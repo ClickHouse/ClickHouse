@@ -100,7 +100,17 @@ void DuckLakePositionalDeleteTransform::initialize()
         }
     }
 
-    LOG_TRACE(log, "Loaded {} deleted positions for data file {}", excluded_rows.size(), object_info->getPath());
+    /// Deletions inlined in the catalog (ducklake_inlined_delete_N) were translated
+    /// to file-relative positions when the file list was built.
+    for (const auto position : object_info->inlined_deleted_positions)
+        excluded_rows.add(position);
+
+    LOG_TRACE(
+        log,
+        "Loaded {} deleted positions ({} inlined) for data file {}",
+        excluded_rows.size(),
+        object_info->inlined_deleted_positions.size(),
+        object_info->getPath());
 }
 
 void DuckLakePositionalDeleteTransform::transform(Chunk & chunk)

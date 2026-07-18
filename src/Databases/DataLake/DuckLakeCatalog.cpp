@@ -9,6 +9,8 @@
 
 #include <fmt/format.h>
 
+#include <algorithm>
+
 #if USE_SQLITE
 #include <Databases/SQLite/SQLiteUtils.h>
 #include <sqlite3.h>
@@ -80,13 +82,20 @@ Int64 parseInt64(const std::optional<String> & value, const String & what)
 
 }
 
+struct DuckLakeQueryResult
+{
+    std::vector<String> column_names;
+    using Row = std::vector<std::optional<String>>;
+    std::vector<Row> rows;
+};
+
 class IDuckLakeConnection
 {
 public:
     virtual ~IDuckLakeConnection() = default;
 
     using Row = std::vector<std::optional<String>>;
-    virtual std::vector<Row> exec(const String & query) = 0;
+    virtual DuckLakeQueryResult exec(const String & query) = 0;
     virtual bool tableExists(const String & name) = 0;
 
     /// ducklake_* table reference including the catalog schema qualifier for postgres.
@@ -106,46 +115,61 @@ public:
 
     const String & getDatabasePath() const { return database_path; }
 
-    std::vector<Row> exec(const String & query) override
+    DuckLakeQueryResult exec(const String & query) override
     {
         std::lock_guard lock(mutex);
         ensureOpen();
 
-        std::vector<Row> rows;
-        auto callback = [](void * res, int col_num, char ** data_by_col, char ** /* col_names */) -> int
+        sqlite3_stmt * stmt = nullptr;
+        DuckLakeQueryResult result;
+        /// The query is a single statement; prepare/step it directly (sqlite3_exec would
+        /// stringify BLOB values and truncate them at the first zero byte).
+        int status = sqlite3_prepare_v2(db.get(), query.c_str(), static_cast<int>(query.size() + 1), &stmt, nullptr);
+        if (status != SQLITE_OK)
+            throw Exception(
+                ErrorCodes::SQLITE_ENGINE_ERROR,
+                "DuckLake catalog query failed to prepare. Error status: {}. Query: {}",
+                status,
+                query);
+
+        std::unique_ptr<sqlite3_stmt, decltype(&sqlite3_finalize)> stmt_holder(stmt, &sqlite3_finalize);
+
+        const int col_num = sqlite3_column_count(stmt);
+        while ((status = sqlite3_step(stmt)) == SQLITE_ROW)
         {
-            Row row;
+            if (result.column_names.empty())
+            {
+                result.column_names.reserve(col_num);
+                for (int i = 0; i < col_num; ++i)
+                    result.column_names.emplace_back(sqlite3_column_name(stmt, i));
+            }
+            DuckLakeQueryResult::Row row;
             row.reserve(col_num);
             for (int i = 0; i < col_num; ++i)
             {
-                if (data_by_col[i])
-                    row.emplace_back(String(data_by_col[i]));
-                else
+                if (sqlite3_column_type(stmt, i) == SQLITE_NULL)
+                {
                     row.emplace_back(std::nullopt);
+                    continue;
+                }
+                const char * data = reinterpret_cast<const char *>(sqlite3_column_text(stmt, i));
+                const int bytes = sqlite3_column_bytes(stmt, i);
+                row.emplace_back(String(data, bytes));
             }
-            static_cast<std::vector<Row> *>(res)->push_back(std::move(row));
-            return 0;
-        };
-
-        char * err_message = nullptr;
-        int status = sqlite3_exec(db.get(), query.c_str(), callback, &rows, &err_message);
-        if (status != SQLITE_OK)
-        {
-            String err_msg = err_message ? err_message : "unknown error";
-            sqlite3_free(err_message);
+            result.rows.push_back(std::move(row));
+        }
+        if (status != SQLITE_DONE)
             throw Exception(
                 ErrorCodes::SQLITE_ENGINE_ERROR,
-                "DuckLake catalog query failed. Error status: {}. Message: {}. Query: {}",
+                "DuckLake catalog query failed. Error status: {}. Query: {}",
                 status,
-                err_msg,
                 query);
-        }
-        return rows;
+        return result;
     }
 
     bool tableExists(const String & name) override
     {
-        return !exec(fmt::format("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = {} LIMIT 1", quoteLiteral(name))).empty();
+        return !exec(fmt::format("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = {} LIMIT 1", quoteLiteral(name))).rows.empty();
     }
 
     String qualified(const String & table) override { return quoteIdentifier(table); }
@@ -176,7 +200,7 @@ public:
     {
     }
 
-    std::vector<Row> exec(const String & query) override
+    DuckLakeQueryResult exec(const String & query) override
     {
         std::lock_guard lock(mutex);
         try
@@ -185,11 +209,15 @@ public:
             pqxx::nontransaction tx(*connection);
             pqxx::result res = tx.exec(query);
 
-            std::vector<Row> rows;
-            rows.reserve(res.size());
+            DuckLakeQueryResult result;
+            result.column_names.reserve(res.columns());
+            for (pqxx::row::size_type i = 0; i < res.columns(); ++i)
+                result.column_names.emplace_back(res.column_name(i));
+
+            result.rows.reserve(res.size());
             for (const auto & prow : res)
             {
-                Row row;
+                DuckLakeQueryResult::Row row;
                 row.reserve(prow.size());
                 for (const auto & field : prow)
                 {
@@ -198,9 +226,9 @@ public:
                     else
                         row.emplace_back(String(field.c_str()));
                 }
-                rows.push_back(std::move(row));
+                result.rows.push_back(std::move(row));
             }
-            return rows;
+            return result;
         }
         catch (const pqxx::broken_connection & e)
         {
@@ -211,10 +239,10 @@ public:
 
     bool tableExists(const String & name) override
     {
-        const auto rows = exec(fmt::format(
+        const auto result = exec(fmt::format(
             "SELECT to_regclass({}) IS NOT NULL",
             quoteLiteral(fmt::format("{}.{}", catalog_schema, name))));
-        return !rows.empty() && parseBool(rows[0][0]);
+        return !result.rows.empty() && parseBool(result.rows[0][0]);
     }
 
     String qualified(const String & table) override
@@ -293,7 +321,7 @@ DuckLakeCatalog::DuckLakeCatalog(
     /// Validate the catalog and read global metadata.
     String catalog_version;
     bool encrypted = false;
-    for (const auto & row : connection->exec(fmt::format("SELECT key, value FROM {} WHERE scope IS NULL", connection->qualified("ducklake_metadata"))))
+    for (const auto & row : connection->exec(fmt::format("SELECT key, value FROM {} WHERE scope IS NULL", connection->qualified("ducklake_metadata"))).rows)
     {
         const auto & key = row.at(0);
         const auto & value = row.at(1);
@@ -341,12 +369,17 @@ DB::DatabaseDataLakeCatalogType DuckLakeCatalog::getCatalogType() const
     return DB::DatabaseDataLakeCatalogType::DUCKLAKE;
 }
 
+bool DuckLakeCatalog::isPostgres() const
+{
+    return sqlite_database_path.empty();
+}
+
 Int64 DuckLakeCatalog::pinSnapshot() const
 {
-    const auto rows = connection->exec(fmt::format("SELECT COALESCE(MAX(snapshot_id), 0) FROM {}", connection->qualified("ducklake_snapshot")));
-    if (rows.empty())
+    const auto result = connection->exec(fmt::format("SELECT COALESCE(MAX(snapshot_id), 0) FROM {}", connection->qualified("ducklake_snapshot")));
+    if (result.rows.empty())
         return 0;
-    return parseInt64(rows[0][0], "snapshot_id");
+    return parseInt64(result.rows[0][0], "snapshot_id");
 }
 
 bool DuckLakeCatalog::empty() const
@@ -357,22 +390,22 @@ bool DuckLakeCatalog::empty() const
 DuckLakeCatalog::Namespaces DuckLakeCatalog::getNamespaces() const
 {
     const Int64 snapshot = pinSnapshot();
-    const auto rows = connection->exec(fmt::format(
+    const auto result = connection->exec(fmt::format(
         "SELECT schema_name FROM {} WHERE {} ORDER BY schema_name",
         connection->qualified("ducklake_schema"),
         visibilityPredicate(snapshot, "ducklake_schema")));
 
-    Namespaces result;
-    result.reserve(rows.size());
-    for (const auto & row : rows)
-        result.push_back(row[0].value_or(""));
-    return result;
+    Namespaces namespaces;
+    namespaces.reserve(result.rows.size());
+    for (const auto & row : result.rows)
+        namespaces.push_back(row[0].value_or(""));
+    return namespaces;
 }
 
 DataLake::CatalogTables DuckLakeCatalog::listTablesInNamespaceDirect(const std::string & namespace_name) const
 {
     const Int64 snapshot = pinSnapshot();
-    const auto rows = connection->exec(fmt::format(
+    const auto result = connection->exec(fmt::format(
         "SELECT t.table_name FROM {0} t "
         "JOIN {1} s ON s.schema_id = t.schema_id "
         "WHERE s.schema_name = {2} AND {3} AND {4} "
@@ -383,11 +416,11 @@ DataLake::CatalogTables DuckLakeCatalog::listTablesInNamespaceDirect(const std::
         visibilityPredicate(snapshot, "s"),
         visibilityPredicate(snapshot, "t")));
 
-    DataLake::CatalogTables result;
-    result.reserve(rows.size());
-    for (const auto & row : rows)
-        result.push_back(DataLake::CatalogTable{.name = namespace_name + "." + row[0].value_or(""), .is_readable = true});
-    return result;
+    DataLake::CatalogTables tables;
+    tables.reserve(result.rows.size());
+    for (const auto & row : result.rows)
+        tables.push_back(DataLake::CatalogTable{.name = namespace_name + "." + row[0].value_or(""), .is_readable = true});
+    return tables;
 }
 
 DataLake::CatalogTables DuckLakeCatalog::getTables() const
@@ -403,7 +436,7 @@ DataLake::CatalogTables DuckLakeCatalog::getTables() const
 
 std::optional<std::pair<Int64, Int64>> DuckLakeCatalog::findTable(const String & namespace_name, const String & table_name, Int64 snapshot_id) const
 {
-    const auto rows = connection->exec(fmt::format(
+    const auto result = connection->exec(fmt::format(
         "SELECT t.table_id, s.schema_id FROM {0} t "
         "JOIN {1} s ON s.schema_id = t.schema_id "
         "WHERE s.schema_name = {2} AND t.table_name = {3} AND {4} AND {5}",
@@ -414,9 +447,9 @@ std::optional<std::pair<Int64, Int64>> DuckLakeCatalog::findTable(const String &
         visibilityPredicate(snapshot_id, "s"),
         visibilityPredicate(snapshot_id, "t")));
 
-    if (rows.empty())
+    if (result.rows.empty())
         return std::nullopt;
-    return std::make_pair(parseInt64(rows[0][0], "table_id"), parseInt64(rows[0][1], "schema_id"));
+    return std::make_pair(parseInt64(result.rows[0][0], "table_id"), parseInt64(result.rows[0][1], "schema_id"));
 }
 
 bool DuckLakeCatalog::existsTable(const std::string & namespace_name, const std::string & table_name) const
@@ -438,7 +471,7 @@ String joinPaths(const String & base, const String & suffix)
 
 String DuckLakeCatalog::getTableDataPath(const String & namespace_name, const String & table_name, Int64 snapshot_id) const
 {
-    const auto rows = connection->exec(fmt::format(
+    const auto result = connection->exec(fmt::format(
         "SELECT s.path, s.path_is_relative, t.path, t.path_is_relative FROM {0} t "
         "JOIN {1} s ON s.schema_id = t.schema_id "
         "WHERE s.schema_name = {2} AND t.table_name = {3} AND {4} AND {5}",
@@ -449,10 +482,10 @@ String DuckLakeCatalog::getTableDataPath(const String & namespace_name, const St
         visibilityPredicate(snapshot_id, "s"),
         visibilityPredicate(snapshot_id, "t")));
 
-    if (rows.empty())
+    if (result.rows.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "DuckLake table {}.{} does not exist", namespace_name, table_name);
 
-    const auto & row = rows[0];
+    const auto & row = result.rows[0];
     const String schema_path = row[0].value_or("");
     const bool schema_path_relative = parseBool(row[1]);
     const String table_path = row[2].value_or("");
@@ -468,15 +501,15 @@ String DuckLakeCatalog::getTableDataPath(const String & namespace_name, const St
 
 std::vector<DuckLake::ColumnInfo> DuckLakeCatalog::getColumnRows(Int64 table_id) const
 {
-    const auto rows = connection->exec(fmt::format(
+    const auto result = connection->exec(fmt::format(
         "SELECT column_id, parent_column, column_order, column_name, column_type, nulls_allowed, "
         "begin_snapshot, end_snapshot FROM {} WHERE table_id = {} ORDER BY column_id",
         connection->qualified("ducklake_column"),
         table_id));
 
-    std::vector<DuckLake::ColumnInfo> result;
-    result.reserve(rows.size());
-    for (const auto & row : rows)
+    std::vector<DuckLake::ColumnInfo> columns;
+    columns.reserve(result.rows.size());
+    for (const auto & row : result.rows)
     {
         DuckLake::ColumnInfo info;
         info.column_id = parseInt64(row[0], "column_id");
@@ -489,49 +522,9 @@ std::vector<DuckLake::ColumnInfo> DuckLakeCatalog::getColumnRows(Int64 table_id)
         info.begin_snapshot = parseInt64(row[6], "begin_snapshot");
         if (row[7].has_value())
             info.end_snapshot = std::stoll(*row[7]);
-        result.push_back(std::move(info));
+        columns.push_back(std::move(info));
     }
-    return result;
-}
-
-void DuckLakeCatalog::checkNoInlinedData(Int64 table_id, Int64 snapshot_id) const
-{
-    const auto inlined_tables = connection->exec(fmt::format(
-        "SELECT table_name FROM {} WHERE table_id = {}",
-        connection->qualified("ducklake_inlined_data_tables"),
-        table_id));
-
-    for (const auto & row : inlined_tables)
-    {
-        const String inlined_table = row[0].value_or("");
-        if (inlined_table.empty() || !connection->tableExists(inlined_table))
-            continue;
-        const auto visible = connection->exec(fmt::format(
-            "SELECT 1 FROM {} inlined WHERE {} LIMIT 1",
-            connection->qualified(inlined_table),
-            visibilityPredicate(snapshot_id, "inlined")));
-        if (!visible.empty())
-            throw Exception(
-                ErrorCodes::SUPPORT_IS_DISABLED,
-                "DuckLake table (id {}) has inlined data rows (data inlining) which are not supported; "
-                "flush the inlined data (ducklake_flush_inlined_data) or disable inlining",
-                table_id);
-    }
-
-    const String inlined_deletes = fmt::format("ducklake_inlined_delete_{}", table_id);
-    if (connection->tableExists(inlined_deletes))
-    {
-        const auto visible = connection->exec(fmt::format(
-            "SELECT 1 FROM {} WHERE begin_snapshot <= {} LIMIT 1",
-            connection->qualified(inlined_deletes),
-            snapshot_id));
-        if (!visible.empty())
-            throw Exception(
-                ErrorCodes::SUPPORT_IS_DISABLED,
-                "DuckLake table (id {}) has inlined deletions which are not supported; "
-                "flush the inlined data (ducklake_flush_inlined_data) or disable inlining",
-                table_id);
-    }
+    return columns;
 }
 
 DuckLakeTableSnapshotInfo DuckLakeCatalog::getTableSnapshotInfo(const String & namespace_name, const String & table_name) const
@@ -542,24 +535,35 @@ DuckLakeTableSnapshotInfo DuckLakeCatalog::getTableSnapshotInfo(const String & n
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "DuckLake table {}.{} does not exist", namespace_name, table_name);
     const auto [table_id, schema_id] = *table;
 
-    checkNoInlinedData(table_id, snapshot);
-
     const auto column_rows = getColumnRows(table_id);
     auto roots = DuckLake::buildColumnTree(column_rows, snapshot);
+
+    std::unordered_map<Int64, NameAndTypePair> column_types;
+    std::function<void(const DuckLake::ColumnNode &)> collect_types = [&](const DuckLake::ColumnNode & node)
+    {
+        column_types.emplace(node.info.column_id, NameAndTypePair(node.info.name, DuckLake::getColumnType(node)));
+        for (const auto & child : node.children)
+            collect_types(child);
+    };
+    for (const auto & root : roots)
+        collect_types(root);
 
     return DuckLakeTableSnapshotInfo{
         .snapshot_id = snapshot,
         .table_id = table_id,
         .schema = DuckLake::getTableSchema(roots),
         .field_id_map = DuckLake::buildFieldIdMap(column_rows, snapshot),
+        .column_types = std::move(column_types),
     };
 }
 
-std::vector<DuckLakeDataFileEntry> DuckLakeCatalog::getDataFiles(Int64 table_id, Int64 snapshot_id) const
+DuckLakeFileListing DuckLakeCatalog::getDataFiles(Int64 table_id, Int64 snapshot_id) const
 {
-    const auto rows = connection->exec(fmt::format(
+    DuckLakeFileListing listing;
+
+    const auto data_files = connection->exec(fmt::format(
         "SELECT data.data_file_id, data.path, data.path_is_relative, data.record_count, data.file_size_bytes, "
-        "data.encryption_key, data.mapping_id, data.file_format, "
+        "data.encryption_key, data.mapping_id, data.file_format, data.partition_id, "
         "del.path, del.path_is_relative, del.format, del.delete_count, del.encryption_key "
         "FROM {0} data "
         "LEFT JOIN {1} del ON del.data_file_id = data.data_file_id AND {2} "
@@ -571,8 +575,7 @@ std::vector<DuckLakeDataFileEntry> DuckLakeCatalog::getDataFiles(Int64 table_id,
         table_id,
         visibilityPredicate(snapshot_id, "data")));
 
-    std::vector<DuckLakeDataFileEntry> result;
-    for (const auto & row : rows)
+    for (const auto & row : data_files.rows)
     {
         const Int64 data_file_id = parseInt64(row[0], "data_file_id");
 
@@ -595,41 +598,202 @@ std::vector<DuckLakeDataFileEntry> DuckLakeCatalog::getDataFiles(Int64 table_id,
                 row[1].value_or(""),
                 file_format);
 
-        if (result.empty() || result.back().data_file_id != data_file_id)
+        if (listing.files.empty() || listing.files.back().data_file_id != data_file_id)
         {
-            result.push_back(DuckLakeDataFileEntry{
+            DuckLakeDataFileEntry entry{
                 .data_file_id = data_file_id,
                 .path = row[1].value_or(""),
                 .path_is_relative = parseBool(row[2]),
                 .record_count = row[3].has_value() ? std::stoll(*row[3]) : 0,
                 .file_size_bytes = row[4].has_value() ? std::stoll(*row[4]) : 0,
+                .partition_id = std::nullopt,
                 .delete_files = {},
-            });
+                .column_stats = {},
+                .partition_values = {},
+                .inlined_deleted_positions = {},
+            };
+            if (row[8].has_value())
+                entry.partition_id = std::stoll(*row[8]);
+            listing.files.push_back(std::move(entry));
         }
 
-        if (row[8].has_value())
+        if (row[9].has_value())
         {
-            const String delete_format = Poco::toLower(row[10].value_or("parquet"));
+            const String delete_format = Poco::toLower(row[11].value_or("parquet"));
             if (delete_format != "parquet")
                 throw Exception(
                     ErrorCodes::SUPPORT_IS_DISABLED,
                     "DuckLake delete file '{}' has format '{}' (puffin deletion vectors are not supported)",
-                    row[8].value_or(""),
+                    row[9].value_or(""),
                     delete_format);
-            if (row[12].has_value() && !row[12]->empty())
+            if (row[13].has_value() && !row[13]->empty())
                 throw Exception(
                     ErrorCodes::SUPPORT_IS_DISABLED,
                     "DuckLake delete file '{}' is encrypted; Parquet modular encryption is not supported",
-                    row[8].value_or(""));
+                    row[9].value_or(""));
 
-            result.back().delete_files.push_back(DuckLakeDeleteFileEntry{
-                .path = row[8].value_or(""),
-                .path_is_relative = parseBool(row[9]),
-                .delete_count = row[11].has_value() ? std::stoll(*row[11]) : 0,
+            listing.files.back().delete_files.push_back(DuckLakeDeleteFileEntry{
+                .path = row[9].value_or(""),
+                .path_is_relative = parseBool(row[10]),
+                .delete_count = row[12].has_value() ? std::stoll(*row[12]) : 0,
             });
         }
     }
-    return result;
+
+    if (listing.files.empty())
+        return listing;
+
+    const auto stats = connection->exec(fmt::format(
+        "SELECT data_file_id, column_id, value_count, null_count, contains_nan, min_value, max_value "
+        "FROM {} WHERE table_id = {}",
+        connection->qualified("ducklake_file_column_stats"),
+        table_id));
+    for (const auto & row : stats.rows)
+    {
+        const Int64 data_file_id = parseInt64(row[0], "data_file_id");
+        auto it = std::lower_bound(
+            listing.files.begin(), listing.files.end(), data_file_id,
+            [](const DuckLakeDataFileEntry & entry, Int64 id) { return entry.data_file_id < id; });
+        if (it == listing.files.end() || it->data_file_id != data_file_id)
+            continue;
+        it->column_stats.push_back(DuckLakeFileColumnStats{
+            .column_id = parseInt64(row[1], "column_id"),
+            .value_count = row[2].has_value() ? std::stoll(*row[2]) : 0,
+            .null_count = row[3].has_value() ? std::stoll(*row[3]) : 0,
+            .contains_nan = parseBool(row[4]),
+            .min_value = row[5],
+            .max_value = row[6],
+        });
+    }
+
+    const auto partition_values = connection->exec(fmt::format(
+        "SELECT data_file_id, partition_key_index, partition_value FROM {} WHERE table_id = {}",
+        connection->qualified("ducklake_file_partition_value"),
+        table_id));
+    for (const auto & row : partition_values.rows)
+    {
+        const Int64 data_file_id = parseInt64(row[0], "data_file_id");
+        const auto partition_key_index = static_cast<size_t>(parseInt64(row[1], "partition_key_index"));
+        auto it = std::lower_bound(
+            listing.files.begin(), listing.files.end(), data_file_id,
+            [](const DuckLakeDataFileEntry & entry, Int64 id) { return entry.data_file_id < id; });
+        if (it == listing.files.end() || it->data_file_id != data_file_id)
+            continue;
+        if (it->partition_values.size() <= partition_key_index)
+            it->partition_values.resize(partition_key_index + 1);
+        it->partition_values[partition_key_index] = row[2];
+    }
+
+    const auto partition_specs = connection->exec(fmt::format(
+        "SELECT pc.partition_id, pc.partition_key_index, pc.column_id, pc.transform "
+        "FROM {0} pc "
+        "JOIN {1} pi ON pi.partition_id = pc.partition_id AND {2} "
+        "WHERE pc.table_id = {3} "
+        "ORDER BY pc.partition_id, pc.partition_key_index",
+        connection->qualified("ducklake_partition_column"),
+        connection->qualified("ducklake_partition_info"),
+        visibilityPredicate(snapshot_id, "pi"),
+        table_id));
+    for (const auto & row : partition_specs.rows)
+    {
+        const Int64 partition_id = parseInt64(row[0], "partition_id");
+        listing.partition_specs[partition_id].push_back(DuckLakePartitionField{
+            .partition_key_index = parseInt64(row[1], "partition_key_index"),
+            .column_id = parseInt64(row[2], "column_id"),
+            .transform = row[3].value_or(""),
+        });
+    }
+
+    /// Inlined deletions live in ducklake_inlined_delete_N (file_id, row_id, begin_snapshot),
+    /// where row_id is the file-relative position (same as the pos column of delete files).
+    /// Unlike everything else the rows are physically removed by a flush, so they are only
+    /// consistent with the pinned snapshot when nothing commits concurrently; the snapshot
+    /// re-check at the end of this method catches that race loudly.
+    const String inlined_deletes_table = fmt::format("ducklake_inlined_delete_{}", table_id);
+    if (connection->tableExists(inlined_deletes_table))
+    {
+        std::unordered_map<Int64, size_t> position_by_file_id;
+        for (size_t i = 0; i < listing.files.size(); ++i)
+            position_by_file_id.emplace(listing.files[i].data_file_id, i);
+
+        const auto inlined_deletes = connection->exec(fmt::format(
+            "SELECT file_id, row_id FROM {} WHERE begin_snapshot <= {}",
+            connection->qualified(inlined_deletes_table),
+            snapshot_id));
+        for (const auto & row : inlined_deletes.rows)
+        {
+            const Int64 file_id = parseInt64(row[0], "file_id");
+            const Int64 row_id = parseInt64(row[1], "row_id");
+            auto it = position_by_file_id.find(file_id);
+            if (it == position_by_file_id.end())
+                continue;
+            auto & file = listing.files[it->second];
+            if (row_id < 0 || row_id >= file.record_count)
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Inlined deletion at position {} is out of bounds for DuckLake data file '{}' "
+                    "(record_count {})",
+                    row_id,
+                    file.path,
+                    file.record_count);
+            file.inlined_deleted_positions.push_back(static_cast<UInt64>(row_id));
+        }
+    }
+
+    /// The catalog is read with several independent statements; a concurrent commit (e.g. an
+    /// inlining flush physically removing ducklake_inlined_delete rows) could leave the file
+    /// list and the inlined deletions inconsistent. Detect it and fail loudly rather than
+    /// silently resurrecting deleted rows.
+    if (pinSnapshot() != snapshot_id)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "DuckLake catalog changed while reading table (id {}) metadata; retry the query",
+            table_id);
+
+    return listing;
+}
+
+std::vector<DuckLakeInlinedDataTable> DuckLakeCatalog::getInlinedDataTables(Int64 table_id) const
+{
+    const auto result = connection->exec(fmt::format(
+        "SELECT table_name, schema_version FROM {} WHERE table_id = {}",
+        connection->qualified("ducklake_inlined_data_tables"),
+        table_id));
+
+    std::vector<DuckLakeInlinedDataTable> tables;
+    for (const auto & row : result.rows)
+    {
+        const String table_name = row[0].value_or("");
+        if (table_name.empty() || !connection->tableExists(table_name))
+            continue;
+        tables.push_back(DuckLakeInlinedDataTable{
+            .table_name = table_name,
+            .schema_version = parseInt64(row[1], "schema_version"),
+        });
+    }
+    return tables;
+}
+
+std::pair<std::vector<String>, std::vector<std::vector<std::optional<String>>>>
+DuckLakeCatalog::getInlinedRows(const String & inlined_table, Int64 snapshot_id) const
+{
+    auto result = connection->exec(fmt::format(
+        "SELECT * FROM {} inlined WHERE {} ORDER BY row_id",
+        connection->qualified(inlined_table),
+        visibilityPredicate(snapshot_id, "inlined")));
+    return {std::move(result.column_names), std::move(result.rows)};
+}
+
+std::map<Int64, Int64> DuckLakeCatalog::getSchemaVersionFirstSnapshots() const
+{
+    const auto result = connection->exec(fmt::format(
+        "SELECT schema_version, MIN(snapshot_id) FROM {} GROUP BY schema_version",
+        connection->qualified("ducklake_snapshot")));
+
+    std::map<Int64, Int64> versions;
+    for (const auto & row : result.rows)
+        versions.emplace(parseInt64(row[0], "schema_version"), parseInt64(row[1], "snapshot_id"));
+    return versions;
 }
 
 void DuckLakeCatalog::getTableMetadata(

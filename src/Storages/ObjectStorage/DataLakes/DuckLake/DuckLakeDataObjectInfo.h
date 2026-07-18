@@ -20,11 +20,13 @@ struct DuckLakeDataObjectInfo : public ObjectInfo
         const String & path_,
         std::vector<PositionalDeleteFile> positional_delete_files_,
         std::optional<Int64> record_count_,
-        std::optional<Int64> file_size_bytes_)
+        std::optional<Int64> file_size_bytes_,
+        std::vector<UInt64> inlined_deleted_positions_ = {})
         : ObjectInfo(path_)
         , positional_delete_files(std::move(positional_delete_files_))
         , record_count(record_count_)
         , file_size_bytes(file_size_bytes_)
+        , inlined_deleted_positions(std::move(inlined_deleted_positions_))
     {
     }
 
@@ -38,6 +40,8 @@ struct DuckLakeDataObjectInfo : public ObjectInfo
     std::vector<PositionalDeleteFile> positional_delete_files;
     std::optional<Int64> record_count;
     std::optional<Int64> file_size_bytes;
+    /// File-relative positions deleted via the catalog's inlined deletion table.
+    std::vector<UInt64> inlined_deleted_positions;
 };
 
 using DuckLakeDataObjectInfoPtr = std::shared_ptr<DuckLakeDataObjectInfo>;

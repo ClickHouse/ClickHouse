@@ -139,6 +139,19 @@ void ReadFromObjectStorageStep::initializePipeline(QueryPipelineBuilder & pipeli
 
         pipes.emplace_back(std::move(source));
     }
+
+    /// Data lake metadata can provide additional row sources that are not backed by files
+    /// (e.g. DuckLake inlined data rows stored in the catalog).
+    if (configuration->isDataLakeConfiguration())
+    {
+        if (auto * lake_metadata = configuration->getExternalMetadata())
+        {
+            auto additional_pipe = lake_metadata->getAdditionalReadPipe(info, storage_snapshot->metadata, context, max_block_size);
+            if (!additional_pipe.empty())
+                pipes.emplace_back(std::move(additional_pipe));
+        }
+    }
+
     auto pipe = Pipe::unitePipes(std::move(pipes));
     if (pipe.empty())
         pipe = Pipe(std::make_shared<NullSource>(std::make_shared<const Block>(info.source_header)));
