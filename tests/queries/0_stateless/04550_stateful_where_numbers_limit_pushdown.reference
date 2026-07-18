@@ -1,0 +1,12 @@
+-- neighbor in WHERE only
+4
+5
+6
+-- neighbor in WHERE only, old analyzer
+4
+5
+6
+-- neighbor in WHERE only, optimizer disabled
+4
+5
+6

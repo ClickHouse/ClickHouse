@@ -116,11 +116,14 @@ bool shouldPushdownLimit(const SelectQueryInfo & query_info, const InterpreterSe
     /// `optimizeTopK`, `topKThroughJoin`, `pushLimitByIntoSort`,
     /// `optimizePrimaryKeyConditionAndLimit`).
     ///
-    /// The `arrayJoin` function call appears in the SELECT clause, while the `ARRAY JOIN`
-    /// clause is stored separately in `arrayJoinExpressionList()` (the clause itself is
-    /// already an array-join operation, regardless of what its expressions contain).
-    /// Both forms must reject pushdown.
-    if (astContainsArrayJoinFunction(query.select()))
+    /// The `arrayJoin` function call may appear in the SELECT clause or in a filter
+    /// (`WHERE`/`PREWHERE`, e.g. `WHERE arrayJoin(...) >= 0` or a `WITH` alias referenced only
+    /// there), while the `ARRAY JOIN` clause is stored separately in `arrayJoinExpressionList()`
+    /// (the clause itself is already an array-join operation, regardless of what its expressions
+    /// contain). All forms must reject pushdown.
+    if (astContainsArrayJoinFunction(query.select())
+        || astContainsArrayJoinFunction(query.where())
+        || astContainsArrayJoinFunction(query.prewhere()))
         return false;
     if (query.arrayJoinExpressionList().first)
         return false;
@@ -129,8 +132,11 @@ bool shouldPushdownLimit(const SelectQueryInfo & query_info, const InterpreterSe
     /// data-order dependent results and side effects, so it must see the same input rows it would
     /// see without the optimization. Capping the source to `limit + offset` rows would truncate
     /// its input. See the sibling guards in `InterpreterSelectQuery::maxBlockSizeByLimit` and
-    /// `mainQueryNodeBlockSizeByLimit`.
-    if (astContainsStatefulFunction(query.select(), context))
+    /// `mainQueryNodeBlockSizeByLimit`. Like `arrayJoin`, such a function may also sit in a filter
+    /// (`WHERE`/`PREWHERE`), not only in the SELECT clause.
+    if (astContainsStatefulFunction(query.select(), context)
+        || astContainsStatefulFunction(query.where(), context)
+        || astContainsStatefulFunction(query.prewhere(), context))
         return false;
 
     /// Just ignore some minor cases, such as:
