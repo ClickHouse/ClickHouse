@@ -105,6 +105,17 @@ void registerOutputFormatCSV(FormatFactory & factory)
         /// return cannot survive the text `EventStream` framing, so the output is base64-encoded there
         /// (see `checkIfOutputFormatMayEmitCarriageReturn`).
         factory.markOutputFormatMayEmitCarriageReturns(format_name);
+
+        /// The `*WithNames*` variants write the column names (and data type names) into the header
+        /// through `writeCSVString`, which quotes special characters but does not validate UTF-8, so a
+        /// name that is not valid UTF-8 (a quoted identifier or an `Enum` element with arbitrary bytes)
+        /// makes the output non-textual. It is knowable from the header, so the text framings reject or
+        /// base64-encode the output accordingly.
+        if (with_names || with_types)
+            factory.registerOutputFormatMayProduceRawBytesChecker(
+                format_name,
+                [with_names, with_types](const FormatSettings &, const Block & header)
+                { return headerNamesMayProduceRawBytes(header, with_names, with_types); });
     };
 
     registerWithNamesAndTypes("CSV", register_func);

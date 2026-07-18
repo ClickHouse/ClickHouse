@@ -123,9 +123,14 @@ void registerOutputFormatCustomSeparated(FormatFactory & factory)
         /// is not guaranteed to be valid UTF-8 text and cannot be embedded into a text framing format.
         /// The literal delimiters are written verbatim regardless of the escaping rule, so a delimiter
         /// that is not valid UTF-8 (for example `format_custom_row_after_delimiter` set to a non-UTF-8
-        /// byte sequence) makes the output non-textual as well. This is knowable from the settings, so
-        /// it is detected here rather than relying on the payload being valid UTF-8.
-        factory.registerOutputFormatMayProduceRawBytesChecker(format_name, [](const FormatSettings & settings, const Block &)
+        /// byte sequence) makes the output non-textual as well. The `*WithNames*` variants also write
+        /// the column names (and data type names) into the header, and neither the escaping rule nor
+        /// the delimiters validate UTF-8, so a name that is not valid UTF-8 makes the output
+        /// non-textual too. All of this is knowable from the settings and the header, so it is detected
+        /// here rather than relying on the payload being valid UTF-8.
+        factory.registerOutputFormatMayProduceRawBytesChecker(
+            format_name,
+            [with_names, with_types](const FormatSettings & settings, const Block & header)
         {
             const auto & custom = settings.custom;
             if (custom.escaping_rule == FormatSettings::EscapingRule::Raw)
@@ -139,7 +144,8 @@ void registerOutputFormatCustomSeparated(FormatFactory & factory)
                 || is_not_valid_utf8(custom.row_before_delimiter)
                 || is_not_valid_utf8(custom.row_after_delimiter)
                 || is_not_valid_utf8(custom.row_between_delimiter)
-                || is_not_valid_utf8(custom.field_delimiter);
+                || is_not_valid_utf8(custom.field_delimiter)
+                || headerNamesMayProduceRawBytes(header, with_names, with_types);
         });
 
         /// The `CSV` and `XML` escaping rules pass a carriage return in a `String` value through

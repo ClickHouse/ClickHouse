@@ -4,6 +4,7 @@
 #include <Processors/Port.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/PrettyFormatHelpers.h>
+#include <Formats/registerWithNamesAndTypes.h>
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromString.h>
@@ -892,6 +893,15 @@ void registerOutputFormatPretty(FormatFactory & factory)
                 /// `EventStream` framing, so the output is base64-encoded there (see
                 /// `checkIfOutputFormatMayEmitCarriageReturn`).
                 factory.markOutputFormatMayEmitCarriageReturns(name);
+
+                /// The header (and, for many rows, the footer) column names are written verbatim, so a
+                /// name that is not valid UTF-8 makes the output not valid UTF-8 either. The text
+                /// framings reject or base64-encode the output in that case (see
+                /// `checkIfOutputFormatMayProduceRawBytes`). `Pretty` does not write the data type names.
+                factory.registerOutputFormatMayProduceRawBytesChecker(
+                    name,
+                    [](const FormatSettings &, const Block & header)
+                    { return headerNamesMayProduceRawBytes(header, /*with_names=*/ true, /*with_types=*/ false); });
             }
         }
     }

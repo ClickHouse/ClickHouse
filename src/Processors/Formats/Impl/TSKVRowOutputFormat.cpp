@@ -4,6 +4,7 @@
 #include <Processors/Formats/Impl/TSKVRowOutputFormat.h>
 #include <Processors/Port.h>
 #include <Formats/FormatFactory.h>
+#include <Formats/registerWithNamesAndTypes.h>
 
 namespace DB
 {
@@ -49,6 +50,15 @@ void registerOutputFormatTSKV(FormatFactory & factory)
     });
     factory.markOutputFormatSupportsParallelFormatting("TSKV");
     factory.setContentType("TSKV", "text/tab-separated-values; charset=UTF-8");
+
+    /// `TSKV` always writes the column names into the header (`writeAnyEscapedString<'='>`, which
+    /// escapes control characters but does not validate UTF-8), so a column name that is not valid
+    /// UTF-8 (a quoted identifier with arbitrary bytes) makes the output non-textual. It is knowable
+    /// from the header, so the text framings reject or base64-encode the output accordingly.
+    factory.registerOutputFormatMayProduceRawBytesChecker("TSKV", [](const FormatSettings &, const Block & header)
+    {
+        return headerNamesMayProduceRawBytes(header, /*with_names=*/true, /*with_types=*/false);
+    });
 }
 
 }

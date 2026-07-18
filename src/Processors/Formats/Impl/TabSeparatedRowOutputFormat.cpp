@@ -102,6 +102,17 @@ void registerOutputFormatTabSeparated(FormatFactory & factory)
             /// so the output is not guaranteed to be valid UTF-8 text despite the textual content type.
             if (is_raw)
                 factory.markOutputFormatMayProduceRawBytes(format_name);
+            /// The `*WithNames*` variants write the column names (and data type names) into the header
+            /// through `writeEscapedString`, which escapes control characters but does not validate
+            /// UTF-8, so a name that is not valid UTF-8 (a quoted identifier or an `Enum` element with
+            /// arbitrary bytes) makes the output non-textual. It is knowable from the header, so the
+            /// text framings reject or base64-encode the output accordingly. The `*Raw` variants are
+            /// already covered by the unconditional mark above.
+            else if (with_names || with_types)
+                factory.registerOutputFormatMayProduceRawBytesChecker(
+                    format_name,
+                    [with_names, with_types](const FormatSettings &, const Block & header)
+                    { return headerNamesMayProduceRawBytes(header, with_names, with_types); });
 
             /// With `output_format_tsv_crlf_end_of_line`, rows end with `\r\n`. That carriage return
             /// cannot survive the text `EventStream` framing, so it is base64-encoded there (see
