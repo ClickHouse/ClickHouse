@@ -1,0 +1,9 @@
+<clickhouse>
+    <!-- Only the PostgreSQL test host is reachable. This lets every positive test keep
+         connecting to `postgres1` while proving that the PostgreSQL entrypoints honor
+         `remote_url_allow_hosts`: a database engine pointed at any other host must be
+         rejected before a connection is opened. -->
+    <remote_url_allow_hosts>
+        <host>postgres1</host>
+    </remote_url_allow_hosts>
+</clickhouse>
