@@ -5458,7 +5458,8 @@ std::unique_ptr<IQueryPlanStep> ReadFromMergeTree::deserialize(Deserialization &
     if (has_prewhere_info)
         query_info.prewhere_info = std::make_shared<PrewhereInfo>(PrewhereInfo::deserialize(ctx));
 
-    /// The per-bucket marks travel in the `read_bucket` task parameter, so the step carries only the count.
+    /// The per-bucket marks travel in a per-read task parameter, so the step carries only the count and
+    /// this read's parameter key.
     size_t distributed_read_bucket_count = 0;
     readVarUInt(distributed_read_bucket_count, ctx.in);
     /// A version-1 bucketed step had a trailing part-name payload this reader would leave unconsumed; fail
@@ -5467,6 +5468,9 @@ std::unique_ptr<IQueryPlanStep> ReadFromMergeTree::deserialize(Deserialization &
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
             "make_distributed_plan: a bucketed ReadFromMergeTree read requires query plan serialization "
             "version >= 2; all nodes must run the same version");
+    String distributed_read_param_name;
+    if (distributed_read_bucket_count > 0)
+        readStringBinary(distributed_read_param_name, ctx.in);
 
     /// The plan is only being drained off the buffer (TCPHandler::skipData) and will be discarded.
     /// All serialized fields have been consumed above, so return a lightweight placeholder that
@@ -5491,20 +5495,6 @@ std::unique_ptr<IQueryPlanStep> ReadFromMergeTree::deserialize(Deserialization &
     const auto metadata_snapshot = table.getInMemoryMetadataPtr(ctx.context, false);
     StorageSnapshotPtr storage_snapshot = table.getStorageSnapshot(metadata_snapshot, ctx.context);
     const auto & snapshot_data = assert_cast<const MergeTreeData::SnapshotData &>(*storage_snapshot->data);
-
-    /// The per-bucket marks travel in a per-read task parameter, so the step carries only the count and
-    /// this read's parameter key.
-    size_t distributed_read_bucket_count = 0;
-    readVarUInt(distributed_read_bucket_count, ctx.in);
-    /// A version-1 bucketed step had a trailing part-name payload this reader would leave unconsumed; fail
-    /// closed at the version boundary instead of misparsing the rest of the plan.
-    if (distributed_read_bucket_count > 0 && ctx.version < 2)
-        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-            "make_distributed_plan: a bucketed ReadFromMergeTree read requires query plan serialization "
-            "version >= 2; all nodes must run the same version");
-    String distributed_read_param_name;
-    if (distributed_read_bucket_count > 0)
-        readStringBinary(distributed_read_param_name, ctx.in);
 
     auto step = executor.readFromParts(
         snapshot_data.parts,
