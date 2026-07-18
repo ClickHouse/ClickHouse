@@ -620,7 +620,7 @@ struct AggregateFunctionMergedJSONPatchData
             /// Skip entries that have their own separate typed column in the result schema —
             /// they will be written directly by the main loop and must not appear inside the
             /// reconstructed parent object (which would double-write them).
-            if (result_column_for_skip && result_column_for_skip->getTypedPaths().count(p))
+            if (result_column_for_skip && result_column_for_skip->getTypedPaths().contains(p))
                 continue;
 
             std::string_view rel = p.substr(ancestor_path.size() + 1);
@@ -769,7 +769,7 @@ struct AggregateFunctionMergedJSONPatchData
         for (const auto & entry : entries)
         {
             std::string_view path = entry.pathView();
-            if (consumed.count(path))
+            if (consumed.contains(path))
                 continue;
 
             Field value = entry.value.get();
