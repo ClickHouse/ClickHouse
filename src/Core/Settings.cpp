@@ -361,13 +361,13 @@ The maximum number of threads to parse data in input formats that support parall
 The maximal size of buffer for parallel downloading (e.g. for URL engine) per each thread.
 )", 0) \
     DECLARE(NonZeroUInt64, max_read_buffer_size, DBMS_DEFAULT_BUFFER_SIZE, R"(
-The maximum size of the buffer to read from the filesystem.
+The maximum size of the buffer to read from the filesystem. Values above 256 MiB are clamped to 256 MiB, as a read buffer never needs to be larger.
 )", 0) \
     DECLARE(UInt64, max_read_buffer_size_local_fs, 128*1024, R"(
-The maximum size of the buffer to read from local filesystem. If set to 0 then max_read_buffer_size will be used.
+The maximum size of the buffer to read from local filesystem. If set to 0 then max_read_buffer_size will be used. Values above 256 MiB are clamped to 256 MiB, as a read buffer never needs to be larger.
 )", 0) \
     DECLARE(UInt64, max_read_buffer_size_remote_fs, 0, R"(
-The maximum size of the buffer to read from remote filesystem. If set to 0 then max_read_buffer_size will be used.
+The maximum size of the buffer to read from remote filesystem. If set to 0 then max_read_buffer_size will be used. Values above 256 MiB are clamped to 256 MiB, as a read buffer never needs to be larger.
 )", 0) \
     DECLARE(UInt64, max_distributed_connections, 1024, R"(
 The maximum number of simultaneous connections with remote servers for distributed processing of a single query to a single Distributed table. We recommend setting a value no less than the number of servers in the cluster.
@@ -6879,7 +6879,7 @@ Prefer prefetched threadpool if all parts are on local filesystem
 )", 0) \
     \
     DECLARE(UInt64, prefetch_buffer_size, DBMS_DEFAULT_BUFFER_SIZE, R"(
-The maximum size of the prefetch buffer to read from the filesystem.
+The maximum size of the prefetch buffer to read from the filesystem. Values above 256 MiB are clamped to 256 MiB, as a read buffer never needs to be larger.
 )", 0) \
     DECLARE(UInt64, filesystem_prefetch_step_bytes, 0, R"(
 Prefetch step in bytes. Zero means `auto` - approximately the best prefetch step will be auto deduced, but might not be 100% the best. The actual value might be different because of setting filesystem_prefetch_min_bytes_for_single_read_task
