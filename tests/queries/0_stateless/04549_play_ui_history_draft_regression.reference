@@ -56,6 +56,11 @@ run-one single-statement: the full run keeps run=1
 placeholder dropped: the completed run keeps run=1
 placeholder dropped: the removed placeholder does not leak into the URL
 placeholder dropped: the stale binding is cleared from the tab
+run under pending param restore: the clean run keeps run=1
+run under pending param restore: the entry keeps the destination tab params
+run under pending param restore: the destination param reaches the URL
+run under pending param restore: the stale source param does not leak
+run under pending param restore: a later capture keeps the destination params
 reload after a preserved draft: the draft is restored as editor text
 reload after a preserved draft: the draft is not auto-run
 stale reload then rerun: the draft is restored unrun first

@@ -5236,6 +5236,7 @@ async function postSingle(posted_request_num, query, history_query_text, params_
                 data: result.reply.length > 100000 ? null : result.reply,
                 elapsed_ns: 1e6 * (performance.now() - last_query_start),
                 params: paramValuesSnapshot,
+                params_restore_pending: params_restore_pending,   /// see saveHistory: the launch-time params are authoritative when a run raced an in-flight param restore
                 partial: partial,
             });
         }
@@ -5278,6 +5279,7 @@ async function postSingle(posted_request_num, query, history_query_text, params_
         data: result.reply.length > 100000 ? null : result.reply,
         elapsed_ns: elapsed_ns,
         params: paramValuesSnapshot,
+        params_restore_pending: params_restore_pending,   /// see saveHistory: the launch-time params are authoritative when a run raced an in-flight param restore
         partial: partial,
     });
 }
@@ -5459,6 +5461,7 @@ async function postMulti(posted_request_num, parsed, params_restore_pending, lau
         multi: multi,
         elapsed_ns: elapsed_ns,
         params: paramValuesSnapshot,
+        params_restore_pending: params_restore_pending,   /// see saveHistory: the launch-time params are authoritative when a run raced an in-flight param restore
         partial: partial || skipped_after_error,
     }, parsed[0].query);
 }
@@ -6587,7 +6590,28 @@ function saveHistory(stateData, titleForDoc) {
     /// `run=1` and leaking the stale placeholder into the entry and the URL. The live inputs are
     /// exactly what the completed run's own `paramValuesSnapshot` was read from, so a genuine
     /// in-flight parameter edit still diverges from `stateData.params` and correctly drops `run=1`.
-    tab.params = getParamValues();
+    ///
+    /// EXCEPT when the run was launched while a tab activation / Back-Forward parameter restore was
+    /// still pending (`params_restore_pending`): then the live inputs are NOT what ran. The run
+    /// sourced its parameters from the destination tab's own saved snapshot via `resolveRunParams`,
+    /// because the pending restore had not yet written them to the inputs — and it may never write
+    /// them here, since `setParamValues` can only update inputs that already exist and the aborted
+    /// restore's `updateQueryParams` can rebuild them blank from the PREVIOUS tab's `oldValues`.
+    /// Rereading the DOM would then compare the launched params (e.g. `{y:'2'}`) against stale or
+    /// blank inputs (`{x:'1'}` / `{y:''}`), falsely see a divergence, drop `run=1`, and persist the
+    /// wrong bindings on a clean run. Trust the launch-time snapshot instead, and write it back to
+    /// the inputs (which exist by now) so a later `captureActiveTab` reads the right values. The
+    /// synthetic `input` events `setParamValues` fires are ignored by the param handler
+    /// (`!e.isTrusted`), so this does not re-enter history/persist.
+    if (stateData.params_restore_pending)
+    {
+        tab.params = { ...(stateData.params || {}) };
+        setParamValues(tab.params);
+    }
+    else
+    {
+        tab.params = getParamValues();
+    }
     const ranLiveQuery = tab.query === stateData.query;
     const ranLiveParams = JSON.stringify(tab.params || {}) === JSON.stringify(stateData.params || {});
     if (ranLiveQuery) tab.query = stateData.query;

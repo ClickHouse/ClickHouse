@@ -102,6 +102,12 @@ const FUNCS = ['toBase64', 'nextDefaultTitle', 'uniqueTitle', 'makeTab', 'getAct
     /// into `postSingle`. A regression that re-read `query_area.value` after the tokenization await
     /// would stamp a draft typed meanwhile as `run=1`, and neither `saveHistory` nor `postMulti`
     /// exercises that path.
+    ///
+    /// The real parameter resolver, so the params-restore-pending run case below drives `postSingle`'s
+    /// real sourcing of the destination tab's own saved params (rather than the stale live inputs)
+    /// end to end. For `params_restore_pending = false` it just returns `getParamValues()`, exactly
+    /// what the previous stub did, so the other cases are unaffected.
+    'resolveRunParams',
     'postSingle', 'postOne'];
 let code = FUNCS.map(f => extractTopLevel(new RegExp('^(async )?function ' + f + '\\('), f)).join('\n');
 code += '\n' + extractTopLevel(/^window\.onpopstate = /, 'window.onpopstate');
@@ -168,9 +174,6 @@ const sandbox = {
     progressEl: { start() {}, finish() {}, clear() {}, updateText() {}, updateProgress() {}, style: { setProperty() {} } },
     logoEl: { style: {} },
     clear: () => {},
-    /// `postMulti` calls this with `params_restore_pending = false` in every case the tests
-    /// below drive, matching the real one's behavior for that argument.
-    resolveRunParams: () => sandbox.getParamValues(),
     /// Stands in for the network round-trip: hangs until `resolvePendingPostImpl` above
     /// releases it, always reporting a successful, non-image, non-raw text result.
     postImpl: (posted_request_num, query) => new Promise(resolve => pendingPostImpl.push(() => resolve({
@@ -871,6 +874,59 @@ async function reload()
     assert_eq('placeholder dropped: the completed run keeps run=1', sandbox.history.stack[sandbox.history.idx].url.includes('run=1'), true);
     assert_eq('placeholder dropped: the removed placeholder does not leak into the URL', sandbox.history.stack[sandbox.history.idx].url.includes('param_x'), false);
     assert_params('placeholder dropped: the stale binding is cleared from the tab', active().params, {});
+
+    /// A run launched while a tab activation / Back-Forward parameter restore is still pending must
+    /// record the destination tab's own params and keep `run=1`, even though the live `param_*`
+    /// inputs still show the previous tab. Switch from `SELECT {x}` (x=1) to `SELECT {y}` (y=2) and
+    /// press Run before the restore finishes: `resolveRunParams` correctly runs `{y:'2'}`, but the
+    /// aborted restore's `updateQueryParams` can rebuild the inputs blank (`{y:''}`) from the
+    /// previous tab's `oldValues`. If `saveHistory` reread those inputs it would falsely see the
+    /// params diverge, drop `run=1`, and persist `{y:''}` on a clean run. Drives the REAL `postOne`/
+    /// `postSingle`/`resolveRunParams`, with the pending restore modeled by
+    /// `params_restore_pending_token === request_num` and stale/blank live inputs.
+    reset();
+    sandbox.param_inputs = { x: '1' };
+    active().query = 'SELECT {x}';
+    sandbox.query_area.value = 'SELECT {x}';
+    await run('SELECT {x}');                        /// tab A: a clean, run-backed entry with x=1
+    /// A second tab (SELECT {y}, y=2) is being activated; its parameter restore is still in flight
+    /// (`params_restore_pending_token === request_num`) when the user presses Run. `restoreFromHistory`
+    /// has set the editor to the destination query but not yet written its params, so the live inputs
+    /// still hold tab A's `{x:'1'}`.
+    const dest_tab = sandbox.makeTab();
+    dest_tab.query = 'SELECT {y}';
+    dest_tab.params = { y: '2' };
+    sandbox.tabs.push(dest_tab);
+    sandbox.activeTabId = dest_tab.id;
+    sandbox.query_area.value = 'SELECT {y}';
+    sandbox.param_inputs = { x: '1' };
+    sandbox.params_restore_pending_token = sandbox.request_num;
+    sandbox.isMultiQuery = false;
+    sandbox.query_area.selectionStart = 0;
+    sandbox.query_area.selectionEnd = 0;
+    let releaseCursorDest;
+    sandbox.getQueryUnderCursor = () => new Promise(resolve => { releaseCursorDest = () => resolve('SELECT {y}'); });
+    const destRunPromise = sandbox.postOne();
+    await drain();
+    releaseCursorDest();
+    await drain();
+    /// The aborted restore's `updateQueryParams` rebuilds the inputs from tab A's `oldValues`, so
+    /// `param-y` ends up blank (and `param-x` is gone) by the time the run completes.
+    sandbox.param_inputs = { y: '' };
+    resolvePendingPostImpl();
+    await destRunPromise;
+    await drain();
+    assert_eq('run under pending param restore: the clean run keeps run=1', sandbox.history.stack[sandbox.history.idx].url.includes('run=1'), true);
+    assert_params('run under pending param restore: the entry keeps the destination tab params', active().params, { y: '2' });
+    assert_eq('run under pending param restore: the destination param reaches the URL', sandbox.history.stack[sandbox.history.idx].url.includes('param_y=2'), true);
+    assert_eq('run under pending param restore: the stale source param does not leak', sandbox.history.stack[sandbox.history.idx].url.includes('param_x'), false);
+    /// A later `captureActiveTab` (the debounced persist, a tab switch/rename, ...) rereads the live
+    /// inputs; because the run wrote the destination params back into them, that capture keeps the
+    /// right values instead of clobbering the tab with the stale/blank DOM.
+    sandbox.captureActiveTab();
+    assert_params('run under pending param restore: a later capture keeps the destination params', active().params, { y: '2' });
+    sandbox.params_restore_pending_token = -1;
+    sandbox.getQueryUnderCursor = async () => '';
 
     /// Reload after a preserved-draft Back/Forward round-trip. The debounced save persists the
     /// draft (query != lastSavedQuery, the shape reconcileStartup treats as a stale reload), so
