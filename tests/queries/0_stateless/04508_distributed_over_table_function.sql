@@ -593,6 +593,18 @@ CREATE TABLE dist_probe_error (n UInt64) ENGINE = Distributed(test_shard_localho
 SELECT count() FROM dist_probe_error SETTINGS skip_unavailable_shards = 1; -- { serverError ILLEGAL_DIVISION }
 DROP TABLE dist_probe_error;
 
+-- The `BAD_ARGUMENTS` exemption above is narrow: it applies only to the `dictionary` table function (a
+-- missing dictionary is reported as `BAD_ARGUMENTS`, there is no dedicated code). Because the table function
+-- of a persisted `Distributed(..., table_function())` target is not validated with `parseArguments` at
+-- `CREATE` when it has a static structure (see `registerStorageDistributed`), a target like `numbers(0, 10, 0)`
+-- (zero step) can be created and only fail at read time with `BAD_ARGUMENTS`. That is a real configuration
+-- error and must surface even on the local-replica probe path (`prefer_localhost_replica = 1`) and even with
+-- `skip_unavailable_shards = 1`, not be downgraded to a skipped shard / `ALL_CONNECTION_TRIES_FAILED`.
+CREATE TABLE dist_probe_bad_step (number UInt64) ENGINE = Distributed(test_shard_localhost, numbers(0, 10, 0));
+SELECT count() FROM dist_probe_bad_step SETTINGS enable_analyzer = 1, prefer_localhost_replica = 1, skip_unavailable_shards = 1, enable_parallel_replicas = 0, serialize_query_plan = 0; -- { serverError BAD_ARGUMENTS }
+SELECT count() FROM dist_probe_bad_step SETTINGS enable_analyzer = 0, prefer_localhost_replica = 1, skip_unavailable_shards = 1, enable_parallel_replicas = 0, serialize_query_plan = 0; -- { serverError BAD_ARGUMENTS }
+DROP TABLE dist_probe_bad_step;
+
 -- The MergeTree-inspection table functions (`mergeTreeIndex`, `mergeTreeProjection`, `mergeTreeTextIndex`,
 -- `mergeTreeAnalyzeIndexes`) name a concrete local table in their first two arguments and read it at query
 -- time, so a persisted `Distributed` over such a target registers a referential dependency on that table -
