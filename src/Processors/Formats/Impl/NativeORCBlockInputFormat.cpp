@@ -2322,10 +2322,12 @@ void registerORCSchemaReader(FormatFactory & factory)
     factory.registerAdditionalInfoForSchemaCacheGetter("ORC", [](const FormatSettings & settings)
     {
         return fmt::format(
-            "schema_inference_make_columns_nullable={};schema_inference_allow_nullable_tuple_type={};dictionary_as_low_cardinality={}",
+            "schema_inference_make_columns_nullable={};schema_inference_allow_nullable_tuple_type={};"
+            "dictionary_as_low_cardinality={};skip_columns_with_unsupported_types={}",
             settings.schema_inference_make_columns_nullable,
             settings.schema_inference_allow_nullable_tuple_type,
-            settings.orc.dictionary_as_low_cardinality);
+            settings.orc.dictionary_as_low_cardinality,
+            settings.orc.skip_columns_with_unsupported_types_in_schema_inference);
     });
 }
 
