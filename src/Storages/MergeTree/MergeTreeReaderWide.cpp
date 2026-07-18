@@ -236,6 +236,11 @@ size_t MergeTreeReaderWide::readRows(
             ownership_validator.add(states);
         ownership_validator.add(deserialize_binary_bulk_state_map);
         ownership_validator.add(deserialize_binary_bulk_state_map_for_subcolumns);
+        /// The reader-local `deserialize_binary_bulk_state_map` holds clones of the prefix states; the
+        /// originals stay in the shared cache and share the same column references (e.g. a single-part
+        /// `LowCardinality` `global_dictionary`), so count those cache-held holders too.
+        if (deserialization_prefixes_cache)
+            deserialization_prefixes_cache->addToOwnershipValidator(ownership_validator);
         ownership_validator.validate(res_columns);
 #endif
 
