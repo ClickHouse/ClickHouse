@@ -29,6 +29,9 @@
 #    include <Processors/Formats/Impl/ParquetMetadataCache.h>
 #endif
 #include <Storages/System/ServerSettingColumnsParams.h>
+#if ENABLE_DISTRIBUTED_CACHE
+#    include <Disks/IO/WriteBufferFromDistributedCache.h>
+#endif
 #include <base/types.h>
 #include <Common/Config/ConfigReloader.h>
 #include <Common/HTTPConnectionPool.h>
@@ -1256,23 +1259,23 @@ Whether background memory worker should correct internal memory tracker based on
 )", 0) \
     DECLARE(Bool, memory_worker_use_cgroup, true, "Use current cgroup memory usage information to correct memory tracking.", 0) \
     DECLARE(Double, memory_worker_rss_speculative_reserve_ratio, getDefaultMemoryWorkerRssSpeculativeReserveRatio(), R"(
-    On each `MemoryWorker` tick, reserve an additional
-    `ratio * min(resident - previous_resident, resident - tracked)` on top of
-    the observed RSS, on the assumption that the next tick may grow by the same
-    amount as the last one (`resident - previous_resident` is the RSS growth
-    over the last tick). The growth is capped by `resident - tracked`, the part
-    of RSS not visible to the global memory tracker, because growth that is
-    already tracked is handled by the ordinary hard-limit check. The reservation
-    is applied to the `rss` counter that the global hard-limit check consults
-    via `MemoryTracker::allocImpl`, so when the extrapolated value crosses
-    `max_server_memory_usage`, subsequent allocations throw
-    `MEMORY_LIMIT_EXCEEDED` before the kernel OOM-killer fires. A value of `0`
-    disables speculation (falling back to `rss = resident`); the default `1`
-    reserves one full growth delta of headroom for the next interval. Under
-    sanitizers (`ASan`, `UBSan`, `MSan`, `TSan`) the default is `0`, because the
-    `resident - tracked` gap is dominated by sanitizer shadow / runtime overhead
-    rather than tracker bookkeeping lag.
-    )", 0) \
+On each `MemoryWorker` tick, reserve an additional
+`ratio * min(resident - previous_resident, resident - tracked)` on top of
+the observed RSS, on the assumption that the next tick may grow by the same
+amount as the last one (`resident - previous_resident` is the RSS growth
+over the last tick). The growth is capped by `resident - tracked`, the part
+of RSS not visible to the global memory tracker, because growth that is
+already tracked is handled by the ordinary hard-limit check. The reservation
+is applied to the `rss` counter that the global hard-limit check consults
+via `MemoryTracker::allocImpl`, so when the extrapolated value crosses
+`max_server_memory_usage`, subsequent allocations throw
+`MEMORY_LIMIT_EXCEEDED` before the kernel OOM-killer fires. A value of `0`
+disables speculation (falling back to `rss = resident`); the default `1`
+reserves one full growth delta of headroom for the next interval. Under
+sanitizers (`ASan`, `UBSan`, `MSan`, `TSan`) the default is `0`, because the
+`resident - tracked` gap is dominated by sanitizer shadow / runtime overhead
+rather than tracker bookkeeping lag.
+)", 0) \
     DECLARE(Bool, memory_worker_dynamic_hard_limit, true, R"(
 Whether the background memory worker periodically recomputes the server's hard memory limit at runtime as `(resident memory + system available memory) * max_server_memory_usage_to_ram_ratio`, so the server leaves headroom for other processes running on the same host.
 
@@ -1322,6 +1325,7 @@ Maximum size of batch for MultiRead request to [Zoo]Keeper that support batching
     DECLARE(UInt64, iceberg_background_schedule_pool_size, 10, "Size of thread pool to asynchronously fetch the latest metadata from a remote iceberg catalog; the pool is shared by all the active tables.", 0) \
     DECLARE(UInt64, drop_distributed_cache_pool_size, 8, R"(The size of the threadpool used for dropping distributed cache.)", 0) \
     DECLARE(UInt64, drop_distributed_cache_queue_size, 1000, R"(The queue size of the threadpool used for dropping distributed cache.)", 0) \
+    DECLARE(UInt64, distributed_cache_write_pool_size, 100, R"(The maximum number of distributed cache write requests that run on a background thread at the same time (across all queries). When the limit is reached, a write goes through the cache inline (on the calling thread) instead of on a background thread, so it neither blocks waiting for a slot nor creates an unbounded number of threads.)", 0) \
     DECLARE(Bool, distributed_cache_apply_throttling_settings_from_client, true, R"(Whether cache server should apply throttling settings received from client.)", 0) \
     DECLARE(UInt32, allow_feature_tier, 0, R"(
 Controls if the user can change settings related to the different feature tiers.
@@ -2060,6 +2064,10 @@ ChangeableSettingsMap collectChangeableServerSettings(ContextPtr context)
              {context->getDistributedCacheReadThrottler() ? std::to_string(context->getDistributedCacheReadThrottler()->getMaxSpeed()) : "0", ChangeableWithoutRestart::Yes}},
             {"max_distributed_cache_write_bandwidth_for_server",
              {context->getDistributedCacheWriteThrottler() ? std::to_string(context->getDistributedCacheWriteThrottler()->getMaxSpeed()) : "0", ChangeableWithoutRestart::Yes}},
+#if ENABLE_DISTRIBUTED_CACHE
+            {"distributed_cache_write_pool_size",
+             {std::to_string(WriteBufferFromDistributedCache::getBackgroundWritePoolSize()), ChangeableWithoutRestart::Yes}},
+#endif
             {"max_io_thread_pool_size",
              {getIOThreadPool().isInitialized() ? std::to_string(getIOThreadPool().get().getMaxThreads()) : "0", ChangeableWithoutRestart::Yes}},
             {"max_io_thread_pool_free_size",
