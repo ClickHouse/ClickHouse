@@ -31,6 +31,8 @@
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/StorageSnapshot.h>
 
+#include <Poco/Util/AbstractConfiguration.h>
+
 #include <fmt/format.h>
 
 #include <unordered_set>
@@ -367,11 +369,24 @@ void StorageSystemUserQueryLog::read(
 {
     auto expected_header = std::make_shared<const Block>(storage_snapshot->getSampleBlockForColumns(column_names));
 
+    /// The backing query log table is identified by the live `QueryLog` object when the system loggers
+    /// are running. When they are not, the absence of that object does not mean there is no readable
+    /// backing table: `clickhouse-local --only-system-tables` deliberately skips starting the loggers
+    /// while still loading the persisted `system` tables from disk, so the configured query log table
+    /// can be present and queryable even though `getQueryLog()` returns nothing. Resolve the table from
+    /// the `query_log.database` / `query_log.table` server settings in that case. The query log table is
+    /// always created in the `system` database (a custom `query_log.database` is coerced back to `system`
+    /// in `createSystemLog`), so only the table name is configurable; `system.query_log` is the default.
     auto query_log = context->getQueryLog();
-    StoragePtr source_table = query_log ? DatabaseCatalog::instance().tryGetTable(query_log->getTableID(), context) : nullptr;
+    StorageID log_table_id = query_log
+        ? query_log->getTableID()
+        : StorageID("system", context->getConfigRef().getString("query_log.table", "query_log"));
+
+    StoragePtr source_table = DatabaseCatalog::instance().tryGetTable(log_table_id, context);
     if (!source_table)
     {
-        /// The query log is not configured, or its table has not been created yet (this happens on the first flush).
+        /// The query log is not configured, or its table has not been created yet (this happens on the
+        /// first flush), or the persisted system tables were loaded without a query log table present.
         query_plan.addStep(std::make_unique<ReadFromPreparedSource>(Pipe(std::make_shared<NullSource>(expected_header))));
         return;
     }
@@ -397,7 +412,7 @@ void StorageSystemUserQueryLog::read(
     /// `ReadFromUserQueryLog`), keeping efficient partition pruning and point lookups on the backing
     /// table.
     query_plan.addStep(std::make_unique<ReadFromUserQueryLog>(
-        column_names, query_info, storage_snapshot, context, std::move(expected_header), query_log->getTableID()));
+        column_names, query_info, storage_snapshot, context, std::move(expected_header), source_table->getStorageID()));
 }
 
 }

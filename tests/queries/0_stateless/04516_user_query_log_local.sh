@@ -76,6 +76,29 @@ else
     echo "UNEXPECTED"
 fi
 
+# In `--only-system-tables` mode the system loggers are not started, so the live query log object is
+# absent, but the persisted query log table is still loaded from disk. `system.user_query_log` must
+# resolve the configured backing table and read it, instead of treating "logger not running" as "no
+# query log configured" and silently returning an empty result in the mode meant for reading existing
+# system tables.
+rm -rf "${test_dir}"
+mkdir -p "${test_dir}/data/metadata/system" "${test_dir}/tmp" "${test_dir}/user_files" "${test_dir}/format_schemas"
+# A persistent `system` database, as a running server leaves behind, so the query log table survives
+# across invocations (the `system` database that clickhouse-local creates on its own is ephemeral).
+echo "ATTACH DATABASE system ENGINE=Ordinary" > "${test_dir}/data/metadata/system.sql"
+make_config query_log true
+# First invocation: produce and persist query log records (the loggers run here).
+${CLICKHOUSE_LOCAL} --config-file "${config}" --log_queries 1 --query "
+    SELECT 1 FORMAT Null;
+    SYSTEM FLUSH LOGS query_log;
+    SELECT count() >= 1 FROM system.user_query_log;
+"
+# Second invocation: only load the persisted system tables (the loggers are skipped). The current user
+# still sees their own persisted records instead of an empty result.
+${CLICKHOUSE_LOCAL} --config-file "${config}" --only-system-tables --query "
+    SELECT count() >= 1, countIf(if(initial_user != '', initial_user, user) != currentUser()) FROM system.user_query_log;
+"
+
 # A leftover table with this name (e.g. created before an upgrade) is reported on startup.
 rm -rf "${test_dir}"
 mkdir -p "${test_dir}/metadata/system"
