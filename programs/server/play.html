@@ -7045,6 +7045,17 @@ async function renderSnapshotIntoElement(el, snap, token) {
     }
 
     if (!snap.ok) {
+        /// A failed query that carried its own `JSONEachPacket*` framing saved its raw packet stream
+        /// (data, log, and progress packets ending with an `exception` packet) as `data`, not a
+        /// plain `{"exception": ...}` error body. Replay it as raw text - the way the live run showed
+        /// it (`updateRaw`) - instead of rendering the whole packet stream as one opaque error
+        /// string, so the partial output and the exception packet stay visible. An NDJSON packet
+        /// stream always begins with a `{"packet": ...}` object, which a plain error body never does
+        /// (this mirrors the `event:`-prefix check above for `EventStream` snapshots).
+        if (snap.data.startsWith('{"packet":')) {
+            el.updateRaw(snap.data);
+            return;
+        }
         let has_exception = false;
         for (const line of snap.data.split('\n')) {
             if (line.startsWith(`{"exception":`)) {
@@ -7285,6 +7296,19 @@ async function restoreFromHistory(state, token) {
         /// left the logo showing, so a reloaded/switched-back error tab looked different from the
         /// original run.
         logoEl.style.display = 'none';
+
+        /// A failed query that carried its own `JSONEachPacket*` framing saved its raw packet stream
+        /// as `data` (data, log, and progress packets ending with an `exception` packet), not a plain
+        /// `{"exception": ...}` error body. Replay it as raw text - the way the live run showed it -
+        /// instead of rendering the whole packet stream as one opaque error string, so the partial
+        /// output and the exception packet stay visible. An NDJSON packet stream always begins with a
+        /// `{"packet": ...}` object (mirroring the `event:`-prefix check above for `EventStream`).
+        if (result.data.startsWith('{"packet":')) {
+            is_raw = true;
+            resultEl.updateRaw(result.data);
+            progressEl.clear();
+            return;
+        }
 
         let has_exception = false;
         for (const line of result.data.split('\n')) {
@@ -11124,6 +11148,21 @@ document.getElementById('download-button').addEventListener('click', async funct
 
     if (!query) {
         alert('No query to download results for');
+        return;
+    }
+
+    /// A query that carries its own `framing_output_format` in a `SETTINGS` clause overrides the
+    /// download's `default_format`: the server streams its framing packets (an NDJSON
+    /// `JSONEachPacket*` stream) instead of the chosen format, and the browser would save that
+    /// packet stream under the selected extension as if it were that format. Refuse the download
+    /// rather than saving a mislabeled file. The setting is detected with the SQL lexer
+    /// (`detectFramingSetting`), so a mention inside a string literal or a comment is not mistaken
+    /// for one; a standalone session-level `SET` is refused too (it is not a runnable result on
+    /// this page anyway). A query that only disables framing (`= 'None'`) is not refused: with no
+    /// framing the requested `default_format` is honored.
+    const { user_framing, user_sets_session_framing } = await detectFramingSetting(query);
+    if (user_framing || user_sets_session_framing) {
+        alert(`This query chooses its own framing_output_format, which overrides the download format, so the downloaded file would contain framing packets instead of ${format}. Remove the framing_output_format setting from the query to download the result as ${format}.`);
         return;
     }
 
