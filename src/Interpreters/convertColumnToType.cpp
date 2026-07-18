@@ -52,7 +52,7 @@ ColumnPtr tryConvertColumnToTypeOrNull(
     {
         return convertColumnToTypeOrNull(value, from, to, format_settings, strict, convert_inexact_floats);
     }
-    catch (...) /// NOLINT(bugprone-empty-catch)
+    catch (...) // Ok: try-pattern that intentionally maps any conversion failure to a null result
     {
         return {};
     }
