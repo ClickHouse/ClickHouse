@@ -246,7 +246,8 @@ String getInsertDataSchemaMismatchDescriptionFromFile(
     catch (...) // NOLINT(bugprone-empty-catch)
     {
         /// Best-effort: the path may be a glob matching several files, or the file may have become
-        /// unreadable since the failed attempt to insert it. A diagnostic must not raise a new error.
+        /// unreadable since the failed attempt to insert it. A diagnostic must not raise a new error,
+        /// so it is Ok to ignore the exception here and simply skip the extra explanation.
         return {};
     }
 
