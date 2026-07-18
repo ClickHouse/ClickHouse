@@ -167,12 +167,14 @@ namespace DB
             parseDateTimeBestEffort(time, in, time_zone, utc_time_zone);
         }
 
-        /// Deadlines before this bound cannot be represented exactly in the stored access entity
-        /// encoding, so accepting them here would only be discovered later, as a silently clamped
-        /// value after a restart or replication round-trip (see `AuthenticationData::toAST`). A stored
-        /// numeric deadline is always non-negative, so for the `ATTACH` numeric branch this only guards
-        /// against a hand-edited out-of-range value, which must fail to load rather than silently
-        /// weaken expiration.
+        /// Reject an absolute deadline earlier than `MIN_VALID_UNTIL_TIME` (see the constant's
+        /// declaration): best-effort parsing of an implausibly ancient date is unreliable, and such a
+        /// value is far more likely a mistake than an intentional "already expired" marker. A
+        /// representable pre-epoch deadline within `[MIN_VALID_UNTIL_TIME, 1970-01-01)` is accepted and
+        /// normalized to the smallest expired instant below, so it never has to be stored in a form an
+        /// older reader would misinterpret. A stored numeric deadline is always non-negative, so for the
+        /// `ATTACH` numeric branch this only guards against a hand-edited out-of-range value, which must
+        /// fail to load rather than silently weaken expiration.
         if (time < MIN_VALID_UNTIL_TIME)
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
