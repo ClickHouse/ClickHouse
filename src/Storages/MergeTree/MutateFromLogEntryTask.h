@@ -108,6 +108,12 @@ private:
 
     /// Set when this task detached itself and is computing the result to be reused later.
     std::atomic<bool> is_surviving_reconnect{false};
+    /// Set by the storage (via `discardPrecomputedMutation`) when this survivor's target part queue
+    /// entry is removed by a range operation while it is still computing. The mutation reads it and
+    /// aborts promptly, since its result can no longer be committed. Declared before
+    /// `survivor_reservation_guard` so that the guard (which removes the storage's pointer to this
+    /// flag) runs before the flag is destroyed.
+    std::atomic<bool> survivor_invalidated{false};
     /// Metadata version at prepare() time, recorded to re-validate a reused result.
     Int64 mutation_metadata_version{-1};
     /// Releases the reservation of the target part name if the survivor fails before depositing.

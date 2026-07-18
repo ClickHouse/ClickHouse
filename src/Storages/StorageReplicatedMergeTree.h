@@ -412,7 +412,13 @@ public:
     };
 
     /// Returns true if the reservation was made; false if the part is already reserved or deposited.
-    bool reservePrecomputedMutation(const String & new_part_name);
+    /// `invalidated_flag` is a survivor-task-owned atomic that this storage sets (via
+    /// `discardPrecomputedMutation`) when the target part's queue entry is removed while the survivor
+    /// is still computing, so the survivor can abort its now-uncommittable mutation promptly. The
+    /// pointer stays valid until the matching `depositPrecomputedMutation` /
+    /// `releasePrecomputedMutationReservation` (both remove the map entry under the same mutex, and
+    /// the survivor task outlives its reservation).
+    bool reservePrecomputedMutation(const String & new_part_name, std::atomic<bool> * invalidated_flag);
     /// Move a reserved part into the "ready to reuse" state.
     void depositPrecomputedMutation(const String & new_part_name, PreservedMutationPart preserved);
     /// Release a reservation without depositing anything (the survivor failed or was cancelled).
@@ -547,8 +553,11 @@ private:
 
     /// State for reusing a mutation result across a transient Keeper reconnection.
     mutable std::mutex precomputed_mutations_mutex;
-    /// Target part names currently being computed by a detached (surviving) mutation task.
-    std::set<String> mutations_being_computed_by_survivor;
+    /// Target part names currently being computed by a detached (surviving) mutation task, mapped to
+    /// that task's invalidation flag. Setting the flag makes the survivor abort its compute (see
+    /// `discardPrecomputedMutation`); the pointer is owned by the survivor task and removed from the
+    /// map before the task is destroyed.
+    std::map<String, std::atomic<bool> *> mutations_being_computed_by_survivor;
     /// Target part names of still-computing survivors whose queue entry has been removed by a range
     /// operation (DROP_RANGE / REPLACE_RANGE / broken-part cleanup). Their eventual deposit must be
     /// dropped instead of stored, because there is no longer a queue entry to commit it.

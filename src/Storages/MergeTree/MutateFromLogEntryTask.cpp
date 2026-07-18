@@ -372,7 +372,8 @@ ReplicatedMergeMutateTaskBase::PrepareResult MutateFromLogEntryTask::prepare()
     if (survival_enabled)
     {
         mutate_task->enableSurvivalAcrossTransientReconnect(
-            &is_surviving_reconnect, &storage.getTransientReconnectFlag(), &storage.getShutdownCalledFlag());
+            &is_surviving_reconnect, &storage.getTransientReconnectFlag(), &storage.getShutdownCalledFlag(),
+            &survivor_invalidated);
 
         /// The mutation is now actually computing into a temporary part, so from here on a transient
         /// reconnect may detach it and keep it running. Publish this only after `mutate_task` and the
@@ -544,8 +545,10 @@ bool MutateFromLogEntryTask::tryDetachForTransientReconnect()
         return false;
 
     /// Reserve the target part name so the queue does not schedule a duplicate task for it while we
-    /// keep computing. If it is already reserved or deposited, don't try to survive again.
-    if (!storage.reservePrecomputedMutation(entry.new_part_name))
+    /// keep computing. If it is already reserved or deposited, don't try to survive again. The
+    /// invalidation flag lets the storage abort our compute if the queue entry is later removed by a
+    /// range operation (see `discardPrecomputedMutation`).
+    if (!storage.reservePrecomputedMutation(entry.new_part_name, &survivor_invalidated))
         return false;
 
     survivor_reservation_guard = [this, name = entry.new_part_name]()

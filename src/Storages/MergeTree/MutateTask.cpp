@@ -1614,11 +1614,21 @@ struct MutationContext
     const std::atomic<bool> * is_surviving_reconnect{};
     const std::atomic<bool> * transient_reconnect_in_progress{};
     const std::atomic<bool> * shutdown_called{};
+    /// Set by the storage when a detached survivor's target part queue entry is removed by a range
+    /// operation (DROP_RANGE / REPLACE_RANGE / broken-part cleanup). Once set, the result can never
+    /// be committed, so the mutation must abort instead of ignoring the cancellation as a reconnect.
+    const std::atomic<bool> * survivor_invalidated{};
 
     bool checkOperationIsNotCanceled() const
     {
         /// A KILL of this specific mutation always aborts it.
         if ((*mutate_entry)->is_cancelled)
+            throw Exception(ErrorCodes::ABORTED, "Cancelled mutating parts");
+
+        /// A detached survivor whose target part's queue entry has been removed can no longer commit
+        /// its result. Abort promptly rather than keep computing an uncommittable part — the survival
+        /// exception below only covers the transient reconnect cancellation, not later invalidation.
+        if (survivor_invalidated != nullptr && survivor_invalidated->load())
             throw Exception(ErrorCodes::ABORTED, "Cancelled mutating parts");
 
         const bool blocker_cancelled = new_data_part
@@ -3688,11 +3698,13 @@ const HardlinkedFiles & MutateTask::getHardlinkedFiles() const
 void MutateTask::enableSurvivalAcrossTransientReconnect(
     const std::atomic<bool> * is_surviving,
     const std::atomic<bool> * transient_reconnect,
-    const std::atomic<bool> * shutdown_called)
+    const std::atomic<bool> * shutdown_called,
+    const std::atomic<bool> * survivor_invalidated)
 {
     ctx->is_surviving_reconnect = is_surviving;
     ctx->transient_reconnect_in_progress = transient_reconnect;
     ctx->shutdown_called = shutdown_called;
+    ctx->survivor_invalidated = survivor_invalidated;
 }
 
 scope_guard MutateTask::releaseTemporaryDirectoryLock()

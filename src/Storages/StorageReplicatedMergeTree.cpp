@@ -6056,7 +6056,7 @@ void StorageReplicatedMergeTree::partialShutdown(bool is_transient)
     LOG_TRACE(log, "Threads finished");
 }
 
-bool StorageReplicatedMergeTree::reservePrecomputedMutation(const String & new_part_name)
+bool StorageReplicatedMergeTree::reservePrecomputedMutation(const String & new_part_name, std::atomic<bool> * invalidated_flag)
 {
     std::lock_guard lock(precomputed_mutations_mutex);
     if (precomputed_mutation_parts.contains(new_part_name))
@@ -6064,7 +6064,7 @@ bool StorageReplicatedMergeTree::reservePrecomputedMutation(const String & new_p
     /// A stale cancellation marker (from a previous survivor for the same target part name) must not
     /// leak into this fresh reservation; clear it before reserving.
     cancelled_survivor_mutations.erase(new_part_name);
-    return mutations_being_computed_by_survivor.insert(new_part_name).second;
+    return mutations_being_computed_by_survivor.emplace(new_part_name, invalidated_flag).second;
 }
 
 void StorageReplicatedMergeTree::depositPrecomputedMutation(const String & new_part_name, PreservedMutationPart preserved)
@@ -6106,11 +6106,19 @@ void StorageReplicatedMergeTree::discardPrecomputedMutation(const String & new_p
     /// temporary directory.
     if (precomputed_mutation_parts.erase(new_part_name))
         return;
-    /// A survivor is still computing this part: mark it so that its eventual deposit is dropped
-    /// instead of stored (see depositPrecomputedMutation). Without this, the deposited temporary
-    /// part would be orphaned, since the queue entry that would have committed it is being removed.
-    if (mutations_being_computed_by_survivor.contains(new_part_name))
+    /// A survivor is still computing this part. Two things must happen:
+    ///  * Mark it so that its eventual deposit is dropped instead of stored (see
+    ///    `depositPrecomputedMutation`). Without this, the deposited temporary part would be
+    ///    orphaned, since the queue entry that would have committed it is being removed.
+    ///  * Set the survivor's invalidation flag so it aborts its compute promptly. The survivor only
+    ///    ignores the *transient reconnect* cancellation; once its queue entry is gone the result can
+    ///    never be committed, so continuing would just burn CPU/IO and a concurrent `DROP PARTITION`
+    ///    would not wait for it (the survivor already released `currently_executing_holder`).
+    if (auto it = mutations_being_computed_by_survivor.find(new_part_name); it != mutations_being_computed_by_survivor.end())
+    {
         cancelled_survivor_mutations.insert(new_part_name);
+        it->second->store(true);
+    }
 }
 
 bool StorageReplicatedMergeTree::isPartBeingComputedBySurvivor(const String & new_part_name) const

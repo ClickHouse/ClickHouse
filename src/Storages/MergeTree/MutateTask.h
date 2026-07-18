@@ -57,10 +57,14 @@ public:
     /// session re-establishment is in progress. `is_surviving`/`transient_reconnect`/`shutdown_called`
     /// are storage-owned flags; the mutation compute keeps going while a reconnect is in progress or
     /// after it has detached itself as a survivor, and only aborts on a real shutdown or a KILL.
+    /// `survivor_invalidated` is set by the storage when the survivor's target part queue entry is
+    /// removed (e.g. by `DROP PARTITION`); once set, the mutation aborts promptly because its result
+    /// can no longer be committed.
     void enableSurvivalAcrossTransientReconnect(
         const std::atomic<bool> * is_surviving,
         const std::atomic<bool> * transient_reconnect,
-        const std::atomic<bool> * shutdown_called);
+        const std::atomic<bool> * shutdown_called,
+        const std::atomic<bool> * survivor_invalidated);
 
     /// Move out the guard that keeps the temporary part directory alive, so a caller can keep the
     /// finished-but-not-committed part around (e.g. to reuse it after a reconnect) after the task
