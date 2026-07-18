@@ -461,9 +461,9 @@ void optimizeTreeSecondPass(
             /// subquery's values, exactly the settings that gate an optimization which can call
             /// `requestReadingInOrder`: `optimizeReadInOrder` (`read_in_order`, `read_in_order_through_join`),
             /// `optimizeAggregationInOrder` (`aggregation_in_order`), `optimizeDistinctInOrder`
-            /// (`distinct_in_order`) and `tryReuseStorageOrderingForWindowFunctions`
-            /// (`reuse_storage_ordering_for_window_functions`). If a new such optimization is added, its gate
-            /// must be added here too.
+            /// (`distinct_in_order`), `optimizeLimitByInOrder` (`limit_by_in_order`) and
+            /// `tryReuseStorageOrderingForWindowFunctions` (`reuse_storage_ordering_for_window_functions`).
+            /// If a new such optimization is added, its gate must be added here too.
             auto local_optimization_settings = optimization_settings;
             if (auto local_context = read_from_local->getContext())
             {
@@ -472,6 +472,7 @@ void optimizeTreeSecondPass(
                 local_optimization_settings.read_in_order_through_join = subquery_optimization_settings.read_in_order_through_join;
                 local_optimization_settings.aggregation_in_order = subquery_optimization_settings.aggregation_in_order;
                 local_optimization_settings.distinct_in_order = subquery_optimization_settings.distinct_in_order;
+                local_optimization_settings.limit_by_in_order = subquery_optimization_settings.limit_by_in_order;
                 local_optimization_settings.reuse_storage_ordering_for_window_functions
                     = subquery_optimization_settings.reuse_storage_ordering_for_window_functions;
                 local_optimization_settings.enable_parallel_replicas = false;
