@@ -585,6 +585,42 @@ def test_insert_partial_commit_dedup():
     )
 
 
+def test_insert_partial_commit_within_request_dedup():
+    # BigQuery's streaming insertAll can partially succeed within a single request: rows listed in
+    # insertErrors are rejected while the others are committed (unlike the all-or-nothing schema
+    # mismatch case). Re-running the same INSERT with the same query id must deduplicate the rows that
+    # already committed, so only the previously-rejected rows are added instead of the whole batch.
+    mock_reset()
+    insert = f"""
+        INSERT INTO FUNCTION {bq('writable')}
+        SELECT
+            number, toString(number), NULL, NULL, NULL, NULL, NULL, NULL,
+            [toString(number)], tuple(number)
+        FROM numbers(6)
+        """
+    # A single ordered stream so the row -> insertId mapping is identical on both runs.
+    settings = {"max_threads": 1, "max_insert_threads": 1}
+
+    # All six rows go in one insertAll request; reject the rows id = 2 and id = 4 per-row. The other
+    # four rows of that same request commit, but the INSERT still fails because BigQuery reported errors.
+    mock_ctl("/__reject_row_ids__?ids=2,4")
+    error = node.query_and_get_error(
+        insert, query_id="bq_within_request", settings=settings
+    )
+    assert "BigQuery rejected" in error
+    assert len(mock_stats()["insert_requests"]) == 1
+    assert node.query(f"SELECT count() FROM {bq('writable')}") == "4\n"
+
+    # Retry the identical INSERT with the same query id, now accepting every row. The four rows that
+    # already committed are deduplicated by insertId, so the table holds all six distinct rows (not ten).
+    mock_ctl("/__reject_row_ids__")
+    node.query(insert, query_id="bq_within_request", settings=settings)
+    assert (
+        node.query(f"SELECT count(), sum(id) FROM {bq('writable')}")
+        == f"6\t{sum(range(6))}\n"
+    )
+
+
 def test_insert_large_integer():
     # INT64 values are sent to insertAll as decimal strings: BigQuery parses JSON numbers as
     # IEEE-754 doubles, so a value outside [-2^53 + 1, 2^53 - 1] sent as a number would be

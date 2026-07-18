@@ -297,6 +297,11 @@ FAIL_INSERTS = [False]
 # When set to an integer N, an insertAll request is rejected once the table already holds >= N rows.
 # Used to simulate a mid-INSERT failure that leaves an earlier committed prefix behind.
 FAIL_INSERTS_AFTER = [None]
+# The set of `id` values whose row is rejected with a per-row "invalid" error while the other rows of
+# the same insertAll request still commit. This models BigQuery's partial success within a single
+# response (rows listed in insertErrors are rejected, the rest are inserted), as opposed to the
+# all-or-nothing schema-mismatch ("stopped") case.
+REJECT_ROW_IDS = set()
 
 
 def google_error(code, status, message):
@@ -447,6 +452,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             STATS["schema_requests"].clear()
             FAIL_INSERTS[0] = False
             FAIL_INSERTS_AFTER[0] = None
+            REJECT_ROW_IDS.clear()
             self.send_json(200, {})
             return
         if parsed.path == "/__fail_inserts__":
@@ -456,6 +462,13 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if parsed.path == "/__fail_inserts_after__":
             rows = params.get("rows")
             FAIL_INSERTS_AFTER[0] = int(rows) if rows is not None else None
+            self.send_json(200, {})
+            return
+        if parsed.path == "/__reject_row_ids__":
+            ids = params.get("ids")
+            REJECT_ROW_IDS.clear()
+            if ids:
+                REJECT_ROW_IDS.update(ids.split(","))
             self.send_json(200, {})
             return
         if not self.check_auth():
@@ -646,11 +659,28 @@ class Handler(http.server.BaseHTTPRequestHandler):
             errors = []
             converted = []
             committed_insert_ids = []
+            # A schema mismatch (or a value that cannot be converted) stops the whole request: BigQuery
+            # commits none of its rows. A configured per-row rejection instead rejects only that row and
+            # still commits the rest, mirroring BigQuery's partial success within one insertAll response.
+            stop_request = False
             for i, entry in enumerate(rows):
                 insert_id = entry.get("insertId")
                 if insert_id is not None and insert_id in seen_insert_ids:
                     continue
                 data = entry.get("json", {})
+                if REJECT_ROW_IDS and str(data.get("id")) in REJECT_ROW_IDS:
+                    errors.append(
+                        {
+                            "index": i,
+                            "errors": [
+                                {
+                                    "reason": "invalid",
+                                    "message": "simulated per-row rejection",
+                                }
+                            ],
+                        }
+                    )
+                    continue
                 try:
                     unknown = set(data) - {field["name"] for field in table["schema"]}
                     if unknown:
@@ -670,17 +700,24 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     if insert_id is not None:
                         committed_insert_ids.append(insert_id)
                 except ValueError as e:
+                    stop_request = True
                     errors.append(
                         {
                             "index": i,
                             "errors": [{"reason": "invalid", "message": str(e)}],
                         }
                     )
+            if stop_request:
+                # Schema mismatch ("stopped"): the whole request fails and none of the rows commit.
+                self.send_json(200, {"insertErrors": errors})
+                return
+            # Commit the accepted rows (all of them when there were no per-row rejections), then report
+            # any per-row rejections so a retry with the same insertIds deduplicates the committed rows.
+            table["rows"].extend(converted)
+            seen_insert_ids.update(committed_insert_ids)
             if errors:
                 self.send_json(200, {"insertErrors": errors})
                 return
-            table["rows"].extend(converted)
-            seen_insert_ids.update(committed_insert_ids)
             self.send_json(200, {"kind": "bigquery#tableDataInsertAllResponse"})
             return
 
