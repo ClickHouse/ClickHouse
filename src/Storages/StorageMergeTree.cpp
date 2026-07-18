@@ -1360,6 +1360,22 @@ StorageMergeTree::DataPartsVector StorageMergeTree::getVisibleDataPartsVectorFor
     if (auto txn = tryGetTransactionForMutation(entry))
         return getVisibleDataPartsVector(txn);
 
+    /// The transaction that started this mutation is no longer in the running list, so it reached a
+    /// terminal state. Only a *committed* transaction's mutation still has parts to do; a rolled-back
+    /// or orphaned entry (left by the mutation-registration / `KILL TRANSACTION` race that the
+    /// failpoint in `startMutation` reproduces) will never execute. Resolve the commit state against
+    /// the transaction log (the authoritative source, exactly as `selectPartsToMutate` and
+    /// `getIncompleteMutationsStatusUnlocked` do): report an empty snapshot (no parts to do) for a
+    /// non-committed entry instead of its stale snapshot. Otherwise `getUnfinishedMutationCommands` /
+    /// `getMutationsStatus` would count a dead mutation as unfinished until `selectPartsToMutate`
+    /// removes the entry, wrongly throttling later mutations via `delayMutationOrThrowIfNeeded` and
+    /// keeping `system.mutations.is_done` at 0.
+    CSN mutation_csn = entry.csn;
+    if (mutation_csn == Tx::UnknownCSN)
+        mutation_csn = TransactionLog::getCSN(entry.tid);
+    if (mutation_csn == Tx::UnknownCSN || mutation_csn == Tx::RolledBackCSN)
+        return {};
+
     return getVisibleDataPartsVector(entry.tid.start_csn, entry.tid);
 }
 

@@ -42,11 +42,22 @@ tid=$($CLICKHOUSE_CLIENT --multiquery -q "
 # Wait until the committed transaction has left the running list (so the status
 # path below hits the "transaction already finished" case), while its finished
 # mutation entry still lingers in `current_mutations_by_version`.
+running=1
 for _ in {1..120}; do
     running=$($CLICKHOUSE_CLIENT -q "SELECT count() FROM system.transactions WHERE tid = $tid")
     [ "$running" = "0" ] && break
     sleep 0.5
 done
+
+# Fail explicitly if the transaction never left the running list: otherwise the
+# barrier `ALTER` below would take the old "live transaction" path in
+# `getIncompleteMutationsStatusUnlocked` and the test could print OK without ever
+# exercising the committed-without-live-`txn` case it is meant to cover.
+if [ "$running" != "0" ]; then
+    echo "FAILED: transaction $tid did not leave system.transactions in time"
+    $CLICKHOUSE_CLIENT -q "DROP TABLE t_txn_mut_wait"
+    exit 1
+fi
 
 # A barrier `ALTER` (`RENAME COLUMN`) waits for the previous mutation via
 # `waitForMutation` from the client thread. Assert the client receives no
