@@ -278,6 +278,25 @@ void StorageMaterializedPostgreSQL::checkTableCanBeDetached() const
 }
 
 
+void StorageMaterializedPostgreSQL::checkTableCanBeDropped(ContextPtr /* query_context */) const
+{
+    /// In a coordinated MaterializedPostgreSQL database, dropping (or truncating) an individual nested
+    /// `ReplicatedReplacingMergeTree` on a single replica does not update the shared publication or the
+    /// configured `materialized_postgresql_tables_list`: the remaining replicas would keep consuming a
+    /// publication that still contains the table, and this replica would keep a wrapper for a nested table
+    /// that no longer exists. Refuse here, before `InterpreterDropQuery` calls `flushAndShutdown` on the
+    /// table, so a rejected DROP stays a true no-op and does not stop replication of the nested table.
+    /// This guard is reached only for a user-issued DROP/TRUNCATE of an individual table (the per-query
+    /// wrapper is built with the coordinated flag only for non-internal queries); DROP DATABASE runs with
+    /// an internal context and operates on the nested tables directly, so it is unaffected.
+    if (is_coordinated)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "Dropping or truncating an individual table is not supported for a coordinated MaterializedPostgreSQL "
+            "setup (materialized_postgresql_keeper_path is set). "
+            "Recreate the database with an updated materialized_postgresql_tables_list instead");
+}
+
+
 void StorageMaterializedPostgreSQL::dropInnerTableIfAny(bool sync, ContextPtr local_context)
 {
     /// If it is a table with database engine MaterializedPostgreSQL - return, because delition of

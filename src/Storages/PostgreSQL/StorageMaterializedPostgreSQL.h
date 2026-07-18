@@ -92,6 +92,12 @@ public:
     /// rejected DETACH stays a true no-op and does not stop replication of the nested table.
     void checkTableCanBeDetached() const override;
 
+    /// Same reasoning for DROP TABLE (and TRUNCATE) of an individual table: dropping the local nested
+    /// `ReplicatedReplacingMergeTree` on one replica does not update the shared publication or the
+    /// configured tables list, so the other replicas keep consuming a publication that still contains
+    /// the table. Refuse here, before `InterpreterDropQuery` calls `flushAndShutdown`.
+    void checkTableCanBeDropped(ContextPtr query_context) const override;
+
     /// Used only for single MaterializedPostgreSQL storage.
     void dropInnerTableIfAny(bool sync, ContextPtr local_context) override;
 
@@ -149,7 +155,7 @@ public:
     void set(StoragePtr nested_storage);
 
     /// Mark this wrapper as belonging to a coordinated (Keeper-managed) MaterializedPostgreSQL database,
-    /// so that `checkTableCanBeDetached` refuses DETACH of individual tables.
+    /// so that `checkTableCanBeDetached` / `checkTableCanBeDropped` refuse DETACH/DROP of individual tables.
     void setCoordinated(bool value) { is_coordinated = value; }
 
     static std::shared_ptr<Context> makeNestedTableContext(ContextPtr from_context);

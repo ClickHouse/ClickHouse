@@ -549,6 +549,18 @@ void DatabaseMaterializedPostgreSQL::stopReplication()
 
 void DatabaseMaterializedPostgreSQL::dropTable(ContextPtr local_context, const String & table_name, bool sync)
 {
+    /// Defense-in-depth for the coordinated-mode guard in `StorageMaterializedPostgreSQL::checkTableCanBeDropped`:
+    /// a user-issued `DROP TABLE` of an individual table would remove the local nested replicated table
+    /// without updating the shared publication, silently diverging replicas. The storage-level check already
+    /// rejects it before `flushAndShutdown`; reject here too in case the storage check is ever bypassed.
+    /// DROP DATABASE and internal cleanup run with an internal context and must still be able to drop the
+    /// nested tables, so only a genuine (non-internal) user query is refused.
+    if (isCoordinated() && !local_context->isInternalQuery())
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "DROP TABLE is not supported for a coordinated MaterializedPostgreSQL setup "
+            "(materialized_postgresql_keeper_path is set). "
+            "Recreate the database with an updated materialized_postgresql_tables_list instead");
+
     /// Modify context into nested_context and pass query to Atomic database.
     DatabaseAtomic::dropTable(StorageMaterializedPostgreSQL::makeNestedTableContext(local_context), table_name, sync);
 }
