@@ -2352,6 +2352,11 @@ struct MergeTreeSettingsImpl : public BaseSettings<MergeTreeSettingsTraits>
     /// Reject experimental / column-type-requiring codecs in the untyped compression settings.
     void checkCompressionCodecSettings() const;
 
+    /// Reset any untyped compression-codec setting that `checkCompressionCodecSettings` would reject to
+    /// its default value, for the metadata-load path (ATTACH / SECONDARY_CREATE) where the check is
+    /// skipped. Returns a human-readable note for every setting that was reset (for logging).
+    std::vector<String> sanitizeCompressionCodecSettings();
+
     /// Subscript operators so that MergeTreeSetting::NAME can be used inside Impl methods.
     /// Delegate to `BaseSettings::operator[]` so the Impl->Data subobject offset is handled
     /// by a real derived-to-base static_cast (offsets are stored relative to `Data`, not Impl).
@@ -2648,34 +2653,45 @@ void MergeTreeSettingsImpl::sanityCheck(size_t background_pool_tasks, bool allow
     checkCompressionCodecSettings();
 }
 
+/// Whether a codec is unsafe for the untyped MergeTree compression settings
+/// (`default_compression_codec`, `marks_compression_codec`, `primary_key_compression_codec`).
+///
+/// These settings are applied without a column type, which bypasses the `allow_experimental_codecs`
+/// validation of column-level codecs; experimental codecs must not sneak in through them. They are
+/// also applied to untyped streams: `marks_compression_codec` and `primary_key_compression_codec`
+/// compress the marks and primary key directly, and `default_compression_codec` becomes the part
+/// default codec, which is fed raw into the statistics and text-index streams. So a codec that
+/// requires a column type (e.g. `PCO`) would only fail later, at the first such write.
+///
+/// Returns an empty string if the codec is safe, otherwise a human-readable reason.
+static String unsafeUntypedCompressionCodecReason(const String & codec_string)
+{
+    if (codec_string.empty())
+        return {};
+
+    auto codec = CompressionCodecFactory::instance().get(codec_string);
+    if (codec->isExperimental())
+        return "it is experimental (experimental codecs can only be specified per column, with the"
+               " 'allow_experimental_codecs' setting enabled)";
+    if (codec->requiresColumnTypeToCompress())
+        return "it requires a column type and the setting is applied to untyped data";
+    return {};
+}
+
 void MergeTreeSettingsImpl::checkCompressionCodecSettings() const
 {
-    /// The codec settings below are applied without a column type, which bypasses the
-    /// `allow_experimental_codecs` validation of column-level codecs; experimental codecs must not
-    /// sneak in through them. They are also applied to untyped streams: `marks_compression_codec` and
-    /// `primary_key_compression_codec` compress the marks and primary key directly, and
-    /// `default_compression_codec` becomes the part default codec, which is fed raw into the statistics
-    /// and text-index streams. So a codec that requires a column type (e.g. `PCO`) would only fail later,
-    /// at the first such write — reject it here instead.
     auto check_codec_setting = [&](const String & codec_string, bool changed, std::string_view setting_name)
     {
-        if (!changed || codec_string.empty())
+        if (!changed)
             return;
 
-        auto codec = CompressionCodecFactory::instance().get(codec_string);
-        if (codec->isExperimental())
+        if (auto reason = unsafeUntypedCompressionCodecReason(codec_string); !reason.empty())
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
-                "Setting '{}' cannot use the experimental codec {}. Experimental codecs can only be specified per column"
-                " (with the 'allow_experimental_codecs' setting enabled)",
+                "Setting '{}' cannot use the codec {} because {}",
                 setting_name,
-                codec_string);
-        if (codec->requiresColumnTypeToCompress())
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "Setting '{}' cannot use the codec {} because it requires a column type and the setting is applied to untyped data",
-                setting_name,
-                codec_string);
+                codec_string,
+                reason);
     };
 
     const auto & dcc = (*this)[MergeTreeSetting::default_compression_codec];
@@ -2684,6 +2700,41 @@ void MergeTreeSettingsImpl::checkCompressionCodecSettings() const
     check_codec_setting(mcc.value, mcc.changed, "marks_compression_codec");
     const auto & pcc = (*this)[MergeTreeSetting::primary_key_compression_codec];
     check_codec_setting(pcc.value, pcc.changed, "primary_key_compression_codec");
+}
+
+std::vector<String> MergeTreeSettingsImpl::sanitizeCompressionCodecSettings()
+{
+    /// `checkCompressionCodecSettings` only runs from `sanityCheck`, which `MergeTreeData` skips on the
+    /// metadata-load path (ATTACH / SECONDARY_CREATE / RESTORE). So an `ATTACH TABLE ... SETTINGS
+    /// marks_compression_codec = 'PCO'` (or `primary_key_compression_codec` / `default_compression_codec`)
+    /// would still load, and only fail later at the first write when the stored string is re-resolved
+    /// untyped. Reset such settings to the default codec here so the table stays writable.
+    std::vector<String> notes;
+
+    auto sanitize_codec_setting = [&](const String & codec_string, bool changed, std::string_view setting_name)
+    {
+        if (!changed)
+            return;
+
+        if (auto reason = unsafeUntypedCompressionCodecReason(codec_string); !reason.empty())
+        {
+            notes.push_back(fmt::format(
+                "Setting '{}' cannot use the codec {} because {}; resetting it to the default codec",
+                setting_name,
+                codec_string,
+                reason));
+            resetToDefault(setting_name);
+        }
+    };
+
+    const auto & dcc = (*this)[MergeTreeSetting::default_compression_codec];
+    sanitize_codec_setting(dcc.value, dcc.changed, "default_compression_codec");
+    const auto & mcc = (*this)[MergeTreeSetting::marks_compression_codec];
+    sanitize_codec_setting(mcc.value, mcc.changed, "marks_compression_codec");
+    const auto & pcc = (*this)[MergeTreeSetting::primary_key_compression_codec];
+    sanitize_codec_setting(pcc.value, pcc.changed, "primary_key_compression_codec");
+
+    return notes;
 }
 
 void MergeTreeColumnSettings::validate(const SettingsChanges & changes)
@@ -2907,6 +2958,11 @@ bool MergeTreeSettings::needSyncPart(size_t input_rows, size_t input_bytes) cons
 void MergeTreeSettings::sanityCheck(size_t background_pool_tasks, bool allow_experimental, bool allow_beta, bool background_pool_auto_lowered) const
 {
     impl->sanityCheck(background_pool_tasks, allow_experimental, allow_beta, background_pool_auto_lowered);
+}
+
+std::vector<String> MergeTreeSettings::sanitizeCompressionCodecSettings()
+{
+    return impl->sanitizeCompressionCodecSettings();
 }
 
 void MergeTreeSettings::dumpToSystemMergeTreeSettingsColumns(MutableColumnsAndConstraints & params) const

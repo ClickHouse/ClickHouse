@@ -762,6 +762,21 @@ MergeTreeData::MergeTreeData(
             allow_beta,
             getContext()->wasBackgroundPoolAutoLowered());
     }
+    else
+    {
+        /// On ATTACH / SECONDARY_CREATE / RESTORE the sanity checks above are skipped, so the table can
+        /// carry compression-codec settings that `checkCompressionCodecSettings` would reject at CREATE
+        /// time (e.g. `SETTINGS marks_compression_codec = 'PCO'`). Left untouched they would only fail
+        /// later at the first write, when the stored string is re-resolved without a column type. Reset
+        /// them to the default codec here so the table stays writable.
+        auto sanitized_settings = std::make_unique<MergeTreeSettings>(*settings);
+        if (auto reset_notes = sanitized_settings->sanitizeCompressionCodecSettings(); !reset_notes.empty())
+        {
+            for (const auto & note : reset_notes)
+                LOG_WARNING(log, "{}", note);
+            storage_settings.set(std::move(sanitized_settings));
+        }
+    }
 
     if (!date_column_name.empty())
     {
