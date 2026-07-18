@@ -541,6 +541,19 @@ FROM
     WINDOW w AS (ORDER BY n ROWS BETWEEN 300 PRECEDING AND CURRENT ROW)
 );
 
+-- count over a mixed Nullable column goes through the tree (unlike plain count, whose
+-- constant-time batch add keeps it on the recompute path); checked against the
+-- closed-form count of non-NULL frame rows (every 11th row is NULL).
+SELECT countIf(c != (n - lo + 1) - (intDiv(n, 11) - intDiv(lo, 11) + (lo % 11 = 0))) AS mismatches
+FROM
+(
+    SELECT
+        number AS n,
+        greatest(toInt64(number) - 2999, 0) AS lo,
+        count(if(number % 11 = 0, NULL, number)) OVER (ORDER BY number ROWS BETWEEN 2999 PRECEDING AND CURRENT ROW) AS c
+    FROM numbers(20000)
+);
+
 -- The incrementally-advanced ROWS PRECEDING frame start must survive a partition
 -- change whose rows outrun the still-clamped offset deficit of the previous partition:
 -- the cached position then points into an already-freed block and must be discarded,
