@@ -512,3 +512,25 @@ ALTER TABLE tab_scann_experimental_gate_alter
 
 DROP TABLE tab_scann_experimental_gate_alter;
 SET allow_experimental_scann_index = 1;
+
+-- Test 23: vector_search_index_fetch_multiplier must not shrink the candidate set.
+SELECT '23. vector_search_index_fetch_multiplier must be at least 1.0';
+DROP TABLE IF EXISTS tab_scann_fetch_multiplier;
+CREATE TABLE tab_scann_fetch_multiplier
+(
+    id UInt64,
+    vector Array(Float32),
+    INDEX vector_idx vector TYPE vector_similarity('scann', 'L2Distance', 2)
+)
+ENGINE = MergeTree
+ORDER BY id;
+INSERT INTO tab_scann_fetch_multiplier
+SELECT number, [toFloat32(number), 0.0]
+FROM numbers(2000);
+OPTIMIZE TABLE tab_scann_fetch_multiplier FINAL;
+SELECT id
+FROM tab_scann_fetch_multiplier
+ORDER BY L2Distance(vector, [1.0, 0.0])
+LIMIT 10
+SETTINGS vector_search_with_rescoring = 1, vector_search_index_fetch_multiplier = 0.5; -- { serverError INVALID_SETTING_VALUE }
+DROP TABLE tab_scann_fetch_multiplier;

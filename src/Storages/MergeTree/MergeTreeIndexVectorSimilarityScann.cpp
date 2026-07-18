@@ -1027,12 +1027,14 @@ MergeTreeIndexConditionVectorSimilarityScann::MergeTreeIndexConditionVectorSimil
     , scann_num_leaves_to_search(context->getSettingsRef()[Setting::scann_num_leaves_to_search])
     , scann_candidate_pool_size(context->getSettingsRef()[Setting::scann_candidate_pool_size])
 {
+    static constexpr double MIN_INDEX_FETCH_MULTIPLIER = 1.0;
     static constexpr double MAX_INDEX_FETCH_MULTIPLIER = 1000.0;
     if (!std::isfinite(index_fetch_multiplier)
-        || index_fetch_multiplier <= 0.0 || index_fetch_multiplier > MAX_INDEX_FETCH_MULTIPLIER
+        || index_fetch_multiplier < MIN_INDEX_FETCH_MULTIPLIER || index_fetch_multiplier > MAX_INDEX_FETCH_MULTIPLIER
         || (parameters && !std::isfinite(index_fetch_multiplier * static_cast<double>(parameters->limit))))
         throw Exception(ErrorCodes::INVALID_SETTING_VALUE,
-            "Setting 'vector_search_index_fetch_multiplier' must be greater than 0.0 and less than {}",
+            "Setting 'vector_search_index_fetch_multiplier' must be greater or equal to {} and less or equal to {}",
+            MIN_INDEX_FETCH_MULTIPLIER,
             MAX_INDEX_FETCH_MULTIPLIER);
 }
 

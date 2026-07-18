@@ -51,3 +51,4 @@
 22. Existing ScaNN index does not block unrelated ALTER
 unrelated ALTER succeeds
 1
+23. vector_search_index_fetch_multiplier must be at least 1.0
