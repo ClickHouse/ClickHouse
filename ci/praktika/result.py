@@ -306,6 +306,13 @@ class Result(MetaClasses.Serializable):
         self._dump_if_persisted()
         return self
 
+    def set_assets(self, assets) -> "Result":
+        if isinstance(assets, (str, Path)):
+            assets = [assets]
+        self.ext["assets"] = [str(asset) for asset in assets]
+        self._dump_if_persisted()
+        return self
+
     def set_on_error_hook(self, hook: str) -> "Result":
         """
         Sets a bash script to execute when the job encounters a critical error.
