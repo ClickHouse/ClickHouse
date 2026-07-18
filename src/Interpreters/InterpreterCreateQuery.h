@@ -10,6 +10,8 @@
 #include <Storages/IStorage_fwd.h>
 #include <Storages/StorageInMemoryMetadata.h>
 
+#include <base/scope_guard.h>
+
 
 namespace DB
 {
@@ -126,7 +128,11 @@ private:
 
     BlockIO executeQueryOnCluster(ASTCreateQuery & create);
 
-    void convertMergeTreeTableIfPossible(ASTCreateQuery & create, DatabasePtr database, bool to_replicated);
+    /// Returns a scope guard that reverts the on-disk metadata file to its pre-conversion content.
+    /// The caller must release it once the converted table has been successfully constructed and
+    /// registered, so that a construction-time rejection not caught by the up-front validation
+    /// (e.g. a future setting the target engine refuses) does not leave unloadable metadata on disk.
+    [[nodiscard]] scope_guard convertMergeTreeTableIfPossible(ASTCreateQuery & create, DatabasePtr database, bool to_replicated);
 
     /// Remove transaction metadata files (txn_version.txt and txn_version.txt.tmp) from all parts for a table.
     static void clearTransactionMetadata(const String & table_data_path, ContextPtr local_context);

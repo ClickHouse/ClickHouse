@@ -34,6 +34,7 @@
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/StorageTableProxy.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/PoolId.h>
 #include <Common/escapeForFileName.h>
 #include <Common/logger_useful.h>
@@ -165,6 +166,16 @@ void DatabaseOrdinary::validateEngineSupportsReplicatedConversion(const ASTCreat
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "Engine {} doesn't support UNIQUE KEY clause, cannot attach table as {}replicated",
             target_engine_name, to_replicated ? "" : "not ");
+
+    /// ReplicatedMergeTree rejects `table_readonly = 1` in its constructor (see StorageReplicatedMergeTree),
+    /// so converting to replicated must be refused here too, before the metadata is rewritten.
+    if (to_replicated)
+        if (auto * settings = create_query.storage->settings)
+            if (const Field * table_readonly = settings->changes.tryGet("table_readonly");
+                table_readonly && applyVisitor(FieldVisitorConvertToNumber<UInt64>(), *table_readonly) != 0)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Engine {} doesn't support the table_readonly setting, cannot attach table as replicated",
+                    target_engine_name);
 }
 
 void DatabaseOrdinary::setMergeTreeEngine(ASTCreateQuery & create_query, ContextPtr local_context, bool replicated)

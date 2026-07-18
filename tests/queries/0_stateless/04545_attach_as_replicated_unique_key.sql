@@ -22,3 +22,21 @@ INSERT INTO t0 VALUES (1), (2);
 SELECT count() FROM t0;
 
 DROP TABLE t0;
+
+-- Same class of check for the `table_readonly` setting: ReplicatedMergeTree rejects it in its
+-- constructor, so the conversion must be refused before the metadata is rewritten. Otherwise the
+-- persisted metadata becomes an unloadable ReplicatedMergeTree + table_readonly = 1.
+DROP TABLE IF EXISTS t1;
+CREATE TABLE t1 (c0 Int) ENGINE = MergeTree() ORDER BY tuple() SETTINGS table_readonly = 1;
+
+DETACH TABLE t1;
+
+-- Rejected: the target engine ReplicatedMergeTree does not support table_readonly = 1.
+ATTACH TABLE t1 AS REPLICATED; -- { serverError BAD_ARGUMENTS }
+
+-- The stored definition must still be MergeTree, so a plain re-attach loads and the table is
+-- queryable (a table_readonly = 1 table cannot be inserted into, so we only check it loads).
+ATTACH TABLE t1;
+SELECT count() FROM t1;
+
+DROP TABLE t1;
