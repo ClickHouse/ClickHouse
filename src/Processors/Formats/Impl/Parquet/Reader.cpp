@@ -916,8 +916,13 @@ void Reader::processBloomFilterHeader(ColumnChunk & column, const PrimitiveColum
     }
 }
 
-bool Reader::decodeDictionaryPage(ColumnChunk & column, const PrimitiveColumnInfo & column_info, size_t max_decoded_bytes)
+bool Reader::decodeDictionaryPage(
+    ColumnChunk & column, const PrimitiveColumnInfo & column_info,
+    const PruningMemoryReservation & reservation, size_t * held_reserved_bytes)
 {
+    if (held_reserved_bytes)
+        *held_reserved_bytes = 0;
+
     auto data = prefetcher.getRangeData(column.dictionary_page_prefetch);
     const char * data_ptr = data.data();
     const char * data_end = data.data() + data.size();
@@ -932,20 +937,24 @@ bool Reader::decodeDictionaryPage(ColumnChunk & column, const PrimitiveColumnInf
         return false;
     }
 
-    /// Dictionary-filter pruning path: bound the decoded dictionary size *before* it is charged and
-    /// used. `columnChunkCanUseDictionaryFilter` only limits the compressed on-disk dictionary page
-    /// (`dictionary_filter_limit_bytes`, 1 MiB by default); a highly compressible dictionary can
-    /// still decompress to many times that. On the pruning path (`BloomFilterBlocksOrDictionary`
-    /// stage) `max_decoded_bytes` is the memory still available for pruning - the reader's memory
-    /// high watermark minus what the stage already holds (`ReadManager::pruningMemoryBudget`) - so
-    /// several row groups pruning in parallel cannot collectively overshoot the watermark: each
-    /// decoded dictionary is charged to the stage (in `ReadManager::runTask`), shrinking the budget
-    /// left for the next one. If the dictionary does not fit the remaining budget, skip it and let
-    /// the caller fall back to a full scan (a missed optimization, never a wrong result). The
-    /// complementary cap on the decoded value set built from the dictionary lives in
-    /// `hashDictionaryValues`. `max_decoded_bytes == 0` means unbounded (the data-read path, where the
-    /// dictionary is decoded lazily and throttled by the normal column-data memory accounting).
-    if (max_decoded_bytes != 0)
+    /// Dictionary-filter pruning path: bound the decoded dictionary size *before* it is decoded and
+    /// used, and reserve it live so several row groups pruning in parallel cannot collectively overshoot
+    /// the watermark. `columnChunkCanUseDictionaryFilter` only limits the compressed on-disk dictionary
+    /// page (`dictionary_filter_limit_bytes`, 1 MiB by default); a highly compressible dictionary can
+    /// still decompress to many times that. On the pruning path (`BloomFilterBlocksOrDictionary` stage)
+    /// `reservation` is a live handle on the shared stage budget - the reader's memory high watermark
+    /// minus what the stage already holds (the decoded dictionaries and value sets other row groups are
+    /// holding right now, plus this batch's not-yet-flushed pruning memory; see
+    /// `ReadManager::pruningMemoryReservation` and `PruningMemoryReservation`). We reserve the decoded
+    /// footprint against it before decoding, so a dictionary that would push the pruning stage past the
+    /// watermark is rejected before `Dictionary::decode` allocates anything and the caller falls back to
+    /// a full scan (a missed optimization, never a wrong result). The complementary cap on the decoded
+    /// value set built from the dictionary lives in `hashDictionaryValues`. A default (unbounded)
+    /// reservation means the data-read path, where the dictionary is decoded lazily and throttled by the
+    /// normal column-data memory accounting.
+    bool bounded = reservation.stage_memory != nullptr && reservation.watermark != 0;
+    size_t reserved_bytes = 0;
+    if (bounded)
     {
         /// Worst-case pre-decode gate. `Dictionary::decode` allocates per-entry state *on top of* the
         /// decompressed page bytes - a `StringPlain` offsets array, or a fully decoded `col` for types
@@ -953,34 +962,58 @@ bool Reader::decodeDictionaryPage(ColumnChunk & column, const PrimitiveColumnInf
         /// bit-packed dictionary decoded into a wider column). `Dictionary::decodedFootprintUpperBound`
         /// predicts that footprint from the page header before anything is allocated, so an oversized
         /// dictionary is rejected *before* `decode` transiently materializes it, and the pruning path
-        /// never overshoots `max_decoded_bytes` even momentarily. If it does not fit, skip it and let
-        /// the caller fall back to a full scan (a missed optimization, never a wrong result); the
-        /// dictionary is re-decoded later, unbounded and throttled, on the data-read path if the column
-        /// is actually read.
+        /// never overshoots the budget even momentarily. If it does not fit, skip it and let the caller
+        /// fall back to a full scan; the dictionary is re-decoded later, unbounded and throttled, on the
+        /// data-read path if the column is actually read.
         if (header.compressed_page_size < 0 || header.uncompressed_page_size < 0
             || header.dictionary_page_header.num_values < 0)
-            return false; /// Malformed header sizes; the data-read path (max_decoded_bytes == 0) surfaces the error.
+            return false; /// Malformed header sizes; the data-read path (unbounded) surfaces the error.
         size_t page_bytes = size_t(std::max(header.uncompressed_page_size, header.compressed_page_size));
-        size_t predicted_bytes = Dictionary::decodedFootprintUpperBound(
+        reserved_bytes = Dictionary::decodedFootprintUpperBound(
             header.dictionary_page_header.encoding, column_info.decoder,
             size_t(header.dictionary_page_header.num_values), page_bytes, *column_info.decoded_type);
-        if (predicted_bytes > max_decoded_bytes)
+        if (!reservation.tryReserve(reserved_bytes))
             return false;
     }
 
+    /// Release the reservation on every early-out below; only the successful path keeps the actual
+    /// decoded footprint reserved (reduced from the predicted upper bound) and hands it to the caller
+    /// via `*held_reserved_bytes`, to be released in `ReadManager::clearColumnChunk`.
+    bool committed = false;
+    SCOPE_EXIT({ if (bounded && !committed) reservation.release(reserved_bytes); });
+
     decodeDictionaryPageImpl(header, page_data, column, column_info);
 
-    /// Defensive backstop: the pre-decode bound above already guarantees the decoded dictionary fits,
-    /// so this exact check should never trigger. It only guards against `decode` and
-    /// `decodedFootprintUpperBound` drifting out of sync; if that ever happened, drop the dictionary
-    /// and fall back to a full scan rather than charging (in `ReadManager::runTask`) and pruning with a
-    /// dictionary larger than the budget.
-    if (max_decoded_bytes != 0 && column.dictionary.allocatedBytes() > max_decoded_bytes)
+    if (bounded)
     {
-        column.dictionary.reset();
-        return false;
+        /// `decodedFootprintUpperBound` predicts the decoded dictionary's size from the page header, but
+        /// the memory actually held (`Dictionary::allocatedBytes`, which includes the `PODArray` capacity
+        /// rounding and padding on top of the logical sizes the prediction sums) can differ from it in
+        /// either direction. Reconcile the live reservation with the true footprint so the amount charged
+        /// to the shared budget matches what was really allocated: if it grew, reserve the extra and fall
+        /// back to a full scan if that no longer fits the budget; if it shrank, release the difference.
+        size_t actual_bytes = column.dictionary.allocatedBytes();
+        if (actual_bytes > reserved_bytes)
+        {
+            if (!reservation.tryReserve(actual_bytes - reserved_bytes))
+            {
+                /// Does not fit the remaining budget: drop the dictionary and let the caller fall back to
+                /// a full scan. The `reserved_bytes` reserved before decoding are freed by the SCOPE_EXIT.
+                column.dictionary.reset();
+                return false;
+            }
+        }
+        else
+        {
+            reservation.release(reserved_bytes - actual_bytes);
+        }
+        /// Now holding exactly `actual_bytes`; hand it to the caller to release in `clearColumnChunk`.
+        reserved_bytes = actual_bytes;
+        if (held_reserved_bytes)
+            *held_reserved_bytes = actual_bytes;
     }
 
+    committed = true;
     return true;
 }
 

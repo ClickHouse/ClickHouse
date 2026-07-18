@@ -811,22 +811,6 @@ void ReadManager::runBatchOfTasks(const std::vector<Task> & tasks) noexcept
     }
 }
 
-size_t ReadManager::pruningMemoryBudget(const MemoryUsageDiff & diff) const
-{
-    size_t watermark = reader.options.format.parquet.memory_high_watermark;
-    if (watermark == 0)
-        return 0; /// Unbounded (the sentinel understood by decodeDictionaryPage / hashDictionaryValues).
-
-    size_t idx = size_t(ReadStage::BloomFilterBlocksOrDictionary);
-    /// Live pruning memory = what previous batches already flushed to the stage counter, plus what
-    /// this batch has charged so far (dictionaries decoded earlier in the same batch, prefetches).
-    ssize_t live = ssize_t(stages[idx].memory_usage.load(std::memory_order_relaxed)) + diff.by_stage[idx];
-    size_t live_bytes = live > 0 ? size_t(live) : 0;
-    size_t remaining = live_bytes < watermark ? watermark - live_bytes : 0;
-    /// Clamp to at least 1: a literal 0 would be read as "unbounded" by the callers.
-    return std::max<size_t>(remaining, 1);
-}
-
 PruningMemoryReservation ReadManager::pruningMemoryReservation(const MemoryUsageDiff & diff)
 {
     size_t watermark = reader.options.format.parquet.memory_high_watermark;
@@ -834,9 +818,11 @@ PruningMemoryReservation ReadManager::pruningMemoryReservation(const MemoryUsage
         return {}; /// Unbounded.
 
     size_t idx = size_t(ReadStage::BloomFilterBlocksOrDictionary);
-    /// Reserve against the live stage counter (what previous batches flushed, plus the value sets
-    /// other row groups are holding right now), accounting for this batch's own not-yet-flushed pruning
-    /// memory (the dictionaries decoded earlier in this batch) via `in_flight`.
+    /// Reserve against the live stage counter (what previous batches flushed, plus the decoded
+    /// dictionaries and value sets other row groups are holding right now), accounting for this batch's
+    /// own not-yet-flushed pruning memory (e.g. bloom-filter prefetches charged in this batch) via
+    /// `in_flight`. The decoded dictionaries of this batch are charged live to the stage counter (in
+    /// `decodeDictionaryPage`), not to `diff`, so they are already reflected in the counter, not here.
     ssize_t in_flight = diff.by_stage[idx];
     return PruningMemoryReservation{
         .stage_memory = &stages[idx].memory_usage,
@@ -862,20 +848,20 @@ void ReadManager::runTask(Task task, bool last_in_batch, MemoryUsageDiff & diff)
             case ReadStage::BloomFilterBlocksOrDictionary:
                 if (column.use_dictionary_filter)
                 {
-                    /// Cap the decoded dictionary size against the memory still available for pruning
-                    /// so the default-on pruning stays within the reader's memory budget (see
-                    /// decodeDictionaryPage / hashDictionaryValues). If the dictionary is too large to
-                    /// decode within budget, skip pruning for this column: `applyBloomAndDictionaryFilters`
-                    /// then treats it as a full scan, and the dictionary is decoded later (throttled) on
-                    /// the data-read path if needed.
-                    if (!reader.decodeDictionaryPage(column, column_info, pruningMemoryBudget(diff)))
+                    /// Reserve the decoded dictionary's footprint live against the shared pruning-stage
+                    /// budget so it is visible to every row group pruning in parallel the moment it is
+                    /// taken - not only after this batch flushes - and the default-on pruning stays
+                    /// within the reader's memory budget (see `decodeDictionaryPage`,
+                    /// `pruningMemoryReservation`, `PruningMemoryReservation`, `hashDictionaryValues`).
+                    /// The reservation (reduced to the actual footprint on success) is held until the
+                    /// chunk is cleared, throttling how many row groups can prune in parallel. If the
+                    /// dictionary is too large to reserve, skip pruning for this column:
+                    /// `applyBloomAndDictionaryFilters` then treats it as a full scan, and the dictionary
+                    /// is decoded later (throttled) on the data-read path if needed.
+                    column.dictionary_reservation = pruningMemoryReservation(diff);
+                    if (!reader.decodeDictionaryPage(
+                            column, column_info, column.dictionary_reservation, &column.dictionary_reserved_bytes))
                         column.use_dictionary_filter = false;
-                    else
-                        /// Charge the decoded dictionary to the pruning stage so it participates in the
-                        /// per-stage memory accounting `scheduleTasksIfNeeded` enforces: while it is
-                        /// live it shrinks `pruningMemoryBudget` and throttles how many row groups can
-                        /// prune in parallel. Released in `clearColumnChunk` when the chunk is done.
-                        column.dictionary_memory = MemoryUsageToken(column.dictionary.allocatedBytes(), &diff);
                 }
                 break;
             case ReadStage::ColumnIndexAndOffsetIndex:
@@ -951,7 +937,10 @@ void ReadManager::clearColumnChunk(ColumnChunk & column, MemoryUsageDiff & diff)
     /// because stages can be skipped e.g. if the row group was filtered out by bloom filter.
 
     column.data_pages_prefetch.reset(&diff);
-    column.dictionary_memory.reset(&diff);
+    /// Release the live pruning reservation for the decoded dictionary (see `runTask` /
+    /// `PruningMemoryReservation`). Must happen before `column = {}` below drops the handle.
+    column.dictionary_reservation.release(column.dictionary_reserved_bytes);
+    column.dictionary_reserved_bytes = 0;
     column.dictionary.reset();
     for (auto & page : column.data_pages)
         page.prefetch.reset(&diff);

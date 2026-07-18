@@ -116,15 +116,14 @@ private:
 
     void scheduleTask(Task task, bool is_first_in_group, MemoryUsageDiff & diff, std::vector<Task> & out_tasks);
     void runTask(Task task, bool last_in_batch, MemoryUsageDiff & diff);
-    /// Memory the dictionary-filter pruning path may still use: the reader's memory high watermark
-    /// minus what the `BloomFilterBlocksOrDictionary` stage already holds (decoded dictionaries
-    /// charged in `runTask`, plus this batch's in-flight `diff`). Returns 0 when the watermark is 0
-    /// (unbounded); otherwise at least 1, so 0 unambiguously means "unbounded" for the callers.
-    size_t pruningMemoryBudget(const MemoryUsageDiff & diff) const;
-    /// Same budget as `pruningMemoryBudget`, but as a live reservation handle that charges the shared
-    /// `BloomFilterBlocksOrDictionary` stage counter, so the dictionary value sets built while
-    /// evaluating a row-group filter stay within the watermark across all row groups pruning in
-    /// parallel (see `PruningMemoryReservation` and `Reader::applyBloomAndDictionaryFilters`).
+    /// A live reservation handle on the memory the dictionary-filter pruning path may still use: the
+    /// reader's memory high watermark minus what the `BloomFilterBlocksOrDictionary` stage already holds
+    /// (the decoded dictionaries and value sets other row groups are holding right now, plus this batch's
+    /// in-flight `diff`). Both the decoded dictionaries (`Reader::decodeDictionaryPage`) and the value
+    /// sets built while evaluating a row-group filter (`Reader::hashDictionaryValues`) reserve through it,
+    /// charging the shared stage counter directly, so the pruning memory stays within the watermark
+    /// across all row groups pruning in parallel (see `PruningMemoryReservation` and
+    /// `Reader::applyBloomAndDictionaryFilters`).
     PruningMemoryReservation pruningMemoryReservation(const MemoryUsageDiff & diff);
     void runBatchOfTasks(const std::vector<Task> & tasks) noexcept;
     void scheduleTasksIfNeeded(ReadStage stage_idx);
