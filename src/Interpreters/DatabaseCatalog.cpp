@@ -459,9 +459,14 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
 #if USE_LIBPQXX
         if (!context_->isInternalQuery() && (db_and_table.first->getEngineName() == "MaterializedPostgreSQL"))
         {
-            db_and_table.second = std::make_shared<StorageMaterializedPostgreSQL>(std::move(db_and_table.second), getContext(),
-                                        assert_cast<const DatabaseMaterializedPostgreSQL *>(db_and_table.first.get())->getPostgreSQLDatabaseName(),
+            const auto * mat_pg_database = assert_cast<const DatabaseMaterializedPostgreSQL *>(db_and_table.first.get());
+            auto wrapper = std::make_shared<StorageMaterializedPostgreSQL>(std::move(db_and_table.second), getContext(),
+                                        mat_pg_database->getPostgreSQLDatabaseName(),
                                         db_and_table.second->getStorageID().table_name);
+            /// Carry the coordinated flag onto this per-query wrapper so `checkTableCanBeDetached` refuses
+            /// DETACH before `InterpreterDropQuery` shuts the table (and its replication) down.
+            wrapper->setCoordinated(mat_pg_database->isCoordinated());
+            db_and_table.second = std::move(wrapper);
         }
 #endif
 

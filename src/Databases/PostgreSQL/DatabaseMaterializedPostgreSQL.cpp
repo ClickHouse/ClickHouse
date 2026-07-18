@@ -146,6 +146,8 @@ void DatabaseMaterializedPostgreSQL::startSynchronization()
             storage = std::make_shared<StorageMaterializedPostgreSQL>(StorageID(TSA_SUPPRESS_WARNING_FOR_READ(database_name), table_name), getContext(), remote_database_name, table_name);
         }
 
+        storage->as<StorageMaterializedPostgreSQL>()->setCoordinated(isCoordinated());
+
         /// Cache MaterializedPostgreSQL wrapper over nested table.
         materialized_tables[table_name] = storage;
 
@@ -248,6 +250,12 @@ void DatabaseMaterializedPostgreSQL::applySettingsChanges(const SettingsChanges 
 
     if (need_update_on_disk)
         DatabaseOnDisk::modifySettingsMetadata(settings_changes, query_context);
+}
+
+
+bool DatabaseMaterializedPostgreSQL::isCoordinated() const
+{
+    return !(*settings)[MaterializedPostgreSQLSetting::materialized_postgresql_keeper_path].value.empty();
 }
 
 

@@ -263,6 +263,21 @@ void StorageMaterializedPostgreSQL::shutdown(bool)
 }
 
 
+void StorageMaterializedPostgreSQL::checkTableCanBeDetached() const
+{
+    /// In a coordinated MaterializedPostgreSQL database, dynamically adding/removing a table mutates the
+    /// shared publication and only takes effect on one replica, so it is refused on every replica (see
+    /// `DatabaseMaterializedPostgreSQL::attachTable` / `detachTablePermanently`). Refuse here, before
+    /// `InterpreterDropQuery` calls `flushAndShutdown` on the table: otherwise a rejected DETACH would
+    /// still have shut the nested ReplacingMergeTree down and silently stopped replication of it.
+    if (is_coordinated)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "DETACH TABLE is not supported for a coordinated MaterializedPostgreSQL setup "
+            "(materialized_postgresql_keeper_path is set). "
+            "Recreate the database with an updated materialized_postgresql_tables_list instead");
+}
+
+
 void StorageMaterializedPostgreSQL::dropInnerTableIfAny(bool sync, ContextPtr local_context)
 {
     /// If it is a table with database engine MaterializedPostgreSQL - return, because delition of

@@ -86,6 +86,12 @@ public:
 
     void shutdown(bool is_drop) override;
 
+    /// In a coordinated MaterializedPostgreSQL database, dynamically adding/removing a table mutates the
+    /// shared publication (see `DatabaseMaterializedPostgreSQL::attachTable` / `detachTablePermanently`).
+    /// Refuse DETACH here, before `InterpreterDropQuery` calls `flushAndShutdown` on the table, so a
+    /// rejected DETACH stays a true no-op and does not stop replication of the nested table.
+    void checkTableCanBeDetached() const override;
+
     /// Used only for single MaterializedPostgreSQL storage.
     void dropInnerTableIfAny(bool sync, ContextPtr local_context) override;
 
@@ -142,6 +148,10 @@ public:
 
     void set(StoragePtr nested_storage);
 
+    /// Mark this wrapper as belonging to a coordinated (Keeper-managed) MaterializedPostgreSQL database,
+    /// so that `checkTableCanBeDetached` refuses DETACH of individual tables.
+    void setCoordinated(bool value) { is_coordinated = value; }
+
     static std::shared_ptr<Context> makeNestedTableContext(ContextPtr from_context);
 
     bool supportsFinal() const override { return true; }
@@ -163,6 +173,9 @@ private:
     /// Distinguish between single MaterilizePostgreSQL table engine and MaterializedPostgreSQL database engine,
     /// because table with engine MaterilizePostgreSQL acts differently in each case.
     bool is_materialized_postgresql_database = false;
+
+    /// Set for wrappers that belong to a coordinated (Keeper-managed) MaterializedPostgreSQL database.
+    bool is_coordinated = false;
 
     /// Will be set to `true` only once - when nested table was loaded by replication thread.
     /// After that, it will never be changed. Needed for MaterializedPostgreSQL database engine

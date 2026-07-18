@@ -78,6 +78,10 @@ public:
 
     String getPostgreSQLDatabaseName() const { return remote_database_name; }
 
+    /// True when the database uses Keeper-coordinated HA (materialized_postgresql_keeper_path is set):
+    /// nested tables are Replicated/Shared and the replication slot is shared between replicas.
+    bool isCoordinated() const;
+
 protected:
     ASTPtr getCreateTableQueryImpl(const String & table_name, ContextPtr local_context, bool throw_on_error) const override;
 
