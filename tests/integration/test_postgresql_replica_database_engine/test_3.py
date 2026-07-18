@@ -4041,6 +4041,74 @@ def test_attach_fails_closed_when_both_slot_and_publication_lost(started_cluster
     pg_manager.drop_materialized_db(mat_db)
 
 
+def test_attach_tolerates_extra_table_added_to_whole_schema_publication(started_cluster):
+    # The mirror of test_attach_fails_closed_when_whole_schema_publication_drifts: a table that this
+    # database never replicated is ADDED to the publication while the server is down (for example an
+    # operator ran ALTER PUBLICATION ... ADD TABLE). The extra table has no nested table on disk, so it
+    # must be ignored on attach - the on-disk table set (the tables replicated in the previous run) is
+    # authoritative. Otherwise fetchRequiredTables() would return the extra table too, the database engine
+    # would build a wrapper for it, and startSynchronization() would throw on its missing nested table on
+    # every attach retry, leaving the whole database unable to resume replication for the tables it does
+    # replicate.
+    table_a = "grow_pub_a"
+    table_b = "grow_pub_b"
+    table_c = "grow_pub_c"
+    mat_db = "grow_pub_database"
+    pg_manager.create_postgres_table(table_a)
+    pg_manager.create_postgres_table(table_b)
+    instance.query(
+        f"INSERT INTO postgres_database.{table_a} SELECT number, number FROM numbers(0, 30)"
+    )
+    instance.query(
+        f"INSERT INTO postgres_database.{table_b} SELECT number, number FROM numbers(0, 30)"
+    )
+    pg_manager.create_materialized_db(
+        ip=started_cluster.postgres_ip,
+        port=started_cluster.postgres_port,
+        materialized_database=mat_db,
+        settings=[
+            "materialized_postgresql_backoff_min_ms = 100",
+            "materialized_postgresql_backoff_max_ms = 100",
+        ],
+    )
+    check_tables_are_synchronized(instance, table_a, materialized_database=mat_db)
+    check_tables_are_synchronized(instance, table_b, materialized_database=mat_db)
+
+    cursor = pg_manager.get_db_cursor()
+    cursor.execute(
+        "SELECT pubname FROM pg_publication WHERE pubname LIKE '%\\_ch\\_publication'"
+    )
+    publications = [row[0] for row in cursor.fetchall()]
+    assert len(publications) == 1, f"expected exactly one publication, got {publications}"
+    publication = publications[0]
+
+    # While the server is down, a brand-new table this database never replicated is created and added to
+    # the publication, and more rows are committed to the two replicated tables.
+    instance.stop_clickhouse()
+    create_postgres_table(cursor, table_c)
+    cursor.execute(f'ALTER PUBLICATION "{publication}" ADD TABLE {table_c}')
+    cursor.execute(f"INSERT INTO {table_a} SELECT i, i FROM generate_series(30, 49) AS i")
+    cursor.execute(f"INSERT INTO {table_b} SELECT i, i FROM generate_series(30, 49) AS i")
+    instance.start_clickhouse()
+
+    # Replication resumes for the tables that were already replicated: the extra published table is ignored
+    # rather than turned into a table to materialize, so the database does not get stuck retrying forever.
+    check_tables_are_synchronized(instance, table_a, materialized_database=mat_db)
+    check_tables_are_synchronized(instance, table_b, materialized_database=mat_db)
+    assert 50 == int(instance.query(f"SELECT count() FROM {mat_db}.{table_a}"))
+    assert 50 == int(instance.query(f"SELECT count() FROM {mat_db}.{table_b}"))
+
+    # The extra table is not materialized - a table is only replicated once it is explicitly attached.
+    assert "0" == instance.query(f"EXISTS TABLE {mat_db}.{table_c}").strip()
+
+    # Ongoing changes keep streaming for the replicated tables.
+    cursor.execute(f"INSERT INTO {table_a} SELECT i, i FROM generate_series(50, 59) AS i")
+    check_tables_are_synchronized(instance, table_a, materialized_database=mat_db)
+    assert 60 == int(instance.query(f"SELECT count() FROM {mat_db}.{table_a}"))
+
+    pg_manager.drop_materialized_db(mat_db)
+
+
 if __name__ == "__main__":
     cluster.start()
     input("Cluster created, press any key to destroy...")

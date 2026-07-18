@@ -1663,34 +1663,44 @@ std::set<String> PostgreSQLReplicationHandler::fetchRequiredTables()
                             "Publication {} already exists and tables list is empty. Assuming publication is correct.",
                             doubleQuoteString(publication_name));
 
-                /// The publication is this engine's persisted table set, so on attach the tables to
-                /// materialize come from it, not from the live PostgreSQL schema. A table created in
-                /// PostgreSQL after `CREATE DATABASE` is not replicated without an explicit
-                /// `ATTACH TABLE`: it is not in the publication, no WAL is streamed for it, and it has
-                /// no nested table on disk - materializing it here would make startSynchronization()
-                /// fail on the missing nested table on every attach retry, leaving the whole database
-                /// unable to resume replication after a restart just because the source schema grew.
+                std::set<String> published_tables;
                 {
                     pqxx::work tx(connection.getRef());
-                    result_tables = fetchTablesFromPublication(tx);
+                    published_tables = fetchTablesFromPublication(tx);
                 }
 
-                /// The reverse of the grown-schema case above is a real drift: a table this database already
-                /// replicated in the previous run (its nested table exists on disk) is missing from the
-                /// publication - for example an operator ran ALTER PUBLICATION ... DROP TABLE. Resuming from
-                /// the slot then silently stops streaming changes for that table, and re-adding it to the
-                /// publication cannot recover the changes committed while it was unpublished (pgoutput skips a
-                /// table that was not published at the change's LSN). Fail closed instead - the current-
-                /// identity counterpart of the exact-table-set proof in adoptLegacyReplicationIdentityIfNeeded()
-                /// for the whole-schema database engine, whose expected set is the on-disk table set rather
-                /// than a `tables_list`. (The single-table and `tables_list` engines are checked against
-                /// their configured set in startSynchronization().)
-                if (tables_replicated_by_previous_run)
+                /// On attach the whole-schema database materializes the tables it already replicated in the
+                /// previous run (their nested tables exist on disk), not whatever the publication currently
+                /// publishes. The two sets can differ in either direction, and both differences must be
+                /// tolerated instead of being turned into tables to materialize:
+                ///  - A table created in PostgreSQL after `CREATE DATABASE` is not replicated without an
+                ///    explicit `ATTACH TABLE`: it is not in the publication, no WAL is streamed for it, and it
+                ///    has no nested table on disk.
+                ///  - A table added to the publication while the server was down (for example an operator ran
+                ///    `ALTER PUBLICATION ... ADD TABLE`) is likewise not something this database replicates: it
+                ///    has no nested table on disk either.
+                /// In both cases materializing the extra table would make startSynchronization() throw on its
+                /// missing nested table on every attach retry, leaving the whole database unable to resume
+                /// replication for the tables it does replicate. So the on-disk table set is authoritative and
+                /// publication extras are ignored.
+                if (tables_replicated_by_previous_run && !tables_replicated_by_previous_run->empty())
                 {
+                    result_tables = *tables_replicated_by_previous_run;
+
+                    /// The reverse of the extra-tables case above is a real drift: a table this database
+                    /// already replicated in the previous run (its nested table exists on disk) is missing from
+                    /// the publication - for example an operator ran ALTER PUBLICATION ... DROP TABLE. Resuming
+                    /// from the slot then silently stops streaming changes for that table, and re-adding it to
+                    /// the publication cannot recover the changes committed while it was unpublished (pgoutput
+                    /// skips a table that was not published at the change's LSN). Fail closed instead - the
+                    /// current-identity counterpart of the exact-table-set proof in
+                    /// adoptLegacyReplicationIdentityIfNeeded() for the whole-schema database engine, whose
+                    /// expected set is the on-disk table set rather than a `tables_list`. (The single-table and
+                    /// `tables_list` engines are checked against their configured set in startSynchronization().)
                     String missing;
                     for (const auto & table_name : *tables_replicated_by_previous_run)
                     {
-                        if (result_tables.contains(table_name))
+                        if (published_tables.contains(table_name))
                             continue;
                         if (!missing.empty())
                             missing += ", ";
@@ -1711,6 +1721,14 @@ std::set<String> PostgreSQLReplicationHandler::fetchRequiredTables()
                             "startup keeps retrying and replication starts automatically once the conflict is "
                             "resolved, without a server restart or a manual re-attach.",
                             doubleQuoteString(publication_name), missing);
+                }
+                else
+                {
+                    /// No table has been replicated yet (the database was created but the initial
+                    /// synchronization did not create a single nested table before the restart), so there is no
+                    /// on-disk set to treat as authoritative. Fall back to the publication's tables to bootstrap
+                    /// the initial synchronization.
+                    result_tables = std::move(published_tables);
                 }
             }
             /// Check tables list from publication is the same as expected tables list.
