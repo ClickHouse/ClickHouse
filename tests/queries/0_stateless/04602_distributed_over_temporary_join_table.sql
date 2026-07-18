@@ -18,7 +18,10 @@ INSERT INTO tmp_join_src VALUES (0, 7);
 CREATE TABLE dist_over_tmp_join (n UInt64)
     ENGINE = Distributed(test_shard_localhost, numbers(joinGet('tmp_join_src', 'v', toUInt64(0))));
 SHOW CREATE TABLE dist_over_tmp_join;
-SELECT count() FROM dist_over_tmp_join;
+-- The table is intentionally not read here: a session-local temporary table only exists on the initiator, so
+-- it is visible to the target table function only when the shard query runs on the local replica. Reading it
+-- over the network path (a remote replica, or the parallel-replicas cluster) would raise `UNKNOWN_TABLE`.
+-- Keeping the unqualified name in the stored definition (asserted above) is the property under test.
 DROP TABLE dist_over_tmp_join;
 DROP TEMPORARY TABLE tmp_join_src;
 
