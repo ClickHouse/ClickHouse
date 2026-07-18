@@ -156,10 +156,20 @@ FunctionOverloadResolverPtr FunctionFactory::tryGetImpl(
         auto query_context = CurrentThread::get().tryGetQueryContext();
         if (query_context && query_context->getSettingsRef()[Setting::log_queries])
             query_context->addQueryFactoriesInfo(Context::QueryLogFactories::Function, name);
+    }
 
-        /// There is a legacy toTime function that has the same name as toTime function for Time data type, so we need to
-        /// check this setting here and decide if we need to change the function to get
-        if (query_context && Poco::toLower(name) == "totime" && query_context->getSettingsRef()[Setting::use_legacy_to_time])
+    /// `use_legacy_to_time` selects the legacy `toTime` (aka `toTimeWithFixedDate`) instead of the one
+    /// producing the `Time` type. Read it from the caller-provided context, not the thread-local query
+    /// context: a stored key expression must resolve to the same type its persisted metadata was built
+    /// with, independent of the session writing/querying the table. Fall back to the query context only
+    /// when no context was supplied.
+    if (Poco::toLower(name) == "totime")
+    {
+        ContextPtr to_time_context = context;
+        if (!to_time_context && CurrentThread::isInitialized())
+            to_time_context = CurrentThread::get().tryGetQueryContext();
+
+        if (to_time_context && to_time_context->getSettingsRef()[Setting::use_legacy_to_time])
         {
             it = functions.find(ToTimeWithFixedDateImpl::name);
             if (functions.end() != it)
