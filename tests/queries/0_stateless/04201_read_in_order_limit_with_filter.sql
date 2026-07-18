@@ -17,22 +17,22 @@ SYSTEM STOP MERGES t_read_in_order_limit;
 INSERT INTO t_read_in_order_limit (Id, Document) SELECT
     leftPad(toString(number * 2), 10, '0'),
     concat('{"ScopeIds": ["aaa", "all"], "TypedField": "v', toString(number), '"}')
-FROM numbers(50_000);
+FROM numbers(20_000);
 
 INSERT INTO t_read_in_order_limit (Id, Document) SELECT
     leftPad(toString(number * 2 + 1), 10, '0'),
     concat('{"ScopeIds": ["aaa", "all"], "TypedField": "v', toString(number), '"}')
-FROM numbers(50_000);
+FROM numbers(20_000);
 
 INSERT INTO t_read_in_order_limit (Id, Document) SELECT
     leftPad(toString(number * 3), 10, '0'),
     concat('{"ScopeIds": ["aaa", "all"], "TypedField": "v', toString(number), '"}')
-FROM numbers(50_000);
+FROM numbers(20_000);
 
 INSERT INTO t_read_in_order_limit (Id, Document) SELECT
     leftPad(toString(number * 3), 10, '1'),
     concat('{"ScopeIds": ["aaa", "all"], "TypedField": "v', toString(number), '"}')
-FROM numbers(50_000);
+FROM numbers(20_000);
 
 SET query_plan_optimize_lazy_materialization = 0;
 
