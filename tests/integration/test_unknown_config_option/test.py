@@ -371,6 +371,18 @@ node_static_missing_path = cluster_static_missing_path.add_instance(
 )
 caught_static_missing_path_exception = ""
 
+# Negative case: a `config://` payload referenced only from a *dead* `http_handlers_alt` group.
+# `createHTTPHandlerFactory` reads only the default `http_handlers` group and the group named by an
+# HTTP protocol's `<handlers>`; a stray `http_handlers_alt` section that no protocol references is
+# never consumed, so the validator must NOT exempt the top-level key it references via `config://`.
+# The node must fail to start with `UNKNOWN_ELEMENT_IN_CONFIG` for `<secret_dead_handler_payload>`.
+cluster_dead_handler_group = ClickHouseCluster(__file__, name="dead_handler_group")
+node_dead_handler_group = cluster_dead_handler_group.add_instance(
+    "node_dead_handler_group",
+    main_configs=["configs/config.d/dead_http_handlers_group_config_ref.xml"],
+)
+caught_dead_handler_group_exception = ""
+
 
 @pytest.fixture(scope="module")
 def start_bad_cluster():
@@ -740,6 +752,23 @@ def start_static_missing_path_cluster():
                 caught_static_missing_path_exception += "\n" + f.read()
     yield
     cluster_static_missing_path.shutdown()
+
+
+@pytest.fixture(scope="module")
+def start_dead_handler_group_cluster():
+    global caught_dead_handler_group_exception
+    try:
+        cluster_dead_handler_group.start()
+    except Exception as e:
+        caught_dead_handler_group_exception = str(e)
+        err_log = os.path.join(
+            node_dead_handler_group.logs_dir, "clickhouse-server.err.log"
+        )
+        if os.path.exists(err_log):
+            with open(err_log, "r") as f:
+                caught_dead_handler_group_exception += "\n" + f.read()
+    yield
+    cluster_dead_handler_group.shutdown()
 
 
 def test_unknown_config_option_rejected(start_bad_cluster):
@@ -1558,3 +1587,16 @@ def test_config_ref_missing_path_does_not_exempt_unknown_key(
     # a `config://` value names it: the unread section is a genuine unknown key, so the node must fail.
     assert "UNKNOWN_ELEMENT_IN_CONFIG" in caught_static_missing_path_exception
     assert "missing_payload" in caught_static_missing_path_exception
+
+
+def test_dead_handler_group_config_ref_not_exempted(start_dead_handler_group_cluster):
+    # A `config://secret_dead_handler_payload` reference lives inside a top-level `<http_handlers_alt>`
+    # group that is neither the default `http_handlers` group nor named by any HTTP protocol's
+    # `<handlers>`, so `createHTTPHandlerFactory` never consults it. The validator must scan only the
+    # handler groups the server actually reads (mirroring the consumer), so it must NOT exempt the
+    # top-level `<secret_dead_handler_payload>` on behalf of a dead handler group. Exempting it would
+    # be a false negative that lets a genuinely unknown top-level key pass, so the node must fail to
+    # start with `UNKNOWN_ELEMENT_IN_CONFIG`. (`<http_handlers_alt>` itself stays exempt via the
+    # `http_handlers` prefix, so the payload section is the only key that triggers the rejection.)
+    assert "UNKNOWN_ELEMENT_IN_CONFIG" in caught_dead_handler_group_exception
+    assert "secret_dead_handler_payload" in caught_dead_handler_group_exception

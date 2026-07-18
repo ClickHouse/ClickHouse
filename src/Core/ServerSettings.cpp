@@ -2415,16 +2415,18 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
         }
     }
 
-    /// Also scan the legacy `http_handlers*` top-level sections for `config://` references.
-    /// These are already exempt as top-level keys (via `known_complex_sections`/`known_prefixes`),
-    /// so they only need to enter `handler_group_paths` for the scan below.
-    {
-        Poco::Util::AbstractConfiguration::Keys top_groups;
-        config.keys("", top_groups);
-        for (const auto & group : top_groups)
-            if (group.starts_with("http_handlers"))
-                handler_group_paths.insert(group);
-    }
+    /// Also scan the default `http_handlers` group for `config://` references. The HTTP handler
+    /// factory (`createHTTPHandlerFactory`) consults exactly two handler groups: the default
+    /// `http_handlers`, and the group named by an HTTP protocol's `<handlers>` (already added
+    /// above from the `protocols` block). Any *other* top-level `http_handlers*` section is dead
+    /// config the server never reads, so exempting a `config://` payload it references would
+    /// whitelist a genuinely unknown top-level key that no server code consumes — a false negative
+    /// (e.g. a stray `<http_handlers_alt>` block referencing `config://<typo>` would mask the typo).
+    /// Mirror the consumer and scan only the default group here (it is itself exempt as a top-level
+    /// key via `known_complex_sections`/`known_prefixes`; it only needs to enter
+    /// `handler_group_paths` for the `config://` scan below).
+    if (config.has("http_handlers"))
+        handler_group_paths.insert("http_handlers");
 
     /// (b) Top-level keys referenced by `config://` inside HTTP handler sections.
     /// Only a handler of `type == "static"` consumes a `config://` reference, and it reads
