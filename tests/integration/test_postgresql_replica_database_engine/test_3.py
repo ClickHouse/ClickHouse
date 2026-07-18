@@ -2915,6 +2915,123 @@ def test_legacy_identity_not_adopted_when_publication_missing(started_cluster):
         cursor.execute(f"SELECT pg_drop_replication_slot('{legacy_slot}')")
 
 
+def test_legacy_identity_not_adopted_with_wrong_table_set(started_cluster):
+    # Fail-close half of the legacy-identity adoption, wrong-table-set case. The legacy publication name is
+    # schema-blind, so proving ownership by schema alone is not enough: a same-schema publication that lists
+    # a DIFFERENT set of tables belongs to another engine over the same schema. A schema-scoped database that
+    # lost its schema-aware slot must NOT adopt such a publication — streaming WAL through the foreign table
+    # set would silently stop replicating this engine's own tables (and DROP would later drop the foreign
+    # publication). So the legacy identity is adopted only when the legacy publication publishes EXACTLY this
+    # engine's tables; a wrong-table-set publication fails closed and the schema-aware slot is NOT recreated
+    # (no re-snapshot into the already-populated nested tables).
+    cursor = pg_manager.get_db_cursor()
+    schema_name = "wts2_schema"
+    table_a = "wts2_a"
+    table_b = "wts2_b"
+    pg_db = "wts2_src"
+    mat_db = "mat_wts2"
+
+    create_postgres_schema(cursor, schema_name)
+    pg_manager.create_clickhouse_postgres_db(
+        database_name=pg_db,
+        schema_name=schema_name,
+        postgres_database="postgres_database",
+    )
+    create_postgres_table_with_schema(cursor, schema_name, table_a)
+    create_postgres_table_with_schema(cursor, schema_name, table_b)
+    instance.query(
+        f"INSERT INTO {pg_db}.{table_a} SELECT number, number from numbers(0, 30)"
+    )
+    instance.query(
+        f"INSERT INTO {pg_db}.{table_b} SELECT number, number from numbers(0, 30)"
+    )
+
+    # The schema-scoped database replicates BOTH tables of the schema and owns a schema-aware identity.
+    pg_manager.create_materialized_db(
+        ip=started_cluster.postgres_ip,
+        port=started_cluster.postgres_port,
+        materialized_database=mat_db,
+        postgres_database="postgres_database",
+        settings=[f"materialized_postgresql_schema = '{schema_name}'"],
+    )
+    check_tables_are_synchronized(
+        instance, table_a, postgres_database=pg_db, materialized_database=mat_db
+    )
+    check_tables_are_synchronized(
+        instance, table_b, postgres_database=pg_db, materialized_database=mat_db
+    )
+
+    cursor.execute(
+        "SELECT slot_name FROM pg_replication_slots WHERE database = 'postgres_database'"
+    )
+    slots = [row[0] for row in cursor.fetchall()]
+    assert len(slots) == 1, f"expected exactly one slot, got {slots}"
+    schema_aware_slot = slots[0]
+    cursor.execute(
+        "SELECT pubname FROM pg_publication WHERE pubname LIKE '%\\_ch\\_publication'"
+    )
+    pubs = [row[0] for row in cursor.fetchall()]
+    assert len(pubs) == 1, f"expected exactly one publication, got {pubs}"
+    schema_aware_publication = pubs[0]
+
+    legacy_slot = "postgres_database"
+    legacy_publication = "postgres_database_ch_publication"
+
+    # While the server is down, rewrite the PostgreSQL side into a schema-blind legacy slot whose legacy
+    # publication publishes only ONE of this engine's two tables (wts2_a) — a different table set in the same
+    # schema, so it belongs to another engine.
+    instance.stop_clickhouse()
+    cursor.execute(f"SELECT pg_drop_replication_slot('{schema_aware_slot}')")
+    cursor.execute(f"DROP PUBLICATION {schema_aware_publication}")
+    cursor.execute(
+        f'CREATE PUBLICATION {legacy_publication} FOR TABLE ONLY "{schema_name}"."{table_a}"'
+    )
+    cursor.execute(
+        f"SELECT pg_create_logical_replication_slot('{legacy_slot}', 'pgoutput')"
+    )
+    instance.start_clickhouse()
+
+    # The attach fails closed: the legacy publication lists a different table set, so it cannot be proven to
+    # belong to this engine and is not adopted. The error surfaces in the log.
+    assert_logs_contain_with_retry(
+        instance,
+        "publishes a different set of tables than this engine replicates",
+        retry_count=120,
+        sleep_time=1,
+    )
+
+    # The schema-aware slot is NOT recreated (recreating it is the only thing that re-runs the initial sync,
+    # so its continued absence proves no re-snapshot happened), and the foreign legacy slot and publication
+    # are left exactly as they were. Give the retrying startup task time to prove nothing changed.
+    for _ in range(15):
+        cursor.execute(
+            "SELECT slot_name FROM pg_replication_slots WHERE database = 'postgres_database'"
+        )
+        slots = {row[0] for row in cursor.fetchall()}
+        assert (
+            schema_aware_slot not in slots
+        ), f"schema-aware slot was recreated; the attach must fail closed, got {slots}"
+        time.sleep(1)
+    assert slots == {legacy_slot}, f"legacy slot must stay untouched, got {slots}"
+    cursor.execute(
+        f"SELECT tablename FROM pg_publication_tables WHERE pubname = '{legacy_publication}'"
+    )
+    published = {row[0] for row in cursor.fetchall()}
+    assert published == {
+        table_a
+    }, f"the foreign legacy publication must not be altered, got {published}"
+
+    pg_manager.drop_materialized_db(mat_db)
+    # The engine never adopted the manually created legacy slot/publication, so DROP DATABASE leaves them
+    # behind; drop them explicitly.
+    cursor.execute(
+        f"SELECT slot_name FROM pg_replication_slots WHERE slot_name = '{legacy_slot}'"
+    )
+    if cursor.fetchall():
+        cursor.execute(f"SELECT pg_drop_replication_slot('{legacy_slot}')")
+    cursor.execute(f"DROP PUBLICATION IF EXISTS {legacy_publication}")
+
+
 def test_table_engine_retries_recoverable_attach_conflict(started_cluster):
     # Regression for the retry gap flagged in review of
     # https://github.com/ClickHouse/ClickHouse/pull/107425. On attach the standalone

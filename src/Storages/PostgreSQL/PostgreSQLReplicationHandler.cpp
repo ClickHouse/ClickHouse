@@ -594,13 +594,16 @@ void PostgreSQLReplicationHandler::assertInitialized() const
 /// same-database deployment over the default schema (or another schema targeting the same bare table),
 /// so the existence of the legacy slot alone does not prove the legacy objects belong to this engine —
 /// only the legacy publication's table list carries the schema. The legacy identity is therefore only
-/// adopted when the legacy publication exists and every table it publishes belongs to this engine's
-/// schema. If the legacy publication is missing, empty, or publishes a table from another schema, the
-/// legacy slot is ambiguous or foreign, and adopting it (or returning to proceed under the schema-aware
-/// identity) would either hijack another engine's slot or, since the schema-aware slot is gone, run an
-/// initial sync and reload a snapshot into the already-existing nested tables (duplicating data on disk).
-/// In that case the attach fails closed with an exception instead of silently re-snapshotting a populated
-/// replica or hijacking another engine's replication slot.
+/// adopted when the legacy publication exists and publishes EXACTLY this engine's set of replicated
+/// tables. A schema check alone is not enough: a same-schema publication that lists a different set of
+/// tables (this engine replicates `foo.a, foo.b` while the publication publishes only `foo.c`) belongs to
+/// another engine, exactly as in the unique-identifier rename above. If the legacy publication is missing,
+/// empty, publishes a table from another schema, or publishes a different table set, the legacy slot is
+/// ambiguous or foreign, and adopting it (or returning to proceed under the schema-aware identity) would
+/// either hijack another engine's slot/publication or, since the schema-aware slot is gone, run an initial
+/// sync and reload a snapshot into the already-existing nested tables (duplicating data on disk). In that
+/// case the attach fails closed with an exception instead of silently re-snapshotting a populated replica
+/// or hijacking another engine's replication slot.
 void PostgreSQLReplicationHandler::adoptLegacyReplicationIdentityIfNeeded(pqxx::nontransaction & tx)
 {
     if (!is_attach)
@@ -821,23 +824,37 @@ void PostgreSQLReplicationHandler::adoptLegacyReplicationIdentityIfNeeded(pqxx::
     else
     {
         pqxx::result result{tx.exec(fmt::format(
-            "SELECT DISTINCT schemaname FROM pg_publication_tables WHERE pubname = '{}'", legacy_publication_name))};
+            "SELECT schemaname, tablename FROM pg_publication_tables WHERE pubname = '{}'", legacy_publication_name))};
         if (result.empty())
             ownership_conflict = fmt::format(
                 "the legacy publication {} publishes no tables, so the schema-blind legacy replication slot "
                 "cannot be proven to belong to this engine's schema '{}'",
                 doubleQuoteString(legacy_publication_name), postgres_schema);
+        std::set<std::pair<String, String>> published;
         for (const auto & row : result)
         {
-            if (row[0].as<std::string>() != postgres_schema)
+            const auto schema = row[0].as<std::string>();
+            if (schema != postgres_schema)
             {
                 ownership_conflict = fmt::format(
                     "the legacy publication {} publishes a table from schema '{}', not this engine's schema "
                     "'{}', so it belongs to another engine",
-                    doubleQuoteString(legacy_publication_name), row[0].as<std::string>(), postgres_schema);
+                    doubleQuoteString(legacy_publication_name), schema, postgres_schema);
                 break;
             }
+            published.emplace(schema, row[1].as<std::string>());
         }
+        /// A schema match alone is not enough: a same-schema legacy publication that lists a different set of
+        /// tables (this engine replicates `foo.a, foo.b` while the publication publishes only `foo.c`) belongs
+        /// to another engine. Adopting it would stream WAL through the foreign table set, so this replica would
+        /// silently stop receiving changes for its own tables (and shutdownFinal() would later drop the foreign
+        /// publication). Require the published set to be exactly this engine's tables — the same fail-closed
+        /// proof legacy_publication_ownership_conflict() applies in the unique-identifier branch above.
+        if (ownership_conflict.empty() && published != expected_replicated_tables())
+            ownership_conflict = fmt::format(
+                "the legacy publication {} publishes a different set of tables than this engine replicates in "
+                "schema '{}', so it belongs to another engine",
+                doubleQuoteString(legacy_publication_name), postgres_schema);
     }
 
     if (!ownership_conflict.empty())
