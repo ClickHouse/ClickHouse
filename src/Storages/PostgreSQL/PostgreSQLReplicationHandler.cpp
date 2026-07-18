@@ -288,6 +288,21 @@ void validateMaterializedPostgreSQLCoordinationSettings(const MaterializedPostgr
             "materialized_postgresql_keeper_path (replica coordination) cannot be combined with "
             "materialized_postgresql_use_unique_replication_consumer_identifier: coordination requires a single "
             "shared replication slot, but the unique consumer identifier gives every replica its own slot");
+
+    if (coordination_enabled && !settings[MaterializedPostgreSQLSetting::materialized_postgresql_replication_slot].value.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "materialized_postgresql_keeper_path (replica coordination) cannot be combined with a user-managed "
+            "materialized_postgresql_replication_slot. Coordination owns the shared slot: if the active worker "
+            "dies before the initial snapshot completes, the next leader must drop and recreate the slot to obtain "
+            "a fresh exported snapshot, which is impossible for a slot it does not manage. Leave the slot unset so "
+            "coordination can create and own it");
+
+    if (coordination_enabled && !settings[MaterializedPostgreSQLSetting::materialized_postgresql_snapshot].value.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "materialized_postgresql_keeper_path (replica coordination) cannot be combined with a user-provided "
+            "materialized_postgresql_snapshot. Coordination re-exports a fresh snapshot when it (re)creates the "
+            "shared slot, so a fixed snapshot token would become stale and a mid-snapshot takeover could never "
+            "recover. Leave the snapshot unset so coordination can manage it");
 }
 
 
@@ -397,8 +412,13 @@ void PostgreSQLReplicationHandler::startup(bool delayed)
         }
         else
         {
-            registerReplicaInKeeper();
+            /// Create the local nested tables first, then register this replica. Registration persists a
+            /// /replicas/<name> node that is only removed by shutdownFinal, so registering before local
+            /// setup succeeds would leave a ghost participant if nested-table creation throws (the engine
+            /// is never created, so no shutdownFinal runs), and a later last-replica drop would then keep
+            /// the shared slot and publication forever.
             ensureNestedTablesExist();
+            registerReplicaInKeeper();
             coordination_task->activateAndSchedule();
         }
         return;
@@ -452,8 +472,13 @@ void PostgreSQLReplicationHandler::checkConnectionAndStart()
         connection.connect(); /// Will throw pqxx::broken_connection if no connection at the moment
         if (coordination_enabled)
         {
-            registerReplicaInKeeper();
+            /// Register this replica only after its local nested tables exist: a persistent /replicas/<name>
+            /// node is removed only by shutdownFinal, so registering before local setup succeeds would leave
+            /// a ghost participant if nested-table creation throws, and a later last-replica drop would then
+            /// keep the shared slot and publication forever. This path retries on error (see below), and both
+            /// steps are idempotent.
             ensureNestedTablesExist();
+            registerReplicaInKeeper();
             coordination_task->activateAndSchedule();
         }
         else
@@ -1569,11 +1594,27 @@ std::set<String> PostgreSQLReplicationHandler::fetchRequiredTables()
         {
             if (tables_list.empty())
             {
-                LOG_WARNING(log,
-                            "Publication {} already exists and tables list is empty. Assuming publication is correct.",
-                            doubleQuoteString(publication_name));
-
+                if (coordination_enabled)
                 {
+                    /// A coordinated CREATE adopts the shared publication rather than dropping it. Its table
+                    /// set is authoritative, so derive the tables from the publication itself instead of
+                    /// re-scanning the live PostgreSQL schema. The schema may have drifted (tables added or
+                    /// dropped) since the first replica created the publication; scanning it here would make
+                    /// this replica build a different set of nested tables than the leader replicates through
+                    /// the publication, so the extra tables would stay empty forever after a failover.
+                    LOG_WARNING(log,
+                                "Coordinated setup: deriving tables from the existing shared publication {}.",
+                                doubleQuoteString(publication_name));
+
+                    pqxx::work tx(connection.getRef());
+                    result_tables = fetchTablesFromPublication(tx);
+                }
+                else
+                {
+                    LOG_WARNING(log,
+                                "Publication {} already exists and tables list is empty. Assuming publication is correct.",
+                                doubleQuoteString(publication_name));
+
                     pqxx::nontransaction tx(connection.getRef());
                     result_tables = fetchPostgreSQLTablesList(tx, schema_list.empty() ? postgres_schema : schema_list);
                 }

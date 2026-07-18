@@ -394,3 +394,70 @@ def test_drop_keeps_shared_state_until_last_replica(started_cluster):
     leader_manager.drop_materialized_db()
     assert not replication_slot_exists()
     assert not publication_exists()
+
+
+def test_coordination_conflicts_with_user_managed_slot(started_cluster):
+    # Coordination owns the shared slot: if the active worker dies before the initial snapshot
+    # completes, the next leader must drop and recreate the slot to obtain a fresh exported snapshot,
+    # which is impossible for a slot it does not manage. The combination must be rejected up front.
+    error = instance.query_and_get_error(
+        f"CREATE DATABASE test_user_slot "
+        f"ENGINE = MaterializedPostgreSQL("
+        f"'{cluster.postgres_ip}:{cluster.postgres_port}', 'postgres_database', 'postgres', '{pg_pass}') "
+        f"SETTINGS materialized_postgresql_table_engine = 'ReplicatedReplacingMergeTree', "
+        f"materialized_postgresql_keeper_path = '{KEEPER_PATH}', "
+        f"materialized_postgresql_replication_slot = 'user_managed_slot'"
+    )
+    assert "materialized_postgresql_replication_slot" in error
+
+
+def test_coordination_conflicts_with_user_provided_snapshot(started_cluster):
+    # A fixed snapshot token would become stale as soon as coordination (re)creates the shared slot,
+    # so a mid-snapshot takeover could never recover. The combination must be rejected up front.
+    error = instance.query_and_get_error(
+        f"CREATE DATABASE test_user_snapshot "
+        f"ENGINE = MaterializedPostgreSQL("
+        f"'{cluster.postgres_ip}:{cluster.postgres_port}', 'postgres_database', 'postgres', '{pg_pass}') "
+        f"SETTINGS materialized_postgresql_table_engine = 'ReplicatedReplacingMergeTree', "
+        f"materialized_postgresql_keeper_path = '{KEEPER_PATH}', "
+        f"materialized_postgresql_snapshot = 'some-snapshot-token'"
+    )
+    assert "materialized_postgresql_snapshot" in error
+
+
+def test_second_coordinated_create_adopts_publication_table_set(started_cluster):
+    # A coordinated CREATE with an empty tables list adopts the shared publication instead of dropping
+    # it. Its table set must be derived from the publication itself, not from a fresh scan of the live
+    # PostgreSQL schema: if the schema drifted after the first replica created the publication, a schema
+    # scan would make the joining replica build nested tables that the publication never feeds, so those
+    # tables would stay empty forever after a failover.
+    pg_manager.create_postgres_table("test_table")
+    instance.query(
+        "INSERT INTO postgres_database.test_table SELECT number, number FROM numbers(100)"
+    )
+
+    # No materialized_postgresql_tables_list -> replicate all tables. The first replica creates the
+    # shared publication (FOR TABLE ONLY test_table).
+    pg_manager.create_materialized_db(
+        ip=cluster.postgres_ip, port=cluster.postgres_port, settings=COORDINATION_SETTINGS
+    )
+    check_tables_are_synchronized(instance, "test_table")
+    assert publication_exists()
+
+    # The PostgreSQL schema drifts: a table is added after the publication already exists. Because the
+    # publication lists its tables explicitly (FOR TABLE ONLY), it does not pick the new table up.
+    pg_manager.create_postgres_table("late_table")
+
+    # The second replica joins with an empty tables list too. It must adopt the publication's table set
+    # rather than the drifted live schema.
+    pg_manager2.create_materialized_db(
+        ip=cluster.postgres_ip, port=cluster.postgres_port, settings=COORDINATION_SETTINGS
+    )
+    check_tables_are_synchronized(instance2, "test_table")
+
+    # The joining replica exposes exactly the publication's tables, not the drifted schema.
+    tables_on_standby = instance2.query("SHOW TABLES FROM test_database").split()
+    assert "test_table" in tables_on_standby
+    assert "late_table" not in tables_on_standby
+
+    pg_query('DROP TABLE IF EXISTS "late_table"')

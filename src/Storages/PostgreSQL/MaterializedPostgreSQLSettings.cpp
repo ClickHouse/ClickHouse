@@ -43,7 +43,9 @@ namespace ErrorCodes
         "Keeper path used to coordinate the PostgreSQL logical replication slot across ClickHouse replicas. " \
         "When non-empty, exactly one replica consumes the slot at a time (the others take over on its failure), " \
         "and `materialized_postgresql_table_engine` must be set to a replicated/shared engine so that the " \
-        "standby replicas receive the data through ClickHouse replication. Supports the {uuid}, {shard} and " \
+        "standby replicas receive the data through ClickHouse replication. Coordination owns the shared slot, " \
+        "so it cannot be combined with a user-managed `materialized_postgresql_replication_slot` or " \
+        "`materialized_postgresql_snapshot`. Supports the {uuid}, {shard} and " \
         "{replica} macros. It must resolve to the same value on every replica.", 0) \
     DECLARE(String, materialized_postgresql_replica_name, "{replica}", \
         "Replica identity used for the Keeper coordination node and for the nested replicated table engine. " \
