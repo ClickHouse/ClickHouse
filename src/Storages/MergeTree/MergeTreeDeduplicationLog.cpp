@@ -133,6 +133,18 @@ void MergeTreeDeduplicationLog::load()
 
         applyRecords(records, record_log_numbers);
 
+        /// Drop the empty log files a previous run's rotations left at the end of the
+        /// history. Without append support every rotation - including the one below in
+        /// load - starts a fresh file, and dropOutdatedLogs can never reclaim a
+        /// zero-record file that sits after the file holding the live state (a normal
+        /// committed file or a compaction snapshot), because retention only drops an
+        /// oldest prefix. So without this a restart-only cycle (no new operations) would
+        /// leak one empty file per restart and make every future load replay O(number
+        /// of restarts) files. With append support the last file is reopened and reused
+        /// instead, so no empty files pile up and this is unnecessary.
+        if (!disk_supports_writing_with_append)
+            removeTrailingEmptyLogs();
+
         /// Start new log, drop previous
         rotateAndDropIfNeeded();
 
@@ -262,6 +274,48 @@ void MergeTreeDeduplicationLog::applyRecords(
         else
             deduplication_map.insert(record.block_id, MergeTreePartInfo::fromPartName(record.part_name, format_version));
     }
+}
+
+void MergeTreeDeduplicationLog::removeTrailingEmptyLogs()
+{
+    /// Remove the zero-record log files that sit at the end of the history, newest
+    /// first, stopping at the first file that still holds records (see the call site in
+    /// load for why they accumulate without append support and why dropOutdatedLogs
+    /// cannot reclaim them). Collect the numbers first, then erase, so the map is not
+    /// mutated while it is walked.
+    std::vector<size_t> empty_tail;
+    for (auto it = existing_logs.rbegin(); it != existing_logs.rend(); ++it)
+    {
+        if (it->second.entries_count != 0)
+            break;
+        empty_tail.push_back(it->first);
+    }
+
+    for (size_t number : empty_tail)
+    {
+        auto it = existing_logs.find(number);
+        try
+        {
+            disk->removeFile(it->second.path);
+        }
+        catch (...)
+        {
+            /// Best effort: keep this file (and, since we walk newest to oldest, every
+            /// older one too) - an empty file replays as no-ops, so leaving it behind is
+            /// harmless.
+            tryLogCurrentException(__PRETTY_FUNCTION__, "Cannot remove an empty deduplication log file " + it->second.path);
+            break;
+        }
+        existing_logs.erase(it);
+    }
+
+    /// Keep current_log_number pointing at a file that still exists (the newest
+    /// surviving one), so rotate() numbers the next file correctly and
+    /// rotateAndDropIfNeeded never inserts a phantom entry for a removed number through
+    /// operator[]. If every file was empty and removed, leave it at the previous
+    /// maximum so numbering keeps increasing and never collides with a removed file.
+    if (!existing_logs.empty())
+        current_log_number = existing_logs.rbegin()->first;
 }
 
 void MergeTreeDeduplicationLog::rotate()

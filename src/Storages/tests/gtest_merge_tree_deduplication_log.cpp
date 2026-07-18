@@ -1352,3 +1352,60 @@ TEST(MergeTreeDeduplicationLog, PartialRollbackKeepsEffectiveCountInStepWithRepl
 
     std::filesystem::remove_all(work_dir);
 }
+
+/// Regression test: on a disk without append support, restarts must not leak empty log
+/// files. Every rotation - including the one in load - starts a fresh file there, and
+/// dropOutdatedLogs can only reclaim an oldest prefix, never a zero-record file sitting
+/// after the file that holds the live state. So without removing the empty tail files
+/// on load, each restart with no new operations would leave one more empty file behind
+/// and make the next load replay O(number of restarts) files. The retained file count
+/// must stay bounded across repeated restarts.
+TEST(MergeTreeDeduplicationLog, RestartsDoNotLeakEmptyLogsWithoutAppendSupport)
+{
+    const std::string work_dir = "tmp/gtest_dedup_log_restart_leak/";
+    std::filesystem::remove_all(work_dir);
+    std::filesystem::create_directories(work_dir);
+
+    const std::string logs_dir = work_dir + "dedup_logs";
+    auto count_logs = [&]() -> size_t
+    {
+        return std::distance(std::filesystem::directory_iterator(logs_dir), std::filesystem::directory_iterator());
+    };
+
+    const MergeTreeDataFormatVersion format_version = MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING;
+    auto part = [&](const String & name) { return MergeTreePartInfo::fromPartName(name, format_version); };
+
+    {
+        /// One committed insert on a disk without append support. It lands in its own
+        /// file and the following rotation opens a fresh empty file, so the process ends
+        /// with the data file plus one empty file.
+        auto disk = std::make_shared<DiskLocal>("healthy", work_dir);
+        MergeTreeDeduplicationLog log("dedup_logs", /*deduplication_window=*/ 1, format_version, disk);
+        log.simulateDiskWithoutWritingWithAppendSupportForTests();
+        log.load();
+        log.addPart({"block1"}, part("all_1_1_0"));
+        log.shutdown();
+    }
+
+    /// Restart several times without doing anything. Each restart must reopen the same
+    /// bounded set of files (the data file plus a single fresh empty writer file), never
+    /// accumulate one more empty file per restart.
+    for (int i = 0; i < 4; ++i)
+    {
+        auto disk = std::make_shared<DiskLocal>("healthy", work_dir);
+        MergeTreeDeduplicationLog log("dedup_logs", /*deduplication_window=*/ 1, format_version, disk);
+        log.simulateDiskWithoutWritingWithAppendSupportForTests();
+        log.load();
+
+        /// The data file plus exactly one fresh, empty writer file - not one more empty
+        /// file for every restart so far.
+        EXPECT_EQ(count_logs(), 2u);
+
+        /// The committed block still deduplicates - the retained data file was kept.
+        EXPECT_FALSE(log.addPart({"block1"}, part("all_2_2_0")).empty());
+
+        log.shutdown();
+    }
+
+    std::filesystem::remove_all(work_dir);
+}
