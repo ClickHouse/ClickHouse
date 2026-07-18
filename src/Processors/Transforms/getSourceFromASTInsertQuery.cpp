@@ -138,6 +138,60 @@ String getInsertDataSchemaMismatchDescription(
     if (inferred.empty())
         return {};
 
+    /// Distinguish a genuinely non-numeric string from a quoted numeric string. Schema inference keeps a
+    /// quoted numeric value (the JSON value `"1"`, the CSV field `"1"`, ...) as `String` by default, but
+    /// the parser accepts it into a numeric column, so treating every inferred `String` as a mismatch for
+    /// a numeric destination would attach a misleading explanation to an unrelated parse error (e.g.
+    /// `{"ok": "1", "bad": 1.5}` into `(ok UInt8, bad UInt8)`, where only `bad` is invalid). Infer the
+    /// schema a second time with number-from-string inference enabled — the same rule the parser follows
+    /// when reading such a value — so a column whose type becomes numeric there is known to hold numeric
+    /// content the parser accepts. Aligned by position with `inferred` (both are inferred from the same
+    /// data with the same column detection, which the setting does not affect). If this best-effort second
+    /// pass is unavailable, `numbers_inference_available` stays false and an inferred `String` is treated
+    /// as compatible with a numeric destination, staying on the low-false-positive side.
+    bool numbers_inference_available = false;
+    std::vector<bool> inferred_is_numeric_content(inferred.size(), false);
+    try
+    {
+        auto number_inference_settings = format_settings;
+        number_inference_settings.csv.try_infer_numbers_from_strings = true;
+        number_inference_settings.json.try_infer_numbers_from_strings = true;
+
+        auto inference_context = Context::createCopy(context);
+        inference_context->setInsertionTable(StorageID::createEmpty());
+
+        auto buffer = std::make_unique<ReadBufferFromMemory>(data.data(), data.size());
+        SingleReadBufferIterator read_buffer_iterator(std::move(buffer));
+        auto inferred_with_numbers
+            = readSchemaFromFormat(format_name, number_inference_settings, read_buffer_iterator, inference_context).getAll();
+
+        if (inferred_with_numbers.size() == inferred.size())
+        {
+            numbers_inference_available = true;
+            size_t index = 0;
+            for (const auto & column : inferred_with_numbers)
+            {
+                const auto unwrapped = removeNullable(recursiveRemoveLowCardinality(column.type));
+                const WhichDataType which(unwrapped);
+                inferred_is_numeric_content[index] = which.isInt() || which.isUInt() || which.isFloat();
+                ++index;
+            }
+        }
+    }
+    catch (...) // NOLINT(bugprone-empty-catch)
+    {
+        /// Best-effort: without this second inference we simply do not flag an inferred `String` for a
+        /// numeric destination, so it is Ok to ignore the exception here.
+    }
+
+    /// True when column `index` of the inferred structure is a `String` that is confirmed to hold
+    /// genuinely non-numeric text (a quoted numeric string, which the parser accepts into a numeric
+    /// column, has a numeric type in the second inference above and is therefore not confirmed as text).
+    auto inferred_is_confirmed_text = [&](size_t index)
+    {
+        return numbers_inference_available && index < inferred_is_numeric_content.size() && !inferred_is_numeric_content[index];
+    };
+
     /// Compare structurally with a deliberately loose notion of compatibility. Schema inference widens
     /// types on purpose — numbers become broad types such as `Int64` / `UInt64` / `Float64`, and it does
     /// not reconstruct wrappers such as `Nullable`, `LowCardinality` or `Enum` — so comparing type names
@@ -146,7 +200,8 @@ String getInsertDataSchemaMismatchDescription(
     /// explanation to an unrelated parse error, we treat a column as mismatched only when the inferred
     /// and expected types have no common supertype at all (e.g. a `String` inferred for a numeric column):
     /// a strong, low-false-positive signal that the data really has a different shape than the query expects.
-    auto types_are_compatible = [format_has_exact_types_from_data](const DataTypePtr & inferred_type, const DataTypePtr & expected_type)
+    auto types_are_compatible
+        = [format_has_exact_types_from_data](const DataTypePtr & inferred_type, const DataTypePtr & expected_type, bool inferred_is_text)
     {
         if (inferred_type->equals(*expected_type))
             return true;
@@ -168,10 +223,12 @@ String getInsertDataSchemaMismatchDescription(
         /// and the `deserializeText*` family) parse such a string into essentially any scalar destination,
         /// so a `String` inferred there is not a reliable mismatch. Treat it as compatible for every
         /// scalar destination, so a genuine parse error elsewhere in the row does not pick up a misleading
-        /// "structure mismatch" suffix. Two kinds of destination are deliberately kept as a mismatch: a
-        /// numeric column — `String` inferred where a number is expected is exactly the reliable "text
-        /// where a number is expected" signal this diagnostic exists to surface — and a nested/complex
-        /// column (`Array`, `Tuple`, `Map`), which genuinely cannot be built from a single scalar string.
+        /// "structure mismatch" suffix. Two kinds of destination are kept as a mismatch: a numeric column
+        /// when the inferred `String` is confirmed to hold genuinely non-numeric text (`inferred_is_text`;
+        /// a quoted numeric string that the parser accepts into a numeric column is not confirmed as text
+        /// and stays compatible) — the reliable "text where a number is expected" signal this diagnostic
+        /// exists to surface — and a nested/complex column (`Array`, `Tuple`, `Map`), which genuinely
+        /// cannot be built from a single scalar string.
         const auto inferred_unwrapped = removeNullable(recursiveRemoveLowCardinality(inferred_type));
         const auto expected_unwrapped = removeNullable(recursiveRemoveLowCardinality(expected_type));
         if (WhichDataType(inferred_unwrapped).isString())
@@ -179,7 +236,7 @@ String getInsertDataSchemaMismatchDescription(
             const WhichDataType which_expected(expected_unwrapped);
             const bool expected_is_numeric = which_expected.isInt() || which_expected.isUInt() || which_expected.isFloat();
             const bool expected_is_nested = which_expected.isArray() || which_expected.isTuple() || which_expected.isMap();
-            return !expected_is_numeric && !expected_is_nested;
+            return !(expected_is_numeric && inferred_is_text) && !expected_is_nested;
         }
 
         return false;
@@ -229,8 +286,11 @@ String getInsertDataSchemaMismatchDescription(
         /// them, so do not require the counts to be equal: only the columns actually present in the input
         /// have to be type-compatible with their destination. A column missing from the input is not a
         /// structure mismatch.
+        size_t inferred_index = 0;
         for (const auto & column : inferred)
         {
+            const size_t current_index = inferred_index++;
+
             size_t position = CaseAwareBlockNameMap::NOT_FOUND;
             try
             {
@@ -257,7 +317,7 @@ String getInsertDataSchemaMismatchDescription(
                 corresponds = false;
                 break;
             }
-            if (!types_are_compatible(column.type, expected_types[position]))
+            if (!types_are_compatible(column.type, expected_types[position], inferred_is_confirmed_text(current_index)))
             {
                 corresponds = false;
                 break;
@@ -275,11 +335,12 @@ String getInsertDataSchemaMismatchDescription(
         /// positional formats a differing count is a genuine mismatch.
         if (!format_allows_variable_number_of_columns && inferred.size() != expected.size())
             corresponds = false;
+        size_t inferred_index = 0;
         for (auto it_inferred = inferred.begin(), it_expected = expected.begin();
              corresponds && it_inferred != inferred.end() && it_expected != expected.end();
-             ++it_inferred, ++it_expected)
+             ++it_inferred, ++it_expected, ++inferred_index)
         {
-            if (!types_are_compatible(it_inferred->type, it_expected->type))
+            if (!types_are_compatible(it_inferred->type, it_expected->type, inferred_is_confirmed_text(inferred_index)))
                 corresponds = false;
         }
     }
