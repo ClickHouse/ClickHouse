@@ -47,6 +47,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsUInt64 max_compress_block_size;
     extern const MergeTreeSettingsUInt64 max_number_of_mutations_for_replica;
     extern const MergeTreeSettingsUInt64 min_columns_to_activate_adaptive_write_buffer;
+    extern const MergeTreeSettingsNonZeroUInt64 object_shared_data_buckets_for_wide_part;
     extern const MergeTreeSettingsUInt64 number_of_free_entries_in_pool_to_execute_mutation;
     extern const MergeTreeSettingsUInt64 number_of_free_entries_in_pool_to_lower_max_size_of_merge;
 }
@@ -213,6 +214,13 @@ size_t countColumnStreamsFromParts(const NamesAndTypesList & columns, const Merg
     return streams;
 }
 
+/// Upper bound on the on-disk streams one shared-data bucket of a JSON column serializes. The ADVANCED
+/// shared-data serialization writes, per bucket, a structure (prefix) stream, the data / paths-marks /
+/// substreams / substreams-marks / paths-substreams-metadata streams, and a structure-suffix stream (see
+/// SerializationObjectSharedData::enumerateStreams); MAP / MAP_WITH_BUCKETS emit fewer. Kept as a small
+/// worst-case constant so a rebuilt JSON projection is never priced below its real shared-data footprint.
+constexpr size_t MAX_OBJECT_SHARED_DATA_STREAMS_PER_BUCKET = 7;
+
 /// Worst-case number of on-disk data streams the dynamic structure of a type can materialize when a column
 /// of it is written, bounded by the type's own write-time capacity limits - the limits ColumnDynamic /
 /// ColumnObject enforce whatever the data looks like (types beyond max_dynamic_types go to the shared
@@ -223,17 +231,23 @@ size_t countColumnStreamsFromParts(const NamesAndTypesList & columns, const Merg
 /// streams: a variant is one data stream (two cover a level of nesting such as Array or Nullable), a path
 /// is a structure stream plus the data streams of its - overwhelmingly single - resolved type per part;
 /// a path that materializes many concrete types inside one part can exceed this, but the dominant,
-/// capacity-bounded term is the number of paths. Composite types are walked recursively, so
-/// Tuple(UInt64, JSON) or Array(Dynamic) are priced by their nested semi-structured components. Zero for
-/// types without dynamic structure.
-size_t countDynamicCapacityStreams(const IDataType & type)
+/// capacity-bounded term is the number of paths. A JSON column also ALWAYS writes its shared-data streams,
+/// whatever its data or max_dynamic_paths is (with max_dynamic_paths = 0 every path goes to the shared
+/// data), and the default serialization cannot enumerate them without a real column, so they are added
+/// here: up to object_shared_data_buckets_for_wide_part buckets (the wide-part count is never below the
+/// compact-part one), each up to MAX_OBJECT_SHARED_DATA_STREAMS_PER_BUCKET streams. Composite types are
+/// walked recursively, so Tuple(UInt64, JSON) or Array(Dynamic) are priced by their nested semi-structured
+/// components. Zero for types without dynamic structure.
+size_t countDynamicCapacityStreams(const IDataType & type, const MergeTreeSettings & settings)
 {
-    const auto node_capacity = [](const IDataType & node) -> size_t
+    const UInt64 shared_data_buckets = settings[MergeTreeSetting::object_shared_data_buckets_for_wide_part];
+
+    const auto node_capacity = [&](const IDataType & node) -> size_t
     {
         if (const auto * dynamic = typeid_cast<const DataTypeDynamic *>(&node))
             return 2 + 2 * (dynamic->getMaxDynamicTypes() + 1);
         if (const auto * object = typeid_cast<const DataTypeObject *>(&node))
-            return 4 * object->getMaxDynamicPaths();
+            return shared_data_buckets * MAX_OBJECT_SHARED_DATA_STREAMS_PER_BUCKET + 4 * object->getMaxDynamicPaths();
         return 0;
     };
 
@@ -242,28 +256,62 @@ size_t countDynamicCapacityStreams(const IDataType & type)
     return streams;
 }
 
+/// Union, by name, of a projection output column's recorded substreams across the source parts - but only
+/// over the parts that store a column of the SAME type under this name, i.e. where the projection output is
+/// a bare identifier of that base column (SELECT json ORDER BY ...), so its written substreams are exactly
+/// that base column's. A projection that reuses a base column's NAME for a different type through an
+/// expression - SELECT CAST(s, 'JSON') AS s over a String base s, SELECT CAST(v, 'Dynamic') AS v over a
+/// UInt64 base v - is a synthesized column, not a bare identifier: its write footprint is that of the
+/// target type, so it must NOT be priced from the base column's (String / UInt64) stream count. Returns
+/// nullopt when no source part records this name with a matching type, so the caller falls back to the
+/// type's own write-time capacity.
+std::optional<size_t> tryCountBareIdentifierProjectionSubstreams(
+    const NameAndTypePair & column, const MergeTreeDataPartsVector & source_parts)
+{
+    std::unordered_set<std::string_view> union_substreams;
+    bool recorded = false;
+    for (const auto & part : source_parts)
+    {
+        const auto part_column = part->getColumns().tryGetByName(column.name);
+        if (!part_column || !part_column->type->equals(*column.type))
+            continue;
+        if (const auto * substreams = part->getColumnsSubstreams().tryGetColumnSubstreams(column.name))
+        {
+            recorded = true;
+            for (const auto & substream : *substreams)
+                union_substreams.insert(substream);
+        }
+    }
+
+    if (!recorded)
+        return std::nullopt;
+    return union_substreams.size();
+}
+
 /// Number of on-disk streams the temporary part of a REBUILT projection writes. A rebuild recalculates the
 /// projection from the merged base rows, so a semi-structured (JSON / Dynamic) projection column carries
 /// real dynamic substreams, and writeTempProjectionPart writes one stream per substream. When the
-/// projection output column shares its name with a base column (a bare-identifier projection, SELECT json
-/// ORDER BY ...) it is priced precisely from that column's recorded substreams. But a projection may
-/// materialize a semi-structured value through an expression under a name no base part records
-/// (SELECT identity(json) ..., a CAST to JSON or Dynamic, ...); its real substream count cannot be
+/// projection output column is a bare identifier of a base column - the same name AND the same type - it is
+/// priced precisely from that column's recorded substreams. But a projection may materialize a
+/// semi-structured value through an expression, either under a name no base part records
+/// (SELECT identity(json) ...) or under a base column's name but with a different type
+/// (SELECT CAST(s, 'JSON') AS s, SELECT number::Dynamic AS d); its real substream count cannot be
 /// enumerated from the default serialization (SerializationDynamic / SerializationObject without data stop
 /// at the structure streams) nor traced to a base column by name - and the value does not have to be
 /// derived from semi-structured input at all (number::Dynamic synthesizes variants from a plain column),
 /// so no bound taken from the source parts' dynamic substreams is sound. Bound such a column by its type's
 /// own write-time capacity instead (countDynamicCapacityStreams), which no written column can exceed. For
 /// simple projection columns this equals the default serialization count.
-size_t countRebuiltProjectionStreams(const NamesAndTypesList & projection_columns, const MergeTreeDataPartsVector & source_parts)
+size_t countRebuiltProjectionStreams(
+    const NamesAndTypesList & projection_columns, const MergeTreeDataPartsVector & source_parts, const MergeTreeSettings & settings)
 {
     size_t streams = 0;
     for (const auto & column : projection_columns)
     {
-        if (auto recorded = tryCountColumnSubstreamsFromParts(column.name, source_parts))
+        if (auto recorded = tryCountBareIdentifierProjectionSubstreams(column, source_parts))
             streams += *recorded;
         else
-            streams += countColumnStreams({column}) + countDynamicCapacityStreams(*column.type);
+            streams += countColumnStreams({column}) + countDynamicCapacityStreams(*column.type, settings);
     }
     return streams;
 }
@@ -615,7 +663,7 @@ UInt64 estimateNeededMemoryForMerge(
                 /// serialization, which would collapse such a column to a single stream and undersize the
                 /// reservation.
                 const size_t projection_streams = countRebuiltProjectionStreams(
-                    projection.sample_block.getNamesAndTypesList(), source_and_patch_parts);
+                    projection.sample_block.getNamesAndTypesList(), source_and_patch_parts, settings);
 
                 /// Unlike the base output above, a rebuilt projection is NOT size-bounded by the merge input:
                 /// a projection expression is not size-monotone (repeat(...), JSON / array construction can
