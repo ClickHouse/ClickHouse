@@ -170,6 +170,10 @@ private:
     /// and without touching any shared state. Used to undo `registerReplicaInKeeper` on a startup error path.
     void unregisterReplica();
 
+    /// True if any of this replica's nested tables has already been created (owns a copy of the shared
+    /// replicated data). Used on the register-first error path to decide whether the registration may be undone.
+    bool hasAnyNestedTable() const;
+
     /// Unregister this replica from <keeper_path>/replicas. Returns true when it was the last
     /// registered replica: only then may the caller drop the shared PostgreSQL objects and the
     /// coordination nodes.

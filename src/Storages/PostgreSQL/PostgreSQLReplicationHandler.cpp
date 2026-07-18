@@ -1321,9 +1321,18 @@ void PostgreSQLReplicationHandler::registerReplicaThenEnsureNestedTables()
     /// this copy still exists (a later resnapshot would resume into it without truncation, duplicating rows or
     /// preserving stale deletes).
     ///
-    /// The flip side of registering first is a ghost participant if nested-table creation then fails (the
-    /// database engine is never created, so no shutdownFinal runs). Undo the registration on failure to close
-    /// that hole. Both steps are idempotent, so the startup task can safely retry.
+    /// The flip side of registering first is a ghost participant if nested-table creation fails outright before
+    /// this replica owns any shared data (the database engine is never created, so no shutdownFinal runs). Undo
+    /// the registration in that case to close that hole. Both steps are idempotent, so the startup task can
+    /// safely retry.
+    ///
+    /// But `ensureNestedTablesExist` is not all-or-nothing: it creates the nested tables one by one, and as soon
+    /// as one is created it is a live replica of the shared Replicated/SharedReplacingMergeTree tree and starts
+    /// receiving replicated data. If a later table in the loop then throws, this replica already owns a copy of
+    /// the shared data - so the registration must NOT be undone, or a peer's last-replica teardown (which decides
+    /// solely from <keeper_path>/replicas) could delete the shared slot/publication/marker while this partial
+    /// copy still exists. In that case keep the replica registered and let the idempotent startup-task retry
+    /// finish creating the remaining tables (it skips the ones that already exist).
     registerReplicaInKeeper();
     try
     {
@@ -1331,13 +1340,24 @@ void PostgreSQLReplicationHandler::registerReplicaThenEnsureNestedTables()
     }
     catch (...)
     {
-        try
+        if (hasAnyNestedTable())
         {
-            unregisterReplica();
+            LOG_WARNING(log,
+                "Nested-table creation failed partway, but this replica already owns a copy of the shared "
+                "nested data; keeping its registration at {}/replicas/{} so a peer cannot decide it is the last "
+                "replica and tear down the shared slot/publication. Retrying.",
+                coordination_keeper_path, coordination_replica_name);
         }
-        catch (...)
+        else
         {
-            tryLogCurrentException(log, "Failed to unregister replica after nested-table creation failed");
+            try
+            {
+                unregisterReplica();
+            }
+            catch (...)
+            {
+                tryLogCurrentException(log, "Failed to unregister replica after nested-table creation failed");
+            }
         }
         throw;
     }
@@ -1365,6 +1385,18 @@ void PostgreSQLReplicationHandler::unregisterReplica()
 
     auto zookeeper = getContext()->getZooKeeper();
     zookeeper->tryRemove(coordination_keeper_path + "/replicas/" + coordination_replica_name);
+}
+
+
+bool PostgreSQLReplicationHandler::hasAnyNestedTable() const
+{
+    /// A nested table exists in the catalog once `createNestedIfNeeded` created it (regardless of whether the
+    /// wrapper has been marked queryable yet), which is exactly when this replica starts holding a copy of the
+    /// shared replicated data. Note this also sees nested tables created by an earlier startup attempt.
+    for (const auto & [table_name, materialized_storage] : materialized_storages)
+        if (materialized_storage->tryGetNested())
+            return true;
+    return false;
 }
 
 
