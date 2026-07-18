@@ -226,3 +226,45 @@ def test_valid_for_on_cluster_mixed_timezone():
     assert altered_ch1 == altered_ch4, (altered_ch1, altered_ch4)
 
     ch1.query("DROP USER valid_for_tz_user ON CLUSTER 'cluster_tz'")
+
+
+def test_valid_until_on_cluster_mixed_timezone():
+    # Absolute `VALID UNTIL` with a bare, time-zone-less literal must also produce an identical stored
+    # deadline across `cluster_tz` (whose `ch1` and `ch4` run in different server time zones). The
+    # initiator parses the literal in its own default time zone and must rewrite it to an explicit-time-zone
+    # literal before distributing; otherwise `ch4` would re-interpret the same wall-clock string in
+    # `America/Los_Angeles` and store a different epoch than `ch1`.
+    def stored_epochs(node):
+        return node.query(
+            "SELECT toUInt32(valid_until[1]), toUInt32(valid_until[2]) "
+            "FROM system.users WHERE name = 'valid_until_tz_user'"
+        ).strip()
+
+    ch1.query("DROP USER IF EXISTS valid_until_tz_user ON CLUSTER 'cluster_tz'")
+
+    # User-level (global) absolute `VALID UNTIL` applied to two authentication methods, plus a
+    # per-authentication absolute `VALID UNTIL` on the second one. Both forms are time-zone-sensitive.
+    ch1.query_with_retry(
+        "CREATE USER valid_until_tz_user ON CLUSTER 'cluster_tz' "
+        "VALID UNTIL '2035-01-01 00:00:00' "
+        "IDENTIFIED WITH plaintext_password BY 'a', "
+        "plaintext_password BY 'b' VALID UNTIL '2040-06-15 12:34:56'",
+        retry_count=5,
+    )
+    epochs_ch1 = stored_epochs(ch1)
+    epochs_ch4 = stored_epochs(ch4)
+    # Both deadlines are set (non-zero) and identical on both nodes despite the different time zones.
+    assert "0" not in epochs_ch1.split("\t"), epochs_ch1
+    assert epochs_ch1 == epochs_ch4, (epochs_ch1, epochs_ch4)
+
+    # Re-issue the absolute deadline from the node in the other time zone; it must still match on both.
+    ch4.query_with_retry(
+        "ALTER USER valid_until_tz_user ON CLUSTER 'cluster_tz' VALID UNTIL '2045-03-03 03:03:03'",
+        retry_count=5,
+    )
+    altered_ch1 = stored_epochs(ch1)
+    altered_ch4 = stored_epochs(ch4)
+    assert altered_ch1 != epochs_ch1
+    assert altered_ch1 == altered_ch4, (altered_ch1, altered_ch4)
+
+    ch1.query("DROP USER valid_until_tz_user ON CLUSTER 'cluster_tz'")

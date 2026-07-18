@@ -287,38 +287,38 @@ BlockIO InterpreterCreateUserQuery::execute()
 
     if (!query.cluster.empty())
     {
-        /// `VALID FOR <interval>` is a shortcut for `VALID UNTIL now + <interval>`, resolved relative to
-        /// the current time at execution. When the query is distributed `ON CLUSTER`, the AST text is what
-        /// gets sent to every replica, so each of them would re-evaluate `now + interval` against its own
-        /// clock and the resulting deadlines could diverge across the cluster. To keep the deadline
-        /// identical everywhere, we resolve the interval once here (on the initiator) and rewrite the AST
-        /// to an absolute `VALID UNTIL` literal before distributing it.
+        /// The deadline of a `VALID FOR <interval>` or `VALID UNTIL <datetime>` clause is resolved on the
+        /// initiator, but when the query is distributed `ON CLUSTER` the AST *text* is what reaches every
+        /// replica. A `VALID FOR <interval>` clause would be re-evaluated as `now + interval` against each
+        /// replica's own clock; a `VALID UNTIL` clause with a bare, time-zone-less literal (for example
+        /// `'2035-01-01 00:00:00'`) would be parsed in each replica's own default time zone. Either way the
+        /// stored `valid_until` could diverge across a cluster whose nodes run in different time zones. To
+        /// keep the deadline identical everywhere, we resolve every deadline once here (on the initiator)
+        /// and rewrite the AST to an absolute, explicit-`UTC` `VALID UNTIL` literal before distributing it.
         auto cluster_query_ptr = updated_query_ptr->clone();
         auto & cluster_query = cluster_query_ptr->as<ASTCreateUserQuery &>();
 
-        auto make_absolute_valid_until = [](time_t deadline) -> ASTPtr
+        auto rewrite_deadline = [](ASTPtr & valid_until, bool & is_interval, time_t deadline)
         {
+            /// No clause to canonicalize, or the deadline is the `VALID UNTIL 'infinity'` sentinel
+            /// (`0` == "no expiration"), which is time-zone independent and is left untouched.
+            if (!valid_until || deadline == 0)
+                return;
+
             /// The explicit `UTC` suffix in the literal makes every replica parse the resulting
             /// `VALID UNTIL` string to the same instant. Without the zone, a bare `'2026-07-14 12:00:00'`
             /// would be interpreted in each replica's own default time zone and the stored `valid_until`
             /// would diverge on mixed-time-zone clusters.
-            return make_intrusive<ASTLiteral>(formatValidUntilInUTC(deadline));
+            valid_until = make_intrusive<ASTLiteral>(formatValidUntilInUTC(deadline));
+            is_interval = false;
         };
 
-        if (cluster_query.global_valid_until_is_interval)
-        {
-            cluster_query.global_valid_until = make_absolute_valid_until(global_valid_until.value_or(0));
-            cluster_query.global_valid_until_is_interval = false;
-        }
+        rewrite_deadline(cluster_query.global_valid_until, cluster_query.global_valid_until_is_interval, global_valid_until.value_or(0));
 
         for (size_t i = 0; i < cluster_query.authentication_methods.size(); ++i)
         {
             auto & method = *cluster_query.authentication_methods[i];
-            if (method.valid_until_is_interval)
-            {
-                method.valid_until = make_absolute_valid_until(authentication_methods[i].getValidUntil());
-                method.valid_until_is_interval = false;
-            }
+            rewrite_deadline(method.valid_until, method.valid_until_is_interval, authentication_methods[i].getValidUntil());
         }
 
         return executeDDLQueryOnCluster(cluster_query_ptr, getContext());
