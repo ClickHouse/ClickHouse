@@ -413,6 +413,22 @@ def test_wide_projection_near_threshold_rejected():
     assert mock_stats()["data_requests"] == []
 
 
+def test_wide_page_token_rejected():
+    mock_reset()
+    # The up-front wide-read guard can only measure the first-page request URL: the `pageToken` BigQuery
+    # returns for later pages is opaque and unbounded, and is unknown until a page has been fetched. Make the
+    # mock return a very long `pageToken` on the first page of a narrow read: the read starts, gets page 1,
+    # and then the second `tabledata.list` request would exceed the request-URL length limit. It must be
+    # rejected up front, before being sent, rather than failing remotely with an opaque HTTP error mid-read.
+    mock_ctl("/__long_page_token__?len=9000")
+    error = node.query_and_get_error(
+        f"SELECT s, i FROM {bq('test_paging')} FORMAT Null"
+    )
+    assert "too long" in error
+    # Only the first page is fetched; the oversized second request is rejected before being sent.
+    assert len(mock_stats()["data_requests"]) == 1
+
+
 def test_insert_roundtrip():
     mock_reset()
     node.query(f"""

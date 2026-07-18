@@ -292,6 +292,21 @@ BigQueryClient::TableDataPage BigQueryClient::listTableData(const String & page_
 {
     auto params = listTableDataParams(page_token, selected_fields, max_results);
 
+    /// Validate the *actual* request URL, including the opaque `pageToken` BigQuery returns from the second page
+    /// onward. The up-front guard in `StorageBigQuery::read` can only measure the first page (the token is not
+    /// known until a page is fetched), and the token length is not documented, so a long token could otherwise
+    /// push a later request over the HTTP front-end URL length limit and fail remotely with an opaque error after
+    /// the read has already started. Reject it here, before issuing the request, with the same clear message.
+    const auto uri = buildRequestURI(tablePath() + "/data", params);
+    const size_t request_uri_length = uri.getPathAndQuery().size();
+    if (request_uri_length > max_request_uri_length)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "The `tabledata.list` request URL is too long: {} bytes, over the {}-byte limit (the BigQuery "
+            "`pageToken` for the next page does not fit); select fewer columns",
+            request_uri_length,
+            max_request_uri_length);
+
     auto response = requestJSON(Poco::Net::HTTPRequest::HTTP_GET, tablePath() + "/data", params, {});
 
     TableDataPage page;

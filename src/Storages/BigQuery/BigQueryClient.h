@@ -42,6 +42,12 @@ private:
 class BigQueryClient
 {
 public:
+    /// The maximum length (in bytes) of the encoded `path?query` of a `tabledata.list` request. BigQuery's
+    /// HTTP front end rejects longer URLs, so both the up-front wide-read guard (`StorageBigQuery::read`) and
+    /// every paginated `listTableData` call reject a request whose URL would exceed this, instead of letting
+    /// it fail remotely with an opaque error.
+    static constexpr size_t max_request_uri_length = 8192;
+
     /// Creates a client with its own short-lived token provider (for a one-off request).
     BigQueryClient(const BigQueryConfiguration & configuration_, ContextPtr context_);
     /// Creates a client that reuses a longer-lived token provider, so an access token minted by one
@@ -59,14 +65,18 @@ public:
     };
 
     /// tabledata.list. Timestamps are requested as int64 microseconds (formatOptions.useInt64Timestamp).
-    /// `selected_fields` is a comma-separated list of columns, empty means all columns.
+    /// `selected_fields` is a comma-separated list of columns, empty means all columns. The full request URL
+    /// (including the opaque `pageToken` that BigQuery returns from the second page onward) is validated against
+    /// `max_request_uri_length` before the request is issued, so an overlong `pageToken` is rejected with a clear
+    /// error rather than failing remotely mid-read.
     TableDataPage listTableData(const String & page_token, const String & selected_fields, UInt64 max_results) const;
 
     /// The length of the encoded `path?query` of the `tabledata.list` request for `selected_fields`, measured
     /// for a first-page request (no `pageToken`). This is the actual number of bytes that goes over the wire,
     /// including the percent-encoded field list and the fixed query parameters, so callers can reject a read
-    /// whose request URL would exceed the HTTP front-end URL length limit instead of failing opaquely later.
-    /// The caller should add headroom for the `pageToken` that appears from the second page onward.
+    /// whose request URL would exceed the HTTP front-end URL length limit up front instead of failing opaquely
+    /// later. The `pageToken` cannot be measured here (it is unknown until a page is fetched); `listTableData`
+    /// validates the actual URL of each paginated request, including the real token, against the same limit.
     size_t tableDataRequestUriLength(const String & selected_fields, UInt64 max_results) const;
 
     /// tabledata.insertAll (streaming insert). Throws if any row of this request is rejected.

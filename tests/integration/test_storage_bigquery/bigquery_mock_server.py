@@ -302,6 +302,11 @@ FAIL_INSERTS_AFTER = [None]
 # response (rows listed in insertErrors are rejected, the rest are inserted), as opposed to the
 # all-or-nothing schema-mismatch ("stopped") case.
 REJECT_ROW_IDS = set()
+# When set to a string, the first page of every `tabledata.list` response carries this value as its
+# `pageToken` instead of the natural numeric offset, simulating a very long opaque BigQuery page token.
+# Used to exercise the per-page request-URL length guard in the reader (a long token pushes the follow-up
+# request over the URL length limit).
+LONG_PAGE_TOKEN = [None]
 
 
 def google_error(code, status, message):
@@ -453,6 +458,12 @@ class Handler(http.server.BaseHTTPRequestHandler):
             FAIL_INSERTS[0] = False
             FAIL_INSERTS_AFTER[0] = None
             REJECT_ROW_IDS.clear()
+            LONG_PAGE_TOKEN[0] = None
+            self.send_json(200, {})
+            return
+        if parsed.path == "/__long_page_token__":
+            length = params.get("len")
+            LONG_PAGE_TOKEN[0] = "z" * int(length) if length else None
             self.send_json(200, {})
             return
         if parsed.path == "/__fail_inserts__":
@@ -538,6 +549,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
             response = {"totalRows": str(len(rows)), "rows": page_rows}
             if start + page_size < len(rows):
                 response["pageToken"] = str(start + page_size)
+            if LONG_PAGE_TOKEN[0] is not None and start == 0 and page_rows:
+                # Force a very long opaque `pageToken` on the first page so that the reader's follow-up
+                # request for page 2 would exceed the URL length limit and must be rejected up front.
+                response["pageToken"] = LONG_PAGE_TOKEN[0]
             if not page_rows:
                 del response["rows"]
             self.send_json(200, response)

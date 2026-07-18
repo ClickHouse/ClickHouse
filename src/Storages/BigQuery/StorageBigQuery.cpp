@@ -489,12 +489,15 @@ Pipe StorageBigQuery::read(
     /// The limit is budgeted against the *full* encoded request URI, not the raw field list: the URI also
     /// carries the table path and the fixed `prettyPrint` / `formatOptions.useInt64Timestamp` / `maxResults`
     /// parameters, and the field list is percent-encoded (each `,` becomes `%2C`), so the wire length is
-    /// larger than `selected_fields.size()`. Headroom is reserved for the `pageToken` that BigQuery adds from
-    /// the second page onward (it is absent from the first request, so it cannot be measured up front).
-    static constexpr size_t max_request_uri_length = 8192;
+    /// larger than `selected_fields.size()`. This up-front check only measures the first page (the `pageToken`
+    /// that BigQuery adds from the second page onward is not known until a page is fetched); it rejects an
+    /// obviously-too-wide read early, with headroom for a typical `pageToken`. The authoritative guard is in
+    /// `BigQueryClient::listTableData`, which validates the actual URL of every paginated request — including
+    /// the real, opaque token — against the same `BigQueryClient::max_request_uri_length`, so a read cannot
+    /// start and then fail remotely on a later page when the token turns out to be larger than this reserve.
     static constexpr size_t page_token_length_reserve = 1024;
     const size_t request_uri_length = client->tableDataRequestUriLength(selected_fields, max_block_size);
-    if (request_uri_length + page_token_length_reserve > max_request_uri_length)
+    if (request_uri_length + page_token_length_reserve > BigQueryClient::max_request_uri_length)
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "The list of selected BigQuery columns is too long: it makes the `tabledata.list` request URL "
@@ -502,7 +505,7 @@ Pipe StorageBigQuery::read(
             "to the analyzed schema; select fewer columns",
             request_uri_length,
             page_token_length_reserve,
-            max_request_uri_length);
+            BigQueryClient::max_request_uri_length);
 
     return Pipe(std::make_shared<BigQuerySource>(
         std::move(client),
