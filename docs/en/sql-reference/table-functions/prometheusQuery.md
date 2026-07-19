@@ -55,7 +55,7 @@ Every selector must contain at least one matcher that does not match the empty l
 | Histogram | `histogram_quantile` |
 | Other    | `time`, `timestamp`, `pi` |
 
-**Note**: `round` accepts an optional second argument `to_nearest` (default `1`) and rounds each value to the nearest multiple of it. The `DateTime` functions may be called without an argument, in which case they operate on the evaluation timestamp (equivalent to passing `time()`).
+**Note**: `round` accepts an optional second argument `to_nearest` (default `1`) and rounds each value to the nearest multiple of it. The `DateTime` functions may be called without an argument, in which case they operate on the evaluation timestamp (equivalent to passing `vector(time())`; note that these functions accept only an instant vector, so a bare `time()` argument is rejected).
 
 **Note**: `histogram_quantile` uses linear interpolation on classic histogram buckets (identified by the `le` label). Native histograms are not yet supported, and the `phi` (quantile level) argument must currently be a constant scalar — expressions that vary per step such as `histogram_quantile(time() / 1000, ...)` are rejected with a `NOT_IMPLEMENTED` error.
 
