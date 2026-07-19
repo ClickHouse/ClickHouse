@@ -456,3 +456,43 @@ CREATE TABLE t_mat_ttl_is_deleted
     ENGINE = ReplacingMergeTree(ver, d) ORDER BY a;
 ALTER TABLE t_mat_ttl_is_deleted MATERIALIZE COLUMN c; -- { serverError CANNOT_UPDATE_COLUMN }
 DROP TABLE t_mat_ttl_is_deleted;
+
+-- Case 39: A skip index reading a *subcolumn* of the materialized column itself (`INDEX idx t.k`
+-- while materializing the parent Tuple column `t`). The readonly recalculation stage reads such a
+-- subcolumn dependency straight from the source part (it is never rewritten through `getSubcolumn`
+-- of the recomputed parent), so the index would be rebuilt from the pre-rewrite values and a query
+-- forced through it could be pruned incorrectly. Refused, same as the subcolumn TTL dependencies.
+DROP TABLE IF EXISTS t_mat_index_subcolumn;
+CREATE TABLE t_mat_index_subcolumn
+    (a UInt64, t Tuple(k UInt64) MATERIALIZED tuple(a * 10),
+     INDEX idx_tk t.k TYPE minmax GRANULARITY 1)
+    ENGINE = MergeTree() ORDER BY a SETTINGS index_granularity = 1, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+INSERT INTO t_mat_index_subcolumn (a) VALUES (5);
+ALTER TABLE t_mat_index_subcolumn MODIFY COLUMN t Tuple(k UInt64) MATERIALIZED tuple(a * 10 + 1000);
+ALTER TABLE t_mat_index_subcolumn MATERIALIZE COLUMN t; -- { serverError CANNOT_UPDATE_COLUMN }
+DROP TABLE t_mat_index_subcolumn;
+
+-- Case 40: Same through a dependent stored MATERIALIZED column — the recomputed set includes the
+-- dependent parent `t`, whose subcolumn is read by the index. Refused.
+DROP TABLE IF EXISTS t_mat_dep_index_subcolumn;
+CREATE TABLE t_mat_dep_index_subcolumn
+    (a UInt64, c2 UInt64 MATERIALIZED a * 10, t Tuple(k UInt64) MATERIALIZED tuple(c2 + 1),
+     INDEX idx_tk t.k TYPE minmax GRANULARITY 1)
+    ENGINE = MergeTree() ORDER BY a SETTINGS index_granularity = 1, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+INSERT INTO t_mat_dep_index_subcolumn (a) VALUES (5);
+ALTER TABLE t_mat_dep_index_subcolumn MODIFY COLUMN c2 UInt64 MATERIALIZED a * 10 + 1000;
+ALTER TABLE t_mat_dep_index_subcolumn MATERIALIZE COLUMN c2; -- { serverError CANNOT_UPDATE_COLUMN }
+DROP TABLE t_mat_dep_index_subcolumn;
+
+-- Case 41: No over-rejection — a skip index on a subcolumn of an *unrelated* column must not block
+-- the command, and the index still prunes correctly afterwards.
+DROP TABLE IF EXISTS t_mat_index_subcolumn_unrelated;
+CREATE TABLE t_mat_index_subcolumn_unrelated
+    (a UInt64, c2 UInt64 MATERIALIZED a * 10, u Tuple(k UInt64),
+     INDEX idx_uk u.k TYPE minmax GRANULARITY 1)
+    ENGINE = MergeTree() ORDER BY a SETTINGS index_granularity = 1, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+INSERT INTO t_mat_index_subcolumn_unrelated (a, u) VALUES (5, tuple(7));
+ALTER TABLE t_mat_index_subcolumn_unrelated MODIFY COLUMN c2 UInt64 MATERIALIZED a * 10 + 1000;
+ALTER TABLE t_mat_index_subcolumn_unrelated MATERIALIZE COLUMN c2 SETTINGS mutations_sync = 2;
+SELECT c2, u.k FROM t_mat_index_subcolumn_unrelated WHERE u.k = 7 SETTINGS force_data_skipping_indices = 'idx_uk';
+DROP TABLE t_mat_index_subcolumn_unrelated;

@@ -1323,6 +1323,36 @@ void MutationsInterpreter::prepare(bool dry_run)
                 });
             };
 
+            /// A skip index can read a rewritten column through a *subcolumn* (`INDEX idx t.k` while
+            /// materializing the parent Tuple column `t`, or a dynamic path of a JSON column). The
+            /// rebuild below registers the subcolumn name as a `SKIP_INDEX` dependency, but the
+            /// readonly recalculation stage materializes such a dependency as a plain identifier read
+            /// from the source part — it is never rewritten through `getSubcolumn` of the recomputed
+            /// parent (unlike the recompute paths for MATERIALIZED expressions above) — so the index
+            /// would be rebuilt from the *pre-rewrite* subcolumn values and stay stale. This is a
+            /// pre-existing limitation of the shared mutation machinery (`ALTER TABLE ... UPDATE` of
+            /// the parent column leaves such an index equally stale), so, following the fail-close
+            /// approach used below for subcolumn TTL bounds, refuse the command rather than silently
+            /// producing a stale index. Refuse based on the table metadata (not a specific part's
+            /// materialized indices), so the command is rejected up front rather than depending on
+            /// the part state, matching the other refusals in this block. (Projections cannot contain
+            /// individual subcolumns, and statistics exist only for whole columns, so only skip
+            /// indices are affected.)
+            for (const auto & index : indices_desc)
+            {
+                for (const auto & required_column : index.expression->getRequiredColumns())
+                {
+                    auto resolved = columns_desc.tryGetColumnOrSubcolumn(GetColumnsOptions::All, required_column);
+                    if (resolved && resolved->isSubcolumn() && rewritten_columns.contains(resolved->getNameInStorage()))
+                        throw Exception(ErrorCodes::CANNOT_UPDATE_COLUMN,
+                            "Refused to materialize column {} because the subcolumn {} of the recomputed column {} "
+                            "is read by skip index {}. Recomputing the column would require rebuilding the index "
+                            "from the subcolumn, which is not supported for subcolumn dependencies",
+                            backQuote(command.column_name), backQuote(required_column),
+                            backQuote(resolved->getNameInStorage()), backQuote(index.name));
+                }
+            }
+
             for (const auto & index : indices_desc)
             {
                 if (!source.hasSecondaryIndex(index.name, metadata_snapshot))
