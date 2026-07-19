@@ -7,7 +7,7 @@
 
 SET enable_analyzer = 1;
 
-SYSTEM DROP QUERY CACHE;
+SYSTEM CLEAR QUERY CACHE;
 
 DROP TABLE IF EXISTS t_subquery_access;
 DROP TABLE IF EXISTS t_subquery_access_joined;
@@ -21,7 +21,7 @@ INSERT INTO t_subquery_access_joined VALUES (1), (2);
 -- The first run computes the subquery and stores its result in the query cache
 SELECT sum(x) FROM (SELECT x FROM t_subquery_access SETTINGS use_query_cache = true);
 
-SELECT count(*) FROM system.query_cache WHERE is_subquery = 1;
+SELECT count() FROM system.query_cache WHERE is_subquery = 1;
 
 -- The second run is answered from the query cache
 SELECT sum(x) FROM (SELECT x FROM t_subquery_access SETTINGS use_query_cache = true);
@@ -37,6 +37,8 @@ FROM system.query_log
 WHERE type = 'QueryFinish'
   AND current_database = currentDatabase()
   AND query LIKE 'SELECT sum(x) FROM (SELECT x FROM t_subquery_access%'
+  AND event_date >= yesterday()
+  AND event_time >= now() - INTERVAL 600 SECOND
 ORDER BY event_time_microseconds;
 
 -- The same for a cached subquery which reads multiple tables, one of them inside a nested subquery
@@ -52,9 +54,11 @@ FROM system.query_log
 WHERE type = 'QueryFinish'
   AND current_database = currentDatabase()
   AND query LIKE 'SELECT count() FROM (SELECT x FROM t_subquery_access JOIN%'
+  AND event_date >= yesterday()
+  AND event_time >= now() - INTERVAL 600 SECOND
 ORDER BY event_time_microseconds;
 
-SYSTEM DROP QUERY CACHE;
+SYSTEM CLEAR QUERY CACHE;
 
 DROP TABLE t_subquery_access;
 DROP TABLE t_subquery_access_joined;
