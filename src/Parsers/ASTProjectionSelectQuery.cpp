@@ -194,6 +194,7 @@ void ASTProjectionSelectQuery::writeJSON(WriteBuffer & out) const
     JSONObjectWriter w(out, "ProjectionSelectQuery");
     w.writeChild("with", with());
     w.writeChild("select", select());
+    w.writeChild("where", where());
     w.writeChild("group_by", groupBy());
     w.writeChild("order_by", orderBy());
 }
@@ -228,6 +229,9 @@ void ASTProjectionSelectQuery::readJSON(const Poco::JSON::Object & json)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected ASTExpressionList for 'select' during AST JSON deserialization");
     setExpression(Expression::SELECT, std::move(select_child));
 
+    /// `WHERE` must be inserted between `SELECT` and `GROUP BY` to match the canonical child order
+    /// produced by `ParserProjectionSelectQuery` (see the ordering comment in `clone`).
+    setExpr("where", Expression::WHERE);
     setExprList("group_by", Expression::GROUP_BY);
     setExpr("order_by", Expression::ORDER_BY);
 }
