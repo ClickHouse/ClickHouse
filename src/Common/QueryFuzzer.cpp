@@ -4718,8 +4718,11 @@ static const std::vector<std::unordered_set<String>> & swapFuncs
         {"naiveBayesClassifier", "detectCharset", "detectLanguage", "detectLanguageUnknown", "detectLanguageMixed", "detectTonality"},
         /// Word-level NLP (language/extension + word)
         {"stem", "lemmatize", "synonyms"},
-        /// AI functions: text + optional params map
-        {"aiEmbed", "aiGenerate"},
+        /// AI text generation: text + optional params map
+        {"aiGenerate"},
+        /// aiEmbed takes (text, model[, params]); its arity matches no other AI function, so it is not
+        /// grouped for name-swapping (a swap would produce arity-mismatched calls).
+        {"aiEmbed"},
         /// AI functions: text + a per-function arg (categories / instruction / target_language) + optional params map
         {"aiClassify", "aiExtract", "aiTranslate"},
         /// Geo distance functions (lon1, lat1, lon2, lat2 → Float64)
