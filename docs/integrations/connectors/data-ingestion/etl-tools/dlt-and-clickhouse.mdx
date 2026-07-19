@@ -23,8 +23,7 @@ pip install "dlt[clickhouse]"
 ## Setup guide {#setup-guide}
 
 <Steps>
-<Step>
-### Initialize the dlt Project {#1-initialize-the-dlt-project}
+<Step title="Initialize the dlt Project" id="1-initialize-the-dlt-project">
 
 Start by initializing a new `dlt` project as follows:
 ```bash
@@ -42,8 +41,7 @@ pip install -r requirements.txt
 
 or with `pip install dlt[clickhouse]`, which installs the `dlt` library and the necessary dependencies for working with ClickHouse as a destination.
 </Step>
-<Step>
-### Setup ClickHouse Database {#2-setup-clickhouse-database}
+<Step title="Setup ClickHouse Database" id="2-setup-clickhouse-database">
 
 To load data into ClickHouse, you need to create a ClickHouse database. Here's a rough outline of what should you do:
 
@@ -61,8 +59,7 @@ GRANT SELECT ON INFORMATION_SCHEMA.COLUMNS TO dlt;
 GRANT CREATE TEMPORARY TABLE, S3 ON *.* TO dlt;
 ```
 </Step>
-<Step>
-### Add credentials {#3-add-credentials}
+<Step title="Add credentials" id="3-add-credentials">
 
 Next, set up the ClickHouse credentials in the `.dlt/secrets.toml` file as shown below:
 

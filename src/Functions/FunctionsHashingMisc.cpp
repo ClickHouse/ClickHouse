@@ -548,6 +548,38 @@ For the 32-bit version see [`xxHash32`](#xxHash32)
     FunctionDocumentation xxHash64_documentation = {xxHash64_description, xxHash64_syntax, xxHash64_arguments, {}, xxHash64_returned_value, xxHash64_examples, xxHash64_introduced_in, xxHash64_category};
     factory.registerFunction<FunctionXxHash64>(xxHash64_documentation);
 
+    FunctionDocumentation::Description xxHash64Spark_description = R"(
+Calculates a [xxHash](http://cyan4973.github.io/xxHash/) from a string using the same seed as Spark.
+
+This function is the same as [`xxHash64`](#xxHash64), but it uses seed `42` and returns the result as `Int64`.
+Only `String` and `NULL` inputs are supported.
+For `NULL`, the function returns `42`, matching Spark's seed behavior.
+)";
+    FunctionDocumentation::Syntax xxHash64Spark_syntax = "xxHash64Spark(arg)";
+    FunctionDocumentation::Arguments xxHash64Spark_arguments = {{"arg", "Input string to hash.", {"String"}}};
+    FunctionDocumentation::ReturnedValue xxHash64Spark_returned_value
+        = {"Returns the computed 64-bit hash of the input string.", {"Int64"}};
+    FunctionDocumentation::Examples xxHash64Spark_examples
+        = {{"Usage example",
+            "SELECT xxHash64Spark('ABC');",
+            R"(
+┌─xxHash64Spark('ABC')─┐
+│  4105715581806190027 │
+└──────────────────────┘
+        )"}};
+    FunctionDocumentation::IntroducedIn xxHash64Spark_introduced_in = {26, 7};
+    FunctionDocumentation::Category xxHash64Spark_category = FunctionDocumentation::Category::Hash;
+    FunctionDocumentation xxHash64Spark_documentation
+        = {xxHash64Spark_description,
+           xxHash64Spark_syntax,
+           xxHash64Spark_arguments,
+           {},
+           xxHash64Spark_returned_value,
+           xxHash64Spark_examples,
+           xxHash64Spark_introduced_in,
+           xxHash64Spark_category};
+    factory.registerFunction<FunctionXxHash64Spark>(xxHash64Spark_documentation);
+
     FunctionDocumentation::Description xxh3_description = "Computes a [XXH3](https://github.com/Cyan4973/xxHash) 64-bit hash value.";
     FunctionDocumentation::Syntax xxh3_syntax = "xxh3(expr)";
     FunctionDocumentation::Arguments xxh3_argument = {{"expr", "A list of expressions of any data type.", {"Any"}}};
