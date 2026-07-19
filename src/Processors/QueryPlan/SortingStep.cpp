@@ -17,6 +17,7 @@
 #include <Processors/Transforms/PartialSortingTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <QueryPipeline/scatterByPartition.h>
+#include <Common/CurrentThread.h>
 #include <Common/JSONBuilder.h>
 #include <Common/MemoryTrackerUtils.h>
 
@@ -424,9 +425,19 @@ void SortingStep::mergeSorting(
 {
     bool increase_sort_description_compile_attempts = true;
 
+    /// Prefer the temporary data scope of the query context: it accounts for the per-query and
+    /// per-user limits (`max_temporary_data_on_disk_size_for_query` and `_for_user`), which the
+    /// server-global scope does not. Fall back to the global scope when there is no query
+    /// context (e.g. when the pipeline is built outside of a query).
+    TemporaryDataOnDiskScopePtr parent_scope;
+    if (auto query_context = CurrentThread::tryGetQueryContext())
+        parent_scope = query_context->getTempDataOnDisk();
+    if (!parent_scope)
+        parent_scope = Context::getGlobalContextInstance()->getSharedTempDataOnDisk();
+
     TemporaryDataOnDiskScopePtr tmp_data_on_disk = nullptr;
-    if (auto data = Context::getGlobalContextInstance()->getSharedTempDataOnDisk())
-        tmp_data_on_disk = data->childScope({
+    if (parent_scope)
+        tmp_data_on_disk = parent_scope->childScope({
             .current_metric = CurrentMetrics::TemporaryFilesForSort,
             .bytes_compressed = ProfileEvents::ExternalSortCompressedBytes,
             .bytes_uncompressed = ProfileEvents::ExternalSortUncompressedBytes,
