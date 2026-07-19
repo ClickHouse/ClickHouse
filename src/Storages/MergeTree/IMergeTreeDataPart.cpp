@@ -24,6 +24,7 @@
 #include <Interpreters/MergeTreeTransaction.h>
 #include <Interpreters/MergeTreeTransaction/VersionMetadataOnDisk.h>
 #include <Interpreters/TransactionLog.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/parseQuery.h>
 #include <Storages/ColumnsDescription.h>
@@ -1829,6 +1830,18 @@ CompressionCodecPtr IMergeTreeDataPart::detectDefaultCompressionCodec(const Comp
             }
 
             result = getCompressionCodecForFile(getDataPartStorage(), path_to_data_file);
+
+            /// `getCompressionCodecForFile` reconstructs the codec from the compressed frame's
+            /// method byte only. The method byte identifies the codec *family* but not its numeric
+            /// parameters, so a column written with `ZSTD(3)` reads back as `ZSTD(1)`, `LZ4HC(N)` as
+            /// `LZ4`, and so on. When the recovered codec carries such parameters - its descriptor is
+            /// a function call (`ZSTD(1)`) rather than a bare identifier (`LZ4`) - the level is a
+            /// default guess, not the part's real default, so mark `default_codec` approximate for
+            /// the same reasons as the `!result` fallback below: consumers must treat it as "unknown"
+            /// rather than trust a level that the on-disk frame does not preserve.
+            if (!result->getCodecDesc()->as<ASTIdentifier>())
+                default_codec_is_approximate = true;
+
             break;
         }
     }

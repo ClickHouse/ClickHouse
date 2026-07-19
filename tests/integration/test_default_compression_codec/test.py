@@ -26,6 +26,12 @@ node2 = cluster.add_instance(
     with_zookeeper=True,
 )
 node4 = cluster.add_instance("node4")
+node5 = cluster.add_instance(
+    "node5",
+    main_configs=[
+        "configs/force_zstd3.xml",
+    ],
+)
 
 
 @pytest.fixture(scope="module")
@@ -627,3 +633,71 @@ def test_default_codec_not_recovered_from_regenerated_checksums(start_cluster):
     )
 
     node4.query("DROP TABLE no_codec_no_checksums SYNC")
+
+
+def test_default_codec_approximate_when_recovered_from_column_data(start_cluster):
+    # The recovery cases above use tables where *every* column has an explicit CODEC, so no column
+    # proves the default codec and `detectDefaultCompressionCodec` recovers it from `checksums.txt`.
+    # This test covers the other branch: when a column has *no* explicit CODEC, its `.bin` is
+    # compressed with the part's default codec, and the recovery reads that column frame directly.
+    #
+    # `getCompressionCodecForFile` reconstructs the codec from the compressed frame's method byte
+    # only. The method byte identifies the codec *family* but not its numeric parameters, so a column
+    # written with `ZSTD(3)` comes back as `ZSTD(1)`. `node5` pins the default codec to `ZSTD(3)` for
+    # parts of any size (see `configs/force_zstd3.xml`), so we can produce a small default-coded
+    # `ZSTD(3)` part and observe the level being lost on recovery. Because the recovered `default_codec`
+    # no longer matches the part's real codec, it must be treated as approximate (its level is a
+    # default guess) so consumers such as `TTLRecompressMergeSelector` do not trust the guessed level.
+    node5.query(
+        """
+    CREATE TABLE approximate_default_codec (
+        key UInt64,
+        data String
+    )
+    ENGINE MergeTree ORDER BY tuple()
+    """
+    )
+
+    # Two inserts and a merge, so the part whose codec file we drop is a merged part.
+    node5.query("INSERT INTO approximate_default_codec VALUES (1, 'Hello world')")
+    node5.query("INSERT INTO approximate_default_codec VALUES (2, 'Goodbye world')")
+    node5.query("OPTIMIZE TABLE approximate_default_codec FINAL")
+
+    part_name = node5.query(
+        "SELECT name FROM system.parts WHERE database='default' AND table='approximate_default_codec' AND active"
+    ).strip()
+
+    # While `default_compression_codec.txt` is still present, the exact write-time default is known.
+    assert (
+        node5.query(
+            "SELECT default_compression_codec FROM system.parts "
+            "WHERE database='default' AND table='approximate_default_codec' AND active"
+        ).strip()
+        == "ZSTD(3)"
+    )
+
+    node5.query(f"ALTER TABLE approximate_default_codec DETACH PART '{part_name}'")
+
+    data_path = node5.query(
+        "SELECT arrayElement(data_paths, 1) FROM system.tables WHERE database='default' AND name='approximate_default_codec'"
+    ).strip()
+    node5.exec_in_container(
+        ["rm", f"{data_path}detached/{part_name}/default_compression_codec.txt"]
+    )
+
+    node5.query(f"ALTER TABLE approximate_default_codec ATTACH PART '{part_name}'")
+
+    assert node5.query("SELECT COUNT() FROM approximate_default_codec") == "2\n"
+
+    # The `data` column's `.bin` proves the codec *family* (ZSTD), but the frame does not store the
+    # level, so the recovered default comes back as `ZSTD(1)` rather than the real `ZSTD(3)`. The
+    # recovery is therefore approximate; the level shown here is a best-effort guess.
+    assert (
+        node5.query(
+            "SELECT default_compression_codec FROM system.parts "
+            "WHERE database='default' AND table='approximate_default_codec' AND active"
+        ).strip()
+        == "ZSTD(1)"
+    )
+
+    node5.query("DROP TABLE approximate_default_codec SYNC")
