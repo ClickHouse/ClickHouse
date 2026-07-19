@@ -3750,7 +3750,15 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
 
                     if (!should_keep_original_string_constant)
                     {
-                        const_value = convertFieldToType(const_value, *key_expr_type_not_null);
+                        /// A Date/Date32 key column can also be compared with a string containing a date and time
+                        /// (the string is then parsed as DateTime64, see `executeWithConstString`), so a failure
+                        /// to convert such a string to the key type is not an error. Skip building the atom,
+                        /// and the condition will be checked during execution.
+                        if (isDateOrDate32(key_expr_type_not_null))
+                            const_value = tryConvertFieldToType(const_value, *key_expr_type_not_null);
+                        else
+                            const_value = convertFieldToType(const_value, *key_expr_type_not_null);
+
                         if (const_value.isNull())
                             return false;
                         /// No need to set condition_is_relaxed because we're doing exact conversion
