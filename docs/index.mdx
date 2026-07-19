@@ -32,7 +32,7 @@ export const FullWidthDivider = ({ style }) => {
     return <hr ref={ref} className="ch-usecase-divider" style={style} />;
 };
 
-export const HeroCard = ({ filename, darkFilename: darkFilenameProp, title, description, body, href, links, icon, showArrow, external, arrowBottom, extraClassName, logo, logoInvert, overlayImg, fullWidthImage, imageHeight = 'h-48', imageTop }) => {
+export const HeroCard = ({ filename, darkFilename: darkFilenameProp, title, description, body, href, links, icon, showArrow, external, arrowBottom, extraClassName, logo, logoInvert, overlayImg, fullWidthImage, imageHeight = 'h-48', imageTop, galaxyEvent }) => {
     const assetBase = typeof window !== 'undefined' && window.location.pathname.startsWith('/docs') ? '/docs' : '';
     const withBase = (p) => p && p.startsWith('/') ? assetBase + p : p;
     const darkFilename = darkFilenameProp || (filename ? filename.replace('-light.', '-dark.') : null);
@@ -121,10 +121,10 @@ export const HeroCard = ({ filename, darkFilename: darkFilenameProp, title, desc
 
     const fullClassName = [cardClassName, extraClassName].filter(Boolean).join(' ');
     if (links && links.length > 0) {
-        return <div className={fullClassName}>{content}</div>;
+        return <div className={fullClassName} data-galaxy-event={galaxyEvent}>{content}</div>;
     }
 
-    return <a className={fullClassName} href={href} onClick={(e) => { e.preventDefault(); window.location.href = withBase(href); }}>{content}</a>;
+    return <a className={fullClassName} href={href} data-galaxy-event={galaxyEvent} onClick={(e) => { e.preventDefault(); window.location.href = withBase(href); }}>{content}</a>;
 };
 
 export const IntegrationsBanner = () => {
@@ -134,6 +134,7 @@ export const IntegrationsBanner = () => {
         <a
             className="ch-hero-card ch-integrations-banner flex items-center justify-between gap-4 p-4 rounded-lg no-underline bg-[#f9f9f9] border border-[#e5e7eb] text-inherit"
             href={href}
+            data-galaxy-event="docs.home.integrations"
             onClick={(e) => { e.preventDefault(); window.location.href = assetBase + href; }}
         >
             <div>
@@ -180,6 +181,7 @@ export const McpLink = ({ children }) => {
     return (
         <a
             href="#mcp-setup"
+            data-galaxy-event="docs.home.mcp-server"
             onClick={handleClick}
             className="inline-flex items-center gap-1.5 text-sm text-gray-500 dark:text-zinc-500 hover:text-gray-900 dark:hover:text-[#fdff75] transition-colors no-underline"
         >
@@ -203,6 +205,7 @@ export const QuickstartPill = ({ children }) => {
         <a
             className="inline-flex items-center gap-2 h-9 px-4 rounded-full text-sm text-gray-700 dark:text-zinc-200 bg-gray-950/[0.03] dark:bg-white/[0.04] border border-gray-950/15 dark:border-white/15 hover:border-gray-950/40 dark:hover:border-white/35 transition-colors no-underline"
             href={path}
+            data-galaxy-event="docs.home.quickstart-cloud"
             onClick={(e) => { e.preventDefault(); window.location.href = withBase(path); }}
         >
             <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" viewBox="0 0 256 256" aria-hidden="true" className="shrink-0 text-gray-500 dark:text-zinc-300"><path d="M215.79,118.17a8,8,0,0,0-5-5.66L153.18,90.9l14.66-73.33a8,8,0,0,0-13.69-7l-112,120a8,8,0,0,0,3,13l57.63,21.61L88.16,238.43a8,8,0,0,0,13.69,7l112-120A8,8,0,0,0,215.79,118.17ZM109.37,214l10.47-52.38a8,8,0,0,0-5-9.06L62,132.71l84.62-90.66L136.16,94.43a8,8,0,0,0,5,9.06l52.8,19.8Z"></path></svg>
@@ -232,6 +235,7 @@ export const AskAILink = ({ children }) => {
         <button
             type="button"
             id="home-assistant-entry"
+            data-galaxy-event="docs.home.ask-ai"
             onClick={openKapa}
             className="inline-flex items-center gap-1.5 text-sm text-gray-500 dark:text-zinc-500 hover:text-gray-900 dark:hover:text-[#fdff75] transition-colors bg-transparent border-0 p-0 cursor-pointer"
         >
@@ -312,7 +316,7 @@ export const PageWrapper = ({ children }) => {
         </div>
 
         <div className="flex items-center justify-center mx-auto mt-8 px-4">
-            <button type="button" id="home-search-entry" className="flex pointer-events-auto items-center text-sm leading-6 h-11 pl-3.5 pr-4 text-gray-500 dark:text-white/50 dark:brightness-[1.1] dark:hover:brightness-[1.25] gap-2 w-full max-w-[560px] bg-gray-950/[0.03] dark:bg-white/[0.03] hover:bg-gray-950/10 dark:hover:bg-white/10 shadow-none border border-gray-950/10 dark:border-white/10 ring-0 dark:ring-0 rounded-lg" aria-label="Open search">
+            <button type="button" id="home-search-entry" data-galaxy-event="docs.home.search" className="flex pointer-events-auto items-center text-sm leading-6 h-11 pl-3.5 pr-4 text-gray-500 dark:text-white/50 dark:brightness-[1.1] dark:hover:brightness-[1.25] gap-2 w-full max-w-[560px] bg-gray-950/[0.03] dark:bg-white/[0.03] hover:bg-gray-950/10 dark:hover:bg-white/10 shadow-none border border-gray-950/10 dark:border-white/10 ring-0 dark:ring-0 rounded-lg" aria-label="Open search">
                 <div className="flex items-center gap-2 min-w-0"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="lucide lucide-search min-w-4 flex-none text-gray-700 hover:text-gray-800 dark:text-gray-400 hover:dark:text-gray-200"><circle cx="11" cy="11" r="8" /><path d="m21 21-4.3-4.3" /></svg><div className="truncate min-w-0">Search...</div></div>
             </button>
         </div>
@@ -325,6 +329,7 @@ export const PageWrapper = ({ children }) => {
         <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-x-6 gap-y-4 mt-24">
             <HeroCard
                 title="Get started"
+                galaxyEvent="docs.home.get-started"
                 description="I am new here, I want to get started and learn more"
                 href="/get-started/quickstarts/create-your-first-service-on-cloud"
                 icon={
@@ -344,6 +349,7 @@ export const PageWrapper = ({ children }) => {
             />
             <HeroCard
                 title="Guides"
+                galaxyEvent="docs.home.guides"
                 description="I want to accomplish a specific task with ClickHouse"
                 href="/guides/clickhouse"
                 icon={
@@ -360,6 +366,7 @@ export const PageWrapper = ({ children }) => {
             />
             <HeroCard
                 title="Reference"
+                galaxyEvent="docs.home.reference"
                 description="I know what I want to do - I just need the details"
                 href="/reference/home"
                 icon={
@@ -379,6 +386,7 @@ export const PageWrapper = ({ children }) => {
             />
             <HeroCard
                 title="Our solutions"
+                galaxyEvent="docs.home.solutions"
                 description="I want to explore ClickHouse solutions"
                 href="/products/cloud/getting-started/intro"
                 icon={
@@ -391,7 +399,7 @@ export const PageWrapper = ({ children }) => {
                     { label: "ClickStack", href: "/clickstack" },
                     { label: "Managed Postgres", href: "/products/managed-postgres/overview" },
                     { label: "Langfuse", href: "https://langfuse.com/docs", external: true },
-                    { label: "chDB", href: "/products/chdb" },
+                    { label: "chDB", href: "/chdb" },
                     { label: "Kubernetes operator", href: "/products/kubernetes-operator/overview" },
                 ]}
             />
@@ -403,24 +411,28 @@ export const PageWrapper = ({ children }) => {
         <div className="grid sm:grid-cols-2 min-[1300px]:grid-cols-4 gap-x-6 gap-y-4 mt-6">
             <HeroCard
                 title="Real-time analytics"
+                galaxyEvent="docs.home.real-time-analytics"
                 description="Deliver instant insights and dashboards at scale. Analyze billions of rows in real time with millisecond results."
                 href="/get-started/use-cases/real-time-analytics"
                 showArrow
             />
             <HeroCard
                 title="Observability"
+                galaxyEvent="docs.home.observability"
                 description="Store and query logs, metrics and traces at scale using ClickStack, the open source observability stack powered by ClickHouse."
                 href="/clickstack/overview"
                 showArrow
             />
             <HeroCard
                 title="Data warehousing"
+                galaxyEvent="docs.home.data-warehousing"
                 description="Analyze and explore data instantly for insights and apps. Scale faster by offloading heavy workloads."
                 href="/get-started/use-cases/data-warehousing"
                 showArrow
             />
             <HeroCard
                 title="Agentic analytics"
+                galaxyEvent="docs.home.agentic-analytics"
                 description="Let AI agents query your real-time data directly to deliver instant, conversational insights and visualizations"
                 href="/get-started/use-cases/agentic-analytics"
                 showArrow
@@ -440,6 +452,7 @@ export const PageWrapper = ({ children }) => {
                         imageTop
                         imageHeight="h-[340px]"
                         title="ClickHouse Cloud"
+                        galaxyEvent="docs.home.clickhouse-cloud"
                         href="/products/cloud/getting-started/cloud-get-started"
                         extraClassName="h-full"
                         body={<>
@@ -461,6 +474,7 @@ export const PageWrapper = ({ children }) => {
                     <HeroCard
                         filename="thumbnail-clickstack-light.webp"
                         title="ClickStack"
+                        galaxyEvent="docs.home.clickstack"
                         description="The all in one observability stack powered by ClickHouse, which gives you lightning-fast queries and powerful aggregations on logs, metrics, traces, session replays and errors."
                         href="/clickstack/overview"
                         extraClassName="flex-1"
@@ -470,6 +484,7 @@ export const PageWrapper = ({ children }) => {
                     <HeroCard
                         filename="thumbnail-postgres-light.webp"
                         title="Managed Postgres"
+                        galaxyEvent="docs.home.managed-postgres"
                         description="Fast, scalable, enterprise-grade Postgres service, natively integrated with ClickHouse. Easily combine Postgres for transactions and ClickHouse for analytics."
                         href="/products/managed-postgres/overview"
                         extraClassName="flex-1"
@@ -485,6 +500,7 @@ export const PageWrapper = ({ children }) => {
                 <HeroCard
                     filename="thumbnail-langfuse-light.webp"
                     title="Langfuse"
+                    galaxyEvent="docs.home.langfuse"
                     description="Open-source LLM engineering platform for observability, metrics, evaluations, and prompt management."
                     href="https://langfuse.com/docs"
                     showArrow
@@ -493,6 +509,7 @@ export const PageWrapper = ({ children }) => {
                 <HeroCard
                     filename="thumbnail-kubernetes-light.webp"
                     title="Kubernetes Operator"
+                    galaxyEvent="docs.home.kubernetes-operator"
                     description="Automates deploying, configuring, and managing ClickHouse and ClickHouse Keeper clusters on Kubernetes."
                     href="/products/kubernetes-operator/overview"
                     showArrow
@@ -500,8 +517,9 @@ export const PageWrapper = ({ children }) => {
                 <HeroCard
                     filename="thumbnail-chdb-light.webp"
                     title="chDB"
+                    galaxyEvent="docs.home.chdb"
                     description="A fast, reliable, and scalable in-process database. Experience the power of ClickHouse, in-process."
-                    href="/products/chdb/index"
+                    href="/chdb/index"
                     showArrow
                 />
             </div>

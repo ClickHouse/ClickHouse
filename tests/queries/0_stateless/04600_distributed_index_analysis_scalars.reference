@@ -1,0 +1,9 @@
+-- { echo }
+select sum(key) from test_200_parts settings cluster_for_parallel_replicas='test_cluster_one_shard_two_replicas';
+499999500000
+select sum(key) from test_20_parts settings cluster_for_parallel_replicas='test_cluster_one_shard_two_replicas';
+499500
+SELECT * FROM mergeTreeAnalyzeIndexesUUID(?, true, __getScalar(?))	['_table_function.mergeTreeAnalyzeIndexesUUID']
+select sum(key) from `?` settings cluster_for_parallel_replicas=?;	['default.test_200_parts']
+SELECT * FROM mergeTreeAnalyzeIndexesUUID(?, true, [?..])	['_table_function.mergeTreeAnalyzeIndexesUUID']
+select sum(key) from test_20_parts settings cluster_for_parallel_replicas=?;	['default.test_20_parts']

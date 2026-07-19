@@ -365,9 +365,27 @@ static IMergeTreeDataPart::Checksums checkDataPart(
         try
         {
             bool noop = false;
+            auto projection_storage = data_part_storage.getProjection(projection_file);
+
+            /// A projection part that failed to load before its columns were set (e.g. because of a
+            /// corrupted serialization.json) has an empty column list. Checking against it would
+            /// report a misleading "columns don't match" error and hide the real corruption, so
+            /// read the expected columns from the part's own columns.txt in that case. The current
+            /// projection metadata would not do: existing parts can legitimately lag behind it
+            /// after an ALTER (readable through alter conversions). If
+            /// columns.txt itself is unreadable, this throws the actual problem into the catch
+            /// below.
+            NamesAndTypesList projection_columns = projection->getColumns();
+            if (projection_columns.empty())
+            {
+                auto buf = projection_storage->readFile("columns.txt", read_settings, std::nullopt);
+                projection_columns.readText(*buf);
+                assertEOF(*buf);
+            }
+
             projection_checksums = checkDataPart(
-                projection, *data_part_storage.getProjection(projection_file),
-                projection->getColumns(), projection->getType(),
+                projection, *projection_storage,
+                projection_columns, projection->getType(),
                 projection->getFileNamesWithoutChecksums(),
                 read_settings, require_checksums, is_cancelled, noop, /* throw_on_broken_projection */false);
         }
