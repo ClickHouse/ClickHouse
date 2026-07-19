@@ -94,6 +94,12 @@ QueryPipeline HTTPDictionarySource::createWrappedBuffer(std::unique_ptr<ReadWrit
     String path = http_buffer_ptr->getCurrentURI().getPath();
     String http_request_compression_method_str = http_buffer_ptr->getCompressionMethod();
     auto compression_method = chooseCompressionMethod(path, http_request_compression_method_str);
+    /// The inverse redirect pattern must keep working too: a source URL with a compression suffix
+    /// (e.g. `/data.csv.gz`) may redirect to an opaque signed URL (e.g. `/signed-token`) that serves
+    /// the same compressed object without `Content-Encoding`. In that case the final URI does not
+    /// imply any compression method, so fall back to the suffix of the original source URL.
+    if (compression_method == CompressionMethod::None && http_request_compression_method_str.empty())
+        compression_method = chooseCompressionMethod(Poco::URI(configuration.url).getPath(), "");
     /// When the compression method came from the response's `Content-Encoding` header,
     /// `Content-Encoding: snappy` follows the HTTP standard wire format (snappy framing),
     /// independent of the user-tunable `snappy_mode`. When the method is instead inferred

@@ -5,4 +5,7 @@ with redirects:
 redirect to gzip:
 1	first
 2	second
+gzip source redirected to opaque url:
+1	first
+2	second
 PASSED
