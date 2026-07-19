@@ -15,6 +15,7 @@ Special format for reading Parquet file metadata (https://parquet.apache.org/doc
 - `format_version` - parquet format version, always 1.0 or 2.6
 - `total_uncompressed_size` - total uncompressed bytes size of the data, calculated as the sum of total_byte_size from all row groups
 - `total_compressed_size` - total compressed bytes size of the data, calculated as the sum of total_compressed_size from all row groups
+- `key_value_metadata` - the map with custom key-value metadata from the file (empty if the file doesn't contain any key-value metadata)
 - `columns` - the list of columns metadata with the next structure:
   - `name` - column name
   - `path` - column path (differs from name for nested column)
@@ -64,6 +65,7 @@ FORMAT PrettyJSONEachRow
     "metadata_size": "577",
     "total_uncompressed_size": "282436",
     "total_compressed_size": "26633",
+    "key_value_metadata": {},
     "columns": [
         {
             "name": "number",
