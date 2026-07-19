@@ -375,6 +375,13 @@ def test_copy_rejects_unsupported_options(started_cluster):
             cur.copy_expert("COPY (SELECT 1 AS a, 2 AS b) TO STDOUT WITH (FORMAT csv, QUOTE '\"')", io.StringIO())
         conn.rollback()
 
+        # A format we do not recognize must be rejected with a clean error too, not throw inside the parser
+        # (which would fall through to the regular-query path and tear the connection down instead).
+        with pytest.raises(py_psql.Error, match='"JSONEachRow" format'):
+            cur = conn.cursor()
+            cur.copy_expert("COPY (SELECT 1 AS a, 2 AS b) TO STDOUT WITH FORMAT JSONEachRow", io.StringIO())
+        conn.rollback()
+
         # The connection is still usable after the rejections.
         cur = conn.cursor()
         cur.execute("SELECT 42")
@@ -598,4 +605,27 @@ def test_explicit_schema_resolves_correct_database(started_cluster):
             f"SELECT id, tag FROM postgresql('127.0.0.1:{PG_PORT}', 'default', 'events', 'pguser', 'pgpass', 'pg_ns_b')"
         )
         == "2\tb\n"
+    )
+
+
+def test_current_setting_missing_ok_returns_null(started_cluster):
+    # The emulated `current_setting(name, missing_ok)` must distinguish an absent parameter (NULL) from one
+    # whose value is the empty string, so it returns `Nullable(String)`: a known parameter yields its value,
+    # an unknown parameter with `missing_ok = true` yields NULL (not an empty string), and an unknown
+    # parameter without `missing_ok` throws.
+    assert node.query("SELECT current_setting('server_version_num')") == "120000\n"
+
+    # An unknown parameter is NULL (rendered as `\N` in TSV), and is genuinely NULL rather than empty.
+    assert node.query("SELECT current_setting('no_such_parameter', true)") == "\\N\n"
+    assert node.query("SELECT current_setting('no_such_parameter', true) IS NULL") == "1\n"
+
+    # `COALESCE` over the missing_ok form takes the fallback branch, which an empty-string sentinel would not.
+    assert (
+        node.query("SELECT COALESCE(current_setting('no_such_parameter', true), 'fallback')")
+        == "fallback\n"
+    )
+
+    # Without `missing_ok`, an unknown parameter throws.
+    assert "UNKNOWN_SETTING" in node.query_and_get_error(
+        "SELECT current_setting('no_such_parameter')"
     )
