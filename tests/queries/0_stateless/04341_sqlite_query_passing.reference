@@ -24,3 +24,9 @@ val	Nullable(Float64)
 -- external_table_strict_query: no outer filter is allowed
 4
 -- INSERT into a query-backed table function is rejected before schema inference
+-- projection-count mismatch: an explicit structure with more columns than the query pads with defaults
+1	a	0
+2	b	0
+3	c	0
+4	d	0
+-- type mismatch: a text value read into a declared Date is a query error, not a crash

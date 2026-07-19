@@ -263,15 +263,15 @@ because "brown" appears between "quick" and "fox".
             "SELECT hasPhrase('the quick brown fox jumps', 'quick brown')",
             R"(
 ┌─hasPhrase('the quick brown fox jumps', 'quick brown')─┐
-│                                                      1 │
-└────────────────────────────────────────────────────────┘
+│                                                     1 │
+└───────────────────────────────────────────────────────┘
         )"},
            {"Non-consecutive tokens",
             "SELECT hasPhrase('the quick brown fox jumps', 'quick fox')",
             R"(
 ┌─hasPhrase('the quick brown fox jumps', 'quick fox')─┐
-│                                                    0 │
-└──────────────────────────────────────────────────────┘
+│                                                   0 │
+└─────────────────────────────────────────────────────┘
         )"}};
     FunctionDocumentation::IntroducedIn introduced_in = {26, 4};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::StringSearch;
