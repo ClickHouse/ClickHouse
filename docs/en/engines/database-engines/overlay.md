@@ -127,12 +127,16 @@ table. This applies to both reads and `INSERT`s:
   facade either, though it does allow reading that database directly (independently of the
   `Overlay`);
 * `INSERT` through the facade likewise requires the `INSERT` privilege on both the `Overlay`
-  and the underlying source database.
+  and the underlying source database;
+* the same dual-grant `SELECT` check covers the other read entrypoints that resolve the facade
+  name to a source table, such as `WATCH`.
 
 Row policies follow the same rule: reading a table through the facade applies the `SELECT` row
 policies of **both** the `Overlay` and the underlying source table (a row is returned only if it
 passes both). A row policy defined on the source table still applies to direct reads of that
-table, independently of the `Overlay`.
+table, independently of the `Overlay`. This holds even when the source object is a view and the
+analyzer inlines it (`analyzer_inline_views = 1`): the facade's own row policies are still
+combined in, so inlining does not bypass them.
 
 Metadata visibility follows the same dual-grant rule. `SHOW TABLES`, `SHOW CREATE TABLE`,
 `DESCRIBE`, `SHOW COLUMNS`, `EXISTS`, and the rows of `system.tables` / `system.columns` that

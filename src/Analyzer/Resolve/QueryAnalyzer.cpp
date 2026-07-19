@@ -61,6 +61,7 @@
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Storages/IStorage.h>
 #include <Storages/StorageView.h>
+#include <Databases/DatabaseOverlay.h>
 #include <Storages/ColumnsDescription.h>
 
 #include <Access/EnabledRowPolicies.h>
@@ -5550,6 +5551,19 @@ void QueryAnalyzer::inlineViewSubqueryIfNeeded(QueryTreeNodePtr & join_tree_node
     auto storage_id = storage->getStorageID();
     auto row_policy_filter = scope.context->getRowPolicyFilter(
         storage_id.getDatabaseName(), storage_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
+
+    /// When the view is reached through a read-only `Overlay` facade, `storage_id` is the underlying
+    /// source view, but the facade's own row policies must apply too (a row must pass both). Combine
+    /// them here, mirroring `getEffectiveRowPolicyFilter` on the non-inlined path — otherwise
+    /// inlining the view would silently drop the facade filter.
+    const auto & written_id = table_node->getStorageID();
+    if (DatabaseOverlay::getSourceTableIdForReadonlyFacade(written_id, storage))
+    {
+        auto facade_filter = scope.context->getRowPolicyFilter(
+            written_id.getDatabaseName(), written_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
+        row_policy_filter = combineRowPolicyFilters(row_policy_filter, facade_filter);
+    }
+
     bool has_row_policy = row_policy_filter && !row_policy_filter->isAlwaysTrue();
 
     /// Build the query tree from the view's inner query AST.

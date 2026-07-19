@@ -1,0 +1,4 @@
+A grant on the Overlay database alone is not enough to WATCH through the facade
+ACCESS_DENIED
+Grants on both the Overlay and the underlying database pass the access check (WATCH then fails only because MergeTree does not support it)
+not supported

@@ -16,6 +16,7 @@ limitations under the License. */
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterWatchQuery.h>
+#include <Databases/DatabaseOverlay.h>
 #include <Access/Common/AccessFlags.h>
 #include <QueryPipeline/StreamLocalLimits.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
@@ -78,6 +79,12 @@ QueryPipelineBuilder InterpreterWatchQuery::buildQueryPipeline()
     auto metadata_snapshot = storage->getInMemoryMetadataPtr(getContext(), false);
     Names required_columns = metadata_snapshot->getColumns().getNamesOfPhysical();
     getContext()->checkAccess(AccessType::SELECT, table_id, required_columns);
+
+    /// When the table is reached through a read-only `Overlay` facade, `table_id` is the facade
+    /// name; reading also requires the grant on the underlying source table, so the facade cannot
+    /// widen access (mirrors the dual-grant `SELECT` check in the regular read path).
+    if (auto source_id = DatabaseOverlay::getSourceTableIdForReadonlyFacade(table_id, storage))
+        getContext()->checkAccess(AccessType::SELECT, *source_id, required_columns);
 
     /// Get context settings for this query
     const Settings & settings = getContext()->getSettingsRef();

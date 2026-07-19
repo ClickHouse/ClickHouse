@@ -3,6 +3,7 @@
 #include <Access/Common/AccessFlags.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/Context.h>
+#include <Databases/DatabaseOverlay.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/HypotheticalIndexStore.h>
 #include <Interpreters/InterpreterFactory.h>
@@ -100,7 +101,15 @@ BlockIO InterpreterHypotheticalIndexQuery::execute()
     /// SELECT — otherwise a user with table-level access could infer a restricted
     /// column's distribution from the reported skip ratio.
     if (index_desc.expression)
+    {
         context->checkAccess(AccessType::SELECT, table_id, index_desc.expression->getRequiredColumns());
+
+        /// Through a read-only `Overlay` facade, `table_id` is the facade name; also require SELECT
+        /// on the underlying source columns, so a facade-only grant cannot infer source-side index
+        /// selectivity through the reported skip ratio.
+        if (auto source_id = DatabaseOverlay::getSourceTableIdForReadonlyFacade(table_id, table))
+            context->checkAccess(AccessType::SELECT, *source_id, index_desc.expression->getRequiredColumns());
+    }
 
     /// validate() must run before get(): index creators assume their arguments were already
     /// validated and read them unguarded (e.g. set/bloom_filter index.arguments->children[0]),
