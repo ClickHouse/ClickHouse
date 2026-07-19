@@ -93,12 +93,18 @@ auto extractSingleValueFromBlock(const Block & block, const String & name)
 }
 
 NameSet getVirtualNamesForFileLikeStorage();
+/// If `detect_hive_partition_columns_regardless_of_setting` is true, hive partition columns found in
+/// `path` are registered as virtual columns even when `use_hive_partitioning` is disabled in `context`.
+/// Persistent tables (e.g. the `S3` table engine) pass true so that the virtual-column set is a stable
+/// property of the table and does not depend on the session setting active at CREATE TABLE / ATTACH
+/// time. Per-query storages (table functions) keep the setting-gated behavior.
 VirtualColumnsDescription getVirtualsForFileLikeStorage(
     ColumnsDescription & storage_columns,
     ContextPtr context,
     const std::optional<FormatSettings> & format_settings = std::nullopt,
     std::optional<PartitionStrategyFactory::StrategyType> partition_strategy = std::nullopt,
-    const std::string & path = "");
+    const std::string & path = "",
+    bool detect_hive_partition_columns_regardless_of_setting = false);
 
 std::optional<ActionsDAG> createPathAndFileFilterDAG(
     const ActionsDAG::Node * predicate,

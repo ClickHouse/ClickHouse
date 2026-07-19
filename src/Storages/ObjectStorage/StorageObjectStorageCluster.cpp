@@ -92,7 +92,11 @@ StorageObjectStorageCluster::StorageObjectStorageCluster(
     resolveSchemaAndFormat(columns, configuration->format, object_storage, configuration, {}, sample_path, context_);
     configuration->check(context_);
 
+    /// Same policy as `StorageObjectStorage`: persistent tables always resolve the sample path so
+    /// that hive partition columns do not depend on the session setting at CREATE TABLE / ATTACH
+    /// time, while table functions keep the setting-gated behavior.
     if (sample_path.empty()
+        && (context_->getSettingsRef()[Setting::use_hive_partitioning] || !is_table_function)
         && !configuration->isDataLakeConfiguration()
         && !configuration->partition_strategy)
         sample_path = getPathSample(context_);
@@ -104,7 +108,8 @@ StorageObjectStorageCluster::StorageObjectStorageCluster(
         sample_path,
         columns_in_table_or_function_definition.empty(),
         std::nullopt,
-        context_);
+        context_,
+        /* detect_hive_partition_columns_regardless_of_setting */ !is_table_function);
 
     StorageInMemoryMetadata metadata;
     metadata.setColumns(columns);
@@ -130,7 +135,8 @@ StorageObjectStorageCluster::StorageObjectStorageCluster(
         context_,
         /* format_settings */std::nullopt,
         configuration->partition_strategy_type,
-        sample_path));
+        sample_path,
+        /* detect_hive_partition_columns_regardless_of_setting */ !is_table_function));
 
     setInMemoryMetadata(metadata);
 }

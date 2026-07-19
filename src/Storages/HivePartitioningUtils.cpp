@@ -214,7 +214,8 @@ HivePartitionColumnsWithFileColumnsPair setupHivePartitioningForObjectStorage(
     const std::string & sample_path,
     bool inferred_schema,
     std::optional<FormatSettings> format_settings,
-    ContextPtr context)
+    ContextPtr context,
+    bool detect_hive_partition_columns_regardless_of_setting)
 {
     NamesAndTypesList hive_partition_columns_to_read_from_file_path;
     NamesAndTypesList file_columns;
@@ -231,12 +232,16 @@ HivePartitionColumnsWithFileColumnsPair setupHivePartitioningForObjectStorage(
         hive_partition_columns_to_read_from_file_path = configuration->partition_strategy->getPartitionColumns();
         sanityCheckSchemaAndHivePartitionColumns(hive_partition_columns_to_read_from_file_path, columns, /* check_contained_in_schema */true);
     }
-    else if (context->getSettingsRef()[Setting::use_hive_partitioning])
+    else if (context->getSettingsRef()[Setting::use_hive_partitioning] || detect_hive_partition_columns_regardless_of_setting)
     {
+        /// Enrichment of an inferred schema with the partition columns stays gated on the
+        /// `use_hive_partitioning` setting: detection performed on behalf of a persistent table
+        /// (`detect_hive_partition_columns_regardless_of_setting`) must not add physical columns
+        /// the user did not opt into — the columns are exposed as virtual columns instead.
         hive_partition_columns_to_read_from_file_path = extractPartitionColumnsFromPathAndEnrichStorageColumns(
             columns,
             sample_path,
-            inferred_schema,
+            inferred_schema && context->getSettingsRef()[Setting::use_hive_partitioning],
             format_settings,
             context);
         sanityCheckSchemaAndHivePartitionColumns(hive_partition_columns_to_read_from_file_path, columns, /* check_contained_in_schema */false);

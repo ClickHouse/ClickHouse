@@ -251,7 +251,8 @@ VirtualColumnsDescription getVirtualsForFileLikeStorage(
     ContextPtr context,
     const std::optional<FormatSettings> & format_settings,
     std::optional<PartitionStrategyFactory::StrategyType> partition_strategy,
-    const std::string & path)
+    const std::string & path,
+    bool detect_hive_partition_columns_regardless_of_setting)
 {
     VirtualColumnsDescription desc;
 
@@ -274,12 +275,13 @@ VirtualColumnsDescription getVirtualsForFileLikeStorage(
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected partition strategy to be specified");
 
         /// If `partition_strategy == none`, we expose hive-style partition columns (`key=value`
-        /// segments in the file path) as virtual columns whenever we can detect them. The set of
-        /// virtual columns has to be fixed at CREATE TABLE / DESCRIBE time, so we do *not* gate
-        /// this on the `use_hive_partitioning` session setting — that setting still controls
-        /// whether hive columns participate in physical schema inference and whether they get
-        /// populated at read time, but the column *existence* must be stable across queries.
-        if (partition_strategy == PartitionStrategyFactory::StrategyType::NONE)
+        /// segments in the file path) as virtual columns. For per-query storages (table functions)
+        /// this is gated on the `use_hive_partitioning` session setting as before. Persistent tables
+        /// pass `detect_hive_partition_columns_regardless_of_setting` so that the virtual-column set
+        /// is a stable property of the table: it must not depend on the setting that happened to be
+        /// active at CREATE TABLE / ATTACH time (see #74571).
+        if ((context->getSettingsRef()[Setting::use_hive_partitioning] || detect_hive_partition_columns_regardless_of_setting)
+            && partition_strategy == PartitionStrategyFactory::StrategyType::NONE)
         {
             auto hive_columns = HivePartitioningUtils::extractHivePartitionColumnsFromPath(storage_columns, path, format_settings, context);
             for (const auto & column : hive_columns)
@@ -383,10 +385,12 @@ ColumnPtr getFilterByPathAndFileIndexes(
 
     Block block;
     NameSet common_virtuals = getVirtualNamesForFileLikeStorage();
+    bool block_has_hive_virtuals = false;
     for (const auto & column : virtual_columns)
     {
-        if (column.name == "_file" || column.name == "_path"
-            || (!common_virtuals.contains(column.name) && !isReaderOnlyVirtualColumn(column.name)))
+        const bool is_hive_virtual = !common_virtuals.contains(column.name) && !isReaderOnlyVirtualColumn(column.name);
+        block_has_hive_virtuals |= is_hive_virtual;
+        if (column.name == "_file" || column.name == "_path" || is_hive_virtual)
             block.insert({column.type->createColumn(), column.type, column.name});
     }
 
@@ -398,7 +402,13 @@ ColumnPtr getFilterByPathAndFileIndexes(
     block.insert({ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), "_idx"});
 
     const auto hive_format_settings = HivePartitioningUtils::buildHiveFormatSettings(format_settings, context);
-    const bool parse_hive_columns = context->getSettingsRef()[Setting::use_hive_partitioning] || !hive_columns.empty();
+    /// If the filter block contains hive-derived columns (either passed explicitly via `hive_columns`
+    /// or registered as non-common virtual columns of the storage), their values can only come from
+    /// parsing the path, so parse it regardless of the `use_hive_partitioning` session setting.
+    /// Leaving such a column empty would produce a zero-height filter and prune every file.
+    const bool parse_hive_columns = context->getSettingsRef()[Setting::use_hive_partitioning]
+        || !hive_columns.empty()
+        || block_has_hive_virtuals;
 
     /// Detach all block columns into mutable holders once, append all rows through them, and
     /// assign them back once. This keeps `IColumn::mutate` (and its recursive subcolumn re-wrapping

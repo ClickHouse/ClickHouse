@@ -42,6 +42,13 @@ $CLICKHOUSE_CLIENT --use_hive_partitioning=0 -q "
     SELECT column0 FROM t_04077_s3_hive LIMIT 1
 "
 
+# Filtering by the hive column must also work with `use_hive_partitioning=0` at query time:
+# the file-listing filter has to parse hive values from the path whenever the storage exposes
+# hive virtual columns, otherwise the empty filter column would prune every file.
+$CLICKHOUSE_CLIENT --use_hive_partitioning=0 -q "
+    SELECT first FROM t_04077_s3_hive WHERE column0 = 'Elizabeth' LIMIT 1
+"
+
 # -- Secondary scenario: table created with use_hive_partitioning=1 works
 #    normally when the setting is also on at query time.
 

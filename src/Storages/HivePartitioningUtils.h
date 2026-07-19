@@ -53,13 +53,19 @@ using HivePartitionColumnsWithFileColumnsPair = std::pair<NamesAndTypesList, Nam
  * and there are hive partitioned paths,
  * then for compatibility we use old hive partitioning support with hive partition columns as virtual.
  */
+/// If `detect_hive_partition_columns_regardless_of_setting` is true, hive partition columns are
+/// extracted from `sample_path` even when `use_hive_partitioning` is disabled in `context`.
+/// Persistent tables (e.g. the `S3` table engine) pass true so that the set of hive partition
+/// columns is decided once per table and does not depend on the session setting active at
+/// CREATE TABLE / ATTACH time; the setting still controls inferred-schema enrichment.
 HivePartitionColumnsWithFileColumnsPair setupHivePartitioningForObjectStorage(
     ColumnsDescription & columns,
     const StorageObjectStorageConfigurationPtr & configuration,
     const std::string & sample_path,
     bool inferred_schema,
     std::optional<FormatSettings> format_settings,
-    ContextPtr context);
+    ContextPtr context,
+    bool detect_hive_partition_columns_regardless_of_setting = false);
 
 HivePartitionColumnsWithFileColumnsPair setupHivePartitioningForFileURLLikeStorage(
     ColumnsDescription & columns,

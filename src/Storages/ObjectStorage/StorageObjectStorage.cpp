@@ -156,12 +156,14 @@ StorageObjectStorage::StorageObjectStorage(
 {
     configuration->initPartitionStrategy(partition_by_, columns_in_table_or_function_definition, context);
     const bool need_resolve_columns_or_format = columns_in_table_or_function_definition.empty() || (configuration->format == "auto");
-    /// Always resolve the sample path so that hive partition columns can be registered as
-    /// virtual columns regardless of whether `use_hive_partitioning` was enabled at CREATE
-    /// TABLE time. The set of virtual columns must be stable across queries, so detection
-    /// happens once here; the setting still controls whether hive columns are *populated* at
-    /// read time and whether they participate in inferred-schema enrichment.
-    const bool need_resolve_sample_path = !configuration->partition_strategy
+    /// For persistent tables, always resolve the sample path so that hive partition columns can be
+    /// registered as virtual columns regardless of whether `use_hive_partitioning` was enabled at
+    /// CREATE TABLE / ATTACH time: the set of virtual columns must be a stable property of the table,
+    /// not of the session that happened to create or re-attach it (see #74571). Table functions are
+    /// constructed per query, so for them the session setting keeps gating the detection (and the
+    /// extra listing request) exactly as before.
+    const bool need_resolve_sample_path = (context->getSettingsRef()[Setting::use_hive_partitioning] || !is_table_function)
+        && !configuration->partition_strategy
         && !configuration->isDataLakeConfiguration();
     const bool do_lazy_init = lazy_init && !need_resolve_columns_or_format && !need_resolve_sample_path;
 
@@ -268,7 +270,8 @@ StorageObjectStorage::StorageObjectStorage(
         sample_path,
         columns_in_table_or_function_definition.empty(),
         format_settings,
-        context);
+        context,
+        /* detect_hive_partition_columns_regardless_of_setting */ !is_table_function);
 
     // Assert file contains at least one column. The assertion only takes place if we were able to deduce the schema. The storage might be empty.
     if (!columns.empty() && file_columns.empty())
@@ -342,7 +345,8 @@ StorageObjectStorage::StorageObjectStorage(
         context,
         format_settings,
         configuration->partition_strategy_type,
-        sample_path);
+        sample_path,
+        /* detect_hive_partition_columns_regardless_of_setting */ !is_table_function);
 
     if (configuration->getType() == ObjectStorageType::Web && !metadata.getColumns().has("_headers"))
     {
