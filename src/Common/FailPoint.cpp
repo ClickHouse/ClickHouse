@@ -249,6 +249,10 @@ static struct InitFiu
     ONCE(zk_send_thread_request_window_throw) \
     ONCE(zk_send_thread_operations_insert_throw) \
     REGULAR(replicated_database_status_finished_node_missing) \
+    REGULAR(iceberg_drop_data_cleanup_fail) \
+    REGULAR(iceberg_drop_catalog_remove_fail) \
+    REGULAR(iceberg_drop_metadata_anchor_fail) \
+    REGULAR(iceberg_drop_first_data_delete_fail) \
     PAUSEABLE_ONCE(rmt_cancel_removed_parts_check_pause_in_gap)
 
 namespace FailPoints

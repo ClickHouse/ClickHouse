@@ -32,6 +32,30 @@ namespace ErrorCodes
 extern const int UNSUPPORTED_METHOD;
 }
 
+/// How the owning database handles a thrown drop(), which determines whether a data-lake drop may
+/// swallow a per-object cleanup failure or must propagate it. The three families behave differently:
+///  - Reattaching: DatabaseOnDisk / DatabaseMemory / DatabaseOrdinary (Nil database UUID, no catalog)
+///    reattach the table into service on any thrown drop(). Since cleanup irreversibly deletes files,
+///    once deletion has started a failure must be swallowed on every phase -- rethrowing would roll a
+///    partially deleted (corrupted) table back into service.
+///  - AsyncRetry: DatabaseAtomic / DatabaseReplicated (non-Nil UUID, no catalog) do not reattach; the
+///    async DatabaseCatalog::dropTableFinally retries a thrown drop() and only removes the dropped
+///    metadata after drop() returns. Failures must propagate (including the post-commit anchor phase)
+///    so the retry re-runs and finishes the cleanup; swallowing would report success and drop the
+///    retry metadata while files can still remain.
+///  - CatalogRetry: DatabaseDataLake (catalog-backed) does not reattach; a DROP is retryable via the
+///    surviving catalog entry and metadata anchor as long as the catalog row is intact. Pre-commit
+///    failures must propagate (retry rebuilds and re-cleans), but AFTER the commit removes the catalog
+///    row the drop is no longer retryable, so the post-commit anchor phase must be swallowed -- else
+///    the DROP reports failure while the table is gone and a surviving *.metadata.json blocks re-create
+///    with TABLE_ALREADY_EXISTS and no SQL retry path.
+enum class DropCleanupPolicy : uint8_t
+{
+    Reattaching,
+    AsyncRetry,
+    CatalogRetry,
+};
+
 class BackgroundJobsAssignee;
 class SinkToStorage;
 using SinkToStoragePtr = std::shared_ptr<SinkToStorage>;
@@ -176,7 +200,13 @@ public:
         throwNotImplemented(fmt::format("EXECUTE {}", command_name));
     }
 
-    virtual void drop(ContextPtr) { }
+    /// Drop the table's underlying files. `commit` is the caller's commit point (catalog entry
+    /// removal) and must be invoked exactly once. Iceberg deletes data files first, runs `commit`,
+    /// then deletes the metadata anchor last, so a failure before `commit` leaves the table fully
+    /// reconstructable and retryable. `policy` (see DropCleanupPolicy) selects, per owning-database
+    /// semantics, whether a per-object failure is propagated or logged and swallowed at each phase.
+    /// The default (non-Iceberg / no-op cleanup) just runs `commit`.
+    virtual void drop(ContextPtr, const std::function<void()> & commit, DropCleanupPolicy /*policy*/) { commit(); }
 
     virtual ObjectStorageType getObjectStorageType() const { return ObjectStorageType::None; }
 

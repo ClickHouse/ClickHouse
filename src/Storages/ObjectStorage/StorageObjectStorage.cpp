@@ -35,6 +35,7 @@
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/TableSnapshot.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLakeMetadataDeltaKernel.h>
 #include <Interpreters/StorageID.h>
+#include <Databases/IDatabase.h>
 #include <Databases/LoadingStrictnessLevel.h>
 #include <Databases/DataLake/Common.h>
 #include <Storages/ColumnsDescription.h>
@@ -54,6 +55,7 @@ namespace Setting
     extern const SettingsInt64 delta_lake_snapshot_start_version;
     extern const SettingsInt64 delta_lake_snapshot_end_version;
     extern const SettingsUInt64 max_streams_for_files_processing_in_cluster_functions;
+    extern const SettingsBool iceberg_delete_data_on_drop;
 }
 
 namespace ErrorCodes
@@ -62,11 +64,14 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int INCORRECT_DATA;
     extern const int BAD_ARGUMENTS;
+    extern const int FAULT_INJECTED;
     extern const int ACCESS_DENIED;
 }
 
 namespace FailPoints
 {
+    extern const char iceberg_drop_data_cleanup_fail[];
+    extern const char iceberg_drop_catalog_remove_fail[];
     extern const char datalake_simulate_missing_table_state[];
 }
 
@@ -781,15 +786,81 @@ void StorageObjectStorage::truncate(
     object_storage->removeObjectsIfExist(objects);
 }
 
+void StorageObjectStorage::checkTableCanBeDropped(ContextPtr query_context) const
+{
+    /// Snapshot the whole query settings, not just iceberg_delete_data_on_drop: the drop-time
+    /// Iceberg init below reads other session-scoped settings from this context (e.g.
+    /// allow_experimental_geo_types_in_iceberg), which the background drop() cannot otherwise see.
+    drop_query_settings = std::make_shared<const Settings>(query_context->getSettingsCopy());
+}
+
 void StorageObjectStorage::drop()
 {
-    if (catalog)
+    /// drop() runs in a background pool without the query context, so build a context from the global
+    /// one carrying the query settings snapshot captured in checkTableCanBeDropped.
+    auto drop_context = Context::createCopy(Context::getGlobalContextInstance());
+    if (drop_query_settings)
+        drop_context->setSettings(*drop_query_settings);
+    const bool delete_data_on_drop = drop_context->getSettingsRef()[Setting::iceberg_delete_data_on_drop];
+    /// On the DataLakeCatalog path the storage is a fresh instance whose metadata was never
+    /// initialized (no prior read/write), so configuration->drop() would be a no-op and leave
+    /// the files behind. Only initialize when we are going to delete data, so a plain DROP keeps
+    /// its no-op behavior and does not newly touch the object storage. iceberg_delete_data_on_drop
+    /// is Iceberg-only and only IcebergMetadata overrides drop(); gate on isIcebergConfiguration()
+    /// so DeltaLake/Hudi/Paimon (which share StorageObjectStorage but keep the no-op drop) do not
+    /// pay an unnecessary init that could fail on metadata/object-storage errors.
+    if (delete_data_on_drop && configuration->isIcebergConfiguration())
+        configuration->lazyInitializeIfNeeded(object_storage, drop_context);
+
+    /// Models an object-storage failure during data cleanup, to check it happens before the
+    /// catalog entry is removed.
+    fiu_do_on(FailPoints::iceberg_drop_data_cleanup_fail, {
+        throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure during Iceberg drop data cleanup");
+    });
+
+    /// Remove the catalog entry as the commit point of the drop, ordered between data deletion and
+    /// metadata deletion by configuration->drop(). Deleting data first keeps DROP retryable if the
+    /// commit throws; deleting the metadata anchor only after the commit keeps the table
+    /// reconstructable for a retry (a fresh DROP rebuilds IcebergMetadata from that anchor).
+    /// Non-Iceberg engines and cleanup-disabled drops just run this commit.
+    auto commit = [this]
     {
-        const auto [namespace_name, table_name] = DataLake::parseTableName(storage_id.getTableName());
-        catalog->dropTable(namespace_name, table_name);
+        /// Models a catalog-service failure at the commit point, to check the metadata anchor
+        /// still exists afterwards so the drop can be retried.
+        fiu_do_on(FailPoints::iceberg_drop_catalog_remove_fail, {
+            throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure during Iceberg drop catalog removal");
+        });
+
+        if (catalog)
+        {
+            const auto [namespace_name, table_name] = DataLake::parseTableName(storage_id.getTableName());
+            catalog->dropTable(namespace_name, table_name);
+        }
+    };
+
+    /// Select how the cleanup handles a thrown per-object failure, based on how the owning database
+    /// handles a thrown drop() (see DropCleanupPolicy):
+    ///  - DatabaseDataLake (catalog-backed, catalog != nullptr): CatalogRetry. The DROP is retryable
+    ///    via the surviving catalog entry and metadata anchor, so pre-commit failures propagate; the
+    ///    post-commit anchor phase is swallowed (catalog row already gone, no retry path left).
+    ///  - Ordinary / Memory (self-managed, Nil database UUID): Reattaching. These reattach the table
+    ///    on a thrown drop(), so once deletion starts failures are swallowed -- rethrowing would roll
+    ///    a partially deleted (corrupted) table back into service.
+    ///  - Atomic / Replicated (self-managed, non-Nil UUID): AsyncRetry. These do not reattach; the
+    ///    async DatabaseCatalog::dropTableFinally retries a thrown drop() and only removes the dropped
+    ///    metadata after drop() returns, so failures propagate (including the anchor phase) to let the
+    ///    retry finish -- swallowing would report success and drop the retry metadata while files or
+    ///    anchors can still remain.
+    /// The Nil-vs-non-Nil database UUID is the same discriminator InterpreterDropQuery uses to tell
+    /// atomic from non-atomic drop handling.
+    DropCleanupPolicy policy = DropCleanupPolicy::CatalogRetry;
+    if (catalog == nullptr)
+    {
+        auto database = DatabaseCatalog::instance().tryGetDatabase(storage_id.database_name);
+        policy = (database && database->getUUID() == UUIDHelpers::Nil) ? DropCleanupPolicy::Reattaching
+                                                                       : DropCleanupPolicy::AsyncRetry;
     }
-    /// We cannot use query context here, because drop is executed in the background.
-    configuration->drop(Context::getGlobalContextInstance());
+    configuration->drop(drop_context, commit, policy);
 }
 
 std::unique_ptr<ReadBufferIterator> StorageObjectStorage::createReadBufferIterator(
