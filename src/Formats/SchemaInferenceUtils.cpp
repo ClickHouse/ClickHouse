@@ -1064,9 +1064,10 @@ namespace
                 /// so it consists only of digits (with an optional sign), but doesn't fit into Int64/UInt64.
                 /// It is an integer that overflows 64-bit types: infer Float64 for it, the same way as
                 /// `tryInferNumberFromStringImpl` does for numbers inside strings.
-                /// Only for JSON: without this fallback JSON inference fails with a parse error, while
-                /// other text formats fall back to String and preserve the digits exactly.
-                /// The check for a leading digit filters out 'inf'/'nan', which also parse as floats.
+                /// Only for JSON: without this fallback JSON inference fails with a parse error.
+                /// Formats inferring from escaped text (e.g. TSV) intentionally keep their String
+                /// fallback for such values, and CSV already infers Float64 via `tryInferNumberFromString`.
+                /// The check for a leading digit filters out signed 'inf'/'nan', which also parse as floats.
                 if constexpr (is_json)
                 {
                     if (parsed_as_float)
@@ -1113,9 +1114,10 @@ namespace
             /// so it consists only of digits (with an optional sign), but doesn't fit into Int64/UInt64.
             /// It is an integer that overflows 64-bit types: infer Float64 for it, the same way as
             /// `tryInferNumberFromStringImpl` does for numbers inside strings.
-            /// Only for JSON: without this fallback JSON inference fails with a parse error, while
-            /// other text formats fall back to String and preserve the digits exactly.
-            /// The check for a leading digit filters out 'inf'/'nan', which also parse as floats.
+            /// Only for JSON: without this fallback JSON inference fails with a parse error.
+            /// Formats inferring from escaped text (e.g. TSV) intentionally keep their String
+            /// fallback for such values, and CSV already infers Float64 via `tryInferNumberFromString`.
+            /// The check for a leading digit filters out signed 'inf'/'nan', which also parse as floats.
             if constexpr (is_json)
             {
                 if (parsed_as_float)

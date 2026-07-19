@@ -1,9 +1,9 @@
 -- Test for issue #110563: JSONEachRow schema inference failed with a parsing error
 -- for valid JSON integer literals that don't fit into Int64/UInt64.
 -- Such integers are now inferred as Float64 in JSON formats, the same way as
--- oversized integers inside strings (see `tryInferNumberFromStringImpl`).
--- Non-JSON text formats are unchanged: they keep falling back to String,
--- preserving the digits exactly.
+-- oversized integers inside strings (see `tryInferNumberFromStringImpl`) and as
+-- CSV already does. Formats inferring from escaped text (e.g. TSV) are unchanged:
+-- they keep falling back to String, preserving the digits exactly.
 
 select 'huge positive integer';
 desc format('JSONEachRow', '{"num":2942420318599003496251392,"name":"Matt"}');
