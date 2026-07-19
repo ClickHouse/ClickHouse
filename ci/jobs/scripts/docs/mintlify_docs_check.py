@@ -21,7 +21,8 @@ The check definitions are declared once here and shared with the Praktika job
 (``ci/jobs/docs_job_mintlify.py``), which imports them. The aggregator job runs
 the full set (``DEFAULT_CHECKS`` plus, when a locale tree changed,
 ``LOCALE_CHECKS``); this client driver runs only ``CLIENT_CHECKS`` -- the checks
-a consuming repo can act on for the slice it owns (validate + internal links).
+a consuming repo can act on for the slice it owns (validation, including the
+snippet-import policy in scoped mode, and internal links).
 Redirects, external links, and the locale checks are aggregator-global and are
 left to the aggregator job. With ``--scoped``, ``mint validate`` is replaced by
 ``scoped_validate.mjs`` over the replaced folders plus every out-of-scope file
@@ -60,7 +61,12 @@ VALIDATE_CHECK = ("Validate docs.json", f"{MINT} validate")
 INTERNAL_LINKS_CHECK = ("Check internal links and anchors", f"{LYCHEE} --mode links .")
 REDIRECTS_CHECK = ("Check redirects", f"{LYCHEE} --mode redirects .")
 EXTERNAL_LINKS_CHECK = ("Check external links (warnings)", f"{LYCHEE} --mode external .")
+SNIPPET_IMPORTS_CHECK = (
+    "Check snippet imports",
+    "python3 ../ci/jobs/scripts/docs/snippet_component_imports_check.py .",
+)
 DEFAULT_CHECKS = [
+    SNIPPET_IMPORTS_CHECK,
     VALIDATE_CHECK,
     INTERNAL_LINKS_CHECK,
     REDIRECTS_CHECK,
@@ -68,23 +74,34 @@ DEFAULT_CHECKS = [
 ]
 
 # The subset a consuming client repo (e.g. clickhouse-connect) runs: only the
-# checks that validate the slice it owns. `mint validate` proves its docs.json
-# fragment and frontmatter are well-formed, and the internal-links check proves
-# its own links and anchors resolve. Redirects, external links, and the locale
-# checks are aggregator-global concerns a client neither owns nor can fix (they
-# depend on the site-wide redirects map, third-party sites, and the translated
-# trees), so the client driver does not run them.
-CLIENT_CHECKS = [VALIDATE_CHECK, INTERNAL_LINKS_CHECK]
+# checks that validate the slice it owns. Unscoped callers retain the standalone
+# snippet-import policy check alongside `mint validate`. In scoped mode,
+# scoped_validate_check bundles the snippet policy with the scoped validator, so
+# language-client workflows get both as one validation step without running the
+# full validator. The internal-links check proves the client's own links and
+# anchors resolve. Redirects, external links, and locale checks are
+# aggregator-global concerns a client cannot fix.
+CLIENT_CHECKS = [SNIPPET_IMPORTS_CHECK, VALIDATE_CHECK, INTERNAL_LINKS_CHECK]
 
 
 # Swaps the full `mint validate` (which MDX-parses the whole site, ~13 minutes)
-# for scoped_validate.mjs over just the replaced folders -- see that script's
-# header for what it covers.
+# for the snippet-import policy check plus scoped_validate.mjs over just the
+# replaced folders -- see that script's header for what it covers. Keep these
+# in one logical validation check so adding client checks cannot accidentally
+# leave the full validator enabled alongside the scoped one.
 def scoped_validate_check(scopes):
-    command = "node ../ci/jobs/scripts/docs/scoped_validate.mjs " + " ".join(
+    scoped_command = "node ../ci/jobs/scripts/docs/scoped_validate.mjs " + " ".join(
         f"--scope {shlex.quote(scope)}" for scope in scopes
     )
-    return ("Validate docs.json and the replaced folders (scoped)", command + " .")
+    command = f"{SNIPPET_IMPORTS_CHECK[1]} && {scoped_command} ."
+    return ("Validate docs.json and the replaced folders (scoped)", command)
+
+
+def client_checks(scoped, scopes):
+    """Select the full or scoped validator plus client-owned link checks."""
+    if scoped:
+        return [scoped_validate_check(scopes), INTERNAL_LINKS_CHECK]
+    return list(CLIENT_CHECKS)
 
 # Locale-only checks, kept out of DEFAULT_CHECKS: the Praktika job runs them only
 # when a PR touches the locale folders (top-level or snippets/<locale>/) -- they
@@ -227,9 +244,7 @@ def main(argv=None):
     # checks it can act on (see CLIENT_CHECKS): validate + internal links. The
     # aggregator-global checks -- redirects, external links, and the locale
     # checks -- are run by the aggregator's own Praktika job, not here.
-    checks = list(CLIENT_CHECKS)
-    if args.scoped:
-        checks[0] = scoped_validate_check(replace_dests)
+    checks = client_checks(args.scoped, replace_dests)
     results = [(name, run_check(docs_root, name, command))
                for name, command in checks]
 
