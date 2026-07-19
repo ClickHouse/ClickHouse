@@ -1089,6 +1089,34 @@ QueryTreeNodePtr createProjectionForUsing(const ColumnNode & using_column_node, 
     return function_node;
 }
 
+/// Returns true if `target` is `root` itself or a table expression nested anywhere inside
+/// the join subtree rooted at `root` (descending through JOIN, CROSS JOIN and ARRAY JOIN).
+static bool joinSubtreeContains(const IQueryTreeNode * root, const IQueryTreeNode * target)
+{
+    if (!root)
+        return false;
+
+    if (root == target)
+        return true;
+
+    if (const auto * join = root->as<JoinNode>())
+        return joinSubtreeContains(join->getLeftTableExpression().get(), target)
+            || joinSubtreeContains(join->getRightTableExpression().get(), target);
+
+    if (const auto * cross_join = root->as<CrossJoinNode>())
+    {
+        for (const auto & table_expression : cross_join->getTableExpressions())
+            if (joinSubtreeContains(table_expression.get(), target))
+                return true;
+        return false;
+    }
+
+    if (const auto * array_join = root->as<ArrayJoinNode>())
+        return joinSubtreeContains(array_join->getTableExpression().get(), target);
+
+    return false;
+}
+
 /// Helper structure to check SEMI/ANTI JOIN side access restrictions
 SemiAntiJoinSideChecker::SemiAntiJoinSideChecker(
     const JoinNode & join_node,
@@ -1108,8 +1136,16 @@ SemiAntiJoinSideChecker::SemiAntiJoinSideChecker(
     skip_left = skip_non_preserved_side && isRight(kind);
     skip_right = skip_non_preserved_side && isLeft(kind);
 
-    /// If we are resolving the ON expression of THIS specific JOIN node, allow access to both sides
-    if (resolving_join_on_expression && resolving_join_on_expression == &join_node)
+    /// If we are resolving the ON expression of THIS join, or of a join nested anywhere inside
+    /// this join's subtree, allow access to both sides. Identifier resolution always starts from
+    /// the root of the join tree, so while an inner join's ON is being resolved, every ancestor
+    /// SEMI/ANTI join is visited first. At execution time the inner ON is evaluated before the
+    /// ancestor filters its non-preserved side, so ancestor restrictions must not apply here -
+    /// otherwise `(t1 LEFT SEMI JOIN t2 ON t1.a = t2.b) RIGHT SEMI JOIN t3` would reject `t1.a`
+    /// and `t2.b` in the inner ON. Restrictions of joins nested BELOW the join whose ON is being
+    /// resolved still apply: their output is already formed and filtered.
+    if ((skip_left || skip_right) && resolving_join_on_expression
+        && joinSubtreeContains(&join_node, resolving_join_on_expression))
     {
         skip_left = false;
         skip_right = false;

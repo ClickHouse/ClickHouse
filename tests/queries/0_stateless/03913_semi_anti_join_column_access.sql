@@ -237,3 +237,34 @@ SELECT if(true, t2.b, 42) FROM (SELECT 1 AS a) t1 LEFT SEMI JOIN (SELECT 2 AS b)
 SELECT if(false, does_not_exist, 42) FROM (SELECT 1 AS a) t1 LEFT SEMI JOIN (SELECT 2 AS b) t2 ON true;
 SELECT if(false, nonexistent_fn_xyz(1), 42) FROM (SELECT 1 AS a) t1 LEFT SEMI JOIN (SELECT 2 AS b) t2 ON true;
 SELECT if(false, cast('abc' AS Int32), 42) FROM (SELECT 1 AS a) t1 LEFT SEMI JOIN (SELECT 2 AS b) t2 ON true;
+
+-- Nested join trees: while an inner join's own ON expression is being resolved, ancestor
+-- SEMI/ANTI joins must not restrict access. Identifier resolution starts from the root of
+-- the join tree, so every ancestor join is visited before the inner join is reached, but at
+-- execution time the inner ON is evaluated before the ancestor filters its non-preserved
+-- side. Here the outer RIGHT SEMI JOIN treats the whole left subtree as non-preserved, yet
+-- `t1.a` and `t2.b` inside the inner LEFT SEMI JOIN's own ON must still resolve.
+SELECT *
+FROM (SELECT 1 AS a) t1
+LEFT SEMI JOIN (SELECT 1 AS b) t2 ON t1.a = t2.b
+RIGHT SEMI JOIN (SELECT 1 AS c) t3 ON true;
+
+-- A qualified matcher over the inner join's own sides inside its ON is exempt as well.
+SELECT *
+FROM (SELECT 1 AS a) t1
+LEFT SEMI JOIN (SELECT 1 AS b) t2 ON ignore(t2.*) = 0 AND t1.a = t2.b
+RIGHT SEMI JOIN (SELECT 1 AS c) t3 ON true;
+
+-- Same shape with an inner ANTI JOIN under an outer SEMI JOIN.
+SELECT *
+FROM (SELECT 1 AS a) t1
+LEFT ANTI JOIN (SELECT 2 AS b) t2 ON t1.a = t2.b
+RIGHT SEMI JOIN (SELECT 1 AS c) t3 ON true;
+
+-- Control: the exemption only lifts ANCESTOR restrictions. A join nested BELOW the join whose
+-- ON is being resolved has already formed and filtered its output, so referencing the inner
+-- LEFT SEMI JOIN's non-preserved side (`t2.b`) from the OUTER join's ON must still be rejected.
+SELECT t3.c
+FROM (SELECT 1 AS a) t1
+LEFT SEMI JOIN (SELECT 1 AS b) t2 ON t1.a = t2.b
+RIGHT SEMI JOIN (SELECT 1 AS c) t3 ON t2.b = t3.c; -- { serverError SEMI_ANTI_JOIN_COLUMN_ACCESS_DENIED }
