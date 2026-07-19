@@ -11,6 +11,9 @@ SELECT r >= 0 AND r <= number + 1 FROM (SELECT number, randUniform(0, number + 1
 -- Bernoulli with probability 0 always returns 0 and with probability 1 always returns 1.
 SELECT randBernoulli(number % 2) = number % 2 FROM numbers(6);
 
+-- Binomial with a non-constant number of trials and probability 1 always returns the number of trials.
+SELECT randBinomial(number % 3, 1.) = number % 3 FROM numbers(6);
+
 -- Invalid parameters in a later row must throw (the first rows have valid parameters).
 SELECT randUniform(number, 1) FROM numbers(5); -- { serverError BAD_ARGUMENTS }
 SELECT randBernoulli(number) FROM numbers(3); -- { serverError BAD_ARGUMENTS }
