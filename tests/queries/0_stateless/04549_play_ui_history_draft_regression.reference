@@ -89,6 +89,11 @@ diverged query mid-flight, inputs not yet rebuilt: the entry drops run=1
 diverged query mid-flight, inputs not yet rebuilt: the stale source param does not leak
 diverged query mid-flight, inputs not yet rebuilt: the entry carries the draft's own params, not the stale ones
 diverged query mid-flight, inputs not yet rebuilt: the completed run's result is still kept
+reordered params: the clean run keeps run=1 despite differing key order
+reordered params: a later tab switch keeps run=1
+cancel during param resolution: the superseded run issues no request
+cancel during param resolution: no history entry is written for the canceled run
+cancel during param resolution: the previous run's result snapshot is untouched
 reload after a preserved draft: the draft is restored as editor text
 reload after a preserved draft: the draft is not auto-run
 stale reload then rerun: the draft is restored unrun first

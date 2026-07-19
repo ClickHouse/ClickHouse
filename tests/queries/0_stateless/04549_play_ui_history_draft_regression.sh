@@ -90,7 +90,7 @@ function extractTopLevel(header_re, name)
 /// DOM rendering, persistence and query execution are stubbed below.
 const FUNCS = ['toBase64', 'nextDefaultTitle', 'uniqueTitle', 'makeTab', 'getActiveTab',
     'captureActiveTab', 'invalidateInFlight', 'activateTab', 'closeTab', 'scheduleSave',
-    'buildHistoryParams', 'isCurrentEntryForTab', 'writeHistoryEntry', 'tabReflectsRun',
+    'buildHistoryParams', 'isCurrentEntryForTab', 'writeHistoryEntry', 'sameParams', 'tabReflectsRun',
     'refreshCurrentHistoryEntry', 'saveHistory', 'syncHistory', 'resolveTabForState',
     /// The connection/database identity helpers the merged history writers and Back/Forward restore
     /// now consult (added on master). Extracted so the run=1 / draft cases run the REAL divergence
@@ -1314,6 +1314,77 @@ async function reload()
     assert_eq('diverged query mid-flight, inputs not yet rebuilt: the stale source param does not leak', sandbox.history.stack[sandbox.history.idx].url.includes('param_x'), false);
     assert_params("diverged query mid-flight, inputs not yet rebuilt: the entry carries the draft's own params, not the stale ones", active().params, { y: '' });
     assert_eq("diverged query mid-flight, inputs not yet rebuilt: the completed run's result is still kept", active().result && active().result.query, 'SELECT {x:Int32}');
+
+    /// A run whose parameters are the SAME bindings as the live inputs but enumerated in a different
+    /// KEY ORDER. Reordering `SELECT {x}, {y}` to `SELECT {y}, {x}` and pressing Run before the edit's
+    /// `updateQueryParams` rebuild lands makes the run's `stateData.params` follow the launched query
+    /// TEXT (`paramValuesForQuery` -> `{y, x}`), while the live inputs `getParamValues()` still iterate
+    /// the previous placeholder order (`{x, y}`). The two describe the same bindings, so the entry must
+    /// keep `run=1` and a later tab switch must not re-mark the tab dirty. A serialized insertion-order
+    /// comparison (`JSON.stringify`) would see `{x, y}` and `{y, x}` as different, wrongly drop `run=1`
+    /// (in `saveHistory`), and keep `tabReflectsRun` false (re-dropping it on the next switch). The
+    /// order-insensitive `sameParams` comparison fixes both sites.
+    reset();
+    sandbox.param_inputs = { x: '1', y: '2' };   /// getParamValues -> insertion order {x, y}
+    active().query = 'SELECT {y:Int32}, {x:Int32}';
+    sandbox.query_area.value = 'SELECT {y:Int32}, {x:Int32}';
+    await sandbox.saveHistory({
+        query: 'SELECT {y:Int32}, {x:Int32}',
+        resultQuery: 'SELECT {y:Int32}, {x:Int32}',
+        params: { y: '2', x: '1' },   /// launched-query-text order from paramValuesForQuery: {y, x}
+        format: 'JSONCompact', ok: true, data: 'result', elapsed_ns: 1,
+        database: sandbox.selected_database, url: sandbox.url_elem.value, user: sandbox.user_elem.value });
+    await drain();
+    assert_eq('reordered params: the clean run keeps run=1 despite differing key order', sandbox.history.stack[sandbox.history.idx].url.includes('run=1'), true);
+    sandbox.syncHistory();   /// a later tab switch calls this; the reordered bindings must not drop run=1
+    assert_eq('reordered params: a later tab switch keeps run=1', sandbox.history.stack[sandbox.history.idx].url.includes('run=1'), true);
+
+    /// `resolveRunParams` is async (it tokenizes the launched query to enumerate its placeholders), so
+    /// a Cancel or tab switch can supersede a run while it is still awaiting that tokenization on a
+    /// cold page. `postSingle`/`postMulti` must bail immediately after that await — before `clear`,
+    /// creating an `AbortController`, or issuing any request — otherwise the stale run clobbers the
+    /// now-active tab's UI and sends a canceled query to the server (`cancel`/`invalidateInFlight` only
+    /// bump `request_num`; there is no controller to abort yet at that point). Drives the REAL
+    /// `postOne`/`postSingle` with a hung `tokenize`, supersedes the run mid-await (`invalidateInFlight`,
+    /// what a tab switch / Cancel does), then releases: no `postImpl` call and no history entry written.
+    reset();
+    await run('SELECT 0');                        /// a clean, run-backed entry
+    const stack_len_before_cancel = sandbox.history.stack.length;
+    let postImplCalls = 0;
+    const savedPostImplForCancel = sandbox.postImpl;
+    sandbox.postImpl = (...a) => { postImplCalls++; return savedPostImplForCancel(...a); };
+    active().query = 'SELECT {x:Int32}';
+    sandbox.query_area.value = 'SELECT {x:Int32}';
+    sandbox.isMultiQuery = false;
+    sandbox.query_area.selectionStart = 0;
+    sandbox.query_area.selectionEnd = 0;
+    sandbox.getQueryUnderCursor = async () => 'SELECT {x:Int32}';
+    let releaseCancelTokenize;
+    /// Hang the run's `resolveRunParams` -> `paramValuesForQuery` -> `tokenize`, so the run suspends
+    /// mid-await, exactly the cold-page window the finding describes.
+    sandbox.tokenize = () => new Promise(resolve => { releaseCancelTokenize = () => resolve([
+        { token: 'SELECT', significant: true }, { token: ' ', significant: false },
+        { token: '{', significant: true }, { token: 'x', significant: true },
+        { token: ':', significant: true }, { token: 'Int32', significant: true },
+        { token: '}', significant: true },
+    ]); });
+    const cancelRunPromise = sandbox.postOne();
+    await drain();
+    sandbox.invalidateInFlight();                 /// a tab switch / Cancel supersedes the suspended run
+    releaseCancelTokenize();                       /// the cold-page tokenize finally resolves
+    await drain();
+    /// The fixed path bailed before issuing any request, so this releases nothing; a regressed path
+    /// that did not bail queued a hung `postImpl` here, so release it — otherwise the run would hang on
+    /// it forever and the assertions below would never run (a silent stall instead of a loud failure).
+    resolvePendingPostImpl();
+    await cancelRunPromise;
+    await drain();
+    assert_eq('cancel during param resolution: the superseded run issues no request', postImplCalls, 0);
+    assert_eq('cancel during param resolution: no history entry is written for the canceled run', sandbox.history.stack.length, stack_len_before_cancel);
+    assert_eq("cancel during param resolution: the previous run's result snapshot is untouched", active().result && active().result.query, 'SELECT 0');
+    sandbox.postImpl = savedPostImplForCancel;
+    sandbox.tokenize = async () => [];
+    sandbox.getQueryUnderCursor = async () => '';
 
     /// Reload after a preserved-draft Back/Forward round-trip. The debounced save persists the
     /// draft (query != lastSavedQuery, the shape reconcileStartup treats as a stale reload), so

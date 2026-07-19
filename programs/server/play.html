@@ -5401,6 +5401,12 @@ async function postSingle(posted_request_num, query, history_query_text, params_
     /// query: `history_query_text` is the whole editor in multi-query mode, and in single-query mode
     /// `query` already IS the whole editor.
     const paramValuesSnapshot = await resolveRunParams(params_restore_pending, history_query_text || query);
+    /// `resolveRunParams` is async (its `tokenize` may still be pending on a cold page), so a `cancel`
+    /// or tab switch could have superseded this run while we were awaiting it. Bail out immediately —
+    /// before `clear`, creating a new `AbortController`, or issuing any `fetch` — otherwise this stale
+    /// run would clobber the now-active tab's UI and send a canceled query to the server (`cancel`
+    /// only bumps `request_num`; there is no controller to abort yet at this point).
+    if (posted_request_num != request_num) { return; }
     /// The live in-memory `tab.params` at launch, for `saveHistory`'s pending-restore guard. When a
     /// run races an in-flight parameter restore, `saveHistory` trusts the launch-time snapshot only
     /// while the live tab has NOT diverged from it. A newer trusted parameter edit during the request
@@ -5526,6 +5532,9 @@ let multiQueryControllers = [];
 async function postMulti(posted_request_num, parsed, params_restore_pending, launch_query_text, partial)
 {
     const paramValuesSnapshot = await resolveRunParams(params_restore_pending, launch_query_text);
+    /// See `postSingle`: `resolveRunParams` is async, so a `cancel` or tab switch could have superseded
+    /// this run during the await. Bail out before touching the UI or issuing any request.
+    if (posted_request_num != request_num) { return; }
     /// The live in-memory `tab.params` at launch, for `saveHistory`'s pending-restore guard (see
     /// `postSingle`): trust the launch-time snapshot only while the live tab has not diverged from it.
     const active_tab_at_launch = getActiveTab();
@@ -6966,10 +6975,29 @@ function writeHistoryEntry(tab, titleForDoc, forceReplace, fromRun) {
 /// one, while a semantically no-op click on the already-current row keeps the marker. A snapshot
 /// produced on a different SERVER is out of scope here: `writeHistoryEntry`'s `live_diverged`
 /// compares the connections and drops `run=1` regardless of what this database check says.
+/// Order-insensitive equality for parameter maps (`{name: value}`). The two sides can be built from
+/// different sources whose key ORDER differs: `getParamValues`/`tabReflectsRun` iterate
+/// `currentQueryParams`, which may still hold the previous placeholder order until an in-flight
+/// `updateQueryParams` rebuild lands, while a run's `stateData.params` comes from `paramValuesForQuery`
+/// and follows the launched query text. Comparing serialized insertion order (`JSON.stringify`) would
+/// then see `{x, y}` and `{y, x}` as different — so reordering `SELECT {x}, {y}` to `SELECT {y}, {x}`
+/// and pressing Run before the rebuild lands would wrongly drop `run=1` and keep the tab marked dirty
+/// on later switches even though the same bindings ran. Compare by key set and value instead.
+function sameParams(a, b) {
+    a = a || {};
+    b = b || {};
+    const ak = Object.keys(a);
+    if (ak.length !== Object.keys(b).length) return false;
+    for (const k of ak) {
+        if (!Object.prototype.hasOwnProperty.call(b, k) || a[k] !== b[k]) return false;
+    }
+    return true;
+}
+
 function tabReflectsRun(tab) {
     return !!(tab && tab.result && tab.result.ran && !tab.result.partial
         && tab.query === tab.result.query
-        && JSON.stringify(tab.params || {}) === JSON.stringify(tab.result.params || {})
+        && sameParams(tab.params, tab.result.params)
         && effectiveDatabase(selected_database) === effectiveDatabase(tab.result.database));
 }
 
@@ -7090,7 +7118,7 @@ async function saveHistory(stateData, titleForDoc) {
     /// sees (or, for a query edit, an incoherent entry — the old params under the new query).
     if (stateData.params_restore_pending
         && tab.query === stateData.query
-        && JSON.stringify(tab.params || {}) === JSON.stringify(stateData.live_params_at_launch || {}))
+        && sameParams(tab.params, stateData.live_params_at_launch))
     {
         tab.params = { ...(stateData.params || {}) };
         setParamValues(tab.params);
@@ -7108,7 +7136,7 @@ async function saveHistory(stateData, titleForDoc) {
         tab.params = getParamValues();
     }
     const ranLiveQuery = tab.query === stateData.query;
-    const ranLiveParams = JSON.stringify(tab.params || {}) === JSON.stringify(stateData.params || {});
+    const ranLiveParams = sameParams(tab.params, stateData.params);
     if (ranLiveQuery) tab.query = stateData.query;
     tab.result = {
         ran: true,   /// marks a genuine run; the tab bar's visibility keys off this
