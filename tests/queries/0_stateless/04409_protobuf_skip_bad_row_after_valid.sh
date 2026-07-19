@@ -34,7 +34,7 @@ trap 'rm -f "$BINARY_FILE_PATH"' EXIT
 } > "$BINARY_FILE_PATH"
 
 # Must not crash: the bad message is skipped and both valid rows are inserted.
-$CLICKHOUSE_CLIENT --input_format_allow_errors_num 10 --query "INSERT INTO protobuf_skip_bad_row_after_valid SETTINGS format_schema = '$SCHEMADIR/04409_protobuf_skip_bad_row_after_valid:Row' FORMAT Protobuf" < "$BINARY_FILE_PATH"
+$CLICKHOUSE_CLIENT --input_format_allow_errors_num 10 --query "INSERT INTO protobuf_skip_bad_row_after_valid SETTINGS format_schema = '$SCHEMADIR/04409_protobuf_skip_bad_row_after_valid.proto:Row' FORMAT Protobuf" < "$BINARY_FILE_PATH"
 
 $CLICKHOUSE_CLIENT --query "SELECT d FROM protobuf_skip_bad_row_after_valid ORDER BY d"
 
