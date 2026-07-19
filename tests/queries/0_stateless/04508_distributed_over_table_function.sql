@@ -605,6 +605,19 @@ SELECT count() FROM dist_probe_bad_step SETTINGS enable_analyzer = 1, prefer_loc
 SELECT count() FROM dist_probe_bad_step SETTINGS enable_analyzer = 0, prefer_localhost_replica = 1, skip_unavailable_shards = 1, enable_parallel_replicas = 0, serialize_query_plan = 0; -- { serverError BAD_ARGUMENTS }
 DROP TABLE dist_probe_bad_step;
 
+-- `UNKNOWN_TABLE` / `UNKNOWN_DATABASE` mean "backing object missing" only when they come from resolving the
+-- table function's OWN backing object, not from evaluating its arguments (argument evaluation is
+-- node-independent, so a failure there is a deterministic definition error, not an absent local replica).
+-- `numbers` has a static structure, so its arguments are evaluated only when the storage is materialized, not
+-- during the structure-only probe: `numbers((SELECT count() FROM missing_src))` is created successfully (not
+-- validated at `CREATE`, see `registerStorageDistributed`), and the `UNKNOWN_TABLE` its scalar subquery
+-- raises for the missing `missing_src` must reach the user, not be downgraded to a skipped shard /
+-- `ALL_CONNECTION_TRIES_FAILED` even on the local-replica probe path with `skip_unavailable_shards = 1`.
+CREATE TABLE dist_probe_arg_subquery (number UInt64) ENGINE = Distributed(test_shard_localhost, numbers((SELECT count() FROM missing_src)));
+SELECT count() FROM dist_probe_arg_subquery SETTINGS enable_analyzer = 1, prefer_localhost_replica = 1, skip_unavailable_shards = 1, enable_parallel_replicas = 0, serialize_query_plan = 0; -- { serverError UNKNOWN_TABLE }
+SELECT count() FROM dist_probe_arg_subquery SETTINGS enable_analyzer = 0, prefer_localhost_replica = 1, skip_unavailable_shards = 1, enable_parallel_replicas = 0, serialize_query_plan = 0; -- { serverError UNKNOWN_TABLE }
+DROP TABLE dist_probe_arg_subquery;
+
 -- The MergeTree-inspection table functions (`mergeTreeIndex`, `mergeTreeProjection`, `mergeTreeTextIndex`,
 -- `mergeTreeAnalyzeIndexes`) name a concrete local table in their first two arguments and read it at query
 -- time, so a persisted `Distributed` over such a target registers a referential dependency on that table -

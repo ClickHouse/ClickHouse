@@ -276,31 +276,31 @@ void SelectStreamFactory::createForShardImpl(
 
         if (table_func_ptr)
         {
-            /// Probe the local replica by evaluating the table function. Treat it like an absent local
-            /// table (so the query can still fall back to a healthy remote replica or honor
-            /// `skip_unavailable_shards`) only when the backing object is missing - i.e. for the same
-            /// exception classes the named-table branch below can ignore, where `tryGetTable` returns null:
-            /// `UNKNOWN_TABLE` / `UNKNOWN_DATABASE` (this is also the set that `skip_unavailable_shards_mode
-            /// = unavailable_or_table_missing` treats as a skippable "table missing" failure, see
-            /// `RemoteQueryExecutor::shouldIgnoreShardException`). A missing dictionary is the one extra case:
-            /// `dictionary('d')` loads through `ExternalDictionariesLoader`, which reports an unknown
-            /// dictionary as `BAD_ARGUMENTS` ("... not found") rather than `UNKNOWN_TABLE`, and there is no
-            /// dedicated error code for it - so `BAD_ARGUMENTS` is accepted as "backing object missing" only
-            /// for the `dictionary` table function.
+            /// Probe whether the table function's backing object exists on this local replica, so the
+            /// query can still fall back to a healthy remote replica or honor `skip_unavailable_shards`
+            /// when it is missing here. The probe resolves only the table function's structure - it does
+            /// NOT materialize the storage or evaluate data-generating arguments. Argument evaluation is
+            /// node-independent, so a failure there is a deterministic definition error that must reach
+            /// the user, not be silently downgraded to a skipped shard: e.g.
+            /// `numbers((SELECT count() FROM missing_src))` runs the scalar subquery only when the storage
+            /// is built (in `TableFunctionNumbers::executeImpl`), and the `UNKNOWN_TABLE` it raises then
+            /// must propagate rather than be mistaken for an absent local replica.
             ///
-            /// Every other table-function error must propagate so it is not silently downgraded to a
-            /// connection/skip failure that would bypass the `skip_unavailable_shards_mode` contract. This is
-            /// deliberately narrow because `BAD_ARGUMENTS` also reports genuine, deterministic configuration
-            /// errors of other supported targets, which first surface here at read time: this PR does not run
-            /// `parseArguments` at `CREATE` for a `Distributed(..., table_function())` target with a static
-            /// structure (see `registerStorageDistributed`), so e.g. `numbers(0, 10, 0)` (zero step) or
-            /// `mergeTreeTextIndex` with a wrong index type can be created and only fail on the first read -
-            /// those must reach the user, not be treated as an absent replica. (Other non-`BAD_ARGUMENTS`
-            /// evaluation failures, such as `numbers(intDiv(1, 0))` raising `ILLEGAL_DIVISION`, propagate too.)
+            /// `get(...)` resolves the backing object for table functions that do it while parsing
+            /// arguments (e.g. `timeSeries*` resolve their source table via `resolveStorageID`), and
+            /// `getActualTableStructureWithAccess(...)` resolves it for the rest (`loop`, `merge`,
+            /// `dictionary`) - the same resolution `tryGetTable` performs for the named-table branch below.
+            /// A missing backing object surfaces as `UNKNOWN_TABLE` / `UNKNOWN_DATABASE` (the set
+            /// `skip_unavailable_shards_mode = unavailable_or_table_missing` treats as a skippable "table
+            /// missing" failure, see `RemoteQueryExecutor::shouldIgnoreShardException`), except a missing
+            /// dictionary: `dictionary('d')` loads through `ExternalDictionariesLoader`, which reports an
+            /// unknown dictionary as `BAD_ARGUMENTS` ("... not found") and has no dedicated error code, so
+            /// `BAD_ARGUMENTS` counts as "backing object missing" only for the `dictionary` table function.
+            TableFunctionPtr table_function_ptr;
             try
             {
-                TableFunctionPtr table_function_ptr = TableFunctionFactory::instance().get(table_func_ptr, context);
-                main_table_storage = table_function_ptr->execute(table_func_ptr, context, table_function_ptr->getName());
+                table_function_ptr = TableFunctionFactory::instance().get(table_func_ptr, context);
+                table_function_ptr->getActualTableStructureWithAccess(context, /*is_insert_query=*/false);
             }
             catch (const Exception & e)
             {
@@ -317,8 +317,18 @@ void SelectStreamFactory::createForShardImpl(
                 LOG_WARNING(getLogger("ClusterProxy::SelectStreamFactory"),
                     "Table function could not be evaluated on local replica of shard {}: {}",
                     shard_info.shard_num, e.message());
-                main_table_storage = nullptr;
+                table_function_ptr = nullptr;
             }
+
+            /// The backing object resolves locally; materialize the storage the usual way. Any error
+            /// raised here - invalid arguments, a scalar subquery over a missing table, division by zero
+            /// (`numbers(intDiv(1, 0))`), a zero step (`numbers(0, 10, 0)`), a wrong `mergeTreeTextIndex`
+            /// type - is a deterministic definition error that first surfaces at read time (this PR does
+            /// not run `parseArguments` at `CREATE` for a static-structure target, see
+            /// `registerStorageDistributed`) and must propagate. `main_table_storage` stays null when the
+            /// backing object is missing, so the shared "table is absent" handling below takes over.
+            if (table_function_ptr)
+                main_table_storage = table_function_ptr->execute(table_func_ptr, context, table_function_ptr->getName());
         }
         else
         {
