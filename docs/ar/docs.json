@@ -2215,10 +2215,6 @@
                     }
                   ],
                   "root": "ar/products/cloud/guides/index"
-                },
-                {
-                  "group": "مرجع واجهة برمجة التطبيقات",
-                  "openapi": "https://api.clickhouse.cloud/v1"
                 }
               ]
             },
@@ -2598,7 +2594,10 @@
             {
               "expanded": true,
               "group": "مرجع واجهة برمجة التطبيقات",
-              "openapi": "https://raw.githubusercontent.com/hyperdxio/hyperdx/refs/heads/main/packages/api/openapi.json",
+              "openapi": {
+                "source": "https://raw.githubusercontent.com/hyperdxio/hyperdx/refs/heads/main/packages/api/openapi.json",
+                "directory": "ar/clickstack/api-reference"
+              },
               "root": "ar/clickstack/api-reference"
             }
           ]

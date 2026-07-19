@@ -1527,20 +1527,7 @@ static bool applyFunctionChainToColumn(
     ColumnPtr & out_column,
     DataTypePtr & out_data_type)
 {
-    /// Strip outer-level wrappers (Const/Replicated/Sparse/LowCardinality) to prepare
-    /// the column for the monotonic function chain. This must be symmetric with
-    /// `removeLowCardinality` on the type — both strip only outer-level LowCardinality,
-    /// preserving `LowCardinality` nested inside container types (`Array`, `Tuple`, `Map`, `Variant`).
-    /// Calling `convertToFullIfNeeded` here would recurse into subcolumns and strip inner
-    /// `LowCardinality`, creating a column/type mismatch when the type still has inner LC
-    /// (e.g. `Variant(LowCardinality(Date), String)` wrapped in `ColumnConst` bypasses
-    /// `ColumnVariant`'s override of `convertToFullIfNeeded`) — leading to `typeid_cast`
-    /// failures in `FunctionCast` wrappers such as `prepareUnpackDictionaries`.
-    auto result_column = in_column
-        ->convertToFullColumnIfConst()
-        ->convertToFullColumnIfReplicated()
-        ->convertToFullColumnIfSparse()
-        ->convertToFullColumnIfLowCardinality();
+    auto result_column = in_column->convertToFullIfWrapped()->convertToFullColumnIfLowCardinality();
     auto result_type = removeLowCardinality(in_data_type);
 
     /// In case function sequence is empty, return full non-LowCardinality column
@@ -1987,16 +1974,7 @@ static bool applyDeterministicDagToColumn(
     ColumnPtr & out_column,
     DataTypePtr & out_type)
 {
-    /// Strip only outer-level wrappers (Const/Replicated/Sparse/LowCardinality), symmetrically with
-    /// `removeLowCardinality` on the type. `convertToFullIfNeeded` must not be used here: it recurses
-    /// into subcolumns and strips inner `LowCardinality`, which `removeLowCardinality` keeps, producing a
-    /// column/type mismatch for inner LC (e.g. `Variant(LowCardinality(String), Int)`) and a `typeid_cast`
-    /// failure in `FunctionCast` wrappers. This mirrors `applyFunctionChainToColumn` above.
-    ColumnPtr input_column = in_column
-        ->convertToFullColumnIfConst()
-        ->convertToFullColumnIfReplicated()
-        ->convertToFullColumnIfSparse()
-        ->convertToFullColumnIfLowCardinality();
+    ColumnPtr input_column = in_column->convertToFullIfWrapped()->convertToFullColumnIfLowCardinality();
     DataTypePtr input_type = removeLowCardinality(in_type);
 
     /// This is the final check for the output column after DAG execution:
@@ -2005,11 +1983,7 @@ static bool applyDeterministicDagToColumn(
     /// - strip Nullable/LowCardinality wrappers to get the actual column
     auto finalize_output_column_and_type = [&](ColumnPtr & column, DataTypePtr & type) -> bool
     {
-        column = column
-            ->convertToFullColumnIfConst()
-            ->convertToFullColumnIfReplicated()
-            ->convertToFullColumnIfSparse()
-            ->convertToFullColumnIfLowCardinality();
+        column = column->convertToFullIfWrapped()->convertToFullColumnIfLowCardinality();
         type = removeLowCardinality(type);
 
         if (column->isNullable())
@@ -3118,13 +3092,18 @@ bool KeyCondition::extractMonotonicFunctionsChainFromKey(
                     auto func_name = func->function_base->getName();
                     auto func_base = func->function_base;
 
+                    /// Monotonicity is asked over the function's argument type, which is the output
+                    /// type of the node's single non-constant child (the descent loop above has
+                    /// already established that exactly one such child exists).
+                    const auto * input_child = func->children.front()->column ? func->children.back() : func->children.front();
+
                     /// If its cumulative monotonicity direction is negative, applying it to the constant
                     /// reverses range comparisons. For example, with `ORDER BY (intDiv(c0, 5) / -7)`,
                     /// `c0 < 0` becomes `divide(intDiv(c0, 5), -7) > divide(intDiv(0, 5), -7)`.
                     ///
                     /// Directions compose by parity: each non-increasing function reverses the current
                     /// direction, so two non-increasing functions preserve the original comparison.
-                    auto monotonicity = func_base->getMonotonicityForRange(*func->result_type, Field(), Field());
+                    auto monotonicity = func_base->getMonotonicityForRange(*input_child->result_type, Field(), Field());
                     if (!monotonicity.is_positive)
                         chain_is_positive = !chain_is_positive;
 
@@ -5645,7 +5624,7 @@ BoolMask KeyCondition::checkInHyperrectangle(
     const Hyperrectangle & sparse_hyperrectangle,
     const DataTypes & sparse_data_types) const
 {
-    std::vector<BoolMask> rpn_stack;
+    absl::InlinedVector<BoolMask, 16> rpn_stack;
 
     auto get_sparse_info = [&](size_t key_column) -> std::pair<bool, size_t>
     {
