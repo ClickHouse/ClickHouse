@@ -6782,7 +6782,10 @@ PartitionBlockNumbersHolder StorageReplicatedMergeTree::allocateBlockNumbersInAf
             try
             {
                 /// Lock only the specific affected partitions instead of all partitions.
-                /// Pass the block_numbers version to detect new partitions appearing concurrently.
+                /// For predicate-pruned commands pass the block_numbers version to detect new
+                /// partitions appearing concurrently (the pruned set was derived from the observed
+                /// partition list). For explicit IN PARTITION the target set is exact and does not
+                /// depend on the partition list, so no version check is needed.
                 EphemeralLocksInPartitions lock_holder(
                     fs::path(zookeeper_path) / "block_numbers",
                     "block-",
@@ -6790,7 +6793,7 @@ PartitionBlockNumbersHolder StorageReplicatedMergeTree::allocateBlockNumbersInAf
                     block_data,
                     *zookeeper,
                     affected,
-                    block_numbers_stat.version);
+                    has_pruned_commands ? std::optional<int32_t>(block_numbers_stat.version) : std::nullopt);
 
                 PartitionBlockNumbersHolder::BlockNumbersType block_numbers;
                 for (const auto & lock : lock_holder.getLocks())
