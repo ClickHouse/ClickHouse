@@ -68,8 +68,7 @@ Rolling out OpenTelemetry across many services is often time consuming and only 
 {/* vale on */}
 
 <Steps>
-<Step>
-#### Deploy Odigos with Helm {#deploy-odigos}
+<Step title="Deploy Odigos with Helm" id="deploy-odigos">
 
 Odigos Enterprise requires an on-prem license token. Export it in your shell:
 
@@ -98,8 +97,7 @@ Verify Odigos pods are running:
 kubectl get pods -n odigos-system
 ```
 </Step>
-<Step>
-#### Add sources in the Odigos UI {#add-sources}
+<Step title="Add sources in the Odigos UI" id="add-sources">
 
 1. Port-forward the Odigos UI service:
 
@@ -112,8 +110,7 @@ kubectl port-forward svc/ui -n odigos-system 3000:3000
 4. Click done at the bottom, once you have marked all workloads for instrumentation.
 5. Verify workloads have been instrumented successfully in the sources column.
 </Step>
-<Step>
-#### Add ClickStack as a destination in the Odigos UI {#add-destination-ui}
+<Step title="Add ClickStack as a destination in the Odigos UI" id="add-destination-ui">
 
 To send telemetry to ClickStack, add an **OTLP HTTP** destination in Odigos. The exact configuration depends on how ClickStack is deployed. With open source ClickStack the OpenTelemetry collector is bundled and the ingestion key is generated for you in the HyperDX UI. With Managed ClickStack you run your own standalone ClickStack collector and choose the authentication token yourself when starting the container.
 
@@ -181,8 +178,7 @@ You can configure the same destination with a `Destination` manifest instead of 
 
 </Tabs>
 </Step>
-<Step>
-#### Verify telemetry in ClickStack {#verify-telemetry}
+<Step title="Verify telemetry in ClickStack" id="verify-telemetry">
 
 1. Open the ClickStack UI (HyperDX):
    - **Open source ClickStack**: for example, `http://<host>:8080` on the all-in-one image.

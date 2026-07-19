@@ -94,6 +94,7 @@ namespace Setting
     extern const SettingsString parallel_replicas_custom_key;
     extern const SettingsUInt64 parallel_replicas_custom_key_range_lower;
     extern const SettingsUInt64 parallel_replica_offset;
+    extern const SettingsSnappyMode snappy_mode;
 }
 
 namespace ErrorCodes
@@ -466,7 +467,7 @@ AsynchronousInsertQueue::pushQueryWithInlinedData(ASTPtr query, ContextPtr query
         /// If limit is exceeded we will fallback to synchronous insert
         /// to avoid buffering of huge amount of data in memory.
 
-        auto read_buf = getReadBufferFromASTInsertQuery(query);
+        auto read_buf = getReadBufferFromASTInsertQuery(query, query_context->getSettingsRef()[Setting::snappy_mode]);
 
         LimitReadBuffer limit_buf(
             *read_buf,
@@ -1177,13 +1178,14 @@ try
             pipeline,
             interpreter.get(),
             internal,
+            /*log_as_internal=*/ internal,
             query_database,
             query_table,
             async_insert);
     }
     catch (...)
     {
-        logExceptionBeforeStart(query_for_logging, normalized_query_hash, insert_context, key.query, query_span, start_watch.elapsedMilliseconds(), internal);
+        logExceptionBeforeStart(query_for_logging, normalized_query_hash, insert_context, key.query, query_span, start_watch.elapsedMilliseconds(), internal, /*log_as_internal=*/ internal);
 
         if (async_insert_log)
         {
@@ -1209,7 +1211,7 @@ try
         queue_shard_flush_time_history.updateWithCurrentTime();
 
         LOG_DEBUG(log, "Asynchronous insert query logQueryFinish query_kind '{}', 'query_id {}'", query_log_elem.query_kind, query_log_elem.client_info.current_query_id);
-        logQueryFinish(query_log_elem, insert_context, key.query, std::move(pileline_), /*pulling_pipeline=*/false, query_span, QueryResultCacheUsage::None, internal);
+        logQueryFinish(query_log_elem, insert_context, key.query, std::move(pileline_), /*pulling_pipeline=*/false, query_span, QueryResultCacheUsage::None, internal, /*log_as_internal=*/ internal);
 
         /// Finish entries (and notify waiting clients) after logging,
         /// so that SYSTEM FLUSH LOGS issued right after the async insert
@@ -1258,7 +1260,7 @@ try
     catch (...)
     {
         bool log_error = true;
-        logQueryException(query_log_elem, insert_context, start_watch, key.query, query_span, internal, log_error);
+        logQueryException(query_log_elem, insert_context, start_watch, key.query, query_span, internal, /*log_as_internal=*/ internal, log_error);
         if (!log_elements.empty())
         {
             auto exception = getCurrentExceptionMessage(false);
@@ -1327,7 +1329,8 @@ Chunk AsynchronousInsertQueue::processEntriesWithParsing(
         std::move(on_error),
         data->size_in_bytes,
         data->entries.size(),
-        std::move(adding_defaults_transform));
+        std::move(adding_defaults_transform),
+        [query_status = insert_context->getProcessListElement()] { return query_status && query_status->isKilled(); });
 
     auto deduplication_info = DeduplicationInfo::create(/*async_insert=*/true);
 

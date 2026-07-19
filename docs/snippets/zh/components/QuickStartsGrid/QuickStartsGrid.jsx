@@ -31,17 +31,36 @@ export const QuickStartsGrid = ({ quickStartsData = [], featured = [] }) => {
   const visibleProductOptions = productOptions.filter(o =>
     explorable.some(qs => (qs.products || []).includes(o.value)));
 
-  // Safely read a persisted selection from localStorage. A corrupted or
-  // hand-edited value must never throw out of a useState initializer, which
-  // would crash the whole page render — fall back to the default instead.
-  // Values not present in the options (e.g. display strings persisted by an
-  // older version of this component) are dropped. An empty selection means
-  // no filter.
-  const readStoredSelection = (key, options) => {
-    if (typeof window === 'undefined') return [];
+  // All localStorage access goes through these guards. Storage may be absent
+  // (SSR) or throw SecurityError (storage-restricted browsers or enterprise
+  // policies); persistence is optional, so a failure means "not persisted"
+  // rather than a render or effect exception that would take down the page.
+  const readStored = (key) => {
+    if (typeof window === 'undefined') return null;
     try {
-      const raw = localStorage.getItem(key);
-      if (!raw) return [];
+      return localStorage.getItem(key);
+    } catch {
+      return null;
+    }
+  };
+  const writeStored = (key, value) => {
+    if (typeof window === 'undefined') return;
+    try {
+      localStorage.setItem(key, value);
+    } catch {
+      // Storage unavailable — persistence is best-effort, so drop it.
+    }
+  };
+
+  // Read a persisted selection. A corrupted or hand-edited value must never
+  // throw out of a useState initializer, which would crash the whole page
+  // render — fall back to the default instead. Values not present in the
+  // options (e.g. display strings persisted by an older version of this
+  // component) are dropped. An empty selection means no filter.
+  const readStoredSelection = (key, options) => {
+    const raw = readStored(key);
+    if (!raw) return [];
+    try {
       const parsed = JSON.parse(raw);
       if (!Array.isArray(parsed)) return [];
       return parsed.filter(v => options.some(o => o.value === v));
@@ -51,12 +70,7 @@ export const QuickStartsGrid = ({ quickStartsData = [], featured = [] }) => {
   };
 
   // State management with localStorage
-  const [searchTerm, setSearchTerm] = useState(() => {
-    if (typeof window !== 'undefined') {
-      return localStorage.getItem('quickstarts-search') || '';
-    }
-    return '';
-  });
+  const [searchTerm, setSearchTerm] = useState(() => readStored('quickstarts-search') || '');
 
   const [selectedUseCases, setSelectedUseCases] = useState(() => readStoredSelection('quickstarts-usecases', visibleUseCaseOptions));
 
@@ -65,12 +79,7 @@ export const QuickStartsGrid = ({ quickStartsData = [], featured = [] }) => {
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 6;
 
-  const [showFilters, setShowFilters] = useState(() => {
-    if (typeof window !== 'undefined') {
-      return localStorage.getItem('quickstarts-show-filters') !== 'false';
-    }
-    return true;
-  });
+  const [showFilters, setShowFilters] = useState(() => readStored('quickstarts-show-filters') !== 'false');
 
   // Track the lg breakpoint so the drawer can collapse left (desktop) or up
   // (mobile). Inline styles can't be responsive, so we branch on this in JS.
@@ -86,19 +95,19 @@ export const QuickStartsGrid = ({ quickStartsData = [], featured = [] }) => {
 
   // Persist to localStorage
   useEffect(() => {
-    if (typeof window !== 'undefined') localStorage.setItem('quickstarts-search', searchTerm);
+    writeStored('quickstarts-search', searchTerm);
   }, [searchTerm]);
 
   useEffect(() => {
-    if (typeof window !== 'undefined') localStorage.setItem('quickstarts-usecases', JSON.stringify(selectedUseCases));
+    writeStored('quickstarts-usecases', JSON.stringify(selectedUseCases));
   }, [selectedUseCases]);
 
   useEffect(() => {
-    if (typeof window !== 'undefined') localStorage.setItem('quickstarts-products', JSON.stringify(selectedProducts));
+    writeStored('quickstarts-products', JSON.stringify(selectedProducts));
   }, [selectedProducts]);
 
   useEffect(() => {
-    if (typeof window !== 'undefined') localStorage.setItem('quickstarts-show-filters', String(showFilters));
+    writeStored('quickstarts-show-filters', String(showFilters));
   }, [showFilters]);
 
   // Reset page when filters change
@@ -223,7 +232,7 @@ export const QuickStartsGrid = ({ quickStartsData = [], featured = [] }) => {
           {featuredQuickStarts.length > 0 && (
             <div className="mb-12">
               <h2 className="text-2xl font-semibold text-gray-900 dark:text-zinc-50 mb-6">精选快速入门</h2>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
                 {featuredQuickStarts.map(quickStart => (
                   <a
                     key={quickStart.id}
@@ -233,7 +242,7 @@ export const QuickStartsGrid = ({ quickStartsData = [], featured = [] }) => {
                   >
                     {/* Banner art is drawn in code from the title so it
                         translates automatically — no per-locale PNG needed. */}
-                    <div className="relative w-full aspect-[16/9] overflow-hidden bg-[#FAFF69] flex flex-col justify-center px-6 transition-transform duration-200 group-hover:scale-[1.02]">
+                    <div className="relative w-full aspect-[3/1] lg:aspect-[16/9] overflow-hidden bg-[#FAFF69] flex flex-col justify-center px-6 transition-transform duration-200 group-hover:scale-[1.02]">
                       {/* Decorative bar-chart motif, purely visual. */}
                       <div className="pointer-events-none absolute inset-y-0 right-6 flex items-center gap-2.5" aria-hidden="true">
                         <span className="w-3 rounded-sm bg-[#C4CB54]" style={{ height: '42%', transform: 'translateY(-12%)' }} />
@@ -241,11 +250,10 @@ export const QuickStartsGrid = ({ quickStartsData = [], featured = [] }) => {
                         <span className="w-3 rounded-sm bg-[#C4CB54]" style={{ height: '64%', transform: 'translateY(-14%)' }} />
                         <span className="w-3 rounded-sm bg-[#C4CB54]" style={{ height: '46%', transform: 'translateY(20%)' }} />
                       </div>
-                      <span className="relative z-10 pr-24 text-base md:text-lg font-bold leading-snug text-black line-clamp-4">
+                      <span className="relative z-10 pr-24 text-[15px] lg:text-lg font-bold leading-snug text-black line-clamp-4">
                         {quickStart.title}
                       </span>
-                      {/* ClickHouse wordmark, inlined so it inherits currentColor. */}
-                      <svg viewBox="0 0 161 34" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" className="absolute bottom-5 left-6 h-5 w-auto text-black">
+                      <svg viewBox="0 0 161 34" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" className="hidden">
                         <rect width="3.77758" height="33.9982" rx="0.918881" fill="currentColor" />
                         <rect x="7.55554" width="3.77758" height="33.9982" rx="0.918881" fill="currentColor" />
                         <rect x="15.1112" width="3.77758" height="33.9982" rx="0.918881" fill="currentColor" />
@@ -281,8 +289,8 @@ export const QuickStartsGrid = ({ quickStartsData = [], featured = [] }) => {
                 {/* Toggle button, centered on the divider line */}
                 <button
                   onClick={() => setShowFilters(prev => !prev)}
-                  aria-label={showFilters ? "16rem" : "0px"}
-                  title={showFilters ? "16rem" : "0px"}
+                  aria-label={showFilters ? "隐藏筛选器" : "显示筛选器"}
+                  title={showFilters ? "隐藏筛选器" : "显示筛选器"}
                   className="flex items-center justify-center absolute z-20 cursor-pointer rounded-full border transition-colors border-gray-300 dark:border-white/20 hover:border-black dark:hover:border-[#FAFF69] bg-white dark:bg-[#1B1B18] text-gray-500 dark:text-gray-400 hover:text-black dark:hover:text-[#FAFF69] shadow-sm"
                   style={isDesktop
                     ? { left: '100%', top: '50%', width: '28px', height: '28px', transform: 'translate(-50%, -50%)' }
