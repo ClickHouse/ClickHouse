@@ -53,7 +53,19 @@ SELECT count(), sum(k), sum(v) FROM t_pr_merge WHERE _table = 't_pr_merge_2';
 SELECT '-- plain SELECT without aggregation';
 SELECT k, v FROM t_pr_merge WHERE k IN (1, 9999, 10000, 19999) ORDER BY k;
 
+-- Ordered query with a limit: read-in-order optimization materializes the child plans of the
+-- Merge table; it must not clash with enabling parallel replicas reading on the same step.
+SELECT '-- ORDER BY with LIMIT';
+SELECT k, v FROM t_pr_merge ORDER BY k LIMIT 5;
+
 SYSTEM DISABLE FAILPOINT slowdown_parallel_replicas_local_plan_read;
+
+-- FINAL is not supported with parallel replicas: the query must fall back to single-replica
+-- execution instead of failing, both for the Merge table and the merge() table function.
+SELECT '-- FINAL over a Merge table';
+SELECT count(), sum(k), sum(v) FROM t_pr_merge FINAL;
+SELECT '-- FINAL over the merge() table function';
+SELECT count(), sum(k), sum(v) FROM merge(currentDatabase(), '^t_pr_merge_[12]$') FINAL;
 
 -- A Merge over a non-MergeTree table cannot coordinate reading, parallel replicas must not be used
 SELECT '-- Merge over a non-MergeTree table';

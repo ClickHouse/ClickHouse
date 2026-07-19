@@ -16,6 +16,16 @@ Aggregating
 9999	19998
 10000	0
 19999	9999
+-- ORDER BY with LIMIT
+0	0
+1	2
+2	4
+3	6
+4	8
+-- FINAL over a Merge table
+20000	199990000	149985000
+-- FINAL over the merge() table function
+20000	199990000	149985000
 -- Merge over a non-MergeTree table
 Aggregating
 20100	201994950	149989950

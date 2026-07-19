@@ -2279,11 +2279,18 @@ void Planner::buildPlanForQueryNode()
         const auto & table_expression_nodes = extractTableExpressions(query_node_typed.getJoinTree(), true, true);
         for (const auto & it : table_expression_nodes)
         {
-            auto * table_node = it->as<TableNode>();
-            if (!table_node)
+            /// FINAL can be specified both on a plain table (`... FROM t FINAL`) and on a table
+            /// function (`... FROM merge(...) FINAL`); both must disable task-based parallel replicas.
+            const std::optional<TableExpressionModifiers> * modifiers_ptr = nullptr;
+            if (const auto * table_node = it->as<TableNode>())
+                modifiers_ptr = &table_node->getTableExpressionModifiers();
+            else if (const auto * table_function_node = it->as<TableFunctionNode>())
+                modifiers_ptr = &table_function_node->getTableExpressionModifiers();
+
+            if (!modifiers_ptr)
                 continue;
 
-            const auto & modifiers = table_node->getTableExpressionModifiers();
+            const auto & modifiers = *modifiers_ptr;
             if (modifiers.has_value() && modifiers->hasFinal())
             {
                 if (settings[Setting::allow_experimental_parallel_reading_from_replicas] >= 2)

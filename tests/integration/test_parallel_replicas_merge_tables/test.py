@@ -28,6 +28,10 @@ parallel_replicas_settings = {
     "cluster_for_parallel_replicas": cluster_name,
     "parallel_replicas_allow_merge_tables": 1,
     "automatic_parallel_replicas_mode": 0,
+    # Hand out small mark segments so the reading work is spread across all replicas instead of a
+    # single (usually local) replica grabbing a whole underlying table at once — otherwise
+    # `_assert_all_replicas_participated` is racy on the small test dataset.
+    "parallel_replicas_mark_segment_size": 10,
 }
 
 
