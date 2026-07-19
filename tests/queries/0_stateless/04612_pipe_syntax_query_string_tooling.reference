@@ -1,0 +1,15 @@
+-- clickhouse-format without the setting rejects pipe syntax
+1
+-- clickhouse-format with --allow_experimental_pipe_syntax
+SELECT *
+FROM numbers(3)
+WHERE number > 0
+ORDER BY number ASC
+-- clickhouse-format --oneline with --allow_experimental_pipe_syntax
+SELECT * FROM numbers(3) WHERE number > 0 ORDER BY number ASC
+-- formatQuery honors the setting
+SELECT * FROM numbers(3) WHERE number > 0 ORDER BY number ASC
+\N
+-- highlightQuery honors the setting
+[(0,4,'keyword'),(5,12,'function'),(13,14,'number'),(19,24,'keyword'),(25,31,'identifier'),(34,35,'number'),(39,47,'keyword'),(48,54,'identifier')]
+[(0,4,'keyword'),(5,12,'function'),(13,14,'number')]

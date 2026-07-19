@@ -46,7 +46,11 @@ struct HighlightQueryImpl
         Expected expected;
         expected.enable_highlighting = true;
 
-        ParserQuery parser(end, /* allow_settings_after_format_in_insert = */ false, /* implicit_select = */ settings.implicit_select);
+        ParserQuery parser(
+            end,
+            /* allow_settings_after_format_in_insert = */ false,
+            /* implicit_select = */ settings.implicit_select,
+            /* allow_pipe_syntax = */ settings.allow_pipe_syntax);
         ASTPtr ast;
 
         try

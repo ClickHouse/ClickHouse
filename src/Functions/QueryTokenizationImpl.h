@@ -32,6 +32,7 @@ namespace Setting
     extern const SettingsUInt64 max_parser_backtracks;
     extern const SettingsUInt64 max_parser_depth;
     extern const SettingsBool implicit_select;
+    extern const SettingsBool allow_experimental_pipe_syntax;
 }
 
 /// Parser settings extracted from context, used by highlightQuery.
@@ -40,6 +41,7 @@ struct QueryTokenizationSettings
     size_t max_parser_depth = DBMS_DEFAULT_MAX_PARSER_DEPTH;
     size_t max_parser_backtracks = DBMS_DEFAULT_MAX_PARSER_BACKTRACKS;
     bool implicit_select = false;
+    bool allow_pipe_syntax = false;
 };
 
 /// Common base class for functions that tokenize/highlight queries.
@@ -71,6 +73,7 @@ public:
             parser_settings.max_parser_depth = settings[Setting::max_parser_depth];
             parser_settings.max_parser_backtracks = settings[Setting::max_parser_backtracks];
             parser_settings.implicit_select = settings[Setting::implicit_select];
+            parser_settings.allow_pipe_syntax = settings[Setting::allow_experimental_pipe_syntax];
         }
     }
 

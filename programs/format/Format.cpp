@@ -51,6 +51,7 @@ namespace Setting
     extern const SettingsUInt64 max_parser_backtracks;
     extern const SettingsUInt64 max_parser_depth;
     extern const SettingsUInt64 max_query_size;
+    extern const SettingsBool allow_experimental_pipe_syntax;
 }
 }
 
@@ -95,6 +96,7 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
         Settings cmd_settings;
         cmd_settings.addToProgramOptions("max_parser_depth", desc);
         cmd_settings.addToProgramOptions("max_query_size", desc);
+        cmd_settings.addToProgramOptions("allow_experimental_pipe_syntax", desc);
 
         boost::program_options::variables_map options;
         boost::program_options::store(boost::program_options::parse_command_line(argc, argv, desc), options);
@@ -257,7 +259,11 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
             const char * end = pos + query.size();
             skipSpacesAndComments(pos, end, comments_callback);
 
-            ParserQuery parser(end, allow_settings_after_format_in_insert);
+            ParserQuery parser(
+                end,
+                allow_settings_after_format_in_insert,
+                /* implicit_select = */ false,
+                /* allow_pipe_syntax = */ cmd_settings[Setting::allow_experimental_pipe_syntax]);
             while (pos != end)
             {
                 size_t approx_query_length = multiple ? find_first_symbols<';'>(pos, end) - pos : end - pos;
