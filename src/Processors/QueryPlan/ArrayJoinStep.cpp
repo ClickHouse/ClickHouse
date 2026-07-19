@@ -7,9 +7,15 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Interpreters/ArrayJoinAction.h>
 #include <IO/Operators.h>
+#include <Core/ProtocolDefines.h>
 #include <Common/JSONBuilder.h>
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int SUPPORT_IS_DISABLED;
+}
 
 namespace QueryPlanSerializationSetting
 {
@@ -103,6 +109,16 @@ void ArrayJoinStep::serialize(Serialization & ctx) const
     if (array_join.array_join_use_nulls)
         flags |= 4;
 
+    /// The `array_join_use_nulls` flag exists only since query-plan serialization version 4. An older
+    /// peer would ignore the bit and pad `LEFT ARRAY JOIN` with defaults instead of `NULL`s on its
+    /// fragment, silently changing the result; throw a clear error rather than let it run with
+    /// different semantics (the deserialize side checks the same).
+    if (array_join.array_join_use_nulls && ctx.version < DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_ARRAY_JOIN_USE_NULLS)
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "ARRAY JOIN with array_join_use_nulls requires query plan serialization version >= {}; "
+            "all nodes must run a version that supports it",
+            DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_ARRAY_JOIN_USE_NULLS);
+
     writeIntBinary(flags, ctx.out);
 
     writeVarUInt(array_join.columns.size(), ctx.out);
@@ -123,6 +139,14 @@ QueryPlanStepPtr ArrayJoinStep::deserialize(Deserialization & ctx)
     bool is_left = bool(flags & 1);
     bool is_unaligned = bool(flags & 2);
     bool array_join_use_nulls = bool(flags & 4);
+
+    /// A writer negotiated below version 4 never sets this bit (its serializer fails closed); fail
+    /// closed at the version boundary here as well instead of executing with mismatched semantics.
+    if (array_join_use_nulls && ctx.version < DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_ARRAY_JOIN_USE_NULLS)
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "ARRAY JOIN with array_join_use_nulls requires query plan serialization version >= {}; "
+            "all nodes must run a version that supports it",
+            DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_ARRAY_JOIN_USE_NULLS);
 
     UInt64 num_columns = 0;
     readVarUInt(num_columns, ctx.in);

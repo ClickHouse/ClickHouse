@@ -66,10 +66,16 @@ static constexpr auto DBMS_MERGE_TREE_PART_INFO_VERSION = 1;
 /// Version 3 adds the parallel-replicas flag (bit 32) on a serialized `ReadFromMergeTree`, telling the
 /// replica to rebuild the read in parallel-reading mode. An older replica would ignore the bit and do a
 /// full non-parallel read, so the serializer fails closed when this flag is set below version 3.
-static constexpr auto DBMS_QUERY_PLAN_SERIALIZATION_VERSION = 3;
+/// Version 4 adds the `array_join_use_nulls` flag (bit 4) on a serialized `ArrayJoinStep`. An older
+/// replica would ignore the bit and pad `LEFT ARRAY JOIN` with defaults instead of `NULL`s, so the
+/// serializer fails closed when this flag is set below version 4.
+static constexpr auto DBMS_QUERY_PLAN_SERIALIZATION_VERSION = 4;
 /// First query-plan serialization version that carries the parallel-replicas flag (bit 32) on a
 /// serialized `ReadFromMergeTree`. Used to gate the flag and to skip replicas that are too old.
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_PARALLEL_REPLICAS = 3;
+/// First query-plan serialization version that carries the `array_join_use_nulls` flag (bit 4) on a
+/// serialized `ArrayJoinStep`. Used to fail closed against peers that are too old to honor it.
+static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_ARRAY_JOIN_USE_NULLS = 4;
 /// Version 1 added the initiator's settings changes to the task.
 /// Version 2 added per-stream streaming-exchange ports to exchange_stream_sources.
 static constexpr auto DBMS_DISTRIBUTED_TASK_SERIALIZATION_VERSION = 2;
