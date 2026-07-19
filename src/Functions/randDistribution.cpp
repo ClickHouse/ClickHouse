@@ -49,14 +49,25 @@ struct UniformDistribution
     static constexpr const char * getName() { return "randUniform"; }
     static constexpr size_t getNumberOfArguments() { return 2; }
 
-    static void generate(Float64 min, Float64 max, ColumnFloat64::Container & container, const DistributionLimits &)
+    static void checkParameters(Float64 min, Float64 max, const DistributionLimits &)
     {
         if (min > max)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument min ({}) of function {} should not be greater than max ({})", min, getName(), max);
+    }
 
+    static void generate(Float64 min, Float64 max, ColumnFloat64::Container & container, const DistributionLimits & limits)
+    {
+        checkParameters(min, max, limits);
         auto distribution = std::uniform_real_distribution<>(min, max);
         for (auto & elem : container)
             elem = distribution(thread_local_rng);
+    }
+
+    static Float64 generateValue(Float64 min, Float64 max, const DistributionLimits & limits)
+    {
+        checkParameters(min, max, limits);
+        auto distribution = std::uniform_real_distribution<>(min, max);
+        return distribution(thread_local_rng);
     }
 };
 
@@ -66,14 +77,25 @@ struct NormalDistribution
     static constexpr const char * getName() { return "randNormal"; }
     static constexpr size_t getNumberOfArguments() { return 2; }
 
-    static void generate(Float64 mean, Float64 stddev, ColumnFloat64::Container & container, const DistributionLimits &)
+    static void checkParameters(Float64 /*mean*/, Float64 stddev, const DistributionLimits &)
     {
         if (stddev < 0)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument stddev of function {} should be non-negative", getName());
+    }
 
+    static void generate(Float64 mean, Float64 stddev, ColumnFloat64::Container & container, const DistributionLimits & limits)
+    {
+        checkParameters(mean, stddev, limits);
         auto distribution = std::normal_distribution<>(mean, stddev);
         for (auto & elem : container)
             elem = distribution(thread_local_rng);
+    }
+
+    static Float64 generateValue(Float64 mean, Float64 stddev, const DistributionLimits & limits)
+    {
+        checkParameters(mean, stddev, limits);
+        auto distribution = std::normal_distribution<>(mean, stddev);
+        return distribution(thread_local_rng);
     }
 };
 
@@ -83,14 +105,25 @@ struct LogNormalDistribution
     static constexpr const char * getName() { return "randLogNormal"; }
     static constexpr size_t getNumberOfArguments() { return 2; }
 
-    static void generate(Float64 mean, Float64 stddev, ColumnFloat64::Container & container, const DistributionLimits &)
+    static void checkParameters(Float64 /*mean*/, Float64 stddev, const DistributionLimits &)
     {
         if (stddev < 0)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument stddev of function {} should be non-negative", getName());
+    }
 
+    static void generate(Float64 mean, Float64 stddev, ColumnFloat64::Container & container, const DistributionLimits & limits)
+    {
+        checkParameters(mean, stddev, limits);
         auto distribution = std::lognormal_distribution<>(mean, stddev);
         for (auto & elem : container)
             elem = distribution(thread_local_rng);
+    }
+
+    static Float64 generateValue(Float64 mean, Float64 stddev, const DistributionLimits & limits)
+    {
+        checkParameters(mean, stddev, limits);
+        auto distribution = std::lognormal_distribution<>(mean, stddev);
+        return distribution(thread_local_rng);
     }
 };
 
@@ -100,14 +133,25 @@ struct ExponentialDistribution
     static constexpr const char * getName() { return "randExponential"; }
     static constexpr size_t getNumberOfArguments() { return 1; }
 
-    static void generate(Float64 lambda, ColumnFloat64::Container & container, const DistributionLimits &)
+    static void checkParameters(Float64 lambda, const DistributionLimits &)
     {
         if (lambda <= 0)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument (lambda) of function {} should be greater than zero", getName());
+    }
 
+    static void generate(Float64 lambda, ColumnFloat64::Container & container, const DistributionLimits & limits)
+    {
+        checkParameters(lambda, limits);
         auto distribution = std::exponential_distribution<>(lambda);
         for (auto & elem : container)
             elem = distribution(thread_local_rng);
+    }
+
+    static Float64 generateValue(Float64 lambda, const DistributionLimits & limits)
+    {
+        checkParameters(lambda, limits);
+        auto distribution = std::exponential_distribution<>(lambda);
+        return distribution(thread_local_rng);
     }
 };
 
@@ -117,16 +161,27 @@ struct ChiSquaredDistribution
     static constexpr const char * getName() { return "randChiSquared"; }
     static constexpr size_t getNumberOfArguments() { return 1; }
 
-    static void generate(Float64 degree_of_freedom, ColumnFloat64::Container & container, const DistributionLimits & limits)
+    static void checkParameters(Float64 degree_of_freedom, const DistributionLimits & limits)
     {
         if (degree_of_freedom <= 0)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument (degrees of freedom) of function {} should be greater than zero", getName());
         if (limits.max_parameter > 0 && degree_of_freedom > limits.max_parameter)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument (degrees of freedom) of function {} is too large: {}", getName(), degree_of_freedom);
+    }
 
+    static void generate(Float64 degree_of_freedom, ColumnFloat64::Container & container, const DistributionLimits & limits)
+    {
+        checkParameters(degree_of_freedom, limits);
         auto distribution = std::chi_squared_distribution<>(degree_of_freedom);
         for (auto & elem : container)
             elem = distribution(thread_local_rng);
+    }
+
+    static Float64 generateValue(Float64 degree_of_freedom, const DistributionLimits & limits)
+    {
+        checkParameters(degree_of_freedom, limits);
+        auto distribution = std::chi_squared_distribution<>(degree_of_freedom);
+        return distribution(thread_local_rng);
     }
 };
 
@@ -136,16 +191,27 @@ struct StudentTDistribution
     static constexpr const char * getName() { return "randStudentT"; }
     static constexpr size_t getNumberOfArguments() { return 1; }
 
-    static void generate(Float64 degree_of_freedom, ColumnFloat64::Container & container, const DistributionLimits & limits)
+    static void checkParameters(Float64 degree_of_freedom, const DistributionLimits & limits)
     {
         if (degree_of_freedom <= 0)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument (degrees of freedom) of function {} should be greater than zero", getName());
         if (limits.max_parameter > 0 && degree_of_freedom > limits.max_parameter)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument (degrees of freedom) of function {} is too large: {}", getName(), degree_of_freedom);
+    }
 
+    static void generate(Float64 degree_of_freedom, ColumnFloat64::Container & container, const DistributionLimits & limits)
+    {
+        checkParameters(degree_of_freedom, limits);
         auto distribution = std::student_t_distribution<>(degree_of_freedom);
         for (auto & elem : container)
             elem = distribution(thread_local_rng);
+    }
+
+    static Float64 generateValue(Float64 degree_of_freedom, const DistributionLimits & limits)
+    {
+        checkParameters(degree_of_freedom, limits);
+        auto distribution = std::student_t_distribution<>(degree_of_freedom);
+        return distribution(thread_local_rng);
     }
 };
 
@@ -155,16 +221,27 @@ struct FisherFDistribution
     static constexpr const char * getName() { return "randFisherF"; }
     static constexpr size_t getNumberOfArguments() { return 2; }
 
-    static void generate(Float64 d1, Float64 d2, ColumnFloat64::Container & container, const DistributionLimits & limits)
+    static void checkParameters(Float64 d1, Float64 d2, const DistributionLimits & limits)
     {
         if (d1 <= 0 || d2 <= 0)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument (degrees of freedom) of function {} should be greater than zero", getName());
         if (limits.max_parameter > 0 && (d1 > limits.max_parameter || d2 > limits.max_parameter))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument (degrees of freedom) of function {} is too large: d1={}, d2={}", getName(), d1, d2);
+    }
 
+    static void generate(Float64 d1, Float64 d2, ColumnFloat64::Container & container, const DistributionLimits & limits)
+    {
+        checkParameters(d1, d2, limits);
         auto distribution = std::fisher_f_distribution<>(d1, d2);
         for (auto & elem : container)
             elem = distribution(thread_local_rng);
+    }
+
+    static Float64 generateValue(Float64 d1, Float64 d2, const DistributionLimits & limits)
+    {
+        checkParameters(d1, d2, limits);
+        auto distribution = std::fisher_f_distribution<>(d1, d2);
+        return distribution(thread_local_rng);
     }
 };
 
@@ -174,14 +251,25 @@ struct BernoulliDistribution
     static constexpr const char * getName() { return "randBernoulli"; }
     static constexpr size_t getNumberOfArguments() { return 1; }
 
-    static void generate(Float64 p, ColumnUInt8::Container & container, const DistributionLimits &)
+    static void checkParameters(Float64 p, const DistributionLimits &)
     {
         if (p < 0.0 || p > 1.0)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument of function {} should be inside [0, 1] because it is a probability", getName());
+    }
 
+    static void generate(Float64 p, ColumnUInt8::Container & container, const DistributionLimits & limits)
+    {
+        checkParameters(p, limits);
         auto distribution = std::bernoulli_distribution(p);
         for (auto & elem : container)
             elem = static_cast<UInt8>(distribution(thread_local_rng));
+    }
+
+    static UInt8 generateValue(Float64 p, const DistributionLimits & limits)
+    {
+        checkParameters(p, limits);
+        auto distribution = std::bernoulli_distribution(p);
+        return static_cast<UInt8>(distribution(thread_local_rng));
     }
 };
 
@@ -191,16 +279,27 @@ struct BinomialDistribution
     static constexpr const char * getName() { return "randBinomial"; }
     static constexpr size_t getNumberOfArguments() { return 2; }
 
-    static void generate(UInt64 t, Float64 p, ColumnUInt64::Container & container, const DistributionLimits & limits)
+    static void checkParameters(UInt64 t, Float64 p, const DistributionLimits & limits)
     {
         if (p < 0.0 || p > 1.0)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument of function {} should be inside [0, 1] because it is a probability", getName());
         if (limits.max_trials > 0 && t > limits.max_trials)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument (number of experiments) of function {} is too large: {}", getName(), t);
+    }
 
+    static void generate(UInt64 t, Float64 p, ColumnUInt64::Container & container, const DistributionLimits & limits)
+    {
+        checkParameters(t, p, limits);
         auto distribution = std::binomial_distribution<UInt64>(t, p);
         for (auto & elem : container)
             elem = static_cast<UInt64>(distribution(thread_local_rng));
+    }
+
+    static UInt64 generateValue(UInt64 t, Float64 p, const DistributionLimits & limits)
+    {
+        checkParameters(t, p, limits);
+        auto distribution = std::binomial_distribution<UInt64>(t, p);
+        return static_cast<UInt64>(distribution(thread_local_rng));
     }
 };
 
@@ -210,16 +309,27 @@ struct NegativeBinomialDistribution
     static constexpr const char * getName() { return "randNegativeBinomial"; }
     static constexpr size_t getNumberOfArguments() { return 2; }
 
-    static void generate(UInt64 t, Float64 p, ColumnUInt64::Container & container, const DistributionLimits & limits)
+    static void checkParameters(UInt64 t, Float64 p, const DistributionLimits & limits)
     {
         if (p < 0.0 || p > 1.0)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument of function {} should be inside [0, 1] because it is a probability", getName());
         if (limits.max_trials > 0 && t > limits.max_trials)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument (number of experiments) of function {} is too large: {}", getName(), t);
+    }
 
+    static void generate(UInt64 t, Float64 p, ColumnUInt64::Container & container, const DistributionLimits & limits)
+    {
+        checkParameters(t, p, limits);
         auto distribution = std::negative_binomial_distribution<UInt64>(t, p);
         for (auto & elem : container)
             elem = static_cast<UInt64>(distribution(thread_local_rng));
+    }
+
+    static UInt64 generateValue(UInt64 t, Float64 p, const DistributionLimits & limits)
+    {
+        checkParameters(t, p, limits);
+        auto distribution = std::negative_binomial_distribution<UInt64>(t, p);
+        return static_cast<UInt64>(distribution(thread_local_rng));
     }
 };
 
@@ -229,21 +339,33 @@ struct PoissonDistribution
     static constexpr const char * getName() { return "randPoisson"; }
     static constexpr size_t getNumberOfArguments() { return 1; }
 
-    static void generate(UInt64 n, ColumnUInt64::Container & container, const DistributionLimits & limits)
+    static void checkParameters(UInt64 n, const DistributionLimits & limits)
     {
         if (limits.max_trials > 0 && n > limits.max_trials)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument (mean) of function {} is too large: {}", getName(), n);
+    }
 
+    static void generate(UInt64 n, ColumnUInt64::Container & container, const DistributionLimits & limits)
+    {
+        checkParameters(n, limits);
         auto distribution = std::poisson_distribution<UInt64>(static_cast<double>(n));
         for (auto & elem : container)
             elem = static_cast<UInt64>(distribution(thread_local_rng));
+    }
+
+    static UInt64 generateValue(UInt64 n, const DistributionLimits & limits)
+    {
+        checkParameters(n, limits);
+        auto distribution = std::poisson_distribution<UInt64>(static_cast<double>(n));
+        return static_cast<UInt64>(distribution(thread_local_rng));
     }
 };
 
 }
 
 /** Function which will generate values according to the specified distribution
-  * Accepts only constant arguments
+  * Parameters of the distribution may be given as constants (then the whole column is generated at once)
+  * or as arbitrary non-constant expressions (then a value is generated for each row from the parameters of this row).
   * Similar to the functions rand and rand64 an additional 'tag' argument could be added to the
   * end of arguments list (this argument will be ignored) which suppresses common subexpression elimination.
   * Example: SELECT randNormal(0, 1, 1), randNormal(0, 1, 2) FROM numbers(10)
@@ -275,6 +397,36 @@ private:
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Parameter number {} of function {} cannot be NaN of infinite", parameter_number, getName());
 
         return parameter;
+    }
+
+    /// The same as getParameterFromConstColumn but for non-constant columns: reads the parameter from the specified row.
+    template <typename ResultType>
+    ResultType getParameterFromColumn(size_t parameter_number, const ColumnsWithTypeAndName & arguments, size_t row_num) const
+    {
+        if (parameter_number >= arguments.size())
+            throw Exception(
+                            ErrorCodes::LOGICAL_ERROR,
+                            "Parameter number ({}) is greater than the size of arguments ({}). This is a bug",
+                            parameter_number, arguments.size());
+
+        const IColumn & col = *arguments[parameter_number].column;
+
+        auto parameter = applyVisitor(FieldVisitorConvertToNumber<ResultType>(), col[row_num]);
+
+        if (isNaN(parameter) || !std::isfinite(parameter))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Parameter number {} of function {} cannot be NaN of infinite", parameter_number, getName());
+
+        return parameter;
+    }
+
+    bool allParametersAreConstant(const ColumnsWithTypeAndName & arguments) const
+    {
+        for (size_t i = 0; i < Distribution::getNumberOfArguments(); ++i)
+        {
+            if (!isColumnConst(*arguments[i].column))
+                return false;
+        }
+        return true;
     }
 
 public:
@@ -320,25 +472,53 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const override
     {
+        /// If all parameters are constant, the whole column is generated at once from the parameters read only once.
+        /// Otherwise the parameters are read, validated and applied for each row separately.
+        const bool parameters_are_constant = allParametersAreConstant(arguments);
+
         if constexpr (std::is_same_v<Distribution, BernoulliDistribution>)
         {
             auto res_column = ColumnUInt8::create(input_rows_count);
             auto & res_data = res_column->getData();
-            Distribution::generate(getParameterFromConstColumn<Float64>(0, arguments), res_data, limits);
+            if (parameters_are_constant)
+            {
+                Distribution::generate(getParameterFromConstColumn<Float64>(0, arguments), res_data, limits);
+            }
+            else
+            {
+                for (size_t row_num = 0; row_num < input_rows_count; ++row_num)
+                    res_data[row_num] = Distribution::generateValue(getParameterFromColumn<Float64>(0, arguments, row_num), limits);
+            }
             return res_column;
         }
         else if constexpr (std::is_same_v<Distribution, BinomialDistribution> || std::is_same_v<Distribution, NegativeBinomialDistribution>)
         {
             auto res_column = ColumnUInt64::create(input_rows_count);
             auto & res_data = res_column->getData();
-            Distribution::generate(getParameterFromConstColumn<UInt64>(0, arguments), getParameterFromConstColumn<Float64>(1, arguments), res_data, limits);
+            if (parameters_are_constant)
+            {
+                Distribution::generate(getParameterFromConstColumn<UInt64>(0, arguments), getParameterFromConstColumn<Float64>(1, arguments), res_data, limits);
+            }
+            else
+            {
+                for (size_t row_num = 0; row_num < input_rows_count; ++row_num)
+                    res_data[row_num] = Distribution::generateValue(getParameterFromColumn<UInt64>(0, arguments, row_num), getParameterFromColumn<Float64>(1, arguments, row_num), limits);
+            }
             return res_column;
         }
         else if constexpr (std::is_same_v<Distribution, PoissonDistribution>)
         {
             auto res_column = ColumnUInt64::create(input_rows_count);
             auto & res_data = res_column->getData();
-            Distribution::generate(getParameterFromConstColumn<UInt64>(0, arguments), res_data, limits);
+            if (parameters_are_constant)
+            {
+                Distribution::generate(getParameterFromConstColumn<UInt64>(0, arguments), res_data, limits);
+            }
+            else
+            {
+                for (size_t row_num = 0; row_num < input_rows_count; ++row_num)
+                    res_data[row_num] = Distribution::generateValue(getParameterFromColumn<UInt64>(0, arguments, row_num), limits);
+            }
             return res_column;
         }
         else
@@ -347,11 +527,27 @@ public:
             auto & res_data = res_column->getData();
             if constexpr (Distribution::getNumberOfArguments() == 1)
             {
-                Distribution::generate(getParameterFromConstColumn<Float64>(0, arguments), res_data, limits);
+                if (parameters_are_constant)
+                {
+                    Distribution::generate(getParameterFromConstColumn<Float64>(0, arguments), res_data, limits);
+                }
+                else
+                {
+                    for (size_t row_num = 0; row_num < input_rows_count; ++row_num)
+                        res_data[row_num] = Distribution::generateValue(getParameterFromColumn<Float64>(0, arguments, row_num), limits);
+                }
             }
             else if constexpr (Distribution::getNumberOfArguments() == 2)
             {
-                Distribution::generate(getParameterFromConstColumn<Float64>(0, arguments), getParameterFromConstColumn<Float64>(1, arguments), res_data, limits);
+                if (parameters_are_constant)
+                {
+                    Distribution::generate(getParameterFromConstColumn<Float64>(0, arguments), getParameterFromConstColumn<Float64>(1, arguments), res_data, limits);
+                }
+                else
+                {
+                    for (size_t row_num = 0; row_num < input_rows_count; ++row_num)
+                        res_data[row_num] = Distribution::generateValue(getParameterFromColumn<Float64>(0, arguments, row_num), getParameterFromColumn<Float64>(1, arguments, row_num), limits);
+                }
             }
             else
             {
