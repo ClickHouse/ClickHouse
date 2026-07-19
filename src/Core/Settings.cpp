@@ -1813,7 +1813,6 @@ Possible values:
 - 0 — Disabled.
 - 1 — Enabled.
 )", 0) \
->>>>>>> origin/master
     DECLARE(Bool, force_primary_key, false, R"(
 Disables query execution if indexing by the primary key is not possible.
 
