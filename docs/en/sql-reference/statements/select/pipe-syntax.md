@@ -25,7 +25,7 @@ The syntax is introduced by Google [[1]](#references). The parser produces the s
 ```sql
 FROM <table_expression>
 [|> WHERE <expr>]
-[|> AGGREGATE <agg_expr>, ... [GROUP BY <grouping_expr>, ...]]
+[|> AGGREGATE <agg_expr>, ... [GROUP BY <grouping_expr>, ...] [WITH ROLLUP|CUBE|TOTALS]]
 [|> [<join_type>] JOIN <table_expression> [ON <condition>]]
 [|> ORDER BY <expr>, ...]
 [|> LIMIT <n> [OFFSET <m>]]
@@ -38,7 +38,7 @@ Operators may be repeated and combined freely. When an operator would conflict w
 
 - `|> WHERE <expr>` — filters rows, like the [`WHERE`](/sql-reference/statements/select/where) clause.
 - `|> AGGREGATE <agg_expr>, ...` — full-table aggregation (no grouping).
-- `|> AGGREGATE <agg_expr>, ... GROUP BY <grouping_expr>, ...` — aggregation with grouping, like [`GROUP BY`](/sql-reference/statements/select/group-by).
+- `|> AGGREGATE <agg_expr>, ... GROUP BY <grouping_expr>, ...` — aggregation with grouping, like [`GROUP BY`](/sql-reference/statements/select/group-by). The `GROUP BY` inside `AGGREGATE` accepts the same modifiers as the regular clause: `GROUP BY ROLLUP(...)`, `GROUP BY CUBE(...)`, `GROUP BY GROUPING SETS(...)`, `GROUP BY ALL`, and the trailing `WITH ROLLUP`/`WITH CUBE`/`WITH TOTALS` forms.
 - `|> [LEFT|RIGHT|FULL|INNER|CROSS|...] JOIN <table_expression> [ON <condition>]` — joins the current stage with another table expression, like the [`JOIN`](/sql-reference/statements/select/join) clause.
 - `|> ORDER BY <expr>, ...` — sorts the output, like [`ORDER BY`](/sql-reference/statements/select/order-by).
 - `|> LIMIT <n> [OFFSET <m>]` — truncates the output, like [`LIMIT`](/sql-reference/statements/select/limit).
@@ -108,10 +108,11 @@ ORDER BY custdist DESC, c_count DESC;
 
 As an experimental feature, pipe syntax currently has the following limitations:
 
-- Only the operators listed [above](#supported-operators) are supported. There is no pipe equivalent yet for projection-only operators (such as a standalone `SELECT`/`EXTEND`), `DISTINCT`, `WINDOW`, `HAVING`, `QUALIFY`, `WITH`, `UNION`, set operations, `SAMPLE`, `PREWHERE`, `ARRAY JOIN`, or `WITH ROLLUP`/`CUBE`/`TOTALS` written in pipe form.
+- Only the operators listed [above](#supported-operators) are supported. There is no pipe equivalent yet for projection-only operators (such as a standalone `SELECT`/`EXTEND`), `DISTINCT`, `WINDOW`, `HAVING`, `QUALIFY`, `WITH`, `UNION`, set operations, `SAMPLE`, `PREWHERE`, or `ARRAY JOIN`. Grouping modifiers (`ROLLUP`, `CUBE`, `GROUPING SETS`, `ALL`, `WITH TOTALS`) are supported inside `|> AGGREGATE ... GROUP BY`, as described [above](#supported-operators).
 - A query must start with a standalone `FROM`; a bare `FROM <table>` without any `|>` operator is only accepted when nothing else follows the table expression (otherwise it is handled by the regular `SELECT` parser, so existing `FROM ... SELECT ...` queries are not shadowed).
 - Pipe syntax is only accepted at the top level of a query. A pipe query cannot appear where a regular `SELECT` is expected in a nested position — inside a subquery (for example `SELECT * FROM (FROM t |> WHERE c)`), a CTE (`WITH x AS (FROM t |> WHERE c)`), an `INSERT ... FROM` source, or a `CREATE VIEW ... AS` definition. Such uses are rejected with a syntax error. Wrap the pipe query at the top level instead, or use the equivalent regular `SELECT` in the nested position.
 - Listing a grouping key in `AGGREGATE` under an alias that collides with an aggregate (for example `|> AGGREGATE count() AS k GROUP BY k`) is ambiguous in the same way as the equivalent `SELECT count() AS k ... GROUP BY k`, and behaves the same way (the alias resolves to the aggregate). Use distinct names for grouping keys and aggregates to avoid the collision.
+- Query-string tooling requires the setting too: the `formatQuery`/`formatQuerySingleLine` and `highlightQuery` functions honor the session value of `allow_experimental_pipe_syntax`, and `clickhouse-format` parses pipe queries only when invoked with `--allow_experimental_pipe_syntax`.
 - Enabling `allow_experimental_pipe_syntax` with `SET` inside a multi-statement batch does not take effect for the remaining statements of that same batch on the PostgreSQL wire protocol (`PostgreSQLHandler`) and on `clickhouse benchmark` script input. These paths split the whole batch into individual statements up front, before any statement runs (via `splitMultipartQuery`), so a leading `SET allow_experimental_pipe_syntax = 1` cannot enable pipe parsing for a later `|>` statement in the same batch, and that statement is rejected with a syntax error. Enable the setting at the session or connection level instead of setting it in the batch. The regular `clickhouse-client` is unaffected: it parses and executes one statement at a time and re-reads the setting between statements.
 
 ## References {#references}
