@@ -96,7 +96,7 @@ FilterWithCachedCount::FilterWithCachedCount(const ColumnPtr & column_)
         }
     }
 
-    ColumnPtr col = column_->convertToFullIfNeeded();
+    ColumnPtr col = column_->convertToFullIfWrapped()->convertToFullColumnIfLowCardinality();
     FilterDescription desc(*col);
     column = desc.data_holder ? desc.data_holder : col;
     data = desc.data;
@@ -704,12 +704,10 @@ void MergeTreeRangeReader::ReadResult::optimize(const FilterWithCachedCount & cu
         setFilterConstTrue();
         return;
     }
-    /// Sparse: per-granule tails come from `sparse_indices` cheaply, so always worth shrinking.
-    /// Dense: guess.
-    const bool worth_shrinking = filter.isSparse()
-        ? total_zero_rows_in_tails > 0
-        : 2 * total_zero_rows_in_tails > filter.size();
-    if (worth_shrinking)
+    /// Shrinking a tail ends the current delayed read and forces a fresh seek
+    /// for the next granule, so it only pays off when enough rows are dropped
+    /// to outweigh the extra seek and misaligned filesystem-cache segment.
+    if (2 * total_zero_rows_in_tails > filter.size())
     {
         const NumRows rows_per_granule_previous = rows_per_granule;
         const size_t total_rows_per_granule_previous = total_rows_per_granule;
