@@ -7,6 +7,12 @@
 namespace DB
 {
 
+void registerPriorityPolicy(SchedulerNodeFactory &);
+void registerFairPolicy(SchedulerNodeFactory &);
+void registerSemaphoreConstraint(SchedulerNodeFactory &);
+void registerThrottlerConstraint(SchedulerNodeFactory &);
+void registerFifoQueue(SchedulerNodeFactory &);
+
 void registerSchedulerNodes()
 {
     auto & factory = SchedulerNodeFactory::instance();

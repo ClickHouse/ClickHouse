@@ -21,7 +21,6 @@ namespace DB
         extern const int LOGICAL_ERROR;
     }
 
-    void registerDictionarySourceRedis(DictionarySourceFactory & factory);
     void registerDictionarySourceRedis(DictionarySourceFactory & factory)
     {
         auto create_table_source = [=](const String & /*name*/,

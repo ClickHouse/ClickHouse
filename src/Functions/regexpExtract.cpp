@@ -20,7 +20,7 @@ namespace ErrorCodes
 
 namespace
 {
-class FunctionRegexpExtract final : public IFunction
+class FunctionRegexpExtract : public IFunction
 {
 public:
     static constexpr auto name = "regexpExtract";
@@ -289,8 +289,6 @@ SELECT
 
     /// For Spark compatibility.
     factory.registerAlias("REGEXP_EXTRACT", "regexpExtract", FunctionFactory::Case::Insensitive);
-    /// For Oracle/MySQL/Snowflake compatibility.
-    factory.registerAlias("REGEXP_SUBSTR", "regexpExtract", FunctionFactory::Case::Insensitive);
 }
 
 }

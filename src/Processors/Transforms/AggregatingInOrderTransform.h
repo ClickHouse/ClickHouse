@@ -22,7 +22,7 @@ struct ChunkInfoWithAllocatedBytes : public ChunkInfoCloneable<ChunkInfoWithAllo
     Int64 allocated_bytes;
 };
 
-class AggregatingInOrderTransform final : public IProcessor
+class AggregatingInOrderTransform : public IProcessor
 {
 public:
     AggregatingInOrderTransform(
@@ -104,7 +104,7 @@ private:
 };
 
 
-class FinalizeAggregatedTransform final : public ISimpleTransform
+class FinalizeAggregatedTransform : public ISimpleTransform
 {
 public:
     FinalizeAggregatedTransform(SharedHeader header, const AggregatingTransformParamsPtr & params_);

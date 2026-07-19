@@ -5,9 +5,7 @@
 #include <Disks/IDiskTransaction.h>
 #include <Disks/SingleDiskVolume.h>
 #include <Disks/TemporaryFileOnDisk.h>
-#include <IO/ReadBufferFromFileBase.h>
 #include <IO/ReadBufferFromString.h>
-#include <IO/ReadPipeline.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromFileBase.h>
 #include <Interpreters/Context.h>
@@ -32,16 +30,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int FILE_DOESNT_EXIST;
     extern const int CORRUPTED_DATA;
-}
-
-std::unique_ptr<ReadBufferFromFileBase> IDataPartStorage::readFile(
-    const std::string & name,
-    const ReadSettings & settings,
-    std::optional<size_t> read_hint) const
-{
-    ReadPipeline pipeline;
-    prepareRead(name, settings, read_hint, pipeline);
-    return pipeline.build();
 }
 
 DataPartStorageOnDiskBase::DataPartStorageOnDiskBase(VolumePtr volume_, std::string root_path_, std::string part_dir_)
@@ -86,7 +74,7 @@ std::string DataPartStorageOnDiskBase::getParentDirectory() const
 
 std::optional<String> DataPartStorageOnDiskBase::getRelativePathForPrefix(LoggerPtr log, const String & prefix, bool detached, bool broken) const
 {
-    chassert(!broken || detached);
+    assert(!broken || detached);
     String res;
 
     auto full_relative_path = fs::path(root_path);
@@ -390,7 +378,7 @@ void DataPartStorageOnDiskBase::backup(
     std::shared_ptr<TemporaryFileOnDisk> temp_dir_owner;
     if (make_temporary_hard_links)
     {
-        chassert(temp_dirs);
+        assert(temp_dirs);
         auto temp_dir_it = temp_dirs->find(disk);
         if (temp_dir_it == temp_dirs->end())
             temp_dir_it = temp_dirs->emplace(disk, std::make_shared<TemporaryFileOnDisk>(disk, "tmp/")).first;

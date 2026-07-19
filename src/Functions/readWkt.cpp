@@ -38,7 +38,7 @@ void readWKT(const String & str, T & out)
 }
 
 template <class DataTypeName, class Geometry, class Serializer, class NameHolder>
-class FunctionReadWKT final : public IFunction
+class FunctionReadWKT : public IFunction
 {
 public:
     explicit FunctionReadWKT() = default;
@@ -95,7 +95,7 @@ public:
     }
 };
 
-class FunctionReadWKTCommon final : public IFunction
+class FunctionReadWKTCommon : public IFunction
 {
 public:
     enum class WKTTypes

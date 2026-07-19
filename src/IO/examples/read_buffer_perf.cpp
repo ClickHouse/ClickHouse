@@ -5,7 +5,6 @@
 #include <base/types.h>
 #include <IO/ReadHelpers.h>
 #include <IO/ReadBufferFromFile.h>
-#include <Examples/clickhouse_examples.h>
 
 
 int mainEntryExampleReadBufferPerf(int, char **)

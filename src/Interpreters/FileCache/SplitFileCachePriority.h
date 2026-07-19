@@ -20,12 +20,13 @@ class SplitFileCachePriority : public IFileCachePriority
 public:
     class SplitIterator;
     using CachePriorityCreatorFunction
-        = std::function<IFileCachePriorityPtr(size_t max_size, size_t max_elements, double size_ratio, size_t overcommit_eviction_evict_step, String description)>;
+        = std::function<IFileCachePriorityPtr(QueueType queue_type, size_t max_size, size_t max_elements, double size_ratio, size_t overcommit_eviction_evict_step, String description)>;
     using IFileCachePriorityPtr = std::unique_ptr<IFileCachePriority>;
     using SegmentType = FileSegmentKeyType;
     using PriorityPerType = std::array<IFileCachePriorityPtr, 3>;
 
     SplitFileCachePriority(
+        QueueType queue_type_,
         CachePriorityCreatorFunction creator_function,
         size_t max_size_,
         size_t max_elements_,

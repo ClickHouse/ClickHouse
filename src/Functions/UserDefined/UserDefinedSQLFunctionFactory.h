@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Core/Types.h>
 #include <Common/NamePrompter.h>
 #include <Parsers/ASTCreateSQLFunctionQuery.h>
 #include <Interpreters/Context_fwd.h>
@@ -35,7 +34,7 @@ public:
     bool has(const String & function_name) const;
 
     /// Get all user defined functions registered names.
-    Strings getAllRegisteredNames() const override;
+    std::vector<String> getAllRegisteredNames() const override;
 
     /// Check whether any UDFs have been registered
     bool empty() const;

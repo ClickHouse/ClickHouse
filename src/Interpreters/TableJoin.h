@@ -99,7 +99,7 @@ public:
 
         size_t keysCount() const
         {
-            chassert(key_names_left.size() == key_names_right.size());
+            assert(key_names_left.size() == key_names_right.size());
             return key_names_right.size();
         }
 

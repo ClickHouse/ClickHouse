@@ -27,7 +27,7 @@ using IColumnFilter = PaddedPODArray<UInt8>;
 /// For this, we don't clear sorting prefix value and hash table after a range is processed,
 /// only right before a new range processing
 ///
-class DistinctSortedStreamTransform final : public ISimpleTransform
+class DistinctSortedStreamTransform : public ISimpleTransform
 {
 public:
     DistinctSortedStreamTransform(

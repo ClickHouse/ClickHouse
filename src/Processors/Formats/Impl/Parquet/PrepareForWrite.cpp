@@ -393,7 +393,7 @@ void preparePrimitiveColumn(ColumnPtr column, DataTypePtr type, const std::strin
             parq::TimeUnit unit;
             const auto & dt = assert_cast<const DataTypeDateTime64 &>(*type);
             UInt32 scale = dt.getScale();
-            UInt32 converted_scale = 0;
+            UInt32 converted_scale;
             if (scale <= 3)
             {
                 converted = parq::ConvertedType::TIMESTAMP_MILLIS;
@@ -738,7 +738,7 @@ SchemaElements convertSchema(const Block & sample, const WriteOptions & options,
     return schema;
 }
 
-static void prepareGeoColumn(ColumnPtr & column, DataTypePtr & type)
+void prepareGeoColumn(ColumnPtr & column, DataTypePtr & type)
 {
     if (!type->getCustomName())
         return;

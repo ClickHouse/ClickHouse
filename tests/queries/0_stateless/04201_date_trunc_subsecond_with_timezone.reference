@@ -1,9 +1,0 @@
-DateTime64(3)
-DateTime64(6)
-DateTime64(9)
-DateTime64(3, \'Asia/Tokyo\')
-DateTime64(6, \'Asia/Tokyo\')
-DateTime64(9, \'Asia/Tokyo\')
-2022-03-01 21:12:12.012
-2022-03-01 21:12:12.012346
-2022-03-01 21:12:12.012345678

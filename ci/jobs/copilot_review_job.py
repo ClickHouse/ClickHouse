@@ -115,9 +115,8 @@ Tools:
 - Do NOT use `gh pr review`; that posts a single batched review, not individual line comments.
 - Fetch inline review threads with:
   `{GH_PREFIX} python3 -m ci.praktika.gh list-pr-review-threads --pr {pr_number} --repo {repo_name}`.
-  The command returns JSON; each thread carries its node `id`, `isResolved`, `resolvedBy.login`
-  (the user who most recently resolved it, or `null`), `path`, `line`, and `comments.nodes` with
-  author, body, `databaseId`, and `createdAt`.
+  The command returns JSON; each thread carries its node `id`, `isResolved`, `path`, `line`, and
+  `comments.nodes` with author, body, `databaseId`, and `createdAt`.
 - Fetch top-level conversation with:
   `{GH_PREFIX} gh api '/repos/{repo_name}/issues/{pr_number}/comments' --paginate`.
 - Reply on an existing thread with:
@@ -133,46 +132,29 @@ Tools:
 def _pre_review_procedure(pr_url):
     return f"""\
 Procedure:
-1. In GitHub discussions, "you" are the `clickhouse-gh` GitHub App. Its identity appears in two
-   forms depending on which GraphQL field returns it: `clickhouse-gh` in `author.login` (comments,
-   reviews) and `clickhouse-gh[bot]` in `resolvedBy.login` (review threads). Treat both as you.
+1. In GitHub discussions, "you" are `clickhouse-gh[bot]`.
 2. Fetch all prior discussion on this PR before reviewing.
 3. Provide a thorough review of {pr_url}. Read the current code and PR diff, not only the discussion.
-4. Read every reply on every thread. Treat each reply as a deliberate engineering decision by the
-   author. An explanation that holds up, a pointer to a fixing commit, or a tradeoff you agree with
-   means drop the point. A dismissal ("no", "won't fix", "by design", "pathological", "wontfix",
-   "agree to disagree", a silent thread resolution) is also a deliberate decision -- accept it. If
-   you still believe the issue is real after the author's reply, see step 5 for what to do with it.
-5. Apply the same judgment to your own prior summary: drop findings that have been addressed, keep
-   or sharpen the rest. Verify by reading the current code, not by trusting the author's reply.
-   Findings the author dismissed but you still consider real STAY in the summary's `Findings`
-   section, marked `[dismissed by author -- <thread URL>]` with a one-line note on why you still
-   consider it real. Do NOT migrate them back to the inline thread.
-6. On existing threads, post a new comment only in these two cases:
-   (a) The author asked you a direct, answerable question (e.g. "what would the fix look like?",
-       "do you have a repro?"). Answer it once and stop -- do not restate the original finding.
-   (b) The author explicitly claimed the issue is fixed ("fixed in <commit>", "this is fixed now")
-       but the current code shows the original issue is still present. Reply once pointing to the
-       `file:line` that disproves the claim. Distinguish this from a dismissal: "won't fix",
-       "by design", "pathological", "no", a silent thread resolution are NOT fixed claims.
-   In every other case, do not reply on the thread.
-7. Resolve and re-open only threads you created yourself: that means threads whose first entry in
-   `comments.nodes` has `author.login == "clickhouse-gh"`. Resolve such a thread when the issue no
-   longer holds in the current code. Re-open such a thread only when it is resolved AND the issue
-   is still present AND either:
-   (a) the thread's `resolvedBy.login` is `"clickhouse-gh[bot]"` (whether you resolved it
-       prematurely or a later commit reintroduced the issue). Re-open silently, no reply needed.
-   (b) case 6(b) fires -- re-open AND post the 6(b) reply in the same run.
-   Never resolve or unresolve threads whose first comment was authored by anyone else.
+4. Read every reply on every thread before deciding whether a point is still live. A reply from the author is not
+   by itself a resolution. Judge it on its merits: an explanation that holds up, a pointer to a commit
+   that actually fixes the issue, or a tradeoff you agree with means drop the point. A handwave, a
+   misunderstanding of what was originally flagged, a "will fix later" that never landed, or a claim
+   that contradicts the code as it stands now means the issue is still live.
+5. Apply the same judgment to your own prior summary: drop findings that have genuinely been addressed,
+   keep or sharpen the ones that have not. Verify this by reading the current code at the relevant path
+   and line, not by trusting the author's reply.
+6. For existing live threads, summarize the issue by default instead of replying on the thread. Reply
+   only when the thread is marked as resolved, someone replied saying it is not an issue and you
+   believe it still is, or your last comment's `createdAt` is older than two days. When replying,
+   restate the concern with the relevant code and explain why the previous answer does not resolve it.
+7. Resolve or re-open only threads you created yourself: that means threads where the first comment in
+   `comments.nodes` was authored by `clickhouse-gh[bot]`. If a bot-authored thread is open and the issue
+   no longer holds in the current code, resolve it. If a bot-authored thread was resolved but the
+   current code still has the issue, re-open it and post a follow-up reply explaining what is still
+   wrong. Never resolve or unresolve threads where the first comment was authored by anyone else.
 8. For genuinely new issues that do not already have a thread, post individual inline comments on the
    relevant changed lines. For architectural issues that do not map cleanly to one line, post around
    the most relevant change in the diff.
-9. Do NOT post inline comments for issues that dedicated CI jobs already catch and report: build /
-   compilation failures (missing headers, undeclared symbols, type errors, link errors) and style
-   check failures (formatting, linters, `check_cpp.sh` / `check_style.sh` output). These are not
-   blockers in this review context: the build and Style Check jobs surface them with full toolchain
-   output, so a review comment is pure noise. If you want to mention them, include them only as
-   `💡 Nits` in the summary file, never as inline comments or as `❌ Blockers` / `⚠️ Majors`.
 """
 
 
@@ -259,7 +241,7 @@ def _run_copilot_once(prompt, robot_name):
             # </dev/null: ensure stdin is definitively non-interactive
             command=f"GH_CONFIG_DIR={shlex.quote(gh_config_dir)} "
                     f"copilot -p {shlex.quote(prompt)} --allow-all --no-ask-user "
-                    f"--add-dir . --model gpt-5.5 --effort xhigh < /dev/null",
+                    f"--add-dir . --model gpt-5.3-codex --effort xhigh < /dev/null",
             with_info=True,
         )
 
@@ -291,7 +273,7 @@ def _run_codex_once(prompt, robot_name):
 
         return Result.from_commands_run(
             name="codex review",
-            # -m gpt-5.5: same model the Copilot CLI uses, so
+            # -m gpt-5.3-codex: same model the Copilot CLI used, so
             #   review quality stays comparable across backends.
             # -s workspace-write: writable workspace + /tmp + CODEX_HOME,
             #   read-only elsewhere; sufficient for review output and
@@ -306,7 +288,7 @@ def _run_codex_once(prompt, robot_name):
             command=f"CODEX_HOME={shlex.quote(codex_home)} "
                     f"GH_CONFIG_DIR={shlex.quote(gh_config_dir)} "
                     f"codex exec "
-                    f"-m gpt-5.5 -c 'model_reasoning_effort=xhigh' "
+                    f"-m gpt-5.3-codex -c 'model_reasoning_effort=xhigh' "
                     f"-s workspace-write "
                     f"-c sandbox_workspace_write.network_access=true "
                     f"-c approval_policy=never "

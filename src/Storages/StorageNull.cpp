@@ -21,7 +21,6 @@ namespace ErrorCodes
 }
 
 
-void registerStorageNull(StorageFactory & factory);
 void registerStorageNull(StorageFactory & factory)
 {
     factory.registerStorage("Null", [](const StorageFactory::Arguments & args)

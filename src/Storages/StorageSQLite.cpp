@@ -137,7 +137,7 @@ Pipe StorageSQLite::read(
 }
 
 
-class SQLiteSink final : public SinkToStorage
+class SQLiteSink : public SinkToStorage
 {
 public:
     explicit SQLiteSink(
@@ -207,7 +207,6 @@ SinkToStoragePtr StorageSQLite::write(const ASTPtr & /* query */, const StorageM
 }
 
 
-void registerStorageSQLite(StorageFactory & factory);
 void registerStorageSQLite(StorageFactory & factory)
 {
     factory.registerStorage("SQLite", [](const StorageFactory::Arguments & args) -> StoragePtr

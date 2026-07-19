@@ -3,7 +3,6 @@
 #include <Common/typeid_cast.h>
 #include <iostream>
 #include <unistd.h>
-#include <Examples/clickhouse_examples.h>
 
 
 using namespace zkutil;

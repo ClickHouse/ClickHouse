@@ -205,9 +205,6 @@ class JobConfigs:
         digest_config=fast_test_digest_config,
         result_name_for_cidb="Tests",
         force_success=True,
-        pre_hooks=[
-            "sudo rm -rf /Library/Logs/DiagnosticReports/*",
-        ],
         post_hooks=[
             "python3 ./ci/jobs/scripts/job_hooks/clickhouse_test_cleanup_hook.py",
             "sudo rm -rf /Users/ec2-user/actions-runner/_work/ClickHouse/ClickHouse/ci/tmp/run* /System/Volumes/Data/System/Library/Caches/com.apple.coresymbolicationd/data",
@@ -1485,37 +1482,6 @@ class JobConfigs:
         requires=[ArtifactNames.ARM_FUZZERS, ArtifactNames.FUZZERS_CORPUS],
         digest_config=Job.CacheDigestConfig(
             include_paths=["./ci/jobs/libfuzzer_test_check.py"],
-        ),
-    )
-    collect_clickhouse_profiles_jobs = Job.Config(
-        name=JobNames.COLLECT_CLICKHOUSE_PROFILES,
-        runs_on=[],  # from parametrize()
-        command="python3 ./ci/jobs/collect_clickhouse_profiles.py",
-        run_in_docker=BINARY_DOCKER_COMMAND,
-        timeout=8 * 3600,
-        digest_config=Job.CacheDigestConfig(
-            include_paths=[
-                "./ci/jobs/collect_clickhouse_profiles.py",
-                "./cmake/profile_optimization.cmake",
-                "./tests/performance/",
-            ],
-        ),
-    ).parametrize(
-        Job.ParamSet(
-            parameter="amd64",
-            runs_on=RunnerLabels.AMD_LARGE,
-            provides=[
-                ArtifactNames.CLICKHOUSE_PGO_PROFILE_AMD,
-                ArtifactNames.CLICKHOUSE_BOLT_PROFILE_AMD,
-            ],
-        ),
-        Job.ParamSet(
-            parameter="aarch64",
-            runs_on=RunnerLabels.ARM_LARGE,
-            provides=[
-                ArtifactNames.CLICKHOUSE_PGO_PROFILE_ARM,
-                ArtifactNames.CLICKHOUSE_BOLT_PROFILE_ARM,
-            ],
         ),
     )
     toolchain_build_jobs = Job.Config(

@@ -6,7 +6,6 @@
 #include <aws/core/utils/crypto/Hash.h>
 #include <Poco/MD5Engine.h>
 #include <Common/CurrentThread.h>
-#include <Common/ThreadStatus.h>
 #include <Common/Exception.h>
 
 #include <aws/core/Aws.h>
@@ -128,7 +127,7 @@ long Client::RetryStrategy::CalculateDelayBeforeNextRetry(const Aws::Client::AWS
     chassert(attemptedRetries >= 0);
     uint64_t backoff_limited_pow = 1ul << std::clamp(attemptedRetries, 0l, 31l);
 
-    uint64_t res = 0;
+    uint64_t res;
     if (config.jitter_factor > 0)
     {
         auto dist = std::uniform_real_distribution<double>(1.0, 1.0 + config.jitter_factor);
@@ -366,7 +365,7 @@ bool Client::checkIfWrongRegionDefined(const std::string & bucket, const Aws::S3
         if (region.empty())
             region = getRegionForBucket(bucket, /*force_detect*/ true);
 
-        chassert(!explicit_region.empty());
+        assert(!explicit_region.empty());
         if (region == explicit_region)
             return false;
 
@@ -681,7 +680,7 @@ Client::doRequest(RequestType & request, RequestFn request_fn) const
         if (found_new_endpoint)
         {
             auto uri_override = request.getURIOverride();
-            chassert(uri_override.has_value());
+            assert(uri_override.has_value());
             updateURIForBucket(bucket, std::move(*uri_override));
         }
     );

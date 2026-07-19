@@ -17,7 +17,7 @@ namespace ErrorCodes
 /** arrayJoin(arr) - a special function - it can not be executed directly;
   *                     is used only to get the result type of the corresponding expression.
   */
-class FunctionArrayJoin final : public IFunction
+class FunctionArrayJoin : public IFunction
 {
 public:
     static constexpr auto name = "arrayJoin";

@@ -27,7 +27,7 @@ namespace
  * should produce:
  *   ['abc', '111']
  */
-class FunctionExtractGroups final : public IFunction
+class FunctionExtractGroups : public IFunction
 {
 public:
     static constexpr auto name = "extractGroups";

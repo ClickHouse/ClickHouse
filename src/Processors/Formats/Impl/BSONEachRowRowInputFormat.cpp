@@ -1,5 +1,6 @@
 #include <IO/ReadBufferFromString.h>
 
+#include <Common/checkStackSize.h>
 #include <Core/CaseAwareBlockNameMap.h>
 
 #include <Formats/FormatFactory.h>
@@ -44,6 +45,7 @@ namespace ErrorCodes
     extern const int TOO_LARGE_STRING_SIZE;
     extern const int UNKNOWN_TYPE;
     extern const int TYPE_MISMATCH;
+    extern const int TOO_DEEP_RECURSION;
 }
 
 namespace
@@ -112,14 +114,14 @@ static std::string_view readBSONKeyName(ReadBuffer & in, String & key_holder)
 
 static UInt8 readBSONType(ReadBuffer & in)
 {
-    UInt8 type = 0;
+    UInt8 type;
     readBinary(type, in);
     return type;
 }
 
 static size_t readBSONSize(ReadBuffer & in)
 {
-    BSONSizeT size = 0;
+    BSONSizeT size;
     readBinaryLittleEndian(size, in);
     return size;
 }
@@ -132,19 +134,19 @@ static void readAndInsertInteger(ReadBuffer & in, IColumn & column, const DataTy
 
     if (bson_type == BSONType::INT32)
     {
-        UInt32 value = 0;
+        UInt32 value;
         readBinaryLittleEndian(value, in);
         assert_cast<ColumnVector<T> &>(column).insertValue(static_cast<T>(value));
     }
     else if (bson_type == BSONType::INT64)
     {
-        UInt64 value = 0;
+        UInt64 value;
         readBinaryLittleEndian(value, in);
         assert_cast<ColumnVector<T> &>(column).insertValue(static_cast<T>(value));
     }
     else if (bson_type == BSONType::BOOL)
     {
-        UInt8 value = 0;
+        UInt8 value;
         readBinaryLittleEndian(value, in);
         assert_cast<ColumnVector<T> &>(column).insertValue(static_cast<T>(value));
     }
@@ -161,7 +163,7 @@ static void readAndInsertIPv4(ReadBuffer & in, IColumn & column, BSONType bson_t
     if (bson_type != BSONType::INT32)
         throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot insert BSON Int32 into column with type IPv4");
 
-    UInt32 value = 0;
+    UInt32 value;
     readBinaryLittleEndian(value, in);
     assert_cast<ColumnIPv4 &>(column).insertValue(IPv4(value));
 }
@@ -173,7 +175,7 @@ static void readAndInsertDouble(ReadBuffer & in, IColumn & column, const DataTyp
         throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot insert BSON {} into column with type {}",
                         getBSONTypeName(bson_type), data_type->getName());
 
-    Float64 value = 0;
+    Float64 value;
     readBinaryLittleEndian(value, in);
     assert_cast<ColumnVector<T> &>(column).insertValue(static_cast<T>(value));
 }
@@ -185,7 +187,7 @@ static void readAndInsertSmallDecimal(ReadBuffer & in, IColumn & column, const D
         throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot insert BSON {} into column with type {}",
                         getBSONTypeName(bson_type), data_type->getName());
 
-    DecimalType value{};
+    DecimalType value;
     readBinaryLittleEndian(value, in);
     assert_cast<ColumnDecimal<DecimalType> &>(column).insertValue(value);
 }
@@ -362,6 +364,11 @@ static void readAndInsertUUID(ReadBuffer & in, IColumn & column, BSONType bson_t
 
 void BSONEachRowRowInputFormat::readArray(IColumn & column, const DataTypePtr & data_type, BSONType bson_type)
 {
+    /// Nested Array/Tuple/Map recurse through readField; the depth is bounded by the declared column
+    /// type, but guard the native stack here (on container entry, not on every primitive field)
+    /// against a pathologically deep declared type.
+    checkStackSize();
+
     if (bson_type != BSONType::ARRAY)
         throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot insert BSON {} into Array column", getBSONTypeName(bson_type));
 
@@ -371,7 +378,7 @@ void BSONEachRowRowInputFormat::readArray(IColumn & column, const DataTypePtr & 
     auto & nested_column = array_column.getData();
 
     size_t document_start = in->count();
-    BSONSizeT document_size = 0;
+    BSONSizeT document_size;
     readBinaryLittleEndian(document_size, *in);
     if (document_size < sizeof(BSONSizeT) + sizeof(BSON_DOCUMENT_END))
         throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid document size: {}", document_size);
@@ -394,6 +401,8 @@ void BSONEachRowRowInputFormat::readArray(IColumn & column, const DataTypePtr & 
 
 void BSONEachRowRowInputFormat::readTuple(IColumn & column, const DataTypePtr & data_type, BSONType bson_type)
 {
+    checkStackSize();
+
     if (bson_type != BSONType::ARRAY && bson_type != BSONType::DOCUMENT)
         throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot insert BSON {} into Tuple column", getBSONTypeName(bson_type));
 
@@ -406,7 +415,7 @@ void BSONEachRowRowInputFormat::readTuple(IColumn & column, const DataTypePtr & 
     size_t read_nested_columns = 0;
 
     size_t document_start = in->count();
-    BSONSizeT document_size = 0;
+    BSONSizeT document_size;
     readBinaryLittleEndian(document_size, *in);
     if (document_size < sizeof(BSONSizeT) + sizeof(BSON_DOCUMENT_END))
         throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid document size: {}", document_size);
@@ -461,6 +470,8 @@ void BSONEachRowRowInputFormat::readTuple(IColumn & column, const DataTypePtr & 
 
 void BSONEachRowRowInputFormat::readMap(IColumn & column, const DataTypePtr & data_type, BSONType bson_type)
 {
+    checkStackSize();
+
     if (bson_type != BSONType::DOCUMENT)
         throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot insert BSON {} into Map column", getBSONTypeName(bson_type));
 
@@ -473,7 +484,7 @@ void BSONEachRowRowInputFormat::readMap(IColumn & column, const DataTypePtr & da
     auto & offsets = column_map.getNestedColumn().getOffsets();
 
     size_t document_start = in->count();
-    BSONSizeT document_size = 0;
+    BSONSizeT document_size;
     readBinaryLittleEndian(document_size, *in);
     if (document_size < sizeof(BSONSizeT) + sizeof(BSON_DOCUMENT_END))
         throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid document size: {}", document_size);
@@ -718,7 +729,7 @@ static void skipBSONField(ReadBuffer & in, BSONType type)
         case BSONType::SYMBOL: [[fallthrough]];
         case BSONType::STRING:
         {
-            BSONSizeT size = 0;
+            BSONSizeT size;
             readBinaryLittleEndian(size, in);
             in.ignore(size);
             break;
@@ -726,7 +737,7 @@ static void skipBSONField(ReadBuffer & in, BSONType type)
         case BSONType::DOCUMENT: [[fallthrough]];
         case BSONType::ARRAY:
         {
-            BSONSizeT size = 0;
+            BSONSizeT size;
             readBinaryLittleEndian(size, in);
             if (size < sizeof(BSONSizeT) + sizeof(BSON_DOCUMENT_END))
                 throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid document size: {}", size);
@@ -735,7 +746,7 @@ static void skipBSONField(ReadBuffer & in, BSONType type)
         }
         case BSONType::BINARY:
         {
-            BSONSizeT size = 0;
+            BSONSizeT size;
             readBinaryLittleEndian(size, in);
             in.ignore(size + 1);
             break;
@@ -760,14 +771,14 @@ static void skipBSONField(ReadBuffer & in, BSONType type)
         }
         case BSONType::DB_POINTER:
         {
-            BSONSizeT size = 0;
+            BSONSizeT size;
             readBinaryLittleEndian(size, in);
             in.ignore(size + BSON_DB_POINTER_SIZE);
             break;
         }
         case BSONType::JAVA_SCRIPT_CODE_W_SCOPE:
         {
-            BSONSizeT size = 0;
+            BSONSizeT size;
             readBinaryLittleEndian(size, in);
             if (size < sizeof(BSONSizeT))
                 throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid java code_w_scope size: {}", size);
@@ -869,7 +880,7 @@ void BSONEachRowRowInputFormat::resetParser()
 size_t BSONEachRowRowInputFormat::countRows(size_t max_block_size)
 {
     size_t num_rows = 0;
-    BSONSizeT document_size = 0;
+    BSONSizeT document_size;
     while (!in->eof() && num_rows < max_block_size)
     {
         readBinaryLittleEndian(document_size, *in);
@@ -887,7 +898,7 @@ BSONEachRowSchemaReader::BSONEachRowSchemaReader(ReadBuffer & in_, const FormatS
 {
 }
 
-DataTypePtr BSONEachRowSchemaReader::getDataTypeFromBSONField(BSONType type, bool allow_to_skip_unsupported_types, bool & skip)
+DataTypePtr BSONEachRowSchemaReader::getDataTypeFromBSONField(BSONType type, bool allow_to_skip_unsupported_types, bool & skip, size_t depth)
 {
     switch (type)
     {
@@ -920,7 +931,7 @@ DataTypePtr BSONEachRowSchemaReader::getDataTypeFromBSONField(BSONType type, boo
         case BSONType::JAVA_SCRIPT_CODE: [[fallthrough]];
         case BSONType::STRING:
         {
-            BSONSizeT size = 0;
+            BSONSizeT size;
             readBinaryLittleEndian(size, in);
             in.ignore(size);
             return std::make_shared<DataTypeString>();
@@ -932,7 +943,7 @@ DataTypePtr BSONEachRowSchemaReader::getDataTypeFromBSONField(BSONType type, boo
         }
         case BSONType::DOCUMENT:
         {
-            auto nested_names_and_types = getDataTypesFromBSONDocument(false);
+            auto nested_names_and_types = getDataTypesFromBSONDocument(false, depth + 1);
             auto nested_types = nested_names_and_types.getTypes();
             bool types_are_equal = true;
             if (nested_types.empty() || !nested_types[0])
@@ -954,7 +965,7 @@ DataTypePtr BSONEachRowSchemaReader::getDataTypeFromBSONField(BSONType type, boo
         }
         case BSONType::ARRAY:
         {
-            auto nested_types = getDataTypesFromBSONDocument(false).getTypes();
+            auto nested_types = getDataTypesFromBSONDocument(false, depth + 1).getTypes();
             bool types_are_equal = true;
             if (nested_types.empty() || !nested_types[0])
                 return nullptr;
@@ -974,7 +985,7 @@ DataTypePtr BSONEachRowSchemaReader::getDataTypeFromBSONField(BSONType type, boo
         }
         case BSONType::BINARY:
         {
-            BSONSizeT size = 0;
+            BSONSizeT size;
             readBinaryLittleEndian(size, in);
             auto subtype = getBSONBinarySubtype(readBSONType(in));
             in.ignore(size);
@@ -1006,10 +1017,23 @@ DataTypePtr BSONEachRowSchemaReader::getDataTypeFromBSONField(BSONType type, boo
     }
 }
 
-NamesAndTypesList BSONEachRowSchemaReader::getDataTypesFromBSONDocument(bool allow_to_skip_unsupported_types)
+NamesAndTypesList BSONEachRowSchemaReader::getDataTypesFromBSONDocument(bool allow_to_skip_unsupported_types, size_t depth)
 {
+    /// BSON documents and arrays can be nested arbitrarily deep. Reject deep nesting early (before
+    /// building the type) with an explicit limit, so inference stays cheap and interruptible instead
+    /// of overflowing the native stack in this recursive descent. checkStackSize is a last-resort
+    /// backstop for when max_parser_depth is raised above the default.
+    /// max_parser_depth == 0 means unlimited (matching the SQL parser), leaving only checkStackSize.
+    if (format_settings.max_parser_depth != 0 && depth > format_settings.max_parser_depth)
+        throw Exception(
+            ErrorCodes::TOO_DEEP_RECURSION,
+            "Too deep recursion while inferring the BSON schema: the nesting depth exceeds the limit ({}). "
+            "It can be raised with the setting 'max_parser_depth', but a very deep schema is rarely intentional",
+            format_settings.max_parser_depth);
+    checkStackSize();
+
     size_t document_start = in.count();
-    BSONSizeT document_size = 0;
+    BSONSizeT document_size;
     readBinaryLittleEndian(document_size, in);
     NamesAndTypesList names_and_types;
     while (in.count() - document_start + sizeof(BSON_DOCUMENT_END) != document_size)
@@ -1018,7 +1042,7 @@ NamesAndTypesList BSONEachRowSchemaReader::getDataTypesFromBSONDocument(bool all
         String name;
         readNullTerminated(name, in);
         bool skip = false;
-        auto type = getDataTypeFromBSONField(bson_type, allow_to_skip_unsupported_types, skip);
+        auto type = getDataTypeFromBSONField(bson_type, allow_to_skip_unsupported_types, skip, depth);
         if (!skip)
             names_and_types.emplace_back(name, type);
     }
@@ -1036,7 +1060,7 @@ NamesAndTypesList BSONEachRowSchemaReader::readRowAndGetNamesAndDataTypes(bool &
         return {};
     }
 
-    return getDataTypesFromBSONDocument(format_settings.bson.skip_fields_with_unsupported_types_in_schema_inference);
+    return getDataTypesFromBSONDocument(format_settings.bson.skip_fields_with_unsupported_types_in_schema_inference, 1);
 }
 
 void BSONEachRowSchemaReader::transformTypesIfNeeded(DataTypePtr & type, DataTypePtr & new_type)
@@ -1055,7 +1079,7 @@ fileSegmentationEngineBSONEachRow(ReadBuffer & in, DB::Memory<> & memory, size_t
 
     while (!in.eof() && memory.size() < min_bytes && number_of_rows < max_rows)
     {
-        BSONSizeT document_size = 0;
+        BSONSizeT document_size;
         readBinaryLittleEndian(document_size, in);
 
         if (document_size < sizeof(document_size))
@@ -1081,7 +1105,6 @@ fileSegmentationEngineBSONEachRow(ReadBuffer & in, DB::Memory<> & memory, size_t
     return {!in.eof(), number_of_rows};
 }
 
-void registerInputFormatBSONEachRow(FormatFactory & factory);
 void registerInputFormatBSONEachRow(FormatFactory & factory)
 {
     factory.registerInputFormat(
@@ -1091,13 +1114,11 @@ void registerInputFormatBSONEachRow(FormatFactory & factory)
     factory.registerFileExtension("bson", "BSONEachRow");
 }
 
-void registerFileSegmentationEngineBSONEachRow(FormatFactory & factory);
 void registerFileSegmentationEngineBSONEachRow(FormatFactory & factory)
 {
     factory.registerFileSegmentationEngine("BSONEachRow", &fileSegmentationEngineBSONEachRow);
 }
 
-void registerBSONEachRowSchemaReader(FormatFactory & factory);
 void registerBSONEachRowSchemaReader(FormatFactory & factory)
 {
     factory.registerSchemaReader("BSONEachRow", [](ReadBuffer & buf, const FormatSettings & settings)

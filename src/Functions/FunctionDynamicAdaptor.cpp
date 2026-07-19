@@ -1,7 +1,5 @@
 #include <Functions/FunctionDynamicAdaptor.h>
 #include <Common/CurrentThread.h>
-#include <Common/UnorderedMapWithMemoryTracking.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeDynamic.h>
 #include <DataTypes/DataTypeVariant.h>
@@ -358,13 +356,13 @@ ColumnPtr ExecutableFunctionDynamicAdaptor::executeImpl(const ColumnsWithTypeAnd
     /// So, we allocate 0 index for rows with NULL values.
     variants.emplace_back();
     /// Remember indexes in selector for each variant type.
-    UnorderedMapWithMemoryTracking<String, size_t> variant_indexes;
+    std::unordered_map<String, size_t> variant_indexes;
     const auto & local_discriminators = variant_column.getLocalDiscriminators();
     const auto & offsets = variant_column.getOffsets();
     auto shared_variant_local_discr = variant_column.localDiscriminatorByGlobal(dynamic_column.getSharedVariantDiscriminator());
     const auto & shared_variant = dynamic_column.getSharedVariant();
     /// Remember created serializations for variants in shared variant to avoid recreating it every time.
-    UnorderedMapWithMemoryTracking<String, SerializationPtr> shared_variants_serializations;
+    std::unordered_map<String, SerializationPtr> shared_variants_serializations;
     FormatSettings format_settings;
     for (size_t i = 0; i != local_discriminators.size(); ++i)
     {
@@ -418,7 +416,7 @@ ColumnPtr ExecutableFunctionDynamicAdaptor::executeImpl(const ColumnsWithTypeAnd
     }
 
     /// Create set of arguments for each variant using selector.
-    VectorWithMemoryTracking<ColumnsWithTypeAndName> variants_arguments;
+    std::vector<ColumnsWithTypeAndName> variants_arguments;
     variants_arguments.resize(variants.size());
     for (size_t i = 0; i != arguments.size(); ++i)
     {
@@ -436,7 +434,7 @@ ColumnPtr ExecutableFunctionDynamicAdaptor::executeImpl(const ColumnsWithTypeAnd
     }
 
     /// Execute function over all created sets of arguments and remember all results.
-    VectorWithMemoryTracking<ColumnPtr> variants_results;
+    std::vector<ColumnPtr> variants_results;
     variants_results.reserve(variants.size());
     /// 0 index is allocated for rows with NULL values, it doesn't have any result,
     /// we will insert NULL values in these rows.
@@ -514,7 +512,7 @@ ColumnPtr ExecutableFunctionDynamicAdaptor::executeDryRunImpl(const ColumnsWithT
 FunctionBaseDynamicAdaptor::FunctionBaseDynamicAdaptor(std::shared_ptr<const IFunctionOverloadResolver> function_overload_resolver_, DataTypes arguments_) : function_overload_resolver(function_overload_resolver_), arguments(arguments_)
 {
     /// For resulting Dynamic type use the maximum max_dynamic_types from all Dynamic arguments.
-    size_t result_max_dynamic_type = 0;
+    size_t result_max_dynamic_type;
     bool first = true;
     for (size_t i = 0; i != arguments.size(); ++i)
     {

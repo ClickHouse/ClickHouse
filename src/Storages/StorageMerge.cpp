@@ -571,7 +571,7 @@ void ReadFromMerge::initializePipeline(QueryPipelineBuilder & pipeline, const Bu
     }
 
     QueryPlanResourceHolder resources;
-    VectorWithMemoryTracking<std::unique_ptr<QueryPipelineBuilder>> pipelines;
+    std::vector<std::unique_ptr<QueryPipelineBuilder>> pipelines;
 
     auto table_it = selected_tables.begin();
     auto modified_context = Context::createCopy(context);
@@ -1192,7 +1192,7 @@ SelectQueryInfo ReadFromMerge::getModifiedQueryInfo(const ContextMutablePtr & mo
     return modified_query_info;
 }
 
-static bool recursivelyApplyToReadingSteps(QueryPlan::Node * node, const std::function<bool(ReadFromMergeTree &)> & func)
+bool recursivelyApplyToReadingSteps(QueryPlan::Node * node, const std::function<bool(ReadFromMergeTree &)> & func)
 {
     bool ok = true;
     for (auto * child : node->children)
@@ -1503,7 +1503,7 @@ StorageMerge::DatabaseTablesIterators StorageMerge::DatabaseNameOrRegexp::getDat
     else
     {
         /// database_name argument is a regexp
-        auto databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_remote_databases = true});
+        auto databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = true, .with_remote_databases = true});
 
         for (const auto & db : databases)
         {
@@ -1745,18 +1745,6 @@ QueryPlanRawPtrs ReadFromMerge::getChildPlans()
     return plans;
 }
 
-std::vector<QueryPlan *> ReadFromMerge::getAllChildPlans()
-{
-    filterTablesAndCreateChildrenPlans();
-
-    std::vector<QueryPlan *> plans;
-    plans.reserve(child_plans->size());
-    for (auto & child_plan : *child_plans)
-        plans.push_back(child_plan.plan.isInitialized() ? &child_plan.plan : nullptr);
-
-    return plans;
-}
-
 IStorage::ColumnSizeByName StorageMerge::getColumnSizes() const
 {
     ColumnSizeByName column_sizes;
@@ -1837,7 +1825,6 @@ std::optional<UInt64> StorageMerge::totalRowsOrBytes(F && func) const
     return first_table ? std::nullopt : std::make_optional(total_rows_or_bytes);
 }
 
-void registerStorageMerge(StorageFactory & factory);
 void registerStorageMerge(StorageFactory & factory)
 {
     factory.registerStorage("Merge", [](const StorageFactory::Arguments & args)

@@ -250,7 +250,7 @@ struct DeltaLakeMetadataImpl
         RelativePathWithMetadata object_info(metadata_file_path);
         auto buf = createReadBuffer(object_info, object_storage, context, log);
 
-        char c = 0;
+        char c;
         String sum_json;
         while (!buf->eof())
         {
@@ -714,8 +714,8 @@ DataTypePtr DeltaLakeMetadata::getSimpleTypeByName(const String & type_name)
     if (type_name.starts_with("decimal(") && type_name.ends_with(')'))
     {
         ReadBufferFromString buf(std::string_view(type_name.begin() + 8, type_name.end() - 1));
-        size_t precision = 0;
-        size_t scale = 0;
+        size_t precision;
+        size_t scale;
         readIntText(precision, buf);
         skipWhitespaceIfAny(buf);
         assertChar(',', buf);

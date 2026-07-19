@@ -27,7 +27,6 @@
 
 #include <Poco/Timestamp.h>
 #include <Common/OpenTelemetryTraceContext.h>
-#include <Common/ProfileEvents.h>
 #include <Common/ThreadPool.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
@@ -55,11 +54,6 @@ namespace CurrentMetrics
     extern const Metric DDLWorkerThreads;
     extern const Metric DDLWorkerThreadsActive;
     extern const Metric DDLWorkerThreadsScheduled;
-}
-
-namespace ProfileEvents
-{
-    extern const Event ZooKeeperWatchTriggeredDistributedDDL;
 }
 
 namespace DB
@@ -346,7 +340,7 @@ void DDLWorker::scheduleTasks(bool reinitialized)
         else
             LOG_INFO(log, "Have {} unfinished tasks, will check them", current_tasks.size());
 
-        chassert(current_tasks.size() <= pool_size + (worker_pool != nullptr));
+        assert(current_tasks.size() <= pool_size + (worker_pool != nullptr));
         auto task_it = current_tasks.begin();
         while (task_it != current_tasks.end())
         {
@@ -357,7 +351,7 @@ void DDLWorker::scheduleTasks(bool reinitialized)
                 chassert(task->was_executed);
                 /// Status must be written (but finished/ node may not exist if entry was deleted).
                 /// If someone is deleting entry concurrently, then /active status dir must not exist.
-                chassert(zookeeper->exists(task->getFinishedNodePath()) || !zookeeper->exists(fs::path(task->entry_path) / "active"));
+                assert(zookeeper->exists(task->getFinishedNodePath()) || !zookeeper->exists(fs::path(task->entry_path) / "active"));
                 ++task_it;
             }
             else if (task->was_executed)
@@ -405,10 +399,7 @@ void DDLWorker::scheduleTasks(bool reinitialized)
         first_failed_task_name.reset();
     }
 
-    Strings queue_nodes = zookeeper->getChildrenWatch(
-        queue_dir,
-        &queue_node_stat,
-        Coordination::WatchCallbackPtrOrEventPtr{queue_updated_event, ProfileEvents::ZooKeeperWatchTriggeredDistributedDDL});
+    Strings queue_nodes = zookeeper->getChildren(queue_dir, &queue_node_stat, queue_updated_event);
     size_t size_before_filtering = queue_nodes.size();
     filterAndSortQueueNodes(queue_nodes);
     /// The following message is too verbose, but it can be useful to debug mysterious test failures in CI
@@ -536,16 +527,16 @@ DDLTaskBase & DDLWorker::saveTask(DDLTaskPtr && task)
     current_tasks.remove_if([](const DDLTaskPtr & t) { return t->completely_processed.load(); });
 
     /// Tasks are scheduled and executed in main thread <==> Parallel execution is disabled
-    chassert((worker_pool != nullptr) == (1 < pool_size));
+    assert((worker_pool != nullptr) == (1 < pool_size));
 
     /// Parallel execution is disabled ==> All previous tasks are failed to start or finished,
     /// so current tasks list must be empty when we are ready to process new one.
-    chassert(worker_pool || current_tasks.empty());
+    assert(worker_pool || current_tasks.empty());
 
     /// Parallel execution is enabled ==> Not more than pool_size tasks are currently executing.
     /// Note: If current_tasks.size() == pool_size, then all worker threads are busy,
     /// so we will wait on worker_pool->scheduleOrThrowOnError(...)
-    chassert(!worker_pool || current_tasks.size() <= pool_size);
+    assert(!worker_pool || current_tasks.size() <= pool_size);
 
     current_tasks.emplace_back(std::move(task));
 
@@ -849,7 +840,7 @@ bool DDLWorker::tryExecuteQueryOnSingleReplica(
     String shard_path = task.getShardNodePath();
     String is_executed_path = fs::path(shard_path) / "executed";
     String tries_to_execute_path = fs::path(shard_path) / "tries_to_execute";
-    chassert(shard_path.starts_with(String(fs::path(task.entry_path) / "shards" / "")));
+    assert(shard_path.starts_with(String(fs::path(task.entry_path) / "shards" / "")));
     zookeeper->createIfNotExists(fs::path(task.entry_path) / "shards", "");
     zookeeper->createIfNotExists(shard_path, "");
 
@@ -868,7 +859,7 @@ bool DDLWorker::tryExecuteQueryOnSingleReplica(
     Coordination::EventPtr event = std::make_shared<Poco::Event>();
     /// We must use exists request instead of get, because zookeeper will not setup event
     /// for non existing node after get request
-    if (zookeeper->existsWatch(is_executed_path, nullptr, Coordination::WatchCallbackPtrOrEventPtr{event, ProfileEvents::ZooKeeperWatchTriggeredDistributedDDL}))
+    if (zookeeper->exists(is_executed_path, nullptr, event))
     {
         LOG_DEBUG(log, "Task {} has already been executed by replica ({}) of the same shard.", task.entry_name, zookeeper->get(is_executed_path));
         if (auto op = task.getOpToUpdateLogPointer())
@@ -1105,7 +1096,7 @@ void DDLWorker::createStatusDirs(const std::string & node_path, const ZooKeeperP
     /// Failed on attempt to create node_path/active because it exists, so node_path/finished must exist too
     bool both_already_exists = responses.size() == 2 && responses[0]->error == Coordination::Error::ZNODEEXISTS
                                                      && responses[1]->error == Coordination::Error::ZRUNTIMEINCONSISTENCY;
-    chassert(!both_already_exists || (zookeeper->exists(fs::path(node_path) / "active") && zookeeper->exists(fs::path(node_path) / "finished")));
+    assert(!both_already_exists || (zookeeper->exists(fs::path(node_path) / "active") && zookeeper->exists(fs::path(node_path) / "finished")));
 
     /// Failed on attempt to create node_path/finished, but node_path/active does not exist
     bool is_currently_deleting = responses.size() == 2 && responses[0]->error == Coordination::Error::ZOK
@@ -1121,7 +1112,7 @@ void DDLWorker::createStatusDirs(const std::string & node_path, const ZooKeeperP
     }
 
     /// Connection lost or entry was removed
-    chassert(Coordination::isHardwareError(code) || code == Coordination::Error::ZNONODE);
+    assert(Coordination::isHardwareError(code) || code == Coordination::Error::ZNONODE);
     zkutil::KeeperMultiException::check(code, ops, responses);
 }
 
@@ -1168,7 +1159,7 @@ String DDLWorker::enqueueQueryAttempt(DDLLogEntry & entry)
     {
         String str_buf = node_path.substr(query_path_prefix.length());
         DB::ReadBufferFromString in(str_buf);
-        CurrentMetrics::Value pushed_entry = 0;
+        CurrentMetrics::Value pushed_entry;
         readText(pushed_entry, in);
         pushed_entry = std::max(CurrentMetrics::get(*max_pushed_entry_metric), pushed_entry);
         CurrentMetrics::set(*max_pushed_entry_metric, pushed_entry);

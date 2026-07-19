@@ -181,7 +181,7 @@ struct BaseXXDecode
 };
 
 template <typename Func>
-class FunctionBaseXXConversion final : public IFunction
+class FunctionBaseXXConversion : public IFunction
 {
     static constexpr bool has_size_optimization = Func::has_size_optimization;
 

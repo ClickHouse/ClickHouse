@@ -1,4 +1,4 @@
--- Tags: no-ordinary-database
+-- Tags: no-ordinary-database, no-encrypted-storage
 -- Test: version metadata (creation_csn, removal_tid, removal_csn) is correctly
 -- reflected in system.parts after transactional operations.
 -- This covers the refactored VersionMetadata class hierarchy and its persistence.

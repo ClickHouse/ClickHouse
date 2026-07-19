@@ -1,7 +1,5 @@
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
-#include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/ITransformingStep.h>
-#include <Processors/QueryPlan/LimitByStep.h>
 #include <Processors/QueryPlan/LimitStep.h>
 #include <Processors/QueryPlan/TotalsHavingStep.h>
 #include <Processors/QueryPlan/SortingStep.h>
@@ -141,50 +139,6 @@ size_t tryPushDownLimit(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes,
 
     parent.swap(child);
     return 2;
-}
-
-void pushLimitByIntoSort(QueryPlan::Node & node)
-{
-    if (node.children.size() != 1)
-        return;
-
-    auto * limit_by = typeid_cast<LimitByStep *>(node.step.get());
-    if (!limit_by)
-        return;
-
-    /// There is a ExpressionStep before LimitBy. Skip it.
-    QueryPlan::Node * expr_node = node.children.front();
-    if (!typeid_cast<ExpressionStep *>(expr_node->step.get()) || expr_node->children.size() != 1)
-        return;
-
-    auto * sort = typeid_cast<SortingStep *>(expr_node->children.front()->step.get());
-    if (!sort)
-        return;
-
-    /// Pushing down `LIMIT BY` adds a parallel pre-cap before the final single-stream
-    /// `LimitByStep`. Each stream can reduce its row count before the final merge to
-    /// a single stream, so the final merge and later pipeline steps have less data to process.
-    ///
-    /// We try to apply `LIMIT BY` per stream when each stream is sorted and `LIMIT BY` keys are a
-    /// prefix of the sort keys. This way we run the in-order variant of LIMIT BY, which is
-    /// just a linear scan over the data with O(1) memory.
-    ///
-    /// TODO: When LIMIT BY prefix columns are a strict monotonic function of the ORDER BY key,
-    ///       we can also do in-order LIMIT BY.
-    ///
-    /// When LIMIT BY is not a prefix of ORDER BY, we can technically still apply the generic LIMIT BY per stream
-    /// by first applying an `ExpressionTransform`, and this will give quite a bit of speedup as well.
-    /// However, if data is somewhat randomly distributed and high cardinality, then each stream will have a hash table
-    /// whose size is the number of unique keys, and this can cause OOM.
-    if (!sort->getSortDescription().hasPrefix(limit_by->getColumns()))
-        return;
-
-    const UInt64 length = limit_by->getGroupLength();
-    const UInt64 offset = limit_by->getGroupOffset();
-    if (length == 0 || length > std::numeric_limits<UInt64>::max() - offset)
-        return;
-
-    sort->updateLimitByHint(limit_by->getColumns(), length + offset);
 }
 
 }

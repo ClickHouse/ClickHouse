@@ -218,7 +218,6 @@ ASTPtr DatabaseSQLite::getCreateTableQueryImpl(const String & table_name, Contex
     return create_table_query;
 }
 
-void registerDatabaseSQLite(DatabaseFactory & factory);
 void registerDatabaseSQLite(DatabaseFactory & factory)
 {
     auto create_fn = [](const DatabaseFactory::Arguments & args)

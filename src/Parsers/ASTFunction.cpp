@@ -443,14 +443,7 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
           * They are needed only if this expression is included in another expression with the operator.
           */
 
-        bool is_like_with_escape = false;
-        if (arguments->children.size() == 3
-            && (name == "like" || name == "ilike" || name == "notLike" || name == "notILike"))
-        {
-            if (const auto * escape_literal = arguments->children[2]->as<ASTLiteral>())
-                is_like_with_escape = escape_literal->value.getType() == Field::Types::String;
-        }
-        if (!written && (arguments->children.size() == 2 || is_like_with_escape))
+        if (!written && arguments->children.size() == 2)
         {
             static constexpr std::array<FunctionOperatorMapping, 21> operators =
             {{
@@ -487,21 +480,6 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
                 bool need_parens_around_in = frame.need_parens || (is_in_operator && in_function_args);
                 if (need_parens_around_in)
                     ostr << '(';
-                /// Our wrapping `(...)` (either from need_parens_around_in here, or from the
-                /// `parenthesized` flag handled in IAST::format) already isolates this IN from
-                /// the enclosing function-argument list, so descendants must not add another
-                /// layer of parens for the same reason. Clear `current_function` for the
-                /// children so a nested IN sees `in_function_args == false`. Without this, a
-                /// query like `f(1, 2 IN ((3 IN (4, 5)) AS x))` formats as
-                /// `f(1, (2 IN ((3 IN (4, 5)) AS x)))`, the re-parse sets `parenthesized=true`
-                /// on the outer IN (so `IAST::format` emits the outer parens and resets
-                /// `current_function`), and the second format drops the inner `(3 IN (4, 5))`,
-                /// breaking the format-parse-format round-trip check.
-                if (need_parens_around_in)
-                {
-                    nested_need_parens.current_function = nullptr;
-                    nested_dont_need_parens.current_function = nullptr;
-                }
                 arguments->children[0]->format(ostr, settings, state, nested_need_parens);
                 ostr << it->operator_name;
 
@@ -536,13 +514,6 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
 
                 if (!extra_parents_around_in_rhs)
                     arguments->children[1]->format(ostr, settings, state, nested_need_parens);
-
-                /// LIKE/ILIKE with ESCAPE clause: format the 3rd argument as ESCAPE 'char'
-                if (is_like_with_escape)
-                {
-                    ostr << " ESCAPE ";
-                    arguments->children[2]->format(ostr, settings, state, nested_dont_need_parens);
-                }
 
                 if (need_parens_around_in)
                     ostr << ')';

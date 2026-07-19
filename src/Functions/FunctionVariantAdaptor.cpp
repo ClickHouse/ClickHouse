@@ -1,7 +1,5 @@
 #include <Common/CurrentThread.h>
 #include <Common/Exception.h>
-#include <Common/UnorderedSetWithMemoryTracking.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNothing.h>
@@ -403,7 +401,7 @@ ColumnPtr ExecutableFunctionVariantAdaptor::executeImpl(
     }
 
     /// Create set of arguments for each variant using selector.
-    VectorWithMemoryTracking<ColumnsWithTypeAndName> variants_arguments;
+    std::vector<ColumnsWithTypeAndName> variants_arguments;
     variants_arguments.resize(variants.size());
     for (size_t i = 0; i != arguments.size(); ++i)
     {
@@ -425,8 +423,8 @@ ColumnPtr ExecutableFunctionVariantAdaptor::executeImpl(
     }
 
     /// Execute function over all created sets of arguments and remember all results.
-    VectorWithMemoryTracking<ColumnPtr> variants_results;
-    VectorWithMemoryTracking<DataTypePtr> variants_result_types;
+    std::vector<ColumnPtr> variants_results;
+    std::vector<DataTypePtr> variants_result_types;
     variants_results.resize(variants.size());
     variants_result_types.resize(variants.size());
     /// Index num_variants is allocated for rows with NULL values, it doesn't have any result,
@@ -524,7 +522,7 @@ ColumnPtr ExecutableFunctionVariantAdaptor::executeImpl(
     /// 3. None of the result types should be Nullable or LowCardinality(Nullable)
     ///    (casting handles NULL extraction automatically)
     bool can_use_direct_construction = true;
-    UnorderedSetWithMemoryTracking<String> result_type_names;
+    std::unordered_set<String> result_type_names;
 
     for (size_t i = 0; i < num_variants; ++i)
     {
@@ -557,7 +555,7 @@ ColumnPtr ExecutableFunctionVariantAdaptor::executeImpl(
         auto & result_variant = assert_cast<ColumnVariant &>(*result);
 
         /// Map each variant result to its discriminator in the result Variant
-        VectorWithMemoryTracking<std::optional<ColumnVariant::Discriminator>> result_discriminators(variants_results.size());
+        std::vector<std::optional<ColumnVariant::Discriminator>> result_discriminators(variants_results.size());
 
         for (size_t i = 0; i < num_variants; ++i)
         {
@@ -617,7 +615,7 @@ ColumnPtr ExecutableFunctionVariantAdaptor::executeImpl(
     }
     /// General path: cast each result to final Variant type to handle
     /// duplicate result types and nested Variants correctly
-    VectorWithMemoryTracking<ColumnPtr> casted_results(variants_results.size());
+    std::vector<ColumnPtr> casted_results(variants_results.size());
 
     for (size_t i = 0; i < num_variants; ++i)
     {

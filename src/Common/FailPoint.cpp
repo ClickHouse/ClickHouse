@@ -71,7 +71,6 @@ static struct InitFiu
     ONCE(distributed_cache_fail_continue_request) \
     ONCE(distributed_cache_fail_choose_server) \
     REGULAR(file_cache_stall_free_space_ratio_keeping_thread) \
-    PAUSEABLE(file_cache_pause_before_do_eviction) \
     REGULAR(cache_filesystem_failure) \
     REGULAR(file_segment_range_writer_partial_write_then_network_error) \
     REGULAR(distributed_cache_simulate_writer_not_keeping_up) \
@@ -87,6 +86,8 @@ static struct InitFiu
     REGULAR(smt_sleep_in_schedule_data_processing_job) \
     REGULAR(cache_warmer_stall) \
     REGULAR(file_cache_dynamic_resize_fail_to_evict) \
+    REGULAR(file_cache_slru_downgrade_fail_before_finalize) \
+    REGULAR(file_cache_modify_size_limits_fail) \
     REGULAR(check_table_query_delay_for_part) \
     REGULAR(dummy_failpoint) \
     REGULAR(prefetched_reader_pool_failpoint) \
@@ -110,9 +111,13 @@ static struct InitFiu
     ONCE(libcxx_hardening_out_of_bounds_assertion) \
     ONCE(receive_timeout_on_table_status_response) \
     ONCE(delta_kernel_fail_literal_visitor) \
+    REGULAR(delta_kernel_force_credentials_fingerprint_drift) \
+    ONCE(delta_kernel_force_stale_token_error) \
+    REGULAR(object_storage_force_refresh_callback_success) \
     ONCE(column_aggregate_function_ensureOwnership_exception) \
     ONCE(space_saving_copy_arena_throw) \
     REGULAR(keepermap_fail_drop_data) \
+    REGULAR(keeper_fault_on_watch_request) \
     REGULAR(lazy_pipe_fds_fail_close) \
     PAUSEABLE(infinite_sleep) \
     PAUSEABLE(stop_moving_part_before_swap_with_active) \
@@ -154,12 +159,15 @@ static struct InitFiu
     ONCE(database_replicated_drop_before_removing_keeper_failed) \
     ONCE(database_replicated_drop_after_removing_keeper_failed) \
     PAUSEABLE_ONCE(mt_mutate_task_pause_in_prepare) \
-    PAUSEABLE(merge_task_projection_stage_pause) \
     PAUSEABLE(rmt_mutate_task_pause_in_prepare) \
     PAUSEABLE(rmt_merge_selecting_task_pause_when_scheduled) \
     PAUSEABLE(mt_merge_selecting_task_pause_when_scheduled) \
     REGULAR(mt_select_parts_to_mutate_no_free_threads) \
     REGULAR(mt_select_parts_to_mutate_max_part_size) \
+    ONCE(mt_alter_throw_in_start_mutation) \
+    ONCE(mt_alter_throw_after_mutation_registered) \
+    ONCE(mt_throw_after_mutation_commit) \
+    ONCE(mt_alter_throw_in_durable_rollback) \
     REGULAR(rmt_merge_selecting_task_no_free_threads) \
     REGULAR(rmt_merge_selecting_task_max_part_size) \
     REGULAR(merge_tree_load_statistics_throw) \
@@ -208,6 +216,9 @@ struct FailPointChannel
 
     /// Condition variable for target threads to wait for resume notification
     std::condition_variable resume_cv;
+
+    /// Number of threads currently paused at this failpoint
+    size_t pause_count = 0;
 
     /// Resume epoch: incremented on each notify or disable to wake up waiting threads.
     /// Threads record the epoch when they start waiting, and only wake up
@@ -304,6 +315,7 @@ void FailPointInjection::notifyPauseAndWaitForResume(const String & fail_point_n
     size_t my_resume_epoch = channel->resume_epoch;
 
     /// Signal that a thread has reached and paused at this failpoint
+    ++channel->pause_count;
     ++channel->pause_epoch;
     channel->pause_cv.notify_all();
 
@@ -311,6 +323,9 @@ void FailPointInjection::notifyPauseAndWaitForResume(const String & fail_point_n
     channel->resume_cv.wait(lock, [&] {
         return channel->resume_epoch > my_resume_epoch;
     });
+
+    --channel->pause_count;
+
 }
 
 void FailPointInjection::waitForPause(const String & fail_point_name)
@@ -323,6 +338,9 @@ void FailPointInjection::waitForPause(const String & fail_point_name)
     auto channel = iter->second;
 
     /// Wait until a thread has paused at this failpoint after the most recent resume.
+    /// Using pause_epoch > resume_epoch instead of pause_count > 0 avoids a race:
+    /// after NOTIFY, the task thread may not have decremented pause_count yet,
+    /// so a stale pause_count > 0 could cause waitForPause to return prematurely.
     channel->pause_cv.wait(lock, [&] {
         return channel->pause_epoch > channel->resume_epoch || channel->disabled;
     });

@@ -242,7 +242,7 @@ void StoragePostgreSQL::readImpl(
 }
 
 
-class PostgreSQLSink final : public SinkToStorage
+class PostgreSQLSink : public SinkToStorage
 {
 
 using Row = std::vector<std::optional<std::string>>;
@@ -647,7 +647,6 @@ StoragePostgreSQL::Configuration StoragePostgreSQL::getConfiguration(ASTs engine
 }
 
 
-void registerStoragePostgreSQL(StorageFactory & factory);
 void registerStoragePostgreSQL(StorageFactory & factory)
 {
     factory.registerStorage("PostgreSQL", [](const StorageFactory::Arguments & args)

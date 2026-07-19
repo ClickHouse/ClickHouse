@@ -332,7 +332,7 @@ size_t YTsaurusClient::getTableNumberOfRows(const String & table_path)
     String lock_metadata_path = fmt::format("{}/@row_count", table_path);
     YTsaurusQueryPtr get_query(new YTsaurusGetQuery(lock_metadata_path));
     auto read_buff = executeQuery(get_query);
-    size_t row_count = 0;
+    size_t row_count;
     DB::readIntText(row_count, *read_buff);
     return row_count;
 }

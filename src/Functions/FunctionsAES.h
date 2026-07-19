@@ -137,7 +137,7 @@ inline void validateIV(std::string_view iv_value, const size_t cipher_iv_size)
 }
 
 template <typename Impl>
-class FunctionEncrypt final : public IFunction
+class FunctionEncrypt : public IFunction
 {
 public:
     static constexpr OpenSSLDetails::CompatibilityMode compatibility_mode = Impl::compatibility_mode;
@@ -301,7 +301,7 @@ private:
 
         auto * encrypted = encrypted_result_column_data.data();
 
-        KeyHolder<mode> key_holder{};
+        KeyHolder<mode> key_holder;
 
         for (size_t row_idx = 0; row_idx < input_rows_count; ++row_idx)
         {
@@ -413,7 +413,7 @@ private:
 
 /// decrypt(string, key, block_mode[, init_vector])
 template <typename Impl>
-class FunctionDecrypt final : public IFunction
+class FunctionDecrypt : public IFunction
 {
 public:
     static constexpr OpenSSLDetails::CompatibilityMode compatibility_mode = Impl::compatibility_mode;
@@ -586,7 +586,7 @@ private:
 
         auto * decrypted = decrypted_result_column_data.data();
 
-        KeyHolder<mode> key_holder{};
+        KeyHolder<mode> key_holder;
         for (size_t row_idx = 0; row_idx < input_rows_count; ++row_idx)
         {
             // 0: prepare key if required

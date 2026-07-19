@@ -77,7 +77,7 @@ FractionalLimitTransform::FractionalLimitTransform(
 
 Chunk FractionalLimitTransform::makeChunkWithPreviousRow(const Chunk & chunk, UInt64 row) const
 {
-    chassert(row < chunk.getNumRows());
+    assert(row < chunk.getNumRows());
     ColumnRawPtrs current_columns = extractSortColumns(chunk.getColumns());
     MutableColumns last_row_sort_columns;
     for (size_t i = 0; i < current_columns.size(); ++i)
@@ -404,7 +404,7 @@ void FractionalLimitTransform::splitChunk(Chunk & current_chunk)
     /// <---------------> offset_rows
     ///             <---> cut_start
 
-    chassert(offset_rows < rows_processed);
+    assert(offset_rows < rows_processed);
 
     if (offset_rows + chunk_rows > rows_processed)
         cut_start = offset_rows + chunk_rows - rows_processed;
@@ -479,7 +479,7 @@ ColumnRawPtrs FractionalLimitTransform::extractSortColumns(const Columns & colum
 
 bool FractionalLimitTransform::sortColumnsEqualAt(const ColumnRawPtrs & current_chunk_sort_columns, UInt64 current_chunk_row_num) const
 {
-    chassert(current_chunk_sort_columns.size() == ties_last_row.getNumColumns());
+    assert(current_chunk_sort_columns.size() == ties_last_row.getNumColumns());
     const size_t num_sort_columns = current_chunk_sort_columns.size();
     const auto & ties_last_row_sort_columns = ties_last_row.getColumns();
     for (size_t i = 0; i < num_sort_columns; ++i)

@@ -66,7 +66,7 @@ StoragePtr StorageAlias::getTargetTable(std::optional<TargetAccess> access_check
 
 /// AliasSink: Writes data to the target table using full INSERT pipeline
 /// which triggers materialized views on the target table.
-class AliasSink final : public SinkToStorage, WithContext
+class AliasSink : public SinkToStorage, WithContext
 {
 public:
     AliasSink(
@@ -341,7 +341,6 @@ QueryProcessingStage::Enum StorageAlias::getQueryProcessingStage(
     return target_storage->getQueryProcessingStage(local_context, to_stage, target_snapshot, query_info);
 }
 
-void registerStorageAlias(StorageFactory & factory);
 void registerStorageAlias(StorageFactory & factory)
 {
     factory.registerStorage("Alias", [](const StorageFactory::Arguments & args)

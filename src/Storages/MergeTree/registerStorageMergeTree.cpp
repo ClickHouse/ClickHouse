@@ -319,7 +319,7 @@ static TableZnodeInfo extractZooKeeperPathAndReplicaNameFromEngineArgs(
         /// TODO maybe use hostname if {replica} is not defined?
 
         /// Modify query, so default values will be written to metadata
-        chassert(arg_num == 0);
+        assert(arg_num == 0);
         ASTs old_args;
         std::swap(engine_args, old_args);
         auto path_arg = make_intrusive<ASTLiteral>("");
@@ -914,7 +914,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             {
                 try
                 {
-                    auto projection = ProjectionDescription::getProjectionFromAST(projection_ast, columns, &metadata.partition_key, context, args.mode);
+                    auto projection = ProjectionDescription::getProjectionFromAST(projection_ast, columns, &metadata.partition_key, context);
                     metadata.projections.add(std::move(projection));
                 }
                 catch (...)
@@ -1072,7 +1072,6 @@ static StoragePtr create(const StorageFactory::Arguments & args)
 }
 
 
-void registerStorageMergeTree(StorageFactory & factory);
 void registerStorageMergeTree(StorageFactory & factory)
 {
     StorageFactory::StorageFeatures features{

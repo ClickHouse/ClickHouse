@@ -64,6 +64,7 @@
 #    include <llvm/IR/IRBuilder.h>
 #endif
 
+#include <cassert>
 #include <ranges>
 
 namespace DB
@@ -291,72 +292,27 @@ struct BinaryOperation
     template <OpCase op_case>
     static void NO_INLINE process(const A * __restrict a, const B * __restrict b, ResultType * __restrict c, size_t size, const NullMap * right_nullmap = nullptr)
     {
-        /// No mainstream ISA has SIMD integer division (see `DivideIntegralImpl`).
-        /// The compiler "vectorizes" by extracting each element, doing scalar div,
-        /// and re-inserting, bloating the loop ~3-5x for no benefit. Operations
-        /// that use div/mod set `no_vectorize = true` to opt out; `Op` types that
-        /// don't define the member are treated as opting in to vectorization.
-        static constexpr bool disable_vectorization = []
-        {
-            if constexpr (requires { Op::no_vectorize; })
-                return bool(Op::no_vectorize);
-            else
-                return false;
-        }();
-
         if constexpr (op_case == OpCase::RightConstant)
         {
             if (right_nullmap && (*right_nullmap)[0])
                 return;
 
-            if constexpr (disable_vectorization)
-            {
-                #pragma clang loop vectorize(disable)
-                for (size_t i = 0; i < size; ++i)
-                    c[i] = Op::template apply<ResultType>(a[i], *b);
-            }
-            else
-            {
-                for (size_t i = 0; i < size; ++i)
-                    c[i] = Op::template apply<ResultType>(a[i], *b);
-            }
+            for (size_t i = 0; i < size; ++i)
+                c[i] = Op::template apply<ResultType>(a[i], *b);
         }
         else
         {
             if (right_nullmap)
             {
-                if constexpr (disable_vectorization)
-                {
-                    #pragma clang loop vectorize(disable)
-                    for (size_t i = 0; i < size; ++i)
-                        if ((*right_nullmap)[i])
-                            c[i] = ResultType();
-                        else
-                            apply<op_case>(a, b, c, i);
-                }
-                else
-                {
-                    for (size_t i = 0; i < size; ++i)
-                        if ((*right_nullmap)[i])
-                            c[i] = ResultType();
-                        else
-                            apply<op_case>(a, b, c, i);
-                }
+                for (size_t i = 0; i < size; ++i)
+                    if ((*right_nullmap)[i])
+                        c[i] = ResultType();
+                    else
+                        apply<op_case>(a, b, c, i);
             }
             else
-            {
-                if constexpr (disable_vectorization)
-                {
-                    #pragma clang loop vectorize(disable)
-                    for (size_t i = 0; i < size; ++i)
-                        apply<op_case>(a, b, c, i);
-                }
-                else
-                {
-                    for (size_t i = 0; i < size; ++i)
-                        apply<op_case>(a, b, c, i);
-                }
-            }
+                for (size_t i = 0; i < size; ++i)
+                    apply<op_case>(a, b, c, i);
         }
     }
 
@@ -634,7 +590,7 @@ public:
         if constexpr (op_case == OpCase::LeftConstant) static_assert(!is_decimal<decltype(a)>);
         if constexpr (op_case == OpCase::RightConstant) static_assert(!is_decimal<decltype(b)>);
 
-        size_t size = 0;
+        size_t size;
 
         if constexpr (op_case == OpCase::LeftConstant)
             size = b.size();
@@ -1354,11 +1310,11 @@ class FunctionBinaryArithmetic : public IFunction
         {
             explicit ColumnInfo(const ColumnWithTypeAndName & argument_) : argument(argument_), converted_col(nullptr) {}
             const ColumnWithTypeAndName & argument;
-            const ColumnDateTime64 * col{};
+            const ColumnDateTime64 * col;
             ColumnPtr converted_col;
-            UInt64 const_val{};
-            bool is_const{};
-            UInt64 scale{};
+            UInt64 const_val;
+            bool is_const;
+            UInt64 scale;
         } cols[2]{ColumnInfo{arguments[0]}, ColumnInfo{arguments[1]}};
 
         const auto * type = checkAndGetDataType<DataTypeDecimal<Decimal64>>(result_type.get());
@@ -1453,11 +1409,11 @@ class FunctionBinaryArithmetic : public IFunction
         {
             explicit ColumnInfo(const ColumnWithTypeAndName & argument_) : argument(argument_), converted_col(nullptr) {}
             const ColumnWithTypeAndName & argument;
-            const ColumnTime64 * col{};
+            const ColumnTime64 * col;
             ColumnPtr converted_col;
-            UInt64 const_val{};
-            bool is_const{};
-            UInt64 scale{};
+            UInt64 const_val;
+            bool is_const;
+            UInt64 scale;
         } cols[2]{ColumnInfo{arguments[0]}, ColumnInfo{arguments[1]}};
 
         const auto * type = checkAndGetDataType<DataTypeDecimal<Decimal64>>(result_type.get());
@@ -3165,7 +3121,7 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
 
     llvm::Value * compileImpl(llvm::IRBuilderBase & builder, const ValuesWithType & arguments, const DataTypePtr & result_type) const override
     {
-        chassert(2 == arguments.size());
+        assert(2 == arguments.size());
 
         auto denull_left_type = removeNullable(arguments[0].type);
         auto denull_right_type = removeNullable(arguments[1].type);
@@ -3207,7 +3163,7 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
 
 
 template <template <typename, typename> class Op, typename Name, bool valid_on_default_arguments = true, bool valid_on_float_arguments = true, bool division_by_nullable = false>
-class FunctionBinaryArithmeticWithConstants final : public FunctionBinaryArithmetic<Op, Name, valid_on_default_arguments, valid_on_float_arguments, division_by_nullable>
+class FunctionBinaryArithmeticWithConstants : public FunctionBinaryArithmetic<Op, Name, valid_on_default_arguments, valid_on_float_arguments, division_by_nullable>
 {
 public:
     using Base = FunctionBinaryArithmetic<Op, Name, valid_on_default_arguments, valid_on_float_arguments, division_by_nullable>;
@@ -3519,7 +3475,7 @@ private:
 };
 
 template <template <typename, typename> class Op, typename Name, bool valid_on_default_arguments = true, bool valid_on_float_arguments = true>
-class BinaryArithmeticOverloadResolver final : public IFunctionOverloadResolver
+class BinaryArithmeticOverloadResolver : public IFunctionOverloadResolver
 {
 public:
     static constexpr auto name = Name::name;

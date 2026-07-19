@@ -27,7 +27,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-static Parquet::ReadOptions convertReadOptions(const FormatSettings & format_settings)
+Parquet::ReadOptions convertReadOptions(const FormatSettings & format_settings)
 {
     Parquet::ReadOptions options;
     options.format = format_settings;
@@ -240,11 +240,11 @@ void ParquetFileBucketInfo::serialize(WriteBuffer & buffer)
 
 void ParquetFileBucketInfo::deserialize(ReadBuffer & buffer)
 {
-    size_t size_chunks = 0;
+    size_t size_chunks;
     readVarUInt(size_chunks, buffer);
     row_group_ids = std::vector<size_t>{};
     row_group_ids.resize(size_chunks);
-    size_t bucket = 0;
+    size_t bucket;
     for (size_t i = 0; i < size_chunks; ++i)
     {
         readVarUInt(bucket, buffer);
@@ -281,7 +281,6 @@ std::shared_ptr<FileBucketInfo> ParquetFileBucketInfo::filterByMatchingRowGroups
     return std::make_shared<ParquetFileBucketInfo>(std::move(filtered));
 }
 
-void registerParquetFileBucketInfo(std::unordered_map<String, FileBucketInfoPtr> & instances);
 void registerParquetFileBucketInfo(std::unordered_map<String, FileBucketInfoPtr> & instances)
 {
     instances.emplace("Parquet", std::make_shared<ParquetFileBucketInfo>());
@@ -324,7 +323,6 @@ std::vector<FileBucketInfoPtr> ParquetBucketSplitter::splitToBuckets(size_t buck
     return result;
 }
 
-void registerInputFormatParquet(FormatFactory & factory);
 void registerInputFormatParquet(FormatFactory & factory)
 {
     factory.registerFileBucketInfo(
@@ -347,7 +345,7 @@ void registerInputFormatParquet(FormatFactory & factory)
            const ContextPtr & context) -> InputFormatPtr
         {
             size_t min_bytes_for_seek
-                = is_remote_fs ? read_settings.remote_fs_settings.min_bytes_for_seek : settings.parquet.local_read_min_bytes_for_seek;
+                = is_remote_fs ? read_settings.remote_read_min_bytes_for_seek : settings.parquet.local_read_min_bytes_for_seek;
             /// `tryGet` keeps the metadata-aware creator usable from contexts that don't
             /// initialise the cache (e.g. the client side of `INSERT ... FROM INFILE`).
             /// In such contexts we just don't memoise the footer — the format itself works
@@ -375,7 +373,7 @@ void registerInputFormatParquet(FormatFactory & factory)
         FormatFilterInfoPtr format_filter_info) -> InputFormatPtr
     {
         size_t min_bytes_for_seek
-            = is_remote_fs ? read_settings.remote_fs_settings.min_bytes_for_seek : settings.parquet.local_read_min_bytes_for_seek;
+            = is_remote_fs ? read_settings.remote_read_min_bytes_for_seek : settings.parquet.local_read_min_bytes_for_seek;
         return std::make_shared<ParquetV3BlockInputFormat>(
             buf,
             std::make_shared<const Block>(sample),
@@ -394,7 +392,6 @@ void registerInputFormatParquet(FormatFactory & factory)
     });
 }
 
-void registerParquetSchemaReader(FormatFactory & factory);
 void registerParquetSchemaReader(FormatFactory & factory)
 {
     factory.registerSplitter("Parquet", []
@@ -426,8 +423,6 @@ void registerParquetSchemaReader(FormatFactory & factory)
 namespace DB
 {
 class FormatFactory;
-void registerInputFormatParquet(FormatFactory &);
-void registerParquetSchemaReader(FormatFactory &);
 void registerInputFormatParquet(FormatFactory &)
 {
 }

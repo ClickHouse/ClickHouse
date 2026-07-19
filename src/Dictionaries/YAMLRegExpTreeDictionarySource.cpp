@@ -62,7 +62,6 @@ namespace ErrorCodes
     extern const int PATH_ACCESS_DENIED;
 }
 
-void registerDictionarySourceYAMLRegExpTree(DictionarySourceFactory & factory);
 void registerDictionarySourceYAMLRegExpTree(DictionarySourceFactory & factory)
 {
     auto create_table_source = [=]([[maybe_unused]] const String & name,
@@ -149,8 +148,8 @@ const std::string kValues = "values";
 
 struct MatchNode
 {
-    UInt64 id{};
-    UInt64 parent_id{};
+    UInt64 id;
+    UInt64 parent_id;
     String reg_exp;
     VectorWithMemoryTracking<Field> keys;
     VectorWithMemoryTracking<Field> values;
@@ -168,7 +167,7 @@ struct ResultColumns
 
 using StringToNode = UnorderedMapWithMemoryTracking<String, YAML::Node>;
 
-static YAML::Node loadYAML(const String & filepath)
+YAML::Node loadYAML(const String & filepath)
 {
     try
     {
@@ -197,7 +196,7 @@ static StringToNode parseYAMLMap(const YAML::Node & node)
     return result;
 }
 
-static void insertValues(const MatchNode & node, ResultColumns & result_columns)
+void insertValues(const MatchNode & node, ResultColumns & result_columns)
 {
     result_columns.ids->insert(node.id);
     result_columns.parent_ids->insert(node.parent_id);
@@ -212,7 +211,7 @@ void parseMatchList(UInt64 parent_id, UInt64 & id, const YAML::Node & node, Resu
 /// 1. regex, indicating a regular expression
 /// 2. attribute_name, indicating the attributes to set
 /// 3. match (optional), indicating the nested match logic under this node
-static void parseMatchNode(UInt64 parent_id, UInt64 & id, const YAML::Node & node, ResultColumns & result, const String & key_name, const DictionaryStructure & structure)
+void parseMatchNode(UInt64 parent_id, UInt64 & id, const YAML::Node & node, ResultColumns & result, const String & key_name, const DictionaryStructure & structure)
 {
     if (!node.IsMap())
     {
@@ -266,7 +265,7 @@ void parseMatchList(UInt64 parent_id, UInt64 & id, const YAML::Node & node, Resu
     }
 }
 
-static Block parseYAMLAsRegExpTree(const YAML::Node & node, const String & key_name, const DictionaryStructure & structure)
+Block parseYAMLAsRegExpTree(const YAML::Node & node, const String & key_name, const DictionaryStructure & structure)
 {
     ResultColumns result_cols;
     UInt64 id = 0;

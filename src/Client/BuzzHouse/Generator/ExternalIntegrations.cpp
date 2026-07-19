@@ -999,14 +999,14 @@ constexpr bool is_document = std::is_same_v<T, bsoncxx::v_noabi::builder::stream
 template <typename T>
 void MongoDBIntegration::documentAppendBottomType(RandomGenerator & rg, const String & cname, T & output, SQLType * tp)
 {
-    IntType * itp = nullptr;
-    DateType * dtp = nullptr;
-    TimeType * ttp = nullptr;
-    DateTimeType * dttp = nullptr;
-    DecimalType * detp = nullptr;
-    StringType * stp = nullptr;
-    EnumType * etp = nullptr;
-    GeoType * gtp = nullptr;
+    IntType * itp;
+    DateType * dtp;
+    TimeType * ttp;
+    DateTimeType * dttp;
+    DecimalType * detp;
+    StringType * stp;
+    EnumType * etp;
+    GeoType * gtp;
 
     if ((itp = dynamic_cast<IntType *>(tp)))
     {
@@ -1288,9 +1288,9 @@ void MongoDBIntegration::documentAppendArray(
     /// Array
     auto array = document << cname << bsoncxx::builder::stream::open_array;
     SQLType * tp = at->subtype.get();
-    Nullable * nl = nullptr;
-    VariantType * vtp = nullptr;
-    LowCardinality * lc = nullptr;
+    Nullable * nl;
+    VariantType * vtp;
+    LowCardinality * lc;
 
     for (uint64_t i = 0; i < limit; i++)
     {
@@ -1362,10 +1362,10 @@ void MongoDBIntegration::documentAppendArray(
 void MongoDBIntegration::documentAppendAnyValue(
     RandomGenerator & rg, const String & cname, bsoncxx::builder::stream::document & document, SQLType * tp)
 {
-    Nullable * nl = nullptr;
-    ArrayType * at = nullptr;
-    VariantType * vtp = nullptr;
-    LowCardinality * lc = nullptr;
+    Nullable * nl;
+    ArrayType * at;
+    VariantType * vtp;
+    LowCardinality * lc;
     const uint32_t nopt = rg.nextLargeNumber();
 
     if (nopt < 31)
@@ -1918,7 +1918,6 @@ bool DolorIntegration::performExternalCommand(
 
 ExternalIntegrations::ExternalIntegrations(FuzzConfig & fcc)
     : fc(fcc)
-    , worker(fcc.log)
 {
     if (fc.mysql_server.has_value())
     {

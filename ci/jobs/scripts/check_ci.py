@@ -1040,47 +1040,49 @@ def main():
         mergeable_check_status, sha=head_sha
     )
 
-    # `gh pr merge --auto` calls the `enablePullRequestAutoMerge` mutation,
-    # which the repo disables in favor of a merge queue on `master`. Call
-    # `enqueuePullRequest` directly: it is the mutation the "Merge when ready"
-    # button on github.com uses.
-    pr_node_id = Shell.get_output(
-        f"gh pr view {pr_number} --json id --jq '.id' --repo ClickHouse/ClickHouse"
-    ).strip()
-    if not pr_node_id:
-        print(f"ERROR: Failed to fetch node ID for PR #{pr_number}")
-        sys.exit(1)
-
-    enqueue_cmd = (
-        "gh api graphql "
-        "-f 'query=mutation($id:ID!){enqueuePullRequest(input:{pullRequestId:$id})"
-        "{mergeQueueEntry{position state}}}' "
-        f"-f id={pr_node_id}"
-    )
-    if not Shell.check(enqueue_cmd, verbose=True):
+    auto_merge_cmd = f"gh pr merge {pr_number} --auto --repo ClickHouse/ClickHouse"
+    if not Shell.check(auto_merge_cmd, verbose=True):
         print(
-            f"ERROR: Failed to add PR #{pr_number} to the merge queue. "
+            f"ERROR: Failed to enable auto-merge for PR #{pr_number}. "
             f"This often happens when mergeStateStatus is UNKNOWN "
-            f"(GitHub is still computing mergeability after a recent push) "
-            f"or the PR is not yet eligible (failing required checks, "
-            f"missing approvals, out of date with base). "
-            f"Retry manually:\n  {enqueue_cmd}"
+            f"(GitHub is still computing mergeability after a recent push). "
+            f"Retry manually:\n  {auto_merge_cmd}"
         )
         sys.exit(1)
 
-    # Give GitHub a moment to update the PR's merge state, then verify it
-    # actually landed in the queue.
+    # Give GitHub a moment to process auto-merge and update merge state
     time.sleep(5)
     merge_status = Shell.get_output(
         f"gh pr view {pr_number} --json mergeStateStatus --jq '.mergeStateStatus' --repo ClickHouse/ClickHouse"
     )
-    if merge_status == "QUEUED":
+    if merge_status == "CLEAN":
+        # PR checks already passed but GitHub didn't enqueue it — the
+        # state transition was missed. Disable and re-enable auto-merge
+        # to force GitHub to re-evaluate.
+        print(
+            f"WARNING: PR #{pr_number} has mergeStateStatus=CLEAN (checks passed but not queued). "
+            f"Retoggling auto-merge to fix..."
+        )
+        Shell.check(
+            f"gh pr merge {pr_number} --disable-auto --repo ClickHouse/ClickHouse",
+            verbose=True,
+        )
+        time.sleep(2)
+        if Shell.check(
+            f"gh pr merge {pr_number} --auto --repo ClickHouse/ClickHouse",
+            verbose=True,
+        ):
+            print(f"OK: Auto-merge retoggled for PR #{pr_number}")
+        else:
+            print(
+                f"ERROR: Failed to re-enable auto-merge for PR #{pr_number}. "
+                f"Please manually click 'Merge when ready' on GitHub."
+            )
+    elif merge_status == "QUEUED":
         print(f"OK: PR #{pr_number} added to the merge queue")
     else:
         print(
-            f"WARNING: PR #{pr_number} enqueue mutation succeeded but "
-            f"mergeStateStatus is {merge_status} (expected QUEUED). "
-            f"Check the PR on github.com."
+            f"OK: PR #{pr_number} auto-merge enabled (mergeStateStatus={merge_status})"
         )
 
 

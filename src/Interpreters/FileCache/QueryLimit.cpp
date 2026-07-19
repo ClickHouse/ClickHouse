@@ -3,7 +3,6 @@
 #include <Interpreters/FileCache/QueryLimit.h>
 #include <IO/ReadSettings.h>
 #include <Common/CurrentThread.h>
-#include <Common/ThreadStatus.h>
 
 namespace DB
 {
@@ -43,7 +42,7 @@ void FileCacheQueryLimit::removeQueryContext(const std::string & query_id, const
 
 FileCacheQueryLimit::QueryContextPtr FileCacheQueryLimit::getOrSetQueryContext(
     const std::string & query_id,
-    const FilesystemCacheSettings & settings,
+    const ReadSettings & settings,
     const CachePriorityGuard::WriteLock &)
 {
     if (query_id.empty())
@@ -53,8 +52,8 @@ FileCacheQueryLimit::QueryContextPtr FileCacheQueryLimit::getOrSetQueryContext(
     if (inserted)
     {
         it->second = std::make_shared<QueryContext>(
-            settings.max_download_size_per_query,
-            !settings.skip_download_if_exceeds_per_query_cache_write_limit);
+            settings.filesystem_cache_max_download_size,
+            !settings.filesystem_cache_skip_download_if_exceeds_per_query_cache_write_limit);
     }
 
     return it->second;
@@ -63,7 +62,7 @@ FileCacheQueryLimit::QueryContextPtr FileCacheQueryLimit::getOrSetQueryContext(
 FileCacheQueryLimit::QueryContext::QueryContext(
     size_t query_cache_size,
     bool recache_on_query_limit_exceeded_)
-    : priority(LRUFileCachePriority(query_cache_size, 0))
+    : priority(LRUFileCachePriority(IFileCachePriority::QueueType::Query, query_cache_size, 0))
     , recache_on_query_limit_exceeded(recache_on_query_limit_exceeded_)
 {
 }

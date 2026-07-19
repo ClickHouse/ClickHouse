@@ -4,6 +4,7 @@
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
 
+#include <cassert>
 #include <mutex>
 #include <shared_mutex>
 
@@ -71,7 +72,7 @@ namespace DimensionalMetrics
 
     Metric & MetricFamily::withLabels(LabelValues label_values)
     {
-        chassert(label_values.size() == labels.size());
+        assert(label_values.size() == labels.size());
         {
             std::shared_lock lock(mutex);
             auto it = metrics.find(label_values);

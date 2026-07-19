@@ -134,7 +134,6 @@ BlockIO InterpreterShowIndexesQuery::execute()
     return executeQuery(getRewrittenQuery(), query_context, QueryFlags{ .internal = true }).second;
 }
 
-void registerInterpreterShowIndexesQuery(InterpreterFactory & factory);
 void registerInterpreterShowIndexesQuery(InterpreterFactory & factory)
 {
     auto create_fn = [] (const InterpreterFactory::Arguments & args)

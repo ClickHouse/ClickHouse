@@ -148,8 +148,8 @@ public:
                     getName(),
                     num_captures);
 
-            const char * row_data = nullptr;
-            size_t row_size = 0;
+            const char * row_data;
+            size_t row_size;
             if (col_haystack_vector)
             {
                 const auto & offsets = col_haystack_vector->getOffsets();

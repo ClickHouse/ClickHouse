@@ -203,10 +203,6 @@ def main():
     os.environ["SCCACHE_ERROR_LOG"] = f"{build_dir}/sccache.log"
     os.environ["SCCACHE_LOG"] = "info"
     info = Info()
-    # PR builds must not pollute the shared sccache bucket; only master/release
-    # builds (pr_number == 0) are allowed to write entries.
-    if info.pr_number > 0:
-        os.environ["SCCACHE_S3_READ_ONLY"] = "true"
     if info.is_local_run:
         print("NOTE: It's a local run")
         if os.environ.get("SCCACHE_ENDPOINT"):
@@ -348,12 +344,12 @@ def main():
             test_pattern = "|".join(args.test)
             fast_test_command += f" -- '{test_pattern}'"
 
-        test_exit_code = CH.run_test(fast_test_command)
+        res = CH.run_test(fast_test_command)
 
         test_results = FTResultsProcessor(wd=Settings.OUTPUT_DIR).run(
-            runner_exit_code=test_exit_code,
+            runner_exit_code=0 if res else 1,
         )
-        if test_exit_code != 0:
+        if not res:
             attach_debug = True
 
         results.append(test_results)

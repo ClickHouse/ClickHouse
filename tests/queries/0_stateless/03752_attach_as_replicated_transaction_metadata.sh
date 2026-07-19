@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: zookeeper, no-replicated-database, no-ordinary-database, no-shared-merge-tree
+# Tags: zookeeper, no-replicated-database, no-ordinary-database, no-encrypted-storage, no-shared-merge-tree
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

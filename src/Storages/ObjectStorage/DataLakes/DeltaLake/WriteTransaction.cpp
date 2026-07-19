@@ -17,7 +17,6 @@
 #include <Formats/FormatFactory.h>
 #include <Processors/Formats/Impl/CHColumnToArrowColumn.h>
 
-#include <base/scope_guard.h>
 #include <delta_kernel_ffi.hpp>
 #include <fmt/ranges.h>
 
@@ -231,8 +230,8 @@ void WriteTransaction::commit(const std::vector<CommitFile> & files)
     LOG_TEST(log, "Will commit {} files", files.size());
     auto write_metadata = getWriteMetadata(files, log);
 
-    ffi::FFI_ArrowArray array{};
-    ffi::FFI_ArrowSchema schema{};
+    ffi::FFI_ArrowArray array;
+    ffi::FFI_ArrowSchema schema;
     SCOPE_EXIT({
         if (schema.release)
             schema.release(&schema);

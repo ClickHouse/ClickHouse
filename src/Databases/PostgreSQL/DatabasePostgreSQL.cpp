@@ -499,7 +499,6 @@ ASTPtr DatabasePostgreSQL::getCreateTableQueryImpl(const String & table_name, Co
 }
 
 
-void registerDatabasePostgreSQL(DatabaseFactory & factory);
 void registerDatabasePostgreSQL(DatabaseFactory & factory)
 {
     auto create_fn = [](const DatabaseFactory::Arguments & args)

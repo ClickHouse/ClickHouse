@@ -1,11 +1,7 @@
 #include <Client.h>
-#include <base/defines.h>
 #include <Client/ConnectionString.h>
 #include <Core/Protocol.h>
 #include <Core/Settings.h>
-
-/// musl defines stderr as (stderr) which is a self-referential macro
-#pragma clang diagnostic ignored "-Wdisabled-macro-expansion"
 #include <boost/algorithm/string/replace.hpp>
 #include <boost/program_options.hpp>
 #include <Common/Config/parseConnectionCredentials.h>
@@ -123,7 +119,7 @@ void Client::processError(std::string_view query) const
 
     // A debug check -- at least some exception must be set, if the error
     // flag is set, and vice versa.
-    chassert(have_error == (client_exception || server_exception));
+    assert(have_error == (client_exception || server_exception));
 }
 
 
@@ -1052,7 +1048,7 @@ void Client::processOptions(
 
 void Client::processConfig()
 {
-    if (!queries.empty() && !queries_files.empty())
+    if (!queries.empty() && config().has("queries-file"))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Options '--query' and '--queries-file' cannot be specified at the same time");
 
     /// Batch mode is enabled if one of the following is true:
@@ -1063,21 +1059,20 @@ void Client::processConfig()
     /// - --queries-file command line option is present.
     ///   The value of the option is used as file with query (or of multiple queries) to execute.
 
-    delayed_interactive = config().has("interactive") && (!queries.empty() || !queries_files.empty());
+    delayed_interactive = config().has("interactive") && (!queries.empty() || config().has("queries-file"));
     if (stdin_is_a_tty && (delayed_interactive || (queries.empty() && queries_files.empty())))
     {
         is_interactive = true;
     }
     else
     {
+        echo_queries = config().getBool("echo", false);
         ignore_error = config().getBool("ignore-error", false);
 
         query_id = config().getString("query_id", "");
         if (!query_id.empty())
             client_context->setCurrentQueryId(query_id);
     }
-
-    setupEchoAndHighlightSettings();
 
     if (is_interactive || delayed_interactive)
     {
@@ -1362,7 +1357,8 @@ void Client::readArguments(
 }
 
 
-int mainEntryClickHouseClient(int argc, char ** argv);
+#pragma clang diagnostic ignored "-Wunused-function"
+#pragma clang diagnostic ignored "-Wmissing-declarations"
 
 int mainEntryClickHouseClient(int argc, char ** argv)
 {

@@ -24,7 +24,7 @@ enum class ArgumentKind : uint8_t
     Mandatory
 };
 
-static PreformattedMessage getExceptionMessage(
+PreformattedMessage getExceptionMessage(
     const String & message, size_t argument_index, const char * argument_name,
     const std::string & context_data_type_name, Field::Types::Which field_type)
 {

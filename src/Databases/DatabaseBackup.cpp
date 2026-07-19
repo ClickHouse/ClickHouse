@@ -13,7 +13,6 @@
 #include <IO/ReadBufferFromFileBase.h>
 
 #include <Core/Settings.h>
-#include <Core/UUID.h>
 
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
@@ -466,7 +465,6 @@ DatabaseBackup::Configuration parseArguments(ASTs engine_args, ContextPtr)
 
 }
 
-void registerDatabaseBackup(DatabaseFactory & factory);
 void registerDatabaseBackup(DatabaseFactory & factory)
 {
     auto create_fn = [](const DatabaseFactory::Arguments & args)

@@ -38,18 +38,14 @@ LimitByStep::LimitByStep(
 
 void LimitByStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
-    if (!skip_stream_merging)
-        pipeline.resize(1);
+    pipeline.resize(1);
 
     pipeline.addSimpleTransform([&](const SharedHeader & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
     {
         if (stream_type != QueryPipelineBuilder::StreamType::Main)
             return nullptr;
 
-        if (input_sorted_by_keys)
-            return std::make_shared<LimitBySortedStreamTransform>(header, group_length, group_offset, columns);
-
-        return std::make_shared<LimitByTransform>(header, group_length, group_offset, columns);
+        return std::make_shared<LimitByTransform>(header, group_length, group_offset, in_order, columns);
     });
 }
 
@@ -77,8 +73,6 @@ void LimitByStep::describeActions(FormatSettings & settings) const
 
     settings.out << prefix << "Length " << group_length << '\n';
     settings.out << prefix << "Offset " << group_offset << '\n';
-    if (skip_stream_merging)
-        settings.out << prefix << "Skip stream merging: 1\n";
 }
 
 void LimitByStep::describeActions(JSONBuilder::JSONMap & map) const
@@ -90,8 +84,6 @@ void LimitByStep::describeActions(JSONBuilder::JSONMap & map) const
     map.add("Columns", std::move(columns_array));
     map.add("Length", group_length);
     map.add("Offset", group_offset);
-    if (skip_stream_merging)
-        map.add("Skip stream merging", true);
 }
 
 void LimitByStep::serialize(Serialization & ctx) const
@@ -107,13 +99,13 @@ void LimitByStep::serialize(Serialization & ctx) const
 
 QueryPlanStepPtr LimitByStep::deserialize(Deserialization & ctx)
 {
-    UInt64 group_length = 0;
-    UInt64 group_offset = 0;
+    UInt64 group_length;
+    UInt64 group_offset;
 
     readVarUInt(group_length, ctx.in);
     readVarUInt(group_offset, ctx.in);
 
-    UInt64 num_columns = 0;
+    UInt64 num_columns;
     readVarUInt(num_columns, ctx.in);
     Names columns(num_columns);
     for (auto & column : columns)
@@ -124,10 +116,9 @@ QueryPlanStepPtr LimitByStep::deserialize(Deserialization & ctx)
 
 void LimitByStep::applyOrder(SortDescription sort_description)
 {
-    input_sorted_by_keys = sort_description.hasPrefix(columns);
+    in_order = sort_description.hasPrefix(columns);
 }
 
-void registerLimitByStep(QueryPlanStepRegistry & registry);
 void registerLimitByStep(QueryPlanStepRegistry & registry)
 {
     registry.registerStep("LimitBy", LimitByStep::deserialize);

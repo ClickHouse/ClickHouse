@@ -232,7 +232,6 @@ AggregateFunctionPtr createAggregateFunctionBitwise(const std::string & name, co
 
 }
 
-void registerAggregateFunctionsBitwise(AggregateFunctionFactory & factory);
 void registerAggregateFunctionsBitwise(AggregateFunctionFactory & factory)
 {
     FunctionDocumentation::Description description_or = R"(

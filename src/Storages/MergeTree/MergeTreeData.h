@@ -27,8 +27,6 @@
 #include <Storages/MergeTree/TemporaryParts.h>
 #include <Storages/MergeTree/AlterConversions.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
-#include <Storages/MergeTree/Streaming/CursorPromoter.h>
-#include <Storages/Streaming/SubscriptionManager.h>
 #include <Storages/IndicesDescription.h>
 #include <Storages/DataDestinationType.h>
 #include <Storages/extractKeyExpressionList.h>
@@ -36,7 +34,7 @@
 #include <Storages/MergeTree/EphemeralLockInZooKeeper.h>
 #include <Interpreters/PartLog.h>
 #include <Poco/Timestamp.h>
-#include <Common/ThreadPool_fwd.h>
+#include <Common/threadPoolCallbackRunner.h>
 #include <Storages/MergeTree/PatchParts/PatchPartsUtils.h>
 
 #include <boost/multi_index_container.hpp>
@@ -451,7 +449,7 @@ public:
             Coalescing          = 8,
         };
 
-        Mode mode{};
+        Mode mode;
 
         /// For Collapsing and VersionedCollapsing mode.
         String sign_column;
@@ -472,6 +470,19 @@ public:
         void check(const MergeTreeSettings & settings, const StorageInMemoryMetadata & metadata) const;
 
         String getModeName() const;
+
+        /// True when both tables would merge a part with identical semantics, i.e. every
+        /// field that feeds the merge transforms matches. Used to decide whether an adopted
+        /// part's merge level may be preserved (see getLevelForAdoptedPart).
+        bool hasSameMergeSemantics(const MergingParams & rhs) const
+        {
+            return mode == rhs.mode
+                && sign_column == rhs.sign_column
+                && is_deleted_column == rhs.is_deleted_column
+                && columns_to_sum == rhs.columns_to_sum
+                && version_column == rhs.version_column
+                && graphite_params == rhs.graphite_params;
+        }
     };
 
     /// Attach the table corresponding to the directory in full_path inside policy (must end with /), with the given columns.
@@ -1111,6 +1122,15 @@ public:
     MergeTreeData & checkStructureAndGetMergeTreeData(const StoragePtr & source_table, const StorageMetadataPtr & src_snapshot, const StorageMetadataPtr & my_snapshot) const;
     MergeTreeData & checkStructureAndGetMergeTreeData(IStorage & source_table, const StorageMetadataPtr & src_snapshot, const StorageMetadataPtr & my_snapshot) const;
 
+    /// Level for a part adopted from `source_data` (ATTACH/REPLACE PARTITION FROM, CLONE AS,
+    /// MOVE PARTITION TO TABLE). Preserve the source level only when this table merges parts
+    /// identically; otherwise reset to 0 so FINAL/OPTIMIZE re-merge the lone part instead of
+    /// trusting it as already-merged (issue #106798).
+    UInt32 getLevelForAdoptedPart(const MergeTreeData & source_data, UInt32 source_level) const
+    {
+        return merging_params.hasSameMergeSemantics(source_data.merging_params) ? source_level : 0;
+    }
+
     std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> cloneAndLoadDataPart(
         const MergeTreeData::DataPartPtr & src_part,
         const String & tmp_part_prefix,
@@ -1137,14 +1157,10 @@ public:
 
     /// Get constant pointer to storage settings.
     /// Copy this pointer into your scope and you will get consistent settings.
-    /// When `settings_changes` is provided, apply the overrides on top of the table settings.
-    MergeTreeSettingsPtr getSettings(const SettingsChanges * settings_changes = nullptr) const;
+    /// When `projection` is provided, apply projection-level overrides on top of the table settings.
+    MergeTreeSettingsPtr getSettings(ProjectionDescriptionRawPtr projection = nullptr) const;
 
     StorageMetadataPtr getInMemoryMetadataPtr(ContextPtr query_context, bool bypass_metadata_cache) const override;
-
-    /// Whether the per-part metadata version is stored in the engine's metadata storage instead of
-    /// the on-disk `metadata_version.txt` file. When true, the file is not written for new parts.
-    virtual bool storesMetadataVersionInPartAttributes() const { return false; }
 
     String getRelativeDataPath() const { return relative_data_path; }
 
@@ -1210,10 +1226,6 @@ public:
     /// Returns a snapshot of mutations that probably will be applied on the fly to parts during reading.
     virtual MutationsSnapshotPtr getMutationsSnapshot(const IMutationsSnapshot::Params & params) const = 0;
 
-    /// Per-partition promoters for streaming reads.
-    virtual CursorPromotersMap buildPromoters() = 0;
-    void triggerStreamingSubscriptionEnrichment() const;
-
     /// Computes snapshot-related part statistics in a single pass:
     /// min metadata version, per-partition min data version, and whether any part has a lightweight delete mask.
     struct PartsSnapshotInfo
@@ -1247,12 +1259,9 @@ public:
     size_t getTotalMergesWithTTLInMergeList() const;
 
     constexpr static auto EMPTY_PART_TMP_PREFIX = "tmp_empty_";
-    /// `metadata_snapshot` must come from the source part being covered
-    /// (via `IMergeTreeDataPart::getMetadataSnapshot`) so patch parts get patch-part metadata.
     std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> createEmptyPart(
         MergeTreePartInfo & new_part_info, const MergeTreePartition & partition,
-        const String & new_part_name, const StorageMetadataPtr & metadata_snapshot,
-        const MergeTreeTransactionPtr & txn);
+        const String & new_part_name, const MergeTreeTransactionPtr & txn);
 
     MergeTreeDataFormatVersion format_version;
 
@@ -1331,17 +1340,12 @@ public:
     /// Mutex for currently_moving_parts
     mutable std::mutex moving_parts_mutex;
 
-    /// Used for streaming queries registration.
-    mutable StreamSubscriptionManager subscription_manager;
-
     PinnedPartUUIDsPtr getPinnedPartUUIDs() const;
 
     /// Schedules job to move parts between disks/volumes and so on.
     bool scheduleDataMovingJob(BackgroundJobsAssignee & assignee) override;
     bool areBackgroundMovesNeeded() const;
 
-    /// Schedules continuation jobs for in-fly streaming queries.
-    bool scheduleStreamingJob(BackgroundJobsAssignee & assignee) override;
 
     /// Lock part in zookeeper for shared data in several nodes
     /// Overridden in StorageReplicatedMergeTree
@@ -1573,9 +1577,8 @@ protected:
     /// Another explanation is that moving operations are common for Replicated and Plain MergeTree classes.
     /// Task that schedules this operations is executed with its own timetable and triggered in a specific places in code.
     /// And for ReplicatedMergeTree we don't have LogEntry type for this operation.
-    mutable BackgroundJobsAssignee background_operations_assignee;
-    mutable BackgroundJobsAssignee background_moves_assignee;
-    mutable BackgroundJobsAssignee background_streaming_assignee;
+    BackgroundJobsAssignee background_operations_assignee;
+    BackgroundJobsAssignee background_moves_assignee;
 
     /// Strongly connected with two fields above.
     /// Every task that is finished will ask to assign a new one into an executor.
@@ -1648,6 +1651,14 @@ protected:
         bool allow_empty_sorting_key,
         bool allow_reverse_sorting_key,
         bool allow_nullable_key_,
+        ContextPtr local_context) const;
+
+    /// Runs the same metadata validation as `setProperties` but without publishing
+    /// `new_metadata`. Lets `alter()` validate against freshly changed settings before
+    /// the durable commit.
+    void checkMetadataProperties(
+        const StorageInMemoryMetadata & new_metadata,
+        const StorageInMemoryMetadata & old_metadata,
         ContextPtr local_context) const;
 
     void setProperties(
@@ -1753,7 +1764,7 @@ protected:
     struct PartBackupEntries
     {
         String part_name;
-        UInt128 part_checksum{}; /// same as MinimalisticDataPartChecksums::hash_of_all_files
+        UInt128 part_checksum; /// same as MinimalisticDataPartChecksums::hash_of_all_files
         BackupEntries backup_entries;
     };
     using PartsBackupEntries = std::vector<PartBackupEntries>;

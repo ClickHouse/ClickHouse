@@ -433,7 +433,7 @@ ColumnPtr ColumnAggregateFunction::index(const IColumn & indexes, size_t limit) 
 template <typename Type>
 ColumnPtr ColumnAggregateFunction::indexImpl(const PaddedPODArray<Type> & indexes, size_t limit) const
 {
-    chassert(limit <= indexes.size());
+    assert(limit <= indexes.size());
     auto res = createView();
 
     res->data.resize_exact(limit);

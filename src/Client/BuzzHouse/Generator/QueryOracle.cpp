@@ -216,9 +216,8 @@ void QueryOracle::generateCorrectnessTestFirstQuery(RandomGenerator & rg, Statem
     gen.levels[gen.current_level].allow_aggregates = prev_allow_aggregates;
     gen.levels[gen.current_level].allow_window_funcs = prev_allow_window_funcs;
 
-    ExprColAlias * eca = ssc->add_result_columns()->mutable_eca();
-    eca->mutable_expr()->mutable_comp_expr()->mutable_func_call()->mutable_func()->set_catalog_func("count");
-    eca->mutable_col_alias()->set_column("c0");
+    ssc->add_result_columns()->mutable_eca()->mutable_expr()->mutable_comp_expr()->mutable_func_call()->mutable_func()->set_catalog_func(
+        FUNCcount);
     gen.levels.clear();
     gen.ctes.clear();
     gen.setAllowNotDetermistic(true);
@@ -245,15 +244,13 @@ void QueryOracle::generateCorrectnessTestSecondQuery(SQLQuery & sq1, SQLQuery & 
     SelectStatementCore & ssc1 = *sel1.mutable_select_core();
     Select * sel2 = ts->mutable_sel();
     SelectStatementCore * ssc2 = sel2->mutable_select_core();
-    ExprColAlias * eca = ssc2->add_result_columns()->mutable_eca();
-    SQLFuncCall * sfc1 = eca->mutable_expr()->mutable_comp_expr()->mutable_func_call();
+    SQLFuncCall * sfc1 = ssc2->add_result_columns()->mutable_eca()->mutable_expr()->mutable_comp_expr()->mutable_func_call();
     SQLFuncCall * sfc2 = sfc1->add_args()->mutable_expr()->mutable_comp_expr()->mutable_func_call();
 
-    eca->mutable_col_alias()->set_column("c0");
-    sfc1->mutable_func()->set_catalog_func("ifNull");
+    sfc1->mutable_func()->set_catalog_func(FUNCifNull);
     sfc1->add_args()->mutable_expr()->mutable_lit_val()->mutable_special_val()->set_val(
         SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_ZERO);
-    sfc2->mutable_func()->set_catalog_func("sum");
+    sfc2->mutable_func()->set_catalog_func(FUNCsum);
 
     ssc2->set_allocated_from(ssc1.release_from());
     if (ssc1.has_groupby())
@@ -419,10 +416,9 @@ void QueryOracle::generateRoundtripOracleQueries(RandomGenerator & rg, Statement
         }
     }
 
-    /// Build sq1: SELECT count() AS c0 FROM <from_clause> WHERE col IS NOT NULL  (baseline)
-    ExprColAlias * eca = ssc1->add_result_columns()->mutable_eca();
-    eca->mutable_expr()->mutable_comp_expr()->mutable_func_call()->mutable_func()->set_catalog_func("count");
-    eca->mutable_col_alias()->set_column("c0");
+    /// Build sq1: SELECT count() FROM <from_clause> WHERE col IS NOT NULL  (baseline)
+    ssc1->add_result_columns()->mutable_eca()->mutable_expr()->mutable_comp_expr()->mutable_func_call()->mutable_func()->set_catalog_func(
+        FUNCcount);
     ssc1->mutable_where()->mutable_expr()->mutable_expr()->mutable_lit_val()->set_no_quote_str(fmt::format("{} IS NOT NULL", col_ref));
     finishSettings(sel1->mutable_setting_values());
     ts1->set_format(OutFormat::OUT_CSV);
@@ -496,9 +492,8 @@ void QueryOracle::generateRowPolicyOracleQueries(RandomGenerator & rg, Statement
         jtf2->mutable_tof()->mutable_est()->mutable_table()->set_value("one");
     }
     // count() result column
-    ExprColAlias * eca = ssc2->add_result_columns()->mutable_eca();
-    eca->mutable_expr()->mutable_comp_expr()->mutable_func_call()->mutable_func()->set_catalog_func("count");
-    eca->mutable_col_alias()->set_column("c0");
+    ssc2->add_result_columns()->mutable_eca()->mutable_expr()->mutable_comp_expr()->mutable_func_call()->mutable_func()->set_catalog_func(
+        FUNCcount);
     // WHERE pred — copied from the stored USING predicate of the catalog policy.
     // In the fallback path (table gone, querying system.one) we cannot reuse column references
     // from the original table; use a constant TRUE predicate instead so the result is always 1.
@@ -554,14 +549,12 @@ void QueryOracle::generateCountDistinctFirstQuery(RandomGenerator & rg, Statemen
     const bool prev_allow_aggregates = gen.levels[gen.current_level].allow_aggregates;
     const bool prev_allow_window_funcs = gen.levels[gen.current_level].allow_window_funcs;
     gen.levels[gen.current_level].allow_aggregates = gen.levels[gen.current_level].allow_window_funcs = false;
-    ExprColAlias * eca = ssc->add_result_columns()->mutable_eca();
-    SQLFuncCall * sfc1 = eca->mutable_expr()->mutable_comp_expr()->mutable_func_call();
+    SQLFuncCall * sfc1 = ssc->add_result_columns()->mutable_eca()->mutable_expr()->mutable_comp_expr()->mutable_func_call();
     SQLFuncCall * sfc2 = sfc1->add_args()->mutable_expr()->mutable_comp_expr()->mutable_func_call();
-    eca->mutable_col_alias()->set_column("c0");
-    sfc1->mutable_func()->set_catalog_func("ifNull");
+    sfc1->mutable_func()->set_catalog_func(FUNCifNull);
     sfc1->add_args()->mutable_expr()->mutable_lit_val()->mutable_special_val()->set_val(
         SpecialVal_SpecialValEnum::SpecialVal_SpecialValEnum_VAL_ZERO);
-    sfc2->mutable_func()->set_catalog_func("count");
+    sfc2->mutable_func()->set_catalog_func(FUNCcount);
     sfc2->set_distinct(true);
     gen.generateExpression(rg, sfc2->add_args()->mutable_expr());
     gen.levels[gen.current_level].allow_aggregates = prev_allow_aggregates;
@@ -601,10 +594,15 @@ void QueryOracle::generateCountDistinctSecondQuery(SQLQuery & sq1, SQLQuery & sq
     SelectIntoFile * sif2 = ts2->mutable_intofile();
     Select * sel2 = ts2->mutable_sel();
     SelectStatementCore * outer_ssc = sel2->mutable_select_core();
-    ExprColAlias * eca = outer_ssc->add_result_columns()->mutable_eca();
 
-    eca->mutable_expr()->mutable_comp_expr()->mutable_func_call()->mutable_func()->set_catalog_func("count");
-    eca->mutable_col_alias()->set_column("c0");
+    outer_ssc->add_result_columns()
+        ->mutable_eca()
+        ->mutable_expr()
+        ->mutable_comp_expr()
+        ->mutable_func_call()
+        ->mutable_func()
+        ->set_catalog_func(FUNCcount);
+
     JoinedTableOrFunction * outer_jtf
         = outer_ssc->mutable_from()->mutable_tos()->mutable_join_clause()->mutable_tos()->mutable_joined_table();
 
@@ -623,14 +621,13 @@ void QueryOracle::generateCountDistinctSecondQuery(SQLQuery & sq1, SQLQuery & sq
                           ->mutable_func_call()
                           ->mutable_args(0)
                           ->release_expr();
-    ExprColAlias * eca2 = inner_ssc->add_result_columns()->mutable_eca();
-    eca2->set_allocated_expr(arg_expr);
-    eca2->mutable_col_alias()->set_column("cx");
+    ExprColAlias * eca = inner_ssc->add_result_columns()->mutable_eca();
+    eca->set_allocated_expr(arg_expr);
+    eca->mutable_col_alias()->set_column("cx");
 
     /// ifNull(COUNT(DISTINCT expr), 0) skips NULLs; filter them from the inner DISTINCT subquery
     /// to keep COUNT(*) equivalent:  WHERE isNotNull(expr)
-    ExprTruthTests * null_test
-        = inner_ssc->mutable_where()->mutable_expr()->mutable_expr()->mutable_comp_expr()->mutable_expr_truth_tests();
+    ExprNullTests * null_test = inner_ssc->mutable_where()->mutable_expr()->mutable_expr()->mutable_comp_expr()->mutable_expr_null_tests();
     null_test->mutable_expr()->mutable_comp_expr()->mutable_expr_stc()->mutable_col()->mutable_path()->mutable_col()->set_column("cx");
     null_test->set_not_(true);
 
@@ -693,20 +690,15 @@ void QueryOracle::dumpTableContent(
         case DumpOracleStrategy::BACKUP_RESTORE: {
             /// Dump entire table and compare contents
             bool first = true;
-            uint32_t col_idx = 0;
             OrderByList * obs = ssc->mutable_orderby()->mutable_olist();
 
             gen.flatTableColumnPath(0, t.cols, [](const SQLColumn & c) { return c.canBeInserted(); });
             for (const auto & entry : gen.entries)
             {
                 ExprOrderingTerm * eot = first ? obs->mutable_ord_term() : obs->add_extra_ord_terms();
-                const String alias = "a" + std::to_string(col_idx++);
 
-                ExprColAlias * eca = ssc->add_result_columns()->mutable_eca();
-                gen.columnPathRef(entry, eca->mutable_expr());
-                eca->mutable_col_alias()->set_column(alias);
-                eot->mutable_expr()->mutable_comp_expr()->mutable_expr_stc()->mutable_col()->mutable_path()->mutable_col()->set_column(
-                    alias);
+                gen.columnPathRef(entry, ssc->add_result_columns()->mutable_etc()->mutable_col()->mutable_path());
+                gen.columnPathRef(entry, eot->mutable_expr()->mutable_comp_expr()->mutable_expr_stc()->mutable_col()->mutable_path());
                 if (rg.nextBool())
                 {
                     eot->set_asc_desc(rg.nextBool() ? AscDesc::ASC : AscDesc::DESC);
@@ -722,23 +714,24 @@ void QueryOracle::dumpTableContent(
             gen.entries.clear();
         }
         break;
-        case DumpOracleStrategy::ALTER_UPDATE: {
+        case DumpOracleStrategy::ALTER_UPDATE:
             /// Just match the count
-            ExprColAlias * eca = ssc->add_result_columns()->mutable_eca();
-            eca->mutable_expr()->mutable_comp_expr()->mutable_func_call()->mutable_func()->set_catalog_func("count");
-            eca->mutable_col_alias()->set_column("c0");
-        }
-        break;
+            ssc->add_result_columns()
+                ->mutable_eca()
+                ->mutable_expr()
+                ->mutable_comp_expr()
+                ->mutable_func_call()
+                ->mutable_func()
+                ->set_catalog_func(FUNCcount);
+            break;
         case DumpOracleStrategy::INSERT_COUNT: {
             /// On the first step get the current count plus the rows to be inserted
-            ExprColAlias * eca = ssc->add_result_columns()->mutable_eca();
-            BinaryExpr * bexpr = eca->mutable_expr()->mutable_comp_expr()->mutable_binary_expr();
+            BinaryExpr * bexpr = ssc->add_result_columns()->mutable_eca()->mutable_expr()->mutable_comp_expr()->mutable_binary_expr();
 
             nrows = rows_dist(rg.generator);
             bexpr->set_op(BinaryOperator::BINOP_PLUS);
-            bexpr->mutable_lhs()->mutable_comp_expr()->mutable_func_call()->mutable_func()->set_catalog_func("count");
+            bexpr->mutable_lhs()->mutable_comp_expr()->mutable_func_call()->mutable_func()->set_catalog_func(FUNCcount);
             bexpr->mutable_rhs()->mutable_lit_val()->mutable_int_lit()->set_uint_lit(nrows);
-            eca->mutable_col_alias()->set_column("c0");
         }
         break;
     }
@@ -772,9 +765,13 @@ void QueryOracle::dumpTableContent(
                                              ->mutable_sel()
                                              ->mutable_select_core();
             scc.clear_result_columns();
-            ExprColAlias * eca2 = scc.add_result_columns()->mutable_eca();
-            eca2->mutable_expr()->mutable_comp_expr()->mutable_func_call()->mutable_func()->set_catalog_func("count");
-            eca2->mutable_col_alias()->set_column("c0");
+            scc.add_result_columns()
+                ->mutable_eca()
+                ->mutable_expr()
+                ->mutable_comp_expr()
+                ->mutable_func_call()
+                ->mutable_func()
+                ->set_catalog_func(FUNCcount);
         }
         break;
     }
@@ -959,14 +956,8 @@ void QueryOracle::dumpOracleIntermediateSteps(
 
 /// Dictionary oracle: dump all columns, compare full content
 void QueryOracle::dumpDictionaryContent(
-    RandomGenerator & rg, StatementGenerator & gen, const SQLDictionary & d, SQLQuery & reload, SQLQuery & sq1, SQLQuery & sq2)
+    RandomGenerator & rg, StatementGenerator & gen, const SQLDictionary & d, SQLQuery & sq1, SQLQuery & sq2)
 {
-    SystemCommand * sc = reload.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_system_cmd();
-    d.setName(sc->mutable_reload_dictionary(), false);
-    const std::optional<String> & cluster = d.getCluster();
-    if (cluster.has_value())
-        sc->mutable_cluster()->set_cluster(cluster.value());
-
     TopSelect * ts = sq1.mutable_single_query()->mutable_explain()->mutable_inner_query()->mutable_select();
     SelectIntoFile * sif = ts->mutable_intofile();
     Select * sel = ts->mutable_sel();
@@ -979,17 +970,13 @@ void QueryOracle::dumpDictionaryContent(
     bool first = true;
     OrderByList * obs = ssc->mutable_orderby()->mutable_olist();
 
-    uint32_t col_idx = 0;
     gen.flatTableColumnPath(0, d.cols, [](const SQLColumn & c) { return c.canBeInserted(); });
     for (const auto & entry : gen.entries)
     {
         ExprOrderingTerm * eot = first ? obs->mutable_ord_term() : obs->add_extra_ord_terms();
-        const String alias = "a" + std::to_string(col_idx++);
 
-        ExprColAlias * eca = ssc->add_result_columns()->mutable_eca();
-        gen.columnPathRef(entry, eca->mutable_expr());
-        eca->mutable_col_alias()->set_column(alias);
-        eot->mutable_expr()->mutable_comp_expr()->mutable_expr_stc()->mutable_col()->mutable_path()->mutable_col()->set_column(alias);
+        gen.columnPathRef(entry, ssc->add_result_columns()->mutable_etc()->mutable_col()->mutable_path());
+        gen.columnPathRef(entry, eot->mutable_expr()->mutable_comp_expr()->mutable_expr_stc()->mutable_col()->mutable_path());
         if (rg.nextBool())
         {
             eot->set_asc_desc(rg.nextBool() ? AscDesc::ASC : AscDesc::DESC);
@@ -1050,18 +1037,14 @@ void QueryOracle::dumpViewContent(RandomGenerator & rg, const SQLView & v, SQLQu
     jtf->set_final(v.supportsFinal());
 
     bool first = true;
-    uint32_t col_idx = 0;
     OrderByList * obs = ssc->mutable_orderby()->mutable_olist();
 
     for (const auto & col : v.cols)
     {
         ExprOrderingTerm * eot = first ? obs->mutable_ord_term() : obs->add_extra_ord_terms();
-        const String alias = "a" + std::to_string(col_idx++);
 
-        ExprColAlias * eca = ssc->add_result_columns()->mutable_eca();
-        eca->mutable_expr()->mutable_comp_expr()->mutable_expr_stc()->mutable_col()->mutable_path()->mutable_col()->set_column(col);
-        eca->mutable_col_alias()->set_column(alias);
-        eot->mutable_expr()->mutable_comp_expr()->mutable_expr_stc()->mutable_col()->mutable_path()->mutable_col()->set_column(alias);
+        ssc->add_result_columns()->mutable_etc()->mutable_col()->mutable_path()->mutable_col()->set_column(col);
+        eot->mutable_expr()->mutable_comp_expr()->mutable_expr_stc()->mutable_col()->mutable_path()->mutable_col()->set_column(col);
         if (rg.nextBool())
         {
             eot->set_asc_desc(rg.nextBool() ? AscDesc::ASC : AscDesc::DESC);
@@ -1294,7 +1277,7 @@ void QueryOracle::generateOracleSelectQuery(RandomGenerator & rg, const PeerQuer
         SQLFuncCall * fcall = eca->mutable_expr()->mutable_comp_expr()->mutable_func_call();
 
         eca->mutable_col_alias()->set_column("explain");
-        fcall->mutable_func()->set_catalog_func("REGEXP_REPLACE");
+        fcall->mutable_func()->set_catalog_func(SQLFunc::FUNCREGEXP_REPLACE);
         fcall->add_args()
             ->mutable_expr()
             ->mutable_comp_expr()
@@ -1312,7 +1295,7 @@ void QueryOracle::generateOracleSelectQuery(RandomGenerator & rg, const PeerQuer
         SQLFuncCall * fcall2 = uexpr->mutable_expr()->mutable_comp_expr()->mutable_func_call();
 
         uexpr->set_unary_op(UnaryOperator::UNOP_NOT);
-        fcall2->mutable_func()->set_catalog_func("match");
+        fcall2->mutable_func()->set_catalog_func(SQLFunc::FUNCmatch);
         fcall2->add_args()
             ->mutable_expr()
             ->mutable_comp_expr()

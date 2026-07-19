@@ -13,7 +13,6 @@
 #include <Common/Config/ConfigHelper.h>
 #include <Common/quoteString.h>
 #include <Core/Settings.h>
-#include <Core/UUID.h>
 #include <QueryPipeline/Pipe.h>
 #include <Dictionaries/getDictionaryConfigurationFromAST.h>
 #include <IO/WriteHelpers.h>
@@ -265,7 +264,7 @@ void StorageDictionary::renameInMemory(const StorageID & new_table_id)
     auto old_table_id = getStorageID();
     IStorage::renameInMemory(new_table_id);
 
-    chassert((location == Location::SameDatabaseAndNameAsDictionary) == (getConfiguration().get() != nullptr));
+    assert((location == Location::SameDatabaseAndNameAsDictionary) == (getConfiguration().get() != nullptr));
     if (location != Location::SameDatabaseAndNameAsDictionary)
         return;
 
@@ -273,7 +272,7 @@ void StorageDictionary::renameInMemory(const StorageID & new_table_id)
 
     bool move_to_atomic = old_table_id.uuid == UUIDHelpers::Nil && new_table_id.uuid != UUIDHelpers::Nil;
     bool move_to_ordinary = old_table_id.uuid != UUIDHelpers::Nil && new_table_id.uuid == UUIDHelpers::Nil;
-    chassert(old_table_id.uuid == new_table_id.uuid || move_to_atomic || move_to_ordinary);
+    assert(old_table_id.uuid == new_table_id.uuid || move_to_atomic || move_to_ordinary);
 
     /// It's better not to update an associated `IDictionary` directly here because it can be not loaded yet or
     /// it can be in the process of loading or reloading right now.
@@ -352,7 +351,6 @@ void StorageDictionary::alter(const AlterCommands & params, ContextPtr alter_con
     external_dictionaries_loader.reloadConfig(getStorageID().getInternalDictionaryName());
 }
 
-void registerStorageDictionary(StorageFactory & factory);
 void registerStorageDictionary(StorageFactory & factory)
 {
     factory.registerStorage("Dictionary", [](const StorageFactory::Arguments & args)

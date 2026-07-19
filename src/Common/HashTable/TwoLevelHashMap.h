@@ -33,7 +33,7 @@ public:
     typename Cell::Mapped & ALWAYS_INLINE operator[](const Key & x)
     {
         LookupResult it;
-        bool inserted = false;
+        bool inserted;
         this->emplace(x, it, inserted);
 
         if (inserted)

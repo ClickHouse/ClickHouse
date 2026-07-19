@@ -34,16 +34,7 @@ public:
     std::unique_ptr<ReadBufferFromFileBase> readObject( /// NOLINT
         const StoredObject & object,
         const ReadSettings & read_settings,
-        std::optional<size_t> read_hint = {},
-        bool use_external_buffer = false,
-        bool restrict_seek = false) const override;
-
-    void prepareRead(
-        ObjectStoragePtr storage,
-        const StoredObjects & objects,
-        const ReadSettings & read_settings,
-        std::optional<size_t> read_hint,
-        ReadPipeline & pipeline) const override;
+        std::optional<size_t> read_hint = {}) const override;
 
     /// Open the file for write and return WriteBufferFromFileBase object.
     std::unique_ptr<WriteBufferFromFileBase> writeObject( /// NOLINT
@@ -136,6 +127,13 @@ public:
         return object_storage->tryGetS3StorageClient();
     }
 #endif
+
+    /// Forward to the underlying storage so DeltaLake's catalog-vended credentials
+    /// refresh path works through a cache disk too.
+    bool tryRefreshCredentialsViaCallback() override
+    {
+        return object_storage->tryRefreshCredentialsViaCallback();
+    }
 
 #if USE_AZURE_BLOB_STORAGE || USE_AWS_S3
     void tagObjects(const StoredObjects & objects, const std::string & tag_key, const std::string & tag_value) override

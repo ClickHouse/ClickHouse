@@ -33,7 +33,6 @@
 #include <Common/getMultipleKeysFromConfig.h>
 #include <Common/getNumberOfCPUCoresToUse.h>
 #include <Common/setThreadName.h>
-#include <Common/ThreadStatus.h>
 
 #if USE_SSL
 #    include <Server/CertificateReloader.h>
@@ -1035,12 +1034,12 @@ nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type typ
                 // and not a RW lock
                 auto & entry = *static_cast<LogEntryPtr *>(param->ctx);
 
-                chassert(entry->get_val_type() == nuraft::app_log);
+                assert(entry->get_val_type() == nuraft::app_log);
                 auto next_zxid = state_machine->getNextZxid();
 
                 auto entry_buf = entry->get_buf_ptr();
 
-                IKeeperStateMachine::ZooKeeperLogSerializationVersion serialization_version = {};
+                IKeeperStateMachine::ZooKeeperLogSerializationVersion serialization_version;
                 size_t request_end_position = 0;
                 auto request_for_session = state_machine->parseRequest(*entry_buf, /*final=*/false, &serialization_version, &request_end_position);
                 request_for_session->zxid = next_zxid;
@@ -1101,7 +1100,7 @@ nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type typ
                 // and not a RW lock
                 auto & entry = *static_cast<LogEntryPtr *>(param->ctx);
 
-                chassert(entry->get_val_type() == nuraft::app_log);
+                assert(entry->get_val_type() == nuraft::app_log);
 
                 auto & entry_buf = entry->get_buf();
                 auto request_for_session = state_machine->parseRequest(entry_buf, true);
@@ -1399,7 +1398,7 @@ bool KeeperServer::waitForConfigUpdateWithReconfigDisabled(const ClusterUpdateAc
 
 Keeper4LWInfo KeeperServer::getPartiallyFilled4LWInfo() const
 {
-    Keeper4LWInfo result{};
+    Keeper4LWInfo result;
     result.is_leader = raft_instance->is_leader();
 
     auto srv_config = state_manager->get_srv_config();
@@ -1458,14 +1457,6 @@ KeeperLogInfo KeeperServer::getKeeperLogInfo()
     }
 
     return log_info;
-}
-
-std::vector<KeeperChangelogStatus> KeeperServer::getChangelogsStatus() const
-{
-    auto log_store = state_manager->load_log_store();
-    if (log_store)
-        return static_cast<const KeeperLogStore &>(*log_store).getChangelogsStatus();
-    return {};
 }
 
 bool KeeperServer::requestLeader()

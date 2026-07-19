@@ -331,7 +331,7 @@ void ColumnString::batchSerializeValueIntoMemory(VectorWithMemoryTracking<char *
 
 void ColumnString::deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings * settings)
 {
-    size_t string_size = 0;
+    size_t string_size;
     readBinaryLittleEndian<size_t>(string_size, in);
 
     bool serialize_string_with_zero_byte = settings && settings->serialize_string_with_zero_byte;
@@ -346,7 +346,7 @@ void ColumnString::deserializeAndInsertFromArena(ReadBuffer & in, const IColumn:
 
 void ColumnString::skipSerializedInArena(ReadBuffer & in) const
 {
-    size_t string_size = 0;
+    size_t string_size;
     readBinaryLittleEndian<size_t>(string_size, in);
     in.ignore(string_size);
 }
@@ -359,7 +359,7 @@ ColumnPtr ColumnString::index(const IColumn & indexes, size_t limit) const
 template <typename Type>
 ColumnPtr ColumnString::indexImpl(const PaddedPODArray<Type> & indexes, size_t limit) const
 {
-    chassert(limit <= indexes.size());
+    assert(limit <= indexes.size());
     if (limit == 0)
         return ColumnString::create();
 
@@ -549,10 +549,6 @@ ColumnPtr ColumnString::replicate(const Offsets & replicate_offsets) const
 
     Chars & res_chars = res->chars;
     size_t res_chars_size = 0;
-    /// This is a dependent prefix-sum where each iteration depends on the
-    /// previous one.  Auto-vectorization adds horizontal-reduction overhead
-    /// without improving throughput for dependent chains.
-#pragma clang loop vectorize(disable)
     for (size_t i = 0; i < col_size; ++i)
     {
         size_t size_to_replicate = replicate_offsets[i] - replicate_offsets[i - 1];
@@ -804,7 +800,12 @@ void ColumnString::updateHashWithValueRange(size_t begin, size_t end, SipHash & 
     size_t chars_begin = offsetAt(begin);
     size_t chars_end = offsetAt(end);
     hash.update(reinterpret_cast<const char *>(&chars[chars_begin]), chars_end - chars_begin);
-    hash.update(reinterpret_cast<const char *>(&offsets[begin]), (end - begin) * sizeof(offsets[0]));
+    /// Relative offsets so equal data hashes equally regardless of position (insert deduplication).
+    for (size_t i = begin; i < end; ++i)
+    {
+        UInt64 relative_offset = offsets[i] - chars_begin;
+        hash.update(relative_offset);
+    }
 }
 
 void ColumnString::updateHashFast(SipHash & hash) const

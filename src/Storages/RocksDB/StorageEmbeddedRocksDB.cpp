@@ -13,7 +13,6 @@
 #include <Storages/RocksDB/RocksDBSettings.h>
 #include <Storages/StorageFactory.h>
 
-#include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 
 #include <Processors/ISource.h>
@@ -104,7 +103,7 @@ static RocksDBOptions getOptionsFromConfig(const Poco::Util::AbstractConfigurati
     return options;
 }
 
-class EmbeddedRocksDBSource final : public ISource
+class EmbeddedRocksDBSource : public ISource
 {
 public:
     EmbeddedRocksDBSource(
@@ -385,11 +384,9 @@ void StorageEmbeddedRocksDB::mutate(const MutationCommands & commands, ContextPt
     }
 
     chassert(commands.front().type == MutationCommand::Type::UPDATE);
-    auto alter = commands.front().ast();
-    const auto column_to_update = getColumnToUpdateExpression(*alter);
     for (const auto & key_name : primary_keys)
     {
-        if (column_to_update.contains(key_name))
+        if (commands.front().column_to_update_expression.contains(key_name))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Primary key cannot be updated (cannot update column {})", key_name);
     }
 
@@ -487,7 +484,7 @@ public:
         {
             va_list backup_ap;
             va_copy(backup_ap, ap);
-            std::array<char, 1024> stack; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - written by `vsnprintf` before read
+            std::array<char, 1024> stack;
             if (vsnprintf(stack.data(), stack.size(), format, backup_ap) < static_cast<int>(stack.size()))
             {
                 va_end(backup_ap);
@@ -639,7 +636,7 @@ void StorageEmbeddedRocksDB::initDB()
 
     if (ttl > 0)
     {
-        rocksdb::DBWithTTL * db = nullptr;
+        rocksdb::DBWithTTL * db;
         status = rocksdb::DBWithTTL::Open(merged, rocksdb_dir, &db, ttl, read_only);
         if (!status.ok())
         {
@@ -649,7 +646,7 @@ void StorageEmbeddedRocksDB::initDB()
     }
     else
     {
-        rocksdb::DB * db = nullptr;
+        rocksdb::DB * db;
         if (read_only)
             status = rocksdb::DB::OpenForReadOnly(merged, rocksdb_dir, &db);
         else
@@ -1016,7 +1013,7 @@ std::optional<UInt64> StorageEmbeddedRocksDB::totalRows(ContextPtr query_context
     SharedLockGuard lock(rocksdb_ptr_mx);
     if (!rocksdb_ptr)
         return {};
-    UInt64 estimated_rows = 0;
+    UInt64 estimated_rows;
     if (!rocksdb_ptr->GetIntProperty("rocksdb.estimate-num-keys", &estimated_rows))
         return {};
     return estimated_rows;
@@ -1027,7 +1024,7 @@ std::optional<UInt64> StorageEmbeddedRocksDB::totalBytes(ContextPtr) const
     SharedLockGuard lock(rocksdb_ptr_mx);
     if (!rocksdb_ptr)
         return {};
-    UInt64 estimated_bytes = 0;
+    UInt64 estimated_bytes;
     if (!rocksdb_ptr->GetAggregatedIntProperty("rocksdb.estimate-live-data-size", &estimated_bytes))
         return {};
     return estimated_bytes;
@@ -1046,7 +1043,6 @@ void StorageEmbeddedRocksDB::alter(const AlterCommands & params, ContextPtr quer
     }
 }
 
-void registerStorageEmbeddedRocksDB(StorageFactory & factory);
 void registerStorageEmbeddedRocksDB(StorageFactory & factory)
 {
     StorageFactory::StorageFeatures features{

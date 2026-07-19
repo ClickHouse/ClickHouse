@@ -56,10 +56,7 @@ namespace Setting
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsAlterUpdateMode alter_update_mode;
     extern const SettingsBool enable_lightweight_update;
-    extern const SettingsBool validate_mutation_query;
     extern const SettingsTimezone session_timezone;
-    extern const SettingsUInt64 max_parser_depth;
-    extern const SettingsUInt64 max_parser_backtracks;
 }
 
 namespace ServerSetting
@@ -125,12 +122,7 @@ CommandSegments parseAlterCommandSegments(const ASTAlterQuery & alter, const Sto
         {
             segments_holder.take<PartitionCommands>().push_back(std::move(partition_command.value()));
         }
-        else if (auto mutation_command = MutationCommand::parse(
-                     *command_ast,
-                     /* parse_alter_commands = */ false,
-                     /* with_pure_metadata_commands = */ false,
-                     settings[Setting::max_parser_depth],
-                     settings[Setting::max_parser_backtracks]))
+        else if (auto mutation_command = MutationCommand::parse(*command_ast))
         {
             if (mutation_command->type == MutationCommand::UPDATE || mutation_command->type == MutationCommand::DELETE)
             {
@@ -139,12 +131,7 @@ CommandSegments parseAlterCommandSegments(const ASTAlterQuery & alter, const Sto
                 if (rewritten_command_ast)
                 {
                     auto * new_alter_command = rewritten_command_ast->as<ASTAlterCommand>();
-                    mutation_command = MutationCommand::parse(
-                        *new_alter_command,
-                        /* parse_alter_commands = */ false,
-                        /* with_pure_metadata_commands = */ false,
-                        settings[Setting::max_parser_depth],
-                        settings[Setting::max_parser_backtracks]);
+                    mutation_command = MutationCommand::parse(*new_alter_command);
                     if (!mutation_command)
                         throw Exception(ErrorCodes::LOGICAL_ERROR,
                             "Alter command '{}' is rewritten to invalid command '{}'",
@@ -158,22 +145,17 @@ CommandSegments parseAlterCommandSegments(const ASTAlterQuery & alter, const Sto
             const auto & session_tz = settings[Setting::session_timezone].value;
             if (!session_tz.empty())
             {
-                auto source_alter = mutation_command->ast();
+                const auto & source_ast = *mutation_command->ast->as<ASTAlterCommand>();
                 auto tz_rewritten_ast = rewriteDateTimeLiteralsWithTimezone(
-                    *source_alter, table->getInMemoryMetadataPtr(context, true)->columns, session_tz);
+                    source_ast, table->getInMemoryMetadataPtr(context, true)->columns, session_tz);
                 if (tz_rewritten_ast)
                 {
                     auto * tz_alter_command = tz_rewritten_ast->as<ASTAlterCommand>();
-                    mutation_command = MutationCommand::parse(
-                        *tz_alter_command,
-                        /* parse_alter_commands = */ false,
-                        /* with_pure_metadata_commands = */ false,
-                        settings[Setting::max_parser_depth],
-                        settings[Setting::max_parser_backtracks]);
+                    mutation_command = MutationCommand::parse(*tz_alter_command);
                     if (!mutation_command)
                         throw Exception(ErrorCodes::LOGICAL_ERROR,
                             "Alter command '{}' is rewritten to invalid command '{}'",
-                            source_alter->formatForErrorMessage(), tz_rewritten_ast->formatForErrorMessage());
+                            source_ast.formatForErrorMessage(), tz_rewritten_ast->formatForErrorMessage());
                 }
             }
 
@@ -328,17 +310,8 @@ BlockIO runCommandSegments(CommandSegments & segments, const StoragePtr & table,
             {
                 auto metadata_snapshot = table->getInMemoryMetadataPtr(context, true);
                 table->checkMutationIsPossible(*mutation_commands, settings);
-                /// Replicated-storage non-determinism check must always run, even when
-                /// `validate_mutation_query=0` — bypassing it would let nondeterministic mutations
-                /// diverge replicas.  The heavier query-shape validation that constructs a full
-                /// `MutationsInterpreter` is gated by the setting, since invalid mutations may
-                /// reference not-yet-existing objects when the user opts out of validation.
-                MutationsInterpreter::validateNonDeterministicMutationsForStorage(table, *mutation_commands, context);
-                if (settings[Setting::validate_mutation_query])
-                {
-                    MutationsInterpreter::Settings mutation_settings(false);
-                    MutationsInterpreter(table, metadata_snapshot, *mutation_commands, context, mutation_settings).validate();
-                }
+                MutationsInterpreter::Settings mutation_settings(false);
+                MutationsInterpreter(table, metadata_snapshot, *mutation_commands, context, mutation_settings).validate();
                 table->mutate(*mutation_commands, context);
             }
         }
@@ -864,7 +837,6 @@ void InterpreterAlterQuery::extendQueryLogElemImpl(QueryLogElement & elem, const
     }
 }
 
-void registerInterpreterAlterQuery(InterpreterFactory & factory);
 void registerInterpreterAlterQuery(InterpreterFactory & factory)
 {
     auto create_fn = [] (const InterpreterFactory::Arguments & args)
