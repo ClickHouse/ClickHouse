@@ -10,7 +10,7 @@
 
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
-#include <Functions/LloydMaxQuantization.h>
+#include <Common/LloydMaxQuantizer.h>
 
 #include <Interpreters/Context.h>
 #include <Interpreters/castColumn.h>

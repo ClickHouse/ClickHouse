@@ -94,13 +94,13 @@ arrayAUCPR(scores, labels[, partial_offsets])
     - `higher_partitions_fp`: The number of negative labels in the higher-scored partitions.
     - `total_positives`: The total number of positive samples in the entire dataset.
 
-:::note
+<Note>
 When `arr_partial_offsets` is used, the `arr_scores` and `arr_labels` should be only a partition of the entire dataset, containing an interval of scores.
 The dataset should be divided into contiguous partitions, where each partition contains the subset of the data whose scores fall within a specific range.
 For example:
 - One partition could contain all scores in the range [0, 0.5).
 - Another partition could contain scores in the range [0.5, 1.0].
-:::
+</Note>
  
 
 **Returned value**
@@ -644,9 +644,9 @@ Introduced in: v23.5.0
 
 Returns the dot product of two arrays.
 
-:::note
+<Note>
 The sizes of the two vectors must be equal. Arrays and Tuples may also contain mixed element types.
-:::
+</Note>
 
 **Syntax**
 
@@ -663,10 +663,10 @@ arrayDotProduct(v1, v2)
 
 The dot product of the two vectors.
 
-:::note
+<Note>
 The return type is determined by the type of the arguments. If Arrays or Tuples contain mixed element types then the result type is the supertype.
 Two `BFloat16` arrays accumulate in and return `Float32` (the same rule as two `Float32` arrays).
-:::
+</Note>
 
  [`(U)Int*`](/reference/data-types/int-uint) or [`Float*`](/reference/data-types/float) or [`Decimal`](/reference/data-types/decimal)
 
@@ -700,9 +700,9 @@ Gets the element of the provided array with index `n` where `n` can be any integ
 If the index falls outside of the bounds of an array, it returns a default value (0 for numbers, an empty string for strings, etc.),
 except for arguments of a non-constant array and a constant index 0. In this case there will be an error `Array indices are 1-based`.
 
-:::note
+<Note>
 Arrays in ClickHouse are one-indexed.
-:::
+</Note>
 
 Negative indexes are supported. In this case, the corresponding element is selected, numbered from the end. For example, `arr[-1]` is the last item in the array.
 
@@ -772,9 +772,9 @@ Introduced in: v1.1.0
 Gets the element of the provided array with index `n` where `n` can be any integer type.
 If the index falls outside of the bounds of an array, `NULL` is returned instead of a default value.
 
-:::note
+<Note>
 Arrays in ClickHouse are one-indexed.
-:::
+</Note>
 
 Negative indexes are supported. In this case, it selects the corresponding element numbered from the end. For example, `arr[-1]` is the last item in the array.
 
@@ -1674,9 +1674,9 @@ and Aggregate Functions which take a group of rows and "compress" or "reduce" th
 All the values in the columns are simply copied, except the values in the column where this function is applied;
 these are replaced with the corresponding array value.
 
-:::note
+<Note>
 This function is non-deterministic: it can return different results for the same arguments.
-:::
+</Note>
 
 **Syntax**
 
@@ -2259,14 +2259,14 @@ Introduced in: v23.2.0
 
 This function is the same as `arrayReverseSort` but with an additional `limit` argument allowing partial sorting.
 
-:::tip
+<Tip>
 To retain only the sorted elements use `arrayResize`.
-:::
+</Tip>
     
 
-:::note
+<Note>
 This function is non-deterministic: it can return different results for the same arguments.
-:::
+</Note>
 
 **Syntax**
 
@@ -2346,16 +2346,16 @@ Returns an array of the same size as the original array where elements in range 
 subset of the original array. Remaining `(limit..n]` shall contain the elements not in `[1..limit]` range in undefined order.
 Value of limit shall be in range `[1..n]`. Values outside of that range are equivalent to performing full `arrayShuffle`:
 
-:::note
+<Note>
 This function will not materialize constants.
 
 The value of `limit` should be in the range `[1..N]`. Values outside of that range are equivalent to performing full [`arrayShuffle`](#arrayShuffle).
-:::
+</Note>
     
 
-:::note
+<Note>
 This function is non-deterministic: it can return different results for the same arguments.
-:::
+</Note>
 
 **Syntax**
 
@@ -2442,14 +2442,14 @@ Introduced in: v23.2.0
 
 This function is the same as `arraySort` but with an additional `limit` argument allowing partial sorting.
 
-:::tip
+<Tip>
 To retain only the sorted elements use `arrayResize`.
-:::
+</Tip>
     
 
-:::note
+<Note>
 This function is non-deterministic: it can return different results for the same arguments.
-:::
+</Note>
 
 **Syntax**
 
@@ -2650,13 +2650,13 @@ arrayPushBack(arr, x)
 - `x` — 
 - Single value to add to the end of the array. [`Array(T)`](/reference/data-types/array).
 
-:::note
+<Note>
 - Only numbers can be added to an array with numbers, and only strings can be added to an array of strings.
 - When adding numbers, ClickHouse automatically sets the type of `x` for the data type of the array.
 - Can be `NULL`. The function adds a `NULL` element to an array, and the type of array elements converts to `Nullable`.
 
 For more information about the types of data in ClickHouse, see [Data types](/reference/data-types/index).
-:::
+</Note>
      
 
 **Returned value**
@@ -2692,13 +2692,13 @@ arrayPushFront(arr, x)
 - `arr` — The array for which to add value `x` to the end of. [`Array(T)`](/reference/data-types/array). - `x` — 
 - Single value to add to the start of the array. [`Array(T)`](/reference/data-types/array).
 
-:::note
+<Note>
 - Only numbers can be added to an array with numbers, and only strings can be added to an array of strings.
 - When adding numbers, ClickHouse automatically sets the type of `x` for the data type of the array.
 - Can be `NULL`. The function adds a `NULL` element to an array, and the type of array elements converts to `Nullable`.
 
 For more information about the types of data in ClickHouse, see [Data types](/reference/data-types/index).
-:::
+</Note>
      
 
 **Returned value**
@@ -2748,13 +2748,13 @@ arrayROCAUC(scores, labels[, scale[, partial_offsets]])
     - `total_positives`: The total number of positive samples in the entire dataset.
     - `total_negatives`: The total number of negative samples in the entire dataset.
 
-:::note
+<Note>
 When `arr_partial_offsets` is used, the `arr_scores` and `arr_labels` should be only a partition of the entire dataset, containing an interval of scores.
 The dataset should be divided into contiguous partitions, where each partition contains the subset of the data whose scores fall within a specific range.
 For example:
 - One partition could contain all scores in the range [0, 0.5).
 - Another partition could contain scores in the range [0.5, 1.0].
-:::
+</Note>
  
 
 **Returned value**
@@ -2779,9 +2779,9 @@ Introduced in: v23.10.0
 
 Returns a subset with `samples`-many random elements of an input array. If `samples` exceeds the size of the input array, the sample size is limited to the size of the array, i.e. all array elements are returned but their order is not guaranteed. The function can handle both flat arrays and nested arrays.
 
-:::note
+<Note>
 This function is non-deterministic: it can return different results for the same arguments.
-:::
+</Note>
 
 **Syntax**
 
@@ -3022,10 +3022,10 @@ Introduced in: v1.1.0
 
 Reverses the order of elements of a given array.
 
-:::note
+<Note>
 Function `reverse(arr)` performs the same functionality but works on other data-types
 in addition to Arrays.
-:::
+</Note>
 
 **Syntax**
 
@@ -3430,14 +3430,14 @@ Introduced in: v23.2.0
 Returns an array of the same size as the original array containing the elements in shuffled order.
 Elements are reordered in such a way that each possible permutation of those elements has equal probability of appearance.
 
-:::note
+<Note>
 This function will not materialize constants.
-:::
+</Note>
     
 
-:::note
+<Note>
 This function is non-deterministic: it can return different results for the same arguments.
-:::
+</Note>
 
 **Syntax**
 
@@ -3696,11 +3696,11 @@ Introduced in: v25.4.0
 
 Takes multiple arrays and returns an array with elements that are not present in all source arrays. The result contains only unique values.
 
-:::note
+<Note>
 The symmetric difference of _more than two sets_ is [mathematically defined](https://en.wikipedia.org/wiki/Symmetric_difference#n-ary_symmetric_difference)
 as the set of all input elements which occur in an odd number of input sets.
 In contrast, function `arraySymmetricDifference` simply returns the set of input elements which do not occur in all input sets.
-:::
+</Note>
 
 **Syntax**
 
@@ -3926,9 +3926,9 @@ It will then count the number of unique tuples. In this case `2`.
 
 All arrays passed must have the same length.
 
-:::tip
+<Tip>
 If you want to get a list of unique items in an array, you can use `arrayReduce('groupUniqArray', arr)`.
-:::
+</Tip>
 
 **Syntax**
 
@@ -4111,9 +4111,9 @@ Checks whether the input array is empty.
 
 An array is considered empty if it does not contain any elements.
 
-:::note
+<Note>
 Can be optimized by enabling the [`optimize_functions_to_subcolumns` setting](/reference/settings/session-settings#optimize_functions_to_subcolumns). With `optimize_functions_to_subcolumns = 1` the function reads only [size0](/reference/data-types/array#array-size) subcolumn instead of reading and processing the whole array column. The query `SELECT empty(arr) FROM TABLE;` transforms to `SELECT arr.size0 = 0 FROM TABLE;`.
-:::
+</Note>
 
 The function also works for Strings or UUIDs.
     
@@ -5010,10 +5010,10 @@ Introduced in: v24.12.0
 Returns the index of the first element with value 'x' (starting from `1`) if it is in the array.
 If the array does not contain the searched-for value, the function returns `0`.
 
-:::note
+<Note>
 Unlike the `indexOf` function, this function assumes that the array is sorted in
 ascending order. If the array is not sorted, results are undefined.
-:::
+</Note>
     
 
 **Syntax**
@@ -5159,9 +5159,9 @@ Checks whether the input array is non-empty.
 
 An array is considered non-empty if it contains at least one element.
 
-:::note
+<Note>
 Can be optimized by enabling the [`optimize_functions_to_subcolumns`](/reference/settings/session-settings#optimize_functions_to_subcolumns) setting. With `optimize_functions_to_subcolumns = 1` the function reads only [size0](/reference/data-types/array#array-size) subcolumn instead of reading and processing the whole array column. The query `SELECT notEmpty(arr) FROM table` transforms to `SELECT arr.size0 != 0 FROM TABLE`.
-:::
+</Note>
 
 The function also works for Strings or UUIDs.
     

@@ -19,12 +19,14 @@
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/JoinStep.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
+#include <Processors/QueryPlan/LimitByStep.h>
 #include <Processors/QueryPlan/MergingAggregatedStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/ReadFromLocalReplica.h>
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/QueryPlan/TotalsHavingStep.h>
 #include <Processors/QueryPlan/UnionStep.h>
+#include <Processors/QueryPlan/WindowStep.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 
 #include <Storages/StorageMerge.h>
@@ -1011,6 +1013,50 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
           * since we can gen a result row when everything is filtered.
           */
         if (keys.empty())
+            return 0;
+
+        if (auto updated_steps = tryAddNewFilterStep(parent_node, true, nodes, keys))
+            return updated_steps;
+    }
+
+    if (const auto * window = typeid_cast<WindowStep *>(child.get()))
+    {
+        /// A predicate on the PARTITION BY columns of a window is safe to apply before the
+        /// window: it only removes whole partitions, and dropping a partition never changes
+        /// any window value on a surviving row (regardless of the window function or frame).
+        /// Predicates on the window result stay above. Same reasoning as for aggregation keys.
+        Names partition_keys;
+        for (const auto & sort_column : window->getWindowDescription().partition_by)
+            partition_keys.push_back(sort_column.column_name);
+
+        if (partition_keys.empty())
+            return 0;
+
+        /// Pass true (as for aggregation), which disables pushing non-deterministic conjuncts.
+        /// A predicate must be deterministic in the partition key, not merely reference only it:
+        /// a non-deterministic conjunct such as `rand64(key) % 2 = 0` removes arbitrary rows
+        /// inside a surviving partition before the window runs, which can change which row
+        /// becomes row_number() = 1. Unlike SortingStep, the window value depends on the set of
+        /// rows in the partition, so non-deterministic filters are not safe to move below it.
+        if (auto updated_steps = tryAddNewFilterStep(parent_node, true, nodes, partition_keys))
+            return updated_steps;
+    }
+
+    if (const auto * limit_by = typeid_cast<LimitByStep *>(child.get()))
+    {
+        /// A predicate on the LIMIT BY key columns removes whole groups, so the surviving
+        /// per-group rows (and therefore the result) are identical whether it runs above or
+        /// below the LIMIT BY. But it is only safe to push when every non-empty input group
+        /// keeps at least one output row, i.e. `OFFSET 0` and `LIMIT >= 1`. Otherwise a group
+        /// can be fully discarded by the step (OFFSET past its size, or `LIMIT 0 BY`), and a
+        /// pushed key predicate would then be evaluated on rows the original query never
+        /// reached -- changing exception semantics for throwing key expressions
+        /// (e.g. `intDiv(1, key)` on a group that OFFSET would have dropped). This mirrors
+        /// AggregatingStep, where GROUP BY likewise never empties a non-empty group.
+        /// `step_changes_the_number_of_rows = true`: LIMIT BY drops rows, so
+        /// non-deterministic key predicates must NOT be pushed.
+        const auto & keys = limit_by->getColumns();
+        if (keys.empty() || limit_by->getGroupOffset() != 0 || limit_by->getGroupLength() == 0)
             return 0;
 
         if (auto updated_steps = tryAddNewFilterStep(parent_node, true, nodes, keys))
