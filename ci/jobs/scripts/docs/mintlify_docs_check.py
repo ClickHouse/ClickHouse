@@ -21,7 +21,8 @@ The check definitions are declared once here and shared with the Praktika job
 (``ci/jobs/docs_job_mintlify.py``), which imports them. The aggregator job runs
 the full set (``DEFAULT_CHECKS`` plus, when a locale tree changed,
 ``LOCALE_CHECKS``); this client driver runs only ``CLIENT_CHECKS`` -- the checks
-a consuming repo can act on for the slice it owns (validate + internal links).
+a consuming repo can act on for the slice it owns (default-locale snippet
+imports, validate, and internal links).
 Redirects, external links, and the locale checks are aggregator-global and are
 left to the aggregator job. With ``--scoped``, ``mint validate`` is replaced by
 ``scoped_validate.mjs`` over the replaced folders plus every out-of-scope file
@@ -60,7 +61,12 @@ VALIDATE_CHECK = ("Validate docs.json", f"{MINT} validate")
 INTERNAL_LINKS_CHECK = ("Check internal links and anchors", f"{LYCHEE} --mode links .")
 REDIRECTS_CHECK = ("Check redirects", f"{LYCHEE} --mode redirects .")
 EXTERNAL_LINKS_CHECK = ("Check external links (warnings)", f"{LYCHEE} --mode external .")
+SNIPPET_IMPORTS_CHECK = (
+    "Check snippet imports",
+    "python3 ../ci/jobs/scripts/docs/snippet_component_imports_check.py .",
+)
 DEFAULT_CHECKS = [
+    SNIPPET_IMPORTS_CHECK,
     VALIDATE_CHECK,
     INTERNAL_LINKS_CHECK,
     REDIRECTS_CHECK,
@@ -68,13 +74,14 @@ DEFAULT_CHECKS = [
 ]
 
 # The subset a consuming client repo (e.g. clickhouse-connect) runs: only the
-# checks that validate the slice it owns. `mint validate` proves its docs.json
+# checks that validate the slice it owns. The snippet check rejects missing
+# file-local imports in default-locale snippets, `mint validate` proves its docs.json
 # fragment and frontmatter are well-formed, and the internal-links check proves
 # its own links and anchors resolve. Redirects, external links, and the locale
 # checks are aggregator-global concerns a client neither owns nor can fix (they
 # depend on the site-wide redirects map, third-party sites, and the translated
 # trees), so the client driver does not run them.
-CLIENT_CHECKS = [VALIDATE_CHECK, INTERNAL_LINKS_CHECK]
+CLIENT_CHECKS = [SNIPPET_IMPORTS_CHECK, VALIDATE_CHECK, INTERNAL_LINKS_CHECK]
 
 
 # Swaps the full `mint validate` (which MDX-parses the whole site, ~13 minutes)
@@ -103,6 +110,18 @@ LOCALE_COMPONENTS_CHECK = (
     "python3 ../ci/jobs/scripts/docs/locale_components_check.py .",
 )
 LOCALE_CHECKS = [LOCALE_LINKS_CHECK, LOCALE_COMPONENTS_CHECK]
+
+# Quickstarts-only check, kept out of DEFAULT_CHECKS: the Praktika job runs it
+# only when a PR touches the quickstarts trees, the generator, or the checker.
+# Validates the quickstart pages' `useCases`/`products` frontmatter against the
+# allowed tag sets and fails if the generated explorer data
+# (snippets/[<locale>/]components/QuickStartsGrid/quickstarts-data.jsx and the
+# in-page badge blocks) was not regenerated and committed after a frontmatter
+# change. Authoring guide: docs/get-started/quickstarts/README.md.
+QUICKSTARTS_CHECK = (
+    "Check quickstarts",
+    "python3 ../ci/jobs/scripts/docs/quickstarts_check.py .",
+)
 
 
 def run(cmd, **kw):

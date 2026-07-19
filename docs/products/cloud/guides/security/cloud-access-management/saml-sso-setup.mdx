@@ -28,20 +28,17 @@ You will need Admin permissions in your IdP, the ability to add a TXT record to 
 ### Steps {#steps}
 
 <Steps>
-<Step>
-### Access Organization settings {#access-organization-settings}
+<Step title="Access Organization settings" id="access-organization-settings">
 
 Click on your organization name in the lower left corner and select Organization details.
 </Step>
-<Step>
-### Enable SAML single sign-on {#enable-saml-sso}
+<Step title="Enable SAML single sign-on" id="enable-saml-sso">
 
 Click the toggle next to `Enable SAML single sign-on`. Leave this screen open as you will refer back to it several times during the setup process.
 
    <Image img="/images/cloud/security/saml-self-serve-1.webp" size="lg" alt="Start SAML setup" force/>
 </Step>
-<Step>
-### Create an application in your identity provider {#create-idp-application}
+<Step title="Create an application in your identity provider" id="create-idp-application">
 
 Create an application within your identity provider and copy the values on the `Enable SAML single sign-on` screen to your identity provider configuration. For more information on this step, refer to your specific identity provider below.
 
@@ -56,22 +53,19 @@ ClickHouse doesn't support identity provider initiated sign-in. To make it easy 
 
    <Image img="/images/cloud/security/saml-self-serve-2.webp" size="lg" alt="Create identity provider application" force/>
 </Step>
-<Step>
-### Add the metadata URL to your SAML configuration {#add-metadata-url}
+<Step title="Add the metadata URL to your SAML configuration" id="add-metadata-url">
 
 Obtain the `Metadata URL` from your SAML provider. Return to ClickHouse Cloud, click `Next: Provide metadata URL` and paste the URL in the text box.
 
    <Image img="/images/cloud/security/saml-self-serve-3.webp" size="lg" alt="Add metadata URL" force/> 
 </Step>
-<Step>
-### Get domain verification code {#get-domain-verification-code}
+<Step title="Get domain verification code" id="get-domain-verification-code">
 
 Click `Next: Verify your domains`. Enter your domain in the text box and click `Check domain`. The system will generate a random verification code for you to add to a TXT record with your DNS provider. 
 
    <Image img="/images/cloud/security/saml-self-serve-4.webp" size="lg" alt="Add domain to verify" force/> 
 </Step>
-<Step>
-### Verify your domain {#verify-your-domain}
+<Step title="Verify your domain" id="verify-your-domain">
 
 Create a TXT record with your DNS provider. Copy the `TXT record name` to the TXT record Name field with your DNS provider. Copy the `Value` to the Content field with your DNS provider. Click `Verify and Finish` to complete the process.
 
@@ -81,13 +75,11 @@ It may take several minutes for the DNS record to update and be verified. You ma
 
    <Image img="/images/cloud/security/saml-self-serve-5.webp" size="lg" alt="Verify your domain" force/> 
 </Step>
-<Step>
-### Update default role and session timeout {#update-defaults}
+<Step title="Update default role and session timeout" id="update-defaults">
 
 Once the SAML setup is complete, you can set the default role(s) all users will be assigned when they log in and also adjust session timeout settings. For a list of available system roles that may be assigned, please review [Console roles and permissions](/products/cloud/reference/security/console-roles).
 </Step>
-<Step>
-### Configure your admin user {#configure-your-admin-user}
+<Step title="Configure your admin user" id="configure-your-admin-user">
 
 <Note>
 Users configured with a different authentication method will be retained until an admin in your organization removes them. 
@@ -111,8 +103,7 @@ To assign your first admin user via SAML:
 To reduce steps, you may set your SAML default role to `Admin` initially. When the admin is assigned in your identity provider and logs in for the first time, they can change the default role to a different value.
 </Tip>
 </Step>
-<Step>
-### Remove other authentication methods {#remove-other-auth-methods}
+<Step title="Remove other authentication methods" id="remove-other-auth-methods">
 
 Remove any users that are using a non-SAML method to complete the integration and restrict access to only users originating from your identity provider connection.
 </Step>

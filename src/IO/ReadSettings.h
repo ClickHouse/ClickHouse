@@ -3,7 +3,10 @@
 #include <cstddef>
 #include <base/unit.h>
 #include <Core/Defines.h>
+#include <Core/Types.h>
+#if ENABLE_DISTRIBUTED_CACHE
 #include <IO/DistributedCacheSettings.h>
+#endif
 #include <IO/ReadMethod.h>
 #include <Interpreters/FileCache/FileCache_fwd.h>
 #include <Common/Priority.h>
@@ -101,6 +104,9 @@ struct PageCacheSettings
 struct FilesystemCacheSettings
 {
     bool read_if_exists_otherwise_bypass = false;
+    /// Cache-only mode for data with no backing storage (distributed-cache temporary data):
+    /// a miss is an error, never a remote-FS bypass. Takes precedence over `read_if_exists_otherwise_bypass`.
+    bool temp_cache_only = false;
     size_t segments_batch_size = 20;
     std::optional<size_t> boundary_alignment;
     bool allow_background_download = true;
@@ -167,7 +173,9 @@ struct ReadSettings
     HTTPReadSettings http_settings;
 
     bool read_through_distributed_cache = false;
+#if ENABLE_DISTRIBUTED_CACHE
     DistributedCacheSettings distributed_cache_settings;
+#endif
 
     ReadSettings adjustBufferSize(size_t file_size) const;
 

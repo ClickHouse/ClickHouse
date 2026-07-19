@@ -54,6 +54,7 @@
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/InterpreterCreateQuery.h>
+#include <Interpreters/InterpreterExplainQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/InterpreterSetQuery.h>
 #include <Interpreters/InterpreterTransactionControlQuery.h>
@@ -170,8 +171,6 @@ namespace Setting
     extern const SettingsUInt64 max_parser_backtracks;
     extern const SettingsUInt64 max_parser_depth;
     extern const SettingsUInt64 max_query_size;
-    extern const SettingsUInt64 max_result_bytes;
-    extern const SettingsUInt64 max_result_rows;
     extern const SettingsUInt64 output_format_compression_level;
     extern const SettingsString polyglot_dialect;
     extern const SettingsUInt64 output_format_compression_zstd_window_log;
@@ -243,6 +242,22 @@ namespace FailPoints
     extern const char terminate_with_exception[];
     extern const char terminate_with_std_exception[];
     extern const char libcxx_hardening_out_of_bounds_assertion[];
+    extern const char trigger_sanitizer_error[];
+}
+
+static TSA_NO_THREAD_SAFETY_ANALYSIS void triggerSanitizerError()
+{
+#if defined(ADDRESS_SANITIZER)
+    const auto data = std::make_unique_for_overwrite<char[]>(16);
+    [[maybe_unused]] volatile char c = data[16];
+#elif defined(THREAD_SANITIZER)
+    std::mutex mutex;
+    mutex.unlock();
+#elif defined(MEMORY_SANITIZER)
+    const auto data = std::make_unique_for_overwrite<char[]>(16);
+    if (data[7] == 42)
+        __builtin_trap();
+#endif
 }
 
 static void checkASTSizeLimits(const IAST & ast, const Settings & settings)
@@ -445,6 +460,7 @@ QueryLogElement logQueryStart(
     const QueryPipeline & pipeline,
     const IInterpreter * interpreter,
     bool internal,
+    bool log_as_internal,
     const String & query_database,
     const String & query_table,
     bool async_insert)
@@ -468,7 +484,7 @@ QueryLogElement logQueryStart(
 
     elem.client_info = context->getClientInfo();
 
-    elem.is_internal = internal;
+    elem.is_internal = log_as_internal;
 
     if (auto txn = context->getCurrentTransaction())
         elem.tid = txn->tid;
@@ -653,6 +669,7 @@ static void logQueryFinishImpl(
     std::shared_ptr<OpenTelemetry::SpanHolder> query_span,
     QueryResultCacheUsage query_result_cache_usage,
     bool internal,
+    bool log_as_internal,
     std::chrono::system_clock::time_point time)
 {
     const Settings & settings = context->getSettingsRef();
@@ -701,7 +718,7 @@ static void logQueryFinishImpl(
             double bytes_per_second = static_cast<double>(elem.read_bytes) / elapsed_seconds;
             LOG_DEBUG(
                 getLogger("executeQuery"),
-                "Read {} rows, {} in {} sec., {} rows/sec., {}/sec.",
+                "Read {} rows, {} in {:.3f} sec., {:.3f} rows/sec., {}/sec.",
                 elem.read_rows,
                 ReadableSize(elem.read_bytes),
                 elapsed_seconds,
@@ -713,7 +730,7 @@ static void logQueryFinishImpl(
 
         elem.query_result_cache_usage = query_result_cache_usage;
 
-        elem.is_internal = internal;
+        elem.is_internal = log_as_internal;
 
         if (log_queries && elem.type >= settings[Setting::log_queries_min_type]
             && static_cast<Int64>(elem.query_duration_ms) >= settings[Setting::log_queries_min_query_duration_ms].totalMilliseconds())
@@ -765,11 +782,12 @@ void logQueryFinish(
     bool pulling_pipeline,
     std::shared_ptr<OpenTelemetry::SpanHolder> query_span,
     QueryResultCacheUsage query_result_cache_usage,
-    bool internal)
+    bool internal,
+    bool log_as_internal)
 {
     const auto time_now = std::chrono::system_clock::now();
     auto query_pipeline_finalized_info = finalizeQueryPipelineBeforeLogging(std::move(query_pipeline), query_result_cache_usage, pulling_pipeline);
-    logQueryFinishImpl(elem, context, query_ast, query_pipeline_finalized_info, pulling_pipeline, query_span, query_result_cache_usage, internal, time_now);
+    logQueryFinishImpl(elem, context, query_ast, query_pipeline_finalized_info, pulling_pipeline, query_span, query_result_cache_usage, internal, log_as_internal, time_now);
 }
 
 /// Bump the FailedQuery / FailedInsertQuery / FailedSelectQuery family of ProfileEvents.
@@ -807,6 +825,7 @@ void logQueryException(
     const ASTPtr & query_ast,
     std::shared_ptr<OpenTelemetry::SpanHolder> query_span,
     bool internal,
+    bool log_as_internal,
     bool log_error)
 {
     const Settings & settings = context->getSettingsRef();
@@ -843,7 +862,7 @@ void logQueryException(
 
     elem.query_result_cache_usage = QueryResultCacheUsage::None;
 
-    elem.is_internal = internal;
+    elem.is_internal = log_as_internal;
 
     if (settings[Setting::calculate_text_stack_trace] && log_error)
         elem.stack_trace = getExceptionStackTraceString(std::current_exception());
@@ -874,7 +893,8 @@ void logExceptionBeforeStart(
     ASTPtr ast,
     const std::shared_ptr<OpenTelemetry::SpanHolder> & query_span,
     UInt64 elapsed_milliseconds,
-    bool internal)
+    bool internal,
+    bool log_as_internal)
 {
     auto query_end_time = std::chrono::system_clock::now();
 
@@ -933,7 +953,7 @@ void logExceptionBeforeStart(
     if (settings[Setting::calculate_text_stack_trace])
         elem.stack_trace = getExceptionStackTraceString(std::current_exception());
 
-    elem.is_internal = internal;
+    elem.is_internal = log_as_internal;
 
     bool log_error = elem.exception_code != ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT && elem.exception_code !=  ErrorCodes::QUERY_WAS_CANCELLED;
     logException(context, elem, log_error);
@@ -1000,7 +1020,7 @@ void logExceptionBeforeStart(
     }
 }
 
-static void validateAnalyzerSettings(ASTPtr ast, bool context_value)
+void validateAnalyzerSettings(ASTPtr ast, bool context_value)
 {
     if (ast->as<ASTSetQuery>())
         return;
@@ -1136,7 +1156,13 @@ static BlockIO executeQueryImpl(
     HTTPContinueCallback http_continue_callback,
     QueryResultDetails & result_details)
 {
+    if (flags.internal)
+        context->getClientInfo().is_internal = true;
+
+    /// Gates concurrency limits, throttling, query-size limit, logging.
     const bool internal = flags.internal;
+    /// Can be spoofed as it comes from the wire.
+    const bool log_as_internal = context->getClientInfo().is_internal;
 
     /// query_span is a special span, when this function exits, it's lifetime is not ended, but ends when the query finishes.
     /// Some internal queries might call this function recursively by setting 'internal' parameter to 'true',
@@ -1437,7 +1463,7 @@ static BlockIO executeQueryImpl(
         logQuery(query_for_logging, context, internal, stage);
 
         normalized_query_hash = normalizedQueryHash(query_for_logging, false);
-        logExceptionBeforeStart(query_for_logging, normalized_query_hash, context, out_ast, query_span, start_watch.elapsedMilliseconds(), internal);
+        logExceptionBeforeStart(query_for_logging, normalized_query_hash, context, out_ast, query_span, start_watch.elapsedMilliseconds(), internal, log_as_internal);
         throw;
     }
 
@@ -1456,7 +1482,14 @@ static BlockIO executeQueryImpl(
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Transaction {} is in a committing state", txn->tid);
             if (txn->getState() == MergeTreeTransaction::COMMITTED)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Transaction {} has been already committed", txn->tid);
-            bool is_special_query = out_ast && (out_ast->as<ASTTransactionControl>() || out_ast->as<ASTExplainQuery>());
+            /// `EXPLAIN ANALYZE` executes the inner `SELECT`, so after a transaction has failed it must
+            /// be rejected exactly like the query it wraps. Other `EXPLAIN` kinds do not execute the
+            /// inner query (they only print a plan) and stay special, as do transaction-control
+            /// statements so that a failed transaction can still be rolled back.
+            const auto * explain_query = out_ast ? out_ast->as<ASTExplainQuery>() : nullptr;
+            const bool is_executing_explain_analyze = explain_query && explain_query->getKind() == ASTExplainQuery::Analyze;
+            bool is_special_query = out_ast
+                && (out_ast->as<ASTTransactionControl>() || (explain_query && !is_executing_explain_analyze));
             if (txn->getState() == MergeTreeTransaction::ROLLED_BACK && !is_special_query)
                 throw Exception(
                     ErrorCodes::INVALID_TRANSACTION,
@@ -1808,10 +1841,23 @@ static BlockIO executeQueryImpl(
                     quota = context->getQuota();
                     if (quota)
                     {
-                        /// Each governing quota is accounted appropriately: NORMALIZED_QUERY_HASH
-                        /// quotas track against per-hash intervals, the rest against shared session
-                        /// intervals. A user may be governed by several quotas of different key types.
-                        if (query_plan || out_ast->as<ASTSelectQuery>() || out_ast->as<ASTSelectWithUnionQuery>())
+                        /// EXPLAIN ANALYZE executes the inner SELECT only when it is an executable
+                        /// analyze (inner SELECT, non-distributed), in which case it must be charged
+                        /// against the select-query quota just like a normal SELECT. Rejected forms such
+                        /// as EXPLAIN ANALYZE INSERT, EXPLAIN ANALYZE SYSTEM, or distributed EXPLAIN
+                        /// ANALYZE never run an inner SELECT and stay counted as generic queries only, so
+                        /// reuse the same predicate that gates execution instead of the AST kind alone.
+                        const auto * explain_interpreter = dynamic_cast<const InterpreterExplainQuery *>(interpreter.get());
+                        const bool is_executable_analyze = explain_interpreter && explain_interpreter->isExecutableAnalyze();
+                        const bool charge_as_select = query_plan
+                            || out_ast->as<ASTSelectQuery>()
+                            || out_ast->as<ASTSelectWithUnionQuery>()
+                            || is_executable_analyze;
+
+                        /// `usedForQuery` dispatches per quota: for `NORMALIZED_QUERY_HASH` keyed
+                        /// quotas it charges the per-hash intervals, otherwise the shared session
+                        /// intervals. So a single set of calls covers all key types.
+                        if (charge_as_select)
                             quota->usedForQuery(normalized_query_hash, QuotaType::QUERY_SELECTS, 1);
                         else if (out_ast->as<ASTInsertQuery>())
                             quota->usedForQuery(normalized_query_hash, QuotaType::QUERY_INSERTS, 1);
@@ -1830,10 +1876,7 @@ static BlockIO executeQueryImpl(
                 if (interpreter)
                 {
                     if (!interpreter->ignoreLimits())
-                    {
-                        limits.mode = LimitsMode::LIMITS_CURRENT;
-                        limits.size_limits = SizeLimits(settings[Setting::max_result_rows], settings[Setting::max_result_bytes], settings[Setting::result_overflow_mode]);
-                    }
+                        limits = StreamLocalLimits::forQueryResult(settings);
 
                     if (auto * create_interpreter = typeid_cast<InterpreterCreateQuery *>(interpreter.get()))
                     {
@@ -1959,6 +2002,7 @@ static BlockIO executeQueryImpl(
                 pipeline,
                 interpreter.get(),
                 internal,
+                log_as_internal,
                 query_database,
                 query_table,
                 async_insert);
@@ -1980,12 +2024,13 @@ static BlockIO executeQueryImpl(
                                     out_ast,
                                     query_result_cache_usage,
                                     internal,
+                                    log_as_internal,
                                     implicit_tcl_executor,
                                     // Need to be cached, since will be changed after complete()
                                     pulling_pipeline = pipeline.pulling(),
                                     query_span](const QueryPipelineFinalizedInfo & query_pipeline_finalized_info, std::chrono::system_clock::time_point finish_time) mutable
             {
-                logQueryFinishImpl(elem, context, out_ast, query_pipeline_finalized_info, pulling_pipeline, query_span, query_result_cache_usage, internal, finish_time);
+                logQueryFinishImpl(elem, context, out_ast, query_pipeline_finalized_info, pulling_pipeline, query_span, query_result_cache_usage, internal, log_as_internal, finish_time);
 
                 if (implicit_tcl_executor->transactionRunning())
                 {
@@ -1994,7 +2039,7 @@ static BlockIO executeQueryImpl(
             };
 
             auto exception_callback =
-                [start_watch, elem, context, out_ast, internal, my_quota(quota), normalized_query_hash, implicit_tcl_executor, query_span](bool log_error) mutable
+                [start_watch, elem, context, out_ast, internal, log_as_internal, my_quota(quota), normalized_query_hash, implicit_tcl_executor, query_span](bool log_error) mutable
             {
                 if (implicit_tcl_executor->transactionRunning())
                 {
@@ -2012,7 +2057,7 @@ static BlockIO executeQueryImpl(
                         my_quota->usedForQuery(normalized_query_hash, QuotaType::ERRORS, 1, /* check_exceeded = */ false);
                 }
 
-                logQueryException(elem, context, start_watch, out_ast, query_span, internal, log_error);
+                logQueryException(elem, context, start_watch, out_ast, query_span, internal, log_as_internal, log_error);
             };
 
             res.finalize_query_pipeline = std::move(finish_callback_finalize_pipeline);
@@ -2031,7 +2076,7 @@ static BlockIO executeQueryImpl(
             txn->onException();
         }
 
-        logExceptionBeforeStart(query_for_logging, normalized_query_hash, context, out_ast, query_span, start_watch.elapsedMilliseconds(), internal);
+        logExceptionBeforeStart(query_for_logging, normalized_query_hash, context, out_ast, query_span, start_watch.elapsedMilliseconds(), internal, log_as_internal);
 
         throw;
     }
@@ -2366,6 +2411,11 @@ std::pair<ASTPtr, BlockIO> executeQuery(
         {
             std::vector<int> v;
             (void)v[0];
+        });
+
+        fiu_do_on(FailPoints::trigger_sanitizer_error,
+        {
+            triggerSanitizerError();
         });
     }
 
