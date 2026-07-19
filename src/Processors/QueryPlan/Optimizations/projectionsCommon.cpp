@@ -378,7 +378,7 @@ bool analyzeProjectionCandidate(
     return true;
 }
 
-void filterPartsAndCollectProjectionCandidates(
+bool filterPartsAndCollectProjectionCandidates(
     ReadFromMergeTree & reading,
     const ProjectionDescription & projection,
     const MergeTreeDataSelectExecutor & reader,
@@ -421,7 +421,7 @@ void filterPartsAndCollectProjectionCandidates(
     }
 
     if (projection_parts.empty())
-        return;
+        return false;
 
     auto projection_marks_to_read = projection_parts.getMarksCountAllParts();
 
@@ -440,7 +440,7 @@ void filterPartsAndCollectProjectionCandidates(
 
     /// Projection has no filtering effect, skip it
     if (projection_result_ptr->selected_marks == projection_marks_to_read)
-        return;
+        return false;
 
     size_t max_projection_rows_to_use_projection_index = context->getSettingsRef()[Setting::max_projection_rows_to_use_projection_index];
     size_t min_table_rows_to_use_projection_index = context->getSettingsRef()[Setting::min_table_rows_to_use_projection_index];
@@ -493,26 +493,53 @@ void filterPartsAndCollectProjectionCandidates(
 
     if (in_use || filtered_parts > 0)
     {
-        auto & stats = parent_reading_select_result.projection_stats.emplace_back();
-        stats.name = projection.name;
+        std::string description;
         if (in_use)
-            stats.description = "Projection has been analyzed and will be applied during reading";
+            description = "Projection has been analyzed and will be applied during reading";
         else
-            stats.description = "Projection has been analyzed and is used for part-level filtering";
+            description = "Projection has been analyzed and is used for part-level filtering";
+
+        std::string condition;
+        MarkRanges::SearchAlgorithm search_algorithm = MarkRanges::SearchAlgorithm::Unknown;
         for (const auto & stat : projection_result_ptr->index_stats)
         {
             if (stat.type == ReadFromMergeTree::IndexType::PrimaryKey)
             {
-                stats.condition = stat.condition;
-                stats.search_algorithm = stat.search_algorithm;
+                condition = stat.condition;
+                search_algorithm = stat.search_algorithm;
             }
         }
+
+        auto & stats = parent_reading_select_result.projection_stats.emplace_back();
+        stats.name = projection.name;
+        stats.description = description;
+        stats.condition = condition;
+        stats.search_algorithm = search_algorithm;
         stats.selected_parts = projection_result_ptr->selected_parts;
         stats.selected_marks = projection_result_ptr->selected_marks;
         stats.selected_ranges = projection_result_ptr->selected_ranges;
         stats.selected_rows = projection_result_ptr->selected_rows;
         stats.filtered_parts = filtered_parts;
+
+        /// Also record as an IndexStat so EXPLAIN indexes = 1 surfaces projection filtering
+        /// (otherwise only PrimaryKey granules are shown and the plan looks like a full scan).
+        /// When the projection index is applied during reading, parent mark ranges are not rewritten
+        /// up front — use the projection's selected marks as the effective granule estimate.
+        /// For part-level-only filtering, parent selected_marks/parts are already updated.
+        parent_reading_select_result.index_stats.emplace_back(ReadFromMergeTree::IndexStat{
+            .type = ReadFromMergeTree::IndexType::Projection,
+            .name = projection.name,
+            .description = std::move(description),
+            .condition = std::move(condition),
+            .num_parts_after = in_use ? projection_result_ptr->selected_parts : parent_reading_select_result.selected_parts,
+            .num_granules_after = in_use ? projection_result_ptr->selected_marks : parent_reading_select_result.selected_marks,
+            .search_algorithm = search_algorithm,
+        });
+
+        return true;
     }
+
+    return false;
 }
 
 void fallbackToLocalProjectionReading(const QueryPlanStepPtr & projection_reading)

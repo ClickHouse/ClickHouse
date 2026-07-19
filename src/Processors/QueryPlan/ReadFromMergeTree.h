@@ -102,6 +102,9 @@ public:
         PrimaryKeyExpand,
         Statistics,
         NonIntersectingSplit,
+        /// Projection used for part-level and/or mark-level filtering (optimize_use_projection_filtering).
+        /// Surfaced in EXPLAIN indexes = 1 so pruned reads are not mistaken for full scans.
+        Projection,
     };
 
     struct DistributedIndexStat

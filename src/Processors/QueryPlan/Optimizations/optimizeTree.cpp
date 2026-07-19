@@ -384,7 +384,7 @@ void optimizeTreeSecondPass(
         if (optimization_settings.optimize_projection)
         {
             /// Projection optimization relies on PK optimization
-            if (auto applied_projection = optimizeUseNormalProjections(stack, nodes, optimization_settings))
+            if (auto applied_projection = optimizeUseNormalProjections(stack, nodes, optimization_settings, applied_projection_names))
             {
                 applied_projection_names.insert(*applied_projection);
 

@@ -80,7 +80,8 @@ bool analyzeProjectionCandidate(
 
 /// Performs part-level filtering using projection to skip irrelevant data parts.
 /// Also collects projections to build filters that will be applied during MergeTree reading for fine-grained row-level filtering.
-void filterPartsAndCollectProjectionCandidates(
+/// Returns true if the projection was used for row-level and/or part-level filtering.
+bool filterPartsAndCollectProjectionCandidates(
     ReadFromMergeTree & reading,
     const ProjectionDescription & projection,
     const MergeTreeDataSelectExecutor & reader,

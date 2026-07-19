@@ -283,7 +283,8 @@ static bool doesQueryFilterImplyProjectionWhere(
 
 /// Normal projection analysis result in case it can be applied.
 /// For now, it is empty.
-/// Normal projection can be used only if it contains all required source columns.
+/// Normal projection can fully replace the table read only if it contains all required source columns.
+/// Otherwise it may still be used for projection filtering (part/row pruning) when optimize_use_projection_filtering is on.
 /// It would not be hard to support pre-computed expressions and filtration.
 struct NormalProjectionCandidate : public ProjectionCandidate
 {
@@ -330,7 +331,8 @@ static std::optional<ActionsDAG> makeMaterializingDAG(const Block & proj_header,
 std::optional<String> optimizeUseNormalProjections(
     Stack & stack,
     QueryPlan::Nodes & nodes,
-    const QueryPlanOptimizationSettings & optimization_settings)
+    const QueryPlanOptimizationSettings & optimization_settings,
+    std::unordered_set<String> & applied_projection_names)
 {
     const auto & frame = stack.back();
 
@@ -543,15 +545,29 @@ std::optional<String> optimizeUseNormalProjections(
             if (query.filter_node && optimize_use_projection_filtering)
             {
                 MergeTreeDataSelectExecutor reader(reading->getMergeTreeData(), projection);
-                filterPartsAndCollectProjectionCandidates(
-                    *reading,
-                    *projection,
-                    reader,
-                    empty_mutations_snapshot,
-                    *parent_reading_select_result,
-                    projection_query_info,
-                    query.filter_node,
-                    context);
+                if (filterPartsAndCollectProjectionCandidates(
+                        *reading,
+                        *projection,
+                        reader,
+                        empty_mutations_snapshot,
+                        *parent_reading_select_result,
+                        projection_query_info,
+                        query.filter_node,
+                        context))
+                {
+                    /// Filtering does not rewrite the plan; still count the projection as used so that
+                    /// force_optimize_projection / force_optimize_projection_name recognize it.
+                    applied_projection_names.insert(projection->name);
+
+                    if (!query_info.is_internal && context->hasQueryContext())
+                    {
+                        context->getQueryContext()->addQueryAccessInfo(Context::QualifiedProjectionName
+                        {
+                            .storage_id = reading->getMergeTreeData().getStorageID(),
+                            .projection_name = projection->name,
+                        });
+                    }
+                }
             }
 
             continue;
