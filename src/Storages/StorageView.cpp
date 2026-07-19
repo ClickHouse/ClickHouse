@@ -331,6 +331,7 @@ std::unordered_map<String, String> extractColumnMapping(
 
     bool has_asterisk = false;
     bool has_explicit_column = false;
+    NameSet used_target_columns;
 
     for (const auto & expr : select.select()->children)
     {
@@ -375,6 +376,16 @@ std::unordered_map<String, String> extractColumnMapping(
             throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                 "Cannot INSERT into view {} because identifier '{}' in its SELECT list "
                 "does not refer to a column of the underlying table",
+                view_id.getFullTableName(), target_col);
+
+        /// Two view columns must not resolve to the same target column, as in
+        /// `SELECT a AS x, a AS y FROM t`: there is no clear write semantics for such a view,
+        /// and the nested insert would fail later with a confusing `DUPLICATE_COLUMN` error
+        /// about a query the user did not write.
+        if (!used_target_columns.emplace(target_col).second)
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "Cannot INSERT into view {} because multiple columns in its SELECT list "
+                "refer to the same column '{}' of the underlying table",
                 view_id.getFullTableName(), target_col);
 
         String view_col = identifier->tryGetAlias();
