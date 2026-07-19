@@ -716,6 +716,8 @@ std::unique_ptr<ReadBuffer> FormatFactory::wrapReadBufferIfNeeded(
             /// without a Content-Length header) is an expected situation here, not an error,
             /// and every constructed exception is counted in `system.errors`.
             std::optional<size_t> maybe_file_size = tryGetFileSizeFromReadBuffer(buf);
+            if (!maybe_file_size.has_value())
+                LOG_TRACE(getLogger("FormatFactory"), "Not using ParallelReadBuffer because the file size is unknown");
             parallel_read = maybe_file_size.has_value() && *maybe_file_size >= 2 * settings[Setting::max_download_buffer_size];
             if (parallel_read)
                 file_size = *maybe_file_size;
