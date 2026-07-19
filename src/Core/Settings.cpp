@@ -6293,7 +6293,7 @@ Generate named tuples in function `tuple()` when all names are unique and can be
 
 Two ways of naming tuple elements are affected differently by the analyzer:
 
-- Automatic naming from argument aliases, e.g. `tuple(1 AS a, 2 AS b)` producing `Tuple(a, b)`, is performed only by the new analyzer (`enable_analyzer = 1`). With the old analyzer (`enable_analyzer = 0`) the aliases are not rewritten before the query is sent to the shards in distributed queries, so the elements stay unnamed even when this setting is enabled.
+- Automatic naming from argument aliases, e.g. `tuple(1 AS a, 2 AS b)` producing `Tuple(a, b)`, is performed only by the analyzer (`enable_analyzer = 1`). With `enable_analyzer = 0` the aliases are not rewritten before the query is sent to the shards in distributed queries, so the elements stay unnamed even when this setting is enabled.
 - The explicit named-tuple syntax `tuple('a', 'b')(x, y)` carries the names in the function parameters and produces a named tuple in both analyzers.
 )", 0) \
     DECLARE(Bool, allow_named_tuple_conversion_with_extra_source_fields, true, R"(
