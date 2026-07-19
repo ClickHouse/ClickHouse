@@ -291,6 +291,8 @@ The function prefers implementation simplicity over full compliance with RFC 398
 
 Leading `./` and `../` segments of `relative` are collapsed against the directory of `base`,
 while dot segments in the middle of the path are kept as is.
+A `base` without a scheme is assumed to begin with a host, so in `clickhouse.com/docs`
+everything up to the first `/` is treated as the authority, not as a path segment.
 If `relative` is empty, `base` is returned. If `base` is empty, `relative` is returned.
 The function does not take HTML's `base` tag into account.
     )";
