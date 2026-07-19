@@ -69,3 +69,35 @@ DROP TABLE t_04092_typed_shadow;
 
 -- Same shadowing for a typed numeric path: the real lowercase value must win over the typed default.
 SELECT 'typed shadow int', JSONExtractIntCaseInsensitive('{"count": 5}'::JSON(Count Int64, max_dynamic_paths=0), 'COUNT');
+
+-- The JSON type does not store `null` values: a path holding JSON `null` is dropped at parse time
+-- and is indistinguishable from an absent key (the subcolumn returns NULL for both). So extracting
+-- such a key returns the default, identically for the case-sensitive and case-insensitive variants.
+SELECT 'json drops null', '{"Key": null}'::JSON;
+SELECT 'null raw cs', JSONExtractRaw('{"Key": null}'::JSON, 'Key');
+SELECT 'null raw ci', JSONExtractRawCaseInsensitive('{"Key": null}'::JSON, 'key');
+-- On String input the raw text is preserved, so `null` is returned as-is.
+SELECT 'null raw string input', JSONExtractRaw('{"Key": null}', 'Key');
+
+-- Same per row: a stored value, a JSON `null`, and a missing key. The `null` and missing rows
+-- must both return the default, matching the case-sensitive variant on the same data.
+DROP TABLE IF EXISTS t_04092_null;
+CREATE TABLE t_04092_null (id UInt32, j JSON) ENGINE = Memory;
+INSERT INTO t_04092_null VALUES
+    (1, '{"Key": "value"}'),
+    (2, '{"Key": null}'),
+    (3, '{}');
+SELECT 'null rows cs', id, JSONExtractRaw(j, 'Key'), JSONExtractString(j, 'Key') FROM t_04092_null ORDER BY id;
+SELECT 'null rows ci', id, JSONExtractRawCaseInsensitive(j, 'key'), JSONExtractStringCaseInsensitive(j, 'key') FROM t_04092_null ORDER BY id;
+DROP TABLE t_04092_null;
+
+-- Multiple casings across rows where one row holds a JSON `null`: the per-row resolver must
+-- treat the `null` row as absent and return the default, not pick up another row's value.
+DROP TABLE IF EXISTS t_04092_null_mixed;
+CREATE TABLE t_04092_null_mixed (id UInt32, j JSON) ENGINE = Memory;
+INSERT INTO t_04092_null_mixed VALUES
+    (1, '{"Name": "alice"}'),
+    (2, '{"name": null}'),
+    (3, '{"NAME": "bob"}');
+SELECT 'null mixed rows', id, JSONExtractRawCaseInsensitive(j, 'name'), JSONExtractStringCaseInsensitive(j, 'name') FROM t_04092_null_mixed ORDER BY id;
+DROP TABLE t_04092_null_mixed;

@@ -28,3 +28,16 @@ typed shadow raw	1	"alice"
 typed shadow raw	2	"bob"
 typed shadow raw	3	""
 typed shadow int	5
+json drops null	{}
+null raw cs	
+null raw ci	
+null raw string input	null
+null rows cs	1	"value"	value
+null rows cs	2		
+null rows cs	3		
+null rows ci	1	"value"	value
+null rows ci	2		
+null rows ci	3		
+null mixed rows	1	"alice"	alice
+null mixed rows	2		
+null mixed rows	3	"bob"	bob
