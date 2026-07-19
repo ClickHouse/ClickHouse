@@ -56,27 +56,12 @@ std::optional<JoinSemantics> getJoinSemanticsFromStep(IQueryPlanStep * step)
 /// Used to gate the deferral: if delayed blocks are possible the deferral would
 /// silently disable both `topKThroughJoin` and the second-pass through-join pass.
 ///
-/// For a physical `JoinStep` we read `hasDelayedBlocks()` directly - the robust property.
-///
-/// For a `JoinStepLogical` the physical join has not been built yet, so we classify each
-/// configured algorithm fail-closed: an algorithm is treated as may-delay unless it is one
-/// of the few that provably never produces delayed blocks. This is deliberately coarse
-/// (per-algorithm, not data-dependent) so it does not couple to any join-internal decision:
-///   - `GRACE_HASH` (`GraceHashJoin`) / `AUTO` (`JoinSwitcher`) always may delay, regardless
-///     of the spill settings.
-///   - `HASH` / `PARALLEL_HASH` / `PREFER_PARTIAL_MERGE` / `DEFAULT` may delay only when
-///     automatic spilling is effectively on, because the `SpillingHashJoin` wrapper is applied
-///     to exactly these branches in `chooseJoinAlgorithm` (`PlannerJoins.cpp`).
-///   - `DIRECT` / `PARTIAL_MERGE` / `FULL_SORTING_MERGE` are never wrapped, so they never delay.
-///   - any future / unknown algorithm falls through to the fail-closed `return true`.
-///
-/// "Spilling effectively on" is read from the *effective* threshold
-/// (`JoinSettings::getEffectiveMaxBytesBeforeExternalJoin()`), not the raw setting, to match the
-/// physical wrap: the wrap gates on `JoinAlgorithmParams::max_bytes_before_external_join`, set
-/// from that same effective value. The raw `max_bytes_ratio_before_external_join` (default `0.5`)
-/// resolves to `0` when there is no system memory hard limit, leaving a plain non-spilling
-/// `HashJoin`; reading the raw ratio would wrongly flag every hash join as may-delay on installs
-/// without a memory limit and force the slower `Sort + Limit` pushdown.
+/// For a physical `JoinStep` we read `hasDelayedBlocks()` directly. For
+/// `JoinStepLogical` the algorithm is picked later from `JoinSettings::join_algorithms`,
+/// so we conservatively assume delayed blocks are possible when the configured settings
+/// allow `JoinAlgorithm::GRACE_HASH` / `JoinAlgorithm::AUTO` (`JoinSwitcher`), or when
+/// automatic spilling is configured via `max_bytes_*_before_external_join` (which can
+/// wrap the chosen hash join in `SpillingHashJoin`).
 bool joinMayHaveDelayedBlocks(const IQueryPlanStep & step)
 {
     if (const auto * physical = typeid_cast<const JoinStep *>(&step))
@@ -86,71 +71,12 @@ bool joinMayHaveDelayedBlocks(const IQueryPlanStep & step)
     }
     if (const auto * logical = typeid_cast<const JoinStepLogical *>(&step))
     {
-        const bool spill_possible = logical->getJoinSettings().getEffectiveMaxBytesBeforeExternalJoin() > 0;
-
-        return std::ranges::any_of(logical->getJoinSettings().join_algorithms, [spill_possible](JoinAlgorithm a)
+        const auto & js = logical->getJoinSettings();
+        if (js.max_bytes_before_external_join > 0 || js.max_bytes_ratio_before_external_join > 0.0)
+            return true;
+        return std::ranges::any_of(js.join_algorithms, [](JoinAlgorithm a)
         {
-            switch (a)
-            {
-                case JoinAlgorithm::DIRECT:
-                case JoinAlgorithm::PARTIAL_MERGE:
-                case JoinAlgorithm::FULL_SORTING_MERGE:
-                    return false; /// never wrapped in a spilling/switching join
-                case JoinAlgorithm::HASH:
-                case JoinAlgorithm::PARALLEL_HASH:
-                case JoinAlgorithm::PREFER_PARTIAL_MERGE:
-                case JoinAlgorithm::DEFAULT:
-                    return spill_possible; /// wrapped in `SpillingHashJoin` only when spilling is on
-                case JoinAlgorithm::GRACE_HASH:
-                case JoinAlgorithm::AUTO:
-                    return true; /// `GraceHashJoin` / `JoinSwitcher` may always delay
-            }
-            return true; /// fail-closed for any future algorithm
-        });
-    }
-    /// Unknown step kind - be conservative.
-    return true;
-}
-
-/// Return `true` when the eventual physical join may reorder the left side, in which case
-/// `optimizeReadInOrder`'s second-pass traversal will not propagate read-in-order through the
-/// join (`findReadingStep` requires `IJoin::preservesLeftBlockOrder()`). Used alongside
-/// `joinMayHaveDelayedBlocks` to gate the deferral: deferring when the join reorders the left
-/// side would silently disable both `topKThroughJoin` and the second-pass through-join pass,
-/// leaving a full join plus a full sort. Flagging it instead runs the always-sound pushdown in
-/// this pass, which is never worse (the pushdown soundness does not depend on the join algorithm,
-/// and the injected inner `Sort` is itself satisfied by a plain read-in-order scan directly above
-/// the storage read when applicable).
-///
-/// For a physical `JoinStep` we read the robust `preservesLeftBlockOrder()` property directly.
-///
-/// For a `JoinStepLogical` the physical join has not been built yet, so this property does not
-/// exist to read. We do NOT re-derive it (the algorithm, slot count and hash-map type are decided
-/// later by `chooseJoinAlgorithm` / `HashJoin::chooseMethod`, and reproducing that here couples the
-/// optimizer to join internals). Instead we treat as order-preserving only the algorithms that
-/// unconditionally stream the left side through once (`HASH` / `DIRECT`, matching the joins that
-/// opt in to `preservesLeftBlockOrder()`), and flag every other configured algorithm. In
-/// particular `PARALLEL_HASH` (`ConcurrentHashJoin`) preserves the order only for some
-/// slot-count / map-type combinations we cannot know at this stage, so it is flagged
-/// conservatively: the pushdown runs rather than a deferral that guesses the map type.
-bool joinMayNotPreserveLeftBlockOrder(const IQueryPlanStep & step)
-{
-    if (const auto * physical = typeid_cast<const JoinStep *>(&step))
-    {
-        const auto & join_ptr = physical->getJoin();
-        return !join_ptr || !join_ptr->preservesLeftBlockOrder();
-    }
-    if (const auto * logical = typeid_cast<const JoinStepLogical *>(&step))
-    {
-        /// Order-preserving only if EVERY configured algorithm unconditionally streams the left
-        /// side through once. `HASH` (`HashJoin`) and `DIRECT` (`DirectKeyValueJoin`) do; these are
-        /// exactly the hash-family joins that override `preservesLeftBlockOrder()` to `true`. Any
-        /// other algorithm (`PARTIAL_MERGE` / `PREFER_PARTIAL_MERGE` / `FULL_SORTING_MERGE` /
-        /// `AUTO` / `PARALLEL_HASH` / `GRACE_HASH`) may reorder or cannot be proven here, so flag it.
-        const auto & algorithms = logical->getJoinSettings().join_algorithms;
-        return std::ranges::any_of(algorithms, [](JoinAlgorithm a)
-        {
-            return a != JoinAlgorithm::HASH && a != JoinAlgorithm::DIRECT;
+            return a == JoinAlgorithm::GRACE_HASH || a == JoinAlgorithm::AUTO;
         });
     }
     /// Unknown step kind - be conservative.
@@ -400,23 +326,13 @@ size_t tryTopKThroughJoin(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
     /// optimizations whenever the planner picks one - which is the steady state today,
     /// because `max_bytes_ratio_before_external_join` defaults to `0.5` and wraps every
     /// hash join in `SpillingHashJoin`.
-    ///
-    /// Likewise, the join must preserve the left block order. `findReadingStep` also gates the
-    /// second pass on the physical `join->preservesLeftBlockOrder()`. At this logical stage we
-    /// only defer for the algorithms that unconditionally preserve it (`hash` / `direct`); every
-    /// other configured algorithm (`partial_merge` / `prefer_partial_merge` / `full_sorting_merge`
-    /// / `auto` / `parallel_hash` / `grace_hash`) is treated as possibly reordering, so the sound
-    /// `Sort + Limit` pushdown below runs in this pass instead of deferring to a second pass that
-    /// might then bail on `!preservesLeftBlockOrder()` and disable both (see
-    /// `joinMayNotPreserveLeftBlockOrder`).
     const bool second_pass_can_apply
         = settings.read_in_order
         && settings.read_in_order_through_join
         && settings.join_swap_table.has_value() && !settings.join_swap_table.value()
         && join_kind == JoinKind::Left
         && (join_strictness == JoinStrictness::All || join_strictness == JoinStrictness::Any)
-        && !joinMayHaveDelayedBlocks(*join_node->step)
-        && !joinMayNotPreserveLeftBlockOrder(*join_node->step);
+        && !joinMayHaveDelayedBlocks(*join_node->step);
     if (second_pass_can_apply)
     {
         if (const auto * reading = findMergeTreeRead(preserved_input_node))

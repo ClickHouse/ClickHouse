@@ -7,12 +7,6 @@
 -- is false) and silently disables both optimizations. The gate makes the
 -- deferral commit only when the join side is guaranteed stable.
 
--- `join_algorithm` is pinned to `hash` in every query below: this test exercises the
--- swap-side deferral gate, not join order preservation. The default `direct,parallel_hash,hash`
--- list makes `topKThroughJoin` treat the join as possibly non-order-preserving (map type and
--- RHS size are unknown at the logical stage), which would fire the pushdown regardless of the
--- swap setting under test. `hash` always preserves order.
-
 SET enable_analyzer = 1;
 SET query_plan_top_k_through_join = 1;
 
@@ -34,7 +28,7 @@ SELECT 'swap_false' AS label, countIf(explain LIKE '%Sorting%') AS sort_count, c
 FROM ( EXPLAIN actions = 0
     SELECT l.k, r.value FROM t_l AS l LEFT JOIN t_r AS r ON r.k = l.k
     ORDER BY l.k DESC LIMIT 10
-    SETTINGS join_algorithm = 'hash', query_plan_join_swap_table = false,
+    SETTINGS query_plan_join_swap_table = false,
              optimize_read_in_order = 1,
              query_plan_read_in_order = 1, query_plan_read_in_order_through_join = 1,
              query_plan_max_limit_for_top_k_optimization = 0,
@@ -53,7 +47,7 @@ SELECT 'swap_true' AS label, countIf(explain LIKE '%Sorting%') AS sort_count, co
 FROM ( EXPLAIN actions = 0
     SELECT l.k, r.value FROM t_l AS l LEFT JOIN t_r AS r ON r.k = l.k
     ORDER BY l.k DESC LIMIT 10
-    SETTINGS join_algorithm = 'hash', query_plan_join_swap_table = true,
+    SETTINGS query_plan_join_swap_table = true,
              optimize_read_in_order = 1,
              query_plan_read_in_order = 1, query_plan_read_in_order_through_join = 1,
              query_plan_max_limit_for_top_k_optimization = 0,
@@ -69,13 +63,13 @@ FROM ( EXPLAIN actions = 0
 SELECT 'result_swap_false' AS label, count(*), max(k), min(k) FROM (
     SELECT l.k AS k, r.value FROM t_l AS l LEFT JOIN t_r AS r ON r.k = l.k
     ORDER BY l.k DESC LIMIT 10
-    SETTINGS join_algorithm = 'hash', query_plan_join_swap_table = false, enable_parallel_replicas = 0
+    SETTINGS query_plan_join_swap_table = false, enable_parallel_replicas = 0
 );
 
 SELECT 'result_swap_true' AS label, count(*), max(k), min(k) FROM (
     SELECT l.k AS k, r.value FROM t_l AS l LEFT JOIN t_r AS r ON r.k = l.k
     ORDER BY l.k DESC LIMIT 10
-    SETTINGS join_algorithm = 'hash', query_plan_join_swap_table = true, enable_parallel_replicas = 0
+    SETTINGS query_plan_join_swap_table = true, enable_parallel_replicas = 0
 );
 
 DROP TABLE t_l;

@@ -9,13 +9,6 @@
 -- reject the read, and both optimizations would be lost. This test pins the
 -- relevant settings on and checks that an inner `Sort + Limit` is injected.
 
--- `join_algorithm` is pinned to `hash` in every query below: this test exercises the
--- FINAL + descending deferral gate, not join order preservation. The default
--- `direct,parallel_hash,hash` list makes `topKThroughJoin` treat the join as possibly
--- non-order-preserving (map type and RHS size are unknown at the logical stage), which would
--- fire the pushdown regardless of the FINAL/direction gate under test. `hash` always
--- preserves order.
-
 SET enable_analyzer = 1;
 SET query_plan_top_k_through_join = 1;
 
@@ -35,7 +28,7 @@ SELECT 'final_desc' AS label, countIf(explain LIKE '%Sorting%') AS sort_count, c
 FROM ( EXPLAIN actions = 0
     SELECT l.k, r.value FROM t_l_final AS l FINAL LEFT JOIN t_r_final AS r ON r.k = l.k
     ORDER BY l.k DESC LIMIT 10
-    SETTINGS join_algorithm = 'hash', optimize_read_in_order = 1,
+    SETTINGS optimize_read_in_order = 1,
              query_plan_read_in_order = 1, query_plan_read_in_order_through_join = 1,
              query_plan_join_swap_table = false, query_plan_max_limit_for_top_k_optimization = 0,
              enable_join_runtime_filters = 0, enable_lazy_columns_replication = 0,
@@ -51,7 +44,7 @@ SELECT 'final_asc' AS label, countIf(explain LIKE '%Sorting%') AS sort_count, co
 FROM ( EXPLAIN actions = 0
     SELECT l.k, r.value FROM t_l_final AS l FINAL LEFT JOIN t_r_final AS r ON r.k = l.k
     ORDER BY l.k ASC LIMIT 10
-    SETTINGS join_algorithm = 'hash', optimize_read_in_order = 1,
+    SETTINGS optimize_read_in_order = 1,
              query_plan_read_in_order = 1, query_plan_read_in_order_through_join = 1,
              query_plan_join_swap_table = false, query_plan_max_limit_for_top_k_optimization = 0,
              enable_join_runtime_filters = 0, enable_lazy_columns_replication = 0,
@@ -65,14 +58,14 @@ FROM ( EXPLAIN actions = 0
 SELECT 'result_final_desc' AS label, count(*), max(k), min(k) FROM (
     SELECT l.k AS k, r.value FROM t_l_final AS l FINAL LEFT JOIN t_r_final AS r ON r.k = l.k
     ORDER BY l.k DESC LIMIT 10
-    SETTINGS join_algorithm = 'hash', query_plan_read_in_order = 1, query_plan_read_in_order_through_join = 1,
+    SETTINGS query_plan_read_in_order = 1, query_plan_read_in_order_through_join = 1,
              enable_parallel_replicas = 0
 );
 
 SELECT 'result_final_asc' AS label, count(*), max(k), min(k) FROM (
     SELECT l.k AS k, r.value FROM t_l_final AS l FINAL LEFT JOIN t_r_final AS r ON r.k = l.k
     ORDER BY l.k ASC LIMIT 10
-    SETTINGS join_algorithm = 'hash', query_plan_read_in_order = 1, query_plan_read_in_order_through_join = 1,
+    SETTINGS query_plan_read_in_order = 1, query_plan_read_in_order_through_join = 1,
              enable_parallel_replicas = 0
 );
 

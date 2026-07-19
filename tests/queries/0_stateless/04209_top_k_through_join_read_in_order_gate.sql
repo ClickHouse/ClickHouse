@@ -7,13 +7,6 @@
 -- disabled it, `topKThroughJoin` must still fire so the query gets at least
 -- one of the two optimizations, instead of falling through both gates.
 
--- `join_algorithm` is pinned to `hash` in every query below: this test exercises the
--- deferral gate (read-in-order / swap / spilling), not join order preservation. The default
--- `direct,parallel_hash,hash` list makes `topKThroughJoin` treat the join as possibly
--- non-order-preserving (the map type and RHS size are unknown at the logical stage), which
--- would fire the pushdown regardless of the gate under test. `hash` always preserves order,
--- so the deferral decision is driven solely by the setting each query varies.
-
 SET enable_analyzer = 1;
 SET query_plan_top_k_through_join = 1;
 
@@ -44,7 +37,7 @@ SELECT 'both_on' AS label, countIf(explain LIKE '%Sorting%') AS sort_count, coun
 FROM ( EXPLAIN actions = 0
     SELECT l.k, r.value FROM t_l AS l LEFT JOIN t_r AS r ON r.k = l.k
     ORDER BY l.k DESC LIMIT 10
-    SETTINGS join_algorithm = 'hash', optimize_read_in_order = 1,
+    SETTINGS optimize_read_in_order = 1,
              query_plan_read_in_order = 1, query_plan_read_in_order_through_join = 1,
              query_plan_join_swap_table = false, query_plan_max_limit_for_top_k_optimization = 0,
              enable_join_runtime_filters = 0, enable_lazy_columns_replication = 0,
@@ -60,7 +53,7 @@ SELECT 'through_join_off' AS label, countIf(explain LIKE '%Sorting%') AS sort_co
 FROM ( EXPLAIN actions = 0
     SELECT l.k, r.value FROM t_l AS l LEFT JOIN t_r AS r ON r.k = l.k
     ORDER BY l.k DESC LIMIT 10
-    SETTINGS join_algorithm = 'hash', optimize_read_in_order = 1,
+    SETTINGS optimize_read_in_order = 1,
              query_plan_read_in_order = 1, query_plan_read_in_order_through_join = 0,
              query_plan_join_swap_table = false, query_plan_max_limit_for_top_k_optimization = 0,
              enable_join_runtime_filters = 0, enable_lazy_columns_replication = 0,
@@ -79,7 +72,7 @@ SELECT 'spilling_on' AS label, countIf(explain LIKE '%Sorting%') AS sort_count, 
 FROM ( EXPLAIN actions = 0
     SELECT l.k, r.value FROM t_l AS l LEFT JOIN t_r AS r ON r.k = l.k
     ORDER BY l.k DESC LIMIT 10
-    SETTINGS join_algorithm = 'hash', optimize_read_in_order = 1,
+    SETTINGS optimize_read_in_order = 1,
              query_plan_read_in_order = 1, query_plan_read_in_order_through_join = 1,
              query_plan_join_swap_table = false, query_plan_max_limit_for_top_k_optimization = 0,
              enable_join_runtime_filters = 0, enable_lazy_columns_replication = 0,
@@ -99,14 +92,14 @@ FROM ( EXPLAIN actions = 0
 SELECT 'result_both_on' AS label, count(*), max(k), min(k) FROM (
     SELECT l.k AS k, r.value FROM t_l AS l LEFT JOIN t_r AS r ON r.k = l.k
     ORDER BY l.k DESC LIMIT 10
-    SETTINGS join_algorithm = 'hash', query_plan_read_in_order = 1, query_plan_read_in_order_through_join = 1,
+    SETTINGS query_plan_read_in_order = 1, query_plan_read_in_order_through_join = 1,
              enable_parallel_replicas = 0
 );
 
 SELECT 'result_through_join_off' AS label, count(*), max(k), min(k) FROM (
     SELECT l.k AS k, r.value FROM t_l AS l LEFT JOIN t_r AS r ON r.k = l.k
     ORDER BY l.k DESC LIMIT 10
-    SETTINGS join_algorithm = 'hash', query_plan_read_in_order = 1, query_plan_read_in_order_through_join = 0,
+    SETTINGS query_plan_read_in_order = 1, query_plan_read_in_order_through_join = 0,
              enable_parallel_replicas = 0
 );
 
