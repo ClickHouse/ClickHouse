@@ -541,9 +541,12 @@ def test_slow_query_longer_than_lock_ttl_is_cached(started_cluster):
     r = get_redis_client()
     flush_redis(r)
 
+    # sleep(6) exceeds the default 3s cap of `function_sleep_max_microseconds_per_block`,
+    # so the limit must be raised explicitly or the query fails with TOO_SLOW.
     node1.query(
         "SELECT sleep(6), 7777"
-        " SETTINGS use_query_cache = true, query_cache_min_query_duration = 0",
+        " SETTINGS use_query_cache = true, query_cache_min_query_duration = 0,"
+        " function_sleep_max_microseconds_per_block = 10000000",
         query_id="slow_ttl_write",
         timeout=30,
     )
@@ -557,7 +560,8 @@ def test_slow_query_longer_than_lock_ttl_is_cached(started_cluster):
     # A second run must read it from the cache instead of executing the 6s query again.
     node1.query(
         "SELECT sleep(6), 7777"
-        " SETTINGS use_query_cache = true, query_cache_min_query_duration = 0",
+        " SETTINGS use_query_cache = true, query_cache_min_query_duration = 0,"
+        " function_sleep_max_microseconds_per_block = 10000000",
         query_id="slow_ttl_read",
         timeout=30,
     )
