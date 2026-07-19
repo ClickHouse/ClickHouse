@@ -151,9 +151,9 @@ public:
 /// `current_setting(name [, missing_ok])` - PostgreSQL compatibility function.
 /// Returns the textual value of a run-time configuration parameter (GUC). Only a small set of the
 /// read-only parameters that clients probe during introspection is emulated. For an unknown
-/// parameter the function throws, unless `missing_ok` is `true`, in which case it returns an empty
-/// string (PostgreSQL returns NULL, but an empty string is enough for the introspection queries and
-/// keeps the return type non-nullable).
+/// parameter the function throws, unless `missing_ok` is `true`, in which case it returns `NULL`
+/// (matching PostgreSQL, which lets a client distinguish an absent parameter from one whose value is
+/// the empty string via `IS NULL` / `COALESCE`). The return type is therefore `Nullable(String)`.
 class FunctionCurrentSetting final : public IFunction
 {
 public:
@@ -178,7 +178,7 @@ public:
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                 "First argument of function {} must be a constant string", getName());
 
-        return std::make_shared<DataTypeString>();
+        return std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>());
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
@@ -202,12 +202,20 @@ public:
 
         const String setting_name = Poco::toLower(name_column->getValue<String>());
 
-        String value;
-        if (!lookup(setting_name, value) && !missing_ok)
-            throw Exception(
-                ErrorCodes::UNKNOWN_SETTING, "Unrecognized configuration parameter \"{}\"", name_column->getValue<String>());
+        auto result_type = std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>());
 
-        return DataTypeString().createColumnConst(input_rows_count, value);
+        String value;
+        if (!lookup(setting_name, value))
+        {
+            if (!missing_ok)
+                throw Exception(
+                    ErrorCodes::UNKNOWN_SETTING, "Unrecognized configuration parameter \"{}\"", name_column->getValue<String>());
+
+            /// `missing_ok` is `true`: an absent parameter is reported as `NULL`, not an empty string.
+            return result_type->createColumnConst(input_rows_count, Field());
+        }
+
+        return result_type->createColumnConst(input_rows_count, Field(value));
     }
 
 private:
@@ -253,8 +261,8 @@ REGISTER_FUNCTION(PostgresCatalog)
                        "Only a small set of read-only parameters used for client introspection is emulated.",
         .syntax = "current_setting(name [, missing_ok])",
         .arguments
-        = {{"name", "The configuration parameter name.", {"String"}}, {"missing_ok", "Return an empty string instead of throwing for an unknown parameter.", {"UInt8"}}},
-        .returned_value = {"The value of the configuration parameter.", {"String"}},
+        = {{"name", "The configuration parameter name.", {"String"}}, {"missing_ok", "Return `NULL` instead of throwing for an unknown parameter.", {"UInt8"}}},
+        .returned_value = {"The value of the configuration parameter, or `NULL` for an unknown parameter when `missing_ok` is true.", {"Nullable(String)"}},
         .examples = {{"Example", "SELECT current_setting('server_version_num')", "120000"}},
         .introduced_in = {26, 8},
         .category = FunctionDocumentation::Category::Other});
