@@ -35,6 +35,7 @@ run_with_both_settings()
     for enabled in 1 0; do
         ${CLICKHOUSE_CLIENT} \
             --query_plan_optimize_lazy_materialization=1 \
+            --query_plan_max_limit_for_lazy_materialization=0 \
             --query_plan_optimize_lazy_materialization_for_object_storage="$enabled" \
             --query "$query"
     done
@@ -61,15 +62,18 @@ run_with_both_settings "SELECT _file, _row_number, k, s FROM ${TABLE_FN} ORDER B
 echo '-- the lazy read step is in the plan only when the optimization is enabled'
 ${CLICKHOUSE_CLIENT} \
     --query_plan_optimize_lazy_materialization=1 \
+    --query_plan_max_limit_for_lazy_materialization=0 \
     --query_plan_optimize_lazy_materialization_for_object_storage=1 \
     --query "EXPLAIN SELECT s FROM ${TABLE_FN} ORDER BY k LIMIT 3" | grep -c 'LazilyReadFromObjectStorage'
 ${CLICKHOUSE_CLIENT} \
     --query_plan_optimize_lazy_materialization=1 \
+    --query_plan_max_limit_for_lazy_materialization=0 \
     --query_plan_optimize_lazy_materialization_for_object_storage=0 \
     --query "EXPLAIN SELECT s FROM ${TABLE_FN} ORDER BY k LIMIT 3" | grep -c 'LazilyReadFromObjectStorage' || true
 
 echo '-- lazily read columns are shown in EXPLAIN'
 ${CLICKHOUSE_CLIENT} \
     --query_plan_optimize_lazy_materialization=1 \
+    --query_plan_max_limit_for_lazy_materialization=0 \
     --query_plan_optimize_lazy_materialization_for_object_storage=1 \
     --query "EXPLAIN actions = 1 SELECT k, s, arr FROM ${TABLE_FN} ORDER BY k LIMIT 3" | grep -o 'Lazily read columns: .*' | sort
