@@ -121,28 +121,24 @@ def started_cluster() -> typing.Generator[ClickHouseCluster, None, None]:
             f"CREATE NAMED COLLECTION ai_embed AS "
             f"provider = 'openai', "
             f"endpoint = 'http://localhost:{MOCK_PORT}/v1/embeddings', "
-            f"model = 'test-embed-model', "
             f"api_key = 'test-key'"
         )
         instance.query(
             f"CREATE NAMED COLLECTION ai_embed_error AS "
             f"provider = 'openai', "
             f"endpoint = 'http://localhost:{MOCK_PORT}/v1/embeddings_error', "
-            f"model = 'test-embed-model', "
             f"api_key = 'test-key'"
         )
         instance.query(
             f"CREATE NAMED COLLECTION ai_embed_dup_index AS "
             f"provider = 'openai', "
             f"endpoint = 'http://localhost:{MOCK_PORT}/v1/embeddings_dup_index', "
-            f"model = 'test-embed-model', "
             f"api_key = 'test-key'"
         )
         instance.query(
             f"CREATE NAMED COLLECTION ai_embed_wrong_count AS "
             f"provider = 'openai', "
             f"endpoint = 'http://localhost:{MOCK_PORT}/v1/embeddings_wrong_count', "
-            f"model = 'test-embed-model', "
             f"api_key = 'test-key'"
         )
         # Endpoints that drop the connection for the first N requests (armed via /set-flaky),
@@ -158,7 +154,6 @@ def started_cluster() -> typing.Generator[ClickHouseCluster, None, None]:
             f"CREATE NAMED COLLECTION ai_embed_flaky AS "
             f"provider = 'openai', "
             f"endpoint = 'http://localhost:{MOCK_PORT}/v1/embeddings_flaky', "
-            f"model = 'test-embed-model', "
             f"api_key = 'test-key'"
         )
 
@@ -282,6 +277,76 @@ def test_generate_with_api_key_sends_auth_header(started_cluster):
     )
     assert result.strip() == "with key"
     assert last_request()["headers"].get("authorization") == "Bearer test-key"
+
+
+def test_generate_model_override_with_default_credentials(started_cluster):
+    """`map('model', ...)` overrides the collection's model on the actual request, even when the
+    collection itself is selected via `ai_function_text_default_credentials` rather than the map."""
+    instance.query(
+        "SELECT aiGenerate('hi', map('model', 'override-model'))",
+        settings={**AI_SETTINGS, "ai_function_text_default_credentials": "ai_mock"},
+    )
+    assert json.loads(last_request()["body"])["model"] == "override-model"
+
+
+def test_embed_model_override_with_default_credentials(started_cluster):
+    """Same for aiEmbed: the required positional `model` argument sets the embedding model on the
+    request, with the collection selected via `ai_function_embedding_default_credentials`."""
+    instance.query(
+        "SELECT aiEmbed('hi', 'override-embed-model')",
+        settings={**AI_SETTINGS, "ai_function_embedding_default_credentials": "ai_embed"},
+    )
+    assert json.loads(last_request()["body"])["model"] == "override-embed-model"
+
+
+def test_generate_empty_model_override_with_default_credentials(started_cluster):
+    """An explicitly empty `model` in the params map overrides the collection's model: the resolver
+    honors presence, not content, so `map('model', '')` sends an empty model (letting an endpoint
+    pick one), even though the collection selected via the default setting defines `test-model`."""
+    instance.query(
+        "SELECT aiGenerate('hi', map('model', ''))",
+        settings={**AI_SETTINGS, "ai_function_text_default_credentials": "ai_mock"},
+    )
+    assert json.loads(last_request()["body"])["model"] == ""
+
+
+# Setting every credential/config key in the params map at once. `ai_mock` carries an api_key,
+# `ai_no_key` does not, so the auth header proves which collection was actually contacted.
+_ALL_PARAMS_QUERY = (
+    "SELECT aiGenerate('hi', map("
+    "'credentials', 'ai_mock', 'model', 'map-model', 'max_tokens', '7', "
+    "'temperature', '0.9', 'system_prompt', 'be terse'))"
+)
+
+
+def _assert_all_params_applied():
+    req = last_request()
+    body = json.loads(req["body"])
+    # `credentials` picked `ai_mock` (keyed) — proves the map won over any default setting.
+    assert req["headers"].get("authorization") == "Bearer test-key"
+    assert body["model"] == "map-model"
+    assert body["max_tokens"] == 7
+    assert abs(body["temperature"] - 0.9) < 1e-4
+    assert body["messages"][0]["role"] == "system"
+    assert body["messages"][0]["content"] == "be terse"
+
+
+def test_generate_all_map_params_override_setting(started_cluster):
+    """Every param passed in the map overrides a default-credentials setting that points at a
+    different collection: `credentials` (proven via the auth header) plus `model` / `max_tokens` /
+    `temperature` / `system_prompt` all take effect."""
+    instance.query(
+        _ALL_PARAMS_QUERY,
+        settings={**AI_SETTINGS, "ai_function_text_default_credentials": "ai_no_key"},
+    )
+    _assert_all_params_applied()
+
+
+def test_generate_all_map_params_without_setting(started_cluster):
+    """The same map, with no default-credentials setting at all: the map supplies everything,
+    including `credentials`, and all keys take effect."""
+    instance.query(_ALL_PARAMS_QUERY, settings=AI_SETTINGS)
+    _assert_all_params_applied()
 
 
 # ---------------------------------------------------------------------------
@@ -492,7 +557,7 @@ def parse_embedding(s):
 def test_embed_basic(started_cluster):
     """Single-row aiEmbed returns an `Array(Float32)` of the model's native size."""
     result = instance.query(
-        "SELECT aiEmbed('hello', map('credentials', 'ai_embed'))",
+        "SELECT aiEmbed('hello', 'test-embed-model', map('credentials', 'ai_embed'))",
         settings=AI_SETTINGS,
     )
     vec = parse_embedding(result)
@@ -500,12 +565,24 @@ def test_embed_basic(started_cluster):
     assert any(v != 0.0 for v in vec)
 
 
+def test_embed_rejects_model_in_named_collection(started_cluster):
+    """aiEmbed takes `model` as a positional argument and never reads it from the named collection.
+    A collection that defines `model` (e.g. the text collection `ai_mock`) is rejected rather than
+    silently ignored."""
+    error = instance.query_and_get_error(
+        "SELECT aiEmbed('hello', 'test-embed-model', map('credentials', 'ai_mock'))",
+        settings=AI_SETTINGS,
+    )
+    assert "BAD_ARGUMENTS" in error
+    assert "defines 'model'" in error
+
+
 def test_embed_uses_embedding_default_credentials(started_cluster):
     """End-to-end default-credentials path for embeddings: with no `credentials` in the call, a real
     (non-empty) request must actually use `ai_function_embedding_default_credentials`. Confirms the
     embedding default is applied on the request path, not only for the zero-row fast path."""
     result = instance.query(
-        "SELECT aiEmbed('hello')",
+        "SELECT aiEmbed('hello', 'test-embed-model')",
         settings={**AI_SETTINGS, "ai_function_embedding_default_credentials": "ai_embed"},
     )
     vec = parse_embedding(result)
@@ -518,7 +595,7 @@ def test_embed_multiple_rows(started_cluster):
     instance.query("TRUNCATE TABLE test_input")
     instance.query("INSERT INTO test_input VALUES ('alpha'), ('beta'), ('gamma')")
     result = instance.query(
-        "SELECT aiEmbed(x, map('credentials', 'ai_embed')) FROM test_input ORDER BY x",
+        "SELECT aiEmbed(x, 'test-embed-model', map('credentials', 'ai_embed')) FROM test_input ORDER BY x",
         settings=AI_SETTINGS,
     )
     rows = [parse_embedding(line) for line in result.strip().split("\n")]
@@ -531,7 +608,7 @@ def test_embed_multiple_rows(started_cluster):
 def test_embed_with_dimensions(started_cluster):
     """The `dimensions` argument is forwarded to the provider and honored in the response."""
     result = instance.query(
-        "SELECT aiEmbed('hello world', map('credentials', 'ai_embed', 'dimensions', '16'))",
+        "SELECT aiEmbed('hello world', 'test-embed-model', map('credentials', 'ai_embed', 'dimensions', '16'))",
         settings=AI_SETTINGS,
     )
     vec = parse_embedding(result)
@@ -546,7 +623,7 @@ def test_embed_null_and_empty_input(started_cluster):
     )
     qid = unique_query_id("embed_null_empty")
     result = instance.query(
-        "SELECT aiEmbed(x, map('credentials', 'ai_embed')) FROM test_input_nullable ORDER BY x NULLS FIRST",
+        "SELECT aiEmbed(x, 'test-embed-model', map('credentials', 'ai_embed')) FROM test_input_nullable ORDER BY x NULLS FIRST",
         settings=AI_SETTINGS,
         query_id=qid,
     )
@@ -572,7 +649,7 @@ def test_embed_profile_events_token_accounting(started_cluster):
     instance.query("INSERT INTO test_input VALUES ('abc'), ('de'), ('fghi')")
     qid = unique_query_id("embed_tokens")
     instance.query(
-        "SELECT aiEmbed(x, map('credentials', 'ai_embed')) FROM test_input",
+        "SELECT aiEmbed(x, 'test-embed-model', map('credentials', 'ai_embed')) FROM test_input",
         settings=AI_SETTINGS,
         query_id=qid,
     )
@@ -592,7 +669,7 @@ def test_embed_batching(started_cluster):
     )
     qid = unique_query_id("embed_batch")
     instance.query(
-        "SELECT aiEmbed(x, map('credentials', 'ai_embed')) FROM test_input",
+        "SELECT aiEmbed(x, 'test-embed-model', map('credentials', 'ai_embed')) FROM test_input",
         settings={**AI_SETTINGS, "ai_function_embedding_max_batch_size": 2},
         query_id=qid,
     )
@@ -606,7 +683,7 @@ def test_embed_batching(started_cluster):
 def test_embed_error_throw(started_cluster):
     """By default, provider errors propagate as `RECEIVED_ERROR_FROM_REMOTE_IO_SERVER`."""
     error = instance.query_and_get_error(
-        "SELECT aiEmbed('hello', map('credentials', 'ai_embed_error'))",
+        "SELECT aiEmbed('hello', 'test-embed-model', map('credentials', 'ai_embed_error'))",
         settings=AI_SETTINGS,
     )
     assert "RECEIVED_ERROR_FROM_REMOTE_IO_SERVER" in error
@@ -617,7 +694,7 @@ def test_embed_error_graceful(started_cluster):
     instance.query("TRUNCATE TABLE test_input")
     instance.query("INSERT INTO test_input VALUES ('a'), ('b')")
     result = instance.query(
-        "SELECT aiEmbed(x, map('credentials', 'ai_embed_error')) FROM test_input",
+        "SELECT aiEmbed(x, 'test-embed-model', map('credentials', 'ai_embed_error')) FROM test_input",
         settings={
             **AI_SETTINGS,
             "ai_function_throw_on_error": 0,
@@ -631,7 +708,7 @@ def test_embed_error_graceful(started_cluster):
 def test_embed_duplicate_index_rejected(started_cluster):
     """`OpenAIProvider::embed` rejects responses with duplicate `index` values."""
     error = instance.query_and_get_error(
-        "SELECT aiEmbed(x, map('credentials', 'ai_embed_dup_index')) FROM (SELECT arrayJoin(['a', 'b']) AS x)",
+        "SELECT aiEmbed(x, 'test-embed-model', map('credentials', 'ai_embed_dup_index')) FROM (SELECT arrayJoin(['a', 'b']) AS x)",
         settings={**AI_SETTINGS, "ai_function_max_retries": 0},
     )
     assert "MALFORMED_AI_PROVIDER_RESPONSE" in error
@@ -641,7 +718,7 @@ def test_embed_duplicate_index_rejected(started_cluster):
 def test_embed_wrong_count_rejected(started_cluster):
     """`OpenAIProvider::embed` rejects responses whose `data` size != number of inputs."""
     error = instance.query_and_get_error(
-        "SELECT aiEmbed(x, map('credentials', 'ai_embed_wrong_count')) FROM (SELECT arrayJoin(['a', 'b']) AS x)",
+        "SELECT aiEmbed(x, 'test-embed-model', map('credentials', 'ai_embed_wrong_count')) FROM (SELECT arrayJoin(['a', 'b']) AS x)",
         settings={**AI_SETTINGS, "ai_function_max_retries": 0},
     )
     assert "MALFORMED_AI_PROVIDER_RESPONSE" in error
@@ -652,7 +729,7 @@ def test_embed_empty_input_table(started_cluster):
     instance.query("TRUNCATE TABLE test_input")
     qid = unique_query_id("embed_zero_rows")
     result = instance.query(
-        "SELECT aiEmbed(x, map('credentials', 'ai_embed')) FROM test_input",
+        "SELECT aiEmbed(x, 'test-embed-model', map('credentials', 'ai_embed')) FROM test_input",
         settings=AI_SETTINGS,
         query_id=qid,
     )
@@ -672,7 +749,7 @@ def test_embed_quota_input_tokens_exceeded(started_cluster):
     # Each batch costs `sum(len(text))` input tokens. With batch_size=1 and rows
     # of length 5 ("row_0".."row_3"), the second batch pushes us over a 5-token cap.
     result = instance.query(
-        "SELECT aiEmbed(x, map('credentials', 'ai_embed')) FROM test_input",
+        "SELECT aiEmbed(x, 'test-embed-model', map('credentials', 'ai_embed')) FROM test_input",
         settings={
             **AI_SETTINGS,
             "ai_function_embedding_max_batch_size": 1,
@@ -747,7 +824,7 @@ def test_embed_retries_on_network_error(started_cluster):
     set_flaky(2)
     qid = unique_query_id("embed_retry_net")
     result = instance.query(
-        "SELECT aiEmbed('hello', map('credentials', 'ai_embed_flaky'))",
+        "SELECT aiEmbed('hello', 'test-embed-model', map('credentials', 'ai_embed_flaky'))",
         settings={
             **AI_SETTINGS,
             "ai_function_max_retries": 5,
@@ -860,7 +937,7 @@ def test_embed_retry_respects_api_call_quota(started_cluster):
     retried past `ai_function_max_api_calls_per_query`."""
     qid = unique_query_id("embed_quota_caps_retries")
     result = instance.query(
-        "SELECT aiEmbed('server error', map('credentials', 'ai_embed_error'))",
+        "SELECT aiEmbed('server error', 'test-embed-model', map('credentials', 'ai_embed_error'))",
         settings={
             **AI_SETTINGS,
             "ai_function_max_retries": 5,

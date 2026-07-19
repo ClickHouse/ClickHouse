@@ -43,6 +43,29 @@ The status of the dictionary can be checked by querying the `system.dictionaries
 SELECT name, status FROM system.dictionaries;
 ```
 
+## SYSTEM UNLOAD DICTIONARY {#unload-dictionary}
+
+Unloads a dictionary `dictionary_name` to release its memory, if the dictionary status is `LOADED`.
+The dictionary is lazy-reloaded when necessary again.
+
+```sql
+SYSTEM UNLOAD DICTIONARY dictionary_name
+```
+
+The status of the dictionary can be checked by querying the `system.dictionaries` table.
+
+```sql
+SELECT name, status FROM system.dictionaries;
+```
+
+## SYSTEM UNLOAD DICTIONARIES {#unload-dictionaries}
+
+The `SYSTEM UNLOAD DICTIONARIES` query unloads all dictionaries with a `LOADED` status (see the `status` column of [`system.dictionaries`](/operations/system-tables/dictionaries)), i.e dictionaries that have been successfully loaded before.
+
+```sql
+SYSTEM UNLOAD DICTIONARIES
+```
+
 ## SYSTEM RELOAD MODELS {#reload-models}
 
 :::note
@@ -114,6 +137,9 @@ Clears the per-URL Confluent Schema Registry caches used by the `AvroConfluent` 
 
 Clears the parquet metadata cache.
 
+## SYSTEM CLEAR|DROP PAIMON METADATA CACHE {#drop-paimon-metadata-cache}
+
+Clears the in-memory cache of parsed Paimon metadata files (manifest lists and manifests).
 ## SYSTEM CLEAR|DROP POINT IN POLYGON CACHE {#drop-point-in-polygon-cache}
 
 Clears the cache of preprocessed constant polygons used by the function [`pointInPolygon`](../functions/geo/coordinates.md#pointinpolygon). The configured size limit (the `point_in_polygon_cache_size` server setting) is left unchanged, so the cache keeps accepting entries afterwards. To disable the cache instead, set `point_in_polygon_cache_size` to `0`.
@@ -244,6 +270,10 @@ The compiled expression cache is enabled/disabled with the query/user/profile-le
 ## SYSTEM CLEAR|DROP QUERY CONDITION CACHE {#drop-query-condition-cache}
 
 Clears the query condition cache.
+
+## SYSTEM CLEAR|DROP ENCRYPTION HEADERS CACHE {#drop-encryption-headers-cache}
+
+Clears the encryption headers cache. This cache holds the encryption headers read from the front of encrypted files and is used by the experimental `use_reader_executor` read path to avoid re-reading them; its size is configured by the `encryption_header_cache_size` server setting.
 
 ## SYSTEM CLEAR|DROP QUERY CACHE {#drop-query-cache}
 
