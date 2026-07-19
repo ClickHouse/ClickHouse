@@ -158,6 +158,7 @@ public:
 
     void reconfigure(const KeeperRequestForSession& request_for_session);
     std::vector<std::pair<std::string, Int32>> getExpiredTTLPathsForGarbageCollector(size_t batch_size) const;
+    std::vector<std::pair<std::string, Int32>> getContainerCandidatesForGarbageCollector(size_t batch_size, UInt64 max_never_used_interval_ms) const;
 
     std::vector<KeeperSnapshotStatus> getSnapshotsStatus() const;
 
