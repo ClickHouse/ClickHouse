@@ -3,6 +3,7 @@
 #include <Processors/Port.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/JSONUtils.h>
+#include <Core/Block.h>
 
 
 namespace DB
@@ -117,6 +118,16 @@ void registerOutputFormatJSONEachRow(FormatFactory & factory)
         {
             return settings && settings->json.array_of_rows ? "application/json; charset=UTF-8" : "application/x-ndjson; charset=UTF-8";
         });
+        /// The field names are emitted as JSON object keys every row via `makeNamesValidJSONStrings`
+        /// with `output_format_json_validate_utf8`. When validation is off, a name that is not valid
+        /// UTF-8 (a quoted alias with arbitrary bytes) makes the keys, and hence the output, non-textual.
+        /// This is knowable from the header, so the text framings reject or base64-encode accordingly.
+        factory.registerOutputFormatMayProduceRawBytesChecker(
+            format,
+            [](const FormatSettings & settings, const Block & header)
+            {
+                return JSONUtils::namesMayProduceRawBytesInJSON(header.getNames(), settings, settings.json.validate_utf8);
+            });
     };
 
     register_function("JSONEachRow", false, false);

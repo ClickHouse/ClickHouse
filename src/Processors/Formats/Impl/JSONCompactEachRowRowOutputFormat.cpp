@@ -5,6 +5,7 @@
 #include <Formats/FormatFactory.h>
 #include <Formats/registerWithNamesAndTypes.h>
 #include <Formats/JSONUtils.h>
+#include <Core/Block.h>
 
 namespace DB
 {
@@ -135,6 +136,23 @@ void registerOutputFormatJSONCompactEachRow(FormatFactory & factory)
             });
 
             factory.markOutputFormatSupportsParallelFormatting(format_name);
+
+            /// The `WithNames` variants write a header row of names (and the `WithNamesAndTypes` ones a
+            /// row of type names too) via `makeNamesValidJSONStrings` with `output_format_json_validate_utf8`.
+            /// When validation is off, a name or type name that is not valid UTF-8 (a quoted alias with
+            /// arbitrary bytes, or a named `Tuple`/`Enum` element with such bytes) makes the header, and
+            /// hence the output, non-textual. It is knowable from the header, so the text framings reject
+            /// or base64-encode the output accordingly.
+            if (with_names || with_types)
+                factory.registerOutputFormatMayProduceRawBytesChecker(
+                    format_name,
+                    [with_names, with_types](const FormatSettings & settings, const Block & header)
+                    {
+                        return (with_names
+                                && JSONUtils::namesMayProduceRawBytesInJSON(header.getNames(), settings, settings.json.validate_utf8))
+                            || (with_types
+                                && JSONUtils::namesMayProduceRawBytesInJSON(header.getDataTypeNames(), settings, settings.json.validate_utf8));
+                    });
         };
 
         registerWithNamesAndTypes(yield_strings ? "JSONCompactStringsEachRow" : "JSONCompactEachRow", register_func);

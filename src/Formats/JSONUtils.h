@@ -47,6 +47,15 @@ namespace JSONUtils
 
     Strings makeNamesValidJSONStrings(const Strings & names, const FormatSettings & settings, bool validate_utf8);
 
+    /// Returns true if the JSON keys derived from `names` (via `makeNamesValidJSONStrings`) would
+    /// contain bytes that are not valid UTF-8 under the given settings. This can happen only when
+    /// UTF-8 validation is off (`validate_utf8 == false`) and a name contains raw non-UTF-8 bytes
+    /// (for example a quoted alias like `` `a\xFFb` ``), because `writeJSONString` passes such bytes
+    /// through verbatim. The names come from the header and are therefore known before the first row,
+    /// so text framings (see `IFramingFormat::requiresTextPayload`) can reject or base64-encode the
+    /// output accordingly.
+    bool namesMayProduceRawBytesInJSON(const Strings & names, const FormatSettings & settings, bool validate_utf8);
+
     /// Functions helpers for writing JSON data to WriteBuffer.
 
     void writeFieldDelimiter(WriteBuffer & out, size_t new_lines = 1);

@@ -450,6 +450,18 @@ void registerOutputFormatGeoJSON(FormatFactory & factory)
     /// Each output is one complete top-level `FeatureCollection`, so appending to an existing file
     /// would produce a second collection and a malformed document.
     factory.markFormatHasNoAppendSupport("GeoJSON");
+    /// The property column names are emitted as JSON object keys via `makeNamesValidJSONStrings` with
+    /// `output_format_json_validate_utf8`. When validation is off, a name that is not valid UTF-8
+    /// (a quoted alias with arbitrary bytes) makes the keys, and hence the output, non-textual. The
+    /// geometry and `id` columns are not emitted as keys, but checking all header names here is a safe
+    /// (fail-close) over-approximation. It is knowable from the header, so the text framings reject or
+    /// base64-encode the output accordingly.
+    factory.registerOutputFormatMayProduceRawBytesChecker(
+        "GeoJSON",
+        [](const FormatSettings & settings, const Block & header)
+        {
+            return JSONUtils::namesMayProduceRawBytesInJSON(header.getNames(), settings, settings.json.validate_utf8);
+        });
 }
 
 }
