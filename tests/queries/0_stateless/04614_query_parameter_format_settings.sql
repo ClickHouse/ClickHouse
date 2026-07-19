@@ -11,6 +11,10 @@ select 'basic rejects the timezone suffix';
 set date_time_input_format = 'basic';
 select {dt:DateTime('UTC')}; -- { serverError BAD_QUERY_PARAMETER }
 
+select 'parameters in a SETTINGS clause still work';
+set param_limit = '54321';
+select getSetting('max_rows_to_read') settings max_rows_to_read = {limit:UInt64};
+
 select 'parameters in INSERT VALUES respect the setting';
 set date_time_input_format = 'best_effort';
 drop table if exists t_04614;

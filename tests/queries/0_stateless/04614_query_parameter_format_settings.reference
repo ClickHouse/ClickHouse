@@ -1,5 +1,7 @@
 best_effort parses an ISO 8601 value with a timezone suffix
 2026-02-03 21:03:24
 basic rejects the timezone suffix
+parameters in a SETTINGS clause still work
+54321
 parameters in INSERT VALUES respect the setting
 2026-02-03 21:03:24
