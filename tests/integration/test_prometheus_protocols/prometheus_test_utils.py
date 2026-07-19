@@ -7,6 +7,7 @@ import snappy
 import sys
 import urllib
 import zipfile
+import zstandard
 
 
 PRESETS_DIR = os.path.join(os.path.dirname(os.path.realpath(__file__)), "presets")
@@ -81,20 +82,45 @@ def load_preset_from_file(preset_file):
 
 
 # Sends a protobuf message of type remote_pb2.WriteRequest to specified host and port via the RemoteWrite protocol.
-def send_protobuf_to_remote_write(host, port, path, write_request_proto):
-    response = get_response_to_remote_write(host, port, path, write_request_proto)
+def send_protobuf_to_remote_write(
+    host, port, path, write_request_proto, content_encoding="snappy"
+):
+    response = get_response_to_remote_write(
+        host, port, path, write_request_proto, content_encoding
+    )
     check_remote_write_response(response)
 
 
-def get_response_to_remote_write(host, port, path, write_request_proto):
+def compress_remote_write_request(serialized_proto, content_encoding):
+    if content_encoding == "snappy":
+        return snappy.compress(data=serialized_proto)
+    if content_encoding == "zstd":
+        return zstandard.compress(serialized_proto)
+    # Deliberately send uncompressed data with an unsupported Content-Encoding
+    # so that tests can check how the server rejects it.
+    return serialized_proto
+
+
+def get_response_to_remote_write(
+    host,
+    port,
+    path,
+    write_request_proto,
+    content_encoding="snappy",
+    content_type="application/x-protobuf",
+):
     url = f"http://{host}:{port}/{path.strip('/')}"
-    print(f"Posting {url}")
+    print(
+        f"Posting {url} with Content-Encoding: {content_encoding}, Content-Type: {content_type}"
+    )
     response = requests.post(
         url,
-        data=snappy.compress(data=write_request_proto.SerializeToString()),
+        data=compress_remote_write_request(
+            write_request_proto.SerializeToString(), content_encoding
+        ),
         headers={
-            "Content-Encoding": "snappy",
-            "Content-Type": "application/x-protobuf",
+            "Content-Encoding": content_encoding,
+            "Content-Type": content_type,
             "User-Agent": requests.utils.default_user_agent(),
             "X-Prometheus-Remote-Write-Version": "0.1.0",
         },
