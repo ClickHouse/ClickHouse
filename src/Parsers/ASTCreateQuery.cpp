@@ -724,6 +724,28 @@ void ASTCreateQuery::readJSON(const Poco::JSON::Object & json)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "`CreateQuery` is missing 'table' during AST JSON deserialization, but the surrounding flags indicate a non-database form");
 
+    /// The parser attaches each of these clause families only to specific `CREATE` variants:
+    /// `refresh_strategy` only to materialized views; the watermark strategies and `ALLOWED LATENESS`
+    /// only to window views; `targets` (`ASTViewTargets`) to materialized views (`TO`/`TO INNER UUID`),
+    /// window views (`TO`/inner engine), `TimeSeries` tables (`DATA`/`TAGS`/`METRICS`) and plain tables
+    /// with an explicit `TO INNER UUID` clause (`SharedSet`/`SharedJoin`). Malformed `clickhouse_json`
+    /// could attach them to other variants; `formatQueryImpl` would then emit SQL the parser never
+    /// accepts (e.g. `CREATE TABLE t REFRESH ...` or `CREATE TABLE t TO dst ...`) while execution
+    /// still partially consumes the hidden state. Reject such shapes instead.
+    if (refresh_strategy && !is_materialized_view)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "`CreateQuery` has 'refresh_strategy' set but is not a materialized view during AST JSON deserialization");
+    if ((is_watermark_strictly_ascending || is_watermark_ascending || is_watermark_bounded) && !is_window_view)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "`CreateQuery` has a watermark strategy set but is not a window view during AST JSON deserialization");
+    if (allowed_lateness && !is_window_view)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "`CreateQuery` has 'allowed_lateness' set but is not a window view during AST JSON deserialization");
+    if (targets && !is_materialized_view && !is_window_view && !is_time_series_table && !has_inner_uuid_clause)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "`CreateQuery` has 'targets' set but is not a materialized view, window view, `TimeSeries` table, "
+            "or a table with a 'TO INNER UUID' clause during AST JSON deserialization");
+
     /// `formatQueryImpl` unconditionally dereferences `lateness_function` when `allowed_lateness` is set,
     /// and `watermark_function` when the bounded watermark strategy is selected. Without the child
     /// expression present, formatting would null-deref. Reject such inconsistent JSON up front.
