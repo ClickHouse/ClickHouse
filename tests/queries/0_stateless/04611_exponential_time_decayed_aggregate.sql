@@ -140,3 +140,58 @@ SELECT exponentialTimeDecayedSum(0)(1, 1); -- { serverError BAD_ARGUMENTS }
 SELECT exponentialTimeDecayedAvg(-1)(1, 1); -- { serverError BAD_ARGUMENTS }
 SELECT exponentialTimeDecayedCount(10)('not a time'); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT exponentialTimeDecayedSum(10)('not a value', 1); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+
+-- Property-style test: direct aggregation and merging an arbitrary number of
+-- independently aggregated batches must be numerically equivalent.
+WITH
+    source AS
+    (
+        SELECT
+            number,
+            toFloat64(((number * 13) % 101) + 1) AS value,
+            toFloat64((number * 104729) % 100000) / 10 AS time
+        FROM numbers(4096)
+    ),
+    direct AS
+    (
+        SELECT
+            exponentialTimeDecayedSum(250)(value, time) AS expected_sum,
+            exponentialTimeDecayedAvg(250)(value, time) AS expected_avg,
+            exponentialTimeDecayedCount(250)(time) AS expected_count
+        FROM source
+    ),
+    batch_states AS
+    (
+        SELECT
+            batch_count,
+            number % batch_count AS batch_id,
+            exponentialTimeDecayedSumState(250)(value, time) AS sum_state,
+            exponentialTimeDecayedAvgState(250)(value, time) AS avg_state,
+            exponentialTimeDecayedCountState(250)(time) AS count_state
+        FROM source
+        CROSS JOIN
+        (
+            SELECT arrayJoin([1, 2, 17, 257, 4096]) AS batch_count
+        )
+        GROUP BY
+            batch_count,
+            batch_id
+    ),
+    merged AS
+    (
+        SELECT
+            batch_count,
+            exponentialTimeDecayedSumMerge(250)(sum_state) AS actual_sum,
+            exponentialTimeDecayedAvgMerge(250)(avg_state) AS actual_avg,
+            exponentialTimeDecayedCountMerge(250)(count_state) AS actual_count
+        FROM batch_states
+        GROUP BY batch_count
+    )
+SELECT
+    batch_count,
+    abs(actual_sum - expected_sum) <= 1e-12 * greatest(1., abs(expected_sum)),
+    abs(actual_avg - expected_avg) <= 1e-12 * greatest(1., abs(expected_avg)),
+    abs(actual_count - expected_count) <= 1e-12 * greatest(1., abs(expected_count))
+FROM merged
+CROSS JOIN direct
+ORDER BY batch_count;
