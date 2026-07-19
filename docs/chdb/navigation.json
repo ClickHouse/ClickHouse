@@ -1,0 +1,85 @@
+{
+  "groups": [
+    {
+      "group": "Get started",
+      "pages": [
+        "chdb/getting-started"
+      ],
+      "root": "chdb/index"
+    },
+    {
+      "group": "Language integrations",
+      "pages": [
+        "chdb/install/python",
+        "chdb/install/nodejs",
+        "chdb/install/go",
+        "chdb/install/rust",
+        "chdb/install/bun",
+        "chdb/install/c"
+      ],
+      "root": "chdb/install/index"
+    },
+    {
+      "group": "DataStore",
+      "pages": [
+        "chdb/datastore/quickstart",
+        "chdb/datastore/factory-methods",
+        "chdb/datastore/query-building",
+        "chdb/datastore/aggregation",
+        "chdb/datastore/accessors",
+        "chdb/datastore/io",
+        "chdb/datastore/execution-model",
+        "chdb/datastore/pandas-compat",
+        "chdb/datastore/class-reference"
+      ],
+      "root": "chdb/datastore/index"
+    },
+    {
+      "group": "Configuration",
+      "pages": [
+        "chdb/configuration/execution-engine",
+        "chdb/configuration/function-config",
+        "chdb/configuration/performance-mode"
+      ],
+      "root": "chdb/configuration/index"
+    },
+    {
+      "group": "Debugging",
+      "pages": [
+        "chdb/debugging/explain",
+        "chdb/debugging/logging",
+        "chdb/debugging/profiling"
+      ],
+      "root": "chdb/debugging/index"
+    },
+    {
+      "group": "Developer guides",
+      "pages": [
+        "chdb/guides/jupysql",
+        "chdb/guides/querying-pandas",
+        "chdb/guides/querying-apache-arrow",
+        "chdb/guides/querying-s3-bucket",
+        "chdb/guides/querying-parquet",
+        "chdb/guides/query-remote-clickhouse",
+        "chdb/guides/clickhouse-local",
+        "chdb/guides/migration-from-pandas",
+        "chdb/guides/pandas-cookbook",
+        "chdb/guides/pandas-differences",
+        "chdb/guides/pandas-performance",
+        "chdb/guides/pandas-to-sql"
+      ],
+      "root": "chdb/guides/index"
+    },
+    {
+      "group": "Technical reference",
+      "pages": [
+        "chdb/reference/data-formats",
+        "chdb/reference/sql-reference",
+        "chdb/api/python"
+      ],
+      "root": "chdb/reference/index"
+    }
+  ],
+  "icon": "/images/icons/icon-chdb.svg",
+  "item": "chDB"
+}
