@@ -107,27 +107,30 @@ def test_wide_and_decimal_type_roundtrip(started_cluster):
     )
 
 
-def test_uint256_max_roundtrip(started_cluster):
-    # UInt256 needs 78 decimal digits, one more than Int256 (77). Both are advertised as `numeric`, so the
-    # catalog carries distinct precisions - numeric(77, 0) for Int256, numeric(78, 0) for UInt256 - and the
-    # counterpart recovery in `convertPostgreSQLDataType` restores UInt256 for a precision of 78. Without
-    # that distinction a UInt256 value above the Int256 maximum was recovered as Int256 and rejected. The
-    # value below is the UInt256 maximum.
+def test_uint256_is_recovered_as_int256_or_rejected(started_cluster):
+    # A self-connected `UInt256` is advertised as `numeric(78, 0)` (the smallest `numeric` that holds every
+    # 256-bit integer), and `convertPostgreSQLDataType` maps any `numeric(p > 76, 0)` back to `Int256` -
+    # PostgreSQL `numeric` is signed, so there is no unsigned counterpart and this mapping is shared with
+    # real PostgreSQL sources (issue #59224). A `UInt256` value within the `Int256` range therefore reads
+    # back as `Int256`, and a value above the `Int256` maximum is rejected (fail-closed) instead of being
+    # silently wrapped around, matching the `numeric -> Int256` overflow check.
     node.query("DROP TABLE IF EXISTS test_u256 SYNC")
     node.query("CREATE TABLE test_u256 (x UInt256) ENGINE = MergeTree ORDER BY x")
+
+    # A value within the Int256 range round-trips (recovered as Int256).
+    in_range = "57896044618658097711785492504343953926634992332820282019728792003956564819967"  # Int256 max
+    node.query(f"INSERT INTO test_u256 VALUES ({in_range})")
+    assert node.query(f"SELECT x FROM {pg_source('default', 'test_u256')}") == in_range + "\n"
+    assert node.query(f"SELECT toTypeName(x) FROM {pg_source('default', 'test_u256')}") == "Int256\n"
+
+    # A value above the Int256 maximum (here the UInt256 maximum) is rejected, not silently corrupted.
+    node.query("TRUNCATE TABLE test_u256")
     node.query(
         "INSERT INTO test_u256 VALUES "
         "(115792089237316195423570985008687907853269984665640564039457584007913129639935)"
     )
-
-    assert node.query(f"SELECT x FROM {pg_source('default', 'test_u256')}") == (
-        "115792089237316195423570985008687907853269984665640564039457584007913129639935\n"
-    )
-
-    # The recovered column type is UInt256, not Int256 (which cannot hold this value).
-    assert (
-        node.query(f"SELECT toTypeName(x) FROM {pg_source('default', 'test_u256')}") == "UInt256\n"
-    )
+    error = node.query_and_get_error(f"SELECT x FROM {pg_source('default', 'test_u256')}")
+    assert "out of range of Int256" in error, error
 
 
 def test_array_type_roundtrip(started_cluster):
@@ -294,28 +297,29 @@ def test_copy_query_initializes_catalog_on_fresh_connection(started_cluster):
         conn.close()
 
 
-def test_copy_honours_format_and_ignores_other_options(started_cluster):
+def test_copy_honours_format_and_no_op_options(started_cluster):
     # Real PostgreSQL clients append data-formatting options to `COPY`. psycopg2's `copy_to`/`copy_from`
-    # always send `WITH DELIMITER AS '\t' NULL AS '\N'`, and a client may spell the format together with
-    # `HEADER`, `NULL`, etc. We only act on the format; every other option must be accepted and ignored,
-    # not rejected. A previous version tried to reject unknown options, but the exception fell through to
-    # the regular-query path, which tore the connection down mid-COPY (psycopg2 then reported a lost
-    # connection instead of returning the rows).
+    # always send `WITH DELIMITER AS '\t' NULL AS '\N'`, which are exactly our defaults for the text format,
+    # so they are no-ops and must be accepted (an earlier version threw for them, and the exception fell
+    # through to the regular-query path, which tore the connection down mid-COPY - psycopg2 then reported a
+    # lost connection instead of returning the rows). A `DELIMITER` that matches the chosen format's default
+    # (a tab for text/TSV, a comma for CSV) and `NULL` are accepted; a non-default value is rejected by
+    # test_copy_rejects_unsupported_options below.
     conn = py_psql.connect(
         host=node.ip_address, port=PG_PORT, user="pguser", password="pgpass", database="default"
     )
     try:
         cur = conn.cursor()
 
-        # Text format with the delimiter/null options psycopg2 sends: still TSV, options ignored.
+        # Text format with the delimiter/null options psycopg2 sends: still TSV, options are no-ops.
         out = io.StringIO()
         cur.copy_expert(
             "COPY (SELECT 1 AS a, 2 AS b) TO STDOUT WITH DELIMITER AS '\t' NULL AS '\\N'", out
         )
         assert out.getvalue() == "1\t2\n"
 
-        # The format is still honoured when other options accompany it, in both the legacy and the modern
-        # parenthesized spellings; the non-format options are ignored.
+        # The format is still honoured when default-valued options accompany it, in both the legacy and the
+        # modern parenthesized spellings.
         out = io.StringIO()
         cur.copy_expert(
             "COPY (SELECT 1 AS a, 2 AS b) TO STDOUT WITH DELIMITER AS ',' NULL AS '' CSV", out
@@ -329,6 +333,41 @@ def test_copy_honours_format_and_ignores_other_options(started_cluster):
         assert out.getvalue() == "1,2\n"
 
         # The connection stayed usable across all of the above (no mid-COPY teardown).
+        cur.execute("SELECT 42")
+        assert cur.fetchone() == (42,)
+    finally:
+        conn.close()
+
+
+def test_copy_rejects_unsupported_options(started_cluster):
+    # Only the format (text/CSV) is honoured; a data-formatting option we cannot faithfully apply must be
+    # rejected with a clear error instead of being silently ignored (which would stream output that does not
+    # match what the client asked for). The rejection is sent as an ordinary error, so - like a failed
+    # ordinary query - the connection survives and can be reused after a rollback.
+    conn = py_psql.connect(
+        host=node.ip_address, port=PG_PORT, user="pguser", password="pgpass", database="default"
+    )
+    try:
+        # A non-default delimiter would otherwise emit commas (CSV) regardless of the requested ';'.
+        with pytest.raises(py_psql.Error, match="non-default DELIMITER"):
+            cur = conn.cursor()
+            cur.copy_expert("COPY (SELECT 1 AS a, 2 AS b) TO STDOUT WITH (FORMAT csv, DELIMITER ';')", io.StringIO())
+        conn.rollback()
+
+        # HEADER is not produced by the text output formats used here.
+        with pytest.raises(py_psql.Error, match="HEADER"):
+            cur = conn.cursor()
+            cur.copy_expert("COPY (SELECT 1 AS a, 2 AS b) TO STDOUT WITH (FORMAT csv, HEADER)", io.StringIO())
+        conn.rollback()
+
+        # An option we do not interpret at all is rejected by name rather than dropped.
+        with pytest.raises(py_psql.Error, match='"QUOTE" option'):
+            cur = conn.cursor()
+            cur.copy_expert("COPY (SELECT 1 AS a, 2 AS b) TO STDOUT WITH (FORMAT csv, QUOTE '\"')", io.StringIO())
+        conn.rollback()
+
+        # The connection is still usable after the rejections.
+        cur = conn.cursor()
         cur.execute("SELECT 42")
         assert cur.fetchone() == (42,)
     finally:

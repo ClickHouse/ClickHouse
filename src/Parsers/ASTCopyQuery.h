@@ -35,6 +35,13 @@ public:
         Binary
     } format = Formats::TSV;
 
+    /// A human-readable reason set by the parser when the `COPY` command carries a data-formatting option we
+    /// cannot faithfully honor (a non-default `DELIMITER`, `HEADER`, or any option we do not interpret). The
+    /// handler rejects such a command with a clean `ErrorResponse` instead of silently ignoring the option
+    /// and producing output that does not match what the client asked for. Empty when there is nothing to
+    /// reject.
+    String unsupported_option;
+
     String getID(char) const override { return "CopyQuery"; }
 
     ASTPtr clone() const override;
