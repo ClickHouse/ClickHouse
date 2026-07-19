@@ -1,0 +1,37 @@
+---
+sidebarTitle: '데이터 카탈로그'
+slug: /manage/data-catalogs
+title: '데이터 카탈로그'
+description: 'ClickHouse Cloud의 데이터 카탈로그 통합'
+doc_type: 'landing-page'
+keywords: ['데이터 카탈로그', '클라우드 기능', '데이터 레이크', 'Iceberg', '통합']
+---
+
+import { Image } from "/snippets/ko/components/Image.jsx";
+import BetaBadge from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge />
+
+ClickHouse Cloud는 오픈 테이블 포맷 데이터 카탈로그에 직접 연결할 수 있으므로, 데이터를 복제하지 않고도 데이터 레이크 테이블에 액세스할 수 있습니다.
+이 통합을 통해 카탈로그의 테이블이 ClickHouse 내에서 쿼리 가능한 데이터베이스로 표시됩니다.
+설정은 SQL 명령([DataLakeCatalog](/ko/reference/engines/database-engines/datalake)) 또는 ClickHouse Cloud UI의 Data Sources 탭에서 모두 가능합니다.
+
+UI 사용 시:
+
+* Data Catalog 객체와 일관된 필드를 사용하는 양식으로 설정을 간소화합니다
+* 활성 데이터 카탈로그 통합을 한곳에서 관리할 수 있는 인터페이스를 제공합니다
+* 저장 시 연결 및 자격 증명을 테스트합니다
+
+<Image img="/images/cloud/features/data-catalogs-ui.png" size="md" alt="데이터 카탈로그 통합이 표시된 ClickHouse Cloud UI" />
+
+| 이름                   | 지원되는 오픈 테이블 포맷                    | 인증 방식                        | 지원                                                                              | 버전     |
+| -------------------- | --------------------------------- | ---------------------------- | ------------------------------------------------------------------------------- | ------ |
+| AWS Glue Catalog     | Iceberg                           | IAM/액세스 키                    | Cloud &amp; [Core](/ko/guides/use-cases/data-warehousing/glue-catalog)             | 25.10+ |
+| Lakekeeper           | Iceberg                           | OAuth 클라이언트 자격 증명            | [Core](/ko/guides/use-cases/data-warehousing/lakekeeper-catalog)                   | 25.10+ |
+| Microsoft OneLake    | Iceberg                           | Azure Active Directory (AAD) | Cloud &amp; [Core](/ko/guides/use-cases/data-warehousing/onelake-catalog)          | 25.12+ |
+| Nessie               | Iceberg                           | OAuth 클라이언트 자격 증명            | [Core](/ko/guides/use-cases/data-warehousing/nessie-catalog)                       | 25.10+ |
+| Polaris/Open Catalog | Iceberg                           | OAuth 클라이언트 자격 증명            | [Core](/ko/guides/use-cases/data-warehousing/polaris-catalog)                      | 26.1+  |
+| REST catalog         | Iceberg                           | OAuth 클라이언트 자격 증명, Bearer 토큰 | Cloud &amp; [Core](/ko/guides/use-cases/data-warehousing/rest-catalog)             | 25.10+ |
+| Unity Catalog        | Iceberg (UniForm 지원 및 관리형), Delta | OAuth 클라이언트 자격 증명            | Cloud (Iceberg만) &amp; [Core](/ko/guides/use-cases/data-warehousing/unity-catalog) | 25.10+ |
+
+Horizon과 S3 tables REST endpoint를 포함해 더 많은 카탈로그를 지원할 예정입니다.

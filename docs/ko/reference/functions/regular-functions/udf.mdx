@@ -1,0 +1,534 @@
+---
+description: '사용자 정의 함수(UDF) 문서'
+sidebarTitle: 'UDF'
+slug: /sql-reference/functions/udf
+title: '사용자 정의 함수(UDFs)'
+doc_type: 'reference'
+---
+
+import PrivatePreviewBadge from "/snippets/ko/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
+
+import CloudNotSupportedBadge from "/snippets/ko/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+import ExperimentalBadge from "/snippets/ko/components/ExperimentalBadge/ExperimentalBadge.jsx";
+
+<div id="udfs-user-defined-functions">
+  # UDFs 사용자 정의 함수
+</div>
+
+ClickHouse는 여러 유형의 사용자 정의 함수(UDF)를 지원합니다.
+
+* [실행형 UDFs](#executable-user-defined-functions)는 외부 프로그램이나 스크립트(Python, Bash 등)를 시작한 뒤, STDIN / STDOUT을 통해 데이터 블록을 해당 프로그램으로 스트리밍합니다. ClickHouse를 다시 컴파일하지 않고도 기존 코드나 도구를 통합할 때 사용할 수 있습니다. 프로세스 내부 옵션보다 호출당 오버헤드가 크므로, 더 무거운 로직을 처리하거나 다른 런타임이 필요한 경우에 가장 적합합니다.
+* [SQL UDFs](#sql-user-defined-functions)는 `CREATE FUNCTION`을 사용해 SQL만으로 정의합니다. 쿼리 계획에 인라인되어 확장되므로(프로세스 경계 없음) 가볍고, 표현식 로직을 재사용하거나 복잡한 계산 컬럼을 단순화하는 데 적합합니다.
+* [Experimental WebAssembly UDFs](#webassembly-user-defined-functions)는 서버 프로세스 내 샌드박스에서 WebAssembly로 컴파일된 코드를 실행합니다. 외부 실행형보다 호출당 오버헤드가 낮고 네이티브 확장 기능보다 격리 수준이 높아, WASM을 대상으로 할 수 있는 언어(예: C/C++/Rust)로 작성한 사용자 정의 알고리즘에 적합합니다.
+
+<div id="executable-user-defined-functions">
+  ## 실행형 사용자 정의 함수
+</div>
+
+<PrivatePreviewBadge />
+
+<Note>
+  이 기능은 ClickHouse Cloud에서 비공개 프리뷰로 제공됩니다.
+  이용하려면 https://clickhouse.cloud/support 에서 ClickHouse 지원팀에 문의하십시오.
+</Note>
+
+ClickHouse는 데이터를 처리하기 위해 외부 실행 프로그램이나 스크립트를 호출할 수 있습니다.
+
+실행형 사용자 정의 함수의 구성은 하나 이상의 XML 파일에 둘 수 있습니다.
+구성 경로는 [`user_defined_executable_functions_config`](/ko/reference/settings/server-settings/settings#user_defined_executable_functions_config) 매개변수로 지정합니다.
+
+함수 구성에는 다음 설정이 포함됩니다:
+
+| 매개변수                          | 설명                                                                                                                                                                                                                                                                                         | 필수    | 기본값                       |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----- | ------------------------- |
+| `name`                        | 함수 이름                                                                                                                                                                                                                                                                                      | 예     | -                         |
+| `command`                     | 실행할 스크립트 이름 또는 `execute_direct`가 false인 경우 실행할 명령                                                                                                                                                                                                                                          | 예     | -                         |
+| `argument`                    | 인수의 `type`과 선택적 `name`을 포함하는 인수 설명입니다. 각 인수는 별도의 설정으로 설명합니다. [Native](/ko/reference/formats/Native) 또는 [JSONEachRow](/ko/reference/formats/JSON/JSONEachRow) 같은 사용자 정의 함수 포맷에서 인수 이름이 직렬화의 일부인 경우에는 이름 지정이 필요합니다                                                                                 | 예     | `c` + argument&#95;number |
+| `format`                      | 인수를 명령에 전달할 때 사용하는 [포맷](/ko/reference/formats/index)입니다. 명령의 출력도 동일한 포맷이어야 합니다                                                                                                                                                                                                                | 예     | -                         |
+| `return_type`                 | 반환 값의 유형                                                                                                                                                                                                                                                                                   | 예     | -                         |
+| `return_name`                 | 반환 값의 이름입니다. [Native](/ko/reference/formats/Native) 또는 [JSONEachRow](/ko/reference/formats/JSON/JSONEachRow) 같은 사용자 정의 함수 포맷에서 반환 이름이 직렬화의 일부인 경우에는 반환 이름 지정이 필요합니다                                                                                                                              | 선택 사항 | `result`                  |
+| `type`                        | 실행형 유형입니다. `type`이 `executable`로 설정되면 단일 명령이 시작됩니다. `executable_pool`로 설정되면 명령 풀(pool)이 생성됩니다                                                                                                                                                                                              | 예     | -                         |
+| `max_command_execution_time`  | 데이터 블록을 처리하는 최대 실행 시간(초)입니다. 이 설정은 `executable_pool` 명령에만 적용됩니다                                                                                                                                                                                                                            | 선택 사항 | `10`                      |
+| `command_termination_timeout` | 파이프가 닫힌 뒤 명령이 종료되어야 하는 시간(초)입니다. 이 시간이 지나면 명령을 실행 중인 프로세스에 `SIGTERM`이 전송됩니다                                                                                                                                                                                                                | 선택 사항 | `10`                      |
+| `command_read_timeout`        | 명령의 stdout에서 데이터를 읽을 때의 timeout(밀리초)입니다                                                                                                                                                                                                                                                    | 선택 사항 | `10000`                   |
+| `command_write_timeout`       | 명령의 stdin에 데이터를 쓸 때의 timeout(밀리초)입니다                                                                                                                                                                                                                                                       | 선택 사항 | `10000`                   |
+| `pool_size`                   | 명령 풀의 크기입니다                                                                                                                                                                                                                                                                                | 선택 사항 | `16`                      |
+| `send_chunk_header`           | 프로세스에 데이터 청크를 보내기 전에 행 수를 먼저 전송할지 여부를 제어합니다                                                                                                                                                                                                                                                | 선택 사항 | `false`                   |
+| `execute_direct`              | `execute_direct` = `1`이면 `command`는 [user&#95;scripts&#95;path](/ko/reference/settings/server-settings/settings#user_scripts_path)에 지정된 user&#95;scripts 폴더에서 검색됩니다. 추가 스크립트 인수는 공백으로 구분해 지정할 수 있습니다. 예시: `script_name arg1 arg2`. `execute_direct` = `0`이면 `command`는 `bin/sh -c`의 인수로 전달됩니다 | 선택 사항 | `1`                       |
+| `lifetime`                    | 함수의 다시 로드 간격(초)입니다. `0`으로 설정하면 함수는 다시 로드되지 않습니다                                                                                                                                                                                                                                            | 선택 사항 | `0`                       |
+| `deterministic`               | 함수가 결정적인지 여부입니다(같은 입력에 대해 항상 같은 결과를 반환)                                                                                                                                                                                                                                                    | 선택 사항 | `false`                   |
+| `stderr_reaction`             | 명령의 stderr 출력을 처리하는 방식입니다. 값: `none`(무시), `log`(모든 stderr를 즉시 기록), `log_first`(종료 후 처음 4 KiB를 기록), `log_last`(종료 후 마지막 4 KiB를 기록), `throw`(stderr 출력이 있으면 즉시 예외 발생). `log_first` 또는 `log_last`를 0이 아닌 종료 코드와 함께 사용하는 경우 stderr 내용이 예외 메시지에 포함됩니다                                           | 선택 사항 | `log_last`                |
+| `check_exit_code`             | true이면 ClickHouse가 명령의 종료 코드를 확인합니다. 종료 코드가 0이 아니면 예외가 발생합니다                                                                                                                                                                                                                               | 선택 사항 | `true`                    |
+
+명령은 `STDIN`에서 인수를 읽고 결과를 `STDOUT`으로 출력해야 합니다. 또한 인수를 반복적으로 처리해야 합니다. 즉, 인수 청크 하나를 처리한 뒤 다음 청크를 기다려야 합니다.
+
+<div id="executable-user-defined-functions">
+  ## 실행형 사용자 정의 함수
+</div>
+
+<div id="examples">
+  ## 예시
+</div>
+
+<div id="udf-inline">
+  ### 인라인 스크립트로 만든 UDF
+</div>
+
+XML 또는 YAML 구성을 사용해 `execute_direct`를 `0`으로 지정하고 `test_function_sum`을 수동으로 생성합니다.
+
+<Tabs>
+  <Tab title="XML">
+    파일 `test_function.xml`(기본 경로 설정 기준 `/etc/clickhouse-server/test_function.xml`).
+
+    ```xml title="/etc/clickhouse-server/test_function.xml"
+    <functions>
+        <function>
+            <type>executable</type>
+            <name>test_function_sum</name>
+            <return_type>UInt64</return_type>
+            <argument>
+                <type>UInt64</type>
+                <name>lhs</name>
+            </argument>
+            <argument>
+                <type>UInt64</type>
+                <name>rhs</name>
+            </argument>
+            <format>TabSeparated</format>
+            <command>cd /; clickhouse-local --input-format TabSeparated --output-format TabSeparated --structure 'x UInt64, y UInt64' --query "SELECT x + y FROM table"</command>
+            <execute_direct>0</execute_direct>
+            <deterministic>true</deterministic>
+        </function>
+    </functions>
+    ```
+  </Tab>
+
+  <Tab title="YAML">
+    파일 `test_function.yaml`(기본 경로 설정 기준 `/etc/clickhouse-server/test_function.yaml`).
+
+    ```yml title="/etc/clickhouse-server/test_function.yaml"
+    functions:
+      type: executable
+      name: test_function_sum
+      return_type: UInt64
+      argument:
+        - type: UInt64
+          name: lhs
+        - type: UInt64
+          name: rhs
+      format: TabSeparated
+      command: 'cd /; clickhouse-local --input-format TabSeparated --output-format TabSeparated --structure ''x UInt64, y UInt64'' --query "SELECT x + y FROM table"'
+      execute_direct: 0
+      deterministic: true
+    ```
+  </Tab>
+</Tabs>
+
+<br />
+
+```sql title="Query"
+SELECT test_function_sum(2, 2);
+```
+
+```text title="Result"
+┌─test_function_sum(2, 2)─┐
+│                       4 │
+└─────────────────────────┘
+```
+
+<div id="udf-python">
+  ### Python 스크립트로 만든 UDF
+</div>
+
+이 예시에서는 `STDIN`에서 값을 읽어 문자열로 반환하는 UDF를 생성합니다.
+
+XML 또는 YAML 구성으로 `test_function`을 생성합니다.
+
+<Tabs>
+  <Tab title="XML">
+    파일 `test_function.xml`(기본 경로 설정 기준: `/etc/clickhouse-server/test_function.xml`).
+
+    ```xml title="/etc/clickhouse-server/test_function.xml"
+    <functions>
+        <function>
+            <type>executable</type>
+            <name>test_function_python</name>
+            <return_type>String</return_type>
+            <argument>
+                <type>UInt64</type>
+                <name>value</name>
+            </argument>
+            <format>TabSeparated</format>
+            <command>test_function.py</command>
+        </function>
+    </functions>
+    ```
+  </Tab>
+
+  <Tab title="YAML">
+    파일 `test_function.yaml`(기본 경로 설정 기준: `/etc/clickhouse-server/test_function.yaml`).
+
+    ```yml title="/etc/clickhouse-server/test_function.yaml"
+    functions:
+      type: executable
+      name: test_function_python
+      return_type: String
+      argument:
+        - type: UInt64
+          name: value
+      format: TabSeparated
+      command: test_function.py
+    ```
+  </Tab>
+</Tabs>
+
+<br />
+
+`user_scripts` 폴더에 스크립트 파일 `test_function.py`를 생성합니다(기본 경로 설정 기준: `/var/lib/clickhouse/user_scripts/test_function.py`).
+
+```python
+#!/usr/bin/python3
+
+import sys
+
+if __name__ == '__main__':
+    for line in sys.stdin:
+        print("Value " + line, end='')
+        sys.stdout.flush()
+```
+
+```sql title="Query"
+SELECT test_function_python(toUInt64(2));
+```
+
+```text title="Result"
+┌─test_function_python(2)─┐
+│ Value 2                 │
+└─────────────────────────┘
+```
+
+<div id="udf-stdin">
+  ### `STDIN`에서 두 값을 읽어 그 합을 JSON 객체로 반환하기
+</div>
+
+이름이 지정된 인수와 [JSONEachRow](/ko/reference/formats/JSON/JSONEachRow) 포맷을 사용하여 XML 또는 YAML 구성으로 `test_function_sum_json`을 생성합니다.
+
+<Tabs>
+  <Tab title="XML">
+    파일 `test_function.xml`(기본 경로 설정 기준: `/etc/clickhouse-server/test_function.xml`).
+
+    ```xml title="/etc/clickhouse-server/test_function.xml"
+    <functions>
+        <function>
+            <type>executable</type>
+            <name>test_function_sum_json</name>
+            <return_type>UInt64</return_type>
+            <return_name>result_name</return_name>
+            <argument>
+                <type>UInt64</type>
+                <name>argument_1</name>
+            </argument>
+            <argument>
+                <type>UInt64</type>
+                <name>argument_2</name>
+            </argument>
+            <format>JSONEachRow</format>
+            <command>test_function_sum_json.py</command>
+        </function>
+    </functions>
+    ```
+  </Tab>
+
+  <Tab title="YAML">
+    파일 `test_function.yaml`(기본 경로 설정 기준: `/etc/clickhouse-server/test_function.yaml`).
+
+    ```yml title="/etc/clickhouse-server/test_function.yaml"
+    functions:
+      type: executable
+      name: test_function_sum_json
+      return_type: UInt64
+      return_name: result_name
+      argument:
+        - type: UInt64
+          name: argument_1
+        - type: UInt64
+          name: argument_2
+      format: JSONEachRow
+      command: test_function_sum_json.py
+    ```
+  </Tab>
+</Tabs>
+
+<br />
+
+`user_scripts` 폴더에 스크립트 파일 `test_function_sum_json.py`를 생성합니다(기본 경로 설정 기준: `/var/lib/clickhouse/user_scripts/test_function_sum_json.py`).
+
+```python
+#!/usr/bin/python3
+
+import sys
+import json
+
+if __name__ == '__main__':
+    for line in sys.stdin:
+        value = json.loads(line)
+        first_arg = int(value['argument_1'])
+        second_arg = int(value['argument_2'])
+        result = {'result_name': first_arg + second_arg}
+        print(json.dumps(result), end='\n')
+        sys.stdout.flush()
+```
+
+```sql title="Query"
+SELECT test_function_sum_json(2, 2);
+```
+
+```text title="Result"
+┌─test_function_sum_json(2, 2)─┐
+│                            4 │
+└──────────────────────────────┘
+```
+
+<div id="udf-parameters-in-command">
+  ### `command` 설정에서 매개변수 사용
+</div>
+
+실행형 사용자 정의 함수는 `command` 설정에 지정된 상수 매개변수를 받을 수 있습니다(이 기능은 `executable` 유형의 사용자 정의 함수에서만 작동합니다).
+또한 셸 인수 확장 취약점을 방지하려면 `execute_direct` 옵션도 필요합니다.
+
+<Tabs>
+  <Tab title="XML">
+    파일 `test_function_parameter_python.xml` (기본 경로 설정 기준: `/etc/clickhouse-server/test_function_parameter_python.xml`).
+
+    ```xml title="/etc/clickhouse-server/test_function_parameter_python.xml"
+    <functions>
+        <function>
+            <type>executable</type>
+            <execute_direct>true</execute_direct>
+            <name>test_function_parameter_python</name>
+            <return_type>String</return_type>
+            <argument>
+                <type>UInt64</type>
+            </argument>
+            <format>TabSeparated</format>
+            <command>test_function_parameter_python.py {test_parameter:UInt64}</command>
+        </function>
+    </functions>
+    ```
+  </Tab>
+
+  <Tab title="YAML">
+    파일 `test_function_parameter_python.yaml` (기본 경로 설정 기준: `/etc/clickhouse-server/test_function_parameter_python.yaml`).
+
+    ```yml title="/etc/clickhouse-server/test_function_parameter_python.yaml"
+    functions:
+      type: executable
+      execute_direct: true
+      name: test_function_parameter_python
+      return_type: String
+      argument:
+        - type: UInt64
+      format: TabSeparated
+      command: test_function_parameter_python.py {test_parameter:UInt64}
+    ```
+  </Tab>
+</Tabs>
+
+<br />
+
+`user_scripts` 폴더에 스크립트 파일 `test_function_parameter_python.py`를 생성하십시오(기본 경로 설정 기준: `/var/lib/clickhouse/user_scripts/test_function_parameter_python.py`).
+
+```python
+#!/usr/bin/python3
+
+import sys
+
+if __name__ == "__main__":
+    for line in sys.stdin:
+        print("Parameter " + str(sys.argv[1]) + " value " + str(line), end="")
+        sys.stdout.flush()
+```
+
+```sql title="Query"
+SELECT test_function_parameter_python(1)(2);
+```
+
+```text title="Result"
+┌─test_function_parameter_python(1)(2)─┐
+│ Parameter 1 value 2                  │
+└──────────────────────────────────────┘
+```
+
+<div id="udf-shell-script">
+  ### 셸 스크립트로 UDF 만들기
+</div>
+
+이 예시에서는 각 값을 2배로 곱하는 셸 스크립트를 만듭니다.
+
+<Tabs>
+  <Tab title="XML">
+    파일 `test_function_shell.xml` (`/etc/clickhouse-server/test_function_shell.xml`, 기본 경로 설정 기준).
+
+    ```xml title="/etc/clickhouse-server/test_function_shell.xml"
+    <functions>
+        <function>
+            <type>executable</type>
+            <name>test_shell</name>
+            <return_type>String</return_type>
+            <argument>
+                <type>UInt8</type>
+                <name>value</name>
+            </argument>
+            <format>TabSeparated</format>
+            <command>test_shell.sh</command>
+        </function>
+    </functions>
+    ```
+  </Tab>
+
+  <Tab title="YAML">
+    파일 `test_function_shell.yaml` (`/etc/clickhouse-server/test_function_shell.yaml`, 기본 경로 설정 기준).
+
+    ```yml title="/etc/clickhouse-server/test_function_shell.yaml"
+    functions:
+      type: executable
+      name: test_shell
+      return_type: String
+      argument:
+        - type: UInt8
+          name: value
+      format: TabSeparated
+      command: test_shell.sh
+    ```
+  </Tab>
+</Tabs>
+
+<br />
+
+`user_scripts` 폴더 안에 스크립트 파일 `test_shell.sh`를 만듭니다 (`/var/lib/clickhouse/user_scripts/test_shell.sh`, 기본 경로 설정 기준).
+
+```bash title="/var/lib/clickhouse/user_scripts/test_shell.sh"
+#!/bin/bash
+
+while read read_data;
+    do printf "$(expr $read_data \* 2)\n";
+done
+```
+
+```sql title="Query"
+SELECT test_shell(number) FROM numbers(10);
+```
+
+```text title="Result"
+    ┌─test_shell(number)─┐
+ 1. │ 0                  │
+ 2. │ 2                  │
+ 3. │ 4                  │
+ 4. │ 6                  │
+ 5. │ 8                  │
+ 6. │ 10                 │
+ 7. │ 12                 │
+ 8. │ 14                 │
+ 9. │ 16                 │
+10. │ 18                 │
+    └────────────────────┘
+```
+
+<div id="error-handling">
+  ## 오류 처리
+</div>
+
+일부 함수는 데이터가 유효하지 않으면 예외를 발생시킬 수 있습니다.
+이 경우 쿼리가 취소되고 클라이언트에 오류 메시지가 반환됩니다.
+분산 처리에서는 서버 중 하나에서 예외가 발생하면 다른 서버들도 쿼리를 중단하려고 합니다.
+
+<div id="evaluation-of-argument-expressions">
+  ## 인수 표현식의 평가
+</div>
+
+거의 모든 프로그래밍 언어에서는 특정 연산자의 경우 일부 인수가 평가되지 않을 수 있습니다.
+보통 `&&`, `||`, `?:` 같은 연산자가 여기에 해당합니다.
+ClickHouse에서는 함수(연산자)의 인수가 항상 평가됩니다.
+이는 각 행을 개별적으로 계산하지 않고 컬럼의 전체 파트를 한 번에 평가하기 때문입니다.
+
+<div id="performing-functions-for-distributed-query-processing">
+  ## 분산 쿼리 처리에서 함수 실행
+</div>
+
+분산 쿼리 처리에서는 가능한 한 많은 쿼리 처리 단계가 원격 서버에서 수행되며, 나머지 단계(중간 결과 병합 및 그 이후의 모든 단계)는 요청자 서버에서 수행됩니다.
+
+즉, 함수가 서로 다른 서버에서 실행될 수 있습니다.
+예를 들어, 쿼리 `SELECT f(sum(g(x))) FROM distributed_table GROUP BY h(y),` 에서
+
+* `distributed_table`에 세그먼트가 2개 이상 있으면 함수 &#39;g&#39;와 &#39;h&#39;는 원격 서버에서 수행되고, 함수 &#39;f&#39;는 요청자 서버에서 수행됩니다.
+* `distributed_table`에 세그먼트가 1개만 있으면 &#39;f&#39;, &#39;g&#39;, &#39;h&#39; 함수가 모두 이 세그먼트가 있는 서버에서 수행됩니다.
+
+함수의 결과는 일반적으로 어느 서버에서 수행되는지와 무관합니다. 하지만 경우에 따라서는 이것이 중요할 수 있습니다.
+예를 들어, 딕셔너리를 사용하는 함수는 해당 함수가 실행되는 서버에 있는 딕셔너리를 사용합니다.
+또 다른 예로 `hostName` 함수가 있습니다. 이 함수는 `SELECT` 쿼리에서 서버별로 `GROUP BY`를 수행할 수 있도록, 자신이 실행 중인 서버의 이름을 반환합니다.
+
+쿼리의 함수가 요청자 서버에서 수행되지만 이를 원격 서버에서 수행해야 한다면, 해당 함수를 &#39;any&#39; 집계 함수로 감싸거나 `GROUP BY`의 키에 추가할 수 있습니다.
+
+<div id="sql-user-defined-functions">
+  ## SQL 사용자 정의 함수
+</div>
+
+람다 표현식에서 사용자 정의 함수를 [CREATE FUNCTION](/ko/reference/statements/create/function) SQL 문으로 생성할 수 있습니다. 이러한 함수를 삭제하려면 [DROP FUNCTION](/ko/reference/statements/drop#drop-function) SQL 문을 사용하십시오.
+
+<div id="webassembly-user-defined-functions">
+  ## WebAssembly 사용자 정의 함수
+</div>
+
+<CloudNotSupportedBadge />
+
+<ExperimentalBadge />
+
+WebAssembly 사용자 정의 함수(WASM UDF)를 사용하면 WebAssembly로 컴파일된 사용자 정의 코드를 ClickHouse 서버 프로세스 내부에서 실행할 수 있습니다.
+
+<div id="quick-start">
+  ### 빠른 시작
+</div>
+
+ClickHouse 구성에서 experimental WebAssembly 지원을 활성화하세요:
+
+```xml
+<clickhouse>
+    <allow_experimental_webassembly_udf>true</allow_experimental_webassembly_udf>
+</clickhouse>
+```
+
+컴파일된 WASM 모듈을 시스템 테이블에 삽입하세요:
+
+```sql
+INSERT INTO system.webassembly_modules (name, code)
+SELECT 'my_module', base64Decode('AGFzbQEAAAA...');
+```
+
+WASM 모듈을 사용해 함수를 만드세요:
+
+```sql
+CREATE FUNCTION my_function
+LANGUAGE WASM
+ABI ROW_DIRECT
+FROM 'my_module'
+ARGUMENTS (x UInt32, y UInt32)
+RETURNS UInt32;
+```
+
+쿼리에서 이 함수를 사용하세요:
+
+```sql
+SELECT my_function(10, 20);
+```
+
+<div id="more-information">
+  ### 추가 정보
+</div>
+
+자세한 내용은 [WebAssembly 사용자 정의 함수](/ko/reference/functions/regular-functions/wasm_udf) 문서를 참고하십시오.
+
+<div id="related-content">
+  ## 관련 콘텐츠
+</div>
+
+* [ClickHouse Cloud의 사용자 정의 함수](https://clickhouse.com/blog/user-defined-functions-clickhouse-udfs)

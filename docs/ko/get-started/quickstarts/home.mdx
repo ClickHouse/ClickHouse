@@ -1,0 +1,31 @@
+---
+sidebarTitle: '빠른 시작'
+title: '빠른 시작 둘러보기'
+description: 'ClickHouse를 빠르게 시작할 수 있는 빠른 시작 가이드를 살펴봅니다'
+keywords: ['빠른 시작', '둘러보기', '시작하기', '튜토리얼']
+mode: 'custom'
+---
+
+import { QuickStartsGrid } from '/snippets/ko/components/QuickStartsGrid/QuickStartsGrid.jsx'
+import { quickStartsData } from '/snippets/ko/components/QuickStartsGrid/quickstarts-data.jsx'
+
+{/* 추천 빠른 시작 - 각 항목에는 quickstart ID와 배너 이미지가 있으며(제목은 이미지에 렌더링됩니다) */}
+
+export const featuredQuickstarts = [
+  { id: 'create-your-first-service-on-cloud' },
+  { id: 'insert-data-using-clickhouse-client' },
+  { id: 'obtain-your-cloud-connection-details' }
+];
+
+
+<div className="relative overflow-hidden">
+  <div className="absolute top-0 left-0 right-0 opacity-80">
+    <img src="/images/background-light.svg" className="block dark:hidden pointer-events-none w-full h-auto" alt="장식용 배경 이미지." />
+
+    <img src="/images/background-dark.svg" className="hidden dark:block pointer-events-none w-full h-auto" alt="장식용 배경 이미지." />
+  </div>
+
+  {/* QuickStartsGrid 컴포넌트를 렌더링합니다 */}
+
+  <QuickStartsGrid quickStartsData={quickStartsData} featured={featuredQuickstarts} />
+</div>

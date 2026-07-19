@@ -1,0 +1,73 @@
+---
+slug: /use-cases/observability/clickstack/migration/elastic/search
+title: 'ClickStack 与 Elastic 中的搜索'
+sidebarTitle: '搜索'
+description: 'ClickStack 与 Elastic 中的搜索'
+doc_type: 'guide'
+keywords: ['ClickStack', '搜索', '日志', '可观测性', '全文搜索']
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+<div id="search-in-clickstack-and-elastic">
+  ## 在 ClickStack 和 Elastic 中搜索
+</div>
+
+ClickHouse 是原生支持 SQL 的引擎，从底层起就专为高性能分析型工作负载而设计。相比之下，Elasticsearch 提供的是类 SQL 接口，会将 SQL 转换到底层的 Elasticsearch 查询 DSL——这意味着 SQL 并非其原生能力，而且其[功能一致性](https://www.elastic.co/docs/explore-analyze/query-filter/languages/sql-limitations)也比较有限。
+
+ClickHouse 不仅支持完整的 SQL，还扩展了一系列面向可观测性的函数，例如 [`argMax`](/zh/reference/functions/aggregate-functions/argMax)、[`histogram`](/zh/reference/functions/aggregate-functions/parametric-functions#histogram) 和 [`quantileTiming`](/zh/reference/functions/aggregate-functions/quantileTiming)，从而简化了对结构化日志、指标和链路追踪数据的查询。
+
+对于简单的日志和 trace 探索，ClickStack UI (HyperDX) 提供了[Lucene 风格语法](/zh/clickstack/features/search)，支持通过直观的文本过滤来执行字段-值查询、范围查询、通配符匹配等操作。这与 Elasticsearch 中的 [Lucene 语法](https://www.elastic.co/docs/reference/query-languages/query-dsl/query-dsl-query-string-query#query-string-syntax)以及 [Kibana Query Language](https://www.elastic.co/docs/reference/query-languages/kql) 的部分元素相似。
+
+<Image img="/images/use-cases/observability/hyperdx-search.webp" alt="搜索" size="lg" />
+
+搜索界面支持这种熟悉的语法，但会在后台将其转换为高效的 SQL `WHERE` 子句，因此 Kibana 用户会觉得很熟悉，同时又能在需要时利用 SQL 的强大能力。这使你能够充分利用 ClickHouse 中丰富的[字符串搜索函数](/zh/reference/functions/regular-functions/string-search-functions)、[相似度函数](/zh/reference/functions/regular-functions/string-functions#stringJaccardIndex) 和 [date time functions](/zh/reference/functions/regular-functions/date-time-functions)。
+
+<Image img="/images/use-cases/observability/hyperdx-sql.webp" alt="SQL" size="lg" />
+
+下面，我们将比较 ClickStack 和 Elasticsearch 的 Lucene 查询语言。
+
+<div id="clickstack-vs-elasticsearch-query-string">
+  ## ClickStack 搜索语法 vs Elasticsearch 查询字符串
+</div>
+
+ClickStack 和 Elasticsearch 都提供灵活的查询语言，便于直观地过滤日志和 trace。Elasticsearch 的查询字符串与其 DSL 和索引引擎紧密集成，而 ClickStack 支持一种受 Lucene 启发的语法，底层会将其转换为 ClickHouse SQL。下表概述了两套系统中常见搜索模式的行为，重点说明了两者在语法上的相似之处以及后端执行方式上的差异。
+
+| **功能**        | **ClickStack 语法**                   | **Elasticsearch 语法**              | **备注**                                                                                                                                                                                        |
+| ------------- | ----------------------------------- | --------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 自由文本搜索        | `error`                             | `error`                           | 匹配所有已建立索引的字段；在 ClickStack 中，这会被重写为多字段 SQL `ILIKE`。                                                                                                                                            |
+| 字段匹配          | `level:error`                       | `level:error`                     | 语法相同。ClickStack 在 ClickHouse 中匹配精确字段值。                                                                                                                                                        |
+| 短语搜索          | `"disk full"`                       | `"disk full"`                     | 带引号的文本会匹配精确词序；ClickHouse 使用字符串相等比较或 `ILIKE`。                                                                                                                                                  |
+| 字段短语匹配        | `message:"disk full"`               | `message:"disk full"`             | 会转换为 SQL `ILIKE` 或精确匹配。                                                                                                                                                                       |
+| OR 条件         | `error OR warning`                  | `error OR warning`                | 术语之间的逻辑 OR；两套系统都原生支持。                                                                                                                                                                         |
+| AND 条件        | `error AND db`                      | `error AND db`                    | 两者都会转换为交集；用户侧语法没有差异。                                                                                                                                                                          |
+| 否定            | `NOT error` or `-error`             | `NOT error` or `-error`           | 支持方式完全相同；ClickStack 会转换为 SQL `NOT ILIKE`。                                                                                                                                                     |
+| 分组            | `(error OR fail) AND db`            | `(error OR fail) AND db`          | 两者都支持标准的布尔分组。                                                                                                                                                                                 |
+| 通配符           | `error*` or `*fail*`                | `error*`, `*fail*`                | ClickStack 支持前导/后缀通配符；ES 出于性能考虑默认禁用前导通配符。不支持术语内部的通配符，例如 `f*ail.`。通配符必须与字段匹配一起使用。                                                                                                              |
+| 范围 (数值/日期)    | `duration:[100 TO 200]`             | `duration:[100 TO 200]`           | ClickStack 使用 SQL `BETWEEN`；Elasticsearch 会展开为范围查询。范围中不支持无界 `*`，例如 `duration:[100 TO *]`。如有需要，请使用下方的 `Unbounded ranges`。                                                                      |
+| 无界范围 (数值/日期)  | `duration:>10` or `duration:>=10`   | `duration:>10` or `duration:>=10` | ClickStack 使用标准 SQL 运算符                                                                                                                                                                       |
+| 包含/排除端点       | `duration:{100 TO 200}` (exclusive) | 相同                                | `{}` 表示排除边界。范围中不支持 `*`，例如 `duration:[100 TO *]`                                                                                                                                               |
+| 存在性检查         | N/A                                 | `_exists_:user` or `field:*`      | 不支持 `_exists_`。对于 `Map` 列 (例如 `LogAttributes`) ，请使用 `LogAttributes.log.file.path: *`。对于根列，这些列必须存在；如果事件中未包含，则会具有默认值。要搜索默认值或缺失列，可使用与 Elasticsearch 相同的语法：`ServiceName:*` 或 `ServiceName != ''`。 |
+| 正则表达式         | `match` function                    | `name:/joh?n(ath[oa]n)/`          | 当前 Lucene 语法不支持。你可以使用 SQL 以及 [`match`](/zh/reference/functions/regular-functions/string-search-functions#match) 函数或其他[字符串搜索函数](/zh/reference/functions/regular-functions/string-search-functions)。  |
+| 模糊匹配          | `editDistance('quikc', field) = 1`  | `quikc~`                          | 当前 Lucene 语法不支持。可以在 SQL 中使用 Distance functions，例如 `editDistance('rror', SeverityText) = 1`，或使用[其他相似度函数](/zh/reference/functions/regular-functions/string-functions#jaroSimilarity)。              |
+| 邻近搜索          | 不支持                                 | `"fox quick"~5`                   | 当前 Lucene 语法不支持。                                                                                                                                                                              |
+| 权重提升          | `quick^2 fox`                       | `quick^2 fox`                     | ClickStack 目前不支持。                                                                                                                                                                             |
+| 字段通配符         | `service.*:error`                   | `service.*:error`                 | ClickStack 目前不支持。                                                                                                                                                                             |
+| 转义特殊字符        | 使用 `\` 转义保留字符                       | 相同                                | 必须对保留符号进行转义。                                                                                                                                                                                  |
+
+<div id="empty-value-differences">
+  ## 存在/缺失差异
+</div>
+
+与 Elasticsearch 不同，在 Elasticsearch 中，某个字段可以在事件中被完全省略，因此是真正的“不存在”；而 ClickHouse 要求表 schema 中的所有列都必须存在。如果插入事件时未提供某个字段：
+
+* 对于 [`Nullable`](/zh/reference/data-types/nullable) 字段，它会被设置为 `NULL`。
+* 对于不可为 NULL 的字段 (默认情况) ，它会被填充为默认值 (通常为空字符串、0 或其他等效值) 。
+
+在 ClickStack 中，我们采用后一种方式，因为 [`Nullable`](/zh/reference/data-types/nullable) [不推荐](/zh/concepts/best-practices/avoidnullablecolumns)。
+
+这意味着，无法直接按照 Elasticsearch 中的语义来检查某个字段是否“存在”。
+
+相反，你可以使用 `field:*` 或 `field != ''` 来检查该字段是否具有非空值。因此，无法区分字段是真正缺失，还是被显式设置为空。
+
+在实践中，这种差异很少会对可观测性场景造成问题，但在不同系统之间转换查询时，仍需注意这一点。

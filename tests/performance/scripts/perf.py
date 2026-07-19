@@ -924,6 +924,12 @@ for query_index in queries_to_run:
                         "query_profiler_real_time_period_ns": 10000000,
                         "query_profiler_cpu_time_period_ns": 10000000,
                         "metrics_perf_events_enabled": 1,
+                        # Dedicated profile runs are not timed, so we can afford
+                        # the overhead of allocation sampling to also collect
+                        # MemorySample and JemallocSample stacks for flamegraphs.
+                        "memory_profiler_sample_probability": 0.1,
+                        "jemalloc_enable_profiler": 1,
+                        "jemalloc_collect_profile_samples_in_trace_log": 1,
                     },
                 )
                 print(

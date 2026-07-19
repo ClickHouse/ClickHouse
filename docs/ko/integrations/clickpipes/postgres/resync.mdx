@@ -1,0 +1,58 @@
+---
+title: '데이터베이스 ClickPipe resync'
+description: '데이터베이스 ClickPipe를 resync하는 문서'
+slug: /integrations/clickpipes/postgres/resync
+sidebarTitle: 'ClickPipe resync'
+doc_type: 'guide'
+keywords: ['clickpipes', 'postgresql', 'cdc', '데이터 수집', '실시간 동기화']
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+<div id="what-postgres-resync-do">
+  ### Resync는 어떤 작업을 수행하나요?
+</div>
+
+Resync는 다음 작업을 순서대로 수행합니다:
+
+1. 기존 ClickPipe가 삭제되고 새 &quot;resync&quot; ClickPipe가 시작됩니다. 따라서 resync를 수행하면 원본 테이블 구조의 변경 사항도 반영됩니다.
+2. resync ClickPipe는 원래 테이블과 이름은 같지만 `_resync` 접미사가 붙은 새 대상 테이블 세트를 생성(또는 교체)합니다.
+3. `_resync` 테이블에 대해 초기 적재가 수행됩니다.
+4. 그런 다음 `_resync` 테이블이 원래 테이블과 스왑됩니다. 스왑 전에 원래 테이블의 소프트 삭제된 행이 `_resync` 테이블로 전송됩니다.
+
+원래 ClickPipe의 모든 설정은 resync ClickPipe에도 그대로 유지됩니다. 원래 ClickPipe의 통계는 UI에서 초기화됩니다.
+
+<div id="use-cases-postgres-resync">
+  ### ClickPipe resync 사용 사례
+</div>
+
+다음과 같은 시나리오가 있습니다:
+
+1. 원본 테이블에 대규모 스키마 변경을 수행해야 하며, 이로 인해 기존 ClickPipe가 더 이상 작동하지 않아 다시 시작해야 할 수 있습니다. 변경을 완료한 후 Resync를 클릭하면 됩니다.
+2. 특히 ClickHouse에서는 대상 테이블의 ORDER BY 키를 변경해야 할 수 있습니다. Resync를 수행하면 올바른 정렬 키를 사용하도록 새 테이블에 데이터를 다시 채울 수 있습니다.
+3. ClickPipe의 replication slot이 무효화된 경우: Resync는 새 ClickPipe와 원본 데이터베이스에 새 슬롯을 생성합니다.
+
+<Note>
+  resync는 여러 번 수행할 수 있지만, 매번 병렬 스레드를 사용하는 초기 적재가 포함되므로
+  resync를 수행할 때 원본 데이터베이스에 가해지는 부하를 고려하십시오.
+</Note>
+
+<div id="guide-postgres-resync">
+  ### ClickPipe resync 가이드
+</div>
+
+1. **Data Sources** 탭에서 resync할 Postgres ClickPipe를 클릭합니다.
+2. **설정** 탭으로 이동합니다.
+3. **Resync** 버튼을 클릭합니다.
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/resync_button.webp" border size="md" />
+
+4. 확인 대화 상자가 나타나면 **Resync**를 다시 클릭합니다.
+5. **메트릭** 탭으로 이동합니다.
+6. 약 5초 후(또는 페이지를 새로 고치면) 파이프 상태가 **Setup** 또는 **Snapshot**이어야 합니다.
+7. resync의 초기 적재는 **Tables** 탭의 **Initial Load Stats** 섹션에서 모니터링할 수 있습니다.
+8. 초기 적재가 완료되면 파이프가 `_resync` 테이블을 원래 테이블과 원자적으로 스왑합니다. 스왑 중 상태는 **Resync**입니다.
+9. 스왑이 완료되면 파이프는 **Running** 상태가 되며, 활성화된 경우 CDC를 수행합니다.

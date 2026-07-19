@@ -1,0 +1,112 @@
+---
+description: 'Redhat/CentOS Linux에 ClickHouse를 설치합니다'
+keywords: ['ClickHouse', '설치', 'Redhat', 'CentOS', 'rpm']
+sidebarTitle: 'Redhat/CentOS'
+slug: /install/redhat
+title: 'rpm 기반 Linux 배포판에 ClickHouse를 설치합니다'
+hide_title: true
+doc_type: 'guide'
+---
+
+import Recommendations from '/snippets/ko/recommendations.mdx';
+
+> **CentOS**, **RedHat** 및 기타 모든 rpm 기반
+> Linux 배포판에서는 공식 사전 컴파일 `rpm` 패키지 사용을 권장합니다.
+
+<Steps>
+  <Step>
+    ## 권장 사항 검토
+
+    <Recommendations />
+  </Step>
+
+  <Step>
+    ## RPM 리포지토리 설정
+
+    다음 명령을 실행하여 공식 리포지토리를 추가합니다.
+
+    ```bash
+    sudo yum install -y yum-utils
+    sudo yum-config-manager --add-repo https://packages.clickhouse.com/rpm/clickhouse.repo
+    ```
+
+    `zypper` 패키지 관리자(openSUSE, SLES)를 사용하는 시스템에서는 다음 명령을 실행합니다.
+
+    ```bash
+    sudo zypper addrepo -r https://packages.clickhouse.com/rpm/clickhouse.repo -g
+    sudo zypper --gpg-auto-import-keys refresh clickhouse-stable
+    ```
+
+    아래 단계에서는 사용 중인 패키지 관리자에 따라 `yum install` 대신
+    `zypper install`을 사용할 수 있습니다.
+  </Step>
+
+  <Step>
+    ## ClickHouse 서버 및 클라이언트 설치
+
+    ClickHouse를 설치하려면 다음 명령을 실행합니다.
+
+    ```bash
+    sudo yum install -y clickhouse-server clickhouse-client
+    ```
+
+    * 필요에 따라 다른 [릴리스 유형](/ko/resources/support-center/knowledge-base/setup-installation/production)을 사용하려면 `stable`을 `lts`로 바꿀 수 있습니다.
+    * [packages.clickhouse.com/rpm](https://packages.clickhouse.com/rpm/stable)에서 패키지를 수동으로 다운로드하여 설치할 수 있습니다.
+    * 특정 버전을 지정하려면 패키지 이름 끝에 `-$version`을 추가하십시오.
+      예시는 다음과 같습니다.
+
+    ```bash
+    sudo yum install clickhouse-server-22.8.7.34
+    ```
+  </Step>
+
+  <Step>
+    ## ClickHouse 서버 시작
+
+    ClickHouse 서버를 시작하려면 다음 명령을 실행합니다.
+
+    ```bash
+    sudo systemctl enable clickhouse-server
+    sudo systemctl start clickhouse-server
+    sudo systemctl status clickhouse-server
+    ```
+
+    ClickHouse 클라이언트를 시작하려면 다음 명령을 실행합니다.
+
+    ```bash
+    clickhouse-client
+    ```
+
+    서버에 비밀번호를 설정한 경우 다음 명령을 실행해야 합니다.
+
+    ```bash
+    clickhouse-client --password
+    ```
+  </Step>
+
+  <Step>
+    ## 독립형 ClickHouse Keeper 설치
+
+    <Tip>
+      프로덕션 환경에서는 전용 노드에서 ClickHouse Keeper를 실행할 것을 강력히 권장합니다.
+      테스트 환경에서 ClickHouse 서버와 ClickHouse Keeper를 동일한 서버에서 실행하기로 한 경우,
+      ClickHouse 서버에 ClickHouse Keeper가 포함되어 있으므로 별도로 설치할 필요가 없습니다.
+    </Tip>
+
+    독립형 ClickHouse Keeper 서버에 `clickhouse-keeper`를 설치하려면 다음 명령을 실행합니다.
+
+    ```bash
+    sudo yum install -y clickhouse-keeper
+    ```
+  </Step>
+
+  <Step>
+    ## ClickHouse Keeper 활성화 및 시작
+
+    ```bash
+    sudo systemctl enable clickhouse-keeper
+    sudo systemctl start clickhouse-keeper
+    sudo systemctl status clickhouse-keeper
+    ```
+  </Step>
+</Steps>

@@ -1,0 +1,84 @@
+---
+description: '一种缓存机制，可将
+数据缓存在进程内内存中，而非依赖操作系统页缓存。'
+sidebarTitle: '用户态页缓存'
+slug: /operations/userspace-page-cache
+title: '用户态页缓存'
+doc_type: 'reference'
+---
+
+<div id="overview">
+  ## 概述
+</div>
+
+> 用户态页缓存是一种新的缓存机制，可将
+> 数据缓存在进程内内存中，而不是依赖操作系统页缓存。
+
+ClickHouse 已经提供了[文件系统缓存](/zh/concepts/features/configuration/server-config/storing-data)，
+作为在 Amazon S3、Google
+Cloud Storage (GCS) 或 Azure Blob 存储等远程对象存储之上进行缓存的一种方式。用户态页缓存旨在
+在常规操作系统缓存效果不够理想时，加快对远程数据的访问。
+
+它与文件系统缓存的区别如下：
+
+| 文件系统缓存                   | 用户态页缓存         |
+| ------------------------ | -------------- |
+| 将数据写入本地文件系统              | 仅存在于内存中        |
+| 占用磁盘空间 (也可配置为使用 tmpfs)   | 不依赖文件系统        |
+| 在服务器重启后仍然保留              | 在服务器重启后不会保留    |
+| 不会反映在服务器的内存使用量中          | 会反映在服务器的内存使用量中 |
+| 既适用于磁盘，也适用于内存 (操作系统页缓存)  | **适合无盘服务器**    |
+
+<div id="configuration-settings-and-usage">
+  ## 配置项与用法
+</div>
+
+<div id="usage">
+  ### 用法
+</div>
+
+要启用用户态页缓存，首先需要在服务器端进行配置：
+
+```bash
+cat config.d/page_cache.yaml
+page_cache_max_size: 100G
+```
+
+<Note>
+  用户态页缓存最多可使用指定数量的内存，但
+  这部分内存并非预留。当服务器因其他需求需要内存时，
+  这部分内存会被回收。
+</Note>
+
+接下来，在查询级别启用它：
+
+```sql
+SET use_page_cache_for_disks_without_file_cache=1;
+```
+
+<div id="settings">
+  ### 设置
+</div>
+
+| 设置                                                      | 描述                                                                                                                                                                                   | 默认值         |
+| ------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------- |
+| `use_page_cache_for_disks_without_file_cache`           | 对未启用文件系统缓存的远程磁盘使用用户态页缓存。                                                                                                                                                             | `0`         |
+| `use_page_cache_with_distributed_cache`                 | 使用分布式缓存时使用用户态页缓存。                                                                                                                                                                    | `0`         |
+| `read_from_page_cache_if_exists_otherwise_bypass_cache` | 以被动模式使用用户态页缓存，类似于 [`read_from_filesystem_cache_if_exists_otherwise_bypass_cache`](/zh/reference/settings/session-settings#read_from_filesystem_cache_if_exists_otherwise_bypass_cache)。 | `0`         |
+| `page_cache_inject_eviction`                            | 用户态页缓存有时会随机使部分页失效。用于测试。                                                                                                                                                              | `0`         |
+| `page_cache_block_size`                                 | 存储在用户态页缓存中的文件块大小 (以字节为单位) 。所有经过缓存的读取都会向上舍入到该大小的整数倍。                                                                                                                                  | `1048576`   |
+| `page_cache_history_window_ms`                          | 已释放的内存在可供用户态页缓存使用前的延迟时间。                                                                                                                                                             | `1000`      |
+| `page_cache_policy`                                     | 用户态页缓存策略名称。                                                                                                                                                                          | `SLRU`      |
+| `page_cache_size_ratio`                                 | 用户态页缓存中受保护队列占缓存总大小的比例。                                                                                                                                                               | `0.5`       |
+| `page_cache_min_size`                                   | 用户态页缓存的最小大小。                                                                                                                                                                         | `104857600` |
+| `page_cache_max_size`                                   | 用户态页缓存的最大大小。设为 0 可禁用缓存。如果大于 page&#95;cache&#95;min&#95;size，则缓存大小会在此范围内持续调整，以便在将总内存使用量保持在限制值 (`max_server_memory_usage`[`_to_ram_ratio`]) 以下的同时，尽可能利用大部分可用内存。                        | `0`         |
+| `page_cache_free_memory_ratio`                          | 需要保留、不供用户态页缓存使用的内存限制比例。类似于 Linux 的 min&#95;free&#95;kbytes 设置。                                                                                                                       | `0.15`      |
+| `page_cache_lookahead_blocks`                           | 当用户态页缓存未命中时，如果后续连续块也不在缓存中，则一次最多从底层存储读取这么多个连续块。每个块的大小为 page&#95;cache&#95;block&#95;size 字节。                                                                                          | `16`        |
+| `page_cache_shards`                                     | 将用户态页缓存划分为这么多个分片，以减少互斥锁竞争。Experimental，不太可能提升性能。                                                                                                                                     | `4`         |
+
+<div id="related-content">
+  ## 相关内容
+</div>
+
+* [文件系统缓存](/zh/concepts/features/configuration/server-config/storing-data)
+* [ClickHouse v25.3 版本发布网络研讨会](https://www.youtube.com/live/iCKEzp0_Z2Q?feature=shared\&t=1320)

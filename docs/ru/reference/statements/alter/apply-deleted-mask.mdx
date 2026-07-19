@@ -1,0 +1,22 @@
+---
+description: 'Документация по команде APPLY DELETED MASK'
+sidebarTitle: 'APPLY DELETED MASK'
+slug: /sql-reference/statements/alter/apply-deleted-mask
+title: 'APPLY DELETED MASK'
+doc_type: 'reference'
+---
+
+```sql
+ALTER TABLE [db].name [ON CLUSTER cluster] APPLY DELETED MASK [IN PARTITION partition_id]
+```
+
+Команда применяет маску, созданную с помощью [легковесного удаления](/ru/reference/statements/delete), и принудительно удаляет с диска строки, помеченные как удалённые. Эта команда является тяжеловесной мутацией и по смыслу эквивалентна запросу `ALTER TABLE [db].name DELETE WHERE _row_exists = 0`.
+
+<Note>
+  Она работает только для таблиц семейства [`MergeTree`](/ru/reference/engines/table-engines/mergetree-family/mergetree) (включая [реплицируемые](/ru/reference/engines/table-engines/mergetree-family/replication) таблицы).
+</Note>
+
+**См. также**
+
+* [Легковесные удаления](/ru/reference/statements/delete)
+* [Тяжеловесные удаления](/ru/reference/statements/alter/delete)

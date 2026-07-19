@@ -42,6 +42,7 @@
 #include <Core/ServerSettings.h>
 
 #include <Poco/Net/NetException.h>
+#include <Poco/Net/SocketDefs.h>
 #include <Poco/Net/DNS.h>
 #include <Poco/Util/AbstractConfiguration.h>
 
@@ -533,6 +534,14 @@ ZooKeeper::ZooKeeper(
         {
             requests_queue.finish();
             socket.shutdown();
+        }
+        catch (const Poco::Net::NetException & e)
+        {
+            /// On macOS, shutdown() on an already-disconnected socket returns ENOTCONN; this is benign here.
+            if (e.code() == POCO_ENOTCONN)
+                LOG_TRACE(log, "Socket already disconnected on shutdown: {}", e.message());
+            else
+                tryLogCurrentException(log);
         }
         catch (...)
         {
@@ -1432,6 +1441,14 @@ void ZooKeeper::finalize(bool error_send, bool error_receive, const String & rea
             /// This will also wakeup the receiving thread.
             socket.shutdown();
         }
+        catch (const Poco::Net::NetException & e)
+        {
+            /// On macOS, shutdown() on an already-disconnected socket returns ENOTCONN; this is benign here.
+            if (e.code() == POCO_ENOTCONN)
+                LOG_TRACE(log, "Socket already disconnected on shutdown: {}", e.message());
+            else
+                tryLogCurrentException(log);
+        }
         catch (...)
         {
             /// We must continue to execute all callbacks, because the user is waiting for them.
@@ -1900,34 +1917,26 @@ void ZooKeeper::list(
     bool with_stat,
     bool with_data)
 {
-    std::shared_ptr<ZooKeeperListRequest> request{nullptr};
-
     if (with_stat || with_data)
-    {
         if (!isFeatureEnabled(KeeperFeatureFlag::LIST_WITH_STAT_AND_DATA) || !isFeatureEnabled(KeeperFeatureFlag::FILTERED_LIST))
             throw Exception::fromMessage(Error::ZBADARGUMENTS, "List with stat/data cannot be used because it's not supported by the server");
 
-        auto list_with_stats_request = std::make_shared<ZooKeeperFilteredListWithStatsAndDataRequest>();
-        list_with_stats_request->list_request_type = list_request_type;
-        list_with_stats_request->with_stat = with_stat;
-        list_with_stats_request->with_data = with_data;
-        request = std::move(list_with_stats_request);
-    }
-    else if (!isFeatureEnabled(KeeperFeatureFlag::FILTERED_LIST))
-    {
-        if (list_request_type != ListRequestType::ALL)
+    if (list_request_type != ListRequestType::ALL)
+        if (!isFeatureEnabled(KeeperFeatureFlag::FILTERED_LIST))
             throw Exception::fromMessage(Error::ZBADARGUMENTS, "Filtered list request type cannot be used because it's not supported by the server");
 
-        request = std::make_shared<ZooKeeperListRequest>();
-    }
-    else
-    {
-        auto filtered_list_request = std::make_shared<ZooKeeperFilteredListRequest>();
-        filtered_list_request->list_request_type = list_request_type;
-        request = std::move(filtered_list_request);
-    }
-
+    auto request = std::make_shared<ZooKeeperListRequest>();
     request->path = path;
+
+    if (list_request_type != ListRequestType::ALL)
+        request->list_request_type = list_request_type;
+
+    if (with_stat || with_data)
+    {
+        request->list_request_type = list_request_type;
+        request->with_stat = with_stat;
+        request->with_data = with_data;
+    }
 
     instrumentResponseTimeMetric(callback, HistogramMetrics::KeeperResponseTimeReadonly);
 
@@ -2264,22 +2273,22 @@ void ZooKeeper::setupFaultDistributions()
     /// pushRequest (before request is sent) and receiveEvent (after request was executed).
     if (0 < args.send_fault_probability && args.send_fault_probability <= 1)
     {
-        LOG_INFO(log, "ZK send fault: {}%", args.send_fault_probability * 100);
+        LOG_INFO(log, "ZK send fault: {:.3f}%", args.send_fault_probability * 100);
         send_inject_fault.emplace(args.send_fault_probability);
     }
     if (0 < args.recv_fault_probability && args.recv_fault_probability <= 1)
     {
-        LOG_INFO(log, "ZK recv fault: {}%", args.recv_fault_probability * 100);
+        LOG_INFO(log, "ZK recv fault: {:.3f}%", args.recv_fault_probability * 100);
         recv_inject_fault.emplace(args.recv_fault_probability);
     }
     if (0 < args.send_sleep_probability && args.send_sleep_probability <= 1)
     {
-        LOG_INFO(log, "ZK send sleep: {}% -> {}ms", args.send_sleep_probability * 100, args.send_sleep_ms);
+        LOG_INFO(log, "ZK send sleep: {:.3f}% -> {}ms", args.send_sleep_probability * 100, args.send_sleep_ms);
         send_inject_sleep.emplace(args.send_sleep_probability);
     }
     if (0 < args.recv_sleep_probability && args.recv_sleep_probability <= 1)
     {
-        LOG_INFO(log, "ZK recv sleep: {}% -> {}ms", args.recv_sleep_probability * 100, args.recv_sleep_ms);
+        LOG_INFO(log, "ZK recv sleep: {:.3f}% -> {}ms", args.recv_sleep_probability * 100, args.recv_sleep_ms);
         recv_inject_sleep.emplace(args.recv_sleep_probability);
     }
     inject_setup.test_and_set();

@@ -1,0 +1,26 @@
+---
+sidebarTitle: 'Java-раннер'
+slug: /integrations/google-dataflow/java-runner
+description: 'Вы можете организовать приём данных в ClickHouse с помощью Java-раннера Google Dataflow'
+title: 'Java-раннер Dataflow'
+doc_type: 'guide'
+keywords: ['Java-раннер Dataflow', 'Google Dataflow ClickHouse', 'Apache Beam Java ClickHouse', 'ClickHouseIO connector']
+---
+
+import ClickHouseSupportedBadge from "/snippets/ru/components/ClickHouseSupported/ClickHouseSupported.jsx";
+
+<ClickHouseSupportedBadge />
+
+Java-раннер Dataflow позволяет запускать пользовательские конвейеры Apache Beam в сервисе Dataflow от Google Cloud. Этот подход обеспечивает максимальную гибкость и хорошо подходит для сложных ETL-процессов.
+
+<div id="how-it-works">
+  ## Как это работает
+</div>
+
+1. **Реализация конвейера**
+   Чтобы использовать Java-раннер, вам нужно реализовать конвейер Beam с помощью `ClickHouseIO` — нашего официального коннектора для Apache Beam. Примеры кода и инструкции по использованию `ClickHouseIO` см. в разделе [ClickHouse Apache Beam](/ru/integrations/connectors/data-ingestion/etl-tools/apache-beam).
+
+2. **Развертывание**
+   После реализации и настройки конвейера вы можете развернуть его в Dataflow с помощью инструментов развертывания Google Cloud. Подробные инструкции приведены в [документации Google Cloud Dataflow — Java Pipeline](https://cloud.google.com/dataflow/docs/quickstarts/create-pipeline-java).
+
+**Note**: Этот подход предполагает знакомство с фреймворком Beam и навыки программирования. Если вам нужно решение без кода, рассмотрите возможность использования [готовых шаблонов ClickHouse](/ru/integrations/connectors/data-ingestion/GCP/google-dataflow/templates).

@@ -1,0 +1,37 @@
+---
+slug: /deployment-guides/index
+title: 'Deployment guides overview'
+description: 'Landing page for the deployment and scaling section'
+keywords: ['deployment guides', 'scaling', 'cluster deployment', 'replication', 'fault tolerance']
+doc_type: 'landing-page'
+mode: wide
+---
+
+This section covers the following topics:
+
+<CardGroup cols={2}>
+  <Card title="Introduction" icon="book-open" href="/guides/oss/deployment-and-scaling/terminology">
+    Terminology used to describe ClickHouse deployments.
+  </Card>
+  <Card title="Table shards and replicas" icon="table-cells-large" href="/guides/oss/deployment-and-scaling/shards">
+    Learn what table shards and replicas are and what they're used for.
+  </Card>
+  <Card title="Rebalancing data" icon="scale-balanced" href="/guides/oss/deployment-and-scaling/scaling-clusters">
+    Approaches to rebalancing data when scaling a cluster.
+  </Card>
+  <Card title="Separation of storage and compute" icon="hard-drive" href="/guides/oss/deployment-and-scaling/separation-storage-compute">
+    Use ClickHouse with object storage to separate storage from compute.
+  </Card>
+  <Card title="Cluster discovery" icon="magnifying-glass" href="/guides/oss/deployment-and-scaling/cluster-discovery">
+    Let nodes discover and register themselves automatically via ClickHouse Keeper.
+  </Card>
+  <Card title="Keeper" icon="key" href="/guides/oss/deployment-and-scaling/keeper/index">
+    Configuring ClickHouse Keeper, the coordination system for replication and distributed DDL.
+  </Card>
+  <Card title="Monitoring" icon="chart-line" href="/guides/oss/deployment-and-scaling/monitoring/monitoring">
+    Monitoring ClickHouse and tracing it with OpenTelemetry.
+  </Card>
+  <Card title="Examples" icon="server" href="/guides/oss/deployment-and-scaling/examples/1-shard-2-replicas">
+    Example deployments: replication for fault tolerance, scaling out, and a combined cluster deployment.
+  </Card>
+</CardGroup>

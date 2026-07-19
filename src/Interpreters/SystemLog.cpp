@@ -23,6 +23,7 @@
 #include <Interpreters/ErrorLog.h>
 #include <Interpreters/FilesystemCacheLog.h>
 #include <Interpreters/FilesystemReadPrefetchesLog.h>
+#include <Interpreters/InterpreterAlterQuery.h>
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/ZooKeeperConnectionLog.h>
@@ -49,11 +50,13 @@
 #include <Interpreters/ZooKeeperLog.h>
 #include <Interpreters/AggregatedZooKeeperLog.h>
 #include <IO/WriteHelpers.h>
+#include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTRenameQuery.h>
+#include <Parsers/ASTSetQuery.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ParserCreateQuery.h>
@@ -830,6 +833,71 @@ void SystemLog<LogElement>::prepareTable()
             addSettingsForQuery(query_context, IAST::QueryKind::Rename);
 
             InterpreterRenameQuery(rename, query_context).execute();
+
+            /// Mark the old (renamed) table as readonly if it's a non-replicated MergeTree without a TTL.
+            /// This prevents the old table from wasting CPU on background operations.
+            ///
+            /// `table_readonly` is only supported for `StorageMergeTree`: `StorageReplicatedMergeTree`
+            /// rejects `ALTER TABLE ... MODIFY SETTING table_readonly` with `NOT_IMPLEMENTED`, so issuing
+            /// it for a replicated system log table (configured via a custom `<engine>`) would throw and
+            /// abort the flush, losing the current batch of log entries. Skip the marking in that case.
+            ///
+            /// A `table_readonly` table performs no modifications on disk at all, including TTL drop/delete
+            /// merges. So if a system log table is configured with a TTL (e.g. `event_date + INTERVAL 30 DAY
+            /// DELETE`), marking it readonly would prevent its expired data from ever being reclaimed. Keep
+            /// such tables writable so background TTL still runs. In the default open-source configuration
+            /// most system logs (including `query_log`) have no TTL, so their rotated tables are frozen as
+            /// readonly; only the few logs configured with a TTL stay writable.
+            ///
+            /// Marking the old table read-only is purely an optimization and must never break log rotation.
+            /// The rename has already succeeded above, so if applying the setting throws (for example, a
+            /// transient error, or the table being dropped concurrently), swallow it, log it, and continue
+            /// to create the new table. Letting the exception propagate would abort `flushImpl` and discard
+            /// the current batch of log entries.
+            try
+            {
+                StorageID old_table_id(table_id.database_name, table_id.table_name + "_" + toString(suffix));
+                auto old_table = DatabaseCatalog::instance().tryGetTable(old_table_id, getContext());
+
+                bool old_table_has_ttl = false;
+                if (old_table)
+                {
+                    auto old_metadata = old_table->getInMemoryMetadataPtr(getContext(), false);
+                    old_table_has_ttl = old_metadata->hasAnyTTL();
+                }
+
+                if (old_table && old_table->isMergeTree() && !old_table->supportsReplication() && !old_table_has_ttl)
+                {
+                    auto alter_context = Context::createCopy(context);
+                    alter_context->makeQueryContext();
+                    addSettingsForQuery(alter_context, IAST::QueryKind::Alter);
+
+                    auto alter_command = make_intrusive<ASTAlterCommand>();
+                    alter_command->type = ASTAlterCommand::MODIFY_SETTING;
+
+                    auto settings_changes = make_intrusive<ASTSetQuery>();
+                    settings_changes->is_standalone = false;
+                    settings_changes->changes.push_back({"table_readonly", Field(true)});
+                    alter_command->settings_changes = settings_changes.get();
+                    alter_command->children.push_back(settings_changes);
+
+                    auto alter_commands = make_intrusive<ASTExpressionList>();
+                    alter_commands->children.push_back(alter_command);
+
+                    auto alter_query = make_intrusive<ASTAlterQuery>();
+                    alter_query->alter_object = ASTAlterQuery::AlterObjectType::TABLE;
+                    alter_query->setDatabase(old_table_id.database_name);
+                    alter_query->setTable(old_table_id.table_name);
+                    alter_query->command_list = alter_commands.get();
+                    alter_query->children.push_back(alter_commands);
+
+                    InterpreterAlterQuery(alter_query, alter_context).execute();
+                }
+            }
+            catch (...)
+            {
+                tryLogCurrentException(log, "Failed to mark the rotated system log table as readonly; continuing with rotation");
+            }
 
             /// The required table will be created.
             table = nullptr;

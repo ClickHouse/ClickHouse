@@ -47,29 +47,27 @@ public:
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         FunctionArgumentDescriptors mandatory_args{
-            {"collection", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), &isColumnConst, "const String"},
             {"text", static_cast<FunctionArgumentDescriptor::TypeValidator>(&FunctionBaseAI::isStringOrNullableString), nullptr, "String or Nullable(String)"},
             {"categories", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isArrayOfStrings), &isColumnConst, "const Array(String)"},
         };
         FunctionArgumentDescriptors optional_args{
-            {"temperature", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNumber), &isColumnConst, "const Number"},
+            {"params", static_cast<FunctionArgumentDescriptor::TypeValidator>(&FunctionBaseAI::isStringToStringMap), &isColumnConst, "const Map(String, String)"},
         };
         validateFunctionArguments(*this, arguments, mandatory_args, optional_args);
 
-        return wrapReturnTypeForNullablePrompt(arguments, prompt_arg_index, std::make_shared<DataTypeString>());
+        return wrapReturnTypeForNullablePrompt(arguments, 0, std::make_shared<DataTypeString>());
     }
 
 private:
     static constexpr float default_temp = 0.0f;
-    static constexpr size_t prompt_arg_index = 1;
-    static constexpr size_t categories_arg_index = 2;
-    static constexpr size_t temp_arg_idx = 3;
+    static constexpr size_t categories_arg_index = 1;
 
     String functionName() const override { return name; }
 
-    float defaultTemperature() const override { return default_temp; }
-    size_t promptArgumentIndex() const override { return prompt_arg_index; }
-    size_t temperatureArgumentIndex() const override { return temp_arg_idx; }
+    AIParamSpecs functionParams() const override
+    {
+        return {{"temperature", AIParamKind::Float, Field(static_cast<Float64>(default_temp))}};
+    }
 
     void checkSanityBeforeExecuteImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t /*input_rows_count*/) const override
     {
@@ -81,7 +79,7 @@ private:
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "aiClassify: 'categories' must contain at least one label");
     }
 
-    String buildSystemPrompt(const ColumnsWithTypeAndName & arguments) const override
+    String buildSystemPrompt(const ColumnsWithTypeAndName & arguments, const AIParams &) const override
     {
         const auto & col_categories = assert_cast<const ColumnConst &>(*arguments[categories_arg_index].column);
         auto categories = (*col_categories.getDataColumnPtr())[0].safeGet<Array>();
@@ -103,7 +101,7 @@ private:
 
     String buildUserMessage(const ColumnsWithTypeAndName & arguments, size_t row) const override
     {
-        return String(arguments[prompt_arg_index].column->getDataAt(row));
+        return String(arguments[0].column->getDataAt(row));
     }
 
     /// Builds the OpenAI `response_format` schema object constraining the model to output one of the
@@ -192,19 +190,20 @@ The function sends the text together with a fixed classification prompt and a JS
 constraining the model to return exactly one of the supplied labels. When the response is returned as a JSON
 object of the form `{"category": "..."}`, the label is unwrapped and the label string is returned.
 
-The first argument is a named collection that specifies the provider, model, endpoint, and optionally an API key.
+Credentials (a named collection specifying the provider, model, endpoint, and optionally an API key)
+are taken from the `credentials` key of the optional parameter map, or from the
+`ai_function_text_default_credentials` setting when the map omits it.
 )",
-        .syntax = "aiClassify(collection, text, categories[, temperature])",
+        .syntax = "aiClassify(text, categories[, params])",
         .arguments = {
-            {"collection", "Name of a named collection containing provider credentials and configuration.", {"String"}},
             {"text", "Text to classify.", {"String"}},
             {"categories", "Constant list of candidate category labels.", {"Array(String)"}},
-            {"temperature", "Sampling temperature controlling randomness. Default: `0.0`.", {"Float64"}},
+            {"params", "Optional constant `Map(String, String)` of parameters. Function-specific keys: `temperature` (sampling temperature controlling randomness; default `0.0`), `max_tokens` (maximum output tokens per call; default `1024`). The common parameters `credentials` and `model` also apply (see [AI Functions](/sql-reference/functions/ai-functions)).", {"Map(String, String)"}},
         },
         .returned_value = {"One of the provided category labels, or the default value for the column type (empty string) if the request failed and `ai_function_throw_on_error` is disabled.", {"String"}},
         .examples = {
-            {"Classify sentiment", "SELECT aiClassify('ai_credentials', 'I love this product!', ['positive', 'negative', 'neutral'])", "positive"},
-            {"Classify a column", "SELECT body, aiClassify('ai_credentials', body, ['bug', 'question', 'feature']) AS kind FROM issues LIMIT 5", ""},
+            {"Classify sentiment", "SELECT aiClassify('I love this product!', ['positive', 'negative', 'neutral'])", "positive"},
+            {"Classify a column with explicit credentials", "SELECT body, aiClassify(body, ['bug', 'question', 'feature'], map('credentials', 'ai_text_credentials')) AS kind FROM issues LIMIT 5", ""},
         },
         .introduced_in = {26, 4},
         .category = FunctionDocumentation::Category::AI});

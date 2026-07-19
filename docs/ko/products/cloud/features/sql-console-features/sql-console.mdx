@@ -1,0 +1,321 @@
+---
+sidebar_title: 'SQL 콘솔'
+slug: /cloud/get-started/sql-console
+description: 'SQL 콘솔을 사용해 쿼리를 실행하고 시각화를 만듭니다.'
+keywords: ['sql 콘솔', 'sql 클라이언트', 'cloud console', 'console']
+title: 'SQL 콘솔'
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+SQL 콘솔은 ClickHouse Cloud에서 데이터베이스를 탐색하고 쿼리하는 가장 빠르고 쉬운 방법입니다. SQL 콘솔을 사용하면 다음 작업을 수행할 수 있습니다:
+
+* ClickHouse Cloud 서비스에 연결
+* 테이블 데이터를 보고, 필터링하고, 정렬
+* 몇 번의 클릭만으로 쿼리를 실행하고 결과 데이터를 시각화
+* 팀 구성원과 쿼리를 공유하여 더욱 효율적으로 협업
+
+<div id="exploring-tables">
+  ### 테이블 살펴보기
+</div>
+
+<div id="viewing-table-list-and-schema-info">
+  ### 테이블 목록 및 스키마 정보 보기
+</div>
+
+ClickHouse 인스턴스에 포함된 테이블 개요는 왼쪽 사이드바에서 확인할 수 있습니다. 왼쪽 바 상단의 데이터베이스 셀렉터를 사용하면 특정 데이터베이스의 테이블을 확인할 수 있습니다
+
+<Image img="/images/cloud/sqlconsole/table-list-and-schema.webp" size="md" alt="테이블 목록 및 스키마" />
+
+목록에 있는 테이블은 펼쳐서 컬럼과 타입도 확인할 수 있습니다
+
+<Image img="/images/cloud/sqlconsole/view-columns.webp" size="md" alt="컬럼 보기" />
+
+<div id="exploring-table-data">
+  ### 테이블 데이터 탐색
+</div>
+
+목록에서 테이블을 클릭하면 새 탭에서 열립니다. Table View에서는 데이터를 쉽게 확인하고 선택하거나 복사할 수 있습니다. Microsoft Excel 및 Google Sheets와 같은 스프레드시트 애플리케이션에 복사하여 붙여넣어도 구조와 서식이 유지됩니다. 푸터의 탐색 기능을 사용하면 테이블 데이터 페이지를 넘길 수 있으며, 페이지는 30개 행 단위로 구분됩니다.
+
+<Image img="/images/cloud/sqlconsole/abc.webp" size="md" alt="abc" />
+
+<div id="inspecting-cell-data">
+  ### 셀 데이터 확인
+</div>
+
+Cell Inspector 도구를 사용하면 단일 셀에 포함된 많은 양의 데이터를 확인할 수 있습니다. 열려면 셀을 마우스 오른쪽 버튼으로 클릭한 다음 &#39;Inspect Cell&#39;을 선택하십시오. 셀 검사기의 내용은 검사기 오른쪽 상단에 있는 복사 아이콘을 클릭하여 복사할 수 있습니다.
+
+<Image img="/images/cloud/sqlconsole/inspecting-cell-content.webp" size="md" alt="셀 내용 확인" />
+
+<div id="filtering-and-sorting-tables">
+  ## 테이블 필터링 및 정렬
+</div>
+
+<div id="sorting-a-table">
+  ### 테이블 정렬하기
+</div>
+
+SQL 콘솔에서 테이블을 정렬하려면 테이블을 연 다음 도구 모음에서 &#39;정렬&#39; 버튼을 선택하십시오. 이 버튼을 클릭하면 정렬을 설정할 수 있는 메뉴가 열립니다. 정렬할 컬럼을 선택하고 정렬 순서(오름차순 또는 내림차순)를 지정할 수 있습니다. &#39;적용&#39;을 선택하거나 Enter를 눌러 테이블을 정렬하십시오
+
+<Image img="/images/cloud/sqlconsole/sort-descending-on-column.webp" size="md" alt="컬럼 기준 내림차순 정렬" />
+
+SQL 콘솔에서는 테이블에 여러 정렬 기준을 추가할 수도 있습니다. 다른 정렬 기준을 추가하려면 &#39;정렬&#39; 버튼을 다시 클릭하십시오.
+
+<Note>
+  정렬은 정렬 창에 표시된 순서대로(위에서 아래로) 적용됩니다. 정렬을 제거하려면 해당 정렬 옆의 &#39;x&#39; 버튼을 클릭하십시오.
+</Note>
+
+<div id="filtering-a-table">
+  ### 테이블 필터링
+</div>
+
+SQL 콘솔에서 테이블을 필터링하려면 테이블을 열고 &#39;Filter&#39; 버튼을 선택합니다. 정렬과 마찬가지로 이 버튼을 클릭하면 필터를 설정할 수 있는 메뉴가 열립니다. 필터링할 컬럼을 선택하고 필요한 조건을 지정할 수 있습니다. SQL 콘솔은 컬럼에 포함된 데이터 유형에 맞는 필터 옵션을 자동으로 표시합니다.
+
+<Image img="/images/cloud/sqlconsole/filter-on-radio-column-equal-gsm.webp" size="md" alt="radio 컬럼이 GSM과 같은 조건으로 필터링" />
+
+필터 설정이 원하는 대로 완료되면 &#39;Apply&#39;를 선택해 데이터를 필터링할 수 있습니다. 아래와 같이 필터를 추가로 더할 수도 있습니다.
+
+<Image img="/images/cloud/sqlconsole/add-more-filters.webp" size="md" alt="2000보다 큰 범위 조건의 필터 추가" />
+
+정렬 기능과 마찬가지로 필터 옆의 &#39;x&#39; 버튼을 클릭하면 해당 필터를 제거할 수 있습니다.
+
+<div id="filtering-and-sorting-together">
+  ### 필터링과 정렬 함께 사용하기
+</div>
+
+SQL 콘솔에서는 테이블에 필터를 적용하고 정렬을 동시에 수행할 수 있습니다. 이렇게 하려면 위에서 설명한 단계에 따라 원하는 필터와 정렬을 모두 추가한 다음 &#39;Apply&#39; 버튼을 클릭하십시오.
+
+<Image img="/images/cloud/sqlconsole/filtering-and-sorting-together.webp" size="md" alt="2000보다 큰 범위에 필터 적용" />
+
+<div id="creating-a-query-from-filters-and-sorts">
+  ### 필터와 정렬로 쿼리 만들기
+</div>
+
+SQL 콘솔에서는 클릭 한 번으로 정렬과 필터를 바로 쿼리로 변환할 수 있습니다. 원하는 정렬 및 필터 매개변수를 선택한 다음, 툴바에서 &#39;Create Query&#39; 버튼을 선택하십시오. &#39;Create Query&#39;를 클릭하면 테이블 뷰에 표시된 데이터에 해당하는 SQL 명령이 미리 입력된 새 쿼리 탭이 열립니다.
+
+<Image img="/images/cloud/sqlconsole/create-a-query-from-sorts-and-filters.webp" size="md" alt="필터와 정렬로 쿼리 만들기" />
+
+<Note>
+  &#39;Create Query&#39; 기능을 사용할 때 필터와 정렬은 필수 항목이 아닙니다.
+</Note>
+
+SQL 콘솔에서 쿼리하는 방법에 대해 자세히 알아보려면 (link) 쿼리 문서를 참조하십시오.
+
+<div id="creating-and-running-a-query">
+  ## 쿼리 작성 및 실행
+</div>
+
+<div id="creating-a-query">
+  ### 쿼리 만들기
+</div>
+
+SQL 콘솔에서 새 쿼리를 만드는 방법은 두 가지입니다.
+
+* 탭 바에서 &#39;+&#39; 버튼을 클릭합니다
+* 왼쪽 사이드바의 쿼리 목록에서 &#39;새 쿼리&#39; 버튼을 선택합니다
+
+<Image img="/images/cloud/sqlconsole/creating-a-query.webp" size="md" alt="쿼리 만들기" />
+
+<div id="running-a-query">
+  ### 쿼리 실행
+</div>
+
+쿼리를 실행하려면 SQL Editor에 SQL 명령 하나 이상을 입력한 다음 &#39;Run&#39; 버튼을 클릭하거나 `cmd / ctrl + enter` 단축키를 사용하십시오. 여러 명령을 순차적으로 작성하고 실행하려면 각 명령 끝에 세미콜론을 추가해야 합니다.
+
+쿼리 실행 옵션
+기본적으로 Run 버튼을 클릭하면 SQL Editor에 포함된 모든 명령이 실행됩니다. SQL 콘솔은 이 외에도 두 가지 쿼리 실행 옵션을 지원합니다.
+
+* 선택한 명령 실행
+* 커서 위치의 명령 실행
+
+선택한 명령을 실행하려면 원하는 명령 또는 여러 명령을 선택한 다음 &#39;Run&#39; 버튼을 클릭하십시오(또는 `cmd / ctrl + enter` 단축키를 사용하십시오). 선택된 항목이 있으면 SQL Editor 컨텍스트 메뉴(에디터 내부 아무 곳이나 마우스 오른쪽 버튼으로 클릭하여 열 수 있음)에서 &#39;Run selected&#39;를 선택할 수도 있습니다.
+
+<Image img="/images/cloud/sqlconsole/run-selected-query.webp" size="md" alt="선택한 쿼리 실행" />
+
+현재 커서 위치의 명령은 두 가지 방법으로 실행할 수 있습니다.
+
+* 확장 실행 옵션 메뉴에서 &#39;At Cursor&#39;를 선택합니다(또는 해당 `cmd / ctrl + shift + enter` 키보드 단축키를 사용합니다
+
+<Image img="/images/cloud/sqlconsole/run-at-cursor-2.webp" size="md" alt="커서 위치에서 실행" />
+
+* SQL Editor 컨텍스트 메뉴에서 &#39;Run at cursor&#39;를 선택합니다
+
+<Image img="/images/cloud/sqlconsole/run-at-cursor.webp" size="md" alt="커서 위치에서 실행" />
+
+<Note>
+  실행되면 커서 위치의 명령이 노란색으로 깜박입니다.
+</Note>
+
+<div id="canceling-a-query">
+  ### 쿼리 취소하기
+</div>
+
+쿼리가 실행되는 동안 Query Editor 도구 모음의 &#39;Run&#39; 버튼이 &#39;Cancel&#39; 버튼으로 바뀝니다. 이 버튼을 클릭하거나 `Esc`를 눌러 쿼리를 취소할 수 있습니다. 참고: 이미 반환된 결과는 취소 후에도 그대로 유지됩니다.
+
+<Image img="/images/cloud/sqlconsole/cancel-a-query.webp" size="md" alt="쿼리 취소" />
+
+<div id="saving-a-query">
+  ### 쿼리 저장하기
+</div>
+
+쿼리를 저장하면 나중에 쉽게 다시 찾을 수 있고 팀원과도 공유할 수 있습니다. SQL 콘솔에서는 쿼리를 폴더로 정리할 수도 있습니다.
+
+쿼리를 저장하려면 도구 모음에서 &quot;Run&quot; 버튼 바로 옆에 있는 &quot;Save&quot; 버튼을 클릭하십시오. 원하는 이름을 입력한 다음 &quot;Save Query&quot;를 클릭합니다.
+
+<Note>
+  단축키 `cmd / ctrl` + s를 사용해도 현재 쿼리 탭의 작업 내용이 저장됩니다.
+</Note>
+
+<Image img="/images/cloud/sqlconsole/sql-console-save-query.webp" size="md" alt="쿼리 저장" />
+
+또는 도구 모음에서 &quot;Untitled Query&quot;를 클릭한 뒤 이름을 수정하고 Enter를 눌러 쿼리에 이름을 지정하는 동시에 저장할 수 있습니다:
+
+<Image img="/images/cloud/sqlconsole/sql-console-rename.webp" size="md" alt="쿼리 이름 변경" />
+
+<div id="query-sharing">
+  ### 쿼리 공유
+</div>
+
+SQL 콘솔에서는 팀 구성원과 쿼리를 쉽게 공유할 수 있습니다. SQL 콘솔은 전역 및 사용자별로 조정할 수 있는 4가지 액세스 수준을 지원합니다.
+
+* 소유자(공유 옵션 조정 가능)
+* 쓰기 권한
+* 읽기 전용 권한
+* 액세스 없음
+
+쿼리를 저장한 후 도구 모음에서 &quot;Share&quot; 버튼을 클릭하십시오. 그러면 공유 옵션이 있는 모달이 표시됩니다.
+
+<Image img="/images/cloud/sqlconsole/sql-console-share.webp" size="md" alt="Share query" />
+
+서비스에 액세스할 수 있는 조직의 모든 구성원에 대한 쿼리 액세스를 조정하려면 맨 위 줄의 액세스 수준 셀렉터를 조정하면 됩니다.
+
+<Image img="/images/cloud/sqlconsole/sql-console-edit-access.webp" size="md" alt="Edit access" />
+
+위 설정을 적용하면 해당 서비스의 SQL 콘솔에 액세스할 수 있는 모든 팀 구성원이 이 쿼리를 보고 실행할 수 있습니다.
+
+특정 구성원에 대한 쿼리 액세스를 조정하려면 &quot;Add a team member&quot; 셀렉터에서 원하는 팀 구성원을 선택하십시오.
+
+<Image img="/images/cloud/sqlconsole/sql-console-add-team.webp" size="md" alt="Add team member" />
+
+팀 구성원을 선택하면 액세스 수준 셀렉터가 있는 새 항목이 표시됩니다.
+
+<Image img="/images/cloud/sqlconsole/sql-console-edit-member.webp" size="md" alt="Edit team member access" />
+
+<div id="accessing-shared-queries">
+  ### 공유된 쿼리에 액세스하기
+</div>
+
+공유받은 쿼리는 SQL 콘솔 왼쪽 사이드바의 &quot;쿼리&quot; 탭에 표시됩니다:
+
+<Image img="/images/cloud/sqlconsole/sql-console-access-queries.webp" size="md" alt="쿼리 액세스" />
+
+<div id="linking-to-a-query-permalinks">
+  ### 쿼리로 연결하기(영구 링크)
+</div>
+
+저장된 쿼리에도 영구 링크가 제공되므로, 공유된 쿼리 링크를 주고받고 해당 쿼리를 직접 열 수 있습니다.
+
+쿼리에 포함될 수 있는 모든 매개변수 값은 저장된 쿼리 URL에 쿼리 매개변수로 자동으로 추가됩니다. 예를 들어, 쿼리에 `{start_date: Date}` 및 `{end_date: Date}` 매개변수가 포함되어 있으면 영구 링크는 다음과 같은 형태가 될 수 있습니다: `https://console.clickhouse.cloud/services/:serviceId/console/query/:queryId?param_start_date=2015-01-01&param_end_date=2016-01-01`.
+
+<div id="advanced-querying-features">
+  ## 고급 쿼리 기능
+</div>
+
+<div id="searching-query-results">
+  ### 쿼리 결과 검색
+</div>
+
+쿼리가 실행된 후 결과 창의 검색 입력창을 사용하면 반환된 결과 집합을 빠르게 검색할 수 있습니다. 이 기능은 추가 `WHERE` 절을 적용했을 때의 결과를 미리 확인하거나, 특정 데이터가 결과 집합에 포함되어 있는지 간단히 점검하는 데 유용합니다. 검색 입력창에 값을 입력하면 결과 창이 업데이트되며, 입력한 값과 일치하는 항목이 포함된 레코드가 반환됩니다. 이 예시에서는 `ClickHouse`를 포함하는 댓글을 대상으로 `hackernews` 테이블에서 `breakfast`가 나타나는 모든 경우를 찾아보겠습니다(대소문자 구분 없음):
+
+<Image img="/images/cloud/sqlconsole/search-hn.webp" size="md" alt="Hacker News 데이터 검색" />
+
+참고: 입력한 값과 일치하는 모든 필드가 반환됩니다. 예를 들어 위 스크린샷의 세 번째 레코드는 `by` 필드에서는 &#39;breakfast&#39;와 일치하지 않지만, `text` 필드에서는 일치합니다:
+
+<Image img="/images/cloud/sqlconsole/match-in-body.webp" size="md" alt="본문에서 일치" />
+
+<div id="adjusting-pagination-settings">
+  ### 페이지 매김 설정 조정
+</div>
+
+기본적으로 결과 창에는 모든 결과 레코드가 한 페이지에 표시됩니다. 결과 집합이 큰 경우에는 더 쉽게 확인할 수 있도록 결과를 여러 페이지로 나누어 보는 편이 좋습니다. 이 작업은 결과 창 오른쪽 하단의 페이지 매김 셀렉터를 사용해 수행할 수 있습니다.
+
+<Image img="/images/cloud/sqlconsole/pagination.webp" size="md" alt="페이지 매김 옵션" />
+
+페이지 크기를 선택하면 결과 집합에 즉시 페이지 매김이 적용되며, 결과 창 footer의 가운데에 탐색 옵션이 표시됩니다.
+
+<Image img="/images/cloud/sqlconsole/pagination-nav.webp" size="md" alt="페이지 매김 탐색" />
+
+<div id="exporting-query-result-data">
+  ### 쿼리 결과 데이터 내보내기
+</div>
+
+쿼리 결과 집합은 SQL 콘솔에서 직접 CSV 형식으로 쉽게 내보낼 수 있습니다. 내보내려면 결과 창 도구 모음 오른쪽의 `•••` 메뉴를 열고 &#39;CSV로 다운로드&#39;를 선택하십시오.
+
+<Image img="/images/cloud/sqlconsole/download-as-csv.webp" size="md" alt="CSV로 다운로드" />
+
+<div id="visualizing-query-data">
+  ## 쿼리 데이터 시각화
+</div>
+
+일부 데이터는 차트로 보면 더 쉽게 해석할 수 있습니다. 몇 번만 클릭하면 SQL 콘솔에서 쿼리 결과 데이터를 바로 시각화할 수 있습니다. 예시로, NYC 택시 운행 데이터의 주간 통계를 계산하는 쿼리를 사용하겠습니다:
+
+```sql
+SELECT
+   toStartOfWeek(pickup_datetime) AS week,
+   sum(total_amount) AS fare_total,
+   sum(trip_distance) AS distance_total,
+   count(*) AS trip_total
+FROM
+   nyc_taxi
+GROUP BY
+   1
+ORDER BY
+   1 ASC
+```
+
+<Image img="/images/cloud/sqlconsole/tabular-query-results.webp" size="md" alt="표 형식의 쿼리 결과" />
+
+시각화하지 않으면 이 결과를 해석하기 어렵습니다. 차트로 시각화해 보겠습니다.
+
+<div id="creating-charts">
+  ### 차트 만들기
+</div>
+
+시각화를 만들기 시작하려면 쿼리 결과 창 도구 모음에서 &#39;Chart&#39; 옵션을 선택하세요. 그러면 차트 구성 패널이 나타납니다:
+
+<Image img="/images/cloud/sqlconsole/switch-from-query-to-chart.webp" size="md" alt="쿼리에서 차트로 전환" />
+
+먼저 `week`별 `trip_total`을 보여주는 간단한 막대 차트를 만들어 보겠습니다. 이를 위해 `week` 필드를 x축으로, `trip_total` 필드를 y축으로 끌어옵니다:
+
+<Image img="/images/cloud/sqlconsole/trip-total-by-week.webp" size="md" alt="주별 총 이동 횟수" />
+
+대부분의 차트 유형은 숫자 축에 여러 필드를 배치할 수 있습니다. 이를 보여주기 위해 `fare_total` 필드를 y축으로 끌어옵니다:
+
+<Image img="/images/cloud/sqlconsole/bar-chart.webp" size="md" alt="막대 차트" />
+
+<div id="customizing-charts">
+  ### 차트 사용자 지정
+</div>
+
+SQL 콘솔은 차트 구성 패널의 차트 유형 셀렉터에서 선택할 수 있는 10가지 차트 유형을 지원합니다. 예를 들어, 이전 차트를 막대형에서 영역형으로 쉽게 변경할 수 있습니다:
+
+<Image img="/images/cloud/sqlconsole/change-from-bar-to-area.webp" size="md" alt="막대 차트를 영역형으로 변경" />
+
+차트 제목은 데이터를 제공하는 쿼리 이름과 일치합니다. 쿼리 이름을 변경하면 차트 제목도 함께 업데이트됩니다:
+
+<Image img="/images/cloud/sqlconsole/update-query-name.webp" size="md" alt="쿼리 이름 업데이트" />
+
+더 고급 차트 속성도 차트 구성 패널의 &#39;Advanced&#39; 섹션에서 조정할 수 있습니다. 먼저 다음 설정을 조정하겠습니다:
+
+* 부제목
+* 축 제목
+* x축 레이블 방향
+
+차트가 그에 맞게 업데이트됩니다:
+
+<Image img="/images/cloud/sqlconsole/update-subtitle-etc.webp" size="md" alt="부제목 등 업데이트" />
+
+일부 경우에는 각 필드의 축 스케일을 개별적으로 조정해야 할 수 있습니다. 이는 차트 구성 패널의 &#39;Advanced&#39; 섹션에서 축 범위의 최소값과 최대값을 지정해 수행할 수 있습니다. 예를 들어, 위 차트도 충분히 보기 좋지만 `trip_total` 필드와 `fare_total` 필드의 상관관계를 보여주려면 축 범위를 약간 조정해야 합니다:
+
+<Image img="/images/cloud/sqlconsole/adjust-axis-scale.webp" size="md" alt="축 스케일 조정" />

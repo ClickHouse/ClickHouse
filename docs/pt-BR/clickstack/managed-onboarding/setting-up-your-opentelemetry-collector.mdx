@@ -1,0 +1,440 @@
+---
+slug: /use-cases/observability/clickstack/setting-up-your-opentelemetry-collector
+title: 'Como configurar seu OpenTelemetry Collector'
+description: 'Como configurar um OpenTelemetry Collector para o Managed ClickStack'
+doc_type: 'guide'
+keywords: ['clickstack', 'opentelemetry', 'collector', 'managed', 'observability', 'gateway', 'telemetrygen']
+unlisted: true
+custom_edit_url: null
+hide_advert: true
+---
+
+import GatherCredentials from '/snippets/pt-BR/clickstack/_gather_credentials.mdx';
+import CreateIngestionUser from '/snippets/pt-BR/clickstack/_create_ingestion_user.mdx';
+import ConfirmInUI from '/snippets/pt-BR/clickstack/_confirm_in_ui.mdx';
+
+Este guia orienta você na implantação de um coletor do OpenTelemetry em um serviço Managed ClickStack existente ou na adaptação do seu coletor atual, antes de verificar se os dados estão fluindo.
+
+<AgentPrompt
+  prompt="Use curl para baixar, ler e seguir: https://clickhouse.com/docs/skills/clickstack-otel-collector/SKILL.md"
+  description="Seu agent configurará o ClickStack OpenTelemetry Collector para você. Funciona com Claude Code, Cursor, Codex e outros agents de programação."
+  outline={[
+"Instale o clickhousectl, se necessário, e autentique-o (ele solicitará uma chave de API do ClickHouse Cloud — cole-a no chat ou execute você mesmo o comando de login).",
+"Ele pedirá o ID ou nome do serviço ClickHouse Cloud de destino e, em seguida, buscará o endpoint HTTPS correspondente.",
+"Crie um usuário SQL hyperdx_ingest no serviço (gera uma senha forte ou usa uma fornecida por você).",
+"Execute localmente o ClickStack OpenTelemetry Collector em Docker, apontando para o seu serviço.",
+"Envie uma pequena quantidade de logs, traces e metrics sintéticos pelo collector para comprovar que o pipeline funciona.",
+"Verifique se os dados chegaram ao banco de dados otel e forneça a URL da ClickStack UI onde você poderá visualizá-los."
+]}
+/>
+
+O coletor é executado como um **gateway**: um único endpoint OTLP para o qual seus aplicativos, SDKs e coletores agent enviam dados. O gateway agrupa eventos em batches, aplica qualquer processamento que você tenha configurado e os grava no ClickHouse por meio do [ClickHouse exporter](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/exporter/clickhouseexporter). Esse padrão mantém a lógica de coleta fora do código da sua aplicação e permite escalar a ingestão de forma independente das cargas de trabalho que produzem dados. Para mais contexto sobre as funções de gateway e agent, consulte [Funções do collector](/pt-BR/clickstack/ingesting-data/collector#collector-roles).
+
+<Info>
+  **Coletor existente**
+
+  Se você estiver usando um coletor OpenTelemetry existente, presumimos que ele já esteja configurado na função de **gateway**. Não recomendamos usar este processo para reconfigurar coletores na função de **agent**.
+</Info>
+
+Escolha a guia correspondente à sua situação:
+
+<Tabs>
+  <Tab title="Não tenho um coletor">
+    <Steps>
+      <Step>
+        ## Obtenha suas credenciais
+
+        <GatherCredentials />
+      </Step>
+
+      <Step>
+        ## Criar um usuário de ingestão
+
+        <CreateIngestionUser />
+      </Step>
+
+      <Step>
+        ## Implante o collector
+
+        Implante a **distribuição ClickStack do OpenTelemetry Collector**, que já vem pré-configurada para o Managed ClickStack. No exemplo abaixo, executamos o collector localmente e geramos telemetria artificial na mesma máquina para simplificar.
+
+        <Note>
+          Em produção, normalmente você implantaria o collector em um cluster do Kubernetes ou em uma máquina virtual que possa ser acessada pelos seus SDKs do OpenTelemetry, agentes e outros collectors. Isso permite que a telemetria de todo o seu ambiente seja coletada centralmente e encaminhada ao ClickStack.
+        </Note>
+
+        Escolha um segredo compartilhado para autenticar clientes que enviam dados ao collector e, em seguida, exporte-o junto com seus detalhes de conexão e a senha escolhida para o usuário `hyperdx_ingest`:
+
+        ```shell
+        export CLICKHOUSE_ENDPOINT=<HTTPS_ENDPOINT>
+        export CLICKHOUSE_USER=hyperdx_ingest
+        export CLICKHOUSE_PASSWORD=ClickH0u3eRocks123!
+        export OTLP_AUTH_TOKEN="a-strong-shared-secret"
+        ```
+
+        Inicie o ClickStack OTel collector:
+
+        ```shell
+        docker run -d \
+          -e OTLP_AUTH_TOKEN=${OTLP_AUTH_TOKEN} \
+          -e CLICKHOUSE_ENDPOINT=${CLICKHOUSE_ENDPOINT} \
+          -e CLICKHOUSE_USER=${CLICKHOUSE_USER} \
+          -e CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD} \
+          -e HYPERDX_OTEL_EXPORTER_CLICKHOUSE_DATABASE=otel \
+          -p 4317:4317 \
+          -p 4318:4318 \
+          clickhouse/clickstack-otel-collector:latest
+        ```
+
+        O coletor agora expõe OTLP gRPC na porta `4317` e OTLP HTTP na porta `4318`. Aplicações, SDKs e coletores do tipo agent devem enviar para essas portas com `authorization: $OTLP_AUTH_TOKEN` nos cabeçalhos da solicitação.
+
+        <Info>
+          **Implantações de produção**
+
+          Em produção, recomendamos habilitar TLS no endpoint OTLP. Veja [Protegendo o coletor](/pt-BR/clickstack/ingesting-data/collector#securing-the-collector).
+        </Info>
+      </Step>
+
+      <Step>
+        ## Verificar o endpoint
+
+        Gere algum tráfego sintético contra o collector para confirmar que o pipeline completo funciona. Utilizamos o [`telemetrygen`](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/cmd/telemetrygen), o gerador do OpenTelemetry Collector Contrib, que emite logs, traces e métricas via OTLP e expõe flags para controlar o formato dos dados entre serviços, severidades, status de spans e tipos de métricas.
+
+        Execute a partir da sua Docker image (sem necessidade de instalação). Defina um pequeno wrapper para que os comandos abaixo fiquem legíveis; `--add-host` permite que o contêiner alcance um collector em execução no host:
+
+        ```shell
+        telemetrygen() {
+          docker run --rm --add-host=host.docker.internal:host-gateway \
+            ghcr.io/open-telemetry/opentelemetry-collector-contrib/telemetrygen:latest "$@"
+        }
+        export OTEL_ENDPOINT=host.docker.internal:4317
+        ```
+
+        Ou instale o binário com Go e use `localhost` como destino:
+
+        ```shell
+        go install github.com/open-telemetry/opentelemetry-collector-contrib/cmd/telemetrygen@latest
+        export OTEL_ENDPOINT=localhost:4317
+        ```
+
+        <Info>
+          **O que esperar**
+
+          Cada execução de `tg` dura cerca de 20 segundos (definidos por `--duration 20s`) e transmite logs detalhados durante todo esse tempo, o que é esperado; cada execução termina automaticamente quando os 20 segundos se encerram. Os logs abaixo são suficientes para confirmar o pipeline; o conjunto opcional mais completo adiciona várias outras execuções e leva alguns minutos.
+        </Info>
+
+        Defina um pequeno helper `tg` para que cada comando especifique apenas o que varia (service, severity, status, atributos):
+
+        ```shell
+        tg() { local signal=$1; shift; telemetrygen "$signal" \
+          --otlp-endpoint ${OTEL_ENDPOINT} --otlp-insecure \
+          --otlp-header "authorization=\"${OTLP_AUTH_TOKEN}\"" \
+          --rate 5 --duration 20s "$@"; }
+        ```
+
+        Envie logs como uma mistura realista de severidades entre serviços, majoritariamente informativos, com um aviso e um erro em vez de um fluxo uniforme de erros:
+
+        ```shell
+        tg logs --service frontend --severity-text Info  --severity-number 9  --body "GET /api/products 200" \
+          --otlp-attributes 'deployment.environment="production"' \
+          --telemetry-attributes 'http.method="GET"' --telemetry-attributes 'http.status_code="200"'
+        tg logs --service checkout --severity-text Warn  --severity-number 13 --body "retrying payment authorization" \
+          --otlp-attributes 'deployment.environment="production"' \
+          --telemetry-attributes 'http.method="POST"'
+        tg logs --service payment  --severity-text Error --severity-number 17 --body "payment gateway timeout" \
+          --otlp-attributes 'deployment.environment="production"' \
+          --telemetry-attributes 'http.status_code="500"'
+        ```
+
+        Somente os logs confirmam que o endpoint está funcionando. Para um demo dataset mais completo, um Service Map com múltiplos serviços e charts com diferentes tipos de métricas, expanda e execute os comandos abaixo também. Eles reutilizam o helper `tg`, portanto execute-os no mesmo shell.
+
+        <Accordion title="Gere uma telemetria mais detalhada (opcional)">
+          Envie traces com múltiplos spans de vários serviços saudáveis e uma dependência com falha. Isso dá ao Service Map uma estrutura realista, predominantemente saudável, com um serviço apresentando erro, e ainda alimenta as visualizações de erro:
+
+          ```shell
+          # Healthy services: the bulk of the traffic, all spans Ok
+          for svc in frontend checkout cart; do
+            tg traces --service "$svc" --child-spans 3 --span-duration 80ms --status-code Ok \
+              --otlp-attributes 'deployment.environment="production"' \
+              --telemetry-attributes "http.route=\"/$svc\""
+          done
+
+          # One slow dependency returning errors
+          tg traces --service payment --child-spans 3 --span-duration 450ms --span-links 1 --status-code Error \
+            --otlp-attributes 'deployment.environment="production"' \
+            --telemetry-attributes 'http.route="/charge"'
+          ```
+
+          Envie métricas dos três tipos mais comuns para que os gráficos tenham um counter, um gauge e uma distribuição:
+
+          ```shell
+          tg metrics --service frontend --metric-type Sum       --otlp-metric-name http.server.requests --aggregation-temporality cumulative
+          tg metrics --service frontend --metric-type Gauge     --otlp-metric-name system.memory.usage
+          tg metrics --service payment  --metric-type Histogram --otlp-metric-name http.server.duration
+          ```
+
+          Para variar ainda mais, adicione mais alguns serviços e um histograma exponencial:
+
+          ```shell
+          tg traces  --service catalog   --child-spans 2 --span-duration 60ms  --status-code Ok \
+            --otlp-attributes 'deployment.environment="production"' --telemetry-attributes 'http.route="/catalog"'
+          tg traces  --service inventory --child-spans 2 --span-duration 220ms --status-code Ok \
+            --otlp-attributes 'deployment.environment="staging"'   --telemetry-attributes 'http.route="/inventory"'
+          tg metrics --service payment   --metric-type ExponentialHistogram --otlp-metric-name db.query.duration
+          ```
+        </Accordion>
+
+        Para a lista completa de flags e mais variações, consulte [Dados sintéticos com telemetrygen](/pt-BR/clickstack/example-datasets/telemetrygen).
+      </Step>
+
+      <Step>
+        ## Confirme na UI do ClickStack
+
+        <ConfirmInUI />
+      </Step>
+    </Steps>
+  </Tab>
+
+  <Tab title="Tenho um collector">
+    <Steps>
+      <Step>
+        ## Reúna suas credenciais
+
+        <GatherCredentials />
+      </Step>
+
+      <Step>
+        ## Criar um usuário de ingestão
+
+        <CreateIngestionUser />
+      </Step>
+
+      <Step>
+        ## Adapte a configuração do seu coletor
+
+        Estenda a configuração atual do seu coletor para gravar no Managed ClickStack por meio do [ClickHouse exporter](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/exporter/clickhouseexporter).
+
+        <Info>
+          **ClickHouse exporter obrigatório**
+
+          Se você estiver usando sua própria distribuição, verifique se ela inclui o ClickHouse exporter. A [imagem contrib](https://github.com/open-telemetry/opentelemetry-collector-contrib) do projeto upstream já inclui.
+        </Info>
+
+        Abaixo está um exemplo de configuração que usa o ClickHouse exporter com os receivers, processors e pipelines esperados pela ClickStack UI. Ele corresponde ao comportamento da distribuição ClickStack, incluindo o caminho de roteamento do Session Replay (`rrweb`). Substitua `<clickhouse_cloud_endpoint>` e `<your_password_here>` pelas credenciais do usuário `hyperdx_ingest` criado acima:
+
+        ```yaml
+        receivers:
+          otlp/hyperdx:
+            protocols:
+              grpc:
+                include_metadata: true
+                endpoint: "0.0.0.0:4317"
+              http:
+                cors:
+                  allowed_origins: ["*"]
+                  allowed_headers: ["*"]
+                include_metadata: true
+                endpoint: "0.0.0.0:4318"
+
+        processors:
+          batch:
+          memory_limiter:
+            # 80% of maximum memory up to 2G, adjust for low memory environments
+            limit_mib: 1500
+            # 25% of limit up to 2G, adjust for low memory environments
+            spike_limit_mib: 512
+            check_interval: 5s
+
+        connectors:
+          routing/logs:
+            default_pipelines: [logs/out-default]
+            error_mode: ignore
+            table:
+              - context: log
+                statement: route() where IsMatch(attributes["rr-web.event"], ".*")
+                pipelines: [logs/out-rrweb]
+
+        exporters:
+          clickhouse:
+            database: otel
+            endpoint: <clickhouse_cloud_endpoint>
+            username: hyperdx_ingest
+            password: <your_password_here>
+            ttl: 720h
+            timeout: 5s
+            retry_on_failure:
+              enabled: true
+              initial_interval: 5s
+              max_interval: 30s
+              max_elapsed_time: 300s
+          clickhouse/rrweb:
+            database: otel
+            endpoint: <clickhouse_cloud_endpoint>
+            username: hyperdx_ingest
+            password: <your_password_here>
+            ttl: 720h
+            logs_table_name: hyperdx_sessions
+            timeout: 5s
+            retry_on_failure:
+              enabled: true
+              initial_interval: 5s
+              max_interval: 30s
+              max_elapsed_time: 300s
+
+        service:
+          pipelines:
+            traces:
+              receivers: [otlp/hyperdx]
+              processors: [memory_limiter, batch]
+              exporters: [clickhouse]
+            metrics:
+              receivers: [otlp/hyperdx]
+              processors: [memory_limiter, batch]
+              exporters: [clickhouse]
+            logs/in:
+              receivers: [otlp/hyperdx]
+              exporters: [routing/logs]
+            logs/out-default:
+              receivers: [routing/logs]
+              processors: [memory_limiter, batch]
+              exporters: [clickhouse]
+            logs/out-rrweb:
+              receivers: [routing/logs]
+              processors: [memory_limiter, batch]
+              exporters: [clickhouse/rrweb]
+        ```
+
+        Algumas observações:
+
+        * O receiver `otlp/hyperdx` escuta tanto em gRPC (`4317`) quanto em HTTP (`4318`); aplicações e agents devem apontar para essas portas no host do seu collector.
+        * O exporter `clickhouse` grava logs, traces e métricas no banco de dados `otel`, de acordo com o layout esperado pela ClickStack UI. O exporter `clickhouse/rrweb` processa eventos de Session Replay roteados pelo connector `routing/logs` para `otel.hyperdx_sessions`.
+        * A autenticação nos receivers OTLP fica por conta da sua configuração atual. Configure-a por meio de [extensions](https://opentelemetry.io/docs/collector/configuration/#extensions) do collector (por exemplo, `bearertokenauth`) ou de um proxy reverso com TLS, caso você precise exigir um token de ingestão.
+
+        Recarregue seu collector com a nova configuração. Em seguida, aplicações, SDKs e collectors agent devem enviar para os endpoints OTLP expostos pelo seu collector usando o header de autenticação exigido pela sua configuração.
+
+        Para mais detalhes sobre como configurar OpenTelemetry collectors com o Managed ClickStack, consulte [Ingesting with OpenTelemetry](/pt-BR/clickstack/ingesting-data/opentelemetry).
+      </Step>
+
+      <Step>
+        ## Verificar o endpoint
+
+        Gere algum tráfego sintético contra o seu collector para confirmar que o pipeline completo está funcionando. Utilizamos o [`telemetrygen`](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/cmd/telemetrygen), o gerador do OpenTelemetry Collector Contrib, que emite logs, traces e métricas via OTLP e expõe flags para controlar o formato dos dados entre serviços, severidades, status de spans e tipos de métricas.
+
+        Execute a partir da sua Docker image (sem necessidade de instalação). Substitua `<your-collector-host>` pelo host em que seu collector está escutando e defina o header `authorization` (ou método de autenticação alternativo) conforme o que seu collector espera:
+
+        ```shell
+        telemetrygen() {
+          docker run --rm --add-host=host.docker.internal:host-gateway \
+            ghcr.io/open-telemetry/opentelemetry-collector-contrib/telemetrygen:latest "$@"
+        }
+        export OTEL_ENDPOINT=<your-collector-host>:4317
+        export OTLP_AUTH_TOKEN=<your-auth-token>
+        ```
+
+        Ou instale o binário com Go:
+
+        ```shell
+        go install github.com/open-telemetry/opentelemetry-collector-contrib/cmd/telemetrygen@latest
+        ```
+
+        <Info>
+          **O que esperar**
+
+          Cada execução de `tg` dura cerca de 20 segundos (configurada por `--duration 20s`) e gera logs detalhados durante todo esse tempo, o que é esperado; cada execução se encerra por conta própria assim que os 20 segundos terminam. Os logs abaixo são suficientes para confirmar o pipeline; o conjunto adicional opcional inclui várias execuções extras e leva alguns minutos.
+        </Info>
+
+        Defina um pequeno helper `tg` para que cada comando especifique apenas o que varia (service, severity, status, atributos):
+
+        ```shell
+        tg() { local signal=$1; shift; telemetrygen "$signal" \
+          --otlp-endpoint ${OTEL_ENDPOINT} --otlp-insecure \
+          --otlp-header "authorization=\"${OTLP_AUTH_TOKEN}\"" \
+          --rate 5 --duration 20s "$@"; }
+        ```
+
+        Envie logs como uma mistura realista de severidades entre serviços, predominantemente informativos com um aviso e um erro, em vez de um fluxo uniforme de erros:
+
+        ```shell
+        tg logs --service frontend --severity-text Info  --severity-number 9  --body "GET /api/products 200" \
+          --otlp-attributes 'deployment.environment="production"' \
+          --telemetry-attributes 'http.method="GET"' --telemetry-attributes 'http.status_code="200"'
+        tg logs --service checkout --severity-text Warn  --severity-number 13 --body "retrying payment authorization" \
+          --otlp-attributes 'deployment.environment="production"' \
+          --telemetry-attributes 'http.method="POST"'
+        tg logs --service payment  --severity-text Error --severity-number 17 --body "payment gateway timeout" \
+          --otlp-attributes 'deployment.environment="production"' \
+          --telemetry-attributes 'http.status_code="500"'
+        ```
+
+        Somente os logs confirmam que o endpoint está funcionando. Para um demo dataset mais completo, um Service Map com múltiplos serviços e gráficos com diferentes tipos de métricas, expanda e execute os comandos abaixo também. Eles reutilizam o helper `tg`, portanto execute-os no mesmo shell.
+
+        <Accordion title="Gere telemetria mais detalhada (opcional)">
+          Envie traces com vários spans de vários serviços saudáveis e uma dependência com falha. Isso dá ao Service Map uma configuração realista, majoritariamente saudável, com um serviço apresentando erro, e ainda popula as visualizações de erros:
+
+          ```shell
+          # Healthy services: the bulk of the traffic, all spans Ok
+          for svc in frontend checkout cart; do
+            tg traces --service "$svc" --child-spans 3 --span-duration 80ms --status-code Ok \
+              --otlp-attributes 'deployment.environment="production"' \
+              --telemetry-attributes "http.route=\"/$svc\""
+          done
+
+          # One slow dependency returning errors
+          tg traces --service payment --child-spans 3 --span-duration 450ms --span-links 1 --status-code Error \
+            --otlp-attributes 'deployment.environment="production"' \
+            --telemetry-attributes 'http.route="/charge"'
+          ```
+
+          Envie métricas nos três tipos mais comuns, para que os gráficos tenham um contador, um gauge e uma distribuição:
+
+          ```shell
+          tg metrics --service frontend --metric-type Sum       --otlp-metric-name http.server.requests --aggregation-temporality cumulative
+          tg metrics --service frontend --metric-type Gauge     --otlp-metric-name system.memory.usage
+          tg metrics --service payment  --metric-type Histogram --otlp-metric-name http.server.duration
+          ```
+
+          Para ter ainda mais variedade, adicione mais alguns serviços e um histograma exponencial:
+
+          ```shell
+          tg traces  --service catalog   --child-spans 2 --span-duration 60ms  --status-code Ok \
+            --otlp-attributes 'deployment.environment="production"' --telemetry-attributes 'http.route="/catalog"'
+          tg traces  --service inventory --child-spans 2 --span-duration 220ms --status-code Ok \
+            --otlp-attributes 'deployment.environment="staging"'   --telemetry-attributes 'http.route="/inventory"'
+          tg metrics --service payment   --metric-type ExponentialHistogram --otlp-metric-name db.query.duration
+          ```
+        </Accordion>
+
+        Para a lista completa de flags e mais variações, consulte [Dados sintéticos com telemetrygen](/pt-BR/clickstack/example-datasets/telemetrygen).
+      </Step>
+
+      <Step>
+        ## Confirme na UI do ClickStack
+
+        <ConfirmInUI />
+      </Step>
+    </Steps>
+  </Tab>
+</Tabs>
+
+<div id="next-steps">
+  ## Próximos passos: envie seus próprios dados
+</div>
+
+A carga sintética acima apenas comprova que o pipeline funciona. Para começar a enviar telemetria real, instrumente seus próprios serviços com os [ClickStack SDKs](/pt-BR/clickstack/ingesting-data/sdks/index), que fornecem instrumentação para Node.js, Python, Go, Java e outras linguagens que exportam OTLP para o endpoint do collector que você acabou de verificar. Para um exemplo completo, siga [Instrumente uma aplicação](/pt-BR/clickstack/managed-onboarding/instrument-application).
+
+Para coletar dados da infraestrutura em vez do código da aplicação:
+
+* [Monitoramento do Kubernetes](/pt-BR/clickstack/managed-onboarding/monitoring-kubernetes): colete logs, métricas de infraestrutura e eventos do Kubernetes de um cluster.
+* [Monitoramento de logs do AWS CloudWatch](/pt-BR/clickstack/managed-onboarding/monitoring-aws-cloudwatch-logs): encaminhe logs do CloudWatch por meio do receiver CloudWatch do OpenTelemetry.
+
+<div id="further-reading">
+  ## Leitura complementar
+</div>
+
+Este guia aborda uma única instância do coletor em sua forma mais simples. A [referência do OpenTelemetry Collector](/pt-BR/clickstack/ingesting-data/collector) explica o que fazer em seguida:
+
+* [Implantando o coletor no Kubernetes](/pt-BR/clickstack/ingesting-data/collector#configuring-the-collector) com o chart do Helm upstream do OpenTelemetry e a imagem do coletor ClickStack.
+* [Protegendo o coletor](/pt-BR/clickstack/ingesting-data/collector#securing-the-collector) com TLS no endpoint OTLP e usuários de ingestão com o menor privilégio necessário.
+* [Processando, filtrando e enriquecendo](/pt-BR/clickstack/ingesting-data/collector#processing-filtering-transforming-enriching) eventos no gateway.
+* [Estendendo a configuração do coletor](/pt-BR/clickstack/ingesting-data/collector#extending-collector-config) com receivers, processors e pipelines personalizados.
+* [Estimando recursos](/pt-BR/clickstack/ingesting-data/collector#estimating-resources) para implantações de gateway e agente na vazão esperada.
+* [Colocando em produção](/pt-BR/clickstack/managing/production)

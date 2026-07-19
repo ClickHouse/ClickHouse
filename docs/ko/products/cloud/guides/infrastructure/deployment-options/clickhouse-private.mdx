@@ -1,0 +1,61 @@
+---
+title: 'ClickHouse Private'
+slug: /cloud/infrastructure/clickhouse-private
+keywords: ['프라이빗', '온프레미스']
+description: 'ClickHouse Private 서비스 개요'
+doc_type: 'reference'
+---
+
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+<div id="overview">
+  ## 개요
+</div>
+
+ClickHouse Private는 ClickHouse Cloud에서 실행되는 것과 동일한 상용 버전의 ClickHouse와 ClickHouse Operator로 구성된 자체 배포형 패키지로, 컴퓨트와 스토리지의 분리를 위해 구성되어 있습니다.
+
+<Info>
+  **참고**
+
+  ClickHouse Private는 전용 인프라를 완전히 제어해야 하고 2TB를 초과하는 메모리가 필요한 대규모 엔터프라이즈 환경을 위해 설계되었습니다. 고객은 모든 인프라를 직접 관리해야 하며, 대규모 환경에서 ClickHouse를 운영할 수 있는 전문성을 갖추고 있어야 합니다. 이 옵션은 [문의](https://clickhouse.com/company/contact?loc=nav)를 통해서만 사용할 수 있습니다.
+</Info>
+
+<div id="benefits-over-os">
+  ## 오픈 소스 대비 장점
+</div>
+
+다음 기능은 ClickHouse Private를 자가 관리형 오픈 소스 배포와 차별화합니다:
+
+* 컴퓨트와 스토리지의 네이티브 분리
+* [shared merge tree](/ko/products/cloud/features/infrastructure/shared-merge-tree) 및 [warehouse](/ko/products/cloud/features/infrastructure/warehouses) 기능과 같은 독점 클라우드 기능
+* ClickHouse Cloud에서 완전히 테스트 및 검증된 ClickHouse 데이터베이스와 operator 버전
+* 백업 및 스케일링 작업을 포함한 프로그래밍 방식 작업용 API
+
+<div id="architecture">
+  ## 아키텍처
+</div>
+
+ClickHouse Private는 배포 환경 내에서 완전히 독립적으로 실행되며, ClickHouse의 클라우드 네이티브 컴퓨트와 스토리지 분리 아키텍처를 제공합니다.
+
+<br />
+
+<Image img="/images/cloud/reference/private-gov-architecture.webp" size="md" alt="ClickHouse Private 아키텍처" background="black" />
+
+<br />
+
+<div id="supported-configurations">
+  ## 지원되는 구성
+</div>
+
+현재 ClickHouse Private는 다음 구성에서 지원됩니다.
+
+| 환경  | 오케스트레이션                          | 스토리지                        | 상태    |
+| :-- | :------------------------------- | :-------------------------- | :---- |
+| AWS | Elastic Kubernetes Service (EKS) | Simple Storage Service (S3) | 사용 가능 |
+| GCP | Google Kubernetes Service (GKS)  | Google Cloud Storage (GCS)  | 미리보기  |
+
+<div id="onboarding-process">
+  ## 온보딩 절차
+</div>
+
+ClickHouse Private에 관심이 있는 고객은 [문의해 주십시오](https://clickhouse.com/company/contact). 사용 사례 검토 통화 일정을 잡아 드립니다. 최소 규모 요건을 충족하고 지원되는 구성 환경을 대상으로 하는 요청이 검토되며, 온보딩 가능 수량은 제한되어 있습니다. 설정은 환경별 설치 가이드를 따라 AWS ECR에서 가져온 이미지와 Helm 차트를 사용하여 진행됩니다.

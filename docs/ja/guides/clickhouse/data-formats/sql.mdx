@@ -1,0 +1,125 @@
+---
+sidebarTitle: 'SQL ダンプ'
+slug: /integrations/data-formats/sql
+title: 'ClickHouse で SQL データを挿入およびダンプする'
+description: 'SQL ダンプを使用して、他のデータベースと ClickHouse 間でデータを転送する方法を説明するページです。'
+doc_type: 'guide'
+keywords: ['sql フォーマット', 'データエクスポート', 'データインポート', 'バックアップ', 'sql ダンプ']
+---
+
+ClickHouse は、さまざまな方法で OLTP データベースのインフラストラクチャに容易に統合できます。その方法の 1 つが、SQL ダンプを使用して他のデータベースと ClickHouse の間でデータを転送することです。
+
+<div id="creating-sql-dumps">
+  ## SQLダンプの作成
+</div>
+
+データは、[SQLInsert](/ja/reference/formats/SQLInsert) を使用してSQLフォーマットでダンプできます。ClickHouse はデータを `INSERT INTO <table name> VALUES(...` 形式で書き出し、[`output_format_sql_insert_table_name`](/ja/reference/settings/formats#output_format_sql_insert_table_name) 設定オプションで指定したテーブル名を使用します:
+
+```sql
+SET output_format_sql_insert_table_name = 'some_table';
+SELECT * FROM some_data
+INTO OUTFILE 'dump.sql'
+FORMAT SQLInsert
+```
+
+[`output_format_sql_insert_include_column_names`](/ja/reference/settings/formats#output_format_sql_insert_include_column_names) オプションを無効にすることで、カラム名を省略できます。
+
+```sql
+SET output_format_sql_insert_include_column_names = 0
+```
+
+これで、[dump.sql](https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/dump.sql) ファイルを別のOLTPデータベースに読み込ませることができます:
+
+```bash
+mysql some_db < dump.sql
+```
+
+`some_db` MySQLデータベースに `some_table` テーブルが存在しているものとします。
+
+DBMS によっては、1 回のバッチで処理できる値の量に制限がある場合があります。デフォルトでは、ClickHouse は 65k 件の値からなるバッチを作成しますが、これは [`output_format_sql_insert_max_batch_size`](/ja/reference/settings/formats#output_format_sql_insert_max_batch_size) オプションで変更できます。
+
+```sql
+SET output_format_sql_insert_max_batch_size = 1000;
+```
+
+<div id="exporting-a-set-of-values">
+  ### 値の一覧をエクスポートする
+</div>
+
+ClickHouse には [Values](/ja/reference/formats/Values) フォーマットがあります。これは SQLInsert に似ていますが、`INSERT INTO table VALUES` の部分を省き、値の一覧だけを返します。
+
+```sql
+SELECT * FROM some_data LIMIT 3 FORMAT Values
+```
+
+```response
+('Bangor_City_Forest','2015-07-01',34),('Alireza_Afzal','2017-02-01',24),('Akhaura-Laksam-Chittagong_Line','2015-09-01',30)
+```
+
+<div id="inserting-data-from-sql-dumps">
+  ## SQLダンプからデータを挿入する
+</div>
+
+SQLダンプを読み取るには、[MySQLDump](/ja/reference/formats/MySQLDump) を使用します。
+
+```sql
+SELECT *
+FROM file('dump.sql', MySQLDump)
+LIMIT 5
+```
+
+```response
+┌─path───────────────────────────┬──────month─┬─hits─┐
+│ Bangor_City_Forest             │ 2015-07-01 │   34 │
+│ Alireza_Afzal                  │ 2017-02-01 │   24 │
+│ Akhaura-Laksam-Chittagong_Line │ 2015-09-01 │   30 │
+│ 1973_National_500              │ 2017-10-01 │   80 │
+│ Attachment                     │ 2017-09-01 │ 1356 │
+└────────────────────────────────┴────────────┴──────┘
+```
+
+デフォルトでは、ClickHouse は不明なカラムをスキップし ([input&#95;format&#95;skip&#95;unknown&#95;fields](/ja/reference/settings/formats#input_format_skip_unknown_fields) オプションで制御) 、ダンプ内で最初に見つかったテーブルのデータを処理します (複数のテーブルが 1 つのファイルにダンプされている場合) 。DDL ステートメントはスキップされます。MySQL ダンプからテーブルにデータを読み込むには ([mysql.sql](https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/mysql.sql) ファイルを使用) :
+
+```sql
+INSERT INTO some_data
+FROM INFILE 'mysql.sql' FORMAT MySQLDump
+```
+
+MySQLのダンプファイルからテーブルを自動的に作成することもできます。
+
+```sql
+CREATE TABLE table_from_mysql
+ENGINE = MergeTree
+ORDER BY tuple() AS
+SELECT *
+FROM file('mysql.sql', MySQLDump)
+```
+
+ここでは、ClickHouse が自動的に推論した構造に基づいて、`table_from_mysql` という名前のテーブルを作成しています。ClickHouse は、データに基づいて型を検出するか、利用可能な場合は DDL を使用します。
+
+```sql
+DESCRIBE TABLE table_from_mysql;
+```
+
+```response
+┌─name──┬─type─────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ path  │ Nullable(String) │              │                    │         │                  │                │
+│ month │ Nullable(Date32) │              │                    │         │                  │                │
+│ hits  │ Nullable(UInt32) │              │                    │         │                  │                │
+└───────┴──────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+<div id="other-formats">
+  ## その他のフォーマット
+</div>
+
+ClickHouse は、さまざまなユースケースやプラットフォームに対応するため、テキスト形式とバイナリ形式の両方を含む多数のフォーマットをサポートしています。さらに多くのフォーマットとその扱い方については、以下の記事を参照してください。
+
+* [CSV および TSV フォーマット](/ja/guides/clickhouse/data-formats/csv-tsv)
+* [Parquet](/ja/guides/clickhouse/data-formats/parquet)
+* [JSON フォーマット](/ja/guides/clickhouse/data-formats/json/intro)
+* [Regex と Template](/ja/guides/clickhouse/data-formats/templates-regex)
+* [Native とバイナリ形式](/ja/guides/clickhouse/data-formats/binary)
+* **SQL フォーマット**
+
+また、[clickhouse-local](https://clickhouse.com/blog/extracting-converting-querying-local-files-with-sql-clickhouse-local) も参照してください。これは、ClickHouse server を必要とせず、ローカル/リモートファイルを扱えるポータブルで高機能なツールです。
