@@ -34,11 +34,13 @@
 #include <Storages/StorageDummy.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Planner/PlannerExpressionAnalysis.h>
+#include <Interpreters/FunctionNameNormalizer.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/Context.h>
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
 #include <Storages/ProjectionsDescription.h>
+#include <Storages/StatisticsDescription.h>
 
 namespace DB
 {
@@ -46,6 +48,7 @@ namespace Setting
 {
     extern const SettingsBool force_optimize_projection;
     extern const SettingsString preferred_optimize_projection_name;
+    extern const SettingsBool use_statistics_for_min_max_aggregation;
 }
 }
 
@@ -556,6 +559,10 @@ struct MinMaxProjectionCandidate
 {
     AggregateProjectionCandidate candidate;
     Block block;
+
+    /// Keeps alive a query-time extension of the implicit minmax_count projection with
+    /// statistics-backed min/max columns, when `candidate.projection` points to one.
+    std::shared_ptr<const ProjectionDescription> owned_projection;
 };
 
 struct AggregateProjectionCandidates
@@ -569,6 +576,72 @@ struct AggregateProjectionCandidates
     /// If not empty, try to find exact ranges from parts to speed up trivial count queries.
     String only_count_column;
 };
+
+/// Collect columns for which the query's `min`/`max` aggregates can be answered exactly from
+/// per-part column statistics (`basic` or `minmax`), to extend the implicit minmax_count
+/// projection for this query. Statistics describe the physical rows of a part, so any mechanism
+/// that changes the values visible at read time (on-the-fly mutations, patch parts, masking
+/// policies) disables the extension. (Lightweight deletes are already excluded for the whole
+/// minmax_count projection candidate.)
+static Names getStatisticsBackedMinMaxColumns(
+    const AggregateDescriptions & aggregates,
+    const StorageMetadataPtr & metadata,
+    const ReadFromMergeTree & reading,
+    const ContextPtr & context)
+{
+    if (!context->getSettingsRef()[Setting::use_statistics_for_min_max_aggregation])
+        return {};
+
+    const auto & mutations_snapshot = reading.getMutationsSnapshot();
+    if (mutations_snapshot->hasDataMutations() || mutations_snapshot->hasPatchParts())
+        return {};
+
+    if (reading.getMergeTreeData().hasEnabledMaskingPolicies(context))
+        return {};
+
+    /// Columns already covered by the projection itself must not be duplicated: min/max of the
+    /// partition key source columns come from the partition minmax index, and min/max of the
+    /// first primary key column come from the primary index.
+    NameSet excluded;
+    for (const auto & name : metadata->getColumnsRequiredForPartitionKey())
+        excluded.insert(name);
+    const auto & primary_key_asts = metadata->getPrimaryKey().expression_list_ast->children;
+    if (!primary_key_asts.empty())
+        if (auto primary_key_column = tryGetIdentifierName(primary_key_asts.front()))
+            excluded.insert(*primary_key_column);
+
+    const auto & columns = metadata->getColumns();
+    Names res;
+    for (const auto & aggregate : aggregates)
+    {
+        const auto & function_name = aggregate.function->getName();
+        if (function_name != "min" && function_name != "max")
+            continue;
+        if (aggregate.argument_names.size() != 1)
+            continue;
+
+        String column_name{stripTableQualifier(aggregate.argument_names.front())};
+        if (excluded.contains(column_name) || !columns.has(column_name))
+            continue;
+
+        const auto & column = columns.get(column_name);
+
+        /// Restrict to non-Nullable columns represented by numbers: for them the per-part
+        /// statistics minimum/maximum are exact and equal the result of `min`/`max` aggregation.
+        WhichDataType which(column.type);
+        if (which.isNullable() || which.isLowCardinality() || !column.type->isValueRepresentedByNumber())
+            continue;
+
+        if (!column.statistics.types_to_desc.contains(StatisticsType::Basic)
+            && !column.statistics.types_to_desc.contains(StatisticsType::MinMax))
+            continue;
+
+        excluded.insert(column_name);
+        res.push_back(column_name);
+    }
+
+    return res;
+}
 
 static AggregateProjectionCandidates getAggregateProjectionCandidates(
     QueryPlan::Node & node,
@@ -615,6 +688,26 @@ static AggregateProjectionCandidates getAggregateProjectionCandidates(
     if (can_use_minmax_projection)
     {
         const auto * projection = &*(metadata->minmax_count_projection);
+
+        /// If the query aggregates `min`/`max` over columns whose per-part statistics can answer
+        /// them exactly, extend the implicit projection with those columns for this query.
+        std::shared_ptr<const ProjectionDescription> extended_projection;
+        Names stats_minmax_columns = getStatisticsBackedMinMaxColumns(aggregates, metadata, reading, context);
+        if (!stats_minmax_columns.empty())
+        {
+            auto partition_columns_ast = metadata->getPartitionKey().expression_list_ast->clone();
+            FunctionNameNormalizer::visit(partition_columns_ast.get());
+            extended_projection = std::make_shared<const ProjectionDescription>(ProjectionDescription::getMinMaxCountProjection(
+                metadata->getColumns(),
+                partition_columns_ast,
+                metadata->getColumnsRequiredForPartitionKey(),
+                metadata->getPrimaryKey(),
+                &metadata->getPartitionKey(),
+                context,
+                stats_minmax_columns));
+            projection = extended_projection.get();
+        }
+
         auto info = getAggregatingProjectionInfo(*projection, context, metadata, key_virtual_columns);
         if (auto proj_dag = analyzeAggregateProjection(info, dag, query_index, keys, aggregates, max_set_size_for_match))
         {
@@ -623,6 +716,7 @@ static AggregateProjectionCandidates getAggregateProjectionCandidates(
 
             auto block = reading.getMergeTreeData().getMinMaxCountProjectionBlock(
                 metadata,
+                *projection,
                 candidate.dag.getRequiredColumnsNames(),
                 (dag.filter_node ? &*dag.dag : nullptr),
                 reading.getParts(),
@@ -638,6 +732,7 @@ static AggregateProjectionCandidates getAggregateProjectionCandidates(
                 minmax.candidate = std::move(candidate);
                 minmax.block = std::move(block);
                 minmax.candidate.projection = projection;
+                minmax.owned_projection = std::move(extended_projection);
                 candidates.minmax_projection.emplace(std::move(minmax));
             }
         }

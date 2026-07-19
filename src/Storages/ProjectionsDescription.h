@@ -69,6 +69,12 @@ struct ProjectionDescription
     /// If a primary key expression is used in the minmax_count projection, store the name of max expression.
     String primary_key_max_column_name;
 
+    /// Columns of the minmax_count projection whose min/max are answered from per-part column
+    /// statistics (`basic`/`minmax`) instead of the partition minmax index or the primary index.
+    /// Set only on query-time extended copies of the implicit minmax_count projection; empty for
+    /// the projection stored in table metadata.
+    Names stats_minmax_columns;
+
     /// Stores partition value indices of partition value row. It's needed because identical
     /// partition columns will appear only once in projection block, but every column will have a
     /// value in the partition value row. This vector holds the biggest value index of give
@@ -117,7 +123,8 @@ struct ProjectionDescription
         const Names & minmax_columns,
         const KeyDescription & primary_key,
         const KeyDescription * partition_key,
-        const ContextPtr & query_context);
+        const ContextPtr & query_context,
+        const Names & stats_minmax_columns = {});
 
     ProjectionDescription() = default;
 

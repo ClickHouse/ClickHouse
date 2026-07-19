@@ -1879,6 +1879,21 @@ Possible values:
 - 0 — Disabled.
 - 1 — Enabled.
 )", 0) \
+    DECLARE(Bool, use_statistics_for_min_max_aggregation, true, R"(
+Use column statistics to answer filterless `min`/`max` aggregation queries from part metadata.
+
+When enabled, queries like `SELECT min(x), max(x) FROM t` over columns that have `minmax` or `basic`
+statistics (see the MergeTree setting `auto_statistics_types`) are answered from per-part statistics
+without reading column data, as an extension of the implicit `_minmax_count_projection`. If any
+selected part lacks usable statistics, or the values seen by the query may differ from the stored
+ones (lightweight deletes, on-the-fly mutations, patch parts, masking policies), the query falls
+back to a normal read.
+
+Possible values:
+
+- 0 — Disabled.
+- 1 — Enabled.
+)", 0) \
     DECLARE(Bool, use_top_k_dynamic_filtering, true, R"(
 Enable dynamic filtering optimization when executing a `ORDER BY <column> LIMIT n` query.
 

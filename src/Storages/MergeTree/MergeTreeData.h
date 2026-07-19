@@ -524,15 +524,24 @@ public:
                   BrokenPartCallback broken_part_callback_ = [](const String &){});
 
     /// Build a block of minmax and count values of a MergeTree table. These values are extracted
-    /// from minmax_indices, the first expression of primary key, and part rows.
+    /// from minmax_indices, per-part column statistics, the first expression of primary key, and
+    /// part rows.
+    ///
+    /// minmax_count_projection - the (possibly query-time extended) minmax_count projection
+    /// describing the block layout
     ///
     /// has_filter - if query has no filter, bypass partition pruning completely
     ///
     /// query_info - used to filter unneeded parts
     ///
     /// parts - part set to filter
+    ///
+    /// Returns an empty block when the values cannot be extracted from part metadata (e.g. a part
+    /// lacks usable statistics for one of `minmax_count_projection.stats_minmax_columns`); the
+    /// caller must then fall back to a normal read.
     Block getMinMaxCountProjectionBlock(
         const StorageMetadataPtr & metadata_snapshot,
+        const ProjectionDescription & minmax_count_projection,
         const Names & required_columns,
         const ActionsDAG * filter_dag,
         const RangesInDataParts & parts,

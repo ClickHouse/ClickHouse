@@ -107,6 +107,7 @@ ProjectionDescription ProjectionDescription::clone() const
     other.metadata = metadata;
     other.key_size = key_size;
     other.primary_key_max_column_name = primary_key_max_column_name;
+    other.stats_minmax_columns = stats_minmax_columns;
     other.partition_value_indices = partition_value_indices;
     other.with_parent_part_offset = with_parent_part_offset;
     other.with_block_number = with_block_number;
@@ -553,13 +554,23 @@ ProjectionDescription ProjectionDescription::getMinMaxCountProjection(
     const Names & minmax_columns,
     const KeyDescription & primary_key,
     const KeyDescription * partition_key,
-    const ContextPtr & query_context)
+    const ContextPtr & query_context,
+    const Names & stats_minmax_columns)
 {
     ProjectionDescription result;
 
     auto select_query = make_intrusive<ASTProjectionSelectQuery>();
     ASTPtr select_expression_list = make_intrusive<ASTExpressionList>();
     for (const auto & column : minmax_columns)
+    {
+        select_expression_list->children.push_back(makeASTFunction("min", make_intrusive<ASTIdentifier>(column)));
+        select_expression_list->children.push_back(makeASTFunction("max", make_intrusive<ASTIdentifier>(column)));
+    }
+
+    /// Columns answered from per-part statistics. They must not duplicate `minmax_columns` or the
+    /// first primary key column: a duplicated name would break the position arithmetic below and in
+    /// `MergeTreeData::getMinMaxCountProjectionBlock`.
+    for (const auto & column : stats_minmax_columns)
     {
         select_expression_list->children.push_back(makeASTFunction("min", make_intrusive<ASTIdentifier>(column)));
         select_expression_list->children.push_back(makeASTFunction("max", make_intrusive<ASTIdentifier>(column)));
@@ -633,14 +644,15 @@ ProjectionDescription ProjectionDescription::getMinMaxCountProjection(
     /// If we have primary key and it's not in minmax_columns, it will be used as one additional minmax columns.
     if (!primary_key_asts.empty()
         && result.sample_block.columns()
-            == 2 * (minmax_columns.size() + 1) /* minmax columns */ + 1 /* count() */
+            == 2 * (minmax_columns.size() + stats_minmax_columns.size() + 1) /* minmax and statistics columns */ + 1 /* count() */
                 + result.partition_value_indices.size() /* partition_columns */)
     {
-        /// partition_expr1, partition_expr2, ..., min(p1), max(p1), min(p2), max(p2), ..., min(k1), max(k1), count()
-        ///                                                                                              ^
-        ///                                                                                           size - 2
+        /// partition_expr1, ..., min(p1), max(p1), ..., min(s1), max(s1), ..., min(k1), max(k1), count()
+        ///                                                                                  ^
+        ///                                                                               size - 2
         result.primary_key_max_column_name = *(result.sample_block.getNames().cend() - 2);
     }
+    result.stats_minmax_columns = stats_minmax_columns;
     result.type = ProjectionDescription::Type::Aggregate;
     StorageInMemoryMetadata metadata;
     metadata.setColumns(ColumnsDescription(result.sample_block.getNamesAndTypesList()));
