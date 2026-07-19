@@ -25,7 +25,7 @@ You cannot currently complete this Confluent Cloud setup with only the ClickHous
 Confluent Cloud requires multiple custom private DNS mappings for a single reverse private endpoint.
 The ClickHouse Cloud console currently supports only one custom private DNS name per RPE.
 
-Use the [ClickHouse Cloud OpenAPI](https://clickhouse.com/docs/cloud/manage/api/swagger#tag/ClickPipes/operation/clickPipeReversePrivateEndpointCreate)
+Use the [ClickHouse Cloud OpenAPI](/products/cloud/api-reference/clickpipes/create-reverse-private-endpoint)
 or Terraform to create or update RPE custom DNS mappings.
 </Warning>
 
@@ -75,11 +75,11 @@ This authorization is required before the ClickPipes RPE can connect to the Conf
 
 ### Create the ClickPipes RPEs {#create-dedicated-rpes}
 
-Create the RPEs with [OpenAPI](https://clickhouse.com/docs/cloud/manage/api/swagger#tag/ClickPipes/operation/clickPipeReversePrivateEndpointCreate)
+Create the RPEs with [OpenAPI](/products/cloud/api-reference/clickpipes/create-reverse-private-endpoint)
 or Terraform.
 
 With OpenAPI, use `customPrivateDnsMappings` in the create request.
-If you update an existing RPE with the [update operation](https://clickhouse.com/docs/cloud/manage/api/swagger#tag/ClickPipes/operation/clickPipeReversePrivateEndpointUpdate),
+If you update an existing RPE with the [update operation](/products/cloud/api-reference/clickpipes/update-reverse-private-endpoint),
 remember that `customPrivateDnsMappings` is a full replacement list.
 
 #### AWS Dedicated {#aws-dedicated}
