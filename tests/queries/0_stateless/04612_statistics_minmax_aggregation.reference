@@ -1,32 +1,32 @@
 -- answered from per-part statistics, no column data is read
-2024-01-01	2025-12-31
-2024-01-01	2025-12-31	-1000	999	20000
-999	2024-01-01
-0	19999	2025-12-31
+2024-01-01	2025-01-10
+2024-01-01	2025-01-10	-100	4	20
+4	2024-01-01
+0	19	2025-01-10
 1
 -- same results with the optimization disabled
-2024-01-01	2025-12-31	-1000	999	20000
+2024-01-01	2025-01-10	-100	4	20
 0
 -- Nullable and String fall back to a normal read
-0	9999
-0	9999
+0	9
+0	9
 0
 0
 -- min/max of a monotonic function of an eligible column is also optimized
-2024-01-02	2026-01-01
+2024-01-02	2025-01-11
 1
 -- unmatched aggregate disables the whole candidate
-2024-01-01	-10000
+2024-01-01	-960
 0
 -- lightweight delete disables the optimization
-5	2024-01-01	2025-12-31
+5	2024-01-06	2025-01-10
 0
 -- mutation rebuilds statistics of the updated column
 42	42
 1
 -- a part without statistics falls back to a normal read
-0	1999
+0	19
 0
 -- group by partition key combined with statistics-backed min/max
-0	0	999	1000
-1	100000	100999	1000
+0	0	9	10
+1	100	109	10

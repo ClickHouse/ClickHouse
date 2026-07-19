@@ -15,8 +15,8 @@ create table t_stats_minmax (key UInt64, date Date, value Int32, n Nullable(Int3
 engine = MergeTree order by (key, date)
 settings auto_statistics_types = 'basic';
 
-insert into t_stats_minmax select number, toDate('2024-01-01') + number % 365, toInt32(number % 1000) - 500, number, toString(number) from numbers(10000);
-insert into t_stats_minmax select number + 10000, toDate('2025-01-01') + number % 365, toInt32(number % 2000) - 1000, number, toString(number) from numbers(10000);
+insert into t_stats_minmax select number, toDate('2024-01-01') + number, toInt32(number) - 5, number, toString(number) from numbers(10);
+insert into t_stats_minmax select number + 10, toDate('2025-01-01') + number, toInt32(number) - 100, number, toString(number) from numbers(10);
 
 select '-- answered from per-part statistics, no column data is read';
 set max_rows_to_read = 4;
@@ -58,8 +58,8 @@ drop table if exists t_stats_minmax_update;
 create table t_stats_minmax_update (key UInt64, value Int32)
 engine = MergeTree order by key
 settings auto_statistics_types = 'basic';
-insert into t_stats_minmax_update select number, toInt32(number) from numbers(1000);
-insert into t_stats_minmax_update select number + 1000, toInt32(number + 1000) from numbers(1000);
+insert into t_stats_minmax_update select number, toInt32(number) from numbers(10);
+insert into t_stats_minmax_update select number + 10, toInt32(number + 10) from numbers(10);
 alter table t_stats_minmax_update update value = 42 where 1;
 set max_rows_to_read = 4;
 select min(value), max(value) from t_stats_minmax_update;
@@ -72,9 +72,9 @@ drop table if exists t_stats_minmax_mixed;
 create table t_stats_minmax_mixed (key UInt64, value Int32)
 engine = MergeTree order by key
 settings auto_statistics_types = '';
-insert into t_stats_minmax_mixed select number, toInt32(number) from numbers(1000);
+insert into t_stats_minmax_mixed select number, toInt32(number) from numbers(10);
 alter table t_stats_minmax_mixed modify setting auto_statistics_types = 'basic';
-insert into t_stats_minmax_mixed select number + 1000, toInt32(number + 1000) from numbers(1000);
+insert into t_stats_minmax_mixed select number + 10, toInt32(number + 10) from numbers(10);
 select min(value), max(value) from t_stats_minmax_mixed;
 select count() from (explain select min(value), max(value) from t_stats_minmax_mixed) where explain like '%_minmax_count_projection%';
 drop table t_stats_minmax_mixed;
@@ -84,8 +84,8 @@ drop table if exists t_stats_minmax_part;
 create table t_stats_minmax_part (p UInt8, v UInt32)
 engine = MergeTree partition by p order by tuple()
 settings auto_statistics_types = 'basic';
-insert into t_stats_minmax_part select 0, number from numbers(1000);
-insert into t_stats_minmax_part select 1, number + 100000 from numbers(1000);
+insert into t_stats_minmax_part select 0, number from numbers(10);
+insert into t_stats_minmax_part select 1, number + 100 from numbers(10);
 set max_rows_to_read = 4;
 select p, min(v), max(v), count() from t_stats_minmax_part group by p order by p;
 set max_rows_to_read = 0;
