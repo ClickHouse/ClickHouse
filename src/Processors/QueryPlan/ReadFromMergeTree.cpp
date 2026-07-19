@@ -1,4 +1,5 @@
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
+#include <Processors/QueryPlan/ReadNothingStep.h>
 #include <base/sort.h>
 
 #include <Storages/MergeTree/Streaming/CursorUtils.h>
@@ -3200,6 +3201,49 @@ bool ReadFromMergeTree::isVectorColumnReplaced() const
     return std::ranges::find(all_column_names, "_distance") != all_column_names.end();
 }
 
+void ReadFromMergeTree::addReadColumn(const String & column)
+{
+    if (std::ranges::find(all_column_names, column) != all_column_names.end())
+        return;
+
+    all_column_names.emplace_back(column);
+
+    /// A PREWHERE / row-level-filter ActionsDAG only outputs the columns it was built with, and `transformHeader` below
+    /// runs the read header through it. A column added here after analysis (e.g. the `Quantize` companion subcolumns
+    /// pulled in by the quantized-vector-search rewrite) is neither an input nor an output of those DAGs, so it would be
+    /// dropped after PREWHERE and the rewrite would then fail to find it. Pass it through, mirroring
+    /// `restorePrewhereInputs` but also for a column that is not yet an input of the DAG.
+    const auto column_type = storage_snapshot->getSampleBlockForColumns({column}).getByName(column).type;
+    auto pass_through_filter = [&](ActionsDAG & dag)
+    {
+        if (dag.tryFindInOutputs(column))
+            return;
+        for (const auto * input : dag.getInputs())
+        {
+            if (input->result_name == column)
+            {
+                dag.getOutputs().push_back(input);
+                return;
+            }
+        }
+        dag.getOutputs().push_back(&dag.addInput(column, column_type));
+    };
+    if (query_info.row_level_filter)
+        pass_through_filter(query_info.row_level_filter->actions);
+    if (query_info.prewhere_info)
+        pass_through_filter(query_info.prewhere_info->prewhere_actions);
+
+    output_header = std::make_shared<const Block>(MergeTreeSelectProcessor::transformHeader(
+        storage_snapshot->getSampleBlockForColumns(all_column_names),
+        query_info.row_level_filter,
+        query_info.prewhere_info));
+
+    /// If analysis has already been done (like in optimization for projections),
+    /// then update columns to read in analysis result.
+    if (analyzed_result_ptr)
+        analyzed_result_ptr->column_names_to_read = all_column_names;
+}
+
 bool ReadFromMergeTree::requestOutputEachPartitionThroughSeparatePortForAggregation()
 {
     if (isQueryWithFinal())
@@ -5285,6 +5329,10 @@ void ReadFromMergeTree::serialize(Serialization & ctx) const
         flags |= 8;
     if (query_info.prewhere_info != nullptr)
         flags |= 16;
+    /// Parallel replicas reading: the replica rebuilds the read in parallel-reading mode and resolves the
+    /// coordinator callbacks + its replica number from its own context, so neither is serialized here.
+    if (is_parallel_reading_from_replicas)
+        flags |= 32;
 
     writeIntBinary(flags, ctx.out);
     if (table_expression_modifiers && table_expression_modifiers->hasSampleSizeRatio())
@@ -5343,6 +5391,7 @@ std::unique_ptr<IQueryPlanStep> ReadFromMergeTree::deserialize(Deserialization &
     const bool has_sample_offset_ratio = flags & 4;
     const bool has_row_level_filter = flags & 8;
     const bool has_prewhere_info = flags & 16;
+    const bool enable_parallel_reading = flags & 32;
 
     std::optional<TableExpressionModifiers::Rational> sample_size_ratio;
     std::optional<TableExpressionModifiers::Rational> sample_offset_ratio;
@@ -5358,6 +5407,23 @@ std::unique_ptr<IQueryPlanStep> ReadFromMergeTree::deserialize(Deserialization &
         query_info.row_level_filter = std::make_shared<FilterDAGInfo>(FilterDAGInfo::deserialize(ctx));
     if (has_prewhere_info)
         query_info.prewhere_info = std::make_shared<PrewhereInfo>(PrewhereInfo::deserialize(ctx));
+
+    /// The per-bucket marks travel in the `read_bucket` task parameter, so the step carries only the count.
+    size_t distributed_read_bucket_count = 0;
+    readVarUInt(distributed_read_bucket_count, ctx.in);
+    /// A version-1 bucketed step had a trailing part-name payload this reader would leave unconsumed; fail
+    /// closed at the version boundary instead of misparsing the rest of the plan.
+    if (distributed_read_bucket_count > 0 && ctx.version < 2)
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "make_distributed_plan: a bucketed ReadFromMergeTree read requires query plan serialization "
+            "version >= 2; all nodes must run the same version");
+
+    /// The plan is only being drained off the buffer (TCPHandler::skipData) and will be discarded.
+    /// All serialized fields have been consumed above, so return a lightweight placeholder that
+    /// carries the serialized header (satisfies the header check) instead of doing a table lookup,
+    /// index analysis and parallel-replicas callback wiring for a step that is never executed.
+    if (ctx.skipping)
+        return std::make_unique<ReadNothingStep>(ctx.output_header);
 
     /// The table could be dropped concurrently after the plan was serialized,
     /// so a failed lookup is a regular error, not a logical one.
@@ -5376,16 +5442,6 @@ std::unique_ptr<IQueryPlanStep> ReadFromMergeTree::deserialize(Deserialization &
     StorageSnapshotPtr storage_snapshot = table.getStorageSnapshot(metadata_snapshot, ctx.context);
     const auto & snapshot_data = assert_cast<const MergeTreeData::SnapshotData &>(*storage_snapshot->data);
 
-    /// The per-bucket marks travel in the `read_bucket` task parameter, so the step carries only the count.
-    size_t distributed_read_bucket_count = 0;
-    readVarUInt(distributed_read_bucket_count, ctx.in);
-    /// A version-1 bucketed step had a trailing part-name payload this reader would leave unconsumed; fail
-    /// closed at the version boundary instead of misparsing the rest of the plan.
-    if (distributed_read_bucket_count > 0 && ctx.version < 2)
-        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-            "make_distributed_plan: a bucketed ReadFromMergeTree read requires query plan serialization "
-            "version >= 2; all nodes must run the same version");
-
     auto step = executor.readFromParts(
         snapshot_data.parts,
         snapshot_data.mutations_snapshot,
@@ -5394,7 +5450,16 @@ std::unique_ptr<IQueryPlanStep> ReadFromMergeTree::deserialize(Deserialization &
         query_info,
         ctx.context,
         max_block_size,
-        num_streams);
+        num_streams,
+        /*max_block_numbers_to_read*/ nullptr,
+        /*merge_tree_select_result_ptr*/ nullptr,
+        /// On a replica this rebuilds the read in parallel-reading mode: the ReadFromMergeTree ctor
+        /// resolves the coordinator callbacks from ctx.context (set by TCPHandler) and the replica number
+        /// from client_info. Passing no extension keeps those resolved from the context. This path is
+        /// only reached for a plan that will actually be executed (see the ctx.skipping short-circuit
+        /// above), so the callbacks are always present.
+        enable_parallel_reading,
+        /*extension*/ nullptr);
 
     if (distributed_read_bucket_count)
     {

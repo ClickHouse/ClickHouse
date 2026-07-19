@@ -50,6 +50,8 @@ set(DBMS_FUNCTIONS
     FunctionsConversion_impl2.cpp
     FunctionsConversion_impl3.cpp
     FunctionTopKFilter.cpp # createInternalFunctionTopKFilterResolver used from optimizeTopK.cpp
+    productQuantization.cpp # createInternalFunctionPQDistanceResolver used from useVectorSearchWithQuantizedCodes.cpp
+    vectorQuantization.cpp # createInternalFunctionQuantizeDistanceResolver used from useVectorSearchWithQuantizedCodes.cpp
     extractTimeZoneFromFunctionArguments.cpp # extractTimeZoneFromFunctionArguments (DateTimeTransforms.h, FunctionsConversion.cpp)
     generateSnowflakeID.cpp
     FunctionGenerateRandomStructure.cpp # FunctionGenerateRandomStructure::generateRandomDataType (Used by StorageGenerateRandom.cpp)
@@ -114,8 +116,8 @@ if (TARGET ch_contrib::bech32)
     list (APPEND PRIVATE_LIBS ch_contrib::bech32)
 endif()
 
-if (TARGET ch_contrib::base64)
-    list (APPEND PRIVATE_LIBS ch_contrib::base64)
+if (TARGET ch_contrib::simdutf)
+    list (APPEND PRIVATE_LIBS ch_contrib::simdutf)
 endif()
 
 if (ENABLE_NLP)
