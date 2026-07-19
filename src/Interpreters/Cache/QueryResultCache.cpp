@@ -67,6 +67,7 @@ namespace ErrorCodes
 {
     extern const int DEPRECATED_FUNCTION;
     extern const int SUPPORT_IS_DISABLED;
+    extern const int THERE_IS_NO_QUERY;
     extern const int QUERY_CACHE_USED_WITH_NONDETERMINISTIC_FUNCTIONS;
     extern const int QUERY_CACHE_USED_WITH_SYSTEM_TABLE;
 }
@@ -107,9 +108,13 @@ struct HasNonDeterministicFunctionsMatcher
             }
             catch (const Exception & e)
             {
-                /// tryGet instantiates the implementation; deprecations and experimental gates may throw instead of returning nullptr.
-                /// Conservative for cache eligibility: treat as non-deterministic (disable caching).
-                if (e.code() == ErrorCodes::DEPRECATED_FUNCTION || e.code() == ErrorCodes::SUPPORT_IS_DISABLED)
+                /// tryGet instantiates the implementation; deprecations, experimental gates, and stateful
+                /// functions that require a live query context (e.g. timeSeriesIdToGroup) may throw
+                /// instead of returning nullptr. Conservative for cache eligibility: treat as
+                /// non-deterministic (disable caching) and never fail the query.
+                if (e.code() == ErrorCodes::DEPRECATED_FUNCTION
+                    || e.code() == ErrorCodes::SUPPORT_IS_DISABLED
+                    || e.code() == ErrorCodes::THERE_IS_NO_QUERY)
                 {
                     data.has_non_deterministic_functions = true;
                     return;

@@ -2981,8 +2981,12 @@ static Aggregator::Params getAggregatorParams(
         context.getServerSettings()[ServerSetting::max_entries_for_hash_table_stats],
         settings[Setting::max_size_to_preallocate_for_aggregation]);
 
+    /// Prefer query context: stateful functions (e.g. `timeSeriesIdToGroup`) need it in `FunctionFactory::tryGet`.
+    ContextPtr context_for_function_check = context.getGlobalContext();
+    if (context.hasQueryContext())
+        context_for_function_check = context.getQueryContext();
     const bool has_nondeterministic_functions
-        = astContainsNonDeterministicFunctions(query_ptr, context.getGlobalContext());
+        = astContainsNonDeterministicFunctions(query_ptr, context_for_function_check);
     const UInt64 partial_cache_semantic_key
         = has_nondeterministic_functions ? 0 : partial_aggregate_semantic_key;
 

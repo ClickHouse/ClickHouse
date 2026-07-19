@@ -662,8 +662,9 @@ Aggregator::Params getAggregatorParams(const PlannerContextPtr & planner_context
     auto tmp_data_scope = query_context->getTempDataOnDisk();
     if (tmp_data_scope)
         tmp_data_scope = tmp_data_scope->childScope(/* metrics */{}, settings[Setting::temporary_files_buffer_size], settings[Setting::temporary_files_codec]);
+    /// Prefer query context: stateful functions (e.g. `timeSeriesIdToGroup`) need it in `FunctionFactory::tryGet`.
     const bool has_nondeterministic_functions
-        = astContainsNonDeterministicFunctions(select_query_info.query, query_context->getGlobalContext());
+        = astContainsNonDeterministicFunctions(select_query_info.query, query_context);
     const UInt64 partial_cache_semantic_key = has_nondeterministic_functions ? 0 : partial_aggregate_semantic_key;
 
     Aggregator::Params aggregator_params = Aggregator::Params(
