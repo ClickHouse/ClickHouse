@@ -39,8 +39,12 @@ cat > "$config" <<'EOF'
 </config>
 EOF
 
+# Use a query id that is unique per test run (the flaky check runs the same test
+# concurrently), then normalise it back to a stable value for the reference.
+query_id="test-query-${CLICKHOUSE_DATABASE}"
+
 echo "-- echo_query_id=true from config, no CLI override (query ID line present)"
-$CLICKHOUSE_CLIENT --config "$config" --query-id test-query-123 -q "SELECT 1"
+$CLICKHOUSE_CLIENT --config "$config" --query-id "$query_id" -q "SELECT 1" | sed "s/${query_id}/test-query-123/"
 
 echo "-- echo_query_id=true from config, CLI --echo-query-id=false wins (no query ID line)"
 $CLICKHOUSE_CLIENT --config "$config" --echo-query-id=false -q "SELECT 1"
