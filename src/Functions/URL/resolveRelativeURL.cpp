@@ -282,7 +282,8 @@ REGISTER_FUNCTION(ResolveRelativeURL)
 Resolves a relative URL (e.g. taken from an HTML page) against a base URL, similarly to how a browser resolves links.
 
 The function prefers implementation simplicity over full compliance with RFC 3986:
-- If `relative` has a scheme (`http://`, `ftp://`, ...), it is returned as is.
+- If `relative` has a scheme followed by `://` (`http://`, `ftp://`, ...), it is returned as is.
+  Scheme-only forms without `//` (`mailto:`, `tel:`, ...) are not recognized as absolute and are resolved as relative paths.
 - If `relative` is protocol-relative (`//example.com/path`), only the scheme is taken from `base`.
 - If `relative` starts with `/`, the scheme and the authority (host) are taken from `base`.
 - If `relative` starts with `?` or `#`, it replaces the query string or the fragment of `base` respectively.
