@@ -4,6 +4,9 @@
 # already satisfied. It now describes the actual constraint.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# Do not forward server logs to the client: the error-level log record would duplicate
+# the exception text on stderr and break the exact match count below.
+CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL=none
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
