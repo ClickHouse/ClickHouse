@@ -214,6 +214,7 @@ struct QueryPlanOptimizationSettings
     std::function<std::unique_ptr<QueryPlan>()> query_plan_with_parallel_replicas_builder;
 
     bool parallel_replicas_filter_pushdown = false;
+    bool enable_parallel_replicas = false;
 };
 
 }
