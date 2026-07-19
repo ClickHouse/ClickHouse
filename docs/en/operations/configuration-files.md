@@ -147,6 +147,8 @@ A literal substitution (`from_env`, or a non-`<` leaf `from_zk` value) preserves
 
 :::note Upgrade behaviour for entity-encoded leaf values
 Earlier versions reparsed every leaf `from_zk` value as XML, so a raw `&`, `<` or `>` was rejected as not well-formed and the only way to embed one was to XML-entity-encode it: a value stored as `a&amp;b` decoded to `a&b`, `&lt;a&gt;1&lt;/a&gt;` decoded to `<a>1</a>`, and `&#13;` decoded to a carriage return. A non-`<` leaf value is now kept as its exact original bytes, so those same nodes now resolve to the literal `a&amp;b`, `&lt;a&gt;1&lt;/a&gt;` and `&#13;`. This means only *plain-text* scalars keep their previous meaning unchanged: a leaf value that was entity-encoded for the old XML path must be stored raw instead (for example store `a&b`, which the old path rejected but the new one accepts as the literal text `a&b`).
+
+The same change applies to a plain scalar substituted through a structural `<include from_zk="…"/>` sitting under a leaf setting or a secret, for example `<password><include from_zk="/secret"/></password>`: a scalar is now kept as its exact original bytes there too, so `/secret = a&amp;b` (which used to decode to `a&b`) now resolves to the literal `a&amp;b` and must be stored raw as `a&b` instead. (A `from_zk` value that begins with `<`, or an actual YAML subtree referenced from `<include>`, is unaffected — only plain scalars are kept literal.)
 :::
 
 #### Default values {#default-values}
