@@ -49,7 +49,7 @@ Additional join types available in ClickHouse are:
 | `PASTE JOIN`                                | Performs a horizontal concatenation of two tables.                                                                                          |
 
 :::note
-With the new analyzer, [`semi_join_compatibility`](../../../operations/settings/settings.md#semi_join_compatibility) and [`anti_join_compatibility`](../../../operations/settings/settings.md#anti_join_compatibility) make `SEMI` and `ANTI` joins expose only their preserved side to expressions resolved after the join result is formed.
+With the analyzer, [`semi_join_compatibility`](../../../operations/settings/settings.md#semi_join_compatibility) and [`anti_join_compatibility`](../../../operations/settings/settings.md#anti_join_compatibility) make `SEMI` and `ANTI` joins expose only their preserved side to expressions resolved after the join result is formed.
 
 - `LEFT SEMI JOIN` and `LEFT ANTI JOIN` expose only left-side columns.
 - `RIGHT SEMI JOIN` and `RIGHT ANTI JOIN` expose only right-side columns.

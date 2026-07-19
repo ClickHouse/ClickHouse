@@ -13,7 +13,7 @@
 --
 -- Note: JOIN ON expressions can access both sides regardless of settings.
 
--- only with new analyzer
+-- only with the analyzer
 SET allow_experimental_analyzer = 1;
 
 -- Test ANTI JOIN setting
