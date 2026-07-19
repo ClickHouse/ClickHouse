@@ -175,7 +175,22 @@ const sandbox = {
         title: '', documentElement: { style: { setProperty() {} } },
         /// `postMulti` only ever toggles `.style.display` on these and creates plain
         /// containers / `query-result` elements for its per-statement progress listeners.
-        getElementById: () => ({ style: {} }),
+        /// A `param-<name>` id, however, is the live parameter input the real `paramValuesForQuery`
+        /// reads by name (`resolveRunParams` now derives every run's params from the launched query
+        /// text, not the possibly-stale `currentQueryParams`): map it to `param_inputs`, returning an
+        /// element with the input's `.value` when the input exists, else `null` — exactly the
+        /// "input already there / not yet rebuilt" distinction the real DOM draws.
+        getElementById: id =>
+        {
+            if (id && id.startsWith('param-'))
+            {
+                const name = id.slice('param-'.length);
+                return Object.prototype.hasOwnProperty.call(sandbox.param_inputs, name)
+                    ? { value: sandbox.param_inputs[name] }
+                    : null;
+            }
+            return { style: {} };
+        },
         createElement: tag => tag === 'query-result'
             ? { style: {}, rowCount: 0, elapsedNs: 0, incompleteResult: false, addEventListener() {} }
             : { style: {}, innerHTML: '', appendChild() {} },
@@ -253,6 +268,11 @@ sandbox.current_url = new URL(sandbox.location.href);
 sandbox.defer_run_for_reconcile = false;
 sandbox.postAllCalled = false;
 sandbox.updateQueryParams = async () => true;
+/// The WASM lexer. `resolveRunParams` -> `paramValuesForQuery` tokenizes every run's launched query
+/// to enumerate its own placeholders (rather than trusting the possibly-stale live inputs), so a
+/// resolving default is needed even for the param-less runs; cases that exercise a specific query's
+/// placeholders (or a mid-await caret/edit race) override it with their own token stream.
+sandbox.tokenize = async () => [];
 sandbox.setParamValues = values => { if (values) for (const [k, v] of Object.entries(values)) sandbox.param_inputs[k] = v; };
 /// Connection/database state the merged history writers + Back/Forward restore read (added on
 /// master). These cases never select a database or change the connection, so the selection stays
@@ -747,13 +767,20 @@ async function reload()
     sandbox.query_area.selectionStart = 3;   /// caret inside `SELECT 1` at launch
     sandbox.query_area.selectionEnd = 3;
     sandbox.getQueryUnderCursor = sandbox.realGetQueryUnderCursor;
-    let releaseCursorTokenize;
-    sandbox.tokenize = () => new Promise(resolve => { releaseCursorTokenize = () => resolve([
+    const cursorTokens = [
         { token: 'SELECT', significant: true }, { token: ' ', significant: false },
         { token: '1', significant: true }, { token: ';', significant: true },
         { token: ' ', significant: false }, { token: 'SELECT', significant: true },
         { token: ' ', significant: false }, { token: '2', significant: true },
-    ]); });
+    ];
+    let releaseCursorTokenize;
+    /// Hang ONLY the first tokenize -- the one `getQueryUnderCursor` awaits, where the caret race is
+    /// under test. Once released, later calls resolve at once; notably the run's own `resolveRunParams`
+    /// -> `paramValuesForQuery`, which tokenizes the launched text to enumerate its placeholders, must
+    /// not re-hang here (that would deadlock the run this case asserts completes).
+    sandbox.tokenize = () => releaseCursorTokenize
+        ? Promise.resolve(cursorTokens)
+        : new Promise(resolve => { releaseCursorTokenize = () => resolve(cursorTokens); });
     const cursorPromise = sandbox.postOne();
     await drain();
     sandbox.query_area.selectionStart = 13;   /// caret moved into `SELECT 2` while the lexer loads
@@ -1180,6 +1207,64 @@ async function reload()
     sandbox.params_restore_pending_token = -1;
     sandbox.params_restore_pending_query = null;
     sandbox.getQueryUnderCursor = async () => '';
+
+    /// The SAME stale-placeholder race, but on the ORDINARY run path -- NO tab restore in flight.
+    /// Editing the query only STARTS `updateQueryParams`; it does not replace `currentQueryParams` /
+    /// the `param_*` inputs until after its own `await tokenize(...)`. A `Run` pressed before that
+    /// rebuild lands (cold page / slow first lexer load) must still execute the edited query with ITS
+    /// OWN placeholders, never the previous query's stale bindings. Change `SELECT {x}` (x=1) to
+    /// `SELECT {y}` and Run before the inputs are rebuilt: `resolveRunParams` -> `paramValuesForQuery`
+    /// derives `{y}` from the launched query TEXT (reading `param-y` if that input exists, else blank),
+    /// so the run records the destination `param_y` and never the stale `param_x=1`. The pre-fix
+    /// ordinary path read the live inputs (`getParamValues`) here, which would leak `param_x=1` onto
+    /// `SELECT {y}` -- the very race the pending-restore path already fixes, just without a tab switch.
+    /// Drives the REAL `postOne`/`postSingle`/`resolveRunParams`; the edit's own `updateQueryParams`
+    /// rebuild lands during the (hung) network round-trip, so the clean run still keeps run=1.
+    reset();
+    sandbox.param_inputs = { x: '1' };
+    active().query = 'SELECT {x}';
+    sandbox.query_area.value = 'SELECT {x}';
+    sandbox.currentQueryParams = [{ name: 'x', type: 'String' }];
+    await run('SELECT {x}');                        /// a clean, run-backed entry with x=1
+    /// No restore is pending for this run -- the ordinary path (`params_restore_pending` false).
+    sandbox.params_restore_pending_token = -1;
+    sandbox.params_restore_pending_query = null;
+    /// The user edited the query to `SELECT {y}`, but the edit's async `updateQueryParams` has NOT
+    /// rebuilt the inputs yet, so the live inputs (and `currentQueryParams`) still hold `{x:'1'}`.
+    sandbox.query_area.value = 'SELECT {y}';
+    active().query = 'SELECT {y}';
+    sandbox.param_inputs = { x: '1' };
+    sandbox.currentQueryParams = [{ name: 'x', type: 'String' }];
+    /// `paramValuesForQuery` tokenizes the LAUNCH query (`SELECT {y}`) to enumerate its own placeholder;
+    /// `param-y` does not exist yet, so its value derives as blank -- never the stale `param-x`.
+    sandbox.tokenize = async () => [
+        { token: 'SELECT', significant: true }, { token: ' ', significant: false },
+        { token: '{', significant: true }, { token: 'y', significant: true },
+        { token: ':', significant: true }, { token: 'String', significant: true },
+        { token: '}', significant: true },
+    ];
+    sandbox.isMultiQuery = false;
+    sandbox.query_area.selectionStart = 0;
+    sandbox.query_area.selectionEnd = 0;
+    let releaseCursorOrdinary;
+    sandbox.getQueryUnderCursor = () => new Promise(resolve => { releaseCursorOrdinary = () => resolve('SELECT {y}'); });
+    const ordinaryRacePromise = sandbox.postOne();
+    await drain();
+    releaseCursorOrdinary();
+    await drain();
+    /// The edit's own `updateQueryParams` rebuild lands while the request is still in flight, so by
+    /// the time the run completes the inputs describe `SELECT {y}` with a (blank) `param-y`.
+    sandbox.param_inputs = { y: '' };
+    sandbox.currentQueryParams = [{ name: 'y', type: 'String' }];
+    resolvePendingPostImpl();
+    await ordinaryRacePromise;
+    await drain();
+    assert_eq('ordinary run, inputs not yet rebuilt: the clean run keeps run=1', sandbox.history.stack[sandbox.history.idx].url.includes('run=1'), true);
+    assert_eq('ordinary run, inputs not yet rebuilt: the stale source param does not leak', sandbox.history.stack[sandbox.history.idx].url.includes('param_x'), false);
+    assert_eq('ordinary run, inputs not yet rebuilt: the launched query param reaches the URL', sandbox.history.stack[sandbox.history.idx].url.includes('param_y='), true);
+    assert_params('ordinary run, inputs not yet rebuilt: the run snapshot carries the launched query params', active().result && active().result.params, { y: '' });
+    sandbox.getQueryUnderCursor = async () => '';
+    sandbox.tokenize = async () => [];
 
     /// Reload after a preserved-draft Back/Forward round-trip. The debounced save persists the
     /// draft (query != lastSavedQuery, the shape reconcileStartup treats as a stale reload), so

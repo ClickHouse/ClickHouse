@@ -7048,9 +7048,12 @@ function saveHistory(stateData, titleForDoc) {
     /// removes placeholders rebuilds the `param_*` inputs (via `updateQueryParams`) without
     /// touching `tab.params`, which then keeps the previous query's bindings. Comparing that stale
     /// field would mistake a removed/added placeholder for an in-flight parameter edit — dropping
-    /// `run=1` and leaking the stale placeholder into the entry and the URL. The live inputs are
-    /// exactly what the completed run's own `paramValuesSnapshot` was read from, so a genuine
-    /// in-flight parameter edit still diverges from `stateData.params` and correctly drops `run=1`.
+    /// `run=1` and leaking the stale placeholder into the entry and the URL. The completed run's own
+    /// `paramValuesSnapshot` was derived from the launched query's own placeholders (`resolveRunParams`
+    /// -> `paramValuesForQuery`); once the edit's rebuild has landed the live inputs reflect the same
+    /// set, so a genuine in-flight parameter edit still diverges from `stateData.params` and correctly
+    /// drops `run=1` (a rebuild not yet landed by save time only ever drops it too — never keeps a
+    /// wrong one).
     ///
     /// EXCEPT when the run was launched while a tab activation / Back-Forward parameter restore was
     /// still pending (`params_restore_pending`): then the live inputs are NOT what ran. The run
@@ -9455,44 +9458,52 @@ function setParamValues(values)
     }
 }
 
-/// Resolve the parameter values a run must execute with, and keep the `param_*` inputs in sync.
+/// Resolve the parameter values a run must execute with (and, for a pending restore, keep the
+/// `param_*` inputs in sync).
 ///
-/// Normally the live DOM inputs are authoritative. But when a tab activation / Back-Forward
-/// restore is still pending for this run's generation, the destination tab's saved parameters
-/// have not yet been written to the inputs — that write happens only after `restoreFromHistory`'s
-/// tokenization await, which `++request_num` in `postOne`/`postAll` has just aborted — so the
-/// inputs still hold the previously active tab's values. Sourcing them would execute this tab's
-/// query against the wrong bindings (a correctness bug, not just a stale UI). Take the values
-/// from the destination tab's own saved `params` instead (parameters are tab-owned), and write
-/// them back so the inputs reflect what actually ran.
+/// The live `param_*` DOM inputs — and `currentQueryParams`, which `getParamValues` reads through —
+/// are NOT authoritative at launch time. `updateQueryParams` rewrites BOTH only after its own
+/// `await tokenize(...)`, so a `Run` pressed right after a query edit — before that async rebuild
+/// lands, e.g. on a cold page or a slow first lexer load — would read the PREVIOUS query's
+/// placeholders: changing `SELECT {x}` (x=1) to `SELECT {y}` and running at once would send
+/// `param_x=1` and drop `y`, executing the launched query against foreign bindings. So the ordinary
+/// run path derives the parameter set from the launched query TEXT (`paramValuesForQuery`): tokenize
+/// it, enumerate its own placeholders, and read each value from its input if that input already
+/// exists (else blank). That is race-free — it records exactly the launched query's parameters and
+/// nothing foreign, whether or not the edit's rebuild has landed — and once the rebuild has landed it
+/// returns exactly what `getParamValues` would.
+///
+/// When a tab activation / Back-Forward restore is still pending for this run's generation, the
+/// destination tab's saved parameters have not yet been written to the inputs — that write happens
+/// only after `restoreFromHistory`'s tokenization await, which `++request_num` in `postOne`/`postAll`
+/// has just aborted — so the inputs still hold the previously active tab's values. Sourcing them
+/// would execute this tab's query against the wrong bindings (a correctness bug, not just a stale
+/// UI). Take the values from the destination tab's own saved `params` instead (parameters are
+/// tab-owned), and write them back so the inputs reflect what actually ran.
 ///
 /// The parameter NAMES must also come from the destination tab's snapshot, NOT from the global
-/// `currentQueryParams`: that list is only rewritten by `updateQueryParams` after its own
-/// `await tokenize(...)`, which the still-pending restore has not reached, so it can still describe
-/// the PREVIOUS tab's query. Enumerating it here would send the wrong parameter set — e.g. for a
-/// switch from `SELECT {x}` to `SELECT {y}`, it would send `param_x` and drop `param_y`, running
-/// the destination query with blank/default bindings. The tab's saved `params` already lists this
-/// tab's own parameters (captured when it was last committed / restored), so use its keys.
+/// `currentQueryParams`: for the same reason as above it can still describe the PREVIOUS tab's query,
+/// so enumerating it would send the wrong parameter set — e.g. for a switch from `SELECT {x}` to
+/// `SELECT {y}`, `param_x` and no `param_y`. The tab's saved `params` already lists this tab's own
+/// parameters (captured when it was last committed / restored), so use its keys.
 ///
 /// The saved snapshot is only trustworthy while the editor is still the query the restore was
 /// for (`params_restore_pending_query`). If the user edited the query before pressing Run
 /// (`launch_query` diverges), those saved params belong to the OLD query — stamping them back
 /// would reintroduce the stale-placeholder leak this contract fixes (e.g. running an edited
-/// `SELECT 1` would keep the destination's `param_y`, marked `run=1`).
-///
-/// But the live inputs are NOT a safe fallback in that edited case either. `getParamValues` reads
-/// them through `currentQueryParams`, and the edit's own `updateQueryParams` rebuilds BOTH only
-/// after its `await tokenize(...)`; if the user pressed Run before that async rebuild completed,
-/// `currentQueryParams`/the inputs still describe the PREVIOUS tab (e.g. `param_x`), so reading them
-/// here would stamp `param_x=1` onto the edited placeholder-free `SELECT 1` — the very leak, just
-/// sourced from the other side of the race. Derive the parameter set from `launch_query` itself
-/// instead (`paramValuesForQuery`): tokenize it, enumerate its own placeholders, and read each
-/// value from its input if that input already exists (else blank). This records exactly the edited
-/// query's parameters and nothing foreign, whether or not the edit's rebuild has landed yet.
+/// `SELECT 1` would keep the destination's `param_y`, marked `run=1`). Fall back to the same
+/// launched-text derivation as the ordinary path (`paramValuesForQuery`), never the live inputs
+/// (which the edit's own not-yet-landed rebuild can leave describing the previous tab).
 async function resolveRunParams(params_restore_pending, launch_query)
 {
-    if (!params_restore_pending) return getParamValues();
-    if (params_restore_pending_query !== null && launch_query !== params_restore_pending_query) return await paramValuesForQuery(launch_query);
+    /// The ordinary run path, OR a pending restore whose destination query the user has since edited:
+    /// in both cases the live inputs may lag the launched query (see above), so derive the parameter
+    /// set from the launched query text rather than reading them.
+    if (!params_restore_pending
+        || (params_restore_pending_query !== null && launch_query !== params_restore_pending_query))
+    {
+        return await paramValuesForQuery(launch_query);
+    }
     const tab = getActiveTab();
     const saved = (tab && tab.params) || {};
     const values = {};

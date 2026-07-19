@@ -80,6 +80,10 @@ query edit under pending restore mid-flight: the run drops run=1
 query edit under pending restore mid-flight: the live draft query survives
 query edit under pending restore mid-flight: the entry carries the new query params, not the old
 query edit under pending restore mid-flight: the stale destination param does not leak into the URL
+ordinary run, inputs not yet rebuilt: the clean run keeps run=1
+ordinary run, inputs not yet rebuilt: the stale source param does not leak
+ordinary run, inputs not yet rebuilt: the launched query param reaches the URL
+ordinary run, inputs not yet rebuilt: the run snapshot carries the launched query params
 reload after a preserved draft: the draft is restored as editor text
 reload after a preserved draft: the draft is not auto-run
 stale reload then rerun: the draft is restored unrun first
