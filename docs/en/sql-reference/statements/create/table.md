@@ -405,6 +405,12 @@ ClickHouse supports general purpose codecs and specialized codecs.
 
 High compression levels are useful for asymmetric scenarios, like compress once, decompress repeatedly. Higher levels mean better compression and higher CPU usage.
 
+#### ZXC {#zxc}
+
+`ZXC[(level)]` — asymmetric [`zxc` compression algorithm](https://github.com/hellobertrand/zxc) with configurable `level`. Possible levels: \[1, 7\]. Default level: 3.
+
+`ZXC` trades slow compression for very fast decompression, at a compression ratio between `LZ4` and `ZSTD`. It is a good fit for the compress-once, decompress-many pattern, and decompresses fastest on modern ARM cores. Higher levels mean better compression and slower compression, while decompression stays fast.
+
 #### Obsolete: ZSTD_QAT {#zstd_qat}
 
 <CloudNotSupportedBadge/>
