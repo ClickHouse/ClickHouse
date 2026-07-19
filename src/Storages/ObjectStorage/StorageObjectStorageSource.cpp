@@ -103,6 +103,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int FILE_DOESNT_EXIST;
     extern const int TOO_MANY_ROWS;
+    extern const int UNSUPPORTED_METHOD;
 }
 
 namespace
@@ -623,9 +624,15 @@ Chunk StorageObjectStorageSource::generate()
 
                 auto row_numbers_info = chunk.getChunkInfos().get<ChunkInfoRowNumbers>();
                 if (!row_numbers_info)
-                    throw Exception(ErrorCodes::LOGICAL_ERROR,
-                        "Lazy materialization requires row numbers from the format reader, "
-                        "but they are missing (file {})", object_info->getPath());
+                    /// Only the Parquet reader provides physical row numbers. This is reachable for a
+                    /// mixed-format Iceberg snapshot (the table-level format is Parquet, but an individual
+                    /// data file has a different format), which is discovered only at read time because the
+                    /// file list is built dynamically. Report an actionable error instead of failing later.
+                    throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
+                        "Lazy materialization requires physical row numbers from the format reader, "
+                        "but file {} (format {}) does not provide them. "
+                        "Disable the query_plan_optimize_lazy_materialization_for_object_storage setting to read such data.",
+                        object_info->getPath(), object_info->getFileFormat().value_or(configuration->format));
 
                 const auto & applied_filter = row_numbers_info->applied_filter;
                 size_t num_indices = applied_filter.has_value() ? applied_filter->size() : num_rows;
