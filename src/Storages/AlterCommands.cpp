@@ -1809,6 +1809,12 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
 
                 const GetColumnsOptions options(GetColumnsOptions::All);
                 const auto old_data_type = all_columns.getColumn(options, column_name).type;
+
+                /// Advance the validation snapshot so that later commands in the same ALTER validate
+                /// against the schema they will actually see in `apply` — e.g. a codec-only
+                /// `MODIFY COLUMN x CODEC(...)` following a `MODIFY COLUMN x Float64` must resolve the
+                /// codec against the new type, not the original one.
+                all_columns.modify(column_name, [&](ColumnDescription & column) { column.type = command.data_type; });
             }
 
             if (command.isRemovingProperty())
