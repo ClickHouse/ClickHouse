@@ -1,0 +1,6 @@
+-- the failing CREATE ... AS SELECT must report the SELECT's error:
+FUNCTION_THROW_IF_VALUE_IS_NON_ZERO
+-- the failed query must not leave an orphan table:
+0
+-- the internal temporary table name must not appear in system.query_log 'tables' for the failed query:
+0
