@@ -1,5 +1,6 @@
-import uuid
+import shlex
 import threading
+import uuid
 import pytest
 from helpers.cluster import ClickHouseCluster
 
@@ -280,6 +281,173 @@ def test_join_load_then_hit_and_parallel_readers():
     for t in threads:
         t.join()
     assert not errs, f"errors: {errs}"
+
+def test_join_statistics_corruption_falls_back_without_partial_estimates():
+    """A failed part/column load must not change join estimates for the full scope."""
+    partial = "partial_stats_111014"
+    dim = "partial_dim_111014"
+    _query_retry(ch1, f"DROP TABLE IF EXISTS {partial} SYNC")
+    _query_retry(ch1, f"DROP TABLE IF EXISTS {dim} SYNC")
+    _query_retry(ch1, f"""
+        CREATE TABLE {partial} (k UInt32, v UInt32)
+        ENGINE = MergeTree PARTITION BY intDiv(k, 1000) ORDER BY k
+        SETTINGS min_bytes_for_wide_part = 0,
+                 min_bytes_for_full_part_storage = 0,
+                 refresh_statistics_interval = 0,
+                 auto_statistics_types = ''
+    """)
+    _query(ch1, f"INSERT INTO {partial} SELECT number, number FROM numbers(1000)")
+    _query(ch1, f"INSERT INTO {partial} SELECT number + 1000, number + 1000 FROM numbers(1000)")
+    _query_retry(ch1, f"ALTER TABLE {partial} ADD STATISTICS v TYPE Basic")
+    _query_retry(ch1, f"ALTER TABLE {partial} MATERIALIZE STATISTICS v")
+
+    _query_retry(ch1, f"""
+        CREATE TABLE {dim} (k UInt32)
+        ENGINE = MergeTree ORDER BY k
+        SETTINGS min_bytes_for_full_part_storage = 0,
+                 auto_statistics_types = ''
+    """)
+    _query(ch1, f"INSERT INTO {dim} SELECT number FROM numbers(2000)")
+
+    part_names = _query(ch1, f"""
+        SELECT name
+        FROM system.parts
+        WHERE database = currentDatabase() AND table = '{partial}' AND active
+        ORDER BY name
+        FORMAT TabSeparated
+    """).strip().splitlines()
+    assert len(part_names) == 2, part_names
+    affected_part = part_names[-1]
+    part_path = _query(ch1, f"""
+        SELECT path
+        FROM system.parts
+        WHERE database = currentDatabase() AND table = '{partial}'
+          AND name = '{affected_part}' AND active
+        FORMAT TabSeparated
+    """).strip()
+    stats_files = ch1.exec_in_container(
+        ["bash", "-c", f"find {shlex.quote(part_path.rstrip('/'))} -maxdepth 1 -type f -name 'statistics*' -printf '%f\\n' | sort"],
+        user="root",
+    ).strip().splitlines()
+    assert len(stats_files) == 1 and stats_files[0] in {"statistics.packed", "statistics_v.stats"}, {
+        "part_path": part_path,
+        "stats_files": stats_files,
+        "files": ch1.exec_in_container(
+            ["bash", "-c", f"find {shlex.quote(part_path.rstrip('/'))} -maxdepth 1 -type f -printf '%f\\n' | sort"],
+            user="root",
+        ),
+    }
+    stats_path = f"{part_path.rstrip('/')}/{stats_files[0]}"
+    quoted_stats_path = shlex.quote(stats_path)
+    backup_path = f"{stats_path}.partial_stats_backup"
+    quoted_backup_path = shlex.quote(backup_path)
+    ch1.exec_in_container(["bash", "-c", f"test -s {quoted_stats_path}"], user="root")
+
+    join_sql = f"""
+        SELECT count()
+        FROM {partial} AS s INNER JOIN {dim} AS d ON s.k = d.k
+        WHERE s.v >= 1500
+    """
+
+    def _plan(use_statistics):
+        return _query(ch1, f"""
+            EXPLAIN PLAN keep_logical_steps=1, actions=1
+            {join_sql}
+            SETTINGS use_statistics={use_statistics}, use_statistics_cache=0,
+                     use_statistics_for_part_pruning=0,
+                     optimize_use_projections=0, optimize_use_implicit_projections=0,
+                     query_plan_optimize_join_order_limit=10
+        """)
+
+    def _result_rows(plan):
+        return tuple(line.strip() for line in plan.splitlines() if "ResultRows:" in line)
+
+    no_stats_rows = _result_rows(_plan(0))
+    clean_rows = _result_rows(_plan(1))
+    assert clean_rows != no_stats_rows, {
+        "clean_rows": clean_rows,
+        "no_stats_rows": no_stats_rows,
+        "reason": "clean statistics did not affect the visible join estimate",
+    }
+
+    def _mutate_stats(remove):
+        nonlocal backup_created
+        backup_created = False
+        ch1.exec_in_container(
+            ["bash", "-c", f"rm -f {quoted_backup_path}; cp -a {quoted_stats_path} {quoted_backup_path}"],
+            user="root",
+        )
+        backup_created = True
+        if remove:
+            ch1.exec_in_container(["rm", "-f", stats_path], user="root")
+        else:
+            ch1.exec_in_container(
+                [
+                    "bash",
+                    "-c",
+                    f"size=$(stat -c %s {quoted_stats_path}); "
+                    f"dd if=/dev/zero of={quoted_stats_path} bs=1 count=$size conv=notrunc status=none",
+                ],
+                user="root",
+            )
+
+    def _restore_stats():
+        if not backup_created:
+            return
+        ch1.exec_in_container(
+            ["bash", "-c", f"rm -f {quoted_stats_path}; mv -f {quoted_backup_path} {quoted_stats_path}"],
+            user="root",
+        )
+
+    observed_rows = {}
+    for remove in (False, True):
+        backup_created = False
+        original_hash = ch1.exec_in_container(
+            ["bash", "-c", f"sha256sum {quoted_stats_path}"],
+            user="root",
+        ).split()[0]
+        try:
+            _mutate_stats(remove)
+            if remove:
+                ch1.exec_in_container(["test", "!", "-e", stats_path], user="root")
+            else:
+                mutated_hash = ch1.exec_in_container(
+                    ["bash", "-c", f"sha256sum {quoted_stats_path}"],
+                    user="root",
+                ).split()[0]
+                assert mutated_hash != original_hash
+            observed_rows["missing" if remove else "zeroed"] = _result_rows(_plan(1))
+            assert _query(ch1, f"""
+                {join_sql}
+                SETTINGS use_statistics_for_part_pruning=0,
+                         optimize_use_projections=0, optimize_use_implicit_projections=0
+                FORMAT TabSeparated
+            """).strip() == "500"
+        finally:
+            _restore_stats()
+
+    assert observed_rows["zeroed"] == no_stats_rows, {
+        "mode": "zeroed",
+        "clean_rows": clean_rows,
+        "no_stats_rows": no_stats_rows,
+        "observed_rows": observed_rows,
+    }
+    assert observed_rows["missing"] == no_stats_rows, {
+        "mode": "missing",
+        "clean_rows": clean_rows,
+        "no_stats_rows": no_stats_rows,
+        "observed_rows": observed_rows,
+    }
+    assert observed_rows["zeroed"] != clean_rows, {
+        "mode": "zeroed",
+        "clean_rows": clean_rows,
+        "observed_rows": observed_rows,
+    }
+    assert observed_rows["missing"] != clean_rows, {
+        "mode": "missing",
+        "clean_rows": clean_rows,
+        "observed_rows": observed_rows,
+    }
 
 def test_alter_interval_requires_detach_attach():
     _create_tbl(ch1, "alt_tbl", 0)

@@ -904,21 +904,28 @@ ConditionSelectivityEstimatorPtr MergeTreeData::getConditionSelectivityEstimator
     LOG_DEBUG(log, "Loading statistics");
     ConditionSelectivityEstimatorBuilder estimator_builder(local_context);
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::LoadedStatisticsMicroseconds);
+    bool all_parts_loaded = true;
     for (const auto & part : parts)
     {
+        if (!part.data_part)
+            return nullptr;
+
         try
         {
             auto parts_lock = readLockParts();
             auto stats = part.data_part->loadStatistics(required_columns);
-            estimator_builder.markDataPart(part.data_part);
-            for (const auto & [column_name, stat] : stats)
-                estimator_builder.addStatistics(column_name, stat);
+            estimator_builder.addDataPartStatistics(part.data_part, stats);
         }
         catch (...)
         {
+            all_parts_loaded = false;
             tryLogCurrentException(log, fmt::format("while loading statistics on part {}", part.data_part->info.getPartNameV1()));
+            break;
         }
     }
+
+    if (!all_parts_loaded)
+        return nullptr;
 
     return estimator_builder.getEstimator();
 }
@@ -3161,35 +3168,52 @@ try
 {
     auto component_guard = Coordination::setCurrentComponent("MergeTreeData::refreshStatistics");
     DataPartsVector data_parts = getDataPartsVectorForInternalUsage();
-    if (cached_estimator)
+    bool cache_is_current = false;
     {
-        if (!cached_estimator->isStale(data_parts))
+        std::lock_guard<std::mutex> lock(stats_mutex);
+        cache_is_current = cached_estimator && !cached_estimator->isStale(data_parts);
+        if (!cache_is_current)
         {
-            LOG_DEBUG(log, "The parts in this storage does not change, will not refresh statistics");
-            if (interval_seconds)
-                refresh_stats_task->scheduleAfter(interval_seconds * 1000);
-            return;
+            /// The query path reuses cached_estimator without checking the
+            /// current part scope. Do not leave a stale snapshot available while
+            /// this refresh is in progress; exact-scope cache validation can make
+            /// retention safe in the future.
+            cached_estimator = nullptr;
         }
     }
+
+    if (cache_is_current)
+    {
+        LOG_DEBUG(log, "The parts in this storage does not change, will not refresh statistics");
+        if (interval_seconds)
+            refresh_stats_task->scheduleAfter(interval_seconds * 1000);
+        return;
+    }
+
     LOG_DEBUG(log, "Refreshing statistics");
     ConditionSelectivityEstimatorBuilder estimator_builder(getContext());
+    bool all_parts_loaded = true;
     for (const DataPartPtr & data_part : data_parts)
     {
         try
         {
             auto parts_lock = readLockParts();
             auto stats = data_part->loadStatistics();
-            estimator_builder.markDataPart(data_part);
-            for (const auto & [column_name, stat] : stats)
-                estimator_builder.addStatistics(column_name, stat);
+            estimator_builder.addDataPartStatistics(data_part, stats);
         }
         catch (...)
         {
+            all_parts_loaded = false;
             tryLogCurrentException(log, fmt::format("while loading statistics on part {}", data_part->info.getPartNameV1()));
+            break;
         }
     }
-    std::lock_guard<std::mutex> lock(stats_mutex);
-    cached_estimator = estimator_builder.getEstimator();
+    if (all_parts_loaded)
+    {
+        auto new_estimator = estimator_builder.getEstimator();
+        std::lock_guard<std::mutex> lock(stats_mutex);
+        cached_estimator = std::move(new_estimator);
+    }
     if (interval_seconds)
         refresh_stats_task->scheduleAfter(interval_seconds * 1000);
 }

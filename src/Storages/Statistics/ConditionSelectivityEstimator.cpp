@@ -1,7 +1,9 @@
 #include <Storages/Statistics/ConditionSelectivityEstimator.h>
 
-#include <stack>
+#include <algorithm>
 #include <cmath>
+#include <stack>
+#include <string_view>
 
 #include <Common/logger_useful.h>
 #include <DataTypes/DataTypeNothing.h>
@@ -207,6 +209,32 @@ RelationProfile ConditionSelectivityEstimator::estimateRelationProfile() const
         result.column_stats.emplace(column_name, estimator.estimateCardinality());
     }
     return result;
+}
+
+bool ConditionSelectivityEstimator::hasStatisticsFor(const StorageMetadataPtr & metadata, const Names & columns) const
+{
+    return std::all_of(columns.begin(), columns.end(), [&](const auto & column)
+    {
+        /// The analyzer may expose a nullable column's `.null` subcolumn as the
+        /// filter input, while persisted statistics are keyed by the parent column.
+        constexpr std::string_view null_suffix = ".null";
+        String statistics_column = column;
+        if (!column_estimators.contains(statistics_column)
+            && column.size() > null_suffix.size()
+            && column.ends_with(null_suffix)
+            && metadata)
+        {
+            String parent_name = column.substr(0, column.size() - null_suffix.size());
+            const auto * parent_column = metadata->getColumns().tryGet(parent_name);
+            if (parent_column && isNullableOrLowCardinalityNullable(parent_column->type))
+                statistics_column = parent_name;
+        }
+
+        auto it = column_estimators.find(statistics_column);
+        return it != column_estimators.end()
+            && it->second.stats != nullptr
+            && isCompatibleStatistics(metadata, it->second.stats, statistics_column);
+    });
 }
 
 RelationProfile ConditionSelectivityEstimator::estimateRelationProfile(const StorageMetadataPtr & metadata, const ActionsDAG::Node * node) const
@@ -494,30 +522,78 @@ void ConditionSelectivityEstimatorBuilder::incrementRowCount(UInt64 rows)
 
 void ConditionSelectivityEstimatorBuilder::markDataPart(const DataPartPtr & data_part)
 {
+    if (!data_part || !marked_part_set.insert(data_part.get()).second)
+    {
+        invalid_scope = true;
+        current_part_columns.clear();
+        return;
+    }
+
     estimator->parts_names.push_back(data_part->name);
     estimator->total_rows += data_part->rows_count;
+    ++marked_parts;
+    current_part_columns.clear();
+}
+
+void ConditionSelectivityEstimatorBuilder::addDataPartStatistics(const DataPartPtr & data_part, const ColumnsStatistics & statistics)
+{
+    markDataPart(data_part);
+    if (invalid_scope)
+        return;
+
+    for (const auto & [column_name, column_stats] : statistics)
+        addStatistics(column_name, column_stats);
 }
 
 void ConditionSelectivityEstimatorBuilder::addStatistics(const String & column_name, const ColumnStatisticsPtr & column_stats)
 {
-    if (column_stats != nullptr)
-    {
-        has_data = true;
-        auto & column_estimator = estimator->column_estimators[column_name];
+    if (column_stats == nullptr || incomplete_columns.contains(column_name))
+        return;
 
-        if (column_estimator.stats == nullptr)
-            column_estimator.stats = column_stats;
-        else if (column_estimator.stats->structureEquals(*column_stats))
-            column_estimator.stats->merge(column_stats);
-        /// else: incompatible statistics (e.g. a concurrent ALTER changed the column type,
-        /// shifting the aggregate-function state layout). Skip this part's statistics so the
-        /// estimator still works with the compatible parts instead of crashing.
+    if (marked_parts && !current_part_columns.insert(column_name).second)
+    {
+        incomplete_columns.insert(column_name);
+        return;
     }
+
+    has_data = true;
+    auto & column_estimator = estimator->column_estimators[column_name];
+
+    if (column_estimator.stats == nullptr)
+        column_estimator.stats = column_stats;
+    else if (column_estimator.stats->structureEquals(*column_stats))
+        column_estimator.stats->merge(column_stats);
+    else
+    {
+        /// Incompatible statistics (e.g. a concurrent ALTER changed the column type)
+        /// are incomplete for the whole scope. Drop this column at getEstimator()
+        /// rather than merging a compatible subset into a seemingly complete estimator.
+        incomplete_columns.insert(column_name);
+        return;
+    }
+
+    if (marked_parts)
+        ++column_part_counts[column_name];
 }
 
-ConditionSelectivityEstimatorPtr ConditionSelectivityEstimatorBuilder::getEstimator() const
+ConditionSelectivityEstimatorPtr ConditionSelectivityEstimatorBuilder::getEstimator()
 {
-    return has_data ? estimator : nullptr;
+    if (invalid_scope)
+        return nullptr;
+
+    if (marked_parts)
+    {
+        for (auto it = estimator->column_estimators.begin(); it != estimator->column_estimators.end();)
+        {
+            auto count_it = column_part_counts.find(it->first);
+            if (incomplete_columns.contains(it->first) || count_it == column_part_counts.end() || count_it->second != marked_parts)
+                it = estimator->column_estimators.erase(it);
+            else
+                ++it;
+        }
+    }
+
+    return has_data && !estimator->column_estimators.empty() ? estimator : nullptr;
 }
 
 ConditionSelectivityEstimator::Selectivity ConditionSelectivityEstimator::Selectivity::applyNot() const

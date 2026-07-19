@@ -38,32 +38,35 @@ bool tryEstimateWithStatistics(
             return false;
 
     ConditionSelectivityEstimatorBuilder builder(context);
-    bool has_any_stats = false;
+    bool all_parts_loaded = true;
 
     for (const auto & part : parts)
     {
+        if (!part.data_part)
+            return false;
+
         try
         {
             auto stats = part.data_part->loadStatistics();
-            if (!stats.empty())
-            {
-                builder.markDataPart(part.data_part);
-                for (const auto & [column_name, stat] : stats)
-                    builder.addStatistics(column_name, stat);
-                has_any_stats = true;
-            }
+            builder.addDataPartStatistics(part.data_part, stats);
         }
         catch (const Exception &) /// Ok — statistical estimation is best-effort
         {
+            all_parts_loaded = false;
             tryLogCurrentException(__PRETTY_FUNCTION__);
+            break;
         }
     }
 
-    if (!has_any_stats)
+    if (!all_parts_loaded)
         return false;
 
     auto estimator = builder.getEstimator();
     if (!estimator)
+        return false;
+
+    Names required_stats_columns(filter_input_columns.begin(), filter_input_columns.end());
+    if (!estimator->hasStatisticsFor(metadata, required_stats_columns))
         return false;
 
     auto profile = estimator->estimateRelationProfile(metadata, filter_node);
