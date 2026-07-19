@@ -16,6 +16,10 @@ s	String
 2	b
 3	c
 4	d
+-- SHOW CREATE TABLE preserves column defaults, aliases and materialized expressions
+ALIAS a + 2
+DEFAULT a + 1
+MATERIALIZED a + 3
 -- EXISTS TABLE for an existing and a missing table
 1
 0

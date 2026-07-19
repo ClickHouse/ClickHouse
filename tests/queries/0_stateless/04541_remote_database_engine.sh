@@ -41,6 +41,12 @@ echo '-- INSERT is forwarded to the remote server'
 ${CLICKHOUSE_CLIENT} --query "INSERT INTO ${REMOTE_DB}.t VALUES (4, 'd')"
 ${CLICKHOUSE_CLIENT} --query "SELECT * FROM ${CLICKHOUSE_DATABASE}.t ORDER BY id"
 
+echo '-- SHOW CREATE TABLE preserves column defaults, aliases and materialized expressions'
+${CLICKHOUSE_CLIENT} --query "
+    CREATE TABLE ${CLICKHOUSE_DATABASE}.m (a UInt32, b UInt32 DEFAULT a + 1, c UInt32 ALIAS a + 2, d UInt32 MATERIALIZED a + 3) ENGINE = MergeTree ORDER BY a;
+"
+${CLICKHOUSE_CLIENT} --query "SHOW CREATE TABLE ${REMOTE_DB}.m FORMAT TSVRaw" | grep -oE "(DEFAULT a \+ 1|ALIAS a \+ 2|MATERIALIZED a \+ 3)" | sort
+
 echo '-- EXISTS TABLE for an existing and a missing table'
 ${CLICKHOUSE_CLIENT} --query "EXISTS TABLE ${REMOTE_DB}.t"
 ${CLICKHOUSE_CLIENT} --query "EXISTS TABLE ${REMOTE_DB}.does_not_exist"
@@ -57,3 +63,4 @@ ${CLICKHOUSE_CLIENT} --query "SHOW CREATE DATABASE ${REMOTE_DB}_secret" | grep -
 ${CLICKHOUSE_CLIENT} --query "DROP DATABASE ${REMOTE_DB}_secret"
 ${CLICKHOUSE_CLIENT} --query "DROP DATABASE ${REMOTE_DB}"
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE ${CLICKHOUSE_DATABASE}.t"
+${CLICKHOUSE_CLIENT} --query "DROP TABLE ${CLICKHOUSE_DATABASE}.m"
