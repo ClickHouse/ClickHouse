@@ -1676,6 +1676,36 @@ TEST(ChimpTest, DecompressMalformedInputReuseAfterInvalidation)
     ASSERT_THROW(codec->decompress(source, source_size, dest.data()), Exception);
 }
 
+TEST(ChimpTest, DecompressMalformedInputEarlyHistoryReference)
+{
+    /// The `0b00`/`0b01` branches reference the ring buffer of previously seen values. The encoder can
+    /// only reference slots that have already been written, but a malformed stream can point at a slot
+    /// that has not been populated yet and used to silently decode the vector's zero-initialized
+    /// placeholder. Here a 2-item `Chimp(4)` block whose first value is 1 encodes the second item as a
+    /// `0b00` repeat of slot 63 — a slot the encoder can never reference at that point (only slot 0 is
+    /// populated) — and used to decode successfully as [1, 0]. It must be rejected with
+    /// `CANNOT_DECOMPRESS`.
+    constexpr unsigned char block[] = {
+        0xA0,                   /// Chimp method byte
+        0x14, 0x00, 0x00, 0x00, /// compressed_size = 20
+        0x08, 0x00, 0x00, 0x00, /// decompressed_size = 8 (2 items * 4 bytes)
+        0x04,                   /// bytes_size = 4
+        0x00,                   /// bytes_to_skip (unused)
+        0x02, 0x00, 0x00, 0x00, /// items_count = 2
+        0x01, 0x00, 0x00, 0x00, /// first value = 1
+        0x3F,                   /// 0b00 flag, match_index = 63 -> references an unwritten slot
+    };
+
+    const char * source = reinterpret_cast<const char *>(block);
+    const UInt32 source_size = static_cast<UInt32>(std::size(block));
+
+    DB::Memory<> dest;
+    dest.resize(8);
+
+    auto codec = makeCodec("Chimp", std::make_shared<DataTypeFloat32>());
+    ASSERT_THROW(codec->decompress(source, source_size, dest.data()), Exception);
+}
+
 TEST(CompressionCodecMultipleTest, DecompressMalformedInputReversedRange)
 {
     /// Reproducer for process abort when `compression_methods_size + 1 > source_size`:

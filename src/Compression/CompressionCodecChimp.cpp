@@ -389,6 +389,11 @@ UInt32 decompressDataForType(const char * source, UInt32 source_size, char * des
             case 1:
                 require_bits(static_cast<UInt64>(LOG_NO_PREVIOUS_VALUES) + LeadingZero::BIT_LENGTH + DATA_BIT_LENGTH);
                 match_index = reader.readBits(LOG_NO_PREVIOUS_VALUES);
+                /// The ring buffer only holds `items_read` values so far; the encoder can never reference
+                /// a slot that has not been written yet. A malformed stream can, and would silently decode
+                /// the vector's zero-initialized placeholder. Reject it instead.
+                if (match_index >= std::min<UInt64>(items_read, NO_PREVIOUS_VALUES))
+                    throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress Chimp-encoded data: corrupted input data.");
                 prev_value = stored_values[match_index];
                 curr_xored_info.leading_zero_bits = static_cast<UInt8>(LeadingZero::reverseBinaryRepresentation[reader.readBits(LeadingZero::BIT_LENGTH)]);
                 curr_xored_info.data_bits = static_cast<UInt8>(reader.readBits(DATA_BIT_LENGTH));
@@ -413,6 +418,9 @@ UInt32 decompressDataForType(const char * source, UInt32 source_size, char * des
             case 0:
                 require_bits(LOG_NO_PREVIOUS_VALUES);
                 match_index = reader.readBits(LOG_NO_PREVIOUS_VALUES);
+                /// Same early-history check as in the `0b01` branch above.
+                if (match_index >= std::min<UInt64>(items_read, NO_PREVIOUS_VALUES))
+                    throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress Chimp-encoded data: corrupted input data.");
                 prev_value = stored_values[match_index];
                 curr_value = prev_value;
                 /// Mirror the encoder: a `0b00` (repeat) item also invalidates the reusable leading-zero
