@@ -12,6 +12,7 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionAnalyzer.h>
+#include <Interpreters/FunctionNameNormalizer.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Analyzer/AggregationUtils.h>
@@ -549,6 +550,21 @@ void ProjectionDescription::fillProjectionDescriptionByQuery(
 }
 
 ProjectionDescription ProjectionDescription::getMinMaxCountProjection(
+    const StorageInMemoryMetadata & metadata, const ContextPtr & query_context, const Names & stats_minmax_columns)
+{
+    auto partition_columns = metadata.partition_key.expression_list_ast->clone();
+    FunctionNameNormalizer::visit(partition_columns.get());
+    return getMinMaxCountProjection(
+        metadata.columns,
+        partition_columns,
+        metadata.getColumnsRequiredForPartitionKey(),
+        metadata.primary_key,
+        &metadata.partition_key,
+        query_context,
+        stats_minmax_columns);
+}
+
+ProjectionDescription ProjectionDescription::getMinMaxCountProjection(
     const ColumnsDescription & columns,
     const ASTPtr & partition_columns,
     const Names & minmax_columns,
@@ -567,8 +583,8 @@ ProjectionDescription ProjectionDescription::getMinMaxCountProjection(
         select_expression_list->children.push_back(makeASTFunction("max", make_intrusive<ASTIdentifier>(column)));
     }
 
-    /// Columns answered from per-part statistics. They must not duplicate `minmax_columns` or the
-    /// first primary key column: a duplicated name would break the position arithmetic below and in
+    /// Statistics-backed columns must not duplicate `minmax_columns` or the first primary key
+    /// column: a duplicated name would break the position arithmetic below and in
     /// `MergeTreeData::getMinMaxCountProjectionBlock`.
     for (const auto & column : stats_minmax_columns)
     {

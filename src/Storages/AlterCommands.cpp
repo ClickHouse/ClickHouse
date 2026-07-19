@@ -18,7 +18,6 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/addTypeConversionToAST.h>
 #include <Interpreters/ExpressionAnalyzer.h>
-#include <Interpreters/FunctionNameNormalizer.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/RenameColumnVisitor.h>
 #include <Interpreters/inplaceBlockConversions.h>
@@ -1436,13 +1435,7 @@ void AlterCommands::apply(StorageInMemoryMetadata & metadata, ContextPtr context
 
         /// If partition key expression is changed, we also need to rebuild minmax_count_projection
         if (metadata.minmax_count_projection && !blocksHaveEqualStructure(metadata_copy.partition_key.sample_block, metadata.partition_key.sample_block))
-        {
-            auto minmax_columns = metadata_copy.getColumnsRequiredForPartitionKey();
-            auto partition_key = metadata_copy.partition_key.expression_list_ast->clone();
-            FunctionNameNormalizer::visit(partition_key.get());
-            metadata_copy.minmax_count_projection.emplace(ProjectionDescription::getMinMaxCountProjection(
-                metadata_copy.columns, partition_key, minmax_columns, metadata_copy.primary_key, &metadata_copy.partition_key, context));
-        }
+            metadata_copy.minmax_count_projection.emplace(ProjectionDescription::getMinMaxCountProjection(metadata_copy, context));
     }
 
     // /// And in sample key expression

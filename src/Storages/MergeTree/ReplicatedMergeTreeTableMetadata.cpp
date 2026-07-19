@@ -620,13 +620,7 @@ StorageInMemoryMetadata ReplicatedMergeTreeTableMetadata::Diff::getNewMetadata(c
         /// and the aggregation engine hits a type mismatch. See #100175.
         if (new_metadata.minmax_count_projection
             && !blocksHaveEqualStructure(new_metadata.partition_key.sample_block, old_partition_key_sample_block))
-        {
-            auto minmax_columns = new_metadata.getColumnsRequiredForPartitionKey();
-            auto partition_key_ast = new_metadata.partition_key.expression_list_ast->clone();
-            FunctionNameNormalizer::visit(partition_key_ast.get());
-            new_metadata.minmax_count_projection.emplace(ProjectionDescription::getMinMaxCountProjection(
-                new_metadata.columns, partition_key_ast, minmax_columns, new_metadata.primary_key, &new_metadata.partition_key, context));
-        }
+            new_metadata.minmax_count_projection.emplace(ProjectionDescription::getMinMaxCountProjection(new_metadata, context));
     }
 
     if (!sorting_key_changed) /// otherwise already updated

@@ -536,9 +536,8 @@ public:
     ///
     /// parts - part set to filter
     ///
-    /// Returns an empty block when the values cannot be extracted from part metadata (e.g. a part
-    /// lacks usable statistics for one of `minmax_count_projection.stats_minmax_columns`); the
-    /// caller must then fall back to a normal read.
+    /// Returns an empty block when the values cannot be extracted from part metadata; the caller
+    /// must then fall back to a normal read.
     Block getMinMaxCountProjectionBlock(
         const StorageMetadataPtr & metadata_snapshot,
         const ProjectionDescription & minmax_count_projection,

@@ -9966,69 +9966,80 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
 
     if (!minmax_count_projection.stats_minmax_columns.empty())
     {
-        const auto & stats_columns = minmax_count_projection.stats_minmax_columns;
-
-        bool need_statistics = false;
-        for (size_t i = 0; i < 2 * stats_columns.size(); ++i)
-            need_statistics |= required_columns_set.contains(partition_minmax_count_column_names[pos + i]);
-
-        std::vector<Estimates> estimates_per_part;
-        if (need_statistics)
+        struct StatsColumn
         {
-            estimates_per_part.reserve(real_parts.size());
-            for (const auto & part : real_parts)
-            {
-                try
-                {
-                    estimates_per_part.push_back(part->getEstimates());
-                }
-                catch (...)
-                {
-                    /// Broken statistics must not fail the query, only disable the optimization.
-                    tryLogCurrentException(
-                        log, fmt::format("while loading statistics on part {} for minmax_count projection", part->name));
-                    return {};
-                }
-            }
-        }
-
-        for (const auto & column_name : stats_columns)
-        {
-            /// Statistics are stored in the domain of the part's physical column type. If a part
-            /// still has a different type (e.g. an unfinished MODIFY COLUMN whose conversion is
-            /// applied at read time), its statistics do not describe the values the query sees.
+            String name;
+            std::optional<size_t> min_pos;
+            std::optional<size_t> max_pos;
             DataTypePtr expected_type;
-            if (required_columns_set.contains(partition_minmax_count_column_names[pos])
-                || required_columns_set.contains(partition_minmax_count_column_names[pos + 1]))
-            {
-                expected_type = metadata_snapshot->getColumns().getPhysical(column_name).type;
-                for (const auto & part : real_parts)
-                {
-                    auto part_column = part->tryGetColumn(column_name);
-                    if (!part_column || !part_column->type->equals(*expected_type))
-                        return {};
-                }
-            }
+        };
 
-            for (bool is_min : {true, false})
+        /// The sample block columns of the statistics section are located by name instead of by
+        /// the running position counter to stay independent of the section order.
+        std::vector<StatsColumn> requested_stats_columns;
+        for (const auto & column_name : minmax_count_projection.stats_minmax_columns)
+        {
+            StatsColumn column;
+            column.name = column_name;
+            String min_name = "min(" + column_name + ")";
+            String max_name = "max(" + column_name + ")";
+            if (required_columns_set.contains(min_name))
+                column.min_pos = minmax_count_projection.sample_block.getPositionByName(min_name);
+            if (required_columns_set.contains(max_name))
+                column.max_pos = minmax_count_projection.sample_block.getPositionByName(max_name);
+            if (column.min_pos || column.max_pos)
             {
-                if (required_columns_set.contains(partition_minmax_count_column_names[pos]))
-                {
-                    auto & agg_column = assert_cast<ColumnAggregateFunction &>(*partition_minmax_count_columns[pos]);
-                    for (size_t i = 0; i < real_parts.size(); ++i)
-                    {
-                        auto it = estimates_per_part[i].find(column_name);
-                        /// The estimate must exist, carry both extremes, and cover every physical
-                        /// row of the part; otherwise fall back to reading the column.
-                        if (it == estimates_per_part[i].end() || !it->second.estimated_min.has_value()
-                            || !it->second.estimated_max.has_value() || it->second.rows_count != real_parts[i]->rows_count)
-                            return {};
-                        insert(agg_column, is_min ? *it->second.estimated_min : *it->second.estimated_max);
-                    }
-                }
-                ++pos;
+                column.expected_type = metadata_snapshot->getColumns().getPhysical(column_name).type;
+                requested_stats_columns.push_back(std::move(column));
             }
         }
+
+        for (const auto & part : real_parts)
+        {
+            if (requested_stats_columns.empty())
+                break;
+
+            Estimates estimates;
+            try
+            {
+                estimates = part->getEstimates();
+            }
+            catch (...)
+            {
+                /// Broken statistics must not fail the query, only disable the optimization.
+                tryLogCurrentException(
+                    log, fmt::format("while loading statistics on part {} for minmax_count projection", part->name));
+                return {};
+            }
+
+            for (const auto & stats_column : requested_stats_columns)
+            {
+                /// Statistics are stored in the domain of the part's physical column type; a part
+                /// with a different type (unfinished MODIFY COLUMN, converted at read time) has
+                /// statistics that do not describe the values the query sees.
+                auto part_column = part->tryGetColumn(stats_column.name);
+                if (!part_column || !part_column->type->equals(*stats_column.expected_type))
+                    return {};
+
+                auto it = estimates.find(stats_column.name);
+                /// The estimate must cover every physical row of the part (e.g. statistics
+                /// carried over a row-reducing mutation do not).
+                if (it == estimates.end() || !it->second.estimated_min.has_value() || !it->second.estimated_max.has_value()
+                    || it->second.rows_count != part->rows_count)
+                    return {};
+
+                if (stats_column.min_pos)
+                    insert(
+                        assert_cast<ColumnAggregateFunction &>(*partition_minmax_count_columns[*stats_column.min_pos]),
+                        *it->second.estimated_min);
+                if (stats_column.max_pos)
+                    insert(
+                        assert_cast<ColumnAggregateFunction &>(*partition_minmax_count_columns[*stats_column.max_pos]),
+                        *it->second.estimated_max);
+            }
+        }
+
+        pos += 2 * minmax_count_projection.stats_minmax_columns.size();
     }
 
     if (!primary_key_max_column_name.empty())

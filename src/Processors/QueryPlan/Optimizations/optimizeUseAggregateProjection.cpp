@@ -34,7 +34,6 @@
 #include <Storages/StorageDummy.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Planner/PlannerExpressionAnalysis.h>
-#include <Interpreters/FunctionNameNormalizer.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/Context.h>
@@ -560,8 +559,7 @@ struct MinMaxProjectionCandidate
     AggregateProjectionCandidate candidate;
     Block block;
 
-    /// Keeps alive a query-time extension of the implicit minmax_count projection with
-    /// statistics-backed min/max columns, when `candidate.projection` points to one.
+    /// Keeps alive the query-time extended projection that `candidate.projection` may point to.
     std::shared_ptr<const ProjectionDescription> owned_projection;
 };
 
@@ -577,12 +575,10 @@ struct AggregateProjectionCandidates
     String only_count_column;
 };
 
-/// Collect columns for which the query's `min`/`max` aggregates can be answered exactly from
-/// per-part column statistics (`basic` or `minmax`), to extend the implicit minmax_count
-/// projection for this query. Statistics describe the physical rows of a part, so any mechanism
-/// that changes the values visible at read time (on-the-fly mutations, patch parts, masking
-/// policies) disables the extension. (Lightweight deletes are already excluded for the whole
-/// minmax_count projection candidate.)
+/// Columns for which the query's `min`/`max` aggregates can be answered exactly from per-part
+/// column statistics. Statistics describe the physical rows of a part, so anything that changes
+/// the values visible at read time (on-the-fly mutations, patch parts, masking policies)
+/// disables the extension; lightweight deletes are already excluded for the whole candidate.
 static Names getStatisticsBackedMinMaxColumns(
     const AggregateDescriptions & aggregates,
     const StorageMetadataPtr & metadata,
@@ -599,9 +595,8 @@ static Names getStatisticsBackedMinMaxColumns(
     if (reading.getMergeTreeData().hasEnabledMaskingPolicies(context))
         return {};
 
-    /// Columns already covered by the projection itself must not be duplicated: min/max of the
-    /// partition key source columns come from the partition minmax index, and min/max of the
-    /// first primary key column come from the primary index.
+    /// Columns already covered by the projection (partition minmax index, primary index) must be
+    /// excluded: a duplicated `min(col)` name would break the sample block position arithmetic.
     NameSet excluded;
     for (const auto & name : metadata->getColumnsRequiredForPartitionKey())
         excluded.insert(name);
@@ -626,8 +621,8 @@ static Names getStatisticsBackedMinMaxColumns(
 
         const auto & column = columns.get(column_name);
 
-        /// Restrict to non-Nullable columns represented by numbers: for them the per-part
-        /// statistics minimum/maximum are exact and equal the result of `min`/`max` aggregation.
+        /// Only for non-Nullable numeric-represented columns the statistics minimum/maximum
+        /// equal the result of `min`/`max` aggregation.
         WhichDataType which(column.type);
         if (which.isNullable() || which.isLowCardinality() || !column.type->isValueRepresentedByNumber())
             continue;
@@ -689,22 +684,12 @@ static AggregateProjectionCandidates getAggregateProjectionCandidates(
     {
         const auto * projection = &*(metadata->minmax_count_projection);
 
-        /// If the query aggregates `min`/`max` over columns whose per-part statistics can answer
-        /// them exactly, extend the implicit projection with those columns for this query.
         std::shared_ptr<const ProjectionDescription> extended_projection;
         Names stats_minmax_columns = getStatisticsBackedMinMaxColumns(aggregates, metadata, reading, context);
         if (!stats_minmax_columns.empty())
         {
-            auto partition_columns_ast = metadata->getPartitionKey().expression_list_ast->clone();
-            FunctionNameNormalizer::visit(partition_columns_ast.get());
-            extended_projection = std::make_shared<const ProjectionDescription>(ProjectionDescription::getMinMaxCountProjection(
-                metadata->getColumns(),
-                partition_columns_ast,
-                metadata->getColumnsRequiredForPartitionKey(),
-                metadata->getPrimaryKey(),
-                &metadata->getPartitionKey(),
-                context,
-                stats_minmax_columns));
+            extended_projection = std::make_shared<const ProjectionDescription>(
+                ProjectionDescription::getMinMaxCountProjection(*metadata, context, stats_minmax_columns));
             projection = extended_projection.get();
         }
 

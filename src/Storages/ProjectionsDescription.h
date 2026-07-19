@@ -70,8 +70,7 @@ struct ProjectionDescription
     String primary_key_max_column_name;
 
     /// Columns of the minmax_count projection whose min/max are answered from per-part column
-    /// statistics (`basic`/`minmax`) instead of the partition minmax index or the primary index.
-    /// Set only on query-time extended copies of the implicit minmax_count projection; empty for
+    /// statistics. Set only on query-time extended copies of the implicit projection; empty for
     /// the projection stored in table metadata.
     Names stats_minmax_columns;
 
@@ -123,6 +122,13 @@ struct ProjectionDescription
         const Names & minmax_columns,
         const KeyDescription & primary_key,
         const KeyDescription * partition_key,
+        const ContextPtr & query_context,
+        const Names & stats_minmax_columns = {});
+
+    /// The same, with all inputs (including the cloned and normalized partition key AST) taken
+    /// from the table metadata.
+    static ProjectionDescription getMinMaxCountProjection(
+        const StorageInMemoryMetadata & metadata,
         const ContextPtr & query_context,
         const Names & stats_minmax_columns = {});
 
