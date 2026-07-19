@@ -19,9 +19,7 @@ namespace ErrorCodes
 class WaitForAsyncInsertSource final : public ISource
 {
 public:
-    /// report_read_progress: when false, only write progress is reported. Used by callers that
-    /// already accounted the read side (e.g. INSERT ... SELECT FROM input() that ran the SELECT
-    /// eagerly on the same process-list entry) to avoid double-counting read_rows/read_bytes.
+    /// Some callers already count reads before waiting for the async flush.
     WaitForAsyncInsertSource(
         std::future<AsyncInsertProgress> insert_future_,
         size_t timeout_ms_,

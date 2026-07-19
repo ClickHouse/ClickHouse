@@ -1602,8 +1602,6 @@ static BlockIO executeQueryImpl(
         }
 
         bool async_insert_select_via_input = false;
-        /// Destination storage for the async INSERT...SELECT FROM input() path, resolved once
-        /// (catalog table or table function) and reused for context seeding and type conversion.
         StoragePtr async_insert_destination_table;
         if (insert_query && insert_query->select)
         {
@@ -1614,15 +1612,10 @@ static BlockIO executeQueryImpl(
                 insert_query->tryFindInputFunction(input_function);
                 if (input_function)
                 {
-                    /// Mark that this is an INSERT...SELECT FROM input() with inlined data —
-                    /// eligible for async routing when async_insert=1.
                     async_insert_select_via_input = true;
 
-                    /// Resolve the destination (catalog table or table function) via getTable,
-                    /// exactly as InterpreterInsertQuery::execute() does, *before* input() is
-                    /// resolved. This makes a missing catalog table throw UNKNOWN_TABLE here
-                    /// (matching the sync path) instead of letting input('auto') later throw a
-                    /// confusing CANNOT_EXTRACT_TABLE_STRUCTURE.
+                    /// Resolve destination before input(), so input('auto') sees the same
+                    /// context as the sync path and missing tables throw UNKNOWN_TABLE.
                     async_insert_destination_table = insert_table;
                     if (!async_insert_destination_table)
                     {
@@ -1633,9 +1626,7 @@ static BlockIO executeQueryImpl(
                         async_insert_destination_table = destination_interpreter.getTable(*insert_query);
                     }
 
-                    /// Seed Context::insertion_table_info (needed by input('auto')) before
-                    /// executeTableFunction resolves input()'s structure — for both catalog
-                    /// and table-function destinations, mirroring the sync path.
+                    /// For input('auto'), make sure that Context::insertion_table_info is set.
                     if (async_insert_destination_table && !context->hasInsertionTableColumnsDescription())
                         InterpreterInsertQuery::setInsertContextValues(context, *insert_query, async_insert_destination_table);
 
@@ -1693,10 +1684,7 @@ static BlockIO executeQueryImpl(
                 LOG_DEBUG(logger, "Setting async_insert=1, but INSERT query will be executed synchronously (reason: {})", reason);
         }
 
-        /// Initialize the per-query metadata cache before either the async or the sync path
-        /// builds a SELECT, so enable_shared_storage_snapshot_in_query keeps one storage
-        /// snapshot for the whole query. It is owned by query_metadata_cache (Context holds
-        /// only a weak ref) and moved into res.query_metadata_cache below for both paths.
+        /// Context keeps only a weak ref, so keep this cache owned by BlockIO for both paths.
         if (settings[Setting::enable_shared_storage_snapshot_in_query])
         {
             query_metadata_cache = std::make_shared<QueryMetadataCache>();
@@ -1736,11 +1724,10 @@ static BlockIO executeQueryImpl(
             if (http_continue_callback && !internal)
                 http_continue_callback();
 
-            /// Report a queued async insert: increment the counter, optionally wait for the
-            /// flush, and record the insertion table. report_read_progress=false suppresses the
-            /// source's synthetic read progress for paths that already ran a real SELECT.
+            /// For INSERT ... SELECT, reads are already counted by the SELECT pipeline.
             auto finish_async_insert_push = [&](AsynchronousInsertQueue::PushResult && push_result, bool report_read_progress = true)
             {
+                // Increment InsertQuery for async insert with inline data
                 ProfileEvents::increment(ProfileEvents::InsertQuery);
                 if (settings[Setting::wait_for_async_insert])
                 {
@@ -1761,14 +1748,6 @@ static BlockIO executeQueryImpl(
 
             if (async_insert_select_via_input)
             {
-                /// StorageInput pipe is already wired. Execute SELECT eagerly and push
-                /// the result as a preprocessed block to the async insert queue.
-
-                /// Fail fast on an access-denied catalog destination, before the request body
-                /// is parsed and the SELECT runs — matching the synchronous INSERT path. The
-                /// destination itself was already resolved (and a missing one already threw
-                /// UNKNOWN_TABLE) while wiring the input() pipe above. Table functions check
-                /// access during execution, consistent with InterpreterInsertQuery::execute.
                 if (!insert_query->table_function)
                 {
                     auto validate_metadata = async_insert_destination_table->getInMemoryMetadataPtr(context, false);
@@ -1792,12 +1771,6 @@ static BlockIO executeQueryImpl(
                     select_pipeline = interpreter_select.buildQueryPipeline();
                 }
 
-                /// Apply the deduplicate_insert_select policy exactly as the synchronous
-                /// INSERT...SELECT path does (FORCE_ENABLE rejects non-stable SELECTs,
-                /// DISABLE / ENABLE_WHEN_POSSIBLE adjust the insert-dedup setting). Compute
-                /// it before pulling so FORCE_ENABLE throws before input() is consumed, and
-                /// carry the decision to the queued push and the sync fallback via a scoped
-                /// context copy.
                 ContextMutablePtr insert_context = context;
                 {
                     const bool select_query_sorted =
@@ -1813,9 +1786,6 @@ static BlockIO executeQueryImpl(
                     }
                 }
 
-                /// Convert the SELECT output to the insert schema (type cast plus
-                /// insert_null_as_default widening) using the same helper the synchronous
-                /// INSERT...SELECT path uses, so the async route accepts the same queries.
                 if (async_insert_destination_table)
                     InterpreterInsertQuery::convertSelectToInsertSchema(
                         select_pipeline, *insert_query, async_insert_destination_table, context,
@@ -1825,15 +1795,11 @@ static BlockIO executeQueryImpl(
                 auto exec_pipeline = QueryPipelineBuilder::getPipeline(std::move(select_pipeline));
                 PullingPipelineExecutor pulling_executor(exec_pipeline);
 
-                /// Same pattern as TCPHandler::processAsyncInsertQuery: accumulate via
-                /// Squashing; once min_block_size_bytes is hit, fall back to sync write.
                 Squashing squashing(
                     pulling_executor.getSharedHeader(),
                     /*min_block_size_rows*/ 0,
                     /*min_block_size_bytes*/ settings[Setting::async_insert_max_data_size]);
 
-                /// Lazy sync fallback: async_insert_flush=true keeps SELECT in the AST
-                /// for setStructureHint, but prevents execute() from re-running it.
                 std::optional<BlockIO> sync_io;
                 std::unique_ptr<PushingPipelineExecutor> sync_exec;
 
@@ -1849,9 +1815,7 @@ static BlockIO executeQueryImpl(
                     auto sync_ast = out_ast->clone();
                     auto & sync_insert_q = sync_ast->as<ASTInsertQuery &>();
                     sync_insert_q.async_insert_flush = true;
-                    /// Drop the inlined-data markers so buildInsertPipeline yields a *pushing*
-                    /// pipeline (hasInlinedData() must be false); we feed the squashed blocks
-                    /// through PushingPipelineExecutor ourselves.
+                    /// Prevent buildInsertPipeline from consuming the one-shot input() body again.
                     sync_insert_q.data = nullptr;
                     sync_insert_q.end = nullptr;
                     sync_insert_q.tail.reset();
@@ -1860,8 +1824,6 @@ static BlockIO executeQueryImpl(
                         settings[Setting::insert_allow_materialized_columns],
                         /* no_squash */ false, /* no_destination */ false, /* async_insert */ false);
                     sync_io.emplace(sync_interpreter.execute());
-                    /// Attach the process list so the write phase honors max_execution_time
-                    /// and KILL, like the regular synchronous insert path.
                     sync_io->pipeline.setProcessListElement(context->getProcessListElement());
                     sync_exec = std::make_unique<PushingPipelineExecutor>(sync_io->pipeline);
                     sync_exec->start();
@@ -1878,14 +1840,11 @@ static BlockIO executeQueryImpl(
                     if (!overflow)
                         continue;
 
-                    /// Size limit hit — switch to sync.
                     init_sync_fallback();
                     sync_exec->push(squashing.getHeader()->cloneWithColumns(overflow.detachColumns()));
                 }
 
-                /// pull() returns false both on normal EOF and on cancellation (KILL QUERY,
-                /// max_execution_time with overflow_mode=break). Do not commit a partial
-                /// result — let the process list throw the standard exception.
+                /// pull() returns false on both EOF and cancellation.
                 if (auto process_list_elem = context->getProcessListElement())
                 {
                     process_list_elem->checkTimeLimit();
@@ -1902,8 +1861,7 @@ static BlockIO executeQueryImpl(
                     const auto & table_id_sync = insert_query->table_id;
                     if (!table_id_sync.empty())
                         context->setInsertionTable(table_id_sync);
-                    /// Keep async_insert=true: StorageInput is one-shot, re-entering the
-                    /// interpreter via the !async_insert path below would throw.
+                    /// Keep async_insert=true: StorageInput is one-shot.
                 }
                 else
                 {
@@ -1915,14 +1873,10 @@ static BlockIO executeQueryImpl(
                     else
                         merged_block = squashing.getHeader()->cloneWithoutColumns();
 
-                    /// Keep SELECT in the clone: preprocessInsertQuery needs query.select for
-                    /// setStructureHint; async_insert_flush prevents execute() re-running it.
                     auto async_query = out_ast->clone();
 
                     auto result = queue->pushQueryWithBlock(async_query, std::move(merged_block), insert_context);
-                    /// The SELECT already reported real read_rows/read_bytes on this process-list
-                    /// entry, so suppress the source's synthetic read progress to avoid double
-                    /// counting (write progress is still reported).
+                    /// Avoid double-counting read progress already reported by the SELECT.
                     finish_async_insert_push(std::move(result), /* report_read_progress */ false);
                 } // else — within-limit async path (sync_exec not set)
             }
