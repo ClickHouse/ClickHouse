@@ -34,7 +34,8 @@ void NormalizeSelectWithUnionQueryMatcher::visit(ASTPtr & ast, Data & data)
         /// we need to keep and restore it.
         auto format = select_union->format_ast;
         visit(*select_union, data);
-        select_union->format_ast = format;
+        select_union->reset(select_union->format_ast);
+        select_union->set(select_union->format_ast, std::move(format));
     }
 }
 

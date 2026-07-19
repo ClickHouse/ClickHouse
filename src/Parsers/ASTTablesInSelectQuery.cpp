@@ -1,6 +1,7 @@
 #include <Parsers/ASTTablesInSelectQuery.h>
 
 #include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTStreamSettings.h>
 #include <Common/SipHash.h>
 #include <IO/Operators.h>
 #include <Parsers/ASTFunction.h>
@@ -38,6 +39,7 @@ ASTPtr ASTTableExpression::clone() const
     CLONE(sample_size);
     CLONE(sample_offset);
     CLONE(column_aliases);
+    CLONE(stream_settings);
 
     return res;
 }
@@ -160,6 +162,18 @@ void ASTTableExpression::formatImpl(WriteBuffer & ostr, const FormatSettings & s
             sample_offset->format(ostr, settings, state, frame);
         }
     }
+
+    if (stream_settings)
+    {
+        ostr << settings.nl_or_ws << indent_str << "STREAM";
+
+        const auto & typed_stream_settings = stream_settings->as<ASTStreamSettings &>();
+        if (typed_stream_settings.settings.cursor_tree.has_value())
+        {
+            ostr << ' ';
+            stream_settings->format(ostr, settings, state, frame);
+        }
+    }
 }
 
 
@@ -237,7 +251,6 @@ void ASTTableJoin::formatImplBeforeTable(WriteBuffer & ostr, const FormatSetting
 
 void ASTTableJoin::formatImplAfterTable(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    frame.need_parens = false;
     frame.expression_list_prepend_whitespace = false;
 
     if (using_expression_list)
@@ -267,10 +280,19 @@ void ASTTableJoin::formatImplAfterTable(WriteBuffer & ostr, const FormatSettings
 
 
         if (on_need_parens)
+        {
             ostr << "(";
-        on_expression->format(ostr, settings, state, frame);
-        if (on_need_parens)
+            /// We have just emitted `(` around the ON expression, so suppress the
+            /// child's own `parenthesized` parens (which would otherwise duplicate ours).
+            FormatStateStacked inner_frame = frame;
+            inner_frame.wrapped_in_parens = true;
+            on_expression->format(ostr, settings, state, inner_frame);
             ostr << ")";
+        }
+        else
+        {
+            on_expression->format(ostr, settings, state, frame);
+        }
     }
 }
 

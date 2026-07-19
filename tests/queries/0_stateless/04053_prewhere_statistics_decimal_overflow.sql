@@ -31,7 +31,7 @@ INSERT INTO test_prewhere_decimal_overflow VALUES
        toDecimal128('-90000000000000000000000000000', 9),
        toDecimal128( '90000000000000000000000000000', 9))]);
 
-ALTER TABLE test_prewhere_decimal_overflow ADD STATISTICS ts TYPE minmax;
+ALTER TABLE test_prewhere_decimal_overflow ADD STATISTICS ts TYPE basic;
 ALTER TABLE test_prewhere_decimal_overflow MATERIALIZE STATISTICS ts SETTINGS mutations_sync = 1;
 
 SET enable_analyzer = 1;
@@ -45,7 +45,7 @@ WHERE (ts >= '2024-01-01 00:00:00') AND (ts < '2024-01-02 00:00:00')
     AND (round(arraySum(x -> if(x.account = 'acct1' AND x.after > x.before,
                                  toFloat64(x.after - x.before), toFloat64(0)),
                         balance_changes) / 1000000000) > 0)
-SETTINGS use_statistics = 0, allow_experimental_statistics = 1;
+SETTINGS use_statistics = 0, allow_experimental_statistics = 1, allow_reorder_prewhere_conditions = 0, query_plan_merge_filters = 1; -- CI may inject merge_filters=False, separating NOT-IN and arraySum into disconnected filter nodes so prewhere can reorder them independently
 
 -- Bug: statistics move `arraySum` before the NOT-IN guard → DECIMAL_OVERFLOW.
 SELECT sig
@@ -65,6 +65,6 @@ WHERE (ts >= '2024-01-01 00:00:00') AND (ts < '2024-01-02 00:00:00')
     AND (round(arraySum(x -> if(x.account = 'acct1' AND x.after > x.before,
                                  toFloat64(x.after - x.before), toFloat64(0)),
                         balance_changes) / 1000000000) > 0)
-SETTINGS use_statistics = 1, allow_experimental_statistics = 1, allow_reorder_prewhere_conditions = 0;
+SETTINGS use_statistics = 1, allow_experimental_statistics = 1, allow_reorder_prewhere_conditions = 0, query_plan_merge_filters = 1; -- CI may inject merge_filters=False, separating NOT-IN and arraySum into disconnected filter nodes so prewhere can reorder them independently
 
 DROP TABLE test_prewhere_decimal_overflow;

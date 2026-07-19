@@ -1,0 +1,148 @@
+---
+alias: []
+description: 'وثائق تنسيق BSONEachRow'
+input_format: true
+keywords: ['BSONEachRow']
+output_format: true
+slug: /interfaces/formats/BSONEachRow
+title: 'BSONEachRow'
+doc_type: 'مرجع'
+---
+
+| إدخال | إخراج | اسم بديل |
+| ----- | ----- | -------- |
+| ✔     | ✔     |          |
+
+<div id="description">
+  ## الوصف
+</div>
+
+يحلّل التنسيق `BSONEachRow` البيانات على هيئة تسلسل من مستندات Binary JSON ‏(BSON) من دون أي فاصل بينها.
+يُنسَّق كل صف على شكل مستند واحد، ويُنسَّق كل عمود كحقل واحد في مستند BSON، بحيث يكون اسم العمود هو المفتاح.
+
+<div id="data-types-matching">
+  ## مطابقة أنواع البيانات
+</div>
+
+في الإخراج، تُستخدم المطابقة التالية بين أنواع ClickHouse وأنواع BSON:
+
+| نوع ClickHouse                                                                          | نوع BSON                                                                                                                              |
+| --------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| [Bool](/ar/reference/data-types/boolean)                                                   | `\x08` boolean                                                                                                                        |
+| [Int8/UInt8](/ar/reference/data-types/int-uint)/[Enum8](/ar/reference/data-types/enum)        | `\x10` int32                                                                                                                          |
+| [Int16/UInt16](/ar/reference/data-types/int-uint)/[Enum16](/ar/reference/data-types/enum)     | `\x10` int32                                                                                                                          |
+| [Int32](/ar/reference/data-types/int-uint)                                                 | `\x10` int32                                                                                                                          |
+| [UInt32](/ar/reference/data-types/int-uint)                                                | `\x12` int64                                                                                                                          |
+| [Int64/UInt64](/ar/reference/data-types/int-uint)                                          | `\x12` int64                                                                                                                          |
+| [Float32/Float64](/ar/reference/data-types/float)                                          | `\x01` double                                                                                                                         |
+| [Date](/ar/reference/data-types/date)/[Date32](/ar/reference/data-types/date32)               | `\x10` int32                                                                                                                          |
+| [DateTime](/ar/reference/data-types/datetime)                                              | `\x12` int64                                                                                                                          |
+| [DateTime64](/ar/reference/data-types/datetime64)                                          | `\x09` datetime                                                                                                                       |
+| [Decimal32](/ar/reference/data-types/decimal)                                              | `\x10` int32                                                                                                                          |
+| [Decimal64](/ar/reference/data-types/decimal)                                              | `\x12` int64                                                                                                                          |
+| [Decimal128](/ar/reference/data-types/decimal)                                             | `\x05` binary, `\x00` binary subtype, الحجم = 16                                                                                      |
+| [Decimal256](/ar/reference/data-types/decimal)                                             | `\x05` binary, `\x00` binary subtype, الحجم = 32                                                                                      |
+| [Int128/UInt128](/ar/reference/data-types/int-uint)                                        | `\x05` binary, `\x00` binary subtype, الحجم = 16                                                                                      |
+| [Int256/UInt256](/ar/reference/data-types/int-uint)                                        | `\x05` binary, `\x00` binary subtype, الحجم = 32                                                                                      |
+| [String](/ar/reference/data-types/string)/[FixedString](/ar/reference/data-types/fixedstring) | `\x05` binary, `\x00` binary subtype أو `\x02` string إذا كان الإعداد output&#95;format&#95;bson&#95;string&#95;as&#95;string ممكّنًا |
+| [UUID](/ar/reference/data-types/uuid)                                                      | `\x05` binary, `\x04` uuid subtype, الحجم = 16                                                                                        |
+| [Array](/ar/reference/data-types/array)                                                    | `\x04` array                                                                                                                          |
+| [Tuple](/ar/reference/data-types/tuple)                                                    | `\x04` array                                                                                                                          |
+| [Named Tuple](/ar/reference/data-types/tuple)                                              | `\x03` document                                                                                                                       |
+| [Map](/ar/reference/data-types/map)                                                        | `\x03` document                                                                                                                       |
+| [IPv4](/ar/reference/data-types/ipv4)                                                      | `\x10` int32                                                                                                                          |
+| [IPv6](/ar/reference/data-types/ipv6)                                                      | `\x05` binary, `\x00` binary subtype                                                                                                  |
+
+في الإدخال، تُستخدم المطابقة التالية بين أنواع BSON وأنواع ClickHouse:
+
+| نوع BSON                                          | نوع ClickHouse                                                                                                                                                          |
+| ------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `\x01` double                                     | [Float32/Float64](/ar/reference/data-types/float)                                                                                                                          |
+| `\x02` string                                     | [String](/ar/reference/data-types/string)/[FixedString](/ar/reference/data-types/fixedstring)                                                                                 |
+| `\x03` مستند                                      | [Map](/ar/reference/data-types/map)/[Named Tuple](/ar/reference/data-types/tuple)                                                                                             |
+| `\x04` مصفوفة                                     | [Array](/ar/reference/data-types/array)/[Tuple](/ar/reference/data-types/tuple)                                                                                               |
+| `\x05` binary, `\x00` النوع الفرعي الثنائي        | [String](/ar/reference/data-types/string)/[FixedString](/ar/reference/data-types/fixedstring)/[IPv6](/ar/reference/data-types/ipv6)                                              |
+| `\x05` binary, `\x02` النوع الفرعي الثنائي القديم | [String](/ar/reference/data-types/string)/[FixedString](/ar/reference/data-types/fixedstring)                                                                                 |
+| `\x05` binary, `\x03` النوع الفرعي القديم uuid    | [UUID](/ar/reference/data-types/uuid)                                                                                                                                      |
+| `\x05` binary, `\x04` النوع الفرعي uuid           | [UUID](/ar/reference/data-types/uuid)                                                                                                                                      |
+| `\x07` ObjectId                                   | [String](/ar/reference/data-types/string)/[FixedString](/ar/reference/data-types/fixedstring)                                                                                 |
+| `\x08` boolean                                    | [Bool](/ar/reference/data-types/boolean)                                                                                                                                   |
+| `\x09` datetime                                   | [DateTime64](/ar/reference/data-types/datetime64)                                                                                                                          |
+| `\x0A` قيمة NULL                                  | [NULL](/ar/reference/data-types/nullable)                                                                                                                                  |
+| `\x0D` JavaScript code                            | [String](/ar/reference/data-types/string)/[FixedString](/ar/reference/data-types/fixedstring)                                                                                 |
+| `\x0E` symbol                                     | [String](/ar/reference/data-types/string)/[FixedString](/ar/reference/data-types/fixedstring)                                                                                 |
+| `\x10` int32                                      | [Int32/UInt32](/ar/reference/data-types/int-uint)/[Decimal32](/ar/reference/data-types/decimal)/[IPv4](/ar/reference/data-types/ipv4)/[Enum8/Enum16](/ar/reference/data-types/enum) |
+| `\x12` int64                                      | [Int64/UInt64](/ar/reference/data-types/int-uint)/[Decimal64](/ar/reference/data-types/decimal)/[DateTime64](/ar/reference/data-types/datetime64)                                |
+
+أنواع BSON الأخرى غير مدعومة. بالإضافة إلى ذلك، يُجري هذا التنسيق تحويلًا بين الأنواع الصحيحة المختلفة.
+فعلى سبيل المثال، يمكن إدراج قيمة BSON من النوع `int32` في ClickHouse بصفتها [`UInt8`](/ar/reference/data-types/int-uint).
+
+يمكن تحليل الأعداد الصحيحة الكبيرة والقيم العشرية مثل `Int128`/`UInt128`/`Int256`/`UInt256`/`Decimal128`/`Decimal256` من قيمة BSON من نوع Binary ذات النوع الفرعي الثنائي `\x00`.
+في هذه الحالة، سيتحقق التنسيق من أن حجم البيانات الثنائية يساوي حجم القيمة المتوقعة.
+
+<Note>
+  لا يعمل هذا التنسيق بشكل صحيح على المنصات ذات ترتيب البايتات Big-Endian.
+</Note>
+
+<div id="example-usage">
+  ## مثال للاستخدام
+</div>
+
+<div id="inserting-data">
+  ### إدراج البيانات
+</div>
+
+باستخدام ملف BSON باسم `football.bson` ويحتوي على البيانات التالية:
+
+```text
+    ┌───────date─┬─season─┬─home_team─────────────┬─away_team───────────┬─home_team_goals─┬─away_team_goals─┐
+ 1. │ 2022-04-30 │   2021 │ Sutton United         │ Bradford City       │               1 │               4 │
+ 2. │ 2022-04-30 │   2021 │ Swindon Town          │ Barrow              │               2 │               1 │
+ 3. │ 2022-04-30 │   2021 │ Tranmere Rovers       │ Oldham Athletic     │               2 │               0 │
+ 4. │ 2022-05-02 │   2021 │ Port Vale             │ Newport County      │               1 │               2 │
+ 5. │ 2022-05-02 │   2021 │ Salford City          │ Mansfield Town      │               2 │               2 │
+ 6. │ 2022-05-07 │   2021 │ Barrow                │ Northampton Town    │               1 │               3 │
+ 7. │ 2022-05-07 │   2021 │ Bradford City         │ Carlisle United     │               2 │               0 │
+ 8. │ 2022-05-07 │   2021 │ Bristol Rovers        │ Scunthorpe United   │               7 │               0 │
+ 9. │ 2022-05-07 │   2021 │ Exeter City           │ Port Vale           │               0 │               1 │
+10. │ 2022-05-07 │   2021 │ Harrogate Town A.F.C. │ Sutton United       │               0 │               2 │
+11. │ 2022-05-07 │   2021 │ Hartlepool United     │ Colchester United   │               0 │               2 │
+12. │ 2022-05-07 │   2021 │ Leyton Orient         │ Tranmere Rovers     │               0 │               1 │
+13. │ 2022-05-07 │   2021 │ Mansfield Town        │ Forest Green Rovers │               2 │               2 │
+14. │ 2022-05-07 │   2021 │ Newport County        │ Rochdale            │               0 │               2 │
+15. │ 2022-05-07 │   2021 │ Oldham Athletic       │ Crawley Town        │               3 │               3 │
+16. │ 2022-05-07 │   2021 │ Stevenage Borough     │ Salford City        │               4 │               2 │
+17. │ 2022-05-07 │   2021 │ Walsall               │ Swindon Town        │               0 │               3 │
+    └────────────┴────────┴───────────────────────┴─────────────────────┴─────────────────┴─────────────────┘
+```
+
+أدرِج البيانات:
+
+```sql
+INSERT INTO football FROM INFILE 'football.bson' FORMAT BSONEachRow;
+```
+
+<div id="reading-data">
+  ### قراءة البيانات
+</div>
+
+اقرأ البيانات بتنسيق `BSONEachRow`:
+
+```sql
+SELECT *
+FROM football INTO OUTFILE 'docs_data/bson/football.bson'
+FORMAT BSONEachRow
+```
+
+<Tip>
+  BSON هو تنسيق ثنائي لا يُعرض في الطرفية بصيغة مقروءة للبشر. استخدم `INTO OUTFILE` لإخراج ملفات BSON.
+</Tip>
+
+<div id="format-settings">
+  ## إعدادات التنسيق
+</div>
+
+| الإعداد                                                                                                                                                                            | الوصف                                                                                | الافتراضي |
+| ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ | --------- |
+| [`output_format_bson_string_as_string`](/ar/reference/settings/formats#output_format_bson_string_as_string)                                                                           | استخدم النوع BSON String بدلاً من Binary في أعمدة String.                            | `false`   |
+| [`input_format_bson_skip_fields_with_unsupported_types_in_schema_inference`](/ar/reference/settings/formats#input_format_bson_skip_fields_with_unsupported_types_in_schema_inference) | اسمح بتخطي الأعمدة ذات الأنواع غير المدعومة أثناء استدلال المخطط للصيغة BSONEachRow. | `false`   |

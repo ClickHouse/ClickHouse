@@ -1,0 +1,16 @@
+--- inlined view with row policy
+3	30
+4	40
+5	50
+--- same without inlining
+3	30
+4	40
+5	50
+--- inlined view with row policy + type conversion
+1	10
+2	20
+3	30
+--- same without inlining
+1	10
+2	20
+3	30

@@ -12,11 +12,18 @@ namespace DB
 
 #if USE_AVRO
 
+/// Codec suffix used inside Iceberg metadata file names: `v{N}.<suffix>.metadata.json`.
+/// The Iceberg spec (org.apache.iceberg.TableMetadataParser.Codec) defines the gzip
+/// extension as "gz", not the HTTP Content-Encoding token "gzip" returned by
+/// toContentEncodingName(). Using the wrong token makes Spark / Hadoop-catalog readers
+/// unable to locate the metadata file.
+std::string toIcebergMetadataCompressionExtension(CompressionMethod method);
+
 struct GeneratedMetadataFileWithInfo
 {
     Iceberg::IcebergPathFromMetadata path;
-    Int32 version;
-    CompressionMethod compression_method;
+    Int32 version = 0;
+    CompressionMethod compression_method = CompressionMethod::None;
 };
 
 /// Generates Iceberg metadata paths (IcebergPathFromMetadata) for new files.

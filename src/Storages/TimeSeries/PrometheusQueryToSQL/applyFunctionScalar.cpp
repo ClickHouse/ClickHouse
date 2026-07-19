@@ -68,31 +68,56 @@ SQLQueryPiece applyFunctionScalar(
         case StoreMethod::VECTOR_GRID:
         {
             /// If the argument contains time series we have to do some aggregation.
-
-            /// SELECT arrayMap(x, y -> if(x = 1, assumeNotNull(y), NaN), countForEach(values), anyForEach(values)) AS values
-            /// FROM <vector_grid>
             SelectQueryBuilder builder;
 
-            builder.select_list.push_back(makeASTFunction(
-                "arrayMap",
-                makeASTFunction(
-                    "lambda",
-                    makeASTFunction("tuple", make_intrusive<ASTIdentifier>("x"), make_intrusive<ASTIdentifier>("y")),
+            if (argument.start_time == argument.end_time)
+            {
+                /// SELECT if(count(values[1]) = 1, assumeNotNull(any(values[1])), NaN) AS value
+                /// FROM <vector_grid>
+                builder.select_list.push_back(makeASTFunction(
+                    "if",
                     makeASTFunction(
-                        "if",
-                        makeASTFunction("equals", make_intrusive<ASTIdentifier>("x"), make_intrusive<ASTLiteral>(1)),
-                        makeASTFunction("assumeNotNull", make_intrusive<ASTIdentifier>("y")),
-                        timeSeriesScalarToAST(std::numeric_limits<Float64>::quiet_NaN(), context.scalar_data_type))),
-                makeASTFunction("countForEach", make_intrusive<ASTIdentifier>(ColumnNames::Values)),
-                makeASTFunction("anyForEach", make_intrusive<ASTIdentifier>(ColumnNames::Values))));
+                        "equals",
+                        makeASTFunction(
+                            "count",
+                            makeASTFunction(
+                                "arrayElement", make_intrusive<ASTIdentifier>(ColumnNames::Values), make_intrusive<ASTLiteral>(1u))),
+                        make_intrusive<ASTLiteral>(1)),
+                    makeASTFunction(
+                        "assumeNotNull",
+                        makeASTFunction(
+                            "any",
+                            makeASTFunction(
+                                "arrayElement", make_intrusive<ASTIdentifier>(ColumnNames::Values), make_intrusive<ASTLiteral>(1u)))),
+                    timeSeriesScalarToAST(std::numeric_limits<Float64>::quiet_NaN(), context.scalar_data_type)));
 
-            builder.select_list.back()->setAlias(ColumnNames::Values);
+                builder.select_list.back()->setAlias(ColumnNames::Value);
+                res.store_method = StoreMethod::SINGLE_SCALAR;
+            }
+            else
+            {
+                /// SELECT arrayMap(x, y -> if(x = 1, assumeNotNull(y), NaN), countForEach(values), anyForEach(values)) AS values
+                /// FROM <vector_grid>
+                builder.select_list.push_back(makeASTFunction(
+                    "arrayMap",
+                    makeASTFunction(
+                        "lambda",
+                        makeASTFunction("tuple", make_intrusive<ASTIdentifier>("x"), make_intrusive<ASTIdentifier>("y")),
+                        makeASTFunction(
+                            "if",
+                            makeASTFunction("equals", make_intrusive<ASTIdentifier>("x"), make_intrusive<ASTLiteral>(1)),
+                            makeASTFunction("assumeNotNull", make_intrusive<ASTIdentifier>("y")),
+                            timeSeriesScalarToAST(std::numeric_limits<Float64>::quiet_NaN(), context.scalar_data_type))),
+                    makeASTFunction("countForEach", make_intrusive<ASTIdentifier>(ColumnNames::Values)),
+                    makeASTFunction("anyForEach", make_intrusive<ASTIdentifier>(ColumnNames::Values))));
+
+                builder.select_list.back()->setAlias(ColumnNames::Values);
+                res.store_method = StoreMethod::SCALAR_GRID;
+            }
 
             context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), std::move(argument.select_query), SQLSubqueryType::TABLE});
             builder.from_table = context.subqueries.back().name;
-
             res.select_query = builder.getSelectQuery();
-            res.store_method = StoreMethod::SCALAR_GRID;
 
             return res;
         }

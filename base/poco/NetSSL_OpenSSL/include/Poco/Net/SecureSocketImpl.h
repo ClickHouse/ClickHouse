@@ -26,6 +26,7 @@
 #include "Poco/Net/Session.h"
 #include "Poco/Net/SocketImpl.h"
 
+#include <memory>
 #include <mutex>
 
 namespace Poco
@@ -193,6 +194,22 @@ namespace Net
         /// the socket are changed via the setBlocking method!
 
 
+        void setBioMethod(const BIO_METHOD * method);
+        /// Optionally inject a custom BIO_METHOD for the SSL transport BIO.
+        /// Has no effect once the SSL handshake has been initiated (i.e. once
+        /// any I/O has happened). If never called, `BIO_s_socket()` is used.
+
+        struct RecursiveMutex
+        {
+            virtual ~RecursiveMutex() = default;
+            virtual void lock() = 0;
+            virtual void unlock() = 0;
+        };
+
+        void setMutex(std::unique_ptr<RecursiveMutex> mutex);
+        /// Replace the lock guarding SSL operations.
+
+
     protected:
         void acceptSSL();
         /// Assume per-object mutex is locked.
@@ -239,13 +256,28 @@ namespace Net
         SecureSocketImpl(const SecureSocketImpl &);
         SecureSocketImpl & operator=(const SecureSocketImpl &);
 
-        mutable std::recursive_mutex _mutex;
+        const BIO_METHOD * getBioMethod() const;
+        /// Returns the BIO_METHOD to use for the SSL transport BIO.
+        /// Falls back to `BIO_s_socket()` when no custom method was set via `setBioMethod`.
+
+        struct StdRecursiveMutex final : RecursiveMutex
+        {
+            void lock() override { _m.lock(); }
+            void unlock() override { _m.unlock(); }
+            std::recursive_mutex _m;
+        };
+
+        using ScopedLock = std::lock_guard<RecursiveMutex>;
+
+        mutable std::unique_ptr<RecursiveMutex> _mutex{std::make_unique<StdRecursiveMutex>()};
         SSL * _pSSL; // GUARDED_BY _mutex
         Poco::AutoPtr<SocketImpl> _pSocket;
         Context::Ptr _pContext;
         bool _needHandshake;
         std::string _peerHostName;
         Session::Ptr _pSession;
+        const BIO_METHOD * _bioMethod = nullptr;
+        /// Contract: when set, store the `SocketImpl *` in the BIO's data.
 
         friend class SecureStreamSocketImpl;
 

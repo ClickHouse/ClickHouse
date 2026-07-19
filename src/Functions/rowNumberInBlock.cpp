@@ -9,7 +9,7 @@ namespace DB
 namespace
 {
 
-class FunctionRowNumberInBlock : public IFunction
+class FunctionRowNumberInBlock final : public IFunction
 {
 public:
     static constexpr auto name = "rowNumberInBlock";

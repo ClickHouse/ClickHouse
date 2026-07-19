@@ -80,7 +80,7 @@ size_t getCompoundTypeDepth(const IDataType & type)
     return depth;
 }
 
-/// The `convertFieldToTypeStrict` is used to prevent unexpected results in case of conversion with loss of precision.
+/// Uses `convertFieldToType` with `strict=true` to prevent unexpected results in case of conversion with loss of precision.
 /// Example: `SELECT 33.3 :: Decimal(9, 1) AS a WHERE a IN (33.33 :: Decimal(9, 2))`
 /// 33.33 in the set is converted to 33.3, but it is not equal to 33.3 in the column, so the result should still be empty.
 /// We can not include values that don't represent any possible value from the type of filtered column to the set.
@@ -89,7 +89,17 @@ std::optional<Field> convertFieldToTypeCheckEnum(
 {
     try
     {
-        return convertFieldToTypeStrict(from_value, from_type, to_type);
+        Field result = convertFieldToType(from_value, to_type, &from_type, {}, /*strict=*/ true);
+
+        /// `convertFieldToType` with `strict=true` returns Null on failed conversion (out-of-range,
+        /// loss of precision, non-representable Bool values like 10, etc). We treat this as
+        /// "not representable in the target type" and return nullopt so the value is excluded
+        /// from the set, rather than being inserted as NULL. The NULL -> NULL case is kept valid
+        /// because a genuine NULL in the source should remain NULL in the set.
+        if (!from_value.isNull() && result.isNull())
+            return std::nullopt;
+
+        return result;
     }
     catch (const Exception & e)
     {

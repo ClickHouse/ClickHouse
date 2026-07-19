@@ -1,0 +1,33 @@
+Each configuration file will contain the following unique configuration (shown below).
+The `server_id` used should be unique for that particular ClickHouse Keeper node
+in the cluster and match the server `<id>` defined in the `<raft_configuration>` section.
+`tcp_port` is the port used by _clients_ of ClickHouse Keeper.
+
+```xml
+<tcp_port>9181</tcp_port>
+<server_id>{id}</server_id>
+```
+
+The following section is used to configure the servers that participate in the
+quorum for the [raft consensus algorithm](https://en.wikipedia.org/wiki/Raft_(algorithm)):
+
+```xml highlight={6}
+<raft_configuration>
+    <server>
+        <id>1</id>
+        <hostname>clickhouse-keeper-01</hostname>
+        <!-- TCP port used for communication between ClickHouse Keeper nodes -->
+        <port>9234</port>
+    </server>
+    <server>
+        <id>2</id>
+        <hostname>clickhouse-keeper-02</hostname>
+        <port>9234</port>
+    </server>
+    <server>
+        <id>3</id>
+        <hostname>clickhouse-keeper-03</hostname>
+        <port>9234</port>
+    </server>
+</raft_configuration>
+```

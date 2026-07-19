@@ -5,11 +5,11 @@
 -- Testcase for https://github.com/ClickHouse/ClickHouse/issues/92863
 -- Tables/parts without UUID should not enter into the query condition cache.
 
-DROP DATABASE IF EXISTS memory_db;
+DROP DATABASE IF EXISTS {CLICKHOUSE_DATABASE_1:Identifier};
 
-CREATE DATABASE memory_db ENGINE = Memory;
+CREATE DATABASE {CLICKHOUSE_DATABASE_1:Identifier} ENGINE = Memory;
 
-USE memory_db;
+USE {CLICKHOUSE_DATABASE_1:Identifier};
 
 CREATE TABLE tab
 (
@@ -21,7 +21,7 @@ SETTINGS index_granularity = 8;
 INSERT INTO tab SELECT number, number * 8 FROM numbers(100);
 
 -- Prints 00000000-0000-0000-0000-000000000000.
-SELECT uuid FROM system.parts WHERE database = 'memory_db';
+SELECT uuid FROM system.parts WHERE database = currentDatabase();
 
 SET use_query_condition_cache = 1;
 
@@ -35,4 +35,4 @@ SELECT count(*) from system.query_condition_cache; -- still no entry
 
 DROP TABLE tab;
 
-DROP DATABASE memory_db;
+DROP DATABASE {CLICKHOUSE_DATABASE_1:Identifier};

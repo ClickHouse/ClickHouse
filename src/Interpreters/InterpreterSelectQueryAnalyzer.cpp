@@ -1,3 +1,6 @@
+#include <Columns/ColumnConst.h>
+#include <Common/ElapsedTimeProfileEventIncrement.h>
+#include <Common/ProfileEvents.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
@@ -35,6 +38,12 @@
 
 #include <Poco/Logger.h>
 #include <Common/logger_useful.h>
+
+namespace ProfileEvents
+{
+    extern const Event QueryAnalysisMicroseconds;
+    extern const Event QueryPipelineBuildMicroseconds;
+}
 
 namespace DB
 {
@@ -221,11 +230,27 @@ void replaceStorageInQueryTree(QueryTreeNodePtr & query_tree, const ContextPtr &
     query_tree = query_tree->cloneAndReplace(replacement_map);
 }
 
+static void tweakSettingsForStreamingQuery(const ContextMutablePtr & context, const QueryTreeNodePtr & query_tree)
+{
+    for (const auto & node : extractAllTableReferences(query_tree))
+    {
+        const auto & table_node = node->as<TableNode &>();
+        if (auto modifiers = table_node.getTableExpressionModifiers(); modifiers && modifiers->hasStream())
+        {
+            context->setSetting("output_format_pretty_squash_consecutive_ms", Field{UInt64{0}});
+            context->setSetting("output_format_pretty_squash_max_wait_ms", Field{UInt64{0}});
+            return;
+        }
+    }
+}
+
 static QueryTreeNodePtr buildQueryTreeAndRunPasses(const ASTPtr & query,
     const SelectQueryOptions & select_query_options,
     const ContextPtr & context,
     const StoragePtr & storage)
 {
+    ProfileEventTimeIncrement<Microseconds> analysis_time_watch(ProfileEvents::QueryAnalysisMicroseconds);
+
     auto query_tree = buildQueryTree(query, context);
 
     QueryTreePassManager query_tree_pass_manager(context);
@@ -263,6 +288,7 @@ InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
           [ast = query_->clone(), ctx = Context::createCopy(context_), select_options = select_query_options_, column_names]()
           { return buildQueryPlanForAutomaticParallelReplicas(ast, ctx, select_options, column_names); })
 {
+    tweakSettingsForStreamingQuery(context, query_tree);
 }
 
 InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
@@ -284,6 +310,7 @@ InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
            select_options = select_query_options_,
            column_names]() { return buildQueryPlanForAutomaticParallelReplicas(ast, ctx, select_options, storage, column_names); })
 {
+    tweakSettingsForStreamingQuery(context, query_tree);
 }
 
 InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
@@ -298,6 +325,7 @@ InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
           [tree = query_tree_->clone(), ctx = Context::createCopy(context_), select_options = select_query_options_]()
           { return buildQueryPlanForAutomaticParallelReplicas(tree->toAST(), ctx, select_options); })
 {
+    tweakSettingsForStreamingQuery(context, query_tree);
 }
 
 SharedHeader InterpreterSelectQueryAnalyzer::getSampleBlock(const ASTPtr & query,
@@ -350,6 +378,7 @@ BlockIO InterpreterSelectQueryAnalyzer::execute()
 
     if (!select_query_options.ignore_quota && select_query_options.to_stage == QueryProcessingStage::Complete)
         result.pipeline.setQuota(context->getQuota());
+    result.pipeline.setNormalizedQueryHash(context->getNormalizedQueryHash());
 
     return result;
 }
@@ -378,7 +407,13 @@ QueryPipelineBuilder InterpreterSelectQueryAnalyzer::buildQueryPipeline()
 
     query_plan.setConcurrencyControl(context->getSettingsRef()[Setting::use_concurrency_control]);
 
-    return std::move(*query_plan.buildQueryPipeline(optimization_settings, build_pipeline_settings));
+    /// Optimize the plan up front so its cost is attributed to QueryPlanOptimizeMicroseconds.
+    /// Otherwise buildQueryPipeline would optimize internally and QueryPipelineBuildMicroseconds
+    /// would double-count the optimization phase.
+    query_plan.optimize(optimization_settings);
+
+    ProfileEventTimeIncrement<Microseconds> pipeline_build_time_watch(ProfileEvents::QueryPipelineBuildMicroseconds);
+    return std::move(*query_plan.buildQueryPipeline(optimization_settings, build_pipeline_settings, /*do_optimize=*/false));
 }
 
 void InterpreterSelectQueryAnalyzer::addStorageLimits(const StorageLimitsList & storage_limits)
@@ -386,12 +421,7 @@ void InterpreterSelectQueryAnalyzer::addStorageLimits(const StorageLimitsList & 
     planner.addStorageLimits(storage_limits);
 }
 
-void InterpreterSelectQueryAnalyzer::extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr & /*ast*/, ContextPtr /*context*/) const
-{
-    for (const auto & used_row_policy : planner.getUsedRowPolicies())
-        elem.used_row_policies.emplace(used_row_policy);
-}
-
+void registerInterpreterSelectQueryAnalyzer(InterpreterFactory & factory);
 void registerInterpreterSelectQueryAnalyzer(InterpreterFactory & factory)
 {
     auto create_fn = [] (const InterpreterFactory::Arguments & args)

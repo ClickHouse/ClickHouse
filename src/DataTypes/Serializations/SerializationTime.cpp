@@ -38,7 +38,7 @@ inline bool tryReadTimeText(
     const DateLUTImpl & time_zone,
     const DateLUTImpl & /*utc_time_zone*/)
 {
-    bool res;
+    bool res = false;
     res = tryReadTimeText(x, istr, time_zone);
 
     x = std::max<time_t>(0, x);

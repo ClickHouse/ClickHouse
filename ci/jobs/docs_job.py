@@ -63,6 +63,19 @@ if __name__ == "__main__":
         )
     )
 
+    testname = "Generate system tables documentation"
+    results.append(
+        Result.from_commands_run(
+            name=testname,
+            command=[
+                f"python3 {os.getcwd()}/utils/generate-system-tables-docs"
+                f" --binary {temp_dir}clickhouse"
+                f" --docs-dir /opt/clickhouse-docs/docs/operations/system-tables/"
+            ],
+            workdir=os.getcwd(),
+        )
+    )
+
     testname = "Generate table of contents pages"
     results.append(
         Result.from_commands_run(

@@ -1,0 +1,862 @@
+---
+slug: /optimize/query-optimization
+sidebarTitle: 'تحسين الاستعلامات'
+title: 'دليل مبسط لتحسين الاستعلامات'
+description: 'دليل مبسط لتحسين الاستعلامات يشرح الطرق الشائعة لتحسين أداء الاستعلامات'
+doc_type: 'guide'
+keywords: ['تحسين الاستعلامات', 'الأداء', 'أفضل الممارسات', 'ضبط الاستعلامات', 'الكفاءة']
+---
+
+import { Image } from "/snippets/ar/components/Image.jsx";
+
+يهدف هذا القسم إلى توضيح كيفية استخدام تقنيات مختلفة للأداء والتحسين، من خلال سيناريوهات شائعة، مثل [المحلّل](/ar/guides/clickhouse/performance-and-monitoring/analyzer)، و[تنميط الاستعلامات](/ar/concepts/features/performance/troubleshoot/sampling-query-profiler)، و[تجنّب الأعمدة Nullable](/ar/concepts/best-practices/avoidnullablecolumns)، بهدف تحسين أداء استعلامات ClickHouse.
+
+<div id="understand-query-performance">
+  ## فهم أداء الاستعلامات
+</div>
+
+أفضل وقت للتفكير في تحسين الأداء هو عند إعداد [مخطط البيانات](/ar/guides/clickhouse/data-modelling/schema-design) قبل إدخال البيانات إلى ClickHouse لأول مرة. 
+
+لكن لنكن صريحين؛ من الصعب التنبؤ بمدى نمو بياناتك أو بأنواع الاستعلامات التي ستُنفَّذ. 
+
+إذا كان لديك عملية نشر قائمة تتضمن بضعة استعلامات تريد تحسينها، فإن الخطوة الأولى هي فهم أداء تلك الاستعلامات ولماذا يُنفَّذ بعضها خلال بضع ميلي ثانية بينما يستغرق بعضها الآخر وقتًا أطول.
+
+يوفر ClickHouse مجموعة غنية من الأدوات التي تساعدك على فهم كيفية تنفيذ استعلامك والموارد المستهلكة أثناء التنفيذ. 
+
+في هذا القسم، سنستعرض هذه الأدوات وكيفية استخدامها. 
+
+<div id="general-considerations">
+  ## اعتبارات عامة
+</div>
+
+لفهم أداء الاستعلام، لنلقِ نظرة على ما يحدث في ClickHouse عند تنفيذ استعلام. 
+
+الجزء التالي مُبسَّط عمدًا ويتجاوز بعض التفاصيل؛ فالفكرة هنا ليست إغراقك بالتفاصيل، بل إطلاعك سريعًا على المفاهيم الأساسية. ولمزيد من المعلومات، يمكنك قراءة [محلل الاستعلام](/ar/guides/clickhouse/performance-and-monitoring/analyzer). 
+
+من منظور عام جدًا، عندما ينفذ ClickHouse استعلامًا، يحدث ما يلي: 
+
+* **تحليل الاستعلام وفهمه**
+
+يُحلَّل الاستعلام، وتُنشأ خطة عامة لتنفيذ الاستعلام. 
+
+* **تحسين الاستعلام**
+
+تُحسَّن خطة تنفيذ الاستعلام، وتُستبعَد البيانات غير الضرورية، ويُبنى خط تنفيذ الاستعلام انطلاقًا من خطة الاستعلام. 
+
+* **تنفيذ خط الاستعلام**
+
+تُقرأ البيانات وتُعالَج بالتوازي. وهذه هي المرحلة التي ينفذ فيها ClickHouse فعليًا عمليات الاستعلام مثل التصفية، والتجميعات، والفرز. 
+
+* **المعالجة النهائية**
+
+تُدمَج النتائج وتُفرَز وتُنسَّق في صورة النتيجة النهائية قبل إرسالها إلى العميل.
+
+في الواقع، تجري العديد من [عمليات التحسين](/ar/get-started/about/why-clickhouse-is-so-fast)، وسنناقشها بمزيد من التفصيل لاحقًا في هذا الدليل، لكن هذه المفاهيم الرئيسية تمنحنا في الوقت الحالي فهمًا جيدًا لما يحدث خلف الكواليس عندما ينفذ ClickHouse استعلامًا. 
+
+وبهذا الفهم العام، لنستعرض الأدوات التي يوفرها ClickHouse وكيف يمكننا استخدامها لتتبّع المقاييس التي تؤثر في أداء الاستعلام. 
+
+<div id="dataset">
+  ## مجموعة البيانات
+</div>
+
+سنستخدم مثالًا واقعيًا لتوضيح كيفية تناولنا لأداء الاستعلامات. 
+
+لنستخدم مجموعة بيانات NYC Taxi، التي تتضمن بيانات رحلات سيارات الأجرة في مدينة نيويورك. سنبدأ أولًا بإدخال مجموعة بيانات NYC Taxi من دون أي تحسينات.
+
+فيما يلي الأمر لإنشاء الجدول وإدراج البيانات من حاوية S3. لاحظ أننا نستنتج المخطط من البيانات عمدًا، وهذا ليس مُحسّنًا.
+
+```sql
+-- Create table with inferred schema
+CREATE TABLE trips_small_inferred
+ORDER BY () EMPTY
+AS SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/clickhouse-academy/nyc_taxi_2009-2010.parquet');
+
+-- Insert data into table with inferred schema
+INSERT INTO trips_small_inferred
+SELECT *
+FROM s3Cluster
+('default','https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/clickhouse-academy/nyc_taxi_2009-2010.parquet');
+```
+
+لنلقِ نظرة على مخطط الجدول التي استُنتجت تلقائيًا من البيانات.
+
+```sql
+--- Display inferred table schema
+SHOW CREATE TABLE trips_small_inferred
+```
+
+```response
+Query id: d97361fd-c050-478e-b831-369469f0784d
+
+CREATE TABLE nyc_taxi.trips_small_inferred
+(
+    `vendor_id` Nullable(String),
+    `pickup_datetime` Nullable(DateTime64(6, 'UTC')),
+    `dropoff_datetime` Nullable(DateTime64(6, 'UTC')),
+    `passenger_count` Nullable(Int64),
+    `trip_distance` Nullable(Float64),
+    `ratecode_id` Nullable(String),
+    `pickup_location_id` Nullable(String),
+    `dropoff_location_id` Nullable(String),
+    `payment_type` Nullable(Int64),
+    `fare_amount` Nullable(Float64),
+    `extra` Nullable(Float64),
+    `mta_tax` Nullable(Float64),
+    `tip_amount` Nullable(Float64),
+    `tolls_amount` Nullable(Float64),
+    `total_amount` Nullable(Float64)
+)
+ORDER BY tuple()
+```
+
+<div id="spot-the-slow-queries">
+  ## حدِّد الاستعلامات البطيئة
+</div>
+
+<div id="query-logs">
+  ### سجلات الاستعلامات
+</div>
+
+يجمع ClickHouse تلقائيًا معلومات عن كل استعلام مُنفَّذ ويسجّلها في [سجلات الاستعلامات](/ar/reference/system-tables/query_log). وتُخزَّن هذه البيانات في الجدول `system.query_log`. 
+
+لكل استعلام مُنفَّذ، يسجّل ClickHouse إحصاءات مثل وقت تنفيذ الاستعلام، وعدد الصفوف المقروءة، واستخدام الموارد مثل CPU، واستخدام الذاكرة، وعدد مرات الوصول إلى ذاكرة التخزين المؤقت لنظام الملفات. 
+
+لذلك، يُعَدّ سجل الاستعلام نقطة انطلاق جيدة عند التحقيق في الاستعلامات البطيئة. ويمكنك بسهولة رصد الاستعلامات التي تستغرق وقتًا طويلًا في التنفيذ وعرض معلومات استخدام الموارد لكل منها. 
+
+لنحدّد أطول خمسة استعلامات تشغيلًا في مجموعة بيانات سيارات الأجرة في NYC.
+
+```sql
+-- Find top 5 long running queries from nyc_taxi database in the last 1 hour
+SELECT
+    type,
+    event_time,
+    query_duration_ms,
+    query,
+    read_rows,
+    tables
+FROM clusterAllReplicas(default, system.query_log)
+WHERE has(databases, 'nyc_taxi') AND (event_time >= (now() - toIntervalMinute(60))) AND type='QueryFinish'
+ORDER BY query_duration_ms DESC
+LIMIT 5
+FORMAT VERTICAL
+```
+
+```response
+Query id: e3d48c9f-32bb-49a4-8303-080f59ed1835
+
+Row 1:
+──────
+type:              QueryFinish
+event_time:        2024-11-27 11:12:36
+query_duration_ms: 2967
+query:             WITH
+  dateDiff('s', pickup_datetime, dropoff_datetime) as trip_time,
+  trip_distance / trip_time * 3600 AS speed_mph
+SELECT
+  quantiles(0.5, 0.75, 0.9, 0.99)(trip_distance)
+FROM
+  nyc_taxi.trips_small_inferred
+WHERE
+  speed_mph > 30
+FORMAT JSON
+read_rows:         329044175
+tables:            ['nyc_taxi.trips_small_inferred']
+
+Row 2:
+──────
+type:              QueryFinish
+event_time:        2024-11-27 11:11:33
+query_duration_ms: 2026
+query:             SELECT
+    payment_type,
+    COUNT() AS trip_count,
+    formatReadableQuantity(SUM(trip_distance)) AS total_distance,
+    AVG(total_amount) AS total_amount_avg,
+    AVG(tip_amount) AS tip_amount_avg
+FROM
+    nyc_taxi.trips_small_inferred
+WHERE
+    pickup_datetime >= '2009-01-01' AND pickup_datetime < '2009-04-01'
+GROUP BY
+    payment_type
+ORDER BY
+    trip_count DESC;
+
+read_rows:         329044175
+tables:            ['nyc_taxi.trips_small_inferred']
+
+Row 3:
+──────
+type:              QueryFinish
+event_time:        2024-11-27 11:12:17
+query_duration_ms: 1860
+query:             SELECT
+  avg(dateDiff('s', pickup_datetime, dropoff_datetime))
+FROM nyc_taxi.trips_small_inferred
+WHERE passenger_count = 1 or passenger_count = 2
+FORMAT JSON
+read_rows:         329044175
+tables:            ['nyc_taxi.trips_small_inferred']
+
+Row 4:
+──────
+type:              QueryFinish
+event_time:        2024-11-27 11:12:31
+query_duration_ms: 690
+query:             SELECT avg(total_amount) FROM nyc_taxi.trips_small_inferred WHERE trip_distance > 5
+FORMAT JSON
+read_rows:         329044175
+tables:            ['nyc_taxi.trips_small_inferred']
+
+Row 5:
+──────
+type:              QueryFinish
+event_time:        2024-11-27 11:12:44
+query_duration_ms: 634
+query:             SELECT
+vendor_id,
+avg(total_amount),
+avg(trip_distance),
+FROM
+nyc_taxi.trips_small_inferred
+GROUP BY vendor_id
+ORDER BY 1 DESC
+FORMAT JSON
+read_rows:         329044175
+tables:            ['nyc_taxi.trips_small_inferred']
+```
+
+يشير الحقل `query_duration_ms` إلى المدة التي استغرقها تنفيذ ذلك الاستعلام المحدد. وبالنظر إلى النتائج في سجلات الاستعلامات، يمكننا أن نرى أن الاستعلام الأول يستغرق 2967ms للتنفيذ، وهو ما يمكن تحسينه. 
+
+قد ترغب أيضًا في معرفة الاستعلامات التي تُحمّل النظام أكثر من غيرها، وذلك من خلال فحص الاستعلام الذي يستهلك أكبر قدر من الذاكرة أو CPU. 
+
+```sql
+-- Top queries by memory usage
+SELECT
+    type,
+    event_time,
+    query_id,
+    formatReadableSize(memory_usage) AS memory,
+    ProfileEvents.Values[indexOf(ProfileEvents.Names, 'UserTimeMicroseconds')] AS userCPU,
+    ProfileEvents.Values[indexOf(ProfileEvents.Names, 'SystemTimeMicroseconds')] AS systemCPU,
+    (ProfileEvents['CachedReadBufferReadFromCacheMicroseconds']) / 1000000 AS FromCacheSeconds,
+    (ProfileEvents['CachedReadBufferReadFromSourceMicroseconds']) / 1000000 AS FromSourceSeconds,
+    normalized_query_hash
+FROM clusterAllReplicas(default, system.query_log)
+WHERE has(databases, 'nyc_taxi') AND (type='QueryFinish') AND ((event_time >= (now() - toIntervalDay(2))) AND (event_time <= now())) AND (user NOT ILIKE '%internal%')
+ORDER BY memory_usage DESC
+LIMIT 30
+```
+
+لنعزل الاستعلامات طويلة التشغيل التي عثرنا عليها ونعِد تشغيلها بضع مرات لفهم زمن الاستجابة. 
+
+في هذه المرحلة، من الضروري تعطيل ذاكرة التخزين المؤقت لنظام الملفات عبر ضبط الإعداد `enable_filesystem_cache` على 0 لتحسين إمكانية تكرار النتائج.
+
+```sql
+-- Disable filesystem cache
+set enable_filesystem_cache = 0;
+
+-- Run query 1
+WITH
+  dateDiff('s', pickup_datetime, dropoff_datetime) as trip_time,
+  trip_distance / trip_time * 3600 AS speed_mph
+SELECT
+  quantiles(0.5, 0.75, 0.9, 0.99)(trip_distance)
+FROM
+  nyc_taxi.trips_small_inferred
+WHERE
+  speed_mph > 30
+FORMAT JSON
+
+----
+```
+
+```response
+1 row in set. Elapsed: 1.699 sec. Processed 329.04 million rows, 8.88 GB (193.72 million rows/s., 5.23 GB/s.)
+Peak memory usage: 440.24 MiB.
+```
+
+```sql
+-- Run query 2
+SELECT
+    payment_type,
+    COUNT() AS trip_count,
+    formatReadableQuantity(SUM(trip_distance)) AS total_distance,
+    AVG(total_amount) AS total_amount_avg,
+    AVG(tip_amount) AS tip_amount_avg
+FROM
+    nyc_taxi.trips_small_inferred
+WHERE
+    pickup_datetime >= '2009-01-01' AND pickup_datetime < '2009-04-01'
+GROUP BY
+    payment_type
+ORDER BY
+    trip_count DESC;
+
+---
+```
+
+```response
+4 rows in set. Elapsed: 1.419 sec. Processed 329.04 million rows, 5.72 GB (231.86 million rows/s., 4.03 GB/s.)
+Peak memory usage: 546.75 MiB.
+```
+
+```sql
+-- Run query 3
+SELECT
+  avg(dateDiff('s', pickup_datetime, dropoff_datetime))
+FROM nyc_taxi.trips_small_inferred
+WHERE passenger_count = 1 or passenger_count = 2
+FORMAT JSON
+
+---
+```
+
+```response
+1 row in set. Elapsed: 1.414 sec. Processed 329.04 million rows, 8.88 GB (232.63 million rows/s., 6.28 GB/s.)
+Peak memory usage: 451.53 MiB.
+```
+
+لنلخّص ذلك في الجدول لتسهيل القراءة.
+
+| الاسم       | الوقت المنقضي | الصفوف المُعالجة | ذروة الذاكرة |
+| ----------- | ------------- | ---------------- | ------------ |
+| الاستعلام 1 | 1.699 ث       | 329.04 مليون     | 440.24 MiB   |
+| الاستعلام 2 | 1.419 ث       | 329.04 مليون     | 546.75 MiB   |
+| الاستعلام 3 | 1.414 ث       | 329.04 مليون     | 451.53 MiB   |
+
+لنفهم بصورة أوضح قليلًا ما الذي تحققه هذه الاستعلامات. 
+
+* يحسب الاستعلام 1 توزيع المسافات للرحلات التي يزيد متوسط سرعتها على 30 ميلًا في الساعة.
+* يعثر الاستعلام 2 على عدد الرحلات ومتوسط تكلفتها أسبوعيًا. 
+* يحسب الاستعلام 3 متوسط مدة كل رحلة في مجموعة البيانات.
+
+لا تتضمن أيّ من هذه الاستعلامات معالجةً شديدة التعقيد، باستثناء الاستعلام الأول، الذي يحسب مدة الرحلة آنيًا في كل مرة يُنفَّذ فيها الاستعلام. ومع ذلك، يستغرق كل واحد من هذه الاستعلامات أكثر من ثانية للتنفيذ، وهو وقت طويل جدًا في عالم ClickHouse. ويمكننا أيضًا ملاحظة استخدام الذاكرة في هذه الاستعلامات؛ فنحو 400 ميغابايت لكل استعلام يُعد مقدارًا كبيرًا جدًا. كذلك، يبدو أن كل استعلام يقرأ العدد نفسه من الصفوف (أي 329.04 مليونًا). دعونا نؤكد سريعًا عدد الصفوف الموجودة في هذا الجدول.
+
+```sql
+-- Count number of rows in table
+SELECT count()
+FROM nyc_taxi.trips_small_inferred
+```
+
+```response
+Query id: 733372c5-deaf-4719-94e3-261540933b23
+
+   ┌───count()─┐
+1. │ 329044175 │ -- 329.04 million
+   └───────────┘
+```
+
+يحتوي الجدول على 329.04 مليون صف، لذلك ينفّذ كل استعلام مسحًا كاملًا للجدول.
+
+<div id="explain-statement">
+  ### جملة Explain
+</div>
+
+بعد أن أصبح لدينا بعض الاستعلامات طويلة الأمد، دعنا نفهم كيفية تنفيذها. لهذا الغرض، يدعم ClickHouse [أمر EXPLAIN](/ar/reference/statements/explain). وهو أداة بالغة الفائدة تتيح عرضًا تفصيليًا دقيقًا لجميع مراحل تنفيذ الاستعلام دون تشغيله فعليًا. وعلى الرغم من أن استيعابه قد يكون أمرًا مرهقًا لغير المتخصصين في ClickHouse، إلا أنه يظل أداةً لا غنى عنها للحصول على رؤية معمّقة حول كيفية تنفيذ استعلامك.
+
+تتضمن الوثائق [دليلاً تفصيلياً](/ar/guides/clickhouse/performance-and-monitoring/understanding-query-execution-with-the-analyzer) حول ماهية عبارة EXPLAIN وكيفية استخدامها لتحليل تنفيذ الاستعلامات. وعوضاً عن تكرار ما ورد في هذا الدليل، سنركز على بعض الأوامر التي تساعد في تحديد نقاط الاختناق في أداء تنفيذ الاستعلامات.
+
+**شرح الفهارس = 1**
+
+لنبدأ بـ EXPLAIN indexes = 1 لفحص خطة الاستعلام. خطة الاستعلام عبارة عن شجرة توضح كيفية تنفيذ الاستعلام، ويمكنك من خلالها معرفة الترتيب الذي ستُنفَّذ به بنود الاستعلام. وتُقرأ خطة الاستعلام التي تُعيدها عبارة EXPLAIN من الأسفل إلى الأعلى.
+
+لنجرّب استخدام أول استعلام من استعلاماتنا طويلة التشغيل.
+
+```sql
+EXPLAIN indexes = 1
+WITH
+    dateDiff('s', pickup_datetime, dropoff_datetime) AS trip_time,
+    (trip_distance / trip_time) * 3600 AS speed_mph
+SELECT quantiles(0.5, 0.75, 0.9, 0.99)(trip_distance)
+FROM nyc_taxi.trips_small_inferred
+WHERE speed_mph > 30
+```
+
+```response
+Query id: f35c412a-edda-4089-914b-fa1622d69868
+
+   ┌─explain─────────────────────────────────────────────┐
+1. │ Expression ((Projection + Before ORDER BY))         │
+2. │   Aggregating                                       │
+3. │     Expression (Before GROUP BY)                    │
+4. │       Filter (WHERE)                                │
+5. │         ReadFromMergeTree (nyc_taxi.trips_small_inferred) │
+   └─────────────────────────────────────────────────────┘
+```
+
+المخرجات واضحة ومباشرة. يبدأ الاستعلام بقراءة البيانات من جدول `nyc_taxi.trips_small_inferred`، ثم يُطبَّق شرط WHERE لتصفية الصفوف استناداً إلى القيم المحسوبة. بعد ذلك، تُهيَّأ البيانات المصفَّاة للتجميع وتُحسَب الكوانتيلات. وأخيراً، تُرتَّب النتائج وتُعرَض.
+
+يمكننا هنا ملاحظة أنه لم يُستخدم أي مفتاح أساسي، وهذا أمر متوقع إذ لم نُعرِّف أيًّا منها عند إنشاء الجدول. ونتيجةً لذلك، يُجري ClickHouse فحصًا كاملًا للجدول لتنفيذ الاستعلام.
+
+**شرح خط المعالجة**
+
+يعرض EXPLAIN Pipeline استراتيجية التنفيذ الفعلية للاستعلام، ومن خلاله يمكنك معرفة كيف نفّذ ClickHouse فعليًا خطة الاستعلام العامة التي استعرضناها سابقًا.
+
+```sql
+EXPLAIN PIPELINE
+WITH
+    dateDiff('s', pickup_datetime, dropoff_datetime) AS trip_time,
+    (trip_distance / trip_time) * 3600 AS speed_mph
+SELECT quantiles(0.5, 0.75, 0.9, 0.99)(trip_distance)
+FROM nyc_taxi.trips_small_inferred
+WHERE speed_mph > 30
+```
+
+```response
+Query id: c7e11e7b-d970-4e35-936c-ecfc24e3b879
+
+    ┌─explain─────────────────────────────────────────────────────────────────────────────┐
+ 1. │ (Expression)                                                                        │
+ 2. │ ExpressionTransform × 59                                                            │
+ 3. │   (Aggregating)                                                                     │
+ 4. │   Resize 59 → 59                                                                    │
+ 5. │     AggregatingTransform × 59                                                       │
+ 6. │       StrictResize 59 → 59                                                          │
+ 7. │         (Expression)                                                                │
+ 8. │         ExpressionTransform × 59                                                    │
+ 9. │           (Filter)                                                                  │
+10. │           FilterTransform × 59                                                      │
+11. │             (ReadFromMergeTree)                                                     │
+12. │             MergeTreeSelect(pool: PrefetchedReadPool, algorithm: Thread) × 59 0 → 1 │
+```
+
+يمكننا هنا ملاحظة عدد الخيوط المستخدمة لتنفيذ الاستعلام: 59 خيطًا، مما يشير إلى درجة عالية من التوازي. يُسرّع هذا من تنفيذ الاستعلام الذي كان سيستغرق وقتًا أطول على جهاز بموارد أقل. ويمكن لعدد الخيوط العاملة بالتوازي أن يُفسّر الحجم الكبير من الذاكرة التي يستهلكها الاستعلام.
+
+من الناحية المثالية، ينبغي أن تتبع الأسلوب ذاته في التحقيق مع جميع الاستعلامات البطيئة، للكشف عن خطط الاستعلام المعقدة غير الضرورية وفهم عدد الصفوف التي يقرأها كل استعلام والموارد التي يستهلكها.
+
+<div id="methodology">
+  ## المنهجية
+</div>
+
+قد يكون من الصعب تحديد الاستعلامات التي تسبّب مشكلات في بيئة الإنتاج، إذ يُحتمل أن يكون هناك عدد كبير من الاستعلامات التي تُنفَّذ في أي لحظة على عملية نشر ClickHouse لديك. 
+
+إذا كنت تعرف أي مستخدم أو قاعدة بيانات أو جداول تواجه مشكلات، فيمكنك استخدام الحقول `user` أو `tables` أو `databases` من `system.query_logs` لتضييق نطاق البحث. 
+
+بمجرد تحديد الاستعلامات التي تريد تحسينها، يمكنك البدء في العمل عليها. ومن الأخطاء الشائعة التي يرتكبها المطورون في هذه المرحلة تغيير عدة أشياء في الوقت نفسه وإجراء تجارب مخصّصة، ما ينتهي غالبًا إلى نتائج متباينة، والأهم من ذلك، من دون فهم واضح لما جعل الاستعلام أسرع. 
+
+يتطلب تحسين الاستعلامات منهجية منظَّمة. لا أتحدث هنا عن قياس أداء متقدم، بل إن وجود عملية بسيطة لفهم كيفية تأثير تغييراتك في أداء الاستعلامات يمكن أن يحقق فائدة كبيرة. 
+
+ابدأ بتحديد الاستعلامات البطيئة من سجلات الاستعلامات، ثم افحص التحسينات المحتملة كلًّا على حدة. وعند اختبار الاستعلام، تأكد من تعطيل ذاكرة التخزين المؤقت لنظام الملفات. 
+
+> يستفيد ClickHouse من [التخزين المؤقت](/ar/concepts/features/performance/caches/caches) لتسريع أداء الاستعلامات في مراحل مختلفة. وهذا جيد لأداء الاستعلامات، لكنه أثناء استكشاف الأخطاء وإصلاحها قد يُخفي اختناقات I/O المحتملة أو مخطط جدول غير مناسب. لهذا السبب، أقترح إيقاف ذاكرة التخزين المؤقت لنظام الملفات أثناء الاختبار. وتأكد من إبقائها مفعّلة في بيئة الإنتاج.
+
+بمجرد تحديد التحسينات المحتملة، يُوصى بتنفيذها واحدًا تلو الآخر لتتبّع كيفية تأثيرها في الأداء بشكل أفضل. يوجد أدناه مخطط يصف النهج العام.
+
+<Image img="/images/guides/best-practices/query_optimization_diagram_1.webp" size="lg" alt="سير عمل التحسين" />
+
+*أخيرًا، انتبه إلى القيم الشاذة؛ فمن الشائع أن يعمل الاستعلام ببطء، إما لأن مستخدمًا نفّذ استعلامًا مكلّفًا مخصّصًا أو لأن النظام كان تحت ضغط لسبب آخر. يمكنك التجميع حسب الحقل normalized&#95;query&#95;hash لتحديد الاستعلامات المكلفة التي تُنفَّذ بانتظام. وغالبًا ما تكون هذه هي الاستعلامات التي ينبغي لك التحقيق فيها.*
+
+<div id="basic-optimization">
+  ## التحسين الأساسي
+</div>
+
+الآن بعد أن أصبح لدينا إطار عمل نختبر به، يمكننا البدء في التحسين.
+
+أفضل نقطة بداية هي النظر في كيفية تخزين البيانات. وكما هو الحال في أي قاعدة بيانات، فكلما قلّت البيانات التي نقرأها، زادت سرعة تنفيذ الاستعلام. 
+
+اعتمادًا على كيفية إدخال بياناتك، ربما تكون قد استفدت من إمكانات ClickHouse [لاستنتاج المخطط](/ar/concepts/features/interfaces/schema-inference) الخاص بالجدول استنادًا إلى البيانات المُدخلة. ورغم أن هذا عملي جدًا للبدء، إذا كنت تريد تحسين أداء الاستعلام، فستحتاج إلى مراجعة مخطط البيانات بحيث يلائم حالة الاستخدام لديك على أفضل وجه.
+
+<div id="nullable">
+  ### Nullable
+</div>
+
+كما هو موضح في [وثائق أفضل الممارسات](/ar/concepts/best-practices/select-data-type#avoid-nullable-columns)، تجنّب استخدام الأعمدة من النوع Nullable كلما أمكن. قد يبدو استخدامها بكثرة مغريًا لأنها تجعل آلية إدخال البيانات أكثر مرونة، لكنها تؤثر سلبًا في الأداء، إذ يجب معالجة عمود إضافي في كل مرة.
+
+ويمكن بسهولة، عبر تشغيل استعلام SQL يحسب الصفوف التي تحتوي على قيمة NULL، تحديد الأعمدة في جداولك التي تحتاج فعلًا إلى قيمة Nullable.
+
+```sql
+-- Find non-null values columns
+SELECT
+    countIf(vendor_id IS NULL) AS vendor_id_nulls,
+    countIf(pickup_datetime IS NULL) AS pickup_datetime_nulls,
+    countIf(dropoff_datetime IS NULL) AS dropoff_datetime_nulls,
+    countIf(passenger_count IS NULL) AS passenger_count_nulls,
+    countIf(trip_distance IS NULL) AS trip_distance_nulls,
+    countIf(fare_amount IS NULL) AS fare_amount_nulls,
+    countIf(mta_tax IS NULL) AS mta_tax_nulls,
+    countIf(tip_amount IS NULL) AS tip_amount_nulls,
+    countIf(tolls_amount IS NULL) AS tolls_amount_nulls,
+    countIf(total_amount IS NULL) AS total_amount_nulls,
+    countIf(payment_type IS NULL) AS payment_type_nulls,
+    countIf(pickup_location_id IS NULL) AS pickup_location_id_nulls,
+    countIf(dropoff_location_id IS NULL) AS dropoff_location_id_nulls
+FROM trips_small_inferred
+FORMAT VERTICAL
+```
+
+```response
+Query id: 4a70fc5b-2501-41c8-813c-45ce241d85ae
+
+Row 1:
+──────
+vendor_id_nulls:           0
+pickup_datetime_nulls:     0
+dropoff_datetime_nulls:    0
+passenger_count_nulls:     0
+trip_distance_nulls:       0
+fare_amount_nulls:         0
+mta_tax_nulls:             137946731
+tip_amount_nulls:          0
+tolls_amount_nulls:        0
+total_amount_nulls:        0
+payment_type_nulls:        69305
+pickup_location_id_nulls:  0
+dropoff_location_id_nulls: 0
+```
+
+لدينا عمودان فقط يحتويان على قيم `NULL`: `mta_tax` و`payment_type`. ولا ينبغي أن تستخدم بقية الحقول عمودًا من النوع `Nullable`.
+
+<div id="low-cardinality">
+  ### انخفاض التعددية
+</div>
+
+من التحسينات السهلة التي يمكن تطبيقها على `Strings` تحقيق أقصى استفادة من نوع البيانات LowCardinality. وكما هو موضح في [الوثائق](/ar/reference/data-types/lowcardinality) الخاصة بـ low cardinality، يطبّق ClickHouse ترميز القاموس على أعمدة LowCardinality، مما يعزّز أداء الاستعلامات بشكل ملحوظ. 
+
+ومن القواعد العملية البسيطة لتحديد الأعمدة المناسبة لـ LowCardinality أن أي عمود يحتوي على أقل من 10,000 قيمة فريدة يُعد مرشحًا مثاليًا.
+
+يمكنك استخدام استعلام SQL التالي للعثور على الأعمدة ذات العدد المنخفض من القيم الفريدة.
+
+```sql
+-- Identify low cardinality columns
+SELECT
+    uniq(ratecode_id),
+    uniq(pickup_location_id),
+    uniq(dropoff_location_id),
+    uniq(vendor_id)
+FROM trips_small_inferred
+FORMAT VERTICAL
+```
+
+```response
+Query id: d502c6a1-c9bc-4415-9d86-5de74dd6d932
+
+Row 1:
+──────
+uniq(ratecode_id):         6
+uniq(pickup_location_id):  260
+uniq(dropoff_location_id): 260
+uniq(vendor_id):           3
+```
+
+نظرًا لانخفاض عدد القيم المميّزة، تُعدّ هذه الأعمدة الأربعة، `ratecode_id` و`pickup_location_id` و`dropoff_location_id` و`vendor_id`، مرشّحةً جيدةً لاستخدام نوع الحقل LowCardinality.
+
+<div id="optimize-data-type">
+  ### حسّن نوع البيانات
+</div>
+
+يدعم ClickHouse عددًا كبيرًا من أنواع البيانات. احرص على اختيار أصغر نوع بيانات ممكن يناسب حالة الاستخدام لديك لتحسين الأداء وتقليل مساحة تخزين بياناتك على القرص. 
+
+بالنسبة إلى الأرقام، يمكنك التحقق من القيم الدنيا والعليا في مجموعة البيانات لديك لمعرفة ما إذا كانت قيمة الدقة الحالية تعكس الواقع الفعلي لمجموعة البيانات. 
+
+```sql
+-- Find min/max values for the payment_type field
+SELECT
+    min(payment_type),max(payment_type),
+    min(passenger_count), max(passenger_count)
+FROM trips_small_inferred
+```
+
+```response
+Query id: 4306a8e1-2a9c-4b06-97b4-4d902d2233eb
+
+   ┌─min(payment_type)─┬─max(payment_type)─┐
+1. │                 1 │                 4 │
+   └───────────────────┴───────────────────┘
+```
+
+بالنسبة إلى التواريخ، ينبغي أن تختار دقةً تتناسب مع مجموعة بياناتك وتلائم الاستعلامات التي تخطط لتشغيلها على أفضل وجه.
+
+<div id="apply-the-optimizations">
+  ### طبّق التحسينات
+</div>
+
+لنُنشئ جدولًا جديدًا لاستخدام البنية المُحسَّنة وإعادة إدخال البيانات.
+
+```sql
+-- Create table with optimized data
+CREATE TABLE trips_small_no_pk
+(
+    `vendor_id` LowCardinality(String),
+    `pickup_datetime` DateTime,
+    `dropoff_datetime` DateTime,
+    `passenger_count` UInt8,
+    `trip_distance` Float32,
+    `ratecode_id` LowCardinality(String),
+    `pickup_location_id` LowCardinality(String),
+    `dropoff_location_id` LowCardinality(String),
+    `payment_type` Nullable(UInt8),
+    `fare_amount` Decimal32(2),
+    `extra` Decimal32(2),
+    `mta_tax` Nullable(Decimal32(2)),
+    `tip_amount` Decimal32(2),
+    `tolls_amount` Decimal32(2),
+    `total_amount` Decimal32(2)
+)
+ORDER BY tuple();
+
+-- Insert the data
+INSERT INTO trips_small_no_pk SELECT * FROM trips_small_inferred
+```
+
+نعيد تشغيل الاستعلامات باستخدام الجدول الجديد للتحقق من التحسن. 
+
+| الاسم       | التشغيل 1 - الزمن المنقضي | الزمن المنقضي | الصفوف المُعالجة | ذروة الذاكرة |
+| ----------- | ------------------------- | ------------- | ---------------- | ------------ |
+| الاستعلام 1 | 1.699 sec                 | 1.353 sec     | 329.04 million   | 337.12 MiB   |
+| الاستعلام 2 | 1.419 sec                 | 1.171 sec     | 329.04 million   | 531.09 MiB   |
+| الاستعلام 3 | 1.414 sec                 | 1.188 sec     | 329.04 million   | 265.05 MiB   |
+
+نلاحظ بعض التحسن في كلٍّ من وقت الاستعلام واستخدام الذاكرة. وبفضل تحسين بنية البيانات، ينخفض الحجم الإجمالي للبيانات التي تمثلها، مما يؤدي إلى تحسين استهلاك الذاكرة وتقليل وقت المعالجة. 
+
+لنتحقق من حجم الجداول لمعرفة الفرق. 
+
+```sql
+SELECT
+    `table`,
+    formatReadableSize(sum(data_compressed_bytes) AS size) AS compressed,
+    formatReadableSize(sum(data_uncompressed_bytes) AS usize) AS uncompressed,
+    sum(rows) AS rows
+FROM system.parts
+WHERE (active = 1) AND ((`table` = 'trips_small_no_pk') OR (`table` = 'trips_small_inferred'))
+GROUP BY
+    database,
+    `table`
+ORDER BY size DESC
+```
+
+```response
+Query id: 72b5eb1c-ff33-4fdb-9d29-dd076ac6f532
+
+   ┌─table────────────────┬─compressed─┬─uncompressed─┬──────rows─┐
+1. │ trips_small_inferred │ 7.38 GiB   │ 37.41 GiB    │ 329044175 │
+2. │ trips_small_no_pk    │ 4.89 GiB   │ 15.31 GiB    │ 329044175 │
+   └──────────────────────┴────────────┴──────────────┴───────────┘
+```
+
+الجدول الجديد أصغر بكثير من الجدول السابق. نلاحظ انخفاضًا بنحو 34% في مساحة القرص الخاصة بالجدول (7.38 GiB مقابل 4.89 GiB).
+
+<div id="the-importance-of-primary-keys">
+  ## أهمية المفاتيح الأساسية
+</div>
+
+تعمل المفاتيح الأساسية في ClickHouse بطريقة تختلف عن معظم أنظمة قواعد البيانات التقليدية. ففي تلك الأنظمة، تفرض المفاتيح الأساسية التفرّد وسلامة البيانات. وأي محاولة لإدراج قيم مكررة للمفتاح الأساسي تُرفض، وعادةً ما يُنشأ فهرس يعتمد على B-tree أو hash لإجراء بحث سريع. 
+
+أما في ClickHouse، فإن [الغرض](/ar/guides/clickhouse/data-modelling/sparse-primary-indexes#a-table-with-a-primary-key) من المفتاح الأساسي مختلف؛ فهو لا يفرض التفرّد ولا يسهم في سلامة البيانات. وبدلاً من ذلك، صُمم لتحسين أداء الاستعلامات. ويحدد المفتاح الأساسي الترتيب الذي تُخزَّن به البيانات على القرص، ويُنفَّذ على شكل فهرس متناثر يخزّن مؤشرات إلى الصف الأول من كل حبيبة.
+
+> الحبيبات في ClickHouse هي أصغر وحدات البيانات التي تُقرأ أثناء تنفيذ الاستعلام. وتحتوي على عدد أقصى ثابت من الصفوف، يحدده `index_granularity`، وتبلغ قيمته الافتراضية 8192 صفًا. وتُخزَّن الحبيبات بشكل متجاور وتُرتَّب بحسب المفتاح الأساسي. 
+
+ويُعد اختيار مجموعة مناسبة من المفاتيح الأساسية أمرًا مهمًا للأداء، بل ومن الشائع أيضًا تخزين البيانات نفسها في جداول مختلفة واستخدام مجموعات مختلفة من المفاتيح الأساسية لتسريع مجموعة معينة من الاستعلامات. 
+
+وتتيح لك خيارات أخرى يدعمها ClickHouse، مثل Projection أو العرض المادي، استخدام مجموعة مختلفة من المفاتيح الأساسية للبيانات نفسها. وسيتناول الجزء الثاني من سلسلة المدوّنة هذه ذلك بمزيد من التفصيل. 
+
+<div id="choose-primary-keys">
+  ### اختر المفاتيح الأساسية
+</div>
+
+يُعد اختيار المجموعة المناسبة من المفاتيح الأساسية موضوعًا معقدًا، وقد يتطلب بعض الموازنة والتجريب للوصول إلى أفضل تركيبة. 
+
+في الوقت الحالي، سنتبع هذه الممارسات البسيطة: 
+
+* استخدم الحقول التي يجري التصفية بناءً عليها في معظم الاستعلامات
+* اختر الأعمدة ذات عدد القيم المميزة الأقل أولًا 
+* ضع في اعتبارك تضمين مكوّن زمني في مفتاحك الأساسي، لأن التصفية حسب الوقت في مجموعة بيانات تحتوي على طابع زمني أمر شائع جدًا. 
+
+في حالتنا، سنجرّب المفاتيح الأساسية التالية: `passenger_count` و`pickup_datetime` و`dropoff_datetime`. 
+
+عدد القيم المميزة للحقل passenger&#95;count صغير (24 قيمة فريدة)، كما يُستخدم في استعلاماتنا البطيئة. ونضيف أيضًا حقول الطابع الزمني (`pickup_datetime` و`dropoff_datetime`) لأنها تُستخدم كثيرًا في التصفية.
+
+أنشئ جدولًا جديدًا بهذه المفاتيح الأساسية، ثم أعد إدخال البيانات.
+
+```sql
+CREATE TABLE trips_small_pk
+(
+    `vendor_id` UInt8,
+    `pickup_datetime` DateTime,
+    `dropoff_datetime` DateTime,
+    `passenger_count` UInt8,
+    `trip_distance` Float32,
+    `ratecode_id` LowCardinality(String),
+    `pickup_location_id` UInt16,
+    `dropoff_location_id` UInt16,
+    `payment_type` Nullable(UInt8),
+    `fare_amount` Decimal32(2),
+    `extra` Decimal32(2),
+    `mta_tax` Nullable(Decimal32(2)),
+    `tip_amount` Decimal32(2),
+    `tolls_amount` Decimal32(2),
+    `total_amount` Decimal32(2)
+)
+PRIMARY KEY (passenger_count, pickup_datetime, dropoff_datetime);
+
+-- Insert the data
+INSERT INTO trips_small_pk SELECT * FROM trips_small_inferred
+```
+
+ثم نُعيد تنفيذ استعلاماتنا. ونجمع نتائج التجارب الثلاث لرؤية التحسينات في الزمن المنقضي، والصفوف المعالجة، واستهلاك الذاكرة. 
+
+<table>
+  <thead>
+    <tr>
+      <th colspan="4">الاستعلام 1</th>
+    </tr>
+
+    <tr>
+      <th />
+
+      <th>التشغيل 1</th>
+      <th>التشغيل 2</th>
+      <th>التشغيل 3</th>
+    </tr>
+  </thead>
+
+  <tbody>
+    <tr>
+      <td>الزمن المنقضي</td>
+      <td>1.699 sec</td>
+      <td>1.353 sec</td>
+      <td>0.765 sec</td>
+    </tr>
+
+    <tr>
+      <td>الصفوف المعالجة</td>
+      <td>329.04 مليون</td>
+      <td>329.04 مليون</td>
+      <td>329.04 مليون</td>
+    </tr>
+
+    <tr>
+      <td>ذروة الذاكرة</td>
+      <td>440.24 MiB</td>
+      <td>337.12 MiB</td>
+      <td>444.19 MiB</td>
+    </tr>
+  </tbody>
+</table>
+
+<table>
+  <thead>
+    <tr>
+      <th colspan="4">الاستعلام 2</th>
+    </tr>
+
+    <tr>
+      <th />
+
+      <th>التشغيل 1</th>
+      <th>التشغيل 2</th>
+      <th>التشغيل 3</th>
+    </tr>
+  </thead>
+
+  <tbody>
+    <tr>
+      <td>الزمن المنقضي</td>
+      <td>1.419 sec</td>
+      <td>1.171 sec</td>
+      <td>0.248 sec</td>
+    </tr>
+
+    <tr>
+      <td>الصفوف المعالجة</td>
+      <td>329.04 مليون</td>
+      <td>329.04 مليون</td>
+      <td>41.46 مليون</td>
+    </tr>
+
+    <tr>
+      <td>ذروة الذاكرة</td>
+      <td>546.75 MiB</td>
+      <td>531.09 MiB</td>
+      <td>173.50 MiB</td>
+    </tr>
+  </tbody>
+</table>
+
+<table>
+  <thead>
+    <tr>
+      <th colspan="4">الاستعلام 3</th>
+    </tr>
+
+    <tr>
+      <th />
+
+      <th>التنفيذ 1</th>
+      <th>التنفيذ 2</th>
+      <th>التنفيذ 3</th>
+    </tr>
+  </thead>
+
+  <tbody>
+    <tr>
+      <td>الزمن المنقضي</td>
+      <td>1.414 sec</td>
+      <td>1.188 sec</td>
+      <td>0.431 sec</td>
+    </tr>
+
+    <tr>
+      <td>الصفوف المُعالجة</td>
+      <td>329.04 million</td>
+      <td>329.04 million</td>
+      <td>276.99 million</td>
+    </tr>
+
+    <tr>
+      <td>ذروة الذاكرة</td>
+      <td>451.53 MiB</td>
+      <td>265.05 MiB</td>
+      <td>197.38 MiB</td>
+    </tr>
+  </tbody>
+</table>
+
+يمكننا ملاحظة تحسّن ملحوظ في زمن التنفيذ والذاكرة المستخدمة على جميع الأصعدة. 
+
+يستفيد الاستعلام 2 أكثر من المفتاح الأساسي. لنلقِ نظرة على كيف تختلف خطة الاستعلام المتولدة عمّا كانت عليه سابقًا.
+
+```sql
+EXPLAIN indexes = 1
+SELECT
+    payment_type,
+    COUNT() AS trip_count,
+    formatReadableQuantity(SUM(trip_distance)) AS total_distance,
+    AVG(total_amount) AS total_amount_avg,
+    AVG(tip_amount) AS tip_amount_avg
+FROM nyc_taxi.trips_small_pk
+WHERE (pickup_datetime >= '2009-01-01') AND (pickup_datetime < '2009-04-01')
+GROUP BY payment_type
+ORDER BY trip_count DESC
+```
+
+```response
+Query id: 30116a77-ba86-4e9f-a9a2-a01670ad2e15
+
+    ┌─explain──────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+ 1. │ Expression ((Projection + Before ORDER BY [lifted up part]))                                                     │
+ 2. │   Sorting (Sorting for ORDER BY)                                                                                 │
+ 3. │     Expression (Before ORDER BY)                                                                                 │
+ 4. │       Aggregating                                                                                                │
+ 5. │         Expression (Before GROUP BY)                                                                             │
+ 6. │           Expression                                                                                             │
+ 7. │             ReadFromMergeTree (nyc_taxi.trips_small_pk)                                                          │
+ 8. │             Indexes:                                                                                             │
+ 9. │               PrimaryKey                                                                                         │
+10. │                 Keys:                                                                                            │
+11. │                   pickup_datetime                                                                                │
+12. │                 Condition: and((pickup_datetime in (-Inf, 1238543999]), (pickup_datetime in [1230768000, +Inf))) │
+13. │                 Parts: 9/9                                                                                       │
+14. │                 Granules: 5061/40167                                                                             │
+    └──────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+بفضل المفتاح الأساسي، لم يُحدَّد إلا جزء فرعي من حبيبات الجدول. وهذا وحده يحسّن أداء الاستعلام بدرجة كبيرة، لأن ClickHouse لا يحتاج إلا إلى معالجة قدر أقل بكثير من البيانات.
+
+<div id="next-steps">
+  ## الخطوات التالية
+</div>
+
+نأمل أن يساعدك هذا الدليل على فهم كيفية تحليل الاستعلامات البطيئة في ClickHouse وكيفية تسريعها. ولمزيد من التعمّق في هذا الموضوع، يمكنك قراءة المزيد عن [محلل الاستعلام](/ar/guides/clickhouse/performance-and-monitoring/analyzer) و[التنميط](/ar/concepts/features/performance/troubleshoot/sampling-query-profiler) لفهم كيفية تنفيذ ClickHouse لاستعلامك بدقة أكبر.
+
+ومع ازدياد إلمامك بخصائص ClickHouse، أوصيك بقراءة المزيد عن [مفاتيح التقسيم](/ar/concepts/best-practices/partitioning-keys) و[فهارس تخطي البيانات](/ar/concepts/features/performance/skip-indexes/skipping-indexes) للتعرّف على تقنيات أكثر تقدمًا يمكنك استخدامها لتسريع استعلاماتك.

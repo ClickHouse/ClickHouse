@@ -1,0 +1,162 @@
+---
+sidebarTitle: '从 Postgres 向 ClickHouse 摄取数据'
+description: '将 Postgres 无缝连接到 ClickHouse Cloud。'
+slug: /integrations/clickpipes/postgres
+title: '从 Postgres 向 ClickHouse 摄取数据（使用 CDC）'
+keywords: ['PostgreSQL', 'ClickPipes', 'CDC', '变更数据捕获', '数据库复制']
+doc_type: 'guide'
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+import BetaBadge from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+您可以使用 ClickPipes 将源 Postgres 数据库中的数据摄取到 ClickHouse Cloud。源 Postgres 数据库既可以托管在本地环境中，也可以托管在云端，包括 Amazon RDS、Google Cloud SQL、Azure Database for Postgres、Supabase 等。
+
+Postgres ClickPipes 可以通过 ClickPipes UI 手动部署和管理，也可以使用 [OpenAPI](/zh/integrations/clickpipes/programmatic-access/openapi) 和 [Terraform](/zh/integrations/clickpipes/programmatic-access/terraform) 以编程方式部署和管理。
+
+<div id="prerequisites">
+  ## 前置条件
+</div>
+
+开始之前，你需要先确保 Postgres 数据库已正确配置。根据你的源 Postgres 实例，可以参考以下任一指南：
+
+1. [Amazon RDS Postgres](/zh/integrations/clickpipes/postgres/source/rds)
+
+2. [Amazon Aurora Postgres](/zh/integrations/clickpipes/postgres/source/aurora)
+
+3. [Supabase Postgres](/zh/integrations/clickpipes/postgres/source/supabase)
+
+4. [Google Cloud SQL Postgres](/zh/integrations/clickpipes/postgres/source/google-cloudsql)
+
+5. [Azure PostgreSQL 灵活服务器](/zh/integrations/clickpipes/postgres/source/azure-flexible-server-postgres)
+
+6. [Neon Postgres](/zh/integrations/clickpipes/postgres/source/neon-postgres)
+
+7. [Crunchy Bridge Postgres](/zh/integrations/clickpipes/postgres/source/crunchy-postgres)
+
+8. [通用 Postgres 源](/zh/integrations/clickpipes/postgres/source/generic)，如果你使用的是其他 Postgres 提供商，或自托管实例。
+
+9. [TimescaleDB](/zh/integrations/clickpipes/postgres/source/timescale)，如果你在托管服务或自托管实例上使用 TimescaleDB 扩展。
+
+<Warning>
+  PgBouncer、RDS Proxy、Supabase Pooler 等 Postgres 代理不支持基于 CDC 的复制。请务必不要在 ClickPipes 设置中使用它们，而应填写实际 Postgres 数据库的连接信息。
+</Warning>
+
+源 Postgres 数据库配置完成后，你就可以继续创建 ClickPipe。
+
+<div id="creating-your-clickpipe">
+  ## 创建你的 ClickPipe
+</div>
+
+请确保你已登录到 ClickHouse Cloud 账户。如果你还没有账户，可以在[这里](https://cloud.clickhouse.com/)注册。
+
+[//]: # "   TODO update image here"
+
+1. 在 ClickHouse Cloud 控制台中，前往你的 ClickHouse Cloud 服务。
+
+<Image img="/images/integrations/data-ingestion/clickpipes/cp_service.webp" alt="ClickPipes 服务" size="lg" border />
+
+2. 在左侧菜单中选择 `数据源` 按钮，然后点击“设置 ClickPipe”
+
+<Image img="/images/integrations/data-ingestion/clickpipes/cp_step0.webp" alt="选择导入" size="lg" border />
+
+3. 选择 `Postgres CDC` 卡片
+
+   <Image img="/images/integrations/data-ingestion/clickpipes/postgres/postgres-tile.webp" alt="选择 Postgres" size="lg" border />
+
+<div id="adding-your-source-postgres-database-connection">
+  ### 添加源 Postgres 数据库连接
+</div>
+
+4. 填写您在前置条件步骤中配置的源 Postgres 数据库连接信息。
+
+<Info>
+  在开始添加连接信息之前，请确保您已在防火墙规则中将 ClickPipes IP addresses 加入白名单。您可以在[此处](/zh/integrations/clickpipes/home#list-of-static-ips)查看 ClickPipes IP addresses 列表。
+  更多信息，请参阅本页[顶部](#prerequisites)链接的源 Postgres 设置指南。
+</Info>
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/postgres-connection-details.jpg" alt="填写连接信息" size="lg" border />
+
+<div id="optional-setting-up-aws-private-link">
+  #### &#x20;(可选) 设置 AWS Private Link
+</div>
+
+如果您的源 Postgres 数据库托管在 AWS 上，可以使用 AWS Private Link 连接到该数据库。这在您
+希望保持数据传输私有时非常有用。
+您可以按照[设置指南来建立连接](/zh/integrations/clickpipes/aws-privatelink)进行操作。
+
+<div id="optional-setting-up-ssh-tunneling">
+  #### &#x20;(可选) 设置 SSH 隧道
+</div>
+
+如果你的源 Postgres 数据库无法通过公网访问，可以填写 SSH 隧道的相关信息。
+
+1. 打开“Use SSH Tunnelling”开关。
+
+2. 填写 SSH 连接信息。
+
+   <Image img="/images/integrations/data-ingestion/clickpipes/postgres/ssh-tunnel.jpg" alt="SSH 隧道" size="lg" border />
+
+3. 如需使用基于密钥的身份验证，请点击“Revoke and generate key pair”生成新的密钥对，并将生成的公钥复制到 SSH 服务器上的 `~/.ssh/authorized_keys`。
+
+4. 点击“Verify Connection”验证连接。
+
+<Note>
+  请确保在 SSH 堡垒机的防火墙规则中将 [ClickPipes IP addresses](/zh/integrations/clickpipes/home#list-of-static-ips) 加入白名单，以便 ClickPipes 能够建立 SSH 隧道。
+</Note>
+
+填写完连接信息后，点击“Next”。
+
+<div id="configuring-the-replication-settings">
+  ### 配置复制设置
+</div>
+
+5. 请确保从下拉列表中选择你在前置条件步骤中创建的 replication slot。
+
+   <Image img="/images/integrations/data-ingestion/clickpipes/postgres/select-replication-slot.jpg" alt="选择 replication slot" size="lg" border />
+
+<div id="advanced-settings">
+  #### 高级设置
+</div>
+
+如有需要，您可以配置高级设置。下面简要介绍各项设置：
+
+* **同步间隔**：指 ClickPipes 轮询源数据库以检查变更的时间间隔。该设置会影响目标端 ClickHouse 服务；对于成本较为敏感的用户，建议将其设为较高的值 (高于 `3600`) 。
+* **初始加载的并行线程数**：指用于拉取初始快照的并行工作线程数量。当您有大量表，并希望控制拉取初始快照时使用的并行工作线程数时，此设置会很有帮助。此设置按表生效。
+* **拉取批次大小**：单个批次拉取的行数。这是一个尽力而为的设置，因此在某些情况下可能不会严格生效。
+* **每个分区快照的行数**：指初始快照期间每个分区中要拉取的行数。当您的表中有大量行，并希望控制每个分区拉取的行数时，此设置会很有帮助。
+* **并行快照的表数量**：指初始快照期间并行拉取的表数量。当您有大量表，并希望控制并行拉取的表数量时，此设置会很有帮助。
+
+<div id="configuring-the-tables">
+  ### 配置表
+</div>
+
+6. 在这里，您可以为 ClickPipe 选择目标端数据库。您可以选择现有数据库，也可以新建一个数据库。
+
+   <Image img="/images/integrations/data-ingestion/clickpipes/postgres/select-destination-db.jpg" alt="选择目标端数据库" size="lg" border />
+
+7. 您可以选择要从源 Postgres 数据库复制的表。选择表时，您还可以重命名目标端 ClickHouse 数据库中的表，并排除特定列。
+
+<Warning>
+  如果您在 ClickHouse 中定义的 ordering key 与 Postgres 中的 primary key 不同，请务必阅读相关的[注意事项](/zh/integrations/clickpipes/postgres/ordering-keys)。
+</Warning>
+
+<div id="review-permissions-and-start-the-clickpipe">
+  ### 检查权限并启动 ClickPipe
+</div>
+
+8. 在权限下拉菜单中选择“完全访问”角色，然后点击“完成设置”。
+
+   <Image img="/images/integrations/data-ingestion/clickpipes/postgres/ch-permissions.jpg" alt="检查权限" size="lg" border />
+
+<div id="whats-next">
+  ## 接下来做什么？
+</div>
+
+设置好 ClickPipe，将数据从 PostgreSQL 复制到 ClickHouse Cloud 后，你就可以重点考虑如何查询和建模数据，以获得最佳性能。请参阅[迁移指南](/zh/get-started/migrate/postgres/overview)，评估哪种策略最适合你的需求；同时也可查看[去重策略 (使用 CDC) ](/zh/integrations/clickpipes/postgres/deduplication)和[排序键](/zh/integrations/clickpipes/postgres/ordering-keys)页面，了解 CDC 工作负载的最佳实践。
+
+如需了解有关 PostgreSQL CDC 的常见问题和故障排查信息，请参阅[Postgres 常见问题页面](/zh/integrations/clickpipes/postgres/faq)。

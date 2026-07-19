@@ -66,6 +66,26 @@ SELECT 'before delete nullable dt64', id, time FROM test_mutation_tz64_nullable 
 ALTER TABLE test_mutation_tz64_nullable DELETE WHERE time >= '2000-01-01 02:00:00';
 SELECT 'after delete nullable dt64', id, time FROM test_mutation_tz64_nullable ORDER BY id;
 
+-- ALTER UPDATE SET DateTime column to a string literal — the literal must be
+-- interpreted in session timezone, not server timezone
+DROP TABLE IF EXISTS test_mutation_tz_set SYNC;
+CREATE TABLE test_mutation_tz_set (id UInt32, time DateTime) ENGINE = MergeTree ORDER BY id;
+
+INSERT INTO test_mutation_tz_set VALUES (1, '2000-01-01 00:00:00');
+ALTER TABLE test_mutation_tz_set UPDATE time = '2000-01-01 07:00:00' WHERE id = 1;
+-- Verify UPDATE SET used session timezone: insert the same literal and compare unix timestamps
+INSERT INTO test_mutation_tz_set VALUES (2, '2000-01-01 07:00:00');
+SELECT 'update set dt', id, toUnixTimestamp(time) FROM test_mutation_tz_set ORDER BY id;
+
+-- Same for DateTime64
+DROP TABLE IF EXISTS test_mutation_tz64_set SYNC;
+CREATE TABLE test_mutation_tz64_set (id UInt32, time DateTime64(3)) ENGINE = MergeTree ORDER BY id;
+
+INSERT INTO test_mutation_tz64_set VALUES (1, '2000-01-01 00:00:00.000');
+ALTER TABLE test_mutation_tz64_set UPDATE time = '2000-01-01 07:00:00.123' WHERE id = 1;
+INSERT INTO test_mutation_tz64_set VALUES (2, '2000-01-01 07:00:00.123');
+SELECT 'update set dt64', id, toUnixTimestamp(time) FROM test_mutation_tz64_set ORDER BY id;
+
 -- DateTime with explicit timezone should NOT be rewritten (timezone is already determined)
 DROP TABLE IF EXISTS test_mutation_tz_explicit SYNC;
 CREATE TABLE test_mutation_tz_explicit (id UInt32, time DateTime('UTC')) ENGINE = MergeTree ORDER BY id;
@@ -80,4 +100,6 @@ DROP TABLE test_mutation_tz_upd SYNC;
 DROP TABLE test_mutation_tz_nullable SYNC;
 DROP TABLE test_mutation_tz_lc SYNC;
 DROP TABLE test_mutation_tz64_nullable SYNC;
+DROP TABLE test_mutation_tz_set SYNC;
+DROP TABLE test_mutation_tz64_set SYNC;
 DROP TABLE test_mutation_tz_explicit SYNC;

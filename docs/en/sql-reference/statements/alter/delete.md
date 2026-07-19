@@ -7,8 +7,6 @@ title: 'ALTER TABLE ... DELETE Statement'
 doc_type: 'reference'
 ---
 
-# ALTER TABLE ... DELETE Statement
-
 ```sql
 ALTER TABLE [db.]table [ON CLUSTER cluster] DELETE WHERE filter_expr
 ```

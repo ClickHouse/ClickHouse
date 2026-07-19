@@ -50,6 +50,7 @@ class Targeting:
 
     def __init__(self, info: Info):
         self.info = info
+        self._cidb = None
         if "stateless" in info.job_name.lower():
             self.job_type = self.STATELESS_JOB_TYPE
         elif "integration" in info.job_name.lower():
@@ -57,13 +58,200 @@ class Targeting:
         else:
             self.job_type = None
 
+    def _ci_db(self):
+        # Queries run as the privileged CI user. The public `play` user is
+        # rate/row/time-limited and must be used only for links handed to humans
+        # (see CIDB.get_link_to_test_case_statistics).
+        if self._cidb is None:
+            url, user, passwd = (
+                self.info.get_secret(Settings.SECRET_CI_DB_URL)
+                .join_with(self.info.get_secret(Settings.SECRET_CI_DB_USER))
+                .join_with(self.info.get_secret(Settings.SECRET_CI_DB_PASSWORD))
+                .get_value()
+            )
+            self._cidb = CIDB(url=url, user=user, passwd=passwd)
+        return self._cidb
+
+    # Keep in sync with TEST_FILE_EXTENSIONS in tests/clickhouse-test.
+    _TEST_FILE_EXTENSIONS = (".sql.j2", ".sql", ".sh", ".py", ".expect")
+
+    @classmethod
+    def _derive_test_name(cls, fpath: str):
+        """Map a changed file under `tests/queries/0_stateless/` to a test name.
+
+        Returns the test base name (without extension) suitable for `clickhouse-test --test`,
+        or `None` if the file does not correspond to a real test (e.g. a data file like
+        `02995_settings_26_4_1.tsv`, which is consumed by `02995_new_settings_history.sh`
+        but has no test of its own).
+        """
+        fname = os.path.basename(fpath)
+
+        # Direct hit: the changed file is itself a test source file.
+        for ext in cls._TEST_FILE_EXTENSIONS:
+            if fname.endswith(ext):
+                return fname[: -len(ext)]
+
+        # Supporting file (`.reference`, `.reference.j2`, `.tsv`, ...). Walk the
+        # extensions one at a time looking for a sibling test source file with
+        # the same base name. This catches reference updates like
+        # `00172_hits_joins.reference.j2` → `00172_hits_joins.sql.j2` while
+        # rejecting orphan data files like `02995_settings_26_4_1.tsv`.
+        test_dir = Path("tests/queries/0_stateless")
+        candidate = fname
+        while "." in candidate:
+            candidate = candidate.rsplit(".", 1)[0]
+            for ext in cls._TEST_FILE_EXTENSIONS:
+                if (test_dir / f"{candidate}{ext}").is_file():
+                    return candidate
+        return None
+
+    @classmethod
+    def _tests_owning_data_file(cls, fpath: str):
+        """Map an auxiliary stateless file back to the base names of the tests
+        that own it.
+
+        A data fixture may sit next to its test (`02995_settings_26_4_1.tsv`) or
+        in a subdirectory (`data_parquet/02716_data.parquet`); either way it has
+        no test of its own, so `_derive_test_name` skips it. But such a fixture
+        change still alters the surface of the test that consumes it, and a drift
+        guard that skips it would false-green the very drift it exists to catch.
+
+        Fixtures carry their owning test's five-digit prefix by convention, so
+        the prefix narrows the candidates to the `NNNNN_*` tests at the suite
+        root (a handful of files, never the whole suite). Among those, prefer the
+        ones whose body actually references the fixture by name; fall back to all
+        prefix siblings when the reference is constructed dynamically and cannot
+        be found textually. Return an empty list when the file has no numeric
+        prefix or no test with that prefix exists — there is then genuinely
+        nothing to rerun, and emitting a pattern that matches no test would make
+        `clickhouse-test` exit 1 (the failure mode `PR #104097` fixed).
+        """
+        match = re.match(r"(\d{5})", os.path.basename(fpath))
+        if match is None:
+            return []
+        prefix = match.group(1)
+        test_dir = Path("tests/queries/0_stateless")
+        candidates = {}
+        for ext in cls._TEST_FILE_EXTENSIONS:
+            for test_file in test_dir.glob(f"{prefix}_*{ext}"):
+                candidates[test_file.name[: -len(ext)]] = test_file
+        if not candidates:
+            return []
+        fname = os.path.basename(fpath)
+        referencing = []
+        for base_name, test_file in candidates.items():
+            try:
+                with test_file.open("r", encoding="utf-8", errors="ignore") as f:
+                    if fname in f.read():
+                        referencing.append(base_name)
+            except OSError:
+                continue
+        return sorted(referencing) if referencing else sorted(candidates)
+
+    @staticmethod
+    def is_functional_test_file(fpath: str) -> bool:
+        """A changed path that is itself a stateless functional test source file."""
+        fpath = fpath.removeprefix("./")
+        return fpath.startswith("tests/queries/0_stateless/") and Path(fpath).is_file()
+
+    @staticmethod
+    def is_integration_test_file(fpath: str) -> bool:
+        """A changed path that is itself an integration test module."""
+        fpath = fpath.removeprefix("./")
+        return (
+            fpath.startswith("tests/integration/test_")
+            and not fpath.startswith("tests/integration/test_e2e_")
+            and Path(fpath).name.startswith("test")
+            and fpath.endswith(".py")
+            and Path(fpath).is_file()
+        )
+
+    @staticmethod
+    def is_ci_job_script(fpath: str) -> bool:
+        """A changed path under the CI job scripts themselves.
+
+        Tolerated alongside test-file changes by the batch-skip check in
+        `functional_tests.py` / `integration_test_job.py`: such a change is
+        exercised identically by every batch, so a batch that does not
+        contain the changed test file is still a valid check of the
+        (possibly changed) job script.
+        """
+        fpath = fpath.removeprefix("./")
+        return fpath.startswith("ci/jobs/") and Path(fpath).is_file()
+
+    @classmethod
+    def functional_test_hash_batch_file(cls, fpath: str):
+        """Return the on-disk stateless test filename (with extension) that
+        `clickhouse-test --run-by-hash-*` uses to bucket the given changed path,
+        or `None` if it cannot be resolved to a concrete test source file.
+
+        `clickhouse-test`'s `is_test_from_dir`/`get_selected_tests` only look
+        at files directly inside the suite root (`os.listdir`, not
+        recursive), so a file nested in a subdirectory - e.g.
+        `tests/queries/0_stateless/helpers/httpclient.py` or
+        `tests/queries/0_stateless/data_avro/generate_avro.sh` - is never a
+        test case there, no matter its extension. Hashing such a nested
+        file's basename would fabricate a bucket assignment that does not
+        correspond to how `--run-by-hash-*` actually splits the suite, so
+        return `None` (the caller then conservatively runs the batch) unless
+        the file's parent directory is exactly the suite root.
+        """
+        test_dir = Path("tests/queries/0_stateless")
+        path = Path(fpath.removeprefix("./"))
+        if path.parent != test_dir:
+            return None
+        fname = path.name
+        for ext in cls._TEST_FILE_EXTENSIONS:
+            if fname.endswith(ext):
+                return fname
+        base_name = cls._derive_test_name(fpath)
+        if base_name is None:
+            return None
+        for ext in cls._TEST_FILE_EXTENSIONS:
+            if (test_dir / f"{base_name}{ext}").is_file():
+                return f"{base_name}{ext}"
+        return None
+
+    @staticmethod
+    def is_sequential_functional_test(test_source_file: str) -> bool:
+        """True if the on-disk stateless test file (e.g. `00001_x.sql`, as
+        returned by `functional_test_hash_batch_file`) is tagged `no-parallel`
+        or `sequential`.
+
+        Mirrors `clickhouse-test`'s own `is_sequential_test`/tag-parsing logic,
+        so the batch-skip check in `functional_tests.py` can tell whether a
+        changed test would even be selected by a job invoked with the
+        `parallel`/`sequential` runner option (`--no-sequential`/`--no-parallel`),
+        which splits the suite into two independently hash-batched job flavors.
+        """
+        if test_source_file.endswith(".sql") or test_source_file.endswith(".sql.j2"):
+            comment_sign = "--"
+        elif test_source_file.endswith((".sh", ".py", ".expect")):
+            comment_sign = "#"
+        else:
+            return False
+        path = Path("tests/queries/0_stateless") / test_source_file
+        try:
+            with path.open("r", encoding="utf-8", errors="ignore") as f:
+                for line in f:
+                    line = line.rstrip("\n")
+                    if not line.startswith(comment_sign):
+                        continue
+                    rest = line[len(comment_sign):].lstrip()
+                    if not rest.startswith("Tags:"):
+                        continue
+                    tags = {t.strip() for t in rest[len("Tags:"):].split(",")}
+                    return "no-parallel" in tags or "sequential" in tags
+        except OSError:
+            return False
+        return False
+
     def get_changed_tests(self):
         # TODO: add support for integration tests
         result = set()
         if hasattr(self, '_diff_text') and self._diff_text:
             # Reuse already-fetched diff text to extract changed file names — avoids
-            # a second gh API call and works when the PR diff was pre-fetched via
-            # --diff-file or the rate limit is exhausted.
+            # a second diff fetch and works when the diff was pre-fetched via --diff-file.
             changed_files = [
                 m.group(1)
                 for m in re.finditer(r'^\+\+\+ b/(.+)$', self._diff_text, re.MULTILINE)
@@ -78,38 +266,61 @@ class Targeting:
             return result
 
         for fpath in changed_files:
-            if re.match(r"tests/queries/0_stateless/\d{5}", fpath):
-                if not Path(fpath).exists():
-                    print(f"File '{fpath}' was removed — skipping")
+            if not fpath.startswith("tests/queries/0_stateless/"):
+                if fpath.startswith("tests/queries/"):
+                    # Log any other changed file under tests/queries for future debugging
+                    print(
+                        f"File '{fpath}' changed, but doesn't match expected test pattern"
+                    )
+                continue
+
+            if not Path(fpath).exists():
+                print(f"File '{fpath}' was removed — skipping")
+                continue
+
+            # A file directly at the suite root may itself be a test source, or a
+            # supporting file (`.reference`, a `.sql.j2` template, ...) whose sibling
+            # test shares its base name.
+            if Path(fpath).parent == Path("tests/queries/0_stateless"):
+                test_base_name = self._derive_test_name(fpath)
+                if test_base_name is not None:
+                    print(f"Detected changed test: '{test_base_name}' (from '{fpath}')")
+                    # Add '.' suffix to precisely match this test only
+                    result.add(f"{test_base_name}.")
                     continue
 
-                print(f"Detected changed test file: '{fpath}'")
-
-                fname = os.path.basename(fpath)
-                fname_without_ext = os.path.splitext(fname)[0]
-
-                # Add '.' suffix to precisely match this test only
-                result.add(f"{fname_without_ext}.")
-
-            elif fpath.startswith("tests/queries/"):
-                # Log any other changed file under tests/queries for future debugging
+            # Either a data fixture nested in a subdirectory
+            # (`data_parquet/02716_data.parquet`) or a root-level orphan data file
+            # (`02995_settings_26_4_1.tsv`) with no sibling test. Map it back to the
+            # test(s) that own it so a fixture-only change still reruns the tests
+            # that consume it; otherwise the flaky check — and the merge-queue drift
+            # guard built on it — would silently skip the very test surface the
+            # change affects. Emit only real tests: `_tests_owning_data_file` returns
+            # an empty list when nothing maps, so we never fabricate a no-match
+            # pattern (which would make clickhouse-test exit 1).
+            owning_tests = self._tests_owning_data_file(fpath)
+            if owning_tests:
+                for base_name in owning_tests:
+                    print(
+                        f"Detected changed data file '{fpath}' owned by test '{base_name}'"
+                    )
+                    # Add '.' suffix to precisely match this test only
+                    result.add(f"{base_name}.")
+            else:
                 print(
-                    f"File '{fpath}' changed, but doesn't match expected test pattern"
+                    f"File '{fpath}' is not a test source and has no owning test — skipping"
                 )
 
         return sorted(result)
 
     def get_previously_failed_tests(self):
-        from ci.praktika.cidb import CIDB
-        from ci.praktika.settings import Settings
-
         assert self.job_type, "Unsupported job type"
         assert (
             self.info.pr_number > 0
         ), "Find tests by previous failures applicable only for PRs"
 
         tests = []
-        cidb = CIDB(url=Settings.CI_DB_READ_URL, user="play", passwd="")
+        cidb = self._ci_db()
         if self.job_type == self.INTEGRATION_JOB_TYPE:
             test_name_pattern = "^test_"
         elif self.job_type == self.STATELESS_JOB_TYPE:
@@ -121,7 +332,7 @@ class Targeting:
             JOB_TYPE=self.job_type,
             TEST_NAME_PATTERN=test_name_pattern,
         )
-        query_result = cidb.query(query, log_level="")
+        query_result = cidb.query(query, log_level="") or ""
         # Parse test names from the query result
         for line in query_result.strip().split("\n"):
             if line.strip():
@@ -183,6 +394,25 @@ class Targeting:
     PASS_WEIGHT_SIBLING       = 0.25  # Pass 2: test covers a sibling file in the same source directory
     PASS_WEIGHT_KEYWORD       = 0.20  # Fallback: test filename contains domain keywords from changed files
 
+    # Shared-registry files: purely declarative files whose changes are virtually always
+    # additive (`extern const Event …`, new setting entries, new error codes).  Every
+    # test emits profile events / reads settings, so coverage for any changed line in
+    # these files returns thousands of tests and floods the candidate pool with noise
+    # (the real signal lives in the other files touched by the same PR).  Skip them
+    # entirely from coverage, sibling, indirect, and keyword-fallback passes.
+    SHARED_REGISTRY_FILES = frozenset({
+        "src/Common/ProfileEvents.cpp",
+        "src/Common/ProfileEvents.h",
+        "src/Common/CurrentMetrics.cpp",
+        "src/Common/CurrentMetrics.h",
+        "src/Common/ErrorCodes.cpp",
+        "src/Common/ErrorCodes.h",
+        "src/Common/SettingsChanges.cpp",
+        "src/Core/Settings.cpp",
+        "src/Core/SettingsChangesHistory.cpp",
+        "src/Core/SettingsChangesHistory.h",
+    })
+
     def get_tests_by_changed_lines(self, changed_lines: list,
                                    hunk_ranges: dict | None = None) -> dict:
         """
@@ -218,12 +448,21 @@ class Targeting:
             (f, ln)
             for f, ln in changed_lines
             if any(f.startswith(p) for p in COVERAGE_TRACKED_PREFIXES)
+            and f not in self.SHARED_REGISTRY_FILES
         ]
         skipped = len(changed_lines) - len(coverage_lines)
         if skipped:
             print(
-                f"[find_tests] skipping {skipped} lines in non-tracked files "
-                f"(test scripts, docs, CI, contrib)"
+                f"[find_tests] skipping {skipped} lines in non-tracked or shared-registry "
+                f"files (test scripts, docs, CI, contrib, ProfileEvents/Settings registries)"
+            )
+        skipped_registry = sorted(
+            {f for f, _ in changed_lines if f in self.SHARED_REGISTRY_FILES}
+        )
+        if skipped_registry:
+            print(
+                f"[find_tests] skipping {len(skipped_registry)} shared-registry file(s): "
+                f"{skipped_registry}"
             )
 
         # Return the original (full) key-set in the result dict so that
@@ -339,7 +578,7 @@ class Targeting:
         HAVING region_test_count <= {BROAD_REGION_HARD_CAP}
         """
 
-        cidb = CIDB(url=Settings.CI_DB_READ_URL, user="play", passwd="")
+        cidb = self._ci_db()
         t_query = time.monotonic()
         raw = cidb.query(query, log_level="") or ""
         print(f"[find_tests] CIDB query: {time.monotonic()-t_query:.2f}s, response={len(raw)} bytes")
@@ -952,9 +1191,7 @@ class Targeting:
         # broader callee coverage and higher overlap with domain-related tests.
         FILE_SEED_RC = 30   # narrower than MAX_TESTS_PER_LINE; avoids pulling in broad seeds
         if sparse_files:
-            from ci.praktika.cidb import CIDB
-            from ci.praktika.settings import Settings
-            _cidb = CIDB(url=Settings.CI_DB_READ_URL, user="play", passwd="")
+            _cidb = self._ci_db()
             # sparse_files are already stored-paths (./src/...)
             sparse_conds = " OR ".join(
                 f"file = '{self._escape_sql_string(f)}'"
@@ -1097,9 +1334,7 @@ class Targeting:
         """
 
         try:
-            from ci.praktika.cidb import CIDB
-            from ci.praktika.settings import Settings
-            cidb = CIDB(url=Settings.CI_DB_READ_URL, user="play", passwd="")
+            cidb = self._ci_db()
             t0 = time.monotonic()
             raw = cidb.query(query, log_level="") or ""
             elapsed = time.monotonic() - t0
@@ -1292,9 +1527,7 @@ class Targeting:
         """
 
         try:
-            from ci.praktika.cidb import CIDB
-            from ci.praktika.settings import Settings
-            cidb = CIDB(url=Settings.CI_DB_READ_URL, user="play", passwd="")
+            cidb = self._ci_db()
             t0 = time.monotonic()
             raw = cidb.query(query, log_level="") or ""
             print(
@@ -1337,7 +1570,6 @@ class Targeting:
         using KEYWORD_FALLBACK_WIDTH so they always rank below any direct or
         sibling hit.
         """
-        import glob as _glob
 
         if not changed_src_files:
             return []
@@ -1528,7 +1760,7 @@ class Targeting:
             info += f" - {test}\n"
         return tests, Result(
             name="tests that were changed or added",
-            status=Result.StatusExtended.OK,
+            status=Result.Status.OK,
             info=info,
         )
 
@@ -1547,7 +1779,7 @@ class Targeting:
             info += f" - {test}\n"
         return tests, Result(
             name="tests that failed in previous runs",
-            status=Result.StatusExtended.OK,
+            status=Result.Status.OK,
             info=info,
         )
 
@@ -1617,19 +1849,35 @@ class Targeting:
         return hunks
 
     def get_diff_text(self) -> str:
-        """Fetch the PR diff text (cached on self._diff_text after first call)."""
-        if not hasattr(self, '_diff_text') or not self._diff_text:
-            assert self.info.pr_number > 0, "Diff fetching applicable for PRs only"
+        """Fetch the PR diff text (cached on self._diff_text after first call).
+
+        CI containers have no .git directory. Use the GitHub API via curl.
+        For public repos no auth is needed; for private repos GITHUB_TOKEN is used.
+        """
+        if hasattr(self, '_diff_text') and self._diff_text is not None:
+            return self._diff_text
+        assert self.info.pr_number > 0, "Diff fetching applicable for PRs only"
+        repo = self.info.repo_name or "ClickHouse/ClickHouse"
+        if self.info.is_local_run:
             self._diff_text = Shell.get_output(
-                f"gh pr diff {self.info.pr_number} --repo ClickHouse/ClickHouse"
+                f"gh pr diff {self.info.pr_number} --repo {repo}"
+            )
+        else:
+            # Use GitHub REST API to get the diff. Works for both public and private
+            # repos; private repos require GITHUB_TOKEN (available in Actions env).
+            token = os.environ.get("GITHUB_TOKEN", "")
+            auth = f'-H "Authorization: Bearer {token}"' if token else ""
+            self._diff_text = Shell.get_output(
+                f"curl -sSf {auth} "
+                f"-H 'Accept: application/vnd.github.v3.diff' "
+                f"'https://api.github.com/repos/{repo}/pulls/{self.info.pr_number}'"
             )
         return self._diff_text
 
     def get_changed_lines_from_diff(self):
         """
         Return changed lines from the PR diff.
-        Always fetches the diff from GitHub using `gh pr diff` so that results
-        reflect the actual PR regardless of the local checkout state.
+        In CI fetches the diff from GitHub API; for local runs uses `gh pr diff`.
         """
         assert self.info.pr_number > 0, "Find tests by diff applicable for PRs only"
         return self._parse_diff_lines(self.get_diff_text())
@@ -1672,6 +1920,7 @@ class Targeting:
             f for f, ln in changed_lines
             if any(f.startswith(p) for p in COVERAGE_TRACKED_PREFIXES)
             and (f.endswith(".cpp") or f.endswith(".h"))
+            and f not in self.SHARED_REGISTRY_FILES
             and not any(pairs for (ff, _), pairs in line_to_tests.items() if ff == f)
         ]
         # Deduplicate file list.
@@ -1708,6 +1957,7 @@ class Targeting:
             if any(f.startswith(p) for p in COVERAGE_TRACKED_PREFIXES)
             and (f.endswith(".cpp") or f.endswith(".h"))
             and f not in cpp_with_zero_coverage
+            and f not in self.SHARED_REGISTRY_FILES
             and any(pairs for (ff, _), pairs in line_to_tests.items() if ff == f)
         ))
         # Always run the supplementary keyword pass: keyword tests get PASS_WEIGHT_KEYWORD
@@ -1892,7 +2142,7 @@ class Targeting:
             info += f"Bottom test: {bottom} (score={width_score[bottom]:.6f})\n"
 
         return ranked, Result(
-            name="tests found by coverage", status=Result.StatusExtended.OK, info=info
+            name="tests found by coverage", status=Result.Status.OK, info=info
         )
 
     def get_all_relevant_tests_with_info(self):
@@ -1909,12 +2159,12 @@ class Targeting:
                     seen.add(t)
                     ranked.append(t)
 
-        # Integration tests run changed test suboptimally (entire module), it might be too long
-        # limit it to stateless tests only
-        if self.job_type == self.STATELESS_JOB_TYPE:
-            changed_tests, result = self.get_changed_or_new_tests_with_info()
-            add_tests(changed_tests)
-            results.append(result)
+        # Changed/new tests are already covered by the flaky check — skip them
+        # in the targeted check to avoid duplication.
+        # if self.job_type == self.STATELESS_JOB_TYPE:
+        #     changed_tests, result = self.get_changed_or_new_tests_with_info()
+        #     add_tests(changed_tests)
+        #     results.append(result)
 
         previously_failed_tests, result = self.get_previously_failed_tests_with_info()
         add_tests(previously_failed_tests)
@@ -1934,7 +2184,7 @@ class Targeting:
                 results.append(
                     Result(
                         name="tests found by coverage",
-                        status=Result.StatusExtended.OK,
+                        status=Result.Status.OK,
                         info=f"Skipped: {e}",
                     )
                 )
@@ -1942,7 +2192,7 @@ class Targeting:
 
         return ranked, Result(
             name="Fetch relevant tests",
-            status=Result.Status.SUCCESS,
+            status=Result.Status.OK,
             info=f"Found {len(ranked)} relevant tests",
             results=results,
         )
@@ -1978,9 +2228,8 @@ if __name__ == "__main__":
 
     # If a pre-fetched diff file is provided, monkey-patch get_diff_text so both
     # get_changed_lines_from_diff and get_most_relevant_tests read from the file
-    # rather than calling gh pr diff.
+    # rather than fetching the diff.
     if args.diff_file:
-        import types
         diff_text = Path(args.diff_file).read_text()
         targeting._diff_text = diff_text
 

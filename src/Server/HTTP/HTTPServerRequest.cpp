@@ -7,6 +7,7 @@
 #include <IO/ReadBufferFromPocoSocket.h>
 #include <IO/ReadHelpers.h>
 #include <IO/ReadBuffer.h>
+#include <Server/HTTP/DeadlineReadBuffer.h>
 #include <Server/HTTP/HTTPServerResponse.h>
 #include <Server/HTTP/ReadHeaders.h>
 
@@ -33,6 +34,7 @@ HTTPServerRequest::HTTPServerRequest(HTTPContextPtr context, HTTPServerResponse 
     , max_fields_number(context->getMaxFields())
     , max_field_name_size(context->getMaxFieldNameSize())
     , max_field_value_size(context->getMaxFieldValueSize())
+    , max_request_header_size(context->getMaxRequestHeaderSize())
 {
     response.attachRequest(this);
 
@@ -43,14 +45,40 @@ HTTPServerRequest::HTTPServerRequest(HTTPContextPtr context, HTTPServerResponse 
 
     auto receive_timeout = context->getReceiveTimeout();
     auto send_timeout = context->getSendTimeout();
+    auto headers_read_timeout = context->getHeadersReadTimeout();
 
-    session.socket().setReceiveTimeout(receive_timeout);
+    /// Use the smaller of headers_read_timeout and receive_timeout during header parsing
+    /// to enforce a total deadline on the entire handshake phase.
+    auto effective_timeout = (headers_read_timeout > Poco::Timespan(0) &&
+                              (receive_timeout <= Poco::Timespan(0) || headers_read_timeout < receive_timeout))
+        ? headers_read_timeout : receive_timeout;
+
+    session.socket().setReceiveTimeout(effective_timeout);
     session.socket().setSendTimeout(send_timeout);
 
-    auto in = std::make_unique<ReadBufferFromPocoSocket>(session.socket(), read_event);
+    auto socket_in = std::make_unique<ReadBufferFromPocoSocket>(session.socket(), read_event);
     socket = session.socket().impl();
 
-    readRequest(*in);  /// Try parse according to RFC7230
+    /// Wrap the socket buffer with a deadline check if configured.
+    /// The deadline is enforced in DeadlineReadBuffer::nextImpl on every buffer refill,
+    /// which protects all parsing (request line, URI, headers) automatically.
+    if (headers_read_timeout > Poco::Timespan(0))
+    {
+        auto deadline = std::chrono::steady_clock::now()
+            + std::chrono::microseconds(headers_read_timeout.totalMicroseconds());
+        DeadlineReadBuffer deadline_in(*socket_in, deadline);
+        readRequest(deadline_in);  /// Try parse according to RFC7230
+    }
+    else
+    {
+        readRequest(*socket_in);  /// Try parse according to RFC7230
+    }
+
+    /// Restore the original receive timeout for body reads.
+    session.socket().setReceiveTimeout(receive_timeout);
+
+    /// Build the body stream from the underlying socket buffer (not the deadline wrapper).
+    auto in = std::move(socket_in);
 
     /// If a client crashes, most systems will gracefully terminate the connection with FIN just like it's done on close().
     /// So we will get 0 from recv(...) and will not be able to understand that something went wrong (well, we probably
@@ -87,43 +115,25 @@ HTTPServerRequest::HTTPServerRequest(HTTPContextPtr context, HTTPServerResponse 
 
 bool HTTPServerRequest::checkPeerConnected() const
 {
-    try
-    {
-        /// For SSL connections, we cannot use recv(MSG_PEEK) on the raw socket because
-        /// a graceful TLS shutdown sends a close_notify alert followed by TCP FIN.
-        /// The close_notify bytes remain in the TCP receive buffer (since nobody consumes them
-        /// at the TLS layer), so recv(MSG_PEEK) always returns > 0 even though the peer
-        /// has disconnected. Instead, use poll with POLLRDHUP to detect the TCP half-close
-        /// that follows the TLS close_notify.
-        /// See https://github.com/ClickHouse/ClickHouse/issues/96737
+    /// For SSL connections, we cannot use recv(MSG_PEEK) on the raw socket (which is what
+    /// `connectionOpen` does), because a graceful TLS shutdown sends a close_notify alert
+    /// followed by TCP FIN. The close_notify bytes remain in the TCP receive buffer (since
+    /// nobody consumes them at the TLS layer), so recv(MSG_PEEK) always returns > 0 even
+    /// though the peer has disconnected. Instead, use poll with POLLRDHUP to detect the TCP
+    /// half-close that follows the TLS close_notify.
+    /// See https://github.com/ClickHouse/ClickHouse/issues/96737
 #ifdef POLLRDHUP
-        if (secure)
-        {
-            struct pollfd pfd;
-            pfd.fd = socket->sockfd();
-            pfd.events = POLLRDHUP;
-            pfd.revents = 0;
-            int rc = poll(&pfd, 1, 0);
-            if (rc > 0 && (pfd.revents & (POLLRDHUP | POLLHUP | POLLERR | POLLNVAL)))
-                return false;
-        }
-        else
+    if (secure)
+    {
+        struct pollfd pfd;
+        pfd.fd = socket->sockfd();
+        pfd.events = POLLRDHUP;
+        pfd.revents = 0;
+        int rc = poll(&pfd, 1, 0);
+        return !(rc > 0 && (pfd.revents & (POLLRDHUP | POLLHUP | POLLERR | POLLNVAL)));
+    }
 #endif
-        {
-            char b;
-            if (!socket->receiveBytes(&b, 1, MSG_DONTWAIT | MSG_PEEK))
-                return false;
-        }
-    }
-    catch (Poco::TimeoutException &) // NOLINT(bugprone-empty-catch)
-    {
-    }
-    catch (const std::exception &)
-    {
-        return false;
-    }
-
-    return true;
+    return socket->connectionOpen();
 }
 
 #if USE_SSL
@@ -154,7 +164,7 @@ X509Certificate HTTPServerRequest::peerCertificate() const
 
 void HTTPServerRequest::readRequest(ReadBuffer & in)
 {
-    char ch;
+    char ch = 0;
     std::string method;
     std::string uri;
     std::string version;
@@ -197,7 +207,7 @@ void HTTPServerRequest::readRequest(ReadBuffer & in)
 
     skipToNextLineOrEOF(in);
 
-    readHeaders(*this, in, max_fields_number, max_field_name_size, max_field_value_size);
+    readHeaders(*this, in, max_fields_number, max_field_name_size, max_field_value_size, max_request_header_size);
 
     skipToNextLineOrEOF(in);
 

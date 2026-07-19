@@ -1,0 +1,58 @@
+{
+  "group": "Bring Your Own Cloud",
+  "pages": [
+    {
+      "group": "Overview",
+      "pages": [
+        "products/bring-your-own-cloud/overview/overview",
+        "products/bring-your-own-cloud/overview/architecture"
+      ]
+    },
+    {
+      "group": "Configuration",
+      "pages": [
+        "products/bring-your-own-cloud/configuration/configurations",
+        "products/bring-your-own-cloud/configuration/connect",
+        "products/bring-your-own-cloud/configuration/operations"
+      ]
+    },
+    {
+      "group": "Onboarding",
+      "pages": [
+        "products/bring-your-own-cloud/onboarding/aws",
+        "products/bring-your-own-cloud/onboarding/standard",
+        {
+          "group": "Customization",
+          "pages": [
+            "products/bring-your-own-cloud/onboarding/customization-aws",
+            "products/bring-your-own-cloud/onboarding/customization-gcp"
+          ]
+        },
+        {
+          "group": "Network",
+          "pages": [
+            "products/bring-your-own-cloud/onboarding/network-aws",
+            "products/bring-your-own-cloud/onboarding/network-gcp"
+          ],
+          "root": "products/bring-your-own-cloud/onboarding/network"
+        },
+        "products/bring-your-own-cloud/onboarding/new-region",
+        "products/bring-your-own-cloud/onboarding/azure-private-preview"
+      ]
+    },
+    {
+      "group": "Reference",
+      "pages": [
+        "products/bring-your-own-cloud/reference/network-security",
+        "products/bring-your-own-cloud/reference/privilege",
+        "products/bring-your-own-cloud/reference/clickhouse-data-access",
+        "products/bring-your-own-cloud/reference/observability-aws",
+        "products/bring-your-own-cloud/reference/billable-aws-services",
+        "products/bring-your-own-cloud/reference/cost-model-aws",
+        "products/bring-your-own-cloud/reference/aws-service-limits",
+        "products/bring-your-own-cloud/reference/faq",
+        "products/bring-your-own-cloud/reference/faq-aws"
+      ]
+    }
+  ]
+}

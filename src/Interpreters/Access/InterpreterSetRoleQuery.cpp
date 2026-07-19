@@ -70,6 +70,7 @@ void InterpreterSetRoleQuery::updateUserSetDefaultRoles(User & user, const Roles
     user.default_roles = roles_from_query;
 }
 
+void registerInterpreterSetRoleQuery(InterpreterFactory & factory);
 void registerInterpreterSetRoleQuery(InterpreterFactory & factory)
 {
     auto create_fn = [] (const InterpreterFactory::Arguments & args)

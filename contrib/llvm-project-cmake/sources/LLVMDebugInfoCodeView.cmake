@@ -1,0 +1,43 @@
+# Source files for LLVMDebugInfoCodeView
+set(LLVMDEBUGINFOCODEVI_SOURCES
+    ${LLVM_SOURCE_DIR}/lib/DebugInfo/CodeView/AppendingTypeTableBuilder.cpp
+    ${LLVM_SOURCE_DIR}/lib/DebugInfo/CodeView/CodeViewError.cpp
+    ${LLVM_SOURCE_DIR}/lib/DebugInfo/CodeView/CodeViewRecordIO.cpp
+    ${LLVM_SOURCE_DIR}/lib/DebugInfo/CodeView/ContinuationRecordBuilder.cpp
+    ${LLVM_SOURCE_DIR}/lib/DebugInfo/CodeView/CVSymbolVisitor.cpp
+    ${LLVM_SOURCE_DIR}/lib/DebugInfo/CodeView/CVTypeVisitor.cpp
+    ${LLVM_SOURCE_DIR}/lib/DebugInfo/CodeView/DebugChecksumsSubsection.cpp
+    ${LLVM_SOURCE_DIR}/lib/DebugInfo/CodeView/DebugCrossExSubsection.cpp
+    ${LLVM_SOURCE_DIR}/lib/DebugInfo/CodeView/DebugCrossImpSubsection.cpp
+    ${LLVM_SOURCE_DIR}/lib/DebugInfo/CodeView/DebugFrameDataSubsection.cpp
+    ${LLVM_SOURCE_DIR}/lib/DebugInfo/CodeView/DebugInlineeLinesSubsection.cpp
+    ${LLVM_SOURCE_DIR}/lib/DebugInfo/CodeView/DebugLinesSubsection.cpp
+    ${LLVM_SOURCE_DIR}/lib/DebugInfo/CodeView/DebugStringTableSubsection.cpp
+    ${LLVM_SOURCE_DIR}/lib/DebugInfo/CodeView/DebugSubsection.cpp
+    ${LLVM_SOURCE_DIR}/lib/DebugInfo/CodeView/DebugSubsectionRecord.cpp
+    ${LLVM_SOURCE_DIR}/lib/DebugInfo/CodeView/DebugSubsectionVisitor.cpp
+    ${LLVM_SOURCE_DIR}/lib/DebugInfo/CodeView/DebugSymbolRVASubsection.cpp
+    ${LLVM_SOURCE_DIR}/lib/DebugInfo/CodeView/DebugSymbolsSubsection.cpp
+    ${LLVM_SOURCE_DIR}/lib/DebugInfo/CodeView/EnumTables.cpp
+    ${LLVM_SOURCE_DIR}/lib/DebugInfo/CodeView/Formatters.cpp
+    ${LLVM_SOURCE_DIR}/lib/DebugInfo/CodeView/GlobalTypeTableBuilder.cpp
+    ${LLVM_SOURCE_DIR}/lib/DebugInfo/CodeView/LazyRandomTypeCollection.cpp
+    ${LLVM_SOURCE_DIR}/lib/DebugInfo/CodeView/Line.cpp
+    ${LLVM_SOURCE_DIR}/lib/DebugInfo/CodeView/MergingTypeTableBuilder.cpp
+    ${LLVM_SOURCE_DIR}/lib/DebugInfo/CodeView/RecordName.cpp
+    ${LLVM_SOURCE_DIR}/lib/DebugInfo/CodeView/RecordSerialization.cpp
+    ${LLVM_SOURCE_DIR}/lib/DebugInfo/CodeView/SimpleTypeSerializer.cpp
+    ${LLVM_SOURCE_DIR}/lib/DebugInfo/CodeView/StringsAndChecksums.cpp
+    ${LLVM_SOURCE_DIR}/lib/DebugInfo/CodeView/SymbolDumper.cpp
+    ${LLVM_SOURCE_DIR}/lib/DebugInfo/CodeView/SymbolRecordHelpers.cpp
+    ${LLVM_SOURCE_DIR}/lib/DebugInfo/CodeView/SymbolRecordMapping.cpp
+    ${LLVM_SOURCE_DIR}/lib/DebugInfo/CodeView/SymbolSerializer.cpp
+    ${LLVM_SOURCE_DIR}/lib/DebugInfo/CodeView/TypeDumpVisitor.cpp
+    ${LLVM_SOURCE_DIR}/lib/DebugInfo/CodeView/TypeHashing.cpp
+    ${LLVM_SOURCE_DIR}/lib/DebugInfo/CodeView/TypeIndex.cpp
+    ${LLVM_SOURCE_DIR}/lib/DebugInfo/CodeView/TypeIndexDiscovery.cpp
+    ${LLVM_SOURCE_DIR}/lib/DebugInfo/CodeView/TypeRecordHelpers.cpp
+    ${LLVM_SOURCE_DIR}/lib/DebugInfo/CodeView/TypeRecordMapping.cpp
+    ${LLVM_SOURCE_DIR}/lib/DebugInfo/CodeView/TypeStreamMerger.cpp
+    ${LLVM_SOURCE_DIR}/lib/DebugInfo/CodeView/TypeTableCollection.cpp
+)

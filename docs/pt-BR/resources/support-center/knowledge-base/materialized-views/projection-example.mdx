@@ -1,0 +1,145 @@
+---
+title: "Como confirmar se uma projeção é usada pela consulta?"
+date: 2022-07-10
+description: "Aprenda a verificar se uma projeção é usada em consultas do ClickHouse testando com dados de exemplo e usando EXPLAIN para confirmar o uso da projeção."
+tags: ['Modelagem de Dados']
+keywords: ['Projeção']
+---
+
+<div id="question">
+  ## Pergunta
+</div>
+
+Como posso saber se uma projeção está sendo utilizada?
+
+<div id="answer">
+  ## Resposta
+</div>
+
+1. Crie um banco de dados de exemplo
+
+```
+CREATE database db1;
+```
+
+2. Crie uma tabela de exemplo que usará column1 como chave primária
+
+```
+CREATE table db1.table1_projections
+(
+ column1 Int32,
+ column2 Int32
+)
+engine = MergeTree()
+order by column1;
+```
+
+3. Adicione uma projeção `for_column2` para usar a column2 como chave primária
+
+```
+ALTER table db1.table1_projections add projection for_column2
+(
+  select * 
+  order by column2
+);
+```
+
+4. Insira dados de teste
+
+*isso insere 100000 linhas com números aleatórios nas colunas column1 e column2
+
+```
+INSERT INTO db1.table1_projections
+select 
+ floor(randNormal(50, 5)) as column1,
+ floor(randUniform(1, 100)) as column2
+from numbers(100000);
+```
+
+5. Verifique a amostra de dados
+
+```
+clickhouse-cloud :) SELECT * from db1.table1_projections limit 5;
+
+SELECT *
+FROM db1.table1_projections
+LIMIT 5
+
+Query id: d6940799-b507-4a5e-9843-df55ebe818ab
+
+┌─column1─┬─column2─┐
+│      28 │      41 │
+│      29 │      12 │
+│      30 │      73 │
+│      30 │      75 │
+│      30 │      70 │
+└─────────┴─────────┘
+```
+
+6. Verifique se está usando a tabela original com column1:
+
+```
+clickhouse-cloud :) explain indexes = 1 
+                    SELECT count() from db1.table1_projections where column1 > 50;
+
+EXPLAIN indexes = 1
+SELECT count()
+FROM db1.table1_projections
+WHERE column1 > 50
+
+Query id: e04d5236-1a05-4f1f-9502-7e41986beb44
+
+┌─explain────────────────────────────────────────────┐
+│ Expression ((Projection + Before ORDER BY))        │
+│   Aggregating                                      │
+│     Expression (Before GROUP BY)                   │
+│       Filter (WHERE)                               │
+│         ReadFromMergeTree (db1.table1_projections) │
+│         Indexes:                                   │
+│           PrimaryKey                               │
+│             Condition: true                        │
+│             Parts: 1/1                             │
+│             Granules: 12/12                        │
+└────────────────────────────────────────────────────┘
+```
+
+*observe que a leitura está sendo feita de `db1.table1_projections`
+
+7. Teste a leitura da projeção usando `column2` na cláusula WHERE
+
+```
+clickhouse-cloud :) explain indexes = 1 
+                    SELECT * from db1.table1_projections where column2 > 50;
+
+EXPLAIN indexes = 1
+SELECT *
+FROM db1.table1_projections
+WHERE column2 > 50
+
+Query id: d2b20e01-93bf-4b60-a370-4aac7b454267
+
+┌─explain─────────────────────────────────────┐
+│ Expression ((Projection + Before ORDER BY)) │
+│   Filter                                    │
+│     ReadFromMergeTree (for_column2)         │
+│     Indexes:                                │
+│       PrimaryKey                            │
+│         Keys:                               │
+│           column2                           │
+│         Condition: (column2 in [51, +Inf))  │
+│         Parts: 1/1                          │
+│         Granules: 6/12                      │
+└─────────────────────────────────────────────┘
+```
+
+*note que agora a projeção `for_column2` está sendo usada.
+
+**Para mais informações**
+
+Projeções:
+[https://clickhouse.com/docs/sql-reference/statements/alter/projection](https://clickhouse.com/docs/sql-reference/statements/alter/projection)
+
+função de tabela numbers: [https://clickhouse.com/docs/sql-reference/table-functions/numbers](https://clickhouse.com/docs/sql-reference/table-functions/numbers)s
+
+Blog sobre como gerar dados aleatórios:
+[https://clickhouse.com/blog/generating-random-test-distribution-data-for-clickhouse](https://clickhouse.com/blog/generating-random-test-distribution-data-for-clickhouse)

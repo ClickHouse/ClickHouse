@@ -4,9 +4,9 @@ import pytest
 from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
-ch1 = cluster.add_instance("ch1", stay_alive=True)
-r1  = cluster.add_instance("r1", with_zookeeper=True, stay_alive=True)
-r2  = cluster.add_instance("r2", with_zookeeper=True, stay_alive=True)
+ch1 = cluster.add_instance("ch1", stay_alive=True, user_configs=["config/config.xml"])
+r1  = cluster.add_instance("r1", with_zookeeper=True, stay_alive=True, user_configs=["config/config.xml"])
+r2  = cluster.add_instance("r2", with_zookeeper=True, stay_alive=True, user_configs=["config/config.xml"])
 
 TEST_DB = f"db_sc_{uuid.uuid4().hex[:6]}"
 SET_PREFIX = f"""\
@@ -67,7 +67,7 @@ def _create_tbl(node, name, interval):
         CREATE TABLE {name} (k UInt32, v Float64)
         ENGINE=MergeTree
         ORDER BY k
-        SETTINGS refresh_statistics_interval = {interval}
+        SETTINGS refresh_statistics_interval = {interval}, auto_statistics_types = ''
     """)
     _query(node, f"INSERT INTO {name} SELECT number, toFloat64(rand())/4294967296.0 FROM numbers({ROWS_SMALL})")
     _query_retry(node, f"ALTER TABLE {name} ADD STATISTICS v TYPE TDigest")
@@ -310,7 +310,7 @@ def test_types_smoke_and_nullable():
     _query_retry(ch1, "DROP TABLE IF EXISTS t_mm SYNC")
     _query_retry(ch1, "CREATE TABLE t_mm (k UInt32, x UInt32) ENGINE=MergeTree ORDER BY k SETTINGS refresh_statistics_interval=1")
     _query(ch1, f"INSERT INTO t_mm SELECT number, number%1000000 FROM numbers({ROWS_MEDIUM})")
-    _query_retry(ch1, "ALTER TABLE t_mm ADD STATISTICS x TYPE MinMax")
+    _query_retry(ch1, "ALTER TABLE t_mm ADD STATISTICS x TYPE Basic")
     _query_retry(ch1, "ALTER TABLE t_mm MATERIALIZE STATISTICS ALL")
     _wait_hit(
         ch1, "t-mm",
@@ -381,7 +381,7 @@ def test_auto_statistics_types_load_then_hit():
         ENGINE=MergeTree
         ORDER BY k
         SETTINGS refresh_statistics_interval=1,
-                 auto_statistics_types='tdigest,countmin,minmax,uniq'
+                 auto_statistics_types='tdigest,countmin,basic,uniq'
     """)
     _query(ch1, f"""
         INSERT INTO auto_tbl

@@ -1,0 +1,78 @@
+---
+title: ClickHouse에서 "Parquet 포맷으로 데이터를 추가할 수 없음" 오류 해결
+description: ClickHouse에서 "Cannot append data in format Parquet to file" 오류가 발생하나요? 이 문제를 해결하는 방법을 살펴보겠습니다.
+date: 2023-03-25
+tags: ['오류 및 예외', '데이터 포맷']
+keywords: ['Parquet', '데이터를 추가할 수 없음']
+---
+
+{frontMatter.description}
+
+{/* truncate */}
+
+<div id="resolving-cannot-append-data-in-parquet-format-error-in-clickhouse">
+  ## ClickHouse에서 &quot;Parquet 포맷으로 데이터를 추가할 수 없음&quot; 오류 해결하기
+</div>
+
+ClickHouse에서 &quot;Cannot append data in format Parquet to file&quot; 오류가 발생합니까?
+
+일반적으로 이 오류는 다음과 같이 표시됩니다:
+
+`DB::Exception: Cannot append data in format Parquet to file, because this format doesn't support appends. (CANNOT_APPEND_TO_FILE)`
+
+Parquet 포맷을 사용하는 `File` 테이블 엔진으로 테이블을 생성했다고 가정해 보겠습니다.
+
+```sql
+CREATE TABLE parquet_test
+(
+    `x` UInt32,
+    `y` String
+)
+ENGINE = File(Parquet)
+```
+
+테이블(table)에는 한 번만 데이터를 쓸 수 있습니다:
+
+```sql
+INSERT INTO parquet_test VALUES
+   (1, 'Hello'),
+   (2, 'Hi')
+```
+
+이렇게 하면 `data/default/parquet_test` 폴더에 `data.Parquet`라는 파일이 생성됩니다. 다른 배치를 삽입하려고 하면:
+
+```sql
+INSERT INTO parquet_test VALUES
+   (3, 'World'),
+   (4, 'Bye')
+```
+
+...다음과 같은 오류가 발생합니다:
+
+```response
+Code: 641. DB::Exception: Received from localhost:9000. DB::Exception: Cannot append data in format Parquet to file, because this format doesn't support appends. You can allow to create a new file on each insert by enabling setting engine_file_allow_create_multiple_files. (CANNOT_APPEND_TO_FILE)
+```
+
+ClickHouse에서는 Parquet 파일에 데이터를 추가할 수 없습니다. 하지만 [`engine_file_allow_create_multiple_files` 설정](/ko/reference/settings/session-settings#engine_file_allow_create_multiple_files)을 활성화하면 `INSERT`할 때마다 ClickHouse가 새 파일을 만들도록 할 수 있습니다. 이 설정을 활성화하면 각 삽입 시 다음 패턴의 이름으로 새 파일이 생성됩니다:
+
+`data.Parquet` -&gt; `data.1.Parquet` -&gt; `data.2.Parquet` 등:
+
+직접 시도해 보겠습니다. 두 개의 명령을 `parquet.sql`이라는 단일 파일에 넣겠습니다:
+
+```sql
+SET engine_file_allow_create_multiple_files = 1;
+
+INSERT INTO default.parquet_test VALUES  (3, 'World'), (4, 'Bye');
+```
+
+다음과 같이 `clickhouse-client`로 실행하세요:
+
+```bash
+./clickhouse client --queries-file parquet.sql
+```
+
+이제 `data/default/parquet_test`에 파일 2개가 표시됩니다(이후 각 삽입 시마다 새 파일이 하나씩 생성됩니다).
+
+<Note>
+  `engine_file_allow_create_multiple_files` 설정은 JSON 및 ORC처럼 추가할 수 없는 다른 데이터 포맷에도 적용됩니다.
+</Note>

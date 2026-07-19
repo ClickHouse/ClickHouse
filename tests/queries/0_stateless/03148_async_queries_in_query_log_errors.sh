@@ -1,6 +1,4 @@
 #!/usr/bin/env bash
-# Tags: no-parallel
-# no-parallel because it flushes asynchronous_insert_log and that conflicts with other tests that expect flushes to be done only by themselves
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -58,5 +56,5 @@ ${CLICKHOUSE_CLIENT} -q "CREATE TABLE async_insert_landing (id UInt32) ENGINE = 
 
 query_id="$(random_str 10)"
 ${CLICKHOUSE_CLIENT} --query_id="${query_id}" -q "INSERT INTO async_insert_landing SETTINGS wait_for_async_insert=0, async_insert=1 values ('Invalid')" 2>/dev/null || true
-${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH ASYNC INSERT QUEUE"
+${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH ASYNC INSERT QUEUE async_insert_landing"
 print_flush_query_logs ${query_id}

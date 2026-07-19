@@ -1,0 +1,32 @@
+0	val_0	default_value
+1	val_1	default_value
+2	val_2	default_value
+3	val_3	default_value
+4	val_4	default_value
+5	val_5	stored_5
+6	val_6	stored_6
+7	val_7	stored_7
+8	val_8	stored_8
+9	val_9	stored_9
+--
+0	val_0	default_value
+1	val_1	default_value
+2	val_2	default_value
+3	val_3	default_value
+4	val_4	default_value
+5	val_5	stored_5
+6	val_6	stored_6
+7	val_7	stored_7
+8	val_8	stored_8
+9	val_9	stored_9
+--- sparse columns ---
+0	val_0	0
+1	val_1	0
+2	val_2	0
+3	val_3	0
+4	val_4	0
+5	val_5	100
+6	val_6	101
+7	val_7	102
+8	val_8	103
+9	val_9	104

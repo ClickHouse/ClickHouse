@@ -97,11 +97,8 @@ void ASTIndexDeclaration::formatImpl(WriteBuffer & ostr, const FormatSettings & 
         type->format(ostr, s, state, frame);
     }
 
-    if (granularity)
-    {
-        ostr << " GRANULARITY ";
-        ostr << granularity;
-    }
+    /// Always emit so AST round-trip is invariant for every granularity (zero included).
+    ostr << " GRANULARITY " << granularity;
 }
 
 UInt64 getSecondaryIndexGranularity(const boost::intrusive_ptr<ASTFunction> & type, const ASTPtr & granularity)

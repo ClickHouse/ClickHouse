@@ -1,4 +1,4 @@
 -- isnan --
-1
-0
-0
+true
+false
+false
