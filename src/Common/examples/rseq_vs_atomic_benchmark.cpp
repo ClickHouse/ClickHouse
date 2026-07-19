@@ -41,7 +41,9 @@
 
 #include <Examples/clickhouse_examples.h>
 
-#if defined(OS_LINUX)
+#include "config.h"
+
+#if USE_LIBRSEQ
 #    include <rseq/rseq.h>
 #endif
 
@@ -116,7 +118,7 @@ ALWAYS_INLINE void sharedBump(Slot * slots)
     __atomic_add_fetch(&slots[0].value, 1, __ATOMIC_RELAXED);
 }
 
-#if defined(OS_LINUX)
+#if USE_LIBRSEQ
 ALWAYS_INLINE void rseqBump(Slot * slots, int slot_count)
 {
     int cpu = static_cast<int>(rseq_cpu_start());
@@ -170,7 +172,7 @@ void runMode(Mode mode, const Options & opts, Slot * slots, int slot_count, doub
                         atomicBump(slots, slot_count);
                     break;
                 case Mode::RSeq:
-#if defined(OS_LINUX)
+#if USE_LIBRSEQ
                     for (Int64 i = 0; i < opts.ops; ++i)
                         rseqBump(slots, slot_count);
 #endif
@@ -200,7 +202,7 @@ int mainEntryExampleRSeqVsAtomicBenchmark(int argc, char ** argv)
     if (!parseOptions(argc, argv, opts))
         return 1;
 
-#if defined(OS_LINUX)
+#if USE_LIBRSEQ
     /// With glibc >= 2.35 every thread is registered by libc; librseq only adopts that
     /// registration here, so one process-wide init is enough for the workers below.
     const bool rseq_supported = rseq_init() == RSEQ_INIT_OK && rseq_size > 0;
@@ -209,7 +211,7 @@ int mainEntryExampleRSeqVsAtomicBenchmark(int argc, char ** argv)
 #endif
 
     int slot_count = 0;
-#if defined(OS_LINUX)
+#if USE_LIBRSEQ
     Int64 n = ::sysconf(_SC_NPROCESSORS_CONF);
     slot_count = n > 0 ? static_cast<int>(n) : 0;
 #endif

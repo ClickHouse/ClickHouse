@@ -248,5 +248,8 @@ set (USE_YTSAURUS 1)
 if (TARGET ch_contrib::sz3)
     set(USE_SZ3 1)
 endif()
+if (TARGET ch_contrib::librseq)
+    set(USE_LIBRSEQ 1)
+endif()
 
 set(SOURCE_DIR ${PROJECT_SOURCE_DIR})

@@ -85,7 +85,12 @@ endif()
 if (OS_LINUX)
     list(APPEND EXAMPLES_SOURCES ../Common/examples/thread_creation_latency.cpp)
     list(APPEND EXAMPLES_SOURCES ../Common/examples/memory_statistics_os_perf.cpp)
-    # Uses sched_getcpu() and rseq, both Linux-only.
+endif()
+
+# Uses sched_getcpu() and rseq via contrib/librseq. Gate on the target rather than OS_LINUX:
+# the submodule may be empty in minimal-submodule Linux checkouts (for example FastTest),
+# and there `ch_contrib::librseq` (with its <rseq/rseq.h> headers) does not exist.
+if (TARGET ch_contrib::librseq)
     list(APPEND EXAMPLES_SOURCES ../Common/examples/rseq_vs_atomic_benchmark.cpp)
 endif()
 
