@@ -8,6 +8,7 @@
 #include <Interpreters/ProcessList.h>
 #include <IO/ParallelReadBuffer.h>
 #include <IO/SharedThreadPools.h>
+#include <IO/WithFileSize.h>
 #include <IO/WriteHelpers.h>
 #include <IO/BufferWithOwnMemory.h>
 #include <Processors/Formats/IRowInputFormat.h>
@@ -711,8 +712,13 @@ std::unique_ptr<ReadBuffer> FormatFactory::wrapReadBufferIfNeeded(
     {
         try
         {
-            file_size = getFileSizeFromReadBuffer(buf);
-            parallel_read = file_size >= 2 * settings[Setting::max_download_buffer_size];
+            /// Use the non-throwing variant: an unknown file size (e.g. a chunked HTTP response
+            /// without a Content-Length header) is an expected situation here, not an error,
+            /// and every constructed exception is counted in `system.errors`.
+            std::optional<size_t> maybe_file_size = tryGetFileSizeFromReadBuffer(buf);
+            parallel_read = maybe_file_size.has_value() && *maybe_file_size >= 2 * settings[Setting::max_download_buffer_size];
+            if (parallel_read)
+                file_size = *maybe_file_size;
         }
         catch (const Poco::Exception & e)
         {
