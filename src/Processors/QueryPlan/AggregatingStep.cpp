@@ -1113,11 +1113,11 @@ QueryPlanStepPtr AggregatingStep::deserialize(Deserialization & ctx)
 
     /// Prefer the temporary data scope of the query context: it accounts for the per-query and
     /// per-user limits (`max_temporary_data_on_disk_size_for_query` and `_for_user`), which the
-    /// server-global scope does not. Fall back to the global scope when there is no query
-    /// context (e.g. when the plan is deserialized outside of a query).
+    /// server-global scope does not. Fall back to the global scope when the deserialization
+    /// context is not a query context (e.g. when a skipped plan packet is deserialized).
     TemporaryDataOnDiskScopePtr tmp_data_scope;
-    if (auto query_context = CurrentThread::tryGetQueryContext())
-        tmp_data_scope = query_context->getTempDataOnDisk();
+    if (ctx.context)
+        tmp_data_scope = ctx.context->getTempDataOnDisk();
     if (!tmp_data_scope)
         tmp_data_scope = Context::getGlobalContextInstance()->getTempDataOnDisk();
 
