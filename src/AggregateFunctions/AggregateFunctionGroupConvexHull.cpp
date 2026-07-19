@@ -420,6 +420,8 @@ For `MultiPolygon`, only the outer ring points of each polygon are used.
 Polygonal inputs are still validated in full: every coordinate, including those of inner rings (holes), must be finite, and a polygon with an empty outer ring but non-empty inner rings is rejected. Inner-ring points are validated even though only outer-ring points contribute to the hull.
 
 The result is a `Ring` representing the convex hull.
+
+`NULL` values inside a `Geometry` (Variant) column are skipped. For a `Nullable` argument (e.g. `Nullable(Point)`), `NULL` rows are skipped as well; because a `Ring` cannot be wrapped in `Nullable`, the result type stays `Ring` and a group with only `NULL` values yields an empty `Ring`, consistent with the empty-group result. A literal `NULL` argument yields `NULL`.
     )";
     FunctionDocumentation::Syntax syntax = "groupConvexHull(geometry)";
     FunctionDocumentation::Arguments arguments
@@ -447,6 +449,11 @@ POLYGON((0 0,0 1,1 1,1 0,0 0))
     FunctionDocumentation::Category category = FunctionDocumentation::Category::GeoPolygon;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
+    /// `returns_default_when_only_null` must stay false. It would not change the `Nullable(Point)` behavior:
+    /// `Ring` cannot be inside `Nullable`, so the `Null` combinator keeps the non-nullable result type and an
+    /// all-NULL group returns an empty `Ring` either way, consistent with the empty-group result. But with true,
+    /// a literal NULL argument would be replaced by `AggregateFunctionNothingUInt64`, i.e. `groupConvexHull(NULL)`
+    /// would return `0 :: UInt64` instead of `NULL`.
     AggregateFunctionProperties properties = {.returns_default_when_only_null = false, .is_order_dependent = false};
     factory.registerFunction("groupConvexHull", {createAggregateFunctionGroupConvexHull, documentation, properties});
 }
