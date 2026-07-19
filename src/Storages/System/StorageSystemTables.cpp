@@ -277,13 +277,16 @@ ColumnPtr getFilteredTables(
                 for (; table_it->isValid(); table_it->next())
                 {
                     const auto & table = table_it->table();
-                    if (!table)
-                        continue; /// Table was concurrently dropped and should be skipped
+                    /// A null table means the storage object could not be resolved (concurrent
+                    /// drop, or unresolvable DataLakeCatalog metadata). Keep the name with an
+                    /// empty engine / Nil uuid rather than dropping the row, so predicates on
+                    /// `engine`/`uuid` see it (and it can be filtered out) instead of the table
+                    /// silently vanishing from system.tables.
                     table_column->insert(table_it->name());
                     if (engine_column)
-                        engine_column->insert(table->getName());
+                        engine_column->insert(table ? table->getName() : "");
                     if (uuid_column)
-                        uuid_column->insert(table->getStorageID().uuid);
+                        uuid_column->insert(table ? table->getStorageID().uuid : UUIDHelpers::Nil);
                 }
             }
             else
@@ -453,26 +456,26 @@ protected:
 
     void fillParametralizedViewData(MutableColumns & columns, const StoragePtr & table, size_t & res_index)
     {
-        if (table)
+        /// `table` can be null for an unresolvable table (e.g. a DataLakeCatalog table whose
+        /// metadata cannot be fetched). Always advance `res_index` so the column stays aligned
+        /// with the others; otherwise the whole system.tables scan aborts.
+        const auto metadata_snapshot = table ? table->getInMemoryMetadataPtr(context, false) : nullptr;
+        if (!metadata_snapshot)
         {
-            const auto metadata_snapshot = table->getInMemoryMetadataPtr(context, false);
-            if (!metadata_snapshot)
-            {
-                columns[res_index++]->insertDefault();
-                return;
-            }
-
-            NameToNameMap query_parameters_array = getSelectParamters(metadata_snapshot);
-            if (!query_parameters_array.empty())
-            {
-                Array changes;
-                for (const auto & [key, value] : query_parameters_array)
-                    changes.push_back(Tuple{key, value});
-                columns[res_index++]->insert(changes);
-            }
-            else
-                columns[res_index++]->insertDefault();
+            columns[res_index++]->insertDefault();
+            return;
         }
+
+        NameToNameMap query_parameters_array = getSelectParamters(metadata_snapshot);
+        if (!query_parameters_array.empty())
+        {
+            Array changes;
+            for (const auto & [key, value] : query_parameters_array)
+                changes.push_back(Tuple{key, value});
+            columns[res_index++]->insert(changes);
+        }
+        else
+            columns[res_index++]->insertDefault();
     }
 
 
@@ -503,7 +506,6 @@ protected:
 
             ++count;
         }
-        ++database_idx;
         return count;
     }
 
@@ -522,8 +524,12 @@ protected:
         size_t rows_count = 0;
         while (rows_count < max_block_size)
         {
+            /// Consume the exhausted iterator, otherwise it could advance `database_idx` twice.
             if (tables_it && !tables_it->isValid())
+            {
                 ++database_idx;
+                tables_it.reset();
+            }
 
             while (database_idx < databases->size() && (!tables_it || !tables_it->isValid()))
             {
@@ -679,6 +685,7 @@ protected:
             {
                 size_t rows_added = fillTableNamesOnly(res_columns);
                 rows_count += rows_added;
+                ++database_idx;
                 continue;
             }
 
@@ -698,15 +705,20 @@ protected:
                     continue;
 
                 StoragePtr table = tables_it->table();
-                if (!table)
-                    continue; /// Table was concurrently dropped between iterator snapshot and table() call so we should skip it
+                /// A null table means the storage object could not be resolved: either the table
+                /// was concurrently dropped between the iterator snapshot and this table() call, or
+                /// (for DataLakeCatalog databases) its metadata is unresolvable. We still emit a row
+                /// for it -- with defaults/NULL for every column that needs the opened storage object
+                /// -- so a single broken table neither drops itself from the listing nor aborts the
+                /// whole system.tables scan. Every metadata-dependent column below is guarded on
+                /// `table` being non-null.
 
                 TableLockHolder lock;
 
                 /// The only column that requires us to hold a shared lock is data_paths as rename might alter them (on ordinary tables)
                 /// and it's not protected internally by other mutexes
                 static const size_t DATA_PATHS_INDEX = 5;
-                if (columns_mask[DATA_PATHS_INDEX])
+                if (table && columns_mask[DATA_PATHS_INDEX])
                 {
                     lock = table->tryLockForShare(context->getCurrentQueryId(), context->getSettingsRef()[Setting::lock_acquire_timeout]);
                     if (!lock)
@@ -730,8 +742,10 @@ protected:
 
                 if (columns_mask[src_index++])
                 {
-                    chassert(table != nullptr);
-                    res_columns[res_index++]->insert(table->getName());
+                    if (table)
+                        res_columns[res_index++]->insert(table->getName());
+                    else
+                        res_columns[res_index++]->insertDefault();
                 }
 
                 if (columns_mask[src_index++])
@@ -739,13 +753,17 @@ protected:
 
                 if (columns_mask[src_index++])
                 {
-                    chassert(lock != nullptr);
                     Array table_paths_array;
-                    if (auto paths = table->tryGetDataPaths())
+                    /// `lock` is only acquired above when `table` is non-null.
+                    if (table)
                     {
-                        table_paths_array.reserve(paths->size());
-                        for (const String & path : *paths)
-                            table_paths_array.push_back(path);
+                        chassert(lock != nullptr);
+                        if (auto paths = table->tryGetDataPaths())
+                        {
+                            table_paths_array.reserve(paths->size());
+                            for (const String & path : *paths)
+                                table_paths_array.push_back(path);
+                        }
                     }
                     res_columns[res_index++]->insert(table_paths_array);
                     /// We don't need the lock anymore
@@ -795,7 +813,11 @@ protected:
 
                 if (columns_mask[src_index] || columns_mask[src_index + 1] || columns_mask[src_index + 2])
                 {
-                    ASTPtr ast = database->tryGetCreateTableQuery(table_name, context);
+                    /// Skip the catalog query for a null-storage row (unresolvable DataLakeCatalog
+                    /// table, or one dropped concurrently with the scan): tryGetCreateTableQuery
+                    /// re-enters DatabaseDataLake::getCreateTableQueryImpl, which can throw again
+                    /// and abort the whole scan. A null ast makes the block below emit defaults.
+                    ASTPtr ast = table ? database->tryGetCreateTableQuery(table_name, context) : nullptr;
                     auto * ast_create = ast ? ast->as<ASTCreateQuery>() : nullptr;
 
                     if (ast_create && !context->getSettingsRef()[Setting::show_table_uuid_in_table_create_query_if_not_nil])
@@ -917,7 +939,7 @@ protected:
                 {
                     try
                     {
-                        auto total_bytes = table->totalBytes(context_copy);
+                        auto total_bytes = table ? table->totalBytes(context_copy) : std::nullopt;
                         if (total_bytes)
                             res_columns[res_index]->insert(*total_bytes);
                         else
@@ -936,7 +958,7 @@ protected:
                 {
                     try
                     {
-                        auto total_bytes_uncompressed = table->totalBytesUncompressed(context_copy->getSettingsRef());
+                        auto total_bytes_uncompressed = table ? table->totalBytesUncompressed(context_copy->getSettingsRef()) : std::nullopt;
                         if (total_bytes_uncompressed)
                             res_columns[res_index]->insert(*total_bytes_uncompressed);
                         else

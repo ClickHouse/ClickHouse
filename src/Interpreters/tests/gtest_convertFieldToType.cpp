@@ -4,6 +4,7 @@
 #include <Core/Field.h>
 #include <Interpreters/convertFieldToType.h>
 #include <DataTypes/DataTypeFactory.h>
+#include <Common/Exception.h>
 
 #include <gtest/gtest.h>
 #include <base/Decimal.h>
@@ -260,3 +261,54 @@ INSTANTIATE_TEST_SUITE_P(
         },
     })
 );
+
+/// https://github.com/ClickHouse/ClickHouse/issues/43144
+/// Conversion to a floating-point type is exact by default (a value that is not exactly
+/// representable returns Null), so optimizer/pruning callers do not build a wrong comparison
+/// bound from a rounded constant. Materialization paths (the `values` table function, `INSERT`)
+/// reach `convertFieldToTypeOrThrow` and pass `convert_inexact_floats=true` to opt into rounding to
+/// the nearest value, like `CAST`.
+/// The strict conversion used by the `IN` operator always stays exact.
+TEST(ConvertFieldToTypeStrictness, Float64ToFloat32)
+{
+    const auto & type_factory = DataTypeFactory::instance();
+    const auto from_type = type_factory.get("Float64");
+    const auto to_type = type_factory.get("Float32");
+
+    /// 0.1 is not exactly representable in Float32.
+    const Field inexact{0.1};
+    /// 0.5 is exactly representable in Float32.
+    const Field exact{0.5};
+
+    /// Default (non-strict, no opt-in): the conversion stays exact, so an inexact value is Null.
+    /// This keeps lossy float rounding out of optimizer/pruning paths (e.g. `KeyCondition`).
+    EXPECT_TRUE(convertFieldToType(inexact, *to_type, from_type.get()).isNull());
+
+    /// Opt-in (convert_inexact_floats=true): the nearest Float32 value is returned, matching CAST.
+    const Field nearest = convertFieldToType(inexact, *to_type, from_type.get(), {}, /*strict=*/ false, /*convert_inexact_floats=*/ true);
+    EXPECT_FALSE(nearest.isNull());
+    EXPECT_EQ(nearest, Field(static_cast<Float32>(0.1)));
+
+    /// `convertFieldToTypeOrThrow` is exact by default: a non-representable value is rejected. This keeps
+    /// lossy rounding out of callers such as `ALTER ... PARTITION` resolution (`getPartitionIDFromQuery`).
+    EXPECT_THROW(convertFieldToTypeOrThrow(inexact, *to_type, from_type.get()), Exception);
+
+    /// The `values`/insert path passes `convert_inexact_floats=true`, so it rounds to the nearest value and does not throw.
+    const Field materialized = convertFieldToTypeOrThrow(inexact, *to_type, from_type.get(), {}, /*convert_inexact_floats=*/ true);
+    EXPECT_EQ(materialized, Field(static_cast<Float32>(0.1)));
+
+    /// Strict: a value that is not exactly representable becomes Null (excluded from an IN set).
+    const Field strict_inexact = convertFieldToType(inexact, *to_type, from_type.get(), {}, /*strict=*/ true);
+    EXPECT_TRUE(strict_inexact.isNull());
+
+    /// An exactly representable value converts identically in all modes.
+    EXPECT_EQ(convertFieldToType(exact, *to_type, from_type.get()), Field(static_cast<Float32>(0.5)));
+    EXPECT_EQ(convertFieldToType(exact, *to_type, from_type.get(), {}, /*strict=*/ false, /*convert_inexact_floats=*/ true), Field(static_cast<Float32>(0.5)));
+    EXPECT_EQ(convertFieldToType(exact, *to_type, from_type.get(), {}, /*strict=*/ true), Field(static_cast<Float32>(0.5)));
+
+    /// Out-of-range values are rejected in every mode (no silent overflow to inf).
+    const Field too_big{1e300};
+    EXPECT_TRUE(convertFieldToType(too_big, *to_type, from_type.get()).isNull());
+    EXPECT_TRUE(convertFieldToType(too_big, *to_type, from_type.get(), {}, /*strict=*/ false, /*convert_inexact_floats=*/ true).isNull());
+    EXPECT_TRUE(convertFieldToType(too_big, *to_type, from_type.get(), {}, /*strict=*/ true).isNull());
+}

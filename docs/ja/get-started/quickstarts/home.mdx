@@ -7,6 +7,7 @@ mode: 'custom'
 ---
 
 import { QuickStartsGrid } from '/snippets/ja/components/QuickStartsGrid/QuickStartsGrid.jsx'
+import { quickStartsData } from '/snippets/ja/components/QuickStartsGrid/quickstarts-data.jsx'
 
 {/* 注目のクイックスタート - 各クイックスタートには ID とバナー画像があります（タイトルは画像内にレンダリングされます） */}
 
@@ -16,106 +17,6 @@ export const featuredQuickstarts = [
   { id: 'obtain-your-cloud-connection-details' }
 ];
 
-{/* クイックスタート用のデータを定義 */}
-
-export const quickStartsData = [
-  {
-    id: 'connect-your-iceberg-catalog',
-    title: 'How to connect your Iceberg catalog in ClickHouse Cloud',
-    description: 'Learn how to connect ClickHouse Cloud to connect to your Data Catalog and query Iceberg tables.',
-    href: '/ja/get-started/quickstarts/connect-your-iceberg-catalog',
-    useCases: ['Data warehousing'],
-    products: ['Cloud'],
-  },
-  {
-    id: 'create-your-first-materialized-view',
-    title: 'Create your first materialized view',
-    description: 'Learn how to use materialized views in ClickHouse to pre-compute and store query results with a different sort order, enabling fast lookups on columns not covered by your primary key.',
-    href: '/ja/get-started/quickstarts/create-your-first-materialized-view',
-    useCases: ['All'],
-    products: ['Cloud', 'OSS'],
-  },
-  {
-    id: 'create-your-first-mergetree-table',
-    title: 'Create your first MergeTree table',
-    description: 'Learn how ClickHouses primary table engine works by creating a MergeTree table, loading UK property price data, and observing how parts and merges affect storage and query performance.',
-    href: '/ja/get-started/quickstarts/create-your-first-mergetree-table',
-    useCases: ['All'],
-    products: ['Cloud', 'OSS'],
-  },
-  {
-    id: 'create-your-first-projection',
-    title: 'Create your first projection',
-    description: 'Learn how to use projections in ClickHouse to store an additional sorted copy of your data within the same table, enabling fast lookups on columns not covered by your primary key.',
-    href: '/ja/get-started/quickstarts/create-your-first-projection',
-    useCases: ['All'],
-    products: ['Cloud', 'OSS'],
-  },
-  {
-    id: 'create-your-first-service-on-cloud',
-    title: 'Create your first Cloud service and load example data',
-    description: 'Create a ClickHouse Cloud service, explore the SQL console, and load an example dataset to start querying real data in minutes.',
-    href: '/ja/get-started/quickstarts/create-your-first-service-on-cloud',
-    useCases: ['All'],
-    products: ['Cloud'],
-  },
-  {
-    id: 'creating-tables',
-    title: 'Creating tables in ClickHouse',
-    description: 'Learn about Creating Tables in ClickHouse',
-    href: '/ja/get-started/quickstarts/creating-tables',
-    useCases: [],
-    products: [],
-  },
-  {
-    id: 'insert-data-using-clickhouse-client',
-    title: 'Insert data into ClickHouse Cloud using clickhouse-client',
-    description: 'Learn how to use clickhouse-client to insert data from local CSV and Parquet files into a ClickHouse Cloud service from the command line.',
-    href: '/ja/get-started/quickstarts/insert-data-using-clickhouse-client',
-    useCases: ['All'],
-    products: ['Cloud'],
-  },
-  {
-    id: 'mutations',
-    title: 'Updating and deleting ClickHouse data',
-    description: 'Describes how to perform update and delete operations in ClickHouse',
-    href: '/ja/get-started/quickstarts/mutations',
-    useCases: [],
-    products: [],
-  },
-  {
-    id: 'obtain-your-cloud-connection-details',
-    title: 'Obtain your Cloud connection details',
-    description: 'Learn how to find the hostname, port, and credentials for your ClickHouse Cloud service so you can connect from external clients, CLIs, and applications.',
-    href: '/ja/get-started/quickstarts/obtain-your-cloud-connection-details',
-    useCases: ['All'],
-    products: ['Cloud'],
-  },
-  {
-    id: 'tutorial',
-    title: 'Advanced tutorial',
-    description: 'Learn how to ingest and query data in ClickHouse using a New York City taxi example dataset.',
-    href: '/ja/get-started/quickstarts/tutorial',
-    useCases: [],
-    products: [],
-  },
-  {
-    id: 'working-with-the-map-type',
-    title: 'Working with the Map type in ClickHouse',
-    description: 'Learn how to use the Map type in ClickHouse to store, query, and aggregate dynamic key-value data using OTel resource attributes as a practical example.',
-    href: '/ja/get-started/quickstarts/working-with-the-map-type',
-    useCases: ['Observability'],
-    products: ['Cloud', 'OSS'],
-  },
-  {
-    id: 'writing-queries',
-    title: 'Selecting ClickHouse Data',
-    description: 'Learn about Selecting ClickHouse Data',
-    href: '/ja/get-started/quickstarts/writing-queries',
-    useCases: [],
-    products: [],
-  },
-];
 
 <div className="relative overflow-hidden">
   <div className="absolute top-0 left-0 right-0 opacity-80">

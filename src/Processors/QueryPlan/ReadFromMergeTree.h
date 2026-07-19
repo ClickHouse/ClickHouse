@@ -339,6 +339,7 @@ public:
     /// Returns `false` if requested reading cannot be performed.
     bool requestReadingInOrder(size_t prefix_size, int direction, size_t read_limit, size_t query_limit = 0);
     bool setVirtualRowConversions(ActionsDAG virtual_row_conversion_);
+    void resetVirtualRowConversions() { virtual_row_conversion = nullptr; }
     bool readsInOrder() const;
     const InputOrderInfoPtr & getInputOrder() const { return query_info.input_order_info; }
     const SortDescription & getSortDescription() const override { return result_sort_description; }
@@ -349,6 +350,10 @@ public:
     /// Special stuff for vector search - replace vector column in read list with virtual "_distance" column
     void replaceVectorColumnWithDistanceColumn(const String & vector_column);
     bool isVectorColumnReplaced() const;
+
+    /// Add one more column (or subcolumn) to the read list, recomputing the output header. Used by the brute-force
+    /// vector-search rewrite to additionally read the quantized-codes subcolumn of a vector column.
+    void addReadColumn(const String & column);
 
     /// Returns true if the optimization is applicable (and applies it then).
     bool requestOutputEachPartitionThroughSeparatePortForAggregation();
@@ -380,6 +385,11 @@ public:
     /// Meanwhile, the ParallelReadingExtension originally in ReadFromMergeTree might be clear.
     void clearParallelReadingExtension();
     std::shared_ptr<ParallelReadingExtension> getParallelReadingExtension();
+
+    /// Mark a (non-executed) read as a parallel-replicas read purely so that serialization records it.
+    /// No callbacks are attached: the read is only serialized on the initiator and shipped to replicas,
+    /// where deserialize rebuilds it in parallel-reading mode and resolves the callbacks from the context.
+    void enableParallelReadingFromReplicasForSerialization() { is_parallel_reading_from_replicas = true; }
 
     bool supportsDataflowStatisticsCollection() const override { return !isQueryWithFinal(); }
 
