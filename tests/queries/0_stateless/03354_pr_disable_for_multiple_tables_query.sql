@@ -54,5 +54,13 @@ select count() from (explain select * from (select * from X order by id) as s in
 set parallel_replicas_for_queries_with_multiple_tables=0;
 select count() from (explain select * from (select * from X order by id) as s inner join (select * from Y) as j on s.id = j.id) where explain ilike '%ReadFromRemoteParallelReplicas%';
 
+-- ARRAY JOIN over a single table is not a multi-table query, so parallel replicas must stay enabled
+-- regardless of the setting. The check must count actual joins, not the table expressions stack size,
+-- which also includes the ARRAY_JOIN node.
+set parallel_replicas_for_queries_with_multiple_tables=1;
+select count() from (explain select id, n from X array join [1, 2] as n) where explain ilike '%ReadFromRemoteParallelReplicas%';
+set parallel_replicas_for_queries_with_multiple_tables=0;
+select count() from (explain select id, n from X array join [1, 2] as n) where explain ilike '%ReadFromRemoteParallelReplicas%';
+
 -- drop table X sync;
 -- drop table Y sync;
