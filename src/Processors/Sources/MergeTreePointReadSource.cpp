@@ -66,23 +66,26 @@ std::optional<ElementStreamInfo> resolveElementStream(const RangesInDataPart & p
     return info;
 }
 
+/// Extend `nested` by `dims` elements and return a writable byte pointer to that region, so a block can be
+/// read straight from the decompressed buffer into the column with no intermediate copy. The returned pointer
+/// is valid only until the next resize of `nested`, which is fine: the caller reads into it immediately.
 template <typename T>
-void appendVector(IColumn & nested, const char * src, size_t dims)
+char * extendAndGetWriteDst(IColumn & nested, size_t dims)
 {
     auto & data = assert_cast<ColumnVector<T> &>(nested).getData();
     const size_t old_size = data.size();
     data.resize(old_size + dims);
-    memcpy(data.data() + old_size, src, dims * sizeof(T));
+    return reinterpret_cast<char *>(data.data() + old_size);
 }
 
-void appendVectorByType(TypeIndex element_type_id, IColumn & nested, const char * src, size_t dims)
+char * extendAndGetWriteDstByType(TypeIndex element_type_id, IColumn & nested, size_t dims)
 {
     switch (element_type_id)
     {
-        case TypeIndex::BFloat16: appendVector<BFloat16>(nested, src, dims); return;
-        case TypeIndex::Float32:  appendVector<Float32>(nested, src, dims);  return;
-        case TypeIndex::Float64:  appendVector<Float64>(nested, src, dims);  return;
-        case TypeIndex::Int8:     appendVector<Int8>(nested, src, dims);     return;
+        case TypeIndex::BFloat16: return extendAndGetWriteDst<BFloat16>(nested, dims);
+        case TypeIndex::Float32:  return extendAndGetWriteDst<Float32>(nested, dims);
+        case TypeIndex::Float64:  return extendAndGetWriteDst<Float64>(nested, dims);
+        case TypeIndex::Int8:     return extendAndGetWriteDst<Int8>(nested, dims);
         default:
             throw Exception(ErrorCodes::LOGICAL_ERROR, "MergeTreePointReadSource: unsupported element type");
     }
@@ -157,13 +160,13 @@ Chunk MergeTreePointReadSource::generate()
     auto & offsets = array.getOffsets();
     offsets.reserve(batch);
 
-    std::vector<char> row_bytes(row_size);
     for (size_t i = 0; i < batch; ++i)
     {
         const UInt64 row = row_offsets[next_offset_index + i];
         data_buffer->seek(row * block_stride, /*offset_in_decompressed_block=*/ 0);
-        data_buffer->readStrict(row_bytes.data(), row_size);
-        appendVectorByType(element_type_id, nested, row_bytes.data(), dimensions);
+        /// Read the one-row block straight into the freshly-extended column storage (no intermediate buffer).
+        char * dst = extendAndGetWriteDstByType(element_type_id, nested, dimensions);
+        data_buffer->readStrict(dst, row_size);
         offsets.push_back(nested.size());
     }
     next_offset_index += batch;
