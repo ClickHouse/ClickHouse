@@ -52,9 +52,10 @@
     var btn = document.createElement('button');
     btn.id = BTN_ID;
     btn.type = 'button';
-    btn.className = 'group/ai flex-none hidden lg:flex items-center justify-center gap-1.5 h-9 rounded-xl shadow-sm bg-background-light dark:bg-background-dark dark:brightness-[1.1] dark:ring-1 dark:hover:brightness-[1.25] ring-1 ring-gray-400/20 hover:ring-gray-600/25 dark:ring-gray-600/30 dark:hover:ring-gray-500/30 w-9 p-0 ml-2';
+    btn.className = 'flex-none hidden lg:flex items-center justify-center gap-1.5 pl-3 pr-3.5 h-9 shadow-none bg-gray-950/[0.03] dark:bg-white/[0.03] hover:bg-gray-950/10 dark:hover:bg-white/10 border border-white/10 rounded ml-2';
     btn.setAttribute('aria-label', 'Ask AI');
-    btn.innerHTML = sparkleSvg;
+    btn.innerHTML = sparkleSvg
+      + '<span class="text-sm text-gray-500 dark:text-white/50 whitespace-nowrap">Ask</span>';
     btn.addEventListener('click', function (e) {
       e.stopPropagation();
       openKapa();
