@@ -85,6 +85,13 @@ public:
     /// working as if the wrapper were not there.
     const ReadBuffer & getWrappedReadBuffer() const override { return in; }
 
+    /// Forward readiness polling to the wrapped buffer so streaming reads keep working through the
+    /// wrapper — in particular the timeout-based partial flush of an HTTP insert
+    /// (`input_format_connection_handling` + `input_format_max_block_wait_ms`), which relies on
+    /// `poll` returning `false` when no data has arrived yet. The base `ReadBuffer::poll` always
+    /// returns `true`, so without this the flush would never fire and the read would block.
+    bool poll(size_t timeout_microseconds) override;
+
 private:
     bool nextImpl() override;
     void captureFromCurrentBuffer();

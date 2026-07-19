@@ -467,6 +467,20 @@ bool PrefixCapturingReadBuffer::nextImpl()
     return res;
 }
 
+bool PrefixCapturingReadBuffer::poll(size_t timeout_microseconds)
+{
+    /// If the wrapper still has buffered bytes, a read will not block, so data is available now.
+    if (hasPendingData())
+        return true;
+
+    /// Otherwise a read will pull from the wrapped buffer. Sync its position first — the wrapper
+    /// advances `pos` as the format consumes bytes without moving the wrapped buffer's position until
+    /// the next `nextImpl` — so the wrapped buffer's own `available()` check reflects the truly
+    /// unconsumed bytes rather than a stale range, then delegate the readiness check to it.
+    in.position() = pos;
+    return in.poll(timeout_microseconds);
+}
+
 InputFormatPtr getInputFormatFromASTInsertQuery(
     const ASTPtr & ast,
     bool with_buffers,
