@@ -2502,6 +2502,8 @@ One deliberate exception: an output format that drops totals and extremes in its
 
 Server logs are included if the `send_logs_level` setting is set, and profile events are included if the `send_profile_events` setting is enabled (they are sent at most once in `interactive_delay` microseconds, and progress packets are also throttled by `interactive_delay`).
 
+Anything a query enables only through its own `SETTINGS` clause - a framing format, `send_logs_level`, or `send_profile_events` - is not known until the query has been parsed, so the corresponding logs and profile events are captured only from query execution onwards. The logs and profile events of the parse, plan, and analysis phase are captured only when the setting comes from the session or the URL. For example, a query that fails during analysis (such as a reference to an unknown table) and enables `send_logs_level` only in its `SETTINGS` clause delivers just the `exception` packet, not the analysis-phase logs; set `send_logs_level` on the session or the URL to capture those.
+
 The setting currently applies to the HTTP protocol and is ignored for other interfaces.
 
 Possible values:
@@ -2510,6 +2512,8 @@ Possible values:
 - `EventStream` - frames packets as HTTP server-sent events (`text/event-stream`). Every packet is sent as an event with the corresponding name: `data`, `totals`, `extremes`, `progress`, `log`, `profile_events`, `exception`. The formatted data becomes the `data` fields of the event, and progress and other auxiliary packets are sent as JSON. Because server-sent events are a text protocol that treats line breaks (including carriage returns, `\r`) as delimiters, output formats whose bytes may not survive it are base64-encoded instead, signalled by a `payload=base64` parameter in the `Content-Type`: formats that may produce non-UTF-8 bytes (binary formats such as `Native` or `RowBinary`, and raw passthrough formats such as `RawBLOB` or `TSVRaw`), and text formats that may emit a raw `\r` (for example `CSV` / `TSV` with a CRLF row terminator, or `CustomSeparated` with a `CSV` / `XML` escaping rule or delimiters containing `\r`). Whether base64 is used therefore also depends on the output format's settings (and, for the raw-bytes check on formats that write the result header, the header itself).
 - `JSONEachPacketBase64` - every packet is a JSON object on a separate line, and the formatted data is base64-encoded, e.g. `{"packet":"data","data":"eyJ4IjoxfQo="}`. Suitable for binary output formats.
 - `JSONEachPacketString` - every packet is a JSON object on a separate line, and the formatted data is put into a string, e.g. `{"packet":"data","data":"{\"x\":1}\n"}`.
+
+`JSONEachPacketString` puts the payload bytes into a JSON string without validating or re-encoding them. `String` and `FixedString` columns can hold arbitrary bytes, so text output formats (such as `JSONEachRow`, `TSV`, or `CSV`) may emit invalid UTF-8 for such values - just as ClickHouse's own `JSONEachRow` does with the default `output_format_json_validate_utf8 = 0` - and then the resulting NDJSON stream is not guaranteed to be valid UTF-8. Use `JSONEachPacketBase64` for byte-exact transport of arbitrary bytes.
 
 Example:
 
