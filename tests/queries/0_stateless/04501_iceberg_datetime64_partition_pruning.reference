@@ -1,0 +1,6 @@
+--- full read ---
+2024-06-15 12:30:00.654321	a
+--- with prunning ---
+a
+--- without prunning ---
+a
