@@ -182,7 +182,14 @@ void DatabaseMemory::alterTable(ContextPtr local_context, const StorageID & tabl
         create_queries[table_id.table_name] = create_query;
     }
 
-    DatabaseCatalog::instance().updateDependencies(table_id, ref_dependencies.dependencies, loading_dependencies, ref_dependencies.mv_from_dependency ? TableNamesSet{ref_dependencies.mv_from_dependency->getQualifiedName()} : TableNamesSet{}, ref_dependencies.plain_view_dependencies);
+    /// Temporary views live in the temporary database (`DatabaseMemory`). Their sources must never be
+    /// registered in the global `plain_view_dependencies` graph, otherwise a metadata-only `ALTER`
+    /// (e.g. `MODIFY COMMENT`) on a temporary view would make permanent source tables report the
+    /// session-local `_temporary_and_external_tables._tmp_<uuid>` object in `system.tables.dependencies_*`.
+    /// This mirrors the guard on the `CREATE` path in `InterpreterCreateQuery`.
+    auto plain_view_dependencies = getDatabaseName() == DatabaseCatalog::TEMPORARY_DATABASE ? TableNamesSet{} : ref_dependencies.plain_view_dependencies;
+
+    DatabaseCatalog::instance().updateDependencies(table_id, ref_dependencies.dependencies, loading_dependencies, ref_dependencies.mv_from_dependency ? TableNamesSet{ref_dependencies.mv_from_dependency->getQualifiedName()} : TableNamesSet{}, plain_view_dependencies);
 }
 
 std::vector<std::pair<ASTPtr, StoragePtr>> DatabaseMemory::getTablesForBackup(const FilterByNameFunction & filter, const ContextPtr & local_context) const
