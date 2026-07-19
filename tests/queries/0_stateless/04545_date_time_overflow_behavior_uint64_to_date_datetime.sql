@@ -22,6 +22,15 @@ SELECT CAST(9223372036854775808::UInt64, 'Date') SETTINGS date_time_overflow_beh
 SELECT CAST(9223372036854775808::UInt64, 'Date32') SETTINGS date_time_overflow_behavior = 'throw'; -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
 SELECT CAST(9223372036854775808::UInt64, 'DateTime') SETTINGS date_time_overflow_behavior = 'throw'; -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
 
+SELECT '--- UInt32 (narrower than the Date32 bound) must not clamp to a truncated bound ---';
+-- Regression: clamping in the unsigned domain must not truncate MAX_DATE32_TIMESTAMP (10413791999)
+-- to the width of the source type: static_cast<UInt32>(10413791999) == 1823857407 (2027-10-18),
+-- which turned 4294967295 seconds (2106-02-07) into 2027-10-18.
+SELECT toDate32(4294967295::UInt32);
+SELECT toDate32OrDefault(4294967295::UInt32);
+SELECT CAST(4294967295::UInt32, 'Date32') SETTINGS date_time_overflow_behavior = 'saturate';
+SELECT CAST(4294967295::UInt32, 'Date32') SETTINGS date_time_overflow_behavior = 'throw';
+
 SELECT '--- saturate: non-constant path via table ---';
 DROP TABLE IF EXISTS overflow_date_test;
 CREATE TABLE overflow_date_test (u64 UInt64) ENGINE = Memory;

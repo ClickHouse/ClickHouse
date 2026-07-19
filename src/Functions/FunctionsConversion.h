@@ -375,8 +375,16 @@ struct ToDate32TransformFromSecondsOrDays
                     return time_zone.toDayNum(static_cast<time_t>(std::min(static_cast<double>(from), static_cast<double>(MAX_DATE32_TIMESTAMP))));
                 /// Likewise, casting a huge unsigned `from` (e.g. above `Int64::max`) straight to `Int64` is
                 /// implementation-defined and typically wraps to a negative value. Clamp in the unsigned domain first.
+                /// Only clamp when `FromType` can actually exceed the bound: then the cast of the bound to `FromType`
+                /// is widening and exact. For narrower types (e.g. `UInt32`), casting the bound would truncate it,
+                /// and no clamp is needed anyway since every value is in range.
                 else if constexpr (is_unsigned_v<FromType>)
-                    return time_zone.toDayNum(static_cast<time_t>(std::min<FromType>(from, static_cast<FromType>(MAX_DATE32_TIMESTAMP))));
+                {
+                    if constexpr (std::numeric_limits<FromType>::max() > MAX_DATE32_TIMESTAMP)
+                        return time_zone.toDayNum(static_cast<time_t>(std::min<FromType>(from, static_cast<FromType>(MAX_DATE32_TIMESTAMP))));
+                    else
+                        return time_zone.toDayNum(static_cast<time_t>(from));
+                }
                 else
                     return time_zone.toDayNum(std::min(time_t(Int64(from)), time_t(MAX_DATE32_TIMESTAMP)));
             }
