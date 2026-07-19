@@ -144,6 +144,16 @@ def create_parser():
         action="store_true",
         default=False,
     )
+    run_parser.add_argument(
+        "--workflow-input",
+        help=(
+            "Workflow dispatch inputs as comma-separated name=value pairs "
+            "(e.g. ref=main,type=patch,dry-run=true). Written to workflow_inputs.json "
+            "so that jobs can read them via Info.get_workflow_input_value"
+        ),
+        type=str,
+        default=None,
+    )
 
     subparsers.add_parser(
         "init",
@@ -406,6 +416,7 @@ def main(argv=None):
                 path_1=args.path_1,
                 workers=args.workers,
                 timestamp=args.timestamp,
+                workflow_input=args.workflow_input,
             )
     else:
         parser.print_help()

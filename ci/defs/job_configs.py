@@ -196,7 +196,7 @@ class JobConfigs:
     )
     ci_tests = Job.Config(
         name=JobNames.CI_TESTS,
-        runs_on=RunnerLabels.ARM_TINY,
+        runs_on=RunnerLabels.ARM_SMALL,
         command="python3 ./ci/jobs/ci_tests_job.py",
         timeout=1200,
         run_in_docker=f"clickhouse/integration-tests-runner+root+--privileged+--dns-search='.'+--security-opt seccomp=unconfined+--cap-add=SYS_PTRACE+{docker_sock_mount}+--volume=clickhouse_integration_tests_volume:/var/lib/docker+--cgroupns=host",

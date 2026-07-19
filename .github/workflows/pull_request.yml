@@ -324,7 +324,7 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Fast test' --workflow "PR" --ci --timestamp
 
   ci_tests:
-    runs-on: [self-hosted, pr-arm-tiny]
+    runs-on: [self-hosted, pr-arm-small]
     needs: [build_amd_asan_ubsan, build_amd_debug, build_amd_msan, build_amd_tsan, build_arm_binary, build_arm_tidy, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, fast_test, integration_tests_amd_asan_ubsan_db_disk_old_analyzer_1_6, integration_tests_amd_asan_ubsan_db_disk_old_analyzer_2_6, integration_tests_amd_asan_ubsan_db_disk_old_analyzer_3_6, integration_tests_amd_asan_ubsan_db_disk_old_analyzer_4_6, integration_tests_amd_asan_ubsan_db_disk_old_analyzer_5_6, integration_tests_amd_asan_ubsan_db_disk_old_analyzer_6_6, stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_1_3, stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_2_3, stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_3_3, stateless_tests_amd_asan_ubsan_distributed_plan_parallel, stateless_tests_amd_debug_parallel, stateless_tests_amd_tsan_parallel, stateless_tests_arm_binary_parallel, stateless_tests_arm_binary_sequential, style_check, unit_tests_asan_ubsan, unit_tests_asan_ubsan_function_prop_fuzzer, unit_tests_msan, unit_tests_msan_function_prop_fuzzer, unit_tests_tsan, unit_tests_tsan_function_prop_fuzzer]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'Q0kgVGVzdHM=') }}
     name: "CI Tests"

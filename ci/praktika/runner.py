@@ -647,6 +647,19 @@ class Runner:
         ) as process:
             exit_code = process.wait()
 
+            # When the job ran in a root Docker container (non-rootless mode),
+            # every file it created — including its own result JSON under
+            # TEMP_DIR — is owned by root. Reclaim ownership NOW, before
+            # praktika (running as the host user) reads/writes those files via
+            # Result.from_fs / result.dump below; otherwise the first host-side
+            # write to a root-owned artifact fails with "Permission denied".
+            if job.run_in_docker and not no_docker and from_root:
+                print("--- Fixing file ownership after running docker as root")
+                uid = os.getuid()
+                gid = os.getgid()
+                chown_cmd = f"docker run --rm --user root --volume {host_dir_q}:{current_dir_q} --workdir={current_dir_q} {docker} chown -R {uid}:{gid} {Settings.TEMP_DIR}"
+                Shell.run(chown_cmd)
+
             result = Result.from_fs(job.name)
             if exit_code != 0:
                 if not result.is_completed():
@@ -677,19 +690,6 @@ class Runner:
 
         print("INFO: disk status after running a job:")
         Shell.run("df -h")
-
-        # When running Docker containers as root (non-rootless mode), any files created
-        # by the job will be owned by root. This causes issues when:
-        # 1. Files need to be read/compressed/uploaded by subsequent steps
-        # 2. Root-owned files remain in the repository working directory
-        # The ownership fix below ensures all root-owned files are changed to the current user
-        if job.run_in_docker and not no_docker and from_root:
-            print("--- Fixing file ownership after running docker as root")
-            # Get host user's UID and GID (not from inside the container)
-            uid = os.getuid()
-            gid = os.getgid()
-            chown_cmd = f"docker run --rm --user root --volume {host_dir_q}:{current_dir_q} --workdir={current_dir_q} {docker} chown -R {uid}:{gid} {Settings.TEMP_DIR}"
-            Shell.run(chown_cmd)
 
         return exit_code
 
@@ -1130,6 +1130,31 @@ class Runner:
         except FileNotFoundError:
             pass
 
+    @staticmethod
+    def _parse_workflow_inputs(workflow_input):
+        """Parse comma-separated `name=value` pairs from --workflow-input.
+
+        Splits on `,` then on the first `=`, so values may themselves contain
+        `=`. Whitespace around names and values is stripped. Entries without
+        an `=` are skipped with a warning.
+        """
+        inputs = {}
+        for pair in workflow_input.split(","):
+            if "=" in pair:
+                name, _, value = pair.partition("=")
+                name = name.strip()
+                if not name:
+                    print(
+                        f"WARNING: Skipping --workflow-input entry [{pair}] with empty name"
+                    )
+                    continue
+                inputs[name] = value.strip()
+            else:
+                print(
+                    f"WARNING: Skipping malformed --workflow-input entry [{pair}] (expected name=value)"
+                )
+        return inputs
+
     def run(
         self,
         workflow,
@@ -1149,6 +1174,7 @@ class Runner:
         path_1="",
         workers=None,
         timestamp=False,
+        workflow_input=None,
     ):
         """Execute one job — public entry. Tees stdout/stderr to
         ``Settings.RUN_LOG`` so every engine (GHA, orchestrator) gets the
@@ -1185,6 +1211,7 @@ class Runner:
                 path=path,
                 path_1=path_1,
                 workers=workers,
+                workflow_input=workflow_input,
             )
         finally:
             sys.stdout = original_stdout
@@ -1209,6 +1236,7 @@ class Runner:
         path="",
         path_1="",
         workers=None,
+        workflow_input=None,
     ):
         """Execute one job.
 
@@ -1233,6 +1261,17 @@ class Runner:
         ), "local_job_run and local_orchestrator_run are mutually exclusive"
 
         self._load_local_env()
+
+        if workflow_input:
+            inputs = self._parse_workflow_inputs(workflow_input)
+            Info.set_workflow_inputs(inputs)
+            print(f"Workflow inputs set: {inputs}")
+        elif local_job_run or local_orchestrator_run:
+            # No --workflow-input given — clear any stale file from a previous
+            # local run so Info.get_workflow_input_value does not return old
+            # values. In CI the YAML-generated heredoc has already written the
+            # real dispatch inputs before Runner.run is invoked.
+            Info.set_workflow_inputs({})
 
         res = True
         post_res = True
