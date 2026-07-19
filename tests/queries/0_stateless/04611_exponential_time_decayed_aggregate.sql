@@ -47,6 +47,46 @@ FROM
     FROM VALUES('value Float64, time Float64', (20, 10))
 );
 
+-- A different two-batch distribution must produce the same result.
+SELECT
+    round(exponentialTimeDecayedSumMerge(10)(sum_state), 6),
+    round(exponentialTimeDecayedAvgMerge(10)(avg_state), 6),
+    round(exponentialTimeDecayedCountMerge(10)(count_state), 6)
+FROM
+(
+    SELECT
+        exponentialTimeDecayedSumState(10)(value, time) AS sum_state,
+        exponentialTimeDecayedAvgState(10)(value, time) AS avg_state,
+        exponentialTimeDecayedCountState(10)(time) AS count_state
+    FROM VALUES('value Float64, time Float64', (10, 0), (20, 10))
+    UNION ALL
+    SELECT
+        exponentialTimeDecayedSumState(10)(value, time) AS sum_state,
+        exponentialTimeDecayedAvgState(10)(value, time) AS avg_state,
+        exponentialTimeDecayedCountState(10)(time) AS count_state
+    FROM VALUES('value Float64, time Float64', (5, 5))
+);
+
+-- Merging one state per input row must also produce the same result.
+SELECT
+    round(exponentialTimeDecayedSumMerge(10)(sum_state), 6),
+    round(exponentialTimeDecayedAvgMerge(10)(avg_state), 6),
+    round(exponentialTimeDecayedCountMerge(10)(count_state), 6)
+FROM
+(
+    SELECT
+        batch,
+        exponentialTimeDecayedSumState(10)(value, time) AS sum_state,
+        exponentialTimeDecayedAvgState(10)(value, time) AS avg_state,
+        exponentialTimeDecayedCountState(10)(time) AS count_state
+    FROM VALUES(
+        'batch UInt8, value Float64, time Float64',
+        (0, 10, 0),
+        (1, 20, 10),
+        (2, 5, 5))
+    GROUP BY batch
+);
+
 DROP TABLE IF EXISTS exponential_time_decayed_aggregate;
 
 CREATE TABLE exponential_time_decayed_aggregate

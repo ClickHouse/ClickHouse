@@ -36,6 +36,11 @@ enum class ExponentialTimeDecayedResult
 
 struct ExponentialTimeDecayedState
 {
+    /// Every state is evaluated at max_time:
+    /// weighted_sum = sum(value_i * exp((time_i - max_time) / decay_length))
+    /// weight = sum(exp((time_i - max_time) / decay_length))
+    /// This representation makes merging states the same operation as adding rows,
+    /// independent of row order, batch distribution, and batch count.
     Float64 weighted_sum = 0;
     Float64 weight = 0;
     Float64 max_time = 0;
@@ -78,6 +83,7 @@ struct ExponentialTimeDecayedState
             return;
         }
 
+        /// Re-anchor both states at their shared greatest timestamp before adding them.
         const Float64 merged_max_time = std::max(max_time, rhs.max_time);
         const Float64 lhs_decay = std::exp((max_time - merged_max_time) / decay_length);
         const Float64 rhs_decay = std::exp((rhs.max_time - merged_max_time) / decay_length);
