@@ -61,6 +61,16 @@ $CLICKHOUSE_CLIENT -q "
 # Create a committed source part on disk that we clone to fabricate the test parts.
 $CLICKHOUSE_CLIENT -q "INSERT INTO ${TABLE} VALUES (42)"
 
+# The fabrication below writes part files (a raw txn_version.txt) straight into the part
+# directory, which is only valid on a local disk. The `no-object-storage` tag only skips the
+# object-storage *runner* modes (--s3-storage/--azure-blob-storage); it does not fire when the
+# server's *default* disk is object-storage (e.g. under stress), where the raw file is not valid
+# object-storage metadata and part loading throws. Skip on any non-local disk.
+if [ "$($CLICKHOUSE_CLIENT -q "SELECT type FROM system.disks WHERE name = (SELECT disk_name FROM system.parts WHERE database = currentDatabase() AND table = '${TABLE}' AND active LIMIT 1)")" != "Local" ]; then
+    echo OK
+    exit 0
+fi
+
 DATA_PATH=$($CLICKHOUSE_CLIENT -q "
     SELECT data_paths[1]
     FROM system.tables
