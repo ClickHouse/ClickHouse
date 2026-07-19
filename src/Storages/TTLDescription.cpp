@@ -2,6 +2,7 @@
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnDynamic.h>
 #include <Columns/ColumnVariant.h>
 #include <Compression/CompressionFactory.h>
 #include <Core/Settings.h>
@@ -25,6 +26,7 @@
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
+#include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeVariant.h>
 #include <Interpreters/FunctionNameNormalizer.h>
 #include <Parsers/ExpressionListParsers.h>
@@ -94,6 +96,15 @@ namespace
 /// adaptor short-circuits (returns NULL) and never runs the consumer on the AggregateFunction
 /// alternative. To exercise it we additionally probe with a single-row `Variant` column whose only value
 /// is that alternative (e.g. `toDateTime(v)` with `v Variant(AggregateFunction(max, DateTime64(3)), String)`).
+///
+/// `Dynamic` erases its value types entirely: the static type never mentions AggregateFunction, yet any
+/// row may carry a state (e.g. inserted via CAST to `Dynamic`), and a consumer like `toDateTime` would
+/// only fail later, during TTL execution. Since the stored types cannot be enumerated at DDL time, we
+/// probe every `Dynamic` argument with a single-row column carrying a representative synthetic state
+/// (`AggregateFunction(max, UInt64)`): type-agnostic consumers (`toString`, `dynamicType`, ...) pass,
+/// while consumers with type requirements are rejected as suspicious. Such a TTL is one inserted row
+/// away from breaking every merge of the table, so rejecting it at CREATE is the safer default; the
+/// `allow_suspicious_ttl_expressions` setting and ATTACH remain available as escape hatches.
 void checkActionsDAGForAggregateFunctions(const ActionsDAG & actions_dag, std::string_view expression_kind)
 {
     for (const auto & node : actions_dag.getNodes())
@@ -109,6 +120,7 @@ void checkActionsDAGForAggregateFunctions(const ActionsDAG & actions_dag, std::s
         }
 
         bool consumes_aggregate_state = false;
+        bool has_dynamic_argument = false;
         bool has_lambda_argument = false;
         ColumnsWithTypeAndName arguments;
         arguments.reserve(node.children.size());
@@ -116,6 +128,9 @@ void checkActionsDAGForAggregateFunctions(const ActionsDAG & actions_dag, std::s
         {
             if (hasAggregateFunctionType(child->result_type))
                 consumes_aggregate_state = true;
+
+            if (WhichDataType(child->result_type).isDynamic())
+                has_dynamic_argument = true;
 
             /// A lambda argument cannot be materialized into a column; the higher-order function that
             /// receives it is validated through the captured lambda DAG above, so skip executing it here.
@@ -133,12 +148,12 @@ void checkActionsDAGForAggregateFunctions(const ActionsDAG & actions_dag, std::s
             arguments.emplace_back(std::move(column), child->result_type, child->result_name);
         }
 
-        if (!consumes_aggregate_state || has_lambda_argument)
+        if ((!consumes_aggregate_state && !has_dynamic_argument) || has_lambda_argument)
             continue;
 
         /// Translate the "cannot consume an AggregateFunction state" type error into a clear TTL message;
         /// rethrow anything else (e.g. a data-dependent error raised by a perfectly valid consumer).
-        auto probe = [&](const ColumnsWithTypeAndName & probe_arguments)
+        auto probe = [&](const ColumnsWithTypeAndName & probe_arguments, std::string_view hint)
         {
             try
             {
@@ -148,38 +163,76 @@ void checkActionsDAGForAggregateFunctions(const ActionsDAG & actions_dag, std::s
             {
                 if (e.code() == ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT)
                     throw Exception(ErrorCodes::BAD_TTL_EXPRESSION,
-                        "TTL {}expression uses AggregateFunction column in a function that cannot handle it. "
-                        "Use `finalizeAggregation` to extract the value first: {}", expression_kind, e.message());
+                        "TTL {}expression uses {}: {}", expression_kind, hint, e.message());
                 throw;
             }
         };
 
-        /// Default values cover a top-level AggregateFunction argument.
-        probe(arguments);
+        constexpr std::string_view aggregate_state_hint =
+            "AggregateFunction column in a function that cannot handle it. "
+            "Use `finalizeAggregation` to extract the value first";
 
-        /// Additionally exercise every AggregateFunction alternative hidden inside a `Variant` argument,
-        /// which the all-NULL default column above would otherwise skip (see the note above the function).
-        for (size_t i = 0; i < arguments.size(); ++i)
+        if (consumes_aggregate_state)
         {
-            if (!WhichDataType(arguments[i].type).isVariant())
-                continue;
+            /// Default values cover a top-level AggregateFunction argument.
+            probe(arguments, aggregate_state_hint);
 
-            const auto & variant_type = assert_cast<const DataTypeVariant &>(*arguments[i].type);
-            const auto & variant_types = variant_type.getVariants();
-            for (size_t discr = 0; discr < variant_types.size(); ++discr)
+            /// Additionally exercise every AggregateFunction alternative hidden inside a `Variant` argument,
+            /// which the all-NULL default column above would otherwise skip (see the note above the function).
+            for (size_t i = 0; i < arguments.size(); ++i)
             {
-                if (!hasAggregateFunctionType(variant_types[discr]))
+                if (!WhichDataType(arguments[i].type).isVariant())
                     continue;
 
-                auto variant_column = variant_type.createColumn();
-                ColumnPtr alternative = variant_types[discr]->createColumnConstWithDefaultValue(1)->convertToFullColumnIfConst();
-                assert_cast<ColumnVariant &>(*variant_column).insertIntoVariantFrom(
-                    static_cast<ColumnVariant::Discriminator>(discr), *alternative, 0);
+                const auto & variant_type = assert_cast<const DataTypeVariant &>(*arguments[i].type);
+                const auto & variant_types = variant_type.getVariants();
+                for (size_t discr = 0; discr < variant_types.size(); ++discr)
+                {
+                    if (!hasAggregateFunctionType(variant_types[discr]))
+                        continue;
 
-                ColumnsWithTypeAndName probe_arguments = arguments;
-                probe_arguments[i].column = std::move(variant_column);
-                probe(probe_arguments);
+                    auto variant_column = variant_type.createColumn();
+                    ColumnPtr alternative = variant_types[discr]->createColumnConstWithDefaultValue(1)->convertToFullColumnIfConst();
+                    assert_cast<ColumnVariant &>(*variant_column).insertIntoVariantFrom(
+                        static_cast<ColumnVariant::Discriminator>(discr), *alternative, 0);
+
+                    ColumnsWithTypeAndName probe_arguments = arguments;
+                    probe_arguments[i].column = std::move(variant_column);
+                    probe(probe_arguments, aggregate_state_hint);
+                }
             }
+        }
+
+        /// Exercise every `Dynamic` argument with a synthetic AggregateFunction state, since the static
+        /// type gives no way to rule one out (see the note above the function).
+        for (size_t i = 0; i < arguments.size(); ++i)
+        {
+            if (!WhichDataType(arguments[i].type).isDynamic())
+                continue;
+
+            auto aggregate_state_type = DataTypeFactory::instance().get("AggregateFunction(max, UInt64)");
+            ColumnPtr aggregate_state = aggregate_state_type->createColumnConstWithDefaultValue(1)->convertToFullColumnIfConst();
+
+            auto dynamic_column = arguments[i].type->createColumn();
+            auto & dynamic = assert_cast<ColumnDynamic &>(*dynamic_column);
+            if (dynamic.addNewVariant(aggregate_state_type))
+            {
+                auto discr = dynamic.getVariantInfo().variant_name_to_discriminator.at(aggregate_state_type->getName());
+                dynamic.getVariantColumn().insertIntoVariantFrom(discr, *aggregate_state, 0);
+            }
+            else
+            {
+                /// The type cannot hold new variants (e.g. `Dynamic(max_types=0)`), so states would be
+                /// stored in the shared variant - probe through it as well.
+                dynamic.insertValueIntoSharedVariant(*aggregate_state, aggregate_state_type, aggregate_state_type->getName(), 0);
+            }
+
+            ColumnsWithTypeAndName probe_arguments = arguments;
+            probe_arguments[i].column = std::move(dynamic_column);
+            probe(probe_arguments,
+                "a Dynamic column in a function that cannot handle all types a Dynamic column can store "
+                "(e.g. an AggregateFunction state), so TTL execution could fail depending on the inserted values. "
+                "Use a typed subcolumn instead, or set `allow_suspicious_ttl_expressions` to allow it");
         }
     }
 }
