@@ -196,30 +196,58 @@ struct AggregateFunctionMergedJSONPatchData
         }
     }
 
-    /// Map keys are arbitrary strings and may contain '.' (the path separator).
-    /// To prevent a key like "x.y" from being misinterpreted as two path levels, dots inside
-    /// Map keys are replaced with \x01 (SOH — a control character that cannot appear in valid
-    /// JSON strings) when the key is appended to a dotted path during flattening.
-    /// unescapeMapKey reverses this at reconstruction time.
+    /// Map keys are arbitrary strings and may contain '.' (the path separator) or the escape
+    /// byte \x01 itself.  We use a two-byte escape scheme so the encoding is injective:
+    ///
+    ///   '.'   → \x01\x00   (dot escaped)
+    ///   \x01  → \x01\x01   (sentinel escaped)
+    ///
+    /// This guarantees that distinct keys always produce distinct escaped representations and
+    /// that unescapeMapKey is the exact inverse of escapeMapKey.
     static String escapeMapKey(std::string_view key)
     {
-        if (key.find('.') == std::string_view::npos)
-            return String(key); // fast path: no dots, nothing to escape
+        if (key.find('.') == std::string_view::npos && key.find('\x01') == std::string_view::npos)
+            return String(key); // fast path: nothing to escape
         String result;
-        result.reserve(key.size());
+        result.reserve(key.size() + 4); // a small over-estimate
         for (char c : key)
-            result += (c == '.') ? '\x01' : c;
+        {
+            if (c == '.')
+            {
+                result += '\x01';
+                result += '\x00';
+            }
+            else if (c == '\x01')
+            {
+                result += '\x01';
+                result += '\x01';
+            }
+            else
+            {
+                result += c;
+            }
+        }
         return result;
     }
 
     static String unescapeMapKey(std::string_view escaped)
     {
         if (escaped.find('\x01') == std::string_view::npos)
-            return String(escaped); // fast path: no escapes
+            return String(escaped); // fast path: no escape sequences
         String result;
         result.reserve(escaped.size());
-        for (char c : escaped)
-            result += (c == '\x01') ? '.' : c;
+        for (size_t i = 0; i < escaped.size(); ++i)
+        {
+            if (escaped[i] == '\x01' && i + 1 < escaped.size())
+            {
+                ++i;
+                result += (escaped[i] == '\x00') ? '.' : '\x01';
+            }
+            else
+            {
+                result += escaped[i];
+            }
+        }
         return result;
     }
 

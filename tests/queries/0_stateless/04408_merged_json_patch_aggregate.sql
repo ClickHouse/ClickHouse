@@ -379,3 +379,9 @@ FROM (
         UNION ALL SELECT '{"a":{"z":3}}'::JSON(a Map(String, UInt32)), 2
     )
 );
+
+-- Map key collision fix: key "x\u0001y" (containing literal \x01) and key "x.y" must be
+-- stored as two distinct entries.  The old single-byte scheme mapped both to the same
+-- internal path segment; the two-byte scheme encodes them differently.
+SELECT toJSONString(mergedJSONPatch(patch, version))
+FROM (SELECT '{"a":{"x\u0001y":1,"x.y":2}}'::JSON(a Map(String, UInt32)) AS patch, 1 AS version);
