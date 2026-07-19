@@ -7,6 +7,8 @@
 namespace DB
 {
 
+class ContextAccessWrapper;
+
 /**
  * Implements the IDatabase interface and combines multiple other databases
  * Searches for tables in each database in order until found, and delegates operations to the appropriate database
@@ -131,6 +133,15 @@ public:
     /// require a privilege on both the facade name and the source (the facade must not widen
     /// access). Returns `std::nullopt` for plain databases, temporary tables, and null `storage`.
     static std::optional<StorageID> getSourceTableIdForReadonlyFacade(const StorageID & written_id, const StoragePtr & storage);
+
+    /// Shared gate for iterator-based `system.*` readers (`system.parts`, `system.mutations`,
+    /// `system.replicas`, queue/consumer tables, ...): returns true when `storage`, reached under
+    /// the facade name `database_name`.`table_name` through a read-only `Overlay`, must stay
+    /// hidden because `SHOW_TABLES` is not granted on the underlying source table — the facade
+    /// must not widen metadata visibility. The check must run regardless of any facade-side
+    /// per-database grant shortcut, since such a shortcut does not cover the source database.
+    static bool isSourceTableHiddenFromShow(
+        const ContextAccessWrapper & access, const String & written_database_name, const String & written_table_name, const StoragePtr & storage);
 
 protected:
     ASTPtr getCreateDatabaseQueryImpl() const override TSA_REQUIRES(mutex);

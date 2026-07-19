@@ -19,6 +19,7 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Access/ContextAccess.h>
 #include <Databases/IDatabase.h>
+#include <Databases/DatabaseOverlay.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/Sources/NullSource.h>
@@ -200,6 +201,12 @@ void StorageSystemReplicas::readImpl(
             if (!dynamic_cast<const StorageReplicatedMergeTree *>(table.get()))
                 continue;
             if (check_access_for_tables && !access->isGranted(AccessType::SHOW_TABLES, db.first, iterator->name()))
+                continue;
+
+            /// A table reached through a read-only `Overlay` facade also requires `SHOW_TABLES`
+            /// on the underlying source table: the facade must not widen metadata visibility.
+            /// This runs regardless of the facade-side per-database grant shortcut.
+            if (DatabaseOverlay::isSourceTableHiddenFromShow(*access, db.first, iterator->name(), table))
                 continue;
             replicated_tables[db.first][iterator->name()] = table;
         }

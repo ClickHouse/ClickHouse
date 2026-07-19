@@ -1,4 +1,5 @@
 #include <Storages/System/StorageSystemIcebergFiles.h>
+#include <Databases/DatabaseOverlay.h>
 #include <Storages/System/SystemTableSourceRegistry.h>
 
 #include <Access/ContextAccess.h>
@@ -214,6 +215,12 @@ protected:
 
             StoragePtr storage = current_table_iterator->table();
             if (!storage)
+                return false;
+
+            /// A table reached through a read-only `Overlay` facade also requires `SHOW_TABLES`
+            /// on the underlying source table: the facade must not widen metadata visibility.
+            /// This runs regardless of the facade-side per-database grant shortcut.
+            if (DatabaseOverlay::isSourceTableHiddenFromShow(*access, current_table_iterator->databaseName(), current_table_iterator->name(), storage))
                 return false;
 
             TableLockHolder lock = storage->tryLockForShare(

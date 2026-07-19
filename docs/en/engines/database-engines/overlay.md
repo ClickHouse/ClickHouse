@@ -139,7 +139,11 @@ Metadata visibility follows the same dual-grant rule. `SHOW TABLES`, `SHOW CREAT
 belong to the facade expose a table only when the corresponding `SHOW` privilege is granted on
 **both** the `Overlay` and the underlying source table. Listings simply omit a table whose
 source-side privilege is missing, `EXISTS` reports it as nonexistent, and the point lookups
-(`SHOW CREATE TABLE`, `DESCRIBE`) are denied.
+(`SHOW CREATE TABLE`, `DESCRIBE`) are denied. The same rule covers the operational system
+tables that enumerate tables per database (`system.parts`, `system.parts_columns`,
+`system.mutations`, `system.replicas`, `system.replication_queue`, `system.distribution_queue`,
+`system.data_skipping_indices`, `system.projections`, `system.constraints`, and similar): a
+facade row is shown only when `SHOW TABLES` is also granted on the underlying source table.
 
 Creating an `Overlay` database requires a `SELECT` privilege on each underlying database
 it unions. A user who cannot read a source database therefore cannot expose it through a

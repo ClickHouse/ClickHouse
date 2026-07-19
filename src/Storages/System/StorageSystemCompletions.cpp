@@ -8,6 +8,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <Databases/IDatabase.h>
+#include <Databases/DatabaseOverlay.h>
 #include <Dictionaries/DictionaryStructure.h>
 #include <Dictionaries/IDictionary.h>
 #include <Dictionaries/IDictionarySource.h>
@@ -81,6 +82,12 @@ static void fillDataWithTableColumns(
 
     if (!table)
         return; // table was dropped or deleted, while adding columns for previous table
+
+    /// A table reached through a read-only `Overlay` facade also requires `SHOW_TABLES`
+    /// on the underlying source table: the facade must not widen metadata visibility.
+    /// This runs regardless of the facade-side per-database grant shortcut.
+    if (DatabaseOverlay::isSourceTableHiddenFromShow(*access, database_name, table_name, table))
+        return;
 
     res_columns[0]->insert(table_name);
     res_columns[1]->insert(TABLE_CONTEXT);

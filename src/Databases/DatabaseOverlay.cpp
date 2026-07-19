@@ -1,5 +1,6 @@
 #include <Databases/DatabaseOverlay.h>
 
+#include <Access/ContextAccess.h>
 #include <Common/quoteString.h>
 #include <Common/typeid_cast.h>
 #include <Common/AsyncLoader.h>
@@ -81,6 +82,13 @@ std::optional<StorageID> DatabaseOverlay::getSourceTableIdForReadonlyFacade(cons
     if (isReadonlyFacade(written_db.get()))
         return source_id;
     return {};
+}
+
+bool DatabaseOverlay::isSourceTableHiddenFromShow(
+    const ContextAccessWrapper & access, const String & written_database_name, const String & written_table_name, const StoragePtr & storage)
+{
+    const auto source_id = getSourceTableIdForReadonlyFacade(StorageID{written_database_name, written_table_name}, storage);
+    return source_id && !access.isGranted(AccessType::SHOW_TABLES, source_id->database_name, source_id->table_name);
 }
 
 std::vector<DatabasePtr> DatabaseOverlay::resolveDatabases() const

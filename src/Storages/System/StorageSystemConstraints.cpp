@@ -155,10 +155,7 @@ protected:
                 /// also be granted on the underlying source table: the facade must not widen metadata
                 /// visibility. The facade-side database shortcut above does not cover the source database,
                 /// so this check runs regardless of `check_access_for_tables`.
-                if (auto overlay_source_id
-                        = DatabaseOverlay::getSourceTableIdForReadonlyFacade(StorageID{database_name, table_name}, table);
-                    overlay_source_id
-                        && !access->isGranted(AccessType::SHOW_TABLES, overlay_source_id->database_name, overlay_source_id->table_name))
+                if (DatabaseOverlay::isSourceTableHiddenFromShow(*access, database_name, table_name, table))
                     continue;
 
                 add_constraints(database_name, table_name, table);
