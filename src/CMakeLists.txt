@@ -603,10 +603,6 @@ if (TARGET ch_contrib::fastpfor)
     target_link_libraries(dbms PUBLIC ch_contrib::fastpfor)
 endif()
 
-if (TARGET ch_contrib::libpng)
-    target_link_libraries(dbms PUBLIC ch_contrib::libpng)
-endif()
-
 if (TARGET ch_contrib::rdkafka)
     target_link_libraries(dbms PUBLIC ch_contrib::rdkafka ch_contrib::cppkafka)
 endif()
@@ -777,7 +773,7 @@ if (TARGET ch_contrib::brotli)
 endif()
 
 if (TARGET ch_contrib::snappy)
-    target_link_libraries (clickhouse_common_io PUBLIC ch_contrib::snappy)
+    target_link_libraries (clickhouse_common_io PUBLIC ch_contrib::snappy ch_contrib::crc32c)
 endif()
 
 if (TARGET ch_contrib::amqp_cpp)
@@ -842,8 +838,8 @@ if (TARGET ch_contrib::bzip2)
     target_link_libraries (clickhouse_common_io PRIVATE ch_contrib::bzip2)
 endif()
 
-if (TARGET ch_contrib::base64)
-    target_link_libraries (clickhouse_common_io PUBLIC ch_contrib::base64)
+if (TARGET ch_contrib::simdutf)
+    target_link_libraries (clickhouse_common_io PUBLIC ch_contrib::simdutf)
 endif()
 
 if (TARGET ch_contrib::libarchive)
