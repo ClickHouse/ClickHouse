@@ -49,7 +49,15 @@ SELECT L2Normalize(CAST([], 'Array(Float64)'));
 SELECT LpNormalize([1, 2]); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
 SELECT LpNormalize([1, 2], -3.4); -- { serverError ARGUMENT_OUT_OF_BOUND }
 SELECT LpNormalize([1, 2], 'aa'); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+-- A non-constant `p` is rejected identically by the tuple and array carriers, so the tuple-or-array
+-- surface does not drift: `p` is declared always-constant, so a materialized `p` is rejected before
+-- the kernel runs regardless of the carrier.
 SELECT LpNormalize([1, 2], materialize(3.14)); -- { serverError ILLEGAL_COLUMN }
+SELECT LpNormalize((1, 2), materialize(3.14)); -- { serverError ILLEGAL_COLUMN }
+SELECT LpNorm([1, 2], materialize(3.14)); -- { serverError ILLEGAL_COLUMN }
+SELECT LpNorm((1, 2), materialize(3.14)); -- { serverError ILLEGAL_COLUMN }
+SELECT LpDistance([1, 2], [3, 4], materialize(3.14)); -- { serverError ILLEGAL_COLUMN }
+SELECT LpDistance((1, 2), (3, 4), materialize(3.14)); -- { serverError ILLEGAL_COLUMN }
 
 -- `p` must be within `[1, inf)`, so non-finite `p` is rejected instead of silently producing `NaN`s.
 SELECT LpNormalize([1, 2], nan); -- { serverError ARGUMENT_OUT_OF_BOUND }
