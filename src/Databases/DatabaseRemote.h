@@ -87,9 +87,11 @@ private:
     Strings fetchTablesList(ContextPtr local_context) const;
 
     /// Build a `Distributed` storage that forwards to `remote_database.table_name` on the remote
-    /// server, inferring the column structure from it. Returns `nullptr` if the table does not
-    /// exist (or the structure cannot be obtained).
-    StoragePtr fetchTable(const String & table_name, ContextPtr local_context) const;
+    /// server, inferring the column structure from it. Returns `nullptr` if the table genuinely
+    /// does not exist. When `throw_on_error` is set, a transport/authentication failure is
+    /// propagated instead of being reported as a missing table; when it is not set (the best-effort
+    /// path used by `tryGetTable`/`system.tables`), any failure returns `nullptr`.
+    StoragePtr fetchTable(const String & table_name, ContextPtr local_context, bool throw_on_error = false) const;
 };
 
 }

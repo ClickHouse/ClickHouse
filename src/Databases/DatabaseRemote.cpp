@@ -5,15 +5,13 @@
 #include <Core/Defines.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeString.h>
-#include <DataTypes/dataTypeToAST.h>
 #include <Databases/DatabaseFactory.h>
 #include <Disks/IDisk.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/evaluateConstantExpression.h>
-#include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTCreateQuery.h>
-#include <Parsers/ASTDataType.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
@@ -27,10 +25,6 @@
 #include <Common/parseRemoteDescription.h>
 #include <Common/quoteString.h>
 
-#include <filesystem>
-
-namespace fs = std::filesystem;
-
 namespace DB
 {
 namespace Setting
@@ -38,6 +32,8 @@ namespace Setting
     extern const SettingsUInt64 table_function_remote_max_addresses;
     extern const SettingsUInt64 max_result_rows;
     extern const SettingsUInt64 max_result_bytes;
+    extern const SettingsUInt64 max_parser_depth;
+    extern const SettingsUInt64 max_parser_backtracks;
 }
 
 namespace ErrorCodes
@@ -101,6 +97,21 @@ Strings DatabaseRemote::fetchTablesList(ContextPtr local_context) const
     {
         try
         {
+            /// A shard that points to this server is a local shard (see `buildCluster`). Enumerate the
+            /// local database under `local_context` instead of opening a self-connection with the stored
+            /// engine credentials, mirroring the local-shard special case of `getStructureOfRemoteTable`.
+            /// Otherwise `SHOW TABLES` / `system.tables` would list local table names according to the
+            /// configured remote user rather than the caller's privileges.
+            if (shard_info.isLocal())
+            {
+                if (auto local_database = DatabaseCatalog::instance().tryGetDatabase(remote_database))
+                {
+                    for (auto it = local_database->getTablesIterator(query_context); it->isValid(); it->next())
+                        tables.push_back(it->name());
+                }
+                return tables;
+            }
+
             RemoteQueryExecutor executor(shard_info.pool, query, sample_block, query_context);
             executor.setPoolMode(PoolMode::GET_ONE);
 
@@ -126,20 +137,42 @@ Strings DatabaseRemote::fetchTablesList(ContextPtr local_context) const
 }
 
 
-StoragePtr DatabaseRemote::fetchTable(const String & table_name, ContextPtr local_context) const
+StoragePtr DatabaseRemote::fetchTable(const String & table_name, ContextPtr local_context, bool throw_on_error) const
 {
     ColumnsDescription columns;
     try
     {
         columns = getStructureOfRemoteTable(*cluster, StorageID{remote_database, table_name}, local_context);
     }
+    catch (const Exception & e)
+    {
+        /// A genuinely missing table is a normal outcome (e.g. `EXISTS TABLE`): return `nullptr` on both
+        /// the best-effort and the throwing path, so `SHOW CREATE TABLE` reports "does not exist" rather
+        /// than the raw remote error.
+        if (e.code() == ErrorCodes::UNKNOWN_TABLE)
+            return {};
+
+        /// A transport / authentication failure is not a missing table. On the throwing path (e.g.
+        /// `SHOW CREATE TABLE`) propagate it instead of masquerading it as `UNKNOWN_TABLE`.
+        if (throw_on_error)
+            throw;
+
+        /// The best-effort methods (`tryGetTable`, `isTableExist`, ...) can be called, for example, by a
+        /// query to `system.tables`, which must not fail because of a remote error, so log only at debug
+        /// level to avoid spurious errors in the server log and in the query's `stderr`.
+        LOG_DEBUG(
+            log,
+            "Cannot get the structure of the remote table {}.{}: {}",
+            remote_database,
+            table_name,
+            getCurrentExceptionMessage(/* with_stacktrace = */ false));
+        return {};
+    }
     catch (...)
     {
-        /// The table may not exist on the remote server, or the remote server may be unavailable.
-        /// Do not throw here: these methods (`tryGetTable`, `isTableExist`, ...) are best-effort and can
-        /// be called, for example, by a query to `system.tables`, which must not fail because of a remote
-        /// error. A missing table is a normal outcome (e.g. `EXISTS TABLE`), so log only at debug level
-        /// to avoid spurious errors in the server log and in the query's `stderr`.
+        if (throw_on_error)
+            throw;
+
         LOG_DEBUG(
             log,
             "Cannot get the structure of the remote table {}.{}: {}",
@@ -236,17 +269,13 @@ ASTPtr DatabaseRemote::getCreateDatabaseQueryImpl() const
 
 ASTPtr DatabaseRemote::getCreateTableQueryImpl(const String & table_name, ContextPtr local_context, bool throw_on_error) const
 {
-    auto storage = fetchTable(table_name, local_context);
+    auto storage = fetchTable(table_name, local_context, throw_on_error);
     if (!storage)
     {
         if (throw_on_error)
             throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table {}.{} does not exist on the remote server", remote_database, table_name);
         return nullptr;
     }
-
-    auto create_table_query = make_intrusive<ASTCreateQuery>();
-    create_table_query->setDatabase(getDatabaseName());
-    create_table_query->setTable(table_name);
 
     /// The table is exposed as the `Remote`/`RemoteSecure` table engine, which is the persistent
     /// counterpart of the `remote`/`remoteSecure` table functions. Turn the database engine
@@ -271,23 +300,19 @@ ASTPtr DatabaseRemote::getCreateTableQueryImpl(const String & table_name, Contex
             engine_arguments.insert(engine_arguments.begin() + 2, make_intrusive<ASTLiteral>(table_name));
         }
     }
-    create_table_query->set(create_table_query->storage, table_storage_define);
 
-    auto columns_declare_list = make_intrusive<ASTColumns>();
-    auto columns_expression_list = make_intrusive<ASTExpressionList>();
-    columns_declare_list->set(columns_declare_list->columns, columns_expression_list);
-    create_table_query->set(create_table_query->columns_list, columns_declare_list);
-
-    auto metadata_snapshot = storage->getInMemoryMetadataPtr(local_context, false);
-    for (const auto & column_type_and_name : metadata_snapshot->getColumns().getOrdinary())
-    {
-        const auto column_declaration = make_intrusive<ASTColumnDeclaration>();
-        column_declaration->name = column_type_and_name.name;
-        column_declaration->setType(dataTypeToAST(column_type_and_name.type));
-        columns_expression_list->children.emplace_back(column_declaration);
-    }
-
-    return create_table_query;
+    /// Reuse the common serializer with `only_ordinary = false` so that column defaults, aliases and
+    /// materialized expressions inferred from the remote `ClickHouse` table are preserved. Emitting only
+    /// names and types would change insert/read semantics of the recreated `Remote(...)` table.
+    const Settings & settings = local_context->getSettingsRef();
+    return getCreateQueryFromStorage(
+        storage,
+        table_storage_define,
+        /* only_ordinary = */ false,
+        static_cast<unsigned>(settings[Setting::max_parser_depth]),
+        static_cast<unsigned>(settings[Setting::max_parser_backtracks]),
+        throw_on_error,
+        local_context);
 }
 
 
