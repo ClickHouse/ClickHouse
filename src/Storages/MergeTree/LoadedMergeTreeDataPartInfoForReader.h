@@ -81,6 +81,8 @@ public:
 
     SerializationPtr getSerialization(const NameAndTypePair & column) const override;
 
+    SerializationPtr tryGetSerialization(const String & column_name) const override { return data_part->tryGetSerialization(column_name); }
+
     String getTableName() const override { return data_part->storage.getStorageID().getNameForLogs(); }
 
     MergeTreeData::DataPartPtr getDataPart() const { return data_part; }

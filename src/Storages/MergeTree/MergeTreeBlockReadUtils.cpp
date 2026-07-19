@@ -118,7 +118,18 @@ bool injectRequiredColumnsRecursively(
             /// This can happen if the column was dropped and then re-added with the same name.
             && !(alter_conversions && alter_conversions->isColumnDropped(column_name_in_part, share_nested)))
         {
-            if (!column_in_storage->isSubcolumn() || column_in_part->type->tryGetSubcolumnType(column_in_storage->getSubcolumnName()))
+            bool column_exists = !column_in_storage->isSubcolumn();
+            if (!column_exists)
+            {
+                const auto & subcolumn_name = column_in_storage->getSubcolumnName();
+                column_exists = data_part_info_for_reader.tryGetSerialization(
+                    Nested::concatenateName(column_name_in_part, subcolumn_name)) != nullptr;
+
+                if (!column_exists)
+                    column_exists = column_in_part->type->tryGetSubcolumnType(subcolumn_name) != nullptr;
+            }
+
+            if (column_exists)
             {
                 add_column(column_name);
                 return true;

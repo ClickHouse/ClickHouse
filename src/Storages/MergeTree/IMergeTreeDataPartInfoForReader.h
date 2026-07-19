@@ -92,6 +92,8 @@ public:
 
     virtual SerializationPtr getSerialization(const NameAndTypePair & column) const = 0;
 
+    virtual SerializationPtr tryGetSerialization(const String & column_name) const = 0;
+
     virtual const SerializationInfoByName & getSerializationInfos() const = 0;
 
     virtual String getTableName() const = 0;
