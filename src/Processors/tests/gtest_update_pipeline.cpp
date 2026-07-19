@@ -188,7 +188,8 @@ public:
         if (output.isFinished())
         {
             for (auto & input : inputs)
-                input.close();
+                if (input.isConnected())
+                    input.close();
             return Status::Finished;
         }
 
@@ -238,7 +239,15 @@ public:
             return update;
         }
 
-        /// Source finished -> remove it. Frees all FAN_OUT of its direct-edges at once.
+        /// Source finished -> remove it. Disconnect every fan-out output from our inputs first, so
+        /// `to_remove` holds a processor already detached from us (the IProcessor::updatePipeline
+        /// contract: returned processors must be disconnected, see MergeTreeCommitOrderSequentialSource).
+        /// Disconnecting only severs the port linkage; removeNode still destroys the source node's
+        /// own graph Edge objects, freeing all FAN_OUT of them at once -- which is what leaves the
+        /// stale Edge* dangling in updateNode's work-list and reproduces the use-after-free.
+        for (auto & input : inputs)
+            disconnect(input.getOutputPort(), input);
+
         update.to_remove.push_back(source);
         source.reset();
         source_removed = true;
