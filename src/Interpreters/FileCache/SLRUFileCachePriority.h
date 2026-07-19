@@ -78,7 +78,7 @@ public:
         const CacheStateGuard::Lock *) override;
 
     bool collectCandidatesForEviction(
-        const EvictionInfo & eviction_info,
+        EvictionInfo & eviction_info,
         FileCacheReserveStat & stat,
         EvictionCandidates & res,
         InvalidatedEntriesInfos & invalidated_entries,
@@ -124,6 +124,9 @@ public:
 protected:
     void setInvalidateNotifier(size_t threshold, std::function<void()> on_invalidate) override
     {
+        /// Remember the hook on this priority as well: `OvercommitFileCachePriority`
+        /// reads it back when wiring newly created per-user priorities.
+        IFileCachePriority::setInvalidateNotifier(threshold, on_invalidate);
         protected_queue.setInvalidateNotifier(threshold, on_invalidate);
         probationary_queue.setInvalidateNotifier(threshold, on_invalidate);
     }
@@ -159,7 +162,7 @@ private:
     void increasePriority(SLRUIterator & iterator, const CachePriorityGuard::WriteLock & lock);
 
     bool collectCandidatesForEvictionInProtected(
-        const EvictionInfo & eviction_info,
+        EvictionInfo & eviction_info,
         FileCacheReserveStat & stat,
         EvictionCandidates & res,
         InvalidatedEntriesInfos & invalidated_entries,
