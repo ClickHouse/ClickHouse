@@ -4026,8 +4026,33 @@ bool StorageReplicatedMergeTree::syncTableStructureFromZooKeeperIfNeeded()
     /// conclude the replica is up to date and skip the repair, leaving the stale structure
     /// indefinitely. So compare the actual local metadata + columns against the ZooKeeper snapshot
     /// (non-strict, so a mismatch returns false instead of throwing).
+    ///
+    /// The comparison itself can throw instead of reporting a mismatch: checkEquals parses the
+    /// ZooKeeper-side indices and projections under the LOCAL column set, so a missed ALTER_METADATA
+    /// that both adds a column and adds an index/projection referencing it raises UNKNOWN_IDENTIFIER
+    /// here. Treat that as "differs" and proceed with the repair (which never parses the ZooKeeper
+    /// metadata under the stale local columns: the repair entry carries the raw strings, and
+    /// executeMetadataAlter parses them under the entry's own column set). Propagating instead would
+    /// wedge the replica permanently: startup would rethrow on every retry and the table would never
+    /// leave readonly mode. Keeper errors must still propagate - they mean we could not look, not
+    /// that the structures differ.
     auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
-    if (checkTableStructureAttempt(zookeeper_path, metadata_snapshot, nullptr, /* strict_check */ false))
+    bool same_structure = false;
+    try
+    {
+        same_structure = checkTableStructureAttempt(zookeeper_path, metadata_snapshot, nullptr, /* strict_check */ false);
+    }
+    catch (const Coordination::Exception &)
+    {
+        throw;
+    }
+    catch (const Exception & e)
+    {
+        LOG_WARNING(log, "Cannot compare the local table structure with the structure in ZooKeeper, assuming they "
+                         "differ. This is expected if a missed ALTER_METADATA added a column together with an index "
+                         "or a projection that references it. Error: {}", e.displayText());
+    }
+    if (same_structure)
         return false;
 
     LOG_WARNING(log, "Local table structure is different from the structure (metadata version {}) in ZooKeeper. "

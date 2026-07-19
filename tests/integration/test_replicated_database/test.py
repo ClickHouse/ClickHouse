@@ -1421,6 +1421,15 @@ def test_replicated_table_structure_alter(started_cluster):
     main_node.query(
         "ALTER TABLE table_structure.rmt COMMENT COLUMN v 'version'", settings=settings
     )
+    # An index on the missed column: the ZooKeeper-side metadata now references a column the
+    # stale replica does not know about, so comparing the structures by parsing the ZooKeeper
+    # metadata under the local columns raises UNKNOWN_IDENTIFIER instead of reporting a
+    # mismatch. The startup repair must treat that as "differs" and still converge, not wedge
+    # the replica in readonly mode.
+    main_node.query(
+        "ALTER TABLE table_structure.rmt ADD INDEX m_idx m TYPE minmax GRANULARITY 1",
+        settings=settings,
+    )
     main_node.query("INSERT INTO table_structure.rmt VALUES (1, 2, 3)")
 
     # competing_node (which SYNCed the pre-ALTER rmt and then detached) is the only replica
@@ -1456,6 +1465,7 @@ def test_replicated_table_structure_alter(started_cluster):
     # time.sleep(600)
     assert "mem" in competing_node.query("SHOW TABLES FROM table_structure")
     assert "1\t2\t3\n" == competing_node.query("SELECT * FROM table_structure.rmt")
+    assert "m_idx" in competing_node.query("SHOW CREATE TABLE table_structure.rmt")
 
     main_node.query("ALTER TABLE table_structure.rmt ADD COLUMN k int")
     main_node.query("INSERT INTO table_structure.rmt VALUES (1, 2, 3, 4)")
