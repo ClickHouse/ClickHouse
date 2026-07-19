@@ -30,6 +30,7 @@
 #include <Parsers/ASTFunction.h>
 #include <Common/DateLUT.h>
 #include <Common/Exception.h>
+#include <Common/LockMemoryExceptionInThread.h>
 #include <Common/Macros.h>
 #include <Common/logger_useful.h>
 #include <Common/CurrentMetrics.h>
@@ -525,15 +526,18 @@ struct BackupsWorker::BackupStarter
 
     void onException()
     {
+        /// After `MEMORY_LIMIT_EXCEEDED` any allocation here (logging, the cleanup, setting the
+        /// status) is likely to fail as well, and the terminal status must be set nevertheless:
+        /// otherwise the operation stays `CREATING_BACKUP` in `system.backups` forever and
+        /// clients waiting for the operation never wake up.
+        LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
+
         /// Something bad happened, the backup has not built.
         tryLogCurrentException(backups_worker.log, fmt::format("Failed to make {} {}",
                                (is_internal_backup ? "internal backup" : "backup"),
                                backup_name_for_logging));
 
-        /// The cleanup below can throw again, e.g. after `MEMORY_LIMIT_EXCEEDED` any allocation
-        /// during the cleanup is likely to fail as well. The terminal status must be set
-        /// nevertheless: otherwise the operation stays `CREATING_BACKUP` in `system.backups`
-        /// forever and clients waiting for the operation never wake up.
+        /// The cleanup below can still throw, e.g. on a coordination (ZooKeeper) error.
         try
         {
             bool backup_is_corrupted = (backup && backup->setIsCorrupted());
@@ -1006,13 +1010,16 @@ struct BackupsWorker::RestoreStarter
 
     void onException()
     {
+        /// After `MEMORY_LIMIT_EXCEEDED` any allocation here (logging, the cleanup, setting the
+        /// status) is likely to fail as well, and the terminal status must be set nevertheless:
+        /// otherwise the operation stays `RESTORING` in `system.backups` forever and clients
+        /// waiting for the operation never wake up.
+        LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
+
         /// Something bad happened, some data were not restored.
         tryLogCurrentException(backups_worker.log, fmt::format("Failed to restore from {} {}", (is_internal_restore ? "internal backup" : "backup"), backup_name_for_logging));
 
-        /// The cleanup below can throw again, e.g. after `MEMORY_LIMIT_EXCEEDED` any allocation
-        /// during the cleanup is likely to fail as well. The terminal status must be set
-        /// nevertheless: otherwise the operation stays `RESTORING` in `system.backups`
-        /// forever and clients waiting for the operation never wake up.
+        /// The cleanup below can still throw, e.g. on a coordination (ZooKeeper) error.
         try
         {
             /// Let other hosts know we got an error.
