@@ -1044,6 +1044,16 @@ public:
     void addViewAccessInfo(const String & view_name);
     void addUsedRowPolicy(const String & policy_name);
 
+    /// Merge access info collected elsewhere (e.g. stored in a query result cache entry)
+    /// into the access info of this query.
+    void addQueryAccessInfo(
+        const std::set<std::string> & databases,
+        const std::set<std::string> & tables,
+        const std::set<std::string> & columns,
+        const std::set<std::string> & partitions,
+        const std::set<std::string> & projections,
+        const std::set<std::string> & views);
+
     struct QualifiedProjectionName
     {
         StorageID storage_id = StorageID::createEmpty();

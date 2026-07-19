@@ -674,6 +674,12 @@ void QueryResultCacheWriter::buffer(Chunk && chunk, ChunkType chunk_type)
     }
 }
 
+void QueryResultCacheWriter::setAccessInfo(QueryResultCache::AccessInfo access_info_)
+{
+    std::lock_guard lock(mutex);
+    query_result->access_info = std::move(access_info_);
+}
+
 void QueryResultCacheWriter::finalizeWrite()
 {
     if (skip_insert)
@@ -854,6 +860,8 @@ QueryResultCacheReader::QueryResultCacheReader(Cache & cache_, const Cache::Key 
 
     auto age = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now() - entry_key.created_at).count();
     ProfileEvents::increment(ProfileEvents::QueryCacheAgeSeconds, age);
+
+    access_info = entry_mapped->access_info;
 
     if (!entry_key.is_compressed)
     {

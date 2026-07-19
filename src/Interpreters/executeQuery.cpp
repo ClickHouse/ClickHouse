@@ -1782,6 +1782,17 @@ static BlockIO executeQueryImpl(
                         result_details.query_cache_entry_created_at = reader.entryCreatedAt();
                         result_details.query_cache_entry_expires_at = reader.entryExpiresAt();
 
+                        /// No interpreter runs on a cache hit, so the access info (the `databases`, `tables`,
+                        /// etc. columns of `system.query_log`) is taken from the cache entry.
+                        const auto & entry_access_info = reader.getAccessInfo();
+                        context->addQueryAccessInfo(
+                            entry_access_info.databases,
+                            entry_access_info.tables,
+                            entry_access_info.columns,
+                            entry_access_info.partitions,
+                            entry_access_info.projections,
+                            entry_access_info.views);
+
                         QueryPipeline pipeline;
                         pipeline.readFromQueryResultCache(reader.getSource(), reader.getSourceTotals(), reader.getSourceExtremes());
                         res.pipeline = std::move(pipeline);
@@ -1925,6 +1936,20 @@ static BlockIO executeQueryImpl(
                                      settings[Setting::max_block_size],
                                      settings[Setting::query_cache_max_size_in_bytes],
                                      settings[Setting::query_cache_max_entries]));
+                                {
+                                    /// Remember the access info in the entry, so that queries answered from
+                                    /// the cache can report it in `system.query_log` (the interpreter that
+                                    /// collects it never runs on a cache hit).
+                                    const auto & access_info = context->getQueryAccessInfo();
+                                    std::lock_guard lock(access_info.mutex);
+                                    query_result_cache_writer->setAccessInfo(
+                                        {access_info.databases,
+                                         access_info.tables,
+                                         access_info.columns,
+                                         access_info.partitions,
+                                         access_info.projections,
+                                         access_info.views});
+                                }
                                 res.pipeline.writeResultIntoQueryResultCache(query_result_cache_writer);
                                 query_result_cache_usage = QueryResultCacheUsage::Write;
                             }

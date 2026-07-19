@@ -2827,6 +2827,26 @@ void Context::addQueryAccessInfo(const Names & partition_names)
         query_access_info->partitions.emplace(partition_name);
 }
 
+void Context::addQueryAccessInfo(
+    const std::set<std::string> & databases,
+    const std::set<std::string> & tables,
+    const std::set<std::string> & columns,
+    const std::set<std::string> & partitions,
+    const std::set<std::string> & projections,
+    const std::set<std::string> & views)
+{
+    if (isGlobalContext())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context cannot have query access info");
+
+    std::lock_guard<std::mutex> lock(query_access_info->mutex);
+    query_access_info->databases.insert(databases.begin(), databases.end());
+    query_access_info->tables.insert(tables.begin(), tables.end());
+    query_access_info->columns.insert(columns.begin(), columns.end());
+    query_access_info->partitions.insert(partitions.begin(), partitions.end());
+    query_access_info->projections.insert(projections.begin(), projections.end());
+    query_access_info->views.insert(views.begin(), views.end());
+}
+
 void Context::addViewAccessInfo(const String & view_name)
 {
     if (isGlobalContext())

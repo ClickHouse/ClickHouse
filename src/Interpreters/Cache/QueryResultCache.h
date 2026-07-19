@@ -12,6 +12,7 @@
 #include <base/UUID.h>
 
 #include <optional>
+#include <set>
 
 namespace DB
 {
@@ -124,11 +125,25 @@ public:
         bool operator==(const Key & other) const;
     };
 
+    /// Access info (databases, tables, columns, etc.) of the query that produced a cache entry.
+    /// It is stored in the entry so that a query answered from the cache reports the same
+    /// information in `system.query_log` as the query that computed the result.
+    struct AccessInfo
+    {
+        std::set<String> databases;
+        std::set<String> tables;
+        std::set<String> columns;
+        std::set<String> partitions;
+        std::set<String> projections;
+        std::set<String> views;
+    };
+
     struct Entry
     {
         Chunks chunks;
         std::optional<Chunk> totals = std::nullopt;
         std::optional<Chunk> extremes = std::nullopt;
+        AccessInfo access_info;
     };
 
 private:
@@ -218,6 +233,9 @@ public:
     };
     void buffer(Chunk && chunk, ChunkType chunk_type);
 
+    /// Remember the access info of the query inside the entry being written.
+    void setAccessInfo(QueryResultCache::AccessInfo access_info_);
+
     void finalizeWrite();
 private:
     using Cache = QueryResultCache::Cache;
@@ -266,6 +284,9 @@ public:
     std::unique_ptr<SourceFromChunks> getSourceExtremes();
     std::unique_ptr<SourceFromChunks> getSourceTotals();
 
+    /// Must only be called if hasCacheEntryForKey is true
+    const QueryResultCache::AccessInfo & getAccessInfo() const { return access_info; }
+
 private:
     QueryResultCacheReader(Cache & cache_, const Cache::Key & key, const std::lock_guard<std::mutex> &);
     void buildSourceFromChunks(SharedHeader header, Chunks && chunks, const std::optional<Chunk> & totals, const std::optional<Chunk> & extremes);
@@ -273,6 +294,8 @@ private:
     std::unique_ptr<SourceFromChunks> source_from_chunks;
     std::unique_ptr<SourceFromChunks> source_from_chunks_totals;
     std::unique_ptr<SourceFromChunks> source_from_chunks_extremes;
+
+    QueryResultCache::AccessInfo access_info;
 
     std::chrono::time_point<std::chrono::system_clock> created_at;
     std::chrono::time_point<std::chrono::system_clock> expires_at;
