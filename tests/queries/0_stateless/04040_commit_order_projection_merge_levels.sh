@@ -1,5 +1,11 @@
--- Tags: no-random-settings, no-random-merge-tree-settings, no-shared-merge-tree, no-parallel-replicas
+#!/usr/bin/env bash
+# Tags: no-random-settings, no-random-merge-tree-settings, no-shared-merge-tree, no-parallel-replicas
 
+CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# shellcheck source=../shell_config.sh
+. "$CUR_DIR"/../shell_config.sh
+
+${CLICKHOUSE_CLIENT} --query "
 set enable_analyzer = 1;
 
 drop table if exists mt_merge_levels sync;
@@ -28,10 +34,27 @@ SYSTEM SYNC MERGES mt_merge_levels;
 -- Now merge level-1 + level-1 -> level-2 (projection MERGED, not rebuilt)
 SYSTEM SCHEDULE MERGE mt_merge_levels PARTS 'all_1_2_1', 'all_3_4_1';
 SYSTEM SYNC MERGES mt_merge_levels;
+"
 
--- Check part_log ProfileEvents to verify rebuild vs merge behavior
-system flush logs part_log;
+# SYSTEM SYNC MERGES returns as soon as the merged part becomes active, but the
+# MergeParts entry is enqueued to system.part_log slightly later.
+# Retry SYSTEM FLUSH LOGS until all three merge entries are fully flushed.
+for _ in {1..30}; do
+    ${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS part_log"
+    res=$(${CLICKHOUSE_CLIENT} --query "
+        select count() from system.part_log
+        where database = currentDatabase() and table = 'mt_merge_levels' and event_type = 'MergeParts'
+            and part_name in ('all_1_2_1', 'all_3_4_1', 'all_1_4_2');"
+    )
+    if [[ $res -eq 3 ]]; then
+        break
+    fi
 
+    sleep 1.0
+done
+
+# Check part_log ProfileEvents to verify rebuild vs merge behavior
+${CLICKHOUSE_CLIENT} --query "
 select 'part_log: rebuild merges';
 select part_name, ProfileEvents['RebuiltProjections'] as rebuilt, ProfileEvents['MergedProjections'] as merged
 from system.part_log
@@ -45,3 +68,4 @@ where database = currentDatabase() and table = 'mt_merge_levels' and event_type 
 order by part_name;
 
 drop table mt_merge_levels sync;
+"
