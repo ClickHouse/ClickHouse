@@ -61,7 +61,7 @@ SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_bare
 Condition: and((plus(flag, 1) not in [1, 1]), (negate(flag) not in [0, 0]))
 Granules: 25/50
 SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_bare_injective WHERE NOT flag) WHERE explain LIKE '%Condition%' OR explain LIKE '%Granules:%/%';
-Condition: or(not((plus(flag, 1) not in [1, 1])), not((negate(flag) not in [0, 0])))
+Condition: not((negate(flag) not in [0, 0]))
 Granules: 26/50
 SELECT count() FROM test_bare_injective WHERE NOT flag SETTINGS force_primary_key = 1;
 50

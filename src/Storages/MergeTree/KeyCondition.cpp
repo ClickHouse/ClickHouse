@@ -1497,6 +1497,8 @@ KeyCondition::KeyCondition(
                 || element.function == RPNElement::FUNCTION_UNKNOWN);
     }));
 
+    dropRelaxedAtomsFromNegatedMultiAtomGroups();
+
     findHyperrectanglesForArgumentsOfSpaceFillingCurves();
 }
 
@@ -1509,6 +1511,77 @@ KeyCondition::KeyCondition(
     , single_point(single_point_)
     , date_time_overflow_behavior_ignore(date_time_overflow_behavior_ignore_)
 {}
+
+void KeyCondition::dropRelaxedAtomsFromNegatedMultiAtomGroups()
+{
+    /// Negation cannot prune through a relaxed atom: evaluation forces its `can_be_false` to
+    /// `true`, and that force propagates through the ANDs of a multi-atom group, so one relaxed
+    /// atom would also disable pruning through the exact atoms of its group under `NOT`. (Such a
+    /// `NOT` reaches the RPN for the leaves with no complement function — for example, a negated
+    /// `has`, unlike `NOT IN`, which arrives as the complement leaf `notIn`.)
+    ///
+    /// An exact (non-relaxed) atom is an exact index approximation of the whole predicate leaf on
+    /// its own, so in a group that stands directly under `NOT` and has at least one exact atom,
+    /// the relaxed atoms only pessimize the group: drop them. This keeps the extra pruning of the
+    /// relaxed atoms for the non-negated groups and restores the pruning of the exact atoms for
+    /// the negated ones.
+    RPN filtered;
+    filtered.reserve(rpn.size());
+
+    size_t i = 0;
+    while (i < rpn.size())
+    {
+        size_t group_end = i + 1;
+        while (group_end < rpn.size() && rpn[group_end].continues_multi_atom_group)
+            ++group_end;
+
+        const bool group_is_negated = group_end < rpn.size() && rpn[group_end].function == RPNElement::FUNCTION_NOT;
+
+        bool has_exact_atom = false;
+        bool has_relaxed_atom = false;
+        if (group_end - i > 1 && group_is_negated)
+        {
+            for (size_t j = i; j < group_end; ++j)
+            {
+                if (rpn[j].function == RPNElement::FUNCTION_AND)
+                    continue;
+                (rpn[j].relaxed ? has_relaxed_atom : has_exact_atom) = true;
+            }
+        }
+
+        if (has_exact_atom && has_relaxed_atom)
+        {
+            size_t emitted = 0;
+            for (size_t j = i; j < group_end; ++j)
+            {
+                if (rpn[j].function == RPNElement::FUNCTION_AND || rpn[j].relaxed)
+                    continue;
+
+                auto element = std::move(rpn[j]);
+                element.continues_multi_atom_group = (emitted > 0);
+                filtered.push_back(std::move(element));
+
+                if (emitted > 0)
+                {
+                    RPNElement and_element(RPNElement::FUNCTION_AND);
+                    and_element.continues_multi_atom_group = true;
+                    filtered.push_back(std::move(and_element));
+                }
+
+                ++emitted;
+            }
+        }
+        else
+        {
+            for (size_t j = i; j < group_end; ++j)
+                filtered.push_back(std::move(rpn[j]));
+        }
+
+        i = group_end;
+    }
+
+    rpn = std::move(filtered);
+}
 
 bool KeyCondition::isRelaxed() const
 {

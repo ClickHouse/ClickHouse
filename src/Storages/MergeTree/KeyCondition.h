@@ -722,6 +722,11 @@ private:
     ///   and all, two, partitions will be scanned, but due to filtering later none of rows will be matched.
     bool unknownOrAlwaysTrue(bool unknown_any) const;
 
+    /// In every multi-atom group that stands directly under `FUNCTION_NOT` and has at least one
+    /// exact atom, drops the relaxed atoms: a relaxed atom forces the group's `can_be_false` to
+    /// `true`, which would disable pruning through the exact atoms of the group under `NOT`.
+    void dropRelaxedAtomsFromNegatedMultiAtomGroups();
+
     /** Iterates over RPN and collapses FUNCTION_IN_RANGE over the arguments of space-filling curve function
       * into atom of type FUNCTION_ARGS_IN_HYPERRECTANGLE.
       */
