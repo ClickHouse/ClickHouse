@@ -1,5 +1,8 @@
--- Tags: no-random-mergetree-settings, no-random-settings
+-- Tags: no-random-mergetree-settings, no-random-settings, no-flaky-check
 -- ^^ Prevent the data sizes from varying with random parameters.
+-- ^^ The test asserts exact compressed byte sizes with all randomization disabled, so its
+--    result is deterministic and the flaky check has nothing to detect by re-running it, while
+--    it can exceed the flaky check's per-run time budget under the heaviest sanitizer configuration.
 
 -- This test validates the storage size of the text index without and with posting list compression.
 -- The text index files follow the part's default compression codec (the `default_compression_codec`
