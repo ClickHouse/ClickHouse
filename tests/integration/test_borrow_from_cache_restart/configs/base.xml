@@ -1,4 +1,5 @@
 <clickhouse>
+    <enable_system_unfreeze>true</enable_system_unfreeze>
     <filesystem_caches_path>/var/lib/clickhouse/filesystem_caches/</filesystem_caches_path>
     <custom_cached_disks_base_directory>/var/lib/clickhouse/custom_cached/</custom_cached_disks_base_directory>
     <custom_local_disks_base_directory>/var/lib/clickhouse/custom_local/</custom_local_disks_base_directory>
