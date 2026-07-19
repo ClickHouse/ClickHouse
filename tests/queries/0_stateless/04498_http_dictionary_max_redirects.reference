@@ -2,4 +2,7 @@ no redirects: True
 with redirects:
 1	first
 2	second
+redirect to gzip:
+1	first
+2	second
 PASSED

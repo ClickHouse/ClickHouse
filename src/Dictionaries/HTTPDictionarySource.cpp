@@ -81,10 +81,14 @@ HTTPDictionarySource::HTTPDictionarySource(const HTTPDictionarySource & other)
 
 QueryPipeline HTTPDictionarySource::createWrappedBuffer(std::unique_ptr<ReadWriteBufferFromHTTP> http_buffer_ptr)
 {
-    Poco::URI uri(configuration.url);
+    /// The buffer is created with delayed initialization disabled, so all redirects have already been
+    /// followed and `getCurrentURI` returns the URI of the final response. Detect the compression method
+    /// from it rather than from `configuration.url`: a redirect may point to an object with a different
+    /// extension (e.g. `/redirect` -> `/data.csv.gz`) and no `Content-Encoding` header.
+    String path = http_buffer_ptr->getCurrentURI().getPath();
     String http_request_compression_method_str = http_buffer_ptr->getCompressionMethod();
     auto in_ptr_wrapped
-        = wrapReadBufferWithCompressionMethod(std::move(http_buffer_ptr), chooseCompressionMethod(uri.getPath(), http_request_compression_method_str));
+        = wrapReadBufferWithCompressionMethod(std::move(http_buffer_ptr), chooseCompressionMethod(path, http_request_compression_method_str));
     auto source = context->getInputFormat(configuration.format, *in_ptr_wrapped, sample_block, max_block_size);
     source->addBuffer(std::move(in_ptr_wrapped));
     return QueryPipeline(std::move(source));

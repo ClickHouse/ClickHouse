@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import gzip
 import os
 import socket
 import sys
@@ -65,10 +66,23 @@ def get_ch_answer(query):
 
 class HttpProcessor(BaseHTTPRequestHandler):
     def do_GET(self):
-        if self.path.startswith("/redirect"):
+        if self.path.startswith("/redirect_gz"):
+            self.send_response(302)
+            self.send_header("Location", HTTP_SERVER_URL_STR + "/data.csv.gz")
+            self.end_headers()
+        elif self.path.startswith("/redirect"):
             self.send_response(302)
             self.send_header("Location", HTTP_SERVER_URL_STR + "/data.csv")
             self.end_headers()
+        elif self.path.startswith("/data.csv.gz"):
+            # The compressed object is served without `Content-Encoding`, so the client has to
+            # detect the compression from the extension of the URL it was redirected to.
+            gz_data = gzip.compress(CSV_DATA.encode())
+            self.send_response(200)
+            self.send_header("Content-Type", "application/gzip")
+            self.send_header("Content-Length", str(len(gz_data)))
+            self.end_headers()
+            self.wfile.write(gz_data)
         elif self.path.startswith("/data.csv"):
             self.send_response(200)
             self.send_header("Content-Type", "text/csv")
@@ -97,7 +111,7 @@ def start_server():
     return httpd, t
 
 
-def create_dictionary(name, max_redirects):
+def create_dictionary(name, max_redirects, endpoint="/redirect"):
     get_ch_answer("DROP DICTIONARY IF EXISTS {}".format(name))
     get_ch_answer(
         """CREATE DICTIONARY {name} (id UInt64, value String)
@@ -107,7 +121,7 @@ def create_dictionary(name, max_redirects):
         LIFETIME(0)
         SETTINGS(max_http_get_redirects = {max_redirects})""".format(
             name=name,
-            url=HTTP_SERVER_URL_STR + "/redirect",
+            url=HTTP_SERVER_URL_STR + endpoint,
             max_redirects=max_redirects,
         )
     )
@@ -128,8 +142,16 @@ def main():
     print("with redirects:")
     sys.stdout.write(answer)
 
+    # A redirect may lead to an object with a different extension; the compression method must be
+    # detected from the final (post-redirect) URL, not from the URL of the dictionary source.
+    create_dictionary("dict_04498_redirect_gz", 5, endpoint="/redirect_gz")
+    answer = get_ch_answer("SELECT * FROM dict_04498_redirect_gz ORDER BY id")
+    print("redirect to gzip:")
+    sys.stdout.write(answer)
+
     get_ch_answer("DROP DICTIONARY IF EXISTS dict_04498_no_redirects")
     get_ch_answer("DROP DICTIONARY IF EXISTS dict_04498_with_redirects")
+    get_ch_answer("DROP DICTIONARY IF EXISTS dict_04498_redirect_gz")
 
     httpd.shutdown()
     t.join()
