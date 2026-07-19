@@ -471,7 +471,11 @@ cp /var/log/clickhouse-server/clickhouse-server.upgrade.log /test_output/clickho
 #       of the surviving DB name (`03279` -> `..._inner_backup_database`; `03277` -> `..._restore`). The follow-up
 #       `Detaching broken part` + `backward incompatibility` cleanup line carries no Code 697 message, so it is
 #       matched by the sibling regex below, scoped to the backup-database DB-name tokens (`backup_database` for
-#       `03276`/`03278`/`03279`, `_restore` for `03277`) so unrelated broken-part errors are not masked.
+#       `03276`/`03278`/`03279`, and the full unique test-name prefix
+#       `03277_database_backup_database_file_engine.*_restore` for `03277`) so unrelated broken-part errors are not
+#       masked. `03277`'s restore DB is named `${CLICKHOUSE_TEST_UNIQUE_NAME}_restore`, which embeds the test file
+#       name, so keying on the bare `_restore` token would also swallow real regressions for ordinary restored
+#       objects created by other previous-release tests (e.g. `${TABLE}_restored`, `t_restore_*`).
 echo "Check for Error messages in server log:"
 rg -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
            -e "Code: 236. DB::Exception: Cancelled mutating parts" \
@@ -568,7 +572,7 @@ rg -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
     | grep -av -e "is broken and needs manual correction.*is encrypted in the backup, it can be restored only to an encrypted disk" \
     | grep -av -e "while loading part.*is encrypted in the backup, it can be restored only to an encrypted disk" \
     | grep -av -e "backup_database.*Detaching broken part.*backward incompatibility" \
-    | grep -av -e "_restore.*Detaching broken part.*backward incompatibility" \
+    | grep -av -e "03277_database_backup_database_file_engine.*_restore.*Detaching broken part.*backward incompatibility" \
     | grep -Fa "<Error>" > /test_output/upgrade_error_messages.txt || true
 
 if [ -s /test_output/upgrade_error_messages.txt ]; then
