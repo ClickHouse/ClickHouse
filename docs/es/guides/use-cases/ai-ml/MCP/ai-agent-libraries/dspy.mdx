@@ -1,0 +1,249 @@
+---
+slug: /use-cases/AI/MCP/ai-agent-libraries/DSPy
+sidebarTitle: 'Integrar DSPy'
+title: 'Cómo crear un agente de IA con DSPy y el servidor MCP de ClickHouse'
+description: 'Aprende a crear un agente de IA con DSPy y el servidor MCP de ClickHouse'
+keywords: ['ClickHouse', 'MCP', 'DSPy']
+show_related_blogs: true
+doc_type: 'guide'
+---
+
+En esta guía, aprenderás a crear un agente de IA con [DSPy](https://github.com/langchain-ai/langgraph) que
+puede interactuar con el [Playground de SQL de ClickHouse](https://sql.clickhouse.com/) mediante el [servidor MCP de ClickHouse](https://github.com/ClickHouse/mcp-clickhouse).
+
+<div id="prerequisites">
+  ## Requisitos previos
+</div>
+
+* Debes tener Python instalado en el sistema.
+* Debes tener `pip` instalado en el sistema.
+* Necesitarás una clave de API de Anthropic o una clave de API de otro proveedor de LLM.
+
+Puedes ejecutar los siguientes pasos desde el REPL de Python o mediante un script.
+
+<Info>
+  **Notebook de ejemplo**
+
+  Este ejemplo está disponible como notebook en el [repositorio de ejemplos](https://github.com/ClickHouse/examples/blob/main/ai/mcp/dspy/dspy.ipynb).
+</Info>
+
+<Steps>
+  <Step>
+    ## Instale las bibliotecas
+
+    Ejecute los siguientes comandos con `pip` para instalar las bibliotecas necesarias:
+
+    ```shell
+    pip install -q --upgrade pip
+    pip install -q dspy
+    pip install -q mcp
+    ```
+  </Step>
+
+  <Step>
+    ## Configura las credenciales
+
+    A continuación, deberás proporcionar tu clave de API de Anthropic:
+
+    ```python
+    import os
+    os.environ["ANTHROPIC_API_KEY"] = getpass.getpass("Enter Anthropic API Key:")
+    ```
+
+    <Info>
+      **Usar otro proveedor de LLM**
+
+      Si no tienes una clave de API de Anthropic y quieres usar otro proveedor de LLM,
+      puedes consultar las instrucciones para configurar tus credenciales en la [documentación de DSPy](https://dspy.ai/#__tabbed_1_1)
+    </Info>
+
+    A continuación, define las credenciales necesarias para conectarte al Playground de SQL de ClickHouse:
+
+    ```python
+    env = {
+        "CLICKHOUSE_HOST": "sql-clickhouse.clickhouse.com",
+        "CLICKHOUSE_PORT": "8443",
+        "CLICKHOUSE_USER": "demo",
+        "CLICKHOUSE_PASSWORD": "",
+        "CLICKHOUSE_SECURE": "true"
+    }
+    ```
+  </Step>
+
+  <Step>
+    ## Inicializar el servidor MCP
+
+    Ahora configura el servidor MCP de ClickHouse para que apunte al Playground de SQL de ClickHouse.
+
+    ```python
+    from mcp import ClientSession, StdioServerParameters
+    from mcp.client.stdio import stdio_client
+    import dspy
+
+    server_params = StdioServerParameters(
+        command="uv",
+        args=[
+            'run',
+            '--with', 'mcp-clickhouse',
+            '--python', '3.13',
+            'mcp-clickhouse'
+        ],
+        env=env
+    )
+    ```
+  </Step>
+
+  <Step>
+    ## Inicializar el LLM
+
+    A continuación, inicialice el LLM con la siguiente línea:
+
+    ```python
+    dspy.configure(lm=dspy.LM("anthropic/claude-sonnet-4-20250514"))
+    ```
+  </Step>
+
+  <Step>
+    ## Ejecutar el agente
+
+    Por último, inicialice y ejecute el agente:
+
+    ```python
+    class DataAnalyst(dspy.Signature):
+        """You are a data analyst. You'll be asked questions and you need to try to answer them using the tools you have access to. """
+
+        user_request: str = dspy.InputField()
+        process_result: str = dspy.OutputField(
+            desc=(
+                "Answer to the query"
+            )
+        )
+
+    from utils import print_dspy_result
+
+    async with stdio_client(server_params) as (read, write):
+        async with ClientSession(read, write) as session:
+            await session.initialize()
+            tools = await session.list_tools()
+
+            dspy_tools = []
+            for tool in tools.tools:
+                dspy_tools.append(dspy.Tool.from_mcp_tool(session, tool))
+
+            react = dspy.ReAct(DataAnalyst, tools=dspy_tools)
+            result = await react.acall(user_request="What's the most popular Amazon product category")
+            print_dspy_result(result)
+    ```
+
+    ```response title="Response"
+    ================================================================================
+    🤖 DSPy ReAct Result
+    ================================================================================
+
+    📍 STEP 1
+    ----------------------------------------
+    🧠 THINKING: Necesito encontrar información sobre las categorías de productos de Amazon y determinar cuál es la más popular. Primero, debería explorar qué bases de datos están disponibles para ver si hay algún dato relacionado con Amazon.
+
+    🔧 TOOL: list_databases
+
+    📊 RESULT:
+       amazon
+    bluesky
+    country
+    covid
+    default
+    dns
+    environmental
+    food
+    forex
+    geo
+    git
+    github
+    hackernews
+    imdb
+    logs
+    metrica
+    mgbench
+    mta
+    noaa
+    nyc_taxi
+    nypd
+    ontime
+    opensky
+    otel
+    otel_v2
+    pypi
+    random
+    reddit
+    rubygems
+    sta...
+
+    📍 STEP 2
+    ----------------------------------------
+    🧠 THINKING: ¡Excelente! Puedo ver que hay una base de datos "amazon" disponible. Esto es exactamente lo que necesito para encontrar información sobre las categorías de productos de Amazon. Voy a explorar las tablas de la base de datos amazon para ver qué datos están disponibles.
+
+    🔧 TOOL: list_tables
+       Args: {'database': 'amazon'}
+
+    📊 RESULT:
+       {
+      "database": "amazon",
+      "name": "amazon_reviews",
+      "comment": "",
+      "columns": [
+        {
+          "name": "review_date",
+          "type": "Date",
+          "default_type": "",
+          "default_expression": "",...
+
+    📍 STEP 3
+    ----------------------------------------
+    🧠 THINKING: ¡Perfecto! Encontré la tabla amazon_reviews, que contiene una columna product_category. Esta tabla tiene más de 150 millones de filas de datos de reseñas de Amazon, lo que debería darme una buena representación de la popularidad de los productos. Para encontrar la categoría de productos de Amazon más popular, necesito contar el número de reseñas por categoría y ordenarlas por recuento en orden descendente. La categoría con más reseñas se considerará la más popular.
+
+    🔧 TOOL: run_select_query
+       Args: {'query': 'SELECT product_category, COUNT(*) as review_count FROM amazon.amazon_reviews GROUP BY product_category ORDER BY review_count DESC LIMIT 10'}
+
+    📊 RESULT:
+       1. Books: 19,530,930 reviews
+       2. Digital_Ebook_Purchase: 17,622,107 reviews
+       3. Wireless: 9,001,567 reviews
+       4. PC: 6,908,245 reviews
+       5. Home: 6,221,321 reviews
+       ... and 5 more
+
+    📍 STEP 4
+    ----------------------------------------
+    🧠 THINKING: ¡Perfecto! He encontrado la respuesta a la pregunta del usuario. A partir de los datos de reseñas de Amazon, puedo ver claramente que "Books" es la categoría de productos de Amazon más popular con 19.530.930 reseñas, seguida de "Digital_Ebook_Purchase" con 17.622.107 reseñas. Los datos muestran una clasificación clara de las categorías de productos por popularidad según el número de reseñas que ha recibido cada categoría. Ahora tengo toda la información necesaria para responder a la pregunta del usuario.
+
+    🔧 TOOL: finish
+
+    📊 RESULT:
+       Completed.
+
+    🎯 REASONING
+    ----------------------------------------
+    Para responder a la pregunta sobre la categoría de productos de Amazon más popular, accedí a la base de datos de Amazon y encontré una tabla llamada "amazon_reviews" con más de 150 millones de registros de reseñas. Esta tabla contiene una columna "product_category" que me permite analizar la popularidad de los productos en función del volumen de reseñas. Ejecuté una consulta para contar el número de reseñas por categoría de producto y las ordené por recuento en orden descendente. La hipótesis aquí es que las categorías con más reseñas indican mayor popularidad, ya que un mayor número de reseñas suele correlacionarse con más compras y mayor interacción de los clientes.
+
+    ✅ FINAL RESULT
+    ----------------------------------------
+    Según los datos de reseñas de Amazon que contienen más de 150 millones de registros, la categoría de productos de Amazon más popular es **Books** con 19.530.930 reseñas.
+
+    Estas son las 10 categorías de productos de Amazon más populares por número de reseñas:
+
+    1. **Books** - 19,530,930 reviews
+    2. **Digital_Ebook_Purchase** - 17,622,107 reviews  
+    3. **Wireless** - 9,001,567 reviews
+    4. **PC** - 6,908,245 reviews
+    5. **Home** - 6,221,321 reviews
+    6. **Apparel** - 5,906,085 reviews
+    7. **Health & Personal Care** - 5,331,239 reviews
+    8. **Beauty** - 5,115,462 reviews
+    9. **Video DVD** - 5,069,014 reviews
+    10. **Mobile_Apps** - 5,033,164 reviews
+
+    Es interesante destacar que Books y Digital Ebook Purchase (categorías relacionadas entre sí) suman juntas más de 37 millones de reseñas, lo que refleja la gran popularidad de los materiales de lectura en la plataforma de Amazon.
+    ================================================================================
+    ```
+  </Step>
+</Steps>

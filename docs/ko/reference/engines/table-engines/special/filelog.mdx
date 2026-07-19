@@ -1,0 +1,112 @@
+---
+description: '이 엔진을 사용하면 애플리케이션 로그 파일을 레코드 스트림 형태로 처리할 수
+  있습니다.'
+sidebarTitle: 'FileLog'
+slug: /engines/table-engines/special/filelog
+title: 'FileLog 테이블 엔진'
+doc_type: 'reference'
+---
+
+이 엔진을 사용하면 애플리케이션 로그 파일을 레코드 스트림 형태로 처리할 수 있습니다.
+
+`FileLog`를 사용하면 다음 작업을 수행할 수 있습니다:
+
+* 로그 파일을 구독합니다.
+* 구독한 로그 파일에 새 레코드가 추가될 때 처리합니다.
+
+<div id="creating-a-table">
+  ## 테이블 생성
+</div>
+
+```sql
+CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
+(
+    name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
+    name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2],
+    ...
+) ENGINE = FileLog('path_to_logs', 'format_name') SETTINGS
+    [poll_timeout_ms = 0,]
+    [poll_max_batch_size = 0,]
+    [max_block_size = 0,]
+    [max_threads = 0,]
+    [poll_directory_watch_events_backoff_init = 500,]
+    [poll_directory_watch_events_backoff_max = 32000,]
+    [poll_directory_watch_events_backoff_factor = 2,]
+    [handle_error_mode = 'default']
+```
+
+엔진 인수:
+
+* `path_to_logs` – 구독할 로그 파일의 경로입니다. 로그 파일이 있는 디렉터리 경로일 수도 있고, 단일 로그 파일 경로일 수도 있습니다. ClickHouse는 `user_files` 디렉터리 내부의 경로만 허용합니다.
+* `format_name` - 레코드 포맷입니다. FileLog는 파일의 각 줄을 개별 레코드로 처리하므로, 모든 데이터 포맷이 이에 적합한 것은 아닙니다.
+
+선택적 매개변수:
+
+* `poll_timeout_ms` - 로그 파일에서 한 번 폴링할 때의 시간 초과 값입니다. 기본값: [stream&#95;poll&#95;timeout&#95;ms](/ko/reference/settings/session-settings#stream_poll_timeout_ms).
+* `poll_max_batch_size` — 한 번의 폴링으로 가져올 수 있는 최대 레코드 수입니다. 기본값: [max&#95;block&#95;size](/ko/reference/settings/session-settings#max_block_size).
+* `max_block_size` — 폴링의 최대 배치 크기(레코드 수)입니다. 기본값: [max&#95;insert&#95;block&#95;size](/ko/reference/settings/session-settings#max_insert_block_size).
+* `max_threads` - 파일을 파싱하기 위한 최대 스레드 수입니다. 기본값은 0이며, 이 경우 스레드 수는 max(1, physical&#95;cpu&#95;cores / 4)입니다.
+* `poll_directory_watch_events_backoff_init` - 디렉터리 감시 스레드의 초기 대기 값입니다. 기본값: `500`.
+* `poll_directory_watch_events_backoff_max` - 디렉터리 감시 스레드의 최대 대기 값입니다. 기본값: `32000`.
+* `poll_directory_watch_events_backoff_factor` - 백오프 속도입니다. 기본적으로 지수적으로 증가합니다. 기본값: `2`.
+* `handle_error_mode` — FileLog 엔진에서 오류를 처리하는 방식입니다. 가능한 값: default(메시지 파싱에 실패하면 예외를 발생시킴), stream(예외 메시지와 원시 메시지를 가상 컬럼 `_error` 및 `_raw_message`에 저장함).
+
+<div id="description">
+  ## 설명
+</div>
+
+전달된 레코드는 자동으로 추적되므로 로그 파일의 각 레코드는 한 번만 계산됩니다.
+
+레코드를 읽는 용도로는 `SELECT`가 그다지 유용하지 않습니다(디버깅 시 제외). 각 레코드는 한 번만 읽을 수 있기 때문입니다. 보다 실용적인 방법은 [materialized view(materialized views)](/ko/reference/statements/create/view)를 사용해 실시간 스트림을 만드는 것입니다. 이를 위해 다음을 수행하십시오:
+
+1. 이 엔진을 사용해 FileLog 테이블을 만들고, 이를 데이터 스트림으로 간주합니다.
+2. 원하는 구조의 테이블을 생성합니다.
+3. 엔진의 데이터를 변환해 앞서 생성한 테이블에 저장하는 materialized view를 생성합니다.
+
+`MATERIALIZED VIEW`를 엔진에 연결하면 백그라운드에서 데이터 수집이 시작됩니다. 이를 통해 로그 파일의 레코드를 지속적으로 수신하고, `SELECT`를 사용해 필요한 포맷으로 변환할 수 있습니다.
+하나의 FileLog 테이블에는 원하는 만큼 materialized view를 둘 수 있습니다. 이들은 테이블에서 데이터를 직접 읽는 대신 새 레코드(블록 단위)를 받습니다. 따라서 상세 수준이 서로 다른 여러 테이블에 쓸 수 있습니다(그룹화/집계 적용 또는 미적용).
+
+예시:
+
+```sql
+  CREATE TABLE logs (
+    timestamp UInt64,
+    level String,
+    message String
+  ) ENGINE = FileLog('user_files/my_app/app.log', 'JSONEachRow');
+
+  CREATE TABLE daily (
+    day Date,
+    level String,
+    total UInt64
+  ) ENGINE = SummingMergeTree(day, (day, level), 8192);
+
+  CREATE MATERIALIZED VIEW consumer TO daily
+    AS SELECT toDate(toDateTime(timestamp)) AS day, level, count() AS total
+    FROM logs GROUP BY day, level;
+
+  SELECT level, sum(total) FROM daily GROUP BY level;
+```
+
+스트림 데이터 수신을 중단하거나 변환 로직을 변경하려면 materialized view를 detach하십시오:
+
+```sql
+  DETACH TABLE consumer;
+  ATTACH TABLE consumer;
+```
+
+`ALTER`를 사용해 대상 테이블을 변경하려면, 대상 테이블과 뷰 데이터 간 불일치를 방지하기 위해 materialized view를 비활성화하는 것이 좋습니다.
+
+<div id="virtual-columns">
+  ## 가상 컬럼(Virtual columns)
+</div>
+
+* `_filename` - 로그 파일 이름입니다. 데이터 타입: `LowCardinality(String)`.
+* `_offset` - 로그 파일 내 오프셋입니다. 데이터 타입: `UInt64`.
+
+`handle_error_mode='stream'`일 때 추가되는 가상 컬럼:
+
+* `_raw_record` - 성공적으로 파싱되지 않은 원시 레코드입니다. 데이터 타입: `Nullable(String)`.
+* `_error` - 파싱 실패 중 발생한 예외 메시지입니다. 데이터 타입: `Nullable(String)`.
+
+참고: `_raw_record` 및 `_error` 가상 컬럼은 파싱 중 예외가 발생한 경우에만 채워지며, 메시지가 성공적으로 파싱된 경우에는 항상 `NULL`입니다.

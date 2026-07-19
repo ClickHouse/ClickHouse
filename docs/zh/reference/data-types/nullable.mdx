@@ -1,0 +1,85 @@
+---
+description: 'ClickHouse 中 Nullable 数据类型修饰符的文档'
+sidebarTitle: 'Nullable(T)'
+slug: /sql-reference/data-types/nullable
+title: 'Nullable(T)'
+doc_type: 'reference'
+---
+
+允许在 `T` 所允许的正常值之外，存储表示“缺失值”的特殊标记 ([NULL](/zh/reference/syntax)) 。例如，`Nullable(Int8)` 类型的列可以存储 `Int8` 类型的值，而没有值的行则存储 `NULL`。
+
+`T` 不能是以下任一复合数据类型：
+
+* [Array](/zh/reference/data-types/array) — 不支持
+* [Map](/zh/reference/data-types/map) — 不支持
+* [Tuple](/zh/reference/data-types/tuple) — 提供 Beta 支持*
+
+不过，复合数据类型**可以包含** `Nullable` 类型的值，例如 `Array(Nullable(Int8))` 或 `Tuple(Nullable(String), Nullable(Int64))`。
+
+<Info>
+  **Beta：Nullable Tuples**
+
+  * 启用 `enable_nullable_tuple_type = 1` 时，支持 [Nullable(Tuple(...))](/zh/reference/data-types/tuple#nullable-tuple)。
+</Info>
+
+`Nullable` 类型的字段不能包含在表索引中。
+
+除非在 ClickHouse 服务器配置中另有指定，否则 `NULL` 是所有 `Nullable` 类型的默认值。
+
+<div id="storage-features">
+  ## 存储特性
+</div>
+
+要在表的列中存储 `Nullable` 类型的值，ClickHouse 除了存放值的普通文件外，还会使用一个单独的文件来存储 `NULL` 掩码。掩码文件中的条目使 ClickHouse 能够区分每个表行中的 `NULL` 和相应数据类型的默认值。由于多了一个额外文件，`Nullable` 列相比类似的普通列会占用更多存储空间。
+
+<Note>
+  使用 `Nullable` 几乎总会对性能产生负面影响，设计数据库时请牢记这一点。
+</Note>
+
+<div id="finding-null">
+  ## 查找 NULL
+</div>
+
+可以通过 `null` 子列在无需读取整列的情况下查找列中的 `NULL` 值。若对应的值为 `NULL`，则返回 `1`；否则返回 `0`。
+
+**示例**
+
+```sql title="Query"
+CREATE TABLE nullable (`n` Nullable(UInt32)) ENGINE = MergeTree ORDER BY tuple();
+
+INSERT INTO nullable VALUES (1) (NULL) (2) (NULL);
+
+SELECT n.null FROM nullable;
+```
+
+```text title="Response"
+┌─n.null─┐
+│      0 │
+│      1 │
+│      0 │
+│      1 │
+└────────┘
+```
+
+<div id="usage-example">
+  ## 使用示例
+</div>
+
+```sql
+CREATE TABLE t_null(x Int8, y Nullable(Int8)) ENGINE TinyLog
+```
+
+```sql
+INSERT INTO t_null VALUES (1, NULL), (2, 3)
+```
+
+```sql
+SELECT x + y FROM t_null
+```
+
+```text
+┌─plus(x, y)─┐
+│       ᴺᵁᴸᴸ │
+│          5 │
+└────────────┘
+```

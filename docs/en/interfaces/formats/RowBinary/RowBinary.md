@@ -275,7 +275,7 @@ The underlying `Int64` value of the `DateTime64` type can be interpreted as the 
 - `DateTime64(6)` - microseconds.
 - `DateTime64(9)` - nanoseconds.
 
-Supported range of values: `[1900-01-01 00:00:00, 2299-12-31 23:59:59.99999999]`.
+Supported range of values: `[0000-01-01 00:00:00, 9999-12-31 23:59:59.999999999]`.
 
 Sample underlying values for `DateTime64`:
 
@@ -284,7 +284,7 @@ Sample underlying values for `DateTime64`:
 - `DateTime64(9)`: value `1705314600123456789` represents `2024-01-15 10:30:00.123456789 UTC`.
 
 :::note
-The precision of the maximum value is 8. If the maximum precision of 9 digits (nanoseconds) is used, the maximum supported value is 2262-04-11 23:47:16 in UTC.
+The full range above is available for precisions up to 7. Because ticks are stored in an `Int64`, higher precisions cover a narrower range: with precision 8 the maximum value is around `4892-10-07`, and with the maximum precision of 9 digits (nanoseconds) the supported range is `1677-09-21 00:12:44` to `2262-04-11 23:47:16` in UTC.
 :::
 
 ### Time {#time}
@@ -1221,10 +1221,10 @@ More complex functions like `uniq`, `quantile`, or `groupArray` use implementati
 Syntax:
 
 ```text
-QBit(element_type, dimension)
+QBit(element_type, dimension[, stride])
 ```
 
-Where `element_type` is `Int8`, `Float32`, `Float64`, or `BFloat16`, and `dimension` is the fixed vector dimension.
+Where `element_type` is `Int8`, `Float32`, `Float64`, or `BFloat16`, and `dimension` is the fixed vector dimension. The optional `stride` only controls how the bit planes are grouped into storage streams server-side; it does not affect the RowBinary wire format, which is always the full array of `dimension` elements.
 
 Wire format: identical to `Array(element_type)`:
 

@@ -1,0 +1,64 @@
+---
+description: 'GenerateRandom 表引擎可根据给定的表 schema 生成随机数据。'
+sidebarTitle: 'GenerateRandom'
+slug: /engines/table-engines/special/generate
+title: 'GenerateRandom 表引擎'
+doc_type: 'reference'
+---
+
+GenerateRandom 表引擎可根据给定的表 schema 生成随机数据。
+
+用法示例：
+
+* 用于测试中填充可复现的大型表。
+* 为模糊测试生成随机输入。
+
+<div id="usage-in-clickhouse-server">
+  ## 在 ClickHouse Server 中使用
+</div>
+
+```sql
+ENGINE = GenerateRandom([random_seed [,max_string_length [,max_array_length]]])
+```
+
+`max_array_length` 和 `max_string_length` 参数分别指定生成数据中所有
+数组或 map 列以及字符串的最大长度。
+
+Generate 表引擎仅支持 `SELECT` 查询。
+
+它支持除 `AggregateFunction` 之外所有可存储在表中的 [数据类型](/zh/reference/data-types/index)。
+
+<div id="example">
+  ## 示例
+</div>
+
+**1.** 创建 `generate_engine_table` 表：
+
+```sql
+CREATE TABLE generate_engine_table (name String, value UInt32) ENGINE = GenerateRandom(1, 5, 3)
+```
+
+**2.** 查询数据：
+
+```sql
+SELECT * FROM generate_engine_table LIMIT 3
+```
+
+```text
+┌─name─┬──────value─┐
+│ c4xJ │ 1412771199 │
+│ r    │ 1791099446 │
+│ 7#$  │  124312908 │
+└──────┴────────────┘
+```
+
+<div id="details-of-implementation">
+  ## 实现细节
+</div>
+
+* 不支持：
+  * `ALTER`
+  * `SELECT ... SAMPLE`
+  * `INSERT`
+  * 索引
+  * 复制

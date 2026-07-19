@@ -1,0 +1,45 @@
+---
+description: '介绍 ClickHouse Cloud 中可用的 `Shared` 数据库引擎的页面。'
+sidebarTitle: 'Shared'
+slug: /engines/database-engines/shared
+title: 'Shared'
+doc_type: 'reference'
+---
+
+import CloudOnlyBadge from "/snippets/zh/components/CloudOnlyBadge/CloudOnlyBadge.jsx";
+
+<CloudOnlyBadge />
+
+<div id="shared-database-engine">
+  # Shared 数据库引擎
+</div>
+
+`Shared` 数据库引擎与 Shared Catalog 配合使用，用于管理其表使用无状态表引擎 (例如 [`SharedMergeTree`](/zh/products/cloud/features/infrastructure/shared-merge-tree)) 的数据库。
+这些表引擎不会将持久状态写入磁盘，并且适用于动态 compute 环境。
+
+Cloud 中的 `Shared` 数据库引擎消除了对本地磁盘的依赖。
+它是纯内存引擎，只需要 CPU 和内存。
+
+<div id="how-it-works">
+  ## 工作原理是什么？
+</div>
+
+`Shared` 数据库引擎将所有数据库和表定义存储在由 Keeper 支持的集中式 Shared Catalog 中。它不将这些定义写入本地磁盘，而是维护一个由所有计算节点共享的、带版本的全局状态。
+
+每个节点只会跟踪最后一次应用的版本，并在启动时拉取最新状态，无需本地文件或手动配置。
+
+<div id="syntax">
+  ## 语法
+</div>
+
+对于最终用户而言，使用 Shared Catalog 和 Shared 数据库引擎无需任何额外配置。创建数据库的方式与往常相同：
+
+```sql
+CREATE DATABASE my_database;
+```
+
+ClickHouse Cloud 会自动为数据库分配 Shared 数据库引擎。在这类数据库中，使用无状态引擎创建的任何表都会自动受益于 Shared Catalog 的复制和协调能力。
+
+<Tip>
+  有关 Shared Catalog 及其优势的更多信息，请参阅 Cloud 参考部分中的[&quot;Shared catalog and shared database engine&quot;](/zh/products/cloud/features/infrastructure/shared-catalog)。
+</Tip>

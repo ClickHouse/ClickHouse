@@ -1,0 +1,689 @@
+---
+sidebar_title: '查询 API 端点'
+slug: /cloud/get-started/query-endpoints
+description: '轻松从您保存的查询创建 REST API 端点'
+keywords: ['api', '查询 api 端点', '查询端点', '查询 rest api']
+title: 设置查询 API 端点
+doc_type: '指南'
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+**查询 API 端点**功能允许您直接根据 ClickHouse Cloud 控制台中任意已保存的 SQL 查询创建 API 端点。您可以通过 HTTP 访问这些 API 端点来执行已保存的查询，而无需使用原生驱动程序连接到您的 ClickHouse Cloud 服务。
+
+<div id="quick-start-guide">
+  ## 前提条件
+</div>
+
+继续之前，请确保你具备：
+
+* 具有相应权限的 API 密钥
+* Admin Console 角色
+
+如果你还没有 API 密钥，可以按照本指南[创建 API 密钥](/zh/products/cloud/features/admin-features/api/openapi)。
+
+<Info>
+  **最低权限**
+
+  要查询 API 端点，API 密钥需要具备 `Member` 组织角色以及 `Query Endpoints` 服务访问权限。数据库角色会在你创建端点时配置。
+</Info>
+
+<Steps>
+  <Step>
+    ### 创建已保存的查询
+
+    如果你已经有已保存的查询，可以跳过此步骤。
+
+    打开一个新的查询标签页。为了演示，我们将使用 [youtube dataset](/zh/get-started/sample-datasets/youtube-dislikes)，其中包含大约 45 亿条记录。
+    按照 [&quot;Create table&quot;](/zh/get-started/sample-datasets/youtube-dislikes#create-the-table) 部分中的步骤，在你的 Cloud 服务上创建该表并向其中插入数据。
+
+    <Tip>
+      **使用 `LIMIT` 限制行数**
+
+      示例数据集教程会插入大量数据——46.5 亿行，因此插入可能需要一些时间。
+      为便于完成本指南，我们建议使用 `LIMIT` 子句插入较少的数据，
+      例如 1000 万行。
+    </Tip>
+
+    作为示例查询，我们将返回用户输入的 `year` 参数对应年份中，按每个视频平均观看次数排序的前 10 位上传者。
+
+    ```sql highlight={11}
+    WITH sum(view_count) AS view_sum,
+      round(view_sum / num_uploads, 2) AS per_upload
+    SELECT
+      uploader,
+      count() AS num_uploads,
+      formatReadableQuantity(view_sum) AS total_views,
+      formatReadableQuantity(per_upload) AS views_per_video
+    FROM
+      youtube
+    WHERE
+      toYear(upload_date) = {year: UInt16}
+    GROUP BY uploader
+    ORDER BY per_upload desc
+      LIMIT 10
+    ```
+
+    请注意，此查询包含一个参数 (`year`) ，上面的代码片段中已高亮显示该参数。
+    你可以使用 `{ }` 并结合参数类型来指定查询参数。
+    SQL 控制台查询编辑器会自动检测 ClickHouse 查询参数表达式，并为每个参数提供一个输入框。
+
+    现在快速运行这个查询，在 SQL 编辑器右侧的查询变量输入框中指定年份 `2010`，确认它能够正常工作：
+
+    <Image img="/images/cloud/sqlconsole/endpoints-testquery.webp" size="md" alt="测试示例查询" />
+
+    接下来，保存该查询：
+
+    <Image img="/images/cloud/sqlconsole/endpoints-savequery.webp" size="md" alt="保存示例查询" />
+
+    有关已保存查询的更多文档，请参阅 [&quot;Saving a query&quot;](/zh/products/cloud/features/sql-console-features/sql-console#saving-a-query) 部分。
+  </Step>
+
+  <Step>
+    ### 配置查询 API 端点
+
+    可以直接在查询视图中点击 **共享** 按钮并选择 `API Endpoint` 来配置查询 API 端点。
+    系统会提示你指定哪些 API 密钥可以访问该端点：
+
+    <Image img="/images/cloud/sqlconsole/endpoints-configure.webp" size="md" alt="配置查询端点" />
+
+    选择 API 密钥后，系统会要求你：
+
+    * 选择用于运行该查询的数据库角色 (`Full access`、`Read only` 或 `Create a custom role`)
+    * 指定允许跨源资源共享 (CORS) 的域名
+
+    选择这些选项后，查询 API 端点将自动完成配置。
+
+    界面中会显示一个示例 `curl` 命令，便于你发送测试请求：
+
+    <Image img="/images/cloud/sqlconsole/endpoints-completed.webp" size="md" alt="端点 curl 命令" />
+
+    为方便起见，界面中显示的 `curl` 命令如下：
+
+    ```bash
+    curl -H "Content-Type: application/json" -s --user '<key_id>:<key_secret>' '<API-endpoint>?format=JSONEachRow&param_year=<value>'
+    ```
+  </Step>
+
+  <Step>
+    ### 查询 API 参数
+
+    查询参数可使用 `{parameter_name: type}` 语法来指定。系统会自动检测这些参数，示例请求载荷中将包含一个 `queryVariables` 对象，你可以通过它传递这些参数。
+  </Step>
+
+  <Step>
+    ### 测试与监控
+
+    创建查询 API 端点后，你可以使用 `curl` 或任何其他 HTTP 客户端测试其是否正常工作：
+
+    <Image img="/images/cloud/sqlconsole/endpoints-curltest.webp" size="md" alt="端点 curl 测试" />
+
+    发送第一个请求后，**共享** 按钮右侧应会立即出现一个新按钮。点击它会打开一个弹出面板，其中包含该查询的监控数据：
+
+    <Image img="/images/cloud/sqlconsole/endpoints-monitoring.webp" size="sm" alt="端点监控" />
+  </Step>
+</Steps>
+
+<div id="implementation-details">
+  ## 实现细节
+</div>
+
+此端点用于执行您已保存的查询 API 端点中的查询。
+它支持多个版本、灵活的响应格式、参数化查询，以及可选的流式响应 (仅限版本 2) 。
+
+**端点：**
+
+```text
+GET /query-endpoints/{queryEndpointId}/run
+POST /query-endpoints/{queryEndpointId}/run
+```
+
+<div id="http-methods">
+  ### HTTP 方法
+</div>
+
+| 方法       | 用途             | 参数                                     |
+| -------- | -------------- | -------------------------------------- |
+| **GET**  | 带参数的简单查询       | 通过 URL 参数传递查询变量 (`?param_name=value`)  |
+| **POST** | 复杂查询，或需要使用请求体时 | 在请求体中传递查询变量 (`queryVariables` 对象)      |
+
+**何时使用 GET：**
+
+* 不涉及复杂嵌套数据的简单查询
+* 参数便于进行 URL 编码
+* 可利用 HTTP GET 语义带来的缓存优势
+
+**何时使用 POST：**
+
+* 复杂的查询变量 (数组、对象、长字符串)
+* 出于安全或隐私考虑，优先使用请求体时
+* 流式文件上传或大体量数据
+
+<div id="authentication">
+  ### 身份验证
+</div>
+
+**必需：** 是
+**方法：** 使用 OpenAPI Key/Secret 进行 Basic Auth 身份验证
+**权限：** 访问查询端点所需的相应权限
+
+<div id="request-configuration">
+  ### 请求配置
+</div>
+
+<div id="url-params">
+  #### URL 参数
+</div>
+
+| 参数                | 必填    | 描述             |
+| ----------------- | ----- | -------------- |
+| `queryEndpointId` | **是** | 要执行的查询端点的唯一标识符 |
+
+<div id="query-params">
+  #### 查询参数
+</div>
+
+| 参数                    | 必填 | 描述                                                           | 示例                       |
+| --------------------- | -- | ------------------------------------------------------------ | ------------------------ |
+| `format`              | 否  | 响应格式 (支持所有 ClickHouse 格式)                                    | `?format=JSONEachRow`    |
+| `param_:name`         | 否  | 当请求体为 stream 时使用的查询变量。请将 `:name` 替换为你的变量名                    | `?param_year=2024`       |
+| `request_timeout`     | 否  | 查询超时时间 (单位为毫秒，默认值：30000)                                     | `?request_timeout=60000` |
+| `:clickhouse_setting` | 否  | 任意受支持的 [ClickHouse 设置](/zh/reference/settings/session-settings) | `?max_threads=8`         |
+
+<div id="headers">
+  #### 请求头
+</div>
+
+| 请求头                             | 必需 | 描述                     | 值                         |
+| ------------------------------- | -- | ---------------------- | ------------------------- |
+| `x-clickhouse-endpoint-version` | 否  | 指定端点版本                 | `1` 或 `2` (默认为最近一次保存的版本)  |
+| `x-clickhouse-endpoint-upgrade` | 否  | 触发端点版本升级 (与版本请求头一起使用)  | `1` 表示升级                  |
+
+***
+
+<div id="request-body">
+  ### 请求体
+</div>
+
+<div id="params">
+  #### 参数
+</div>
+
+| 参数               | 类型     | 必填 | 描述       |
+| ---------------- | ------ | -- | -------- |
+| `queryVariables` | object | 否  | 查询中使用的变量 |
+| `format`         | string | 否  | 返回格式     |
+
+<div id="supported-formats">
+  #### 支持的格式
+</div>
+
+| 版本                  | 支持的格式                                                                                                                                                                    |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **版本 2**            | ClickHouse 支持的所有格式                                                                                                                                                       |
+| **版本 1 (受限)&#x20;**&#x20;| TabSeparated <br /> TabSeparatedWithNames <br /> TabSeparatedWithNamesAndTypes <br /> JSON <br /> JSONEachRow <br /> CSV <br /> CSVWithNames <br /> CSVWithNamesAndTypes |
+
+***
+
+<div id="responses">
+  ### 返回结果
+</div>
+
+<div id="success">
+  #### 成功
+</div>
+
+**状态：** `200 OK`
+查询已成功执行。
+
+<div id="error-codes">
+  #### 错误码
+</div>
+
+| 状态码                | 说明          |
+| ------------------ | ----------- |
+| `400 Bad Request`  | 请求格式有误      |
+| `401 Unauthorized` | 缺少身份验证或权限不足 |
+| `404 Not Found`    | 未找到指定的查询端点  |
+
+<div id="error-handling-best-practices">
+  #### 错误处理最佳实践
+</div>
+
+* 确保请求中包含有效的身份验证凭据
+* 在发送前先验证 `queryEndpointId` 和 `queryVariables`
+* 妥善处理错误，并提供恰当的错误消息
+
+***
+
+<div id="upgrading-endpoint-versions">
+  ### 升级端点版本
+</div>
+
+要从版本 1 升级到版本 2：
+
+1. 添加值为 `1` 的 `x-clickhouse-endpoint-upgrade` 请求头
+2. 添加值为 `2` 的 `x-clickhouse-endpoint-version` 请求头
+
+这样即可使用版本 2 的功能，包括：
+
+* 支持所有 ClickHouse 格式
+* 支持响应流式传输
+* 提升的性能和功能
+
+<div id="examples">
+  ## 示例
+</div>
+
+<div id="basic-request">
+  ### 基本请求
+</div>
+
+**查询 API 端点 SQL：**
+
+```sql
+SELECT database, name AS num_tables FROM system.tables LIMIT 3;
+```
+
+<div id="version-1">
+  #### 版本 1
+</div>
+
+<Tabs>
+  <Tab title="cURL">
+    ```bash
+    curl -X POST 'https://console-api.clickhouse.cloud/.api/query-endpoints/<endpoint id>/run' \
+    --user '<openApiKeyId:openApiKeySecret>' \
+    -H 'Content-Type: application/json' \
+    -d '{ "format": "JSONEachRow" }'
+    ```
+  </Tab>
+
+  <Tab title="JavaScript">
+    ```javascript
+    fetch(
+      "https://console-api.clickhouse.cloud/.api/query-endpoints/<endpoint id>/run",
+      {
+        method: "POST",
+        headers: {
+          Authorization: "Basic <base64_encoded_credentials>",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          format: "JSONEachRow",
+        }),
+      }
+    )
+      .then((response) => response.json())
+      .then((data) => console.log(data))
+      .catch((error) => console.error("Error:", error));
+    ```
+
+    ```json title="响应"
+    {
+      "data": {
+        "columns": [
+          {
+            "name": "database",
+            "type": "String"
+          },
+          {
+            "name": "num_tables",
+            "type": "String"
+          }
+        ],
+        "rows": [
+          ["INFORMATION_SCHEMA", "COLUMNS"],
+          ["INFORMATION_SCHEMA", "KEY_COLUMN_USAGE"],
+          ["INFORMATION_SCHEMA", "REFERENTIAL_CONSTRAINTS"]
+        ]
+      }
+    }
+    ```
+  </Tab>
+</Tabs>
+
+<div id="version-2">
+  #### 版本 2
+</div>
+
+<Tabs>
+  <Tab title="GET (cURL)">
+    ```bash
+    curl 'https://console-api.clickhouse.cloud/.api/query-endpoints/<endpoint id>/run?format=JSONEachRow' \
+    --user '<openApiKeyId:openApiKeySecret>' \
+    -H 'x-clickhouse-endpoint-version: 2'
+    ```
+
+    ```application/x-ndjson title="响应"
+    {"database":"INFORMATION_SCHEMA","num_tables":"COLUMNS"}
+    {"database":"INFORMATION_SCHEMA","num_tables":"KEY_COLUMN_USAGE"}
+    {"database":"INFORMATION_SCHEMA","num_tables":"REFERENTIAL_CONSTRAINTS"}
+    ```
+  </Tab>
+
+  <Tab title="POST (cURL)">
+    ```bash
+    curl -X POST 'https://console-api.clickhouse.cloud/.api/query-endpoints/<endpoint id>/run?format=JSONEachRow' \
+    --user '<openApiKeyId:openApiKeySecret>' \
+    -H 'Content-Type: application/json' \
+    -H 'x-clickhouse-endpoint-version: 2'
+    ```
+  </Tab>
+
+  <Tab title="JavaScript">
+    ```javascript
+    fetch(
+      "https://console-api.clickhouse.cloud/.api/query-endpoints/<endpoint id>/run?format=JSONEachRow",
+      {
+        method: "POST",
+        headers: {
+          Authorization: "Basic <base64_encoded_credentials>",
+          "Content-Type": "application/json",
+          "x-clickhouse-endpoint-version": "2",
+        },
+      }
+    )
+      .then((response) => response.json())
+      .then((data) => console.log(data))
+      .catch((error) => console.error("Error:", error));
+    ```
+
+    ```application/x-ndjson title="响应"
+    {"database":"INFORMATION_SCHEMA","num_tables":"COLUMNS"}
+    {"database":"INFORMATION_SCHEMA","num_tables":"KEY_COLUMN_USAGE"}
+    {"database":"INFORMATION_SCHEMA","num_tables":"REFERENTIAL_CONSTRAINTS"}
+    ```
+  </Tab>
+</Tabs>
+
+<div id="request-with-query-variables-and-version-2-on-jsoncompacteachrow-format">
+  ### 使用查询变量和 JSONCompactEachRow 格式版本 2 发起请求
+</div>
+
+**查询 API 端点 SQL：**
+
+```sql
+SELECT name, database FROM system.tables WHERE match(name, {tableNameRegex: String}) AND database = {database: String};
+```
+
+<Tabs>
+  <Tab title="GET（cURL）">
+    ```bash
+    curl 'https://console-api.clickhouse.cloud/.api/query-endpoints/<endpoint id>/run?format=JSONCompactEachRow&param_tableNameRegex=query.*&param_database=system' \
+    --user '<openApiKeyId:openApiKeySecret>' \
+    -H 'x-clickhouse-endpoint-version: 2'
+    ```
+
+    ```application/x-ndjson title="响应"
+    ["query_cache", "system"]
+    ["query_log", "system"]
+    ["query_views_log", "system"]
+    ```
+  </Tab>
+
+  <Tab title="POST（cURL）">
+    ```bash
+    curl -X POST 'https://console-api.clickhouse.cloud/.api/query-endpoints/<endpoint id>/run?format=JSONCompactEachRow' \
+    --user '<openApiKeyId:openApiKeySecret>' \
+    -H 'Content-Type: application/json' \
+    -H 'x-clickhouse-endpoint-version: 2' \
+    -d '{ "queryVariables": { "tableNameRegex": "query.*", "database": "system" } }'
+    ```
+  </Tab>
+
+  <Tab title="JavaScript">
+    ```javascript
+    fetch(
+      "https://console-api.clickhouse.cloud/.api/query-endpoints/<endpoint id>/run?format=JSONCompactEachRow",
+      {
+        method: "POST",
+        headers: {
+          Authorization: "Basic <base64_encoded_credentials>",
+          "Content-Type": "application/json",
+          "x-clickhouse-endpoint-version": "2",
+        },
+        body: JSON.stringify({
+          queryVariables: {
+            tableNameRegex: "query.*",
+            database: "system",
+          },
+        }),
+      }
+    )
+      .then((response) => response.json())
+      .then((data) => console.log(data))
+      .catch((error) => console.error("Error:", error));
+    ```
+
+    ```application/x-ndjson title="响应"
+    ["query_cache", "system"]
+    ["query_log", "system"]
+    ["query_views_log", "system"]
+    ```
+  </Tab>
+</Tabs>
+
+<div id="request-with-array-in-the-query-variables-that-inserts-data-into-a-table">
+  ### 在查询变量中使用数组并向表中插入数据的请求
+</div>
+
+**表 SQL：**
+
+```SQL
+CREATE TABLE default.t_arr
+(
+    `arr` Array(Array(Array(UInt32)))
+)
+ENGINE = MergeTree
+ORDER BY tuple()
+```
+
+**查询 API 端点 SQL：**
+
+```sql
+INSERT INTO default.t_arr VALUES ({arr: Array(Array(Array(UInt32)))});
+```
+
+<Tabs>
+  <Tab title="cURL">
+    ```bash
+    curl -X POST 'https://console-api.clickhouse.cloud/.api/query-endpoints/<endpoint id>/run' \
+    --user '<openApiKeyId:openApiKeySecret>' \
+    -H 'Content-Type: application/json' \
+    -H 'x-clickhouse-endpoint-version: 2' \
+    -d '{
+      "queryVariables": {
+        "arr": [[[12, 13, 0, 1], [12]]]
+      }
+    }'
+    ```
+  </Tab>
+
+  <Tab title="JavaScript">
+    ```javascript
+    fetch(
+      "https://console-api.clickhouse.cloud/.api/query-endpoints/<endpoint id>/run",
+      {
+        method: "POST",
+        headers: {
+          Authorization: "Basic <base64_encoded_credentials>",
+          "Content-Type": "application/json",
+          "x-clickhouse-endpoint-version": "2",
+        },
+        body: JSON.stringify({
+          queryVariables: {
+            arr: [[[12, 13, 0, 1], [12]]],
+          },
+        }),
+      }
+    )
+      .then((response) => response.json())
+      .then((data) => console.log(data))
+      .catch((error) => console.error("Error:", error));
+    ```
+
+    ```text title="响应"
+    OK
+    ```
+  </Tab>
+</Tabs>
+
+<div id="request-with-clickhouse-settings-max_threads-set-to-8">
+  ### 将 ClickHouse 设置 `max_threads` 设为 8 的请求
+</div>
+
+**查询 API 端点 SQL：**
+
+```sql
+SELECT * FROM system.tables;
+```
+
+<Tabs>
+  <Tab title="GET（cURL）">
+    ```bash
+    curl 'https://console-api.clickhouse.cloud/.api/query-endpoints/<endpoint id>/run?max_threads=8' \
+    --user '<openApiKeyId:openApiKeySecret>' \
+    -H 'x-clickhouse-endpoint-version: 2'
+    ```
+  </Tab>
+
+  <Tab title="POST（cURL）">
+    ```bash
+    curl -X POST 'https://console-api.clickhouse.cloud/.api/query-endpoints/<endpoint id>/run?max_threads=8,' \
+    --user '<openApiKeyId:openApiKeySecret>' \
+    -H 'Content-Type: application/json' \
+    -H 'x-clickhouse-endpoint-version: 2' \
+    ```
+  </Tab>
+
+  <Tab title="JavaScript">
+    ```javascript
+    fetch(
+      "https://console-api.clickhouse.cloud/.api/query-endpoints/<endpoint id>/run?max_threads=8",
+      {
+        method: "POST",
+        headers: {
+          Authorization: "Basic <base64_encoded_credentials>",
+          "Content-Type": "application/json",
+          "x-clickhouse-endpoint-version": "2",
+        },
+      }
+    )
+      .then((response) => response.json())
+      .then((data) => console.log(data))
+      .catch((error) => console.error("Error:", error));
+    ```
+  </Tab>
+</Tabs>
+
+<div id="request-and-parse-the-response-as-a-stream">
+  ### 请求并将响应作为stream解析
+</div>
+
+**查询 API 端点 SQL：**
+
+```sql
+SELECT name, database FROM system.tables;
+```
+
+<Tabs>
+  <Tab title="TypeScript">
+    ```typescript
+    async function fetchAndLogChunks(
+      url: string,
+      openApiKeyId: string,
+      openApiKeySecret: string
+    ) {
+      const auth = Buffer.from(`${openApiKeyId}:${openApiKeySecret}`).toString(
+        "base64"
+      );
+
+      const headers = {
+        Authorization: `Basic ${auth}`,
+        "x-clickhouse-endpoint-version": "2",
+      };
+
+      const response = await fetch(url, {
+        headers,
+        method: "POST",
+        body: JSON.stringify({ format: "JSONEachRow" }),
+      });
+
+      if (!response.ok) {
+        console.error(`HTTP error! Status: ${response.status}`);
+        return;
+      }
+
+      const reader = response.body as unknown as Readable;
+      reader.on("data", (chunk) => {
+        console.log(chunk.toString());
+      });
+
+      reader.on("end", () => {
+        console.log("Stream ended.");
+      });
+
+      reader.on("error", (err) => {
+        console.error("Stream error:", err);
+      });
+    }
+
+    const endpointUrl =
+      "https://console-api.clickhouse.cloud/.api/query-endpoints/<endpoint id>/run?format=JSONEachRow";
+    const openApiKeyId = "<myOpenApiKeyId>";
+    const openApiKeySecret = "<myOpenApiKeySecret>";
+    // 使用示例
+    fetchAndLogChunks(endpointUrl, openApiKeyId, openApiKeySecret).catch((err) =>
+      console.error(err)
+    );
+    ```
+
+    ```shell title="输出"
+    > npx tsx index.ts
+    > {"name":"COLUMNS","database":"INFORMATION_SCHEMA"}
+    > {"name":"KEY_COLUMN_USAGE","database":"INFORMATION_SCHEMA"}
+    ...
+    > Stream ended.
+    ```
+  </Tab>
+</Tabs>
+
+<div id="insert-a-stream-from-a-file-into-a-table">
+  ### 将文件中的stream插入表中
+</div>
+
+创建文件 `./samples/my_first_table_2024-07-11.csv`，内容如下：
+
+```csv
+"user_id","json","name"
+"1","{""name"":""John"",""age"":30}","John"
+"2","{""name"":""Jane"",""age"":25}","Jane"
+```
+
+**CREATE TABLE SQL：**
+
+```sql
+create table default.my_first_table
+(
+    user_id String,
+    json String,
+    name String,
+) ENGINE = MergeTree()
+ORDER BY user_id;
+```
+
+**查询 API 端点 SQL：**
+
+```sql
+INSERT INTO default.my_first_table
+```
+
+```bash
+cat ./samples/my_first_table_2024-07-11.csv | curl --user '<openApiKeyId:openApiKeySecret>' \
+                                                   -X POST \
+                                                   -H 'Content-Type: application/octet-stream' \
+                                                   -H 'x-clickhouse-endpoint-version: 2' \
+                                                   "https://console-api.clickhouse.cloud/.api/query-endpoints/<endpoint id>/run?format=CSV" \
+                                                   --data-binary @-
+```

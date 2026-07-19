@@ -1,0 +1,122 @@
+---
+alias: []
+description: 'PNG 图像输出格式文档'
+input_format: false
+keywords: ['PNG']
+output_format: true
+slug: /interfaces/formats/PNG
+title: 'PNG'
+doc_type: 'reference'
+---
+
+| 输入 | 输出 | 别名 |
+| -- | -- | -- |
+| ✗  | ✔  | ✗  |
+
+<div id="description">
+  ## 描述
+</div>
+
+将查询结果渲染为 PNG 图像。这可用作内置的可视化工具。
+
+输出图像的大小由设置
+[`output_format_image_width`](/zh/reference/settings/formats#output_format_image_width) 和
+[`output_format_image_height`](/zh/reference/settings/formats#output_format_image_height)
+固定 (两者默认值均为 1024) 。结果未覆盖到的像素会填充为黑色
+(在 `RGB` 和灰度模式下) ，或透明黑色 (在 `RGBA` 模式下) 。
+
+颜色模式会根据结果的列名和类型自动确定：
+
+| 列                  | 模式                                 |
+| ------------------ | ---------------------------------- |
+| `r`, `g`, `b`      | 8 位 RGB                            |
+| `r`, `g`, `b`, `a` | 8 位 RGBA                           |
+| 整数类型的 `v`          | 8 位灰度                              |
+| `Float*` 类型的 `v`   | 8 位灰度 (`[0, 1]` 中的值 → `[0, 255]`)  |
+| `Bool` 类型的 `v`     | 二值 (渲染为 8 位灰度：`0` 或 `255`)         |
+
+列名按不区分大小写方式匹配。如果无法明确
+判定颜色模式 (例如列名未知、`v` 与 `r`/`g`/`b`/`a` 混用，或 `r`/`g`/`b` 中缺少某一列) ，
+查询会抛出异常。
+
+对于像素通道，整数值会被限制在 `[0, 255]` 范围内，而浮点值
+会被限制在 `[0, 1]` 范围内，然后再缩放到 `[0, 255]`。
+
+图像中每条记录的位置由以下两种模式之一决定：
+
+* **隐式** (默认模式——即不存在 `x` 和 `y` 时) 。每条记录对应
+  一个像素；像素按扫描线顺序填充：从左到右、从上到下。
+* **显式** (当存在 `x` 和 `y` 列，且两者均为整数类型时) 。
+  `x` 和 `y` 列给出像素坐标。坐标超出
+  图像范围的记录会被静默忽略。如果多个记录具有相同坐标，
+  则以最后一条记录为准 (画家算法) 。
+
+<div id="example-usage">
+  ## 使用示例
+</div>
+
+<div id="implicit-rgb">
+  ### 隐式坐标 (每个像素一行) ，RGB
+</div>
+
+```sql
+SELECT
+    toUInt8(x * 25) AS r,
+    toUInt8(y * 25) AS g,
+    toUInt8((x + y) * 12) AS b
+FROM
+(
+    SELECT number % 10 AS x, intDiv(number, 10) AS y FROM numbers(100)
+)
+INTO OUTFILE 'gradient.png'
+FORMAT PNG
+SETTINGS output_format_image_width = 10, output_format_image_height = 10;
+```
+
+<div id="explicit-grayscale">
+  ### 显式坐标，灰度图
+</div>
+
+```sql
+SELECT
+    toInt32(x) AS x,
+    toInt32(y) AS y,
+    toUInt8(intensity) AS v
+FROM points
+INTO OUTFILE 'points.png'
+FORMAT PNG
+SETTINGS output_format_image_width = 512, output_format_image_height = 512;
+```
+
+<div id="terminal-mode">
+  ## 在终端中显示图像
+</div>
+
+默认情况下，`PNG` 格式会输出原始图像字节。通过设置
+[`output_format_image_terminal_mode`](/zh/reference/settings/formats#output_format_image_terminal_mode)
+可使该格式改为使用内联图像协议，直接在终端中渲染图像：
+
+| 值              | 行为                                                                  |
+| -------------- | ------------------------------------------------------------------- |
+| &#96;&#96; (空) | 输出原始图像字节 (默认值) 。                                                    |
+| `iterm`        | 使用 iTerm2 内联图像协议。                                                   |
+| `kitty`        | 使用 Kitty 图形协议。                                                      |
+| `sixel`        | 使用 Sixel 协议。图像会被缩减为固定的 6×6×6 调色板；如果存在 alpha 通道，则会将其合成到黑色背景上。        |
+| `auto`         | 如果输出是终端，则检测其支持的协议，并使用 `iterm`、`kitty` 或 `sixel` (按此顺序) ；否则输出原始图像字节。 |
+
+```sql
+SELECT toUInt8(x * 25) AS r, toUInt8(y * 25) AS g, toUInt8((x + y) * 12) AS b
+FROM (SELECT number % 10 AS x, intDiv(number, 10) AS y FROM numbers(100))
+FORMAT PNG
+SETTINGS output_format_image_width = 10, output_format_image_height = 10, output_format_image_terminal_mode = 'auto';
+```
+
+<div id="format-settings">
+  ## 格式 设置
+</div>
+
+| Setting                             | 描述                 | 默认值             |
+| ----------------------------------- | ------------------ | --------------- |
+| `output_format_image_width`         | 输出图像的宽度 (以像素为单位) 。 | `1024`          |
+| `output_format_image_height`        | 输出图像的高度 (以像素为单位) 。 | `1024`          |
+| `output_format_image_terminal_mode` | 内联终端图像协议 (见上文) 。   | &#96;&#96; (空)  |

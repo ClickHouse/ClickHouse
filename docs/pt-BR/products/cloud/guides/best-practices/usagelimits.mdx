@@ -1,0 +1,43 @@
+---
+slug: /cloud/bestpractices/usage-limits
+sidebarTitle: 'Limites de serviço'
+title: 'Limites de uso'
+description: 'Descreve os limites de uso recomendados no ClickHouse Cloud'
+doc_type: 'reference'
+keywords: ['limites de uso', 'quotas', 'melhores práticas', 'gerenciamento de recursos', 'recursos do Cloud']
+---
+
+Embora o ClickHouse seja conhecido por sua velocidade e confiabilidade, o desempenho ideal é
+alcançado dentro de determinados parâmetros operacionais. Por exemplo, ter tabelas,
+bancos de dados ou partes em excesso pode impactar negativamente o desempenho. Para evitar isso, o ClickHouse
+Cloud aplica limites em várias dimensões operacionais.
+Os detalhes dessas restrições estão listados abaixo.
+
+<Tip>
+  Se você esbarrou em uma dessas restrições, é possível que esteja
+  implementando seu caso de uso de uma forma não otimizada. Entre em contato com nossa equipe de suporte e
+  teremos prazer em ajudar você a refinar seu caso de uso para evitar exceder essas restrições
+  ou avaliar em conjunto como podemos aumentá-las de forma controlada.
+</Tip>
+
+| Dimensão                           | Limite                                                                                                                    |
+| ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| **Bancos de dados**                | 1000                                                                                                                      |
+| **Tabelas**                        | 5000                                                                                                                      |
+| **Colunas**                        | ∼1000 (wide format é preferível a compact)                                                                                |
+| **Partições**                      | 50k                                                                                                                       |
+| **Partes**                         | 10k (consulte a configuração [`max_parts_in_total`](/pt-BR/products/cloud/guides/cloud-compatibility#max_parts_in_total-10000)) |
+| **Tamanho da parte**               | 150 GB                                                                                                                    |
+| **Serviços por organização**       | 20 (soft)                                                                                                                 |
+| **Serviços por warehouse**         | 5 (soft)                                                                                                                  |
+| **Réplicas por serviço**           | 20 (soft)                                                                                                                 |
+| **Baixa cardinalidade**            | 10k ou menos                                                                                                              |
+| **Chaves primárias em uma tabela** | 4-5 que filtrem os dados de forma suficiente                                                                              |
+| **Concorrência de consultas**      | 1000 (por réplica)                                                                                                        |
+| **Ingestão em lote**               | qualquer lote &gt; 1M será dividido pelo sistema em blocos de 1M linhas                                                   |
+
+<Note>
+  Para serviços com réplica única, o número máximo de bancos de dados é restrito a
+  100, e o número máximo de tabelas é restrito a 500. Além disso, o armazenamento
+  para serviços do Basic Tier é limitado a 1 TB.
+</Note>

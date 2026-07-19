@@ -1,0 +1,85 @@
+---
+slug: /use-cases/observability/clickstack/sdks
+description: 'ClickStack の言語 SDKs - The ClickHouse Observability Stack'
+title: '言語 SDKs'
+doc_type: 'guide'
+keywords: ['ClickStack SDKs', 'ClickStack 言語 SDKs', 'OpenTelemetry SDKs ClickStack', 'アプリケーション インストルメンテーション SDKs
+', 'テレメトリー収集 SDKs']
+---
+
+通常、データは **OpenTelemetry (OTel) collector** を介して ClickStack に送信されます。送信元は言語 SDKs から直接の場合もあれば、エージェントとして動作する中間の OpenTelemetry collector (たとえばインフラストラクチャのメトリクスやログを収集するもの) を経由する場合もあります。
+
+言語 SDKs は、アプリケーション内部からテレメトリー、特に **トレース** と **ログ** を収集し、このデータを OTLP エンドポイント経由で OpenTelemetry collector にエクスポートする役割を担います。OpenTelemetry collector は、そこから ClickHouse へのインジェストを処理します。
+
+ブラウザベースの環境では、SDKs が **セッションデータ** (UI イベント、クリック、ナビゲーションなど) の収集も担い、ユーザーセッションのリプレイを可能にすることもあります。
+
+<div id="how-it-works">
+  ## 動作の仕組み
+</div>
+
+1. アプリケーションは ClickStack SDK (例: Node.js、Python、Go) を使用します。これらの SDK は OpenTelemetry SDKs をベースにしており、追加機能と使いやすさの改善が加えられています。
+2. SDK は OTLP (HTTP または gRPC) 経由でトレースとログを収集し、エクスポートします。
+3. OpenTelemetry collector はテレメトリーを受信し、設定されたエクスポーターを通じて ClickHouse に書き込みます。
+
+<div id="supported-languages">
+  ## 対応言語
+</div>
+
+<Info>
+  **OpenTelemetry 互換性**
+
+  ClickStack は、より充実したテレメトリーと機能を備えた独自の言語 SDK を提供していますが、既存の OpenTelemetry SDK もそのままシームレスに利用できます。
+</Info>
+
+<br />
+
+| 言語           | 説明                                 | リンク                                                    |
+| ------------ | ---------------------------------- | ------------------------------------------------------ |
+| AWS Lambda   | AWS Lambda 関数をインストルメントする           | [ドキュメント](/ja/clickstack/ingesting-data/sdks/aws-lambda)   |
+| Browser      | ブラウザベースのアプリケーション向け JavaScript SDK  | [ドキュメント](/ja/clickstack/ingesting-data/sdks/browser)      |
+| Elixir       | Elixir アプリケーション                    | [ドキュメント](/ja/clickstack/ingesting-data/sdks/elixir)       |
+| Go           | Go アプリケーションとマイクロサービス               | [ドキュメント](/ja/clickstack/ingesting-data/sdks/golang)       |
+| Java         | Java アプリケーション                      | [ドキュメント](/ja/clickstack/ingesting-data/sdks/java)         |
+| NestJS       | NestJS アプリケーション                    | [ドキュメント](/ja/clickstack/ingesting-data/sdks/nestjs)       |
+| Next.js      | Next.js アプリケーション                   | [ドキュメント](/ja/clickstack/ingesting-data/sdks/nextjs)       |
+| Node.js      | サーバーサイドアプリケーション向け JavaScript ランタイム | [ドキュメント](/ja/clickstack/ingesting-data/sdks/nodejs)       |
+| Deno         | Deno アプリケーション                      | [ドキュメント](/ja/clickstack/ingesting-data/sdks/deno)         |
+| Python       | Python アプリケーションと Web サービス          | [ドキュメント](/ja/clickstack/ingesting-data/sdks/python)       |
+| React Native | React Native モバイルアプリケーション          | [ドキュメント](/ja/clickstack/ingesting-data/sdks/react-native) |
+| Ruby         | Ruby on Rails アプリケーションと Web サービス   | [ドキュメント](/ja/clickstack/ingesting-data/sdks/ruby)         |
+
+<div id="securing-api-key">
+  ## API key による保護
+</div>
+
+<Info>
+  **Managed ClickStack では不要**
+
+  Managed ClickStack では API key は必要ありません。
+</Info>
+
+OTel collector 経由で ClickStack にデータを送信するには、SDK でインジェスト API key を指定する必要があります。これは、SDK の `init` 関数または `OTEL_EXPORTER_OTLP_HEADERS` 環境変数で設定できます。
+
+```shell
+OTEL_EXPORTER_OTLP_HEADERS='authorization=<YOUR_INGESTION_API_KEY>'
+```
+
+このAPI keyは ClickStack UI (HyperDX) アプリケーションによって生成され、アプリの `Team Settings → API Keys` から確認できます。
+
+OpenTelemetry をサポートするほとんどの [言語 SDKs](/ja/clickstack/ingesting-data/sdks/index) やテレメトリーライブラリでは、アプリケーションで `OTEL_EXPORTER_OTLP_ENDPOINT` 環境変数を設定するか、SDK の初期化時に指定するだけで済みます。
+
+```shell
+export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318
+```
+
+<div id="kubernetes-integration">
+  ## Kubernetes インテグレーション
+</div>
+
+すべての SDK は、Kubernetes 環境で実行されている場合、Kubernetes のメタデータ (ポッド名、ネームスペース など) との自動相関をサポートしています。これにより、次のことが可能になります。
+
+* サービスに関連付けられたポッドやノードの Kubernetes メトリクスを表示する
+* アプリケーションのログやトレースをインフラストラクチャのメトリクスと相関付ける
+* Kubernetes クラスター全体にわたってリソース使用量とパフォーマンスを追跡する
+
+この機能を有効にするには、resource タグをポッドに転送するよう OpenTelemetry Collector を設定します。詳しい設定手順については、[Kubernetes インテグレーションガイド](/ja/clickstack/integration-examples/kubernetes#forwarding-resouce-tags-to-pods) を参照してください。

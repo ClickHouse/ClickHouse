@@ -107,6 +107,7 @@ import argparse
 import dataclasses
 import json
 import os
+import sys
 from contextlib import contextmanager
 from copy import copy
 from pathlib import Path
@@ -126,6 +127,20 @@ from version_helper import (
     get_version_from_repo,
     update_cmake_version,
     update_contributors,
+)
+
+# The empty-patch-release guard lives in `ci/jobs/scripts/release_checks.py` so
+# the `CI Tests` unit suite can exercise it without this module's release-only
+# dependencies. Import it here, at module load, while the working tree is still
+# the checked-out branch: `prepare()` later checks out the release ref (which may
+# predate this helper), and importing under that `checkout()` would read a tree
+# where the file does not exist. This script runs from `tests/ci` with the repo
+# root off `sys.path`, so add it before importing.
+_REPO_ROOT = str(Path(__file__).resolve().parents[2])
+if _REPO_ROOT not in sys.path:
+    sys.path.append(_REPO_ROOT)
+from ci.jobs.scripts.release_checks import (  # noqa: E402  pylint: disable=wrong-import-position
+    is_empty_patch_release,
 )
 
 CMAKE_PATH = get_abs_path(FILE_WITH_VERSION_PATH)
@@ -286,6 +301,23 @@ class ReleaseInfo:
                 version.with_description(codename)
                 release_branch = f"{version.major}.{version.minor}"
                 release_tag = version.describe
+                # Refuse to make an empty patch release. Recovery runs
+                # (only-repo/only-docker) rebuild an already-tagged release and
+                # do not tag, so skip the check. This is checked before the
+                # out-of-order check below because "nothing to release" is the
+                # more fundamental condition. `is_empty_patch_release` is
+                # imported at module load (see top of file); it must not be
+                # imported here, under `checkout()`, where the working tree may
+                # predate the helper.
+                if not _skip_out_of_order_check and is_empty_patch_release(
+                    version.patch, version.tweak
+                ):
+                    raise RuntimeError(
+                        f"Refusing to release ref [{commit_ref}]: computed "
+                        f"version [{version.string}] has tweak 1, which means the "
+                        f"only commit since the previous release is the automated "
+                        f"version bump. There is nothing to release."
+                    )
             Shell.check(
                 f"{GIT_PREFIX} fetch origin {release_branch} --tags",
                 strict=True,

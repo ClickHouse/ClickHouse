@@ -1,0 +1,197 @@
+---
+slug: /use-cases/AI/MCP/ai-agent-libraries/langchain
+sidebarTitle: 'Langchain 통합'
+title: 'ClickHouse MCP 서버를 사용하여 LangChain/LangGraph AI 에이전트를 구축하는 방법'
+description: 'ClickHouse MCP 서버를 사용해 ClickHouse SQL playground와 상호작용할 수 있는 LangChain/LangGraph AI 에이전트를 구축하는 방법을 알아봅니다.'
+keywords: ['ClickHouse', 'MCP', 'LangChain', 'LangGraph']
+show_related_blogs: true
+doc_type: 'guide'
+---
+
+이 가이드에서는 [LangChain/LangGraph](https://github.com/langchain-ai/langgraph) AI 에이전트를 구축하여
+[ClickHouse SQL playground](https://sql.clickhouse.com/)와 [ClickHouse MCP 서버](https://github.com/ClickHouse/mcp-clickhouse)로 상호작용하는 방법을 알아봅니다.
+
+<Info>
+  **예시 노트북**
+
+  이 예시는 [examples 리포지토리](https://github.com/ClickHouse/examples/blob/main/ai/mcp/langchain/langchain.ipynb)에서 노트북 형태로 확인할 수 있습니다.
+</Info>
+
+<div id="prerequisites">
+  ## 사전 요구 사항
+</div>
+
+* 시스템에 Python이 설치되어 있어야 합니다.
+* 시스템에 `pip`가 설치되어 있어야 합니다.
+* Anthropic API Key 또는 다른 LLM 제공업체의 API Key가 필요합니다.
+
+다음 단계는 Python REPL 또는 스크립트에서 실행할 수 있습니다.
+
+<Steps>
+  <Step>
+    ## 라이브러리 설치
+
+    다음 명령어를 실행하여 필요한 라이브러리를 설치합니다:
+
+    ```python
+    pip install -q --upgrade pip
+    pip install -q langchain-mcp-adapters langgraph "langchain[anthropic]"
+    ```
+  </Step>
+
+  <Step>
+    ## 자격 증명 설정
+
+    다음으로 Anthropic API Key를 입력해야 합니다:
+
+    ```python
+    import os, getpass
+    os.environ["ANTHROPIC_API_KEY"] = getpass.getpass("Enter Anthropic API Key:")
+    ```
+
+    ```response title="Response"
+    Enter Anthropic API Key: ········
+    ```
+
+    <Info>
+      **다른 LLM 제공업체 사용**
+
+      Anthropic API Key가 없고 다른 LLM 제공업체를 사용하려는 경우,
+      [Langchain Providers docs](https://python.langchain.com/docs/integrations/providers/)에서 자격 증명 설정 방법을 확인할 수 있습니다.
+    </Info>
+  </Step>
+
+  <Step>
+    ## MCP 서버 초기화
+
+    이제 ClickHouse MCP 서버가 ClickHouse SQL playground를 가리키도록 설정합니다:
+
+    ```python
+    from mcp import ClientSession, StdioServerParameters
+    from mcp.client.stdio import stdio_client
+
+    server_params = StdioServerParameters(
+        command="uv",
+        args=[
+            "run",
+            "--with", "mcp-clickhouse",
+            "--python", "3.13",
+            "mcp-clickhouse"
+        ],
+        env={
+            "CLICKHOUSE_HOST": "sql-clickhouse.clickhouse.com",
+            "CLICKHOUSE_PORT": "8443",
+            "CLICKHOUSE_USER": "demo",
+            "CLICKHOUSE_PASSWORD": "",
+            "CLICKHOUSE_SECURE": "true"
+        }
+    )
+    ```
+  </Step>
+
+  <Step>
+    ## 스트림 핸들러 구성
+
+    Langchain과 ClickHouse MCP 서버를 사용할 때 쿼리 결과는 단일 응답이 아니라 스트리밍 방식의 데이터로 반환되는 경우가 많습니다. 대용량 데이터셋이나 처리에 시간이 걸릴 수 있는 복잡한 분석 쿼리에서는 스트림 핸들러를 구성하는 것이 중요합니다. 이를 적절히 처리하지 않으면 애플리케이션에서 이 스트리밍 출력을 다루기 어려울 수 있습니다.
+
+    스트리밍 출력을 애플리케이션에서 더 쉽게 활용할 수 있도록 핸들러를 구성하십시오:
+
+    ```python
+    class UltraCleanStreamHandler:
+        def __init__(self):
+            self.buffer = ""
+            self.in_text_generation = False
+            self.last_was_tool = False
+            
+        def handle_chunk(self, chunk):
+            event = chunk.get("event", "")
+            
+            if event == "on_chat_model_stream":
+                data = chunk.get("data", {})
+                chunk_data = data.get("chunk", {})
+                
+                # 실제 텍스트 콘텐츠만 처리하고, 도구 호출 스트림은 건너뜀
+                if hasattr(chunk_data, 'content'):
+                    content = chunk_data.content
+                    if isinstance(content, str) and not content.startswith('{"'):
+                        # 도구 완료 후 필요한 경우 공백 추가
+                        if self.last_was_tool:
+                            print(" ", end="", flush=True)
+                            self.last_was_tool = False
+                        print(content, end="", flush=True)
+                        self.in_text_generation = True
+                    elif isinstance(content, list):
+                        for item in content:
+                            if (isinstance(item, dict) and 
+                                item.get('type') == 'text' and 
+                                'partial_json' not in str(item)):
+                                text = item.get('text', '')
+                                if text and not text.startswith('{"'):
+                                    # 도구 완료 후 필요한 경우 공백 추가
+                                    if self.last_was_tool:
+                                        print(" ", end="", flush=True)
+                                        self.last_was_tool = False
+                                    print(text, end="", flush=True)
+                                    self.in_text_generation = True
+                                    
+            elif event == "on_tool_start":
+                if self.in_text_generation:
+                    print(f"\n🔧 {chunk.get('name', 'tool')}", end="", flush=True)
+                    self.in_text_generation = False
+                    
+            elif event == "on_tool_end":
+                print(" ✅", end="", flush=True)
+                self.last_was_tool = True
+    ```
+  </Step>
+
+  <Step>
+    ## 에이전트 호출하기
+
+    마지막으로, 에이전트를 호출해 ClickHouse에 가장 많은 코드를 커밋한 사람이 누구인지 물어보세요:
+
+    ```python
+    async with stdio_client(server_params) as (read, write):
+        async with ClientSession(read, write) as session:
+            await session.initialize()
+            tools = await load_mcp_tools(session)
+            agent = create_react_agent("anthropic:claude-sonnet-4-0", tools)
+            
+            handler = UltraCleanStreamHandler()        
+            async for chunk in agent.astream_events(
+                {"messages": [{"role": "user", "content": "Who's committed the most code to ClickHouse?"}]}, 
+                version="v1"
+            ):
+                handler.handle_chunk(chunk)
+                
+            print("\n")
+    ```
+
+    다음과 유사한 응답이 표시됩니다:
+
+    ```response title="Response"
+    사용 가능한 데이터베이스와 테이블을 탐색하여 git 커밋 데이터를 찾고, ClickHouse에 가장 많은 코드를 커밋한 사람을 찾아드리겠습니다.
+    🔧 list_databases ✅ git 커밋 정보가 포함되어 있을 것으로 보이는 `git` 데이터베이스가 있습니다. 해당 데이터베이스의 테이블을 살펴보겠습니다:
+    🔧 list_tables ✅ git 데이터베이스의 `clickhouse_commits` 테이블에 80,644개의 커밋으로 구성된 ClickHouse 커밋 데이터가 있습니다. 이 테이블에는 작성자, 추가/삭제된 줄 수, 수정된 파일 등 각 커밋에 대한 정보가 포함되어 있습니다. 다양한 메트릭을 기준으로 가장 많은 코드를 커밋한 사람을 찾기 위해 이 테이블을 쿼리해 보겠습니다.
+    🔧 run_select_query ✅ 가장 많은 새 코드를 기여한 사람을 확인하기 위해 추가된 줄 수만 살펴보겠습니다:
+    🔧 run_select_query ✅ ClickHouse git 커밋 데이터를 기준으로, **Alexey Milovidov**가 여러 지표에서 ClickHouse에 가장 많은 코드를 커밋한 것으로 나타났습니다:
+
+    ## 주요 통계:
+
+    1. **총 변경 줄 수 1위**: Alexey Milovidov — **총 1,696,929줄 변경** (853,049줄 추가 + 843,880줄 삭제)
+    2. **추가 줄 수 1위**: Alexey Milovidov — **853,049줄 추가**
+    3. **커밋 수 1위**: Alexey Milovidov — **15,375회 커밋**
+    4. **변경 파일 수 1위**: Alexey Milovidov — **73,529개 파일 변경**
+
+    ## 추가 줄 수 기준 상위 기여자:
+
+    1. **Alexey Milovidov**: 853,049줄 추가 (15,375회 커밋)
+    2. **s-kat**: 541,609줄 추가 (50회 커밋)
+    3. **Nikolai Kochetov**: 219,020줄 추가 (4,218회 커밋)
+    4. **alesapin**: 193,566줄 추가 (4,783회 커밋)
+    5. **Vitaly Baranov**: 168,807줄 추가 (1,152회 커밋)
+
+    Alexey Milovidov는 ClickHouse의 최초 개발자 중 한 명이자 수석 개발자로서, 단연 가장 활발한 기여자입니다. 약 16,000회의 커밋과 850,000줄 이상의 코드 추가로, 총 코드 규모와 커밋 수 모두에서 다른 기여자들을 압도합니다.
+    ```
+  </Step>
+</Steps>

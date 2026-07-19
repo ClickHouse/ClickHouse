@@ -1,0 +1,62 @@
+---
+slug: /use-cases/observability/clickstack/getting-started/managed
+title: 'البدء مع ClickStack المُدار'
+sidebarTitle: 'مُدار'
+description: 'البدء مع ClickStack المُدار'
+doc_type: 'guide'
+keywords: ['ClickStack المُدار', 'البدء', 'ClickHouse Cloud']
+---
+
+import { Image } from "/snippets/ar/components/Image.jsx";
+
+import SetupManagedIngestion from '/snippets/ar/clickstack/_setup_managed_ingestion.mdx';
+import ProviderSelection from '/snippets/ar/clickstack/_select_provider.mdx';
+import NavigateClickStackUI from '/snippets/ar/clickstack/_navigate_managed.mdx';
+
+أسهل طريقة للبدء هي نشر **Managed ClickStack** على **ClickHouse Cloud**، الذي يوفّر واجهة خلفية آمنة ومُدارة بالكامل مع الاحتفاظ بتحكّم كامل في الاستيعاب، والمخطط، ومسارات عمل observability. وهذا يلغي الحاجة إلى تشغيل ClickHouse بنفسك ويقدّم مجموعة من المزايا:
+
+* التوسّع التلقائي لقدرات المعالجة بشكل مستقل عن التخزين
+* احتفاظ منخفض التكلفة وغير محدود عمليًا استنادًا إلى تخزين الكائنات
+* إمكانية عزل أعباء عمل القراءة والكتابة بشكل مستقل باستخدام warehouses.
+* مصادقة متكاملة
+* نسخ احتياطية مؤتمتة
+* ميزات الأمان والامتثال
+* ترقيات سلسة
+
+<Steps>
+  <Step>
+    ## التسجيل في ClickHouse Cloud
+
+    لإنشاء خدمة Managed ClickStack في [ClickHouse Cloud](https://console.clickhouse.cloud)، أكمل أولًا **الخطوة الأولى** من [دليل البدء السريع لـ ClickHouse Cloud](/ar/get-started/setup/cloud).
+
+    <ProviderSelection />
+  </Step>
+
+  <Step>
+    ## إعداد الاستيعاب
+
+    بعد توفير خدمتك، تأكد من تحديد الخدمة ثم انقر على &quot;ClickStack&quot; من القائمة اليمنى.
+
+    <SetupManagedIngestion />
+  </Step>
+
+  <Step>
+    ## الانتقال إلى واجهة ClickStack
+
+    <NavigateClickStackUI />
+  </Step>
+
+  <Step>
+    ## الخطوات التالية
+
+    <Warning>
+      **سجّل بيانات الاعتماد الافتراضية**
+
+      إذا لم تكن قد سجّلت بيانات الاعتماد الافتراضية أثناء الخطوات أعلاه، فانتقل إلى الخدمة واختر `Connect`، مع تسجيل كلمة المرور ونقاط نهاية HTTP وnative. خزّن بيانات اعتماد المسؤول هذه بأمان، إذ يمكن إعادة استخدامها في الأدلة اللاحقة.
+    </Warning>
+
+    <Image img="/images/_snippets/service_connect.webp" size="lg" alt="الاتصال بالخدمة" border />
+
+    لتنفيذ مهام مثل توفير مستخدمين جدد أو إضافة المزيد من مصادر البيانات، راجع [دليل النشر لـ Managed ClickStack](/ar/clickstack/deployment/managed#additional-tasks).
+  </Step>
+</Steps>
