@@ -28,7 +28,7 @@ pgfault 2055373287
 pgmajfault 0
 inactive_anon 2156335104
 active_anon 0
-inactive_file 2841305088
+inactive_file 1841305088
 active_file 1653915648
 unevictable 256008192
 hierarchical_memory_limit 8589934592
@@ -108,7 +108,7 @@ thp_collapse_alloc 0
 
 const std::string EXPECTED[2]
     = {"{\"active_anon\": 0, \"active_file\": 1653915648, \"cache\": 4673703936, \"dirty\": 4730880, \"hierarchical_memory_limit\": "
-       "8589934592, \"hierarchical_memsw_limit\": 8589934592, \"inactive_anon\": 2156335104, \"inactive_file\": 2841305088, "
+       "8589934592, \"hierarchical_memsw_limit\": 8589934592, \"inactive_anon\": 2156335104, \"inactive_file\": 1841305088, "
        "\"mapped_file\": 344678400, \"pgfault\": 2055373287, \"pgmajfault\": 0, \"pgpgin\": 2038569918, \"pgpgout\": 2036883790, \"rss\": "
        "2232029184, \"rss_huge\": 0, \"shmem\": 0, \"swap\": 0, \"total_active_anon\": 0, \"total_active_file\": 1653915648, "
        "\"total_cache\": 4673703936, \"total_dirty\": 4730880, \"total_inactive_anon\": 2156335104, \"total_inactive_file\": 2841305088, "
@@ -178,6 +178,8 @@ TEST_P(CgroupsMemoryUsageObserverFixture, ReadMemoryUsageAndInactiveFileTest)
     if (version == ICgroupsReader::CgroupsVersion::V1)
     {
         ASSERT_EQ(result.usage, 2232029184); /* rss */
+        /// The fixture deliberately has `inactive_file` (1841305088) != `total_inactive_file` (2841305088),
+        /// so this assertion proves the reader returns the hierarchical `total_*` value (matching cAdvisor).
         ASSERT_EQ(result.inactive_file, 2841305088); /* total_inactive_file */
     }
     else
