@@ -117,9 +117,9 @@ void ExtremesTransform::transform(DB::Chunk & chunk)
                 continue;
 
             /// Extremes of columns of non-comparable types (e.g. aggregate function states)
-            /// cannot be merged across chunks: comparing such values throws. Keep the
-            /// default values obtained from the first chunk, the same as a single-chunk
-            /// result produces for such columns.
+            /// cannot be merged across chunks: comparing such values throws. Keep the values
+            /// obtained from the first chunk; for aggregate function states `getExtremes`
+            /// fills in default states, so the result is consistent with the single-chunk case.
             if (!is_comparable_column[i])
                 continue;
 
