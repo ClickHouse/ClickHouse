@@ -557,6 +557,9 @@ RowPolicyFilterPtr ContextAccess::getRowPolicyFilter(const String & database, co
         }
     }
 
+    if (filter)
+        checkRowPolicyFilterExpression(filter->expression);
+
     if (filter && filter->policies.empty())
     {
         if (access_control->shouldThrowOnUnmatchedRowPolicies())

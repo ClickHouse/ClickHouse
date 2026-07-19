@@ -97,11 +97,9 @@ The [JSON type](/reference/formats/JSON/JSON) is **not backwards compatible** wi
 To migrate from the [default Map-based schemas](/clickstack/ingesting-data/schemas), follow these steps:
 
 <Steps>
-<Step>
-### Stop the OTel collector {#stop-the-collector}
+<Step title="Stop the OTel collector" id="stop-the-collector">
 </Step>
-<Step>
-### Rename existing tables and update sources {#rename-existing-tables-sources}
+<Step title="Rename existing tables and update sources" id="rename-existing-tables-sources">
 
 Rename existing tables and update data sources in HyperDX.
 
@@ -112,20 +110,17 @@ RENAME TABLE otel_logs TO otel_logs_map;
 RENAME TABLE otel_metrics TO otel_metrics_map;
 ```
 </Step>
-<Step>
-### Deploy the collector {#deploy-the-collector}
+<Step title="Deploy the collector" id="deploy-the-collector">
 
 Deploy the collector with `OTEL_AGENT_FEATURE_GATE_ARG` set.
 </Step>
-<Step>
-### Restart the HyperDX container with JSON schema support {#restart-the-hyperdx-container}
+<Step title="Restart the HyperDX container with JSON schema support" id="restart-the-hyperdx-container">
 
 ```shell
 export BETA_CH_OTEL_JSON_SCHEMA_ENABLED=true
 ```
 </Step>
-<Step>
-### Create new data sources {#create-new-data-sources}
+<Step title="Create new data sources" id="create-new-data-sources">
 
 Create new data sources in HyperDX pointing to the JSON tables.
 </Step>

@@ -102,6 +102,7 @@ namespace Setting
     extern const SettingsUInt64 join_runtime_bloom_filter_hash_functions;
     extern const SettingsUInt64 join_runtime_filter_blocks_to_skip_before_reenabling;
     extern const SettingsUInt64 join_runtime_filter_exact_values_limit;
+    extern const SettingsBool join_runtime_filter_size_from_hash_table_stats;
     extern const SettingsUInt64 max_bytes_to_transfer;
     extern const SettingsUInt64 max_limit_for_vector_search_queries;
     extern const SettingsUInt64 max_rows_to_transfer;
@@ -121,6 +122,7 @@ namespace Setting
     extern const SettingsUInt64 use_index_for_in_with_subqueries_max_values;
     extern const SettingsVectorSearchFilterStrategy vector_search_filter_strategy;
     extern const SettingsBool parallel_replicas_filter_pushdown;
+    extern const SettingsBool parallel_replicas_plan_based;
 }
 
 namespace ServerSetting
@@ -236,7 +238,7 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     distributed_plan_default_shuffle_join_bucket_count = from[Setting::distributed_plan_default_shuffle_join_bucket_count];
     distributed_plan_default_reader_bucket_count = from[Setting::distributed_plan_default_reader_bucket_count];
     distributed_plan_optimize_exchanges = from[Setting::distributed_plan_optimize_exchanges];
-#ifdef OS_LINUX
+#if defined(OS_LINUX) || defined(OS_DARWIN)
     distributed_plan_force_exchange_kind = from[Setting::distributed_plan_force_exchange_kind].value;
     if (!distributed_plan_force_exchange_kind.empty()
         && distributed_plan_force_exchange_kind != "Persisted"
@@ -296,6 +298,7 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     join_runtime_filter_pass_ratio_threshold_for_disabling = from[Setting::join_runtime_filter_pass_ratio_threshold_for_disabling];
     join_runtime_filter_blocks_to_skip_before_reenabling = from[Setting::join_runtime_filter_blocks_to_skip_before_reenabling];
     join_runtime_bloom_filter_max_ratio_of_set_bits = from[Setting::join_runtime_bloom_filter_max_ratio_of_set_bits];
+    join_runtime_filter_size_from_hash_table_stats = from[Setting::join_runtime_filter_size_from_hash_table_stats];
 
     query_plan_optimize_join_order_algorithm = from[Setting::query_plan_optimize_join_order_algorithm];
     if (query_plan_optimize_join_order_algorithm.empty())
@@ -334,7 +337,7 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(ContextPtr from)
                 max_parallel_replicas = std::min<size_t>(nodes, max_parallel_replicas);
     }
 
-#ifdef OS_LINUX
+#if defined(OS_LINUX) || defined(OS_DARWIN)
     /// Auto-select the exchange kind when it is not forced: use Streaming only when its listener will
     /// run (both the port and a listen host are configured), otherwise Persisted. This avoids planning
     /// Streaming exchanges that would connect to a listener that was never started. A forced kind and
@@ -348,5 +351,7 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(ContextPtr from)
         distributed_plan_force_exchange_kind = streaming_listener_configured ? "Streaming" : "Persisted";
     }
 #endif
+
+    enable_parallel_replicas = from->canUseParallelReplicasOnInitiator() && from->getSettingsRef()[Setting::parallel_replicas_plan_based];
 }
 }
