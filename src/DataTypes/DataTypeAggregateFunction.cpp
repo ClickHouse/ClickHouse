@@ -86,11 +86,6 @@ bool DataTypeAggregateFunction::isVersioned() const
     return function->isVersioned();
 }
 
-void DataTypeAggregateFunction::updateVersionFromRevision(size_t revision, bool if_empty) const
-{
-    setVersion(function->getVersionFromRevision(revision), if_empty);
-}
-
 String DataTypeAggregateFunction::getNameImpl(bool with_version) const
 {
     WriteBufferFromOwnString stream;
@@ -340,13 +335,18 @@ void setVersionToAggregateFunctions(DataTypePtr & type, bool if_empty, std::opti
     auto callback = [revision, if_empty](DataTypePtr & column_type)
     {
         const auto * aggregate_function_type = typeid_cast<const DataTypeAggregateFunction *>(column_type.get());
-        if (aggregate_function_type && aggregate_function_type->isVersioned())
-        {
-            if (revision)
-                aggregate_function_type->updateVersionFromRevision(*revision, if_empty);
-            else
-                aggregate_function_type->setVersion(0, if_empty);
-        }
+        if (!aggregate_function_type || !aggregate_function_type->isVersioned())
+            return;
+
+        /// Keep an already-explicit version when if_empty is requested.
+        if (if_empty && aggregate_function_type->getVersionIfExplicit())
+            return;
+
+        const size_t version = revision ? aggregate_function_type->getFunction()->getVersionFromRevision(*revision) : 0;
+
+        /// Replace the leaf with a copy carrying the version instead of mutating the
+        /// (possibly shared) type object, which would race with concurrent serializations.
+        column_type = aggregate_function_type->cloneWithVersion(version);
     };
 
     callOnNestedSimpleTypes(type, callback);

@@ -189,6 +189,8 @@ void callOnNestedSimpleTypes(DataTypePtr & type, std::function<void(DataTypePtr 
 {
     DataTypes types = {type};
     transformTypesRecursively(types, [callback](auto & data_types, TypeIndexesSet &){ callback(data_types[0]); }, {});
+    /// The callback may replace the leaf (not only mutate it), so propagate the result back.
+    type = types[0];
 }
 
 }
