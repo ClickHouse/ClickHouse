@@ -1,3 +1,6 @@
+-- Tags: no-parallel
+-- Tag no-parallel: creates fixed-name global roles
+
 -- Test for issue #109298: identifier query parameters worked in `CREATE USER`
 -- but were rejected with a syntax error in `CREATE ROLE` and `ALTER ROLE`.
 
