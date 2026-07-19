@@ -24,9 +24,7 @@ Before starting, ensure you have:
 
 <Steps>
 
-<Step>
-
-## Step 1: Copy Container Images
+<Step title="Step 1: Copy Container Images" id="step-1-copy-container-images">
 
 Use skopeo to copy the Private API image and Helm chart to your ECR.
 
@@ -54,9 +52,7 @@ Replace `1.165.1` and `1.165.1` with the version tags provided by ClickHouse.
 
 </Step>
 
-<Step>
-
-## Step 2: Install via Helm
+<Step title="Step 2: Install via Helm" id="step-2-install-via-helm">
 
 The Private API is installed in a dedicated namespace.
 
@@ -83,9 +79,7 @@ helm install clickhouse-private-api \
 
 </Step>
 
-<Step>
-
-## Step 3: Configure Authentication
+<Step title="Step 3: Configure Authentication" id="step-3-configure-authentication">
 
 By default, basic authentication is disabled. For production environments, enable it by setting Helm values:
 
@@ -99,9 +93,7 @@ The username and password should be stored securely and rotated regularly accord
 
 </Step>
 
-<Step>
-
-## Step 4: Verify Installation
+<Step title="Step 4: Verify Installation" id="step-4-verify-installation">
 
 ### Check the Pod
 

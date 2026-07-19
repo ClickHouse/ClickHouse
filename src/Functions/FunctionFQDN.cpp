@@ -61,9 +61,9 @@ Returns the fully qualified domain name of the ClickHouse server.
 SELECT fqdn()
         )",
         R"(
-┌─FQDN()──────────────────────────┐
+┌─FQDN()────────────────────────┐
 │ clickhouse.us-east-2.internal │
-└─────────────────────────────────┘
+└───────────────────────────────┘
         )"
     }
     };
