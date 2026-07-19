@@ -122,6 +122,26 @@ public:
         return nested_function->getNormalizedStateType();
     }
 
+    /// Cross-variant merging (used e.g. to combine a window-function state with an aggregation state of the same
+    /// function) is a property of the nested function, because the adapter shares the nested state bytes as-is.
+    /// This is the same forwarding the -If / -Array / -State combinators do, but without peeling `rhs`: the adapter
+    /// is invisible in the state type (the -State combinator normalizes a Variant argument to the plain nested
+    /// AggregateFunction(f, Nullable(supertype)) form, exactly what getNormalizedStateType returns above), so the
+    /// counterpart `rhs` is already the nested function itself rather than another adapter. It is forwarded verbatim
+    /// so that a wrapping combinator inside the nested function (e.g. the Null combinator) performs its own peeling.
+    /// This matters for functions such as the CrossTab family (contingency/cramersV/cramersVBiasCorrected/theilsU),
+    /// which support Window-vs-Aggregation state merges.
+    bool canMergeStateFromDifferentVariant(const IAggregateFunction & rhs) const override
+    {
+        return nested_function->canMergeStateFromDifferentVariant(rhs);
+    }
+
+    void mergeStateFromDifferentVariant(
+        AggregateDataPtr __restrict place, const IAggregateFunction & rhs, ConstAggregateDataPtr rhs_place, Arena * arena) const override
+    {
+        nested_function->mergeStateFromDifferentVariant(place, rhs, rhs_place, arena);
+    }
+
     /// The state layout is exactly the nested function's state, so all state operations are forwarded directly.
     void create(AggregateDataPtr __restrict place) const override { nested_function->create(place); }
     void destroy(AggregateDataPtr __restrict place) const noexcept override { nested_function->destroy(place); }
