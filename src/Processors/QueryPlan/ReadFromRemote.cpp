@@ -1185,7 +1185,11 @@ Pipe ReadFromParallelRemoteReplicasStep::createPipeForSingeReplica(
         query_plan);
 
     remote_query_executor->setLogger(log);
-    remote_query_executor->setMainTable(storage_id);
+    /// The storage id is empty when reading from a table function: the storage it creates does
+    /// not exist on remote replicas under its generated id, so there is no table whose status
+    /// could be checked when establishing connections.
+    if (storage_id)
+        remote_query_executor->setMainTable(storage_id);
     remote_query_executor->setDistributedFanout(pools_to_use.size() - (exclude_pool_index.has_value() ? 1 : 0));
 
     Pipe pipe

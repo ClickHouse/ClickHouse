@@ -20,6 +20,7 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/StorageDummy.h>
 #include <Storages/StorageMaterializedView.h>
+#include <Storages/StorageMerge.h>
 #include <Storages/StorageView.h>
 #include <Storages/buildQueryTreeForShard.h>
 #include <Storages/removeGroupingFunctionSpecializations.h>
@@ -62,6 +63,20 @@ static bool canUseTableForParallelReplicas(const TableNode & table_node, const C
 {
     const auto & settings = context->getSettingsRef();
     auto storage = table_node.getStorage();
+
+    /// A Merge table is eligible when every underlying table can be read with parallel replicas
+    /// (each underlying table forms its own data stream in the reading coordinator).
+    if (const auto * merge = typeid_cast<const StorageMerge *>(storage.get()))
+    {
+        if (!merge->canUseParallelReplicas(context))
+            return false;
+
+        /// Parallel replicas not supported with FINAL.
+        if (table_node.hasTableExpressionModifiers() && table_node.getTableExpressionModifiers()->hasFinal())
+            return false;
+
+        return true;
+    }
 
     if (settings[Setting::parallel_replicas_allow_view_over_mergetree])
     {
@@ -196,12 +211,17 @@ public:
             const auto & storage_snapshot = table_node ? table_node->getStorageSnapshot() : table_function_node->getStorageSnapshot();
             const auto & storage = storage_snapshot->storage;
 
+            /// For a Merge table "supports replication" is a property of its underlying tables.
+            bool supports_replication = storage.supportsReplication();
+            if (const auto * merge = typeid_cast<const StorageMerge *>(&storage))
+                supports_replication = merge->supportsParallelReplicasReading(getContext()).value_or(false);
+
             auto storage_dummy = std::make_shared<StorageDummy>(
                 storage.getStorageID(),
                 /// To preserve information about alias columns, column description must be extracted directly from storage metadata.
                 storage_snapshot->metadata->getColumns(),
                 storage_snapshot,
-                storage.supportsReplication());
+                supports_replication);
 
             auto dummy_table_node = std::make_shared<TableNode>(std::move(storage_dummy), getContext());
             if (table_node && table_node->hasTableExpressionModifiers())

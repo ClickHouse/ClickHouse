@@ -854,8 +854,10 @@ void executeQueryWithParallelReplicas(
     QueryPlanStepPtr analyzed_read_from_merge_tree)
 {
     auto logger = getLogger("executeQueryWithParallelReplicas");
+    /// The storage id is empty when reading from a table function (the storage it creates
+    /// does not exist on remote replicas under its generated id).
     LOG_DEBUG(logger, "Executing read from {}, header {}, query ({}), stage {} with parallel replicas",
-        storage_id.getNameForLogs(), header->dumpStructure(), query_ast->formatForLogging(), processed_stage);
+        storage_id ? storage_id.getNameForLogs() : "a table function", header->dumpStructure(), query_ast->formatForLogging(), processed_stage);
 
     auto [cluster, shard_num] = prepareClusterForParallelReplicas(logger, context);
     auto new_context = updateContextForParallelReplicas(logger, context, shard_num);

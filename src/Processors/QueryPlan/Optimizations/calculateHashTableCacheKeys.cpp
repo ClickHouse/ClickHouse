@@ -27,7 +27,9 @@ UInt64 calculateHashFromStep(const ReadFromParallelRemoteReplicasStep & source)
 {
     SipHash hash;
     hash.update(source.getSerializationName());
-    hash.update(source.getStorageID().getFullTableName());
+    /// The storage id is empty when reading from a table function.
+    if (StorageID storage_id = source.getStorageID())
+        hash.update(storage_id.getFullTableName());
     return hash.get64();
 }
 

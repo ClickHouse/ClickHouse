@@ -7802,6 +7802,9 @@ Allow pushing down filters to part of query which parallel replicas choose to ex
     DECLARE(Bool, parallel_replicas_allow_view_over_mergetree, false, R"(
 Allow parallel replicas to execute the outer query of a simple view over `MergeTree` tables (instead of the view's inner query), improving parallelization across nodes. Also applies to `UNION ALL` views whose branches all read from different `MergeTree` tables.
 )", BETA) \
+    DECLARE(Bool, parallel_replicas_allow_merge_tables, false, R"(
+Allow parallel replicas to execute queries over `Merge` tables and the `merge` table function. Reading from every underlying `MergeTree` table is coordinated across replicas (each underlying table forms its own data stream in the reading coordinator). Only applies when every underlying table is a `MergeTree` table; non-replicated underlying tables additionally require `parallel_replicas_for_non_replicated_merge_tree`.
+)", BETA) \
     DECLARE(Bool, distributed_index_analysis, false, R"(
 Index analysis will be distributed across replicas.
 Beneficial for shared storage and huge amount of data in cluster.

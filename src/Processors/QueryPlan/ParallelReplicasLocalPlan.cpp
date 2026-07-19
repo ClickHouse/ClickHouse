@@ -20,6 +20,7 @@
 #include <Processors/QueryPlan/UnionStep.h>
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
 #include <Storages/MergeTree/RequestResponse.h>
+#include <Storages/StorageMerge.h>
 #include <Processors/QueryPlan/ReadFromLocalReplica.h>
 #include <Processors/QueryPlan/ReadFromParallelReplicas.h>
 
@@ -29,6 +30,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool parallel_replicas_allow_view_over_mergetree;
+    extern const SettingsBool parallel_replicas_allow_merge_tables;
 }
 
 namespace FailPoints
@@ -68,7 +70,7 @@ static QueryPlan::Node * findReadingStep(QueryPlan::Node * node)
 /// Walk the plan using the same traversal as findReadingStep (following LEFT/RIGHT JOIN logic),
 /// but look for a UnionStep. If found, collect all ReadFromMergeTree steps from each child branch,
 /// recursively handling nested views with their own UNION ALL.
-std::vector<QueryPlan::Node *> findReadingSteps(QueryPlan::Node * root, bool allow_view_over_mergetree)
+std::vector<QueryPlan::Node *> findReadingSteps(QueryPlan::Node * root, bool allow_view_over_mergetree, bool allow_merge_tables)
 {
     auto * node = root;
     while (node)
@@ -76,6 +78,13 @@ std::vector<QueryPlan::Node *> findReadingSteps(QueryPlan::Node * root, bool all
         if (typeid_cast<const ReadFromMergeTree *>(node->step.get()))
         {
             /// Single reading step, not under a union — return it as a single-element vector.
+            return {node};
+        }
+
+        /// Reading from a Merge table coordinates reading from every underlying MergeTree table
+        /// by itself (see ReadFromMerge::enableParallelReplicasLocalPlan).
+        if (allow_merge_tables && typeid_cast<const ReadFromMerge *>(node->step.get()))
+        {
             return {node};
         }
 
@@ -89,7 +98,7 @@ std::vector<QueryPlan::Node *> findReadingSteps(QueryPlan::Node * root, bool all
             std::vector<QueryPlan::Node *> result;
             for (auto * child : node->children)
             {
-                auto child_results = findReadingSteps(child, allow_view_over_mergetree);
+                auto child_results = findReadingSteps(child, allow_view_over_mergetree, allow_merge_tables);
                 result.insert(result.end(), child_results.begin(), child_results.end());
             }
             return result;
@@ -249,7 +258,8 @@ std::pair<QueryPlanPtr, bool> createLocalPlanForParallelReplicas(
     auto query_plan = std::make_unique<QueryPlan>(std::move(interpreter).extractQueryPlan());
 
     const bool allow_view_over_mergetree = context->getSettingsRef()[Setting::parallel_replicas_allow_view_over_mergetree];
-    auto reading_nodes = findReadingSteps(query_plan->getRootNode(), allow_view_over_mergetree);
+    const bool allow_merge_tables = context->getSettingsRef()[Setting::parallel_replicas_allow_merge_tables];
+    auto reading_nodes = findReadingSteps(query_plan->getRootNode(), allow_view_over_mergetree, allow_merge_tables);
     if (reading_nodes.empty())
     {
         /// it can happen if merge tree table is empty — it'll be replaced with ReadFromPreparedSource
@@ -271,8 +281,6 @@ std::pair<QueryPlanPtr, bool> createLocalPlanForParallelReplicas(
 
     for (auto * reading_node : reading_nodes)
     {
-        auto * reading = typeid_cast<ReadFromMergeTree *>(reading_node->step.get());
-
         MergeTreeAllRangesCallback all_ranges_cb
             = [coordinator](InitialAllRangesAnnouncement announcement) -> std::optional<InitialAllRangesAnnouncementResponse>
         { return coordinator->handleInitialAllRangesAnnouncement(std::move(announcement)); };
@@ -285,6 +293,16 @@ std::pair<QueryPlanPtr, bool> createLocalPlanForParallelReplicas(
             });
             return coordinator->handleRequest(std::move(req));
         };
+
+        /// A Merge table creates its child reading steps lazily; it converts them into local
+        /// parallel replicas reading steps itself (one data stream per underlying table).
+        if (auto * reading_merge = typeid_cast<ReadFromMerge *>(reading_node->step.get()))
+        {
+            reading_merge->enableParallelReplicasLocalPlan(context, std::move(all_ranges_cb), std::move(read_task_cb), replica_number);
+            continue;
+        }
+
+        auto * reading = typeid_cast<ReadFromMergeTree *>(reading_node->step.get());
 
         auto read_from_merge_tree_parallel_replicas = reading->createLocalParallelReplicasReadingStep(
             context, analyzed_result_ptr, std::move(all_ranges_cb), std::move(read_task_cb), replica_number);

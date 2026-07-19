@@ -41,6 +41,10 @@ It is possible to create two `Merge` tables that will endlessly try to read each
 
 The typical way to use the `Merge` engine is for working with a large number of `TinyLog` tables as if with a single table.
 
+## Parallel replicas {#parallel-replicas}
+
+When the [parallel_replicas_allow_merge_tables](/operations/settings/settings#parallel_replicas_allow_merge_tables) setting is enabled and every underlying table is a [MergeTree](../../../engines/table-engines/mergetree-family/mergetree.md) table, queries over a `Merge` table (or the [merge](../../../sql-reference/table-functions/merge.md) table function) can be executed with parallel replicas (`enable_parallel_replicas`). Reading from every underlying table is then coordinated across the replicas of the cluster. Non-replicated underlying tables additionally require [parallel_replicas_for_non_replicated_merge_tree](/operations/settings/settings#parallel_replicas_for_non_replicated_merge_tree).
+
 ## Examples {#examples}
 
 **Example 1**

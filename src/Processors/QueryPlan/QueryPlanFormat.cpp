@@ -571,7 +571,12 @@ namespace QueryPlanFormat
             if (step_name == "ReadFromMergeTree")
                 return static_cast<const ReadFromMergeTree *>(node->step.get())->getStorageID().getFullNameNotQuoted();
             if (step_name == "ReadFromRemoteParallelReplicas")
-                return static_cast<const ReadFromParallelRemoteReplicasStep *>(node->step.get())->getStorageID().getFullNameNotQuoted();
+            {
+                /// The storage id is empty when reading from a table function.
+                if (auto storage_id = static_cast<const ReadFromParallelRemoteReplicasStep *>(node->step.get())->getStorageID())
+                    return storage_id.getFullNameNotQuoted();
+                return {};
+            }
             if (step_name == "ReadFromStorage")
                 return static_cast<const ReadFromStorageStep *>(node->step.get())->getStorage()->getStorageID().getFullNameNotQuoted();
             if (step_name == "ReadFromMemoryStorage")

@@ -159,6 +159,7 @@ namespace Setting
     extern const SettingsBool enable_lazy_columns_replication;
     extern const SettingsBool parallel_replicas_allow_materialized_views;
     extern const SettingsBool parallel_replicas_allow_view_over_mergetree;
+    extern const SettingsBool parallel_replicas_allow_merge_tables;
     extern const SettingsBool parallel_replicas_plan_based;
 }
 
@@ -1314,6 +1315,11 @@ bool parallelReplicasEnabledForStorage(const StoragePtr & current_storage, const
 {
     const auto * table_ptr = current_storage.get();
 
+    /// A Merge table is eligible when every underlying table can be read with parallel replicas
+    /// (each underlying table forms its own data stream in the reading coordinator).
+    if (const auto * merge = typeid_cast<const StorageMerge *>(current_storage.get()))
+        return merge->canUseParallelReplicas(context);
+
     if (query_settings[Setting::parallel_replicas_allow_view_over_mergetree])
     {
         const auto * view = typeid_cast<const StorageView *>(current_storage.get());
@@ -1880,11 +1886,13 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                         // (1) find read step
 
                         const bool allow_view_over_mergetree = settings[Setting::parallel_replicas_allow_view_over_mergetree];
-                        auto reading_steps = findReadingSteps(query_plan.getRootNode(), allow_view_over_mergetree);
+                        const bool allow_merge_tables = settings[Setting::parallel_replicas_allow_merge_tables];
+                        auto reading_steps = findReadingSteps(query_plan.getRootNode(), allow_view_over_mergetree, allow_merge_tables);
                         QueryPlan::Node * reading_node = nullptr;
                         if (!reading_steps.empty())
                         {
-                            if (typeid_cast<ReadFromMergeTree*>(reading_steps.front()->step.get()))
+                            if (typeid_cast<ReadFromMergeTree *>(reading_steps.front()->step.get())
+                                || typeid_cast<ReadFromMerge *>(reading_steps.front()->step.get()))
                                 reading_node = reading_steps.front();
                         }
 
@@ -1892,11 +1900,13 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                         // Note: reading_steps can have several steps in case of reading from view with UNION
                         // In such case, we avoid using parallel_replicas_min_number_of_rows_per_replica for all tables, -
                         // parallel_replicas_min_number_of_rows_per_replica will be replaced by automatic_parallel_replicas_mode
-                        if (reading_node && reading_steps.size() == 1
-                            && settings[Setting::parallel_replicas_min_number_of_rows_per_replica] > 0)
+                        // Reading from a Merge table (ReadFromMerge) also skips the estimation.
+                        const auto * reading_step_merge_tree = reading_node && reading_steps.size() == 1
+                            ? typeid_cast<ReadFromMergeTree *>(reading_steps.front()->step.get())
+                            : nullptr;
+                        if (reading_step_merge_tree && settings[Setting::parallel_replicas_min_number_of_rows_per_replica] > 0)
                         {
-                            const auto * reading_step = typeid_cast<ReadFromMergeTree *>(reading_steps.front()->step.get());
-                            auto result_ptr = reading_step->selectRangesToRead();
+                            auto result_ptr = reading_step_merge_tree->selectRangesToRead();
                             UInt64 rows_to_read = result_ptr->selected_rows;
 
                             if (table_expression_query_info.trivial_limit > 0 && table_expression_query_info.trivial_limit < rows_to_read)
@@ -1935,9 +1945,12 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                                 till_stage = QueryProcessingStage::WithMergeableState;
                                 QueryPlan query_plan_parallel_replicas;
                                 QueryPlanStepPtr reading_step = std::move(reading_node->step);
+                                /// A storage created by a table function (e.g. merge(...)) does not exist
+                                /// on remote replicas under its generated id, so the id must not be used
+                                /// to check tables status on remote replicas.
                                 ClusterProxy::executeQueryWithParallelReplicas(
                                     query_plan_parallel_replicas,
-                                    storage->getStorageID(),
+                                    table_node ? storage->getStorageID() : StorageID::createEmpty(),
                                     till_stage,
                                     table_expression_query_info.query_tree,
                                     table_expression_query_info.planner_context,

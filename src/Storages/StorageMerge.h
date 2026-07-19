@@ -5,6 +5,7 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <Storages/IStorage.h>
+#include <Storages/MergeTree/RequestResponse.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Common/OptimizedRegularExpression.h>
 
@@ -97,6 +98,17 @@ public:
     /// a `Merge` wraps tables that would otherwise trigger it (`Distributed`,
     /// `View`, `ObjectStorageCluster`, etc.) at the top level.
     bool hasChildTable(std::function<bool(const StoragePtr &)> predicate) const;
+
+    /// For parallel replicas eligibility. Returns std::nullopt when reading through this table
+    /// cannot be coordinated across replicas (there are no underlying tables, or some underlying
+    /// table is not a MergeTree table); otherwise whether every underlying table supports
+    /// replication.
+    std::optional<bool> supportsParallelReplicasReading(const ContextPtr & query_context) const;
+
+    /// Whether a query reading from this table is eligible for task-based parallel replicas
+    /// under the current settings (`parallel_replicas_allow_merge_tables` and, when some
+    /// underlying table is not replicated, `parallel_replicas_for_non_replicated_merge_tree`).
+    bool canUseParallelReplicas(const ContextPtr & query_context) const;
 
     static ColumnsDescription getColumnsDescriptionFromSourceTables(
         const ContextPtr & query_context,
@@ -205,6 +217,18 @@ public:
 
     void addFilter(FilterDAGInfo filter);
 
+    /// Turn this step into a part of the initiator's local plan for parallel replicas execution:
+    /// reading from every underlying MergeTree table will be coordinated with the other replicas
+    /// through the given callbacks (each underlying table forms its own data stream identified by
+    /// the table's full name). The context is the initiator's context with parallel replicas
+    /// still enabled (unlike the context of this step, where it is disabled to prevent the local
+    /// plan from initiating parallel replicas execution recursively).
+    void enableParallelReplicasLocalPlan(
+        ContextPtr context_,
+        MergeTreeAllRangesCallback all_ranges_callback_,
+        MergeTreeReadTaskCallback read_task_callback_,
+        size_t replica_number_);
+
 private:
     const size_t required_max_block_size;
     const size_t requested_num_streams;
@@ -280,6 +304,18 @@ private:
 
     /// Store filters pushed down from query plan optimization. Filters are added on top of child plans.
     std::vector<FilterDAGInfo> pushed_down_filters;
+
+    /// Set when this step is a part of the initiator's local plan for parallel replicas execution.
+    /// Child reading steps are then created as local parallel replicas reading steps wired to the
+    /// initiator's reading coordinator through these callbacks.
+    struct ParallelReplicasLocalPlanInfo
+    {
+        ContextPtr context;
+        MergeTreeAllRangesCallback all_ranges_callback;
+        MergeTreeReadTaskCallback read_task_callback;
+        size_t replica_number;
+    };
+    std::optional<ParallelReplicasLocalPlanInfo> parallel_replicas_local_plan_info;
 
     std::vector<ChildPlan> createChildrenPlans(SelectQueryInfo & query_info_) const;
 

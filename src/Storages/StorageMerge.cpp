@@ -80,6 +80,9 @@ namespace Setting
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsFloat max_streams_multiplier_for_merge_tables;
     extern const SettingsUInt64 merge_table_max_tables_to_look_for_schema_inference;
+    extern const SettingsBool parallel_replicas_allow_merge_tables;
+    extern const SettingsBool parallel_replicas_for_non_replicated_merge_tree;
+    extern const SettingsBool parallel_replicas_plan_based;
 }
 
 namespace MergeTreeSetting
@@ -308,6 +311,59 @@ bool StorageMerge::hasChildTable(std::function<bool(const StoragePtr &)> predica
     {
         return table && predicate(table);
     }) != nullptr;
+}
+
+std::optional<bool> StorageMerge::supportsParallelReplicasReading(const ContextPtr & query_context) const
+{
+    bool has_tables = false;
+    bool all_tables_replicated = true;
+
+    auto not_eligible_table = traverseTablesUntilImpl(
+        query_context,
+        this,
+        database_name_or_regexp,
+        [&](const StoragePtr & table)
+        {
+            if (!table)
+                return false;
+
+            has_tables = true;
+
+            /// Reading is coordinated across replicas at the level of MergeTree parts and mark
+            /// ranges. Any other underlying table would be read in full by every replica,
+            /// duplicating its rows in the result.
+            if (!table->isMergeTree())
+                return true;
+
+            if (!table->supportsReplication())
+                all_tables_replicated = false;
+
+            return false;
+        });
+
+    if (not_eligible_table || !has_tables)
+        return std::nullopt;
+
+    return all_tables_replicated;
+}
+
+bool StorageMerge::canUseParallelReplicas(const ContextPtr & query_context) const
+{
+    const auto & settings = query_context->getSettingsRef();
+
+    if (!settings[Setting::parallel_replicas_allow_merge_tables])
+        return false;
+
+    /// The experimental plan-based parallel replicas implementation ships plan fragments instead
+    /// of queries and does not know how to coordinate reading through a Merge table.
+    if (settings[Setting::parallel_replicas_plan_based])
+        return false;
+
+    auto all_tables_replicated = supportsParallelReplicasReading(query_context);
+    if (!all_tables_replicated)
+        return false;
+
+    return *all_tables_replicated || settings[Setting::parallel_replicas_for_non_replicated_merge_tree];
 }
 
 bool StorageMerge::supportsPrewhere() const
@@ -581,6 +637,19 @@ void ReadFromMerge::addFilter(FilterDAGInfo filter)
     }
 
     pushed_down_filters.push_back(std::move(filter));
+}
+
+void ReadFromMerge::enableParallelReplicasLocalPlan(
+    ContextPtr context_,
+    MergeTreeAllRangesCallback all_ranges_callback_,
+    MergeTreeReadTaskCallback read_task_callback_,
+    size_t replica_number_)
+{
+    if (child_plans)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot enable parallel replicas reading: child plans are already created");
+
+    parallel_replicas_local_plan_info = ParallelReplicasLocalPlanInfo{
+        std::move(context_), std::move(all_ranges_callback_), std::move(read_task_callback_), replica_number_};
 }
 
 void ReadFromMerge::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
@@ -1323,6 +1392,30 @@ ReadFromMerge::ChildPlan ReadFromMerge::createPlanForTable(
         if (!plan.isInitialized())
             return {};
 
+        if (parallel_replicas_local_plan_info)
+        {
+            /// This step belongs to the initiator's local plan for parallel replicas execution:
+            /// replace the child reading step with a local parallel replicas reading step wired
+            /// to the initiator's reading coordinator. Eligibility checks in the planner
+            /// guarantee that every underlying table is a MergeTree table; anything else here
+            /// would be read in full by every replica and duplicate its rows in the result.
+            auto * reading = typeid_cast<ReadFromMergeTree *>(plan.getRootNode()->step.get());
+            if (!reading)
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "Expected to find ReadFromMergeTree step for table {} to coordinate reading with parallel replicas, found {}",
+                    storage->getStorageID().getNameForLogs(),
+                    plan.getRootNode()->step->getName());
+
+            ContextPtr reading_context = parallel_replicas_local_plan_info->context;
+            plan.getRootNode()->step = reading->createLocalParallelReplicasReadingStep(
+                reading_context,
+                /*analyzed_result_ptr_=*/ nullptr,
+                parallel_replicas_local_plan_info->all_ranges_callback,
+                parallel_replicas_local_plan_info->read_task_callback,
+                parallel_replicas_local_plan_info->replica_number);
+        }
+
         if (row_policy_data_opt)
         {
             if (auto * source_step_with_filter = dynamic_cast<SourceStepWithFilter *>((plan.getRootNode()->step.get())))
@@ -1331,6 +1424,17 @@ ReadFromMerge::ChildPlan ReadFromMerge::createPlanForTable(
     }
     else
     {
+        /// Reading through an interpreter cannot be coordinated with parallel replicas: the child
+        /// would be read in full by every replica, duplicating its rows in the result. Eligibility
+        /// checks in the planner must not have let such a child through.
+        if (parallel_replicas_local_plan_info)
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Cannot coordinate reading from table {} with parallel replicas: "
+                "the table is read at processing stage {} through an interpreter",
+                storage->getStorageID().getNameForLogs(),
+                QueryProcessingStage::toString(storage_stage));
+
         /// Maximum permissible parallelism is streams_num
         modified_context->setSetting("max_threads", streams_num);
         modified_context->setSetting("max_streams_to_max_threads_ratio", 1);

@@ -1,0 +1,24 @@
+-- non-parallel
+20000	199990000	149985000
+-- parallel_replicas_allow_merge_tables = 0
+Aggregating
+20000	199990000	149985000
+-- parallel_replicas_allow_merge_tables = 1
+MergingAggregated
+Aggregating
+20000	199990000	149985000
+-- merge() table function
+20000	199990000	149985000
+-- filter on the _table virtual column
+10000	149995000	49995000
+-- plain SELECT without aggregation
+1	2
+9999	19998
+10000	0
+19999	9999
+-- Merge over a non-MergeTree table
+Aggregating
+20100	201994950	149989950
+-- Merge over no tables
+Aggregating
+0	0	0
