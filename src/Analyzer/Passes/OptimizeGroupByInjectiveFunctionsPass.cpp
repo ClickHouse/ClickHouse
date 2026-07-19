@@ -187,6 +187,13 @@ private:
                 all_keys.insert(key);
 
         std::vector<EliminatedKey> eliminated;
+        /// Leaves already claimed by an earlier elimination, together with the original key they came from.
+        /// A later key may unwrap to an already-claimed leaf only if it is the SAME original key (the same
+        /// injective key repeated across grouping sets, e.g. GROUPING SETS ((k),(k,k))). Two DIFFERENT keys
+        /// unwrapping to one leaf would let analyzeAggregation deduplicate them into a single aggregation
+        /// key, shrinking the CUBE/ROLLUP grouping lattice (missing subtotal levels, wrong GROUPING arity),
+        /// so the second such key is kept wrapped. See #110715.
+        std::vector<std::pair<QueryTreeNodePtr, QueryTreeNodePtr>> chosen_leaves; /// (leaf, original_key)
 
         for (auto * set : sets)
         {
@@ -223,7 +230,28 @@ private:
                 if (collides)
                     continue;
 
+                /// Cross-elimination collision: the leaf must not have been claimed by a DIFFERENT original
+                /// key already eliminated (that would merge two lattice keys into one).
+                bool leaf_taken_by_other = false;
+                for (const auto & [claimed_leaf, claimed_key] : chosen_leaves)
+                {
+                    if (claimed_leaf->isEqual(*leaf) && !claimed_key->isEqual(*key))
+                    {
+                        leaf_taken_by_other = true;
+                        break;
+                    }
+                }
+                if (leaf_taken_by_other)
+                    continue;
+
+                /// If the key is still referenced from a window function, QUALIFY or the WINDOW clause, those
+                /// occurrences are evaluated post-aggregation and are not fixed by the grouping conditional,
+                /// so unwrapping would leave f(column-default) there on subtotal rows. Keep the key wrapped.
+                if (reachesPostAggregationWindowOrQualify(key, query))
+                    continue;
+
                 eliminated.push_back({key, leaf});
+                chosen_leaves.emplace_back(leaf, key);
                 key = leaf; /// Perform the unwrap in place, preserving key position within the set.
             }
         }
@@ -402,6 +430,10 @@ private:
     /// totals overwrite), its effect on the totals row depends on totals_mode, and the HAVING expression
     /// still evaluates f(g) on the totals row. Leaving the key un-unwrapped in that case is conservative
     /// (correct but unoptimized, same as #110721). See #110715.
+    ///
+    /// QUALIFY and the WINDOW clause are NOT allowed either: window arguments / PARTITION BY / ORDER BY and
+    /// QUALIFY are materialized post-aggregation and still evaluate f(g) on the totals row, which the
+    /// totals-port overwrite (a whole-column projection overwrite) does not reach.
     bool occursOnlyAsTopLevelProjection(
         const QueryTreeNodePtr & key, QueryNode & query, const QueryTreeNodes & projection)
     {
@@ -418,6 +450,12 @@ private:
             return false; /// f(g) is not projected at all -> nothing to correct, leave the key wrapped
 
         if (query.hasHaving() && subtreeContains(query.getHaving(), key))
+            return false;
+
+        /// Referenced from a window function, from QUALIFY, or from the WINDOW clause: those are evaluated
+        /// post-aggregation and still compute f(g) on the totals row, which the whole-column overwrite does
+        /// not reach. Keep the key wrapped in that case (correct but unoptimized).
+        if (reachesPostAggregationWindowOrQualify(key, query))
             return false;
 
         return true;
@@ -445,6 +483,43 @@ private:
         for (const auto & child : node->getChildren())
             if (subtreeContains(child, key))
                 return true;
+        return false;
+    }
+
+    /// True if `key` occurs inside a window function subtree (its arguments or its OVER clause) anywhere in
+    /// `node`, without descending into nested subqueries.
+    static bool containsKeyUnderWindow(const QueryTreeNodePtr & node, const QueryTreeNodePtr & key)
+    {
+        if (!node)
+            return false;
+        if (node->getNodeType() == QueryTreeNodeType::QUERY || node->getNodeType() == QueryTreeNodeType::UNION)
+            return false;
+        if (const auto * function = node->as<FunctionNode>())
+            if (function->isWindowFunction())
+                return subtreeContains(node, key);
+        for (const auto & child : node->getChildren())
+            if (containsKeyUnderWindow(child, key))
+                return true;
+        return false;
+    }
+
+    /// True if the eliminated key is referenced from a position that is evaluated after aggregation but is
+    /// NOT rewritten by the grouping conditional / totals-port overwrite: inside a window function (its
+    /// arguments or OVER clause) in the projection / ORDER BY / HAVING, anywhere in QUALIFY, or in a named
+    /// WINDOW clause. Such an occurrence would still compute f(column-default) on subtotal / totals rows, so
+    /// the key is kept wrapped (correct but unoptimized, same as #110721 for that key). See #110715.
+    static bool reachesPostAggregationWindowOrQualify(const QueryTreeNodePtr & key, QueryNode & query)
+    {
+        if (query.getProjectionNode() && containsKeyUnderWindow(query.getProjectionNode(), key))
+            return true;
+        if (query.hasOrderBy() && containsKeyUnderWindow(query.getOrderByNode(), key))
+            return true;
+        if (query.hasHaving() && containsKeyUnderWindow(query.getHaving(), key))
+            return true;
+        if (query.hasQualify() && subtreeContains(query.getQualify(), key))
+            return true;
+        if (query.hasWindow() && subtreeContains(query.getWindowNode(), key))
+            return true;
         return false;
     }
 

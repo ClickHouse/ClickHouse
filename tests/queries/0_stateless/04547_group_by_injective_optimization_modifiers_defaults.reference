@@ -82,3 +82,38 @@
 2	1
 
 	3
+-- collision across eliminations: two injective keys unwrapping to the same leaf must keep the
+-- full CUBE lattice (they must not be merged into one aggregation key)
+	0	2
+	-1	1
+	0	1
+0	0	1
+1	0	1
+0	0	1
+1	-1	1
+-- same collision under ROLLUP
+	0	2
+0	0	1
+1	0	1
+0	0	1
+1	-1	1
+-- window PARTITION BY on the eliminated key: the special row must use the type default,
+-- so the key is kept wrapped (optimization declined for that key), result stays correct
+	1	3
+0	1	1
+1	1	1
+2	1	1
+-- QUALIFY referencing the eliminated key under GROUPING SETS: kept wrapped, result correct
+	3
+-- QUALIFY referencing the eliminated key under plain WITH TOTALS: kept wrapped, result correct
+0	1
+
+	3
+-- window/QUALIFY-bound cases on == off
+	1	3
+0	1	1
+1	1	1
+2	1	1
+0	1
+
+	3

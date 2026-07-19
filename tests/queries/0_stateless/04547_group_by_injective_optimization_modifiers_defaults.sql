@@ -82,3 +82,43 @@ SELECT '-- optimization on == off: same result with the optimization disabled';
 SELECT toString(number) AS s, count() AS c FROM numbers(3)
 GROUP BY toString(number) WITH TOTALS ORDER BY s
 SETTINGS optimize_injective_functions_in_group_by = 0;
+
+SELECT '-- collision across eliminations: two injective keys unwrapping to the same leaf must keep the';
+SELECT '-- full CUBE lattice (they must not be merged into one aggregation key)';
+SELECT toString(number) AS a, negate(number) AS b, count() AS c FROM numbers(2)
+GROUP BY CUBE(toString(number), negate(number))
+ORDER BY grouping(toString(number)) DESC, grouping(negate(number)) DESC, a, b, c;
+
+SELECT '-- same collision under ROLLUP';
+SELECT toString(number) AS a, negate(number) AS b, count() AS c FROM numbers(2)
+GROUP BY ROLLUP(toString(number), negate(number))
+ORDER BY grouping(toString(number)) DESC, grouping(negate(number)) DESC, a, b, c;
+
+SELECT '-- window PARTITION BY on the eliminated key: the special row must use the type default,';
+SELECT '-- so the key is kept wrapped (optimization declined for that key), result stays correct';
+SELECT toString(number) AS k, count() OVER (PARTITION BY toString(number)) AS w, count() AS c FROM numbers(3)
+GROUP BY GROUPING SETS ((toString(number)), ())
+ORDER BY k, w, c;
+
+SELECT '-- QUALIFY referencing the eliminated key under GROUPING SETS: kept wrapped, result correct';
+SELECT toString(number) AS k, count() AS c FROM numbers(3)
+GROUP BY GROUPING SETS ((toString(number)), ())
+QUALIFY first_value(k) OVER (ORDER BY k) = k
+ORDER BY k, c;
+
+SELECT '-- QUALIFY referencing the eliminated key under plain WITH TOTALS: kept wrapped, result correct';
+SELECT toString(number) AS k, count() AS c FROM numbers(3)
+GROUP BY toString(number) WITH TOTALS
+QUALIFY first_value(k) OVER (ORDER BY k) = k
+ORDER BY k, c;
+
+SELECT '-- window/QUALIFY-bound cases on == off';
+SELECT toString(number) AS k, count() OVER (PARTITION BY toString(number)) AS w, count() AS c FROM numbers(3)
+GROUP BY GROUPING SETS ((toString(number)), ())
+ORDER BY k, w, c
+SETTINGS optimize_injective_functions_in_group_by = 0;
+SELECT toString(number) AS k, count() AS c FROM numbers(3)
+GROUP BY toString(number) WITH TOTALS
+QUALIFY first_value(k) OVER (ORDER BY k) = k
+ORDER BY k, c
+SETTINGS optimize_injective_functions_in_group_by = 0;
