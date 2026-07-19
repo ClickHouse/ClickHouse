@@ -100,37 +100,42 @@ TEST(ValidUntilAttachEncoding, StoredFormIsParsedByEverySupportedReader)
 
 TEST(ValidUntilAttachEncoding, HandEditedOutOfRangeDeadlineFailsToLoad)
 {
-    /// `deserializeAccessEntity` is the entry point used to load stored access entities. The stored
-    /// encoding never contains a deadline outside the representable range, so such a value can only
-    /// come from a hand-edited definition - and it must fail to load instead of silently resolving
-    /// to a different deadline: best-effort parsing substitutes the current year for an explicit
-    /// year `0000`, and a pre-1900 deadline would come back clamped after the next serialization
-    /// round-trip. This mirrors the checks `CREATE`/`ALTER USER ... VALID UNTIL` perform at query
-    /// time. The server still starts: the directory scan skips a broken definition with a logged
-    /// error, and a lazy per-entity read reports the error to the operation that touches it.
-    for (const char * definition :
-         {"ATTACH USER u IDENTIFIED WITH no_password VALID UNTIL '0000-01-01 00:00:00 UTC';",
-          "ATTACH USER u IDENTIFIED WITH no_password VALID UNTIL '1899-12-31 23:59:59 UTC';"})
+    /// `deserializeAccessEntity` is the entry point used to load stored access entities. A definition
+    /// with an explicit year `0000` must fail to load instead of silently resolving to a different
+    /// deadline: best-effort parsing substitutes the current year for an explicit year `0000`, and no
+    /// older release ever persisted such a value (year `0000` was outside the representable `DateTime64`
+    /// range), so it can only come from a hand-edited definition. The server still starts: the directory
+    /// scan skips a broken definition with a logged error, and a lazy per-entity read reports the error
+    /// to the operation that touches it.
+    const char * definition = "ATTACH USER u IDENTIFIED WITH no_password VALID UNTIL '0000-01-01 00:00:00 UTC';";
+    try
     {
-        try
-        {
-            deserializeAccessEntity(definition);
-            FAIL() << "expected the deadline to be rejected: " << definition;
-        }
-        catch (const Exception & e)
-        {
-            EXPECT_TRUE(e.message().contains("too far in the past")) << e.message();
-        }
+        deserializeAccessEntity(definition);
+        FAIL() << "expected the deadline to be rejected: " << definition;
+    }
+    catch (const Exception & e)
+    {
+        EXPECT_TRUE(e.message().contains("too far in the past")) << e.message();
     }
 
-    /// The earliest accepted deadline (`MIN_VALID_UNTIL_TIME`) itself still loads: being pre-epoch, it is
-    /// normalized to the smallest expired instant (`1`), which is the fail-closed value stored for any
-    /// negative deadline (see `Pre1970DeadlinesAreStoredFailClosedAsExpired`).
-    const auto entity = deserializeAccessEntity("ATTACH USER u IDENTIFIED WITH no_password VALID UNTIL '1900-01-01 00:00:00 UTC';");
-    const auto * user = typeid_cast<const User *>(entity.get());
-    ASSERT_NE(user, nullptr);
-    ASSERT_EQ(user->authentication_methods.size(), 1u);
-    EXPECT_EQ(user->authentication_methods.front().getValidUntil(), 1);
+    /// A pre-1900 deadline (earlier than `MIN_VALID_UNTIL_TIME`), on the other hand, must NOT be rejected
+    /// while deserializing a stored entity: an older release accepted `VALID UNTIL '1899-...'` at query
+    /// time and persisted it as a bare datetime string, so rejecting it on load would make an upgraded
+    /// server skip that user on startup - a backward-incompatible change to stored access data. Being
+    /// pre-epoch (negative), it is instead normalized fail-closed to the smallest expired instant (`1`),
+    /// the same value stored for any negative deadline (see `Pre1970DeadlinesAreStoredFailClosedAsExpired`).
+    /// The `MIN_VALID_UNTIL_TIME` floor still rejects such a value when it comes from a query - that path
+    /// is covered by the stateless test `04602_valid_until_pre_1900_rejected`.
+    for (const char * pre_1900 :
+         {"ATTACH USER u IDENTIFIED WITH no_password VALID UNTIL '1899-12-31 23:59:59 UTC';",
+          "ATTACH USER u IDENTIFIED WITH no_password VALID UNTIL '1900-01-01 00:00:00 UTC';"})
+    {
+        const auto entity = deserializeAccessEntity(pre_1900);
+        const auto * user = typeid_cast<const User *>(entity.get());
+        ASSERT_NE(user, nullptr) << pre_1900;
+        ASSERT_EQ(user->authentication_methods.size(), 1u) << pre_1900;
+        EXPECT_EQ(user->authentication_methods.front().getValidUntil(), 1) << pre_1900;
+    }
 }
 
 TEST(ValidUntilAttachEncoding, EpochZeroDeadlineIsNotConfusedWithNoExpiration)

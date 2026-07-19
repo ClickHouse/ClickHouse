@@ -9,15 +9,18 @@
 
 namespace DB
 {
-    /// The lower bound of an accepted absolute `VALID UNTIL` deadline. `CREATE`/`ALTER USER ... VALID UNTIL`
-    /// rejects a deadline earlier than this: best-effort date/time parsing of an implausibly ancient date is
-    /// unreliable (see the year-`0000` handling in `getValidUntilFromAST`), and such a value is far more
-    /// likely a mistake than an intentional "already expired" marker - any post-epoch past date, or
-    /// `VALID FOR` a negative interval, expresses that. A representable pre-epoch deadline within
-    /// `[MIN_VALID_UNTIL_TIME, 1970-01-01)` is accepted and normalized to the smallest expired instant
-    /// (`1970-01-01 00:00:01`), so it is stored as a plain Unix timestamp that every reader - including an
-    /// older or downgraded server - interprets fail-closed (a pre-1970 datetime string would instead be
-    /// resolved to `0`, the "no expiration" sentinel, by an older reader).
+    /// The lower bound of an accepted absolute `VALID UNTIL` deadline coming from a query.
+    /// `CREATE`/`ALTER USER ... VALID UNTIL` rejects a deadline earlier than this: best-effort date/time
+    /// parsing of an implausibly ancient date is unreliable (see the year-`0000` handling in
+    /// `getValidUntilFromAST`), and such a value is far more likely a mistake than an intentional
+    /// "already expired" marker - any post-epoch past date, or `VALID FOR` a negative interval, expresses
+    /// that. A representable pre-epoch deadline within `[MIN_VALID_UNTIL_TIME, 1970-01-01)` is accepted and
+    /// normalized to the smallest expired instant (`1970-01-01 00:00:01`), so it is stored as a plain Unix
+    /// timestamp that every reader - including an older or downgraded server - interprets fail-closed (a
+    /// pre-1970 datetime string would instead be resolved to `0`, the "no expiration" sentinel, by an older
+    /// reader). This bound applies to query input only; a deadline earlier than it that an older release
+    /// already persisted is normalized fail-closed (not rejected) when deserialized, so upgrading does not
+    /// skip such a user - see `getValidUntilFromAST`.
     constexpr time_t MIN_VALID_UNTIL_TIME = -2208988800; /// 1900-01-01 00:00:00 UTC
 
     /// The upper bound is the latest instant `DateLUT` can represent and format. Accepting a deadline

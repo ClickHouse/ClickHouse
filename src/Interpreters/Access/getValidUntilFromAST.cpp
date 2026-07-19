@@ -172,10 +172,18 @@ namespace DB
         /// value is far more likely a mistake than an intentional "already expired" marker. A
         /// representable pre-epoch deadline within `[MIN_VALID_UNTIL_TIME, 1970-01-01)` is accepted and
         /// normalized to the smallest expired instant below, so it never has to be stored in a form an
-        /// older reader would misinterpret. A stored numeric deadline is always non-negative, so for the
-        /// `ATTACH` numeric branch this only guards against a hand-edited out-of-range value, which must
-        /// fail to load rather than silently weaken expiration.
-        if (time < MIN_VALID_UNTIL_TIME)
+        /// older reader would misinterpret.
+        ///
+        /// This bound is enforced only for query input (`context != nullptr`). It must NOT reject an
+        /// already-stored deadline while deserializing an access entity (`context == nullptr`): an older
+        /// release accepted a pre-`1900` `VALID UNTIL` and persisted it as a bare datetime string, so
+        /// enforcing the floor on load would make an upgraded server skip that user on startup - a
+        /// backward-incompatible change to stored access data. On the deserialize path such a pre-`1900`
+        /// value is instead normalized fail-closed to the smallest expired instant by the `time <= 0`
+        /// check below (any pre-`1900` deadline is negative), the same way other pre-epoch stored
+        /// deadlines are handled. A stored numeric deadline is always non-negative, so the `ATTACH`
+        /// numeric branch never reaches this bound regardless.
+        if (context && time < MIN_VALID_UNTIL_TIME)
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
                 "VALID UNTIL deadline is too far in the past, the earliest supported deadline is 1900-01-01 00:00:00 UTC");
