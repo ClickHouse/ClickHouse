@@ -467,6 +467,42 @@ TEST(TransformQueryForExternalDatabase, Limit)
         "JOIN test.table2 AS table2 ON (test.table.apply_id = test.table2.num) LIMIT 10",
         R"(SELECT "column", "apply_id" FROM "test"."table")");
 
+    /// Modifiers that are applied locally and change which rows the query returns must
+    /// disable the push-down, including those that are not children of `ASTSelectQuery`
+    /// (e.g. DISTINCT is just a flag): limiting remotely could return wrong results.
+    check(state, 1, {"column"},
+        "SELECT DISTINCT column FROM table LIMIT 10",
+        R"(SELECT "column" FROM "test"."table")");
+
+    check(state, 1, {"column"},
+        "SELECT column FROM table ORDER BY column LIMIT 10",
+        R"(SELECT "column" FROM "test"."table")");
+
+    check(state, 1, {"column"},
+        "SELECT column FROM table ORDER BY column LIMIT 10 WITH TIES",
+        R"(SELECT "column" FROM "test"."table")");
+
+    check(state, 1, {"column"},
+        "SELECT column FROM table GROUP BY column LIMIT 10",
+        R"(SELECT "column" FROM "test"."table")");
+
+    check(state, 1, {"column"},
+        "SELECT column FROM table GROUP BY ALL LIMIT 10",
+        R"(SELECT "column" FROM "test"."table")");
+
+    /// When the WHERE clause is copied to the external query only partially,
+    /// the rest of it is applied locally, so the LIMIT must not be pushed down either.
+    /// (Range comparisons on UUID columns are not compatible with external databases.)
+    state.context->setSetting("external_table_strict_query", false);
+    check(state, 1, {"uuid_col"},
+        "SELECT uuid_col FROM table WHERE uuid_col = toUUID('61f0c404-5cb3-11e7-907b-a6006ad3dba0') AND uuid_col > toUUID('12345678-1234-1234-1234-123456789012') LIMIT 10",
+        R"(SELECT "uuid_col" FROM "test"."table" WHERE "uuid_col" = '61f0c404-5cb3-11e7-907b-a6006ad3dba0')");
+
+    /// The SETTINGS clause does not change the data, so it does not prevent the push-down.
+    check(state, 1, {"column"},
+        "SELECT column FROM table LIMIT 10 SETTINGS max_threads = 1",
+        R"(SELECT "column" FROM "test"."table" LIMIT 10)");
+
     /// `external_storage_push_down_limit = false` disables pushing the LIMIT down (previous behavior).
     state.context->setSetting("external_storage_push_down_limit", false);
     check(state, 1, {"column"},
