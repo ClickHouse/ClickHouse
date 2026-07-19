@@ -37,23 +37,20 @@ For background on what session replay is and how it fits into ClickStack, see th
 ## Running the demo {#running-the-demo}
 
 <Steps>
-<Step>
-### Clone the repository {#clone-repository}
+<Step title="Clone the repository" id="clone-repository">
 
 ```shell
 git clone https://github.com/ClickHouse/clickstack-session-replay-demo
 cd clickstack-session-replay-demo
 ```
 </Step>
-<Step>
-### Start ClickStack {#start-clickstack}
+<Step title="Start ClickStack" id="start-clickstack">
 
 ```shell
 docker-compose up -d clickstack
 ```
 </Step>
-<Step>
-### Get your API key {#get-api-key}
+<Step title="Get your API key" id="get-api-key">
 
 1. Open HyperDX at [http://localhost:8080](http://localhost:8080)
 2. Create an account or log in if needed
@@ -68,8 +65,7 @@ docker-compose up -d clickstack
 export CLICKSTACK_API_KEY='your-api-key-here'
 ```
 </Step>
-<Step>
-### Start the demo application {#start-demo-app}
+<Step title="Start the demo application" id="start-demo-app">
 
 ```shell
 docker-compose --profile demo up demo-app
@@ -85,8 +81,7 @@ Open [http://localhost:3000](http://localhost:3000) in your browser and interact
 
 All interactions are automatically captured by the ClickStack Browser SDK.
 </Step>
-<Step>
-### View your session replay {#view-session-replay}
+<Step title="View your session replay" id="view-session-replay">
 
 Return to HyperDX at [http://localhost:8080](http://localhost:8080) and navigate to **Client Sessions** from the left sidebar.
 

@@ -11,21 +11,20 @@
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnNullable.h>
-#include <Common/DequeWithMemoryTracking.h>
-#include <Common/VectorWithMemoryTracking.h>
+
+#include <optional>
 
 #include <AggregateFunctions/TimeSeries/AggregateFunctionTimeseriesBase.h>
-
-#include <absl/container/flat_hash_map.h>
+#include <AggregateFunctions/TimeSeries/AggregateFunctionTimeseriesSamples.h>
+#include <AggregateFunctions/TimeSeries/AggregateFunctionTimeseriesSlidingSum.h>
 
 
 namespace DB
 {
 
-template <bool array_arguments_, typename TimestampType_, typename IntervalType_, typename ValueType_, bool is_resets_>
+template <typename TimestampType_, typename IntervalType_, typename ValueType_, bool is_resets_>
 struct AggregateFunctionTimeseriesChangesTraits
 {
-    static constexpr bool array_arguments = array_arguments_;
     static constexpr bool is_resets = is_resets_;
 
     using TimestampType = TimestampType_;
@@ -37,48 +36,10 @@ struct AggregateFunctionTimeseriesChangesTraits
         return is_resets ? "timeSeriesResetsToGrid" : "timeSeriesChangesToGrid";
     }
 
-    struct Bucket
-    {
-        absl::flat_hash_map<TimestampType, ValueType> samples;
+    using Samples = AggregateFunctionTimeseriesSamples<TimestampType, ValueType>;
 
-        void add(TimestampType timestamp, ValueType value)
-        {
-            auto it = samples.find(timestamp);
-            if (it != samples.end())
-                it->second = std::max(it->second, value);
-            else
-                samples[timestamp] = value;
-        }
-
-        void merge(const Bucket & other)
-        {
-            samples.reserve(other.samples.size());
-
-            for (const auto & [timestamp, value] : other.samples)
-                add(timestamp, value);
-        }
-    };
-};
-
-template <typename Traits>
-class AggregateFunctionTimeseriesChanges final :
-    public AggregateFunctionTimeseriesBase<AggregateFunctionTimeseriesChanges<Traits>, Traits>
-{
-public:
-    static constexpr bool DateTime64Supported = true;
-
-    static constexpr bool is_resets = Traits::is_resets;
-
-    using TimestampType = typename Traits::TimestampType;
-    using IntervalType = typename Traits::IntervalType;
-    using ValueType = typename Traits::ValueType;
-
-    using Base = AggregateFunctionTimeseriesBase<AggregateFunctionTimeseriesChanges<Traits>, Traits>;
-
-    using Base::Base;
-
-    using Bucket = typename Base::Bucket;
-
+    /// A Prometheus stale marker (bit pattern 0x7ff0000000000002) means "the series has gone stale here",
+    /// so such samples must be ignored entirely by `changes`/`resets`.
     static bool isPrometheusStaleNaN(ValueType value)
     {
         if constexpr (std::is_same_v<ValueType, Float64>)
@@ -86,158 +47,143 @@ public:
         return false;
     }
 
-    static void serializeBucket(const Bucket & bucket, WriteBuffer & buf)
+    /// Per-bucket summary for changes/resets and, once combined over a window, the window summary too: the first
+    /// and last value, the sample count, and the transition count. `merge` adds a summary at the back of the window
+    /// and `unmerge` drops one from the front, each accounting for the transition across the boundary between
+    /// adjacent buckets, so a window's transition count is maintained incrementally in O(1).
+    struct Summary
     {
-        writeBinaryLittleEndian(bucket.samples.size(), buf);
-        for (const auto & sample : bucket.samples)
-        {
-            writeBinaryLittleEndian(sample.first, buf);
-            writeBinaryLittleEndian(sample.second, buf);
-        }
-    }
-
-    void deserializeBucket(Bucket & bucket, ReadBuffer & buf, const size_t bucket_index) const
-    {
-        size_t sample_count = 0;
-        readBinaryLittleEndian(sample_count,buf);
-        bucket.samples.reserve(sample_count);
-
-        for (size_t s = 0; s < sample_count; ++s)
-        {
-            TimestampType timestamp;
-            readBinaryLittleEndian(timestamp, buf);
-            Base::checkTimestampInRange(timestamp, bucket_index);
-
-            ValueType value;
-            readBinaryLittleEndian(value, buf);
-
-            bucket.add(timestamp, value);
-        }
-    }
-
-private:
-    void fillResultValue(const DequeWithMemoryTracking<std::pair<TimestampType, ValueType>> & samples_in_window,
-        ValueType & result, UInt8 & null) const
-    {
-        if (samples_in_window.empty())
-        {
-            result = 0;
-            null = 1;
-            return;
-        }
-
+        ValueType first_value = 0;
+        ValueType last_value = 0;
         UInt64 count = 0;
-        bool has_prev_sample = false;
-        ValueType prev_sample_value{};
-        for (const auto & sample : samples_in_window)
+        UInt64 changes = 0;
+
+        /// Whether the transition prev -> curr is counted: a decrease for resets, any change otherwise.
+        static bool isCounted(ValueType prev, ValueType curr)
         {
-            if (isPrometheusStaleNaN(sample.second))
-                continue;
-
-            if (!has_prev_sample)
-            {
-                prev_sample_value = sample.second;
-                has_prev_sample = true;
-                continue;
-            }
-
             if constexpr (is_resets)
-            {
-                bool is_reset = (sample.second < prev_sample_value);
-                if (is_reset)
-                    count++;
-            }
+                return curr < prev;
             else
-            {
-                /// PromQL changes() treats consecutive regular NaN samples as the same value.
-                bool is_change = (sample.second != prev_sample_value)
-                    && !(std::isnan(sample.second) && std::isnan(prev_sample_value));
-                if (is_change)
-                    count++;
-            }
-            prev_sample_value = sample.second;
+                /// PromQL `changes` treats consecutive regular NaN samples as the same value.
+                return curr != prev && !(std::isnan(curr) && std::isnan(prev));
         }
 
-        if (!has_prev_sample)
+        void merge(const Summary & added)
         {
-            result = 0;
-            null = 1;
-            return;
+            if (added.count == 0)
+                return;
+            if (count == 0)
+            {
+                *this = added;
+                return;
+            }
+            if (isCounted(last_value, added.first_value))
+                ++changes;      /// transition across the bucket boundary
+            changes += added.changes;
+            last_value = added.last_value;
+            count += added.count;
         }
 
-        result = static_cast<ValueType>(count);
-        null = 0;
-    }
+        void unmerge(const Summary & leaving, const Summary * new_first)
+        {
+            changes -= leaving.changes;
+            count -= leaving.count;
+            if (new_first)
+            {
+                if (isCounted(leaving.last_value, new_first->first_value))
+                    --changes;      /// drop the transition across the boundary
+                first_value = new_first->first_value;   /// the window's first value is now the new front's
+            }
+        }
+    };
 
-public:
-    /// Insert the result into the column
-    void doInsertResultInto(AggregateDataPtr __restrict place, IColumn & to) const
+    /// Sliding aggregator for changes/resets: preaggregates each bucket into a `Summary` and keeps the
+    /// window's summary in a `SlidingSum`. `Summary` is invertible, so the window is maintained with a single
+    /// running sum in O(1) per bucket.
+    struct Aggregator
     {
-        ColumnArray & arr_to = typeid_cast<ColumnArray &>(to);
-        ColumnArray::Offsets & offsets_to = arr_to.getOffsets();
+        AggregateFunctionTimeseriesSlidingSum<TimestampType, Summary> sliding_sum;
+        VectorWithMemoryTracking<std::pair<TimestampType, ValueType>> temp_buffer;  /// reused sort buffer
 
-        offsets_to.push_back(offsets_to.back() + Base::bucket_count);
+        /// `Summary::merge` is order-dependent (not commutative), so it must take the invertible running-sum path,
+        /// not the two-stacks path which combines values out of time order.
+        static_assert(decltype(sliding_sum)::is_invertible);
 
-        if (!Base::bucket_count)
-            return;
-
-        ColumnNullable & result_to = typeid_cast<ColumnNullable &>(arr_to.getData());
-        auto & data_to = typeid_cast<typename Base::ColVecResultType &>(result_to.getNestedColumn()).getData();
-        auto & nulls_to = result_to.getNullMapData();
-
-        const size_t old_size = data_to.size();
-        chassert(old_size == nulls_to.size(), "Sizes of nested column and null map of Nullable column are not equal");
-
-        data_to.resize(old_size + Base::bucket_count);
-        nulls_to.resize(old_size + Base::bucket_count);
-
-        ValueType * values = data_to.data() + old_size;
-        UInt8 * nulls = nulls_to.data() + old_size;
-
-        const auto & buckets = Base::data(place)->buckets;
-
-        DequeWithMemoryTracking<std::pair<TimestampType, ValueType>> samples_in_window;
-        VectorWithMemoryTracking<std::pair<TimestampType, ValueType>> timestamps_buffer;
-
-
-        /// Fill the data for missing buckets
-        for (UInt32 i = 0; i < Base::bucket_count; ++i)
+        void add(const Samples & samples, TimestampType bucket_end_timestamp)
         {
-            /// Use `Base::timestampAtIndex` to compute the grid timestamp with overflow-safe
-            /// arithmetic. The plain expression `Base::start_timestamp + i * Base::step`
-            /// signed-overflows `TimestampType` when `step` is near `INT64_MAX` and `i >= 2`
-            /// (reachable from adversarial fuzzer inputs), which trips UBSAN.
-            const TimestampType current_timestamp = Base::timestampAtIndex(i);
-
-            auto bucket_it = buckets.find(i);
-            if (bucket_it != buckets.end())
+            /// Preaggregate the bucket's samples (visited in ascending order) into a per-bucket summary.
+            Summary summary;
+            samples.forEachSampleSorted([&summary](TimestampType, ValueType value)
             {
-                timestamps_buffer.clear();
-                /// Sort samples from the current bucket
-                for (const auto & [timestamp, value] : bucket_it->second.samples)
-                    timestamps_buffer.emplace_back(timestamp, value);
-                std::sort(timestamps_buffer.begin(), timestamps_buffer.end());
-
-                /// Add samples from the current bucket
-                for (const auto & [timestamp, value] : timestamps_buffer)
-                    samples_in_window.push_back({timestamp, value});
-            }
-
-            /// Remove samples that are out of the window
-            while (!samples_in_window.empty()
-                   && Base::isSampleOutOfWindow(samples_in_window.front().first, current_timestamp))
-            {
-                samples_in_window.pop_front();
-            }
-
-            fillResultValue(
-                samples_in_window,
-                values[i],
-                nulls[i]);
+                if (isPrometheusStaleNaN(value))
+                    return;
+                if (summary.count == 0)
+                    summary.first_value = value;
+                else if (Summary::isCounted(summary.last_value, value))
+                    ++summary.changes;
+                summary.last_value = value;
+                ++summary.count;
+            }, temp_buffer);
+            add(std::move(summary), bucket_end_timestamp);
         }
+
+        void add(Summary summary, TimestampType bucket_end_timestamp)
+        {
+            if (summary.count == 0)
+                return;
+            sliding_sum.add(std::move(summary), bucket_end_timestamp);
+        }
+
+        void removeBefore(TimestampType cut_off)
+        {
+            sliding_sum.removeBefore(cut_off);
+        }
+
+        std::optional<ValueType> getResult(TimestampType /*grid_timestamp*/) const
+        {
+            const Summary combined = sliding_sum.getCurrentSum();
+            if (combined.count == 0)
+                return std::nullopt;
+            return static_cast<ValueType>(combined.changes);
+        }
+    };
+
+    /// The bucket stores raw samples; the aggregator's `add(const Samples &)` preaggregates them into a `Summary`.
+    using Bucket = Samples;
+};
+
+
+template <typename TimestampType_, typename IntervalType_, typename ValueType_, bool is_resets_>
+class AggregateFunctionTimeseriesChanges final :
+    public AggregateFunctionTimeseriesBase<
+        AggregateFunctionTimeseriesChanges<TimestampType_, IntervalType_, ValueType_, is_resets_>,
+        AggregateFunctionTimeseriesChangesTraits<TimestampType_, IntervalType_, ValueType_, is_resets_>>
+{
+public:
+    using Traits = AggregateFunctionTimeseriesChangesTraits<TimestampType_, IntervalType_, ValueType_, is_resets_>;
+
+    static constexpr bool is_resets = Traits::is_resets;
+
+    using Aggregator = typename Traits::Aggregator;
+
+    using Base = AggregateFunctionTimeseriesBase<AggregateFunctionTimeseriesChanges, Traits>;
+    using Base::Base;
+
+    Aggregator createAggregator(size_t /* num_populated_buckets */) const
+    {
+        return {};
     }
 
-    static constexpr UInt16 FORMAT_VERSION = 1;
+    static constexpr UInt16 FORMAT_VERSION = 2;
+    static constexpr bool DateTime64Supported = true;
 };
+
+/// Each SQL function as a 3-argument template with its is_resets variant baked in, so registration names the
+/// function directly.
+template <typename TimestampType, typename IntervalType, typename ValueType>
+using AggregateFunctionTimeseriesChangesToGrid = AggregateFunctionTimeseriesChanges<TimestampType, IntervalType, ValueType, false>;
+
+template <typename TimestampType, typename IntervalType, typename ValueType>
+using AggregateFunctionTimeseriesResetsToGrid = AggregateFunctionTimeseriesChanges<TimestampType, IntervalType, ValueType, true>;
 
 }

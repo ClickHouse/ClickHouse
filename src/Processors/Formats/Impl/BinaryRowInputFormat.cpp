@@ -101,7 +101,7 @@ std::vector<String> BinaryFormatReader<with_defaults>::readTypes()
         type_names.reserve(read_columns);
         for (size_t i = 0; i < read_columns; ++i)
         {
-            read_data_types.push_back(decodeDataType(*in));
+            read_data_types.push_back(decodeDataType(*in, format_settings.binary.max_binary_type_complexity));
             type_names.push_back(read_data_types.back()->getName());
         }
     }
@@ -227,6 +227,8 @@ void registerInputFormatRowBinary(FormatFactory & factory)
 
     factory.setDocumentation("RowBinary", Documentation{
         .description = R"DOCS_MD(
+import RowBinaryFormatSettings from '/snippets/common-row-binary-format-settings.mdx';
+
 | Input | Output | Alias |
 |-------|--------|-------|
 | ✔     | ✔      |       |
@@ -246,20 +248,20 @@ Because data is in the binary format the delimiter after `FORMAT RowBinary` is s
   - or Unix style `'\n'`
 - Immediately followed by binary data.
 
-:::note
-This format is less efficient than the [Native](../Native.md) format since it is row-based.
-:::
+<Note>
+This format is less efficient than the [Native](/reference/formats/Native) format since it is row-based.
+</Note>
 
 ## Data types wire format {#data-types-wire-format}
 
-:::tip
+<Tip>
 Most of the queries provided in the examples can be executed with curl with a file output.
 
 ```bash
 curl -XPOST "http://localhost:8123?default_format=RowBinary" \
   --data-binary "SELECT 42 :: UInt32"  > out.bin
 ```
-:::
+</Tip>
 
 Then, the data can be examined with a hex editor.
 
@@ -284,7 +286,7 @@ Boolean values are encoded as a single byte, and can be deserialized similarly t
 
 ### BFloat16 {#bfloat16}
 
-[BFloat16](https://clickhouse.com/docs/sql-reference/data-types/float#bfloat16) (Brain Floating Point) is a 16-bit floating point format with the range of Float32 and reduced precision, making it useful for machine learning workloads. The wire format is essentially the top 16 bits of a Float32 value. If your language doesn't support it natively, the easiest way to handle it is to read and write as UInt16, converting to and from Float32:
+[BFloat16](/reference/data-types/float#bfloat16) (Brain Floating Point) is a 16-bit floating point format with the range of Float32 and reduced precision, making it useful for machine learning workloads. The wire format is essentially the top 16 bits of a Float32 value. If your language doesn't support it natively, the easiest way to handle it is to read and write as UInt16, converting to and from Float32:
 
 To convert BFloat16 to Float32 (pseudocode):
 
@@ -342,7 +344,7 @@ let scale_multiplier = 10 ** scale
 let result = whole_part * scale_multiplier + fractional_part
 ```
 
-See more details in the [Decimal types ClickHouse docs](https://clickhouse.com/docs/sql-reference/data-types/decimal).
+See more details in the [Decimal types ClickHouse docs](/reference/data-types/decimal).
 
 ### String {#string}
 
@@ -369,9 +371,9 @@ For example, a string `foobar` will be encoded using *seven* bytes as follows:
 
 Unlike `String`, `FixedString` has a fixed length, which is defined in the schema. It is encoded as a sequence of bytes, padded with trailing zero bytes if the value is shorter than `N`.
 
-:::note
+<Note>
 When reading a `FixedString`, trailing zero bytes may be either padding or actual `\0` characters in the data, they are indistinguishable on the wire. ClickHouse itself preserves all `N` bytes as-is.
-:::
+</Note>
 
 An empty `FixedString(3)` contains only padding zeroes:
 
@@ -451,9 +453,9 @@ DateTime([timezone])
 
 For example, `DateTime` or `DateTime('UTC')`.
 
-:::note
+<Note>
 The binary value is always a UTC epoch offset. The timezone does not change the encoding. However, the timezone **does** affect how string values are interpreted on insertion: inserting `'2024-01-15 10:30:00'` into a `DateTime('America/New_York')` column stores a different epoch value than inserting the same string into a `DateTime('UTC')` column, because the string is interpreted as local time in the column's timezone. On the wire, both are just `UInt32` epoch seconds.
-:::
+</Note>
 
 Supported range of values: `[1970-01-01 00:00:00, 2106-02-07 06:28:15]`.
 
@@ -480,9 +482,9 @@ Where `precision` is an integer from `0` to `9`. Typically, only the following a
 
 Examples of valid DateTime64 definitions: `DateTime64(0)`, `DateTime64(3)`, `DateTime64(6, 'UTC')`, or `DateTime64(9, 'Europe/Amsterdam')`.
 
-:::note
+<Note>
 As with `DateTime`, the binary value is always a UTC epoch offset. The timezone affects how string values are interpreted on insertion (see the [DateTime](#datetime) note), but the encoding itself is always `Int64` ticks since the UTC epoch.
-:::
+</Note>
 
 The underlying `Int64` value of the `DateTime64` type can be interpreted as the number of the following units before or after the UNIX epoch:
 
@@ -491,7 +493,7 @@ The underlying `Int64` value of the `DateTime64` type can be interpreted as the 
 - `DateTime64(6)` - microseconds.
 - `DateTime64(9)` - nanoseconds.
 
-Supported range of values: `[1900-01-01 00:00:00, 2299-12-31 23:59:59.99999999]`.
+Supported range of values: `[0000-01-01 00:00:00, 9999-12-31 23:59:59.999999999]` (for precision up to 7; precision 8 and 9 are narrower, see the note below).
 
 Sample underlying values for `DateTime64`:
 
@@ -499,9 +501,9 @@ Sample underlying values for `DateTime64`:
 - `DateTime64(6)`: value `1705314600123456` represents `2024-01-15 10:30:00.123456 UTC`.
 - `DateTime64(9)`: value `1705314600123456789` represents `2024-01-15 10:30:00.123456789 UTC`.
 
-:::note
-The precision of the maximum value is 8. If the maximum precision of 9 digits (nanoseconds) is used, the maximum supported value is 2262-04-11 23:47:16 in UTC.
-:::
+<Note>
+Because the underlying `Int64` tick range is narrower at higher precision, the maximum supported value shrinks: at precision 8 it is `4892-10-07` and at precision 9 (nanoseconds) it is `2262-04-11 23:47:16` in UTC.
+</Note>
 
 ### Time {#time}
 
@@ -509,9 +511,9 @@ Stored as `Int32` representing a time value in seconds. Negative values are vali
 
 Supported range of values: `[-999:59:59, 999:59:59]` (i.e., `[-3599999, 3599999]` seconds).
 
-:::note
+<Note>
 At the moment, the setting `enable_time_time64_type` must be set to `1` to use `Time` or `Time64`.
-:::
+</Note>
 
 Sample underlying values for `Time`:
 
@@ -538,9 +540,9 @@ Where `precision` is an integer from `0` to `9`. Common values: `3` (millisecond
 
 Supported range of values: `[-999:59:59.xxxxxxxxx, 999:59:59.xxxxxxxxx]`.
 
-:::note
+<Note>
 At the moment, the setting `enable_time_time64_type` must be set to `1` to use `Time` or `Time64`.
-:::
+</Note>
 
 The underlying `Int64` value represents fractional seconds scaled by `10^precision`.
 
@@ -563,9 +565,9 @@ All interval types are stored as `Int64` (eight bytes, little-endian). The value
 
 The interval types are: `IntervalNanosecond`, `IntervalMicrosecond`, `IntervalMillisecond`, `IntervalSecond`, `IntervalMinute`, `IntervalHour`, `IntervalDay`, `IntervalWeek`, `IntervalMonth`, `IntervalQuarter`, `IntervalYear`.
 
-:::note
+<Note>
 The interval type name (e.g., `IntervalSecond` vs `IntervalDay`) determines the unit of the stored value. The wire encoding is always the same.
-:::
+</Note>
 
 Sample underlying values:
 
@@ -739,15 +741,15 @@ SELECT
 
 In RowBinary format, the low-cardinality marker does not affect the wire format. For example, a `LowCardinality(String)` is encoded the same way as a regular `String`.
 
-:::warning
+<Warning>
 This only applies to RowBinary. In the Native format, `LowCardinality` uses a different dictionary-based encoding.
-:::
+</Warning>
 
-:::note
+<Note>
 A column can be defined as `LowCardinality(Nullable(T))`, but it is not possible to define it as `Nullable(LowCardinality(T))` - it will always result in an error from the server.
-:::
+</Note>
 
-While testing, [allow_suspicious_low_cardinality_types](https://clickhouse.com/docs/operations/settings/settings#allow_suspicious_low_cardinality_types) can be set to `1` to allow most of the data types inside `LowCardinality` for better coverage.
+While testing, [allow_suspicious_low_cardinality_types](/reference/settings/session-settings#allow_suspicious_low_cardinality_types) can be set to `1` to allow most of the data types inside `LowCardinality` for better coverage.
 
 ### Array {#array}
 
@@ -784,9 +786,9 @@ SELECT array('foobar', 'qaz') AS arr
 0x71, 0x61, 0x7a, // 'qaz'
 ```
 
-:::note
+<Note>
 An array can contain nullable values, but the array itself cannot be nullable.
-:::
+</Note>
 
 The following is valid:
 
@@ -843,7 +845,6 @@ The string encoding of the tuple data type presents similar challenges as with t
 For example, in the following table, the tuple contains an enum with a tick and parenthesis in the name, which can cause parsing issues if not handled properly:
 
 ```sql
-SET enable_nullable_tuple_type = 1;
 CREATE OR REPLACE TABLE foo
 (
    `t` Tuple(
@@ -876,17 +877,17 @@ SELECT CAST(map('foo', 1, 'bar', 2), 'Map(String, UInt32)') AS m
 0x02, 0x00, 0x00, 0x00, // UInt32(2)
 ```
 
-:::note
+<Note>
 It is possible to have maps with deeply nested structures, such as `Map(String, Map(Int32, Array(Nullable(String))))`, which will be encoded similarly to what is described above.
-:::
+</Note>
 
 ### Variant {#variant}
 
 This type represents a union of other data types. Type `Variant(T1, T2, ..., TN)` means that each row of this type has a value of either type `T1` or `T2` or … or `TN` or none of them (`NULL` value).
 
-:::warning
+<Warning>
 While for the end user `Variant(T1, T2)` means exactly the same as `Variant(T2, T1)`, the order of types in the definition matters for the wire format: the types in the definition are always sorted alphabetically, and this is important, since the exact variant is encoded by a "discriminant" - the data type index in the definition.
-:::
+</Warning>
 
 Consider the following example:
 
@@ -944,17 +945,17 @@ SELECT NULL :: Variant(UInt32, String)
 0xFF, // discriminant = NULL
 ```
 
-The [allow_suspicious_variant_types](https://clickhouse.com/docs/operations/settings/settings#allow_suspicious_variant_types) setting can be used to allow more exhaustive testing of the `Variant` type.
+The [allow_suspicious_variant_types](/reference/settings/session-settings#allow_suspicious_variant_types) setting can be used to allow more exhaustive testing of the `Variant` type.
 
 ### Dynamic {#dynamic}
 
-The `Dynamic` type can hold values of any type, determined at runtime. In RowBinary format, each value is self-describing: the first part is the type specification in [this format](https://clickhouse.com/docs/sql-reference/data-types/data-types-binary-encoding). The contents then follow, with the value encoding as described in this document. So to parse a value you just need to use the type index to determine the right parser and then re-use the RowBinary parsing you already have elsewhere.
+The `Dynamic` type can hold values of any type, determined at runtime. In RowBinary format, each value is self-describing: the first part is the type specification in [this format](/reference/data-types/data-types-binary-encoding). The contents then follow, with the value encoding as described in this document. So to parse a value you just need to use the type index to determine the right parser and then re-use the RowBinary parsing you already have elsewhere.
 
 ```text
 [BinaryTypeIndex][type-specific parameters...][value]
 ```
 
-Where `BinaryTypeIndex` is a single byte identifying the type. See the reference [here](https://clickhouse.com/docs/sql-reference/data-types/data-types-binary-encoding) for the type indices and parameters.
+Where `BinaryTypeIndex` is a single byte identifying the type. See the reference [here](/reference/data-types/data-types-binary-encoding) for the type indices and parameters.
 
 A `NULL` Dynamic value is encoded with `BinaryTypeIndex` `0x00` (the `Nothing` type), with no additional bytes:
 
@@ -1279,9 +1280,9 @@ Sample encoding of a `Ring` as `Geometry`:
 
 The wire format for `Nested` depends on the `flatten_nested` setting.
 
-:::warning
+<Warning>
 All component arrays in a single row **must have the same length**. This is a server-enforced constraint. Mismatched lengths will cause insertion errors.
-:::
+</Warning>
 
 #### `flatten_nested = 1` (default) {#nested-flattened}
 
@@ -1380,9 +1381,9 @@ The RowBinaryWithNamesAndTypes header reports the type as `SimpleAggregateFuncti
 
 `AggregateFunction(func, T)` stores the full intermediate state of an aggregate function. Unlike `SimpleAggregateFunction`, which also stores an intermediate state but encodes it identically to the underlying data type, `AggregateFunction` stores an opaque binary blob whose format is specific to each aggregate function.
 
-:::warning
+<Warning>
 Aggregate states have **no length prefix** in RowBinary. A parser must understand the internal serialization format of each specific aggregate function to know how many bytes to consume. In practice, most clients treat aggregate states as opaque and use `*State` / `*Merge` combinators to let the server handle serialization.
-:::
+</Warning>
 
 The internal format varies by function. Some simple examples:
 
@@ -1427,9 +1428,9 @@ SELECT minState(toUInt32(number)) FROM numbers(0)
 0x00, // flag: no value
 ```
 
-:::note
+<Note>
 More complex functions like `uniq`, `quantile`, or `groupArray` use implementation-specific formats. If you need to read or write these states, consult the ClickHouse source code for the specific function.
-:::
+</Note>
 
 ### QBit {#qbit}
 
@@ -1466,26 +1467,20 @@ SELECT [1.0, 2.0, 3.0, 4.0]::QBit(Float32, 4)
 
 ## Format settings {#format-settings}
 
-The following settings are common to all `RowBinary` type formats.
-
-| Setting                                                                                                                                              | Description                                                                                                                                                                                                                                         | Default |
-|------------------------------------------------------------------------------------------------------------------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---------|
-| [`format_binary_max_string_size`](/operations/settings/settings-formats.md/#format_binary_max_string_size)                                           | The maximum allowed size for String in RowBinary format.                                                                                                                                                                                          | `1GiB`  |
-| [`output_format_binary_encode_types_in_binary_format`](/operations/settings/formats#input_format_binary_decode_types_in_binary_format) | Allows to write types in header using [`binary encoding`](/sql-reference/data-types/data-types-binary-encoding.md) instead of strings with type names in [`RowBinaryWithNamesAndTypes`](../RowBinaryWithNamesAndTypes.md) output format.  | `false` |
-| [`input_format_binary_decode_types_in_binary_format`](/operations/settings/formats#input_format_binary_decode_types_in_binary_format)   | Allows to read types in header using [`binary encoding`](/sql-reference/data-types/data-types-binary-encoding.md) instead of strings with type names in [`RowBinaryWithNamesAndTypes`](../RowBinaryWithNamesAndTypes.md) input format.    | `false` |
-| [`output_format_binary_write_json_as_string`](/operations/settings/settings-formats.md/#output_format_binary_write_json_as_string)                   | Allows to write values of the [`JSON`](/sql-reference/data-types/newjson.md) data type as `JSON` [String](/sql-reference/data-types/string.md) values in [`RowBinary`](../RowBinary.md) output format.                            | `false` |
-| [`input_format_binary_read_json_as_string`](/operations/settings/settings-formats.md/#input_format_binary_read_json_as_string)                       | Allows to read values of the [`JSON`](/sql-reference/data-types/newjson.md) data type as `JSON` [String](/sql-reference/data-types/string.md) values in [`RowBinary`](../RowBinary.md) input format.                              | `false` |
+<RowBinaryFormatSettings/>
 )DOCS_MD"});
 
     factory.setDocumentation("RowBinaryWithDefaults", Documentation{
         .description = R"DOCS_MD(
+import RowBinaryFormatSettings from '/snippets/common-row-binary-format-settings.mdx';
+
 | Input | Output | Alias |
 |-------|--------|-------|
 | ✔     | ✗      |       |
 
 ## Description {#description}
 
-Similar to the [`RowBinary`](./RowBinary.md) format, but with an extra byte before each column that indicates if the default value should be used.
+Similar to the [`RowBinary`](/reference/formats/RowBinary/RowBinary) format, but with an extra byte before each column that indicates if the default value should be used.
 
 ## Example usage {#example-usage}
 
@@ -1505,26 +1500,20 @@ SELECT * FROM FORMAT('RowBinaryWithDefaults', 'x UInt32 default 42, y UInt32', x
 
 ## Format settings {#format-settings}
 
-The following settings are common to all `RowBinary` type formats.
-
-| Setting                                                                                                                                              | Description                                                                                                                                                                                                                                         | Default |
-|------------------------------------------------------------------------------------------------------------------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---------|
-| [`format_binary_max_string_size`](/operations/settings/settings-formats.md/#format_binary_max_string_size)                                           | The maximum allowed size for String in RowBinary format.                                                                                                                                                                                          | `1GiB`  |
-| [`output_format_binary_encode_types_in_binary_format`](/operations/settings/formats#input_format_binary_decode_types_in_binary_format) | Allows to write types in header using [`binary encoding`](/sql-reference/data-types/data-types-binary-encoding.md) instead of strings with type names in [`RowBinaryWithNamesAndTypes`](../RowBinaryWithNamesAndTypes.md) output format.  | `false` |
-| [`input_format_binary_decode_types_in_binary_format`](/operations/settings/formats#input_format_binary_decode_types_in_binary_format)   | Allows to read types in header using [`binary encoding`](/sql-reference/data-types/data-types-binary-encoding.md) instead of strings with type names in [`RowBinaryWithNamesAndTypes`](../RowBinaryWithNamesAndTypes.md) input format.    | `false` |
-| [`output_format_binary_write_json_as_string`](/operations/settings/settings-formats.md/#output_format_binary_write_json_as_string)                   | Allows to write values of the [`JSON`](/sql-reference/data-types/newjson.md) data type as `JSON` [String](/sql-reference/data-types/string.md) values in [`RowBinary`](../RowBinary.md) output format.                            | `false` |
-| [`input_format_binary_read_json_as_string`](/operations/settings/settings-formats.md/#input_format_binary_read_json_as_string)                       | Allows to read values of the [`JSON`](/sql-reference/data-types/newjson.md) data type as `JSON` [String](/sql-reference/data-types/string.md) values in [`RowBinary`](../RowBinary.md) input format.                              | `false` |
+<RowBinaryFormatSettings/>
 )DOCS_MD"});
 
     factory.setDocumentation("RowBinaryWithNames", Documentation{
         .description = R"DOCS_MD(
+import RowBinaryFormatSettings from '/snippets/common-row-binary-format-settings.mdx';
+
 | Input | Output | Alias |
 |-------|--------|-------|
 | ✔     | ✔      |       |
 
 ## Description {#description}
 
-Similar to the [`RowBinary`](./RowBinary.md) format, but with added header:
+Similar to the [`RowBinary`](/reference/formats/RowBinary/RowBinary) format, but with added header:
 
 - [`LEB128`](https://en.wikipedia.org/wiki/LEB128)-encoded number of columns (N).
 - N `String`s specifying column names.
@@ -1533,33 +1522,27 @@ Similar to the [`RowBinary`](./RowBinary.md) format, but with added header:
 
 ## Format settings {#format-settings}
 
-The following settings are common to all `RowBinary` type formats.
+<RowBinaryFormatSettings/>
 
-| Setting                                                                                                                                              | Description                                                                                                                                                                                                                                         | Default |
-|------------------------------------------------------------------------------------------------------------------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---------|
-| [`format_binary_max_string_size`](/operations/settings/settings-formats.md/#format_binary_max_string_size)                                           | The maximum allowed size for String in RowBinary format.                                                                                                                                                                                          | `1GiB`  |
-| [`output_format_binary_encode_types_in_binary_format`](/operations/settings/formats#input_format_binary_decode_types_in_binary_format) | Allows to write types in header using [`binary encoding`](/sql-reference/data-types/data-types-binary-encoding.md) instead of strings with type names in [`RowBinaryWithNamesAndTypes`](../RowBinaryWithNamesAndTypes.md) output format.  | `false` |
-| [`input_format_binary_decode_types_in_binary_format`](/operations/settings/formats#input_format_binary_decode_types_in_binary_format)   | Allows to read types in header using [`binary encoding`](/sql-reference/data-types/data-types-binary-encoding.md) instead of strings with type names in [`RowBinaryWithNamesAndTypes`](../RowBinaryWithNamesAndTypes.md) input format.    | `false` |
-| [`output_format_binary_write_json_as_string`](/operations/settings/settings-formats.md/#output_format_binary_write_json_as_string)                   | Allows to write values of the [`JSON`](/sql-reference/data-types/newjson.md) data type as `JSON` [String](/sql-reference/data-types/string.md) values in [`RowBinary`](../RowBinary.md) output format.                            | `false` |
-| [`input_format_binary_read_json_as_string`](/operations/settings/settings-formats.md/#input_format_binary_read_json_as_string)                       | Allows to read values of the [`JSON`](/sql-reference/data-types/newjson.md) data type as `JSON` [String](/sql-reference/data-types/string.md) values in [`RowBinary`](../RowBinary.md) input format.                              | `false` |
-
-:::note
-- If setting [`input_format_with_names_use_header`](/operations/settings/settings-formats.md/#input_format_with_names_use_header) is set to `1`,
+<Note>
+- If setting [`input_format_with_names_use_header`](/reference/settings/formats#input_format_with_names_use_header) is set to `1`,
 the columns from input data will be mapped to the columns from the table by their names, columns with unknown names will be skipped. 
-- If setting [`input_format_skip_unknown_fields`](/operations/settings/settings-formats.md/#input_format_skip_unknown_fields) is set to `1`.
+- If setting [`input_format_skip_unknown_fields`](/reference/settings/formats#input_format_skip_unknown_fields) is set to `1`.
 Otherwise, the first row will be skipped.
-:::
+</Note>
 )DOCS_MD"});
 
     factory.setDocumentation("RowBinaryWithNamesAndTypes", Documentation{
         .description = R"DOCS_MD(
+import RowBinaryFormatSettings from '/snippets/common-row-binary-format-settings.mdx';
+
 | Input | Output | Alias |
 |-------|--------|-------|
 | ✔     | ✔      |       |
 
 ## Description {#description}
 
-Similar to the [RowBinary](./RowBinary.md) format, but with added header:
+Similar to the [RowBinary](/reference/formats/RowBinary/RowBinary) format, but with added header:
 
 - [`LEB128`](https://en.wikipedia.org/wiki/LEB128)-encoded number of columns (N).
 - N `String`s specifying column names.
@@ -1569,40 +1552,34 @@ Similar to the [RowBinary](./RowBinary.md) format, but with added header:
 
 ## Format settings {#format-settings}
 
-The following settings are common to all `RowBinary` type formats.
+<RowBinaryFormatSettings/>
 
-| Setting                                                                                                                                              | Description                                                                                                                                                                                                                                         | Default |
-|------------------------------------------------------------------------------------------------------------------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---------|
-| [`format_binary_max_string_size`](/operations/settings/settings-formats.md/#format_binary_max_string_size)                                           | The maximum allowed size for String in RowBinary format.                                                                                                                                                                                          | `1GiB`  |
-| [`output_format_binary_encode_types_in_binary_format`](/operations/settings/formats#input_format_binary_decode_types_in_binary_format) | Allows to write types in header using [`binary encoding`](/sql-reference/data-types/data-types-binary-encoding.md) instead of strings with type names in [`RowBinaryWithNamesAndTypes`](../RowBinaryWithNamesAndTypes.md) output format.  | `false` |
-| [`input_format_binary_decode_types_in_binary_format`](/operations/settings/formats#input_format_binary_decode_types_in_binary_format)   | Allows to read types in header using [`binary encoding`](/sql-reference/data-types/data-types-binary-encoding.md) instead of strings with type names in [`RowBinaryWithNamesAndTypes`](../RowBinaryWithNamesAndTypes.md) input format.    | `false` |
-| [`output_format_binary_write_json_as_string`](/operations/settings/settings-formats.md/#output_format_binary_write_json_as_string)                   | Allows to write values of the [`JSON`](/sql-reference/data-types/newjson.md) data type as `JSON` [String](/sql-reference/data-types/string.md) values in [`RowBinary`](../RowBinary.md) output format.                            | `false` |
-| [`input_format_binary_read_json_as_string`](/operations/settings/settings-formats.md/#input_format_binary_read_json_as_string)                       | Allows to read values of the [`JSON`](/sql-reference/data-types/newjson.md) data type as `JSON` [String](/sql-reference/data-types/string.md) values in [`RowBinary`](../RowBinary.md) input format.                              | `false` |
-
-:::note
-If setting [`input_format_with_names_use_header`](/operations/settings/settings-formats.md/#input_format_with_names_use_header) is set to 1,
-the columns from input data will be mapped to the columns from the table by their names, columns with unknown names will be skipped if setting [input_format_skip_unknown_fields](/operations/settings/settings-formats.md/#input_format_skip_unknown_fields) is set to 1.
+<Note>
+If setting [`input_format_with_names_use_header`](/reference/settings/formats#input_format_with_names_use_header) is set to 1,
+the columns from input data will be mapped to the columns from the table by their names, columns with unknown names will be skipped if setting [input_format_skip_unknown_fields](/reference/settings/formats#input_format_skip_unknown_fields) is set to 1.
 Otherwise, the first row will be skipped.
-If setting [`input_format_with_types_use_header`](/operations/settings/settings-formats.md/#input_format_with_types_use_header) is set to `1`,
+If setting [`input_format_with_types_use_header`](/reference/settings/formats#input_format_with_types_use_header) is set to `1`,
 the types from input data will be compared with the types of the corresponding columns from the table. Otherwise, the second row will be skipped.
-:::
+</Note>
 )DOCS_MD"});
 
     factory.setDocumentation("RowBinaryWithNamesAndTypesAndDefaults", Documentation{
         .description = R"DOCS_MD(
+import RowBinaryFormatSettings from '/snippets/common-row-binary-format-settings.mdx';
+
 | Input | Output | Alias |
 |-------|--------|-------|
 | ✔     | ✗      |       |
 
 ## Description {#description}
 
-Similar to the [`RowBinaryWithNamesAndTypes`](./RowBinaryWithNamesAndTypes.md) format, but with an extra byte before each cell that indicates whether the column's `DEFAULT` value should be used — exactly like in the [`RowBinaryWithDefaults`](./RowBinaryWithDefaults.md) format. This combination supports schema-evolving `INSERT`s: the writer can omit columns from the header (they receive the target column's `DEFAULT`) and, for any column it does send, it can mark individual cells as "use the column's `DEFAULT`" without conflating that with `NULL`.
+Similar to the [`RowBinaryWithNamesAndTypes`](/reference/formats/RowBinary/RowBinaryWithNamesAndTypes) format, but with an extra byte before each cell that indicates whether the column's `DEFAULT` value should be used — exactly like in the [`RowBinaryWithDefaults`](/reference/formats/RowBinary/RowBinaryWithDefaults) format. This combination supports schema-evolving `INSERT`s: the writer can omit columns from the header (they receive the target column's `DEFAULT`) and, for any column it does send, it can mark individual cells as "use the column's `DEFAULT`" without conflating that with `NULL`.
 
 This format is input only.
 
 ## Wire format {#wire-format}
 
-The header is identical to [`RowBinaryWithNamesAndTypes`](./RowBinaryWithNamesAndTypes.md):
+The header is identical to [`RowBinaryWithNamesAndTypes`](/reference/formats/RowBinary/RowBinaryWithNamesAndTypes):
 
 1. A `VarUInt` with the number of columns `N`.
 2. `N` length-prefixed `String`s with column names.
@@ -1654,15 +1631,7 @@ SELECT * FROM format(
 
 ## Format settings {#format-settings}
 
-The following settings are common to all `RowBinary` type formats.
-
-| Setting                                                                                                                                              | Description                                                                                                                                                                                                                                         | Default |
-|------------------------------------------------------------------------------------------------------------------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---------|
-| [`format_binary_max_string_size`](/operations/settings/settings-formats.md/#format_binary_max_string_size)                                           | The maximum allowed size for String in RowBinary format.                                                                                                                                                                                          | `1GiB`  |
-| [`output_format_binary_encode_types_in_binary_format`](/operations/settings/formats#input_format_binary_decode_types_in_binary_format) | Allows to write types in header using [`binary encoding`](/sql-reference/data-types/data-types-binary-encoding.md) instead of strings with type names in [`RowBinaryWithNamesAndTypes`](../RowBinaryWithNamesAndTypes.md) output format.  | `false` |
-| [`input_format_binary_decode_types_in_binary_format`](/operations/settings/formats#input_format_binary_decode_types_in_binary_format)   | Allows to read types in header using [`binary encoding`](/sql-reference/data-types/data-types-binary-encoding.md) instead of strings with type names in [`RowBinaryWithNamesAndTypes`](../RowBinaryWithNamesAndTypes.md) input format.    | `false` |
-| [`output_format_binary_write_json_as_string`](/operations/settings/settings-formats.md/#output_format_binary_write_json_as_string)                   | Allows to write values of the [`JSON`](/sql-reference/data-types/newjson.md) data type as `JSON` [String](/sql-reference/data-types/string.md) values in [`RowBinary`](../RowBinary.md) output format.                            | `false` |
-| [`input_format_binary_read_json_as_string`](/operations/settings/settings-formats.md/#input_format_binary_read_json_as_string)                       | Allows to read values of the [`JSON`](/sql-reference/data-types/newjson.md) data type as `JSON` [String](/sql-reference/data-types/string.md) values in [`RowBinary`](../RowBinary.md) input format.                              | `false` |
+<RowBinaryFormatSettings/>
 )DOCS_MD"});
 }
 
