@@ -355,7 +355,10 @@ void Loggers::createAuditLog(Poco::Util::AbstractConfiguration & config, time_t 
         return;
 
     /// Keep an already-created writer alive. It is torn down only at shutdown, never on reload,
-    /// so that concurrent LOG_AUDIT callers cannot use a freed writer.
+    /// so that concurrent LOG_AUDIT callers cannot use a freed writer. A consequence is that a
+    /// runtime change of the `logger.auditlog` path is not applied until a restart; removing or
+    /// emptying `logger.auditlog` still disables emission on reload, because
+    /// `Context::loadOrReloadAuditTypes` gates on the current config value.
     if (audit_log)
         return;
 

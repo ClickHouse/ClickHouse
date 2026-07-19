@@ -8577,7 +8577,12 @@ void Context::loadOrReloadAuditTypes(const Poco::Util::AbstractConfiguration & c
     /// kept alive for the process lifetime; this flag is the runtime gate that toggles emission on
     /// reload without a restart. When the feature is off (or the writer was never created because it
     /// started disabled), keep audit emission off.
+    /// The gate must also depend on the current `logger.auditlog` value, not just on the existence
+    /// of a previously created writer: when the operator removes (or empties) `logger.auditlog` and
+    /// reloads the config, audit emission must stop, otherwise statements would keep leaking into
+    /// the old file path even though the config no longer declares an audit sink.
     if (!config.getBool("allow_experimental_audit_log", false)
+        || config.getString("logger.auditlog", "").empty()
         || !hasGlobalAuditLog())
     {
         setAuditLoggingEnabled(false);
