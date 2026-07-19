@@ -440,11 +440,11 @@ struct BackupsWorker::BackupStarter
             && query_context->getBackupsThrottler())
         {
             UInt64 queryMaxSpeed = query_context->getBackupsThrottler()->getMaxSpeed();
-            // Note: With S3 checksum enabled, each file is read twice â€” once for checksum, once for upload.
+            // Note: With S3 checksum enabled, each file is read twice — once for checksum, once for upload.
             // This effectively halves the usable bandwidth relative to max_backup_bandwidth.
             LOG_WARNING(
                 log,
-                "S3 checksum is enabled (s3_disable_checksum = 0): each file will be read twice â€” once for checksum and once for upload. "
+                "S3 checksum is enabled (s3_disable_checksum = 0): each file will be read twice — once for checksum and once for upload. "
                 "This effectively reduces the usable bandwidth to about half of max_backup_bandwidth (currently: {}). "
                 "To mitigate this, either disable checksum (SET s3_disable_checksum = 1) or increase max_backup_bandwidth.",
                 formatReadableSizeWithBinarySuffix(static_cast<double>(queryMaxSpeed), 0));
@@ -536,12 +536,12 @@ struct BackupsWorker::BackupStarter
         /// forever and clients waiting for the operation never wake up.
         try
         {
+            bool backup_is_corrupted = (backup && backup->setIsCorrupted());
+
             fiu_do_on(FailPoints::backup_cleanup_error,
             {
                 throw Exception(ErrorCodes::FAULT_INJECTED, "Fault injected in the cleanup after a failed backup");
             });
-
-            bool backup_is_corrupted = (backup && backup->setIsCorrupted());
 
             /// Let other hosts know we got an error.
             if (backup_coordination)

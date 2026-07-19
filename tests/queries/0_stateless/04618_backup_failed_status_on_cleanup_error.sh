@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest
+# Tags: no-fasttest, no-parallel
 # Tag no-fasttest: backups to Disk('backups') are not configured in the fast test
+# Tag no-parallel: the failpoint is server-global; a concurrently failing backup in
+# another test would consume it or get poisoned by it
 
 # Test for issue #92649: when the cleanup after a failed backup threw a second
 # exception, the terminal status was never written and the operation stayed
