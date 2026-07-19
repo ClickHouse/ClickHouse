@@ -1,0 +1,38 @@
+---
+sidebarTitle: '垂直オートスケーリング'
+slug: /cloud/features/autoscaling/vertical
+description: 'ClickHouse Cloud における垂直オートスケーリングの設定'
+keywords: ['オートスケーリング', '自動スケーリング', '垂直', 'スケーリング', 'CPU', 'メモリ']
+title: '垂直オートスケーリング'
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+import ScalePlanFeatureBadge from "/snippets/ja/components/ScalePlanFeatureBadge/ScalePlanFeatureBadge.jsx";
+
+<ScalePlanFeatureBadge feature="自動垂直スケーリング" />
+
+Scale および Enterprise tier のサービスでは、CPU 使用率とメモリ使用量に基づくオートスケーリングを利用できます。スケーリングの判断には、ルックバックウィンドウ内のサービス使用状況が継続的に監視されます。使用状況が特定のしきい値を上回る、または下回ると、需要に合わせてサービスが適切にスケーリングされます。
+
+<div id="configuring-vertical-auto-scaling">
+  ## 垂直オートスケーリングの設定
+</div>
+
+ClickHouse Cloud の Scale または Enterprise サービスのスケーリングは、**Admin** ロールを持つ組織メンバーが調整できます。垂直オートスケーリングを設定するには、サービスの **Settings** タブを開き、以下のように CPU 設定とあわせて最小メモリと最大メモリを調整します。
+
+<Note>
+  単一レプリカのサービスは、すべてのティアでスケーリングできるわけではありません。
+</Note>
+
+<Image img="/images/cloud/manage/AutoScaling.webp" size="lg" alt="スケーリング設定ページ" border />
+
+レプリカの **Maximum memory** は、**Minimum memory** より大きい値に設定してください。すると、サービスはその範囲内で必要に応じてスケーリングされます。これらの設定は、サービスの初回作成時にも指定できます。サービス内の各レプリカには、同じメモリおよび CPU リソースが割り当てられます。
+
+これらの値を同じに設定して、実質的にサービスを特定の構成に「固定」することもできます。そうすると、選択したサイズにただちにスケーリングされます。
+
+重要なのは、これによりクラスターのオートスケーリングが無効になり、この設定を超える CPU 使用量やメモリ使用量の増加に対してサービスが保護されなくなるという点です。
+
+<Note>
+  Enterprise tier のサービスでは、標準の 1:4 プロファイルで垂直オートスケーリングがサポートされます。カスタムプロファイルでは、垂直オートスケーリングおよび手動の垂直スケーリングはサポートされません。ただし、これらのサービスもサポートに連絡することで垂直方向にスケーリングできます。
+</Note>

@@ -1,0 +1,60 @@
+---
+sidebarTitle: 'Deepnote'
+slug: /integrations/deepnote
+keywords: ['clickhouse', 'Deepnote', 'connect', 'integrate', 'notebook']
+description: 'استعلم بكفاءة عن مجموعات بيانات ضخمة جدًا، مع التحليل والنمذجة في بيئة دفتر بيانات مألوفة.'
+title: 'توصيل ClickHouse بـ Deepnote'
+doc_type: 'guide'
+integration:
+  - support_level: 'community'
+  - category: 'data_visualization'
+  - website: 'https://deepnote.com/launch?template=ClickHouse%20and%20Deepnote'
+---
+
+import { Image } from "/snippets/ar/components/Image.jsx";
+import CommunityMaintainedBadge from "/snippets/ar/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
+import ConnectionDetails from '/snippets/ar/_gather_your_details_http.mdx';
+
+<CommunityMaintainedBadge />
+
+يُعد <a href="https://www.deepnote.com/" target="_blank">Deepnote</a> دفتر بيانات تعاونيًا صُمّم لتمكين الفرق من اكتشاف الرؤى ومشاركتها. وإلى جانب توافقه مع Jupyter، فهو يعمل في السحابة ويوفّر لك مكانًا مركزيًا موحدًا للتعاون والعمل بكفاءة على مشاريع علم البيانات.
+
+يفترض هذا الدليل أن لديك بالفعل حسابًا على Deepnote وأن لديك مثيل ClickHouse قيد التشغيل.
+
+<div id="interactive-example">
+  ## مثال تفاعلي
+</div>
+
+إذا كنت ترغب في استكشاف مثال تفاعلي لإجراء استعلامات على ClickHouse من دفاتر البيانات في Deepnote، فانقر الزر أدناه لتشغيل مشروع قالب متصل بـ [ClickHouse playground](/ar/get-started/sample-datasets/playground).
+
+[<img src="https://deepnote.com/buttons/launch-in-deepnote.svg" alt="تشغيل في Deepnote" width="32" />](https://deepnote.com/launch?template=ClickHouse%20and%20Deepnote)
+
+<div id="connect-to-clickhouse">
+  ## الاتصال بـ ClickHouse
+</div>
+
+1. من داخل Deepnote، اختر قسم &quot;Integrations&quot; وانقر على بطاقة ClickHouse.
+
+<Image size="lg" img="/images/integrations/data-visualization/deepnote_01.webp" alt="بطاقة تكامل ClickHouse" border />
+
+2. أدخِل تفاصيل الاتصال الخاصة بمثيل ClickHouse لديك:
+
+<ConnectionDetails />
+
+<Image size="md" img="/images/integrations/data-visualization/deepnote_02.webp" alt="مربع حوار تفاصيل ClickHouse" border />
+
+***ملاحظة:*** إذا كان اتصالك بـ ClickHouse محميًا باستخدام IP Access List، فقد تحتاج إلى السماح لعناوين IP الخاصة بـ Deepnote. اقرأ المزيد عن ذلك في [وثائق Deepnote](https://docs.deepnote.com/integrations/authorize-connections-from-deepnote-ip-addresses).
+
+3. تهانينا! لقد نجحت الآن في دمج ClickHouse مع Deepnote.
+
+<div id="using-clickhouse-integration">
+  ## استخدام تكامل ClickHouse.
+</div>
+
+1. ابدأ بالاتصال بـ تكامل ClickHouse الموجود على يمين الـ دفتر بيانات.
+
+   <Image size="lg" img="/images/integrations/data-visualization/deepnote_03.webp" alt="ClickHouse details dialog" border />
+
+2. أنشئ الآن block جديدًا من نوع ClickHouse استعلام، ثم نفّذ استعلام على الـ database. ستُحفَظ نتائج الاستعلام كـ DataFrame وتُخزَّن في المتغير المحدد في block الـ SQL.
+
+3. يمكنك أيضًا تحويل أي [كتلة SQL](https://docs.deepnote.com/features/sql-cells) حالية إلى block من نوع ClickHouse.

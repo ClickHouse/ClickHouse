@@ -1,0 +1,151 @@
+---
+description: 'توثيق نوع البيانات Time في ClickHouse، الذي يخزّن
+  قيمة وقتية بدقة الثواني'
+slug: /sql-reference/data-types/time
+sidebarTitle: 'Time'
+title: 'Time'
+doc_type: 'reference'
+---
+
+يمثل نوع البيانات `Time` قيمة وقتية تتكوّن من الساعة والدقيقة والثانية.
+وهو مستقل عن أي تاريخ تقويمي، ومناسب للقيم التي لا تحتاج إلى مكوّنات اليوم والشهر والسنة.
+
+البنية:
+
+```sql
+Time
+```
+
+نطاق التمثيل النصي: [-999:59:59, 999:59:59].
+
+الدقة: ثانية واحدة.
+
+<div id="implementation-details">
+  ## تفاصيل التنفيذ
+</div>
+
+**التمثيل والأداء**.
+يخزّن نوع البيانات `Time` داخليًا عددًا صحيحًا موقّعًا من 32 بت يرمّز الثواني.
+لقيمتَي `Time` و`DateTime` حجم البايت نفسه، ولذلك يكون أداؤهما متقاربًا.
+
+**التطبيع**.
+عند تحليل السلاسل النصية إلى `Time`، تُطبَّع مكوّنات الوقت ولا يُتحقَّق من صحتها.
+على سبيل المثال، يُفسَّر `25:70:70` على أنه `26:11:10`.
+
+**القيم السالبة**.
+إشارات الطرح البادئة مدعومة ويُحتفَظ بها.
+تنشأ القيم السالبة عادةً من العمليات الحسابية على قيم `Time`.
+بالنسبة إلى النوع `Time`، يُحتفَظ بالمدخلات السالبة سواء كانت نصية (مثل `'-01:02:03'`) أو رقمية (مثل `-3723`).
+
+**الإشباع**.
+يُقيَّد مكوّن وقت اليوم بالنطاق [-999:59:59, 999:59:59].
+تُمثَّل القيم التي تتجاوز فيها الساعات 999 (أو تقل عن -999)، وعند تحويلها من النص وإليه تكون على هيئة `999:59:59` (أو `-999:59:59`).
+
+**المناطق الزمنية**.
+لا يدعم `Time` المناطق الزمنية، أي إن قيم `Time` تُفسَّر من دون سياق زمني إقليمي.
+يؤدي تحديد منطقة زمنية لـ `Time` كمعامل نوع أو أثناء إنشاء القيمة إلى حدوث خطأ.
+وبالمثل، فإن محاولات تطبيق منطقة زمنية على أعمدة `Time` أو تغييرها غير مدعومة وتؤدي إلى خطأ.
+لا يُعاد تفسير قيم `Time` ضمنيًا وفق مناطق زمنية مختلفة.
+
+<div id="examples">
+  ## أمثلة
+</div>
+
+**1.** إنشاء جدول يحتوي على عمود من النوع `Time` وإدراج البيانات فيه:
+
+```sql
+CREATE TABLE tab
+(
+    `event_id` UInt8,
+    `time` Time
+)
+ENGINE = TinyLog;
+```
+
+```sql
+-- Parse Time
+-- - from string,
+-- - from integer interpreted as number of seconds since 00:00:00.
+INSERT INTO tab VALUES (1, '14:30:25'), (2, 52225);
+
+SELECT * FROM tab ORDER BY event_id;
+```
+
+```text
+   ┌─event_id─┬──────time─┐
+1. │        1 │ 14:30:25 │
+2. │        2 │ 14:30:25 │
+   └──────────┴───────────┘
+```
+
+**2.** التصفية حسب قيم `Time`
+
+```sql
+SET use_legacy_to_time = 0;
+SELECT * FROM tab WHERE time = toTime('14:30:25')
+```
+
+```text
+   ┌─event_id─┬──────time─┐
+1. │        1 │ 14:30:25 │
+2. │        2 │ 14:30:25 │
+   └──────────┴───────────┘
+```
+
+يمكن تصفية قيم العمود `Time` باستخدام قيمة نصية في الشرط `WHERE`. وستُحوَّل تلقائيًا إلى `Time`:
+
+```sql
+SELECT * FROM tab WHERE time = '14:30:25'
+```
+
+```text
+   ┌─event_id─┬──────time─┐
+1. │        1 │ 14:30:25 │
+2. │        2 │ 14:30:25 │
+   └──────────┴───────────┘
+```
+
+**3.** معاينة النوع الناتج:
+
+```sql
+SELECT CAST('14:30:25' AS Time) AS column, toTypeName(column) AS type
+```
+
+```text
+   ┌────column─┬─type─┐
+1. │ 14:30:25 │ Time │
+   └───────────┴──────┘
+```
+
+<div id="addition-with-date">
+  ## الجمع مع Date
+</div>
+
+يمكن جمع قيمة [Time](/ar/reference/data-types/time) مع قيمة [Date](/ar/reference/data-types/date) أو [Date32](/ar/reference/data-types/date32) لإنتاج [DateTime](/ar/reference/data-types/datetime) أو [DateTime64](/ar/reference/data-types/datetime64):
+
+```sql
+SET use_legacy_to_time = 0;
+SELECT toDate('2024-07-15') + toTime('14:30:25') as datetime;
+```
+
+```text
+   ┌────────────datetime─┐
+1. │ 2024-07-15 14:30:25 │
+   └─────────────────────┘
+```
+
+اطّلع على [إضافة التاريخ والوقت](/ar/reference/operators/index#date-time-addition) للتعرّف على تفاصيل جميع التركيبات المدعومة وأنواع النتائج.
+
+<div id="see-also">
+  ## انظر أيضًا
+</div>
+
+* [دوال تحويل الأنواع](/ar/reference/functions/regular-functions/type-conversion-functions)
+* [دوال التعامل مع التواريخ والأوقات](/ar/reference/functions/regular-functions/date-time-functions)
+* [دوال التعامل مع المصفوفات](/ar/reference/functions/regular-functions/array-functions)
+* [الإعداد `date_time_input_format`](/ar/reference/settings/formats#date_time_input_format)
+* [الإعداد `date_time_output_format`](/ar/reference/settings/formats#date_time_output_format)
+* [معلمة تهيئة الخادم `timezone`](/ar/reference/settings/server-settings/settings#timezone)
+* [الإعداد `session_timezone`](/ar/reference/settings/session-settings#session_timezone)
+* [نوع البيانات `DateTime`](/ar/reference/data-types/datetime)
+* [نوع البيانات `Date`](/ar/reference/data-types/date)

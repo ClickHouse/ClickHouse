@@ -137,6 +137,9 @@
         <gs>
             <to>https://storage.googleapis.com/{bucket}</to>
         </gs>
+        <gcs>
+            <to>https://storage.googleapis.com/{bucket}</to>
+        </gcs>
         <oss>
             <to>https://{bucket}.oss.aliyuncs.com</to>
         </oss>

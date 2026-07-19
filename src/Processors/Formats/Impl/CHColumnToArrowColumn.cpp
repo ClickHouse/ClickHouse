@@ -75,7 +75,9 @@
         M(BINARY, arrow::BinaryType) \
         M(STRING, arrow::StringType) \
         M(FIXED_SIZE_BINARY, arrow::FixedSizeBinaryType) \
-        M(DATE32, arrow::Date32Type)
+        M(DATE32, arrow::Date32Type) \
+        M(TIME32, arrow::Time32Type) \
+        M(DURATION, arrow::DurationType)
 
 namespace DB
 {

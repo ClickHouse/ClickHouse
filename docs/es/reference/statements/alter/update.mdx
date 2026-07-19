@@ -1,0 +1,37 @@
+---
+description: 'Documentación sobre las sentencias ALTER TABLE ... UPDATE'
+sidebarTitle: 'UPDATE'
+slug: /sql-reference/statements/alter/update
+title: 'Sentencias ALTER TABLE ... UPDATE'
+doc_type: 'reference'
+---
+
+```sql
+ALTER TABLE [db.]table [ON CLUSTER cluster] UPDATE column1 = expr1 [, ...] [IN PARTITION partition_id] WHERE filter_expr
+```
+
+Manipula los datos que coinciden con la expresión de filtrado especificada. Se implementa como una [mutación](/es/reference/statements/alter/index#mutations).
+
+<Note>
+  El prefijo `ALTER TABLE` hace que esta sintaxis sea distinta de la de la mayoría de los demás sistemas que admiten SQL. Su objetivo es indicar que, a diferencia de consultas similares en bases de datos OLTP, esta es una operación costosa que no está pensada para usarse con frecuencia.
+</Note>
+
+`filter_expr` debe ser de tipo `UInt8`. Esta consulta actualiza los valores de las columnas especificadas con los valores de las expresiones correspondientes en las filas para las que `filter_expr` toma un valor distinto de cero. Los valores se convierten al tipo de la columna mediante el operador `CAST`. No se admite actualizar columnas que se usan en el cálculo de la clave primaria o de la clave de partición.
+
+Una consulta puede contener varios comandos separados por comas.
+
+El carácter síncrono del procesamiento de la consulta se define mediante la configuración [mutations&#95;sync](/es/reference/settings/session-settings#mutations_sync). De forma predeterminada, es asíncrona.
+
+**Véase también**
+
+* [Mutaciones](/es/reference/statements/alter/index#mutations)
+* [Sincronía de las consultas ALTER](/es/reference/statements/alter/index#synchronicity-of-alter-queries)
+* Configuración [mutations&#95;sync](/es/reference/settings/session-settings#mutations_sync)
+* [`UPDATE` ligera](/es/reference/statements/update) - Actualización ligera alternativa mediante partes de parche
+* [`APPLY PATCHES`](/es/reference/statements/alter/apply-patches) - Aplicar manualmente parches de actualizaciones ligeras
+
+<div id="related-content">
+  ## Contenido relacionado
+</div>
+
+* Blog: [Cómo gestionar actualizaciones y eliminaciones en ClickHouse](https://clickhouse.com/blog/handling-updates-and-deletes-in-clickhouse)

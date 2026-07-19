@@ -1,0 +1,76 @@
+---
+alias: []
+description: 'JSONColumnsWithMetadata 포맷 문서'
+input_format: true
+keywords: ['JSONColumnsWithMetadata']
+output_format: true
+slug: /interfaces/formats/JSONColumnsWithMetadata
+title: 'JSONColumnsWithMetadata'
+doc_type: 'reference'
+---
+
+| 입력 | 출력 | 별칭 |
+| -- | -- | -- |
+| ✔  | ✔  |    |
+
+<div id="description">
+  ## 설명
+</div>
+
+[`JSONColumns`](/ko/reference/formats/JSON/JSONColumns) 포맷과 달리, 일부 메타데이터와 통계 정보도 포함합니다([`JSON`](/ko/reference/formats/JSON/JSON) 포맷과 유사).
+
+<Note>
+  `JSONColumnsWithMetadata` 포맷은 모든 데이터를 메모리에 버퍼링한 뒤 단일 블록으로 출력하므로 메모리 사용량이 높아질 수 있습니다.
+</Note>
+
+<div id="example-usage">
+  ## 사용 예시
+</div>
+
+예시:
+
+```json
+{
+        "meta":
+        [
+                {
+                        "name": "num",
+                        "type": "Int32"
+                },
+                {
+                        "name": "str",
+                        "type": "String"
+                },
+
+                {
+                        "name": "arr",
+                        "type": "Array(UInt8)"
+                }
+        ],
+
+        "data":
+        {
+                "num": [42, 43, 44],
+                "str": ["hello", "hello", "hello"],
+                "arr": [[0,1], [0,1,2], [0,1,2,3]]
+        },
+
+        "rows": 3,
+
+        "rows_before_limit_at_least": 3,
+
+        "statistics":
+        {
+                "elapsed": 0.000272376,
+                "rows_read": 3,
+                "bytes_read": 24
+        }
+}
+```
+
+`JSONColumnsWithMetadata` 입력 형식에서는 [`input_format_json_validate_types_from_metadata`](/ko/reference/settings/formats#input_format_json_validate_types_from_metadata) 설정이 `1`로 지정되면,
+입력 데이터 메타데이터의 타입을 테이블의 해당 컬럼 타입과 비교합니다.
+
+<div id="format-settings">
+  ## 포맷 설정
+</div>

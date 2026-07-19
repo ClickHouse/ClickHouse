@@ -1,0 +1,75 @@
+---
+description: '`remote_servers` セクションで設定されたクラスターのすべての分片に、Distributed テーブルを作成せずにアクセスできます。'
+sidebarTitle: 'cluster'
+slug: /sql-reference/table-functions/cluster
+title: 'clusterAllReplicas'
+doc_type: 'reference'
+---
+
+Distributed テーブルを作成せずに、クラスターのすべての分片 (`remote_servers` セクションで設定) にアクセスできます。各分片では、1 つのレプリカのみがクエリされます。
+
+`clusterAllReplicas` 関数 — `cluster` と同様ですが、すべてのレプリカがクエリされます。クラスター内の各レプリカは、それぞれ個別の分片/接続として扱われます。
+
+<Note>
+  使用可能なすべてのクラスターは、[system.clusters](/ja/reference/system-tables/clusters) テーブルに一覧表示されます。詳細は、[Distributed](/ja/reference/engines/table-engines/special/distributed) テーブルの説明も参照してください。
+</Note>
+
+<div id="syntax">
+  ## 構文
+</div>
+
+```sql
+cluster(['cluster_name', db.table, sharding_key])
+cluster(['cluster_name', db, table, sharding_key])
+clusterAllReplicas(['cluster_name', db.table, sharding_key])
+clusterAllReplicas(['cluster_name', db, table, sharding_key])
+```
+
+<div id="arguments">
+  ## 引数
+</div>
+
+| 引数                          | 型                                                                                  |
+| --------------------------- | ---------------------------------------------------------------------------------- |
+| `cluster_name`              | リモートおよびローカルのサーバーに対するアドレスのセットと接続パラメーターの構築に使用されるクラスター名です。指定しない場合は `default` が設定されます。 |
+| `db.table` or `db`, `table` | データベース名とテーブル名です。                                                                   |
+| `sharding_key`              | シャーディングキーです。省略可能です。クラスターに複数の分片がある場合は指定する必要があります。                                   |
+
+<div id="returned_value">
+  ## 戻り値
+</div>
+
+クラスターから取得したデータセット。
+
+<div id="using_macros">
+  ## マクロの使用
+</div>
+
+`cluster_name` には、`{}` で置換されるマクロを含めることができます。置換される値は、サーバー設定ファイルの [macros](/ja/reference/settings/server-settings/settings#macros) セクションから取得されます。
+
+例:
+
+```sql
+SELECT * FROM cluster('{cluster}', default.example_table);
+```
+
+<div id="usage_recommendations">
+  ## 使用方法と推奨事項
+</div>
+
+`cluster` および `clusterAllReplicas` テーブル関数の使用は、`Distributed` テーブルを作成する場合よりも非効率です。これは、この場合、リクエストごとにサーバー接続が再確立されるためです。大量のクエリを処理する場合は、必ずあらかじめ `Distributed` テーブルを作成し、`cluster` および `clusterAllReplicas` テーブル関数は使用しないでください。
+
+`cluster` および `clusterAllReplicas` テーブル関数は、次のような場合に役立ちます。
+
+* データの比較、デバッグ、テストのために特定のクラスターにアクセスする場合。
+* 調査目的で、さまざまな ClickHouse クラスターやレプリカに対してクエリを実行する場合。
+* 手動で実行する頻度の低い分散リクエスト。
+
+`host`、`port`、`user`、`password`、`compression`、`secure` などの接続設定は、`<remote_servers>` 設定セクションから取得されます。詳細は [Distributed engine](/ja/reference/engines/table-engines/special/distributed) を参照してください。
+
+<div id="related">
+  ## 関連項目
+</div>
+
+* [skip&#95;unavailable&#95;shards](/ja/reference/settings/session-settings#skip_unavailable_shards)
+* [load&#95;balancing](/ja/reference/settings/session-settings#load_balancing)

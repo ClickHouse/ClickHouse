@@ -1,0 +1,35 @@
+---
+title: Exécuter des instructions SYSTEM sur tous les nœuds de ClickHouse Cloud
+description: Découvrez comment utiliser `ON CLUSTER` et `clusterAllReplicas` pour exécuter des instructions SYSTEM et des requêtes sur tous les nœuds d’un service ClickHouse Cloud.
+date: 2023-03-01
+tags: ['Déploiements et mise à l’échelle']
+keywords: ['clusterAllReplicas']
+---
+
+{frontMatter.description}
+
+{/* truncate */}
+
+<div id="answer">
+  ## Réponse
+</div>
+
+Pour exécuter la même requête sur tous les nœuds d’un service ClickHouse Cloud, nous pouvons utiliser [clusterAllReplicas](/fr/reference/functions/table-functions/cluster).
+
+Par exemple, pour récupérer les entrées d’une table système (locale au nœud) sur tous les nœuds, vous pouvez utiliser :
+
+```sql
+SELECT ... FROM clusterAllReplicas(default, system.TABLE) ...;
+```
+
+De même, vous pouvez exécuter cette même [instruction SYSTEM](/fr/reference/statements/system) sur tous les nœuds au moyen d’une seule instruction, à l’aide de la clause [ON CLUSTER](/fr/reference/statements/distributed-ddl) :
+
+```sql
+SYSTEM ... ON CLUSTER default;
+```
+
+Par exemple, pour [vider le cache du système de fichiers](/fr/reference/statements/system#drop-filesystem-cache) sur tous les nœuds, vous pouvez utiliser :
+
+```sql
+SYSTEM DROP FILESYSTEM CACHE ON CLUSTER default;
+```

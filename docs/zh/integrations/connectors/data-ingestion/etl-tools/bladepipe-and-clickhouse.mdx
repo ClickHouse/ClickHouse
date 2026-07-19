@@ -1,0 +1,120 @@
+---
+sidebarTitle: 'BladePipe'
+keywords: ['clickhouse', 'BladePipe', 'connect', 'integrate', 'cdc', 'etl', 'data integration']
+slug: /integrations/bladepipe
+description: '通过 BladePipe 数据管道将流式数据导入 ClickHouse'
+title: '将 BladePipe 连接到 ClickHouse'
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+import PartnerBadge from "/snippets/zh/components/PartnerBadge/PartnerBadge.jsx";
+
+<PartnerBadge />
+
+<a href="https://www.bladepipe.com/" target="_blank">BladePipe</a> 是一款实时端到端数据集成工具，具备亚秒级时延，可实现跨平台间的无缝数据流转。
+
+ClickHouse 是 BladePipe 的预置连接器之一，用户可以通过它自动将来自各种数据源的数据集成到 ClickHouse 中。本页将分步介绍如何将数据实时加载到 ClickHouse。
+
+<div id="supported-sources">
+  ## 支持的数据源
+</div>
+
+目前，BladePipe 支持从以下数据源将数据集成至 ClickHouse：
+
+* MySQL/MariaDB/AuroraMySQL
+* Oracle
+* PostgreSQL/AuroraPostgreSQL
+* MongoDB
+* Kafka
+* PolarDB-MySQL
+* OceanBase
+* TiDB
+
+后续还将支持更多数据源。
+
+<Steps>
+  <Step>
+    ## 下载并运行 BladePipe
+
+    1. 登录 <a href="https://www.bladepipe.com/" target="_blank">BladePipe Cloud</a>。
+
+    2. 按照 <a href="https://doc.bladepipe.com/productOP/byoc/installation/install_worker_docker" target="_blank">安装 Worker (Docker) </a> 或 <a href="https://doc.bladepipe.com/productOP/byoc/installation/install_worker_binary" target="_blank">安装 Worker (二进制) </a> 中的说明，下载并安装 BladePipe Worker。
+
+    <Note>
+      您也可以选择下载并部署 <a href="https://doc.bladepipe.com/productOP/onPremise/installation/install_all_in_one_binary" target="_blank">BladePipe Enterprise</a>。
+    </Note>
+  </Step>
+
+  <Step>
+    ## 将 ClickHouse 添加为目标
+
+    <Note>
+      1. BladePipe 支持 ClickHouse `20.12.3.3` 及以上版本。
+      2. 若要将 ClickHouse 用作目标，请确保该用户具有 SELECT、INSERT 和常见 DDL 权限。
+    </Note>
+
+    1. 在 BladePipe 中，点击 &quot;DataSource&quot; &gt; &quot;Add DataSource&quot;。
+
+    2. 选择 `ClickHouse`，然后填写相关设置，包括 ClickHouse 的主机和端口、用户名和密码，并点击 &quot;Test Connection&quot;。
+
+       <Image img="/images/integrations/data-ingestion/etl-tools/bp_ck_1.webp" size="lg" border alt="将 ClickHouse 添加为目标" />
+
+    3. 点击底部的 &quot;Add DataSource&quot;，即可添加一个 ClickHouse 实例。
+  </Step>
+
+  <Step>
+    ## 将 MySQL 添加为源
+
+    在本教程中，我们将使用 MySQL 实例作为源，并介绍将 MySQL 数据加载到 ClickHouse 的过程。
+
+    <Note>
+      要使用 MySQL 作为源，请确保该用户具有<a href="https://doc.bladepipe.com/dataMigrationAndSync/datasource_func/MySQL/privs_for_mysql" target="_blank">所需权限</a>。
+    </Note>
+
+    1. 在 BladePipe 中，点击 &quot;DataSource&quot; &gt; &quot;Add DataSource&quot;。
+
+    2. 选择 `MySQL`，然后填写相关设置，输入 MySQL 主机和端口、用户名和密码，再点击 &quot;Test Connection&quot;。
+
+       <Image img="/images/integrations/data-ingestion/etl-tools/bp_ck_2.webp" size="lg" border alt="将 MySQL 添加为源" />
+
+    3. 点击底部的 &quot;Add DataSource&quot;，即可添加 MySQL 实例。
+  </Step>
+
+  <Step>
+    ## 创建管道
+
+    1. 在 BladePipe 中，点击 &quot;DataJob&quot; &gt; &quot;Create DataJob&quot;。
+
+    2. 选择已添加的 MySQL 和 ClickHouse 实例，点击 &quot;Test Connection&quot;，确认 BladePipe 已连接到这些实例。然后，选择要迁移的数据库。
+       <Image img="/images/integrations/data-ingestion/etl-tools/bp_ck_3.webp" size="lg" border alt="选择源和目标" />
+
+    3. 在 DataJob Type 中选择 &quot;Incremental&quot;，同时勾选 &quot;Full Data&quot; 选项。
+       <Image img="/images/integrations/data-ingestion/etl-tools/bp_ck_4.webp" size="lg" border alt="选择同步类型" />
+
+    4. 选择要复制的表。
+       <Image img="/images/integrations/data-ingestion/etl-tools/bp_ck_5.webp" size="lg" border alt="选择表" />
+
+    5. 选择要复制的列。
+       <Image img="/images/integrations/data-ingestion/etl-tools/bp_ck_6.webp" size="lg" border alt="选择列" />
+
+    6. 确认创建 DataJob 后，DataJob 会自动运行。
+       <Image img="/images/integrations/data-ingestion/etl-tools/bp_ck_8.webp" size="lg" border alt="DataJob 正在运行" />
+  </Step>
+
+  <Step>
+    ## 验证数据
+
+    1. 停止向 MySQL 实例写入数据，并等待 ClickHouse 完成数据合并。
+
+    <Note>
+      由于 ClickHouse 自动合并的时机不可预测，你可以手动运行 `OPTIMIZE TABLE xxx FINAL;` 命令来触发一次合并。请注意，这种手动合并并不一定每次都能成功。
+
+      或者，你也可以运行 `CREATE VIEW xxx_v AS SELECT * FROM xxx FINAL;` 命令创建一个视图，并在该视图上执行查询，以确保数据已完全合并。
+    </Note>
+
+    2. 创建一个 <a href="https://doc.bladepipe.com/operation/job_manage/create_job/create_period_verification_correction_job" target="_blank">验证 DataJob</a>。验证 DataJob 完成后，请检查结果，确认 ClickHouse 中的数据与 MySQL 中的数据一致。
+       <Image img="/images/integrations/data-ingestion/etl-tools/bp_ck_9.webp" size="lg" border alt="验证数据" />
+  </Step>
+</Steps>

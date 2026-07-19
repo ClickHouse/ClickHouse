@@ -3,6 +3,7 @@
 #include <Access/ContextAccess.h>
 #include <Common/NamedCollections/NamedCollections.h>
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
+#include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTExpressionList.h>
@@ -21,6 +22,11 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool allow_named_collection_override_by_default;
+}
+
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
@@ -298,7 +304,8 @@ BackupInfo BackupInfo::withoutS3Credentials(ContextPtr context) const
                 auto key = getEffectiveKeyValueArgName(kv_arg, context);
                 return key
                     && (*key == "access_key_id" || *key == "secret_access_key" || *key == "session_token" || *key == "role_arn"
-                        || *key == "role_session_name" || *key == "external_id");
+                        || *key == "role_session_name" || *key == "external_id"
+                        || *key == "google_adc_client_secret" || *key == "google_adc_refresh_token");
             }),
         res.kv_args.end());
 
@@ -363,8 +370,18 @@ NamedCollectionPtr BackupInfo::getNamedCollection(ContextPtr context) const
     {
         auto mutable_collection = collection->duplicate();
         auto params_from_query = getParamsMapFromAST(kv_args, context);
+        const auto allow_override_by_default = context->getSettingsRef()[Setting::allow_named_collection_override_by_default];
         for (const auto & [key, value] : params_from_query)
+        {
+            /// Enforce the same override permission as the table-function/storage paths
+            /// (`tryGetNamedCollectionWithOverrides`): a non-overridable key (e.g. an operator-static endpoint or
+            /// credentials) must not be redirected from the query, otherwise the collection's static credentials
+            /// could be reused against a user-chosen endpoint under the S3 credential restriction.
+            if (!mutable_collection->isOverridable(key, allow_override_by_default))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Override not allowed for '{}'", key);
             mutable_collection->setOrUpdate<String>(key, fieldToString(value), {});
+            mutable_collection->markQueryOverridden(key);
+        }
         collection = std::move(mutable_collection);
     }
 

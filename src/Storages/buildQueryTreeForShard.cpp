@@ -8,6 +8,7 @@
 #include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/JoinNode.h>
 #include <Analyzer/QueryNode.h>
+#include <Analyzer/SortNode.h>
 #include <Core/Block.h>
 #include <Planner/PlannerActionsVisitor.h>
 
@@ -325,6 +326,21 @@ public:
                 return false;
         }
 
+        if (auto * sort_node = parent->as<SortNode>())
+        {
+            /// Do not replace WITH FILL FROM/TO/STEP/STALENESS constants. The planner reads them
+            /// directly via `as<ConstantNode &>()` in extractWithFillValue (PlannerSorting.cpp),
+            /// so a `__getScalar` FunctionNode there would cause a bad cast during planning.
+            if (sort_node->hasFillFrom() && sort_node->getFillFrom() == child)
+                return false;
+            if (sort_node->hasFillTo() && sort_node->getFillTo() == child)
+                return false;
+            if (sort_node->hasFillStep() && sort_node->getFillStep() == child)
+                return false;
+            if (sort_node->hasFillStaleness() && sort_node->getFillStaleness() == child)
+                return false;
+        }
+
         return true;
     }
 
@@ -486,7 +502,7 @@ TableNodePtr executeSubqueryNode(const QueryTreeNodePtr & subquery_node,
     /// only writes the materialized rows into `external_table` and applies
     /// `network_transfer_limits` after `materializeBlock`, raising
     /// `SET_SIZE_LIMIT_EXCEEDED` with the `"IN/JOIN external table"` reason on
-    /// `THROW` and stopping the input on `BREAK`. This keeps the new analyzer
+    /// `THROW` and stopping the input on `BREAK`. This keeps the analyzer
     /// behaviour in lockstep with the old analyzer.
     const auto & subquery_settings = mutable_context->getSettingsRef();
     SizeLimits network_transfer_limits(
@@ -880,7 +896,12 @@ public:
 
     static bool needChildVisit(const QueryTreeNodePtr & /*parent*/, const QueryTreeNodePtr & child)
     {
-        return child->getNodeType() != QueryTreeNodeType::QUERY && child->getNodeType() != QueryTreeNodeType::UNION;
+        /// Table/table-function argument lists are not expression scopes whose names need translating, and they may
+        /// contain unresolved identifiers (e.g. the `key = value` named-collection overrides of `s3`/`oss`/`url`) that
+        /// `calculateActionNodeName` cannot name. Skip them, like the nested QUERY/UNION scopes above.
+        auto child_type = child->getNodeType();
+        return child_type != QueryTreeNodeType::QUERY && child_type != QueryTreeNodeType::UNION
+            && child_type != QueryTreeNodeType::TABLE_FUNCTION && child_type != QueryTreeNodeType::TABLE;
     }
 
 private:

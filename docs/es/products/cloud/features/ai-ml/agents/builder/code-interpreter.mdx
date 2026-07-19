@@ -1,0 +1,72 @@
+---
+sidebarTitle: 'Code interpreter'
+slug: /cloud/features/ai-ml/agents/builder/code-interpreter
+title: 'Code interpreter'
+description: 'Ejecución de código en un entorno aislado en ClickHouse Agents'
+keywords: ['AI', 'ClickHouse Cloud', 'agents', 'code interpreter', 'sandbox', 'python']
+doc_type: 'reference'
+---
+
+import BetaBadge from "/snippets/es/components/BetaBadge/BetaBadge.jsx";
+import { Image } from "/snippets/es/components/Image.jsx";
+
+<BetaBadge />
+
+El intérprete de código permite a un agente ejecutar código en un sandbox administrado. Úsalo para realizar cálculos, transformar datos, convertir formatos, generar gráficos y cualquier otra tarea que sea mejor hacer con código que con lenguaje natural.
+
+<div id="enable-it">
+  ## Habilita el intérprete de código
+</div>
+
+En Agent Builder, habilita **Run Code** en la sección **Capabilities** y luego guarda los cambios. El agente decide cuándo ejecutar código en función de la solicitud del usuario y de las instrucciones del agente.
+
+<Image img="/images/cloud/agent-builder/run-code/run-code.webp" alt="Sección Run Code del panel Capabilities, con la casilla Run Code habilitada y un botón Upload to Code Environment" size="sm" />
+
+<div id="supported-languages">
+  ## Idiomas compatibles
+</div>
+
+El sandbox es un entorno Unix con dos entornos de ejecución de propósito general y algunas utilidades de shell:
+
+* **Python 3**: la opción predeterminada para las tareas de datos.
+* **Node.js (JavaScript)**: cuando un agente prefiere JS para la tarea.
+* **Bash** y **sh**: scripting de shell para encadenar comandos y hacer E/S rápidas.
+* **AWK** y **sed**: procesamiento de texto orientado a líneas.
+* **bc**: matemáticas de precisión arbitraria.
+
+Los agentes recurren primero a Python para cualquier tarea que implique análisis, transformación o cálculo de datos.
+
+<Tip>
+  Reserva las herramientas de shell para las tareas que de verdad se beneficien de un comando de una sola línea.
+</Tip>
+
+<div id="files">
+  ## Archivos
+</div>
+
+Los usuarios pueden subir archivos a una conversación; el intérprete de código puede acceder a ellos en el directorio de trabajo del sandbox. El código también puede generar archivos de salida (CSV, gráficos, archivos comprimidos) que aparecen en la conversación como archivos adjuntos descargables.
+
+<div id="sandbox-isolation">
+  ## Aislamiento del sandbox
+</div>
+
+Cada ejecución se realiza en un sandbox efímero, sin acceso a la red ni almacenamiento persistente. Las sesiones no comparten estado: las variables y los archivos de una ejecución no se trasladan a la siguiente, a menos que el agente los vuelva a cargar explícitamente.
+
+Se aplican límites de recursos propios del plan (memoria, archivos por ejecución y cuotas mensuales de solicitudes). Los errores y `stderr` se muestran en la conversación junto con `stdout`.
+
+<div id="when-to-use-it">
+  ## Cuándo usarlo
+</div>
+
+Usa el intérprete de código cuando la respuesta requiera un cálculo determinista que un modelo de lenguaje no pueda producir de forma fiable solo con razonamiento.
+Los casos típicos incluyen:
+
+* Analizar un archivo CSV o JSON que el usuario haya subido.
+* Calcular estadísticas descriptivas o ejecutar una simulación rápida.
+* Convertir entre formatos (Parquet, JSON, CSV).
+* Generar un gráfico a partir de los resultados de una consulta.
+
+<Tip>
+  Evítalo para tareas que el modelo ya pueda responder con el contexto disponible.
+  La ejecución de código añade latencia y consume cuota.
+</Tip>

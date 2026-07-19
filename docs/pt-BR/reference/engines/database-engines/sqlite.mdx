@@ -1,0 +1,107 @@
+---
+description: 'Permite conectar-se a um banco de dados SQLite e executar consultas `INSERT` e `SELECT`
+  para transferir dados entre o ClickHouse e o SQLite.'
+sidebarTitle: 'SQLite'
+slug: /engines/database-engines/sqlite
+title: 'SQLite'
+doc_type: 'reference'
+---
+
+Permite conectar-se a um banco de dados [SQLite](https://www.sqlite.org/index.html) e executar consultas `INSERT` e `SELECT` para transferir dados entre o ClickHouse e o SQLite.
+
+<div id="creating-a-database">
+  ## Criando um banco de dados
+</div>
+
+```sql
+    CREATE DATABASE sqlite_database
+    ENGINE = SQLite('db_path')
+```
+
+**Parâmetros do mecanismo**
+
+* `db_path` — Caminho para um arquivo com um banco de dados SQLite.
+
+<div id="data_types-support">
+  ## Suporte a tipos de dados
+</div>
+
+A tabela abaixo mostra o mapeamento de tipos padrão quando o ClickHouse infere automaticamente o esquema a partir do SQLite:
+
+| SQLite  | ClickHouse                              |
+| ------- | --------------------------------------- |
+| INTEGER | [Int32](/pt-BR/reference/data-types/int-uint) |
+| REAL    | [Float32](/pt-BR/reference/data-types/float)  |
+| TEXT    | [String](/pt-BR/reference/data-types/string)  |
+| TEXT    | [UUID](/pt-BR/reference/data-types/uuid)      |
+| BLOB    | [String](/pt-BR/reference/data-types/string)  |
+
+Quando você define explicitamente uma tabela com tipos específicos do ClickHouse usando o [SQLite table engine](/pt-BR/reference/engines/table-engines/integrations/sqlite), os tipos a seguir do ClickHouse podem ser analisados a partir de colunas TEXT do SQLite:
+
+* [Date](/pt-BR/reference/data-types/date), [Date32](/pt-BR/reference/data-types/date32)
+* [DateTime](/pt-BR/reference/data-types/datetime), [DateTime64](/pt-BR/reference/data-types/datetime64)
+* [UUID](/pt-BR/reference/data-types/uuid)
+* [Enum8, Enum16](/pt-BR/reference/data-types/enum)
+* [Decimal32, Decimal64, Decimal128, Decimal256](/pt-BR/reference/data-types/decimal)
+* [FixedString](/pt-BR/reference/data-types/fixedstring)
+* Todos os tipos inteiros ([UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64](/pt-BR/reference/data-types/int-uint))
+* [Float32, Float64](/pt-BR/reference/data-types/float)
+
+O SQLite tem tipagem dinâmica, e suas funções de acesso a tipos fazem coerção automática de tipos. Por exemplo, ler uma coluna TEXT como inteiro retornará 0 se o texto não puder ser analisado como um número. Isso significa que, se uma tabela do ClickHouse for definida com um tipo diferente do da coluna subjacente no SQLite, os valores poderão ser convertidos silenciosamente em vez de gerar um erro.
+
+<div id="specifics-and-recommendations">
+  ## Especificidades e recomendações
+</div>
+
+O SQLite armazena todo o banco de dados (definições, tabelas, índices e os próprios dados) como um único arquivo multiplataforma em uma máquina host. Durante a gravação, o SQLite bloqueia todo o arquivo do banco de dados; portanto, as operações de gravação são executadas sequencialmente. As operações de leitura podem ser realizadas em paralelo.
+O SQLite não exige gerenciamento de serviço (como scripts de inicialização) nem controle de acesso baseado em `GRANT` e senhas. O controle de acesso é feito por meio das permissões do sistema de arquivos atribuídas ao próprio arquivo do banco de dados.
+
+<div id="usage-example">
+  ## Exemplo de uso
+</div>
+
+Banco de dados no ClickHouse, conectado ao SQLite:
+
+```sql
+CREATE DATABASE sqlite_db ENGINE = SQLite('sqlite.db');
+SHOW TABLES FROM sqlite_db;
+```
+
+```text
+┌──name───┐
+│ table1  │
+│ table2  │
+└─────────┘
+```
+
+Exibe as tabelas:
+
+```sql
+SELECT * FROM sqlite_db.table1;
+```
+
+```text
+┌─col1──┬─col2─┐
+│ line1 │    1 │
+│ line2 │    2 │
+│ line3 │    3 │
+└───────┴──────┘
+```
+
+Inserindo dados em uma tabela SQLite a partir de uma tabela ClickHouse:
+
+```sql
+CREATE TABLE clickhouse_table(`col1` String,`col2` Int16) ENGINE = MergeTree() ORDER BY col2;
+INSERT INTO clickhouse_table VALUES ('text',10);
+INSERT INTO sqlite_db.table1 SELECT * FROM clickhouse_table;
+SELECT * FROM sqlite_db.table1;
+```
+
+```text
+┌─col1──┬─col2─┐
+│ line1 │    1 │
+│ line2 │    2 │
+│ line3 │    3 │
+│ text  │   10 │
+└───────┴──────┘
+```
