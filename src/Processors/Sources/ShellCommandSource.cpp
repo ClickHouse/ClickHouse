@@ -599,21 +599,17 @@ namespace
                     /// was provably alive; by cleanup the child has closed stdout and is
                     /// exiting, so its `/proc` mm fields are gone — no useful sample here.
                     ///
-                    /// Attempt a non-blocking reap to capture wait4 rusage for CPU.
-                    /// When `prepare` already reaped the child via its blocking `wait`
-                    /// (`check_exit_code=true`, normal completion), `isWaitCalled()` is
-                    /// true and `tryReapWithoutStatusCheck` is skipped.
-                    ///
-                    /// Non-blocking: a child that closed stdout but keeps running is left
-                    /// to `~ShellCommand`'s bounded `command_termination_timeout` + SIGTERM,
-                    /// so profiling cannot turn cleanup into a query hang.
-                    /// No status check: a non-zero exit must not raise
-                    /// CHILD_WAS_NOT_EXITED_NORMALLY when `check_exit_code=false`.
+                    /// Capture wait4 rusage for CPU. When `prepare` already waited the child
+                    /// via its blocking `wait` (`check_exit_code=true`), `isWaitCalled()` is
+                    /// true and this is skipped. A child lingering past the poll budget is left
+                    /// to `~ShellCommand`'s bounded `command_termination_timeout` + SIGTERM, so
+                    /// profiling cannot turn cleanup into a query hang. No status check: a
+                    /// non-zero exit must not raise CHILD_WAS_NOT_EXITED_NORMALLY here.
                     if (!command->isWaitCalled())
                     {
                         try
                         {
-                            command->tryReapWithoutStatusCheck();
+                            command->tryWaitWithoutStatusCheck();
                         }
                         catch (...)
                         {
@@ -621,9 +617,9 @@ namespace
                         }
                     }
 
-                    /// Peak memory is independent of the reap: it comes from /proc VmHWM
+                    /// Peak memory is independent of the wait: it comes from /proc VmHWM
                     /// sampled during IO and stamped by recordExecutableElapsed. CPU requires
-                    /// the wait4 rusage and is recorded only when the reap succeeded.
+                    /// the wait4 rusage and is recorded only when the wait succeeded.
                     configuration.sampler->recordExecutableElapsed();
 
                     if (command->wasChildResourceUsageCaptured())

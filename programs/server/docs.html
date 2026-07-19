@@ -632,42 +632,115 @@
 
     marked.use({ extensions: [admonitionExtension, mathBlockExtension, mathInlineExtension] });
 
+    /// Content of documentation snippets that converted pages `import` and use as a self-closing tag
+    /// (e.g. `import PrettyFormatSettings from '/snippets/common-pretty-format-settings.mdx'; ...
+    /// <PrettyFormatSettings/>`). Unlike a decorative badge, these carry real content (a settings
+    /// table, a data-type mapping) that a converted entry would otherwise lose entirely on this page;
+    /// keyed by the imported path's suffix so any local binding name resolves. Kept in sync with the
+    /// corresponding files under `docs/snippets/`.
+    const DOC_SNIPPETS = {
+        "_when-to-use-json.mdx": "## When to use the `JSON` Type {#when-to-use-json-type}\n\nThe `JSON` type is designed for querying, filtering, and aggregating specific fields within JSON objects that have dynamic or unpredictable structures. It achieves this by splitting JSON objects into separate sub-columns, which dramatically reduces data read and speeds up queries on selected fields compared to alternatives like `Map` or parsing strings.\n\n**However, this comes with important trade-offs:**\n\n- Slower `INSERT`s - Splitting JSON into sub-columns, performing type inference, and managing flexible storage structures makes inserts slower compared to storing JSON as a simple `String` column.\n- Slower when reading entire objects - If you need to retrieve complete JSON documents (rather than specific fields), the `JSON` type is slower than reading from a `String` column. The overhead of reconstructing objects from separate sub-columns provides no benefit when you're not doing field-level queries.\n- Storage overhead - Maintaining separate sub-columns adds structural overhead compared to storing JSON as a single string value.\n\n### Use the `JSON` type when: {#use-json-type}\n\n- Your data has a dynamic or unpredictable structure with varying keys across documents\n- Field types or schemas change over time or vary between records\n- You need to query, filter, or aggregate on specific paths within JSON objects whose structure you can't predict upfront\n- Your use case involves semi-structured data like logs, events, or user-generated content with inconsistent schemas\n\n### Use a `String` column (or structured types) when: {#use-string-type}\n- Your data structure is known and consistent - in this case, use normal columns, `Tuple`, `Array`, `Dynamic`, or `Variant` types instead\n- `JSON` documents are treated as opaque blobs that are only stored and retrieved in their entirety without field-level analysis\n- You don't need to query or filter on individual JSON fields within the database\n- The `JSON` is simply a transport/storage format, not analyzed within ClickHouse\n\n<Tip>\nIf `JSON` is an opaque document that isn't analyzed inside the database, and only stored and retrieved back, it should be stored as a `String` field. The `JSON` type's benefits only materialize when you need to efficiently query, filter, or aggregate on specific fields within dynamic `JSON` structures.\n\nYou can also mix approaches—use standard columns for predictable top-level fields and a `JSON` column for dynamic sections of the payload.\n</Tip>",
+
+        "common-pretty-format-settings.mdx": "The following settings are common to all `Pretty` formats:\n\n| Setting                                                                                                                                                                     | Description                                                                                                                                                                                                                                 | Default |\n|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---------|\n| [`output_format_pretty_max_rows`](/reference/settings/formats#output_format_pretty_max_rows)                                                          | Row limit for Pretty formats.                                                                                                                                                                                                               | `10000` |\n| [`output_format_pretty_max_column_pad_width`](/reference/settings/formats#output_format_pretty_max_column_pad_width)                                  | Maximum width to pad all values in a column in Pretty formats.                                                                                                                                                                              | `250`   |\n| [`output_format_pretty_max_value_width`](/reference/settings/formats#output_format_pretty_max_value_width)                                            | Maximum width of value to display in Pretty formats. If greater - it will be cut.                                                                                                                                                           | `10000` |                                                                                                                                                 \n| [`output_format_pretty_color`](/reference/settings/formats#output_format_pretty_color)                                                                | Use ANSI escape sequences to paint colors in Pretty formats.                                                                                                                                                                                | `true`  |\n| [`output_format_pretty_grid_charset`](/reference/settings/formats#output_format_pretty_grid_charset)                                                  | Charset for printing grid borders. Available charsets: ASCII, UTF-8.                                                                                                                                                                        | `UTF-8` |                                                                                                                                                           \n| [`output_format_pretty_row_numbers`](/reference/settings/formats#output_format_pretty_row_numbers)                                                    | Add row numbers before each row for pretty output format.                                                                                                                                                                                   | `true`  |                                                                                                                                                                          \n| [`output_format_pretty_display_footer_column_names`](/reference/settings/formats#output_format_pretty_display_footer_column_names)                    | Display column names in the footer if table contains many rows.                                                                                                                                                                             | `true`  |                                                                                                                                                                    \n| [`output_format_pretty_display_footer_column_names_min_rows`](/reference/settings/formats#output_format_pretty_display_footer_column_names_min_rows)  | Sets the minimum number of rows for which a footer will be displayed if [`output_format_pretty_display_footer_column_names`](/reference/settings/formats#output_format_pretty_display_footer_column_names) is enabled.  | `50`    |",
+
+        "common-row-binary-format-settings.mdx": "The following settings are common to all `RowBinary` type formats.\n\n| Setting                                                                                                                                              | Description                                                                                                                                                                                                                                         | Default |\n|------------------------------------------------------------------------------------------------------------------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---------|\n| [`format_binary_max_string_size`](/reference/settings/formats#format_binary_max_string_size)                                           | The maximum allowed size for String in RowBinary format.                                                                                                                                                                                          | `1GiB`  |\n| [`output_format_binary_encode_types_in_binary_format`](/reference/settings/formats#input_format_binary_decode_types_in_binary_format) | Allows to write types in header using [`binary encoding`](/reference/data-types/data-types-binary-encoding) instead of strings with type names in [`RowBinaryWithNamesAndTypes`](/reference/formats/RowBinary/RowBinaryWithNamesAndTypes) output format.  | `false` |\n| [`input_format_binary_decode_types_in_binary_format`](/reference/settings/formats#input_format_binary_decode_types_in_binary_format)   | Allows to read types in header using [`binary encoding`](/reference/data-types/data-types-binary-encoding) instead of strings with type names in [`RowBinaryWithNamesAndTypes`](/reference/formats/RowBinary/RowBinaryWithNamesAndTypes) input format.    | `false` |\n| [`output_format_binary_write_json_as_string`](/reference/settings/formats#output_format_binary_write_json_as_string)                   | Allows to write values of the [`JSON`](/reference/data-types/newjson) data type as `JSON` [String](/reference/data-types/string) values in [`RowBinary`](/reference/formats/RowBinary/RowBinary) output format.                            | `false` |\n| [`input_format_binary_read_json_as_string`](/reference/settings/formats#input_format_binary_read_json_as_string)                       | Allows to read values of the [`JSON`](/reference/data-types/newjson) data type as `JSON` [String](/reference/data-types/string) values in [`RowBinary`](/reference/formats/RowBinary/RowBinary) input format.                              | `false` |",
+
+        "data-types-matching.mdx": "The table below shows all data types supported by the Apache Avro format, and their corresponding ClickHouse [data types](/reference/data-types/index) in `INSERT` and `SELECT` queries.\n\n| Avro data type `INSERT`                     | ClickHouse data type                                                                                                          | Avro data type `SELECT`         |\n|---------------------------------------------|-------------------------------------------------------------------------------------------------------------------------------|---------------------------------|\n| `boolean`, `int`, `long`, `float`, `double` | [Int(8\\16\\32)](/reference/data-types/int-uint), [UInt(8\\16\\32)](/reference/data-types/int-uint) | `int`                           |\n| `boolean`, `int`, `long`, `float`, `double` | [Int64](/reference/data-types/int-uint), [UInt64](/reference/data-types/int-uint)               | `long`                          |\n| `boolean`, `int`, `long`, `float`, `double` | [Float32](/reference/data-types/float)                                                                         | `float`                         |\n| `boolean`, `int`, `long`, `float`, `double` | [Float64](/reference/data-types/float)                                                                         | `double`                        |\n| `bytes`, `string`, `fixed`, `enum`          | [String](/reference/data-types/string)                                                                         | `bytes` or `string` \\*          |\n| `bytes`, `string`, `fixed`                  | [FixedString(N)](/reference/data-types/fixedstring)                                                            | `fixed(N)`                      |\n| `enum`                                      | [Enum(8\\16)](/reference/data-types/enum)                                                                       | `enum`                          |\n| `array(T)`                                  | [Array(T)](/reference/data-types/array)                                                                        | `array(T)`                      |\n| `map(V, K)`                                 | [Map(V, K)](/reference/data-types/map)                                                                         | `map(string, K)`                |\n| `union(null, T)`, `union(T, null)`          | [Nullable(T)](/reference/data-types/date)                                                                      | `union(null, T)`                |\n| `union(T1, T2, …)` \\**                      | [Variant(T1, T2, …)](/reference/data-types/variant)                                                            | `union(T1, T2, …)` \\**          |\n| `null`                                      | [Nullable(Nothing)](/reference/data-types/special-data-types/nothing)                                          | `null`                          |\n| `int (date)` \\**\\*                          | [Date](/reference/data-types/date), [Date32](/reference/data-types/date32)                       | `int (date)` \\**\\*              |\n| `long (timestamp-millis)` \\**\\*             | [DateTime64(3)](/reference/data-types/datetime)                                                                | `long (timestamp-millis)` \\**\\* |\n| `long (timestamp-micros)` \\**\\*             | [DateTime64(6)](/reference/data-types/datetime)                                                                | `long (timestamp-micros)` \\**\\* |\n| `bytes (decimal)`  \\**\\*                    | [DateTime64(N)](/reference/data-types/datetime)                                                                | `bytes (decimal)`  \\**\\*        |\n| `int`                                       | [IPv4](/reference/data-types/ipv4)                                                                             | `int`                           |\n| `fixed(16)`                                 | [IPv6](/reference/data-types/ipv6)                                                                             | `fixed(16)`                     |\n| `bytes (decimal)` \\**\\*                     | [Decimal(P, S)](/reference/data-types/decimal)                                                                 | `bytes (decimal)` \\**\\*         |\n| `string (uuid)` \\**\\*                       | [UUID](/reference/data-types/uuid)                                                                             | `string (uuid)` \\**\\*           |\n| `fixed(16)`                                 | [Int128/UInt128](/reference/data-types/int-uint)                                                               | `fixed(16)`                     |\n| `fixed(32)`                                 | [Int256/UInt256](/reference/data-types/int-uint)                                                               | `fixed(32)`                     |\n| `record`                                    | [Tuple](/reference/data-types/tuple)                                                                           | `record`                        |\n\n\\* `bytes` is default, controlled by setting [`output_format_avro_string_column_pattern`](/reference/settings/formats#output_format_avro_string_column_pattern)\n\n\\**  The [Variant type](/reference/data-types/variant) implicitly accepts `null` as a field value, so for example the Avro `union(T1, T2, null)` will be converted to `Variant(T1, T2)`.\nAs a result, when producing Avro from ClickHouse, we have to always include the `null` type to the Avro `union` type set as we don't know if any value is actually `null` during the schema inference.\n\n\\**\\* [Avro logical types](https://avro.apache.org/docs/current/spec.html#Logical+Types)\n\nUnsupported Avro logical data types:\n- `time-millis`\n- `time-micros`\n- `duration`",
+    };
+
     /// Known MDX components from the documentation toolchain (status badges and a few layout
-    /// wrappers). These are build machinery, not content, and are stripped whether or not the
-    /// Markdown that uses them also `import`s them: some embedded entries use them without a local
-    /// import (e.g. `transactionID` opens with a bare `<ExperimentalBadge/>` / `<CloudNotSupportedBadge/>`).
-    /// Only these known names, plus any `*Badge` component (see `preprocessMarkdown`), are stripped, so
-    /// literal `<...>` placeholders in the prose (e.g. `<SearchPhrase>` in an XML example) are preserved.
+    /// wrappers). The layout wrappers are build machinery, not content, and are stripped whether or not
+    /// the Markdown that uses them also `import`s them; a status `*Badge`, in contrast, carries real
+    /// availability information and is rendered as a readable label by `preprocessMarkdown` (some
+    /// embedded entries use badges without a local import, e.g. `transactionID` opens with a bare
+    /// `<ExperimentalBadge/>` / `<CloudNotSupportedBadge/>`). Only these known names, plus any `*Badge`
+    /// component (see `preprocessMarkdown`), are recognized, so literal `<...>` placeholders in the prose
+    /// (e.g. `<SearchPhrase>` in an XML example) are preserved.
     const MDX_COMPONENTS = [
         'ExperimentalBadge', 'BetaBadge', 'DeprecatedBadge',
         'CloudNotSupportedBadge', 'CloudAvailableBadge', 'PrivatePreviewBadge',
         'Tabs', 'TabItem', 'VerticalStepper', 'Image',
+        /// Mintlify components used by embedded pages converted from the website's Mintlify sources.
+        /// Admonitions (`<Note>` etc.) and titled wrappers (`<Tab>`, `<Card>`) are first rewritten by
+        /// `preprocessMarkdown` into renderable Markdown; the names here catch any leftover tags.
+        'Tab', 'Card', 'CardGroup',
+        'Note', 'Warning', 'Tip', 'Info', 'Check', 'Danger', 'Caution',
     ];
+
+    /// Human-readable text for an MDX `*Badge` component such as `<ExperimentalBadge/>`, mirroring the
+    /// terminal `help` renderer's `badgeLabel` (`src/Client/TerminalMarkdownRenderer.cpp`) so both help
+    /// surfaces convey the same status. Known badges get a descriptive label; any other `*Badge` (the
+    /// website adds new ones over time) falls back to its name with the camel case split (e.g.
+    /// `CommunityMaintainedBadge` -> `Community Maintained`).
+    function badgeLabel(name) {
+        switch (name) {
+            case 'ExperimentalBadge': return 'Experimental';
+            case 'BetaBadge': return 'Beta';
+            case 'CloudNotSupportedBadge': return 'Not supported in ClickHouse Cloud';
+            case 'CloudAvailableBadge': return 'Available in ClickHouse Cloud';
+            case 'CloudOnlyBadge': return 'ClickHouse Cloud only';
+            case 'PrivatePreviewBadge': return 'Private Preview';
+            case 'ScalePlanFeatureBadge': return 'Scale plan feature';
+            case 'EnterprisePlanFeatureBadge': return 'Enterprise plan feature';
+        }
+        const stem = name.endsWith('Badge') ? name.slice(0, -5) : name;
+        return stem.replace(/([^A-Z])([A-Z])/g, '$1 $2');
+    }
+
+    /// The substantive message that a plan-gating badge renders from its attributes on the website
+    /// (`docs/snippets/components/ScalePlanFeatureBadge`, `.../EnterprisePlanFeatureBadge`): which plan
+    /// a feature requires and how to get it. Unlike a status badge, collapsing these to a label would
+    /// lose that message, so `preprocessMarkdown` renders it after the label. An attribute is truthy
+    /// when present with a non-empty value, matching how the website's JSX treats the string attributes
+    /// the documentation actually uses (`support="true"`, `linking_verb_are="True"`); kept in sync with
+    /// the identical `badgePayload` in the terminal `help` renderer (`src/Client/TerminalMarkdownRenderer.cpp`).
+    function badgePayload(name, attributes) {
+        if (name !== 'ScalePlanFeatureBadge' && name !== 'EnterprisePlanFeatureBadge')
+            return '';
+        const attribute = (attr) => {
+            const m = new RegExp('(?:^|\\s)' + attr + '\\s*=\\s*"([^"]*)"').exec(attributes || '');
+            return m ? m[1] : '';
+        };
+        const feature = attribute('feature') || 'This feature';
+        const verb = attribute('linking_verb_are') ? 'are' : 'is';
+        if (name === 'ScalePlanFeatureBadge')
+            return feature + ' ' + verb + ' available in the Scale and Enterprise plans. To upgrade, visit the plans page in the cloud console.';
+        return feature + ' ' + verb + ' available in the Enterprise plan. '
+            + (attribute('support') ? 'Contact support to enable this feature.' : 'To upgrade, visit the plans page in the cloud console.');
+    }
 
     /// Strip MDX-isms that occasionally leak into the documentation text: `import`/`export`
     /// statements and `<import ... >` directives are machinery for the website build, not content.
-    /// The components brought in by those `import`s (e.g. the `<ExperimentalBadge/>` of an
-    /// experimental feature, or a `<Tabs>` wrapper), as well as the known `MDX_COMPONENTS` above
-    /// even when they are not imported, are stripped as well: a self-closing custom tag like
-    /// `<ExperimentalBadge/>` is otherwise parsed by the HTML parser as an unclosed element — the
-    /// self-closing slash is ignored for non-void elements — that swallows the rest of the document
-    /// as its children, so the sanitizer then drops the whole body (the visible symptom: an
-    /// experimental entity rendered as an empty page).
+    /// The layout components brought in by those `import`s (e.g. a `<Tabs>` wrapper), as well as the
+    /// known `MDX_COMPONENTS` above even when they are not imported, are stripped as well; a status
+    /// `<ExperimentalBadge/>` is instead rendered as a readable label (see `badgeLabel`). Either way the
+    /// tag must not survive verbatim: a self-closing custom tag like `<Tabs/>` is otherwise parsed by
+    /// the HTML parser as an unclosed element — the self-closing slash is ignored for non-void
+    /// elements — that swallows the rest of the document as its children, so the sanitizer then drops
+    /// the whole body (the visible symptom: an entity rendered as an empty page).
     function preprocessMarkdown(md) {
         /// Seed with the known component names, then add the local names of imported MDX components:
         /// default imports (`import ExperimentalBadge from '...'`) and named/aliased imports
-        /// (`import {Tabs, TabItem as Item} from '...'`).
+        /// (`import {Tabs, TabItem as Item} from '...'`). An import from a known `DOC_SNIPPETS` path
+        /// is also recorded under its local name, whatever that happens to be, so its usage can be
+        /// resolved to real content below instead of falling through to the generic tag-stripping.
         const components = new Set(MDX_COMPONENTS);
-        const importRe = /^[ \t]*import\s+([\s\S]*?)\s+from\s+['"][^'"]+['"];?[ \t]*$/gm;
+        const snippetContentByLocalName = new Map();
+        const importRe = /^[ \t]*import\s+([\s\S]*?)\s+from\s+['"]([^'"]+)['"];?[ \t]*$/gm;
         for (const m of md.matchAll(importRe)) {
             const clause = m[1].trim();
+            const path = m[2];
+            const snippetEntry = Object.entries(DOC_SNIPPETS).find(([suffix]) => path.endsWith(suffix));
             const braced = /\{([^}]*)\}/.exec(clause);
             const names = braced ? braced[1].split(',') : [clause];
             for (const name of names) {
                 /// The local binding is the identifier after `as` when the import is aliased.
                 const id = /([A-Za-z_$][\w$]*)\s*$/.exec(name.trim());
-                if (id)
+                if (id) {
                     components.add(id[1]);
+                    if (snippetEntry)
+                        snippetContentByLocalName.set(id[1], snippetEntry[1]);
+                }
             }
         }
 
@@ -676,19 +749,60 @@
             .replace(/^[ \t]*export\s+default\b.*$/gm, '')
             .replace(/<import\b[^>]*\/?>/gi, '');
 
-        /// Remove the opening, closing, and self-closing tags of those components, keeping any
-        /// content nested between an open/close pair.
-        for (const name of components)
-            out = out.replace(new RegExp('</?' + name + '(?:\\s[^>]*)?/?>', 'g'), '');
+        /// Resolve self-closing usages of a known documentation snippet import (see `DOC_SNIPPETS`)
+        /// to its actual content, before the generic tag-stripping below discards it as machinery
+        /// with nothing to render.
+        for (const [name, content] of snippetContentByLocalName)
+            out = out.replace(new RegExp('<' + name + '(?:\\s[^>]*)?/?>', 'g'), '\n\n' + content + '\n\n');
 
-        /// Also strip any `*Badge` MDX component even when it was neither imported nor in the known list
-        /// above. The website adds new status badges over time (e.g. `<ScalePlanFeatureBadge .../>` in the
-        /// `S3Queue` engine docs), and an importless self-closing badge swallows the rest of the document
-        /// into its subtree, which the sanitizer then drops. Stripping `*Badge` by name removes the
-        /// dependency on the local `import` being present. A `*Badge` is a PascalCase component name that
-        /// does not occur in documentation prose, so this is safe; the terminal Markdown renderer strips
-        /// `*Badge` components the same way.
-        out = out.replace(/<\/?[A-Z][A-Za-z0-9]*Badge(?:\s[^>]*)?\/?>/g, '');
+        /// Mintlify admonition components (`<Note>` ... `</Note>`), used by embedded pages converted
+        /// from the website's Mintlify sources: mapped onto the `:::type` admonition syntax so they
+        /// render as admonitions instead of being dropped as unknown elements. The tags stand on
+        /// their own lines in those sources; any leftover inline tag is stripped by the loop below.
+        out = out
+            .replace(/^[ \t]*<(Note|Warning|Tip|Info|Check|Danger|Caution)>[ \t]*$/gm, (m, name) => ':::' + name.toLowerCase())
+            .replace(/^[ \t]*<\/(?:Note|Warning|Tip|Info|Check|Danger|Caution)>[ \t]*$/gm, ':::');
+
+        /// A `<Tab title="...">` / `<TabItem label="...">` / `<Card title="...">` introduces an
+        /// alternative (e.g. a syntax variant) or a callout whose heading carries meaning: keep the
+        /// title as a bold line; the wrapper tags themselves are stripped below.
+        out = out.replace(/<(?:Tab|TabItem|Card)(\s[^>]*)>/g, (m, attrs) => {
+            const title = /(?:^|\s)(?:title|label)="([^"]*)"/.exec(attrs);
+            return title ? '\n**' + title[1] + '**\n' : '';
+        });
+
+        /// Remove the opening, closing, and self-closing tags of those components, keeping any
+        /// content nested between an open/close pair. A `*Badge` is handled separately below — it is
+        /// rendered as a readable label rather than dropped — so it is skipped here even when imported.
+        for (const name of components)
+            if (!name.endsWith('Badge'))
+                out = out.replace(new RegExp('</?' + name + '(?:\\s[^>]*)?/?>', 'g'), '');
+
+        /// Render any `*Badge` MDX component as a readable label instead of dropping it, mirroring the
+        /// terminal `help` renderer (see `badgeLabel`). A status badge such as `<ExperimentalBadge/>`,
+        /// `<CloudNotSupportedBadge/>`, or `<ScalePlanFeatureBadge/>` carries real availability
+        /// information (experimental, not supported in ClickHouse Cloud, plan-gated), so the browser help
+        /// surface shows it as a bold label rather than silently omitting it. A plan-gating badge also
+        /// carries a substantive message built from its attributes (see `badgePayload`), rendered after
+        /// the label. Matching by the `*Badge` name (not the local `import`) removes the dependency on
+        /// the import being present, and a self-closing badge no longer swallows the rest of the
+        /// document into its subtree for the sanitizer to drop. A `*Badge` is a PascalCase component
+        /// name that does not occur in documentation prose, so this is safe. A closing `</...Badge>`
+        /// (badges are self-closing in practice) is simply removed.
+        out = out.replace(/<(\/?)([A-Z][A-Za-z0-9]*Badge)((?:\s[^>]*)?)\/?>/g,
+            (m, closing, name, attributes) => {
+                if (closing)
+                    return '';
+                const payload = badgePayload(name, attributes);
+                return '**[' + badgeLabel(name) + ']**' + (payload ? ' ' + payload : '');
+            });
+
+        /// Likewise strip any remaining *self-closing* PascalCase component that was neither imported
+        /// nor named in the lists above, nor resolved as a known snippet import — the website adds new
+        /// components and snippets over time. A self-closing custom tag is unambiguously JSX — prose
+        /// placeholders like `<SearchPhrase>` are never self-closing — and if left in place it swallows
+        /// the rest of the document as its subtree (see the comment above `preprocessMarkdown`).
+        out = out.replace(/<[A-Z][A-Za-z0-9]*(?:\s[^>]*)?\/>/g, '');
 
         return out;
     }
