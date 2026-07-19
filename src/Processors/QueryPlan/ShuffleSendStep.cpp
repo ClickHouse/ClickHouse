@@ -5,9 +5,9 @@
 #include <Processors/QueryPlan/IParameterLookup.h>
 #include <Processors/QueryPlan/ExchangeLookup.h>
 #include <Processors/QueryPlan/LogicalExchangeStep.h>
-#include <Processors/Transforms/ScatterByPartitionTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <QueryPipeline/Pipe.h>
+#include <QueryPipeline/scatterByPartition.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
 #include <Core/ColumnNumbers.h>
@@ -19,33 +19,40 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int NOT_IMPLEMENTED;
 }
 
 QueryPipelineBuilderPtr ShuffleSendStep::updatePipeline(QueryPipelineBuilders pipelines, const BuildQueryPipelineSettings & settings)
 {
-    /// Add calculation of hash of key columns and bucket id based on the hash
-    /// Add fork processor to send data to num_buckets outputs
     auto & pipeline = *pipelines.front();
     auto stream_header = pipeline.getSharedHeader();
-    {
-        ColumnNumbers key_columns;
-        for (const auto & key_name : key_names)
-            key_columns.push_back(stream_header->getPositionByName(key_name));
 
-        pipeline.resize(1);
-        auto scatter = std::make_shared<ScatterByPartitionTransform>(stream_header, num_buckets, key_columns, hash_cast_types);
-        pipeline.addTransform(scatter);
-    }
+    /// Exchanges carry only the main data stream; throw instead of silently dropping totals/extremes.
+    if (pipeline.hasTotals() || pipeline.hasExtremes())
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "ShuffleSendStep does not support pipelines with totals or extremes");
+
+    ColumnNumbers key_columns;
+    key_columns.reserve(key_names.size());
+    for (const auto & key_name : key_names)
+        key_columns.push_back(stream_header->getPositionByName(key_name));
+
+    /// Repartitioning creates num_streams * num_buckets connections in the pipeline.
+    /// Cap the number of streams to keep that number small.
+    const size_t max_scatter_streams = 16;
+    if (pipeline.getNumStreams() > max_scatter_streams)
+        pipeline.resize(max_scatter_streams);
+
+    /// Repartition the data so that stream i carries exactly the rows of bucket i.
+    scatterByPartition(pipeline, num_buckets, key_columns, hash_cast_types);
 
     const String shard_id = settings.parameter_lookup->getParameter("bucket_id").safeGet<String>();
 
-    /// Add sink for each bucket
     size_t bucket = 0;
     pipeline.setSinks([&](const SharedHeader & header, Pipe::StreamType stream_type)
     {
         chassert(stream_type == Pipe::StreamType::Main);
         String destination_bucket_id = toString(bucket);
-        ++bucket;   /// TODO: this is a hack. Find a better way to assigning bucket id to each sink.
+        ++bucket;
         return settings.exchange_lookup->createSink(header, ExchangeStreamId(exchange_id, shard_id, destination_bucket_id));
     });
 

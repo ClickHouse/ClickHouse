@@ -260,7 +260,6 @@ private:
     const bool add_deduplication_info;
     /// Effective dedup: gates whether shutdown can abort mid-file.
     const bool is_deduplication_v2;
-    const InsertDeduplicationVersions insert_deduplication_version;
     time_t transaction_start_time;
 
     LoggerPtr log;

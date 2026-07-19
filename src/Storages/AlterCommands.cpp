@@ -1450,12 +1450,13 @@ void AlterCommands::apply(StorageInMemoryMetadata & metadata, ContextPtr context
         metadata_copy.sampling_key.recalculateWithNewAST(metadata_copy.sampling_key.definition_ast, metadata_copy.columns, metadata_copy.virtuals, context);
 
     /// Changes in columns may lead to changes in secondary indices
+    const ColumnsDescription columns_with_virtuals = metadata_copy.getColumnsWithVirtuals();
     for (auto & index : metadata_copy.secondary_indices)
     {
         try
         {
             index = IndexDescription::getIndexFromAST(
-                index.definition_ast, metadata_copy.columns, index.isImplicitlyCreated(), index.escape_filenames, context);
+                index.definition_ast, columns_with_virtuals, index.isImplicitlyCreated(), index.escape_filenames, context);
         }
         catch (const Exception & exception)
         {

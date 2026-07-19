@@ -34,9 +34,7 @@ You will also need:
 
 <Steps>
 
-<Step>
-
-## Phase 1: Create IAM Role for ECR Access
+<Step title="Phase 1: Create IAM Role for ECR Access" id="phase-1-create-iam-role-for-ecr-access">
 
 Create an IAM role that allows pulling images from the ClickHouse private ECR. Deploy this CloudFormation template in your AWS account:
 
@@ -95,9 +93,7 @@ Once the stack is created, **provide the output Role ARN to the ClickHouse team*
 
 </Step>
 
-<Step>
-
-## Phase 2: Copy Container Images
+<Step title="Phase 2: Copy Container Images" id="phase-2-copy-container-images">
 
 Create ECR repositories in your account for each artifact, then use skopeo to copy images from the ClickHouse ECR to your own. The `--all` flag preserves all architectures (amd64, arm64).
 
@@ -128,9 +124,7 @@ Replace `TARGET_REGION` and `TARGET_ECR_REPO` with your ECR region and host. Rep
 
 </Step>
 
-<Step>
-
-## Phase 3: Create VPC
+<Step title="Phase 3: Create VPC" id="phase-3-create-vpc">
 
 Create a VPC with at least 3 availability zones for high availability. Here is an example configuration:
 
@@ -162,9 +156,7 @@ See [reference/infrastructure-requirements.md](/products/clickhouse-private/refe
 
 </Step>
 
-<Step>
-
-## Phase 4: Create EKS Cluster
+<Step title="Phase 4: Create EKS Cluster" id="phase-4-create-eks-cluster">
 
 Create an EKS cluster associated with the VPC from Phase 3. The cluster requires:
 
@@ -188,9 +180,7 @@ Create an OIDC provider for the EKS cluster (required for IRSA).
 
 </Step>
 
-<Step>
-
-## Phase 5: Create Node Groups
+<Step title="Phase 5: Create Node Groups" id="phase-5-create-node-groups">
 
 Create three node groups. **All nodes require [IMDS](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/instancedata-data-retrieval.html) for authentication.**
 
@@ -364,9 +354,7 @@ This can be an existing node group if the EKS cluster already exists.
 
 </Step>
 
-<Step>
-
-## Phase 6: Create S3 Bucket and IAM Roles
+<Step title="Phase 6: Create S3 Bucket and IAM Roles" id="phase-6-create-s3-bucket-and-iam-roles">
 
 ### S3 Bucket
 
@@ -412,9 +400,7 @@ Create an IAM role for each ClickHouse cluster using IRSA (IAM Roles for Service
 
 </Step>
 
-<Step>
-
-## Phase 7: Install Kubernetes Prerequisites
+<Step title="Phase 7: Install Kubernetes Prerequisites" id="phase-7-install-kubernetes-prerequisites">
 
 ### Install VolumeSnapshot CRDs
 
@@ -462,9 +448,7 @@ aws-ebs-csi-driver/aws-ebs-csi-driver \
 
 </Step>
 
-<Step>
-
-## Phase 8: Install the Operator
+<Step title="Phase 8: Install the Operator" id="phase-8-install-the-operator">
 
 Log into ECR from Helm if needed:
 
@@ -510,9 +494,7 @@ helm install clickhouse-operator \
 
 </Step>
 
-<Step>
-
-## Phase 9: Deploy a ClickHouse Cluster
+<Step title="Phase 9: Deploy a ClickHouse Cluster" id="phase-9-deploy-a-clickhouse-cluster">
 
 ### Naming Your Cluster
 
@@ -602,9 +584,7 @@ helm install $CLUSTER_NAME \
 
 </Step>
 
-<Step>
-
-## Phase 10: Run Preflight Checks
+<Step title="Phase 10: Run Preflight Checks" id="phase-10-run-preflight-checks">
 
 To validate the readiness of your cluster we recommend running preflight checks. The preflight checks use [Troubleshoot](https://troubleshoot.sh/), a Kubernetes plugin for cluster diagnostics.
 
@@ -646,9 +626,7 @@ For more details see the [How To: Run Preflight Checks](/products/clickhouse-pri
 
 </Step>
 
-<Step>
-
-## Phase 11: Verify Installation
+<Step title="Phase 11: Verify Installation" id="phase-11-verify-installation">
 
 ### Port-forward the ClickHouse Service
 
