@@ -994,7 +994,7 @@ def main():
         compare_against_master or compare_against_release
     ), "test option: head_master or release_base must be selected"
 
-    # release_version = CHVersion.get_release_version_as_dict()
+    # release_version = CHVersion.get_release_version()
     info = Info()
 
     if Utils.is_arm():
