@@ -248,7 +248,8 @@ static struct InitFiu
     REGULAR(distributed_plan_status_check_reenqueue_fault) \
     ONCE(zk_send_thread_request_window_throw) \
     ONCE(zk_send_thread_operations_insert_throw) \
-    REGULAR(replicated_database_status_finished_node_missing)
+    REGULAR(replicated_database_status_finished_node_missing) \
+    PAUSEABLE_ONCE(rmt_cancel_removed_parts_check_pause_in_gap)
 
 namespace FailPoints
 {
