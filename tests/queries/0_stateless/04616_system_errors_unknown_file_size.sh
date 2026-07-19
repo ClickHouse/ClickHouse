@@ -13,7 +13,8 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 url="http://${CLICKHOUSE_HOST}:${CLICKHOUSE_PORT_HTTP}/?query=SELECT+1"
 
 before=$($CLICKHOUSE_CLIENT -q "SELECT ifNull(sum(value), 0) FROM system.errors WHERE name = 'UNKNOWN_FILE_SIZE'")
-$CLICKHOUSE_CLIENT -q "SELECT * FROM url('${url}', 'TSV', 'x UInt8')"
+# max_download_threads > 1 is required to reach the file size probe in FormatFactory::wrapReadBufferIfNeeded
+$CLICKHOUSE_CLIENT -q "SELECT * FROM url('${url}', 'TSV', 'x UInt8') SETTINGS max_download_threads = 4"
 after=$($CLICKHOUSE_CLIENT -q "SELECT ifNull(sum(value), 0) FROM system.errors WHERE name = 'UNKNOWN_FILE_SIZE'")
 
 echo $((after - before))
