@@ -97,13 +97,9 @@ void DatabaseMaterializedPostgreSQL::tryStartSynchronization()
     }
 }
 
-void DatabaseMaterializedPostgreSQL::startSynchronization()
+std::shared_ptr<PostgreSQLReplicationHandler> DatabaseMaterializedPostgreSQL::makeReplicationHandler()
 {
-    std::lock_guard lock(handler_mutex);
-    if (shutdown_called)
-        return;
-
-    replication_handler = std::make_unique<PostgreSQLReplicationHandler>(
+    return std::make_shared<PostgreSQLReplicationHandler>(
             remote_database_name,
             /* table_name */"",
             TSA_SUPPRESS_WARNING_FOR_READ(database_name),     /// FIXME
@@ -113,6 +109,16 @@ void DatabaseMaterializedPostgreSQL::startSynchronization()
             is_attach,
             *settings,
             /* is_materialized_postgresql_database = */ true);
+}
+
+
+void DatabaseMaterializedPostgreSQL::startSynchronization()
+{
+    std::lock_guard lock(handler_mutex);
+    if (shutdown_called)
+        return;
+
+    replication_handler = makeReplicationHandler();
 
     std::set<String> tables_to_replicate;
     try
@@ -612,15 +618,35 @@ void DatabaseMaterializedPostgreSQL::beforeDropDatabase(ContextPtr)
     /// before it ever reaches `DatabaseMaterializedPostgreSQL::drop` / `PostgreSQLReplicationHandler::
     /// shutdownFinal`. In coordinated mode the nested tables are this replica's local copy of the shared
     /// replicated data, so the last-replica teardown of the shared slot/publication/marker has to be decided
-    /// here - while the nested tables still exist - not after they are gone. `coordinatedTeardownBeforeDataDrop`
-    /// makes that decision fail-close: if Keeper is unreachable it throws, aborting the drop before any nested
-    /// table is removed (retry once Keeper is reachable again); if this is the last replica it removes the
-    /// shared coordination nodes now so a Keeper outage or a failure during the subsequent nested-table drop can
-    /// never leave the shared state behind after the last copy is deleted; and if it is not the last replica it
-    /// keeps this replica registered until `drop` removes it, after the nested tables have actually been dropped.
+    /// here - while the nested tables still exist - not after they are gone.
+    ///
+    /// Stop the background startup task first (outside `handler_mutex`, which `startSynchronization` also takes)
+    /// so it can neither build the handler / create the nested tables concurrently with this teardown nor
+    /// recreate them after it.
+    startup_task->deactivate();
+
     std::lock_guard lock(handler_mutex);
-    if (isCoordinated() && replication_handler)
-        replication_handler->coordinatedTeardownBeforeDataDrop();
+    if (!isCoordinated())
+        return;
+
+    /// `startSynchronization` may never have run: on attach or after a restart the coordinated nested tables and
+    /// the persistent `<keeper_path>/replicas/<name>` registration already exist, but `replication_handler` is
+    /// still null until the background startup task builds it. Build it from the persisted settings now, purely
+    /// to run the fail-close teardown below (constructing the handler only resolves the coordination path /
+    /// replica-name macros; it does not connect to PostgreSQL or start replication). Without this, dropping the
+    /// database in that window would delete the local nested tables without unregistering this replica or
+    /// removing the shared slot/publication/`snapshot_completed` marker, and a later recreate on the same keeper
+    /// path could resume from `confirmed_flush_lsn` into empty tables.
+    if (!replication_handler)
+        replication_handler = makeReplicationHandler();
+
+    /// `coordinatedTeardownBeforeDataDrop` makes the last-replica decision fail-close: if Keeper is unreachable
+    /// it throws, aborting the drop before any nested table is removed (retry once Keeper is reachable again); if
+    /// this is the last replica it removes the shared coordination nodes now so a Keeper outage or a failure
+    /// during the subsequent nested-table drop can never leave the shared state behind after the last copy is
+    /// deleted; and if it is not the last replica it keeps this replica registered until `drop` removes it, after
+    /// the nested tables have actually been dropped.
+    replication_handler->coordinatedTeardownBeforeDataDrop();
 }
 
 

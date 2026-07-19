@@ -312,20 +312,52 @@ void validateMaterializedPostgreSQLCoordinationSettings(const MaterializedPostgr
 
     /// The keeper path is both the coordination namespace (leader election, replica registration, snapshot
     /// marker) AND the root of the shared nested Replicated/SharedReplacingMergeTree tables. Every coordinated
-    /// replica must therefore resolve it to the SAME path. A per-replica macro such as {replica} expands to a
-    /// different value on each replica, so they would end up in disjoint Keeper subtrees - each electing its
-    /// own leader and creating its own nested tables - while still contending for the same shared PostgreSQL
-    /// slot and publication. The advertised HA setup would then silently not share data, even though the loser
-    /// never receives any. Reject a per-replica macro up front; the per-replica identity belongs in
-    /// materialized_postgresql_replica_name, not in the shared path.
+    /// replica must therefore resolve it to the SAME path. A per-replica/per-server macro (such as {replica} or
+    /// {server_uuid}) resolves to a different value on each replica/server, so they would end up in disjoint
+    /// Keeper subtrees - each electing its own leader and creating its own nested tables - while still
+    /// contending for the same shared PostgreSQL slot and publication. The advertised HA setup would then
+    /// silently not share data, even though the loser never receives any. Reject such a path up front; the
+    /// per-replica identity belongs in materialized_postgresql_replica_name, not in the shared path.
+    ///
+    /// Checking only the literal `{replica}` token is not enough: the path can reach a per-replica value through
+    /// a config macro (e.g. `{coord_path}` where `<coord_path>` is `.../{replica}`), or use `{server_uuid}`. To
+    /// catch every such case, expand the path twice with different injected values for the `replica`/`server_uuid`
+    /// macros and reject if the two expansions differ. The injected map entries take precedence over both any
+    /// config definition of those macros and the built-in special handling, and they propagate through any config
+    /// macro that expands to them. The shared macros ({shard}, {uuid}, {database} and any other config macro that
+    /// is identical on every replica) are held constant across both expansions, so they never trigger a false
+    /// rejection.
     const String raw_keeper_path = settings[MaterializedPostgreSQLSetting::materialized_postgresql_keeper_path];
-    if (coordination_enabled && raw_keeper_path.find("{replica}") != String::npos)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "materialized_postgresql_keeper_path must resolve to the same path on every coordinated replica, "
-            "so it cannot contain the per-replica macro {{replica}}: it would place each replica on a disjoint "
-            "Keeper subtree, breaking data sharing (the loser never receives data through ClickHouse "
-            "replication) while the replicas still contend for the same PostgreSQL slot and publication. Put the "
-            "per-replica part in materialized_postgresql_replica_name instead");
+    if (coordination_enabled)
+    {
+        const auto macros = context->getMacros();
+        /// A fixed, non-nil UUID so that a top-level {uuid} expands identically in both probes instead of throwing.
+        const UUID probe_uuid = parse<UUID>("00000000-0000-0000-0000-000000000001");
+
+        auto expand_probe = [&](const String & per_replica_value) -> String
+        {
+            Macros::MacroMap macro_map = macros->getMacroMap();
+            macro_map["replica"] = per_replica_value;
+            macro_map["server_uuid"] = per_replica_value;
+            Macros probing_macros(macro_map);
+
+            Macros::MacroExpansionInfo info;
+            info.ignore_unknown = true;
+            info.table_id.database_name = "__mpg_probe_database__";
+            info.table_id.uuid = probe_uuid;
+            info.shard = "__mpg_probe_shard__";
+            return probing_macros.expand(raw_keeper_path, info);
+        };
+
+        if (expand_probe("__mpg_probe_a__") != expand_probe("__mpg_probe_b__"))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "materialized_postgresql_keeper_path must resolve to the same path on every coordinated replica, "
+                "so it cannot depend on a per-replica or per-server macro such as {{replica}} or {{server_uuid}} "
+                "(directly, or through a config macro that expands to one): it would place each replica on a "
+                "disjoint Keeper subtree, breaking data sharing (the loser never receives data through ClickHouse "
+                "replication) while the replicas still contend for the same PostgreSQL slot and publication. Put "
+                "the per-replica part in materialized_postgresql_replica_name instead");
+    }
 
     if (coordination_enabled && settings[MaterializedPostgreSQLSetting::materialized_postgresql_use_unique_replication_consumer_identifier])
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
@@ -1416,6 +1448,11 @@ void PostgreSQLReplicationHandler::coordinatedTeardownBeforeDataDrop()
     /// consumer below is stopped, so a transient Keeper outage does not disturb an otherwise-healthy replica).
     const bool is_last = unregisterReplicaAndCheckLast();
 
+    /// Record the decision so shutdownFinal (the post-data teardown) does not re-run the race-free check: if this
+    /// replica was the last one it has already removed the shared /replicas node here, and re-checking there
+    /// would read its absence as "another replica was last" and skip the shared PostgreSQL cleanup (a leak).
+    coordinated_teardown_was_last = is_last;
+
     shutdown();
 
     if (is_last)
@@ -1444,32 +1481,56 @@ bool PostgreSQLReplicationHandler::unregisterReplicaAndCheckLast()
 
     auto zookeeper = getContext()->getZooKeeper();
     const String replicas_path = coordination_keeper_path + "/replicas";
-
-    /// This decision must be fail-close: the caller (shutdownFinal, hence DROP DATABASE) is about to remove
-    /// this replica's local nested tables, so any Keeper error here has to propagate rather than default to
-    /// "this was the last replica". Otherwise a Keeper blip during DROP DATABASE could delete the last copy of
-    /// the data while leaving the shared slot/publication/marker behind. Tolerate only ZNONODE (the node or
-    /// the /replicas parent is genuinely absent), and throw on every other error code.
     const String replica_path = replicas_path + "/" + coordination_replica_name;
+
+    /// The last-replica decision must be race-free across replicas dropping concurrently. A plain "remove my
+    /// node, then list the parent" lets two droppers both delete their node before either lists it, so both
+    /// observe an empty list and both conclude they are the last replica - and then both tear down the shared
+    /// slot/publication/snapshot_completed marker, potentially around a replica whose nested-table drop later
+    /// fails and still holds a copy of the data. Instead, fence the transition on the /replicas parent node:
+    /// remove this replica's node, then try to remove the (now possibly empty) parent. Removing an empty node
+    /// succeeds for exactly one caller - the last one out - and every other concurrent dropper then gets ZNONODE
+    /// (the parent was already removed by that last replica) or ZNOTEMPTY (other replicas are still registered),
+    /// so at most one replica can ever observe itself as the last one.
+    ///
+    /// This is also fail-close: the caller (DROP DATABASE / DROP TABLE) is about to remove this replica's local
+    /// nested tables, so any Keeper error other than the expected ZNONODE/ZNOTEMPTY codes propagates rather than
+    /// defaulting to "this was the last replica". Otherwise a Keeper blip during the drop could delete the last
+    /// copy of the data while leaving the shared slot/publication/marker behind.
     if (auto code = zookeeper->tryRemove(replica_path);
         code != Coordination::Error::ZOK && code != Coordination::Error::ZNONODE)
         throw zkutil::KeeperException::fromPath(code, replica_path);
 
-    Strings remaining;
-    auto code = zookeeper->tryGetChildren(replicas_path, remaining);
-    if (code != Coordination::Error::ZOK && code != Coordination::Error::ZNONODE)
-        throw zkutil::KeeperException::fromPath(code, replicas_path);
+    /// Removing the parent succeeds only when this replica's node was its last child, which atomically
+    /// designates this caller - and only this caller - as the last replica.
+    const auto parent_code = zookeeper->tryRemove(replicas_path);
 
-    if (code == Coordination::Error::ZOK && !remaining.empty())
+    if (parent_code == Coordination::Error::ZOK)
+    {
+        LOG_INFO(log, "Unregistered the last replica '{}'", coordination_replica_name);
+        return true;
+    }
+
+    if (parent_code == Coordination::Error::ZNOTEMPTY)
     {
         LOG_INFO(log,
-            "Unregistered replica '{}'; {} replica(s) still registered, keeping the shared replication slot and publication",
-            coordination_replica_name, remaining.size());
+            "Unregistered replica '{}'; other replica(s) still registered, keeping the shared replication slot and publication",
+            coordination_replica_name);
         return false;
     }
 
-    LOG_INFO(log, "Unregistered the last replica '{}'", coordination_replica_name);
-    return true;
+    if (parent_code == Coordination::Error::ZNONODE)
+    {
+        /// The /replicas parent is already gone: a concurrent dropper removed it as the last replica and has
+        /// therefore already torn down (or is tearing down) the shared state. This replica is consequently not
+        /// the last one, so it must not repeat the shared teardown here.
+        LOG_INFO(log,
+            "Unregistered replica '{}'; the shared /replicas node was already removed by a concurrent last-replica teardown",
+            coordination_replica_name);
+        return false;
+    }
+
+    throw zkutil::KeeperException::fromPath(parent_code, replicas_path);
 }
 
 
@@ -1752,30 +1813,41 @@ Strings PostgreSQLReplicationHandler::getTableAllowedColumns(const std::string &
 
 void PostgreSQLReplicationHandler::shutdownFinal()
 {
-    /// In coordinated mode the last-replica decision has to be fail-close, and it must be made BEFORE the
-    /// caller removes any local data: DatabaseMaterializedPostgreSQL::drop runs DatabaseAtomic::drop (which
-    /// deletes this replica's local nested tables) immediately after this returns. So determine last-replica
-    /// status first, and let a Keeper failure propagate instead of swallowing it: otherwise a DROP DATABASE
-    /// during a Keeper outage would delete the last actual copy of the data while the shared slot,
-    /// publication and snapshot_completed marker survive, and a later recreate on the same keeper path would
-    /// resume from confirmed_flush_lsn into empty tables, losing every pre-slot row. Failing here makes DROP
-    /// DATABASE abort before anything is removed; it can be retried once Keeper is reachable again.
+    /// In coordinated mode the race-free, fail-close last-replica decision was already made in
+    /// coordinatedTeardownBeforeDataDrop, BEFORE the caller removed this replica's local nested tables (that is
+    /// what closes the data-loss window: a Keeper outage while the last copy is being deleted can never leave the
+    /// shared slot/publication/snapshot_completed marker behind). shutdownFinal is the authoritative post-data
+    /// step that finalizes the teardown once the nested tables are gone.
     if (coordination_enabled)
     {
         shutdown();
 
-        /// Not the last registered replica: another replica still holds the shared data (through ClickHouse
-        /// replication of the nested tables), so keep the shared slot/publication and coordination nodes and
-        /// let the caller drop only this replica's local nested tables.
-        if (!unregisterReplicaAndCheckLast())
-            return;
+        if (coordinated_teardown_was_last)
+        {
+            /// This replica already claimed the last-replica role (race-free) in the pre-data teardown and
+            /// removed the shared /replicas node itself, so it must not re-run the check here: the parent's
+            /// absence would be read as "another replica was last" and wrongly skip the shared PostgreSQL
+            /// cleanup below. Remove the coordination nodes again (idempotent) and fall through to drop the
+            /// shared slot/publication.
+            removeCoordinationNodes();
+        }
+        else
+        {
+            /// This replica re-registered /replicas/<name> in the pre-data teardown (it was not the last one
+            /// then) and has since dropped its local nested tables. Remove that registration now and re-run the
+            /// race-free check: a peer that dropped concurrently may have left this the actual last replica. If
+            /// it is still not the last one, another replica holds the shared data, so keep the shared
+            /// slot/publication and coordination nodes for the peers and let the caller drop only this replica's
+            /// local nested tables.
+            if (!unregisterReplicaAndCheckLast())
+                return;
 
-        /// This is the last coordinated replica, so the caller is about to remove the last copy of the shared
-        /// nested tables. Remove the coordination nodes (including the snapshot_completed marker) first and
-        /// unconditionally: if the PostgreSQL cleanup below then fails (e.g. PostgreSQL is unreachable), a
-        /// later recreate on the same keeper path finds no marker and correctly redoes the initial snapshot
-        /// instead of resuming into empty tables. A leaked PostgreSQL slot/publication is recoverable manually.
-        removeCoordinationNodes();
+            /// Now the last replica: remove the coordination nodes (including the snapshot_completed marker)
+            /// before dropping the shared PostgreSQL slot/publication below, so that even if that cleanup fails a
+            /// later recreate on the same keeper path finds no marker and correctly redoes the initial snapshot
+            /// instead of resuming into empty tables. A leaked PostgreSQL slot/publication is recoverable manually.
+            removeCoordinationNodes();
+        }
     }
 
     try

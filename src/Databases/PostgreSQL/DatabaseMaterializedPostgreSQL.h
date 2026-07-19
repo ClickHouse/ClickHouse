@@ -105,6 +105,11 @@ private:
     void tryStartSynchronization();
     void startSynchronization();
 
+    /// Construct a replication handler from the persisted settings without fetching tables or starting
+    /// replication. Constructing it only resolves the coordination path / replica-name macros, which is enough to
+    /// run the coordinated teardown even before the background startup task has built the live handler.
+    std::shared_ptr<PostgreSQLReplicationHandler> makeReplicationHandler();
+
     ASTPtr createAlterSettingsQuery(const SettingChange & new_setting);
 
     String getFormattedTablesList(const String & except = {}) const;

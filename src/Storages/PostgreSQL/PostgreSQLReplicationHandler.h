@@ -186,9 +186,10 @@ private:
     /// replicated data). Used on the register-first error path to decide whether the registration may be undone.
     bool hasAnyNestedTable() const;
 
-    /// Unregister this replica from <keeper_path>/replicas. Returns true when it was the last
-    /// registered replica: only then may the caller drop the shared PostgreSQL objects and the
-    /// coordination nodes.
+    /// Unregister this replica from <keeper_path>/replicas. Returns true when it was the last registered
+    /// replica: only then may the caller drop the shared PostgreSQL objects and the coordination nodes. The
+    /// last-replica decision is fenced on the /replicas parent node (removing the empty parent succeeds for
+    /// exactly one caller), so it is race-free across replicas dropping concurrently.
     bool unregisterReplicaAndCheckLast();
 
     /// Remove the coordination-owned Keeper nodes (leader, replicas, snapshot marker). Does not touch
@@ -294,6 +295,10 @@ private:
     /// Fully macro-expanded values (computed once in the constructor).
     String coordination_keeper_path;
     String coordination_replica_name;
+    /// Set by coordinatedTeardownBeforeDataDrop (the race-free pre-data last-replica decision) so that the
+    /// post-data shutdownFinal does not re-decide when this replica already claimed the last-replica role and
+    /// removed the shared /replicas node itself (its absence would otherwise read as "another replica was last").
+    bool coordinated_teardown_was_last = false;
     /// One of "ReplacingMergeTree" / "ReplicatedReplacingMergeTree" / "SharedReplacingMergeTree".
     String nested_engine_name;
     /// The ephemeral Keeper node marking this replica as the active worker. Non-null only while leader.

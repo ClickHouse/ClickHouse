@@ -1,3 +1,4 @@
+import threading
 import time
 
 import pytest
@@ -788,6 +789,24 @@ def test_keeper_path_rejects_per_replica_macro(started_cluster):
     assert "test_per_replica_path" not in instance.query("SHOW DATABASES")
 
 
+def test_keeper_path_rejects_per_server_macro(started_cluster):
+    # The keeper path must also resolve to the same value on every server, so a per-server macro like
+    # {server_uuid} is rejected for the same reason as {replica}: it would place each server on a disjoint
+    # Keeper subtree. Validation expands the path with different injected macro values and rejects it when the
+    # result differs, so it catches {server_uuid} even though the literal path contains no {replica} token.
+    error = instance.query_and_get_error(
+        f"CREATE DATABASE test_per_server_path "
+        f"ENGINE = MaterializedPostgreSQL("
+        f"'{cluster.postgres_ip}:{cluster.postgres_port}', 'postgres_database', 'postgres', '{pg_pass}') "
+        f"SETTINGS materialized_postgresql_table_engine = 'ReplicatedReplacingMergeTree', "
+        f"materialized_postgresql_keeper_path = '/clickhouse/mat_pg/{{shard}}/{{server_uuid}}/test'"
+    )
+    assert "{server_uuid}" in error
+    assert "materialized_postgresql_replica_name" in error
+    # The rejected CREATE must not have left a database behind.
+    assert "test_per_server_path" not in instance.query("SHOW DATABASES")
+
+
 def test_join_with_drifted_schema_reports_error(started_cluster):
     # The shared nested-table schema is authoritative in coordinated mode. A replica joins by declaring a
     # nested table derived from the *current* PostgreSQL schema, and ReplicatedMergeTree compares that
@@ -904,3 +923,105 @@ def test_database_wide_truncate_is_rejected_in_coordinated_mode(started_cluster)
     check_tables_are_synchronized(instance, "test_table")
     check_tables_are_synchronized(instance2, "test_table")
     assert int(instance2.query("SELECT count() FROM test_database.test_table")) == 200
+
+
+def replica_registered(node, replica_name):
+    return (
+        int(
+            node.query(
+                f"SELECT count() FROM system.zookeeper "
+                f"WHERE path = '{KEEPER_PATH_RESOLVED}/replicas' AND name = '{replica_name}'"
+            )
+        )
+        > 0
+    )
+
+
+def test_drop_immediately_after_restart_unregisters_replica(started_cluster):
+    # On attach/restart the persistent <keeper_path>/replicas/<name> registration and the coordinated nested
+    # tables already exist on disk / in Keeper, but the in-memory replication handler is rebuilt only by the
+    # background startup task. A DROP DATABASE issued in that window must still run the coordinated teardown
+    # (built from the persisted settings) - unregistering this replica and, if it is the last one, removing the
+    # shared state - rather than deleting the local nested tables while leaving the /replicas node and the shared
+    # slot/publication/marker behind (a later last-replica drop would then keep the shared state around a ghost).
+    pg_manager.create_postgres_table("test_table")
+    instance.query(
+        "INSERT INTO postgres_database.test_table SELECT number, number FROM numbers(100)"
+    )
+
+    create_coordinated_db("test_table")
+    check_tables_are_synchronized(instance, "test_table")
+    check_tables_are_synchronized(instance2, "test_table")
+
+    leader_name = wait_for_leader(instance)
+    leader_instance = instance if leader_name == "coord_instance1" else instance2
+    leader_manager = pg_manager if leader_name == "coord_instance1" else pg_manager2
+    standby = instance2 if leader_name == "coord_instance1" else instance
+    standby_name = "coord_instance2" if leader_name == "coord_instance1" else "coord_instance1"
+
+    # The registration is a persistent node, so it survives the restart.
+    assert replica_registered(leader_instance, standby_name)
+
+    # Restart the standby and drop the database immediately, before the background startup task has reconnected
+    # to PostgreSQL and rebuilt the replication handler.
+    standby.restart_clickhouse()
+    standby.query("DROP DATABASE test_database")
+
+    # The standby must have unregistered itself even though its handler had not been rebuilt from a running
+    # startup - the teardown was constructed from the persisted settings.
+    assert not replica_registered(leader_instance, standby_name)
+    # It was not the last replica, so the shared state is kept for the leader.
+    assert replication_slot_exists()
+    assert publication_exists()
+    assert marker_znode_exists(leader_instance)
+    check_tables_are_synchronized(leader_instance, "test_table")
+
+    # Dropping the leader (now the last replica) removes the shared state. This only holds if the standby's
+    # registration was correctly cleaned above; otherwise the leader would see a ghost replica and keep it.
+    leader_manager.drop_materialized_db()
+    assert not replication_slot_exists()
+    assert not publication_exists()
+    assert not marker_znode_exists(leader_instance)
+
+
+def test_concurrent_drop_on_both_replicas_removes_shared_state(started_cluster):
+    # Two replicas dropping the coordinated database at the same time must not both decide they are the last
+    # replica. The decision is fenced on the shared /replicas node (removing the empty parent succeeds for
+    # exactly one caller), so after both drops complete the shared slot, publication and snapshot marker are
+    # removed exactly once and no ghost registration is left behind.
+    pg_manager.create_postgres_table("test_table")
+    instance.query(
+        "INSERT INTO postgres_database.test_table SELECT number, number FROM numbers(100)"
+    )
+
+    create_coordinated_db("test_table")
+    check_tables_are_synchronized(instance, "test_table")
+    check_tables_are_synchronized(instance2, "test_table")
+    wait_for_marker(instance)
+
+    errors = {}
+
+    def drop(node, key):
+        try:
+            node.query("DROP DATABASE test_database")
+            errors[key] = ""
+        except Exception as e:  # noqa: BLE001
+            errors[key] = str(e)
+
+    threads = [
+        threading.Thread(target=drop, args=(instance, "n1")),
+        threading.Thread(target=drop, args=(instance2, "n2")),
+    ]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    assert errors["n1"] == "", errors["n1"]
+    assert errors["n2"] == "", errors["n2"]
+    assert "test_database" not in instance.query("SHOW DATABASES")
+    assert "test_database" not in instance2.query("SHOW DATABASES")
+    # The shared state was torn down (exactly one replica acted as the last one, so it was removed once).
+    assert not replication_slot_exists()
+    assert not publication_exists()
+    assert not marker_znode_exists(instance)
