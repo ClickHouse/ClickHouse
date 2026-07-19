@@ -1298,7 +1298,7 @@ void ClientBase::processOrdinaryQuery(String query, ASTPtr parsed_query)
         && connection->getServerRevision(connection_parameters.timeouts) < DBMS_MIN_PROTOCOL_VERSION_WITH_PARAMETERS)
     {
         /// Replace ASTQueryParameter with ASTLiteral for prepared statements.
-        ReplaceQueryParameterVisitor visitor(query_parameters);
+        ReplaceQueryParameterVisitor visitor(query_parameters, getFormatSettings(client_context));
         visitor.visit(parsed_query);
 
         /// Get new query after substitutions.
@@ -1315,7 +1315,7 @@ void ClientBase::processOrdinaryQuery(String query, ASTPtr parsed_query)
             /// Replace query parameters because AST cannot be serialized otherwise.
             if (!query_parameters.empty())
             {
-                ReplaceQueryParameterVisitor visitor(query_parameters);
+                ReplaceQueryParameterVisitor visitor(query_parameters, getFormatSettings(client_context));
                 visitor.visit(parsed_query);
             }
 
@@ -1986,7 +1986,7 @@ void ClientBase::processInsertQuery(String query, ASTPtr parsed_query)
         && connection->getServerRevision(connection_parameters.timeouts) < DBMS_MIN_PROTOCOL_VERSION_WITH_PARAMETERS)
     {
         /// Replace ASTQueryParameter with ASTLiteral for prepared statements.
-        ReplaceQueryParameterVisitor visitor(query_parameters);
+        ReplaceQueryParameterVisitor visitor(query_parameters, getFormatSettings(client_context));
         visitor.visit(parsed_query);
 
         /// Get new query after substitutions.
@@ -2604,7 +2604,7 @@ void ClientBase::processParsedSingleQuery(
         {
             /// Resolve query parameters used as setting values, e.g. `SET max_threads = {threads:UInt64}`.
             SettingsChanges changes = set_query->changes;
-            replaceQueryParametersInSettingsChanges(changes, client_context->getQueryParameters());
+            replaceQueryParametersInSettingsChanges(changes, client_context->getQueryParameters(), getFormatSettings(client_context));
 
             /// Save all changes in settings to avoid losing them if the connection is lost.
             for (const auto & change : changes)

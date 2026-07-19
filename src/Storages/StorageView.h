@@ -9,6 +9,8 @@
 namespace DB
 {
 
+struct FormatSettings;
+
 class StorageView final : public StorageWithCommonVirtualColumns
 {
     static VirtualColumnsDescription createVirtuals();
@@ -49,7 +51,7 @@ public:
     void drop() override;
     void alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & table_lock_holder) override;
 
-    static void replaceQueryParametersIfParameterizedView(ASTPtr & outer_query, const NameToNameMap & parameter_values);
+    static void replaceQueryParametersIfParameterizedView(ASTPtr & outer_query, const NameToNameMap & parameter_values, const FormatSettings & format_settings);
 
     static void replaceWithSubquery(ASTSelectQuery & select_query, ASTPtr & view_name, const StorageMetadataPtr & metadata_snapshot, const bool parameterized_view)
     {

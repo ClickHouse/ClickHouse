@@ -179,7 +179,6 @@ Field ReplaceQueryParameterVisitor::resolveParameterValueAsField(const String & 
     auto temp_column_ptr = data_type->createColumn();
     IColumn & temp_column = *temp_column_ptr;
     ReadBufferFromString read_buffer{value};
-    FormatSettings format_settings;
 
     const SerializationPtr & serialization = data_type->getDefaultSerialization();
     try
@@ -261,9 +260,9 @@ void ReplaceQueryParameterVisitor::visitSetQuery(ASTSetQuery & set_query)
     visitSettingsChanges(set_query.changes);
 }
 
-void replaceQueryParametersInSettingsChanges(SettingsChanges & changes, const NameToNameMap & parameters)
+void replaceQueryParametersInSettingsChanges(SettingsChanges & changes, const NameToNameMap & parameters, const FormatSettings & format_settings)
 {
-    ReplaceQueryParameterVisitor(parameters).visitSettingsChanges(changes);
+    ReplaceQueryParameterVisitor(parameters, format_settings).visitSettingsChanges(changes);
 }
 
 void ReplaceQueryParameterVisitor::visitIdentifier(ASTPtr & ast)

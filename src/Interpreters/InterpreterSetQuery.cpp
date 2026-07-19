@@ -2,6 +2,7 @@
 #include <Backups/RestoreSettings.h>
 #include <Core/Settings.h>
 #include <Databases/IDatabase.h>
+#include <Formats/FormatFactory.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterFactory.h>
@@ -39,7 +40,7 @@ BlockIO InterpreterSetQuery::execute()
     /// Work on a copy so the original AST keeps the placeholders: they are still needed by the
     /// old-server compatibility rewrite in ClientBase::processOrdinaryQuery.
     SettingsChanges changes = ast.changes;
-    replaceQueryParametersInSettingsChanges(changes, getContext()->getQueryParameters());
+    replaceQueryParametersInSettingsChanges(changes, getContext()->getQueryParameters(), getFormatSettings(getContext()));
     /// Pass as const on purpose: the non-const checkSettingsConstraints overload rewrites the
     /// changes (dropping no-op changes), which would lose the "changed" flag for a setting
     /// explicitly set to its current value. The original code applies const `ast.changes`.
@@ -58,7 +59,7 @@ void InterpreterSetQuery::executeForCurrentContext(bool ignore_setting_constrain
     /// Resolve query parameters used as setting values, e.g. `SELECT ... SETTINGS max_threads = {threads:UInt64}`.
     /// Work on a copy so the original AST keeps the placeholders (see the note in execute()).
     SettingsChanges changes = ast.changes;
-    replaceQueryParametersInSettingsChanges(changes, getContext()->getQueryParameters());
+    replaceQueryParametersInSettingsChanges(changes, getContext()->getQueryParameters(), getFormatSettings(getContext()));
     /// const on purpose - see the note in execute().
     if (!ignore_setting_constraints)
         getContext()->checkSettingsConstraints(std::as_const(changes), SettingSource::QUERY);

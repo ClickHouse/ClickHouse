@@ -434,9 +434,9 @@ static ASTTableExpression * getFirstTableExpression(ASTSelectQuery & select_quer
     return select_element->table_expression->as<ASTTableExpression>();
 }
 
-void StorageView::replaceQueryParametersIfParameterizedView(ASTPtr & outer_query, const NameToNameMap & parameter_values)
+void StorageView::replaceQueryParametersIfParameterizedView(ASTPtr & outer_query, const NameToNameMap & parameter_values, const FormatSettings & format_settings)
 {
-    ReplaceQueryParameterVisitor visitor(parameter_values);
+    ReplaceQueryParameterVisitor visitor(parameter_values, format_settings);
     visitor.visit(outer_query);
 }
 
