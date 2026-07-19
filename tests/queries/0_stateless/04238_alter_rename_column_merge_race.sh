@@ -104,6 +104,37 @@ if [ "$count" != "8" ]; then
     exit 1
 fi
 
+# Phase 3: the old name is re-added before the pending RENAME materializes. RENAME COLUMN a -> b is
+# a barrier, but a later non-barrier ADD COLUMN a does not wait for it, so the metadata can carry
+# both a and b while the parts still physically store only the pre-rename a. The merge must keep the
+# physical a bound to b only (its rename target) and default the re-added a; it must not bind the old
+# bytes to both names. Doing so would make the merged part carry both a and b off one physical column
+# and the pending rename mutation, finding b already present, aborts with a LOGICAL_ERROR.
+${CLICKHOUSE_CLIENT} --query="
+    DROP TABLE IF EXISTS t_rename_merge_race_reuse;
+    CREATE TABLE t_rename_merge_race_reuse (id UInt64, a String)
+    ENGINE = MergeTree() ORDER BY id
+    SETTINGS min_bytes_for_wide_part = 0;
+    INSERT INTO t_rename_merge_race_reuse VALUES (1, 'AAA'), (2, 'BBB'), (3, 'CCC');
+"
+
+${CLICKHOUSE_CLIENT} --query="SYSTEM ENABLE FAILPOINT mt_select_parts_to_mutate_no_free_threads"
+${CLICKHOUSE_CLIENT} --query="ALTER TABLE t_rename_merge_race_reuse RENAME COLUMN a TO b SETTINGS alter_sync = 0"
+${CLICKHOUSE_CLIENT} --query="ALTER TABLE t_rename_merge_race_reuse ADD COLUMN a String DEFAULT 'reused_default' SETTINGS alter_sync = 0"
+${CLICKHOUSE_CLIENT} --query="OPTIMIZE TABLE t_rename_merge_race_reuse FINAL"
+disable_failpoint
+wait_mutation t_rename_merge_race_reuse
+
+# b must carry the original values (renamed old column); the re-added a must be its default for every
+# row, never the old bytes.
+count=$(${CLICKHOUSE_CLIENT} --query="SELECT count() FROM t_rename_merge_race_reuse WHERE b = ['AAA', 'BBB', 'CCC'][id] AND a = 'reused_default'")
+if [ "$count" != "3" ]; then
+    echo "FAIL (rename target reused): expected 3 rows with renamed b and defaulted a, got $count"
+    ${CLICKHOUSE_CLIENT} --query="SELECT id, a, b FROM t_rename_merge_race_reuse ORDER BY id"
+    exit 1
+fi
+
 ${CLICKHOUSE_CLIENT} --query="DROP TABLE IF EXISTS t_rename_merge_race"
 ${CLICKHOUSE_CLIENT} --query="DROP TABLE IF EXISTS t_rename_merge_race_dynamic"
+${CLICKHOUSE_CLIENT} --query="DROP TABLE IF EXISTS t_rename_merge_race_reuse"
 echo "OK"
