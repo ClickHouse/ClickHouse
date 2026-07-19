@@ -414,3 +414,6 @@
 [submodule "contrib/pcodec"]
 	path = contrib/pcodec
 	url = https://github.com/ClickHouse/pcodec.git
+[submodule "contrib/zxc"]
+	path = contrib/zxc
+	url = https://github.com/ClickHouse/zxc
