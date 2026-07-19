@@ -986,12 +986,13 @@ bool Reader::decodeDictionaryPage(
 
     if (bounded)
     {
-        /// `decodedFootprintUpperBound` predicts the decoded dictionary's size from the page header, but
-        /// the memory actually held (`Dictionary::allocatedBytes`, which includes the `PODArray` capacity
-        /// rounding and padding on top of the logical sizes the prediction sums) can differ from it in
-        /// either direction. Reconcile the live reservation with the true footprint so the amount charged
-        /// to the shared budget matches what was really allocated: if it grew, reserve the extra and fall
-        /// back to a full scan if that no longer fits the budget; if it shrank, release the difference.
+        /// `decodedFootprintUpperBound` is a true upper bound on the memory actually held
+        /// (`Dictionary::allocatedBytes`), because it accounts for the `PODArray` capacity rounding and
+        /// padding on top of the logical sizes (see the helper). Reconcile the live reservation down to
+        /// the real footprint so the amount charged to the shared budget matches what was really
+        /// allocated: normally the dictionary is smaller than predicted and we release the difference.
+        /// The grow branch is a defensive backstop in case the prediction ever drifts below the real
+        /// footprint: reserve the extra and fall back to a full scan if it no longer fits the budget.
         size_t actual_bytes = column.dictionary.allocatedBytes();
         if (actual_bytes > reserved_bytes)
         {
@@ -1179,8 +1180,9 @@ static std::optional<HashSet<UInt64>> hashDictionaryValues(
     /// is used, in `decodeDictionaryPage` on the pruning path.
     /// `estimated_value_set_bytes` must be an upper bound on the peak transient memory allocated below,
     /// so that once the reservation succeeds the value set is guaranteed to stay within budget while it
-    /// is built. The `hashes` vector and the resulting `value_hashes` HashSet (power-of-two capacity, up
-    /// to ~2 UInt64 cells per value) are always built. When the dictionary is not already an `IColumn`
+    /// is built. The `hashes` vector (allocated at exactly `count` capacity by `parquetTryHashColumn`, so
+    /// exactly `count * sizeof(UInt64)`) and the resulting `value_hashes` HashSet (power-of-two capacity,
+    /// up to ~2 UInt64 cells per value) are always built. When the dictionary is not already an `IColumn`
     /// (FixedSize / StringPlain modes) the values are first materialized into a fresh column of `count`
     /// values plus an identity `indexes` vector: a `ColumnString` there reserves only its UInt64 offsets
     /// and grows its `chars` buffer geometrically (up to ~2x the final size) as `insertData` appends, so

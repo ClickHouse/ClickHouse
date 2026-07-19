@@ -173,6 +173,11 @@ std::optional<std::vector<uint64_t>> parquetTryHashColumn(const IColumn * data_c
         column = nullable_column->getNestedColumnPtr().get();
 
     std::vector<uint64_t> hashes;
+    /// Allocate the exact capacity up front rather than growing geometrically via `emplace_back`.
+    /// The dictionary-filter pruning path budgets this vector as exactly `size() * sizeof(UInt64)`
+    /// against `input_format_parquet_memory_high_watermark` (see `hashDictionaryValues`); a geometric
+    /// growth would transiently allocate up to twice that and overshoot the reservation.
+    hashes.reserve(column->size());
 
     for (size_t i = 0u; i < column->size(); i++)
     {

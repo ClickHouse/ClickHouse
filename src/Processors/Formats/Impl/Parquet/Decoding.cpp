@@ -1238,7 +1238,22 @@ size_t Dictionary::decodedFootprintUpperBound(
     if (encoding == parq::Encoding::PLAIN_DICTIONARY)
         encoding = parq::Encoding::PLAIN;
 
-    size_t bound = uncompressed_page_size;
+    /// Saturating arithmetic: on overflow report an unbounded footprint so the pruning path rejects the
+    /// dictionary up front (full scan) instead of wrapping around to a small, unsafe bound.
+    auto sat_add = [](size_t a, size_t b) -> size_t
+    {
+        size_t r = 0;
+        return __builtin_add_overflow(a, b, &r) ? std::numeric_limits<size_t>::max() : r;
+    };
+    auto sat_mul = [](size_t a, size_t b) -> size_t
+    {
+        size_t r = 0;
+        return __builtin_mul_overflow(a, b, &r) ? std::numeric_limits<size_t>::max() : r;
+    };
+
+    /// Sum of the *logical* payload sizes of the buffers decode() holds. This is turned into a true
+    /// upper bound on allocatedBytes() below.
+    size_t logical = uncompressed_page_size;
 
     if (encoding == parq::Encoding::PLAIN && info.fixed_size_converter && info.fixed_size_converter->isTrivial())
     {
@@ -1247,7 +1262,7 @@ size_t Dictionary::decodedFootprintUpperBound(
     else if (encoding == parq::Encoding::PLAIN && info.string_converter && info.string_converter->isTrivial())
     {
         /// Mode::StringPlain: a UInt32 offset per value.
-        bound += num_values * sizeof(UInt32);
+        logical = sat_add(logical, sat_mul(num_values, sizeof(UInt32)));
     }
     else
     {
@@ -1256,15 +1271,15 @@ size_t Dictionary::decodedFootprintUpperBound(
         if (raw_decoded_type.haveMaximumSizeOfValue())
         {
             /// Fixed-size decoded types take `num_values * value_size` regardless of the page encoding.
-            bound += num_values * raw_decoded_type.getMaximumSizeOfValueInMemory();
+            logical = sat_add(logical, sat_mul(num_values, raw_decoded_type.getMaximumSizeOfValueInMemory()));
         }
         else if (encoding == parq::Encoding::PLAIN)
         {
             /// Variable-size types (e.g. String) take a per-value offset plus a chars buffer. For the
             /// only in-spec (PLAIN) dictionary encoding each value is stored as a 4-byte length plus its
-            /// raw bytes, so the decoded chars are no larger than the page payload - counted twice to
-            /// cover `ColumnString`'s geometric chars growth - plus a per-value UInt64 offset.
-            bound += num_values * sizeof(UInt64) + 2 * uncompressed_page_size;
+            /// raw bytes, so the decoded chars are no larger than the page payload, plus a per-value
+            /// UInt64 offset.
+            logical = sat_add(logical, sat_add(sat_mul(num_values, sizeof(UInt64)), uncompressed_page_size));
         }
         else
         {
@@ -1278,7 +1293,16 @@ size_t Dictionary::decodedFootprintUpperBound(
         }
     }
 
-    return bound;
+    /// Turn the logical payload sum into a genuine upper bound on `allocatedBytes()`. Every buffer above
+    /// is `PODArray`-backed (`decompressed_buf`, `offsets`, and the `PODArray`s inside `col`), and each
+    /// over-allocates its logical size by up to ~2x: `PODArray::reserve`/`resize` round the capacity up to
+    /// the next power of two (`reallocPowerOfTwoElements`), and `ColumnString`'s `chars` grow geometrically
+    /// (allocated bytes doubled on each realloc) as `decode` appends. So `allocatedBytes()` is bounded by
+    /// twice the logical footprint plus a small per-buffer padding allowance (`pad_left`/`pad_right`). If we
+    /// only reserved the logical sum, a dictionary that just fits the budget could still allocate almost
+    /// twice that during decode and let concurrent pruning batches collectively overshoot the watermark.
+    static constexpr size_t padding_slack = 256;
+    return sat_add(sat_mul(logical, 2), padding_slack);
 }
 
 template<size_t value_size>
