@@ -138,6 +138,11 @@ private:
     /// Flush `out` down to the underlying buffer (including the nested compressed buffer, if any).
     void flushOut();
 
+    /// If a previous packet write threw partway through (`writing` is still set), stop: mark the
+    /// framing finalized so no further packets are produced, and return true so the caller writes
+    /// nothing more. Returns false when it is safe to proceed.
+    bool failClosedAfterPartialWrite();
+
     WriteBufferFromOwnString payload;
 
     std::shared_ptr<InternalTextLogsQueue> logs_queue;
@@ -149,6 +154,16 @@ private:
 
     String exception_message;
     bool finalized = false;
+
+    /// Set while a packet is being written to `out`, and cleared once the write completes. The public
+    /// methods (`onPayload`, `onProgress`, `finalize`) are serialized by `IOutputFormat` and never
+    /// nested (see the class comment), so entering one with this flag already set means a previous write
+    /// threw partway through - after some bytes may already have reached the socket. We then fail closed
+    /// (see `failClosedAfterPartialWrite`): a half-written packet is on the wire and the exception
+    /// recovery path retries `finalize`; re-emitting the buffered payload or the tail packets would
+    /// append a well-formed-looking duplicate after the truncated packet and corrupt the stream. Failing
+    /// closed lets the error terminate the already-broken stream instead.
+    bool writing = false;
 };
 
 using FramingFormatPtr = std::shared_ptr<IFramingFormat>;

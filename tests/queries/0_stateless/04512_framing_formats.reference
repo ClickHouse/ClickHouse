@@ -185,3 +185,18 @@ text/event-stream; charset=UTF-8; payload=base64
 Vertical payload with a non-UTF-8 column name round-trips
 --- JSONEachPacketString accepts Markdown with a valid UTF-8 (multi-byte) column name
 Markdown (valid UTF-8 column name) accepted: OK
+--- JSONEachPacketString is rejected for CSVWithNames with a non-UTF-8 Tuple element name
+is not compatible with the output format CSVWithNames
+--- EventStream base64-encodes CSVWithNames with a non-UTF-8 Tuple element name
+text/event-stream; charset=UTF-8; payload=base64
+CSVWithNames payload with a non-UTF-8 Tuple element name round-trips
+--- JSONEachPacketString accepts CSVWithNames with a non-UTF-8 Tuple element name when the header is not flattened
+CSVWithNames (unflattened header, non-UTF-8 Tuple element name) accepted: OK
+--- JSONEachPacketString accepts CSVWithNames with a valid UTF-8 (multi-byte) Tuple element name
+CSVWithNames (valid UTF-8 Tuple element name) accepted: OK
+--- JSONEachPacketString is rejected for CustomSeparatedWithNames (CSV rule) with a non-UTF-8 Tuple element name
+is not compatible with the output format CustomSeparatedWithNames
+--- EventStream base64-encodes CustomSeparatedWithNames (CSV rule) with a non-UTF-8 Tuple element name
+text/event-stream; charset=UTF-8; payload=base64
+--- JSONEachPacketString accepts CustomSeparatedWithNames (CSV rule) with a non-matching delimiter (header not flattened)
+CustomSeparatedWithNames (non-matching delimiter, header not flattened) accepted: OK

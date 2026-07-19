@@ -109,13 +109,20 @@ void registerOutputFormatCSV(FormatFactory & factory)
         /// The `*WithNames*` variants write the column names (and data type names) into the header
         /// through `writeCSVString`, which quotes special characters but does not validate UTF-8, so a
         /// name that is not valid UTF-8 (a quoted identifier or an `Enum` element with arbitrary bytes)
-        /// makes the output non-textual. It is knowable from the header, so the text framings reject or
+        /// makes the output non-textual. When a Tuple column is flattened into separate columns the
+        /// header carries the dotted leaf names (see `getCSVHeaderNamesAndTypes`), so a non-UTF-8 Tuple
+        /// element name would slip past a top-level-only check; validate the actual flattened header
+        /// under the current settings. It is knowable from the header, so the text framings reject or
         /// base64-encode the output accordingly.
         if (with_names || with_types)
             factory.registerOutputFormatMayProduceRawBytesChecker(
                 format_name,
-                [with_names, with_types](const FormatSettings &, const Block & header)
-                { return headerNamesMayProduceRawBytes(header, with_names, with_types); });
+                [with_names, with_types](const FormatSettings & settings, const Block & header)
+                {
+                    const bool flatten = settings.csv.serialize_tuple_into_separate_columns
+                        && settings.csv.header_serialize_tuple_into_separate_columns;
+                    return csvHeaderNamesMayProduceRawBytes(header, flatten, with_names, with_types);
+                });
     };
 
     registerWithNamesAndTypes("CSV", register_func);

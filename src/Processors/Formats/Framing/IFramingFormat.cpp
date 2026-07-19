@@ -11,10 +11,22 @@
 #include <IO/WriteHelpers.h>
 #include <Interpreters/InternalTextLogsQueue.h>
 #include <Common/CurrentThread.h>
+#include <Common/Exception.h>
+#include <Common/FailPoint.h>
 #include <Common/assert_cast.h>
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int FAULT_INJECTED;
+}
+
+namespace FailPoints
+{
+    extern const char framing_throw_after_writing_packet[];
+}
 
 IFramingFormat::IFramingFormat(WriteBuffer & out_, const FormatSettings & format_settings_)
     : out(out_), format_settings(format_settings_)
@@ -47,33 +59,50 @@ void IFramingFormat::setProfileEventsQueue(const InternalProfileEventsQueuePtr &
     profile_events_period_us = period_us;
 }
 
+bool IFramingFormat::failClosedAfterPartialWrite()
+{
+    if (!writing)
+        return false;
+
+    /// A packet write is still marked in progress although we are being entered again: it must have
+    /// thrown partway through, leaving a half-written packet on the wire. Do not write anything more -
+    /// see the `writing` member for the full rationale.
+    finalized = true;
+    return true;
+}
+
 void IFramingFormat::onPayload(FramedPacketKind kind)
 {
-    if (finalized)
+    if (finalized || failClosedAfterPartialWrite())
         return;
 
+    writing = true;
     extractAndWritePayload(kind);
     pumpLogs();
     pumpProfileEvents(/*force=*/ false);
     flushOut();
+    writing = false;
 }
 
 void IFramingFormat::onProgress(const Progress & progress)
 {
-    if (finalized)
+    if (finalized || failClosedAfterPartialWrite())
         return;
 
+    writing = true;
     writeProgressPacket(progress);
     pumpLogs();
     pumpProfileEvents(/*force=*/ false);
     flushOut();
+    writing = false;
 }
 
 void IFramingFormat::finalize()
 {
-    if (finalized)
+    if (finalized || failClosedAfterPartialWrite())
         return;
 
+    writing = true;
     extractAndWritePayload(FramedPacketKind::Data);
     pumpLogs();
     pumpProfileEvents(/*force=*/ true);
@@ -86,6 +115,7 @@ void IFramingFormat::finalize()
 
     payload.finalize();
     finalized = true;
+    writing = false;
 }
 
 namespace
@@ -115,7 +145,18 @@ void IFramingFormat::extractAndWritePayload(FramedPacketKind kind)
 {
     std::string & data = payload.str();
     if (!data.empty())
+    {
         writePayloadPacket(kind, data);
+
+        /// Test-only: emulate a packet write throwing after some bytes have reached `out` but before the
+        /// payload buffer is cleared, to check that the exception recovery fails closed (the `writing`
+        /// flag stays set, so the retried `finalize` becomes a no-op via `failClosedAfterPartialWrite`)
+        /// instead of re-emitting this packet.
+        fiu_do_on(FailPoints::framing_throw_after_writing_packet,
+        {
+            throw Exception(ErrorCodes::FAULT_INJECTED, "Injecting fault after writing a framing packet");
+        });
+    }
     payload.restart(DBMS_DEFAULT_BUFFER_SIZE);
 }
 

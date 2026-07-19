@@ -260,3 +260,29 @@ else:
         print('MISMATCH:', [p.get('packet') for p in packets])
 "
 ${CLICKHOUSE_CLIENT} -q "SYSTEM DISABLE FAILPOINT framing_finalize_throw"
+
+# A packet write that throws partway through (for example a broken pipe after some bytes have already
+# reached the socket) must not be retried: `payload` is cleared only on the success path and the
+# framing's `finalized` flag flips only at the end of `finalize`, so a naive recovery would re-enter the
+# same half-written framing and re-emit the buffered `data` packet before the terminal `exception`,
+# corrupting the very stream it tries to salvage. The framing fails closed as soon as a packet starts
+# writing. Here `framing_throw_after_writing_packet` throws right after the first `data` packet was
+# written; the streaming recovery must not produce a second, duplicate `data` packet.
+echo '--- a partial packet write is not retried into a duplicated packet'
+${CLICKHOUSE_CLIENT} -q "SYSTEM ENABLE FAILPOINT framing_throw_after_writing_packet"
+${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=JSONEachPacketString" \
+    -d "SELECT 1 AS x FORMAT JSONEachRow" | python3 -c "
+import sys, json
+lines = [line for line in sys.stdin.read().splitlines() if line]
+try:
+    packets = [json.loads(line) for line in lines]
+except json.JSONDecodeError:
+    print('MISMATCH: response is not valid NDJSON')
+else:
+    data_packets = [p for p in packets if p.get('packet') == 'data']
+    if len(data_packets) <= 1:
+        print('partial packet write not duplicated: OK')
+    else:
+        print('MISMATCH: data packets =', len(data_packets))
+"
+${CLICKHOUSE_CLIENT} -q "SYSTEM DISABLE FAILPOINT framing_throw_after_writing_packet"
