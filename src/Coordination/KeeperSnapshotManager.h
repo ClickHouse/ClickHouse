@@ -41,9 +41,10 @@ enum SnapshotVersion : uint8_t
     V6 = 6, /// remove is_sequential, per node size, data length
     V7 = 7, /// acl_id narrowed from uint64_t to uint32_t, seq_num widened from int32_t to int64_t
     V8 = 8, /// add destroy_time and ttl for TTL nodes
+    V9 = 9, /// container nodes (ephemeralOwner = INT64_MIN sentinel)
 };
 
-static constexpr auto MAX_SUPPORTED_SNAPSHOT_VERSION = SnapshotVersion::V8;
+static constexpr auto MAX_SUPPORTED_SNAPSHOT_VERSION = SnapshotVersion::V9;
 
 /// What is stored in binary snapshot
 struct SnapshotDeserializationResult
