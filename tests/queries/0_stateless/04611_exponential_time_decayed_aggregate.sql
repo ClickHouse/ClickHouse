@@ -5,6 +5,17 @@ FROM VALUES('value Float64, time Float64', (1, 0));
 -- The new aggregate-function form is experimental and disabled by default.
 SELECT exponentialTimeDecayedSum(10)(toFloat64(1), toFloat64(0)); -- { serverError UNKNOWN_AGGREGATE_FUNCTION }
 
+-- Boolean keywords enable and disable the aggregate-function forms.
+SET allow_experimental_time_decay_aggregate_functions = true;
+SELECT exponentialTimeDecayedSum(10)(toFloat64(1), toFloat64(0));
+
+SET allow_experimental_time_decay_aggregate_functions = false;
+SELECT exponentialTimeDecayedAvg(10)(toFloat64(1), toFloat64(0)); -- { serverError UNKNOWN_AGGREGATE_FUNCTION }
+
+-- Numeric Boolean values have the same behavior.
+SET allow_experimental_time_decay_aggregate_functions = 0;
+SELECT exponentialTimeDecayedCount(10)(toFloat64(0)); -- { serverError UNKNOWN_AGGREGATE_FUNCTION }
+
 SET allow_experimental_time_decay_aggregate_functions = 1;
 
 SELECT
