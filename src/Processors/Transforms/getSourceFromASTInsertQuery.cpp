@@ -215,7 +215,37 @@ String getInsertDataSchemaMismatchDescription(
         if (format_has_exact_types_from_data)
             return false;
 
+        const auto inferred_unwrapped = removeNullable(recursiveRemoveLowCardinality(inferred_type));
+        const auto expected_unwrapped = removeNullable(recursiveRemoveLowCardinality(expected_type));
+        const WhichDataType which_inferred(inferred_unwrapped);
+        const WhichDataType which_expected(expected_unwrapped);
+
+        const bool inferred_is_numeric = which_inferred.isInt() || which_inferred.isUInt() || which_inferred.isFloat();
+        const bool expected_is_nested = which_expected.isArray() || which_expected.isTuple() || which_expected.isMap();
+
+        /// A bare numeric token really is a structure mismatch for a few scalar destinations whose text /
+        /// JSON deserializers require a (quoted) string and reject a number in every format — `UUID`, `IPv4`
+        /// and `IPv6` (e.g. `{"u": 1}` into `(u UUID)`). This is checked before the supertype rule below
+        /// because `IPv4` is backed by a `UInt32` and does share a least supertype with a widened numeric
+        /// type, so the supertype rule would otherwise wrongly treat it as compatible. `FixedString` is
+        /// deliberately not listed: `TSV` / `CSV` read the raw field verbatim into a `FixedString` column, so
+        /// a number is accepted there and flagging it would be a false positive.
+        if (inferred_is_numeric && (which_expected.isUUID() || which_expected.isIPv4() || which_expected.isIPv6()))
+            return false;
+
         if (tryGetLeastSupertype(DataTypes{inferred_type, expected_type}) != nullptr)
+            return true;
+
+        /// The mirror image of the rule below: a `String` destination accepts values that schema inference
+        /// widened to a richer scalar type. The text parsers read a number, a boolean, a date, ... straight
+        /// into a `String` column — `SerializationString::deserializeText*` for `TSV` / `CSV` takes the raw
+        /// field verbatim, and `JSONEachRow` reads a JSON number / boolean into a `String` under the default
+        /// `input_format_json_read_numbers_as_strings` / `read_bools_as_strings` settings — so an inferred
+        /// non-`String` type going into a `String` destination is not a reliable structure mismatch (e.g.
+        /// `1\t1.5` into `(s String, n UInt8)`, where only `n` is invalid). Treat a `String` destination as
+        /// compatible, so a genuine value-level parse error elsewhere in the row is not given a misleading
+        /// "structure mismatch" suffix.
+        if (which_expected.isString())
             return true;
 
         /// Formats that read values from text (e.g. every quoted string in `JSONEachRow`) keep fields as
@@ -231,26 +261,9 @@ String getInsertDataSchemaMismatchDescription(
         /// and stays compatible) — the reliable "text where a number is expected" signal this diagnostic
         /// exists to surface — and a nested/complex column (`Array`, `Tuple`, `Map`), which genuinely
         /// cannot be built from a single scalar string.
-        const auto inferred_unwrapped = removeNullable(recursiveRemoveLowCardinality(inferred_type));
-        const auto expected_unwrapped = removeNullable(recursiveRemoveLowCardinality(expected_type));
-
-        /// The mirror image of the rule below: a `String` destination accepts values that schema inference
-        /// widened to a richer scalar type. The text parsers read a number, a boolean, a date, ... straight
-        /// into a `String` column — `SerializationString::deserializeText*` for `TSV` / `CSV` takes the raw
-        /// field verbatim, and `JSONEachRow` reads a JSON number / boolean into a `String` under the default
-        /// `input_format_json_read_numbers_as_strings` / `read_bools_as_strings` settings — so an inferred
-        /// non-`String` type going into a `String` destination is not a reliable structure mismatch (e.g.
-        /// `1\t1.5` into `(s String, n UInt8)`, where only `n` is invalid). Treat a `String` destination as
-        /// compatible, so a genuine value-level parse error elsewhere in the row is not given a misleading
-        /// "structure mismatch" suffix.
-        if (WhichDataType(expected_unwrapped).isString())
-            return true;
-
-        if (WhichDataType(inferred_unwrapped).isString())
+        if (which_inferred.isString())
         {
-            const WhichDataType which_expected(expected_unwrapped);
             const bool expected_is_numeric = which_expected.isInt() || which_expected.isUInt() || which_expected.isFloat();
-            const bool expected_is_nested = which_expected.isArray() || which_expected.isTuple() || which_expected.isMap();
             return !(expected_is_numeric && inferred_is_text) && !expected_is_nested;
         }
 
@@ -258,17 +271,11 @@ String getInsertDataSchemaMismatchDescription(
         /// the text / JSON deserializers into many scalar destinations that share no common supertype with
         /// the widened numeric type: an integer into `DateTime` / `Date` (read as a Unix timestamp), into an
         /// `Enum` (by its numeric value), into `Decimal`, and so on. So an inferred numeric type is not a
-        /// reliable structure mismatch for any scalar destination (e.g. `{"ts": 1, "n": 1.5}` into
-        /// `(ts DateTime, n UInt8)`, where `ts` parses fine and only `n` is invalid). Only a nested
-        /// destination (`Array`, `Tuple`, `Map`), which cannot be built from a single scalar, stays a
-        /// mismatch.
-        const WhichDataType which_inferred(inferred_unwrapped);
-        if (which_inferred.isInt() || which_inferred.isUInt() || which_inferred.isFloat())
-        {
-            const WhichDataType which_expected(expected_unwrapped);
-            const bool expected_is_nested = which_expected.isArray() || which_expected.isTuple() || which_expected.isMap();
+        /// reliable structure mismatch for a scalar destination (the string-only `UUID` / `IPv4` / `IPv6`
+        /// destinations were already handled above). Only a nested destination (`Array`, `Tuple`, `Map`),
+        /// which cannot be built from a single scalar, stays a mismatch.
+        if (inferred_is_numeric)
             return !expected_is_nested;
-        }
 
         return false;
     };
