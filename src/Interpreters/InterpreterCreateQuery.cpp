@@ -1666,6 +1666,8 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 
     DDLGuardPtr ddl_guard;
 
+    scope_guard metadata_revert_guard;
+
     // If this is a stub ATTACH query, read the query definition from the database
     if (create.attach && (!create.storage || !create.storage->engine) && !create.columns_list)
     {
@@ -1754,7 +1756,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
                     "Table {}.{} already exists",
                     backQuoteIfNeed(create.getDatabase()),
                     backQuoteIfNeed(create.getTable()));
-            convertMergeTreeTableIfPossible(create_query, database, create.attach_as_replicated.value());
+            metadata_revert_guard = convertMergeTreeTableIfPossible(create_query, database, create.attach_as_replicated.value());
         }
 
         if (!create.is_dictionary && create_query.is_dictionary)
@@ -1970,6 +1972,8 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     /// Actually creates table
     bool created = doCreateTable(create, properties, ddl_guard, mode);
     ddl_guard.reset();
+
+    metadata_revert_guard.release();
 
     if (!created)   /// Table already exists
         return {};
@@ -3083,9 +3087,8 @@ void InterpreterCreateQuery::processSQLSecurityOption(ContextMutablePtr context_
         context_->checkAccess(AccessType::ALLOW_SQL_SECURITY_NONE);
 }
 
-void InterpreterCreateQuery::convertMergeTreeTableIfPossible(ASTCreateQuery & create, DatabasePtr database, bool to_replicated)
+scope_guard InterpreterCreateQuery::convertMergeTreeTableIfPossible(ASTCreateQuery & create, DatabasePtr database, bool to_replicated)
 {
-    /// Check engine can be changed
     if (database->getEngineName() != "Atomic")
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
             "Table engine conversion to replicated is supported only for Atomic databases");
@@ -3103,11 +3106,11 @@ void InterpreterCreateQuery::convertMergeTreeTableIfPossible(ASTCreateQuery & cr
     else if (!to_replicated)
        throw Exception(ErrorCodes::INCORRECT_QUERY, "Can not attach table as not replicated, table is already not replicated");
 
-    /// Ensure the old detached table instance is destroyed before we remove
-    /// transaction metadata files. Otherwise the old table's parts still hold
-    /// in-memory version metadata referencing those files, and the debug
-    /// assertion in removeIfNeeded() → assertHasValidVersionMetadata() will
-    /// fail when the old storage is destroyed later.
+    DatabaseOrdinary::validateEngineSupportsReplicatedConversion(create, to_replicated);
+
+    if (to_replicated)
+        DatabaseOrdinary::checkReplicaPathExists(create, getContext());
+
     if (create.uuid != UUIDHelpers::Nil)
     {
         if (getContext()->getSettingsRef()[Setting::database_atomic_wait_for_drop_and_detach_synchronously])
@@ -3123,27 +3126,43 @@ void InterpreterCreateQuery::convertMergeTreeTableIfPossible(ASTCreateQuery & cr
             database->checkDetachedTableNotInUse(create.uuid);
     }
 
-    /// When converting to replicated, remove all transaction metadata files
     if (to_replicated && !engine_name.starts_with("Replicated"))
     {
         String table_data_path = database->getTableDataPath(create);
         clearTransactionMetadata(table_data_path, getContext());
     }
 
-    /// Set new engine
-    DatabaseOrdinary::setMergeTreeEngine(create, getContext(), to_replicated);
-
-    /// Save new metadata
     auto db_disk = database->getDisk();
     String table_metadata_path = database->getObjectMetadataPath(create.getTable());
     String table_metadata_tmp_path = table_metadata_path + ".tmp";
+    bool fsync_metadata = getContext()->getSettingsRef()[Setting::fsync_metadata];
+    String original_statement = readMetadataFile(db_disk, table_metadata_path);
+
+    scope_guard metadata_revert_guard = [db_disk, table_metadata_path, table_metadata_tmp_path,
+                                         saved_statement = std::move(original_statement),
+                                         fsync_metadata, table_name = create.getTable()]
+    {
+        try
+        {
+            writeMetadataFile(db_disk, table_metadata_tmp_path, saved_statement, fsync_metadata);
+            db_disk->replaceFile(table_metadata_tmp_path, table_metadata_path);
+            LOG_INFO(getLogger("InterpreterCreateQuery"),
+                "Reverted metadata of table {} after a failed ATTACH AS [NOT] REPLICATED.", backQuoteIfNeed(table_name));
+        }
+        catch (...)
+        {
+            tryLogCurrentException(getLogger("InterpreterCreateQuery"),
+                "Failed to revert metadata after a failed ATTACH AS [NOT] REPLICATED");
+        }
+    };
+
+    DatabaseOrdinary::setMergeTreeEngine(create, getContext(), to_replicated);
+
     String statement = DB::getObjectDefinitionFromCreateQuery(create.clone());
-    writeMetadataFile(
-        db_disk,
-        /*file_path=*/table_metadata_tmp_path,
-        /*content=*/statement,
-        /*fsync_metadata=*/getContext()->getSettingsRef()[Setting::fsync_metadata]);
+    writeMetadataFile(db_disk, table_metadata_tmp_path, statement, fsync_metadata);
     db_disk->replaceFile(table_metadata_tmp_path, table_metadata_path);
+
+    return metadata_revert_guard;
 }
 
 void InterpreterCreateQuery::clearTransactionMetadata(const String & table_data_path, ContextPtr local_context)

@@ -88,6 +88,10 @@ public:
 
     static void setMergeTreeEngine(ASTCreateQuery & create_query, ContextPtr context, bool replicated);
 
+    static void validateEngineSupportsReplicatedConversion(const ASTCreateQuery & create_query, bool to_replicated);
+
+    static void checkReplicaPathExists(ASTCreateQuery & create_query, ContextPtr local_context);
+
 protected:
     /// Erase pending async load/startup task references for a table. Must hold `mutex`.
     /// Shared by detachTableUnlocked and the Atomic rename detach path (issue #91777).
@@ -108,6 +112,8 @@ protected:
     std::atomic<size_t> total_tables_to_startup{0};
     std::atomic<size_t> tables_started{0};
     AtomicStopwatch startup_watch;
+
+    std::unordered_map<String, std::function<void()>> metadata_revert_guards TSA_GUARDED_BY(mutex);
 
     DatabaseMetadataDiskSettings database_metadata_disk_settings;
     DiskPtr metadata_disk_ptr;

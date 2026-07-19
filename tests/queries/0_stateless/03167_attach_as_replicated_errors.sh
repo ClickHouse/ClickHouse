@@ -48,5 +48,8 @@ ARGS_1="('/clickhouse/tables/$UUID/s1', 'r1')" # Suppress style check for zk pat
 ${CLICKHOUSE_CLIENT} --allow_deprecated_database_ordinary=1 -q "CREATE TABLE already_exists_2 (id UInt32) ENGINE=ReplicatedMergeTree$ARGS_1 ORDER BY id;"
 ${CLICKHOUSE_CLIENT} --allow_deprecated_database_ordinary=1 -q "DETACH TABLE already_exists_1;"
 echo "$(${CLICKHOUSE_CLIENT} --allow_deprecated_database_ordinary=1 --server_logs_file=/dev/null --query="ATTACH TABLE already_exists_1 AS REPLICATED" 2>&1)" \
-  | grep -c 'There already is an active replica with this replica path'
-${CLICKHOUSE_CLIENT} --allow_deprecated_database_ordinary=1 -q "ATTACH TABLE already_exists_1 AS NOT REPLICATED;"
+  | grep -c 'Found existing ZooKeeper path'
+# The preflight replica-path check rejects the conversion before rewriting the metadata, so the
+# stored definition stays MergeTree. A plain re-attach must succeed with the engine unchanged.
+${CLICKHOUSE_CLIENT} --allow_deprecated_database_ordinary=1 -q "ATTACH TABLE already_exists_1;"
+${CLICKHOUSE_CLIENT} --allow_deprecated_database_ordinary=1 --query="SELECT engine FROM system.tables WHERE database=currentDatabase() AND table='already_exists_1';"

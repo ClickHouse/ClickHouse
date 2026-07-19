@@ -30,9 +30,11 @@
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/StorageFactory.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/StorageTableProxy.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/PoolId.h>
 #include <Common/escapeForFileName.h>
 #include <Common/logger_useful.h>
@@ -73,6 +75,7 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int UNEXPECTED_NODE_IN_ZOOKEEPER;
     extern const int UNKNOWN_TABLE;
+    extern const int BAD_ARGUMENTS;
 }
 
 namespace DatabaseMetadataDiskSetting
@@ -120,7 +123,7 @@ void DatabaseOrdinary::loadStoredObjects(ContextMutablePtr, LoadingStrictnessLev
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented");
 }
 
-static void checkReplicaPathExists(ASTCreateQuery & create_query, ContextPtr local_context)
+void DatabaseOrdinary::checkReplicaPathExists(ASTCreateQuery & create_query, ContextPtr local_context)
 {
     Macros::MacroExpansionInfo info;
     StorageID table_id = StorageID(create_query.getDatabase(), create_query.getTable(), create_query.uuid);
@@ -137,6 +140,33 @@ static void checkReplicaPathExists(ASTCreateQuery & create_query, ContextPtr loc
             "Found existing ZooKeeper path {} while trying to convert table {} to replicated. Table will not be converted.",
             zookeeper_path, backQuote(table_id.getFullTableName())
         );
+}
+
+void DatabaseOrdinary::validateEngineSupportsReplicatedConversion(const ASTCreateQuery & create_query, bool to_replicated)
+{
+    const String & engine_name = create_query.storage->engine->name;
+
+    if (engine_name.starts_with("Shared"))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Engine {} cannot be converted between MergeTree and Replicated by toggling the Replicated prefix",
+            engine_name);
+
+    const String target_engine_name
+        = to_replicated ? "Replicated" + engine_name : engine_name.substr(strlen("Replicated"));
+
+    if (create_query.storage->unique_key
+        && !StorageFactory::instance().getStorageFeatures(target_engine_name).supports_unique_key)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Engine {} doesn't support UNIQUE KEY clause, cannot attach table as {}replicated",
+            target_engine_name, to_replicated ? "" : "not ");
+
+    if (to_replicated)
+        if (auto * settings = create_query.storage->settings)
+            if (const Field * table_readonly = settings->changes.tryGet("table_readonly");
+                table_readonly && applyVisitor(FieldVisitorConvertToNumber<UInt64>(), *table_readonly) != 0)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Engine {} doesn't support the table_readonly setting, cannot attach table as replicated",
+                    target_engine_name);
 }
 
 void DatabaseOrdinary::setMergeTreeEngine(ASTCreateQuery & create_query, ContextPtr local_context, bool replicated)
@@ -231,19 +261,34 @@ void DatabaseOrdinary::convertMergeTreeToReplicatedIfNeeded(ASTPtr ast, const Qu
     LOG_INFO(log, "Found {} flag for table {}. Will try to change it's engine in metadata to replicated.", CONVERT_TO_REPLICATED_FLAG_NAME, backQuote(qualified_name.getFullName()));
 
     checkReplicaPathExists(create_query, getContext());
-    setMergeTreeEngine(create_query, getContext(), /*replicated*/ true);
+    validateEngineSupportsReplicatedConversion(create_query, /*to_replicated*/ true);
 
-    /// Write changes to metadata
     String table_metadata_path = full_path;
     String table_metadata_tmp_path = table_metadata_path + ".tmp";
-    String statement = getObjectDefinitionFromCreateQuery(ast);
-    writeMetadataFile(
-        db_disk,
-        /*file_path=*/table_metadata_tmp_path,
-        /*content=*/statement,
-        /*fsync_metadata=*/getContext()->getSettingsRef()[Setting::fsync_metadata]);
+    bool fsync_metadata = getContext()->getSettingsRef()[Setting::fsync_metadata];
+    String original_statement = readMetadataFile(db_disk, table_metadata_path);
 
+    setMergeTreeEngine(create_query, getContext(), /*replicated*/ true);
+
+    String statement = getObjectDefinitionFromCreateQuery(ast);
+    writeMetadataFile(db_disk, table_metadata_tmp_path, statement, fsync_metadata);
     db_disk->replaceFile(table_metadata_tmp_path, table_metadata_path);
+
+    metadata_revert_guards[qualified_name.getFullName()] = [db_disk, table_metadata_path, table_metadata_tmp_path,
+                                                            saved = std::move(original_statement), fsync_metadata,
+                                                            table_name = qualified_name.getFullName(), this]
+    {
+        try
+        {
+            writeMetadataFile(db_disk, table_metadata_tmp_path, saved, fsync_metadata);
+            db_disk->replaceFile(table_metadata_tmp_path, table_metadata_path);
+            LOG_INFO(log, "Reverted metadata of table {} after a failed restart-time conversion.", backQuoteIfNeed(table_name));
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log, "Failed to revert metadata after a failed restart-time conversion");
+        }
+    };
 
     LOG_INFO(
         log,
@@ -506,7 +551,25 @@ LoadTaskPtr DatabaseOrdinary::loadTableFromMetadataAsync(
         [this, local_context, file_path, name, ast, mode](AsyncLoader &, const LoadJobPtr &)
         {
             SCOPE_EXIT(TransactionLog::decreaseAsyncTablesLoadingJobNumber(););
-            loadTableFromMetadata(local_context, file_path, name, ast, mode);
+            try
+            {
+                loadTableFromMetadata(local_context, file_path, name, ast, mode);
+            }
+            catch (...)
+            {
+                std::function<void()> revert;
+                {
+                    std::lock_guard guard(mutex);
+                    if (auto it = metadata_revert_guards.find(name.getFullName()); it != metadata_revert_guards.end())
+                    {
+                        revert = std::move(it->second);
+                        metadata_revert_guards.erase(it);
+                    }
+                }
+                if (revert)
+                    revert();
+                throw;
+            }
         });
 
     return load_table[name.table] = makeLoadTask(async_loader, {job});
@@ -517,6 +580,11 @@ void DatabaseOrdinary::restoreMetadataAfterConvertingToReplicated(StoragePtr tab
     auto * rmt = table->as<StorageReplicatedMergeTree>();
     if (!rmt)
         return;
+
+    {
+        std::lock_guard guard(mutex);
+        metadata_revert_guards.erase(name.getFullName());
+    }
 
     auto convert_to_replicated_flag_path = getConvertToReplicatedFlagPath(name.table, true);
 
