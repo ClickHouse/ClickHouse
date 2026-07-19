@@ -908,7 +908,6 @@ UInt64 mainQueryNodeBlockSizeByLimit(const SelectQueryInfo & select_query_info, 
         && !main_query_node.isLimitWithTies()
         && !main_query_node.hasPrewhere()
         && !main_query_node.hasWhere()
-        && select_query_info.filter_asts.empty()
         && !main_query_node.hasGroupBy()
         && !main_query_node.hasHaving()
         && !main_query_node.hasOrderBy()
@@ -937,13 +936,26 @@ UInt64 mainQueryNodeBlockSizeByLimit(const SelectQueryInfo & select_query_info, 
     /// itself, but it does make the result depend on the scheduling race between streams (e.g.
     /// each `GenerateRandom` stream is seeded independently, and an unordered multi-stream `LIMIT`
     /// keeps whichever rows happen to arrive first) -- so the caller still forces a single stream
-    /// via `out_stateful_function_blocked_trivial_limit`, matching the pre-existing behavior for
-    /// such a trivial LIMIT before this guard was added.
+    /// (and disables parallel replicas) via `out_stateful_function_blocked_trivial_limit`, matching
+    /// the pre-existing behavior for such a trivial LIMIT before this guard was added.
+    /// This check is BEFORE the hidden-reader-side-filter check below on purpose: the
+    /// single-deterministic-stream requirement holds even when a row policy / additional filter is
+    /// present (the caller suppresses only the source cap in that case).
     if (hasStatefulFunctionNode(main_query_node.getProjectionNode()))
     {
         out_stateful_function_blocked_trivial_limit = true;
         return 0;
     }
+
+    /// A hidden reader-side filter (row policy / additional table filter / parallel-replicas
+    /// custom-key filter) can drop rows before the LIMIT applies, so capping the source to
+    /// `limit + offset` rows is unsafe. There is no stateful function in the projection here
+    /// (checked above), so there is no single-stream requirement -- just skip the source cap.
+    /// In the planner `filter_asts` is not populated (the caller detects hidden filters via
+    /// `has_additional_filters` and suppresses the source cap there), so this is defensive; it
+    /// mirrors the live check in `InterpreterSelectQuery::maxBlockSizeByLimit`.
+    if (!select_query_info.filter_asts.empty())
+        return 0;
 
     return limit_length + limit_offset;
 }
@@ -1546,13 +1558,21 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
               * and also set the number of threads to 1.
               */
             /// Use the same effective-filter checks as the row-policy / additional-filter
-            /// planning further down: the trivial-LIMIT optimization must be disabled
-            /// whenever those filters actually apply, so the flags must agree.
+            /// planning further down: whenever those hidden reader-side filters actually apply,
+            /// they can drop rows before the LIMIT, so the source cap / `trivial_limit` is unsafe
+            /// (it could drop output rows the LIMIT should keep), so the flags must agree.
             bool has_additional_filters = !!table_expression_query_info.additional_filter_ast
                 || !!getEffectiveRowPolicyFilter(storage, query_context);
             bool stateful_function_blocked_trivial_limit = false;
-            if (!has_additional_filters)
-                max_block_size_limited = mainQueryNodeBlockSizeByLimit(select_query_info, stateful_function_blocked_trivial_limit);
+            max_block_size_limited = mainQueryNodeBlockSizeByLimit(select_query_info, stateful_function_blocked_trivial_limit);
+            /// Suppress ONLY the source cap when a hidden filter is present -- but keep
+            /// `stateful_function_blocked_trivial_limit`. The single-deterministic-stream requirement
+            /// for a stateful projection (below) is a separate concern from the source cap: it holds
+            /// even under a row policy / additional filter (the stateful function must still see one
+            /// deterministic stream of the surviving rows), so the source cap and the single-stream
+            /// decision must not be conflated (mirrors `InterpreterSelectQuery::maxBlockSizeByLimit`).
+            if (has_additional_filters)
+                max_block_size_limited = 0;
             if (max_block_size_limited)
             {
                 if (max_block_size_limited < max_block_size)

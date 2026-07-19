@@ -2726,7 +2726,6 @@ UInt64 InterpreterSelectQuery::maxBlockSizeByLimit(bool & out_stateful_function_
        && !query.limit_with_ties
        && !query.prewhere()
        && !query.where()
-       && query_info.filter_asts.empty()
        && !query.groupBy()
        && !query.having()
        && !query.orderBy()
@@ -2757,13 +2756,24 @@ UInt64 InterpreterSelectQuery::maxBlockSizeByLimit(bool & out_stateful_function_
     /// does make the result depend on the scheduling race between streams (e.g. each
     /// `GenerateRandom` stream is seeded independently, and an unordered multi-stream `LIMIT`
     /// keeps whichever rows happen to arrive first) -- so the caller still forces a single stream
-    /// via `out_stateful_function_blocked_trivial_limit`, matching the pre-existing behavior for
-    /// such a trivial LIMIT before this guard was added.
+    /// (and disables parallel replicas) via `out_stateful_function_blocked_trivial_limit`, matching
+    /// the pre-existing behavior for such a trivial LIMIT before this guard was added.
+    /// This check is BEFORE the hidden-reader-side-filter check below on purpose: the
+    /// single-deterministic-stream requirement holds even when a row policy / additional filter is
+    /// present, whereas the source cap does not (see the sibling caller in `PlannerJoinTree`).
     if (selectListHasStatefulFunction(query.select(), context))
     {
         out_stateful_function_blocked_trivial_limit = true;
         return 0;
     }
+
+    /// A hidden reader-side filter (a row policy, an additional table filter, or a parallel-replicas
+    /// custom-key filter -- all collected into `query_info.filter_asts`) can drop rows before the
+    /// LIMIT applies, so capping the source to `limit + offset` rows is unsafe (it could drop output
+    /// rows the LIMIT should keep). There is no stateful function in the SELECT list here (checked
+    /// above), so there is no single-stream requirement -- just skip the source cap.
+    if (!query_info.filter_asts.empty())
+        return 0;
 
     return lim_info.limit_length + lim_info.limit_offset;
 }
