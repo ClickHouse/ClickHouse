@@ -1,0 +1,118 @@
+---
+sidebarTitle: 'Google Cloud SQL'
+description: '将 Google Cloud SQL Postgres 实例配置为 ClickPipes 的数据源'
+slug: /integrations/clickpipes/postgres/source/google-cloudsql
+title: 'Google Cloud SQL Postgres 数据源设置指南'
+doc_type: 'guide'
+keywords: ['google cloud sql', 'postgres', 'ClickPipes', '逻辑解码', '防火墙']
+integration:
+   - support_level: 'core'
+   - category: 'clickpipes'
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+<Info>
+  如果你使用的是受支持的提供商之一 (见侧边栏) ，请参阅该提供商对应的专门指南。
+</Info>
+
+<div id="supported-postgres-versions">
+  ## 支持的 Postgres 版本
+</div>
+
+Postgres 12 及更高版本
+
+<div id="enable-logical-replication">
+  ## 启用逻辑复制
+</div>
+
+如果设置 `cloudsql. logical_decoding` 已开启，则**无需**执行以下步骤。如果你是从其他数据复制工具迁移而来，通常此设置已预先配置好。
+
+1. 在 Overview 页面上点击 **Edit** 按钮。
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/google-cloudsql/edit.webp" alt="Cloud SQL Postgres 中的 Edit 按钮" size="lg" border />
+
+2. 进入 Flags，将 `cloudsql.logical_decoding` 设置为 on。此更改需要重启 Postgres 服务器。
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/google-cloudsql/cloudsql_logical_decoding1.webp" alt="将 cloudsql.logical_decoding 设置为 on" size="lg" border />
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/google-cloudsql/cloudsql_logical_decoding3.webp" alt="重启服务器" size="lg" border />
+
+<div id="creating-clickpipes-user-and-granting-permissions">
+  ## 创建 ClickPipes 用户并授予权限
+</div>
+
+使用管理员用户连接到您的 Cloud SQL Postgres，并运行以下命令：
+
+1. 为 ClickPipes 创建一个专用用户：
+
+   ```sql
+   CREATE USER clickpipes_user PASSWORD 'some-password';
+   ```
+
+2. 向您在上一步创建的用户授予 schema 级只读权限。以下示例展示了 `public` schema 的权限。请对每个包含您要复制的表的 schema 重复执行这些命令：
+
+   ```sql
+   GRANT USAGE ON SCHEMA "public" TO clickpipes_user;
+   GRANT SELECT ON ALL TABLES IN SCHEMA "public" TO clickpipes_user;
+   ALTER DEFAULT PRIVILEGES IN SCHEMA "public" GRANT SELECT ON TABLES TO clickpipes_user;
+   ```
+
+3. 向该用户授予复制权限：
+
+   ```sql
+   ALTER USER clickpipes_user WITH REPLICATION;
+   ```
+
+4. 使用您要复制的表创建一个 [publication](https://www.postgresql.org/docs/current/logical-replication-publication.html)。我们强烈建议仅在 publication 中包含您实际需要的表，以避免额外的性能开销。
+
+<Warning>
+  凡是包含在 publication 中的表，都必须**定义主键**，&#95;或者&#95;将其**副本标识**配置为 `FULL`。有关如何界定范围的指导，请参阅 [Postgres FAQs](/zh/integrations/clickpipes/postgres/faq#how-should-i-scope-my-publications-when-setting-up-replication)。
+</Warning>
+
+* 为特定表创建 publication：
+
+  ```sql
+  CREATE PUBLICATION clickpipes FOR TABLE table_to_replicate, table_to_replicate2;
+  ```
+
+  * 为特定 schema 中的所有表创建 publication：
+
+    ```sql
+    CREATE PUBLICATION clickpipes FOR TABLES IN SCHEMA "public";
+    ```
+
+`clickpipes` publication 将包含从指定表生成的一组变更事件，后续将用于摄取复制流。
+
+[//]: # "TODO Add SSH Tunneling"
+
+<div id="add-clickpipes-ips-to-firewall">
+  ## 将 ClickPipes IP 添加到防火墙
+</div>
+
+请按以下步骤将 ClickPipes IP 添加到您的网络中。
+
+<Note>
+  如果您使用 SSH 隧道，则需要将 [ClickPipes IP](/zh/integrations/clickpipes/home#list-of-static-ips) 添加到跳板机/堡垒机的防火墙规则中。
+</Note>
+
+1. 前往 **Connections** 部分
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/google-cloudsql/connections.webp" alt="Cloud SQL 中的 Connections 部分" size="lg" border />
+
+2. 前往 **Networking** 子部分
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/google-cloudsql/connections_networking.webp" alt="Cloud SQL 中的 Networking 子部分" size="lg" border />
+
+3. 添加 [ClickPipes 的公网 IP](/zh/integrations/clickpipes/home#list-of-static-ips)
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/google-cloudsql/firewall1.webp" alt="将 ClickPipes 网络添加到防火墙" size="lg" border />
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/google-cloudsql/firewall2.webp" alt="已将 ClickPipes 网络添加到防火墙" size="lg" border />
+
+<div id="whats-next">
+  ## 下一步是什么？
+</div>
+
+您现在可以[创建 ClickPipe](/zh/integrations/clickpipes/postgres/index)，并开始将 Postgres 实例中的数据摄取到 ClickHouse Cloud。
+请务必记下设置 Postgres 实例时使用的连接信息，因为在创建 ClickPipe 的过程中需要用到这些信息。

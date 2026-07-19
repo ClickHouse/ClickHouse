@@ -1,0 +1,289 @@
+---
+description: 'Graphite 데이터를 축약하고 집계/평균화(롤업)하도록 설계되었습니다.'
+sidebarTitle: 'GraphiteMergeTree'
+slug: /engines/table-engines/mergetree-family/graphitemergetree
+title: 'GraphiteMergeTree 테이블 엔진'
+doc_type: 'guide'
+---
+
+이 엔진은 [Graphite](http://graphite.readthedocs.io/en/latest/index.html) 데이터를 축약하고 집계/평균화(롤업)하도록 설계되었습니다. ClickHouse를 Graphite용 데이터 저장소로 사용하려는 개발자에게 유용할 수 있습니다.
+
+롤업이 필요하지 않다면 Graphite 데이터를 저장하는 데 어떤 ClickHouse 테이블 엔진이든 사용할 수 있지만, 롤업이 필요하다면 `GraphiteMergeTree`를 사용하십시오. 이 엔진은 저장 용량을 줄이고 Graphite 쿼리의 효율을 높입니다.
+
+이 엔진은 [MergeTree](/ko/reference/engines/table-engines/mergetree-family/mergetree)의 속성을 상속합니다.
+
+<div id="creating-table">
+  ## 테이블 생성하기
+</div>
+
+```sql
+CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
+(
+    Path String,
+    Time DateTime,
+    Value Float64,
+    Version <Numeric_type>
+    ...
+) ENGINE = GraphiteMergeTree(config_section)
+[PARTITION BY expr]
+[ORDER BY expr]
+[SAMPLE BY expr]
+[SETTINGS name=value, ...]
+```
+
+자세한 내용은 [CREATE TABLE](/ko/reference/statements/create/table) 쿼리 설명을 참조하십시오.
+
+Graphite 데이터용 테이블에는 다음 데이터를 위한 컬럼이 있어야 합니다.
+
+* 메트릭 이름(Graphite sensor). 데이터 타입: `String`.
+
+* 메트릭 측정 시간. 데이터 타입: `DateTime`.
+
+* 메트릭 값. 데이터 타입: `Float64`.
+
+* 메트릭 버전. 데이터 타입: 임의의 숫자형(ClickHouse는 버전이 가장 높은 행을 저장하며, 버전이 같으면 마지막으로 기록된 행을 저장합니다. 다른 행은 데이터 파트 머지 중 삭제됩니다).
+
+이 컬럼 이름은 롤업 구성에서 설정해야 합니다.
+
+**GraphiteMergeTree 매개변수**
+
+* `config_section` — 롤업 규칙이 설정된 설정 파일 섹션의 이름입니다.
+
+**쿼리 절**
+
+`GraphiteMergeTree` 테이블을 생성할 때는 `MergeTree` 테이블을 생성할 때와 동일한 [절](/ko/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-creating-a-table)이 필요합니다.
+
+<details markdown="1">
+  <summary>더 이상 권장되지 않는 테이블 생성 방법</summary>
+
+  <Note>
+    새 프로젝트에서는 이 방법을 사용하지 말고, 가능하면 기존 프로젝트도 위에서 설명한 방법으로 전환하십시오.
+  </Note>
+
+  ```sql
+  CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
+  (
+      EventDate Date,
+      Path String,
+      Time DateTime,
+      Value Float64,
+      Version <Numeric_type>
+      ...
+  ) ENGINE [=] GraphiteMergeTree(date-column [, sampling_expression], (primary, key), index_granularity, config_section)
+  ```
+
+  `config_section`을 제외한 모든 매개변수의 의미는 `MergeTree`와 같습니다.
+
+  * `config_section` — 롤업 규칙이 설정된 설정 파일 섹션의 이름입니다.
+</details>
+
+<div id="rollup-configuration">
+  ## 롤업 구성
+</div>
+
+롤업 설정은 서버 구성의 [graphite&#95;rollup](/ko/reference/settings/server-settings/settings#graphite) 매개변수로 정의합니다. 매개변수 이름은 임의로 지정할 수 있습니다. 여러 구성을 생성하여 서로 다른 테이블에 사용할 수 있습니다.
+
+롤업 구성 구조:
+
+required-columns
+patterns
+
+<div id="required-columns">
+  ### 필수 컬럼
+</div>
+
+<div id="path_column_name">
+  #### `path_column_name`
+</div>
+
+`path_column_name` — 메트릭 이름(Graphite sensor)을 저장하는 컬럼 이름입니다. 기본값은 `Path`입니다.
+
+<div id="time_column_name">
+  #### `time_column_name`
+</div>
+
+`time_column_name` — 메트릭 측정 시간을 저장하는 컬럼의 이름입니다. 기본값은 `Time`입니다.
+
+<div id="value_column_name">
+  #### `value_column_name`
+</div>
+
+`value_column_name` — `time_column_name`에 지정된 시점의 메트릭 값을 저장하는 컬럼 이름입니다. 기본값은 `Value`입니다.
+
+<div id="version_column_name">
+  #### `version_column_name`
+</div>
+
+`version_column_name` — 메트릭 버전을 저장하는 컬럼 이름입니다. 기본값은 `Timestamp`입니다.
+
+<div id="patterns">
+  ### 패턴
+</div>
+
+`patterns` 섹션의 구조:
+
+```text
+pattern
+    rule_type
+    regexp
+    function
+pattern
+    rule_type
+    regexp
+    age + precision
+    ...
+pattern
+    rule_type
+    regexp
+    function
+    age + precision
+    ...
+pattern
+    ...
+default
+    function
+    age + precision
+    ...
+```
+
+<Warning>
+  패턴은 반드시 다음 순서대로 엄격하게 정렬해야 합니다:
+
+  1. `function` 또는 `retention`이 없는 패턴
+  2. `function`과 `retention`이 모두 있는 패턴
+  3. `default` 패턴
+</Warning>
+
+행을 처리할 때 ClickHouse는 `pattern` 섹션의 규칙을 확인합니다. 각 `pattern` 섹션(`default` 포함)에는 집계를 위한 `function` 매개변수, `retention` 매개변수 또는 둘 다 포함할 수 있습니다. 메트릭 이름이 `regexp`와 일치하면 해당 `pattern` 섹션의 규칙(또는 여러 섹션의 규칙)이 적용되고, 일치하지 않으면 `default` 섹션의 규칙이 사용됩니다.
+
+`pattern` 및 `default` 섹션의 필드:
+
+* `rule_type` - 규칙의 유형입니다. 특정 메트릭에만 적용됩니다. 엔진은 이를 사용해 일반 메트릭과 태그된 메트릭을 구분합니다. 선택 사항인 매개변수입니다. 기본값: `all`.
+  성능이 중요하지 않거나 일반 메트릭처럼 하나의 메트릭 타입만 사용하는 경우에는 필요하지 않습니다. 기본적으로는 하나의 규칙 세트만 생성됩니다. 반대로 특수 유형이 하나라도 정의되면 서로 다른 두 세트가 생성됩니다. 하나는 일반 메트릭(root.branch.leaf)용이고, 다른 하나는 태그된 메트릭(root.branch.leaf;tag1=value1)용입니다.
+  기본 규칙은 두 세트 모두에 포함됩니다.
+  유효한 값:
+  * `all` (기본값) - `rule_type`이 생략된 경우 사용되는 범용 규칙입니다.
+  * `plain` - 일반 메트릭용 규칙입니다. `regexp` 필드는 정규식으로 처리됩니다.
+  * `tagged` - 태그된 메트릭용 규칙입니다(메트릭은 DB에 `someName?tag1=value1&tag2=value2&tag3=value3` 형식으로 저장됩니다). 정규식은 태그 이름 순으로 정렬되어 있어야 하며, 존재하는 경우 첫 번째 태그는 `__name__`이어야 합니다. `regexp` 필드는 정규식으로 처리됩니다.
+  * `tag_list` - 태그된 메트릭용 규칙으로, graphite 형식 `someName;tag1=value1;tag2=value2`, `someName` 또는 `tag1=value1;tag2=value2`에서 메트릭을 더 쉽게 기술하기 위한 간단한 DSL입니다. `regexp` 필드는 `tagged` 규칙으로 변환됩니다. 태그 이름순 정렬은 필요 없으며 자동으로 수행됩니다. 태그 값(이름 제외)은 정규식으로 지정할 수 있습니다. 예: `env=(dev|staging)`.
+* `regexp` – 메트릭 이름에 대한 패턴(정규식 또는 DSL)입니다.
+* `age` – 초 단위 데이터 경과 시간의 최소값입니다.
+* `precision`– 초 단위 데이터 경과 시간을 얼마나 정밀하게 정의할지 나타냅니다. 86400(하루의 초 수)의 약수여야 합니다.
+* `function` – 경과 시간이 `[age, age + precision]` 범위에 속하는 데이터에 적용할 집계 함수의 이름입니다. 허용되는 함수: min / max / any / avg. 평균은 평균들의 평균처럼 부정확하게 계산됩니다.
+
+<div id="configuration-example">
+  ### 규칙 타입 없이 사용하는 구성 예시
+</div>
+
+```xml
+<graphite_rollup>
+    <version_column_name>Version</version_column_name>
+    <pattern>
+        <regexp>click_cost</regexp>
+        <function>any</function>
+        <retention>
+            <age>0</age>
+            <precision>5</precision>
+        </retention>
+        <retention>
+            <age>86400</age>
+            <precision>60</precision>
+        </retention>
+    </pattern>
+    <default>
+        <function>max</function>
+        <retention>
+            <age>0</age>
+            <precision>60</precision>
+        </retention>
+        <retention>
+            <age>3600</age>
+            <precision>300</precision>
+        </retention>
+        <retention>
+            <age>86400</age>
+            <precision>3600</precision>
+        </retention>
+    </default>
+</graphite_rollup>
+```
+
+<div id="configuration-typed-example">
+  ### 규칙 타입을 포함한 구성 예시
+</div>
+
+```xml
+<graphite_rollup>
+    <version_column_name>Version</version_column_name>
+    <pattern>
+        <rule_type>plain</rule_type>
+        <regexp>click_cost</regexp>
+        <function>any</function>
+        <retention>
+            <age>0</age>
+            <precision>5</precision>
+        </retention>
+        <retention>
+            <age>86400</age>
+            <precision>60</precision>
+        </retention>
+    </pattern>
+    <pattern>
+        <rule_type>tagged</rule_type>
+        <regexp>^((.*)|.)min\?</regexp>
+        <function>min</function>
+        <retention>
+            <age>0</age>
+            <precision>5</precision>
+        </retention>
+        <retention>
+            <age>86400</age>
+            <precision>60</precision>
+        </retention>
+    </pattern>
+    <pattern>
+        <rule_type>tagged</rule_type>
+        <regexp><![CDATA[^someName\?(.*&)*tag1=value1(&|$)]]></regexp>
+        <function>min</function>
+        <retention>
+            <age>0</age>
+            <precision>5</precision>
+        </retention>
+        <retention>
+            <age>86400</age>
+            <precision>60</precision>
+        </retention>
+    </pattern>
+    <pattern>
+        <rule_type>tag_list</rule_type>
+        <regexp>someName;tag2=value2</regexp>
+        <retention>
+            <age>0</age>
+            <precision>5</precision>
+        </retention>
+        <retention>
+            <age>86400</age>
+            <precision>60</precision>
+        </retention>
+    </pattern>
+    <default>
+        <function>max</function>
+        <retention>
+            <age>0</age>
+            <precision>60</precision>
+        </retention>
+        <retention>
+            <age>3600</age>
+            <precision>300</precision>
+        </retention>
+        <retention>
+            <age>86400</age>
+            <precision>3600</precision>
+        </retention>
+    </default>
+</graphite_rollup>
+```
+
+<Note>
+  데이터 롤업은 머지 중에 수행됩니다. 일반적으로 오래된 파티션에서는 머지가 시작되지 않으므로, 롤업을 수행하려면 [optimize](/ko/reference/statements/optimize)를 사용해 예정되지 않은 머지를 트리거해야 합니다. 또는 [graphite-ch-optimizer](https://github.com/innogames/graphite-ch-optimizer)와 같은 추가 도구를 사용할 수 있습니다.
+</Note>

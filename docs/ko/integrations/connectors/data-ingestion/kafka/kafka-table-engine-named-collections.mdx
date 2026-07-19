@@ -1,0 +1,241 @@
+---
+title: '이름이 지정된 컬렉션을 사용해 ClickHouse를 Kafka와 통합하기'
+description: '이름이 지정된 컬렉션을 사용해 ClickHouse를 Kafka에 연결하는 방법'
+keywords: ['명명된 컬렉션', '방법', 'Kafka']
+slug: /integrations/data-ingestion/kafka/kafka-table-engine-named-collections
+doc_type: 'guide'
+---
+
+<div id="introduction">
+  ## 소개
+</div>
+
+이 가이드에서는 이름이 지정된 컬렉션을 사용해 ClickHouse를 Kafka에 연결하는 방법을 살펴봅니다. 이름이 지정된 컬렉션용 설정 파일을 사용하면 다음과 같은 장점이 있습니다.
+
+* 구성 설정을 중앙에서 더 쉽게 관리할 수 있습니다.
+* SQL 테이블 정의를 변경하지 않고도 설정을 수정할 수 있습니다.
+* 단일 설정 파일을 확인하여 구성을 더 쉽게 검토하고 문제를 해결할 수 있습니다.
+
+이 가이드는 Apache Kafka 3.4.1 및 ClickHouse 24.5.1에서 테스트되었습니다.
+
+<div id="assumptions">
+  ## 전제 조건
+</div>
+
+이 문서는 다음이 갖추어져 있다고 가정합니다:
+
+1. 정상적으로 작동하는 Kafka 클러스터
+2. 설정이 완료되어 실행 중인 ClickHouse 클러스터
+3. SQL에 대한 기본 지식과 ClickHouse 및 Kafka 구성에 대한 이해
+
+<div id="prerequisites">
+  ## 사전 요구 사항
+</div>
+
+명명된 컬렉션을 생성하는 사용자에게 필요한 접근 권한이 있는지 확인하십시오.
+
+```xml
+<access_management>1</access_management>
+<named_collection_control>1</named_collection_control>
+<show_named_collections>1</show_named_collections>
+<show_named_collections_secrets>1</show_named_collections_secrets>
+```
+
+액세스 제어 활성화에 대한 자세한 내용은 [사용자 관리 가이드](/ko/concepts/features/security/access-rights)를 참조하십시오.
+
+<div id="configuration">
+  ## 구성
+</div>
+
+다음 섹션을 ClickHouse `config.xml` 파일에 추가하십시오:
+
+```xml
+<!-- Kafka 통합을 위한 이름이 지정된 컬렉션 -->
+<named_collections>
+    <cluster_1>
+        <!-- ClickHouse Kafka 엔진 매개변수 -->
+        <kafka_broker_list>c1-kafka-1:9094,c1-kafka-2:9094,c1-kafka-3:9094</kafka_broker_list>
+        <kafka_topic_list>cluster_1_clickhouse_topic</kafka_topic_list>
+        <kafka_group_name>cluster_1_clickhouse_consumer</kafka_group_name>
+        <kafka_format>JSONEachRow</kafka_format>
+        <kafka_commit_every_batch>0</kafka_commit_every_batch>
+        <kafka_num_consumers>1</kafka_num_consumers>
+        <kafka_thread_per_consumer>1</kafka_thread_per_consumer>
+
+        <!-- Kafka 확장 구성 -->
+        <kafka>
+            <security_protocol>SASL_SSL</security_protocol>
+            <enable_ssl_certificate_verification>false</enable_ssl_certificate_verification>
+            <sasl_mechanism>PLAIN</sasl_mechanism>
+            <sasl_username>kafka-client</sasl_username>
+            <sasl_password>kafkapassword1</sasl_password>
+            <debug>all</debug>
+            <auto_offset_reset>latest</auto_offset_reset>
+        </kafka>
+    </cluster_1>
+
+    <cluster_2>
+        <!-- ClickHouse Kafka 엔진 매개변수 -->
+        <kafka_broker_list>c2-kafka-1:29094,c2-kafka-2:29094,c2-kafka-3:29094</kafka_broker_list>
+        <kafka_topic_list>cluster_2_clickhouse_topic</kafka_topic_list>
+        <kafka_group_name>cluster_2_clickhouse_consumer</kafka_group_name>
+        <kafka_format>JSONEachRow</kafka_format>
+        <kafka_commit_every_batch>0</kafka_commit_every_batch>
+        <kafka_num_consumers>1</kafka_num_consumers>
+        <kafka_thread_per_consumer>1</kafka_thread_per_consumer>
+
+        <!-- Kafka 확장 구성 -->
+        <kafka>
+            <security_protocol>SASL_SSL</security_protocol>
+            <enable_ssl_certificate_verification>false</enable_ssl_certificate_verification>
+            <sasl_mechanism>PLAIN</sasl_mechanism>
+            <sasl_username>kafka-client</sasl_username>
+            <sasl_password>kafkapassword2</sasl_password>
+            <debug>all</debug>
+            <auto_offset_reset>latest</auto_offset_reset>
+        </kafka>
+    </cluster_2>
+</named_collections>
+```
+
+<div id="configuration-notes">
+  ### 구성 참고 사항
+</div>
+
+1. Kafka 주소와 관련 구성은 Kafka 클러스터 설정에 맞게 조정하십시오.
+2. `<kafka>` 앞의 섹션에는 ClickHouse Kafka 엔진 매개변수가 포함되어 있습니다. 전체 매개변수 목록은 [Kafka 엔진 매개변수](/ko/reference/engines/table-engines/integrations/kafka)를 참조하십시오.
+3. `<kafka>` 내부의 섹션에는 확장 Kafka 구성 옵션이 포함되어 있습니다. 추가 옵션은 [librdkafka 구성](https://github.com/confluentinc/librdkafka/blob/master/CONFIGURATION.md)을 참조하십시오.
+4. 이 예시에서는 `SASL_SSL` 보안 프로토콜과 `PLAIN` 메커니즘을 사용합니다. 이러한 설정은 Kafka 클러스터 구성에 따라 조정하십시오.
+
+<div id="creating-tables-and-databases">
+  ## 테이블 및 데이터베이스 생성
+</div>
+
+ClickHouse 클러스터에서 필요한 데이터베이스와 테이블을 생성하십시오. ClickHouse를 단일 노드로 실행하는 경우 SQL 명령에서 클러스터 부분은 생략하고 `ReplicatedMergeTree` 대신 다른 엔진을 사용하십시오.
+
+<div id="create-the-database">
+  ### 데이터베이스 생성
+</div>
+
+```sql
+CREATE DATABASE kafka_testing ON CLUSTER LAB_CLICKHOUSE_CLUSTER;
+```
+
+<div id="create-kafka-tables">
+  ### Kafka 테이블 생성
+</div>
+
+첫 번째 Kafka 클러스터용 첫 번째 Kafka 테이블을 생성합니다:
+
+```sql
+CREATE TABLE kafka_testing.first_kafka_table ON CLUSTER LAB_CLICKHOUSE_CLUSTER
+(
+    `id` UInt32,
+    `first_name` String,
+    `last_name` String
+)
+ENGINE = Kafka(cluster_1);
+```
+
+두 번째 Kafka 클러스터용 두 번째 Kafka 테이블을 생성합니다:
+
+```sql
+CREATE TABLE kafka_testing.second_kafka_table ON CLUSTER STAGE_CLICKHOUSE_CLUSTER
+(
+    `id` UInt32,
+    `first_name` String,
+    `last_name` String
+)
+ENGINE = Kafka(cluster_2);
+```
+
+<div id="create-replicated-tables">
+  ### 복제된 테이블(Replicated Table) 생성
+</div>
+
+첫 번째 Kafka 테이블에 사용할 테이블을 생성합니다:
+
+```sql
+CREATE TABLE kafka_testing.first_replicated_table ON CLUSTER STAGE_CLICKHOUSE_CLUSTER
+(
+    `id` UInt32,
+    `first_name` String,
+    `last_name` String
+) ENGINE = ReplicatedMergeTree()
+ORDER BY id;
+```
+
+두 번째 Kafka 테이블에 사용할 테이블을 생성합니다:
+
+```sql
+CREATE TABLE kafka_testing.second_replicated_table ON CLUSTER STAGE_CLICKHOUSE_CLUSTER
+(
+    `id` UInt32,
+    `first_name` String,
+    `last_name` String
+) ENGINE = ReplicatedMergeTree()
+ORDER BY id;
+```
+
+<div id="create-materialized-views">
+  ### materialized view 생성
+</div>
+
+첫 번째 Kafka 테이블의 데이터를 첫 번째 복제된 테이블(Replicated Table)에 삽입할 materialized view를 생성합니다:
+
+```sql
+CREATE MATERIALIZED VIEW kafka_testing.cluster_1_mv ON CLUSTER STAGE_CLICKHOUSE_CLUSTER TO first_replicated_table AS
+SELECT 
+    id,
+    first_name,
+    last_name
+FROM first_kafka_table;
+```
+
+두 번째 Kafka 테이블의 데이터를 두 번째 복제된 테이블에 삽입하도록 materialized view를 생성합니다:
+
+```sql
+CREATE MATERIALIZED VIEW kafka_testing.cluster_2_mv ON CLUSTER STAGE_CLICKHOUSE_CLUSTER TO second_replicated_table AS
+SELECT 
+    id,
+    first_name,
+    last_name
+FROM second_kafka_table;
+```
+
+<div id="verifying-the-setup">
+  ## 설정 확인
+</div>
+
+이제 Kafka 클러스터에서 해당 consumer group을 확인할 수 있습니다:
+
+* `cluster_1`의 `cluster_1_clickhouse_consumer`
+* `cluster_2`의 `cluster_2_clickhouse_consumer`
+
+두 테이블의 데이터를 확인하려면 ClickHouse 노드 아무 곳에서나 다음 쿼리를 실행하십시오:
+
+```sql
+SELECT * FROM first_replicated_table LIMIT 10;
+```
+
+```sql
+SELECT * FROM second_replicated_table LIMIT 10;
+```
+
+<div id="note">
+  ### 참고
+</div>
+
+이 가이드에서는 두 Kafka 토픽으로 수집되는 데이터가 동일합니다. 실제 환경에서는 서로 다를 수 있습니다. 필요한 만큼 Kafka 클러스터를 추가할 수 있습니다.
+
+예시 출력:
+
+```response
+┌─id─┬─first_name─┬─last_name─┐
+│  0 │ FirstName0 │ LastName0 │
+│  1 │ FirstName1 │ LastName1 │
+│  2 │ FirstName2 │ LastName2 │
+└────┴────────────┴───────────┘
+```
+
+이로써 이름이 지정된 컬렉션을 사용한 ClickHouse와 Kafka 통합 설정이 완료됩니다. Kafka 구성을 ClickHouse `config.xml` 파일에 중앙에서 관리하면 설정을 더 쉽게 관리하고 조정할 수 있어, 통합을 더욱 간편하고 효율적으로 운영할 수 있습니다.

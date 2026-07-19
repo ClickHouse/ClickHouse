@@ -1,0 +1,244 @@
+---
+sidebarTitle: 'Pub/Sub에서 ClickHouse로'
+slug: /integrations/google-dataflow/templates/pubsub-to-clickhouse
+description: 'Google Dataflow Template을 사용하여 Pub/Sub의 JSON 메시지를 ClickHouse로 스트리밍할 수 있습니다'
+title: 'Dataflow Pub/Sub를 ClickHouse로 전송하는 Template'
+doc_type: 'guide'
+keywords: ['Dataflow', 'Pub/Sub', 'PubSub', 'streaming', '데드 레터']
+---
+
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+Pub/Sub to ClickHouse Template은 Pub/Sub subscription에서 JSON으로 인코딩된 메시지를 읽어 ClickHouse 테이블에 기록하는 스트리밍 파이프라인입니다.
+파싱에 실패하거나 대상 스키마에 맞게 매핑되지 않은 메시지는 데드 레터 대상, 즉 ClickHouse 테이블, Pub/Sub 토픽 또는 둘 다로 라우팅됩니다.
+
+<div id="pipeline-requirements">
+  ## 파이프라인 요구 사항
+</div>
+
+* 소스 Pub/Sub subscription이 존재해야 합니다.
+* subscription에 게시되는 메시지는 유효한 JSON이어야 합니다.
+* 대상 ClickHouse 테이블(table)이 존재해야 하며, 해당 컬럼 이름은 JSON 페이로드(payload)의 필드 이름과 일치해야 합니다.
+* Dataflow worker 머신에서 ClickHouse 호스트에 접근할 수 있어야 합니다.
+* 데드 레터 대상(`clickHouseDeadLetterTable` 또는 `deadLetterTopic`)을 최소 하나 이상 지정해야 합니다. 둘 다 지정하면 실패한 메시지가 두 대상으로 동시에 라우팅됩니다.
+* `clickHouseDeadLetterTable`이 설정된 경우, 데드 레터 테이블은 [데드 레터 처리](#dead-letter-handling)에 나와 있는 스키마(schema)로 ClickHouse에 미리 존재해야 합니다.
+* `deadLetterTopic`이 설정된 경우, Pub/Sub 토픽이 미리 존재해야 합니다.
+
+<div id="template-parameters">
+  ## Template 매개변수
+</div>
+
+<br />
+
+<br />
+
+| 매개변수 이름                     | 매개변수 설명                                                                                                                                         | 필수 여부 | 참고                                                                                                                                                      |
+| --------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- | ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `inputSubscription`         | 메시지를 읽어올 Pub/Sub subscription입니다. 예시: `projects/<PROJECT_ID>/subscriptions/<SUBSCRIPTION_NAME>`.                                                          | ✅     | 메시지는 JSON으로 인코딩되어 있어야 합니다.                                                                                                                              |
+| `clickHouseUrl`             | ClickHouse 엔드포인트 URL입니다. SSL 연결(ClickHouse Cloud)에는 `https://`를, 비SSL 연결에는 `http://`를 사용합니다. 예시: `https://<HOST>:8443` 또는 `http://<HOST>:8123`. | ✅     | ClickHouse Cloud에서는 포트 `8443`의 HTTPS 엔드포인트를 사용합니다.                                                                                                      |
+| `clickHouseDatabase`        | 대상 테이블이 있는 ClickHouse 데이터베이스의 이름입니다. 예시: `default`.                                                                                             | ✅     |                                                                                                                                                         |
+| `clickHouseTable`           | 데이터를 기록할 ClickHouse 테이블의 이름입니다.                                                                                                                 | ✅     | 파이프라인을 실행하기 전에 테이블이 이미 존재해야 합니다.                                                                                                                        |
+| `clickHouseUsername`        | ClickHouse 인증에 사용할 사용자 이름입니다.                                                                                                                   | ✅     |                                                                                                                                                         |
+| `clickHousePassword`        | ClickHouse 인증에 사용할 비밀번호입니다.                                                                                                                     | ✅     |                                                                                                                                                         |
+| `clickHouseDeadLetterTable` | 실패한 메시지를 기록할 ClickHouse 테이블입니다. 예시: `my_table_dead_letter`.                                                                                     |       | `clickHouseDeadLetterTable` 또는 `deadLetterTopic` 중 하나는 반드시 제공해야 합니다. 테이블은 [데드 레터 처리](#dead-letter-handling)에 나온 데드 레터 스키마로 미리 생성되어 있어야 합니다. |
+| `deadLetterTopic`           | 실패한 메시지를 게시할 Pub/Sub 토픽입니다. 예시: `projects/<PROJECT_ID>/topics/<TOPIC_NAME>`.                                                                    |       | `clickHouseDeadLetterTable` 또는 `deadLetterTopic` 중 하나는 반드시 제공해야 합니다. 실패한 payload는 `errorMessage`와 `failedAt`가 메시지 속성으로 설정된 상태로 토픽에 게시됩니다.               |
+| `windowSeconds`             | 시간 기반 배칭 윈도우의 지속 시간(초)입니다.                                                                                                                      |       | `batchRowCount`와의 상호작용은 [배칭 및 윈도우 처리](#batching-and-windowing)을 참조하십시오. 둘 다 설정하지 않으면 결합 모드에서 기본값 `30s`와 `1000`행이 사용됩니다.                      |
+| `batchRowCount`             | ClickHouse로 플러시하기 전에 누적할 행 수입니다.                                                                                                                |       | `windowSeconds`와의 상호작용은 [배칭 및 윈도우 처리](#batching-and-windowing)을 참조하십시오.                                                                      |
+| `maxInsertBlockSize`        | ClickHouse로 전송되는 `INSERT` statement당 최대 행 수입니다. 기본값은 `1,000,000`입니다.                                                                            |       | `ClickHouseIO` 옵션입니다.                                                                                                                                   |
+| `maxRetries`                | 실패한 ClickHouse 삽입에 대한 최대 재시도 횟수입니다. 기본값은 `5`입니다.                                                                                                |       | `ClickHouseIO` 옵션입니다.                                                                                                                                   |
+| `insertDeduplicate`         | 복제된 ClickHouse 테이블의 `INSERT` 쿼리에 대해 중복 제거를 활성화할지 여부입니다. 기본값은 `true`입니다.                                                                         |       | `ClickHouseIO` 옵션입니다.                                                                                                                                   |
+| `insertQuorum`              | 복제된 테이블의 `INSERT` 쿼리에서 지정한 수의 레플리카가 쓰기를 확인하고 데이터 추가를 선형화할 때까지 기다립니다. `0`은 quorum 쓰기를 비활성화합니다.                                                   |       | `ClickHouseIO` 옵션입니다. 기본 server settings에서는 비활성화되어 있습니다.                                                                                                |
+| `insertDistributedSync`     | 활성화하면 분산 테이블에 대한 `INSERT` 쿼리는 클러스터의 모든 노드로 데이터가 전송될 때까지 기다립니다. 기본값은 `true`입니다.                                                                  |       | `ClickHouseIO` 옵션입니다.                                                                                                                                   |
+
+<Note>
+  모든 `ClickHouseIO` 매개변수의 기본값은 [`ClickHouseIO` Apache Beam Connector](/ko/integrations/connectors/data-ingestion/etl-tools/apache-beam#clickhouseiowrite-parameters)에서 확인할 수 있습니다.
+</Note>
+
+<div id="message-format-and-schema-mapping">
+  ## 메시지 포맷 및 스키마 매핑
+</div>
+
+Pub/Sub 메시지는 최상위 필드 이름이 대상 ClickHouse 테이블의 컬럼 이름과 정확히 일치하는 JSON 객체여야 합니다.
+
+수신 메시지를 대상 테이블에 매핑하기 위해 파이프라인은 시작 시 다음 작업을 수행합니다:
+
+1. 대상 ClickHouse 테이블의 스키마를 가져옵니다.
+2. 해당 ClickHouse 스키마를 바탕으로 Beam `Row` 스키마를 생성합니다.
+3. 수신되는 각 Pub/Sub 메시지에 대해 JSON payload를 파싱하고, ClickHouse 스키마에 정의된 이름의 필드를 읽어 행을 구성합니다.
+
+<br />
+
+<Warning>
+  JSON 필드 이름은 ClickHouse 컬럼 이름과 정확히 일치해야 합니다(대소문자를 구분함). 메시지에 포함된 필드 중 ClickHouse 컬럼에 해당하지 않는 필드는 무시됩니다. ClickHouse 컬럼에 대응하는 필드가 JSON payload에 없으면, 파이프라인은 해당 컬럼에 `NULL`을 기록하려고 시도합니다. 이는 해당 컬럼이 [`널 허용`](/ko/reference/data-types/nullable)으로 선언된 경우에만 성공합니다. 파싱에 실패한 메시지, 값이 컬럼 타입으로 변환될 수 없는 메시지, 또는 널 허용이 아닌 컬럼에 `NULL`을 기록하려는 메시지는 데드 레터 대상으로 라우팅됩니다.
+</Warning>
+
+<div id="type-conversion">
+  ### 타입 변환
+</div>
+
+JSON 값은 해당 ClickHouse 컬럼 타입에 맞게 강제 변환됩니다:
+
+| ClickHouse 타입                                                                      | 비고                                                             |
+| ---------------------------------------------------------------------------------- | -------------------------------------------------------------- |
+| [`Float32`](/ko/reference/data-types/float)                                           | `Float.valueOf`로 파싱됩니다.                                        |
+| [`Float64`](/ko/reference/data-types/float)                                           | `Double.valueOf`로 파싱됩니다.                                       |
+| [`Date`](/ko/reference/data-types/date)                                               | ISO-8601 날짜 문자열로 파싱됩니다.                                        |
+| [`DateTime`](/ko/reference/data-types/datetime)                                       | ISO-8601 datetime 문자열(예: `2026-01-15T12:34:56Z`)로 파싱됩니다.       |
+| [`Array(T)`](/ko/reference/data-types/array)                                          | JSON 배열이며, 각 요소는 요소 타입 `T`로 변환됩니다. 비어 있거나 누락된 배열은 빈 배열로 처리됩니다. |
+| Integer types (`Int8`/`Int16`/`Int32`/`Int64`, `UInt8`/`UInt16`/`UInt32`/`UInt64`) | JSON 숫자 또는 숫자의 문자열 표현에서 파싱됩니다.                                 |
+| [`String`](/ko/reference/data-types/string)                                           | 텍스트 필드에는 그대로 사용되며, 텍스트가 아닌 JSON 노드는 JSON 문자열 형태로 직렬화됩니다.       |
+
+<div id="batching-and-windowing">
+  ## 배칭 및 윈도우 처리
+</div>
+
+파이프라인은 스트리밍 방식으로 동작하므로, 들어오는 행은 ClickHouse로 플러시되기 전에 윈도우 단위로 누적됩니다. 윈도우 처리 전략은 지정한 매개변수에 따라 선택됩니다.
+
+| `windowSeconds` | `batchRowCount` | 동작                                                                |
+| --------------- | --------------- | ----------------------------------------------------------------- |
+| 설정됨             | 설정되지 않음         | `windowSeconds`를 기준으로 하는 시간 기반 고정 윈도우입니다.                         |
+| 설정되지 않음         | 설정됨             | 행 수 트리거가 있는 전역 윈도우이며, `batchRowCount`행마다 트리거됩니다.                  |
+| 둘 다 설정됨         | 둘 다 설정됨         | 결합 트리거가 있는 전역 윈도우이며, 두 조건 중 먼저 충족되는 조건(시간 **또는** 행 수)에 따라 트리거됩니다. |
+| 둘 다 설정되지 않음     | 둘 다 설정되지 않음     | 기본값을 사용하는 결합 모드입니다. `30`초 또는 `1000`행 중 먼저 도달한 조건에 따라 트리거됩니다.      |
+
+이 값을 조정하면 지연 시간과 삽입 효율성 사이에서 균형을 맞출 수 있습니다. 더 작은 윈도우는 종단 간 지연 시간을 줄이고, 더 큰 윈도우는 수는 적지만 크기는 더 큰 `INSERT` 배치를 생성합니다.
+
+<div id="dead-letter-handling">
+  ## 데드 레터 처리
+</div>
+
+JSON 파싱, 스키마 매핑 또는 타입 강제 변환에 실패한 메시지는 구성된 데드 레터 대상(들)로 라우팅됩니다. `clickHouseDeadLetterTable` 또는 `deadLetterTopic` 중 최소 하나를 반드시 지정해야 합니다. 둘 다 설정하면 실패한 메시지가 두 곳 모두로 전송됩니다.
+
+<div id="clickhouse-dead-letter-table">
+  ### ClickHouse 데드 레터 테이블
+</div>
+
+`clickHouseDeadLetterTable`이 설정된 경우, 데드 레터 테이블은 다음과 같은 고정 스키마로 미리 생성되어 있어야 합니다:
+
+| 컬럼              | 유형         | 설명                                 |
+| --------------- | ---------- | ---------------------------------- |
+| `raw_message`   | `String`   | UTF-8 텍스트 형식의 원본 Pub/Sub 메시지 페이로드. |
+| `error_message` | `String`   | 해당 행이 실패한 이유를 설명하는 예외 메시지.         |
+| `stack_trace`   | `String`   | 실패 시점에 수집된 전체 Java 스택 트레이스.        |
+| `failed_at`     | `DateTime` | 행이 실패한 처리 시점의 타임스탬프.               |
+
+단일 노드 배포를 위한 최소 정의:
+
+```sql
+CREATE TABLE my_table_dead_letter (
+    raw_message   String,
+    error_message String,
+    stack_trace   String,
+    failed_at     DateTime
+) ENGINE = MergeTree()
+ORDER BY failed_at;
+```
+
+<Note>
+  배포 환경에 맞게 엔진과 `ORDER BY` 절을 조정하세요 — 복제된 테이블에는 `ReplicatedMergeTree`를 사용하고, 분산 환경에서는 `ON CLUSTER`를 추가하며, 필요에 따라 파티셔닝이나 TTL을 조정하십시오.
+</Note>
+
+<div id="pubsub-dead-letter-topic">
+  ### Pub/Sub 데드 레터 토픽
+</div>
+
+`deadLetterTopic`이 설정되면, 실패한 각 메시지가 다음 정보를 포함해 해당 토픽으로 다시 게시됩니다.
+
+* **Payload**: 원본 메시지 바이트입니다.
+* **속성** `errorMessage`: 실패 시점에 포착된 예외 메시지입니다.
+* **속성** `failedAt`: 해당 행이 실패한 처리 시점의 타임스탬프입니다.
+
+이렇게 하면 기본 스키마 또는 프로듀서 문제를 해결한 후 실패한 메시지를 손쉽게 다시 처리할 수 있습니다.
+
+<div id="running-the-template">
+  ## Template 실행
+</div>
+
+Pub/Sub to ClickHouse Template은 Google Cloud Console에서 사용할 수 있습니다.
+
+<Note>
+  이 문서, 특히 위 섹션을 반드시 검토하여 Template의 구성 요구 사항과 사전 요구 사항을 충분히 이해하십시오.
+</Note>
+
+Google Cloud Console에 로그인한 다음 Dataflow를 검색합니다.
+
+1. `CREATE JOB FROM TEMPLATE` 버튼을 누르십시오.
+   <Image img="/images/integrations/data-ingestion/google-dataflow/create_job_from_template_button.webp" border alt="Dataflow 콘솔" />
+
+2. Template 양식이 열리면 작업 이름을 입력하고 원하는 리전을 선택합니다.
+
+   {/* PLACEHOLDER: 작업 이름 + 리전이 포함된 Pub/Sub to ClickHouse Template 초기 양식 스크린샷 추가 */}
+
+3. `Dataflow Template` 입력란에 `ClickHouse` 또는 `Pub/Sub`를 입력한 다음 `Pub/Sub to ClickHouse` Template을 선택합니다.
+
+   {/* PLACEHOLDER: 드롭다운에서 "Pub/Sub to ClickHouse" Template을 선택하는 스크린샷 추가 */}
+
+4. 선택하면 양식이 확장됩니다. 다음을 입력합니다.
+
+   * `projects/<PROJECT_ID>/subscriptions/<SUBSCRIPTION_NAME>` 형식의 Pub/Sub 입력 subscription
+   * ClickHouse endpoint URL — ClickHouse Cloud의 경우 `https://<HOST>:8443` 사용
+   * ClickHouse 데이터베이스, 대상 테이블, 사용자 이름 및 비밀번호
+   * 최소 하나의 데드 레터 대상: ClickHouse 테이블 또는 Pub/Sub 토픽(또는 둘 다)
+
+   {/* PLACEHOLDER: 필수 필드와 데드 레터 섹션이 표시된 확장된 Pub/Sub to ClickHouse Template 양식 스크린샷 추가 */}
+
+5. 필요에 따라 [Template parameters](#template-parameters) 섹션에 설명된 대로 배칭(`windowSeconds`, `batchRowCount`) 및 `ClickHouseIO` 튜닝 매개변수를 사용자 지정합니다.
+
+<div id="monitor-the-job">
+  ### 작업 모니터링
+</div>
+
+작업 상태를 모니터링하려면 Google Cloud Console의 [Dataflow Jobs 탭](https://console.cloud.google.com/dataflow/jobs)으로 이동하십시오. 여기에서 진행 상황과 오류를 포함한 작업 세부 정보를 확인할 수 있습니다:
+
+<Image img="/images/integrations/data-ingestion/google-dataflow/pubsub-inqueue-job.webp" size="lg" border alt="실행 중인 Pub/Sub-ClickHouse 작업을 보여주는 Dataflow 콘솔" />
+
+템플릿은 또한 `PubSubToClickHouse` 네임스페이스 아래에 다음과 같은 사용자 지정 메트릭을 내보내며, Dataflow 작업 페이지에서 확인할 수 있습니다:
+
+| Metric                  | 유형           | 설명                                             |
+| ----------------------- | ------------ | ---------------------------------------------- |
+| `messages-received`     | Counter      | 파싱 단계에서 수신한 Pub/Sub 메시지의 총개수입니다.               |
+| `rows-parsed-ok`        | Counter      | 성공적으로 행으로 변환되어 주 출력으로 라우팅된 메시지입니다.             |
+| `rows-parse-failed`     | Counter      | 파싱 또는 스키마 매핑에 실패하여 데드 레터로 라우팅된 메시지입니다.         |
+| `message-payload-bytes` | Distribution | 수신된 Pub/Sub 메시지 payload 크기의 분포를 바이트 단위로 나타냅니다. |
+
+<div id="troubleshooting">
+  ## 문제 해결
+</div>
+
+<div id="code-241-dbexception-memory-limit-total-exceeded">
+  ### 메모리 제한(총량) 초과 오류(코드 241)
+</div>
+
+이 오류는 ClickHouse가 대량의 데이터 배치를 처리하는 중 메모리가 부족할 때 발생합니다. 이 문제를 해결하려면 다음을 수행하십시오.
+
+* 인스턴스 리소스를 늘리세요: 데이터 처리 부하를 감당할 수 있도록 메모리가 더 많은 더 큰 인스턴스로 ClickHouse 서버를 업그레이드하십시오.
+* 배치 크기를 줄이세요: Dataflow 작업 구성에서 `batchRowCount`(및/또는 `maxInsertBlockSize`)를 줄여 더 작은 데이터 청크를 ClickHouse로 전송하면 배치당 메모리 사용량을 줄일 수 있습니다.
+
+<div id="all-messages-going-to-dlq">
+  ### 모든 메시지가 데드 레터 대상으로 전송됩니다
+</div>
+
+가장 흔한 원인은 다음과 같습니다.
+
+* JSON 필드 이름이 ClickHouse 컬럼 이름과 정확히 일치하지 않습니다(일치는 대소문자를 구분합니다).
+* JSON 값을 컬럼 유형으로 변환할 수 없습니다(예: `DateTime` 컬럼에 ISO-8601 형식이 아닌 문자열이 있는 경우).
+* 파이프라인이 시작된 이후 대상 테이블 스키마가 변경되었습니다 — 스키마는 시작 시 한 번만 가져옵니다. 스키마 변경 사항을 적용한 후 작업을 다시 시작하십시오.
+
+근본 원인을 파악하려면 ClickHouse 데드 레터 테이블의 `error_message` 및 `stack_trace` 컬럼(또는 Pub/Sub 데드 레터 메시지의 `errorMessage` 속성)을 확인하십시오.
+
+<div id="no-rows-arriving">
+  ### 파이프라인이 시작되지만 ClickHouse에 행이 도착하지 않습니다
+</div>
+
+* subscription이 메시지를 수신하고 있는지 확인하십시오 — Dataflow 작업 페이지에서 `messages-received` 메트릭을 확인하십시오.
+* 시간 기반 모드(`windowSeconds`만 해당)에서는 윈도우 경계에서만 행이 플러시됩니다. 플러시가 발생하는지 확인하려면 `windowSeconds` 값을 낮추십시오.
+* Dataflow 작업자와 ClickHouse 엔드포인트 간 네트워크 연결이 가능한지 확인하십시오(방화벽, VPC peering 또는 Private Service Connect).
+
+<div id="template-source-code">
+  ## Template 소스 코드
+</div>
+
+Template의 소스 코드는 다음 리포지토리에서 확인할 수 있습니다.
+
+* [`GoogleCloudPlatform/DataflowTemplates`](https://github.com/GoogleCloudPlatform/DataflowTemplates/tree/main/v2/googlecloud-to-clickhouse) — 원본 Google Cloud Platform 리포지토리입니다.
+* [`ClickHouse/DataflowTemplates`](https://github.com/ClickHouse/DataflowTemplates) — ClickHouse에서 포크한 리포지토리입니다.

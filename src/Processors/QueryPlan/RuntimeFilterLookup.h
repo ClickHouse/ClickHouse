@@ -246,7 +246,8 @@ public:
         UInt64 bytes_limit_,
         UInt64 exact_values_limit_,
         UInt64 bloom_filter_hash_functions_,
-        Float64 max_ratio_of_set_bits_in_bloom_filter_);
+        Float64 max_ratio_of_set_bits_in_bloom_filter_,
+        std::optional<UInt64> distinct_keys_hint_);
 
     void insert(ColumnPtr values) override;
 
@@ -268,6 +269,8 @@ private:
 
     const UInt64 bloom_filter_hash_functions;
     const Float64 max_ratio_of_set_bits_in_bloom_filter = 0.7;
+    /// Measured distinct build-side keys from prior statistics, used to choose the bloom filter size.
+    const std::optional<UInt64> distinct_keys_hint;
 
     BloomFilterPtr bloom_filter;
 };

@@ -1,0 +1,81 @@
+---
+slug: /tips-and-tricks/too-many-parts
+sidebarTitle: 'عدد كبير جدًا من الأجزاء'
+doc_type: 'guide'
+keywords: [
+  'ClickHouse عدد كبير جدًا من الأجزاء',
+  'خطأ عدد كبير جدًا من الأجزاء',
+  'تجميع عمليات الإدراج في ClickHouse على دفعات',
+  'مشكلة تضخم الأجزاء',
+  'أداء الدمج في ClickHouse',
+  'تحسين الإدراج على دفعات',
+  'عمليات الإدراج غير المتزامنة في ClickHouse',
+  'مشكلات الإدراجات الصغيرة',
+  'إدارة الأجزاء في ClickHouse',
+  'تحسين أداء الإدراج',
+  'استراتيجية التجميع على دفعات في ClickHouse',
+  'أنماط الإدراج في قاعدة البيانات'
+]
+title: 'دروس - مشكلة العدد الكبير جدًا من الأجزاء'
+description: 'حلول للوقاية من مشكلة العدد الكبير جدًا من الأجزاء ومعالجتها'
+---
+
+*هذا الدليل جزء من مجموعة من الخلاصات المستمدة من لقاءات المجتمع. ولمزيد من الحلول العملية والرؤى المستقاة من الاستخدام الفعلي، يمكنك [التصفح حسب المشكلة المحددة](/ar/resources/support-center/tips-and-tricks/community-wisdom).*
+*هل تحتاج إلى المزيد من نصائح تحسين الأداء؟ اطّلع على دليل رؤى المجتمع حول [تحسين الأداء](/ar/resources/support-center/tips-and-tricks/performance-optimization).*
+
+<div id="understanding-the-problem">
+  ## فهم المشكلة
+</div>
+
+سيعرض ClickHouse الخطأ &quot;عدد كبير جدًا من الأجزاء&quot; لمنع التدهور الشديد في الأداء. وتتسبب الأجزاء الصغيرة في عدة مشكلات: تراجع أداء الاستعلامات بسبب قراءة عدد أكبر من الملفات ودمجها أثناء تنفيذ الاستعلامات، وزيادة استخدام الذاكرة لأن كل جزء يتطلب بيانات وصفية في الذاكرة، وانخفاض كفاءة الضغط لأن كتل البيانات الأصغر لا تُضغط بالكفاءة نفسها، وارتفاع العبء على عمليات I/O نتيجة زيادة مقابض الملفات وعمليات `seek`، وبطء عمليات الدمج في الخلفية مما يضيف مزيدًا من العمل إلى مُجدول الدمج.
+
+**الوثائق ذات الصلة**
+
+* [محرك MergeTree](/ar/reference/engines/table-engines/mergetree-family/mergetree)
+* [الأجزاء](/ar/concepts/core-concepts/parts)
+* [جدول النظام للأجزاء](/ar/reference/system-tables/parts)
+
+<div id="recognize-parts-problem">
+  ## التعرّف على المشكلة مبكرًا
+</div>
+
+يراقب هذا الاستعلام تجزؤ الجداول من خلال تحليل عدد الأجزاء وأحجامها في جميع الجداول النشطة. ويحدّد الجداول التي تحتوي على عدد مفرط من الأجزاء أو على أجزاء أصغر من اللازم، وقد تحتاج إلى تحسين عمليات الدمج. استخدمه بانتظام لاكتشاف مشكلات التجزؤ قبل أن تؤثر في أداء الاستعلامات.
+
+```sql runnable editable
+-- Challenge: Replace with your actual database and table names for production use
+-- Experiment: Adjust the part count thresholds (1000, 500, 100) based on your system
+SELECT 
+    database,
+    table,
+    count() as total_parts,
+    sum(rows) as total_rows,
+    round(avg(rows), 0) as avg_rows_per_part,
+    min(rows) as min_rows_per_part,
+    max(rows) as max_rows_per_part,
+    round(sum(bytes_on_disk) / 1024 / 1024, 2) as total_size_mb,
+    CASE 
+        WHEN count() > 1000 THEN 'CRITICAL - Too many parts (>1000)'
+        WHEN count() > 500 THEN 'WARNING - Many parts (>500)'
+        WHEN count() > 100 THEN 'CAUTION - Getting many parts (>100)'
+        ELSE 'OK - Reasonable part count'
+    END as parts_assessment,
+    CASE 
+        WHEN avg(rows) < 1000 THEN 'POOR - Very small parts'
+        WHEN avg(rows) < 10000 THEN 'FAIR - Small parts'
+        WHEN avg(rows) < 100000 THEN 'GOOD - Medium parts'
+        ELSE 'EXCELLENT - Large parts'
+    END as part_size_assessment
+FROM system.parts
+WHERE active = 1
+  AND database NOT IN ('system', 'information_schema')
+GROUP BY database, table
+ORDER BY total_parts DESC
+LIMIT 20;
+```
+
+<div id="video-sources">
+  ## مصادر الفيديو
+</div>
+
+* [عمليات INSERT غير المتزامنة السريعة والمتوازية والمتسقة في ClickHouse](https://www.youtube.com/watch?v=AsMPEfN5QtM) - يشرح أحد أعضاء فريق ClickHouse عمليات الإدراج غير المتزامن ومشكلة عدد كبير جدًا من الأجزاء
+* [تشغيل ClickHouse في بيئات الإنتاج وعلى نطاق واسع](https://www.youtube.com/watch?v=liTgGiTuhJE) - استراتيجيات التجميع الدفعي العملية من منصات observability

@@ -1,0 +1,29 @@
+---
+sidebarTitle: '概述'
+slug: /integrations/azure-data-factory/overview
+description: '将 Azure 数据导入 ClickHouse - 概述'
+keywords: ['azure data factory', 'azure', 'microsoft', '数据']
+title: '将 Azure 数据导入 ClickHouse'
+doc_type: 'guide'
+integration:
+  - support_level: 'core'
+  - category: 'data_ingestion'
+---
+
+import ClickHouseSupportedBadge from "/snippets/zh/components/ClickHouseSupported/ClickHouseSupported.jsx";
+
+<ClickHouseSupportedBadge />
+
+Microsoft Azure 提供了丰富的工具来存储、转换和分析
+数据。不过，在许多场景下，ClickHouse 在对海量数据集进行低延迟查询和处理时，性能会显著更优。
+此外，相比通用型
+Azure 数据库，ClickHouse 的列式存储和压缩还能大幅降低查询大规模分析数据的
+成本。
+
+在本文档的这一部分中，我们将介绍两种将数据从 Microsoft Azure
+摄取到 ClickHouse 的方法：
+
+| 方法                                                                                                                              | 说明                                                                                                                                |
+| ------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| [使用 `azureBlobStorage` Table Function](/zh/integrations/connectors/data-ingestion/azure/azure-data-factory/using-azureblobstorage) | 使用 ClickHouse 的 [`azureBlobStorage` Table Function](/zh/reference/functions/table-functions/azureBlobStorage) 直接从 Azure Blob 存储传输数据。 |
+| [使用 ClickHouse HTTP 接口](/zh/integrations/connectors/data-ingestion/azure/azure-data-factory/using-http-interface)                  | 将 [ClickHouse HTTP 接口](/zh/concepts/features/interfaces/http) 作为 Azure Data Factory 中的数据源，以便在管道中复制数据或将其用于数据流活动。                      |

@@ -1,0 +1,104 @@
+---
+title: '標準オンボーディング'
+slug: /cloud/reference/byoc/onboarding/standard
+sidebarTitle: '標準プロセス'
+keywords: ['BYOC', 'cloud', 'Bring Your Own Cloud', 'オンボーディング']
+description: '自社のクラウドインフラストラクチャに ClickHouse をデプロイ'
+doc_type: 'reference'
+---
+
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+<div id="what-is-standard-onboarding">
+  ## 標準オンボーディングとは？
+</div>
+
+**標準オンボーディング** は、BYOC を使用してお客様自身のクラウドアカウントに ClickHouse をデプロイするための、標準的なガイド付きワークフローです。この方式では、ClickHouse Cloud が、デプロイに必要な主要なクラウドリソース (VPC/VNet、サブネット、セキュリティグループ、Kubernetes (EKS/GKE/AKS) クラスター、関連する IAM ロール、サービスアカウント、サービスプリンシパルなど) を、お客様の AWS アカウント、GCP プロジェクト、または Azure サブスクリプション内にまとめてプロビジョニングします。これにより、一貫性のある安全な構成を確保しつつ、お客様のチームに必要な手動作業を最小限に抑えられます。
+
+標準オンボーディングでは、専用の AWS アカウント、GCP プロジェクト、または Azure サブスクリプションを用意し、初期スタック (CloudFormation または Terraform) を実行して、ClickHouse Cloud が以降のセットアップをオーケストレーションするために必要な最小限の権限と信頼関係を作成するだけで済みます。それ以降のすべての手順 (インフラストラクチャのプロビジョニングやサービスの起動を含む) は、ClickHouse Cloud の Web コンソールから管理されます。
+
+権限とリソースをより適切に分離するため、ClickHouse BYOC デプロイをホストするための**専用の** AWS アカウント、GCP プロジェクト、または Azure サブスクリプションを用意することを強く推奨します。ClickHouse は、お客様のアカウント内に、専用のクラウドリソース一式 (VPC/VNet、Kubernetes クラスター、IAM ロール、サービスアカウント、サービスプリンシパル、オブジェクトストレージバケットなど) をデプロイします。
+
+より柔軟にカスタマイズしたセットアップ (たとえば既存の VPC へのデプロイ) が必要な場合は、[Customized Onboarding](/ja/products/bring-your-own-cloud/onboarding/customization-aws) のドキュメントを参照してください。
+
+<Note>
+  標準の BYOC オンボーディングは、CloudFormation または Terraform の手順を開始してから最初の ClickHouse サービスに接続できるようになるまで、エンドツーエンドでおよそ 45～90 分かかります。
+</Note>
+
+<div id="request-access">
+  ## アクセスを申請する
+</div>
+
+オンボーディングを開始するには、[お問い合わせください](https://clickhouse.com/cloud/bring-your-own-cloud)。当社のチームがBYOCの要件をご案内し、最適なデプロイメントオプションの選定を支援するとともに、お客様のアカウントを許可リストに追加します。
+
+<div id="onboarding-process">
+  ## オンボーディング
+</div>
+
+<div id="prepare-an-aws-account">
+  ### AWS アカウント/GCP プロジェクト/Azure サブスクリプションを準備する
+</div>
+
+組織配下に新しい AWS アカウント、GCP プロジェクト、または Azure サブスクリプションを用意します。
+
+<Steps>
+  <Step>
+    ### クラウドプロバイダーを選択する
+
+    <Image img="/images/cloud/reference/byoc-onboarding-1.webp" size="lg" alt="BYOC で CSP を選択" background="black" />
+  </Step>
+
+  <Step>
+    ### アカウント/プロジェクト/サブスクリプションのセットアップ
+
+    初期の BYOC セットアップは、[CloudFormation template (AWS)](https://s3.us-east-2.amazonaws.com/clickhouse-public-resources.clickhouse.cloud/cf-templates/byoc.yaml)、[Terraform module (GCP)](https://github.com/ClickHouse/terraform-byoc-onboarding/tree/main/modules/gcp)、または [Terraform module (Azure)](https://github.com/ClickHouse/terraform-byoc-onboarding/tree/main/modules/azure) のいずれかを使用して実行できます。これにより高権限の ID (IAM ロール/サービスアカウント/サービスプリンシパル) が作成され、ClickHouse Cloud の BYOC コントローラーがインフラストラクチャを管理できるようになります。
+
+    <Image img="/images/cloud/reference/byoc-onboarding-2.webp" size="lg" alt="BYOC アカウントを初期化" background="black" />
+
+    <Note>
+      ClickHouse の実行に必要なストレージバケット、VPC/VNet、Kubernetes クラスター、コンピュートリソースは、この初期セットアップには含まれていません。これらは次のステップでプロビジョニングされます。
+    </Note>
+
+    #### AWS 向けの代替 Terraform モジュール
+
+    AWS のデプロイで CloudFormation ではなく Terraform を使いたい場合は、[AWS 向け Terraform モジュール](https://s3.us-east-2.amazonaws.com/clickhouse-public-resources.clickhouse.cloud/tf/byoc.tar.gz) も利用できます。
+
+    使用方法:
+
+    ```hcl
+    module "clickhouse_onboarding" {
+      source   = "https://s3.us-east-2.amazonaws.com/clickhouse-public-resources.clickhouse.cloud/tf/byoc.tar.gz"
+      byoc_env = "production"
+    }
+    ```
+  </Step>
+
+  <Step>
+    ### BYOC インフラストラクチャをセットアップする
+
+    ClickHouse Cloud コンソールから、オブジェクトストレージバケット、VPC/VNet、Kubernetes クラスターを含むインフラストラクチャをセットアップするよう案内されます。この段階で決める必要がある設定がいくつかあり、後から変更することはできません。具体的には次のとおりです。
+
+    * **Region**: [サポート対象リージョン](/ja/products/cloud/reference/supported-regions) のドキュメントに記載されているすべての**パブリックリージョン**で、BYOC デプロイを利用できます。Private Region は現在サポートされていません。
+
+    * **VPC/VNet CIDR 範囲**: デフォルトでは、BYOC の VPC (AWS/GCP) または VNet (Azure) の CIDR 範囲として `10.0.0.0/16` を使用します。別のアカウントと VPC/VNet ピアリングを行う予定がある場合は、CIDR 範囲が重複しないようにしてください。必要なワークロードを収容できるよう、最小サイズ `/23` で BYOC 用の適切な CIDR 範囲を割り当ててください。
+
+    * **アベイラビリティゾーン**: VPC ピアリングを使用する予定がある場合、ソースアカウントと BYOC アカウントのアベイラビリティゾーンを揃えることで、AZ 間トラフィックのコストを抑えられることがあります。たとえば AWS では、アベイラビリティゾーンの接尾辞 (`a`、`b`、`c`) が、アカウントごとに異なる物理ゾーン ID を表す場合があります。詳細は [AWS ガイド](https://docs.aws.amazon.com/prescriptive-guidance/latest/patterns/use-consistent-availability-zones-in-vpcs-across-different-aws-accounts.html) を参照してください。
+
+    <Image img="/images/cloud/reference/byoc-onboarding-3.webp" size="lg" alt="BYOC インフラをセットアップ" background="black" />
+  </Step>
+</Steps>
+
+<div id="create-clickhouse-service">
+  ### 最初の BYOC ClickHouse サービスを作成する
+</div>
+
+BYOC インフラストラクチャのプロビジョニングが完了したら、最初の ClickHouse サービスを作成する準備は整っています。ClickHouse Cloud コンソールを開き、BYOC 環境を選択して、画面の案内に従って新しいサービスを作成します。
+
+<Image img="/images/cloud/reference/byoc-new-service-1.webp" size="md" alt="BYOC の新しいサービスを作成" />
+
+サービスの作成時には、次のオプションを設定します。
+
+* **サービス名**: ClickHouse サービスに、わかりやすく説明的な名前を入力します。
+* **BYOC インフラストラクチャ**: サービスを実行する BYOC 環境 (クラウドアカウントとリージョンを含む) を選択します。
+* **リソース構成**: ClickHouse レプリカに割り当てる CPU とメモリの量を選択します。
+* **レプリカ数**: 高可用性を高めるため、レプリカ数を設定します。

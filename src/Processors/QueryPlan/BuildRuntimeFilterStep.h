@@ -1,6 +1,8 @@
 #pragma once
 #include <Processors/QueryPlan/ITransformingStep.h>
 
+#include <optional>
+
 namespace DB
 {
 
@@ -22,7 +24,8 @@ public:
         Float64 pass_ratio_threshold_for_disabling,
         UInt64 blocks_to_skip_before_reenabling,
         Float64 max_ratio_of_set_bits_in_bloom_filter,
-        bool allow_to_use_not_exact_filter_);
+        bool allow_to_use_not_exact_filter_,
+        std::optional<UInt64> distinct_keys_hint_ = std::nullopt);
 
     BuildRuntimeFilterStep(const BuildRuntimeFilterStep & other) = default;
 
@@ -65,6 +68,9 @@ private:
     Float64 max_ratio_of_set_bits_in_bloom_filter;
 
     bool allow_to_use_not_exact_filter;
+
+    /// Measured distinct build-side keys from prior statistics, used to choose the bloom filter size.
+    std::optional<UInt64> distinct_keys_hint;
 };
 
 }

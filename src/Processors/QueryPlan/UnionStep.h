@@ -33,7 +33,7 @@ public:
 
     static QueryPlanStepPtr deserialize(Deserialization & ctx);
 
-    bool hasCorrelatedExpressions() const override { return false; }
+    QueryPlanStepPtr clone() const override;
 
 private:
     void updateOutputHeader() override;

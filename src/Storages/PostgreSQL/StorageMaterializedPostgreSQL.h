@@ -89,6 +89,11 @@ public:
     /// Used only for single MaterializedPostgreSQL storage.
     void dropInnerTableIfAny(bool sync, ContextPtr local_context) override;
 
+    /// Forward the size guard onto the nested table that `dropInnerTableIfAny` will
+    /// actually drop, so `CREATE OR REPLACE` cannot delete an over-limit nested table
+    /// that plain `DROP TABLE` would refuse.
+    void checkTableSizeBelowDropLimit(ContextPtr query_context) const override;
+
     bool needRewriteQueryWithFinal(const Names & column_names) const override;
 
     void read(
