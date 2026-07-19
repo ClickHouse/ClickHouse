@@ -37,6 +37,8 @@ bool tryEstimateWithStatistics(
         if (!index_columns_set.contains(col))
             return false;
 
+    Names required_stats_columns(filter_input_columns.begin(), filter_input_columns.end());
+
     ConditionSelectivityEstimatorBuilder builder(context);
     bool all_parts_loaded = true;
 
@@ -47,7 +49,7 @@ bool tryEstimateWithStatistics(
 
         try
         {
-            auto stats = part.data_part->loadStatistics();
+            auto stats = part.data_part->loadStatistics(required_stats_columns);
             builder.addDataPartStatistics(part.data_part, stats);
         }
         catch (const Exception &) /// Ok — statistical estimation is best-effort
@@ -65,7 +67,6 @@ bool tryEstimateWithStatistics(
     if (!estimator)
         return false;
 
-    Names required_stats_columns(filter_input_columns.begin(), filter_input_columns.end());
     if (!estimator->hasStatisticsFor(metadata, required_stats_columns))
         return false;
 

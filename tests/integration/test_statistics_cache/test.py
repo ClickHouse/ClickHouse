@@ -283,7 +283,7 @@ def test_join_load_then_hit_and_parallel_readers():
     assert not errs, f"errors: {errs}"
 
 def test_join_statistics_corruption_falls_back_without_partial_estimates():
-    """A failed part/column load must not change join estimates for the full scope."""
+    """A failed part/column load or mixed scope must not change join estimates."""
     partial = "partial_stats_111014"
     dim = "partial_dim_111014"
     _query_retry(ch1, f"DROP TABLE IF EXISTS {partial} SYNC")
@@ -370,7 +370,7 @@ def test_join_statistics_corruption_falls_back_without_partial_estimates():
         "reason": "clean statistics did not affect the visible join estimate",
     }
 
-    def _mutate_stats(remove):
+    def _mutate_stats():
         nonlocal backup_created
         backup_created = False
         ch1.exec_in_container(
@@ -378,13 +378,35 @@ def test_join_statistics_corruption_falls_back_without_partial_estimates():
             user="root",
         )
         backup_created = True
-        if remove:
-            ch1.exec_in_container(["rm", "-f", stats_path], user="root")
+        if stats_files[0] == "statistics.packed":
+            member_name = "statistics_v.stats"
+            # A v0 packed-index entry stores the member name followed by its
+            # UInt64 payload offset and size. Keep the index intact and damage
+            # only this column's compressed payload.
+            ch1.exec_in_container(
+                [
+                    "bash",
+                    "-c",
+                    "set -euo pipefail; export LC_ALL=C; "
+                    f"version=$(od -An -tu1 -N 1 {quoted_stats_path} | tr -d ' '); "
+                    f"test \"$version\" -eq 0; "
+                    f"member=$(grep -abo -F {shlex.quote(member_name)} {quoted_stats_path} | cut -d: -f1); "
+                    f"test -n \"$member\"; "
+                    f"test $(grep -abo -F {shlex.quote(member_name)} {quoted_stats_path} | wc -l) -eq 1; "
+                    f"offset_pos=$((member + {len(member_name)})); "
+                    f"offset=$(od -An -tu8 -j $offset_pos -N 8 {quoted_stats_path} | tr -d ' '); "
+                    f"size=$(od -An -tu8 -j $((offset_pos + 8)) -N 8 {quoted_stats_path} | tr -d ' '); "
+                    f"test \"$offset\" -gt 0; test \"$size\" -gt 0; "
+                    f"dd if=/dev/zero of={quoted_stats_path} bs=1 seek=$offset count=$size conv=notrunc status=none",
+                ],
+                user="root",
+            )
         else:
             ch1.exec_in_container(
                 [
                     "bash",
                     "-c",
+                    "set -euo pipefail; "
                     f"size=$(stat -c %s {quoted_stats_path}); "
                     f"dd if=/dev/zero of={quoted_stats_path} bs=1 count=$size conv=notrunc status=none",
                 ],
@@ -399,55 +421,112 @@ def test_join_statistics_corruption_falls_back_without_partial_estimates():
             user="root",
         )
 
-    observed_rows = {}
-    for remove in (False, True):
-        backup_created = False
-        original_hash = ch1.exec_in_container(
+    backup_created = False
+    original_hash = ch1.exec_in_container(
+        ["bash", "-c", f"sha256sum {quoted_stats_path}"],
+        user="root",
+    ).split()[0]
+    try:
+        _mutate_stats()
+        mutated_hash = ch1.exec_in_container(
             ["bash", "-c", f"sha256sum {quoted_stats_path}"],
             user="root",
         ).split()[0]
-        try:
-            _mutate_stats(remove)
-            if remove:
-                ch1.exec_in_container(["test", "!", "-e", stats_path], user="root")
-            else:
-                mutated_hash = ch1.exec_in_container(
-                    ["bash", "-c", f"sha256sum {quoted_stats_path}"],
-                    user="root",
-                ).split()[0]
-                assert mutated_hash != original_hash
-            observed_rows["missing" if remove else "zeroed"] = _result_rows(_plan(1))
-            assert _query(ch1, f"""
-                {join_sql}
-                SETTINGS use_statistics_for_part_pruning=0,
-                         optimize_use_projections=0, optimize_use_implicit_projections=0
-                FORMAT TabSeparated
-            """).strip() == "500"
-        finally:
-            _restore_stats()
+        assert mutated_hash != original_hash
+        observed_zeroed = _result_rows(_plan(1))
+        assert _query(ch1, f"""
+            {join_sql}
+            SETTINGS use_statistics_for_part_pruning=0,
+                     optimize_use_projections=0, optimize_use_implicit_projections=0
+            FORMAT TabSeparated
+        """).strip() == "500"
+    finally:
+        _restore_stats()
 
-    assert observed_rows["zeroed"] == no_stats_rows, {
+    assert observed_zeroed == no_stats_rows, {
         "mode": "zeroed",
         "clean_rows": clean_rows,
         "no_stats_rows": no_stats_rows,
-        "observed_rows": observed_rows,
+        "observed_rows": observed_zeroed,
     }
-    assert observed_rows["missing"] == no_stats_rows, {
-        "mode": "missing",
-        "clean_rows": clean_rows,
-        "no_stats_rows": no_stats_rows,
-        "observed_rows": observed_rows,
-    }
-    assert observed_rows["zeroed"] != clean_rows, {
+    assert observed_zeroed != clean_rows, {
         "mode": "zeroed",
         "clean_rows": clean_rows,
-        "observed_rows": observed_rows,
+        "observed_rows": observed_zeroed,
     }
-    assert observed_rows["missing"] != clean_rows, {
-        "mode": "missing",
-        "clean_rows": clean_rows,
-        "observed_rows": observed_rows,
+
+    mixed = "partial_stats_mixed_111014"
+    _query_retry(ch1, f"DROP TABLE IF EXISTS {mixed} SYNC")
+    _query_retry(ch1, f"""
+        CREATE TABLE {mixed} (k UInt32, v UInt32)
+        ENGINE = MergeTree PARTITION BY intDiv(k, 1000) ORDER BY k
+        SETTINGS min_bytes_for_wide_part = 0,
+                 min_bytes_for_full_part_storage = 0,
+                 refresh_statistics_interval = 0,
+                 auto_statistics_types = ''
+    """)
+    _query(ch1, f"SET materialize_statistics_on_insert = 0; INSERT INTO {mixed} SELECT number, number FROM numbers(1000)")
+    _query_retry(ch1, f"ALTER TABLE {mixed} ADD STATISTICS v TYPE Basic")
+    _query(ch1, f"SET materialize_statistics_on_insert = 1; INSERT INTO {mixed} SELECT number + 1000, number + 1000 FROM numbers(1000)")
+
+    mixed_part_names = _query(ch1, f"""
+        SELECT name
+        FROM system.parts
+        WHERE database = currentDatabase() AND table = '{mixed}' AND active
+        ORDER BY name
+        FORMAT TabSeparated
+    """).strip().splitlines()
+    assert len(mixed_part_names) == 2, mixed_part_names
+    mixed_stats_files = {}
+    for part_name in mixed_part_names:
+        mixed_part_path = _query(ch1, f"""
+            SELECT path
+            FROM system.parts
+            WHERE database = currentDatabase() AND table = '{mixed}'
+              AND name = '{part_name}' AND active
+            FORMAT TabSeparated
+        """).strip()
+        mixed_stats_files[part_name] = ch1.exec_in_container(
+            ["bash", "-c", f"find {shlex.quote(mixed_part_path.rstrip('/'))} -maxdepth 1 -type f -name 'statistics*' -printf '%f\\n' | sort"],
+            user="root",
+        ).strip().splitlines()
+
+    assert sorted(bool(files) for files in mixed_stats_files.values()) == [False, True], mixed_stats_files
+
+    mixed_join_sql = f"""
+        SELECT count()
+        FROM {mixed} AS s INNER JOIN {dim} AS d ON s.k = d.k
+        WHERE s.v >= 1500
+    """
+
+    def _mixed_plan(use_statistics):
+        return _query(ch1, f"""
+            EXPLAIN PLAN keep_logical_steps=1, actions=1
+            {mixed_join_sql}
+            SETTINGS use_statistics={use_statistics}, use_statistics_cache=0,
+                     use_statistics_for_part_pruning=0,
+                     optimize_use_projections=0, optimize_use_implicit_projections=0,
+                     query_plan_optimize_join_order_limit=10
+        """)
+
+    mixed_no_stats_rows = _result_rows(_mixed_plan(0))
+    mixed_rows = _result_rows(_mixed_plan(1))
+    assert mixed_no_stats_rows and mixed_rows, {
+        "mixed_rows": mixed_rows,
+        "mixed_no_stats_rows": mixed_no_stats_rows,
+        "reason": "EXPLAIN PLAN did not expose a ResultRows estimate",
     }
+    assert mixed_rows == mixed_no_stats_rows, {
+        "mixed_rows": mixed_rows,
+        "mixed_no_stats_rows": mixed_no_stats_rows,
+        "reason": "a part without v statistics must reject the mixed statistics scope",
+    }
+    assert _query(ch1, f"""
+        {mixed_join_sql}
+        SETTINGS use_statistics_for_part_pruning=0,
+                 optimize_use_projections=0, optimize_use_implicit_projections=0
+        FORMAT TabSeparated
+    """).strip() == "500"
 
 def test_alter_interval_requires_detach_attach():
     _create_tbl(ch1, "alt_tbl", 0)

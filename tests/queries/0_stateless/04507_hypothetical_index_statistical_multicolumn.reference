@@ -2,6 +2,10 @@
   status:       applicable
   source:           statistical
   empirical_status: disabled
+--- statistical: required-column load bypasses unrestricted statistics failpoint ---
+  status:       applicable
+  source:           statistical
+  empirical_status: disabled
 --- statistical: filter touches non-index column, bails to applicability_only ---
   status:       applicable
   source:           applicability_only
