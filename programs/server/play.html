@@ -657,7 +657,7 @@
             margin-bottom: 0.25rem;
             /* Rendered as an <a> so middle-click, Shift+click, and the platform's new-tab
                modifier click (Cmd+click on macOS, Ctrl+click elsewhere) open the terminal in
-               a new browser tab natively. color: inherit keeps the currentColor strokes from
+               a new browser tab or window natively. color: inherit keeps the currentColor strokes from
                picking up the default link color, and display: block matches #databases-icon. */
             text-decoration: none;
             display: block;
@@ -1636,7 +1636,7 @@
             <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><line x1="3" y1="12" x2="15" y2="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><polyline points="9,6 3,12 9,18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><line x1="20" y1="4" x2="20" y2="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
         </button>
         <div id="databases"></div>
-        <a id="terminal-icon" class="menu-icon" href="" title="Web Terminal (~) — middle-click, Shift+click, or the platform's new-tab modifier click (Cmd+click on macOS, Ctrl+click elsewhere) to open in a new tab">
+        <a id="terminal-icon" class="menu-icon" href="" title="Web Terminal (~) — middle-click, Shift+click, or the platform's new-tab modifier click (Cmd+click on macOS, Ctrl+click elsewhere) to open in a new tab or window">
             <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><rect x="1" y="1" width="22" height="22" rx="3" fill="none" stroke="currentColor" stroke-width="2"/><path d="M6 8l4 4-4 4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><line x1="13" y1="16" x2="18" y2="16" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
         </a>
         <a id="docs-icon" class="menu-icon" href="/docs" target="_blank" rel="noopener noreferrer" title="Documentation">
@@ -4989,8 +4989,9 @@ function toggleDatabases() {
     }
 }
 
-/// The logo is an <a> element so that Ctrl/Cmd/Shift+click and middle-click
-/// natively open the current page (with the query) in a new tab.
+/// The logo is an <a> element so that middle-click, Shift+click, and the platform's
+/// new-tab modifier click (Cmd+click on macOS, Ctrl+click elsewhere) natively open the
+/// current page (with the query) in a new tab or window.
 /// We update the href on mousedown so it always reflects the current URL.
 document.getElementById('databases-icon').addEventListener('mousedown', () => {
     document.getElementById('databases-icon').href = window.location.href;
@@ -4998,7 +4999,8 @@ document.getElementById('databases-icon').addEventListener('mousedown', () => {
 
 databases_toggle.addEventListener('click', e => {
     e.stopPropagation();
-    /// Let the browser handle modifier clicks as a link (open in new tab).
+    /// Defer any modified click to the browser's native link handling instead of toggling:
+    /// a new tab or window for the new-tab gestures, or the context menu for macOS Ctrl+click.
     if (e.ctrlKey || e.metaKey || e.shiftKey) return;
     /// Normal click: toggle the databases panel instead of following the link.
     e.preventDefault();
@@ -6318,9 +6320,11 @@ function addTab() {
 }
 
 /// Duplicate a tab: copy its query and parameters into a new tab inserted right after the
-/// source, then switch to the copy. Triggered by a middle-click or Ctrl/Shift/Cmd+click on
-/// the title — the browser gesture for "open in a new tab". `guard_paste` is set for a genuine
-/// middle click, so the activation swallows the X11 PRIMARY paste that follows focusing the editor.
+/// source, then switch to the copy. Triggered by a middle-click, Shift+click, or the platform's
+/// new-tab modifier click (Cmd+click on macOS, Ctrl+click elsewhere) on the title — the browser
+/// gesture for "open in a new tab" (macOS Ctrl+click is the secondary/context-menu click and is
+/// left to the browser, not a duplicate gesture). `guard_paste` is set for a genuine middle click,
+/// so the activation swallows the X11 PRIMARY paste that follows focusing the editor.
 function duplicateTab(id, guard_paste = false) {
     const src = tabs.find(t => t.id === id);
     if (!src) return;
@@ -10304,8 +10308,11 @@ document.getElementById('download-button').addEventListener('click', async funct
         else activateTerminal();
     }
 
-    /// Ctrl/Cmd/Shift+click opens the terminal in a new browser tab; let the anchor's native
-    /// behaviour handle it (middle-click does not fire a `click` event and is handled natively too).
+    /// True for a modified click that should defer to the anchor's native handling rather
+    /// than toggling the inline terminal: Shift+click or the platform's new-tab modifier
+    /// click (Cmd+click on macOS, Ctrl+click elsewhere) opens a new tab or window, while
+    /// macOS Ctrl+click is the secondary/context-menu click. (Middle-click does not fire a
+    /// `click` event and is handled natively too.)
     function wantsNewTab(e) {
         return e.ctrlKey || e.metaKey || e.shiftKey;
     }
@@ -10315,7 +10322,8 @@ document.getElementById('download-button').addEventListener('click', async funct
     terminalIcon.addEventListener('pointerdown', updateTerminalHref);
 
     terminalIcon.addEventListener('click', function(e) {
-        /// For a modifier-click, fall through to the anchor's native "open in new tab".
+        /// For a modified click, fall through to the anchor's native handling (a new tab or
+        /// window, or the macOS Ctrl+click context menu) instead of toggling the terminal.
         if (wantsNewTab(e)) return;
         /// A plain left click toggles the inline terminal panel instead of navigating.
         e.preventDefault();

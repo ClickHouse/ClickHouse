@@ -116,7 +116,7 @@ private:
     void convertTableEngineForCloud(ASTStorage & table_engine, TableProperties & properties) const;
 #endif
     /// Inserts data in created table if it's CREATE ... SELECT
-    BlockIO fillTableIfNeeded(const ASTCreateQuery & create);
+    BlockIO fillTableIfNeeded(const ASTCreateQuery & create, bool skip_target_insert_access_check = false);
 
     /// Whether this CREATE MATERIALIZED VIEW ... POPULATE should be populated atomically: the feature
     /// setting is enabled and the query is an immediate INSERT SELECT into a non-window, non-clone view.
