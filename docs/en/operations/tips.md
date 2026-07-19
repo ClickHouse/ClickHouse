@@ -156,7 +156,7 @@ Otherwise you may get `Illegal instruction` crashes when hypervisor is run on ol
 
 ## ClickHouse Keeper and ZooKeeper {#zookeeper}
 
-ClickHouse Keeper is recommended to replace ZooKeeper for ClickHouse clusters.  See the documentation for [ClickHouse Keeper](../guides/sre/keeper/index.md)
+ClickHouse Keeper is recommended to replace ZooKeeper for ClickHouse clusters.  See the documentation for [ClickHouse Keeper](./utilities/clickhouse-keeper-client.md)
 
 If you would like to continue using ZooKeeper then it is best to use a fresh version of ZooKeeper – 3.4.9 or later. The version in stable Linux distributions may be outdated.
 
