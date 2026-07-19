@@ -106,6 +106,7 @@
 #include <memory>
 #include <mutex>
 #include <random>
+#include <unordered_set>
 
 #include <boost/algorithm/string/predicate.hpp>
 
@@ -1070,18 +1071,23 @@ static void collectTableIdentifiers(const IAST & ast, AppendFn && append)
 static String extractObjectNamesFromAST(const IAST & ast)
 {
     String result;
+    std::unordered_set<String> seen;
     const auto append = [&](const String & database, const String & table)
     {
         if (database.empty() && table.empty())
             return;
-        if (!result.empty())
-            result += ",";
+        String name;
         if (!database.empty())
         {
-            result += database;
-            result += ".";
+            name += database;
+            name += ".";
         }
-        result += table;
+        name += table;
+        if (!seen.emplace(name).second)
+            return;
+        if (!result.empty())
+            result += ",";
+        result += name;
     };
 
     if (const auto * rename = ast.as<ASTRenameQuery>())
@@ -1093,12 +1099,23 @@ static String extractObjectNamesFromAST(const IAST & ast)
         }
     }
     else if (const auto * insert = ast.as<ASTInsertQuery>())
+    {
+        /// Record the target first, then walk the nested `SELECT` (if any), so
+        /// `INSERT INTO dst SELECT * FROM src` keeps both `dst` and `src` in the audit trail
+        /// even when the query fails before `logQueryStart`.
         append(insert->getDatabase(), insert->getTable());
+        collectTableIdentifiers(ast, append);
+    }
     /// `CREATE`, `DROP`, `TRUNCATE`, `ALTER`, `OPTIMIZE`, `EXISTS`, `DESCRIBE`, ... all derive
     /// from `ASTQueryWithTableAndOutput`. Use `dynamic_cast` (not `as<>`, which matches the exact
     /// dynamic type) to handle the whole family through the common base.
     else if (const auto * with_table = dynamic_cast<const ASTQueryWithTableAndOutput *>(&ast))
+    {
+        /// Also walk the children, so multi-object statements such as
+        /// `CREATE TABLE dst AS SELECT * FROM src` record the source objects too.
         append(with_table->getDatabase(), with_table->getTable());
+        collectTableIdentifiers(ast, append);
+    }
     /// Select-like statements (`SELECT`, `WITH ... SELECT`, and data-modifying `DELETE`/`UPDATE`)
     /// have no single top-level target and reference their tables through nested
     /// `ASTTableIdentifier` nodes. Walk the AST so a query that fails before `logQueryStart`
