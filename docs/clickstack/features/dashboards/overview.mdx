@@ -32,15 +32,13 @@ For example, you might chart the number of errors (`count()`) grouped by service
 For the examples below, we use the remote dataset available at [sql.clickhouse.com](https://sql.clickhouse.com), described in the guide ["Remote Demo Dataset"](/clickstack/example-datasets/remote-demo-data). **You can also reproduce these examples by visiting [play-clickstack.clickhouse.com](https://play-clickstack.clickhouse.com).**
 
 <Steps>
-<Step>
-### Navigate to Chart Explorer {#navigate-chart-explorer}
+<Step title="Navigate to Chart Explorer" id="navigate-chart-explorer">
 
 Select `Chart Explorer` from the left menu.
 
 <Image img="/images/use-cases/observability/clickstack-visualization-1.webp" alt="Chart Explorer" size="lg"/>
 </Step>
-<Step>
-### Create visualization {#create-visualization}
+<Step title="Create visualization" id="create-visualization">
 
 In the example below, we chart the average request duration over time per service name. This requires the user to specify a metric, a column (which can be a SQL expression), and an aggregation field.
 
@@ -85,15 +83,13 @@ Global filters can be applied at the dashboard level, automatically propagating 
 We create a dashboard with two visualizations below using the log and trace data sources. These steps can be reproduced on [play-clickstack.clickhouse.com](https://play-clickstack.clickhouse.com) or locally by connecting to the dataset hosted on [sql.clickhouse.com](https://sql.clickhouse.com), as described in the guide ["Remote Demo Dataset"](/clickstack/example-datasets/remote-demo-data).
 
 <Steps>
-<Step>
-### Navigate to Dashboards {#navigate-dashboards}
+<Step title="Navigate to Dashboards" id="navigate-dashboards">
 
 Select `Dashboards` from the left menu. Then click `New Dashboard` to create a temporary or saved dashboard.
 
 <Image img="/images/use-cases/observability/hyperdx-dashboard-1.webp" alt="Create Dashboard" size="lg"/>
 </Step>
-<Step>
-### Create a visualization – average request time by service {#create-a-tile}
+<Step title="Create a visualization – average request time by service" id="create-a-tile">
 
 Select `Add New Tile` to open the visualization creation panel.
 
@@ -114,8 +110,7 @@ Resize the visualization to occupy the full width of the dashboard.
 
 <Image img="/images/use-cases/observability/hyperdx-dashboard-3.webp" alt="Dashboard with visuals" size="lg"/>
 </Step>
-<Step>
-### Create a visualization – events over time by service {#create-a-tile-2}
+<Step title="Create a visualization – events over time by service" id="create-a-tile-2">
 
 Select `Add New Tile` to open the visualization creation panel.
 
@@ -135,8 +130,7 @@ Resize the visualization to occupy the full width of the dashboard.
 
 <Image img="/images/use-cases/observability/hyperdx-dashboard-5.webp" alt="Dashboard with visuals 2" size="lg"/>
 </Step>
-<Step>
-### Add a heatmap tile for span duration {#create-a-tile-heatmap}
+<Step title="Add a heatmap tile for span duration" id="create-a-tile-heatmap">
 
 Heatmap tiles plot the count of events falling into each (time, value) bucket as a colored grid. Use a heatmap when you want to see the **shape** of a distribution over time, not just the average or a single percentile. A latency heatmap reveals bimodal duration patterns, slow-tail clusters, or sudden spreads that a Line chart would average away.
 
@@ -179,8 +173,7 @@ Click any cell on a rendered heatmap tile to open a **View in Event Deltas** act
 
 Selecting it opens the [Event Deltas](/clickstack/features/event-deltas) view with the tile's data source, `Where` clause, and time range carried over. From there you can examine the same distribution interactively, slice by attribute to see what makes the slow spans different from the fast ones, and inspect the individual spans behind any cell, without rebuilding the query by hand.
 </Step>
-<Step>
-### Filter dashboard {#filter-dashboards}
+<Step title="Filter dashboard" id="filter-dashboards">
 
 Lucene or SQL filters, along with the time range, can be applied at the dashboard level and will automatically propagate to all visualizations.
 
@@ -232,15 +225,13 @@ In addition to the [free-text filters](#filter-dashboards) available on all dash
 The following steps demonstrate adding a custom filter to the dashboard created in the ["Creating dashboards"](#creating-dashboards) section.
 
 <Steps>
-<Step>
-### Open the Edit Filters dialog {#open-edit-filters}
+<Step title="Open the Edit Filters dialog" id="open-edit-filters">
 
 Open a saved dashboard and select **Edit Filters** from the toolbar.
 
 <Image img="/images/clickstack/dashboards/edit-filters.webp" alt="Edit Filters button in the dashboard toolbar" size="lg"/>
 </Step>
-<Step>
-### Add a new filter {#add-new-filter}
+<Step title="Add a new filter" id="add-new-filter">
 
 Click **Add new filter**. Configure the filter by providing a **Name**, selecting a **Data source**, and entering a **Filter expression** — a SQL column or expression whose distinct values will populate the dropdown. Click **Save filter**.
 
@@ -252,15 +243,13 @@ The Filters modal shows all configured filters for the dashboard. From here you 
 
 <Image img="/images/clickstack/dashboards/saved-filters.webp" alt="Filters modal showing a configured Services filter" size="md"/>
 </Step>
-<Step>
-### Use the filter {#use-filter}
+<Step title="Use the filter" id="use-filter">
 
 Close the Filters modal. The new dropdown filter appears below the search bar. Click it to see the available values, then select one to filter all visualizations on the dashboard.
 
 <Image img="/images/clickstack/dashboards/filtered-dashboard.webp" alt="Dashboard filtered to the frontend service" size="lg"/>
 </Step>
-<Step>
-### (Optional) Save filter values as default {#save-default-filters}
+<Step title="(Optional) Save filter values as default" id="save-default-filters">
 
 To persist a filter selection as the dashboard default, choose **Save Query & Filters as Default** from the dashboard menu. The dashboard will always open with the selected filters applied. To reset, select **Remove Default Query & Filters** from the same menu.
 
