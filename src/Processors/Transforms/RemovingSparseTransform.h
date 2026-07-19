@@ -4,7 +4,7 @@
 namespace DB
 {
 
-class RemovingSparseTransform : public ISimpleTransform
+class RemovingSparseTransform final : public ISimpleTransform
 {
 public:
     explicit RemovingSparseTransform(SharedHeader header);

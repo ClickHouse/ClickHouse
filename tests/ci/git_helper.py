@@ -46,7 +46,7 @@ with tempfile.NamedTemporaryFile("w", delete=False) as f:
 # Py 3.8 removeprefix and removesuffix
 def removeprefix(string: str, prefix: str) -> str:
     if string.startswith(prefix):
-        return string[len(prefix) :]  # noqa: ignore E203, false positive
+        return string[len(prefix) :]  # noqa: E203
     return string
 
 
@@ -139,7 +139,7 @@ def checkout_submodule(name: str, retry: int = 3) -> None:
             # progressive sleep before retry
             sleep(start_sleep * (n + 1))
 
-    raise subprocess.SubprocessError(f"Unable to retreive submodule {name}")
+    raise subprocess.SubprocessError(f"Unable to retrieve submodule {name}")
 
 
 def checkout_submodules() -> None:

@@ -6,7 +6,6 @@
 
 #include <Functions/array/FunctionArrayMapped.h>
 
-
 namespace DB
 {
 
@@ -76,7 +75,7 @@ struct ArrayCumSumImpl
             Dst accumulated{};
             for (; pos < offset; ++pos)
             {
-                accumulated += src_value;
+                accumulated += static_cast<Dst>(src_value);
                 res_values[pos] = accumulated;
             }
         }
@@ -93,7 +92,7 @@ struct ArrayCumSumImpl
             Dst accumulated{};
             for (; pos < offset; ++pos)
             {
-                accumulated += src_values[pos];
+                accumulated += static_cast<Dst>(src_values[pos]);
                 res_values[pos] = accumulated;
             }
         }

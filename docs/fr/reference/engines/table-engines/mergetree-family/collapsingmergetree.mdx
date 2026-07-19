@@ -1,0 +1,384 @@
+---
+description: 'Hérite de MergeTree, mais ajoute une logique de collapsing des lignes lors du
+  processus de fusion.'
+keywords: ['mises à jour', 'collapsing']
+sidebarTitle: 'CollapsingMergeTree'
+slug: /engines/table-engines/mergetree-family/collapsingmergetree
+title: 'Moteur de table CollapsingMergeTree'
+doc_type: 'guide'
+---
+
+<div id="description">
+  ## Description
+</div>
+
+Le moteur `CollapsingMergeTree` hérite de [MergeTree](/fr/reference/engines/table-engines/mergetree-family/mergetree)
+et ajoute une logique de collapsing des lignes pendant le processus de fusion.
+Le moteur de table `CollapsingMergeTree` supprime (collapsing) de manière asynchrone
+des paires de lignes si tous les champs d&#39;une clé de tri (`ORDER BY`) sont équivalents, à l&#39;exception du champ spécial `Sign`,
+qui peut prendre la valeur `1` ou `-1`.
+Les lignes qui n&#39;ont pas de paire avec une valeur `Sign` opposée sont conservées.
+
+Pour plus de détails, consultez la section [Collapsing](#table_engine-collapsingmergetree-collapsing) de ce document.
+
+<Note>
+  Ce moteur peut réduire considérablement le volume de stockage,
+  et ainsi améliorer l&#39;efficacité des requêtes `SELECT`.
+</Note>
+
+<div id="parameters">
+  ## Paramètres
+</div>
+
+Tous les paramètres de ce moteur de table, à l&#39;exception du paramètre `Sign`,
+ont la même signification que dans [`MergeTree`](/fr/reference/engines/table-engines/mergetree-family/mergetree).
+
+* `Sign` — Le nom donné à une colonne indiquant le type de ligne, où `1` correspond à une ligne d&#39;état et `-1` à une ligne d&#39;annulation. Type : [Int8](/fr/reference/data-types/int-uint).
+
+<div id="creating-a-table">
+  ## Créer une table
+</div>
+
+```sql
+CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
+(
+    name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
+    name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2],
+    ...
+) 
+ENGINE = CollapsingMergeTree(Sign)
+[PARTITION BY expr]
+[ORDER BY expr]
+[SAMPLE BY expr]
+[SETTINGS name=value, ...]
+```
+
+<details markdown="1">
+  <summary>Méthode obsolète pour créer une table</summary>
+
+  <Note>
+    La méthode ci-dessous n’est pas recommandée dans les nouveaux projets.
+    Nous vous conseillons, si possible, de mettre à jour les anciens projets pour utiliser la nouvelle méthode.
+  </Note>
+
+  ```sql
+  CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
+  (
+      name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
+      name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2],
+      ...
+  ) 
+  ENGINE [=] CollapsingMergeTree(date-column [, sampling_expression], (primary, key), index_granularity, Sign)
+  ```
+
+  `Sign` — Nom donné à une colonne indiquant le type de ligne : `1` correspond à une ligne &quot;d’état&quot; et `-1` à une ligne &quot;d’annulation&quot;. [Int8](/fr/reference/data-types/int-uint).
+</details>
+
+* Pour une description des paramètres de requête, voir [description de la requête](/fr/reference/statements/create/table).
+* Lors de la création d’une table `CollapsingMergeTree`, les mêmes [clauses de requête](/fr/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-creating-a-table) sont requises que pour la création d’une table `MergeTree`.
+
+<div id="table_engine-collapsingmergetree-collapsing">
+  ## Collapsing
+</div>
+
+<div id="data">
+  ### Données
+</div>
+
+Considérez le cas où vous devez enregistrer des données qui changent continuellement pour un objet donné.
+Il peut sembler logique d&#39;avoir une ligne par objet et de la mettre à jour chaque fois que quelque chose change,
+cependant, les opérations de mise à jour sont coûteuses et lentes pour le SGBD, car elles nécessitent de réécrire les données dans le stockage.
+Si nous devons écrire des données rapidement, effectuer un grand nombre de mises à jour n&#39;est pas une approche acceptable,
+mais nous pouvons toujours écrire les modifications d&#39;un objet de manière séquentielle.
+Pour ce faire, nous utilisons la colonne spéciale `Sign`.
+
+* Si `Sign` = `1`, cela signifie que la ligne est une ligne d&#39;&quot;état&quot; : *une ligne contenant des champs qui représentent un état valide actuel*.
+* Si `Sign` = `-1`, cela signifie que la ligne est une ligne d&#39;&quot;annulation&quot; : *une ligne utilisée pour annuler l&#39;état d&#39;un objet ayant les mêmes attributs*.
+
+Par exemple, nous voulons calculer combien de pages les utilisateurs ont consultées sur un certain site web et combien de temps ils les ont visitées.
+À un instant donné, nous écrivons la ligne suivante avec l&#39;état de l&#39;activité de l&#39;utilisateur :
+
+```text
+┌──────────────UserID─┬─PageViews─┬─Duration─┬─Sign─┐
+│ 4324182021466249494 │         5 │      146 │    1 │
+└─────────────────────┴───────────┴──────────┴──────┘
+```
+
+À un moment ultérieur, nous enregistrons le changement d’activité de l’utilisateur et le consignons dans les deux lignes suivantes :
+
+```text
+┌──────────────UserID─┬─PageViews─┬─Duration─┬─Sign─┐
+│ 4324182021466249494 │         5 │      146 │   -1 │
+│ 4324182021466249494 │         6 │      185 │    1 │
+└─────────────────────┴───────────┴──────────┴──────┘
+```
+
+La première ligne annule l’état précédent de l’objet (qui représente ici un utilisateur).
+Elle doit copier tous les champs de la clé de tri de la ligne &quot;canceled&quot;, à l’exception de `Sign`.
+La deuxième ligne ci-dessus contient l’état actuel.
+
+Comme nous n’avons besoin que du dernier état de l’activité de l’utilisateur, la ligne &quot;state&quot; d’origine et la ligne &quot;cancel&quot;
+que nous avons insérées peuvent être supprimées comme indiqué ci-dessous, ce qui provoque la suppression par collapsing de l’état invalide (ancien) d’un objet :
+
+```text
+┌──────────────UserID─┬─PageViews─┬─Duration─┬─Sign─┐
+│ 4324182021466249494 │         5 │      146 │    1 │ -- old "state" row can be deleted
+│ 4324182021466249494 │         5 │      146 │   -1 │ -- "cancel" row can be deleted
+│ 4324182021466249494 │         6 │      185 │    1 │ -- new "state" row remains
+└─────────────────────┴───────────┴──────────┴──────┘
+```
+
+`CollapsingMergeTree` met précisément en œuvre ce comportement de *collapsing* lors de la fusion des parties de données.
+
+<Note>
+  La raison pour laquelle deux lignes sont nécessaires pour chaque modification
+  est expliquée plus en détail dans le paragraphe [Algorithme](#table_engine-collapsingmergetree-collapsing-algorithm).
+</Note>
+
+**Les particularités d&#39;une telle approche**
+
+1. Le programme qui écrit les données doit mémoriser l&#39;état d&#39;un objet pour pouvoir l&#39;annuler. La ligne &quot;cancel&quot; doit contenir des copies des champs de la clé de tri de la ligne &quot;state&quot;, ainsi que le `Sign` opposé. Cela augmente la taille initiale du stockage, mais permet d&#39;écrire les données rapidement.
+2. De longs tableaux dans les colonnes réduisent l&#39;efficacité du moteur en raison de la charge d&#39;écriture plus élevée. Plus les données sont simples, plus l&#39;efficacité est élevée.
+3. Les résultats de `SELECT` dépendent fortement de la cohérence de l&#39;historique des modifications de l&#39;objet. Soyez vigilant lors de la préparation des données à insérer. Des données incohérentes peuvent produire des résultats imprévisibles. Par exemple, des valeurs négatives pour des métriques non négatives, comme la profondeur de session.
+
+<div id="table_engine-collapsingmergetree-collapsing-algorithm">
+  ### Algorithme
+</div>
+
+Lorsque ClickHouse fusionne des [parts](/fr/concepts/core-concepts/glossary#parts),
+chaque groupe de lignes consécutives ayant la même clé de tri (`ORDER BY`) est réduit à deux lignes au maximum :
+la ligne « état » avec `Sign` = `1` et la ligne « annulation » avec `Sign` = `-1`.
+Autrement dit, dans ClickHouse, les entrées sont collapsées.
+
+Pour chaque partie de données résultante, ClickHouse conserve :
+
+|    |                                                                                                                                                                             |
+| -- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1. | La première ligne « annulation » et la dernière ligne « état », si le nombre de lignes « état » et « annulation » est identique et que la dernière ligne est une ligne « état ». |
+| 2. | La dernière ligne « état », s&#39;il y a plus de lignes « état » que de lignes « annulation ».                                                                                |
+| 3. | La première ligne « annulation », s&#39;il y a plus de lignes « annulation » que de lignes « état ».                                                                               |
+| 4. | Aucune ligne, dans tous les autres cas.                                                                                                                                     |
+
+De plus, lorsqu&#39;il y a au moins deux lignes « état » de plus que de lignes « annulation »,
+ou au moins deux lignes « annulation » de plus que de lignes « état », la fusion se poursuit.
+ClickHouse traite toutefois cette situation comme une erreur logique et l&#39;enregistre dans le journal du serveur.
+Cette erreur peut se produire si les mêmes données sont insérées plusieurs fois.
+Ainsi, le collapsing ne doit pas modifier les résultats du calcul des statistiques.
+Les modifications sont progressivement collapsées, de sorte qu&#39;à la fin, seul le dernier état de presque chaque objet subsiste.
+
+La colonne `Sign` est requise, car l&#39;algorithme de fusion ne garantit pas
+que toutes les lignes ayant la même clé de tri se retrouveront dans la même partie de données résultante, ni même sur le même serveur physique.
+ClickHouse traite les requêtes `SELECT` avec plusieurs threads et ne peut pas prédire l&#39;ordre des lignes dans le résultat.
+
+Une agrégation est nécessaire si vous devez obtenir des données entièrement « collapsées » à partir de la table `CollapsingMergeTree`.
+Pour finaliser le collapsing, écrivez une requête avec la clause `GROUP BY` et des fonctions d&#39;agrégation qui tiennent compte du signe.
+Par exemple, pour calculer la quantité, utilisez `sum(Sign)` au lieu de `count()`.
+Pour calculer la somme d&#39;une valeur, utilisez `sum(Sign * x)` avec `HAVING sum(Sign) > 0` au lieu de `sum(x)`
+comme dans l&#39;[exemple](#example-of-use) ci-dessous.
+
+Les agrégats `count`, `sum` et `avg` peuvent être calculés de cette manière.
+L&#39;agrégat `uniq` peut être calculé si un objet possède au moins un état non collapsé.
+Les agrégats `min` et `max` ne peuvent pas être calculés,
+car `CollapsingMergeTree` ne conserve pas l&#39;historique des états collapsés.
+
+<Note>
+  Si vous devez extraire des données sans agrégation
+  (par exemple, pour vérifier si des lignes dont les valeurs les plus récentes correspondent à certaines conditions sont présentes),
+  vous pouvez utiliser le modificateur [`FINAL`](/fr/reference/statements/select/from#final-modifier) pour la clause `FROM`. Il fusionnera les données avant de renvoyer le résultat.
+  Pour CollapsingMergeTree, seule la ligne d&#39;état la plus récente pour chaque clé est renvoyée.
+</Note>
+
+<div id="examples">
+  ## Exemples
+</div>
+
+<div id="example-of-use">
+  ### Exemple d’utilisation
+</div>
+
+Considérons les données d’exemple suivantes :
+
+```text
+┌──────────────UserID─┬─PageViews─┬─Duration─┬─Sign─┐
+│ 4324182021466249494 │         5 │      146 │    1 │
+│ 4324182021466249494 │         5 │      146 │   -1 │
+│ 4324182021466249494 │         6 │      185 │    1 │
+└─────────────────────┴───────────┴──────────┴──────┘
+```
+
+Créons une table `UAct` en utilisant `CollapsingMergeTree` :
+
+```sql
+CREATE TABLE UAct
+(
+    UserID UInt64,
+    PageViews UInt8,
+    Duration UInt8,
+    Sign Int8
+)
+ENGINE = CollapsingMergeTree(Sign)
+ORDER BY UserID
+```
+
+Ensuite, nous allons insérer des données :
+
+```sql
+INSERT INTO UAct VALUES (4324182021466249494, 5, 146, 1)
+```
+
+```sql
+INSERT INTO UAct VALUES (4324182021466249494, 5, 146, -1),(4324182021466249494, 6, 185, 1)
+```
+
+Nous utilisons deux requêtes `INSERT` pour créer deux `data parts` distinctes.
+
+<Note>
+  Si nous insérons les données avec une seule requête, ClickHouse ne crée qu&#39;une seule `data part` et n&#39;effectuera jamais de fusion.
+</Note>
+
+Nous pouvons sélectionner les données à l&#39;aide de :
+
+```sql
+SELECT * FROM UAct
+```
+
+```text
+┌──────────────UserID─┬─PageViews─┬─Duration─┬─Sign─┐
+│ 4324182021466249494 │         5 │      146 │   -1 │
+│ 4324182021466249494 │         6 │      185 │    1 │
+└─────────────────────┴───────────┴──────────┴──────┘
+┌──────────────UserID─┬─PageViews─┬─Duration─┬─Sign─┐
+│ 4324182021466249494 │         5 │      146 │    1 │
+└─────────────────────┴───────────┴──────────┴──────┘
+```
+
+Examinons les données renvoyées ci-dessus pour voir si le collapsing a eu lieu...
+Avec deux requêtes `INSERT`, nous avons créé deux parties de données.
+La requête `SELECT` a été exécutée dans deux threads, et nous avons obtenu les lignes dans un ordre aléatoire.
+Cependant, le collapsing **n&#39;a pas eu lieu**, car il n&#39;y a pas encore eu de fusion des parties de données,
+et ClickHouse fusionne les parties de données en arrière-plan à un moment imprévisible.
+
+Nous avons donc besoin d&#39;une agrégation,
+que nous effectuons avec la fonction d&#39;agrégation [`sum`](/fr/reference/functions/aggregate-functions/sum)
+et la clause [`HAVING`](/fr/reference/statements/select/having) :
+
+```sql
+SELECT
+    UserID,
+    sum(PageViews * Sign) AS PageViews,
+    sum(Duration * Sign) AS Duration
+FROM UAct
+GROUP BY UserID
+HAVING sum(Sign) > 0
+```
+
+```text
+┌──────────────UserID─┬─PageViews─┬─Duration─┐
+│ 4324182021466249494 │         6 │      185 │
+└─────────────────────┴───────────┴──────────┘
+```
+
+Si nous n’avons pas besoin d’agrégation et souhaitons forcer le collapsing, nous pouvons également utiliser le modificateur `FINAL` dans la clause `FROM`.
+
+```sql
+SELECT * FROM UAct FINAL
+```
+
+```text
+┌──────────────UserID─┬─PageViews─┬─Duration─┬─Sign─┐
+│ 4324182021466249494 │         6 │      185 │    1 │
+└─────────────────────┴───────────┴──────────┴──────┘
+```
+
+<Note>
+  Cette façon de sélectionner les données est moins efficace et n’est pas recommandée pour de grands volumes de données parcourues (des millions de lignes).
+</Note>
+
+<div id="example-of-another-approach">
+  ### Exemple d&#39;une autre approche
+</div>
+
+Cette approche repose sur l&#39;idée que les fusions ne prennent en compte que les champs clés.
+Dans la ligne &quot;annulation&quot;, nous pouvons donc spécifier des valeurs négatives
+qui annulent l&#39;effet de la version précédente de la ligne lors de la somme, sans utiliser la colonne `Sign`.
+
+Pour cet exemple, nous utiliserons les données d&#39;exemple ci-dessous :
+
+```text
+┌──────────────UserID─┬─PageViews─┬─Duration─┬─Sign─┐
+│ 4324182021466249494 │         5 │      146 │    1 │
+│ 4324182021466249494 │        -5 │     -146 │   -1 │
+│ 4324182021466249494 │         6 │      185 │    1 │
+└─────────────────────┴───────────┴──────────┴──────┘
+```
+
+Pour cette approche, il est nécessaire de modifier les types de données de `PageViews` et `Duration` afin de pouvoir stocker des valeurs négatives.
+Nous modifions donc le type de ces colonnes, de `UInt8` à `Int16`, lorsque nous créons notre table `UAct` à l’aide de
+`collapsingMergeTree` :
+
+```sql
+CREATE TABLE UAct
+(
+    UserID UInt64,
+    PageViews Int16,
+    Duration Int16,
+    Sign Int8
+)
+ENGINE = CollapsingMergeTree(Sign)
+ORDER BY UserID
+```
+
+Testons cette approche en insérant des données dans notre table.
+
+Pour des exemples ou de petites tables, cela reste toutefois acceptable :
+
+```sql
+INSERT INTO UAct VALUES(4324182021466249494,  5,  146,  1);
+INSERT INTO UAct VALUES(4324182021466249494, -5, -146, -1);
+INSERT INTO UAct VALUES(4324182021466249494,  6,  185,  1);
+
+SELECT * FROM UAct FINAL;
+```
+
+```text
+┌──────────────UserID─┬─PageViews─┬─Duration─┬─Sign─┐
+│ 4324182021466249494 │         6 │      185 │    1 │
+└─────────────────────┴───────────┴──────────┴──────┘
+```
+
+```sql
+SELECT
+    UserID,
+    sum(PageViews) AS PageViews,
+    sum(Duration) AS Duration
+FROM UAct
+GROUP BY UserID
+```
+
+```text
+┌──────────────UserID─┬─PageViews─┬─Duration─┐
+│ 4324182021466249494 │         6 │      185 │
+└─────────────────────┴───────────┴──────────┘
+```
+
+```sql
+SELECT COUNT() FROM UAct
+```
+
+```text
+┌─count()─┐
+│       3 │
+└─────────┘
+```
+
+```sql
+OPTIMIZE TABLE UAct FINAL;
+
+SELECT * FROM UAct
+```
+
+```text
+┌──────────────UserID─┬─PageViews─┬─Duration─┬─Sign─┐
+│ 4324182021466249494 │         6 │      185 │    1 │
+└─────────────────────┴───────────┴──────────┴──────┘
+```

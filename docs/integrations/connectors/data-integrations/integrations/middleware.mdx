@@ -1,0 +1,51 @@
+---
+sidebarTitle: 'Middleware'
+slug: /integrations/middleware
+keywords: ['clickhouse', 'middleware', 'observability', 'integration', 'monitoring']
+description: 'Connect Middleware with ClickHouse to monitor and analyze ClickHouse metrics and logs.'
+title: 'Connecting Middleware to ClickHouse'
+doc_type: 'guide'
+integration:
+  - support_level: 'partner'
+  - category: 'data_integration'
+---
+
+import PartnerBadge from "/snippets/components/PartnerBadge/PartnerBadge.jsx";
+
+<PartnerBadge/>
+
+[Middleware](https://middleware.io/) is a cloud observability platform for monitoring infrastructure, logs, and application performance.
+
+You can connect ClickHouse with Middleware to collect and visualize database telemetry as part of your broader monitoring workflows.
+
+## Prerequisites {#prerequisites}
+
+- A running ClickHouse service (Cloud or self-managed)
+- Access to your ClickHouse host, port, username, and password
+- A Middleware account
+
+## Connect ClickHouse in Middleware {#connect-clickhouse-in-middleware}
+
+1. Sign in to your Middleware account.
+2. Go to **Integrations** and search for **ClickHouse**.
+3. Choose the ClickHouse integration and enter your connection details:
+   - Host
+   - Port
+   - Database
+   - Username
+   - Password
+4. Save the integration and run a connection test.
+
+## Verify data collection {#verify-data-collection}
+
+After setup, confirm that ClickHouse metrics and/or logs are visible in your Middleware dashboards.
+
+If connection validation fails, verify that:
+
+- ClickHouse accepts inbound connections from Middleware
+- SSL/TLS settings match your ClickHouse endpoint
+- Credentials and database permissions are correct
+
+## Additional resources {#additional-resources}
+
+- [Middleware website](https://middleware.io/)

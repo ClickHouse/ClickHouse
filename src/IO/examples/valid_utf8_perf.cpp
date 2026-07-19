@@ -3,8 +3,9 @@
 #include <Common/Stopwatch.h>
 #include <string>
 #include <iostream>
+#include <Examples/clickhouse_examples.h>
 
-int main(int argc, char ** argv)
+int mainEntryExampleValidUtf8Perf(int argc, char ** argv)
 {
     try
     {

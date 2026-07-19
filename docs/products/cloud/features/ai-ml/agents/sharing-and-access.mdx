@@ -1,0 +1,77 @@
+---
+sidebarTitle: 'Sharing and access'
+slug: /cloud/features/ai-ml/agents/sharing-and-access
+title: 'Sharing and access control'
+description: 'Permission model and access control for ClickHouse Agents'
+keywords: ['AI', 'ClickHouse Cloud', 'agents', 'sharing', 'access control', 'permissions', 'RBAC']
+doc_type: 'reference'
+---
+
+import BetaBadge from "/snippets/components/BetaBadge/BetaBadge.jsx";
+import { Image } from "/snippets/components/Image.jsx";
+
+<BetaBadge/>
+
+ClickHouse Agents uses a layered permission model: roles control which features users can use at all, resource-level access lists control who can use a specific agent or other resource, and admin permissions control who manages everything.
+
+## Roles {#roles}
+
+A role is a bundle of feature permissions assigned to one or more users. The defaults:
+
+- **User** - can run agents and chat. Whether they can build agents, create skills, share resources, etc. depends on the per-feature toggles in their role.
+- **Admin** - everything in User, plus org-level controls: managing users, configuring the marketplace, granting permissions.
+
+Admins can create custom roles with their own toggles for finer-grained control.
+
+## Resource sharing {#resource-sharing}
+
+Agents, prompts, and skills each have an access list. Three access levels per principal:
+
+- **Viewer** - can use the resource but can't modify it.
+- **Editor** - can change the resource's configuration (instructions, attached tools, model, etc.).
+- **Owner** - Editor plus the ability to delete the resource or change its sharing.
+
+When you create a resource, you're its owner by default. Anything you don't explicitly share is private to you.
+
+## Principals {#principals}
+
+You can grant access to:
+
+- **Individual users** - one user at a time.
+- **Groups** - teams or org units. If a user joins or leaves the group later, their access updates automatically.
+- **Organization-wide** - everyone in the org sees the resource. Subject to the role-level toggle that allows this.
+
+The org-wide visibility is what makes a resource discoverable in the [marketplace](/products/cloud/features/ai-ml/agents/marketplace).
+
+## Share an agent {#share-an-agent}
+
+Click the **share** icon at the bottom of the Agent Builder. A badge on the icon shows how many users or groups currently have access.
+
+<Image img="/images/cloud/agent-builder/sharing/sharing.webp" alt="Bottom of the Agent Builder panel with the share icon highlighted and a badge showing one shared principal" size="sm"/>
+
+The **Share** modal opens. Search for a user or group by name or email, choose the access level (**Viewer**, **Editor**, or **Owner**), and click **Save Changes**. To share organization-wide, enable the **Share with everyone in ClickHouse** toggle.
+
+<Image img="/images/cloud/agent-builder/sharing/share-agent-modal.webp" alt="Share modal with User and Group Permissions section, a search input, an existing user with an Owner role, a Share with everyone in ClickHouse toggle, and Cancel and Save Changes buttons" size="md"/>
+
+The recipient sees the agent in their available-agents list the next time they refresh. To revoke access, remove the row in the same modal. The recipient loses access immediately; their in-flight conversations finish but new ones won't open.
+
+## Default agent {#default-agent}
+
+You can mark one agent as your default. New conversations open against that agent unless you pick something else. Admins can also set an org-wide default for users who haven't picked their own.
+
+## Admin operations {#admin-operations}
+
+Admin-only operations include:
+
+- Creating and editing roles.
+- Configuring marketplace categories and curating featured agents.
+- Enabling or disabling features at the org level (memory, web search, code interpreter, marketplace, etc.).
+- Granting admin permissions to other users.
+
+In ClickHouse Cloud, the admin panel is available to org admins. If you can't see it, contact your org admin or ClickHouse Cloud support to request access.
+
+## Gotchas {#gotchas}
+
+- **Deleting an agent breaks all sharing.** Recipients lose access; their saved conversations with the agent remain readable but can't be continued.
+- **Editing a shared agent affects everyone using it.** Use a copy if you need to experiment without disrupting others.
+- **Revoking a user's role doesn't delete the resources they created.** Their agents, prompts, and skills stay on their access lists; transfer ownership before fully off-boarding.

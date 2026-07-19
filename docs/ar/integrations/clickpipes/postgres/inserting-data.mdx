@@ -1,0 +1,16 @@
+---
+slug: /integrations/postgresql/inserting-data
+title: 'كيفية إدراج البيانات من PostgreSQL'
+keywords: ['postgres', 'postgresql', 'إدراج']
+description: 'صفحة توضّح كيفية إدراج البيانات من PostgreSQL باستخدام ClickPipes أو PeerDB أو دالة جدول Postgres'
+doc_type: 'guide'
+---
+
+نوصي بقراءة [هذا الدليل](/ar/concepts/features/operations/insert/inserting-data) للتعرّف على أفضل الممارسات لإدراج البيانات في ClickHouse بهدف تحسين أداء الإدراج.
+
+لتحميل كميات كبيرة من البيانات من PostgreSQL، يمكنك استخدام:
+
+* [ClickPipes](/ar/integrations/clickpipes/postgres/index)، خدمة التكامل المُدارة لـ ClickHouse Cloud.
+* `PeerDB by ClickHouse`، أداة ETL مصممة خصيصًا لنسخ بيانات PostgreSQL إلى كل من ClickHouse المستضاف ذاتيًا وClickHouse Cloud.
+* [دالة جدول Postgres](/ar/reference/functions/table-functions/postgresql) لقراءة البيانات مباشرةً. يكون هذا مناسبًا عادةً إذا كان النسخ على دفعات استنادًا إلى علامة مائية معروفة، مثل طابع زمني، كافيًا، أو إذا كانت عملية ترحيل لمرة واحدة. يمكن لهذا النهج أن يتوسع ليشمل عشرات الملايين من الصفوف. ينبغي للمستخدمين الذين يتطلعون إلى ترحيل مجموعات بيانات أكبر التفكير في استخدام طلبات متعددة، يتعامل كل منها مع جزء من البيانات. يمكن استخدام الجداول المرحلية لكل جزء قبل نقل أقسامه إلى جدول نهائي. يتيح ذلك إعادة محاولة الطلبات الفاشلة. لمزيد من التفاصيل حول استراتيجية التحميل بالجملة هذه، انظر هنا.
+* يمكن تصدير البيانات من Postgres بتنسيق CSV. ويمكن بعد ذلك إدراجها في ClickHouse إما من الملفات المحلية أو عبر تخزين الكائنات باستخدام دوال الجدول.

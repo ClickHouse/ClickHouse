@@ -12,7 +12,7 @@ Expression ((Project names + Projection))
   Filter ((WHERE + Change column names to column identifiers))
     ReadFromMergeTree (default.test_int_divide)
     Indexes:
-      Partition Min-Max
+      Min-Max
         Keys:
           x
         Condition: and((intDiv(10, x) in [5, +Inf)), (x not in [0, 0]))
@@ -39,7 +39,7 @@ Expression (Project names)
       Filter ((WHERE + Change column names to column identifiers))
         ReadFromMergeTree (default.test_divide)
         Indexes:
-          Partition Min-Max
+          Min-Max
             Keys:
               x
             Condition: and((divide(10, x) in (\'4\', +Inf)), (x not in [\'0\', \'0\']))
@@ -63,7 +63,7 @@ Expression ((Project names + Projection))
   Filter ((WHERE + Change column names to column identifiers))
     ReadFromMergeTree (default.test_div_by_zero_const)
     Indexes:
-      Partition Min-Max
+      Min-Max
         Keys:
           x
         Condition: (divide(x, 0) in (0., +Inf))

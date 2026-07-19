@@ -6,13 +6,14 @@
 #include <Common/Elf.h>
 #include <Common/StackTrace.h>
 #include <Common/SymbolIndex.h>
+#include <Examples/clickhouse_examples.h>
 
 [[maybe_unused]] static NO_INLINE const void * getAddress()
 {
     return __builtin_return_address(0);
 }
 
-int main(int argc, char ** argv)
+int mainEntryExampleSymbolIndex(int argc, char ** argv)
 {
 #if defined(__ELF__) && !defined(OS_FREEBSD)
     using namespace DB;
@@ -47,7 +48,7 @@ int main(int argc, char ** argv)
     Dwarf dwarf(object->elf);
 
     Dwarf::LocationInfo location;
-    std::vector<Dwarf::SymbolizedFrame> frames;
+    VectorWithMemoryTracking<Dwarf::SymbolizedFrame> frames;
     if (dwarf.findAddress(uintptr_t(address) - uintptr_t(info.dli_fbase), location, Dwarf::LocationInfoMode::FAST, frames))
         std::cerr << location.file.toString() << ":" << location.line << "\n";
     else

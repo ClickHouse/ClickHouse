@@ -1,4 +1,4 @@
--- Tags: long, no-sanitizers, no-parallel, no-parallel-replicas, no-async-insert
+-- Tags: long, no-sanitizers, no-parallel, no-flaky-check, no-parallel-replicas, no-async-insert
 
 -- no-parallel-replicas -- https://github.com/ClickHouse/ClickHouse/issues/90063
 -- no-parallel -- the test requires fixed database name and table names to check deduplication blocks in part_log, which makes it incompatible with parallel execution of tests

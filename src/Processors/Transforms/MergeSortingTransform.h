@@ -16,7 +16,7 @@ using VolumePtr = std::shared_ptr<IVolume>;
 
 /// Takes sorted separate chunks of data. Sorts them.
 /// Returns stream with globally sorted data.
-class MergeSortingTransform : public SortingTransform
+class MergeSortingTransform final : public SortingTransform
 {
 public:
     /// limit - if not 0, allowed to return just first 'limit' rows in sorted order.
@@ -42,7 +42,7 @@ protected:
     void serialize() override;
     void generate() override;
 
-    Processors expandPipeline() override;
+    PipelineUpdate updatePipeline() override;
 
 private:
     size_t max_bytes_before_remerge;

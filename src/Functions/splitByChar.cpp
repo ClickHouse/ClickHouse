@@ -28,12 +28,12 @@ using Pos = const char *;
 class SplitByCharImpl
 {
 private:
-    Pos pos;
-    Pos end;
-    char separator;
+    Pos pos{};
+    Pos end{};
+    char separator{};
     std::optional<size_t> max_splits;
-    size_t splits;
-    bool max_substrings_includes_remaining_string;
+    size_t splits{};
+    bool max_substrings_includes_remaining_string{};
 
 public:
     static constexpr auto name = "splitByChar";

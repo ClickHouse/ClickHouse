@@ -6,7 +6,6 @@
 #include <Common/Scheduler/ResourceLink.h>
 #include <Common/Scheduler/ResourceRequest.h>
 #include <Common/CurrentMetrics.h>
-#include <Common/ProfileEvents.h>
 
 #include <condition_variable>
 #include <exception>

@@ -1,0 +1,23 @@
+---
+description: 'Distributed DDL 文档'
+sidebarTitle: 'Distributed DDL'
+slug: /sql-reference/distributed-ddl
+title: 'Distributed DDL 查询（ON CLUSTER 子句）'
+doc_type: 'reference'
+---
+
+默认情况下，`CREATE`、`DROP`、`ALTER` 和 `RENAME` 查询只会影响执行这些查询的当前服务器。在集群环境中，可以通过 `ON CLUSTER` 子句以分布式方式执行这类查询。
+
+例如，以下查询会在 `cluster` 中的每台主机上创建 `all_hits` `Distributed` 表：
+
+```sql
+CREATE TABLE IF NOT EXISTS all_hits ON CLUSTER cluster (p Date, i Int32) ENGINE = Distributed(cluster, default, hits)
+```
+
+为了正确运行这些查询，每台主机都必须具有相同的集群定义 (为简化配置同步，你可以使用来自 ZooKeeper 的替换) 。它们还必须连接到 ZooKeeper 服务器。
+
+该查询的本地版本最终会在集群中的每台主机上执行，即使某些主机当前不可用也是如此。
+
+<Warning>
+  可保证单台主机内查询的执行顺序。
+</Warning>

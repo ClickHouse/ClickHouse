@@ -201,7 +201,6 @@ struct SelectQueryInfo
 
     bool settings_limit_offset_done = false;
     bool is_internal = false;
-    bool parallel_replicas_disabled = false;
     bool is_parameterized_view = false;
     bool optimize_trivial_count = false;
 
@@ -215,6 +214,9 @@ struct SelectQueryInfo
     bool merge_tree_enable_remove_parts_from_snapshot_optimization = true;
 
     bool isFinal() const;
+
+    /// Whether the table expression has the STREAM modifier.
+    bool isStream() const;
 
     /// Analyzer generates unique ColumnIdentifiers like __table1.__partition_id in filter nodes,
     /// while key analysis still requires unqualified column names.

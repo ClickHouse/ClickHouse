@@ -137,7 +137,7 @@ bool traverseDAGFilterSingleColumn(
         if (value->type != ActionsDAG::ActionType::COLUMN)
             return false;
 
-        auto converted_field = convertFieldToType((*value->column)[0], *primary_key_type);
+        auto converted_field = convertFieldToType(value->column->getField(), *primary_key_type);
         if (!converted_field.isNull())
             res->push_back(converted_field);
         return true;
@@ -276,7 +276,7 @@ bool traverseDAGFilter(
             if (right->type != ActionsDAG::ActionType::COLUMN)
                 return false;
 
-            const auto & value_field = (*right->column)[0];
+            auto value_field = right->column->getField();
             if (value_field.getType() != Field::Types::Tuple)
                 return false;
 

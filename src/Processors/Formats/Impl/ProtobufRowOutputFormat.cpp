@@ -53,6 +53,7 @@ void ProtobufRowOutputFormat::write(const Columns & columns, size_t row_num)
     serializer->writeRow(row_num);
 }
 
+void registerOutputFormatProtobuf(FormatFactory & factory);
 void registerOutputFormatProtobuf(FormatFactory & factory)
 {
     for (bool with_length_delimiter : {false, true})
@@ -82,6 +83,7 @@ void registerOutputFormatProtobuf(FormatFactory & factory)
 namespace DB
 {
     class FormatFactory;
+    void registerOutputFormatProtobuf(FormatFactory &);
     void registerOutputFormatProtobuf(FormatFactory &) {}
 }
 

@@ -401,15 +401,21 @@ void DictionaryStructure::parseRangeConfiguration(const Poco::Util::AbstractConf
     if (!range_min)
         return;
 
-    if (!range_min->type->equals(*range_max->type))
+    auto range_min_type = removeNullable(range_min->type);
+    auto range_max_type = removeNullable(range_max->type);
+
+    if (!range_min_type->equals(*range_max_type))
     {
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "Dictionary structure 'range_min' and 'range_max' should have same type, "
             "'range_min' type: {},"
             "'range_max' type: {}",
-            range_min->type->getName(),
-            range_max->type->getName());
+            range_min_type->getName(),
+            range_max_type->getName());
     }
+
+    range_min.emplace(DictionaryTypedSpecialAttribute{range_min->name, range_min->expression, range_min_type});
+    range_max.emplace(DictionaryTypedSpecialAttribute{range_max->name, range_max->expression, range_max_type});
 
     WhichDataType range_type(range_min->type);
 

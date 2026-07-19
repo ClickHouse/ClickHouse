@@ -8,7 +8,8 @@
 namespace BuzzHouse
 {
 
-class MD5Impl
+class
+    MD5Impl // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - `inputBuffer` is scratch space, filled by `file.read` before read
 {
 private:
     /// 8 KB buffer

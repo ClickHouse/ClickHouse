@@ -10,6 +10,9 @@
 #include <Common/noexcept_scope.h>
 #include <Common/logger_useful.h>
 #include <Common/LockGuardWithStopWatch.h>
+#include <Common/CurrentThread.h>
+#include <Common/ThreadStatus.h>
+#include <Common/FailPoint.h>
 
 
 namespace CurrentMetrics
@@ -21,6 +24,11 @@ namespace CurrentMetrics
 
 namespace DB
 {
+
+namespace FailPoints
+{
+    extern const char merge_tree_background_task_marked_for_deletion[];
+}
 
 namespace ErrorCodes
 {
@@ -167,7 +175,7 @@ bool MergeTreeBackgroundExecutor<Queue>::trySchedule(ExecutableTaskPtr task)
     return true;
 }
 
-void printExceptionWithRespectToAbort(LoggerPtr log, const String & query_id)
+static void printExceptionWithRespectToAbort(LoggerPtr log, const String & query_id)
 {
     std::exception_ptr ex = std::current_exception();
 
@@ -226,6 +234,14 @@ void MergeTreeBackgroundExecutor<Queue>::removeTasksCorrespondingToStorage(Stora
         }
     }
 
+    /// At this point every active task for this storage is flagged is_currently_deleting, so when
+    /// it resumes it is guaranteed to take the destruction path (cancel + destroy) rather than
+    /// being requeued and finalized normally. A test can synchronize here to be sure a paused
+    /// task will be torn down while still holding its resources (e.g. a zero-copy lock). Pause only
+    /// when this executor actually owns a task being deleted, and outside the mutex.
+    if (!tasks_to_wait.empty())
+        FailPointInjection::pauseFailPoint(FailPoints::merge_tree_background_task_marked_for_deletion);
+
     for (auto & item : tasks_to_cancel)
     {
         item->cancel();
@@ -267,11 +283,9 @@ void MergeTreeBackgroundExecutor<Queue>::routine(TaskRuntimeDataPtr item)
         /// Slow part: destroy the task outside the lock.
         NOEXCEPT_SCOPE({
             ALLOW_ALLOCATIONS_IN_SCOPE;
+            captured_storage_id = item_->storage_id.getNameForLogs();
             if (item_->task)
-            {
-                captured_storage_id = item_->task->getStorageID().getNameForLogs();
                 captured_query_id = item_->task->getQueryId();
-            }
             item_->resetTask();
         });
 
@@ -287,7 +301,7 @@ void MergeTreeBackgroundExecutor<Queue>::routine(TaskRuntimeDataPtr item)
             if (elapsed_ms > THRESHOLD_MILLISECONDS)
             {
                 LOG_WARNING(log,
-                    "Releasing background task runtime data took {} milliseconds, executor={}, storage={}, query_id={}",
+                    "Destroying background task took {} milliseconds, executor={}, storage={}, query_id={}",
                     elapsed_ms,
                     toString(name),
                     captured_storage_id.value_or("unknown"),
@@ -303,7 +317,7 @@ void MergeTreeBackgroundExecutor<Queue>::routine(TaskRuntimeDataPtr item)
         item_.reset();
     };
 
-    /// No TSA because of unique_lock
+    /// No TSA because LockGuardWithStopWatch wraps mutex locking and is not understood by TSA
     auto restart_task = [this, &erase_from_active, &release_task] (TaskRuntimeDataPtr && item_) TSA_NO_THREAD_SAFETY_ANALYSIS
     {
         {
@@ -322,12 +336,13 @@ void MergeTreeBackgroundExecutor<Queue>::routine(TaskRuntimeDataPtr item)
             }
         }
 
-        /// No lock here.
+        /// No lock here. The storage is being deleted, do the heavy work outside the lock.
+        /// removeTasksCorrespondingToStorage has already found this item and is waiting on is_done,
+        /// so the storage won't be destroyed until we signal completion below.
         {
             ALLOW_ALLOCATIONS_IN_SCOPE;
             item_->cancel();
         }
-
         /// release_task handles destruction outside the lock, then cleanup under the lock.
         release_task(std::move(item_));
     };
@@ -336,9 +351,11 @@ void MergeTreeBackgroundExecutor<Queue>::routine(TaskRuntimeDataPtr item)
 
     auto complete_task = [this, &release_task] (TaskRuntimeDataPtr && item_)
     {
+        /// Run onCompleted outside the lock — it can be slow (especially under sanitizers)
+        /// and holding the mutex here was the root cause of lock-contention warnings.
+        /// The item stays in `active` during onCompleted, so removeTasksCorrespondingToStorage
+        /// can still find it and wait on is_done.
         {
-            LockGuardWithStopWatch lock(mutex, log, __PRETTY_FUNCTION__);
-
             Stopwatch watch_on_completed;
             ALLOW_ALLOCATIONS_IN_SCOPE;
             /// In a situation of a lack of memory this method can throw an exception,
@@ -348,7 +365,7 @@ void MergeTreeBackgroundExecutor<Queue>::routine(TaskRuntimeDataPtr item)
 
             if (watch_on_completed.elapsedMilliseconds() > 1000)
             {
-                LOG_WARNING(log, "Execution of callback took {} ms in [{}], Stack trace (when copying this message, always include the lines below): \n {}",
+                LOG_WARNING(log, "Execution of callback onCompleted took {} ms in [{}], Stack trace (when copying this message, always include the lines below):\n{}",
                     watch_on_completed.elapsedMilliseconds(), __PRETTY_FUNCTION__, StackTrace().toString());
             }
         }

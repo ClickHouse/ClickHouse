@@ -1,0 +1,62 @@
+---
+slug: /use-cases/observability/clickstack/getting-started/managed
+title: 'Primeiros passos no Managed ClickStack'
+sidebarTitle: 'Managed'
+description: 'Primeiros passos no Managed ClickStack'
+doc_type: 'guide'
+keywords: ['Managed ClickStack', 'primeiros passos', 'ClickHouse Cloud']
+---
+
+import { Image } from "/snippets/pt-BR/components/Image.jsx";
+
+import SetupManagedIngestion from '/snippets/pt-BR/clickstack/_setup_managed_ingestion.mdx';
+import ProviderSelection from '/snippets/pt-BR/clickstack/_select_provider.mdx';
+import NavigateClickStackUI from '/snippets/pt-BR/clickstack/_navigate_managed.mdx';
+
+A maneira mais fácil de começar é implantando o **Managed ClickStack** no **ClickHouse Cloud**, que fornece um backend seguro e totalmente gerenciado, mantendo controle total sobre a ingestão, o schema e os fluxos de trabalho de observabilidade. Isso elimina a necessidade de operar o ClickHouse por conta própria e oferece uma série de benefícios:
+
+* Escalonamento automático de compute, independente do armazenamento
+* Retenção de baixo custo e praticamente ilimitada com base em armazenamento de objetos
+* A capacidade de isolar de forma independente workloads de leitura e gravação com warehouses.
+* Autenticação integrada
+* Backups automatizados
+* Recursos de segurança e compliance
+* Atualizações contínuas
+
+<Steps>
+  <Step>
+    ## Cadastre-se no ClickHouse Cloud
+
+    Para criar um serviço Managed ClickStack no [ClickHouse Cloud](https://console.clickhouse.cloud), primeiro conclua a **primeira etapa** do [guia de início rápido do ClickHouse Cloud](/pt-BR/get-started/setup/cloud).
+
+    <ProviderSelection />
+  </Step>
+
+  <Step>
+    ## Configure a ingestão
+
+    Depois que seu serviço tiver sido provisionado, verifique se ele está selecionado e clique em &quot;ClickStack&quot; no menu à esquerda.
+
+    <SetupManagedIngestion />
+  </Step>
+
+  <Step>
+    ## Acesse a UI do ClickStack
+
+    <NavigateClickStackUI />
+  </Step>
+
+  <Step>
+    ## Próximas etapas
+
+    <Warning>
+      **Registre as credenciais padrão**
+
+      Se você não registrou suas credenciais padrão durante as etapas acima, vá até o serviço e selecione `Connect`, anotando a senha e os endpoints HTTP e nativos. Armazene essas credenciais de administrador com segurança, pois elas poderão ser reutilizadas em guias posteriores.
+    </Warning>
+
+    <Image img="/images/_snippets/service_connect.webp" size="lg" alt="Conexão do serviço" border />
+
+    Para realizar tarefas como provisionar novos usuários ou adicionar outras fontes de dados, consulte o [guia de implantação do Managed ClickStack](/pt-BR/clickstack/deployment/managed#additional-tasks).
+  </Step>
+</Steps>

@@ -7,11 +7,15 @@
 #include <stdexcept>
 #include <cstdlib>
 #include <unistd.h>
+#include <Examples/clickhouse_examples.h>
 
 
 namespace fs = std::filesystem;
 
-static std::string createTmpPath(const std::string & filename)
+namespace
+{
+
+std::string createTmpPath(const std::string & filename)
 {
     char pattern[] = "/tmp/fileXXXXXX";
     char * dir = mkdtemp(pattern);
@@ -241,7 +245,7 @@ struct Generator3
     }
 };
 
-static void runTests()
+void runTests()
 {
     std::cout << "Test set 1\n";
     TestSet<Generator1>::execute();
@@ -251,7 +255,9 @@ static void runTests()
     TestSet<Generator3>::execute();
 }
 
-int main()
+}
+
+int mainEntryExampleCompactArray(int, char **)
 {
     runTests();
     return 0;

@@ -57,7 +57,7 @@ private:
     void readJSONObject(IColumn & column) override;
 };
 
-class JSONAsStringExternalSchemaReader : public IExternalSchemaReader
+class JSONAsStringExternalSchemaReader final : public IExternalSchemaReader
 {
 public:
     NamesAndTypesList readSchema() override
@@ -66,7 +66,7 @@ public:
     }
 };
 
-class JSONAsObjectExternalSchemaReader : public IExternalSchemaReader
+class JSONAsObjectExternalSchemaReader final : public IExternalSchemaReader
 {
 public:
     explicit JSONAsObjectExternalSchemaReader(const FormatSettings & settings_);

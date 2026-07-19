@@ -5,7 +5,7 @@ ReadFromMergeTree (default.t1)
    Parts: 1 | Granules: 1
    Output: a, b
 --- Projection with expressions ---
-Output: a_plus, b_lower
+Output: a + 1, lower(b)
 
 ReadFromMergeTree (default.t1)
    Read type: Default
@@ -32,7 +32,7 @@ Join (JOIN FillRightFirst)
 │  t1[100] ⋈ t2[100]
 │  Type: inner | Strictness: all | Algorithm: ConcurrentHashJoin
 │  Result rows: 100
-│  Join conditions: [(__table1.a) = (__table2.x)]
+│  Join conditions: a = x
 │  Output:
 │    Left:  a, b
 │    Right: y
@@ -51,7 +51,7 @@ Join (JOIN FillRightFirst)
 │  t1[100] ⋈ t2[100]
 │  Type: inner | Strictness: all | Algorithm: ConcurrentHashJoin
 │  Result rows: 100
-│  Join conditions: [(__table1.a) = (__table2.x)]
+│  Join conditions: a = x
 │  Output:
 │    Left:  a, b, c
 │    Right: x, y
@@ -70,7 +70,7 @@ Join (JOIN FillRightFirst)
 │  t1[100] ⋈ t2[100]
 │  Type: inner | Strictness: all | Algorithm: ConcurrentHashJoin
 │  Result rows: 100
-│  Join conditions: [(__table1.a) = (__table2.x)]
+│  Join conditions: a = x
 │  Output:
 │    Left:  a, b
 │    Right: Empty
@@ -89,7 +89,7 @@ Join (JOIN FillRightFirst)
 │  t1[100] ⋈ t2[100]
 │  Type: inner | Strictness: all | Algorithm: ConcurrentHashJoin
 │  Result rows: 100
-│  Join conditions: [(__table1.a) = (__table2.x)]
+│  Join conditions: a = x
 │  Output:
 │    Left:  Empty
 │    Right: x, y

@@ -1,0 +1,195 @@
+---
+description: '`user.xml` 설정 파일의 `profiles` 섹션에서 설정에 대한 제약 조건을 정의할 수 있으며,
+  이를 통해 사용자가 `SET` 쿼리로 일부 설정을 변경하지 못하도록 할 수 있습니다.'
+sidebarTitle: '설정에 대한 제약 조건'
+slug: /operations/settings/constraints-on-settings
+title: '설정에 대한 제약 조건'
+doc_type: 'reference'
+---
+
+<div id="overview">
+  ## 개요
+</div>
+
+ClickHouse에서 설정의 &quot;제약 조건&quot;은
+설정에 지정할 수 있는 제한 사항과 규칙을 의미합니다. 이러한 제약 조건은 데이터베이스의
+안정성, 보안, 예측 가능한 동작을 유지하는 데 사용됩니다.
+
+<div id="defining-constraints">
+  ## 제약 조건 정의
+</div>
+
+설정 제약 조건은 `user.xml`
+설정 파일의 `profiles` 섹션에서 정의할 수 있습니다. 이러한 제약 조건은 사용자가
+[`SET`](/ko/reference/statements/set) SQL 문을 사용해 일부 설정을 변경하지 못하게 합니다.
+
+제약 조건은 다음과 같이 정의합니다:
+
+```xml
+<profiles>
+  <user_name>
+    <constraints>
+      <setting_name_1>
+        <min>lower_boundary</min>
+      </setting_name_1>
+      <setting_name_2>
+        <max>upper_boundary</max>
+      </setting_name_2>
+      <setting_name_3>
+        <min>lower_boundary</min>
+        <max>upper_boundary</max>
+      </setting_name_3>
+      <setting_name_4>
+        <readonly/>
+      </setting_name_4>
+      <setting_name_5>
+        <min>lower_boundary</min>
+        <max>upper_boundary</max>
+        <changeable_in_readonly/>
+      </setting_name_5>
+      <setting_name_6>
+        <min>lower_boundary</min>
+        <max>upper_boundary</max>
+        <disallowed>value1</disallowed>
+        <disallowed>value2</disallowed>
+        <disallowed>value3</disallowed>
+        <changeable_in_readonly/>
+      </setting_name_6>
+    </constraints>
+  </user_name>
+</profiles>
+```
+
+사용자가 제약 조건을 위반하려고 하면 예외가 발생하고
+설정은 그대로 유지됩니다.
+
+<div id="types-of-constraints">
+  ## 제약 조건의 유형
+</div>
+
+ClickHouse에서는 몇 가지 유형의 제약 조건을 지원합니다:
+
+* `min`
+* `max`
+* `disallowed`
+* `readonly` (별칭 `const`)
+* `changeable_in_readonly`
+
+`min` 및 `max` 제약 조건은 숫자 설정의 상한과 하한을 지정하며,
+함께 조합해 사용할 수 있습니다.
+
+`disallowed` 제약 조건은 특정 설정에서 허용하지 않을 값(들)을 지정할 때 사용할 수 있습니다.
+
+`readonly` 또는 `const` 제약 조건은 사용자가 해당 설정을 전혀 변경할 수 없음을 의미합니다.
+
+`changeable_in_readonly` 제약 조건 유형을 사용하면 `readonly` 설정이 `1`로 설정되어 있어도
+사용자가 `min`/`max` 범위 내에서 설정을 변경할 수 있습니다.
+그렇지 않으면 `readonly=1` 모드에서는 설정 변경이 허용되지 않습니다.
+
+<Note>
+  `changeable_in_readonly`는 `settings_constraints_replace_previous`가 활성화된 경우에만 지원됩니다:
+
+  ```xml
+  <access_control_improvements>
+    <settings_constraints_replace_previous>true</settings_constraints_replace_previous>
+  </access_control_improvements>
+  ```
+</Note>
+
+<div id="multiple-constraint-profiles">
+  ## 여러 제약 조건 프로필
+</div>
+
+사용자에게 여러 프로필이 활성화된 경우 제약 조건이 머지됩니다.
+머지 과정은 `settings_constraints_replace_previous` 값에 따라 달라집니다.
+
+* **true** (권장): 동일한 설정에 대한 제약 조건은 머지 중에 대체되며,
+  마지막 제약 조건이 사용되고 그 이전의 제약 조건은 모두 무시됩니다.
+  여기에는 새 제약 조건에서 설정되지 않은 필드도 포함됩니다.
+* **false** (기본값): 동일한 설정에 대한 제약 조건은 다음 방식으로 머지됩니다.
+  설정되지 않은 각 제약 조건 유형은 이전 프로필에서 가져오고,
+  설정된 각 제약 조건 유형은 새 프로필의 값으로 대체됩니다.
+
+<div id="read-only">
+  ## 읽기 전용 모드
+</div>
+
+읽기 전용 모드는 `readonly` 설정으로 활성화됩니다. 이는 `readonly` 제약 조건 유형과 혼동하지 마십시오:
+
+* `readonly=0`: 읽기 전용 제한이 없습니다.
+* `readonly=1`: 읽기 쿼리만 허용되며, `changeable_in_readonly`가 설정된 경우를 제외하면 설정을 변경할 수 없습니다.
+* `readonly=2`: 읽기 쿼리만 허용되지만, `readonly` 설정 자체를 제외한 다른 설정은 변경할 수 있습니다.
+
+<div id="example-read-only">
+  ### 예시
+</div>
+
+`users.xml`에 다음 내용을 포함하십시오:
+
+```xml
+<profiles>
+  <default>
+    <max_memory_usage>10000000000</max_memory_usage>
+    <force_index_by_date>0</force_index_by_date>
+    ...
+    <constraints>
+      <max_memory_usage>
+        <min>5000000000</min>
+        <max>20000000000</max>
+      </max_memory_usage>
+      <force_index_by_date>
+        <readonly/>
+      </force_index_by_date>
+    </constraints>
+  </default>
+</profiles>
+```
+
+다음 쿼리는 모두 예외를 발생시킵니다:
+
+```sql
+SET max_memory_usage=20000000001;
+SET max_memory_usage=4999999999;
+SET force_index_by_date=1;
+```
+
+```text
+Code: 452, e.displayText() = DB::Exception: Setting max_memory_usage should not be greater than 20000000000.
+Code: 452, e.displayText() = DB::Exception: Setting max_memory_usage should not be less than 5000000000.
+Code: 452, e.displayText() = DB::Exception: Setting force_index_by_date should not be changed.
+```
+
+<Note>
+  `default` 프로필은 특별하게 처리됩니다. `default` 프로필에 정의된 모든 제약 조건은
+  기본 제약 조건이 되며, 따라서 각 사용자에 대해 명시적으로 재정의되기 전까지는 모든 사용자에게
+  적용됩니다.
+</Note>
+
+<div id="constraints-on-merge-tree-settings">
+  ## MergeTree 설정 제약 조건
+</div>
+
+[merge tree settings](/ko/reference/settings/merge-tree-settings)에 대한 제약 조건을 설정할 수 있습니다.
+이 제약 조건은 MergeTree engine을 사용하는 테이블을 생성하거나
+스토리지 설정을 변경할 때 적용됩니다.
+
+`<constraints>` 섹션에서 참조할 때는
+merge tree setting 이름 앞에 `merge_tree_` 접두사를 붙여야 합니다.
+
+<div id="example-read-only">
+  ### 예시
+</div>
+
+`storage_policy`를 명시적으로 지정한 새 테이블의 생성을 금지할 수 있습니다.
+
+```xml
+<profiles>
+  <default>
+    <constraints>
+      <merge_tree_storage_policy>
+        <const/>
+      </merge_tree_storage_policy>
+    </constraints>
+  </default>
+</profiles>
+```

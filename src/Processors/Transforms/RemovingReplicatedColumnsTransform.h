@@ -4,7 +4,7 @@
 namespace DB
 {
 
-class RemovingReplicatedColumnsTransform : public ISimpleTransform
+class RemovingReplicatedColumnsTransform final : public ISimpleTransform
 {
 public:
     explicit RemovingReplicatedColumnsTransform(SharedHeader header);

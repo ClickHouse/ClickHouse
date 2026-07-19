@@ -1,5 +1,7 @@
 -- Test for swapping the build and probe sides of a ANTI join
+SET explain_query_plan_default = 'legacy';
 
+SET query_plan_optimize_join_order_randomize = 0; -- Pinned because the test asserts on join plan/order
 CREATE TABLE lhs(a UInt32)
 ENGINE = MergeTree
 ORDER BY tuple();
@@ -14,6 +16,7 @@ INSERT INTO rhs SELECT * FROM numbers_mt(1e6);
 SET enable_parallel_replicas = 0; -- join swap/reordering disabled with parallel replicas
 SET enable_analyzer = 1, query_plan_join_swap_table = 'auto';
 SET join_algorithm='hash';
+SET query_plan_optimize_join_order_limit = 10; -- CI may inject 0; anti join table swap runs inside chooseJoinOrder and is skipped when the limit is 0
 
 -- swap LEFT ANTI join to RIGHT ANTI join
 SELECT trimLeft(explain)

@@ -32,7 +32,7 @@ SELECT t1.dt, t2.dt FROM t1 JOIN t2 ON t1.foo = t2.bar ORDER BY t1.dt;
 SELECT '-';
 SELECT * FROM t1 ALL JOIN t2 ON t1.dt = t2.dt ORDER BY t1.time, t2.time;
 SELECT '-';
-SELECT * FROM t1 ALL JOIN t2 USING (dt) ORDER BY t1.time, t2.time settings enable_analyzer=0;
+SELECT * FROM t1 ALL JOIN t2 USING (dt) ORDER BY t1.time, t2.time settings enable_analyzer=0, enable_optimize_predicate_expression=1; -- old analyzer needs predicate optimization to resolve materialized columns in USING
 SELECT * FROM t1 ALL JOIN t2 USING (dt) ORDER BY t1.time, t2.time settings enable_analyzer=1;
 SELECT '-';
 SELECT * FROM t1 JOIN t2 ON t1.dt1 = t2.dt2 ORDER BY t1.time, t1.dimension_1, t2.time, t2.dimension_2;

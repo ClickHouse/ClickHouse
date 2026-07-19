@@ -81,3 +81,108 @@ def test_optimize(started_cluster_iceberg_with_spark, storage_type):
     )
     df = spark.read.format("iceberg").load(f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}").collect()
     assert len(df) == 90
+
+
+def test_optimize_manifest_per_file_stats(started_cluster_iceberg_with_spark):
+    instance = started_cluster_iceberg_with_spark.instances["node1"]
+    spark = started_cluster_iceberg_with_spark.spark_session
+    storage_type = "local"
+    TABLE_NAME = "test_optimize_stats_" + storage_type + "_" + get_uuid_str()
+
+    spark.sql(
+        f"""
+        CREATE TABLE {TABLE_NAME} (id long, data string) USING iceberg TBLPROPERTIES (
+            'format-version' = '2',
+            'write.update.mode' = 'merge-on-read',
+            'write.delete.mode' = 'merge-on-read',
+            'write.merge.mode' = 'merge-on-read'
+        )
+        """
+    )
+    spark.sql(
+        f"INSERT INTO {TABLE_NAME} SELECT id, char(id + ascii('a')) FROM range(10, 100)"
+    )
+
+    default_upload_directory(
+        started_cluster_iceberg_with_spark,
+        storage_type,
+        f"/iceberg_data/default/{TABLE_NAME}/",
+        f"/iceberg_data/default/{TABLE_NAME}/",
+    )
+    create_iceberg_table(
+        storage_type, instance, TABLE_NAME, started_cluster_iceberg_with_spark
+    )
+
+    spark.sql(f"DELETE FROM {TABLE_NAME} WHERE id < 20")
+    default_upload_directory(
+        started_cluster_iceberg_with_spark,
+        storage_type,
+        f"/iceberg_data/default/{TABLE_NAME}/",
+        f"/iceberg_data/default/{TABLE_NAME}/",
+    )
+
+    instance.query(
+        f"OPTIMIZE TABLE {TABLE_NAME};",
+        settings={"allow_experimental_iceberg_compaction": 1},
+    )
+    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 80
+
+    metadata_dir = (
+        f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}/metadata"
+    )
+    manifest_files = (
+        instance.exec_in_container(
+            [
+                "bash",
+                "-c",
+                f"find '{metadata_dir}' -maxdepth 1 -name '*.avro' "
+                f"-not -name 'snap-*.avro' -type f",
+            ]
+        )
+        .strip()
+        .splitlines()
+    )
+    assert manifest_files
+
+    data_entries_checked = 0
+    for manifest in manifest_files:
+        result = instance.query(
+            f"""
+            SELECT
+                tupleElement(data_file, 'content')             AS content,
+                tupleElement(data_file, 'file_path')           AS file_path,
+                tupleElement(data_file, 'record_count')        AS record_count,
+                tupleElement(data_file, 'file_size_in_bytes')  AS file_size
+            FROM file('{manifest}', Avro)
+            FORMAT TSV
+            """
+        ).strip()
+        if not result:
+            continue
+        for line in result.splitlines():
+            content, file_path, record_count, file_size = line.split("\t")
+            if int(content) != 0:
+                continue
+
+            exists = instance.exec_in_container(
+                ["bash", "-c", f"test -f '{file_path}' && echo yes || echo no"]
+            ).strip()
+            if exists != "yes":
+                continue
+
+            actual_size = int(
+                instance.exec_in_container(
+                    ["bash", "-c", f"wc -c < '{file_path}'"]
+                ).strip()
+            )
+            assert int(file_size) == actual_size
+
+            actual_rows = int(
+                instance.query(
+                    f"SELECT count() FROM file('{file_path}', Parquet)"
+                ).strip()
+            )
+            assert int(record_count) == actual_rows
+            data_entries_checked += 1
+
+    assert data_entries_checked > 0

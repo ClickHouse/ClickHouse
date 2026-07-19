@@ -1,0 +1,13 @@
+---
+title: 'ClickHouse 是否有基于成本的优化器'
+toc_hidden: true
+toc_priority: 10
+slug: /faq/general/cost-based
+description: 'ClickHouse 具备一些基于成本的优化机制'
+doc_type: 'reference'
+keywords: ['CBE', 'optimizer']
+---
+
+ClickHouse 具备一些局部的、基于成本的优化机制。例如，列的读取顺序由从磁盘读取压缩数据范围的成本决定。
+
+ClickHouse 也会基于列统计信息对 JOIN 进行重排序，不过 (截至 2025 年) ，与 Postgres、Oracle 和 MS SQL Server 中的 CBE 相比，这方面还远不够成熟。
