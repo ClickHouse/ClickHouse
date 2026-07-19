@@ -8,7 +8,7 @@ doc_type: 'reference'
 ---
 
 ```sql
-ALTER TABLE [db.]table [ON CLUSTER cluster] DELETE WHERE filter_expr
+ALTER TABLE [db.]table [ON CLUSTER cluster] DELETE [IN PARTITION partition_expr1 [, partition_expr2 ...]] WHERE filter_expr
 ```
 
 Deletes data matching the specified filtering expression. Implemented as a [mutation](/sql-reference/statements/alter/index.md#mutations).
@@ -20,6 +20,8 @@ The `ALTER TABLE` prefix makes this syntax different from most other systems sup
 The `filter_expr` must be of type `UInt8`. The query deletes rows in the table for which this expression takes a non-zero value.
 
 One query can contain several commands separated by commas.
+
+The `IN PARTITION` clause limits the mutation to the listed partitions. Without it, when the [optimize_mutations_with_partition_pruning](/operations/settings/settings#optimize_mutations_with_partition_pruning) setting is enabled (the default), ClickHouse automatically detects partition key conditions in `filter_expr` and only mutates the affected partitions.
 
 The synchronicity of the query processing is defined by the [mutations_sync](/operations/settings/settings.md/#mutations_sync) setting. By default, it is asynchronous.
 

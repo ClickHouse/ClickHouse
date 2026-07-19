@@ -11,7 +11,7 @@ doc_type: 'reference'
 The lightweight `DELETE` statement removes rows from the table `[db.]table` that match the expression `expr`. It is only available for the *MergeTree table engine family.
 
 ```sql
-DELETE FROM [db.]table [ON CLUSTER cluster] [IN PARTITION partition_expr] WHERE expr;
+DELETE FROM [db.]table [ON CLUSTER cluster] [IN PARTITION partition_expr1 [, partition_expr2 ...]] WHERE expr;
 ```
 
 It is called "lightweight `DELETE`" to contrast it to the [ALTER TABLE ... DELETE](/sql-reference/statements/alter/delete) command, which is a heavyweight process.
