@@ -41,13 +41,21 @@ EOF
 # expired TTL, so `OPTIMIZE ... FINAL` performs the recompression merge, which resolves the recompression
 # codec without a column type. After the unsafe codec is reset to the default codec on load, the merge must
 # succeed and the data stays intact, instead of throwing at the codec resolution.
+#
+# The normalization is also durable: it rewrites the stored TTL AST, not only the parsed runtime codec, so a
+# later unrelated `ALTER` (here `ADD COLUMN`, with `allow_suspicious_ttl_expressions = 0`) rebuilds the table
+# TTL from that AST without hitting the now-removed unsafe codec again.
 ${CLICKHOUSE_LOCAL} --path="${WORKING_FOLDER}" --multiquery "
 INSERT INTO local.t_sz3 SELECT now() - INTERVAL 1 DAY, repeat('a', 100) FROM numbers(1000);
 OPTIMIZE TABLE local.t_sz3 FINAL;
 SELECT 'sz3', count(), sum(length(s)) FROM local.t_sz3;
+ALTER TABLE local.t_sz3 ADD COLUMN extra UInt8 DEFAULT 0;
+SELECT 'sz3_after_alter', count(), sum(length(s)) FROM local.t_sz3;
 INSERT INTO local.t_alp SELECT now() - INTERVAL 1 DAY, repeat('b', 100) FROM numbers(1000);
 OPTIMIZE TABLE local.t_alp FINAL;
 SELECT 'alp', count(), sum(length(s)) FROM local.t_alp;
+ALTER TABLE local.t_alp ADD COLUMN extra UInt8 DEFAULT 0;
+SELECT 'alp_after_alter', count(), sum(length(s)) FROM local.t_alp;
 INSERT INTO local.t_chain SELECT now() - INTERVAL 1 DAY, repeat('c', 100) FROM numbers(1000);
 OPTIMIZE TABLE local.t_chain FINAL;
 SELECT 'chain', count(), sum(length(s)) FROM local.t_chain;

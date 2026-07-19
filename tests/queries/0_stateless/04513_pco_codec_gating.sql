@@ -22,6 +22,18 @@ CREATE TABLE t_pco_ttl (d Date, x UInt32)
 ENGINE = MergeTree ORDER BY tuple()
 TTL d + INTERVAL 1 DAY RECOMPRESS CODEC(PCO); -- { serverError BAD_ARGUMENTS }
 
+-- `allow_suspicious_ttl_expressions` only relaxes the "TTL expression must depend on table columns" check;
+-- it is not a codec escape hatch and does not turn a `CREATE` / `ALTER ... MODIFY TTL` into a metadata load,
+-- so PCO in TTL RECOMPRESS is still rejected (not silently normalized to the default codec) at DDL time.
+SET allow_suspicious_ttl_expressions = 1;
+CREATE TABLE t_pco_ttl (d Date, x UInt32)
+ENGINE = MergeTree ORDER BY tuple()
+TTL d + INTERVAL 1 DAY RECOMPRESS CODEC(PCO); -- { serverError BAD_ARGUMENTS }
+CREATE TABLE t_pco_alter_ttl (d Date, x UInt32) ENGINE = MergeTree ORDER BY tuple();
+ALTER TABLE t_pco_alter_ttl MODIFY TTL d + INTERVAL 1 DAY RECOMPRESS CODEC(PCO); -- { serverError BAD_ARGUMENTS }
+DROP TABLE t_pco_alter_ttl;
+SET allow_suspicious_ttl_expressions = 0;
+
 -- The untyped MergeTree compression settings reject PCO (experimental, and marks/primary-key
 -- streams are also untyped), both directly and inside a chain, even with the switch on.
 CREATE TABLE t_pco_s (x UInt32) ENGINE = MergeTree ORDER BY tuple() SETTINGS default_compression_codec = 'PCO'; -- { serverError BAD_ARGUMENTS }

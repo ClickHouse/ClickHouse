@@ -954,7 +954,8 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
     else if (type == MODIFY_TTL)
     {
         metadata.table_ttl = TTLTableDescription::getTTLForTableFromAST(
-            ttl, metadata.columns, context, metadata.primary_key, context->getSettingsRef()[Setting::allow_suspicious_ttl_expressions]);
+            ttl, metadata.columns, context, metadata.primary_key,
+            /* is_metadata_load */ false, context->getSettingsRef()[Setting::allow_suspicious_ttl_expressions]);
     }
     else if (type == REMOVE_TTL)
     {
@@ -1493,7 +1494,8 @@ void AlterCommands::apply(StorageInMemoryMetadata & metadata, ContextPtr context
     for (const auto & [name, ast] : column_ttl_asts)
     {
         auto new_ttl_entry = TTLDescription::getTTLFromAST(
-            ast, metadata_copy.columns, context, metadata_copy.primary_key, context->getSettingsRef()[Setting::allow_suspicious_ttl_expressions]);
+            ast, metadata_copy.columns, context, metadata_copy.primary_key,
+            /* is_metadata_load */ false, context->getSettingsRef()[Setting::allow_suspicious_ttl_expressions]);
         metadata_copy.column_ttls_by_name[name] = new_ttl_entry;
     }
 
@@ -1503,7 +1505,7 @@ void AlterCommands::apply(StorageInMemoryMetadata & metadata, ContextPtr context
             metadata_copy.columns,
             context,
             metadata_copy.primary_key,
-            context->getSettingsRef()[Setting::allow_suspicious_ttl_expressions]);
+            /* is_metadata_load */ false, context->getSettingsRef()[Setting::allow_suspicious_ttl_expressions]);
 
     metadata = std::move(metadata_copy);
 }

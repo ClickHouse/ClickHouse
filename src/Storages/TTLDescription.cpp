@@ -33,7 +33,6 @@ namespace Setting
 {
     extern const SettingsBool allow_experimental_codecs;
     extern const SettingsBool allow_suspicious_codecs;
-    extern const SettingsBool allow_suspicious_ttl_expressions;
 }
 
 namespace ErrorCodes
@@ -219,10 +218,17 @@ TTLDescription TTLDescription::getTTLFromAST(
     const ColumnsDescription & columns,
     ContextPtr context,
     const KeyDescription & primary_key,
-    bool is_attach)
+    bool is_metadata_load,
+    bool allow_suspicious)
 {
     TTLDescription result;
     const auto * ttl_element = definition_ast->as<ASTTTLElement>();
+
+    /// `allow_suspicious` relaxes the checks below; it is set on a genuine metadata load (`ATTACH` / `RESTORE` /
+    /// replicated metadata) and when the user opts in with `allow_suspicious_ttl_expressions` (the caller derives it
+    /// from the query settings). `is_metadata_load` marks only the genuine metadata load and additionally triggers
+    /// the recompression-codec normalization below; `allow_suspicious_ttl_expressions` must not, so that a `CREATE`
+    /// / `ALTER ... MODIFY TTL` keeps the user-specified codec instead of having it silently rewritten.
 
     /// First child is expression: `TTL expr TO DISK`
     if (ttl_element != nullptr)
@@ -320,22 +326,25 @@ TTLDescription TTLDescription::getTTLFromAST(
         }
         else if (ttl_element->mode == TTLMode::RECOMPRESS)
         {
-            /// On `ATTACH` (loading stored metadata) the codec checks are relaxed the same way column codecs are:
-            /// a table created on an earlier version must still load even if its recompression codec would now be
-            /// rejected at `CREATE`, otherwise the server could fail to start after an upgrade. `is_attach` here is
-            /// also set for a create with `allow_suspicious_ttl_expressions`, matching `checkTTLExpression` below.
-            ///
             /// A recompression codec is always resolved with a null column type in
-            /// `MergeTreeData::getCompressionCodecForPart`, so a stored codec that is unsafe for untyped data —
-            /// experimental (e.g. `PCO`), one that requires a column type, or a lossy one (e.g. `SZ3`) — could not
-            /// actually be used: it would throw or silently corrupt data at the first `TTL ... RECOMPRESS` merge.
-            /// On the metadata-load path, where rejecting would make the table unloadable, normalize such a codec
-            /// to the server default codec so the table stays loadable and writable, mirroring the marks / primary
-            /// key / default codec sanitization in the `MergeTreeData` constructor. At `CREATE` it is still
-            /// rejected by `validateCodecAndGetPreprocessedAST` below.
+            /// `MergeTreeData::getCompressionCodecForPart`, so a codec that is unsafe for untyped data —
+            /// experimental (e.g. `PCO`), one that requires a column type, or a lossy one (e.g. `SZ3`) — cannot
+            /// actually be used there: it would throw or silently corrupt data at the first `TTL ... RECOMPRESS`
+            /// merge.
+            ///
+            /// Only on a genuine metadata load (`is_metadata_load`), where rejecting would make an existing table
+            /// unloadable, normalize such a codec to the server default codec so the table stays loadable and
+            /// writable, mirroring the marks / primary key / default codec sanitization in the `MergeTreeData`
+            /// constructor. `getTTLForTableFromAST` rewrites the stored TTL AST accordingly so the normalization is
+            /// durable. `allow_suspicious_ttl_expressions` deliberately does not trigger this: it only relaxes the
+            /// checks, so a `CREATE` / `ALTER ... MODIFY TTL` keeps the user-specified codec (as for the sibling
+            /// per-column codec handling) instead of having it silently rewritten. At `CREATE` an unsafe codec is
+            /// still rejected by `validateCodecAndGetPreprocessedAST` below (`PCO` unconditionally, because it
+            /// requires a column type; lossy / experimental ones unless the matching `allow_suspicious_codecs` /
+            /// `allow_experimental_codecs` escape hatch is set).
             auto & factory = CompressionCodecFactory::instance();
             String unsafe_reason;
-            if (is_attach)
+            if (is_metadata_load)
                 unsafe_reason = factory.getReasonUnsafeForUntypedData(ttl_element->recompression_codec);
 
             if (!unsafe_reason.empty())
@@ -353,13 +362,13 @@ TTLDescription TTLDescription::getTTLFromAST(
                 result.recompression_codec =
                     factory.validateCodecAndGetPreprocessedAST(
                         ttl_element->recompression_codec, {},
-                        !is_attach && !context->getSettingsRef()[Setting::allow_suspicious_codecs],
-                        is_attach || context->getSettingsRef()[Setting::allow_experimental_codecs]);
+                        !allow_suspicious && !context->getSettingsRef()[Setting::allow_suspicious_codecs],
+                        allow_suspicious || context->getSettingsRef()[Setting::allow_experimental_codecs]);
             }
         }
     }
 
-    checkTTLExpression(expression, result.result_column, is_attach || context->getSettingsRef()[Setting::allow_suspicious_ttl_expressions]);
+    checkTTLExpression(expression, result.result_column, allow_suspicious);
     return result;
 }
 
@@ -398,7 +407,8 @@ TTLTableDescription TTLTableDescription::getTTLForTableFromAST(
     const ColumnsDescription & columns,
     ContextPtr context,
     const KeyDescription & primary_key,
-    bool is_attach)
+    bool is_metadata_load,
+    bool allow_suspicious)
 {
     TTLTableDescription result;
     if (!definition_ast)
@@ -406,10 +416,29 @@ TTLTableDescription TTLTableDescription::getTTLForTableFromAST(
 
     result.definition_ast = definition_ast->clone();
 
+    auto & compression_factory = CompressionCodecFactory::instance();
     bool have_unconditional_delete_ttl = false;
-    for (const auto & ttl_element_ptr : definition_ast->children)
+    const auto & ttl_elements = definition_ast->children;
+    for (size_t i = 0; i < ttl_elements.size(); ++i)
     {
-        auto ttl = TTLDescription::getTTLFromAST(ttl_element_ptr, columns, context, primary_key, is_attach);
+        const auto & ttl_element_ptr = ttl_elements[i];
+        auto ttl = TTLDescription::getTTLFromAST(ttl_element_ptr, columns, context, primary_key, is_metadata_load, allow_suspicious);
+
+        /// If a recompression codec was normalized on the metadata-load path (see `getTTLFromAST`), rewrite the
+        /// stored TTL AST as well, so `SHOW CREATE`, replicated metadata and later re-parses (e.g. from
+        /// `AlterCommands`, which rebuilds the table TTL from `definition_ast` on unrelated `ALTER`s) use the
+        /// normalized codec instead of the unsafe stored one, rather than only the parsed runtime field.
+        if (is_metadata_load && ttl.mode == TTLMode::RECOMPRESS)
+        {
+            const auto * original_element = ttl_element_ptr->as<ASTTTLElement>();
+            if (original_element && original_element->recompression_codec
+                && !compression_factory.getReasonUnsafeForUntypedData(original_element->recompression_codec).empty())
+            {
+                if (auto * stored_element = result.definition_ast->children[i]->as<ASTTTLElement>())
+                    stored_element->recompression_codec = ttl.recompression_codec->clone();
+            }
+        }
+
         if (ttl.mode == TTLMode::DELETE)
         {
             if (!ttl.where_expression_ast)
@@ -442,7 +471,7 @@ TTLTableDescription TTLTableDescription::getTTLForTableFromAST(
 }
 
 TTLTableDescription TTLTableDescription::parse(
-    const String & str, const ColumnsDescription & columns, ContextPtr context, const KeyDescription & primary_key, bool is_attach)
+    const String & str, const ColumnsDescription & columns, ContextPtr context, const KeyDescription & primary_key, bool is_metadata_load, bool allow_suspicious)
 {
     TTLTableDescription result;
     if (str.empty())
@@ -452,7 +481,7 @@ TTLTableDescription TTLTableDescription::parse(
     ASTPtr ast = parseQuery(parser, str, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
     FunctionNameNormalizer::visit(ast.get());
 
-    return getTTLForTableFromAST(ast, columns, context, primary_key, is_attach);
+    return getTTLForTableFromAST(ast, columns, context, primary_key, is_metadata_load, allow_suspicious);
 }
 
 }

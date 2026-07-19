@@ -805,13 +805,18 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             }
         }
 
-        bool allow_suspicious_ttl
-            = LoadingStrictnessLevel::SECONDARY_CREATE <= args.mode || local_settings[Setting::allow_suspicious_ttl_expressions];
+        /// `is_metadata_load` marks a genuine metadata load (`ATTACH` / `RESTORE` / replicated internal create); it
+        /// gates the recompression-codec normalization. `allow_suspicious_ttl` additionally relaxes the TTL checks
+        /// when the user opts in with `allow_suspicious_ttl_expressions`, but that setting must not by itself be
+        /// treated as a metadata load, so a `CREATE` with it keeps a user-specified `RECOMPRESS` codec instead of
+        /// having it silently normalized. See `TTLDescription::getTTLFromAST`.
+        bool is_metadata_load = LoadingStrictnessLevel::SECONDARY_CREATE <= args.mode;
+        bool allow_suspicious_ttl = is_metadata_load || local_settings[Setting::allow_suspicious_ttl_expressions];
 
         if (args.storage_def->ttl_table)
         {
             metadata.table_ttl = TTLTableDescription::getTTLForTableFromAST(
-                args.storage_def->ttl_table->ptr(), metadata.columns, context, metadata.primary_key, allow_suspicious_ttl);
+                args.storage_def->ttl_table->ptr(), metadata.columns, context, metadata.primary_key, is_metadata_load, allow_suspicious_ttl);
         }
 
         /// We use the local (query) context here so that user-level settings profiles can control
@@ -941,7 +946,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         auto column_ttl_asts = columns.getColumnTTLs();
         for (const auto & [name, ast] : column_ttl_asts)
         {
-            auto new_ttl_entry = TTLDescription::getTTLFromAST(ast, columns, context, metadata.primary_key, allow_suspicious_ttl);
+            auto new_ttl_entry = TTLDescription::getTTLFromAST(ast, columns, context, metadata.primary_key, is_metadata_load, allow_suspicious_ttl);
             metadata.column_ttls_by_name[name] = new_ttl_entry;
         }
 

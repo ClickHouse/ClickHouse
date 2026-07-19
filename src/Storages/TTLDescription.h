@@ -99,7 +99,7 @@ struct TTLDescription
     ASTPtr recompression_codec;
 
     /// Parse TTL structure from definition. Able to parse both column and table TTLs.
-    static TTLDescription getTTLFromAST(const ASTPtr & definition_ast, const ColumnsDescription & columns, ContextPtr context, const KeyDescription & primary_key, bool is_attach);
+    static TTLDescription getTTLFromAST(const ASTPtr & definition_ast, const ColumnsDescription & columns, ContextPtr context, const KeyDescription & primary_key, bool is_metadata_load, bool allow_suspicious);
 
     TTLDescription() = default;
     TTLDescription(const TTLDescription & other);
@@ -136,10 +136,10 @@ struct TTLTableDescription
     TTLTableDescription & operator=(const TTLTableDescription & other);
 
     static TTLTableDescription getTTLForTableFromAST(
-        const ASTPtr & definition_ast, const ColumnsDescription & columns, ContextPtr context, const KeyDescription & primary_key, bool is_attach);
+        const ASTPtr & definition_ast, const ColumnsDescription & columns, ContextPtr context, const KeyDescription & primary_key, bool is_metadata_load, bool allow_suspicious);
 
     /// Parse description from string
-    static TTLTableDescription parse(const String & str, const ColumnsDescription & columns, ContextPtr context, const KeyDescription & primary_key, bool is_attach);
+    static TTLTableDescription parse(const String & str, const ColumnsDescription & columns, ContextPtr context, const KeyDescription & primary_key, bool is_metadata_load, bool allow_suspicious);
 };
 
 }
