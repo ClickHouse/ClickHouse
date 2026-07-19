@@ -57,7 +57,7 @@ namespace
         if (override_name)
             user.setName(override_name->toString());
         else if (query.new_name)
-            user.setName(*query.new_name);
+            user.setName(query.new_name->toString());
         else if (query.names->size() == 1)
             user.setName(query.names->toStrings().at(0));
 
@@ -212,7 +212,7 @@ BlockIO InterpreterCreateUserQuery::execute()
         access->checkAccess(query.alter ? AccessType::ALTER_USER : AccessType::CREATE_USER, name);
 
     if (query.new_name && !query.alter)
-        access->checkAccess(AccessType::CREATE_USER, *query.new_name);
+        access->checkAccess(AccessType::CREATE_USER, query.new_name->toString());
 
     bool implicit_no_password_allowed = access_control.isImplicitNoPasswordAllowed();
     bool no_password_allowed = access_control.isNoPasswordAllowed();

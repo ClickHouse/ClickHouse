@@ -61,6 +61,11 @@ void ReplaceQueryParameterVisitor::visit(ASTPtr & ast)
                 ASTPtr names = create_user_query->names;
                 visitChildren(names);
             }
+            if (create_user_query->new_name)
+            {
+                ASTPtr new_name = create_user_query->new_name;
+                visitChildren(new_name);
+            }
             visitChildren(ast);
         }
         else if (auto * create_query = dynamic_cast<ASTCreateQuery *>(ast.get()))

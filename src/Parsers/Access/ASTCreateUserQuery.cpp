@@ -12,9 +12,10 @@ namespace DB
 
 namespace
 {
-    void formatRenameTo(const String & new_name, WriteBuffer & ostr, const IAST::FormatSettings &)
+    void formatRenameTo(const IAST & new_name, WriteBuffer & ostr, const IAST::FormatSettings & format)
     {
-        ostr << " RENAME TO " << quoteString(new_name);
+        ostr << " RENAME TO ";
+        new_name.format(ostr, format);
     }
 
     void formatAuthenticationData(const std::vector<boost::intrusive_ptr<ASTAuthenticationData>> & authentication_methods, WriteBuffer & ostr, const IAST::FormatSettings & settings)
@@ -190,6 +191,9 @@ ASTPtr ASTCreateUserQuery::clone() const
 
     if (names)
         res->names = boost::static_pointer_cast<ASTUserNamesWithHost>(names->clone());
+
+    if (new_name)
+        res->new_name = boost::static_pointer_cast<ASTUserNameWithHost>(new_name->clone());
 
     if (roles)
         res->roles = boost::static_pointer_cast<ASTRolesOrUsersSet>(roles->clone());

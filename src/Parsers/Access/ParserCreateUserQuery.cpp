@@ -9,7 +9,6 @@
 #include <Parsers/Access/ParserSettingsProfileElement.h>
 #include <Parsers/Access/ParserUserNameWithHost.h>
 #include <Parsers/Access/ParserPublicSSHKey.h>
-#include <Parsers/Access/parseUserName.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ExpressionElementParsers.h>
@@ -35,18 +34,18 @@ namespace ErrorCodes
 
 namespace
 {
-    bool parseRenameTo(IParserBase::Pos & pos, Expected & expected, std::optional<String> & new_name)
+    bool parseRenameTo(IParserBase::Pos & pos, Expected & expected, boost::intrusive_ptr<ASTUserNameWithHost> & new_name)
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
             if (!ParserKeyword{Keyword::RENAME_TO}.ignore(pos, expected))
                 return false;
 
-            String maybe_new_name;
-            if (!parseUserName(pos, expected, maybe_new_name, /*allow_query_parameter=*/true))
+            ASTPtr new_name_ast;
+            if (!ParserUserNameWithHost(/*allow_query_parameter=*/true).parse(pos, new_name_ast, expected))
                 return false;
 
-            new_name.emplace(std::move(maybe_new_name));
+            new_name = boost::static_pointer_cast<ASTUserNameWithHost>(new_name_ast);
             return true;
         });
     }
@@ -582,7 +581,7 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
 
     auto pos_after_parsing_names = pos;
 
-    std::optional<String> new_name;
+    boost::intrusive_ptr<ASTUserNameWithHost> new_name;
     std::optional<AllowedClientHosts> hosts;
     std::optional<AllowedClientHosts> add_hosts;
     std::optional<AllowedClientHosts> remove_hosts;

@@ -1,0 +1,4 @@
+CREATE USER user_param_04626 IDENTIFIED WITH no_password
+CREATE USER user_param_04626_renamed IDENTIFIED WITH no_password
+CREATE USER user_param_04626_renamed_twice IDENTIFIED WITH no_password
+CREATE USER user_param_04626_renamed_twice IDENTIFIED WITH no_password
