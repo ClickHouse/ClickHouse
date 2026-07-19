@@ -71,6 +71,7 @@ namespace ProfileEvents
     extern const Event PatchesAcquireLockTries;
     extern const Event PatchesAcquireLockMicroseconds;
     extern const Event MergesRejectedByMemoryLimit;
+    extern const Event MergesDeferredDueToActiveInserts;
 }
 
 namespace DB
@@ -2044,6 +2045,14 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
         if (merger_mutator.merges_blocker.isCancelled())
             return false;
 
+        if (shouldDeferMergesDueToActiveInserts())
+        {
+            ProfileEvents::increment(ProfileEvents::MergesDeferredDueToActiveInserts);
+            LOG_TRACE(
+                LogFrequencyLimiter(log.load(), 30),
+                "Deferring merge selection: a long-running insert is actively writing into the table and the number of parts is small");
+        }
+        else
         {
             if (auto merge_select_result = selectPartsToMerge(metadata_snapshot, false, {}, false, shared_lock, lock, txn))
                 merge_entry = std::move(merge_select_result.value());

@@ -485,6 +485,7 @@
     \
     M(Merge, "Number of launched background merges.", ValueType::Number) \
     M(MergeSourceParts, "Number of source parts scheduled for merges.", ValueType::Number) \
+    M(MergesDeferredDueToActiveInserts, "Number of times background merge selection was postponed because a long-running INSERT was actively writing into the table (see the MergeTree setting min_insert_duration_to_defer_merges_ms).", ValueType::Number) \
     M(MergedRows, "Rows read for background merges. This is the number of rows before merge.", ValueType::Number) \
     M(MergedColumns, "Number of columns merged during the horizontal stage of merges.", ValueType::Number) \
     M(GatheredColumns, "Number of columns gathered during the vertical stage of merges.", ValueType::Number) \
