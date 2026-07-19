@@ -6,10 +6,12 @@
              subtree-splicing form, it is also the generic "replace this element with the node
              contents" form, so it can carry a leaf value. A plain scalar must be kept as literal
              text (not reinterpreted by the YAML parser, which would drop the "# rotated" suffix
-             as a YAML comment); only a YAML mapping or sequence is expanded as a subtree. -->
-        <log_comment>
-            <include from_zk="/scalar_with_yaml_syntax" />
-        </log_comment>
+             as a YAML comment); only a YAML mapping or sequence is expanded as a subtree.
+             The <include> is written inline (no surrounding whitespace inside <log_comment>):
+             whitespace-only text nodes around a child element are preserved by the config parser,
+             so a pretty-printed <include> would leave the substituted value wrapped in
+             newlines/indentation (the value of an element is its concatenated inner text). -->
+        <log_comment><include from_zk="/scalar_with_yaml_syntax" /></log_comment>
     </default>
   </profiles>
   <users>
