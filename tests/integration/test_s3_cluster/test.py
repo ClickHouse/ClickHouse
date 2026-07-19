@@ -2,10 +2,7 @@ import csv
 import logging
 import os
 import shutil
-import threading
-import time
 import uuid
-from email.errors import HeaderParseError
 
 import pytest
 

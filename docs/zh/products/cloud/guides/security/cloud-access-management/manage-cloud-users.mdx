@@ -1,0 +1,131 @@
+---
+sidebarTitle: '管理 Cloud 用户'
+slug: /cloud/security/manage-cloud-users
+title: '管理 Cloud 用户'
+description: '本页介绍管理员如何添加用户、管理分派以及移除用户'
+doc_type: 'guide'
+keywords: ['Cloud 用户', '访问管理', '安全', '权限', '团队管理']
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+import EnterprisePlanFeatureBadge from "/snippets/zh/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
+
+本指南面向在 ClickHouse Cloud 中拥有 Admin 角色的用户。
+
+<div id="add-users">
+  ## 向您的组织添加用户
+</div>
+
+<div id="invite-users">
+  ### 邀请用户
+</div>
+
+管理员可以一次邀请多位用户，并在发出邀请时分配一个或多个角色。
+
+<Steps>
+  <Step>
+    ### 进入组织设置并选择 Users and roles
+
+    在 services 页面中，选择您的组织名称。然后在弹出菜单中选择 `Users and roles` 菜单项。
+
+    <Image img="/images/cloud/guides/control_plane/1_users_and_roles.webp" size="lg" />
+  </Step>
+
+  <Step>
+    ### 在左上角选择“Invite members”
+
+    点击左上角的 `Invite members` 按钮。
+
+    <Image img="/images/cloud/guides/control_plane/manage_cloud_users/2_invite_user.webp" size="lg" />
+  </Step>
+
+  <Step>
+    ### 输入新成员的电子邮件地址并分配角色
+
+    在邀请页面顶部输入电子邮件地址。选择要分配给这些用户的一个或多个角色。
+
+    <Image img="/images/cloud/guides/control_plane/manage_cloud_users/3_invite_user.webp" size="lg" />
+  </Step>
+
+  <Step>
+    ### 点击 `Send invites`
+
+    点击页面底部的 `Send invites`。用户会收到一封电子邮件，并可通过该邮件加入组织。有关接受邀请的更多信息，请参阅 [管理我的账户](/zh/products/cloud/guides/security/cloud-access-management/manage-my-account)。
+
+    <Image img="/images/cloud/guides/control_plane/manage_cloud_users/4_invite_user.webp" size="lg" />
+  </Step>
+</Steps>
+
+<div id="add-users-via-saml">
+  ### 通过 SAML 身份提供商添加用户
+</div>
+
+<EnterprisePlanFeatureBadge feature="SAML 单点登录" />
+
+如果您的组织已配置 [SAML 单点登录](/zh/products/cloud/guides/security/cloud-access-management/saml-sso-setup)，请按以下步骤将用户添加到您的组织。
+
+1. 在身份提供商中将用户添加到您的 SAML 应用程序。用户首次登录前，不会显示在 ClickHouse 中。
+2. 用户登录 ClickHouse Cloud 后，会自动分配您在 SAML 配置中选择的默认角色。
+3. 按照下方 `管理用户角色分配` 中的说明授予权限
+
+<div id="enforce-saml">
+  ### 强制仅使用 SAML 进行身份验证
+</div>
+
+当组织中至少有一位 SAML 用户被分配了 Admin 角色后，移除使用其他身份验证方法的用户，以强制该组织仅使用 SAML 进行身份验证。
+
+<div id="manage-role-assignments">
+  ## 管理用户角色分配
+</div>
+
+被赋予 Admin 角色的用户可随时更新其他用户的权限。
+
+<Steps>
+  <Step>
+    ### 进入 组织设置 并选择 Users and roles
+
+    在服务页面中，选择您的组织名称。然后在弹出菜单中选择 `Users and roles` 菜单项。
+
+    <Image img="/images/cloud/guides/control_plane/1_users_and_roles.webp" size="lg" />
+  </Step>
+
+  <Step>
+    ### 选择要更新的用户，然后选择 Edit
+
+    在要修改访问权限的用户所在行末尾，选择对应的菜单项。然后在弹出菜单中选择 `Edit`。
+
+    <Image img="/images/cloud/guides/control_plane/manage_cloud_users/5_edit_user.webp" size="lg" />
+  </Step>
+
+  <Step>
+    ### 更新权限
+
+    点击 `Roles` 框以展开菜单。选中或取消选中复选框，为该用户添加或移除角色。有关角色及其对应权限的列表，请参阅[控制台角色和权限](/zh/products/cloud/reference/security/console-roles)。
+
+    <Image img="/images/cloud/guides/control_plane/manage_cloud_users/6_edit_user.webp" size="lg" />
+  </Step>
+
+  <Step>
+    ### 保存更改
+
+    使用标签页底部的 `Save changes` 按钮保存更改。
+  </Step>
+</Steps>
+
+<div id="remove-user">
+  ## 删除用户
+</div>
+
+<Info>
+  **删除 SAML 用户**
+
+  已在身份提供商中取消分配 ClickHouse 应用的 SAML 用户将无法登录 ClickHouse Cloud。该账户不会从控制台中移除，需要手动删除。
+</Info>
+
+按照以下步骤删除用户。
+
+1. 在左下角选择组织名称
+2. 点击 `Users and roles`
+3. 点击用户名旁边的三个点，然后选择 `Remove`
+4. 点击 `Remove user` 按钮确认操作

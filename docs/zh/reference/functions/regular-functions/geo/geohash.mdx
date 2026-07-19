@@ -1,0 +1,131 @@
+---
+description: 'Geohash 相关文档'
+sidebarTitle: 'Geohash'
+slug: /sql-reference/functions/geo/geohash
+title: 'Geohash 相关函数'
+doc_type: 'reference'
+---
+
+<div id="geohash">
+  ## Geohash
+</div>
+
+[Geohash](https://en.wikipedia.org/wiki/Geohash) 是一种地理编码系统，它将地球表面划分为网格状区域，并将每个单元编码为由字母和数字组成的短字符串。它是一种层级化数据结构，因此 geohash 字符串越长，表示的地理位置就越精确。
+
+如果你需要手动将地理坐标转换为 geohash 字符串，可以使用 [geohash.org](http://geohash.co/)
+
+<div id="geohashencode">
+  ## geohashEncode
+</div>
+
+将纬度和经度编码为 [geohash](#geohash) 字符串。
+
+**语法**
+
+```sql
+geohashEncode(longitude, latitude, [precision])
+```
+
+**输入值**
+
+* `longitude` — 要编码的坐标的经度部分。浮点数，范围为 `[-180°, 180°]`。[Float](/zh/reference/data-types/float)。
+* `latitude` — 要编码的坐标的纬度部分。浮点数，范围为 `[-90°, 90°]`。[Float](/zh/reference/data-types/float)。
+* `precision` (可选) — 编码结果字符串的长度。默认为 `12`。整数，范围为 `[1, 12]`。[Int8](/zh/reference/data-types/int-uint)。
+
+<Note>
+  - 所有坐标参数必须为相同类型，即 `Float32` 或 `Float64`。
+  - 对于 `precision` 参数，任何小于 `1` 或大于 `12` 的值都会被静默转换为 `12`。
+</Note>
+
+**返回值**
+
+* 编码后坐标的字母数字字符串 (使用的是修改版的 base32 编码字母表) 。[String](/zh/reference/data-types/string)。
+
+**示例**
+
+```sql title="Query"
+SELECT geohashEncode(-5.60302734375, 42.593994140625, 0) AS res;
+```
+
+```text title="Response"
+┌─res──────────┐
+│ ezs42d000000 │
+└──────────────┘
+```
+
+<div id="geohashdecode">
+  ## geohashDecode
+</div>
+
+将任何以 [geohash](#geohash) 编码的字符串解码为经度和纬度。
+
+**语法**
+
+```sql
+geohashDecode(hash_str)
+```
+
+**输入值**
+
+* `hash_str` — Geohash 编码的字符串。
+
+**返回值**
+
+* 由经度和纬度的 `Float64` 值构成的 Tuple `(longitude, latitude)`。[Tuple](/zh/reference/data-types/tuple)([Float64](/zh/reference/data-types/float))
+
+**示例**
+
+```sql
+SELECT geohashDecode('ezs42') AS res;
+```
+
+```text
+┌─res─────────────────────────────┐
+│ (-5.60302734375,42.60498046875) │
+└─────────────────────────────────┘
+```
+
+<div id="geohashesinbox">
+  ## geohashesInBox
+</div>
+
+返回指定精度、位于给定框内并与其边界相交的 [geohash](#geohash) 编码字符串数组，本质上是将二维网格展平后得到的数组。
+
+**语法**
+
+```sql
+geohashesInBox(longitude_min, latitude_min, longitude_max, latitude_max, precision)
+```
+
+**参数**
+
+* `longitude_min` — 最小经度。范围：`[-180°, 180°]`。[Float](/zh/reference/data-types/float)。
+* `latitude_min` — 最小纬度。范围：`[-90°, 90°]`。[Float](/zh/reference/data-types/float)。
+* `longitude_max` — 最大经度。范围：`[-180°, 180°]`。[Float](/zh/reference/data-types/float)。
+* `latitude_max` — 最大纬度。范围：`[-90°, 90°]`。[Float](/zh/reference/data-types/float)。
+* `precision` — Geohash 精度。范围：`[1, 12]`。[UInt8](/zh/reference/data-types/int-uint)。
+
+<Note>
+  所有坐标参数必须使用相同的类型：`Float32` 或 `Float64`。
+</Note>
+
+**返回值**
+
+* 由覆盖给定区域的 geohash 网格组成的、长度为 precision 的字符串数组；不应依赖其中元素的顺序。[Array](/zh/reference/data-types/array)([String](/zh/reference/data-types/string))。
+* `[]` - 如果最小纬度和经度不小于对应的最大值，则返回空数组。
+
+<Note>
+  如果结果数组长度超过 10&#39;000&#39;000，函数会抛出异常。
+</Note>
+
+**示例**
+
+```sql title="Query"
+SELECT geohashesInBox(24.48, 40.56, 24.785, 40.81, 4) AS thasos;
+```
+
+```text title="Response"
+┌─thasos──────────────────────────────────────┐
+│ ['sx1q','sx1r','sx32','sx1w','sx1x','sx38'] │
+└─────────────────────────────────────────────┘
+```

@@ -1,0 +1,278 @@
+---
+sidebarTitle: '功能与配置'
+slug: /integrations/dbt/features-and-configurations
+description: '可用功能和常规配置说明'
+keywords: ['clickhouse', 'dbt', '功能']
+title: '功能与配置'
+doc_type: 'guide'
+---
+
+import ClickHouseSupportedBadge from "/snippets/zh/components/ClickHouseSupported/ClickHouseSupported.jsx";
+
+<ClickHouseSupportedBadge />
+
+本节提供有关 dbt 与 ClickHouse 可用部分功能的文档说明。
+
+<div id="profile-yml-configurations">
+  ## Profile.yml 配置
+</div>
+
+如需通过 dbt 连接到 ClickHouse，您需要在 `profiles.yml` 文件中添加一个 [profile](https://docs.getdbt.com/docs/core/connect-data-platform/connection-profiles)。ClickHouse 的 profile 需符合以下语法：
+
+```yaml
+your_profile_name:
+  target: dev
+  outputs:
+    dev:
+      type: clickhouse
+
+      # Optional
+      schema: [default] # ClickHouse database for dbt models
+      driver: [http] # http or native.  If not set this will be autodetermined based on port setting
+      host: [localhost] 
+      port: [8123]  # If not set, defaults to 8123, 8443, 9000, 9440 depending on the secure and driver settings 
+      user: [default] # User for all database operations
+      password: [<empty string>] # Password for the user
+      cluster: [<empty string>] # If set, certain DDL/table operations will be executed with the `ON CLUSTER` clause using this cluster. Distributed materializations require this setting to work. See the following ClickHouse Cluster section for more details.
+      verify: [True] # Validate TLS certificate if using TLS/SSL
+      secure: [False] # Use TLS (native protocol) or HTTPS (http protocol)
+      client_cert: [null] # Path to a TLS client certificate in .pem format
+      client_cert_key: [null] # Path to the private key for the TLS client certificate
+      retries: [1] # Number of times to retry a "retriable" database exception (such as a 503 'Service Unavailable' error)
+      compression: [<empty string>] # Use gzip compression if truthy (http), or compression type for a native connection
+      connect_timeout: [10] # Timeout in seconds to establish a connection to ClickHouse
+      send_receive_timeout: [300] # Timeout in seconds to receive data from the ClickHouse server
+      cluster_mode: [False] # Use specific settings designed to improve operation on Replicated databases (recommended for ClickHouse Cloud)
+      use_lw_deletes: [False] # Use the strategy `delete+insert` as the default incremental strategy.
+      check_exchange: [True] # Validate that clickhouse support the atomic EXCHANGE TABLES command.  (Not needed for most ClickHouse versions)
+      local_suffix: [_local] # Table suffix of local tables on shards for distributed materializations.
+      local_db_prefix: [<empty string>] # Database prefix of local tables on shards for distributed materializations. If empty, it uses the same database as the distributed table.
+      allow_automatic_deduplication: [False] # Enable ClickHouse automatic deduplication for Replicated tables
+      tcp_keepalive: [False] # Native client only, specify TCP keepalive configuration. Specify custom keepalive settings as [idle_time_sec, interval_sec, probes].
+      reuse_connections: [True] # Re-use the same connection across models. Set to `False` to close the connection at the end of each model — useful on multi-replica ClickHouse Cloud services where the load balancer routes by TCP connection.
+      custom_settings: [{}] # A dictionary/mapping of custom ClickHouse settings for the connection - default is empty.
+      database_engine: '' # Database engine to use when creating new ClickHouse schemas (databases).  If not set (the default), new databases will use the default ClickHouse database engine (usually Atomic).
+      threads: [1] # Number of threads to use when running queries. Before setting it to a number higher than 1, make sure to read the [read-after-write consistency](#read-after-write-consistency) section.
+      
+      # Native (clickhouse-driver) connection settings
+      sync_request_timeout: [5] # Timeout for server ping
+      compress_block_size: [1048576] # Compression block size if compression is enabled
+```
+
+<div id="schema-vs-database">
+  ### schema 与 database
+</div>
+
+dbt 模型的 relation 标识符 `database.schema.table` 与 ClickHouse 不兼容，因为 ClickHouse 不支持 `schema`。
+因此，我们采用简化形式 `schema.table`，其中 `schema` 表示 ClickHouse 的 database。不建议使用 `default` database。
+
+<div id="set-statement-warning">
+  ### SET 语句警告
+</div>
+
+在许多环境中，使用 SET 语句让某个 ClickHouse 设置在所有 DBT 查询中持续生效并不可靠，
+而且可能导致意外失败。尤其是在通过负载均衡器使用 HTTP 连接时，因为负载均衡器会将查询
+分发到多个节点 (例如 ClickHouse Cloud) ；不过在某些情况下，使用 ClickHouse 原生连接时也可能
+出现这种问题。因此，作为最佳实践，我们建议将所需的 ClickHouse 设置配置在 DBT profile 的
+“custom&#95;settings” 属性中，而不要依赖 pre-hook 的 “SET” 语句，尽管这种做法偶尔也会被建议采用。
+
+<div id="setting-quote_columns">
+  ### 设置 `quote_columns`
+</div>
+
+为避免出现警告，请务必在 `dbt_project.yml` 中为 `quote_columns` 显式指定一个值。更多信息请参阅 [quote&#95;columns 文档](https://docs.getdbt.com/reference/resource-configs/quote_columns)。
+
+```yaml
+seeds:
+  +quote_columns: false  #如果 CSV 列标题中含有空格，则设为 `true`
+```
+
+<div id="about-the-clickhouse-cluster">
+  ### 关于 ClickHouse 集群
+</div>
+
+使用 ClickHouse 集群时，需要考虑两点：
+
+* 设置 `cluster` 参数。
+* 确保写后读一致性，尤其是在使用多个 `threads` 时。
+
+<div id="cluster-setting">
+  #### 集群设置
+</div>
+
+profile 中的 `cluster` 设置可让 dbt-clickhouse 针对 ClickHouse 集群运行。如果在 profile 中设置了 `cluster`，默认情况下，**所有模型都会使用 `ON CLUSTER` 子句创建**——使用 **Replicated** 引擎的模型除外。这包括：
+
+* 创建数据库
+* 视图物化类型
+* 表和增量物化类型
+* 分布式物化类型
+
+Replicated 引擎**不会**包含 `ON CLUSTER` 子句，因为它们旨在自行管理复制。
+
+如果想让某个特定模型**不使用**基于集群的创建方式，请添加 `disable_on_cluster` 配置：
+
+```sql
+{{ config(
+        engine='MergeTree',
+        materialized='table',
+        disable_on_cluster='true'
+    )
+}}
+
+```
+
+使用非复制引擎的表和增量物化类型不会受到 `cluster` 设置的影响 (模型只会
+在当前连接的节点上创建) 。
+
+**兼容性**
+
+如果某个模型在创建时未设置 `cluster`，dbt-clickhouse 会检测到这种情况，并在该模型上执行所有不带 `on cluster` 子句的 DDL/DML。
+
+<div id="read-after-write-consistency">
+  #### 写后读一致性
+</div>
+
+dbt 依赖写入后读取一致性模型。如果无法保证所有操作都发送到同一个副本，那么它与拥有多个副本的 ClickHouse 集群并不兼容。你在日常使用 dbt 时可能不会遇到问题，但可以根据集群情况采用一些策略来确保这一点：
+
+* 如果你使用的是 ClickHouse Cloud 集群，只需在 profile 的 `custom_settings` 属性中设置 `select_sequential_consistency: 1`。有关此设置的更多信息，请参见[这里](/zh/reference/settings/session-settings#select_sequential_consistency)。
+* 如果你使用的是自托管集群，请确保所有 dbt 请求都发送到同一个 ClickHouse 副本。如果上层有负载均衡器，请尝试使用某种 `replica aware routing`/`sticky sessions` 机制，以确保始终访问同一个副本。在 ClickHouse Cloud 之外的集群中添加设置 `select_sequential_consistency = 1`[不推荐](/zh/reference/settings/session-settings#select_sequential_consistency)。
+
+<div id="additional-clickhouse-macros">
+  ## 其他 ClickHouse 宏
+</div>
+
+<div id="model-materialization-utility-macros">
+  ### 模型物化实用宏
+</div>
+
+以下宏用于简化创建 ClickHouse 特有的表和视图：
+
+* `engine_clause` -- 使用 `engine` 模型配置属性来指定 ClickHouse 表引擎。dbt-clickhouse
+  默认使用 `MergeTree` 引擎。
+* `partition_cols` -- 使用 `partition_by` 模型配置属性来指定 ClickHouse 分区键。默认不指定
+  分区键。
+* `order_cols` -- 使用 `order_by` 模型配置来指定 ClickHouse 的 ORDER BY/排序键。如果未指定，
+  ClickHouse 将使用空的 tuple()，并且该表将处于未排序状态
+* `primary_key_clause` -- 使用 `primary_key` 模型配置属性来指定 ClickHouse 主键。默认情况下，
+  会设置主键，ClickHouse 将使用 ORDER BY 子句作为主键。
+* `on_cluster_clause` -- 使用 `cluster` profile 属性为某些 dbt 操作添加 `ON CLUSTER` 子句：
+  Distributed 物化、视图创建和数据库创建。
+* `ttl_config` -- 使用 `ttl` 模型配置属性来指定 ClickHouse 表生存时间 (TTL) 表达式。默认不指定
+  TTL。
+
+<div id="s3source-helper-macro">
+  ### s3Source 辅助宏
+</div>
+
+`s3source` 宏简化了通过 ClickHouse S3 表函数直接从 S3 选择 ClickHouse 数据的过程。它的工作原理是，
+从一个具名配置字典中填充 S3 表函数的参数 (该字典名称必须以
+`s3` 结尾) 。该宏
+会先在 profile 的 `vars` 中查找该字典，然后再在模型配置中查找。该字典可以包含以下任意
+键，用于填充 S3 表函数的
+参数：
+
+| 参数名称                              | 描述                                                                                                                          |
+| --------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| bucket                            | bucket 的基础 URL，例如 `https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi`。如果未提供协议，则默认使用 `https://`。            |
+| path                              | 用于表查询的 S3 路径，例如 `/trips_4.gz`。支持 S3 通配符。                                                                                    |
+| fmt                               | 引用的 S3 对象所预期的 ClickHouse 输入格式 (例如 `TSV` 或 `CSVWithNames`) 。                                                                 |
+| structure                         | bucket 中数据的列结构，以名称/数据类型对列表表示，例如 `['id UInt32', 'date DateTime', 'value String']`。如果未提供，ClickHouse 将推断该结构。                   |
+| aws&#95;access&#95;key&#95;id     | S3 访问密钥 ID。                                                                                                                 |
+| aws&#95;secret&#95;access&#95;key | S3 密钥。                                                                                                                      |
+| role&#95;arn                      | 用于安全访问 S3 对象的 ClickhouseAccess IAM role 的 ARN。更多信息请参见此[文档](/zh/products/cloud/guides/data-sources/accessing-s3-data-securely)。 |
+| compression                       | S3 对象使用的压缩方法。如果未提供，ClickHouse 将尝试根据文件名判断压缩方式。                                                                               |
+
+有关如何使用此宏的示例，请参见
+[S3 测试文件](https://github.com/ClickHouse/dbt-clickhouse/blob/main/tests/integration/adapter/clickhouse/test_clickhouse_s3.py)。
+
+<div id="cross-database-macro-support">
+  ### 跨数据库宏支持
+</div>
+
+dbt-clickhouse 现已支持 `dbt Core` 中包含的大多数跨数据库宏，但以下情况除外：
+
+* ClickHouse 中的 `split_part` SQL 函数是通过 splitByChar 函数实现的。该函数要求
+  “split”分隔符必须使用常量字符串，因此此宏使用的 `delimeter` 参数会被
+  解释为字符串，而不是列名
+* 同样，ClickHouse 中的 `replace` SQL 函数要求 `old_chars` 和 `new_chars`
+  参数必须是常量字符串，因此调用此宏时，这些参数会被解释为字符串而不是列名。
+
+<div id="catalog-support">
+  ## 目录支持
+</div>
+
+<div id="dbt-catalog-integration-status">
+  ### dbt 目录集成状态
+</div>
+
+dbt Core v1.10 引入了目录集成支持，使适配器能够将模型物化到管理 Apache Iceberg 等开放表格式的外部目录中。**该功能尚未在 dbt-clickhouse 中原生实现。** 你可以在 [GitHub issue #489](https://github.com/ClickHouse/dbt-clickhouse/issues/489) 中跟踪该功能实现的进展。
+
+<div id="clickhouse-catalog-support">
+  ### ClickHouse 目录支持
+</div>
+
+ClickHouse 最近新增了对 Apache Iceberg 表和数据目录的原生支持。大多数功能仍处于 `experimental` 阶段，但如果你使用的是较新的 ClickHouse 版本，已经可以使用这些功能。
+
+* 你可以使用 ClickHouse，通过 [Iceberg 表引擎](/zh/reference/engines/table-engines/integrations/iceberg) 和 [Iceberg 表函数](/zh/reference/functions/table-functions/iceberg) **查询存储在对象存储中** (S3、Azure Blob 存储、Google Cloud Storage) **的 Iceberg 表**。
+
+* 此外，ClickHouse 还提供了 [DataLakeCatalog 数据库引擎](/zh/reference/engines/database-engines/datalake)，可**连接到外部数据目录**，包括 AWS Glue Catalog、Databricks Unity Catalog、Hive Metastore 和 REST Catalog。这样，你就可以直接从外部目录查询开放表格式的数据 (Iceberg、Delta Lake) ，而无需复制数据。
+
+<div id="workarounds-iceberg-catalogs">
+  ### 使用 Iceberg 和目录的变通方案
+</div>
+
+如果你已经使用上述工具在 ClickHouse 集群中定义了 Iceberg 表或目录，就可以在 dbt 项目中从这些 Iceberg 表或目录读取数据。你可以利用 dbt 的 `source` 功能，在 dbt 项目中引用这些表。比如，如果你想访问 REST 目录中的表，可以：
+
+1. **创建一个指向外部目录的数据库：**
+
+```sql
+-- 使用 REST Catalog 的示例
+SET allow_experimental_database_iceberg = 1;
+
+CREATE DATABASE iceberg_catalog
+ENGINE = DataLakeCatalog('http://rest:8181/v1', 'admin', 'password')
+SETTINGS 
+    catalog_type = 'rest', 
+    storage_endpoint = 'http://minio:9000/lakehouse', 
+    warehouse = 'demo'
+```
+
+2. **在 dbt 中将目录数据库及其表定义为 source：** 请注意，这些表应已在 ClickHouse 中可用
+
+```yaml
+version: 2
+
+sources:
+  - name: external_catalog
+    database: iceberg_catalog
+    tables:
+      - name: orders
+      - name: customers
+```
+
+3. **在 dbt 模型中使用目录中的表：**
+
+```sql
+SELECT 
+    o.order_id,
+    c.customer_name,
+    o.order_date
+FROM {{ source('external_catalog', 'orders') }} o
+INNER JOIN {{ source('external_catalog', 'customers') }} c
+    ON o.customer_id = c.customer_id
+```
+
+<div id="benefits-workarounds">
+  ### 关于这些变通方案的说明
+</div>
+
+这些变通方案的优点包括：
+
+* 你可以立即使用不同类型的外部表和外部目录，无需等待原生 dbt 目录集成。
+* 原生目录支持可用后，你也能顺畅迁移过去。
+
+但目前仍有一些限制：
+
+* **手动设置：**在 dbt 中引用 Iceberg 表和目录数据库之前，必须先在 ClickHouse 中手动创建它们。
+* **不支持目录级 DDL：**dbt 无法管理目录级操作，例如在外部目录中创建或删除 Iceberg 表。因此，目前你还无法通过 dbt connector 创建这些表。未来可能会增加通过 Iceberg() 引擎创建表的能力。
+* **写入操作：**目前，向 Iceberg/Data Catalog 表写入的能力仍然有限。请查阅 ClickHouse 文档，了解当前可用的选项。

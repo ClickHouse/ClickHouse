@@ -1,0 +1,112 @@
+---
+title: Astuces et conseils pour optimiser les types de données de base dans ClickHouse
+description: "Astuces et conseils pour optimiser les types de données de base dans ClickHouse"
+date: 2024-07-02
+tags: ['Performances et optimisations']
+keywords: ['Optimiser les types de données de base']
+---
+
+{frontMatter.description}
+
+{/* truncate */}
+
+<div id="question">
+  ## Question
+</div>
+
+Quels types de données dois-je utiliser dans ClickHouse pour optimiser la rapidité de mes requêtes et le stockage ?
+
+<div id="answer">
+  ## Réponse
+</div>
+
+Lors d&#39;une conversion automatisée depuis un autre système ou au moment de choisir un type de données, les utilisateurs optent souvent pour les approches « plus c&#39;est mieux », « choisir ce qui est plus simple » ou « choisir le plus générique ». Ces approches fonctionneront probablement pour de petits jeux de données de l&#39;ordre de millions, voire de milliards de lignes. L&#39;impact peut passer inaperçu et rester acceptable pour ces types de cas d&#39;usage où la différence de performance des requêtes est négligeable.
+
+Cela ne sera cependant plus acceptable à mesure que le volume de données augmente et que l&#39;impact devient plus visible.
+
+La différence entre une requête prenant 50 ms et une autre prenant 500 ms peut être acceptable pour la plupart des cas d&#39;usage, par exemple dans une interface web, mais l&#39;une est 10 fois plus lente que l&#39;autre, même si cela reste peu perceptible pour un utilisateur final.
+
+Exemple de table initiale :
+
+```
+timestamp Datetime64(9),
+group_id Int64,
+vendor_id String,
+product_id String,
+category1 Int64,
+code_name String,
+paid_status String,
+country_code String,
+description String,
+price Float64,
+attributes Map(String, String)
+```
+
+Exemple de données :
+
+```
+3456, 0123456789, bd6087b7-6026-4974-9122-bc99faae5d84, "2024-03-01 01:00:01.000", 98, "bear", paid", "us", "corvette model car", 123.45, {"color" : "blue", "size" : "S"}
+156, 0000012345, bd6087b7-6026-4974-9122-bc99faae5d84, "2024-03-01 01:00:02:123", 45, "tiger", "not paid", "uk", "electric car", 53432.10, {"color" : "red", "model" : "X"} 
+...
+```
+
+Voici quelques recommandations pour optimiser ces données :
+
+`timestamp : DateTime64(9)`
+Sauf besoin de précision scientifique, une valeur de précision 9 (nanosecondes) est rarement nécessaire. Elle peut s&#39;avérer utile pour l&#39;affichage ou le tri, mais généralement pas dans les requêtes de recherche, les clés primaires, etc.
+
+* **Recommandation :**
+  Pour la PK, utilisez DateTime dans ORDER BY
+  Pour l’affichage ou le tri, ajoutez une colonne supplémentaire, par ex. `timestamp_microseconds : DateTime64(6)`
+
+`group_id : Int64`
+Il s&#39;agit apparemment d&#39;un entier ; sélectionnez le plus petit type entier capable de contenir la valeur maximale requise pour cette colonne. D&#39;après cet échantillon de données et le nom de la colonne, il est peu probable qu&#39;un quintillion de valeurs soit nécessaire — un Int16 suffirait probablement, avec une capacité allant jusqu&#39;à 16 000 valeurs.
+
+* **Recommandation** : Int16
+
+`vendor_id : String`
+Cette colonne ressemble à un nombre mais contient des zéros en tête, qu&#39;il est probablement important de conserver pour le formatage. Elle semble également être limitée à un certain nombre de caractères.
+
+* **Recommandation** : FixedString(10)
+
+`product_id : String`
+Celui-ci est alphanumérique, ce qui pourrait laisser penser intuitivement qu&#39;il s&#39;agit d&#39;une chaîne de caractères ; il s&#39;agit toutefois également d&#39;un UUID.
+
+* **Recommandation** : UUID
+
+`category1 : Int64`
+Les valeurs sont faibles, avec probablement peu de catégories et sans perspective de croissance importante, voire limitées. Moins de 255
+
+* **Recommandation** : UInt8
+
+`code_name : String`
+Ce champ semble ne contenir qu&#39;un nombre limité de valeurs de type String.
+Pour ce type de situation où le nombre de valeurs String peut se compter en centaines ou en milliers, les champs à faible cardinalité sont utiles.
+
+* **Recommandation** : LowCardinality(String)
+
+`paid_status : String`
+Il s&#39;agit d&#39;une valeur de type String valant &quot;paid&quot; ou &quot;not&#95;paid&quot;. Pour les situations où il n&#39;y a que deux valeurs possibles, utilisez un booléen.
+
+* **Recommandation**: Bool
+
+`country_code : String`
+Il arrive que certaines colonnes se prêtent à plusieurs optimisations à la fois. Dans cet exemple, il n&#39;existe qu&#39;un nombre limité de codes pays, et ils sont tous des identifiants à deux caractères.
+
+* **Recommandation**: LowCardinality(FixedString(2))
+
+`price : Float64`
+Les Float ne sont pas recommandés lorsqu&#39;une précision fixe est connue, en particulier pour les données financières et les calculs. Il est préférable d&#39;utiliser des types Decimal avec la précision nécessaire. Pour ce cas d&#39;usage, le prix de l&#39;article ne devrait pas dépasser 999 999,00.
+
+* **Recommandation** : Decimal(10,2)
+
+`attributes : map`
+Il arrive souvent qu&#39;une table contienne des attributs dynamiques stockés dans des maps. La recherche de clés ou de valeurs y est généralement plus lente. Il existe plusieurs façons d&#39;améliorer les performances des maps. Si certaines clés sont présentes dans la majorité des enregistrements, il est préférable de les placer dans une colonne séparée à faible cardinalité, et de regrouper celles qui seront éparses dans une autre colonne à haute cardinalité. Il sera alors plus efficace de créer des skip indexes, bien que cela puisse accroître la complexité des requêtes.
+
+* **Recommandation :** lc&#95;attributes: Map(String, String), hc&#95;attributes: Map(String, String).
+
+Selon les requêtes, les options pouvant également être utilisées pour créer un skip index et/ou extraire les attributs sont les suivantes :
+Utiliser ARRAY JOIN pour extraire les attributs dans des colonnes à l’aide d’une vue matérialisée :
+https://clickhouse.com/docs/knowledgebase/using-array-join-to-extract-and-query-attributes
+Utiliser un skip index pour les clés :
+https://clickhouse.com/docs/knowledgebase/improve-map-performance

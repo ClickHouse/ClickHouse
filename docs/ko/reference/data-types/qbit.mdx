@@ -1,0 +1,99 @@
+---
+description: '근사 벡터 검색을 위한 세밀한 양자화를 지원하는 ClickHouse의 QBit 데이터 타입 문서'
+keywords: ['qbit', '데이터 타입']
+sidebarTitle: 'QBit'
+slug: /sql-reference/data-types/qbit
+title: 'QBit 데이터 타입'
+doc_type: 'reference'
+---
+
+`QBit` 데이터 타입은 더 빠른 근사 벡터 검색을 위해 벡터 저장 방식을 재구성합니다. 각 벡터의 요소를 함께 저장하는 대신, 모든 벡터에서 동일한 비트 위치끼리 묶어 저장합니다.
+이 방식은 벡터를 전체 정밀도로 저장하면서도, 검색 시점에 세밀한 양자화 수준을 선택할 수 있게 합니다. 즉, I/O를 줄이고 계산 속도를 높이기 위해 더 적은 비트를 읽거나, 더 높은 정확도를 위해 더 많은 비트를 읽을 수 있습니다. 양자화를 통해 데이터 전송량과 연산량을 줄여 속도상의 이점을 얻으면서도, 필요할 때는 원본 데이터 전체를 그대로 사용할 수 있습니다.
+
+`QBit` 타입의 컬럼을 선언하려면 다음 구문을 사용합니다:
+
+```sql
+column_name QBit(element_type, dimension)
+```
+
+* `element_type` – 각 벡터 요소의 타입입니다. 허용되는 타입은 `BFloat16`, `Float32`, `Float64`입니다
+* `dimension` – 각 벡터를 구성하는 요소의 수입니다
+
+<div id="creating-qbit">
+  ## QBit 생성
+</div>
+
+테이블 컬럼 정의에 `QBit` 유형을 사용합니다:
+
+```sql
+CREATE TABLE test (id UInt32, vec QBit(Float32, 8)) ENGINE = Memory;
+INSERT INTO test VALUES (1, [1, 2, 3, 4, 5, 6, 7, 8]), (2, [9, 10, 11, 12, 13, 14, 15, 16]);
+SELECT vec FROM test ORDER BY id;
+```
+
+```text
+┌─vec──────────────────────┐
+│ [1,2,3,4,5,6,7,8]        │
+│ [9,10,11,12,13,14,15,16] │
+└──────────────────────────┘
+```
+
+<div id="converting-arrays-to-qbit">
+  ## 배열을 QBit으로 변환하기
+</div>
+
+배열 길이가 `QBit` 차원과 일치하면 배열을 `QBit`으로 변환할 수 있습니다. 배열의 요소 타입이 `QBit` 요소 타입과 같을 필요는 없습니다. 숫자 요소 타입은 모두 자동으로 해당 타입으로 변환됩니다. 따라서 기존 embeddings 컬럼을 바로 `QBit` 컬럼으로 옮길 수 있습니다:
+
+```sql
+CREATE TABLE embeddings (id UInt32, embedding Array(Float32)) ENGINE = Memory;
+INSERT INTO embeddings VALUES (1, [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8]), (2, [0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2, 0.1]);
+
+CREATE TABLE vectors (id UInt32, vec QBit(Float32, 8)) ENGINE = Memory;
+INSERT INTO vectors SELECT id, embedding FROM embeddings;
+
+SELECT * FROM vectors ORDER BY id;
+```
+
+```text
+┌─id─┬─vec───────────────────────────────┐
+│  1 │ [0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8] │
+│  2 │ [0.8,0.7,0.6,0.5,0.4,0.3,0.2,0.1] │
+└────┴───────────────────────────────────┘
+```
+
+이 변환은 `CAST`를 사용해 명시적으로 수행할 수도 있습니다. 예를 들어 `CAST(embedding AS QBit(Float32, 8))`와 같습니다.
+
+<div id="qbit-subcolumns">
+  ## QBit 서브컬럼
+</div>
+
+`QBit`는 저장된 벡터의 개별 비트 평면에 접근할 수 있는 서브컬럼 접근 패턴을 구현합니다. 각 비트 위치는 `.N` 구문으로 접근할 수 있으며, 여기서 `N`은 해당 비트 위치를 나타냅니다:
+
+```sql
+CREATE TABLE test (id UInt32, vec QBit(Float32, 8)) ENGINE = Memory;
+INSERT INTO test VALUES (1, [0, 0, 0, 0, 0, 0, 0, 0]);
+INSERT INTO test VALUES (1, [-0, -0, -0, -0, -0, -0, -0, -0]);
+SELECT bin(vec.1) FROM test;
+```
+
+```text
+┌─bin(tupleElement(vec, 1))─┐
+│ 00000000                  │
+│ 11111111                  │
+└───────────────────────────┘
+```
+
+접근 가능한 서브컬럼 수는 요소 타입에 따라 달라집니다:
+
+* `BFloat16`: 16개 서브컬럼 (1-16)
+* `Float32`: 32개 서브컬럼 (1-32)
+* `Float64`: 64개 서브컬럼 (1-64)
+
+<div id="vector-search-functions">
+  ## 벡터 검색 함수
+</div>
+
+다음은 `QBit` 데이터 타입을 사용하는 벡터 유사도 검색용 거리 함수입니다:
+
+* [`L2DistanceTransposed`](/ko/reference/functions/regular-functions/distance-functions#L2DistanceTransposed)
+* [`cosineDistanceTransposed`](/ko/reference/functions/regular-functions/distance-functions#cosineDistanceTransposed)

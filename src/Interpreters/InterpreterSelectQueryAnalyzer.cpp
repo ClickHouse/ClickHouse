@@ -1,4 +1,6 @@
 #include <Columns/ColumnConst.h>
+#include <Common/ElapsedTimeProfileEventIncrement.h>
+#include <Common/ProfileEvents.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
@@ -36,6 +38,12 @@
 
 #include <Poco/Logger.h>
 #include <Common/logger_useful.h>
+
+namespace ProfileEvents
+{
+    extern const Event QueryAnalysisMicroseconds;
+    extern const Event QueryPipelineBuildMicroseconds;
+}
 
 namespace DB
 {
@@ -241,6 +249,8 @@ static QueryTreeNodePtr buildQueryTreeAndRunPasses(const ASTPtr & query,
     const ContextPtr & context,
     const StoragePtr & storage)
 {
+    ProfileEventTimeIncrement<Microseconds> analysis_time_watch(ProfileEvents::QueryAnalysisMicroseconds);
+
     auto query_tree = buildQueryTree(query, context);
 
     QueryTreePassManager query_tree_pass_manager(context);
@@ -368,6 +378,7 @@ BlockIO InterpreterSelectQueryAnalyzer::execute()
 
     if (!select_query_options.ignore_quota && select_query_options.to_stage == QueryProcessingStage::Complete)
         result.pipeline.setQuota(context->getQuota());
+    result.pipeline.setNormalizedQueryHash(context->getNormalizedQueryHash());
 
     return result;
 }
@@ -396,7 +407,13 @@ QueryPipelineBuilder InterpreterSelectQueryAnalyzer::buildQueryPipeline()
 
     query_plan.setConcurrencyControl(context->getSettingsRef()[Setting::use_concurrency_control]);
 
-    return std::move(*query_plan.buildQueryPipeline(optimization_settings, build_pipeline_settings));
+    /// Optimize the plan up front so its cost is attributed to QueryPlanOptimizeMicroseconds.
+    /// Otherwise buildQueryPipeline would optimize internally and QueryPipelineBuildMicroseconds
+    /// would double-count the optimization phase.
+    query_plan.optimize(optimization_settings);
+
+    ProfileEventTimeIncrement<Microseconds> pipeline_build_time_watch(ProfileEvents::QueryPipelineBuildMicroseconds);
+    return std::move(*query_plan.buildQueryPipeline(optimization_settings, build_pipeline_settings, /*do_optimize=*/false));
 }
 
 void InterpreterSelectQueryAnalyzer::addStorageLimits(const StorageLimitsList & storage_limits)

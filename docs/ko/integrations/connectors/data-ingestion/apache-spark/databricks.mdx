@@ -1,0 +1,339 @@
+---
+sidebarTitle: 'Databricks'
+slug: /integrations/data-ingestion/apache-spark/databricks
+description: 'ClickHouse와 Databricks 통합'
+keywords: ['ClickHouse', 'Databricks', 'Spark', 'Unity Catalog', '데이터']
+title: 'ClickHouse와 Databricks 통합'
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+import ClickHouseSupportedBadge from "/snippets/ko/components/ClickHouseSupported/ClickHouseSupported.jsx";
+
+<ClickHouseSupportedBadge />
+
+ClickHouse Spark connector는 Databricks와 원활하게 연동됩니다. 이 가이드에서는 Databricks 환경에 맞는 설정, 설치, 그리고 일반적인 사용 패턴을 설명합니다.
+
+<div id="api-selection">
+  ## Databricks용 API 선택
+</div>
+
+기본적으로 Databricks는 Unity Catalog를 사용하며, 이로 인해 Spark 카탈로그 등록이 차단됩니다. 이 경우 **반드시** **TableProvider API**(포맷 기반 접근 방식)를 사용해야 합니다.
+
+하지만 **No isolation shared** 액세스 모드로 클러스터를 생성해 Unity Catalog를 비활성화하면 **Catalog API**를 대신 사용할 수 있습니다. Catalog API는 중앙 집중식 구성과 네이티브 Spark SQL 통합을 제공합니다.
+
+| Unity Catalog 상태                | 권장 API                    | 참고                                                  |
+| ------------------------------- | ------------------------- | --------------------------------------------------- |
+| **활성화됨** (기본값)                  | TableProvider API (포맷 기반) | Unity Catalog로 인해 Spark 카탈로그 등록이 차단됩니다           |
+| **비활성화됨** (No isolation shared) | Catalog API               | &quot;No isolation shared&quot; 액세스 모드의 클러스터가 필요합니다 |
+
+<div id="installation">
+  ## Databricks에서 설치
+</div>
+
+<div id="installation-ui">
+  ### 옵션 1: Databricks UI를 통해 JAR 업로드
+</div>
+
+1. 런타임 JAR을 빌드하거나 [다운로드](https://repo1.maven.org/maven2/com/clickhouse/spark/)합니다:
+   ```bash
+   clickhouse-spark-runtime-{{ spark_binary_version }}_{{ scala_binary_version }}-{{ stable_version }}.jar
+   ```
+
+2. Databricks 워크스페이스에 JAR을 업로드합니다:
+   * **Workspace**로 이동한 다음 원하는 폴더로 이동합니다
+   * **Upload**를 클릭한 다음 JAR 파일을 선택합니다
+   * JAR 파일은 워크스페이스에 저장됩니다
+
+3. 클러스터에 라이브러리를 설치합니다:
+   * **Compute**로 이동한 다음 클러스터를 선택합니다
+   * **Libraries** 탭을 클릭합니다
+   * **Install New**를 클릭합니다
+   * **DBFS** 또는 **Workspace**를 선택한 다음 업로드한 JAR 파일로 이동합니다
+   * **Install**을 클릭합니다
+
+<Image img={require('@site/images/integrations/data-ingestion/apache-spark/databricks/databricks-libraries-tab.webp')} alt="Databricks Libraries 탭" />
+
+<Image img={require('@site/images/integrations/data-ingestion/apache-spark/databricks/databricks-install-from-volume.webp')} alt="워크스페이스 볼륨에서 라이브러리 설치" />
+
+4. 라이브러리를 로드하려면 클러스터를 다시 시작합니다
+
+<div id="installation-cli">
+  ### 옵션 2: Databricks CLI로 설치
+</div>
+
+```bash
+# JAR을 DBFS에 업로드
+databricks fs cp clickhouse-spark-runtime-{{ spark_binary_version }}_{{ scala_binary_version }}-{{ stable_version }}.jar \
+  dbfs:/FileStore/jars/
+
+# 클러스터에 설치
+databricks libraries install \
+  --cluster-id <your-cluster-id> \
+  --jar dbfs:/FileStore/jars/clickhouse-spark-runtime-{{ spark_binary_version }}_{{ scala_binary_version }}-{{ stable_version }}.jar
+```
+
+<div id="installation-maven">
+  ### 옵션 3: Maven 좌표(권장)
+</div>
+
+1. Databricks 워크스페이스로 이동합니다.
+   * **Compute**로 이동한 다음 클러스터를 선택합니다
+   * **Libraries** 탭을 클릭합니다
+   * **Install New**를 클릭합니다
+   * **Maven** 탭을 선택합니다
+
+2. Maven 좌표를 추가합니다:
+
+```text
+com.clickhouse.spark:clickhouse-spark-runtime-{{ spark_binary_version }}_{{ scala_binary_version }}:{{ stable_version }}
+```
+
+<Image img={require('@site/images/integrations/data-ingestion/apache-spark/databricks/databricks-maven-tab.webp')} alt="Databricks Maven 라이브러리 설정" />
+
+3. **Install**를 클릭한 다음 라이브러리를 로드할 수 있도록 클러스터를 다시 시작하세요
+
+<div id="tableprovider-api">
+  ## TableProvider API 사용
+</div>
+
+Unity Catalog가 활성화된 경우(기본값), Unity Catalog가 Spark 카탈로그 등록을 차단하므로 **반드시** TableProvider API(포맷 기반 접근 방식)를 사용해야 합니다. 반대로 &quot;No isolation shared&quot; 액세스 모드의 클러스터를 사용해 Unity Catalog를 비활성화한 경우에는 대신 [Catalog API](/ko/integrations/connectors/data-ingestion/apache-spark/spark-native-connector#register-the-catalog-required)를 사용할 수 있습니다.
+
+<div id="reading-data-table-provider">
+  ### 데이터 읽기
+</div>
+
+<Tabs>
+  <Tab title="Python">
+    ```python
+    # TableProvider API를 사용해 ClickHouse 데이터 읽기
+    df = spark.read \
+        .format("clickhouse") \
+        .option("host", "your-clickhouse-cloud-host.clickhouse.cloud") \
+        .option("protocol", "https") \
+        .option("http_port", "8443") \
+        .option("database", "default") \
+        .option("table", "events") \
+        .option("user", "default") \
+        .option("password", dbutils.secrets.get(scope="clickhouse", key="password")) \
+        .option("ssl", "true") \
+        .load()
+
+    # 스키마(schema)는 자동으로 추론됩니다
+    df.display()
+    ```
+  </Tab>
+
+  <Tab title="Scala">
+    ```scala
+    val df = spark.read
+      .format("clickhouse")
+      .option("host", "your-clickhouse-cloud-host.clickhouse.cloud")
+      .option("protocol", "https")
+      .option("http_port", "8443")
+      .option("database", "default")
+      .option("table", "events")
+      .option("user", "default")
+      .option("password", dbutils.secrets.get(scope="clickhouse", key="password"))
+      .option("ssl", "true")
+      .load()
+
+    df.show()
+    ```
+  </Tab>
+</Tabs>
+
+<div id="writing-data-unity">
+  ### 데이터 쓰기
+</div>
+
+<Tabs>
+  <Tab title="Python">
+    ```python
+    # ClickHouse에 쓰기 - 테이블이 없으면 자동으로 생성됩니다
+    df.write \
+        .format("clickhouse") \
+        .option("host", "your-clickhouse-cloud-host.clickhouse.cloud") \
+        .option("protocol", "https") \
+        .option("http_port", "8443") \
+        .option("database", "default") \
+        .option("table", "events_copy") \
+        .option("user", "default") \
+        .option("password", dbutils.secrets.get(scope="clickhouse", key="password")) \
+        .option("ssl", "true") \
+        .option("order_by", "id") \  # 필수: 새 테이블 생성 시 ORDER BY를 지정합니다
+        .option("settings.allow_nullable_key", "1") \  # 필수: ORDER BY에 널 허용 컬럼이 포함된 경우 ClickHouse Cloud에서 필요합니다
+        .mode("append") \
+        .save()
+    ```
+  </Tab>
+
+  <Tab title="Scala">
+    ```scala
+    df.write
+      .format("clickhouse")
+      .option("host", "your-clickhouse-cloud-host.clickhouse.cloud")
+      .option("protocol", "https")
+      .option("http_port", "8443")
+      .option("database", "default")
+      .option("table", "events_copy")
+      .option("user", "default")
+      .option("password", dbutils.secrets.get(scope="clickhouse", key="password"))
+      .option("ssl", "true")
+      .option("order_by", "id")  // 필수: 새 테이블 생성 시 ORDER BY를 지정합니다
+      .option("settings.allow_nullable_key", "1")  // 필수: ORDER BY에 널 허용 컬럼이 포함된 경우 ClickHouse Cloud에서 필요합니다
+      .mode("append")
+      .save()
+    ```
+  </Tab>
+</Tabs>
+
+<Note>
+  이 예시에서는 Databricks에서 시크릿 스코프가 미리 구성되어 있다고 가정합니다. 설정 방법은 Databricks [시크릿 관리 문서](https://docs.databricks.com/aws/en/security/secrets/)를 참조하십시오.
+</Note>
+
+<div id="considerations">
+  ## Databricks 관련 고려 사항
+</div>
+
+<div id="access-mode">
+  ### 액세스 모드 요구 사항
+</div>
+
+ClickHouse Spark Connector는 **Dedicated**(이전 명칭: Single User) 액세스 모드에서만 사용할 수 있습니다. Unity Catalog가 활성화되면 Databricks가 해당 구성에서 외부 DataSource V2 커넥터를 차단하므로 **Standard**(이전 명칭: Shared) 액세스 모드는 지원되지 않습니다.
+
+| 액세스 모드                  | Unity Catalog | 지원 여부 |
+| ----------------------- | ------------- | ----- |
+| Dedicated (Single User) | 활성화           | ✅ 예   |
+| Dedicated (Single User) | 비활성화          | ✅ 예   |
+| Standard (Shared)       | 활성화           | ❌ 아니요 |
+| Standard (Shared)       | 비활성화          | ✅ 예   |
+
+<div id="secret-management">
+  ### 시크릿 관리
+</div>
+
+Databricks secret scopes를 사용해 ClickHouse 자격 증명을 안전하게 저장하세요:
+
+```python
+# 시크릿 접근
+password = dbutils.secrets.get(scope="clickhouse", key="password")
+```
+
+설정 방법은 Databricks [시크릿 관리 문서](https://docs.databricks.com/aws/en/security/secrets/)를 참조하십시오.
+
+{/* TODO: Databricks secret scopes 설정 화면 스크린샷 추가 */}
+
+<div id="clickhouse-cloud">
+  ### ClickHouse Cloud 연결
+</div>
+
+Databricks에서 ClickHouse Cloud에 연결하는 경우:
+
+1. **HTTPS 프로토콜**을 사용합니다 (`protocol: https`, `http_port: 8443`)
+2. **SSL**을 활성화합니다 (`ssl: true`)
+
+<div id="examples">
+  ## 예시
+</div>
+
+<div id="workflow-example">
+  ### 전체 워크플로 예시
+</div>
+
+<Tabs>
+  <Tab title="Python">
+    ```python
+    from pyspark.sql import SparkSession
+    from pyspark.sql.functions import col
+
+    # ClickHouse 커넥터를 사용해 Spark 초기화
+    spark = SparkSession.builder \
+        .config("spark.jars.packages", "com.clickhouse.spark:clickhouse-spark-runtime-3.4_2.12:0.9.0") \
+        .getOrCreate()
+
+    # ClickHouse에서 데이터 읽기
+    df = spark.read \
+        .format("clickhouse") \
+        .option("host", "your-host.clickhouse.cloud") \
+        .option("protocol", "https") \
+        .option("http_port", "8443") \
+        .option("database", "default") \
+        .option("table", "source_table") \
+        .option("user", "default") \
+        .option("password", dbutils.secrets.get(scope="clickhouse", key="password")) \
+        .option("ssl", "true") \
+        .load()
+
+    # 데이터 변환
+    transformed_df = df.filter(col("status") == "active")
+
+    # ClickHouse에 데이터 쓰기
+    transformed_df.write \
+        .format("clickhouse") \
+        .option("host", "your-host.clickhouse.cloud") \
+        .option("protocol", "https") \
+        .option("http_port", "8443") \
+        .option("database", "default") \
+        .option("table", "target_table") \
+        .option("user", "default") \
+        .option("password", dbutils.secrets.get(scope="clickhouse", key="password")) \
+        .option("ssl", "true") \
+        .option("order_by", "id") \
+        .mode("append") \
+        .save()
+    ```
+  </Tab>
+
+  <Tab title="Scala">
+    ```scala
+    import org.apache.spark.sql.SparkSession
+    import org.apache.spark.sql.functions.col
+
+    // ClickHouse 커넥터를 사용해 Spark 초기화
+    val spark = SparkSession.builder
+      .config("spark.jars.packages", "com.clickhouse.spark:clickhouse-spark-runtime-3.4_2.12:0.9.0")
+      .getOrCreate()
+
+    // ClickHouse에서 데이터 읽기
+    val df = spark.read
+      .format("clickhouse")
+      .option("host", "your-host.clickhouse.cloud")
+      .option("protocol", "https")
+      .option("http_port", "8443")
+      .option("database", "default")
+      .option("table", "source_table")
+      .option("user", "default")
+      .option("password", dbutils.secrets.get(scope="clickhouse", key="password"))
+      .option("ssl", "true")
+      .load()
+
+    // 데이터 변환
+    val transformedDF = df.filter(col("status") === "active")
+
+    // ClickHouse에 데이터 쓰기
+    transformedDF.write
+      .format("clickhouse")
+      .option("host", "your-host.clickhouse.cloud")
+      .option("protocol", "https")
+      .option("http_port", "8443")
+      .option("database", "default")
+      .option("table", "target_table")
+      .option("user", "default")
+      .option("password", dbutils.secrets.get(scope="clickhouse", key="password"))
+      .option("ssl", "true")
+      .option("order_by", "id")
+      .mode("append")
+      .save()
+    ```
+  </Tab>
+</Tabs>
+
+<div id="related">
+  ## 관련 문서
+</div>
+
+* [Spark 네이티브 커넥터 가이드](/ko/integrations/connectors/data-ingestion/apache-spark/spark-native-connector) - 커넥터 전체 문서
+* [TableProvider API 문서](/ko/integrations/connectors/data-ingestion/apache-spark/spark-native-connector#using-the-tableprovider-api) - 포맷 기반 접근 방식에 대한 자세한 내용
+* [Catalog API 문서](/ko/integrations/connectors/data-ingestion/apache-spark/spark-native-connector#register-the-catalog-required) - 카탈로그 기반 접근 방식에 대한 자세한 내용

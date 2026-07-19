@@ -1,24 +1,13 @@
-import io
-import json
 import logging
-import random
-import string
 import time
-import uuid
-from multiprocessing.dummy import Pool
 from datetime import datetime
 
 import pytest
-from kazoo.exceptions import NoNodeError
 
-from helpers.client import QueryRuntimeException
-from helpers.cluster import ClickHouseCluster, ClickHouseInstance
+from helpers.cluster import ClickHouseCluster
 from helpers.s3_queue_common import (
-    run_query,
-    random_str,
     generate_random_files,
     put_s3_file_content,
-    put_azure_file_content,
     create_table,
     create_mv,
     generate_random_string,
@@ -102,7 +91,7 @@ def started_cluster():
 def test_settings_check(started_cluster):
     node = started_cluster.instances["instance"]
     node_2 = started_cluster.instances["instance2"]
-    table_name = f"test_settings_check"
+    table_name = "test_settings_check"
     # A unique path is necessary for repeatable tests
     keeper_path = f"/clickhouse/test_{table_name}_{generate_random_string()}"
     files_path = f"{table_name}_data"
@@ -165,7 +154,7 @@ def test_processed_file_setting(started_cluster, processing_threads):
             "s3queue_last_processed_path": f"{files_path}/test_5.csv",
         },
     )
-    total_values = generate_random_files(
+    generate_random_files(
         started_cluster, files_path, files_to_generate, start_ind=0, row_num=1
     )
 
@@ -224,7 +213,7 @@ def test_processed_file_setting_distributed(started_cluster, processing_threads)
             },
         )
 
-    total_values = generate_random_files(
+    generate_random_files(
         started_cluster, files_path, files_to_generate, start_ind=0, row_num=1
     )
 
@@ -284,7 +273,7 @@ def test_commit_on_limit(started_cluster, processing_threads):
             "s3queue_max_processed_files_before_commit": 10,
         },
     )
-    total_values = generate_random_files(
+    generate_random_files(
         started_cluster, files_path, files_to_generate, start_ind=0, row_num=1
     )
 

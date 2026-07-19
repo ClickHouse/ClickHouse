@@ -1,6 +1,6 @@
 #pragma once
 
-#include <expected>
+#include <Storages/MergeTree/ConditionTemplate.h>
 #include <Storages/MergeTree/MergeTreeReadTask.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/MergeTree/MergeTreeData.h>
@@ -11,6 +11,8 @@
 #include <Storages/MergeTree/MergeTreeIndexMinMax.h>
 
 #include <boost/dynamic_bitset.hpp>
+
+#include <expected>
 
 struct PreformattedMessage;
 
@@ -77,9 +79,10 @@ public:
         const RangesInDataPart & part_with_ranges,
         const StorageMetadataPtr & metadata_snapshot,
         const KeyCondition & key_condition,
-        const std::optional<KeyCondition> & part_offset_condition,
-        const std::optional<KeyCondition> & total_offset_condition,
+        const KeyCondition * part_offset_condition,
+        const KeyCondition * total_offset_condition,
         MarkRanges * exact_ranges,
+        const std::vector<std::optional<size_t>> * pk_to_minmax_slot,
         const Settings & settings,
         LoggerPtr log);
 
@@ -145,25 +148,12 @@ private:
     static RangesInDataParts selectPartsToRead(
         const RangesInDataParts & parts,
         const std::optional<std::unordered_set<String>> & part_values,
-        const std::optional<KeyCondition> & minmax_idx_condition,
+        const ConditionTemplate<KeyCondition>::Ptr & minmax_idx_condition,
         const DataTypes & minmax_columns_types,
         const std::optional<PartitionPruner> & partition_pruner,
         const PartitionIdToMaxBlock * max_block_numbers_to_read,
         PartFilterCounters & counters,
         QueryStatusPtr query_status);
-
-    /// Same as previous but also skip parts uuids if any to the query context, or skip parts which uuids marked as excluded.
-    static RangesInDataParts selectPartsToReadWithUUIDFilter(
-        const RangesInDataParts & parts,
-        const std::optional<std::unordered_set<String>> & part_values,
-        MergeTreeData::PinnedPartUUIDsPtr pinned_part_uuids,
-        const std::optional<KeyCondition> & minmax_idx_condition,
-        const DataTypes & minmax_columns_types,
-        const std::optional<PartitionPruner> & partition_pruner,
-        const PartitionIdToMaxBlock * max_block_numbers_to_read,
-        ContextPtr query_context,
-        PartFilterCounters & counters,
-        LoggerPtr log);
 
 public:
     /// For given number rows and bytes, get the number of marks to read.
@@ -178,13 +168,19 @@ public:
     static size_t minMarksForConcurrentRead(
         size_t rows_setting, size_t bytes_setting, size_t rows_granularity, size_t bytes_granularity, size_t min_marks, size_t max_marks);
 
-    /// If possible, construct optional key condition from predicates containing _part_offset and _part column.
-    static void buildKeyConditionFromPartOffset(
-        std::optional<KeyCondition> & part_offset_condition, const ActionsDAG::Node * predicate, ContextPtr context);
+    /// If possible, construct optional key condition template from predicates containing _part_offset and _part column.
+    static ConditionTemplate<KeyCondition>::Ptr buildKeyConditionFromPartOffset(
+        const std::shared_ptr<ActionsDAGWithInversionPushDown> & filter_dag,
+        const StorageMetadataPtr & metadata_snapshot,
+        bool skip_folding,
+        ContextPtr context);
 
-    /// If possible, construct optional key condition from predicates containing _part_offset + _part_starting_offset expression.
-    static void buildKeyConditionFromTotalOffset(
-        std::optional<KeyCondition> & total_offset_condition, const ActionsDAG::Node * predicate, ContextPtr context);
+    /// If possible, construct optional key condition template from predicates containing _part_offset + _part_starting_offset expression.
+    static ConditionTemplate<KeyCondition>::Ptr buildKeyConditionFromTotalOffset(
+        const std::shared_ptr<ActionsDAGWithInversionPushDown> & filter_dag,
+        const StorageMetadataPtr & metadata_snapshot,
+        bool skip_folding,
+        ContextPtr context);
 
     /// If possible, filter using expression on virtual columns.
     /// Example: SELECT count() FROM table WHERE _part = 'part_name'
@@ -200,7 +196,7 @@ public:
     static RangesInDataParts filterPartsByPartition(
         const RangesInDataParts & parts,
         const std::optional<PartitionPruner> & partition_pruner,
-        const std::optional<KeyCondition> & minmax_idx_condition,
+        const ConditionTemplate<KeyCondition>::Ptr & minmax_idx_condition,
         const std::optional<std::unordered_set<String>> & part_values,
         const StorageMetadataPtr & metadata_snapshot,
         const MergeTreeData & data,
@@ -246,9 +242,22 @@ public:
         RangesInDataParts & parts_with_ranges,
         const SelectQueryInfo & select_query_info,
         const std::optional<VectorSearchParameters> & vector_search_parameters,
+        const std::optional<TopKFilterInfo> & top_k_filter_info,
         const MergeTreeData::MutationsSnapshotPtr & mutations_snapshot,
+        const ReadFromMergeTree::Indexes & indexes,
         const ContextPtr & context,
         LoggerPtr log);
+
+    /// Salt a WHERE/PREWHERE condition hash with the effective skip-index profile that index
+    /// analysis actually ran: the set of useful skip indexes (their names and types, after
+    /// use_skip_indexes / ignore_data_skipping_indices / metadata have been applied) and the
+    /// effective use_skip_indexes_for_disjunctions mode. Skip-index-derived query condition
+    /// cache exclusions are stored under this profiled hash so a query that ran a different
+    /// set of indexes (e.g. use_skip_indexes = 0, an index dropped/ignored, or a different
+    /// disjunction mode) never consults a verdict produced by an index it did not run.
+    /// Both the write side (ReadFromMergeTree) and the read side (filterPartsByQueryConditionCache)
+    /// pass the same Indexes, so the salt is identical on both.
+    static UInt64 getSkipIndexProfiledConditionHash(UInt64 condition_hash, const ReadFromMergeTree::Indexes & indexes);
 
     /// Create expression for sampling.
     /// Also, calculate _sample_factor if needed.
@@ -257,7 +266,7 @@ public:
         const SelectQueryInfo & select_query_info,
         NamesAndTypesList available_real_columns,
         const RangesInDataParts & parts,
-        KeyCondition & key_condition,
+        ConditionTemplate<KeyCondition>::Ptr & key_condition,
         const MergeTreeData & data,
         const StorageMetadataPtr & metadata_snapshot,
         ContextPtr context,

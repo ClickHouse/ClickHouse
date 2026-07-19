@@ -20,8 +20,11 @@ import platform
 import shutil
 import subprocess
 import time
+import xml.etree.ElementTree as ET
 
-from ci.defs.defs import BuildTypes, ToolSet
+from ci.defs.defs import ToolSet
+from ci.jobs.scripts.dataset_download import download_and_extract_datasets
+from ci.jobs.scripts.server_cleanup import kill_leftover_server_processes
 from ci.praktika.result import Result
 from ci.praktika.utils import MetaClasses, Shell, Utils
 
@@ -214,15 +217,13 @@ def download_datasets():
         "values": "https://clickhouse-datasets.s3.amazonaws.com/values_with_expressions/partitions/test_values.tar",
         "tpch10": "https://clickhouse-datasets.s3.amazonaws.com/h/10/tpch.tar",
     }
-    cmds = []
-    for dataset_path in dataset_paths.values():
-        cmds.append(
-            f'wget -nv -nd -c "{dataset_path}" -O- | tar --extract --verbose -C {PERF_DB_PATH}'
-        )
-    res = Shell.check_parallel(cmds, verbose=True)
-    if res:
-        Shell.check(f"touch {PERF_DB_PATH}/.done")
-    return res
+    errors = download_and_extract_datasets(dataset_paths.values(), PERF_DB_PATH)
+    for error in errors:
+        print(f"ERROR: {error}")
+    if errors:
+        return False
+    Shell.check(f"touch {PERF_DB_PATH}/.done")
+    return True
 
 
 def dump_log_tail(log_path, lines=200):
@@ -341,6 +342,27 @@ def install_perf_python_deps():
     )
 
 
+def test_has_shell_query(test_path):
+    """Whether a performance-test file contains a shell-script query.
+
+    Profile collection runs every `tests/performance/*.xml` against a single,
+    instrumented server started with only `--tcp_port` (its perf config removes
+    `<http_port>`), and it invokes `perf.py` without `--binary` / `--http-port`.
+    Shell-script queries (`<query type="shell">`) rely on exactly those: they build
+    `$CLICKHOUSE_BINARY` / `$CLICKHOUSE_LOCAL` from `--binary` and `$CLICKHOUSE_URL`
+    from `--http-port`. Here they would pick up whatever `clickhouse` is in `PATH`
+    (not the instrumented binary) and hit an HTTP endpoint that is not listening, so
+    such tests are skipped for profile collection rather than collecting profiles for
+    the wrong executable or failing the pass. A parse error is treated as "no shell
+    query" so the test still runs and `perf.py` reports the real error.
+    """
+    try:
+        root = ET.parse(test_path).getroot()
+    except ET.ParseError:
+        return False
+    return any(q.get("type") == "shell" for q in root.findall("query"))
+
+
 def run_performance_tests(server_dir, port, runs, max_queries, time_budget_s):
     """Run performance tests against a single server to exercise code paths.
 
@@ -374,6 +396,13 @@ def run_performance_tests(server_dir, port, runs, max_queries, time_budget_s):
     # For profile collection we run against a single server (left=right on same port)
     for i, test_file in enumerate(test_files):
         test_name = test_file.removesuffix(".xml")
+        # Shell-script queries need the instrumented `--binary` and an HTTP port,
+        # neither of which profile collection passes; they exercise startup / HTTP
+        # timing rather than query code paths, so they are useless for PGO/BOLT
+        # profiles. Skip them here (logged, never silently dropped).
+        if test_has_shell_query(f"{repo_path}/tests/performance/{test_file}"):
+            print(f"  Skipping {test_name}: shell-script query test, not used for profile collection")
+            continue
         remaining = deadline - time.monotonic()
         if remaining <= 0:
             print(
@@ -501,6 +530,14 @@ def parse_args():
 def main():
     args = parse_args()
     os.makedirs(temp_dir, exist_ok=True)
+
+    # This job starts its own servers below (the temporary dataset server in
+    # configure_datasets and the profiled server in start_server, once per PGO
+    # and BOLT pass) on fixed shared ports. Before the first of them, clear any
+    # clickhouse-server leaked by a previous CI job on this reused runner;
+    # otherwise its held ports make those starts fail
+    # (see kill_leftover_server_processes).
+    kill_leftover_server_processes()
 
     stages = list(JobStages)
     if args.param:

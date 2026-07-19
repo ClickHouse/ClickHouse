@@ -1,0 +1,196 @@
+---
+slug: /use-cases/observability/clickstack/demo-days/2026/2026-06-12
+title: 'Demo days - 2026-06-12'
+sidebarTitle: '2026-06-12'
+description: 'ClickStack demo days del 2026-06-12'
+doc_type: 'guide'
+keywords: ['ClickStack', 'Demo days']
+---
+
+<div id="schema-migration-tool">
+  ## Herramienta de migración de esquemas
+</div>
+
+*Demo de [@wrn14897](https://github.com/wrn14897)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/jRKTN30ghAo" title="Reproductor de video de YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+La herramienta de migración de esquemas es una nueva funcionalidad de ClickStack en desarrollo activo que permite a los usuarios iniciar y supervisar migraciones de esquema de ClickHouse directamente desde la UI. Warren habilita el migrador, crea un índice de búsqueda de texto completo en la columna `body` y luego lo elimina mientras sigue el progreso con un tail del log en tiempo real.
+
+A continuación, está previsto el soporte para cambios de esquema a nivel de todo el despliegue, lo que acerca esta funcionalidad a la disponibilidad general. 
+
+<div id="source-level-filters-for-alerts-and-mcp">
+  ## Filtros a nivel de fuente para alertas y MCP
+</div>
+
+*Demo de [@pulpdrew](https://github.com/pulpdrew)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/z0Lbggcy6dU" title="Reproductor de video de YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+Drew presenta una importante ampliación del soporte de filtros de fuente en todo ClickStack. Ahora se pueden configurar alertas en tiles de dashboard y tiles de Raw SQL que requieren filtros de fuente, con indicaciones claras en la propia interfaz cuando faltan filtros o cuando una consulta no incluye una macro de filtro para la inyección. Las alertas de búsquedas guardadas admiten el mismo comportamiento.
+
+Ahora los filtros de fuente se aplican en toda la experiencia del mapa de servicios, propagando las selecciones a las páginas de Búsqueda enlazadas y a los paneles laterales de trazas.
+
+El MCP también pasó a reconocer los filtros de fuente. Los agentes pueden detectar los requisitos de filtro, recuperar los valores disponibles y pasar filtros a las herramientas de consulta. Los valores de los filtros se acotan entre sí, lo que permite que una selección reduzca los valores compatibles de los demás. Cuando se omiten filtros obligatorios, el MCP puede seleccionarlos automáticamente e informar qué valores se aplicaron. Los resultados iniciales de la evaluación no indican ningún impacto medible en las fuentes que no usan filtros de fuente.
+
+**PR relacionadas:** [#2459](https://github.com/hyperdxio/hyperdx/pull/2459) feat: mostrar un icono en tiles con filtros excluidos con alcance de fuente, [#2331](https://github.com/hyperdxio/hyperdx/pull/2331) feat: añadir alcance de fuente a los filtros del dashboard
+
+<div id="candidate-columns-when-building-sources">
+  ## Columnas candidatas al crear fuentes
+</div>
+
+*Demo de [@karl-power](https://github.com/karl-power)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/PA-6sDjdjIM" title="Reproductor de video de YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+Al crear una fuente, ClickStack ahora sugiere campos candidatos de la tabla subyacente para ayudar a poblar el formulario de configuración. Las sugerencias se muestran como chips en los que se puede hacer clic, mientras que la validación distingue entre los campos que no existen y los que sí son válidos, pero requieren filtros de fuente antes de poder resolverse.
+
+Una nueva advertencia también destaca los casos en los que se ha configurado una expresión de body sin una columna implícita. La funcionalidad está prácticamente completa y solo quedan pequeños retoques en la UI y mejoras de validación.
+
+**PR relacionadas:** [#2436](https://github.com/hyperdxio/hyperdx/pull/2436) feat: add source field suggestions
+
+<div id="anomaly-alerts-with-group-by">
+  ## Alertas de anomalías con group-by (WIP)
+</div>
+
+*Demo de [@fleon](https://github.com/fleon)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/70UzCRUTK7M" title="Reproductor de video de YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+Este trabajo aborda un problema de usabilidad en la detección de anomalías para series temporales agrupadas. Mostrar bandas de anomalías en todas las series a la vez se vuelve ilegible rápidamente. El enfoque de Himanshu hace que las bandas de anomalías aparezcan en la leyenda al pasar el cursor, mientras que sigue mostrándolas directamente en el gráfico cuando se selecciona una sola serie.
+
+Esta funcionalidad sigue en desarrollo activo y aún está pendiente de más mejoras antes de su lanzamiento.
+
+<div id="mcp-eval-multi-model-selector">
+  ## Selector multmodelo para evaluación de MCP
+</div>
+
+*Demo de [@brandon-pereira](https://github.com/brandon-pereira)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/1O47NXHDzUY" title="Reproductor de video de YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+El marco de evaluación de MCP ahora permite ejecutar una única suite de evaluación con varios modelos simultáneamente. Brandon muestra esta función comparando Fable, Opus y Sonnet en una sola ejecución tras el lanzamiento de Fable.
+
+Tanto en la suite de evaluación de ClickHouse como en la de HyperDX, Fable obtuvo resultados considerablemente mejores en preguntas específicas de ClickStack. Ojalá pudiéramos usar el modelo :).
+
+**PR relacionadas:** [#2438](https://github.com/hyperdxio/hyperdx/pull/2438) feat(hdx-eval): compatibilidad con comparación multmodelo en lotes de evaluación, [#2414](https://github.com/hyperdxio/hyperdx/pull/2414) feat: marco de evaluación de IA para benchmark de servidores MCP
+
+<div id="all-notebook-tools-now-use-the-mcp">
+  ## Todas las herramientas del notebook ahora usan el MCP
+</div>
+
+*Demo de [@brandon-pereira](https://github.com/brandon-pereira)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/lJnrfmQswpQ" title="Reproductor de video de YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+Todas las herramientas de investigación del notebook ahora se ejecutan a través del MCP de ClickStack, en lugar de una implementación separada. Aunque no hay cambios visibles para los usuarios, esta consolidación elimina rutas de código duplicadas y sienta las bases para la futura interoperabilidad entre el notebook y el agent local.
+
+Lo próximo previsto son los tiles de Raw SQL del notebook.
+
+<div id="datadog-receiver">
+  ## receiver de Datadog
+</div>
+
+*Demo de [@SpencerTorres](https://github.com/SpencerTorres)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/P0VVuN_yL6Q" title="Reproductor de video de YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+Spencer presenta mejoras en el receiver de Datadog.
+
+Anteriormente, los payloads de logs de Datadog se ingerían principalmente como JSON no estructurado dentro del cuerpo del mensaje. Ahora, el receiver extrae y eleva campos clave, como los ID de traza, los ID de span, las marcas de tiempo y los metadatos de solicitudes HTTP, a atributos estándar de recurso y de log de OpenTelemetry.
+
+Los ID de traza numéricos de 64 bits de Datadog también se expanden al formato de 128 bits de OpenTelemetry, lo que permite una correlación de trazas adecuada en ClickStack. Se espera que el receiver se incluya en la distribución del ClickStack collector, y se prevén más pruebas sobre la correlación de trazas de extremo a extremo.
+
+<div id="event-patterns-any-column">
+  ## Patrones de eventos: cualquier columna
+</div>
+
+*Demo de [@knudtty](https://github.com/knudtty)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/5uGZ69YNV74" title="Reproductor de video de YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+El análisis de patrones de eventos ahora puede ejecutarse sobre cualquier columna de tipo cadena, en lugar de estar limitado a `Body`. Un nuevo selector de columna usa `Body` de forma predeterminada para conservar el comportamiento existente, pero permite a los usuarios seleccionar cualquier columna que pueda representarse como una cadena.
+
+Aaron también explica la lógica de enmascaramiento que se utiliza para normalizar el contenido variable antes de que el algoritmo Drain agrupe los eventos en patrones. La funcionalidad aún está en revisión, pero debería estar disponible pronto.
+
+**PR relacionadas:** [#2460](https://github.com/hyperdxio/hyperdx/pull/2460) feat: añadir un selector de columna de patrones para la coincidencia de patrones de eventos en cualquier columna
+
+<div id="span-links">
+  ## Enlaces entre spans (WIP)
+</div>
+
+*Demo de [@alex-fedotyev](https://github.com/alex-fedotyev)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/SK-T5J3YcQE" title="Reproductor de video de YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+Alex presenta una versión preliminar del soporte para enlaces entre spans en el visor de trazas de ClickStack. Los enlaces entre spans son un concepto de OpenTelemetry que permite que los spans hagan referencia a spans relacionados en otras trazas, y es una funcionalidad de tracing solicitada con frecuencia.
+
+La implementación actual muestra los spans enlazados y sus atributos asociados directamente en el panel de trazas. El diseño y la presentación aún se están perfeccionando, así que considérelo claramente un trabajo en curso.
+
+**PR relacionadas:** [#2463](https://github.com/hyperdxio/hyperdx/pull/2463) feat(traces): mostrar enlaces entre spans en el visor de trazas
+
+<div id="time-series-highlighting-on-hover">
+  ## Resaltado de series temporales al pasar el cursor
+</div>
+
+*Demo de [@alex-fedotyev](https://github.com/alex-fedotyev)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/QhyWYDE-stY" title="Reproductor de video de YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+Los gráficos de series temporales con múltiples series ahora resaltan la serie más cercana al cursor. Esto facilita mucho la identificación de líneas individuales en gráficos densos con muchos valores de group-by.
+
+Esta función surgió a partir de los comentarios de equipos que estaban migrando de Grafana a ClickStack.
+
+**PR relacionadas:** [#2456](https://github.com/hyperdxio/hyperdx/pull/2456) feat: resaltar la serie más cercana al cursor en la información sobre herramientas de los gráficos de series temporales
+
+<div id="duplicate-series">
+  ## Series duplicadas
+</div>
+
+*Demo de [@alex-fedotyev](https://github.com/alex-fedotyev)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/PnhU_CtRFc4" title="Reproductor de video de YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+Se ha añadido una acción para duplicar en el constructor de gráficos. Ahora, los usuarios pueden copiar la configuración de una serie existente y hacer pequeños ajustes, en lugar de volver a crear una serie similar desde cero.
+
+Alex muestra el flujo de trabajo creando una comparación entre P50 y P95.
+
+**PR relacionadas:** [#2453](https://github.com/hyperdxio/hyperdx/pull/2453) feat(chart-explorer): duplicate a series in the chart builder
+
+<div id="editable-pill-filters">
+  ## Filtros en píldoras editables (WIP)
+</div>
+
+*Demo de [@alex-fedotyev](https://github.com/alex-fedotyev)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/T7q_qkhWjUU" title="Reproductor de vídeo de YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+Las píldoras de filtro pronto podrán editarse directamente en la interfaz de búsqueda. La funcionalidad inicial incluye alternar entre los modos de inclusión y exclusión, editar los valores directamente y copiar filtros desde la propia píldora.
+
+La implementación aún está en curso, y antes del lanzamiento se prevén funciones adicionales y mejoras de acabado.
+
+**PR relacionadas:** [#2455](https://github.com/hyperdxio/hyperdx/pull/2455) feat(search): píldoras de filtro editables, [#2471](https://github.com/hyperdxio/hyperdx/pull/2471) feat(search): permitir valores de texto libre al editar una píldora de filtro

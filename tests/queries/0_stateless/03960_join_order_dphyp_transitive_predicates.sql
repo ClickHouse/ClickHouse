@@ -6,6 +6,7 @@
 
 SET allow_experimental_analyzer = 1;
 SET use_statistics = 1;
+SET materialize_statistics_on_insert = 0; -- pin (randomized in CI): statistics built on INSERT change the join order
 SET query_plan_join_swap_table = 'auto';
 SET enable_join_runtime_filters = 0;
 SET enable_parallel_replicas = 0;
@@ -16,6 +17,7 @@ SET query_plan_optimize_join_order_limit = 10;
 SET use_hash_table_stats_for_join_reordering = 0;
 SET query_plan_remove_unused_columns = 1;
 SET query_plan_merge_filter_into_join_condition = 1;
+SET explain_query_plan_default = 'legacy';
 
 CREATE TABLE tp_dim_a (key UInt32, name String) ENGINE = MergeTree() PRIMARY KEY key SETTINGS auto_statistics_types = 'uniq';
 CREATE TABLE tp_fact  (id UInt32, key UInt32, val Float64) ENGINE = MergeTree() PRIMARY KEY id SETTINGS auto_statistics_types = 'uniq';

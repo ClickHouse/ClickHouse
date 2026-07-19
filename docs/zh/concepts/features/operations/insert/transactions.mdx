@@ -1,0 +1,355 @@
+---
+description: '介绍 ClickHouse 事务（ACID）支持的页面'
+slug: /guides/developer/transactional
+title: '事务（ACID）支持'
+doc_type: 'guide'
+---
+
+import ExperimentalBadge from "/snippets/zh/components/ExperimentalBadge/ExperimentalBadge.jsx";
+import CloudNotSupportedBadge from "/snippets/zh/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+
+<div id="case-1-insert-into-one-partition-of-one-table-of-the-mergetree-family">
+  ## 情况 1：向 MergeTree* 家族中某个表的单个分区执行 INSERT
+</div>
+
+如果插入的行经过打包，并以单个块写入，则该操作具有事务性 (ACID)  (见注释) ：
+
+* 原子性：一次 INSERT 要么整体成功，要么整体被拒绝：如果向客户端发送了确认，则所有行都已插入；如果向客户端返回了错误，则不会插入任何行。
+* 一致性：如果未违反表约束，则一次 INSERT 中的所有行都会被插入，并且 INSERT 成功；如果违反了约束，则不会插入任何行。
+* 隔离性：并发客户端观察到的是表的一致性快照——要么是发起 INSERT 之前的表状态，要么是 INSERT 成功之后的表状态；不会看到中间的部分状态。处于另一个事务中的客户端具有[快照隔离](https://en.wikipedia.org/wiki/Snapshot_isolation)，而事务外的客户端具有[读未提交](https://en.wikipedia.org/wiki/Isolation_\(database_systems\)#Read_uncommitted)隔离级别。
+* 持久性：成功的 INSERT 会在响应客户端之前写入文件系统，可写入单个副本或多个副本 (由 `insert_quorum` 设置控制) ，并且 ClickHouse 可以要求操作系统将文件系统中的数据同步到存储介质 (由 `fsync_after_insert` 设置控制) 。
+* 如果涉及 materialized view，则可以通过一条语句向多个表执行 INSERT (即客户端向一个具有关联 materialized view 的表执行 INSERT) 。
+
+<div id="case-2-insert-into-multiple-partitions-of-one-table-of-the-mergetree-family">
+  ## 情况 2：向 MergeTree* 家族的同一张表中的多个分区执行 INSERT
+</div>
+
+与上面的情况 1 相同，但有一点需要注意：
+
+* 如果表有很多分区，且 INSERT 涉及多个分区，那么向每个分区的插入都会各自作为一个事务处理
+
+<div id="case-3-insert-into-one-distributed-table-of-the-mergetree-family">
+  ## 情况 3：向一个 MergeTree* 家族的分布式表执行 INSERT
+</div>
+
+与上面的情况 1 相同，但有以下细节：
+
+* 对 Distributed 表执行 INSERT 整体上不具备事务性，而对每个分片的插入则是事务性的
+
+<div id="case-4-using-a-buffer-table">
+  ## 案例 4：使用 Buffer 表
+</div>
+
+* 向 Buffer 表插入数据既不具备原子性，也不具备隔离性、一致性和持久性
+
+<div id="case-5-using-async_insert">
+  ## 情况 5：使用 async_insert
+</div>
+
+与上文的情况 1 相同，但有一点需要注意：
+
+* 即使启用了 `async_insert` 且将 `wait_for_async_insert` 设为 1 (默认值) ，也能保证原子性；但如果将 `wait_for_async_insert` 设为 0，则无法保证原子性。
+
+<div id="notes">
+  ## 注意事项
+</div>
+
+* 在以下情况下，客户端以某种数据格式插入的行会被打包成一个块：
+  * 插入格式为基于行的格式 (如 CSV、TSV、Values、JSONEachRow 等) ，且数据少于 `max_insert_block_size` 行 (默认约 1 000 000 行) ；或者在使用并行解析时 (默认启用) ，数据少于 `min_chunk_bytes_for_parallel_parsing` 字节 (默认 10 MB)
+  * 插入格式为基于列的格式 (如 Native、Parquet、ORC 等) ，且数据中只包含一个块
+* 一般来说，插入块的大小可能取决于许多设置 (例如：`max_block_size`、`max_insert_block_size`、`min_insert_block_size_rows`、`min_insert_block_size_bytes`、`preferred_block_size_bytes` 等)
+* 如果客户端没有收到来自服务器的响应，它就无法确定事务是否成功，因此可能会借助 exactly-once 插入特性重试该事务
+* ClickHouse 在内部使用 [MVCC](https://en.wikipedia.org/wiki/Multiversion_concurrency_control) 和[快照隔离](https://en.wikipedia.org/wiki/Snapshot_isolation)来支持并发事务
+* 即使在服务器被终止或崩溃的情况下，所有 ACID 属性依然成立
+* 在典型部署中，应启用跨不同 AZ 的 insert&#95;quorum 或 fsync，以确保插入的持久性
+* ACID 中的“一致性”并不涵盖分布式系统语义，参见 https://jepsen.io/consistency；这由不同的设置 (select&#95;sequential&#95;consistency) 控制
+* 本说明未涵盖一项新的事务功能，该功能支持跨多个表、materialized view 以及多个 SELECT 的全功能事务等。 (请参见下一节“Transactions, Commit, and Rollback”)
+
+<div id="transactions-commit-and-rollback">
+  ## 事务、提交与回滚
+</div>
+
+<ExperimentalBadge />
+
+<CloudNotSupportedBadge />
+
+除本文档开头所述功能外，ClickHouse 还对事务、提交和回滚提供 Experimental 支持。
+
+<div id="requirements">
+  ### 要求
+</div>
+
+* 部署 ClickHouse Keeper 或 ZooKeeper 以跟踪事务
+* 仅限 Atomic DB (默认)
+* 仅限非复制表 MergeTree 表引擎
+* 在 `config.d/transactions.xml` 中添加以下设置，以启用 Experimental 事务支持：
+  ```xml
+  <clickhouse>
+    <allow_experimental_transactions>1</allow_experimental_transactions>
+  </clickhouse>
+  ```
+
+<div id="notes-1">
+  ### 说明
+</div>
+
+* 这是一项 Experimental 功能，后续可能会有所变动。
+* 如果在事务期间发生异常，则无法提交该事务。这包括所有异常，也包括因拼写错误导致的 `UNKNOWN_FUNCTION` 异常。
+* 不支持嵌套事务；请先完成当前事务，再开始新事务
+
+<div id="configuration">
+  ### 配置
+</div>
+
+以下示例均基于启用了 ClickHouse Keeper 的单节点 ClickHouse server。
+
+<div id="enable-experimental-transaction-support">
+  #### 启用 Experimental 事务支持
+</div>
+
+```xml title=/etc/clickhouse-server/config.d/transactions.xml
+<clickhouse>
+    <allow_experimental_transactions>1</allow_experimental_transactions>
+</clickhouse>
+```
+
+<div id="basic-configuration-for-a-single-clickhouse-server-node-with-clickhouse-keeper-enabled">
+  #### 启用 ClickHouse Keeper 的单个 ClickHouse server 节点基本配置
+</div>
+
+<Note>
+  有关部署 ClickHouse server 以及满足法定人数要求的 ClickHouse Keeper 节点的详细信息，请参阅[部署](/zh/guides/oss/deployment-and-scaling/terminology)文档。此处展示的配置仅供实验之用。
+</Note>
+
+```xml title=/etc/clickhouse-server/config.d/config.xml
+<clickhouse replace="true">
+    <logger>
+        <level>debug</level>
+        <log>/var/log/clickhouse-server/clickhouse-server.log</log>
+        <errorlog>/var/log/clickhouse-server/clickhouse-server.err.log</errorlog>
+        <size>1000M</size>
+        <count>3</count>
+    </logger>
+    <display_name>node 1</display_name>
+    <listen_host>0.0.0.0</listen_host>
+    <http_port>8123</http_port>
+    <tcp_port>9000</tcp_port>
+    <zookeeper>
+        <node>
+            <host>clickhouse-01</host>
+            <port>9181</port>
+        </node>
+    </zookeeper>
+    <keeper_server>
+        <tcp_port>9181</tcp_port>
+        <server_id>1</server_id>
+        <log_storage_path>/var/lib/clickhouse/coordination/log</log_storage_path>
+        <snapshot_storage_path>/var/lib/clickhouse/coordination/snapshots</snapshot_storage_path>
+        <coordination_settings>
+            <operation_timeout_ms>10000</operation_timeout_ms>
+            <session_timeout_ms>30000</session_timeout_ms>
+            <raft_logs_level>information</raft_logs_level>
+        </coordination_settings>
+        <raft_configuration>
+            <server>
+                <id>1</id>
+                <hostname>clickhouse-keeper-01</hostname>
+                <port>9234</port>
+            </server>
+        </raft_configuration>
+    </keeper_server>
+</clickhouse>
+```
+
+<div id="example">
+  ### 示例
+</div>
+
+<div id="verify-that-experimental-transactions-are-enabled">
+  #### 验证是否已启用 Experimental 事务
+</div>
+
+执行 `BEGIN TRANSACTION` 或 `START TRANSACTION`，然后再执行 `ROLLBACK`，以确认 Experimental 事务已启用，并且 ClickHouse Keeper 也已启用，因为它用于跟踪事务。
+
+```sql
+BEGIN TRANSACTION
+```
+
+```response
+Ok.
+```
+
+<Tip>
+  如果你看到以下错误，请检查配置文件，确认 `allow_experimental_transactions` 已设置为 `1` (或除 `0` 和 `false` 之外的任意值) 。
+
+  ```response
+  Code: 48. DB::Exception: Received from localhost:9000.
+  DB::Exception: Transactions are not supported.
+  (NOT_IMPLEMENTED)
+  ```
+
+  你也可以执行以下命令检查 ClickHouse Keeper：
+
+  ```bash
+  echo ruok | nc localhost 9181
+  ```
+
+  ClickHouse Keeper 应返回 `imok`。
+</Tip>
+
+```sql
+ROLLBACK
+```
+
+```response
+Ok.
+```
+
+<div id="create-a-table-for-testing">
+  #### 创建一个测试用表
+</div>
+
+<Tip>
+  创建表不具备事务性。请在事务之外运行此 DDL 查询。
+</Tip>
+
+```sql
+CREATE TABLE mergetree_table
+(
+    `n` Int64
+)
+ENGINE = MergeTree
+ORDER BY n
+```
+
+```response
+Ok.
+```
+
+<div id="begin-a-transaction-and-insert-a-row">
+  #### 开启事务并插入一行
+</div>
+
+```sql
+BEGIN TRANSACTION
+```
+
+```response
+Ok.
+```
+
+```sql
+INSERT INTO mergetree_table FORMAT Values (10)
+```
+
+```response
+Ok.
+```
+
+```sql
+SELECT *
+FROM mergetree_table
+```
+
+```response
+┌──n─┐
+│ 10 │
+└────┘
+```
+
+<Note>
+  你可以在事务中查询该表，并看到该行已插入，尽管事务尚未提交。
+</Note>
+
+<div id="rollback-the-transaction-and-query-the-table-again">
+  #### 回滚事务，并再次查询表
+</div>
+
+验证事务是否已回滚：
+
+```sql
+ROLLBACK
+```
+
+```response
+Ok.
+```
+
+```sql
+SELECT *
+FROM mergetree_table
+```
+
+```response
+Ok.
+
+0 rows in set. Elapsed: 0.002 sec.
+```
+
+<div id="complete-a-transaction-and-query-the-table-again">
+  #### 完成事务并再次查询该表
+</div>
+
+```sql
+BEGIN TRANSACTION
+```
+
+```response
+Ok.
+```
+
+```sql
+INSERT INTO mergetree_table FORMAT Values (42)
+```
+
+```response
+Ok.
+```
+
+```sql
+COMMIT
+```
+
+```response
+Ok. Elapsed: 0.002 sec.
+```
+
+```sql
+SELECT *
+FROM mergetree_table
+```
+
+```response
+┌──n─┐
+│ 42 │
+└────┘
+```
+
+<div id="transactions-introspection">
+  ### 事务内部信息
+</div>
+
+你可以通过查询 `system.transactions` 表来查看事务，但请注意，处于事务中的会话无法查询该
+表。请打开第二个 `clickhouse client` 会话来查询该表。
+
+```sql
+SELECT *
+FROM system.transactions
+FORMAT Vertical
+```
+
+```response
+Row 1:
+──────
+tid:         (33,61,'51e60bce-6b82-4732-9e1d-b40705ae9ab8')
+tid_hash:    11240433987908122467
+elapsed:     210.017820947
+is_readonly: 1
+state:       RUNNING
+```
+
+<div id="more-details">
+  ## 更多详情
+</div>
+
+请参阅这个[汇总 issue](https://github.com/ClickHouse/ClickHouse/issues/48794)，其中包含更全面的测试，并可及时了解最新进展。

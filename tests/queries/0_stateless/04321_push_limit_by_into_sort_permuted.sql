@@ -4,6 +4,7 @@
 SET enable_analyzer = 1;
 SET query_plan_push_limit_by_into_sort = 1;
 SET max_threads = 16;
+SET explain_query_plan_default = 'legacy';
 
 -- { echo }
 

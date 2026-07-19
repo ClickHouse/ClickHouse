@@ -1,0 +1,152 @@
+---
+slug: /use-cases/observability/clickstack/session-replay
+title: '세션 리플레이'
+sidebarTitle: '세션 리플레이'
+description: 'ClickStack에서 사용자 세션을 캡처하고 재생하여 프런트엔드 문제를 디버깅하고, 사용자 행동을 이해하며, 브라우저 활동을 백엔드 로그 및 트레이스와 연관시킵니다.'
+doc_type: 'guide'
+keywords: ['clickstack', '세션 리플레이', '브라우저 SDK', '프런트엔드 관측성', '사용자 세션', '디버깅']
+---
+
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+ClickStack의 세션 리플레이는 웹 애플리케이션에서의 사용자 상호작용을 캡처하고 재구성하여, 세션 동안 사용자가 정확히 무엇을 보고 무엇을 했는지 시각적으로 다시 볼 수 있게 합니다. 비디오를 녹화하는 방식이 아니라 SDK가 DOM 변경, 마우스 이동, 클릭, 스크롤, 키보드 입력, 콘솔 로그, 네트워크 요청(XHR, Fetch, WebSocket), JavaScript 예외를 기록한 뒤 브라우저에서 해당 경험을 재구성합니다.
+
+세션 리플레이는 로그, 트레이스, 메트릭과 함께 ClickHouse에 저장되므로, 사용자의 경험을 살펴보는 것에서 이를 뒷받침한 백엔드 트레이스와 데이터베이스 쿼리를 확인하는 것까지 몇 번의 클릭만으로 이어서 수행할 수 있습니다. 따라서 세션 리플레이는 운영 환경의 문제를 디버깅하고, 사용자 행동을 이해하며, UX 마찰 지점을 파악하고, 지원팀에 보고된 문제를 시각적으로 확인하는 데 유용합니다.
+
+<div id="instrumentation">
+  ## 애플리케이션 계측하기
+</div>
+
+ClickStack은 OpenTelemetry와 완전히 호환되므로, 표준 OpenTelemetry JavaScript SDK 또는 [ClickStack language SDKs](/ko/clickstack/ingesting-data/sdks)를 사용해 브라우저 텔레메트리(트레이스, 예외)를 전송할 수 있습니다. 하지만 **세션 리플레이에는 ClickStack Browser SDK** (`@hyperdx/browser`)가 필요합니다. 이 SDK는 OpenTelemetry SDK를 확장해 세션 기록, 콘솔 캡처, 네트워크 요청 캡처를 지원합니다. 세션 리플레이 없이 트레이스만 필요하다면 OTel 호환 브라우저 SDK는 모두 ClickStack과 함께 사용할 수 있습니다.
+
+아래 예시에서는 ClickStack Browser SDK를 사용합니다. 애플리케이션에 세션 리플레이를 추가하는 데는 세 단계만 거치면 됩니다. 패키지를 설치하고 SDK를 초기화하면 모든 사용자 상호작용이 자동으로 캡처되며, 추가 코드 변경은 필요하지 않습니다.
+
+<Tip>
+  앱 시작 시 반드시 로드되는 위치에서 SDK를 초기화하세요. 예를 들어 Next.js 애플리케이션에서는 루트 `layout.js`가 그 위치가 될 수 있습니다. 이렇게 하면 세션 기록이 즉시 시작되어 전체 사용자 경험을 캡처할 수 있습니다.
+</Tip>
+
+<Tabs>
+  <Tab title="NPM">
+    ```shell
+    npm install @hyperdx/browser
+    ```
+
+    ```javascript
+    import HyperDX from '@hyperdx/browser';
+
+    HyperDX.init({
+      url: 'http://your-otel-collector:4318',
+      apiKey: 'YOUR_INGESTION_API_KEY', // Managed ClickStack에서는 생략
+      service: 'my-frontend-app',
+      tracePropagationTargets: [/api.myapp.domain/i],
+      consoleCapture: true,
+      advancedNetworkCapture: true,
+    });
+    ```
+  </Tab>
+
+  <Tab title="Yarn">
+    ```shell
+    yarn add @hyperdx/browser
+    ```
+
+    ```javascript
+    import HyperDX from '@hyperdx/browser';
+
+    HyperDX.init({
+      url: 'http://your-otel-collector:4318',
+      apiKey: 'YOUR_INGESTION_API_KEY', // Managed ClickStack에서는 생략
+      service: 'my-frontend-app',
+      tracePropagationTargets: [/api.myapp.domain/i],
+      consoleCapture: true,
+      advancedNetworkCapture: true,
+    });
+    ```
+  </Tab>
+
+  <Tab title="스크립트 태그">
+    번들러를 사용하지 않는 애플리케이션에서는 스크립트 태그로 SDK를 직접 포함하세요. 이렇게 하면 전역 변수 `HyperDX`가 노출되며, NPM 패키지와 동일한 방식으로 사용할 수 있습니다.
+
+    ```html
+    <script src="https://unpkg.com/@hyperdx/browser@0.21.0/build/index.js"></script>
+    <script>
+      window.HyperDX.init({
+        url: 'http://your-otel-collector:4318',
+        apiKey: 'YOUR_INGESTION_API_KEY', // Managed ClickStack에서는 생략
+        service: 'my-frontend-app',
+        tracePropagationTargets: [/api.myapp.domain/i],
+        consoleCapture: true,
+        advancedNetworkCapture: true,
+      });
+    </script>
+    ```
+  </Tab>
+</Tabs>
+
+<Note>
+  `tracePropagationTargets` 옵션은 세션 리플레이를 백엔드 트레이스와 연결하는 데 핵심적인 역할을 합니다. 전체 프런트엔드-백엔드 분산 추적을 사용하려면 API 도메인으로 설정하세요. 개인정보 보호 제어, 사용자 지정 액션, React 오류 경계, 소스 맵을 포함한 전체 SDK 옵션 목록은 [Browser SDK 참고](/ko/clickstack/ingesting-data/sdks/browser)를 참조하세요.
+</Note>
+
+Browser SDK는 개인정보 보호가 중요한 애플리케이션을 위해 [입력값과 텍스트 마스킹](/ko/clickstack/ingesting-data/sdks/browser#options)도 지원하며, [사용자 정보 연결](/ko/clickstack/ingesting-data/sdks/browser#attach-user-information-or-metadata)을 통해 ClickStack UI에서 사용자별로 세션을 검색하고 필터링할 수 있습니다.
+
+<div id="viewing-replays">
+  ## 세션 리플레이 보기
+</div>
+
+ClickStack UI(HyperDX)의 왼쪽 사이드바에서 **Client Sessions**로 이동합니다. 이 화면에는 캡처된 모든 브라우저 세션이 지속 시간과 이벤트 수와 함께 표시됩니다.
+
+<Image img="/images/clickstack/session-replay/replay-search-view.webp" alt="세션 리플레이 검색 화면" size="lg" />
+
+리플레이하려는 세션의 재생 버튼을 클릭합니다. 리플레이 화면의 오른쪽에는 재구성된 사용자 경험이 표시되고, 왼쪽에는 네트워크 요청, 콘솔 로그, 오류 등 브라우저 이벤트의 타임라인이 표시됩니다.
+
+<Image img="/images/clickstack/session-replay/session-replay.webp" alt="세션 리플레이 재생" size="lg" />
+
+타임라인에 표시되는 세부 정보 수준을 조정하려면 **Highlighted** 모드와 **All Events** 모드 사이를 전환합니다. 오류는 빨간색으로 표시되며, 이벤트를 클릭하면 리플레이가 세션의 해당 시점으로 이동합니다.
+
+<div id="session-to-trace">
+  ### 세션에서 트레이스로
+</div>
+
+세션 타임라인에서 네트워크 요청이나 오류를 선택하면 **Trace** 탭으로 이동해 요청이 백엔드 서비스를 거치는 경로를 추적할 수 있습니다. 이 과정에서 해당 사용자 상호작용으로 인해 발생한 관련 로그, 스팬, 데이터베이스 쿼리도 함께 확인할 수 있습니다.
+
+이 기능이 가능한 이유는 `tracePropagationTargets` 구성이 `traceparent` 헤더를 통해 브라우저 스팬과 서버 스팬을 연결하여, 사용자의 클릭부터 데이터베이스까지 이어지는 분산 트레이스를 만들기 때문입니다. 프런트엔드와 백엔드 계측을 모두 포함한 자세한 실습 예시는 [OpenTelemetry 및 ClickStack으로 NextJS 애플리케이션 계측하기](https://clickhouse.com/blog/instrumenting-nextjs-opentelemetry-clickstack)를 참조하십시오.
+
+<Frame>
+  <img src="/images/clickstack/session-replay/clickpy-trace.webp" alt="ClickStack에서 세션 리플레이에서 백엔드 트레이스로 이동하는 모습" />
+</Frame>
+
+<div id="trace-to-session">
+  ### 트레이스에서 세션으로
+</div>
+
+이 상관관계는 반대 방향에서도 유효합니다. **검색** 보기에서 트레이스를 확인할 때 해당 항목을 클릭해 트레이스 상세 정보를 연 다음, **세션 리플레이** 탭을 선택하면 그 트레이스 시점에 사용자가 실제로 무엇을 겪고 있었는지 정확히 확인할 수 있습니다. 이는 특히 오류나 느린 요청을 조사할 때 매우 유용합니다. 백엔드 문제에서 바로 출발해 곧바로 사용자 관점까지 확인할 수 있기 때문입니다.
+
+<Image img="/images/clickstack/session-replay/trace-to-replay.webp" alt="세션 리플레이 트레이스 보기" size="lg" />
+
+<div id="data-storage">
+  ## 세션 데이터 저장 방식
+</div>
+
+세션 리플레이 데이터는 로그 및 트레이스와는 별도로 ClickHouse의 전용 [`hyperdx_sessions`](/ko/clickstack/ingesting-data/schemas#sessions) 테이블에 저장됩니다. 각 세션 이벤트는 하나의 행으로 저장되며, 이벤트 페이로드를 담는 `Body` 필드와 이벤트 메타데이터를 저장하는 `LogAttributes` 맵을 포함합니다. `Body`와 `LogAttributes` 컬럼에는 리플레이를 재구성하는 데 사용되는 실제 세션 이벤트의 세부 정보가 함께 저장됩니다.
+
+전체 테이블 스키마 정보는 [ClickStack에서 사용하는 테이블 및 스키마](/ko/clickstack/ingesting-data/schemas)를 참조하십시오.
+
+<div id="try-it-out">
+  ## 직접 사용해 보기
+</div>
+
+세션 리플레이가 실제로 어떻게 동작하는지 확인하는 방법은 두 가지입니다.
+
+* **라이브 예시** — [clickpy.clickhouse.com](https://clickpy.clickhouse.com)에 접속해 앱을 사용해 본 다음, [play-clickstack.clickhouse.com](https://play-clickstack.clickhouse.com)에서 **ClickPy Sessions** 소스의 세션 리플레이를 확인하십시오. ClickPy에 어떻게 계측을 적용했는지에 대한 자세한 내용은 블로그 게시물 [Instrumenting your NextJS application with OpenTelemetry and ClickStack](https://clickhouse.com/blog/instrumenting-your-app-with-otel-clickstack)를 참조하십시오.
+* **로컬 데모** — [세션 리플레이 데모](/ko/clickstack/example-datasets/session-replay)에서는 데모 애플리케이션에 세션 리플레이 계측을 단계별로 적용하는 과정을 안내하며, ClickStack을 로컬에서 실행하고 리플레이를 확인하는 방법도 포함합니다.
+
+<div id="learn-more">
+  ## 더 알아보기
+</div>
+
+* [세션 리플레이 데모](/ko/clickstack/example-datasets/session-replay) — 단계별 안내가 포함된 대화형 로컬 데모 애플리케이션
+* [Browser SDK 참고](/ko/clickstack/ingesting-data/sdks/browser) — 전체 SDK 옵션, 소스 맵, 사용자 지정 액션 및 고급 구성
+* [검색](/ko/clickstack/features/search) — 세션과 이벤트를 필터링하기 위한 검색 구문
+* [대시보드](/ko/clickstack/features/dashboards/overview) — 세션 및 trace 데이터로 시각화와 대시보드 생성
+* [알림](/ko/clickstack/features/alerts) — 오류, 지연 시간 및 기타 신호에 대한 알림 설정
+* [ClickStack 아키텍처](/ko/clickstack/architecture) — ClickHouse, HyperDX, OTel collector가 서로 어떻게 연동되는지 설명

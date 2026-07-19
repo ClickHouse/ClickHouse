@@ -410,7 +410,7 @@ Features:
 
 ### Yandex DataLens {#yandex-datalens}
 
-[Yandex DataLens](https://cloud.yandex.ru/services/datalens) is a service of data visualization and analytics.
+[Yandex DataLens](https://yandex.cloud/en/services/datalens) is a service of data visualization and analytics.
 
 Features:
 
@@ -419,10 +419,10 @@ Features:
 - Support for multiple data sources including ClickHouse.
 - Storage for materialized data based on ClickHouse.
 
-DataLens is [available for free](https://cloud.yandex.com/docs/datalens/pricing) for low-load projects, even for commercial use.
+DataLens is [available for free](https://yandex.cloud/en/docs/datalens/pricing) for low-load projects, even for commercial use.
 
-- [DataLens documentation](https://cloud.yandex.com/docs/datalens/).
-- [Tutorial](https://cloud.yandex.com/docs/solutions/datalens/data-from-ch-visualization) on visualizing data from a ClickHouse database.
+- [DataLens documentation](https://yandex.cloud/en/docs/datalens/).
+- [Tutorial](https://yandex.cloud/en/docs/solutions/datalens/data-from-ch-visualization) on visualizing data from a ClickHouse database.
 
 ### Holistics Software {#holistics-software}
 

@@ -1,0 +1,91 @@
+---
+description: 'يُنفِّذ استعلام Prometheus باستخدام بيانات من جدول TimeSeries.'
+sidebarTitle: 'prometheusQuery'
+slug: /sql-reference/table-functions/prometheusQuery
+title: 'prometheusQuery'
+doc_type: 'reference'
+---
+
+يُنفِّذ استعلام Prometheus باستخدام بيانات من جدول TimeSeries.
+
+<div id="syntax">
+  ## البنية
+</div>
+
+```sql
+prometheusQuery('db_name', 'time_series_table', 'promql_query', evaluation_time)
+prometheusQuery(db_name.time_series_table, 'promql_query', evaluation_time)
+prometheusQuery('time_series_table', 'promql_query', evaluation_time)
+```
+
+<div id="arguments">
+  ## الوسيطات
+</div>
+
+* `db_name` - اسم قاعدة البيانات التي يوجد فيها جدول TimeSeries.
+* `time_series_table` - اسم جدول TimeSeries.
+* `promql_query` - استعلام مكتوب [بصيغة PromQL](https://prometheus.io/docs/prometheus/latest/querying/basics/).
+* `evaluation_time - الطابع الزمني للتقييم. لتقييم استعلام في الوقت الحالي، استخدم `now()`باعتباره`evaluation&#95;time&#96;.
+
+<div id="returned_value">
+  ## القيمة المُعادة
+</div>
+
+يمكن أن تُرجع الدالة أعمدة مختلفة بحسب نوع نتيجة الاستعلام المُمرَّر إلى المعامل `promql_query`:
+
+| نوع النتيجة | أعمدة النتيجة                                                                             | مثال                                                |
+| ----------- | ----------------------------------------------------------------------------------------- | --------------------------------------------------- |
+| vector      | tags Array(Tuple(String, String)), timestamp TimestampType, value ValueType               | prometheusQuery(mytable, &#39;up&#39;)              |
+| matrix      | tags Array(Tuple(String, String)), time&#95;series Array(Tuple(TimestampType, ValueType)) | prometheusQuery(mytable, &#39;up[1m]&#39;)          |
+| scalar      | scalar ValueType                                                                          | prometheusQuery(mytable, &#39;1h30m&#39;)           |
+| string      | string String                                                                             | prometheusQuery(mytable, &#39;&quot;abc&quot;&#39;) |
+
+<div id="supported-promql-features">
+  ## الميزات المدعومة في PromQL
+</div>
+
+<div id="selectors">
+  ### المُحدِّدات
+</div>
+
+المُحدِّدات الآنية، ومُحدِّدات النطاق، ومطابقات التسميات (`=`, `!=`, `=~`, `!~`)، ومُعدِّلات الإزاحة، ومُعدِّلات الطابع الزمني `@`، والاستعلامات الفرعية.
+
+<div id="functions">
+  ### الدوال
+</div>
+
+| الفئة          | الدوال                                                                                           |
+| -------------- | ------------------------------------------------------------------------------------------------ |
+| النطاق         | `rate`, `irate`, `delta`, `idelta`, `last_over_time`                                             |
+| الرياضيات      | `abs`, `sgn`, `floor`, `ceil`, `sqrt`, `exp`, `ln`, `log2`, `log10`, `rad`, `deg`                |
+| المثلثات       | `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `sinh`, `cosh`, `tanh`, `asinh`, `acosh`, `atanh`   |
+| DateTime       | `day_of_week`, `day_of_month`, `days_in_month`, `day_of_year`, `minute`, `hour`, `month`, `year` |
+| النوع          | `scalar`, `vector`                                                                               |
+| مُدرَّج تكراري | `histogram_quantile`                                                                             |
+| أخرى           | `time`, `pi`                                                                                     |
+
+**ملاحظة**: تستخدم `histogram_quantile` الاستيفاء الخطي على حاويات المُدرَّج التكراري التقليدي (التي يحدّدها الوسم `le`). لا يزال دعم المُدرَّجات التكرارية الأصلية غير متاح، ويجب أن تكون قيمة المعامل `phi` (مستوى quantile) حاليًا `scalar` ثابتًا — وتُرفض التعبيرات التي تتغيّر في كل خطوة، مثل `histogram_quantile(time() / 1000, ...)`، مع الخطأ `NOT_IMPLEMENTED`.
+
+<div id="operators">
+  ### المعاملات
+</div>
+
+جميع المعاملات الثنائية: الحسابية (`+`, `-`, `*`, `/`, `%`, `^`)، ومعاملات المقارنة (`==`, `!=`, `<`, `>`, `<=`, `>=` مع `bool` اختياري)، والمعاملات المنطقية (`and`, `or`, `unless`)، مع مُعدِّلات `on()`/`ignoring()` و`group_left()`/`group_right()`.
+
+والمعاملات الأحادية `+` و`-`.
+
+<div id="aggregation-operators">
+  ### معاملات التجميع
+</div>
+
+`sum`, `avg`, `min`, `max`, `count`, `stddev`, `stdvar`, `group`, `quantile`, `topk`, `bottomk`, `limitk` — مع مُعدِّلات اختيارية من نوع `by()` أو `without()`.
+
+غير مدعوم حتى الآن: `count_values`.
+
+<div id="example">
+  ## مثال
+</div>
+
+```sql
+SELECT * FROM prometheusQuery(mytable, 'rate(http_requests{job="prometheus"}[10m])[1h:10m]', now())
+```
