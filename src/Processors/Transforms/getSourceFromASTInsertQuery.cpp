@@ -252,6 +252,22 @@ String getInsertDataSchemaMismatchDescription(
             return !(expected_is_numeric && inferred_is_text) && !expected_is_nested;
         }
 
+        /// A numeric value that schema inference widened to `Int64` / `UInt64` / `Float64` is accepted by
+        /// the text / JSON deserializers into many scalar destinations that share no common supertype with
+        /// the widened numeric type: an integer into `DateTime` / `Date` (read as a Unix timestamp), into an
+        /// `Enum` (by its numeric value), into `Decimal`, and so on. So an inferred numeric type is not a
+        /// reliable structure mismatch for any scalar destination (e.g. `{"ts": 1, "n": 1.5}` into
+        /// `(ts DateTime, n UInt8)`, where `ts` parses fine and only `n` is invalid). Only a nested
+        /// destination (`Array`, `Tuple`, `Map`), which cannot be built from a single scalar, stays a
+        /// mismatch.
+        const WhichDataType which_inferred(inferred_unwrapped);
+        if (which_inferred.isInt() || which_inferred.isUInt() || which_inferred.isFloat())
+        {
+            const WhichDataType which_expected(expected_unwrapped);
+            const bool expected_is_nested = which_expected.isArray() || which_expected.isTuple() || which_expected.isMap();
+            return !expected_is_nested;
+        }
+
         return false;
     };
 
