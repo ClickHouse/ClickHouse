@@ -200,3 +200,22 @@ is not compatible with the output format CustomSeparatedWithNames
 text/event-stream; charset=UTF-8; payload=base64
 --- JSONEachPacketString accepts CustomSeparatedWithNames (CSV rule) with a non-matching delimiter (header not flattened)
 CustomSeparatedWithNames (non-matching delimiter, header not flattened) accepted: OK
+--- JSONEachPacketString is rejected for JSONEachRow with a non-UTF-8 column name
+is not compatible with the output format JSONEachRow
+--- EventStream base64-encodes JSONEachRow with a non-UTF-8 column name
+text/event-stream; charset=UTF-8; payload=base64
+JSONEachRow payload with a non-UTF-8 column name round-trips
+--- JSONEachPacketString accepts JSONEachRow with a non-UTF-8 column name when UTF-8 validation is on
+JSONEachRow (UTF-8 validation on) accepted: OK
+--- JSONEachPacketString accepts JSONEachRow with a valid UTF-8 (multi-byte) column name
+JSONEachRow (valid UTF-8 column name) accepted: OK
+--- JSONEachPacketString is rejected for JSONColumns with a non-UTF-8 column name
+is not compatible with the output format JSONColumns
+--- JSONEachPacketString is rejected for JSONCompactEachRowWithNames with a non-UTF-8 column name
+is not compatible with the output format JSONCompactEachRowWithNames
+--- JSONEachPacketString is rejected for JSONCompactEachRowWithNamesAndTypes with a non-UTF-8 type name
+is not compatible with the output format JSONCompactEachRowWithNamesAndTypes
+--- JSONEachPacketString accepts plain JSONCompactEachRow with a non-UTF-8 column name (no header is written)
+plain JSONCompactEachRow (non-UTF-8 column name, no header) accepted: OK
+--- JSONEachPacketString is rejected for GeoJSON with a non-UTF-8 property column name
+is not compatible with the output format GeoJSON

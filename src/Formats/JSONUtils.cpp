@@ -10,6 +10,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <Common/assert_cast.h>
+#include <Common/isValidUTF8.h>
 #include <Columns/IColumn.h>
 
 #include <base/find_symbols.h>
@@ -571,6 +572,20 @@ namespace JSONUtils
             result.push_back(buf.str().substr(1, buf.str().size() - 2));
         }
         return result;
+    }
+
+    bool namesMayProduceRawBytesInJSON(const Strings & names, const FormatSettings & settings, bool validate_utf8)
+    {
+        /// When validation is on, `makeNamesValidJSONStrings` runs the names through
+        /// `WriteBufferValidUTF8`, which replaces invalid sequences, so the result is always valid.
+        if (validate_utf8)
+            return false;
+
+        for (const auto & escaped : makeNamesValidJSONStrings(names, settings, validate_utf8))
+            if (!UTF8::isValidUTF8(reinterpret_cast<const UInt8 *>(escaped.data()), escaped.size()))
+                return true;
+
+        return false;
     }
 
     void skipColon(ReadBuffer & in)

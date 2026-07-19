@@ -511,3 +511,67 @@ echo '--- JSONEachPacketString accepts CustomSeparatedWithNames (CSV rule) with 
 data_packets=$(${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=JSONEachPacketString&format_custom_escaping_rule=CSV&format_custom_field_delimiter=|" \
     -d 'SELECT CAST((1, 2) AS Tuple(`a\xFFb` UInt8, c UInt8)) AS t FORMAT CustomSeparatedWithNames' | grep -c '"packet":"data"')
 [ "$data_packets" -ge 1 ] && echo 'CustomSeparatedWithNames (non-matching delimiter, header not flattened) accepted: OK'
+
+# Several JSON output formats write the header-derived names into the output without validating UTF-8
+# when `output_format_json_validate_utf8 = 0` (the default): `JSONEachRow` (and its aliases) and
+# `JSONColumns` emit the column names as object keys via `makeNamesValidJSONStrings`, the
+# `JSONCompactEachRowWithNames*` variants emit a header row of names (and type names), and `GeoJSON`
+# emits the property column names as keys. A quoted identifier can contain arbitrary bytes
+# (`SELECT 1 AS `a\xFFb``), so a non-UTF-8 name is knowable from the header before the first row and
+# makes the framed NDJSON/SSE non-textual, exactly like the text formats above.
+echo '--- JSONEachPacketString is rejected for JSONEachRow with a non-UTF-8 column name'
+${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=JSONEachPacketString" \
+    -d 'SELECT 1 AS `a\xFFb` FORMAT JSONEachRow' \
+    | grep -o -m1 'is not compatible with the output format JSONEachRow'
+
+echo '--- EventStream base64-encodes JSONEachRow with a non-UTF-8 column name'
+${CLICKHOUSE_CURL} -sS -o /dev/null -w '%{content_type}\n' "${URL}&framing_output_format=EventStream" \
+    -d 'SELECT 1 AS `a\xFFb` FORMAT JSONEachRow'
+${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=EventStream${SINGLE_BLOCK}" \
+    -d 'SELECT 1 AS `a\xFFb` FORMAT JSONEachRow' \
+    | awk '/^event: data$/ { getline; sub(/^data: /, ""); print }' | base64 -d \
+    | cmp -s - <(${CLICKHOUSE_CURL} -sS "${URL}" -d 'SELECT 1 AS `a\xFFb` FORMAT JSONEachRow') \
+    && echo 'JSONEachRow payload with a non-UTF-8 column name round-trips' || echo 'MISMATCH'
+
+# With UTF-8 validation enabled the JSON writer replaces the invalid bytes, so the output is textual
+# and the same query is accepted.
+echo '--- JSONEachPacketString accepts JSONEachRow with a non-UTF-8 column name when UTF-8 validation is on'
+data_packets=$(${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=JSONEachPacketString&output_format_json_validate_utf8=1" \
+    -d 'SELECT 1 AS `a\xFFb` FORMAT JSONEachRow' | grep -c '"packet":"data"')
+[ "$data_packets" -ge 1 ] && echo 'JSONEachRow (UTF-8 validation on) accepted: OK'
+
+# A valid multi-byte UTF-8 column name (here `col` followed by U+2713 CHECK MARK) must not be
+# misdetected as raw bytes.
+echo '--- JSONEachPacketString accepts JSONEachRow with a valid UTF-8 (multi-byte) column name'
+data_packets=$(${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=JSONEachPacketString" \
+    -d 'SELECT 1 AS `col\xE2\x9C\x93` FORMAT JSONEachRow' | grep -c '"packet":"data"')
+[ "$data_packets" -ge 1 ] && echo 'JSONEachRow (valid UTF-8 column name) accepted: OK'
+
+echo '--- JSONEachPacketString is rejected for JSONColumns with a non-UTF-8 column name'
+${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=JSONEachPacketString" \
+    -d 'SELECT 1 AS `a\xFFb` FORMAT JSONColumns' \
+    | grep -o -m1 'is not compatible with the output format JSONColumns'
+
+echo '--- JSONEachPacketString is rejected for JSONCompactEachRowWithNames with a non-UTF-8 column name'
+${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=JSONEachPacketString" \
+    -d 'SELECT 1 AS `a\xFFb` FORMAT JSONCompactEachRowWithNames' \
+    | grep -o -m1 'is not compatible with the output format JSONCompactEachRowWithNames'
+
+# The `WithNamesAndTypes` variant also writes the data type names, so a non-UTF-8 name inside a type
+# (here an `Enum` element with arbitrary bytes) is caught the same way.
+echo '--- JSONEachPacketString is rejected for JSONCompactEachRowWithNamesAndTypes with a non-UTF-8 type name'
+${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=JSONEachPacketString" \
+    -d "SELECT CAST(1 AS Enum8('x\xFFy' = 1)) AS c FORMAT JSONCompactEachRowWithNamesAndTypes" \
+    | grep -o -m1 'is not compatible with the output format JSONCompactEachRowWithNamesAndTypes'
+
+# The plain `JSONCompactEachRow` writes no header row, so the non-UTF-8 name is not part of the output
+# and the query is accepted.
+echo '--- JSONEachPacketString accepts plain JSONCompactEachRow with a non-UTF-8 column name (no header is written)'
+data_packets=$(${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=JSONEachPacketString" \
+    -d 'SELECT 1 AS `a\xFFb` FORMAT JSONCompactEachRow' | grep -c '"packet":"data"')
+[ "$data_packets" -ge 1 ] && echo 'plain JSONCompactEachRow (non-UTF-8 column name, no header) accepted: OK'
+
+echo '--- JSONEachPacketString is rejected for GeoJSON with a non-UTF-8 property column name'
+${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=JSONEachPacketString" \
+    -d 'SELECT (0, 0)::Point AS g, 1 AS `p\xFFq` FORMAT GeoJSON' \
+    | grep -o -m1 'is not compatible with the output format GeoJSON'
