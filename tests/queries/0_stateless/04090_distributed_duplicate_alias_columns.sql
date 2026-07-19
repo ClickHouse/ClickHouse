@@ -128,6 +128,50 @@ SELECT sum(d), sum(e) FROM dist_nested_alias;
 SELECT d, e, f FROM dist_nested_alias;
 SELECT sum(d), sum(e), sum(f) FROM dist_nested_alias WHERE e > 0 AND f > 0;
 
+-- A chained ALIAS column whose fully inlined expression coincides with an explicit
+-- expression of the query, in the same query with duplicate ALIAS columns: the shard
+-- must not collapse the expansion of `f` (inlined `(b + c) + 1`) onto the explicit
+-- `b + c + 1`, because the wrapped duplicates `d`, `e` prevent the initiator-side
+-- fan-out reconstruction from recognizing the collapsed header.
+SELECT b + c + 1, d, e, f FROM dist_nested_alias ORDER BY d;
+
+-- ALIAS columns that are plain references to other columns (issue #108291), mixed
+-- with duplicate ALIAS columns: the expansion of `d` (a bare `b`) must not collapse
+-- onto the physical column `b` selected in the same query.
+DROP TABLE IF EXISTS shard_ref_alias;
+DROP TABLE IF EXISTS dist_ref_alias;
+
+CREATE TABLE shard_ref_alias (a UInt64, b String) ENGINE = MergeTree() ORDER BY a;
+INSERT INTO shard_ref_alias VALUES (1, 'x') (2, 'y');
+
+CREATE TABLE dist_ref_alias
+(
+    a UInt64,
+    b String,
+    c UInt64 ALIAS a,          -- plain column reference
+    d String ALIAS b,          -- plain column reference, non-numeric
+    e UInt64 ALIAS a * 10,     -- function alias
+    f UInt64 ALIAS c           -- alias of an alias, inlines to a plain reference
+)
+ENGINE = Distributed('test_cluster_two_shards', currentDatabase(), shard_ref_alias, rand());
+
+-- All of the above at once, via asterisk expansion.
+SELECT * FROM dist_ref_alias ORDER BY a, b SETTINGS asterisk_include_alias_columns = 1;
+
+-- A plain-reference ALIAS column next to its source column.
+SELECT a, c FROM dist_ref_alias ORDER BY a;
+SELECT b, d FROM dist_ref_alias ORDER BY b;
+
+-- A function ALIAS column next to the same explicit expression.
+SELECT a * 10, e FROM dist_ref_alias ORDER BY a;
+
+-- The same, mixed with duplicate ALIAS columns (`c` and `f` both inline to `a`),
+-- whose wrappers would defeat the initiator-side fan-out reconstruction if the
+-- expansion of `e` collapsed onto the explicit `a * 10`.
+SELECT a * 10, c, e, f FROM dist_ref_alias ORDER BY c;
+
+DROP TABLE dist_ref_alias;
+DROP TABLE shard_ref_alias;
 DROP TABLE dist_nested_alias;
 DROP TABLE shard_nested_alias;
 DROP TABLE dist_pk_alias;

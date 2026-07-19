@@ -830,8 +830,17 @@ namespace
   * the header received from remote shards and the header expected by the initiator
   * fails with NUMBER_OF_COLUMNS_DOESNT_MATCH (issue #85895).
   *
+  * The same collapse happens when the expression of an ALIAS column coincides with
+  * anything else the query computes: with a physical column (`d String ALIAS b`
+  * inlines to a bare `b`, which collapses onto the physical column `b` when both are
+  * selected, issue #108291), or with an explicit expression of the query itself
+  * (`SELECT e, a * 10` where `e UInt64 ALIAS a * 10`). The initiator names the ALIAS
+  * column after the column itself, so it always expects a separate column, while the
+  * shard plans the inlined expression.
+  *
   * To keep such expansions distinct, every occurrence of an ALIAS column whose
-  * expression coincides with the expression of another ALIAS column of the same table
+  * inlined expression coincides with the inlined expression of another ALIAS column
+  * of the same table, or with the inlined form of any other expression of the query,
   * is wrapped into the internal function `__actionName(expression, 'name')`. It is
   * a no-op at runtime, but its action name is taken from the second argument
   * (see PlannerActionsVisitor), so both the sample block computed on the initiator
@@ -859,7 +868,7 @@ public:
 
     void visit(QueryTreeNodePtr & node)
     {
-        collectAliasColumns(node);
+        collectAliasColumns(node, /*inside_alias_expression=*/ false);
         replace(node, /*is_filter_context=*/ false);
     }
 
@@ -910,8 +919,13 @@ private:
         }
     }
 
-    /// Remember the names of all ALIAS columns sharing one expression, per column source.
-    void collectAliasColumns(const QueryTreeNodePtr & node)
+    /// Remember the names of all ALIAS columns sharing one expression, per column source,
+    /// and the inlined-form hashes of all other expressions of the query. The latter are
+    /// not collected inside ALIAS column expressions: those subtrees do not appear in the
+    /// rewritten query on their own, only as parts of the expansions, and shared subparts
+    /// of expansions are harmless (they merge inside the DAG without dropping a column of
+    /// the block sent over the network).
+    void collectAliasColumns(const QueryTreeNodePtr & node, bool inside_alias_expression)
     {
         if (const auto * column_node = node->as<ColumnNode>(); column_node && column_node->hasExpression())
         {
@@ -919,13 +933,26 @@ private:
             {
                 source_ordinals.emplace(column_source, source_ordinals.size());
                 alias_names_by_expression[{column_source, getExpressionHash(inlineAliasColumns(column_node->getExpression()))}].insert(column_node->getColumnName());
+
+                for (const auto & child : node->getChildren())
+                {
+                    if (child)
+                        collectAliasColumns(child, /*inside_alias_expression=*/ true);
+                }
+                return;
             }
+        }
+        else if (!inside_alias_expression)
+        {
+            auto node_type = node->getNodeType();
+            if (node_type == QueryTreeNodeType::COLUMN || node_type == QueryTreeNodeType::FUNCTION || node_type == QueryTreeNodeType::CONSTANT)
+                other_expression_hashes.insert(getExpressionHash(inlineAliasColumns(node)));
         }
 
         for (const auto & child : node->getChildren())
         {
             if (child)
-                collectAliasColumns(child);
+                collectAliasColumns(child, inside_alias_expression);
         }
     }
 
@@ -969,8 +996,9 @@ private:
         auto column_expression = inlineAliasColumns(column_node->getExpression());
         const String & column_name = column_node->getColumnName();
 
-        bool is_duplicate = false;
-        if (auto it = alias_names_by_expression.find({column_source, getExpressionHash(column_expression)}); it != alias_names_by_expression.end())
+        auto expression_hash = getExpressionHash(column_expression);
+        bool is_duplicate = other_expression_hashes.contains(expression_hash);
+        if (auto it = alias_names_by_expression.find({column_source, expression_hash}); !is_duplicate && it != alias_names_by_expression.end())
             is_duplicate = it->second.size() > 1;
 
         if (!is_duplicate)
@@ -1004,6 +1032,7 @@ private:
     /// tables of one query happen to have equal names.
     std::map<const IQueryTreeNode *, size_t> source_ordinals;
     std::map<std::pair<const IQueryTreeNode *, IQueryTreeNode::Hash>, std::set<String>> alias_names_by_expression;
+    std::set<IQueryTreeNode::Hash> other_expression_hashes;
 };
 
 class RewriteInToGlobalInVisitor : public InDepthQueryTreeVisitorWithContext<RewriteInToGlobalInVisitor>
