@@ -114,6 +114,29 @@ GTEST_TEST(DataTypeAggregateFunctionVersion, PreservesCustomNameOfNonAggregateTy
     ASSERT_EQ(point->getName(), "Point");
 }
 
+/// A wrapper whose only aggregate child is UNVERSIONED (uniq) must be left untouched:
+/// hasAggregateFunctionType() passes, but the leaf callback replaces nothing, so the outer
+/// Nested/Array/Tuple must NOT be rebuilt (that would drop the Nested custom name and rewrite
+/// the Native type name / ATTACH encoding from Nested(...) to plain Array(Tuple(...))).
+GTEST_TEST(DataTypeAggregateFunctionVersion, UnversionedLeafPreservesNestedCustomName)
+{
+    tryRegisterAggregateFunctions();
+
+    /// uniq is not versioned, so no leaf is ever replaced under this Nested wrapper.
+    DataTypePtr nested = DataTypeFactory::instance().get("Nested(s AggregateFunction(uniq, UInt64))");
+    const String name_before = nested->getName();
+    ASSERT_TRUE(name_before.starts_with("Nested("));
+    const IDataType * nested_ptr_before = nested.get();
+
+    DataTypePtr assigned = nested;
+    setVersionToAggregateFunctions(assigned, /*if_empty=*/true, /*revision=*/54452);
+
+    /// The custom name survives and the object is not even rebuilt.
+    ASSERT_EQ(assigned->getName(), name_before);
+    ASSERT_EQ(assigned.get(), nested_ptr_before);
+    ASSERT_EQ(nested->getName(), name_before);
+}
+
 /// Concurrent setVersionToAggregateFunctions calls over the SAME shared type object.
 /// Before the fix each call wrote the shared object's mutable `version`, producing the
 /// arm_tsan data race. After the fix nothing shared is mutated, so this is race-free
