@@ -586,6 +586,16 @@ size_t QueryResultCache::EntryWeight::operator()(const Entry & entry) const
         res += chunk.allocatedBytes();
     res += entry.totals.has_value() ? entry.totals->allocatedBytes() : 0;
     res += entry.extremes.has_value() ? entry.extremes->allocatedBytes() : 0;
+    auto names_weight = [](const std::set<String> & names)
+    {
+        size_t bytes = 0;
+        for (const auto & name : names)
+            bytes += name.size();
+        return bytes;
+    };
+    res += names_weight(entry.access_info.databases) + names_weight(entry.access_info.tables)
+        + names_weight(entry.access_info.columns) + names_weight(entry.access_info.partitions)
+        + names_weight(entry.access_info.projections) + names_weight(entry.access_info.views);
     return res;
 }
 
