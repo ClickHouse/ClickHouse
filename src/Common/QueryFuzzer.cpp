@@ -7323,7 +7323,7 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
                 create_role->settings.reset();
             else
             {
-                create_role->new_name.clear();
+                create_role->new_name.reset();
                 create_role->alter_settings.reset();
             }
         }

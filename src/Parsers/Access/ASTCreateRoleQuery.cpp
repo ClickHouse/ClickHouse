@@ -9,9 +9,10 @@ namespace DB
 {
 namespace
 {
-    void formatRenameTo(const String & new_name, WriteBuffer & ostr, const IAST::FormatSettings &)
+    void formatRenameTo(const IAST & new_name, WriteBuffer & ostr, const IAST::FormatSettings & format)
     {
-        ostr << " RENAME TO " << quoteString(new_name);
+        ostr << " RENAME TO ";
+        new_name.format(ostr, format);
     }
 
     void formatSettings(const ASTSettingsProfileElements & settings, WriteBuffer & ostr, const IAST::FormatSettings & format)
@@ -40,6 +41,9 @@ ASTPtr ASTCreateRoleQuery::clone() const
 
     if (names)
         res->names = boost::static_pointer_cast<ASTUserNamesWithHost>(names->clone());
+
+    if (new_name)
+        res->new_name = boost::static_pointer_cast<ASTUserNameWithHost>(new_name->clone());
 
     if (settings)
         res->settings = boost::static_pointer_cast<ASTSettingsProfileElements>(settings->clone());
@@ -80,8 +84,8 @@ void ASTCreateRoleQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & f
 
     formatOnCluster(ostr, format);
 
-    if (!new_name.empty())
-        formatRenameTo(new_name, ostr, format);
+    if (new_name)
+        formatRenameTo(*new_name, ostr, format);
 
     if (alter_settings)
         formatAlterSettings(*alter_settings, ostr, format);

@@ -5,7 +5,6 @@
 #include <Parsers/Access/ASTUserNameWithHost.h>
 #include <Parsers/Access/ParserSettingsProfileElement.h>
 #include <Parsers/Access/ParserUserNameWithHost.h>
-#include <Parsers/Access/parseUserName.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ExpressionElementParsers.h>
@@ -16,14 +15,19 @@ namespace DB
 {
 namespace
 {
-    bool parseRenameTo(IParserBase::Pos & pos, Expected & expected, String & new_name)
+    bool parseRenameTo(IParserBase::Pos & pos, Expected & expected, boost::intrusive_ptr<ASTUserNameWithHost> & new_name)
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
             if (!ParserKeyword{Keyword::RENAME_TO}.ignore(pos, expected))
                 return false;
 
-            return parseRoleName(pos, expected, new_name);
+            ASTPtr new_name_ast;
+            if (!ParserUserNameWithHost(/*allow_query_parameter=*/true).parse(pos, new_name_ast, expected))
+                return false;
+
+            new_name = boost::static_pointer_cast<ASTUserNameWithHost>(new_name_ast);
+            return true;
         });
     }
 
@@ -103,7 +107,7 @@ bool ParserCreateRoleQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         return false;
     auto names = boost::static_pointer_cast<ASTUserNamesWithHost>(names_ast);
 
-    String new_name;
+    boost::intrusive_ptr<ASTUserNameWithHost> new_name;
     boost::intrusive_ptr<ASTSettingsProfileElements> settings;
     boost::intrusive_ptr<ASTAlterSettingsProfileElements> alter_settings;
     String cluster;
@@ -111,7 +115,7 @@ bool ParserCreateRoleQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
 
     while (true)
     {
-        if (alter && new_name.empty() && (names->size() == 1) && parseRenameTo(pos, expected, new_name))
+        if (alter && !new_name && (names->size() == 1) && parseRenameTo(pos, expected, new_name))
             continue;
 
         if (alter)
