@@ -1032,9 +1032,26 @@ InsertDependenciesBuilder::InsertDependenciesBuilder(
             return true;
         return strict_insert_block_limits && forwardedInsertHidesDependentView(entry.second);
     });
+    /// A dependent-MV target that forwards its write through a nested `INSERT` in a *separate* context
+    /// (`Buffer` flushes in its own context; `Distributed` writes on a remote shard that may itself
+    /// forward to such a `Buffer`) does not observe this query's `deduplicate_insert` /
+    /// `insert_deduplicate` / `deduplicate_blocks_in_dependent_materialized_views` settings, so it can
+    /// still deduplicate on its final destination even when deduplication is disabled here. Each parallel
+    /// branch's `BufferSink` / `DistributedSink` then restarts the source block numbering from zero, so
+    /// identical blocks on different branches collide on that destination and rows are silently dropped -
+    /// the same hazard the top-level path guards against for a direct `Buffer` / `Distributed` target in
+    /// `InterpreterInsertQuery` via `storageForwardsInsertToSeparateContext`. Fail closed on such a
+    /// dependent target regardless of this query's deduplication settings.
+    const bool any_dependent_target_forwards_to_separate_context = std::ranges::any_of(storages, [&] (const auto & entry)
+    {
+        if (isView(entry.first) || entry.first == init_table_id)
+            return false;
+        return storageForwardsInsertToSeparateContext(entry.second);
+    });
+
     const bool mv_dedup_single_stream = isViewsInvolved()
-        && deduplicate_blocks_in_dependent_materialized_views
-        && any_dependent_target_dedup_hazard;
+        && ((deduplicate_blocks_in_dependent_materialized_views && any_dependent_target_dedup_hazard)
+            || any_dependent_target_forwards_to_separate_context);
 
     if (all_sinks_support_parallel_insert
         && (settings[Setting::parallel_view_processing] || !isViewsInvolved())
