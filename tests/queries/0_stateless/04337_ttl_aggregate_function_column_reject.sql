@@ -352,3 +352,92 @@ TTL toDateTime(v) + INTERVAL 1 DAY;
 DROP TABLE test_ttl_agg_variant_suspicious;
 
 SET allow_suspicious_ttl_expressions = 0;
+
+-- Dynamic column: the static type never mentions AggregateFunction, but any row may carry a state
+-- (e.g. inserted via CAST to Dynamic), so this used to pass CREATE TABLE and only fail during TTL
+-- execution. The validator probes Dynamic arguments with a synthetic state.
+-- Table-level TTL: toDateTime cannot consume an AggregateFunction state stored in the Dynamic.
+CREATE TABLE test_ttl_agg_dynamic
+(
+    key UInt64,
+    dyn Dynamic,
+    d DateTime
+)
+ENGINE = MergeTree()
+ORDER BY key
+TTL toDateTime(dyn) + INTERVAL 1 DAY; -- { serverError BAD_TTL_EXPRESSION }
+
+-- Column-level TTL on the Dynamic: same issue.
+CREATE TABLE test_ttl_agg_dynamic_col
+(
+    key UInt64,
+    dyn Dynamic TTL toDateTime(dyn) + INTERVAL 1 DAY
+)
+ENGINE = MergeTree()
+ORDER BY key; -- { serverError BAD_TTL_EXPRESSION }
+
+-- TTL DELETE WHERE using the Dynamic column.
+CREATE TABLE test_ttl_agg_dynamic_where
+(
+    key UInt64,
+    d DateTime,
+    dyn Dynamic
+)
+ENGINE = MergeTree()
+ORDER BY key
+TTL d + INTERVAL 1 DAY DELETE WHERE toDateTime(dyn) > toDateTime(0); -- { serverError BAD_TTL_EXPRESSION }
+
+-- Dynamic with no room for new variants stores every value in the shared variant; the probe goes
+-- through the shared variant and the expression is still rejected.
+CREATE TABLE test_ttl_agg_dynamic_shared
+(
+    key UInt64,
+    dyn Dynamic(max_types=0),
+    d DateTime
+)
+ENGINE = MergeTree()
+ORDER BY key
+TTL toDateTime(dyn) + INTERVAL 1 DAY; -- { serverError BAD_TTL_EXPRESSION }
+
+-- Valid: a type-agnostic consumer (`isNotNull`) can handle any stored value, including a state.
+CREATE TABLE test_ttl_agg_dynamic_agnostic
+(
+    key UInt64,
+    d DateTime,
+    dyn Dynamic
+)
+ENGINE = MergeTree()
+ORDER BY key
+TTL d + INTERVAL 1 DAY DELETE WHERE isNotNull(dyn);
+
+DROP TABLE test_ttl_agg_dynamic_agnostic;
+
+-- Valid: a Dynamic column that is not referenced in the TTL is accepted.
+CREATE TABLE test_ttl_agg_dynamic_not_referenced
+(
+    key UInt64,
+    d DateTime,
+    dyn Dynamic
+)
+ENGINE = MergeTree()
+ORDER BY key
+TTL d + INTERVAL 1 DAY;
+
+DROP TABLE test_ttl_agg_dynamic_not_referenced;
+
+-- Valid: the escape hatch `allow_suspicious_ttl_expressions` still lets the rejected expression through.
+SET allow_suspicious_ttl_expressions = 1;
+
+CREATE TABLE test_ttl_agg_dynamic_suspicious
+(
+    key UInt64,
+    dyn Dynamic,
+    d DateTime
+)
+ENGINE = MergeTree()
+ORDER BY key
+TTL toDateTime(dyn) + INTERVAL 1 DAY;
+
+DROP TABLE test_ttl_agg_dynamic_suspicious;
+
+SET allow_suspicious_ttl_expressions = 0;
