@@ -1,6 +1,7 @@
 #include <Processors/Transforms/ExtremesTransform.h>
 #include <Columns/IColumn.h>
 #include <Core/Field.h>
+#include <DataTypes/IDataType.h>
 #include <Common/NaNUtils.h>
 
 namespace DB
@@ -11,6 +12,10 @@ ExtremesTransform::ExtremesTransform(SharedHeader header)
 {
     /// Port for Extremes.
     outputs.emplace_back(outputs.front().getHeader(), this);
+
+    is_comparable_column.reserve(header->columns());
+    for (const auto & column : *header)
+        is_comparable_column.push_back(column.type->isComparable());
 }
 
 IProcessor::Status ExtremesTransform::prepare()
@@ -109,6 +114,13 @@ void ExtremesTransform::transform(DB::Chunk & chunk)
         for (size_t i = 0; i < num_columns; ++i)
         {
             if (isColumnConst(*extremes_columns[i]))
+                continue;
+
+            /// Extremes of columns of non-comparable types (e.g. aggregate function states)
+            /// cannot be merged across chunks: comparing such values throws. Keep the
+            /// default values obtained from the first chunk, the same as a single-chunk
+            /// result produces for such columns.
+            if (!is_comparable_column[i])
                 continue;
 
             Field min_value = (*extremes_columns[i])[0];

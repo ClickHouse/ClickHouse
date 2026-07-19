@@ -25,6 +25,10 @@ protected:
 
 private:
     MutableColumns extremes_columns;
+
+    /// Whether the column type is comparable: extremes of multiple chunks
+    /// can be merged only for comparable types.
+    std::vector<UInt8> is_comparable_column;
 };
 
 }
