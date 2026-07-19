@@ -26,7 +26,7 @@ SET asterisk_include_alias_columns = 1;
 -- With `asterisk_include_alias_columns = 1` the matcher in `b`'s default expands to
 -- include the alias `x` (which aliases `b`), forming a `b` -> `x` -> `b` cycle. Reading the
 -- alias column `x` forces this expansion at query time under both the old analyzer
--- (with `optimize_respect_aliases`) and the new analyzer, so the late cycle is detected.
+-- (with `optimize_respect_aliases`) and the analyzer, so the late cycle is detected.
 SELECT x FROM ttl_default_matcher_late_cycle SETTINGS optimize_respect_aliases = 1; -- { serverError CYCLIC_ALIASES }
 
 DROP TABLE ttl_default_matcher_late_cycle;
