@@ -65,9 +65,25 @@ DatabaseTablesIteratorPtr DatabaseSQLite::getTablesIterator(ContextPtr local_con
     std::lock_guard lock(mutex);
 
     Tables tables;
-    auto table_names = fetchTablesList();
-    for (const auto & table_name : table_names)
-        tables[table_name] = fetchTable(table_name, local_context, true);
+
+    /// Do not allow to throw here, because this might be, for example, a query to system.tables:
+    /// enumeration of one broken SQLite database (e.g. its file is missing after a fail-closed
+    /// `ATTACH`) must not fail queries that enumerate tables of all databases. Direct table access
+    /// (`fetchTable`, `checkSQLiteTable`) still fails closed. The same is done for other external
+    /// database engines, see `DatabasePostgreSQL::getTablesIterator`.
+    try
+    {
+        auto table_names = fetchTablesList();
+        for (const auto & table_name : table_names)
+            tables[table_name] = fetchTable(table_name, local_context, true);
+    }
+    catch (...)
+    {
+        /// Log below the `warning` level: with `send_logs_level = 'warning'` (set e.g. by the test
+        /// harness for every query) an `error`-level record would be forwarded to every client whose
+        /// unrelated query enumerates tables, and the error is reported properly on direct access anyway.
+        tryLogCurrentException(log, "", LogsLevel::information);
+    }
 
     return std::make_unique<DatabaseTablesSnapshotIterator>(tables, database_name);
 }

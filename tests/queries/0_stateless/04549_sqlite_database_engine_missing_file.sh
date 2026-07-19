@@ -27,10 +27,14 @@ mkdir -p "${BASE}"
 # forwarded to the client by `send_logs_level`, so keep it out of the test output.
 ${CLICKHOUSE_CLIENT} --query "ATTACH DATABASE ${ATTACHED_DB} ENGINE = SQLite('${DB_PATH}')" 2>/dev/null
 
-# Table discovery and table lookup on the attached database must fail closed while the database file is
-# missing, instead of fabricating an empty database and reporting "no tables".
-echo 'Table discovery fails closed:'
-${CLICKHOUSE_CLIENT} --query "SHOW TABLES FROM ${ATTACHED_DB}" 2>&1 | grep -oF 'Cannot access sqlite database' | head -1
+# Table enumeration must not throw while the database file is missing: one broken SQLite database
+# must not fail `SHOW TABLES` or queries over `system.tables` that enumerate all databases
+# (the same tolerance as the PostgreSQL and MySQL database engines). It must not fabricate an
+# empty database file either. Direct table lookup, in contrast, fails closed.
+echo 'Table discovery of a broken database is empty:'
+${CLICKHOUSE_CLIENT} --query "SHOW TABLES FROM ${ATTACHED_DB}"
+echo 'system.tables enumeration does not throw:'
+${CLICKHOUSE_CLIENT} --query "SELECT count() FROM system.tables WHERE database = '${ATTACHED_DB}'"
 echo 'Table lookup fails closed:'
 ${CLICKHOUSE_CLIENT} --query "SELECT * FROM ${ATTACHED_DB}.t1" 2>&1 | grep -oF 'Cannot access sqlite database' | head -1
 

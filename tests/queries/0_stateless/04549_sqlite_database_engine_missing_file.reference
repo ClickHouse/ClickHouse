@@ -1,5 +1,6 @@
-Table discovery fails closed:
-Cannot access sqlite database
+Table discovery of a broken database is empty:
+system.tables enumeration does not throw:
+0
 Table lookup fails closed:
 Cannot access sqlite database
 SQLite database file was not created by ATTACH
