@@ -23,7 +23,6 @@ bool ParserDeleteQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserKeyword s_settings(Keyword::SETTINGS);
     ParserKeyword s_on{Keyword::ON};
 
-    ParserPartition parser_partition;
 
     if (s_delete.ignore(pos, expected))
     {

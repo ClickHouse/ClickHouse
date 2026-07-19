@@ -23,7 +23,6 @@ bool ParserUpdateQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserKeyword s_in_partition(Keyword::IN_PARTITION);
 
     ParserExpression parser_exp_elem;
-    ParserPartition parser_partition;
 
     ParserList parser_assignment_list(
         std::make_unique<ParserAssignment>(),

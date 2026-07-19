@@ -1067,8 +1067,25 @@ void StorageMergeTree::mutate(const MutationCommands & commands, ContextPtr quer
 
     delayMutationOrThrowIfNeeded(nullptr, query_context);
 
-    /// Validate partition IDs (if any) before starting mutation
-    getPartitionIdsAffectedByCommands(commands, query_context);
+    /// Validate explicit IN PARTITION ids (if any) before starting mutation.
+    /// Unlike the replicated case there is no need to analyze the predicate here:
+    /// parts of unaffected partitions are skipped by `canSkipMutationCommandForPart`.
+    for (const auto & command : commands)
+    {
+        auto alter = command.ast();
+        if (!alter)
+            continue;
+
+        if (alter->partitions)
+        {
+            for (const auto & partition_ast : alter->partitions->children)
+                getPartitionIDFromQuery(partition_ast, query_context);
+        }
+        else if (alter->partition)
+        {
+            getPartitionIDFromQuery(ASTPtr(alter->partition), query_context);
+        }
+    }
 
     Int64 version = 0;
     {

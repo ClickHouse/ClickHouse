@@ -264,16 +264,14 @@ EphemeralLocksInPartitions::EphemeralLocksInPartitions(
                 throw Coordination::Exception(code);
         }
 
-        /// After creating partition znodes, we need to re-read the version since
-        /// the creates above bump block_numbers_path version.
+        /// The creates above bump the block_numbers_path version. If the caller requested
+        /// a version check, it derived the partition set from the partition list it observed
+        /// at that version, and a concurrent insert may have created a partition it has not
+        /// seen. Do not silently refresh the version here - report ZBADVERSION so the caller
+        /// re-reads the partition list and recomputes the set (the created znodes persist,
+        /// so the retry will not take this path again).
         if (expected_block_numbers_version.has_value())
-        {
-            Coordination::Stat stat;
-            zookeeper_.get(block_numbers_path, &stat);
-
-            lock_ops.pop_back();
-            lock_ops.push_back(zkutil::makeCheckRequest(block_numbers_path, stat.version));
-        }
+            throw Coordination::Exception(Coordination::Error::ZBADVERSION);
 
         rc = zookeeper_.tryMulti(lock_ops, lock_responses);
     }
