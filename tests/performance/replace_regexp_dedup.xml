@@ -1,0 +1,13 @@
+<test>
+    <!-- Per-block deduplication in ReplaceRegexpImpl only engages on the RE2 path,
+         so the JIT is disabled for all queries here. -->
+    <settings>
+        <min_count_to_compile_regular_expression>1000000000</min_count_to_compile_regular_expression>
+    </settings>
+
+    <query>SELECT count() FROM test.hits WHERE NOT ignore(replaceRegexpAll(Referer, '^https?://(?:www\\.)?([^/]+)/.*$', '\\1'))</query>
+    <query>SELECT count() FROM test.hits WHERE NOT ignore(replaceRegexpOne(URL, '^https?://(?:www\\.)?([^/]+)/.*$', '\\1'))</query>
+
+    <!-- Mostly-distinct haystacks: the distinct-ratio guard must disable deduplication. -->
+    <query>SELECT count() FROM numbers(2000000) WHERE NOT ignore(replaceRegexpAll(concat('https://example.com/path/', toString(number)), '^https?://(?:www\\.)?([^/]+)/.*$', '\\1'))</query>
+</test>

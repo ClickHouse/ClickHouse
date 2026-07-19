@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Columns/ColumnString.h>
+#include <Common/HashTable/HashMap.h>
 #include <Common/OptimizedRegularExpression.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Common/re2.h>
@@ -376,6 +377,49 @@ struct ReplaceRegexpImpl
             capture_ends.resize(n);
         }
 
+        if (matcher)
+        {
+            for (size_t i = 0; i < input_rows_count; ++i)
+            {
+                size_t from = haystack_offsets[i - 1];
+
+                const char * hs_data = reinterpret_cast<const char *>(haystack_data.data() + from);
+                const size_t hs_length = static_cast<size_t>(haystack_offsets[i] - from);
+
+                processStringJIT(hs_data, hs_length, res_data, res_offset, matcher, capture_starts.data(), capture_ends.data(), instructions);
+                res_offsets[i] = res_offset;
+            }
+            return;
+        }
+
+        /// Haystacks are often repetitive (e.g. URLs), so run the regexp once per distinct value
+        /// and copy the cached result (a range in res_data) for repeats. The hash map is switched
+        /// off if the block is mostly distinct values. This pays off only for RE2 matches;
+        /// a JIT-compiled match is about as cheap as the hash table probe it would save,
+        /// which is why the JIT loop above processes every row directly.
+        struct CachedResult
+        {
+            UInt64 start;
+            UInt64 length;
+        };
+        HashMap<std::string_view, CachedResult> results_cache;
+        bool map_enabled = true;
+        size_t next_distinct_ratio_check = 4096;
+
+        const char * prev_hs_data = nullptr;
+        size_t prev_hs_length = 0;
+        CachedResult prev_result{0, 0};
+
+        auto copy_cached = [&](const CachedResult & cached)
+        {
+            res_data.resize(res_data.size() + cached.length);
+            /// Plain memcpy: the gap to the source region can be smaller than the 15 bytes of
+            /// slack that memcpySmallAllowReadWriteOverflow15 requires.
+            if (cached.length)
+                memcpy(&res_data[res_offset], &res_data[cached.start], cached.length);
+            res_offset += cached.length;
+        };
+
         for (size_t i = 0; i < input_rows_count; ++i)
         {
             size_t from = haystack_offsets[i - 1];
@@ -383,10 +427,44 @@ struct ReplaceRegexpImpl
             const char * hs_data = reinterpret_cast<const char *>(haystack_data.data() + from);
             const size_t hs_length = static_cast<size_t>(haystack_offsets[i] - from);
 
-            if (matcher)
-                processStringJIT(hs_data, hs_length, res_data, res_offset, matcher, capture_starts.data(), capture_ends.data(), instructions);
+            if (prev_hs_data && hs_length == prev_hs_length && 0 == memcmp(hs_data, prev_hs_data, hs_length))
+            {
+                copy_cached(prev_result);
+                res_offsets[i] = res_offset;
+                continue;
+            }
+
+            if (map_enabled && i >= next_distinct_ratio_check)
+            {
+                if (results_cache.size() * 10 > i * 9)
+                {
+                    map_enabled = false;
+                    results_cache.clearAndShrink();
+                }
+                next_distinct_ratio_check *= 2;
+            }
+
+            const UInt64 result_start = res_offset;
+
+            if (map_enabled)
+            {
+                typename HashMap<std::string_view, CachedResult>::LookupResult it;
+                bool inserted;
+                results_cache.emplace(std::string_view(hs_data, hs_length), it, inserted);
+                if (!inserted)
+                    copy_cached(it->getMapped());
+                else
+                {
+                    processString(hs_data, hs_length, res_data, res_offset, searcher, num_captures, instructions);
+                    it->getMapped() = {result_start, res_offset - result_start};
+                }
+            }
             else
                 processString(hs_data, hs_length, res_data, res_offset, searcher, num_captures, instructions);
+
+            prev_hs_data = hs_data;
+            prev_hs_length = hs_length;
+            prev_result = {result_start, res_offset - result_start};
             res_offsets[i] = res_offset;
         }
     }
