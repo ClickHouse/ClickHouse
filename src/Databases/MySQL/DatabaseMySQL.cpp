@@ -591,7 +591,6 @@ void DatabaseMySQL::createTable(ContextPtr local_context, const String & table_n
     attachTable(local_context, table_name, storage, {});
 }
 
-void registerDatabaseMySQL(DatabaseFactory & factory);
 void registerDatabaseMySQL(DatabaseFactory & factory)
 {
     auto create_fn = [](const DatabaseFactory::Arguments & args)
@@ -662,12 +661,7 @@ void registerDatabaseMySQL(DatabaseFactory & factory)
             throw Exception(ErrorCodes::CANNOT_CREATE_DATABASE, "Cannot create MySQL database, because {}", exception_message);
         }
     };
-    factory.registerDatabase("MySQL", create_fn, {
-        .supports_arguments = true,
-        .supports_settings = true,
-        .is_external = true,
-        .source_access_type = AccessTypeObjects::Source::MYSQL,
-    });
+    factory.registerDatabase("MySQL", create_fn, {.supports_arguments = true, .supports_settings = true, .is_external = true});
 }
 }
 

@@ -22,63 +22,38 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsString default_compression_codec;
 }
 
-Block getIndexBlockAndPermute(const Block & block, const Names & names, const IColumnPermutation * permutation, Block * permuted_columns_cache)
+Block getIndexBlockAndPermute(const Block & block, const Names & names, const IColumnPermutation * permutation)
 {
-    /// The cache is meaningful only when a permutation is applied: it stores the result
-    /// of `permute()` so that subsequent lookups by name return the already-permuted column.
-    /// If `permutation == nullptr`, there is nothing to amortize, so we ignore the cache.
-    Block * cache = permutation ? permuted_columns_cache : nullptr;
-
     Block result;
     for (size_t i = 0, size = names.size(); i < size; ++i)
     {
-        if (cache && cache->has(names[i]))
-        {
-            result.insert(i, cache->getByName(names[i]));
-            continue;
-        }
-
         auto src_column = block.getColumnOrSubcolumnByName(names[i]);
         src_column.column = removeSpecialRepresentations(src_column.column);
         src_column.column = src_column.column->convertToFullColumnIfConst();
+        result.insert(i, src_column);
 
         /// Reorder primary key columns in advance and add them to `primary_key_columns`.
         if (permutation)
-            src_column.column = src_column.column->permute(*permutation, 0);
-
-        if (cache)
-            cache->insert(src_column);
-
-        result.insert(i, src_column);
+        {
+            auto & column = result.getByPosition(i);
+            column.column = column.column->permute(*permutation, 0);
+        }
     }
 
     return result;
 }
 
-Block permuteBlockIfNeeded(const Block & block, const IColumnPermutation * permutation, Block * permuted_columns_cache)
+Block permuteBlockIfNeeded(const Block & block, const IColumnPermutation * permutation)
 {
-    /// See the comment in `getIndexBlockAndPermute`: the cache only stores genuinely
-    /// permuted columns, so it is ignored when `permutation == nullptr`.
-    Block * cache = permutation ? permuted_columns_cache : nullptr;
-
     Block result;
     for (size_t i = 0; i < block.columns(); ++i)
     {
-        const auto & col = block.getByPosition(i);
-        if (cache && cache->has(col.name))
-        {
-            result.insert(i, cache->getByName(col.name));
-            continue;
-        }
-
-        auto column_with_type = col;
+        result.insert(i, block.getByPosition(i));
         if (permutation)
-            column_with_type.column = column_with_type.column->permute(*permutation, 0);
-
-        if (cache)
-            cache->insert(column_with_type);
-
-        result.insert(i, column_with_type);
+        {
+            auto & column = result.getByPosition(i);
+            column.column = column.column->permute(*permutation, 0);
+        }
     }
     return result;
 }

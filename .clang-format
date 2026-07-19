@@ -31,7 +31,7 @@ IndentCaseLabels: true
 SpaceAfterTemplateKeyword: true
 SpaceBeforeCpp11BracedList: false
 SortIncludes: true
-IndentPPDirectives: None
+IndentPPDirectives: AfterHash
 IncludeCategories:
   - Regex: '^<[a-z_]+>'
     Priority: 1
@@ -60,7 +60,7 @@ AlignConsecutiveAssignments: false
 AlignOperands: false
 AllowAllParametersOfDeclarationOnNextLine: true
 AllowShortBlocksOnASingleLine: false
-AllowShortCaseLabelsOnASingleLine: true
+AllowShortCaseLabelsOnASingleLine: false
 AllowShortIfStatementsOnASingleLine: false
 AllowShortLoopsOnASingleLine: false
 AlwaysBreakAfterDefinitionReturnType: None

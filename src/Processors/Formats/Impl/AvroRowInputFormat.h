@@ -4,17 +4,21 @@
 
 #if USE_AVRO
 
-#include <map>
 #include <unordered_map>
+#include <unordered_set>
+#include <map>
 #include <vector>
-#include <Formats/FormatSchemaInfo.h>
+
 #include <Formats/FormatSettings.h>
+#include <Formats/FormatSchemaInfo.h>
 #include <Processors/Formats/IRowInputFormat.h>
 #include <Processors/Formats/ISchemaReader.h>
+
 #include <DataFile.hh>
 #include <Decoder.hh>
 #include <Schema.hh>
 #include <ValidSchema.hh>
+
 
 namespace DB
 {
@@ -32,7 +36,6 @@ class Block;
 /// levels, so 256 is more than enough.
 static constexpr size_t MAX_AVRO_SCHEMA_DEPTH = 256;
 
-class ConfluentSchemaRegistry;
 class AvroInputStreamReadBufferAdapter : public avro::InputStream
 {
 public:
@@ -76,7 +79,7 @@ private:
         enum Type {Noop, Deserialize, Skip, Record, Union, Nested};
         Type type;
         /// Deserialize
-        int target_column_idx{};
+        int target_column_idx;
         DeserializeFn deserialize_fn;
         /// Skip
         SkipFn skip_fn;
@@ -199,6 +202,8 @@ public:
     AvroConfluentRowInputFormat(SharedHeader header_, ReadBuffer & in_, Params params_, const FormatSettings & format_settings_);
     String getName() const override { return "AvroConfluentRowInputFormat"; }
 
+    class SchemaRegistry;
+
 private:
     bool readRow(MutableColumns & columns, RowReadExtension & ext) override;
     void readPrefix() override;
@@ -206,7 +211,7 @@ private:
     bool allowSyncAfterError() const override { return true; }
     void syncAfterError() override;
 
-    std::shared_ptr<ConfluentSchemaRegistry> schema_registry;
+    std::shared_ptr<SchemaRegistry> schema_registry;
     using SchemaId = uint32_t;
     std::unordered_map<SchemaId, AvroDeserializer> deserializer_cache;
     const AvroDeserializer & getOrCreateDeserializer(SchemaId schema_id);
@@ -216,16 +221,20 @@ private:
     FormatSettings format_settings;
 };
 
-class AvroSchemaReader final : public ISchemaReader
+class AvroSchemaReader : public ISchemaReader
 {
 public:
     AvroSchemaReader(ReadBuffer & in_, bool confluent_, const FormatSettings & format_settings_);
 
     NamesAndTypesList readSchema() override;
 
-    static DataTypePtr avroNodeToDataType(avro::NodePtr node);
+    /// If `allow_nullable_tuple_type` is false, a union [null, record] is converted to a plain
+    /// Tuple instead of Nullable(Tuple). Schema inference passes
+    /// schema_inference_allow_nullable_tuple_type here, because otherwise it would return a type
+    /// that CREATE TABLE rejects.
+    static DataTypePtr avroNodeToDataType(avro::NodePtr node, bool allow_nullable_tuple_type = true);
 private:
-    static DataTypePtr avroNodeToDataTypeImpl(const avro::NodePtr & node, std::unordered_set<std::string> & seen_names);
+    static DataTypePtr avroNodeToDataTypeImpl(const avro::NodePtr & node, std::unordered_set<std::string> & seen_names, bool allow_nullable_tuple_type);
 
     bool confluent;
     const FormatSettings format_settings;

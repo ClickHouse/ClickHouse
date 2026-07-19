@@ -444,7 +444,7 @@ void BackgroundSchedulePool::threadFunction()
 
     while (!shutdown)
     {
-        UInt64 task_type_to_run = 0;
+        UInt64 task_type_to_run;
         TaskInfoPtr task;
 
         current_thread->flushUntrackedMemory();

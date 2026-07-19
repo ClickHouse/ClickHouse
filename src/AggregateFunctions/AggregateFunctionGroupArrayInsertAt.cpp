@@ -229,7 +229,6 @@ AggregateFunctionPtr createAggregateFunctionGroupArrayInsertAt(
 
 }
 
-void registerAggregateFunctionGroupArrayInsertAt(AggregateFunctionFactory & factory);
 void registerAggregateFunctionGroupArrayInsertAt(AggregateFunctionFactory & factory)
 {
     FunctionDocumentation::Description description = R"(

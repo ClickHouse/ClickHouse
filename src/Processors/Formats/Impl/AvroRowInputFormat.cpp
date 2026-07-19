@@ -1,39 +1,50 @@
 #include <Processors/Formats/Impl/AvroRowInputFormat.h>
 #if USE_AVRO
 
-#include <Columns/ColumnArray.h>
-#include <Columns/ColumnLowCardinality.h>
-#include <Columns/ColumnMap.h>
-#include <Columns/ColumnNullable.h>
-#include <Columns/ColumnTuple.h>
+#include <numeric>
+
 #include <Common/checkStackSize.h>
 #include <Core/AccurateComparison.h>
 #include <Core/Field.h>
+
+#include <Common/CacheBase.h>
+#include <Common/CurrentMetrics.h>
+
+#include <IO/ReadHelpers.h>
+#include <IO/HTTPCommon.h>
+#include <IO/ReadBufferFromString.h>
+
+#include <Formats/FormatFactory.h>
+
 #include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeDate32.h>
 #include <DataTypes/DataTypeDateTime64.h>
+#include <DataTypes/DataTypeDate32.h>
+#include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeEnum.h>
-#include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeLowCardinality.h>
-#include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypeVariant.h>
-#include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/IDataType.h>
+#include <DataTypes/DataTypeMap.h>
 #include <DataTypes/NestedUtils.h>
-#include <DataTypes/Serializations/SerializationArray.h>
-#include <DataTypes/Serializations/SerializationMap.h>
+#include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/Serializations/SerializationTuple.h>
-#include <Formats/FormatFactory.h>
-#include <IO/ReadBufferFromString.h>
-#include <IO/ReadHelpers.h>
-#include <Processors/Formats/Impl/AvroConfluentSchemaRegistry.h>
-#include <base/EnumReflection.h>
+#include <DataTypes/Serializations/SerializationMap.h>
+#include <DataTypes/Serializations/SerializationArray.h>
+
+#include <Columns/ColumnArray.h>
+#include <Columns/ColumnNullable.h>
+#include <Columns/ColumnLowCardinality.h>
+#include <Columns/ColumnTuple.h>
+#include <Columns/ColumnMap.h>
+
+#include <fmt/format.h>
+
 #include <Compiler.hh>
 #include <DataFile.hh>
 #include <Decoder.hh>
@@ -41,6 +52,25 @@
 #include <NodeImpl.hh>
 #include <Types.hh>
 #include <ValidSchema.hh>
+
+#include <Poco/JSON/Object.h>
+#include <Poco/JSON/Parser.h>
+#include <Poco/Net/HTTPBasicCredentials.h>
+#include <Poco/Net/HTTPCredentials.h>
+#include <Poco/Net/HTTPRequest.h>
+#include <Poco/Net/HTTPResponse.h>
+#include <Poco/URI.h>
+
+#include <base/EnumReflection.h>
+
+
+namespace CurrentMetrics
+{
+    extern const Metric AvroSchemaCacheBytes;
+    extern const Metric AvroSchemaCacheCells;
+    extern const Metric AvroSchemaRegistryCacheBytes;
+    extern const Metric AvroSchemaRegistryCacheCells;
+}
 
 namespace DB
 {
@@ -257,14 +287,6 @@ static bool canBeDeserializedFromFixed(const DataTypePtr & target_type, size_t f
             return true;
         case TypeIndex::FixedString: [[fallthrough]];
         case TypeIndex::IPv6: [[fallthrough]];
-        case TypeIndex::Int8: [[fallthrough]];
-        case TypeIndex::UInt8: [[fallthrough]];
-        case TypeIndex::Int16: [[fallthrough]];
-        case TypeIndex::UInt16: [[fallthrough]];
-        case TypeIndex::Int32: [[fallthrough]];
-        case TypeIndex::UInt32: [[fallthrough]];
-        case TypeIndex::Int64: [[fallthrough]];
-        case TypeIndex::UInt64: [[fallthrough]];
         case TypeIndex::Int128: [[fallthrough]];
         case TypeIndex::UInt128: [[fallthrough]];
         case TypeIndex::Int256: [[fallthrough]];
@@ -1027,6 +1049,7 @@ AvroDeserializer::Action AvroDeserializer::createAction(const Block & header, co
     }
 }
 
+
 AvroDeserializer::AvroDeserializer(DataTypePtr data_type, const std::string & column_name, avro::ValidSchema schema, bool allow_missing_fields, bool null_as_default_, const FormatSettings & settings_)
     : null_as_default(null_as_default_), settings(settings_)
 {
@@ -1088,6 +1111,7 @@ void AvroDeserializer::deserializeRow(MutableColumns & columns, avro::Decoder & 
     }
 }
 
+
 AvroRowInputFormat::AvroRowInputFormat(SharedHeader header_, ReadBuffer & in_, Params params_, const FormatSettings & format_settings_)
     : IRowInputFormat(header_, in_, params_), format_settings(format_settings_)
 {
@@ -1126,10 +1150,128 @@ size_t AvroRowInputFormat::countRows(size_t max_block_size)
     return num_rows;
 }
 
+class AvroConfluentRowInputFormat::SchemaRegistry
+{
+public:
+    explicit SchemaRegistry(const std::string & base_url_, size_t schema_cache_max_size = 1000)
+        : base_url(base_url_), schema_cache(CurrentMetrics::AvroSchemaCacheBytes, CurrentMetrics::AvroSchemaCacheCells, schema_cache_max_size)
+    {
+        if (base_url.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Empty Schema Registry URL");
+    }
+
+    avro::ValidSchema getSchema(uint32_t id)
+    {
+        auto [schema, loaded] = schema_cache.getOrSet(
+            id,
+            [this, id](){ return std::make_shared<avro::ValidSchema>(fetchSchema(id)); }
+        );
+        return *schema;
+    }
+
+private:
+    avro::ValidSchema fetchSchema(uint32_t id)
+    {
+        try
+        {
+            try
+            {
+                Poco::URI url(base_url, base_url.getPath() + "/schemas/ids/" + std::to_string(id));
+                LOG_TRACE((getLogger("AvroConfluentRowInputFormat")), "Fetching schema id = {} from url {}", id, url.toString());
+
+                /// One second for connect/send/receive. Just in case.
+                auto timeouts = ConnectionTimeouts()
+                    .withConnectionTimeout(1)
+                    .withSendTimeout(1)
+                    .withReceiveTimeout(1);
+
+                Poco::Net::HTTPRequest request(Poco::Net::HTTPRequest::HTTP_GET, url.getPathAndQuery(), Poco::Net::HTTPRequest::HTTP_1_1);
+                if (url.getPort())
+                    request.setHost(url.getHost(), url.getPort());
+                else
+                    request.setHost(url.getHost());
+
+                if (!url.getUserInfo().empty())
+                {
+                    Poco::Net::HTTPCredentials http_credentials;
+                    Poco::Net::HTTPBasicCredentials http_basic_credentials;
+
+                    http_credentials.fromUserInfo(url.getUserInfo());
+
+                    std::string decoded_username;
+                    Poco::URI::decode(http_credentials.getUsername(), decoded_username);
+                    http_basic_credentials.setUsername(decoded_username);
+
+                    if (!http_credentials.getPassword().empty())
+                    {
+                        std::string decoded_password;
+                        Poco::URI::decode(http_credentials.getPassword(), decoded_password);
+                        http_basic_credentials.setPassword(decoded_password);
+                    }
+
+                    http_basic_credentials.authenticate(request);
+                }
+
+                auto session = makeHTTPSession(HTTPConnectionGroupType::HTTP, url, timeouts);
+                session->sendRequest(request);
+
+                Poco::Net::HTTPResponse response;
+                std::istream * response_body = receiveResponse(*session, request, response, false);
+
+                Poco::JSON::Parser parser;
+                auto json_body = parser.parse(*response_body).extract<Poco::JSON::Object::Ptr>();
+
+
+                auto schema = json_body->getValue<std::string>("schema");
+                LOG_TRACE((getLogger("AvroConfluentRowInputFormat")), "Successfully fetched schema id = {}\n{}", id, schema);
+                return avro::compileJsonSchemaFromString(schema, MAX_AVRO_SCHEMA_DEPTH);
+            }
+            catch (const Exception &)
+            {
+                throw;
+            }
+            catch (const Poco::Exception & e)
+            {
+                throw Exception(Exception::CreateFromPocoTag{}, e);
+            }
+            catch (const avro::Exception & e)
+            {
+                throw Exception::createDeprecated(e.what(), ErrorCodes::INCORRECT_DATA);
+            }
+        }
+        catch (Exception & e)
+        {
+            e.addMessage("while fetching schema id = " + std::to_string(id));
+            throw;
+        }
+    }
+
+    Poco::URI base_url;
+    CacheBase<uint32_t, avro::ValidSchema> schema_cache;
+};
+
+using ConfluentSchemaRegistry = AvroConfluentRowInputFormat::SchemaRegistry;
+#define SCHEMA_REGISTRY_CACHE_MAX_SIZE 1000
+/// Cache of Schema Registry URL -> SchemaRegistry
+static CacheBase<std::string, ConfluentSchemaRegistry> schema_registry_cache(CurrentMetrics::AvroSchemaRegistryCacheBytes, CurrentMetrics::AvroSchemaRegistryCacheCells, SCHEMA_REGISTRY_CACHE_MAX_SIZE);
+
+static std::shared_ptr<ConfluentSchemaRegistry> getConfluentSchemaRegistry(const FormatSettings & format_settings)
+{
+    const auto & base_url = format_settings.avro.schema_registry_url;
+    auto [schema_registry, loaded] = schema_registry_cache.getOrSet(
+        base_url,
+        [base_url]()
+        {
+            return std::make_shared<ConfluentSchemaRegistry>(base_url);
+        }
+    );
+    return schema_registry;
+}
+
 static uint32_t readConfluentSchemaId(ReadBuffer & in)
 {
-    uint8_t magic = 0;
-    uint32_t schema_id = 0;
+    uint8_t magic;
+    uint32_t schema_id;
 
     try
     {
@@ -1200,7 +1342,7 @@ const AvroDeserializer & AvroConfluentRowInputFormat::getOrCreateDeserializer(Sc
     auto it = deserializer_cache.find(schema_id);
     if (it == deserializer_cache.end())
     {
-        auto schema = schema_registry->getSchema(schema_id, format_settings.avro.schema_registry_timeouts);
+        auto schema = schema_registry->getSchema(schema_id);
         AvroDeserializer deserializer(
             output.getHeader(), schema, format_settings.avro.allow_missing_fields, format_settings.null_as_default, format_settings);
         it = deserializer_cache.emplace(schema_id, std::move(deserializer)).first;
@@ -1219,7 +1361,7 @@ NamesAndTypesList AvroSchemaReader::readSchema()
     if (confluent)
     {
         UInt32 schema_id = readConfluentSchemaId(in);
-        root_node = getConfluentSchemaRegistry(format_settings)->getSchema(schema_id, format_settings.avro.schema_registry_timeouts).root();
+        root_node = getConfluentSchemaRegistry(format_settings)->getSchema(schema_id).root();
     }
     else
     {
@@ -1233,20 +1375,20 @@ NamesAndTypesList AvroSchemaReader::readSchema()
 
     NamesAndTypesList names_and_types;
     for (int i = 0; i != static_cast<int>(root_node->leaves()); ++i)
-        names_and_types.emplace_back(root_node->nameAt(i), avroNodeToDataType(root_node->leafAt(i)));
+        names_and_types.emplace_back(root_node->nameAt(i), avroNodeToDataType(root_node->leafAt(i), format_settings.schema_inference_allow_nullable_tuple_type));
 
     return names_and_types;
 }
 
-DataTypePtr AvroSchemaReader::avroNodeToDataType(avro::NodePtr node)
+DataTypePtr AvroSchemaReader::avroNodeToDataType(avro::NodePtr node, bool allow_nullable_tuple_type)
 {
     checkStackSize();
 
     std::unordered_set<std::string> seen_names;
-    return avroNodeToDataTypeImpl(node, seen_names);
+    return avroNodeToDataTypeImpl(node, seen_names, allow_nullable_tuple_type);
 }
 
-DataTypePtr AvroSchemaReader::avroNodeToDataTypeImpl(const avro::NodePtr & node, std::unordered_set<std::string> & seen_names)
+DataTypePtr AvroSchemaReader::avroNodeToDataTypeImpl(const avro::NodePtr & node, std::unordered_set<std::string> & seen_names, bool allow_nullable_tuple_type)
 {
     switch (node->type())
     {
@@ -1316,7 +1458,7 @@ DataTypePtr AvroSchemaReader::avroNodeToDataTypeImpl(const avro::NodePtr & node,
             return std::make_shared<DataTypeFixedString>(node->fixedSize());
         }
         case avro::Type::AVRO_ARRAY:
-            return std::make_shared<DataTypeArray>(avroNodeToDataTypeImpl(node->leafAt(0), seen_names));
+            return std::make_shared<DataTypeArray>(avroNodeToDataTypeImpl(node->leafAt(0), seen_names, allow_nullable_tuple_type));
         case avro::Type::AVRO_NULL:
             return std::make_shared<DataTypeNothing>();
         case avro::Type::AVRO_UNION:
@@ -1324,7 +1466,7 @@ DataTypePtr AvroSchemaReader::avroNodeToDataTypeImpl(const avro::NodePtr & node,
             // Treat union[T] as just T
             if (node->leaves() == 1)
             {
-                return avroNodeToDataTypeImpl(node->leafAt(0), seen_names);
+                return avroNodeToDataTypeImpl(node->leafAt(0), seen_names, allow_nullable_tuple_type);
             }
 
             // Treat union[T, NULL] and union[NULL, T] as Nullable(T)
@@ -1333,7 +1475,9 @@ DataTypePtr AvroSchemaReader::avroNodeToDataTypeImpl(const avro::NodePtr & node,
                 && (node->leafAt(0)->type() == avro::Type::AVRO_NULL || node->leafAt(1)->type() == avro::Type::AVRO_NULL))
             {
                 int nested_leaf_index = node->leafAt(0)->type() == avro::Type::AVRO_NULL ? 1 : 0;
-                auto nested_type = avroNodeToDataTypeImpl(node->leafAt(nested_leaf_index), seen_names);
+                auto nested_type = avroNodeToDataTypeImpl(node->leafAt(nested_leaf_index), seen_names, allow_nullable_tuple_type);
+                if (isTuple(nested_type) && !allow_nullable_tuple_type)
+                    return nested_type;
                 return nested_type->canBeInsideNullable() ? makeNullable(nested_type) : nested_type;
             }
 
@@ -1349,14 +1493,14 @@ DataTypePtr AvroSchemaReader::avroNodeToDataTypeImpl(const avro::NodePtr & node,
                 if (node->leafAt(i)->type() == avro::Type::AVRO_NULL) continue;
 
                 const auto & avro_node = node->leafAt(i);
-                nested_types.push_back(avroNodeToDataTypeImpl(avro_node, seen_names));
+                nested_types.push_back(avroNodeToDataTypeImpl(avro_node, seen_names, allow_nullable_tuple_type));
             }
             return std::make_shared<DataTypeVariant>(nested_types);
         }
         case avro::Type::AVRO_SYMBOLIC:
         {
             auto resolved = avro::resolveSymbol(node);
-            return avroNodeToDataTypeImpl(resolved, seen_names);
+            return avroNodeToDataTypeImpl(resolved, seen_names, allow_nullable_tuple_type);
         }
         case avro::Type::AVRO_RECORD:
         {
@@ -1371,7 +1515,7 @@ DataTypePtr AvroSchemaReader::avroNodeToDataTypeImpl(const avro::NodePtr & node,
             nested_names.reserve(node->leaves());
             for (int i = 0; i != static_cast<int>(node->leaves()); ++i)
             {
-                nested_types.push_back(avroNodeToDataTypeImpl(node->leafAt(i), seen_names));
+                nested_types.push_back(avroNodeToDataTypeImpl(node->leafAt(i), seen_names, allow_nullable_tuple_type));
                 nested_names.push_back(node->nameAt(i));
             }
 
@@ -1379,13 +1523,12 @@ DataTypePtr AvroSchemaReader::avroNodeToDataTypeImpl(const avro::NodePtr & node,
             return std::make_shared<DataTypeTuple>(nested_types, nested_names);
         }
         case avro::Type::AVRO_MAP:
-            return std::make_shared<DataTypeMap>(avroNodeToDataTypeImpl(node->leafAt(0), seen_names), avroNodeToDataTypeImpl(node->leafAt(1), seen_names));
+            return std::make_shared<DataTypeMap>(avroNodeToDataTypeImpl(node->leafAt(0), seen_names, allow_nullable_tuple_type), avroNodeToDataTypeImpl(node->leafAt(1), seen_names, allow_nullable_tuple_type));
         default:
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Avro column {} is not supported for inserting.", nodeName(node));
     }
 }
 
-void registerInputFormatAvro(FormatFactory & factory);
 void registerInputFormatAvro(FormatFactory & factory)
 {
     factory.registerInputFormat("Avro", [](
@@ -1411,7 +1554,6 @@ void registerInputFormatAvro(FormatFactory & factory)
     factory.markFormatSupportsSubsetOfColumns("AvroConfluent");
 }
 
-void registerAvroSchemaReader(FormatFactory & factory);
 void registerAvroSchemaReader(FormatFactory & factory)
 {
     factory.registerSchemaReader("Avro", [](ReadBuffer & buf, const FormatSettings & settings)
@@ -1424,7 +1566,16 @@ void registerAvroSchemaReader(FormatFactory & factory)
         return std::make_shared<AvroSchemaReader>(buf, true, settings);
     });
 
+    for (const auto * format_name : {"Avro", "AvroConfluent"})
+    {
+        factory.registerAdditionalInfoForSchemaCacheGetter(format_name, [](const FormatSettings & settings)
+        {
+            return fmt::format(
+                "schema_inference_allow_nullable_tuple_type={}", settings.schema_inference_allow_nullable_tuple_type);
+        });
+    }
 }
+
 
 }
 
@@ -1433,8 +1584,6 @@ void registerAvroSchemaReader(FormatFactory & factory)
 namespace DB
 {
 class FormatFactory;
-void registerInputFormatAvro(FormatFactory &);
-void registerAvroSchemaReader(FormatFactory &);
 void registerInputFormatAvro(FormatFactory &)
 {
 }

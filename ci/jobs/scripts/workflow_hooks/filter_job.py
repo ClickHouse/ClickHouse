@@ -1,6 +1,6 @@
 import re
 
-from ci.defs.defs import BuildTypes, JobNames
+from ci.defs.defs import JobNames
 from ci.defs.job_configs import JobConfigs
 from ci.jobs.scripts.workflow_hooks.new_tests_check import (
     has_new_functional_tests,
@@ -17,6 +17,7 @@ def only_docs(changed_files):
             file.startswith("docs/")
             or file.startswith("docker/docs")
             or file.endswith(".md")
+            or "aspell-dict.txt" in file
         ):
             continue
         else:
@@ -113,6 +114,14 @@ def should_skip_job(job_name):
             )
         return False, ""
 
+    if job_name == JobNames.PR_BODY:
+        # Run the job if AI assistant is explicitly enabled in the PR body
+        if "disable ai pr formatting assistant: true" in _info_cache.pr_body.lower():
+            return True, "AI PR assistant is explicitly disabled in the PR body"
+        if "Reverts ClickHouse/" in _info_cache.pr_body:
+            return True, "Skipped for revert PRs"
+        return False, ""
+
     if (
         Labels.CI_BUILD in _info_cache.pr_labels
         and "build" not in job_name.lower()
@@ -127,7 +136,7 @@ def should_skip_job(job_name):
         return True, f"Skipped, labeled with '{Labels.NO_FAST_TESTS}'"
 
     if (
-        job_name in (JobNames.SMOKE_TEST_MACOS, f"{JobNames.FAST_TEST} ({BuildTypes.ARM_DARWIN})")
+        job_name == JobNames.SMOKE_TEST_MACOS
         and _info_cache.pr_number
         and Labels.CI_MACOS not in _info_cache.pr_labels
     ):
@@ -261,20 +270,14 @@ def should_skip_job(job_name):
     ):
         return True, "Skipped, not labeled with 'pr-performance'"
 
-    # If only CI scripts changed (no product code), run a minimal set of tests
-    # to validate the CI pipeline: stateless batch 1 and amd_asan_ubsan integration batch 1.
-    # Individual coverage test jobs run normally, but the LLVM merge/report job is skipped
-    # so that partial shard data does not corrupt the master coverage number.
+    # If only the functional tests script changed, run only the first batch of stateless tests
     if changed_files and all(
         f.startswith("ci/") and f.endswith(".py") for f in changed_files
     ):
-        if job_name == JobNames.LLVM_COVERAGE:
-            return True, "Skipped: only CI scripts changed; skipping coverage merge to preserve master coverage number"
-
         if JobNames.STATELESS in job_name:
             match = re.search(r"(\d)/\d", job_name)
             if match and match.group(1) != "1" or "sequential" in job_name:
-                return True, "Skipped: only CI scripts changed; running stateless batch 1 only"
+                return True, "Skipped, only job script changed - run first batch only"
 
         if JobNames.INTEGRATION in job_name:
             match = re.search(r"(\d)/\d", job_name)
@@ -284,6 +287,6 @@ def should_skip_job(job_name):
                 or "sequential" in job_name
                 or "_asan" not in job_name
             ):
-                return True, "Skipped: only CI scripts changed; running amd_asan_ubsan integration batch 1 only"
+                return True, "Skipped, only job script changed - run first batch only"
 
     return False, ""

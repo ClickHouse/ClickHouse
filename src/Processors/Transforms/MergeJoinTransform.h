@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cassert>
 #include <cstddef>
 #include <memory>
 #include <mutex>
@@ -78,13 +79,13 @@ public:
             , current(begin_)
             , chunk(std::move(chunk_))
         {
-            chassert(length > 0 && begin + length <= chunk.getNumRows());
+            assert(length > 0 && begin + length <= chunk.getNumRows());
         }
 
-        size_t begin{};
-        size_t length{};
+        size_t begin;
+        size_t length;
 
-        size_t current{};
+        size_t current;
         Chunk chunk;
     };
 
@@ -105,7 +106,7 @@ public:
     bool next()
     {
         /// advance right to one row, when right finished, advance left to next block
-        chassert(!left.empty() && !right.empty());
+        assert(!left.empty() && !right.empty());
 
         if (finished())
             return false;

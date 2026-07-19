@@ -11,11 +11,9 @@ from helpers.cluster import ClickHouseCluster
 
 
 def generate_cluster_def(port):
-    worker_id = os.environ.get("PYTEST_XDIST_WORKER", "")
-    suffix = f"_{worker_id}" if worker_id else ""
     path = os.path.join(
         os.path.dirname(os.path.realpath(__file__)),
-        f"./_gen/named_collections{suffix}.xml",
+        "./_gen/named_collections.xml",
     )
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w") as f:

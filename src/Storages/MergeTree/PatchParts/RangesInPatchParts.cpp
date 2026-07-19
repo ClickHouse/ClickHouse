@@ -314,7 +314,7 @@ MaybeMinMaxStats getPatchMinMaxStats(const DataPartPtr & patch_part, const MarkR
     return result;
 }
 
-static bool intersects(const MinMaxStat & lhs, const MinMaxStat & rhs)
+bool intersects(const MinMaxStat & lhs, const MinMaxStat & rhs)
 {
     return (lhs.min <= rhs.min && rhs.min <= lhs.max) || (rhs.min <= lhs.min && lhs.min <= rhs.max);
 }

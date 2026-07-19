@@ -24,7 +24,7 @@ namespace ErrorCodes
     extern const int PATH_ACCESS_DENIED;
 }
 
-static CacheDictionaryStorageConfiguration parseCacheStorageConfiguration(
+CacheDictionaryStorageConfiguration parseCacheStorageConfiguration(
     const Poco::Util::AbstractConfiguration & config,
     const String & full_name,
     const String & layout_type,
@@ -53,7 +53,7 @@ static CacheDictionaryStorageConfiguration parseCacheStorageConfiguration(
 
 #if defined(OS_LINUX) || defined(OS_FREEBSD)
 
-static SSDCacheDictionaryStorageConfiguration parseSSDCacheStorageConfiguration(
+SSDCacheDictionaryStorageConfiguration parseSSDCacheStorageConfiguration(
     const Poco::Util::AbstractConfiguration & config,
     const String & full_name,
     const String & layout_type,
@@ -117,7 +117,7 @@ static SSDCacheDictionaryStorageConfiguration parseSSDCacheStorageConfiguration(
 
 #endif
 
-static CacheDictionaryUpdateQueueConfiguration parseCacheDictionaryUpdateQueueConfiguration(
+CacheDictionaryUpdateQueueConfiguration parseCacheDictionaryUpdateQueueConfiguration(
     const Poco::Util::AbstractConfiguration & config,
     const String & full_name,
     const String & layout_type,
@@ -252,7 +252,6 @@ DictionaryPtr createCacheDictionaryLayout(
     return dictionary;
 }
 
-void registerDictionaryCache(DictionaryFactory & factory);
 void registerDictionaryCache(DictionaryFactory & factory)
 {
     auto create_simple_cache_layout = [=](const String & full_name,

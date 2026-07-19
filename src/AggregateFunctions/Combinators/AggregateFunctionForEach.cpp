@@ -49,7 +49,6 @@ public:
 
 }
 
-void registerAggregateFunctionCombinatorForEach(AggregateFunctionCombinatorFactory & factory);
 void registerAggregateFunctionCombinatorForEach(AggregateFunctionCombinatorFactory & factory)
 {
     factory.registerCombinator(std::make_shared<AggregateFunctionCombinatorForEach>());

@@ -7,6 +7,8 @@ title: 'Operators'
 doc_type: 'reference'
 ---
 
+# Operators
+
 ClickHouse transforms operators to their corresponding functions at the query parsing stage according to their priority, precedence, and associativity.
 
 ## Access Operators {#access-operators}
@@ -115,15 +117,6 @@ SELECT
 └──────────────────────────┴──────────────────────────┘
 ```
 
-## Operators for Working with Strings {#operators-for-working-with-strings}
-
-### OVERLAY {#overlay}
-
-- `OVERLAY(string PLACING replacement FROM offset)` - The `overlay(string, replacement, offset)` function.
-- `OVERLAY(string PLACING replacement FROM offset FOR length)` - The `overlay(string, replacement, offset, length)` function.
-- `OVERLAYUTF8(string PLACING replacement FROM offset)` - The `overlayUTF8(string, replacement, offset)` function.
-- `OVERLAYUTF8(string PLACING replacement FROM offset FOR length)` - The `overlayUTF8(string, replacement, offset, length)` function.
-
 ## Operators for Working with Data Sets {#operators-for-working-with-data-sets}
 
 See [IN operators](../../sql-reference/operators/in.md) and [EXISTS](../../sql-reference/operators/exists.md) operator.
@@ -156,11 +149,13 @@ See [IN operators](../../sql-reference/operators/in.md) and [EXISTS](../../sql-r
 
 Query with ALL:
 
-```sql title="Query"
+```sql
 SELECT number AS a FROM numbers(10) WHERE a > ALL (SELECT number FROM numbers(3, 3));
 ```
 
-```text title="Response"
+Result:
+
+```text
 ┌─a─┐
 │ 6 │
 │ 7 │
@@ -171,11 +166,13 @@ SELECT number AS a FROM numbers(10) WHERE a > ALL (SELECT number FROM numbers(3,
 
 Query with ANY:
 
-```sql title="Query"
+```sql
 SELECT number AS a FROM numbers(10) WHERE a > ANY (SELECT number FROM numbers(3, 3));
 ```
 
-```text title="Response"
+Result:
+
+```text
 ┌─a─┐
 │ 4 │
 │ 5 │
@@ -494,34 +491,3 @@ SELECT * FROM t_null WHERE y IS NOT NULL
 ```
 
 Can be optimized by enabling the [optimize_functions_to_subcolumns](/operations/settings/settings#optimize_functions_to_subcolumns) setting. With `optimize_functions_to_subcolumns = 1` the function reads only [null](../../sql-reference/data-types/nullable.md#finding-null) subcolumn instead of reading and processing the whole column data. The query `SELECT n IS NOT NULL FROM table` transforms to `SELECT NOT n.null FROM TABLE`.
-
-## Checking Boolean Values {#checking-boolean-values}
-
-ClickHouse supports the `IS TRUE`, `IS FALSE`, `IS UNKNOWN`, `IS NOT TRUE`, `IS NOT FALSE`, and `IS NOT UNKNOWN` operators.
-They are used with [Bool](../../sql-reference/data-types/boolean.md) and `Nullable(Bool)` expressions.
-
-- `expr IS TRUE` returns `1` only if `expr` is `true`.
-- `expr IS FALSE` returns `1` only if `expr` is `false`.
-- `expr IS UNKNOWN` returns `1` only if `expr` is `NULL`.
-- `expr IS NOT TRUE` returns `1` if `expr` is `false` or `NULL`.
-- `expr IS NOT FALSE` returns `1` if `expr` is `true` or `NULL`.
-- `expr IS NOT UNKNOWN` returns `1` if `expr` is not `NULL`.
-
-For boolean expressions, `IS UNKNOWN` is equivalent to `IS NULL`, and `IS NOT UNKNOWN` is equivalent to `IS NOT NULL`.
-
-<!-- -->
-
-```sql
-CREATE TABLE t_bool (x Nullable(Bool)) ENGINE = Memory;
-INSERT INTO t_bool VALUES (true), (false), (NULL);
-
-SELECT
-    x,
-    x IS TRUE,
-    x IS FALSE,
-    x IS UNKNOWN,
-    x IS NOT TRUE,
-    x IS NOT FALSE,
-    x IS NOT UNKNOWN
-FROM t_bool;
-```

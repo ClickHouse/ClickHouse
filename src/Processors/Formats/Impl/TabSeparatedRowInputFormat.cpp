@@ -288,11 +288,7 @@ void TabSeparatedFormatReader::checkNullValueForNonNullable(DataTypePtr type)
 void TabSeparatedFormatReader::skipPrefixBeforeHeader()
 {
     for (size_t i = 0; i != format_settings.tsv.skip_first_lines; ++i)
-    {
-        if (buf->eof())
-            break;
         readRow();
-    }
 }
 
 void TabSeparatedRowInputFormat::syncAfterError()
@@ -325,7 +321,7 @@ void TabSeparatedFormatReader::skipRow()
     ReadBuffer & istr = *buf;
     while (!istr.eof())
     {
-        char * pos = nullptr;
+        char * pos;
         if (is_raw)
             pos = find_first_symbols<'\r', '\n'>(istr.position(), istr.buffer().end());
         else
@@ -403,7 +399,6 @@ std::optional<DataTypes> TabSeparatedSchemaReader::readRowAndGetDataTypesImpl()
     return std::move(fields_with_types->second);
 }
 
-void registerInputFormatTabSeparated(FormatFactory & factory);
 void registerInputFormatTabSeparated(FormatFactory & factory)
 {
     for (bool is_raw : {false, true})
@@ -427,7 +422,6 @@ void registerInputFormatTabSeparated(FormatFactory & factory)
     }
 }
 
-void registerTSVSchemaReader(FormatFactory & factory);
 void registerTSVSchemaReader(FormatFactory & factory)
 {
     for (bool is_raw : {false, true})
@@ -517,7 +511,6 @@ static std::pair<bool, size_t> fileSegmentationEngineTabSeparatedImpl(ReadBuffer
     return {loadAtPosition(in, memory, pos), number_of_rows};
 }
 
-void registerFileSegmentationEngineTabSeparated(FormatFactory & factory);
 void registerFileSegmentationEngineTabSeparated(FormatFactory & factory)
 {
     for (bool is_raw : {false, true})

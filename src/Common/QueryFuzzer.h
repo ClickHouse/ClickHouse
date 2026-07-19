@@ -8,11 +8,13 @@
 #include <Core/Names.h>
 #include <Parsers/ASTExplainQuery.h>
 #include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/IASTHash.h>
 #include <Parsers/IAST_fwd.h>
 #include <Parsers/NullsAction.h>
 #include <Parsers/ParserInsertQuery.h>
 #include <Parsers/parseQuery.h>
+#include <Common/SettingsChanges.h>
 #include <Common/randomSeed.h>
 
 
@@ -20,7 +22,6 @@ namespace DB
 {
 
 class ASTExpressionList;
-class ASTFunction;
 class ASTOrderByElement;
 class ASTCreateQuery;
 class ASTInsertQuery;
@@ -30,10 +31,7 @@ class ASTIndexDeclaration;
 class ASTProjectionDeclaration;
 class ASTSetQuery;
 struct ASTTableExpression;
-struct ASTTableJoin;
 struct ASTWindowDefinition;
-
-class SettingsChanges;
 
 /*
  * This is an AST-based query fuzzer that makes random modifications to query
@@ -130,11 +128,11 @@ public:
         if (!parsed_query)
             return {};
 
-        const auto * query_ast = parsed_query->template as<ParsedAST>();
-        if (!query_ast || !query_ast->table)
+        const auto & query_ast = *parsed_query->template as<ParsedAST>();
+        if (!query_ast.table)
             return {};
 
-        auto table_name = query_ast->getTable();
+        auto table_name = query_ast.getTable();
         auto it = original_table_name_to_fuzzed.find(table_name);
         if (it == original_table_name_to_fuzzed.end())
             return {};
@@ -145,14 +143,8 @@ public:
             /// Parse query from scratch for each table instead of clone,
             /// to store proper pointers to inlined data,
             /// which are not copied during clone.
-            auto query = tryParseQueryForFuzzedTables<Parser>(full_query);
-            if (!query)
-                continue;
-            auto * fuzzed_ast = query->template as<ParsedAST>();
-            if (!fuzzed_ast)
-                continue;
-            fuzzed_ast->setTable(fuzzed_name);
-            queries.emplace_back(std::move(query));
+            auto & query = queries.emplace_back(tryParseQueryForFuzzedTables<Parser>(full_query));
+            query->template as<ParsedAST>()->setTable(fuzzed_name);
         }
 
         return queries;
@@ -238,13 +230,11 @@ private:
     void fuzzExplainQuery(ASTExplainQuery & explain);
     ASTExplainQuery::ExplainKind fuzzExplainKind(ASTExplainQuery::ExplainKind kind = ASTExplainQuery::ExplainKind::QueryPipeline);
     void fuzzExplainSettings(ASTSetQuery & settings_ast, ASTExplainQuery::ExplainKind kind);
-    void fuzzCodecFunction(ASTFunction & codec_fn);
     void fuzzColumnDeclaration(ASTColumnDeclaration & column);
     void fuzzIndexDeclaration(ASTIndexDeclaration & index);
     void fuzzProjectionDeclaration(ASTProjectionDeclaration & projection);
     void fuzzProjectionWithSettings(ASTProjectionDeclaration & projection);
     void fuzzTableName(ASTTableExpression & table);
-    void fuzzTableFunctionName(ASTPtr & table_function);
     ASTPtr fuzzLiteralUnderExpressionList(ASTPtr child);
     ASTPtr reverseLiteralFuzzing(ASTPtr child);
     void fuzzExpressionList(ASTExpressionList & expr_list);
@@ -270,7 +260,6 @@ private:
     template <typename Container>
     const auto & pickRandomly(pcg64 & rand, const Container & container)
     {
-        chassert(!container.empty());
         std::uniform_int_distribution<size_t> d{0, container.size() - 1};
         auto it = container.begin();
         std::advance(it, d(rand));

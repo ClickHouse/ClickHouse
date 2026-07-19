@@ -205,10 +205,10 @@ private:
     /// Day nums are the same in all time zones. 1970-01-01 is 0 and so on.
     /// Table is relatively large, so better not to place the object on stack.
     /// In comparison to std::vector, plain array is cheaper by one indirection.
-    Values lut[DATE_LUT_SIZE + 1]; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - fully assigned in constructor
+    Values lut[DATE_LUT_SIZE + 1];
 
     /// Same as above but with dates < 1970-01-01 saturated to 1970-01-01.
-    Values lut_saturated[DATE_LUT_SIZE + 1]; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - fully assigned in constructor
+    Values lut_saturated[DATE_LUT_SIZE + 1];
 
     /// Year number after DATE_LUT_MIN_YEAR -> LUTIndex in lut for start of year.
     LUTIndex years_lut[DATE_LUT_YEARS];
@@ -1292,14 +1292,14 @@ public:
     struct TimeComponents
     {
         bool is_negative = false;
-        uint64_t hour{};
-        uint8_t minute{};
-        uint8_t second{};
+        uint64_t hour;
+        uint8_t minute;
+        uint8_t second;
     };
 
     struct DateTimeComponents
     {
-        DateComponents date{};
+        DateComponents date;
         TimeComponents time;
     };
 

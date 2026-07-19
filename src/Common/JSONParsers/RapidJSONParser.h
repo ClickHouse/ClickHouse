@@ -87,7 +87,7 @@ struct RapidJSONParser
         ALWAYS_INLINE Iterator begin() const { return ptr->Begin(); }
         ALWAYS_INLINE Iterator end() const { return ptr->End(); }
         ALWAYS_INLINE size_t size() const { return ptr->Size(); }
-        ALWAYS_INLINE Element operator[](size_t index) const { chassert(index < size()); return *(ptr->Begin() + index); }
+        ALWAYS_INLINE Element operator[](size_t index) const { assert(index < size()); return *(ptr->Begin() + index); }
 
     private:
         const rapidjson::Value * ptr = nullptr;
@@ -160,7 +160,7 @@ struct RapidJSONParser
         /// Optional: Provides access to an object's element by index.
         ALWAYS_INLINE KeyValuePair operator[](size_t index) const
         {
-            chassert(index < size());
+            assert (index < size());
             auto it = ptr->MemberBegin() + index;
             std::string_view key{it->name.GetString(), it->name.GetStringLength()};
             return {key, it->value};

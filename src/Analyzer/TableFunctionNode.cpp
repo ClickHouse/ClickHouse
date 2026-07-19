@@ -30,7 +30,7 @@ TableFunctionNode::TableFunctionNode(String table_function_name_)
     children[arguments_child_index] = std::make_shared<ListNode>();
 }
 
-void TableFunctionNode::resolve(TableFunctionPtr table_function_value, StoragePtr storage_value, ContextPtr context, VectorWithMemoryTracking<size_t> unresolved_arguments_indexes_)
+void TableFunctionNode::resolve(TableFunctionPtr table_function_value, StoragePtr storage_value, ContextPtr context, std::vector<size_t> unresolved_arguments_indexes_)
 {
     table_function = std::move(table_function_value);
     storage = std::move(storage_value);

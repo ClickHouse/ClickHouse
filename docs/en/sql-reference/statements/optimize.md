@@ -113,7 +113,7 @@ OPTIMIZE TABLE table DEDUPLICATE BY COLUMNS('column-matched-by-regex') EXCEPT (c
 
 Consider the table:
 
-```sql title="Query"
+```sql
 CREATE TABLE example (
     primary_key Int32,
     secondary_key Int32,
@@ -127,16 +127,17 @@ PARTITION BY partition_key
 ORDER BY (primary_key, secondary_key);
 ```
 
-```sql title="Query"
+```sql
 INSERT INTO example (primary_key, secondary_key, value, partition_key)
 VALUES (0, 0, 0, 0), (0, 0, 0, 0), (1, 1, 2, 2), (1, 1, 2, 3), (1, 1, 3, 3);
 ```
 
-```sql title="Query"
+```sql
 SELECT * FROM example;
 ```
+Result:
 
-```sql title="Response"
+```sql
 
 ┌─primary_key─┬─secondary_key─┬─value─┬─partition_key─┐
 │           0 │             0 │     0 │             0 │
@@ -156,15 +157,17 @@ All following examples are executed against this state with 5 rows.
 #### `DEDUPLICATE` {#deduplicate}
 When columns for deduplication are not specified, all of them are taken into account. The row is removed only if all values in all columns are equal to corresponding values in the previous row:
 
-```sql title="Query"
+```sql
 OPTIMIZE TABLE example FINAL DEDUPLICATE;
 ```
 
-```sql title="Query"
+```sql
 SELECT * FROM example;
 ```
 
-```response title="Response"
+Result:
+
+```response
 ┌─primary_key─┬─secondary_key─┬─value─┬─partition_key─┐
 │           1 │             1 │     2 │             2 │
 └─────────────┴───────────────┴───────┴───────────────┘
@@ -181,15 +184,17 @@ SELECT * FROM example;
 
 When columns are specified implicitly, the table is deduplicated by all columns that are not `ALIAS` or `MATERIALIZED`. Considering the table above, these are `primary_key`, `secondary_key`, `value`, and `partition_key` columns:
 
-```sql title="Query"
+```sql
 OPTIMIZE TABLE example FINAL DEDUPLICATE BY *;
 ```
 
-```sql title="Query"
+```sql
 SELECT * FROM example;
 ```
 
-```response title="Response"
+Result:
+
+```response
 ┌─primary_key─┬─secondary_key─┬─value─┬─partition_key─┐
 │           1 │             1 │     2 │             2 │
 └─────────────┴───────────────┴───────┴───────────────┘
@@ -205,15 +210,17 @@ SELECT * FROM example;
 #### `DEDUPLICATE BY * EXCEPT` {#deduplicate-by--except}
 Deduplicate by all columns that are not `ALIAS` or `MATERIALIZED` and explicitly not `value`: `primary_key`, `secondary_key`, and `partition_key` columns.
 
-```sql title="Query"
+```sql
 OPTIMIZE TABLE example FINAL DEDUPLICATE BY * EXCEPT value;
 ```
 
-```sql title="Query"
+```sql
 SELECT * FROM example;
 ```
 
-```response title="Response"
+Result:
+
+```response
 ┌─primary_key─┬─secondary_key─┬─value─┬─partition_key─┐
 │           1 │             1 │     2 │             2 │
 └─────────────┴───────────────┴───────┴───────────────┘
@@ -229,15 +236,16 @@ SELECT * FROM example;
 
 Deduplicate explicitly by `primary_key`, `secondary_key`, and `partition_key` columns:
 
-```sql title="Query"
+```sql
 OPTIMIZE TABLE example FINAL DEDUPLICATE BY primary_key, secondary_key, partition_key;
 ```
 
-```sql title="Query"
+```sql
 SELECT * FROM example;
 ```
+Result:
 
-```response title="Response"
+```response
 ┌─primary_key─┬─secondary_key─┬─value─┬─partition_key─┐
 │           1 │             1 │     2 │             2 │
 └─────────────┴───────────────┴───────┴───────────────┘
@@ -253,15 +261,17 @@ SELECT * FROM example;
 
 Deduplicate by all columns matching a regex: `primary_key`, `secondary_key`, and `partition_key` columns:
 
-```sql title="Query"
+```sql
 OPTIMIZE TABLE example FINAL DEDUPLICATE BY COLUMNS('.*_key');
 ```
 
-```sql title="Query"
+```sql
 SELECT * FROM example;
 ```
 
-```response title="Response"
+Result:
+
+```response
 ┌─primary_key─┬─secondary_key─┬─value─┬─partition_key─┐
 │           0 │             0 │     0 │             0 │
 └─────────────┴───────────────┴───────┴───────────────┘

@@ -199,7 +199,6 @@ AggregateFunctionPtr createAggregateFunctionMinMax(
 }
 }
 
-void registerAggregateFunctionsMinMax(AggregateFunctionFactory & factory);
 void registerAggregateFunctionsMinMax(AggregateFunctionFactory & factory)
 {
     FunctionDocumentation::Description min_description = R"(

@@ -11,7 +11,6 @@
 #include <Common/Scheduler/Workload/IWorkloadEntityStorage.h>
 #include <Common/Stopwatch.h>
 #include <Common/setThreadName.h>
-#include <Common/ThreadGroupSwitcher.h>
 #include <Common/logger_useful.h>
 #include <Processors/Executors/PipelineExecutor.h>
 #include <Processors/Executors/ExecutingGraph.h>

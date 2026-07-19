@@ -25,7 +25,6 @@
 #include <Compression/CompressedWriteBuffer.h>
 #include <Compression/CompressedReadBufferFromFile.h>
 
-#include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTSelectQuery.h>
 
@@ -71,9 +70,6 @@
 #include <base/types.h>
 
 #include <boost/core/noncopyable.hpp>
-#if CLICKHOUSE_CLOUD
-#include <Interpreters/SharedDatabaseCatalog.h>
-#endif
 
 namespace DB
 {
@@ -134,7 +130,7 @@ void verifyTableId(const StorageID & table_id)
 
 }
 
-class StorageKeeperMapSink final : public SinkToStorage
+class StorageKeeperMapSink : public SinkToStorage
 {
     StorageKeeperMap & storage;
     std::unordered_map<std::string, std::string> new_values;
@@ -283,7 +279,7 @@ public:
 };
 
 template <typename KeyContainer>
-class StorageKeeperMapSource final : public ISource, WithContext
+class StorageKeeperMapSource : public ISource, WithContext
 {
     const StorageKeeperMap & storage;
     size_t max_block_size;
@@ -1037,10 +1033,6 @@ void StorageKeeperMap::drop()
 
     // used in private build
     bool do_not_drop_table_data_in_keeper = false;
-#if CLICKHOUSE_CLOUD
-    /// In case of Shared Catalog, table data in ZooKeeper will be dropped separately
-    do_not_drop_table_data_in_keeper = SharedDatabaseCatalog::initialized() && SharedDatabaseCatalog::instance().isTableInLocalDropOrDetachQueue(getStorageID().uuid);
-#endif
     if (do_not_drop_table_data_in_keeper)
         return;
 
@@ -1654,7 +1646,7 @@ void StorageKeeperMap::mutate(const MutationCommands & commands, ContextPtr loca
                     settings[Setting::keeper_retry_max_backoff_ms],
                     local_context->getProcessListElement()}};
 
-            Coordination::Error status = {};
+            Coordination::Error status;
             zk_retry.retryLoop([&]
             {
                 auto client = getClient();
@@ -1686,8 +1678,7 @@ void StorageKeeperMap::mutate(const MutationCommands & commands, ContextPtr loca
     }
 
     chassert(commands.front().type == MutationCommand::Type::UPDATE);
-    auto alter = commands.front().ast();
-    if (getColumnToUpdateExpression(*alter).contains(primary_key))
+    if (commands.front().column_to_update_expression.contains(primary_key))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Primary key cannot be updated (cannot update column {})", primary_key);
 
     MutationsInterpreter::Settings settings(true);
@@ -1751,12 +1742,7 @@ StoragePtr create(const StorageFactory::Arguments & args)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "StorageKeeperMap requires one column in primary key");
 
     // used in private build
-#if CLICKHOUSE_CLOUD
-    const auto & client_info = args.getLocalContext()->getClientInfo();
-    bool override_metadata = client_info.is_shared_catalog_internal && !SharedDatabaseCatalog::isInitialQuery(args.getLocalContext());
-#else
     bool override_metadata = false;
-#endif
 
     return std::make_shared<StorageKeeperMap>(
         args.getContext(), args.table_id, metadata, args.query.attach, primary_key_names[0], zk_root_path, keys_limit, override_metadata);
@@ -1764,7 +1750,6 @@ StoragePtr create(const StorageFactory::Arguments & args)
 
 }
 
-void registerStorageKeeperMap(StorageFactory & factory);
 void registerStorageKeeperMap(StorageFactory & factory)
 {
     factory.registerStorage(

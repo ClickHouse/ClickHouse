@@ -293,7 +293,7 @@ IMergingAlgorithm::Status AggregatingSortedAlgorithm::merge()
     /// We take the rows in the correct order and put them in `merged_block`, while the rows are no more than `max_block_size`
     while (queue.isValid())
     {
-        bool key_differs = false;
+        bool key_differs;
         SortCursor current = queue.current();
 
         if (current->isLast() && skipLastRowFor(current->order))

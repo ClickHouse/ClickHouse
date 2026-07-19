@@ -103,16 +103,6 @@ DataTypeObject::DataTypeObject(const DB::DataTypeObject::SchemaFormat & schema_f
 {
 }
 
-void DataTypeObject::insertDefaultInto(IColumn & column) const
-{
-    auto & column_object = assert_cast<ColumnObject &>(column);
-    for (auto & [path, typed_column] : column_object.getTypedPaths())
-        typed_paths.at(path)->insertDefaultInto(*typed_column);
-    for (auto & [_, dynamic_column] : column_object.getDynamicPathsPtrs())
-        dynamic_column->insertDefault();
-    column_object.getSharedDataColumn().insertDefault();
-}
-
 bool DataTypeObject::equals(const IDataType & rhs) const
 {
     if (const auto * object = typeid_cast<const DataTypeObject *>(&rhs))
@@ -301,110 +291,29 @@ void replaceJSONTypeNameIfNeeded(String & type_name, const String & nested_json_
     }
 }
 
-/// Strip JSON type parameters from a type name string for comparison purposes.
-/// E.g. "Array(JSON(max_dynamic_paths=4, max_dynamic_types=2))" -> "Array(JSON)"
-///      "JSON(max_dynamic_paths=16, max_dynamic_types=8)" -> "JSON"
-///      "Int64" -> "Int64" (no change)
-/// When scanning for the matching ')' we skip over back-quoted strings
-/// (which may contain unbalanced parentheses, e.g. JSON(SKIP `some()path`))
-/// using tryReadBackQuotedString to correctly handle escaped backticks.
-String removeJSONTypeParameters(const String & type_name)
-{
-    String result = type_name;
-    auto pos = result.find("JSON(");
-    while (pos != String::npos)
-    {
-        /// Find matching ')' starting after "JSON("
-        size_t start = pos + 4; /// position of '('
-        size_t depth = 1;
-        size_t i = start + 1;
-        while (i < result.size() && depth > 0)
-        {
-            if (result[i] == '`')
-            {
-                /// Use tryReadBackQuotedString to properly skip back-quoted strings,
-                /// handling escaped backticks (doubled: ``).
-                ReadBufferFromMemory buf(result.data() + i, result.size() - i);
-                String tmp;
-                if (tryReadBackQuotedString(tmp, buf))
-                    i += buf.count();
-                else
-                    ++i;
-                continue;
-            }
-            if (result[i] == '\'')
-            {
-                /// Use tryReadQuotedString to properly skip single-quoted strings,
-                /// so that parentheses inside them (e.g. in SKIP REGEXP '...')
-                /// don't affect the nesting depth.
-                ReadBufferFromMemory buf(result.data() + i, result.size() - i);
-                String tmp;
-                if (tryReadQuotedString(tmp, buf))
-                    i += buf.count();
-                else
-                    ++i;
-                continue;
-            }
-            if (result[i] == '(')
-                ++depth;
-            else if (result[i] == ')')
-                --depth;
-            ++i;
-        }
-        /// Remove from '(' to matching ')'
-        result.erase(start, i - start);
-        pos = result.find("JSON(", pos + 4);
-    }
-    return result;
-}
-
 /// JSON subcolumn name with Dynamic type subcolumn looks like this:
 /// "json.some.path.:`Type_name`.some.subcolumn".
 /// We back quoted type name during identifier parsing so we can distinguish type subcolumn and path element ":TypeName".
-struct PathAndSubcolumn
-{
-    String path;
-    String type_hint;
-    /// Remaining subcolumn after the type hint, without a leading dot separator.
-    String remaining;
-
-    /// Reconstruct the full subcolumn (type_hint + "." + remaining).
-    String fullSubcolumn() const
-    {
-        if (type_hint.empty())
-            return {};
-        if (remaining.empty())
-            return type_hint;
-        return type_hint + "." + remaining;
-    }
-};
-
-PathAndSubcolumn splitPathAndDynamicTypeSubcolumn(std::string_view subcolumn_name, const String & nested_json_type_name)
+std::pair<String, String> splitPathAndDynamicTypeSubcolumn(std::string_view subcolumn_name, const String & nested_json_type_name)
 {
     /// Try to find dynamic type subcolumn in a form .:`Type`.
     auto pos = subcolumn_name.find(".:`");
     if (pos == std::string_view::npos)
-        return {String(subcolumn_name), {}, {}};
+        return {String(subcolumn_name), ""};
 
     ReadBufferFromMemory buf(subcolumn_name.substr(pos + 2));
-    String type_hint;
+    String dynamic_subcolumn;
     /// Try to read back quoted type name.
-    if (!tryReadBackQuotedString(type_hint, buf))
-        return {String(subcolumn_name), {}, {}};
+    if (!tryReadBackQuotedString(dynamic_subcolumn, buf))
+        return {String(subcolumn_name), ""};
 
-    replaceJSONTypeNameIfNeeded(type_hint, nested_json_type_name);
+    replaceJSONTypeNameIfNeeded(dynamic_subcolumn, nested_json_type_name);
 
-    /// If there is more data in the buffer - it's the remaining subcolumn after the type hint.
-    /// Strip the leading dot separator if present.
-    String remaining;
+    /// If there is more data in the buffer - it's subcolumn of a type, append it to the type name.
     if (!buf.eof())
-    {
-        remaining = String(buf.position(), buf.available());
-        if (!remaining.empty() && remaining[0] == '.')
-            remaining = remaining.substr(1);
-    }
+        dynamic_subcolumn += String(buf.position(), buf.available());
 
-    return {String(subcolumn_name.substr(0, pos)), std::move(type_hint), std::move(remaining)};
+    return {String(subcolumn_name.substr(0, pos)), dynamic_subcolumn};
 }
 
 /// Prefixed subcolumn in JSON path always looks like "<prefix>`some`.path.path"
@@ -505,9 +414,8 @@ ColumnPtr extractCombinedColumn(
     auto literal_column = extractLiteralColumn(object_column, path, max_dynamic_types);
     auto sub_object_column = extractSubObjectColumn(object_column, prefix, sub_object_type);
 
-    /// If sub-object contains only empty objects, just use literal.
-    const auto * sub_object_typed_column = assert_cast<const ColumnObject *>(sub_object_column.get());
-    if (!sub_object_typed_column->hasNonEmptyRows())
+    /// If sub-object is all defaults, just use literal.
+    if (sub_object_column->getNumberOfDefaultRows() == sub_object_column->size())
         return literal_column;
 
     /// Cast sub-object to Dynamic.
@@ -520,7 +428,7 @@ ColumnPtr extractCombinedColumn(
     {
         if (!literal_column->isDefaultAt(i))
             merged->insertFrom(*literal_column, i);
-        else if (!sub_object_typed_column->isEmptyAt(i))
+        else if (!sub_object_column->isDefaultAt(i))
             merged->insertFrom(*casted_sub_object, i);
         else
             merged->insertDefault();
@@ -669,36 +577,16 @@ std::unique_ptr<ISerialization::SubstreamData> DataTypeObject::getDynamicSubcolu
         return res;
     }
 
-    /// If the subcolumn starts with a type hint (.:`Type`), it means this getDynamicSubcolumnData
-    /// was reached from IDataType::getSubcolumnData after a typed path prefix match in enumerateStreams.
-    /// E.g. for json.a.:`Array(JSON)`.x where a is a typed Array(JSON) path, enumerateStreams found "a"
-    /// as a static subcolumn, then tried to resolve the remaining ":`Array(JSON)`.x" via the typed path's
-    /// type chain, which eventually called this method. We return nullptr here so that the resolution falls
-    /// through to the outer DataTypeObject::getDynamicSubcolumnData with the full subcolumn name, where
-    /// the type hint can be properly detected and stripped.
-    if (subcolumn_name.starts_with(":`"))
-        return nullptr;
-
-    /// Split requested subcolumn to the JSON path, type hint, and remaining subcolumn.
-    auto split = splitPathAndDynamicTypeSubcolumn(subcolumn_name, getTypeOfNestedObjects()->getName());
-    const auto & path = split.path;
-    String path_subcolumn;
+    /// Split requested subcolumn to the JSON path and Dynamic type subcolumn.
+    auto [path, path_subcolumn] = splitPathAndDynamicTypeSubcolumn(subcolumn_name, getTypeOfNestedObjects()->getName());
     std::unique_ptr<SubstreamData> res;
     if (auto it = typed_paths.find(path); it != typed_paths.end())
     {
-        /// If there is a type hint subcolumn and it matches the typed path's type
-        /// (after normalizing JSON parameters), the hint is redundant — strip it.
-        if (!split.type_hint.empty() && removeJSONTypeParameters(split.type_hint) == removeJSONTypeParameters(it->second->getName()))
-            path_subcolumn = split.remaining;
-        else
-            path_subcolumn = split.fullSubcolumn();
-
         res = std::make_unique<SubstreamData>(typed_paths_serializations.at(path));
         res->type = it->second;
     }
     else
     {
-        path_subcolumn = split.fullSubcolumn();
         res = std::make_unique<SubstreamData>(dynamic_path_serialization);
         res->type = std::make_shared<DataTypeDynamic>(max_dynamic_types);
     }
@@ -740,21 +628,12 @@ static DataTypePtr createObject(const ASTPtr & arguments, const DataTypeObject::
     for (const auto & argument : arguments->children)
     {
         const auto * object_type_argument = argument->as<ASTObjectTypeArgument>();
-        /// The AST may be structurally invalid, so we cannot assume that every child is an
-        /// `ASTObjectTypeArgument`. Validate the cast before use.
-        if (!object_type_argument)
-            throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE, "Unexpected AST in {} type arguments: {}", magic_enum::enum_name(schema_format), argument->formatForErrorMessage());
         if (object_type_argument->parameter)
         {
             const auto * function = object_type_argument->parameter->as<ASTFunction>();
 
             if (!function || function->name != "equals")
-                throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE, "Unexpected parameter in {} type arguments: {}", magic_enum::enum_name(schema_format), object_type_argument->parameter->formatForErrorMessage());
-
-            /// The `equals` function expects exactly two children: an identifier and a literal.
-            /// Validate the argument list shape before indexing.
-            if (!function->arguments || function->arguments->children.size() != 2)
-                throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE, "Unexpected parameter in {} type arguments: {}. Expected expression 'max_dynamic_types=N' or 'max_dynamic_paths=N'", magic_enum::enum_name(schema_format), function->formatForErrorMessage());
+                throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE, "Unexpected parameter in {} type arguments: {}", magic_enum::enum_name(schema_format), function->formatForErrorMessage());
 
             const auto * identifier = function->arguments->children[0]->as<ASTIdentifier>();
             if (!identifier)
@@ -777,8 +656,6 @@ static DataTypePtr createObject(const ASTPtr & arguments, const DataTypeObject::
         else if (object_type_argument->path_with_type)
         {
             const auto * path_with_type = object_type_argument->path_with_type->as<ASTObjectTypedPathArgument>();
-            if (!path_with_type)
-                throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE, "Unexpected AST in {} type path with type argument: {}. Expected 'path data_type'", magic_enum::enum_name(schema_format), object_type_argument->path_with_type->formatForErrorMessage());
             auto data_type = DataTypeFactory::instance().get(path_with_type->type);
             if (typed_paths.contains(path_with_type->path))
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Found duplicated path with type: {}", path_with_type->path);
@@ -799,7 +676,7 @@ static DataTypePtr createObject(const ASTPtr & arguments, const DataTypeObject::
         {
             const auto * literal = object_type_argument->skip_path_regexp->as<ASTLiteral>();
             if (!literal || literal->value.getType() != Field::Types::String)
-                throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE, "Unexpected AST in SKIP REGEXP section of {} type arguments: {}. Expected string literal with path regexp", magic_enum::enum_name(schema_format), object_type_argument->skip_path_regexp->formatForErrorMessage());
+                throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE, "Unexpected AST in SKIP section of {} type arguments: {}. Expected identifier with path name", magic_enum::enum_name(schema_format), object_type_argument->skip_path->formatForErrorMessage());
 
             path_regexps_to_skip.push_back(literal->value.safeGet<String>());
         }

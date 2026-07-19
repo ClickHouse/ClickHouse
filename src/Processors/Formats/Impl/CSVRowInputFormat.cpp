@@ -448,11 +448,7 @@ bool CSVFormatReader::readFieldOrDefault(DB::IColumn & column, const DB::DataTyp
 void CSVFormatReader::skipPrefixBeforeHeader()
 {
     for (size_t i = 0; i != format_settings.csv.skip_first_lines; ++i)
-    {
-        if (buf->eof())
-            break;
         readRow();
-    }
 }
 
 void CSVFormatReader::setReadBuffer(ReadBuffer & in_)
@@ -514,7 +510,6 @@ std::optional<DataTypes> CSVSchemaReader::readRowAndGetDataTypesImpl()
 }
 
 
-void registerInputFormatCSV(FormatFactory & factory);
 void registerInputFormatCSV(FormatFactory & factory)
 {
     auto register_func = [&](const String & format_name, bool with_names, bool with_types)
@@ -604,7 +599,6 @@ std::pair<bool, size_t> fileSegmentationEngineCSVImpl(ReadBuffer & in, DB::Memor
     return {loadAtPosition(in, memory, pos), number_of_rows};
 }
 
-void registerFileSegmentationEngineCSV(FormatFactory & factory);
 void registerFileSegmentationEngineCSV(FormatFactory & factory)
 {
     auto register_func = [&](const String & format_name, bool, bool)
@@ -623,7 +617,6 @@ void registerFileSegmentationEngineCSV(FormatFactory & factory)
     markFormatWithNamesAndTypesSupportsSamplingColumns("CSV", factory);
 }
 
-void registerCSVSchemaReader(FormatFactory & factory);
 void registerCSVSchemaReader(FormatFactory & factory)
 {
     auto register_func = [&](const String & format_name, bool with_names, bool with_types)

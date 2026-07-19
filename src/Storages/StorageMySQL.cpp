@@ -162,7 +162,7 @@ void StorageMySQL::readImpl(
 }
 
 
-class StorageMySQLSink final : public SinkToStorage
+class StorageMySQLSink : public SinkToStorage
 {
 public:
     explicit StorageMySQLSink(
@@ -393,7 +393,6 @@ void ReadFromMySQLStep::initializePipeline(QueryPipelineBuilder & pipeline, cons
 }
 
 
-void registerStorageMySQL(StorageFactory & factory);
 void registerStorageMySQL(StorageFactory & factory)
 {
     factory.registerStorage("MySQL", [](const StorageFactory::Arguments & args)

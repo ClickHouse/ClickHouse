@@ -64,7 +64,7 @@ void MergedColumnOnlyOutputStream::write(const Block & block)
     if (!block.rows())
         return;
 
-    writer->write(block, nullptr, nullptr);
+    writer->write(block, nullptr);
     new_serialization_infos.add(block);
 }
 

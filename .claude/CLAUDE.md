@@ -146,8 +146,6 @@ When writing C++ code, always use Allman-style braces (opening brace on a new li
 
 Never use sleep in C++ code to fix race conditions - this is stupid and not acceptable!
 
-Avoid fallback paths. When an operation fails, prefer letting the error propagate over silently substituting a default value or alternate behavior. Fallbacks hide bugs and make incidents harder to diagnose. If a fallback is genuinely needed, follow the fail-close principle: never perform a destructive, expensive, or otherwise consequential action on the fallback path. Skip the operation and surface the error instead — for example, when label-attribution data is unavailable, do not assume "human-added" and create backports anyway; let the run fail and retry once the data is available.
-
 When writing messages, say ASan, not ASAN, and similar (because there are two words: Address Sanitizer).
 
 When checking the CI status, pay attention to the comment from robot with the links first. Look at the Praktika reports first. The logs of GitHub actions usually contain less info.
@@ -161,13 +159,6 @@ When running tests, always redirect output to a log file in the build directory 
 If I provided a URL with the CI report, logs, or examples, include it in the commit message. If the link has `PR=...`, also add a link to the corresponding PR.
 
 When creating or updating a pull request, use `.github/PULL_REQUEST_TEMPLATE.md` as the PR body template. The body should contain: a short description of the change and motivation, then the Changelog category (leave one from the list), then the Changelog entry, then the Documentation entry checkbox. Do not invent a custom "## Summary" or "## Test plan" structure — follow the template exactly. The "Bug Fix" category should be used only for real bug fixes, while for fixing CI reports you can use the "CI Fix or improvement" category. Include the URL to CI report I provided if any. If the PR is about a CI failure, search for the corresponding open issues and provide a link in the PR description.
-
-Link related pull requests and issues explicitly, using full GitHub URLs, one relationship per line:
-- When a pull request fixes an issue, put `Closes: <full link to the issue>` on its own line in the pull request description. GitHub renders this as `Closes: #<number>` and closes the issue automatically when the pull request is merged into the default branch (auto-close only fires when targeting the default branch).
-- When an issue was caused by a pull request (a regression), put `Caused by: <full link to the pull request>` on its own line in the issue.
-- For any other relevant pull request or issue, put `Related: <full link>` on its own line.
-
-Use the keyword `Closes` (not `Fixes` or `Resolves`) for consistency, even though GitHub also auto-closes on `Fixes` and `Resolves`. `Caused by` and `Related` are not GitHub keywords and trigger no automatic closing; they are conventions for humans and tooling. Issues never close pull requests, so the issue side uses only `Caused by` and `Related`.
 
 ARM machines in CI are not slow. They are similar to x86 in performance.
 

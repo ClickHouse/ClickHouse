@@ -37,8 +37,6 @@
 
 #include <Formats/FormatFactory.h>
 #include <Formats/ReadSchemaUtils.h>
-#include <Formats/FormatParserSharedResources.h>
-#include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <Processors/Formats/IInputFormat.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <Processors/Sinks/SinkToStorage.h>
@@ -419,10 +417,7 @@ std::unique_ptr<ReadBuffer> selectReadBuffer(
     if (context->getApplicationType() == Context::ApplicationType::SERVER && read_method == LocalFSReadMethod::mmap)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Using storage_file_read_method=mmap is not safe in server mode. Consider using pread.");
 
-    /// Avoid zero-length mmap: empty regular files still read as empty via `pread`, while
-    /// pseudo-files such as `/proc` and `/sys` may report `st_size == 0` despite readable content.
-    /// See #69070.
-    if (S_ISREG(file_stat.st_mode) && read_method == LocalFSReadMethod::mmap && file_stat.st_size > 0)
+    if (S_ISREG(file_stat.st_mode) && read_method == LocalFSReadMethod::mmap)
     {
         try
         {
@@ -501,7 +496,7 @@ std::unique_ptr<ReadBuffer> createReadBuffer(
     const String & compression_method,
     ContextPtr context)
 {
-    CompressionMethod method = {};
+    CompressionMethod method;
     if (use_table_fd)
         method = chooseCompressionMethod("", compression_method);
     else
@@ -565,7 +560,7 @@ namespace
             }
 
             String path;
-            struct stat file_stat{};
+            struct stat file_stat;
 
             do
             {
@@ -747,7 +742,7 @@ namespace
                 }
 
                 const auto & archive = archive_info.paths_to_archives[current_archive_index];
-                struct stat file_stat{};
+                struct stat file_stat;
                 file_stat = getFileStat(archive, false, -1, "File");
                 if (file_stat.st_size == 0)
                 {
@@ -912,7 +907,7 @@ namespace
             if (!context->getSettingsRef()[Setting::schema_inference_use_cache_for_file])
                 return std::nullopt;
 
-            struct stat file_stat{};
+            struct stat file_stat;
             auto & schema_cache = StorageFile::getSchemaCache(context);
             auto get_last_mod_time = [&]() -> std::optional<time_t>
             {
@@ -1160,7 +1155,7 @@ bool StorageFile::parallelizeOutputAfterReading(ContextPtr context) const
 StorageFile::StorageFile(int table_fd_, CommonArguments args)
     : StorageFile(args)
 {
-    struct stat buf{};
+    struct stat buf;
     int res = fstat(table_fd_, &buf);
     if (-1 == res)
         throw ErrnoException(ErrorCodes::CANNOT_FSTAT, "Cannot execute fstat");
@@ -1570,27 +1565,10 @@ Chunk StorageFileSource::generate()
 
             if (!read_buf)
             {
-                struct stat file_stat{};
+                struct stat file_stat;
                 file_stat = getFileStat(current_path, storage->use_table_fd, storage->table_fd, storage->getName());
                 current_file_size = file_stat.st_size;
                 current_file_last_modified = Poco::Timestamp::fromEpochTime(file_stat.st_mtime);
-
-                /// Build a sub-second-precision version token for the format metadata cache key.
-                /// `st_mtime` alone is second-resolution, so an in-place rewrite within the same
-                /// second that keeps the file size unchanged would otherwise reuse a stale entry.
-#if defined(OS_DARWIN)
-                const auto mtim_sec = file_stat.st_mtimespec.tv_sec;
-                const auto mtim_nsec = file_stat.st_mtimespec.tv_nsec;
-#else
-                const auto mtim_sec = file_stat.st_mtim.tv_sec;
-                const auto mtim_nsec = file_stat.st_mtim.tv_nsec;
-#endif
-                current_file_cache_version = fmt::format(
-                    "{}.{:09}_{}_{}",
-                    static_cast<Int64>(mtim_sec),
-                    static_cast<Int64>(mtim_nsec),
-                    static_cast<Int64>(file_stat.st_ino),
-                    file_stat.st_size);
 
                 if (getContext()->getSettingsRef()[Setting::engine_file_skip_empty_files] && file_stat.st_size == 0)
                     continue;
@@ -1609,60 +1587,18 @@ Chunk StorageFileSource::generate()
 
             chassert(file_num > 0);
 
-            /// For real local files, build a synthetic RelativePathWithMetadata so the
-            /// format-level metadata cache (e.g. Parquet footer cache) is reachable. The
-            /// "etag" is just any version identifier the cache compares for equality —
-            /// for local files we use the precomputed `current_file_cache_version`
-            /// (sub-second mtime + inode + size) so an in-place rewrite invalidates
-            /// the cache even when the new file has the same length and is written
-            /// within the same wall-clock second.
-            std::optional<RelativePathWithMetadata> object_with_metadata;
-            if (!storage->use_table_fd && !storage->archive_info && !current_path.empty()
-                && current_file_size.has_value() && current_file_last_modified.has_value()
-                && current_file_cache_version.has_value())
-            {
-                ObjectMetadata md;
-                md.size_bytes = *current_file_size;
-                md.last_modified = *current_file_last_modified;
-                md.etag = *current_file_cache_version;
-                object_with_metadata.emplace(current_path, std::move(md));
-            }
-
-            if (object_with_metadata.has_value())
-            {
-                input_format = FormatFactory::instance().getInputWithMetadata(
-                    storage->format_name,
-                    *read_buf,
-                    block_for_format,
-                    getContext(),
-                    max_block_size,
-                    object_with_metadata,
-                    storage->format_settings,
-                    parser_shared_resources,
-                    format_filter_info,
-                    /*is_remote_fs=*/false,
-                    CompressionMethod::None,
-                    need_only_count);
-            }
-            else
-            {
-                /// No usable metadata (e.g. archive entries, fd-backed storage, missing
-                /// stat info). Fall back to the regular creator — it doesn't trigger the
-                /// `getInputWithMetadata` chassert and the format-level metadata cache
-                /// just isn't consulted on this read.
-                input_format = FormatFactory::instance().getInput(
-                    storage->format_name,
-                    *read_buf,
-                    block_for_format,
-                    getContext(),
-                    max_block_size,
-                    storage->format_settings,
-                    parser_shared_resources,
-                    format_filter_info,
-                    /*is_remote_fs=*/false,
-                    CompressionMethod::None,
-                    need_only_count);
-            }
+            input_format = FormatFactory::instance().getInput(
+                storage->format_name,
+                *read_buf,
+                block_for_format,
+                getContext(),
+                max_block_size,
+                storage->format_settings,
+                parser_shared_resources,
+                format_filter_info,
+                /*is_remote_fs=*/false,
+                CompressionMethod::None,
+                need_only_count);
 
             input_format->setSerializationHints(serialization_hints);
 
@@ -1763,8 +1699,6 @@ Chunk StorageFileSource::generate()
     return {};
 }
 
-void StorageFileSource::onFinish() { parser_shared_resources->finishStream(); }
-
 void StorageFileSource::addNumRowsToCache(const String & path, size_t num_rows) const
 {
     auto key = getKeyForSchemaCache(path, storage->format_name, storage->format_settings, getContext());
@@ -1860,7 +1794,7 @@ void StorageFile::read(
     }
     else
     {
-        const std::vector<std::string> * p = nullptr;
+        const std::vector<std::string> * p;
 
         if (archive_info.has_value())
             p = &archive_info->paths_to_archives;
@@ -2396,7 +2330,6 @@ void StorageFile::addInferredEngineArgsToCreateQuery(ASTs & args, const ContextP
         args[0] = make_intrusive<ASTLiteral>(format_name);
 }
 
-void registerStorageFile(StorageFactory & factory);
 void registerStorageFile(StorageFactory & factory)
 {
     StorageFactory::StorageFeatures storage_features{

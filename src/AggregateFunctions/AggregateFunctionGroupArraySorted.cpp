@@ -414,7 +414,6 @@ AggregateFunctionPtr createAggregateFunctionGroupArray(
 
 }
 
-void registerAggregateFunctionGroupArraySorted(AggregateFunctionFactory & factory);
 void registerAggregateFunctionGroupArraySorted(AggregateFunctionFactory & factory)
 {
     FunctionDocumentation::Description description = R"(

@@ -152,7 +152,7 @@ private:
 
     struct Attribute final
     {
-        AttributeUnderlyingType type{};
+        AttributeUnderlyingType type;
 
         std::variant<
             AttributeContainerType<UInt8>,

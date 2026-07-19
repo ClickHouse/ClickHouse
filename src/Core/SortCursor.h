@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cassert>
 #include <vector>
 #include <algorithm>
 
@@ -179,7 +180,7 @@ struct SortCursor : SortCursorHelper<SortCursor>
 #if USE_EMBEDDED_COMPILER
         if (impl->desc.compiled_sort_description && rhs.impl->desc.compiled_sort_description)
         {
-            chassert(impl->raw_sort_columns_data.size() == rhs.impl->raw_sort_columns_data.size());
+            assert(impl->raw_sort_columns_data.size() == rhs.impl->raw_sort_columns_data.size());
 
             auto sort_description_func_typed = reinterpret_cast<JITSortDescriptionFunc>(impl->desc.compiled_sort_description);
             /// JIT-compiled functions lack the type metadata prologue that UBSan's
@@ -234,7 +235,7 @@ struct SimpleSortCursor : SortCursorHelper<SimpleSortCursor>
 #if USE_EMBEDDED_COMPILER
         if (impl->desc.compiled_sort_description && rhs.impl->desc.compiled_sort_description)
         {
-            chassert(impl->raw_sort_columns_data.size() == rhs.impl->raw_sort_columns_data.size());
+            assert(impl->raw_sort_columns_data.size() == rhs.impl->raw_sort_columns_data.size());
 
             auto sort_description_func_typed = reinterpret_cast<JITSortDescriptionFunc>(impl->desc.compiled_sort_description);
             res = callJITFunction(sort_description_func_typed, lhs_pos, rhs_pos, impl->raw_sort_columns_data.data(), rhs.impl->raw_sort_columns_data.data()); // NOLINT(bugprone-signed-char-misuse,cert-str34-c)
@@ -268,8 +269,8 @@ struct SpecializedSingleColumnSortCursor : SortCursorHelper<SpecializedSingleCol
         auto & lhs_columns = this_impl->sort_columns;
         auto & rhs_columns = rhs.impl->sort_columns;
 
-        chassert(lhs_columns.size() == 1);
-        chassert(rhs_columns.size() == 1);
+        assert(lhs_columns.size() == 1);
+        assert(rhs_columns.size() == 1);
 
         const auto & lhs_column = assert_cast<const ColumnType &>(*lhs_columns[0]);
         const auto & rhs_column = assert_cast<const ColumnType &>(*rhs_columns[0]);
@@ -298,8 +299,8 @@ struct SpecializedSingleNullableColumnSortCursor : SortCursorHelper<SpecializedS
         auto & lhs_columns = this_impl->sort_columns;
         auto & rhs_columns = rhs.impl->sort_columns;
 
-        chassert(lhs_columns.size() == 1);
-        chassert(rhs_columns.size() == 1);
+        assert(lhs_columns.size() == 1);
+        assert(rhs_columns.size() == 1);
 
         const auto & lhs_column = assert_cast<const ColumnNullable &>(*lhs_columns[0]);
         const auto & rhs_column = assert_cast<const ColumnNullable &>(*rhs_columns[0]);
@@ -348,7 +349,7 @@ struct SortCursorWithCollation : SortCursorHelper<SortCursorWithCollation>
             const auto & desc = impl->desc[i];
             int direction = desc.direction;
             int nulls_direction = desc.nulls_direction;
-            int res = 0;
+            int res;
             if (impl->need_collation[i])
                 res = impl->sort_columns[i]->compareAtWithCollation(lhs_pos, rhs_pos, *(rhs.impl->sort_columns[i]), nulls_direction, *impl->desc[i].collator);
             else
@@ -421,7 +422,7 @@ public:
 
     void ALWAYS_INLINE next() requires (strategy == SortingQueueStrategy::Default)
     {
-        chassert(isValid());
+        assert(isValid());
 
         if (!queue.front()->isLast())
         {
@@ -436,9 +437,9 @@ public:
 
     void ALWAYS_INLINE next(size_t batch_size_value) requires (strategy == SortingQueueStrategy::Batch)
     {
-        chassert(isValid());
-        chassert(batch_size_value <= batch_size);
-        chassert(batch_size_value > 0);
+        assert(isValid());
+        assert(batch_size_value <= batch_size);
+        assert(batch_size_value > 0);
 
         batch_size -= batch_size_value;
         if (batch_size > 0)
@@ -569,7 +570,7 @@ private:
     /// Update batch size of elements that client can extract from current cursor
     void updateBatchSize()
     {
-        chassert(!queue.empty());
+        assert(!queue.empty());
 
         auto & begin_cursor = *queue.begin();
         size_t min_cursor_size = begin_cursor->getSize();

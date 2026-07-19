@@ -36,8 +36,6 @@ struct StorageInMemoryMetadata
     bool add_minmax_index_for_numeric_columns = false;
     bool add_minmax_index_for_string_columns = false;
     bool add_minmax_index_for_temporal_columns = false;
-    bool add_minmax_index_for_block_number_column = false;
-    bool add_minmax_index_for_block_offset_column = false;
     /// Needed for compatibility
     bool escape_index_filenames = true;
     IndicesDescription secondary_indices;
@@ -56,8 +54,6 @@ struct StorageInMemoryMetadata
     KeyDescription sorting_key;
     /// SAMPLE BY expression. Supported for MergeTree only.
     KeyDescription sampling_key;
-    /// UNIQUE KEY expression. Supported for MergeTree only. Experimental.
-    KeyDescription unique_key;
     /// Separate ttl expressions for columns
     TTLColumnsDescription column_ttls_by_name;
     /// TTL expressions for table (Move and Rows)
@@ -285,17 +281,6 @@ struct StorageInMemoryMetadata
     /// * y', 'toStartOfMonth(date)', etc.
     Names getPrimaryKeyColumns() const;
 
-    /// Returns structure with unique key (UNIQUE KEY clause).
-    const KeyDescription & getUniqueKey() const;
-    /// Returns AST of unique key expression for storage or nullptr if there is none.
-    ASTPtr getUniqueKeyAST() const { return unique_key.definition_ast; }
-    /// Storage has user-defined (in CREATE query) unique key.
-    bool isUniqueKeyDefined() const;
-    /// Storage has unique key (at least one column).
-    bool hasUniqueKey() const;
-    /// Returns column names from UNIQUE KEY clause.
-    Names getUniqueKeyColumns() const;
-
     /// Storage settings
     ASTPtr getSettingsChanges() const;
     Field getSettingChange(const String & setting_name) const;
@@ -333,9 +318,6 @@ struct StorageInMemoryMetadata
 
     void addImplicitIndicesForColumn(const ColumnDescription & column, ContextPtr context);
     void dropImplicitIndicesForColumn(const String & column_name);
-
-    void addImplicitIndicesForVirtualColumns(ContextPtr context);
-    void dropImplicitIndicesForVirtualColumns();
 };
 
 using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;

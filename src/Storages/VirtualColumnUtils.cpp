@@ -15,7 +15,6 @@
 #include <Interpreters/evaluateConstantExpression.h>
 
 
-#include <Columns/ColumnConst.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
@@ -67,13 +66,16 @@ namespace ErrorCodes
 namespace VirtualColumnUtils
 {
 
-static void buildSetsForDagImpl(const ActionsDAG & dag, const ContextPtr & context, bool ordered)
+void buildSetsForDagImpl(const ActionsDAG & dag, const ContextPtr & context, bool ordered)
 {
     for (const auto & node : dag.getNodes())
     {
         if (node.type == ActionsDAG::ActionType::COLUMN)
         {
-            const ColumnSet * column_set = checkAndGetColumn<const ColumnSet>(&node.column->getDataColumn());
+            const ColumnSet * column_set = checkAndGetColumnConstData<const ColumnSet>(node.column.get());
+            if (!column_set)
+                column_set = checkAndGetColumn<const ColumnSet>(node.column.get());
+
             if (column_set)
             {
                 auto future_set = column_set->getData();
@@ -122,7 +124,10 @@ void buildSetsForDAGExcludingGlobalIn(const ActionsDAG & dag, const ContextPtr &
     {
         if (node.type == ActionsDAG::ActionType::COLUMN && !global_in_set_nodes.contains(&node))
         {
-            const ColumnSet * column_set = checkAndGetColumn<const ColumnSet>(&node.column->getDataColumn());
+            const ColumnSet * column_set = checkAndGetColumnConstData<const ColumnSet>(node.column.get());
+            if (!column_set)
+                column_set = checkAndGetColumn<const ColumnSet>(node.column.get());
+
             if (column_set)
             {
                 auto future_set = column_set->getData();
@@ -613,24 +618,20 @@ static const ActionsDAG::Node * splitFilterNodeForAllowedInputs(
                     /// A plain CAST(256, 'UInt8') would give 0 (since 256 % 256 == 0), losing truthiness
                     /// for values like 256, 512, 65536, 2147483648, etc.  See #101269.
                     ///
-                    /// Use removeLowCardinalityAndNullable to get the nested scalar type's default
-                    /// (zero, not NULL).  DataTypeNullable::getDefault() returns Null(), but
-                    /// notEquals(x, NULL) always returns NULL (SQL three-valued logic), which is
-                    /// treated as false and would incorrectly filter out all rows/parts. See
-                    /// #101433 and #103049.  A LowCardinality wrapper must be stripped as well —
-                    /// removeNullable alone leaves LowCardinality(Nullable(X)) unchanged because
-                    /// the outer type is LowCardinality (not Nullable), so its getDefault falls
-                    /// through to the dictionary type's default which is Null again. See #104393.
+                    /// Use removeNullable to get the nested type's default (zero, not NULL).
+                    /// DataTypeNullable::getDefault() returns Null(), but notEquals(x, NULL)
+                    /// always returns NULL (SQL three-valued logic), which is treated as false and
+                    /// would incorrectly filter out all rows/parts.  See #101433 and #103049.
                     /// Special case: Nullable(Nothing) — the child is a bare NULL literal.
                     /// Nothing has no getDefault, so fall back to the Nullable default
                     /// (Null field), which makes notEquals(x, NULL) -> NULL -> false.  Correct.
                     ActionsDAG tmp_dag;
-                    auto nested_type = removeLowCardinalityAndNullable(res->result_type);
+                    auto nested_type = removeNullable(res->result_type);
                     auto zero_field = (nested_type->getTypeId() == TypeIndex::Nothing)
                         ? res->result_type->getDefault()
                         : nested_type->getDefault();
-                    auto zero_column = res->result_type->createColumnConst(0, zero_field);
-                    const auto & zero_node = tmp_dag.addColumn(std::move(zero_column), res->result_type, "0");
+                    auto zero_column = res->result_type->createColumnConst(1, zero_field);
+                    const auto & zero_node = tmp_dag.addColumn({zero_column, res->result_type, "0"});
                     auto ne_func = FunctionFactory::instance().get("notEquals", context);
                     res = &tmp_dag.addFunction(ne_func, {res, &zero_node}, {});
                     additional_nodes.splice(additional_nodes.end(), ActionsDAG::detachNodes(std::move(tmp_dag)));

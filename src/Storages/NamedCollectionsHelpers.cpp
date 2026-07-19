@@ -104,7 +104,7 @@ MutableNamedCollectionPtr tryGetNamedCollectionWithOverrides(
     ASTs asts,
     ContextPtr context,
     bool throw_unknown_collection,
-    VectorWithMemoryTracking<std::pair<std::string, ASTPtr>> * complex_args,
+    std::vector<std::pair<std::string, ASTPtr>> * complex_args,
     const StorageID * dependent_table_id)
 {
     if (asts.empty())

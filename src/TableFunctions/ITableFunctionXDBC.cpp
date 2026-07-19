@@ -187,7 +187,7 @@ void ITableFunctionXDBC::startBridgeIfNot(ContextPtr context) const
     {
         helper = createBridgeHelper(
             context,
-            Poco::Timespan(context->getSettingsRef()[Setting::http_receive_timeout]),
+            context->getSettingsRef()[Setting::http_receive_timeout].value,
             connection_string,
             context->getSettingsRef()[Setting::odbc_bridge_use_connection_pooling].value);
         helper->startBridgeSync();

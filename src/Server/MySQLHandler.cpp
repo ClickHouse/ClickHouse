@@ -1,6 +1,7 @@
 #include <Server/MySQLHandler.h>
 
 #include <optional>
+#include <Access/Common/AccessFlags.h>
 #include <Core/MySQL/Authentication.h>
 #include <Core/MySQL/PacketsConnection.h>
 #include <Core/MySQL/PacketsGeneric.h>
@@ -8,7 +9,6 @@
 #include <Core/MySQL/PacketsProtocolText.h>
 #include <Core/NamesAndTypes.h>
 #include <Core/Settings.h>
-#include <Core/UUID.h>
 #include <IO/LimitReadBuffer.h>
 #include <IO/ReadBufferFromPocoSocket.h>
 #include <IO/ReadBufferFromString.h>
@@ -89,7 +89,7 @@ static bool isFederatedServerSetupSetCommand(const String & query)
         "|(^(SET sql_mode(.*)))"
         "|(^(SET @@(.*)))"
         "|(^(SET SESSION TRANSACTION ISOLATION LEVEL(.*)))", regexp_options);
-    chassert(expr.ok());
+    assert(expr.ok());
     return re2::RE2::FullMatch(query, expr);
 }
 
@@ -450,6 +450,8 @@ void MySQLHandler::comInitDB(ReadBuffer & payload)
     String database;
     readStringUntilEOF(database, payload);
     LOG_DEBUG(log, "Setting current database to {}", database);
+    /// Mirror the access check of the SQL `USE database` statement (InterpreterUseQuery).
+    session->sessionContext()->checkAccess(AccessType::SHOW_DATABASES, database);
     session->sessionContext()->setCurrentDatabase(database);
     packet_endpoint->sendPacket(OKPacket(0, client_capabilities, 0, 0, 1));
 }
@@ -460,6 +462,9 @@ void MySQLHandler::comFieldList(ReadBuffer & payload)
     packet.readPayloadWithUnpacked(payload);
     const auto session_context = session->sessionContext();
     String database = session_context->getCurrentDatabase();
+    /// Mirror the access check of the SQL `DESCRIBE`/`SHOW COLUMNS` statements (InterpreterDescribeQuery).
+    /// Check before getTable() so this command does not become a table-existence oracle.
+    session_context->checkAccess(AccessType::SHOW_COLUMNS, database, packet.table);
     StoragePtr table_ptr = DatabaseCatalog::instance().getTable({database, packet.table}, session_context);
     auto metadata_snapshot = table_ptr->getInMemoryMetadataPtr(session_context, false);
     for (const NameAndTypePair & column : metadata_snapshot->getColumns().getAll())
@@ -591,7 +596,7 @@ void MySQLHandler::comStmtPrepare(DB::ReadBuffer & payload)
 
 void MySQLHandler::comStmtExecute(ReadBuffer & payload)
 {
-    uint32_t statement_id = 0;
+    uint32_t statement_id;
     payload.readStrict(reinterpret_cast<char *>(&statement_id), 4);
 
     auto statement_opt = getPreparedStatement(statement_id);
@@ -603,7 +608,7 @@ void MySQLHandler::comStmtExecute(ReadBuffer & payload)
 
 void MySQLHandler::comStmtClose(ReadBuffer & payload)
 {
-    uint32_t statement_id = 0;
+    uint32_t statement_id;
     payload.readStrict(reinterpret_cast<char *>(&statement_id), 4);
 
     // https://dev.mysql.com/doc/dev/mysql-server/latest/page_protocol_com_stmt_close.html

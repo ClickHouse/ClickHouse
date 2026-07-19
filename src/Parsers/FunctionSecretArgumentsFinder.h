@@ -620,11 +620,10 @@ protected:
         if (function->arguments->size() < 3)
             return;
 
-        /// We hide the key argument and any following for the case of mistyping or using extra arguments by mistake:
+        /// We hide the key argument:
         /// HMAC('mode', 'message', 'key') -> HMAC('mode', 'message', '[HIDDEN]')
-        /// HMAC('sha256', toString(toFixedString('b', 3), 3), '(', 'this_should_be_secret') -> HMAC('sha256', toString(toFixedString('b', 3), 3), '[HIDDEN]', '[HIDDEN]')
         result.start = 2;
-        result.count = function->arguments->size() - 2;
+        result.count = 1;
     }
 
     void findTableEngineSecretArguments()

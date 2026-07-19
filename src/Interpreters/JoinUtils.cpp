@@ -88,7 +88,7 @@ LowcardAndNull getLowcardAndNullability(const ColumnPtr & col)
     if (col->lowCardinality())
     {
         /// Currently only `LowCardinality(Nullable(T))` is possible, but not `Nullable(LowCardinality(T))`
-        chassert(!col->canBeInsideNullable());
+        assert(!col->canBeInsideNullable());
         const auto * col_as_lc = assert_cast<const ColumnLowCardinality *>(col.get());
         return {true, col_as_lc->nestedIsNullable()};
     }
@@ -298,7 +298,7 @@ ColumnPtr emptyNotNullableClone(const ColumnPtr & column)
     return column->cloneEmpty();
 }
 
-static ColumnPtr materializeColumn(const ColumnPtr & column)
+ColumnPtr materializeColumn(const ColumnPtr & column)
 {
     return recursiveRemoveLowCardinality(removeSpecialRepresentations(column->convertToFullColumnIfConst()));
 }
@@ -480,7 +480,7 @@ bool typesEqualUpToNullability(DataTypePtr left_type, DataTypePtr right_type)
     return left_type_strict->equals(*right_type_strict);
 }
 
-static ColumnPtr castToBoolColumn(ColumnPtr column)
+ColumnPtr castToBoolColumn(ColumnPtr column)
 {
     if (!typeid_cast<const ColumnUInt8 *>(column.get()))
     {
@@ -547,6 +547,18 @@ void splitAdditionalColumns(const Names & key_names, const Block & sample_block,
 }
 
 template <Fn<size_t(size_t)> Sharder>
+static IColumn::Selector hashToSelector(const WeakHash32 & hash, Sharder sharder)
+{
+    const auto & hashes = hash.getData();
+    size_t num_rows = hashes.size();
+
+    IColumn::Selector selector(num_rows);
+    for (size_t i = 0; i < num_rows; ++i)
+        selector[i] = sharder(intHashCRC32(hashes[i]));
+    return selector;
+}
+
+template <Fn<size_t(size_t)> Sharder>
 static Blocks scatterBlockByHashImpl(const Strings & key_columns_names, const Block & block, size_t num_shards, Sharder sharder)
 {
     size_t num_rows = block.rows();
@@ -571,7 +583,7 @@ static Blocks scatterBlockByHashImpl(const Strings & key_columns_names, const Bl
     for (size_t i = 0; i < num_cols; ++i)
     {
         auto dispatched_columns = block.getByPosition(i).column->scatter(num_shards, selector);
-        chassert(result.size() == dispatched_columns.size());
+        assert(result.size() == dispatched_columns.size());
         for (size_t block_index = 0; block_index < num_shards; ++block_index)
         {
             result[block_index].getByPosition(i).column = std::move(dispatched_columns[block_index]);

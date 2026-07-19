@@ -11,7 +11,6 @@
 #include <Common/Config/AbstractConfigurationComparison.h>
 #include <Common/logger_useful.h>
 #include <Core/Settings.h>
-#include <Core/UUID.h>
 
 #include "config.h"
 
@@ -235,7 +234,7 @@ std::string ExternalDictionariesLoader::resolveDictionaryNameFromDatabaseCatalog
 
     if (!db)
         return res;
-    chassert(table);
+    assert(table);
 
     if (db->getUUID() == UUIDHelpers::Nil)
         return res;

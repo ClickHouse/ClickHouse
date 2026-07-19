@@ -12,7 +12,7 @@ namespace ErrorCodes
 
 /// See DateTimeTransforms.h
 template <typename ToDataType, typename Transform>
-class FunctionDateOrDateTimeToSomething final : public IFunctionDateOrDateTime<Transform>
+class FunctionDateOrDateTimeToSomething : public IFunctionDateOrDateTime<Transform>
 {
 public:
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionDateOrDateTimeToSomething>(); }

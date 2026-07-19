@@ -239,7 +239,7 @@ void ClientInfo::read(ReadBuffer & in, UInt64 client_protocol_revision)
 
     if (client_protocol_revision >= DBMS_MIN_REVISION_WITH_PARALLEL_REPLICAS)
     {
-        UInt64 value = 0;
+        UInt64 value;
         readVarUInt(value, in);
         collaborate_with_initiator = static_cast<bool>(value);
         readVarUInt(obsolete_count_participating_replicas, in);
@@ -347,7 +347,7 @@ void ClientInfo::setFromHTTPRequest(const Poco::Net::HTTPRequest & request)
     {
         /// These headers can contain authentication info and shouldn't be accessible by the user.
         String key_lowercase = Poco::toLower(header.first);
-        if (key_lowercase.starts_with("x-clickhouse") || key_lowercase == "authentication")
+        if (key_lowercase.starts_with("x-clickhouse") || key_lowercase == "authentication" || key_lowercase == "authorization")
             continue;
         http_headers[header.first] = header.second;
     }

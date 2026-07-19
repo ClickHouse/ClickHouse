@@ -19,7 +19,6 @@ namespace ErrorCodes
     extern const int UNSUPPORTED_METHOD;
 }
 
-void registerDictionaryHashed(DictionaryFactory & factory);
 void registerDictionaryHashed(DictionaryFactory & factory)
 {
     auto create_layout = [](const std::string & full_name,

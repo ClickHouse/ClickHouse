@@ -64,7 +64,6 @@ void JSONCompactRowOutputFormat::writeExtremesElement(const char * title, const 
     JSONUtils::writeCompactArrayEnd(*ostr);
 }
 
-void registerOutputFormatJSONCompact(FormatFactory & factory);
 void registerOutputFormatJSONCompact(FormatFactory & factory)
 {
     factory.registerOutputFormat("JSONCompact", [](

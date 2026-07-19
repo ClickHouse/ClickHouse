@@ -20,7 +20,6 @@
 #include <Storages/System/StorageSystemCompletions.h>
 #include <Storages/System/StorageSystemDatabases.h>
 #include <Storages/System/StorageSystemDataSkippingIndices.h>
-#include <Storages/System/StorageSystemDataSkippingIndexTypes.h>
 #include <Storages/System/StorageSystemDataTypeFamilies.h>
 #include <Storages/System/StorageSystemDetachedParts.h>
 #include <Storages/System/StorageSystemDetachedTables.h>
@@ -65,7 +64,6 @@
 #include <Storages/System/StorageSystemTableFunctions.h>
 #include <Storages/System/StorageSystemTables.h>
 #include <Storages/System/StorageSystemProjections.h>
-#include <Storages/System/StorageSystemConstraints.h>
 #include <Storages/System/StorageSystemZooKeeper.h>
 #include <Storages/System/StorageSystemZooKeeperInfo.h>
 #include <Storages/System/StorageSystemContributors.h>
@@ -106,10 +104,6 @@
 #include <Storages/System/StorageSystemDroppedTables.h>
 #include <Storages/System/StorageSystemDroppedTablesParts.h>
 #include <Storages/System/StorageSystemZooKeeperConnection.h>
-#include <Storages/System/StorageSystemZooKeeperWatches.h>
-#if USE_NURAFT
-#include <Storages/System/StorageSystemKeeperChangelogs.h>
-#endif
 #include <Storages/System/StorageSystemJemalloc.h>
 #include <Storages/System/StorageSystemJemallocProfileText.h>
 #include <Storages/System/StorageSystemJemallocStats.h>
@@ -149,7 +143,7 @@
 namespace DB
 {
 
-void attachSystemTablesServer(ContextPtr context, IDatabase & system_database, bool has_zookeeper, [[maybe_unused]] bool has_keeper_server)
+void attachSystemTablesServer(ContextPtr context, IDatabase & system_database, bool has_zookeeper)
 {
     auto component_guard = Coordination::setCurrentComponent("attachSystemTablesServer");
     attachNoDescription<StorageSystemOne>(context, system_database, "one", "This table contains a single row with a single dummy UInt8 column containing the value 0. Used when the table is not specified explicitly, for example in queries like `SELECT 1`.");
@@ -178,7 +172,6 @@ void attachSystemTablesServer(ContextPtr context, IDatabase & system_database, b
     attach<StorageSystemTableFunctions>(context, system_database, "table_functions", "Contains a list of all available table functions with their descriptions.");
     attach<StorageSystemAggregateFunctionCombinators>(context, system_database, "aggregate_function_combinators", "Contains a list of all available aggregate function combinators, which could be applied to aggregate functions and change the way they work.");
     attach<StorageSystemDataTypeFamilies>(context, system_database, "data_type_families", "Contains a list of all available native data types along with all the aliases used for compatibility with other DBMS.");
-    attach<StorageSystemDataSkippingIndexTypes>(context, system_database, "data_skipping_index_types", "Contains a list of all available data skipping index types along with their embedded documentation.");
     attach<StorageSystemCollations>(context, system_database, "collations", "Contains a list of all available collations for alphabetical comparison of strings.");
     attach<StorageSystemDatabaseEngines>(context, system_database, "database_engines", "Contains a list of all available database engines");
     attach<StorageSystemTableEngines>(context, system_database, "table_engines", "Contains a list of all available table engines along with information whether a particular table engine supports some specific features (e.g. settings, skipping indices, projections, replication, TTL, deduplication, parallel insert, etc.)");
@@ -202,7 +195,6 @@ void attachSystemTablesServer(ContextPtr context, IDatabase & system_database, b
     attach<StorageSystemWarnings>(context, system_database, "warnings", "Contains warnings about server configuration to be displayed by clickhouse-client right after it connects to the server.");
     attachNoDescription<StorageSystemDataSkippingIndices>(context, system_database, "data_skipping_indices", "Contains all the information about all the data skipping indices in tables, similar to system.columns.");
     attachNoDescription<StorageSystemProjections>(context, system_database, "projections", "Contains all the information about all the projections in tables, similar to system.data_skipping_indices.");
-    attachNoDescription<StorageSystemConstraints>(context, system_database, "constraints", "Contains all the information about all the constraints in tables, similar to system.data_skipping_indices.");
     attach<StorageSystemLicenses>(context, system_database, "licenses", "Contains licenses of third-party libraries that are located in the contrib directory of ClickHouse sources.");
     attach<StorageSystemTimeZones>(context, system_database, "time_zones", "Contains a list of time zones that are supported by the ClickHouse server. This list of timezones might vary depending on the version of ClickHouse.");
     attach<StorageSystemBackups>(context, system_database, "backups", "Contains a list of all BACKUP or RESTORE operations with their current states and other properties. Note, that table is not persistent and it shows only operations executed after the last server restart.");
@@ -284,15 +276,7 @@ void attachSystemTablesServer(ContextPtr context, IDatabase & system_database, b
         attachNoDescription<StorageSystemZooKeeper>(context, system_database, "zookeeper", "Exposes data from the [Zoo]Keeper cluster defined in the config. Allow to get the list of children for a particular node or read the value written inside it.");
         attach<StorageSystemZooKeeperInfo>(context, system_database, "zookeeper_info", "Exposes data from the [Zoo]Keeper cluster defined in the config.");
         attach<StorageSystemZooKeeperConnection>(context, system_database, "zookeeper_connection", "Shows the information about current connections to [Zoo]Keeper (including auxiliary [ZooKeepers)");
-        attach<StorageSystemZooKeeperWatches>(context, system_database, "zookeeper_watches", "Shows all active watches across all [Zoo]Keeper connections.");
     }
-
-#if USE_NURAFT
-    if (has_keeper_server)
-    {
-        attach<StorageSystemKeeperChangelogs>(context, system_database, "keeper_changelogs", "Contains information about changelogs stored on this Keeper node.");
-    }
-#endif
 
     if (context->getConfigRef().getInt("allow_experimental_transactions", 0))
     {

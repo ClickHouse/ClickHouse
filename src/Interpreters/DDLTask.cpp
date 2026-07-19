@@ -706,7 +706,7 @@ Coordination::RequestPtr DatabaseReplicatedTask::getOpToUpdateLogPointer()
 
 void DatabaseReplicatedTask::createSyncedNodeIfNeed(const ZooKeeperPtr & zookeeper)
 {
-    chassert(!completely_processed);
+    assert(!completely_processed);
     if (!entry.settings)
         return;
 
@@ -715,7 +715,7 @@ void DatabaseReplicatedTask::createSyncedNodeIfNeed(const ZooKeeperPtr & zookeep
         return;
 
     /// Bool type is really weird, sometimes it's Bool and sometimes it's UInt64...
-    chassert(value.getType() == Field::Types::Bool || value.getType() == Field::Types::UInt64);
+    assert(value.getType() == Field::Types::Bool || value.getType() == Field::Types::UInt64);
     if (!value.safeGet<UInt64>())
         return;
 
@@ -730,9 +730,9 @@ String DDLTaskBase::getLogEntryName(UInt32 log_entry_number)
 UInt32 DDLTaskBase::getLogEntryNumber(const String & log_entry_name)
 {
     constexpr const char * name = "query-";
-    chassert(startsWith(log_entry_name, name));
+    assert(startsWith(log_entry_name, name));
     UInt32 num = parse<UInt32>(log_entry_name.substr(strlen(name)));
-    chassert(num < std::numeric_limits<Int32>::max());
+    assert(num < std::numeric_limits<Int32>::max());
     return num;
 }
 

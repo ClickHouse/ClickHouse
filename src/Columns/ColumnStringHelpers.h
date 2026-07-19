@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstring>
+#include <cassert>
 
 #include <Common/Exception.h>
 #include <Columns/ColumnString.h>

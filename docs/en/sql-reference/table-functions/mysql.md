@@ -8,6 +8,8 @@ title: 'mysql'
 doc_type: 'reference'
 ---
 
+# mysql Table Function
+
 Allows `SELECT` and `INSERT` queries to be performed on data that are stored on a remote MySQL server.
 
 ## Syntax {#syntax}
@@ -100,35 +102,6 @@ SELECT * FROM mysql(creds, table='test');
 ┌─int_id─┬─float─┐
 │      1 │     2 │
 └────────┴───────┘
-```
-
-### `enable_compression` {#enable-compression}
-
-Enables compression for the MySQL protocol connection.
-
-Default value: `false`.
-
-This setting applies to:
-
-- the `mysql` table function;
-- the `MySQL` table engine;
-- the `MySQL` database engine;
-- named collections used by MySQL integrations.
-
-When enabled, ClickHouse requests compression for the connection.
-
-Example:
-
-```sql
-SELECT *
-FROM mysql(
-    'mysql80:3306',
-    'clickhouse',
-    'test_table',
-    'root',
-    'password',
-    SETTINGS enable_compression = 1
-);
 ```
 
 Replacing and inserting:

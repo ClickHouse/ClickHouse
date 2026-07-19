@@ -19,7 +19,7 @@ namespace ErrorCodes
 namespace
 {
 
-class FunctionGetServerSetting final : public IFunction
+class FunctionGetServerSetting : public IFunction
 {
 public:
     static constexpr auto name = "getServerSetting";

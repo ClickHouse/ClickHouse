@@ -41,8 +41,6 @@ EXCLUDE=(
     04045_delta_no_padding_3vals.parquet
     04045_delta_no_padding_5vals.parquet
     04045_delta_sample_93093.parquet
-    # Hand-crafted file for testing dictionary memory estimation with sparse nullables.
-    04099_dict_nullable_string_memory.parquet
 )
 
 for NAME in $(find "$DATA_DIR" -type f \( -iname '*.parquet' -o -iname '*.parquet.gz' \) -print0 | xargs -0 -n 1 basename | LC_ALL=C sort | grep -vFf <(printf '%s\n' "${EXCLUDE[@]}")); do

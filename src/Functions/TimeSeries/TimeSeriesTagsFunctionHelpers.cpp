@@ -77,7 +77,7 @@ namespace
         std::string_view function_name,
         size_t argument_index,
         const IColumn & column_tags_array,
-        VectorWithMemoryTracking<TagNamesAndValues> & out_tags_vector)
+        std::vector<TagNamesAndValues> & out_tags_vector)
     {
         size_t num_rows = column_tags_array.size();
         chassert(out_tags_vector.size() == num_rows);
@@ -157,10 +157,10 @@ namespace
     }
 
     /// Extracts strings from a column.
-    VectorWithMemoryTracking<std::string_view> extractStringViewFromArgument(const IColumn & column)
+    std::vector<std::string_view> extractStringViewFromArgument(const IColumn & column)
     {
         size_t num_rows = column.size();
-        VectorWithMemoryTracking<std::string_view> res{num_rows, ""};
+        std::vector<std::string_view> res{num_rows, ""};
         for (size_t i = 0; i != res.size(); ++i)
         {
             if (!column.isNullAt(i))
@@ -176,14 +176,14 @@ namespace
     /// Extracts tags from two columns: the first column contains names and the second column contains values.
     void extractTagNameAndValueFromTwoColumns(const IColumn & column_tag_name,
                                               const IColumn & column_tag_value,
-                                              VectorWithMemoryTracking<TagNamesAndValues> & out_tags_vector)
+                                              std::vector<TagNamesAndValues> & out_tags_vector)
     {
         size_t num_rows = column_tag_name.size();
         chassert(column_tag_name.size() == num_rows);
         chassert(out_tags_vector.size() == num_rows);
 
-        VectorWithMemoryTracking<std::string_view> tag_names = extractStringViewFromArgument(column_tag_name);
-        VectorWithMemoryTracking<std::string_view> tag_values = extractStringViewFromArgument(column_tag_value);
+        std::vector<std::string_view> tag_names = extractStringViewFromArgument(column_tag_name);
+        std::vector<std::string_view> tag_values = extractStringViewFromArgument(column_tag_value);
         for (size_t i = 0; i != num_rows; ++i)
         {
             auto tag_name = tag_names[i];
@@ -194,7 +194,7 @@ namespace
 
     /// Sorts each set of tags and removes duplicate tags.
     /// The function also removes tags with empty values.
-    void sortTagsAndRemoveDuplicates(std::string_view function_name, VectorWithMemoryTracking<TagNamesAndValues> & tags_vector)
+    void sortTagsAndRemoveDuplicates(std::string_view function_name, std::vector<TagNamesAndValues> & tags_vector)
     {
         auto less_by_tag_name = [](const std::pair<String, String> & left, const std::pair<String, String> & right)
         {
@@ -233,9 +233,9 @@ namespace
     }
 
     /// Wrap TagNamesAndValues in shared pointers.
-    VectorWithMemoryTracking<TagNamesAndValuesPtr> makeTagsPtrVector(VectorWithMemoryTracking<TagNamesAndValues> && tags_vector)
+    std::vector<TagNamesAndValuesPtr> makeTagsPtrVector(std::vector<TagNamesAndValues> && tags_vector)
     {
-        VectorWithMemoryTracking<TagNamesAndValuesPtr> res;
+        std::vector<TagNamesAndValuesPtr> res;
         res.reserve(tags_vector.size());
         for (auto & tags : tags_vector)
         {
@@ -245,7 +245,7 @@ namespace
     }
 
     /// Extracts a group from a column.
-    VectorWithMemoryTracking<Group> extractGroupFromColumn(std::string_view function_name, size_t argument_index, const IColumn & column, bool return_single_element_if_const_column)
+    std::vector<Group> extractGroupFromColumn(std::string_view function_name, size_t argument_index, const IColumn & column, bool return_single_element_if_const_column)
     {
         /// Group must be UInt64.
         if (checkColumn<ColumnUInt64>(&column))
@@ -253,7 +253,7 @@ namespace
             std::string_view data = column.getRawData();
             chassert(data.size() == column.size() * sizeof(UInt64));
             const UInt64 * begin = reinterpret_cast<const UInt64 *>(data.data());
-            return VectorWithMemoryTracking<Group>(begin, begin + column.size());
+            return std::vector<Group>(begin, begin + column.size());
         }
 
         /// The argument can be wrapped in ColumnConst.
@@ -280,7 +280,7 @@ namespace
 
     /// Extracts an identifier of time series from a column.
     template <typename IDType>
-    void extractIDFromColumn(std::string_view function_name, size_t argument_index, const IColumn & column, VectorWithMemoryTracking<IDType> & out_ids)
+    void extractIDFromColumn(std::string_view function_name, size_t argument_index, const IColumn & column, std::vector<IDType> & out_ids)
     {
         size_t num_rows = out_ids.size();
 
@@ -376,7 +376,7 @@ void checkArgumentTypesForTagNamesAndValues(
     }
 }
 
-VectorWithMemoryTracking<TagNamesAndValuesPtr> extractTagNamesAndValuesFromArguments(
+std::vector<TagNamesAndValuesPtr> extractTagNamesAndValuesFromArguments(
     std::string_view function_name,
     const ColumnsWithTypeAndName & arguments,
     size_t start_argument_index)
@@ -384,7 +384,7 @@ VectorWithMemoryTracking<TagNamesAndValuesPtr> extractTagNamesAndValuesFromArgum
     chassert(start_argument_index < arguments.size());
     const auto & column_tags_array = *arguments[start_argument_index].column;
 
-    VectorWithMemoryTracking<TagNamesAndValues> tags_vector;
+    std::vector<TagNamesAndValues> tags_vector;
     tags_vector.resize(column_tags_array.size());
     extractTagsArrayFromColumn(function_name, start_argument_index, column_tags_array, tags_vector);
 
@@ -419,7 +419,7 @@ void checkArgumentTypeForGroup(std::string_view function_name, const ColumnsWith
 }
 
 
-VectorWithMemoryTracking<Group> extractGroupFromArgument(std::string_view function_name, const ColumnsWithTypeAndName & arguments, size_t argument_index, bool return_single_element_if_const_column)
+std::vector<Group> extractGroupFromArgument(std::string_view function_name, const ColumnsWithTypeAndName & arguments, size_t argument_index, bool return_single_element_if_const_column)
 {
     chassert(argument_index < arguments.size());
     const auto & column = *arguments[argument_index].column;
@@ -495,7 +495,7 @@ void checkArgumentTypeForConstTagNames(std::string_view function_name, const Col
 }
 
 
-Strings extractConstStringsFromArgument(std::string_view function_name, const ColumnsWithTypeAndName & arguments, size_t argument_index)
+std::vector<String> extractConstStringsFromArgument(std::string_view function_name, const ColumnsWithTypeAndName & arguments, size_t argument_index)
 {
     chassert(argument_index < arguments.size());
     const auto & column = *arguments[argument_index].column;
@@ -521,7 +521,7 @@ Strings extractConstStringsFromArgument(std::string_view function_name, const Co
 }
 
 
-Strings extractConstTagNamesFromArgument(std::string_view function_name, const ColumnsWithTypeAndName & arguments, size_t argument_index)
+std::vector<String> extractConstTagNamesFromArgument(std::string_view function_name, const ColumnsWithTypeAndName & arguments, size_t argument_index)
 {
     Strings tag_names = extractConstStringsFromArgument(function_name, arguments, argument_index);
     for (const auto & tag_name : tag_names)
@@ -561,13 +561,13 @@ const std::type_info & checkArgumentTypeForID(std::string_view function_name, co
 
 
 template <typename IDType>
-VectorWithMemoryTracking<IDType> extractIDFromArgument(std::string_view function_name, const ColumnsWithTypeAndName & arguments, size_t argument_index)
+std::vector<IDType> extractIDFromArgument(std::string_view function_name, const ColumnsWithTypeAndName & arguments, size_t argument_index)
 {
     chassert(argument_index < arguments.size());
     const auto & column = *arguments[argument_index].column;
 
     size_t num_rows = column.size();
-    VectorWithMemoryTracking<IDType> ids;
+    std::vector<IDType> ids;
     ids.resize(num_rows);
 
     extractIDFromColumn(function_name, argument_index, column, ids);
@@ -575,13 +575,13 @@ VectorWithMemoryTracking<IDType> extractIDFromArgument(std::string_view function
 }
 
 
-template VectorWithMemoryTracking<UInt64> extractIDFromArgument<UInt64>(std::string_view function_name, const ColumnsWithTypeAndName & arguments, size_t argument_index);
-template VectorWithMemoryTracking<std::optional<UInt64>> extractIDFromArgument<std::optional<UInt64>>(std::string_view function_name, const ColumnsWithTypeAndName & arguments, size_t argument_index);
-template VectorWithMemoryTracking<UInt128> extractIDFromArgument<UInt128>(std::string_view function_name, const ColumnsWithTypeAndName & arguments, size_t argument_index);
-template VectorWithMemoryTracking<std::optional<UInt128>> extractIDFromArgument<std::optional<UInt128>>(std::string_view function_name, const ColumnsWithTypeAndName & arguments, size_t argument_index);
+template std::vector<UInt64> extractIDFromArgument<UInt64>(std::string_view function_name, const ColumnsWithTypeAndName & arguments, size_t argument_index);
+template std::vector<std::optional<UInt64>> extractIDFromArgument<std::optional<UInt64>>(std::string_view function_name, const ColumnsWithTypeAndName & arguments, size_t argument_index);
+template std::vector<UInt128> extractIDFromArgument<UInt128>(std::string_view function_name, const ColumnsWithTypeAndName & arguments, size_t argument_index);
+template std::vector<std::optional<UInt128>> extractIDFromArgument<std::optional<UInt128>>(std::string_view function_name, const ColumnsWithTypeAndName & arguments, size_t argument_index);
 
 
-ColumnPtr makeColumnForGroup(const VectorWithMemoryTracking<Group> & groups)
+ColumnPtr makeColumnForGroup(const std::vector<Group> & groups)
 {
     auto res = ColumnUInt64::create();
     res->reserve(groups.size());
@@ -591,7 +591,7 @@ ColumnPtr makeColumnForGroup(const VectorWithMemoryTracking<Group> & groups)
 }
 
 
-ColumnPtr makeColumnForTagNamesAndValues(const VectorWithMemoryTracking<TagNamesAndValuesPtr> & tags_vector)
+ColumnPtr makeColumnForTagNamesAndValues(const std::vector<TagNamesAndValuesPtr> & tags_vector)
 {
     size_t total_tags = 0;
     for (const auto & tags : tags_vector)

@@ -227,7 +227,6 @@ std::string ExecutableDictionarySource::toString() const
     return "Executable: " + configuration.command;
 }
 
-void registerDictionarySourceExecutable(DictionarySourceFactory & factory);
 void registerDictionarySourceExecutable(DictionarySourceFactory & factory)
 {
     auto create_table_source = [=](const String & /*name*/,

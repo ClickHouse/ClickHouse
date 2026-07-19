@@ -293,7 +293,7 @@ Names StorageRabbitMQ::parseSettings(String settings_list)
 
 AMQP::ExchangeType StorageRabbitMQ::defineExchangeType(String exchange_type_)
 {
-    AMQP::ExchangeType type = {};
+    AMQP::ExchangeType type;
     if (exchange_type_ != ExchangeType::DEFAULT)
     {
         if (exchange_type_ == ExchangeType::FANOUT)              type = AMQP::ExchangeType::fanout;
@@ -509,7 +509,7 @@ void StorageRabbitMQ::bindExchange(AMQP::TcpChannel & rabbit_channel)
     /// 2. `autodelete` (auto delete in case of queue bindings are dropped).
 
     std::string error;
-    int error_code = 0;
+    int error_code;
     rabbit_channel.declareExchange(exchange_name, exchange_type, AMQP::durable)
     .onError([&](const char * message)
     {
@@ -991,7 +991,7 @@ void StorageRabbitMQ::cleanupRabbitMQ() const
     for (const auto & queue : queues)
     {
         /// AMQP::ifunused is needed, because it is possible to share queues between multiple tables and dropping
-        /// one of them should not affect others.
+        /// on of them should not affect others.
         /// AMQP::ifempty is not used on purpose.
 
         rabbit_channel->removeQueue(queue, AMQP::ifunused)
@@ -1323,7 +1323,6 @@ bool StorageRabbitMQ::tryStreamToViews()
 }
 
 
-void registerStorageRabbitMQ(StorageFactory & factory);
 void registerStorageRabbitMQ(StorageFactory & factory)
 {
     auto creator_fn = [](const StorageFactory::Arguments & args)

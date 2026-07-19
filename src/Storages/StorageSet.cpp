@@ -40,7 +40,7 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
-class SetOrJoinSink final : public SinkToStorage, WithContext
+class SetOrJoinSink : public SinkToStorage, WithContext
 {
 public:
     SetOrJoinSink(
@@ -345,7 +345,6 @@ void StorageSetOrJoinBase::rename(const String & new_path_to_table_data, const S
 }
 
 
-void registerStorageSet(StorageFactory & factory);
 void registerStorageSet(StorageFactory & factory)
 {
     factory.registerStorage("Set", [](const StorageFactory::Arguments & args)

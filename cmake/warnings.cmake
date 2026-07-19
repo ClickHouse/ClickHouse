@@ -25,31 +25,27 @@ no_warning(c++98-compat-pedantic) # We don't care about C++98 compatibility (We 
 no_warning(c++20-compat) # Use C++20 features incompatible with older standards (consteval, constinit, implicit typename...)
 no_warning(sign-conversion) # TODO: Fix the code and enable it
 no_warning(deprecated-declarations) # TODO: Fix the code and enable it
-# -Wdisabled-macro-expansion is enabled
-no_warning(documentation-unknown-command) # Too many false positives from contrib headers (zstd) and backslashes in comments
-# -Wdouble-promotion is enabled: avoid implicit float-to-double conversions
-no_warning(exit-time-destructors) # We intentionally use global objects with non-trivial destructors (singletons, registries)
-no_warning(float-equal) # Exact float comparison is intentional in many places (hash functions, serialization, NaN checks)
-no_warning(global-constructors) # We intentionally use global constructors for registration and initialization
-# -Wmissing-prototypes is enabled
-no_warning(missing-variable-declarations) # TODO: Fix the code and enable it
-no_warning(padded) # Padding is a micro-optimization; not actionable as a global warning
-no_warning(switch-enum) # Conflicts with having a default case in switches; we prefer explicit defaults
-no_warning(undefined-func-template) # Too many template instantiations across TU boundaries to fix; also triggers in contrib
-no_warning(unused-template) # Triggers on static template functions in headers included by multiple TUs
-no_warning(weak-template-vtables) # Same as weak-vtables but for templates
-no_warning(weak-vtables) # Requires out-of-line virtual methods; too many classes across codebase and contrib to fix
+no_warning(disabled-macro-expansion)
+no_warning(documentation-unknown-command)
+no_warning(double-promotion)
+no_warning(exit-time-destructors)
+no_warning(float-equal)
+no_warning(global-constructors)
+no_warning(missing-prototypes)
+no_warning(missing-variable-declarations)
+no_warning(padded)
+no_warning(switch-enum)
+no_warning(undefined-func-template)
+no_warning(unused-template)
+no_warning(weak-template-vtables)
+no_warning(weak-vtables)
 no_warning(thread-safety-negative) # experimental flag, too many false positives
 no_warning(unsafe-buffer-usage) # too aggressive
 no_warning(switch-default) # conflicts with "defaults in a switch covering all enum values"
 no_warning(nrvo) # not eliding copy on return - too aggressive
 no_warning(missing-noreturn) # too aggressive with no clear benefit, see https://github.com/ClickHouse/ClickHouse/pull/86416
-# Hard-code knowledge of clang version-specific warnings rather than probing the compiler.
-# `lifetime-safety-*` were introduced in clang 23.
-if (CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 23)
-    no_warning(lifetime-safety-intra-tu-suggestions)
-    no_warning(lifetime-safety-cross-tu-suggestions)
-endif ()
+no_warning(lifetime-safety-intra-tu-suggestions) # New in clang-23
+no_warning(lifetime-safety-cross-tu-suggestions) # New in clang-23
 if (ARCH_E2K)
     # disable "use of GNU statement expression extension from macro expansion" warning
     no_warning(gnu-statement-expression-from-macro-expansion)

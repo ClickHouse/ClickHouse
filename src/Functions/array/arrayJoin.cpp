@@ -17,7 +17,7 @@ namespace ErrorCodes
 /** arrayJoin(arr) - a special function - it can not be executed directly;
   *                     is used only to get the result type of the corresponding expression.
   */
-class FunctionArrayJoin final : public IFunction
+class FunctionArrayJoin : public IFunction
 {
 public:
     static constexpr auto name = "arrayJoin";
@@ -249,11 +249,6 @@ GROUP BY
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
     factory.registerFunction<FunctionArrayJoin>(documentation);
-    /// PostgreSQL/SQL-standard alias. `unnest(arr)` in a SELECT clause behaves
-    /// the same as `arrayJoin(arr)` - one row per array element. Note that
-    /// PostgreSQL's `LATERAL`/`CROSS JOIN UNNEST(...)` table-source syntax is
-    /// not supported by this alias and still requires `ARRAY JOIN`.
-    factory.registerAlias("unnest", "arrayJoin", FunctionFactory::Case::Insensitive);
 }
 
 }

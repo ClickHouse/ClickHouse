@@ -36,7 +36,6 @@ void HashOutputFormat::finalizeImpl()
     out.next();
 }
 
-void registerOutputFormatHash(FormatFactory & factory);
 void registerOutputFormatHash(FormatFactory & factory)
 {
     factory.registerOutputFormat("Hash",

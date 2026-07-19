@@ -94,7 +94,7 @@ public:
         const auto & column = assert_cast<const ColumnType &>(asof_column);
         TKey key = column.getElement(row_num);
 
-        chassert(!sorted.load(std::memory_order_acquire));
+        assert(!sorted.load(std::memory_order_acquire));
 
         entries.emplace_back(key, static_cast<UInt32>(row_refs.size()));
         row_refs.emplace_back(RowRef(columns, row_num));

@@ -678,16 +678,9 @@ def test_jbod_overflow(start_cluster, name, engine):
             )
         )
 
-        # The last (10MB) part cannot fit on the nearly-full jbod1 and must go to `external`.
-        # Find it by the highest block number instead of relying on `get_used_disks_for_table`,
-        # which orders by `modification_time`: all inserts happen within the same second, so the
-        # last jbod1 part and the external part tie and order arbitrarily, making this flaky.
-        overflow_part_disk = node1.query(
-            "SELECT disk_name FROM system.parts WHERE table == '{}' AND active = 1 "
-            "ORDER BY max_block_number DESC LIMIT 1".format(name)
-        ).strip()
+        used_disks = get_used_disks_for_table(node1, name)
 
-        assert overflow_part_disk == "external"
+        assert used_disks[-1] == "external"
 
         node1.query(f"SYSTEM START MERGES {name}")
         node1.query(f"SYSTEM START MOVES {name}")
@@ -1333,15 +1326,7 @@ def test_concurrent_alter_modify(start_cluster, name, engine):
     r2 = node2.is_built_with_llvm_coverage()
     if r1 or r2:
         pytest.skip("Flaky under llvm_coverage")
-
-    # Event used to terminate the worker functions early so this test is
-    # idempotent: when `task.get(timeout=...)` raises `TimeoutError`, the
-    # worker tasks would otherwise keep firing `ALTER` queries against
-    # the table for many seconds, racing with the `DROP TABLE` in the
-    # `finally` block and contaminating the next run of this test (e.g.
-    # under `pytest --count`).
-    stop_event = threading.Event()
-
+    
     try:
         node1.query_with_retry(
             """
@@ -1361,8 +1346,6 @@ def test_concurrent_alter_modify(start_cluster, name, engine):
 
         def insert(num):
             for i in range(num):
-                if stop_event.is_set():
-                    return
                 day = random.randint(11, 30)
                 value = values.pop()
                 month = "0" + str(random.choice([3, 4]))
@@ -1374,14 +1357,10 @@ def test_concurrent_alter_modify(start_cluster, name, engine):
 
         def alter_move(num):
             for i in range(num):
-                if stop_event.is_set():
-                    return
                 produce_alter_move(node1, name)
 
         def alter_modify(num):
             for i in range(num):
-                if stop_event.is_set():
-                    return
                 column_type = random.choice(["UInt64", "String"])
                 try:
                     node1.query(
@@ -1397,42 +1376,19 @@ def test_concurrent_alter_modify(start_cluster, name, engine):
 
         assert node1.query("SELECT COUNT() FROM {}".format(name)) == "100\n"
 
-        # `with Pool(...)` guarantees `terminate()` + `join()` on exit, but
-        # `terminate()` cannot interrupt a worker that is mid-task — every
-        # `apply_async` call below executes a full `for i in range(num)`
-        # loop in a single task. The `stop_event` set in the inner `finally`
-        # makes those loops break out at the next iteration so `join()`
-        # completes promptly even when a `task.get` raises `TimeoutError`.
-        #
-        # The per-task timeout below (in seconds) was 120s historically,
-        # which was too tight under sanitizer builds — the workload
-        # (10 concurrent loops of 100 ALTER MOVE/MODIFY operations against
-        # a multi-disk MergeTree) reliably finished in ~115s on a fast box
-        # under ASan+UBSan, leaving no margin for variability on shared CI
-        # workers and producing chronic `task.get(timeout=120)` failures
-        # without indicating any real bug. The pytest-level timeout
-        # (`timeout = 900` in `tests/integration/pytest.ini`) still bounds
-        # the test as a whole.
-        with Pool(50) as p:
-            tasks = []
-            for i in range(5):
-                tasks.append(p.apply_async(alter_move, (100,)))
-                tasks.append(p.apply_async(alter_modify, (100,)))
+        p = Pool(50)
+        tasks = []
+        for i in range(5):
+            tasks.append(p.apply_async(alter_move, (100,)))
+            tasks.append(p.apply_async(alter_modify, (100,)))
 
-            try:
-                for task in tasks:
-                    task.get(timeout=360)
-            finally:
-                stop_event.set()
+        for task in tasks:
+            task.get(timeout=120)
 
         assert node1.query("SELECT 1") == "1\n"
         assert node1.query("SELECT COUNT() FROM {}".format(name)) == "100\n"
 
     finally:
-        # Defensive: in case an exception escaped before the inner `finally`
-        # ran (e.g. during `CREATE TABLE` retries), make sure no stray
-        # worker thread keeps querying the table after we drop it.
-        stop_event.set()
         node1.query_with_retry(f"DROP TABLE IF EXISTS {name} SYNC")
 
 

@@ -286,7 +286,7 @@ void performRequiredConversions(Block & block, const NamesAndTypesList & require
     }
 }
 
-static bool needConvertAnyNullToDefault(const Block & header, const NamesAndTypesList & required_columns, const ColumnsDescription & columns)
+bool needConvertAnyNullToDefault(const Block & header, const NamesAndTypesList & required_columns, const ColumnsDescription & columns)
 {
     for (const auto & required_column : required_columns)
     {
@@ -374,19 +374,19 @@ static std::unordered_map<String, ColumnPtr> collectOffsetsColumns(
 
 static ColumnPtr createColumnWithDefaultValue(const IDataType & data_type, const String & subcolumn_name, size_t num_rows)
 {
-    auto const_column = data_type.createColumnConstWithDefaultValue(num_rows);
+    auto column = data_type.createColumnConstWithDefaultValue(num_rows);
 
     /// We must turn a constant column into a full column because the interpreter could infer
     /// that it is constant everywhere but in some blocks (from other parts) it can be a full column.
 
     if (subcolumn_name.empty())
-        return const_column->convertToFullColumnIfConst();
+        return column->convertToFullColumnIfConst();
 
     /// Firstly get subcolumn from const column and then replicate.
-    ColumnPtr data_column = const_column->getDataColumnPtr();
-    data_column = data_type.getSubcolumn(subcolumn_name, data_column);
+    column = assert_cast<const ColumnConst &>(*column).getDataColumnPtr();
+    column = data_type.getSubcolumn(subcolumn_name, column);
 
-    return ColumnConst::create(std::move(data_column), num_rows)->convertToFullColumnIfConst();
+    return ColumnConst::create(std::move(column), num_rows)->convertToFullColumnIfConst();
 }
 
 static bool hasDefault(const StorageSnapshotPtr & storage_snapshot, const NameAndTypePair & column)

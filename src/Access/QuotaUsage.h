@@ -12,7 +12,7 @@ struct QuotaUsage
 {
     struct Interval
     {
-        QuotaValue used[static_cast<size_t>(QuotaType::MAX)]{};
+        QuotaValue used[static_cast<size_t>(QuotaType::MAX)];
         std::optional<QuotaValue> max[static_cast<size_t>(QuotaType::MAX)];
         std::chrono::seconds duration = std::chrono::seconds::zero();
         bool randomize_interval = false;

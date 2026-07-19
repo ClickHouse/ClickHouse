@@ -279,9 +279,24 @@ void ColumnTuple::doInsertManyFrom(const IColumn & src, size_t position, size_t 
 
 void ColumnTuple::insertDefault()
 {
+    /// Must be exception-safe: if some nested column throws (e.g. on a memory limit),
+    /// the already modified nested columns have to be rolled back, otherwise the tuple
+    /// is left with nested columns of different sizes, which later leads to over-popping
+    /// in popBack during rollback of a partially read row.
+    size_t i = 0;
+    try
+    {
+        for (; i < columns.size(); ++i)
+            columns[i]->insertDefault();
+    }
+    catch (...)
+    {
+        for (size_t rollback = 0; rollback < i; ++rollback)
+            columns[rollback]->popBack(1);
+        throw;
+    }
+
     ++column_length;
-    for (auto & column : columns)
-        column->insertDefault();
 }
 
 void ColumnTuple::popBack(size_t n)
@@ -592,7 +607,7 @@ int ColumnTuple::compareAtImpl(size_t n, size_t m, const IColumn & rhs, int nan_
     const size_t tuple_size = columns.size();
     for (size_t i = 0; i < tuple_size; ++i)
     {
-        int res = 0;
+        int res;
         if (collator && columns[i]->isCollationSupported())
             res = columns[i]->compareAtWithCollation(n, m, *assert_cast<const ColumnTuple &>(rhs).columns[i], nan_direction_hint, *collator);
         else
@@ -633,7 +648,7 @@ struct ColumnTuple::Less
     {
         for (const auto & column : columns)
         {
-            int res = 0;
+            int res;
             if (collator && column->isCollationSupported())
                 res = column->compareAtWithCollation(a, b, *column, nan_direction_hint, *collator);
             else

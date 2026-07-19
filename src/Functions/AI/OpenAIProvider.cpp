@@ -94,8 +94,7 @@ AIResponse OpenAIProvider::call(const AIRequest & ai_request, const ConnectionTi
 
     Poco::Net::HTTPRequest http_request(Poco::Net::HTTPRequest::HTTP_POST, uri.getPathAndQuery(), Poco::Net::HTTPMessage::HTTP_1_1);
     http_request.setContentType("application/json");
-    if (!api_key.empty()) /// not all providers need API key
-        http_request.set("Authorization", "Bearer " + api_key);
+    http_request.set("Authorization", "Bearer " + api_key);
     http_request.setContentLength(body.size());
 
     auto & out_stream = session->sendRequest(http_request);
@@ -177,8 +176,7 @@ AIEmbeddingResponse OpenAIProvider::embed(const AIEmbeddingRequest & ai_embeddin
 
     Poco::Net::HTTPRequest http_request(Poco::Net::HTTPRequest::HTTP_POST, uri.getPathAndQuery(), Poco::Net::HTTPMessage::HTTP_1_1);
     http_request.setContentType("application/json");
-    if (!api_key.empty()) /// not all providers need API key
-        http_request.set("Authorization", "Bearer " + api_key);
+    http_request.set("Authorization", "Bearer " + api_key);
     http_request.setContentLength(body.size());
 
     auto & out_stream = session->sendRequest(http_request);

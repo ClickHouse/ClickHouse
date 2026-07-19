@@ -94,7 +94,7 @@ void wrapIntoToString(FunctionNode & function_node, QueryTreeNodePtr arg, Contex
 
     function_node.resolveAsFunction(to_string_function->build(function_node.getArgumentColumns()));
 
-    chassert(isString(removeNullable(function_node.getResultType())));
+    assert(isString(removeNullable(function_node.getResultType())));
 }
 
 class ConvertStringsToEnumVisitor : public InDepthQueryTreeVisitorWithContext<ConvertStringsToEnumVisitor>

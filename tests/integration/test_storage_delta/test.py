@@ -1537,6 +1537,8 @@ def test_filesystem_cache(started_cluster, use_delta_kernel):
     # (it reads last 64kb for parquet metadata unconditionally
     # assuming most of it will be metadata, see Reader::readFileMetaData)
     # So we end up reading the same data two times here with parquet reader v3.
+    # We cannot disable input_format_parquet_use_native_reader_v3 because
+    # this setting is deprecated.
     # So we cannot check count == CachedReadBufferReadFromCacheBytes,
     # but instead check that CachedReadBufferReadFromCacheBytes is no more than 2 times more :(
     assert count * 2 > int(
@@ -2569,7 +2571,7 @@ def test_column_pruning(started_cluster):
     query_id = f"query_{TABLE_NAME}_1"
     sum = int(
         instance.query(
-            f"SELECT sum(id) FROM {table_function} SETTINGS allow_experimental_delta_kernel_rs=0, max_read_buffer_size_remote_fs=100, remote_read_min_bytes_for_seek=1",
+            f"SELECT sum(id) FROM {table_function} SETTINGS allow_experimental_delta_kernel_rs=0, max_read_buffer_size_remote_fs=100, remote_read_min_bytes_for_seek=1, input_format_parquet_use_native_reader_v3=1",
             query_id=query_id,
         )
     )
@@ -2585,7 +2587,7 @@ def test_column_pruning(started_cluster):
     query_id = f"query_{TABLE_NAME}_2"
     assert sum == int(
         instance.query(
-            f"SELECT sum(id) FROM {table_function} SETTINGS enable_filesystem_cache=0, max_read_buffer_size_remote_fs=100, remote_read_min_bytes_for_seek=1, use_parquet_metadata_cache=0",
+            f"SELECT sum(id) FROM {table_function} SETTINGS enable_filesystem_cache=0, max_read_buffer_size_remote_fs=100, remote_read_min_bytes_for_seek=1, input_format_parquet_use_native_reader_v3=1, use_parquet_metadata_cache=0",
             query_id=query_id,
         )
     )
@@ -5358,45 +5360,119 @@ def test_azure_url_encoded_partition_path(started_cluster, use_delta_kernel):
 
     instance.query(f"DROP TABLE IF EXISTS {TABLE_NAME}")
 
-@pytest.mark.parametrize(
-    "use_delta_kernel",
-    ["0", "1"],
-)
-def test_azure_empty_blob_path(started_cluster, use_delta_kernel):
-    """based off test_single_log_file_azure_connection_string but parameterized for delta_kernel"""
-
-    instance = get_node(started_cluster, use_delta_kernel)
+def test_delta_kernel_rebuild_on_credentials_rotation(started_cluster):
+    """Cache a DeltaLake snapshot, then change the credentials fingerprint between two
+    reads and assert the second read rebuilds the kernel engine instead of silently
+    reusing the stale one.
+    """
+    instance = started_cluster.instances["node1"]
     spark = started_cluster.spark_session
-    TABLE_NAME = randomize_table_name("test_azure_empty_blob_path")
+    minio_client = started_cluster.minio_client
+    bucket = started_cluster.minio_bucket
+    TABLE_NAME = randomize_table_name("test_delta_kernel_rebuild_on_rotation")
 
-    inserted_data = "SELECT number as a, toString(number + 1) as b FROM numbers(100)"
-    parquet_data_path = create_initial_data_file(
-        started_cluster, instance, inserted_data, TABLE_NAME, node_name=instance.name
+    write_delta_from_df(
+        spark, generate_data(spark, 0, 100), f"/{TABLE_NAME}", mode="overwrite"
+    )
+    upload_directory(minio_client, bucket, f"/{TABLE_NAME}", "")
+    create_delta_table(instance, "s3", TABLE_NAME, started_cluster)
+
+    # First read: caches the kernel snapshot state under the current credentials fingerprint.
+    baseline_query_id = f"{TABLE_NAME}_baseline"
+    assert int(instance.query(
+        f"SELECT count() FROM {TABLE_NAME}",
+        query_id=baseline_query_id,
+    )) == 100
+
+    instance.query("SYSTEM FLUSH LOGS")
+    init_hits = int(instance.query(
+        "SELECT count() FROM system.text_log "
+        f"WHERE query_id = '{baseline_query_id}' "
+        "  AND message ILIKE '%Initializing snapshot%'"
+    ).strip())
+    assert init_hits >= 1, "First read should initialize the kernel snapshot state"
+
+    rebuild_hits_pre = int(instance.query(
+        "SELECT count() FROM system.text_log "
+        f"WHERE query_id = '{baseline_query_id}' "
+        "  AND message ILIKE '%Rebuilding kernel snapshot state%'"
+    ).strip())
+    assert rebuild_hits_pre == 0, "First read should NOT trigger the credentials-rotation rebuild"
+
+    # Second read: the failpoint perturbs the credentials fingerprint, simulating an STS
+    # rotation between consecutive reads of the same cached snapshot. The fingerprint
+    # mismatch must trigger the rebuild path; the row count must still come back correct.
+    rotated_query_id = f"{TABLE_NAME}_rotated"
+    instance.query("SYSTEM ENABLE FAILPOINT delta_kernel_force_credentials_fingerprint_drift")
+    try:
+        assert int(instance.query(
+            f"SELECT count() FROM {TABLE_NAME}",
+            query_id=rotated_query_id,
+        )) == 100
+    finally:
+        instance.query("SYSTEM DISABLE FAILPOINT delta_kernel_force_credentials_fingerprint_drift")
+
+    instance.query("SYSTEM FLUSH LOGS")
+    rebuild_hits = int(instance.query(
+        "SELECT count() FROM system.text_log "
+        f"WHERE query_id = '{rotated_query_id}' "
+        "  AND message ILIKE '%Rebuilding kernel snapshot state (credentials rotated)%'"
+    ).strip())
+    assert rebuild_hits >= 1, (
+        f"Expected the credentials-rotation rebuild log line to fire for query {rotated_query_id}, "
+        f"found {rebuild_hits} hits — the fingerprint check did not rebuild the kernel state."
     )
 
-    delta_path = f"/{TABLE_NAME}"
-    write_delta_from_file(spark, parquet_data_path, delta_path)
 
-    files = default_upload_directory(
-        started_cluster,
-        "azure",
-        delta_path,
-        "/",  # empty remote_path ends up inferring from local_path otherwise
+def test_delta_kernel_retry_on_stale_token_via_catalog_callback(started_cluster):
+    """Simulate delta-kernel reporting an `ExpiredToken` during snapshot init. The
+    `delta_kernel_force_stale_token_error` failpoint throws the kernel error exactly
+    once; `object_storage_force_refresh_callback_success` short-circuits the catalog
+    refresh callback to succeed without an actual catalog. The retry path must rebuild
+    the snapshot and return the correct row count.
+    """
+    instance = started_cluster.instances["node1"]
+    spark = started_cluster.spark_session
+    minio_client = started_cluster.minio_client
+    bucket = started_cluster.minio_bucket
+    TABLE_NAME = randomize_table_name("test_delta_kernel_retry_on_stale_token")
+
+    write_delta_from_df(
+        spark, generate_data(spark, 0, 100), f"/{TABLE_NAME}", mode="overwrite"
     )
+    upload_directory(minio_client, bucket, f"/{TABLE_NAME}", "")
+    create_delta_table(instance, "s3", TABLE_NAME, started_cluster)
 
-    assert len(files) == 2  # 1 metadata file + 1 data file
-
-    empty_blob_path = ""
-    connection_string = started_cluster.env_variables["AZURITE_CONNECTION_STRING"]
-    instance.query(
-        f"""
-        DROP TABLE IF EXISTS {TABLE_NAME};
-        CREATE TABLE {TABLE_NAME}
-        ENGINE=DeltaLakeAzure('{connection_string}', '{started_cluster.azure_container_name}', '{empty_blob_path}', Parquet)
-        """
-    )
-
+    # Prime the cache so the second read starts from a clean state.
     assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 100
-    assert instance.query(f"SELECT * FROM {TABLE_NAME}") == instance.query(
-        inserted_data
+
+    retry_query_id = f"{TABLE_NAME}_retry"
+    instance.query("SYSTEM ENABLE FAILPOINT object_storage_force_refresh_callback_success")
+    # Drift the fingerprint so initOrUpdateSnapshot enters its rebuild branch; the
+    # stale-token failpoint then trips inside the KernelSnapshotState ctor and the
+    # retry path takes over.
+    instance.query("SYSTEM ENABLE FAILPOINT delta_kernel_force_credentials_fingerprint_drift")
+    instance.query("SYSTEM ENABLE FAILPOINT delta_kernel_force_stale_token_error")
+    try:
+        assert int(instance.query(
+            f"SELECT count() FROM {TABLE_NAME}",
+            query_id=retry_query_id,
+        )) == 100
+    finally:
+        instance.query("SYSTEM DISABLE FAILPOINT delta_kernel_force_credentials_fingerprint_drift")
+        instance.query("SYSTEM DISABLE FAILPOINT object_storage_force_refresh_callback_success")
+        # delta_kernel_force_stale_token_error is FIU_ONETIME and self-disables, but
+        # disable defensively in case the retry path never reached it.
+        instance.query("SYSTEM DISABLE FAILPOINT delta_kernel_force_stale_token_error")
+
+    instance.query("SYSTEM FLUSH LOGS")
+    retry_hits = int(instance.query(
+        "SELECT count() FROM system.text_log "
+        f"WHERE query_id = '{retry_query_id}' "
+        "  AND message ILIKE '%stale credentials during snapshot init; rebuilding%'"
+        "  AND message ILIKE '%refreshed via callback: true%'"
+    ).strip())
+    assert retry_hits >= 1, (
+        f"Expected the catalog-callback retry log line to fire for query {retry_query_id}, "
+        f"found {retry_hits} hits — the stale-token retry path was not exercised."
     )

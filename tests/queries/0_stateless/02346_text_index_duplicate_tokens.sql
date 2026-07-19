@@ -23,7 +23,7 @@ SELECT count() FROM tab WHERE s LIKE '%Hello%' OR s LIKE '%hello%';
 
 SELECT trim(explain) FROM
 (
-    EXPLAIN actions = 1 SELECT count() FROM tab WHERE s LIKE '%Hello%' OR s LIKE '%hello%' SETTINGS use_skip_indexes_on_data_read = 1, query_plan_direct_read_from_text_index = 1
+    EXPLAIN actions = 1 SELECT count() FROM tab WHERE s LIKE '%Hello%' OR s LIKE '%hello%' SETTINGS use_skip_indexes_on_data_read = 1
 )
 WHERE explain LIKE '%INPUT%\_\_text_index%';
 
@@ -46,7 +46,7 @@ SELECT count() FROM tab WHERE s LIKE '%Hello%' OR s LIKE '%hello%';
 
 SELECT trim(explain) FROM
 (
-    EXPLAIN actions = 1 SELECT count() FROM tab WHERE s LIKE '%Hello%' OR s LIKE '%hello%' SETTINGS use_skip_indexes_on_data_read = 1, query_plan_direct_read_from_text_index = 1
+    EXPLAIN actions = 1 SELECT count() FROM tab WHERE s LIKE '%Hello%' OR s LIKE '%hello%' SETTINGS use_skip_indexes_on_data_read = 1
 )
 WHERE explain LIKE '%INPUT%\_\_text_index%';
 
@@ -54,7 +54,7 @@ SELECT count() FROM tab WHERE s LIKE 'Hello,%' OR s LIKE 'hello,%';
 
 SELECT trim(explain) FROM
 (
-    EXPLAIN actions = 1, indexes = 1 SELECT count() FROM tab WHERE s LIKE 'Hello,%' OR s LIKE 'hello,%' SETTINGS use_skip_indexes_on_data_read = 1, query_plan_direct_read_from_text_index = 1
+    EXPLAIN actions = 1, indexes = 1 SELECT count() FROM tab WHERE s LIKE 'Hello,%' OR s LIKE 'hello,%' SETTINGS use_skip_indexes_on_data_read = 1
 )
 WHERE explain LIKE '%INPUT%\_\_text_index%';
 
