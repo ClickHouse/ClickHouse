@@ -7,6 +7,7 @@
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/FileCache/FileCacheSettings.h>
 #include <Interpreters/FileCache/IFileCachePriority.h>
+#include <Interpreters/FileCache/CacheUsage.h>
 #include <Interpreters/FileCache/LRUFileCachePriority.h>
 #include <Interpreters/FileCache/SLRUFileCachePriority.h>
 #include <Interpreters/FileCache/FileCacheUtils.h>
@@ -59,6 +60,8 @@ namespace ProfileEvents
     extern const Event FilesystemCacheEvictedBytes;
     extern const Event FilesystemCacheCheckCorrectness;
     extern const Event FilesystemCacheCheckCorrectnessMicroseconds;
+    extern const Event FilesystemCacheIdleClientEvictions;
+    extern const Event FilesystemCacheInvalidatedEntriesCleanupThreadWorkMilliseconds;
 }
 
 namespace CurrentMetrics
@@ -123,6 +126,9 @@ namespace FileCacheSetting
     extern const FileCacheSettingsDouble split_cache_ratio;
     extern const FileCacheSettingsUInt64 overcommit_eviction_evict_step;
     extern const FileCacheSettingsBool skip_cache_on_disk_failure;
+    extern const FileCacheSettingsUInt64 idle_client_ttl_sec;
+    extern const FileCacheSettingsUInt64 idle_client_check_interval_sec;
+    extern const FileCacheSettingsNonZeroUInt64 idle_client_eviction_threads;
     extern const FileCacheSettingsBool expose_prometheus_eviction_metrics;
     extern const FileCacheSettingsBool expose_prometheus_eviction_metrics_per_user;
 }
@@ -283,6 +289,12 @@ FileCache::FileCache(const std::string & cache_name, const FileCacheSettings & s
     , keep_current_elements_to_max_ratio(1 - settings[FileCacheSetting::keep_free_space_elements_ratio])
     , keep_up_free_space_remove_batch(settings[FileCacheSetting::keep_free_space_remove_batch])
     , keep_up_free_space_eviction_threads(settings[FileCacheSetting::keep_free_space_eviction_threads])
+    , invalidated_entries_cleanup_threshold(settings[FileCacheSetting::invalidated_entries_cleanup_threshold])
+    , invalidated_entries_cleanup_interval_ms(settings[FileCacheSetting::invalidated_entries_cleanup_interval_ms])
+    , invalidated_entries_cleanup_remove_batch(settings[FileCacheSetting::invalidated_entries_cleanup_remove_batch])
+    , idle_client_ttl_sec(settings[FileCacheSetting::idle_client_ttl_sec])
+    , idle_client_check_interval_sec(settings[FileCacheSetting::idle_client_check_interval_sec])
+    , idle_client_eviction_threads(settings[FileCacheSetting::idle_client_eviction_threads])
     , use_split_cache(settings[FileCacheSetting::use_split_cache])
     , split_cache_ratio(settings[FileCacheSetting::split_cache_ratio])
     , skip_cache_on_disk_failure(settings[FileCacheSetting::skip_cache_on_disk_failure])
@@ -360,6 +372,13 @@ FileCache::FileCache(const std::string & cache_name, const FileCacheSettings & s
     }
     if (use_split_cache)
     {
+        /// Backstop for programmatically built settings which bypass
+        /// `FileCacheSettings::validate` (config-loaded settings are rejected there).
+        const auto policy = settings[FileCacheSetting::cache_policy].value;
+        if (policy == FileCachePolicy::LRU_OVERCOMMIT || policy == FileCachePolicy::SLRU_OVERCOMMIT)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS, "`use_split_cache` is not supported with overcommit cache policies");
+
         main_priority = std::make_unique<SplitFileCachePriority>(
             IFileCachePriority::QueueType::Main,
             creator_function,
@@ -381,10 +400,6 @@ FileCache::FileCache(const std::string & cache_name, const FileCacheSettings & s
             cache_name
         );
     }
-    main_priority->setCleanupSettings(
-        settings[FileCacheSetting::invalidated_entries_cleanup_threshold],
-        settings[FileCacheSetting::invalidated_entries_cleanup_interval_ms],
-        settings[FileCacheSetting::invalidated_entries_cleanup_remove_batch]);
 
     LOG_DEBUG(log, "Using {} cache policy", settings[FileCacheSetting::cache_policy].value);
 
@@ -392,6 +407,16 @@ FileCache::FileCache(const std::string & cache_name, const FileCacheSettings & s
     {
         onSegmentEvicted(segment, user_id);
     });
+
+    /// Idle-client eviction needs per-client usage, which only overcommit policies keep.
+    /// The TTL itself is reloadable; this only fixes whether tracking is possible at all.
+    const auto cache_policy = settings[FileCacheSetting::cache_policy].value;
+    const bool is_overcommit_policy =
+        cache_policy == FileCachePolicy::LRU_OVERCOMMIT || cache_policy == FileCachePolicy::SLRU_OVERCOMMIT;
+    client_tracking_possible = is_overcommit_policy && write_cache_per_user_directory;
+    if (write_cache_per_user_directory && idle_client_ttl_sec.load() > 0 && !is_overcommit_policy)
+        LOG_WARNING(log, "idle_client_ttl_sec is set but the cache policy does not track "
+                         "per-client usage; idle-client eviction is disabled");
 
     if (settings[FileCacheSetting::enable_filesystem_query_cache_limit])
         query_limit = std::make_unique<FileCacheQueryLimit>();
@@ -447,9 +472,9 @@ bool FileCache::skipCacheOnDiskFailure() const
     return skip_cache_on_disk_failure;
 }
 
-String FileCache::getFileSegmentPath(const Key & key, size_t offset, FileSegmentKind segment_kind, const OriginInfo & origin) const
+String FileCache::getFileSegmentPath(const Key & key, size_t offset, FileSegmentKind segment_kind, const OriginInfo & origin, std::optional<size_t> size) const
 {
-    return metadata.getFileSegmentPath(key, offset, segment_kind, origin);
+    return metadata.getFileSegmentPath(key, offset, segment_kind, origin, size);
 }
 
 String FileCache::getKeyPath(const Key & key, const OriginInfo & origin) const
@@ -524,8 +549,18 @@ void FileCache::initializeImpl(bool load_metadata)
 
     try
     {
-        /// Publish the invalidate notifier before loadMetadata spawns threads that can invalidate entries.
-        main_priority->startup(Context::getGlobalContextInstance()->getSchedulePool(), cache_guard);
+        /// Record per-client accesses for idle-client eviction. Installed whenever
+        /// tracking is possible (not gated on the TTL), so the TTL can be toggled live.
+        if (client_tracking_possible)
+            metadata.setClientAccessCallback([this](const std::string & user_id) { main_priority->touchClientAccess(user_id); });
+
+        /// The single maintenance task (invalidated-entries cleanup + idle eviction).
+        /// Publish the wake notifier before loadMetadata can invalidate entries.
+        background_cleanup_task = Context::getGlobalContextInstance()->getSchedulePool().createTask(
+            StorageID::createEmpty(), "FileCacheBackgroundCleanup", [this] { backgroundCleanupTaskFunc(); });
+        main_priority->setInvalidateNotifier(
+            invalidated_entries_cleanup_threshold, [this] { background_cleanup_task->schedule(); });
+        background_cleanup_task->scheduleAfter(backgroundCleanupIntervalMs());
 
         if (load_metadata)
             loadMetadata();
@@ -534,9 +569,10 @@ void FileCache::initializeImpl(bool load_metadata)
     }
     catch (...)
     {
-        /// startup() may have scheduled the background cleanup task; stop it so a retried
+        /// The cleanup task may already be scheduled; stop it so a retried
         /// initialization does not leave an orphaned task rescheduling on `this`.
-        main_priority->deactivateBackgroundOperations();
+        if (background_cleanup_task)
+            background_cleanup_task->deactivate();
         init_exception = std::current_exception();
         tryLogCurrentException(__PRETTY_FUNCTION__);
         throw;
@@ -555,6 +591,7 @@ void FileCache::initializeImpl(bool load_metadata)
         keep_up_free_space_ratio_task = Context::getGlobalContextInstance()->getSchedulePool().createTask(StorageID::createEmpty(), log->name(), [this] { freeSpaceRatioKeepingThreadFunc(); });
         keep_up_free_space_ratio_task->schedule();
     }
+
 
     is_initialized = true;
     LOG_TEST(log, "Initialized cache from {}", metadata.getBaseDirectory());
@@ -1438,8 +1475,8 @@ bool FileCache::doTryReserve(
 }
 
 bool FileCache::doEviction(
-    const EvictionInfo & main_eviction_info,
-    const EvictionInfo * query_eviction_info,
+    EvictionInfo & main_eviction_info,
+    EvictionInfo * query_eviction_info,
     FileSegment & file_segment,
     const OriginInfo & origin_info,
     const IFileCachePriority::IteratorPtr & main_priority_iterator,
@@ -1867,6 +1904,138 @@ void FileCache::freeSpaceRatioImpl(size_t & reschedule_ms)
     assertCacheCorrectness();
 }
 
+UInt64 FileCache::backgroundCleanupIntervalMs() const
+{
+    /// Invalidated-entries interval, shrunk to the idle-client check cadence
+    /// (default `ttl/10`) while idle-client eviction is enabled.
+    const auto ttl_sec = idle_client_ttl_sec.load();
+    if (ttl_sec == 0)
+        return invalidated_entries_cleanup_interval_ms;
+    const auto check_sec = idle_client_check_interval_sec.load();
+    const auto interval_sec = check_sec > 0 ? check_sec : std::max<UInt64>(1, ttl_sec / 10);
+    return std::min<UInt64>(invalidated_entries_cleanup_interval_ms, interval_sec * 1000);
+}
+
+void FileCache::backgroundCleanupTaskFunc()
+{
+    size_t removed = 0;
+    {
+        Stopwatch watch;
+        try
+        {
+            removed = main_priority->removeInvalidatedEntries(invalidated_entries_cleanup_remove_batch, cache_guard);
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
+        ProfileEvents::increment(
+            ProfileEvents::FilesystemCacheInvalidatedEntriesCleanupThreadWorkMilliseconds, watch.elapsedMilliseconds());
+    }
+
+    /// Idle-client eviction shares this thread; self-throttled to its own interval.
+    /// Possible only for client-tracking (overcommit) policies; the live TTL gates it.
+    if (client_tracking_possible)
+    {
+        try
+        {
+            evictIdleClients();
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
+    }
+
+    if (shutdown || !background_cleanup_task)
+        return;
+
+    /// A full batch likely means there is more to clean: come back immediately.
+    if (removed == invalidated_entries_cleanup_remove_batch)
+        background_cleanup_task->schedule();
+    else
+        background_cleanup_task->scheduleAfter(backgroundCleanupIntervalMs());
+}
+
+void FileCache::evictIdleClients()
+{
+    /// Wait for `is_initialized`: the cleanup task is scheduled before loadMetadata,
+    /// and purging a client mid-load could race a key still being reconstructed.
+    if (!is_initialized || shutdown)
+        return;
+
+    /// TTL is reloadable: zero means eviction is currently disabled. Access tracking
+    /// keeps running, so last-access stays fresh if it is re-enabled later.
+    const auto ttl_sec = idle_client_ttl_sec.load();
+    if (ttl_sec == 0)
+        return;
+
+    /// Self-throttle to the check interval: the cleanup task can fire more often.
+    /// Runs only on the cleanup-task thread, so `last_idle_eviction` needs no sync.
+    const auto now = std::chrono::steady_clock::now();
+    const auto configured = idle_client_check_interval_sec.load();
+    const std::chrono::seconds check_interval(configured > 0 ? configured : std::max<UInt64>(1, ttl_sec / 10));
+    if (last_idle_eviction.time_since_epoch().count() != 0 && now - last_idle_eviction < check_interval)
+        return;
+    last_idle_eviction = now;
+
+    const std::chrono::seconds ttl(ttl_sec);
+    const auto idle_clients = main_priority->collectIdleClients(ttl);
+    if (idle_clients.empty())
+        return;
+
+    /// Purge clients in parallel: `removeAllKeys` scans all metadata buckets, so a
+    /// large idle set would otherwise serialize behind one another.
+    const auto check_now = std::chrono::steady_clock::now();
+    std::atomic<size_t> next_index = 0;
+    auto purge_worker = [&]
+    {
+        for (size_t i = next_index.fetch_add(1, std::memory_order_relaxed);
+             i < idle_clients.size() && !shutdown;
+             i = next_index.fetch_add(1, std::memory_order_relaxed))
+        {
+            const auto & [user_id, usage] = idle_clients[i];
+            try
+            {
+                /// Re-check via the carried usage to skip clients touched since the scan.
+                if (!usage->idleFor(ttl, check_now))
+                    continue;
+
+                if (usage->total_size == 0)
+                    continue;
+
+                /// Report success only on a full purge; held segments are retried next sweep.
+                if (metadata.removeAllKeys(user_id))
+                {
+                    ProfileEvents::increment(ProfileEvents::FilesystemCacheIdleClientEvictions);
+                    LOG_INFO(log, "Purged cache for idle client '{}' (idle for >= {} sec)", user_id, ttl_sec);
+                }
+            }
+            catch (...)
+            {
+                tryLogCurrentException(log, "Failed to purge idle client cache");
+            }
+        }
+    };
+
+    /// The current (cleanup-task) thread participates, so spawn one fewer worker.
+    const size_t num_extra_threads = std::min<size_t>(idle_clients.size(), idle_client_eviction_threads) - 1;
+    std::vector<ThreadFromGlobalPool> threads;
+    try
+    {
+        threads.reserve(num_extra_threads);
+        for (size_t t = 0; t < num_extra_threads; ++t)
+            threads.emplace_back(purge_worker);
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log, "Failed to spawn idle client eviction threads");
+    }
+    purge_worker();
+    for (auto & thread : threads)
+        thread.join();
+}
+
 void FileCache::iterate(IterateFunc && func, const UserID & user_id)
 {
     metadata.iterate([&](const LockedKey & locked_key)
@@ -2259,14 +2428,35 @@ void FileCache::loadMetadataForKey(const fs::path & key_directory, const OriginI
         FileSegmentKind kind;
         fs::path path;
         IFileCachePriority::IteratorPtr cache_it; /// filled in phase 2
+        bool size_in_filename; /// whether the size was read from the file name (no `stat` needed)
     };
     std::vector<SegmentToLoad> segments;
+    /// Deduplicate by offset. Encoding the size in the name (`<offset>` -> `<offset>_<size>`, see
+    /// `renameToIncludeSizeInNameUnlocked`) is best-effort: if the target name is already occupied the
+    /// rename fails and the real segment stays under its legacy `<offset>` name next to a stale
+    /// `<offset>_<size>` artifact. Both parse to the same offset, so without deduplication we would
+    /// build two priority entries for one offset and later hit the duplicate-offset path in phase 3
+    /// (a `chassert(false)` in debug builds; a nondeterministic deletion of the real file in release).
+    std::unordered_map<UInt64, size_t> offset_to_index;
 
     for (; offset_it != fs::directory_iterator(); ++offset_it)
     {
+        /// Only regular files hold cache segments. A rename target occupied by a non-regular entry
+        /// (e.g. a leftover directory, as exercised by `RenameToIncludeSizeInNameFailureKeepsSegmentConsistent`)
+        /// is exactly what makes the best-effort rename fail; skip it here so its name is never parsed
+        /// and trusted as a segment (the size of a `<offset>_<size>` entry is read from the name without
+        /// a `stat`). Uses the directory-entry type cached by `directory_iterator` (no extra syscall on
+        /// local filesystems, which always report the entry type).
+        if (!offset_it->is_regular_file())
+        {
+            LOG_WARNING(log, "Unexpected non-regular entry in cache directory: {}", offset_it->path().string());
+            continue;
+        }
+
         auto offset_with_suffix = offset_it->path().filename().string();
         bool parsed = false;
         UInt64 offset = 0;
+        std::optional<UInt64> size_from_name;
 
         auto delim_pos = offset_with_suffix.find('_');
         if (delim_pos == std::string::npos)
@@ -2277,17 +2467,26 @@ void FileCache::loadMetadataForKey(const fs::path & key_directory, const OriginI
         {
             parsed = tryParse<UInt64>(offset, offset_with_suffix.substr(0, delim_pos));
 
-            if (offset_with_suffix.substr(delim_pos + 1) == "persistent")
+            const auto suffix = offset_with_suffix.substr(delim_pos + 1);
+            if (suffix == "persistent")
             {
                 /// For compatibility. Persistent files are no longer supported.
                 fs::remove(offset_it->path());
                 continue;
             }
-            if (offset_with_suffix.substr(delim_pos + 1) == "temporary")
+            if (suffix == "temporary")
             {
                 fs::remove(offset_it->path());
                 continue;
             }
+
+            /// New format `<offset>_<size>`: the size is encoded in the name, so we can
+            /// load this segment without a `stat` syscall.
+            UInt64 size_value = 0;
+            if (parsed && tryParse<UInt64>(size_value, suffix))
+                size_from_name = size_value;
+            else
+                parsed = false;
         }
 
         if (!parsed)
@@ -2296,14 +2495,36 @@ void FileCache::loadMetadataForKey(const fs::path & key_directory, const OriginI
             continue;
         }
 
-        auto size = offset_it->file_size();
+        /// Legacy `<offset>` files (and files left by a download that was interrupted before
+        /// the size was encoded into the name) require a `stat` to obtain the size.
+        UInt64 size = size_from_name.has_value() ? *size_from_name : offset_it->file_size();
         if (!size)
         {
             fs::remove(offset_it->path());
             continue;
         }
 
-        segments.push_back({offset, size, FileSegmentKind::Regular, offset_it->path(), nullptr});
+        /// If two names map to the same offset (a legacy `<offset>` next to a stale `<offset>_<size>`
+        /// left by a failed best-effort rename), keep the legacy file — its size comes from a real
+        /// `stat`, and it is the segment whose rename failed — and ignore the suffixed duplicate,
+        /// whose size is trusted from the name. Leaving the stale artifact on disk is deliberate:
+        /// removing it here would be a destructive action on this recovery path.
+        if (auto [it, is_new] = offset_to_index.try_emplace(offset, segments.size()); !is_new)
+        {
+            auto & existing = segments[it->second];
+            const bool replace_existing = !size_from_name.has_value() && existing.size_in_filename;
+            LOG_WARNING(
+                log,
+                "Duplicate cache files for offset {}: keeping '{}', ignoring '{}'",
+                offset,
+                replace_existing ? offset_it->path().string() : existing.path.string(),
+                replace_existing ? existing.path.string() : offset_it->path().string());
+            if (replace_existing)
+                existing = {offset, size, FileSegmentKind::Regular, offset_it->path(), nullptr, /* size_in_filename */false};
+            continue;
+        }
+
+        segments.push_back({offset, size, FileSegmentKind::Regular, offset_it->path(), nullptr, size_from_name.has_value()});
     }
 
     /// Phase 2: add all segments for the key under a single write lock acquisition.
@@ -2357,7 +2578,8 @@ void FileCache::loadMetadataForKey(const fs::path & key_directory, const OriginI
                     /* background_download_enabled */false,
                     this,
                     key_metadata,
-                    segment.cache_it);
+                    segment.cache_it,
+                    /* size_in_filename */segment.size_in_filename);
 
                 inserted = key_metadata->emplaceUnlocked(segment.offset, std::make_shared<FileSegmentMetadata>(std::move(file_segment))).second;
             }
@@ -2449,14 +2671,17 @@ void FileCache::deactivateBackgroundOperations()
     if (load_metadata_main_thread && load_metadata_main_thread->joinable())
         load_metadata_main_thread->join();
 
-    metadata.shutdown();
     if (keep_up_free_space_ratio_task)
         keep_up_free_space_ratio_task->deactivate();
+    /// The single maintenance task: invalidated-entries cleanup + idle-client eviction.
+    if (background_cleanup_task)
+        background_cleanup_task->deactivate();
+
     /// The task is stopped, so no new eviction jobs can be scheduled - drain the rest.
     if (eviction_pool)
         eviction_pool->wait();
-    if (main_priority)
-        main_priority->deactivateBackgroundOperations();
+
+    metadata.shutdown();
 }
 
 std::vector<FileSegment::Info> FileCache::getFileSegmentInfos(const UserID & user_id)
@@ -2680,6 +2905,34 @@ void FileCache::applySettingsIfPossible(const FileCacheSettings & new_settings, 
     if (new_settings[FileCacheSetting::max_file_segment_size] != actual_settings[FileCacheSetting::max_file_segment_size])
     {
         max_file_segment_size = actual_settings[FileCacheSetting::max_file_segment_size] = new_settings[FileCacheSetting::max_file_segment_size];
+    }
+
+    if (new_settings[FileCacheSetting::idle_client_ttl_sec] != actual_settings[FileCacheSetting::idle_client_ttl_sec])
+    {
+        const UInt64 new_ttl = new_settings[FileCacheSetting::idle_client_ttl_sec];
+        const bool was_enabled = idle_client_ttl_sec.load() > 0;
+        idle_client_ttl_sec.store(new_ttl);
+
+        LOG_INFO(log, "Changed idle_client_ttl_sec from {} to {}",
+                 actual_settings[FileCacheSetting::idle_client_ttl_sec].value, new_ttl);
+        actual_settings[FileCacheSetting::idle_client_ttl_sec] = new_settings[FileCacheSetting::idle_client_ttl_sec];
+
+        if (new_ttl > 0 && !client_tracking_possible)
+            LOG_WARNING(log, "idle_client_ttl_sec is set but the cache policy does not track "
+                             "per-client usage; idle-client eviction is disabled");
+        /// Just enabled: wake the task so the first sweep does not wait a full interval.
+        else if (new_ttl > 0 && !was_enabled && client_tracking_possible && background_cleanup_task)
+            background_cleanup_task->schedule();
+    }
+
+    if (new_settings[FileCacheSetting::idle_client_check_interval_sec] != actual_settings[FileCacheSetting::idle_client_check_interval_sec])
+    {
+        idle_client_check_interval_sec.store(new_settings[FileCacheSetting::idle_client_check_interval_sec]);
+
+        LOG_INFO(log, "Changed idle_client_check_interval_sec from {} to {}",
+                 actual_settings[FileCacheSetting::idle_client_check_interval_sec].value,
+                 new_settings[FileCacheSetting::idle_client_check_interval_sec].value);
+        actual_settings[FileCacheSetting::idle_client_check_interval_sec] = new_settings[FileCacheSetting::idle_client_check_interval_sec];
     }
 
     if (new_settings[FileCacheSetting::expose_prometheus_eviction_metrics] != actual_settings[FileCacheSetting::expose_prometheus_eviction_metrics])

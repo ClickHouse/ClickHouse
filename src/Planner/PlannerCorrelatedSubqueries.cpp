@@ -417,13 +417,15 @@ QueryPlan decorrelateQueryPlan(
         if (aggeregating_step->isGroupingSets())
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Decorrelation of GROUP BY GROUPING SETS is not supported yet");
 
-        auto new_aggregator_params = aggeregating_step->getAggregatorParameters();
+        const auto & original_aggregator_params = aggeregating_step->getAggregatorParameters();
 
+        Names new_keys = original_aggregator_params.keys;
         for (const auto & correlated_column_identifier : context.correlated_subquery.correlated_column_identifiers)
         {
-            new_aggregator_params.keys.push_back(correlated_column_identifier);
+            new_keys.push_back(correlated_column_identifier);
         }
-        new_aggregator_params.keys_size = new_aggregator_params.keys.size();
+
+        auto new_aggregator_params = original_aggregator_params.cloneWithKeys(new_keys, original_aggregator_params.only_merge);
 
         auto result_step = std::make_unique<AggregatingStep>(
             std::move(input_header),
