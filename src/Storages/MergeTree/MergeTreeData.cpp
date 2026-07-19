@@ -5444,7 +5444,10 @@ static bool hasTextIndexMaterialization(const MutationCommands & commands, Stora
         if (it == secondary_indices.end())
             continue;
 
-        if (it->type == "text" || it->type == "vector_similarity" || it->type == "vector_spann")
+        /// `text` and `vector_similarity` use part-wide `UInt32` row ids, so materialization is capped at
+        /// `UInt32::max()` rows per part below. `vector_spann` uses `UInt64` per-granule row ids and imposes
+        /// no such part-wide limit, so it is intentionally excluded from that guard.
+        if (it->type == "text" || it->type == "vector_similarity")
             return true;
     }
     return false;

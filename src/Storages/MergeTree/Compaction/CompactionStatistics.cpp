@@ -165,9 +165,11 @@ UInt64 getMaxResultPartRowsCount(const MergeTreeData & data)
 {
     auto metadata_snapshot = data.getInMemoryMetadataPtr(data.getContext(), false);
     const auto & secondary_indices = metadata_snapshot->getSecondaryIndices();
-    /// Text index and vector similarity indexes don't support UInt64 indexes of rows.
-    bool has_index_with_limit_on_rows = secondary_indices.hasType("text") || secondary_indices.hasType("vector_similarity")
-        || secondary_indices.hasType("vector_spann");
+    /// Text index and vector similarity indexes address rows within a part with `UInt32` ids, so their parts
+    /// must stay below the `UInt32` row cap. `vector_spann` does not: its posting-list row ids are `UInt64`
+    /// and local to a skip-index granule (converted to part offsets at query time), so it imposes no part-wide
+    /// row limit and must not stop such parts from compacting.
+    bool has_index_with_limit_on_rows = secondary_indices.hasType("text") || secondary_indices.hasType("vector_similarity");
     return has_index_with_limit_on_rows ? std::numeric_limits<UInt32>::max() : std::numeric_limits<UInt64>::max();
 }
 
