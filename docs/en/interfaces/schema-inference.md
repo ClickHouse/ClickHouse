@@ -663,6 +663,14 @@ DESC format(JSONEachRow, $$
 
 Enabling this setting allows reading numeric values as strings.
 
+When enabled:
+
+- Bare JSON numbers can be read into `String` columns.
+- During schema inference, columns that mix numbers and strings are inferred as `String`.
+- During schema inference (and for the `Dynamic` type), bare JSON integers outside the range of the currently inferred integer types (`Int64` / `UInt64`) are inferred as `String`, so the exact digits are preserved instead of failing mid-token or rounding through `Float64`.
+
+When disabled, such out-of-range integers cause a clear overflow error during schema inference.
+
 This setting is enabled by default.
 
 **Example**
@@ -678,6 +686,19 @@ DESC format(JSONEachRow, $$
 ┌─name──┬─type─────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
 │ value │ Nullable(String) │              │                    │         │                  │                │
 └───────┴──────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+```sql
+DESC format(JSONEachRow, '{"num":2942420318599003496251392}');
+SELECT toTypeName(num), num FROM format(JSONEachRow, '{"num":2942420318599003496251392}');
+```
+```response
+┌─name─┬─type─────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ num  │ Nullable(String) │              │                    │         │                  │                │
+└──────┴──────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+┌─toTypeName(num)──┬─num─────────────────────────┐
+│ Nullable(String) │ 2942420318599003496251392   │
+└──────────────────┴─────────────────────────────┘
 ```
 
 ##### input_format_json_read_bools_as_numbers {#input_format_json_read_bools_as_numbers}

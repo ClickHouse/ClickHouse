@@ -1031,6 +1031,24 @@ namespace
         return isNumericASCII(c) || c == '-';
     }
 
+    /// Called for a JSON integer that doesn't fit into any of the inferred integer types.
+    /// If reading numbers as strings is allowed, infer `String` to preserve the exact digits,
+    /// otherwise report a clear overflow error instead of failing mid-token later.
+    DataTypePtr inferOutOfRangeJSONIntegerAsString(ReadBuffer & buf, const FormatSettings & settings)
+    {
+        if (!settings.json.read_numbers_as_strings)
+            throw Exception(
+                ErrorCodes::CANNOT_PARSE_NUMBER,
+                "Cannot infer type of JSON integer because it is out of range of supported inferred integer types. "
+                "Enable setting input_format_json_read_numbers_as_strings to infer such integers as String");
+
+        /// The field may still be malformed, in this case it's not a number and we cannot infer the type.
+        if (!trySkipJSONField(buf, "", settings.json))
+            return nullptr;
+
+        return std::make_shared<DataTypeString>();
+    }
+
     template <bool is_json>
     DataTypePtr tryInferNumber(ReadBuffer & buf, const FormatSettings & settings, JSONInferenceInfo * json_info)
     {
@@ -1074,9 +1092,10 @@ namespace
                 if constexpr (is_json)
                 {
                     if (integer_starts_number)
-                        throw Exception(
-                            ErrorCodes::CANNOT_PARSE_NUMBER,
-                            "Cannot infer type of JSON integer because it is out of range of supported inferred integer types");
+                    {
+                        buf.position() = number_start;
+                        return inferOutOfRangeJSONIntegerAsString(buf, settings);
+                    }
                 }
 
                 return nullptr;
@@ -1100,7 +1119,8 @@ namespace
                     json_info->negative_integers.insert(type.get());
                 return type;
             }
-            peekable_buf.rollbackToCheckpoint(/* drop= */ true);
+
+            peekable_buf.rollbackToCheckpoint(/* drop= */ !integer_starts_number);
 
             /// In case of Int64 overflow we can try to infer UInt64.
             UInt64 tmp_uint = 0;
@@ -1110,9 +1130,10 @@ namespace
             if constexpr (is_json)
             {
                 if (integer_starts_number)
-                    throw Exception(
-                        ErrorCodes::CANNOT_PARSE_NUMBER,
-                        "Cannot infer type of JSON integer because it is out of range of supported inferred integer types");
+                {
+                    peekable_buf.rollbackToCheckpoint(/* drop= */ true);
+                    return inferOutOfRangeJSONIntegerAsString(peekable_buf, settings);
+                }
             }
         }
         else if (tryReadFloat<is_json>(tmp_float, buf, settings, has_fractional))

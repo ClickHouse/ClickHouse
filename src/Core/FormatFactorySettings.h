@@ -416,6 +416,15 @@ Enabled by default.
     DECLARE(Bool, input_format_json_read_numbers_as_strings, true, R"(
 Allow parsing numbers as strings in JSON input formats.
 
+When enabled:
+- bare JSON numbers can be read into `String` columns;
+- during schema inference, columns that mix numbers and strings are inferred as `String`;
+- during schema inference (and for the `Dynamic` type), bare JSON integers outside the range of the
+  currently inferred integer types (`Int64` / `UInt64`) are inferred as `String` so the exact digits
+  are preserved instead of failing or rounding through `Float64`.
+
+When disabled, such out-of-range integers cause a clear overflow error during schema inference.
+
 Enabled by default.
 )", 0) \
     DECLARE(Bool, input_format_json_read_objects_as_strings, true, R"(
