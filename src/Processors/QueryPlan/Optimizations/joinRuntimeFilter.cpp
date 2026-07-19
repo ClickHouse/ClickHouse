@@ -251,6 +251,47 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
     QueryPlan::Node * apply_filter_node = node.children[0];
     QueryPlan::Node * build_filter_node = node.children[1];
 
+    /// The runtime filter is built on the build (right) side and is addressed by name
+    /// (BuildRuntimeFilterStep on the key name, findInOutputs, name-keyed permutations). If a join
+    /// KEY column name occurs more than once in the build input header (e.g. a correlated subquery
+    /// decorrelated from `SELECT c, *` where the join key itself is the duplicated column), the
+    /// name-keyed machinery cannot disambiguate the two identically-named key columns; the resulting
+    /// filter then changes a downstream step's stream multiplicity and aborts with
+    /// 'Block structure mismatch in JoinStep'. A duplicated NON-key build column, or a duplicated key
+    /// on the probe side (where the filter is only applied and preserves the header), is harmless, so
+    /// guard the build-side keys specifically. Skipping the filter is always correctness-safe. Mirrors
+    /// JoinStepLogical::canRemoveUnusedColumns(), which disables a sibling optimization on duplicated
+    /// join-condition inputs.
+    {
+        NameSet build_key_names;
+        for (const auto & condition : join_operator.expression)
+        {
+            auto [predicate_op, lhs, rhs] = condition.asBinaryPredicate();
+            if (predicate_op != JoinConditionOperator::Equals)
+                continue;
+            /// Mirror preCalculateKeys(): only a genuine left/right equi-join PAIR contributes a build
+            /// key. A single-side local filter such as `r.c = 1` (build column vs constant) is not a
+            /// runtime-filter key, so it must not enlist `c` into the duplicate-key check — otherwise a
+            /// duplicated NON-key build column guarded by such a filter would needlessly disable the
+            /// filter (which is only ever built on the real key).
+            if (lhs.fromLeft() && rhs.fromRight())
+                build_key_names.insert(rhs.getColumnName());
+            else if (lhs.fromRight() && rhs.fromLeft())
+                build_key_names.insert(lhs.getColumnName());
+        }
+
+        const auto & build_header = *build_filter_node->step->getOutputHeader();
+        for (const auto & key_name : build_key_names)
+        {
+            size_t count = 0;
+            for (const auto & column : build_header)
+            {
+                if (column.name == key_name && ++count > 1)
+                    return false;
+            }
+        }
+    }
+
     ColumnsWithTypeAndName join_keys_probe_side;
     ColumnsWithTypeAndName join_keys_build_side;
 
