@@ -1836,17 +1836,29 @@ static BlockIO executeQueryImpl(
                         qrc_key->ast_hash,
                         qrc_key->user_id,
                         qrc_key->current_user_roles,
-                        settings[Setting::query_cache_share_between_users]};
+                        settings[Setting::query_cache_share_between_users],
+                        qrc_key->tag};
                     /// Keep the herd wait cancellation-aware: if this query is killed while blocked waiting for the
                     /// executor, observe it promptly instead of after the full `query_cache_herd_wait_timeout`.
                     QueryStatusPtr herd_wait_process_list_elem = context->getProcessListElement();
                     auto herd_wait_is_cancelled = [herd_wait_process_list_elem]()
                     { return herd_wait_process_list_elem && herd_wait_process_list_elem->isKilled(); };
                     if (auto token = query_result_cache->startAsyncInsert(herd_key, std::chrono::milliseconds(herd_wait_ms), herd_wait_is_cancelled))
+                    {
                         /// This query is the herd "executor".
                         async_insert_token_to_finish = std::move(token);
+                    }
                     else
+                    {
+                        /// `startAsyncInsert` returns nullptr both when the wait ended (executor finished, timed out,
+                        /// woken by a cache clear) and when the waiting query itself was killed. In the latter case,
+                        /// surface the cancellation right away instead of falling through into the normal execution
+                        /// path - otherwise a killed waiter would silently start a full query execution of its own.
+                        /// `throwIfKilled` raises the proper exception (`QUERY_WAS_CANCELLED` or `TIMEOUT_EXCEEDED`).
+                        if (herd_wait_process_list_elem)
+                            herd_wait_process_list_elem->throwIfKilled();
                         skip_execution = get_result_from_query_result_cache();
+                    }
                 }
 
                 if (!skip_execution)

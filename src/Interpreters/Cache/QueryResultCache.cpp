@@ -998,7 +998,8 @@ public:
     HerdCoalescingTokenPtr startAsyncInsert(
         const HerdCoalescingKey & key, std::chrono::milliseconds timeout, const std::function<bool()> & is_cancelled);
     void finishAsyncInsert(const HerdCoalescingTokenPtr & token);
-    void clear();
+    /// Wake waiters and drop tokens: all of them when `tag` is unset, only those whose key carries `tag` otherwise.
+    void clear(const std::optional<String> & tag);
 
 private:
     using TokenPtr = HerdCoalescingTokenPtr;
@@ -1104,16 +1105,25 @@ void QueryResultCache::HerdCoalescing::finishAsyncInsert(const TokenPtr & token)
     wake({token});
 }
 
-void QueryResultCache::HerdCoalescing::clear()
+void QueryResultCache::HerdCoalescing::clear(const std::optional<String> & tag)
 {
     std::vector<TokenPtr> tokens_to_wake;
     {
         std::lock_guard lock(mutex);
         tokens_to_wake.reserve(tokens.size());
-        /// Save the tokens before clearing the map.
-        for (const auto & kv : tokens)
-            tokens_to_wake.push_back(kv.second);
-        tokens.clear();
+        /// Save the tokens before removing them from the map. For a tagged clear, touch only the tokens of the cleared
+        /// tag: the tag participates in `ast_hash` (see `HerdCoalescingKey::tag`), so waiters of other tags coalesce on
+        /// different tokens whose in-flight computations are unaffected by this clear and must keep waiting.
+        for (auto it = tokens.begin(); it != tokens.end();)
+        {
+            if (!tag || it->first.tag == *tag)
+            {
+                tokens_to_wake.push_back(it->second);
+                it = tokens.erase(it);
+            }
+            else
+                ++it;
+        }
     }
     /// The waiters blocked in startAsyncInsert are waiting for a currently running query to finish and insert its result into the
     /// cache. When the cache is cleared (SYSTEM CLEAR QUERY CACHE), there will no longer be any in-progress entry for their key, so
@@ -1178,13 +1188,11 @@ void QueryResultCache::clear(const std::optional<String> & tag)
         cache.clear();
     }
 
-    /// Wake herd waiters regardless of whether the clear was tagged. `HerdCoalescingKey` covers only the AST and user
-    /// (not the tag), so a single in-flight token can be shared by queries with different tags and cannot be matched to
-    /// one tag here. Waking all waiters is safe: each simply re-probes the cache and either reads a freshly inserted
-    /// entry or falls back to executing itself, instead of staying blocked on an in-flight computation whose result the
-    /// operator has just asked to discard. Previously a tagged clear left same-tag waiters blocked until the executor
-    /// finished (or their timeout elapsed).
-    herd_coalescing->clear();
+    /// Wake herd waiters whose entries were cleared. Each simply re-probes the cache and either reads a freshly
+    /// inserted entry or falls back to executing itself, instead of staying blocked on an in-flight computation whose
+    /// result the operator has just asked to discard. A tagged clear wakes only the waiters of that tag (the tag is
+    /// carried in `HerdCoalescingKey`); coalescing for other tags stays intact.
+    herd_coalescing->clear(tag);
 
     std::lock_guard lock(mutex);
     times_executed.clear();

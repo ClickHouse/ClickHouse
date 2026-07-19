@@ -141,6 +141,12 @@ public:
         std::optional<UUID> user_id;
         std::vector<UUID> current_user_roles;
         bool share_between_users;
+        /// The value of setting `query_cache_tag`. Deliberately not part of `operator==` / the hash: the tag already
+        /// participates in `ast_hash` (`isQueryResultCacheRelatedSetting` excludes `query_cache_tag`, so
+        /// `calculateASTHash` hashes it like any other changed setting), hence all queries coalescing on one key
+        /// necessarily share the same tag. It is carried here so that `SYSTEM CLEAR QUERY CACHE TAG '...'` can wake
+        /// only the herd waiters of the cleared tag instead of resetting coalescing globally.
+        String tag;
 
         bool operator==(const HerdCoalescingKey & other) const;
     };
