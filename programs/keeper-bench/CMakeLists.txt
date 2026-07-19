@@ -4,11 +4,14 @@ if (NOT TARGET ch_contrib::rapidjson OR NOT TARGET ch_contrib::nuraft)
 endif ()
 
 set (CLICKHOUSE_KEEPER_BENCH_SOURCES
+    GeneratedRunner.cpp
     Generator.cpp
-    Runner.cpp
+    KeeperBench.cpp
+    LogRunner.cpp
+    NodesSetup.cpp
+    RunnerCommon.cpp
     Stats.cpp
     StorageRunner.cpp
-    KeeperBench.cpp
 )
 
 set (CLICKHOUSE_KEEPER_BENCH_LINK

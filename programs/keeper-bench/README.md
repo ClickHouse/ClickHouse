@@ -28,7 +28,7 @@ An example config is available at `programs/keeper-bench/example.yaml`.
 |------|-------|-------------|
 | `--help` | | Print help and exit |
 | `--config` | | YAML/XML config file |
-| `--input-request-log` | | Replay requests from a request log file |
+| `--input-request-log` | | Replay requests from a request log file (enables replay mode) |
 | `--setup-nodes-snapshot-path` | | Directory containing Keeper snapshots used to build initial node state for replay |
 | `--concurrency` | `-c` | Number of parallel worker threads |
 | `--report-delay` | `-d` | Delay between periodic reports in seconds (`0` disables periodic reports) |
@@ -42,7 +42,8 @@ Rules:
 - `--config` or `--input-request-log` must be provided.
 - Command-line values override config values for overlapping fields.
 - Hosts can come from `--hosts` or from `connections` in config.
-- If config does not define `generator`, execution uses replay mode, so `--input-request-log` must be provided.
+- If `--input-request-log` is provided, replay mode is used, even if the config defines `generator` (so the same config can serve both modes).
+- Otherwise, generated mode is used; the config must define `generator`.
 
 ## Modes
 
@@ -490,7 +491,8 @@ Each result object contains:
 Common configuration exceptions:
 
 - `No config file or hosts defined`: provide `--hosts` or `connections`.
-- `Both --config and --input_request_log cannot be empty`: provide at least one mode input.
+- `--config is required`: generated mode needs a config file; pass `--input-request-log` for replay mode.
+- `Config file must contain a generator section`: define `generator` in the config, or pass `--input-request-log` for replay mode.
 - `Invalid path for request generator`: all paths must start with `/`.
 - `PathGetter has no paths after initialization`: `children_of` parent has no children and no explicit `path` entries were supplied.
 - `Generator weight must be >= 1`: use positive weights only.
