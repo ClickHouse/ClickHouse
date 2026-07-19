@@ -106,7 +106,6 @@
 #include <Databases/registerDatabases.h>
 #include <Dictionaries/registerDictionaries.h>
 #include <Disks/registerDisks.h>
-#include <Common/Scheduler/Nodes/registerSchedulerNodes.h>
 #include <Common/Scheduler/Workload/IWorkloadEntityStorage.h>
 #include <Coordination/KeeperContext.h>
 #include <Common/Config/ConfigReloader.h>
@@ -225,6 +224,7 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 background_move_pool_size;
     extern const ServerSettingsUInt64 background_pool_size;
     extern const ServerSettingsUInt64 background_schedule_pool_size;
+    extern const ServerSettingsUInt64 background_streaming_schedule_pool_size;
     extern const ServerSettingsUInt64 backups_io_thread_pool_queue_size;
     extern const ServerSettingsDouble cache_size_to_ram_max_ratio;
     extern const ServerSettingsDouble cannot_allocate_thread_fault_injection_probability;
@@ -288,6 +288,10 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 iceberg_metadata_files_cache_size;
     extern const ServerSettingsUInt64 iceberg_metadata_files_cache_max_entries;
     extern const ServerSettingsDouble iceberg_metadata_files_cache_size_ratio;
+    extern const ServerSettingsString paimon_metadata_files_cache_policy;
+    extern const ServerSettingsUInt64 paimon_metadata_files_cache_size;
+    extern const ServerSettingsUInt64 paimon_metadata_files_cache_max_entries;
+    extern const ServerSettingsDouble paimon_metadata_files_cache_size_ratio;
     extern const ServerSettingsString parquet_metadata_cache_policy;
     extern const ServerSettingsUInt64 parquet_metadata_cache_size;
     extern const ServerSettingsUInt64 parquet_metadata_cache_max_entries;
@@ -368,6 +372,9 @@ namespace ServerSetting
     extern const ServerSettingsString query_condition_cache_policy;
     extern const ServerSettingsUInt64 query_condition_cache_size;
     extern const ServerSettingsDouble query_condition_cache_size_ratio;
+    extern const ServerSettingsString encryption_header_cache_policy;
+    extern const ServerSettingsUInt64 encryption_header_cache_size;
+    extern const ServerSettingsDouble encryption_header_cache_size_ratio;
     extern const ServerSettingsBool prepare_system_log_tables_on_startup;
     extern const ServerSettingsBool user_profile_events_per_cpu;
     extern const ServerSettingsBool show_addresses_in_stack_traces;
@@ -1342,7 +1349,8 @@ try
 
     // If the startup_console_log_level is set in the config, we override the console logger level.
     // Specific loggers can still override it.
-    std::string original_console_log_level_config = config().getString("logger.startup_console_log_level", "");
+    bool console_log_level_was_set = config().has("logger.console_log_level");
+    std::string original_console_log_level_config = config().getString("logger.console_log_level", "");
     bool should_restore_console_log_level = false;
     if (config().has("logger.startup_console_log_level") && !config().getString("logger.startup_console_log_level").empty())
     {
@@ -1409,7 +1417,6 @@ try
     registerDisks(/* global_skip_access_check= */ false);
     registerFormats();
     registerRemoteFileMetadatas();
-    registerSchedulerNodes();
 
     QueryPlanStepRegistry::registerPlanSteps();
 
@@ -2133,7 +2140,7 @@ try
         stateless_worker_endpoint_ptr.reset();
     });
 
-    #ifdef OS_LINUX
+    #if defined(OS_LINUX) || defined(OS_DARWIN)
     ExchangeConnectionsPtr exchange_connections_ptr = ExchangeConnections::instance();
     std::vector<std::shared_ptr<ExchangeServer>> exchange_servers;
     if (auto streaming_exchange_port = config().getUInt("distributed_query.streaming_exchange_port", 0))
@@ -2180,7 +2187,7 @@ try
     });
     #else
     if (config().getUInt("distributed_query.streaming_exchange_port", 0))
-        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "ExchangeServer is not supported on non-linux platform");
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "ExchangeServer is not supported on this platform");
     #endif
 
     /// Set up caches.
@@ -2323,6 +2330,17 @@ try
         LOG_INFO(log, "Lowered Iceberg metadata cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(iceberg_metadata_files_cache_size));
     }
     global_context->setIcebergMetadataFilesCache(iceberg_metadata_files_cache_policy, iceberg_metadata_files_cache_size, iceberg_metadata_files_cache_max_entries, iceberg_metadata_files_cache_size_ratio);
+
+    String paimon_metadata_files_cache_policy = server_settings[ServerSetting::paimon_metadata_files_cache_policy];
+    size_t paimon_metadata_files_cache_size = server_settings[ServerSetting::paimon_metadata_files_cache_size];
+    size_t paimon_metadata_files_cache_max_entries = server_settings[ServerSetting::paimon_metadata_files_cache_max_entries];
+    double paimon_metadata_files_cache_size_ratio = server_settings[ServerSetting::paimon_metadata_files_cache_size_ratio];
+    if (paimon_metadata_files_cache_size > max_cache_size)
+    {
+        paimon_metadata_files_cache_size = max_cache_size;
+        LOG_INFO(log, "Lowered Paimon metadata cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(paimon_metadata_files_cache_size));
+    }
+    global_context->setPaimonMetadataFilesCache(paimon_metadata_files_cache_policy, paimon_metadata_files_cache_size, paimon_metadata_files_cache_max_entries, paimon_metadata_files_cache_size_ratio);
 #endif
 #if USE_PARQUET
     String parquet_metadata_cache_policy = server_settings[ServerSetting::parquet_metadata_cache_policy];
@@ -2350,6 +2368,16 @@ try
         LOG_INFO(log, "Lowered query condition cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(query_condition_cache_size));
     }
     global_context->setQueryConditionCache(query_condition_cache_policy, query_condition_cache_size, query_condition_cache_size_ratio);
+
+    String encryption_header_cache_policy = server_settings[ServerSetting::encryption_header_cache_policy];
+    size_t encryption_header_cache_size = server_settings[ServerSetting::encryption_header_cache_size];
+    double encryption_header_cache_size_ratio = server_settings[ServerSetting::encryption_header_cache_size_ratio];
+    if (encryption_header_cache_size > max_cache_size)
+    {
+        encryption_header_cache_size = max_cache_size;
+        LOG_INFO(log, "Lowered encryption header cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(encryption_header_cache_size));
+    }
+    global_context->setEncryptionHeaderCache(encryption_header_cache_policy, encryption_header_cache_size, encryption_header_cache_size_ratio);
 
     size_t query_result_cache_max_size_in_bytes = server_settings[ServerSetting::query_cache_max_size_in_bytes];
     size_t query_result_cache_max_entries = server_settings[ServerSetting::query_cache_max_entries];
@@ -2687,6 +2715,7 @@ try
             global_context->getSchedulePool().increaseThreadsCount(new_server_settings[ServerSetting::background_schedule_pool_size]);
             global_context->getMessageBrokerSchedulePool().increaseThreadsCount(new_server_settings[ServerSetting::background_message_broker_schedule_pool_size]);
             global_context->getDistributedSchedulePool().increaseThreadsCount(new_server_settings[ServerSetting::background_distributed_schedule_pool_size]);
+            global_context->getStreamingSchedulePool().increaseThreadsCount(new_server_settings[ServerSetting::background_streaming_schedule_pool_size]);
 
             global_context->getAsyncLoader().setMaxThreads(TablesLoaderForegroundPoolId, new_server_settings[ServerSetting::tables_loader_foreground_pool_size]);
             global_context->getAsyncLoader().setMaxThreads(TablesLoaderBackgroundLoadPoolId, new_server_settings[ServerSetting::tables_loader_background_pool_size]);
@@ -2745,9 +2774,12 @@ try
                 new_server_settings[ServerSetting::cpu_slot_quantum_ns],
                 new_server_settings[ServerSetting::cpu_slot_preemption_timeout_ms]);
 
-            if (config().has("resources"))
+            if (config().has("resources") || config().has("workload_classifiers"))
             {
-                global_context->getResourceManager()->updateConfiguration(config());
+                LOG_WARNING(
+                    &logger(),
+                    "Config-based resource scheduling ('resources' and 'workload_classifiers' configuration sections) "
+                    "has been removed and is ignored. Use 'CREATE RESOURCE' and 'CREATE WORKLOAD' queries instead.");
             }
 
             /// Load WORKLOADs and RESOURCEs.
@@ -2791,10 +2823,12 @@ try
                 global_context->updateMMappedFileCacheConfiguration(config(), max_cache_size_in_bytes);
                 global_context->updateQueryResultCacheConfiguration(config(), max_cache_size_in_bytes);
                 global_context->updateQueryConditionCacheConfiguration(config(), max_cache_size_in_bytes);
+                global_context->updateEncryptionHeaderCacheConfiguration(config(), max_cache_size_in_bytes);
                 setPointInPolygonCacheMaxSizeInBytes(
                     std::min<size_t>(new_server_settings[ServerSetting::point_in_polygon_cache_size], max_cache_size_in_bytes));
 #if USE_AVRO
                 global_context->updateIcebergMetadataFilesCacheConfiguration(config(), max_cache_size_in_bytes);
+                global_context->updatePaimonMetadataFilesCacheConfiguration(config(), max_cache_size_in_bytes);
 #endif
 #if USE_PARQUET
                 global_context->updateParquetMetadataCacheConfiguration(config(), max_cache_size_in_bytes);
@@ -3430,59 +3464,6 @@ try
         if (config().has("startup_scripts"))
             loadStartupScripts(config(), server_settings, global_context, log);
 
-        {
-            std::lock_guard lock(servers_lock);
-
-            /// Restore the startup log level overrides before accepting connections,
-            /// so that no requests are served with an elevated (startup) log level.
-            /// This must happen before server.start() because the config reload callback
-            /// (ConfigReloader) reads from config() which includes the writable layer
-            /// where startup level overrides are stored.
-            if (should_restore_default_logger_level)
-            {
-                config().setString("logger.level", default_logger_level_config);
-                Loggers::updateLevels(config(), logger());
-                LOG_INFO(log, "Restored default logger level to {}", default_logger_level_config);
-            }
-
-            if (should_restore_console_log_level)
-            {
-                config().setString("logger.console_log_level", original_console_log_level_config);
-                Loggers::updateLevels(config(), logger());
-                LOG_INFO(log, "Restored console logger level to {}", original_console_log_level_config);
-            }
-
-            for (auto & server : servers)
-            {
-                server.start();
-                LOG_INFO(log, "Listening for {}", server.getDescription());
-            }
-
-            global_context->setServerCompletelyStarted();
-            LOG_INFO(log, "Ready for connections.");
-        }
-
-        startup_watch.stop();
-        ProfileEvents::increment(ProfileEvents::ServerStartupMilliseconds, startup_watch.elapsedMilliseconds());
-
-        CannotAllocateThreadFaultInjector::setFaultProbability(server_settings[ServerSetting::cannot_allocate_thread_fault_injection_probability]);
-
-        try
-        {
-            global_context->startClusterDiscovery();
-        }
-        catch (...)
-        {
-            tryLogCurrentException(log, "Caught exception while starting cluster discovery");
-        }
-
-#if defined(OS_LINUX)
-        /// Tell the service manager that service startup is finished.
-        /// NOTE: the parent clickhouse-watchdog process must do systemdNotify("MAINPID={}\n", child_pid); before
-        /// the child process notifies 'READY=1'.
-        systemdNotify("READY=1\n");
-#endif
-
         auto stop_acme_instance = []{
 #if USE_SSL
             /// Stop ACME tasks.
@@ -3598,6 +3579,70 @@ try
                 safeExit(0);
             }
         });
+
+        {
+            std::lock_guard lock(servers_lock);
+
+            /// Restore the startup log level overrides before accepting connections,
+            /// so that no requests are served with an elevated (startup) log level.
+            /// This must happen before server.start() because the config reload callback
+            /// (ConfigReloader) reads from config() which includes the writable layer
+            /// where startup level overrides are stored.
+            if (should_restore_default_logger_level)
+            {
+                config().setString("logger.level", default_logger_level_config);
+                Loggers::updateLevels(config(), logger());
+                LOG_INFO(log, "Restored default logger level to {}", default_logger_level_config);
+            }
+
+            if (should_restore_console_log_level)
+            {
+                /// If the level was unset just remove the override so the default can be set via
+                /// Loggers::updateLevels again; otherwise restore the configured value.
+                if (console_log_level_was_set)
+                {
+                    config().setString("logger.console_log_level", original_console_log_level_config);
+                    Loggers::updateLevels(config(), logger());
+                    LOG_INFO(log, "Restored console logger level to {}", original_console_log_level_config);
+                }
+                else
+                {
+                    config().remove("logger.console_log_level");
+                    Loggers::updateLevels(config(), logger());
+                    LOG_INFO(log, "Restored console logger level to logger.level");
+                }
+            }
+
+            for (auto & server : servers)
+            {
+                server.start();
+                LOG_INFO(log, "Listening for {}", server.getDescription());
+            }
+
+            global_context->setServerCompletelyStarted();
+            LOG_INFO(log, "Ready for connections.");
+        }
+
+        startup_watch.stop();
+        ProfileEvents::increment(ProfileEvents::ServerStartupMilliseconds, startup_watch.elapsedMilliseconds());
+
+        CannotAllocateThreadFaultInjector::setFaultProbability(server_settings[ServerSetting::cannot_allocate_thread_fault_injection_probability]);
+
+        try
+        {
+            global_context->startClusterDiscovery();
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log, "Caught exception while starting cluster discovery");
+        }
+
+#if defined(OS_LINUX)
+        /// Tell the service manager that service startup is finished.
+        /// NOTE: the parent clickhouse-watchdog process must do systemdNotify("MAINPID={}\n", child_pid); before
+        /// the child process notifies 'READY=1'.
+        systemdNotify("READY=1\n");
+#endif
 
         std::vector<std::unique_ptr<MetricsTransmitter>> metrics_transmitters;
         for (const auto & graphite_key : DB::getMultipleKeysFromConfig(config(), "", "graphite"))
