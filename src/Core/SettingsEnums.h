@@ -16,6 +16,7 @@
 #include <IO/DistributedCacheLogMode.h>
 #include <IO/DistributedCachePoolBehaviourOnLimit.h>
 #include <IO/ReadMethod.h>
+#include <IO/SnappyMode.h>
 #include <Parsers/IdentifierQuotingStyle.h>
 #include <QueryPipeline/SizeLimits.h>
 #include <Common/ShellCommandSettings.h>
@@ -250,7 +251,8 @@ enum class MySQLDataTypesSupport : uint8_t
     DECIMAL, // convert MySQL's decimal and number to ClickHouse Decimal when applicable
     DATETIME64, // convert MySQL's DATETIME and TIMESTAMP and ClickHouse DateTime64 if precision is > 0 or range is greater that for DateTime.
     DATE2DATE32, // convert MySQL's date type to ClickHouse Date32
-    DATE2STRING  // convert MySQL's date type to ClickHouse String(This is usually used when your mysql date is less than 1925)
+    DATE2STRING, // convert MySQL's date type to ClickHouse String(This is usually used when your mysql date is less than 1925)
+    GEOMETRY // convert MySQL's spatial types to the corresponding ClickHouse geometric types (LineString, Polygon, MultiLineString, MultiPolygon); the generic GEOMETRY type maps to the umbrella Geometry type
 };
 
 DECLARE_SETTING_MULTI_ENUM(MySQLDataTypesSupport)
@@ -280,6 +282,8 @@ DECLARE_SETTING_ENUM(DistributedDDLOutputMode)
 DECLARE_SETTING_ENUM(StreamingHandleErrorMode)
 
 DECLARE_SETTING_ENUM(ShortCircuitFunctionEvaluation)
+
+DECLARE_SETTING_ENUM(SnappyMode)
 
 enum class TransactionsWaitCSNMode : uint8_t
 {
@@ -451,6 +455,7 @@ enum class DatabaseDataLakeCatalogType : uint8_t
     ICEBERG_ONELAKE,
     ICEBERG_BIGLAKE,
     PAIMON_REST,
+    ICEBERG_DELTA_SHARING,
 };
 
 DECLARE_SETTING_ENUM(DatabaseDataLakeCatalogType)
