@@ -310,6 +310,19 @@ private:
     /// accumulated garbage while reconstructing the identical state on the next replay.
     void compact();
 
+    /// Remove a log file left behind by a failed compaction, or - if it cannot be
+    /// removed - overwrite it with an empty file. A compaction snapshot is written at a
+    /// log number one past `current_log_number`, so if the snapshot is made durable but
+    /// the compaction then fails before switching over to it, the server keeps appending
+    /// to the older, lower-numbered file while a stale snapshot survives at a HIGHER
+    /// number. On the next restart `load` replays that snapshot last - after the older
+    /// files that by then hold newer committed block ids - so its stale ADD records would
+    /// resurrect evicted block ids and forget committed ones. Simply removing the file is
+    /// therefore not optional; if the removal fails too, overwriting it with an empty
+    /// file makes it replay as a no-op no matter where it sits, which preserves a
+    /// consistent state instead of leaving a stale higher-numbered trap.
+    void neutralizeOrphanLog(const std::string & path);
+
     /// Compact when the raw record count has grown well beyond the effective coverage,
     /// i.e. when repeated rolled-back operations have left enough cancelled record pairs
     /// that the retained files (and the records load must replay) would otherwise keep

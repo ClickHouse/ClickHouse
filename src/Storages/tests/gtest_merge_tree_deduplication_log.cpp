@@ -3,6 +3,7 @@
 #include <filesystem>
 #include <fstream>
 #include <map>
+#include <unordered_set>
 
 #include <Disks/DiskLocal.h>
 #include <Disks/WriteMode.h>
@@ -22,6 +23,7 @@ namespace ErrorCodes
 {
     extern const int CANNOT_FSYNC;
     extern const int CANNOT_WRITE_TO_FILE_DESCRIPTOR;
+    extern const int CANNOT_UNLINK;
 }
 }
 
@@ -261,6 +263,39 @@ public:
     const size_t fail_on_sync;
     size_t flush_count = 0;
     const size_t fail_on_flush;
+};
+
+/// A DiskLocal that reproduces a compaction whose snapshot is written and made durable
+/// but whose completion then fails: reopening the just-written snapshot for appending
+/// throws, and removing the orphan snapshot during the failure cleanup throws as well.
+/// The append failure is keyed on a file this disk itself has already rewritten - which
+/// is exactly the compaction snapshot being reopened, and never the pre-existing file
+/// `load` reopens for appending - so all other writes (the snapshot itself and the empty
+/// overwrite the cleanup falls back to) go through and the log stays usable.
+class DiskFailingSnapshotReopenAndRemove : public DiskLocal
+{
+public:
+    DiskFailingSnapshotReopenAndRemove(const String & name_, const String & path_)
+        : DiskLocal(name_, path_)
+    {
+    }
+
+    std::unique_ptr<WriteBufferFromFileBase>
+    writeFile(const String & path, size_t buf_size, WriteMode mode, const WriteSettings & settings) override
+    {
+        if (mode == WriteMode::Append && rewritten.contains(path))
+            throw Exception(ErrorCodes::CANNOT_WRITE_TO_FILE_DESCRIPTOR, "Injected snapshot-reopen failure");
+        if (mode == WriteMode::Rewrite)
+            rewritten.insert(path);
+        return DiskLocal::writeFile(path, buf_size, mode, settings);
+    }
+
+    void removeFileIfExists(const String &) override
+    {
+        throw Exception(ErrorCodes::CANNOT_UNLINK, "Injected remove failure");
+    }
+
+    std::unordered_set<String> rewritten;
 };
 
 /// Read the raw records of every deduplication log file under `logs_root`, in
@@ -1405,6 +1440,95 @@ TEST(MergeTreeDeduplicationLog, RestartsDoNotLeakEmptyLogsWithoutAppendSupport)
         EXPECT_FALSE(log.addPart({"block1"}, part("all_2_2_0")).empty());
 
         log.shutdown();
+    }
+
+    std::filesystem::remove_all(work_dir);
+}
+
+/// Regression test: when a compaction's snapshot is written and made durable but the
+/// compaction then fails to switch over to it (reopening the snapshot throws), the
+/// failure cleanup must not leave that durable snapshot behind at a log number higher
+/// than the file the server keeps appending to. A compaction snapshot is written one
+/// past current_log_number, so an orphaned snapshot outranks every older file; on the
+/// next restart load replays it last - after the older files that by then may hold newer
+/// committed block ids - and its stale ADD records would resurrect evicted block ids and
+/// forget committed ones. If the snapshot cannot even be removed during cleanup it must
+/// be overwritten with an empty file, which replays as a no-op regardless of position.
+TEST(MergeTreeDeduplicationLog, CompactionCleanupFailureNeutralizesOrphanSnapshot)
+{
+    const std::string work_dir = "tmp/gtest_dedup_log_compaction_orphan/";
+    std::filesystem::remove_all(work_dir);
+    std::filesystem::create_directories(work_dir);
+
+    const std::string logs_dir = work_dir + "dedup_logs";
+    auto highest_log_record_count = [&]() -> size_t
+    {
+        /// The number of records in the highest-numbered log file - the slot a compaction
+        /// snapshot occupies. A neutralized orphan snapshot is empty; a surviving one is not.
+        std::map<size_t, std::filesystem::path> logs;
+        for (const auto & entry : std::filesystem::directory_iterator(logs_dir))
+        {
+            const std::string stem = entry.path().stem();
+            logs.emplace(std::stoull(stem.substr(stem.find_last_of('_') + 1)), entry.path());
+        }
+        if (logs.empty())
+            return 0;
+        std::ifstream in(logs.rbegin()->second);
+        size_t count = 0;
+        std::string line;
+        while (std::getline(in, line))
+            ++count;
+        return count;
+    };
+
+    const MergeTreeDataFormatVersion format_version = MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING;
+    auto part = [&](const String & name) { return MergeTreePartInfo::fromPartName(name, format_version); };
+
+    {
+        /// First accumulate the unreclaimable rollback garbage that makes the next restart
+        /// want to compact, exactly as in the compaction test above.
+        auto disk = std::make_shared<DiskThrowingFromNthSync>("faulty", work_dir, /*fail_from_sync=*/ 1);
+        MergeTreeDeduplicationLog log("dedup_logs", /*deduplication_window=*/ 1, format_version, disk);
+        log.load();
+
+        log.addPart({"block1"}, part("all_1_1_0"));
+        for (int i = 2; i <= 8; ++i)
+        {
+            const std::string suffix = std::to_string(i) + "_" + std::to_string(i) + "_0";
+            EXPECT_ANY_THROW(log.addPart({"block" + std::to_string(i)}, part("all_" + suffix)));
+        }
+        EXPECT_GT(highest_log_record_count(), 0u);
+
+        log.shutdown();
+    }
+
+    {
+        /// Restart on a disk that lets the compaction write and fsync its snapshot, then
+        /// fails to reopen it for appending and fails to remove it during cleanup. load
+        /// reconstructs the single live block and triggers compaction, which writes the
+        /// snapshot durably and then aborts at the reopen.
+        auto disk = std::make_shared<DiskFailingSnapshotReopenAndRemove>("faulty-compaction", work_dir);
+        MergeTreeDeduplicationLog log("dedup_logs", /*deduplication_window=*/ 1, format_version, disk);
+        log.load();
+
+        /// The orphaned snapshot occupies the highest log number. Without neutralization it
+        /// stays behind holding the live state ({"block1"}), outranking every older file, so
+        /// a later committed block written to a lower-numbered file would be clobbered by it
+        /// on the next replay. The fix overwrites it with an empty file, so the highest log
+        /// file holds no records.
+        EXPECT_EQ(highest_log_record_count(), 0u);
+
+        log.shutdown();
+    }
+
+    {
+        /// A healthy restart must still reconstruct the live state exactly.
+        auto disk = std::make_shared<DiskLocal>("healthy", work_dir);
+        MergeTreeDeduplicationLog log("dedup_logs", /*deduplication_window=*/ 1, format_version, disk);
+        log.load();
+
+        EXPECT_FALSE(log.addPart({"block1"}, part("all_9_9_0")).empty());
+        EXPECT_TRUE(log.addPart({"block2"}, part("all_10_10_0")).empty());
     }
 
     std::filesystem::remove_all(work_dir);

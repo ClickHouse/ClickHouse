@@ -538,28 +538,23 @@ void MergeTreeDeduplicationLog::compact()
     catch (...)
     {
         tryLogCurrentException(__PRETTY_FUNCTION__, "Cannot compact the MergeTree deduplication log; keeping the existing log files");
-        /// Discard whatever was set up so no orphan file is left for load to read.
+        /// Discard whatever was set up so no orphan file is left for load to read. The
+        /// snapshot may already be durable at a HIGHER log number than the older files the
+        /// server keeps appending to, so it cannot simply be forgotten: left behind, load
+        /// would replay it last - after the older files that by then hold newer committed
+        /// block ids - and its stale ADD records would resurrect evicted block ids and
+        /// forget committed ones. neutralizeOrphanLog removes it, or, if that fails,
+        /// overwrites it with an empty file that replays as a no-op no matter its position.
         if (new_writer)
             new_writer->cancel();
         existing_logs.erase(snapshot_log_number);
         if (!reopen_snapshot)
             existing_logs.erase(writer_log_number);
-        try
-        {
-            disk->removeFileIfExists(snapshot_path);
-            /// writer_path == snapshot_path when the snapshot is reopened, so only a
-            /// separate fresh writer file needs its own cleanup.
-            if (!reopen_snapshot)
-                disk->removeFileIfExists(writer_path);
-        }
-        catch (...)
-        {
-            /// Cleanup of a failed compaction; if even removing the orphan snapshot fails there
-            /// is nothing more to do. Leaving the file behind is harmless: it is not registered in
-            /// existing_logs, and it holds the highest log number, so should load ever read it, its
-            /// ADD records replay last as no-ops on top of the already-reconstructed live state.
-            tryLogCurrentException(__PRETTY_FUNCTION__, "Cannot remove an orphan snapshot file left by a failed deduplication log compaction");
-        }
+        neutralizeOrphanLog(snapshot_path);
+        /// writer_path == snapshot_path when the snapshot is reopened, so only a separate
+        /// fresh writer file needs its own cleanup.
+        if (!reopen_snapshot)
+            neutralizeOrphanLog(writer_path);
         return;
     }
 
@@ -595,6 +590,43 @@ void MergeTreeDeduplicationLog::compact()
 
     current_log_number = writer_log_number;
     current_writer = std::move(new_writer);
+}
+
+void MergeTreeDeduplicationLog::neutralizeOrphanLog(const std::string & path)
+{
+    /// Best effort: try to remove the orphan file first (see the header for why leaving a
+    /// durable, higher-numbered snapshot behind would corrupt the next replay).
+    try
+    {
+        disk->removeFileIfExists(path);
+        return;
+    }
+    catch (...)
+    {
+        tryLogCurrentException(
+            __PRETTY_FUNCTION__,
+            "Cannot remove an orphan file left by a failed deduplication log compaction: " + path
+                + "; will overwrite it with an empty file instead");
+    }
+
+    /// Removal failed, so overwrite the file with an empty one: an empty log replays as a
+    /// no-op wherever it sits, so it can no longer resurrect evicted or drop committed
+    /// block ids on the next restart. Rewrite creates the file afresh, so even a partial
+    /// snapshot is truncated away, and finalize makes the emptiness durable on object
+    /// storage. If this fails as well the disk is unwritable and nothing more can be done.
+    try
+    {
+        auto empty_writer = disk->writeFile(path, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite);
+        empty_writer->finalize();
+        empty_writer->sync();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(
+            __PRETTY_FUNCTION__,
+            "Cannot overwrite an orphan file left by a failed deduplication log compaction with an empty file: " + path
+                + "; a restart may replay stale records from it");
+    }
 }
 
 std::vector<MergeTreeDeduplicationLog::AddPartResult> MergeTreeDeduplicationLog::addPart(const std::vector<std::string> & block_ids, const MergeTreePartInfo & part_info)
