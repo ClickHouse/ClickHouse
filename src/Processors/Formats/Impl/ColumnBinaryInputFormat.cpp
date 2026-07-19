@@ -173,6 +173,79 @@ void registerInputFormatColumnBinary(FormatFactory & factory)
     {
         return std::make_shared<ColumnBinaryInputFormat>(buf, header, params, settings);
     });
+
+    factory.setDocumentation("ColumnBinary", Documentation{
+        .description = R"DOCS_MD(
+| Input | Output | Alias |
+|-------|--------|-------|
+| ✔     | ✔      |       |
+
+## Description {#description}
+
+`ColumnBinary` is a compact columnar binary format that reuses the `COLUMNAR_V1` wire layout also used by the [`COLUMNAR_V1` WASM UDF ABI](/sql-reference/functions/wasm_udf#abi-columnar-v1). Unlike [Native](./Native.md) and [Buffers](./Buffers.md), which serialize each column independently one after another, `ColumnBinary` writes a single frame per block: a header, a fixed-size descriptor table (one descriptor per column), and then every column's data packed contiguously. All numeric fields are little-endian.
+
+A frame has the following layout:
+
+```txt
+[ColumnarV1Header: 8 bytes]
+[ColDescriptor × num_columns: 40 bytes each]
+[Column data blocks]
+```
+
+The 8-byte header contains two `uint32` fields: `num_rows` then `num_cols`.
+
+Each `ColDescriptor` is exactly 40 bytes and contains five `uint64` fields (all byte offsets are absolute from the start of the frame):
+
+- `type` (8 bytes) — column type identifier (see below)
+- `null_offset` (8 bytes) — absolute offset to the `u8[num_rows]` null map (0 if not nullable; 1 = null, 0 = non-null)
+- `offsets_offset` (8 bytes) — absolute offset to the `uint64[num_rows+1]` offsets array (for `COL_BYTES` columns; 0 otherwise)
+- `data_offset` (8 bytes) — absolute offset to the column data block
+- `data_size` (8 bytes) — size of the data block in bytes
+
+Base column types:
+
+- `0` — `COL_BYTES` — variable-length byte strings (`String`); paired with `offsets_offset` array and a data block of raw bytes (no null terminators)
+- `1` — `COL_FIXED8` — 1-byte fixed-width scalars (`Int8`, `UInt8`)
+- `2` — `COL_FIXED16` — 2-byte fixed-width scalars (`Int16`, `UInt16`)
+- `3` — `COL_FIXED32` — 4-byte fixed-width scalars (`Int32`, `UInt32`, `Float32`)
+- `4` — `COL_FIXED64` — 8-byte fixed-width scalars (`Int64`, `UInt64`, `Float64`, `DateTime64`)
+- `5` — `COL_COMPLEX` — recursive format for `Array(T)`, `Tuple(T…)`, and `Map(K, V)`
+- `6` — `COL_VARIANT` — discriminated union (`Variant(…)`)
+- `7` — `COL_FIXEDN` — fixed-width scalars of any other width (`UUID`, `IPv6`, `Int128`/`UInt128`, `Int256`/`UInt256`, `Decimal128`/`Decimal256`, …)
+- `8` — `COL_LOWCARD` — top-level `LowCardinality(T)`; dictionary sub-column plus a compact index array (nested `LowCardinality` materializes to `T` instead)
+
+Modifier flags (OR'd onto the base type):
+
+- `COL_IS_NULLABLE` (`0x20`) — nullable column; `null_offset` carries a `u8[num_rows]` null map
+- `COL_IS_CONST` (`0x80`) — constant column; only 1 row of data is stored; the reader replicates it to the full row count
+
+Because the entire frame is laid out contiguously, a well-formed `data_offset`/`data_size` pair for `COL_BYTES` always starts at byte `0` of the data block and covers it exactly, with no gaps.
+
+## Example usage {#example-usage}
+
+Write to a file:
+
+```sql
+SELECT
+    number AS num,
+    number * number AS num_square
+FROM numbers(10)
+INTO OUTFILE 'squares.columnbinary'
+FORMAT ColumnBinary;
+```
+
+Read back with explicit column types:
+
+```sql
+SELECT
+    *
+FROM file(
+    'squares.columnbinary',
+    'ColumnBinary',
+    'col_1 UInt64, col_2 UInt64'
+);
+```
+)DOCS_MD"});
 }
 
 }
