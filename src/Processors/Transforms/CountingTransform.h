@@ -20,6 +20,9 @@ public:
     {
         Direct,
         MaterializedView,
+        /// Rows that are neither a direct INSERT nor a push from a materialized view into its target table,
+        /// e.g. rows entering a window view. Counted only in the generic InsertedRows/InsertedBytes events.
+        Other,
     };
 
     explicit CountingTransform(

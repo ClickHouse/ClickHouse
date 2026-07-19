@@ -43,6 +43,9 @@ void CountingTransform::onConsume(Chunk chunk)
             ProfileEvents::increment(ProfileEvents::MaterializedViewInsertedRows, local_progress.written_rows);
             ProfileEvents::increment(ProfileEvents::MaterializedViewInsertedBytes, written_bytes);
             break;
+
+        case InsertSource::Other:
+            break;
     }
 
     if (process_elem)

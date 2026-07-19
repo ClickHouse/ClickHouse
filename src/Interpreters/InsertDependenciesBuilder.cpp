@@ -1355,7 +1355,12 @@ Chain InsertDependenciesBuilder::createSelect(StorageIDMaybeEmpty view_id) const
     }
 
 
-    auto counting = std::make_shared<CountingTransform>(output_header, CountingTransform::InsertSource::MaterializedView, insert_context->getQuota(), insert_context->getNormalizedQueryHash());
+    /// This path is shared with window views: count only pushes from materialized views into their target tables
+    /// as MaterializedViewInsertedRows/MaterializedViewInsertedBytes.
+    auto insert_source = view_types.at(view_id) == QueryViewsLogElement::ViewType::MATERIALIZED
+        ? CountingTransform::InsertSource::MaterializedView
+        : CountingTransform::InsertSource::Other;
+    auto counting = std::make_shared<CountingTransform>(output_header, insert_source, insert_context->getQuota(), insert_context->getNormalizedQueryHash());
     counting->setProcessListElement(insert_context->getProcessListElement());
     counting->setProgressCallback(insert_context->getProgressCallback());
     counting->setRuntimeData(thread_groups.at(view_id));

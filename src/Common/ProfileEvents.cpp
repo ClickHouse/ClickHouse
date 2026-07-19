@@ -322,10 +322,10 @@
     \
     M(InsertedRows, "Number of rows INSERTed to all tables.", ValueType::Number) \
     M(InsertedBytes, "Number of bytes (uncompressed; for columns as they stored in memory) INSERTed to all tables.", ValueType::Bytes) \
-    M(DirectInsertedRows, "Number of rows inserted by direct INSERT queries, excluding materialized views.", ValueType::Number) \
-    M(DirectInsertedBytes, "Number of uncompressed bytes inserted by direct INSERT queries, excluding materialized views.", ValueType::Bytes) \
-    M(MaterializedViewInsertedRows, "Number of rows inserted into target tables of materialized views.", ValueType::Number) \
-    M(MaterializedViewInsertedBytes, "Number of uncompressed bytes inserted into target tables of materialized views.", ValueType::Bytes) \
+    M(DirectInsertedRows, "Number of rows written by INSERT queries into their immediate destination table, not counting the rows written by insert-triggered materialized views into their target tables. Refreshable materialized view refreshes and explicit INSERT queries into a materialized view run as regular INSERT queries and are counted here.", ValueType::Number) \
+    M(DirectInsertedBytes, "Number of uncompressed bytes written by INSERT queries into their immediate destination table, not counting the bytes written by insert-triggered materialized views into their target tables. Refreshable materialized view refreshes and explicit INSERT queries into a materialized view run as regular INSERT queries and are counted here.", ValueType::Bytes) \
+    M(MaterializedViewInsertedRows, "Number of rows written by insert-triggered materialized views into their target tables. Refreshable materialized view refreshes and explicit INSERT queries into a materialized view are counted in DirectInsertedRows instead.", ValueType::Number) \
+    M(MaterializedViewInsertedBytes, "Number of uncompressed bytes written by insert-triggered materialized views into their target tables. Refreshable materialized view refreshes and explicit INSERT queries into a materialized view are counted in DirectInsertedBytes instead.", ValueType::Bytes) \
     M(DelayedInserts, "Number of times the INSERT of a block to a MergeTree table was throttled due to high number of active data parts for partition.", ValueType::Number) \
     M(RejectedInserts, "Number of times the INSERT of a block to a MergeTree table was rejected with 'Too many parts' exception due to high number of active data parts for partition.", ValueType::Number) \
     M(DelayedInsertsMilliseconds, "Total number of milliseconds spent while the INSERT of a block to a MergeTree table was throttled due to high number of active data parts for partition.", ValueType::Milliseconds) \
