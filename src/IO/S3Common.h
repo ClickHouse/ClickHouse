@@ -26,6 +26,15 @@ namespace ErrorCodes
 
 struct Settings;
 
+/// MinIO transiently reports a just-uploaded object/part as missing on CompleteMultipartUpload even
+/// though every part was uploaded: NO_SUCH_KEY, or InvalidPart / InvalidPartOrder. These are all
+/// eventual-consistency quirks of the same class and are safe to retry (callers list parts in
+/// ascending order, so a genuine InvalidPartOrder cannot originate here). InvalidPart /
+/// InvalidPartOrder are not in the typed S3Errors enum, so the SDK leaves GetErrorType() == UNKNOWN
+/// and keeps the raw code only in GetExceptionName() -- match by name. NO_SUCH_UPLOAD is a genuine
+/// error handled by DB::S3::Client, not retried here.
+bool isTransientCompleteMultipartUploadError(const Aws::S3::S3Error & error);
+
 class S3Exception : public Exception
 {
 public:
