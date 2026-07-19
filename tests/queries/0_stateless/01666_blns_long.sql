@@ -28,6 +28,9 @@ SOFTWARE.
 
 SET max_insert_threads = 0, output_format_pretty_row_numbers = 0;
 
+-- The wide row below falls back to the Vertical format; keep control characters raw to preserve the reference.
+SET output_format_vertical_display_control_characters = 0;
+
 DROP TABLE IF EXISTS test;
 
 CREATE TABLE test
