@@ -75,6 +75,7 @@ namespace ServerSetting
 
 namespace FailPoints
 {
+    extern const char backup_cleanup_error[];
     extern const char backup_pause_on_start[];
     extern const char restore_pause_on_start[];
 }
@@ -83,6 +84,7 @@ namespace ErrorCodes
 {
     extern const int ACCESS_DENIED;
     extern const int BAD_ARGUMENTS;
+    extern const int FAULT_INJECTED;
     extern const int LOGICAL_ERROR;
     extern const int QUERY_WAS_CANCELLED;
     extern const int QUERY_WAS_CANCELLED_BY_CLIENT;
@@ -438,11 +440,11 @@ struct BackupsWorker::BackupStarter
             && query_context->getBackupsThrottler())
         {
             UInt64 queryMaxSpeed = query_context->getBackupsThrottler()->getMaxSpeed();
-            // Note: With S3 checksum enabled, each file is read twice — once for checksum, once for upload.
+            // Note: With S3 checksum enabled, each file is read twice â€” once for checksum, once for upload.
             // This effectively halves the usable bandwidth relative to max_backup_bandwidth.
             LOG_WARNING(
                 log,
-                "S3 checksum is enabled (s3_disable_checksum = 0): each file will be read twice — once for checksum and once for upload. "
+                "S3 checksum is enabled (s3_disable_checksum = 0): each file will be read twice â€” once for checksum and once for upload. "
                 "This effectively reduces the usable bandwidth to about half of max_backup_bandwidth (currently: {}). "
                 "To mitigate this, either disable checksum (SET s3_disable_checksum = 1) or increase max_backup_bandwidth.",
                 formatReadableSizeWithBinarySuffix(static_cast<double>(queryMaxSpeed), 0));
@@ -528,39 +530,56 @@ struct BackupsWorker::BackupStarter
                                (is_internal_backup ? "internal backup" : "backup"),
                                backup_name_for_logging));
 
-        bool backup_is_corrupted = (backup && backup->setIsCorrupted());
-
-        /// Let other hosts know we got an error.
-        if (backup_coordination)
-            backup_coordination->setError(std::current_exception(), /* throw_if_error = */ false);
-
-        /// Let other hosts know that the current host has finished its work.
-        /// We do that only if the error is set to prevent other hosts from thinking that the current host has finished successfully.
-        if (backup_coordination && backup_coordination->isErrorSet())
+        /// The cleanup below can throw again, e.g. after `MEMORY_LIMIT_EXCEEDED` any allocation
+        /// during the cleanup is likely to fail as well. The terminal status must be set
+        /// nevertheless: otherwise the operation stays `CREATING_BACKUP` in `system.backups`
+        /// forever and clients waiting for the operation never wake up.
+        try
         {
-            if (!is_internal_backup && backup_coordination->isBackupQuerySentToOtherHosts())
-                backup_coordination->waitOtherHostsFinish(/* throw_if_error = */ false);
-            backup_coordination->finish(/* throw_if_error = */ false);
+            fiu_do_on(FailPoints::backup_cleanup_error,
+            {
+                throw Exception(ErrorCodes::FAULT_INJECTED, "Fault injected in the cleanup after a failed backup");
+            });
+
+            bool backup_is_corrupted = (backup && backup->setIsCorrupted());
+
+            /// Let other hosts know we got an error.
+            if (backup_coordination)
+                backup_coordination->setError(std::current_exception(), /* throw_if_error = */ false);
+
+            /// Let other hosts know that the current host has finished its work.
+            /// We do that only if the error is set to prevent other hosts from thinking that the current host has finished successfully.
+            if (backup_coordination && backup_coordination->isErrorSet())
+            {
+                if (!is_internal_backup && backup_coordination->isBackupQuerySentToOtherHosts())
+                    backup_coordination->waitOtherHostsFinish(/* throw_if_error = */ false);
+                backup_coordination->finish(/* throw_if_error = */ false);
+            }
+
+            /// Remove files of the corrupted backup.
+            bool should_remove_files_in_backup = backup && backup_is_corrupted && backups_worker.remove_backup_files_after_failure
+                && backup_coordination && backup_coordination->isErrorSet() &&
+                (backup_coordination->isBackupQuerySentToOtherHosts() ? backup_coordination->allHostsFinished() : backup_coordination->finished());
+
+            if (should_remove_files_in_backup)
+                backup->tryRemoveAllFiles();
+
+            backup.reset();
+
+            /// It's fine to remove the coordination info if the current host is the last host which was working on this backup.
+            bool should_cleanup_coordination = backup_coordination && backup_coordination->isErrorSet() &&
+                (backup_coordination->isBackupQuerySentToOtherHosts() ? backup_coordination->allHostsFinished() : backup_coordination->finished());
+
+            if (should_cleanup_coordination)
+                backup_coordination->cleanup(/* throw_if_error = */ false);
+
+            backup_coordination.reset();
         }
-
-        /// Remove files of the corrupted backup.
-        bool should_remove_files_in_backup = backup && backup_is_corrupted && backups_worker.remove_backup_files_after_failure
-            && backup_coordination && backup_coordination->isErrorSet() &&
-            (backup_coordination->isBackupQuerySentToOtherHosts() ? backup_coordination->allHostsFinished() : backup_coordination->finished());
-
-        if (should_remove_files_in_backup)
-            backup->tryRemoveAllFiles();
-
-        backup.reset();
-
-        /// It's fine to remove the coordination info if the current host is the last host which was working on this backup.
-        bool should_cleanup_coordination = backup_coordination && backup_coordination->isErrorSet() &&
-            (backup_coordination->isBackupQuerySentToOtherHosts() ? backup_coordination->allHostsFinished() : backup_coordination->finished());
-
-        if (should_cleanup_coordination)
-            backup_coordination->cleanup(/* throw_if_error = */ false);
-
-        backup_coordination.reset();
+        catch (...)
+        {
+            tryLogCurrentException(backups_worker.log, fmt::format("Failed to clean up after a failed {} {}",
+                                   (is_internal_backup ? "internal backup" : "backup"), backup_name_for_logging));
+        }
 
         backups_worker.setStatusSafe(backup_id, getBackupStatusFromCurrentException());
     }
@@ -588,7 +607,7 @@ std::pair<BackupOperationID, BackupStatus> BackupsWorker::startMakingBackup(cons
                 {
                     starter->doBackup();
                 }
-                catch (const std::exception &)
+                catch (...)
                 {
                     starter->onException();
                 }
@@ -990,27 +1009,39 @@ struct BackupsWorker::RestoreStarter
         /// Something bad happened, some data were not restored.
         tryLogCurrentException(backups_worker.log, fmt::format("Failed to restore from {} {}", (is_internal_restore ? "internal backup" : "backup"), backup_name_for_logging));
 
-        /// Let other hosts know we got an error.
-        if (restore_coordination)
-            restore_coordination->setError(std::current_exception(), /* throw_if_error = */ false);
-
-        /// Let other hosts know that the current host has finished its work.
-        /// We do that only if the error is set to prevent other hosts from thinking that the current host has finished successfully.
-        if (restore_coordination && restore_coordination->isErrorSet())
+        /// The cleanup below can throw again, e.g. after `MEMORY_LIMIT_EXCEEDED` any allocation
+        /// during the cleanup is likely to fail as well. The terminal status must be set
+        /// nevertheless: otherwise the operation stays `RESTORING` in `system.backups`
+        /// forever and clients waiting for the operation never wake up.
+        try
         {
-            if (!is_internal_restore && restore_coordination->isRestoreQuerySentToOtherHosts())
-                restore_coordination->waitOtherHostsFinish(/* throw_if_error = */ false);
-            restore_coordination->finish(/* throw_if_error = */ false);
+            /// Let other hosts know we got an error.
+            if (restore_coordination)
+                restore_coordination->setError(std::current_exception(), /* throw_if_error = */ false);
+
+            /// Let other hosts know that the current host has finished its work.
+            /// We do that only if the error is set to prevent other hosts from thinking that the current host has finished successfully.
+            if (restore_coordination && restore_coordination->isErrorSet())
+            {
+                if (!is_internal_restore && restore_coordination->isRestoreQuerySentToOtherHosts())
+                    restore_coordination->waitOtherHostsFinish(/* throw_if_error = */ false);
+                restore_coordination->finish(/* throw_if_error = */ false);
+            }
+
+            /// It's fine to remove the coordination info if the current host is the last host which was working on this restore.
+            bool should_cleanup_coordination = restore_coordination && restore_coordination->isErrorSet() &&
+                (restore_coordination->isRestoreQuerySentToOtherHosts() ? restore_coordination->allHostsFinished() : restore_coordination->finished());
+
+            if (should_cleanup_coordination)
+                restore_coordination->cleanup(/* throw_if_error = */ false);
+
+            restore_coordination.reset();
         }
-
-        /// It's fine to remove the coordination info if the current host is the last host which was working on this restore.
-        bool should_cleanup_coordination = restore_coordination && restore_coordination->isErrorSet() &&
-            (restore_coordination->isRestoreQuerySentToOtherHosts() ? restore_coordination->allHostsFinished() : restore_coordination->finished());
-
-        if (should_cleanup_coordination)
-            restore_coordination->cleanup(/* throw_if_error = */ false);
-
-        restore_coordination.reset();
+        catch (...)
+        {
+            tryLogCurrentException(backups_worker.log, fmt::format("Failed to clean up after a failed restore from {} {}",
+                                   (is_internal_restore ? "internal backup" : "backup"), backup_name_for_logging));
+        }
 
         backups_worker.setStatusSafe(restore_id, getRestoreStatusFromCurrentException());
     }
@@ -1037,7 +1068,7 @@ std::pair<BackupOperationID, BackupStatus> BackupsWorker::startRestoring(const A
                 {
                     starter->doRestore();
                 }
-                catch (const std::exception &)
+                catch (...)
                 {
                     starter->onException();
                 }
