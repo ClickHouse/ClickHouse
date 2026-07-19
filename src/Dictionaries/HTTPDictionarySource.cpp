@@ -3,6 +3,7 @@
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
 #include <Formats/formatBlock.h>
+#include <IO/CompressionMethod.h>
 #include <IO/ConnectionTimeouts.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
 #include <IO/WriteBufferFromOStream.h>
@@ -20,6 +21,11 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsSnappyMode snappy_mode;
+}
+
 namespace ErrorCodes
 {
     extern const int SUPPORT_IS_DISABLED;
@@ -87,8 +93,18 @@ QueryPipeline HTTPDictionarySource::createWrappedBuffer(std::unique_ptr<ReadWrit
     /// extension (e.g. `/redirect` -> `/data.csv.gz`) and no `Content-Encoding` header.
     String path = http_buffer_ptr->getCurrentURI().getPath();
     String http_request_compression_method_str = http_buffer_ptr->getCompressionMethod();
+    auto compression_method = chooseCompressionMethod(path, http_request_compression_method_str);
+    /// When the compression method came from the response's `Content-Encoding` header,
+    /// `Content-Encoding: snappy` follows the HTTP standard wire format (snappy framing),
+    /// independent of the user-tunable `snappy_mode`. When the method is instead inferred
+    /// from the URL path (for example `http://.../data.snappy`), respect the user's
+    /// `snappy_mode` setting like `StorageURL` does, so dictionary sources stay consistent
+    /// with generic file/url reads.
+    SnappyMode snappy_mode = !http_request_compression_method_str.empty()
+        ? SnappyMode::Framed
+        : context->getSettingsRef()[Setting::snappy_mode];
     auto in_ptr_wrapped
-        = wrapReadBufferWithCompressionMethod(std::move(http_buffer_ptr), chooseCompressionMethod(path, http_request_compression_method_str));
+        = wrapReadBufferWithCompressionMethod(std::move(http_buffer_ptr), compression_method, /*zstd_window_log_max=*/0, snappy_mode);
     auto source = context->getInputFormat(configuration.format, *in_ptr_wrapped, sample_block, max_block_size);
     source->addBuffer(std::move(in_ptr_wrapped));
     return QueryPipeline(std::move(source));

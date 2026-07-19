@@ -1,0 +1,44 @@
+-- { echoOn }
+
+SELECT 'First JOIN LEFT second JOIN FULL';
+First JOIN LEFT second JOIN FULL
+(
+    SELECT
+        t1.*,
+        t2.*,
+        t3.*
+    FROM test_table_join_1 AS t1
+    LEFT JOIN test_table_join_2 AS t2 USING (id)
+    FULL JOIN test_table_join_3 AS t3 USING (id)
+    ORDER BY ALL ASC
+    SETTINGS enable_parallel_replicas = 0
+)
+EXCEPT
+(
+    SELECT
+        t1.*,
+        t2.*,
+        t3.*
+    FROM test_table_join_1 AS t1
+    LEFT JOIN test_table_join_2 AS t2 USING (id)
+    FULL JOIN test_table_join_3 AS t3 USING (id)
+    ORDER BY ALL ASC
+    SETTINGS enable_parallel_replicas = 1
+);
+SELECT
+    sum(sipHash64(t1.*, t2.*, t3.*)),
+    count()
+FROM test_table_join_1 AS t1
+LEFT JOIN test_table_join_2 AS t2 USING (id)
+FULL JOIN test_table_join_3 AS t3 USING (id)
+ORDER BY ALL ASC
+SETTINGS enable_parallel_replicas=0;
+4047269034570325425	1100
+SELECT
+    sum(sipHash64(t1.*, t2.*, t3.*)),
+    count()
+FROM test_table_join_1 AS t1
+LEFT JOIN test_table_join_2 AS t2 USING (id)
+FULL JOIN test_table_join_3 AS t3 USING (id)
+ORDER BY ALL ASC;
+4047269034570325425	1100
