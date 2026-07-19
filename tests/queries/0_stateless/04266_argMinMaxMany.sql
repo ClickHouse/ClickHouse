@@ -90,3 +90,25 @@ SELECT argMinManyMerge(1)(s) FROM
     UNION ALL
     SELECT argMinManyState(1)(arg, val) AS s FROM (SELECT 'b' AS arg, toFloat64(1) AS val)
 );
+
+-- Error: Variant anywhere inside the arg type is rejected: arg values are stored in the state
+-- as plain Fields, and SerializationVariant does not implement Field-based binary serialization,
+-- so serializing the state (argMaxManyState, distributed merges) would throw. A Field also cannot
+-- record which variant alternative was active, so the result could reconstruct a different one.
+SELECT argMaxMany(2)(number::Variant(UInt64), number) FROM numbers(5); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT argMinMany(2)(number::Variant(UInt64), number) FROM numbers(5); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT argMaxMany(2)(tuple(number::Variant(UInt64, String), number), number) FROM numbers(5); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT argMinMany(2)(tuple(number::Variant(UInt64, String), number), number) FROM numbers(5); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT argMaxMany(2)([number::Variant(UInt64, String)], number) FROM numbers(5); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT argMinMany(2)([number::Variant(UInt64, String)], number) FROM numbers(5); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+
+-- Dynamic arg is supported, including through state serialization: SerializationDynamic encodes
+-- the value type together with the value. Round-trip the state through a MergeTree table to
+-- force binary serialization and deserialization of the state.
+SELECT argMaxMany(2)(number::Dynamic, number) FROM numbers(5);
+SELECT argMinMany(2)(number::Dynamic, number) FROM numbers(5);
+DROP TABLE IF EXISTS t_04266_argmaxmany_dynamic;
+CREATE TABLE t_04266_argmaxmany_dynamic (s AggregateFunction(argMaxMany(2), Dynamic, UInt64)) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t_04266_argmaxmany_dynamic SELECT argMaxManyState(2)(number::Dynamic, number) FROM numbers(5) GROUP BY number % 2;
+SELECT argMaxManyMerge(2)(s) FROM t_04266_argmaxmany_dynamic;
+DROP TABLE t_04266_argmaxmany_dynamic;
