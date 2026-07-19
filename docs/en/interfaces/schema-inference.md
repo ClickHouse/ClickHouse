@@ -1502,6 +1502,7 @@ This setting does not apply to the `JSON` data type.
 If enabled, ClickHouse will try to infer integers instead of floats in schema inference for text formats.
 If all numbers in the column from sample data are integers, the result type will be `Int64`, if at least one number is float, the result type will be `Float64`.
 If the sample data contains only integers and at least one integer is positive and overflows `Int64`, ClickHouse will infer `UInt64`.
+In JSON formats, an integer that doesn't fit into `Int64`/`UInt64` is inferred as `Float64` (in other text formats such values fall back to `String`).
 
 Enabled by default.
 

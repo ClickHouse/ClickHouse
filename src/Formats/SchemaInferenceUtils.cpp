@@ -1041,8 +1041,8 @@ namespace
                     return std::make_shared<DataTypeFloat64>();
 
                 /// Remember the position after the parsed float to be able to infer
-                /// Float64 for integers that don't fit into Int64/UInt64.
-                char * float_end = buf.position();
+                /// Float64 for integers that don't fit into Int64/UInt64 (JSON only).
+                [[maybe_unused]] char * float_end = buf.position();
 
                 Int64 tmp_int = 0;
                 buf.position() = number_start;
@@ -1062,16 +1062,21 @@ namespace
 
                 /// The number was parsed as a float without a fractional part and starts with a digit,
                 /// so it consists only of digits (with an optional sign), but doesn't fit into Int64/UInt64.
-                /// It is an integer that overflows 64-bit types: infer Float64 for it, the same way
-                /// as tryInferNumberFromStringImpl does for numbers inside strings.
+                /// It is an integer that overflows 64-bit types: infer Float64 for it, the same way as
+                /// `tryInferNumberFromStringImpl` does for numbers inside strings.
+                /// Only for JSON: without this fallback JSON inference fails with a parse error, while
+                /// other text formats fall back to String and preserve the digits exactly.
                 /// The check for a leading digit filters out 'inf'/'nan', which also parse as floats.
-                if (parsed_as_float)
+                if constexpr (is_json)
                 {
-                    char * digits_start = (*number_start == '-' || *number_start == '+') ? number_start + 1 : number_start;
-                    if (digits_start != float_end && isNumericASCII(*digits_start))
+                    if (parsed_as_float)
                     {
-                        buf.position() = float_end;
-                        return std::make_shared<DataTypeFloat64>();
+                        char * digits_start = (*number_start == '-' || *number_start == '+') ? number_start + 1 : number_start;
+                        if (digits_start != float_end && isNumericASCII(*digits_start))
+                        {
+                            buf.position() = float_end;
+                            return std::make_shared<DataTypeFloat64>();
+                        }
                     }
                 }
 
@@ -1106,20 +1111,25 @@ namespace
 
             /// The number was parsed as a float without a fractional part and starts with a digit,
             /// so it consists only of digits (with an optional sign), but doesn't fit into Int64/UInt64.
-            /// It is an integer that overflows 64-bit types: infer Float64 for it, the same way
-            /// as tryInferNumberFromStringImpl does for numbers inside strings.
+            /// It is an integer that overflows 64-bit types: infer Float64 for it, the same way as
+            /// `tryInferNumberFromStringImpl` does for numbers inside strings.
+            /// Only for JSON: without this fallback JSON inference fails with a parse error, while
+            /// other text formats fall back to String and preserve the digits exactly.
             /// The check for a leading digit filters out 'inf'/'nan', which also parse as floats.
-            if (parsed_as_float)
+            if constexpr (is_json)
             {
-                peekable_buf.rollbackToCheckpoint(/* drop= */ true);
-                if (*peekable_buf.position() == '-' || *peekable_buf.position() == '+')
-                    ++peekable_buf.position();
-                if (!peekable_buf.eof() && isNumericASCII(*peekable_buf.position()))
+                if (parsed_as_float)
                 {
-                    /// Consume the rest of the digits to move the position to the end of the number.
-                    while (!peekable_buf.eof() && isNumericASCII(*peekable_buf.position()))
+                    peekable_buf.rollbackToCheckpoint(/* drop= */ true);
+                    if (*peekable_buf.position() == '-' || *peekable_buf.position() == '+')
                         ++peekable_buf.position();
-                    return std::make_shared<DataTypeFloat64>();
+                    if (!peekable_buf.eof() && isNumericASCII(*peekable_buf.position()))
+                    {
+                        /// Consume the rest of the digits to move the position to the end of the number.
+                        while (!peekable_buf.eof() && isNumericASCII(*peekable_buf.position()))
+                            ++peekable_buf.position();
+                        return std::make_shared<DataTypeFloat64>();
+                    }
                 }
             }
         }

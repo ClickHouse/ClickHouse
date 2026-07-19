@@ -15,6 +15,9 @@ num	Nullable(Float64)
 num	Nullable(Float64)					
 huge integer inside an array
 arr	Array(Nullable(Float64))					
-huge integer in Values format
-c1	Nullable(Float64)					
-c1	Nullable(Float64)					
+TSV still infers String for huge integers
+c1	Nullable(String)					
+huge integer in a file (non-string read buffer)
+num	Nullable(Float64)					
+Dynamic stores huge JSON integers as Float64, consistent with CSV
+Float64
