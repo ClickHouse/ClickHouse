@@ -24,6 +24,8 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSampleRatio.h>
+#include <Parsers/IAST.h>
+#include <Parsers/IASTHash.h>
 #include <Parsers/parseIdentifierOrStringLiteral.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/ExpressionActions.h>
@@ -40,6 +42,7 @@
 
 #include <Columns/ColumnConst.h>
 #include <Columns/FilterDescription.h>
+#include <Common/SipHash.h>
 #include <Core/Settings.h>
 #include <Core/UUID.h>
 #include <DataTypes/DataTypeArray.h>
@@ -78,6 +81,8 @@ extern const Event IndexBinarySearchAlgorithm;
 extern const Event IndexGenericExclusionSearchAlgorithm;
 extern const Event IndexGenericExclusionSearchStepLimitReached;
 extern const Event FilterPartsByVirtualColumnsMicroseconds;
+extern const Event QueryConditionCacheHits;
+extern const Event QueryConditionCacheMisses;
 }
 
 namespace DB
@@ -1438,12 +1443,105 @@ MergeTreeDataSelectExecutor::RowLimits MergeTreeDataSelectExecutor::getRowLimits
     return row_limits;
 }
 
+UInt64 MergeTreeDataSelectExecutor::getSkipIndexProfiledConditionHash(UInt64 condition_hash, const ReadFromMergeTree::Indexes & indexes)
+{
+    SipHash hash;
+    hash.update(condition_hash);
+    hash.update(indexes.use_skip_indexes);
+
+    /// Salt with the identity of the skip indexes that index analysis actually used. This set is
+    /// already the effective one: buildIndexes removes indexes disabled via ignore_data_skipping_indices,
+    /// drops indexes no longer present in metadata, and leaves it empty when use_skip_indexes = 0. So
+    /// any change to the running set (a different ignore list, an index dropped/added/redefined, skip
+    /// indexes off) changes the key, and a query that did not run an index never reads a verdict
+    /// produced by it. Each index contributes a stable identity: its name, its granularity, and the
+    /// tree hash of its definition AST (type, expression, arguments). name and granularity are plain
+    /// members of ASTIndexDeclaration and are not part of its tree hash, so they are folded in
+    /// separately; otherwise two indexes with the same expression and type but a different name or
+    /// granularity would share a key (the partially-materialized case: a verdict produced while one
+    /// index ran could be served to a query running only the other). The name is length-prefixed so
+    /// distinct (name, granularity) pairs cannot collide by concatenation. Index names are unique
+    /// within a table, so sorting by name is a deterministic, order-independent ordering.
+    std::vector<std::tuple<String, UInt64, IASTHash>> index_identities;
+    index_identities.reserve(indexes.skip_indexes.useful_indices.size());
+    for (const auto & useful_index : indexes.skip_indexes.useful_indices)
+        index_identities.emplace_back(
+            useful_index.index->index.name,
+            useful_index.index->index.granularity,
+            useful_index.index->index.definition_ast->getTreeHash(/*ignore_aliases=*/true));
+    std::sort(index_identities.begin(), index_identities.end(), [](const auto & l, const auto & r) { return std::get<0>(l) < std::get<0>(r); });
+
+    hash.update(index_identities.size());
+    for (const auto & [name, granularity, definition_hash] : index_identities)
+    {
+        hash.update(name.size());
+        hash.update(name);
+        hash.update(granularity);
+        hash.update(definition_hash.low64);
+        hash.update(definition_hash.high64);
+    }
+
+    /// use_skip_indexes_for_disjunctions changes the exclusions produced by the same indexes for OR
+    /// predicates, so two queries with different effective modes must not share a key.
+    hash.update(indexes.use_skip_indexes_for_disjunctions);
+
+    return hash.get64();
+}
+
+static bool isTopKFilterFunction(const ActionsDAG::Node * node)
+{
+    return node->type == ActionsDAG::ActionType::FUNCTION
+        && node->function_base
+        && node->function_base->getName() == "__topKFilter";
+}
+
+/// TopK dynamic filtering can push `__topKFilter` into the WHERE `ActionsDAG` as
+/// `and(__topKFilter(...), <predicate>)`. Plain `SELECT ... WHERE <predicate>` entries
+/// are keyed on `<predicate>` alone, so strip internal TopK nodes before probing reuse.
+static std::optional<size_t> getTopKReusePredicateOnlyConditionHash(const ActionsDAG::Node * node)
+{
+    if (!node)
+        return std::nullopt;
+
+    if (node->type == ActionsDAG::ActionType::FUNCTION
+        && node->function_base && node->function_base->getName() == "and")
+    {
+        std::vector<const ActionsDAG::Node *> where_children;
+        where_children.reserve(node->children.size());
+        for (const auto * child : node->children)
+        {
+            if (!isTopKFilterFunction(child))
+                where_children.push_back(child);
+        }
+
+        if (where_children.empty())
+            return std::nullopt;
+
+        /// The common TopK shape is `and(__topKFilter(...), <WHERE-root>)`, where the WHERE root is a
+        /// single (possibly nested `and`) node, so stripping the internal `__topKFilter` leaves exactly
+        /// one child whose hash reproduces the key a plain `SELECT ... WHERE <predicate>` wrote. But the
+        /// top-level `and` can also be flattened (`and(__topKFilter, a, b, ...)`), leaving several
+        /// children with no single node to hash; in that case we cannot reproduce a plain-WHERE key, so
+        /// skip the cross-query reuse (a plain multi-conjunct `WHERE` is keyed on its own single
+        /// `and(a, b, ...)` node, which we do not have here).
+        if (where_children.size() != 1)
+            return std::nullopt;
+        return where_children.front()->getHash();
+    }
+
+    if (isTopKFilterFunction(node))
+        return std::nullopt;
+
+    return node->getHash();
+}
+
 void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
     RangesInDataParts & parts_with_ranges,
     const SelectQueryInfo & select_query_info,
     const std::optional<VectorSearchParameters> & vector_search_parameters,
     const std::optional<TopKFilterInfo> & top_k_filter_info,
     const MergeTreeData::MutationsSnapshotPtr & mutations_snapshot,
+    const ReadFromMergeTree::Indexes & indexes,
     const ContextPtr & context,
     LoggerPtr log)
 {
@@ -1458,6 +1556,23 @@ void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
 
     QueryConditionCachePtr query_condition_cache = context->getQueryConditionCache();
 
+    /// Each condition is looked up under two keys (see the write sides):
+    ///   * the bare condition hash, holding row-level exclusions (FilterTransform,
+    ///     MergeTreeSelectProcessor, object storage) which are always sound; and
+    ///   * a hash salted with the effective skip-index profile that index analysis ran
+    ///     (getSkipIndexProfiledConditionHash), holding the skip-index-analysis exclusions
+    ///     written by ReadFromMergeTree.
+    /// Skip-index exclusions can legitimately diverge from the row-level predicate (e.g. a text
+    /// index with a preprocessor), so they must only be consulted by a query that ran the same set
+    /// of indexes; salting the key with the running index set (and disjunction mode) guarantees a
+    /// query that ran a different set (use_skip_indexes = 0, an index dropped/ignored, or a
+    /// different disjunction mode) never reads them. The two verdicts are merged: a mark may be
+    /// skipped iff either verdict says it does not match. This keeps the pure-QCC case
+    /// (use_skip_indexes = 0 still reusing row-level entries) working while preventing the
+    /// skip-index poisoning of issue #108519. TopK WHERE reads also consult the
+    /// `topk_reuse_predicate_only_hash` so plain `SELECT ... WHERE` entries can be reused;
+    /// TopK-salted entries are not read otherwise.
+
     struct Stats
     {
         size_t total_granules = 0;
@@ -1469,6 +1584,19 @@ void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
         /// `size_t` (not `UInt64`) so `boost::hash_combine` binds on platforms where
         /// they differ (e.g. Apple, where `size_t` is `unsigned long` but `UInt64` is `unsigned long long`).
         size_t condition_hash = dag->getHash();
+        size_t topk_reuse_predicate_only_hash = 0;
+        bool has_topk_reuse_predicate_only_hash = false;
+        if (apply_top_k_salt && top_k_filter_info && top_k_filter_info->where_clause)
+        {
+            /// Only reuse when stripping actually recovered a predicate-only hash. Otherwise the hash
+            /// would still carry `__topKFilter` (matching neither a plain `WHERE` entry nor the salted
+            /// TopK entry), so probing it would just be wasted cache lookups per part.
+            if (auto stripped = getTopKReusePredicateOnlyConditionHash(dag))
+            {
+                topk_reuse_predicate_only_hash = *stripped;
+                has_topk_reuse_predicate_only_hash = true;
+            }
+        }
 
         /// Mirror the salting done by `updateQueryConditionCache` on the WHERE write path: when the
         /// read goes through a TopK filter, the cached granule decisions are valid only for the same
@@ -1479,7 +1607,28 @@ void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
         if (apply_top_k_salt && top_k_filter_info)
             boost::hash_combine(condition_hash, top_k_filter_info->condition_hash);
 
+        /// The skip-index-analysis exclusions written by ReadFromMergeTree are stored under a key
+        /// salted with the effective skip-index profile, computed from the same (top-k-salted)
+        /// condition hash the write side used, so only a query that ran the same set of indexes
+        /// consults them. See getSkipIndexProfiledConditionHash and issue #108519.
+        UInt64 profiled_condition_hash = getSkipIndexProfiledConditionHash(condition_hash, indexes);
+        const bool also_probe_topk_reuse_predicate_only_hash = has_topk_reuse_predicate_only_hash;
+        const UInt64 topk_reuse_predicate_only_profiled_hash = also_probe_topk_reuse_predicate_only_hash
+            ? getSkipIndexProfiledConditionHash(topk_reuse_predicate_only_hash, indexes) : 0;
+
         Stats stats;
+
+        auto merge_opt_marks = [](QueryConditionCache::MatchingMarks & matching_marks, const std::optional<QueryConditionCache::MatchingMarks> & marks_opt)
+        {
+            if (!marks_opt)
+                return;
+            if (matching_marks.empty())
+                matching_marks = *marks_opt;
+            else if (matching_marks.size() == marks_opt->size())
+                for (size_t i = 0; i < matching_marks.size(); ++i)
+                    matching_marks[i] = matching_marks[i] && (*marks_opt)[i];
+        };
+
         for (auto it = parts_with_ranges.begin(); it != parts_with_ranges.end();)
         {
             auto & part_with_ranges = *it;
@@ -1487,14 +1636,37 @@ void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
 
             const auto & data_part = part_with_ranges.data_part;
             auto storage_id = data_part->storage.getStorageID();
-            auto matching_marks_opt = query_condition_cache->read(storage_id.uuid, data_part->name, condition_hash);
-            if (!matching_marks_opt)
+            /// Row-level entries are sound under any profile; skip-index entries only under the
+            /// matching profile. Merge the two verdicts: a mark must be read iff both say so.
+            /// This is one logical cache consultation, so it must emit at most one
+            /// QueryConditionCacheHits/Misses event regardless of how many keys are probed: count
+            /// the hit/miss ourselves and suppress the per-read events on every lookup.
+            auto row_level_marks_opt = query_condition_cache->read(storage_id.uuid, data_part->name, condition_hash, /*increment_profile_events=*/false);
+            auto skip_index_marks_opt = query_condition_cache->read(storage_id.uuid, data_part->name, profiled_condition_hash, /*increment_profile_events=*/false);
+            std::optional<QueryConditionCache::MatchingMarks> topk_reuse_predicate_only_row_level_marks_opt;
+            std::optional<QueryConditionCache::MatchingMarks> topk_reuse_predicate_only_skip_index_marks_opt;
+            if (also_probe_topk_reuse_predicate_only_hash)
             {
+                topk_reuse_predicate_only_row_level_marks_opt = query_condition_cache->read(storage_id.uuid, data_part->name, topk_reuse_predicate_only_hash, /*increment_profile_events=*/false);
+                topk_reuse_predicate_only_skip_index_marks_opt = query_condition_cache->read(storage_id.uuid, data_part->name, topk_reuse_predicate_only_profiled_hash, /*increment_profile_events=*/false);
+            }
+            if (!row_level_marks_opt && !skip_index_marks_opt
+                && !topk_reuse_predicate_only_row_level_marks_opt && !topk_reuse_predicate_only_skip_index_marks_opt)
+            {
+                ProfileEvents::increment(ProfileEvents::QueryConditionCacheMisses);
                 ++it;
                 continue;
             }
+            ProfileEvents::increment(ProfileEvents::QueryConditionCacheHits);
 
-            auto & matching_marks = *matching_marks_opt;
+            QueryConditionCache::MatchingMarks matching_marks;
+            merge_opt_marks(matching_marks, row_level_marks_opt);
+            merge_opt_marks(matching_marks, skip_index_marks_opt);
+            /// TopK WHERE reads may also hit predicate-only entries written by plain
+            /// `SELECT ... WHERE`; AND-merge them with the TopK-salted verdicts above.
+            merge_opt_marks(matching_marks, topk_reuse_predicate_only_row_level_marks_opt);
+            merge_opt_marks(matching_marks, topk_reuse_predicate_only_skip_index_marks_opt);
+
             MarkRanges ranges;
             const auto & part = it->data_part;
             size_t min_marks_for_seek = roundRowsOrBytesToMarks(
@@ -1983,15 +2155,18 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
 
                 if (range.end == marks_count)
                 {
-                    /// Last mark: the right boundary of every loaded key column is +inf. The left and right
-                    /// boundaries are equal only when the left boundary value is also +inf, i.e. when the
-                    /// value at range.begin is NULL (create_field_ref maps NULL to +inf for NULL_LAST
-                    /// ordering). A non-nullable column is never NULL, so its boundaries are never equal.
+                    /// Last mark: the unknown boundary of every loaded key column is a virtual infinity. For a
+                    /// non-reversed column it is +inf, and the boundaries are equal only when the value at
+                    /// range.begin is also +inf, i.e. when it is NULL (create_field_ref maps NULL to +inf, and
+                    /// NULLs are stored physically last for a non-reversed column, so the granule is NULL up to
+                    /// the end of the part). For a reversed column the unknown boundary is -inf, and no value at
+                    /// range.begin can be -inf (a NULL maps to +inf), so its boundaries are never known to be
+                    /// equal. A non-nullable column is never NULL, so its boundaries are never equal either.
                     for (size_t i = 0; i < num_used_prefix_key_columns_loaded_in_memory; ++i)
                     {
                         const auto & col = (*index_columns)[i].column;
                         chassert(col);
-                        equal_boundaries_mask[i] = col->isNullAt(range.begin);
+                        equal_boundaries_mask[i] = !reverse_flags[i] && col->isNullAt(range.begin);
                     }
 
                     for (size_t sparse_pos = 0; sparse_pos < num_sparse_keys_loaded_in_memory; ++sparse_pos)
@@ -2003,7 +2178,8 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
 
                         create_field_ref(range.begin, key_col, left);
 
-                        right = POSITIVE_INFINITY;
+                        /// If reverse_flags[key_col] is true, the right points to sparse_key_left[sparse_pos].
+                        right = reverse_flags[key_col] ? NEGATIVE_INFINITY : POSITIVE_INFINITY;
                     }
                 }
                 else
@@ -2052,9 +2228,11 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
                     if ((*index_columns)[i].column)
                         create_field_ref(range.begin, i, left);
                     else
-                        left = index_bounds[i].left;
+                        /// If reverse_flags[i] is true, the left points to index_right[i].
+                        left = reverse_flags[i] ? POSITIVE_INFINITY : NEGATIVE_INFINITY;
 
-                    right = index_bounds[i].right;
+                    /// If reverse_flags[i] is true, the right points to index_left[i].
+                    right = reverse_flags[i] ? NEGATIVE_INFINITY : POSITIVE_INFINITY;
                 }
             }
             else
@@ -2070,8 +2248,11 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
                     }
                     else
                     {
-                        left = index_bounds[i].left;
-                        right = index_bounds[i].right;
+                        /// If reverse_flags[i] is true, the left points to index_right[i].
+                        left = reverse_flags[i] ? POSITIVE_INFINITY : NEGATIVE_INFINITY;
+
+                        /// If reverse_flags[i] is true, the right points to index_left[i].
+                        right = reverse_flags[i] ? NEGATIVE_INFINITY : POSITIVE_INFINITY;
                     }
                 }
             }
