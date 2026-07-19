@@ -58,8 +58,7 @@ To set up PrivateLink with VPC resource:
 3. Create a resource share
 
 <Steps>
-<Step>
-#### Create a resource gateway {#create-resource-gateway}
+<Step title="Create a resource gateway" id="create-resource-gateway">
 
 Resource gateway is the point that receives traffic for specified resources in your VPC.
 
@@ -90,8 +89,7 @@ aws vpc-lattice get-resource-gateway \
     --resource-gateway-identifier <RESOURCE_GATEWAY_ID>
 ```
 </Step>
-<Step>
-#### Create a VPC Resource-Configuration {#create-resource-configuration}
+<Step title="Create a VPC Resource-Configuration" id="create-resource-configuration">
 
 Resource-Configuration is associated with resource gateway to make your resource accessible.
 
@@ -127,8 +125,7 @@ For more information, see the [AWS documentation](https://docs.aws.amazon.com/vp
 
 The output will contain a Resource-Configuration ARN, which you will need for the next step. It will also contain a Resource-Configuration ID, which you will need to set up a ClickPipe connection with VPC resource.
 </Step>
-<Step>
-#### Create a Resource-Share {#create-resource-share}
+<Step title="Create a Resource-Share" id="create-resource-share">
 
 Sharing your resource requires a Resource-Share. This is facilitated through the Resource Access Manager (RAM).
 
@@ -191,7 +188,7 @@ In these cases, see [Custom private DNS](#custom-private-dns).
 It's a preferred choice for:
 
 - Any on-premises Kafka setup that requires private DNS support
-- [Confluent Cloud PrivateLink](https://docs.confluent.io/cloud/current/networking/aws-privatelink-overview.html)
+- [Confluent Cloud private connectivity](/resources/support-center/knowledge-base/cloud-services/confluent-cloud-private-connectivity-for-clickpipes)
 - [Cross-region connectivity for Postgres CDC](/resources/support-center/knowledge-base/cloud-services/aws-privatelink-setup-for-clickpipes)
 - [Cross-region connectivity for MSK clusters](/resources/support-center/knowledge-base/cloud-services/aws-privatelink-vpc-endpoint-service-for-msk-cluster)
 

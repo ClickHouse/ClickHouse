@@ -1,5 +1,6 @@
 #include <Processors/QueryPlan/RuntimeFilterLookup.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <Functions/FunctionFactory.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnsCommon.h>
@@ -234,7 +235,11 @@ void ExactNotContainsRuntimeFilter::merge(const IRuntimeFilter * source)
 bool ApproximateRuntimeFilter::isDataTypeSupported(const DataTypePtr & data_type)
 {
     /// Runtime BloomFilter hashing uses byte representation from either fixed contiguous column storage or getDataAt().
-    return data_type->isValueUnambiguouslyRepresentedInContiguousMemoryRegion();
+    /// LowCardinality reports a contiguous representation unconditionally, but its getDataAt() delegates to the
+    /// dictionary column; for LowCardinality(Nullable(...)) that is ColumnNullable::getDataAt(), which throws on a NULL.
+    /// Strip LowCardinality and test the inner type so LC(Nullable(...)) falls back to the exact (NULL-safe) Set path,
+    /// exactly like a plain Nullable(...) key already does.
+    return removeLowCardinality(data_type)->isValueUnambiguouslyRepresentedInContiguousMemoryRegion();
 }
 
 ApproximateRuntimeFilter::ApproximateRuntimeFilter(

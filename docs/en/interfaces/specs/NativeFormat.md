@@ -1432,17 +1432,39 @@ flowchart LR
 
 ### Method byte values {#method-byte-values}
 
+These three codecs are the ones the server produces for whole-stream `Native` framing: HTTP `compress=1` output always uses `LZ4`, and the native TCP protocol uses `LZ4`, `ZSTD`, or `NONE` depending on `network_compression_method`. A generic `Native` client only ever needs to produce and consume these.
+
 | Byte   | Method | Body encoding |
 |--------|--------|---------------|
 | `0x02` | NONE   | Body is the raw bytes (no compression). The frame is still emitted; the receiver verifies the checksum. |
 | `0x82` | LZ4    | Body is the **LZ4 block format** — *not* the LZ4 frame format. No magic number. |
 | `0x90` | ZSTD   | Body is a raw zstd single-frame stream (the standard zstd magic number is part of the body). |
 
-These three are the generic codecs used for Native-stream compression (`network_compression_method`, the HTTP `compress=1`/`decompress=1` path, and the server default). They are not the only method-byte values: the full set is defined by `CompressionMethodByte` in `src/Compression/CompressionInfo.h` and also includes `Multiple` (`0x91`) and the specialized column-storage codecs (`Delta` `0x92`, `T64` `0x93`, `DoubleDelta` `0x94`, `Gorilla` `0x95`, the encryption codecs `0x96`/`0x97`, `FPC` `0x98`, `GCD` `0x9a`, `ALP` `0x9c`, `Chimp` `0x9d`). A reader that accepts the method byte from each frame (the `decompress=1` path) must be prepared to dispatch on these too: a column compressed with a chain such as `CODEC(Chimp, LZ4)` is stored as a `Multiple` (`0x91`) frame that recursively wraps the inner method bytes.
+The method byte also encodes the [column-level codecs](/sql-reference/statements/create/table#column_compression_codec). These are applied per column on the MergeTree on-disk paths rather than to whole-stream framing, but the `decompress=1` HTTP input path takes the codec from each frame's method byte, so any of these bytes may legitimately appear on input. A conforming decoder must therefore recognize the whole assigned space and reject a byte it does not implement rather than misread the body. Their bodies are codec-specific and outside this generic frame contract:
 
-For the floating-point time series codecs, the per-frame body carries the parameters the decoder needs, so the codec does not need to be reconstructed with a width up front. For `Chimp` (`0x9d`) the body is: 1 byte data width (4 or 8), 1 byte `bytes_to_skip` (kept for backward compatibility), `bytes_to_skip` raw leading bytes (`uncompressed_size % width`), then the compressed stream — a little-endian `u32` item count, the first value verbatim, and the bit-packed XOR encoding of the remaining values.
+| Byte   | Method            |
+|--------|-------------------|
+| `0x91` | `Multiple` (a composite codec wrapping a sequence of nested codecs) |
+| `0x92` | `Delta`           |
+| `0x93` | `T64`             |
+| `0x94` | `DoubleDelta`     |
+| `0x95` | `Gorilla`         |
+| `0x96` | `AES_128_GCM_SIV` (encryption) |
+| `0x97` | `AES_256_GCM_SIV` (encryption) |
+| `0x98` | `FPC`             |
+| `0x9a` | `GCD`             |
+| `0x9c` | `ALP`             |
+| `0x9d` | `SZ3`             |
+| `0x9e` | `Quantized`       |
+| `0x9f` | `ZXC`             |
+| `0xa0` | `Chimp`           |
 
-`Chimp` cannot be selected as `network_compression_method`: it has no default width and is rejected without a column type, so it never appears as a standalone top-level frame method byte produced by a ClickHouse server — only as a column-storage codec, typically nested inside a `Multiple` frame.
+`0x9d` (`SZ3`) is an **experimental**, error-bounded *lossy* codec for `Float32`, `Float64`, and `Array` of those types. A table can be created with `CODEC(SZ3)` only when `allow_experimental_codecs` is set, but the method byte is always accepted on decompression so that previously written data stays readable. `0x9f` (`ZXC`) is an asymmetric LZ codec: slow to compress, but very fast to decompress at a ratio between `LZ4` and `ZSTD`. The bytes `0x99` (`DeflateQpl`) and `0x9b` (`ZSTD_QPL`) were assigned to codecs that have since been removed; they are reserved and not reused.
+
+`0x9e` (`Quantized`) is an **experimental** column codec for dense vector columns (`Array(Float32)` and friends). Like `NONE` it is a passthrough — the full-precision body is stored verbatim — but its presence attaches a serialization that writes a compact quantized companion stream used to accelerate vector search. A table can be created with `CODEC(Quantized(...))` only when `allow_experimental_codecs` is set, and the method byte is always accepted on decompression.
+
+`0xa0` (`Chimp`) is an **experimental** lossless XOR-based codec for `Float32` and `Float64` columns, gated behind `allow_experimental_codecs` at DDL time; the method byte is always accepted on decompression. Its per-frame body carries the parameters the decoder needs, so the codec does not need to be reconstructed with a width up front: 1 byte data width (4 or 8), 1 byte `bytes_to_skip` (kept for backward compatibility), `bytes_to_skip` raw leading bytes (`uncompressed_size % width`), then the compressed stream — a little-endian `u32` item count, the first value verbatim, and the bit-packed XOR encoding of the remaining values. `Chimp` cannot be selected as `network_compression_method`: it has no default width and is rejected without a column type, so it never appears as a standalone top-level frame method byte produced by a ClickHouse server — only as a column-storage codec, typically nested inside a `Multiple` (`0x91`) frame that recursively wraps the inner method bytes (e.g. a column compressed with `CODEC(Chimp, LZ4)`).
+
 
 ### Checksum {#checksum}
 

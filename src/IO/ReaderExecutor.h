@@ -12,13 +12,20 @@
 #include <base/types.h>
 
 #include <array>
+#include <functional>
 #include <memory>
 #include <optional>
+
+#include "config.h"
+#if USE_SSL
+#include <IO/ReaderExecutorDecryptor.h>
+#endif
 
 namespace DB
 {
 
 class ReadBufferFromFileBase;
+class EncryptionHeaderCache;
 
 /// Maps a logical read position to a `StoredObject` (via `OffsetMap`) and serves
 /// bytes from an `IFileBasedSourceReader` as a `ChainedBuffers`, one block at a time.
@@ -40,6 +47,8 @@ public:
         size_t block_size = DEFAULT_BLOCK_SIZE;
         size_t max_tail_for_drain = DEFAULT_MAX_TAIL_FOR_DRAIN;
         std::shared_ptr<LongConnectionLimit> long_connection_limit = nullptr;
+        /// Global cache of encryption-header bytes; null disables it. Set only for random-key disks.
+        std::shared_ptr<EncryptionHeaderCache> encryption_header_cache = nullptr;
     };
 
     ReaderExecutor(
@@ -68,12 +77,24 @@ public:
 
     size_t getPosition() const { return position; }
 
-    size_t totalSize() const { return offset_map.totalSize(); }
+    /// Logical file size (physical size minus the encryption headers). Saturates
+    /// to 0 when the objects sum to fewer bytes than the declared headers.
+    size_t totalSize() const;
     bool hasUnknownSize() const { return offset_map.hasUnknownSize(); }
 
     /// Front object's `remote_path`, used to name the source in diagnostics;
     /// empty when no objects are configured.
     String getFileName() const { return log_file_path; }
+
+    using KeyFinderFunc = std::function<String(UInt128 key_fingerprint, const String & path_for_logs)>;
+
+    /// Add a decryption layer (callable multiple times for layered encryption).
+    /// No-op without SSL. Call `initDecryption` once after all layers.
+    void addDecryptionLayer(String path, KeyFinderFunc key_finder);
+
+    /// Read the encryption headers (one per layer) and resolve keys. Must run
+    /// before any read; no-op when no layers / no SSL.
+    void initDecryption();
 
 private:
     /// Per-instance read-path counters. `add` is the only mutator and the single place a
@@ -91,6 +112,7 @@ private:
             CacheGetRequests,
             CachePopulateRequests,
             WorkMicroseconds,
+            DecryptMicroseconds,        /// time spent decrypting served payload
             LongConnectionOpened,       /// held connections opened for reuse
             LongConnectionHits,         /// windows served from a held connection
             LongConnectionFallbacks,    /// opens skipped because no slot was free
@@ -187,6 +209,13 @@ private:
     /// Drop the held connection: drain a small tail to complete it, else account it incomplete.
     void dropLongConnection();
 
+    /// Whether served payload is encrypted (`data_start_offset` is the header size,
+    /// 0 when there is no encryption / no SSL).
+    bool needsDecryption() const { return data_start_offset > 0; }
+    /// Decrypt `size` bytes in place at logical `logical_offset` via the reentrant
+    /// `decryptor`. No-op without SSL / with no layers.
+    void decryptInPlaceIfNeeded(char * data, size_t size, size_t logical_offset);
+
     std::shared_ptr<IFileBasedSourceReader> source;
     OffsetMap offset_map;
     String log_file_path;
@@ -202,8 +231,20 @@ private:
     ReadContinuityTracker continuity_tracker;
     /// Connection-reuse budget; null disables long connections (the stateless path).
     std::shared_ptr<LongConnectionLimit> long_connection_limit;
+    /// Global encryption-header cache; null disables caching (url / non-disk reads).
+    std::shared_ptr<EncryptionHeaderCache> encryption_header_cache;
     size_t min_bytes_for_seek;
     size_t max_tail_for_drain;
+
+#if USE_SSL
+    /// Immutable per-layer decryption config, parsed once by `initDecryption`; `decryptInPlaceIfNeeded`
+    /// is reentrant over it. Present only in SSL builds.
+    ReaderExecutorDecryptor decryptor;
+#endif
+    /// Byte offset of the first plaintext byte in the physical stream: `N * Header::kSize`
+    /// (0 when there is no encryption / no SSL). Logical position `p` maps to physical `p +
+    /// data_start_offset`; `totalSize` is the physical size minus this.
+    size_t data_start_offset = 0;
 
     Stats stats;
     CurrentMetrics::Increment active_metric;  /// the ReaderExecutorActive gauge, for the lifetime

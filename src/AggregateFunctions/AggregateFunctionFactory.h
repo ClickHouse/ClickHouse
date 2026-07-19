@@ -119,6 +119,8 @@ private:
     /// Same as above for `IGNORE NULLS` modifier
     ActionMap ignore_nulls;
     std::optional<AggregateFunctionWithProperties> getAssociatedFunctionByNullsAction(const String & name, NullsAction action) const;
+    /// Name-only variant: the registered name that `name` resolves to under `action` (see the definition).
+    String getAssociatedNameByNullsAction(const String & name, NullsAction action) const;
 
     /// Case insensitive aggregate functions will be additionally added here with lowercased name.
     AggregateFunctions case_insensitive_aggregate_functions;
