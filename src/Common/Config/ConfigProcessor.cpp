@@ -71,6 +71,12 @@ namespace ErrorCodes
 /// substitution — for example a multi-line secret or a setting copied with Windows line endings. A
 /// character reference is resolved after end-of-line normalization, so `&#13;` round-trips to the exact
 /// original `\r` byte.
+///
+/// Limitation: the escaped value must still be valid XML 1.0 text. Control characters that XML 1.0
+/// cannot represent at all — `0x00`–`0x08`, `0x0B`, `0x0C`, `0x0E`–`0x1F` (XML 1.0, section 2.2; they
+/// are forbidden even as numeric character references, section 4.1) — are passed through verbatim and
+/// rejected by the parser when the synthetic document is reparsed. No escaping scheme can carry them
+/// through XML, so the documented contract is "exact bytes for any XML-1.0-legal text", not "any bytes".
 static std::string escapeForXMLText(const std::string & s)
 {
     WriteBufferFromOwnString buf;
@@ -665,7 +671,8 @@ void ConfigProcessor::doIncludesRecursive(
                 ///    instead of being treated as a YAML comment. To splice a subtree into an ordinary
                 ///    element, provide it as XML (a value beginning with '<'). XML special characters
                 ///    (for example `&`, `<` or `>`) are escaped the same way as for `from_env`, so a
-                ///    literal value can contain any text.
+                ///    literal value can contain any XML-1.0-representable text (see the note on
+                ///    `escapeForXMLText` about control characters that XML cannot represent).
                 const size_t pos = firstNonWhitespacePos(znode.contents);
                 if (pos != std::string::npos && znode.contents[pos] == '<')
                 {
