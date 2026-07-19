@@ -63,3 +63,12 @@ SELECT
     toDateTime64OrNull('.x', 3, 'UTC') IS NULL,
     toDateTime64OrNull(toFixedString('.', 20), 3, 'UTC') IS NULL
 "
+
+# The throwing entrypoint must also reject a dot with no fractional digit, including zero-padded
+# FixedString values long enough for the optimistic path (they used to be recovered as the epoch).
+# The signed FixedString values fail in the integer part, so the error is CANNOT_PARSE_NUMBER there.
+for value in "'.'" "'+.'" "'-.'" "toFixedString('.', 20)" "toFixedString('+.', 20)" "toFixedString('-.', 20)"
+do
+    ${CLICKHOUSE_LOCAL} -q "SET date_time_input_format = 'basic', cast_string_to_date_time_mode = 'basic'; SELECT toDateTime64(${value}, 3, 'UTC')" 2>&1 \
+        | grep -qE 'CANNOT_PARSE_DATETIME|CANNOT_PARSE_NUMBER' && echo "rejected: ${value}" || echo "UNEXPECTED SUCCESS: ${value}"
+done

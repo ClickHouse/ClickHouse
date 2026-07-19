@@ -1216,6 +1216,7 @@ inline ReturnType readDateTimeTextImpl(DateTime64 & datetime64, UInt32 scale, Re
     bool is_negative_timestamp = (!buf.eof() && *buf.position() == '-');
     bool is_empty = buf.eof();
     DateTimeFractionPrefix fraction_prefix;
+    bool recovered_at_dot = false;
 
     if (!is_empty)
     {
@@ -1229,6 +1230,13 @@ inline ReturnType readDateTimeTextImpl(DateTime64 & datetime64, UInt32 scale, Re
             {
                 if (buf.eof() || *buf.position() != '.')
                     throw;
+                /// The whole part failed to parse and the failure position is a dot, so the value can only be
+                /// a fraction with no integer digits, like ".5". Recover only when at least one fractional digit
+                /// follows the dot: a bare "." (e.g. from a zero-padded FixedString) must not become the epoch.
+                ++buf.position();
+                if (buf.eof() || !isNumericASCII(*buf.position()))
+                    throw;
+                recovered_at_dot = true;
             }
         }
         else
@@ -1242,9 +1250,11 @@ inline ReturnType readDateTimeTextImpl(DateTime64 & datetime64, UInt32 scale, Re
 
     DB::DecimalUtils::DecimalComponents<DateTime64> components{static_cast<DateTime64::NativeType>(whole), 0};
 
-    if (fraction_prefix.has_fraction || (!buf.eof() && *buf.position() == '.'))
+    if (fraction_prefix.has_fraction || recovered_at_dot || (!buf.eof() && *buf.position() == '.'))
     {
-        if (!fraction_prefix.has_fraction)
+        /// The dot has already been consumed when the fallback pre-read the fraction prefix
+        /// or when the throwing path recovered at the dot.
+        if (!fraction_prefix.has_fraction && !recovered_at_dot)
             ++buf.position();
 
         /// Read digits, up to 'scale' positions, starting with the digits that were already consumed
