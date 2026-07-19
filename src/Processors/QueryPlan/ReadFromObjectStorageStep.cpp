@@ -1,6 +1,8 @@
 #include <Processors/QueryPlan/ReadFromObjectStorageStep.h>
+#include <Processors/QueryPlan/LazilyReadFromObjectStorage.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Core/Settings.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Processors/Sources/NullSource.h>
@@ -135,7 +137,8 @@ void ReadFromObjectStorageStep::initializePipeline(QueryPipelineBuilder & pipeli
             iterator_wrapper,
             parser_shared_resources,
             format_filter_info,
-            need_only_count);
+            need_only_count,
+            lazy_row_index_registry);
 
         pipes.emplace_back(std::move(source));
     }
@@ -180,6 +183,120 @@ static InputOrderInfoPtr convertSortingKeyToInputOrder(const KeyDescription & ke
         sort_description_for_merging.push_back(
             SortColumnDescription(key_description.column_names[i], (!key_description.reverse_flags.empty() && key_description.reverse_flags[i]) ? -1 : 1));
     return std::make_shared<const InputOrderInfo>(sort_description_for_merging, sort_description_for_merging.size(), 1, 0);
+}
+
+bool ReadFromObjectStorageStep::canUseLazyMaterialization() const
+{
+    if (need_only_count)
+        return false;
+
+    /// The global row index requires per-row file row numbers (ChunkInfoRowNumbers), and the lazy
+    /// branch requires reading an explicit set of rows (FormatFilterInfo::rows_to_read).
+    /// Only the Parquet reader supports both.
+    if (!boost::iequals(configuration->format, "Parquet"))
+        return false;
+
+    if (!configuration->supportsLazyMaterialization())
+        return false;
+
+#if CLICKHOUSE_CLOUD
+    /// The transformed plan is not serializable.
+    if (distributed_read_bucket_count)
+        return false;
+#endif
+
+    return true;
+}
+
+std::unique_ptr<LazilyReadFromObjectStorage> ReadFromObjectStorageStep::keepOnlyRequiredColumnsAndCreateLazyReadStep(const NameSet & required_names)
+{
+    /// Columns that the PREWHERE / row-level filter needs as inputs must stay in the main read
+    /// because filtering happens there.
+    NameSet columns_to_keep = required_names;
+    if (info.row_level_filter)
+        for (const auto & column : info.row_level_filter->actions.getRequiredColumns())
+            columns_to_keep.insert(column.name);
+    if (info.prewhere_info)
+        for (const auto & column : info.prewhere_info->prewhere_actions.getRequiredColumns())
+            columns_to_keep.insert(column.name);
+
+    /// Hive partition columns are parsed from the file path, reading them is cheap; keep them.
+    for (const auto & column : info.hive_partition_columns_to_read_from_file_path)
+        columns_to_keep.insert(column.name);
+
+    /// Virtual columns are cheap as well.
+    for (const auto & column : info.requested_virtual_columns)
+        columns_to_keep.insert(column.name);
+
+    NameSet requested_from_format;
+    for (const auto & column : info.requested_columns)
+        requested_from_format.insert(column.name);
+
+    /// Defer the physical columns that the format reads and nothing needs before the LIMIT.
+    NameSet lazy_names;
+    Block lazy_source_header;
+    for (const auto & column : info.source_header)
+    {
+        if (!columns_to_keep.contains(column.name) && requested_from_format.contains(column.name))
+        {
+            lazy_names.insert(column.name);
+            lazy_source_header.insert(column);
+        }
+    }
+
+    if (!lazy_source_header.columns())
+        return {};
+
+    /// The info for the lazy read: only the deferred columns, no virtual columns, no filters.
+    ReadFromFormatInfo lazy_info;
+    lazy_info.source_header = lazy_source_header;
+    lazy_info.columns_description = info.columns_description;
+    lazy_info.serialization_hints = info.serialization_hints;
+    for (const auto & column : info.format_header)
+        if (lazy_names.contains(column.name))
+            lazy_info.format_header.insert(column);
+    for (const auto & column : info.requested_columns)
+        if (lazy_names.contains(column.name))
+            lazy_info.requested_columns.push_back(column);
+
+    /// Remove the deferred columns from the main read and make it produce the global row index.
+    Block main_source_header;
+    for (const auto & column : info.source_header)
+        if (!lazy_names.contains(column.name))
+            main_source_header.insert(column);
+    main_source_header.insert({std::make_shared<DataTypeUInt64>(), "__global_row_index"});
+
+    Block main_format_header;
+    for (const auto & column : info.format_header)
+        if (!lazy_names.contains(column.name))
+            main_format_header.insert(column);
+
+    NamesAndTypesList main_requested_columns;
+    for (const auto & column : info.requested_columns)
+        if (!lazy_names.contains(column.name))
+            main_requested_columns.push_back(column);
+
+    info.source_header = std::move(main_source_header);
+    info.format_header = std::move(main_format_header);
+    info.requested_columns = std::move(main_requested_columns);
+    output_header = std::make_shared<const Block>(info.source_header);
+
+    std::erase_if(required_source_columns, [&](const String & name) { return lazy_names.contains(name); });
+
+    lazy_row_index_registry = std::make_shared<LazyObjectStorageFileRegistry>();
+
+    auto lazy_step = std::make_unique<LazilyReadFromObjectStorage>(
+        std::make_shared<const Block>(std::move(lazy_source_header)),
+        storage_id,
+        object_storage,
+        configuration,
+        storage_snapshot,
+        format_settings,
+        std::move(lazy_info),
+        getContext(),
+        max_block_size);
+
+    return lazy_step;
 }
 
 bool ReadFromObjectStorageStep::requestReadingInOrder() const

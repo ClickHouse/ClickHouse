@@ -292,6 +292,15 @@ public:
         return true;
     }
 
+    /// Whether LIMIT lazy materialization can be used (see optimizeLazyMaterialization2).
+    /// It requires that the physical row numbers of the main read match a later positional
+    /// re-read of the same files, which for data lakes depends on how deletes and schema
+    /// evolution are applied.
+    virtual bool supportsLazyMaterialization() const
+    {
+        return true;
+    }
+
     virtual void drop(ContextPtr) {}
 
     virtual bool isBackgroundExecutable() const

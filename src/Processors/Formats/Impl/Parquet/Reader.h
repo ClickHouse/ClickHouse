@@ -426,6 +426,11 @@ struct Reader
         size_t start_global_row_idx = 0; // total number of rows in preceding row groups in the file
 
         bool need_to_process = false;
+
+        /// Lazy materialization: set iff FormatFilterInfo::rows_to_read is set.
+        /// Half-open range of indexes in `rows_to_read` that fall into this row group.
+        std::pair<size_t, size_t> requested_rows_slice {0, 0};
+
         /// Parallel to Reader::primitive_columns.
         /// NOT parallel to `meta.columns` (it's a subset of parquet columns).
         std::vector<ColumnChunk> columns;

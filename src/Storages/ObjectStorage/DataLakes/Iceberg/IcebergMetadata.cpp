@@ -25,6 +25,7 @@
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Processors/Formats/Impl/ParquetV3BlockInputFormat.h>
 #include <Processors/Transforms/FilterTransform.h>
+#include <Storages/ObjectStorage/DataLakes/RowNumbersPreservingFilterTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/ObjectStorage/StorageObjectStorageConfiguration.h>
 #include <fmt/format.h>
@@ -1352,7 +1353,10 @@ void IcebergMetadata::addDeleteTransformers(
             const auto & not_in_node = dag.addFunction(func_not_in, {in_lhs_arg, in_rhs_arg}, "notInResult");
             dag.getOutputs().push_back(&not_in_node);
             LOG_DEBUG(log, "Use expression {} in equality deletes", dag.dumpDAG());
-            return std::make_shared<FilterTransform>(header, std::make_shared<ExpressionActions>(std::move(dag)), "notInResult", true);
+            /// RowNumbersPreservingFilterTransform (rather than FilterTransform) keeps the physical
+            /// row numbers of the chunks (ChunkInfoRowNumbers) consistent after rows are removed,
+            /// so the `_row_number` virtual column and lazy materialization stay correct.
+            return std::make_shared<RowNumbersPreservingFilterTransform>(header, std::make_shared<ExpressionActions>(std::move(dag)), "notInResult", true);
         };
         builder.addSimpleTransform(simple_transform_adder);
     }
