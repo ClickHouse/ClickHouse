@@ -35,7 +35,12 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 #     entry it produces, even though it still keeps the completed run's own result snapshot.
 #     Pinned for both a single query and a "Run all" of several, the latter driving the real
 #     `postMulti` (not just `saveHistory`) so a regression in its own launch-time snapshot
-#     (`launch_query_text`) is caught too, not only one in `saveHistory`'s guard;
+#     (`launch_query_text`) is caught too, not only one in `saveHistory`'s guard. When the
+#     in-flight edit CHANGED the placeholder set, the newer draft's entry must record ITS OWN
+#     parameters, derived from the draft query TEXT (`paramValuesForQuery`) — even if the edit's
+#     async `updateQueryParams` rebuild has not landed by the time the run completes, so the live
+#     inputs still describe the previous query — never the stale binding `getParamValues()` would
+#     still read (which would leak e.g. `param_x=1` into the `SELECT {y:Int32}` entry / URL);
 #   - the run entrypoints snapshot the launched query AND caret/selection range BEFORE the WASM-lexer
 #     await, so a draft typed (or a caret moved) while the lexer loads never becomes what actually
 #     runs: `postAll`'s single-statement branch runs the parsed launch text rather than re-reading
@@ -381,7 +386,7 @@ function setParam(name, value)
 async function run(q)
 {
     type(q);
-    sandbox.saveHistory({ query: q, resultQuery: q, params: sandbox.getParamValues(), format: 'JSONCompact', ok: true, data: 'result of ' + q, elapsed_ns: 1,
+    await sandbox.saveHistory({ query: q, resultQuery: q, params: sandbox.getParamValues(), format: 'JSONCompact', ok: true, data: 'result of ' + q, elapsed_ns: 1,
         /// Stamp the live connection the run executed against, exactly as `postSingle`/`postMulti` do,
         /// so the snapshot is recognized as reproducible on the current connection (`liveDivergedFromRun`
         /// false) and the entry keeps `run=1`; an unstamped snapshot is treated as diverged (fail closed).
@@ -395,7 +400,7 @@ async function run(q)
 async function runSelected(editorText, selectedStatement)
 {
     type(editorText);
-    sandbox.saveHistory({ query: editorText, resultQuery: selectedStatement, params: sandbox.getParamValues(), format: 'JSONCompact', ok: true, data: 'result of ' + selectedStatement, elapsed_ns: 1,
+    await sandbox.saveHistory({ query: editorText, resultQuery: selectedStatement, params: sandbox.getParamValues(), format: 'JSONCompact', ok: true, data: 'result of ' + selectedStatement, elapsed_ns: 1,
         database: sandbox.selected_database, url: sandbox.url_elem.value, user: sandbox.user_elem.value });
     await drain();
 }
@@ -414,7 +419,7 @@ function startRun(q)
 /// never whatever the editor/params hold by the time the response actually arrives.
 async function finishRun(started)
 {
-    sandbox.saveHistory({ query: started.query, resultQuery: started.query, params: started.params, format: 'JSONCompact', ok: true, data: 'result of ' + started.query, elapsed_ns: 1,
+    await sandbox.saveHistory({ query: started.query, resultQuery: started.query, params: started.params, format: 'JSONCompact', ok: true, data: 'result of ' + started.query, elapsed_ns: 1,
         database: sandbox.selected_database, url: sandbox.url_elem.value, user: sandbox.user_elem.value });
     await drain();
 }
@@ -1197,6 +1202,15 @@ async function reload()
     /// handler keeps `tab.query` in sync and `updateQueryParams` rebuilds the inputs for the new query.
     type('SELECT {z}');
     sandbox.param_inputs = { z: '' };
+    /// `saveHistory`'s diverged-query branch derives the draft's params from its TEXT (`SELECT {z}`),
+    /// so tokenize it: `param-z` (present, blank after the rebuild) is read and the coherent `{z:''}`
+    /// recorded, never the launch snapshot's stale `{y:'2'}`.
+    sandbox.tokenize = async () => [
+        { token: 'SELECT', significant: true }, { token: ' ', significant: false },
+        { token: '{', significant: true }, { token: 'z', significant: true },
+        { token: ':', significant: true }, { token: 'String', significant: true },
+        { token: '}', significant: true },
+    ];
     resolvePendingPostImpl();
     await queryEditRunPromise;
     await drain();
@@ -1204,6 +1218,7 @@ async function reload()
     assert_eq('query edit under pending restore mid-flight: the live draft query survives', active().query, 'SELECT {z}');
     assert_params('query edit under pending restore mid-flight: the entry carries the new query params, not the old', active().params, { z: '' });
     assert_eq('query edit under pending restore mid-flight: the stale destination param does not leak into the URL', sandbox.history.stack[sandbox.history.idx].url.includes('param_y'), false);
+    sandbox.tokenize = async () => [];
     sandbox.params_restore_pending_token = -1;
     sandbox.params_restore_pending_query = null;
     sandbox.getQueryUnderCursor = async () => '';
@@ -1265,6 +1280,40 @@ async function reload()
     assert_params('ordinary run, inputs not yet rebuilt: the run snapshot carries the launched query params', active().result && active().result.params, { y: '' });
     sandbox.getQueryUnderCursor = async () => '';
     sandbox.tokenize = async () => [];
+
+    /// The same stale-input race on the SAVE side (`saveHistory`'s diverged-query branch): a query
+    /// edited WHILE a run is in flight, whose async `updateQueryParams` rebuild has NOT landed by the
+    /// time the run completes. A run of `SELECT {x:Int32}` (x=1) is launched, then the editor is edited
+    /// to a DIFFERENT placeholder set `SELECT {y:Int32}`, and the run completes before the rebuild
+    /// lands — so the live inputs still describe `{x}`. `saveHistory` correctly drops `run=1` (the query
+    /// diverged), but must record the DRAFT's own params, derived from its query TEXT
+    /// (`paramValuesForQuery`), NOT `getParamValues()` — the latter here still reads the stale
+    /// `param_x=1` and would leak it into the `SELECT {y:Int32}` entry / URL under a query that no
+    /// longer has an `x`. This combines the `delayed completion` (diverged query) and `placeholder
+    /// dropped` (rebuild not landed) hazards, which the harness otherwise only covers separately.
+    reset();
+    await run('SELECT 0');
+    sandbox.param_inputs = { x: '1' };                  /// the run's live parameter binding
+    const inFlightDivergedParams = startRun('SELECT {x:Int32}');   /// launch snapshot: query {x}, params {x:'1'}
+    /// The user edits the query to a different placeholder set mid-flight; the edit's async
+    /// `updateQueryParams` has NOT rebuilt the inputs yet, so they still hold the previous `{x:'1'}`.
+    type('SELECT {y:Int32}');
+    sandbox.param_inputs = { x: '1' };
+    /// `paramValuesForQuery` tokenizes the DRAFT (`SELECT {y:Int32}`) to enumerate its own placeholder;
+    /// `param-y` does not exist yet (rebuild not landed), so its value derives blank — never `param-x`.
+    sandbox.tokenize = async () => [
+        { token: 'SELECT', significant: true }, { token: ' ', significant: false },
+        { token: '{', significant: true }, { token: 'y', significant: true },
+        { token: ':', significant: true }, { token: 'Int32', significant: true },
+        { token: '}', significant: true },
+    ];
+    await finishRun(inFlightDivergedParams);
+    sandbox.tokenize = async () => [];
+    assert_eq('diverged query mid-flight, inputs not yet rebuilt: the live draft survives', active().query, 'SELECT {y:Int32}');
+    assert_eq('diverged query mid-flight, inputs not yet rebuilt: the entry drops run=1', sandbox.history.stack[sandbox.history.idx].url.includes('run=1'), false);
+    assert_eq('diverged query mid-flight, inputs not yet rebuilt: the stale source param does not leak', sandbox.history.stack[sandbox.history.idx].url.includes('param_x'), false);
+    assert_params("diverged query mid-flight, inputs not yet rebuilt: the entry carries the draft's own params, not the stale ones", active().params, { y: '' });
+    assert_eq("diverged query mid-flight, inputs not yet rebuilt: the completed run's result is still kept", active().result && active().result.query, 'SELECT {x:Int32}');
 
     /// Reload after a preserved-draft Back/Forward round-trip. The debounced save persists the
     /// draft (query != lastSavedQuery, the shape reconcileStartup treats as a stale reload), so

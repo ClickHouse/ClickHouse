@@ -5449,7 +5449,7 @@ async function postSingle(posted_request_num, query, history_query_text, params_
         /// `postMulti`), so a superseded run (tab switch / newer run) does not overwrite the
         /// now-active tab's snapshot.
         if (posted_request_num == request_num) {
-            saveHistory({
+            await saveHistory({
                 query: history_query_text || query,
                 resultQuery: query,
                 format: result.format,
@@ -5499,7 +5499,7 @@ async function postSingle(posted_request_num, query, history_query_text, params_
     /// the full editor content (the editor text + URL), while `resultQuery` is the single
     /// statement that actually produced this result (used for rendering and downloads).
     /// The per-column color coding modes travel with the snapshot (see `saveHistory`).
-    saveHistory({
+    await saveHistory({
         query: history_query_text || query,
         resultQuery: query,
         format: result.format,
@@ -5702,7 +5702,7 @@ async function postMulti(posted_request_num, parsed, params_restore_pending, lau
     /// and execute a statement (e.g. a `DROP`) that never ran in the original session, so treat any
     /// skipped-after-error statement exactly like a subset run and drop `run=1`.
     const skipped_after_error = collected.some(r => r === null);
-    saveHistory({
+    await saveHistory({
         query: launch_query_text,
         format: null,
         ok: !had_error,
@@ -7040,20 +7040,25 @@ function refreshCurrentHistoryEntry(tab) {
 /// and `resolveRunParams`'s return value). If either diverged, the live draft must be left alone
 /// (never reverted to the stale query/params that actually ran) and the entry must not carry
 /// `run=1` — that draft was never run, so a reload must not auto-execute it.
-function saveHistory(stateData, titleForDoc) {
+async function saveHistory(stateData, titleForDoc) {
     const tab = getActiveTab();
     if (!tab) return;
-    /// Refresh the tab's parameters from the live inputs before comparing. `tab.params` is only
-    /// resynced on an explicit `param-` edit or a `captureActiveTab`; a query edit that adds or
-    /// removes placeholders rebuilds the `param_*` inputs (via `updateQueryParams`) without
-    /// touching `tab.params`, which then keeps the previous query's bindings. Comparing that stale
-    /// field would mistake a removed/added placeholder for an in-flight parameter edit — dropping
-    /// `run=1` and leaking the stale placeholder into the entry and the URL. The completed run's own
-    /// `paramValuesSnapshot` was derived from the launched query's own placeholders (`resolveRunParams`
-    /// -> `paramValuesForQuery`); once the edit's rebuild has landed the live inputs reflect the same
-    /// set, so a genuine in-flight parameter edit still diverges from `stateData.params` and correctly
-    /// drops `run=1` (a rebuild not yet landed by save time only ever drops it too — never keeps a
-    /// wrong one).
+    /// Refresh the tab's parameters before comparing, so the recorded entry carries what the tab
+    /// now holds. HOW we read them depends on whether the editor query still matches what ran:
+    ///
+    ///  - Query UNCHANGED (`tab.query === stateData.query`): only an in-flight `param-` edit could
+    ///    have moved the values, and a parameter edit does NOT rebuild the inputs (only a query edit
+    ///    triggers `updateQueryParams`), so the live `param_*` inputs are authoritative — read them
+    ///    with `getParamValues`. A genuine in-flight parameter edit then diverges from
+    ///    `stateData.params` and correctly drops `run=1`.
+    ///  - Query DIVERGED (a newer, unrun draft): do NOT read the live inputs. A query edit rebuilds
+    ///    the `param_*` inputs via `updateQueryParams`, which is async (`await tokenize`) and may not
+    ///    have landed by the time this in-flight run completes, so `getParamValues` could still
+    ///    describe the PREVIOUS query's placeholders and leak a stale binding (e.g. `param_x=1`) into
+    ///    the draft's entry and URL — even though `run=1` is correctly dropped. Derive the parameters
+    ///    from the draft's query TEXT instead (`paramValuesForQuery`), the same race-free derivation
+    ///    `resolveRunParams` uses at launch, so the entry carries exactly the draft's own parameters
+    ///    and nothing foreign, whether or not the edit's own rebuild has caught up.
     ///
     /// EXCEPT when the run was launched while a tab activation / Back-Forward parameter restore was
     /// still pending (`params_restore_pending`): then the live inputs are NOT what ran. The run
@@ -7089,6 +7094,14 @@ function saveHistory(stateData, titleForDoc) {
     {
         tab.params = { ...(stateData.params || {}) };
         setParamValues(tab.params);
+    }
+    else if (tab.query !== stateData.query)
+    {
+        /// A newer, unrun draft has replaced what ran: record ITS parameters, derived from its
+        /// query text so a not-yet-landed `updateQueryParams` rebuild can never leak the previous
+        /// query's placeholder into the entry (see the header comment). `run=1` is dropped below
+        /// anyway, since the query diverged.
+        tab.params = await paramValuesForQuery(tab.query);
     }
     else
     {
