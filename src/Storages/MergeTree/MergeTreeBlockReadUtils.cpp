@@ -144,13 +144,24 @@ bool injectRequiredColumnsRecursively(
 
     /// Column doesn't have default value and don't exist in part
     /// don't need to add to required set.
-    const auto column_default = storage_snapshot->getDefault(column_name);
+    auto column_default = storage_snapshot->getDefault(column_name);
+    String column_name_for_default = column_name;
+
+    /// A subcolumn does not have its own default expression: it is extracted from the evaluated
+    /// default of the column in storage (see IMergeTreeReader::evaluateMissingDefaults),
+    /// so the columns required by that expression must be read as well.
+    if (!column_default && column_in_storage && column_in_storage->isSubcolumn())
+    {
+        column_name_for_default = column_in_storage->getNameInStorage();
+        column_default = storage_snapshot->getDefault(column_name_for_default);
+    }
+
     if (!column_default || !column_default->expression)
         return false;
 
     /// Collect identifiers required for evaluation.
     auto default_expression = cloneAndExpandColumnDefaultExpressionWithAliases(*column_default, storage_snapshot->metadata->getColumns(), context);
-    validateNoCyclicAliasesAfterExpansion(column_name, default_expression, storage_snapshot->metadata->getColumns(), context);
+    validateNoCyclicAliasesAfterExpansion(column_name_for_default, default_expression, storage_snapshot->metadata->getColumns(), context);
     auto identifiers = collectRequiredSourceColumns(default_expression);
 
     bool result = false;
