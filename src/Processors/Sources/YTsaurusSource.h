@@ -88,7 +88,7 @@ public:
         const SharedHeader & sample_block_,
         const UInt64 & max_block_size_,
         bool format_skip_unknown_columns_,
-        Block lookup_input_block_,
+        VectorWithMemoryTracking<Block> lookup_input_blocks_,
         ThrottlerPtr lookup_throttler_,
         YTsaurusTableLockPtr table_lock_);
     ~YTsaurusTableSourceDynamicTableLookup() override = default;
@@ -103,7 +103,11 @@ private:
     const SharedHeader sample_block;
     UInt64 max_block_size;
     FormatSettings format_settings;
-    Block lookup_input_block;
+    /// Each block is one `lookup_rows` request of at most `lookup_max_rows_per_query` keys.
+    /// A single source processes them sequentially so that the number of pipeline sources
+    /// does not depend on the number of chunks.
+    VectorWithMemoryTracking<Block> lookup_input_blocks;
+    size_t next_block_index = 0;
     ThrottlerPtr lookup_throttler;
     YTsaurusTableLockPtr table_lock;
     ReadBufferPtr read_buffer;

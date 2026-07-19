@@ -215,6 +215,44 @@ def test_yt_dictionary_cache_complex_key(started_cluster, dynamic_table):
     yt.remove_table(path)
 
 
+def test_yt_dictionary_cache_complex_key_chunked(started_cluster):
+    """Chunked complex-key selective load: `lookup_max_rows_per_query = 1` splits the load into one lookup request per key."""
+    yt = YTsaurusCLI(started_cluster, instance, yt_uri_helper.host, yt_uri_helper.port)
+    path = "//tmp/table"
+    yt.create_table(
+        path,
+        '{"id1":1, "id2":1, "value":20}{"id1":2, "id2":2, "value":40}{"id1":3, "id2":3, "value":30}',
+        sorted_columns=("id1", "id2"),
+        schema={"id1": "uint64", "id2": "uint64", "value": "int32"},
+        dynamic=True,
+    )
+
+    instance.query(f"""
+        CREATE DICTIONARY yt_dict(id1 UInt64, id2 UInt64, value Int32)
+        PRIMARY KEY id1, id2
+        SOURCE(
+            YTSAURUS(
+                http_proxy_urls '{yt_uri_helper.uri}'
+                cypress_path '{path}'
+                oauth_token '{yt_uri_helper.token}'
+                lookup_max_rows_per_query '1'
+            )
+        )
+        LAYOUT(COMPLEX_KEY_CACHE(SIZE_IN_CELLS 10))
+        LIFETIME(MIN 0 MAX 1000)
+        """)
+    assert (
+        instance.query(
+            "SELECT dictGet('yt_dict', 'value', (number + 1, number + 1)) FROM numbers(3)"
+        )
+        == "20\n40\n30\n"
+    )
+    assert instance.query("SELECT dictGet('yt_dict', 'value', (2, 2))") == "40\n"
+
+    instance.query("DROP DICTIONARY yt_dict")
+    yt.remove_table(path)
+
+
 def test_yt_dictionary_multiple_enpoints(started_cluster):
     yt = YTsaurusCLI(started_cluster, instance, yt_uri_helper.host, yt_uri_helper.port)
     path = "//tmp/table"

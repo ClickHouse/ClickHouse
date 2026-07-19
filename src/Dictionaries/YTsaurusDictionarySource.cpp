@@ -229,11 +229,20 @@ BlockIO YTsarususDictionarySource::loadKeys(const Columns & key_columns, const V
     if (key_columns.size() != dict_struct.key->size())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "The size of key_columns does not equal to the size of dictionary key");
 
-    auto rows_vectors = divideVectorByChunkSize(requested_rows, configuration->settings[YTsaurusSetting::lookup_max_rows_per_query]);
+    /// `blockForKeys` scans the whole key columns on every call, so it is called only once for all
+    /// requested rows, and the resulting block is sliced into chunks; this keeps the total work
+    /// linear in the number of requested rows regardless of `lookup_max_rows_per_query`.
     VectorWithMemoryTracking<Block> lookup_blocks;
-    for (const auto & row_chunk : rows_vectors)
+    if (!requested_rows.empty())
     {
-        lookup_blocks.push_back(blockForKeys(dict_struct, key_columns, row_chunk));
+        const Block block_for_all_keys = blockForKeys(dict_struct, key_columns, requested_rows);
+        const size_t chunk_size = configuration->settings[YTsaurusSetting::lookup_max_rows_per_query];
+        const size_t total_rows = block_for_all_keys.rows();
+        if (!chunk_size || total_rows <= chunk_size)
+            lookup_blocks.push_back(block_for_all_keys);
+        else
+            for (size_t offset = 0; offset < total_rows; offset += chunk_size)
+                lookup_blocks.push_back(block_for_all_keys.cloneWithCutColumns(offset, std::min(chunk_size, total_rows - offset)));
     }
 
     BlockIO io;

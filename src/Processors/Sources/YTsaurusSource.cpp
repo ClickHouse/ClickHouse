@@ -101,7 +101,7 @@ YTsaurusTableSourceDynamicTableLookup::YTsaurusTableSourceDynamicTableLookup(
     const SharedHeader & sample_block_,
     const UInt64 & max_block_size_,
     bool format_skip_unknown_columns_,
-    Block lookup_input_block_,
+    VectorWithMemoryTracking<Block> lookup_input_blocks_,
     ThrottlerPtr lookup_throttler_,
     YTsaurusTableLockPtr table_lock_)
     : ISource(sample_block_)
@@ -110,7 +110,7 @@ YTsaurusTableSourceDynamicTableLookup::YTsaurusTableSourceDynamicTableLookup(
     , sample_block(sample_block_)
     , max_block_size(max_block_size_)
     , format_settings({.skip_unknown_fields = format_skip_unknown_columns_})
-    , lookup_input_block(std::move(lookup_input_block_))
+    , lookup_input_blocks(std::move(lookup_input_blocks_))
     , lookup_throttler(std::move(lookup_throttler_))
     , table_lock(table_lock_)
 {
@@ -119,13 +119,27 @@ YTsaurusTableSourceDynamicTableLookup::YTsaurusTableSourceDynamicTableLookup(
 
 Chunk YTsaurusTableSourceDynamicTableLookup::generate()
 {
-    if (!json_row_format)
+    while (true)
     {
-        read_buffer = client->lookupRows(cypress_path, lookup_input_block, lookup_throttler);
-        json_row_format = std::make_unique<JSONEachRowRowInputFormat>(
-            *read_buffer.get(), sample_block, IRowInputFormat::Params({.max_block_size_rows = max_block_size}), format_settings, false);
+        if (!json_row_format)
+        {
+            if (next_block_index >= lookup_input_blocks.size())
+                return {};
+
+            read_buffer = client->lookupRows(cypress_path, lookup_input_blocks[next_block_index], lookup_throttler);
+            ++next_block_index;
+            json_row_format = std::make_unique<JSONEachRowRowInputFormat>(
+                *read_buffer.get(), sample_block, IRowInputFormat::Params({.max_block_size_rows = max_block_size}), format_settings, false);
+        }
+
+        auto chunk = json_row_format->read();
+        if (chunk.hasRows())
+            return chunk;
+
+        /// The response for the current lookup request is exhausted, proceed to the next one.
+        json_row_format.reset();
+        read_buffer.reset();
     }
-        return json_row_format->read();
 }
 
 
@@ -180,7 +194,7 @@ Pipe createPipeForStaticTable(
 Pipe createPipeForDynamicTable(
     YTsaurusClientPtr client,
     const String & cypress_path,
-    const YTsaurusTableSourceOptions & source_options,
+    YTsaurusTableSourceOptions & source_options,
     const SharedHeader & sample_block,
     UInt64 max_block_size)
 {
@@ -193,25 +207,22 @@ Pipe createPipeForDynamicTable(
         if (source_options.lookup_input_blocks->empty())
             return Pipe(std::make_shared<NullSource>(sample_block));
 
-        Pipes pipes;
         LOG_DEBUG(::getLogger("YTsaurusSourceFactory"),
-        "Will read dynamic table {} with {} streams and lookup mode",
+        "Will read dynamic table {} in lookup mode with {} lookup requests",
             cypress_path, source_options.lookup_input_blocks->size());
 
-        for (const auto & block : *source_options.lookup_input_blocks)
-        {
-            YTsaurusClientPtr client_for_source(new YTsaurusClient(*client));
-            pipes.emplace_back(std::make_shared<YTsaurusTableSourceDynamicTableLookup>(
-                client_for_source,
-                cypress_path,
-                sample_block,
-                max_block_size,
-                skip_unknown_columns,
-                block,
-                source_options.lookup_throttler,
-                source_options.table_lock));
-        }
-        return Pipe::unitePipes(std::move(pipes));
+        /// A single source issues the lookup requests one by one: materializing one source per
+        /// chunk would create an unbounded number of pipeline sources when
+        /// `lookup_max_rows_per_query` is small relative to the number of requested keys.
+        return Pipe(std::make_shared<YTsaurusTableSourceDynamicTableLookup>(
+            client,
+            cypress_path,
+            sample_block,
+            max_block_size,
+            skip_unknown_columns,
+            std::move(*source_options.lookup_input_blocks),
+            source_options.lookup_throttler,
+            source_options.table_lock));
     }
     else
     {
