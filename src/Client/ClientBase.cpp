@@ -3977,7 +3977,7 @@ void ClientBase::addOptionsToTheClientConfiguration(const CommandLineOptions & o
     /// Whether to print the number of processed rows at
     if (options.contains("processed-rows"))
         getClientConfiguration().setBool("print-num-processed-rows", true);
-    if (options.contains("progress"))
+    if (options.contains("progress") && !options["progress"].defaulted())
     {
         switch (options["progress"].as<ProgressOption>())
         {
@@ -3995,7 +3995,7 @@ void ClientBase::addOptionsToTheClientConfiguration(const CommandLineOptions & o
                 break;
         }
     }
-    if (options.contains("progress-table"))
+    if (options.contains("progress-table") && !options["progress-table"].defaulted())
     {
         switch (options["progress-table"].as<ProgressOption>())
         {
@@ -4027,7 +4027,7 @@ void ClientBase::addOptionsToTheClientConfiguration(const CommandLineOptions & o
         getClientConfiguration().setBool("disable_suggestion", true);
     if (options.contains("wait_for_suggestions_to_load"))
         getClientConfiguration().setBool("wait_for_suggestions_to_load", true);
-    if (options.contains("suggestion_limit"))
+    if (options.contains("suggestion_limit") && !options["suggestion_limit"].defaulted())
         getClientConfiguration().setInt("suggestion_limit", options["suggestion_limit"].as<int>());
     if (options.contains("highlight") && !options["highlight"].defaulted())
         getClientConfiguration().setBool("highlight", options["highlight"].as<bool>());
@@ -4039,7 +4039,7 @@ void ClientBase::addOptionsToTheClientConfiguration(const CommandLineOptions & o
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Specifying custom history file is not allowed, because the client runs in an embedded mode");
         getClientConfiguration().setString("history_file", options["history_file"].as<std::string>());
     }
-    if (options.contains("history_max_entries"))
+    if (options.contains("history_max_entries") && !options["history_max_entries"].defaulted())
         getClientConfiguration().setUInt("history_max_entries", options["history_max_entries"].as<UInt32>());
     if (options.contains("interactive"))
         getClientConfiguration().setBool("interactive", true);
@@ -4127,9 +4127,9 @@ void ClientBase::runInteractive()
     {
         /// Load suggestion data from the server.
         if (client_context->getApplicationType() == Context::ApplicationType::CLIENT)
-            suggest->load<Connection>(client_context, connection_parameters, getClientConfiguration().getInt("suggestion_limit"), wait_for_suggestions_to_load);
+            suggest->load<Connection>(client_context, connection_parameters, getClientConfiguration().getInt("suggestion_limit", 10000), wait_for_suggestions_to_load);
         else if (client_context->getApplicationType() == Context::ApplicationType::LOCAL || client_context->getApplicationType() == Context::ApplicationType::SERVER)
-            suggest->load<LocalConnection>(client_context, connection_parameters, getClientConfiguration().getInt("suggestion_limit"), wait_for_suggestions_to_load);
+            suggest->load<LocalConnection>(client_context, connection_parameters, getClientConfiguration().getInt("suggestion_limit", 10000), wait_for_suggestions_to_load);
     }
 
     if (home_path.empty())
@@ -4320,7 +4320,7 @@ void ClientBase::runInteractive()
         {
             // If a separate connection loading suggestions failed to open a new session,
             // use the main session to receive them.
-            suggest->load(*connection, connection_parameters.timeouts, getClientConfiguration().getInt("suggestion_limit"), client_context->getClientInfo());
+            suggest->load(*connection, connection_parameters.timeouts, getClientConfiguration().getInt("suggestion_limit", 10000), client_context->getClientInfo());
         }
 
         try

@@ -610,7 +610,7 @@ void Client::connect()
     wait_for_suggestions_to_load = config().getBool("wait_for_suggestions_to_load", false);
     if (load_suggestions)
     {
-        suggestion_limit = config().getInt("suggestion_limit");
+        suggestion_limit = config().getInt("suggestion_limit", 10000);
     }
 
     server_display_name = connection->getServerDisplayName(connection_parameters.timeouts);
