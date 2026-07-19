@@ -1349,6 +1349,15 @@ InputOrderInfoPtr buildInputOrderInfo(
     }
     if (auto * merge = typeid_cast<ReadFromMerge *>(reading_node->step.get()))
     {
+        /// Note: `optimize_final_limit_pushdown` is deliberately NOT propagated through
+        /// `ReadFromMerge` (a `Merge` table or the `merge` table function over
+        /// `AggregatingMergeTree` / `SummingMergeTree` / `CoalescingMergeTree` children).
+        /// The child reading steps are built inside `StorageMerge` per child table, and
+        /// forwarding `final_limit` there safely would require re-checking the whole gate
+        /// (filters, joins, row-reducing steps, `SAMPLE`, deferred filters) against each
+        /// child plan. Such queries stay correct but perform full FINAL merges in the
+        /// children without early termination. This is a documented limitation of the
+        /// setting, see its description in `Settings.cpp`.
         auto order_info = buildInputOrderFromSortDescription(
             merge,
             fixed_columns,

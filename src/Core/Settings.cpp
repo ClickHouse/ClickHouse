@@ -4162,6 +4162,10 @@ sorting key. It is safe for Aggregating, Summing, and Coalescing merge modes whe
 is independent. It is NOT applied to Replacing, Collapsing, or VersionedCollapsing modes which need to
 see all rows.
 
+The pushdown applies only when the query reads the `MergeTree` table directly. It is not propagated
+through a `Merge` table (or the `merge` table function): such queries stay correct but perform full
+FINAL merges in the children without early termination.
+
 Possible values:
 
 - 0 — Disabled. FINAL merge always processes all rows (default).
