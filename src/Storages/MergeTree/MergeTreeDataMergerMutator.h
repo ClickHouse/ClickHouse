@@ -105,7 +105,7 @@ public:
         MutationCommandsConstPtr commands,
         MergeListEntry * merge_entry,
         time_t time_of_mutation,
-        ContextPtr context,
+        ContextMutablePtr context,
         const MergeTreeTransactionPtr & txn,
         ReservationSharedPtr space_reservation,
         TableLockHolder & table_lock_holder,
