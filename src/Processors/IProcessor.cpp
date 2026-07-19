@@ -163,13 +163,8 @@ IProcessor::ProcessorsProfileLogInfo IProcessor::getProcessorsProfileLogInfo() c
 
     info.id = get_proc_id(*this);
 
-    for (const auto & port : outputs)
-    {
-        if (!port.isConnected())
-            continue;
-        const IProcessor & next = port.getInputPort().getProcessor();
-        info.parent_ids.push_back(get_proc_id(next));
-    }
+    /// parent_ids are populated by the free getProcessorsProfileLogInfo(const Processors &) overload: a
+    /// peer processor reached through a port may already be destroyed, so it must not be dereferenced here.
 
     info.plan_step = reinterpret_cast<std::uintptr_t>(query_plan_step);
     info.plan_step_name = plan_step_name;

@@ -16,6 +16,7 @@
 #include <base/getFQDNOrHostName.h>
 #include <Common/ClickHouseRevision.h>
 #include <Common/DateLUTImpl.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/logger_useful.h>
 
 namespace DB
@@ -98,9 +99,36 @@ VectorWithMemoryTracking<IProcessor::ProcessorsProfileLogInfo> getProcessorsProf
     VectorWithMemoryTracking<IProcessor::ProcessorsProfileLogInfo> infos;
     infos.reserve(processors.size());
 
+    auto get_proc_id = [](const IProcessor & proc) -> UInt64 { return reinterpret_cast<std::uintptr_t>(&proc); };
+
+    /// Map each input port's shared connection id to its owning processor id. Connected ports share one
+    /// state, so an output port finds its peer through this map without dereferencing the peer processor,
+    /// whose lifetime is not guaranteed here (it may already be destroyed during pipeline teardown).
+    UnorderedMapWithMemoryTracking<const void *, UInt64> input_connection_to_id;
     for (const auto & processor : processors)
     {
-        infos.push_back(processor->getProcessorsProfileLogInfo());
+        auto proc_id = get_proc_id(*processor);
+        for (const auto & port : processor->getInputs())
+            if (port.isConnected())
+                input_connection_to_id.try_emplace(port.getConnectionId(), proc_id);
+    }
+
+    for (const auto & processor : processors)
+    {
+        auto info = processor->getProcessorsProfileLogInfo();
+
+        for (const auto & port : processor->getOutputs())
+        {
+            if (!port.isConnected())
+                continue;
+            /// Only record the parent if the peer input port belongs to a processor in this set.
+            auto it = input_connection_to_id.find(port.getConnectionId());
+            if (it == input_connection_to_id.end())
+                continue;
+            info.parent_ids.push_back(it->second);
+        }
+
+        infos.push_back(std::move(info));
     }
 
     return infos;
