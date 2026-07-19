@@ -52,21 +52,32 @@ EOF
 
 # Each table loads through the ATTACH path (sanity checks skipped); the first write must succeed, not
 # throw `Codec 'PCO' was created without a numeric column type and cannot compress` (nor the lossy
-# `SZ3` error) after the unsafe setting is reset to the default codec.
+# `SZ3` error) after the unsafe setting is reset to the default codec. The reset must also be durable:
+# resetting only the live settings leaves the stored `settings_changes` AST advertising the unsafe
+# codec, so an unrelated `ALTER` that re-runs the sanity check on it would still be rejected. Run such
+# an `ALTER ADD COLUMN` after the attach and require it to succeed.
 ${CLICKHOUSE_LOCAL} --path="${WORKING_FOLDER}" --multiquery "
 SET allow_experimental_statistics = 1;
 INSERT INTO local.t_marks SELECT number FROM numbers(1000);
 SELECT 'marks', count() FROM local.t_marks;
+ALTER TABLE local.t_marks ADD COLUMN y UInt32;
+SELECT 'marks_after_alter', count() FROM local.t_marks;
 INSERT INTO local.t_pk SELECT number, number FROM numbers(1000);
 SELECT 'primary_key', count() FROM local.t_pk;
+ALTER TABLE local.t_pk ADD COLUMN w UInt32;
+SELECT 'primary_key_after_alter', count() FROM local.t_pk;
 INSERT INTO local.t_def SELECT number, number FROM numbers(1000);
 SELECT 'default', count() FROM local.t_def;
+ALTER TABLE local.t_def ADD COLUMN w UInt32;
+SELECT 'default_after_alter', count() FROM local.t_def;
 INSERT INTO local.t_marks_sz3 SELECT number FROM numbers(1000);
 SELECT 'marks_sz3', count() FROM local.t_marks_sz3;
 INSERT INTO local.t_pk_sz3 SELECT number, number FROM numbers(1000);
 SELECT 'primary_key_sz3', count() FROM local.t_pk_sz3;
 INSERT INTO local.t_def_sz3 SELECT number, number FROM numbers(1000);
 SELECT 'default_sz3', count() FROM local.t_def_sz3;
+ALTER TABLE local.t_def_sz3 ADD COLUMN w UInt32;
+SELECT 'default_sz3_after_alter', count() FROM local.t_def_sz3;
 "
 
 rm -rf "${WORKING_FOLDER}"

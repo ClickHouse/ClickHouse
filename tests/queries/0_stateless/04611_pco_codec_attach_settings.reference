@@ -1,6 +1,10 @@
 marks	1000
+marks_after_alter	1000
 primary_key	1000
+primary_key_after_alter	1000
 default	1000
+default_after_alter	1000
 marks_sz3	1000
 primary_key_sz3	1000
 default_sz3	1000
+default_sz3_after_alter	1000

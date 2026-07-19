@@ -105,8 +105,14 @@ struct MergeTreeSettings
     /// Reset any untyped compression-codec setting (`default_compression_codec`, `marks_compression_codec`,
     /// `primary_key_compression_codec`) that `sanityCheck` would reject to its default value. Used on the
     /// metadata-load path (ATTACH / SECONDARY_CREATE) where sanity checks are skipped, so that such tables
-    /// stay writable instead of failing later at the first write. Returns a note per reset setting.
-    std::vector<String> sanitizeCompressionCodecSettings();
+    /// stay writable instead of failing later at the first write. Returns, per reset setting, its name
+    /// (so the caller can also rewrite the stored `settings_changes` AST) and a human-readable note.
+    struct CompressionCodecSettingReset
+    {
+        String setting_name;
+        String note;
+    };
+    std::vector<CompressionCodecSettingReset> sanitizeCompressionCodecSettings();
 
     void dumpToSystemMergeTreeSettingsColumns(MutableColumnsAndConstraints & params) const;
     void dumpToSystemCompletionsColumns(MutableColumns & columns) const;

@@ -2355,8 +2355,8 @@ struct MergeTreeSettingsImpl : public BaseSettings<MergeTreeSettingsTraits>
 
     /// Reset any untyped compression-codec setting that `checkCompressionCodecSettings` would reject to
     /// its default value, for the metadata-load path (ATTACH / SECONDARY_CREATE) where the check is
-    /// skipped. Returns a human-readable note for every setting that was reset (for logging).
-    std::vector<String> sanitizeCompressionCodecSettings();
+    /// skipped. Returns, per reset setting, its name and a human-readable note.
+    std::vector<MergeTreeSettings::CompressionCodecSettingReset> sanitizeCompressionCodecSettings();
 
     /// Subscript operators so that MergeTreeSetting::NAME can be used inside Impl methods.
     /// Delegate to `BaseSettings::operator[]` so the Impl->Data subobject offset is handled
@@ -2701,14 +2701,14 @@ void MergeTreeSettingsImpl::checkCompressionCodecSettings() const
     check_codec_setting(pcc.value, pcc.changed, "primary_key_compression_codec");
 }
 
-std::vector<String> MergeTreeSettingsImpl::sanitizeCompressionCodecSettings()
+std::vector<MergeTreeSettings::CompressionCodecSettingReset> MergeTreeSettingsImpl::sanitizeCompressionCodecSettings()
 {
     /// `checkCompressionCodecSettings` only runs from `sanityCheck`, which `MergeTreeData` skips on the
     /// metadata-load path (ATTACH / SECONDARY_CREATE / RESTORE). So an `ATTACH TABLE ... SETTINGS
     /// marks_compression_codec = 'PCO'` (or `primary_key_compression_codec` / `default_compression_codec`)
     /// would still load, and only fail later at the first write when the stored string is re-resolved
     /// untyped. Reset such settings to the default codec here so the table stays writable.
-    std::vector<String> notes;
+    std::vector<MergeTreeSettings::CompressionCodecSettingReset> resets;
 
     auto sanitize_codec_setting = [&](const String & codec_string, bool changed, std::string_view setting_name)
     {
@@ -2717,11 +2717,11 @@ std::vector<String> MergeTreeSettingsImpl::sanitizeCompressionCodecSettings()
 
         if (auto reason = unsafeUntypedCompressionCodecReason(codec_string); !reason.empty())
         {
-            notes.push_back(fmt::format(
+            resets.push_back({String(setting_name), fmt::format(
                 "Setting '{}' cannot use the codec {} because {}; resetting it to the default codec",
                 setting_name,
                 codec_string,
-                reason));
+                reason)});
             resetToDefault(setting_name);
         }
     };
@@ -2733,7 +2733,7 @@ std::vector<String> MergeTreeSettingsImpl::sanitizeCompressionCodecSettings()
     const auto & pcc = (*this)[MergeTreeSetting::primary_key_compression_codec];
     sanitize_codec_setting(pcc.value, pcc.changed, "primary_key_compression_codec");
 
-    return notes;
+    return resets;
 }
 
 void MergeTreeColumnSettings::validate(const SettingsChanges & changes)
@@ -2959,7 +2959,7 @@ void MergeTreeSettings::sanityCheck(size_t background_pool_tasks, bool allow_exp
     impl->sanityCheck(background_pool_tasks, allow_experimental, allow_beta, background_pool_auto_lowered);
 }
 
-std::vector<String> MergeTreeSettings::sanitizeCompressionCodecSettings()
+std::vector<MergeTreeSettings::CompressionCodecSettingReset> MergeTreeSettings::sanitizeCompressionCodecSettings()
 {
     return impl->sanitizeCompressionCodecSettings();
 }

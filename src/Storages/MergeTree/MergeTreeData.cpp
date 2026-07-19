@@ -770,11 +770,26 @@ MergeTreeData::MergeTreeData(
         /// later at the first write, when the stored string is re-resolved without a column type. Reset
         /// them to the default codec here so the table stays writable.
         auto sanitized_settings = std::make_unique<MergeTreeSettings>(*settings);
-        if (auto reset_notes = sanitized_settings->sanitizeCompressionCodecSettings(); !reset_notes.empty())
+        if (auto resets = sanitized_settings->sanitizeCompressionCodecSettings(); !resets.empty())
         {
-            for (const auto & note : reset_notes)
-                LOG_WARNING(log, "{}", note);
+            for (const auto & reset : resets)
+                LOG_WARNING(log, "{}", reset.note);
             storage_settings.set(std::move(sanitized_settings));
+
+            /// Reset the live `storage_settings` alone is not durable: the stored `settings_changes` AST
+            /// still records the unsafe codec, so `SHOW CREATE` / backup metadata keep advertising it and a
+            /// later `ALTER` that re-parses `settings_changes` (which re-runs `sanityCheck`) would reject it,
+            /// making unrelated `ALTER`s impossible. Drop the reset settings from the AST too, so the stored
+            /// metadata matches the sanitized live settings (the setting falls back to its default).
+            if (metadata_.settings_changes)
+            {
+                std::unordered_set<std::string_view> reset_names;
+                for (const auto & reset : resets)
+                    reset_names.insert(reset.setting_name);
+
+                auto & changes = metadata_.settings_changes->as<ASTSetQuery &>().changes;
+                std::erase_if(changes, [&](const SettingChange & change) { return reset_names.contains(change.name); });
+            }
         }
     }
 
