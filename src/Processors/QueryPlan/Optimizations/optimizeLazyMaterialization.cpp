@@ -721,13 +721,30 @@ bool optimizeLazyMaterialization2(QueryPlan::Node & root, QueryPlan & query_plan
     auto result_header = result_plan.getCurrentHeader();
     if (result_header->columns() != expected_output_header->columns())
     {
-        Names expected_columns;
-        expected_columns.reserve(expected_output_header->columns());
-        for (const auto & col : *expected_output_header)
-            expected_columns.push_back(col.name);
-
         ActionsDAG projection_dag(result_header->getColumnsWithTypeAndName());
-        projection_dag.getOutputs() = projection_dag.findInOutputs(expected_columns);
+
+        /// Match the expected columns to the DAG outputs by name while preserving the
+        /// relative order of duplicate names, the same way as `mapInputsToHeaderPositions`.
+        /// `findInOutputs` collapses duplicate names through a map, which would bind
+        /// several expected positions with the same name to the same output node.
+        const auto & outputs = projection_dag.getOutputs();
+        std::unordered_map<std::string, std::list<size_t>> name_to_output_position;
+        for (size_t i = 0; i < outputs.size(); ++i)
+            name_to_output_position[outputs[i]->result_name].push_back(i);
+
+        ActionsDAG::NodeRawConstPtrs new_outputs;
+        new_outputs.reserve(expected_output_header->columns());
+        for (const auto & col : *expected_output_header)
+        {
+            auto & positions = name_to_output_position[col.name];
+            if (positions.empty())
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown identifier: '{}'", col.name);
+
+            new_outputs.push_back(outputs[positions.front()]);
+            positions.pop_front();
+        }
+
+        projection_dag.getOutputs() = std::move(new_outputs);
         result_plan.addStep(std::make_unique<ExpressionStep>(result_header, std::move(projection_dag)));
     }
 
