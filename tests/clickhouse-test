@@ -1300,7 +1300,7 @@ def auto_statistics_generator():
         if random.random() < 0.3:
             return ""
 
-        all_statistic_types = ["minmax", "uniq", "uniq_v2", "tdigest", 'countmin', 'basic']
+        all_statistic_types = ["uniq", "uniq_v2", "tdigest", 'countmin', 'basic']
         return ",".join(random.sample(all_statistic_types, random.randint(0, len(all_statistic_types))))
 
     return gen
@@ -1394,9 +1394,6 @@ class SettingsRandomizer:
         "throw_on_error_from_cache_on_write_operations": lambda: random.randint(0, 1),
         "remote_filesystem_read_prefetch": lambda: random.randint(0, 1),
         "distributed_cache_discard_connection_if_unread_data": lambda: random.randint(
-            0, 1
-        ),
-        "distributed_cache_use_clients_cache_for_write": lambda: random.randint(
             0, 1
         ),
         "distributed_cache_use_clients_cache_for_read": lambda: random.randint(
