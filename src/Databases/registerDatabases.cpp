@@ -45,6 +45,8 @@ void registerDatabaseDataLake(DatabaseFactory & factory);
 
 void registerDatabaseBackup(DatabaseFactory & factory);
 
+void registerDatabaseRemote(DatabaseFactory & factory);
+
 void registerDatabases()
 {
     auto & factory = DatabaseFactory::instance();
@@ -54,6 +56,7 @@ void registerDatabases()
     registerDatabaseMemory(factory);
     registerDatabaseFilesystem(factory);
     registerDatabaseReplicated(factory);
+    registerDatabaseRemote(factory);
 #if CLICKHOUSE_CLOUD
     registerDatabaseShared(factory);
 #endif

@@ -682,6 +682,14 @@ protected:
         {
             findArrowFlightSecretArguments();
         }
+        else if ((engine_name == "Remote") || (engine_name == "RemoteSecure"))
+        {
+            /// Remote('addresses_expr', db, table, 'user', 'password', ...)
+            /// RemoteSecure(...) - same as Remote(...)
+            /// The arguments are identical to the `remote`/`remoteSecure` table functions, so reuse
+            /// the same finder (it also handles the named-collection form `Remote(named_collection, ...)`).
+            findRemoteFunctionSecretArguments();
+        }
         else if ((engine_name == "JDBC") || (engine_name == "ODBC"))
         {
             /// JDBC('DSN', database, table)
@@ -800,6 +808,16 @@ protected:
         {
             /// MySQL('host:port', 'database', 'user', 'password')
             /// PostgreSQL('host:port', 'database', 'user', 'password')
+            findMySQLDatabaseSecretArguments();
+        }
+        else if (engine_name == "Remote" || engine_name == "RemoteSecure")
+        {
+            /// Remote('addresses_expr', 'database', 'user', 'password')
+            /// RemoteSecure(...) - same as Remote(...)
+            /// The password is the last positional argument (or `password = ...` in the named-collection
+            /// form), exactly like the MySQL/PostgreSQL database engines. Note this differs from the
+            /// `Remote`/`RemoteSecure` *table* engine signature (which also has a table name), so the
+            /// database engine cannot reuse `findRemoteFunctionSecretArguments`.
             findMySQLDatabaseSecretArguments();
         }
         else if (engine_name == "S3")

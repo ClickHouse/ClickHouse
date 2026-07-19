@@ -1,0 +1,27 @@
+-- database engine
+Remote
+-- SHOW TABLES lists the remote tables
+t
+-- each table is exposed as a Distributed storage
+Distributed
+-- DESCRIBE reflects the remote structure
+id	UInt64
+s	String
+-- SELECT is forwarded to the remote server
+1	a
+2	b
+3	c
+-- INSERT is forwarded to the remote server
+1	a
+2	b
+3	c
+4	d
+-- EXISTS TABLE for an existing and a missing table
+1
+0
+-- DDL against a Remote database is not supported (prints 1 if the expected error is raised)
+1
+1
+-- the password is masked in SHOW CREATE DATABASE (0 = not leaked, 1 = [HIDDEN] shown)
+0
+1
