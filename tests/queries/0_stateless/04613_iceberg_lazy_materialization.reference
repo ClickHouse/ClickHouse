@@ -1,0 +1,33 @@
+-- simple ORDER BY ... LIMIT (the first rows are deleted)
+1	val_1
+2	val_2
+3	val_3
+1	val_1
+2	val_2
+3	val_3
+-- ORDER BY ... DESC LIMIT across data files
+9999	val_9999
+9998	val_9998
+9997	val_9997
+9999	val_9999
+9998	val_9998
+9997	val_9997
+-- with a filter
+3	val_3
+10	val_10
+17	val_17
+3	val_3
+10	val_10
+17	val_17
+-- rows adjacent to deleted rows keep their values
+4998	val_4998
+4999	val_4999
+5001	val_5001
+5002	val_5002
+4998	val_4998
+4999	val_4999
+5001	val_5001
+5002	val_5002
+-- the lazy read step is in the plan only when the optimization is enabled
+1
+0

@@ -539,10 +539,18 @@ bool optimizeLazyMaterialization2(QueryPlan::Node & root, QueryPlan & query_plan
     if (node->step.get() != reading_step || (!read_from_merge_tree && !read_from_object_storage))
         return false;
 
-    const auto * source_step_with_filter = typeid_cast<const SourceStepWithFilter *>(reading_step);
-    chassert(source_step_with_filter);
-    if (source_step_with_filter->getPrewhereInfo() || source_step_with_filter->getRowLevelFilter())
-        has_filter = true;
+    /// (typeid_cast to the intermediate base class SourceStepWithFilter would return nullptr
+    /// because it matches the exact type, so dispatch through the concrete types.)
+    if (read_from_merge_tree)
+    {
+        if (read_from_merge_tree->getPrewhereInfo() || read_from_merge_tree->getRowLevelFilter())
+            has_filter = true;
+    }
+    else
+    {
+        if (read_from_object_storage->getPrewhereInfo() || read_from_object_storage->getRowLevelFilter())
+            has_filter = true;
+    }
 
     /// Disable the case with read-in-order and no filter.
     /// It's not likely we can optimize it more.
