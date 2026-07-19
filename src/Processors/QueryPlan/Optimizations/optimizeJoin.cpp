@@ -704,7 +704,12 @@ static size_t addChildQueryGraph(QueryGraphBuilder & graph, QueryPlan::Node * no
 {
     auto * join_node = node;
     auto * expression_step = typeid_cast<ExpressionStep *>(node->step.get());
-    if (expression_step && node->children.size() == 1  && !expression_step->getExpression().hasArrayJoin())
+    /// Do not flatten the child join through an expression that contains an `arrayJoin` or a stateful
+    /// function. Merging such an expression into the join graph lets the optimizer reattach it at the
+    /// final reordered join, so a stateful function (`logTrace`, `neighbor`, `runningAccumulate`, ...)
+    /// would observe different rows and blocks than in the query as written.
+    if (expression_step && node->children.size() == 1  && !expression_step->getExpression().hasArrayJoin()
+        && !expression_step->getExpression().hasStatefulFunctions())
     {
         if (isPassthroughActions(expression_step->getExpression()))
         {
@@ -817,7 +822,7 @@ void buildQueryGraph(QueryGraphBuilder & query_graph, QueryPlan::Node & node, Qu
             {
                 bool merge_expression_into_join = query_graph.context->optimization_settings.merge_expression_into_join;
                 auto * expr = typeid_cast<ExpressionStep *>(check->step.get());
-                if (expr && !expr->getExpression().hasArrayJoin()
+                if (expr && !expr->getExpression().hasArrayJoin() && !expr->getExpression().hasStatefulFunctions()
                     && (isPassthroughActions(expr->getExpression()) || merge_expression_into_join))
                 {
                     check = check->children[0];

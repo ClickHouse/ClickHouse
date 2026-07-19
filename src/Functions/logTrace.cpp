@@ -55,8 +55,10 @@ namespace
         /// reader-side `PREWHERE`, which would prune granules before the stateful predicate runs, and keeps
         /// projection selection (`QueryDAG::build`, used by `optimizeUseNormalProjections` and
         /// `optimizeUseAggregateProjections`) from substituting a projection read or index whose different sort
-        /// key and granularity would change the observed row and block stream. This mirrors other functions with
-        /// block-level semantics such as `neighbor`.
+        /// key and granularity would change the observed row and block stream, and keeps join reordering
+        /// (`optimizeJoin`) from flattening an expression that wraps a child join into the global join graph,
+        /// which could reattach the call at a different (reordered) join and change the rows and blocks it sees.
+        /// This mirrors other functions with block-level semantics such as `neighbor`.
         bool isStateful() const override { return true; }
 
         bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
