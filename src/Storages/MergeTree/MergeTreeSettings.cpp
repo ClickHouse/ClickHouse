@@ -758,8 +758,9 @@ slowly does not hold merges back.
     DECLARE(UInt64, max_parts_in_partition_to_defer_merges, 500, R"(
 While a long-running `INSERT` defers background merges (see
 `min_insert_duration_to_defer_merges_ms`), stop deferring as soon as some
-partition has at least this many active parts, so that merges stay well ahead
-of the `parts_to_delay_insert` backpressure even under continuous inserts.
+partition has at least this many active parts. The effective limit is capped by
+half of `parts_to_delay_insert`, so that merges stay well ahead of the
+'too many parts' backpressure even under continuous inserts.
 )", 0) \
     DECLARE(UInt64, min_age_to_force_merge_seconds, 0, R"(
 Merge parts if every part in the range is older than the value of

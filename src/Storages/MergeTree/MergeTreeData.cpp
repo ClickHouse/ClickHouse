@@ -6809,8 +6809,11 @@ bool MergeTreeData::shouldDeferMergesDueToActiveInserts() const
 
     /// Never let parts pile up too much: queries over many small parts are slow, and merges
     /// must stay ahead of the 'too many parts' insert backpressure.
+    const UInt64 max_parts_to_defer = std::min(
+        (*settings)[MergeTreeSetting::max_parts_in_partition_to_defer_merges].value,
+        (*settings)[MergeTreeSetting::parts_to_delay_insert].value / 2);
     const size_t max_parts_in_partition = getMaxPartsCountAndSizeForPartition().first;
-    return max_parts_in_partition < (*settings)[MergeTreeSetting::max_parts_in_partition_to_defer_merges];
+    return max_parts_in_partition < max_parts_to_defer;
 }
 
 void MergeTreeData::delayInsertOrThrowIfNeeded(Poco::Event * until, const ContextPtr & query_context, bool allow_throw) const
