@@ -621,10 +621,10 @@ bool PostgreSQLHandler::processCopyQuery(const String & query)
     }
 
     /// A `COPY` that carries a data-formatting option we cannot faithfully honor (a non-default `DELIMITER`,
-    /// `HEADER`, or any option we do not interpret) is rejected here rather than silently ignored: honoring
-    /// only the format while dropping such options would stream output that does not match what the client
-    /// requested. Like the binary rejection above, this is sent as an ordinary `ErrorResponse` (not thrown)
-    /// so the connection stays open for the following `ReadyForQuery`.
+    /// a non-default `NULL` marker, `HEADER`, or any option we do not interpret) is rejected here rather than
+    /// silently ignored: honoring only the format while dropping such options would stream output that does
+    /// not match what the client requested. Like the binary rejection above, this is sent as an ordinary
+    /// `ErrorResponse` (not thrown) so the connection stays open for the following `ReadyForQuery`.
     if (copy_query_parsed && !copy_query_parsed->as<ASTCopyQuery>()->unsupported_option.empty())
     {
         message_transport->send(

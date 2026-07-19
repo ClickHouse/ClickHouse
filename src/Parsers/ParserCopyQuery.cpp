@@ -196,14 +196,16 @@ bool ParserCopyQuery::parseOptions(Pos & pos, boost::intrusive_ptr<ASTCopyQuery>
     /// carried through so the handler rejects it with a clean message.
     ///
     /// The data-formatting options are handled as follows so that a client's request is never silently
-    /// disregarded (which would emit output that does not match what it asked for). A `DELIMITER` and a
-    /// `HEADER` that match our defaults for the chosen format (a tab for text/TSV, a comma for CSV, and no
-    /// header) are no-ops and accepted - this is exactly what real clients append, e.g. psycopg2's
-    /// `copy_to`/`copy_from` always send `DELIMITER AS '\t' NULL AS '\N'`. A non-default `DELIMITER`, a
-    /// `HEADER`, or any option we do not interpret (`QUOTE`, `ESCAPE`, `ENCODING`, ...) is recorded in
-    /// `unsupported_option`; the handler then rejects the command with an `ErrorResponse`. `NULL` is accepted
-    /// and ignored: its value only matters for actual NULLs, its default representation differs between
-    /// PostgreSQL and ClickHouse, and interpreting it faithfully is left to a dedicated follow-up.
+    /// disregarded (which would emit output that does not match what it asked for). A `DELIMITER`, a `NULL`
+    /// marker, and a `HEADER` that match our defaults for the chosen format (a tab for text/TSV, a comma for
+    /// CSV, `\N` for a NULL in either, and no header) are no-ops and accepted - this is exactly what real
+    /// clients append, e.g. psycopg2's `copy_to`/`copy_from` always send `DELIMITER AS '\t' NULL AS '\N'`. A
+    /// non-default `DELIMITER`, a non-default `NULL` marker, a `HEADER`, or any option we do not interpret
+    /// (`QUOTE`, `ESCAPE`, `ENCODING`, ...) is recorded in `unsupported_option`; the handler then rejects the
+    /// command with an `ErrorResponse`. A non-default `NULL` marker cannot be honored - ClickHouse's CSV and
+    /// TSV formats always read and write `\N`, so, for example, PostgreSQL's CSV convention of an empty field
+    /// meaning NULL would be a silent mismatch - hence it is rejected rather than ignored; wiring
+    /// `DELIMITER`/`NULL`/`HEADER` all the way through to `FormatSettings` is left to a dedicated follow-up.
     ///
     /// The parser must not throw for these options: an exception here makes
     /// `PostgreSQLHandler::processCopyQuery` fall through to the regular-query path, whose error tears the
@@ -212,6 +214,7 @@ bool ParserCopyQuery::parseOptions(Pos & pos, boost::intrusive_ptr<ASTCopyQuery>
     enum class PendingOption : uint8_t { None, Delimiter, Null, Header };
     PendingOption pending = PendingOption::None;
     std::optional<String> delimiter_value;
+    std::optional<String> null_value;
     bool header_requested = false;
     String unknown_option;
 
@@ -271,6 +274,8 @@ bool ParserCopyQuery::parseOptions(Pos & pos, boost::intrusive_ptr<ASTCopyQuery>
         {
             if (pending == PendingOption::Delimiter)
                 delimiter_value = stringLiteralInnerBytes(String(pos->begin, pos->end));
+            else if (pending == PendingOption::Null)
+                null_value = stringLiteralInnerBytes(String(pos->begin, pos->end));
             pending = PendingOption::None;
             ++pos;
         }
@@ -286,8 +291,19 @@ bool ParserCopyQuery::parseOptions(Pos & pos, boost::intrusive_ptr<ASTCopyQuery>
     else
     {
         const String default_delimiter = node->format == ASTCopyQuery::Formats::CSV ? "," : "\t";
+        /// ClickHouse's CSV and TSV formats both represent a NULL as `\N` by default. A `NULL` marker that
+        /// means that default (what libpq/psycopg2 append for the text format, `NULL AS '\N'`) is a no-op;
+        /// anything else (for example PostgreSQL's CSV convention of an empty field) is not honored and is
+        /// rejected. As with the delimiter, the value is taken as the raw bytes between the quotes without
+        /// ClickHouse unescaping (that would turn a lone `\N` into an empty string). A standard-conforming
+        /// client sends the marker as `'\N'` (raw `\N`), while psycopg2 doubles the backslash and sends
+        /// `'\\N'` (raw `\\N`); both spell the same default marker, so both are accepted.
+        const String default_null = "\\N";
+        const String default_null_backslash_escaped = "\\\\N";
         if (delimiter_value && *delimiter_value != default_delimiter)
             node->unsupported_option = "a non-default DELIMITER";
+        else if (null_value && *null_value != default_null && *null_value != default_null_backslash_escaped)
+            node->unsupported_option = "a non-default NULL marker";
         else if (header_requested)
             node->unsupported_option = "HEADER";
     }

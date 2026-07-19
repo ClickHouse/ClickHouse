@@ -302,9 +302,9 @@ def test_copy_honours_format_and_no_op_options(started_cluster):
     # always send `WITH DELIMITER AS '\t' NULL AS '\N'`, which are exactly our defaults for the text format,
     # so they are no-ops and must be accepted (an earlier version threw for them, and the exception fell
     # through to the regular-query path, which tore the connection down mid-COPY - psycopg2 then reported a
-    # lost connection instead of returning the rows). A `DELIMITER` that matches the chosen format's default
-    # (a tab for text/TSV, a comma for CSV) and `NULL` are accepted; a non-default value is rejected by
-    # test_copy_rejects_unsupported_options below.
+    # lost connection instead of returning the rows). A `DELIMITER` or `NULL` marker that matches the chosen
+    # format's default (a tab for text/TSV, a comma for CSV, `\N` for a NULL in either) is accepted; a
+    # non-default value is rejected by test_copy_rejects_unsupported_options below.
     conn = py_psql.connect(
         host=node.ip_address, port=PG_PORT, user="pguser", password="pgpass", database="default"
     )
@@ -319,16 +319,18 @@ def test_copy_honours_format_and_no_op_options(started_cluster):
         assert out.getvalue() == "1\t2\n"
 
         # The format is still honoured when default-valued options accompany it, in both the legacy and the
-        # modern parenthesized spellings.
+        # modern parenthesized spellings. A comma delimiter is the CSV default and `\N` is the default NULL
+        # marker for both text and CSV, so these stay no-ops (an empty NULL marker - PostgreSQL's CSV default -
+        # is rejected by test_copy_rejects_unsupported_options because ClickHouse still reads and writes `\N`).
         out = io.StringIO()
         cur.copy_expert(
-            "COPY (SELECT 1 AS a, 2 AS b) TO STDOUT WITH DELIMITER AS ',' NULL AS '' CSV", out
+            "COPY (SELECT 1 AS a, 2 AS b) TO STDOUT WITH DELIMITER AS ',' NULL AS '\\N' CSV", out
         )
         assert out.getvalue() == "1,2\n"
 
         out = io.StringIO()
         cur.copy_expert(
-            "COPY (SELECT 1 AS a, 2 AS b) TO STDOUT WITH (FORMAT csv, DELIMITER ',', NULL '')", out
+            "COPY (SELECT 1 AS a, 2 AS b) TO STDOUT WITH (FORMAT csv, DELIMITER ',')", out
         )
         assert out.getvalue() == "1,2\n"
 
@@ -358,6 +360,13 @@ def test_copy_rejects_unsupported_options(started_cluster):
         with pytest.raises(py_psql.Error, match="HEADER"):
             cur = conn.cursor()
             cur.copy_expert("COPY (SELECT 1 AS a, 2 AS b) TO STDOUT WITH (FORMAT csv, HEADER)", io.StringIO())
+        conn.rollback()
+
+        # A non-default NULL marker (PostgreSQL's CSV default is an empty field) would otherwise be silently
+        # ignored while ClickHouse still reads and writes `\N` - a protocol mismatch, so it is rejected.
+        with pytest.raises(py_psql.Error, match="non-default NULL marker"):
+            cur = conn.cursor()
+            cur.copy_expert("COPY (SELECT 1 AS a, 2 AS b) TO STDOUT WITH (FORMAT csv, NULL '')", io.StringIO())
         conn.rollback()
 
         # An option we do not interpret at all is rejected by name rather than dropped.
