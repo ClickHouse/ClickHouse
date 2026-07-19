@@ -1,9 +1,10 @@
 #pragma once
 
-#include <base/types.h>
-#include <Common/OpenTelemetryTracingContext.h>
-
+#include <map>
 #include <time.h>
+#include <base/types.h>
+#include <Common/HTTPFieldLess.h>
+#include <Common/OpenTelemetryTracingContext.h>
 
 namespace Poco::Net
 {
@@ -121,7 +122,7 @@ public:
     HTTPMethod http_method = HTTPMethod::UNKNOWN;
     String http_user_agent;
     String http_referer;
-    std::unordered_map<String, String> http_headers;
+    std::map<String, String, HTTPFieldLess> http_headers;
 
     /// For mysql and postgresql
     UInt64 connection_id = 0;
