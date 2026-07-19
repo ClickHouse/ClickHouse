@@ -6,3 +6,5 @@ Option must not be given more than once: max_thread_pool_size
 OK: --config resolves
 OK: --log resolves
 1
+7
+2500

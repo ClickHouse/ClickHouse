@@ -1893,7 +1893,16 @@ void ServerSettingsImpl::loadSettingsFromConfig(const Poco::Util::AbstractConfig
         const String * path_or_name = path.empty() ? &name : &path;
         try
         {
-            if (config.has(*path_or_name))
+            /// A setting backed by a dotted config path (e.g. `query_cache.max_entries`) may also be
+            /// present under its flat name (`query_cache_max_entries`): `argsToConfig` stores the whole
+            /// command line under the flat argument names (the last occurrence wins), while the direct
+            /// program options registered in `addToProgramOptions` bind the dotted path. The flat name
+            /// takes precedence over the path so that the command line overrides the configuration
+            /// file, and a value after the `--` separator (the last occurrence) overrides a direct
+            /// option, same as for the settings without a path.
+            if (!path.empty() && config.has(name))
+                set(name, config.getString(name));
+            else if (config.has(*path_or_name))
                 set(name, config.getString(*path_or_name));
             else if (settings_from_profile_allowlist.contains(name) && config.has("profiles.default." + *path_or_name))
                 set(name, config.getString("profiles.default." + *path_or_name));
@@ -2006,6 +2015,14 @@ void ServerSettings::addToProgramOptions(Poco::Util::OptionSet & options)
 
         std::string_view path = accessor.getPath(i);
 
+        /// For settings backed by a dotted config path (e.g. `query_cache_max_entries` ->
+        /// `query_cache.max_entries`), bind the option to the path: the components that consume such
+        /// settings read the dotted key from the raw configuration, so binding the flat name would
+        /// leave them unaffected. Independently of the binding, `argsToConfig` stores the whole
+        /// command line under the flat argument names in a higher-priority configuration layer, and
+        /// `loadSettingsFromConfig` reads the flat name with precedence over the path, so a value
+        /// given after the `--` separator still overrides a direct option for these settings, same
+        /// as for the settings without a path.
         std::string binding = path.empty() ? name : std::string(path);
 
         std::string argument_placeholder = "<" + std::string(accessor.getTypeName(i)) + ">";

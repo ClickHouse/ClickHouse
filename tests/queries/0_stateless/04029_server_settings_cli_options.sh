@@ -147,3 +147,35 @@ $CLICKHOUSE_CLIENT --query "SELECT value IN ('1', 'true') FROM system.server_set
 kill $PID 2>/dev/null
 wait $PID 2>/dev/null
 trap '' EXIT
+
+# Test 8: Settings backed by a dotted config path (e.g. `distributed_ddl_pool_size` ->
+# `distributed_ddl.pool_size`) work as direct CLI options, and the value after the `--` separator
+# still takes precedence for them: the command-line arguments are stored under the flat setting
+# name, which `loadSettingsFromConfig` reads before the dotted path. (The settings are chosen not
+# to shadow a user-level setting name - a user-level setting at the top level of the configuration
+# is rejected at startup - and not to enable a subsystem by making its config section appear.)
+srv_dir8="${CLICKHOUSE_TMP}/srv8"
+mkdir -p "$srv_dir8"
+$CLICKHOUSE_BINARY server \
+    --distributed_ddl_pool_size 7 --distributed_ddl_max_tasks_in_queue 1500 \
+    -- --tcp_port "$CLICKHOUSE_PORT_TCP" --path "$srv_dir8/" --distributed_ddl_max_tasks_in_queue 2500 > "${CLICKHOUSE_TMP}/server8.log" 2>&1 &
+PID=$!
+
+trap 'kill $PID 2>/dev/null; wait $PID 2>/dev/null' EXIT
+
+for i in {1..30}; do
+    sleep 1
+    $CLICKHOUSE_CLIENT --query "SELECT 1" >/dev/null 2>&1 && break
+    if [[ $i == 30 ]]; then
+        cat "${CLICKHOUSE_TMP}/server8.log"
+        exit 1
+    fi
+done
+
+# Path-backed settings are displayed in `system.server_settings` under their dotted path
+$CLICKHOUSE_CLIENT --query "SELECT value FROM system.server_settings WHERE name = 'distributed_ddl.pool_size'"
+$CLICKHOUSE_CLIENT --query "SELECT value FROM system.server_settings WHERE name = 'distributed_ddl.max_tasks_in_queue'"
+
+kill $PID 2>/dev/null
+wait $PID 2>/dev/null
+trap '' EXIT
