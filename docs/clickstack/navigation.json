@@ -235,7 +235,10 @@
     {
       "expanded": true,
       "group": "API reference",
-      "openapi": "https://raw.githubusercontent.com/hyperdxio/hyperdx/refs/heads/main/packages/api/openapi.json",
+      "openapi": {
+        "source": "https://raw.githubusercontent.com/hyperdxio/hyperdx/refs/heads/main/packages/api/openapi.json",
+        "directory": "clickstack/api-reference"
+      },
       "root": "clickstack/api-reference"
     }
   ]
