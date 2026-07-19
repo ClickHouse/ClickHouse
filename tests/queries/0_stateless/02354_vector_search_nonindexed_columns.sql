@@ -30,10 +30,9 @@ FROM numbers(100);
 
 -- Test vector search on indexed column (vec1) with different filter strategies
 --
--- With the PK filter below, vector index analysis does not produce usable row
--- hints for auto and postfilter strategies, so implicit PREWHERE is restored.
--- The vector index must still be used during index analysis before that fallback.
--- The prefilter strategy explicitly prefers PREWHERE and brute force distance
+-- With the PK filter below, vector index analysis produces usable row hints for
+-- auto and postfilter strategies, so the filter remains outside `PREWHERE`.
+-- The prefilter strategy explicitly prefers `PREWHERE` and brute force distance
 -- calculation.
 
 SELECT '-- Indexed auto/postfilter still use the vector index';

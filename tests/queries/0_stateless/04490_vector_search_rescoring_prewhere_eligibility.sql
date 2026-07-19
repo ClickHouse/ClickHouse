@@ -25,7 +25,8 @@ INSERT INTO tab
 SELECT number, number % 3, repeat('x', 64), [toFloat32(number), 0]
 FROM numbers(32);
 
-SELECT count() > 0
+-- Partial PK filtering produces vector row hints, so rescoring suppresses implicit `PREWHERE`.
+SELECT count() = 0
 FROM
 (
     EXPLAIN actions = 1
