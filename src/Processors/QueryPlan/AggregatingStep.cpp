@@ -31,6 +31,7 @@
 #include <Processors/Transforms/MemoryBoundMerging.h>
 #include <Processors/Transforms/MergingAggregatedMemoryEfficientTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
+#include <Common/CurrentThread.h>
 #include <Common/JSONBuilder.h>
 #include <Core/SettingsEnums.h>
 
@@ -1110,6 +1111,16 @@ QueryPlanStepPtr AggregatingStep::deserialize(Deserialization & ctx)
         ctx.settings[QueryPlanSerializationSetting::max_entries_for_hash_table_stats],
         ctx.settings[QueryPlanSerializationSetting::max_size_to_preallocate_for_aggregation]);
 
+    /// Prefer the temporary data scope of the query context: it accounts for the per-query and
+    /// per-user limits (`max_temporary_data_on_disk_size_for_query` and `_for_user`), which the
+    /// server-global scope does not. Fall back to the global scope when there is no query
+    /// context (e.g. when the plan is deserialized outside of a query).
+    TemporaryDataOnDiskScopePtr tmp_data_scope;
+    if (auto query_context = CurrentThread::tryGetQueryContext())
+        tmp_data_scope = query_context->getTempDataOnDisk();
+    if (!tmp_data_scope)
+        tmp_data_scope = Context::getGlobalContextInstance()->getTempDataOnDisk();
+
     Aggregator::Params params{
         keys,
         aggregates,
@@ -1120,7 +1131,7 @@ QueryPlanStepPtr AggregatingStep::deserialize(Deserialization & ctx)
         ctx.settings[QueryPlanSerializationSetting::group_by_two_level_threshold_bytes],
         ctx.settings[QueryPlanSerializationSetting::max_bytes_before_external_group_by],
         ctx.settings[QueryPlanSerializationSetting::empty_result_for_aggregation_by_empty_set],
-        Context::getGlobalContextInstance()->getTempDataOnDisk(),
+        std::move(tmp_data_scope),
         0, //settings[QueryPlanSerializationSetting::max_threads],
         ctx.settings[QueryPlanSerializationSetting::min_free_disk_space_for_temporary_data],
         ctx.settings[QueryPlanSerializationSetting::compile_aggregate_expressions],

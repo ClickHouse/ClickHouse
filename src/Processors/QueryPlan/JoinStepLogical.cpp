@@ -5,6 +5,7 @@
 
 #include <base/scope_guard.h>
 
+#include <Common/CurrentThread.h>
 #include <Common/JSONBuilder.h>
 #include <Common/safe_cast.h>
 #include <Common/typeid_cast.h>
@@ -1103,9 +1104,19 @@ static QueryPlanNode buildPhysicalJoinImpl(
 {
     auto * logical_lookup = typeid_cast<JoinStepLogicalLookup *>(children.back()->step.get());
 
+    /// Prefer the temporary data scope of the query context: it accounts for the per-query and
+    /// per-user limits (`max_temporary_data_on_disk_size_for_query` and `_for_user`), which the
+    /// server-global scope does not. Fall back to the global scope when there is no query
+    /// context (e.g. when the plan is optimized outside of a query).
+    TemporaryDataOnDiskScopePtr tmp_data_scope;
+    if (auto query_context = CurrentThread::tryGetQueryContext())
+        tmp_data_scope = query_context->getTempDataOnDisk();
+    if (!tmp_data_scope)
+        tmp_data_scope = Context::getGlobalContextInstance()->getTempDataOnDisk();
+
     auto table_join = std::make_shared<TableJoin>(join_settings, logical_lookup && logical_lookup->useNulls(),
         Context::getGlobalContextInstance()->getGlobalTemporaryVolume(),
-        Context::getGlobalContextInstance()->getTempDataOnDisk());
+        std::move(tmp_data_scope));
 
     PreparedJoinStorage prepared_join_storage;
     if (logical_lookup)
