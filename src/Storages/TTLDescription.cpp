@@ -31,6 +31,7 @@
 #include <Interpreters/FunctionNameNormalizer.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseQuery.h>
+#include <base/scope_guard.h>
 
 
 namespace DB
@@ -40,6 +41,8 @@ namespace Setting
     extern const SettingsBool allow_experimental_codecs;
     extern const SettingsBool allow_suspicious_codecs;
     extern const SettingsBool allow_suspicious_ttl_expressions;
+    extern const SettingsBool variant_throw_on_type_mismatch;
+    extern const SettingsBool dynamic_throw_on_type_mismatch;
 }
 
 namespace ErrorCodes
@@ -237,12 +240,48 @@ void checkActionsDAGForAggregateFunctions(const ActionsDAG & actions_dag, std::s
     }
 }
 
-void checkTTLExpressionForAggregateFunctions(const ExpressionActionsPtr & expression, std::string_view expression_kind)
+void checkTTLExpressionForAggregateFunctions(
+    const ExpressionActionsPtr & expression, std::string_view expression_kind, const ContextPtr & context)
 {
+    /// The synthetic probe in `checkActionsDAGForAggregateFunctions` exercises consumers over `Variant`/`Dynamic`
+    /// columns carrying an AggregateFunction state. Whether a type mismatch throws or is silently turned into NULL
+    /// is decided by the `Variant`/`Dynamic` function adaptors based on `variant_throw_on_type_mismatch` /
+    /// `dynamic_throw_on_type_mismatch`, which they read from the query context. A session that lowered either of
+    /// these to 0 would make the probe accept a suspicious TTL, while TTL merges - which rebuild and execute the
+    /// expression under the strict server-default storage context - would still throw, breaking every merge of the
+    /// table. Force strict mismatch behavior for the validation pass so DDL matches TTL execution.
+    ContextMutablePtr query_context = context && context->hasQueryContext() ? context->getQueryContext() : nullptr;
+    std::optional<bool> old_variant_throw;
+    std::optional<bool> old_dynamic_throw;
+    if (query_context)
+    {
+        const auto & settings = query_context->getSettingsRef();
+        if (!settings[Setting::variant_throw_on_type_mismatch])
+        {
+            old_variant_throw = false;
+            query_context->setSetting("variant_throw_on_type_mismatch", Field(true));
+        }
+        if (!settings[Setting::dynamic_throw_on_type_mismatch])
+        {
+            old_dynamic_throw = false;
+            query_context->setSetting("dynamic_throw_on_type_mismatch", Field(true));
+        }
+    }
+    SCOPE_EXIT({
+        if (query_context)
+        {
+            if (old_variant_throw)
+                query_context->setSetting("variant_throw_on_type_mismatch", Field(*old_variant_throw));
+            if (old_dynamic_throw)
+                query_context->setSetting("dynamic_throw_on_type_mismatch", Field(*old_dynamic_throw));
+        }
+    });
+
     checkActionsDAGForAggregateFunctions(expression->getActionsDAG(), expression_kind);
 }
 
-void checkTTLExpression(const ExpressionActionsPtr & ttl_expression, const String & result_column_name, bool allow_suspicious)
+void checkTTLExpression(
+    const ExpressionActionsPtr & ttl_expression, const String & result_column_name, bool allow_suspicious, const ContextPtr & context)
 {
     /// Do not apply this check in ATTACH queries for compatibility reasons and if explicitly allowed.
     if (!allow_suspicious)
@@ -263,7 +302,7 @@ void checkTTLExpression(const ExpressionActionsPtr & ttl_expression, const Strin
             }
         }
 
-        checkTTLExpressionForAggregateFunctions(ttl_expression, /*expression_kind=*/ "");
+        checkTTLExpressionForAggregateFunctions(ttl_expression, /*expression_kind=*/ "", context);
     }
 
     const auto & result_column = ttl_expression->getSampleBlock().getByName(result_column_name);
@@ -401,7 +440,7 @@ static void checkTTLGroupBySetForAggregateFunctions(
     {
         auto argument_ast = argument->clone();
         auto argument_expression = buildExpressionAndSets(argument_ast, columns, context).expression;
-        checkTTLExpressionForAggregateFunctions(argument_expression, /*expression_kind=*/ "GROUP BY SET ");
+        checkTTLExpressionForAggregateFunctions(argument_expression, /*expression_kind=*/ "GROUP BY SET ", context);
     }
 }
 
@@ -528,7 +567,7 @@ TTLDescription TTLDescription::getTTLFromAST(
                 /// state itself (e.g. `any(ts)`), casting it to an incompatible target type (e.g. `DateTime`)
                 /// must be rejected here instead of failing during the TTL merge.
                 if (!is_attach && !context->getSettingsRef()[Setting::allow_suspicious_ttl_expressions])
-                    checkTTLExpressionForAggregateFunctions(set_part.expression, /*expression_kind=*/ "GROUP BY SET ");
+                    checkTTLExpressionForAggregateFunctions(set_part.expression, /*expression_kind=*/ "GROUP BY SET ", context);
 
                 result.set_parts.emplace_back(set_part);
 
@@ -550,10 +589,10 @@ TTLDescription TTLDescription::getTTLFromAST(
         }
     }
 
-    checkTTLExpression(expression, result.result_column, is_attach || context->getSettingsRef()[Setting::allow_suspicious_ttl_expressions]);
+    checkTTLExpression(expression, result.result_column, is_attach || context->getSettingsRef()[Setting::allow_suspicious_ttl_expressions], context);
 
     if (where_expression && !is_attach && !context->getSettingsRef()[Setting::allow_suspicious_ttl_expressions])
-        checkTTLExpressionForAggregateFunctions(where_expression, /*expression_kind=*/ "WHERE ");
+        checkTTLExpressionForAggregateFunctions(where_expression, /*expression_kind=*/ "WHERE ", context);
 
     return result;
 }
