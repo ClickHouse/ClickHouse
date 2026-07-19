@@ -1,3 +1,17 @@
 multi-chunk result with aggregate function states
+multi-chunk extremes of comparable columns are still merged
+0	90
+1	91
+2	92
+3	93
+4	94
+5	95
+6	96
+7	97
+8	98
+9	99
+
+0	90
+9	99
 single-chunk result still works
 ok
