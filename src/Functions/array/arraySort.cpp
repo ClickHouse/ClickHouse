@@ -4,17 +4,15 @@
 #include <Columns/ColumnsDateTime.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/array/arraySort.h>
+#include <Functions/array/createArrayLimitGetter.h>
 #include <Functions/castTypeToEither.h>
 #include <Common/iota.h>
-
-#include <limits>
 
 namespace DB
 {
 
 namespace ErrorCodes
 {
-    extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
 }
 
@@ -87,31 +85,13 @@ struct GenericLess
     }
 };
 
-/// Reads limit[row] from the limit column and rejects a negative value for a signed column.
-size_t readLimit(const IColumn & limit_column, bool limit_is_signed, size_t row, const char * function_name)
-{
-    const UInt64 limit = limit_column.getUInt(row);
-    /// For a signed limit column a negative value is reinterpreted as a huge UInt64 with the high bit set;
-    /// detect that and throw, like arrayTopK does for its K argument.
-    if (limit_is_signed && limit > static_cast<UInt64>(std::numeric_limits<Int64>::max()))
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "Argument limit of function {} must be non-negative, got {}",
-            function_name,
-            static_cast<Int64>(limit));
-    return limit;
-}
-
 /// Builds and returns a permutation that sorts (or partially sorts, when `is_partial`) every array
-/// row using `cmp`. The limit (how many elements to partially sort) may differ from row to row when
-/// it is passed as a non-constant column, so it is read per-row inside the loop.
+/// row using `cmp`. For partial sort the per-row limit is read from `limit_getter`.
 template <bool is_partial, typename Comparator>
 IColumn::Permutation applyComparator(
     const Comparator & cmp,
-    const IColumn * limit_column,
-    bool limit_is_signed,
-    const ColumnArray::Offsets & offsets,
-    const char * function_name)
+    const ArrayLimitGetter * limit_getter,
+    const ColumnArray::Offsets & offsets)
 {
     const size_t nested_size = offsets.empty() ? 0 : offsets.back();
     IColumn::Permutation permutation(nested_size);
@@ -124,7 +104,7 @@ IColumn::Permutation applyComparator(
         const auto next_offset = offsets[i];
         if constexpr (is_partial)
         {
-            const size_t limit = readLimit(*limit_column, limit_is_signed, i, function_name);
+            const size_t limit = limit_getter->get(i);
             /// With limit == 0 there is nothing to sort, the row keeps its original order.
             if (limit)
             {
@@ -150,9 +130,7 @@ ColumnPtr ArraySortImpl<positive, is_partial>::execute(
     ColumnPtr mapped,
     const ColumnWithTypeAndName * fixed_arguments)
 {
-    const IColumn * limit_column = nullptr;
-    bool limit_is_signed = false;
-    const char * function_name = positive ? "arrayPartialSort" : "arrayPartialReverseSort";
+    std::unique_ptr<ArrayLimitGetter> limit_getter;
     if constexpr (is_partial)
     {
         if (!fixed_arguments)
@@ -160,8 +138,8 @@ ColumnPtr ArraySortImpl<positive, is_partial>::execute(
                 ErrorCodes::LOGICAL_ERROR,
                 "Expected fixed arguments to get the limit for partial array sort");
 
-        limit_column = fixed_arguments[0].column.get();
-        limit_is_signed = isNativeInt(*fixed_arguments[0].type);
+        const char * function_name = positive ? "arrayPartialSort" : "arrayPartialReverseSort";
+        limit_getter = createArrayLimitGetter(*fixed_arguments[0].column, function_name);
     }
 
     const ColumnArray::Offsets & offsets = array.getOffsets();
@@ -200,12 +178,12 @@ ColumnPtr ArraySortImpl<positive, is_partial>::execute(
             if (null_map)
             {
                 NullableLess<positive, ColumnT> cmp(column, *null_map);
-                permutation = applyComparator<is_partial>(cmp, limit_column, limit_is_signed, offsets, function_name);
+                permutation = applyComparator<is_partial>(cmp, limit_getter.get(), offsets);
             }
             else
             {
                 Less<positive, ColumnT> cmp(column);
-                permutation = applyComparator<is_partial>(cmp, limit_column, limit_is_signed, offsets, function_name);
+                permutation = applyComparator<is_partial>(cmp, limit_getter.get(), offsets);
             }
             return true;
         });
@@ -214,7 +192,7 @@ ColumnPtr ArraySortImpl<positive, is_partial>::execute(
     if (!dispatched)
     {
         GenericLess<positive> cmp(*mapped);
-        permutation = applyComparator<is_partial>(cmp, limit_column, limit_is_signed, offsets, function_name);
+        permutation = applyComparator<is_partial>(cmp, limit_getter.get(), offsets);
     }
 
     return ColumnArray::create(array.getData().permute(permutation, 0), array.getOffsetsPtr());

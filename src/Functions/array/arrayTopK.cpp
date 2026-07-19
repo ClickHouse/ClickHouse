@@ -8,6 +8,7 @@
 #include <Columns/ColumnsDateTime.h>
 #include <Columns/ColumnsNumber.h>
 #include <Functions/FunctionFactory.h>
+#include <Functions/array/createArrayLimitGetter.h>
 #include <Functions/castTypeToEither.h>
 #include <base/sort.h>
 
@@ -17,7 +18,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
 }
 
@@ -63,30 +63,13 @@ struct GenericLess
     }
 };
 
-/// Reads K[row] from the K column and rejects negatives (signed columns).
-size_t readK(const IColumn & k_column, bool k_is_signed, size_t row, const char * function_name)
-{
-    const UInt64 k = k_column.getUInt(row);
-    /// For a signed K column, a negative value is reinterpreted as a huge UInt64 with the high bit set;
-    /// detect that and throw.
-    if (k_is_signed && k > static_cast<UInt64>(std::numeric_limits<Int64>::max()))
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "Argument K of function {} must be non-negative, got {}",
-            function_name,
-            static_cast<Int64>(k));
-    return k;
-}
-
 /// K-selection pass for a single call, specialized at compile time on the comparator type.
 /// Builds the result `ColumnArray`.
 template <typename Comparator>
 ColumnPtr applyComparator(
-    const IColumn & k_column,
-    bool k_is_signed,
+    const ArrayLimitGetter & limit_getter,
     const ColumnArray & source,
-    const IColumn & mapped,
-    const char * function_name)
+    const IColumn & mapped)
 {
     const auto & offsets = source.getOffsets();
     const size_t size = offsets.size();
@@ -108,8 +91,8 @@ ColumnPtr applyComparator(
     auto & indexes = indexes_column->getData();
 
     /// Smaller reserve when K is constant.
-    if (isColumnConst(k_column))
-        indexes.reserve(std::min(readK(k_column, k_is_signed, 0, function_name) * size, nested_size));
+    if (auto const_k = limit_getter.tryGetConstant())
+        indexes.reserve(std::min(*const_k * size, nested_size));
     else
         indexes.reserve(nested_size);
 
@@ -125,7 +108,7 @@ ColumnPtr applyComparator(
     {
         const auto next_offset = offsets[i];
 
-        const size_t k = readK(k_column, k_is_signed, i, function_name);
+        const size_t k = limit_getter.get(i);
         if (!k)
         {
             result_offsets[i] = result_offset;
@@ -165,11 +148,9 @@ ColumnPtr applyComparator(
 /// Iterates the specialized-column type list, falling back to `GenericLess`.
 template <bool IsAscending>
 ColumnPtr dispatchByColumn(
-    const IColumn & k_column,
-    bool k_is_signed,
+    const ArrayLimitGetter & limit_getter,
     const ColumnArray & source,
-    const IColumn & mapped,
-    const char * function_name)
+    const IColumn & mapped)
 {
     /// A constant lambda (e.g. `(x) -> NULL`) gives `mapped` as `ColumnConst(Nullable(...))`.
     /// Materialize it so the `Nullable` peel below and the null-map access in `applyComparator` work uniformly.
@@ -204,7 +185,7 @@ ColumnPtr dispatchByColumn(
         [&](const auto & column)
         {
             using ColumnT = std::decay_t<decltype(column)>;
-            result = applyComparator<Less<IsAscending, ColumnT>>(k_column, k_is_signed, source, *mapped_full, function_name);
+            result = applyComparator<Less<IsAscending, ColumnT>>(limit_getter, source, *mapped_full);
             return true;
         });
 
@@ -212,7 +193,7 @@ ColumnPtr dispatchByColumn(
         return result;
 
     /// Fall back to GenericLess<>.
-    return applyComparator<GenericLess<IsAscending>>(k_column, k_is_signed, source, *mapped_full, function_name);
+    return applyComparator<GenericLess<IsAscending>>(limit_getter, source, *mapped_full);
 }
 
 }
@@ -231,10 +212,9 @@ ColumnPtr ArrayTopKImpl<IsAscending>::execute(
             "Expected fixed arguments to get K for {}",
             function_name);
 
-    const IColumn & k_column = *fixed_arguments[0].column;
-    const bool k_is_signed = isNativeInt(*fixed_arguments[0].type);
+    auto limit_getter = createArrayLimitGetter(*fixed_arguments[0].column, function_name);
 
-    return dispatchByColumn<IsAscending>(k_column, k_is_signed, array, *mapped, function_name);
+    return dispatchByColumn<IsAscending>(*limit_getter, array, *mapped);
 }
 
 REGISTER_FUNCTION(ArrayTopK)
@@ -256,7 +236,7 @@ See also `arrayBottomK`, which returns the K smallest elements instead.
     FunctionDocumentation::Syntax syntax = "arrayTopK([f,] K, arr [, arr1, ... ,arrN])";
     FunctionDocumentation::Arguments arguments = {
         {"f(arr[, arr1, ... ,arrN])", "Optional. A lambda function to compute the sort key for each element.", {"Lambda function"}},
-        {"K", "The number of largest elements to return.", {"(U)Int8/16/32/64"}},
+        {"K", "The number of largest elements to return.", {"(U)Int*"}},
         {"arr", "An array.", {"Array(T)"}},
         {"arr1, ... ,arrN", "N additional arrays, in the case when `f` accepts multiple arguments.", {"Array(T)"}}
     };
@@ -301,7 +281,7 @@ also keeps the remaining elements in unspecified order, and does not skip nulls.
     FunctionDocumentation::Syntax syntax = "arrayBottomK([f,] K, arr [, arr1, ... ,arrN])";
     FunctionDocumentation::Arguments arguments = {
         {"f(arr[, arr1, ... ,arrN])", "Optional. A lambda function to compute the sort key for each element.", {"Lambda function"}},
-        {"K", "The number of smallest elements to return.", {"(U)Int8/16/32/64"}},
+        {"K", "The number of smallest elements to return.", {"(U)Int*"}},
         {"arr", "An array.", {"Array(T)"}},
         {"arr1, ... ,arrN", "N additional arrays, in the case when `f` accepts multiple arguments.", {"Array(T)"}}
     };

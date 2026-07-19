@@ -51,10 +51,10 @@ struct ArrayTopKImpl
                 ErrorCodes::LOGICAL_ERROR,
                 "Expected fixed arguments to get K for {}", name);
 
-        if (!isNativeInteger(*fixed_arguments[0].type))
+        if (!isInteger(*fixed_arguments[0].type))
             throw Exception(
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of the K argument of function {} (must be a native integer: UInt8/16/32/64 or Int8/16/32/64)",
+                "Illegal type {} of the K argument of function {} (must be an integer)",
                 fixed_arguments[0].type->getName(),
                 name);
     }

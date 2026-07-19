@@ -25,8 +25,14 @@ SELECT arrayPartialSort((x) -> -x, -1, [5, 9, 1, 3]); -- { serverError BAD_ARGUM
 SELECT arrayPartialSort(k, arr)
 FROM values('k Int8, arr Array(Int32)', (1, [3, 1, 2]), (-1, [9, 7, 8])); -- { serverError BAD_ARGUMENTS }
 
--- Only native integer limit types are accepted; a wide integer type is rejected at analysis time.
--- This guards the negative check, which relies on the limit fitting into 64 bits.
-SELECT arrayPartialSort(CAST(2 AS Int128), [5, 9, 1, 3]); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
-SELECT arrayPartialSort(CAST(-1 AS Int128), [5, 9, 1, 3]); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
-SELECT arrayPartialReverseSort(CAST(2 AS UInt128), [5, 9, 1, 3]); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+-- A wide integer limit type is accepted; the value is read at its full width. Only the first `limit`
+-- elements are guaranteed sorted, so slice to keep the deterministic prefix.
+SELECT arraySlice(arrayPartialSort(CAST(2 AS Int128), [5, 9, 1, 3]), 1, 2);
+SELECT arraySlice(arrayPartialReverseSort(CAST(2 AS UInt128), [5, 9, 1, 3]), 1, 2);
+
+-- A huge wide value means "sort everything": it is saturated to the array size, not truncated.
+SELECT arrayPartialSort(CAST('100000000000000000000' AS UInt128), [5, 9, 1, 3]);
+
+-- A negative wide value still raises an exception (a value error, like a negative native value).
+SELECT arrayPartialSort(CAST(-1 AS Int128), [5, 9, 1, 3]); -- { serverError BAD_ARGUMENTS }
+SELECT arrayPartialReverseSort(CAST(-2 AS Int256), [5, 9, 1, 3]); -- { serverError BAD_ARGUMENTS }
