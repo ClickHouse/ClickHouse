@@ -3252,6 +3252,7 @@ ASTExplainQuery::ExplainKind QueryFuzzer::fuzzExplainKind(ASTExplainQuery::Expla
            ASTExplainQuery::ExplainKind::QueryTree,
            ASTExplainQuery::ExplainKind::QueryPlan,
            ASTExplainQuery::ExplainKind::QueryPipeline,
+           ASTExplainQuery::ExplainKind::Analyze,
            ASTExplainQuery::ExplainKind::QueryEstimates,
            ASTExplainQuery::ExplainKind::TableOverride,
            ASTExplainQuery::ExplainKind::CurrentTransaction,
@@ -3263,44 +3264,56 @@ void QueryFuzzer::fuzzExplainSettings(ASTSetQuery & settings_ast, ASTExplainQuer
 {
     auto & changes = settings_ast.changes;
 
-    static const std::unordered_map<ASTExplainQuery::ExplainKind, DB::Strings> settings_by_kind = {
-        {ASTExplainQuery::ExplainKind::ParsedAST, {"graph", "optimize"}},
-        {ASTExplainQuery::ExplainKind::AnalyzedSyntax, {"oneline", "run_query_tree_passes", "query_tree_passes"}},
-        {ASTExplainQuery::QueryTree, {"run_passes", "dump_tree", "dump_passes", "dump_ast", "passes"}},
-        {ASTExplainQuery::ExplainKind::QueryPlan,
-         {"header",
-          "description",
-          "actions",
-          "indexes",
-          "projections",
-          "optimize",
-          "json",
-          "sorting",
-          "distributed",
-          "keep_logical_steps",
-          "input_headers",
-          "compact",
-          "column_structure",
-          "pretty"}},
-        {ASTExplainQuery::ExplainKind::QueryPipeline, {"header", "graph", "compact", "compact_repeated_processor_chains", "distributed"}},
-        {ASTExplainQuery::ExplainKind::QueryEstimates,
-         {"header",
-          "description",
-          "actions",
-          "indexes",
-          "projections",
-          "optimize",
-          "json",
-          "sorting",
-          "distributed",
-          "keep_logical_steps",
-          "input_headers",
-          "compact",
-          "column_structure",
-          "pretty"}},
-        {ASTExplainQuery::ExplainKind::TableOverride, {}},
-        {ASTExplainQuery::ExplainKind::CurrentTransaction, {}},
-        {ASTExplainQuery::ExplainKind::WhatIf, {"empirical"}}};
+    static const std::unordered_map<ASTExplainQuery::ExplainKind, DB::Strings> settings_by_kind
+        = {{ASTExplainQuery::ExplainKind::ParsedAST, {"graph", "optimize"}},
+           {ASTExplainQuery::ExplainKind::AnalyzedSyntax, {"oneline", "run_query_tree_passes", "query_tree_passes"}},
+           {ASTExplainQuery::QueryTree, {"run_passes", "dump_tree", "dump_passes", "dump_ast", "passes"}},
+           {ASTExplainQuery::ExplainKind::QueryPlan,
+            {"header",
+             "description",
+             "actions",
+             "indexes",
+             "projections",
+             "optimize",
+             "json",
+             "sorting",
+             "distributed",
+             "keep_logical_steps",
+             "input_headers",
+             "compact",
+             "column_structure",
+             "pretty"}},
+           {ASTExplainQuery::ExplainKind::QueryPipeline, {"header", "graph", "compact", "compact_repeated_processor_chains", "distributed"}},
+           {ASTExplainQuery::ExplainKind::Analyze,
+            {"header",
+             "description",
+             "actions",
+             "indexes",
+             "projections",
+             "sorting",
+             "input_headers",
+             "compact",
+             "column_structure",
+             "pretty",
+             "processors"}},
+           {ASTExplainQuery::ExplainKind::QueryEstimates,
+            {"header",
+             "description",
+             "actions",
+             "indexes",
+             "projections",
+             "optimize",
+             "json",
+             "sorting",
+             "distributed",
+             "keep_logical_steps",
+             "input_headers",
+             "compact",
+             "column_structure",
+             "pretty"}},
+           {ASTExplainQuery::ExplainKind::TableOverride, {}},
+           {ASTExplainQuery::ExplainKind::CurrentTransaction, {}},
+           {ASTExplainQuery::ExplainKind::WhatIf, {"empirical"}}};
 
     const auto & settings = settings_by_kind.at(kind);
     if (fuzz_rand() % 50 == 0 && !changes.empty())
@@ -3500,10 +3513,12 @@ void QueryFuzzer::fuzzExpressionList(ASTExpressionList & expr_list)
                 /// optionally with APPLY/EXCEPT/REPLACE transformers attached.
                 new_child = makeFuzzedAsteriskLikeMatcher();
             }
-            else if (auto * ident = typeid_cast<ASTIdentifier *>(child.get()); ident && fuzz_rand() % 250 == 0)
+            else if (auto * ident = typeid_cast<ASTIdentifier *>(child.get()); ident && !ident->isParam() && fuzz_rand() % 250 == 0)
             {
                 /// Rewrite a column reference into one of its potential subcolumn accessors
                 /// (typeid_cast is exact, so ASTTableIdentifier / ASTQueryParameter are left alone).
+                /// Parameterized identifiers (e.g. `{db:Identifier}.t`) carry empty placeholder
+                /// name parts, so rebuilding them via the non-param ctor trips chassert(!part.empty()).
                 static const Strings subcolumn_names = {"keys", "null", "size0", "values"};
                 const String subcolumn = pickRandomly(fuzz_rand, subcolumn_names);
                 switch (fuzz_rand() % 5)
@@ -3682,9 +3697,11 @@ ASTPtr QueryFuzzer::setIdentifierAliasOrNot(ASTPtr & exp)
             ASTIdentifier * id = nullptr;
             const int next_action = fuzz_rand() % 30;
 
-            if (next_action == 0 && (id = typeid_cast<ASTIdentifier *>(exp.get())) && !id->name_parts.empty())
+            if (next_action == 0 && (id = typeid_cast<ASTIdentifier *>(exp.get())) && !id->name_parts.empty() && !id->isParam())
             {
-                /// Move alias to the end of the identifier (most of the time) or somewhere else
+                /// Move alias to the end of the identifier (most of the time) or somewhere else.
+                /// Skip parameterized identifiers: their empty placeholder parts would trip
+                /// chassert(!part.empty()) when rebuilt via the non-param ctor below.
                 Strings clone_parts = id->name_parts;
                 int name_parts_size = static_cast<int>(id->name_parts.size());
                 const int index = (fuzz_rand() % 2) == 0 ? (name_parts_size - 1) : (fuzz_rand() % name_parts_size);
@@ -4701,8 +4718,11 @@ static const std::vector<std::unordered_set<String>> & swapFuncs
         {"naiveBayesClassifier", "detectCharset", "detectLanguage", "detectLanguageUnknown", "detectLanguageMixed", "detectTonality"},
         /// Word-level NLP (language/extension + word)
         {"stem", "lemmatize", "synonyms"},
-        /// AI functions: text + optional params map
-        {"aiEmbed", "aiGenerate"},
+        /// AI text generation: text + optional params map
+        {"aiGenerate"},
+        /// aiEmbed takes (text, model[, params]); its arity matches no other AI function, so it is not
+        /// grouped for name-swapping (a swap would produce arity-mismatched calls).
+        {"aiEmbed"},
         /// AI functions: text + a per-function arg (categories / instruction / target_language) + optional params map
         {"aiClassify", "aiExtract", "aiTranslate"},
         /// Geo distance functions (lon1, lat1, lon2, lat2 → Float64)
@@ -6294,27 +6314,26 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
             case ASTAlterCommand::DROP_PARTITION:
             case ASTAlterCommand::ATTACH_PARTITION:
             case ASTAlterCommand::DROP_DETACHED_PARTITION:
-            case ASTAlterCommand::FORGET_PARTITION:
-                /// DROP PARTITION <-> FORGET PARTITION carry the same PARTITION <expr> payload.
-                /// Gated on !part: DROP/DETACH PART hold a string part name, which FORGET PARTITION
-                /// (no PART form) cannot reparse.
-                if (!alter_cmd->part
-                    && (alter_cmd->type == ASTAlterCommand::DROP_PARTITION || alter_cmd->type == ASTAlterCommand::FORGET_PARTITION)
-                    && fuzz_rand() % 20 == 0)
-                    alter_cmd->type = alter_cmd->type == ASTAlterCommand::DROP_PARTITION ? ASTAlterCommand::FORGET_PARTITION
-                                                                                         : ASTAlterCommand::DROP_PARTITION;
                 if (fuzz_rand() % 20 == 0)
                     alter_cmd->detach = !alter_cmd->detach;
-                /// Do not flip `part`: PARTITION holds an ASTPartition while PART holds a string
-                /// part name (parsed differently), so a plain toggle produces unreparseable text.
+                if (fuzz_rand() % 20 == 0)
+                    alter_cmd->part = !alter_cmd->part;
                 break;
             case ASTAlterCommand::MOVE_PARTITION:
                 if (fuzz_rand() % 20 == 0)
                     alter_cmd->detach = !alter_cmd->detach;
-                /// Swap DISK<->VOLUME only: both carry move_destination_name so it round-trips. Never
-                /// switch a TABLE move or switch to TABLE — that needs a to_table we do not synthesize.
-                if (!alter_cmd->move_destination_name.empty() && fuzz_rand() % 10 == 0)
-                    alter_cmd->move_destination_type = (fuzz_rand() % 2 == 0) ? DataDestinationType::DISK : DataDestinationType::VOLUME;
+                if (fuzz_rand() % 20 == 0)
+                    alter_cmd->part = !alter_cmd->part;
+                /// Cycle move destination type between DISK, VOLUME, TABLE
+                if (fuzz_rand() % 10 == 0)
+                {
+                    static const DataDestinationType dest_types[] = {
+                        DataDestinationType::DISK,
+                        DataDestinationType::VOLUME,
+                        DataDestinationType::TABLE,
+                    };
+                    alter_cmd->move_destination_type = dest_types[fuzz_rand() % 3];
+                }
                 break;
             case ASTAlterCommand::DROP_CONSTRAINT:
             case ASTAlterCommand::MODIFY_CONSTRAINT:

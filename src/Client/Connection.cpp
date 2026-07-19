@@ -1277,7 +1277,7 @@ protected:
         num_rows += chunk.getNumRows();
 
         auto block = getPort().getHeader().cloneWithColumns(chunk.detachColumns());
-        connection.sendData(block, table_data.table_name, false);
+        connection.sendData(block, table_data.table_name, /*scalar=*/ false);
     }
 
 private:

@@ -19,6 +19,27 @@ except (ImportError, AssertionError):
 
 from praktika.utils import Shell
 
+# `gh auth login --with-token` validates the token against api.github.com. A single
+# transient GitHub API 5xx/timeout there would otherwise hard-fail the whole job.
+# Retry only on transport-class errors; auth errors (e.g. HTTP 401 bad token) stay fatal.
+_GH_AUTH_RETRY_ERRORS = [
+    "HTTP 500",
+    "HTTP 502",
+    "HTTP 503",
+    "HTTP 504",
+    "HTTP 429",
+    "Service Unavailable",
+    "Bad Gateway",
+    "Gateway Timeout",
+    "Too Many Requests",
+    "Internal Server Error",
+    "i/o timeout",
+    "TLS handshake timeout",
+    "connection reset by peer",
+    "connection refused",
+    "EOF",
+]
+
 
 _PERMISSION_LEVELS = {
     "none": 0,
@@ -203,6 +224,8 @@ class GHAuth:
             "gh auth login --with-token",
             stdin_str=f"{access_token}\n",
             strict=True,
+            retries=4,
+            retry_errors=_GH_AUTH_RETRY_ERRORS,
         )
 
     @classmethod
