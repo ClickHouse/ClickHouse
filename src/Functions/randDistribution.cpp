@@ -394,7 +394,7 @@ private:
         auto parameter = applyVisitor(FieldVisitorConvertToNumber<ResultType>(), assert_cast<const ColumnConst &>(*col).getField());
 
         if (isNaN(parameter) || !std::isfinite(parameter))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Parameter number {} of function {} cannot be NaN of infinite", parameter_number, getName());
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Parameter number {} of function {} cannot be NaN or infinite", parameter_number, getName());
 
         return parameter;
     }
@@ -414,7 +414,7 @@ private:
         auto parameter = applyVisitor(FieldVisitorConvertToNumber<ResultType>(), col[row_num]);
 
         if (isNaN(parameter) || !std::isfinite(parameter))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Parameter number {} of function {} cannot be NaN of infinite", parameter_number, getName());
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Parameter number {} of function {} cannot be NaN or infinite", parameter_number, getName());
 
         return parameter;
     }
