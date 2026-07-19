@@ -8584,50 +8584,72 @@ std::optional<std::set<String>> MergeTreeData::getPartitionIdsPrunedByPredicate(
 
     auto columns = metadata_snapshot->getColumns().getAllPhysical();
 
-    auto predicate_clone = predicate->clone();
-    TreeRewriter tree_rewriter(query_context);
-    auto syntax_result = tree_rewriter.analyze(predicate_clone, columns);
-    auto actions_dag = ExpressionAnalyzer(predicate_clone, syntax_result, query_context).getActionsDAG(false);
-
-    /// The predicate output is the node matching the predicate expression name.
-    /// `getActionsDAG` may include input columns in the outputs list, so we need
-    /// to find the correct node by name.
-    String predicate_column_name = predicate_clone->getColumnName();
-    const auto * predicate_node = actions_dag.tryFindInOutputs(predicate_column_name);
-    if (!predicate_node)
-        return std::nullopt;
-
-    ActionsDAGWithInversionPushDown inverted_dag(predicate_node, query_context, /* boolean_context */ true);
-
-    PartitionPruner partition_pruner(
-        metadata_snapshot,
-        inverted_dag,
-        query_context,
-        false /* strict */);
-
-    if (partition_pruner.isUseless())
-        return std::nullopt;
-
-    DataPartsVector active_parts;
+    /// The predicate may reference virtual columns (e.g. `_part` or `_partition_id`).
+    /// They are available during mutation execution, so they must be known to this analysis too.
+    NameSet physical_column_names;
+    for (const auto & column : columns)
+        physical_column_names.insert(column.name);
+    for (const auto & column : metadata_snapshot->virtuals)
     {
-        auto lock = readLockParts();
-        active_parts = getDataPartsVectorForInternalUsage({DataPartState::Active}, lock);
+        if (!physical_column_names.contains(column.name))
+            columns.emplace_back(column.name, column.type);
     }
 
-    std::set<String> affected_partition_ids;
-    for (const auto & part : active_parts)
+    try
     {
-        if (part->info.getPartitionId().starts_with(MergeTreePartInfo::PATCH_PART_PREFIX))
-            continue;
+        auto predicate_clone = predicate->clone();
+        TreeRewriter tree_rewriter(query_context);
+        auto syntax_result = tree_rewriter.analyze(predicate_clone, columns);
+        auto actions_dag = ExpressionAnalyzer(predicate_clone, syntax_result, query_context).getActionsDAG(false);
 
-        if (!partition_pruner.canBePruned(*part))
-            affected_partition_ids.insert(part->info.getPartitionId());
+        /// The predicate output is the node matching the predicate expression name.
+        /// `getActionsDAG` may include input columns in the outputs list, so we need
+        /// to find the correct node by name.
+        String predicate_column_name = predicate_clone->getColumnName();
+        const auto * predicate_node = actions_dag.tryFindInOutputs(predicate_column_name);
+        if (!predicate_node)
+            return std::nullopt;
+
+        ActionsDAGWithInversionPushDown inverted_dag(predicate_node, query_context, /* boolean_context */ true);
+
+        PartitionPruner partition_pruner(
+            metadata_snapshot,
+            inverted_dag,
+            query_context,
+            false /* strict */);
+
+        if (partition_pruner.isUseless())
+            return std::nullopt;
+
+        DataPartsVector active_parts;
+        {
+            auto lock = readLockParts();
+            active_parts = getDataPartsVectorForInternalUsage({DataPartState::Active}, lock);
+        }
+
+        std::set<String> affected_partition_ids;
+        for (const auto & part : active_parts)
+        {
+            if (part->info.getPartitionId().starts_with(MergeTreePartInfo::PATCH_PART_PREFIX))
+                continue;
+
+            if (!partition_pruner.canBePruned(*part))
+                affected_partition_ids.insert(part->info.getPartitionId());
+        }
+
+        LOG_DEBUG(log, "Mutation partition pruning: {} partition(s) affected for predicate '{}'",
+            affected_partition_ids.size(), predicate->formatForErrorMessage());
+
+        return affected_partition_ids;
     }
-
-    LOG_DEBUG(log, "Mutation partition pruning: {} partition(s) affected for predicate '{}'",
-        affected_partition_ids.size(), predicate->formatForErrorMessage());
-
-    return affected_partition_ids;
+    catch (...)
+    {
+        /// Partition pruning is an optimization. The mutation analyzes the predicate later
+        /// with more context (e.g. it can resolve ALIAS columns), so a predicate that cannot
+        /// be analyzed in isolation here must not fail the mutation - just don't prune.
+        tryLogCurrentException(log, "Cannot analyze the mutation predicate for partition pruning, all partitions will be affected", LogsLevel::debug);
+        return std::nullopt;
+    }
 }
 
 std::optional<std::set<String>> MergeTreeData::getPartitionIdsAffectedByCommands(
