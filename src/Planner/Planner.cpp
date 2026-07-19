@@ -67,6 +67,7 @@
 
 #include <Analyzer/Utils.h>
 #include <Analyzer/ColumnNode.h>
+#include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/InterpolateNode.h>
@@ -1877,6 +1878,49 @@ void addReadFromQueryResultCacheStep(
     query_plan.addStep(std::move(read_from_query_result_cache_step));
 }
 
+/** On a hit of the Planner-level (subquery) query result cache, no plan is built for the subquery,
+  * so the `Context::addQueryAccessInfo` calls which plan building normally performs (see `PlannerJoinTree.cpp`)
+  * never happen and the subquery's databases, tables and columns would be missing from `system.query_log`.
+  * This visitor reconstructs that information from the analyzed query tree: it contains every resolved
+  * table and table function, and the columns read from them, including those of nested subqueries.
+  * Partitions and projections are not reconstructed: they only become known when the plan actually
+  * reads from the tables, which does not happen on a cache hit.
+  */
+class CollectAccessInfoFromQueryTreeVisitor : public ConstInDepthQueryTreeVisitor<CollectAccessInfoFromQueryTreeVisitor>
+{
+public:
+    explicit CollectAccessInfoFromQueryTreeVisitor(ContextMutablePtr query_context_)
+        : query_context(std::move(query_context_))
+    {
+    }
+
+    void visitImpl(const QueryTreeNodePtr & node)
+    {
+        if (const auto * table_node = node->as<TableNode>())
+        {
+            query_context->addQueryAccessInfo(table_node->getStorageID(), /* column_names */ {});
+        }
+        else if (const auto * table_function_node = node->as<TableFunctionNode>())
+        {
+            query_context->addQueryAccessInfo(table_function_node->getStorageID(), /* column_names */ {});
+        }
+        else if (const auto * column_node = node->as<ColumnNode>())
+        {
+            auto column_source = column_node->getColumnSourceOrNull();
+            if (!column_source)
+                return;
+
+            if (const auto * source_table_node = column_source->as<TableNode>())
+                query_context->addQueryAccessInfo(source_table_node->getStorageID(), {column_node->getColumnName()});
+            else if (const auto * source_table_function_node = column_source->as<TableFunctionNode>())
+                query_context->addQueryAccessInfo(source_table_function_node->getStorageID(), {column_node->getColumnName()});
+        }
+    }
+
+private:
+    ContextMutablePtr query_context;
+};
+
 }
 
 static PlannerContextPtr buildPlannerContext(const QueryTreeNodePtr & query_tree_node,
@@ -2184,6 +2228,15 @@ void Planner::buildPlanForQueryNode()
         auto reader = std::make_shared<QueryResultCacheReader>(query_result_cache->createReader(key));
         if (reader->hasCacheEntryForKey())
         {
+            /// The plan for the subquery is not built on a cache hit, so the access info that plan building
+            /// would record for `system.query_log` must be reconstructed from the analyzed query tree.
+            /// The guard mirrors the one plan building uses when it records the access info (see `PlannerJoinTree.cpp`).
+            if (query_context->hasQueryContext() && !select_query_options.only_analyze && !select_query_options.is_internal)
+            {
+                CollectAccessInfoFromQueryTreeVisitor collect_access_info_visitor(query_context->getQueryContext());
+                collect_access_info_visitor.visit(query_tree);
+            }
+
             addReadFromQueryResultCacheStep(query_plan, reader->getSource(), reader->getSourceTotals(), reader->getSourceExtremes());
             return;
         }
