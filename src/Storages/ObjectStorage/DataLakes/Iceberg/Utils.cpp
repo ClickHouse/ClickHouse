@@ -1,4 +1,5 @@
 
+#include <charconv>
 #include <memory>
 #include <string>
 #include <unordered_set>
@@ -8,8 +9,11 @@
 #include <Core/TypeId.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeCustom.h>
+#include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypesDecimal.h>
+#include <Common/assert_cast.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <IO/CompressionMethod.h>
 #include <Interpreters/Context_fwd.h>
@@ -33,6 +37,7 @@
 #include <Poco/UUID.h>
 #include <Poco/UUIDGenerator.h>
 #include <Common/DateLUT.h>
+#include <Common/quoteString.h>
 #include <Core/ColumnWithTypeAndName.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Disks/IStoragePolicy.h>
@@ -163,6 +168,23 @@ static bool isTemporaryMetadataFile(const String & file_name)
     return Poco::UUID{}.tryParse(substring);
 }
 
+/// Parse an all-digit version string into Int32, mapping overflow/garbage to BAD_ARGUMENTS.
+/// std::stoi throws std::out_of_range for values above INT_MAX, which would surface as an
+/// opaque STD_EXCEPTION (see issue #109612) instead of a clean BAD_ARGUMENTS.
+static Int32 parseMetadataVersion(const String & version_str, const String & file_name)
+{
+    Int32 version = 0;
+    const char * begin = version_str.data();
+    const char * end = begin + version_str.size();
+    auto [ptr, ec] = std::from_chars(begin, end, version);
+    if (ec != std::errc{} || ptr != end)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Bad metadata file name: '{}'. Version number is not a valid 32-bit integer",
+            file_name);
+    return version;
+}
+
 static MetadataFileWithInfo getMetadataFileAndVersion(const std::string & path)
 {
     String file_name = std::filesystem::path(path).filename();
@@ -206,7 +228,9 @@ static MetadataFileWithInfo getMetadataFileAndVersion(const std::string & path)
             file_name);
 
     return MetadataFileWithInfo{
-        .version = std::stoi(version_str), .path = path, .compression_method = getCompressionMethodFromMetadataFile(path)};
+        .version = parseMetadataVersion(version_str, file_name),
+        .path = path,
+        .compression_method = getCompressionMethodFromMetadataFile(path)};
 }
 
 /// Resolve metadata filename from version hint content.
@@ -244,11 +268,15 @@ static std::optional<String> resolveMetadataFilenameFromVersionHint(
     }
     if (compression_method != CompressionMethod::None)
     {
-        auto suffix = toContentEncodingName(compression_method);
-        String compressed_candidate = "v" + version_number + "." + suffix + ".metadata.json";
-        auto compressed_path = std::filesystem::path(table_path) / "metadata" / compressed_candidate;
-        if (object_storage->exists(StoredObject(compressed_path)))
-            return compressed_candidate;
+        /// Try the Iceberg spec extension first (gzip -> "gz"), then the legacy
+        /// Content-Encoding token ("gzip") that older ClickHouse versions wrote.
+        for (const auto & suffix : {toIcebergMetadataCompressionExtension(compression_method), toContentEncodingName(compression_method)})
+        {
+            String compressed_candidate = "v" + version_number + "." + suffix + ".metadata.json";
+            auto compressed_path = std::filesystem::path(table_path) / "metadata" / compressed_candidate;
+            if (object_storage->exists(StoredObject(compressed_path)))
+                return compressed_candidate;
+        }
     }
 
     /// Nothing found via direct checks.
@@ -273,7 +301,17 @@ void writeMessageToFile(
     if (compression_method != CompressionMethod::None)
     {
         auto settings = context->getSettingsRef();
-        auto compressed_buffer_metadata = wrapWriteBufferWithCompressionMethod(std::move(buffer_metadata), compression_method, static_cast<int>(settings[Setting::output_format_compression_level]));
+        /// Iceberg metadata snappy is always the Hadoop block format (`SnappyMode::Basic`),
+        /// independent of the session `snappy_mode`. The wire format is not encoded in the
+        /// `.snappy.metadata.json` suffix, so it must be deterministic for the read path (which
+        /// always decodes basic, see `getMetadataJSONObject`) to round-trip its own metadata and
+        /// stay interoperable with other Iceberg engines.
+        auto compressed_buffer_metadata = wrapWriteBufferWithCompressionMethod(
+            std::move(buffer_metadata),
+            compression_method,
+            static_cast<int>(settings[Setting::output_format_compression_level]),
+            /*zstd_window_log=*/ 0,
+            SnappyMode::Basic);
         compressed_buffer_metadata->write(data.data(), data.size());
         compressed_buffer_metadata->finalize();
     }
@@ -344,7 +382,7 @@ bool writeMetadataFileAndVersionHint(
         {
             if (std::all_of(version_hint_value.begin(), version_hint_value.end(), isdigit))
             {
-                old_version = std::stoi(version_hint_value);
+                old_version = parseMetadataVersion(version_hint_value, version_hint_value);
             }
             else
             {
@@ -484,7 +522,10 @@ Poco::JSON::Object::Ptr getMetadataJSONObject(
 
         std::unique_ptr<ReadBuffer> buf;
         if (compression_method != CompressionMethod::None)
-            buf = wrapReadBufferWithCompressionMethod(std::move(source_buf), compression_method);
+            /// Iceberg metadata snappy is always the Hadoop block format (`SnappyMode::Basic`); the
+            /// write path in `writeMessageToFile` pins the same mode. The wire format cannot be
+            /// inferred from the `.snappy.metadata.json` suffix, so both sides must agree statically.
+            buf = wrapReadBufferWithCompressionMethod(std::move(source_buf), compression_method, /*zstd_window_log_max=*/ 0, SnappyMode::Basic);
         else
             buf = std::move(source_buf);
 
@@ -616,8 +657,18 @@ Poco::Dynamic::Var getAvroType(DataTypePtr type)
         case TypeIndex::UInt64:
         case TypeIndex::Int64:
         case TypeIndex::DateTime:
-        case TypeIndex::DateTime64:
             return "long";
+        case TypeIndex::DateTime64:
+        {
+            if (getDecimalScale(*type) != 6)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported type for iceberg {}", type->getName());
+
+            Poco::JSON::Object::Ptr timestamp_type = new Poco::JSON::Object;
+            timestamp_type->set("type", "long");
+            timestamp_type->set("logicalType", "timestamp-micros");
+            timestamp_type->set("adjust-to-utc", assert_cast<const DataTypeDateTime64 &>(*type).hasExplicitTimeZone());
+            return timestamp_type;
+        }
         case TypeIndex::Float32:
             return "float";
         case TypeIndex::Float64:
@@ -1411,6 +1462,9 @@ KeyDescription getSortingKeyDescriptionFromMetadata(Poco::JSON::Object::Ptr meta
             int direction = field->getValue<String>(f_direction) == "asc" ? 1 : -1;
             auto iceberg_transform_name = field->getValue<String>(f_transform);
             auto clickhouse_transform_name = parseTransformAndArgument(iceberg_transform_name);
+            /// Quote the column name so identifiers with special characters (e.g. `@timestamp`)
+            /// produce a parseable ORDER BY clause.
+            auto quoted_column_name = backQuoteIfNeed(column_name);
             String full_argument;
             if (clickhouse_transform_name->transform_name != "identity")
             {
@@ -1419,11 +1473,11 @@ KeyDescription getSortingKeyDescriptionFromMetadata(Poco::JSON::Object::Ptr meta
                 {
                     full_argument += std::to_string(*clickhouse_transform_name->argument) +  ", ";
                 }
-                full_argument += column_name + ")";
+                full_argument += quoted_column_name + ")";
             }
             else
             {
-                full_argument = column_name;
+                full_argument = quoted_column_name;
             }
             if (direction == 1)
                 order_by_str += fmt::format("{} ASC,", full_argument);

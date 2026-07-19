@@ -41,6 +41,16 @@ struct NodeStats
 
     void copyStats(const Coordination::Stat & stat);
 
+    bool isContainer() const
+    {
+        return is_ephemeral_and_ctime.is_container;
+    }
+
+    void setContainer()
+    {
+        is_ephemeral_and_ctime.is_container = true;
+    }
+
     bool isEphemeral() const
     {
         return is_ephemeral_and_ctime.is_ephemeral;
@@ -50,6 +60,10 @@ struct NodeStats
     {
         if (isEphemeral())
             return ephemeral_or_seq_num_or_ttl.ephemeral_owner;
+
+        /// ZooKeeper-compatible sentinel for container nodes (matches CONTAINER_EPHEMERAL_OWNER in ZK)
+        if (isContainer())
+            return std::numeric_limits<int64_t>::min();
 
         return 0;
     }
@@ -117,10 +131,11 @@ private:
     /// node was created, we can use the high bits for flags
     struct
     {
-        int64_t ctime : 62;
+        int64_t ctime : 61;
+        int64_t is_container : 1;
         int64_t is_ephemeral : 1;
         int64_t is_ttl : 1;
-    } is_ephemeral_and_ctime{0, false, false};
+    } is_ephemeral_and_ctime{0, false, false, false};
 
     /// ephemeral nodes cannot have children, so a node either stores
     /// ephemeral_owner (the owning session) OR seq_num (the counter
@@ -473,6 +488,15 @@ public:
 
     std::atomic<UInt64> committed_ttl_nodes{0};
 
+    /// Paths of all container nodes (auto-deleted when last child is removed)
+    mutable std::unordered_set<
+        String,
+        StringHashForHeterogeneousLookup,
+        StringHashForHeterogeneousLookup::transparent_key_equal>
+        container_paths TSA_GUARDED_BY(storage_mutex);
+
+    std::atomic<UInt64> committed_container_nodes{0};
+
     struct UncommittedNodeRef;
 
     struct UncommittedState
@@ -596,7 +620,8 @@ public:
         const Coordination::Stat & stat,
         ACLId acl_id,
         bool update_digest,
-        std::optional<int64_t> ttl) TSA_NO_THREAD_SAFETY_ANALYSIS;
+        std::optional<int64_t> ttl,
+        bool is_container = false) TSA_NO_THREAD_SAFETY_ANALYSIS;
 
     // Remove node in the storage
     // Returns false if it failed to remove the node, true otherwise
@@ -667,6 +692,10 @@ public:
 
     std::vector<std::pair<std::string, Int32>> collectExpiredTTLPaths(int64_t now_ms, size_t batch_size) const;
 
+    /// Container nodes eligible for GC: childless after having had children, or never
+    /// populated and empty past max_never_used_interval_ms.
+    std::vector<std::pair<std::string, Int32>> collectContainerCandidates(size_t batch_size, UInt64 max_never_used_interval_ms) const;
+
     /// Used by tests.
     bool containsTTLPath(const std::string & path) const;
 
@@ -695,7 +724,7 @@ public:
         std::string_view parent_path, UncommittedNodeRef parent,
         const NodeStats & new_parent_stats, int32_t new_parent_num_children,
         std::string_view path, UncommittedNodeRef node, const Coordination::Stat & stat,
-        ACLId acl_id, std::string_view data, std::optional<int64_t> ttl = std::nullopt);
+        ACLId acl_id, std::string_view data, std::optional<int64_t> ttl = std::nullopt, bool is_container = false);
     void prepareRemoveNode(
         std::string_view parent_path, UncommittedNodeRef parent,
         const NodeStats & new_parent_stats, int32_t new_parent_num_children,
