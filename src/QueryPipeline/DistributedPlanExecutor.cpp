@@ -560,7 +560,7 @@ ExchangeLookupPtr createExchangeLookup(
         return std::make_shared<AllKindsExchangeLookup>(exchanges_, persisted_exchanges, /*streaming_exchange_lookup=*/nullptr);
     }
 
-#ifdef OS_LINUX
+#if defined(OS_LINUX) || defined(OS_DARWIN)
     auto streaming_exchange_port = context->getConfigRef().getUInt("distributed_query.streaming_exchange_port", 0);
     if (streaming_exchange_port == 0)
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
@@ -592,7 +592,7 @@ ExchangeLookupPtr createExchangeLookup(
 #else
     UNUSED(exchange_stream_sources);
     throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-        "Streaming exchanges are only supported on Linux; "
+        "Streaming exchanges are only supported on Linux and macOS; "
         "use `distributed_plan_force_exchange_kind = 'Persisted'`");
 #endif
 }
@@ -608,7 +608,8 @@ static String serializeQueryPlan(const QueryPlan & query_plan)
 static QueryPlan deserializeQueryPlan(const String & serialized_query_plan, ContextPtr context)
 {
     ReadBufferFromString in(serialized_query_plan);
-    auto plan_and_sets = QueryPlan::deserialize(in, context);
+    /// Trusted server-to-server plan fragment: decode types without the input complexity limit.
+    auto plan_and_sets = QueryPlan::deserialize(in, context, 0);
     return QueryPlan::makeSets(std::move(plan_and_sets), context);
 }
 
@@ -638,7 +639,7 @@ void doExecuteTask(const DistributedQueryTaskDescription & task_description, Obj
     LOG_TRACE(logger, "Task '{}' input exchange streams: [{}], output exchange streams: [{}]",
         task.task_id, fmt::join(input_exchange_streams, ", "), fmt::join(output_exchange_streams, ", "));
 
-#ifdef OS_LINUX
+#if defined(OS_LINUX) || defined(OS_DARWIN)
     /// Release this task's pending streaming exchange connections on the worker when it ends. A
     /// consumer that never connects (e.g. its query was cancelled) would otherwise leave them behind.
     /// Only this task's output streams are dropped, so sibling tasks of the same query are unaffected.
@@ -1060,7 +1061,7 @@ public:
     void cleanup() override
     {
         running_tasks.cancel();
-#ifdef OS_LINUX
+#if defined(OS_LINUX) || defined(OS_DARWIN)
         /// Drop any still-pending exchange connection slots that belong to this query
         /// (the peer was cancelled or never arrived). Without this they would leak
         /// FutureConnection/eventfd entries in the ExchangeConnections singleton for
