@@ -17,6 +17,9 @@
 #include <IO/Bzip2ReadBuffer.h>
 #include <IO/Bzip2WriteBuffer.h>
 #include <IO/HadoopSnappyReadBuffer.h>
+#include <IO/HadoopSnappyWriteBuffer.h>
+#include <IO/SnappyFramedReadBuffer.h>
+#include <IO/SnappyFramedWriteBuffer.h>
 
 #include "config.h"
 
@@ -143,7 +146,7 @@ std::pair<uint64_t, uint64_t> getCompressionLevelRange(const CompressionMethod &
 }
 
 static std::unique_ptr<CompressedReadBufferWrapper> createCompressedWrapper(
-    std::unique_ptr<ReadBuffer> nested, CompressionMethod method, size_t buf_size, char * existing_memory, size_t alignment, int zstd_window_log_max)
+    std::unique_ptr<ReadBuffer> nested, CompressionMethod method, size_t buf_size, char * existing_memory, size_t alignment, int zstd_window_log_max, [[maybe_unused]] SnappyMode snappy_mode)
 {
     if (method == CompressionMethod::Gzip || method == CompressionMethod::Zlib)
     {
@@ -170,24 +173,28 @@ static std::unique_ptr<CompressedReadBufferWrapper> createCompressedWrapper(
 #endif
 #if USE_SNAPPY
     if (method == CompressionMethod::Snappy)
+    {
+        if (snappy_mode == SnappyMode::Framed)
+            return std::make_unique<SnappyFramedReadBuffer>(std::move(nested), buf_size, existing_memory, alignment);
         return std::make_unique<HadoopSnappyReadBuffer>(std::move(nested), buf_size, existing_memory, alignment);
+    }
 #endif
 
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported compression method");
 }
 
 std::unique_ptr<ReadBuffer> wrapReadBufferWithCompressionMethod(
-    std::unique_ptr<ReadBuffer> nested, CompressionMethod method, int zstd_window_log_max, size_t buf_size, char * existing_memory, size_t alignment)
+    std::unique_ptr<ReadBuffer> nested, CompressionMethod method, int zstd_window_log_max, SnappyMode snappy_mode, size_t buf_size, char * existing_memory, size_t alignment)
 {
     if (method == CompressionMethod::None)
         return nested;
-    return createCompressedWrapper(std::move(nested), method, buf_size, existing_memory, alignment, zstd_window_log_max);
+    return createCompressedWrapper(std::move(nested), method, buf_size, existing_memory, alignment, zstd_window_log_max, snappy_mode);
 }
 
 
 template<typename WriteBufferT>
 std::unique_ptr<WriteBuffer> createWriteCompressedWrapper(
-    WriteBufferT && nested, CompressionMethod method, int level, int zstd_window_log, size_t buf_size, char * existing_memory, size_t alignment, bool compress_empty)
+    WriteBufferT && nested, CompressionMethod method, int level, int zstd_window_log, [[maybe_unused]] SnappyMode snappy_mode, size_t buf_size, char * existing_memory, size_t alignment, bool compress_empty)
 {
     if (method == DB::CompressionMethod::Gzip || method == CompressionMethod::Zlib)
     {
@@ -220,7 +227,11 @@ std::unique_ptr<WriteBuffer> createWriteCompressedWrapper(
 #endif
 #if USE_SNAPPY
     if (method == CompressionMethod::Snappy)
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported compression method");
+    {
+        if (snappy_mode == SnappyMode::Framed)
+            return std::make_unique<SnappyFramedWriteBuffer>(std::forward<WriteBufferT>(nested), buf_size, existing_memory, alignment, compress_empty);
+        return std::make_unique<HadoopSnappyWriteBuffer>(std::forward<WriteBufferT>(nested), buf_size, existing_memory, alignment, compress_empty);
+    }
 #endif
 
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported compression method");
@@ -232,6 +243,7 @@ std::unique_ptr<WriteBuffer> wrapWriteBufferWithCompressionMethod(
     CompressionMethod method,
     int level,
     int zstd_window_log,
+    SnappyMode snappy_mode,
     size_t buf_size,
     char * existing_memory,
     size_t alignment,
@@ -239,7 +251,7 @@ std::unique_ptr<WriteBuffer> wrapWriteBufferWithCompressionMethod(
 {
     if (method == CompressionMethod::None)
         return nested;
-    return createWriteCompressedWrapper(nested, method, level, zstd_window_log, buf_size, existing_memory, alignment, compress_empty);
+    return createWriteCompressedWrapper(nested, method, level, zstd_window_log, snappy_mode, buf_size, existing_memory, alignment, compress_empty);
 }
 
 
@@ -248,13 +260,14 @@ std::unique_ptr<WriteBuffer> wrapWriteBufferWithCompressionMethod(
     CompressionMethod method,
     int level,
     int zstd_window_log,
+    SnappyMode snappy_mode,
     size_t buf_size,
     char * existing_memory,
     size_t alignment,
     bool compress_empty)
 {
     chassert(method != CompressionMethod::None);
-    return createWriteCompressedWrapper(nested, method, level, zstd_window_log, buf_size, existing_memory, alignment, compress_empty);
+    return createWriteCompressedWrapper(nested, method, level, zstd_window_log, snappy_mode, buf_size, existing_memory, alignment, compress_empty);
 }
 
 }
