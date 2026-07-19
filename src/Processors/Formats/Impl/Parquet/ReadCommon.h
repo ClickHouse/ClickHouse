@@ -205,15 +205,21 @@ private:
 /// batch flushed, overshooting the watermark. A live reservation keeps every decoded dictionary and
 /// value set visible to all threads for as long as it is alive, so their combined footprint - across
 /// several dictionary-filtered columns in one row group and across several row groups on different
-/// worker threads - stays within `input_format_parquet_memory_high_watermark`. A reservation is taken
-/// before the memory is allocated, so real memory never exceeds it; if it would push the total past the
-/// watermark the allocation is not made and the row group is scanned in full (fail-open, never a wrong
-/// result). A default-constructed reservation (or watermark 0) is unbounded and charges nothing.
+/// worker threads - stays within the pruning stage's share of `input_format_parquet_memory_high_watermark`.
+/// A reservation is taken before the memory is allocated, so real memory never exceeds it; if it would push
+/// the total past the watermark the allocation is not made and the row group is scanned in full (fail-open,
+/// never a wrong result). A default-constructed reservation (or watermark 0) is unbounded and charges
+/// nothing. The `watermark` is the same per-stage / per-reader budget the scheduler uses
+/// (`SharedResourcesExt::getLimitsPerReader(..., stage.memory_target_fraction)`), not the full query-global
+/// setting, so a single stage - or one of several files read in parallel - cannot reserve the whole limit
+/// (see `ReadManager::pruningMemoryReservation`).
 struct PruningMemoryReservation
 {
     /// The `BloomFilterBlocksOrDictionary` stage's live memory counter (nullptr == unbounded).
     std::atomic<size_t> * stage_memory = nullptr;
-    /// `input_format_parquet_memory_high_watermark` (0 == unbounded).
+    /// The pruning stage's per-reader memory budget: the query-global
+    /// `input_format_parquet_memory_high_watermark` scaled by the stage's `memory_target_fraction` and split
+    /// across `num_streams` (0 == unbounded).
     size_t watermark = 0;
     /// This batch's pruning memory charged to its `MemoryUsageDiff` but not yet flushed to `stage_memory`
     /// (e.g. bloom-filter prefetches of the row group being pruned on this thread), so the reservation

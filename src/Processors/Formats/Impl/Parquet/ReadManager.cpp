@@ -813,11 +813,23 @@ void ReadManager::runBatchOfTasks(const std::vector<Task> & tasks) noexcept
 
 PruningMemoryReservation ReadManager::pruningMemoryReservation(const MemoryUsageDiff & diff)
 {
-    size_t watermark = reader.options.format.parquet.memory_high_watermark;
-    if (watermark == 0)
+    if (reader.options.format.parquet.memory_high_watermark == 0)
         return {}; /// Unbounded.
 
     size_t idx = size_t(ReadStage::BloomFilterBlocksOrDictionary);
+    /// Budget the reservation with the same per-stage / per-reader limit the scheduler enforces in
+    /// `scheduleTasksIfNeeded` (`getLimitsPerReader(..., stage.memory_target_fraction)`): the query-global
+    /// `input_format_parquet_memory_high_watermark` scaled by this stage's fraction and split across the
+    /// `num_streams` files read in parallel. Reserving against the full watermark instead would let a single
+    /// `BloomFilterBlocksOrDictionary` stage - and every concurrently-read file, since `stage_memory` is
+    /// per-reader - each reserve the entire watermark, breaking its documented "total across those files"
+    /// contract and overshooting the cap before scheduler throttling has a chance to help.
+    size_t watermark = SharedResourcesExt::getLimitsPerReader(
+        *parser_shared_resources, stages[idx].memory_target_fraction).memory_high_watermark;
+    /// Never let a tiny per-reader budget round down to 0, which `PruningMemoryReservation` reads as
+    /// "unbounded"; a near-zero budget must instead mean "reserve nothing", i.e. skip pruning (full scan).
+    watermark = std::max(watermark, size_t(1));
+
     /// Reserve against the live stage counter (what previous batches flushed, plus the decoded
     /// dictionaries and value sets other row groups are holding right now), accounting for this batch's
     /// own not-yet-flushed pruning memory (e.g. bloom-filter prefetches charged in this batch) via
