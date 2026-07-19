@@ -25,4 +25,9 @@ SET param_role_target = 'role_param_04612_renamed_twice';
 ALTER ROLE role_param_04612_renamed RENAME TO {role_target:Identifier};
 SHOW CREATE ROLE role_param_04612_renamed_twice;
 
+-- An unset parameter must be an error and must not create or rename anything
+CREATE ROLE {role_unset:Identifier}; -- { serverError UNKNOWN_QUERY_PARAMETER }
+ALTER ROLE role_param_04612_renamed_twice RENAME TO {role_unset:Identifier}; -- { serverError UNKNOWN_QUERY_PARAMETER }
+SHOW CREATE ROLE role_param_04612_renamed_twice;
+
 DROP ROLE role_param_04612_renamed_twice, role_param_04612_a, role_param_04612_b;
