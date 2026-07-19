@@ -121,6 +121,30 @@ static size_t computePaddedDim(size_t dim)
     return (dim + ALIGN - 1) / ALIGN * ALIGN;
 }
 
+template <typename DatapointIndex>
+static size_t estimateTreeAHSearcherMemoryBytes(
+    const std::vector<std::vector<DatapointIndex>> & datapoints_by_token,
+    size_t hashed_dim)
+{
+    size_t total = sizeof(datapoints_by_token)
+        + datapoints_by_token.capacity() * sizeof(std::vector<DatapointIndex>);
+
+    for (const auto & token : datapoints_by_token)
+    {
+        total += token.capacity() * sizeof(DatapointIndex);
+
+        /// CreatePackedDataset pads each leaf to 32 datapoints before packing two
+        /// four-bit hashes into each byte. Empty leaves allocate no packed data.
+        if (!token.empty())
+        {
+            const size_t padded_token_size = (token.size() + 31) & ~size_t{31};
+            total += hashed_dim * (padded_token_size / 2);
+        }
+    }
+
+    return total;
+}
+
 static size_t getAutoScannNumLeaves(size_t num_vectors, const ScannIndexParams & params)
 {
     return params.num_leaves != 0
@@ -291,15 +315,17 @@ size_t MergeTreeIndexGranuleVectorSimilarityScann::memoryUsageBytes() const
         total += hashed_data.size();
     }
 
-    /// SOAR secondary codes (moved into the searcher's soar_hashed_dataset after restore; the
-    /// member still reflects the on-disk size before that, but the searcher exposes no accessor,
-    /// so account for the member only — it is the only copy we hold outside ScaNN).
+    /// Before restore these members hold the serialized artifacts. During restore, ScaNN repacks
+    /// the AH codes into leaf searchers and takes a copy of the token lists; that memory is
+    /// tracked separately.
     total += soar_hashed_data.size();
 
     total += serialized_partitioner_proto.size();
     total += serialized_codebook_proto.size();
     for (const auto & token : datapoints_by_token)
         total += token.size() * sizeof(uint32_t);
+
+    total += searcher_owned_memory_bytes;
 
     return total;
 }
@@ -722,6 +748,17 @@ void MergeTreeIndexGranuleVectorSimilarityScann::buildIndex()
         vectors.shrink_to_fit();
     }
 
+    searcher_owned_memory_bytes = estimateTreeAHSearcherMemoryBytes(datapoints_by_token, hashed_dim);
+    if (params.precision == "bf16")
+    {
+        searcher_owned_memory_bytes += bf16_data.size() * sizeof(int16_t);
+    }
+    else if (params.precision == "i8")
+    {
+        searcher_owned_memory_bytes += int8_data.size() * sizeof(int8_t)
+            + (int8_multipliers.size() + int8_norms.size()) * sizeof(float);
+    }
+
     const size_t hashed_rows_extracted = (opts.hashed_dataset && hashed_dim > 0) ? opts.hashed_dataset->size() : 0;
     LOG_DEBUG(log, "Extracted ScaNN artifacts: partitioner={} bytes, codebook={} bytes, "
         "hashed_dataset={}×{} bytes, {} IVF tokens",
@@ -751,6 +788,7 @@ void MergeTreeIndexGranuleVectorSimilarityScann::buildIndexFromSerialized()
     }
 
     research_scann::SingleMachineFactoryOptions opts;
+    size_t restored_searcher_owned_memory_bytes = 0;
 
     /// Build the per-leaf searchers in parallel during restore. With the precomputed
     /// hashed_dataset present this only repacks the codes into the leaf LUT16 layout (no
@@ -813,6 +851,8 @@ void MergeTreeIndexGranuleVectorSimilarityScann::buildIndexFromSerialized()
         dbt->reserve(datapoints_by_token.size());
         for (const auto & token : datapoints_by_token)
             dbt->emplace_back(token.begin(), token.end());
+
+        restored_searcher_owned_memory_bytes += estimateTreeAHSearcherMemoryBytes(*dbt, hashed_dim);
         opts.datapoints_by_token = std::move(dbt);
     }
 
@@ -859,6 +899,8 @@ void MergeTreeIndexGranuleVectorSimilarityScann::buildIndexFromSerialized()
     }
     else if (params.precision == "i8")
     {
+        restored_searcher_owned_memory_bytes +=
+            (int8_multipliers.capacity() + int8_norms.capacity()) * sizeof(float);
         auto fp = std::make_shared<research_scann::PreQuantizedFixedPoint>();
         fp->fixed_point_dataset = std::make_shared<research_scann::DenseDataset<int8_t>>(
             std::move(int8_data), num_vectors);
@@ -883,6 +925,7 @@ void MergeTreeIndexGranuleVectorSimilarityScann::buildIndexFromSerialized()
 
         searcher = std::make_unique<ScannSearcherWrapper>();
         searcher->inner = std::move(status_or).value();
+        searcher_owned_memory_bytes = restored_searcher_owned_memory_bytes;
     }
     catch (const DB::Exception &)
     {

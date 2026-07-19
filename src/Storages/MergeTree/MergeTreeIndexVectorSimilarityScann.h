@@ -58,6 +58,8 @@ public:
     size_t num_vectors = 0;
     size_t padded_dim = 0;            /// ceil(params.dimensions / 8) * 8
     std::unique_ptr<ScannSearcherWrapper> searcher; /// non-null when index is built
+    /// Data owned by ScaNN but not exposed through its searcher API.
+    size_t searcher_owned_memory_bytes = 0;
 
     /// Exact-reordering vectors at the configured params.precision. Exactly one of these holds
     /// the persisted reorder data (the other(s) stay empty); for "f32" the float `vectors` above
