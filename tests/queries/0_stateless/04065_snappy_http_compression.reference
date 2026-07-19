@@ -1,0 +1,7 @@
+< Content-Encoding: snappy
+OK: snappy framing stream identifier found
+OK: empty snappy response is zero bytes
+OK: empty snappy response has no Content-Encoding header
+99
+OK: malformed snappy request rejected
+OK: oversized snappy chunk header rejected

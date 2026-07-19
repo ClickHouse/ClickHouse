@@ -50,6 +50,22 @@ function normalizeTaskName(name) {
 /**
  * Fetch a URL and return the response body
  */
+// Transparently decompress object-level compression (not HTTP transfer-encoding): CI stores text
+// artifacts above a size threshold as zstd (see ci/praktika/s3.py). Detected by magic bytes, so it
+// works whether the object is served plain, as `.zst`, or gzip.
+function maybeDecompress(buf) {
+  if (buf.length >= 4 && buf[0] === 0x28 && buf[1] === 0xb5 && buf[2] === 0x2f && buf[3] === 0xfd) {
+    if (typeof zlib.zstdDecompressSync === 'function') return zlib.zstdDecompressSync(buf);
+    const { execFileSync } = require('child_process');
+    // Bound the child: a wedged zstd would otherwise block the whole helper indefinitely.
+    return execFileSync('zstd', ['-dcq'], { input: buf, maxBuffer: 2 * 1024 * 1024 * 1024, timeout: 120000 });
+  }
+  if (buf.length >= 2 && buf[0] === 0x1f && buf[1] === 0x8b) {
+    return zlib.gunzipSync(buf);
+  }
+  return buf;
+}
+
 function fetchUrl(urlString, credentials = null) {
   return new Promise((resolve, reject) => {
     const parsedUrl = new URL(urlString);
@@ -69,6 +85,13 @@ function fetchUrl(urlString, credentials = null) {
       if (res.statusCode === 301 || res.statusCode === 302) {
         // Follow redirect
         return fetchUrl(res.headers.location, credentials).then(resolve).catch(reject);
+      }
+
+      // A missing/expired plain artifact may exist only as a zstd-compressed sibling: CI
+      // compresses text artifacts over a size threshold (see ci/praktika/s3.py).
+      if ((res.statusCode === 403 || res.statusCode === 404) && !urlString.endsWith('.zst')) {
+        res.resume();
+        return fetchUrl(urlString + '.zst', credentials).then(resolve).catch(reject);
       }
 
       if (res.statusCode === 403) {
@@ -93,8 +116,14 @@ function fetchUrl(urlString, credentials = null) {
       const chunks = [];
       stream.on('data', chunk => chunks.push(chunk));
       stream.on('end', () => {
-        const body = Buffer.concat(chunks).toString('utf8');
-        resolve(body);
+        // maybeDecompress may throw (missing zstd binary, corrupt archive); a throw from this
+        // async handler would escape the Promise as an uncaught exception, so surface it as a
+        // normal rejection instead.
+        try {
+          resolve(maybeDecompress(Buffer.concat(chunks)).toString('utf8'));
+        } catch (err) {
+          reject(err);
+        }
       });
       stream.on('error', reject);
     });
