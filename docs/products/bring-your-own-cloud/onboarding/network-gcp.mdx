@@ -29,8 +29,7 @@ The example steps are for a simple scenario, for advanced scenarios such as peer
 </Note>
 
 <Steps>
-<Step>
-### Create a peering connection {#step-1-create-a-peering-connection}
+<Step title="Create a peering connection" id="step-1-create-a-peering-connection">
 
 In this example, we are setting up peering between the BYOC VPC network and another existing VPC network.
 
@@ -51,8 +50,7 @@ After both connections are created, the status of the 2 connections should becom
 
 The ClickHouse service should now be accessible from the peered VPC.
 </Step>
-<Step>
-### Access ClickHouse service via peering connection {#step-2-access-ch-service-via-peering}
+<Step title="Access ClickHouse service via peering connection" id="step-2-access-ch-service-via-peering">
 
 To access ClickHouse privately, a private load balancer and endpoint are provisioned for secure connectivity from the user's peered VPC. The private endpoint follows the public endpoint format with a `-private` suffix. For example:
 - **Public endpoint**: `h5ju65kv87.mhp0y4dmph.us-east1.gcp.byoc.clickhouse.cloud`
@@ -65,15 +63,13 @@ To access ClickHouse privately, a private load balancer and endpoint are provisi
 GCP PSC (Private Service Connect) provides secure, private connectivity to your ClickHouse BYOC services without requiring VPC peering or internet gateways.
 
 <Steps>
-<Step>
-### Request PSC service setup {#step-1-request-psc-setup}
+<Step title="Request PSC service setup" id="step-1-request-psc-setup">
 
 Contact [ClickHouse Support](https://clickhouse.com/cloud/bring-your-own-cloud) to request PSC service setup for your BYOC deployment. No specific information is required at this stage—simply indicate that you want to set up PSC connectivity.
 
 ClickHouse Support will enable the necessary infrastructure components, including **the private load balancer** and **PSC Service**.
 </Step>
-<Step>
-### Obtain GCP PSC service name and DNS name {#step-2-obtain-gcp-service-attachment-and-dns-name-for-private-service-connect}
+<Step title="Obtain GCP PSC service name and DNS name" id="step-2-obtain-gcp-service-attachment-and-dns-name-for-private-service-connect">
 
 ClickHouse Support will provide you with the PSC Service name. You can also obtain it in the ClickHouse Cloud console, under "Organization" -> "Infrastructure", click into the infra name to see the details.
 
@@ -85,8 +81,7 @@ You can also find the PSC service name in the GCP Private Service Connect consol
 <Image img="/images/cloud/reference/byoc-privatelink-gcp-3.webp" size="lg" alt="BYOC PSC Endpoint" border />
 <Image img="/images/cloud/reference/byoc-privatelink-gcp-4.webp" size="lg" alt="BYOC PSC Endpoint" border />
 </Step>
-<Step>
-### Create a PSC endpoint in your network {#step-3-create-endpoint}
+<Step title="Create a PSC endpoint in your network" id="step-3-create-endpoint">
 
 After ClickHouse Support has enabled PSC service on their side, you need to create a PSC endpoint in your client application network to connect to the ClickHouse PSC service.
 
@@ -106,8 +101,7 @@ After ClickHouse Support has enabled PSC service on their side, you need to crea
 
 <Image img="/images/cloud/reference/byoc-privatelink-gcp-6.webp" size="lg" alt="BYOC PSC endpoint detail" border />
 </Step>
-<Step>
-### Set private DNS name for endpoint {#step-4-set-private-dns-name-for-endpoint}
+<Step title="Set private DNS name for endpoint" id="step-4-set-private-dns-name-for-endpoint">
 
 <Note>
 There are various ways to configure DNS. Please set up DNS according to your specific use case.
@@ -115,8 +109,7 @@ There are various ways to configure DNS. Please set up DNS according to your spe
 
 You need to point all subdomains (wildcard) of the "DNS name", taken from [Obtain GCP PSC service name and DNS name](#step-2-obtain-gcp-service-attachment-and-dns-name-for-private-service-connect) step, to GCP PSC endpoint IP address. This ensures that services/components within your VPC/Network can resolve it properly.
 </Step>
-<Step>
-### Add endpoint's PSC Connection ID to service allowlist {#step-5-add-endpoint-id-allowlist}
+<Step title="Add endpoint's PSC Connection ID to service allowlist" id="step-5-add-endpoint-id-allowlist">
 
 Once your PSC endpoint is created and the status is "Accepted", you need to add the Endpoint's PSC Connection ID to the allowlist for **each ClickHouse service** you want to access via PSC.
 
@@ -125,8 +118,7 @@ Once your PSC endpoint is created and the status is "Accepted", you need to add 
 - Specify which ClickHouse services should allow access from this endpoint
 - ClickHouse Support will add the Endpoint Connection IDs to the service allowlist
 </Step>
-<Step>
-### Connect to ClickHouse via PSC {#step-6-connect-via-psc-endpoint}
+<Step title="Connect to ClickHouse via PSC" id="step-6-connect-via-psc-endpoint">
 
 After the Endpoint Connection IDs is added to the allowlist, you can connect to your ClickHouse service using the PSC endpoint.
 

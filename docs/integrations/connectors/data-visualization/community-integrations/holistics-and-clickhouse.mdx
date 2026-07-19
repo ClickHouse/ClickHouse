@@ -37,8 +37,7 @@ GRANT SELECT ON system.* TO holistics_user;
 ```
 
 <Steps>
-<Step>
-## Gather connection details {#step-1-gather-connection-details}
+<Step title="Gather connection details" id="step-1-gather-connection-details">
 
 To connect to ClickHouse with HTTP(S) you will need this information:
 
@@ -54,8 +53,7 @@ You can find these details by clicking the **Connect** button in your ClickHouse
 
 <Image size="md" img="/images/integrations/data-visualization/holistics_01.webp" alt="Location of the Connect button in the ClickHouse Cloud console" border />
 </Step>
-<Step>
-## Configure network access {#step-2-configure-network-access}
+<Step title="Configure network access" id="step-2-configure-network-access">
 
 Since Holistics is a cloud-based application, its servers must be able to reach your database. You have two options:
 
@@ -65,8 +63,7 @@ Since Holistics is a cloud-based application, its servers must be able to reach 
 
 2. **Reverse SSH Tunnel:** If your database is in a private network (VPC) and can't be exposed publicly, use a [Reverse SSH Tunnel](https://docs.holistics.io/docs/connect/connect-tunnel).
 </Step>
-<Step>
-## Add data source in Holistics {#step-3-add-data-source-in-holistics}
+<Step title="Add data source in Holistics" id="step-3-add-data-source-in-holistics">
 
 1. In Holistics, go to **Settings → Data Sources**.
 

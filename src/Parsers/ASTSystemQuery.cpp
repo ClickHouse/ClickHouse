@@ -262,6 +262,7 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
             break;
         }
         case Type::RELOAD_DICTIONARY:
+        case Type::UNLOAD_DICTIONARY:
         case Type::RELOAD_MODEL:
         case Type::RELOAD_FUNCTION:
         case Type::RESTART_DISK:
@@ -595,6 +596,7 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         case Type::CLEAR_CONNECTIONS_CACHE:
         case Type::CLEAR_MMAP_CACHE:
         case Type::CLEAR_QUERY_CONDITION_CACHE:
+        case Type::CLEAR_ENCRYPTION_HEADERS_CACHE:
         case Type::CLEAR_MARK_CACHE:
         case Type::CLEAR_PRIMARY_INDEX_CACHE:
         case Type::CLEAR_INDEX_MARK_CACHE:
@@ -608,6 +610,7 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         case Type::CLEAR_COMPILED_EXPRESSION_CACHE:
         case Type::CLEAR_S3_CLIENT_CACHE:
         case Type::CLEAR_ICEBERG_METADATA_CACHE:
+        case Type::CLEAR_PAIMON_METADATA_CACHE:
         case Type::CLEAR_PARQUET_METADATA_CACHE:
         case Type::CLEAR_POINT_IN_POLYGON_CACHE:
         case Type::CLEAR_AVRO_SCHEMA_CACHE:
@@ -622,6 +625,7 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         case Type::REPLICA_READY:   /// Obsolete
         case Type::REPLICA_UNREADY: /// Obsolete
         case Type::RELOAD_DICTIONARIES:
+        case Type::UNLOAD_DICTIONARIES:
         case Type::RELOAD_EMBEDDED_DICTIONARIES:
         case Type::RELOAD_MODELS:
         case Type::RELOAD_FUNCTIONS:

@@ -66,8 +66,8 @@ GCC 및 기타 컴파일러는 지원되지 않습니다.
 </div>
 
 <Note>
-  Rust는 ClickHouse의 선택적 의존성입니다.
-  Rust가 설치되어 있지 않으면 ClickHouse의 일부 기능은 컴파일에 포함되지 않습니다.
+Rust는 ClickHouse의 선택적 의존성입니다.
+Rust가 설치되어 있지 않으면 ClickHouse의 일부 기능은 컴파일에 포함되지 않습니다.
 </Note>
 
 먼저 공식 [Rust 문서](https://www.rust-lang.org/tools/install)의 안내에 따라 `rustup`을 설치합니다.
@@ -83,7 +83,7 @@ rustup component add rust-src
 ```
 
 <div id="build-clickhouse">
-  ## ClickHouse 빌드
+## ClickHouse 빌드
 </div>
 
 모든 빌드 아티팩트를 포함하는 별도의 디렉터리 `build`를 `ClickHouse` 내부에 생성하는 것을 권장합니다:
@@ -111,7 +111,7 @@ cmake -D CMAKE_BUILD_TYPE=Debug ..
 ```
 
 <Note>
-  `gdb`와 같은 디버거를 사용하려면 위 명령에 `-D DEBUG_O_LEVEL="0"`를 추가해 모든 컴파일러 최적화를 비활성화하십시오. 이러한 최적화는 `gdb`가 변수를 확인하거나 접근하는 데 방해가 될 수 있습니다.
+`gdb`와 같은 디버거를 사용하려면 위 명령에 `-D DEBUG_O_LEVEL="0"`를 추가해 모든 컴파일러 최적화를 비활성화하십시오. 이러한 최적화는 `gdb`가 변수를 확인하거나 접근하는 데 방해가 될 수 있습니다.
 </Note>
 
 빌드하려면 `ninja`를 실행하십시오:
@@ -133,16 +133,17 @@ ninja -j 1 clickhouse
 ```
 
 <Note>
-  `clickhouse-server`, `clickhouse-client` 및 이와 유사한 바이너리는 빌드 완료 후 `clickhouse` 실행 파일을 가리키는 `programs/` 디렉터리의 심볼릭 링크입니다.
-
-  :::tip
-  CMake는 위 명령어에 대한 단축 구문을 제공합니다.
-
-  ```sh
-  cmake -S . -B build  # 빌드 구성, 리포지토리 최상위 디렉터리에서 실행
-  cmake --build build  # 컴파일
-  ```
+`clickhouse-server`, `clickhouse-client` 및 이와 유사한 바이너리는 빌드 완료 후 `clickhouse` 실행 파일을 가리키는 `programs/` 디렉터리의 심볼릭 링크입니다.
 </Note>
+
+<Tip>
+CMake는 위 명령어에 대한 단축 구문을 제공합니다.
+
+```sh
+cmake -S . -B build  # 빌드 구성, 리포지토리 최상위 디렉터리에서 실행
+cmake --build build  # 컴파일
+```
+</Tip>
 
 <div id="running-the-clickhouse-executable">
   ## ClickHouse 실행 파일 실행하기
