@@ -37,6 +37,11 @@ public:
     ~WriteBufferReplacingControlCharacters() override;
 
 private:
+    /// An instance is constructed per value, so the buffer has to be small: the default 1 MiB
+    /// buffer would mean a large allocation for every value written, which is prohibitively
+    /// slow (especially under sanitizers) and defeats the purpose of the streaming path.
+    static constexpr size_t buffer_size = 4096;
+
     void nextImpl() override;
 
     WriteBuffer & out;

@@ -176,7 +176,8 @@ String replaceControlCharactersWithPictures(String source)
 
 
 WriteBufferReplacingControlCharacters::WriteBufferReplacingControlCharacters(WriteBuffer & out_)
-    : out(out_)
+    : BufferWithOwnMemory<WriteBuffer>(buffer_size)
+    , out(out_)
 {
 }
 
