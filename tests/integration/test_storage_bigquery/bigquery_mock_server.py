@@ -241,6 +241,19 @@ WIDE_SCHEMA = [f("i", "INTEGER", "REQUIRED")] + [
 
 WIDE_ROWS = [row(*(["1"] * (WIDE_COLUMN_COUNT + 1)))]
 
+# Two columns of the same type. If they are reordered on the BigQuery side between query analysis and
+# execution, the positional `tabledata.list` response would swap their values with no type error, so the
+# reader's pre-read schema-drift check must reject the query. Used by test_read_schema_reorder_rejected.
+REORDER_SCHEMA = [
+    f("a", "STRING"),
+    f("b", "STRING"),
+]
+
+REORDER_ROWS = [
+    row("a0", "b0"),
+    row("a1", "b1"),
+]
+
 TABLES = {}
 
 
@@ -284,6 +297,11 @@ def reset_tables():
             "schema": WIDE_SCHEMA,
             "rows": [json.loads(json.dumps(r)) for r in WIDE_ROWS],
         },
+        "test_reorder": {
+            "type": "TABLE",
+            "schema": REORDER_SCHEMA,
+            "rows": [json.loads(json.dumps(r)) for r in REORDER_ROWS],
+        },
     }
 
 
@@ -307,6 +325,13 @@ REJECT_ROW_IDS = set()
 # Used to exercise the per-page request-URL length guard in the reader (a long token pushes the follow-up
 # request over the URL length limit).
 LONG_PAGE_TOKEN = [None]
+# Maps a table name to a pair of column indices (i, j) whose schema entries are swapped starting from the
+# SECOND `tables.get` served for that table. This simulates a concurrent BigQuery-side column reorder that
+# lands after query analysis (one tables.get) but before the read's pre-read schema re-check (a second
+# tables.get), so the reader must reject the query instead of silently swapping the positionally-decoded
+# cells. SCHEMA_GET_COUNT tracks how many schema requests have been served per table.
+SWAP_SCHEMA_AFTER_FIRST_GET = {}
+SCHEMA_GET_COUNT = {}
 
 
 def google_error(code, status, message):
@@ -422,7 +447,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         )
         if not m:
             self.send_json(*google_error(404, "NOT_FOUND", f"Unexpected path {path}"))
-            return None, None
+            return None, None, None
         table_name = urllib.parse.unquote(m.group(1))
         if table_name not in TABLES:
             self.send_json(
@@ -432,8 +457,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     f"Not found: Table {PROJECT}:{DATASET}.{table_name}",
                 )
             )
-            return None, None
-        return TABLES[table_name], m.group(2)
+            return None, None, None
+        return TABLES[table_name], m.group(2), table_name
 
     def do_GET(self):
         parsed = urllib.parse.urlparse(self.path)
@@ -459,6 +484,17 @@ class Handler(http.server.BaseHTTPRequestHandler):
             FAIL_INSERTS_AFTER[0] = None
             REJECT_ROW_IDS.clear()
             LONG_PAGE_TOKEN[0] = None
+            SWAP_SCHEMA_AFTER_FIRST_GET.clear()
+            SCHEMA_GET_COUNT.clear()
+            self.send_json(200, {})
+            return
+        if parsed.path == "/__swap_schema_after_first_get__":
+            table_name = params.get("table")
+            i = params.get("i")
+            j = params.get("j")
+            if table_name and i is not None and j is not None:
+                SWAP_SCHEMA_AFTER_FIRST_GET[table_name] = (int(i), int(j))
+                SCHEMA_GET_COUNT.pop(table_name, None)
             self.send_json(200, {})
             return
         if parsed.path == "/__long_page_token__":
@@ -485,18 +521,29 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if not self.check_auth():
             return
 
-        table, suffix = self.get_table(parsed.path)
+        table, suffix, table_name = self.get_table(parsed.path)
         if table is None:
             return
 
         if suffix is None:
             STATS["schema_requests"].append({"path": parsed.path})
+            fields = table["schema"]
+            swap = SWAP_SCHEMA_AFTER_FIRST_GET.get(table_name)
+            if swap is not None:
+                # Simulate a concurrent BigQuery-side column reorder that happens after query analysis
+                # (which reads the schema once) but before the read's pre-read schema re-check (a second
+                # tables.get): serve the original order on the first get and the swapped order afterwards.
+                SCHEMA_GET_COUNT[table_name] = SCHEMA_GET_COUNT.get(table_name, 0) + 1
+                if SCHEMA_GET_COUNT[table_name] >= 2:
+                    i, j = swap
+                    fields = list(fields)
+                    fields[i], fields[j] = fields[j], fields[i]
             self.send_json(
                 200,
                 {
                     "type": table["type"],
                     "numRows": str(len(table["rows"])),
-                    "schema": {"fields": table["schema"]},
+                    "schema": {"fields": fields},
                 },
             )
             return
@@ -588,7 +635,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if not self.check_auth():
             return
 
-        table, suffix = self.get_table(parsed.path)
+        table, suffix, _ = self.get_table(parsed.path)
         if table is None:
             return
 

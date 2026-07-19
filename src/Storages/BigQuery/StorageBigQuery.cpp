@@ -447,8 +447,10 @@ Pipe StorageBigQuery::read(
 
     NameSet requested(column_names.begin(), column_names.end());
 
-    /// The response returns the selected fields in the order of the table schema,
-    /// so both the descriptors and the header follow that order.
+    /// The `tabledata.list` response returns the selected columns positionally, in the order of the
+    /// table's *current* schema (not in the order they are listed in `selectedFields`). We build the
+    /// descriptors and the header in the analyzed-snapshot order; the pre-read schema-drift check below
+    /// guarantees that this order still matches the current schema, so the positional mapping is correct.
     BigQueryFields selected;
     Block sample;
     for (const auto & field : all_fields)
@@ -475,16 +477,17 @@ Pipe StorageBigQuery::read(
 
     auto client = std::make_shared<BigQueryClient>(configuration, context, token_provider);
 
-    /// `selectedFields` is passed in the `tabledata.list` request URL, and it is the only way to pin the
-    /// read to the schema snapshot taken at analysis time: an empty `selectedFields` tells BigQuery to
-    /// return all of the table's *current* columns, and because the `tabledata.list` response is positional
-    /// and carries no column names, a concurrent schema change that keeps the column count (e.g. a dropped
-    /// column offset by an added one) would be read into the wrong columns without tripping the per-row
-    /// cell-count check. BigQuery tables can have up to 10000 columns, so for a very wide read the explicit
-    /// list can exceed the request URL / front-end length limit. There is no pinned read once the list is
-    /// dropped (a pre-execution schema re-fetch still leaves a window before, and between the pages of, the
-    /// data requests), so rather than risk a silent misread the query is rejected: the read must project a
-    /// smaller set of columns whose explicit list fits the request URL.
+    /// `selectedFields` is passed in the `tabledata.list` request URL. It pins the *set and names* of the
+    /// columns the read returns: an empty `selectedFields` would instead return all of the table's *current*
+    /// columns, and because the response is positional and carries no column names, a concurrent schema
+    /// change that keeps the column count (e.g. a dropped column offset by an added one) would be read into
+    /// the wrong columns without tripping the per-row cell-count check. It does not, however, pin the column
+    /// *order*: the response cells always follow the current-schema order, so a concurrent reorder of
+    /// same-named columns is caught separately by the pre-read schema-drift check below, not by
+    /// `selectedFields`. BigQuery tables can have up to 10000 columns, so for a very wide read the explicit
+    /// list can exceed the request URL / front-end length limit. Rather than drop the list (which would
+    /// unpin the column set) and risk a silent misread, such a read is rejected: it must project a smaller
+    /// set of columns whose explicit list fits the request URL.
     ///
     /// The limit is budgeted against the *full* encoded request URI, not the raw field list: the URI also
     /// carries the table path and the fixed `prettyPrint` / `formatOptions.useInt64Timestamp` / `maxResults`
@@ -506,6 +509,42 @@ Pipe StorageBigQuery::read(
             request_uri_length,
             page_token_length_reserve,
             BigQueryClient::max_request_uri_length);
+
+    /// Fail-close schema-drift check. `selectedFields` pins the *set and names* of the columns that come
+    /// back, but the `tabledata.list` response is positional and ordered by the table's *current* schema
+    /// (see `BigQuerySource::generate`), so a concurrent replacement of the remote table that keeps the same
+    /// column names in a different order — or changes a column's type — would be decoded into the wrong
+    /// ClickHouse columns without any error, silently swapping type-compatible values. The header and the
+    /// descriptors were built from the schema snapshot taken at analysis time, which can be arbitrarily
+    /// older than execution. Re-fetch the live schema now and verify that the requested columns still appear
+    /// with the same names, types, and relative order as that snapshot; otherwise reject the query instead
+    /// of returning silently mismapped data.
+    ///
+    /// This closes the (potentially long) window between query analysis and execution. It cannot close the
+    /// whole window: the schema and the row data are fetched by separate REST requests, so a schema change
+    /// between this check and the first data request, or between the pages of a paginated read, is still
+    /// possible. That residual window is inherent to `tabledata.list` (a positional, name-less response with
+    /// no way to pin the schema across the read) and is documented as a limitation; it is the same class of
+    /// exposure as any other external-table engine reading a remote table that is concurrently altered.
+    const auto current_fields = fetchTableSchema(configuration, context, token_provider);
+    BigQueryFields current_selected;
+    current_selected.reserve(selected.size());
+    for (const auto & field : current_fields)
+        if (requested.contains(field.name))
+            current_selected.push_back(field);
+
+    bool schema_changed = current_selected.size() != selected.size();
+    for (size_t i = 0; !schema_changed && i < selected.size(); ++i)
+        schema_changed = current_selected[i].name != selected[i].name
+            || !current_selected[i].data_type->equals(*selected[i].data_type);
+    if (schema_changed)
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA,
+            "The schema of the BigQuery table `{}.{}` changed between query analysis and execution: the "
+            "requested columns no longer match the analyzed schema (their names, types, or order differ). "
+            "The `tabledata.list` response is positional, so reading now could silently return mismatched "
+            "columns; re-run the query",
+            configuration.dataset, configuration.table);
 
     return Pipe(std::make_shared<BigQuerySource>(
         std::move(client),

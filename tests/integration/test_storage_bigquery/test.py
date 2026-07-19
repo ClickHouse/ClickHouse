@@ -429,6 +429,24 @@ def test_wide_page_token_rejected():
     assert len(mock_stats()["data_requests"]) == 1
 
 
+def test_read_schema_reorder_rejected():
+    mock_reset()
+    # `selectedFields` pins the *set* of requested columns, but the tabledata.list response is positional
+    # and ordered by the table's *current* schema, so if the BigQuery table is replaced between analysis
+    # and execution with the same column names in a different order, decoding the positional response into
+    # the analyzed order would silently swap type-compatible values. The reader re-fetches the live schema
+    # right before the read and rejects the query when the requested columns no longer line up. Here the
+    # mock serves the original order (a, b) for the analysis-time schema fetch and the swapped order (b, a)
+    # for the read's pre-read re-check; both columns are STRING, so the swap would otherwise be silent.
+    mock_ctl("/__swap_schema_after_first_get__?table=test_reorder&i=0&j=1")
+    error = node.query_and_get_error(
+        f"SELECT a, b FROM {bq('test_reorder')} ORDER BY a FORMAT TSV"
+    )
+    assert "changed between query analysis and execution" in error
+    # The read was rejected before any data request was issued.
+    assert mock_stats()["data_requests"] == []
+
+
 def test_insert_roundtrip():
     mock_reset()
     node.query(f"""
@@ -758,18 +776,20 @@ def test_named_collection_dependency():
 
 
 def test_table_function_reuses_schema_snapshot():
-    # The table function fetches the schema once during analysis and hands that snapshot (and the
-    # token provider) to the storage, so a single query does not issue a second tables.get at
-    # execution time (and does not mint a second OAuth token).
+    # The table function fetches the schema once during analysis and hands that snapshot (and the token
+    # provider) to the storage, so the structure is not re-inferred at execution time. The read adds exactly
+    # one more tables.get: a fail-close drift check that verifies the live schema still matches the analyzed
+    # snapshot before decoding the positional tabledata.list response (see test_read_schema_reorder_rejected).
+    # So a single query issues two tables.get in total (the analysis snapshot and the pre-read drift check),
+    # and no more, and it does not mint a second OAuth token.
     mock_reset()
     assert (
         node.query(f"SELECT * FROM {bq('test_paging')} ORDER BY i LIMIT 1 FORMAT TSV")
         == "0\tvalue0\n"
     )
-    assert len(mock_stats()["schema_requests"]) == 1
+    assert len(mock_stats()["schema_requests"]) == 2
 
-    # The same holds for a refreshable credential: the token is minted once and reused for both
-    # schema inference and execution.
+    # The token is minted once and reused for schema inference, the pre-read drift check, and execution.
     creds = (
         "client_id = 'test-client-id.apps.googleusercontent.com', "
         "client_secret = 'test-client-secret', "
@@ -778,7 +798,7 @@ def test_table_function_reuses_schema_snapshot():
     )
     mock_reset()
     assert node.query(f"SELECT count() FROM {bq('test_paging', creds=creds)}") == "10\n"
-    assert len(mock_stats()["schema_requests"]) == 1
+    assert len(mock_stats()["schema_requests"]) == 2
     assert len(mock_stats()["token_requests"]) == 1
 
 
