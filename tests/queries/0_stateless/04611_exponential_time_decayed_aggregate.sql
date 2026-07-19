@@ -204,3 +204,84 @@ SELECT
 FROM merged
 CROSS JOIN direct
 ORDER BY batch_count;
+
+-- Generate reproducible pseudo-random values, timestamps, row orders, and batch
+-- assignments. Both randomized input orders and all batch distributions must
+-- produce numerically equivalent results.
+WITH
+    source AS
+    (
+        SELECT
+            number,
+            toFloat64((sipHash64(number, 101) % 1000000) + 1) / 1000 AS value,
+            toFloat64(sipHash64(number, 202) % 10000000) / 1000 AS time,
+            sipHash64(number, 303) AS first_order,
+            sipHash64(number, 404) AS second_order,
+            sipHash64(number, 505) AS batch_key
+        FROM numbers(2048)
+    ),
+    first_direct AS
+    (
+        SELECT
+            exponentialTimeDecayedSum(500)(value, time) AS expected_sum,
+            exponentialTimeDecayedAvg(500)(value, time) AS expected_avg,
+            exponentialTimeDecayedCount(500)(time) AS expected_count
+        FROM
+        (
+            SELECT value, time
+            FROM source
+            ORDER BY first_order
+        )
+    ),
+    second_direct AS
+    (
+        SELECT
+            exponentialTimeDecayedSum(500)(value, time) AS reordered_sum,
+            exponentialTimeDecayedAvg(500)(value, time) AS reordered_avg,
+            exponentialTimeDecayedCount(500)(time) AS reordered_count
+        FROM
+        (
+            SELECT value, time
+            FROM source
+            ORDER BY second_order
+        )
+    ),
+    batch_states AS
+    (
+        SELECT
+            batch_count,
+            batch_key % batch_count AS batch_id,
+            exponentialTimeDecayedSumState(500)(value, time) AS sum_state,
+            exponentialTimeDecayedAvgState(500)(value, time) AS avg_state,
+            exponentialTimeDecayedCountState(500)(time) AS count_state
+        FROM source
+        CROSS JOIN
+        (
+            SELECT arrayJoin([1, 5, 31, 257, 2048]) AS batch_count
+        )
+        GROUP BY
+            batch_count,
+            batch_id
+    ),
+    merged AS
+    (
+        SELECT
+            batch_count,
+            exponentialTimeDecayedSumMerge(500)(sum_state) AS actual_sum,
+            exponentialTimeDecayedAvgMerge(500)(avg_state) AS actual_avg,
+            exponentialTimeDecayedCountMerge(500)(count_state) AS actual_count
+        FROM batch_states
+        GROUP BY batch_count
+    )
+SELECT
+    batch_count,
+    abs(reordered_sum - expected_sum) <= 1e-12 * greatest(1., abs(expected_sum)),
+    abs(reordered_avg - expected_avg) <= 1e-12 * greatest(1., abs(expected_avg)),
+    abs(reordered_count - expected_count) <= 1e-12 * greatest(1., abs(expected_count)),
+    abs(actual_sum - expected_sum) <= 1e-12 * greatest(1., abs(expected_sum)),
+    abs(actual_avg - expected_avg) <= 1e-12 * greatest(1., abs(expected_avg)),
+    abs(actual_count - expected_count) <= 1e-12 * greatest(1., abs(expected_count))
+FROM merged
+CROSS JOIN first_direct
+CROSS JOIN second_direct
+ORDER BY batch_count;
