@@ -4,6 +4,7 @@
 #include <Common/logger_useful.h>
 #include <IO/Operators.h>
 #include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadBufferFromString.h>
@@ -74,6 +75,17 @@ MergeTreeMutationEntry::MergeTreeMutationEntry(
             << "create time: " << LocalDateTime(create_time, DateLUT::serverTimezoneInstance()) << "\n";
         *out << "commands: ";
         commands->writeText(*out, /* with_pure_metadata_commands = */ false);
+        *out << "\n";
+        /// Persist the set of affected partitions so that `loadMutations` does not have to recompute it
+        /// from the current table metadata after a restart. Recomputing re-parses the `IN PARTITION`
+        /// literal through the current partition key, which can throw after a safe partition key type
+        /// change (e.g. `Enum8 -> Int8`), making an otherwise valid pending mutation block table loading.
+        *out << "partition ids: " << partition_ids.size();
+        for (const auto & partition_id : partition_ids)
+        {
+            *out << " ";
+            writeQuotedString(partition_id, *out);
+        }
         *out << "\n";
         if (tid.isNonTransactional())
         {
@@ -149,6 +161,27 @@ MergeTreeMutationEntry::MergeTreeMutationEntry(
     commands->readText(*buf, false);
     *buf >> "\n";
 
+    /// `partition ids` is an optional line written after the commands (see the writing constructor above).
+    /// Older mutation files (written before this line was introduced) do not contain it; for those we fall
+    /// back to recomputing the affected partitions from the current table metadata below. The `tid` and `csn`
+    /// lines never start with 'p', so `checkString` cannot partially consume them for old-format files.
+    bool partition_ids_loaded = false;
+    if (!buf->eof() && checkString("partition ids: ", *buf))
+    {
+        size_t num_partition_ids = 0;
+        readIntText(num_partition_ids, *buf);
+        partition_ids.reserve(num_partition_ids);
+        for (size_t i = 0; i < num_partition_ids; ++i)
+        {
+            assertChar(' ', *buf);
+            String partition_id;
+            readQuotedString(partition_id, *buf);
+            partition_ids.insert(partition_id);
+        }
+        *buf >> "\n";
+        partition_ids_loaded = true;
+    }
+
     if (buf->eof())
     {
         tid = Tx::NonTransactionalTID;
@@ -168,7 +201,8 @@ MergeTreeMutationEntry::MergeTreeMutationEntry(
 
     assertEOF(*buf);
 
-    partition_ids = storage_->getPartitionIdsAffectedByCommands(*commands, context_);
+    if (!partition_ids_loaded)
+        partition_ids = storage_->getPartitionIdsAffectedByCommands(*commands, context_);
 }
 
 MergeTreeMutationEntry::MergeTreeMutationEntry(MergeTreeMutationEntry && other) noexcept
