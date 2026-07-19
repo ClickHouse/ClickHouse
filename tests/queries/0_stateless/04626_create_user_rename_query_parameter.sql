@@ -1,3 +1,6 @@
+-- Tags: no-parallel
+-- Tag no-parallel: creates fixed-name global users
+
 -- Test for a bug found in the review of PR #110973: `ALTER USER x RENAME TO {new:Identifier}`
 -- flattened the rename target to a string at parse time, so the query parameter was never
 -- substituted and the user was silently renamed to the literal `{new:Identifier}`.
