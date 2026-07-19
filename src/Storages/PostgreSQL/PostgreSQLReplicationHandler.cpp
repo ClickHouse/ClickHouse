@@ -1400,15 +1400,41 @@ bool PostgreSQLReplicationHandler::hasAnyNestedTable() const
 }
 
 
-void PostgreSQLReplicationHandler::assertCoordinationKeeperReachable()
+void PostgreSQLReplicationHandler::coordinatedTeardownBeforeDataDrop()
 {
-    /// Lightweight, non-mutating fail-close probe for DROP DATABASE (see DatabaseMaterializedPostgreSQL::
-    /// beforeDropDatabase). Obtaining the session and issuing an `exists` both throw if Keeper is unreachable,
-    /// which aborts the drop before any nested table is removed. The actual last-replica teardown still happens
-    /// in shutdownFinal once the drop proceeds.
-    auto component_guard = Coordination::setCurrentComponent("PostgreSQLReplicationHandler::assertCoordinationKeeperReachable");
+    /// Runs (in coordinated mode) from the DROP path BEFORE the caller deletes this replica's local nested
+    /// tables, so the last-replica decision - and, for the last replica, the removal of the shared
+    /// coordination state - happens while this replica still holds the data. This closes the data-loss window
+    /// that existed when the last-replica teardown ran only in shutdownFinal, AFTER the nested tables had
+    /// already been dropped: a Keeper outage in between could then delete the last copy of the data while the
+    /// shared slot, publication and snapshot_completed marker survived, and a later recreate on the same
+    /// keeper path would resume from confirmed_flush_lsn into empty tables.
+    auto component_guard = Coordination::setCurrentComponent("PostgreSQLReplicationHandler::coordinatedTeardownBeforeDataDrop");
 
-    getContext()->getZooKeeper()->exists(coordination_keeper_path);
+    /// Make the fail-close last-replica decision first: unregisterReplicaAndCheckLast throws if Keeper is
+    /// unreachable, which aborts the drop before any nested table is removed (and, importantly, before the
+    /// consumer below is stopped, so a transient Keeper outage does not disturb an otherwise-healthy replica).
+    const bool is_last = unregisterReplicaAndCheckLast();
+
+    shutdown();
+
+    if (is_last)
+    {
+        /// Last replica: remove the shared coordination nodes (including the snapshot_completed marker) now,
+        /// before the caller drops the last local copy. The shared PostgreSQL slot/publication are cleaned up
+        /// authoritatively in shutdownFinal (a leaked slot/publication is recoverable, and with the marker
+        /// already gone a recreate correctly redoes the snapshot rather than resuming into empty tables).
+        removeCoordinationNodes();
+    }
+    else
+    {
+        /// Not the last replica: the shared state must stay. We had to remove /replicas/<name> to make the
+        /// last-replica decision race-free, so re-register it - this replica keeps counting as a live data
+        /// holder until its nested tables have actually been dropped. The authoritative removal then happens
+        /// in shutdownFinal, AFTER the caller has dropped the nested tables, so a failure while dropping them
+        /// never leaves this replica unregistered while it still holds a copy of the shared data.
+        registerReplicaInKeeper();
+    }
 }
 
 

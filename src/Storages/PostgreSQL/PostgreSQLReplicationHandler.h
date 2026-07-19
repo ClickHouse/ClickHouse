@@ -75,10 +75,22 @@ public:
     /// Clean up replication: remove publication and replication slots.
     void shutdownFinal();
 
-    /// Fail-close probe for DROP DATABASE: throw if Keeper is unreachable. Called before the drop removes any
-    /// local nested table, so a drop during a Keeper outage aborts before deleting the last copy of the data
-    /// while the shared slot/publication/marker survive. Does not mutate any state.
-    void assertCoordinationKeeperReachable();
+    /// True when this handler runs in coordinated mode (materialized_postgresql_keeper_path is set).
+    bool isCoordinated() const { return coordination_enabled; }
+
+    /// Coordinated teardown that must run BEFORE the caller deletes this replica's local nested tables (from
+    /// DatabaseMaterializedPostgreSQL::beforeDropDatabase for the database engine, and from
+    /// StorageMaterializedPostgreSQL::dropInnerTableIfAny for the single-table engine). It makes the fail-close
+    /// last-replica decision while this replica still owns the data:
+    ///   * if this is the last replica, it removes the shared coordination nodes (including the
+    ///     snapshot_completed marker) now, so that even if the subsequent nested-table drop (or the process)
+    ///     fails, a later recreate on the same keeper path redoes the initial snapshot instead of resuming
+    ///     from confirmed_flush_lsn into empty tables;
+    ///   * if this is not the last replica, it re-registers /replicas/<name> so this replica keeps counting as
+    ///     a live data holder until its nested tables have actually been dropped - the authoritative removal
+    ///     then happens in shutdownFinal, AFTER the caller has dropped the nested tables.
+    /// A Keeper error propagates (aborting the drop before any table is removed).
+    void coordinatedTeardownBeforeDataDrop();
 
     /// Add storage pointer to let handler know which tables it needs to keep in sync.
     void addStorage(const std::string & table_name, StorageMaterializedPostgreSQL * storage);

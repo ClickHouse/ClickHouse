@@ -304,6 +304,26 @@ void StorageMaterializedPostgreSQL::dropInnerTableIfAny(bool sync, ContextPtr lo
     if (is_materialized_postgresql_database)
         return;
 
+    if (replication_handler->isCoordinated())
+    {
+        /// Coordinated single-table engine: make the fail-close last-replica decision - and, if this is the
+        /// last replica, remove the shared slot/publication/marker - BEFORE dropping the local nested table,
+        /// so a Keeper outage can never delete the last copy while the shared state survives. For the non-last
+        /// case this keeps /replicas/<name> registered until the nested table has actually been dropped, so a
+        /// failure while dropping it never leaves this replica unregistered while it still holds a live copy of
+        /// the shared data (which a peer's later last-replica drop would then tear down around).
+        replication_handler->coordinatedTeardownBeforeDataDrop();
+
+        if (tryGetNested())
+            InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind::Drop, getContext(), local_context, getNestedStorageID(), sync, /* ignore_sync_setting */ true);
+
+        /// The local copy is gone: finalize the teardown authoritatively (drops this replica's registration
+        /// for the non-last case; a no-op for the last case, whose registration was already removed above).
+        replication_handler->shutdownFinal();
+        replication_handler.reset();
+        return;
+    }
+
     replication_handler->shutdownFinal();
     replication_handler.reset();
 

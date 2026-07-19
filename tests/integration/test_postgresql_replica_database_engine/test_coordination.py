@@ -177,6 +177,40 @@ def publication_exists():
     return len(pg_query("SELECT pubname FROM pg_publication")) > 0
 
 
+def marker_znode_exists(node):
+    # The snapshot_completed marker lives directly under the coordination keeper path. Query the parent so the
+    # lookup does not raise "No node" once the whole coordination path has been removed (the parent survives).
+    parent, leaf = KEEPER_PATH_RESOLVED.rsplit("/", 1)
+    coordination_path_exists = (
+        int(
+            node.query(
+                f"SELECT count() FROM system.zookeeper "
+                f"WHERE path = '{parent}' AND name = '{leaf}'"
+            )
+        )
+        > 0
+    )
+    if not coordination_path_exists:
+        return False
+    return (
+        int(
+            node.query(
+                f"SELECT count() FROM system.zookeeper "
+                f"WHERE path = '{KEEPER_PATH_RESOLVED}' AND name = 'snapshot_completed'"
+            )
+        )
+        > 0
+    )
+
+
+def wait_for_marker(node, timeout=90):
+    for _ in range(timeout):
+        if marker_znode_exists(node):
+            return
+        time.sleep(1)
+    raise AssertionError("snapshot_completed marker did not appear")
+
+
 def test_replicated_nested_tables_converge_with_single_leader(started_cluster):
     pg_manager.create_postgres_table("test_table")
     instance.query(
@@ -410,6 +444,49 @@ def test_drop_keeps_shared_state_until_last_replica(started_cluster):
     leader_manager.drop_materialized_db()
     assert not replication_slot_exists()
     assert not publication_exists()
+
+
+def test_last_replica_drop_removes_marker_and_recreate_redoes_snapshot(started_cluster):
+    # The last-replica teardown must remove the shared coordination state - in particular the
+    # snapshot_completed marker - so that recreating the coordinated database on the same keeper path redoes
+    # the initial snapshot instead of resuming from confirmed_flush_lsn into empty tables. The decision is made
+    # (and, for the last replica, the marker removed) before the nested tables are dropped, so a failure while
+    # dropping them can never leave the marker behind after the last copy is gone. Dropping a non-last replica
+    # must keep that state - it is still a live copy of the shared data.
+    pg_manager.create_postgres_table("test_table")
+    instance.query(
+        "INSERT INTO postgres_database.test_table SELECT number, number FROM numbers(100)"
+    )
+
+    create_coordinated_db("test_table")
+    check_tables_are_synchronized(instance, "test_table")
+    check_tables_are_synchronized(instance2, "test_table")
+    wait_for_marker(instance)
+
+    leader_name = wait_for_leader(instance)
+    leader_instance = instance if leader_name == "coord_instance1" else instance2
+    leader_manager = pg_manager if leader_name == "coord_instance1" else pg_manager2
+    standby_manager = pg_manager2 if leader_name == "coord_instance1" else pg_manager
+
+    # Dropping a standby (not the last replica) must keep the shared coordination state, including the marker.
+    standby_manager.drop_materialized_db()
+    assert marker_znode_exists(leader_instance)
+    assert replication_slot_exists()
+    assert publication_exists()
+
+    # Dropping the last replica removes the whole coordination path (and the marker) from Keeper.
+    leader_manager.drop_materialized_db()
+    assert not marker_znode_exists(leader_instance)
+    assert not replication_slot_exists()
+    assert not publication_exists()
+
+    # Recreate on the same keeper path: with the marker gone, the initial snapshot is redone and every row
+    # replicated before the drop is copied again (a surviving marker would instead resume into empty tables).
+    create_coordinated_db("test_table")
+    check_tables_are_synchronized(instance, "test_table")
+    check_tables_are_synchronized(instance2, "test_table")
+    assert int(instance.query("SELECT count() FROM test_database.test_table")) == 100
+    assert int(instance2.query("SELECT count() FROM test_database.test_table")) == 100
 
 
 def test_coordination_conflicts_with_user_managed_slot(started_cluster):

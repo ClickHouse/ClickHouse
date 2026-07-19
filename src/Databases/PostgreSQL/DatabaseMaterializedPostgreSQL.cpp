@@ -608,22 +608,30 @@ void DatabaseMaterializedPostgreSQL::beforeTruncateDatabase(ContextPtr local_con
 
 void DatabaseMaterializedPostgreSQL::beforeDropDatabase(ContextPtr)
 {
-    /// Fail-close before the generic DROP DATABASE path starts removing the nested tables. In coordinated mode
-    /// the nested tables are the local copy of the shared replicated data, and the last-replica teardown of the
-    /// shared slot/publication/marker is decided in Keeper (in `shutdownFinal`, called from `drop`). If Keeper
-    /// is unreachable, aborting here - before any nested table is dropped - is the only way to avoid deleting
-    /// the last copy of the data while the shared state survives (a later recreate on the same keeper path would
-    /// then resume into empty tables). Only probing Keeper here (not tearing anything down) keeps the actual
-    /// last-replica cleanup - and the resulting Keeper node cleanup ordering - unchanged in `drop`. Retry the
-    /// drop once Keeper is reachable again.
+    /// The generic DROP DATABASE path drops every nested table (in `InterpreterDropQuery::executeToDatabaseImpl`)
+    /// before it ever reaches `DatabaseMaterializedPostgreSQL::drop` / `PostgreSQLReplicationHandler::
+    /// shutdownFinal`. In coordinated mode the nested tables are this replica's local copy of the shared
+    /// replicated data, so the last-replica teardown of the shared slot/publication/marker has to be decided
+    /// here - while the nested tables still exist - not after they are gone. `coordinatedTeardownBeforeDataDrop`
+    /// makes that decision fail-close: if Keeper is unreachable it throws, aborting the drop before any nested
+    /// table is removed (retry once Keeper is reachable again); if this is the last replica it removes the
+    /// shared coordination nodes now so a Keeper outage or a failure during the subsequent nested-table drop can
+    /// never leave the shared state behind after the last copy is deleted; and if it is not the last replica it
+    /// keeps this replica registered until `drop` removes it, after the nested tables have actually been dropped.
     std::lock_guard lock(handler_mutex);
     if (isCoordinated() && replication_handler)
-        replication_handler->assertCoordinationKeeperReachable();
+        replication_handler->coordinatedTeardownBeforeDataDrop();
 }
 
 
 void DatabaseMaterializedPostgreSQL::drop(ContextPtr local_context)
 {
+    /// Reached after the generic DROP DATABASE path has already dropped the nested tables. In coordinated mode
+    /// the last-replica decision (and, for the last replica, the removal of the shared coordination nodes) has
+    /// already been made in `beforeDropDatabase`, while the nested tables still existed. `shutdownFinal` here is
+    /// the authoritative post-data teardown: it removes this replica's registration for the non-last case (now
+    /// that its nested tables are gone) and cleans up the shared PostgreSQL slot/publication for the last case;
+    /// running it after `beforeDropDatabase` is idempotent. In non-coordinated mode this is the only teardown.
     std::lock_guard lock(handler_mutex);
     if (replication_handler)
         replication_handler->shutdownFinal();
