@@ -1,7 +1,7 @@
 virtual column in predicate
-2024-02-01	2
-2024-02-01	10
+2024-02-01	2	200
+2024-02-01	2	10
 subquery in predicate
-2024-02-01	11
+2024-02-01	2	11
 replicated, virtual column in predicate
-2024-02-01	2
+2024-02-01	2	200
