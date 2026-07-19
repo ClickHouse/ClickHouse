@@ -1,4 +1,4 @@
--- `WITH CLUSTER` is only implemented for the new analyzer; reject it
+-- `WITH CLUSTER` is only implemented for the analyzer; reject it
 -- early on the legacy (`enable_analyzer = 0`) path with `BAD_ARGUMENTS`.
 
 SET enable_analyzer = 0;

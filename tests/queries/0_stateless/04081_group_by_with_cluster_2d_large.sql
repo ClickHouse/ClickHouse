@@ -3,7 +3,7 @@
 -- These tests exercise that neighborhood at its corners and verify bulk
 -- correctness on tens of thousands of rows.
 
-SET enable_analyzer = 1; -- `WITH CLUSTER` is implemented for the new analyzer only
+SET enable_analyzer = 1; -- `WITH CLUSTER` is implemented for the analyzer only
 SET allow_experimental_group_by_with_cluster = 1;
 
 SELECT '--- Cell-boundary: distance exactly d (3-4-5 triangle) ---';

@@ -1,8 +1,8 @@
 -- `GROUP BY ... WITH CLUSTER` is experimental and gated behind
 -- `allow_experimental_group_by_with_cluster`. It must be rejected by default on
--- the new-analyzer path and accepted once the setting is enabled.
+-- the analyzer path and accepted once the setting is enabled.
 
-SET enable_analyzer = 1; -- `WITH CLUSTER` is implemented for the new analyzer only
+SET enable_analyzer = 1; -- `WITH CLUSTER` is implemented for the analyzer only
 
 -- Disabled by default: rejected during analysis with SUPPORT_IS_DISABLED.
 SET allow_experimental_group_by_with_cluster = 0;

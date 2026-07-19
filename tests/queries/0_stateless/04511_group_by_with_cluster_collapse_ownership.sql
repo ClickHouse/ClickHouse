@@ -6,7 +6,7 @@
 -- by the AST fuzzer). Taking unique ownership of every state up front fixes it; the
 -- result of a full collapse must equal the ungrouped aggregate over all rows.
 
-SET enable_analyzer = 1; -- `WITH CLUSTER` is implemented for the new analyzer only
+SET enable_analyzer = 1; -- `WITH CLUSTER` is implemented for the analyzer only
 SET allow_experimental_group_by_with_cluster = 1;
 
 -- 257 numeric groups, all within the distance -> one cluster. The merged `sum` state

@@ -5,7 +5,7 @@
 -- round to the same bucket and be merged. Such inputs must be rejected, not silently
 -- misclustered.
 
-SET enable_analyzer = 1; -- `WITH CLUSTER` is implemented for the new analyzer only
+SET enable_analyzer = 1; -- `WITH CLUSTER` is implemented for the analyzer only
 SET allow_experimental_group_by_with_cluster = 1;
 
 -- 1D: `10.0 / 1e-15 = 1e16 > 2^53`, so the bucket id is imprecise -> reject.

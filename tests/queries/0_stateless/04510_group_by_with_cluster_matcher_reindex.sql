@@ -5,7 +5,7 @@
 -- `LOGICAL_ERROR` ("Failed to resolve GROUP BY ... WITH CLUSTER key names"). The
 -- cluster key must be tracked through expansion instead.
 
-SET enable_analyzer = 1; -- `WITH CLUSTER` is implemented for the new analyzer only
+SET enable_analyzer = 1; -- `WITH CLUSTER` is implemented for the analyzer only
 SET allow_experimental_group_by_with_cluster = 1;
 
 -- A matcher that matches nothing must behave exactly like omitting it.

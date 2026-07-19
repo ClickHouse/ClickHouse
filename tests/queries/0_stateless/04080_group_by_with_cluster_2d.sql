@@ -1,7 +1,7 @@
 -- Tests for 2D GROUP BY ... WITH CLUSTER <distance>
 -- Cluster key is a Tuple(numeric, numeric); points are merged by Euclidean distance.
 
-SET enable_analyzer = 1; -- `WITH CLUSTER` is implemented for the new analyzer only
+SET enable_analyzer = 1; -- `WITH CLUSTER` is implemented for the analyzer only
 SET allow_experimental_group_by_with_cluster = 1;
 
 SELECT '--- Basic 2D: two well-separated clusters ---';

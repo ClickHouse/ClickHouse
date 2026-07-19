@@ -8,7 +8,7 @@
 
 -- Aggregate query (count()): used to fail before the fix.
 
-SET enable_analyzer = 1; -- `WITH CLUSTER` is implemented for the new analyzer only
+SET enable_analyzer = 1; -- `WITH CLUSTER` is implemented for the analyzer only
 SET allow_experimental_group_by_with_cluster = 1;
 
 SELECT count() AS num_clusters

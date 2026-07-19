@@ -2,7 +2,7 @@
 -- tuple expressions like `(x, y)` open the 2D path. Verify the explicit
 -- rejection and the suggested unpacking workaround.
 
-SET enable_analyzer = 1; -- `WITH CLUSTER` is implemented for the new analyzer only
+SET enable_analyzer = 1; -- `WITH CLUSTER` is implemented for the analyzer only
 SET allow_experimental_group_by_with_cluster = 1;
 
 DROP TABLE IF EXISTS t_cluster_tuple;

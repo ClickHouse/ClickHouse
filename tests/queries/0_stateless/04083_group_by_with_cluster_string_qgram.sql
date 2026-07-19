@@ -3,7 +3,7 @@
 -- Each test produces a result identical to what a naive O(N^2) sweep would
 -- give; the test contract is correctness, not the path taken.
 
-SET enable_analyzer = 1; -- `WITH CLUSTER` is implemented for the new analyzer only
+SET enable_analyzer = 1; -- `WITH CLUSTER` is implemented for the analyzer only
 SET allow_experimental_group_by_with_cluster = 1;
 
 SELECT '--- 12k random hex strings, d=1 ---';

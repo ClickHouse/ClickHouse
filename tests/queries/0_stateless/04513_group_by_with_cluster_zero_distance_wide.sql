@@ -5,7 +5,7 @@
 -- rejected with `BAD_ARGUMENTS`.
 -- See https://github.com/ClickHouse/ClickHouse/pull/101878
 
-SET enable_analyzer = 1; -- `WITH CLUSTER` is implemented for the new analyzer only
+SET enable_analyzer = 1; -- `WITH CLUSTER` is implemented for the analyzer only
 SET allow_experimental_group_by_with_cluster = 1;
 
 -- 1D `UInt64`: values span 2^60 (>> 2^53). Exact match keeps them as two separate groups.

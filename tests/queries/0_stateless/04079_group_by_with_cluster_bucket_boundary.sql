@@ -4,7 +4,7 @@
 
 -- Values exactly at bucket boundary (D=10: values 9 and 10 are in buckets 0 and 1, should merge)
 
-SET enable_analyzer = 1; -- `WITH CLUSTER` is implemented for the new analyzer only
+SET enable_analyzer = 1; -- `WITH CLUSTER` is implemented for the analyzer only
 SET allow_experimental_group_by_with_cluster = 1;
 
 SELECT '--- Bucket boundary merge ---';

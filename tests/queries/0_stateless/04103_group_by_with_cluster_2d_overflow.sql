@@ -4,7 +4,7 @@
 -- points farther apart than the requested distance. The overflow-safe check
 -- (per-axis reject + `std::hypot`) keeps such points separate.
 
-SET enable_analyzer = 1; -- `WITH CLUSTER` is implemented for the new analyzer only
+SET enable_analyzer = 1; -- `WITH CLUSTER` is implemented for the analyzer only
 SET allow_experimental_group_by_with_cluster = 1;
 
 -- Far apart in different cells: the real distance 2e300 > 1e300, so the squared

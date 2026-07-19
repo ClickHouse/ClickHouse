@@ -7,7 +7,7 @@
 --   * an explicit non-throwing `max_rows_to_group_by` cap is rejected.
 -- See https://github.com/ClickHouse/ClickHouse/pull/101878
 
-SET enable_analyzer = 1; -- `WITH CLUSTER` is implemented for the new analyzer only
+SET enable_analyzer = 1; -- `WITH CLUSTER` is implemented for the analyzer only
 SET allow_experimental_group_by_with_cluster = 1;
 SET optimize_trivial_group_by_limit_query = 1;
 

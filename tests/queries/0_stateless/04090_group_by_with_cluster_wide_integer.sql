@@ -6,7 +6,7 @@
 
 -- 1D UInt64 around 2^53: three consecutive integers must merge under d=1.
 
-SET enable_analyzer = 1; -- `WITH CLUSTER` is implemented for the new analyzer only
+SET enable_analyzer = 1; -- `WITH CLUSTER` is implemented for the analyzer only
 SET allow_experimental_group_by_with_cluster = 1;
 
 SELECT count() AS num_clusters, sum(c) AS total_rows

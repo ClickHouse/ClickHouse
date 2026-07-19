@@ -8,7 +8,7 @@
 -- aggregate and must be skipped. (AST fuzzer STID 2508-320f.)
 -- See https://github.com/ClickHouse/ClickHouse/pull/101878
 
-SET enable_analyzer = 1; -- `WITH CLUSTER` is implemented for the new analyzer only
+SET enable_analyzer = 1; -- `WITH CLUSTER` is implemented for the analyzer only
 SET allow_experimental_group_by_with_cluster = 1;
 
 -- 1D: `ts` = 1 and 5 fall in one cluster (distance 10); merging them must not choke on the

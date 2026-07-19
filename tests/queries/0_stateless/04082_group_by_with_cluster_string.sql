@@ -2,7 +2,7 @@
 -- Distance is byte-level Levenshtein. d is interpreted as integer max edits.
 -- UTF-8 bytes are treated as raw bytes (no codepoint awareness).
 
-SET enable_analyzer = 1; -- `WITH CLUSTER` is implemented for the new analyzer only
+SET enable_analyzer = 1; -- `WITH CLUSTER` is implemented for the analyzer only
 SET allow_experimental_group_by_with_cluster = 1;
 
 SELECT '--- Basic: two close strings, d=1 ---';

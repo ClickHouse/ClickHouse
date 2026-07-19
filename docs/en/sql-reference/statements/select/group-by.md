@@ -327,7 +327,7 @@ For every different key value encountered, `GROUP BY` calculates a set of aggreg
 The `WITH CLUSTER` modifier is a per-element modifier that merges groups whose key values are within a specified distance. This enables session-window-style aggregation where nearby key values are treated as belonging to the same group.
 
 :::note
-`WITH CLUSTER` is experimental. To use it, enable the setting [`allow_experimental_group_by_with_cluster`](/operations/settings/settings#allow_experimental_group_by_with_cluster); otherwise the query is rejected during analysis. It is implemented only for the new analyzer (`enable_analyzer = 1`, the default).
+`WITH CLUSTER` is experimental. To use it, enable the setting [`allow_experimental_group_by_with_cluster`](/operations/settings/settings#allow_experimental_group_by_with_cluster); otherwise the query is rejected during analysis. It is implemented only for the analyzer (`enable_analyzer = 1`, the default).
 :::
 
 Unlike `ROLLUP` or `CUBE`, `WITH CLUSTER` is applied to an individual `GROUP BY` expression rather than to the entire `GROUP BY` clause:
