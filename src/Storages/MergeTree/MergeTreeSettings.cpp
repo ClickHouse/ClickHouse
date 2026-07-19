@@ -925,6 +925,35 @@ of a merge issue (for example, due to insufficient disk space) you will
 notice it later than you would with the original 300.
 
 )", 0) \
+    DECLARE(UInt64, dead_blobs_to_throw_insert, 1000000, R"(
+If the number of blobs pending removal in the dead blobs queues of the table's disks is more than the
+`dead_blobs_to_throw_insert` value, `INSERT` is interrupted with the following error:
+
+> "Too many dead blobs in queue (N) on disks of table. Blobs cleanup is processing significantly
+  slower than inserts"
+
+The dead blobs queue belongs to the disk and is shared by all tables on it (including blobs of already
+dropped tables), so size the threshold for the whole disk rather than a single table.
+
+Possible values:
+- Any positive integer.
+- 0 — disabled.
+)", 0) \
+    DECLARE(UInt64, dead_blobs_to_delay_insert, 100000, R"(
+If the number of blobs pending removal in the dead blobs queues of the table's disks exceeds the
+`dead_blobs_to_delay_insert` value, an `INSERT` is artificially slowed down (up to `max_delay_to_insert`).
+
+The dead blobs queue belongs to the disk and is shared by all tables on it (including blobs of already
+dropped tables), so size the threshold for the whole disk rather than a single table.
+
+:::tip
+It is useful when a server fails to clean up blobs quickly enough.
+:::
+
+Possible values:
+- Any positive integer.
+- 0 — disabled.
+)", 0) \
     DECLARE(UInt64, inactive_parts_to_throw_insert, 0, R"(
 If the number of inactive parts in a single partition more than the
 `inactive_parts_to_throw_insert` value, `INSERT` is interrupted with the
@@ -1919,9 +1948,10 @@ When enabled, an implicit min-max (skipping) index is added for the persistent v
 Requires `enable_block_offset_column = 1` to take effect. The index is built only during merges,
 not during inserts.
 )", 0) \
-    DECLARE(String, auto_statistics_types, "minmax, uniq", R"(
+    DECLARE(String, auto_statistics_types, "basic, uniq", R"(
 Comma-separated list of statistics types to calculate automatically on all suitable columns.
-Supported statistics types: basic, tdigest, countmin, minmax, uniq.
+Supported statistics types: basic, tdigest, countmin, uniq, uniq_v2.
+The `minmax` statistics type is deprecated: it is a subset of `basic`, which should be used instead.
 )", 0) \
     DECLARE(UInt64, packed_skip_index_max_bytes, 0, R"(
 Threshold (serialized on-disk bytes, i.e. after the substream's compression and hashing
@@ -2085,7 +2115,10 @@ Notify newest block number to SharedJoin or SharedSet. Only in ClickHouse Cloud.
 )", EXPERIMENTAL) \
     DECLARE(UInt64, shared_merge_tree_virtual_parts_discovery_batch, 1, R"(
 How many partition discoveries should be packed into batch
-)", EXPERIMENTAL) \
+)", 0) \
+    DECLARE(Bool, shared_merge_tree_virtual_parts_partition_atomic_discovery, true, R"(
+Will SMT discover virtual parts partition atomically with extra data fetch and watches setup.
+)", 0) \
     DECLARE(Bool, shared_merge_tree_enable_automatic_empty_partitions_cleanup, true, R"(
 Enabled cleanup of Keeper entries of empty partition.
 )", 0) \
