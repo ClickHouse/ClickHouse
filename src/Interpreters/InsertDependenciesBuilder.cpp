@@ -945,7 +945,7 @@ VectorWithMemoryTracking<Chain> InsertDependenciesBuilder::createChainWithDepend
     {
         auto & chain = result_chains.emplace_back(std::move(processor_list));
         chain.attachResources(std::move(resources));
-        chain.setNumThreads(init_context->getSettingsRef()[Setting::max_threads]);
+        chain.setNumThreads(getViewProcessingNumThreads());
         chain.setConcurrencyControl(init_context->getSettingsRef()[Setting::use_concurrency_control]);
     }
 
@@ -979,7 +979,7 @@ Chain InsertDependenciesBuilder::createChainWithDependencies() const
         result.addSink(std::make_shared<NullSinkToStorage>(output_headers.at(root_view)));
     }
 
-    result.setNumThreads(init_context->getSettingsRef()[Setting::max_threads]);
+    result.setNumThreads(getViewProcessingNumThreads());
     result.setConcurrencyControl(init_context->getSettingsRef()[Setting::use_concurrency_control]);
 
     result.addInsertDependenciesBuilder(shared_from_this());
@@ -1571,13 +1571,17 @@ Chain InsertDependenciesBuilder::createPostSink(StorageIDMaybeEmpty view_id) con
 
 static String getCleanQueryAst(const ASTPtr q, ContextPtr context)
 {
-    String res = q->formatWithSecretsOneLine();
-    if (auto masker = SensitiveDataMasker::getInstance())
-        masker->wipeSensitiveData(res);
+    if (!q)
+        return {};
 
-    res = res.substr(0, context->getSettingsRef()[Setting::log_queries_cut_to_length]);
+    const auto max_length = context->getSettingsRef()[Setting::log_queries_cut_to_length];
 
-    return res;
+    if (q->hasSecretParts())
+    {
+        return q->formatForLogging(max_length);
+    }
+
+    return wipeSensitiveDataAndCutToLength(q->formatWithSecretsOneLine(), max_length, true);
 }
 
 
@@ -1698,6 +1702,15 @@ QueryViewsLogElement::ViewStatus InsertDependenciesBuilder::getQueryViewStatus(s
 bool InsertDependenciesBuilder::isViewsInvolved() const
 {
     return isView(init_table_id) || !dependent_views.at(root_view).empty();
+}
+
+
+size_t InsertDependenciesBuilder::getViewProcessingNumThreads() const
+{
+    const auto & settings = init_context->getSettingsRef();
+    if (settings[Setting::parallel_view_processing] || !isViewsInvolved())
+        return static_cast<size_t>(settings[Setting::max_threads]);
+    return 1;
 }
 
 
