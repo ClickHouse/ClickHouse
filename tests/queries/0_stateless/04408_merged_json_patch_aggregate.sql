@@ -357,3 +357,25 @@ FROM (
     SELECT '{"a":{"k":{"x":1,"y":2}}}'::JSON(a Map(String, JSON)) AS patch, 1 AS version
     UNION ALL SELECT '{"a":{"k":{"y":3}}}'::JSON(a Map(String, JSON)), 2
 );
+
+-- Map typed path: dotted keys must round-trip — a key "x.y" must not be misread as two
+-- path levels "x" -> "y", which would cause BAD_GET at finalization.
+SELECT toJSONString(mergedJSONPatch(patch, version))
+FROM (SELECT '{"a":{"x.y":1}}'::JSON(a Map(String, UInt32)) AS patch, 1 AS version);
+
+-- Dotted key survives deep merge: older x.y=1 must not be lost when newer patch updates z only.
+SELECT toJSONString(mergedJSONPatch(patch, version))
+FROM (
+    SELECT '{"a":{"x.y":1,"z":2}}'::JSON(a Map(String, UInt32)) AS patch, 1 AS version
+    UNION ALL SELECT '{"a":{"z":3}}'::JSON(a Map(String, UInt32)), 2
+);
+
+-- Same case via State+Merge combinator.
+SELECT toJSONString(mergedJSONPatchMerge(state))
+FROM (
+    SELECT mergedJSONPatchState(patch, version) AS state
+    FROM (
+        SELECT '{"a":{"x.y":1,"z":2}}'::JSON(a Map(String, UInt32)) AS patch, 1 AS version
+        UNION ALL SELECT '{"a":{"z":3}}'::JSON(a Map(String, UInt32)), 2
+    )
+);

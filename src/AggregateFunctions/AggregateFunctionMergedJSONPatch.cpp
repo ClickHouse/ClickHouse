@@ -196,6 +196,33 @@ struct AggregateFunctionMergedJSONPatchData
         }
     }
 
+    /// Map keys are arbitrary strings and may contain '.' (the path separator).
+    /// To prevent a key like "x.y" from being misinterpreted as two path levels, dots inside
+    /// Map keys are replaced with \x01 (SOH — a control character that cannot appear in valid
+    /// JSON strings) when the key is appended to a dotted path during flattening.
+    /// unescapeMapKey reverses this at reconstruction time.
+    static String escapeMapKey(std::string_view key)
+    {
+        if (key.find('.') == std::string_view::npos)
+            return String(key); // fast path: no dots, nothing to escape
+        String result;
+        result.reserve(key.size());
+        for (char c : key)
+            result += (c == '.') ? '\x01' : c;
+        return result;
+    }
+
+    static String unescapeMapKey(std::string_view escaped)
+    {
+        if (escaped.find('\x01') == std::string_view::npos)
+            return String(escaped); // fast path: no escapes
+        String result;
+        result.reserve(escaped.size());
+        for (char c : escaped)
+            result += (c == '\x01') ? '.' : c;
+        return result;
+    }
+
     /// Returns true for Field types that represent a JSON object and should be recursed into
     /// during leaf collection, rather than stored as an atomic value.
     ///
@@ -312,7 +339,7 @@ struct AggregateFunctionMergedJSONPatchData
                 String child_path(path);
                 if (!child_path.empty())
                     child_path += '.';
-                child_path += child_key;
+                child_path += escapeMapKey(child_key);
                 insertPathValue(child_path, kv[1], sort_key);
             }
         }
@@ -422,7 +449,8 @@ struct AggregateFunctionMergedJSONPatchData
                 const auto & kv = elem.safeGet<Tuple>();
                 chassert(kv.size() == 2);
                 const String & child_key = kv[0].safeGet<String>();
-                String child_path = path.empty() ? child_key : path + '.' + child_key;
+                String escaped = escapeMapKey(child_key);
+                String child_path = path.empty() ? escaped : path + '.' + escaped;
                 collectLeaves(child_path, kv[1], sort_key, out);
             }
         }
@@ -662,9 +690,9 @@ struct AggregateFunctionMergedJSONPatchData
         DataTypePtr inner_value_type = removeLowCardinality(removeNullable(value_type));
         const auto * nested_map_type = typeid_cast<const DataTypeMap *>(inner_value_type.get());
 
-        /// Collect distinct direct child keys preserving insertion order.
+        /// Collect distinct direct child keys (escaped) preserving insertion order.
         /// Uses owned Strings (not string_views) to avoid dangling references after move.
-        std::vector<String> seen_keys; // STYLE_CHECK_ALLOW_STD_CONTAINERS
+        std::vector<String> seen_escaped_keys; // STYLE_CHECK_ALLOW_STD_CONTAINERS
         std::unordered_set<String> seen_set; // STYLE_CHECK_ALLOW_STD_CONTAINERS
         for (const auto & entry : entries)
         {
@@ -672,20 +700,21 @@ struct AggregateFunctionMergedJSONPatchData
             if (!isDescendantPath(ancestor_path, p))
                 continue;
             std::string_view rel = p.substr(ancestor_path.size() + 1);
-            String direct_key(rel.substr(0, rel.find('.')));
-            if (seen_set.insert(direct_key).second)
-                seen_keys.push_back(std::move(direct_key));
+            String escaped_key(rel.substr(0, rel.find('.')));
+            if (seen_set.insert(escaped_key).second)
+                seen_escaped_keys.push_back(std::move(escaped_key));
         }
 
         Map result;
-        result.reserve(seen_keys.size());
-        for (const String & key : seen_keys)
+        result.reserve(seen_escaped_keys.size());
+        for (const String & escaped_key : seen_escaped_keys)
         {
-            String child_prefix = String(ancestor_path) + '.' + key;
+            String child_prefix = String(ancestor_path) + '.' + escaped_key;
             Field child_value = nested_map_type
                 ? rebuildNestedMap(child_prefix, nested_map_type->getValueType())
                 : rebuildNestedObject(child_prefix);
-            result.push_back(Tuple{Field(key), std::move(child_value)});
+            /// Unescape \x01 back to '.' to recover the original Map key.
+            result.push_back(Tuple{Field(unescapeMapKey(escaped_key)), std::move(child_value)});
         }
         return result;
     }
