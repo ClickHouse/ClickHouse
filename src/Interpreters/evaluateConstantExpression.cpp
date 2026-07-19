@@ -15,6 +15,7 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <Formats/FormatFactory.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/castColumn.h>
@@ -94,7 +95,7 @@ static std::optional<EvaluateConstantExpressionResult> evaluateConstantExpressio
         ast->setAlias("constant_expression");
     }
 
-    ReplaceQueryParameterVisitor param_visitor(context->getQueryParameters());
+    ReplaceQueryParameterVisitor param_visitor(context->getQueryParameters(), getFormatSettings(context));
     param_visitor.visit(ast);
 
     String result_name;
