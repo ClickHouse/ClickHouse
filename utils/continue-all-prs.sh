@@ -52,6 +52,8 @@ set -euo pipefail
 #                         existing $CCACHE_DIR, else ~/.cache/ccache). A warm
 #                         shared cache keeps post-merge rebuilds fast.
 #   --ccache-size SIZE    ccache max size via CCACHE_MAXSIZE (default: 200G).
+#   --effort LEVEL        Reasoning effort for each worker `claude` (--effort);
+#                         default: medium.
 #   --max-continue N      Max `claude` turns per PR. The worker runs once and is
 #                         then resumed (same session) until it signals it is done
 #                         or this cap is hit (default: 4). The worker is told not
@@ -103,6 +105,7 @@ COLOR_WHEN="auto"
 DRY_RUN=0
 CCACHE_DIR_OPT=""      # shared ccache dir for all workers (default: existing $CCACHE_DIR, else ~/.cache/ccache)
 CCACHE_SIZE="200G"     # ccache max size, applied via CCACHE_MAXSIZE env (not persisted to ccache.conf)
+EFFORT="medium"        # reasoning effort passed to each worker `claude` (--effort)
 
 # PR selection modes (combinable). If none are given, all are enabled.
 MODE_MINE=0       # PRs I authored
@@ -125,6 +128,7 @@ while [[ $# -gt 0 ]]; do
         --max-continue)   MAX_CONTINUE="$2"; shift 2 ;;
         --ccache-dir)     CCACHE_DIR_OPT="$2"; shift 2 ;;
         --ccache-size)    CCACHE_SIZE="$2"; shift 2 ;;
+        --effort)         EFFORT="$2"; shift 2 ;;
         --once)           ONCE=1; shift ;;
         --skip-submodules) SKIP_SUBMODULES=1; shift ;;
         --color)          COLOR_WHEN="$2"; shift 2 ;;
@@ -455,10 +459,12 @@ run_continue_pr()
         ec=0
         if (( iter == 1 )); then
             ( cd "$wt" && timeout "$remaining" claude --dangerously-skip-permissions --print \
+                --effort "$EFFORT" \
                 --session-id "$sid" --append-system-prompt "$STEER_PROMPT $build_steer" \
                 "/continue-pr-auto $url"</dev/null ) > "$log.last" 2>&1 || ec=$?
         else
             ( cd "$wt" && timeout "$remaining" claude --dangerously-skip-permissions --print \
+                --effort "$EFFORT" \
                 --resume "$sid" --append-system-prompt "$STEER_PROMPT $build_steer" \
                 "$NUDGE_PROMPT"</dev/null ) > "$log.last" 2>&1 || ec=$?
         fi
@@ -668,6 +674,7 @@ banner "Worktree base:   ${WORKTREE_BASE}-{0..$((WORKERS - 1))}"
 banner "Selecting:       $MODES_DESC"
 banner "Per-PR timeout:  ${TIMEOUT}s (shared across up to ${MAX_CONTINUE} turns)"
 banner "ccache:          ${CCACHE_DIR} (max ${CCACHE_MAXSIZE})"
+banner "Effort:          ${EFFORT}"
 (( DRY_RUN )) && banner "DRY RUN: not creating worktrees or running /continue-pr-auto"
 echo ""
 
