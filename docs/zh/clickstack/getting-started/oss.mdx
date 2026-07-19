@@ -1,0 +1,147 @@
+---
+slug: /use-cases/observability/clickstack/getting-started/oss
+title: '开源 ClickStack 入门'
+sidebarTitle: '开源'
+description: '开源 ClickStack 入门'
+doc_type: 'guide'
+keywords: ['开源 ClickStack', '入门', 'Docker 部署', 'HyperDX UI', '本地部署']
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+要部署 **ClickStack 开源版** (即自行运行和管理 ClickHouse 及 ClickStack UI) ，我们提供了预构建的 Docker 镜像，将 UI、OpenTelemetry collector 和 ClickHouse 打包到单个容器中，让本地开发、测试和自管理部署都能轻松上手。
+
+<Tip>
+  此外还提供托管版本的 ClickStack——请参阅 [Managed ClickStack](/zh/clickstack/getting-started/managed)。
+</Tip>
+
+这些镜像基于官方 ClickHouse Debian 软件包构建，并提供多种发行版，以适应不同的使用场景。
+
+最简单的选择是 **单镜像发行版**，其中集成了该栈的所有核心组件：
+
+* **HyperDX UI**
+* **OpenTelemetry (OTel) collector**
+* **ClickHouse**
+
+这个一体化镜像可让你通过一条命令启动整套栈，非常适合测试、实验或快速进行本地部署。
+
+<Steps>
+  <Step>
+    ## 使用 Docker 部署该栈
+
+    以下命令将运行一个 OpenTelemetry collector (监听 4317 和 4318 端口) 、HyperDX UI (监听 8080 端口) 以及 ClickHouse (8123 端口) 。
+
+    ```shell
+    docker run --name clickstack -p 8123:8123 -p 8080:8080 -p 4317:4317 -p 4318:4318 clickhouse/clickstack-all-in-one:latest clickstack
+    ```
+
+    <Info>
+      **镜像名称更新**
+
+      ClickStack 镜像现已发布为 `clickhouse/clickstack-*` (此前为 `docker.hyperdx.io/hyperdx/*`) 。
+    </Info>
+
+    <Tip>
+      **持久化数据和设置**
+
+      若要在容器重启后保留数据和设置，你可以修改上面的 Docker 命令，挂载 `/data/db`、`/var/lib/clickhouse` 和 `/var/log/clickhouse-server` 这几个路径。
+
+      例如：
+
+      ```shell
+      # 修改命令以挂载路径
+      docker run \
+        --name clickstack \
+        -p 8123:8123 \
+        -p 8080:8080 \
+        -p 4317:4317 \
+        -p 4318:4318 \
+        -v "$(pwd)/.volumes/db:/data/db" \
+        -v "$(pwd)/.volumes/ch_data:/var/lib/clickhouse" \
+        -v "$(pwd)/.volumes/ch_logs:/var/log/clickhouse-server" \
+        clickhouse/clickstack-all-in-one:latest
+      ```
+    </Tip>
+  </Step>
+
+  <Step>
+    ## 打开 ClickStack UI
+
+    访问 [http://localhost:8080](http://localhost:8080) 即可进入 ClickStack UI (HyperDX) 。
+
+    创建一个用户，并设置符合复杂度要求的用户名和密码。
+
+    <Image img="/images/use-cases/observability/hyperdx-login.webp" alt="HyperDX UI" size="lg" />
+
+    HyperDX 会自动连接到本地集群，并为日志、链路追踪、指标和会话创建数据源，让你可以立即开始探索产品。
+  </Step>
+
+  <Step>
+    ## 探索产品
+
+    部署完成后，不妨试试我们的某个示例数据集。
+
+    如果要继续使用本地集群：
+
+    * [示例数据集](/zh/clickstack/example-datasets/sample-data) - 从我们的公开演示中加载一个演示数据集，并诊断一个简单问题。
+    * [本地文件和指标](/zh/clickstack/example-datasets/local-data) - 使用本地 OTel collector 加载本地文件，并在 OSX 或 Linux 上监控系统。
+
+    <br />
+
+    或者，你也可以连接到演示集群，探索更大的数据集：
+
+    * [远程演示数据集](/zh/clickstack/example-datasets/remote-demo-data) - 在我们的演示 ClickHouse 服务中探索演示数据集。
+  </Step>
+</Steps>
+
+<div id="alternative-deployment-models">
+  ## 其他部署模式
+</div>
+
+<div id="local-mode">
+  ### 本地模式
+</div>
+
+本地模式是一种无需身份验证即可部署 HyperDX 的方式。
+
+**不支持身份验证**。
+
+此模式适用于快速测试、开发、演示和调试等场景；在这些场景下，无需身份验证，也不需要持久化保存设置。
+
+有关此部署模式的更多信息，请参阅 [&quot;仅本地模式&quot;](/zh/clickstack/deployment/local-mode-only)。
+
+<div id="hosted-version">
+  ### 托管版本
+</div>
+
+你可以使用以本地模式运行的 ClickStack 托管版，访问 [play-clickstack.clickhouse.com](https://play-clickstack.clickstack.com)。
+
+<div id="self-hosted-version">
+  ### 自托管版本
+</div>
+
+<Steps>
+  <Step>
+    ### 使用 Docker 运行
+
+    自托管本地模式镜像还预先配置了 OpenTelemetry Collector、ClickStack UI 和 ClickHouse server。这使您能够轻松接收应用程序的遥测数据，并在几乎无需额外配置的情况下完成可视化。要开始使用自托管版本，只需运行 Docker 容器并转发相应端口：
+
+    ```shell
+    docker run -p 8080:8080 clickhouse/clickstack-local:latest
+    ```
+
+    与 “All in one” 镜像不同，系统不会提示您创建用户，因为**本地模式不包含身份验证**。
+  </Step>
+
+  <Step>
+    ### 补全连接凭据
+
+    要连接到您自己的**外部 ClickHouse 集群**，您可以手动输入连接凭据。
+
+    或者，如果您只是想快速体验产品，也可以点击**连接到演示服务器**，访问预加载的数据集，并在无需任何设置的情况下试用 ClickStack。
+
+    <Image img="/images/use-cases/observability/hyperdx-2.webp" alt="凭据" size="md" />
+
+    如果连接到演示服务器，您可以按照[演示数据集说明](/zh/clickstack/example-datasets/remote-demo-data)来浏览该数据集。
+  </Step>
+</Steps>

@@ -28,8 +28,13 @@ public:
 
     static constexpr EventId not_postponed = 0;
 
-    using TimePoint = std::chrono::system_clock::time_point;
-    using Duration = std::chrono::system_clock::duration;
+    /// A monotonic clock is used to schedule and measure time intervals (postponed events, throttling).
+    /// std::chrono::system_clock (wall clock) must NOT be used here: it can jump backward or forward
+    /// (NTP adjustments, manual time changes), which would make postponed events fire too early or be
+    /// delayed arbitrarily. std::chrono::steady_clock is guaranteed to never go backward.
+    using Clock = std::chrono::steady_clock;
+    using TimePoint = Clock::time_point;
+    using Duration = Clock::duration;
 
     struct Event
     {

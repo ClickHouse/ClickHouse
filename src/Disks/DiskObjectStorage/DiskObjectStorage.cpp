@@ -14,6 +14,8 @@
 #include <IO/CachedInMemoryReadBufferFromFile.h>
 #include <IO/ReadPipeline.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/Cached/CachedObjectStorage.h>
+#include <Disks/DiskObjectStorage/Replication/ClusterConfiguration.h>
+#include <Disks/DiskObjectStorage/Replication/ObjectStorageRouter.h>
 #include <Interpreters/FileCache/FileCache.h>
 #include <Disks/IO/ReadBufferFromRemoteFSGather.h>
 #include <Disks/IO/AsynchronousBoundedReadBuffer.h>
@@ -28,7 +30,9 @@
 
 #include <Parsers/ASTCreateResourceQuery.h>
 #if ENABLE_DISTRIBUTED_CACHE
+#if CLICKHOUSE_CLOUD
 #include <DistributedCache/Utils.h>
+#endif
 #endif
 #include <Core/Settings.h>
 #include <Core/ServerSettings.h>
@@ -836,6 +840,12 @@ void DiskObjectStorage::prepareRead(
     /// CachedObjectStorage::prepareRead adds needFilesystemCache automatically.
     storage->prepareRead(storage, storage_objects, read_settings, read_hint, pipeline);
 
+    /// Let the experimental ReaderExecutor reuse held source connections across sequential
+    /// windows; independent of the cache / prefetch stages below. A null limit (feature off
+    /// or 0 slots) keeps the stateless one-shot path.
+    if (read_settings.reader_executor.enabled && read_settings.reader_executor.use_long_connections)
+        pipeline.needLongConnectionLimit(global_context->getLongConnectionLimit());
+
     if (use_distributed_cache)
         pipeline.needDistributedCache();
 
@@ -925,6 +935,16 @@ void DiskObjectStorage::writeFileUsingBlobWritingFunction(const String & path, W
 void DiskObjectStorage::waitBlobsCleanup()
 {
     blob_killer->triggerAndWait();
+}
+
+int64_t DiskObjectStorage::getDeadBlobsQueueEstimate() const
+{
+    return metadata_storage->getDeadBlobsQueueEstimate();
+}
+
+int64_t DiskObjectStorage::getMissingBlobsQueueEstimate() const
+{
+    return metadata_storage->getMissingBlobsQueueEstimate();
 }
 
 void DiskObjectStorage::applyNewSettings(const Poco::Util::AbstractConfiguration & config, ContextPtr context, const String & config_prefix, const DisksMap & map)

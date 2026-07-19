@@ -1,0 +1,232 @@
+---
+sidebarTitle: 'Стратегии дедупликации'
+description: 'Обработка дубликатов и удалённых строк.'
+slug: /integrations/clickpipes/postgres/deduplication
+title: 'Стратегии дедупликации (с использованием CDC)'
+keywords: ['дедупликация', 'postgres', 'clickpipes', 'replacingmergetree', 'final']
+doc_type: 'guide'
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+import { Image } from "/snippets/ru/components/Image.jsx";
+
+Обновления и удаления, реплицируемые из Postgres в ClickHouse, приводят к появлению дублирующихся строк в ClickHouse из-за особенностей его структуры хранения данных и процесса репликации. На этой странице объясняется, почему это происходит, и какие стратегии в ClickHouse можно использовать для работы с дубликатами.
+
+<div id="how-does-data-get-replicated">
+  ## Как происходит репликация данных?
+</div>
+
+<div id="PostgreSQL-logical-decoding">
+  ### Логическое декодирование PostgreSQL
+</div>
+
+ClickPipes использует [логическое декодирование Postgres](https://www.pgedge.com/blog/logical-replication-evolution-in-chronological-order-clustering-solution-built-around-logical-replication), чтобы получать изменения по мере их возникновения в Postgres. Процесс Logical Decoding в Postgres позволяет таким клиентам, как ClickPipes, получать изменения в человекочитаемом формате, то есть в виде последовательности операций INSERT, UPDATE и DELETE.
+
+<div id="replacingmergetree">
+  ### ReplacingMergeTree
+</div>
+
+ClickPipes сопоставляет таблицы Postgres с ClickHouse с помощью движка [ReplacingMergeTree](/ru/reference/engines/table-engines/mergetree-family/replacingmergetree). ClickHouse лучше всего подходит для append-only рабочих нагрузок и не рекомендует часто использовать UPDATE. В этом ReplacingMergeTree особенно эффективен.
+
+В ReplacingMergeTree обновления моделируются как вставки новой версии строки (`_peerdb_version`), а удаления — как вставки более новой версии строки, в которой `_peerdb_is_deleted` имеет значение true. Движок ReplacingMergeTree выполняет дедупликацию и слияние данных в фоновом режиме, сохраняя последнюю версию строки для заданного первичного ключа (id), что позволяет эффективно обрабатывать UPDATE и DELETE как версионированные вставки.
+
+Ниже приведен пример оператора CREATE TABLE, который ClickPipes выполняет для создания таблицы в ClickHouse.
+
+```sql
+CREATE TABLE users
+(
+    `id` Int32,
+    `reputation` String,
+    `creationdate` DateTime64(6),
+    `displayname` String,
+    `lastaccessdate` DateTime64(6),
+    `aboutme` String,
+    `views` Int32,
+    `upvotes` Int32,
+    `downvotes` Int32,
+    `websiteurl` String,
+    `location` String,
+    `accountid` Int32,
+    `_peerdb_synced_at` DateTime64(9) DEFAULT now64(),
+    `_peerdb_is_deleted` Int8,
+    `_peerdb_version` Int64
+)
+ENGINE = ReplacingMergeTree(_peerdb_version)
+PRIMARY KEY id
+ORDER BY id;
+```
+
+<div id="illustrative-example">
+  ### Наглядный пример
+</div>
+
+На иллюстрации ниже показан базовый пример синхронизации таблицы `users` между PostgreSQL и ClickHouse с помощью ClickPipes.
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/postgres-cdc-initial-load.webp" alt="Начальная загрузка ClickPipes" size="lg" />
+
+**Шаг 1** показывает исходный снимок 2 строк в PostgreSQL и то, как ClickPipes выполняет начальную загрузку этих 2 строк в ClickHouse. Как видно, обе строки копируются в ClickHouse без изменений.
+
+**Шаг 2** показывает три операции с таблицей `users`: вставку новой строки, обновление существующей строки и удаление другой строки.
+
+**Шаг 3** показывает, как ClickPipes реплицирует операции INSERT, UPDATE и DELETE в ClickHouse в виде версионированных вставок. UPDATE отображается как новая версия строки с ID 2, а DELETE — как новая версия строки с ID 1, помеченная значением true с помощью `_is_deleted`. Из-за этого в ClickHouse становится на три строки больше, чем в PostgreSQL.
+
+В результате выполнение простого запроса, например `SELECT count(*) FROM users;`, может давать разные результаты в ClickHouse и PostgreSQL. Согласно [документации ClickHouse о слияниях](/ru/concepts/core-concepts/merges#replacing-merges), устаревшие версии строк со временем отбрасываются в процессе слияния. Однако момент такого слияния непредсказуем, а значит, запросы в ClickHouse до этого могут возвращать несогласованные результаты.
+
+Как обеспечить одинаковые результаты запросов и в ClickHouse, и в PostgreSQL?
+
+<div id="deduplicate-using-final-keyword">
+  ### Дедупликация с помощью ключевого слова FINAL
+</div>
+
+Рекомендуемый способ выполнять дедупликацию данных в запросах ClickHouse — использовать [модификатор FINAL.](/ru/reference/statements/select/from#final-modifier) Это гарантирует, что будут возвращаться только дедуплицированные строки.
+
+Давайте посмотрим, как применить его к трём разным запросам.
+
+*Обратите внимание на предложение WHERE в следующих запросах: оно используется для отфильтровывания удалённых строк.*
+
+* **Простой запрос count**: Подсчёт количества постов.
+
+Это самый простой запрос, который можно выполнить, чтобы проверить, что синхронизация прошла успешно. Оба запроса должны вернуть одинаковое количество.
+
+```sql
+-- PostgreSQL
+SELECT count(*) FROM posts;
+
+-- ClickHouse 
+SELECT count(*) FROM posts FINAL WHERE _peerdb_is_deleted=0;
+```
+
+* **Простая агрегация с JOIN**: Топ-10 пользователей с наибольшим числом просмотров.
+
+Пример агрегации по одной таблице. Наличие дубликатов здесь существенно повлияло бы на результат функции sum.
+
+```sql highlight={8,22}
+-- PostgreSQL 
+SELECT
+    sum(p.viewcount) AS viewcount,
+    p.owneruserid AS user_id,
+    u.displayname AS display_name
+FROM posts p
+LEFT JOIN users u ON u.id = p.owneruserid
+WHERE p.owneruserid > 0
+GROUP BY user_id, display_name
+ORDER BY viewcount DESC
+LIMIT 10;
+
+-- ClickHouse 
+SELECT
+    sum(p.viewcount) AS viewcount,
+    p.owneruserid AS user_id,
+    u.displayname AS display_name
+FROM posts AS p
+FINAL
+LEFT JOIN users AS u
+FINAL ON (u.id = p.owneruserid) AND (u._peerdb_is_deleted = 0)
+WHERE (p.owneruserid > 0) AND (p._peerdb_is_deleted = 0)
+GROUP BY
+    user_id,
+    display_name
+ORDER BY viewcount DESC
+LIMIT 10
+```
+
+<div id="final-setting">
+  #### Настройка FINAL
+</div>
+
+Вместо того чтобы добавлять модификатор FINAL к имени каждой таблицы в запросе, можно использовать [настройку FINAL](/ru/reference/settings/session-settings#final), чтобы он автоматически применялся ко всем таблицам в запросе.
+
+Эту настройку можно применять как к отдельному запросу, так и ко всему сеансу.
+
+```sql
+-- Настройка FINAL для отдельного запроса
+SELECT count(*) FROM posts SETTINGS FINAL = 1;
+
+-- Установка FINAL для сеанса
+SET final = 1;
+SELECT count(*) FROM posts; 
+```
+
+<div id="row-policy">
+  #### ROW policy
+</div>
+
+Простой способ скрыть лишний фильтр `_peerdb_is_deleted = 0` — использовать [ROW policy.](/ru/concepts/features/security/access-rights#row-policy-management) Ниже приведён пример создания ROW POLICY, которая исключает удалённые строки из всех запросов к таблице votes.
+
+```sql
+-- Применить политику строк ко всем пользователям
+CREATE ROW POLICY cdc_policy ON votes FOR SELECT USING _peerdb_is_deleted = 0 TO ALL;
+```
+
+> Политики доступа на уровне строк применяются к списку пользователей и ролей. В этом примере они применяются ко всем пользователям и ролям. При необходимости их можно настроить так, чтобы они применялись только к определённым пользователям или ролям.
+
+<div id="query-like-with-postgres">
+  ### Запросы как в Postgres
+</div>
+
+При миграции аналитического набора данных из PostgreSQL в ClickHouse часто приходится изменять запросы в приложении, чтобы учесть различия в обработке данных и выполнении запросов.
+
+В этом разделе мы рассмотрим, как удалять дубликаты данных, не меняя исходные запросы.
+
+<div id="views">
+  #### Представления
+</div>
+
+[Представления](/ru/reference/statements/create/view#normal-view) — отличный способ скрыть ключевое слово FINAL в запросе, так как они не хранят данные и при каждом обращении просто читают их из другой таблицы.
+
+Ниже приведён пример создания представлений для каждой таблицы в нашей базе данных ClickHouse с ключевым словом FINAL и фильтрацией удалённых строк.
+
+```sql
+CREATE VIEW posts_view AS SELECT * FROM posts FINAL WHERE _peerdb_is_deleted=0;
+CREATE VIEW users_view AS SELECT * FROM users FINAL WHERE _peerdb_is_deleted=0;
+CREATE VIEW votes_view AS SELECT * FROM votes FINAL WHERE _peerdb_is_deleted=0;
+CREATE VIEW comments_view AS SELECT * FROM comments FINAL WHERE _peerdb_is_deleted=0;
+```
+
+Затем эти представления можно запрашивать тем же запросом, что и в PostgreSQL.
+
+```sql
+-- Наиболее просматриваемые посты
+SELECT
+    sum(viewcount) AS viewcount,
+    owneruserid
+FROM posts_view
+WHERE owneruserid > 0
+GROUP BY owneruserid
+ORDER BY viewcount DESC
+LIMIT 10
+```
+
+<div id="refreshable-material-view">
+  #### Refreshable materialized view
+</div>
+
+Другой подход — использовать [refreshable materialized view](/ru/concepts/features/materialized-views/refreshable-materialized-view), которая позволяет выполнять запрос по расписанию для дедупликации строк и сохранения результатов в целевую таблицу. При каждом обновлении по расписанию целевая таблица заменяется результатами последнего запроса.
+
+Ключевое преимущество этого метода в том, что запрос с ключевым словом FINAL выполняется только один раз — во время обновления, поэтому в последующих запросах к целевой таблице использовать FINAL уже не требуется.
+
+Однако у этого подхода есть и недостаток: данные в целевой таблице будут актуальны лишь на момент последнего обновления. Тем не менее для многих сценариев может быть достаточно интервалов обновления от нескольких минут до нескольких часов.
+
+```sql
+-- Создать таблицу дедуплицированных постов 
+CREATE TABLE deduplicated_posts AS posts;
+
+-- Создать materialized view и запланировать запуск каждый час
+CREATE MATERIALIZED VIEW deduplicated_posts_mv REFRESH EVERY 1 HOUR TO deduplicated_posts AS 
+SELECT * FROM posts FINAL WHERE _peerdb_is_deleted=0 
+```
+
+Затем вы можете запрашивать таблицу `deduplicated_posts` как обычно.
+
+```sql
+SELECT
+    sum(viewcount) AS viewcount,
+    owneruserid
+FROM deduplicated_posts
+WHERE owneruserid > 0
+GROUP BY owneruserid
+ORDER BY viewcount DESC
+LIMIT 10;
+```

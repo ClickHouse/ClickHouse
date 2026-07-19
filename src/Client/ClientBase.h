@@ -337,6 +337,11 @@ protected:
     ContextMutablePtr global_context;
     ContextMutablePtr client_context;
 
+    /// The client local time zone, captured on the first connect() before it may switch the
+    /// process default to the server time zone. Used to seed `session_timezone` per query when
+    /// `use_client_time_zone` is set, so server-side literal parsing matches the client side.
+    String client_local_timezone;
+
     String default_database;
     String query_id;
     Int32 suggestion_limit{};
@@ -465,6 +470,7 @@ protected:
     bool have_error = false;
 
     std::list<ExternalTable> external_tables; /// External tables info.
+    std::list<ExternalTable> external_scalars; /// External scalars info.
     bool send_external_tables = false;
     NameToNameMap query_parameters; /// Dictionary with query parameters for prepared statements.
 

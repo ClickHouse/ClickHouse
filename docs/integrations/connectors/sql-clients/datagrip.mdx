@@ -1,0 +1,76 @@
+---
+sidebarTitle: 'DataGrip'
+slug: /integrations/datagrip
+description: 'DataGrip is a database IDE that supports ClickHouse out of the box.'
+title: 'Connecting DataGrip to ClickHouse'
+doc_type: 'guide'
+integration:
+  - support_level: 'community'
+  - category: 'sql_client'
+  - website: 'https://www.jetbrains.com/datagrip/'
+keywords: ['DataGrip', 'database IDE', 'JetBrains', 'SQL client', 'integrated development environment']
+---
+
+import { Image } from "/snippets/components/Image.jsx";
+import ConnectionDetails from '/snippets/_gather_your_details_http.mdx';
+
+import CommunityMaintainedBadge from "/snippets/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
+
+<CommunityMaintainedBadge/>
+
+## Start or download DataGrip {#start-or-download-datagrip}
+
+DataGrip is available at https://www.jetbrains.com/datagrip/
+
+<Steps>
+<Step title="Gather your connection details" id="1-gather-your-connection-details">
+<ConnectionDetails />
+
+</Step>
+<Step title="Load the ClickHouse driver" id="2-load-the-clickhouse-driver">
+
+1. Launch DataGrip, and on the **Data Sources** tab in the **Data Sources and Drivers** dialog, click the **+** icon
+
+<Image img="/images/integrations/sql-clients/datagrip-5.webp" size="lg" border alt="DataGrip Data Sources tab with + icon highlighted" />
+
+  Select **ClickHouse**
+
+<Tip>
+  As you establish connections the order changes, ClickHouse may not be at the top of your list yet.
+</Tip>
+
+<Image img="/images/integrations/sql-clients/datagrip-6.webp" size="sm" border alt="DataGrip selecting ClickHouse from the data sources list" />
+
+- Switch to the **Drivers** tab and load the ClickHouse driver
+
+  DataGrip doesn't ship with drivers in order to minimize the download size.  On the **Drivers** tab
+  Select **ClickHouse** from the **Complete Support** list, and expand the **+** sign.  Choose the **Latest stable** driver from the **Provided Driver** option:
+
+<Image img="/images/integrations/sql-clients/datagrip-1.webp" size="lg" border alt="DataGrip Drivers tab showing ClickHouse driver installation" />
+
+</Step>
+<Step title="Connect to ClickHouse" id="3-connect-to-clickhouse">
+
+- Specify your database connection details, and click **Test Connection**. 
+In step one you gathered your connection details - fill in the host URL, port, username, password, and database name, then test the connection.
+
+<Tip>
+Enter only the hostname in the **Host** field (e.g., `your-host.clickhouse.cloud`) without any protocol prefix like `https://`.
+
+For ClickHouse Cloud connections, you must add `?ssl=true` to the **URL** field below the host. The complete JDBC URL should look like:
+
+`jdbc:clickhouse://your-host.clickhouse.cloud:8443/default?ssl=true`
+
+ClickHouse Cloud requires SSL encryption for all connections. Without the `?ssl=true` parameter, you'll see "Connection reset" errors even with correct credentials.
+
+For more details on JDBC URL settings, please refer to the [ClickHouse JDBC driver](https://github.com/ClickHouse/clickhouse-java) repository.
+</Tip>
+
+<Image img="/images/integrations/sql-clients/datagrip-7.webp" border alt="DataGrip connection details form with ClickHouse settings" />
+
+</Step>
+</Steps>
+
+## Learn more {#learn-more}
+
+Find more information about DataGrip visit the DataGrip documentation.

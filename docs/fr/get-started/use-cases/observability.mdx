@@ -1,0 +1,46 @@
+---
+slug: /cloud/get-started/cloud/use-cases/observability
+title: 'Observabilité'
+description: 'Utilisez ClickHouse Cloud pour l’observabilité, la supervision, la journalisation et l’analyse des performances des systèmes dans les applications distribuées'
+keywords: ['cas d’usage', 'observabilité']
+sidebarTitle: 'Observabilité'
+doc_type: 'guide'
+---
+
+import { PrimaryButton } from "/snippets/fr/components/PrimaryButton/PrimaryButton.jsx";
+
+<div id="clickstack">
+  ## ClickHouse pour l’observabilité
+</div>
+
+Les premiers utilisateurs de ClickHouse ont compris un point fondamental : l’observabilité est avant tout un problème de données.
+La base de données que vous choisissez détermine le coût, l’évolutivité et les capacités de votre plateforme d’observabilité — c’est pourquoi choisir la bonne base de données pour les données de séries temporelles est souvent la décision architecturale la plus importante, que vous développiez une solution en interne ou lanciez une entreprise dans l’observabilité.
+
+C’est exactement pour cette raison que ClickHouse est au cœur des stacks d’observabilité depuis des années.
+Des géants du secteur comme Netflix et eBay aux startups de l’observabilité comme Sentry et Dash0, ClickHouse prend en charge les logs, les métriques et les traces à très grande échelle.
+Son stockage orienté colonnes, sa compression agressive et son moteur d’exécution vectorisé réduisent considérablement les coûts et permettent d’obtenir les requêtes en moins d’une seconde dont les ingénieurs ont besoin pour déboguer des systèmes en production sans être ralentis par des outils trop lents.
+
+## ClickStack
+
+Au cœur de l’usage de ClickHouse pour l’observabilité se trouve ClickStack, une plateforme d’observabilité innovante qui révolutionne la manière dont vous gérez les logs, les traces et les métriques en les stockant dans une seule base de données ClickHouse.
+Cette approche unifiée facilite grandement la corrélation des signaux à l’échelle de toute votre infrastructure et de vos applications.
+
+ClickStack repose sur trois composants principaux qui fonctionnent ensemble de façon fluide :
+
+<Tabs>
+  <Tab title="OpenTelemetry" icon="/images/integrations/logos/logo_otel.webp">
+    > La distribution ClickStack de l’OpenTelemetry Collector sert de gateway pour l’ingestion de vos données. OpenTelemetry est devenu la norme de l’industrie pour les données d’observabilité, ce qui en fait le choix naturel pour gérer vos flux de télémétrie.
+  </Tab>
+
+  <Tab title="ClickHouse" icon="/images/icons/icon-clickhouse-tab.svg">
+    > ClickHouse a été choisi pour ses performances exceptionnelles avec les données à forte cardinalité et les agrégations ultra-rapides qu’exigent les workloads d’observabilité.
+  </Tab>
+
+  <Tab title="HyperDX" icon="/images/hyperdx-logo.webp">
+    > HyperDX fournit une interface utilisateur intuitive qui rassemble toutes vos données, avec de puissantes capacités de requête et de corrélation.
+  </Tab>
+</Tabs>
+
+Ce qui rend ClickStack particulièrement attractif, c’est sa flexibilité. Bien qu’il soit nativement compatible avec OpenTelemetry et fonctionne de manière optimale avec l’écosystème OpenTelemetry, il n’y est pas exclusivement lié. Vous pouvez ingérer des données depuis diverses sources, notamment S3, Kafka et d’autres agents, ce qui vous permet de vous appuyer sur votre infrastructure existante.
+
+<PrimaryButton label="Lire la documentation ClickStack" href="/fr/clickstack" />

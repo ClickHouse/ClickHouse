@@ -1,0 +1,64 @@
+---
+slug: /use-cases/observability/clickstack/deployment/local-mode-only
+title: 'وضع محلي فقط'
+description: 'نشر ClickStack بوضع محلي فقط - حزمة observability من ClickHouse'
+doc_type: 'guide'
+keywords: ['clickstack', 'النشر', 'الإعداد', 'التهيئة', 'observability']
+---
+
+import { Image } from "/snippets/ar/components/Image.jsx";
+
+import JSONSupport from '/snippets/ar/_json_support.mdx';
+
+على غرار [الصورة الشاملة](/ar/clickstack/deployment/docker-compose)، تتضمن صورة Docker الشاملة هذه جميع مكونات ClickStack:
+
+* **ClickHouse**
+* **HyperDX**
+* **مجمِّع OpenTelemetry ‏(OTel)** (يعرِض OTLP على المنفذين `4317` و`4318`)
+* **MongoDB** (للحفاظ على حالة التطبيق بشكل دائم)
+
+**ومع ذلك، فإن مصادقة المستخدم معطّلة في هذا الإصدار من HyperDX**
+
+<div id="suitable-for">
+  ### مناسب لـ
+</div>
+
+* العروض التوضيحية
+* تصحيح الأخطاء
+* بيئات التطوير التي يُستخدم فيها HyperDX
+
+<div id="deployment-steps">
+  ## خطوات النشر
+</div>
+
+<br />
+
+<Steps>
+  <Step>
+    ### النشر باستخدام Docker
+
+    يؤدي الوضع المحلي إلى نشر واجهة HyperDX UI على المنفذ 8080.
+
+    ```shell
+    docker run -p 8080:8080 clickhouse/clickstack-local:latest
+    ```
+  </Step>
+
+  <Step>
+    ### انتقل إلى HyperDX UI
+
+    زُر [http://localhost:8080](http://localhost:8080) للوصول إلى HyperDX UI.
+
+    **لن يُطلب منك إنشاء مستخدم، لأن المصادقة غير مفعّلة في وضع النشر هذا.**
+
+    اتصل بعنقود ClickHouse خارجي خاص بك، مثل ClickHouse Cloud.
+
+    <Image img="/images/use-cases/observability/hyperdx-2.webp" alt="إنشاء تسجيل دخول" size="md" />
+
+    أنشئ مصدرًا، واحتفِظ بجميع القيم الافتراضية، ثم أكمل الحقل `Table` بالقيمة `otel_logs`. ينبغي اكتشاف جميع الإعدادات الأخرى تلقائيًا، ما يتيح لك النقر على `Save New Source`.
+
+    <Image img="/images/use-cases/observability/hyperdx-logs.webp" alt="إنشاء مصدر سجلات" size="md" />
+  </Step>
+</Steps>
+
+<JSONSupport />

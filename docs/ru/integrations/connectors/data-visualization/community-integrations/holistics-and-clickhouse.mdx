@@ -1,0 +1,114 @@
+---
+sidebarTitle: 'Holistics'
+slug: /integrations/holistics
+keywords: ['clickhouse', 'Holistics', 'AI', 'integrate', 'bi', 'data visualization']
+description: 'Holistics — это платформа на базе ИИ для BI самообслуживания и встроенной аналитики, которая помогает всем принимать более взвешенные решения благодаря управляемым и легкодоступным метрикам.'
+title: 'Подключение ClickHouse к Holistics'
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ru/components/Image.jsx";
+import CommunityMaintainedBadge from "/snippets/ru/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
+
+<CommunityMaintainedBadge />
+
+[Holistics](https://www.holistics.io/) — это платформа BI самообслуживания с ИИ и программируемым семантическим слоем для согласованных и надежных метрик.
+
+Подключив ClickHouse к Holistics, ваши команды получат быстрый и надежный опыт самообслуживания с поддержкой ИИ, основанный на семантическом слое, описанном в коде. Бизнес-пользователи смогут уверенно работать с данными с помощью drag-and-drop и ИИ, а вы сохраните определения метрик переиспользуемыми, компонуемыми и версионируемыми в Git.
+
+<div id="prerequisites">
+  ## Предварительные требования
+</div>
+
+Перед подключением убедитесь, что выполнены следующие условия:
+
+* **Разрешения:** Чтобы добавлять новые источники данных, вы должны иметь роль Admin в Holistics.
+* **Сетевой доступ:** Ваш сервер ClickHouse должен быть доступен с [IP-адресов Holistics](https://docs.holistics.io/docs/connect/ip-whitelisting).
+* **Пользователь базы данных:** Создайте для Holistics отдельного пользователя с правами только для чтения вместо учетной записи администратора.
+
+<div id="recommended-privileges">
+  ### Рекомендуемые привилегии
+</div>
+
+Выделенному пользователю требуются привилегии `SELECT` для таблиц, которые вы хотите запрашивать, а также для таблиц `system` (для определения схемы).
+
+```sql
+-- Пример: предоставление доступа на чтение к конкретной базе данных
+GRANT SELECT ON my_database.* TO holistics_user;
+
+-- Предоставление доступа к системным метаданным
+GRANT SELECT ON system.* TO holistics_user;
+```
+
+<Steps>
+  <Step>
+    ## Соберите сведения о подключении
+
+    Чтобы подключиться к ClickHouse по HTTP(S), вам понадобятся следующие сведения:
+
+    | **Parameter**     | **Description**                                                                                |
+    | ----------------- | ---------------------------------------------------------------------------------------------- |
+    | **Host**          | Имя хоста вашего сервера ClickHouse (например, `mz322.eu-central-1.aws.clickhouse.cloud`).     |
+    | **Port**          | **8443** для ClickHouse Cloud (SSL/TLS). **8123** для самоуправляемых экземпляров без SSL.     |
+    | **Database Name** | Имя базы данных, к которой вы хотите подключиться. Обычно по умолчанию используется `default`. |
+    | **Username**      | Пользователь базы данных. По умолчанию — `default`.                                            |
+    | **Password**      | Пароль пользователя базы данных.                                                               |
+
+    Эти сведения можно найти, нажав кнопку **Connect** в консоли ClickHouse Cloud и выбрав **HTTPS**.
+
+    <Image size="md" img="/images/integrations/data-visualization/holistics_01.webp" alt="Расположение кнопки Connect в консоли ClickHouse Cloud" border />
+  </Step>
+
+  <Step>
+    ## Настройте сетевой доступ
+
+    Поскольку Holistics — облачное приложение, его серверы должны иметь доступ к вашей базе данных. У вас есть два варианта:
+
+    1. **Прямое подключение (рекомендуется):** Добавьте IP-адреса Holistics в список разрешённых в вашем межсетевом экране или в ClickHouse Cloud IP Access List. Список IP-адресов можно найти в руководстве [IP Whitelisting](https://docs.holistics.io/docs/connect/ip-whitelisting).
+
+       <Image size="md" img="/images/integrations/data-visualization/holistics_02.webp" alt="Пример добавления IP-адресов в список разрешённых в ClickHouse Cloud" border />
+
+    2. **Обратный SSH-туннель:** Если ваша база данных находится в частной сети (VPC) и не может быть доступна публично, используйте [Reverse SSH Tunnel](https://docs.holistics.io/docs/connect/connect-tunnel).
+  </Step>
+
+  <Step>
+    ## Добавьте источник данных в Holistics
+
+    1. В Holistics перейдите в **Settings → Data Sources**.
+
+       <Image size="md" img="/images/integrations/data-visualization/holistics_03.webp" alt="Переход к Data Sources в настройках Holistics" border />
+
+    2. Нажмите **New Data Source** и выберите **ClickHouse**.
+
+       <Image size="md" img="/images/integrations/data-visualization/holistics_04.webp" alt="Выбор ClickHouse из списка новых источников данных" border />
+
+    3. Заполните форму данными, собранными на шаге 1.
+
+       | **Field**         | **Setting**                                                                                |
+       | ----------------- | ------------------------------------------------------------------------------------------ |
+       | **Host**          | Имя хоста ClickHouse                                                                       |
+       | **Port**          | `8443` (или `8123`)                                                                        |
+       | **Require SSL**   | Включите параметр (**ON**), если используете порт 8443 (обязательно для ClickHouse Cloud). |
+       | **Database Name** | `default` (или имя вашей базы данных)                                                      |
+
+       <Image size="md" img="/images/integrations/data-visualization/holistics_05.webp" alt="Заполнение сведений о подключении к ClickHouse в Holistics" border />
+
+    4. Нажмите **Test Connection**.
+
+       <Image size="md" img="/images/integrations/data-visualization/holistics_06.webp" alt="Успешная проверка подключения к ClickHouse в Holistics" border />
+
+       * **Success:** Нажмите **Save**.
+       * **Failure:** Проверьте имя пользователя и пароль, а также убедитесь, что [IP-адреса Holistics добавлены в список разрешённых](https://docs.holistics.io/docs/connect/ip-whitelisting).
+  </Step>
+</Steps>
+
+<div id="known-limitations">
+  ## Известные ограничения
+</div>
+
+Holistics поддерживает большинство стандартных возможностей SQL в ClickHouse, за следующими исключениями:
+
+* **Running Total:** Эта аналитическая функция в ClickHouse пока поддерживается ограниченно.
+* **Вложенные типы данных:** Для глубоко вложенных структур JSON или Array перед визуализацией может потребоваться выравнивание с помощью SQL-моделей.
+
+Полный список поддерживаемых возможностей см. на [странице ограничений для конкретных баз данных](https://docs.holistics.io/docs/connect/faqs/clickhouse-limitations).

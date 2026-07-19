@@ -10,7 +10,6 @@
 #include <limits>
 #include <memory>
 #include <optional>
-#include <sstream>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnSet.h>
 #include <Core/UUID.h>
@@ -157,9 +156,7 @@ namespace
 {
 String dumpMetadataObjectToString(const Poco::JSON::Object::Ptr & metadata_object)
 {
-    std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-    Poco::JSON::Stringifier::stringify(metadata_object, oss);
-    return removeEscapedSlashes(oss.str());
+    return stringifyJSON(metadata_object);
 }
 }
 
@@ -488,6 +485,43 @@ bool IcebergMetadata::optimize(
 #endif
 }
 
+bool IcebergMetadata::optimizeManifestFiles(
+       const StorageMetadataPtr & metadata_snapshot,
+       ContextPtr context,
+       std::shared_ptr<DataLake::ICatalog> catalog,
+       const StorageID & storage_id)
+{
+    if (context->getSettingsRef()[Setting::allow_experimental_iceberg_compaction])
+    {
+        /// Reject manifest compaction on format-version 3: the writer does not yet round-trip the row-lineage `first_row_id`, so a rewrite would drop row ids (fail-close).
+        if (persistent_components.format_version >= 3)
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "OPTIMIZE TABLE ... MANIFEST is not yet supported for Iceberg format-version 3: "
+                "row-lineage 'first_row_id' round-trip is not implemented");
+
+        const auto sample_block = std::make_shared<const Block>(metadata_snapshot->getSampleBlock());
+
+        // Perform manifest-only compaction using the current snapshot from the metadata file
+        compactIcebergManifests(
+            persistent_components,
+            object_storage,
+            data_lake_settings,
+            sample_block,
+            context,
+            write_format,
+            catalog,
+            storage_id);
+
+        return true;
+    }
+    else
+    {
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS, "Enable 'allow_experimental_iceberg_compaction' setting to call OPTIMIZE TABLE ... MANIFEST for iceberg tables.");
+    }
+}
+
 std::pair<IcebergDataSnapshotPtr, Int32>
 IcebergMetadata::getStateImpl(const ContextPtr & local_context, Poco::JSON::Object::Ptr metadata_object) const
 {
@@ -638,6 +672,9 @@ void IcebergMetadata::mutate(
 
 void IcebergMetadata::checkMutationIsPossible(const MutationCommands & commands)
 {
+    if (commands.size() > 1)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Iceberg does not support multiple mutation commands in a single ALTER");
+
     for (const auto & command : commands)
         if (command.type != MutationCommand::DELETE && command.type != MutationCommand::UPDATE)
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Iceberg supports only DELETE and UPDATE mutations");
@@ -774,7 +811,8 @@ void IcebergMetadata::createInitial(
     auto compression_method_str = local_context->getSettingsRef()[Setting::iceberg_metadata_compression_method].value;
     auto compression_method = chooseCompressionMethod(compression_method_str, compression_method_str);
 
-    auto compression_suffix = compression_method_str;
+    /// Use the Iceberg spec file extension (gzip -> "gz"), not the raw setting token.
+    auto compression_suffix = toIcebergMetadataCompressionExtension(compression_method);
     if (!compression_suffix.empty())
         compression_suffix = "." + compression_suffix;
 
@@ -804,7 +842,7 @@ void IcebergMetadata::createInitial(
     if (catalog)
     {
         auto catalog_filename = configuration_ptr->getTypeName() + "://" + configuration_ptr->getNamespace() + "/"
-            + configuration_ptr->getRawPath().path + "metadata/v1.metadata.json";
+            + configuration_ptr->getRawPath().path + fmt::format("metadata/v1{}.metadata.json", compression_suffix);
         const auto & [namespace_name, table_name] = DataLake::parseTableName(table_id_.getTableName());
         catalog->createTable(namespace_name, table_name, catalog_filename, metadata_content_object);
     }
@@ -1244,8 +1282,12 @@ void IcebergMetadata::addDeleteTransformers(
             {
                 NameAndTypePair name_and_type
                     = persistent_components.schema_processor->getFieldCharacteristics(delete_file.schema_id, col_id);
-                block_for_set.insert(ColumnWithTypeAndName(name_and_type.type, name_and_type.name));
-                equality_indexes_delete_file.push_back(delete_file_header.getPositionByName(name_and_type.name));
+                size_t position_in_delete_file = delete_file_header.getPositionByName(name_and_type.name);
+                /// Take the type from the delete file header rather than from the table schema:
+                /// the nullability of a column in the delete file may differ from its nullability
+                /// in the table schema, and the columns read below have exactly the header's types.
+                block_for_set.insert(ColumnWithTypeAndName(delete_file_header.getByPosition(position_in_delete_file).type, name_and_type.name));
+                equality_indexes_delete_file.push_back(position_in_delete_file);
             }
             /// Then we read the content of the delete file.
             auto mutable_columns_for_set = block_for_set.cloneEmptyColumns();

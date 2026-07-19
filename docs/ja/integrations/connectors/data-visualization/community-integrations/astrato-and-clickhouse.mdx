@@ -1,0 +1,109 @@
+---
+sidebarTitle: 'Astrato'
+slug: /integrations/astrato
+keywords: ['clickhouse', 'Power BI', '接続', '統合', 'UI', 'データアプリケーション', 'データ可視化', '組み込みアナリティクス', 'Astrato']
+description: 'Astrato は、分析をあらゆるユーザーの手に届けることで、企業やデータビジネスに真のセルフサービス BI をもたらします。これにより、ユーザーは IT の支援なしに自らダッシュボード、レポート、データアプリケーションを作成し、データに関する疑問に答えられるようになります。Astrato は導入を加速し、意思決定を迅速化するとともに、分析、組み込みアナリティクス、データ入力、データアプリケーションを 1 つのプラットフォームに統合します。さらに、アクションと分析を一体化し、ライブライトバックの導入、ML モデルとの連携、AI による分析の高速化を実現します。Astrato の pushdown SQL サポートにより、単なるダッシュボード作成の枠を超えることができます。'
+title: 'Astrato を ClickHouse に接続する'
+doc_type: 'guide'
+integration:
+  - support_level: 'community'
+  - category: 'data_visualization'
+---
+
+import ConnectionDetails from '/snippets/ja/_gather_your_details_http.mdx';
+import { Image } from "/snippets/ja/components/Image.jsx";
+import CommunityMaintainedBadge from "/snippets/ja/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
+
+<CommunityMaintainedBadge />
+
+Astrato は Pushdown SQL を使用して、ClickHouse Cloud またはオンプレミス環境のデプロイメントに直接クエリを実行します。これにより、業界をリードする ClickHouse のパフォーマンスを活かして、必要なすべてのデータにアクセスできます。
+
+<div id="connection-data-required">
+  ## 接続に必要な情報
+</div>
+
+データ接続を設定する際は、次の情報が必要です。
+
+* データ接続: ホスト名、ポート
+
+* データベース認証情報: ユーザー名、パスワード
+
+<ConnectionDetails />
+
+<div id="creating-the-data-connection-to-clickhouse">
+  ## ClickHouse へのデータ接続の作成
+</div>
+
+* サイドバーで **Data** を選択し、**Data Connection** タブを選択します
+   (または、次のリンクにアクセスします: https://app.astrato.io/data/sources) 
+  ​
+* 画面右上の **New Data Connection** ボタンをクリックします。
+
+<Image size="sm" img="/images/integrations/data-visualization/astrato_1_dataconnection.webp" alt="Astrato Data Connection" border />
+
+* **ClickHouse** を選択します。
+
+<Image size="sm" img="/images/integrations/data-visualization/astrato_2a_clickhouse_connection.webp" alt="Astrato ClickHouse Data Connection" border />
+
+* 接続ダイアログで必須フィールドを入力します
+
+<Image size="sm" img="/images/integrations/data-visualization/astrato_2b_clickhouse_connection.webp" alt="Astrato connect to ClickHouse required fields" border />
+
+* **Test Connection** をクリックします。接続に成功したら、データ接続に **名前** を付けて **Next.** をクリックします。
+
+* データ接続の **user access** を設定し、**connect.** をクリックします。
+
+<Image size="md" img="/images/integrations/data-visualization/astrato_3_user_access.webp" alt="Astrato connect to ClickHouse User Access" border />
+
+* 接続が作成され、データビューも作成されます。
+
+<Note>
+  重複するものが作成された場合は、データソース名にタイムスタンプが追加されます。
+</Note>
+
+<div id="creating-a-semantic-model--data-view">
+  ## セマンティックモデル / データビューを作成する
+</div>
+
+データビュー エディタでは、ClickHouse 内のすべてのテーブルとスキーマが表示されます。まずはその中からいくつか選択してください。
+
+<Image size="lg" img="/images/integrations/data-visualization/astrato_4a_clickhouse_data_view.webp" alt="Astrato から ClickHouse のユーザーアクセスに接続" border />
+
+データを選択したら、次は **データビュー** を定義します。Web ページ右上の Define をクリックしてください。
+
+ここでは、データを結合できるだけでなく、**管理された次元とメジャーを作成** することもできます。これにより、さまざまなチーム間でビジネスロジックの一貫性を保ちやすくなります。
+
+<Image size="lg" img="/images/integrations/data-visualization/astrato_4b_clickhouse_data_view_joins.webp" alt="Astrato から ClickHouse のユーザーアクセスに接続" border />
+
+**Astrato は結合をインテリジェントに提案します**。これには、ClickHouse のキーも活用したメタデータの利用が含まれます。提案された結合を使えば、車輪の再発明をすることなく、適切に管理された ClickHouse データを基にすぐに作業を開始できます。また、**結合の品質** も表示されるため、Astrato ですべての提案内容を詳細に確認できます。
+
+<Image size="lg" img="/images/integrations/data-visualization/astrato_4c_clickhouse_completed_data_view.webp" alt="Astrato から ClickHouse のユーザーアクセスに接続" border />
+
+<div id="creating-a-dashboard">
+  ## ダッシュボードの作成
+</div>
+
+わずか数ステップで、Astrato で最初のチャートを作成できます。
+
+1. Visuals パネルを開きます
+2. ビジュアルを選択します (まずは Column Bar Chart を選びましょう) 
+3. 次元を追加します
+4. メジャーを追加します
+
+<Image size="lg" img="/images/integrations/data-visualization/astrato_5a_clickhouse_build_chart.webp" alt="Astrato を ClickHouse の User Access に接続" border />
+
+<div id="view-generated-sql-supporting-each-visualization">
+  ### 各可視化に対応する生成された SQL を表示する
+</div>
+
+透明性と正確性は Astrato の中核を成しています。生成されたすべてのクエリを確認できるため、常に完全な制御を維持できます。すべてのコンピュートは ClickHouse 上で直接実行されるため、その高速性を活かしながら、強固なセキュリティとガバナンスも確保できます。
+
+<Image size="lg" img="/images/integrations/data-visualization/astrato_5b_clickhouse_view_sql.webp" alt="ClickHouse の User Access に接続する Astrato" border />
+
+<div id="example-completed-dashboard">
+  ### 完成したダッシュボードの例
+</div>
+
+美しく完成されたダッシュボードやデータアプリケーションの実現は、もう目前です。構築した内容をさらに確認するには、当社の Web サイトにあるデモギャラリーをご覧ください。 https://astrato.io/gallery
+
+<Image size="lg" img="/images/integrations/data-visualization/astrato_5c_clickhouse_complete_dashboard.webp" alt="Astrato が ClickHouse のユーザーアクセスに接続" border />
