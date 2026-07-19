@@ -104,6 +104,7 @@ You can configure the advanced settings if needed. A brief description of each s
 - **Pull batch size**: The number of rows to fetch in a single batch. This is a best effort setting and may not be respected in all cases.
 - **Snapshot number of rows per partition**: This is the number of rows that will be fetched in each partition during the initial snapshot. This is useful when you have a large number of rows in your tables and you want to control the number of rows fetched in each partition.
 - **Snapshot number of tables in parallel**: This is the number of tables that will be fetched in parallel during the initial snapshot. This is useful when you have a large number of tables and you want to control the number of tables fetched in parallel.
+- **Server ID**: Optional parameter to set the server ID for the MySQL binlog replication. If not set, ClickPipes will generate a random server ID that might change over the ClickPipe lifecycle. Use it to deterministically identify your ClickPipe at the source MySQL server side.
 
 ### Configure the tables {#configure-the-tables}
 
