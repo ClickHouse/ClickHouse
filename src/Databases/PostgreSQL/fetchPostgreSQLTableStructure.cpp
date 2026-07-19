@@ -134,19 +134,14 @@ DataTypePtr convertPostgreSQLDataType(String & type, std::function<void()> reche
                 /// e.g. numeric(5, 7)) and dispatches to the smallest Decimal type that fits the precision.
                 res = createDecimal<DataTypeDecimal>(precision, scale);
             else if (scale == 0)
-            {
                 /// PostgreSQL numeric with precision higher than Decimal256 supports (76 digits) and no
-                /// fractional part (used to store 256-bit integers). It cannot be represented as a ClickHouse
-                /// Decimal. The signed Int256 range needs 77 decimal digits and the unsigned UInt256 range
-                /// needs 78, and the self-connect catalog advertises them with exactly those precisions (see
-                /// PostgreSQLHandler / PostgreSQLProtocol), so a precision of 78 or more selects UInt256 and
-                /// preserves values above the Int256 maximum. Values that do not fit the chosen type are
-                /// rejected at insert time (see insertPostgreSQLValue).
-                if (precision >= 78)
-                    res = std::make_shared<DataTypeUInt256>();
-                else
-                    res = std::make_shared<DataTypeInt256>();
-            }
+                /// fractional part (e.g. numeric(78, 0), used to store 256-bit integers). It cannot be
+                /// represented as a ClickHouse Decimal, so use Int256. Values that do not fit into Int256
+                /// are rejected at insert time (see insertPostgreSQLValue). This mapping is fixed: PostgreSQL
+                /// `numeric` is signed, so a self-connected `UInt256` above the Int256 maximum is rejected
+                /// there (fail-closed) rather than recovered - a distinct `UInt256` mapping would collide with
+                /// this contract for real PostgreSQL sources.
+                res = std::make_shared<DataTypeInt256>();
             else
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Precision {} and scale {} are too big and not supported", precision, scale);
         }
