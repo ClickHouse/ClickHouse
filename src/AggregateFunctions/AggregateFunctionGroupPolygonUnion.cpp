@@ -292,6 +292,8 @@ For `Geometry` (Variant) columns, accepts any active value that is structurally 
 Empty geometry inputs are silently skipped (neutral element for union).
 
 The result is a `MultiPolygon`. Returns an empty `MultiPolygon` for empty groups. Invalid polygonal input raises an exception.
+
+`NULL` values inside a `Geometry` (Variant) column are skipped. The polygonal argument types are `Array`-based and cannot be wrapped in `Nullable`; a literal `NULL` argument follows the standard aggregate convention and yields `NULL` (like `sum` and unlike `count`).
     )";
     FunctionDocumentation::Syntax syntax = "groupPolygonUnion(polygon)";
     FunctionDocumentation::Arguments arguments
@@ -317,7 +319,14 @@ MULTIPOLYGON(((1 2,1 3,3 3,3 1,2 1,2 0,0 0,0 2,1 2)))
     FunctionDocumentation::Category category = FunctionDocumentation::Category::GeoPolygon;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
-    AggregateFunctionProperties properties = {.returns_default_when_only_null = false, .is_order_dependent = false};
+    /// `returns_default_when_only_null` must stay false: with true, a literal NULL argument is replaced by
+    /// `AggregateFunctionNothingUInt64`, i.e. `groupPolygonUnion(NULL)` would return `0 :: UInt64` instead of `NULL`.
+    /// The polygonal argument types are `Array`-based and cannot be wrapped in `Nullable`, so a literal NULL
+    /// is the only way the `Null` combinator applies here.
+    /// `is_order_dependent` must stay true: the result is geometrically order-invariant, but `boost::geometry`
+    /// set operations on floating point are not exactly associative and the returned `MultiPolygon` is not
+    /// canonicalized, so the observable array layout may differ across input orders.
+    AggregateFunctionProperties properties = {.returns_default_when_only_null = false, .is_order_dependent = true};
     factory.registerFunction("groupPolygonUnion", {createAggregateFunctionGroupPolygonUnion, documentation, properties});
 }
 
