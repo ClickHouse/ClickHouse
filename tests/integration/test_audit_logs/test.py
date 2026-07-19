@@ -569,3 +569,85 @@ def test_audit_log_reload_disable(start_cluster):
     assert not node_reload.contains_in_log(
         "test_disable_after", from_host=True, filename="clickhouse-server.audit.log"
     ), "DDL after disabling audit must not appear in audit log"
+
+
+def test_audit_log_failed_insert_select_object_names(start_cluster):
+    """A multi-object statement that fails before execution starts must record every referenced
+    object in OBJECT_NAMES, not only the top-level target. `INSERT INTO dst SELECT * FROM missing`
+    fails while resolving the source table, before `logQueryStart` populates query_tables, so the
+    names are extracted from the AST — and both the target and the missing source must be there."""
+    dst = "audit_ins_sel_dst"
+    missing = "audit_ins_sel_missing_src"
+    node_dml_misc.query(f"DROP TABLE IF EXISTS {dst}")
+    node_dml_misc.query(f"DROP TABLE IF EXISTS {missing}")
+    node_dml_misc.query(f"CREATE TABLE {dst}(a Int32) ENGINE=Memory")
+
+    error = node_dml_misc.query_and_get_error(f"INSERT INTO {dst} SELECT * FROM {missing}")
+    assert error, "INSERT selecting from a missing table must fail"
+
+    assert_audit_log_contain_with_retry(node_dml_misc, missing)
+    log_content = node_dml_misc.grep_in_log(missing, from_host=True, filename="clickhouse-server.audit.log")
+    lines = [line for line in log_content.strip().split("\n")
+             if "AUDIT:" in line and "Insert" in line and missing in line]
+    assert len(lines) >= 1, "A failed INSERT ... SELECT must produce a DML audit record"
+
+    # Audit message format: "TYPE, COMMAND, EXCEPTION_CODE, USER, IP, OBJECT_NAMES, QUERY".
+    # A literal comma inside a field (several object names) is escaped as '\,'.
+    audit_part = lines[0].split("AUDIT: ", 1)[1]
+    fields = re.split(r"(?<!\\), ", audit_part)
+    assert fields[0] == "DML", f"INSERT must be classified as DML: {lines[0]}"
+    assert fields[2] != "0", f"A failed INSERT must record a non-zero exception code: {lines[0]}"
+    # OBJECT_NAMES is field index 5; it must carry the target AND the nested source table.
+    assert dst in fields[5], f"OBJECT_NAMES must record the INSERT target table: {lines[0]}"
+    assert missing in fields[5], f"OBJECT_NAMES must record the nested SELECT source table: {lines[0]}"
+
+    node_dml_misc.query(f"DROP TABLE IF EXISTS {dst}")
+
+
+def test_audit_log_reload_remove_sink(start_cluster):
+    """Removing (emptying) `logger.auditlog` on a config reload must stop audit emission even
+    though `allow_experimental_audit_log` stays enabled and a writer was already created. The
+    writer object is intentionally kept alive (no teardown on reload), but no new statements may
+    keep leaking into the old file path once the config no longer declares an audit sink."""
+
+    audit_path = "/var/log/clickhouse-server/clickhouse-server.audit.log"
+
+    # Ensure audit is enabled (the previous reload tests leave the flag disabled).
+    node_reload.replace_in_config(
+        AUDIT_LOG_CONFIG_PATH,
+        "<allow_experimental_audit_log>false</allow_experimental_audit_log>",
+        "<allow_experimental_audit_log>true</allow_experimental_audit_log>",
+    )
+    node_reload.query("SYSTEM RELOAD CONFIG")
+
+    node_reload.query("DROP TABLE IF EXISTS test_remove_sink_before")
+    node_reload.query("CREATE TABLE test_remove_sink_before(a int) ENGINE=Memory")
+    assert_audit_log_contain_with_retry(node_reload, "test_remove_sink_before")
+
+    # Remove the sink from the config while the feature flag stays enabled.
+    node_reload.replace_in_config(
+        AUDIT_LOG_CONFIG_PATH,
+        f"<auditlog>{audit_path}</auditlog>",
+        "<auditlog></auditlog>",
+    )
+    node_reload.query("SYSTEM RELOAD CONFIG")
+
+    # New statements must stop appearing in the audit log.
+    node_reload.query("CREATE TABLE test_remove_sink_after(a int) ENGINE=Memory")
+    time.sleep(2)
+    assert not node_reload.contains_in_log(
+        "test_remove_sink_after", from_host=True, filename="clickhouse-server.audit.log"
+    ), "DDL after removing logger.auditlog must not appear in the audit log"
+
+    # Restore the config so later tests (and reruns) see the original state.
+    node_reload.replace_in_config(
+        AUDIT_LOG_CONFIG_PATH,
+        "<auditlog></auditlog>",
+        f"<auditlog>{audit_path}</auditlog>",
+    )
+    node_reload.replace_in_config(
+        AUDIT_LOG_CONFIG_PATH,
+        "<allow_experimental_audit_log>true</allow_experimental_audit_log>",
+        "<allow_experimental_audit_log>false</allow_experimental_audit_log>",
+    )
+    node_reload.query("SYSTEM RELOAD CONFIG")
