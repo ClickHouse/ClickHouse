@@ -168,6 +168,9 @@
       "src": "/_site/customizations/tab-nav.js"
     },
     {
+      "src": "/_site/customizations/nav-icon-preload.js"
+    },
+    {
       "src": "/_site/customizations/kapa-init.js"
     },
     {
