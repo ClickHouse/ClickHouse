@@ -33,8 +33,6 @@ DO_NOT_TEST_JOBS = [
 PRELIMINARY_JOBS = [
     JobNames.STYLE_CHECK,
     JobNames.FAST_TEST,
-    "Build (amd_tidy)",
-    "Build (arm_tidy)",
 ]
 
 BUILDS_FOR_TESTS = [
@@ -97,6 +95,47 @@ def _has_build_digest_changes(changed_files):
 
 
 _info_cache = None
+_pipeline_note_labels = set()
+
+_PIPELINE_NOTES = {
+    Labels.CI_BUILD: "Label `ci-build` runs build jobs and preliminary checks only.",
+    Labels.DO_NOT_TEST: (
+        "Label `do not test` runs only `STYLE_CHECK`, `DOCKER_BUILDS_ARM`, and "
+        "`DOCKER_BUILDS_AMD`."
+    ),
+    Labels.NO_FAST_TESTS: (
+        "Label `no-fast-tests` skips only `STYLE_CHECK` and `FAST_TEST`; merge is "
+        "still allowed because the merge queue runs those checks."
+    ),
+    Labels.CI_INTEGRATION_FLAKY: (
+        "Label `ci-integration-test-flaky` runs the integration flaky-check jobs only."
+    ),
+    Labels.CI_FUNCTIONAL_FLAKY: (
+        "Label `ci-functional-test-flaky` runs the stateless flaky-check jobs only."
+    ),
+    Labels.CI_INTEGRATION: (
+        "Label `ci-integration-test` runs integration test jobs only."
+    ),
+    Labels.CI_FUNCTIONAL: (
+        "Label `ci-functional-test` runs stateless and stateful test jobs only."
+    ),
+    Labels.CI_PERFORMANCE: (
+        "Label `ci-performance` runs performance jobs only."
+    ),
+    Labels.CI_NO_COVERAGE: (
+        "Label `ci-no-coverage` skips coverage jobs and the `LLVM Coverage` merge job."
+    ),
+}
+
+
+def _add_pipeline_note(label):
+    if _info_cache is None or label in _pipeline_note_labels:
+        return
+    message = _PIPELINE_NOTES.get(label)
+    if not message:
+        return
+    _pipeline_note_labels.add(label)
+    _info_cache.add_workflow_note(message)
 
 # Labels that mark a PR as a bug fix (set by the `pr_labels_and_category.py`
 # pre-hook from the changelog category). Gating Bugfix Validation on labels
@@ -201,12 +240,15 @@ def should_skip_job(job_name):
         and "build" not in job_name.lower()
         and job_name not in PRELIMINARY_JOBS
     ):
+        _add_pipeline_note(Labels.CI_BUILD)
         return True, f"Skipped, labeled with '{Labels.CI_BUILD}'"
 
     if Labels.DO_NOT_TEST in _info_cache.pr_labels and job_name not in DO_NOT_TEST_JOBS:
+        _add_pipeline_note(Labels.DO_NOT_TEST)
         return True, f"Skipped, labeled with '{Labels.DO_NOT_TEST}'"
 
     if Labels.NO_FAST_TESTS in _info_cache.pr_labels and job_name in PRELIMINARY_JOBS:
+        _add_pipeline_note(Labels.NO_FAST_TESTS)
         return True, f"Skipped, labeled with '{Labels.NO_FAST_TESTS}'"
 
     if (
@@ -220,6 +262,7 @@ def should_skip_job(job_name):
         Labels.CI_INTEGRATION_FLAKY in _info_cache.pr_labels
         and job_name not in INTEGRATION_TEST_FLAKY_CHECK_JOBS
     ):
+        _add_pipeline_note(Labels.CI_INTEGRATION_FLAKY)
         return (
             True,
             f"Skipped, labeled with '{Labels.CI_INTEGRATION_FLAKY}' - run integration test flaky check job only",
@@ -229,6 +272,7 @@ def should_skip_job(job_name):
         Labels.CI_FUNCTIONAL_FLAKY in _info_cache.pr_labels
         and job_name not in FUNCTIONAL_TEST_FLAKY_CHECK_JOBS
     ):
+        _add_pipeline_note(Labels.CI_FUNCTIONAL_FLAKY)
         return (
             True,
             f"Skipped, labeled with '{Labels.CI_FUNCTIONAL_FLAKY}' - run stateless test jobs only",
@@ -238,6 +282,7 @@ def should_skip_job(job_name):
         job_name.startswith(JobNames.INTEGRATION)
         or job_name in BUILDS_FOR_TESTS
     ):
+        _add_pipeline_note(Labels.CI_INTEGRATION)
         return (
             True,
             f"Skipped, labeled with '{Labels.CI_INTEGRATION}' - run integration test jobs only",
@@ -249,6 +294,7 @@ def should_skip_job(job_name):
         or job_name in BUILDS_FOR_TESTS
         or "functional" in job_name.lower()  # Bugfix validation (functional tests)
     ):
+        _add_pipeline_note(Labels.CI_FUNCTIONAL)
         return (
             True,
             f"Skipped, labeled with '{Labels.CI_FUNCTIONAL}' - run stateless test jobs only",
@@ -264,6 +310,7 @@ def should_skip_job(job_name):
             JobNames.DOCKER_BUILDS_AMD,
         )
     ):
+        _add_pipeline_note(Labels.CI_PERFORMANCE)
         return (
             True,
             "Skipped, labeled with 'ci-performance' - run performance jobs only",
@@ -276,6 +323,7 @@ def should_skip_job(job_name):
         or "excluded_from_llvm" in job_name
         or job_name == JobNames.LLVM_COVERAGE
     ):
+        _add_pipeline_note(Labels.CI_NO_COVERAGE)
         return True, f"Skipped, labeled with '{Labels.CI_NO_COVERAGE}'"
 
     if not _is_bugfix_pr() and "Bugfix" in job_name:
