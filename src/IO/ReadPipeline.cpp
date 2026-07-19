@@ -701,11 +701,13 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::wrapAsyncPrefetch(std::uni
     if (total_size > 0)
         async_buffer_size = std::min(async_buffer_size, total_size);
 
+    size_t min_bytes_for_seek = settings.remote_fs_settings.min_bytes_for_seek;
+#if ENABLE_DISTRIBUTED_CACHE
     /// When distributed cache is active, use its min_bytes_for_seek
     /// (typically larger, since seeks within the cache are cheaper).
-    size_t min_bytes_for_seek = distributed_cache
-        ? settings.distributed_cache_settings.min_bytes_for_seek
-        : settings.remote_fs_settings.min_bytes_for_seek;
+    if (distributed_cache)
+        min_bytes_for_seek = settings.distributed_cache_settings.min_bytes_for_seek;
+#endif
 
     /// When the memory-cache stage is enabled, `AsynchronousBoundedReadBuffer`
     /// detects its `CachedInMemoryReadBufferFromFile` inner buffer and uses
