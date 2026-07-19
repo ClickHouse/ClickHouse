@@ -1,0 +1,102 @@
+---
+slug: /use-cases/observability/clickstack/demo-days/2026/2026-05-29
+title: 'Demo days - 2026-05-29'
+sidebarTitle: '2026-05-29'
+description: 'ClickStack demo days for 2026-05-29'
+doc_type: 'guide'
+keywords: ['ClickStack', 'Demo days']
+---
+
+## Version-aware improved schema filtering {#version-aware-improved-schema-filtering}
+
+*Demo by [@knudtty](https://github.com/knudtty)*
+
+<Frame>
+<iframe src="https://www.youtube.com/embed/bAVaBnfJ82Y" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+</Frame>
+
+ClickStack now applies the direct_read optimization only on ClickHouse versions 26.2 and above, where the full-text search index properly supports the alias columns added to open-source schemas. Previously the optimization could be attempted on older versions where it wouldn't work correctly. The version check happens at query time by inspecting the schema, and the alias columns themselves are now included in the open-source schemas by default. 
+
+Also shown: work in progress on replacing the autocomplete materialized view with direct queries against the text index. Right now both do overlapping work, adding ingest pressure. If benchmarks confirm the text index queries hold up performance-wise, the materialized view can be simplified or removed. Aaron also fielded questions from the team about how positional encoding in future ClickHouse text index versions might make key-value filter lookups even more accurate.
+
+**Related PRs:** [#2341](https://github.com/hyperdxio/hyperdx/pull/2341) feat: adds direct_read optimization by default for logs and traces, [#2405](https://github.com/hyperdxio/hyperdx/pull/2405) feat(common-utils): apply direct_read KV items optimization to SQL filters, [#2376](https://github.com/hyperdxio/hyperdx/pull/2376) feat: use text index to power filters and autocomplete
+
+## Better log parsing {#better-log-parsing}
+
+*Demo by [@dhable](https://github.com/dhable)*
+
+<Frame>
+<iframe src="https://www.youtube.com/embed/vhkMlddahu4" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+</Frame>
+
+A customer had logs where the event body was a JSON object containing a `level` field. The severity inference logic was doing two things: parsing the body as JSON to extract attributes, and then falling back to string matching if no severity was set at the OTel level. The string matching was picking up the word "alert" from an alert manager name inside the body, misclassifying the log level.
+
+The fix adds a guard condition: if the body parses as JSON and already contains a level field, skip the string inference step entirely. A smoke test suite built about a year ago made it easy to verify the fix and catch related edge cases just by adding new test cases, which is exactly what it was designed for.
+
+**Related PRs:** [#2363](https://github.com/hyperdxio/hyperdx/pull/2363) fix(log-parser): skip string inference when body parses as JSON with a level field
+
+## MCP server improvements {#mcp-server-improvements}
+
+*Demo by [@brandon-pereira](https://github.com/brandon-pereira)*
+
+<Frame>
+<iframe src="https://www.youtube.com/embed/aIy1zfmlz3Y" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+</Frame>
+
+Several MCP improvements shipped this week: better event pattern bucketing and scoring, improved error hints, and shared helper cleanup. Tool prefixes were also renamed from `hyperdx_` to `clickstack_` to match the product name.
+
+**Related PRs:** [#2337](https://github.com/hyperdxio/hyperdx/pull/2337) feat(mcp): improve MCP tool quality — error hints, shared helpers, better messages, [#2396](https://github.com/hyperdxio/hyperdx/pull/2396) refactor(mcp): rename tool prefixes from hyperdx_ to clickstack_, [#2343](https://github.com/hyperdxio/hyperdx/pull/2343) feat(mcp): add patch_dashboard, get_dashboard_tile, search_dashboards tools, [#2418](https://github.com/hyperdxio/hyperdx/pull/2418) fix(mcp): improve alias descriptions and examples for readable chart legends, [#2412](https://github.com/hyperdxio/hyperdx/pull/2412) refactor: simplify MCP ObjectId validation with shared helpers and schema-level checks
+
+## New series color palette {#new-series-color-palette}
+
+*Demo by [@elizabetdev](https://github.com/elizabetdev)*
+
+<Frame>
+<iframe src="https://www.youtube.com/embed/YzECP3diWvg" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+</Frame>
+
+Elizabet worked on unifying the data visualization color palette across HyperDX and ClickStack themes, in support of Alex's color picker work. The two themes had separate palettes with exception rules for each, which made reasoning about colors unnecessarily complicated. The goal was a single palette that works for both.
+
+She tested against industry-standard palettes (Tableau, Observable, IBM) using a color vision simulation tool to check contrast and accessibility. The ClickHouse palette performed poorly — the green doesn't have sufficient contrast on a white background. Tableau and Observable both fail on at least one check each; IBM's palette passes everything but only has five colors, which isn't enough. Observable's palette came closest overall, with a small blue tweak, and will now be shared across both themes.
+
+**Related PRs:** [#2362](https://github.com/hyperdxio/hyperdx/pull/2362) refactor(theme): rename chart palette tokens to hue names + unify across themes
+
+## New page layout with sticky header {#new-page-layout-with-sticky-header}
+
+*Demo by [@elizabetdev](https://github.com/elizabetdev)*
+
+<Frame>
+<iframe src="https://www.youtube.com/embed/e7d3ocqi4Ac" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+</Frame>
+
+A new PageHeader and PageLayout component pair has been rolled out across all major pages: dashboards, service map, client sessions, Kubernetes, and the ClickHouse dashboard. Every page now shares the same padding, border line below the header, and title structure. Before this, pages were inconsistent — some had a title on the left with controls on the right, others had no title at all.
+
+The sticky behavior is opt-in via a prop. Whatever you pass into the sticky slot stays pinned below the header as you scroll; everything else scrolls normally. If nothing is passed, just the breadcrumbs or page options, those get sticky automatically.
+
+**Related PRs:** [#2282](https://github.com/hyperdxio/hyperdx/pull/2282) Add PageHeader/PageLayout and migrate Sessions, [#2345](https://github.com/hyperdxio/hyperdx/pull/2345) Use PageHeader title on list pages, [#2346](https://github.com/hyperdxio/hyperdx/pull/2346) Migrate Service Map to PageLayout, [#2347](https://github.com/hyperdxio/hyperdx/pull/2347) Migrate Kubernetes dashboard to PageLayout, [#2348](https://github.com/hyperdxio/hyperdx/pull/2348) Migrate ClickHouse dashboard to PageLayout, [#2364](https://github.com/hyperdxio/hyperdx/pull/2364) feat(dashboard): migrate to PageLayout with sticky query toolbar, [#2394](https://github.com/hyperdxio/hyperdx/pull/2394) fix(PageHeader): keep sticky header below drawer overlays
+
+## New datasource selector and color picking for series {#new-datasource-selector-and-color-picking-for-series}
+
+*Demo by [@alex-fedotyev](https://github.com/alex-fedotyev)*
+
+<Frame>
+<iframe src="https://www.youtube.com/embed/DKfJs9onl50" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+</Frame>
+
+Two UI improvements from Alex. The datasource selector has been cleaned up: clicking on it now only shows datasources to pick from. Management actions like viewing the schema or creating a new source are moved into a separate kebab menu. This separates selection from configuration — something that's been on the to-do list for a while and addresses feedback from the team.
+
+Number tiles now also have a static color picker so you can assign a specific color to a metric. Conditional color rules (turning red, green, or yellow based on a threshold value or column) are in progress too. Once Elizabet's unified palette lands, both will use properly named colors rather than the current "color 1, 2, 3" labels, which should be a meaningful improvement for users coming from tools like Grafana.
+
+**Related PRs:** [#2365](https://github.com/hyperdxio/hyperdx/pull/2365) feat(source-picker): chip + kebab menu UX, [#2265](https://github.com/hyperdxio/hyperdx/pull/2265) feat(app): number tile static color picker
+
+## Better hints for dashboard actions {#better-hints-for-dashboard-actions}
+
+*Demo by [@alex-fedotyev](https://github.com/alex-fedotyev)*
+
+<Frame>
+<iframe src="https://www.youtube.com/embed/yQaKMSXp8YA" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+</Frame>
+
+Dashboard table tile rows now show a more useful hover state. The cursor and icon change on mouseover to signal what will happen when you click — either opening a linked dashboard or drilling down into a data source. Before this change it wasn't obvious that the rows were clickable at all, let alone what they'd do.
+
+**Related PRs:** [#2321](https://github.com/hyperdxio/hyperdx/pull/2321) feat(app): hover hint and native link affordance for dashboard table tile row click

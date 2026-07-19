@@ -1,0 +1,58 @@
+---
+alias: []
+description: 'Documentation du format Vertical'
+input_format: false
+keywords: ['Vertical']
+output_format: true
+slug: /interfaces/formats/Vertical
+title: 'Vertical'
+doc_type: 'reference'
+---
+
+| Entrée | Sortie | Alias |
+| ------ | ------ | ----- |
+| ✗      | ✔      |       |
+
+<div id="description">
+  ## Description
+</div>
+
+Affiche chaque valeur sur une ligne distincte, avec le nom de la colonne indiqué. Ce format est pratique pour n’afficher qu’une ou quelques lignes lorsque chaque ligne comporte un grand nombre de colonnes.
+
+Notez que [`NULL`](/fr/reference/syntax) est affiché sous la forme `ᴺᵁᴸᴸ` afin de permettre de distinguer plus facilement la chaîne `NULL` d’une absence de valeur. Les colonnes JSON sont affichées dans un format Pretty, et `NULL` est rendu sous la forme `null`, car il s’agit d’une valeur JSON valide, facile à distinguer de `"null"`.
+
+<div id="example-usage">
+  ## Exemple d’utilisation
+</div>
+
+Exemple :
+
+```sql
+SELECT * FROM t_null FORMAT Vertical
+```
+
+```response
+Row 1:
+──────
+x: 1
+y: ᴺᵁᴸᴸ
+```
+
+Les lignes ne sont pas échappées dans le format Vertical :
+
+```sql
+SELECT 'string with \'quotes\' and \t with some special \n characters' AS test FORMAT Vertical
+```
+
+```response
+Row 1:
+──────
+test: string with 'quotes' and      with some special
+ characters
+```
+
+Ce format convient uniquement à l’affichage d’un résultat de la requête, et non à l’analyse syntaxique (récupération de données à insérer dans une table).
+
+<div id="format-settings">
+  ## Paramètres du format
+</div>

@@ -1,0 +1,379 @@
+---
+slug: /guides/developer/cascading-materialized-views
+title: '캐스케이딩 materialized views'
+description: '소스 테이블에서 여러 materialized view를 사용하는 방법을 설명합니다.'
+keywords: ['materialized view', '집계']
+doc_type: 'guide'
+---
+
+이 예시에서는 materialized view를 생성한 다음, 첫 번째 materialized view를 기반으로 두 번째 materialized view를 캐스케이딩하는 방법을 설명합니다. 이 페이지에서는 구현 방법, 다양한 활용 가능성, 그리고 제한 사항을 살펴봅니다. 두 번째 Materialized view를 소스로 사용하는 Materialized view를 생성하면 다양한 사용 사례를 해결할 수 있습니다.
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/QDAJTKZT8y4?si=1KqPNHHfaKfxtPat" title="YouTube 동영상 플레이어" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+<br />
+
+예시:
+
+도메인 이름 그룹의 시간당 조회 수를 담은 가상의 데이터셋을 사용하겠습니다.
+
+목표
+
+1. 각 도메인 이름별로 월 단위 집계 데이터가 필요합니다.
+2. 각 도메인 이름별로 연 단위 집계 데이터도 필요합니다.
+
+다음 옵션 중 하나를 선택할 수 있습니다.
+
+* SELECT 요청 시 데이터를 읽고 집계하는 쿼리를 작성합니다.
+* 수집 시점에 데이터를 새로운 포맷으로 준비합니다.
+* 수집 시점에 데이터를 특정 집계 형태로 준비합니다.
+
+Materialized view를 사용해 데이터를 준비하면 ClickHouse가 처리해야 하는 데이터 양과 계산량을 줄일 수 있으므로 SELECT 요청을 더 빠르게 수행할 수 있습니다.
+
+<div id="source-table-for-the-materialized-views">
+  ## materialized view용 소스 테이블
+</div>
+
+소스 테이블을 생성합니다. 목표는 개별 행이 아니라 집계된 데이터에 대한 보고이므로, 데이터를 파싱한 뒤 정보를 Materialized Views로 전달하고 실제로 들어오는 데이터는 버릴 수 있습니다. 이는 목표에 부합할 뿐 아니라 스토리지도 절약할 수 있으므로 `Null` 테이블 엔진을 사용합니다.
+
+```sql
+CREATE DATABASE IF NOT EXISTS analytics;
+```
+
+```sql
+CREATE TABLE analytics.hourly_data
+(
+    `domain_name` String,
+    `event_time` DateTime,
+    `count_views` UInt64
+)
+ENGINE = Null
+```
+
+<Note>
+  Null 테이블에 materialized view를 생성할 수 있습니다. 따라서 테이블에 기록된 데이터는 뷰에 반영되지만, 원본 원시 데이터는 계속 폐기됩니다.
+</Note>
+
+<div id="monthly-aggregated-table-and-materialized-view">
+  ## 월별 집계 테이블 및 materialized view
+</div>
+
+첫 번째 materialized view에서는 먼저 `Target` 테이블을 생성해야 합니다. 이 예시에서는 `analytics.monthly_aggregated_data`를 사용하며, 월별 도메인 이름 기준 조회수 합계를 저장합니다.
+
+```sql
+CREATE TABLE analytics.monthly_aggregated_data
+(
+    `domain_name` String,
+    `month` Date,
+    `sumCountViews` AggregateFunction(sum, UInt64)
+)
+ENGINE = AggregatingMergeTree
+ORDER BY (domain_name, month)
+```
+
+대상 테이블로 데이터를 전달하는 materialized view는 다음과 같습니다:
+
+```sql
+CREATE MATERIALIZED VIEW analytics.monthly_aggregated_data_mv
+TO analytics.monthly_aggregated_data
+AS
+SELECT
+    toDate(toStartOfMonth(event_time)) AS month,
+    domain_name,
+    sumState(count_views) AS sumCountViews
+FROM analytics.hourly_data
+GROUP BY
+    domain_name,
+    month
+```
+
+<div id="yearly-aggregated-table-and-materialized-view">
+  ## 연도별 집계 테이블과 materialized view
+</div>
+
+이제 앞서 만든 대상 테이블(target table) `monthly_aggregated_data`에 연결될 두 번째 Materialized view를 생성하겠습니다.
+
+먼저 각 도메인 이름별로 연도 단위로 집계한 조회 수 합계를 저장할 새 대상 테이블(target table)을 생성하겠습니다.
+
+```sql
+CREATE TABLE analytics.year_aggregated_data
+(
+    `domain_name` String,
+    `year` UInt16,
+    `sumCountViews` UInt64
+)
+ENGINE = SummingMergeTree()
+ORDER BY (domain_name, year)
+```
+
+이 단계에서 캐스케이딩을 정의합니다. `FROM` 문은 `monthly_aggregated_data` 테이블을 사용하므로, 데이터 흐름은 다음과 같습니다.
+
+1. 데이터가 `hourly_data` 테이블로 들어옵니다.
+2. ClickHouse는 수신한 데이터를 첫 번째 materialized view인 `monthly_aggregated_data` 테이블로 전달합니다.
+3. 마지막으로 2단계에서 수신한 데이터가 `year_aggregated_data` 테이블로 전달됩니다.
+
+```sql
+CREATE MATERIALIZED VIEW analytics.year_aggregated_data_mv
+TO analytics.year_aggregated_data
+AS
+SELECT
+    toYear(toStartOfYear(month)) AS year,
+    domain_name,
+    sumMerge(sumCountViews) AS sumCountViews
+FROM analytics.monthly_aggregated_data
+GROUP BY
+    domain_name,
+    year
+```
+
+<Note>
+  materialized view를 사용할 때 흔히 하는 오해는 데이터가 테이블에서 읽힌다고 생각하는 것입니다. 하지만 `Materialized views`는 그런 방식으로 동작하지 않습니다. 전달되는 데이터는 테이블의 최종 결과가 아니라 삽입된 block입니다.
+
+  이 예시에서는 `monthly_aggregated_data`에 사용된 engine이 CollapsingMergeTree라고 가정하겠습니다. 이 경우 두 번째 materialized view인 `year_aggregated_data_mv`로 전달되는 것은 축약된 테이블의 최종 결과가 아니라, `SELECT ... GROUP BY`에 정의된 field를 가진 데이터 block입니다.
+
+  CollapsingMergeTree, ReplacingMergeTree 또는 SummingMergeTree를 사용하면서 캐스케이딩 materialized view를 만들 계획이라면, 여기에서 설명하는 제한 사항을 이해해야 합니다.
+</Note>
+
+<div id="sample-data">
+  ## 예제 데이터
+</div>
+
+이제 데이터를 삽입하여 캐스케이딩 materialized view를 테스트해 보겠습니다:
+
+```sql
+INSERT INTO analytics.hourly_data (domain_name, event_time, count_views)
+VALUES ('clickhouse.com', '2019-01-01 10:00:00', 1),
+       ('clickhouse.com', '2019-02-02 00:00:00', 2),
+       ('clickhouse.com', '2019-02-01 00:00:00', 3),
+       ('clickhouse.com', '2020-01-01 00:00:00', 6);
+```
+
+`analytics.hourly_data`의 내용을 SELECT하면 테이블 엔진이 `Null`이기 때문에 데이터는 처리되었지만 다음과 같이 표시됩니다.
+
+```sql
+SELECT * FROM analytics.hourly_data
+```
+
+```response
+Ok.
+
+0 rows in set. Elapsed: 0.002 sec.
+```
+
+예상한 결과와 비교하며 흐름을 쉽게 확인할 수 있도록 소규모 데이터셋을 사용했습니다. 작은 데이터셋으로 흐름이 올바르게 작동하는 것이 확인되면, 이후에는 대량의 데이터로 진행할 수 있습니다.
+
+<div id="results">
+  ## 결과
+</div>
+
+`sumCountViews` 필드를 선택해 대상 테이블을 쿼리하면, 값이 숫자가 아니라 AggregateFunction 타입으로 저장되기 때문에 이진 표현이 표시됩니다(일부 터미널에서).
+
+집계의 최종 결과를 얻으려면 `-Merge` 접미사를 사용해야 합니다.
+
+다음 쿼리를 사용하면 AggregateFunction에 저장된 특수 문자를 확인할 수 있습니다:
+
+```sql
+SELECT sumCountViews FROM analytics.monthly_aggregated_data
+```
+
+```response
+┌─sumCountViews─┐
+│               │
+│               │
+│               │
+└───────────────┘
+
+3 rows in set. Elapsed: 0.003 sec.
+```
+
+대신 `sumCountViews` 값을 가져오기 위해 `Merge` 접미사를 사용해 보겠습니다:
+
+```sql
+SELECT
+   sumMerge(sumCountViews) AS sumCountViews
+FROM analytics.monthly_aggregated_data;
+```
+
+```response
+┌─sumCountViews─┐
+│            12 │
+└───────────────┘
+
+1 행 in set. Elapsed: 0.003 sec.
+```
+
+`AggregatingMergeTree`에서는 `AggregateFunction`을 `sum`으로 정의했으므로 `sumMerge`를 사용할 수 있습니다. `AggregateFunction`에 `avg` 함수를 사용한 경우에는 `avgMerge`를 사용하며, 다른 함수도 마찬가지입니다.
+
+```sql
+SELECT
+    month,
+    domain_name,
+    sumMerge(sumCountViews) AS sumCountViews
+FROM analytics.monthly_aggregated_data
+GROUP BY
+    domain_name,
+    month
+```
+
+이제 materialized view가 앞서 정의한 목표를 충족하는지 살펴보겠습니다.
+
+이제 데이터가 대상 테이블 `monthly_aggregated_data`에 저장되었으므로, 각 도메인 이름별 월간 집계 데이터를 가져올 수 있습니다:
+
+```sql
+SELECT
+   month,
+   domain_name,
+   sumMerge(sumCountViews) AS sumCountViews
+FROM analytics.monthly_aggregated_data
+GROUP BY
+   domain_name,
+   month
+```
+
+```response
+┌──────month─┬─domain_name────┬─sumCountViews─┐
+│ 2020-01-01 │ clickhouse.com │             6 │
+│ 2019-01-01 │ clickhouse.com │             1 │
+│ 2019-02-01 │ clickhouse.com │             5 │
+└────────────┴────────────────┴───────────────┘
+
+3 rows in set. Elapsed: 0.004 sec.
+```
+
+각 도메인 이름에 대해 연도별로 집계한 데이터:
+
+```sql
+SELECT
+   year,
+   domain_name,
+   sum(sumCountViews)
+FROM analytics.year_aggregated_data
+GROUP BY
+   domain_name,
+   year
+```
+
+```response
+┌─year─┬─domain_name────┬─sum(sumCountViews)─┐
+│ 2019 │ clickhouse.com │                  6 │
+│ 2020 │ clickhouse.com │                  6 │
+└──────┴────────────────┴────────────────────┘
+
+2 rows in set. Elapsed: 0.004 sec.
+```
+
+<div id="combining-multiple-source-tables-to-single-target-table">
+  ## 여러 소스 테이블을 하나의 대상 테이블로 결합하기
+</div>
+
+materialized view는 여러 소스 테이블을 동일한 대상 테이블로 결합하는 데에도 사용할 수 있습니다. 이는 `UNION ALL`과 유사한 로직의 materialized view를 생성할 때 유용합니다.
+
+먼저, 서로 다른 메트릭 집합을 나타내는 두 개의 소스 테이블을 생성합니다:
+
+```sql
+CREATE TABLE analytics.impressions
+(
+    `event_time` DateTime,
+    `domain_name` String
+) ENGINE = MergeTree ORDER BY (domain_name, event_time)
+;
+
+CREATE TABLE analytics.clicks
+(
+    `event_time` DateTime,
+    `domain_name` String
+) ENGINE = MergeTree ORDER BY (domain_name, event_time)
+;
+```
+
+그런 다음 결합된 메트릭 집합을 사용해 `Target` 테이블을 생성합니다:
+
+```sql
+CREATE TABLE analytics.daily_overview
+(
+    `on_date` Date,
+    `domain_name` String,
+    `impressions` SimpleAggregateFunction(sum, UInt64),
+    `clicks` SimpleAggregateFunction(sum, UInt64)
+) ENGINE = AggregatingMergeTree ORDER BY (on_date, domain_name)
+```
+
+동일한 `Target` 테이블을 대상으로 하는 materialized view 2개를 생성합니다. 누락된 컬럼은 명시적으로 포함하지 않아도 됩니다:
+
+```sql
+CREATE MATERIALIZED VIEW analytics.daily_impressions_mv
+TO analytics.daily_overview
+AS
+SELECT
+    toDate(event_time) AS on_date,
+    domain_name,
+    count() AS impressions,
+    0 clicks         ---<<<--- 생략해도 동일하게 0이 됩니다
+FROM
+    analytics.impressions
+GROUP BY
+    toDate(event_time) AS on_date,
+    domain_name
+;
+
+CREATE MATERIALIZED VIEW analytics.daily_clicks_mv
+TO analytics.daily_overview
+AS
+SELECT
+    toDate(event_time) AS on_date,
+    domain_name,
+    count() AS clicks,
+    0 impressions    ---<<<--- 생략해도 동일하게 0이 됩니다
+FROM
+    analytics.clicks
+GROUP BY
+    toDate(event_time) AS on_date,
+    domain_name
+;
+```
+
+이제 값을 삽입하면 해당 값이 `Target` 테이블의 각 컬럼에 맞게 집계됩니다:
+
+```sql
+INSERT INTO analytics.impressions (domain_name, event_time)
+VALUES ('clickhouse.com', '2019-01-01 00:00:00'),
+       ('clickhouse.com', '2019-01-01 12:00:00'),
+       ('clickhouse.com', '2019-02-01 00:00:00'),
+       ('clickhouse.com', '2019-03-01 00:00:00')
+;
+
+INSERT INTO analytics.clicks (domain_name, event_time)
+VALUES ('clickhouse.com', '2019-01-01 00:00:00'),
+       ('clickhouse.com', '2019-01-01 12:00:00'),
+       ('clickhouse.com', '2019-03-01 00:00:00')
+;
+```
+
+결합된 노출 수와 클릭 수가 `Target` 테이블에 함께 저장됩니다:
+
+```sql
+SELECT
+    on_date,
+    domain_name,
+    sum(impressions) AS impressions,
+    sum(clicks) AS clicks
+FROM
+    analytics.daily_overview
+GROUP BY
+    on_date,
+    domain_name
+;
+```
+
+이 쿼리를 실행하면 다음과 비슷한 결과가 출력됩니다:
+
+```response
+┌────on_date─┬─domain_name────┬─impressions─┬─clicks─┐
+│ 2019-01-01 │ clickhouse.com │           2 │      2 │
+│ 2019-03-01 │ clickhouse.com │           1 │      1 │
+│ 2019-02-01 │ clickhouse.com │           1 │      0 │
+└────────────┴────────────────┴─────────────┴────────┘
+
+3 rows in set. Elapsed: 0.018 sec.
+```

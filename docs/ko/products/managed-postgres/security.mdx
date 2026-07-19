@@ -1,0 +1,160 @@
+---
+slug: /cloud/managed-postgres/security
+sidebarTitle: '보안'
+title: '보안'
+description: 'IP 허용 목록, 암호화, Private Link를 포함한 ClickHouse Managed Postgres 보안 기능'
+keywords: ['postgres 보안', 'IP 허용 목록', '암호화', 'tls', 'ssl', 'private link', '백업 보존']
+doc_type: 'guide'
+---
+
+import BetaBadge from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.security-beta" />
+
+Managed Postgres는 데이터를 보호하고 컴플라이언스 요구 사항을 충족할 수 있도록 엔터프라이즈급 보안 기능을 갖추고 있습니다. 이 페이지에서는 네트워크 보안, 암호화, 백업 보존 정책을 설명합니다.
+
+<div id="ip-whitelisting">
+  ## IP 허용 목록
+</div>
+
+IP 필터는 Managed Postgres 인스턴스에 연결할 수 있는 소스 IP 주소를 제어하며, 인증되지 않은 연결로부터 데이터베이스를 보호하는 네트워크 수준의 액세스 제어를 제공합니다.
+
+<Image img="/images/managed-postgres/ip-filters.webp" alt="IP 액세스 목록 구성" size="md" border />
+
+<div id="configuring-ip-filters">
+  ### IP 필터 구성
+</div>
+
+IP 필터를 구성하려면:
+
+1. **설정** 탭으로 이동합니다
+2. **IP 필터** 아래에서 **Edit**를 클릭합니다
+3. 연결을 허용할 IP 주소 또는 CIDR 범위를 추가합니다
+4. 변경 사항을 적용하려면 **Save**를 클릭합니다
+
+다음 값을 지정할 수 있습니다:
+
+* 개별 IP 주소(예: `203.0.113.5`)
+* 네트워크의 CIDR 범위(예: `192.168.1.0/24`)
+* **Anywhere**: 모든 IP 주소 허용(운영 환경에서는 권장되지 않음)
+* **Nowhere**: 모든 연결 차단
+
+<Warning>
+  **운영 환경 모범 사례**
+
+  IP 필터를 구성하지 않으면 모든 IP 주소의 연결이 허용됩니다. 운영 환경의 워크로드에서는 신뢰할 수 있는 IP 주소 또는 CIDR 범위로만 액세스를 제한하십시오. 다음 항목에 대해서만 액세스를 허용하는 방안을 고려하십시오:
+
+  * 애플리케이션 서버
+  * VPN gateway IP 주소
+  * 관리용 배스천 호스트
+  * 자동 배포를 위한 CI/CD pipeline IP
+</Warning>
+
+<div id="encryption">
+  ## 암호화
+</div>
+
+Managed Postgres는 포괄적인 데이터 보호를 위해 저장 중과 전송 중 모두 데이터를 암호화합니다.
+
+<div id="encryption-at-rest">
+  ### 저장 시 암호화
+</div>
+
+Managed Postgres에 저장되는 모든 데이터는 기반 스토리지 인프라에 대한 무단 액세스를 방지하기 위해 저장 시 암호화됩니다.
+
+<div id="nvme-encryption">
+  #### NVMe 스토리지 암호화
+</div>
+
+NVMe 드라이브에 저장되는 데이터베이스 파일, 트랜잭션 로그, 임시 파일은 업계 표준 암호화 알고리즘으로 암호화됩니다. 이 암호화는 애플리케이션에 투명하게 적용되며 별도의 구성이 필요하지 않습니다.
+
+<div id="s3-encryption">
+  #### 객체 스토리지 암호화 (S3)
+</div>
+
+객체 스토리지에 저장되는 백업 및 Write-Ahead Log(WAL) 아카이브도 저장 시 암호화됩니다. 여기에는 다음이 포함됩니다.
+
+* 일일 전체 백업
+* 증분 WAL 아카이브
+* 시점 복구 데이터
+
+모든 백업 데이터는 전용의 격리된 스토리지 버킷에 저장되며, 자격 증명은 각 인스턴스별로 범위가 제한됩니다. 이를 통해 백업 데이터의 보안이 유지되며, 권한이 부여된 시스템만 액세스할 수 있습니다.
+
+<Info>
+  저장 시 암호화는 모든 Managed Postgres 인스턴스에 기본적으로 적용되며, 비활성화할 수 없습니다. 추가 구성은 필요하지 않습니다.
+</Info>
+
+<div id="encryption-in-transit">
+  ### 전송 중 암호화
+</div>
+
+Managed Postgres에 대한 모든 네트워크 연결은 애플리케이션과 데이터베이스 간에 데이터가 전송되는 동안 이를 보호하기 위해 TLS(Transport Layer Security)로 보호됩니다.
+
+<div id="tls-ssl">
+  #### TLS/SSL 구성
+</div>
+
+기본적으로 연결은 인증서 검증 없이 TLS로 암호화됩니다. 프로덕션 환경에서는 올바른 서버와 통신하고 있는지 확인할 수 있도록 인증서가 검증된 TLS로 연결하는 것을 권장합니다.
+
+TLS 구성 및 연결 옵션에 대한 자세한 내용은 [Connection](/ko/products/managed-postgres/connection#tls) 페이지를 참조하십시오.
+
+<div id="private-link">
+  ## Private Link
+</div>
+
+Private Link를 사용하면 Managed Postgres 인스턴스와 Virtual Private Cloud(VPC) 사이에 퍼블릭 인터넷으로 트래픽을 노출하지 않는 프라이빗 연결을 설정할 수 있습니다. 이를 통해 네트워크 격리와 보안을 한층 강화할 수 있습니다.
+
+<Info>
+  **수동 설정 필요**
+
+  Private Link는 지원되지만, ClickHouse 지원팀을 통한 수동 구성이 필요합니다. 이 기능은 엄격한 네트워크 격리 요구 사항이 있는 엔터프라이즈 고객에게 적합합니다.
+</Info>
+
+<div id="requesting-private-link">
+  ### Private Link 설정 요청
+</div>
+
+Managed Postgres 인스턴스에서 Private Link를 활성화하려면 다음 단계를 수행하십시오.
+
+1. 지원 티켓을 생성하여 **ClickHouse 지원팀에 문의합니다**
+
+2. **다음 정보를 제공합니다**:
+   * ClickHouse 조직 ID
+   * Postgres 서비스의 ID/호스트명
+   * Private Link에 연결할 AWS 계정 ID/ARN
+     * (선택 사항) Postgres 인스턴스 리전 외에 연결하려는 다른 리전
+
+3. **ClickHouse 지원팀에서 다음 작업을 수행합니다**:
+   * Managed Postgres 측에 Private Link 엔드포인트를 프로비저닝합니다
+   * 엔드포인트 인터페이스를 생성하는 데 사용할 수 있도록 엔드포인트 연결 정보를 제공합니다.
+
+4. **Private Link를 설정합니다**:
+   * AWS 설정에서 엔드포인트 인터페이스로 이동한 다음 ClickHouse 지원팀이 제공한 구성을 사용해 Private Link를 생성합니다.
+   * Private Link 상태가 &quot;Available&quot;이 되면 AWS UI에 표시된 Private DNS 이름을 사용하여 연결할 수 있습니다.
+
+<div id="backup-retention">
+  ## 백업 보존
+</div>
+
+Managed Postgres는 실수로 인한 삭제, 손상 및 기타 데이터 손실 상황으로부터 데이터를 보호하기 위해 자동으로 백업을 수행합니다.
+
+<div id="retention-policy">
+  ### 보존 정책
+</div>
+
+* **기본 보존 기간**: 7일
+* **백업 빈도**: 매일 전체 백업 + 연속 WAL 아카이빙(60초마다 또는 16MB에 도달할 때마다, 둘 중 먼저 도래하는 시점 기준)
+* **복구 세분화 수준**: 보존 기간 내 임의 시점으로 시점 복구
+
+<div id="backup-security">
+  ### 백업 보안
+</div>
+
+백업은 프라이머리 데이터와 동일한 수준의 보안이 적용된 상태로 저장됩니다:
+
+* 객체 스토리지의 **저장 시 암호화**
+* 권한 범위가 제한된 자격 증명을 사용하는 인스턴스별 **격리된 스토리지 버킷**
+* 백업에 연결된 Postgres 인스턴스에만 제한되는 **접근 제어**
+
+백업 전략과 특정 시점 복구에 대한 자세한 내용은 [백업 및 복원](/ko/products/managed-postgres/backup-and-restore) 페이지를 참조하십시오.

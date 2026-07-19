@@ -1,0 +1,128 @@
+---
+title: Cómo usar NodeJS con @clickhouse/client
+description: "Aprende a usar @clickhouse/client en una aplicación Node.js para interactuar con ClickHouse y realizar consultas."
+date: 2023-11-22
+tags: ['Clientes de lenguaje']
+keywords: ['NodeJS']
+---
+
+{frontMatter.description}
+
+{/* truncate */}
+
+<div id="use-nodejs-with-clickhouseclient">
+  ## Usa NodeJS con @clickhouse/client
+</div>
+
+Aquí tienes un archivo de ejemplo con un fragmento de código básico: `main.ts`.
+
+`Package.json` (colócalo en `./`):
+
+```json
+{
+  "name": "a simple clickhouse client example",
+  "version": "1.0.0",
+  "main": "main.js",
+  "license": "MIT",
+  "devDependencies": {
+    "typescript": "^5.3.2"
+  },
+  "dependencies": {
+    "@clickhouse/client": "^0.2.6"
+  }
+}
+```
+
+`Main.ts` (colócalo en `./src`):
+
+```ts
+import { ClickHouseClient, createClient } from '@clickhouse/client'; // or '@clickhouse/client-web'
+
+interface ClickHouseResultSet<T> {
+  meta: Meta[];
+  data: T[];
+  rows: number;
+  statistics: Statistics;
+}
+
+interface Statistics {
+  elapsed: number;
+  rows_read: number;
+  bytes_read: number;
+}
+
+interface Meta {
+  name: string;
+  type: string;
+}
+
+interface Count {
+  c: number;
+}
+
+//Reemplace los parámetros de conexión del cliente como `host`,
+//`username`, `passowrd`, `database` según corresponda.
+
+const initClickHouseClient = async (): Promise<ClickHouseClient> => {
+  const client = createClient({
+    host: 'https://FQDN.aws.clickhouse.cloud',
+    username: 'default',
+    password: 'password',
+    database: 'default',
+    application: `pingpong`,
+  });
+
+  console.log('ClickHouse ping');
+  if (!(await client.ping())) {
+    throw new Error('failed to ping clickhouse!');
+  }
+  console.log('ClickHouse pong!');
+  return client;
+};
+
+const main = async () => {
+  console.log('Initialising clickhouse client');
+  const client = await initClickHouseClient();
+
+  const row = await client.query({
+    query: `SELECT count() AS c FROM system.tables WHERE database='system'`,
+  });
+
+  const jsonRow: ClickHouseResultSet<Count> = await row.json();
+
+  console.log(`I have found ${jsonRow.data[0].c} system tables!`);
+
+  await client.close();
+  console.log(`👋`);
+};
+
+main();
+```
+
+Para instalar los paquetes, ejecuta `yarn` en `./`:
+
+```
+$ yarn
+yarn install v1.22.19
+[1/4] 🔍  Resolving packages...
+[2/4] 🚚  Fetching packages...
+[3/4] 🔗  Linking dependencies...
+[4/4] 🔨  Building fresh packages...
+✨  Done in 0.14s.
+```
+
+ejecuta el código de `main.ts` desde `./` con:
+
+```
+$ npx ts-node src/main.ts
+```
+
+mostrará:
+
+```
+Inicializando el cliente de ClickHouse
+Ping a ClickHouse
+¡Pong de ClickHouse!
+¡He encontrado 120 tablas del sistema!
+👋
+```

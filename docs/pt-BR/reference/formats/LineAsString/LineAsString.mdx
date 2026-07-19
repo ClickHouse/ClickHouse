@@ -1,0 +1,43 @@
+---
+alias: []
+description: 'Documentação do formato LineAsString'
+input_format: true
+keywords: ['LineAsString']
+output_format: true
+slug: /interfaces/formats/LineAsString
+title: 'LineAsString'
+doc_type: 'reference'
+---
+
+| Entrada | Saída | Alias |
+| ------- | ----- | ----- |
+| ✔       | ✔     |       |
+
+<div id="description">
+  ## Descrição
+</div>
+
+O formato `LineAsString` interpreta cada linha dos dados de entrada como um único valor de texto.
+Esse formato só pode ser processado para uma tabela com um único campo do tipo [String](/pt-BR/reference/data-types/string).
+As colunas restantes devem ser definidas como [`DEFAULT`](/pt-BR/reference/statements/create/table#default), [`MATERIALIZED`](/pt-BR/reference/statements/create/view#materialized-view) ou ser omitidas.
+
+<div id="example-usage">
+  ## Exemplo de uso
+</div>
+
+```sql title="Query"
+DROP TABLE IF EXISTS line_as_string;
+CREATE TABLE line_as_string (field String) ENGINE = Memory;
+INSERT INTO line_as_string FORMAT LineAsString "I love apple", "I love banana", "I love orange";
+SELECT * FROM line_as_string;
+```
+
+```text title="Response"
+┌─field─────────────────────────────────────────────┐
+│ "I love apple", "I love banana", "I love orange"; │
+└───────────────────────────────────────────────────┘
+```
+
+<div id="format-settings">
+  ## Configurações de formato
+</div>

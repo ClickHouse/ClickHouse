@@ -1,0 +1,37 @@
+---
+title: 如何增加 ClickHouse 的线程数
+description: 了解如何通过调整 `max_thread_pool_size`、`thread_pool_queue_size` 和 `max_thread_pool_free_size` 等设置，来配置 ClickHouse 的全局线程池。
+date: 2023-03-01
+tags: ['性能与优化']
+keywords: ['可用线程']
+---
+
+{frontMatter.description}
+
+{/* truncate */}
+
+<div id="increasing-the-number-of-threads-in-clickhouse">
+  ## 增加 ClickHouse 中的线程数
+</div>
+
+ClickHouse 使用**全局线程池**中的线程来处理查询，并执行合并、变更等后台操作。如果没有空闲线程来处理查询，线程池中就会创建一个新线程。
+
+全局线程池的最大容量由 `max_thread_pool_size` 设置决定，默认值为 10,000。你可以在配置中修改该值——这里我们将其设为 20,000：
+
+```xml
+<max_thread_pool_size>20000</max_thread_pool_size>
+```
+
+如果你修改了 `max_thread_pool_size`，我们建议也将 `thread_pool_queue_size` 设为相同的值。`thread_pool_queue_size` 设置表示可在全局线程池中调度的最大作业数：
+
+```xml
+<thread_pool_queue_size>20000</thread_pool_queue_size>
+```
+
+如果服务器中有大量空闲线程，也可以通过 `max_thread_pool_free_size` 设置来释放资源。默认值为 1,000，这意味着全局线程池中的空闲线程数量不会超过 1,000。以下示例将该值增加到 2,000：
+
+```xml
+<max_thread_pool_free_size>2000</max_thread_pool_free_size>
+```
+
+请参阅[文档](/zh/reference/settings/server-settings/settings#max_thread_pool_size)，了解上述设置以及其他会影响全局线程池的设置的更多信息。

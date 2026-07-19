@@ -1,0 +1,101 @@
+---
+sidebarTitle: '快速入门'
+description: '分步指导您创建第一个 Azure Blob 存储 (ABS) ClickPipe。'
+slug: /integrations/clickpipes/object-storage/azure-blob-storage/get-started
+title: '创建您的第一个 Azure Blob 存储 ClickPipe'
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+**前置条件**
+
+要按照本指南操作，您需要准备：
+
+* 一个 Azure Blob 存储账户
+* [Azure 连接字符串](/zh/integrations/connectors/data-ingestion/azure/azure-data-factory/using-azureblobstorage#acquiring-azure-blob-storage-access-keys)
+* 容器名称
+* 一个正在运行的 ClickHouse Cloud 服务
+
+<Steps>
+  <Step>
+    ## 前往数据源
+
+    在服务主页中，点击左侧菜单中的 **Data sources**。
+    展开 **ClickPipes** 下拉菜单，然后点击 **Create ClickPipe**
+
+    <Image img="/images/integrations/data-ingestion/clickpipes/object-storage/azure-blob-storage/01-navigate-to-datasources.webp" alt="前往数据源" size="md" />
+
+    <Image img="/images/integrations/data-ingestion/clickpipes/object-storage/azure-blob-storage/02-create-clickpipe.webp" alt="创建 ClickPipe" size="md" />
+  </Step>
+
+  <Step>
+    ## 选择数据源
+
+    选择 **Azure Blob Storage** 作为数据类型
+
+    <Image img="/images/integrations/data-ingestion/clickpipes/object-storage/azure-blob-storage/03-select-blob-storage.webp" alt="选择 Azure Blob Storage" size="md" />
+  </Step>
+
+  <Step>
+    ## 设置 ClickPipe 连接
+
+    1. 为 ClickPipe 指定一个便于识别的名称
+    2. 在身份验证方法下拉菜单中选择 **Connection String**
+    3. 将 Azure 连接字符串粘贴到 **Connection string** 字段中
+    4. 输入容器名称
+    5. 输入 Azure Blob 存储中的文件路径；如果要摄取多个文件，可使用通配符
+
+    您也可以启用持续摄取。更多信息，请参见 [&quot;Continuous Ingestion&quot;](/zh/integrations/clickpipes/object-storage/azure-blob-storage/overview#continuous-ingestion)。
+
+    最后，点击 **Incoming data**
+
+    <Image img="/images/integrations/data-ingestion/clickpipes/object-storage/azure-blob-storage/04-configuration-details.webp" alt="配置详情" size="md" />
+  </Step>
+
+  <Step>
+    ## 选择数据格式
+
+    1. 选择文件类型
+    2. 选择文件压缩方式 (`detect automatically`、`none`、`gzip`、`brotli`、`xz` 或 `zstd`)
+    3. 完成其他格式相关配置，例如为逗号分隔格式指定分隔符
+    4. 点击 **Parse information**
+
+    <Image img="/images/integrations/data-ingestion/clickpipes/object-storage/azure-blob-storage/05-choose-data-format.webp" alt="选择数据格式" size="md" />
+  </Step>
+
+  <Step>
+    ## 配置表、schema 和设置
+
+    现在，您需要创建一个新表，或选择一个现有表来存储传入的数据。
+
+    1. 选择将数据写入新表还是现有表
+    2. 选择要使用的数据库；如果是新表，还需指定表名
+    3. 选择一个或多个排序键
+    4. 定义从源文件到目标表的映射，包括列名、列类型、默认值和可空性
+    5. 最后，指定高级设置，例如要使用的引擎类型、分区表达式和主键
+
+    <Image img="/images/integrations/data-ingestion/clickpipes/object-storage/azure-blob-storage/06-parse-information.webp" alt="解析信息" size="md" />
+
+    完成表、schema 和设置的配置后，点击 **Details and settings**
+  </Step>
+
+  <Step>
+    ## 配置权限
+
+    ClickPipes 会为数据写入创建一个专用的数据库用户。
+    您可以为该用户选择一个角色。
+    如果目标表需要访问 materialized view 或字典，请选择 &quot;Full access&quot;。
+
+    <Image img="/images/integrations/data-ingestion/clickpipes/object-storage/azure-blob-storage/07-permissions.webp" alt="配置权限" size="md" />
+  </Step>
+
+  <Step>
+    ## 完成设置
+
+    点击 **Create ClickPipe** 完成设置
+
+    此时您应该会看到 ClickPipe 处于 provisioning 状态。
+    稍等片刻后，它会从 **provisioning** 变为 **completed**。
+  </Step>
+</Steps>

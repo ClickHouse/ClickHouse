@@ -175,24 +175,24 @@ void optimizePrewhere(QueryPlan::Node & parent_node, const bool remove_unused_co
     if (!optimize)
         return;
 
-    auto column_sizes = storage.getColumnSizes();
+    const auto & queried_columns = source_step_with_filter->requiredSourceColumns();
+
+    auto column_sizes = storage.getColumnSizes(queried_columns);
     if (column_sizes.empty())
         return;
 
     /// These two optimizations conflict:
-    /// - vector search lookups
+    /// - vector search lookups with disabled rescoring
     /// - PREWHERE
     /// The former is more impactful, therefore disable PREWHERE if both may be used.
     auto * read_from_merge_tree_step = typeid_cast<ReadFromMergeTree *>(child_node->step.get());
-    if (read_from_merge_tree_step && read_from_merge_tree_step->getVectorSearchParameters().has_value())
+    if (read_from_merge_tree_step && read_from_merge_tree_step->getVectorSearchParameters().has_value() && !settings[Setting::vector_search_with_rescoring])
         return;
 
     /// Extract column compressed sizes
     std::unordered_map<std::string, UInt64> column_compressed_sizes;
     for (const auto & [name, sizes] : column_sizes)
         column_compressed_sizes[name] = sizes.data_compressed;
-
-    const auto & queried_columns = source_step_with_filter->requiredSourceColumns();
 
     /// Statistics are only used to reorder conditions, so skip if there is just one.
     const auto & filter_root_node = filter_step->getExpression().findInOutputs(filter_step->getFilterColumnName());

@@ -1,0 +1,149 @@
+---
+sidebarTitle: 'SQLAlchemy'
+keywords: ['clickhouse', 'python', 'sqlalchemy', 'integrate']
+description: 'دعم SQLAlchemy في ClickHouse'
+slug: /integrations/language-clients/python/sqlalchemy
+title: 'دعم SQLAlchemy'
+doc_type: 'reference'
+---
+
+يوفّر ClickHouse Connect لهجة SQLAlchemy (`clickhousedb`) مبنية على المشغّل الأساسي. وهي مخصّصة لواجهات SQLAlchemy Core وتدعم SQLAlchemy 1.4.40+ و2.0.x.
+
+<div id="sqlalchemy-connect">
+  ## الاتصال باستخدام SQLAlchemy
+</div>
+
+أنشئ محركًا باستخدام عناوين URL من النوع `clickhousedb://` أو `clickhousedb+connect://`. وترتبط معلمات الاستعلام بإعدادات ClickHouse وخيارات العميل وخيارات النقل عبر HTTP/TLS.
+
+```python
+from sqlalchemy import create_engine, text
+
+engine = create_engine(
+    "clickhousedb://user:password@host:8123/mydb?compression=zstd"
+)
+
+with engine.begin() as conn:
+    rows = conn.execute(text("SELECT version()"))
+    print(rows.scalar())
+```
+
+ملاحظات حول URL/معلمات الاستعلام:
+
+* إعدادات ClickHouse: مرّرها كمعلمات استعلام (على سبيل المثال، `use_skip_indexes=0`).
+* خيارات العميل: `compression` (اسمًا بديلًا لـ `compress`) و`query_limit` والمهلات الزمنية وغير ذلك.
+* خيارات HTTP/TLS: خيارات خاصة بمجمّع HTTP وTLS (على سبيل المثال، `ch_http_max_field_name_size=99999` و`ca_cert=certifi`).
+
+راجع [وسائط الاتصال والإعدادات](/ar/integrations/language-clients/python/driver-api#connection-arguments) في الأقسام أدناه للاطلاع على القائمة الكاملة للخيارات المدعومة. ويمكن أيضًا تمرير هذه الخيارات عبر SQLAlchemy DSN.
+
+<div id="sqlalchemy-core-queries">
+  ## استعلامات Core
+</div>
+
+تدعم هذه اللهجة استعلامات `SELECT` في SQLAlchemy Core مع عمليات الربط، وعوامل التصفية، والترتيب، والحدود/الإزاحات، و`DISTINCT`.
+
+```python
+from sqlalchemy import MetaData, Table, select
+
+metadata = MetaData(schema="mydb")
+users = Table("users", metadata, autoload_with=engine)
+orders = Table("orders", metadata, autoload_with=engine)
+
+# Basic SELECT
+with engine.begin() as conn:
+    rows = conn.execute(select(users.c.id, users.c.name).order_by(users.c.id).limit(10)).fetchall()
+
+# JOINs (INNER/LEFT OUTER/FULL OUTER/CROSS)
+with engine.begin() as conn:
+    stmt = (
+        select(users.c.name, orders.c.product)
+        .select_from(users.join(orders, users.c.id == orders.c.user_id))
+    )
+    rows = conn.execute(stmt).fetchall()
+```
+
+يُدعَم عبارة `DELETE` خفيفة مع عبارة `WHERE` إلزامية:
+
+```python
+from sqlalchemy import delete
+
+with engine.begin() as conn:
+    conn.execute(delete(users).where(users.c.name.like("%temp%")))
+```
+
+<div id="sqlalchemy-ddl-reflection">
+  ## DDL واستكشاف البنية
+</div>
+
+يمكنك إنشاء قواعد البيانات والجداول باستخدام مساعدات DDL المتوفرة وبُنى النوع/المحرك. كما تتوفر إمكانية استكشاف بنية الجداول (بما في ذلك أنواع الأعمدة والمحرك).
+
+```python
+import sqlalchemy as db
+from sqlalchemy import MetaData
+from clickhouse_connect.cc_sqlalchemy.ddl.custom import CreateDatabase, DropDatabase
+from clickhouse_connect.cc_sqlalchemy.ddl.tableengine import MergeTree
+from clickhouse_connect.cc_sqlalchemy.datatypes.sqltypes import UInt32, String, DateTime64
+
+with engine.begin() as conn:
+    # Databases
+    conn.execute(CreateDatabase("example_db", exists_ok=True))
+
+    # Tables
+    metadata = MetaData(schema="example_db")
+    table = db.Table(
+        "events",
+        metadata,
+        db.Column("id", UInt32, primary_key=True),
+        db.Column("user", String),
+        db.Column("created_at", DateTime64(3)),
+        MergeTree(order_by="id"),
+    )
+    table.create(conn)
+
+    # Reflection
+    reflected = db.Table("events", metadata, autoload_with=engine)
+    assert reflected.engine is not None
+```
+
+تتضمن الأعمدة المكتشفة سمات خاصة باللهجة، مثل `clickhousedb_default_type` و`clickhousedb_codec_expression` و`clickhousedb_ttl_expression`، عند وجودها على الخادم.
+
+<div id="sqlalchemy-inserts">
+  ## عمليات الإدراج (Core وORM البسيط)
+</div>
+
+يمكن إجراء عمليات الإدراج باستخدام SQLAlchemy Core، وكذلك عبر نماذج ORM البسيطة لسهولة الاستخدام.
+
+```python
+# Core insert
+with engine.begin() as conn:
+    conn.execute(table.insert().values(id=1, user="joe"))
+
+# Basic ORM insert
+from sqlalchemy.orm import declarative_base, Session
+
+Base = declarative_base(metadata=MetaData(schema="example_db"))
+
+class User(Base):
+    __tablename__ = "users"
+    __table_args__ = (MergeTree(order_by=["id"]),)
+    id = db.Column(UInt32, primary_key=True)
+    name = db.Column(String)
+
+Base.metadata.create_all(engine)
+
+with Session(engine) as session:
+    session.add(User(id=1, name="Alice"))
+    session.bulk_save_objects([User(id=2, name="Bob")])
+    session.commit()
+```
+
+<div id="scope-and-limitations">
+  ## النطاق والقيود
+</div>
+
+* التركيز الأساسي: تمكين ميزات SQLAlchemy Core مثل `SELECT` مع `JOIN` (`INNER`, `LEFT OUTER`, `FULL OUTER`, `CROSS`)، و`WHERE`، و`ORDER BY`، و`LIMIT`/`OFFSET`، و`DISTINCT`.
+* `DELETE` مع `WHERE` فقط: تدعم اللهجة عبارة `DELETE` خفيفة، لكنها تتطلب عبارة `WHERE` صريحة لتجنب حذف الجدول بالكامل عن طريق الخطأ. ولإفراغ جدول، استخدم `TRUNCATE TABLE`.
+* لا يوجد `UPDATE`: ClickHouse مُحسّنة لعمليات الإلحاق. لا تطبّق اللهجة `UPDATE`. إذا كنت بحاجة إلى تغيير البيانات، فطبّق التحويلات في المصدر ثم أعد الإدراج، أو استخدم SQL نصيًا صريحًا (على سبيل المثال، `ALTER TABLE ... UPDATE`) على مسؤوليتك الخاصة.
+* DDL واستكشاف البنية: إنشاء قواعد البيانات والجداول مدعوم، وتُرجع عملية استكشاف البنية أنواع الأعمدة والبيانات الوصفية لمحرك الجدول. ولا تتوفر البيانات الوصفية التقليدية للمفتاح الأساسي/المفتاح الخارجي/الفهرس لأن ClickHouse لا يفرض هذه القيود.
+* نطاق ORM: تعمل النماذج التصريحية وعمليات الإدراج عبر `Session.add(...)`/`bulk_save_objects(...)` للتيسير. أما ميزات ORM المتقدمة (إدارة العلاقات، وتحديثات unit-of-work، والتسلسل، ودلالات التحميل eager/lazy) فغير مدعومة.
+* دلالات المفتاح الأساسي: يُستخدم `Column(..., primary_key=True)` في SQLAlchemy لهوية الكائن فقط. وهو لا ينشئ قيدًا على مستوى الخادم في ClickHouse. حدِّد `ORDER BY` (و`PRIMARY KEY` اختياريًا) عبر محركات الجداول (على سبيل المثال، `MergeTree(order_by=...)`).
+* المعاملات وميزات الخادم: المعاملات ثنائية الطور، وsequences، و`RETURNING`، ومستويات العزل المتقدمة غير مدعومة. يوفّر `engine.begin()` مدير سياق في بايثون لتجميع العبارات، لكنه لا ينفّذ أي تحكم فعلي في المعاملات (`commit`/`rollback` عمليتا no-op).

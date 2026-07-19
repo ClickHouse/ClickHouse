@@ -1,0 +1,37 @@
+---
+description: 'ALTER TABLE ... UPDATE 文に関するドキュメント'
+sidebarTitle: 'UPDATE'
+slug: /sql-reference/statements/alter/update
+title: 'ALTER TABLE ... UPDATE 文'
+doc_type: 'reference'
+---
+
+```sql
+ALTER TABLE [db.]table [ON CLUSTER cluster] UPDATE column1 = expr1 [, ...] [IN PARTITION partition_id] WHERE filter_expr
+```
+
+指定したフィルタ式に一致するデータを操作します。[ミューテーション](/ja/reference/statements/alter/index#mutations)として実装されています。
+
+<Note>
+  `ALTER TABLE` プレフィックスが付くため、この構文は SQL をサポートする他の多くのシステムとは異なります。これは、OLTP データベースの類似クエリとは異なり、頻繁な使用を想定していない高コストな操作であることを示すためのものです。
+</Note>
+
+`filter_expr` は `UInt8` 型である必要があります。このクエリは、`filter_expr` が 0 以外の値を取る行について、指定したカラムの値を対応する式の値に更新します。値は `CAST` 演算子を使用してカラムの型にキャストされます。プライマリキーまたはパーティションキーの計算に使用されるカラムの更新はサポートされていません。
+
+1 つのクエリに、カンマ区切りで複数のコマンドを含めることができます。
+
+クエリ処理の同期性は、[mutations&#95;sync](/ja/reference/settings/session-settings#mutations_sync) 設定で定義されます。デフォルトでは非同期です。
+
+**関連項目**
+
+* [ミューテーション](/ja/reference/statements/alter/index#mutations)
+* [ALTER クエリの同期性](/ja/reference/statements/alter/index#synchronicity-of-alter-queries)
+* [mutations&#95;sync](/ja/reference/settings/session-settings#mutations_sync) 設定
+* [論理更新 `UPDATE`](/ja/reference/statements/update) - パッチパートを使用する代替の論理更新
+* [`APPLY PATCHES`](/ja/reference/statements/alter/apply-patches) - 論理更新のパッチを手動で適用する
+
+<div id="related-content">
+  ## 関連コンテンツ
+</div>
+
+* ブログ記事: [ClickHouse における更新と削除の処理](https://clickhouse.com/blog/handling-updates-and-deletes-in-clickhouse)

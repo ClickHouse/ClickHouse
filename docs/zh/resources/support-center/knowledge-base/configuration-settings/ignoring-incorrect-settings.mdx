@@ -1,0 +1,27 @@
+---
+title: 如何在 ClickHouse 中忽略错误设置
+description: 了解如何使用 `skip_check_for_incorrect_settings` 选项，使 ClickHouse 即使在用户级设置指定有误的情况下也能启动。
+date: 2023-03-01
+tags: ['设置']
+keywords: ['忽略错误设置']
+---
+
+{frontMatter.description}
+
+{/* truncate */}
+
+<div id="ignoring-incorrect-settings-in-clickhouse">
+  ## 在 ClickHouse 中忽略错误的设置
+</div>
+
+当用户级设置被写在错误的位置时，server 将无法启动，并且日志中会记录异常消息。不过，你可以使用 `skip_check_for_incorrect_settings` 设置，让 ClickHouse 忽略此类错误设置。
+
+将以下内容添加到 `config.xml` 中：
+
+```xml
+<skip_check_for_incorrect_settings>1</skip_check_for_incorrect_settings>
+```
+
+<Note>
+  用户级设置应在 `users.xml` 中、特定用户 profile 的 `<profile>` 部分内指定 (默认设置则在 `<default>` 中指定) 。
+</Note>

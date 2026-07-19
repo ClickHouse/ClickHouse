@@ -21,7 +21,7 @@ void WriteBufferFromFileDescriptorDiscardOnFailure::nextImpl()
             /// Never send this profile event to trace log because it may cause another
             /// write into the same fd and likely will trigger the same error
             /// and will lead to infinite recursion.
-            ProfileEvents::incrementNoTrace(ProfileEvents::CannotWriteToWriteBufferDiscard);
+            ProfileEvents::incrementSignalSafe(ProfileEvents::CannotWriteToWriteBufferDiscard);
             break;  /// Discard
         }
 

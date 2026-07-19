@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cctype>
 #include <functional>
+#include <optional>
 #include <utility>
 #include <vector>
 
@@ -93,6 +94,308 @@ bool isMdxImport(std::string_view line)
         || line.starts_with("import \"");
 }
 
+/// An MDX (JSX) component tag that constitutes a whole line of the documentation source, e.g.
+/// `<Note>`, `</Tabs>`, `<Tab title="Connection string">`, or a self-closing snippet reference
+/// such as `<PrettyFormatSettings/>` (resolved to real content by `resolveDocSnippets` when known,
+/// see `DOC_SNIPPETS`, or otherwise dropped here as it has nothing to render).
+struct MdxTagLine
+{
+    std::string_view name;
+    std::string_view attributes;
+    bool closing = false;
+    bool self_closing = false;
+};
+
+/// Parses a line consisting solely of one MDX component tag: `<Name ...>`, `</Name>`, or `<Name ... />`.
+/// Component names start with an uppercase letter, which distinguishes them from literal HTML in the
+/// prose (e.g. `<br/>`); lines inside fenced code blocks never reach this parser.
+std::optional<MdxTagLine> parseMdxTagLine(std::string_view line)
+{
+    line = trimView(line);
+    if (line.size() < 3 || line.front() != '<' || line.back() != '>')
+        return {};
+
+    MdxTagLine tag;
+    std::string_view inner = trimView(line.substr(1, line.size() - 2));
+    if (inner.starts_with('/'))
+    {
+        tag.closing = true;
+        inner = trimView(inner.substr(1));
+    }
+    else if (inner.ends_with('/'))
+    {
+        tag.self_closing = true;
+        inner = trimView(inner.substr(0, inner.size() - 1));
+    }
+
+    if (inner.empty() || !(inner[0] >= 'A' && inner[0] <= 'Z'))
+        return {};
+    size_t p = 0;
+    while (p < inner.size() && (std::isalnum(static_cast<unsigned char>(inner[p]))))
+        ++p;
+    tag.name = inner.substr(0, p);
+
+    std::string_view rest = inner.substr(p);
+    if (!rest.empty() && !isInlineSpace(rest.front()))
+        return {}; /// not a bare component tag (e.g. a `<Name...>` placeholder with punctuation)
+    if (tag.closing && !trimView(rest).empty())
+        return {}; /// a closing tag carries no attributes
+    tag.attributes = trimView(rest);
+    return tag;
+}
+
+/// A parsed `import LocalName from '<path>';` statement, used to resolve a documentation snippet
+/// import (see `DOC_SNIPPETS`) to its local binding name, whatever that happens to be.
+struct MdxImportLine
+{
+    std::string_view local_name;
+    std::string_view path;
+};
+
+std::optional<MdxImportLine> parseMdxImportLine(std::string_view line)
+{
+    line = trimView(line);
+    if (!line.starts_with("import"))
+        return {};
+    line.remove_prefix(6);
+    if (line.empty() || !isInlineSpace(line.front()))
+        return {};
+    line = trimView(line);
+
+    size_t p = 0;
+    while (p < line.size() && (std::isalnum(static_cast<unsigned char>(line[p])) || line[p] == '_' || line[p] == '$'))
+        ++p;
+    if (p == 0)
+        return {};
+    std::string_view name = line.substr(0, p);
+
+    std::string_view rest = trimView(line.substr(p));
+    if (!rest.starts_with("from"))
+        return {};
+    rest.remove_prefix(4);
+    if (rest.empty() || !isInlineSpace(rest.front()))
+        return {};
+    rest = trimView(rest);
+
+    if (rest.empty() || (rest.front() != '\'' && rest.front() != '"'))
+        return {};
+    const char quote = rest.front();
+    rest.remove_prefix(1);
+    const size_t close = rest.find(quote);
+    if (close == std::string_view::npos)
+        return {};
+    return MdxImportLine{name, rest.substr(0, close)};
+}
+
+/// Content of documentation snippets that converted pages `import` and use as a self-closing tag
+/// (e.g. `import PrettyFormatSettings from '/snippets/common-pretty-format-settings.mdx'; ...
+/// <PrettyFormatSettings/>`). Unlike a decorative badge, these carry real content (a settings
+/// table, a data-type mapping) that would otherwise be silently dropped by the self-closing-tag
+/// handling in `renderDocument`/`startsNewBlock` below. Matched by the imported path's suffix, so
+/// any local binding name resolves (see `resolveDocSnippets`); kept in sync with the identical
+/// table in `programs/server/docs.html` and with the corresponding files under `docs/snippets/`.
+struct DocSnippet
+{
+    std::string_view path_suffix;
+    std::string_view content;
+};
+
+const DocSnippet DOC_SNIPPETS[] = {
+    {"_when-to-use-json.mdx", R"DOCS_MD(## When to use the `JSON` Type {#when-to-use-json-type}
+
+The `JSON` type is designed for querying, filtering, and aggregating specific fields within JSON objects that have dynamic or unpredictable structures. It achieves this by splitting JSON objects into separate sub-columns, which dramatically reduces data read and speeds up queries on selected fields compared to alternatives like `Map` or parsing strings.
+
+**However, this comes with important trade-offs:**
+
+- Slower `INSERT`s - Splitting JSON into sub-columns, performing type inference, and managing flexible storage structures makes inserts slower compared to storing JSON as a simple `String` column.
+- Slower when reading entire objects - If you need to retrieve complete JSON documents (rather than specific fields), the `JSON` type is slower than reading from a `String` column. The overhead of reconstructing objects from separate sub-columns provides no benefit when you're not doing field-level queries.
+- Storage overhead - Maintaining separate sub-columns adds structural overhead compared to storing JSON as a single string value.
+
+### Use the `JSON` type when: {#use-json-type}
+
+- Your data has a dynamic or unpredictable structure with varying keys across documents
+- Field types or schemas change over time or vary between records
+- You need to query, filter, or aggregate on specific paths within JSON objects whose structure you can't predict upfront
+- Your use case involves semi-structured data like logs, events, or user-generated content with inconsistent schemas
+
+### Use a `String` column (or structured types) when: {#use-string-type}
+- Your data structure is known and consistent - in this case, use normal columns, `Tuple`, `Array`, `Dynamic`, or `Variant` types instead
+- `JSON` documents are treated as opaque blobs that are only stored and retrieved in their entirety without field-level analysis
+- You don't need to query or filter on individual JSON fields within the database
+- The `JSON` is simply a transport/storage format, not analyzed within ClickHouse
+
+<Tip>
+If `JSON` is an opaque document that isn't analyzed inside the database, and only stored and retrieved back, it should be stored as a `String` field. The `JSON` type's benefits only materialize when you need to efficiently query, filter, or aggregate on specific fields within dynamic `JSON` structures.
+
+You can also mix approaches—use standard columns for predictable top-level fields and a `JSON` column for dynamic sections of the payload.
+</Tip>)DOCS_MD"},
+
+    {"common-pretty-format-settings.mdx", R"DOCS_MD(The following settings are common to all `Pretty` formats:
+
+| Setting                                                                                                                                                                     | Description                                                                                                                                                                                                                                 | Default |
+|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---------|
+| [`output_format_pretty_max_rows`](/reference/settings/formats#output_format_pretty_max_rows)                                                          | Row limit for Pretty formats.                                                                                                                                                                                                               | `10000` |
+| [`output_format_pretty_max_column_pad_width`](/reference/settings/formats#output_format_pretty_max_column_pad_width)                                  | Maximum width to pad all values in a column in Pretty formats.                                                                                                                                                                              | `250`   |
+| [`output_format_pretty_max_value_width`](/reference/settings/formats#output_format_pretty_max_value_width)                                            | Maximum width of value to display in Pretty formats. If greater - it will be cut.                                                                                                                                                           | `10000` |                                                                                                                                                 
+| [`output_format_pretty_color`](/reference/settings/formats#output_format_pretty_color)                                                                | Use ANSI escape sequences to paint colors in Pretty formats.                                                                                                                                                                                | `true`  |
+| [`output_format_pretty_grid_charset`](/reference/settings/formats#output_format_pretty_grid_charset)                                                  | Charset for printing grid borders. Available charsets: ASCII, UTF-8.                                                                                                                                                                        | `UTF-8` |                                                                                                                                                           
+| [`output_format_pretty_row_numbers`](/reference/settings/formats#output_format_pretty_row_numbers)                                                    | Add row numbers before each row for pretty output format.                                                                                                                                                                                   | `true`  |                                                                                                                                                                          
+| [`output_format_pretty_display_footer_column_names`](/reference/settings/formats#output_format_pretty_display_footer_column_names)                    | Display column names in the footer if table contains many rows.                                                                                                                                                                             | `true`  |                                                                                                                                                                    
+| [`output_format_pretty_display_footer_column_names_min_rows`](/reference/settings/formats#output_format_pretty_display_footer_column_names_min_rows)  | Sets the minimum number of rows for which a footer will be displayed if [`output_format_pretty_display_footer_column_names`](/reference/settings/formats#output_format_pretty_display_footer_column_names) is enabled.  | `50`    |)DOCS_MD"},
+
+    {"common-row-binary-format-settings.mdx", R"DOCS_MD(The following settings are common to all `RowBinary` type formats.
+
+| Setting                                                                                                                                              | Description                                                                                                                                                                                                                                         | Default |
+|------------------------------------------------------------------------------------------------------------------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---------|
+| [`format_binary_max_string_size`](/reference/settings/formats#format_binary_max_string_size)                                           | The maximum allowed size for String in RowBinary format.                                                                                                                                                                                          | `1GiB`  |
+| [`output_format_binary_encode_types_in_binary_format`](/reference/settings/formats#input_format_binary_decode_types_in_binary_format) | Allows to write types in header using [`binary encoding`](/reference/data-types/data-types-binary-encoding) instead of strings with type names in [`RowBinaryWithNamesAndTypes`](/reference/formats/RowBinary/RowBinaryWithNamesAndTypes) output format.  | `false` |
+| [`input_format_binary_decode_types_in_binary_format`](/reference/settings/formats#input_format_binary_decode_types_in_binary_format)   | Allows to read types in header using [`binary encoding`](/reference/data-types/data-types-binary-encoding) instead of strings with type names in [`RowBinaryWithNamesAndTypes`](/reference/formats/RowBinary/RowBinaryWithNamesAndTypes) input format.    | `false` |
+| [`output_format_binary_write_json_as_string`](/reference/settings/formats#output_format_binary_write_json_as_string)                   | Allows to write values of the [`JSON`](/reference/data-types/newjson) data type as `JSON` [String](/reference/data-types/string) values in [`RowBinary`](/reference/formats/RowBinary/RowBinary) output format.                            | `false` |
+| [`input_format_binary_read_json_as_string`](/reference/settings/formats#input_format_binary_read_json_as_string)                       | Allows to read values of the [`JSON`](/reference/data-types/newjson) data type as `JSON` [String](/reference/data-types/string) values in [`RowBinary`](/reference/formats/RowBinary/RowBinary) input format.                              | `false` |)DOCS_MD"},
+
+    {"data-types-matching.mdx", R"DOCS_MD(The table below shows all data types supported by the Apache Avro format, and their corresponding ClickHouse [data types](/reference/data-types/index) in `INSERT` and `SELECT` queries.
+
+| Avro data type `INSERT`                     | ClickHouse data type                                                                                                          | Avro data type `SELECT`         |
+|---------------------------------------------|-------------------------------------------------------------------------------------------------------------------------------|---------------------------------|
+| `boolean`, `int`, `long`, `float`, `double` | [Int(8\16\32)](/reference/data-types/int-uint), [UInt(8\16\32)](/reference/data-types/int-uint) | `int`                           |
+| `boolean`, `int`, `long`, `float`, `double` | [Int64](/reference/data-types/int-uint), [UInt64](/reference/data-types/int-uint)               | `long`                          |
+| `boolean`, `int`, `long`, `float`, `double` | [Float32](/reference/data-types/float)                                                                         | `float`                         |
+| `boolean`, `int`, `long`, `float`, `double` | [Float64](/reference/data-types/float)                                                                         | `double`                        |
+| `bytes`, `string`, `fixed`, `enum`          | [String](/reference/data-types/string)                                                                         | `bytes` or `string` \*          |
+| `bytes`, `string`, `fixed`                  | [FixedString(N)](/reference/data-types/fixedstring)                                                            | `fixed(N)`                      |
+| `enum`                                      | [Enum(8\16)](/reference/data-types/enum)                                                                       | `enum`                          |
+| `array(T)`                                  | [Array(T)](/reference/data-types/array)                                                                        | `array(T)`                      |
+| `map(V, K)`                                 | [Map(V, K)](/reference/data-types/map)                                                                         | `map(string, K)`                |
+| `union(null, T)`, `union(T, null)`          | [Nullable(T)](/reference/data-types/date)                                                                      | `union(null, T)`                |
+| `union(T1, T2, …)` \**                      | [Variant(T1, T2, …)](/reference/data-types/variant)                                                            | `union(T1, T2, …)` \**          |
+| `null`                                      | [Nullable(Nothing)](/reference/data-types/special-data-types/nothing)                                          | `null`                          |
+| `int (date)` \**\*                          | [Date](/reference/data-types/date), [Date32](/reference/data-types/date32)                       | `int (date)` \**\*              |
+| `long (timestamp-millis)` \**\*             | [DateTime64(3)](/reference/data-types/datetime)                                                                | `long (timestamp-millis)` \**\* |
+| `long (timestamp-micros)` \**\*             | [DateTime64(6)](/reference/data-types/datetime)                                                                | `long (timestamp-micros)` \**\* |
+| `bytes (decimal)`  \**\*                    | [DateTime64(N)](/reference/data-types/datetime)                                                                | `bytes (decimal)`  \**\*        |
+| `int`                                       | [IPv4](/reference/data-types/ipv4)                                                                             | `int`                           |
+| `fixed(16)`                                 | [IPv6](/reference/data-types/ipv6)                                                                             | `fixed(16)`                     |
+| `bytes (decimal)` \**\*                     | [Decimal(P, S)](/reference/data-types/decimal)                                                                 | `bytes (decimal)` \**\*         |
+| `string (uuid)` \**\*                       | [UUID](/reference/data-types/uuid)                                                                             | `string (uuid)` \**\*           |
+| `fixed(16)`                                 | [Int128/UInt128](/reference/data-types/int-uint)                                                               | `fixed(16)`                     |
+| `fixed(32)`                                 | [Int256/UInt256](/reference/data-types/int-uint)                                                               | `fixed(32)`                     |
+| `record`                                    | [Tuple](/reference/data-types/tuple)                                                                           | `record`                        |
+
+\* `bytes` is default, controlled by setting [`output_format_avro_string_column_pattern`](/reference/settings/formats#output_format_avro_string_column_pattern)
+
+\**  The [Variant type](/reference/data-types/variant) implicitly accepts `null` as a field value, so for example the Avro `union(T1, T2, null)` will be converted to `Variant(T1, T2)`.
+As a result, when producing Avro from ClickHouse, we have to always include the `null` type to the Avro `union` type set as we don't know if any value is actually `null` during the schema inference.
+
+\**\* [Avro logical types](https://avro.apache.org/docs/current/spec.html#Logical+Types)
+
+Unsupported Avro logical data types:
+- `time-millis`
+- `time-micros`
+- `duration`)DOCS_MD"},
+
+};
+
+/// Replaces self-closing usages of a known documentation snippet import (see `DOC_SNIPPETS`) with
+/// the snippet's own content, so this line-based renderer does not have to special-case them: the
+/// substituted content runs back through the same per-line handling as the rest of the document
+/// (e.g. an admonition inside a snippet renders like any other admonition).
+String resolveDocSnippets(const String & markdown)
+{
+    std::vector<std::string_view> lines;
+    {
+        std::string_view rest = markdown;
+        while (true)
+        {
+            const size_t nl = rest.find('\n');
+            lines.push_back(rest.substr(0, nl));
+            if (nl == std::string_view::npos)
+                break;
+            rest = rest.substr(nl + 1);
+        }
+    }
+
+    std::vector<std::pair<std::string_view, std::string_view>> resolved;
+    for (std::string_view line : lines)
+        if (auto imp = parseMdxImportLine(line))
+            for (const auto & snippet : DOC_SNIPPETS)
+                if (imp->path.ends_with(snippet.path_suffix))
+                    resolved.emplace_back(imp->local_name, snippet.content);
+
+    if (resolved.empty())
+        return markdown;
+
+    String out;
+    out.reserve(markdown.size());
+    for (size_t i = 0; i < lines.size(); ++i)
+    {
+        std::string_view stripped = trimView(lines[i]);
+        bool replaced = false;
+        if (auto tag = parseMdxTagLine(stripped); tag && tag->self_closing)
+        {
+            for (const auto & [name, content] : resolved)
+            {
+                if (tag->name == name)
+                {
+                    out += content;
+                    replaced = true;
+                    break;
+                }
+            }
+        }
+        if (!replaced)
+            out += lines[i];
+        if (i + 1 < lines.size())
+            out += '\n';
+    }
+    return out;
+}
+
+/// The value of a `name="value"` attribute in an MDX tag's attribute list, or empty if absent.
+std::string_view mdxAttribute(std::string_view attrs, std::string_view name)
+{
+    size_t pos = 0;
+    while (pos < attrs.size())
+    {
+        size_t found = attrs.find(name, pos);
+        if (found == std::string_view::npos)
+            return {};
+        pos = found + name.size();
+        const bool at_word_start = found == 0 || isInlineSpace(attrs[found - 1]);
+        std::string_view rest = attrs.substr(found + name.size());
+        while (!rest.empty() && isInlineSpace(rest.front()))
+            rest.remove_prefix(1);
+        if (!at_word_start || rest.empty() || rest.front() != '=')
+            continue;
+        rest = rest.substr(1);
+        while (!rest.empty() && isInlineSpace(rest.front()))
+            rest.remove_prefix(1);
+        if (rest.empty() || rest.front() != '"')
+            continue;
+        rest = rest.substr(1);
+        const size_t close = rest.find('"');
+        if (close == std::string_view::npos)
+            return {};
+        return rest.substr(0, close);
+    }
+    return {};
+}
+
+/// Mintlify admonition components used by embedded documentation pages (converted from the website's
+/// Mintlify sources); rendered like the equivalent `:::type` Docusaurus admonitions.
+bool isMdxAdmonitionComponent(std::string_view name)
+{
+    return name == "Note" || name == "Warning" || name == "Tip" || name == "Info" || name == "Check" || name == "Danger"
+        || name == "Caution";
+}
+
+/// Known layout-only MDX components: their tags are dropped while the content between an open/close
+/// pair keeps rendering as ordinary Markdown (a `Tab`/`Card` title is preserved, see `renderDocument`).
+bool isMdxLayoutComponent(std::string_view name)
+{
+    return name == "Tabs" || name == "Tab" || name == "TabItem" || name == "Card" || name == "CardGroup"
+        || name == "VerticalStepper" || name == "Image";
+}
+
 /// Human-readable text for an MDX badge component such as `<ExperimentalBadge/>`. Known badges get a
 /// descriptive label; any other `*Badge` component falls back to its name with the camel case split.
 String badgeLabel(std::string_view name)
@@ -109,6 +412,10 @@ String badgeLabel(std::string_view name)
         return "ClickHouse Cloud only";
     if (name == "PrivatePreviewBadge")
         return "Private Preview";
+    if (name == "ScalePlanFeatureBadge")
+        return "Scale plan feature";
+    if (name == "EnterprisePlanFeatureBadge")
+        return "Enterprise plan feature";
 
     std::string_view stem = name;
     if (stem.ends_with("Badge"))
@@ -121,6 +428,31 @@ String badgeLabel(std::string_view name)
         result += stem[i];
     }
     return result;
+}
+
+/// The substantive message that a plan-gating badge renders from its attributes on the website
+/// (`docs/snippets/components/ScalePlanFeatureBadge`, `.../EnterprisePlanFeatureBadge`): which plan a
+/// feature requires and how to get it. Unlike a status badge, collapsing these to a label would lose
+/// that message, so it is rendered after the label. An attribute is truthy when present with a
+/// non-empty value, matching how the website's JSX treats the string attributes the documentation
+/// actually uses (`support="true"`, `linking_verb_are="True"`); kept in sync with the identical
+/// `badgePayload` in `programs/server/docs.html`.
+String badgePayload(std::string_view name, std::string_view attributes)
+{
+    if (name != "ScalePlanFeatureBadge" && name != "EnterprisePlanFeatureBadge")
+        return {};
+
+    std::string_view feature = mdxAttribute(attributes, "feature");
+    if (feature.empty())
+        feature = "This feature";
+    const std::string_view verb = mdxAttribute(attributes, "linking_verb_are").empty() ? "is" : "are";
+
+    const String message = String(feature) + ' ' + String(verb);
+    if (name == "ScalePlanFeatureBadge")
+        return message + " available in the Scale and Enterprise plans. To upgrade, visit the plans page in the cloud console.";
+    if (mdxAttribute(attributes, "support").empty())
+        return message + " available in the Enterprise plan. To upgrade, visit the plans page in the cloud console.";
+    return message + " available in the Enterprise plan. Contact support to enable this feature.";
 }
 
 /// Removes a trailing explicit anchor such as `{#projections}` from a header's text. Documentation
@@ -210,13 +542,13 @@ public:
         }
         out += "\n\n";
 
-        renderDocument(description);
+        renderDocument(resolveDocSnippets(description));
         return finish();
     }
 
     String render(const String & markdown)
     {
-        renderDocument(markdown);
+        renderDocument(resolveDocSnippets(markdown));
         return finish();
     }
 
@@ -469,6 +801,14 @@ private:
                         if (name.size() > 5 && name[0] >= 'A' && name[0] <= 'Z' && name.ends_with("Badge"))
                         {
                             append("[" + badgeLabel(name) + "]", Style{.bold = true});
+                            /// A plan-gating badge also carries a substantive message built from its
+                            /// attributes; render it after the label (see `badgePayload`).
+                            if (const String payload = badgePayload(name, s.substr(p, close - 1 - p)); !payload.empty())
+                            {
+                                flush_word();
+                                push_space();
+                                scan(payload);
+                            }
                             i = close + 1;
                             continue;
                         }
@@ -910,6 +1250,9 @@ private:
             return true;
         if (isMdxImport(stripped))
             return true;
+        if (auto tag = parseMdxTagLine(stripped);
+            tag && !tag->name.ends_with("Badge") && (isMdxAdmonitionComponent(tag->name) || isMdxLayoutComponent(tag->name) || tag->self_closing))
+            return true;
         size_t ml = 0;
         String marker;
         bool ordered = false;
@@ -953,6 +1296,59 @@ private:
             {
                 ++i;
                 continue;
+            }
+
+            /// A line that is a single MDX component tag: website machinery around Markdown content.
+            /// A known documentation snippet import (e.g. `<PrettyFormatSettings/>`) was already
+            /// replaced with its actual content by `resolveDocSnippets` before this loop runs, so by
+            /// this point a self-closing tag is either an unresolved snippet or a decorative
+            /// component with nothing to render. A Mintlify admonition (`<Note>` ... `</Note>`)
+            /// renders like its `:::note` equivalent; a `<Tab title="...">` / `<Card title="...">`
+            /// keeps its title as a bold line so the alternatives it introduces stay distinguishable;
+            /// the other known component tags (and any remaining self-closing component) are dropped
+            /// while the content between an open/close pair keeps rendering as ordinary Markdown.
+            /// Badges are not intercepted: they keep their inline rendering (`[Experimental]`).
+            /// Unknown non-self-closing tags render literally, preserving `<...>` placeholders in prose.
+            if (auto tag = parseMdxTagLine(stripped); tag && !tag->name.ends_with("Badge"))
+            {
+                if (isMdxAdmonitionComponent(tag->name))
+                {
+                    if (!tag->closing && !tag->self_closing)
+                    {
+                        const String close_tag = "</" + String(tag->name) + ">";
+                        size_t close_pos = i + 1;
+                        std::vector<std::string_view> body_lines;
+                        while (close_pos < lines.size() && trimView(stripCR(lines[close_pos])) != close_tag)
+                        {
+                            body_lines.push_back(stripCR(lines[close_pos]));
+                            ++close_pos;
+                        }
+                        if (close_pos < lines.size())
+                        {
+                            String type(tag->name);
+                            std::transform(type.begin(), type.end(), type.begin(), [](char c) { return std::tolower(static_cast<unsigned char>(c)); });
+                            renderAdmonition(type, {}, body_lines);
+                            i = close_pos + 1;
+                            continue;
+                        }
+                    }
+                    /// A close tag, a self-closing tag, or an open tag with no matching close: drop the line.
+                    ++i;
+                    continue;
+                }
+                if (isMdxLayoutComponent(tag->name) || tag->self_closing)
+                {
+                    if (!tag->closing && !tag->self_closing)
+                    {
+                        std::string_view title = mdxAttribute(tag->attributes, "title");
+                        if (title.empty())
+                            title = mdxAttribute(tag->attributes, "label");
+                        if (!title.empty())
+                            layout(renderInline("**" + String(title) + "**"), 0, 0);
+                    }
+                    ++i;
+                    continue;
+                }
             }
 
             /// Docusaurus admonition: `:::type [title]` ... `:::`. The fences may use more than three
