@@ -445,3 +445,94 @@ TEST_F(MetadataInMemoryTest, TestHardlinkedBlobReleasedOnlyOnLastUnlink)
     }
     EXPECT_TRUE(metadata->hasPendingRemovalBlobs({blob}));
 }
+
+/// `FREEZE` of a replicated `borrow_from_cache` table writes `frozen_metadata.txt` through
+/// `writeStringToFile` and reads it back via `readFileToString` (`FreezeMetaData::save`/`load`).
+/// The in-memory backend must round-trip that plain-content file (no backing blobs) rather than
+/// throwing `NOT_IMPLEMENTED`, and it must be removable and overwritable like any other file.
+TEST_F(MetadataInMemoryTest, TestWriteStringToFileRoundTrip)
+{
+    auto metadata = getMetadataStorage();
+
+    const std::string content = "2\nreplica_1\nzk\nshared_id\n";
+
+    /// Root-level plain file (mirrors `frozen_metadata.txt`).
+    {
+        auto transaction = metadata->createTransaction();
+        transaction->writeStringToFile("frozen_metadata.txt", content);
+        transaction->commit(DB::NoCommitOptions{});
+    }
+
+    EXPECT_TRUE(metadata->existsFile("frozen_metadata.txt"));
+    EXPECT_EQ(metadata->readFileToString("frozen_metadata.txt"), content);
+    /// A plain-content file has no backing objects.
+    EXPECT_TRUE(metadata->getStorageObjects("frozen_metadata.txt").empty());
+
+    /// Overwriting replaces the content in place.
+    {
+        auto transaction = metadata->createTransaction();
+        transaction->writeStringToFile("frozen_metadata.txt", "updated");
+        transaction->commit(DB::NoCommitOptions{});
+    }
+    EXPECT_EQ(metadata->readFileToString("frozen_metadata.txt"), "updated");
+
+    /// Removing it releases no blobs (there are none) and it no longer exists (`FreezeMetaData::clean`).
+    {
+        auto transaction = metadata->createTransaction();
+        transaction->unlinkFile("frozen_metadata.txt", /* if_exists= */ false, /* should_remove_objects= */ true);
+        transaction->commit(DB::NoCommitOptions{});
+        EXPECT_EQ(transaction->getSubmittedForRemovalBlobs().size(), 0);
+    }
+    EXPECT_FALSE(metadata->existsFile("frozen_metadata.txt"));
+
+    /// Reading a missing plain file reports it clearly rather than returning empty data.
+    EXPECT_ANY_THROW(metadata->readFileToString("frozen_metadata.txt"));
+
+    /// A nested plain file requires its parent directory to exist, matching disk-backed metadata.
+    {
+        auto transaction = metadata->createTransaction();
+        transaction->writeStringToFile("shadow/frozen_metadata.txt", content);
+        /// Parent directory `shadow/` was never created.
+        EXPECT_ANY_THROW(transaction->commit(DB::NoCommitOptions{}));
+    }
+    {
+        auto transaction = metadata->createTransaction();
+        transaction->createDirectory("shadow");
+        transaction->writeStringToFile("shadow/frozen_metadata.txt", content);
+        transaction->commit(DB::NoCommitOptions{});
+    }
+    EXPECT_EQ(metadata->readFileToString("shadow/frozen_metadata.txt"), content);
+}
+
+/// `FREEZE` and detached-part cloning mark each source file read-only (`BackupImpl` with
+/// `make_source_readonly`, also reached by `makeCloneInDetached`/`DETACH PART`). For this ephemeral
+/// backend `setReadOnly` is a validated no-op: it must succeed on an existing file (leaving it
+/// otherwise unchanged) and throw on a missing one, rather than throwing `NOT_IMPLEMENTED`.
+TEST_F(MetadataInMemoryTest, TestSetReadOnlyIsNoOpButValidatesExistence)
+{
+    auto metadata = getMetadataStorage();
+    const DB::StoredObject blob(DB::ObjectStorageKey::createAsAbsolute("k1").serialize(), "file", 123);
+
+    {
+        auto transaction = metadata->createTransaction();
+        transaction->createMetadataFile("file", {blob});
+        transaction->commit(DB::NoCommitOptions{});
+    }
+
+    /// No-op on an existing file: it stays present and its blobs are unchanged.
+    {
+        auto transaction = metadata->createTransaction();
+        transaction->setReadOnly("file");
+        transaction->commit(DB::NoCommitOptions{});
+    }
+    EXPECT_TRUE(metadata->existsFile("file"));
+    ASSERT_EQ(metadata->getStorageObjects("file").size(), 1);
+    EXPECT_EQ(metadata->getStorageObjects("file")[0].remote_path, "k1");
+
+    /// Missing file is rejected instead of silently succeeding.
+    {
+        auto transaction = metadata->createTransaction();
+        transaction->setReadOnly("does_not_exist");
+        EXPECT_ANY_THROW(transaction->commit(DB::NoCommitOptions{}));
+    }
+}

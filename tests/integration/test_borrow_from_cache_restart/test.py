@@ -62,6 +62,46 @@ def test_borrow_from_cache_atomic_db_creates_no_host_root_symlink(started_cluste
     node.query("DROP TABLE borrowed_symlink SYNC")
 
 
+def test_borrow_from_cache_freeze_and_detach_part(started_cluster):
+    # Regression: `FREEZE` and detached-part cloning of a `MergeTree` table on a `borrow_from_cache`
+    # disk go through `BackupImpl` with `make_source_readonly`, which calls
+    # `IMetadataTransaction::setReadOnly` on each part file. The `memory` metadata backend used to
+    # leave `setReadOnly` (and the string metadata read/write helpers) unimplemented, so
+    # `ALTER TABLE ... FREEZE`, `DETACH PART`, and broken-part quarantine failed with `NOT_IMPLEMENTED`
+    # even though the table itself is supported. These operations must now succeed.
+    node.query("DROP TABLE IF EXISTS borrowed_freeze SYNC")
+    node.query(
+        """
+        CREATE TABLE borrowed_freeze (key UInt64)
+        ENGINE = MergeTree ORDER BY key
+        SETTINGS disk = disk(
+            type = object_storage,
+            object_storage_type = 'borrow_from_cache',
+            cache_name = 'borrowed_cache',
+            name = 'borrowed_freeze_disk')
+        """
+    )
+    node.query("INSERT INTO borrowed_freeze VALUES (1), (2), (3)")
+
+    # FREEZE marks each source part file read-only and hardlinks the part into `shadow/`.
+    node.query("ALTER TABLE borrowed_freeze FREEZE WITH NAME 'borrow_backup'")
+
+    # Freezing leaves the table itself untouched and still readable.
+    assert node.query("SELECT count() FROM borrowed_freeze").strip() == "3"
+
+    # Detaching and re-attaching a part exercises `makeCloneInDetached` (also `make_source_readonly`).
+    part = node.query(
+        "SELECT name FROM system.parts WHERE table = 'borrowed_freeze' AND active ORDER BY name LIMIT 1"
+    ).strip()
+    node.query(f"ALTER TABLE borrowed_freeze DETACH PART '{part}'")
+    node.query(f"ALTER TABLE borrowed_freeze ATTACH PART '{part}'")
+    assert node.query("SELECT count() FROM borrowed_freeze").strip() == "3"
+
+    # Releasing the frozen snapshot and dropping the table both clean up without error.
+    node.query("SYSTEM UNFREEZE WITH NAME 'borrow_backup'")
+    node.query("DROP TABLE borrowed_freeze SYNC")
+
+
 def test_borrow_from_cache_restart_with_absent_cache(started_cluster):
     # A `borrow_from_cache` table stores its data only in node-local cache segments, so its data
     # does not survive a restart. The named cache is registered by a *separate* disk, and on restart

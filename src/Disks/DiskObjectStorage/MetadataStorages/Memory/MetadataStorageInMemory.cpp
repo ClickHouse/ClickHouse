@@ -22,7 +22,6 @@ namespace ErrorCodes
     extern const int DIRECTORY_DOESNT_EXIST;
     extern const int CANNOT_RMDIR;
     extern const int LOGICAL_ERROR;
-    extern const int NOT_IMPLEMENTED;
 }
 
 MetadataStorageInMemory::MetadataStorageInMemory(
@@ -198,9 +197,18 @@ uint32_t MetadataStorageInMemory::getHardlinkCount(const std::string & path) con
     return entry->blob_group->ref_count - 1;
 }
 
-std::string MetadataStorageInMemory::readFileToString(const std::string & /* path */) const
+std::string MetadataStorageInMemory::readFileToString(const std::string & path) const
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "readFileToString is not supported by in-memory metadata storage");
+    /// `readFileToString` reads back the raw content of a plain metadata file. For this backend the
+    /// only such files are the ones written via `writeStringToFile` (e.g. `frozen_metadata.txt`
+    /// during `FREEZE` of a replicated table), whose content is stored as the entry's inline data.
+    /// It is never used to read a blob-backed data file here — those are read through
+    /// `getStorageObjects` — so returning the inline data is exact.
+    std::shared_lock lock(metadata_mutex);
+    auto * entry = findFile(path);
+    if (!entry)
+        throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File does not exist: {}", path);
+    return entry->blob_group->inline_data;
 }
 
 std::string MetadataStorageInMemory::readInlineDataToString(const std::string & path) const
@@ -363,9 +371,57 @@ TransactionCommitOutcomeVariant MetadataStorageInMemoryTransaction::tryCommit(co
     return true;
 }
 
-void MetadataStorageInMemoryTransaction::writeStringToFile(const std::string & /* path */, const std::string & /* data */)
+void MetadataStorageInMemoryTransaction::setReadOnly(const std::string & path)
 {
-    throwNotImplemented();
+    operations.emplace_back([this, path]()
+    {
+        /// `setReadOnly` marks a metadata file read-only during `FREEZE` and detached-part cloning
+        /// (`BackupImpl` with `make_source_readonly`, also reached by `IMergeTreeDataPart::makeCloneInDetached`
+        /// for broken parts and `DETACH PART`). On disk it flips the `read_only` flag in the serialized
+        /// object metadata; nothing in the object-storage removal path consumes that flag, and this
+        /// backend's blob lifetime is driven entirely by `ref_count` (see `unlinkFile`), so there is
+        /// nothing to mark on the ephemeral in-memory metadata. Keep it a no-op, but validate existence
+        /// to match the disk-backed `SetReadonlyFileOperation`, which throws when the file is missing.
+        if (!metadata_storage.findFile(path))
+            throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "Can't update readonly flag for file: {}", path);
+    });
+}
+
+void MetadataStorageInMemoryTransaction::writeStringToFile(const std::string & path, const std::string & data)
+{
+    operations.emplace_back([this, path, data]()
+    {
+        /// A plain metadata file whose content is `data` itself (e.g. `frozen_metadata.txt` written by
+        /// `FreezeMetaData::save`), as opposed to a blob-backed data file. Store the content as inline
+        /// data with no backing objects, so it round-trips through `readFileToString` and can be
+        /// unlinked like any other file. Overwriting an existing file replaces its content.
+        auto * entry = metadata_storage.findFile(path);
+        if (!entry)
+        {
+            /// Reject creation at a path that already exists as a directory, and require the parent
+            /// directory to exist — matching `createMetadataFile` and the disk-backed `WriteFileOperation`,
+            /// which fails to open the file when the parent directory is missing.
+            if (metadata_storage.directories.contains(path + "/"))
+                throw Exception(ErrorCodes::FILE_ALREADY_EXISTS,
+                    "Cannot create file {}: a directory already exists at this path", path);
+
+            auto last_slash = path.rfind('/');
+            if (last_slash != std::string::npos && last_slash > 0)
+            {
+                std::string parent = path.substr(0, last_slash + 1);
+                if (!metadata_storage.directories.contains(parent))
+                    throw Exception(ErrorCodes::DIRECTORY_DOESNT_EXIST,
+                        "Cannot create file {}: parent directory does not exist", path);
+            }
+
+            recordFileBefore(path);
+            metadata_storage.files[path] = MetadataStorageInMemory::FileEntry{};
+            entry = &metadata_storage.files[path];
+        }
+        recordBlobGroupBefore(entry->blob_group);
+        entry->blob_group->inline_data = data;
+        entry->blob_group->last_modified = Poco::Timestamp();
+    });
 }
 
 void MetadataStorageInMemoryTransaction::writeInlineDataToFile(const std::string & path, const std::string & data)
