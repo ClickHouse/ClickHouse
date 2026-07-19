@@ -111,8 +111,16 @@ TEST(PaimonLatestHint, ConcurrentHintRewriteDoesNotCrash)
     auto table = makePaimonTable(tmp.path, {1, 10}, "1");
     auto hint = table / Paimon::PAIMON_SNAPSHOT_DIR / Paimon::PAIMON_SNAPSHOT_LATEST_HINT;
 
+    /// The pre-fix chassert only fires when the hint read goes through createReadBuffer's
+    /// AsynchronousBoundedReadBuffer, which is selected by remote_filesystem_read_method=threadpool
+    /// + remote_filesystem_read_prefetch=1. Pin both explicitly so the repro stays tied to the
+    /// failure mode rather than to whatever the global defaults happen to be.
+    auto context = Context::createCopy(getContext().context);
+    context->setSetting("remote_filesystem_read_method", String("threadpool"));
+    context->setSetting("remote_filesystem_read_prefetch", Field(true));
+
     auto storage = makeLocalObjectStorage(tmp.path.string());
-    PaimonTableClient client(storage, table.string(), getContext().context);
+    PaimonTableClient client(storage, table.string(), context);
 
     std::atomic<bool> stop{false};
     std::thread writer(
