@@ -741,10 +741,44 @@ void ASTCreateQuery::readJSON(const Poco::JSON::Object & json)
     if (allowed_lateness && !is_window_view)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "`CreateQuery` has 'allowed_lateness' set but is not a window view during AST JSON deserialization");
-    if (targets && !is_materialized_view && !is_window_view && !is_time_series_table && !has_inner_uuid_clause)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "`CreateQuery` has 'targets' set but is not a materialized view, window view, `TimeSeries` table, "
-            "or a table with a 'TO INNER UUID' clause during AST JSON deserialization");
+    if (targets && !is_materialized_view && !is_window_view && !is_time_series_table)
+    {
+        /// The only non-view / non-`TimeSeries` form that carries `targets` is a plain table with a
+        /// `TO INNER UUID` clause. `ParserCreateQuery` builds it only for `SharedSet`/`SharedJoin` engines
+        /// (see `to_inner_uuid` handling in `ParserCreateQuery.cpp`), and the resulting `ASTViewTargets`
+        /// holds exactly one `To` target whose sole payload is `inner_uuid` — no external table name, no
+        /// inner engine, no inner columns, and no other target kinds. Merely honouring `has_inner_uuid_clause`
+        /// is not enough: any other `targets` shape (an external `TO dst` table, `ENGINE`/`SAMPLES`/`TAGS`
+        /// targets, or a non-`SharedSet`/`SharedJoin` engine) makes `formatQueryImpl` emit SQL such as
+        /// `CREATE TABLE t TO dst ...` that the SQL parser never accepts. Require the flag, the exact target
+        /// shape, and the matching engine.
+        if (!has_inner_uuid_clause)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "`CreateQuery` has 'targets' set but is not a materialized view, window view, `TimeSeries` table, "
+                "or a table with a 'TO INNER UUID' clause during AST JSON deserialization");
+
+        const auto & view_targets = targets->as<const ASTViewTargets &>();
+        const bool valid_inner_uuid_shape =
+            view_targets.targets.size() == 1
+            && view_targets.targets[0].kind == ViewTarget::To
+            && view_targets.targets[0].inner_uuid != UUIDHelpers::Nil
+            && view_targets.targets[0].table_id.empty()
+            && !view_targets.targets[0].inner_engine
+            && !view_targets.targets[0].inner_columns
+            && !view_targets.targets[0].table_ast;
+        if (!valid_inner_uuid_shape)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "`CreateQuery` with a 'TO INNER UUID' clause on a plain table must carry exactly one inner-UUID "
+                "'TO' target and nothing else during AST JSON deserialization");
+
+        const bool inner_uuid_engine =
+            storage && storage->engine
+            && (storage->engine->name == "SharedSet" || storage->engine->name == "SharedJoin");
+        if (!inner_uuid_engine)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "`CreateQuery` with a 'TO INNER UUID' clause is only valid for the `SharedSet` / `SharedJoin` "
+                "engines during AST JSON deserialization");
+    }
 
     /// `formatQueryImpl` unconditionally dereferences `lateness_function` when `allowed_lateness` is set,
     /// and `watermark_function` when the bounded watermark strategy is selected. Without the child
