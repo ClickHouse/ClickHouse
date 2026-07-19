@@ -1,0 +1,39 @@
+Date IN strings with a date and time
+1
+0
+0
+1
+0
+1
+Fractional seconds
+1
+0
+Date32
+1
+0
+1
+0
+0
+Dates out of the range of the column type never match
+0
+Mixed lists
+1
+1
+0
+1
+Non-constant date column
+1
+0
+1
+Nullable
+1
+0
+Strings without a time still work
+1
+0
+Filtering by a Date key column
+1
+0
+2
+2
+Invalid strings still throw
