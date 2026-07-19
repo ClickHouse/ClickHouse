@@ -1,0 +1,106 @@
+#!/usr/bin/expect -f
+
+# Regression guard for the !defaulted() fix in ClientBase::processOptions.
+#
+# Before the fix, options["highlight"] and options["hints"] always wrote their
+# default value (true) into the configuration even when the user never passed
+# the flag on the CLI, silently overriding any <highlight>false</highlight> /
+# <hints>false</hints> coming from a --config file.
+#
+# Four cases are exercised:
+#   1. <highlight>false</highlight> in config, no --highlight CLI flag
+#      → replxx must emit NO SGR color/style escape codes while typing.
+#   2. <highlight>false</highlight> in config, explicit --highlight=1 on CLI
+#      → SGR codes must appear (CLI wins over config).
+#   3. <hints>false</hints> in config, no --hints CLI flag
+#      → no inline hint ghost text must appear while typing a partial word.
+#   4. <hints>false</hints> in config, explicit --hints=1 on CLI
+#      → ghost text must appear (CLI wins over config).
+
+set basedir [file dirname $argv0]
+set basename [file tail $argv0]
+if {[info exists env(CLICKHOUSE_TMP)]} {
+    set CLICKHOUSE_TMP $env(CLICKHOUSE_TMP)
+} else {
+    set CLICKHOUSE_TMP "."
+}
+exp_internal -f $CLICKHOUSE_TMP/$basename.debuglog 0
+set history_file $CLICKHOUSE_TMP/$basename.history
+
+log_user 0
+set timeout 60
+match_max 100000
+expect_after {
+    -i $any_spawn_id eof     { exp_continue }
+    -i $any_spawn_id timeout { exit 1 }
+}
+
+# Write temporary config files used across test cases.
+set highlight_off_cfg "$CLICKHOUSE_TMP/$basename.highlight_off.xml"
+set hints_off_cfg     "$CLICKHOUSE_TMP/$basename.hints_off.xml"
+
+set fd [open $highlight_off_cfg w]
+puts $fd {<config><highlight>false</highlight></config>}
+close $fd
+
+set fd [open $hints_off_cfg w]
+puts $fd {<config><hints>false</hints></config>}
+close $fd
+
+# ─── 1. highlight=false from config, no --highlight CLI flag ──────────────────
+# After typing a SQL keyword replxx must not emit any SGR (color/style) code.
+# An SGR sequence matches \033[<digits/semicolons>m.
+# Cursor-movement codes (\033[K, \033[G, etc.) end in non-m letters and are
+# deliberately excluded so they do not cause false failures.
+spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_CLIENT_BINARY \$CLICKHOUSE_CLIENT_EXPECT_OPT --config $highlight_off_cfg --history_file=$history_file"
+expect ":) "
+
+send -- "SELECT"
+set timeout 1
+expect {
+    -re {\x1b\[[0-9;]*[1-9][0-9;]*m} { exit 1 }
+    timeout {}
+}
+set timeout 60
+send -- "\3\4"
+expect eof
+
+# ─── 2. highlight=false from config, --highlight=1 on CLI ────────────────────
+# CLI must win over the config file: keyword SGR codes must be present.
+spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_CLIENT_BINARY \$CLICKHOUSE_CLIENT_EXPECT_OPT --config $highlight_off_cfg --highlight=1 --history_file=$history_file"
+expect ":) "
+
+send -- "SELECT"
+expect -re {\x1b\[[0-9;]*[1-9][0-9;]*m}
+send -- "\3\4"
+expect eof
+
+# ─── 3. hints=false from config, no --hints CLI flag ─────────────────────────
+# Suggestions are loaded synchronously so hints are immediately available.
+# The prefix "max_concurrent_q" completes to "max_concurrent_queries*" whose
+# suffix always starts with "ueries"; no such text must appear in ghost form.
+spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_CLIENT_BINARY \${CLICKHOUSE_CLIENT_EXPECT_OPT/--disable_suggestion/} --wait_for_suggestions_to_load --config $hints_off_cfg --history_file=$history_file"
+expect ":) "
+
+send -- "max_concurrent_q"
+set timeout 1
+expect {
+    "ueries" { exit 1 }
+    timeout  {}
+}
+set timeout 60
+send -- "\3\4"
+expect eof
+
+# ─── 4. hints=false from config, --hints=1 on CLI ────────────────────────────
+# CLI must win over the config file: ghost text must appear after the prefix.
+spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_CLIENT_BINARY \${CLICKHOUSE_CLIENT_EXPECT_OPT/--disable_suggestion/} --wait_for_suggestions_to_load --config $hints_off_cfg --hints=1 --history_file=$history_file"
+expect ":) "
+
+send -- "max_concurrent_q"
+expect "ueries"
+send -- "\3\4"
+expect eof
+
+file delete $highlight_off_cfg
+file delete $hints_off_cfg
