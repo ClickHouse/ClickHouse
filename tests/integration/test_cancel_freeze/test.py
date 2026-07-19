@@ -65,7 +65,7 @@ def test_cancel_backup():
             node.query(
                 "KILL QUERY WHERE query_kind == 'Alter' AND query LIKE '%FREEZE%' SYNC"
             )
-            assert "killed in pending state" in freeze.get_error()
+            assert "DB::Exception: Query was cancelled" in freeze.get_error()
 
             assert parts > len(
                 node.exec_in_container(["bash", "-c", f"ls {shadow_path}"])
