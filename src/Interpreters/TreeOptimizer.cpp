@@ -705,12 +705,17 @@ void TreeOptimizer::apply(ASTPtr & query, TreeRewriterResult & result,
     if (settings[Setting::optimize_injective_functions_inside_uniq])
         optimizeInjectiveFunctionsInsideUniq(query, context);
 
-    /// Eliminate min/max/any aggregators of functions of GROUP BY keys
+    /// Eliminate min/max/any aggregators of functions of GROUP BY keys.
+    /// GROUPING SETS with a single set is classified as an ordinary GROUP BY by ExpressionAnalyzer
+    /// (see analyzeAggregation), so it emits no rows with a key absent from the aggregated set and
+    /// the elimination stays valid; only the multi-set form has to be skipped.
+    const bool is_multi_set_grouping_sets = select_query->group_by_with_grouping_sets
+        && select_query->groupBy() && select_query->groupBy()->children.size() > 1;
     if (settings[Setting::optimize_aggregators_of_group_by_keys]
         && !select_query->group_by_with_totals
         && !select_query->group_by_with_rollup
         && !select_query->group_by_with_cube
-        && !select_query->group_by_with_grouping_sets)
+        && !is_multi_set_grouping_sets)
         optimizeAggregateFunctionsOfGroupByKeys(select_query, query);
 
     /// Remove functions from ORDER BY if its argument is also in ORDER BY

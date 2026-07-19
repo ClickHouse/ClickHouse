@@ -133,3 +133,25 @@ FROM values('a UInt64, b UInt64', (1, 10), (1, 50), (2, 60), (2, 100))
 GROUP BY GROUPING SETS ((a, b), (a))
 ORDER BY a, mb, GROUPING(b)
 SETTINGS enable_analyzer = 0, optimize_aggregators_of_group_by_keys = 1;
+
+-- Single-set GROUPING SETS ((...)) is executed as an ordinary GROUP BY on the legacy path
+-- (ExpressionAnalyzer classifies it as GroupByKind::ORDINARY), so it has no absent-key rows and
+-- the min/max/any elimination must still apply there with an unchanged result.
+SELECT max(number) AS m
+FROM numbers(10)
+GROUP BY GROUPING SETS ((number))
+ORDER BY m
+SETTINGS enable_analyzer = 0, optimize_aggregators_of_group_by_keys = 0;
+
+SELECT max(number) AS m
+FROM numbers(10)
+GROUP BY GROUPING SETS ((number))
+ORDER BY m
+SETTINGS enable_analyzer = 0, optimize_aggregators_of_group_by_keys = 1;
+
+-- Prove the elimination still fires for the single-set form: max(number) is rewritten to number.
+EXPLAIN SYNTAX
+SELECT max(number)
+FROM numbers(10)
+GROUP BY GROUPING SETS ((number))
+SETTINGS enable_analyzer = 0, optimize_aggregators_of_group_by_keys = 1;
