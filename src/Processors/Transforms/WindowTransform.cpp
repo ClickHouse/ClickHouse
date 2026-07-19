@@ -3031,6 +3031,8 @@ void registerWindowFunctions(AggregateFunctionFactory & factory)
     FunctionDocumentation::Description exponentialTimeDecayedSum_description = R"(
 Returns the sum of values weighted by exponential decay relative to the greatest time value.
 Aggregate states can be combined independently of the input order, including in an `AggregatingMergeTree`.
+The aggregate-function form is experimental and requires `allow_experimental_time_decay_aggregate_functions = 1`.
+The window-function form is not affected by this setting.
     )";
     FunctionDocumentation::Syntax exponentialTimeDecayedSum_syntax = "exponentialTimeDecayedSum(x)(v, t)";
     FunctionDocumentation::Arguments exponentialTimeDecayedSum_arguments = {
@@ -3228,6 +3230,8 @@ FROM
     FunctionDocumentation::Description exponentialTimeDecayedCount_description = R"(
 Returns the sum of exponential weights relative to the greatest time value.
 Aggregate states can be combined independently of the input order, including in an `AggregatingMergeTree`.
+The aggregate-function form is experimental and requires `allow_experimental_time_decay_aggregate_functions = 1`.
+The window-function form is not affected by this setting.
     )";
     FunctionDocumentation::Syntax exponentialTimeDecayedCount_syntax = "exponentialTimeDecayedCount(x)(t)";
     FunctionDocumentation::Arguments exponentialTimeDecayedCount_arguments = {
@@ -3328,6 +3332,8 @@ FROM
     FunctionDocumentation::Description exponentialTimeDecayedAvg_description = R"(
 Returns the average of values weighted by exponential decay relative to the greatest time value.
 Aggregate states can be combined independently of the input order, including in an `AggregatingMergeTree`.
+The aggregate-function form is experimental and requires `allow_experimental_time_decay_aggregate_functions = 1`.
+The window-function form is not affected by this setting.
     )";
     FunctionDocumentation::Syntax exponentialTimeDecayedAvg_syntax = "exponentialTimeDecayedAvg(x)(v, t)";
     FunctionDocumentation::Arguments exponentialTimeDecayedAvg_arguments = {

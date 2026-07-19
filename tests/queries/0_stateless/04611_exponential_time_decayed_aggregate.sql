@@ -1,3 +1,12 @@
+-- The existing window-function form remains available without the experimental setting.
+SELECT exponentialTimeDecayedSum(10)(value, time) OVER ()
+FROM VALUES('value Float64, time Float64', (1, 0));
+
+-- The new aggregate-function form is experimental and disabled by default.
+SELECT exponentialTimeDecayedSum(10)(toFloat64(1), toFloat64(0)); -- { serverError UNKNOWN_AGGREGATE_FUNCTION }
+
+SET allow_experimental_time_decay_aggregate_functions = 1;
+
 SELECT
     round(exponentialTimeDecayedSum(10)(value, time), 6),
     round(exponentialTimeDecayedAvg(10)(value, time), 6),
