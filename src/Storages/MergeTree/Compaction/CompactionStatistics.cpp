@@ -670,7 +670,6 @@ UInt64 estimateNeededMemoryForMerge(
     /// a window of the compressed file plus the decompressed block, so they can never hold more than the
     /// part's own data: cap the per-part estimate by the part size.
     UInt64 input_memory = 0;
-    UInt64 sum_input_bytes_compressed = 0;
     UInt64 sum_input_bytes_uncompressed = 0;
     for (const auto & part : source_and_patch_parts)
     {
@@ -681,7 +680,6 @@ UInt64 estimateNeededMemoryForMerge(
         const UInt64 read_buffer_size = part->isStoredOnRemoteDisk() ? remote_read_buffer_size : local_read_buffer_size;
         const UInt64 part_bytes = part->getBytesOnDisk() + part->getBytesUncompressedOnDisk();
         input_memory += std::min<UInt64>(streams * read_buffer_size, part_bytes);
-        sum_input_bytes_compressed += part->getBytesOnDisk();
         sum_input_bytes_uncompressed += part->getBytesUncompressedOnDisk();
     }
 
@@ -706,18 +704,27 @@ UInt64 estimateNeededMemoryForMerge(
     /// However, only the compressor block and the file buffer are allocated eagerly (and they start at
     /// adaptive_write_buffer_initial_size when adaptive write buffers are active for this part). Object
     /// storage upload buffers - and the growth of adaptive buffers - only ever hold data that has already
-    /// been written into them, so their total is bounded by the volume of data the merge writes, which
-    /// cannot exceed the input data volume: at most the compressed output in flight twice over (due to
-    /// double buffering of uploads) plus one uncompressed block per stream. Without this cap a merge of
-    /// tiny parts in a table with many columns on object storage would reserve gigabytes it can never
-    /// touch, and concurrent merges would saturate the soft limit and starve each other for no reason.
+    /// been written into them, so their total is bounded by the volume of data the merge writes. Bound it
+    /// by the merged output volume, not by the compressed size of the source parts: a merge interleaves
+    /// rows from several parts, and parts that each compressed very well on their own (for example even /
+    /// odd primary keys with per-part constant values) can merge into a row order that compresses far
+    /// worse, so the produced compressed output - which the multipart writers keep alive in their upload
+    /// buffers - can be much larger than 2 * sum_input_bytes_compressed. The merged part never holds more
+    /// uncompressed data than the source parts do (a merge does not add rows, and dedup / cleanup / TTL
+    /// only remove them), and its compressed size cannot exceed that uncompressed volume, so
+    /// sum_input_bytes_uncompressed is a sound upper bound on the produced compressed output. Cap the
+    /// data-dependent buffers at the compressed output in flight twice over (double buffering of uploads)
+    /// plus one uncompressed working block per stream, all bounded by the uncompressed input volume.
+    /// Without this cap a merge of tiny parts in a table with many columns on object storage would reserve
+    /// gigabytes it can never touch, and concurrent merges would saturate the soft limit and starve each
+    /// other for no reason.
     const UInt64 min_columns_for_adaptive = settings[MergeTreeSetting::min_columns_to_activate_adaptive_write_buffer];
     const bool adaptive_write_buffer = min_columns_for_adaptive != 0 && output_columns.size() >= min_columns_for_adaptive;
     const UInt64 eager_buffers_per_stream = adaptive_write_buffer
         ? 2 * settings[MergeTreeSetting::adaptive_write_buffer_initial_size]
         : local_write_buffer_size;
     const UInt64 output_data_bound = output_streams * eager_buffers_per_stream
-        + 2 * sum_input_bytes_compressed + sum_input_bytes_uncompressed;
+        + 3 * sum_input_bytes_uncompressed;
 
     const UInt64 output_memory = std::min(output_worst_case, output_data_bound);
 
@@ -893,8 +900,8 @@ UInt64 estimateNeededMemoryForMerge(
                 /// Unlike the base output above, a rebuilt projection is NOT size-bounded by the merge input:
                 /// a projection expression is not size-monotone (repeat(...), JSON / array construction can
                 /// expand the bytes per row, an aggregate projection can materialize states larger than the raw
-                /// input), so 2 * sum_input_bytes_compressed + sum_input_bytes_uncompressed is not a valid cap
-                /// here and would let the writer's upload buffers and the read-back grow past the reservation.
+                /// input), so the uncompressed-input cap used for the base output is not a valid cap here and
+                /// would let the writer's upload buffers and the read-back grow past the reservation.
                 /// Reserve the per-stream worst case instead: a writer stream never holds more than
                 /// write_buffer_size and a read-back stream never more than its read buffer, whatever the
                 /// projected data volume. On a local disk write_buffer_size is a small per-stream constant; on
