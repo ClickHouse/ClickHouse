@@ -297,7 +297,7 @@ private:
             ColumnNumbers argument_indexes{index_it->second};
 
             auto grouping_conditional = buildGroupingConditional(
-                entry.original_key, argument_indexes, kind, aggregation_keys_size,
+                entry.original_key, entry.unwrapped_key, argument_indexes, kind, aggregation_keys_size,
                 grouping_sets_keys_indexes, force_compatibility);
 
             replacements.emplace(entry.original_key, std::move(grouping_conditional));
@@ -389,9 +389,19 @@ private:
         query.setEliminatedTotalsDefaultPositions(std::move(eliminated_positions));
     }
 
-    /// True if f(g) appears in the output only as one or more whole top-level projection columns: nowhere
-    /// nested inside a projection expression, and not in ORDER BY or HAVING. Only then can a totals-row
+    /// True if f(g) appears in the output only as one or more whole top-level projection columns and never
+    /// nested inside a larger projection expression or inside HAVING. Only then can a totals-row
     /// whole-column overwrite fully correct it.
+    ///
+    /// ORDER BY referencing f(g) is allowed: the grand-total row is produced on a separate totals stream
+    /// and is never sorted (the Sorting step reorders only the main stream, and the DefaultTotalsColumns
+    /// overwrite is applied to the totals stream and preserved through it), so ORDER BY over the key sorts
+    /// the main rows on their correct per-row value while the totals column is corrected independently.
+    ///
+    /// HAVING is NOT allowed: it is applied by TotalsHavingStep (before the projection and before the
+    /// totals overwrite), its effect on the totals row depends on totals_mode, and the HAVING expression
+    /// still evaluates f(g) on the totals row. Leaving the key un-unwrapped in that case is conservative
+    /// (correct but unoptimized, same as #110721). See #110715.
     bool occursOnlyAsTopLevelProjection(
         const QueryTreeNodePtr & key, QueryNode & query, const QueryTreeNodes & projection)
     {
@@ -407,8 +417,6 @@ private:
         if (!appears_as_top_level)
             return false; /// f(g) is not projected at all -> nothing to correct, leave the key wrapped
 
-        if (query.hasOrderBy() && subtreeContains(query.getOrderByNode(), key))
-            return false;
         if (query.hasHaving() && subtreeContains(query.getHaving(), key))
             return false;
 
@@ -441,8 +449,16 @@ private:
     }
 
     /// if(equals(groupingForKind(__grouping_set, unwrapped_key), present_value), original_key, default)
+    ///
+    /// The grouping function's key argument must be `unwrapped_key` (the node that is actually a GROUP BY
+    /// key after the unwrap), NOT `original_key` (f(g), which is no longer a key). The value is identical
+    /// either way (FunctionGroupingBase computes only from __grouping_set + the precomputed argument index),
+    /// but ValidateGroupByColumnsVisitor requires every grouping() argument to be a current GROUP BY key,
+    /// and a distributed shard re-analyzes the serialized query from scratch and would otherwise reject
+    /// grouping(f(g)). See #110715.
     QueryTreeNodePtr buildGroupingConditional(
         const QueryTreeNodePtr & original_key,
+        const QueryTreeNodePtr & unwrapped_key,
         const ColumnNumbers & argument_indexes,
         GroupByKind kind,
         size_t aggregation_keys_size,
@@ -471,7 +487,7 @@ private:
             NameAndTypePair{"__grouping_set", std::make_shared<DataTypeUInt64>()}, QueryTreeNodeWeakPtr{});
 
         auto grouping_function = std::make_shared<FunctionNode>("groupingForResolved");
-        grouping_function->getArguments().getNodes() = {grouping_set_column, original_key->clone()};
+        grouping_function->getArguments().getNodes() = {grouping_set_column, unwrapped_key->clone()};
         grouping_function->resolveAsFunction(grouping_resolver->build(grouping_function->getArgumentColumns()));
 
         /// The grouping function returns 0 for a present single key when force_compatibility (the

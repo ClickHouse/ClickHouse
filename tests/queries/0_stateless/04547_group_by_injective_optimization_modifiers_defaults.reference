@@ -9,6 +9,18 @@
 0	1
 1	1
 2	1
+-- GROUPING SETS ((k),(k,k)) where the injective key repeats: grouping() must reference the
+-- unwrapped key, so the rewritten tree stays valid (it is re-analyzed on distributed shards)
+1	0
+1	0
+1	1
+1	1
+1	2
+1	2
+1	3
+1	3
+1	4
+1	4
 -- ROLLUP: the rolled-up () level is the String default
 	3
 0	1
@@ -61,6 +73,8 @@
 
 	3
 -- the optimization still fires: the aggregation key is the unwrapped column, not the function
+│  Keys: number
+-- the optimization still fires when the key is also referenced in ORDER BY (totals row is not sorted)
 │  Keys: number
 -- optimization on == off: same result with the optimization disabled
 0	1

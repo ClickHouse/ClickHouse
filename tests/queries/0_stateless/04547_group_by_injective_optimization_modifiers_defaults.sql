@@ -19,6 +19,12 @@ SELECT toString(number) AS s, count() AS c FROM numbers(3)
 GROUP BY GROUPING SETS ((toString(number)), ())
 ORDER BY grouping(toString(number)) DESC, s;
 
+SELECT '-- GROUPING SETS ((k),(k,k)) where the injective key repeats: grouping() must reference the';
+SELECT '-- unwrapped key, so the rewritten tree stays valid (it is re-analyzed on distributed shards)';
+SELECT count() AS c, toString(number) AS k FROM numbers(5)
+GROUP BY GROUPING SETS ((k), (k, k))
+ORDER BY k, c;
+
 SELECT '-- ROLLUP: the rolled-up () level is the String default';
 SELECT toString(number) AS s, count() AS c FROM numbers(3)
 GROUP BY ROLLUP(toString(number))
@@ -63,6 +69,13 @@ SELECT trimLeft(explain)
 FROM (EXPLAIN PLAN
       SELECT toString(number) AS s, count() FROM numbers(3)
       GROUP BY toString(number) WITH TOTALS)
+WHERE explain ILIKE '%Keys:%';
+
+SELECT '-- the optimization still fires when the key is also referenced in ORDER BY (totals row is not sorted)';
+SELECT trimLeft(explain)
+FROM (EXPLAIN PLAN
+      SELECT toString(number) AS s, count() FROM numbers(3)
+      GROUP BY toString(number) WITH TOTALS ORDER BY s)
 WHERE explain ILIKE '%Keys:%';
 
 SELECT '-- optimization on == off: same result with the optimization disabled';
