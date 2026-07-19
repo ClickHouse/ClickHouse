@@ -9,6 +9,8 @@
 #include <Storages/MergeTree/MergeTreeSelectProcessor.h>
 #include <Storages/MergeTree/MergeTreeSource.h>
 #include <Storages/MergeTree/MergeTreeReadTask.h>
+#include <Processors/Sources/MergeTreePointReadSource.h>
+#include <Compression/CompressionCodecQuantized.h>
 
 #include <algorithm>
 
@@ -222,6 +224,65 @@ IProcessor::PipelineUpdate LazyReadFromMergeTreeSource::updatePipeline()
 Processors LazyReadFromMergeTreeSource::buildReaders()
 {
     const auto & ctx_settings = context->getSettingsRef();
+
+    /// Point-read fast path: when the (single) lazy column is a fixed-size Array carrying a `Quantized(...)` codec
+    /// and every part stores it one-vector-per-block, fetch each shortlisted row's single compressed block instead
+    /// of decompressing whole granules. Requires the whole batch to be eligible; otherwise fall through to the
+    /// ordinary granule read below. See MergeTreePointReadSource.
+    {
+        const Block & lazy_header = outputs.front().getHeader();
+        std::optional<NameAndTypePair> point_read_column;
+        size_t point_read_dims = 0;
+        if (lazy_header.columns() == 1)
+        {
+            const auto & col = lazy_header.getByPosition(0);
+            const auto & columns_desc = storage_snapshot->metadata->getColumns();
+            if (columns_desc.has(col.name))
+            {
+                if (auto params = tryExtractQuantizedCodecParams(columns_desc.get(col.name).codec))
+                {
+                    point_read_column = NameAndTypePair(col.name, col.type);
+                    point_read_dims = params->dimensions;
+                }
+            }
+        }
+
+        if (point_read_column)
+        {
+            bool all_eligible = true;
+            for (const auto & part_with_ranges : lazy_materializing_rows->ranges_in_data_parts)
+            {
+                if (!MergeTreePointReadSource::isEligible(part_with_ranges, *point_read_column, point_read_dims))
+                {
+                    all_eligible = false;
+                    break;
+                }
+            }
+
+            if (all_eligible)
+            {
+                Processors processors;
+                auto lazy_header_ptr = std::make_shared<const Block>(lazy_header);
+                for (const auto & part_with_ranges : lazy_materializing_rows->ranges_in_data_parts)
+                {
+                    auto & offsets = lazy_materializing_rows->rows_in_parts[part_with_ranges.part_index_in_query];
+                    const size_t total_rows = offsets.size();
+                    auto source = std::make_shared<MergeTreePointReadSource>(
+                        lazy_header_ptr,
+                        part_with_ranges,
+                        std::move(offsets),
+                        *point_read_column,
+                        point_read_dims,
+                        reader_settings,
+                        max_block_size);
+                    source->addTotalRowsApprox(total_rows);
+                    processors.emplace_back(std::move(source));
+                }
+                return processors;
+            }
+        }
+    }
+
     size_t sum_marks = lazy_materializing_rows->ranges_in_data_parts.getMarksCountAllParts();
     size_t sum_rows = lazy_materializing_rows->ranges_in_data_parts.getRowsCountAllParts();
 
