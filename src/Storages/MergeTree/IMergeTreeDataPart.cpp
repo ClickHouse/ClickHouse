@@ -2933,6 +2933,21 @@ std::optional<String> IMergeTreeDataPart::getStreamNameOrHash(
     const String & extension,
     const IDataPartStorage & storage_)
 {
+    /// NAME_MAX on most local filesystems.
+    static constexpr size_t max_local_file_name_length = 255;
+
+    if (stream_name.size() + extension.size() > max_local_file_name_length)
+    {
+        /// A file with such a long raw name is normally stored under the hashed name
+        /// (see the `replace_long_file_name_to_hash` setting). Probe the hash first:
+        /// probing the raw name on a local disk throws `File name too long` instead of
+        /// returning false, which made `CHECK TABLE` report healthy parts as broken
+        /// for `JSON` columns with long paths.
+        auto hash = sipHash128String(stream_name);
+        if (storage_.existsFile(hash + extension))
+            return hash;
+    }
+
     if (storage_.existsFile(stream_name + extension))
         return stream_name;
 
