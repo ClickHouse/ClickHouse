@@ -27,6 +27,8 @@
 #include <Common/quoteString.h>
 #include <Parsers/ASTLiteral.h>
 
+#include <base/unit.h>
+
 #include <algorithm>
 #include <unordered_set>
 
@@ -545,8 +547,19 @@ InputFormatPtr getInputFormatFromASTInsertQuery(
         = with_buffers && !input_function && (has_streamed_tail || !ast_insert_query->data);
     std::unique_ptr<PrefixCapturingReadBuffer> capturing_buffer;
     if (capture_prefix_for_diagnostic)
-        capturing_buffer = std::make_unique<PrefixCapturingReadBuffer>(
-            *input_buffer, settings[Setting::input_format_max_bytes_to_read_for_schema_inference]);
+    {
+        /// Unlike the inline (`ASTInsertQuery::data`) and INFILE paths — where the data is re-read only on
+        /// the error path — a streamed insert (network / HTTP body / stdin) is consumed while parsing and
+        /// cannot be re-read, so the prefix has to be captured eagerly, on every insert, including the ones
+        /// that succeed. Capturing up to the full schema-inference sampling bound
+        /// (`input_format_max_bytes_to_read_for_schema_inference`, 32 MiB by default) would add a large copy
+        /// to the hot path for a best-effort error message. A small prefix is enough to infer the structure
+        /// (column count and types) for the diagnostic, so cap the capture at a much smaller dedicated size.
+        static constexpr size_t max_bytes_to_capture_for_diagnostic = 1_MiB;
+        const size_t capture_limit = std::min<size_t>(
+            settings[Setting::input_format_max_bytes_to_read_for_schema_inference], max_bytes_to_capture_for_diagnostic);
+        capturing_buffer = std::make_unique<PrefixCapturingReadBuffer>(*input_buffer, capture_limit);
+    }
 
     ReadBuffer & format_input = capturing_buffer ? static_cast<ReadBuffer &>(*capturing_buffer) : *input_buffer;
 
