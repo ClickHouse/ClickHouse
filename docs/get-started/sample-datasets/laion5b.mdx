@@ -31,8 +31,7 @@ We recommend users first run a sizing exercise to estimate the storage and memor
 ## Steps {#steps}
 
 <Steps>
-<Step>
-### Create table {#create-table}
+<Step title="Create table" id="create-table">
 
 Create the `laion_5b_100m` table to store the embeddings and their associated attributes:
 
@@ -61,8 +60,7 @@ CREATE TABLE laion_5b_100m
 The `id` is just an incrementing integer. The additional attributes can be used in predicates to understand
 vector similarity search combined with post-filtering/pre-filtering as explained in the [documentation](/reference/engines/table-engines/mergetree-family/annindexes)
 </Step>
-<Step>
-### Load data {#load-table}
+<Step title="Load data" id="load-table">
 
 To load the dataset from all `Parquet` files, run the following SQL statement:
 
@@ -80,8 +78,7 @@ INSERT INTO laion_5b_100m SELECT * FROM s3('https://clickhouse-datasets.s3.amazo
 ⋮
 ```
 </Step>
-<Step>
-### Run a brute-force vector similarity search {#run-a-brute-force-vector-similarity-search}
+<Step title="Run a brute-force vector similarity search" id="run-a-brute-force-vector-similarity-search">
 
 KNN (k - Nearest Neighbours) search or brute force search involves calculating the distance of each vector in the dataset
 to the search embedding vector and then ordering the distances to get the nearest neighbours. We can use one of the vectors
@@ -126,8 +123,7 @@ The vector in the row with id = 9999 is the embedding for an image of a Deli res
 Note down the query latency so that we can compare it with the query latency of ANN (using vector index).
 With 100 million rows, the above query without a vector index could take a few seconds/minutes to complete.
 </Step>
-<Step>
-### Build a vector similarity index {#build-vector-similarity-index}
+<Step title="Build a vector similarity index" id="build-vector-similarity-index">
 
 Run the following SQL to define and build a vector similarity index on the `vector` column of the `laion_5b_100m` table :
 
@@ -144,8 +140,7 @@ corresponding to selected values.
 
 Building and saving the index could even take a few hours for the full l00 million dataset, depending on the number of CPU cores available and the storage bandwidth. 
 </Step>
-<Step>
-### Perform ANN search {#perform-ann-search}
+<Step title="Perform ANN search" id="perform-ann-search">
 
 Once the vector similarity index has been built, vector search queries will automatically use the index:
 
@@ -159,8 +154,7 @@ LIMIT 20
 
 The first time load of the vector index into memory could take a few seconds/minutes.
 </Step>
-<Step>
-### Generate embeddings for search query {#generating-embeddings-for-search-query}
+<Step title="Generate embeddings for search query" id="generating-embeddings-for-search-query">
 
 The `LAION 5b` dataset embedding vectors were generated using `OpenAI CLIP` model `ViT-L/14`.
 
