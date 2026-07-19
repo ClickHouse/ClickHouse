@@ -3,6 +3,7 @@
 #include <Common/Exception.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/ProfileEvents.h>
+#include <base/getThreadId.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 
@@ -31,6 +32,24 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+}
+
+
+/// Comma-separated owner query_ids (with owner count when > 1). For diagnostics/logging only.
+static String formatOwnerQueryIds(const std::unordered_map<String, size_t> & owner_queries)
+{
+    WriteBufferFromOwnString out;
+    bool need_comma = false;
+    for (const auto & [query_id, num_owners] : owner_queries)
+    {
+        if (need_comma)
+            out << ", ";
+        out << query_id;
+        if (num_owners != 1)
+            out << " (" << num_owners << ")";
+        need_comma = true;
+    }
+    return out.str();
 }
 
 
@@ -134,7 +153,10 @@ RWLockImpl::getLock(RWLockImpl::Type type, const String & query_id, const std::c
             if (wrlock_owner != writers_queue.end())
             {
                 if (throw_in_fast_path)
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "RWLockImpl::getLock(): RWLock is already locked in exclusive mode");
+                    throw Exception(ErrorCodes::LOGICAL_ERROR,
+                        "RWLockImpl::getLock(): RWLock is already locked in exclusive mode "
+                        "(requested by query_id '{}' from thread {}; this query_id already holds {} lock(s); current owners: {})",
+                        query_id, getThreadId(), owner_query_it->second, formatOwnerQueryIds(owner_queries));
                 return nullptr;
             }
 
@@ -142,7 +164,10 @@ RWLockImpl::getLock(RWLockImpl::Type type, const String & query_id, const std::c
             if (type == Write)
             {
                 if (throw_in_fast_path)
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "RWLockImpl::getLock(): Cannot acquire exclusive lock while RWLock is already locked");
+                    throw Exception(ErrorCodes::LOGICAL_ERROR,
+                        "RWLockImpl::getLock(): Cannot acquire exclusive lock while RWLock is already locked "
+                        "(requested by query_id '{}' from thread {}; this query_id already holds {} read lock(s); current owners: {})",
+                        query_id, getThreadId(), owner_query_it->second, formatOwnerQueryIds(owner_queries));
                 return nullptr;
             }
 
@@ -384,19 +409,8 @@ std::unordered_map<String, size_t> RWLockImpl::getOwnerQueryIds() const
 
 String RWLockImpl::getOwnerQueryIdsDescription() const
 {
-    auto map = getOwnerQueryIds();
-    WriteBufferFromOwnString out;
-    bool need_comma = false;
-    for (const auto & [query_id, num_owners] : map)
-    {
-        if (need_comma)
-            out << ", ";
-        out << query_id;
-        if (num_owners != 1)
-            out << " (" << num_owners << ")";
-        need_comma = true;
-    }
-    return out.str();
+    /// Format the owners copied by getOwnerQueryIds() without holding internal_state_mtx.
+    return formatOwnerQueryIds(getOwnerQueryIds());
 }
 
 }
