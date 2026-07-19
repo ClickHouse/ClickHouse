@@ -159,6 +159,8 @@ public:
 
     void sendExternalTablesData(ExternalTablesData &) override;
 
+    void sendScalarsData(Scalars & data) override;
+
     void sendMergeTreeReadTaskResponse(const ParallelReadResponse & response) override;
 
     void sendMergeTreeAllRangesAnnouncementResponse(const InitialAllRangesAnnouncementResponse & response) override;
