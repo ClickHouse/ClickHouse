@@ -258,6 +258,68 @@ def test_postgresql_dictionary_over_ssl(started_cluster):
     node.query("DROP DICTIONARY dict_pg_ssl")
 
 
+def test_postgresql_dictionary_client_certificate(started_cluster):
+    # `PostgreSQLDictionarySource` has its own parser/copy path for `sslcert`/`sslkey`
+    # instead of reusing `StoragePostgreSQL`, so the table-function coverage does not
+    # prove the client-certificate keys on the dictionary surface. Source a dictionary
+    # from `certdb`, which only accepts a connection presenting a verified client
+    # certificate: a dropped `sslcert`/`sslkey` would make the connection fail before
+    # any row is read, so a successful load proves the keys reach `libpq`. A dedicated
+    # table keeps the test independent of the other `certdb` cases.
+    pg_exec(
+        f"psql -v ON_ERROR_STOP=1 -U postgres -d {CERT_DB} -c "
+        f'"CREATE TABLE IF NOT EXISTS dict_cert_table (key integer PRIMARY KEY, value integer); '
+        f"TRUNCATE dict_cert_table; "
+        f'INSERT INTO dict_cert_table SELECT i, i * 10 FROM generate_series(0, 9) AS i"'
+    )
+    node.query("DROP DICTIONARY IF EXISTS dict_pg_cert")
+    node.query(
+        f"""
+        CREATE DICTIONARY dict_pg_cert (key UInt32, value UInt32)
+        PRIMARY KEY key
+        SOURCE(POSTGRESQL(
+            host '{PG_HOST}' port 5432
+            user 'postgres' password '{pg_pass}'
+            db '{CERT_DB}' table 'dict_cert_table'
+            sslmode 'verify-full' sslrootcert '{CA_CERT_PATH}'
+            sslcert '{CLIENT_CERT_PATH}' sslkey '{CLIENT_KEY_PATH}'))
+        LAYOUT(HASHED())
+        LIFETIME(MIN 0 MAX 0)
+        """
+    )
+    assert node.query("SELECT count() FROM dict_pg_cert").strip() == "10"
+    assert node.query("SELECT dictGetUInt32(dict_pg_cert, 'value', toUInt64(5))").strip() == "50"
+    node.query("DROP DICTIONARY dict_pg_cert")
+
+
+def test_postgresql_dictionary_client_certificate_is_required(started_cluster):
+    # The same dictionary without a client certificate must fail, so the positive
+    # test above really did authenticate with the certificate rather than connecting
+    # anonymously. Depending on `dictionaries_lazy_load` the source is instantiated
+    # either at CREATE or on first use, so accept the error from either step.
+    node.query("DROP DICTIONARY IF EXISTS dict_pg_cert_missing")
+    try:
+        node.query(
+            f"""
+            CREATE DICTIONARY dict_pg_cert_missing (key UInt32, value UInt32)
+            PRIMARY KEY key
+            SOURCE(POSTGRESQL(
+                host '{PG_HOST}' port 5432
+                user 'postgres' password '{pg_pass}'
+                db '{CERT_DB}' table 'dict_cert_table'
+                sslmode 'verify-full' sslrootcert '{CA_CERT_PATH}'))
+            LAYOUT(HASHED())
+            LIFETIME(MIN 0 MAX 0)
+            """
+        )
+    except Exception as e:
+        error = str(e)
+    else:
+        error = node.query_and_get_error("SELECT dictGetUInt32(dict_pg_cert_missing, 'value', toUInt64(1))")
+        node.query("DROP DICTIONARY dict_pg_cert_missing")
+    assert "POSTGRESQL_CONNECTION_FAILURE" in error
+
+
 def test_client_certificate_authentication(started_cluster):
     # CERT_DB requires a verified client certificate, so a successful read proves
     # the sslcert/sslkey parameters are forwarded to libpq and accepted.
@@ -351,6 +413,58 @@ def test_materialized_postgresql_table_engine_ssl(started_cluster):
         "MaterializedPostgreSQL table engine to replicate a post-create insert over SSL",
     )
     node.query("DROP TABLE mpg_tbl_ssl SYNC")
+
+
+def test_materialized_postgresql_table_engine_client_certificate(started_cluster):
+    # The standalone `MaterializedPostgreSQL` table engine has its own duplicated
+    # settings-merge block in `StorageMaterializedPostgreSQL.cpp`, separate from the
+    # database engine, and the `verify-full` case above would still pass if
+    # `materialized_postgresql_ssl_cert`/`_ssl_key` were dropped (the server enforces
+    # SSL, but not a client certificate). Materialize a `certdb` table, which only
+    # accepts a verified client certificate, so both the snapshot and the WAL-consumer
+    # connections must authenticate with it: a dropped `_ssl_cert`/`_ssl_key` would
+    # make the initial sync never complete. A dedicated table keeps the test
+    # independent of the other `certdb` cases.
+    pg_exec(
+        f"psql -v ON_ERROR_STOP=1 -U postgres -d {CERT_DB} -c "
+        f'"CREATE TABLE IF NOT EXISTS tbl_cert_table (key integer PRIMARY KEY, value integer); '
+        f"TRUNCATE tbl_cert_table; "
+        f'INSERT INTO tbl_cert_table SELECT i, i * 10 FROM generate_series(0, 24) AS i"'
+    )
+    node.query("DROP TABLE IF EXISTS mpg_tbl_cert_ssl SYNC")
+    node.query(
+        f"""
+        CREATE TABLE mpg_tbl_cert_ssl (key Int32, value Int32)
+        ENGINE = MaterializedPostgreSQL('{PG_HOST}:5432', '{CERT_DB}', 'tbl_cert_table', 'postgres', '{pg_pass}')
+        ORDER BY key
+        SETTINGS
+            materialized_postgresql_ssl_mode = 'verify-full',
+            materialized_postgresql_ssl_root_cert = '{CA_CERT_PATH}',
+            materialized_postgresql_ssl_cert = '{CLIENT_CERT_PATH}',
+            materialized_postgresql_ssl_key = '{CLIENT_KEY_PATH}'
+        """,
+        settings={"allow_experimental_materialized_postgresql_table": 1},
+    )
+
+    wait_for(
+        lambda: node.query("SELECT count() FROM mpg_tbl_cert_ssl").strip() == "25",
+        120,
+        "MaterializedPostgreSQL table engine initial sync over a client-certificate connection",
+    )
+    assert node.query("SELECT sum(value) FROM mpg_tbl_cert_ssl").strip() == str(sum(i * 10 for i in range(25)))
+
+    # A post-create insert must replicate too, so the WAL consumer (a separate
+    # connection) also authenticates with the client certificate. Insert over the
+    # local socket (trust auth): a psycopg2 client here has no certificate to reach
+    # `certdb`.
+    pg_exec(f'psql -v ON_ERROR_STOP=1 -U postgres -d {CERT_DB} -c "INSERT INTO tbl_cert_table VALUES (25, 250)"')
+
+    wait_for(
+        lambda: node.query("SELECT value FROM mpg_tbl_cert_ssl WHERE key = 25").strip() == "250",
+        120,
+        "MaterializedPostgreSQL table engine to replicate a post-create insert over a client-certificate connection",
+    )
+    node.query("DROP TABLE mpg_tbl_cert_ssl SYNC")
 
 
 def test_materialized_postgresql_client_certificate(started_cluster):
