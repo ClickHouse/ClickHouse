@@ -52,7 +52,9 @@ close $fd
 # An SGR sequence matches \033[<digits/semicolons>m.
 # Cursor-movement codes (\033[K, \033[G, etc.) end in non-m letters and are
 # deliberately excluded so they do not cause false failures.
-spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_CLIENT_BINARY \$CLICKHOUSE_CLIENT_EXPECT_OPT --config $highlight_off_cfg --history_file=$history_file"
+# CLICKHOUSE_CLIENT_EXPECT_OPT contains "--highlight 0"; strip it so the
+# config file (not an explicit CLI flag) is what disables highlighting.
+spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_CLIENT_BINARY \${CLICKHOUSE_CLIENT_EXPECT_OPT/--highlight 0/} --config $highlight_off_cfg --history_file=$history_file"
 expect ":) "
 
 send -- "SELECT"
@@ -67,7 +69,8 @@ expect eof
 
 # ─── 2. highlight=false from config, --highlight=1 on CLI ────────────────────
 # CLI must win over the config file: keyword SGR codes must be present.
-spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_CLIENT_BINARY \$CLICKHOUSE_CLIENT_EXPECT_OPT --config $highlight_off_cfg --highlight=1 --history_file=$history_file"
+# Strip the harness's "--highlight 0" — the option cannot be repeated.
+spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_CLIENT_BINARY \${CLICKHOUSE_CLIENT_EXPECT_OPT/--highlight 0/} --config $highlight_off_cfg --highlight=1 --history_file=$history_file"
 expect ":) "
 
 send -- "SELECT"
@@ -79,7 +82,10 @@ expect eof
 # Suggestions are loaded synchronously so hints are immediately available.
 # The prefix "max_concurrent_q" completes to "max_concurrent_queries*" whose
 # suffix always starts with "ueries"; no such text must appear in ghost form.
-spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_CLIENT_BINARY \${CLICKHOUSE_CLIENT_EXPECT_OPT/--disable_suggestion/} --wait_for_suggestions_to_load --config $hints_off_cfg --history_file=$history_file"
+# Inline hints require the highlighter (ReplxxLineReader gates the hint
+# callback on it), so the harness's "--highlight 0" must be stripped as well;
+# only <hints>false</hints> from the config file may disable the hints here.
+spawn bash -c "source $basedir/../shell_config.sh ; opts=\${CLICKHOUSE_CLIENT_EXPECT_OPT/--disable_suggestion/} ; opts=\${opts/--highlight 0/} ; \$CLICKHOUSE_CLIENT_BINARY \$opts --wait_for_suggestions_to_load --config $hints_off_cfg --history_file=$history_file"
 expect ":) "
 
 send -- "max_concurrent_q"
@@ -94,7 +100,7 @@ expect eof
 
 # ─── 4. hints=false from config, --hints=1 on CLI ────────────────────────────
 # CLI must win over the config file: ghost text must appear after the prefix.
-spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_CLIENT_BINARY \${CLICKHOUSE_CLIENT_EXPECT_OPT/--disable_suggestion/} --wait_for_suggestions_to_load --config $hints_off_cfg --hints=1 --history_file=$history_file"
+spawn bash -c "source $basedir/../shell_config.sh ; opts=\${CLICKHOUSE_CLIENT_EXPECT_OPT/--disable_suggestion/} ; opts=\${opts/--highlight 0/} ; \$CLICKHOUSE_CLIENT_BINARY \$opts --wait_for_suggestions_to_load --config $hints_off_cfg --hints=1 --history_file=$history_file"
 expect ":) "
 
 send -- "max_concurrent_q"
