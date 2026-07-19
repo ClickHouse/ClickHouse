@@ -39,7 +39,7 @@ SELECT * FROM t_null
 └───┴──────┘
 ```
 
-Rows are not escaped in any of the `Pretty` formats. The following example is shown for the [`PrettyCompact`](./PrettyCompact.md) format:
+Rows are not escaped in any of the `Pretty` formats. However, when a wide but short table makes a `Pretty` format fall back to the [`Vertical`](../Vertical.md) format (see [`output_format_pretty_fallback_to_vertical`](/operations/settings/formats#output_format_pretty_fallback_to_vertical)), non-printable control characters are displayed as Unicode "Control Pictures" by default, controlled by [`output_format_vertical_display_control_characters`](/operations/settings/formats#output_format_vertical_display_control_characters). The following example is shown for the [`PrettyCompact`](./PrettyCompact.md) format:
 
 ```sql title="Query"
 SELECT 'String with \'quotes\' and \t character' AS Escaping_test

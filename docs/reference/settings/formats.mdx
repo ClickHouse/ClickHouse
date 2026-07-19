@@ -2650,6 +2650,14 @@ If it is set true, end of line in TSV format will be \\r\\n instead of \\n.
 
 If true escape ' with '', otherwise quoted with \\'
 
+## output_format_vertical_display_control_characters {#output_format_vertical_display_control_characters}   
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "1"},{"label": "New setting to display non-printable control characters as Unicode Control Pictures in the Vertical output format."}]}]}/>
+
+If enabled, non-printable control characters (NUL, SOH, tab, newline, etc.) in the Vertical output format are displayed as Unicode "Control Pictures" (such as ␀, ␉, ␊) instead of being printed as raw bytes that are usually swallowed by the terminal.
+
 ## output_format_write_statistics {#output_format_write_statistics}   
 
 <SettingsInfoBlock type="Bool" default_value="1" />
