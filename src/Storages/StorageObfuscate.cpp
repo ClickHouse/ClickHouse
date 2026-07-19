@@ -75,7 +75,15 @@ void registerStorageObfuscate(StorageFactory & factory)
             throw Exception(ErrorCodes::INCORRECT_QUERY, "Specifying ENGINE is not allowed for an Obfuscate");
 
         return std::make_shared<StorageObfuscate>(args.table_id, args.query, args.columns, args.comment);
-    });
+    },
+    {},
+    Documentation{
+        .description = R"DOCS_MD(
+The `Obfuscate` table engine produces an obfuscated version of the data returned by a `SELECT` query.
+It backs the `obfuscate` table function: reading from the table applies the same model-based obfuscation that
+`clickhouse-obfuscator` performs, preserving the statistical properties of the data while hiding the actual values.
+)DOCS_MD",
+        .syntax = "obfuscate(SELECT ...)"});
 }
 
 }
