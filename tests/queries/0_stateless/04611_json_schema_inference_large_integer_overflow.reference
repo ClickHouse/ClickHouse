@@ -1,0 +1,5 @@
+num	Nullable(Int64)					
+positive with read_numbers_as_strings=0: overflow error is clear
+positive with default settings: overflow error is clear
+negative overflow: overflow error is clear
+uint64 max + 1: overflow error is clear

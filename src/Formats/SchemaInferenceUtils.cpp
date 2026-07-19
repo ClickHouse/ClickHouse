@@ -31,6 +31,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int CANNOT_PARSE_NUMBER;
     extern const int TOO_DEEP_RECURSION;
     extern const int NOT_IMPLEMENTED;
     extern const int INCORRECT_DATA;
@@ -1017,6 +1018,19 @@ namespace
         return tryReadFloatTextExtNoExponent(value, buf, has_fractional);
     }
 
+    bool startsWithInteger(ReadBuffer & buf)
+    {
+        if (buf.eof())
+            return false;
+
+        /// JSON numbers are optional '-' followed by digits.
+        /// Treat leading '-' as an integer start without looking at the next
+        /// buffer chunk: valid JSON never ends at '-', and the following digit
+        /// may live in the next chunk.
+        char c = *buf.position();
+        return isNumericASCII(c) || c == '-';
+    }
+
     template <bool is_json>
     DataTypePtr tryInferNumber(ReadBuffer & buf, const FormatSettings & settings, JSONInferenceInfo * json_info)
     {
@@ -1027,6 +1041,8 @@ namespace
         bool has_fractional = false;
         if (settings.try_infer_integers)
         {
+            const bool integer_starts_number = is_json && startsWithInteger(buf);
+
             /// If we read from String, we can do it in a more efficient way.
             if (auto * /*string_buf*/ _ = dynamic_cast<ReadBufferFromString *>(&buf))
             {
@@ -1055,6 +1071,14 @@ namespace
                 if (tryReadIntText(tmp_uint, buf))
                     return std::make_shared<DataTypeUInt64>();
 
+                if constexpr (is_json)
+                {
+                    if (integer_starts_number)
+                        throw Exception(
+                            ErrorCodes::CANNOT_PARSE_NUMBER,
+                            "Cannot infer type of JSON integer because it is out of range of supported inferred integer types");
+                }
+
                 return nullptr;
             }
 
@@ -1082,6 +1106,14 @@ namespace
             UInt64 tmp_uint = 0;
             if (tryReadIntText(tmp_uint, peekable_buf))
                 return std::make_shared<DataTypeUInt64>();
+
+            if constexpr (is_json)
+            {
+                if (integer_starts_number)
+                    throw Exception(
+                        ErrorCodes::CANNOT_PARSE_NUMBER,
+                        "Cannot infer type of JSON integer because it is out of range of supported inferred integer types");
+            }
         }
         else if (tryReadFloat<is_json>(tmp_float, buf, settings, has_fractional))
         {
