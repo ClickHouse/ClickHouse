@@ -279,6 +279,20 @@ void StorageMaterializedPostgreSQL::dropInnerTableIfAny(bool sync, ContextPtr lo
 }
 
 
+void StorageMaterializedPostgreSQL::checkTableSizeBelowDropLimit(ContextPtr query_context) const
+{
+    /// In MaterializedPostgreSQL database engine mode there is no per-table nested storage
+    /// to size-check (the database engine owns the nested tables); mirror `dropInnerTableIfAny`.
+    if (is_materialized_postgresql_database)
+        return;
+
+    /// Mirror `dropInnerTableIfAny`'s tolerance: if the nested table is missing for any reason
+    /// the drop is a no-op, so the size check is too.
+    if (auto nested = tryGetNested())
+        nested->checkTableSizeBelowDropLimit(query_context);
+}
+
+
 bool StorageMaterializedPostgreSQL::needRewriteQueryWithFinal(const Names & column_names) const
 {
     return needRewriteQueryWithFinalForStorage(column_names, getNested());
@@ -622,7 +636,9 @@ void registerStorageMaterializedPostgreSQL(StorageFactory & factory)
         else
             metadata.primary_key = KeyDescription::getKeyFromAST(args.storage_def->order_by->ptr(), metadata.columns, {}, args.getContext());
 
-        auto configuration = StoragePostgreSQL::getConfiguration(args.engine_args, args.getContext());
+        /// The `PostgreSQLSettings` are not passed: this engine does not use a connection pool,
+        /// so the `postgresql_*` pool settings are rejected instead of being silently ignored.
+        auto configuration = StoragePostgreSQL::getConfiguration(args.engine_args, args.getContext(), /*storage_settings=*/ nullptr);
         auto connection_info = postgres::formatConnectionString(
             configuration.database,
             configuration.host,
