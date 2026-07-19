@@ -151,12 +151,14 @@ printf '6\ttimeout_row_a\n6\ttimeout_row_b\n' | ${CLICKHOUSE_CURL} -sS \
 # ── Case 7: missing destination table → fail fast before pulling input() ─────────
 # A non-existent catalog target must be rejected up front with UNKNOWN_TABLE,
 # before the request body is parsed and the SELECT runs, matching the sync path.
-# sleepEachRow(2.0) in the SELECT ensures the broken binary (which runs the
-# SELECT before validating the destination) takes ~2 s and times out before the
-# error is returned, while the fixed binary rejects immediately and curl (with a
-# 0.5 s timeout) captures UNKNOWN_TABLE.
-Q=$(urlencode "INSERT INTO test_async_input_missing SELECT id, if(sleepEachRow(2.0)=0,s,'') AS s, '' FROM input('id UInt32, s String') FORMAT TSV")
-printf '7\tmissing_row\n' | ${CLICKHOUSE_CURL} -sS --max-time 0.5 \
+# The fixed binary throws before the SELECT (so the sleepEachRow below never runs
+# and the response is immediate). A broken binary would run the SELECT first and
+# sleep ~40 s (20 rows * 2 s). curl aborts at --max-time 10 s, which sits well
+# above the fixed binary's fail-fast latency even under heavy CI load, yet well
+# below the broken binary's sleep — so the fixed binary reliably prints
+# UNKNOWN_TABLE while a broken one prints nothing.
+Q=$(urlencode "INSERT INTO test_async_input_missing SELECT id, if(sleepEachRow(2) = 0, s, '') AS s, '' FROM input('id UInt32, s String') FORMAT TSV")
+seq 1 20 | sed 's/$/\tx/' | ${CLICKHOUSE_CURL} -sS --max-time 10 \
     "${CLICKHOUSE_URL}&async_insert=1&wait_for_async_insert=1&allow_get_client_http_header=1&query=${Q}" \
     -H 'Content-Type: application/octet-stream' \
     --data-binary @- 2>&1 | grep -oF 'UNKNOWN_TABLE'
