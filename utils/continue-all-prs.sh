@@ -54,6 +54,9 @@ set -euo pipefail
 #   --ccache-size SIZE    ccache max size via CCACHE_MAXSIZE (default: 200G).
 #   --effort LEVEL        Reasoning effort for each worker `claude` (--effort);
 #                         default: medium.
+#   --no-status           Disable the persistent bottom status bar (elapsed,
+#                         rounds, ok/fail counts, cost, token totals). The bar is
+#                         shown by default on a TTY.
 #   --max-continue N      Max `claude` turns per PR. The worker runs once and is
 #                         then resumed (same session) until it signals it is done
 #                         or this cap is hit (default: 4). The worker is told not
@@ -106,6 +109,7 @@ DRY_RUN=0
 CCACHE_DIR_OPT=""      # shared ccache dir for all workers (default: existing $CCACHE_DIR, else ~/.cache/ccache)
 CCACHE_SIZE="200G"     # ccache max size, applied via CCACHE_MAXSIZE env (not persisted to ccache.conf)
 EFFORT="medium"        # reasoning effort passed to each worker `claude` (--effort)
+SHOW_STATUS=1          # show the persistent bottom status bar (TTY only; --no-status disables)
 
 # PR selection modes (combinable). If none are given, all are enabled.
 MODE_MINE=0       # PRs I authored
@@ -129,6 +133,7 @@ while [[ $# -gt 0 ]]; do
         --ccache-dir)     CCACHE_DIR_OPT="$2"; shift 2 ;;
         --ccache-size)    CCACHE_SIZE="$2"; shift 2 ;;
         --effort)         EFFORT="$2"; shift 2 ;;
+        --no-status)      SHOW_STATUS=0; shift ;;
         --once)           ONCE=1; shift ;;
         --skip-submodules) SKIP_SUBMODULES=1; shift ;;
         --color)          COLOR_WHEN="$2"; shift 2 ;;
@@ -223,17 +228,100 @@ pr_color_seq()
     }'
 }
 
+# Terminal writes are serialized on fd 6 (the TTY lock) against the status-bar
+# redraw, so scrolling log lines never land on the reserved status line.
 emit()
 {
     # emit <color-seq> <message>
-    if (( COLOR )); then
-        printf '%s%s%s\n' "$1" "$2" "$RESET"
+    local line
+    if (( COLOR )); then line="${1}${2}${RESET}"; else line="$2"; fi
+    if (( ${STATUS_ENABLED:-0} )); then
+        { flock 6; printf '%s\n' "$line"; } 6>>"${TTYLOCK:-/dev/null}"
     else
-        printf '%s\n' "$2"
+        printf '%s\n' "$line"
     fi
 }
 
-banner() { echo "${S}$*${R}"; }
+banner()
+{
+    if (( ${STATUS_ENABLED:-0} )); then
+        { flock 6; echo "${S}$*${R}"; } 6>>"${TTYLOCK:-/dev/null}"
+    else
+        echo "${S}$*${R}"
+    fi
+}
+
+# ----------------------------------------------------------------------------
+# Status bar: a persistent reverse-video line pinned to the bottom of the
+# terminal (via a DECSTBM scroll region) showing elapsed time, rounds,
+# ok/fail PR counts, total cost, and token totals. Counters live in $STATSFILE
+# (updated under $STATSLOCK); a background updater redraws the bar. TTY only.
+# ----------------------------------------------------------------------------
+STATUS_ENABLED=0
+STATUS_PID=""
+START=0
+
+stats_init() { printf '0 0 0 0 0 0 0 0\n' > "$STATSFILE"; }
+
+# stats_add <d_rounds> <d_ok> <d_fail> <d_in> <d_out> <d_cachein> <d_cacheout> <d_cost>
+stats_add()
+{
+    { flock 7
+      local cur; cur=$(cat "$STATSFILE" 2>/dev/null || echo '0 0 0 0 0 0 0 0')
+      awk -v cur="$cur" -v r="$1" -v s="$2" -v f="$3" -v i="$4" -v o="$5" -v ci="$6" -v co="$7" -v c="$8" \
+        'BEGIN { split(cur, x, " ");
+                 printf "%d %d %d %d %d %d %d %.6f\n",
+                        x[1]+r, x[2]+s, x[3]+f, x[4]+i, x[5]+o, x[6]+ci, x[7]+co, x[8]+c }' \
+        > "$STATSFILE"
+    } 7>>"$STATSLOCK"
+}
+
+humanize() { awk -v n="$1" 'BEGIN{ if(n>=1e9)printf"%.2fG",n/1e9; else if(n>=1e6)printf"%.2fM",n/1e6; else if(n>=1e3)printf"%.1fk",n/1e3; else printf"%d",n }'; }
+fmt_elapsed() { local s=$1; printf '%02d:%02d:%02d' $((s/3600)) $(((s%3600)/60)) $((s%60)); }
+
+render_status()
+{
+    local cur r s f i o ci co c now el
+    cur=$(cat "$STATSFILE" 2>/dev/null || echo '0 0 0 0 0 0 0 0')
+    read -r r s f i o ci co c <<< "$cur"
+    now=$(date +%s); el=$(( now - START ))
+    printf 'continue-all-prs | %s | round %d | ok %d fail %d | $%.2f | in %s out %s cache-in %s cache-out %s' \
+        "$(fmt_elapsed "$el")" "$r" "$s" "$f" "$c" \
+        "$(humanize "$i")" "$(humanize "$o")" "$(humanize "$ci")" "$(humanize "$co")"
+}
+
+draw_status()
+{
+    (( STATUS_ENABLED )) || return 0
+    local rows cols text
+    rows=$(tput lines 2>/dev/null || echo 24)
+    cols=$(tput cols 2>/dev/null || echo 100)
+    text=$(render_status); text=${text:0:cols}
+    # save cursor (DECSC), go to last row, clear it, print reverse-video, restore (DECRC)
+    { flock 6; printf '\0337\033[%d;1H\033[2K\033[7m%s\033[0m\0338' "$rows" "$text"; } 6>>"$TTYLOCK"
+}
+
+status_updater() { while :; do draw_status; sleep "${STATUS_INTERVAL:-2}"; done; }
+
+status_start()
+{
+    (( STATUS_ENABLED )) || return 0
+    local rows; rows=$(tput lines 2>/dev/null || echo 24)
+    # reserve the bottom row: scroll region = rows 1..(rows-1); park the cursor inside it
+    printf '\033[1;%dr\033[%d;1H' "$(( rows - 1 ))" "$(( rows - 1 ))"
+    draw_status
+    status_updater & STATUS_PID=$!
+}
+
+status_stop()
+{
+    (( STATUS_ENABLED )) || return 0
+    [[ -n "$STATUS_PID" ]] && kill "$STATUS_PID" 2>/dev/null || true
+    local rows; rows=$(tput lines 2>/dev/null || echo 24)
+    # reset the scroll region to the full screen and clear the status line
+    printf '\033[r\033[%d;1H\033[2K' "$rows"
+    STATUS_ENABLED=0
+}
 
 # Distill a one-to-two sentence summary of what the worker did from its log.
 # In plain `--print` mode `claude` writes only its final message to the log, so
@@ -406,11 +494,16 @@ ensure_worktree()
 QUEUEFILE=""
 LOCKFILE=""
 LOGDIR="${MAIN_REPO}/tmp/continue-all-prs"
+STATSFILE="$LOGDIR/stats"
+STATSLOCK="$LOGDIR/stats.lock"
+TTYLOCK="$LOGDIR/tty.lock"
 
 cleanup()
 {
+    status_stop   # reset the scroll region and kill the updater first
     [[ -n "${QUEUEFILE:-}" ]] && rm -f "$QUEUEFILE" "$QUEUEFILE.tmp" 2>/dev/null || true
     [[ -n "${LOCKFILE:-}" ]] && rm -f "$LOCKFILE" 2>/dev/null || true
+    rm -f "$STATSLOCK" "$TTYLOCK" 2>/dev/null || true
 }
 trap cleanup EXIT
 trap 'echo; banner "Interrupted, stopping..."; exit 130' INT TERM
@@ -459,14 +552,26 @@ run_continue_pr()
         ec=0
         if (( iter == 1 )); then
             ( cd "$wt" && timeout "$remaining" claude --dangerously-skip-permissions --print \
-                --effort "$EFFORT" \
+                --output-format json --effort "$EFFORT" \
                 --session-id "$sid" --append-system-prompt "$STEER_PROMPT $build_steer" \
-                "/continue-pr-auto $url"</dev/null ) > "$log.last" 2>&1 || ec=$?
+                "/continue-pr-auto $url"</dev/null ) > "$log.json" 2>"$log.err" || ec=$?
         else
             ( cd "$wt" && timeout "$remaining" claude --dangerously-skip-permissions --print \
-                --effort "$EFFORT" \
+                --output-format json --effort "$EFFORT" \
                 --resume "$sid" --append-system-prompt "$STEER_PROMPT $build_steer" \
-                "$NUDGE_PROMPT"</dev/null ) > "$log.last" 2>&1 || ec=$?
+                "$NUDGE_PROMPT"</dev/null ) > "$log.json" 2>"$log.err" || ec=$?
+        fi
+
+        # Extract the final message text and accumulate token/cost usage. On a
+        # timeout/crash the JSON is empty or partial, so fall back to stderr.
+        if jq -e . "$log.json" >/dev/null 2>&1; then
+            jq -r '.result // ""' "$log.json" > "$log.last"
+            local usage u_i u_o u_ci u_co u_cost
+            usage=$(jq -r '[(.usage.input_tokens//0),(.usage.output_tokens//0),(.usage.cache_creation_input_tokens//0),(.usage.cache_read_input_tokens//0),(.total_cost_usd//0)]|@tsv' "$log.json" 2>/dev/null)
+            IFS=$'\t' read -r u_i u_o u_ci u_co u_cost <<< "$usage"
+            stats_add 0 0 0 "${u_i:-0}" "${u_o:-0}" "${u_ci:-0}" "${u_co:-0}" "${u_cost:-0}"
+        else
+            { cat "$log.err" 2>/dev/null || true; } > "$log.last"
         fi
         cat "$log.last" >> "$log"
 
@@ -538,6 +643,12 @@ process_pr()
         status="$outcome; state=$pr_state mergeable=$pr_mergeable review=$pr_review"
         summary=$(summarize_log "$log.last")
     fi
+
+    # Count the PR as processed ok (clean run) or not (errored/timed out).
+    case "$outcome" in
+        FAILED*|TIMEOUT) stats_add 0 0 1 0 0 0 0 0 ;;
+        *)               stats_add 0 1 0 0 0 0 0 0 ;;
+    esac
 
     ts=$(date +%H:%M:%S)
     emit "$color" "$ts  $mark  worker $i  FINISHED  PR #$number  $title  --  $status"
@@ -679,6 +790,8 @@ banner "Effort:          ${EFFORT}"
 echo ""
 
 mkdir -p "$LOGDIR"
+START=$(date +%s)
+stats_init
 
 # Per-worker worktree paths.
 declare -a WT
@@ -697,9 +810,14 @@ fi
 QUEUEFILE="$(mktemp "$LOGDIR/queue.XXXXXX")"
 LOCKFILE="$(mktemp "$LOGDIR/lock.XXXXXX")"
 
+# Pin the status bar to the bottom of the terminal (TTY only).
+if (( SHOW_STATUS )) && [[ -t 1 ]]; then STATUS_ENABLED=1; fi
+status_start
+
 ROUND=0
 while true; do
     ROUND=$((ROUND + 1))
+    stats_add 1 0 0 0 0 0 0 0
     banner "===== Round ${ROUND}: fetching open PRs ====="
 
     PRS="$(fetch_prs || true)"
