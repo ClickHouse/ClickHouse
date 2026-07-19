@@ -25,8 +25,7 @@ You can find the source code for this example in the [examples repository](https
 You can run the following steps to create your Streamlit application.
 
 <Steps>
-<Step>
-## Install libraries {#install-libraries}
+<Step title="Install libraries" id="install-libraries">
 
 Install the required libraries by running the following commands:
 
@@ -34,8 +33,7 @@ Install the required libraries by running the following commands:
 pip install streamlit agno ipywidgets
 ```
 </Step>
-<Step>
-## Create utilities file {#create-utilities}
+<Step title="Create utilities file" id="create-utilities">
 
 Create a `utils.py` file with two utility functions. The first is an
 asynchronous function generator for handling stream responses from the 
@@ -63,8 +61,7 @@ def apply_styles():
   <hr class='divider' />""", unsafe_allow_html=True)
 ```
 </Step>
-<Step>
-## Setup credentials {#setup-credentials}
+<Step title="Setup credentials" id="setup-credentials">
 
 Set your Anthropic API key as an environment variable:
 
@@ -79,8 +76,7 @@ If you don't have an Anthropic API key, and want to use another LLM provider,
 you can find the instructions for setting up your credentials in the [Agno "Integrations" docs](https://docs.agentops.ai/v2/integrations/ag2)
 </Info>
 </Step>
-<Step>
-## Import required libraries {#import-libraries}
+<Step title="Import required libraries" id="import-libraries">
 
 Start by creating your main Streamlit application file (e.g., `app.py`) and add the imports:
 
@@ -104,8 +100,7 @@ import threading
 from queue import Queue
 ```
 </Step>
-<Step>
-## Define the agent streaming function {#define-agent-function}
+<Step title="Define the agent streaming function" id="define-agent-function">
 
 Add the main agent function that connects to [ClickHouse's SQL playground](https://sql.clickhouse.com/) and streams responses:
 
@@ -155,8 +150,7 @@ async def stream_clickhouse_agent(message):
                     yield chunk.content
 ```
 </Step>
-<Step>
-## Add synchronous wrapper functions {#add-wrapper-functions}
+<Step title="Add synchronous wrapper functions" id="add-wrapper-functions">
 
 Add helper functions to handle async streaming in Streamlit:
 
@@ -178,8 +172,7 @@ async def _agent_stream_to_queue(message, queue):
         queue.put(chunk)
 ```
 </Step>
-<Step>
-## Create the Streamlit interface {#create-interface}
+<Step title="Create the Streamlit interface" id="create-interface">
 
 Add the Streamlit UI components and chat functionality:
 
@@ -208,8 +201,7 @@ if prompt := st.chat_input("What is up?"):
   st.session_state.messages.append({"role": "assistant", "content": response})
 ```
 </Step>
-<Step>
-## Run the application {#run-application}
+<Step title="Run the application" id="run-application">
 
 To start your ClickHouse AI agent web application you can run the
 following command from your terminal:
