@@ -79,7 +79,9 @@ IMergeTreeReader::IMergeTreeReader(
         const auto & column_to_read = columns_to_read.emplace_back(getColumnInPart(column));
         serializations.emplace_back(getSerializationInPart(column));
 
-        if (column.isSubcolumn())
+        if (column.isSubcolumn()
+            && data_part_info_for_read->isCompactPart()
+            && !data_part_info_for_read->getIndexGranularityInfo().mark_type.with_substreams)
         {
             NameAndTypePair requested_column_in_storage{column.getNameInStorage(), column.getTypeInStorage()};
             serializations_of_full_columns.emplace(column_to_read.getNameInStorage(), getSerializationInPart(requested_column_in_storage));
