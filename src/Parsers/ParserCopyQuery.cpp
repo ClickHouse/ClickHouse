@@ -34,11 +34,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-extern const int BAD_ARGUMENTS;
-}
-
 bool ParserCopyQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     ParserIdentifier s_ident;
@@ -136,7 +131,10 @@ namespace
 /// against a normalized (lower-cased) spelling. `binary` is parsed but not supported: PostgreSQL binary
 /// `COPY` has its own wire format and is rejected in the handler (see `PostgreSQLHandler::processCopyQuery`);
 /// parsing it here yields a clear error there instead of the query silently falling through to the regular
-/// query path.
+/// query path. Likewise, a format we do not recognize (`JSONEachRow`, ...) is not thrown for here - it is
+/// recorded in `unsupported_option` so the handler rejects it with a clean `ErrorResponse`. Throwing in the
+/// parser would make `PostgreSQLHandler::processCopyQuery` fall through to the regular-query path, whose
+/// error tears the connection down instead of returning a clean `0A000` plus `ReadyForQuery`.
 void setCopyFormat(boost::intrusive_ptr<ASTCopyQuery> node, const String & raw_format)
 {
     String format_name = raw_format;
@@ -148,7 +146,7 @@ void setCopyFormat(boost::intrusive_ptr<ASTCopyQuery> node, const String & raw_f
     else if (format_name == "binary")
         node->format = ASTCopyQuery::Formats::Binary;
     else
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown format in PostgreSQL COPY command: {}", raw_format);
+        node->unsupported_option = fmt::format("the \"{}\" format", raw_format);
 }
 
 /// A bare identifier that names an output format in the legacy `COPY ... CSV` / `WITH BINARY` grammar.
@@ -228,7 +226,12 @@ bool ParserCopyQuery::parseOptions(Pos & pos, boost::intrusive_ptr<ASTCopyQuery>
             {
                 ++pos;
                 if (pos->isEnd() || pos->type != TokenType::BareWord)
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected a format name after FORMAT in the PostgreSQL COPY command");
+                {
+                    /// A `FORMAT` with no name is malformed; record it (rather than throwing, which would
+                    /// tear the connection down) so the handler rejects it with a clean `ErrorResponse`.
+                    node->unsupported_option = "a FORMAT without a name";
+                    break;
+                }
                 setCopyFormat(node, String(pos->begin, pos->end));
                 pending = PendingOption::None;
             }
@@ -286,7 +289,13 @@ bool ParserCopyQuery::parseOptions(Pos & pos, boost::intrusive_ptr<ASTCopyQuery>
         }
     }
 
-    if (!unknown_option.empty())
+    /// `setCopyFormat` (or the `FORMAT` handling above) may already have recorded an unsupported format; keep
+    /// that reason rather than overwriting it with a data-formatting-option reason - either is enough to
+    /// reject the command, and the format is the more relevant one to report.
+    if (!node->unsupported_option.empty())
+    {
+    }
+    else if (!unknown_option.empty())
         node->unsupported_option = fmt::format("the \"{}\" option", unknown_option);
     else
     {
