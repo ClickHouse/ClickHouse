@@ -3,6 +3,7 @@
 #include <ranges>
 #include <IO/copyData.h>
 #include <fmt/ranges.h>
+#include <Common/Base64.h>
 #include <Common/Exception.h>
 #include <Common/formatReadable.h>
 
@@ -896,6 +897,13 @@ void FuzzConfig::loadServerConfigurations()
         this->in_out_formats,
         "input and output formats",
         R"(SELECT "name" FROM "system"."formats" WHERE "is_input" = 1 AND "is_output" = 1)");
+    if (this->in_formats.empty() || this->out_formats.empty() || this->in_out_formats.empty())
+    {
+        throw DB::Exception(
+            DB::ErrorCodes::BUZZHOUSE,
+            "No {} formats were loaded from the server; cannot continue fuzzing",
+            this->in_formats.empty() ? "input" : (this->out_formats.empty() ? "output" : "input and output"));
+    }
     loadServerSettings<String>(
         this->storage_policies, "storage policies", R"(SELECT DISTINCT "policy_name" FROM "system"."storage_policies")");
     loadServerSettings<String>(
@@ -1113,7 +1121,10 @@ String FuzzConfig::getRandomIcebergHistoryValue(const String & property)
         if (!res.empty() && res.back() == '\r')
             res.pop_back();
     }
-    return res.empty() ? "-1" : res;
+    /// Empty history (e.g. a table with no snapshots yet). Return the DEFAULT keyword so a
+    /// `SET iceberg_snapshot_id/iceberg_timestamp_ms = DEFAULT` resets the pin and clears its
+    /// `changed` flag, instead of pinning the never-valid -1 snapshot and poisoning the session.
+    return res.empty() ? "DEFAULT" : res;
 }
 
 String FuzzConfig::getRandomFileSystemCacheValue()
@@ -1163,6 +1174,51 @@ String FuzzConfig::tableGetRandomPartitionOrPart(
         std::getline(infile, res);
         if (!res.empty() && res.back() == '\r')
             res.pop_back();
+    }
+    return res;
+}
+
+String FuzzConfig::tableGetRandomPartitionValue(const uint64_t rand_val, const String & database, const String & table)
+{
+    String res;
+    const String db_clause = database.empty() ? "" : (R"("database" = ')" + escapeSQLString(database) + "' AND ");
+
+    /// base64-encode the partition value so raw bytes survive the TabSeparated OUTFILE unescaped.
+    if (processServerQuery(
+            true,
+            fmt::format(
+                "SELECT base64Encode(z.y) FROM (SELECT (row_number() OVER () - 1) AS x, \"partition\" AS y FROM \"system\".\"parts\" "
+                "WHERE {}\"table\" = '{}' AND \"partition_id\" != 'all') AS z WHERE z.x = (SELECT {} % max2(count(), 1) FROM "
+                "\"system\".\"parts\" WHERE {}\"table\" = '{}' AND \"partition_id\" != 'all') INTO OUTFILE '{}' TRUNCATE FORMAT "
+                "TabSeparated;",
+                db_clause,
+                escapeSQLString(table),
+                rand_val,
+                db_clause,
+                escapeSQLString(table),
+                fuzzer_out_file.generic_string())))
+    {
+        String encoded;
+        std::ifstream infile(fuzzer_out_file, std::ios::in);
+
+        std::getline(infile, encoded);
+        if (!encoded.empty() && encoded.back() == '\r')
+            encoded.pop_back();
+        if (!encoded.empty())
+            res = DB::base64Decode(encoded);
+    }
+    /// Only emit values re-parseable as a bare `PARTITION <expr>`: the quoted tuple form
+    /// `(202101, 'x')` or a bare integer. Unquoted single-column string keys fall back to PARTITION ID.
+    const bool is_tuple = res.size() > 1 && res.front() == '(' && res.back() == ')';
+    bool is_integer = !res.empty();
+    for (size_t i = (!res.empty() && res.front() == '-') ? 1 : 0; is_integer && i < res.size(); i++)
+    {
+        is_integer &= res[i] >= '0' && res[i] <= '9';
+    }
+    is_integer &= !(res.size() == 1 && res.front() == '-'); /// reject a lone "-"
+    if (!is_tuple && !is_integer)
+    {
+        res.clear();
     }
     return res;
 }
