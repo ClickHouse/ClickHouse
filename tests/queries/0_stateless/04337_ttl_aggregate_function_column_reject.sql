@@ -441,3 +441,48 @@ TTL toDateTime(dyn) + INTERVAL 1 DAY;
 DROP TABLE test_ttl_agg_dynamic_suspicious;
 
 SET allow_suspicious_ttl_expressions = 0;
+
+-- Lowering `variant_throw_on_type_mismatch` to 0 makes the Variant function adaptor return NULL instead of
+-- throwing on a type mismatch. The validation probe must still reject a suspicious TTL, because TTL merges
+-- rebuild the expression under the strict server-default storage context and would otherwise break every merge.
+SET variant_throw_on_type_mismatch = 0;
+
+CREATE TABLE test_ttl_agg_variant_lenient
+(
+    key UInt64,
+    v Variant(AggregateFunction(max, DateTime64(3)), String),
+    d DateTime
+)
+ENGINE = MergeTree()
+ORDER BY key
+TTL toDateTime(v) + INTERVAL 1 DAY; -- { serverError BAD_TTL_EXPRESSION }
+
+SET variant_throw_on_type_mismatch = 1;
+
+-- Same, for `dynamic_throw_on_type_mismatch`: a lenient session must not let a suspicious Dynamic TTL through.
+SET dynamic_throw_on_type_mismatch = 0;
+
+CREATE TABLE test_ttl_agg_dynamic_lenient
+(
+    key UInt64,
+    dyn Dynamic,
+    d DateTime
+)
+ENGINE = MergeTree()
+ORDER BY key
+TTL toDateTime(dyn) + INTERVAL 1 DAY; -- { serverError BAD_TTL_EXPRESSION }
+
+-- A type-agnostic Dynamic consumer is still accepted even under the lenient setting.
+CREATE TABLE test_ttl_agg_dynamic_lenient_agnostic
+(
+    key UInt64,
+    d DateTime,
+    dyn Dynamic
+)
+ENGINE = MergeTree()
+ORDER BY key
+TTL d + INTERVAL 1 DAY DELETE WHERE isNotNull(dyn);
+
+DROP TABLE test_ttl_agg_dynamic_lenient_agnostic;
+
+SET dynamic_throw_on_type_mismatch = 1;
