@@ -357,9 +357,6 @@
 [submodule "contrib/SHA3IUF"]
 	path = contrib/SHA3IUF
 	url = https://github.com/brainhub/SHA3IUF.git
-[submodule "contrib/libpng"]
-	path = contrib/libpng
-	url = https://github.com/pnggroup/libpng.git
 [submodule "contrib/chdig"]
 	path = contrib/chdig
 	url = https://github.com/azat/chdig.git
@@ -381,9 +378,6 @@
 [submodule "contrib/antlr4-cpp-runtime"]
 	path = contrib/antlr4-cpp-runtime
 	url = https://github.com/antlr/antlr4.git
-[submodule "contrib/base64"]
-	path = contrib/base64
-	url = https://github.com/ClickHouse/base64.git
 [submodule "contrib/libcotp"]
 	path = contrib/libcotp
 	url = https://github.com/paolostivanin/libcotp.git
@@ -405,6 +399,9 @@
 [submodule "contrib/xsimd"]
 	path = contrib/xsimd
 	url = https://github.com/xtensor-stack/xsimd
+[submodule "contrib/simdutf"]
+	path = contrib/simdutf
+	url = https://github.com/ClickHouse/simdutf
 [submodule "contrib/libdeflate"]
 	path = contrib/libdeflate
 	url = https://github.com/ClickHouse/libdeflate

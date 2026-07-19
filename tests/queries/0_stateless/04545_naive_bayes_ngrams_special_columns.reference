@@ -1,0 +1,23 @@
+\N
+Nullable(Nothing)
+[]
+['a b']
+Array(String)
+0	['one two']
+1	[]
+2	[]
+3	[]
+0	['<s> one','one two','two </s>']
+1	['<s> </s>']
+2	['<s> </s>']
+3	['<s> three','three </s>']
+['a b']
+['a b']
+Array(String)
+1
+0	['one two']
+1	[]
+2	['one two']
+1
+2
+['one two','two three']

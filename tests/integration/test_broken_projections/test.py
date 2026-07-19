@@ -74,7 +74,7 @@ def create_table(node, table, replica, data_prefix="", aggressive_merge=True):
         enable_vertical_merge_algorithm=0,
         vertical_merge_algorithm_min_rows_to_activate = {vertical_merge_algorithm_min_rows_to_activate},
         vertical_merge_algorithm_min_columns_to_activate = {vertical_merge_algorithm_min_columns_to_activate},
-        -- auto_statistics_types='': otherwise the new materialize_statistics_on_insert default builds minmax
+        -- auto_statistics_types='': otherwise the new materialize_statistics_on_insert default builds basic
         -- statistics on freshly-inserted parts, and statistics-based part pruning drops the `d == 12` /
         -- `c == 12` predicate so no part uses the projection and force_optimize_projection=1 throws.
         auto_statistics_types='',
