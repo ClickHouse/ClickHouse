@@ -5,6 +5,13 @@
 CLICKHOUSE_PORT_TCP=50222
 CLICKHOUSE_DATABASE=default
 
+# The test starts several short-lived servers on the same port, one after another. Disable the
+# watchdog so that each `$CLICKHOUSE_BINARY server` is a single process: `$!` is then the server
+# itself (not a watchdog parent that outlives a still-running child), and `kill; wait` shuts it down
+# and releases the port synchronously before the next server is started. Otherwise a lingering child
+# would keep the port bound and the next server would fail with `No servers started`.
+export CLICKHOUSE_WATCHDOG_ENABLE=0
+
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
