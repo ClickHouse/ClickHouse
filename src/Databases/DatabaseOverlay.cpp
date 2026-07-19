@@ -880,7 +880,15 @@ void registerDatabaseOverlay(DatabaseFactory & factory)
         return overlay;
     };
 
-    factory.registerDatabase("Overlay", create_fn, { .supports_arguments = true });
+    factory.registerDatabase("Overlay", create_fn, { .supports_arguments = true }, Documentation{
+        .description = "A read-only facade that exposes the union of the tables of several underlying databases, "
+                       "resolving each table name through the listed sources in order (the first source that has the table wins). "
+                       "DDL on the facade is rejected, while SELECT and INSERT resolve to the underlying source table "
+                       "and require the corresponding privilege on both the facade and the source. "
+                       "Also used implicitly as the default database of clickhouse-local.",
+        .syntax = "ENGINE = Overlay('db1', 'db2', ...)",
+        .examples = {{"Union of two databases", "CREATE DATABASE facade ENGINE = Overlay('db1', 'db2')", ""}},
+        .related = {"Atomic"}});
 }
 
 
