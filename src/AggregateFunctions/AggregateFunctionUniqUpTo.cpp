@@ -353,7 +353,7 @@ AggregateFunctionPtr createAggregateFunctionUniqUpTo(const std::string & name, c
 void registerAggregateFunctionUniqUpTo(AggregateFunctionFactory & factory);
 void registerAggregateFunctionUniqUpTo(AggregateFunctionFactory & factory)
 {
-    factory.registerFunction("uniqUpTo", {createAggregateFunctionUniqUpTo, {}, {.returns_default_when_only_null = true, .support_variant_argument = true}});
+    factory.registerFunction("uniqUpTo", {createAggregateFunctionUniqUpTo, {.description = R"DOC(Calculates the number of distinct values of the argument, but only up to the specified threshold; if the number of distinct values exceeds the threshold, it returns 0.)DOC", .category = FunctionDocumentation::Category::AggregateFunction}, {.returns_default_when_only_null = true, .support_variant_argument = true}});
 }
 
 }

@@ -450,6 +450,34 @@ AggregateFunctionFactory::getAssociatedFunctionByNullsAction(const String & name
     return {};
 }
 
+String AggregateFunctionFactory::getAssociatedNameByNullsAction(const String & name, NullsAction action) const
+{
+    /// Name-only counterpart of getAssociatedFunctionByNullsAction: it returns the registered name of
+    /// the function `name` resolves to under `action`, reading the same maps. It exists so the -Tuple
+    /// combinator can name the shared tuple state after the action-adjusted base aggregate without
+    /// instantiating a specific element. `name` is expected to be already alias-resolved by the caller;
+    /// the lowercase fallbacks mirror how getImpl() looks up case-insensitive functions.
+    if (action == NullsAction::RESPECT_NULLS)
+    {
+        if (auto it = respect_nulls.find(name); it != respect_nulls.end())
+            return it->second;
+        if (auto it = respect_nulls.find(Poco::toLower(name)); it != respect_nulls.end())
+            return it->second;
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Function {} does not support RESPECT NULLS", name);
+    }
+
+    if (action == NullsAction::IGNORE_NULLS)
+    {
+        if (auto it = ignore_nulls.find(name); it != ignore_nulls.end())
+            return it->second;
+        if (auto it = ignore_nulls.find(Poco::toLower(name)); it != ignore_nulls.end())
+            return it->second;
+        /// IGNORE NULLS is the default for functions without an explicit transform.
+    }
+
+    return name;
+}
+
 
 AggregateFunctionPtr AggregateFunctionFactory::getImpl(
     const String & name_param,
@@ -580,8 +608,12 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(
                 nested_functions.push_back(getWithoutVariantAdapter(
                     nested_name, action, nested_arguments, nested_parameters, out_properties, state_variant, apply_variant_adapter_to_nested));
 
+            /// A `-State` round-trip reconstructs every element from this one shared name, so it must be
+            /// the action-adjusted base aggregate name, not one element's instantiation (which can collapse
+            /// to a placeholder for only-null elements and drop the other elements' state).
+            String adjusted_nested_name = getAssociatedNameByNullsAction(getAliasToOrName(nested_name), action);
             combined_function = combinator->transformAggregateFunctionFromMultipleNestedFunctions(
-                getAliasToOrName(nested_name), std::move(nested_functions), out_properties, argument_types, parameters);
+                adjusted_nested_name, std::move(nested_functions), out_properties, argument_types, parameters);
         }
         else
         {
