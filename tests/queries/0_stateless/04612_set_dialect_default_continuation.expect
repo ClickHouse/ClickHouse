@@ -1,0 +1,53 @@
+#!/usr/bin/expect -f
+
+# Regression test: the single-line continuation probe
+# `ClientBase::queryNeedsContinuation` must mirror `SET name = DEFAULT` (an
+# `ASTSetQuery::default_settings` entry) the same way the multi-statement
+# executor does via `resetSettingsToDefaultValue`, not only plain `SET` value
+# changes. In the buffer below, `SET dialect = 'kusto'` switches the probe to
+# the Kusto parser and `SET dialect = DEFAULT` must switch it back; the final
+# `print` is then a complete statement for the default dialect, so pressing
+# Enter must submit the buffer. If the probe ignored `default_settings`, it
+# would keep probing `print` as Kusto (incomplete: `print` still expects an
+# expression), keep folding newlines into the buffer, and never submit.
+
+set basedir [file dirname $argv0]
+set basename [file tail $argv0]
+if {[info exists env(CLICKHOUSE_TMP)]} {
+    set CLICKHOUSE_TMP $env(CLICKHOUSE_TMP)
+} else {
+    set CLICKHOUSE_TMP "."
+}
+exp_internal -f $CLICKHOUSE_TMP/$basename.debuglog 0
+set history_file $CLICKHOUSE_TMP/$basename.history
+
+log_user 0
+set timeout 60
+match_max 100000
+
+expect_after {
+    # Do not ignore eof from expect
+    -i $any_spawn_id eof { exp_continue }
+    # A default timeout action is to do nothing, change it to fail
+    -i $any_spawn_id timeout { exit 1 }
+}
+
+spawn bash -c "source $basedir/../shell_config.sh ; TERM=xterm \$CLICKHOUSE_LOCAL --allow_experimental_kusto_dialect 1 --disable_suggestion --enable-progress-table-toggle=0 --history_file=$history_file"
+expect ":) "
+
+# The buffer must be submitted on Enter: after `SET dialect = DEFAULT` the
+# probe is back on the default dialect, under which the trailing `print` is a
+# complete statement (`clickhouse-local` has `implicit_select` enabled, so it
+# parses as `SELECT print`) that fails at execution with an unknown identifier.
+# With the bug, nothing is submitted and the test times out here.
+send -- "SET dialect = 'kusto'; SET dialect = DEFAULT; print\r"
+expect "Unknown expression identifier"
+expect ":) "
+
+# The executed `SET dialect = DEFAULT` left the session on the default dialect.
+send -- "SELECT 1;\r"
+expect "│ 1 │"
+expect ":) "
+
+send -- "\4"
+expect eof

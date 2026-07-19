@@ -3402,7 +3402,23 @@ bool ClientBase::queryNeedsContinuation(const String & text) const
                     if (change.name != "profile")
                         changes.push_back(change);
                 effective_settings.applyChanges(changes);
+                /// `SET name = DEFAULT` lands in `default_settings`, not `changes`;
+                /// the executor resets those via `resetSettingsToDefaultValue`.
+                /// Mirror it, so e.g. `SET dialect = 'kusto'; SET dialect = DEFAULT; ...`
+                /// probes the trailing statements with the session's parser again.
+                for (const auto & name : set_query->default_settings)
+                    effective_settings.setDefaultValue(name);
                 parser = make_parser();
+
+                /// The `SET` may also have changed the parser limits, and the
+                /// current parse position still carries the old ones. Rebuild it
+                /// at the same token with the limits from the updated settings
+                /// (`Pos::operator=` keeps the accumulated backtrack count, so
+                /// a lowered `max_parser_backtracks` still applies to the whole
+                /// buffer, never less strictly than the executor's reparse).
+                max_parser_depth = static_cast<unsigned>(effective_settings[Setting::max_parser_depth]);
+                max_parser_backtracks = static_cast<unsigned>(effective_settings[Setting::max_parser_backtracks]);
+                token_iterator = IParser::Pos(token_iterator, max_parser_depth, max_parser_backtracks);
             }
 
             if (token_iterator->isEnd())
