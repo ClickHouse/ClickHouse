@@ -7,6 +7,7 @@ INSERT INTO t0 VALUES (2, 3);
 SET enable_analyzer=1;
 SET enable_parallel_replicas=0;
 SET enable_join_runtime_filters=1;
+SET query_plan_optimize_join_order_randomize = 0; -- Pinned because the test asserts on join plan/order
 
 SELECT explain
 FROM (

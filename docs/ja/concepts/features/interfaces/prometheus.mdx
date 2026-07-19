@@ -1,0 +1,171 @@
+---
+description: 'ClickHouseのPrometheusプロトコルサポートに関するドキュメント'
+sidebarTitle: 'Prometheus プロトコル'
+slug: /interfaces/prometheus
+title: 'Prometheus プロトコル'
+doc_type: 'reference'
+---
+
+<div id="expose">
+  ## メトリクスの公開
+</div>
+
+<Note>
+  ClickHouse Cloud を使用している場合は、[Prometheus インテグレーション](/ja/products/cloud/features/monitoring/prometheus)を使用して、メトリクスを Prometheus に公開できます。
+</Note>
+
+ClickHouse では、Prometheus にスクレイピングさせるための独自のメトリクスを公開できます：
+
+````xml
+<prometheus>
+    <port>9363</port>
+    <endpoint>/metrics</endpoint>
+    <metrics>true</metrics>
+    <asynchronous_metrics>true</asynchronous_metrics>
+    <events>true</events>
+    <errors>true</errors>
+    <histograms>true</histograms>
+    <dimensional_metrics>true</dimensional_metrics>
+</prometheus>
+
+`<prometheus.handlers>` セクションを使用すると、より高度なハンドラーを定義できます。
+このセクションは [<http_handlers>](/concepts/features/interfaces/http) と同様ですが、Prometheus プロトコル向けに動作します：
+
+```xml
+<prometheus>
+    <port>9363</port>
+    <handlers>
+        <my_rule_1>
+            <url>/metrics</url>
+            <handler>
+                <type>expose_metrics</type>
+                <metrics>true</metrics>
+                <asynchronous_metrics>true</asynchronous_metrics>
+                <events>true</events>
+                <errors>true</errors>
+                <histograms>true</histograms>
+                <dimensional_metrics>true</dimensional_metrics>
+            </handler>
+        </my_rule_1>
+    </handlers>
+</prometheus>
+````
+
+設定:
+
+| Name                         | Default    | Description                                                                                                 |
+| ---------------------------- | ---------- | ----------------------------------------------------------------------------------------------------------- |
+| `port`                       | none       | メトリクス公開プロトコルを提供するポートです。                                                                                     |
+| `endpoint`                   | `/metrics` | Prometheus サーバーがメトリクスをスクレイピングするための HTTP エンドポイントです。`/` で始まります。`<handlers>` セクションと併用しないでください。                 |
+| `url` / `headers` / `method` | none       | リクエストに一致するハンドラーを見つけるためのフィルターです。[`<http_handlers>`](/ja/concepts/features/interfaces/http) セクションの同名のフィールドと同様です。 |
+| `metrics`                    | true       | [system.metrics](/ja/reference/system-tables/metrics) table のメトリクスを公開します。                                      |
+| `asynchronous_metrics`       | true       | [system.asynchronous&#95;metrics](/ja/reference/system-tables/asynchronous_metrics) table の現在のメトリクス値を公開します。    |
+| `events`                     | true       | [system.events](/ja/reference/system-tables/events) table のメトリクスを公開します。                                        |
+| `errors`                     | true       | 前回のサーバー再起動以降に発生した、エラーコードごとのエラー数を公開します。この情報は [system.errors](/ja/reference/system-tables/errors) からも取得できます。     |
+| `histograms`                 | true       | [system.histogram&#95;metrics](/ja/reference/system-tables/histogram_metrics) のヒストグラムメトリクスを公開します               |
+| `dimensional_metrics`        | true       | [system.dimensional&#95;metrics](/ja/reference/system-tables/dimensional_metrics) の次元メトリクスを公開します               |
+
+確認します (`127.0.0.1` は ClickHouse サーバーの IP アドレスまたはホスト名に置き換えてください) :
+
+```bash
+curl 127.0.0.1:9363/metrics
+```
+
+## Remote-write プロトコル
+
+ClickHouse は [remote-write](https://prometheus.io/docs/specs/remote_write_spec/) プロトコルをサポートしています。
+このプロトコルでデータを受信し、[TimeSeries](/ja/reference/engines/table-engines/integrations/time-series) テーブルに書き込みます
+(このテーブルはあらかじめ作成しておく必要があります) 。
+
+```xml
+<prometheus>
+    <port>9363</port>
+    <handlers>
+        <my_rule_1>
+            <url>/write</url>
+            <handler>
+                <type>remote_write</type>
+                <database>db_name</database>
+                <table>time_series_table</table>
+            </handler>
+        </my_rule_1>
+    </handlers>
+</prometheus>
+```
+
+設定:
+
+| Name                         | Default | Description                                                                                                                                            |
+| ---------------------------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `port`                       | なし      | `remote-write` プロトコルを受け付けるポート。                                                                                                                         |
+| `url` / `headers` / `method` | なし      | リクエストに一致するハンドラーを見つけるためのフィルター。[`<http_handlers>`](/ja/concepts/features/interfaces/http) セクションの同名のフィールドと同様です。                                              |
+| `table`                      | なし      | `remote-write` プロトコルで受信したデータの書き込み先となる [TimeSeries](/ja/reference/engines/table-engines/integrations/time-series) テーブル名です。この名前には、必要に応じてデータベース名も含めることができます。 |
+| `database`                   | なし      | `table` 設定にデータベース名が指定されていない場合に、`table` 設定で指定したテーブルが存在するデータベース名です。                                                                                      |
+
+## リモート読み取りプロトコル
+
+ClickHouse は [remote-read](https://prometheus.io/docs/prometheus/latest/querying/remote_read_api/) プロトコルに対応しています。
+データは [TimeSeries](/ja/reference/engines/table-engines/integrations/time-series) テーブルから読み取られ、このプロトコル経由で送信されます。
+
+```xml
+<prometheus>
+    <port>9363</port>
+    <handlers>
+        <my_rule_1>
+            <url>/read</url>
+            <handler>
+                <type>remote_read</type>
+                <database>db_name</database>
+                <table>time_series_table</table>
+            </handler>
+        </my_rule_1>
+    </handlers>
+</prometheus>
+```
+
+設定:
+
+| Name                         | Default | Description                                                                                                                                             |
+| ---------------------------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `port`                       | なし      | `remote-read` プロトコルを提供するポートです。                                                                                                                          |
+| `url` / `headers` / `method` | なし      | リクエストに一致するハンドラーを見つけるためのフィルターです。[`<http_handlers>`](/ja/concepts/features/interfaces/http) セクションの同名のフィールドと同様です。                                             |
+| `table`                      | なし      | `remote-read` プロトコルで送信するデータの読み取り元となる [TimeSeries](/ja/reference/engines/table-engines/integrations/time-series) テーブルの名前です。この名前には、必要に応じてデータベース名を含めることもできます。 |
+| `database`                   | なし      | `table` 設定でデータベース名が指定されていない場合に、`table` 設定で指定したテーブルが存在するデータベースの名前です。                                                                                     |
+
+## 複数のプロトコルの設定
+
+複数のプロトコルを1か所でまとめて指定できます。
+
+```xml
+<prometheus>
+    <port>9363</port>
+    <handlers>
+        <my_rule_1>
+            <url>/metrics</url>
+            <handler>
+                <type>expose_metrics</type>
+                <metrics>true</metrics>
+                <asynchronous_metrics>true</asynchronous_metrics>
+                <events>true</events>
+                <errors>true</errors>
+                <histograms>true</histograms>
+                <dimensional_metrics>true</dimensional_metrics>
+            </handler>
+        </my_rule_1>
+        <my_rule_2>
+            <url>/write</url>
+            <handler>
+                <type>remote_write</type>
+                <table>db_name.time_series_table</table>
+            </handler>
+        </my_rule_2>
+        <my_rule_3>
+            <url>/read</url>
+            <handler>
+                <type>remote_read</type>
+                <table>db_name.time_series_table</table>
+            </handler>
+        </my_rule_3>
+    </handlers>
+</prometheus>
+```

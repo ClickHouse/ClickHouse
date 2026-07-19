@@ -1,0 +1,199 @@
+---
+sidebarTitle: 'BigQuery から ClickHouse へ'
+slug: /integrations/google-dataflow/templates/bigquery-to-clickhouse
+description: 'Google Dataflow テンプレートを使用して、BigQuery から ClickHouse にデータを取り込めます'
+title: 'Dataflow BigQuery to ClickHouse テンプレート'
+doc_type: 'guide'
+keywords: ['Dataflow', 'BigQuery']
+---
+
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+BigQuery から ClickHouse へのTemplateは、BigQuery テーブルから ClickHouse テーブルにデータを取り込むバッチパイプラインです。
+このTemplateでは、テーブル全体を読み取ることも、指定したSQLクエリを使って特定のレコードをフィルタリングすることもできます。
+
+<div id="pipeline-requirements">
+  ## パイプラインの要件
+</div>
+
+* ソースとなる BigQuery テーブルが存在している必要があります。
+* ClickHouse のターゲットテーブルが存在している必要があります。
+* Dataflow のワーカーマシンから ClickHouse ホストにアクセスできる必要があります。
+
+<div id="template-parameters">
+  ## Template パラメータ
+</div>
+
+<br />
+
+<br />
+
+| Parameter Name          | Parameter Description                                                                                                                                                                                                                                                              | Required | Notes                                                                                                                                                                                                                                |
+| ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `jdbcUrl`               | `jdbc:clickhouse://<host>:<port>/<schema>` 形式の ClickHouse JDBC URL。                                                                                                                                                                                                                | ✅        | username と password は JDBC オプションとして追加しないでください。その他の JDBC オプションは JDBC URL の末尾に追加できます。ClickHouse Cloud ユーザーは、`jdbcUrl` に `ssl=true&sslmode=NONE` を追加してください。                                                                             |
+| `clickHouseUsername`    | 認証に使用する ClickHouse の username。                                                                                                                                                                                                                                                     | ✅        |                                                                                                                                                                                                                                      |
+| `clickHousePassword`    | 認証に使用する ClickHouse の password。                                                                                                                                                                                                                                                     | ✅        |                                                                                                                                                                                                                                      |
+| `clickHouseTable`       | データの挿入先となる ClickHouse のターゲットテーブル。                                                                                                                                                                                                                                                  | ✅        |                                                                                                                                                                                                                                      |
+| `maxInsertBlockSize`    | 挿入用の block の作成を制御する場合の、挿入時の最大 block サイズ (ClickHouseIO オプション) 。                                                                                                                                                                                                                     |          | `ClickHouseIO` オプションです。                                                                                                                                                                                                              |
+| `insertDistributedSync` | この設定を有効にすると、distributed への INSERT クエリは、データがクラスター内のすべてのノードに送信されるまで待機します。 (ClickHouseIO オプション)                                                                                                                                                                                       |          | `ClickHouseIO` オプションです。                                                                                                                                                                                                              |
+| `insertQuorum`          | レプリケートテーブルへの INSERT クエリで、指定した数のレプリカへの書き込みが完了するまで待機し、データ追加を線形化します。0 は無効です。                                                                                                                                                                                                          |          | `ClickHouseIO` オプションです。この設定はデフォルトの server settings では無効です。                                                                                                                                                                           |
+| `insertDeduplicate`     | レプリケートテーブルへの INSERT クエリで、挿入する blocks の deduplication を実行するかどうかを指定します。                                                                                                                                                                                                              |          | `ClickHouseIO` オプションです。                                                                                                                                                                                                              |
+| `maxRetries`            | 挿入ごとの最大再試行回数。                                                                                                                                                                                                                                                                      |          | `ClickHouseIO` オプションです。                                                                                                                                                                                                              |
+| `InputTableSpec`        | 読み取り元の BigQuery テーブル。`inputTableSpec` または `query` のいずれかを指定してください。両方が設定されている場合は、`query` パラメータが優先されます。例: `<BIGQUERY_PROJECT>:<DATASET_NAME>.<INPUT_TABLE>`。                                                                                                                          |          | [BigQuery Storage Read API](https://cloud.google.com/bigquery/docs/reference/storage) を使用して BigQuery Storage から直接データを読み取ります。[Storage Read API の制限事項](https://cloud.google.com/bigquery/docs/reference/storage#limitations)に注意してください。 |
+| `outputDeadletterTable` | 出力テーブルへの書き込みに失敗したメッセージを格納する BigQuery テーブル。テーブルが存在しない場合は、pipeline の実行中に作成されます。指定しない場合は、`<outputTableSpec>_error_records` が使用されます。例: `<PROJECT_ID>:<DATASET_NAME>.<DEADLETTER_TABLE>`。                                                                                               |          |                                                                                                                                                                                                                                      |
+| `query`                 | BigQuery からデータを読み取るために使用する SQL クエリ。BigQuery データセット が Dataflow job とは別の project にある場合は、SQL クエリ内で完全修飾の データセット 名を指定してください。例: `<PROJECT_ID>.<DATASET_NAME>.<TABLE_NAME>`。`useLegacySql` が true でない限り、デフォルトは [GoogleSQL](https://cloud.google.com/bigquery/docs/introduction-sql) です。 |          | `inputTableSpec` または `query` のいずれかを必ず指定する必要があります。両方のパラメータを設定した場合、template は `query` パラメータを使用します。例: `SELECT * FROM sampledb.sample_table`。                                                                                            |
+| `useLegacySql`          | 従来の SQL を使用するには `true` に設定します。このパラメータは `query` パラメータを使用する場合にのみ適用されます。デフォルトは `false` です。                                                                                                                                                                                            |          |                                                                                                                                                                                                                                      |
+| `queryLocation`         | 基になるテーブルへの permission がない状態で認可済み VIEW から読み取る場合に必要です。例: `US`。                                                                                                                                                                                                                       |          |                                                                                                                                                                                                                                      |
+| `queryTempDataset`      | クエリ結果を保存する一時テーブルの作成先として、既存の データセット を指定します。例: `temp_dataset`。                                                                                                                                                                                                                      |          |                                                                                                                                                                                                                                      |
+| `KMSEncryptionKey`      | クエリ ソースを使用して BigQuery から読み取る場合は、この Cloud KMS key を使用して作成される一時テーブルを暗号化します。例: `projects/your-project/locations/global/keyRings/your-keyring/cryptoKeys/your-key`。                                                                                                                    |          |                                                                                                                                                                                                                                      |
+
+<Note>
+  `ClickHouseIO` のすべてのパラメータのデフォルト値は、[`ClickHouseIO` Apache Beam コネクタ](/ja/integrations/connectors/data-ingestion/etl-tools/apache-beam#clickhouseiowrite-parameters)で確認できます。
+</Note>
+
+<div id="source-and-target-tables-schema">
+  ## ソーステーブルとターゲットテーブルのスキーマ
+</div>
+
+BigQuery のデータセットを ClickHouse に効率よくロードするために、このパイプラインでは次のフェーズでカラム推論を行います。
+
+1. Templateは、ClickHouse のターゲットテーブルに基づいてスキーマオブジェクトを構築します。
+2. Templateは BigQuery のデータセットを走査し、カラム名に基づいて一致を試みます。
+
+<br />
+
+<Warning>
+  ただし、BigQuery のデータセット (テーブルまたはクエリ) は、ClickHouse の
+  ターゲットテーブルと完全に同じカラム名である必要があります。
+</Warning>
+
+<div id="data-types-mapping">
+  ## データ型マッピング
+</div>
+
+BigQuery の型は、ClickHouse のテーブル定義に基づいて変換されます。したがって、上の表には、
+(指定した BigQuery のテーブル/クエリに対して) ClickHouse のターゲットテーブルで推奨される型マッピングを示しています。
+
+| BigQuery Type                                                                                                         | ClickHouse Type                                     | Notes                                                                                                                                                                                                                                                                                                  |
+| --------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| [**Array Type**](https://cloud.google.com/bigquery/docs/reference/standard-sql/data-types#array_type)                 | [**Array Type**](/ja/reference/data-types/array)       | 内部型は、この表に記載されているサポート対象のプリミティブなデータ型のいずれかである必要があります。                                                                                                                                                                                                                                                     |
+| [**Boolean Type**](https://cloud.google.com/bigquery/docs/reference/standard-sql/data-types#boolean_type)             | [**Bool Type**](/ja/reference/data-types/boolean)      |                                                                                                                                                                                                                                                                                                        |
+| [**Date Type**](https://cloud.google.com/bigquery/docs/reference/standard-sql/data-types#date_type)                   | [**Date Type**](/ja/reference/data-types/date)         |                                                                                                                                                                                                                                                                                                        |
+| [**Datetime Type**](https://cloud.google.com/bigquery/docs/reference/standard-sql/data-types#datetime_type)           | [**Datetime Type**](/ja/reference/data-types/datetime) | `Enum8`、`Enum16`、`FixedString` に対しても使用できます。                                                                                                                                                                                                                                                            |
+| [**String Type**](https://cloud.google.com/bigquery/docs/reference/standard-sql/data-types#string_type)               | [**String Type**](/ja/reference/data-types/string)     | BigQuery では、すべての Int 型 (`INT`、`SMALLINT`、`INTEGER`、`BIGINT`、`TINYINT`、`BYTEINT`) は `INT64` の別名です。ClickHouse では、適切な Integer サイズを設定することを推奨します。テンプレートは、定義されたカラム型 (`Int8`、`Int16`、`Int32`、`Int64`) に基づいてカラムを変換するためです。                                                                                      |
+| [**Numeric - Integer Types**](https://cloud.google.com/bigquery/docs/reference/standard-sql/data-types#numeric_types) | [**Integer Types**](/ja/reference/data-types/int-uint) | BigQuery では、すべての Int 型 (`INT`、`SMALLINT`、`INTEGER`、`BIGINT`、`TINYINT`、`BYTEINT`) は `INT64` の別名です。ClickHouse では、適切な Integer サイズを設定することを推奨します。テンプレートは、定義されたカラム型 (`Int8`、`Int16`、`Int32`、`Int64`) に基づいてカラムを変換するためです。さらに、ClickHouse テーブルで符号なし Int 型 (`UInt8`、`UInt16`、`UInt32`、`UInt64`) が使われている場合も変換されます。 |
+| [**Numeric - Float Types**](https://cloud.google.com/bigquery/docs/reference/standard-sql/data-types#numeric_types)   | [**Float Types**](/ja/reference/data-types/float)      | サポートされる ClickHouse の型: `Float32` および `Float64`                                                                                                                                                                                                                                                         |
+
+<div id="running-the-template">
+  ## Templateの実行
+</div>
+
+BigQuery から ClickHouse へのTemplateは、Google Cloud CLI 経由で実行できます。
+
+<Note>
+  このドキュメント、特に上記の各セクションを確認し、Templateの設定要件と前提条件を十分に理解しておいてください。
+</Note>
+
+<Tabs>
+  <Tab title="Google Cloud Console">
+    Google Cloud Console にサインインし、DataFlow を検索します。
+
+    1. `CREATE JOB FROM TEMPLATE` ボタンをクリックします
+       <Image img="/images/integrations/data-ingestion/google-dataflow/create_job_from_template_button.webp" border alt="DataFlow コンソール" />
+    2. Templateフォームが開いたら、ジョブ名を入力し、目的のリージョンを選択します。
+       <Image img="/images/integrations/data-ingestion/google-dataflow/template_initial_form.webp" border alt="DataFlow Templateの初期フォーム" />
+    3. `DataFlow Template` の入力欄に `ClickHouse` または `BigQuery` と入力し、`BigQuery to ClickHouse` Templateを選択します
+       <Image img="/images/integrations/data-ingestion/google-dataflow/template_clickhouse_search.webp" border alt="BigQuery to ClickHouse Templateを選択" />
+    4. 選択するとフォームが展開され、追加情報を入力できるようになります。
+       * 次の形式の ClickHouse server JDBC URL: `jdbc:clickhouse://host:port/schema`
+       * ClickHouse のユーザー名。
+       * ClickHouse のターゲットテーブル名。
+
+    <br />
+
+    <Note>
+      ClickHouse のパスワードオプションは、パスワードが設定されていないユースケース向けに任意項目として表示されます。
+      追加するには、下にスクロールして `Password for ClickHouse Endpoint` オプションを指定してください。
+    </Note>
+
+    <Image img="/images/integrations/data-ingestion/google-dataflow/extended_template_form.webp" border alt="BigQuery to ClickHouse の拡張Templateフォーム" />
+
+    5. [Template パラメータ](#template-parameters) セクションの説明に従って、
+       BigQuery/ClickHouseIO 関連の設定を必要に応じてカスタマイズして追加します
+  </Tab>
+
+  <Tab title="Google Cloud CLI">
+    ### `gcloud` CLI のインストールと設定
+
+    * まだインストールしていない場合は、[`gcloud` CLI](https://cloud.google.com/sdk/docs/install) をインストールします。
+    * [このガイド](https://cloud.google.com/dataflow/docs/guides/templates/using-flex-templates#before-you-begin) の `Before you begin` セクションに従って、
+      DataFlow Templateの実行に必要な設定、構成、権限をセットアップしてください。
+
+    ### コマンドの実行
+
+    Flex Template を使用する Dataflow ジョブを実行するには、
+    [`gcloud dataflow flex-template run`](https://cloud.google.com/sdk/gcloud/reference/dataflow/flex-template/run)
+    コマンドを使用します。
+
+    以下はコマンドの例です。
+
+    ```bash
+    gcloud dataflow flex-template run "bigquery-clickhouse-dataflow-$(date +%Y%m%d-%H%M%S)" \
+     --template-file-gcs-location "gs://clickhouse-dataflow-templates/bigquery-clickhouse-metadata.json" \
+     --parameters inputTableSpec="<bigquery table id>",jdbcUrl="jdbc:clickhouse://<clickhouse host>:<clickhouse port>/<schema>?ssl=true&sslmode=NONE",clickHouseUsername="<username>",clickHousePassword="<password>",clickHouseTable="<clickhouse target table>"
+    ```
+
+    ### コマンドの内訳
+
+    * **Job Name:** `run` キーワードの後ろの文字列が、一意のジョブ名です。
+    * **Template File:** `--template-file-gcs-location` で指定する JSON file は、Templateの構造と、
+      受け付けるパラメータの詳細を定義します。ここで示している file path は公開されており、そのまま使用できます。
+    * **パラメータ:** パラメータ はカンマ区切りです。文字列型のパラメータでは、値を二重引用符で囲みます。
+
+    ### 想定されるレスポンス
+
+    コマンドを実行すると、次のようなレスポンスが表示されます。
+
+    ```bash
+    job:
+      createTime: '2025-01-26T14:34:04.608442Z'
+      currentStateTime: '1970-01-01T00:00:00Z'
+      id: 2025-01-26_06_34_03-13881126003586053150
+      location: us-central1
+      name: bigquery-clickhouse-dataflow-20250126-153400
+      projectId: ch-integrations
+      startTime: '2025-01-26T14:34:04.608442Z'
+    ```
+  </Tab>
+</Tabs>
+
+<div id="monitor-the-job">
+  ### ジョブを監視する
+</div>
+
+Google Cloud Console の [Dataflow Jobs タブ](https://console.cloud.google.com/dataflow/jobs) に移動し、
+ジョブのステータスを確認します。進行状況やエラーを含むジョブの詳細を確認できます。
+
+<Image img="/images/integrations/data-ingestion/google-dataflow/dataflow-inqueue-job.webp" size="lg" border alt="実行中の BigQuery から ClickHouse へのジョブが表示された Dataflow コンソール" />
+
+<div id="troubleshooting">
+  ## トラブルシューティング
+</div>
+
+<div id="code-241-dbexception-memory-limit-total-exceeded">
+  ### メモリ制限 (合計) 超過エラー (コード 241)
+</div>
+
+このエラーは、大きなバッチデータの処理中に ClickHouse のメモリが不足すると発生します。この問題を解決するには、次の対応を行ってください。
+
+* インスタンスのリソースを増やす: より多くのメモリを搭載した大きなインスタンスに ClickHouse server をアップグレードし、データ処理の負荷に対応します。
+* バッチサイズを小さくする: Dataflow ジョブの設定でバッチサイズを調整し、より小さな chunk のデータを ClickHouse に送信することで、バッチごとのメモリ消費を抑えます。これらの変更は、データのインジェスト時にリソース使用量のバランスを取るのに役立ちます。
+
+<div id="template-source-code">
+  ## Template のソースコード
+</div>
+
+Template のソースコードは以下で公開されています。
+
+* [`GoogleCloudPlatform/DataflowTemplates`](https://github.com/GoogleCloudPlatform/DataflowTemplates/tree/main/v2/googlecloud-to-clickhouse) — Google Cloud Platform のアップストリーム リポジトリ。
+* [`ClickHouse/DataflowTemplates`](https://github.com/ClickHouse/DataflowTemplates) — ClickHouse のフォーク。

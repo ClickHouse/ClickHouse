@@ -1,0 +1,111 @@
+---
+description: 'Ce moteur permet de traiter les fichiers de log d''application comme un flux d''enregistrements.'
+sidebarTitle: 'FileLog'
+slug: /engines/table-engines/special/filelog
+title: 'Moteur de table FileLog'
+doc_type: 'reference'
+---
+
+Ce moteur permet de traiter les fichiers de log d&#39;application comme un flux d&#39;enregistrements.
+
+`FileLog` vous permet de :
+
+* Vous abonner à des fichiers de log.
+* Traiter les nouveaux enregistrements à mesure qu&#39;ils sont ajoutés aux fichiers de log suivis.
+
+<div id="creating-a-table">
+  ## Créer une table
+</div>
+
+```sql
+CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
+(
+    name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
+    name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2],
+    ...
+) ENGINE = FileLog('path_to_logs', 'format_name') SETTINGS
+    [poll_timeout_ms = 0,]
+    [poll_max_batch_size = 0,]
+    [max_block_size = 0,]
+    [max_threads = 0,]
+    [poll_directory_watch_events_backoff_init = 500,]
+    [poll_directory_watch_events_backoff_max = 32000,]
+    [poll_directory_watch_events_backoff_factor = 2,]
+    [handle_error_mode = 'default']
+```
+
+Arguments du moteur :
+
+* `path_to_logs` – Chemin des fichiers de log à suivre. Il peut s&#39;agir du chemin vers un répertoire contenant des fichiers de log ou vers un seul fichier de log. Notez que ClickHouse n&#39;autorise que les chemins situés dans le répertoire `user_files`.
+* `format_name` - Format de l&#39;enregistrement. Notez que FileLog traite chaque ligne d&#39;un fichier comme un enregistrement distinct et que tous les formats de données ne s&#39;y prêtent pas.
+
+Paramètres facultatifs :
+
+* `poll_timeout_ms` - Délai d&#39;expiration d&#39;une opération de poll unique sur le fichier de log. Par défaut : [stream&#95;poll&#95;timeout&#95;ms](/fr/reference/settings/session-settings#stream_poll_timeout_ms).
+* `poll_max_batch_size` — Nombre maximal d&#39;enregistrements récupérés lors d&#39;une seule opération de poll. Par défaut : [max&#95;block&#95;size](/fr/reference/settings/session-settings#max_block_size).
+* `max_block_size` — Taille maximale du lot (en enregistrements) pour le poll. Par défaut : [max&#95;insert&#95;block&#95;size](/fr/reference/settings/session-settings#max_insert_block_size).
+* `max_threads` - Nombre maximal de threads pour analyser les fichiers. La valeur par défaut est 0, ce qui signifie que ce nombre sera égal à max(1, physical&#95;cpu&#95;cores / 4).
+* `poll_directory_watch_events_backoff_init` - Temporisation initiale du thread de surveillance du répertoire. Par défaut : `500`.
+* `poll_directory_watch_events_backoff_max` - Temporisation maximale du thread de surveillance du répertoire. Par défaut : `32000`.
+* `poll_directory_watch_events_backoff_factor` - Vitesse du backoff, exponentielle par défaut. Par défaut : `2`.
+* `handle_error_mode` — Mode de gestion des erreurs du moteur FileLog. Valeurs possibles : default (une exception sera levée si l&#39;analyse d&#39;un message échoue), stream (le message d&#39;exception et le message brut seront enregistrés dans les colonnes virtuelles `_error` et `_raw_message`).
+
+<div id="description">
+  ## Description
+</div>
+
+Les enregistrements reçus sont suivis automatiquement, de sorte que chaque enregistrement d’un fichier de log n’est compté qu’une seule fois.
+
+`SELECT` n’est pas particulièrement utile pour lire des enregistrements (sauf pour le débogage), car chaque enregistrement ne peut être lu qu’une seule fois. Il est plus pratique de créer des flux en temps réel à l’aide de [vues matérialisées](/fr/reference/statements/create/view). Pour ce faire :
+
+1. Utilisez le moteur pour créer une table FileLog et considérez-la comme un flux de données.
+2. Créez une table avec la structure souhaitée.
+3. Créez une vue matérialisée qui convertit les données du moteur et les insère dans une table créée précédemment.
+
+Lorsqu’une `MATERIALIZED VIEW` est associée au moteur, elle commence à collecter des données en arrière-plan. Cela vous permet de recevoir en continu des enregistrements depuis des fichiers de log et de les convertir au format requis à l’aide de `SELECT`.
+Une table FileLog peut avoir autant de vues matérialisées que vous le souhaitez ; elles ne lisent pas les données directement depuis la table, mais reçoivent les nouveaux enregistrements (par blocs). Vous pouvez ainsi écrire dans plusieurs tables avec différents niveaux de détail (avec regroupement et agrégation, ou sans).
+
+Exemple :
+
+```sql
+  CREATE TABLE logs (
+    timestamp UInt64,
+    level String,
+    message String
+  ) ENGINE = FileLog('user_files/my_app/app.log', 'JSONEachRow');
+
+  CREATE TABLE daily (
+    day Date,
+    level String,
+    total UInt64
+  ) ENGINE = SummingMergeTree(day, (day, level), 8192);
+
+  CREATE MATERIALIZED VIEW consumer TO daily
+    AS SELECT toDate(toDateTime(timestamp)) AS day, level, count() AS total
+    FROM logs GROUP BY day, level;
+
+  SELECT level, sum(total) FROM daily GROUP BY level;
+```
+
+Pour ne plus recevoir les données des flux ou pour modifier la logique de conversion, détachez la vue matérialisée :
+
+```sql
+  DETACH TABLE consumer;
+  ATTACH TABLE consumer;
+```
+
+Si vous souhaitez modifier la table cible à l’aide de `ALTER`, nous vous recommandons de désactiver la vue matérialisée afin d’éviter toute incohérence entre la table cible et les données de la vue.
+
+<div id="virtual-columns">
+  ## Colonnes virtuelles
+</div>
+
+* `_filename` - Nom du fichier de log. Type de données : `LowCardinality(String)`.
+* `_offset` - Décalage dans le fichier de log. Type de données : `UInt64`.
+
+Colonnes virtuelles supplémentaires lorsque `handle_error_mode='stream'` :
+
+* `_raw_record` - Enregistrement brut qui n&#39;a pas pu être analysé correctement. Type de données : `Nullable(String)`.
+* `_error` - Message d&#39;exception survenu lors d&#39;une erreur d&#39;analyse. Type de données : `Nullable(String)`.
+
+Remarque : les colonnes virtuelles `_raw_record` et `_error` ne sont renseignées qu&#39;en cas d&#39;exception lors de l&#39;analyse ; elles sont toujours `NULL` lorsque le message a été analysé avec succès.

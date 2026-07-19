@@ -1,0 +1,148 @@
+---
+slug: /cloud/data-resiliency
+sidebarTitle: '데이터 복원력'
+title: '데이터 복원력'
+description: '이 가이드는 재해 복구를 개괄적으로 설명합니다.'
+doc_type: 'reference'
+keywords: ['ClickHouse Cloud', '데이터 복원력', '재해 복구']
+---
+
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+이 페이지에서는 ClickHouse Cloud의 재해 복구 권장 사항과 장애 발생 시 고객이 복구할 수 있도록 지침을 제공합니다.
+현재 ClickHouse Cloud는 자동 장애 조치 또는 여러 지리적 리전 간 자동 동기화를 지원하지 않습니다.
+
+<Tip>
+  고객은 서비스 규모와 구성에 따른 구체적인 RTO를 파악하기 위해 주기적으로 Backup 복원 테스트를 수행해야 합니다.
+</Tip>
+
+<div id="definitions">
+  ## 정의
+</div>
+
+먼저 몇 가지 정의를 짚고 넘어가면 도움이 됩니다.
+
+**RPO (Recovery Point Objective)**: 장애 발생 후 시간을 기준으로 측정한 허용 가능한 최대 데이터 손실 범위입니다. 예시: RPO가 30분이라는 것은 장애가 발생했을 때 DB를 최대 30분 전 시점의 데이터까지 복원할 수 있어야 함을 의미합니다. 물론 이는 백업을 얼마나 자주 수행하는지에 따라 달라집니다.
+
+**RTO (Recovery Time Objective)**: 장애 발생 후 정상 운영을 재개해야 하는 최대 허용 중단 시간입니다. 예시: RTO가 30분이라는 것은 장애가 발생했을 때 팀이 30분 이내에 데이터와 애플리케이션을 복원하고 정상 운영을 다시 시작할 수 있음을 의미합니다.
+
+**데이터베이스 백업과 스냅샷**: 백업은 데이터를 별도의 사본으로 보관해 내구성 있는 장기 저장을 제공합니다. 스냅샷은 추가 데이터 사본을 생성하지 않으며, 일반적으로 더 빠르고 더 나은 RPO를 제공합니다.
+
+<div id="database-backups">
+  ## 데이터베이스 Backup
+</div>
+
+기본 서비스의 Backup을 보유하면 기본 서비스에 장애가 발생했을 때 해당 Backup을 활용해 복원할 수 있으므로 효과적입니다.
+ClickHouse Cloud는 Backup에 대해 다음과 같은 기능을 지원합니다.
+
+1. **기본 Backup**
+
+기본적으로 ClickHouse Cloud는 24시간마다 서비스의 [Backup](/ko/products/cloud/guides/backups/index)을 생성합니다.
+이 Backup은 서비스와 동일한 리전에 저장되며, ClickHouse CSP(클라우드 서비스 제공자)의 스토리지 버킷에서 수행됩니다.
+기본 서비스의 데이터가 손상된 경우 이 Backup을 사용해 새 서비스로 복원할 수 있습니다.
+
+2. **외부 Backup(고객 소유의 스토리지 버킷)**
+
+동일한 리전 또는 다른 리전에 있는 계정의 자체 객체 스토리지로 [Backup을 내보낼](/ko/products/cloud/guides/backups/bring-your-own-backup/export-backups-to-own-cloud-account) 수 있습니다.
+클라우드 간 Backup 내보내기 지원은 곧 제공될 예정입니다.
+리전 간 및 클라우드 간 Backup에는 해당 데이터 전송 요금이 적용됩니다.
+
+<Note>
+  이 기능은 현재 PCI/HIPAA 서비스에서 사용할 수 없습니다
+</Note>
+
+3. **구성 가능한 Backup**
+
+고객은 RPO를 개선하기 위해 [Backup을 구성하여](/ko/products/cloud/guides/backups/configurable-backups) 최대 6시간마다 Backup이 수행되도록 설정할 수 있습니다.
+더 긴 보존 기간도 설정할 수 있습니다.
+
+현재 서비스에서 사용할 수 있는 Backup은 ClickHouse Cloud 콘솔의 &quot;backups&quot; 페이지에 나열됩니다.
+이 섹션에서는 각 Backup의 성공/실패 상태도 확인할 수 있습니다.
+
+<div id="restoring-from-a-backup">
+  ## 백업에서 복원하기
+</div>
+
+1. ClickHouse Cloud 버킷의 기본 백업은 동일한 리전의 새 서비스로 복원할 수 있습니다.
+2. 외부 백업(고객 객체 스토리지의 백업)은 동일한 리전이나 다른 리전의 새 서비스로 복원할 수 있습니다.
+
+<div id="backup-and-restore-duration-guidance">
+  ## 백업 및 복원 소요 시간 안내
+</div>
+
+백업 및 복원 소요 시간은 데이터베이스 크기와 스키마, 그리고 데이터베이스 내 테이블 수 등 여러 요인에 따라 달라집니다.
+
+당사 테스트에서는 비교적 작은 규모인 약 1 TB 백업도 완료까지 10~~15분 이상 걸리는 경우를 확인했습니다.
+20 TB 미만의 백업은 일반적으로 1시간 이내에 완료되며, 약 50 TB의 데이터 백업에는 2~~3시간이 소요됩니다.
+백업은 규모가 커질수록 규모의 경제가 작용하며, 일부 내부 서비스에서는 최대 1 PB 규모의 백업도 10시간 이내에 완료되는 것을 확인했습니다.
+
+실제 소요 시간은 위에서 설명한 여러 요인에 따라 달라지므로, 보다 정확한 추정을 위해 자체 데이터베이스 또는 샘플 데이터로 테스트해 볼 것을 권장합니다.
+
+비슷한 규모라면 복원 소요 시간도 백업 소요 시간과 유사합니다.
+위에서 언급했듯이, 백업 복원에 얼마나 걸리는지 파악하려면 자체 데이터베이스로 테스트해 볼 것을 권장합니다.
+
+<Note>
+  현재 동일하거나 서로 다른 리전에 있는 2개의 ClickHouse Cloud 인스턴스 간 자동 장애 조치는 지원되지 않습니다.
+  현재 동일하거나 서로 다른 리전에 있는 서로 다른 ClickHouse Cloud 서비스 간 데이터 자동 동기화는 지원되지 않습니다. 즉, Active-Active 복제는 지원되지 않습니다.
+</Note>
+
+<div id="recovery-process">
+  ## 복구 프로세스
+</div>
+
+이 섹션에서는 다양한 복구 옵션과 각 경우에 따라 수행할 수 있는 복구 절차를 설명합니다.
+
+<div id="primary-service-data-corruption">
+  ### 기본 서비스 데이터 손상
+</div>
+
+이 경우 데이터는 동일한 리전의 다른 서비스에 [백업에서 복원할 수 있습니다](/ko/products/cloud/guides/backups/review-and-restore-backups#restore-a-backup).
+기본 백업 정책을 사용하는 경우 백업은 최대 24시간 전 상태일 수 있으며, 6시간 주기의 구성 가능한 백업을 사용하는 경우 최대 6시간 전 상태일 수 있습니다.
+
+<div id="restoration-steps">
+  #### 복원 단계
+</div>
+
+기존 백업에서 복원하려면
+
+1. ClickHouse Cloud 콘솔의 &quot;Backups&quot; 섹션으로 이동합니다.
+2. 복원할 백업의 &quot;Actions&quot; 아래에 있는 점 3개를 클릭합니다.
+3. 새 서비스의 이름을 지정하고 이 백업에서 복원합니다.
+
+<Image img="/images/cloud/guides/restore_backup.webp" size="md" alt="백업에서 복원" />
+
+<div id="primary-region-downtime">
+  ### 프라이머리 리전 장애
+</div>
+
+자체 클라우드 제공업체의 버킷으로 [백업을 내보낼 수 있습니다](/ko/products/cloud/guides/backups/bring-your-own-backup/export-backups-to-own-cloud-account).
+리전 장애가 우려된다면 백업을 다른 리전으로 내보내는 것을 권장합니다.
+이 경우 리전 간 데이터 전송 요금이 적용된다는 점에 유의하십시오.
+
+프라이머리 리전에 장애가 발생하면 다른 리전에 있는 백업을 해당 리전의 새 서비스로 복원할 수 있습니다.
+
+백업이 다른 서비스로 복원되면 DNS, 로드 밸런서 또는 연결 문자열(connection string) 구성이 새 서비스를 가리키도록 업데이트해야 합니다.
+여기에는 다음이 포함될 수 있습니다.
+
+* 환경 변수 또는 시크릿 업데이트
+* 새 연결을 설정하기 위한 애플리케이션 서비스 재시작
+
+<Note>
+  현재 [Transparent Data Encryption (TDE)](/ko/products/cloud/guides/security/cmek#transparent-data-encryption-tde)를 사용하는 서비스는 외부 버킷으로 백업 / 복원을 지원하지 않습니다.
+</Note>
+
+<div id="additional-options">
+  ## 추가 옵션
+</div>
+
+검토할 수 있는 추가 옵션이 몇 가지 있습니다.
+
+1. **별도 클러스터에 이중 쓰기**
+
+이 옵션에서는 서로 다른 리전에 2개의 별도 클러스터를 구성하고, 두 클러스터에 동시에 이중 쓰기를 설정할 수 있습니다.
+이 옵션은 여러 서비스를 운영해야 하므로 기본적으로 비용이 더 많이 들지만, 한 리전을 사용할 수 없게 되더라도 더 높은 가용성을 제공합니다.
+
+2. **CSP 복제 활용**
+
+이 옵션에서는 클라우드 서비스 제공자의 네이티브 객체 스토리지 복제 기능을 활용해 데이터를 복사합니다.
+예를 들어 BYOB를 사용하는 경우, 프라이머리 리전에서 사용자가 소유한 버킷으로 백업을 내보낸 뒤 [AWS cross region replication](https://docs.aws.amazon.com/AmazonS3/latest/userguide/replication.html)을 사용해 이를 다른 리전으로 복제할 수 있습니다.

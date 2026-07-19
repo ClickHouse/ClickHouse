@@ -1,0 +1,252 @@
+---
+description: 'Guia passo a passo para compilação do ClickHouse a partir do código-fonte em sistemas Linux'
+sidebarTitle: 'Compilação no Linux'
+slug: /development/build
+title: 'Como fazer a compilação do ClickHouse no Linux'
+doc_type: 'guide'
+---
+
+<Info>
+  **Este guia de compilação é destinado a colaboradores que modificam o próprio ClickHouse.**
+
+  Se você não estiver alterando o código-fonte do ClickHouse, poderá instalar o ClickHouse pré-compilado conforme descrito no [Quick Start](/pt-BR/get-started/setup/install).
+</Info>
+
+O ClickHouse pode ser compilado nas seguintes plataformas:
+
+* x86&#95;64
+* AArch64
+* PowerPC 64 LE (experimental)
+* s390/x (experimental)
+* RISC-V 64 (experimental)
+
+<div id="assumptions">
+  ## Premissas
+</div>
+
+O tutorial a seguir é baseado no Ubuntu Linux, mas também deve funcionar em qualquer outra distribuição Linux, com os ajustes apropriados.
+A versão mínima recomendada do Ubuntu para desenvolvimento é a 24.04 LTS.
+
+O tutorial pressupõe que você já tenha o repositório do ClickHouse e todos os submódulos clonados localmente.
+
+<div id="install-prerequisites">
+  ## Instale os pré-requisitos
+</div>
+
+Primeiro, consulte a [documentação geral de pré-requisitos](/pt-BR/resources/develop-contribute/introduction/developer-instruction).
+
+O ClickHouse usa CMake e Ninja para compilação.
+
+Opcionalmente, você pode instalar o ccache para que a compilação reutilize arquivos-objeto já compilados.
+
+```bash
+sudo apt-get update
+sudo apt-get install build-essential git cmake ccache python3 ninja-build nasm yasm gawk lsb-release wget software-properties-common gnupg
+```
+
+<div id="install-the-clang-compiler">
+  ## Instale o compilador Clang
+</div>
+
+Para instalar o Clang no Ubuntu/Debian, use o script de instalação automática do LLVM disponível [aqui](https://apt.llvm.org/).
+
+```bash
+wget https://apt.llvm.org/llvm.sh
+chmod +x llvm.sh
+sudo ./llvm.sh 21
+```
+
+Para outras distribuições Linux, verifique se é possível instalar algum dos [pacotes pré-compilados](https://releases.llvm.org/download.html) do LLVM.
+
+A partir de fevereiro de 2026, é necessário usar o Clang 21 ou superior.
+GCC e outros compiladores não têm suporte.
+
+<div id="install-the-rust-compiler-optional">
+  ## Instale o compilador Rust (opcional)
+</div>
+
+<Note>
+Rust é uma dependência opcional do ClickHouse.
+Se o Rust não estiver instalado, alguns recursos do ClickHouse serão omitidos da compilação.
+</Note>
+
+Primeiro, siga as instruções da [documentação oficial do Rust](https://www.rust-lang.org/tools/install) para instalar o `rustup`.
+
+Assim como acontece com as dependências de C++, o ClickHouse usa vendoring para controlar exatamente o que é instalado e evitar depender de serviços de terceiros (como o `registry` `crates.io`).
+
+Embora, no modo release, qualquer versão moderna da toolchain do rustup deva funcionar com essas dependências, se você pretende habilitar sanitizers, deverá usar uma versão que corresponda exatamente ao mesmo `std` usado na CI (para a qual incluímos os crates via vendoring):
+
+```bash
+rustup toolchain install nightly-2026-03-22
+rustup default nightly-2026-03-22
+rustup component add rust-src
+```
+
+<div id="build-clickhouse">
+## Compilação do ClickHouse
+</div>
+
+Recomendamos criar um diretório `build` separado dentro de `ClickHouse`, que contenha todos os artefatos da compilação:
+
+```sh
+mkdir build
+cd build
+```
+
+Você pode ter vários diretórios diferentes (por exemplo, `build_release`, `build_debug` etc.) para diferentes tipos de compilação.
+
+Opcional: se você tiver várias versões de compilador instaladas, poderá especificar exatamente qual compilador usar.
+
+```sh
+export CC=clang-21
+export CXX=clang++-21
+```
+
+Para desenvolvimento, recomenda-se o uso de compilações de depuração.
+Em comparação com as compilações de lançamento, elas têm um nível de otimização do compilador (`-O`) mais baixo, o que proporciona uma experiência de depuração melhor.
+Além disso, exceções internas do tipo `LOGICAL_ERROR` fazem o processo encerrar imediatamente, em vez de falhar de forma controlada.
+
+```sh
+cmake -D CMAKE_BUILD_TYPE=Debug ..
+```
+
+<Note>
+Se quiser usar um depurador como o gdb, adicione `-D DEBUG_O_LEVEL="0"` ao comando acima para remover todas as otimizações do compilador, o que pode interferir na capacidade do gdb de visualizar/acessar variáveis.
+</Note>
+
+Execute `ninja` para compilar:
+
+```sh
+ninja clickhouse
+```
+
+Se quiser compilar todos os binários (utilitários e testes), execute `ninja` sem parâmetros:
+
+```sh
+ninja
+```
+
+Você pode controlar o número de jobs de compilação paralelos usando o parâmetro `-j`:
+
+```sh
+ninja -j 1 clickhouse
+```
+
+<Note>
+`clickhouse-server`, `clickhouse-client` e binários semelhantes são links simbólicos no diretório `programs/` que apontam para o executável `clickhouse` após a conclusão da compilação.
+</Note>
+
+<Tip>
+O CMake fornece atalhos para os comandos acima:
+
+```sh
+cmake -S . -B build  # configurar a compilação, executar a partir do diretório raiz do repositório
+cmake --build build  # compilar
+```
+</Tip>
+
+<div id="running-the-clickhouse-executable">
+  ## Executando o executável do ClickHouse
+</div>
+
+Após a compilação ser concluída com sucesso, o executável estará em `ClickHouse/<build_dir>/programs/`:
+
+O servidor ClickHouse tenta localizar um arquivo de configuração `config.xml` no diretório atual.
+Como alternativa, você pode especificar um arquivo de configuração na linha de comando com `-C`.
+
+Para se conectar ao servidor ClickHouse com `clickhouse-client`, abra outro terminal, vá até `ClickHouse/build/programs/` e execute `./clickhouse client`.
+
+Se aparecer a mensagem `Connection refused` no macOS ou FreeBSD, tente especificar o endereço de host 127.0.0.1:
+
+```bash
+clickhouse client --host 127.0.0.1
+```
+
+<div id="advanced-options">
+  ## Opções avançadas
+</div>
+
+<div id="minimal-build">
+  ### Compilação mínima
+</div>
+
+Se você não precisa da funcionalidade oferecida por bibliotecas de terceiros, pode acelerar ainda mais a compilação:
+
+```sh
+cmake -DENABLE_LIBRARIES=OFF
+```
+
+Em caso de problemas, você estará por conta própria ...
+
+O Rust requer uma conexão com a internet. Para desativar o suporte ao Rust:
+
+```sh
+cmake -DENABLE_RUST=OFF
+```
+
+<div id="running-the-clickhouse-executable-1">
+  ### Executando o executável do ClickHouse
+</div>
+
+Você pode substituir a versão do ClickHouse em produção instalada no seu sistema pelo binário compilado do ClickHouse.
+Para fazer isso, instale o ClickHouse na sua máquina seguindo as instruções do site oficial.
+Em seguida, execute:
+
+```bash
+sudo service clickhouse-server stop
+sudo cp ClickHouse/build/programs/clickhouse /usr/bin/
+sudo service clickhouse-server start
+```
+
+Observe que `clickhouse-client`, `clickhouse-server` e outros são links simbólicos para o binário compartilhado `clickhouse`.
+
+Você também pode executar sua versão personalizada do binário do ClickHouse com o arquivo de config do pacote ClickHouse instalado no seu sistema:
+
+```bash
+sudo service clickhouse-server stop
+sudo -u clickhouse ClickHouse/build/programs/clickhouse server --config-file /etc/clickhouse-server/config.xml
+```
+
+<div id="building-on-any-linux">
+  ### Compilação em qualquer distribuição Linux
+</div>
+
+Instale os pré-requisitos no OpenSUSE Tumbleweed:
+
+```bash
+sudo zypper install git cmake ninja clang-c++ python lld nasm yasm gawk
+git clone --recursive https://github.com/ClickHouse/ClickHouse.git
+mkdir build
+cmake -S . -B build
+cmake --build build
+```
+
+Instale os pré-requisitos no Fedora Rawhide:
+
+```bash
+sudo yum update
+sudo yum --nogpg install git cmake make clang python3 ccache lld nasm yasm gawk
+git clone --recursive https://github.com/ClickHouse/ClickHouse.git
+mkdir build
+cmake -S . -B build
+cmake --build build
+```
+
+<div id="building-in-docker">
+  ### Compilação com Docker
+</div>
+
+Você pode executar qualquer compilação localmente em um ambiente semelhante ao de CI usando:
+
+```bash
+python -m ci.praktika run "BUILD_JOB_NAME"
+```
+
+em que BUILD&#95;JOB&#95;NAME é o nome do job, conforme exibido no relatório de CI, por exemplo, &quot;Build (arm&#95;release)&quot;, &quot;Build (amd&#95;debug)&quot;
+
+Este comando baixa a imagem Docker adequada `clickhouse/binary-builder` com todas as dependências necessárias
+e executa o script de compilação dentro dela: `./ci/jobs/build_clickhouse.py`
+
+A saída da compilação será gerada em `./ci/tmp/`.
+
+Funciona em arquiteturas AMD e ARM e não requer dependências adicionais além de Python com o módulo `requests` disponível e Docker.

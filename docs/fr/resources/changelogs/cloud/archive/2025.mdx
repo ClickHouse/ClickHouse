@@ -1,0 +1,447 @@
+---
+slug: /whats-new/cloud/2025
+sidebarTitle: '2025'
+title: 'Changelog Cloud - 2025'
+description: 'Changelog de ClickHouse Cloud pour 2025'
+doc_type: 'changelog'
+keywords: ['changelog', 'notes de version', 'mises à jour', 'nouvelles fonctionnalités', 'changements Cloud', '2025']
+---
+
+import { Image } from "/snippets/fr/components/Image.jsx";
+
+<div id="december-19-2025">
+  ## 19 décembre 2025
+</div>
+
+* AWS ap-south-1 prend désormais en charge le lancement de services conformes PCI.
+* **Préversion privée de l’identité utilisateur unifiée**
+  Les clients qui souhaitent gérer les utilisateurs de base de données depuis la console peuvent activer une nouvelle méthode d’authentification pour la console SQL.
+  Cela leur permet d’essayer cette nouvelle méthode d’authentification pendant que nous continuons à intégrer la gestion des utilisateurs de base de données à la console.
+* **Le mode non ordonné est désormais disponible dans S3 ClickPipes** :
+  Les clients peuvent désormais ingérer des données depuis Amazon S3 vers ClickHouse Cloud dans n’importe quel ordre pour des analyses pilotées par les événements.
+  Les fichiers n’ont plus besoin d’être dans l’ordre lexicographique pour être traités. Plus de détails sont disponibles dans ce [billet de blog d’annonce](https://clickhouse.com/blog/clickpipes-s3-unordered-mode).
+* Le connecteur Fivetran vient de passer en bêta. Si vous utilisez Fivetran et souhaitez configurer ClickHouse comme destination, consultez cette [documentation](https://fivetran.com/docs/destinations/clickhouse/setup-guide).
+
+<div id="december-12-2025">
+  ## 12 décembre 2025
+</div>
+
+* **Configuration en libre-service de SAML SSO**
+
+  Les clients Enterprise peuvent désormais effectuer la configuration de SAML dans la console sans ouvrir de ticket d’assistance.
+  De plus, les clients SAML peuvent définir un rôle par défaut qui sera attribué aux nouveaux utilisateurs ajoutés via leur fournisseur d’identité, ainsi que des paramètres personnalisés de délai d’expiration de session.
+  Pour plus d’informations, veuillez consulter notre [documentation](/fr/products/cloud/guides/security/cloud-access-management/saml-sso-setup).
+* **Taille maximale des répliques et limites de mise à l’échelle dans Azure**
+
+  Les clients peuvent désormais définir la taille maximale des répliques à 356 GiB dans toutes les régions Azure, à l’exception de `eastus2`, où la taille maximale disponible est de 120 GiB.
+
+<div id="november-21-2025">
+  ## 21 novembre 2025
+</div>
+
+* ClickHouse Cloud est désormais disponible dans **AWS Israel (Tel Aviv) — il-central-1**
+* Amélioration de l&#39;expérience d&#39;onboarding du marketplace pour configurer des organisations ClickHouse afin de les facturer via des abonnements marketplace paiement à l’usage ou des offres privées.
+
+<div id="november-14-2025">
+  ## 14 novembre 2025
+</div>
+
+* Nous sommes ravis d’annoncer que **ClickHouse Cloud** est désormais disponible dans **deux nouvelles régions publiques** :
+
+  * **GCP Japan (asia-northeast1)**
+  * **AWS Seoul (Asia Pacific, ap-northeast-2)** — désormais également pris en charge dans **ClickPipes**
+
+  Ces régions étaient auparavant disponibles en tant que **régions privées** et sont maintenant **accessibles à tous les utilisateurs**.
+* Terraform et l’API prennent désormais en charge l’ajout de tags aux services, ainsi que le filtrage des services par tags.
+
+<div id="november-7-2025">
+  ## 7 novembre 2025
+</div>
+
+* La console ClickHouse Cloud permet désormais de configurer les tailles de réplique par paliers de 1 vCPU et 4 GiB depuis la console Cloud.
+  Ces options sont disponibles aussi bien lors de la configuration d&#39;un nouveau service que lors de la définition des tailles de réplique minimales et maximales sur la page des paramètres.
+* Les profils matériels personnalisés (disponibles avec le niveau Enterprise) prennent désormais en charge la mise en veille.
+* ClickHouse Cloud propose désormais une expérience d&#39;achat simplifiée via AWS Marketplace, avec des options distinctes pour le [paiement à l&#39;usage](https://aws.amazon.com/marketplace/pp/prodview-p4gwofrqpkltu?sr=0-2\&ref_=beagle\&applicationId=AWSMPContessa) et les [contrats d&#39;engagement de dépenses](https://aws.amazon.com/marketplace/pp/prodview-4qyeihstyym2s?sr=0-3\&ref_=beagle\&applicationId=AWSMPContessa).
+* Les alertes sont désormais disponibles pour les utilisateurs de ClickStack dans ClickHouse Cloud.
+  Vous pouvez désormais créer et gérer des alertes directement dans l&#39;HyperDX UI, pour les logs, les métriques et les traces, sans configuration supplémentaire, sans infrastructure ni service supplémentaires, et sans config. Les alertes s&#39;intègrent à Slack, PagerDuty et bien plus encore.
+  Pour plus d&#39;informations, consultez la [documentation sur les alertes](/fr/clickstack/features/alerts).
+
+<div id="october-17-2025">
+  ## 17 octobre 2025
+</div>
+
+* **Monitoring du service - Tableau de bord d’utilisation des ressources**
+  L’affichage des métriques d’utilisation du CPU et de la mémoire n’indiquera plus la moyenne, mais la valeur d’utilisation maximale sur une période donnée, afin de mieux mettre en évidence les cas de sous-dimensionnement.
+  De plus, la métrique d’utilisation du CPU affichera une métrique au niveau Kubernetes, plus proche de celle utilisée par l’autoscaler de ClickHouse Cloud.
+* **Buckets externes**
+  ClickHouse Cloud vous permet désormais d’exporter directement des sauvegardes vers votre propre compte auprès d’un fournisseur de services cloud.
+  Connectez votre bucket de stockage externe — AWS S3, Google Cloud Storage ou Azure Blob Storage — et prenez le contrôle de la gestion de vos sauvegardes.
+
+<div id="august-29-2025">
+  ## 29 août 2025
+</div>
+
+* [ClickHouse Cloud Azure Private Link](/fr/products/cloud/guides/security/connectivity/private-networking/azure-privatelink) utilise désormais des filtres Resource ID à la place des filtres Resource GUID pour l’identification des ressources. Vous pouvez toujours utiliser l’ancien Resource GUID, qui reste rétrocompatible, mais nous vous recommandons de passer aux filtres Resource ID. Pour plus de détails sur la migration, consultez la [documentation](/fr/products/cloud/guides/security/connectivity/private-networking/azure-privatelink#obtaining-private-endpoint-resourceid) d’Azure Private Link.
+
+<div id="august-22-2025">
+  ## 22 août 2025
+</div>
+
+* **ClickHouse Connector for AWS Glue**
+  Vous pouvez désormais utiliser le [ClickHouse Connector for AWS Glue](/fr/integrations/connectors/data-ingestion/AWS/glue) officiel, disponible sur [AWS Marketplace](https://aws.amazon.com/marketplace/pp/prodview-eqvmuopqzdg7s). Il utilise le moteur serverless basé sur Apache
+  Spark d&#39;AWS Glue pour l&#39;extraction, la transformation et le chargement de données entre ClickHouse et d&#39;autres sources de données. Pour
+  commencer, suivez le billet de [blog](http://clickhouse.com/blog/clickhouse-connector-aws-glue) d&#39;annonce expliquant comment créer des tables, écrire et lire des données entre ClickHouse et Spark.
+* **Modification du nombre minimal de répliques dans un service**
+  Les services qui ont été mis à l&#39;échelle à la hausse peuvent désormais être [redimensionnés à la baisse](/fr/products/cloud/features/autoscaling/overview) afin d&#39;utiliser une seule réplique (auparavant, le minimum était de 2 répliques). Remarque : les services à réplique unique offrent une disponibilité réduite et ne sont pas recommandés pour une utilisation en production.
+* ClickHouse Cloud commencera à envoyer des notifications liées à la mise à l&#39;échelle des services et aux mises à niveau de version des services, par défaut pour les rôles d&#39;administrateur. Les administrateurs peuvent ajuster leurs préférences de notification dans les paramètres de notification.
+
+<div id="august-13-2025">
+  ## 13 août 2025
+</div>
+
+* **ClickPipes for MongoDB CDC désormais disponible en préversion privée**
+  Vous pouvez désormais utiliser ClickPipes pour répliquer des données de MongoDB vers ClickHouse Cloud en quelques clics, afin de bénéficier de l’analytique en temps réel sans recourir à des outils ETL externes. Le connecteur prend en charge la
+  réplication continue ainsi que les migrations ponctuelles, et il est compatible avec MongoDB Atlas et les déploiements
+  MongoDB auto-hébergés. Consultez le [billet de blog](https://clickhouse.com/blog/mongodb-cdc-clickhouse-preview) pour une vue d’ensemble du connecteur MongoDB CDC et [inscrivez-vous ici pour bénéficier d’un accès anticipé](https://clickhouse.com/cloud/clickpipes/mongodb-cdc-connector) !
+
+<div id="august-08-2025">
+  ## 8 août 2025
+</div>
+
+* **Notifications** : vous recevrez désormais une notification dans l’UI lorsque votre service commencera sa mise à niveau vers une nouvelle version de ClickHouse. Des notifications supplémentaires par e-mail et sur Slack peuvent être ajoutées via le centre de notifications.
+* **ClickPipes** : la prise en charge des ClickPipes Azure Blob Storage (ABS) a été ajoutée au provider Terraform de ClickHouse. Consultez la documentation du provider pour voir un exemple de création programmatique d’un ABS ClickPipe.
+  * [Correction de bug] Les Object Storage ClickPipes qui écrivent dans une table de destination utilisant le moteur Null affichent désormais les métriques « Total records » et « Data ingested » dans l’UI.
+  * [Correction de bug] Le sélecteur « Time period » des métriques dans l’UI revenait par défaut à « 24 hours », quelle que soit la période sélectionnée. Ce problème a été corrigé, et l’UI met désormais correctement à jour les graphiques pour la période sélectionnée.
+* **Private Link inter-région (AWS)** est désormais disponible de façon générale. Veuillez consulter la [documentation](/fr/products/cloud/guides/security/connectivity/private-networking/aws-privatelink) pour obtenir la liste des régions prises en charge.
+
+<div id="july-31-2025">
+  ## 31 juillet 2025
+</div>
+
+**La mise à l’échelle verticale de ClickPipes est désormais disponible**
+
+[La mise à l’échelle verticale est désormais disponible pour les ClickPipes streaming](https://clickhouse.com/blog/clickpipes-flexible-scaling-monitoring).
+Cette fonctionnalité vous permet de contrôler la taille de chaque réplique, en plus du
+nombre de répliques (mise à l’échelle horizontale). La page de détails de chaque ClickPipe
+affiche désormais aussi l’utilisation du CPU et de la mémoire par réplique, ce qui vous aide à mieux
+comprendre vos charges de travail et à planifier vos opérations de redimensionnement en toute confiance.
+
+<div id="july-24-2025">
+  ## 24 juillet 2025
+</div>
+
+**ClickPipes for MySQL CDC désormais en bêta publique**
+
+Le connecteur MySQL CDC de ClickPipes est désormais disponible en bêta publique. En quelques clics seulement,
+vous pouvez commencer à répliquer vos données MySQL (ou MariaDB) directement dans ClickHouse Cloud en temps réel,
+sans dépendances externes. Consultez le [billet de blog](https://clickhouse.com/blog/mysql-cdc-connector-clickpipes-beta)
+pour une présentation du connecteur et suivez le [guide de démarrage rapide](/fr/integrations/clickpipes/mysql/index)
+pour démarrer rapidement.
+
+<div id="june-11-2025">
+  ## 11 juillet 2025
+</div>
+
+* Les nouveaux services stockent désormais les métadonnées des bases de données et des tables dans un **SharedCatalog** central,
+  un nouveau modèle de coordination et de cycle de vie des objets qui permet :
+
+  * **Des DDL à l&#39;échelle du Cloud**, même en cas de forte concurrence
+  * **Une suppression résiliente et de nouvelles opérations DDL**
+  * **Des démarrages et réactivations rapides**, car les nœuds sans état se lancent désormais sans dépendance au disque
+  * **Du compute sans état sur les formats natifs et ouverts**, notamment Iceberg et Delta Lake
+
+  Pour en savoir plus sur SharedCatalog, consultez notre [blog](https://clickhouse.com/blog/clickhouse-cloud-stateless-compute)
+
+* Nous prenons désormais en charge le lancement de services conformes à HIPAA dans GCP `europe-west4`
+
+<div id="june-27-2025">
+  ## 27 juin 2025
+</div>
+
+* Nous prenons désormais officiellement en charge un provider Terraform pour la gestion des privilèges de base de données,
+  également compatible avec les déploiements autogérés. Veuillez consulter le
+  [blog](https://clickhouse.com/blog/new-terraform-provider-manage-clickhouse-database-users-roles-and-privileges-with-code)
+  et notre [documentation](https://registry.terraform.io/providers/ClickHouse/clickhousedbops/latest/docs)
+  pour en savoir plus.
+* Les services du niveau Enterprise peuvent désormais s’inscrire au [canal de publication lent](/fr/products/cloud/features/admin-features/upgrades#slow-release-channel-deferred-upgrades) afin de différer
+  les mises à niveau de deux semaines après la publication habituelle, pour disposer de plus de temps
+  pour les tests.
+
+<div id="june-13-2025">
+  ## 13 juin 2025
+</div>
+
+* Nous sommes ravis d’annoncer que les tableaux de bord de ClickHouse Cloud sont désormais en disponibilité générale. Les tableaux de bord vous permettent de visualiser des requêtes dans des tableaux de bord, d’interagir avec les données à l’aide de filtres et de paramètres de requête, et de gérer le partage.
+* Filtres IP des API keys : nous introduisons une couche de protection supplémentaire pour vos interactions avec ClickHouse Cloud. Lors de la génération d’une API key, vous pouvez configurer une liste d’autorisation IP afin de limiter les adresses depuis lesquelles l’API key peut être utilisée. Veuillez consulter la [documentation](/fr/products/cloud/guides/security/connectivity/setting-ip-filters) pour plus de détails.
+
+<div id="may-30-2025">
+  ## 30 mai 2025
+</div>
+
+* Nous sommes ravis d’annoncer la disponibilité générale de **ClickPipes for Postgres CDC**
+  dans ClickHouse Cloud. En quelques clics, vous pouvez désormais répliquer vos bases de données Postgres
+  et bénéficier d’analyses en temps réel ultra-rapides. Le connecteur offre
+  une synchronisation des données plus rapide, une latence de seulement quelques secondes, des modifications automatiques du schéma,
+  une connectivité entièrement sécurisée, et bien plus encore. Consultez le
+  [blog](https://clickhouse.com/blog/postgres-cdc-connector-clickpipes-ga) pour
+  plus d’informations. Pour commencer, consultez les instructions [ici](/fr/integrations/clickpipes/postgres/index).
+
+* Nouvelles améliorations apportées aux tableaux de bord de la console SQL :
+  * Partage : vous pouvez partager votre tableau de bord avec les membres de votre équipe. Quatre niveaux d’accès sont pris en charge et peuvent être ajustés à la fois globalement et utilisateur par utilisateur :
+    * *Accès en écriture* : ajouter/modifier des visualisations, ajuster les paramètres d’actualisation, interagir avec les tableaux de bord via des filtres.
+    * *Propriétaire* : partager un tableau de bord, supprimer un tableau de bord, ainsi que toutes les autres permissions d’un utilisateur disposant d’un « accès en écriture ».
+    * *Accès en lecture seule* : afficher un tableau de bord et interagir avec lui via des filtres
+    * *Aucun accès* : impossible d’afficher un tableau de bord
+  * Pour les tableaux de bord existants, les administrateurs de l’organisation peuvent désormais s’en attribuer la propriété.
+  * Vous pouvez désormais ajouter une table ou un graphique à un tableau de bord depuis la vue de requête de la console SQL.
+
+<Image img="/images/cloud/reference/may-30-dashboards.webp" size="md" alt="Améliorations des tableaux de bord" border />
+
+* Nous recrutons des participants pour la preview de [Distributed cache](https://clickhouse.com/cloud/distributed-cache-waitlist)
+  sur AWS et GCP. Pour en savoir plus, consultez le [blog](https://clickhouse.com/blog/building-a-distributed-cache-for-s3).
+
+<div id="may-16-2025">
+  ## 16 mai 2025
+</div>
+
+* Lancement du tableau de bord d’utilisation des ressources, qui offre une vue des
+  ressources utilisées par un service dans ClickHouse Cloud. Les métriques suivantes
+  sont extraites des tables système et affichées sur ce tableau de bord :
+  * Mémoire et CPU : graphiques pour `CGroupMemoryTotal` (mémoire allouée), `CGroupMaxCPU` (CPU alloué),
+    `MemoryResident` (mémoire utilisée) et `ProfileEvent_OSCPUVirtualTimeMicroseconds` (CPU utilisé)
+  * Transfert de données : graphiques montrant les flux de données entrants et sortants de ClickHouse Cloud. Pour en savoir plus, consultez [cette page](/fr/products/cloud/reference/billing/network-data-transfer).
+* Nous sommes ravis d’annoncer le lancement de notre nouveau mix-in Prometheus/Grafana pour ClickHouse Cloud,
+  conçu pour simplifier le monitoring de vos services ClickHouse Cloud.
+  Ce mix-in utilise notre endpoint d’API compatible Prometheus pour intégrer de façon transparente
+  les métriques ClickHouse à votre configuration Prometheus et Grafana existante. Il inclut
+  un tableau de bord préconfiguré qui vous offre une visibilité en temps réel sur l’état
+  et les performances de vos services. Consultez le [blog](https://clickhouse.com/blog/monitor-with-new-prometheus-grafana-mix-in) de lancement pour en savoir plus.
+
+<div id="april-18-2025">
+  ## 18 avril 2025
+</div>
+
+* Ajout d’un nouveau rôle **Member** au niveau de l’organisation et de deux nouveaux rôles au niveau du service
+   : **Service Admin** et **Service Read Only**.
+  **Member** est un rôle au niveau de l’organisation attribué par défaut aux utilisateurs SAML SSO et
+  permet uniquement de se connecter et de mettre à jour le profil. Les rôles **Service Admin**
+  et **Service Read Only** pour un ou plusieurs services peuvent être attribués à des utilisateurs
+  disposant des rôles **Member**, **Developer** ou **Billing Admin**. Pour plus d’informations,
+  consultez [« Contrôle d’accès dans ClickHouse Cloud »](/fr/products/cloud/guides/security/cloud-access-management/manage-database-users)
+* ClickHouse Cloud propose désormais des services **HIPAA** et **PCI** dans les régions suivantes
+  pour les clients **Enterprise** : AWS eu-central-1, AWS eu-west-2, AWS us-east-2.
+* Ajout de **notifications utilisateur pour ClickPipes**. Cette fonctionnalité envoie
+  des alertes automatiques en cas d’échec de ClickPipes par e-mail, via l’UI ClickHouse Cloud et
+  sur Slack. Les notifications par e-mail et via l’UI sont activées par défaut et peuvent être
+  configurées pour chaque pipe. Pour les **Postgres CDC ClickPipes**, les alertes couvrent également
+  le seuil du slot de réplication (configurable dans l’onglet **Settings**), des types d’erreur spécifiques
+  et des étapes en libre-service pour résoudre les échecs.
+* La **préversion privée de MySQL CDC** est désormais ouverte. Elle permet aux clients de répliquer des bases de données MySQL
+  vers ClickHouse Cloud en quelques clics, pour effectuer rapidement des analyses et
+  supprimer le besoin d’outils ETL externes. Le connector prend en charge à la fois la réplication continue
+  et les migrations ponctuelles, que MySQL soit dans le cloud (RDS,
+  Aurora, Cloud SQL, Azure, etc.) ou on-premise. Vous pouvez vous inscrire à la préversion privée
+  en [suivant ce lien](https://clickhouse.com/cloud/clickpipes/mysql-cdc-connector).
+* Ajout d’**AWS PrivateLink pour ClickPipes**. Vous pouvez utiliser AWS PrivateLink pour
+  établir une connectivité sécurisée entre des VPC, des services AWS, vos systèmes on-premise
+  et ClickHouse Cloud. Cela peut se faire sans exposer le trafic à
+  l’internet public lors du transfert de données depuis des sources telles que Postgres, MySQL et
+  MSK sur AWS. Cette fonctionnalité prend également en charge l’accès cross-region via des endpoints de service VPC.
+  La configuration de la connectivité PrivateLink est désormais [entièrement en libre-service](/fr/integrations/clickpipes/aws-privatelink)
+  via ClickPipes.
+
+<div id="april-4-2025">
+  ## 4 avril 2025
+</div>
+
+* Notifications Slack pour ClickHouse Cloud : ClickHouse Cloud prend désormais en charge les notifications Slack pour les événements de facturation, de mise à l’échelle et de ClickPipes, en plus des notifications dans la console et par e-mail. Ces notifications sont envoyées via l’application Slack de ClickHouse Cloud. Les administrateurs de l’organisation peuvent configurer ces notifications depuis le centre de notifications en indiquant les canaux Slack auxquels elles doivent être envoyées.
+* Les utilisateurs de services Production et Development verront désormais sur leurs factures le coût d’utilisation de ClickPipes et des transferts de données.
+
+<div id="march-21-2025">
+  ## 21 mars 2025
+</div>
+
+* La connectivité Private Link inter-régions sur AWS est désormais en Beta. Veuillez consulter la
+  documentation ClickHouse Cloud sur le Private Link [AWS](/fr/products/cloud/guides/security/connectivity/private-networking/aws-privatelink) pour
+  en savoir plus sur la configuration et la liste des régions prises en charge.
+* La taille maximale de replica disponible pour les services sur AWS est désormais fixée à 236 Gio de RAM.
+  Cela permet une utilisation efficace, tout en garantissant que des ressources sont
+  allouées aux processus en arrière-plan.
+
+<div id="march-7-2025">
+  ## 7 mars 2025
+</div>
+
+* Nouvel endpoint API `UsageCost` : la spécification de l’API prend désormais en charge un nouvel endpoint
+  pour récupérer les informations d’utilisation. Il s’agit d’un endpoint au niveau de l’organisation, et les coûts d’utilisation
+  peuvent être interrogés sur une période maximale de 31 jours. Les métriques pouvant être
+  récupérées incluent Storage, Compute, le transfert de données et ClickPipes. Veuillez consulter
+  la [documentation](/fr/api-reference/billing/get-organization-usage-costs) pour plus de détails.
+* La version [v2.1.0](https://registry.terraform.io/providers/ClickHouse/clickhouse/2.1.0/docs/resources/service#nestedatt--endpoints_configuration) du provider Terraform permet d’activer l’endpoint MySQL.
+
+<div id="february-21-2025">
+  ## 21 février 2025
+</div>
+
+<div id="clickhouse-byoc-for-aws-ga">
+  ### ClickHouse Bring Your Own Cloud (BYOC) pour AWS est désormais officiellement disponible
+</div>
+
+Dans ce mode de déploiement, les composants du plan de données (ressources de calcul, stockage, sauvegardes, logs, métriques)
+s’exécutent dans le VPC du client, tandis que le plan de contrôle (accès web, API et facturation)
+reste au sein du ClickHouse VPC. Cette configuration est idéale pour les charges de travail importantes qui
+doivent répondre à des exigences strictes de résidence des données, en garantissant que toutes les données restent
+dans un environnement client sécurisé.
+
+* Pour plus de détails, vous pouvez consulter la [documentation](/fr/products/cloud/guides/infrastructure/deployment-options/byoc/overview) sur le BYOC
+  ou lire notre [article de blog d’annonce](https://clickhouse.com/blog/announcing-general-availability-of-clickhouse-bring-your-own-cloud-on-aws).
+* [Contactez-nous](https://clickhouse.com/cloud/bring-your-own-cloud) pour demander l’accès.
+
+<div id="postgres-cdc-connector-for-clickpipes">
+  ### Connecteur Postgres CDC pour ClickPipes
+</div>
+
+Le connecteur Postgres CDC pour ClickPipes vous permet de répliquer facilement vos bases de données Postgres vers ClickHouse Cloud.
+
+* Pour commencer, consultez la [documentation](/fr/integrations/clickpipes/postgres/index) du connecteur Postgres CDC pour ClickPipes.
+* Pour plus d’informations sur les cas d’usage et les fonctionnalités, consultez la [page de présentation](https://clickhouse.com/cloud/clickpipes/postgres-cdc-connector) et l’[article de lancement](https://clickhouse.com/blog/postgres-cdc-connector-clickpipes-public-beta).
+
+<div id="pci-compliance-for-clickhouse-cloud-on-aws">
+  ### Conformité à la norme PCI pour ClickHouse Cloud sur AWS
+</div>
+
+ClickHouse Cloud prend désormais en charge des **services conformes à la norme PCI** pour les clients du **niveau Enterprise**
+dans les régions **us-east-1** et **us-west-2**. Les utilisateurs qui souhaitent lancer
+un service dans un environnement conforme à la norme PCI peuvent contacter [l’assistance](https://clickhouse.com/support/program)
+pour obtenir de l’aide.
+
+<div id="tde-and-cmek-on-gcp">
+  ### Transparent Data Encryption et Customer Managed Encryption Keys sur Google Cloud Platform
+</div>
+
+ClickHouse Cloud prend désormais en charge **Transparent Data Encryption (TDE)** et les **Customer Managed
+Encryption Keys (CMEK)** sur **Google Cloud Platform (GCP)**.
+
+* Veuillez consulter la [documentation](/fr/products/cloud/guides/security/cmek#transparent-data-encryption-tde) de ces fonctionnalités pour plus d’informations.
+
+<div id="aws-middle-east-uae-availability">
+  ### Disponibilité dans AWS Middle East (UAE)
+</div>
+
+ClickHouse Cloud prend désormais en charge une nouvelle région et est maintenant disponible dans la
+région **AWS Middle East (UAE) me-central-1**.
+
+<div id="clickhouse-cloud-guardrails">
+  ### Garde-fous de ClickHouse Cloud
+</div>
+
+Afin d’encourager les bonnes pratiques et de garantir une utilisation stable de ClickHouse Cloud, nous
+mettons en place des garde-fous concernant le nombre de tables, de bases de données, de partitions et de parts
+utilisées.
+
+* Consultez la section [limites d’utilisation](/fr/products/cloud/guides/best-practices/usagelimits)
+  de la documentation pour plus de détails.
+* Si votre service est déjà au-delà de ces limites, nous autoriserons une augmentation de 10 %.
+  Veuillez contacter le [support](https://clickhouse.com/support/program) si vous avez des questions.
+
+<div id="january-27-2025">
+  ## 27 janvier 2025
+</div>
+
+<div id="changes-to-clickhouse-cloud-tiers">
+  ### Évolution des niveaux de service ClickHouse Cloud
+</div>
+
+Nous nous attachons à faire évoluer nos produits pour répondre aux besoins changeants de nos clients. Depuis son lancement en GA il y a deux ans, ClickHouse Cloud a considérablement évolué, et nous avons acquis une compréhension précieuse de la façon dont nos clients utilisent nos offres cloud.
+
+Nous introduisons de nouvelles fonctionnalités afin d&#39;optimiser le dimensionnement et la rentabilité des services ClickHouse Cloud pour vos workloads. Celles-ci incluent la **compute-compute separation**, des types de machines hautes performances et des **services à réplica unique**. Nous faisons également évoluer la mise à l&#39;échelle automatique et les mises à niveau gérées afin qu&#39;elles s&#39;exécutent de façon plus fluide et plus réactive.
+
+Nous ajoutons un **nouveau niveau Enterprise** pour répondre aux besoins des clients et des workloads les plus exigeants, en mettant l&#39;accent sur des fonctionnalités de sécurité et de conformité propres à certains secteurs, un contrôle accru sur le matériel sous-jacent et les mises à niveau, ainsi que des fonctionnalités avancées de reprise après sinistre.
+
+Pour accompagner ces changements, nous restructurons nos niveaux **Development** et **Production** actuels afin qu&#39;ils correspondent davantage à la manière dont notre clientèle en constante évolution utilise nos offres. Nous lançons le niveau **Basic**, destiné aux utilisateurs qui testent de nouvelles idées et de nouveaux projets, ainsi que le niveau **Scale**, adapté aux utilisateurs qui travaillent avec des workloads de production et des données à grande échelle.
+
+Vous pouvez en savoir plus sur ces évolutions fonctionnelles et d&#39;autres dans ce [blog](https://clickhouse.com/blog/evolution-of-clickhouse-cloud-new-features-superior-performance-tailored-offerings). Les clients existants devront intervenir pour sélectionner une [nouvelle formule](https://clickhouse.com/pricing). Une communication destinée aux clients a été envoyée par e-mail aux administrateurs de l&#39;organisation.
+
+<div id="warehouses-compute-compute-separation-ga">
+  ### Warehouses: Compute-compute separation (GA)
+</div>
+
+Compute-compute separation (également appelée « Warehouses ») est disponible de manière générale ; veuillez consulter le [blog](https://clickhouse.com/blog/introducing-warehouses-compute-compute-separation-in-clickhouse-cloud) pour plus de détails et la [documentation](/fr/products/cloud/features/infrastructure/warehouses).
+
+<div id="single-replica-services">
+  ### Services à réplica unique
+</div>
+
+Nous introduisons le concept de « service à réplica unique », à la fois comme offre autonome et au sein des warehouses. En tant qu’offre autonome, les services à réplica unique sont limités en termes de taille et destinés à de petites charges de test. Au sein des warehouses, les services à réplica unique peuvent être déployés dans des tailles plus importantes et utilisés pour des charges de travail ne nécessitant pas de haute disponibilité à grande échelle, comme des jobs ETL redémarrables.
+
+<div id="vertical-auto-scaling-improvements">
+  ### Améliorations de l’auto-scaling vertical
+</div>
+
+Nous introduisons un nouveau mécanisme de mise à l’échelle verticale pour les répliques de calcul, que nous appelons « Make Before Break » (MBB). Cette approche ajoute une ou plusieurs répliques avec le nouveau dimensionnement avant de supprimer les anciennes, évitant ainsi toute perte de capacité pendant les opérations de mise à l’échelle. En supprimant l’intervalle entre le retrait des répliques existantes et l’ajout des nouvelles, MBB rend le processus de mise à l’échelle plus fluide et moins perturbateur. Cette approche est particulièrement avantageuse dans les scénarios de montée en capacité, où une forte utilisation des ressources rend nécessaire une capacité supplémentaire, car retirer des répliques prématurément ne ferait qu’aggraver la pression sur les ressources.
+
+<div id="horizontal-scaling-ga">
+  ### Mise à l’échelle horizontale (GA)
+</div>
+
+La mise à l’échelle horizontale est désormais en disponibilité générale. Vous pouvez ajouter des répliques supplémentaires pour augmenter la capacité de votre service via les API et la Cloud Console. Veuillez consulter la [documentation](/fr/products/cloud/features/autoscaling/horizontal#manual-horizontal-scaling) pour plus d’informations.
+
+<div id="configurable-backups">
+  ### Sauvegardes configurables
+</div>
+
+Nous permettons désormais aux clients d’exporter des sauvegardes vers leur propre compte cloud ; veuillez consulter la [documentation](/fr/products/cloud/guides/backups/configurable-backups) pour plus d’informations.
+
+<div id="managed-upgrade-improvements">
+  ### Améliorations des mises à niveau Managed
+</div>
+
+Les mises à niveau Managed sécurisées apportent une réelle valeur à nos utilisateurs en leur permettant de maintenir leur base de données à jour à mesure que de nouvelles fonctionnalités sont ajoutées. Avec ce déploiement progressif, nous avons appliqué l’approche « make before break » (ou MBB) aux mises à niveau, réduisant encore l’impact sur les workloads en cours d’exécution.
+
+<div id="hipaa-support">
+  ### Prise en charge de l’HIPAA
+</div>
+
+Nous prenons désormais en charge l’HIPAA dans les régions conformes, notamment AWS `us-east-1`, `us-west-2` ainsi que GCP `us-central1`, `us-east1`. Les clients qui souhaitent être intégrés doivent signer un Business Associate Agreement (BAA) et déployer dans la version conforme de la région. Pour plus d’informations sur l’HIPAA, veuillez consulter la [documentation](/fr/products/cloud/reference/security/compliance-overview).
+
+<div id="scheduled-upgrades">
+  ### Mises à niveau planifiées
+</div>
+
+Vous pouvez planifier les mises à niveau de vos services. Cette fonctionnalité est prise en charge uniquement pour les services du niveau Enterprise. Pour plus d&#39;informations sur les mises à niveau planifiées, consultez la [documentation](/fr/products/cloud/features/admin-features/upgrades).
+
+<div id="language-client-support-for-complex-types">
+  ### Prise en charge des types complexes par les bibliothèques clientes
+</div>
+
+Les clients [Golang](https://github.com/ClickHouse/clickhouse-go/releases/tag/v2.30.1), [Python](https://github.com/ClickHouse/clickhouse-connect/releases/tag/v0.8.11) et [NodeJS](https://github.com/ClickHouse/clickhouse-js/releases/tag/1.10.1) prennent désormais en charge les types Dynamic, Variant et JSON.
+
+<div id="dbt-support-for-refreshable-materialized-views">
+  ### Prise en charge des vues matérialisées actualisables par DBT
+</div>
+
+DBT prend désormais en charge les [vues matérialisées actualisables](https://github.com/ClickHouse/dbt-clickhouse/releases/tag/v1.8.7) dans la version `1.8.7`.
+
+<div id="jwt-token-support">
+  ### Prise en charge des jetons JWT
+</div>
+
+La prise en charge de l&#39;authentification basée sur JWT a été ajoutée au JDBC driver v2, à clickhouse-java, ainsi qu&#39;aux clients [Python](https://github.com/ClickHouse/clickhouse-connect/releases/tag/v0.8.12) et[ NodeJS](https://github.com/ClickHouse/clickhouse-js/releases/tag/1.10.0).
+
+JDBC / Java sera disponible dans[ 0.8.0](https://github.com/ClickHouse/clickhouse-java/releases/tag/v0.8.0) à sa publication - date de disponibilité estimée à confirmer.
+
+<div id="prometheus-integration-improvements">
+  ### Améliorations de l’intégration Prometheus
+</div>
+
+Nous avons apporté plusieurs améliorations à l’intégration Prometheus :
+
+* **Endpoint au niveau de l’organisation**. Nous avons amélioré notre intégration Prometheus pour ClickHouse Cloud. En plus des métriques au niveau du service, l’API inclut désormais un endpoint pour les **métriques au niveau de l’organisation**. Ce nouvel endpoint collecte automatiquement les métriques de tous les services de votre organisation, ce qui simplifie leur exportation vers votre collector Prometheus. Ces métriques peuvent être intégrées à des outils de visualisation comme Grafana et Datadog afin d’offrir une vue plus complète des performances de votre organisation.
+
+  Cette fonctionnalité est d’ores et déjà disponible pour tous les utilisateurs. Vous trouverez plus de détails [ici](/fr/products/cloud/features/monitoring/prometheus).
+
+* **Métriques filtrées**. Nous avons ajouté la prise en charge du renvoi d’une liste filtrée de métriques dans notre intégration Prometheus pour ClickHouse Cloud. Cette fonctionnalité permet de réduire la taille du payload de réponse en vous permettant de vous concentrer sur les métriques essentielles à la surveillance de l’état de santé de votre service.
+
+  Cette fonctionnalité est disponible via un paramètre de requête facultatif dans l’API, ce qui facilite l’optimisation de votre collecte de données et simplifie les intégrations avec des outils comme Grafana et Datadog.
+
+  La fonctionnalité de métriques filtrées est désormais disponible pour tous les utilisateurs. Vous trouverez plus de détails [ici](/fr/products/cloud/features/monitoring/prometheus).

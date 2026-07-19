@@ -1,0 +1,103 @@
+---
+description: 'Dictionary の作成と設定に関するドキュメント'
+sidebarTitle: '概要'
+slug: /sql-reference/statements/create/dictionary
+title: 'CREATE DICTIONARY'
+doc_type: 'reference'
+---
+
+import CloudNotSupportedBadge from "/snippets/ja/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+import CloudSupportedBadge from "/snippets/ja/components/CloudSupportedBadge/CloudSupportedBadge.jsx";
+
+Dictionary は、さまざまな種類の参照リストで便利に使えるマッピング (`key -> attributes`) です。
+ClickHouse は、Dictionary を操作するための特別な関数をサポートしており、これらはクエリ内で使用できます。参照テーブルに対して `JOIN` を使用するよりも、関数を使って Dictionary を利用するほうが簡単で効率的です。
+
+Dictionary は、次の 2 つの方法で作成できます。
+
+* [DDLクエリを使用する](#creating-a-dictionary-with-a-ddl-query) (推奨)
+* [設定ファイルを使用する](#creating-a-dictionary-with-a-configuration-file)
+
+<div id="creating-a-dictionary-with-a-ddl-query">
+  ## DDL クエリを使用した Dictionary の作成
+</div>
+
+<CloudSupportedBadge />
+
+Dictionary は DDL クエリで作成できます。
+DDL で作成した Dictionary には次の利点があるため、これが推奨される方法です。
+
+* サーバー設定ファイルに追加のレコードを記述する必要がありません。
+* Dictionary は、テーブルやビューと同様の第一級エンティティとして使用できます。
+* Dictionary の table function ではなく、使い慣れた `SELECT` 構文を使ってデータを直接読み取れます。なお、`SELECT` ステートメントで Dictionary に直接アクセスした場合、cache 型の Dictionary では cache されているデータのみが返され、非 cache 型の Dictionary では保持しているすべてのデータが返されます。
+* Dictionary は簡単に名前を変更できます。
+
+<div id="syntax">
+  ### 構文
+</div>
+
+```sql
+CREATE [OR REPLACE] DICTIONARY [IF NOT EXISTS] [db.]dictionary_name [ON CLUSTER cluster]
+(
+    key1  type1  [DEFAULT | EXPRESSION expr1] [IS_OBJECT_ID],
+    key2  type2  [DEFAULT | EXPRESSION expr2],
+    attr1 type2  [DEFAULT | EXPRESSION expr3] [HIERARCHICAL|INJECTIVE],
+    attr2 type2  [DEFAULT | EXPRESSION expr4] [HIERARCHICAL|INJECTIVE]
+)
+PRIMARY KEY key1, key2
+SOURCE(SOURCE_NAME([param1 value1 ... paramN valueN]))
+LAYOUT(LAYOUT_NAME([param_name param_value]))
+LIFETIME({MIN min_val MAX max_val | max_val})
+SETTINGS(setting_name = setting_value, setting_name = setting_value, ...)
+COMMENT 'Comment'
+```
+
+| 句                                                                    | 説明                                                                       |
+| -------------------------------------------------------------------- | ------------------------------------------------------------------------ |
+| [Attributes](/ja/reference/statements/create/dictionary/attributes)     | Dictionary の属性は、テーブルのカラムと同様に指定します。必須のプロパティは type のみで、それ以外はデフォルト値を設定できます。 |
+| PRIMARY KEY                                                          | Dictionary のルックアップに使用するキーカラムを定義します。layout に応じて、1 つ以上の属性をキーとして指定できます。     |
+| [`SOURCE`](/ja/reference/statements/create/dictionary/sources/overview) | Dictionary のデータソース (例: ClickHouse テーブル、HTTP、PostgreSQL) を定義します。          |
+| [`LAYOUT`](/ja/reference/statements/create/dictionary/layouts/overview) | Dictionary をメモリ内でどのように格納するかを制御します (例: `FLAT`、`HASHED`、`CACHE`) 。         |
+| [`LIFETIME`](/ja/reference/statements/create/dictionary/lifetime)       | Dictionary の更新間隔を設定します。                                                  |
+| [`ON CLUSTER`](/ja/reference/statements/distributed-ddl)                | クラスター上に Dictionary を作成します。省略可能です。                                        |
+| `SETTINGS`                                                           | Dictionary に対する追加設定です。省略可能です。                                            |
+| `COMMENT`                                                            | Dictionary にテキストコメントを追加します。省略可能です。                                       |
+
+<div id="creating-a-dictionary-with-a-configuration-file">
+  ## 設定ファイルを使用したDictionaryの作成
+</div>
+
+<CloudNotSupportedBadge />
+
+<Note>
+  設定ファイルを使用したDictionaryの作成は ClickHouse Cloud ではサポートされていません。DDL (上記を参照) を使用し、`default` ユーザーとしてDictionaryを作成してください。
+</Note>
+
+Dictionaryの設定ファイルは、次の形式です。
+
+```xml
+<clickhouse>
+    <comment>An optional element with any content. Ignored by the ClickHouse server.</comment>
+
+    <!--省略可能な要素。substitutionsを含むファイル名-->
+    <include_from>/etc/metrika.xml</include_from>
+
+    <dictionary>
+        <!-- Dictionaryの設定。 -->
+        <!-- 1つのconfiguration fileに複数のDictionaryセクションを記述できます。-->
+    </dictionary>
+
+</clickhouse>
+```
+
+同じファイルに、いくつでも辞書を設定できます。
+
+<div id="related-content">
+  ## 関連コンテンツ
+</div>
+
+* [レイアウト](/ja/reference/statements/create/dictionary/layouts/overview) — Dictionaryがメモリ内でどのように格納されるか
+* [SOURCES](/ja/reference/statements/create/dictionary/sources/overview) — データソースへの接続
+* [有効期間](/ja/reference/statements/create/dictionary/lifetime) — 自動更新の設定
+* [属性](/ja/reference/statements/create/dictionary/attributes) — キーと属性の設定
+* [Embedded Dictionaries](/ja/reference/statements/create/dictionary/embedded) — 組み込みのgeobase Dictionary
+* [system.dictionaries](/ja/reference/system-tables/dictionaries) — Dictionaryの情報を含むシステムテーブル

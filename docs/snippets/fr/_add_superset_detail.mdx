@@ -1,0 +1,47 @@
+---
+title: Ajouter des détails sur Superset
+---
+
+<Accordion title="Lancer Apache Superset dans Docker">
+  Superset fournit des instructions pour [installer Superset localement avec Docker Compose](https://superset.apache.org/docs/installation/installing-superset-using-docker-compose/). Après avoir cloné le dépôt Apache Superset depuis GitHub, vous pouvez exécuter la dernière version du code de développement ou un tag spécifique. Nous recommandons la version 2.0.0, car c’est la dernière version qui n’est pas marquée comme `pre-release`.
+
+  Quelques tâches doivent être effectuées avant d’exécuter `docker compose` :
+
+  1. Ajouter le pilote officiel ClickHouse Connect
+  2. Obtenir une clé API Mapbox et l’ajouter comme variable d’environnement (facultatif)
+  3. Indiquer la version de Superset à exécuter
+
+  <Tip>
+    Les commandes ci-dessous doivent être exécutées depuis la racine du dépôt GitHub `superset`.
+  </Tip>
+
+  ## Pilote officiel ClickHouse Connect
+
+  Pour rendre le pilote ClickHouse Connect disponible dans le déploiement Superset, ajoutez-le au fichier local des dépendances :
+
+  ```bash
+  echo "clickhouse-connect" >> ./docker/requirements-local.txt
+  ```
+
+  ## Mapbox
+
+  Cette étape est facultative. Vous pouvez afficher des données de localisation dans Superset sans clé API Mapbox, mais un message vous indiquera qu’il faut en ajouter une et l’image d’arrière-plan de la carte sera absente (vous ne verrez que les points de données, sans le fond de carte). Mapbox propose une offre gratuite si vous souhaitez l’utiliser.
+
+  Certaines des visualisations d’exemple que les guides vous font créer utilisent des données de localisation, par exemple la longitude et la latitude. Superset prend en charge les cartes Mapbox. Pour utiliser les visualisations Mapbox, vous avez besoin d’une clé API Mapbox. Inscrivez-vous à [l’offre gratuite de Mapbox](https://account.mapbox.com/auth/signup/) et générez une clé API.
+
+  Rendez la clé API disponible pour Superset :
+
+  ```bash
+  echo "MAPBOX_API_KEY=pk.SAMPLE-Use-your-key-instead" >> docker/.env-non-dev
+  ```
+
+  ## Déployer Superset version 2.0.0
+
+  Pour déployer la version 2.0.0, exécutez :
+
+  ```bash
+  git checkout 2.0.0
+  TAG=2.0.0 docker-compose -f docker-compose-non-dev.yml pull
+  TAG=2.0.0 docker-compose -f docker-compose-non-dev.yml up
+  ```
+</Accordion>

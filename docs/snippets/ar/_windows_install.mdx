@@ -1,0 +1,109 @@
+---
+title: التثبيت على Windows
+---
+
+<div id="install-clickhouse-on-windows-with-wsl">
+  # تثبيت ClickHouse على نظام Windows باستخدام WSL
+</div>
+
+<div id="requirements">
+  ## المتطلبات
+</div>
+
+<Note>
+  لتثبيت ClickHouse على Windows، ستحتاج إلى WSL ‏(Windows Subsystem for Linux).
+</Note>
+
+<Steps>
+  <Step>
+    ## تثبيت WSL
+
+    افتح Windows PowerShell بامتيازات المسؤول، ثم شغّل الأمر التالي:
+
+    ```bash
+    wsl --install
+    ```
+
+    سيُطلب منك إدخال اسم مستخدم وكلمة مرور جديدين لـ UNIX. بعد إدخال
+    اسم المستخدم وكلمة المرور اللذين تريد استخدامهما، ينبغي أن تظهر لك رسالة مشابهة لما يلي:
+
+    ```bash
+    Welcome to Ubuntu 24.04.1 LTS (GNU/Linux 5.15.133.1-microsoft-WSL2 x86_64)
+    ```
+  </Step>
+
+  <Step>
+    ## تثبيت ClickHouse عبر نص برمجي باستخدام curl
+
+    شغّل الأمر التالي لتثبيت ClickHouse عبر نص برمجي باستخدام curl:
+
+    ```bash
+    curl https://clickhouse.com/ | sh
+    ```
+
+    إذا تم تشغيل النص البرمجي بنجاح، فسترى الرسالة التالية:
+
+    ```bash
+    Successfully downloaded the ClickHouse binary, you can run it as:
+      ./clickhouse
+    ```
+  </Step>
+
+  <Step>
+    ## بدء clickhouse-local
+
+    يتيح لك `clickhouse-local` معالجة الملفات المحلية والبعيدة باستخدام
+    صياغة SQL القوية في ClickHouse، ومن دون الحاجة إلى أي إعدادات. تُخزَّن بيانات الجداول
+    في موقع مؤقت، ما يعني أنه بعد إعادة تشغيل `clickhouse-local`
+    لن تعود الجداول التي أُنشئت سابقًا متاحة.
+
+    شغّل الأمر التالي لبدء [clickhouse-local](/ar/concepts/features/tools-and-utilities/clickhouse-local):
+
+    ```bash
+    ./clickhouse
+    ```
+  </Step>
+
+  <Step>
+    ## بدء clickhouse-server
+
+    إذا كنت ترغب في الاحتفاظ بالبيانات، فستحتاج إلى تشغيل `clickhouse-server`. يمكنك
+    بدء خادم ClickHouse باستخدام الأمر التالي:
+
+    ```bash
+    ./clickhouse server
+    ```
+  </Step>
+
+  <Step>
+    ## بدء clickhouse-client
+
+    بعد تشغيل الخادم، افتح نافذة طرفية جديدة وشغّل الأمر التالي
+    لبدء `clickhouse-client`:
+
+    ```bash
+    ./clickhouse client
+    ```
+
+    سترى شيئًا مشابهًا لما يلي:
+
+    ```response
+    ./clickhouse client
+    ClickHouse client version 24.5.1.117 (official build).
+    Connecting to localhost:9000 as user default.
+    Connected to ClickHouse server version 24.5.1.
+
+    local-host :)
+    ```
+
+    تُخزَّن بيانات الجداول في الدليل الحالي وتبقى متاحة حتى بعد إعادة تشغيل
+    خادم ClickHouse. وإذا لزم الأمر، يمكنك تمرير
+    `-C config.xml` كوسيط إضافي في سطر الأوامر إلى `./clickhouse server`
+    وتوفير المزيد من الإعدادات في ملف إعدادات.
+    جميع إعدادات التهيئة المتاحة موثقة [هنا](/ar/reference/settings/server-settings/settings) وفي
+    [قالب مثال ملف الإعدادات
+    ](https://github.com/ClickHouse/ClickHouse/blob/master/programs/server/config.xml).
+
+    أنت الآن جاهز لبدء إرسال أوامر SQL إلى ClickHouse!
+  </Step>
+</Steps>

@@ -1,0 +1,112 @@
+---
+title: 优化 ClickHouse 基本数据类型的实用技巧
+description: "优化 ClickHouse 基本数据类型的实用技巧"
+date: 2024-07-02
+tags: ['性能与优化']
+keywords: ['优化基本数据类型']
+---
+
+{frontMatter.description}
+
+{/* truncate */}
+
+<div id="question">
+  ## 问题
+</div>
+
+在 ClickHouse 中，我应该使用哪些数据类型来优化查询性能和存储效率？
+
+<div id="answer">
+  ## 解答
+</div>
+
+在从其他系统进行自动转换或手动选择数据类型时，用户往往倾向于采用&quot;越大越好&quot;、&quot;选最简单的&quot;或&quot;选最通用的&quot;策略。对于百万级、甚至十亿级行数的小规模数据集，这种做法通常不会有什么问题。在查询性能差异不大的使用场景下，其影响可能并不明显，也属于可接受的范围。
+
+然而，随着数据量不断增长，问题会愈发突出，届时这种情况将难以接受。
+
+对于大多数使用场景来说，查询耗时 50ms 与 500ms 之间的差异或许是可以接受的——例如在 Web UI 中，虽然两者相差 10 倍，但前端用户几乎感知不到这种差异。
+
+示例初始表：
+
+```
+timestamp Datetime64(9),
+group_id Int64,
+vendor_id String,
+product_id String,
+category1 Int64,
+code_name String,
+paid_status String,
+country_code String,
+description String,
+price Float64,
+attributes Map(String, String)
+```
+
+样本数据：
+
+```
+3456, 0123456789, bd6087b7-6026-4974-9122-bc99faae5d84, "2024-03-01 01:00:01.000", 98, "bear", paid", "us", "corvette model car", 123.45, {"color" : "blue", "size" : "S"}
+156, 0000012345, bd6087b7-6026-4974-9122-bc99faae5d84, "2024-03-01 01:00:02:123", 45, "tiger", "not paid", "uk", "electric car", 53432.10, {"color" : "red", "model" : "X"} 
+...
+```
+
+以下是一些关于如何优化此数据的建议：
+
+`timestamp : DateTime64(9)`
+除非有科学级别的精度需求，否则精度值设为 9 (纳秒) 通常是没有必要的。这种精度或许适用于显示或排序场景，但在用于搜索、主键等的查询中一般用不到。
+
+* **建议：**
+  对于主键 (PK) ，ORDER BY：DateTime
+  用于显示或排序：添加一个额外的列，即 `timestamp_microseconds : DateTime64(6)`
+
+`group_id : Int64`
+这看起来是一个整数，请选择能容纳该列最大值的最小整数类型。从此样本数据集和列名来看，该列不太可能需要存储千亿亿量级的值，Int16 应该足够用，最多可存储约 16k 个值。
+
+* **推荐**：Int16
+
+`vendor_id : String`
+该列看起来像是数字，但包含前导零，因此保留其格式可能很重要。此外，该列的字符数似乎也有固定长度限制。
+
+* **建议**：FixedString(10)
+
+`product_id : String`
+该字段由字母和数字组成，直觉上会将其视为字符串类型，但它实际上也是一个 UUID。
+
+* **推荐**：UUID
+
+`category1 : Int64`
+值较小，类别数量可能不多，且预计不会大幅增长或数量有限。少于 255
+
+* **建议**：UInt8
+
+`code_name : String`
+该字段看起来只会使用数量有限的字符串值。
+对于字符串值数量可能在数百到数千之间的此类场景，低基数字段能发挥很大作用。
+
+* **建议**：LowCardinality(String)
+
+`paid_status : String`
+该字段为 String 类型，值为 &quot;paid&quot; 或 &quot;not&#95;paid&quot;。若字段只有两个可能的取值，建议改用布尔类型。
+
+* **建议**：Bool
+
+`country_code : String`
+有时某些列可以同时满足多种优化条件。在本示例中，国家代码的种类有限，且均为两字符标识符。
+
+* **建议**：LowCardinality(FixedString(2))
+
+`price : Float64`
+当精度固定且已知时，不建议使用浮点数，尤其是在金融数据和计算场景中。最佳做法是根据所需精度选用 Decimal 类型。在此用例中，商品价格很可能不超过 999,999.00。
+
+* **建议值**：Decimal(10,2)
+
+`attributes : map`
+通常，表中可能存在以 Map 形式存储的动态属性。对键或值的搜索往往较慢。有几种方法可以提升 Map 的查询性能：若某些键在大多数记录中均存在，建议将其提取到单独的低基数列中；而那些稀疏出现的键则放入另一个高基数列中。在此基础上，创建跳过索引会更加高效，尽管这可能会增加查询的复杂度。
+
+* **建议：** lc&#95;attributes: Map(String, String), hc&#95;attributes: Map(String, String).
+
+视查询而定，也可以使用以下方式来创建跳过索引和/或提取属性：
+使用 Array Join，并通过 materialized view 提取到列中：
+https://clickhouse.com/docs/knowledgebase/using-array-join-to-extract-and-query-attributes
+对键使用跳过索引：
+https://clickhouse.com/docs/knowledgebase/improve-map-performance

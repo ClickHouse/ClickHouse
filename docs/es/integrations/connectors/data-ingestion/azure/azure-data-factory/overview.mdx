@@ -1,0 +1,30 @@
+---
+sidebarTitle: 'Descripción general'
+slug: /integrations/azure-data-factory/overview
+description: 'Cómo incorporar datos de Azure a ClickHouse: descripción general'
+keywords: ['azure data factory', 'azure', 'microsoft', 'datos']
+title: 'Cómo incorporar datos de Azure a ClickHouse'
+doc_type: 'guide'
+integration:
+  - support_level: 'core'
+  - category: 'data_ingestion'
+---
+
+import ClickHouseSupportedBadge from "/snippets/es/components/ClickHouseSupported/ClickHouseSupported.jsx";
+
+<ClickHouseSupportedBadge />
+
+Microsoft Azure ofrece una amplia gama de herramientas para almacenar, transformar y analizar
+datos. Sin embargo, en muchos casos, ClickHouse puede ofrecer un rendimiento significativamente superior
+para consultar y procesar grandes conjuntos de datos con baja latencia. Además,
+el almacenamiento columnar y la compresión de ClickHouse pueden reducir considerablemente el
+coste de consultar grandes volúmenes de datos analíticos en comparación con las bases de datos
+de uso general de Azure.
+
+En esta sección de la documentación, exploraremos dos formas de ingestar datos desde Microsoft Azure
+en ClickHouse:
+
+| Método                                                                                                                                   | Descripción                                                                                                                                                                                                                       |
+| ---------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [Uso de la función de tabla `azureBlobStorage`](/es/integrations/connectors/data-ingestion/azure/azure-data-factory/using-azureblobstorage) | Consiste en usar la [función de tabla `azureBlobStorage`](/es/reference/functions/table-functions/azureBlobStorage) de ClickHouse para transferir datos directamente desde Azure Blob Storage.                                       |
+| [Uso de la interfaz HTTP de ClickHouse](/es/integrations/connectors/data-ingestion/azure/azure-data-factory/using-http-interface)           | Usa la [interfaz HTTP de ClickHouse](/es/concepts/features/interfaces/http) como fuente de datos en Azure Data Factory, lo que permite copiar datos o utilizarlos en actividades de flujo de datos como parte de las canalizaciones. |

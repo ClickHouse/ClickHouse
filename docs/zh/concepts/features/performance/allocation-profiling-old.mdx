@@ -1,0 +1,234 @@
+---
+description: '介绍 ClickHouse 中内存分配分析的页面'
+sidebarTitle: '适用于 25.9 之前版本的内存分配分析'
+slug: /operations/allocation-profiling-old
+title: '适用于 25.9 之前版本的内存分配分析'
+doc_type: 'reference'
+---
+
+ClickHouse 使用 [jemalloc](https://github.com/jemalloc/jemalloc) 作为全局内存分配器。Jemalloc 自带一些用于分配采样和性能分析的工具。
+为了让内存分配分析更方便，除了 Keeper 中的四字命令 (4LW) 外，还提供了 `SYSTEM` 命令。
+
+<div id="sampling-allocations-and-flushing-heap-profiles">
+  ## 对内存分配进行采样并写出堆内存剖析
+</div>
+
+如果你想在 `jemalloc` 中对内存分配进行采样和剖析，需要在启动 ClickHouse/Keeper 时通过环境变量 `MALLOC_CONF` 启用 profiling：
+
+```sh
+MALLOC_CONF=background_thread:true,prof:true,prof_active:true
+```
+
+`jemalloc` 会对内存分配进行采样，并在内部保存相关信息。
+
+你可以运行以下命令，让 `jemalloc` 将当前 profile flush 到磁盘：
+
+<Tabs>
+  <Tab title="ClickHouse">
+    ```sql
+    SYSTEM JEMALLOC FLUSH PROFILE
+    ```
+  </Tab>
+
+  <Tab title="Keeper">
+    ```sh
+    echo jmfp | nc localhost 9181
+    ```
+  </Tab>
+</Tabs>
+
+默认情况下，堆内存剖析文件会生成在 `/tmp/jemalloc_clickhouse._pid_._seqnum_.heap`，其中 `_pid_` 是 ClickHouse 的 PID，`_seqnum_` 是当前堆内存剖析的全局序列号。
+对于 Keeper，默认文件为 `/tmp/jemalloc_keeper._pid_._seqnum_.heap`，规则相同。
+
+你也可以通过在 `MALLOC_CONF` 环境变量中追加 `prof_prefix` 选项来指定其他位置。
+例如，如果你想在 `/data` 目录中生成剖析文件，并将文件名前缀设为 `my_current_profile`，可以使用以下环境变量运行 ClickHouse/Keeper：
+
+```sh
+MALLOC_CONF=background_thread:true,prof:true,prof_prefix:/data/my_current_profile
+```
+
+生成的文件名将附带前缀、PID 和序列号。
+
+<div id="analyzing-heap-profiles">
+  ## 分析堆内存剖析
+</div>
+
+生成堆内存剖析后，需要对其进行分析。
+为此，可以使用 `jemalloc` 的工具 [jeprof](https://github.com/jemalloc/jemalloc/blob/dev/bin/jeprof.in)。它有多种安装方式：
+
+* 使用系统的软件包管理器
+* 克隆 [jemalloc 仓库](https://github.com/jemalloc/jemalloc)，并在根目录运行 `autogen.sh`。这样会在 `bin` 文件夹中生成 `jeprof` 脚本
+
+<Note>
+  `jeprof` 使用 `addr2line` 生成调用栈，这个过程可能会非常慢。
+  如果遇到这种情况，建议安装该工具的[另一种实现](https://github.com/gimli-rs/addr2line)。
+
+  ```bash
+  git clone https://github.com/gimli-rs/addr2line.git --depth=1 --branch=0.23.0
+  cd addr2line
+  cargo build --features bin --release
+  cp ./target/release/addr2line path/to/current/addr2line
+  ```
+</Note>
+
+可以使用 `jeprof` 从堆内存剖析中生成多种不同的输出格式。
+建议运行 `jeprof --help`，了解该工具的用法以及它提供的各种选项。
+
+通常，`jeprof` 命令的用法如下：
+
+```sh
+jeprof path/to/binary path/to/heap/profile --output_format [ > output_file]
+```
+
+如果你想比较两个 profile 之间有哪些内存分配，可设置 `base` 参数：
+
+```sh
+jeprof path/to/binary --base path/to/first/heap/profile path/to/second/heap/profile --output_format [ > output_file]
+```
+
+<div id="examples">
+  ### 示例
+</div>
+
+* 如果你想生成一个文本文件，并将每个过程分别写在一行中：
+
+```sh
+jeprof path/to/binary path/to/heap/profile --text > result.txt
+```
+
+* 如果你想生成包含调用图的 PDF 文件：
+
+```sh
+jeprof path/to/binary path/to/heap/profile --pdf > result.pdf
+```
+
+<div id="generating-flame-graph">
+  ### 生成火焰图
+</div>
+
+`jeprof` 可生成用于构建火焰图的折叠栈。
+
+你需要使用 `--collapsed` 参数：
+
+```sh
+jeprof path/to/binary path/to/heap/profile --collapsed > result.collapsed
+```
+
+之后，你可以使用许多不同的工具将折叠栈可视化。
+
+其中最常用的是 [FlameGraph](https://github.com/brendangregg/FlameGraph)，其中包含一个名为 `flamegraph.pl` 的脚本：
+
+```sh
+cat result.collapsed | /path/to/FlameGraph/flamegraph.pl --color=mem --title="Allocation Flame Graph" --width 2400 > result.svg
+```
+
+另一个有趣的工具是 [speedscope](https://www.speedscope.app/)，它可以让你以更直观的交互方式分析已采集的调用栈。
+
+<div id="controlling-allocation-profiler-during-runtime">
+  ## 在运行时控制内存分配剖析器
+</div>
+
+如果 ClickHouse/Keeper 在启动时启用了 剖析器，则支持在运行时禁用/启用内存分配分析的额外命令。
+使用这些命令后，就可以更方便地只分析特定时间间隔。
+
+要禁用剖析器：
+
+<Tabs>
+  <Tab title="ClickHouse">
+    ```sql
+    SYSTEM JEMALLOC DISABLE PROFILE
+    ```
+  </Tab>
+
+  <Tab title="Keeper">
+    ```sh
+    echo jmdp | nc localhost 9181
+    ```
+  </Tab>
+</Tabs>
+
+要启用剖析器：
+
+<Tabs>
+  <Tab title="ClickHouse">
+    ```sql
+    SYSTEM JEMALLOC ENABLE PROFILE
+    ```
+  </Tab>
+
+  <Tab title="Keeper">
+    ```sh
+    echo jmep | nc localhost 9181
+    ```
+  </Tab>
+</Tabs>
+
+也可以通过设置 `prof_active` 选项来控制剖析器的初始状态；该选项默认启用。
+例如，如果你不想在启动期间对内存分配进行采样，而只想在启动完成后采样，可以启用分析器。你可以使用以下环境变量启动 ClickHouse/Keeper：
+
+```sh
+MALLOC_CONF=background_thread:true,prof:true,prof_active:false
+```
+
+稍后可启用剖析器。
+
+<div id="additional-options-for-profiler">
+  ## 剖析器的其他选项
+</div>
+
+`jemalloc` 提供了许多与剖析器相关的选项，这些选项可通过修改 `MALLOC_CONF` 环境变量来控制。
+例如，可以使用 `lg_prof_sample` 控制分配样本之间的时间间隔。
+如果你想每分配 N 个字节就转储一次堆内存剖析，可以通过 `lg_prof_interval` 启用。
+
+建议查阅 `jemalloc` 的[参考页](https://jemalloc.net/jemalloc.3.html)，获取完整的选项列表。
+
+<div id="other-resources">
+  ## 其他资源
+</div>
+
+ClickHouse/Keeper 会通过多种不同方式暴露与 `jemalloc` 相关的指标。
+
+<Warning>
+  **警告**
+
+  请务必注意，这些指标彼此之间并未同步，因此其值可能会出现偏差。
+</Warning>
+
+<div id="system-table-asynchronous_metrics">
+  ### 系统表 `asynchronous_metrics`
+</div>
+
+```sql
+SELECT *
+FROM system.asynchronous_metrics
+WHERE metric LIKE '%jemalloc%'
+FORMAT Vertical
+```
+
+[参考](/zh/reference/system-tables/asynchronous_metrics)
+
+<div id="system-table-jemalloc_bins">
+  ### 系统表 `jemalloc_bins`
+</div>
+
+包含通过 jemalloc 分配器在不同大小类 (bins) 中进行的内存分配信息，汇总自所有 Arena。
+
+[参考](/zh/reference/system-tables/jemalloc_bins)
+
+<div id="prometheus">
+  ### Prometheus
+</div>
+
+`asynchronous_metrics` 中所有与 `jemalloc` 相关的指标，也会通过 ClickHouse 和 Keeper 的 Prometheus 端点对外暴露。
+
+[参考](/zh/reference/settings/server-settings/settings#prometheus)
+
+<div id="jmst-4lw-command-in-keeper">
+  ### Keeper 中的 `jmst` 4LW 命令
+</div>
+
+Keeper 支持 `jmst` 4LW 命令，该命令会返回[基础分配器统计信息](https://github.com/jemalloc/jemalloc/wiki/Use-Case%3A-Basic-Allocator-Statistics)：
+
+```sh
+echo jmst | nc localhost 9181
+```

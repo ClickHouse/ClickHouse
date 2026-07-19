@@ -1,0 +1,81 @@
+---
+slug: /sql-reference/statements/create/dictionary/sources/yamlregexptree
+title: 'Fuente del diccionario YAMLRegExpTree'
+sidebarTitle: 'YAMLRegExpTree'
+description: 'Configure un archivo YAML como fuente para diccionarios de árbol de expresiones regulares.'
+doc_type: 'referencia'
+---
+
+import CloudNotSupportedBadge from "/snippets/es/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+
+<CloudNotSupportedBadge />
+
+La fuente `YAMLRegExpTree` carga un árbol de expresiones regulares desde un archivo YAML en el sistema de archivos local.
+Está diseñada exclusivamente para usarse con el layout de diccionario [`regexp_tree`](/es/reference/statements/create/dictionary/layouts/regexp-tree)
+y proporciona correspondencias jerárquicas entre expresiones regulares y atributos para búsquedas basadas en patrones, como el análisis de user agent.
+
+<Note>
+  La fuente `YAMLRegExpTree` solo está disponible en ClickHouse Open Source.
+  En ClickHouse Cloud, exporte el diccionario a CSV y cárguelo mediante una [fuente de tabla de ClickHouse](/es/reference/statements/create/dictionary/sources/clickhouse).
+  Consulte [Uso de diccionarios regexp&#95;tree en ClickHouse Cloud](/es/reference/statements/create/dictionary/layouts/regexp-tree#use-regular-expression-tree-dictionary-in-clickhouse-cloud) para obtener más información.
+</Note>
+
+<div id="configuration">
+  ## Configuración
+</div>
+
+```sql
+CREATE DICTIONARY regexp_dict
+(
+    regexp String,
+    name String,
+    version String
+)
+PRIMARY KEY(regexp)
+SOURCE(YAMLRegExpTree(PATH '/var/lib/clickhouse/user_files/regexp_tree.yaml'))
+LAYOUT(regexp_tree)
+LIFETIME(0);
+```
+
+Campos de ajuste:
+
+| Ajuste | Descripción                                                                                                                                                    |
+| ------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `PATH` | La ruta absoluta al archivo YAML que contiene el árbol de expresiones regulares. Si se crea mediante DDL, el archivo debe estar en el directorio `user_files`. |
+
+<div id="yaml-file-structure">
+  ## Estructura del archivo YAML
+</div>
+
+El archivo YAML contiene una lista de nodos de un árbol de expresiones regulares. Cada nodo puede tener atributos y nodos hijo, formando una jerarquía:
+
+```yaml
+- regexp: 'Linux/(\d+[\.\d]*).+tlinux'
+  name: 'TencentOS'
+  version: '\1'
+
+- regexp: '\d+/tclwebkit(?:\d+[\.\d]*)'
+  name: 'Android'
+  versions:
+    - regexp: '33/tclwebkit'
+      version: '13'
+    - regexp: '3[12]/tclwebkit'
+      version: '12'
+    - regexp: '30/tclwebkit'
+      version: '11'
+    - regexp: '29/tclwebkit'
+      version: '10'
+```
+
+Cada nodo tiene la siguiente estructura:
+
+* **`regexp`**: La expresión regular de este nodo.
+* **attributes**: Atributos de diccionario definidos por el usuario (p. ej., `name`, `version`). Los valores de los atributos pueden contener **retroreferencias** a grupos de captura en la expresión regular, escritas como `\1` o `$1` (números del 1 al 9). Estas se sustituyen por el grupo de captura coincidente durante la consulta.
+* **nodos hijo**: Una lista de nodos hijo, cada uno con sus propios atributos y, opcionalmente, más nodos hijo. El nombre de la lista de hijos es arbitrario (p. ej., `versions` arriba). La coincidencia de cadenas se realiza en profundidad: si una cadena coincide con un nodo, también se comprueban sus nodos hijo. Los atributos del nodo coincidente más profundo tienen prioridad y sobrescriben los atributos del nodo padre con el mismo nombre.
+
+<div id="related-pages">
+  ## Páginas relacionadas
+</div>
+
+* [layout del diccionario regexp&#95;tree](/es/reference/statements/create/dictionary/layouts/regexp-tree) — configuración del layout, ejemplos de consultas y modos de coincidencia
+* [dictGet](/es/reference/functions/regular-functions/ext-dict-functions#dictGet), [dictGetAll](/es/reference/functions/regular-functions/ext-dict-functions#dictGetAll) — funciones para consultar diccionarios regexp tree

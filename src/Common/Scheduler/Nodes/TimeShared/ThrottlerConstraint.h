@@ -20,15 +20,7 @@ class ThrottlerConstraint final : public ISchedulerConstraint
 public:
     static constexpr double default_burst_seconds = 1.0;
 
-    explicit ThrottlerConstraint(EventQueue & event_queue_, const Poco::Util::AbstractConfiguration & config = emptyConfig(), const String & config_prefix = {})
-        : ISchedulerConstraint(event_queue_, config, config_prefix)
-        , max_speed(config.getDouble(config_prefix + ".max_speed", 0))
-        , max_burst(config.getDouble(config_prefix + ".max_burst", default_burst_seconds * max_speed))
-        , last_update(event_queue_.now())
-        , tokens(max_burst)
-    {}
-
-    ThrottlerConstraint(EventQueue & event_queue_, const SchedulerNodeInfo & info_, double max_speed_, double max_burst_)
+    explicit ThrottlerConstraint(EventQueue & event_queue_, const SchedulerNodeInfo & info_ = {}, double max_speed_ = 0.0, double max_burst_ = 0.0)
         : ISchedulerConstraint(event_queue_, info_)
         , max_speed(max_speed_)
         , max_burst(max_burst_)
@@ -47,15 +39,6 @@ public:
     }
 
     std::string_view getTypeName() const override { return "bandwidth_limit"; }
-
-    bool equals(ISchedulerNode * other) override
-    {
-        if (!ISchedulerNode::equals(other))
-            return false;
-        if (auto * o = dynamic_cast<ThrottlerConstraint *>(other))
-            return max_speed == o->max_speed && max_burst == o->max_burst;
-        return false;
-    }
 
     void attachChild(const std::shared_ptr<ISchedulerNode> & child_) override
     {

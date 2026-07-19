@@ -1,0 +1,199 @@
+---
+sidebarTitle: 'من BigQuery إلى ClickHouse'
+slug: /integrations/google-dataflow/templates/bigquery-to-clickhouse
+description: 'يمكنك إدخال البيانات من BigQuery إلى ClickHouse باستخدام قالب Google Dataflow'
+title: 'قالب Dataflow من BigQuery إلى ClickHouse'
+doc_type: 'guide'
+keywords: ['Dataflow', 'BigQuery']
+---
+
+import { Image } from "/snippets/ar/components/Image.jsx";
+
+قالب BigQuery إلى ClickHouse هو مسار معالجة دفعي يُدخِل البيانات من جدول BigQuery إلى جدول ClickHouse.
+يمكن للقالب قراءة الجدول بالكامل أو تصفية سجلات محددة باستخدام استعلام SQL مُقدَّم.
+
+<div id="pipeline-requirements">
+  ## متطلبات مسار المعالجة
+</div>
+
+* يجب أن يكون جدول BigQuery المصدر موجودًا.
+* يجب أن يكون جدول ClickHouse الهدف موجودًا.
+* يجب أن يكون مضيف ClickHouse متاحًا من الأجهزة العاملة في Dataflow.
+
+<div id="template-parameters">
+  ## معلمات القالب
+</div>
+
+<br />
+
+<br />
+
+| اسم المعلمة             | وصف المعلمة                                                                                                                                                                                                                                                                                                                                                                      | مطلوب | ملاحظات                                                                                                                                                                                                                                          |
+| ----------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `jdbcUrl`               | عنوان URL لـ JDBC الخاص بـ ClickHouse بالتنسيق `jdbc:clickhouse://<host>:<port>/<schema>`.                                                                                                                                                                                                                                                                                       | ✅     | لا تُضِف اسم المستخدم وكلمة المرور كخيارات JDBC. ويمكن إضافة أي خيار JDBC آخر في نهاية عنوان URL الخاص بـ JDBC. بالنسبة إلى مستخدمي ClickHouse Cloud، أضِف `ssl=true&sslmode=NONE` إلى `jdbcUrl`.                                                |
+| `clickHouseUsername`    | اسم مستخدم ClickHouse المستخدم للمصادقة.                                                                                                                                                                                                                                                                                                                                         | ✅     |                                                                                                                                                                                                                                                  |
+| `clickHousePassword`    | كلمة مرور ClickHouse المستخدمة للمصادقة.                                                                                                                                                                                                                                                                                                                                         | ✅     |                                                                                                                                                                                                                                                  |
+| `clickHouseTable`       | جدول ClickHouse الهدف الذي ستُدرَج فيه البيانات.                                                                                                                                                                                                                                                                                                                                 | ✅     |                                                                                                                                                                                                                                                  |
+| `maxInsertBlockSize`    | الحد الأقصى لحجم الكتلة للإدراج، إذا كنا نتحكم في إنشاء الكتل للإدراج (خيار `ClickHouseIO`).                                                                                                                                                                                                                                                                                     |       | خيار `ClickHouseIO`.                                                                                                                                                                                                                             |
+| `insertDistributedSync` | إذا كان هذا الإعداد مُمكّنًا، فإن insert query إلى Distributed تنتظر حتى يتم إرسال البيانات إلى جميع العقد في cluster. (خيار `ClickHouseIO`).                                                                                                                                                                                                                                    |       | خيار `ClickHouseIO`.                                                                                                                                                                                                                             |
+| `insertQuorum`          | بالنسبة إلى استعلامات INSERT في جدول Replicated، انتظر اكتمال الكتابة إلى العدد المحدد من replicas واجعل إضافة البيانات خطية. 0 - معطّل.                                                                                                                                                                                                                                         |       | خيار `ClickHouseIO`. هذا الإعداد معطّل في إعدادات الخادم الافتراضية.                                                                                                                                                                             |
+| `insertDeduplicate`     | بالنسبة إلى استعلامات INSERT في جدول Replicated، يحدد ما إذا كان ينبغي تنفيذ إزالة التكرار لكتل الإدراج.                                                                                                                                                                                                                                                                         |       | خيار `ClickHouseIO`.                                                                                                                                                                                                                             |
+| `maxRetries`            | الحد الأقصى لعدد محاولات إعادة التنفيذ لكل عملية insert.                                                                                                                                                                                                                                                                                                                         |       | خيار `ClickHouseIO`.                                                                                                                                                                                                                             |
+| `InputTableSpec`        | جدول BigQuery المطلوب القراءة منه. حدِّد إما `inputTableSpec` أو `query`. وعند تعيينهما معًا، تكون الأولوية للمعلمة `query`. مثال: `<BIGQUERY_PROJECT>:<DATASET_NAME>.<INPUT_TABLE>`.                                                                                                                                                                                            |       | يقرأ البيانات مباشرةً من تخزين BigQuery باستخدام [BigQuery Storage Read API](https://cloud.google.com/bigquery/docs/reference/storage). انتبه إلى [قيود Storage Read API](https://cloud.google.com/bigquery/docs/reference/storage#limitations). |
+| `outputDeadletterTable` | جدول BigQuery المخصّص للرسائل التي تعذّر وصولها إلى جدول الإخراج. إذا لم يكن الجدول موجودًا، فسيتم إنشاؤه أثناء تنفيذ مسار المعالجة. وإذا لم يتم تحديده، فسيُستخدم `<outputTableSpec>_error_records`. على سبيل المثال: `<PROJECT_ID>:<DATASET_NAME>.<DEADLETTER_TABLE>`.                                                                                                              |       |                                                                                                                                                                                                                                                  |
+| `query`                 | استعلام SQL المستخدم لقراءة البيانات من BigQuery. إذا كانت مجموعة بيانات BigQuery في مشروع مختلف عن job الخاصة بـ Dataflow، فحدِّد الاسم الكامل لمجموعة البيانات في استعلام SQL، على سبيل المثال: `<PROJECT_ID>.<DATASET_NAME>.<TABLE_NAME>`. تكون القيمة الافتراضية [GoogleSQL](https://cloud.google.com/bigquery/docs/introduction-sql) ما لم تكن `useLegacySql` تساوي `true`. |       | يجب تحديد `inputTableSpec` أو `query`. وإذا عيّنت المعلمتين معًا، يستخدم القالب المعلمة `query`. مثال: `SELECT * FROM sampledb.sample_table`.                                                                                                    |
+| `useLegacySql`          | اضبطها على `true` لاستخدام SQL القديمة. لا تنطبق هذه المعلمة إلا عند استخدام المعلمة `query`. القيمة الافتراضية هي `false`.                                                                                                                                                                                                                                                      |       |                                                                                                                                                                                                                                                  |
+| `queryLocation`         | تكون مطلوبة عند القراءة من عرض مصرَّح له بدون إذن الوصول إلى الجدول الأساسي. على سبيل المثال، `US`.                                                                                                                                                                                                                                                                              |       |                                                                                                                                                                                                                                                  |
+| `queryTempDataset`      | حدِّد مجموعة بيانات موجودة لإنشاء الجدول المؤقت لتخزين نتائج query. على سبيل المثال، `temp_dataset`.                                                                                                                                                                                                                                                                             |       |                                                                                                                                                                                                                                                  |
+| `KMSEncryptionKey`      | عند القراءة من BigQuery باستخدام مصدر query، استخدم مفتاح Cloud KMS هذا لتشفير أي جداول مؤقتة يتم إنشاؤها. على سبيل المثال، `projects/your-project/locations/global/keyRings/your-keyring/cryptoKeys/your-key`.                                                                                                                                                                  |       |                                                                                                                                                                                                                                                  |
+
+<Note>
+  يمكن الاطلاع على القيم الافتراضية لجميع معلمات `ClickHouseIO` في [موصل Apache Beam لـ `ClickHouseIO`](/ar/integrations/connectors/data-ingestion/etl-tools/apache-beam#clickhouseiowrite-parameters)
+</Note>
+
+<div id="source-and-target-tables-schema">
+  ## مخطط جدولَي المصدر والهدف
+</div>
+
+لتحميل مجموعة بيانات BigQuery إلى ClickHouse بكفاءة، ينفّذ مسار المعالجة عملية استنتاج للأعمدة عبر المراحل التالية:
+
+1. تنشئ القوالب كائن مخطط استنادًا إلى جدول ClickHouse الهدف.
+2. تمرّ القوالب على مجموعة بيانات BigQuery وتحاول مطابقة الأعمدة بناءً على أسمائها.
+
+<br />
+
+<Warning>
+  ومع ذلك، يجب أن تتضمن مجموعة بيانات BigQuery لديك (سواء كانت جدولًا أو استعلامًا) أسماء الأعمدة نفسها تمامًا الموجودة في جدول ClickHouse
+  الهدف.
+</Warning>
+
+<div id="data-types-mapping">
+  ## مطابقة أنواع البيانات
+</div>
+
+تُحوَّل أنواع BigQuery استنادًا إلى تعريف جدول ClickHouse لديك. لذلك، يوضّح الجدول أعلاه
+المطابقة الموصى بها التي ينبغي اعتمادها في جدول ClickHouse الهدف (لجدول أو query معيّن في BigQuery):
+
+| نوع BigQuery                                                                                                                  | نوع ClickHouse                                      | ملاحظات                                                                                                                                                                                                                                                                                                                                                                                       |
+| ----------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [**نوع Array**](https://cloud.google.com/bigquery/docs/reference/standard-sql/data-types#array_type)                          | [**نوع Array**](/ar/reference/data-types/array)        | يجب أن يكون النوع الداخلي أحد أنواع البيانات الأولية المدعومة والمذكورة في هذا الجدول.                                                                                                                                                                                                                                                                                                        |
+| [**نوع Boolean**](https://cloud.google.com/bigquery/docs/reference/standard-sql/data-types#boolean_type)                      | [**نوع Bool**](/ar/reference/data-types/boolean)       |                                                                                                                                                                                                                                                                                                                                                                                               |
+| [**نوع Date**](https://cloud.google.com/bigquery/docs/reference/standard-sql/data-types#date_type)                            | [**نوع Date**](/ar/reference/data-types/date)          |                                                                                                                                                                                                                                                                                                                                                                                               |
+| [**نوع Datetime**](https://cloud.google.com/bigquery/docs/reference/standard-sql/data-types#datetime_type)                    | [**نوع Datetime**](/ar/reference/data-types/datetime)  | يعمل أيضًا مع `Enum8` و`Enum16` و`FixedString`.                                                                                                                                                                                                                                                                                                                                               |
+| [**نوع String**](https://cloud.google.com/bigquery/docs/reference/standard-sql/data-types#string_type)                        | [**نوع String**](/ar/reference/data-types/string)      | في BigQuery، تُعد جميع أنواع Int (`INT`, `SMALLINT`, `INTEGER`, `BIGINT`, `TINYINT`, `BYTEINT`) أسماء مستعارة لـ `INT64`. نوصي بتعيين حجم Integer المناسب في ClickHouse، لأن القالب سيحوّل العمود استنادًا إلى نوع العمود المحدد (`Int8`, `Int16`, `Int32`, `Int64`).                                                                                                                         |
+| [**الأنواع الرقمية - أنواع Integer**](https://cloud.google.com/bigquery/docs/reference/standard-sql/data-types#numeric_types) | [**أنواع Integer**](/ar/reference/data-types/int-uint) | في BigQuery، تُعد جميع أنواع Int (`INT`, `SMALLINT`, `INTEGER`, `BIGINT`, `TINYINT`, `BYTEINT`) أسماء مستعارة لـ `INT64`. نوصي بتعيين حجم Integer المناسب في ClickHouse، لأن القالب سيحوّل العمود استنادًا إلى نوع العمود المحدد (`Int8`, `Int16`, `Int32`, `Int64`). كما سيحوّل القالب أيضًا أنواع Int غير المعيّنة إذا استُخدمت في جدول ClickHouse (`UInt8`, `UInt16`, `UInt32`, `UInt64`). |
+| [**الأنواع الرقمية - أنواع Float**](https://cloud.google.com/bigquery/docs/reference/standard-sql/data-types#numeric_types)   | [**أنواع Float**](/ar/reference/data-types/float)      | أنواع ClickHouse المدعومة: `Float32` و`Float64`                                                                                                                                                                                                                                                                                                                                               |
+
+<div id="running-the-template">
+  ## تشغيل قالب
+</div>
+
+يتوفر قالب ‏BigQuery إلى ClickHouse للتشغيل عبر Google Cloud CLI.
+
+<Note>
+  احرص على مراجعة هذا المستند، ولا سيما الأقسام الواردة أعلاه، لفهم متطلبات تهيئة قالب والمتطلبات المسبقة الخاصة به فهمًا كاملًا.
+</Note>
+
+<Tabs>
+  <Tab title="Google Cloud Console">
+    سجّل الدخول إلى Google Cloud Console وابحث عن DataFlow.
+
+    1. اضغط على الزر `CREATE JOB FROM TEMPLATE`
+       <Image img="/images/integrations/data-ingestion/google-dataflow/create_job_from_template_button.webp" border alt="وحدة تحكم DataFlow" />
+    2. بعد فتح نموذج قالب، أدخل اسم المهمة وحدد المنطقة المطلوبة.
+       <Image img="/images/integrations/data-ingestion/google-dataflow/template_initial_form.webp" border alt="النموذج الأولي لـ DataFlow قالب" />
+    3. في حقل `DataFlow Template`، اكتب `ClickHouse` أو `BigQuery`، ثم اختر قالب ‏`BigQuery to ClickHouse`
+       <Image img="/images/integrations/data-ingestion/google-dataflow/template_clickhouse_search.webp" border alt="اختر قالب ‏BigQuery to ClickHouse" />
+    4. بعد الاختيار، سيتوسع النموذج ليتيح لك إدخال تفاصيل إضافية:
+       * عنوان JDBC URL لخادم ClickHouse، بالتنسيق التالي `jdbc:clickhouse://host:port/schema`.
+       * اسم مستخدم ClickHouse.
+       * اسم الجدول الهدف في ClickHouse.
+
+    <br />
+
+    <Note>
+      خيار كلمة مرور ClickHouse مُشار إليه على أنه اختياري، وذلك لحالات الاستخدام التي لا تكون فيها كلمة مرور مُعدّة.
+      لإضافتها، يُرجى التمرير إلى أسفل حتى خيار `Password for ClickHouse Endpoint`.
+    </Note>
+
+    <Image img="/images/integrations/data-ingestion/google-dataflow/extended_template_form.webp" border alt="نموذج القالب الموسّع لـ BigQuery إلى ClickHouse" />
+
+    5. خصّص وأضف أي إعدادات مرتبطة بـ BigQuery/ClickHouseIO، كما هو موضح في
+       قسم [معلمات القالب](#template-parameters)
+  </Tab>
+
+  <Tab title="Google Cloud CLI">
+    ### تثبيت `gcloud` CLI وتهيئته
+
+    * إذا لم يكن [`gcloud` CLI](https://cloud.google.com/sdk/docs/install) مثبتًا بالفعل، فثبّته.
+    * اتبع قسم `Before you begin`
+      في [هذا الدليل](https://cloud.google.com/dataflow/docs/guides/templates/using-flex-templates#before-you-begin) لإعداد
+      التهيئات والإعدادات والأذونات المطلوبة لتشغيل DataFlow قالب.
+
+    ### تشغيل الأمر
+
+    استخدم الأمر [`gcloud dataflow flex-template run`](https://cloud.google.com/sdk/gcloud/reference/dataflow/flex-template/run)
+    لتشغيل مهمة Dataflow تستخدم Flex قالب.
+
+    فيما يلي مثال على الأمر:
+
+    ```bash
+    gcloud dataflow flex-template run "bigquery-clickhouse-dataflow-$(date +%Y%m%d-%H%M%S)" \
+     --template-file-gcs-location "gs://clickhouse-dataflow-templates/bigquery-clickhouse-metadata.json" \
+     --parameters inputTableSpec="<bigquery table id>",jdbcUrl="jdbc:clickhouse://<clickhouse host>:<clickhouse port>/<schema>?ssl=true&sslmode=NONE",clickHouseUsername="<username>",clickHousePassword="<password>",clickHouseTable="<clickhouse target table>"
+    ```
+
+    ### شرح مكوّنات الأمر
+
+    * **اسم المهمة:** النص الذي يلي الكلمة المفتاحية `run` هو اسم المهمة الفريد.
+    * **ملف قالب:** يحدد JSON file المشار إليه بواسطة `--template-file-gcs-location` بنية قالب
+      وتفاصيل المعلمات المقبولة. مسار الملف المذكور عام وجاهز للاستخدام.
+    * **Parameters:** تُفصل Parameters بفواصل. وبالنسبة إلى المعلمات النصية، أَحِط القيم بعلامات اقتباس مزدوجة.
+
+    ### الاستجابة المتوقعة
+
+    بعد تشغيل الأمر، ينبغي أن ترى استجابة مشابهة لما يلي:
+
+    ```bash
+    job:
+      createTime: '2025-01-26T14:34:04.608442Z'
+      currentStateTime: '1970-01-01T00:00:00Z'
+      id: 2025-01-26_06_34_03-13881126003586053150
+      location: us-central1
+      name: bigquery-clickhouse-dataflow-20250126-153400
+      projectId: ch-integrations
+      startTime: '2025-01-26T14:34:04.608442Z'
+    ```
+  </Tab>
+</Tabs>
+
+<div id="monitor-the-job">
+  ### مراقبة المهمة
+</div>
+
+انتقل إلى [علامة التبويب Dataflow Jobs](https://console.cloud.google.com/dataflow/jobs) في Google Cloud Console
+لمراقبة حالة المهمة. ستجد تفاصيل المهمة، بما في ذلك مدى التقدّم وأي أخطاء:
+
+<Image img="/images/integrations/data-ingestion/google-dataflow/dataflow-inqueue-job.webp" size="lg" border alt="واجهة Dataflow تعرض مهمة قيد التشغيل لنقل البيانات من BigQuery إلى ClickHouse" />
+
+<div id="troubleshooting">
+  ## استكشاف الأخطاء وإصلاحها
+</div>
+
+<div id="code-241-dbexception-memory-limit-total-exceeded">
+  ### خطأ تجاوز الحد الإجمالي للذاكرة (الرمز 241)
+</div>
+
+يحدث هذا الخطأ عندما تستنفد ClickHouse الذاكرة أثناء معالجة دفعات كبيرة من البيانات. لحل هذه المشكلة:
+
+* زيادة موارد المثيل: قم بترقية خادم ClickHouse إلى مثيل أكبر مزود بذاكرة أكبر للتعامل مع حمل معالجة البيانات.
+* تقليل حجم الدفعة: عدّل حجم الدفعة في إعدادات مهمة Dataflow لإرسال أجزاء أصغر من البيانات إلى ClickHouse، مما يقلل استهلاك الذاكرة لكل دفعة. يمكن أن تساعد هذه التغييرات في تحقيق توازن في استخدام الموارد أثناء إدخال البيانات.
+
+<div id="template-source-code">
+  ## الشيفرة المصدرية للقالب
+</div>
+
+تتوفّر الشيفرة المصدرية للقالب في:
+
+* [`GoogleCloudPlatform/DataflowTemplates`](https://github.com/GoogleCloudPlatform/DataflowTemplates/tree/main/v2/googlecloud-to-clickhouse) — المستودع الأصلي على Google Cloud Platform.
+* [`ClickHouse/DataflowTemplates`](https://github.com/ClickHouse/DataflowTemplates) — النسخة المتفرعة الخاصة بـ ClickHouse.

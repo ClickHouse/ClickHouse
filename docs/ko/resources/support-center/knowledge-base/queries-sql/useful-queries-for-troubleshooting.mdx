@@ -1,0 +1,598 @@
+---
+date: 2023-03-17
+title: 문제 해결에 유용한 쿼리
+description: 테이블 크기 모니터링, 장시간 실행되는 쿼리, 오류 확인 등 ClickHouse 문제 해결에 유용한 쿼리를 모아 두었습니다.
+tags: ['설정']
+keywords: ['유용한 쿼리']
+---
+
+{frontMatter.description}
+
+{/* TRUNCATE */}
+
+<div id="useful-queries-for-troubleshooting">
+  ## 문제 해결에 유용한 쿼리
+</div>
+
+특별한 순서 없이, ClickHouse 문제를 해결하고 현재 어떤 일이 일어나고 있는지 파악하는 데 유용한 몇 가지 쿼리를 소개합니다.
+
+또한 [ClickHouse 모니터링을 위한 필수 쿼리](https://clickhouse.com/blog/monitoring-troubleshooting-select-queries-clickhouse)를 소개하는 훌륭한 블로그 글도 있습니다.
+
+<div id="view-which-settings-have-been-changed-from-the-default">
+  ## 기본값에서 변경된 설정 확인하기
+</div>
+
+```sql
+SELECT
+    name,
+    value
+FROM system.settings
+WHERE changed
+```
+
+<div id="get-the-size-of-all-your-tables">
+  ## 모든 테이블 크기 확인하기
+</div>
+
+```sql
+SELECT table,
+    formatReadableSize(sum(bytes)) as size
+    FROM system.parts
+    WHERE active
+GROUP BY table
+```
+
+응답은 다음과 같습니다.
+
+```response
+┌─table───────────┬─size──────┐
+│ stat            │ 38.89 MiB │
+│ customers       │ 525.00 B  │
+│ my_sparse_table │ 40.73 MiB │
+│ crypto_prices   │ 32.18 MiB │
+│ hackernews      │ 6.23 GiB  │
+└─────────────────┴───────────┘
+```
+
+<div id="row-count-and-average-day-size-of-your-table">
+  ## 테이블의 행 수와 하루 평균 크기
+</div>
+
+```sql
+SELECT
+    table,
+    formatReadableSize(size) AS size,
+    rows,
+    days,
+    formatReadableSize(avgDaySize) AS avgDaySize
+FROM
+(
+    SELECT
+        table,
+        sum(bytes) AS size,
+        sum(rows) AS rows,
+        min(min_date) AS min_date,
+        max(max_date) AS max_date,
+        max_date - min_date AS days,
+        size / (max_date - min_date) AS avgDaySize
+    FROM system.parts
+    WHERE active
+    GROUP BY table
+    ORDER BY rows DESC
+)
+```
+
+<div id="compression-columns-percentage-as-well-as-the-size-of-primary-index-in-memory">
+  ## 컬럼별 압축 비율과 메모리 내 프라이머리 인덱스 크기
+</div>
+
+데이터가 컬럼별로 얼마나 압축되었는지 확인할 수 있습니다. 이 쿼리는 메모리에 있는 프라이머리 인덱스의 크기도 반환합니다. 프라이머리 인덱스는 반드시 메모리에 적재되어야 하므로 유용합니다.
+
+```sql
+SELECT
+    parts.*,
+    columns.compressed_size,
+    columns.uncompressed_size,
+    columns.compression_ratio,
+    columns.compression_percentage
+FROM
+(
+    SELECT
+        table,
+        formatReadableSize(sum(data_uncompressed_bytes)) AS uncompressed_size,
+        formatReadableSize(sum(data_compressed_bytes)) AS compressed_size,
+        round(sum(data_compressed_bytes) / sum(data_uncompressed_bytes), 3) AS compression_ratio,
+        round(100 - ((sum(data_compressed_bytes) * 100) / sum(data_uncompressed_bytes)), 3) AS compression_percentage
+    FROM system.columns
+    GROUP BY table
+) AS columns
+RIGHT JOIN
+(
+    SELECT
+        table,
+        sum(rows) AS rows,
+        max(modification_time) AS latest_modification,
+        formatReadableSize(sum(bytes)) AS disk_size,
+        formatReadableSize(sum(primary_key_bytes_in_memory)) AS primary_keys_size,
+        any(engine) AS engine,
+        sum(bytes) AS bytes_size
+    FROM system.parts
+    WHERE active
+    GROUP BY
+        database,
+        table
+) AS parts ON columns.table = parts.table
+ORDER BY parts.bytes_size DESC
+```
+
+<div id="number-of-queries-sent-by-client-in-the-last-10-minutes">
+  ## 지난 10분 동안 클라이언트가 전송한 쿼리 수
+</div>
+
+`toIntervalMinute(10)` 함수에서 시간 인터벌을 늘리거나 줄일 수 있습니다:
+
+```sql
+SELECT
+    client_name,
+    count(),
+    query_kind,
+    toStartOfMinute(event_time) AS event_time_m
+FROM system.query_log
+WHERE (type = 'QueryStart') AND (event_time > (now() - toIntervalMinute(10)))
+GROUP BY
+    event_time_m,
+    client_name,
+    query_kind
+ORDER BY
+    event_time_m DESC,
+    count() ASC
+```
+
+<div id="number-of-parts-in-each-partition">
+  ## 파티션별 파트 수
+</div>
+
+```sql
+SELECT
+    concat(database, '.', table),
+    partition_id,
+    count()
+FROM system.parts
+WHERE active
+GROUP BY
+    database,
+    table,
+    partition_id
+```
+
+<div id="finding-long-running-queries">
+  ## 장시간 실행 중인 쿼리 찾기
+</div>
+
+다음은 멈춰 있는 쿼리를 찾는 데 도움이 될 수 있습니다:
+
+```sql
+SELECT
+    elapsed,
+    initial_user,
+    client_name,
+    hostname(),
+    query_id,
+    query
+FROM clusterAllReplicas(default, system.processes)
+ORDER BY elapsed DESC
+```
+
+가장 오래 실행 중인 쿼리의 Query id를 사용하면 디버깅에 도움이 되는 스택 트레이스를 확인할 수 있습니다.
+
+```
+SET allow_introspection_functions=1;
+
+SELECT
+    arrayStringConcat(
+        arrayMap(
+            x,
+            y -> concat(x, ': ', y),
+            arrayMap(x -> addressToLine(x), trace),
+            arrayMap(x -> demangle(addressToSymbol(x)), trace)
+        ),
+        '\n'
+    ) as trace
+FROM
+    system.stack_trace
+WHERE
+    query_id = '0bb6e88b-9b9a-4ffc-b612-5746c859e360';
+```
+
+<div id="view-the-most-recent-errors">
+  ## 최신 오류 보기
+</div>
+
+```
+SELECT *
+FROM system.errors
+ORDER BY last_error_time DESC
+```
+
+응답은 다음과 같습니다.
+
+```response
+┌─name──────────────────┬─code─┬─value─┬─────last_error_time─┬─last_error_message──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┬─last_error_trace─┬─remote─┐
+│ UNKNOWN_TABLE         │   60 │     3 │ 2023-03-14 01:02:35 │ Table system.stack_trace doesn't exist                                                                                                              │ []               │      0 │
+│ BAD_GET               │  170 │     1 │ 2023-03-14 00:58:55 │ Requested cluster 'default' not found                                                                                                               │ []               │      0 │
+│ UNKNOWN_IDENTIFIER    │   47 │     1 │ 2023-03-14 00:49:12 │ Missing columns: 'parts.table' 'table' while processing query: 'table = parts.table', required columns: 'table' 'parts.table' 'table' 'parts.table' │ []               │      0 │
+│ NO_ELEMENTS_IN_CONFIG │  139 │     2 │ 2023-03-14 00:42:11 │ Certificate file is not set.                                                                                                                        │ []               │      0 │
+└───────────────────────┴──────┴───────┴─────────────────────┴─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┴──────────────────┴────────┘
+```
+
+<div id="top-10-queries-that-are-using-the-most-cpu-and-memory">
+  ## CPU와 메모리를 가장 많이 사용하는 쿼리 상위 10개
+</div>
+
+```sql
+SELECT
+    type,
+    event_time,
+    initial_query_id,
+    formatReadableSize(memory_usage) AS memory,
+    `ProfileEvents.Values`[indexOf(`ProfileEvents.Names`, 'UserTimeMicroseconds')] AS userCPU,
+    `ProfileEvents.Values`[indexOf(`ProfileEvents.Names`, 'SystemTimeMicroseconds')] AS systemCPU,
+    normalizedQueryHash(query) AS normalized_query_hash
+FROM system.query_log
+ORDER BY memory_usage DESC
+LIMIT 10
+```
+
+<Note>
+  단일 쿼리는 서로 다른 `query_id` 값을 가진 여러 행으로 기록될 수 있습니다 — 분산 보조 쿼리와 내부 뷰 단계에는 `is_initial_query = 0`이 설정됩니다. 제출된 형태 그대로의 쿼리를 보려면 `is_initial_query = 1`(또는 `query_id = initial_query_id`)로 필터링하고, ClickHouse가 할당하는 내부 `query_id` 값에는 `queryView...`와 같은 레이블이 포함될 수 있다는 점에 유의하십시오. 자세한 내용은 [`query_log` 참고](/ko/reference/system-tables/query_log)를 확인하십시오.
+</Note>
+
+<div id="how-much-disk-space-are-my-projection-using">
+  ## 프로젝션은 디스크 공간을 얼마나 사용합니까
+</div>
+
+```sql
+SELECT
+    name,
+    parent_name,
+    formatReadableSize(bytes_on_disk) AS bytes,
+    formatReadableSize(parent_bytes_on_disk) AS parent_bytes,
+    bytes_on_disk / parent_bytes_on_disk AS ratio
+FROM system.projection_parts
+```
+
+<div id="show-disk-storage-number-of-parts-number-of-rows-in-systemparts-and-marks-across-databases">
+  ## 데이터베이스 전반의 디스크 저장 공간, 파트 수, system.parts의 행 수 및 마크 수 표시
+</div>
+
+```sql
+SELECT
+    database,
+    table,
+    partition,
+    count() AS parts,
+    formatReadableSize(sum(bytes_on_disk)) AS bytes_on_disk,
+    formatReadableQuantity(sum(rows)) AS rows,
+    sum(marks) AS marks
+FROM system.parts
+WHERE (database != 'system') AND active
+GROUP BY
+    database,
+    table,
+    partition
+ORDER BY database ASC
+```
+
+<div id="list-details-of-recently-written-new-parts">
+  ## 최근 기록된 새 파트의 상세 정보
+</div>
+
+상세 정보에는 생성 시점, 크기, 행 수 등이 포함됩니다:
+
+```sql
+SELECT
+    modification_time,
+    rows,
+    formatReadableSize(bytes_on_disk),
+    *
+FROM clusterAllReplicas(default, system.parts)
+WHERE (database = 'default') AND active AND (level = 0)
+ORDER BY modification_time DESC
+LIMIT 100
+```
+
+<div id="cluster-wide-monitoring-queries">
+  ## 클러스터 전체에 대한 모니터링 쿼리
+</div>
+
+다음 쿼리는 ClickHouse 클러스터를 모니터링할 때 유용합니다. `clusterAllReplicas()`를 사용해 모든 노드의 데이터를 집계합니다.
+
+<Note>
+  이 쿼리는 클러스터 이름이 `default`라고 가정합니다. 클러스터 이름이 다르면 `'default'`와 `default`를 실제 클러스터 이름으로 바꾸십시오.
+</Note>
+
+<div id="avg-new-parts-per-minute-and-second">
+  ### 분당 및 초당 평균 신규 파트 생성 수(지난 1시간)
+</div>
+
+```sql
+WITH
+    PER_MINUTE AS
+    (
+    SELECT
+        toStartOfInterval(modification_time, toIntervalMinute(1)) AS t,
+        count() AS new_part_count
+    FROM
+        clusterAllReplicas(default, merge(system, '^parts'))
+    WHERE
+        (database = 'default') AND
+        (table = 'your_table') AND
+        (active = true) AND
+        (level = 0) AND
+        (modification_time >= (now() - toIntervalHour(1)))
+    GROUP BY
+        t
+    ORDER BY
+        t ASC
+    SETTINGS skip_unavailable_shards = 1
+    )
+SELECT
+    AVG(new_part_count) AS new_parts_per_minute,
+    new_parts_per_minute / 60 AS new_parts_per_second
+FROM
+    PER_MINUTE
+```
+
+모니터링할 실제 테이블 이름으로 `'your_table'`을 바꾸십시오.
+
+<div id="cpu-and-memory-intensive-queries-cluster-wide">
+  ### CPU 및 메모리 사용량이 많은 쿼리(클러스터 전체)
+</div>
+
+```sql
+SELECT
+    type,
+    event_time,
+    initial_query_id,
+    formatReadableSize(memory_usage) AS memory,
+    `ProfileEvents.Values`[indexOf(`ProfileEvents.Names`, 'UserTimeMicroseconds')] AS userCPU,
+    `ProfileEvents.Values`[indexOf(`ProfileEvents.Names`, 'SystemTimeMicroseconds')] AS systemCPU,
+    normalizedQueryHash(query) AS normalized_query_hash
+FROM clusterAllReplicas(default, merge(system, '^query_log'))
+ORDER BY memory_usage DESC
+LIMIT 10
+```
+
+<div id="merges-in-progress-with-eta">
+  ### 예상 완료 시간이 포함된 진행 중인 머지
+</div>
+
+이 쿼리는 클러스터에서 현재 진행 중인 머지와 예상 완료 시간을 보여줍니다.
+
+```sql
+SELECT
+    hostName(),
+    database,
+    table,
+    round(elapsed, 0) AS elapsed_seconds,
+    round(progress, 4) AS progress_ratio,
+    formatReadableTimeDelta((elapsed / progress) - elapsed) AS estimated_time_remaining,
+    num_parts,
+    result_part_name
+FROM clusterAllReplicas(default, merge(system, '^merges'))
+ORDER BY (elapsed / progress) - elapsed ASC
+```
+
+<div id="most-common-queries-by-normalized-hash">
+  ### 정규화된 해시별 가장 많이 실행된 쿼리
+</div>
+
+가장 자주 실행되는 쿼리를 찾습니다(최적화가 필요한 쿼리를 식별하는 데 유용합니다):
+
+```sql
+SELECT
+    normalizedQueryHash(query) AS query_hash,
+    count() AS execution_count,
+    any(query) AS example_query
+FROM clusterAllReplicas(default, merge(system, '^query_log'))
+WHERE event_date >= today() - 1
+GROUP BY normalizedQueryHash(query)
+ORDER BY execution_count DESC
+LIMIT 20
+```
+
+<div id="error-counts-by-event-type-and-date">
+  ### 이벤트 유형 및 날짜별 오류 건수
+</div>
+
+클러스터 전반의 파트 생성 오류를 분석합니다:
+
+```sql
+SELECT
+    event_date,
+    event_type,
+    table,
+    error,
+    COUNT() AS error_count
+FROM clusterAllReplicas(default, merge(system, '^part_log'))
+WHERE database = 'default'
+GROUP BY
+    event_date,
+    event_type,
+    error,
+    table
+ORDER BY
+    event_date DESC,
+    error_count DESC
+```
+
+<div id="number-of-tables-by-node">
+  ### 노드별 테이블 수
+</div>
+
+클러스터 노드 간 테이블 분포를 확인합니다:
+
+```sql
+SELECT
+    hostName() AS host,
+    count() AS table_count
+FROM clusterAllReplicas('default', merge(system, '^tables'))
+WHERE database = 'default'
+GROUP BY hostName()
+ORDER BY table_count DESC
+```
+
+<div id="check-for-async-insert-operations">
+  ### async insert 작업 확인
+</div>
+
+async insert 활동을 모니터링합니다:
+
+```sql
+SELECT
+    event_date,
+    count() AS total_count,
+    sum(if(query LIKE '%async%', 1, 0)) AS async_count,
+    sum(if(query LIKE '%INSERT%', 1, 0)) AS insert_count
+FROM clusterAllReplicas(default, merge(system, '^query_log'))
+WHERE event_date >= today() - 7
+GROUP BY event_date
+ORDER BY event_date DESC
+```
+
+<div id="parts-and-merges-analysis">
+  ## 파트 및 머지 분석
+</div>
+
+<div id="currently-active-parts-by-table">
+  ### 현재 활성화된 테이블별 파트
+</div>
+
+클러스터 전체에서 테이블별 활성 파트 수를 확인합니다:
+
+```sql
+SELECT
+    database,
+    table,
+    count() AS part_count,
+    formatReadableSize(sum(bytes_on_disk)) AS total_size
+FROM clusterAllReplicas(default, system.parts)
+WHERE active = 1 AND database = 'default'
+GROUP BY database, table
+ORDER BY part_count DESC
+```
+
+<div id="partitions-with-too-many-parts">
+  ### 파트가 과도하게 많은 파티션
+</div>
+
+파트가 과도하게 많아 쿼리 성능에 영향을 줄 수 있는 파티션을 찾습니다:
+
+```sql
+SELECT
+    database,
+    table,
+    partition,
+    count() AS part_count,
+    formatReadableSize(sum(bytes_on_disk)) AS total_size
+FROM clusterAllReplicas(default, system.parts)
+WHERE active = 1
+GROUP BY database, table, partition
+HAVING part_count > 100
+ORDER BY part_count DESC
+```
+
+<div id="detached-parts">
+  ### 분리된 파트
+</div>
+
+조사가 필요할 수 있는 분리된 파트가 있는지 확인합니다:
+
+```sql
+SELECT
+    database,
+    table,
+    partition_id,
+    name,
+    reason,
+    count()
+FROM clusterAllReplicas(default, system.detached_parts)
+GROUP BY database, table, partition_id, name, reason
+ORDER BY database, table
+```
+
+<div id="system-information-queries">
+  ## 시스템 정보 쿼리
+</div>
+
+<div id="cluster-wide-memory-usage-by-node">
+  ### 노드별 클러스터 전체 메모리 사용량
+</div>
+
+클러스터 전체에서 노드별 메모리 사용량을 모니터링합니다:
+
+```sql
+SELECT
+    hostName() AS host,
+    formatReadableSize(max(memory_usage)) AS peak_memory,
+    formatReadableSize(avg(memory_usage)) AS avg_memory,
+    formatReadableSize(min(memory_usage)) AS min_memory
+FROM clusterAllReplicas(default, merge(system, '^query_log'))
+WHERE event_date >= today() - 1
+GROUP BY hostName()
+ORDER BY peak_memory DESC
+```
+
+<div id="running-queries-on-the-cluster">
+  ### 클러스터에서 실행 중인 쿼리
+</div>
+
+현재 실행 중인 쿼리를 확인하세요:
+
+```sql
+SELECT
+    hostName() AS host,
+    initial_user,
+    query_id,
+    elapsed,
+    read_rows,
+    formatReadableSize(memory_usage) AS memory_usage,
+    normalizedQueryHash(query) AS query_hash
+FROM clusterAllReplicas(default, system.processes)
+ORDER BY elapsed DESC
+```
+
+<div id="modified-settings-from-defaults">
+  ### 기본값에서 변경된 설정
+</div>
+
+기본값에서 변경된 설정을 확인합니다:
+
+```sql
+SELECT
+    hostName() AS host,
+    name,
+    value
+FROM clusterAllReplicas(default, system.settings)
+WHERE changed = 1
+ORDER BY hostName(), name
+```
+
+<div id="replication-queue-status">
+  ### 복제 큐 상태
+</div>
+
+복제된 테이블(Replicated Table)의 복제 큐를 확인하십시오:
+
+```sql
+SELECT
+    hostName() AS host,
+    database,
+    table,
+    count() AS queue_size,
+    sum(if(is_currently_executing = 1, 1, 0)) AS executing_count
+FROM clusterAllReplicas(default, system.replication_queue)
+GROUP BY hostName(), database, table
+HAVING queue_size > 0
+ORDER BY queue_size DESC
+```
