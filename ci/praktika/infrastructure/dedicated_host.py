@@ -230,7 +230,9 @@ class DedicatedHost:
 
             allocated_by_az: Dict[str, List[str]] = {}
 
-            merged_tags = {"praktika_rn": self.name}
+            # "Name" gives the host a human-readable label in the console;
+            # "praktika_rn" is the stable identity used for discovery/counting.
+            merged_tags = {"Name": self.name, "praktika_rn": self.name}
             # Add resource tag if specified
             if self.praktika_resource_tag:
                 merged_tags["praktika_resource_tag"] = self.praktika_resource_tag

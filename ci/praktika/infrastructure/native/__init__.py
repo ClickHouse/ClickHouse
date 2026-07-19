@@ -6,6 +6,7 @@ from .image_builder import (
     create_image_test_component,
     create_ubuntu_image_builder_config,
 )
+from .dedicated_runner_pool import DedicatedRunnerPool
 from .orchestrator_pool import OrchestratorPool
 from .pool_autoscaler import PoolAutoscaler
 from .runner_pool import RunnerPool
@@ -14,6 +15,7 @@ from .user_data import cidb_user_data
 
 class Components:
     CIDBCluster = CIDBCluster
+    DedicatedRunnerPool = DedicatedRunnerPool
     GitHubTokenMinter = GitHubTokenMinter
     OrchestratorPool = OrchestratorPool
     PoolAutoscaler = PoolAutoscaler

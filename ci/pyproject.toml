@@ -1,13 +1,13 @@
 [build-system]
-requires = ["setuptools>=45", "wheel", "setuptools_scm[toml]>=6.2"]
+requires = ["setuptools>=45", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "praktika"
-version = "0.1.1"
+version = "0.1.9"
 description = "CI Infrastructure Toolbox"
 requires-python = ">=3.8"
-license = {text = "Apache-2.0"}
+license = "Apache-2.0"
 authors = [
     {name = "Max Kainov", email = "max.kainov@clickhouse.com"}
 ]
@@ -15,7 +15,6 @@ keywords = ["ci", "cd", "continuous-integration", "automation", "github-actions"
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
-    "License :: OSI Approved :: Apache Software License",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.8",
@@ -26,55 +25,77 @@ classifiers = [
     "Topic :: Software Development :: Build Tools",
     "Topic :: Software Development :: Testing",
 ]
-
-# Core dependencies - only requests is strictly required
-dependencies = [
-    "requests>=2.25.0",
-]
+dependencies = []
 
 [project.optional-dependencies]
-# AWS S3 support
+aws = [
+    "boto3>=1.18.0",
+]
 s3 = [
     "boto3>=1.18.0",
 ]
-
-# GitHub authentication with JWT
+github = [
+    "requests>=2.25.0",
+]
 github-auth = [
     "PyJWT>=2.4.0",
+    "cryptography>=42.0.0",
+    "requests>=2.25.0",
 ]
-
-# Full installation with all optional features
+infrastructure = [
+    "boto3>=1.18.0",
+    "PyJWT>=2.4.0",
+    "cryptography>=42.0.0",
+    "requests>=2.25.0",
+]
+# AI orchestration with the built-in "anthropic" provider (first-party API).
+# Optional: the SDK is imported lazily, so the advisor degrades to an error Turn
+# if it's absent.
+ai = [
+    "anthropic>=0.69.0",
+]
+# AI orchestration via the "bedrock" provider (Amazon Bedrock, AWS auth). Adds
+# the SDK's Bedrock client deps (boto3) on top of `ai`.
+bedrock = [
+    "anthropic[bedrock]>=0.69.0",
+]
 all = [
     "boto3>=1.18.0",
     "PyJWT>=2.4.0",
+    "cryptography>=42.0.0",
+    "requests>=2.25.0",
+    "anthropic[bedrock]>=0.69.0",
 ]
-
-# Development dependencies
 dev = [
+    "coverage>=7.0.0,<8",
     "pytest>=7.0.0",
-    "pytest-cov>=3.0.0",
-    "black>=22.0.0",
-    "isort>=5.10.0",
-    "pylint>=2.12.0",
-    "mypy>=0.942",
+    "pytest-reportlog>=0.4.0",
+    "boto3>=1.18.0",
+    "PyJWT>=2.4.0",
+    "cryptography>=42.0.0",
+    "requests>=2.25.0",
 ]
 
 [project.urls]
-Homepage = "https://github.com/ClickHouse/ClickHouse"
-Repository = "https://github.com/ClickHouse/ClickHouse"
-Issues = "https://github.com/ClickHouse/ClickHouse/issues"
+Homepage = "https://github.com/ClickHouse/praktika"
+Repository = "https://github.com/ClickHouse/praktika"
+Issues = "https://github.com/ClickHouse/praktika/issues"
 
 [project.scripts]
 praktika = "praktika.__main__:main"
 
 [tool.setuptools.packages.find]
-where = [".."]
-include = ["praktika*"]
+where = ["."]
+include = ["praktika", "praktika.*"]
 exclude = ["tests*", "*.tests", "*.tests.*"]
-namespaces = true
 
 [tool.setuptools.package-data]
-praktika = ["*.html", "*.html.gz", "py.typed"]
+praktika = [
+    "*.html",
+    "py.typed",
+    "infrastructure/native/user_data_cidb.sh",
+    "infrastructure/native/cidb_schema.sql",
+]
 
 [tool.black]
 line-length = 88
@@ -123,7 +144,7 @@ module = [
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]
-testpaths = ["tests"]
+testpaths = ["ci/tests"]
 python_files = ["test_*.py", "*_test.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]

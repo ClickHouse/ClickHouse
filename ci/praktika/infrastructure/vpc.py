@@ -60,6 +60,24 @@ class VPC:
             subnets.sort(key=lambda s: s.get("AvailabilityZone", ""))
             return subnets[0]["SubnetId"]
 
+        def subnet_id_for_az(self, az: str) -> str:
+            """Resolve the subnet in a specific availability zone. Sorted by
+            SubnetId so re-deploys land in the same one when an AZ has several."""
+            resp = self._client().describe_subnets(
+                Filters=[
+                    {"Name": "vpc-id", "Values": [self.vpc_id]},
+                    {"Name": "availability-zone", "Values": [az]},
+                ]
+            )
+            subnets = resp.get("Subnets", [])
+            if not subnets:
+                raise ValueError(
+                    f"VPC '{self.name}' ({self.vpc_id}) has no subnet in "
+                    f"availability zone '{az}'"
+                )
+            subnets.sort(key=lambda s: s.get("SubnetId", ""))
+            return subnets[0]["SubnetId"]
+
         def resolve_security_group_ids(self, names) -> List[str]:
             """Translate SG names to IDs, scoped to this VPC. Empty input → []."""
             names = list(names or [])

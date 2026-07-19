@@ -29,6 +29,7 @@ if TYPE_CHECKING:
     from .lambda_function import Lambda
     from .launch_template import LaunchTemplate
     from .native.cidb_cluster import CIDBCluster
+    from .native.dedicated_runner_pool import DedicatedRunnerPool
     from .native.orchestrator_pool import OrchestratorPool
     from .native.github_token_minter import GitHubTokenMinter
     from .native.pool_autoscaler import PoolAutoscaler
@@ -62,6 +63,9 @@ class CloudInfrastructure:
         report_pages: List["ReportPage.Config"] = field(default_factory=list)
         vpcs: List["VPC.Config"] = field(default_factory=list)
         runner_pools: List["RunnerPool"] = field(default_factory=list)
+        dedicated_runner_pools: List["DedicatedRunnerPool"] = field(
+            default_factory=list
+        )
         github_token_minters: List["GitHubTokenMinter"] = field(default_factory=list)
         pool_autoscalers: List["PoolAutoscaler"] = field(default_factory=list)
         pool_autoscaler_interval_seconds: int = 60
@@ -95,6 +99,7 @@ class CloudInfrastructure:
                     "report_pages": self.report_pages,
                     "vpcs": self.vpcs,
                     "runner_pools": self.runner_pools,
+                    "dedicated_runner_pools": self.dedicated_runner_pools,
                     "github_token_minters": self.github_token_minters,
                     "pool_autoscalers": self.pool_autoscalers,
                     "orchestrator_pool": self.orchestrator_pool,
@@ -190,6 +195,7 @@ class CloudInfrastructure:
                 "dedicated_hosts",
                 "ec2_instances",
                 "runner_pools",
+                "dedicated_runner_pools",
                 "orchestrator_pools",
                 "github_token_minters",
                 "pool_autoscalers",
@@ -203,9 +209,12 @@ class CloudInfrastructure:
                     self._pre_namespace_names[attr] = names
 
         def _apply_vpc_defaults(self):
-            if len(self.vpcs) == 1 and not self.vpcs[0].name:
+            # The first VPC is the project's primary/default one; pools and
+            # builders that don't name a VPC bind to it. Additional VPCs (e.g. a
+            # cross-region one for a Mac pool) must be referenced explicitly.
+            if self.vpcs and not self.vpcs[0].name:
                 self.vpcs[0].name = "vpc"
-            default_vpc_name = self.vpcs[0].name if len(self.vpcs) == 1 else ""
+            default_vpc_name = self.vpcs[0].name if self.vpcs else ""
             if not default_vpc_name:
                 return
 
@@ -254,7 +263,7 @@ class CloudInfrastructure:
                     cluster.security_group_names = [f"{cluster.vpc_name}-sg"]
 
         def _apply_image_builder_defaults(self):
-            default_vpc_name = self.vpcs[0].name if len(self.vpcs) == 1 else ""
+            default_vpc_name = self.vpcs[0].name if self.vpcs else ""
 
             for builder in self.image_builders:
                 if not builder.vpc_name and default_vpc_name:
@@ -539,6 +548,106 @@ class CloudInfrastructure:
                 pool.autoscaling_group.launch_template_name = self._prefixed(pool.autoscaling_group.launch_template_name)
                 self._record_rename(replacements, old_lt_ref, pool.autoscaling_group.launch_template_name)
 
+            for pool in self.dedicated_runner_pools:
+                new_allowed_ssm_parameters = []
+                for param_name in pool.allowed_ssm_parameters:
+                    if param_name.startswith("arn:"):
+                        new_allowed_ssm_parameters.append(param_name)
+                        continue
+                    old_param = param_name
+                    new_param = self._prefixed_secret_name(param_name)
+                    new_allowed_ssm_parameters.append(new_param)
+                    self._record_rename(replacements, old_param, new_param)
+                    self._record_rename(
+                        replacements, old_param.lstrip("/"), new_param.lstrip("/")
+                    )
+                pool.allowed_ssm_parameters = new_allowed_ssm_parameters
+                new_allowed_secrets = []
+                for secret_name in pool.allowed_secrets:
+                    if secret_name.startswith("arn:"):
+                        new_allowed_secrets.append(secret_name)
+                        continue
+                    old_secret = secret_name
+                    new_secret = self._prefixed_secret_name(secret_name)
+                    new_allowed_secrets.append(new_secret)
+                    self._record_rename(replacements, old_secret, new_secret)
+                    self._record_rename(
+                        replacements, old_secret.lstrip("/"), new_secret.lstrip("/")
+                    )
+                pool.allowed_secrets = new_allowed_secrets
+                for attr in ("allowed_s3_prefixes", "allowed_s3_prefixes_readonly"):
+                    new_prefixes = []
+                    for s3_prefix in getattr(pool, attr):
+                        if not s3_prefix or not s3_prefix.strip():
+                            continue
+                        if s3_prefix.startswith("arn:"):
+                            new_prefixes.append(s3_prefix)
+                            continue
+                        scheme = "s3://" if s3_prefix.startswith("s3://") else ""
+                        old_s3_prefix = s3_prefix
+                        clean_s3_prefix = s3_prefix.removeprefix("s3://").lstrip("/")
+                        bucket, separator, key_prefix = clean_s3_prefix.partition("/")
+                        new_bucket = self._prefixed(bucket)
+                        new_s3_prefix = f"{scheme}{new_bucket}"
+                        if separator:
+                            new_s3_prefix = f"{new_s3_prefix}/{key_prefix}"
+                        new_prefixes.append(new_s3_prefix)
+                        self._record_rename(replacements, old_s3_prefix, new_s3_prefix)
+                        self._record_rename(replacements, bucket, new_bucket)
+                    setattr(pool, attr, new_prefixes)
+                old_queue = pool.queue.name
+                pool.queue.name = self._prefixed(pool.queue.name)
+                self._record_rename(replacements, old_queue, pool.queue.name)
+                for host in pool.dedicated_hosts:
+                    old_host = host.name
+                    host.name = self._prefixed(host.name)
+                    self._record_rename(replacements, old_host, host.name)
+                # A generated role/profile is namespaced; an external profile
+                # (iam_instance_profile_name) is left untouched.
+                if pool.ec2_role is not None:
+                    old_role_name = pool.ec2_role.name
+                    pool.ec2_role.name = self._prefixed(pool.ec2_role.name)
+                    self._record_rename(replacements, old_role_name, pool.ec2_role.name)
+                if pool.instance_profile is not None:
+                    old_profile_name = pool.instance_profile.name
+                    pool.instance_profile.name = self._prefixed(pool.instance_profile.name)
+                    self._record_rename(
+                        replacements, old_profile_name, pool.instance_profile.name
+                    )
+                    old_profile_role = pool.instance_profile.role_name
+                    pool.instance_profile.role_name = self._prefixed(
+                        pool.instance_profile.role_name
+                    )
+                    self._record_rename(
+                        replacements, old_profile_role, pool.instance_profile.role_name
+                    )
+                for instance in pool.ec2_instances:
+                    old_instance_name = instance.name
+                    instance.name = self._prefixed(instance.name)
+                    self._record_rename(replacements, old_instance_name, instance.name)
+                    # vpc_name/security_group_names reference the project's
+                    # managed VPC, so namespace them like the runner pools do.
+                    if getattr(instance, "vpc_name", ""):
+                        old_vpc = instance.vpc_name
+                        instance.vpc_name = self._prefixed(instance.vpc_name)
+                        self._record_rename(replacements, old_vpc, instance.vpc_name)
+                    instance.security_group_names = [
+                        self._prefixed(name)
+                        for name in getattr(instance, "security_group_names", [])
+                    ]
+                    if pool.instance_profile is not None and getattr(
+                        instance, "iam_instance_profile_name", ""
+                    ):
+                        old_instance_profile = instance.iam_instance_profile_name
+                        instance.iam_instance_profile_name = self._prefixed(
+                            instance.iam_instance_profile_name
+                        )
+                        self._record_rename(
+                            replacements,
+                            old_instance_profile,
+                            instance.iam_instance_profile_name,
+                        )
+
             for pool in self.orchestrator_pools:
                 if pool.vpc_name:
                     old_vpc = pool.vpc_name
@@ -726,6 +835,17 @@ class CloudInfrastructure:
                 pool.launch_template.user_data = self._replace_recursive(pool.launch_template.user_data, replacements)
                 pool.autoscaling_group.tags = self._replace_recursive(pool.autoscaling_group.tags, replacements)
 
+            for pool in self.dedicated_runner_pools:
+                if pool.ec2_role is not None:
+                    pool.ec2_role.inline_policies = self._replace_recursive(
+                        pool.ec2_role.inline_policies, replacements
+                    )
+                for instance in pool.ec2_instances:
+                    instance.tags = self._replace_recursive(instance.tags, replacements)
+                    instance.user_data = self._replace_recursive(
+                        getattr(instance, "user_data", ""), replacements
+                    )
+
             for pool in self.orchestrator_pools:
                 pool.launch_template.tags["praktika_project_slug"] = project_slug
                 pool.autoscaling_group.tags["praktika_project_slug"] = project_slug
@@ -848,6 +968,19 @@ class CloudInfrastructure:
                 self.autoscaling_groups.append(pool.autoscaling_group)
                 self.sqs_queues.append(pool.queue)
                 implicit_autoscaler_sources.append(pool)
+            # Dedicated runner pools are fixed-capacity: their child hosts,
+            # instances, and queue are registered into the standard lists so
+            # the normal deploy/destroy ordering handles them, but they are
+            # intentionally NOT added to implicit_autoscaler_sources (nothing
+            # to scale).
+            for pool in self.dedicated_runner_pools:
+                if pool.ec2_role is not None:
+                    _add_role(pool.ec2_role)
+                if pool.instance_profile is not None:
+                    _add_profile(pool.instance_profile)
+                self.dedicated_hosts.extend(pool.dedicated_hosts)
+                self.ec2_instances.extend(pool.ec2_instances)
+                self.sqs_queues.append(pool.queue)
             from .native.pool_autoscaler import PoolAutoscaler as _PoolAutoscaler
             implicit_runner_autoscaler = _PoolAutoscaler.from_pools(
                 implicit_autoscaler_sources,
@@ -882,6 +1015,9 @@ class CloudInfrastructure:
                     token_minter.grant_invoke(pool.lambda_role)
                 for pool in self.runner_pools:
                     token_minter.grant_invoke(pool.ec2_role)
+                for pool in self.dedicated_runner_pools:
+                    if pool.ec2_role is not None:
+                        token_minter.grant_invoke(pool.ec2_role)
             for autoscaler in self.pool_autoscalers:
                 _add_role(autoscaler.lambda_role)
                 self.lambda_functions.append(autoscaler.lambda_config)
@@ -1068,6 +1204,19 @@ class CloudInfrastructure:
                         f"Missing required settings for Lambda deployment: {', '.join(missing_settings)}"
                     )
 
+            # Deploy VPCs first: EC2 instances (and ASGs) resolve their subnet
+            # and security groups from the VPC by name at deploy time.
+            if _wants("VPC", "VPCs"):
+                for vpc_config in self.vpcs:
+                    # Respect an explicitly-set region (e.g. a cross-region VPC
+                    # for a Mac pool); only fall back to the global setting.
+                    if not vpc_config.region:
+                        vpc_config.region = self._settings.AWS_REGION
+                    print("\n" + "=" * 60)
+                    print(f"Deploying VPC: {vpc_config.name}")
+                    print("=" * 60)
+                    vpc_config.deploy()
+
             # Deploy all Dedicated Hosts
             if _wants("DedicatedHost", "DedicatedHosts"):
                 for host_config in self.dedicated_hosts:
@@ -1107,21 +1256,15 @@ class CloudInfrastructure:
             # Deploy EC2 Instances
             if _wants("EC2Instance", "EC2Instances", "Instance", "Instances"):
                 for instance_config in self.ec2_instances:
-                    instance_config.region = self._settings.AWS_REGION
+                    # Respect an explicitly-set region (e.g. a cross-region Mac
+                    # pool); only fall back to the global setting otherwise.
+                    if not instance_config.region:
+                        instance_config.region = self._settings.AWS_REGION
 
                     print("\n" + "=" * 60)
                     print(f"Deploying EC2 Instance: {instance_config.name}")
                     print("=" * 60)
                     instance_config.deploy()
-
-            # Deploy VPCs (before ASGs that reference them by name)
-            if _wants("VPC", "VPCs"):
-                for vpc_config in self.vpcs:
-                    vpc_config.region = self._settings.AWS_REGION
-                    print("\n" + "=" * 60)
-                    print(f"Deploying VPC: {vpc_config.name}")
-                    print("=" * 60)
-                    vpc_config.deploy()
 
             # Deploy secret parameters (before Lambdas that reference them)
             if _wants("SecretParameter", "SecretParameters", "Secret", "Secrets"):
