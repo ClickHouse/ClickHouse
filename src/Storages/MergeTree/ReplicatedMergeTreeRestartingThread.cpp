@@ -207,6 +207,13 @@ bool ReplicatedMergeTreeRestartingThread::tryStartup()
             /// pullLogsToQueue() after we mark replica 'is_active' (and after we repair if it was lost);
             /// because cleanup_thread doesn't delete log_pointer of active replicas.
             storage.queue.pullLogsToQueue(zookeeper, {}, ReplicatedMergeTreeQueue::LOAD);
+
+            /// If an ALTER_METADATA log entry was cleaned up from the log before this replica could pull
+            /// it (and the replica was not marked lost, so cloneReplica did not repair it), the local
+            /// structure would never converge, and an alter's data-mutation stage could run against the
+            /// stale structure. Repair it now, while the replica is still readonly and background queue
+            /// processing has not started.
+            storage.syncTableStructureFromZooKeeperIfNeeded();
         }
         catch (...)
         {

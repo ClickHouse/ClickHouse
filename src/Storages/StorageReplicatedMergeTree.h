@@ -719,13 +719,15 @@ private:
     /// Repairs metadata of staled replica. Called from cloneReplica(...)
     void cloneMetadataIfNeeded(const String & source_replica, const String & source_path, zkutil::ZooKeeperPtr & zookeeper);
 
-public:
-    /// Forces a metadata resync from ZooKeeper if the local structure is behind zookeeper_path/metadata.
-    /// Used after DatabaseReplicated recovery, where a kept matching-UUID table may miss a cleaned-up
-    /// ALTER_METADATA log entry and would otherwise never converge. Returns true if a resync was scheduled.
+    /// Forces a metadata resync from ZooKeeper if the local structure differs from zookeeper_path/metadata.
+    /// Repairs a replica that missed an ALTER_METADATA log entry that was cleaned up from the log without
+    /// the replica being marked lost (e.g. a kept matching-UUID table of a recovered Replicated database),
+    /// and would otherwise never converge. Prepends a dummy ALTER_METADATA to the replication queue, like
+    /// cloneMetadataIfNeeded. Called from ReplicatedMergeTreeRestartingThread::tryStartup() before the
+    /// replica leaves readonly mode and background queue processing starts (an alter's data-mutation stage
+    /// must not run before the repair entry is queued). Returns true if a resync entry was created.
     bool syncTableStructureFromZooKeeperIfNeeded();
 
-private:
     /// Clone replica if it is lost.
     void cloneReplicaIfNeeded(zkutil::ZooKeeperPtr zookeeper);
 

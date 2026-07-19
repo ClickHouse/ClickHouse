@@ -1354,6 +1354,31 @@ def test_force_synchronous_settings(started_cluster):
     snapshotting_node.query("DROP DATABASE test_force_synchronous_settings SYNC")
 
 
+def delete_alter_metadata_from_table_log(cluster, node, database, table):
+    """Deterministically delete the ALTER_METADATA entries from the table's replication
+    /log so a detached replica cannot replay them on recovery. This mimics the flaky
+    window where the replication-log GC had already trimmed those entries while the
+    replica was detached. Without this, the entries usually survive in /log and
+    pullLogsToQueue replays them normally, so the recovered replica converges even
+    without the repair and the bug does not reproduce. Other entry types (e.g.
+    MUTATE_PART, GET_PART) are left in place."""
+    zk_path = node.query(
+        f"SELECT zookeeper_path FROM system.replicas "
+        f"WHERE database='{database}' AND table='{table}'"
+    ).strip()
+    zk = cluster.get_kazoo_client("zoo1")
+    try:
+        for log_znode in zk.get_children(f"{zk_path}/log"):
+            data, _ = zk.get(f"{zk_path}/log/{log_znode}")
+            # ALTER_METADATA log entries serialize an "alter\n" token (see
+            # ReplicatedMergeTreeLogEntryData::writeText); other entry types do not.
+            if b"\nalter\n" in data:
+                zk.delete(f"{zk_path}/log/{log_znode}")
+    finally:
+        zk.stop()
+        zk.close()
+
+
 def test_replicated_table_structure_alter(started_cluster):
     main_node.query("DROP DATABASE IF EXISTS table_structure SYNC")
     dummy_node.query("DROP DATABASE IF EXISTS table_structure SYNC")
@@ -1398,32 +1423,12 @@ def test_replicated_table_structure_alter(started_cluster):
     )
     main_node.query("INSERT INTO table_structure.rmt VALUES (1, 2, 3)")
 
-    # Deterministically delete the ALTER_METADATA entries from the table's replication
-    # /log so the detached replica cannot replay them on recovery. This mimics the flaky
-    # window where the replication-log GC had already trimmed those entries while the
-    # replica was detached. Without this, the entries usually survive in /log and
-    # pullLogsToQueue replays them normally, so the recovered replica converges even
-    # without the fix and the bug does not reproduce (the recovery resync path is never
-    # exercised). Doing the deletion here makes the regression deterministic rather than
-    # relying on cleanup-thread timing. competing_node (which SYNCed the pre-ALTER rmt and
-    # then detached) is the only replica that must replay these entries; dummy_node
-    # detached before rmt was created, so on ATTACH it recreates rmt fresh from the current
-    # /metadata and is unaffected by this deletion.
-    rmt_zk_path = main_node.query(
-        "SELECT zookeeper_path FROM system.replicas "
-        "WHERE database='table_structure' AND table='rmt'"
-    ).strip()
-    zk = started_cluster.get_kazoo_client("zoo1")
-    try:
-        for log_znode in zk.get_children(f"{rmt_zk_path}/log"):
-            data, _ = zk.get(f"{rmt_zk_path}/log/{log_znode}")
-            # ALTER_METADATA log entries serialize an "alter\n" token (see
-            # ReplicatedMergeTreeLogEntryData::writeText); other entry types do not.
-            if b"\nalter\n" in data:
-                zk.delete(f"{rmt_zk_path}/log/{log_znode}")
-    finally:
-        zk.stop()
-        zk.close()
+    # competing_node (which SYNCed the pre-ALTER rmt and then detached) is the only replica
+    # that must replay the deleted entries; dummy_node detached before rmt was created, so on
+    # ATTACH it recreates rmt fresh from the current /metadata and is unaffected.
+    delete_alter_metadata_from_table_log(
+        started_cluster, main_node, "table_structure", "rmt"
+    )
 
     competing_node.exec_in_container(
         [
@@ -1565,6 +1570,114 @@ def test_replicated_table_single_missed_alter(started_cluster):
     main_node.query("DROP DATABASE single_alter SYNC")
     dummy_node.query("DROP DATABASE single_alter SYNC")
     competing_node.query("DROP DATABASE single_alter SYNC")
+
+
+def test_replicated_table_missed_alter_with_mutation(started_cluster):
+    # Regression for the missed-ALTER recovery case where the ALTER also has a data-mutation
+    # stage: MODIFY COLUMN produces an ALTER_METADATA log entry plus a mutation whose
+    # MUTATE_PART entries rewrite existing parts. If the ALTER_METADATA entry is cleaned up
+    # from /log while the replica is inactive, the mutation is still in /mutations when the
+    # replica comes back, and updateMutations treats an alter mutation without a matching
+    # ALTER_METADATA queue entry as "metadata already applied"
+    # (ReplicatedMergeTreeAltersSequence::addMutationForAlter), making its MUTATE_PART entries
+    # runnable. The startup repair must queue the metadata resync entry before background
+    # queue processing starts, so the mutation keeps waiting for the metadata stage instead of
+    # mutating data against the stale pre-ALTER structure.
+    main_node.query("DROP DATABASE IF EXISTS alter_mutation SYNC")
+    dummy_node.query("DROP DATABASE IF EXISTS alter_mutation SYNC")
+    competing_node.query("DROP DATABASE IF EXISTS alter_mutation SYNC")
+
+    main_node.query(
+        "CREATE DATABASE alter_mutation ENGINE = Replicated('/clickhouse/databases/alter_mutation', 'shard1', 'replica1');"
+    )
+    dummy_node.query(
+        "CREATE DATABASE alter_mutation ENGINE = Replicated('/clickhouse/databases/alter_mutation', 'shard1', 'replica2');"
+    )
+    competing_node.query(
+        "CREATE DATABASE alter_mutation ENGINE = Replicated('/clickhouse/databases/alter_mutation', 'shard1', 'replica3');"
+    )
+
+    # A Memory table whose metadata file we remove to force recoverLostReplica on restart.
+    competing_node.query("CREATE TABLE alter_mutation.mem (n int) ENGINE=Memory")
+
+    settings = {"distributed_ddl_task_timeout": 0}
+    main_node.query(
+        "CREATE TABLE alter_mutation.rmt (n int, v UInt64, d UInt64) ENGINE=ReplicatedReplacingMergeTree(v) ORDER BY n",
+        settings=settings,
+    )
+    main_node.query("INSERT INTO alter_mutation.rmt VALUES (1, 1, 42)")
+    competing_node.query("SYSTEM SYNC DATABASE REPLICA alter_mutation")
+    competing_node.query("SYSTEM SYNC REPLICA alter_mutation.rmt")
+
+    # Capture the path while the database is still attached (see test_replicated_table_structure_alter).
+    metadata_path = competing_node.query(
+        "SELECT metadata_path FROM system.tables WHERE database='alter_mutation' AND name='mem'"
+    ).strip()
+    db_disk_name = get_database_disk_name(competing_node)
+
+    competing_node.query("DETACH DATABASE alter_mutation")
+
+    # A type change is an alter with both stages: ALTER_METADATA plus a mutation.
+    main_node.query(
+        "ALTER TABLE alter_mutation.rmt MODIFY COLUMN d String", settings=settings
+    )
+    # Wait for the mutation to finish on the attached replicas so both the ALTER_METADATA and
+    # the MUTATE_PART entries are committed to /log before the ALTER_METADATA entry is deleted
+    # below. The mutation znode in /mutations survives until ALL replicas have executed it, so
+    # the detached replica still sees the mutation on recovery - only the metadata stage
+    # becomes unreplayable.
+    assert_eq_with_retry(
+        main_node,
+        "SELECT count() FROM system.mutations WHERE database='alter_mutation' AND table='rmt' AND NOT is_done",
+        "0\n",
+    )
+    main_node.query("INSERT INTO alter_mutation.rmt VALUES (2, 1, 'two')")
+
+    delete_alter_metadata_from_table_log(
+        started_cluster, main_node, "alter_mutation", "rmt"
+    )
+
+    competing_node.exec_in_container(
+        [
+            "/usr/bin/clickhouse",
+            "disks",
+            "-C",
+            "/etc/clickhouse-server/config.xml",
+            "--disk",
+            f"{db_disk_name}",
+            "--save-logs",
+            "--query",
+            f"remove {metadata_path}",
+        ],
+        user="root",
+    )
+    # The restart re-attaches the database (DETACH is not persistent) and, because the mem
+    # metadata file was removed, triggers recoverLostReplica for this replica.
+    competing_node.restart_clickhouse(kill=True)
+
+    competing_node.query("SYSTEM SYNC DATABASE REPLICA alter_mutation")
+    competing_node.query("SYSTEM SYNC REPLICA alter_mutation.rmt")
+    # The recovered replica must converge to the post-ALTER structure and execute the mutation
+    # on top of it, in that order.
+    assert_eq_with_retry(
+        competing_node,
+        "SELECT type FROM system.columns WHERE database='alter_mutation' AND table='rmt' AND name='d'",
+        "String\n",
+    )
+    assert_eq_with_retry(
+        competing_node,
+        "SELECT count() FROM system.mutations WHERE database='alter_mutation' AND table='rmt' AND NOT is_done",
+        "0\n",
+    )
+    assert (
+        competing_node.query("SELECT n, v, d FROM alter_mutation.rmt ORDER BY n")
+        == "1\t1\t42\n2\t1\ttwo\n"
+    )
+    assert "mem" in competing_node.query("SHOW TABLES FROM alter_mutation")
+
+    main_node.query("DROP DATABASE alter_mutation SYNC")
+    dummy_node.query("DROP DATABASE alter_mutation SYNC")
+    competing_node.query("DROP DATABASE alter_mutation SYNC")
 
 
 def test_modify_comment(started_cluster):

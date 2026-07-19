@@ -3973,50 +3973,72 @@ void StorageReplicatedMergeTree::cloneMetadataIfNeeded(const String & source_rep
 
 bool StorageReplicatedMergeTree::syncTableStructureFromZooKeeperIfNeeded()
 {
-    /// After DatabaseReplicated recovery a matching-UUID table is kept as is and is expected to converge
-    /// its structure via table-level replication. But if the ALTER_METADATA log entry was already cleaned
-    /// up from zookeeper_path/log by the time this replica processes the log (e.g. it was detached across
-    /// the ALTER, and the active replicas already executed and GC'd the entry), pullLogsToQueue advances the
-    /// log pointer past the missing entry without applying it, and SYSTEM SYNC REPLICA only drains the queue.
-    /// So the local structure can stay behind the authoritative one in zookeeper_path/metadata indefinitely.
-    /// This is the same situation cloneMetadataIfNeeded() repairs for a cloned replica; do it here too, but
-    /// source the structure and metadata version from the table root (zookeeper_path). We prepend a dummy
-    /// ALTER_METADATA to our own queue so normal queue processing applies it (setTableStructure), instead of a
-    /// strict re-attach which would throw INCOMPATIBLE_COLUMNS.
+    /// If this replica was inactive across an ALTER (e.g. it was detached, or its Replicated database
+    /// replica was detached) and the corresponding ALTER_METADATA log entry was cleaned up from
+    /// zookeeper_path/log before this replica could pull it, the local structure stays behind the
+    /// authoritative one in zookeeper_path/metadata indefinitely: pullLogsToQueue advances the log
+    /// pointer past the missing entry without applying it, and SYSTEM SYNC REPLICA only drains the
+    /// replication queue. cloneMetadataIfNeeded repairs exactly this for a replica that was marked lost
+    /// (from cloneReplica), but a replica that missed an entry without being marked lost never takes
+    /// that path. Repair it here in the same way: prepend a dummy ALTER_METADATA to our own replication
+    /// queue, sourcing the structure and the metadata version from the table root (zookeeper_path), so
+    /// that normal queue processing applies it (setTableStructure). A strict re-attach
+    /// (checkTableStructure with strict_check = true) would instead throw INCOMPATIBLE_COLUMNS and
+    /// leave the table readonly.
+    ///
+    /// This runs from ReplicatedMergeTreeRestartingThread::tryStartup() after the queue is loaded and
+    /// the log is drained, but before the replica leaves readonly mode and starts background queue
+    /// processing. The position is essential:
+    ///  - An alter with a data-mutation stage (e.g. MODIFY COLUMN) requires the metadata stage to be
+    ///    applied before the data stage: updateMutations treats an alter mutation whose ALTER_METADATA
+    ///    entry is missing from the queue as "metadata already applied"
+    ///    (ReplicatedMergeTreeAltersSequence::addMutationForAlter), making its MUTATE_PART entries
+    ///    runnable. The repair entry must therefore be in the queue before background processing
+    ///    starts, otherwise a recovered replica could mutate data against a stale structure. Inserting
+    ///    it flips an already-registered mutation with the same alter_version back to
+    ///    waiting-for-metadata (see ReplicatedMergeTreeAltersSequence::addMetadataAlter).
+    ///  - No background workers touch the queue during startup, so the checks and the insert below do
+    ///    not race with entry execution or removal, and queue.load() has already materialized every
+    ///    /queue znode into the in-memory queue - including a repair entry that a previous incarnation
+    ///    created but did not live long enough to see executed. The in-memory queue is therefore a
+    ///    complete picture of the pending work.
     auto zookeeper = getZooKeeper();
 
     /// The authoritative table-wide metadata version is the Coordination::Stat.version of the
     /// zookeeper_path/metadata znode: each ALTER does a versioned set on it and alter_version =
-    /// getMetadataVersion() + 1 tracks that (the in-memory metadata_version is derived from this
-    /// stat.version at startup). ReplicatedMergeTree has NO table-root /metadata_version node; the
-    /// only metadata_version znodes are per-replica (replica_path/metadata_version).
+    /// getMetadataVersion() + 1 tracks that (see alter()). ReplicatedMergeTree has NO table-root
+    /// /metadata_version node; the only metadata_version znodes are per-replica
+    /// (replica_path/metadata_version). If the stat version is still 0, the table was never altered
+    /// and there is nothing to repair (this also keeps the non-strict structure check below from
+    /// throwing INCOMPATIBLE_COLUMNS, which it does when /metadata was never modified).
     Coordination::Stat table_metadata_stat;
     String zk_metadata_probe;
     if (!zookeeper->tryGet(zookeeper_path + "/metadata", zk_metadata_probe, &table_metadata_stat))
         return false;
-
-    auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
-
-    /// The in-memory metadata_version is NOT reliable proof that the local structure already matches ZooKeeper.
-    /// table->startup() runs before DatabaseReplicated recovery, and fixReplicaMetadataVersionIfNeeded() there
-    /// advances replica_path/metadata_version (and thus the in-memory version) to the current zookeeper_path/metadata
-    /// version whenever there is no queued ALTER_METADATA. That is exactly the single-missed-ALTER case this function
-    /// repairs: the log entry was already cleaned up, so startup can bump the version to the ZooKeeper /metadata
-    /// version while the on-disk structure is still pre-ALTER. A version-only guard would then falsely conclude we
-    /// are up to date and skip the repair, leaving the stale structure indefinitely. So compare the actual local
-    /// metadata + columns against the ZooKeeper snapshot instead (non-strict, like checkTableStructure during attach)
-    /// rather than the version counter. checkTableStructureAttempt also writes the /metadata stat.version we need.
-    Int32 zk_metadata_version = table_metadata_stat.version;
-    if (checkTableStructureAttempt(zookeeper_path, metadata_snapshot, &zk_metadata_version, /* strict_check */ false))
+    if (table_metadata_stat.version == 0)
         return false;
 
-    LOG_WARNING(log, "Local table structure is behind the structure (metadata version {}) in ZooKeeper after recovery. "
-                     "Forcing a metadata resync from {}.",
-                zk_metadata_version, zookeeper_path);
+    /// The replica's stored metadata_version is NOT reliable proof that the local structure already
+    /// matches ZooKeeper: fixReplicaMetadataVersionIfNeeded advances replica_path/metadata_version to
+    /// the current zookeeper_path/metadata version whenever the stored version still reads 0 and no
+    /// ALTER_METADATA is queued. That is exactly the single-missed-ALTER case this function repairs
+    /// (for a replica that never applied an alter locally): a version-only guard would falsely
+    /// conclude the replica is up to date and skip the repair, leaving the stale structure
+    /// indefinitely. So compare the actual local metadata + columns against the ZooKeeper snapshot
+    /// (non-strict, so a mismatch returns false instead of throwing).
+    auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
+    if (checkTableStructureAttempt(zookeeper_path, metadata_snapshot, nullptr, /* strict_check */ false))
+        return false;
 
-    /// Read a consistent /metadata + /columns snapshot from the table root (same approach as cloneMetadataIfNeeded).
-    /// Capture the /metadata stat.version of the snapshot we actually take: it may be newer than the version probed
-    /// above if a concurrent ALTER lands here, and it must match the metadata_str/columns_str the entry carries.
+    LOG_WARNING(log, "Local table structure is different from the structure (metadata version {}) in ZooKeeper. "
+                     "Probably this replica was inactive while an ALTER_METADATA log entry was cleaned up from the log. "
+                     "Forcing a metadata resync from {}.",
+                table_metadata_stat.version, zookeeper_path);
+
+    /// Read a consistent /metadata + /columns snapshot from the table root (same approach as
+    /// cloneMetadataIfNeeded). Capture the /metadata stat version of the snapshot we actually take: it
+    /// may be newer than the version probed above if a concurrent ALTER lands here, and it must match
+    /// the metadata_str/columns_str the repair entry carries.
     String zk_metadata;
     String zk_columns;
     Int32 snapshot_metadata_version = 0;
@@ -4047,238 +4069,66 @@ bool StorageReplicatedMergeTree::syncTableStructureFromZooKeeperIfNeeded()
             zkutil::KeeperMultiException::check(code, ops, responses);
     }
 
-    /// The applied in-memory metadata version being behind does not by itself mean the entry is missing:
-    /// the real ALTER_METADATA (version snapshot_metadata_version) may still be present. Injecting a second
-    /// entry with the same alter_version would corrupt the alters sequence (ReplicatedMergeTreeAltersSequence
-    /// keeps a single slot per alter_version; the duplicate flips it back to unfinished and the first completion
-    /// erases it, so the second finishMetadataAlter hits its head invariant). We must only enqueue the synthetic
-    /// repair if the real entry is genuinely gone, and checking /replicas/<me>/queue alone is not enough: the real
-    /// ALTER_METADATA can still be pending in zookeeper_path/log, which SYSTEM SYNC REPLICA / pullLogsToQueue would
-    /// later copy into /queue with the same alter_version. So serialize against log draining: drain /log to head
-    /// first (this advances log_pointer under pull_logs_to_queue_mutex and copies any pending ALTER_METADATA from
-    /// /log into /replicas/<me>/queue and the in-memory queue), then re-check the authoritative /queue. Because a
-    /// versioned set on /metadata and the matching /log entry are written in one atomic multi (see alter()), once
-    /// our snapshot confirms /metadata == snapshot_metadata_version the real entry was in /log at that point; after
-    /// the drain it is either now in /queue (so we suppress the repair) or was already GC'd from /log. In the GC'd
-    /// case the drain has moved log_pointer to head, so no later pullLogsToQueue can re-copy that version (all future
-    /// /log entries carry a strictly greater alter_version), which makes the synthetic entry safe from duplication.
-    /// Use FIX_METADATA_VERSION: this runs from recoverLostReplica during DatabaseReplicated startup, before
-    /// ReplicatedMergeTreeRestartingThread has cleared is_readonly, so any reason other than LOAD/FIX_METADATA_VERSION
-    /// trips the readonly guard in pullLogsToQueue and throws LOGICAL_ERROR. FIX_METADATA_VERSION is the reason the
-    /// sibling startup-time metadata drain (fixReplicaMetadataVersionIfNeeded) already uses for the same situation;
-    /// reason only gates that readonly check and does not change the drain itself.
-    queue.pullLogsToQueue(zookeeper, {}, ReplicatedMergeTreeQueue::FIX_METADATA_VERSION);
-
-    /// Hold pull_logs_to_queue_mutex for the whole classify-and-materialize region below (down to the
-    /// final return) so the ZooKeeper /queue listing, the in-memory queue snapshot, and the
-    /// queue.insert()/create that act on them form one atomic step with respect to pullLogsToQueue.
-    /// pullLogsToQueue creates a /replicas/<me>/queue/queue-* znode in ZooKeeper and only then
-    /// insertUnlocked()s the same entry into RAM, both under this mutex (ReplicatedMergeTreeQueue.cpp
-    /// pullLogsToQueue). Background queue workers are already active by the time recoverLostReplica runs,
-    /// so without holding it a concurrent UPDATE pull could be observed half-done -- its znode already
-    /// present in ZooKeeper but the entry not yet inserted into RAM -- and getChildren()/getEntries() taken
-    /// at different instants would then see the znode but not the RAM entry. A real ALTER_METADATA would be
-    /// misclassified as a synthetic orphan and inserted a second time (queue.insert() does not deduplicate
-    /// by znode), reopening the same alter_version in ReplicatedMergeTreeAltersSequence and tripping
-    /// finishMetadataAlter's head invariant. Holding the mutex makes the ZooKeeper-vs-RAM comparison and the
-    /// insert see either a fully-applied pull or none in between. Lock order matches pullLogsToQueue's own
-    /// (pull_logs_to_queue_mutex, then state_mutex via queue.getEntries()/insert()), so there is no
-    /// deadlock; the drain above stays outside this scope because the mutex is non-recursive. The case (b)
-    /// window below (removeProcessedEntry erases from RAM before deleting the znode, without this mutex) is
-    /// orthogonal and is still handled by the live-structure recheck, not by this lock.
-    std::lock_guard pull_logs_lock(queue.pull_logs_to_queue_mutex);
+    /// A lagging local structure does not by itself mean the real ALTER_METADATA entry is gone: it may
+    /// simply not be applied yet. Injecting a second entry with the same alter_version would corrupt
+    /// the alters sequence (ReplicatedMergeTreeAltersSequence keeps a single slot per alter_version;
+    /// the first completion erases it and the second finishMetadataAlter trips the head invariant), so
+    /// the repair must only be enqueued if the real entry cannot be applied anymore. A versioned set on
+    /// /metadata and the matching /log entry are committed in one atomic multi (see alter()), so once
+    /// the snapshot above has confirmed /metadata == snapshot_metadata_version, the real entry with
+    /// that alter_version was present in /log at that moment - unless it was already cleaned up. Drain
+    /// the log to head, then check the in-memory queue: either the entry is in the queue now (normal
+    /// processing will apply it; no repair needed), or it was cleaned up and is gone for good (the
+    /// drain moved log_pointer to head and every future log entry carries a strictly greater
+    /// alter_version, so the repair entry cannot be duplicated by a later pull). Use reason LOAD
+    /// because the replica is still in readonly mode at this point of the startup (other reasons trip
+    /// the readonly guard in pullLogsToQueue).
+    queue.pullLogsToQueue(zookeeper, {}, ReplicatedMergeTreeQueue::LOAD);
 
     {
-        Strings queue_znodes = zookeeper->getChildren(replica_path + "/queue");
-        Strings queue_entry_paths;
-        queue_entry_paths.reserve(queue_znodes.size());
-        for (const String & znode : queue_znodes)
-            queue_entry_paths.emplace_back(replica_path + "/queue/" + znode);
-
-        /// Snapshot the znode names currently materialized in the in-memory queue so we can tell an entry that
-        /// normal processing already knows about apart from one that only exists in ZooKeeper. This function's
-        /// only queue.load() ran before startupDatabaseAsync, and pullLogsToQueue (just run above) copies each
-        /// /log entry into ZooKeeper /queue AND the in-memory queue in one step, so the only way a /queue znode
-        /// can exist without a matching in-memory entry is a synthetic repair znode a previous recovery attempt
-        /// created before it managed to queue.insert() it (recoverLostReplica is retried by
-        /// DatabaseReplicatedDDLWorker::initializeReplication() without restarting the table, so nothing reloads
-        /// that orphan). Treating ZooKeeper presence alone as "already queued" would leave such an orphan
-        /// unprocessed forever and the structure stale.
-        std::unordered_set<String> in_memory_queue_znodes;
+        ReplicatedMergeTreeQueue::LogEntriesData queue_entries;
+        queue.getEntries(queue_entries);
+        for (const auto & queued_entry : queue_entries)
         {
-            ReplicatedMergeTreeQueue::LogEntriesData in_memory_entries;
-            queue.getEntries(in_memory_entries);
-            for (const auto & in_memory_entry : in_memory_entries)
-                in_memory_queue_znodes.insert(in_memory_entry.znode_name);
-        }
-
-        auto queue_entry_data = zookeeper->tryGet(queue_entry_paths);
-        for (size_t i = 0; i < queue_entry_paths.size(); ++i)
-        {
-            const auto & res = queue_entry_data[i];
-            if (res.error != Coordination::Error::ZOK)
-                continue;
-            auto queued = ReplicatedMergeTreeLogEntry::parse(res.data, res.stat, format_version);
-            if (queued->type == LogEntry::ALTER_METADATA && queued->alter_version >= snapshot_metadata_version)
+            if (queued_entry.type == LogEntry::ALTER_METADATA && queued_entry.alter_version >= snapshot_metadata_version)
             {
-                queued->znode_name = queue_znodes[i];
-                if (in_memory_queue_znodes.contains(queued->znode_name))
-                {
-                    /// The real (or a previously repaired) ALTER_METADATA is already in the in-memory queue and
-                    /// normal processing will apply it. No synthetic entry needed.
-                    LOG_INFO(log, "Local metadata version ({}) is behind ZooKeeper ({}), but an ALTER_METADATA entry "
-                                  "with alter_version {} is already queued in {} after draining the log; skipping the "
-                                  "synthetic metadata resync.",
-                             metadata_snapshot->getMetadataVersion(), snapshot_metadata_version, queued->alter_version,
-                             queue_entry_paths[i]);
-                    return false;
-                }
-
-                /// The entry exists in ZooKeeper /queue but is not in the in-memory queue. There are two ways
-                /// that can happen, and only one of them needs repair:
-                ///  (a) a synthetic orphan left by an earlier recovery attempt that created the znode and then
-                ///      failed before queue.insert() (the retry path never reloads the queue), or
-                ///  (b) a real ALTER_METADATA that normal processing already finished: removeProcessedEntry erases
-                ///      the entry from RAM first and only then deletes its znode, without pull_logs_to_queue_mutex,
-                ///      so between those two steps the znode still exists while the entry is already gone from RAM.
-                /// In case (b) the alter has already been applied locally (executeMetadataAlter -> setTableStructure
-                /// runs before removeProcessedEntry), so re-inserting it would reopen the same alter_version in the
-                /// alters sequence and re-execute an already-applied entry. Case (b) has two shapes: V was the last
-                /// applied (live structure is exactly V), or V finished and a later V+1 already applied on top of it
-                /// (live structure is at V+1). Both are "already applied"; only case (a) needs repair.
-                ///
-                /// Distinguish them with a version check FIRST, then a structural compare (see the two checks below),
-                /// because neither signal alone is sufficient:
-                ///   - a structural compare against the ENTRY's own metadata_str/columns_str only recognises the
-                ///     "live == V" shape. If V finished and V+1 already applied locally, the live structure is at
-                ///     V+1 != V, so the compare reports "still lags" and would wrongly resurrect the completed V --
-                ///     reopening a finished alter_version in the alters sequence. (Comparing against the live
-                ///     zookeeper_path/metadata znode has the same flaw, and is additionally a moving target.)
-                ///   - a version-only "up to date" guard is also unsafe: fixReplicaMetadataVersionIfNeeded bumps
-                ///     replica_path/metadata_version (and the in-memory version) to the ZK /metadata version at
-                ///     startup whenever no ALTER_METADATA is queued, even while the on-disk structure is still stale
-                ///     -- exactly the single-missed-ALTER case this function repairs. So the version can read "past"
-                ///     an entry whose structure is not applied.
-                /// The version check handles only the strictly-greater "superseded" shape (immune to that startup
-                /// bump because a bump advances only to the current version, never past a not-yet-applied one), and
-                /// the equal case falls through to the structural compare, which is authoritative when the version
-                /// is not ahead. Together they cover both case-(b) shapes without misclassifying a case-(a) orphan.
-                ///
-                /// Re-read the LIVE in-memory metadata here rather than reusing metadata_snapshot captured before the
-                /// queue scan: in case (b) executeMetadataAlter -> setTableStructure -> setInMemoryMetadata has already
-                /// committed the new structure and version, and the pre-scan snapshot still holds the old pre-alter
-                /// values. The storage metadata is multiversion, so getInMemoryMetadataPtr(bypass_metadata_cache =
-                /// true) returns the latest committed version without a lock. Comparing the stale snapshot would
-                /// always report "still lags" and resurrect the finished entry.
-                auto live_metadata_snapshot = getInMemoryMetadataPtr(getContext(), true);
-
-                /// Case (b) has two sub-shapes and the version-anchored check below covers the one that a
-                /// structural compare against this entry misses. executeMetadataAlter applies each ALTER_METADATA
-                /// under setTableStructure(..., alter_version), which calls setMetadataVersion(alter_version), so
-                /// the live in-memory metadata version equals the alter_version of the last applied entry. Metadata
-                /// alters finish strictly in order (ReplicatedMergeTreeAltersSequence keeps one slot per version and
-                /// finishMetadataAlter asserts the head equals the finishing version), so the version only ever
-                /// advances by applying V, then V+1, then V+2 in sequence. Therefore:
-                ///   live metadata version >  queued->alter_version  =>  this entry (V) and every version up to the
-                ///       live one has already been applied and finished. Even if V just finished (RAM-removed, znode
-                ///       not yet deleted) and a concurrent replica's V+1 already committed AND was applied locally,
-                ///       the live structure is at V+1 and a compare against V's own strings would falsely report
-                ///       "still lags" and resurrect the finished V. The version check catches exactly this and skips.
-                ///   live metadata version == queued->alter_version  =>  V is the last applied; fall through to the
-                ///       structural compare (defends the version counter being bumped without the structure, see
-                ///       fixReplicaMetadataVersionIfNeeded, which advances replica_path/metadata_version to the ZK
-                ///       /metadata version at startup when no ALTER_METADATA is queued while the structure is stale).
-                ///   live metadata version <  queued->alter_version  =>  V is not applied; genuine orphan (case a).
-                /// A version-only "up to date" guard is unsafe on its own (that startup bump can lie), which is why
-                /// the strictly-greater case is a separate skip and the equal case still verifies the structure.
-                if (live_metadata_snapshot->getMetadataVersion() > queued->alter_version)
-                {
-                    LOG_INFO(log, "An ALTER_METADATA entry with alter_version {} exists in {} but not in the in-memory "
-                                  "queue; the live metadata version ({}) is already past it, so this alter was applied "
-                                  "and superseded by a later one (removeProcessedEntry removes it from memory before "
-                                  "ZooKeeper). Not materializing it.",
-                             queued->alter_version, queue_entry_paths[i], live_metadata_snapshot->getMetadataVersion());
-                    return false;
-                }
-
-                /// Parse the entry's own columns/metadata and normalize the same way checkTableStructureAttempt does
-                /// for the ZooKeeper snapshot (parseAndNormalize + checkEquals, non-strict so a mismatch returns
-                /// false instead of throwing). columns must be parsed from the entry's own columns_str, matching the
-                /// column set the entry's metadata_str describes (see parseAndNormalize contract).
-                auto entry_columns = ColumnsDescription::parse(queued->columns_str);
-                auto entry_metadata = ReplicatedMergeTreeTableMetadata::parseAndNormalize(
-                    queued->metadata_str, entry_columns,
-                    live_metadata_snapshot->add_minmax_index_for_numeric_columns,
-                    live_metadata_snapshot->add_minmax_index_for_string_columns,
-                    getContext());
-                ReplicatedMergeTreeTableMetadata local_metadata(*this, live_metadata_snapshot);
-                bool metadata_matches = local_metadata.checkEquals(
-                    entry_metadata, live_metadata_snapshot->columns, live_metadata_snapshot->virtuals,
-                    getStorageID().getNameForLogs(), getContext(),
-                    /* check_index_granularity */ true, /* strict_check */ false, log.load());
-                if (metadata_matches && live_metadata_snapshot->getColumns() == entry_columns)
-                {
-                    LOG_INFO(log, "An ALTER_METADATA entry with alter_version {} exists in {} but not in the in-memory "
-                                  "queue; the local structure already matches this entry's own structure, so this alter "
-                                  "was already applied (removeProcessedEntry removes it from memory before ZooKeeper). "
-                                  "Not materializing it.",
-                             queued->alter_version, queue_entry_paths[i]);
-                    return false;
-                }
-
-                /// The local structure still lags, so this is a genuine synthetic orphan from an earlier recovery
-                /// attempt. Materialize exactly this znode into the in-memory queue so normal processing applies it,
-                /// instead of creating a second same-alter_version entry (which would corrupt the
-                /// single-slot-per-alter_version alters sequence). This reuses the entry the prior attempt already
-                /// created, so the repair is idempotent across initializeReplication() retries.
-                LOG_INFO(log, "Local metadata version ({}) is behind ZooKeeper ({}); an ALTER_METADATA entry with "
-                              "alter_version {} already exists in {} but was not loaded into the in-memory queue "
-                              "(orphaned by an earlier recovery attempt). Materializing it instead of creating a new one.",
-                         metadata_snapshot->getMetadataVersion(), snapshot_metadata_version, queued->alter_version,
-                         queue_entry_paths[i]);
-                LogEntryPtr orphan_entry = queued;
-                queue.insert(zookeeper, orphan_entry);
-                return true;
+                LOG_INFO(log, "Local table structure is behind the structure (metadata version {}) in ZooKeeper, but an "
+                              "ALTER_METADATA entry with alter_version {} is already queued ({}); skipping the metadata resync.",
+                         snapshot_metadata_version, queued_entry.alter_version, queued_entry.znode_name);
+                return false;
             }
         }
     }
 
     auto dummy_alter = std::make_shared<LogEntry>();
     dummy_alter->type = LogEntry::ALTER_METADATA;
-    /// Locally injected repair entry, not replicated from another replica. Leave source_replica empty (the
-    /// local-entry marker) so a filtered SYSTEM SYNC REPLICA FROM <replica> always waits for it: addSubscriber
-    /// treats empty-source entries as required, but would skip a self-sourced entry unless the caller names us.
+    /// Locally injected repair entry, not replicated from another replica. Leave source_replica empty
+    /// (the local-entry marker) so a filtered SYSTEM SYNC REPLICA FROM <replica> always waits for it:
+    /// addSubscriber treats empty-source entries as required, but would skip a self-sourced entry
+    /// unless the caller names us.
     dummy_alter->source_replica = "";
     dummy_alter->metadata_str = zk_metadata;
     dummy_alter->columns_str = zk_columns;
-    /// alter_version is the table's metadata-version counter, which is exactly the /metadata znode stat.version:
-    /// each ALTER does a versioned set on /metadata and alter_entry->alter_version = getMetadataVersion() + 1
-    /// tracks that count. Use the stat.version of the consistent snapshot we just took so the version matches the
-    /// metadata_str/columns_str this entry carries and is >= every version already in the alters sequence (never
-    /// inserted ahead of an in-flight lower alter, so finishMetadataAlter's head invariant holds).
+    /// Use the /metadata stat version of the consistent snapshot taken above, so the alter_version
+    /// matches the metadata_str/columns_str this entry carries and is >= every version already in the
+    /// alters sequence (never inserted ahead of an in-flight lower alter, so finishMetadataAlter's
+    /// head invariant holds).
     dummy_alter->alter_version = snapshot_metadata_version;
     dummy_alter->create_time = time(nullptr);
 
-    /// Create the entry in our replication queue, exactly like cloneMetadataIfNeeded().
+    /// Create the entry in our replication queue, exactly like cloneMetadataIfNeeded.
     String path_created = zookeeper->create(replica_path + "/queue/queue-", dummy_alter->toString(), zkutil::CreateMode::PersistentSequential);
     dummy_alter->znode_name = path_created.substr(path_created.find_last_of('/') + 1);
-    LOG_INFO(log, "Created an ALTER_METADATA entry {} to force metadata update after recovery. Entry: {}",
+    LOG_INFO(log, "Created an ALTER_METADATA entry {} to force metadata update. Entry: {}",
              path_created, dummy_alter->toString());
 
-    /// cloneMetadataIfNeeded() can rely on the queue.load() that ReplicatedMergeTreeRestartingThread::tryStartup()
-    /// runs right after it, in the same startup, to pull the new /queue entry into RAM. This recovery path has no
-    /// such following load: recoverLostReplica() runs from the DDL worker after the table already started and loaded
-    /// its queue (DatabaseReplicated::startupDatabaseAsync -> initDDLWorker runs only after all table startup tasks
-    /// complete), so the entry would otherwise sit in Keeper and never reach the in-memory queue. Materialize it now.
-    /// Insert ONLY this newly created entry (we already know its znode_name), never re-enumerate the whole /queue:
-    /// recoverLostReplica() explicitly waited for all table startup tasks, so background queue workers are already
-    /// active. A full queue.load() rebuilds already_loaded_paths from RAM and re-reads every znode still under
-    /// /replicas/<me>/queue, but removeProcessedEntry erases an entry from RAM before removing its znode and without
-    /// pull_logs_to_queue_mutex; a load() racing that gap would see a stale znode as "not loaded" and re-push an
-    /// already-completed entry (e.g. reinsert a finished ALTER_METADATA into alter_sequence). queue.insert() only
-    /// adds this one known entry under state_mutex, exactly like the runtime broken-part fetch path does with
-    /// active workers, so it cannot re-push anything. Safe for the alters sequence too: dummy_alter->alter_version
-    /// is the authoritative metadata version from ZooKeeper, >= every version already in the sequence.
+    /// cloneMetadataIfNeeded can rely on the queue.load() that tryStartup() runs right after
+    /// cloneReplica to pull its new /queue entry into RAM; this function runs after that load, so
+    /// insert the entry into the in-memory queue explicitly. If the server dies between the create
+    /// above and this insert, the next startup's queue.load() picks the znode up, so the repair entry
+    /// is never orphaned. Applying it is idempotent: executeMetadataAlter skips entries whose
+    /// alter_version is behind the table's current metadata version, so a leftover repair entry from a
+    /// dead incarnation is harmless even if the structure moved on in the meantime.
     LogEntryPtr dummy_alter_entry = dummy_alter;
     queue.insert(zookeeper, dummy_alter_entry);
     return true;
