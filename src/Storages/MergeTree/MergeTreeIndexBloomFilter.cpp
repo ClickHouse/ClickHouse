@@ -130,6 +130,17 @@ void MergeTreeIndexGranuleBloomFilter::fillingBloomFilter(BloomFilterPtr & bf, c
 namespace
 {
 
+/// A String value that cannot be parsed as the target type (e.g. a `Date` column compared
+/// with a date-and-time string, see the similar handling in `KeyCondition`) must not fail
+/// the whole query during index analysis. Return a Null field instead, so that the caller
+/// excludes the atom from the index condition.
+Field convertFieldSkippingUnparsableDateStrings(const Field & field, const IDataType & type, const IDataType * hint = nullptr)
+{
+    if (field.getType() == Field::Types::String && WhichDataType(type).isDateOrDate32())
+        return tryConvertFieldToType(field, type, hint);
+    return convertFieldToType(field, type, hint);
+}
+
 ColumnWithTypeAndName getPreparedSetInfo(const ConstSetPtr & prepared_set)
 {
     if (prepared_set->getDataTypes().size() == 1)
@@ -702,7 +713,7 @@ static ColumnPtr createColumnFromConstantArray(const Field & value_field, const 
         if ((f.isNull() && !is_nullable) || f.isDecimal(f.getType())) /// NOLINT(readability-static-accessed-through-instance)
             return nullptr;
 
-        auto converted = convertFieldToType(f, *actual_type);
+        auto converted = convertFieldSkippingUnparsableDateStrings(f, *actual_type);
         if (converted.isNull())
             return nullptr;
 
@@ -818,7 +829,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
                 {
                     out.function = RPNElement::FUNCTION_HAS;
                     const DataTypePtr actual_type = BloomFilter::getPrimitiveType(array_type->getNestedType());
-                    auto converted_field = convertFieldToType(value_field, *actual_type, value_type.get());
+                    auto converted_field = convertFieldSkippingUnparsableDateStrings(value_field, *actual_type, value_type.get());
                     if (converted_field.isNull())
                         return false;
 
@@ -860,7 +871,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
 
             out.function = function_name == "equals" ? RPNElement::FUNCTION_EQUALS : RPNElement::FUNCTION_NOT_EQUALS;
             const DataTypePtr actual_type = BloomFilter::getPrimitiveType(index_type);
-            auto converted_field = convertFieldToType(value_field, *actual_type, value_type.get());
+            auto converted_field = convertFieldSkippingUnparsableDateStrings(value_field, *actual_type, value_type.get());
             if (converted_field.isNull())
                 return false;
 
@@ -907,7 +918,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
 
         out.function = RPNElement::FUNCTION_HAS;
         const DataTypePtr actual_type = BloomFilter::getPrimitiveType(array_type->getNestedType());
-        auto converted_field = convertFieldToType(value_field, *actual_type, value_type.get());
+        auto converted_field = convertFieldSkippingUnparsableDateStrings(value_field, *actual_type, value_type.get());
         if (converted_field.isNull())
             return false;
 

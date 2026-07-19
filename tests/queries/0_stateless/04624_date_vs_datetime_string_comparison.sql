@@ -56,6 +56,13 @@ SELECT count() FROM t_date_vs_datetime_string WHERE d = '2026-01-01 00:00:00';
 SELECT count() FROM t_date_vs_datetime_string WHERE d > '2026-01-01 12:00:00';
 DROP TABLE t_date_vs_datetime_string;
 
+-- A bloom filter skip index on a `Date` column must not fail the query either.
+DROP TABLE IF EXISTS t_date_bloom_filter;
+CREATE TABLE t_date_bloom_filter (d Date, INDEX bf d TYPE bloom_filter GRANULARITY 1) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t_date_bloom_filter VALUES ('2026-01-01'), ('2026-01-02'), ('2026-01-03');
+SELECT count() FROM t_date_bloom_filter WHERE d = '2026-01-02 00:00:00';
+DROP TABLE t_date_bloom_filter;
+
 SELECT 'Invalid strings still throw';
 SELECT toDate('2026-01-01') = 'garbage'; -- { serverError CANNOT_PARSE_DATE }
 SELECT toDate32('2026-01-01') = 'garbage'; -- { serverError CANNOT_PARSE_DATE }
