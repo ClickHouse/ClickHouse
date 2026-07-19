@@ -772,6 +772,45 @@ def test_timestamp_modifier_fixed_evaluation_time():
     )
 
 
+def test_timestamp_modifier_fixed_evaluation_time_subquery():
+    # Behavior: a subquery with a fixed evaluation time keeps its full fixed window (evaluation points aligned
+    # with the subquery step within the window ending at the fixed time), not just its first step.
+    do_query_test(
+        "test[1m:10s] @ 130",
+        250,
+        '{"resultType": "matrix", "result": [{"metric": {"__name__": "test"}, "values": [[110, "1"], [120, "1"], [130, "3"]]}]}',
+        [
+            [
+                "[('__name__','test')]",
+                "[('1970-01-01 00:01:50.000',1),('1970-01-01 00:02:00.000',1),('1970-01-01 00:02:10.000',3)]",
+            ]
+        ],
+    )
+
+    # Behavior: a range-vector function over a fixed-time subquery aggregates the full fixed window.
+    do_query_test(
+        "changes(test[1m:10s] @ 130)",
+        250,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [250, "1"]}]}',
+        [["[]", "1970-01-01 00:04:10.000", 1]],
+    )
+
+    # Behavior: in a range query the value aggregated over the fixed window is repeated across the outer grid.
+    do_range_query_test(
+        "changes(test[1m:10s] @ 130)",
+        130,
+        250,
+        60,
+        '{"resultType": "matrix", "result": [{"metric": {}, "values": [[130, "1"], [190, "1"], [250, "1"]]}]}',
+        [
+            [
+                "[]",
+                "[('1970-01-01 00:02:10.000',1),('1970-01-01 00:03:10.000',1),('1970-01-01 00:04:10.000',1)]",
+            ]
+        ],
+    )
+
+
 def test_function_over_time():
     do_query_test(
         "last_over_time(test[45s])[120s:15s]",

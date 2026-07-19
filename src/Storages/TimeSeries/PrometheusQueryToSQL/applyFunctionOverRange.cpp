@@ -165,8 +165,12 @@ SQLQueryPiece applyFunctionOverRange(
     auto argument = std::move(arguments[0]);
 
     std::optional<NodeEvaluationRange> fixed_argument_range;
-    if (argument.store_method == StoreMethod::RAW_DATA && argument.node->node_type == NodeType::Offset)
+    if ((argument.store_method == StoreMethod::RAW_DATA || argument.store_method == StoreMethod::VECTOR_GRID)
+        && argument.node->node_type == NodeType::Offset)
     {
+        /// A range argument under a fixed evaluation time (`@`): raw samples of a range selector, or the grid of
+        /// a subquery kept intact by `setEvaluationTime`. Aggregate the fixed window first and then repeat the
+        /// resulting value across the outer query grid (see below).
         const auto * offset_node = static_cast<const PQT::Offset *>(argument.node);
         if (offset_node->at_timestamp)
             fixed_argument_range = context.node_range_getter.get(offset_node->getExpression());

@@ -139,6 +139,16 @@ namespace
             case StoreMethod::SCALAR_GRID:
             case StoreMethod::VECTOR_GRID:
             {
+                if (expression.type == ResultType::RANGE_VECTOR)
+                {
+                    /// A range vector stored as a grid (produced by a subquery) is already evaluated over the fixed
+                    /// window planned by `NodeEvaluationRangeGetter` at the fixed evaluation time. Keep the grid intact
+                    /// so range-vector functions can aggregate that fixed window first and then repeat the result
+                    /// across the outer query grid (see `applyFunctionOverRange`), and so a root matrix query
+                    /// returns the full fixed window rather than its first step.
+                    return std::move(expression);
+                }
+
                 /// For scalar grid:
                 /// SELECT arrayResize([], <count_of_time_steps>, values[1])) AS values
                 /// FROM <scalar_grid>
