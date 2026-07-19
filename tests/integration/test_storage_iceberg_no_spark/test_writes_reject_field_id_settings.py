@@ -2,6 +2,7 @@ import pytest
 
 from helpers.iceberg_utils import (
     create_iceberg_table,
+    get_creation_expression,
     get_uuid_str,
 )
 
@@ -11,25 +12,29 @@ from helpers.iceberg_utils import (
 def test_writes_reject_field_id_settings(
     started_cluster_iceberg_no_spark, format_version, storage_type
 ):
-    """Regression coverage for the `ParquetBlockOutputFormat` datalake guard.
+    """Regression coverage for rejecting user Parquet field-id settings on Iceberg tables.
 
     When writing to an Iceberg table the datalake metadata (the `column_mapper`)
     is the authoritative source for Parquet `field_id`s. Letting the settings
     `output_format_parquet_column_field_ids` /
     `output_format_parquet_auto_assign_field_ids` override that mapping would
     emit `field_id`s that no longer match the table metadata, breaking
-    subsequent reads, so `ParquetBlockOutputFormat` rejects them with
-    `BAD_ARGUMENTS`.
+    subsequent reads.
+
+    An object-storage engine freezes its `FormatSettings` from the `CREATE
+    TABLE ... SETTINGS` clause and ignores per-`INSERT` session settings, so
+    the only way these settings can reach an Iceberg engine write is through
+    the table definition — and such a table would be permanently unwritable
+    (every `INSERT` rejected by the write-time guard in
+    `ParquetBlockOutputFormat`). `createStorageObjectStorage` therefore
+    rejects the definition up front: `CREATE TABLE ... ENGINE = Iceberg*
+    ... SETTINGS output_format_parquet_column_field_ids = ...` (or
+    `output_format_parquet_auto_assign_field_ids = 1`) fails with
+    `BAD_ARGUMENTS` at `CREATE` time. The write-time guard stays as defense in
+    depth for tables attached from existing metadata.
 
     This path is not reachable from a stateless (`file()` / `clickhouse-local`)
-    test because no `column_mapper` is present there.
-
-    The field-id settings must be baked into the table's `SETTINGS` clause at
-    `CREATE TABLE` time: an object-storage engine freezes its `FormatSettings`
-    from the `SETTINGS` clause and ignores per-`INSERT` session settings, so a
-    per-query field-id setting would never reach the writer and the guard would
-    not fire. The settings parse and freeze at `CREATE` time; the guard rejects
-    them only at write time, when the datalake `column_mapper` is present.
+    test because no Iceberg engine table is involved there.
     """
     instance = started_cluster_iceberg_no_spark.instances["node1"]
 
@@ -43,7 +48,7 @@ def test_writes_reject_field_id_settings(
             + get_uuid_str()
         )
 
-    # A plain INSERT works — the datalake column-id mapping is used.
+    # A plain CREATE + INSERT works — the datalake column-id mapping is used.
     ok_table = make_table_name("ok")
     create_iceberg_table(
         storage_type,
@@ -56,37 +61,38 @@ def test_writes_reject_field_id_settings(
     instance.query(f"INSERT INTO {ok_table} VALUES (1), (2);")
     assert instance.query(f"SELECT * FROM {ok_table} ORDER BY ALL") == "1\n2\n"
 
-    # Auto-assigning field ids on top of a datalake mapping is rejected. The
-    # setting is frozen into the table at CREATE time (see the docstring).
+    # Baking the auto-assign setting into the table definition is rejected at
+    # CREATE time — accepting it would freeze the setting into the engine's
+    # FormatSettings and make every subsequent INSERT fail.
     auto_table = make_table_name("auto")
-    create_iceberg_table(
-        storage_type,
-        instance,
-        auto_table,
-        started_cluster_iceberg_no_spark,
-        "(x Int32)",
-        format_version,
-        additional_settings=["output_format_parquet_auto_assign_field_ids = 1"],
+    error = instance.query_and_get_error(
+        get_creation_expression(
+            storage_type,
+            auto_table,
+            started_cluster_iceberg_no_spark,
+            "(x Int32)",
+            format_version,
+            additional_settings=["output_format_parquet_auto_assign_field_ids = 1"],
+        )
     )
-    error = instance.query_and_get_error(f"INSERT INTO {auto_table} VALUES (3);")
     assert "BAD_ARGUMENTS" in error
     assert "column-id mapping" in error
+    assert instance.query(f"EXISTS TABLE {auto_table}") == "0\n"
 
-    # An explicit field-id override map on top of a datalake mapping is rejected too.
+    # An explicit field-id override map in the table definition is rejected too.
     explicit_table = make_table_name("explicit")
-    create_iceberg_table(
-        storage_type,
-        instance,
-        explicit_table,
-        started_cluster_iceberg_no_spark,
-        "(x Int32)",
-        format_version,
-        additional_settings=["output_format_parquet_column_field_ids = {'x': '1'}"],
+    error = instance.query_and_get_error(
+        get_creation_expression(
+            storage_type,
+            explicit_table,
+            started_cluster_iceberg_no_spark,
+            "(x Int32)",
+            format_version,
+            additional_settings=[
+                "output_format_parquet_column_field_ids = {'x': '1'}"
+            ],
+        )
     )
-    error = instance.query_and_get_error(f"INSERT INTO {explicit_table} VALUES (4);")
     assert "BAD_ARGUMENTS" in error
     assert "column-id mapping" in error
-
-    # The rejected inserts must not have committed any rows or corrupted the table.
-    assert instance.query(f"SELECT * FROM {auto_table} ORDER BY ALL") == ""
-    assert instance.query(f"SELECT * FROM {explicit_table} ORDER BY ALL") == ""
+    assert instance.query(f"EXISTS TABLE {explicit_table}") == "0\n"

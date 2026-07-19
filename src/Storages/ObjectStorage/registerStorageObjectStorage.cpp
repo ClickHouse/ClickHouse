@@ -70,6 +70,20 @@ createStorageObjectStorage(const StorageFactory::Arguments & args, StorageObject
         format_settings = getFormatSettings(context);
     }
 
+    /// An Iceberg table's metadata is the authoritative source of Parquet `field_id`s: every write
+    /// receives the table's own column-id mapping, and `ParquetBlockOutputFormat` rejects the user
+    /// `field_id` settings at write time in that case. The format settings are frozen here at table
+    /// definition time, so accepting these settings would produce a table whose every `INSERT`
+    /// fails — reject the definition up front instead. Only fresh `CREATE` queries are checked, so
+    /// that replaying existing metadata (server startup, replica recovery, `ATTACH`) never breaks.
+    if (args.mode == LoadingStrictnessLevel::CREATE && configuration->isIcebergConfiguration() && format_settings
+        && (!format_settings->parquet.column_field_ids.empty() || format_settings->parquet.auto_assign_field_ids))
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Settings output_format_parquet_column_field_ids and output_format_parquet_auto_assign_field_ids "
+            "cannot be used when creating an Iceberg table: the table metadata provides its own "
+            "column-id mapping, so every write to such a table would fail");
+
     ASTPtr partition_by;
     if (args.storage_def->partition_by)
         partition_by = args.storage_def->partition_by->clone();
