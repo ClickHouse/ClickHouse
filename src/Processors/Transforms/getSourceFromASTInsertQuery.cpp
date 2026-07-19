@@ -231,6 +231,19 @@ String getInsertDataSchemaMismatchDescription(
         /// cannot be built from a single scalar string.
         const auto inferred_unwrapped = removeNullable(recursiveRemoveLowCardinality(inferred_type));
         const auto expected_unwrapped = removeNullable(recursiveRemoveLowCardinality(expected_type));
+
+        /// The mirror image of the rule below: a `String` destination accepts values that schema inference
+        /// widened to a richer scalar type. The text parsers read a number, a boolean, a date, ... straight
+        /// into a `String` column — `SerializationString::deserializeText*` for `TSV` / `CSV` takes the raw
+        /// field verbatim, and `JSONEachRow` reads a JSON number / boolean into a `String` under the default
+        /// `input_format_json_read_numbers_as_strings` / `read_bools_as_strings` settings — so an inferred
+        /// non-`String` type going into a `String` destination is not a reliable structure mismatch (e.g.
+        /// `1\t1.5` into `(s String, n UInt8)`, where only `n` is invalid). Treat a `String` destination as
+        /// compatible, so a genuine value-level parse error elsewhere in the row is not given a misleading
+        /// "structure mismatch" suffix.
+        if (WhichDataType(expected_unwrapped).isString())
+            return true;
+
         if (WhichDataType(inferred_unwrapped).isString())
         {
             const WhichDataType which_expected(expected_unwrapped);
