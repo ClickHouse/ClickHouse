@@ -92,6 +92,28 @@ GTEST_TEST(DataTypeAggregateFunctionVersion, NestedInArrayIsRebuilt)
     ASSERT_EQ(assigned_nested.getVersion(), 1u);
 }
 
+/// A type with no aggregate function must be left untouched, including its custom name
+/// (callOnNestedSimpleTypes rebuilds wrapper types via make_shared, dropping custom names).
+/// Point is a custom-named Tuple(Float64, Float64); stripping its name broke GeoJSON output.
+GTEST_TEST(DataTypeAggregateFunctionVersion, PreservesCustomNameOfNonAggregateType)
+{
+    tryRegisterAggregateFunctions();
+
+    /// Point is registered as a custom-named Tuple(Float64, Float64).
+    DataTypePtr point = DataTypeFactory::instance().get("Point");
+    ASSERT_EQ(point->getName(), "Point");
+    const IDataType * point_ptr_before = point.get();
+
+    DataTypePtr assigned = point;
+    setVersionToAggregateFunctions(assigned, /*if_empty=*/true, /*revision=*/54452);
+
+    /// No aggregate function anywhere: the type (and its custom name) must survive intact,
+    /// and the object must not even be rebuilt.
+    ASSERT_EQ(assigned->getName(), "Point");
+    ASSERT_EQ(assigned.get(), point_ptr_before);
+    ASSERT_EQ(point->getName(), "Point");
+}
+
 /// Concurrent setVersionToAggregateFunctions calls over the SAME shared type object.
 /// Before the fix each call wrote the shared object's mutable `version`, producing the
 /// arm_tsan data race. After the fix nothing shared is mutated, so this is race-free

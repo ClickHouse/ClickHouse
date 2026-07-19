@@ -332,6 +332,12 @@ static DataTypePtr create(const ASTPtr & arguments)
 
 void setVersionToAggregateFunctions(DataTypePtr & type, bool if_empty, std::optional<size_t> revision)
 {
+    /// Nothing to version. callOnNestedSimpleTypes rebuilds wrapper types (Array/Tuple/Map/
+    /// Nullable) via make_shared, which drops custom type names (e.g. the geometry type Point,
+    /// a named Tuple). Skipping when there is no aggregate function leaves `type` untouched.
+    if (!hasAggregateFunctionType(type))
+        return;
+
     auto callback = [revision, if_empty](DataTypePtr & column_type)
     {
         const auto * aggregate_function_type = typeid_cast<const DataTypeAggregateFunction *>(column_type.get());
