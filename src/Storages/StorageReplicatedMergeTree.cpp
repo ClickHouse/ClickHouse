@@ -12,6 +12,7 @@
 #include <Common/Macros.h>
 #include <Common/MemoryTracker.h>
 #include <Common/ProfileEventsScope.h>
+#include <Common/SipHash.h>
 #include <Common/StringUtils.h>
 #include <Common/ThreadFuzzer.h>
 #include <Common/ZooKeeper/KeeperException.h>
@@ -9217,6 +9218,18 @@ std::unique_ptr<ReplicatedMergeTreeLogEntryData> StorageReplicatedMergeTree::rep
 
         String drop_range_fake_part_name = getPartNamePossiblyFake(format_version, drop_range);
 
+        /// The deduplication block id must depend not only on the content of the attached parts, but also on the
+        /// identity of the source table. Otherwise `ATTACH PARTITION FROM` of identical data from two different
+        /// source tables would be considered the same operation, and the second attach would be a silent no-op
+        /// (see issue #105632). Prefer the source table UUID because it is stable across renames (so a retry of
+        /// the same query produces the same block id even if the table was renamed in between); tables without
+        /// a UUID (e.g. in an `Ordinary` database) fall back to the fully qualified name.
+        const auto src_storage_id = src_data.getStorageID();
+        const String src_table_identity = src_storage_id.hasUUID()
+            ? toString(src_storage_id.uuid)
+            : src_storage_id.getFullNameNotQuoted();
+        const String src_identity_hash = getHexUIntUppercase(sipHash64(src_table_identity));
+
         std::set<String> replaced_parts;
         for (const auto & src_part : src_all_parts)
         {
@@ -9238,7 +9251,9 @@ std::unique_ptr<ReplicatedMergeTreeLogEntryData> StorageReplicatedMergeTree::rep
             else
                 LOG_INFO(log, "Trying to attach {} with hash_hex {}", src_part->name, hash_hex);
 
-            std::vector<std::string> block_id_path = (replace || is_duplicated_part) ? std::vector<std::string>() : std::vector<std::string>{(fs::path(zookeeper_path) / "blocks" / (partition_id + "_replace_from_" + hash_hex))};
+            std::vector<std::string> block_id_path = (replace || is_duplicated_part)
+                ? std::vector<std::string>()
+                : std::vector<std::string>{(fs::path(zookeeper_path) / "blocks" / (partition_id + "_replace_from_" + src_identity_hash + "_" + hash_hex))};
 
             auto lock = allocateBlockNumber(
                 partition_id,
