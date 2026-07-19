@@ -30,8 +30,7 @@ If you would like to test the MySQL logs integration before configuring your own
 - Sufficient disk space for log files
 
 <Steps>
-<Step>
-#### Configure MySQL logging {#configure-mysql}
+<Step title="Configure MySQL logging" id="configure-mysql">
 
 MySQL supports multiple log types. For comprehensive monitoring with OpenTelemetry, we recommend enabling the error log and slow query log.
 
@@ -82,8 +81,7 @@ tail -f /var/log/mysql/error.log
 tail -f /var/log/mysql/mysql-slow.log
 ```
 </Step>
-<Step>
-#### Create custom OTel collector configuration {#custom-otel}
+<Step title="Create custom OTel collector configuration" id="custom-otel">
 
 ClickStack allows you to extend the base OpenTelemetry Collector configuration by mounting a custom configuration file and setting an environment variable. The custom configuration is merged with the base configuration managed by HyperDX via OpAMP.
 
@@ -167,8 +165,7 @@ This configuration:
 Two receivers are required because MySQL error logs and slow query logs have completely different formats. The `time_parser` uses `gotime` layout to handle MySQL's ISO8601 timestamp format with timezone offsets.
 </Note>
 </Step>
-<Step>
-#### Configure ClickStack to load custom configuration {#load-custom}
+<Step title="Configure ClickStack to load custom configuration" id="load-custom">
 
 To enable custom collector configuration in your existing ClickStack deployment, mount the custom config file at `/etc/otelcol-contrib/custom.config.yaml` and set the environment variable `CUSTOM_OTELCOL_CONFIG_FILE=/etc/otelcol-contrib/custom.config.yaml`.
 
@@ -190,8 +187,7 @@ services:
 Ensure the ClickStack collector has appropriate permissions to read the MySQL log files. Use read-only mounts (`:ro`) and follow the principle of least privilege.
 </Note>
 </Step>
-<Step>
-#### Verifying Logs in HyperDX {#verifying-logs}
+<Step title="Verifying Logs in HyperDX" id="verifying-logs">
 
 Once configured, log into HyperDX and verify logs are flowing:
 
@@ -211,8 +207,7 @@ Once configured, log into HyperDX and verify logs are flowing:
 For users who want to test the MySQL logs integration before configuring their production systems, we provide a sample dataset of pre-generated MySQL logs with realistic patterns.
 
 <Steps>
-<Step>
-#### Download the sample dataset {#download-sample}
+<Step title="Download the sample dataset" id="download-sample">
 
 Download the sample log files:
 
@@ -230,8 +225,7 @@ The dataset includes:
 - Connection lifecycle events
 - Database server startup and shutdown sequences
 </Step>
-<Step>
-#### Create test collector configuration {#test-config}
+<Step title="Create test collector configuration" id="test-config">
 
 Create a file named `mysql-logs-demo.yaml` with the following configuration:
 
@@ -297,8 +291,7 @@ service:
 EOF
 ```
 </Step>
-<Step>
-#### Run ClickStack with demo configuration {#run-demo}
+<Step title="Run ClickStack with demo configuration" id="run-demo">
 
 Run ClickStack with the demo logs and configuration:
 
@@ -312,8 +305,7 @@ docker run --name clickstack-demo \
   clickhouse/clickstack-all-in-one:latest
 ```
 </Step>
-<Step>
-#### Verify logs in HyperDX {#verify-demo-logs}
+<Step title="Verify logs in HyperDX" id="verify-demo-logs">
 
 Once ClickStack is running:
 
@@ -344,11 +336,11 @@ HyperDX displays timestamps in your browser's local timezone. The demo data span
 To help you get started monitoring MySQL with ClickStack, we provide essential visualizations for MySQL logs.
 
 <Steps>
-<Step>
-#### <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/mysql-logs-dashboard.json'} download="mysql-logs-dashboard.json" eventName="docs.mysql_logs_monitoring.dashboard_download">Download</TrackedLink> the dashboard configuration {#download}
+<Step title="Download the dashboard configuration" id="download">
+
+<TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/mysql-logs-dashboard.json'} download="mysql-logs-dashboard.json" eventName="docs.mysql_logs_monitoring.dashboard_download">Download the dashboard configuration file</TrackedLink>.
 </Step>
-<Step>
-#### Import the pre-built dashboard {#import-dashboard}
+<Step title="Import the pre-built dashboard" id="import-dashboard">
 
 1. Open HyperDX and navigate to the Dashboards section
 2. Click **Import Dashboard** in the upper right corner under the ellipses
@@ -359,8 +351,7 @@ To help you get started monitoring MySQL with ClickStack, we provide essential v
 
 <Image img="/images/clickstack/mysql/finish-import.webp" alt="Finish import"/>
 </Step>
-<Step>
-#### View the dashboard {#created-dashboard}
+<Step title="View the dashboard" id="created-dashboard">
 
 The dashboard will be created with all visualizations pre-configured.
 

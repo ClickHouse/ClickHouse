@@ -31,13 +31,11 @@ Load scraped or processed data into ClickHouse for analytics, monitoring, or enr
 ## Setup guide {#setup-guide}
 
 <Steps>
-<Step>
-### Gather your ClickHouse connection details {#1-gather-your-connection-details}
+<Step title="Gather your ClickHouse connection details" id="1-gather-your-connection-details">
 
 <ConnectionDetails />
 </Step>
-<Step>
-### Apify prerequisites {#2-apify-prerequisites}
+<Step title="Apify prerequisites" id="2-apify-prerequisites">
 
 You'll also need:
 
@@ -45,8 +43,7 @@ You'll also need:
 - An [Apify API token](https://docs.apify.com/platform/integrations/api#api-token), found in **Settings > Integrations** in the [Apify Console](https://console.apify.com/).
 - Node.js 18+ installed locally (for the JavaScript examples).
 </Step>
-<Step>
-### Install dependencies {#3-install-dependencies}
+<Step title="Install dependencies" id="3-install-dependencies">
 
 Install the Apify JavaScript client and the ClickHouse JavaScript client:
 
@@ -58,8 +55,7 @@ npm install apify-client @clickhouse/client
 Apify also provides a [Python client](https://docs.apify.com/api/client/python). If you prefer Python, install `apify-client` via pip and use [clickhouse-connect](/integrations/language-clients/python/index) for ClickHouse.
 </Note>
 </Step>
-<Step>
-### Create a target table in ClickHouse {#4-create-a-target-table}
+<Step title="Create a target table in ClickHouse" id="4-create-a-target-table">
 
 Create a table to hold the scraped data. The schema depends on the Actor you use. This example uses [MergeTree](/reference/engines/table-engines/mergetree-family/mergetree) for a product scraping Actor:
 
@@ -76,8 +72,7 @@ ENGINE = MergeTree()
 ORDER BY (scraped_at, url);
 ```
 </Step>
-<Step>
-### Fetch Apify dataset and load into ClickHouse {#5-fetch-and-load}
+<Step title="Fetch Apify dataset and load into ClickHouse" id="5-fetch-and-load">
 
 The following script fetches the results of an Apify Actor run and inserts them into ClickHouse:
 
@@ -115,8 +110,7 @@ await clickhouse.close();
 For large datasets, paginate through results using the `limit` and `offset` parameters of the [List dataset items](https://docs.apify.com/api/v2#/reference/datasets/item-collection/list-items) endpoint. You can also pass `clean=true` to retrieve only non-empty, deduplicated items.
 </Tip>
 </Step>
-<Step>
-### Automate with webhooks {#6-automate-with-webhooks}
+<Step title="Automate with webhooks" id="6-automate-with-webhooks">
 
 Instead of running the script manually, automate the pipeline so data loads into ClickHouse every time an Actor finishes:
 

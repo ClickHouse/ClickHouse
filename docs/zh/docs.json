@@ -2215,10 +2215,6 @@
                     }
                   ],
                   "root": "zh/products/cloud/guides/index"
-                },
-                {
-                  "group": "API 参考文档",
-                  "openapi": "https://api.clickhouse.cloud/v1"
                 }
               ]
             },
@@ -2598,7 +2594,10 @@
             {
               "expanded": true,
               "group": "API 参考文档",
-              "openapi": "https://raw.githubusercontent.com/hyperdxio/hyperdx/refs/heads/main/packages/api/openapi.json",
+              "openapi": {
+                "source": "https://raw.githubusercontent.com/hyperdxio/hyperdx/refs/heads/main/packages/api/openapi.json",
+                "directory": "zh/clickstack/api-reference"
+              },
               "root": "zh/clickstack/api-reference"
             }
           ]
