@@ -2,21 +2,22 @@
 
 # Regression: a query parameter whose name collides with a real setting. The HTTP "table as file"
 # feature promoted `format` / `database` / `filter` / `select` / `page` / ... to first-class
-# settings. Query parameters are transported through the `Settings` serialization, so the client
-# now stores every parameter as a *custom* (string-valued) field (`Settings::setCustom`) rather than
-# via typed `set`: a parameter whose name collides with a built-in setting must not be parsed as that
-# setting's type. For a `String` setting like `format` that would (used to) corrupt values that
-# legitimately start with `'` (e.g. `--param_format="'abc"` threw CANNOT_PARSE_QUOTED_STRING); for a
-# numeric setting like `page` (a `Double`) typed parsing would reject a non-numeric value altogether
-# (`--param_page=foo`) or normalize a numeric-looking string. The server honors the wire CUSTOM flag
-# even for a colliding name (`BaseSettings::read`) and reconstructs the map (`toNameToNameMap`) by the
-# field's `isCustom()` type, SQL-unquoting custom values — so the original string round-trips intact.
+# settings. Query parameters travel over the native protocol in their own wire section: the client
+# writes each parameter as a *custom* (string-valued) field via `writeQueryParameters`, and the
+# server reads them back with `readQueryParameters`, SQL-unquoting each value. Because parameters
+# never go through the settings type system on either side, a parameter whose name collides with a
+# built-in setting is never parsed as that setting's type. For a `String` setting like `format`
+# typed parsing would (used to) corrupt values that legitimately start with `'`
+# (e.g. `--param_format="'abc"` threw CANNOT_PARSE_QUOTED_STRING); for a numeric setting like `page`
+# (a `Double`) typed parsing would reject a non-numeric value altogether (`--param_page=foo`) or
+# normalize a numeric-looking string. Storing and reading them as plain name/value pairs makes the
+# original string round-trip intact.
 #
 # A parameter whose name is a setting *alias* (e.g. `enable_analyzer`, an alias of
-# `allow_experimental_analyzer`) is a stronger case: both `Settings::setCustom` (client side) and
-# `BaseSettings::read` (server side) must store the custom field under the user's chosen name, NOT the
-# alias-resolved canonical name — otherwise `{enable_analyzer:String}` cannot find a value stored under
-# `allow_experimental_analyzer` and substitution fails.
+# `allow_experimental_analyzer`) is a stronger case: both `writeQueryParameters` (client side) and
+# `readQueryParameters` (server side) transport the parameter under the user's chosen name, NOT the
+# alias-resolved canonical name — otherwise `{enable_analyzer:String}` cannot find a value stored
+# under `allow_experimental_analyzer` and substitution fails.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

@@ -1085,18 +1085,13 @@ void Connection::sendQuery(
     writeStringBinary(query, *out);
 
     if (server_revision >= DBMS_MIN_PROTOCOL_VERSION_WITH_PARAMETERS)
-    {
-        Settings params;
-        for (const auto & [name, value] : query_parameters)
-            /// Query parameters are user-chosen names, not settings. Store each as a custom
-            /// (string-valued) field so a parameter whose name collides with a built-in setting
-            /// (e.g. `page`, now a `Double` setting) is not parsed as that setting's type — which
-            /// would throw for a non-numeric value (`--param_page=foo`) or normalize a numeric-looking
-            /// string. The server reconstructs the value via `Settings::toNameToNameMap`, which
-            /// SQL-unquotes custom fields, so the original string round-trips intact.
-            params.setCustom(name, value);
-        params.write(*out, SettingsWriteFormat::STRINGS_WITH_FLAGS);
-    }
+        /// Query parameters are written as custom (string-valued) fields, so a parameter whose
+        /// name collides with a built-in setting (e.g. `page`, now a `Double` setting) is not
+        /// parsed as that setting's type — which would throw for a non-numeric value
+        /// (`--param_page=foo`) or normalize a numeric-looking string. The server reads them back
+        /// with `readQueryParameters`, which SQL-unquotes the value so the original string
+        /// round-trips intact.
+        writeQueryParameters(query_parameters, *out);
 
     maybe_compressed_in.reset();
     if (maybe_compressed_out && maybe_compressed_out != out)

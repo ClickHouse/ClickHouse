@@ -40,23 +40,23 @@ Text index analysis
 -- Text index for ILIKE function should choose none for non-existent token
 Description: text GRANULARITY 100000000
 Parts: 0/4
-Granules: 0/4096
--- Text index for ILIKE function should choose 1 part and 1024 granules (lowercase pattern matches uppercase token)
+Granules: 0/40
+-- Text index for ILIKE function should choose 1 part and 10 granules (lowercase pattern matches uppercase token)
 Description: text GRANULARITY 100000000
 Parts: 1/4
-Granules: 1024/4096
--- Text index for ILIKE function should choose same 1 part and 1024 granules (uppercase pattern, case-insensitive)
+Granules: 10/40
+-- Text index for ILIKE function should choose same 1 part and 10 granules (uppercase pattern, case-insensitive)
 Description: text GRANULARITY 100000000
 Parts: 1/4
-Granules: 1024/4096
--- Text index for ILIKE function should choose 2 parts and 2048 granules out of 4 parts and 4096 granules
+Granules: 10/40
+-- Text index for ILIKE function should choose 2 parts and 20 granules out of 4 parts and 40 granules
 Description: text GRANULARITY 100000000
 Parts: 2/4
-Granules: 2048/4096
--- Text index for ILIKE function should choose all 4 parts and 4096 granules
+Granules: 20/40
+-- Text index for ILIKE function should choose all 4 parts and 40 granules
 Description: text GRANULARITY 100000000
 Parts: 4/4
-Granules: 4096/4096
+Granules: 40/40
 Tests fallback when threshold (text_index_like_max_postings_to_read) is exceeded for reading large postings
 7547
 7547
@@ -83,19 +83,19 @@ Text index analysis for ILIKE with array tokenizer
 -- Text index for ILIKE function with array tokenizer should choose none for non-existent token
 Description: text GRANULARITY 100000000
 Parts: 0/4
-Granules: 0/4096
--- Text index for ILIKE function with array tokenizer should choose 1 part and 1024 granules
+Granules: 0/40
+-- Text index for ILIKE function with array tokenizer should choose 1 part and 10 granules
 Description: text GRANULARITY 100000000
 Parts: 1/4
-Granules: 1024/4096
--- Text index for ILIKE function with array tokenizer should choose 1 part and 1024 granules (uppercase pattern, case-insensitive)
+Granules: 10/40
+-- Text index for ILIKE function with array tokenizer should choose 1 part and 10 granules (uppercase pattern, case-insensitive)
 Description: text GRANULARITY 100000000
 Parts: 1/4
-Granules: 1024/4096
--- Text index for ILIKE function with array tokenizer should choose all 4 parts and 4096 granules
+Granules: 10/40
+-- Text index for ILIKE function with array tokenizer should choose all 4 parts and 40 granules
 Description: text GRANULARITY 100000000
 Parts: 4/4
-Granules: 4096/4096
+Granules: 40/40
 Test results are same with/without the optimization with expression index
 -- without optimization
 [1,3]
@@ -130,3 +130,18 @@ Test ILIKE optimization is disabled for non-case-folding preprocessor (reverse(c
 -- with optimization (must produce same results)
 [1]
 [2]
+Test ILIKE optimization is applied for lcase/ucase preprocessor aliases
+-- lcase: results match a full scan (case-insensitive)
+1
+1
+-- lcase: the index prunes the non-matching granule
+Description: text GRANULARITY 100000000
+Parts: 1/1
+Granules: 1/2
+-- ucase: results match a full scan (case-insensitive)
+1
+1
+-- ucase: the index prunes the non-matching granule
+Description: text GRANULARITY 100000000
+Parts: 1/1
+Granules: 1/2

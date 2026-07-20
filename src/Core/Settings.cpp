@@ -8591,6 +8591,9 @@ If the number of set bits in a runtime bloom filter exceeds this ratio the filte
     DECLARE(Bool, join_runtime_filter_from_fixed_hash_table, true, R"(
 When the hash join build side was converted to a FixedHashMap (see `enable_join_fixed_hash_table_conversion`), use that hash map directly as the runtime filter.
 )", 0) \
+    DECLARE(Bool, enable_join_runtime_filters_index_analysis, false, R"(
+Run a second pass index analysis (via use_skip_indexes_on_data_read) to prune granules on LHS of a join.
+)", EXPERIMENTAL) \
     DECLARE(Bool, join_runtime_filter_size_from_hash_table_stats, true, R"(
 Use hash table size statistics collected from previous executions to size the JOIN runtime filter. When disabled, fall back to the fixed `join_runtime_bloom_filter_bytes`.
 )", 0) \
@@ -9267,39 +9270,36 @@ void Settings::dumpToMapColumn(IColumn * column, bool changed_only) const
     impl->dumpToMapColumn(column, changed_only);
 }
 
-NameToNameMap Settings::toNameToNameMap() const
+void writeQueryParameters(const NameToNameMap & parameters, WriteBuffer & out)
 {
-    /// This is used to convert the `Settings` packet that the TCP protocol carries query
-    /// parameters in (see `Connection::sendQuery`) into a name→value map. The client side calls
-    /// `params.setCustom(name, value)` for each query parameter, producing a `SettingFieldCustom`
-    /// (whose `toString()` SQL-quotes the value, e.g. `'default'`) even when the parameter name
-    /// collides with a built-in setting — query parameters are user-chosen names, not settings, and
-    /// must not be parsed as a setting's type.
-    ///
-    /// Branch on `isCustom()` — the exact per-entry type — rather than guessing from the first byte:
-    /// a query parameter whose name collides with a real setting (e.g. `format` / `database` /
-    /// `filter` / `select` / `page`) arrives as a custom field whose raw value may legitimately start
-    /// with `'` (e.g. `--param_format="'abc"`). The old "starts with a quote → SQL-quoted" heuristic
-    /// would then call `readQuoted` on a value that is not a complete SQL-quoted string, corrupting it
-    /// or throwing `CANNOT_PARSE_QUOTED_STRING`. Custom entries are SQL-unquoted; a typed entry (from
-    /// an older client that sent a non-colliding setting in this packet) is copied as-is.
-    NameToNameMap query_parameters;
-    for (const auto & param : *impl)
+    /// Query parameters are user-chosen names, not settings. Each is written as a custom
+    /// (string-valued) field so a parameter whose name collides with a built-in setting
+    /// (e.g. `format` / `database` / `filter` / `select` / `page`) is not parsed as that setting's
+    /// type. `readQueryParameters` reads them back and SQL-unquotes each value.
+    for (const auto & [name, value] : parameters)
     {
-        std::string value_string = param.getValueString();
-        std::string value;
-        if (param.isCustom())
-        {
-            ReadBufferFromOwnString buf(value_string);
-            readQuoted(value, buf);
-        }
-        else
-        {
-            value = std::move(value_string);
-        }
-        query_parameters.emplace(param.getName(), std::move(value));
+        BaseSettingsHelpers::writeString(name, out);
+        BaseSettingsHelpers::writeFlags(BaseSettingsHelpers::Flags::CUSTOM, out);
+        BaseSettingsHelpers::writeString(SettingFieldCustom(Field(value)).toString(), out);
     }
-    return query_parameters;
+    BaseSettingsHelpers::writeString(std::string_view{}, out);
+}
+
+NameToNameMap readQueryParameters(ReadBuffer & in)
+{
+    NameToNameMap parameters;
+    while (true)
+    {
+        String name = BaseSettingsHelpers::readString(in);
+        if (name.empty())
+            break;
+        std::ignore = BaseSettingsHelpers::readFlags(in);
+        String value;
+        ReadBufferFromOwnString buf(BaseSettingsHelpers::readString(in));
+        readQuoted(value, buf);
+        parameters.insert_or_assign(std::move(name), std::move(value));
+    }
+    return parameters;
 }
 
 void Settings::write(WriteBuffer & out, SettingsWriteFormat format) const
