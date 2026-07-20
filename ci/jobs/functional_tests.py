@@ -755,8 +755,9 @@ def main():
 
             if not Info().is_local_run:
                 if not CH.start_log_exports(stop_watch.start_time):
-                    info.add_workflow_warning("Failed to start log export")
-                    print("Failed to start log export")
+                    warning = "Failed to enable ClickHouse logs export to the CI Logs cluster"
+                    info.add_workflow_warning(warning)
+                    print(warning)
             # MinIO log tables are non-fatal (tests still run without the
             # webhook log tables), so keep going - but record the concrete
             # failure reason (the real clickminio restart status, carried out of
