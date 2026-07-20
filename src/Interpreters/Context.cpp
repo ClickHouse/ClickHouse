@@ -88,6 +88,7 @@
 #include <Core/SettingsQuirks.h>
 #include <Core/UUID.h>
 #include <Access/AccessControl.h>
+#include <Access/Common/AccessFlags.h>
 #include <Access/ContextAccess.h>
 #include <Access/EnabledRolesInfo.h>
 #include <Access/EnabledRowPolicies.h>
@@ -3539,6 +3540,12 @@ void Context::setCurrentDatabase(const String & name)
 {
     std::lock_guard lock(mutex);
     setCurrentDatabaseWithLock(name, lock);
+}
+
+void Context::setCurrentDatabaseWithAccessCheck(const String & name)
+{
+    checkAccess(AccessType::SHOW_DATABASES, name);
+    setCurrentDatabase(name);
 }
 
 void Context::setCurrentDatabaseUnchecked(const String & name)

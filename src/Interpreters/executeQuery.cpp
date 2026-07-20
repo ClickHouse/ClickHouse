@@ -2483,10 +2483,11 @@ static BlockIO executeQueryImpl(
             /// the same behavior. Previously only `HTTPHandler` honored it, via a one-off
             /// `setCurrentDatabase`; the HTTP path additionally resolves a database supplied via the
             /// URL *path*, which is already applied before we reach here.
+            /// The access-checked variant enforces the same `SHOW_DATABASES` privilege as `USE`.
             if (const String & database_setting = settings[Setting::database];
                 !database_setting.empty() && database_setting != context->getCurrentDatabase())
             {
-                context->setCurrentDatabase(database_setting);
+                context->setCurrentDatabaseWithAccessCheck(database_setting);
             }
 
             /// Apply the query-construction settings (`select`/`filter`/`order`/`sort`/`page`) on the

@@ -6684,7 +6684,7 @@ It shapes result-producing `SELECT` / `UNION` queries. For a write query (`INSER
 :::
 )", 0) \
     DECLARE(String, database, "", R"(
-Sets the current database for the query — the database in which unqualified table names are resolved, the same effect as `USE <database>`. Unlike the `USE` statement, this is an ordinary session setting: like any other setting it accepts a value without validating it, and an unknown database is reported when the setting takes effect (when a query runs), not at `SET` time. Used as the destination for the HTTP interface `database` URL parameter and the `X-ClickHouse-Database` header.
+Sets the current database for the query — the database in which unqualified table names are resolved, the same effect as `USE <database>`. Unlike the `USE` statement, this is an ordinary session setting: like any other setting it accepts a value without validating it, and an unknown database is reported when the setting takes effect (when a query runs), not at `SET` time. When the setting takes effect, it requires the same `SHOW_DATABASES` privilege on the target database as `USE`. Used as the destination for the HTTP interface `database` URL parameter and the `X-ClickHouse-Database` header.
 )", 0) \
     DECLARE(String, default_format, "", R"(
 Specifies the format of the query result when the query has no `FORMAT` clause and no other format override is applied.
