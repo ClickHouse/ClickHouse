@@ -74,8 +74,17 @@ if [ "$READY" -ne 1 ]; then
     exit 1
 fi
 
-# A query forwarded through the native frontend to the backend server.
-$CLICKHOUSE_CLIENT_BINARY --host 127.0.0.1 --port "$NATIVE_PORT" --query "SELECT 'native_ok'"
+# A query forwarded through the native frontend to the backend server. The HTTP and native
+# listeners bind independently, so a successful /ping above does not guarantee the native port is
+# already accepting connections; retry until it is to avoid a startup race (Connection refused).
+NATIVE_OUT=
+for _ in $(seq 1 100); do
+    if NATIVE_OUT=$($CLICKHOUSE_CLIENT_BINARY --host 127.0.0.1 --port "$NATIVE_PORT" --query "SELECT 'native_ok'" 2>/dev/null); then
+        break
+    fi
+    sleep 0.2
+done
+echo "$NATIVE_OUT"
 
 # The health monitor probes the backend every interval_ms; wait until the status endpoint shows a
 # completed probe (check_latency_ms > 0) with the backend still alive for pool selection.
