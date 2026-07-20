@@ -2105,6 +2105,7 @@ void QueryFuzzer::fuzzCodecFunction(ASTFunction & codec_fn)
            "LZ4",
            "LZ4HC",
            "ZSTD",
+           "ZXC",
            "AES_128_GCM_SIV",
            "AES_256_GCM_SIV",
            "Delta",
@@ -2132,6 +2133,9 @@ void QueryFuzzer::fuzzCodecFunction(ASTFunction & codec_fn)
     }
     else if (chosen == "LZ4HC" && fuzz_rand() % 2 == 0)
         codec_fn.arguments->children.push_back(makeASTFunction("LZ4HC", make_intrusive<ASTLiteral>(UInt64(fuzz_rand() % 12 + 1))));
+    else if (chosen == "ZXC" && fuzz_rand() % 2 == 0)
+        /// Optional compression level, 1 (fastest) to 7 (max density); default is 3.
+        codec_fn.arguments->children.push_back(makeASTFunction("ZXC", make_intrusive<ASTLiteral>(UInt64(fuzz_rand() % 7 + 1))));
     else if ((chosen == "Delta" || chosen == "DoubleDelta" || chosen == "Gorilla") && fuzz_rand() % 2 == 0)
     {
         /// Optional data byte-size argument, shared by the three delta-style codecs.

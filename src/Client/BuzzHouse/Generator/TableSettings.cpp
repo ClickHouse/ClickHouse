@@ -994,7 +994,7 @@ void loadFuzzerTableSettings(const FuzzConfig & fc)
 
     /// marks and primary key codecs are passed to CompressionCodecFactory::get() directly
     /// (no type context), so only block-compression codecs are valid — no transform codecs.
-    static const DB::Strings blockCodecs = {"LZ4", "LZ4HC", "ZSTD", "AES_128_GCM_SIV", "AES_256_GCM_SIV", "NONE"};
+    static const DB::Strings blockCodecs = {"LZ4", "LZ4HC", "ZSTD", "ZXC", "AES_128_GCM_SIV", "AES_256_GCM_SIV", "NONE"};
     std::unordered_set<String> blockCodecsEscaped;
     for (const auto & codec : blockCodecs)
     {
@@ -1009,6 +1009,8 @@ void loadFuzzerTableSettings(const FuzzConfig & fc)
                 res += "(" + std::to_string(rg.randomInt<uint32_t>(0, 12)) + ")";
             else if (codec == "ZSTD" && rg.nextBool())
                 res += "(" + std::to_string(rg.randomInt<uint32_t>(1, 22)) + ")";
+            else if (codec == "ZXC" && rg.nextBool())
+                res += "(" + std::to_string(rg.randomInt<uint32_t>(1, 7)) + ")";
             return "'" + res + "'";
         },
         blockCodecsEscaped,

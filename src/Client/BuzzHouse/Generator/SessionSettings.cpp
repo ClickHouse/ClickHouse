@@ -93,6 +93,13 @@ static String formatCodecChoices(RandomGenerator & rg, const DB::Strings & choic
             }
             res += ")";
         }
+        else if (choices[i] == "ZXC" && rg.nextBool())
+        {
+            /// Optional compression level, 1 (fastest) to 7 (max density); default is 3.
+            res += "(";
+            res += std::to_string(rg.randomInt<uint32_t>(1, 7));
+            res += ")";
+        }
         else if ((choices[i] == "Delta" || choices[i] == "DoubleDelta") && rg.nextBool())
         {
             res += "(";
@@ -201,7 +208,7 @@ static const SQLType * leafType(const SQLType * tp)
 }
 
 /// General-purpose compression codecs: work on any column type.
-static const DB::Strings kGeneralCodecs = {"LZ4", "LZ4HC", "ZSTD", "NONE", "AES_128_GCM_SIV", "AES_256_GCM_SIV"};
+static const DB::Strings kGeneralCodecs = {"LZ4", "LZ4HC", "ZSTD", "ZXC", "NONE", "AES_128_GCM_SIV", "AES_256_GCM_SIV"};
 
 String generateNextCodecStringForType(RandomGenerator & rg, const SQLType * tp)
 {
