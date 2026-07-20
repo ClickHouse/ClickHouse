@@ -59,6 +59,7 @@ namespace DB
     M(GreaterOrEquals) \
     M(Spaceship)              /** <=>. Used in MySQL for NULL-safe equality comparison. */ \
     M(PipeMark) \
+    M(PipeOperator)           /** |>. Pipe operator: FROM t |> WHERE x |> SELECT y */ \
     M(Concatenation)          /** String concatenation operator: || */ \
     \
     M(At)                     /** @. Used for specifying user names and also for MySQL-style variables. */ \

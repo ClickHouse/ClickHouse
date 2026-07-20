@@ -1,5 +1,6 @@
 #include <memory>
 #include <base/defines.h>
+#include <Parsers/ASTAsterisk.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectQuery.h>
@@ -131,14 +132,22 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     }
 
     /// SELECT [ALL/DISTINCT [ON (expr_list)]] [TOP N [WITH TIES]] expr_list
+    bool has_select_keyword = s_select.ignore(pos, expected);
+    if (!has_select_keyword && tables)
+    {
+        /// A query that starts with the FROM clause can omit SELECT - then it is equivalent to SELECT *.
+        /// This form is mostly used in queries with pipe operators: FROM t |> WHERE x |> LIMIT 1.
+        auto asterisk_list = make_intrusive<ASTExpressionList>();
+        asterisk_list->children.push_back(make_intrusive<ASTAsterisk>());
+        select_expression_list = std::move(asterisk_list);
+    }
+    else
     {
         bool has_all = false;
-        if (!s_select.ignore(pos, expected))
-        {
-            /// This allows queries without SELECT, like `1 + 2`.
-            if (!implicit_select || with_expression_list || tables)
-                return false;
-        }
+
+        /// This allows queries without SELECT, like `1 + 2`.
+        if (!has_select_keyword && (!implicit_select || with_expression_list))
+            return false;
 
         if (s_all.ignore(pos, expected))
             has_all = true;

@@ -33,6 +33,21 @@ FROM table
 SELECT *
 ```
 
+In a query that starts with `FROM`, the `SELECT` clause is optional - when it is omitted, the query works as if `SELECT *` was written:
+
+```sql
+FROM table
+WHERE x > 1
+```
+
+This form is mostly used in queries with [pipe operators](../../../sql-reference/statements/select/pipe-operators.md):
+
+```sql
+FROM table
+|> WHERE x > 1
+|> AGGREGATE count() AS c GROUP BY y
+```
+
 ## FINAL Modifier {#final-modifier}
 
 When `FINAL` is specified, ClickHouse fully merges the data before returning the result. This also performs all data transformations that happen during merges for the given table engine.

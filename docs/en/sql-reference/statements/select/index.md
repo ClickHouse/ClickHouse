@@ -58,6 +58,15 @@ Specifics of each optional clause are covered in separate sections, which are li
 - [INTO OUTFILE clause](../../../sql-reference/statements/select/into-outfile.md)
 - [FORMAT clause](../../../sql-reference/statements/select/format.md)
 
+A query can also be written as a linear chain of transformations with [pipe operators](../../../sql-reference/statements/select/pipe-operators.md):
+
+```sql
+FROM table
+|> WHERE x > 1
+|> AGGREGATE count() AS c GROUP BY y
+|> ORDER BY c DESC
+```
+
 ## SELECT Clause {#select-clause}
 
 [Expressions](/sql-reference/syntax#expressions) specified in the `SELECT` clause are calculated after all the operations in the clauses described above are finished. These expressions work as if they apply to separate rows in the result. If expressions in the `SELECT` clause contain aggregate functions, then ClickHouse processes aggregate functions and expressions used as their arguments during the [GROUP BY](/sql-reference/statements/select/group-by) aggregation.
