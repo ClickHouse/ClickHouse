@@ -137,6 +137,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsUInt64 merge_max_block_size_bytes;
     extern const MergeTreeSettingsNonZeroUInt64 merge_max_block_size;
     extern const MergeTreeSettingsUInt64 min_merge_bytes_to_use_direct_io;
+    extern const MergeTreeSettingsBool compute_exact_num_defaults_for_sparse_columns;
     extern const MergeTreeSettingsFloat ratio_of_defaults_for_sparse_serialization;
     extern const MergeTreeSettingsUInt64 vertical_merge_algorithm_min_bytes_to_activate;
     extern const MergeTreeSettingsUInt64 vertical_merge_algorithm_min_columns_to_activate;
@@ -453,6 +454,11 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::extractMergingAndGatheringColu
     for (const auto & index : skip_indexes)
     {
         if (exclude_index_names.contains(index.name)) /// user requested to skip this index during merge
+            continue;
+
+        /// Inert indices (a removed index type kept only for attach compatibility) hold no data and
+        /// cannot be recomputed. Skip them so the merge does not try to aggregate them and wedge.
+        if (MergeTreeIndexFactory::instance().get(global_ctx->metadata_snapshot, index, *global_ctx->data_settings)->isInert())
             continue;
 
         auto index_columns = index.expression->getRequiredColumns();
@@ -827,6 +833,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     {
         static_cast<double>((*merge_tree_settings)[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization]),
         true,
+        (*merge_tree_settings)[MergeTreeSetting::compute_exact_num_defaults_for_sparse_columns],
         (*merge_tree_settings)[MergeTreeSetting::serialization_info_version],
         (*merge_tree_settings)[MergeTreeSetting::string_serialization_version],
         (*merge_tree_settings)[MergeTreeSetting::nullable_serialization_version],
@@ -853,7 +860,11 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
             infos.add(part_infos);
         }
 
-        global_ctx->alter_conversions.push_back(MergeTreeData::getAlterConversionsForPart(part, mutations_snapshot, global_ctx->context));
+        global_ctx->alter_conversions.push_back(MergeTreeData::getAlterConversionsForPart(part, mutations_snapshot, global_ctx->context
+#if CLICKHOUSE_CLOUD
+            , nullptr
+#endif
+            ));
     }
 
     if (global_ctx->new_data_part->info.isPatch())
@@ -901,6 +912,12 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
             {
                 if (!exclude_index_names.contains(index.name))
                 {
+                    /// Inert indices (a removed index type kept only for attach compatibility) hold no
+                    /// data and cannot be recomputed. Skip them so the merge does not wedge trying to
+                    /// aggregate them.
+                    if (MergeTreeIndexFactory::instance().get(global_ctx->metadata_snapshot, index, *global_ctx->data_settings)->isInert())
+                        continue;
+
                     if (index.type == "text")
                         global_ctx->text_indexes_to_merge.push_back(index);
                     else
@@ -1002,14 +1019,18 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
 
 bool MergeTask::enabledBlockNumberColumn(GlobalRuntimeContextPtr global_ctx)
 {
-    return (*global_ctx->data_settings)[MergeTreeSetting::enable_block_number_column]
-        && global_ctx->metadata_snapshot->getGroupByTTLs().empty();
+    if (global_ctx->parent_part)
+        return false;
+
+    return (*global_ctx->data_settings)[MergeTreeSetting::enable_block_number_column];
 }
 
 bool MergeTask::enabledBlockOffsetColumn(GlobalRuntimeContextPtr global_ctx)
 {
-    return (*global_ctx->data_settings)[MergeTreeSetting::enable_block_offset_column]
-        && global_ctx->metadata_snapshot->getGroupByTTLs().empty();
+    if (global_ctx->parent_part)
+        return false;
+
+    return (*global_ctx->data_settings)[MergeTreeSetting::enable_block_offset_column];
 }
 
 void MergeTask::addGatheringColumn(GlobalRuntimeContextPtr global_ctx, const String & name, const DataTypePtr & type)
@@ -1189,15 +1210,45 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::prepareProjectionsToMergeAndRe
             continue;
         }
 
+        /// An existing projection part may lack a column the current metadata expects (e.g. an ALIAS
+        /// selected by the projection was re-pointed by ALTER; see projectionPartHasRequiredColumns).
+        /// Merging it directly would bake default values into the merged part, so rebuild from the parent
+        /// instead. A parent TABLE column the parent part also lacks is a legitimate late-add and does
+        /// not count.
+        const auto projection_columns = projection.metadata->getColumns().getAllPhysical();
+        const auto & parent_table_columns = global_ctx->metadata_snapshot->getColumns();
+        bool projection_part_misses_column = false;
+
         MergeTreeData::DataPartsVector projection_parts;
         for (const auto & part : global_ctx->future_part->parts)
         {
             auto it = part->getProjectionParts().find(projection.name);
             if (it != part->getProjectionParts().end() && !it->second->is_broken)
+            {
+                for (const auto & column : projection_columns)
+                {
+                    if (!it->second->tryGetColumn(column.name)
+                        && (part->tryGetColumn(column.name)
+                            || !parent_table_columns.hasColumnOrSubcolumn(GetColumnsOptions::AllPhysical, column.name)))
+                    {
+                        projection_part_misses_column = true;
+                        break;
+                    }
+                }
+
                 projection_parts.push_back(it->second);
+            }
         }
 
-        if (projection_parts.size() == global_ctx->future_part->parts.size())
+        if (projection_part_misses_column && mode != DeduplicateMergeProjectionMode::IGNORE)
+        {
+            LOG_DEBUG(
+                ctx->log,
+                "Projection {} will be rebuilt because some projection parts miss columns the projection now expects",
+                projection.name);
+            global_ctx->projections_to_rebuild.push_back(&projection);
+        }
+        else if (projection_parts.size() == global_ctx->future_part->parts.size())
         {
             global_ctx->projections_to_merge.push_back(&projection);
             global_ctx->projections_to_merge_parts[projection.name].assign(projection_parts.begin(), projection_parts.end());
@@ -1969,7 +2020,7 @@ bool MergeTask::MergeProjectionsStage::prepareProjections() const
 
         double elapsed_seconds = global_ctx->merge_list_element_ptr->watch.elapsedSeconds();
         LOG_DEBUG(ctx->log,
-            "Merge sorted {} rows, containing {} columns ({} merged, {} gathered) in {} sec., {} rows/sec., {}/sec.",
+            "Merge sorted {} rows, containing {} columns ({} merged, {} gathered) in {:.3f} sec., {:.3f} rows/sec., {}/sec.",
             global_ctx->merge_list_element_ptr->rows_read.load(),
             global_ctx->storage_columns.size(),
             global_ctx->merging_columns.size(),

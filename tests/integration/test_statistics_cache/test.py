@@ -310,7 +310,7 @@ def test_types_smoke_and_nullable():
     _query_retry(ch1, "DROP TABLE IF EXISTS t_mm SYNC")
     _query_retry(ch1, "CREATE TABLE t_mm (k UInt32, x UInt32) ENGINE=MergeTree ORDER BY k SETTINGS refresh_statistics_interval=1")
     _query(ch1, f"INSERT INTO t_mm SELECT number, number%1000000 FROM numbers({ROWS_MEDIUM})")
-    _query_retry(ch1, "ALTER TABLE t_mm ADD STATISTICS x TYPE MinMax")
+    _query_retry(ch1, "ALTER TABLE t_mm ADD STATISTICS x TYPE Basic")
     _query_retry(ch1, "ALTER TABLE t_mm MATERIALIZE STATISTICS ALL")
     _wait_hit(
         ch1, "t-mm",
@@ -381,7 +381,7 @@ def test_auto_statistics_types_load_then_hit():
         ENGINE=MergeTree
         ORDER BY k
         SETTINGS refresh_statistics_interval=1,
-                 auto_statistics_types='tdigest,countmin,minmax,uniq'
+                 auto_statistics_types='tdigest,countmin,basic,uniq'
     """)
     _query(ch1, f"""
         INSERT INTO auto_tbl

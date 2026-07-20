@@ -1,0 +1,112 @@
+---
+slug: /parts
+title: 'أجزاء الجدول'
+description: 'ما المقصود بأجزاء البيانات في ClickHouse'
+keywords: ['جزء']
+doc_type: 'reference'
+---
+
+import { Image } from "/snippets/ar/components/Image.jsx";
+
+<div id="what-are-table-parts-in-clickhouse">
+  ## ما هي أجزاء الجدول في ClickHouse؟
+</div>
+
+<br />
+
+تُنظَّم بيانات كل جدول في ClickHouse ضمن [عائلة محركات MergeTree](/ar/reference/engines/table-engines/mergetree-family/index) على القرص في شكل مجموعة من `data parts` غير القابلة للتغيير.
+
+ولتوضيح ذلك، نستخدم [هذا](https://sql.clickhouse.com/?query=U0hPVyBDUkVBVEUgVEFCTEUgdWsudWtfcHJpY2VfcGFpZF9zaW1wbGU\&run_query=true\&tab=results) الجدول (المُقتبس من [مجموعة بيانات أسعار العقارات في المملكة المتحدة](/ar/get-started/sample-datasets/uk-price-paid))، والذي يتتبع تاريخ بيع العقارات في المملكة المتحدة وبلدتها وشارعها وسعرها:
+
+```sql
+CREATE TABLE uk.uk_price_paid_simple
+(
+    date Date,
+    town LowCardinality(String),
+    street LowCardinality(String),
+    price UInt32
+)
+ENGINE = MergeTree
+ORDER BY (town, street);
+```
+
+يمكنك [الاستعلام عن هذا الجدول](https://sql.clickhouse.com/?query=U0VMRUNUICogRlJPTSB1ay51a19wcmljZV9wYWlkX3NpbXBsZTs\&run_query=true\&tab=results) في ClickHouse SQL Playground الخاص بنا.
+
+يُنشأ جزء بيانات كلما أُدرجت مجموعة من الصفوف في الجدول. يوضّح المخطط التالي ذلك:
+
+<Image img="/images/managing-data/core-concepts/part.webp" size="lg" />
+
+<br />
+
+عندما يعالج خادم ClickHouse مثال الإدراج الذي يحتوي على 4 صفوف (على سبيل المثال، عبر عبارة [INSERT INTO](/ar/reference/statements/insert-into)) الموضحة في المخطط أعلاه، فإنه ينفّذ عدة خطوات:
+
+① **الفرز**: تُفرَز الصفوف بحسب مفتاح الفرز الخاص بالجدول `(town, street)`، ويُنشأ [فهرس أساسي متناثر](/ar/guides/clickhouse/data-modelling/sparse-primary-indexes) للصفوف المُفرَزة.
+
+② **التقسيم**: تُقسَّم البيانات المُفرَزة إلى أعمدة.
+
+③ **الضغط**: يُصبح كل عمود [مضغوطًا](https://clickhouse.com/blog/optimize-clickhouse-codecs-compression-schema).
+
+④ **الكتابة إلى القرص**: تُحفَظ الأعمدة المضغوطة كملفات أعمدة ثنائية داخل دليل جديد يمثّل جزء البيانات الخاص بعملية الإدراج. ويُضغط الفهرس الأساسي المتناثر أيضًا ويُخزَّن في الدليل نفسه.
+
+اعتمادًا على المحرك المحدد للجدول، [قد](/ar/reference/settings/session-settings) تحدث تحويلات إضافية بالتوازي مع الفرز.
+
+تكون أجزاء البيانات مكتفية ذاتيًا، وتشمل جميع البيانات الوصفية اللازمة لتفسير محتوياتها من دون الحاجة إلى كتالوج مركزي. وإلى جانب الفهرس الأساسي المتناثر، تحتوي الأجزاء على بيانات وصفية إضافية، مثل [فهارس تخطي البيانات](/ar/concepts/features/performance/skip-indexes/skipping-indexes) الثانوية، و[إحصاءات الأعمدة](https://clickhouse.com/blog/clickhouse-release-23-11#column-statistics-for-prewhere)، وقيم التحقق، وفهارس الحدين الأدنى والأقصى (إذا استُخدم [التقسيم](/ar/concepts/core-concepts/partitions))، و[المزيد](https://github.com/ClickHouse/ClickHouse/blob/a065b11d591f22b5dd50cb6224fab2ca557b4989/src/Storages/MergeTree/MergeTreeData.h#L104).
+
+<div id="part-merges">
+  ## دمج الأجزاء
+</div>
+
+لإدارة عدد الأجزاء في كل جدول، تجمع مهمة [دمج في الخلفية](/ar/concepts/core-concepts/merges) الأجزاء الأصغر دوريًا في أجزاء أكبر حتى تصل إلى [حجم مضغوط](/ar/reference/settings/merge-tree-settings#max_bytes_to_merge_at_max_space_in_pool) [قابل للتهيئة](/ar/reference/settings/merge-tree-settings#max_bytes_to_merge_at_max_space_in_pool) (عادةً نحو 150 جيجابايت). وتُعلَّم الأجزاء المدمجة على أنها غير نشطة، ثم تُحذف بعد [فاصل زمني](/ar/reference/settings/merge-tree-settings#old_parts_lifetime) [قابل للتهيئة](/ar/reference/settings/merge-tree-settings#old_parts_lifetime). ومع مرور الوقت، تُنشئ هذه العملية بنية هرمية من الأجزاء المدمجة، ولهذا سُمّي جدول MergeTree بهذا الاسم:
+
+<Image img="/images/managing-data/core-concepts/merges.webp" size="lg" />
+
+<br />
+
+لتقليل عدد الأجزاء الأولية والعبء الإضافي الناتج عن عمليات الدمج، يُنصح [عملاء](https://clickhouse.com/blog/asynchronous-data-inserts-in-clickhouse#data-needs-to-be-batched-for-optimal-performance) قاعدة البيانات إما بإدراج الصفوف على دفعات كبيرة، مثل 20,000 صف دفعة واحدة، أو باستخدام [وضع الإدراج غير المتزامن](https://clickhouse.com/blog/asynchronous-data-inserts-in-clickhouse)، حيث يخزّن ClickHouse مؤقتًا الصفوف الواردة من عدة عمليات INSERT إلى الجدول نفسه، ولا ينشئ جزءًا جديدًا إلا بعد أن يتجاوز حجم المخزن المؤقت عتبة قابلة للتهيئة، أو تنتهي مهلة timeout.
+
+<div id="monitoring-table-parts">
+  ## مراقبة أجزاء الجدول
+</div>
+
+يمكنك [الاستعلام عن](https://sql.clickhouse.com/?query=U0VMRUNUIF9wYXJ0CkZST00gdWsudWtfcHJpY2VfcGFpZF9zaW1wbGUKR1JPVVAgQlkgX3BhcnQKT1JERVIgQlkgX3BhcnQgQVNDOw\&run_query=true\&tab=results) قائمة جميع الأجزاء النشطة الموجودة حاليًا في جدول المثال لدينا باستخدام [العمود الافتراضي](/ar/reference/engines/table-engines/index#table_engines-virtual_columns) `_part`:
+
+```sql
+SELECT _part
+FROM uk.uk_price_paid_simple
+GROUP BY _part
+ORDER BY _part ASC;
+```
+
+```response
+   ┌─_part───────┐
+1. │ all_0_5_1   │
+2. │ all_12_17_1 │
+3. │ all_18_23_1 │
+4. │ all_6_11_1  │
+   └─────────────┘
+```
+
+يسترجع الاستعلام أعلاه أسماء المجلدات على القرص، حيث يمثّل كل مجلد جزء بيانات نشطًا من الجدول. ولمكوّنات أسماء هذه المجلدات معانٍ محددة، وهي موثّقة [هنا](https://github.com/ClickHouse/ClickHouse/blob/f90551824bb90ade2d8a1d8edd7b0a3c0a459617/src/Storages/MergeTree/MergeTreeData.h#L130) لمن يرغب في التعمق أكثر.
+
+بدلًا من ذلك، يتتبّع ClickHouse معلومات جميع الأجزاء في جميع الجداول ضمن جدول النظام [system.parts](/ar/reference/system-tables/parts)، ويُرجع الاستعلام التالي [لجدول المثال أعلاه](https://sql.clickhouse.com/?query=U0VMRUNUCiAgICBuYW1lLAogICAgbGV2ZWwsCiAgICByb3dzCkZST00gc3lzdGVtLnBhcnRzCldIRVJFIChkYXRhYmFzZSA9ICd1aycpIEFORCAoYHRhYmxlYCA9ICd1a19wcmljZV9wYWlkX3NpbXBsZScpIEFORCBhY3RpdmUKT1JERVIgQlkgbmFtZSBBU0M7\&run_query=true\&tab=results) قائمة بجميع الأجزاء النشطة حاليًا، ومستوى الدمج لكل منها، وعدد الصفوف المخزّنة فيها:
+
+```sql
+SELECT
+    name,
+    level,
+    rows
+FROM system.parts
+WHERE (database = 'uk') AND (`table` = 'uk_price_paid_simple') AND active
+ORDER BY name ASC;
+```
+
+```response
+   ┌─name────────┬─level─┬────rows─┐
+1. │ all_0_5_1   │     1 │ 6368414 │
+2. │ all_12_17_1 │     1 │ 6442494 │
+3. │ all_18_23_1 │     1 │ 5977762 │
+4. │ all_6_11_1  │     1 │ 6459763 │
+   └─────────────┴───────┴─────────┘
+```
+
+يرتفع مستوى الدمج بمقدار واحد مع كل عملية دمج إضافية تُجرى على الجزء. ويشير المستوى 0 إلى أن هذا جزء جديد لم يُدمج بعد.

@@ -1,0 +1,57 @@
+---
+description: 'Documentação da instrução REVOKE'
+sidebarTitle: 'REVOKE'
+slug: /sql-reference/statements/revoke
+title: 'Instrução REVOKE'
+doc_type: 'reference'
+---
+
+Revoga privilégios de usuários ou roles.
+
+<div id="syntax">
+  ## Sintaxe
+</div>
+
+**Revogando privilégios de usuários**
+
+```sql
+REVOKE [ON CLUSTER cluster_name] privilege[(column_name [,...])] [,...] ON {db.table|db.*|*.*|table|*} FROM {user | CURRENT_USER} [,...] | ALL | ALL EXCEPT {user | CURRENT_USER} [,...]
+```
+
+**Revogar roles de usuários**
+
+```sql
+REVOKE [ON CLUSTER cluster_name] [ADMIN OPTION FOR] role [,...] FROM {user | role | CURRENT_USER} [,...] | ALL | ALL EXCEPT {user_name | role_name | CURRENT_USER} [,...]
+```
+
+<div id="description">
+  ## Descrição
+</div>
+
+Para revogar um privilégio, você pode usar um privilégio de escopo mais amplo do que o que pretende revogar. Por exemplo, se um usuário tiver o privilégio `SELECT (x,y)`, o administrador poderá executar a consulta `REVOKE SELECT(x,y) ...`, ou `REVOKE SELECT * ...`, ou até mesmo `REVOKE ALL PRIVILEGES ...` para revogar esse privilégio.
+
+<div id="partial-revokes">
+  ### Revogações parciais
+</div>
+
+Você pode revogar parte de um privilégio. Por exemplo, se um usuário tiver o privilégio `SELECT *.*`, você pode revogar desse usuário o privilégio de ler dados de alguma tabela ou de um banco de dados.
+
+<div id="examples">
+  ## Exemplos
+</div>
+
+Conceda à conta de usuário `john` o privilégio de selecionar dados de todos os bancos de dados, exceto do `accounts`:
+
+```sql
+GRANT SELECT ON *.* TO john;
+REVOKE SELECT ON accounts.* FROM john;
+```
+
+Conceda à conta de usuário `mira` o privilégio de selecionar todas as colunas da tabela `accounts.staff`, exceto a coluna `wage`.
+
+```sql
+GRANT SELECT ON accounts.staff TO mira;
+REVOKE SELECT(wage) ON accounts.staff FROM mira;
+```
+
+[Artigo original](/pt-BR/reference/settings/session-settings)

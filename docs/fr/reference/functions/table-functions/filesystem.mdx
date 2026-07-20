@@ -1,0 +1,112 @@
+---
+description: 'Fournit un accès au système de fichiers pour répertorier les fichiers et renvoyer leurs métadonnées ainsi que leur contenu.'
+sidebarTitle: 'filesystem'
+slug: /sql-reference/table-functions/filesystem
+title: 'filesystem'
+doc_type: 'reference'
+---
+
+import CloudNotSupportedBadge from "/snippets/fr/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+
+<div id="filesystem-table-function">
+  # Fonction de table filesystem
+</div>
+
+<CloudNotSupportedBadge />
+
+Parcourt récursivement un répertoire et renvoie une table contenant les métadonnées des fichiers (`paths`, tailles, types, permissions, dates de modification) et, éventuellement, le contenu des fichiers.
+
+En mode `clickhouse-server`, le chemin doit se trouver dans le répertoire [user&#95;files&#95;path](/fr/reference/settings/server-settings/settings#user_files_path). Les liens symboliques à l’intérieur de `user_files_path` qui pointent en dehors de celui-ci sont suivis, mais seules les entrées dont le chemin (via le lien symbolique) commence par `user_files_path` sont renvoyées.
+
+En mode `clickhouse-local`, il n’y a aucune restriction de chemin.
+
+<div id="syntax">
+  ## Syntaxe
+</div>
+
+```sql
+filesystem([path])
+```
+
+<div id="arguments">
+  ## Arguments
+</div>
+
+| Paramètre | Description                                                                                                                                                                                                                         |
+| --------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `path`    | Le répertoire à lister. Il peut s’agir d’un chemin absolu (qui doit se trouver dans `user_files_path` en mode serveur) ou d’un chemin relatif à `user_files_path`. S’il est vide ou omis, `user_files_path` est utilisé par défaut. |
+
+<div id="returned_columns">
+  ## Colonnes renvoyées
+</div>
+
+| Column              | Type                       | Description                                                                                                                                                                                                                                                                                      |
+| ------------------- | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `path`              | `String`                   | Répertoire contenant l’entrée (sans inclure le nom du fichier/répertoire lui-même).                                                                                                                                                                                                              |
+| `name`              | `String`                   | Nom du fichier ou du répertoire (dernier composant du chemin).                                                                                                                                                                                                                                   |
+| `file`              | `String` (ALIAS of `name`) | Alias de la colonne `name`.                                                                                                                                                                                                                                                                      |
+| `type`              | `Enum8`                    | Type de fichier : `'none'`, `'not_found'`, `'regular'`, `'directory'`, `'symlink'`, `'block'`, `'character'`, `'fifo'`, `'socket'`, `'unknown'`.                                                                                                                                                 |
+| `size`              | `Nullable(UInt64)`         | Taille du fichier en octets (pour les fichiers ordinaires). `NULL` pour les fichiers non ordinaires (répertoires, liens symboliques, etc.) et en cas d’erreur.                                                                                                                                   |
+| `depth`             | `UInt16`                   | Profondeur de récursion. `0` pour le répertoire interrogé lui-même et ses enfants immédiats, `1` pour les entrées situées un niveau plus bas, et ainsi de suite.                                                                                                                                 |
+| `modification_time` | `Nullable(DateTime64(6))`  | Date et heure de dernière modification, avec une précision à la microseconde. `NULL` en cas d’erreur.                                                                                                                                                                                            |
+| `is_symlink`        | `Bool`                     | Indique si l’entrée est un lien symbolique.                                                                                                                                                                                                                                                      |
+| `content`           | `Nullable(String)`         | Contenu du fichier (pour les fichiers ordinaires). `NULL` pour les fichiers non ordinaires (répertoires, liens symboliques, etc.). Les erreurs de lecture lèvent une exception. La lecture de cette colonne déclenche des E/S de fichier réelles ; omettez-la donc si vous n’en avez pas besoin. |
+| `owner_read`        | `Bool`                     | Le propriétaire dispose du droit de lecture.                                                                                                                                                                                                                                                     |
+| `owner_write`       | `Bool`                     | Le propriétaire dispose du droit d’écriture.                                                                                                                                                                                                                                                     |
+| `owner_exec`        | `Bool`                     | Le propriétaire dispose du droit d’exécution.                                                                                                                                                                                                                                                    |
+| `group_read`        | `Bool`                     | Le groupe dispose du droit de lecture.                                                                                                                                                                                                                                                           |
+| `group_write`       | `Bool`                     | Le groupe dispose du droit d’écriture.                                                                                                                                                                                                                                                           |
+| `group_exec`        | `Bool`                     | Le groupe dispose du droit d’exécution.                                                                                                                                                                                                                                                          |
+| `others_read`       | `Bool`                     | Les autres disposent du droit de lecture.                                                                                                                                                                                                                                                        |
+| `others_write`      | `Bool`                     | Les autres disposent du droit d’écriture.                                                                                                                                                                                                                                                        |
+| `others_exec`       | `Bool`                     | Les autres disposent du droit d’exécution.                                                                                                                                                                                                                                                       |
+| `set_gid`           | `Bool`                     | Bit set-GID.                                                                                                                                                                                                                                                                                     |
+| `set_uid`           | `Bool`                     | Bit set-UID.                                                                                                                                                                                                                                                                                     |
+| `sticky_bit`        | `Bool`                     | Sticky bit.                                                                                                                                                                                                                                                                                      |
+
+Seules les colonnes effectivement utilisées dans la requête sont calculées ; sélectionner un sous-ensemble de colonnes (en particulier en omettant `content`) est donc efficace.
+
+<div id="examples">
+  ## Exemples
+</div>
+
+<div id="list-files">
+  ### Lister les fichiers dans user_files
+</div>
+
+```sql
+SELECT name, type, size, depth
+FROM filesystem()
+ORDER BY name;
+```
+
+<div id="find-large-files">
+  ### Repérer les fichiers volumineux
+</div>
+
+```sql
+SELECT path, name, size
+FROM filesystem()
+WHERE type = 'regular' AND size > 1000000
+ORDER BY size DESC;
+```
+
+<div id="read-contents">
+  ### Lire le contenu d’un fichier
+</div>
+
+```sql
+SELECT name, content
+FROM filesystem('my_directory')
+WHERE name LIKE '%.csv';
+```
+
+<div id="list-immediate">
+  ### Lister uniquement les éléments enfants immédiats
+</div>
+
+```sql
+SELECT name, type
+FROM filesystem('my_directory')
+WHERE depth = 0;
+```

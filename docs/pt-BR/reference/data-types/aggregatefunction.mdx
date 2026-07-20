@@ -1,0 +1,125 @@
+---
+description: 'Documentação do tipo de dado AggregateFunction no ClickHouse, que
+armazena estados intermediários de funções de agregação'
+keywords: ['AggregateFunction', 'Tipo']
+sidebarTitle: 'AggregateFunction'
+slug: /sql-reference/data-types/aggregatefunction
+title: 'Tipo AggregateFunction'
+doc_type: 'reference'
+---
+
+<div id="description">
+  ## Descrição
+</div>
+
+Todas as [funções de agregação](/pt-BR/reference/functions/aggregate-functions/index) do ClickHouse têm
+um estado intermediário específico da implementação, que pode ser serializado em um
+tipo de dado `AggregateFunction` e armazenado em uma tabela. Isso geralmente é feito por
+meio de uma [visão materializada](/pt-BR/reference/statements/create/view).
+
+Há dois [combinadores](/pt-BR/reference/functions/aggregate-functions/combinators) de função de agregação
+comumente usados com o tipo `AggregateFunction`:
+
+* O combinador de função de agregação [`-State`](/pt-BR/reference/functions/aggregate-functions/combinators#-state), que, quando anexado ao nome de uma função de agregação,
+  produz estados intermediários `AggregateFunction`.
+* O combinador de função de agregação [`-Merge`](/pt-BR/reference/functions/aggregate-functions/combinators#-merge),
+  usado para obter o resultado final de uma agregação
+  a partir dos estados intermediários.
+
+<div id="syntax">
+  ## Sintaxe
+</div>
+
+```sql
+AggregateFunction(aggregate_function_name, types_of_arguments...)
+```
+
+**Parâmetros**
+
+* `aggregate_function_name` - O nome de uma função de agregação. Se a função
+  for paramétrica, seus parâmetros também deverão ser especificados.
+* `types_of_arguments` - Os tipos dos argumentos da função de agregação.
+
+por exemplo:
+
+```sql
+CREATE TABLE t
+(
+    column1 AggregateFunction(uniq, UInt64),
+    column2 AggregateFunction(anyIf, String, UInt8),
+    column3 AggregateFunction(quantiles(0.5, 0.9), UInt64)
+) ENGINE = ...
+```
+
+<div id="usage">
+  ## Uso
+</div>
+
+<div id="data-insertion">
+  ### Inserção de dados
+</div>
+
+Para inserir dados em uma tabela com colunas do tipo `AggregateFunction`, você pode
+usar `INSERT SELECT` com funções de agregação e o
+combinador de funções de agregação
+[`-State`](/pt-BR/reference/functions/aggregate-functions/combinators#-state).
+
+Por exemplo, para inserir dados em colunas do tipo `AggregateFunction(uniq, UInt64)` e
+`AggregateFunction(quantiles(0.5, 0.9), UInt64)`, use as seguintes
+funções de agregação com combinadores.
+
+```sql
+uniqState(UserID)
+quantilesState(0.5, 0.9)(SendTiming)
+```
+
+Em contraste com as funções `uniq` e `quantiles`, `uniqState` e `quantilesState`
+(com o combinador `-State` anexado) retornam o estado, em vez do valor final.
+Em outras palavras, elas retornam um valor do tipo `AggregateFunction`.
+
+Nos resultados da consulta `SELECT`, valores do tipo `AggregateFunction` têm
+representações binárias específicas da implementação em todos os formatos de saída
+do ClickHouse.
+
+Há uma configuração especial no nível da sessão, `aggregate_function_input_format`, que permite construir o estado a partir dos valores de entrada.
+Ela oferece suporte aos seguintes formatos:
+
+* `state` - string binária com o estado serializado (o padrão).
+  Se você exportar dados para, por exemplo, o formato `TabSeparated` com uma consulta `SELECT`,
+  esse dump poderá ser carregado novamente usando a consulta `INSERT`.
+* `value` - o formato esperará um único valor do argumento da função de agregação ou, no caso de vários argumentos, uma tupla deles; isso será desserializado para formar o estado correspondente
+* `array` - o formato esperará um Array de valores, conforme descrito na opção `value` acima; todos os elementos do array serão agregados para formar o estado
+
+<div id="data-selection">
+  ### Seleção de dados
+</div>
+
+Ao selecionar dados de uma tabela `AggregatingMergeTree`, use a cláusula `GROUP BY`
+e as mesmas funções de agregação usadas na inserção dos dados, mas com o
+combinador [`-Merge`](/pt-BR/reference/functions/aggregate-functions/combinators#-merge).
+
+Uma função de agregação com o combinador `-Merge` adicionado recebe um conjunto de
+estados, combina esses estados e retorna o resultado da agregação completa dos dados.
+
+Por exemplo, as duas consultas a seguir retornam o mesmo resultado:
+
+```sql
+SELECT uniq(UserID) FROM table
+
+SELECT uniqMerge(state) FROM (SELECT uniqState(UserID) AS state FROM table GROUP BY RegionID)
+```
+
+<div id="usage-example">
+  ## Exemplo de uso
+</div>
+
+Consulte a descrição do motor [AggregatingMergeTree](/pt-BR/reference/engines/table-engines/mergetree-family/aggregatingmergetree).
+
+<div id="related-content">
+  ## Conteúdo relacionado
+</div>
+
+* Blog: [Como usar combinadores de agregação no ClickHouse](https://clickhouse.com/blog/aggregate-functions-combinators-in-clickhouse-for-arrays-maps-and-states)
+* [MergeState](/pt-BR/reference/functions/aggregate-functions/combinators#-mergestate)
+  combinador.
+* [State](/pt-BR/reference/functions/aggregate-functions/combinators#-state) combinador.

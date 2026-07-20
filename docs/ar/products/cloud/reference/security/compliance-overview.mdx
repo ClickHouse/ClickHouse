@@ -1,0 +1,62 @@
+---
+title: 'تقارير الأمن والامتثال'
+slug: /cloud/security/compliance-overview
+description: 'نظرة عامة على شهادات الأمن والامتثال الخاصة بـ ClickHouse Cloud، بما في ذلك SOC 2 وISO 27001 وU.S. DPF وHIPAA'
+doc_type: 'مرجع'
+keywords: ['ClickHouse Cloud', 'SOC 2 Type II', 'ISO 27001', 'HIPAA', 'U.S. DPF', 'PCI']
+---
+
+import BetaBadge from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
+import EnterprisePlanFeatureBadge from "/snippets/ar/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
+
+تُقيِّم ClickHouse احتياجات عملائنا المتعلقة بالأمان والامتثال، وتواصل توسيع هذا البرنامج باستمرار كلما طُلِبت تقارير إضافية. ولمزيد من المعلومات أو لتنزيل التقارير، يُرجى زيارة [Trust Center](https://trust.clickhouse.com).
+
+<div id="soc-2-type-ii-since-2022">
+  ## SOC 2 Type II (منذ 2022)
+</div>
+
+يُعدّ System and Organization Controls (SOC) 2 تقريرًا يركّز على معايير الأمان، والتوافر، والسرية، ونزاهة المعالجة، والخصوصية الواردة ضمن Trust Services Criteria (TSC)، كما تُطبَّق على أنظمة المؤسسة، وقد صُمِّم لتوفير تأكيد بشأن هذه الضوابط للأطراف المعتمدة عليها (عملائنا). وتتعاون ClickHouse مع مدققين خارجيين مستقلين للخضوع لتدقيق مرة واحدة على الأقل سنويًا، يتناول الأمان والتوافر ونزاهة المعالجة في أنظمتنا، إضافةً إلى سرية البيانات التي تعالجها أنظمتنا وخصوصيتها. ويغطي التقرير كلاً من عروض ClickHouse Cloud وBring Your Own Cloud (BYOC) لدينا.
+
+<div id="iso-27001-since-2023">
+  ## ISO 27001 (منذ 2023)
+</div>
+
+يُعد ISO 27001 معيارًا دوليًا لأمن المعلومات. ويتطلب من الشركات تطبيق نظام إدارة أمن المعلومات (ISMS)، الذي يتضمن عمليات لإدارة المخاطر، ووضع السياسات وإيصالها، وتنفيذ الضوابط الأمنية، وإجراء المراقبة لضمان بقاء هذه العناصر ملائمة وفعّالة. وتُجري ClickHouse عمليات تدقيق داخلية، كما تعمل مع مدققين خارجيين مستقلين للخضوع لعمليات تدقيق وعمليات تفتيش مرحلية خلال السنتين التاليتين لإصدار الشهادة.
+
+<div id="us-dpf-since-2024">
+  ## U.S. DPF (منذ 2024)
+</div>
+
+وُضع إطار خصوصية البيانات الأمريكي لتزويد المؤسسات الأمريكية بآليات موثوقة لنقل البيانات الشخصية إلى الولايات المتحدة من الاتحاد الأوروبي/المنطقة الاقتصادية الأوروبية، والمملكة المتحدة، وسويسرا، بما يتوافق مع قوانين الاتحاد الأوروبي والمملكة المتحدة وسويسرا (https://dataprivacyframework.gov/Program-Overview). وقد أجرت ClickHouse اعتمادًا ذاتيًا بموجب هذا الإطار وهي مُدرجة في [قائمة إطار خصوصية البيانات](https://dataprivacyframework.gov/list).
+
+<div id="hipaa-since-2024">
+  ## HIPAA (منذ 2024)
+</div>
+
+<EnterprisePlanFeatureBadge feature="HIPAA" />
+
+يُعد قانون قابلية نقل التأمين الصحي والمساءلة (HIPAA) لعام 1996 قانون خصوصية في الولايات المتحدة يركّز على إدارة المعلومات الصحية المحمية (PHI). ويتضمن HIPAA عدة متطلبات، منها [قاعدة الأمان](https://www.hhs.gov/hipaa/for-professionals/security/index.html)، التي تركّز على حماية المعلومات الصحية الشخصية الإلكترونية (ePHI). وقد طبّقت ClickHouse ضمانات إدارية ومادية وتقنية لضمان سرية ePHI المخزنة في الخدمات المعيّنة وسلامتها وأمنها. وتندرج هذه الأنشطة ضمن تقرير SOC 2 Type II الخاص بنا، والمتاح للتنزيل من [Trust Center](https://trust.clickhouse.com).
+
+ارجع إلى [إعداد HIPAA](/ar/products/cloud/guides/security/compliance/hipaa-onboarding) للاطلاع على خطوات إكمال اتفاقية شريك الأعمال (BAA) ونشر خدمات متوافقة مع HIPAA.
+
+<div id="pci-service-provider-since-2025">
+  ## مزود خدمة PCI (اعتبارًا من 2025)
+</div>
+
+<EnterprisePlanFeatureBadge feature="امتثال PCI" />
+
+يُعد [معيار أمان بيانات صناعة بطاقات الدفع (PCI DSS)](https://www.pcisecuritystandards.org/standards/pci-dss/) مجموعةً من القواعد التي وضعها مجلس معايير أمان PCI لحماية بيانات الدفع الخاصة ببطاقات الائتمان. خضع ClickHouse لتدقيق خارجي أجراه مُقيِّم أمان مؤهل (QSA)، وأسفر ذلك عن اجتياز تقرير الامتثال (ROC) وفقًا لمعايير PCI ذات الصلة بتخزين بيانات بطاقات الائتمان. لتنزيل نسخة من شهادة الامتثال (AOC) ونظرة عامة على مسؤوليات PCI، يُرجى زيارة [Trust Center](https://trust.clickhouse.com).
+
+راجِع [إعداد PCI](/ar/products/cloud/guides/security/compliance/pci-onboarding) للاطلاع على خطوات نشر خدمات متوافقة مع PCI.
+
+<div id="privacy-compliance">
+  ## الامتثال للخصوصية
+</div>
+
+بالإضافة إلى البنود المذكورة أعلاه، تدير ClickHouse برامج امتثال داخلية تتناول اللائحة العامة لحماية البيانات (GDPR)، وقانون خصوصية المستهلك في كاليفورنيا (CCPA)، وغيرها من أطر الخصوصية ذات الصلة.
+
+<div id="payment-compliance">
+  ## الامتثال لمتطلبات الدفع
+</div>
+
+يوفّر ClickHouse طريقة آمنة للدفع ببطاقة ائتمان تتوافق مع [PCI SAQ A v4.0](https://www.pcisecuritystandards.org/document_library/).

@@ -1,0 +1,191 @@
+---
+description: '원격 MySQL 서버에 저장된 데이터에 대해 `SELECT` 및 `INSERT` 쿼리를 실행할 수
+  있습니다.'
+sidebarTitle: 'mysql'
+slug: /sql-reference/table-functions/mysql
+title: 'mysql'
+doc_type: 'reference'
+---
+
+원격 MySQL 서버에 저장된 데이터에 대해 `SELECT` 및 `INSERT` 쿼리를 실행할 수 있습니다.
+
+<div id="syntax">
+  ## 구문
+</div>
+
+```sql
+mysql({host:port, database, table, user, password[, replace_query, on_duplicate_clause] | named_collection[, option=value [,..]]})
+```
+
+<div id="arguments">
+  ## 인수
+</div>
+
+| 인수                    | 설명                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `host:port`           | MySQL 서버 주소입니다.                                                                                                                                                                                                                                                                                                                                                                                                     |
+| `database`            | 원격 데이터베이스 이름입니다.                                                                                                                                                                                                                                                                                                                                                                                                    |
+| `table`               | 원격 테이블 이름입니다.                                                                                                                                                                                                                                                                                                                                                                                                       |
+| `user`                | MySQL 사용자입니다.                                                                                                                                                                                                                                                                                                                                                                                                       |
+| `password`            | 사용자 비밀번호입니다.                                                                                                                                                                                                                                                                                                                                                                                                        |
+| `replace_query`       | `INSERT INTO` 쿼리를 `REPLACE INTO`로 변환하는 플래그입니다. 가능한 값:<br />    - `0` - 쿼리가 `INSERT INTO`로 실행됩니다.<br />    - `1` - 쿼리가 `REPLACE INTO`로 실행됩니다.                                                                                                                                                                                                                                                                        |
+| `on_duplicate_clause` | `INSERT` 쿼리에 추가되는 `ON DUPLICATE KEY on_duplicate_clause` 표현식입니다. `replace_query = 0`일 때만 지정할 수 있습니다(`replace_query = 1`과 `on_duplicate_clause`를 동시에 전달하면 ClickHouse에서 예외가 발생합니다).<br />    예시: `INSERT INTO t (c1,c2) VALUES ('a', 2) ON DUPLICATE KEY UPDATE c2 = c2 + 1;`<br />    여기서 `on_duplicate_clause`는 `UPDATE c2 = c2 + 1`입니다. `ON DUPLICATE KEY` 절과 함께 사용할 수 있는 `on_duplicate_clause`는 MySQL 문서를 참조하십시오. |
+
+인수는 [이름이 지정된 컬렉션](/ko/concepts/features/configuration/server-config/named-collections)을 사용해 전달할 수도 있습니다. 이 경우 `host`와 `port`는 별도로 지정해야 합니다. 프로덕션 환경에서는 이 방식을 권장합니다.
+
+`=, !=, >, >=, <, <=`와 같은 단순한 `WHERE` 절은 현재 MySQL 서버에서 실행됩니다.
+
+그 외 조건과 `LIMIT` 샘플링 제약은 MySQL 쿼리가 완료된 후에만 ClickHouse에서 실행됩니다.
+
+여러 레플리카를 지원하며, `|`로 나열해야 합니다. 예를 들면 다음과 같습니다:
+
+```sql
+SELECT name FROM mysql(`mysql{1|2|3}:3306`, 'mysql_database', 'mysql_table', 'user', 'password');
+```
+
+또는
+
+```sql
+SELECT name FROM mysql(`mysql1:3306|mysql2:3306|mysql3:3306`, 'mysql_database', 'mysql_table', 'user', 'password');
+```
+
+<div id="returned_value">
+  ## 반환 값
+</div>
+
+원본 MySQL 테이블과 동일한 컬럼으로 이루어진 테이블 객체입니다.
+
+<Note>
+  MySQL의 일부 데이터 타입은 서로 다른 ClickHouse 타입으로 매핑될 수 있으며, 이는 쿼리 수준 설정 [mysql&#95;datatypes&#95;support&#95;level](/ko/reference/settings/session-settings#mysql_datatypes_support_level)로 제어됩니다.
+</Note>
+
+<Note>
+  `INSERT` 쿼리에서 테이블 함수 `mysql(...)`를 컬럼 이름 목록이 포함된 테이블 이름과 구분하려면 `FUNCTION` 또는 `TABLE FUNCTION` 키워드를 사용해야 합니다. 아래 예시를 참조하십시오.
+</Note>
+
+<div id="examples">
+  ## 예시
+</div>
+
+MySQL 테이블:
+
+```text
+mysql> CREATE TABLE `test`.`test` (
+    ->   `int_id` INT NOT NULL AUTO_INCREMENT,
+    ->   `float` FLOAT NOT NULL,
+    ->   PRIMARY KEY (`int_id`));
+
+mysql> INSERT INTO test (`int_id`, `float`) VALUES (1,2);
+
+mysql> SELECT * FROM test;
++--------+-------+
+| int_id | float |
++--------+-------+
+|      1 |     2 |
++--------+-------+
+```
+
+ClickHouse에서 데이터 조회:
+
+```sql
+SELECT * FROM mysql('localhost:3306', 'test', 'test', 'bayonet', '123');
+```
+
+또는 [이름이 지정된 컬렉션](/ko/concepts/features/configuration/server-config/named-collections):
+
+```sql
+CREATE NAMED COLLECTION creds AS
+        host = 'localhost',
+        port = 3306,
+        database = 'test',
+        user = 'bayonet',
+        password = '123';
+SELECT * FROM mysql(creds, table='test');
+```
+
+```text
+┌─int_id─┬─float─┐
+│      1 │     2 │
+└────────┴───────┘
+```
+
+<div id="enable-compression">
+  ### `enable_compression`
+</div>
+
+MySQL 프로토콜 연결에 대한 압축을 활성화합니다.
+
+기본값: `false`.
+
+이 설정은 다음에 적용됩니다.
+
+* `mysql` 테이블 함수;
+* `MySQL` 테이블 엔진;
+* `MySQL` 데이터베이스 엔진;
+* MySQL 통합에 사용되는 이름이 지정된 컬렉션.
+
+활성화되면 ClickHouse가 해당 연결에 대해 압축을 요청합니다.
+
+예시:
+
+```sql
+SELECT *
+FROM mysql(
+    'mysql80:3306',
+    'clickhouse',
+    'test_table',
+    'root',
+    'password',
+    SETTINGS enable_compression = 1
+);
+```
+
+교체 및 삽입:
+
+```sql
+INSERT INTO FUNCTION mysql('localhost:3306', 'test', 'test', 'bayonet', '123', 1) (int_id, float) VALUES (1, 3);
+INSERT INTO TABLE FUNCTION mysql('localhost:3306', 'test', 'test', 'bayonet', '123', 0, 'UPDATE int_id = int_id + 1') (int_id, float) VALUES (1, 4);
+SELECT * FROM mysql('localhost:3306', 'test', 'test', 'bayonet', '123');
+```
+
+```text
+┌─int_id─┬─float─┐
+│      1 │     3 │
+│      2 │     4 │
+└────────┴───────┘
+```
+
+MySQL 테이블의 데이터를 ClickHouse 테이블로 복사:
+
+```sql
+CREATE TABLE mysql_copy
+(
+   `id` UInt64,
+   `datetime` DateTime('UTC'),
+   `description` String,
+)
+ENGINE = MergeTree
+ORDER BY (id,datetime);
+
+INSERT INTO mysql_copy
+SELECT * FROM mysql('host:port', 'database', 'table', 'user', 'password');
+```
+
+또는 현재 최대 id 값을 기준으로 MySQL에서 증분 배치만 복사하는 경우:
+
+```sql
+INSERT INTO mysql_copy
+SELECT * FROM mysql('host:port', 'database', 'table', 'user', 'password')
+WHERE id > (SELECT max(id) FROM mysql_copy);
+```
+
+<div id="related">
+  ## 관련
+</div>
+
+* [「MySQL」 테이블 엔진](/ko/reference/engines/table-engines/integrations/mysql)
+* [MySQL을 딕셔너리 소스로 사용](/ko/reference/statements/create/dictionary/sources/mysql)
+* [mysql&#95;datatypes&#95;support&#95;level](/ko/reference/settings/session-settings#mysql_datatypes_support_level)
+* [mysql&#95;map&#95;fixed&#95;string&#95;to&#95;text&#95;in&#95;show&#95;columns](/ko/reference/settings/session-settings#mysql_map_fixed_string_to_text_in_show_columns)
+* [mysql&#95;map&#95;string&#95;to&#95;text&#95;in&#95;show&#95;columns](/ko/reference/settings/session-settings#mysql_map_string_to_text_in_show_columns)
+* [mysql&#95;max&#95;rows&#95;to&#95;insert](/ko/reference/settings/session-settings#mysql_max_rows_to_insert)
