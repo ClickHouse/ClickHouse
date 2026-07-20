@@ -7850,7 +7850,7 @@ Allow to add compound identifiers to nested. This is a compatibility setting bec
 When enabled, this setting makes the analyzer restrict `SEMI` JOIN column access to the preserved side in accordance with the SQL standard.
 For `LEFT SEMI JOIN` only left table columns are accessible, for `RIGHT SEMI JOIN` only right table columns.
 This applies to expressions resolved from the joined result, such as `SELECT`, `PREWHERE`, `WHERE`, `GROUP BY`, `HAVING`, `QUALIFY`, `ORDER BY`, and `LIMIT BY` clauses, including qualified wildcards like `t1.*`.
-Non-preserved side columns cause `UNKNOWN_IDENTIFIER` exception.
+An explicit reference to a non-preserved side column raises the `SEMI_ANTI_JOIN_COLUMN_ACCESS_DENIED` exception. This covers qualified references such as `t2.b`, qualified wildcards like `t2.*`, `USING` columns like `d.id`, and fully qualified references like `db.table.column`, and it is enforced even inside statically-dead branches such as `if(false, t2.b, 42)`. An unqualified identifier that does not match any accessible column still falls back to the generic `UNKNOWN_IDENTIFIER` exception.
 The `JOIN ON` expression of the same `JOIN` can access both sides regardless of this setting.
 When disabled, legacy behavior keeps columns from both sides accessible, and `SELECT *` returns columns from both sides.
     )", 0) \
@@ -7858,7 +7858,7 @@ When disabled, legacy behavior keeps columns from both sides accessible, and `SE
 When enabled, this setting makes the analyzer restrict `ANTI` JOIN column access to the preserved side in accordance with the SQL standard.
 For `LEFT ANTI JOIN` only left table columns are accessible, for `RIGHT ANTI JOIN` only right table columns.
 This applies to expressions resolved from the joined result, such as `SELECT`, `PREWHERE`, `WHERE`, `GROUP BY`, `HAVING`, `QUALIFY`, `ORDER BY`, and `LIMIT BY` clauses, including qualified wildcards like `t1.*`.
-Non-preserved side columns cause `UNKNOWN_IDENTIFIER` exception.
+An explicit reference to a non-preserved side column raises the `SEMI_ANTI_JOIN_COLUMN_ACCESS_DENIED` exception. This covers qualified references such as `t2.b`, qualified wildcards like `t2.*`, `USING` columns like `d.id`, and fully qualified references like `db.table.column`, and it is enforced even inside statically-dead branches such as `if(false, t2.b, 42)`. An unqualified identifier that does not match any accessible column still falls back to the generic `UNKNOWN_IDENTIFIER` exception.
 The `JOIN ON` expression of the same `JOIN` can access both sides regardless of this setting.
 When disabled, legacy behavior keeps columns from both sides accessible, and `SELECT *` returns columns from both sides.
     )", 0) \
