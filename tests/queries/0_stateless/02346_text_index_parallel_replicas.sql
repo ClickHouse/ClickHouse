@@ -11,6 +11,10 @@ SET enable_analyzer = 1;
 -- With small index granularity, the amount of rows left to read after the index analysis might be too small to utilize parallel replicas. So, we set it to 0.
 SET parallel_replicas_min_number_of_rows_per_replica = 0;
 
+-- TextIndexUsedEmbeddedPostings only increments on a tokens-cache miss (the token infos are read from
+-- disk). With the global cache warm the probe below reads 0 and the test flaps, so read tokens from disk.
+SET use_text_index_tokens_cache = 0;
+
 DROP TABLE IF EXISTS tab;
 
 CREATE TABLE tab
