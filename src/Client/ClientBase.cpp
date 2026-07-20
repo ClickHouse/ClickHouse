@@ -814,8 +814,22 @@ try
 
                 chassert(out_file_buf.get() == nullptr);
 
+                auto out_file_write_buf = std::make_unique<WriteBufferFromFile>(out_file, DBMS_DEFAULT_BUFFER_SIZE, flags);
+
+                /// Keep the primary `INTO OUTFILE` sink responsive to cancellation, just like the
+                /// `std_out` result-set path and the `AND STDOUT` mirror below. A non-regular target
+                /// (a FIFO, character device or socket path) can block in `write()` the same way a
+                /// stuck terminal does, so without a hook the first `Ctrl+C` would not promptly abort
+                /// the output. For a regular file `setCancellationHook` is a no-op (`fstat` marks it
+                /// as non-blocking), so nothing is dropped and the complete file is preserved. The
+                /// `isRunning()` guard keeps the final flush in `resetOutput()` from discarding
+                /// already-produced output on an exception path, where the query was never cancelled.
+                out_file_write_buf->setCancellationHook(
+                    [this]()
+                    { return query_interrupt_handler.isRunning() && query_interrupt_handler.cancelled(); });
+
                 out_file_buf = wrapWriteBufferWithCompressionMethod(
-                    std::make_unique<WriteBufferFromFile>(out_file, DBMS_DEFAULT_BUFFER_SIZE, flags),
+                    std::move(out_file_write_buf),
                     compression_method,
                     static_cast<int>(compression_level),
                     /*zstd_window_log=*/ 0,
@@ -981,11 +995,15 @@ void ClientBase::initLogsOutputStream()
             }
             else
             {
-                out_logs_buf
-                    = std::make_unique<AutoCanceledWriteBuffer<WriteBufferFromFile>>(server_logs_file, DBMS_DEFAULT_BUFFER_SIZE, O_WRONLY | O_APPEND | O_CREAT);
+                auto file_buf = std::make_unique<AutoCanceledWriteBuffer<WriteBufferFromFile>>(
+                    server_logs_file, DBMS_DEFAULT_BUFFER_SIZE, O_WRONLY | O_APPEND | O_CREAT);
+                /// The user-specified path is not necessarily a regular file: it can be a FIFO,
+                /// character device or socket, which can block in write() just like a terminal. Track
+                /// it as the terminal-facing sink so it is armed on the responsive path below; for a
+                /// regular file setCancellationHook is a no-op (fstat marks it as non-blocking).
+                logs_out_terminal_buf = file_buf.get();
+                out_logs_buf = std::move(file_buf);
                 wb = out_logs_buf.get();
-                /// A real file never blocks like a terminal, so it stays outside the responsive path.
-                logs_out_terminal_buf = nullptr;
             }
         }
 
@@ -998,7 +1016,9 @@ void ClientBase::initLogsOutputStream()
         /// output - so without a hook the first Ctrl+C could still hang in a log/profile-events flush.
         /// In --server_logs_file=- mode the sink is std_out, which is already armed for the query (and
         /// whose hook resetOutput() re-points during teardown), so it must not be re-armed from here.
-        if (server_logs_file.empty() && logs_out_terminal_buf)
+        /// An explicit --server_logs_file=<path> (a dedicated buffer) is armed here as well, so a
+        /// non-regular sink such as a FIFO stays interruptible.
+        if (server_logs_file != "-" && logs_out_terminal_buf)
             logs_out_terminal_buf->setCancellationHook(
                 [this]() { return query_interrupt_handler.isRunning() && query_interrupt_handler.cancelled(); });
     }
