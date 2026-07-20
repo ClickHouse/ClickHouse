@@ -377,6 +377,32 @@ class JobConfigs:
             runs_on=RunnerLabels.ARM_LARGE,
         ),
     )
+    cfi_build_job = common_build_job_config.parametrize(
+        Job.ParamSet(
+            parameter=BuildTypes.AMD_CFI,
+            provides=[ArtifactNames.CH_AMD_CFI, ArtifactNames.DEB_AMD_CFI],
+            runs_on=RunnerLabels.ARM_LARGE,
+            timeout=4 * 3600,
+        ),
+    )
+    cfi_integration_jobs = common_integration_test_job_config.parametrize(
+        *[
+            Job.ParamSet(
+                parameter=f"amd_cfi, {batch}/{total_batches}",
+                runs_on=RunnerLabels.AMD_MEDIUM,
+                requires=[ArtifactNames.CH_AMD_CFI],
+            )
+            for total_batches in (4,)
+            for batch in range(1, total_batches + 1)
+        ]
+    )
+    cfi_stress_job = common_stress_job_config.parametrize(
+        Job.ParamSet(
+            parameter="amd_cfi",
+            runs_on=RunnerLabels.FUNC_TESTER_AMD,
+            requires=[ArtifactNames.DEB_AMD_CFI],
+        ),
+    )
     # sccache-warmup builds (MasterCI only): compile amd_release / arm_release
     # with the PR release builds' cmake flags (see PR_CACHE_WARMUP_BUILD_TYPES
     # in build_clickhouse.py) while keeping the shared sccache read-write. This
@@ -656,6 +682,14 @@ class JobConfigs:
             parameter="amd_asan_ubsan, distributed plan, parallel",
             runs_on=RunnerLabels.AMD_MEDIUM_CPU,
             requires=[ArtifactNames.CH_AMD_ASAN_UBSAN],
+            # This variant runs the parallel suite at reduced concurrency (see the
+            # distributed-plan branch in `functional_tests.py`) to keep the
+            # aggregate server RSS under the sanitizer memory cap, which lowers
+            # throughput. Allow more wall-clock than the common 2.5h budget so the
+            # reduced concurrency cannot turn into a job timeout: the job ran ~2h36m
+            # at 8 workers, and the further cut to 7 workers pushes it to ~2h57m, so
+            # 3.5h keeps a comfortable margin.
+            timeout=int(3600 * 3.5),
         ),
         *[
             Job.ParamSet(
@@ -1414,7 +1448,9 @@ class JobConfigs:
     docker_server = Job.Config(
         name=JobNames.DOCKER_SERVER,
         runs_on=RunnerLabels.STYLE_CHECK_AMD,
-        command="python3 ./ci/jobs/docker_server.py --tag-type head --allow-build-reuse",
+        # --apt-mirror-region points apt at the in-region AWS Ubuntu mirror; the
+        # runners are in us-east-1, where Canonical's mirrors are often unreachable.
+        command="python3 ./ci/jobs/docker_server.py --tag-type head --allow-build-reuse --apt-mirror-region us-east-1",
         digest_config=Job.CacheDigestConfig(
             include_paths=[
                 "./ci/jobs/docker_server.py",
@@ -1428,7 +1464,9 @@ class JobConfigs:
     docker_keeper = Job.Config(
         name=JobNames.DOCKER_KEEPER,
         runs_on=RunnerLabels.STYLE_CHECK_AMD,
-        command="python3 ./ci/jobs/docker_server.py --tag-type head --allow-build-reuse",
+        # --apt-mirror-region points apt at the in-region AWS Ubuntu mirror; the
+        # runners are in us-east-1, where Canonical's mirrors are often unreachable.
+        command="python3 ./ci/jobs/docker_server.py --tag-type head --allow-build-reuse --apt-mirror-region us-east-1",
         digest_config=Job.CacheDigestConfig(
             include_paths=[
                 "./ci/jobs/docker_server.py",
@@ -1526,7 +1564,7 @@ class JobConfigs:
         requires=["Build (amd_binary)"],
     )
     jepsen_server = Job.Config(
-        name=JobNames.JEPSEN_KEEPER,
+        name=JobNames.JEPSEN_SERVER,
         runs_on=RunnerLabels.STYLE_CHECK_AMD,
         command="python3 ./ci/jobs/jepsen_check.py server",
         requires=["Build (amd_binary)"],
