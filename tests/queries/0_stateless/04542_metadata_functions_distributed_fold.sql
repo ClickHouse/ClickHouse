@@ -52,3 +52,44 @@ WHERE event_date >= yesterday() AND is_initial_query = 0 AND type = 'QueryFinish
         ORDER BY event_time_microseconds DESC
         LIMIT 1
     );
+
+-- Cache-shape regression for the `isServerConstant` contract. The queries above only exercise the
+-- direct `isSuitableForConstantFolding` path (a single distributed scope). Here two syntactically
+-- identical calls appear in different scopes — a local outer branch and an inner sub-SELECT over
+-- `clusterAllReplicas` — so they share the same tree hash. `isServerConstant` must keep them out of
+-- the analyzer's shared `functions_cache`: reusing the `FunctionBase` built in the local branch
+-- (`is_distributed = false`, foldable) for the distributed branch folds the call on the initiator
+-- and produces a header mismatch between the local plan and the shards
+-- (`NOT_FOUND_COLUMN_IN_BLOCK`). Same shape as 04356 for `hostName`.
+
+SELECT count() AS distinct_values, sum(x) AS total
+FROM
+(
+    SELECT v, sum(x) AS x
+    FROM
+    (
+        SELECT getMaxTableNameLengthForDatabase('default') AS v, 0 AS x
+        UNION ALL
+        SELECT getMaxTableNameLengthForDatabase('default') AS v, count() AS x
+        FROM clusterAllReplicas('test_cluster_two_shards', system.one)
+        GROUP BY v
+    )
+    GROUP BY v
+)
+SETTINGS enable_analyzer = 1, prefer_localhost_replica = 0;
+
+SELECT count() AS distinct_values, sum(x) AS total
+FROM
+(
+    SELECT v, sum(x) AS x
+    FROM
+    (
+        SELECT hasColumnInTable('system', 'one', 'dummy') AS v, 0 AS x
+        UNION ALL
+        SELECT hasColumnInTable('system', 'one', 'dummy') AS v, count() AS x
+        FROM clusterAllReplicas('test_cluster_two_shards', system.one)
+        GROUP BY v
+    )
+    GROUP BY v
+)
+SETTINGS enable_analyzer = 1, prefer_localhost_replica = 0;
