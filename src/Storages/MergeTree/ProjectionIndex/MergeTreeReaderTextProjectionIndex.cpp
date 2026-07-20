@@ -210,7 +210,7 @@ void MergeTreeReaderTextProjectionIndex::ensureInitialized()
     for (size_t i = 0; i < columns_to_read.size(); ++i)
     {
         auto search_query = condition_text.getSearchQueryForVirtualColumn(columns_to_read[i].name);
-        if (search_query && search_query->direct_read_mode == TextIndexDirectReadMode::Hint)
+        if (search_query && search_query->getDirectReadMode() == TextIndexDirectReadMode::Hint)
             is_always_true[i] = true;
     }
 }
@@ -235,8 +235,8 @@ PostingCursorPtr & MergeTreeReaderTextProjectionIndex::getOrBuildCursor(const St
     auto search_query = condition_text.getSearchQueryForVirtualColumn(column_name);
 
     std::vector<PostingCursorPtr> token_cursors;
-    token_cursors.reserve(search_query->tokens.size());
-    for (const auto & token : search_query->tokens)
+    token_cursors.reserve(search_query->getTokens().size());
+    for (const auto & token : search_query->getTokens())
     {
         auto cursor_it = cursor_map.find(token);
         if (cursor_it != cursor_map.end())
@@ -247,19 +247,19 @@ PostingCursorPtr & MergeTreeReaderTextProjectionIndex::getOrBuildCursor(const St
     {
         it->second = nullptr;
     }
-    else if (search_query->search_mode == TextSearchMode::All
-             && token_cursors.size() != search_query->tokens.size())
+    else if (search_query->getSearchMode() == TextSearchMode::All
+             && token_cursors.size() != search_query->getTokens().size())
     {
         /// For All mode, all tokens must be present; if any is missing, result is empty.
         it->second = nullptr;
     }
-    else if (token_cursors.size() == 1 && search_query->search_mode != TextSearchMode::Phrase)
+    else if (token_cursors.size() == 1 && search_query->getSearchMode() != TextSearchMode::Phrase)
     {
         it->second = std::move(token_cursors[0]);
     }
-    else if (search_query->search_mode == TextSearchMode::Phrase)
+    else if (search_query->getSearchMode() == TextSearchMode::Phrase)
     {
-        if (token_cursors.size() != search_query->tokens.size())
+        if (token_cursors.size() != search_query->getTokens().size())
         {
             it->second = nullptr;
             return it->second;
@@ -270,13 +270,13 @@ PostingCursorPtr & MergeTreeReaderTextProjectionIndex::getOrBuildCursor(const St
 
         std::vector<ProjectionPostingListCursorPtr> phrase_token_cursors;
         std::vector<PositionCursorPtr> pos_cursors;
-        phrase_token_cursors.reserve(search_query->tokens.size());
-        pos_cursors.reserve(search_query->tokens.size());
+        phrase_token_cursors.reserve(search_query->getTokens().size());
+        pos_cursors.reserve(search_query->getTokens().size());
 
         bool ok = true;
-        for (size_t i = 0; i < search_query->tokens.size() && ok; ++i)
+        for (size_t i = 0; i < search_query->getTokens().size() && ok; ++i)
         {
-            auto token_it = remaining_tokens.find(search_query->tokens[i]);
+            auto token_it = remaining_tokens.find(search_query->getTokens()[i]);
             if (token_it == remaining_tokens.end())
             {
                 ok = false;
@@ -319,7 +319,7 @@ PostingCursorPtr & MergeTreeReaderTextProjectionIndex::getOrBuildCursor(const St
             it->second = std::make_shared<AndCursor>(std::move(token_cursors));
         }
     }
-    else if (search_query->search_mode == TextSearchMode::Any)
+    else if (search_query->getSearchMode() == TextSearchMode::Any)
     {
         std::sort(
             token_cursors.begin(),
@@ -363,7 +363,7 @@ void MergeTreeReaderTextProjectionIndex::fillColumnLazy(
         /// back to and an empty needle cannot match any document.
         const auto & condition_text = assert_cast<const MergeTreeIndexConditionText &>(*index.condition_template->generateUnsubstituted());
         auto search_query = condition_text.getSearchQueryForVirtualColumn(column_name);
-        if (search_query && !search_query->patterns.empty())
+        if (search_query && !search_query->getPatterns().empty())
             memset(column_data.data() + column_offset, 1, num_rows);
         return;
     }
@@ -460,7 +460,7 @@ size_t MergeTreeReaderTextProjectionIndex::readRows(
         return max_rows_to_read;
     }
 
-    createEmptyColumns(res_columns);
+    createEmptyColumns(res_columns, max_rows_to_read);
     size_t total_marks = index_granularity.getMarksCountWithoutFinal();
 
     size_t batch_rows = 0;

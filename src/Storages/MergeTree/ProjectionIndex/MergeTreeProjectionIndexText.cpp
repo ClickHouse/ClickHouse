@@ -432,12 +432,12 @@ bool MergeTreeProjectionIndexGranuleText::hasAnyQueryTokens(const TextSearchQuer
     if (!projection_part)
         return true;
 
-    if (query.tokens.empty())
+    if (query.getTokens().empty())
         return false;
 
     if (!current_range.has_value())
     {
-        for (const auto & token : query.tokens)
+        for (const auto & token : query.getTokens())
             if (remaining_tokens.contains(token))
                 return true;
         return false;
@@ -446,7 +446,7 @@ bool MergeTreeProjectionIndexGranuleText::hasAnyQueryTokens(const TextSearchQuer
     UInt32 range_begin = static_cast<UInt32>(current_range->begin);
     UInt32 range_end = static_cast<UInt32>(current_range->end);
 
-    for (const auto & token : query.tokens)
+    for (const auto & token : query.getTokens())
     {
         auto it = remaining_tokens.find(token);
         if (it != remaining_tokens.end()
@@ -461,17 +461,17 @@ bool MergeTreeProjectionIndexGranuleText::hasAnyQueryPatterns(const TextSearchQu
     if (!projection_part)
         return true;
 
-    if (query.patterns.empty())
+    if (query.getPatterns().empty())
         return false;
 
     /// Patterns carry extracted tokens (e.g. ngrams from LIKE '%5555%').
     /// No tokens means the tokenizer could not extract anything — conservatively pass.
-    if (query.tokens.empty())
+    if (query.getTokens().empty())
         return true;
 
     if (!current_range.has_value())
     {
-        for (const auto & token : query.tokens)
+        for (const auto & token : query.getTokens())
             if (remaining_tokens.contains(token))
                 return true;
         return false;
@@ -480,7 +480,7 @@ bool MergeTreeProjectionIndexGranuleText::hasAnyQueryPatterns(const TextSearchQu
     UInt32 range_begin = static_cast<UInt32>(current_range->begin);
     UInt32 range_end = static_cast<UInt32>(current_range->end);
 
-    for (const auto & token : query.tokens)
+    for (const auto & token : query.getTokens())
     {
         auto it = remaining_tokens.find(token);
         if (it != remaining_tokens.end()
@@ -492,7 +492,7 @@ bool MergeTreeProjectionIndexGranuleText::hasAnyQueryPatterns(const TextSearchQu
 
 bool MergeTreeProjectionIndexGranuleText::hasAllQueryTokens(const TextSearchQuery & query) const
 {
-    if (query.tokens.empty())
+    if (query.getTokens().empty())
         return false;
     return hasAllQueryTokensOrEmpty(query);
 }
@@ -504,7 +504,7 @@ bool MergeTreeProjectionIndexGranuleText::hasAllQueryTokensOrEmpty(const TextSea
 
     if (!current_range.has_value())
     {
-        for (const auto & token : query.tokens)
+        for (const auto & token : query.getTokens())
             if (!remaining_tokens.contains(token))
                 return false;
         return true;
@@ -513,7 +513,7 @@ bool MergeTreeProjectionIndexGranuleText::hasAllQueryTokensOrEmpty(const TextSea
     UInt32 range_begin = static_cast<UInt32>(current_range->begin);
     UInt32 range_end = static_cast<UInt32>(current_range->end);
 
-    for (const auto & token : query.tokens)
+    for (const auto & token : query.getTokens())
     {
         auto it = remaining_tokens.find(token);
         if (it == remaining_tokens.end()
