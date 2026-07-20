@@ -1080,6 +1080,40 @@ class GH:
                 os.unlink(temp_file_path)
         return None
 
+    @classmethod
+    def get_pr_url_by_branch(cls, branch, repo=None):
+        """URL of the PR whose head is `branch`, or '' if there genuinely is none.
+
+        On the rerun-safety path (changelog / version-bump PR reuse), a transient
+        `gh pr list` failure must NOT be mistaken for "no PR exists" — that would
+        create a duplicate PR or let merge_prs run with an empty URL after the
+        release is already published. So the lookup is retried and raises on a
+        persistent failure. A successful `gh pr list --json` always prints at
+        least `[]`, so an empty result from the retried read means the command
+        itself failed; genuinely no PR is an empty JSON array.
+        """
+        if not repo:
+            repo = _Environment.get().REPOSITORY
+        safe_repo = shlex.quote(repo)
+        safe_branch = shlex.quote(branch)
+        for state in ("open", "merged"):
+            cmd = (
+                f"gh pr list --repo {safe_repo} --head {safe_branch}"
+                f" --state {state} --json url"
+            )
+            raw = cls.get_output_with_retries(cmd)
+            if not raw:
+                raise RuntimeError(
+                    f"gh pr list failed for branch [{branch}] in repo [{repo}] "
+                    f"(state {state}) after retries; refusing to treat a failed "
+                    f"lookup as 'no PR'"
+                )
+            prs = json.loads(raw)
+            if prs:
+                return prs[0]["url"]
+            print(f"No {state} PR found for branch [{branch}]")
+        return ""
+
     _STATUS_TO_GH = {
         Result.Status.OK: Result.GHStatus.SUCCESS,
         Result.Status.FAIL: Result.GHStatus.FAILURE,
