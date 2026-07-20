@@ -54,9 +54,10 @@ set -euo pipefail
 #   --ccache-size SIZE    ccache max size via CCACHE_MAXSIZE (default: 200G).
 #   --effort LEVEL        Reasoning effort for each worker `claude` (--effort);
 #                         default: medium.
-#   --no-status           Disable the persistent bottom status bar (elapsed,
-#                         rounds, ok/fail counts, cost, token totals). The bar is
-#                         shown by default on a TTY.
+#   --no-status           Disable the persistent bottom status bar (two lines:
+#                         elapsed, rounds, ok/fail counts, cost and token totals,
+#                         plus the list of PR numbers needing attention). The bar
+#                         is shown by default on a TTY.
 #   --max-continue N      Max `claude` turns per PR. The worker runs once and is
 #                         then resumed (same session) until it signals it is done
 #                         or this cap is hit (default: 4). The worker is told not
@@ -261,9 +262,10 @@ STATUS_ENABLED=0
 STATUS_PID=""
 START=0
 
-stats_init() { printf '0 0 0 0 0 0 0 0\n' > "$STATSFILE"; }
+stats_init() { printf '0 0 0 0 0 0 0 0\n' > "$STATSFILE"; : > "$NAFILE"; }
 
 # stats_add <d_rounds> <d_ok> <d_fail> <d_in> <d_out> <d_cachein> <d_cacheout> <d_cost>
+# Writes atomically (tmp + mv) so a concurrent reader never sees a torn/empty file.
 stats_add()
 {
     { flock 7
@@ -272,7 +274,17 @@ stats_add()
         'BEGIN { split(cur, x, " ");
                  printf "%d %d %d %d %d %d %d %.6f\n",
                         x[1]+r, x[2]+s, x[3]+f, x[4]+i, x[5]+o, x[6]+ci, x[7]+co, x[8]+c }' \
-        > "$STATSFILE"
+        > "$STATSFILE.tmp" && mv -f "$STATSFILE.tmp" "$STATSFILE"
+    } 7>>"$STATSLOCK"
+}
+
+# needs-attention list: reset at the start of each round, appended (deduped) as
+# PRs finish NEEDS-ATTENTION, so the list reflects the current round.
+na_reset() { { flock 7; : > "$NAFILE"; } 7>>"$STATSLOCK"; }
+na_add()
+{
+    { flock 7
+      grep -qxF "$1" "$NAFILE" 2>/dev/null || echo "$1" >> "$NAFILE"
     } 7>>"$STATSLOCK"
 }
 
@@ -282,23 +294,37 @@ fmt_elapsed() { local s=$1; printf '%02d:%02d:%02d' $((s/3600)) $(((s%3600)/60))
 render_status()
 {
     local cur r s f i o ci co c now el
-    cur=$(cat "$STATSFILE" 2>/dev/null || echo '0 0 0 0 0 0 0 0')
+    cur=$(cat "$STATSFILE" 2>/dev/null); [[ -n "$cur" ]] || cur='0 0 0 0 0 0 0 0'
     read -r r s f i o ci co c <<< "$cur"
     now=$(date +%s); el=$(( now - START ))
     printf 'continue-all-prs | %s | round %d | ok %d fail %d | $%.2f | in %s out %s cache-in %s cache-out %s' \
-        "$(fmt_elapsed "$el")" "$r" "$s" "$f" "$c" \
-        "$(humanize "$i")" "$(humanize "$o")" "$(humanize "$ci")" "$(humanize "$co")"
+        "$(fmt_elapsed "$el")" "${r:-0}" "${s:-0}" "${f:-0}" "${c:-0}" \
+        "$(humanize "${i:-0}")" "$(humanize "${o:-0}")" "$(humanize "${ci:-0}")" "$(humanize "${co:-0}")"
 }
 
+render_na()
+{
+    local nums n
+    nums=$(tr '\n' ' ' < "$NAFILE" 2>/dev/null | sed 's/ *$//')
+    n=$(grep -c . "$NAFILE" 2>/dev/null || echo 0)
+    if [[ -z "$nums" ]]; then printf 'needs attention: none'; else printf 'needs attention (%s): %s' "$n" "$nums"; fi
+}
+
+# Redraw both reserved lines. Re-asserts the scroll region every tick (cheap;
+# also adapts to terminal resize), all under the TTY lock and bracketed by
+# DECSC/DECRC so it never disturbs the scrolling output's cursor.
 draw_status()
 {
     (( STATUS_ENABLED )) || return 0
-    local rows cols text
+    local rows cols stat na
     rows=$(tput lines 2>/dev/null || echo 24)
     cols=$(tput cols 2>/dev/null || echo 100)
-    text=$(render_status); text=${text:0:cols}
-    # save cursor (DECSC), go to last row, clear it, print reverse-video, restore (DECRC)
-    { flock 6; printf '\0337\033[%d;1H\033[2K\033[7m%s\033[0m\0338' "$rows" "$text"; } 6>>"$TTYLOCK"
+    stat=$(render_status); stat=${stat:0:cols}
+    na=$(render_na);       na=${na:0:cols}
+    { flock 6
+      printf '\0337\033[1;%dr\033[%d;1H\033[2K\033[7m%s\033[0m\033[%d;1H\033[2K\033[7m%s\033[0m\0338' \
+        "$(( rows - 2 ))" "$(( rows - 1 ))" "$na" "$rows" "$stat"
+    } 6>>"$TTYLOCK"
 }
 
 status_updater() { while :; do draw_status; sleep "${STATUS_INTERVAL:-2}"; done; }
@@ -306,20 +332,28 @@ status_updater() { while :; do draw_status; sleep "${STATUS_INTERVAL:-2}"; done;
 status_start()
 {
     (( STATUS_ENABLED )) || return 0
-    local rows; rows=$(tput lines 2>/dev/null || echo 24)
-    # reserve the bottom row: scroll region = rows 1..(rows-1); park the cursor inside it
-    printf '\033[1;%dr\033[%d;1H' "$(( rows - 1 ))" "$(( rows - 1 ))"
+    local rows old; rows=$(tput lines 2>/dev/null || echo 24)
+    # kill a stale updater left by a previous run in this log dir (prevents two
+    # updaters fighting over the reserved lines).
+    if [[ -f "$LOGDIR/updater.pid" ]]; then
+        old=$(cat "$LOGDIR/updater.pid" 2>/dev/null || true)
+        [[ -n "$old" ]] && kill "$old" 2>/dev/null || true
+    fi
+    # reserve the bottom TWO rows: scroll region = 1..(rows-2); park cursor inside
+    printf '\033[1;%dr\033[%d;1H' "$(( rows - 2 ))" "$(( rows - 2 ))"
     draw_status
     status_updater & STATUS_PID=$!
+    echo "$STATUS_PID" > "$LOGDIR/updater.pid"
 }
 
 status_stop()
 {
     (( STATUS_ENABLED )) || return 0
     [[ -n "$STATUS_PID" ]] && kill "$STATUS_PID" 2>/dev/null || true
+    rm -f "$LOGDIR/updater.pid" 2>/dev/null || true
     local rows; rows=$(tput lines 2>/dev/null || echo 24)
-    # reset the scroll region to the full screen and clear the status line
-    printf '\033[r\033[%d;1H\033[2K' "$rows"
+    # reset the scroll region to the full screen and clear both reserved lines
+    printf '\033[r\033[%d;1H\033[2K\033[%d;1H\033[2K' "$(( rows - 1 ))" "$rows"
     STATUS_ENABLED=0
 }
 
@@ -497,13 +531,14 @@ LOGDIR="${MAIN_REPO}/tmp/continue-all-prs"
 STATSFILE="$LOGDIR/stats"
 STATSLOCK="$LOGDIR/stats.lock"
 TTYLOCK="$LOGDIR/tty.lock"
+NAFILE="$LOGDIR/needs-attention"
 
 cleanup()
 {
     status_stop   # reset the scroll region and kill the updater first
     [[ -n "${QUEUEFILE:-}" ]] && rm -f "$QUEUEFILE" "$QUEUEFILE.tmp" 2>/dev/null || true
     [[ -n "${LOCKFILE:-}" ]] && rm -f "$LOCKFILE" 2>/dev/null || true
-    rm -f "$STATSLOCK" "$TTYLOCK" 2>/dev/null || true
+    rm -f "$STATSLOCK" "$TTYLOCK" "$STATSFILE.tmp" 2>/dev/null || true
 }
 trap cleanup EXIT
 trap 'echo; banner "Interrupted, stopping..."; exit 130' INT TERM
@@ -649,6 +684,7 @@ process_pr()
         FAILED*|TIMEOUT) stats_add 0 0 1 0 0 0 0 0 ;;
         *)               stats_add 0 1 0 0 0 0 0 0 ;;
     esac
+    [[ "$outcome" == NEEDS-ATTENTION ]] && na_add "$number"
 
     ts=$(date +%H:%M:%S)
     emit "$color" "$ts  $mark  worker $i  FINISHED  PR #$number  $title  --  $status"
@@ -818,6 +854,7 @@ ROUND=0
 while true; do
     ROUND=$((ROUND + 1))
     stats_add 1 0 0 0 0 0 0 0
+    na_reset
     banner "===== Round ${ROUND}: fetching open PRs ====="
 
     PRS="$(fetch_prs || true)"
