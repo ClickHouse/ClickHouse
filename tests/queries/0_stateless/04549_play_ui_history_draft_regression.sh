@@ -165,6 +165,12 @@ const sandbox = {
     request_num: 0, params_restore_pending_token: -1, params_restore_pending_query: null,
     controller: null, multiQueryControllers: [], multiQueryContainer: null,
     save_timer: null, column_color_modes: {}, elapsed_ns: 0, last_query_start: 0,
+    /// The shared display-state globals for pinned columns / per-column color modes and their
+    /// `?pinned_columns=` / `?color_modes=` URL carriers (added on master): no case here opens
+    /// such a link, so the URL carriers stay absent (null / not-malformed) and the pinned set
+    /// stays empty, exactly like a plain `/play` load.
+    pinned_columns: Object.create(null), url_pinned_columns: null, pinned_columns_url_malformed: false,
+    url_color_modes: null, color_modes_url_malformed: false,
     /// With `run=1` propagation enabled, the test can assert that refreshing an entry
     /// from an unrun draft drops the auto-run marker. `url_run_directive` is the immutable
     /// "the URL carried `?run=1`" fact; entry stamping keys off it plus the per-entry
@@ -199,6 +205,9 @@ const sandbox = {
         createElement: tag => tag === 'query-result'
             ? { style: {}, rowCount: 0, elapsedNs: 0, incompleteResult: false, addEventListener() {} }
             : { style: {}, innerHTML: '', appendChild() {} },
+        /// `reconcileStartup` re-lays-out every rendered `query-result` for the reasserted
+        /// pinned-column / color-mode display state; nothing is rendered in this sandbox.
+        querySelectorAll: () => [],
     },
     location: { origin: 'http://localhost:8123', pathname: '/play', href: 'http://localhost:8123/play' },
     /// `postMulti`'s own rendering; the tab/history bookkeeping it drives is the real code.
@@ -1385,6 +1394,87 @@ async function reload()
     sandbox.postImpl = savedPostImplForCancel;
     sandbox.tokenize = async () => [];
     sandbox.getQueryUnderCursor = async () => '';
+
+    /// A parameter input moved WHILE the launch's own param resolution is still pending. The run
+    /// entrypoints snapshot the live inputs synchronously in the click's task (`postOne`/`postAll`
+    /// -> `live_params`), and `paramValuesForQuery` filters that snapshot — never a post-await
+    /// re-read of the inputs. Press Run with x=1, change x to 2 while the cold-page tokenization
+    /// is pending: the request and the result snapshot must carry the click-time `{x:'1'}` while
+    /// the live input keeps the newer 2 — which then diverges from what ran, so `run=1` drops. A
+    /// regression that read the inputs after the tokenization await would execute the click with
+    /// `{x:'2'}`, a binding the user never launched. Drives the REAL `postOne`/`postSingle`/
+    /// `resolveRunParams`/`paramValuesForQuery` with a hung `tokenize`.
+    reset();
+    sandbox.param_inputs = { x: '1' };
+    sandbox.currentQueryParams = [{ name: 'x', type: 'String' }];
+    active().query = 'SELECT {x:Int32}';
+    active().params = { x: '1' };
+    sandbox.query_area.value = 'SELECT {x:Int32}';
+    sandbox.isMultiQuery = false;
+    sandbox.query_area.selectionStart = 0;
+    sandbox.query_area.selectionEnd = 0;
+    sandbox.getQueryUnderCursor = async () => 'SELECT {x:Int32}';
+    let releaseMovedInputTokenize;
+    sandbox.tokenize = () => new Promise(resolve => { releaseMovedInputTokenize = () => resolve([
+        { token: 'SELECT', significant: true }, { token: ' ', significant: false },
+        { token: '{', significant: true }, { token: 'x', significant: true },
+        { token: ':', significant: true }, { token: 'Int32', significant: true },
+        { token: '}', significant: true },
+    ]); });
+    const movedInputRunPromise = sandbox.postOne();
+    await drain();
+    setParam('x', '2');                            /// the user moves the input mid-resolution
+    releaseMovedInputTokenize();                   /// the cold-page tokenize finally resolves
+    await drain();
+    resolvePendingPostImpl();
+    await movedInputRunPromise;
+    await drain();
+    assert_params('param moved during launch resolution: the run executes with the click-time binding', active().result && active().result.params, { x: '1' });
+    assert_eq('param moved during launch resolution: the live input keeps the newer value', sandbox.param_inputs.x, '2');
+    assert_params('param moved during launch resolution: the tab records the live binding', active().params, { x: '2' });
+    assert_eq('param moved during launch resolution: the entry drops run=1 (shown binding was never run)', sandbox.history.stack[sandbox.history.idx].url.includes('run=1'), false);
+    sandbox.tokenize = async () => [];
+    sandbox.getQueryUnderCursor = async () => '';
+    sandbox.currentQueryParams = [];
+
+    /// A SECOND draft edit while `saveHistory`'s diverged-branch derivation is still awaiting the
+    /// FIRST draft's tokenization. `writeHistoryEntry` serializes the THEN-current `tab.query`, so
+    /// params derived from the first draft must never be recorded under the second draft's text
+    /// (an incoherent `#SELECT {z:Int32}` entry carrying `{y:''}`): the branch re-derives until the
+    /// draft is stable. Run `SELECT 1`, edit to `SELECT {y:Int32}` mid-flight, complete the run
+    /// with the diverged-branch tokenization hung, type `SELECT {z:Int32}` while it is pending,
+    /// then release both derivations.
+    reset();
+    await run('SELECT 0');
+    const secondEditRun = startRun('SELECT 1');
+    type('SELECT {y:Int32}');                      /// first mid-flight edit: a diverged draft
+    sandbox.param_inputs = {};                     /// its `updateQueryParams` rebuild never landed
+    const pendingDraftTokenize = [];
+    const draftTokens = name => [
+        { token: 'SELECT', significant: true }, { token: ' ', significant: false },
+        { token: '{', significant: true }, { token: name, significant: true },
+        { token: ':', significant: true }, { token: 'Int32', significant: true },
+        { token: '}', significant: true },
+    ];
+    sandbox.tokenize = q => new Promise(resolve =>
+        pendingDraftTokenize.push(() => resolve(draftTokens(q.includes('{z') ? 'z' : 'y'))));
+    const secondEditFinishPromise = finishRun(secondEditRun);
+    await drain();                                 /// `saveHistory` is now awaiting the first draft's tokenize
+    type('SELECT {z:Int32}');                      /// the second edit lands while that await is pending
+    pendingDraftTokenize.shift()();                /// first derivation resolves against the OLD draft
+    await drain();                                 /// the branch sees the newer draft and re-derives
+    /// A regressed single-shot derivation queues no second tokenize; guard the release so it fails
+    /// on the assertions below (recorded `{y:''}` under `SELECT {z:Int32}`) rather than a TypeError.
+    if (pendingDraftTokenize.length) { pendingDraftTokenize.shift()(); }
+    await drain();
+    await secondEditFinishPromise;
+    await drain();
+    assert_eq('second edit during delayed completion: the latest draft survives in the editor', active().query, 'SELECT {z:Int32}');
+    assert_params("second edit during delayed completion: the entry carries the latest draft's own params", active().params, { z: '' });
+    assert_eq('second edit during delayed completion: the first draft param does not leak into the URL', sandbox.history.stack[sandbox.history.idx].url.includes('param_y'), false);
+    assert_eq('second edit during delayed completion: the entry drops run=1', sandbox.history.stack[sandbox.history.idx].url.includes('run=1'), false);
+    assert_eq("second edit during delayed completion: the completed run's result is still kept", active().result && active().result.query, 'SELECT 1');
+    sandbox.tokenize = async () => [];
 
     /// Reload after a preserved-draft Back/Forward round-trip. The debounced save persists the
     /// draft (query != lastSavedQuery, the shape reconcileStartup treats as a stale reload), so
