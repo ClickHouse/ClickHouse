@@ -143,6 +143,12 @@ String detectClientAgent()
 
 }
 
+struct ClientInfo::ForwardedForCache
+{
+    String source;
+    std::optional<Poco::Net::SocketAddress> address;
+};
+
 ClientInfo::ClientInfo()
 {
     connection_address = std::make_shared<Poco::Net::SocketAddress>();
@@ -177,7 +183,7 @@ std::optional<Poco::Net::SocketAddress> ClientInfo::getLastForwardedFor() const
         }
     }
 
-    last_forwarded_for_cache.emplace(ForwardedForCache{forwarded_for, address});
+    last_forwarded_for_cache = std::make_shared<const ForwardedForCache>(ForwardedForCache{forwarded_for, address});
 
     if (!address)
         LOG_WARNING(getLogger("ClientInfo"), "Invalid address in `X-Forwarded-For` HTTP header: '{}'", last);

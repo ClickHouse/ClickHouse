@@ -1,16 +1,17 @@
 #pragma once
 
 #include <map>
+#include <memory>
 #include <optional>
 #include <time.h>
 #include <base/types.h>
 #include <Common/HTTPFieldLess.h>
 #include <Common/OpenTelemetryTracingContext.h>
-#include <Poco/Net/SocketAddress.h>
 
 namespace Poco::Net
 {
     class HTTPRequest;
+    class SocketAddress;
 }
 
 namespace DB
@@ -179,14 +180,10 @@ public:
     String getVersionStr() const;
 
 private:
-    struct ForwardedForCache
-    {
-        String source;
-        std::optional<Poco::Net::SocketAddress> address;
-    };
+    struct ForwardedForCache;
 
-    /// The raw field is public and can be replaced directly, so the source value is part of the cache key.
-    mutable std::optional<ForwardedForCache> last_forwarded_for_cache;
+    /// The immutable cache can be shared by copies. The raw source remains the cache key when a copy changes it.
+    mutable std::shared_ptr<const ForwardedForCache> last_forwarded_for_cache;
 
     void fillOSUserHostNameAndVersionInfo();
 };

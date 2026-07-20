@@ -314,10 +314,14 @@ TEST(ClientInfoForwardedFor, LogsEachRejectedAddressOnlyOnce)
     EXPECT_EQ(info.getLastForwardedForHost(), "");
     EXPECT_FALSE(info.getLastForwardedFor());
 
-    /// Replacing the public raw field must invalidate the cached parse result.
-    info.forwarded_for = "second-attacker.example";
+    /// A copy shares the immutable cache. Replacing its public raw field must create a new cache
+    /// without changing the cache still used by the original object.
+    ClientInfo copied_info = info;
+    EXPECT_FALSE(copied_info.getLastForwardedFor());
+    copied_info.forwarded_for = "second-attacker.example";
+    EXPECT_FALSE(copied_info.getLastForwardedFor());
+    EXPECT_EQ(copied_info.getLastForwardedForHost(), "");
     EXPECT_FALSE(info.getLastForwardedFor());
-    EXPECT_EQ(info.getLastForwardedForHost(), "");
 
     const String log_text = log_output.str();
     for (const String & rejected : {"attacker.example", "second-attacker.example"})
