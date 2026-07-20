@@ -46,6 +46,20 @@ def _read(path):
         return f.read()
 
 
+def _head_sha(repo):
+    """The current ``HEAD`` commit SHA of ``repo``. The version-file githash in
+    these fixtures must point at a real commit so the (now strict) tweak =
+    commit-count-since-githash is computable, so tests anchor it at a captured
+    SHA instead of the ``0``*40 placeholder."""
+    return subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+
+
 def _argparse_long_flags(path):
     """Every ``--long-option`` registered via ``add_argument`` in ``path``."""
     flags = set()
@@ -411,8 +425,17 @@ def test_prepare_recovers_from_tag(tmp_path):
     git("config", "commit.gpgsign", "false")
     git("config", "tag.gpgsign", "false")
 
+    # Anchor commit the release version-file githash points at, so the strict
+    # tweak (commits since githash) is computable — here one commit -> tweak 1.
+    (repo / "README.md").write_text("clickhouse\n", encoding="utf-8")
+    git("add", "-A")
+    git("commit", "-q", "-m", "Anchor commit (previous release)")
+    anchor = _head_sha(repo)
+
     (repo / "cmake").mkdir()
-    (repo / _VERSIONS_FILE).write_text(_VERSIONS_CONTENT, encoding="utf-8")
+    (repo / _VERSIONS_FILE).write_text(
+        _VERSIONS_CONTENT.replace("0" * 40, anchor), encoding="utf-8"
+    )
     (repo / "src" / "Storages" / "System").mkdir(parents=True)
     (repo / _CONTRIBUTORS_FILE).write_text(
         "const char * auto_contributors[] {\n    nullptr};\n", encoding="utf-8"
@@ -492,8 +515,17 @@ def test_prepare_recovers_already_released_commit(tmp_path):
     git("config", "commit.gpgsign", "false")
     git("config", "tag.gpgsign", "false")
 
+    # Anchor commit the release version-file githash points at, so the strict
+    # tweak (commits since githash) is computable — here one commit -> tweak 1.
+    (repo / "README.md").write_text("clickhouse\n", encoding="utf-8")
+    git("add", "-A")
+    git("commit", "-q", "-m", "Anchor commit (previous release)")
+    anchor = _head_sha(repo)
+
     (repo / "cmake").mkdir()
-    (repo / _VERSIONS_FILE).write_text(_VERSIONS_CONTENT, encoding="utf-8")
+    (repo / _VERSIONS_FILE).write_text(
+        _VERSIONS_CONTENT.replace("0" * 40, anchor), encoding="utf-8"
+    )
     (repo / "src" / "Storages" / "System").mkdir(parents=True)
     (repo / _CONTRIBUTORS_FILE).write_text(
         "const char * auto_contributors[] {\n    nullptr};\n", encoding="utf-8"
@@ -580,8 +612,17 @@ def test_prepare_refuses_out_of_order_commit(tmp_path):
     git("config", "commit.gpgsign", "false")
     git("config", "tag.gpgsign", "false")
 
+    # Anchor commit the release version-file githash points at, so the strict
+    # tweak (commits since githash) is computable — here one commit -> tweak 1.
+    (repo / "README.md").write_text("clickhouse\n", encoding="utf-8")
+    git("add", "-A")
+    git("commit", "-q", "-m", "Anchor commit (previous release)")
+    anchor = _head_sha(repo)
+
     (repo / "cmake").mkdir()
-    (repo / _VERSIONS_FILE).write_text(_VERSIONS_CONTENT, encoding="utf-8")
+    (repo / _VERSIONS_FILE).write_text(
+        _VERSIONS_CONTENT.replace("0" * 40, anchor), encoding="utf-8"
+    )
     (repo / "src" / "Storages" / "System").mkdir(parents=True)
     (repo / _CONTRIBUTORS_FILE).write_text(
         "const char * auto_contributors[] {\n    nullptr};\n", encoding="utf-8"
@@ -597,10 +638,13 @@ def test_prepare_refuses_out_of_order_commit(tmp_path):
         text=True,
     ).stdout.strip()
     # Advance the branch and bump the version file so the branch tip is a newer
-    # release (26.6.3) than the dispatched commit (26.6.2).
-    later_versions = _VERSIONS_CONTENT.replace(
-        "VERSION_PATCH 2", "VERSION_PATCH 3"
-    ).replace("26.6.2.1", "26.6.3.1")
+    # release (26.6.3) than the dispatched commit (26.6.2). The githash points at
+    # the anchor too, so reading the branch-tip version computes a real tweak.
+    later_versions = (
+        _VERSIONS_CONTENT.replace("VERSION_PATCH 2", "VERSION_PATCH 3")
+        .replace("26.6.2.1", "26.6.3.1")
+        .replace("0" * 40, anchor)
+    )
     (repo / _VERSIONS_FILE).write_text(later_versions, encoding="utf-8")
     (repo / "README.md").write_text("clickhouse\n", encoding="utf-8")
     git("add", "-A")
@@ -671,8 +715,17 @@ def test_prepare_refuses_stale_commit_even_when_it_is_a_tagged_release(tmp_path)
     git("config", "commit.gpgsign", "false")
     git("config", "tag.gpgsign", "false")
 
+    # Anchor commit the release version-file githash points at, so the strict
+    # tweak (commits since githash) is computable — here one commit -> tweak 1.
+    (repo / "README.md").write_text("clickhouse\n", encoding="utf-8")
+    git("add", "-A")
+    git("commit", "-q", "-m", "Anchor commit (previous release)")
+    anchor = _head_sha(repo)
+
     (repo / "cmake").mkdir()
-    (repo / _VERSIONS_FILE).write_text(_VERSIONS_CONTENT, encoding="utf-8")
+    (repo / _VERSIONS_FILE).write_text(
+        _VERSIONS_CONTENT.replace("0" * 40, anchor), encoding="utf-8"
+    )
     (repo / "src" / "Storages" / "System").mkdir(parents=True)
     (repo / _CONTRIBUTORS_FILE).write_text(
         "const char * auto_contributors[] {\n    nullptr};\n", encoding="utf-8"
@@ -681,19 +734,16 @@ def test_prepare_refuses_stale_commit_even_when_it_is_a_tagged_release(tmp_path)
     git("commit", "-q", "-m", "Base release commit")
     # The stale commit already carries its own (older) release tag; we will
     # dispatch it by raw SHA, which must NOT be read as recovery of that tag.
-    commit_sha = subprocess.run(
-        ["git", "rev-parse", "HEAD"],
-        cwd=repo,
-        check=True,
-        capture_output=True,
-        text=True,
-    ).stdout.strip()
+    commit_sha = _head_sha(repo)
     git("tag", "-a", "v26.6.2.1-stable", "-m", "Release v26.6.2.1-stable")
     # Advance the branch and bump the version file so the tip is a newer release
-    # (26.6.3) than the dispatched commit (26.6.2), plus a tag for realism.
-    later_versions = _VERSIONS_CONTENT.replace(
-        "VERSION_PATCH 2", "VERSION_PATCH 3"
-    ).replace("26.6.2.1", "26.6.3.1")
+    # (26.6.3) than the dispatched commit (26.6.2), plus a tag for realism. The
+    # githash points at the anchor too, so the branch-tip tweak is computable.
+    later_versions = (
+        _VERSIONS_CONTENT.replace("VERSION_PATCH 2", "VERSION_PATCH 3")
+        .replace("26.6.2.1", "26.6.3.1")
+        .replace("0" * 40, anchor)
+    )
     (repo / _VERSIONS_FILE).write_text(later_versions, encoding="utf-8")
     (repo / "README.md").write_text("clickhouse\n", encoding="utf-8")
     git("add", "-A")
@@ -871,9 +921,14 @@ def test_prepare_fails_closed_on_stale_branch_version_file(tmp_path):
     git("commit", "-q", "-m", "Base release commit")
     # This commit's release was already published as v26.6.2.1-stable.
     git("tag", "-a", "v26.6.2.1-stable", "-m", "Release v26.6.2.1-stable")
+    base_sha = _head_sha(repo)
     # A later commit lands, but the post-release version bump did NOT: the tip's
-    # version file still says 26.6.2.1, so prepare will compute the already-used
-    # tag v26.6.2.1-stable at a different (tip) commit.
+    # version file still says 26.6.2.1 (its githash points at the base commit, so
+    # the tweak is a computable 1), so prepare computes the already-used tag
+    # v26.6.2.1-stable at a different (tip) commit.
+    (repo / _VERSIONS_FILE).write_text(
+        _VERSIONS_CONTENT.replace("0" * 40, base_sha), encoding="utf-8"
+    )
     (repo / "README.md").write_text("clickhouse\n", encoding="utf-8")
     git("add", "-A")
     git("commit", "-q", "-m", "Later commit; version bump not applied")
