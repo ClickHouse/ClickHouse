@@ -1026,7 +1026,8 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             ASTPtr arg_ast;
             while (ParserLiteral{}.parse(pos, arg_ast, expected))
             {
-                const auto & value = arg_ast->as<ASTLiteral &>().value;
+                /// Decimal/exponent literals parse as NumberLiteral (deferred); resolve to a concrete type.
+                const auto value = arg_ast->as<ASTLiteral &>().value.resolveNumberLiteral();
                 if (value.getType() == Field::Types::String)
                     res->instrumentation_arguments.emplace_back(value.safeGet<String>());
                 else if (value.getType() == Field::Types::Int64)
