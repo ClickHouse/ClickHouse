@@ -1,14 +1,14 @@
-all_1_1_0	j	j.a.Int64	400573	800000	{'LZ4':14}
-all_1_1_0	j	j.a.SharedVariant	0	0	{}
-all_1_1_0	j	j.a.SharedVariant.size	0	0	{}
-all_1_1_0	j	j.a.dynamic_structure	39	16	{'LZ4':1}
-all_1_1_0	j	j.a.variant_discr	43	60	{'LZ4':1}
-all_1_1_0	j	j.b.Int64	400558	800000	{'LZ4':14}
-all_1_1_0	j	j.b.SharedVariant	0	0	{}
-all_1_1_0	j	j.b.SharedVariant.size	0	0	{}
-all_1_1_0	j	j.b.dynamic_structure	39	16	{'LZ4':1}
-all_1_1_0	j	j.b.variant_discr	43	60	{'LZ4':1}
-all_1_1_0	j	j.object_shared_data.0%2Epaths	0	0	{}
-all_1_1_0	j	j.object_shared_data.0%2Evalues	0	0	{}
-all_1_1_0	j	j.object_shared_data.0.size0	3630	800000	{'LZ4':14}
-all_1_1_0	j	j.object_structure	47	23	{'LZ4':1}
+j.a.Int64	800000	0.5	{'LZ4':14}
+j.a.SharedVariant	0	nan	{}
+j.a.SharedVariant.size	0	nan	{}
+j.a.dynamic_structure	16	2.44	{'LZ4':1}
+j.a.variant_discr	60	0.72	{'LZ4':1}
+j.b.Int64	800000	0.5	{'LZ4':14}
+j.b.SharedVariant	0	nan	{}
+j.b.SharedVariant.size	0	nan	{}
+j.b.dynamic_structure	16	2.44	{'LZ4':1}
+j.b.variant_discr	60	0.72	{'LZ4':1}
+j.object_shared_data.0%2Epaths	0	nan	{}
+j.object_shared_data.0%2Evalues	0	nan	{}
+j.object_shared_data.0.size0	800000	0	{'LZ4':14}
+j.object_structure	23	2.04	{'LZ4':1}

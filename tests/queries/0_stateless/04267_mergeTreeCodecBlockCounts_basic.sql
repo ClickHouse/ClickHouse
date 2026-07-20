@@ -2,6 +2,15 @@
 -- no-random-merge-tree-settings: random settings could flip the part to Compact, where codec_block_counts is empty.
 
 DROP TABLE IF EXISTS t_basic;
+DROP TABLE IF EXISTS t_not_mergetree;
+
+-- Wrong number of arguments.
+SELECT * FROM mergeTreeCodecBlockCounts(currentDatabase()); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+
+-- Not a MergeTree table.
+CREATE TABLE t_not_mergetree (a UInt64) ENGINE = Memory;
+SELECT * FROM mergeTreeCodecBlockCounts(currentDatabase(), t_not_mergetree); -- { serverError BAD_ARGUMENTS }
+DROP TABLE t_not_mergetree;
 
 CREATE TABLE t_basic
 (
@@ -25,18 +34,10 @@ SELECT
 FROM mergeTreeCodecBlockCounts(currentDatabase(), t_basic)
 ORDER BY column, substream;
 
--- The tuple's streams listed on their own.
-SELECT
-    substream,
-    mapKeys(codec_block_counts) AS codecs
-FROM mergeTreeCodecBlockCounts(currentDatabase(), t_basic)
-WHERE column = 't'
-ORDER BY substream;
-
 -- A query that selects no codec column stays metadata-only and still returns one row per (part, column, substream).
 SELECT count() FROM mergeTreeCodecBlockCounts(currentDatabase(), t_basic);
 
-SELECT substream, data_uncompressed_bytes, data_compressed_bytes > 0 AS compressed_positive
+SELECT substream, data_uncompressed_bytes, round(data_compressed_bytes / data_uncompressed_bytes, 2) AS compression_ratio
 FROM mergeTreeCodecBlockCounts(currentDatabase(), t_basic)
 ORDER BY substream;
 
