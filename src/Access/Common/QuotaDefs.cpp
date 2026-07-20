@@ -9,12 +9,15 @@
 #include <boost/algorithm/string/replace.hpp>
 #include <boost/algorithm/string/split.hpp>
 
+#include <cmath>
+
 
 namespace DB
 {
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
 }
 
@@ -35,7 +38,14 @@ QuotaValue QuotaTypeInfo::stringToValue(const String & str) const
 {
     if (output_denominator == 1)
         return static_cast<QuotaValue>(parse<UInt64>(str));
-    return static_cast<QuotaValue>(parse<Float64>(str) * static_cast<Float64>(output_denominator));
+
+    /// Bound the scaled value to the QuotaValue (UInt64) range before the cast: an out-of-range or
+    /// non-finite product makes static_cast<QuotaValue> undefined behavior.
+    Float64 scaled_value = parse<Float64>(str) * static_cast<Float64>(output_denominator);
+    static constexpr Float64 uint64_max_plus_one_as_double = 18446744073709551616.0; /// 2^64, first double above UInt64 max
+    if (!std::isfinite(scaled_value) || scaled_value >= uint64_max_plus_one_as_double || scaled_value < 0)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Quota value {} is out of range", str);
+    return static_cast<QuotaValue>(scaled_value);
 }
 
 String QuotaTypeInfo::valueToStringWithName(QuotaValue value) const

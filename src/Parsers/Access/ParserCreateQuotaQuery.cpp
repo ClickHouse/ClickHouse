@@ -161,9 +161,19 @@ namespace
         const Field & max_field = ast->as<ASTLiteral &>().value;
         const auto & type_info = QuotaTypeInfo::get(quota_type);
         if (type_info.output_denominator == 1)
+        {
             max_value = fieldToNumber<QuotaValue>(max_field);
+        }
         else
-            max_value = static_cast<QuotaValue>(fieldToNumber<double>(max_field) * static_cast<double>(type_info.output_denominator));
+        {
+            /// Bound the scaled value to the QuotaValue (UInt64) range before the cast: an out-of-range or
+            /// non-finite product (e.g. MAX execution_time = 1e19) makes static_cast<QuotaValue> undefined behavior.
+            double scaled_value = fieldToNumber<double>(max_field) * static_cast<double>(type_info.output_denominator);
+            static constexpr double uint64_max_plus_one_as_double = 18446744073709551616.0; /// 2^64, first double above UInt64 max
+            if (!std::isfinite(scaled_value) || scaled_value >= uint64_max_plus_one_as_double || scaled_value < 0)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Quota max value is out of range");
+            max_value = static_cast<QuotaValue>(scaled_value);
+        }
         return true;
     }
 

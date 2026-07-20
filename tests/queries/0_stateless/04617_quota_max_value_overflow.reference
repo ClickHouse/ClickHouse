@@ -1,0 +1,1 @@
+CREATE QUOTA q_04617 FOR INTERVAL 1 hour MAX execution_time = 1.5
