@@ -16,7 +16,6 @@
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 #include <Common/Exception.h>
-#include <Common/ErrnoException.h>
 #include <Common/ProfileEvents.h>
 #include <Disks/IDisk.h>
 
@@ -74,11 +73,11 @@ bool enoughSpaceInDirectory(const std::string & path, size_t data_size)
     return data_size <= free_space;
 }
 
-std::unique_ptr<Poco::TemporaryFile> createTemporaryFile(const std::string & folder_path)
+std::unique_ptr<PocoTemporaryFile> createTemporaryFile(const std::string & folder_path)
 {
     ProfileEvents::increment(ProfileEvents::ExternalProcessingFilesTotal);
     fs::create_directories(folder_path);
-    return std::make_unique<Poco::TemporaryFile>(folder_path);
+    return std::make_unique<PocoTemporaryFile>(folder_path);
 }
 
 #if !defined(OS_LINUX)
@@ -130,7 +129,7 @@ BlockDeviceType getBlockDeviceType([[maybe_unused]] const String & device_id)
         readText(rotational, in);
         return rotational ? BlockDeviceType::ROT : BlockDeviceType::NONROT;
     }
-    catch (const std::exception &)
+    catch (...)
     {
         return BlockDeviceType::UNKNOWN;
     }
@@ -153,7 +152,7 @@ UInt64 getBlockDeviceReadAheadBytes([[maybe_unused]] const String & device_id)
         readText(read_ahead_kb, in);
         return read_ahead_kb * 1024;
     }
-    catch (const std::exception &)
+    catch (...)
     {
         return static_cast<UInt64>(-1);
     }

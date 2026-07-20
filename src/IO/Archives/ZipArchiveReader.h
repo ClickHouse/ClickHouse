@@ -69,18 +69,8 @@ private:
     };
 
     HandleHolder acquireHandle();
-
-    /// The stream pointer is opaque here (StreamFromReadBuffer* in the .cpp file).
-    /// It's non-null when reading from a buffer via archive_read_function,
-    /// null when reading from a file path.
-    struct RawHandleWithStream
-    {
-        RawHandle handle = nullptr;
-        void * stream = nullptr;
-    };
-
-    RawHandleWithStream acquireRawHandle();
-    void releaseRawHandle(RawHandleWithStream handle_info);
+    RawHandle acquireRawHandle();
+    void releaseRawHandle(RawHandle handle_);
 
     void checkResult(int code) const;
     [[noreturn]] void showError(const String & message) const;
@@ -89,7 +79,7 @@ private:
     const ReadArchiveFunction archive_read_function;
     const UInt64 archive_size = 0;
     String password;
-    std::vector<RawHandleWithStream> free_handles;
+    std::vector<RawHandle> free_handles;
     mutable std::mutex mutex;
 };
 

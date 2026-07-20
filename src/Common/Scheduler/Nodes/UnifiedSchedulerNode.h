@@ -143,11 +143,9 @@ private:
             {
                 // Remove fair if the only child has left
                 chassert(root);
-                auto remaining_child = children.begin()->second;
-                detach(remaining_child); // Detach remaining child from root before destroying it
                 detach(root);
                 root.reset();
-                return remaining_child; // The last child is a new root now
+                return children.begin()->second; // The last child is a new root now
             }
             else if (children.empty())
                 return {}; // We have detached the last child
@@ -557,8 +555,8 @@ protected: // Hide all the ISchedulerNode interface methods as an implementation
     {
         if (immediate_child.get() == child)
         {
-            immediate_child->setParent(nullptr); // detach first: cancels pending activations and waits for any in-progress activateChild
-            child_active = false; // deactivate (safe: no concurrent activateChild after cancelActivation)
+            child_active = false; // deactivate
+            immediate_child->setParent(nullptr); // detach
             immediate_child.reset();
         }
     }

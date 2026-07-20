@@ -65,7 +65,7 @@ class MsgPackRowInputFormat : public IRowInputFormat
 public:
     MsgPackRowInputFormat(SharedHeader header_, ReadBuffer & in_, Params params_, const FormatSettings & settings);
 
-    String getName() const override { return "MsgPackRowInputFormat"; }
+    String getName() const override { return "MagPackRowInputFormat"; }
     void resetParser() override;
     void setReadBuffer(ReadBuffer & in_) override;
     void resetReadBuffer() override;
@@ -94,7 +94,7 @@ public:
 
 private:
     msgpack::object_handle readObject();
-    DataTypePtr getDataType(const msgpack::object & object);
+    DataTypePtr getDataType(const msgpack::object & object, size_t depth);
     std::optional<DataTypes> readRowAndGetDataTypes() override;
 
     PeekableReadBuffer buf;

@@ -8,7 +8,6 @@
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Interpreters/QueryLog.h>
 #include <Access/Common/AccessRightsElement.h>
-#include <Common/NamedCollections/NamedCollectionsFactory.h>
 #include <Common/typeid_cast.h>
 #include <Core/Settings.h>
 #include <Databases/DatabaseReplicated.h>
@@ -38,7 +37,7 @@ BlockIO InterpreterRenameQuery::execute()
 {
     const auto & rename = query_ptr->as<const ASTRenameQuery &>();
 
-    if (!rename.cluster.empty() && !maybeRemoveOnCluster(query_ptr, getContext()))
+    if (!rename.cluster.empty())
     {
         DDLQueryOnClusterParams params;
         params.access_to_check = getRequiredAccess(rename.database ? RenameType::RenameDatabase : RenameType::RenameTable);
@@ -167,10 +166,6 @@ BlockIO InterpreterRenameQuery::executeToTables(const ASTRenameQuery & rename, c
             DatabaseCatalog::instance().addDependencies(to_table_id, from_ref_dependencies, from_loading_dependencies, from_mv_dependencies);
             if (!to_ref_dependencies.empty() || !to_loading_dependencies.empty() || !to_mv_dependencies.empty())
                 DatabaseCatalog::instance().addDependencies(from_table_id, to_ref_dependencies, to_loading_dependencies, to_mv_dependencies);
-
-            NamedCollectionFactory::instance().renameDependencies(from_table_id, to_table_id);
-            if (exchange_tables)
-                NamedCollectionFactory::instance().renameDependencies(to_table_id, from_table_id);
         }
         catch (...)
         {

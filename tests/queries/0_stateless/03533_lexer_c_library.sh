@@ -2,7 +2,7 @@
 # Tags: fasttest-only
 # Tag fasttest-only - this test requires lexer_test which is only available
 # in fast-test environment because it is built along with clickhouse but is not
-# transferred as an artifact to other test environments
+# transfered as an artifact to other test environments
 
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)

@@ -1,4 +1,3 @@
-#include <Common/setThreadName.h>
 #include <Common/Scheduler/Nodes/CustomResourceManager.h>
 
 #include <Common/Scheduler/Nodes/SchedulerNodeFactory.h>
@@ -187,7 +186,7 @@ WorkloadSettings CustomResourceManager::Classifier::getWorkloadSettings(const St
 CustomResourceManager::CustomResourceManager()
     : state(new State())
 {
-    scheduler.start(ThreadName::CUSTOM_RESOURCE_MANAGER);
+    scheduler.start("Sch.CstmResMngr");
 }
 
 void CustomResourceManager::updateConfiguration(const Poco::Util::AbstractConfiguration & config)

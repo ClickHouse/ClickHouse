@@ -97,12 +97,12 @@ ThreadGroupPtr CurrentThread::getGroup()
     return current_thread->getThreadGroup();
 }
 
-ContextPtr CurrentThread::tryGetQueryContext()
+ContextPtr CurrentThread::getQueryContext()
 {
     if (unlikely(!current_thread))
         return {};
 
-    return current_thread->tryGetQueryContext();
+    return current_thread->getQueryContext();
 }
 
 std::string_view CurrentThread::getQueryId()

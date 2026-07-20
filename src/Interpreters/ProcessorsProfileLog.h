@@ -52,9 +52,5 @@ public:
     using SystemLog<ProcessorProfileLogElement>::SystemLog;
 };
 
-std::vector<IProcessor::ProcessorsProfileLogInfo> getProcessorsProfileLogInfo(const Processors & processors);
-
 void logProcessorProfile(ContextPtr context, const Processors & processors);
-void logProcessorProfile(ContextPtr context, const std::vector<IProcessor::ProcessorsProfileLogInfo> & profile_infos, String pipeline_dump);
-
 }

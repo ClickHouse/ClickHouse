@@ -17,7 +17,6 @@
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <filesystem>
-#include <optional>
 
 namespace fs = std::filesystem;
 
@@ -59,8 +58,8 @@ private:
     String backup_tmp_path;
     String backup_file_name;
     std::unique_ptr<WriteBufferFromFileBase> backup_buf;
-    std::optional<CompressedWriteBuffer> compressed_backup_buf;
-    std::optional<NativeWriter> backup_stream;
+    CompressedWriteBuffer compressed_backup_buf;
+    NativeWriter backup_stream;
     bool persistent;
 };
 
@@ -80,6 +79,9 @@ SetOrJoinSink::SetOrJoinSink(
     , backup_path(backup_path_)
     , backup_tmp_path(backup_tmp_path_)
     , backup_file_name(backup_file_name_)
+    , backup_buf(table_.disk->writeFile(fs::path(backup_tmp_path) / backup_file_name))
+    , compressed_backup_buf(*backup_buf)
+    , backup_stream(compressed_backup_buf, 0, std::make_shared<const Block>(metadata_snapshot->getSampleBlock()))
     , persistent(persistent_)
 {
 }
@@ -92,8 +94,7 @@ SetOrJoinSink::~SetOrJoinSink()
 
 void SetOrJoinSink::cancelBuffers() noexcept
 {
-    if (compressed_backup_buf)
-        compressed_backup_buf->cancel();
+    compressed_backup_buf.cancel();
     if (backup_buf)
         backup_buf->cancel();
 }
@@ -105,27 +106,23 @@ void SetOrJoinSink::consume(Chunk & chunk)
 
     table.insertBlock(block, getContext());
     if (persistent)
-    {
-        if (!backup_buf)
-        {
-            backup_buf = table.disk->writeFile(fs::path(backup_tmp_path) / backup_file_name);
-            compressed_backup_buf.emplace(*backup_buf);
-            backup_stream.emplace(*compressed_backup_buf, 0, std::make_shared<const Block>(metadata_snapshot->getSampleBlock()));
-        }
-        backup_stream->write(block);
-    }
+        backup_stream.write(block);
 }
 
 void SetOrJoinSink::onFinish()
 {
     table.finishInsert();
-    if (backup_buf)
+    if (persistent)
     {
-        backup_stream->flush();
-        compressed_backup_buf->finalize();
+        backup_stream.flush();
+        compressed_backup_buf.finalize();
         backup_buf->finalize();
 
         table.disk->replaceFile(fs::path(backup_tmp_path) / backup_file_name, fs::path(backup_path) / backup_file_name);
+    }
+    else
+    {
+        cancelBuffers();
     }
 }
 

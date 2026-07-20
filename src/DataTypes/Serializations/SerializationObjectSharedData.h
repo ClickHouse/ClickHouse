@@ -1,12 +1,7 @@
 #pragma once
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wdocumentation-html"
 
-#include <Common/Exception.h>
 #include <DataTypes/Serializations/SimpleTextSerialization.h>
 #include <boost/algorithm/string/join.hpp>
-
-#include <map>
 
 namespace DB
 {
@@ -18,7 +13,6 @@ namespace ErrorCodes
 
 class SerializationObjectSharedDataPath;
 class SerializationSubObjectSharedData;
-class SerializationObjectDistinctPaths;
 
 /// Class for binary serialization/deserialization of a shared data structure inside Object type.
 class SerializationObjectSharedData final : public SimpleTextSerialization
@@ -73,14 +67,8 @@ public:
         explicit SerializationVersion(Value value_) : value(value_) {}
     };
 
-private:
-    SerializationObjectSharedData(SerializationVersion serialization_version_, const DataTypePtr & dynamic_type_, const SerializationPtr & dynamic_serialization_, size_t buckets_);
 
-public:
-    static UInt128 getHash(SerializationVersion serialization_version_, const DataTypePtr & dynamic_type_, const SerializationPtr & dynamic_serialization_, size_t buckets_);
-    static SerializationPtr create(SerializationVersion serialization_version_, const DataTypePtr & dynamic_type_, const SerializationPtr & dynamic_serialization_, size_t buckets_);
-
-    bool supportsPooling() const override { return dynamic_serialization->supportsPooling(); }
+    SerializationObjectSharedData(SerializationVersion serialization_version_, const DataTypePtr & dynamic_type_, size_t buckets_);
 
     void enumerateStreams(
         EnumerateStreamsSettings & settings,
@@ -313,7 +301,6 @@ private:
 
     friend SerializationObjectSharedDataPath;
     friend SerializationSubObjectSharedData;
-    friend SerializationObjectDistinctPaths;
 
     SerializationVersion serialization_version;
     DataTypePtr dynamic_type;
@@ -323,4 +310,3 @@ private:
 };
 
 }
-#pragma clang diagnostic pop

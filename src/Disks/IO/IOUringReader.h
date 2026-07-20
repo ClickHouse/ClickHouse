@@ -7,7 +7,6 @@
 #include <Common/Exception.h>
 #include <Common/ThreadPool_fwd.h>
 #include <IO/AsynchronousReader.h>
-#include <cstddef>
 #include <deque>
 #include <unordered_map>
 #include <liburing.h>
@@ -38,7 +37,6 @@ private:
     std::mutex mutex;
     struct io_uring ring;
     uint32_t cq_entries;
-    size_t tracked_ring_size = 0;
 
     std::atomic<bool> cancelled{false};
     std::unique_ptr<ThreadFromGlobalPool> ring_completion_monitor;

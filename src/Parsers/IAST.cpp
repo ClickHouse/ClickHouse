@@ -9,82 +9,12 @@
 #include <Common/SensitiveDataMasker.h>
 #include <Common/SipHash.h>
 #include <Common/StringUtils.h>
+#include <Common/checkStackSize.h>
 
 #include <algorithm>
 
 namespace DB
 {
-
-/// Verify that we did not increase the size of IAST by accident.
-static_assert(sizeof(IAST) <= 32);
-
-void intrusive_ptr_add_ref(const IAST * p) noexcept
-{
-    p->ref_counter.fetch_add(1, std::memory_order_relaxed);
-}
-
-void intrusive_ptr_release(const IAST * p) noexcept
-{
-    if (p->ref_counter.fetch_sub(1, std::memory_order_acq_rel) == 1)
-    {
-        struct LinkedList
-        {
-            ASTs children;
-            LinkedList * next = nullptr;
-
-            static LinkedList * create(IAST * ptr)
-            {
-                if (ptr->children.empty())
-                {
-                    delete ptr;
-                    return nullptr;
-                }
-
-                ASTs children;
-                children.swap(ptr->children);
-                ptr->~IAST();
-                LinkedList * elem = new (dynamic_cast<void *>(ptr)) LinkedList;
-                elem->children.swap(children);
-                return elem;
-            }
-        };
-
-        static_assert(sizeof(LinkedList) <= sizeof(IAST));
-
-        const IAST * const_ptr = p;
-        IAST * ptr = const_cast<IAST *>(const_ptr);
-
-        LinkedList * list_head = LinkedList::create(ptr);
-
-        while (list_head)
-        {
-            ASTs children;
-            children.swap(list_head->children);
-            {
-                LinkedList * next = list_head->next;
-                list_head->~LinkedList();
-                operator delete(list_head);
-                list_head = next;
-            }
-
-            for (auto & child : children)
-            {
-                if (child == nullptr || child->use_count() != 1)
-                    continue;
-
-                ptr = child.detach();
-                chassert(ptr->ref_counter.fetch_sub(1, std::memory_order_acq_rel) == 1);
-
-                LinkedList * elem = LinkedList::create(ptr);
-                if (elem)
-                {
-                    elem->next = list_head;
-                    list_head = elem;
-                }
-            }
-        }
-    }
-}
 
 namespace ErrorCodes
 {
@@ -94,24 +24,70 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-IAST::IAST(const IAST & other)
-    : TypePromotion<IAST>()
-    , children(other.children)
-    , ref_counter(0)
-    , flags_storage(other.flags_storage)
-{
-}
 
-IAST & IAST::operator=(const IAST & other)
+IAST::~IAST()
 {
-    if (this == &other)
-        return *this;
-    children = other.children;
-    flags_storage = other.flags_storage;
-    return *this;
-}
+    /** Create intrusive linked list of children to delete.
+      * Each ASTPtr child contains pointer to next child to delete.
+      */
+    ASTPtr delete_list_head_holder = nullptr;
+    const bool delete_directly = next_to_delete_list_head == nullptr;
+    ASTPtr & delete_list_head_reference = next_to_delete_list_head ? *next_to_delete_list_head : delete_list_head_holder;
 
-IAST::~IAST() = default;
+    /// Move children into intrusive list
+    for (auto & child : children)
+    {
+        /** If two threads remove ASTPtr concurrently,
+          * it is possible that neither thead will see use_count == 1.
+          * It is ok. Will need one more extra stack frame in this case.
+          */
+        if (child.use_count() != 1)
+            continue;
+
+        ASTPtr child_to_delete;
+        child_to_delete.swap(child);
+
+        if (!delete_list_head_reference)
+        {
+            /// Initialize list first time
+            delete_list_head_reference = std::move(child_to_delete);
+            continue;
+        }
+
+        ASTPtr previous_head = std::move(delete_list_head_reference);
+        delete_list_head_reference = std::move(child_to_delete);
+        delete_list_head_reference->next_to_delete = std::move(previous_head);
+    }
+
+    if (!delete_directly)
+        return;
+
+    while (delete_list_head_reference)
+    {
+        /** Extract child to delete from current list head.
+          * Child will be destroyed at the end of scope.
+          */
+        ASTPtr child_to_delete;
+        child_to_delete.swap(delete_list_head_reference);
+
+        /// Update list head
+        delete_list_head_reference = std::move(child_to_delete->next_to_delete);
+
+        /** Pass list head into child before destruction.
+          * It is important to properly handle cases where subclass has member same as one of its children.
+          *
+          * class ASTSubclass : IAST
+          * {
+          *     ASTPtr first_child; /// Same as first child
+          * }
+          *
+          * In such case we must move children into list only in IAST destructor.
+          * If we try to move child to delete children into list before subclasses desruction,
+          * first child use count will be 2.
+          */
+        child_to_delete->next_to_delete_list_head = &delete_list_head_reference;
+    }
+}
 
 size_t IAST::size() const
 {
@@ -124,6 +100,7 @@ size_t IAST::size() const
 
 size_t IAST::checkSize(size_t max_size) const
 {
+    checkStackSize();
     size_t res = 1;
     for (const auto & child : children)
         res += child->checkSize(max_size);
@@ -145,6 +122,7 @@ IASTHash IAST::getTreeHash(bool ignore_aliases) const
 
 void IAST::updateTreeHash(SipHash & hash_state, bool ignore_aliases) const
 {
+    checkStackSize();
     updateTreeHashImpl(hash_state, ignore_aliases);
     hash_state.update(children.size());
     for (const auto & child : children)
@@ -250,6 +228,8 @@ String IAST::formatWithSecretsMultiLine() const
 
 bool IAST::childrenHaveSecretParts() const
 {
+    checkStackSize();
+
     for (const auto & child : children)
     {
         if (child->hasSecretParts())
@@ -260,6 +240,7 @@ bool IAST::childrenHaveSecretParts() const
 
 void IAST::cloneChildren()
 {
+    checkStackSize();
     for (auto & child : children)
         child = child->clone();
 }
@@ -341,6 +322,7 @@ void IAST::FormatSettings::checkIdentifier(const String & name) const
 
 void IAST::dumpTree(WriteBuffer & ostr, size_t indent) const
 {
+    checkStackSize();
     String indent_str(indent, '-');
     ostr << indent_str << getID() << ", ";
     writePointerHex(this, ostr);

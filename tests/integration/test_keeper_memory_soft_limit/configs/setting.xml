@@ -1,7 +1,3 @@
 <clickhouse>
-    <allow_zookeeper_write>1</allow_zookeeper_write>
-    <metric_log>
-        <database>system</database>
-        <table>metric_log</table>
-    </metric_log>
+<allow_zookeeper_write>1</allow_zookeeper_write>
 </clickhouse>

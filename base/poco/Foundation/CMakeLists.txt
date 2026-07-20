@@ -19,7 +19,6 @@ target_compile_options (_poco_foundation_pcre
         -Wno-unknown-pragmas
         -Wno-unreachable-code-break
         -Wno-unused-macros
-        -Wno-implicit-int-conversion
 )
 
 # Foundation
@@ -202,7 +201,6 @@ target_compile_options (_poco_foundation
         -Wno-unused-macros
         -Wno-unused-parameter
         -Wno-zero-as-null-pointer-constant
-        -Wno-implicit-int-conversion
 )
 
 target_compile_definitions (_poco_foundation

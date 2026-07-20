@@ -1,7 +1,6 @@
 <clickhouse>
     <profiles>
         <default>
-            <async_insert>0</async_insert>
         </default>
     </profiles>
 

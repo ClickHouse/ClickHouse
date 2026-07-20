@@ -4,10 +4,8 @@
 #include <Backups/BackupIO.h>
 #include <Backups/IBackupEntry.h>
 #include <Backups/BackupIO_S3.h>
-#include <Backups/getBackupDataFileName.h>
 #include <Common/CurrentThread.h>
 #include <Common/ProfileEvents.h>
-#include <Common/StackTrace.h>
 #include <Common/StringUtils.h>
 #include <base/hex.h>
 #include <Common/logger_useful.h>
@@ -68,6 +66,7 @@ namespace
     const int INITIAL_BACKUP_VERSION = 1;
     /// We may use lightweight backup in version 2.
     const int CURRENT_BACKUP_VERSION = 2;
+    constexpr auto BASE_BACKUP_COPY_S3_CREDENTIALS_FROM_BACKUP = "base_backup_copy_s3_credentials_from_backup";
 
     using SizeAndChecksum = IBackup::SizeAndChecksum;
 
@@ -168,8 +167,6 @@ BackupImpl::BackupImpl(
     , archive_params(archive_params_)
     , open_mode(OpenMode::WRITE)
     , writer(std::move(writer_))
-    , data_file_name_generator(params.data_file_name_generator)
-    , data_file_name_prefix_length(params.data_file_name_prefix_length)
     , coordination(params.backup_coordination)
     , uuid(params.backup_uuid)
     , version(CURRENT_BACKUP_VERSION)
@@ -182,13 +179,15 @@ BackupImpl::BackupImpl(
 BackupImpl::BackupImpl(
     const BackupInfo & backup_info_,
     const ArchiveParams & archive_params_,
-    std::shared_ptr<IBackupReader> reader_)
+    std::shared_ptr<IBackupReader> reader_,
+    std::shared_ptr<IBackupWriter> lightweight_snapshot_writer_)
     : backup_info(backup_info_)
     , backup_name_for_logging(backup_info.toStringForLogging())
     , use_archive(!archive_params_.archive_name.empty())
     , archive_params(archive_params_)
     , open_mode(OpenMode::UNLOCK)
     , reader(reader_)
+    , lightweight_snapshot_writer(lightweight_snapshot_writer_)
     , log(getLogger("BackupImpl"))
 {
     open();
@@ -279,8 +278,7 @@ void BackupImpl::openArchive()
     }
     else
     {
-        archive_writer = createArchiveWriter(
-            archive_name, writer->writeFile(archive_name), DBMS_DEFAULT_BUFFER_SIZE, archive_params.adaptive_buffer_max_size);
+        archive_writer = createArchiveWriter(archive_name, writer->writeFile(archive_name));
         archive_writer->setPassword(archive_params.password);
         archive_writer->setCompression(archive_params.compression_method, archive_params.compression_level);
     }
@@ -310,10 +308,21 @@ std::shared_ptr<const IBackup> BackupImpl::getBaseBackupUnlocked() const
 {
     if (!base_backup && base_backup_info)
     {
+        /// Copy the credentials into a local copy only used for opening the base backup.
+        /// The stored `base_backup_info` must stay unchanged because `writeBackupMetadata`
+        /// serializes it into the `.backup` file, and the copied credentials must not be persisted there.
+        BackupInfo effective_base_backup_info = *base_backup_info;
         if (params.use_same_s3_credentials_for_base_backup)
-            backup_info.copyS3CredentialsTo(*base_backup_info);
+        {
+            backup_info.copyS3CredentialsTo(effective_base_backup_info);
+        }
+        else if (base_backup_copy_s3_credentials_from_backup && backup_info.canCopyS3CredentialsTo(effective_base_backup_info))
+        {
+            /// Metadata marker asks to copy credentials from this backup locator at restore time.
+            backup_info.copyS3CredentialsTo(effective_base_backup_info);
+        }
 
-        BackupFactory::CreateParams base_params = params.getCreateParamsForBaseBackup(*base_backup_info, archive_params.password);
+        BackupFactory::CreateParams base_params = params.getCreateParamsForBaseBackup(std::move(effective_base_backup_info), archive_params.password);
         base_backup = BackupFactory::instance().createBackup(base_params);
 
         if ((open_mode == OpenMode::READ) && (base_backup_uuid != base_backup->getUUID()))
@@ -399,9 +408,6 @@ void BackupImpl::writeBackupMetadata()
     *out << "<deduplicate_files>" << params.deduplicate_files << "</deduplicate_files>";
     *out << "<timestamp>" << toString(LocalDateTime{timestamp}) << "</timestamp>";
     *out << "<uuid>" << toString(*uuid) << "</uuid>";
-    if (data_file_name_generator != BackupDataFileNameGeneratorType::FirstFileName)
-        *out << "<data_file_name_generator>" << SettingFieldBackupDataFileNameGeneratorTypeTraits::toString(data_file_name_generator)
-             << "</data_file_name_generator>";
 
     auto all_file_infos = coordination->getFileInfosForAllHosts();
 
@@ -419,8 +425,27 @@ void BackupImpl::writeBackupMetadata()
 
         if (base_backup_in_use)
         {
-            *out << "<base_backup>" << xml << base_backup_info->toString() << "</base_backup>";
+            /// Persist base backup locators without inline `S3` credentials.
+            BackupInfo effective_base_backup_info = *base_backup_info;
+            if (params.use_same_s3_credentials_for_base_backup)
+                backup_info.copyS3CredentialsTo(effective_base_backup_info);
+
+            const BackupInfo base_backup_info_for_metadata = effective_base_backup_info.withoutS3Credentials(params.context);
+            const bool base_backup_credentials_were_stripped = base_backup_info_for_metadata.toString() != effective_base_backup_info.toString();
+            bool base_backup_can_use_this_backup_credentials = false;
+
+            if (base_backup_credentials_were_stripped && backup_info.canCopyS3CredentialsTo(base_backup_info_for_metadata))
+            {
+                BackupInfo base_backup_info_with_this_backup_credentials = base_backup_info_for_metadata;
+                backup_info.copyS3CredentialsTo(base_backup_info_with_this_backup_credentials);
+                base_backup_can_use_this_backup_credentials = base_backup_info_with_this_backup_credentials.toString() == effective_base_backup_info.toString();
+            }
+
+            *out << "<base_backup>" << xml << base_backup_info_for_metadata.toString() << "</base_backup>";
             *out << "<base_backup_uuid>" << getBaseBackupUnlocked()->getUUID() << "</base_backup_uuid>";
+            if (base_backup_can_use_this_backup_credentials)
+                *out << "<" << BASE_BACKUP_COPY_S3_CREDENTIALS_FROM_BACKUP << ">true</"
+                     << BASE_BACKUP_COPY_S3_CREDENTIALS_FROM_BACKUP << ">";
         }
     }
 
@@ -469,10 +494,7 @@ void BackupImpl::writeBackupMetadata()
         }
 
         total_size += info.size;
-        bool has_entry = !params.deduplicate_files
-            || (info.size && (info.size != info.base_size)
-                && (info.data_file_name.empty()
-                    || info.data_file_name == getBackupDataFileName(info, data_file_name_generator, data_file_name_prefix_length)));
+        bool has_entry = !params.deduplicate_files || (info.size && (info.size != info.base_size) && (info.data_file_name.empty() || (info.data_file_name == info.file_name)));
         if (has_entry)
         {
             ++num_entries;
@@ -529,7 +551,13 @@ void BackupImpl::readBackupMetadata()
     uuid = parse<UUID>(getString(config_root, "uuid"));
 
     if (config_root->getNodeByPath("base_backup") && !base_backup_info)
+    {
         base_backup_info = BackupInfo::fromString(getString(config_root, "base_backup"));
+
+        /// The marker is honored only when the base backup locator itself comes from the metadata:
+        /// if the locator was overridden with the `base_backup` setting, the override is used as is.
+        base_backup_copy_s3_credentials_from_backup = getBool(config_root, BASE_BACKUP_COPY_S3_CREDENTIALS_FROM_BACKUP, false);
+    }
 
     if (config_root->getNodeByPath("base_backup_uuid"))
         base_backup_uuid = parse<UUID>(getString(config_root, "base_backup_uuid"));
@@ -607,7 +635,7 @@ void BackupImpl::readBackupMetadata()
 
             ++num_files;
             total_size += info.size;
-            bool has_entry = !params.deduplicate_files || (info.size && (info.size != info.base_size) && (info.data_file_name.empty() || info.data_file_name == info.file_name));
+            bool has_entry = !params.deduplicate_files || (info.size && (info.size != info.base_size) && (info.data_file_name.empty() || (info.data_file_name == info.file_name)));
             if (has_entry)
             {
                 ++num_entries;
@@ -659,12 +687,9 @@ bool BackupImpl::checkLockFile(bool throw_if_failed) const
 {
     if (!lock_file_name.empty() && uuid)
     {
-        LOG_TRACE(log, "Checking lock file {}", lock_file_name);
         ProfileEvents::increment(ProfileEvents::BackupLockFileReads);
-        String actual_file_contents;
-        if (writer->fileContentsEqual(lock_file_name, toString(*uuid), actual_file_contents))
+        if (writer->fileContentsEqual(lock_file_name, toString(*uuid)))
             return true;
-        LOG_TRACE(log, "Lock file {} contents do not match, expected: {}, actual: {}", lock_file_name, toString(*uuid), actual_file_contents);
     }
 
     if (throw_if_failed)
@@ -1234,5 +1259,29 @@ bool BackupImpl::tryRemoveAllFiles() noexcept
     }
 }
 
+bool BackupImpl::tryRemoveAllFilesUnderDirectory(const String & directory) const noexcept
+{
+    try
+    {
+        LOG_INFO(log, "Removing all files of under directory {}", directory);
+
+        Strings files_to_remove = listFiles(directory, true);
+        Strings objects_to_remove;
+        for (const String & file_name : files_to_remove)
+        {
+            std::lock_guard<std::mutex> lock(mutex);
+            String file_object_key = file_object_keys.at(fs::path(removeLeadingSlash(directory)) / file_name);
+            objects_to_remove.push_back(file_object_key);
+        }
+
+        lightweight_snapshot_writer->removeFiles(objects_to_remove);
+        return true;
+    }
+    catch (...)
+    {
+        DB::tryLogCurrentException(log, "Caught exception while removing files of a corrupted backup");
+        return false;
+    }
 }
 
+}

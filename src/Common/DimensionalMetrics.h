@@ -2,7 +2,6 @@
 
 #include <base/defines.h>
 #include <base/types.h>
-#include <Common/SharedMutex.h>
 
 #include <atomic>
 #include <memory>
@@ -10,12 +9,7 @@
 #include <unordered_map>
 #include <vector>
 
-namespace DB
-{
-    class WriteBuffer;
-}
-
-namespace DimensionalMetrics
+namespace DB::DimensionalMetrics
 {
     using Value = Float64;
     using Labels = std::vector<String>;
@@ -23,8 +17,7 @@ namespace DimensionalMetrics
 
     struct Metric
     {
-        Metric() : value(0.0) {}
-
+        Metric();
         void set(Value value_);
         void increment(Value amount = 1.0);
         void decrement(Value amount = 1.0);
@@ -42,40 +35,31 @@ namespace DimensionalMetrics
             size_t operator()(const LabelValues & label_values) const;
         };
 
-        using MetricsMap = std::unordered_map<LabelValues, std::unique_ptr<Metric>, LabelValuesHash>;
+        using MetricsMap = std::unordered_map<LabelValues, std::shared_ptr<Metric>, LabelValuesHash>;
 
     public:
-        MetricFamily(String name_, String documentation_, Labels labels_, std::vector<LabelValues> initial_label_values = {});
+        explicit MetricFamily(Labels labels_, std::vector<LabelValues> initial_label_values = {});
         Metric & withLabels(LabelValues label_values);
-
-        template <typename Func>
-        void forEachMetric(Func && func) const
-        {
-            std::shared_lock lock(mutex);
-            for (const auto & [label_values, metric] : metrics)
-            {
-                func(label_values, *metric);
-            }
-        }
-
+        void unregister(LabelValues label_values) noexcept;
+        MetricsMap getMetrics() const;
         const Labels & getLabels() const;
-        const String & getName() const;
-        const String & getDocumentation() const;
 
     private:
-        mutable DB::SharedMutex mutex;
+        mutable std::shared_mutex mutex;
         MetricsMap metrics;
-        const String name;
-        const String documentation;
         const Labels labels;
     };
 
-    using MetricFamilyPtr = std::unique_ptr<MetricFamily>;
-    using MetricFamilies = std::vector<MetricFamilyPtr>;
+    struct MetricRecord
+    {
+        MetricRecord(String name_, String documentation_, Labels labels, std::vector<LabelValues> initial_label_values);
+        String name;
+        String documentation;
+        MetricFamily family;
+    };
 
-    void add(MetricFamily & metric, LabelValues labels, Value amount = 1.0);
-    void sub(MetricFamily & metric, LabelValues labels, Value amount = 1.0);
-    void set(MetricFamily & metric, LabelValues labels, Value value);
+    using MetricRecordPtr = std::shared_ptr<MetricRecord>;
+    using MetricRecords = std::vector<MetricRecordPtr>;
 
     class Factory
     {
@@ -86,19 +70,10 @@ namespace DimensionalMetrics
             String documentation,
             Labels labels,
             std::vector<LabelValues> initial_label_values = {});
-
-        template <typename Func>
-        void forEachFamily(Func && func) const
-        {
-            std::shared_lock lock(mutex);
-            for (const auto & family : registry)
-            {
-                func(*family);
-            }
-        }
+        MetricRecords getRecords() const;
 
     private:
-        mutable DB::SharedMutex mutex;
-        MetricFamilies registry;
+        mutable std::mutex mutex;
+        MetricRecords registry TSA_GUARDED_BY(mutex);
     };
 }

@@ -145,7 +145,6 @@ public:
 
         /// Pad the remainder, which is missing up to an 8-byte word.
         current_word = 0;
-        /// NOLINTBEGIN(clang-analyzer-security.ArrayBound)
         switch (end - data) /// NOLINT(bugprone-switch-missing-default-case)
         {
             case 7: current_bytes[CURRENT_BYTES_IDX(6)] = data[6]; [[fallthrough]];
@@ -157,7 +156,6 @@ public:
             case 1: current_bytes[CURRENT_BYTES_IDX(0)] = data[0]; [[fallthrough]];
             case 0: break;
         }
-        /// NOLINTEND(clang-analyzer-security.ArrayBound)
     }
 
     template <typename Transform = void, typename T>
@@ -198,7 +196,6 @@ public:
         hi = v2 ^ v3;
     }
 
-    /// ATTENTION: This is not constant method, if you call it several times, it will return different results, because of the finalization step.
     ALWAYS_INLINE UInt128 get128()
     {
         UInt128 res;

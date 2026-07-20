@@ -4,7 +4,6 @@ sidebar_label: 'INSERT INTO'
 sidebar_position: 33
 slug: /sql-reference/statements/insert-into
 title: 'INSERT INTO Statement'
-doc_type: 'reference'
 ---
 
 # INSERT INTO Statement
@@ -17,7 +16,7 @@ Inserts data into a table.
 INSERT INTO [TABLE] [db.]table [(c1, c2, c3)] [SETTINGS ...] VALUES (v11, v12, v13), (v21, v22, v23), ...
 ```
 
-You can specify a list of columns to insert using  the `(c1, c2, c3)`. You can also use an expression with column [matcher](../../sql-reference/statements/select/index.md#asterisk) such as `*` and/or [modifiers](../../sql-reference/statements/select/index.md#select-modifiers) such as [APPLY](/sql-reference/statements/select/apply-modifier), [EXCEPT](/sql-reference/statements/select/except-modifier), [REPLACE](/sql-reference/statements/select/replace-modifier).
+You can specify a list of columns to insert using  the `(c1, c2, c3)`. You can also use an expression with column [matcher](../../sql-reference/statements/select/index.md#asterisk) such as `*` and/or [modifiers](../../sql-reference/statements/select/index.md#select-modifiers) such as [APPLY](/sql-reference/statements/select#apply), [EXCEPT](/sql-reference/statements/select#except), [REPLACE](/sql-reference/statements/select#replace).
 
 For example, consider the table:
 
@@ -92,7 +91,7 @@ INSERT INTO t FORMAT TabSeparated
 22  Qwerty
 ```
 
-You can insert data separately from the query by using the [command-line client](/operations/utilities/clickhouse-local) or the [HTTP interface](/interfaces/http).
+You can insert data separately from the query by using the [command-line client](/operations/utilities/clickhouse-local) or the [HTTP interface](/interfaces/http/).
 
 :::note
 If you want to specify `SETTINGS` for `INSERT` query then you have to do it _before_ the `FORMAT` clause since everything after `FORMAT format_name` is treated as data. For example:
@@ -105,45 +104,6 @@ INSERT INTO table SETTINGS ... FORMAT format_name data_set
 ## Constraints {#constraints}
 
 If a table has [constraints](../../sql-reference/statements/create/table.md#constraints), their expressions will be checked for each row of inserted data. If any of those constraints is not satisfied — the server will raise an exception containing the constraint name and expression, and the query will be stopped.
-
-## Data Type Validation {#data-type-validation}
-
-ClickHouse validates allowed data types (controlled by settings like `enable_time_time64_type`, `allow_suspicious_low_cardinality_types`, `allow_suspicious_fixed_string_types`, etc.) only during table creation (`CREATE TABLE`) and schema modification (`ALTER TABLE`), not during `INSERT`.
-
-This means that if a table with a disallowed data type already exists, data can be inserted into it even when the corresponding setting is disabled on the server. This is by design — once a table is created, inserts should not be blocked by settings that control type creation.
-
-For example:
-
-```sql
-SET enable_time_time64_type = 1;
-
-CREATE TABLE events
-(
-    `id` UInt64,
-    `event_time` Time
-)
-ENGINE = MergeTree()
-ORDER BY id;
-
-SET enable_time_time64_type = 0;
-
--- This works even though the setting is now disabled.
--- The table already exists, so inserts are not blocked.
-INSERT INTO events VALUES (1, '14:30:25');
-
--- But creating a new table with the Time type will fail.
-CREATE TABLE events_new
-(
-    `id` UInt64,
-    `event_time` Time
-)
-ENGINE = MergeTree()
-ORDER BY id; -- ERR: TYPE_TIME_TIME64_IS_NOT_ENABLED
-```
-
-:::note
-As a consequence, a client with a newer version (where a setting is enabled by default) can insert data with disallowed data types into a server with an older version (where the setting is disabled), as long as the target table already has the corresponding column types. The validation is enforced at the DDL level, not at the DML level.
-:::
 
 ## Inserting the Results of SELECT {#inserting-the-results-of-select}
 

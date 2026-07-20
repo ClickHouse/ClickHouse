@@ -43,10 +43,6 @@ public:
     bool isVariadic() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    /// Disable default Variant implementation for compatibility.
-    /// Hash values must remain stable, so we don't want the Variant adaptor to change hash computation.
-    bool useDefaultImplementationForVariant() const override { return false; }
-
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override
     {
         if constexpr (is_simhash)

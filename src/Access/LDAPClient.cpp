@@ -64,7 +64,6 @@ void LDAPClient::Params::updateHash(SipHash & hash) const
     ::updateHash(hash, bind_dn);
     ::updateHash(hash, user);
     ::updateHash(hash, password);
-    ::updateHash(hash, static_cast<int>(follow_referrals)); // Include follow referral behavior
 
     if (user_dn_detection)
         user_dn_detection->updateHash(hash);
@@ -246,13 +245,6 @@ bool LDAPClient::openConnection()
         }
         handleError(ldap_set_option(handle, LDAP_OPT_PROTOCOL_VERSION, &value));
     }
-
-#ifdef LDAP_OPT_REFERRALS
-    handleError(ldap_set_option(
-        handle,
-        LDAP_OPT_REFERRALS,
-        params.follow_referrals ? LDAP_OPT_ON : LDAP_OPT_OFF));
-#endif
 
     handleError(ldap_set_option(handle, LDAP_OPT_RESTART, LDAP_OPT_ON));
 
@@ -540,12 +532,7 @@ LDAPClient::SearchResults LDAPClient::search(const SearchParams & search_params)
 
                     for (size_t i = 0; referrals[i]; ++i)
                     {
-                        if (params.follow_referrals)
-                            LOG_TRACE(getLogger("LDAPClient"), "Received LDAP search reference: {} (library referral chasing enabled)",
-                            referrals[i]);
-                        else
-                            LOG_TRACE(getLogger("LDAPClient"), "Received LDAP search reference but not following it: {}",
-                            referrals[i]);
+                        LOG_WARNING(getLogger("LDAPClient"), "Received reference during LDAP search but not following it: {}", referrals[i]);
                     }
                 }
 

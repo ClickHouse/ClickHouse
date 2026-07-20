@@ -49,16 +49,12 @@ check_exception_detected 2> /dev/null
 $CLICKHOUSE_CLIENT --query "SELECT last_exception FROM system.dictionaries WHERE database = currentDatabase() AND name = 'invalidate'" 2>&1 | grep -Eo "dict_invalidate.*UNKNOWN_TABLE" | wc -l
 
 $CLICKHOUSE_CLIENT --query "
-CREATE TABLE dict_invalidate_new
+CREATE TABLE dict_invalidate
 ENGINE = Memory AS
 SELECT
     133 as dummy,
     toDateTime('2019-10-29 18:51:35') AS last_time
 FROM system.one"
-
-$CLICKHOUSE_CLIENT --query "
-RENAME TABLE dict_invalidate_new TO dict_invalidate
-"
 
 function check_exception_fixed()
 {

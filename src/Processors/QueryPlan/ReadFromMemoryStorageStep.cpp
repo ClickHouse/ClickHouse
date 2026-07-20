@@ -4,12 +4,9 @@
 #include <functional>
 #include <memory>
 
-#include <Common/typeid_cast.h>
-
 #include <Interpreters/getColumnFromBlock.h>
 #include <Interpreters/inplaceBlockConversions.h>
 #include <Interpreters/InterpreterSelectQuery.h>
-#include <Interpreters/MaterializedCTE.h>
 #include <Storages/StorageSnapshot.h>
 #include <Storages/StorageMemory.h>
 
@@ -21,13 +18,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-
-extern const int LOGICAL_ERROR;
-
-}
-
 class MemorySource : public ISource
 {
     using InitializerFunc = std::function<void(std::shared_ptr<const Blocks> &)>;
@@ -38,17 +28,15 @@ public:
         const StorageSnapshotPtr & storage_snapshot,
         std::shared_ptr<const Blocks> data_,
         std::shared_ptr<std::atomic<size_t>> parallel_execution_index_,
-        InitializerFunc initializer_func_ = {},
-        MaterializedCTEPtr materialized_cte_ = {})
+        InitializerFunc initializer_func_ = {})
         : ISource(std::make_shared<const Block>(storage_snapshot->getSampleBlockForColumns(column_names_)))
         , requested_column_names_and_types(storage_snapshot->getColumnsByNames(
-              GetColumnsOptions(GetColumnsOptions::All).withSubcolumns(), column_names_))
+              GetColumnsOptions(GetColumnsOptions::All).withSubcolumns().withExtendedObjects(), column_names_))
         , data(data_)
         , parallel_execution_index(parallel_execution_index_)
         , initializer_func(std::move(initializer_func_))
-        , materialized_cte(std::move(materialized_cte_))
     {
-        auto all_column_names_and_types = storage_snapshot->getColumns(GetColumnsOptions(GetColumnsOptions::All).withSubcolumns());
+        auto all_column_names_and_types = storage_snapshot->getColumns(GetColumnsOptions(GetColumnsOptions::All).withSubcolumns().withExtendedObjects());
         for (const auto & [name, type] : all_column_names_and_types)
             all_names_to_types[name] = type;
     }
@@ -60,12 +48,6 @@ protected:
     {
         if (initializer_func)
         {
-            if (materialized_cte && !materialized_cte->is_built)
-                throw Exception(ErrorCodes::LOGICAL_ERROR,
-                    "Reading from materialized CTE '{}' before it has been materialized (materialization was planned: {})",
-                    materialized_cte->cte_name,
-                    materialized_cte->is_materialization_planned.load());
-
             initializer_func(data);
             initializer_func = {};
         }
@@ -117,7 +99,6 @@ private:
     std::shared_ptr<const Blocks> data;
     std::shared_ptr<std::atomic<size_t>> parallel_execution_index;
     InitializerFunc initializer_func;
-    MaterializedCTEPtr materialized_cte;
 };
 
 ReadFromMemoryStorageStep::ReadFromMemoryStorageStep(
@@ -183,8 +164,7 @@ Pipe ReadFromMemoryStorageStep::makePipe()
             [my_storage = storage](std::shared_ptr<const Blocks> & data_to_initialize)
             {
                 data_to_initialize = assert_cast<const StorageMemory &>(*my_storage).data.get();
-            },
-            typeid_cast<StorageMemory *>(storage.get())->getMaterializedCTE()));
+            }));
     }
 
     size_t size = current_data->size();

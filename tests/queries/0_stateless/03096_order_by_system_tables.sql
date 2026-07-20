@@ -1,4 +1,4 @@
-SYSTEM FLUSH LOGS /* all tables */;
+SYSTEM FLUSH LOGS;
 
 -- Check for system tables which have non-default sorting key
 WITH

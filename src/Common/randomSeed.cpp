@@ -2,7 +2,6 @@
 #include <unistd.h>
 #include <sys/types.h>
 #include <Common/Exception.h>
-#include <Common/ErrnoException.h>
 #include <Common/randomSeed.h>
 #include <Common/SipHash.h>
 #include <base/getThreadId.h>

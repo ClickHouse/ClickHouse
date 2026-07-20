@@ -14,7 +14,7 @@ def check():
         if any(file.startswith(f) for f in integrations_ecosystem_files):
             GH.post_updateable_comment(
                 comment_tags_and_bodies={
-                    "team_notification": "@ClickHouse/integrations team,  please, take a look"
+                    "team_notigication": "@ClickHouse/integrations-ecosystem please, take a look"
                 }
             )
             break

@@ -25,7 +25,6 @@ def started_cluster():
         stay_alive=True,
         main_configs=["configs/remote_servers.xml", "configs/logger.xml"],
         user_configs=["configs/users.xml"],
-        mem_limit='14g'
     )
 
     for name in NODES:
@@ -207,10 +206,7 @@ def test_stuck_replica(started_cluster):
     if NODES["node"].is_built_with_thread_sanitizer():
         pytest.skip("Hedged requests don't work under Thread Sanitizer")
 
-    # Add a small delay to node_3 to ensure node_2 always wins the race
-    # when node_1 is paused. Without this, under heavy load (e.g., MSan builds),
-    # node_3 can occasionally respond before node_2.
-    update_configs(node_3_sleep_in_send_tables_status=1000)
+    update_configs()
 
     with cluster.pause_container("node_1"):
         check_query(expected_replica="node_2")
@@ -228,14 +224,12 @@ def test_stuck_replica(started_cluster):
 
         assert TSV(result) == TSV("node_2\t0")
 
-        # Check that we didn't choose node_1 first again and slowdowns_count didn't increase much.
-        # Under heavy load (e.g., MSan builds), hedging may still attempt node_1 as a secondary
-        # hedge, recording an extra slowdown, but the key assertion is the result above.
+        # Check that we didn't choose node_1 first again and slowdowns_count didn't increase.
         result = NODES["node"].query(
             "SELECT slowdowns_count FROM system.clusters WHERE cluster='test_cluster' and host_name='node_1'"
         )
 
-        assert int(result) <= 2
+        assert TSV(result) == TSV("1")
 
 
 def test_long_query(started_cluster):
@@ -261,13 +255,7 @@ def test_send_table_status_sleep(started_cluster):
     if NODES["node"].is_built_with_thread_sanitizer():
         pytest.skip("Hedged requests don't work under Thread Sanitizer")
 
-    # Add a small delay to node_3 to ensure node_2 always wins the race
-    # when both are faster than node_1. Without this, under heavy load (e.g., ASAN builds),
-    # node_3 can occasionally respond before node_2.
-    update_configs(
-        node_1_sleep_in_send_tables_status=sleep_time,
-        node_3_sleep_in_send_tables_status=1000,
-    )
+    update_configs(node_1_sleep_in_send_tables_status=sleep_time)
     check_query(expected_replica="node_2")
     check_changing_replica_events(1)
 
@@ -288,13 +276,7 @@ def test_send_data(started_cluster):
     if NODES["node"].is_built_with_thread_sanitizer():
         pytest.skip("Hedged requests don't work under Thread Sanitizer")
 
-    # Add a small delay to node_3 to ensure node_2 always wins the race
-    # when node_1 is slow in send_data. Without this, under heavy load (e.g., MSan builds),
-    # node_3 can occasionally respond before node_2.
-    update_configs(
-        node_1_sleep_in_send_data=sleep_time,
-        node_3_sleep_in_send_tables_status=1000,
-    )
+    update_configs(node_1_sleep_in_send_data=sleep_time)
     check_query(expected_replica="node_2")
     check_changing_replica_events(1)
 
@@ -458,9 +440,6 @@ def test_async_connect(started_cluster):
 def test_async_query_sending(started_cluster):
     if NODES["node"].is_built_with_thread_sanitizer():
         pytest.skip("Hedged requests don't work under Thread Sanitizer")
-
-    if NODES["node"].is_built_with_memory_sanitizer():
-        pytest.skip("Memory Sanitizer is too slow for precise resource measurement in this test")
 
     update_configs(
         node_1_sleep_after_receiving_query=5000,

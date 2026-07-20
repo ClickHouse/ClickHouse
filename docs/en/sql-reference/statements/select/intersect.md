@@ -3,7 +3,6 @@ description: 'Documentation for INTERSECT Clause'
 sidebar_label: 'INTERSECT'
 slug: /sql-reference/statements/select/intersect
 title: 'INTERSECT Clause'
-doc_type: 'reference'
 ---
 
 # INTERSECT Clause

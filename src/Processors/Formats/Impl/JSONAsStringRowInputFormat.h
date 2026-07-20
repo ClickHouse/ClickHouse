@@ -4,6 +4,7 @@
 #include <Processors/Formats/ISchemaReader.h>
 #include <IO/PeekableReadBuffer.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeObjectDeprecated.h>
 #include <DataTypes/DataTypeObject.h>
 
 namespace DB

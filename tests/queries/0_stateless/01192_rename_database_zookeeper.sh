@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: zookeeper, no-parallel, no-fasttest, no-shared-merge-tree, no-flaky-check
+# Tags: zookeeper, no-parallel, no-fasttest, no-shared-merge-tree
 # no-shared-merge-tree: database ordinary not supported
 
 # Creation of a database with Ordinary engine emits a warning.

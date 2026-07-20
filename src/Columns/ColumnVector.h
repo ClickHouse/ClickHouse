@@ -3,6 +3,7 @@
 #include <Columns/ColumnFixedSizeHelper.h>
 #include <Columns/IColumn.h>
 #include <Columns/IColumnImpl.h>
+#include <Common/TargetSpecific.h>
 #include <Common/assert_cast.h>
 #include <Core/CompareHelper.h>
 #include <Core/Field.h>
@@ -16,6 +17,11 @@ class SipHash;
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int NOT_IMPLEMENTED;
+}
 
 /** A template for columns that use a simple array to store.
  */
@@ -51,7 +57,7 @@ private:
 public:
     bool isNumeric() const override { return is_arithmetic_v<T>; }
 
-    size_t size() const final
+    size_t size() const override
     {
         return data.size();
     }
@@ -97,9 +103,6 @@ public:
 
     void popBack(size_t n) override
     {
-        if (n > size())
-            throwCannotPopBack(n, this->getName(), size());
-
         data.resize_assume_reserved(data.size() - n);
     }
 
@@ -108,7 +111,6 @@ public:
     void skipSerializedInArena(ReadBuffer & in) const override;
 
     void updateHashWithValue(size_t n, SipHash & hash) const override;
-    void updateHashWithValueRange(size_t begin, size_t end, SipHash & hash) const override;
 
     WeakHash32 getWeakHash32() const override;
 
@@ -147,43 +149,12 @@ public:
 
     /// This method implemented in header because it could be possibly devirtualized.
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
-    int compareAt(size_t n, size_t m, const IColumn & rhs_, int nan_direction_hint) const final
+    int compareAt(size_t n, size_t m, const IColumn & rhs_, int nan_direction_hint) const override
 #else
     int doCompareAt(size_t n, size_t m, const IColumn & rhs_, int nan_direction_hint) const override
 #endif
     {
         return CompareHelper<T>::compare(data[n], assert_cast<const Self &>(rhs_).data[m], nan_direction_hint);
-    }
-
-    [[nodiscard]] Int64 compareTrackAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const final
-    {
-#if defined(DEBUG_OR_SANITIZER_BUILD)
-    #define compareAt doCompareAt
-#endif
-        Int64 res = compareAt(n, m, rhs, nan_direction_hint);
-
-        if (res < 0)
-        {
-            ++n;
-            while (n < size() && (compareAt(n, m, rhs, nan_direction_hint) < 0))
-            {
-                --res;
-                ++n;
-            }
-        }
-        else if (res > 0)
-        {
-            ++m;
-            while (m < assert_cast<const Self &>(rhs).size() && (compareAt(n, m, rhs, nan_direction_hint) > 0))
-            {
-                ++res;
-                ++m;
-            }
-        }
-        return res;
-#if defined(DEBUG_OR_SANITIZER_BUILD)
-    #undef compareAt
-#endif
     }
 
 #if USE_EMBEDDED_COMPILER
@@ -193,10 +164,6 @@ public:
     llvm::Value * compileComparator(llvm::IRBuilderBase & /*builder*/, llvm::Value * /*lhs*/, llvm::Value * /*rhs*/, llvm::Value * /*nan_direction_hint*/) const override;
 
 #endif
-
-    void compareColumn(const IColumn & rhs, size_t rhs_row_num,
-        PaddedPODArray<UInt64> * row_indexes, PaddedPODArray<Int8> & compare_results,
-        int direction, int nan_direction_hint) const override;
 
     void getPermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
                     size_t limit, int nan_direction_hint, IColumn::Permutation & res) const override;
@@ -238,7 +205,7 @@ public:
         res = (*this)[n];
     }
 
-    void getValueNameImpl(WriteBufferFromOwnString & name_buf, size_t n, const IColumn::Options &) const override;
+    std::pair<String, DataTypePtr> getValueNameAndType(size_t n) const override;
 
     UInt64 get64(size_t n) const override;
 
@@ -251,7 +218,7 @@ public:
         if constexpr (is_arithmetic_v<T>)
             return UInt64(data[n]);
         else
-            throwColumnConvertNotSupported(TypeName<T>, "UInt");
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot get the value of {} as UInt", TypeName<T>);
     }
 
     /// Out of range conversion is permitted.
@@ -260,7 +227,7 @@ public:
         if constexpr (is_arithmetic_v<T>)
             return Int64(data[n]);
         else
-            throwColumnConvertNotSupported(TypeName<T>, "Int");
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot get the value of {} as Int", TypeName<T>);
     }
 
     bool getBool(size_t n) const override
@@ -268,7 +235,7 @@ public:
         if constexpr (is_arithmetic_v<T>)
             return bool(data[n]);
         else
-            throwColumnConvertNotSupported(TypeName<T>, "bool");
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot get the value of {} as bool", TypeName<T>);
     }
 
     void insert(const Field & x) override
@@ -286,8 +253,6 @@ public:
 
     ColumnPtr filter(const IColumn::Filter & filt, ssize_t result_size_hint) const override;
 
-    void filter(const IColumn::Filter & filt) override;
-
     void expand(const IColumn::Filter & mask, bool inverted) override;
 
     ColumnPtr permute(const IColumn::Permutation & perm, size_t limit) const override;
@@ -299,7 +264,7 @@ public:
 
     ColumnPtr replicate(const IColumn::Offsets & offsets) const override;
 
-    void getExtremes(Field & min, Field & max, size_t start, size_t end) const override;
+    void getExtremes(Field & min, Field & max) const override;
 
     bool canBeInsideNullable() const override { return true; }
     bool isFixedAndContiguous() const override { return true; }
@@ -311,9 +276,9 @@ public:
         return {reinterpret_cast<const char*>(data.data()), byteSize()};
     }
 
-    std::string_view getDataAt(size_t n) const override
+    StringRef getDataAt(size_t n) const override
     {
-        return std::string_view(reinterpret_cast<const char *>(&data[n]), sizeof(data[n]));
+        return StringRef(reinterpret_cast<const char *>(&data[n]), sizeof(data[n]));
     }
 
     bool isDefaultAt(size_t n) const override { return data[n] == T{}; }

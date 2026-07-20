@@ -4,7 +4,6 @@
 #include <Common/quoteString.h>
 #include <algorithm>
 #include <Parsers/ExpressionListParsers.h>
-#include <Parsers/IAST.h>
 #include <Parsers/parseQuery.h>
 #include <Storages/TTLDescription.h>
 

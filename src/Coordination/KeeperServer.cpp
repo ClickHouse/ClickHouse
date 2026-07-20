@@ -1,6 +1,5 @@
 #include <Coordination/Defines.h>
 #include <Coordination/KeeperServer.h>
-#include <Common/ProfiledLocks.h>
 
 #include "config.h"
 
@@ -21,7 +20,6 @@
 #include <libnuraft/log_val_type.hxx>
 #include <libnuraft/msg_type.hxx>
 #include <libnuraft/ptr.hxx>
-#include <libnuraft/peer.hxx>
 #include <libnuraft/raft_server.hxx>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Poco/Util/Application.h>
@@ -43,17 +41,12 @@
 #include <chrono>
 #include <mutex>
 #include <string>
-#include <unordered_set>
 
 #pragma clang diagnostic ignored "-Wdeprecated-declarations"
 #include <fmt/chrono.h>
 
 #include <libnuraft/req_msg.hxx>
 
-namespace ProfileEvents
-{
-    extern const Event KeeperServerWriteLockWaitMicroseconds;
-}
 
 namespace DB
 {
@@ -70,7 +63,6 @@ namespace CoordinationSetting
     extern const CoordinationSettingsMilliseconds heart_beat_interval_ms;
     extern const CoordinationSettingsMilliseconds leadership_expiry_ms;
     extern const CoordinationSettingsUInt64 max_requests_append_size;
-    extern const CoordinationSettingsUInt64 max_requests_append_bytes_size;
     extern const CoordinationSettingsMilliseconds operation_timeout_ms;
     extern const CoordinationSettingsBool quorum_reads;
     extern const CoordinationSettingsUInt64 raft_limits_reconnect_limit;
@@ -81,7 +73,6 @@ namespace CoordinationSetting
     extern const CoordinationSettingsUInt64 snapshot_distance;
     extern const CoordinationSettingsUInt64 stale_log_gap;
     extern const CoordinationSettingsMilliseconds startup_timeout;
-    extern const CoordinationSettingsBool nuraft_test_mode;
 }
 
 namespace ErrorCodes
@@ -130,14 +121,6 @@ auto getSslContextProvider(const Poco::Util::AbstractConfiguration & config, std
 
     params.loadDefaultCAs = config.getBool(load_default_ca_file_property, false);
     params.verificationMode = Poco::Net::Utility::convertVerificationMode(config.getString(verification_mode_property, "none"));
-
-    String cipher_list_property = fmt::format("openSSL.{}.cipherList", key);
-    if (config.has(cipher_list_property))
-        params.cipherList = config.getString(cipher_list_property);
-
-    String dh_params_file_property = fmt::format("openSSL.{}.dhParamsFile", key);
-    if (config.has(dh_params_file_property))
-        params.dhParamsFile = config.getString(dh_params_file_property);
 
     std::string disabled_protocols_list = config.getString(fmt::format("openSSL.{}.disableProtocols", key), "");
     Poco::StringTokenizer dp_tok(disabled_protocols_list, ";,", Poco::StringTokenizer::TOK_TRIM | Poco::StringTokenizer::TOK_IGNORE_EMPTY);
@@ -359,55 +342,6 @@ struct KeeperServer::KeeperRaftServer : public nuraft::raft_server
         serving_req_ = value;
     }
 
-    /// Collect IDs of learner (non-voting) servers from the cluster config.
-    std::unordered_set<int32_t> getLearnerIds()
-    {
-        std::vector<nuraft::ptr<nuraft::srv_config>> configs;
-        get_srv_config_all(configs);
-        std::unordered_set<int32_t> learner_ids;
-        for (const auto & cfg : configs)
-            if (cfg->is_learner())
-                learner_ids.insert(cfg->get_id());
-        return learner_ids;
-    }
-
-    /// Returns alive (responding) learner and follower counters.
-    /// Follower counters include only voting peers; learners include all peers.
-    /// Both get_peer_info_all and get_srv_config_all hold the raft lock internally.
-    KeeperServer::RespondingCounts getRespondingCounts()
-    {
-        auto peers = get_peer_info_all();
-        auto learner_ids = getLearnerIds();
-        auto params = get_current_params();
-        uint64_t expiry_us = static_cast<uint64_t>(params.heart_beat_interval_) * raft_server::raft_limits_.response_limit_ * 1000;
-        uint64_t stale_gap = params.stale_log_gap_;
-        uint64_t last_log = get_last_log_idx();
-
-        KeeperServer::RespondingCounts counts;
-        for (const auto & peer : peers)
-        {
-            if (peer.last_succ_resp_us_ > expiry_us)
-                continue;
-
-            ++counts.learners;
-
-            bool synced = last_log <= peer.last_log_idx_ + stale_gap;
-
-            if (learner_ids.contains(peer.id_))
-            {
-                if (synced)
-                    ++counts.synced_non_voting_followers;
-                continue;
-            }
-
-            ++counts.followers;
-            if (synced)
-                ++counts.synced_followers;
-        }
-
-        return counts;
-    }
-
     using nuraft::raft_server::raft_server;
 
     // peers are initially marked as responding because at least one cycle
@@ -479,7 +413,7 @@ void KeeperServer::forceRecovery()
 {
     // notify threads containing the lock that we want to enter recovery mode
     is_recovering = true;
-    ProfiledMutexLock lock(server_write_mutex, ProfileEvents::KeeperServerWriteLockWaitMicroseconds);
+    std::lock_guard lock{server_write_mutex};
     auto params = raft_instance->get_current_params();
     enterRecoveryMode(params);
     raft_instance->setConfig(state_manager->load_config());
@@ -542,7 +476,6 @@ void KeeperServer::launchRaftServer(const Poco::Util::AbstractConfiguration & co
         = getValueOrMaxInt32AndLogWarning(coordination_settings[CoordinationSetting::operation_timeout_ms].totalMilliseconds() * 2, "operation_timeout_ms", log);
     params.max_append_size_
         = getValueOrMaxInt32AndLogWarning(coordination_settings[CoordinationSetting::max_requests_append_size], "max_requests_append_size", log);
-    params.max_append_size_bytes_ = coordination_settings[CoordinationSetting::max_requests_append_bytes_size];
 
     params.return_method_ = nuraft::raft_params::async_handler;
 
@@ -582,7 +515,6 @@ void KeeperServer::launchRaftServer(const Poco::Util::AbstractConfiguration & co
     init_options.skip_initial_election_timeout_ = state_manager->shouldStartAsFollower();
     init_options.start_server_in_constructor_ = false;
     init_options.raft_callback_ = [this](nuraft::cb_func::Type type, nuraft::cb_func::Param * param) { return callbackFunc(type, param); };
-    init_options.test_mode_flag_ = coordination_settings[CoordinationSetting::nuraft_test_mode];
 
     nuraft::ptr<nuraft::logger> logger = nuraft::cs_new<LoggerWrapper>("RaftInstance", coordination_settings[CoordinationSetting::raft_logs_level]);
     asio_service = nuraft::cs_new<nuraft::asio_service>(asio_opts, logger);
@@ -592,21 +524,16 @@ void KeeperServer::launchRaftServer(const Poco::Util::AbstractConfiguration & co
 
     if (listen_hosts.empty())
     {
-        auto asio_listener = asio_service->create_rpc_listener(static_cast<ushort>(state_manager->getPort()), logger, enable_ipv6);
+        auto asio_listener = asio_service->create_rpc_listener(state_manager->getPort(), logger, enable_ipv6);
         if (!asio_listener)
-        {
-            LOG_WARNING(log, "Failed to create listener with IPv6 enabled, falling back to IPv4 only.");
-            asio_listener = asio_service->create_rpc_listener(static_cast<ushort>(state_manager->getPort()), logger, /*_enable_ipv6=*/false);
-            if (!asio_listener)
-                throw Exception(ErrorCodes::RAFT_ERROR, "Cannot create interserver listener on port {} after trying both IPv6 and IPv4.", state_manager->getPort());
-        }
+            throw Exception(ErrorCodes::RAFT_ERROR, "Cannot create interserver listener on port {}", state_manager->getPort());
         asio_listeners.emplace_back(std::move(asio_listener));
     }
     else
     {
         for (const auto & listen_host : listen_hosts)
         {
-            auto asio_listener = asio_service->create_rpc_listener(listen_host, static_cast<ushort>(state_manager->getPort()), logger);
+            auto asio_listener = asio_service->create_rpc_listener(listen_host, state_manager->getPort(), logger);
             if (asio_listener)
                 asio_listeners.emplace_back(std::move(asio_listener));
         }
@@ -653,7 +580,7 @@ void KeeperServer::startup(const Poco::Util::AbstractConfiguration & config, boo
 
     const auto & coordination_settings = keeper_context->getCoordinationSettings();
 
-    state_manager->loadLogStore(state_machine->last_commit_index(), coordination_settings[CoordinationSetting::reserved_log_items]);
+    state_manager->loadLogStore(state_machine->last_commit_index() + 1, coordination_settings[CoordinationSetting::reserved_log_items]);
 
     auto log_store = state_manager->load_log_store();
     last_log_idx_on_disk = log_store->next_slot() - 1;
@@ -721,6 +648,11 @@ void KeeperServer::shutdown()
     state_machine->shutdownStorage();
 }
 
+namespace
+{
+
+
+}
 
 void KeeperServer::putLocalReadRequest(const KeeperRequestForSession & request_for_session)
 {
@@ -737,7 +669,7 @@ RaftAppendResult KeeperServer::putRequestBatch(const KeeperRequestsForSessions &
     for (const auto & request_for_session : requests_for_sessions)
         entries.push_back(IKeeperStateMachine::getZooKeeperLogEntry(request_for_session));
 
-    ProfiledMutexLock lock(server_write_mutex, ProfileEvents::KeeperServerWriteLockWaitMicroseconds);
+    std::lock_guard lock{server_write_mutex};
     if (is_recovering)
         return nullptr;
 
@@ -771,9 +703,26 @@ bool KeeperServer::isExceedingMemorySoftLimit() const
     return mem_soft_limit > 0 && std::max(total_memory_tracker.get(), total_memory_tracker.getRSS()) >= mem_soft_limit;
 }
 
-KeeperServer::RespondingCounts KeeperServer::getRespondingCounts() const
+/// TODO test whether taking failed peer in count
+uint64_t KeeperServer::getFollowerCount() const
 {
-    return raft_instance->getRespondingCounts();
+    return raft_instance->get_peer_info_all().size();
+}
+
+uint64_t KeeperServer::getSyncedFollowerCount() const
+{
+    uint64_t last_log_idx = raft_instance->get_last_log_idx();
+    const auto followers = raft_instance->get_peer_info_all();
+
+    uint64_t stale_followers = 0;
+
+    const uint64_t stale_follower_gap = raft_instance->get_current_params().stale_log_gap_;
+    for (const auto & fl : followers)
+    {
+        if (last_log_idx > fl.last_log_idx_ + stale_follower_gap)
+            stale_followers++;
+    }
+    return followers.size() - stale_followers;
 }
 
 nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type type, nuraft::cb_func::Param * param)
@@ -1097,25 +1046,6 @@ nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type typ
             const auto & entry = *static_cast<LogEntryPtr *>(param->ctx);
             return follower_preappend(entry);
         }
-        case nuraft::cb_func::ReceivedMisbehavingMessage:
-        {
-            auto & req = *static_cast<nuraft::req_msg *>(param->ctx);
-
-            if (req.get_src() == server_id)
-            {
-                LOG_FATAL
-                (
-                    log,
-                    "Raft received its own message intended for another peer, this indicates misconfiguration; server_id: {}, src: {}, dst: {}",
-                    server_id,
-                    req.get_src(),
-                    req.get_dst()
-                );
-                std::terminate();
-            }
-
-            return nuraft::cb_func::ReturnCode::Ok;
-        }
         default: /// ignore other events
             return nuraft::cb_func::ReturnCode::Ok;
     }
@@ -1139,7 +1069,7 @@ KeeperServer::ConfigUpdateState KeeperServer::applyConfigUpdate(
     const ClusterUpdateAction & action, bool last_command_was_leader_change)
 {
     using enum ConfigUpdateState;
-    ProfiledMutexLock _(server_write_mutex, ProfileEvents::KeeperServerWriteLockWaitMicroseconds);
+    std::lock_guard _{server_write_mutex};
 
     if (const auto * add = std::get_if<AddRaftServer>(&action))
     {
@@ -1189,15 +1119,8 @@ KeeperServer::ConfigUpdateState KeeperServer::applyConfigUpdate(
         if (ptr->get_priority() == update->priority)
             return Accepted;
 
-        raft_instance->set_priority_v2(update->id, update->priority);
+        raft_instance->set_priority(update->id, update->priority, /*broadcast on live leader*/ true);
         return Accepted;
-    }
-    if (const auto * transfer_leader = std::get_if<TransferLeadership>(&action))
-    {
-        if (raft_instance->request_leadership(transfer_leader->target_server_id))
-            return Accepted;
-        else
-            return Declined;
     }
     std::unreachable();
 }
@@ -1209,7 +1132,7 @@ ClusterUpdateActions KeeperServer::getRaftConfigurationDiff(const Poco::Util::Ab
 
     if (!diff.empty())
     {
-        ProfiledMutexLock lock(server_write_mutex, ProfileEvents::KeeperServerWriteLockWaitMicroseconds);
+        std::lock_guard lock{server_write_mutex};
         last_local_config = state_manager->parseServersConfiguration(config, true, coordination_settings[CoordinationSetting::async_replication]).cluster_config;
     }
 
@@ -1218,7 +1141,7 @@ ClusterUpdateActions KeeperServer::getRaftConfigurationDiff(const Poco::Util::Ab
 
 void KeeperServer::applyConfigUpdateWithReconfigDisabled(const ClusterUpdateAction& action)
 {
-    ProfiledMutexLock server_write_lock(server_write_mutex, ProfileEvents::KeeperServerWriteLockWaitMicroseconds);
+    std::unique_lock server_write_lock{server_write_mutex};
     if (is_recovering) return;
     constexpr auto sleep_time = 500ms;
 
@@ -1226,7 +1149,7 @@ void KeeperServer::applyConfigUpdateWithReconfigDisabled(const ClusterUpdateActi
 
     auto applied = [&] { LOG_INFO(log, "Applied {}", action); };
     auto not_leader = [&] { LOG_INFO(log, "Not leader anymore, aborting"); };
-    auto backoff_on_refusal = [&](size_t i) TSA_NO_THREAD_SAFETY_ANALYSIS
+    auto backoff_on_refusal = [&](size_t i)
     {
         LOG_INFO(log, "Update was not accepted (try {}), backing off for {}", i + 1, sleep_time * (i + 1));
         server_write_lock.unlock();
@@ -1271,7 +1194,7 @@ void KeeperServer::applyConfigUpdateWithReconfigDisabled(const ClusterUpdateActi
     }
     else if (const auto * update = std::get_if<UpdateRaftServerPriority>(&action))
     {
-        raft_instance->set_priority_v2(update->id, update->priority);
+        raft_instance->set_priority(update->id, update->priority, /*broadcast on live leader*/true);
         return;
     }
 
@@ -1330,19 +1253,12 @@ Keeper4LWInfo KeeperServer::getPartiallyFilled4LWInfo() const
 
     result.is_follower = !result.is_leader && !result.is_observer;
     result.has_leader = result.is_leader || isLeaderAlive();
-    result.learner_count = 0;
-    result.follower_count = 0;
-    result.synced_follower_count = 0;
-    result.synced_non_voting_follower_count = 0;
+    result.is_standalone = !result.is_follower && getFollowerCount() == 0;
     if (result.is_leader)
     {
-        auto counts = getRespondingCounts();
-        result.learner_count = counts.learners;
-        result.follower_count = counts.followers;
-        result.synced_follower_count = counts.synced_followers;
-        result.synced_non_voting_follower_count = counts.synced_non_voting_followers;
+        result.follower_count = getFollowerCount();
+        result.synced_follower_count = getSyncedFollowerCount();
     }
-    result.is_standalone = !result.is_follower && result.follower_count == 0;
     result.is_exceeding_mem_soft_limit = isExceedingMemorySoftLimit();
     return result;
 }
@@ -1382,11 +1298,6 @@ KeeperLogInfo KeeperServer::getKeeperLogInfo()
 bool KeeperServer::requestLeader()
 {
     return isLeader() || raft_instance->request_leadership();
-}
-
-int64_t KeeperServer::getLeaderID() const
-{
-    return raft_instance->get_leader();
 }
 
 void KeeperServer::yieldLeadership()

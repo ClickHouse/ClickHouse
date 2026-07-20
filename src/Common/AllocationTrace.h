@@ -22,8 +22,6 @@ struct AllocationTrace
     {
         if (likely(sample_probability <= 0))
             return;
-        if (!size)
-            return;
 
         onFreeImpl(ptr, size);
     }

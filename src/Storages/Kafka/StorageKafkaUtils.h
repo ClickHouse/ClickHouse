@@ -1,7 +1,6 @@
 #pragma once
 
 #include <chrono>
-#include <Common/Logger_fwd.h>
 #include <Core/Names.h>
 #include <Core/StreamingHandleErrorMode.h>
 #include <Interpreters/Context_fwd.h>

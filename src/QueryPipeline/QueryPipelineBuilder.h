@@ -39,9 +39,6 @@ using SetAndKeyPtr = std::shared_ptr<SetAndKey>;
 class PreparedSetsCache;
 using PreparedSetsCachePtr = std::shared_ptr<PreparedSetsCache>;
 
-struct MaterializedCTE;
-using MaterializedCTEPtr = std::shared_ptr<MaterializedCTE>;
-
 class QueryPipelineBuilder
 {
 public:
@@ -54,6 +51,8 @@ public:
 
     /// All pipes must have same header.
     void init(Pipe pipe);
+    /// This is a constructor which adds some steps to pipeline.
+    void init(QueryPipeline & pipeline);
     /// Clear and release all resources.
     void reset();
 
@@ -95,8 +94,7 @@ public:
     /// Will read from this stream after all data was read from other streams.
     void addDelayedStream(ProcessorPtr source);
 
-    void addMergingAggregatedMemoryEfficientTransform(
-        AggregatingTransformParamsPtr params, size_t num_merging_processors, bool should_produce_results_in_order_of_bucket_number);
+    void addMergingAggregatedMemoryEfficientTransform(AggregatingTransformParamsPtr params, size_t num_merging_processors);
 
     /// Changes the number of output ports if needed. Adds ResizeTransform.
     void resize(size_t num_streams, bool strict = false, UInt64 min_outstreams_per_resize_after_split = 0);
@@ -167,12 +165,9 @@ public:
     void addCreatingSetsTransform(
         SharedHeader res_header,
         SetAndKeyPtr set_and_key,
+        StoragePtr external_table,
         const SizeLimits & limits,
         PreparedSetsCachePtr prepared_sets_cache);
-
-    void addMaterializingCTETransform(
-        SharedHeader res_header,
-        MaterializedCTEPtr materialized_cte);
 
     PipelineExecutorPtr execute();
 
@@ -217,13 +212,7 @@ public:
         return concurrency_control;
     }
 
-    /// Whether the read step deliberately reduced the number of streams below max_threads
-    /// (e.g. ReadFromMergeTree chose fewer streams because the data is small).
-    /// This is used by AggregatingStep to decide whether to cap post-aggregation resize.
-    void setReadStreamCountWasReduced(bool value) { read_stream_count_was_reduced = value; }
-    bool getReadStreamCountWasReduced() const { return read_stream_count_was_reduced; }
-
-    void addResources(const QueryPlanResourceHolder & resources_) { resources.append(resources_); }
+    void addResources(QueryPlanResourceHolder resources_) { resources.append(std::move(resources_)); }
     void setQueryIdHolder(std::shared_ptr<QueryIdHolder> query_id_holder) { resources.query_id_holders.emplace_back(std::move(query_id_holder)); }
     void addContext(ContextPtr context) { resources.interpreter_context.emplace_back(std::move(context)); }
 
@@ -242,7 +231,6 @@ private:
     size_t max_threads = 0;
 
     bool concurrency_control = false;
-    bool read_stream_count_was_reduced = false;
 
     QueryStatusPtr process_list_element;
     ProgressCallback progress_callback = nullptr;

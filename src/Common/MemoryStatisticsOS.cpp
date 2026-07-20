@@ -15,7 +15,6 @@
 #include <Common/logger_useful.h>
 #include <base/getPageSize.h>
 #include <Common/Exception.h>
-#include <Common/ErrnoException.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadHelpers.h>
 

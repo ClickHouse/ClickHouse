@@ -21,8 +21,6 @@ bool isChineseNewYearMode(const String & local_tz);
 
 std::string getChineseZodiac();
 
-bool isCloudEndpoint(const std::string & host);
-
 #if USE_REPLXX
 void highlight(const String & query, std::vector<replxx::Replxx::Color> & colors, const Context & context, int cursor_position);
 String highlighted(const String & query, const Context & context);

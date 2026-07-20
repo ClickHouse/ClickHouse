@@ -6,7 +6,6 @@ sidebar_label: 'gcs'
 sidebar_position: 70
 slug: /sql-reference/table-functions/gcs
 title: 'gcs'
-doc_type: 'reference'
 ---
 
 # gcs Table Function

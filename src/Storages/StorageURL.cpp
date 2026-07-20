@@ -27,20 +27,24 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 
+#include <Interpreters/convertFieldToType.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ClusterFunctionReadTask.h>
 
 #include <Common/HTTPHeaderFilter.h>
 #include <Common/OpenTelemetryTraceContext.h>
+#include <Common/ThreadStatus.h>
 #include <Common/parseRemoteDescription.h>
 #include <Common/NamedCollections/NamedCollections.h>
 #include <Common/ProfileEvents.h>
 #include <Common/thread_local_rng.h>
 #include <Common/logger_useful.h>
+#include <Common/re2.h>
 
 #include <TableFunctions/TableFunctionURL.h>
 
 #include <Formats/SchemaInferenceUtils.h>
+#include <Core/FormatFactorySettings.h>
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
@@ -78,7 +82,6 @@ namespace Setting
     extern const SettingsBool use_cache_for_count_from_files;
     extern const SettingsInt64 zstd_window_log_max;
     extern const SettingsBool use_hive_partitioning;
-    extern const SettingsUInt64 max_streams_for_files_processing_in_cluster_functions;
 }
 
 namespace ErrorCodes
@@ -189,21 +192,14 @@ IStorageURLBase::IStorageURLBase(
 
     auto & storage_columns = storage_metadata.columns;
 
-    const auto sample_path = getSampleURI(uri, context_);
     std::tie(hive_partition_columns_to_read_from_file_path, file_columns) = HivePartitioningUtils::setupHivePartitioningForFileURLLikeStorage(
         storage_columns,
-        sample_path,
+        getSampleURI(uri, context_),
         columns_.empty(),
         format_settings,
         context_);
 
-    auto virtual_columns_desc = VirtualColumnUtils::getVirtualsForFileLikeStorage(
-        storage_metadata.columns,
-        context_,
-        format_settings,
-        PartitionStrategyFactory::StrategyType::NONE,
-        sample_path);
-
+    auto virtual_columns_desc = VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.columns);
     if (!storage_metadata.getColumns().has("_headers"))
     {
         virtual_columns_desc.addEphemeral(
@@ -255,7 +251,7 @@ public:
 
         std::optional<ActionsDAG> filter_dag;
         if (!uris.empty())
-            filter_dag = VirtualColumnUtils::createPathAndFileFilterDAG(predicate, virtual_columns, context, hive_columns);
+            filter_dag = VirtualColumnUtils::createPathAndFileFilterDAG(predicate, virtual_columns, hive_columns);
 
         if (filter_dag)
         {
@@ -333,8 +329,7 @@ StorageURLSource::StorageURLSource(
     const HTTPHeaderEntries & headers_,
     const URIParams & params,
     bool glob_url,
-    bool need_only_count_,
-    StorageID storage_id_)
+    bool need_only_count_)
     : ISource(std::make_shared<const Block>(info.source_header), false)
     , WithContext(context_)
     , name(std::move(name_))
@@ -350,7 +345,6 @@ StorageURLSource::StorageURLSource(
     , format_filter_info(std::move(format_filter_info_))
     , headers(getHeaders(headers_))
     , need_only_count(need_only_count_)
-    , storage_id(std::move(storage_id_))
     , hive_partition_columns_to_read_from_file_path(info.hive_partition_columns_to_read_from_file_path)
 {
     /// Lazy initialization. We should not perform requests in constructor, because we need to do it in query pipeline.
@@ -495,7 +489,6 @@ Chunk StorageURLSource::generate()
                 requested_virtual_columns,
                 {
                     .path = curr_uri.getPath(),
-                    .storage_id = storage_id,
                     .size = current_file_size,
                 },
                 getContext());
@@ -522,7 +515,7 @@ Chunk StorageURLSource::generate()
             && (!format_filter_info || !format_filter_info->hasFilter()))
             addNumRowsToCache(curr_uri.toString(), total_rows_in_file);
 
-        (*pipeline).reset();
+        pipeline->reset();
         reader.reset();
         input_format.reset();
         read_buf.reset();
@@ -713,7 +706,6 @@ void StorageURLSink::finalizeBuffers()
     catch (...)
     {
         /// Stop ParallelFormattingOutputFormat correctly.
-        cancelBuffers();
         releaseBuffers();
         throw;
     }
@@ -1090,7 +1082,7 @@ bool IStorageURLBase::canMoveConditionsToPrewhere() const
 
 std::optional<NameSet> IStorageURLBase::supportedPrewhereColumns() const
 {
-    return getInMemoryMetadataPtr()->getColumnsWithoutDefaultExpressions(/*exclude=*/ hive_partition_columns_to_read_from_file_path);
+    return getInMemoryMetadataPtr()->getColumnsWithoutDefaultExpressions();
 }
 
 IStorage::ColumnSizeByName IStorageURLBase::getColumnSizes() const
@@ -1176,8 +1168,9 @@ void ReadFromURL::applyFilters(ActionDAGNodes added_filter_nodes)
 
 void ReadFromURL::updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info_value)
 {
-    info = updateFormatPrewhereInfo(info, query_info.row_level_filter, prewhere_info_value);
+    info = updateFormatPrewhereInfo(info, prewhere_info_value);
     query_info.prewhere_info = prewhere_info_value;
+    prewhere_info = prewhere_info_value;
     output_header = std::make_shared<const Block>(info.source_header);
 }
 
@@ -1191,9 +1184,6 @@ void IStorageURLBase::read(
     size_t max_block_size,
     size_t num_streams)
 {
-    if (distributed_processing && local_context->getSettingsRef()[Setting::max_streams_for_files_processing_in_cluster_functions])
-        num_streams = local_context->getSettingsRef()[Setting::max_streams_for_files_processing_in_cluster_functions];
-
     auto params = getReadURIParams(column_names, storage_snapshot, query_info, local_context, processed_stage, max_block_size);
     auto read_from_format_info = prepareReadingFromFormat(
         column_names,
@@ -1203,12 +1193,11 @@ void IStorageURLBase::read(
         /*supports_tuple_elements=*/ supports_prewhere,
         PrepareReadingFromFormatHiveParams {file_columns, hive_partition_columns_to_read_from_file_path.getNameToTypeMap()});
 
-    if (query_info.prewhere_info || query_info.row_level_filter)
-        read_from_format_info = updateFormatPrewhereInfo(read_from_format_info, query_info.row_level_filter, query_info.prewhere_info);
+    if (query_info.prewhere_info)
+        read_from_format_info = updateFormatPrewhereInfo(read_from_format_info, query_info.prewhere_info);
 
-    bool need_only_count = (query_info.optimize_trivial_count || (read_from_format_info.requested_columns.empty() && !read_from_format_info.prewhere_info && !read_from_format_info.row_level_filter))
-        && local_context->getSettingsRef()[Setting::optimize_count_from_files]
-        && !VirtualColumnUtils::hasRowDependentVirtualColumns(read_from_format_info.requested_virtual_columns);
+    bool need_only_count = (query_info.optimize_trivial_count || (read_from_format_info.requested_columns.empty() && !read_from_format_info.prewhere_info))
+        && local_context->getSettingsRef()[Setting::optimize_count_from_files];
 
     auto read_post_data_callback = getReadPOSTDataCallback(
         read_from_format_info.columns_description.getNamesOfPhysical(),
@@ -1320,7 +1309,8 @@ void ReadFromURL::initializePipeline(QueryPipelineBuilder & pipeline, const Buil
     pipes.reserve(num_streams);
 
     auto parser_shared_resources = std::make_shared<FormatParserSharedResources>(settings, num_streams);
-    auto format_filter_info = std::make_shared<FormatFilterInfo>(filter_actions_dag, context, nullptr, query_info.row_level_filter, query_info.prewhere_info);
+    auto format_filter_info = std::make_shared<FormatFilterInfo>(filter_actions_dag, context, nullptr);
+    format_filter_info->prewhere_info = prewhere_info;
 
     for (size_t i = 0; i < num_streams; ++i)
     {
@@ -1341,8 +1331,7 @@ void ReadFromURL::initializePipeline(QueryPipelineBuilder & pipeline, const Buil
             storage->headers,
             read_uri_params,
             is_url_with_globs,
-            need_only_count,
-            storage->getStorageID());
+            need_only_count);
 
         pipes.emplace_back(std::move(source));
     }
@@ -1385,12 +1374,11 @@ void StorageURLWithFailover::read(
         /*supports_tuple_elements=*/ supports_prewhere,
         PrepareReadingFromFormatHiveParams {file_columns, hive_partition_columns_to_read_from_file_path.getNameToTypeMap()});
 
-    if (query_info.prewhere_info || query_info.row_level_filter)
-        read_from_format_info = updateFormatPrewhereInfo(read_from_format_info, query_info.row_level_filter, query_info.prewhere_info);
+    if (query_info.prewhere_info)
+        read_from_format_info = updateFormatPrewhereInfo(read_from_format_info, query_info.prewhere_info);
 
-    bool need_only_count = (query_info.optimize_trivial_count || (read_from_format_info.requested_columns.empty() && !read_from_format_info.prewhere_info && !read_from_format_info.row_level_filter))
-        && local_context->getSettingsRef()[Setting::optimize_count_from_files]
-        && !VirtualColumnUtils::hasRowDependentVirtualColumns(read_from_format_info.requested_virtual_columns);
+    bool need_only_count = (query_info.optimize_trivial_count || (read_from_format_info.requested_columns.empty() && !read_from_format_info.prewhere_info))
+        && local_context->getSettingsRef()[Setting::optimize_count_from_files];
 
     auto read_post_data_callback = getReadPOSTDataCallback(
         read_from_format_info.columns_description.getNamesOfPhysical(),
@@ -1585,7 +1573,7 @@ size_t StorageURL::evalArgsAndCollectHeaders(
 {
     ASTs::iterator headers_it = url_function_args.end();
 
-    for (auto arg_it = url_function_args.begin(); arg_it != url_function_args.end(); ++arg_it)
+    for (auto * arg_it = url_function_args.begin(); arg_it != url_function_args.end(); ++arg_it)
     {
         const auto * headers_ast_function = (*arg_it)->as<ASTFunction>();
         if (headers_ast_function && headers_ast_function->name == "headers")
@@ -1679,11 +1667,11 @@ void StorageURL::addInferredEngineArgsToCreateQuery(ASTs & args, const ContextPt
     TableFunctionURL::updateStructureAndFormatArgumentsIfNeeded(args, "", format_name, context, /*with_structure=*/false);
 }
 
-StorageURL::Configuration StorageURL::getConfiguration(ASTs & args, const ContextPtr & local_context, const StorageID * table_id)
+StorageURL::Configuration StorageURL::getConfiguration(ASTs & args, const ContextPtr & local_context)
 {
     StorageURL::Configuration configuration;
 
-    if (auto named_collection = tryGetNamedCollectionWithOverrides(args, local_context, true, nullptr, table_id))
+    if (auto named_collection = tryGetNamedCollectionWithOverrides(args, local_context))
     {
         StorageURL::processNamedCollectionResult(configuration, *named_collection);
         evalArgsAndCollectHeaders(args, configuration.headers, local_context, false);
@@ -1722,7 +1710,7 @@ void registerStorageURL(StorageFactory & factory)
         [](const StorageFactory::Arguments & args)
         {
             ASTs & engine_args = args.engine_args;
-            auto configuration = StorageURL::getConfiguration(engine_args, args.getLocalContext(), &args.table_id);
+            auto configuration = StorageURL::getConfiguration(engine_args, args.getLocalContext());
             auto format_settings = StorageURL::getFormatSettingsFromArgs(args);
             auto context = args.getLocalContext();
 

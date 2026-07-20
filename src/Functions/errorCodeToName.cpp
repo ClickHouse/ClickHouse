@@ -57,33 +57,7 @@ public:
 
 REGISTER_FUNCTION(ErrorCodeToName)
 {
-    FunctionDocumentation::Description description = R"(
-Returns the textual name of a numeric ClickHouse error code.
-The mapping from numeric error codes to error names is available [here](https://github.com/ClickHouse/ClickHouse/blob/master/src/Common/ErrorCodes.cpp).
-)";
-    FunctionDocumentation::Syntax syntax = "errorCodeToName(error_code)";
-    FunctionDocumentation::Arguments arguments = {
-        {"error_code", "ClickHouse error code.", {"(U)Int*", "Float*", "Decimal"}}
-    };
-    FunctionDocumentation::ReturnedValue returned_value = {"Returns the textual name of `error_code`.", {"String"}};
-    FunctionDocumentation::Examples examples = {
-    {
-        "Usage example",
-        R"(
-SELECT errorCodeToName(252);
-        )",
-        R"(
-┌─errorCodeToName(252)─┐
-│ TOO_MANY_PARTS       │
-└──────────────────────┘
-        )"
-    }
-    };
-    FunctionDocumentation::IntroducedIn introduced_in = {20, 12};
-    FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
-    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
-
-    factory.registerFunction<FunctionErrorCodeToName>(documentation);
+    factory.registerFunction<FunctionErrorCodeToName>();
 }
 
 }

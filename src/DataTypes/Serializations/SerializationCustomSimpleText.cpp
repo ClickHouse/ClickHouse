@@ -47,7 +47,7 @@ bool SerializationCustomSimpleText::tryDeserializeText(DB::IColumn & column, DB:
         deserializeText(column, istr, settings, whole);
         return true;
     }
-    catch (...) // Ok: tryDeserializeText is a try-pattern
+    catch (...)
     {
         return false;
     }

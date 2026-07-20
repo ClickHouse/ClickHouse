@@ -16,8 +16,6 @@
 #include <Poco/JSON/Stringifier.h>
 #include <Poco/SharedPtr.h>
 
-#include <mutex>
-
 namespace DB::Iceberg
 {
 
