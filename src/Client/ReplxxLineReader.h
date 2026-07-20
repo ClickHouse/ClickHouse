@@ -47,6 +47,7 @@ public:
 
     /// Set text to be prepopulated in the next readLine call
     void setInitialText(const String & text) override;
+
 private:
     InputStatus readOneLine(const String & prompt) override;
     void addToHistory(const String & line) override;
@@ -55,16 +56,16 @@ private:
 
     /// Bind the vim-style normal/operator/motion keymap. Defined in VimMode.cpp.
     void setupVimKeybindings();
-    void fixTrailingNewline(int *pos, std::string *text);
-    void resetVim(int *pos = nullptr, std::string *text = nullptr);
+    void fixTrailingNewline(int * pos, std::string * text);
+    void resetVim(int * pos = nullptr, std::string * text = nullptr);
     template <typename T>
     void bindKey(char32_t key, T && func, int mode);
-    void recomputeCurswant(int pos, std::string &text);
+    void recomputeCurswant(int pos, std::string & text);
     int vimReps() const;
-    void vimWordMotion(int &pos, std::string &text, char motion);
-    void vimWordObject(int &pos, std::string &text, bool bigword);
-    void vimBracketObject(int &pos, std::string &text, char open_char, char close_char);
-    void find(std::string &text, int &pos, char direction, char c);
+    void vimWordMotion(int & pos, std::string & text, char motion);
+    void vimWordObject(int & pos, std::string & text, bool bigword);
+    void vimBracketObject(int & pos, std::string & text, char open_char, char close_char);
+    void find(std::string & text, int & pos, char direction, char c);
 
     /// Whether the text cursor is at the very end of the input (where as-you-type hints render).
     bool isCursorAtEndOfInput();
@@ -117,7 +118,8 @@ private:
     /// `3w`), `vimbufferinner` the count typed after an operator (the 2 in `d2w`); the effective
     /// repeat is their product. The editing mode itself is stored in replxx (see set_editing_mode)
     /// and encodes the pending operator and motion prefix as a bitfield of the flags below.
-    enum {
+    enum
+    {
         MODE_INSERT,
         MODE_NORMAL,
         MODE_FIND,
@@ -126,12 +128,14 @@ private:
         MODE_END,
     };
 
-    enum {
+    enum
+    {
         OPERATOR_C = 1,
         OPERATOR_D,
     };
 
-    enum {
+    enum
+    {
         FLAG_INSIDE = 0x1,
         FLAG_AROUND = 0x2,
     };
