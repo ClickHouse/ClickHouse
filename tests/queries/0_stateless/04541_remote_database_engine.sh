@@ -61,6 +61,24 @@ ${CLICKHOUSE_CLIENT} --query "SHOW CREATE TABLE ${REMOTE_DB}_loop.t" 2>&1 | grep
 ${CLICKHOUSE_CLIENT} --query "SHOW TABLES FROM ${REMOTE_DB}_loop"
 ${CLICKHOUSE_CLIENT} --query "DROP DATABASE ${REMOTE_DB}_loop"
 
+echo '-- a chain of Remote databases that refers to itself terminates instead of recursing'
+${CLICKHOUSE_CLIENT} --query "CREATE DATABASE ${REMOTE_DB}_cycle_a ENGINE = Remote('127.0.0.1', '${REMOTE_DB}_cycle_b', 'default', '')"
+${CLICKHOUSE_CLIENT} --query "CREATE DATABASE ${REMOTE_DB}_cycle_b ENGINE = Remote('127.0.0.1', '${REMOTE_DB}_cycle_a', 'default', '')"
+# The table listing is best-effort, so it must terminate with an empty result rather than an error.
+${CLICKHOUSE_CLIENT} --query "SHOW TABLES FROM ${REMOTE_DB}_cycle_a"
+# Table resolution must terminate with a defined error rather than hang.
+${CLICKHOUSE_CLIENT} --query "SELECT * FROM ${REMOTE_DB}_cycle_a.t" 2>&1 | grep -c -m1 "INFINITE_LOOP"
+${CLICKHOUSE_CLIENT} --query "DROP DATABASE ${REMOTE_DB}_cycle_a"
+${CLICKHOUSE_CLIENT} --query "DROP DATABASE ${REMOTE_DB}_cycle_b"
+
+echo '-- a remote failure on table resolution is reported as the real error, not as UNKNOWN_TABLE'
+# Port 1 is never listened on, so the connection is refused; the query must fail with the network
+# error instead of pretending that the table does not exist.
+${CLICKHOUSE_CLIENT} --query "CREATE DATABASE ${REMOTE_DB}_unreachable ENGINE = Remote('127.0.0.1:1', 'default', 'default', '')"
+${CLICKHOUSE_CLIENT} --query "SELECT * FROM ${REMOTE_DB}_unreachable.t" 2>&1 | grep -c -m1 -E "NETWORK_ERROR|ALL_CONNECTION_TRIES_FAILED|CONNECTION_REFUSED"
+${CLICKHOUSE_CLIENT} --query "SELECT * FROM ${REMOTE_DB}_unreachable.t" 2>&1 | grep -c "UNKNOWN_TABLE" || true
+${CLICKHOUSE_CLIENT} --query "DROP DATABASE ${REMOTE_DB}_unreachable"
+
 echo '-- DDL against a Remote database is not supported (prints 1 if the expected error is raised)'
 ${CLICKHOUSE_CLIENT} --query "CREATE TABLE ${REMOTE_DB}.new_table (x UInt8) ENGINE = Memory" 2>&1 | grep -c -m1 "NOT_IMPLEMENTED"
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE ${REMOTE_DB}.t" 2>&1 | grep -c -m1 "NOT_IMPLEMENTED"

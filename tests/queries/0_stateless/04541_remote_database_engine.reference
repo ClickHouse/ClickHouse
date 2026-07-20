@@ -27,6 +27,11 @@ MATERIALIZED a + 3
 1
 -- a database that refers to itself is rejected instead of recursing (prints 1 if the expected error is raised)
 1
+-- a chain of Remote databases that refers to itself terminates instead of recursing
+1
+-- a remote failure on table resolution is reported as the real error, not as UNKNOWN_TABLE
+1
+0
 -- DDL against a Remote database is not supported (prints 1 if the expected error is raised)
 1
 1

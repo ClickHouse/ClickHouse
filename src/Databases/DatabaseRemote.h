@@ -62,6 +62,9 @@ public:
     VectorWithMemoryTracking<String> getAllTableNames(ContextPtr context) const override;
 
     bool isTableExist(const String & name, ContextPtr context) const override;
+
+    /// Returns `nullptr` only for a genuinely missing table; a transport/authentication failure is
+    /// propagated as the real remote error, so user queries do not misreport it as `UNKNOWN_TABLE`.
     StoragePtr tryGetTable(const String & name, ContextPtr context) const override;
 
     /// The engine is a read-through view of the remote server; it does not manage the remote schema.

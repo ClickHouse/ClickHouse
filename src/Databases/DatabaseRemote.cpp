@@ -26,6 +26,8 @@
 #include <Common/parseRemoteDescription.h>
 #include <Common/quoteString.h>
 
+#include <unordered_set>
+
 namespace DB
 {
 namespace Setting
@@ -75,6 +77,37 @@ DatabaseRemote::DatabaseRemote(
 }
 
 
+namespace
+{
+
+/// Several `Remote` databases on this server may refer to each other in a cycle (e.g. `a` -> `b` -> `a`),
+/// in which case following the local shard would recurse forever. The pointer-equality check of
+/// `tryGetLocalDatabase` only catches the direct self-reference, so additionally track the databases
+/// being traversed and reject re-entry. The traversal is synchronous, so a thread-local set suffices.
+thread_local std::unordered_set<const IDatabase *> local_databases_in_traversal;
+
+struct LocalTraversalGuard
+{
+    const IDatabase * database;
+
+    explicit LocalTraversalGuard(const IDatabase * database_) : database(database_)
+    {
+        if (!local_databases_in_traversal.emplace(database).second)
+            throw Exception(
+                ErrorCodes::INFINITE_LOOP,
+                "A chain of `Remote` databases containing {} refers to itself",
+                backQuoteIfNeed(database->getDatabaseName()));
+    }
+
+    ~LocalTraversalGuard()
+    {
+        local_databases_in_traversal.erase(database);
+    }
+};
+
+}
+
+
 DatabasePtr DatabaseRemote::tryGetLocalDatabase() const
 {
     auto local_database = DatabaseCatalog::instance().tryGetDatabase(remote_database);
@@ -121,6 +154,9 @@ Strings DatabaseRemote::fetchTablesList(ContextPtr local_context) const
             {
                 if (auto local_database = tryGetLocalDatabase())
                 {
+                    /// The local database may be another `Remote` database that (indirectly) refers back
+                    /// to this one; the guard rejects such a cycle instead of recursing forever.
+                    LocalTraversalGuard guard(this);
                     for (auto it = local_database->getTablesIterator(query_context); it->isValid(); it->next())
                         tables.push_back(it->name());
                 }
@@ -168,6 +204,9 @@ ColumnsDescription DatabaseRemote::fetchTableStructure(const String & table_name
 
         if (auto local_database = tryGetLocalDatabase())
         {
+            /// The local database may be another `Remote` database that (indirectly) refers back to
+            /// this one; the guard rejects such a cycle instead of recursing forever.
+            LocalTraversalGuard guard(this);
             if (auto storage = local_database->tryGetTable(table_name, local_context))
             {
                 auto metadata_snapshot = storage->getInMemoryMetadataPtr(local_context, /* bypass_metadata_cache = */ false);
@@ -319,7 +358,14 @@ bool DatabaseRemote::isTableExist(const String & table_name, ContextPtr local_co
 
 StoragePtr DatabaseRemote::tryGetTable(const String & table_name, ContextPtr local_context) const
 {
-    return fetchTable(table_name, local_context);
+    /// This is the ordinary table-resolution path of user queries (`SELECT`, `INSERT`, ...), both
+    /// through `IDatabase::getTable` and through the analyzer's `DatabaseCatalog::tryGetTable`.
+    /// Return `nullptr` only for a genuinely missing table; a transport/authentication failure while
+    /// resolving an existing remote table is propagated as the real remote error rather than being
+    /// reported as `UNKNOWN_TABLE` (`DatabaseMySQL::tryGetTable` behaves the same way on a connection
+    /// failure). The listing paths (`getTablesIterator`, `getAllTableNames`, `isTableExist`) stay
+    /// best-effort.
+    return fetchTable(table_name, local_context, /* throw_on_error = */ true);
 }
 
 
