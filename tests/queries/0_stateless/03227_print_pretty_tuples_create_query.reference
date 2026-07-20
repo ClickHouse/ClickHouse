@@ -5,7 +5,8 @@ CREATE TABLE default.test
     `x` Tuple(
         a String,
         b Array(Tuple(
-            c Tuple(e String),
+            c Tuple(
+                e String),
             d String))),
     `y` String
 )
@@ -27,7 +28,8 @@ CREATE TABLE test
     `x` Tuple(
         a String,
         b Array(Tuple(
-            c Tuple(e String),
+            c Tuple(
+                e String),
             d String))),
     `y` String
 )
@@ -40,7 +42,8 @@ CREATE TABLE test
     `x` Tuple(
         a String,
         b Array(Tuple(
-            c Tuple(e String),
+            c Tuple(
+                e String),
             d String))),
     `y` String
 )

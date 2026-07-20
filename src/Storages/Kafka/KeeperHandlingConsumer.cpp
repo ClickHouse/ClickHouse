@@ -1,7 +1,6 @@
 #include <Storages/Kafka/KeeperHandlingConsumer.h>
 
 #include <IO/ReadHelpers.h>
-#include <IO/WriteHelpers.h>
 #include <boost/algorithm/string/join.hpp>
 #include <pcg-random/pcg_random.hpp>
 #include <Common/DateLUT.h>
@@ -363,7 +362,7 @@ void KeeperHandlingConsumer::lockTemporaryLocksLocked(
     pcg64 generator(randomSeed());
     std::shuffle(available_topic_partitions_copy.begin(), available_topic_partitions_copy.end(), generator);
 
-    for (const auto & tp : available_topic_partitions_copy)
+    for (const auto & tp : available_topic_partitions)
     {
         if (tmp_locks.size() >= tmp_locks_quota)
             break;

@@ -91,7 +91,7 @@ public:
         if (!function->hasArguments())
             return;
 
-        switch (function_.getKind())
+        switch (function_.kind)
         {
             case ASTFunction::Kind::ORDINARY_FUNCTION: findOrdinaryFunctionSecretArguments(); break;
             case ASTFunction::Kind::WINDOW_FUNCTION: break;

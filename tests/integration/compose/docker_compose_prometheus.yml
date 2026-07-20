@@ -1,0 +1,116 @@
+services:
+  # Service "prometheus_writer" runs a prometheus server which scrapes some metrics and sends them via the RemoteWrite
+  # protocol to ClickHouse by url ${PROMETHEUS_REMOTE_WRITE_HANDLER}.
+  prometheus_writer:
+    image: prom/prometheus:v3.5.0
+    hostname: ${PROMETHEUS_WRITER_HOSTNAME:-prometheus_writer}
+    restart: always
+    entrypoint: |
+      /bin/sh -c '
+      if [ -z ${PROMETHEUS_WRITER_PORT} ]; then
+        exit 0
+      fi
+      cat << EOF > /etc/prometheus/prometheus.yml
+        global:
+          scrape_interval: 1s
+        scrape_configs:
+          - job_name: "prometheus"
+            static_configs:
+              - targets: ["localhost:${PROMETHEUS_WRITER_PORT}"]
+        remote_write: ${PROMETHEUS_REMOTE_WRITE_HANDLERS}
+        storage:
+          tsdb:
+            out_of_order_time_window: 100y
+      EOF
+      exec /bin/prometheus --config.file="/etc/prometheus/prometheus.yml" --storage.tsdb.path="/prometheus" --web.listen-address="0.0.0.0:${PROMETHEUS_WRITER_PORT}" &> /var/log/prometheus/prometheus.log
+      '
+    expose:
+      - ${PROMETHEUS_WRITER_PORT}
+    healthcheck:
+      test: |
+        /bin/sh -c '
+        if [ -z ${PROMETHEUS_WRITER_PORT} ]; then
+          exit 0
+        fi
+        curl -f "https://localhost:${PROMETHEUS_WRITER_PORT}/api/v1/status/runtimeinfo" || exit 1
+        '
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    volumes:
+      - type: ${PROMETHEUS_WRITER_LOGS_FS:-tmpfs}
+        source: ${PROMETHEUS_WRITER_LOGS:-}
+        target: /var/log/prometheus
+    stop_grace_period: 5s
+  # Service "prometheus_reader" runs a prometheus server which scrapes nothing and can request data via the RemoteRead protocol
+  # from ClickHouse by url ${PROMETHEUS_REMOTE_READ_HANDLER}.
+  prometheus_reader:
+    image: prom/prometheus:v3.5.0
+    hostname: ${PROMETHEUS_READER_HOSTNAME:-prometheus_reader}
+    restart: always
+    entrypoint: |
+      /bin/sh -c '
+      if [ -z ${PROMETHEUS_READER_PORT} ]; then
+        exit 0
+      fi
+      cat << EOF > /etc/prometheus/prometheus.yml
+        remote_read: ${PROMETHEUS_REMOTE_READ_HANDLERS}
+        storage:
+          tsdb:
+            out_of_order_time_window: 100y
+      EOF
+      exec /bin/prometheus --config.file="/etc/prometheus/prometheus.yml" --storage.tsdb.path="/prometheus" --web.listen-address="0.0.0.0:${PROMETHEUS_READER_PORT}" &> /var/log/prometheus/prometheus.log
+      '
+    expose:
+      - ${PROMETHEUS_READER_PORT}
+    healthcheck:
+      test: |
+        /bin/sh -c '
+        if [ -z ${PROMETHEUS_READER_PORT} ]; then
+          exit 0
+        fi
+        curl -f "https://localhost:${PROMETHEUS_READER_PORT}/api/v1/status/runtimeinfo" || exit 1
+        '
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    volumes:
+      - type: ${PROMETHEUS_READER_LOGS_FS:-tmpfs}
+        source: ${PROMETHEUS_READER_LOGS:-}
+        target: /var/log/prometheus
+    stop_grace_period: 5s
+  # Service "prometheus_receiver" runs a prometheus server which accepts data sent by the RemoteWrite protocol to Prometheus to api/v1/write.
+  prometheus_receiver:
+    image: prom/prometheus:v3.5.0
+    hostname: ${PROMETHEUS_HOSTNAME:-prometheus_receiver}
+    restart: always
+    entrypoint: |
+      /bin/sh -c '
+      if [ -z ${PROMETHEUS_RECEIVER_PORT} ]; then
+        exit 0
+      fi
+      cat << EOF > /etc/prometheus/prometheus.yml
+      storage:
+        tsdb:
+          out_of_order_time_window: 100y
+      EOF
+      exec /bin/prometheus --config.file="/etc/prometheus/prometheus.yml" --storage.tsdb.path="/prometheus" --web.listen-address="0.0.0.0:${PROMETHEUS_RECEIVER_PORT}" --storage.tsdb.retention.time=100y --enable-feature=remote-write-receiver --web.enable-remote-write-receiver &> /var/log/prometheus/prometheus.log
+      '
+    expose:
+      - ${PROMETHEUS_RECEIVER_PORT}
+    healthcheck:
+      test: |
+        /bin/sh -c '
+        if [ -z ${PROMETHEUS_RECEIVER_PORT} ]; then
+          exit 0
+        fi
+        curl -f "https://localhost:${PROMETHEUS_RECEIVER_PORT}/api/v1/status/runtimeinfo" || exit 1
+        '
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    volumes:
+      - type: ${PROMETHEUS_RECEIVER_LOGS_FS:-tmpfs}
+        source: ${PROMETHEUS_RECEIVER_LOGS:-}
+        target: /var/log/prometheus
+    stop_grace_period: 5s

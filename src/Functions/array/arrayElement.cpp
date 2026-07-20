@@ -1,7 +1,6 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnFixedString.h>
-#include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
@@ -15,14 +14,11 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
-#include <Functions/FunctionLowCardinalityFastPath.h>
 #include <Functions/IFunction.h>
-#include <Functions/LowCardinalityExecutionHelpers.h>
 #include <Functions/castTypeToEither.h>
-#include <Interpreters/Context_fwd.h>
+#include <Interpreters/Context.h>
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
-#include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
 {
@@ -60,6 +56,7 @@ class FunctionArrayElement : public IFunction
 public:
     static constexpr bool is_null_mode = (mode == ArrayElementExceptionMode::Null);
     static constexpr auto name = (mode == ArrayElementExceptionMode::Zero) ? "arrayElement" : "arrayElementOrNull";
+    static FunctionPtr create(ContextPtr context_);
 
     String getName() const override;
 
@@ -67,19 +64,10 @@ public:
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
     size_t getNumberOfArguments() const override { return 2; }
 
-    /// Keep the inherited getReturnTypeImpl(ColumnsWithTypeAndName) visible alongside the
-    /// overload declared below; FunctionWithLowCardinalityFastPath calls it by qualified name.
-    using IFunction::getReturnTypeImpl;
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
 
     ColumnPtr
     executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override;
-
-    /// Fast path hook for FunctionWithLowCardinalityFastPath (see FunctionLowCardinalityFastPath.h):
-    /// element access over Array(LowCardinality(String)) and Map with LowCardinality string keys
-    /// without materializing the dictionary into full columns. Returns nullptr to decline.
-    ColumnPtr tryExecuteLowCardinality(
-        const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const;
 
 private:
     ColumnPtr perform(
@@ -161,7 +149,7 @@ private:
 
     /** For a tuple array, the function is evaluated component-wise for each element of the tuple.
       */
-    ColumnPtr executeTuple(const ColumnsWithTypeAndName & arguments, ArrayImpl::NullMapBuilder<mode> &, size_t input_rows_count) const;
+    ColumnPtr executeTuple(const ColumnsWithTypeAndName & arguments, size_t input_rows_count) const;
 
     /** For a map array, the function is evaluated component-wise for its keys and values
       */
@@ -193,6 +181,8 @@ private:
     template <typename Matcher>
     static void
     executeMatchConstKeyToIndex(size_t num_rows, size_t num_values, PaddedPODArray<UInt64> & matched_idxs, const Matcher & matcher);
+
+    ContextPtr context;
 };
 
 
@@ -272,7 +262,7 @@ struct ArrayElementNumImpl
 
             if (index < array_size)
             {
-                size_t j = 0;
+                size_t j;
                 if constexpr (negative)
                     j = offsets[i] - index - 1;
                 else
@@ -595,7 +585,7 @@ struct ArrayElementArrayStringImpl
         for (size_t i = 0; i < size; ++i)
         {
             size_t array_size = offsets[i] - offsets[i - 1];
-            size_t adjusted_index = 0; /// index in array from zero
+            size_t adjusted_index; /// index in array from zero
             TIndex index = indices[i];
             if (index > 0 && static_cast<size_t>(index) <= array_size)
                 adjusted_index = index - 1;
@@ -628,7 +618,7 @@ struct ArrayElementArrayStringImpl
         for (size_t i = 0; i < size; ++i)
         {
             size_t array_size = offsets[i] - offsets[i - 1];
-            size_t adjusted_index = 0; /// index in array from zero
+            size_t adjusted_index; /// index in array from zero
 
             TIndex index = indices[i];
             if (index > 0 && static_cast<size_t>(index) <= array_size)
@@ -691,7 +681,7 @@ struct ArrayElementStringImpl
         ColumnArray::Offset current_offset = 0;
         /// get the total result bytes at first, and reduce the cost of result_data.resize.
         size_t total_result_bytes = 0;
-        VectorWithMemoryTracking<std::pair<const ColumnString::Char *, UInt64>> selected_bufs;
+        std::vector<std::pair<const ColumnString::Char *, UInt64>> selected_bufs;
         selected_bufs.reserve(size);
         for (size_t i = 0; i < size; ++i)
         {
@@ -699,7 +689,7 @@ struct ArrayElementStringImpl
 
             if (index < array_size)
             {
-                size_t adjusted_index = 0;
+                size_t adjusted_index;
                 if constexpr (negative)
                     adjusted_index = array_size - index - 1;
                 else
@@ -753,12 +743,12 @@ struct ArrayElementStringImpl
         ColumnArray::Offset current_offset = 0;
         /// get the total result bytes at first, and reduce the cost of result_data.resize.
         size_t total_result_bytes = 0;
-        VectorWithMemoryTracking<std::pair<const ColumnString::Char *, UInt64>> selected_bufs;
+        std::vector<std::pair<const ColumnString::Char *, UInt64>> selected_bufs;
         selected_bufs.reserve(size);
         for (size_t i = 0; i < size; ++i)
         {
             size_t array_size = offsets[i] - current_offset;
-            size_t adjusted_index = 0; /// index in array from zero
+            size_t adjusted_index; /// index in array from zero
 
             TIndex index = indices[i];
             if (index > 0 && static_cast<size_t>(index) <= array_size)
@@ -880,6 +870,13 @@ struct ArrayElementGenericImpl
 };
 
 }
+
+template <ArrayElementExceptionMode mode>
+FunctionPtr FunctionArrayElement<mode>::create(ContextPtr)
+{
+    return std::make_shared<FunctionArrayElement>();
+}
+
 
 template <ArrayElementExceptionMode mode>
 template <typename DataType>
@@ -1593,7 +1590,7 @@ ColumnPtr FunctionArrayElement<mode>::executeMap2(const ColumnsWithTypeAndName &
 }
 
 template <ArrayElementExceptionMode mode>
-ColumnPtr FunctionArrayElement<mode>::executeTuple(const ColumnsWithTypeAndName & arguments, ArrayImpl::NullMapBuilder<mode> & builder, size_t input_rows_count) const
+ColumnPtr FunctionArrayElement<mode>::executeTuple(const ColumnsWithTypeAndName & arguments, size_t input_rows_count) const
 {
     const ColumnArray * col_array = typeid_cast<const ColumnArray *>(arguments[0].column.get());
     if (!col_array)
@@ -1602,142 +1599,6 @@ ColumnPtr FunctionArrayElement<mode>::executeTuple(const ColumnsWithTypeAndName 
     const ColumnTuple * col_nested = typeid_cast<const ColumnTuple *>(&col_array->getData());
     if (!col_nested)
         return nullptr;
-
-    if (builder)
-    {
-        const auto & offsets = col_array->getOffsets();
-        chassert(offsets.size() == input_rows_count);
-        if (input_rows_count != 0)
-            chassert(col_nested->size() == offsets.back());
-
-        builder.initSink(input_rows_count);
-
-        const IColumn * index_col = arguments[1].column.get();
-
-        /// Non-const numeric index vector (Int*/UInt*) path
-        auto fill_null_map_for_vector = [&](const auto * index_column) -> bool
-        {
-            if (!index_column)
-                return false;
-
-            using IndexColumn = std::decay_t<decltype(*index_column)>;
-            using IndexType = typename IndexColumn::ValueType;
-
-            const auto & indices = index_column->getData();
-            chassert(indices.size() == input_rows_count);
-
-            ColumnArray::Offset current_offset = 0;
-            for (size_t row = 0; row < input_rows_count; ++row)
-            {
-                const size_t array_size = offsets[row] - current_offset;
-                const IndexType idx = indices[row];
-
-                bool in_range = false;
-                UInt64 zero_based = 0;
-
-                if (idx > 0 && static_cast<UInt64>(idx) <= array_size)
-                {
-                    zero_based = static_cast<UInt64>(idx) - 1; /// 1-based to 0-based
-                    in_range = true;
-                }
-                else if constexpr (std::is_signed_v<IndexType>)
-                {
-                    if (idx < 0 && -static_cast<UInt64>(idx) <= array_size)
-                    {
-                        /// Negative index from the end: arr[-1] is last element
-                        zero_based = static_cast<UInt64>(array_size + idx);
-                        in_range = true;
-                    }
-                }
-
-                if (in_range)
-                {
-                    const size_t j = current_offset + zero_based; /// nested offset
-                    chassert(j < col_nested->size());
-                    builder.update(j);
-                }
-                else
-                {
-                    builder.update();
-                }
-
-                current_offset = offsets[row];
-            }
-
-            return true;
-        };
-
-        if (!isColumnConst(*index_col))
-        {
-            if (!(fill_null_map_for_vector(checkAndGetColumn<ColumnVector<Int8>>(index_col))
-                  || fill_null_map_for_vector(checkAndGetColumn<ColumnVector<Int16>>(index_col))
-                  || fill_null_map_for_vector(checkAndGetColumn<ColumnVector<Int32>>(index_col))
-                  || fill_null_map_for_vector(checkAndGetColumn<ColumnVector<Int64>>(index_col))
-                  || fill_null_map_for_vector(checkAndGetColumn<ColumnVector<UInt8>>(index_col))
-                  || fill_null_map_for_vector(checkAndGetColumn<ColumnVector<UInt16>>(index_col))
-                  || fill_null_map_for_vector(checkAndGetColumn<ColumnVector<UInt32>>(index_col))
-                  || fill_null_map_for_vector(checkAndGetColumn<ColumnVector<UInt64>>(index_col))))
-            {
-                /// Index is not a plain integer vector; generic path will throw handle it
-                return nullptr;
-            }
-        }
-        else
-        {
-            /// Constant numeric index
-            Field index_field = (*index_col)[0];
-
-            /// All sizes of shorter widths are also covered because `Field` promotes them to Int64/UInt64
-            if (index_field.getType() != Field::Types::UInt64 && index_field.getType() != Field::Types::Int64)
-                return nullptr;
-
-            Int64 idx = 0;
-            if (index_field.getType() == Field::Types::UInt64)
-                idx = static_cast<Int64>(index_field.safeGet<UInt64>());
-            else
-                idx = index_field.safeGet<Int64>();
-
-            if constexpr (!is_null_mode)
-            {
-                /// Preserve historical behaviour
-                if (idx == 0)
-                    throw Exception(ErrorCodes::ZERO_ARRAY_OR_TUPLE_INDEX, "Array indices are 1-based");
-            }
-
-            ColumnArray::Offset current_offset = 0;
-            for (size_t row = 0; row < input_rows_count; ++row)
-            {
-                const size_t array_size = offsets[row] - current_offset;
-
-                bool in_range = false;
-                UInt64 zero_based = 0;
-
-                if (idx > 0 && static_cast<UInt64>(idx) <= array_size)
-                {
-                    zero_based = static_cast<UInt64>(idx) - 1;
-                    in_range = true;
-                }
-                else if (idx < 0 && -static_cast<UInt64>(idx) <= array_size)
-                {
-                    zero_based = static_cast<UInt64>(array_size + idx); /// idx < 0
-                    in_range = true;
-                }
-
-                if (in_range)
-                {
-                    const size_t j = current_offset + zero_based;
-                    chassert(j < col_nested->size());
-                    builder.update(j);
-                }
-                else
-                {
-                    builder.update();
-                }
-
-                current_offset = offsets[row];
-            }
-        }
-    }
 
     const auto & tuple_columns = col_nested->getColumns();
     size_t tuple_size = tuple_columns.size();
@@ -1792,7 +1653,7 @@ struct MatcherString
     {
         auto data_ref = data.getDataAt(row_data);
         auto index_ref = index.getDataAt(row_index);
-        return memequalSmallAllowOverflow15(index_ref.data(), index_ref.size(), data_ref.data(), data_ref.size());
+        return memequalSmallAllowOverflow15(index_ref.data, index_ref.size, data_ref.data, data_ref.size);
     }
 };
 
@@ -1805,7 +1666,7 @@ struct MatcherStringConst
     bool match(size_t row_data, size_t /* row_index */) const
     {
         auto data_ref = data.getDataAt(row_data);
-        return index.size() == data_ref.size() && memcmp(index.data(), data_ref.data(), data_ref.size()) == 0;
+        return index.size() == data_ref.size && memcmp(index.data(), data_ref.data, data_ref.size) == 0;
     }
 };
 
@@ -1922,56 +1783,17 @@ bool castColumnString(const IColumn * column, F && f)
     return castTypeToEither<ColumnString, ColumnFixedString>(column, std::forward<F>(f));
 }
 
-bool isStringOrFixedStringColumn(const IColumn & column)
-{
-    return typeid_cast<const ColumnString *>(&column) || typeid_cast<const ColumnFixedString *>(&column);
-}
-
 template <ArrayElementExceptionMode mode>
 bool FunctionArrayElement<mode>::matchKeyToIndexStringConst(
     const IColumn & data, const Offsets & offsets, const Field & index, PaddedPODArray<UInt64> & matched_idxs)
 {
-    if (index.getType() != Field::Types::String)
-        return false;
-
-    /// The dictionary lookup below is defined only for String and FixedString keys. For other
-    /// LowCardinality key types, fall through so that the regular dispatch reports the type error
-    /// instead of silently finding no match.
-    const auto * low_cardinality_data = typeid_cast<const ColumnLowCardinality *>(&data);
-    if (low_cardinality_data
-        && isStringOrFixedStringColumn(*low_cardinality_data->getDictionary().getNestedNotNullableColumn()))
-    {
-        const auto & requested_key = index.safeGet<String>();
-        auto dictionary_index = low_cardinality_data->getDictionary().getOrFindValueIndex(requested_key);
-        matched_idxs.reserve(offsets.size());
-
-        if (!dictionary_index)
-        {
-            matched_idxs.resize_fill(offsets.size());
-            return true;
-        }
-
-        struct MatcherLowCardinalityStringConst
-        {
-            const ColumnLowCardinality & data;
-            UInt64 dictionary_index;
-
-            bool match(size_t row_data, size_t /* row_index */) const
-            {
-                return data.getIndexAt(row_data) == dictionary_index;
-            }
-        };
-
-        MatcherLowCardinalityStringConst matcher{*low_cardinality_data, *dictionary_index};
-        executeMatchKeyToIndex(offsets, matched_idxs, matcher);
-        return true;
-    }
-
     return castColumnString(
         &data,
         [&](const auto & data_column)
         {
             using DataColumn = std::decay_t<decltype(data_column)>;
+            if (index.getType() != Field::Types::String)
+                return false;
             MatcherStringConst<DataColumn> matcher{data_column, index.safeGet<String>()};
             executeMatchKeyToIndex(offsets, matched_idxs, matcher);
             return true;
@@ -2095,7 +1917,7 @@ ColumnPtr FunctionArrayElement<mode>::executeMap(
 {
     const auto * col_map = checkAndGetColumn<ColumnMap>(arguments[0].column.get());
     const auto * col_const_map = checkAndGetColumnConst<ColumnMap>(arguments[0].column.get());
-    chassert(col_map || col_const_map);
+    assert(col_map || col_const_map);
 
     if (col_const_map)
         col_map = typeid_cast<const ColumnMap *>(&col_const_map->getDataColumn());
@@ -2156,7 +1978,7 @@ DataTypePtr FunctionArrayElement<mode>::getReturnTypeImpl(const DataTypes & argu
 {
     if (const auto * map_type = checkAndGetDataType<DataTypeMap>(arguments[0].get()))
     {
-        auto value_type = recursiveRemoveLowCardinality(map_type->getValueType());
+        auto value_type = map_type->getValueType();
         return is_null_mode && value_type->canBeInsideNullable() ? makeNullable(value_type) : value_type;
     }
 
@@ -2170,8 +1992,7 @@ DataTypePtr FunctionArrayElement<mode>::getReturnTypeImpl(const DataTypes & argu
             arguments[0]->getName());
     }
 
-    auto index_type = removeNullable(removeLowCardinality(arguments[1]));
-    if (!isNativeInteger(index_type))
+    if (!isNativeInteger(arguments[1]))
     {
         throw Exception(
             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
@@ -2180,66 +2001,8 @@ DataTypePtr FunctionArrayElement<mode>::getReturnTypeImpl(const DataTypes & argu
             arguments[1]->getName());
     }
 
-    auto nested_type = recursiveRemoveLowCardinality(array_type->getNestedType());
+    auto nested_type = array_type->getNestedType();
     return is_null_mode && nested_type->canBeInsideNullable() ? makeNullable(nested_type) : nested_type;
-}
-
-template <ArrayElementExceptionMode mode>
-ColumnPtr FunctionArrayElement<mode>::tryExecuteLowCardinality(
-    const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
-{
-    if (arguments.size() != 2 || !isColumnConst(*arguments[1].column))
-        return nullptr;
-
-    /// Nullable and LowCardinality(Nullable) arguments make the result type Nullable,
-    /// which this path does not produce. Leave them to the default implementations.
-    for (const auto & argument : arguments)
-        if (isNullableOrLowCardinalityNullable(argument.type))
-            return nullptr;
-
-    Field index = (*arguments[1].column)[0];
-    if ((index.getType() == Field::Types::UInt64 && index.safeGet<UInt64>() == 0)
-        || (index.getType() == Field::Types::Int64 && index.safeGet<Int64>() == 0))
-        return nullptr;
-
-    /// Only optimize arrayElement here. arrayElementOrNull would need to build the null map
-    /// for out-of-bounds rows, which is a separate path from the measured materialization hot spot.
-    if constexpr (!is_null_mode)
-    {
-        if (const auto * col_array = checkAndGetColumn<ColumnArray>(arguments[0].column.get()))
-        {
-            const auto * low_cardinality_data = typeid_cast<const ColumnLowCardinality *>(&col_array->getData());
-            const auto & array_type = assert_cast<const DataTypeArray &>(*arguments[0].type);
-            if (low_cardinality_data
-                && isStringOrFixedString(removeLowCardinality(array_type.getNestedType()))
-                && (index.getType() == Field::Types::UInt64 || index.getType() == Field::Types::Int64))
-                return LowCardinalityExecutionHelpers::LowCardinalityArrayView{
-                    .elements = *low_cardinality_data,
-                    .offsets = col_array->getOffsets(),
-                    .rows = input_rows_count,
-                }.arrayElementConst(index, *result_type);
-        }
-    }
-
-    const auto * col_map = checkAndGetColumn<ColumnMap>(arguments[0].column.get());
-    if (!col_map)
-        return nullptr;
-
-    const auto & map_column = *col_map;
-    if (!typeid_cast<const ColumnLowCardinality *>(&map_column.getNestedData().getColumn(0)))
-        return nullptr;
-
-    /// The string key lookup below is defined only for String and FixedString keys. For other
-    /// LowCardinality key types, leave the arguments to the default implementations so that the
-    /// regular dispatch reports the type error, exactly as without the specialized path.
-    const auto & map_type = assert_cast<const DataTypeMap &>(*arguments[0].type);
-    if (!isStringOrFixedString(removeLowCardinality(map_type.getKeyType())))
-        return nullptr;
-
-    if (index.getType() != Field::Types::String)
-        return nullptr;
-
-    return recursiveRemoveLowCardinality(executeMap(arguments, result_type, input_rows_count));
 }
 
 template <ArrayElementExceptionMode mode>
@@ -2339,7 +2102,7 @@ ColumnPtr FunctionArrayElement<mode>::perform(
     size_t input_rows_count) const
 {
     ColumnPtr res;
-    if ((res = executeTuple(arguments, builder, input_rows_count)))
+    if ((res = executeTuple(arguments, input_rows_count)))
         return res;
     if ((res = executeMap2(arguments, input_rows_count)))
         return res;
@@ -2457,9 +2220,9 @@ Operator `[n]` provides the same functionality.
     };
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;
-    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction<FunctionWithLowCardinalityFastPath<FunctionArrayElement<ArrayElementExceptionMode::Zero>>>(documentation);
+    factory.registerFunction<FunctionArrayElement<ArrayElementExceptionMode::Zero>>(documentation);
 
     FunctionDocumentation::Description description_null = R"(
 Gets the element of the provided array with index `n` where `n` can be any integer type.
@@ -2483,8 +2246,8 @@ Negative indexes are supported. In this case, it selects the corresponding eleme
     };
     FunctionDocumentation::IntroducedIn introduced_in_null = {1, 1};
     FunctionDocumentation::Category category_null = FunctionDocumentation::Category::Array;
-    FunctionDocumentation documentation_null = {description_null, syntax_null, arguments_null, {}, returned_value_null, examples_null, introduced_in_null, category_null};
+    FunctionDocumentation documentation_null = {description_null, syntax_null, arguments_null, returned_value_null, examples_null, introduced_in_null, category_null};
 
-    factory.registerFunction<FunctionWithLowCardinalityFastPath<FunctionArrayElement<ArrayElementExceptionMode::Null>>>(documentation_null);
+    factory.registerFunction<FunctionArrayElement<ArrayElementExceptionMode::Null>>(documentation_null);
 }
 }

@@ -8,8 +8,6 @@
 #include <Common/Exception.h>
 #include <Common/NamedCollections/NamedCollections.h>
 
-#include <boost/range/adaptor/map.hpp>
-
 namespace DB
 {
 
@@ -20,8 +18,6 @@ namespace ErrorCodes
 
 #define NATS_RELATED_SETTINGS(DECLARE, ALIAS) \
     DECLARE(String, nats_url, "", "A host-port to connect to NATS server.", 0) \
-    DECLARE(String, nats_stream, "", "Stream name for NATS JetStream", 0) \
-    DECLARE(String, nats_consumer_name, "", "Name of a durable pull consumer for NATS JetStream.", 0) \
     DECLARE(String, nats_subjects, "", "List of subject for NATS table to subscribe/publish to.", 0) \
     DECLARE(String, nats_format, "", "The message format.", 0) \
     DECLARE(String, nats_schema, "", "Schema identifier (used by schema-based formats) for NATS engine", 0) \
@@ -50,8 +46,21 @@ namespace ErrorCodes
     OBSOLETE_NATS_SETTINGS(M, ALIAS)      \
     LIST_OF_ALL_FORMAT_SETTINGS(M, ALIAS) \
 
-DECLARE_SETTINGS_TRAITS(NATSSettingsTraits, LIST_OF_NATS_SETTINGS, NATS_SETTINGS_SUPPORTED_TYPES)
-IMPLEMENT_SETTINGS_TRAITS(NATSSettingsTraits, LIST_OF_NATS_SETTINGS, NATSSettings, NATSSetting)
+DECLARE_SETTINGS_TRAITS(NATSSettingsTraits, LIST_OF_NATS_SETTINGS)
+IMPLEMENT_SETTINGS_TRAITS(NATSSettingsTraits, LIST_OF_NATS_SETTINGS)
+
+struct NATSSettingsImpl : public BaseSettings<NATSSettingsTraits>
+{
+};
+
+#define INITIALIZE_SETTING_EXTERN(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS, ...) NATSSettings##TYPE NAME = &NATSSettingsImpl ::NAME;
+
+namespace NATSSetting
+{
+LIST_OF_NATS_SETTINGS(INITIALIZE_SETTING_EXTERN, INITIALIZE_SETTING_EXTERN)
+}
+
+#undef INITIALIZE_SETTING_EXTERN
 
 NATSSettings::NATSSettings() : impl(std::make_unique<NATSSettingsImpl>())
 {
@@ -61,7 +70,9 @@ NATSSettings::NATSSettings(const NATSSettings & settings) : impl(std::make_uniqu
 {
 }
 
-NATSSettings::NATSSettings(NATSSettings && settings) noexcept = default;
+NATSSettings::NATSSettings(NATSSettings && settings) noexcept : impl(std::make_unique<NATSSettingsImpl>(std::move(*settings.impl)))
+{
+}
 
 NATSSettings::~NATSSettings() = default;
 
@@ -84,7 +95,7 @@ void NATSSettings::loadFromQuery(ASTStorage & storage_def)
     }
     else
     {
-        auto settings_ast = make_intrusive<ASTSetQuery>();
+        auto settings_ast = std::make_shared<ASTSetQuery>();
         settings_ast->is_standalone = false;
         storage_def.set(storage_def.settings, settings_ast);
     }

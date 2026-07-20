@@ -66,8 +66,6 @@ ${CLICKHOUSE_CLIENT} -q '
   FROM
       system.part_log
   WHERE
-          event_date >= yesterday() AND event_time >= now() - 600
-      AND
           event_type = '"'MergeParts'"'
       AND
           table = '"'t_part_log_has_merge_type_table'"'

@@ -1,3 +1,5 @@
+#if defined(OS_LINUX)
+
 #include <Server/ClientEmbedded/ClientEmbeddedRunner.h>
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
@@ -79,12 +81,11 @@ void ClientEmbeddedRunner::clientRoutine(NameToNameMap envs, String starting_que
     }
 
     finished.test_and_set();
-    if (client_descriptors->isPty())
-    {
-        char c = 0;
-        // Server may poll on a descriptor waiting for client output, wake him up with invisible character
-        (void)write(client_descriptors->getDescriptorsForClient().out, &c, 1);
-    }
+    char c = 0;
+    // Server may poll on a descriptor waiting for client output, wake him up with invisible character
+    (void)write(client_descriptors->getDescriptorsForClient().out, &c, 1);
 }
 
 }
+
+#endif

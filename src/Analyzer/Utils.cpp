@@ -4,7 +4,6 @@
 
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTIdentifier.h>
-#include <Parsers/ASTStreamSettings.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTFunction.h>
 
@@ -50,10 +49,7 @@
 
 #include <Analyzer/Resolve/IdentifierResolveScope.h>
 
-#include <Core/Streaming/CursorTree_fwd.h>
-
 #include <ranges>
-
 namespace DB
 {
 namespace Setting
@@ -67,7 +63,6 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
-    extern const int TYPE_MISMATCH;
 }
 
 bool isNodePartOfTree(const IQueryTreeNode * node, const IQueryTreeNode * root)
@@ -202,25 +197,15 @@ void makeUniqueColumnNamesInBlock(Block & block)
 
     for (auto & column_with_type : block)
     {
-        if (block_column_names.insert(column_with_type.name).second)
-            continue;
-
-        /// The base name collides with a name we have already kept or produced.
-        /// Loop until we find a suffix that is unused anywhere in the block,
-        /// including by names we are about to keep and by names we have already
-        /// renamed. Register the renamed name to prevent further collisions.
-        ///
-        /// Example: for input `a, a, a_1`, the second `a` is renamed to `a_1`
-        /// and the third column (`a_1`) is renamed to `a_2`, instead of leaving
-        /// the block with two `a_1` columns.
-        String new_name;
-        do
+        if (!block_column_names.contains(column_with_type.name))
         {
-            new_name = column_with_type.name + '_' + std::to_string(unique_column_name_counter);
-            ++unique_column_name_counter;
-        } while (!block_column_names.insert(new_name).second);
+            block_column_names.insert(column_with_type.name);
+            continue;
+        }
 
-        column_with_type.name = std::move(new_name);
+        column_with_type.name += '_';
+        column_with_type.name += std::to_string(unique_column_name_counter);
+        ++unique_column_name_counter;
     }
 }
 
@@ -280,11 +265,7 @@ bool checkCorrelatedColumn(
     ///
     /// X would have lambda as a source node
     /// Y comes from outer scope and requires ordinary check.
-    ///
-    /// Similarly, INTERPOLATE creates fake columns with InterpolateNode as the source.
-    /// These are expression arguments, not table expressions, so they cannot be correlated.
-    auto source_type = column_source->getNodeType();
-    if (source_type == QueryTreeNodeType::LAMBDA || source_type == QueryTreeNodeType::INTERPOLATE)
+    if (column_source->getNodeType() == QueryTreeNodeType::LAMBDA)
         return false;
 
     bool is_correlated = false;
@@ -387,7 +368,7 @@ std::optional<bool> tryExtractConstantFromConditionNode(const QueryTreeNodePtr &
     if (value.isNull())
         return false;
 
-    auto predicate_value = static_cast<UInt8>(value.safeGet<UInt8>());
+    UInt8 predicate_value = value.safeGet<UInt8>();
     return predicate_value > 0;
 }
 
@@ -405,9 +386,9 @@ static ASTPtr convertIntoTableExpressionAST(
         const auto & identifier = identifier_node.getIdentifier();
 
         if (identifier.getPartsSize() == 1)
-            table_expression_node_ast = make_intrusive<ASTTableIdentifier>(identifier[0]);
+            table_expression_node_ast = std::make_shared<ASTTableIdentifier>(identifier[0]);
         else if (identifier.getPartsSize() == 2)
-            table_expression_node_ast = make_intrusive<ASTTableIdentifier>(identifier[0], identifier[1]);
+            table_expression_node_ast = std::make_shared<ASTTableIdentifier>(identifier[0], identifier[1]);
         else
             throw Exception(ErrorCodes::LOGICAL_ERROR,
                 "Identifier for table expression must contain 1 or 2 parts. Actual '{}'",
@@ -420,7 +401,7 @@ static ASTPtr convertIntoTableExpressionAST(
         table_expression_node_ast = table_expression_node->toAST(convert_to_ast_options);
     }
 
-    auto result_table_expression = make_intrusive<ASTTableExpression>();
+    auto result_table_expression = std::make_shared<ASTTableExpression>();
     result_table_expression->children.push_back(table_expression_node_ast);
 
     std::optional<TableExpressionModifiers> table_expression_modifiers;
@@ -458,22 +439,11 @@ static ASTPtr convertIntoTableExpressionAST(
 
         const auto & sample_size_ratio = table_expression_modifiers->getSampleSizeRatio();
         if (sample_size_ratio.has_value())
-            result_table_expression->sample_size = make_intrusive<ASTSampleRatio>(*sample_size_ratio);
+            result_table_expression->sample_size = std::make_shared<ASTSampleRatio>(*sample_size_ratio);
 
         const auto & sample_offset_ratio = table_expression_modifiers->getSampleOffsetRatio();
         if (sample_offset_ratio.has_value())
-            result_table_expression->sample_offset = make_intrusive<ASTSampleRatio>(*sample_offset_ratio);
-
-        const auto & stream_settings = table_expression_modifiers->getStreamSettings();
-        if (stream_settings.has_value())
-        {
-            ASTStreamSettings::StreamSettings ast_stream_settings;
-            if (stream_settings->cursor_tree)
-                ast_stream_settings.cursor_tree = cursorTreeToMap(stream_settings->cursor_tree);
-
-            result_table_expression->stream_settings = make_intrusive<ASTStreamSettings>(std::move(ast_stream_settings));
-            result_table_expression->children.push_back(result_table_expression->stream_settings);
-        }
+            result_table_expression->sample_offset = std::make_shared<ASTSampleRatio>(*sample_offset_ratio);
     }
 
     return result_table_expression;
@@ -501,7 +471,7 @@ void addTableExpressionOrJoinIntoTablesInSelectQuery(
         {
             auto table_expression_ast = convertIntoTableExpressionAST(table_expression, convert_to_ast_options);
 
-            auto tables_in_select_query_element_ast = make_intrusive<ASTTablesInSelectQueryElement>();
+            auto tables_in_select_query_element_ast = std::make_shared<ASTTablesInSelectQueryElement>();
             tables_in_select_query_element_ast->children.push_back(std::move(table_expression_ast));
             tables_in_select_query_element_ast->table_expression = tables_in_select_query_element_ast->children.back();
 
@@ -615,15 +585,6 @@ QueryTreeNodes extractTableExpressions(const QueryTreeNodePtr & join_tree_node, 
 
         switch (node_type)
         {
-            case QueryTreeNodeType::IDENTIFIER:
-            {
-                /** An unresolved identifier can appear in a join tree if the query tree
-                  * was not fully resolved (e.g. a subquery inside an unresolved table function
-                  * argument). Treat it like a leaf table expression.
-                  */
-                result.push_back(std::move(node_to_process));
-                break;
-            }
             case QueryTreeNodeType::TABLE:
                 [[fallthrough]];
             case QueryTreeNodeType::TABLE_FUNCTION:
@@ -699,8 +660,6 @@ QueryTreeNodePtr extractLeftTableExpression(const QueryTreeNodePtr & join_tree_n
 
         switch (node_type)
         {
-            case QueryTreeNodeType::IDENTIFIER:
-                [[fallthrough]];
             case QueryTreeNodeType::TABLE:
                 [[fallthrough]];
             case QueryTreeNodeType::QUERY:
@@ -1342,7 +1301,7 @@ Field getFieldFromColumnForASTLiteralImpl(const ColumnPtr & column, size_t row, 
 
             const auto & shared_variant = dynamic_column.getSharedVariant();
             auto value_data = shared_variant.getDataAt(variant_column.offsetAt(row));
-            ReadBufferFromMemory buf(value_data);
+            ReadBufferFromMemory buf(value_data.data, value_data.size);
             auto type = decodeDataType(buf);
             auto tmp_column = type->createColumn();
             tmp_column->reserve(1);
@@ -1370,9 +1329,9 @@ Field getFieldFromColumnForASTLiteralImpl(const ColumnPtr & column, size_t row, 
             FormatSettings format_settings;
             for (size_t i = start; i != end; ++i)
             {
-                String path{shared_paths->getDataAt(i)};
+                String path = shared_paths->getDataAt(i).toString();
                 auto value_data = shared_values->getDataAt(i);
-                ReadBufferFromMemory buf(value_data);
+                ReadBufferFromMemory buf(value_data.data, value_data.size);
                 auto tmp_column = dynamic_type->createColumn();
                 tmp_column->reserve(1);
                 dynamic_serialization->deserializeBinary(*tmp_column, buf, format_settings);
@@ -1391,71 +1350,6 @@ Field getFieldFromColumnForASTLiteralImpl(const ColumnPtr & column, size_t row, 
 Field getFieldFromColumnForASTLiteral(const ColumnPtr & column, size_t row, const DataTypePtr & data_type)
 {
     return getFieldFromColumnForASTLiteralImpl(column, row, data_type, false);
-}
-
-/// Verify that a subsequent reference to a MATERIALIZED CTE produced the same projection
-/// types as the storage that was created from the first reference.
-///
-/// Each reference to a MATERIALIZED CTE clones the body subquery and re-resolves it in the
-/// scope of that reference. Normally all clones must produce identical projection types
-/// (otherwise the single shared storage cannot satisfy all readers). Type drift across
-/// clones is possible when the body resolves identifiers from outer scope that take
-/// different values per call site (for example, aliases from the calling subquery's
-/// projection are inlined as different constants).
-///
-/// Without this check the planner would create the storage with one set of column types
-/// but feed it data with another set, leading to a `Bad cast` `LOGICAL_ERROR` at read time
-/// inside `MemorySource::fillPhysicalColumns`. Detecting the mismatch here turns the
-/// silent corruption into a clear analysis-time error.
-bool verifyMaterializedCTESubqueryMatchesStorage(
-    const QueryTreeNodePtr & subquery,
-    const StoragePtr & storage,
-    const ContextPtr & context,
-    const std::string & cte_name,
-    const QueryTreeNodePtr & scope_node,
-    bool throw_on_mismatch)
-{
-    const NamesAndTypes & projection_columns = subquery->as<QueryNode>()
-        ? subquery->as<QueryNode>()->getProjectionColumns()
-        : subquery->as<UnionNode>()->computeProjectionColumns();
-
-    auto storage_metadata = storage->getInMemoryMetadataPtr(context, /*throw_on_invalid=*/false);
-    const NamesAndTypesList storage_columns = storage_metadata->getColumns().getOrdinary();
-
-    if (projection_columns.size() != storage_columns.size())
-    {
-        if (!throw_on_mismatch)
-            return false;
-
-        throw Exception(ErrorCodes::TYPE_MISMATCH,
-            "Materialized CTE '{}' has inconsistent projection across references: storage has {} columns, "
-            "but this reference resolved to {}. In scope {}",
-            cte_name, storage_columns.size(), projection_columns.size(),
-            scope_node->formatASTForErrorMessage());
-    }
-
-    auto storage_it = storage_columns.begin();
-    for (size_t i = 0; i < projection_columns.size(); ++i, ++storage_it)
-    {
-        if (!projection_columns[i].type->equals(*storage_it->type))
-        {
-            if (!throw_on_mismatch)
-                return false;
-
-            throw Exception(ErrorCodes::TYPE_MISMATCH,
-                "Materialized CTE '{}' has inconsistent column types across references: column '{}' has type {} in storage "
-                "but this reference resolved to type {}. This usually means the CTE body references identifiers "
-                "from outer scope (e.g. aliases from the calling subquery) that take different values per call site. "
-                "Materialized CTEs cannot have such dependencies. In scope {}",
-                cte_name,
-                storage_it->name,
-                storage_it->type->getName(),
-                projection_columns[i].type->getName(),
-                scope_node->formatASTForErrorMessage());
-        }
-    }
-
-    return true;
 }
 
 }

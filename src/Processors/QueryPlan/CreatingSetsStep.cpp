@@ -1,7 +1,5 @@
 #include <Processors/QueryPlan/CreatingSetsStep.h>
-#include <Processors/QueryPlan/MaterializingCTEStep.h>
 #include <Processors/QueryPlan/QueryPlan.h>
-#include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Processors/Transforms/CreatingSetsTransform.h>
@@ -44,10 +42,12 @@ static ITransformingStep::Traits getTraits()
 CreatingSetStep::CreatingSetStep(
     const SharedHeader & input_header_,
     SetAndKeyPtr set_and_key_,
+    StoragePtr external_table_,
     SizeLimits network_transfer_limits_,
     PreparedSetsCachePtr prepared_sets_cache_)
     : ITransformingStep(input_header_, std::make_shared<const Block>(Block{}), getTraits())
     , set_and_key(std::move(set_and_key_))
+    , external_table(std::move(external_table_))
     , network_transfer_limits(std::move(network_transfer_limits_))
     , prepared_sets_cache(std::move(prepared_sets_cache_))
 {
@@ -58,6 +58,7 @@ void CreatingSetStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
     pipeline.addCreatingSetsTransform(
         getOutputHeader(),
         std::move(set_and_key),
+        std::move(external_table),
         network_transfer_limits,
         std::move(prepared_sets_cache));
 }
@@ -69,14 +70,13 @@ void CreatingSetStep::updateOutputHeader()
 
 void CreatingSetStep::describeActions(FormatSettings & settings) const
 {
-    if (!set_and_key->set)
-        return ;
-
-    const String & prefix = settings.detail_prefix;
+    String prefix(settings.offset, ' ');
 
     settings.out << prefix;
-    settings.out << "Set: ";
-    settings.out << (settings.pretty ? QueryPlanFormat::formatColumnPretty(set_and_key->key, settings.pretty_names) : set_and_key->key) << '\n';
+    if (set_and_key->set)
+        settings.out << "Set: ";
+
+    settings.out << set_and_key->key << '\n';
 }
 
 void CreatingSetStep::describeActions(JSONBuilder::JSONMap & map) const
@@ -216,32 +216,6 @@ std::vector<std::unique_ptr<QueryPlan>> DelayedCreatingSetsStep::makePlansForSet
         auto plan = future_set->build(optimization_settings.network_transfer_limits, optimization_settings.prepared_sets_cache);
         if (!plan)
             continue;
-
-        /// The set's plan was built by the Planner under
-        /// `forceMaterializeCTE`, which plants a safety-net
-        /// `DelayedMaterializingCTEsStep` per dependency level on the
-        /// source plan so that `buildSetInplace` / `buildOrderedSetInplace`
-        /// can materialize the referenced CTEs synchronously if that path
-        /// fires first. Here we are attaching the plan for *runtime* set
-        /// construction; for the runtime path, we want the outer plan's
-        /// `MaterializingCTEsStep` to be the single canonical writer site
-        /// so its `DelayedPortsProcessor` lazily gates every reader,
-        /// including readers that sit on the "main" (always-eventually-pulled)
-        /// side of an inner `CreatingSets` gate. The outer plan can only
-        /// win that role if no surviving `DelayedMaterializingCTEsStep`
-        /// inside this sub-plan claims `is_materialization_planned` first
-        /// via the recursive `plan->optimize(...)` below — that includes
-        /// per-branch safety-nets planted by `buildPlanForQueryNode` below
-        /// each `UnionStep` / `IntersectOrExceptStep` branch, which sit
-        /// *below* the union-level safety-net.
-        ///
-        /// So strip every `DelayedMaterializingCTEsStep` in this sub-plan
-        /// tree, not just the top contiguous chain. Nested
-        /// `DelayedCreatingSetsStep` source plans (held in
-        /// `subqueries`, not as children of any node in this tree) are
-        /// untouched — they keep their safety-nets for their own
-        /// `buildSetInplace` / `buildOrderedSetInplace` consumers.
-        removeAllDelayedMaterializingCTEsStep(*plan);
 
         plan->optimize(optimization_settings);
         plans.emplace_back(std::move(plan));

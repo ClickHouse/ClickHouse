@@ -6,7 +6,6 @@
 #include <Databases/DatabaseReplicated.h>
 #include <Interpreters/ReplicatedDatabaseQueryStatusSource.h>
 #include <Interpreters/Context.h>
-#include <Common/FailPoint.h>
 
 namespace DB
 {
@@ -20,56 +19,21 @@ namespace ErrorCodes
 extern const int TIMEOUT_EXCEEDED;
 extern const int LOGICAL_ERROR;
 }
-namespace FailPoints
-{
-extern const char replicated_database_status_finished_node_missing[];
-}
 
 ReplicatedDatabaseQueryStatusSource::ReplicatedDatabaseQueryStatusSource(
-    const String & zookeeper_name_,
-    const String & zk_node_path,
-    const String & zk_replicas_path,
-    ContextPtr context_,
-    const Strings & hosts_to_wait,
-    DDLGuardPtr && database_guard_)
+    const String & zk_node_path, const String & zk_replicas_path, ContextPtr context_, const Strings & hosts_to_wait, DDLGuardPtr && database_guard_)
     : DistributedQueryStatusSource(
-        zookeeper_name_,
-        zk_node_path,
-        zk_replicas_path,
-        std::make_shared<const Block>(getSampleBlock()),
-        context_,
-        hosts_to_wait,
-        "ReplicatedDatabaseQueryStatusSource")
+          zk_node_path, zk_replicas_path, std::make_shared<const Block>(getSampleBlock()), context_, hosts_to_wait, "ReplicatedDatabaseQueryStatusSource")
     , database_guard(std::move(database_guard_))
 {
 }
 
 ExecutionStatus ReplicatedDatabaseQueryStatusSource::checkStatus([[maybe_unused]] const String & host_id)
 {
-    /// A present finished/<host_id> for a Replicated database always holds status 0; an absent one is the benign
-    /// cleaner/retry race, not a remote error. This is a debug/sanitizer-only cross-check.
+    /// Replicated database retries in case of error, it should not write error status.
 #ifdef DEBUG_OR_SANITIZER_BUILD
     fs::path status_path = fs::path(node_path) / "finished" / host_id;
-    bool node_exists = true;
-    ExecutionStatus status = getExecutionStatus(status_path, &node_exists);
-    /// Simulate the absent-node read (tryGet false -> node_exists false and the getExecutionStatus sentinel).
-    fiu_do_on(FailPoints::replicated_database_status_finished_node_missing,
-    {
-        node_exists = false;
-        status = ExecutionStatus(-1, "Cannot obtain error message");
-    });
-    /// Only the absent-node case is the benign race, so report success like the non-debug branch for it. A present
-    /// node holds a real deserialized status (positive code), or the (-1) sentinel when its payload is corrupt
-    /// (tryDeserializeText is atomic, so the sentinel survives) which the cross-check must still surface.
-    if (!node_exists)
-    {
-        LOG_DEBUG(log, "finished node {} is absent (benign cleaner/retry race), reporting success", status_path.string());
-        return ExecutionStatus{0};
-    }
-    if (status.code < 0)
-        LOG_WARNING(log, "finished node {} is present but its status payload could not be deserialized, "
-                    "surfacing it via the cross-check", status_path.string());
-    return status;
+    return getExecutionStatus(status_path);
 #else
     return ExecutionStatus{0};
 #endif
@@ -164,7 +128,7 @@ Chunk ReplicatedDatabaseQueryStatusSource::stopWaitingOfflineHosts()
 
 void ReplicatedDatabaseQueryStatusSource::handleNonZeroStatusCode(const ExecutionStatus & status, const String & host_id)
 {
-    chassert(status.code != 0);
+    assert(status.code != 0);
 
     if (!first_exception && context->getSettingsRef()[Setting::distributed_ddl_output_mode] != DistributedDDLOutputMode::NEVER_THROW)
     {

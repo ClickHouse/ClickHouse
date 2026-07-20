@@ -27,6 +27,6 @@ system flush logs query_log;
 -- lower() to pass through clickhouse-test "exception" check
 select replaceAll(query, '\n', '\\n'), lower(type::String), errorCodeToName(exception_code)
     from system.query_log
-    where event_date >= yesterday() AND event_time >= now() - 600 AND current_database = currentDatabase()
+    where current_database = currentDatabase()
     order by event_time_microseconds
     format CSV;

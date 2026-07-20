@@ -11,9 +11,6 @@ namespace DB
 class IMergeTreeReader;
 using MergeTreeReaderPtr = std::unique_ptr<IMergeTreeReader>;
 
-class RuntimeDataflowStatisticsCacheUpdater;
-using RuntimeDataflowStatisticsCacheUpdaterPtr = std::shared_ptr<RuntimeDataflowStatisticsCacheUpdater>;
-
 /// A class which is responsible for creating read tasks
 /// which are later taken by readers via getTask method.
 /// Does prefetching for the read tasks it creates.
@@ -24,17 +21,14 @@ public:
         RangesInDataParts && parts_,
         MutationsSnapshotPtr mutations_snapshot_,
         VirtualFields shared_virtual_fields_,
-        const IndexReadTasks & index_read_tasks_,
         const StorageSnapshotPtr & storage_snapshot_,
-        const FilterDAGInfoPtr & row_level_filter_,
         const PrewhereInfoPtr & prewhere_info_,
         const ExpressionActionsSettings & actions_settings_,
         const MergeTreeReaderSettings & reader_settings_,
         const Names & column_names_,
         const PoolSettings & settings_,
         const MergeTreeReadTask::BlockSizeParams & params_,
-        const ContextPtr & context_,
-        RuntimeDataflowStatisticsCacheUpdaterPtr updater_);
+        const ContextPtr & context_);
 
     String getName() const override { return "PrefetchedReadPool"; }
     bool preservesOrderOfRanges() const override { return false; }
@@ -122,8 +116,6 @@ private:
 
     static std::string dumpTasks(const TasksPerThread & tasks);
 
-    RuntimeDataflowStatisticsCacheUpdaterPtr updater;
-
     mutable std::mutex mutex;
     ThreadPool & prefetch_threadpool;
 
@@ -141,14 +133,17 @@ private:
         explicit PrefetchIncrement(std::shared_ptr<AsyncReadCounters> counters_)
             : counters(counters_)
         {
-            counters->total_prefetch_tasks.fetch_add(1, std::memory_order_relaxed);
-            AsyncReadCounters::incrementAndUpdateMax(
-                counters->current_parallel_prefetch_tasks, counters->max_parallel_prefetch_tasks);
+            std::lock_guard lock(counters->mutex);
+            ++counters->total_prefetch_tasks;
+            if (++counters->current_parallel_prefetch_tasks > counters->max_parallel_prefetch_tasks)
+                counters->max_parallel_prefetch_tasks = counters->current_parallel_prefetch_tasks;
+
         }
 
         ~PrefetchIncrement()
         {
-            counters->current_parallel_prefetch_tasks.fetch_sub(1, std::memory_order_relaxed);
+            std::lock_guard lock(counters->mutex);
+            --counters->current_parallel_prefetch_tasks;
         }
 
         std::shared_ptr<AsyncReadCounters> counters;
