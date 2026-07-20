@@ -1582,7 +1582,7 @@ FROM (
         /// back to parsing the scale out of the type name, skipping the same leading wrappers as `base`.
         coalesce(datetime_precision,
                  toUInt64OrNull(extract(type, '^(?:Nullable\(|LowCardinality\(|Array\()*DateTime64\(([0-9]+)')),
-                 if(base = 'DateTime', 0, NULL)) AS dt_precision
+                 if (base = 'DateTime', 0, NULL)) AS dt_precision
     FROM system.columns
     /// The data path streams a table with `SELECT * FROM <table>` (see `processCopyQuery`), which omits
     /// `MATERIALIZED` / `ALIAS` / `EPHEMERAL` columns by default. Advertise exactly that column set here, so
