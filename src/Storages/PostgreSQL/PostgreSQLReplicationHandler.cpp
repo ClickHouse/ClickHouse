@@ -264,9 +264,34 @@ namespace
         }
         return slot_name;
     }
+
+    /// The canonical form of the settings through which a coordinated replica derives the ClickHouse names
+    /// of the shared nested tables (and the names of the shared PostgreSQL slot and publication) from the
+    /// shared publication. Stored at <keeper_path>/naming by the first replica and checked by every joining
+    /// one (see `ensureCoordinatedNamingCompatible`): replicas that disagree on any of these would build
+    /// disjoint replicated nested trees - or even separate slots/publications - on the same keeper path.
+    /// The nested table engine is included because mixing Replicated and Shared nested engines on one
+    /// shared tree is equally incoherent.
+    String coordinatedNamingFingerprint(const MaterializedPostgreSQLSettings & settings)
+    {
+        const String schema = settings[MaterializedPostgreSQLSetting::materialized_postgresql_schema];
+        const String schema_list = settings[MaterializedPostgreSQLSetting::materialized_postgresql_schema_list];
+        const bool schema_as_a_part_of_table_name
+            = !schema_list.empty() || settings[MaterializedPostgreSQLSetting::materialized_postgresql_tables_list_with_schema];
+        return fmt::format(
+            "table_engine: {}\nschema: {}\nschema_list: {}\nschema_as_a_part_of_table_name: {}\n",
+            settings[MaterializedPostgreSQLSetting::materialized_postgresql_table_engine].value,
+            schema,
+            schema_list,
+            schema_as_a_part_of_table_name);
+    }
 }
 
-void validateMaterializedPostgreSQLCoordinationSettings(const MaterializedPostgreSQLSettings & settings, ContextPtr context)
+void validateMaterializedPostgreSQLCoordinationSettings(
+    const MaterializedPostgreSQLSettings & settings,
+    ContextPtr context,
+    const String & clickhouse_database_name,
+    const UUID & clickhouse_uuid)
 {
     const String engine = settings[MaterializedPostgreSQLSetting::materialized_postgresql_table_engine];
     const bool is_plain = engine == "ReplacingMergeTree";
@@ -335,11 +360,29 @@ void validateMaterializedPostgreSQLCoordinationSettings(const MaterializedPostgr
     /// is identical on every replica) are held constant across both expansions, so they never trigger a false
     /// rejection.
     const String raw_keeper_path = settings[MaterializedPostgreSQLSetting::materialized_postgresql_keeper_path];
+    String expanded_keeper_path;
     if (coordination_enabled)
     {
         const auto macros = context->getMacros();
-        /// A fixed, non-nil UUID so that a top-level {uuid} expands identically in both probes instead of throwing.
-        const UUID probe_uuid = parse<UUID>("00000000-0000-0000-0000-000000000001");
+
+        /// First expand both coordination settings strictly, exactly as the replication handler's constructor
+        /// will (same macros, same database name and UUID, no table name): a misspelled or unsupported macro
+        /// throws here, at CREATE time. Without this pass an invalid macro would only be caught later, in the
+        /// background startup task that constructs the handler, leaving a mounted database stuck retrying
+        /// instead of failing synchronously - exactly what this validator exists to prevent.
+        {
+            Macros::MacroExpansionInfo info;
+            info.table_id.database_name = clickhouse_database_name;
+            info.table_id.uuid = clickhouse_uuid;
+            expanded_keeper_path = macros->expand(raw_keeper_path, info);
+        }
+        {
+            const String raw_replica_name = settings[MaterializedPostgreSQLSetting::materialized_postgresql_replica_name];
+            Macros::MacroExpansionInfo info;
+            info.table_id.database_name = clickhouse_database_name;
+            info.table_id.uuid = clickhouse_uuid;
+            macros->expand(raw_replica_name, info);
+        }
 
         auto expand_probe = [&](const String & per_replica_value) -> String
         {
@@ -348,11 +391,12 @@ void validateMaterializedPostgreSQLCoordinationSettings(const MaterializedPostgr
             macro_map["server_uuid"] = per_replica_value;
             Macros probing_macros(macro_map);
 
+            /// The strict pass above has already rejected unknown macros, so ignoring them here only
+            /// keeps the probe itself from ever throwing.
             Macros::MacroExpansionInfo info;
             info.ignore_unknown = true;
-            info.table_id.database_name = "__mpg_probe_database__";
-            info.table_id.uuid = probe_uuid;
-            info.shard = "__mpg_probe_shard__";
+            info.table_id.database_name = clickhouse_database_name;
+            info.table_id.uuid = clickhouse_uuid;
             return probing_macros.expand(raw_keeper_path, info);
         };
 
@@ -404,6 +448,32 @@ void validateMaterializedPostgreSQLCoordinationSettings(const MaterializedPostgr
             "nested tables on the same Keeper path, so they must agree on the exact column projection, but the "
             "per-table column list is taken from each replica's local setting rather than from the shared "
             "publication. List the tables without column filters so every replica builds the identical shared schema");
+
+    /// If the coordinated setup already exists in Keeper, check this replica's naming-affecting settings
+    /// against the ones it published (see `ensureCoordinatedNamingCompatible` for the startup-time
+    /// enforcement and the reasoning), so a replica that would derive different ClickHouse table names
+    /// from the shared publication is rejected synchronously at CREATE time rather than from the
+    /// background startup task. Keeper errors propagate and fail the CREATE: coordination cannot work
+    /// without Keeper anyway, and joining an existing setup on an unverified guess must not happen.
+    if (coordination_enabled)
+    {
+        const String local_fingerprint = coordinatedNamingFingerprint(settings);
+        String published_fingerprint;
+        if (context->getZooKeeper()->tryGet(expanded_keeper_path + "/naming", published_fingerprint)
+            && published_fingerprint != local_fingerprint)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "A coordinated MaterializedPostgreSQL setup already exists at Keeper path '{}', and its "
+                "naming-affecting settings differ from the ones of this CREATE query. All replicas of one "
+                "coordinated setup must agree on materialized_postgresql_table_engine, "
+                "materialized_postgresql_schema, materialized_postgresql_schema_list and "
+                "materialized_postgresql_tables_list_with_schema: they determine how the ClickHouse names of "
+                "the shared nested tables (and the names of the shared replication slot and publication) are "
+                "derived from the shared publication, so a disagreeing replica would build a disjoint "
+                "replicated tree that never receives the other replicas' data. Existing setup:\n{}\nThis "
+                "query:\n{}\n(If the existing setup was dropped incompletely, remove the leftover Keeper "
+                "path manually.)",
+                expanded_keeper_path, published_fingerprint, local_fingerprint);
+    }
 }
 
 
@@ -481,6 +551,8 @@ PostgreSQLReplicationHandler::PostgreSQLReplicationHandler(
             info.table_id = macro_table_id;
             coordination_replica_name = macros->expand(raw_replica_name, info);
         }
+
+        coordination_naming_fingerprint = coordinatedNamingFingerprint(replication_settings);
 
         LOG_INFO(log, "Replica coordination enabled: keeper path '{}', replica name '{}', nested table engine '{}'",
                  coordination_keeper_path, coordination_replica_name, nested_engine_name);
@@ -1380,6 +1452,7 @@ void PostgreSQLReplicationHandler::registerReplicaThenEnsureNestedTables()
     /// solely from <keeper_path>/replicas) could delete the shared slot/publication/marker while this partial
     /// copy still exists. In that case keep the replica registered and let the idempotent startup-task retry
     /// finish creating the remaining tables (it skips the ones that already exist).
+    ensureCoordinatedNamingCompatible();
     registerReplicaInKeeper();
     try
     {
@@ -1408,6 +1481,49 @@ void PostgreSQLReplicationHandler::registerReplicaThenEnsureNestedTables()
         }
         throw;
     }
+}
+
+
+void PostgreSQLReplicationHandler::ensureCoordinatedNamingCompatible()
+{
+    /// The first replica of a coordinated setup publishes its naming-affecting settings at
+    /// <keeper_path>/naming; every replica that joins later must carry the identical settings, because the
+    /// ClickHouse names of the shared nested tables (which feed the shared Keeper paths of their replicated
+    /// trees), as well as the names of the shared PostgreSQL slot and publication, are derived from them.
+    /// A replica that disagrees would adopt the same publication yet build a disjoint replicated tree: it
+    /// would never receive the other replicas' data through ClickHouse replication, but on failover it
+    /// would still resume the shared slot from confirmed_flush_lsn, silently losing all pre-failover rows.
+    /// Runs BEFORE this replica registers itself, so the check cannot be satisfied by its own state.
+    ///
+    /// This is enforced fail-close: on a mismatch the replica refuses to join (the same check also runs
+    /// synchronously at CREATE time in validateMaterializedPostgreSQLCoordinationSettings when the setup
+    /// already exists). A leftover /naming node from an incompletely dropped setup keeps rejecting
+    /// replicas with different settings; overwriting it automatically would race a concurrent fresh
+    /// CREATE on the same path, so it deliberately requires manual removal instead.
+    auto component_guard = Coordination::setCurrentComponent("PostgreSQLReplicationHandler::ensureCoordinatedNamingCompatible");
+
+    auto zookeeper = getContext()->getZooKeeper();
+    const String naming_path = coordination_keeper_path + "/naming";
+    zookeeper->createAncestors(naming_path);
+    auto code = zookeeper->tryCreate(naming_path, coordination_naming_fingerprint, zkutil::CreateMode::Persistent);
+    if (code == Coordination::Error::ZOK)
+        return;
+    if (code != Coordination::Error::ZNODEEXISTS)
+        throw zkutil::KeeperException::fromPath(code, naming_path);
+
+    const String published_fingerprint = zookeeper->get(naming_path);
+    if (published_fingerprint != coordination_naming_fingerprint)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "The coordinated MaterializedPostgreSQL setup at Keeper path '{}' was created with "
+            "naming-affecting settings that differ from this replica's. All replicas of one coordinated "
+            "setup must agree on materialized_postgresql_table_engine, materialized_postgresql_schema, "
+            "materialized_postgresql_schema_list and materialized_postgresql_tables_list_with_schema: they "
+            "determine how the ClickHouse names of the shared nested tables (and the names of the shared "
+            "replication slot and publication) are derived from the shared publication, so a disagreeing "
+            "replica would build a disjoint replicated tree that never receives the other replicas' data. "
+            "Existing setup:\n{}\nThis replica:\n{}\n(If the existing setup was dropped incompletely, "
+            "remove the leftover Keeper path manually.)",
+            coordination_keeper_path, published_fingerprint, coordination_naming_fingerprint);
 }
 
 
@@ -1597,6 +1713,11 @@ void PostgreSQLReplicationHandler::removeCoordinationNodes()
     zookeeper->tryRemove(coordination_keeper_path + "/leader");
     zookeeper->tryRemoveRecursive(coordination_keeper_path + "/replicas");
     zookeeper->tryRemove(coordination_keeper_path + "/snapshot_completed");
+    /// The naming fingerprint goes AFTER the marker and the replicas: if this teardown dies partway, the
+    /// surviving state must keep its fingerprint, or a replica with different naming settings could adopt
+    /// the leftover publication/marker unchecked. The safe failure direction is a leftover /naming node,
+    /// which merely rejects a recreate with different settings until removed manually.
+    zookeeper->tryRemove(coordination_keeper_path + "/naming");
     /// The nested Replicated tables remove their own trees under <keeper_path>/tables when they are
     /// dropped; only clean up the (then empty) parents. For the single-table engine the nested table is
     /// dropped after this handler shuts down, so these removals may legitimately fail as not-empty,

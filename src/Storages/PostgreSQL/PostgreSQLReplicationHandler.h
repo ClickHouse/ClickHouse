@@ -45,8 +45,17 @@ struct NestedTableEngineSpec
 /// single shared slot that coordination relies on). When coordination is enabled it also requires
 /// Keeper/ZooKeeper to be configured (`context`), because both the coordination nodes and the nested
 /// replicated tables need it; otherwise CREATE would succeed and the database would sit in a
-/// permanent background retry loop.
-void validateMaterializedPostgreSQLCoordinationSettings(const MaterializedPostgreSQLSettings & settings, ContextPtr context);
+/// permanent background retry loop. `clickhouse_database_name` and `clickhouse_uuid` identify the
+/// database (or single table) being created: the coordination macros are expanded with them, exactly
+/// as the replication handler will expand them later, so an invalid macro fails at CREATE time.
+/// When the coordinated setup already exists in Keeper, the naming-affecting settings of this replica
+/// are also checked against it, so a replica that would derive different ClickHouse table names from
+/// the shared publication is rejected synchronously.
+void validateMaterializedPostgreSQLCoordinationSettings(
+    const MaterializedPostgreSQLSettings & settings,
+    ContextPtr context,
+    const String & clickhouse_database_name,
+    const UUID & clickhouse_uuid);
 
 class PostgreSQLReplicationHandler : WithContext
 {
@@ -188,6 +197,13 @@ private:
     /// registered (see the implementation for the reasoning). Both steps are idempotent.
     void registerReplicaThenEnsureNestedTables();
 
+    /// Publish this replica's naming-affecting settings at <keeper_path>/naming (first replica) or check
+    /// them against the already published ones (joining replica), throwing BAD_ARGUMENTS on a mismatch.
+    /// All coordinated replicas derive the ClickHouse names of the shared nested tables from the shared
+    /// publication through these settings, so replicas that disagree on them would build disjoint
+    /// replicated trees on the same keeper path. Idempotent.
+    void ensureCoordinatedNamingCompatible();
+
     /// Register this replica under <keeper_path>/replicas, so that dropping the engine on another
     /// replica knows the shared PostgreSQL objects (slot, publication) are still in use. Idempotent.
     void registerReplicaInKeeper();
@@ -314,6 +330,9 @@ private:
     bool coordination_enabled = false;
     /// Fully macro-expanded values (computed once in the constructor).
     String coordination_keeper_path;
+    /// The naming-affecting settings of this replica, in the canonical form stored at <keeper_path>/naming
+    /// (computed once in the constructor; see `ensureCoordinatedNamingCompatible`).
+    String coordination_naming_fingerprint;
     String coordination_replica_name;
     /// Set by coordinatedTeardownBeforeDataDrop (the race-free pre-data last-replica decision) so that the
     /// post-data shutdownFinal does not re-decide when this replica already claimed the last-replica role and

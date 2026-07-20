@@ -1234,3 +1234,98 @@ def test_refused_drop_after_handler_shutdown_recovers_single_table_engine(starte
 
     assert len(pg_query("SELECT slot_name FROM pg_replication_slots")) == 0
     assert not publication_exists()
+
+
+def test_join_with_different_naming_settings_is_rejected(started_cluster):
+    # All coordinated replicas derive the ClickHouse names of the shared nested tables from the shared
+    # publication through their local naming settings (materialized_postgresql_tables_list_with_schema,
+    # materialized_postgresql_schema, materialized_postgresql_schema_list). A joining replica that
+    # disagrees on them would adopt the same publication and slot but build a differently named -
+    # disjoint - replicated tree: it would never receive the leader's data through ClickHouse
+    # replication, yet on failover it would still resume the shared slot from confirmed_flush_lsn,
+    # silently losing every pre-failover row. Such a join must be rejected synchronously at CREATE time.
+    # A dedicated keeper path: this test publishes a schema-qualified naming fingerprint there, which
+    # must not interact with the other tests sharing KEEPER_PATH.
+    naming_keeper_settings = [
+        "materialized_postgresql_table_engine = 'ReplicatedReplacingMergeTree'",
+        "materialized_postgresql_keeper_path = '/clickhouse/mat_pg/{shard}/naming_test'",
+        "materialized_postgresql_replica_name = '{replica}'",
+        "materialized_postgresql_tables_list = 'naming_schema.naming_table'",
+    ]
+    naming_settings = naming_keeper_settings + [
+        "materialized_postgresql_tables_list_with_schema = 1"
+    ]
+
+    pg_manager.create_postgres_schema("naming_schema")
+    try:
+        pg_query(
+            'CREATE TABLE "naming_schema"."naming_table" '
+            "(key Integer NOT NULL, value Integer, PRIMARY KEY(key))"
+        )
+        pg_query(
+            'INSERT INTO "naming_schema"."naming_table" SELECT i, i FROM generate_series(0, 99) AS i'
+        )
+
+        # The first replica names the nested table `naming_schema.naming_table`.
+        pg_manager.create_materialized_db(
+            ip=cluster.postgres_ip,
+            port=cluster.postgres_port,
+            settings=naming_settings,
+        )
+        check_tables_are_synchronized(
+            instance, "naming_table", schema_name="naming_schema"
+        )
+
+        # The joining replica omits materialized_postgresql_tables_list_with_schema, so from the very
+        # same publication it would derive `naming_table` instead of `naming_schema.naming_table`.
+        error = instance2.query_and_get_error(
+            f"CREATE DATABASE test_database "
+            f"ENGINE = MaterializedPostgreSQL("
+            f"'{cluster.postgres_ip}:{cluster.postgres_port}', 'postgres_database', 'postgres', '{pg_pass}') "
+            f"SETTINGS {', '.join(naming_keeper_settings)}"
+        )
+        assert "naming-affecting settings" in error
+        assert "materialized_postgresql_tables_list_with_schema" in error
+        assert "test_database" not in instance2.query("SHOW DATABASES").split()
+
+        # With the identical naming settings the join converges on the same table names.
+        pg_manager2.create_materialized_db(
+            ip=cluster.postgres_ip,
+            port=cluster.postgres_port,
+            settings=naming_settings,
+        )
+        check_tables_are_synchronized(
+            instance2, "naming_table", schema_name="naming_schema"
+        )
+    finally:
+        pg_manager.drop_materialized_db()
+        pg_manager2.drop_materialized_db()
+        pg_query("DROP SCHEMA IF EXISTS naming_schema CASCADE")
+
+
+def test_bad_macro_in_coordination_settings_is_rejected_at_create(started_cluster):
+    # A misspelled or unsupported macro in materialized_postgresql_keeper_path or
+    # materialized_postgresql_replica_name must fail the CREATE synchronously. Without CREATE-time
+    # expansion it would only surface in the background startup task (which constructs the replication
+    # handler), leaving a mounted database stuck retrying forever.
+    base = (
+        f"CREATE DATABASE test_bad_macro "
+        f"ENGINE = MaterializedPostgreSQL("
+        f"'{cluster.postgres_ip}:{cluster.postgres_port}', 'postgres_database', 'postgres', '{pg_pass}') "
+        f"SETTINGS materialized_postgresql_table_engine = 'ReplicatedReplacingMergeTree', "
+    )
+
+    error = instance.query_and_get_error(
+        base
+        + "materialized_postgresql_keeper_path = '/clickhouse/mat_pg/{no_such_macro}/test'"
+    )
+    assert "no_such_macro" in error
+
+    error = instance.query_and_get_error(
+        base
+        + f"materialized_postgresql_keeper_path = '{KEEPER_PATH}', "
+        + "materialized_postgresql_replica_name = '{no_such_macro}'"
+    )
+    assert "no_such_macro" in error
+
+    assert "test_bad_macro" not in instance.query("SHOW DATABASES").split()
