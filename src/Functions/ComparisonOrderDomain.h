@@ -5,9 +5,9 @@
 namespace DB
 {
 
-/** Identifies a shared ordering used by comparison functions.
+/** Identifies a shared ordering used by comparison functions
   * Equal valid domains guarantee that comparisons between any member types use the same
-  * counterpart-independent ordering and do not require a partial or throwing conversion.
+  * counterpart-independent ordering and do not require a partial or throwing conversion
   */
 struct ComparisonOrderDomain
 {
@@ -21,7 +21,7 @@ struct ComparisonOrderDomain
     };
 
     Kind kind = Kind::None;
-    /// Tick scale for `TimePoint`: `DateTime` uses scale 0 and `DateTime64(s)` uses scale `s`.
+    /// Tick scale for TimePoint (DateTime -> 0, DateTime64(s) -> s)
     UInt32 scale = 0;
 
     bool isValid() const
