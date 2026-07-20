@@ -42,7 +42,9 @@ SELECT id FROM t_map_kv WHERE startsWith(m['k2'], 'v') ORDER BY id;
 SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT id FROM t_map_kv WHERE mapContainsValue(m, 'bar')) WHERE explain LIKE '%Name: idx%';
 
 -- Value-only search also engages direct read (a text-index virtual column replaces the predicate).
-SELECT count() > 0 FROM (EXPLAIN actions = 1 SELECT id FROM t_map_kv WHERE mapContainsValue(m, 'bar')) WHERE explain LIKE '%__text_index_%';
+-- Pin query_plan_direct_read_from_text_index: the flaky check randomizes it, and with direct read
+-- off the __text_index_ virtual column is not emitted, so this plan-shape assertion is optional-opt sensitive.
+SELECT count() > 0 FROM (EXPLAIN actions = 1 SELECT id FROM t_map_kv WHERE mapContainsValue(m, 'bar') SETTINGS query_plan_direct_read_from_text_index = 1) WHERE explain LIKE '%__text_index_%';
 
 -- Key search: existence and key LIKE, resolved by the dictionary scan.
 SELECT id FROM t_map_kv WHERE mapContainsKey(m, 'foo') ORDER BY id;
