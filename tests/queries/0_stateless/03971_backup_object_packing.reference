@@ -25,3 +25,4 @@ RESTORED
 1	1
 BACKUP_CREATED
 Archive backup cannot contain packed objects
+not supported with deduplicate_files

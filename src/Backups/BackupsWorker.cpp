@@ -422,6 +422,11 @@ struct BackupsWorker::BackupStarter
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "experimental_backup_pack_format is not supported with experimental_lightweight_snapshot");
 
+        /// The plain path (deduplicate_files=0) doesn't build the dedup identity/data_file_index packing needs.
+        if (backup_settings.experimental_backup_pack_format && !backup_settings.deduplicate_files)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "experimental_backup_pack_format is not supported with deduplicate_files=0");
+
         if (!backup_settings.backup_uuid)
             backup_settings.backup_uuid = UUIDHelpers::generateV4();
 

@@ -117,4 +117,9 @@ ${CLICKHOUSE_CLIENT} --query "DROP TABLE t"
 ${CLICKHOUSE_CLIENT} --query "RESTORE TABLE t FROM Disk('backups', '${name}_9.zip')" 2>&1 \
     | grep -o "Archive backup cannot contain packed objects" | head -1
 
+# Case 10: packing is unsupported on the plain path (deduplicate_files=0), which doesn't build the dedup
+# identity packing needs -- reject rather than silently no-op.
+${CLICKHOUSE_CLIENT} --query "BACKUP TABLE t TO Disk('backups', '${name}_10') SETTINGS experimental_backup_pack_format=1, deduplicate_files=0" 2>&1 \
+    | grep -o "not supported with deduplicate_files" | head -1
+
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS t"
