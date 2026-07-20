@@ -1,5 +1,4 @@
 #include <Storages/System/StorageSystemFilesystemCache.h>
-#include <Storages/System/SystemTableSourceRegistry.h>
 
 #include <Columns/IColumn.h>
 #include <Columns/ColumnString.h>
@@ -19,16 +18,13 @@
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Disks/IDisk.h>
-#if ENABLE_DISTRIBUTED_CACHE
-#include <DistributedCache/DistributedCacheCommon.h>
-#endif
-#include <Interpreters/Context.h>
+
 
 namespace DB
 {
 namespace
 {
-class SystemFilesystemCacheSource final : public ISource, private WithContext
+class SystemFilesystemCacheSource : public ISource, private WithContext
 {
 public:
     SystemFilesystemCacheSource(
@@ -38,11 +34,7 @@ public:
         : ISource(header_)
         , WithContext(context_)
         , max_block_size(max_block_size_)
-#if ENABLE_DISTRIBUTED_CACHE
-        , origin(context_->isDistributedCacheServer() ? DistributedCache::getIntrospectionCacheUser() : FileCache::getCommonOrigin())
-#else
         , origin(FileCache::getCommonOrigin())
-#endif
     {
         auto caches_by_name = FileCacheFactory::instance().getAll();
         for (const auto & [cache_name, cache_data] : caches_by_name)
@@ -293,6 +285,3 @@ void StorageSystemFilesystemCache::readImpl(
 }
 
 }
-
-/// Register the source file of this system table for `system.documentation`.
-namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemFilesystemCache) }

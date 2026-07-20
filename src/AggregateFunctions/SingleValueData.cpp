@@ -1325,7 +1325,7 @@ void SingleValueDataString::write(WriteBuffer & buf, const ISerialization & /*se
 void SingleValueDataString::read(ReadBuffer & buf, const ISerialization & /*serialization*/, const DataTypePtr & /*type*/, Arena * arena)
 {
     /// For serialization we use signed Int32 (for historical reasons), -1 means "no value"
-    Int32 rhs_size_signed = 0;
+    Int32 rhs_size_signed;
     readBinaryLittleEndian(rhs_size_signed, buf);
 
     if (rhs_size_signed < 0)
@@ -1344,7 +1344,7 @@ void SingleValueDataString::read(ReadBuffer & buf, const ISerialization & /*seri
     }
 
     /// The strings are serialized as zero terminated.
-    char last_char = 0;
+    char last_char;
 
     UInt32 rhs_size = rhs_size_signed;
     if (rhs_size <= MAX_SMALL_STRING_SIZE + 1 && isSmall())
@@ -1476,7 +1476,7 @@ void SingleValueDataGeneric::write(WriteBuffer & buf, const ISerialization & ser
 
 void SingleValueDataGeneric::read(ReadBuffer & buf, const ISerialization & serialization, const DataTypePtr &, Arena *)
 {
-    bool is_not_null = false;
+    bool is_not_null;
     readBinary(is_not_null, buf);
 
     if (is_not_null)
@@ -1587,7 +1587,7 @@ void SingleValueDataGenericWithColumn::write(WriteBuffer & buf, const ISerializa
 
 void SingleValueDataGenericWithColumn::read(ReadBuffer & buf, const ISerialization & serialization, const DataTypePtr & type, Arena *)
 {
-    bool is_not_null = false;
+    bool is_not_null;
     readBinary(is_not_null, buf);
 
     if (is_not_null)

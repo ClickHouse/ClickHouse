@@ -142,7 +142,6 @@ void InterpreterCreateSettingsProfileQuery::updateSettingsProfileFromQuery(Setti
     updateSettingsProfileFromQueryImpl(SettingsProfile, query, {}, {}, {});
 }
 
-void registerInterpreterCreateSettingsProfileQuery(InterpreterFactory & factory);
 void registerInterpreterCreateSettingsProfileQuery(InterpreterFactory & factory)
 {
     auto create_fn = [] (const InterpreterFactory::Arguments & args)

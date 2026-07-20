@@ -21,7 +21,7 @@ namespace ErrorCodes
 namespace
 {
 
-class FunctionH3GetBaseCell final : public IFunction
+class FunctionH3GetBaseCell : public IFunction
 {
 public:
     static constexpr auto name = "h3GetBaseCell";

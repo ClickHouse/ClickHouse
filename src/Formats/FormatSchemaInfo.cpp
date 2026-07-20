@@ -18,7 +18,6 @@
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <boost/algorithm/hex.hpp>
 #include <Common/CurrentThread.h>
-#include <Common/ThreadStatus.h>
 #include <Common/Exception.h>
 #include <Common/Logger.h>
 #include <Common/OpenSSLHelpers.h>
@@ -355,7 +354,7 @@ String FormatSchemaInfo::generateSchemaFileName(const String & hashing_content, 
 
     String content_sample;
     content_sample.resize(content_sample_len * 2);
-    boost::algorithm::hex(hashing_content.begin(), hashing_content.begin() + content_sample_len, content_sample.data());
+    boost::algorithm::hex(content_sample.begin(), content_sample.begin() + content_sample_len, content_sample.data());
 
     if (file_extention.empty())
         return fmt::format("{}-{}", content_sample, content_hash_hex);

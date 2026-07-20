@@ -29,7 +29,7 @@ $CLICKHOUSE_LOCAL -q "
 SELECT id, ts, toTypeName(ts)
 FROM file('$DATA_DIR/ts=*/data.csv')
 ORDER BY id
-SETTINGS use_hive_partitioning = 1, session_timezone = 'UTC';
+SETTINGS use_hive_partitioning = 1, cast_string_to_date_time_mode = 'best_effort', session_timezone = 'UTC';
 "
 
 # Schema-declared type case: `ts` is declared as DateTime64 in UTC.
@@ -37,7 +37,7 @@ $CLICKHOUSE_LOCAL -q "
 SELECT id, ts, toTypeName(ts)
 FROM file('$DATA_DIR/ts=*/data.csv', 'CSV', 'id UInt64, ts DateTime64(0, ''UTC'')')
 ORDER BY id
-SETTINGS use_hive_partitioning = 1, session_timezone = 'UTC';
+SETTINGS use_hive_partitioning = 1, cast_string_to_date_time_mode = 'best_effort', session_timezone = 'UTC';
 "
 
 # Same as above but with cast_string_to_date_time_mode = 'best_effort' set explicitly.
@@ -56,7 +56,7 @@ $CLICKHOUSE_LOCAL -q "
 SELECT id, ts
 FROM file('$DATA_DIR/ts=*/data.csv', 'CSV', 'id UInt64, ts DateTime64(0, ''UTC'')')
 ORDER BY id
-SETTINGS use_hive_partitioning = 1, date_time_input_format = 'best_effort', session_timezone = 'UTC';
+SETTINGS use_hive_partitioning = 1, date_time_input_format = 'best_effort', cast_string_to_date_time_mode = 'best_effort', session_timezone = 'UTC';
 "
 
 # Virtual column case: the schema declares only `id`, so `ts` is materialized as
@@ -66,7 +66,7 @@ $CLICKHOUSE_LOCAL -q "
 SELECT id, ts
 FROM file('$DATA_DIR/ts=*/data.csv', 'CSV', 'id UInt64')
 ORDER BY id
-SETTINGS use_hive_partitioning = 1, session_timezone = 'UTC';
+SETTINGS use_hive_partitioning = 1, cast_string_to_date_time_mode = 'best_effort', session_timezone = 'UTC';
 "
 
 # Virtual column case with a path filter on the virtual column. This exercises
@@ -76,7 +76,7 @@ SELECT id
 FROM file('$DATA_DIR/ts=*/data.csv', 'CSV', 'id UInt64')
 WHERE ts = toDateTime('2026-05-07 22:15:15', 'UTC')
 ORDER BY id
-SETTINGS use_hive_partitioning = 1, session_timezone = 'UTC';
+SETTINGS use_hive_partitioning = 1, cast_string_to_date_time_mode = 'best_effort', session_timezone = 'UTC';
 "
 
 # If the user explicitly opts into the strict parser, parsing of timezone

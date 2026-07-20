@@ -1,5 +1,7 @@
 #pragma once
 
+#if defined(OS_LINUX)
+
 #include <Client/ClientBase.h>
 #include <Client/LocalConnection.h>
 
@@ -62,3 +64,5 @@ private:
 };
 
 }
+
+#endif
