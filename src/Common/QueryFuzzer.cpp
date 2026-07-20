@@ -2091,7 +2091,7 @@ void QueryFuzzer::fuzzCreateQuery(ASTCreateQuery & create)
         original_table_name_to_fuzzed[original_name].insert(new_name);
 }
 
-static const Strings stat_types = {"tdigest", "countmin", "minmax", "uniq", "nullcount"};
+static const Strings stat_types = {"tdigest", "countmin", "minmax", "uniq", "uniq_v2", "nullcount"};
 
 void QueryFuzzer::fuzzCodecFunction(ASTFunction & codec_fn)
 {
@@ -7384,7 +7384,7 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
     }
     else if (auto * stats_decl = typeid_cast<ASTStatisticsDeclaration *>(ast.get()))
     {
-        /// Mutate statistic type names (tdigest / countmin / minmax / uniq) with low probability.
+        /// Mutate statistic type names with low probability.
         if (stats_decl->types)
             for (auto & type_ast : stats_decl->types->children)
                 if (auto * afn = type_ast->as<ASTFunction>(); afn && fuzz_rand() % 5 == 0)
