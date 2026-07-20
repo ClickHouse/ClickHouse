@@ -102,6 +102,14 @@ Take this implementation specificity into account when programming queries.
 
 `DISTINCT` works with [NULL](/sql-reference/syntax#null) as if `NULL` were a specific value, and `NULL==NULL`. In other words, in the `DISTINCT` results, different combinations with `NULL` occur only once. It differs from `NULL` processing in most other contexts.
 
+## DISTINCT in External Memory {#distinct-in-external-memory}
+
+`DISTINCT` can spill temporary data to the disk to restrict its memory usage, and by default it is allowed to do so once the memory usage of the query exceeds half of the available memory: the threshold is controlled by the [max_bytes_ratio_before_external_distinct](/operations/settings/settings#max_bytes_ratio_before_external_distinct) setting (`0.5` by default) as a ratio of the available memory. Additionally, the [max_bytes_before_external_distinct](/operations/settings/settings#max_bytes_before_external_distinct) setting can specify the threshold as an absolute amount of bytes (unset by default); if both settings are set, the smaller resulting threshold is used. To disable spilling completely, set both settings to `0`.
+
+When the threshold is exceeded, the distinct rows collected so far are sorted and written into a temporary file, and the rest of the data is processed the same way. After all data is read, the sorted files are merged and the remaining distinct rows are output. Rows stop streaming to the client as soon as the first spill happens: the remaining distinct rows are returned only after the merge. If a `LIMIT` is reached before the memory threshold, no spilling happens and the query still finishes early.
+
+`DISTINCT` in external memory requires all the `DISTINCT` columns to be comparable; for the few types that support only equality checks (e.g. `AggregateFunction`), `DISTINCT` is processed in memory. Values that are different in the binary representation but compare equal — such as `0.` and `-0.`, or `NaN` values with different payloads — are normally distinct values for `DISTINCT`, but once the data is spilled they may be deduplicated as a single value, same as for `DISTINCT` over sorted data (the `optimize_distinct_in_order` optimization).
+
 ## Alternatives {#alternatives}
 
 It is possible to obtain the same result by applying [GROUP BY](/sql-reference/statements/select/group-by) across the same set of values as specified as `SELECT` clause, without using any aggregate functions. But there are few differences from `GROUP BY` approach:
