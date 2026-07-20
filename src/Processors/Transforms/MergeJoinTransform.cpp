@@ -178,27 +178,27 @@ size_t ALWAYS_INLINE nextNotLess(FullMergeJoinCursor & cursor, const FullMergeJo
 {
     chassert(cursor.isValid() && other.isValid());
 
-    const size_t start_pos = cursor.getRow();
-    const IColumn & first_column = *cursor.sort_columns.front();
-
     /// A row whose first key column is strictly less than the other row's one is less regardless
     /// of the remaining key columns, so the whole run of such rows can be skipped with a single
-    /// compareTrackAt call. The fast path is taken only for fixed-and-contiguous columns
-    /// (ColumnVector, ColumnDecimal, ColumnFixedString) - exactly those devirtualize
-    /// compareTrackAt, for the rest it degrades to a row-by-row virtual compareAt loop.
+    /// compareTrackAt call. The fast path requires a devirtualized compareTrackAt (for other
+    /// columns it degrades to a row-by-row virtual compareAt loop, worse than nextDistinct).
     /// Rows with NULL in the first key column are ordered by the null map, not by the values
     /// of the nested column, so the track is not applicable when either current row is NULL.
-    Int64 track = 0;
+    if (!cursor.first_key_fast_track)
+        return nextDistinct(cursor);
+
+    const size_t start_pos = cursor.getRow();
     const auto * null_map = getNullMapData(cursor.null_maps.front());
     const auto * other_null_map = getNullMapData(other.null_maps.front());
-    bool any_null = (null_map && (*null_map)[start_pos]) || (other_null_map && (*other_null_map)[other.getRow()]);
-    if (!any_null && first_column.isFixedAndContiguous())
-        track = first_column.compareTrackAt(start_pos, other.getRow(), *other.sort_columns.front(), null_direction_hint);
+    if ((null_map && (*null_map)[start_pos]) || (other_null_map && (*other_null_map)[other.getRow()]))
+        return nextDistinct(cursor);
+
+    Int64 track = cursor.sort_columns.front()->compareTrackAt(start_pos, other.getRow(), *other.sort_columns.front(), null_direction_hint);
 
     chassert(track <= 0);
     if (track == 0)
     {
-        /// The first key columns are equal (or the fast path is not applicable):
+        /// The first key columns are equal - a later key column decided the order:
         /// skip the run of rows with all key columns equal.
         return nextDistinct(cursor);
     }
@@ -424,6 +424,8 @@ void FullMergeJoinCursor::setChunk(Chunk && chunk)
         asof_column = std::move(sort_columns.back());
         sort_columns.pop_back();
     }
+
+    first_key_fast_track = !sort_columns.empty() && sort_columns.front()->isFixedAndContiguous();
 }
 
 bool FullMergeJoinCursor::fullyCompleted() const

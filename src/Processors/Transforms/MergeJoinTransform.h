@@ -202,6 +202,8 @@ public:
     ColumnPtr asof_column = nullptr;
     size_t pos = 0;
     size_t rows = 0;
+    /// Whether the first sort column has a devirtualized compareTrackAt (fixed-and-contiguous columns only).
+    bool first_key_fast_track = false;
 
     bool empty() const { return rows == 0; }
     size_t getRow() const { return pos; }
