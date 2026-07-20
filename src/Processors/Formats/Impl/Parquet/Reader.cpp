@@ -1181,7 +1181,10 @@ static std::optional<HashSet<UInt64>> hashDictionaryValues(
     /// `estimated_value_set_bytes` must be an upper bound on the peak transient memory allocated below,
     /// so that once the reservation succeeds the value set is guaranteed to stay within budget while it
     /// is built. The `hashes` vector (allocated at exactly `count` capacity by `parquetTryHashColumn`, so
-    /// exactly `count * sizeof(UInt64)`) and the resulting `value_hashes` HashSet are always built. When
+    /// exactly `count * sizeof(UInt64)`) and the resulting `value_hashes` HashSet are always built; the
+    /// hashing itself allocates nothing on top - `parquetTryHashColumn` hashes string values in place
+    /// from the column's buffers rather than copying each into a `Field` scratch string, and every other
+    /// hashable type is stored inline in `Field`. When
     /// the dictionary is not already an `IColumn` (FixedSize / StringPlain modes) the values are first
     /// materialized into a fresh column of `count` values plus an identity `indexes` vector: a
     /// `ColumnString` there reserves only its UInt64 offsets and grows its `chars` buffer geometrically
