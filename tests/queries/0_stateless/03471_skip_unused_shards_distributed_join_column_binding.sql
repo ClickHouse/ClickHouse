@@ -113,7 +113,7 @@ SELECT '---';
 -- a group keyed by it spans shards. Here dsr rows with a = 100, 101 match no dsl row, so a shard-local
 -- Complete stage would return unmerged per-shard partials. The shortcut must NOT fire even though l.k is
 -- the left table's sharding key. Assert the optimized result equals the non-optimized one.
-INSERT INTO dsr VALUES (100, 7), (101, 7);
+INSERT INTO dsr SETTINGS distributed_foreground_insert = 1 VALUES (100, 7), (101, 7);
 
 SELECT groupArray((lk, rk, c)) = (
     SELECT groupArray((lk, rk, c)) FROM (
@@ -135,6 +135,46 @@ SELECT count() > 0 FROM (
     SETTINGS distributed_product_mode = 'global', optimize_skip_unused_shards = 1, optimize_distributed_group_by_sharding_key = 1
 ) WHERE explain ILIKE '%MergingAggregated%';
 
+SELECT '---';
+
+-- The shard-local precheck must follow the same column visibility as the type-checked DAG it guards:
+-- an ALIAS column is represented by its expression, not its own name (see PlannerActionsVisitor). `k_alias`
+-- on the left is `ALIAS k` (the sharding key) and reduces to `k`; the right table has a distinct physical
+-- column that happens to also be named `k_alias`. The DAG never sees a `k_alias` collision, so grouping by
+-- both stays shard-local (the sharding key still pins each group). Counting the wrapper name as a second
+-- source would wrongly disable the optimization. Assert the aggregation is pushed to the shard.
+CREATE TABLE shard_0.wl (k UInt32, a UInt16, k_alias UInt32 ALIAS k) ENGINE = MergeTree ORDER BY k;
+CREATE TABLE shard_1.wl (k UInt32, a UInt16, k_alias UInt32 ALIAS k) ENGINE = MergeTree ORDER BY k;
+CREATE TABLE shard_0.wr (a UInt32, k_alias UInt32) ENGINE = MergeTree ORDER BY a;
+CREATE TABLE shard_1.wr (a UInt32, k_alias UInt32) ENGINE = MergeTree ORDER BY a;
+CREATE TABLE dwl (k UInt32, a UInt16, k_alias UInt32 ALIAS k)
+    ENGINE = Distributed(test_cluster_two_shards_different_databases, '', wl, k);
+CREATE TABLE dwr (a UInt32, k_alias UInt32)
+    ENGINE = Distributed(test_cluster_two_shards_different_databases, '', wr, a);
+INSERT INTO dwl (k, a) SELECT number, number % 50 FROM numbers(20) SETTINGS distributed_foreground_insert = 1;
+INSERT INTO dwr SELECT number % 50, number FROM numbers(40) SETTINGS distributed_foreground_insert = 1;
+
+SELECT count() = 0 FROM (
+    EXPLAIN distributed = 1
+    SELECT l.k_alias, r.k_alias FROM dwl AS l INNER JOIN dwr AS r ON l.a = r.a
+    GROUP BY l.k_alias, r.k_alias
+    SETTINGS distributed_product_mode = 'global', optimize_skip_unused_shards = 1, optimize_distributed_group_by_sharding_key = 1
+) WHERE explain ILIKE '%MergingAggregated%';
+
+SELECT '---';
+
+-- Same for DISTINCT, and the result must match the non-optimized one.
+SELECT groupArray((ka, rka)) = (
+    SELECT groupArray((ka, rka)) FROM (
+        SELECT DISTINCT l.k_alias AS ka, r.k_alias AS rka FROM dwl AS l INNER JOIN dwr AS r ON l.a = r.a
+        ORDER BY ka, rka SETTINGS optimize_skip_unused_shards = 0))
+FROM (
+    SELECT DISTINCT l.k_alias AS ka, r.k_alias AS rka FROM dwl AS l INNER JOIN dwr AS r ON l.a = r.a
+    ORDER BY ka, rka SETTINGS optimize_skip_unused_shards = 1)
+SETTINGS distributed_product_mode = 'global';
+
+DROP TABLE dwl;
+DROP TABLE dwr;
 DROP TABLE nb_dl;
 DROP TABLE nb_dr;
 DROP TABLE dsl;

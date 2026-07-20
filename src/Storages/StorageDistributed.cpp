@@ -610,15 +610,34 @@ QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(
 namespace
 {
 
-/// Collect, for every column referenced by an expression, the set of sources that expose its
-/// unqualified name. Used to decide whether a DISTINCT / GROUP BY / LIMIT BY key can be processed
-/// shard-locally (see isShardLocalKeyExpression).
+/// Collect, for every plain-named column the type-checked DAG will actually reference, the set of
+/// sources that expose that unqualified name. Used to decide whether a DISTINCT / GROUP BY / LIMIT BY
+/// key can be processed shard-locally (see isShardLocalKeyExpression).
+///
+/// This mirrors how buildActionsDAGFromExpressionNode names nodes with
+/// use_column_identifier_as_action_node_name = false (see PlannerActionsVisitor::visitColumn): an
+/// expression-backed column (ALIAS column, ARRAY JOIN column) is not materialized under its own name -
+/// the builder recurses into its expression, so only the leaf physical columns reach the DAG. Recording
+/// the wrapper name here would count sources the DAG never sees and reject sound keys (e.g. grouping by
+/// `l.k_alias, r.k_alias` where the aliases wrap different physical columns from each side). A
+/// constant-backed column contributes a constant, not a column, so it and its subtree are skipped too.
 class KeyColumnSourcesVisitor : public InDepthQueryTreeVisitor<KeyColumnSourcesVisitor>
 {
 public:
+    bool needChildVisit(QueryTreeNodePtr & parent, QueryTreeNodePtr & /*child*/)
+    {
+        /// A constant-backed column becomes a constant in the DAG; do not descend into its expression.
+        const auto * column_node = parent->as<ColumnNode>();
+        return !(column_node && column_node->hasExpression()
+            && column_node->getExpression()->getNodeType() == QueryTreeNodeType::CONSTANT);
+    }
+
     void visitImpl(QueryTreeNodePtr & node)
     {
-        if (const auto * column_node = node->as<ColumnNode>())
+        const auto * column_node = node->as<ColumnNode>();
+        /// Record only leaf physical columns: expression-backed columns are represented in the DAG by
+        /// their expression (visited as children), not by their own name.
+        if (column_node && !column_node->hasExpression())
             name_to_sources[column_node->getColumnName()].insert(column_node->getColumnSourceOrNull().get());
     }
 
