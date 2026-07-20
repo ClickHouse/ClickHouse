@@ -111,15 +111,17 @@ public:
 using FunctionSecretArgumentsFinderTreeNode = FunctionSecretArgumentsFinderTreeNodeImpl<FunctionNode>;
 using TableFunctionSecretArgumentsFinderTreeNode = FunctionSecretArgumentsFinderTreeNodeImpl<TableFunctionNode>;
 
-/// Masks the constant nodes selected by a finder result in a resolved argument list, for the
-/// query-tree surfaces (`EXPLAIN QUERY TREE`, projection names): the span members (for a named
-/// `key = value` argument, its value), the arguments with a partial replacement (a tree dump cannot
-/// represent partial masking, so the whole constant is masked: fail closed), and the values of the
-/// nested secret maps (`headers(..)` / `extra_credentials(..)`; a malformed child is masked whole).
-/// The callback receives the top-level argument index and each constant node to mask.
-void forEachSecretArgumentConstantNode(
-    const QueryTreeNodes & arguments,
+/// Visits the secret value slots selected by a finder result in a resolved argument list, for the
+/// query-tree surfaces (`EXPLAIN QUERY TREE`, projection names): the span members and the arguments
+/// with a partial replacement (for a `key = value` argument, its value; a tree dump cannot represent
+/// partial masking, so the whole value is masked: fail closed), and the values of the nested secret
+/// maps (`headers(..)` / `extra_credentials(..)`; a malformed child is visited whole). The callback
+/// receives the top-level argument index and a mutable reference to each secret value node, so it can
+/// mask a constant in place or replace a non-constant node entirely (the parsers accept identifiers
+/// and expressions as values, which have no display mask of their own).
+void forEachSecretArgumentNode(
+    QueryTreeNodes & arguments,
     const FunctionSecretArgumentsFinder::Result & secret_arguments,
-    const std::function<void(size_t, ConstantNode &)> & on_secret);
+    const std::function<void(size_t, QueryTreeNodePtr &)> & on_secret);
 
 }

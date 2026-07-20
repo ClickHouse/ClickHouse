@@ -273,10 +273,21 @@ namespace
 
             if (FunctionSecretArgumentsFinder::Result secret_arguments = TableFunctionSecretArgumentsFinderTreeNode(*table_function_node_ptr).getResult(); secret_arguments.hasSecrets())
             {
-                const auto & argument_nodes = table_function_node_ptr->getArguments().getNodes();
+                auto & argument_nodes = table_function_node_ptr->getArguments().getNodes();
 
-                forEachSecretArgumentConstantNode(
-                    argument_nodes, secret_arguments, [](size_t, ConstantNode & constant) { constant.setMaskId(); });
+                /// This tree exists only to be dumped, so a non-constant secret value (the parsers
+                /// accept identifiers and constant expressions, which have no display mask of their
+                /// own) is replaced with a hidden constant: fail closed.
+                forEachSecretArgumentNode(
+                    argument_nodes,
+                    secret_arguments,
+                    [](size_t, QueryTreeNodePtr & node)
+                    {
+                        if (auto * constant = node->as<ConstantNode>())
+                            constant->setMaskId();
+                        else
+                            node = std::make_shared<ConstantNode>(Field("[HIDDEN]"));
+                    });
             }
         }
     };

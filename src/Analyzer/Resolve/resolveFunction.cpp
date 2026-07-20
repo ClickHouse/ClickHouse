@@ -1209,15 +1209,21 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
     {
         if (FunctionSecretArgumentsFinder::Result secret_arguments = FunctionSecretArgumentsFinderTreeNode(*function_node_ptr).getResult(); secret_arguments.hasSecrets())
         {
-            const auto & argument_nodes = function_node_ptr->getArgumentsNode()->as<ListNode &>().getNodes();
+            auto & argument_nodes = function_node_ptr->getArgumentsNode()->as<ListNode &>().getNodes();
 
-            forEachSecretArgumentConstantNode(
+            /// This tree is used for execution, so only the display mask of constants can be set;
+            /// a non-constant value cannot be masked here (ordinary functions carry secrets in
+            /// constants only).
+            forEachSecretArgumentNode(
                 argument_nodes,
                 secret_arguments,
-                [&](size_t n, ConstantNode & constant)
+                [&](size_t n, QueryTreeNodePtr & secret_node)
                 {
-                    auto mask = scope.projection_mask_map->insert({constant.getTreeHash(), scope.projection_mask_map->size() + 1}).first->second;
-                    constant.setMaskId(mask);
+                    auto * constant = secret_node->as<ConstantNode>();
+                    if (!constant)
+                        return;
+                    auto mask = scope.projection_mask_map->insert({constant->getTreeHash(), scope.projection_mask_map->size() + 1}).first->second;
+                    constant->setMaskId(mask);
                     arguments_projection_names[n] = "[HIDDEN id: " + std::to_string(mask) + "]";
                 });
         }
