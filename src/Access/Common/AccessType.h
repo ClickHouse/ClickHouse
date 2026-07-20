@@ -396,7 +396,7 @@ enum class AccessType : uint8_t
     M(SYSTEM_RESET_DDL_WORKER, "SYSTEM RESET DDL WORKER, RESET DDL WORKER", GLOBAL, SYSTEM) \
     M(SYSTEM, "", GROUP, ALL) /* allows to execute SYSTEM {SHUTDOWN|RELOAD CONFIG|...} */ \
     \
-    M(dictGet, "dictHas, dictGetHierarchy, dictIsIn", DICTIONARY, ALL) /* allows to execute functions dictGet(), dictHas(), dictGetHierarchy(), dictIsIn() */\
+    M(dictGet, "dictHas, dictGetHierarchy, dictGetRoot, dictGetChildren, dictGetDescendants, dictIsIn", DICTIONARY, ALL) /* allows to execute functions dictGet(), dictHas(), dictGetHierarchy(), dictGetRoot(), dictGetChildren(), dictGetDescendants(), dictIsIn() */\
     M(displaySecretsInShowAndSelect, "", GLOBAL, ALL) /* allows to show plaintext secrets in SELECT and SHOW queries. display_secrets_in_show_and_select format and server settings must be turned on */\
     \
     M(addressToLine, "", GLOBAL, INTROSPECTION) /* allows to execute function addressToLine() */\

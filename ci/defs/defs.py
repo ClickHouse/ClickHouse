@@ -93,18 +93,30 @@ SECRETS = [
     ),
 ]
 
+# In-region AWS Ubuntu mirror. Canonical's archive.ubuntu.com (amd64) /
+# ports.ubuntu.com (arm64) are frequently unreachable over IPv4 from the runners
+# and have no IPv6 route; the in-region mirror is reachable and fast. Passed as
+# build args to the Ubuntu-based images, whose Dockerfiles keep canonical
+# defaults so local builds are unchanged.
+APT_MIRROR_BUILD_ARGS = {
+    "apt_archive": "http://us-east-1.ec2.archive.ubuntu.com",
+    "apt_ports_archive": "http://us-east-1.ec2.ports.ubuntu.com",
+}
+
 DOCKERS = [
     Docker.Config(
         name="clickhouse/style-test",
         path="./ci/docker/style-test",
         platforms=Docker.Platforms.arm_amd,
         depends_on=[],
+        build_args=APT_MIRROR_BUILD_ARGS,
     ),
     Docker.Config(
         name="clickhouse/fasttest",
         path="./ci/docker/fasttest",
         platforms=Docker.Platforms.arm_amd,
         depends_on=[],
+        build_args=APT_MIRROR_BUILD_ARGS,
     ),
     Docker.Config(
         name="clickhouse/binary-builder",
@@ -129,6 +141,7 @@ DOCKERS = [
         path="./ci/docker/test-base",
         platforms=Docker.Platforms.arm_amd,
         depends_on=[],
+        build_args=APT_MIRROR_BUILD_ARGS,
     ),
     Docker.Config(
         name="clickhouse/stress-test",
@@ -255,6 +268,7 @@ DOCKERS = [
         path="./ci/docker/integration/postgresql_java_client",
         platforms=Docker.Platforms.arm_amd,
         depends_on=[],
+        build_args=APT_MIRROR_BUILD_ARGS,
     ),
     Docker.Config(
         name="clickhouse/python-bottle",
@@ -279,6 +293,7 @@ DOCKERS = [
         path="./ci/docker/install/deb",
         platforms=Docker.Platforms.arm_amd,
         depends_on=[],
+        build_args=APT_MIRROR_BUILD_ARGS,
     ),
     Docker.Config(
         name="clickhouse/install-rpm-test",
@@ -291,12 +306,14 @@ DOCKERS = [
         path="./ci/docker/sqlancer-test",
         platforms=Docker.Platforms.arm_amd,
         depends_on=[],
+        build_args=APT_MIRROR_BUILD_ARGS,
     ),
     Docker.Config(
         name="clickhouse/mysql_dotnet_client",
         path="./ci/docker/integration/mysql_dotnet_client",
         platforms=Docker.Platforms.arm_amd,
         depends_on=[],
+        build_args=APT_MIRROR_BUILD_ARGS,
     ),
 ]
 
