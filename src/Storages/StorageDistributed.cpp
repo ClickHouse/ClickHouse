@@ -607,6 +607,90 @@ QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(
     return QueryProcessingStage::WithMergeableState;
 }
 
+namespace
+{
+
+/// Collect, for every column referenced by an expression, the set of sources that expose its
+/// unqualified name. Used to decide whether a DISTINCT / GROUP BY / LIMIT BY key can be processed
+/// shard-locally (see isShardLocalKeyExpression).
+class KeyColumnSourcesVisitor : public InDepthQueryTreeVisitor<KeyColumnSourcesVisitor>
+{
+public:
+    void visitImpl(QueryTreeNodePtr & node)
+    {
+        if (const auto * column_node = node->as<ColumnNode>())
+            name_to_sources[column_node->getColumnName()].insert(column_node->getColumnSourceOrNull().get());
+    }
+
+    std::unordered_map<String, std::unordered_set<const IQueryTreeNode *>> name_to_sources;
+};
+
+/// Whether `source` is reachable in `join_tree` on a path where no join null-extends it, i.e. its
+/// rows always carry their own column values. A RIGHT/FULL join null-extends its left side and a
+/// LEFT/FULL join its right side (unmatched rows get NULLs); INNER, CROSS and comma joins never
+/// null-extend. Conservative: returns false when `source` is not found or is only reachable through a
+/// null-extending join. Null-extended rows of the sharded table carry no sharding-key value and are
+/// produced on every shard, so a group keyed by them would span shards.
+bool sourceIsAlwaysPreserved(const QueryTreeNodePtr & join_tree, const QueryTreeNodePtr & source)
+{
+    if (join_tree.get() == source.get())
+        return true;
+
+    const auto * join_node = join_tree->as<JoinNode>();
+    if (!join_node)
+        return false;
+
+    const JoinKind kind = join_node->getKind();
+    if (!isRightOrFull(kind) && sourceIsAlwaysPreserved(join_node->getLeftTableExpression(), source))
+        return true;
+    if (!isLeftOrFull(kind) && sourceIsAlwaysPreserved(join_node->getRightTableExpression(), source))
+        return true;
+    return false;
+}
+
+/// Whether grouping/distinct by `expr` keeps every group's rows on a single shard.
+///
+/// The sharding key is matched against `expr` by unqualified column name, which identifies a column
+/// only within one source. Grouping stays shard-local only when this table's own sharding key pins the
+/// group, so reject when:
+///   - an unqualified name is exposed by more than one source (ambiguous, and the type-checked DAG
+///     built over plain names can collapse columns of different types and throw);
+///   - a sharding-key column name is not backed by this table's own column (another side's same-named
+///     column does not pin the shard); or
+///   - a RIGHT/FULL join can null-extend this table (unmatched rows carry no sharding key and appear on
+///     every shard).
+/// Other-side columns with distinct names only refine the grouping within a shard, so they are kept.
+bool isShardLocalKeyExpression(
+    const QueryTreeNodePtr & expr,
+    const QueryTreeNodePtr & expected_source,
+    const Names & sharding_key_columns,
+    const QueryTreeNodePtr & join_tree)
+{
+    if (!expected_source)
+        return false;
+
+    if (!sourceIsAlwaysPreserved(join_tree, expected_source))
+        return false;
+
+    KeyColumnSourcesVisitor visitor;
+    visitor.visit(const_cast<QueryTreeNodePtr &>(expr));
+
+    for (const auto & [name, sources] : visitor.name_to_sources)
+        if (sources.size() > 1)
+            return false;
+
+    for (const auto & sharding_key_column : sharding_key_columns)
+    {
+        auto it = visitor.name_to_sources.find(sharding_key_column);
+        if (it == visitor.name_to_sources.end() || *it->second.begin() != expected_source.get())
+            return false;
+    }
+
+    return true;
+}
+
+}
+
 /// Reuses the logic of isPartitionKeySuitsGroupByKey in useDataParallelAggregation.cpp
 /// Will skip merging step in the initial server when the following conditions are met:
 /// 1. Sharding key columns should be a subset of expression columns.
@@ -615,6 +699,17 @@ QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(
 bool StorageDistributed::isShardingKeySuitsQueryTreeNodeExpression(
     const QueryTreeNodePtr & expr, const SelectQueryInfo & query_info) const
 {
+    /// Guard the optimization before building the type-checked DAG below: the checks match `expr` against
+    /// the sharding key by unqualified column name, which is unambiguous only within a single source (see
+    /// isShardLocalKeyExpression for the join cases this rejects).
+    const auto & query_node = query_info.query_tree->as<const QueryNode &>();
+    if (!isShardLocalKeyExpression(
+            expr,
+            query_info.table_expression,
+            sharding_key_expr->getActionsDAG().getRequiredColumnsNames(),
+            query_node.getJoinTree()))
+        return false;
+
     ColumnsWithTypeAndName empty_input_columns;
     ColumnNodePtrWithHashSet empty_correlated_columns_set;
     // When comparing sharding key expressions, we need to ignore table qualifiers in column names
