@@ -129,7 +129,12 @@ table. This applies to both reads and `INSERT`s:
 * `INSERT` through the facade likewise requires the `INSERT` privilege on both the `Overlay`
   and the underlying source database;
 * the same dual-grant `SELECT` check covers the other read entrypoints that resolve the facade
-  name to a source table, such as `WATCH`.
+  name to a source table, such as `WATCH`;
+* management operations that resolve the facade name to a source table follow the same rule:
+  `CHECK TABLE` requires the `CHECK` privilege on both the `Overlay` and the underlying source
+  table, and `KILL MUTATION` / `KILL PART_MOVE TO SHARD` targeting a facade row of
+  `system.mutations` / `system.part_moves_between_shards` require the corresponding `ALTER`
+  privilege on both.
 
 Row policies follow the same rule: reading a table through the facade applies the `SELECT` row
 policies of **both** the `Overlay` and the underlying source table (a row is returned only if it

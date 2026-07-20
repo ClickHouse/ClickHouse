@@ -19,6 +19,8 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
 
+#include <Databases/DatabaseOverlay.h>
+
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ProcessList.h>
@@ -114,6 +116,13 @@ public:
     {
         chassert(context);
         context->checkAccess(AccessType::CHECK, table_id);
+
+        /// When the table is reached through a read-only `Overlay` facade, `table_id` is the
+        /// facade name while the check runs against the underlying source table; also require
+        /// the grant there, so the facade cannot widen access (mirrors the dual-grant `SELECT`
+        /// contract of the read path).
+        if (auto source_id = DatabaseOverlay::getSourceTableIdForReadonlyFacade(table_id, table))
+            context->checkAccess(AccessType::CHECK, *source_id);
     }
 
     TableCheckTask(StoragePtr table_, ContextPtr context)
