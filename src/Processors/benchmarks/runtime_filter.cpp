@@ -277,7 +277,8 @@ UniqueRuntimeFilterPtr makeRuntimeFilter(RuntimeFilterKind kind, const DataTypeP
                 BLOOM_FILTER_BYTES,
                 EXACT_VALUES_LIMIT_FOR_BLOOM_FILTER,
                 BLOOM_FILTER_HASH_FUNCTIONS,
-                DISABLE_BLOOM_FULLNESS_CHECK);
+                DISABLE_BLOOM_FULLNESS_CHECK,
+                /*distinct_keys_hint_=*/std::nullopt);
     }
     UNREACHABLE();
 }
@@ -311,7 +312,8 @@ UniqueRuntimeFilterPtr makeMergeDestination(RuntimeFilterKind kind, const DataTy
                 BLOOM_FILTER_BYTES,
                 EXACT_VALUES_LIMIT_FOR_BLOOM_FILTER,
                 BLOOM_FILTER_HASH_FUNCTIONS,
-                DISABLE_BLOOM_FULLNESS_CHECK);
+                DISABLE_BLOOM_FULLNESS_CHECK,
+                /*distinct_keys_hint_=*/std::nullopt);
     }
     UNREACHABLE();
 }
@@ -582,6 +584,8 @@ static void BM_RuntimeFilterBuildTransformUInt64(benchmark::State & state)
             BLOCKS_TO_SKIP_BEFORE_REENABLING,
             DISABLE_BLOOM_FULLNESS_CHECK,
             /*allow_to_use_not_exact_filter_=*/true,
+            /*track_key_range_=*/false,
+            /*distinct_keys_hint_=*/std::nullopt,
             /*query_context_=*/nullptr);
 
         for (const auto & column_chunk : column_chunks)
@@ -623,6 +627,8 @@ static void BM_RuntimeFilterBuildTransformCastUInt32ToUInt64(benchmark::State & 
             BLOCKS_TO_SKIP_BEFORE_REENABLING,
             DISABLE_BLOOM_FULLNESS_CHECK,
             /*allow_to_use_not_exact_filter_=*/true,
+            /*track_key_range_=*/false,
+            /*distinct_keys_hint_=*/std::nullopt,
             /*query_context_=*/nullptr);
 
         for (const auto & column_chunk : column_chunks)
