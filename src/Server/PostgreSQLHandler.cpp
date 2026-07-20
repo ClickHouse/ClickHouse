@@ -648,6 +648,13 @@ bool PostgreSQLHandler::processCopyQuery(const String & query)
         auto query_context = session->makeQueryContext();
         query_context->setCurrentQueryId(fmt::format("postgres:{:d}:{:d}", connection_id, secret_key));
 
+        /// PostgreSQL's CSV convention is that an empty unquoted field means NULL (a quoted empty string
+        /// stays an empty string), while ClickHouse's CSV default marker is `\N`. Apply the marker the
+        /// client asked for - PostgreSQL's default, or an explicit `NULL '\N'` - so that nullable values
+        /// are read back faithfully.
+        if (copy_query->format == ASTCopyQuery::Formats::CSV)
+            query_context->setSetting("format_csv_null_representation", copy_query->csv_null_marker);
+
         /// Initialize the emulated `pg_catalog` views before the copy, mirroring `processQuery`, so that the
         /// `COPY` path sees the same catalog surface as ordinary queries on a fresh connection.
         if (should_init_system_tables)
@@ -739,6 +746,13 @@ bool PostgreSQLHandler::processCopyQuery(const String & query)
         auto * copy_query = copy_query_parsed->as<ASTCopyQuery>();
         auto query_context = session->makeQueryContext();
         query_context->setCurrentQueryId(fmt::format("postgres:{:d}:{:d}", connection_id, secret_key));
+
+        /// PostgreSQL's CSV convention is that an empty unquoted field means NULL (a quoted empty string is
+        /// written as `""`), while ClickHouse's CSV default marker is `\N`. Apply the marker the client
+        /// asked for - PostgreSQL's default, or an explicit `NULL '\N'` - so that nullable values are
+        /// streamed in the form the client expects.
+        if (copy_query->format == ASTCopyQuery::Formats::CSV)
+            query_context->setSetting("format_csv_null_representation", copy_query->csv_null_marker);
 
         /// Lazily create the emulated `pg_catalog` views before running the copied query, exactly as
         /// `processQuery` does for ordinary queries. Otherwise `COPY (SELECT * FROM pg_namespace) TO STDOUT`
@@ -1490,7 +1504,7 @@ SELECT
                         cols.base = 'Float64', 1022,
                         cols.base = 'UUID', 2951,
                         cols.base IN ('Date', 'Date32'), 1182,
-                        cols.base IN ('DateTime', 'DateTime64'), 1115,
+                        cols.base IN ('DateTime', 'DateTime64') AND cols.dt_precision <= 6, 1115,
                         cols.base IN ('String', 'FixedString'), 1009,
                         1009),
             cols.base IN ('Bool', 'Boolean'), 16,
@@ -1503,7 +1517,7 @@ SELECT
             cols.base = 'Float64', 701,
             cols.base = 'UUID', 2950,
             cols.base IN ('Date', 'Date32'), 1082,
-            cols.base IN ('DateTime', 'DateTime64'), 1114,
+            cols.base IN ('DateTime', 'DateTime64') AND cols.dt_precision <= 6, 1114,
             cols.base IN ('String', 'FixedString'), 25,
             25) AS atttypid,
     oids.oid AS attrelid,
@@ -1517,13 +1531,22 @@ SELECT
     /// precision that spans their whole value range (the 256-bit types share `numeric(78, 0)`, which holds
     /// every 256-bit integer). `convertPostgreSQLDataType` maps such a `numeric(p > 76, 0)` back to `Int256`;
     /// PostgreSQL `numeric` is signed, so a self-connected `UInt256` above the `Int256` maximum is rejected
-    /// on the reading side (fail-closed) rather than recovered. Everything else uses -1 ("no modifier").
+    /// on the reading side (fail-closed) rather than recovered.
+    ///
+    /// For `timestamp`, PostgreSQL stores the fractional-second precision (0..6) directly in the modifier;
+    /// carry the `DateTime`/`DateTime64` scale there so `format_type` renders `timestamp(p) without time
+    /// zone` and schema inference recovers `DateTime` (p = 0) or `DateTime64(p)` instead of collapsing every
+    /// timestamp to `DateTime64(6)`. A `DateTime64` scale above 6 does not fit PostgreSQL's `timestamp` at
+    /// all, so such a column is advertised as text (see `atttypid` above) and read back as `String` with the
+    /// full value preserved. Everything else uses -1 ("no modifier").
     multiIf(cols.base IN ('Decimal', 'Decimal32', 'Decimal64', 'Decimal128', 'Decimal256')
                 AND cols.decimal_precision IS NOT NULL AND cols.decimal_scale IS NOT NULL,
                 toInt32(assumeNotNull(cols.decimal_precision) * 65536 + assumeNotNull(cols.decimal_scale) + 4),
             cols.base = 'UInt64', toInt32(20 * 65536 + 4),
             cols.base IN ('Int128', 'UInt128'), toInt32(39 * 65536 + 4),
             cols.base IN ('Int256', 'UInt256'), toInt32(78 * 65536 + 4),
+            cols.base IN ('DateTime', 'DateTime64') AND cols.dt_precision <= 6,
+                toInt32(assumeNotNull(cols.dt_precision)),
             -1) AS atttypmod,
     /// A column is advertised as nullable (`attnotnull = 'f'`) when the value that a self-connected client
     /// materializes can be NULL: a `Nullable`/`LowCardinality(Nullable(...))` scalar, or an array whose
@@ -1553,7 +1576,13 @@ FROM (
         extract(type, '^((?:Nullable\(|LowCardinality\(|Array\()*)') AS wrappers,
         /// Count only the leading `Array(` wrappers. An `Array(` nested inside a `Map`/`Tuple` argument
         /// list must not make the column look like a top-level array: such columns are exposed as text.
-        toInt32(countSubstrings(wrappers, 'Array(')) AS ndims
+        toInt32(countSubstrings(wrappers, 'Array(')) AS ndims,
+        /// The fractional-second precision of a `DateTime`/`DateTime64` column (0 for `DateTime`).
+        /// `system.columns.datetime_precision` is NULL for an element wrapped in `Array(...)`, so fall
+        /// back to parsing the scale out of the type name, skipping the same leading wrappers as `base`.
+        coalesce(datetime_precision,
+                 toUInt64OrNull(extract(type, '^(?:Nullable\(|LowCardinality\(|Array\()*DateTime64\(([0-9]+)')),
+                 if(base = 'DateTime', 0, NULL)) AS dt_precision
     FROM system.columns
     /// The data path streams a table with `SELECT * FROM <table>` (see `processCopyQuery`), which omits
     /// `MATERIALIZED` / `ALIAS` / `EPHEMERAL` columns by default. Advertise exactly that column set here, so
