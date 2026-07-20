@@ -252,7 +252,8 @@ void UnionNode::updateTreeHashImpl(HashState & state, CompareOptions) const
 
     state.update(cte_name.size());
     state.update(cte_name);
-    state.update(static_cast<UInt8>(cte_name_quote));
+    if (cte_name_quote != IdentifierPartQuote::Unquoted)
+        state.update(static_cast<UInt8>(cte_name_quote));
 
     state.update(static_cast<size_t>(union_mode));
 }

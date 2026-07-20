@@ -388,16 +388,15 @@ void QueryNode::updateTreeHashImpl(HashState & state, CompareOptions options) co
         state.update(false);
         state.update(size_t(0));
         state.update(std::string());
-        state.update(static_cast<UInt8>(IdentifierPartQuote::Unquoted));
-        state.update(false);
     }
     else
     {
         state.update(is_cte);
         state.update(cte_name.size());
         state.update(cte_name);
-        state.update(static_cast<UInt8>(cte_name_quote));
-        state.update(is_materialized);
+        /// Mix the quote only when semantic, so quote-free queries keep their previous hash.
+        if (cte_name_quote != IdentifierPartQuote::Unquoted)
+            state.update(static_cast<UInt8>(cte_name_quote));
     }
 
     state.update(projection_columns.size());
@@ -422,6 +421,7 @@ void QueryNode::updateTreeHashImpl(HashState & state, CompareOptions options) co
         state.update(pinned_name);
     }
 
+    state.update(is_materialized);
     state.update(is_recursive_with);
     state.update(is_distinct);
     state.update(is_limit_with_ties);

@@ -273,8 +273,15 @@ ASTPtr ExceptColumnTransformerNode::toASTImpl(const ConvertToASTOptions & /* opt
     }
 
     ast_except_transformer->children.reserve(except_column_names.size());
-    for (const auto & name : except_column_names)
-        ast_except_transformer->children.push_back(make_intrusive<ASTIdentifier>(name));
+    for (size_t i = 0; i < except_column_names.size(); ++i)
+    {
+        /// Rebuild the identifier with its recorded quote so an in-memory round-trip
+        /// keeps the target exact under `standard` matching.
+        IdentifierName target_name;
+        target_name.push_back(IdentifierPart{except_column_names[i],
+            i < except_column_names_quotes.size() ? except_column_names_quotes[i] : IdentifierPartQuote::Unquoted});
+        ast_except_transformer->children.push_back(make_intrusive<ASTIdentifier>(std::move(target_name)));
+    }
 
     return ast_except_transformer;
 }
@@ -386,6 +393,8 @@ ASTPtr ReplaceColumnTransformerNode::toASTImpl(const ConvertToASTOptions & optio
     {
         auto replacement_ast = make_intrusive<ASTColumnsReplaceTransformer::Replacement>();
         replacement_ast->name = replacements_names[i];
+        if (i < replacements_names_quotes.size())
+            replacement_ast->name_quote = replacements_names_quotes[i];
         replacement_ast->children.push_back(replacement_expressions_nodes[i]->toAST(options));
         ast_replace_transformer->children.push_back(std::move(replacement_ast));
     }

@@ -232,7 +232,8 @@ IQueryTreeNode::Hash IQueryTreeNode::getTreeHash(CompareOptions compare_options)
         {
             hash_state.update(node_to_process->alias.size());
             hash_state.update(node_to_process->alias);
-            hash_state.update(node_to_process->alias_quote == IdentifierPartQuote::DoubleQuoted);
+            if (node_to_process->alias_quote == IdentifierPartQuote::DoubleQuoted)
+                hash_state.update(true);
         }
 
         node_to_process->updateTreeHashImpl(hash_state, compare_options);

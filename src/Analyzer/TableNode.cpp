@@ -187,7 +187,8 @@ void TableNode::updateTreeHashImpl(HashState & state, CompareOptions) const
     {
         state.update(temporary_table_name.size());
         state.update(temporary_table_name);
-        state.update(static_cast<UInt8>(temporary_table_name_quote));
+        if (temporary_table_name_quote != IdentifierPartQuote::Unquoted)
+            state.update(static_cast<UInt8>(temporary_table_name_quote));
     }
     else
     {
