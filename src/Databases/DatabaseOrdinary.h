@@ -91,10 +91,13 @@ public:
     /// Validate that the MergeTree <-> Replicated conversion in `setMergeTreeEngine` is legal for
     /// this table's engine and DDL clauses BEFORE any side effect (metadata rewrite). Rejects
     /// engines that only differ by a name prefix (e.g. Shared*, which `setMergeTreeEngine` would
-    /// blindly turn into an unknown `ReplicatedShared*`) and clauses the target engine does not
-    /// support (e.g. UNIQUE KEY, unsupported by ReplicatedMergeTree). Shared by both the
-    /// `ATTACH ... AS REPLICATED` entrypoint and the restart-time converter. See issue #110854.
-    static void validateEngineSupportsReplicatedConversion(const ASTCreateQuery & create_query, bool to_replicated);
+    /// blindly turn into an unknown `ReplicatedShared*`) and clauses/settings/disks the target
+    /// engine does not support (e.g. UNIQUE KEY, `table_readonly = 1`, or a Keeper-backed disk,
+    /// none of which ReplicatedMergeTree accepts). Mirrors the constructor-time rejections against
+    /// the RESOLVED target settings and storage policy, so a value coming from server config (not
+    /// the explicit AST) is caught too. Shared by both the `ATTACH ... AS REPLICATED` entrypoint
+    /// and the restart-time converter. See issue #110854.
+    static void validateEngineSupportsReplicatedConversion(const ASTCreateQuery & create_query, ContextPtr local_context, bool to_replicated);
 
     /// Reject the conversion to replicated when the target replica path already exists in Keeper,
     /// BEFORE any side effect (metadata rewrite). Otherwise the metadata is rewritten to `Replicated*`

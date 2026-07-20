@@ -2920,7 +2920,7 @@ scope_guard InterpreterCreateQuery::convertMergeTreeTableIfPossible(ASTCreateQue
     /// SharedMergeTree turned into a non-existent ReplicatedSharedMergeTree) would leave the
     /// persisted metadata pointing at an unloadable engine, making the table fail to load after
     /// restart (ASYNC_LOAD_WAIT_FAILED). Shared with the restart-time converter. See issue #110854.
-    DatabaseOrdinary::validateEngineSupportsReplicatedConversion(create, to_replicated);
+    DatabaseOrdinary::validateEngineSupportsReplicatedConversion(create, getContext(), to_replicated);
 
     /// When converting to replicated, reject a pre-existing target replica path in Keeper BEFORE any
     /// side effect. Otherwise the metadata is rewritten to `Replicated*` and the collision surfaces

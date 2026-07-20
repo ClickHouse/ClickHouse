@@ -15,6 +15,9 @@
 #include <Databases/DatabasesCommon.h>
 #include <Databases/TablesLoader.h>
 #include <Disks/DiskObjectStorage/DiskObjectStorage.h>
+#include <Disks/DiskType.h>
+#include <Disks/IDisk.h>
+#include <Disks/IStoragePolicy.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromFile.h>
@@ -59,7 +62,9 @@ namespace Setting
 
 namespace MergeTreeSetting
 {
+    extern const MergeTreeSettingsString disk;
     extern const MergeTreeSettingsString storage_policy;
+    extern const MergeTreeSettingsBool table_readonly;
 }
 
 namespace ServerSetting
@@ -142,7 +147,7 @@ void DatabaseOrdinary::checkReplicaPathExists(ASTCreateQuery & create_query, Con
         );
 }
 
-void DatabaseOrdinary::validateEngineSupportsReplicatedConversion(const ASTCreateQuery & create_query, bool to_replicated)
+void DatabaseOrdinary::validateEngineSupportsReplicatedConversion(const ASTCreateQuery & create_query, ContextPtr local_context, bool to_replicated)
 {
     const String & engine_name = create_query.storage->engine->name;
 
@@ -167,15 +172,57 @@ void DatabaseOrdinary::validateEngineSupportsReplicatedConversion(const ASTCreat
             "Engine {} doesn't support UNIQUE KEY clause, cannot attach table as {}replicated",
             target_engine_name, to_replicated ? "" : "not ");
 
-    /// ReplicatedMergeTree rejects `table_readonly = 1` in its constructor (see StorageReplicatedMergeTree),
-    /// so converting to replicated must be refused here too, before the metadata is rewritten.
-    if (to_replicated)
-        if (auto * settings = create_query.storage->settings)
-            if (const Field * table_readonly = settings->changes.tryGet("table_readonly");
-                table_readonly && applyVisitor(FieldVisitorConvertToNumber<UInt64>(), *table_readonly) != 0)
+    /// The remaining checks mirror rejections StorageReplicatedMergeTree performs in its
+    /// constructor. They resolve against the target's effective settings/policy (server config
+    /// overlaid with the query's explicit SETTINGS), not just the AST, so a value coming from the
+    /// `merge_tree` / `replicated_merge_tree` config is caught too. Only reject cases the
+    /// constructor also rejects, to avoid refusing conversions the engine would accept.
+    if (!to_replicated)
+        return;
+
+    const MergeTreeSettings & config_settings = local_context->getReplicatedMergeTreeSettings();
+    const auto * query_settings = create_query.storage->settings;
+
+    /// ReplicatedMergeTree rejects `table_readonly = 1` in its constructor. The effective value is
+    /// the config default unless the query overrides it explicitly.
+    bool table_readonly = config_settings[MergeTreeSetting::table_readonly];
+    if (query_settings)
+        if (const Field * value = query_settings->changes.tryGet("table_readonly"))
+            table_readonly = applyVisitor(FieldVisitorConvertToNumber<UInt64>(), *value) != 0;
+    if (table_readonly)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Engine {} doesn't support the table_readonly setting, cannot attach table as replicated",
+            target_engine_name);
+
+    /// ReplicatedMergeTree rejects Keeper-backed ('s3_with_keeper') disks in its constructor.
+    /// Resolve the effective storage policy the same way the storage does: an explicitly set `disk`
+    /// takes precedence over `storage_policy` (mirroring registerStorageMergeTree), otherwise the
+    /// effective `storage_policy` (query override or config default) is used. An inline
+    /// `disk = disk(...)` custom definition is deliberately not resolved here (resolving it would
+    /// create the disk as a side effect); it is left for the constructor to reject.
+    const Field * disk_change = query_settings ? query_settings->changes.tryGet("disk") : nullptr;
+    const Field * storage_policy_change = query_settings ? query_settings->changes.tryGet("storage_policy") : nullptr;
+
+    String disk_name = disk_change ? String{} : config_settings[MergeTreeSetting::disk];
+    if (disk_change && disk_change->getType() == Field::Types::String)
+        disk_name = disk_change->safeGet<String>();
+    String storage_policy_name = storage_policy_change && storage_policy_change->getType() == Field::Types::String
+        ? storage_policy_change->safeGet<String>()
+        : config_settings[MergeTreeSetting::storage_policy];
+
+    /// An inline `disk = disk(...)` change is a non-String Field; skip disk resolution and rely on
+    /// the constructor for that case rather than materialising the custom disk here.
+    if (!(disk_change && disk_change->getType() != Field::Types::String))
+    {
+        StoragePolicyPtr policy = disk_name.empty()
+            ? local_context->getStoragePolicy(storage_policy_name)
+            : local_context->getStoragePolicyFromDisk(disk_name);
+        for (const auto & disk : policy->getDisks())
+            if (disk->getDataSourceDescription().metadata_type == MetadataStorageType::Keeper)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "Engine {} doesn't support the table_readonly setting, cannot attach table as replicated",
+                    "Engine {} doesn't work with 's3_with_keeper' disk type, cannot attach table as replicated",
                     target_engine_name);
+    }
 }
 
 void DatabaseOrdinary::setMergeTreeEngine(ASTCreateQuery & create_query, ContextPtr local_context, bool replicated)
@@ -270,7 +317,7 @@ void DatabaseOrdinary::convertMergeTreeToReplicatedIfNeeded(ASTPtr ast, const Qu
     LOG_INFO(log, "Found {} flag for table {}. Will try to change it's engine in metadata to replicated.", CONVERT_TO_REPLICATED_FLAG_NAME, backQuote(qualified_name.getFullName()));
 
     checkReplicaPathExists(create_query, getContext());
-    validateEngineSupportsReplicatedConversion(create_query, /*to_replicated*/ true);
+    validateEngineSupportsReplicatedConversion(create_query, getContext(), /*to_replicated*/ true);
     setMergeTreeEngine(create_query, getContext(), /*replicated*/ true);
 
     /// Write changes to metadata
