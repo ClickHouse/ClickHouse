@@ -120,6 +120,7 @@ public:
     void enforceAggregationInOrder(const SortDescription & sort_description);
 
     StorageID getStorageID() const { return storage_id; }
+    const ASTPtr & getQueryAST() const { return query_ast; }
     ParallelReplicasReadingCoordinatorPtr getCoordinator() const { return coordinator; }
 
     /// The connection pools (sized to the coordinator's replica count) and the local replica's index

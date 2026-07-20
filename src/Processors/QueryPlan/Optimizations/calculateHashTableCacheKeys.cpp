@@ -9,6 +9,7 @@
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Common/typeid_cast.h>
 #include <Processors/QueryPlan/ITransformingStep.h>
+#include <Parsers/IAST.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
 #include <Processors/QueryPlan/ReadFromRemote.h>
 #include <Processors/QueryPlan/Serialization.h>
@@ -27,9 +28,19 @@ UInt64 calculateHashFromStep(const ReadFromParallelRemoteReplicasStep & source)
 {
     SipHash hash;
     hash.update(source.getSerializationName());
-    /// The storage id is empty when reading from a table function.
     if (StorageID storage_id = source.getStorageID())
+    {
         hash.update(storage_id.getFullTableName());
+    }
+    else
+    {
+        /// The storage id is empty when reading from a table function. Use the remote query itself as
+        /// a stable source identity, so that different table functions with the same plan shape do not
+        /// collide in `HashTablesStatistics`.
+        const auto tree_hash = source.getQueryAST()->getTreeHash(/*ignore_aliases=*/ false);
+        hash.update(tree_hash.low64);
+        hash.update(tree_hash.high64);
+    }
     return hash.get64();
 }
 
