@@ -194,16 +194,17 @@ bool ParserCopyQuery::parseOptions(Pos & pos, boost::intrusive_ptr<ASTCopyQuery>
     /// carried through so the handler rejects it with a clean message.
     ///
     /// The data-formatting options are handled as follows so that a client's request is never silently
-    /// disregarded (which would emit output that does not match what it asked for). A `DELIMITER`, a `NULL`
-    /// marker, and a `HEADER` that match our defaults for the chosen format (a tab for text/TSV, a comma for
-    /// CSV, `\N` for a NULL in either, and no header) are no-ops and accepted - this is exactly what real
-    /// clients append, e.g. psycopg2's `copy_to`/`copy_from` always send `DELIMITER AS '\t' NULL AS '\N'`. A
-    /// non-default `DELIMITER`, a non-default `NULL` marker, a `HEADER`, or any option we do not interpret
-    /// (`QUOTE`, `ESCAPE`, `ENCODING`, ...) is recorded in `unsupported_option`; the handler then rejects the
-    /// command with an `ErrorResponse`. A non-default `NULL` marker cannot be honored - ClickHouse's CSV and
-    /// TSV formats always read and write `\N`, so, for example, PostgreSQL's CSV convention of an empty field
-    /// meaning NULL would be a silent mismatch - hence it is rejected rather than ignored; wiring
-    /// `DELIMITER`/`NULL`/`HEADER` all the way through to `FormatSettings` is left to a dedicated follow-up.
+    /// disregarded (which would emit output that does not match what it asked for). A `DELIMITER` and a
+    /// `HEADER` that match our defaults for the chosen format (a tab for text/TSV, a comma for CSV, and no
+    /// header) are no-ops and accepted - this is exactly what real clients append, e.g. psycopg2's
+    /// `copy_to`/`copy_from` always send `DELIMITER AS '\t' NULL AS '\N'`. The `NULL` marker follows
+    /// PostgreSQL's per-format defaults: `\N` for the text format (which is also ClickHouse's TSV default,
+    /// so nothing needs wiring) and an empty unquoted field for CSV, which is carried in `csv_null_marker`
+    /// and applied by the handler through `format_csv_null_representation`; an explicit `NULL '\N'` for CSV
+    /// selects the `\N` marker the same way. A non-default `DELIMITER`, any other `NULL` marker, a `HEADER`,
+    /// or any option we do not interpret (`QUOTE`, `ESCAPE`, `ENCODING`, ...) is recorded in
+    /// `unsupported_option`; the handler then rejects the command with an `ErrorResponse`. Wiring
+    /// `DELIMITER`/`HEADER` all the way through to `FormatSettings` is left to a dedicated follow-up.
     ///
     /// The parser must not throw for these options: an exception here makes
     /// `PostgreSQLHandler::processCopyQuery` fall through to the regular-query path, whose error tears the
@@ -299,22 +300,37 @@ bool ParserCopyQuery::parseOptions(Pos & pos, boost::intrusive_ptr<ASTCopyQuery>
         node->unsupported_option = fmt::format("the \"{}\" option", unknown_option);
     else
     {
-        const String default_delimiter = node->format == ASTCopyQuery::Formats::CSV ? "," : "\t";
-        /// ClickHouse's CSV and TSV formats both represent a NULL as `\N` by default. A `NULL` marker that
-        /// means that default (what libpq/psycopg2 append for the text format, `NULL AS '\N'`) is a no-op;
-        /// anything else (for example PostgreSQL's CSV convention of an empty field) is not honored and is
-        /// rejected. As with the delimiter, the value is taken as the raw bytes between the quotes without
-        /// ClickHouse unescaping (that would turn a lone `\N` into an empty string). A standard-conforming
-        /// client sends the marker as `'\N'` (raw `\N`), while psycopg2 doubles the backslash and sends
-        /// `'\\N'` (raw `\\N`); both spell the same default marker, so both are accepted.
-        const String default_null = "\\N";
-        const String default_null_backslash_escaped = "\\\\N";
+        const bool is_csv = node->format == ASTCopyQuery::Formats::CSV;
+        const String default_delimiter = is_csv ? "," : "\t";
+        /// The `NULL` marker. Its value is taken as the raw bytes between the quotes without ClickHouse
+        /// unescaping (that would turn a lone `'\N'` into an empty string), and the `\N` marker therefore
+        /// has two accepted spellings: a standard-conforming client sends it as `'\N'` (raw `\N`), while
+        /// psycopg2 doubles the backslash and sends `'\\N'` (raw `\\N`).
+        ///
+        /// For the text format PostgreSQL's default marker is `\N`, which is also ClickHouse's TSV default,
+        /// so both an absent `NULL` option and an explicit `NULL '\N'` (what libpq/psycopg2 append) are
+        /// no-ops. For CSV PostgreSQL's default is an empty unquoted field; `csv_null_marker` already
+        /// defaults to that, and an explicit `NULL ''` restates it, while an explicit `NULL '\N'` selects
+        /// the `\N` marker instead - the handler applies the marker to the CSV reader/writer through
+        /// `format_csv_null_representation`. Any other marker is rejected rather than silently ignored.
+        const String backslash_n = "\\N";
+        const String backslash_n_doubled = "\\\\N";
         if (delimiter_value && *delimiter_value != default_delimiter)
             node->unsupported_option = "a non-default DELIMITER";
-        else if (null_value && *null_value != default_null && *null_value != default_null_backslash_escaped)
-            node->unsupported_option = "a non-default NULL marker";
         else if (header_requested)
             node->unsupported_option = "HEADER";
+        else if (null_value && (*null_value == backslash_n || *null_value == backslash_n_doubled))
+        {
+            if (is_csv)
+                node->csv_null_marker = backslash_n;
+        }
+        else if (null_value && null_value->empty())
+        {
+            if (!is_csv)
+                node->unsupported_option = "a non-default NULL marker";
+        }
+        else if (null_value)
+            node->unsupported_option = "a non-default NULL marker";
     }
 
     return true;

@@ -42,6 +42,14 @@ public:
     /// Empty when there is nothing to reject.
     String unsupported_option;
 
+    /// The NULL marker to use for the CSV format, as raw bytes. PostgreSQL's CSV convention is that an
+    /// empty unquoted field means NULL (a quoted empty string stays an empty string), so this defaults to
+    /// the empty string; an explicit `NULL '\N'` option selects the `\N` marker instead. The handler wires
+    /// it into the CSV reader and writer through the `format_csv_null_representation` setting. Unused for
+    /// the text format, whose default marker (`\N`) is also ClickHouse's TSV default; any other marker is
+    /// rejected via `unsupported_option`.
+    String csv_null_marker;
+
     String getID(char) const override { return "CopyQuery"; }
 
     ASTPtr clone() const override;
