@@ -171,8 +171,6 @@ path:
 
 Notes:
 
-- The forms cannot be mixed within one `path`: use a single `tagged`, or a single `children_of`, or a list of explicit paths. Mixing sources raises an exception.
-- Each distinct source is backed by one shared `PathSet`; generators referencing the same tag or the same `children_of` parent share the same in-memory set of paths, so each path is stored once regardless of how many generators or threads use it.
 - Paths must start with `/`.
 - `children_of` is resolved at startup by listing the parent; if it has no children (and no `create` generator adds to it), an exception is raised.
 - `tagged` references a tag name assigned to setup nodes via the `tag` field. All paths created with that tag are included. If the tag is not found (and no `create` generator outputs to it), an exception is raised.

@@ -14,6 +14,7 @@ using CreateRequestSink = std::function<void(std::shared_ptr<Coordination::ZooKe
 /// Returns child names of a znode by path. Used to populate `children_of` path
 /// sets. The network runners query a running Keeper; the storage-only runner
 /// supplies a callable that reads from an in-process `KeeperStorage`.
+/// TODO: Consider removing `children_of` altogether, leaving only tags. That would remove a good chunk of code.
 using ListChildrenFn = std::function<std::vector<std::string>(const std::string &)>;
 
 /// Parses the `setup` config section describing a tree of znodes to create

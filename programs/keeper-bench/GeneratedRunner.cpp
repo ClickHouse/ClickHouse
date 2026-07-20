@@ -326,7 +326,18 @@ void GeneratedRunner::runBenchmark()
         for (size_t i = 0; i < concurrency; ++i)
         {
             auto thread_connections = connections;
-            pool->scheduleOrThrowOnError([this, i, my_connections = std::move(thread_connections)]() mutable { thread(my_connections, threads.at(i)); });
+            pool->scheduleOrThrowOnError([this, i, my_connections = std::move(thread_connections)]() mutable
+            {
+                try
+                {
+                    thread(my_connections, threads.at(i));
+                }
+                catch (...)
+                {
+                    DB::tryLogCurrentException("Unexpected exception in bench thread");
+                    std::abort();
+                }
+            });
         }
     }
     catch (...)

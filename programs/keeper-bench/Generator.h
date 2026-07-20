@@ -178,21 +178,6 @@ private:
     std::optional<double> watch_probability;
 };
 
-/// Recursively removes a random node drawn from a path set (which makes the set
-/// dynamic), together with its whole subtree. Note that only the removed root is
-/// taken out of the set; if the subtree contains other tracked paths, they go
-/// stale (their requests get ignored "node doesn't exist" errors).
-struct RemoveRecursiveRequestGenerator final : public RequestGenerator
-{
-private:
-    void getFromConfigImpl(const std::string & key, const Poco::Util::AbstractConfiguration & config, NodesSetup & nodes_setup) override;
-    std::string descriptionImpl() override;
-    ZooKeeperRequestWithCallbacks generateImpl(GenerateContext & ctx, const Coordination::ACLs & acls) override;
-
-    PathGetter path;
-    uint32_t remove_nodes_limit = 100;
-};
-
 struct RequestGetter
 {
     explicit RequestGetter(std::vector<RequestGeneratorPtr> request_generators_);
@@ -206,14 +191,13 @@ struct RequestGetter
     /// request if all of them decline.
     ZooKeeperRequestWithCallbacks generate(GenerateContext & ctx, const Coordination::ACLs & acls) const;
 
-    RequestGeneratorPtr getRequestGenerator(pcg64 & rng) const;
     std::string description() const;
     void setWatchCallback(Coordination::WatchCallbackPtr callback);
     const std::vector<RequestGeneratorPtr> & requestGenerators() const;
 private:
     std::vector<RequestGeneratorPtr> request_generators;
     std::vector<size_t> weights;
-    /// Upper bound (inclusive) for the random pick in getRequestGenerator.
+    /// Sum of `weights` or `request_generators.size()`, for `generate`.
     size_t picker_max = 0;
 };
 
