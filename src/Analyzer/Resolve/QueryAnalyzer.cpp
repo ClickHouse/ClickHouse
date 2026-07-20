@@ -77,6 +77,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool aggregate_functions_null_for_empty;
+    extern const SettingsBool analyzer_compatibility_allow_non_aggregate_in_having;
     extern const SettingsBool enable_streaming_queries;
     extern const SettingsBool analyzer_compatibility_join_using_top_level_identifier;
     extern const SettingsBool analyzer_inline_views;
@@ -137,58 +138,6 @@ namespace ErrorCodes
 
 namespace
 {
-
-/// Verify that a subsequent reference to a MATERIALIZED CTE produced the same projection
-/// types as the storage that was created from the first reference.
-///
-/// Each reference to a MATERIALIZED CTE clones the body subquery and re-resolves it in the
-/// scope of that reference. Normally all clones must produce identical projection types
-/// (otherwise the single shared storage cannot satisfy all readers). Type drift across
-/// clones is possible when the body resolves identifiers from outer scope that take
-/// different values per call site (for example, aliases from the calling subquery's
-/// projection are inlined as different constants).
-///
-/// Without this check the planner would create the storage with one set of column types
-/// but feed it data with another set, leading to a `Bad cast` `LOGICAL_ERROR` at read time
-/// inside `MemorySource::fillPhysicalColumns`. Detecting the mismatch here turns the
-/// silent corruption into a clear analysis-time error.
-void verifyMaterializedCTESubqueryMatchesStorage(
-    const QueryTreeNodePtr & subquery,
-    const StoragePtr & storage,
-    const ContextPtr & context,
-    const std::string & cte_name,
-    const QueryTreeNodePtr & scope_node)
-{
-    const NamesAndTypes & projection_columns = subquery->as<QueryNode>()
-        ? subquery->as<QueryNode>()->getProjectionColumns()
-        : subquery->as<UnionNode>()->computeProjectionColumns();
-
-    auto storage_metadata = storage->getInMemoryMetadataPtr(context, /*throw_on_invalid=*/false);
-    const NamesAndTypesList storage_columns = storage_metadata->getColumns().getOrdinary();
-
-    if (projection_columns.size() != storage_columns.size())
-        throw Exception(ErrorCodes::TYPE_MISMATCH,
-            "Materialized CTE '{}' has inconsistent projection across references: storage has {} columns, "
-            "but this reference resolved to {}. In scope {}",
-            cte_name, storage_columns.size(), projection_columns.size(),
-            scope_node->formatASTForErrorMessage());
-
-    auto storage_it = storage_columns.begin();
-    for (size_t i = 0; i < projection_columns.size(); ++i, ++storage_it)
-    {
-        if (!projection_columns[i].type->equals(*storage_it->type))
-            throw Exception(ErrorCodes::TYPE_MISMATCH,
-                "Materialized CTE '{}' has inconsistent column types across references: column '{}' has type {} in storage "
-                "but this reference resolved to type {}. This usually means the CTE body references identifiers "
-                "from outer scope (e.g. aliases from the calling subquery) that take different values per call site. "
-                "Materialized CTEs cannot have such dependencies. In scope {}",
-                cte_name,
-                storage_it->name,
-                storage_it->type->getName(),
-                projection_columns[i].type->getName(),
-                scope_node->formatASTForErrorMessage());
-    }
-}
 
 /// Recursively clears aliases from `node` and all of its descendants, stopping at
 /// nested-scope boundaries (`QUERY`, `UNION`, `LAMBDA`).
@@ -285,12 +234,16 @@ void QueryAnalyzer::resolve(QueryTreeNodePtr & node, const QueryTreeNodePtr & ta
                 scope.table_expressions_in_resolve_process.erase(table_expression.get());
             }
 
+            /// Collect aliases defined inside the expression (e.g. `f(...) AS a, ..., a`) into the scope
+            /// before resolution, so that later references to them can be resolved. This must be done for
+            /// a single expression node too, not only for a list: otherwise an alias defined and later
+            /// referenced within a standalone expression (such as a column DEFAULT expression checked
+            /// during `ALTER TABLE ... DROP COLUMN`) is not found and resolution fails with UNKNOWN_IDENTIFIER.
+            QueryExpressionsAliasVisitor visitor(scope.aliases);
+            visitor.visit(node);
+
             if (node_type == QueryTreeNodeType::LIST)
-            {
-                QueryExpressionsAliasVisitor visitor(scope.aliases);
-                visitor.visit(node);
                 resolveExpressionNodeList(node, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
-            }
             else
                 resolveExpressionNode(node, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
 
@@ -313,7 +266,7 @@ void QueryAnalyzer::resolve(QueryTreeNodePtr & node, const QueryTreeNodePtr & ta
     }
 
     validateCorrelatedSubqueries(node);
-    inlineMaterializedCTEIfNeeded(node, reused_materialized_cte, context);
+    inlineMaterializedCTEIfNeeded(node, context);
 }
 
 void QueryAnalyzer::resolveConstantExpression(QueryTreeNodePtr & node, const QueryTreeNodePtr & table_expression, ContextPtr context)
@@ -344,6 +297,14 @@ void QueryAnalyzer::resolveConstantExpression(QueryTreeNodePtr & node, const Que
         initializeTableExpressionData(scope.expression_join_tree_node, scope);
         scope.table_expressions_in_resolve_process.erase(table_expression.get());
     }
+
+    /// Collect aliases defined inside the expression (e.g. `f(...) AS a, ..., a`) into the scope
+    /// before resolution, so that later references to them can be resolved. This mirrors `resolve`
+    /// above and is needed for a single expression node too, not only for a list: otherwise an alias
+    /// defined and later referenced within a standalone constant expression (such as a user predicate
+    /// passed to `mergeTreeAnalyzeIndexes`) is not found and resolution fails with UNKNOWN_IDENTIFIER.
+    QueryExpressionsAliasVisitor visitor(scope.aliases);
+    visitor.visit(node);
 
     if (node_type == QueryTreeNodeType::LIST)
         resolveExpressionNodeList(node, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
@@ -713,9 +674,11 @@ void QueryAnalyzer::replaceNodesWithPositionalArguments(QueryTreeNodePtr & node_
         /// initiator.
         if (scope.context->isPositionalArgumentsAlreadyResolved())
             return;
-        /// Skip on remote shard execution (SECONDARY_QUERY): same reasoning as above for
-        /// paths not covered by setPositionalArgumentsAlreadyResolved.
-        if (scope.context->getClientInfo().query_kind != ClientInfo::QueryKind::INITIAL_QUERY)
+        /// Skip only on remote shard execution (SECONDARY_QUERY): the initiator already
+        /// resolved positional arguments. Do not skip for contexts that never set the kind
+        /// (NO_QUERY), e.g. a Replicated database DDL worker running CREATE ... AS SELECT,
+        /// which must resolve positional arguments itself.
+        if (scope.context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
             return;
     }
 
@@ -869,8 +832,8 @@ void QueryAnalyzer::validateTableExpressionModifiers(const QueryTreeNodePtr & ta
 
             if (table_expression_modifiers->hasStream())
             {
-                #ifndef OS_LINUX
-                    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Streaming requests are supported only on Linux.");
+                #if !defined(OS_LINUX) && !defined(OS_DARWIN)
+                    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Streaming requests are supported only on Linux and macOS.");
                 #else
                     if (scope.context && !scope.context->getSettingsRef()[Setting::enable_streaming_queries])
                         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
@@ -1339,13 +1302,6 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierFromCTE(
         table_node->setAlias(full_name);
 
         cte_node = table_node;
-    }
-    else if (auto * table_node = cte_node->as<TableNode>())
-    {
-        if (table_node->isMaterializedCTE())
-        {
-            reused_materialized_cte.insert(table_node->getMaterializedCTE());
-        }
     }
 
     return { .resolved_identifier = cte_node, .resolve_place = IdentifierResolvePlace::CTE };
@@ -3287,7 +3243,8 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
                                 materialized_cte_ptr->storage,
                                 scope.context,
                                 materialized_cte_ptr->cte_name,
-                                scope.scope_node);
+                                scope.scope_node,
+                                /*throw_on_mismatch=*/ true);
                         }
                     }
                 }
@@ -5859,7 +5816,8 @@ void QueryAnalyzer::resolveQueryJoinTreeNode(QueryTreeNodePtr & join_tree_node, 
                         materialized_cte_ptr->storage,
                         scope.context,
                         materialized_cte_ptr->cte_name,
-                        scope.scope_node);
+                        scope.scope_node,
+                        /*throw_on_mismatch=*/ true);
                 }
             }
 
@@ -5937,6 +5895,193 @@ void QueryAnalyzer::resolveQueryJoinTreeNode(QueryTreeNodePtr & join_tree_node, 
     add_table_expression_alias_into_scope(join_tree_node);
     scope.registered_table_expression_nodes.insert(join_tree_node);
     scope.table_expressions_in_resolve_process.erase(join_tree_node.get());
+}
+
+namespace
+{
+
+/** Classify a HAVING conjunct subtree for the `HAVING` -> `WHERE` rewrite.
+  *
+  * `AbortRewrite` outranks `KeepInHaving` outranks `Move`:
+  * - any window function or stateful function -> `AbortRewrite` (matches legacy `return false`);
+  * - else any aggregate function -> `KeepInHaving`;
+  * - else any `grouping` function -> `KeepInHaving` (stricter than legacy; required because
+  *   `validateAggregates` rejects `grouping` in `WHERE`);
+  * - else any non-deterministic function -> `KeepInHaving` (stricter than legacy, which moved them);
+  * - else -> `Move`.
+  */
+enum class HavingConjunctMoveAction
+{
+    Move,
+    KeepInHaving,
+    AbortRewrite,
+};
+
+HavingConjunctMoveAction classifyHavingConjunctForMove(const QueryTreeNodePtr & node)
+{
+    HavingConjunctMoveAction verdict = HavingConjunctMoveAction::Move;
+
+    QueryTreeNodes nodes_to_visit = {node};
+    while (!nodes_to_visit.empty())
+    {
+        auto current = nodes_to_visit.back();
+        nodes_to_visit.pop_back();
+
+        auto current_type = current->getNodeType();
+        if (current_type == QueryTreeNodeType::QUERY || current_type == QueryTreeNodeType::UNION)
+            continue;
+
+        if (auto * function_node = current->as<FunctionNode>())
+        {
+            if (function_node->isWindowFunction())
+                return HavingConjunctMoveAction::AbortRewrite;
+
+            if (function_node->isOrdinaryFunction())
+            {
+                if (auto function_base = function_node->getFunction())
+                {
+                    if (function_base->isStateful())
+                        return HavingConjunctMoveAction::AbortRewrite;
+
+                    if (!function_base->isDeterministicInScopeOfQuery() && verdict == HavingConjunctMoveAction::Move)
+                        verdict = HavingConjunctMoveAction::KeepInHaving;
+                }
+            }
+
+            if (function_node->isAggregateFunction() && verdict == HavingConjunctMoveAction::Move)
+                verdict = HavingConjunctMoveAction::KeepInHaving;
+
+            if (function_node->getFunctionName() == "grouping" && verdict == HavingConjunctMoveAction::Move)
+                verdict = HavingConjunctMoveAction::KeepInHaving;
+        }
+
+        for (const auto & child : current->getChildren())
+            if (child)
+                nodes_to_visit.push_back(child);
+    }
+
+    return verdict;
+}
+
+/** Mimic the legacy `tryMovePredicatesFromHavingToWhere` rewrite at the QueryTree level.
+  *
+  * All-or-nothing for stateful and window functions: if any conjunct contains either,
+  * the entire rewrite is skipped (matches legacy `return false`).
+  *
+  * Stricter than legacy for non-determinism: conjuncts containing non-deterministic calls
+  * (e.g. `rand`) stay in `HAVING` instead of moving. Legacy moved them, silently changing
+  * per-group evaluation to per-row; we intentionally keep them in `HAVING`.
+  *
+  * Gated behind `analyzer_compatibility_allow_non_aggregate_in_having`. Skipped for
+  * `WITH CUBE`/`WITH ROLLUP`/`WITH TOTALS`/`GROUPING SETS` and when `group_by_use_nulls`
+  * is in effect.
+  */
+void tryMoveNonAggregateHavingPredicatesToWhere(const QueryTreeNodePtr & query_node, const IdentifierResolveScope & scope)
+{
+    auto & query_node_typed = query_node->as<QueryNode &>();
+    if (!query_node_typed.hasHaving())
+        return;
+
+    if (!scope.context->getSettingsRef()[Setting::analyzer_compatibility_allow_non_aggregate_in_having])
+        return;
+
+    if (query_node_typed.isGroupByWithCube()
+        || query_node_typed.isGroupByWithRollup()
+        || query_node_typed.isGroupByWithTotals()
+        || query_node_typed.isGroupByWithGroupingSets())
+        return;
+
+    if (scope.group_by_use_nulls)
+        return;
+
+    /// HAVING without aggregation is handled by other validation paths; do not interfere.
+    QueryTreeNodes aggregate_function_nodes;
+    collectAggregateFunctionNodes(query_node, aggregate_function_nodes);
+    if (!query_node_typed.hasGroupBy() && aggregate_function_nodes.empty())
+        return;
+
+    auto & having_node = query_node_typed.getHaving();
+
+    /// The parser builds left-associative binary `and` trees, so `(a AND b) AND c`
+    /// arrives as `and(and(a, b), c)`. Flatten the whole chain into atomic conjuncts,
+    /// mirroring the legacy `splitConjunctionsAst` used by `PredicateExpressionsOptimizer`.
+    /// Without this, a nested `and` containing an aggregate is classified as a single
+    /// `KeepInHaving` conjunct and its non-aggregate siblings stay trapped in `HAVING`.
+    QueryTreeNodes conjuncts;
+    {
+        QueryTreeNodes worklist{having_node};
+        while (!worklist.empty())
+        {
+            auto current = std::move(worklist.back());
+            worklist.pop_back();
+
+            auto * current_function = current->as<FunctionNode>();
+            if (current_function && current_function->getFunctionName() == "and")
+            {
+                const auto & args = current_function->getArguments().getNodes();
+                /// Reverse-iterate into the LIFO worklist to preserve left-to-right order.
+                for (auto it = args.rbegin(); it != args.rend(); ++it)
+                    worklist.push_back(*it);
+            }
+            else
+            {
+                conjuncts.push_back(std::move(current));
+            }
+        }
+    }
+
+    std::vector<HavingConjunctMoveAction> classifications;
+    classifications.reserve(conjuncts.size());
+    for (const auto & conjunct : conjuncts)
+    {
+        auto action = classifyHavingConjunctForMove(conjunct);
+        if (action == HavingConjunctMoveAction::AbortRewrite)
+            return;
+        classifications.push_back(action);
+    }
+
+    QueryTreeNodes keep_in_having;
+    QueryTreeNodes move_to_where;
+    keep_in_having.reserve(conjuncts.size());
+    move_to_where.reserve(conjuncts.size());
+
+    for (size_t i = 0; i < conjuncts.size(); ++i)
+    {
+        if (classifications[i] == HavingConjunctMoveAction::KeepInHaving)
+            keep_in_having.push_back(std::move(conjuncts[i]));
+        else
+            move_to_where.push_back(std::move(conjuncts[i]));
+    }
+
+    if (move_to_where.empty())
+        return;
+
+    auto build_and = [&scope](QueryTreeNodes && args) -> QueryTreeNodePtr
+    {
+        if (args.size() == 1)
+            return std::move(args.front());
+        auto and_function = std::make_shared<FunctionNode>("and");
+        and_function->markAsOperator();
+        and_function->getArguments().getNodes() = std::move(args);
+        and_function->resolveAsFunction(FunctionFactory::instance().get("and", scope.context));
+        return and_function;
+    };
+
+    if (keep_in_having.empty())
+        having_node = nullptr;
+    else
+        having_node = build_and(std::move(keep_in_having));
+
+    QueryTreeNodes new_where_args;
+    new_where_args.reserve(1 + move_to_where.size());
+    if (query_node_typed.hasWhere())
+        new_where_args.push_back(query_node_typed.getWhere());
+    for (auto & moved : move_to_where)
+        new_where_args.push_back(std::move(moved));
+
+    query_node_typed.getWhere() = build_and(std::move(new_where_args));
+}
+
 }
 
 /** Resolve query.
@@ -6333,7 +6478,27 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
         node->removeAlias();
     }
 
+    const bool was_group_by_all = query_node_typed.isGroupByAll();
     expandGroupByAll(query_node_typed);
+
+    /// `GROUP BY ALL` adds the SELECT expressions as grouping keys only here, after
+    /// `resolveGroupByNode` already ran its tuple unwrapping and key type validation. So a key like
+    /// `tuple(a, b)` is kept as a single key, unlike an explicit `GROUP BY tuple(a, b)` which
+    /// `expandTuplesInList` turns into the separate keys `a` and `b`, and none of the expanded keys go
+    /// through `validateGroupByKeyType`. Redo both here: otherwise the tuple elements are not
+    /// individually available after aggregation, and a later pass such as `OrderByTupleEliminationPass`
+    /// (which rewrites `ORDER BY tuple(a, b)` into `ORDER BY a, b`) would reference columns missing from
+    /// the aggregated block; and a suspicious key type such as `Variant`/`Dynamic`, which explicit
+    /// `GROUP BY` rejects, would be silently accepted. See https://github.com/ClickHouse/ClickHouse/issues/83433.
+    if (was_group_by_all)
+    {
+        expandTuplesInList(query_node_typed.getGroupBy().getNodes());
+
+        for (const auto & group_by_elem : query_node_typed.getGroupBy().getNodes())
+            validateGroupByKeyType(group_by_elem->getResultType(), scope);
+    }
+
+    tryMoveNonAggregateHavingPredicatesToWhere(query_node, scope);
 
     validateFromClause(query_node);
     validateFilters(query_node);
