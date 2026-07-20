@@ -768,18 +768,11 @@ SETTINGS schema_inference_mode='union';
         {.allow_readonly = false}
     );
 
-#if USE_GOOGLE_CLOUD
-    factory.registerFunction<TableFunctionGCS>(
-        {
-            .description=R"(The table function can be used to read the data stored on GCS. Set `use_native_gcs=1` to use the native Google Cloud SDK instead of the S3-compatibility path.)",
-            .examples{{GCSDefinition::name, "SELECT * FROM gcs(url, access_key_id, secret_access_key)", ""}},
-            .category = FunctionDocumentation::Category::TableFunction
-        },
-        {.allow_readonly = false}
-    );
-#else
-    factory.registerFunction<TableFunctionObjectStorage<GCSDefinition, StorageS3Configuration>>(
-        {.description = R"DOCS_MD(
+    /// The `gcs` reference page (docs/reference/functions/table-functions/gcs.mdx) is regenerated from this
+    /// description, so both registration branches carry the full page body, including the "Native GCS
+    /// integration" section: the page documents the feature (experimental, off by default) regardless of
+    /// whether this particular build has the native backend compiled in.
+    const String gcs_description = R"DOCS_MD(
 Provides a table-like interface to `SELECT` and `INSERT` data from [Google Cloud Storage](https://cloud.google.com/storage/). Requires the [`Storage Object User` IAM role](https://cloud.google.com/storage/docs/access-control/iam-roles).
 
 This is an alias of the [s3 table function](/reference/functions/table-functions/s3).
@@ -799,6 +792,29 @@ gcs(named_collection[, option=value [,..]])
 The GCS Table Function integrates with Google Cloud Storage by using the GCS XML API and HMAC keys. 
 See the [Google interoperability docs](https://cloud.google.com/storage/docs/interoperability) for more details about the endpoint and HMAC.
 </Tip>
+
+## Native GCS integration {#native-gcs}
+
+:::note Experimental feature
+Native GCS integration is an experimental feature (the `use_native_gcs` setting is in the experimental tier and off by default). Its behavior may change in future releases.
+:::
+
+By default `gcs` talks to Google Cloud Storage through its S3-compatible XML API (using the AWS SDK and HMAC keys). Enable the [`use_native_gcs`](/operations/settings/settings#use_native_gcs) setting to instead use the native Google Cloud SDK (`google-cloud-cpp`, the GCS JSON API):
+
+```sql
+SELECT * FROM gcs('https://storage.googleapis.com/my-bucket/data.parquet')
+SETTINGS use_native_gcs = 1;
+```
+
+In native mode credentials are resolved via the Google-native mechanisms rather than S3 HMAC keys:
+
+- **Application Default Credentials** (the default when no credentials are given): `GOOGLE_APPLICATION_CREDENTIALS`, the GCE/GKE metadata server, or the `gcloud` SDK configuration.
+- **`NOSIGN`** — anonymous access (public buckets and the GCS emulator).
+- **Service-account key** or the `google_adc_*` OAuth refresh-token flow, supplied via a [named collection](/concepts/features/configuration/server-config/named-collections).
+
+Positional HMAC `access_key_id`/`secret_access_key` arguments only apply to the default S3-compatibility path; leave `use_native_gcs` unset (the default) to keep using them.
+
+The same setting switches the `GCS` table engine between the two backends. Native GCS is also available as a MergeTree storage disk via `object_storage_type: gcs` (or `type: gcs`).
 
 ## Arguments {#arguments}
 
@@ -989,7 +1005,15 @@ As a result, the data is written into three files in different buckets: `my_buck
 ## Related {#related}
 - [S3 table function](/reference/functions/table-functions/s3)
 - [S3 engine](/reference/engines/table-engines/integrations/s3)
-)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction},
+)DOCS_MD";
+#if USE_GOOGLE_CLOUD
+    factory.registerFunction<TableFunctionGCS>(
+        {.description = gcs_description, .category = FunctionDocumentation::Category::TableFunction},
+        {.allow_readonly = false}
+    );
+#else
+    factory.registerFunction<TableFunctionObjectStorage<GCSDefinition, StorageS3Configuration>>(
+        {.description = gcs_description, .category = FunctionDocumentation::Category::TableFunction},
         {.allow_readonly = false}
     );
 #endif
