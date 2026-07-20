@@ -736,18 +736,12 @@ Possible values:
 Merge parts if every part in the range is older than the value of
 `min_age_to_force_merge_seconds`.
 
-By default, ignores setting `max_bytes_to_merge_at_max_space_in_pool`
-(see `enable_max_bytes_limit_for_min_age_to_force_merge`).
-
 Possible values:
 - Positive integer.
 )", 0) \
     DECLARE(Bool, min_age_to_force_merge_on_partition_only, false, R"(
 Whether `min_age_to_force_merge_seconds` should be applied only on the entire
 partition and not on subset.
-
-By default, ignores setting `max_bytes_to_merge_at_max_space_in_pool` (see
-`enable_max_bytes_limit_for_min_age_to_force_merge`).
 
 Possible values:
 - true, false
