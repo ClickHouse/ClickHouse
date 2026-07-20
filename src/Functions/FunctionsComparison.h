@@ -1362,8 +1362,8 @@ private:
         }
 
         ColumnsWithTypeAndName element_args{
-            {std::move(elements0), removeNullable(nested_type0), "left"},
-            {std::move(elements1), removeNullable(nested_type1), "right"}};
+            {elements0, removeNullable(nested_type0), "left"},
+            {elements1, removeNullable(nested_type1), "right"}};
 
         auto run = [&](const FunctionOverloadResolverPtr & resolver) -> ColumnPtr
         {
