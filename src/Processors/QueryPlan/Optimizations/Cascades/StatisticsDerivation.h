@@ -57,6 +57,9 @@ private:
     /// Estimate bytes per row for a ReadFromMergeTree step using hint, storage column sizes, or output header.
     Float64 estimateReadBytesPerRow(const ReadFromMergeTree & read_step);
 
+    /// Fill per-column average value sizes of the read (storage-derived, hint overrides).
+    void fillReadColumnWidths(ExpressionStatistics & statistics, const ReadFromMergeTree & read_step, const String & table_name);
+
     Memo & memo;
     const IOptimizerStatistics & statistics_lookup;
     LoggerPtr log = getLogger("StatisticsDerivation");

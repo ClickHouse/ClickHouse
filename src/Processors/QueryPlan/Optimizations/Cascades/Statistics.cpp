@@ -6,12 +6,10 @@
 #include <IO/Operators.h>
 #include <base/defines.h>
 #include <boost/algorithm/string/split.hpp>
+#include <Interpreters/Context.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
-#include <Poco/JSON/Parser.h>
-#include <Poco/JSON/Object.h>
-#include <Common/Exception.h>
 #include <mutex>
 #include <optional>
 #include <unordered_map>
@@ -19,11 +17,6 @@
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int BAD_ARGUMENTS;
-}
 
 void ExpressionStatistics::dump(WriteBuffer & out) const
 {
@@ -33,7 +26,8 @@ void ExpressionStatistics::dump(WriteBuffer & out) const
         << " estimated_bytes_per_row: " << estimated_bytes_per_row
         << "\n";
     for (const auto & column : column_statistics)
-        out << "`" << column.first << "` NDV : " << column.second.num_distinct_values << "\n";
+        out << "`" << column.first << "` NDV : " << column.second.num_distinct_values
+            << " avg_bytes: " << column.second.avg_bytes << "\n";
 }
 
 String ExpressionStatistics::dump() const
@@ -43,24 +37,41 @@ String ExpressionStatistics::dump() const
     return out.str();
 }
 
-Float64 estimateRowWidthFromHeader(const Block & header)
+static constexpr Float64 MIN_ROW_WIDTH = 8.0;
+
+Float64 estimateColumnWidthFromType(const IDataType & type)
 {
     static constexpr Float64 DEFAULT_STRING_SIZE = 64.0;
     static constexpr Float64 DEFAULT_COMPLEX_TYPE_SIZE = 128.0;
-    static constexpr Float64 MIN_ROW_WIDTH = 8.0;
 
+    if (type.haveMaximumSizeOfValue())
+        return Float64(type.getMaximumSizeOfValueInMemory());
+    if (const auto * agg_type = typeid_cast<const DataTypeAggregateFunction *>(&type))
+        return Float64(agg_type->getFunction()->sizeOfData());
+    if (type.getTypeId() == TypeIndex::String)
+        return DEFAULT_STRING_SIZE;
+    return DEFAULT_COMPLEX_TYPE_SIZE;
+}
+
+Float64 estimateRowWidthFromHeader(const Block & header)
+{
+    Float64 total = 0;
+    for (const auto & col : header)
+        total += estimateColumnWidthFromType(*col.type);
+
+    return std::max(total, MIN_ROW_WIDTH);
+}
+
+Float64 estimateRowWidth(const Block & header, const std::unordered_map<String, ColumnStats> & column_statistics)
+{
     Float64 total = 0;
     for (const auto & col : header)
     {
-        const auto & type = col.type;
-        if (type->haveMaximumSizeOfValue())
-            total += Float64(type->getMaximumSizeOfValueInMemory());
-        else if (const auto * agg_type = typeid_cast<const DataTypeAggregateFunction *>(type.get()))
-            total += Float64(agg_type->getFunction()->sizeOfData());
-        else if (type->getTypeId() == TypeIndex::String)
-            total += DEFAULT_STRING_SIZE;
+        auto it = column_statistics.find(col.name);
+        if (it != column_statistics.end() && it->second.avg_bytes > 0)
+            total += it->second.avg_bytes;
         else
-            total += DEFAULT_COMPLEX_TYPE_SIZE;
+            total += estimateColumnWidthFromType(*col.type);
     }
 
     return std::max(total, MIN_ROW_WIDTH);
@@ -68,13 +79,16 @@ Float64 estimateRowWidthFromHeader(const Block & header)
 
 RelationStats parseTableStatsHint(const String & dummy_stats_str, const String & table_name);
 
-/// Statistics hint can be passed in JSON as query parameter:
+/// Statistics hint can be passed in JSON as query parameter. `avg_row_bytes` and `column_bytes`
+/// (average bytes of one value per column) are optional:
 ///
 /// SET param__internal_join_table_stat_hints = '{
 ///     "region": { "cardinality": 5, "distinct_keys": {
 ///         "r_regionkey" : 5,
 ///         "r_name" : 5,
-///         "r_comment" : 5}
+///         "r_comment" : 5},
+///       "avg_row_bytes": 120,
+///       "column_bytes": { "r_name": 10 }
 ///     },
 ///     ...
 /// }';
@@ -113,45 +127,30 @@ public:
         std::lock_guard g(table_statistics_lock);
         fillParsedStatisticsIfNeeded(table_name);
 
-        auto it = parsed_avg_row_bytes.find(table_name);
-        if (it != parsed_avg_row_bytes.end())
-            return it->second;
-        return std::nullopt;
+        return parsed_table_statistics[table_name].avg_row_bytes;
+    }
+
+    std::optional<Float64> getColumnAvgBytes(const String & table_name, const String & column_name) const override
+    {
+        std::lock_guard g(table_statistics_lock);
+        fillParsedStatisticsIfNeeded(table_name);
+
+        const auto & table_statistics = parsed_table_statistics[table_name];
+        auto column_statistics = table_statistics.column_stats.find(column_name);
+        if (column_statistics == table_statistics.column_stats.end() || column_statistics->second.avg_bytes == 0)
+            return std::nullopt;
+        return column_statistics->second.avg_bytes;
     }
 
 private:
     void fillParsedStatisticsIfNeeded(const String & table_name) const TSA_REQUIRES(table_statistics_lock)
     {
         if (!parsed_table_statistics.contains(table_name))
-        {
             parsed_table_statistics[table_name] = parseTableStatsHint(statistics_hint_json, table_name);
-
-            /// Parse avg_row_bytes from the hint JSON
-            try
-            {
-                Poco::JSON::Parser parser;
-                auto result = parser.parse(statistics_hint_json);
-                const auto & object = result.extract<Poco::JSON::Object::Ptr>();
-                if (object && object->has(table_name))
-                {
-                    auto stat_object = object->getObject(table_name);
-                    if (stat_object && stat_object->has("avg_row_bytes"))
-                        parsed_avg_row_bytes[table_name] = stat_object->getValue<Float64>("avg_row_bytes");
-                }
-            }
-            catch (const Poco::Exception & e)
-            {
-                /// The other hint fields were already parsed, so a broken `avg_row_bytes` means a
-                /// malformed hint; the hint is a test knob, so make the mistake visible.
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "Cannot parse 'avg_row_bytes' for table '{}' from the statistics hint: {}", table_name, e.displayText());
-            }
-        }
     }
 
     mutable std::mutex table_statistics_lock;
     mutable std::unordered_map<String, RelationStats> parsed_table_statistics TSA_GUARDED_BY(table_statistics_lock);
-    mutable std::unordered_map<String, Float64> parsed_avg_row_bytes TSA_GUARDED_BY(table_statistics_lock);
     const String statistics_hint_json;
 };
 
@@ -176,24 +175,58 @@ OptimizerStatisticsPtr createEmptyStatistics()
 }
 
 
-/// Estimate bytes per row for a ReadFromMergeTree step using storage column sizes or output header.
+std::unordered_map<String, Float64> estimateReadColumnWidths(const ReadFromMergeTree & read_step)
+{
+    const auto & storage = read_step.getStorageSnapshot()->storage;
+    const auto total_rows_opt = storage.totalRows(nullptr);
+    const auto column_sizes = storage.getColumnSizes();
+    const Float64 total_rows = (total_rows_opt && *total_rows_opt > 0) ? Float64(*total_rows_opt) : 0;
+
+    /// Compact parts carry no per-column sizes, but the table-level uncompressed total is still
+    /// measured; scale the type-based estimates so their sum matches the real row width.
+    Float64 type_width_scale = 1.0;
+    {
+        Float64 measured_columns_bytes = 0;
+        for (const auto & [_, size] : column_sizes)
+            measured_columns_bytes += Float64(size.data_uncompressed);
+        auto total_bytes_opt = storage.totalBytesUncompressed(read_step.getContext()->getSettingsRef());
+        if (measured_columns_bytes == 0 && total_rows > 0 && total_bytes_opt && *total_bytes_opt > 0)
+        {
+            Float64 type_width_sum = 0;
+            for (const auto & column : read_step.getStorageSnapshot()->metadata->getColumns().getAllPhysical())
+                type_width_sum += estimateColumnWidthFromType(*column.type);
+            if (type_width_sum > 0)
+                type_width_scale = (Float64(*total_bytes_opt) / total_rows) / type_width_sum;
+        }
+    }
+
+    const auto & header = *read_step.getOutputHeader();
+    std::unordered_map<String, Float64> widths;
+    for (const auto & col_name : read_step.getAllColumnNames())
+    {
+        auto size_it = column_sizes.find(col_name);
+        if (total_rows > 0 && size_it != column_sizes.end() && size_it->second.data_uncompressed > 0)
+        {
+            widths[col_name] = Float64(size_it->second.data_uncompressed) / total_rows;
+            continue;
+        }
+        if (const auto * col = header.findByName(col_name))
+            widths[col_name] = estimateColumnWidthFromType(*col->type) * type_width_scale;
+    }
+    return widths;
+}
+
+/// Estimate bytes per row of a read: the sum of the per-column widths, the output header as fallback.
 Float64 estimateReadBytesPerRowFromStep(const ReadFromMergeTree & read_step)
 {
-    auto total_rows_opt = read_step.getStorageSnapshot()->storage.totalRows(nullptr);
-    auto column_sizes = read_step.getStorageSnapshot()->storage.getColumnSizes();
-    if (total_rows_opt && *total_rows_opt > 0 && !column_sizes.empty())
-    {
-        Float64 total_bytes = 0;
-        for (const auto & col_name : read_step.getAllColumnNames())
-        {
-            auto it = column_sizes.find(col_name);
-            if (it != column_sizes.end())
-                total_bytes += Float64(it->second.data_uncompressed);
-        }
-        if (total_bytes > 0)
-            return total_bytes / Float64(*total_rows_opt);
-    }
-    return estimateRowWidthFromHeader(*read_step.getOutputHeader());
+    auto widths = estimateReadColumnWidths(read_step);
+    if (widths.empty())
+        return estimateRowWidthFromHeader(*read_step.getOutputHeader());
+
+    Float64 total = 0;
+    for (const auto & [_, width] : widths)
+        total += width;
+    return std::max(total, MIN_ROW_WIDTH);
 }
 
 namespace QueryPlanOptimizations
@@ -223,9 +256,17 @@ std::optional<ExpressionStatistics> estimateStatistics(QueryPlan::Node & node)
             stats.emplace();
             stats->estimated_row_count = Float64(*relation_stats.estimated_rows);
             stats->column_statistics = relation_stats.column_stats;
+            /// Hinted column widths are already in the stats; fill the rest from storage so
+            /// downstream width estimates (join, aggregation) know every column's real size.
+            for (const auto & [column_name, width] : estimateReadColumnWidths(*read_step))
+            {
+                auto & column_stats = stats->column_statistics[column_name];
+                if (column_stats.avg_bytes == 0)
+                    column_stats.avg_bytes = width;
+            }
             stats->estimated_bytes_per_row = relation_stats.avg_row_bytes
                 ? *relation_stats.avg_row_bytes
-                : estimateReadBytesPerRowFromStep(*read_step);
+                : estimateRowWidth(*read_step->getOutputHeader(), stats->column_statistics);
             /// A read (with or without a filter) cannot emit more rows than the table holds. Stat
             /// hints can deliberately claim more rows than the table physically has (tiny tables
             /// standing in for big ones in tests), so never put the bound below the estimate.

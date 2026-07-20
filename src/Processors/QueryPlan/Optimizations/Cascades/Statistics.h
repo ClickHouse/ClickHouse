@@ -13,6 +13,7 @@ namespace DB
 {
 
 class WriteBuffer;
+class IDataType;
 
 struct ExpressionStatistics
 {
@@ -41,6 +42,7 @@ public:
     virtual std::optional<UInt64> getCardinality(const String & table_name) const = 0;
     virtual std::optional<UInt64> getNumberOfDistinctValues(const String & table_name, const String & column_name) const = 0;
     virtual std::optional<Float64> getAvgRowBytes(const String & table_name) const = 0;
+    virtual std::optional<Float64> getColumnAvgBytes(const String & /*table_name*/, const String & /*column_name*/) const { return std::nullopt; }
 };
 
 using OptimizerStatisticsPtr = std::unique_ptr<IOptimizerStatistics>;
@@ -51,10 +53,23 @@ class ReadFromMergeTree;
 
 /// Bytes per row of a read: storage column sizes when available, the output header otherwise.
 Float64 estimateReadBytesPerRowFromStep(const ReadFromMergeTree & read_step);
+
+/// Average bytes per value of each column a read produces: real per-column storage sizes when the
+/// parts carry them; otherwise type-based estimates, scaled to match the table-level uncompressed
+/// total when only that is known (compact parts).
+std::unordered_map<String, Float64> estimateReadColumnWidths(const ReadFromMergeTree & read_step);
+
 OptimizerStatisticsPtr createStatisticsFromHint(const String & statistics_hint_json);
+
+/// Estimate average bytes of one value of the type.
+Float64 estimateColumnWidthFromType(const IDataType & type);
 
 /// Estimate average bytes per row from a step's output header using data type information.
 Float64 estimateRowWidthFromHeader(const Block & header);
+
+/// Estimate average bytes per row of the header, preferring the columns' known average sizes
+/// over the type-based estimate.
+Float64 estimateRowWidth(const Block & header, const std::unordered_map<String, ColumnStats> & column_statistics);
 
 std::optional<ExpressionStatistics> estimateStatistics(QueryPlan::Node & node);
 

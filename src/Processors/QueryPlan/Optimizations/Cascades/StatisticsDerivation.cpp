@@ -288,8 +288,10 @@ ExpressionStatistics StatisticsDerivation::deriveJoinStatistics(
         statistics.max_row_count, left_statistics.max_row_count, right_statistics.max_row_count);
 
     /// Width comes from the actual join output columns; summing both inputs double-counts join keys and
-    /// can include columns the join does not emit.
-    statistics.estimated_bytes_per_row = estimateRowWidthFromHeader(*join_step.getOutputHeader());
+    /// can include columns the join does not emit. Use the inputs' known column sizes where available:
+    /// with type defaults alone a short `String` would count as 64 bytes, and a cheap post-join shuffle
+    /// could look costlier than shuffling the whole pre-join input.
+    statistics.estimated_bytes_per_row = estimateRowWidth(*join_step.getOutputHeader(), statistics.column_statistics);
 
     for (auto & column_statistics : statistics.column_statistics)
         if (Float64(column_statistics.second.num_distinct_values) > statistics.estimated_row_count)
@@ -339,6 +341,7 @@ ExpressionStatistics StatisticsDerivation::deriveReadStatistics(const ReadFromMe
                 statistics.column_statistics[column_name].num_distinct_values = column_stats.num_distinct_values;
             /// The profile carries no byte sizes; leaving the default 1 byte per row would make wide
             /// tables look nearly free to move over the network.
+            fillReadColumnWidths(statistics, read_step, table_name);
             statistics.estimated_bytes_per_row = estimateReadBytesPerRow(read_step);
 
             LOG_TEST(log, "Estimate statistics for table {}: {}", table_name, statistics.dump());
@@ -357,9 +360,24 @@ ExpressionStatistics StatisticsDerivation::deriveReadStatistics(const ReadFromMe
     if (cardinality_hint)
         statistics.estimated_row_count = std::min<Float64>(statistics.estimated_row_count, Float64(*cardinality_hint));
 
+    fillReadColumnWidths(statistics, read_step, table_name);
     statistics.estimated_bytes_per_row = estimateReadBytesPerRow(read_step);
 
     return statistics;
+}
+
+void StatisticsDerivation::fillReadColumnWidths(ExpressionStatistics & statistics, const ReadFromMergeTree & read_step, const String & table_name)
+{
+    for (const auto & [column_name, width] : estimateReadColumnWidths(read_step))
+        statistics.column_statistics[column_name].avg_bytes = width;
+
+    /// A hint overrides the storage-derived width, like the table-level `avg_row_bytes` does.
+    for (const auto & column_name : read_step.getAllColumnNames())
+    {
+        auto hint = statistics_lookup.getColumnAvgBytes(table_name, column_name);
+        if (hint)
+            statistics.column_statistics[column_name].avg_bytes = *hint;
+    }
 }
 
 namespace QueryPlanOptimizations
@@ -414,8 +432,16 @@ ExpressionStatistics StatisticsDerivation::deriveAggregatingStatistics(const Agg
     aggregation_statistics.estimated_row_count = std::min(max_key_number_of_distinct_values, input_statistics.estimated_row_count);
     /// Maximum number of rows is the product of all aggregation key NDVs
     aggregation_statistics.max_row_count = std::min(max_total_number_of_distinct_values, input_statistics.max_row_count);
-    /// Aggregation changes the schema (group-by keys + aggregate states), recompute from output header
-    aggregation_statistics.estimated_bytes_per_row = estimateRowWidthFromHeader(*aggregating_step.getOutputHeader());
+    /// Group-by keys pass through with their input value sizes.
+    for (auto & [column_name, column_stats] : aggregation_statistics.column_statistics)
+    {
+        auto input_column_statistics = input_statistics.column_statistics.find(column_name);
+        if (input_column_statistics != input_statistics.column_statistics.end())
+            column_stats.avg_bytes = input_column_statistics->second.avg_bytes;
+    }
+    /// Aggregation changes the schema (group-by keys + aggregate states), recompute from output
+    /// header with the keys' known value sizes.
+    aggregation_statistics.estimated_bytes_per_row = estimateRowWidth(*aggregating_step.getOutputHeader(), aggregation_statistics.column_statistics);
     return aggregation_statistics;
 }
 
