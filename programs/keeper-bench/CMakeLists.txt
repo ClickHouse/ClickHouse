@@ -9,6 +9,7 @@ set (CLICKHOUSE_KEEPER_BENCH_SOURCES
     KeeperBench.cpp
     LogRunner.cpp
     NodesSetup.cpp
+    PathSet.cpp
     RunnerCommon.cpp
     Stats.cpp
     StorageRunner.cpp

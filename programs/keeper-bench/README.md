@@ -152,7 +152,7 @@ key:
 
 ### `PathGetter`
 
-One or more ZooKeeper paths. Paths can be explicit, expanded from children of a parent, or drawn from a tagged set of paths created during setup.
+A set of ZooKeeper paths that requests draw from. The set comes from exactly one source: explicit path(s), the children of one parent, or one tagged set of paths created during setup.
 
 ```yaml
 # explicit paths
@@ -169,14 +169,13 @@ path:
     tagged: "my_tag"
 ```
 
-All forms can be used together and merged into one candidate set.
-
 Notes:
 
+- The forms cannot be mixed within one `path`: use a single `tagged`, or a single `children_of`, or a list of explicit paths. Mixing sources raises an exception.
+- Each distinct source is backed by one shared `PathSet`; generators referencing the same tag or the same `children_of` parent share the same in-memory set of paths, so each path is stored once regardless of how many generators or threads use it.
 - Paths must start with `/`.
-- `children_of` is resolved at startup; if it has no children and no explicit paths are provided, an exception is raised.
+- `children_of` is resolved at startup by listing the parent; if it has no children, an exception is raised.
 - `tagged` references a tag name assigned to setup nodes via the `tag` field. All paths created with that tag are included. If the tag is not found, an exception is raised.
-- Duplicate `path` keys in one section are supported when parsed by ClickHouse config loader (Poco-style key indexing).
 
 ---
 
@@ -494,7 +493,8 @@ Common configuration exceptions:
 - `--config is required`: generated mode needs a config file; pass `--input-request-log` for replay mode.
 - `Config file must contain a generator section`: define `generator` in the config, or pass `--input-request-log` for replay mode.
 - `Invalid path for request generator`: all paths must start with `/`.
-- `PathGetter has no paths after initialization`: `children_of` parent has no children and no explicit `path` entries were supplied.
+- `... must draw from exactly one source`: a `path` section mixes explicit paths with `tagged` or `children_of`; use one source per `path`.
+- `... is empty: check that the children_of target has children or that setup nodes carry the tag`: the referenced path set ended up empty after setup.
 - `Generator weight must be >= 1`: use positive weights only.
 - `remove_factor must be in [0.0, 1.0]`: keep probability in range.
 - `watch_probability must be in [0.0, 1.0]`: keep probability in range.

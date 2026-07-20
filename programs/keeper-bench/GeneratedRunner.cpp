@@ -83,6 +83,11 @@ GeneratedRunner::GeneratedRunner(
     output.initializeFromConfig(*config_ptr);
 
     std::cerr << "---- Run options ----\n" << std::endl;
+
+    /// Parse the workload before connecting: this registers the path sets the
+    /// generators draw from, which the setup tree creation populates.
+    generator = std::make_shared<Generator>();
+    generator->parse(*config_ptr, nodes_setup);
 }
 
 void GeneratedRunner::printNumberOfRequestsExecuted(size_t num)
@@ -264,12 +269,13 @@ void GeneratedRunner::runBenchmark()
     createConnections();
 
     std::cerr << "Preparing to run\n";
+
+    /// All generators are parsed, so the path set flags are final; allocate the
+    /// shards, create the setup tree (populating tag sets), then fill the
+    /// `children_of` sets by listing their parents.
+    nodes_setup.finalizePathSets(concurrency);
     nodes_setup.startup(*connections[0]);
 
-    /// Initialize the generator up front, before any worker thread starts
-    /// executing requests. Generator startup resolves `children_of` paths by
-    /// listing them, which must not race with workers mutating the tree.
-    const auto * tagged_paths = nodes_setup.getTaggedPaths().empty() ? nullptr : &nodes_setup.getTaggedPaths();
     auto list_children = [&zk = *connections[0]](const std::string & parent_path) -> std::vector<std::string>
     {
         auto list_promise = std::make_shared<std::promise<Coordination::ListResponse>>();
@@ -284,9 +290,9 @@ void GeneratedRunner::runBenchmark()
         zk.list(parent_path, Coordination::ListRequestType::ALL, std::move(callback), {}, false, false);
         return list_future.get().names;
     };
+    nodes_setup.resolveChildrenOf(list_children);
+    nodes_setup.validatePathSets();
 
-    generator = std::make_shared<Generator>();
-    generator->startup(*config_ptr, list_children, tagged_paths);
     generator->setWatchCallback(std::make_shared<Coordination::WatchCallback>(
         [stats = info](const Coordination::WatchResponse &)
         {

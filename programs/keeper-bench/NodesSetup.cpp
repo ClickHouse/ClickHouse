@@ -1,7 +1,9 @@
 #include <NodesSetup.h>
 
+#include <fmt/ranges.h>
 #include <filesystem>
 #include <iostream>
+#include <ranges>
 
 #include <Common/Exception.h>
 #include <Common/ZooKeeper/KeeperException.h>
@@ -108,23 +110,9 @@ void NodesSetup::initializeFromConfig(const Poco::Util::AbstractConfiguration & 
     {
         if (key.starts_with("node"))
         {
-            auto node_key = setup_key + "." + key;
-            auto parsed_root_node = parseNode(node_key, config);
-            const auto node = root_nodes.emplace_back(parsed_root_node);
-
-            if (config.has(node_key + ".repeat"))
-            {
-                if (!node->name.isRandom())
-                    throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Repeating node creation for key {}, but name is not randomly generated", node_key);
-
-                auto repeat_count = config.getUInt64(node_key + ".repeat");
-                node->repeat_count = repeat_count;
-                for (size_t i = 1; i < repeat_count; ++i)
-                    root_nodes.emplace_back(node->clone());
-            }
+            const auto node = root_nodes.emplace_back(parseNode(setup_key + "." + key, config));
 
             std::cerr << "Tree to create:" << std::endl;
-
             node->dumpTree();
             std::cerr << std::endl;
         }
@@ -141,7 +129,21 @@ std::shared_ptr<NodesSetup::Node> NodesSetup::parseNode(const std::string & key,
         node->data = StringGetter::fromConfig(key + ".data", config);
 
     if (config.has(key + ".tag"))
+    {
         node->tag = config.getString(key + ".tag");
+        node->tag_set = getOrCreateTagSet(*node->tag);
+        node->tag_set->is_setup_tag = true;
+    }
+
+    if (config.has(key + ".repeat"))
+    {
+        if (!node->name.isRandom())
+            throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Repeating node creation for key {}, but name is not randomly generated", key);
+
+        node->repeat_count = config.getUInt64(key + ".repeat");
+        if (node->repeat_count == 0)
+            throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "repeat must be >= 1 for key {}", key);
+    }
 
     Poco::Util::AbstractConfiguration::Keys node_keys;
     config.keys(key, node_keys);
@@ -151,20 +153,7 @@ std::shared_ptr<NodesSetup::Node> NodesSetup::parseNode(const std::string & key,
         if (!node_key.starts_with("node"))
             continue;
 
-        const auto node_key_string = key + "." + node_key;
-        auto child_node = parseNode(node_key_string, config);
-        node->children.push_back(child_node);
-
-        if (config.has(node_key_string + ".repeat"))
-        {
-            if (!child_node->name.isRandom())
-                throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Repeating node creation for key {}, but name is not randomly generated", node_key_string);
-
-            auto repeat_count = config.getUInt64(node_key_string + ".repeat");
-            child_node->repeat_count = repeat_count;
-            for (size_t i = 1; i < repeat_count; ++i)
-                node->children.push_back(child_node);
-        }
+        node->children.push_back(parseNode(key + "." + node_key, config));
     }
 
     return node;
@@ -175,74 +164,147 @@ void NodesSetup::Node::dumpTree(int level) const
     std::string data_string
         = data.has_value() ? fmt::format("{}", data->description()) : "no data";
 
-    std::string repeat_count_string = repeat_count != 0 ? fmt::format(", repeated {} times", repeat_count) : "";
+    std::string repeat_count_string = repeat_count != 1 ? fmt::format(", repeated {} times", repeat_count) : "";
 
     std::string tag_string = tag.has_value() ? fmt::format(", tag: \"{}\"", *tag) : "";
 
     std::cerr << fmt::format("{}name: {}, data: {}{}{}", std::string(level, '\t'), name.description(), data_string, repeat_count_string, tag_string) << std::endl;
 
-    for (auto it = children.begin(); it != children.end();)
-    {
-        const auto & child = *it;
+    for (const auto & child : children)
         child->dumpTree(level + 1);
-        std::advance(it, child->repeat_count != 0 ? child->repeat_count : 1);
-    }
 }
 
-std::shared_ptr<NodesSetup::Node> NodesSetup::Node::clone() const
+void NodesSetup::Node::createAt(const std::string & path, const CreateRequestSink & sink, const Coordination::ACLs & acls, pcg64 & rng_) const
 {
-    auto new_node = std::make_shared<Node>();
-    new_node->name = name;
-    new_node->data = data;
-    new_node->tag = tag;
-    new_node->repeat_count = repeat_count;
-
-    // don't do deep copy of children because we will do clone only for root nodes
-    new_node->children = children;
-
-    return new_node;
-}
-
-void NodesSetup::Node::createNodes(
-    const CreateRequestSink & sink,
-    const std::string & parent_path,
-    const Coordination::ACLs & acls,
-    TaggedPaths & tagged_paths_out,
-    pcg64 & rng_) const
-{
-    auto path = std::filesystem::path(parent_path) / name.getString(rng_);
-
     auto request = std::make_shared<Coordination::ZooKeeperCreateRequest>();
     request->path = path;
     request->data = data ? data->getString(rng_) : "";
     request->acls = acls;
     sink(std::move(request));
 
-    if (tag.has_value())
-        tagged_paths_out[*tag].push_back(path);
+    if (tag_set && tag_set->used_as_input)
+        tag_set->populate(path);
 
     for (const auto & child : children)
-        child->createNodes(sink, path, acls, tagged_paths_out, rng_);
+        for (size_t i = 0; i < child->repeat_count; ++i)
+            child->createAt(std::filesystem::path(path) / child->name.getString(rng_), sink, acls, rng_);
+}
+
+PathSetPtr NodesSetup::getOrCreateTagSet(const std::string & tag)
+{
+    auto & set = tag_sets[tag];
+    if (!set)
+    {
+        set = std::make_shared<PathSet>();
+        set->name = fmt::format("tag \"{}\"", tag);
+    }
+    return set;
+}
+
+PathSetPtr NodesSetup::getOrCreateChildrenOfSet(const std::string & parent_path)
+{
+    auto & set = children_of_sets[parent_path];
+    if (!set)
+    {
+        set = std::make_shared<PathSet>();
+        set->name = fmt::format("children of {}", parent_path);
+        set->is_children_of = true;
+        set->children_of_parent = parent_path;
+    }
+    return set;
+}
+
+PathSetPtr NodesSetup::createLiteralSet(std::vector<std::string> paths)
+{
+    auto set = std::make_shared<PathSet>();
+    set->name = fmt::format("paths [{}]", fmt::join(paths, ", "));
+    set->is_literal = true;
+    for (auto & path : paths)
+        set->populate(std::move(path));
+    literal_sets.push_back(set);
+    return set;
+}
+
+void NodesSetup::finalizePathSets(size_t num_threads)
+{
+    for (const auto & [_, set] : tag_sets)
+        set->finalize(num_threads);
+    for (const auto & [_, set] : children_of_sets)
+        set->finalize(num_threads);
+    for (const auto & set : literal_sets)
+        set->finalize(num_threads);
+}
+
+void NodesSetup::resolveChildrenOf(const ListChildrenFn & list_children)
+{
+    for (const auto & [parent_path, set] : children_of_sets)
+    {
+        if (!set->used_as_input)
+            continue;
+
+        for (const auto & child : list_children(parent_path))
+            set->populate(std::filesystem::path(parent_path) / child);
+    }
+}
+
+void NodesSetup::validatePathSets() const
+{
+    bool printed_header = false;
+    auto validate = [&](const PathSetPtr & set)
+    {
+        bool defined = set->is_setup_tag || set->is_children_of || set->is_literal || set->used_as_output;
+        if (set->used_as_input && !defined)
+            throw DB::Exception(
+                DB::ErrorCodes::BAD_ARGUMENTS,
+                "{} is used by a request generator, but no setup node has this tag "
+                "and no create generator outputs to it. Available tags: {}",
+                set->name,
+                tag_sets.empty() ? "(none)" : fmt::to_string(fmt::join(tag_sets | std::views::keys, ", ")));
+
+        if (set->used_as_input && !set->is_dynamic && set->totalSize() == 0)
+            throw DB::Exception(
+                DB::ErrorCodes::BAD_ARGUMENTS,
+                "{} is empty: check that the `children_of` target has children or that setup nodes carry the tag",
+                set->name);
+
+        if (set->used_as_input)
+        {
+            if (!printed_header)
+            {
+                std::cerr << "Path sets:" << std::endl;
+                printed_header = true;
+            }
+            std::cerr << fmt::format("  {}: {} paths{}", set->name, set->totalSize(), set->is_dynamic ? " (dynamic)" : "") << std::endl;
+        }
+    };
+
+    for (const auto & [_, set] : tag_sets)
+        validate(set);
+    for (const auto & [_, set] : children_of_sets)
+        validate(set);
+    for (const auto & set : literal_sets)
+        validate(set);
+}
+
+const std::vector<std::string> & NodesSetup::prepareRootPaths()
+{
+    if (created_root_paths.empty())
+    {
+        for (const auto & node : root_nodes)
+            for (size_t i = 0; i < node->repeat_count; ++i)
+                created_root_paths.push_back(std::filesystem::path("/") / node->name.getString(rng));
+    }
+    return created_root_paths;
 }
 
 void NodesSetup::createNodes(const CreateRequestSink & sink)
 {
+    const auto & root_paths = prepareRootPaths();
+
+    size_t path_idx = 0;
     for (const auto & node : root_nodes)
-    {
-        /// Pin the root name (which may be randomly generated) so later getString
-        /// calls (e.g. in cleanup) return the same path.
-        auto node_name = node->name.getString(rng);
-        node->name.setString(node_name);
-
-        node->createNodes(sink, "/", default_acls, tagged_paths, rng);
-    }
-
-    if (!tagged_paths.empty())
-    {
-        std::cerr << "Tagged paths:" << std::endl;
-        for (const auto & [tag_name, paths] : tagged_paths)
-            std::cerr << fmt::format("  \"{}\": {} paths", tag_name, paths.size()) << std::endl;
-    }
+        for (size_t i = 0; i < node->repeat_count; ++i)
+            node->createAt(root_paths.at(path_idx++), sink, default_acls, rng);
 }
 
 void NodesSetup::startup(Coordination::ZooKeeper & zookeeper)
@@ -252,13 +314,9 @@ void NodesSetup::startup(Coordination::ZooKeeper & zookeeper)
 
     std::cerr << "---- Creating test data ----" << std::endl;
 
-    /// Pin root names and remove leftovers from previous runs.
-    for (const auto & node : root_nodes)
+    /// Remove leftovers from previous runs.
+    for (const auto & root_path : prepareRootPaths())
     {
-        auto node_name = node->name.getString(rng);
-        node->name.setString(node_name);
-
-        std::string root_path = std::filesystem::path("/") / node_name;
         std::cerr << "Cleaning up " << root_path << std::endl;
         removeRecursive(zookeeper, root_path, use_remove_recursive);
     }
@@ -275,14 +333,12 @@ void NodesSetup::startup(Coordination::ZooKeeper & zookeeper)
 
 void NodesSetup::cleanup(Coordination::ZooKeeper & zookeeper)
 {
-    if (root_nodes.empty())
+    if (created_root_paths.empty())
         return;
 
     std::cerr << "---- Cleaning up test data ----" << std::endl;
-    for (const auto & node : root_nodes)
+    for (const auto & root_path : created_root_paths)
     {
-        auto node_name = node->name.getString(rng);
-        std::string root_path = std::filesystem::path("/") / node_name;
         std::cerr << "Cleaning up " << root_path << std::endl;
         removeRecursive(zookeeper, root_path, use_remove_recursive);
     }

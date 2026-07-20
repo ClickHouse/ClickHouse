@@ -9,6 +9,8 @@
 #include <Common/Config/ConfigProcessor.h>
 #include <Poco/Util/AbstractConfiguration.h>
 
+#include <NodesSetup.h>
+
 using namespace Coordination;
 using namespace zkutil;
 
@@ -133,11 +135,14 @@ bool StringGetter::isRandom() const
     return std::holds_alternative<NumberGetter>(value);
 }
 
-PathGetter PathGetter::fromConfig(const std::string & key, const Poco::Util::AbstractConfiguration & config)
+PathGetter PathGetter::fromConfig(const std::string & key, const Poco::Util::AbstractConfiguration & config, NodesSetup & nodes_setup)
 {
     static constexpr std::string_view path_key_string = "path";
 
-    PathGetter path_getter;
+    std::vector<std::string> literal_paths;
+    std::vector<std::string> parent_paths;
+    std::vector<std::string> tag_names;
+
     Poco::Util::AbstractConfiguration::Keys path_keys;
     config.keys(key, path_keys);
 
@@ -154,14 +159,14 @@ PathGetter PathGetter::fromConfig(const std::string & key, const Poco::Util::Abs
             auto parent_node = config.getString(children_of_key);
             if (parent_node.empty() || parent_node[0] != '/')
                 throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Invalid path for request generator: '{}'", parent_node);
-            path_getter.parent_paths.push_back(std::move(parent_node));
+            parent_paths.push_back(std::move(parent_node));
         }
         else if (config.has(tagged_key))
         {
             auto tag_name = config.getString(tagged_key);
             if (tag_name.empty())
                 throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Empty tag name for request generator in key '{}'", current_path_key_string);
-            path_getter.tag_names.push_back(std::move(tag_name));
+            tag_names.push_back(std::move(tag_name));
         }
         else
         {
@@ -170,98 +175,50 @@ PathGetter PathGetter::fromConfig(const std::string & key, const Poco::Util::Abs
             if (path.empty() || path[0] != '/')
                 throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Invalid path for request generator: '{}'", path);
 
-            path_getter.paths.push_back(std::move(path));
+            literal_paths.push_back(std::move(path));
         }
     }
 
-    if (path_getter.paths.empty() && path_getter.parent_paths.empty() && path_getter.tag_names.empty())
+    size_t num_sources = (literal_paths.empty() ? 0 : 1) + parent_paths.size() + tag_names.size();
+    if (num_sources == 0)
         throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "PathGetter has no paths configured for key '{}'", key);
+    if (num_sources > 1)
+        throw DB::Exception(
+            DB::ErrorCodes::BAD_ARGUMENTS,
+            "`path` for key '{}' must draw from exactly one source: literal path(s), one `tagged`, or one `children_of`",
+            key);
+
+    PathGetter path_getter;
+    if (!literal_paths.empty())
+        path_getter.set = nodes_setup.createLiteralSet(std::move(literal_paths));
+    else if (!parent_paths.empty())
+        path_getter.set = nodes_setup.getOrCreateChildrenOfSet(parent_paths[0]);
+    else
+        path_getter.set = nodes_setup.getOrCreateTagSet(tag_names[0]);
+
+    path_getter.set->used_as_input = true;
 
     return path_getter;
 }
 
-void PathGetter::initialize(const ListChildrenFn & list_children, const TaggedPaths * tagged_paths)
-{
-    if (!parent_paths.empty() && !list_children)
-        throw DB::Exception(
-            DB::ErrorCodes::BAD_ARGUMENTS,
-            "`children_of` paths requested but no list callback provided to PathGetter");
-
-    for (const auto & parent_path : parent_paths)
-    {
-        for (const auto & child : list_children(parent_path))
-            paths.push_back(std::filesystem::path(parent_path) / child);
-    }
-
-    for (const auto & tag_name : tag_names)
-    {
-        if (!tagged_paths)
-            throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Tag '{}' referenced but no tagged paths available (is setup missing?)", tag_name);
-
-        auto it = tagged_paths->find(tag_name);
-        if (it == tagged_paths->end())
-            throw DB::Exception(
-                DB::ErrorCodes::BAD_ARGUMENTS,
-                "Tag '{}' not found in setup. Available tags: {}",
-                tag_name,
-                tagged_paths->empty() ? "(none)" : fmt::to_string(fmt::join(*tagged_paths | std::views::keys, ", ")));
-
-        for (const auto & path : it->second)
-            paths.push_back(path);
-    }
-
-    if (paths.empty())
-        throw DB::Exception(
-            DB::ErrorCodes::BAD_ARGUMENTS,
-            "PathGetter has no paths after initialization. "
-            "Check that children_of targets have children, tagged nodes exist, or add explicit path entries");
-
-    initialized = true;
-}
-
 std::string PathGetter::getPath(GenerateContext & ctx) const
 {
-    if (!initialized)
-        throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "PathGetter is not initialized");
-
-    if (paths.size() == 1)
-        return paths[0];
-
-    return paths[std::uniform_int_distribution<size_t>(0, paths.size() - 1)(ctx.rng)];
+    auto path = set->samplePath(ctx.rng, ctx.thread_idx);
+    if (!path)
+        throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Path set '{}' is empty", set->name);
+    return *std::move(path);
 }
 
 std::string PathGetter::description() const
 {
-    std::string description;
-    for (const auto & path : parent_paths)
-    {
-        if (!description.empty())
-            description += ", ";
-        description += fmt::format("children of {}", path);
-    }
-
-    for (const auto & tag_name : tag_names)
-    {
-        if (!description.empty())
-            description += ", ";
-        description += fmt::format("tagged \"{}\"", tag_name);
-    }
-
-    for (const auto & path : paths)
-    {
-        if (!description.empty())
-            description += ", ";
-        description += path;
-    }
-
-    return description;
+    return set->name;
 }
 
 RequestGetter::RequestGetter(std::vector<RequestGeneratorPtr> request_generators_)
     : request_generators(std::move(request_generators_))
 {}
 
-RequestGetter RequestGetter::fromConfig(const std::string & key, const Poco::Util::AbstractConfiguration & config, bool for_multi)
+RequestGetter RequestGetter::fromConfig(const std::string & key, const Poco::Util::AbstractConfiguration & config, NodesSetup & nodes_setup, bool for_multi)
 {
     RequestGetter request_getter;
 
@@ -297,7 +254,7 @@ RequestGetter RequestGetter::fromConfig(const std::string & key, const Poco::Uti
             throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Unknown generator '{}' in key '{}'", generator_key, key);
         }
 
-        request_generator->getFromConfig(key + "." + generator_key, config);
+        request_generator->getFromConfig(key + "." + generator_key, config, nodes_setup);
 
         auto weight = request_generator->getWeight();
         use_weights |= weight != 1;
@@ -347,12 +304,6 @@ std::string RequestGetter::description() const
     return description + guard;
 }
 
-void RequestGetter::startup(const ListChildrenFn & list_children, const TaggedPaths * tagged_paths)
-{
-    for (const auto & request_generator : request_generators)
-        request_generator->startup(list_children, tagged_paths);
-}
-
 void RequestGetter::setWatchCallback(Coordination::WatchCallbackPtr callback)
 {
     for (auto & gen : request_generators)
@@ -364,7 +315,7 @@ const std::vector<RequestGeneratorPtr> & RequestGetter::requestGenerators() cons
     return request_generators;
 }
 
-void RequestGenerator::getFromConfig(const std::string & key, const Poco::Util::AbstractConfiguration & config)
+void RequestGenerator::getFromConfig(const std::string & key, const Poco::Util::AbstractConfiguration & config, NodesSetup & nodes_setup)
 {
     if (config.has(key + ".weight"))
     {
@@ -372,7 +323,7 @@ void RequestGenerator::getFromConfig(const std::string & key, const Poco::Util::
         if (weight == 0)
             throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Generator weight must be >= 1, got 0 for key '{}'", key);
     }
-    getFromConfigImpl(key, config);
+    getFromConfigImpl(key, config, nodes_setup);
 }
 
 std::string RequestGenerator::description()
@@ -386,11 +337,6 @@ ZooKeeperRequestWithCallbacks RequestGenerator::generate(GenerateContext & ctx, 
     return generateImpl(ctx, acls);
 }
 
-void RequestGenerator::startup(const ListChildrenFn & list_children, const TaggedPaths * tagged_paths)
-{
-    startupImpl(list_children, tagged_paths);
-}
-
 void RequestGenerator::setWatchCallback(Coordination::WatchCallbackPtr callback)
 {
     watch_callback_ptr = callback;
@@ -402,12 +348,12 @@ size_t RequestGenerator::getWeight() const
     return weight;
 }
 
-void CreateRequestGenerator::getFromConfigImpl(const std::string & key, const Poco::Util::AbstractConfiguration & config)
+void CreateRequestGenerator::getFromConfigImpl(const std::string & key, const Poco::Util::AbstractConfiguration & config, NodesSetup & nodes_setup)
 {
     if (config.has(key + ".watch_probability"))
         throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "watch_probability is not supported for create requests (key '{}')", key);
 
-    parent_path = PathGetter::fromConfig(key, config);
+    parent_path = PathGetter::fromConfig(key, config, nodes_setup);
 
     name = StringGetter(NumberGetter::fromConfig(key + ".name_length", config, 10));
 
@@ -438,11 +384,6 @@ std::string CreateRequestGenerator::descriptionImpl()
         name.description(),
         data_string,
         remove_factor_string);
-}
-
-void CreateRequestGenerator::startupImpl(const ListChildrenFn & list_children, const TaggedPaths * tagged_paths)
-{
-    parent_path.initialize(list_children, tagged_paths);
 }
 
 ZooKeeperRequestWithCallbacks CreateRequestGenerator::generateImpl(GenerateContext & ctx, const Coordination::ACLs & acls)
@@ -517,12 +458,12 @@ ZooKeeperRequestWithCallbacks CreateRequestGenerator::generateImpl(GenerateConte
     return {.request = request, .callback = std::move(callback)};
 }
 
-void SetRequestGenerator::getFromConfigImpl(const std::string & key, const Poco::Util::AbstractConfiguration & config)
+void SetRequestGenerator::getFromConfigImpl(const std::string & key, const Poco::Util::AbstractConfiguration & config, NodesSetup & nodes_setup)
 {
     if (config.has(key + ".watch_probability"))
         throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "watch_probability is not supported for set requests (key '{}')", key);
 
-    path = PathGetter::fromConfig(key, config);
+    path = PathGetter::fromConfig(key, config, nodes_setup);
 
     data = StringGetter::fromConfig(key + ".data", config);
 }
@@ -545,14 +486,9 @@ ZooKeeperRequestWithCallbacks SetRequestGenerator::generateImpl(GenerateContext 
     return {.request = request};
 }
 
-void SetRequestGenerator::startupImpl(const ListChildrenFn & list_children, const TaggedPaths * tagged_paths)
+void GetRequestGenerator::getFromConfigImpl(const std::string & key, const Poco::Util::AbstractConfiguration & config, NodesSetup & nodes_setup)
 {
-    path.initialize(list_children, tagged_paths);
-}
-
-void GetRequestGenerator::getFromConfigImpl(const std::string & key, const Poco::Util::AbstractConfiguration & config)
-{
-    path = PathGetter::fromConfig(key, config);
+    path = PathGetter::fromConfig(key, config, nodes_setup);
 
     if (config.has(key + ".watch_probability"))
     {
@@ -584,14 +520,9 @@ ZooKeeperRequestWithCallbacks GetRequestGenerator::generateImpl(GenerateContext 
     return {.request = request};
 }
 
-void GetRequestGenerator::startupImpl(const ListChildrenFn & list_children, const TaggedPaths * tagged_paths)
+void ListRequestGenerator::getFromConfigImpl(const std::string & key, const Poco::Util::AbstractConfiguration & config, NodesSetup & nodes_setup)
 {
-    path.initialize(list_children, tagged_paths);
-}
-
-void ListRequestGenerator::getFromConfigImpl(const std::string & key, const Poco::Util::AbstractConfiguration & config)
-{
-    path = PathGetter::fromConfig(key, config);
+    path = PathGetter::fromConfig(key, config, nodes_setup);
 
     if (config.has(key + ".watch_probability"))
     {
@@ -624,12 +555,7 @@ ZooKeeperRequestWithCallbacks ListRequestGenerator::generateImpl(GenerateContext
     return {.request = request};
 }
 
-void ListRequestGenerator::startupImpl(const ListChildrenFn & list_children, const TaggedPaths * tagged_paths)
-{
-    path.initialize(list_children, tagged_paths);
-}
-
-void MultiRequestGenerator::getFromConfigImpl(const std::string & key, const Poco::Util::AbstractConfiguration & config)
+void MultiRequestGenerator::getFromConfigImpl(const std::string & key, const Poco::Util::AbstractConfiguration & config, NodesSetup & nodes_setup)
 {
     if (config.has(key + ".watch_probability"))
         throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "watch_probability is not supported on multi requests directly; set it on individual get/list sub-requests instead (key '{}')", key);
@@ -637,7 +563,7 @@ void MultiRequestGenerator::getFromConfigImpl(const std::string & key, const Poc
     if (config.has(key + ".size"))
         size = NumberGetter::fromConfig(key + ".size", config);
 
-    request_getter = RequestGetter::fromConfig(key, config, /*for_multi*/ true);
+    request_getter = RequestGetter::fromConfig(key, config, nodes_setup, /*for_multi*/ true);
 };
 
 std::string MultiRequestGenerator::descriptionImpl()
@@ -733,17 +659,12 @@ ZooKeeperRequestWithCallbacks MultiRequestGenerator::generateImpl(GenerateContex
     };
 }
 
-void MultiRequestGenerator::startupImpl(const ListChildrenFn & list_children, const TaggedPaths * tagged_paths)
-{
-    request_getter.startup(list_children, tagged_paths);
-}
-
 void MultiRequestGenerator::setWatchCallbackImpl(Coordination::WatchCallbackPtr callback)
 {
     request_getter.setWatchCallback(std::move(callback));
 }
 
-void Generator::startup(const Poco::Util::AbstractConfiguration & config, const ListChildrenFn & list_children, const TaggedPaths * tagged_paths)
+void Generator::parse(const Poco::Util::AbstractConfiguration & config, NodesSetup & nodes_setup)
 {
     if (config.has("generator.seed"))
         base_seed = config.getUInt64("generator.seed");
@@ -753,12 +674,10 @@ void Generator::startup(const Poco::Util::AbstractConfiguration & config, const 
     default_acls = getDefaultACLs();
 
     static const std::string requests_key = "generator.requests";
-    request_getter = RequestGetter::fromConfig(requests_key, config);
+    request_getter = RequestGetter::fromConfig(requests_key, config, nodes_setup);
 
     std::cerr << "Generator seed: " << base_seed << std::endl;
     std::cerr << request_getter.description() << std::endl;
-
-    request_getter.startup(list_children, tagged_paths);
 }
 
 void Generator::setWatchCallback(Coordination::WatchCallbackPtr callback)

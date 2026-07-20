@@ -71,6 +71,11 @@ StorageRunner::StorageRunner(
     continue_on_error = getOption<bool>(continue_on_error_, config_ptr, "continue_on_error", false);
 
     parseConfig(*config_ptr);
+
+    /// Parse the workload before setting up the storage: this registers the path
+    /// sets the generators draw from, which the setup tree creation populates.
+    generator = std::make_shared<Generator>();
+    generator->parse(*config_ptr, nodes_setup);
 }
 
 StorageRunner::~StorageRunner()
@@ -187,6 +192,7 @@ void StorageRunner::setupStorage()
     /// The setup tree walk produces `Create` requests; issue preprocess+commit
     /// for each of them directly against the storage.
     std::cerr << "---- Populating storage for benchmark ----" << std::endl;
+    nodes_setup.finalizePathSets(concurrency);
     nodes_setup.createNodes([&](std::shared_ptr<Coordination::ZooKeeperCreateRequest> request)
     {
         const std::string path = request->path;
@@ -214,8 +220,6 @@ void StorageRunner::setupStorage()
 
 void StorageRunner::startGenerators()
 {
-    const auto * tagged_paths = nodes_setup.getTaggedPaths().empty() ? nullptr : &nodes_setup.getTaggedPaths();
-
     auto list_children = [this](const std::string & parent_path) -> std::vector<std::string>
     {
         Coordination::KeeperRequestsForSessions requests;
@@ -236,8 +240,9 @@ void StorageRunner::startGenerators()
         return list.names;
     };
 
-    generator = std::make_shared<Generator>();
-    generator->startup(*config_ptr, list_children, tagged_paths);
+    nodes_setup.resolveChildrenOf(list_children);
+    nodes_setup.validatePathSets();
+
     generator->setWatchCallback(std::make_shared<Coordination::WatchCallback>(
         [](const Coordination::WatchResponse &) {}));
 }

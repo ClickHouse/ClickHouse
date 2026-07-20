@@ -8,18 +8,12 @@
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Common/randomSeed.h>
 
-/// Maps tag name → list of znode paths created with that tag during setup.
-using TaggedPaths = std::unordered_map<std::string, std::vector<std::string>>;
+#include <PathSet.h>
 
-/// Returns child names of a znode by path. Used by PathGetter to resolve
-/// `children_of` references during generator startup. The default
-/// implementation (in GeneratedRunner) queries a running Keeper; the
-/// storage-only runner supplies a callable that reads from an in-process
-/// KeeperStorage.
-using ListChildrenFn = std::function<std::vector<std::string>(const std::string &)>;
+class NodesSetup;
 
 /// Per-thread state passed to every `generate` call. Generators themselves are
-/// immutable after startup and shared by all worker threads.
+/// immutable after parsing and shared by all worker threads.
 struct GenerateContext
 {
     pcg64 & rng;
@@ -58,21 +52,19 @@ private:
     std::variant<std::string, NumberGetter> value;
 };
 
+/// Draws paths from exactly one `PathSet`: a literal path list, one `tagged`
+/// reference, or one `children_of` reference.
 struct PathGetter
 {
-    static PathGetter fromConfig(const std::string & key, const Poco::Util::AbstractConfiguration & config);
+    static PathGetter fromConfig(const std::string & key, const Poco::Util::AbstractConfiguration & config, NodesSetup & nodes_setup);
 
     std::string getPath(GenerateContext & ctx) const;
     std::string description() const;
 
-    void initialize(const ListChildrenFn & list_children, const TaggedPaths * tagged_paths = nullptr);
+    const PathSetPtr & pathSet() const { return set; }
+
 private:
-    std::vector<std::string> parent_paths;
-    std::vector<std::string> tag_names;
-
-    bool initialized = false;
-
-    std::vector<std::string> paths;
+    PathSetPtr set;
 };
 
 /// Default ACLs used throughout keeper-bench (world:anyone with all permissions)
@@ -89,21 +81,19 @@ struct RequestGenerator
 {
     virtual ~RequestGenerator() = default;
 
-    void getFromConfig(const std::string & key, const Poco::Util::AbstractConfiguration & config);
+    void getFromConfig(const std::string & key, const Poco::Util::AbstractConfiguration & config, NodesSetup & nodes_setup);
 
     ZooKeeperRequestWithCallbacks generate(GenerateContext & ctx, const Coordination::ACLs & acls);
 
     std::string description();
 
-    void startup(const ListChildrenFn & list_children, const TaggedPaths * tagged_paths = nullptr);
     void setWatchCallback(Coordination::WatchCallbackPtr callback);
 
     size_t getWeight() const;
 private:
-    virtual void getFromConfigImpl(const std::string & key, const Poco::Util::AbstractConfiguration & config) = 0;
+    virtual void getFromConfigImpl(const std::string & key, const Poco::Util::AbstractConfiguration & config, NodesSetup & nodes_setup) = 0;
     virtual std::string descriptionImpl() = 0;
     virtual ZooKeeperRequestWithCallbacks generateImpl(GenerateContext & ctx, const Coordination::ACLs & acls) = 0;
-    virtual void startupImpl(const ListChildrenFn &, const TaggedPaths *) {}
     virtual void setWatchCallbackImpl(Coordination::WatchCallbackPtr) {}
 
     size_t weight = 1;
@@ -116,10 +106,9 @@ using RequestGeneratorPtr = std::shared_ptr<RequestGenerator>;
 struct CreateRequestGenerator final : public RequestGenerator
 {
 private:
-    void getFromConfigImpl(const std::string & key, const Poco::Util::AbstractConfiguration & config) override;
+    void getFromConfigImpl(const std::string & key, const Poco::Util::AbstractConfiguration & config, NodesSetup & nodes_setup) override;
     std::string descriptionImpl() override;
     ZooKeeperRequestWithCallbacks generateImpl(GenerateContext & ctx, const Coordination::ACLs & acls) override;
-    void startupImpl(const ListChildrenFn & list_children, const TaggedPaths * tagged_paths) override;
 
     PathGetter parent_path;
     StringGetter name;
@@ -138,10 +127,9 @@ private:
 struct SetRequestGenerator final : public RequestGenerator
 {
 private:
-    void getFromConfigImpl(const std::string & key, const Poco::Util::AbstractConfiguration & config) override;
+    void getFromConfigImpl(const std::string & key, const Poco::Util::AbstractConfiguration & config, NodesSetup & nodes_setup) override;
     std::string descriptionImpl() override;
     ZooKeeperRequestWithCallbacks generateImpl(GenerateContext & ctx, const Coordination::ACLs & acls) override;
-    void startupImpl(const ListChildrenFn & list_children, const TaggedPaths * tagged_paths) override;
 
     PathGetter path;
     StringGetter data;
@@ -150,10 +138,9 @@ private:
 struct GetRequestGenerator final : public RequestGenerator
 {
 private:
-    void getFromConfigImpl(const std::string & key, const Poco::Util::AbstractConfiguration & config) override;
+    void getFromConfigImpl(const std::string & key, const Poco::Util::AbstractConfiguration & config, NodesSetup & nodes_setup) override;
     std::string descriptionImpl() override;
     ZooKeeperRequestWithCallbacks generateImpl(GenerateContext & ctx, const Coordination::ACLs & acls) override;
-    void startupImpl(const ListChildrenFn & list_children, const TaggedPaths * tagged_paths) override;
 
     PathGetter path;
     std::optional<double> watch_probability;
@@ -162,10 +149,9 @@ private:
 struct ListRequestGenerator final : public RequestGenerator
 {
 private:
-    void getFromConfigImpl(const std::string & key, const Poco::Util::AbstractConfiguration & config) override;
+    void getFromConfigImpl(const std::string & key, const Poco::Util::AbstractConfiguration & config, NodesSetup & nodes_setup) override;
     std::string descriptionImpl() override;
     ZooKeeperRequestWithCallbacks generateImpl(GenerateContext & ctx, const Coordination::ACLs & acls) override;
-    void startupImpl(const ListChildrenFn & list_children, const TaggedPaths * tagged_paths) override;
 
     PathGetter path;
     std::optional<double> watch_probability;
@@ -177,11 +163,10 @@ struct RequestGetter
 
     RequestGetter() = default;
 
-    static RequestGetter fromConfig(const std::string & key, const Poco::Util::AbstractConfiguration & config, bool for_multi = false);
+    static RequestGetter fromConfig(const std::string & key, const Poco::Util::AbstractConfiguration & config, NodesSetup & nodes_setup, bool for_multi = false);
 
     RequestGeneratorPtr getRequestGenerator(pcg64 & rng) const;
     std::string description() const;
-    void startup(const ListChildrenFn & list_children, const TaggedPaths * tagged_paths = nullptr);
     void setWatchCallback(Coordination::WatchCallbackPtr callback);
     const std::vector<RequestGeneratorPtr> & requestGenerators() const;
 private:
@@ -194,10 +179,9 @@ private:
 struct MultiRequestGenerator final : public RequestGenerator
 {
 private:
-    void getFromConfigImpl(const std::string & key, const Poco::Util::AbstractConfiguration & config) override;
+    void getFromConfigImpl(const std::string & key, const Poco::Util::AbstractConfiguration & config, NodesSetup & nodes_setup) override;
     std::string descriptionImpl() override;
     ZooKeeperRequestWithCallbacks generateImpl(GenerateContext & ctx, const Coordination::ACLs & acls) override;
-    void startupImpl(const ListChildrenFn & list_children, const TaggedPaths * tagged_paths) override;
     void setWatchCallbackImpl(Coordination::WatchCallbackPtr callback) override;
 
     std::optional<NumberGetter> size;
@@ -205,14 +189,16 @@ private:
 };
 
 /// Produces the benchmark workload described by the `generator` config section.
-/// Immutable after `startup`; one instance is shared by all worker threads, each
+/// Immutable after `parse`; one instance is shared by all worker threads, each
 /// thread passing its own `GenerateContext` to `generate`.
 class Generator
 {
 public:
     Generator() = default;
 
-    void startup(const Poco::Util::AbstractConfiguration & config, const ListChildrenFn & list_children, const TaggedPaths * tagged_paths = nullptr);
+    /// Parses the generator config, registering the path sets it references in
+    /// `nodes_setup`. Called before the setup tree is created.
+    void parse(const Poco::Util::AbstractConfiguration & config, NodesSetup & nodes_setup);
     void setWatchCallback(Coordination::WatchCallbackPtr callback);
     ZooKeeperRequestWithCallbacks generate(GenerateContext & ctx);
 
