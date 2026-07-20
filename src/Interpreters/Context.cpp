@@ -3599,6 +3599,15 @@ void Context::setCurrentDatabase(const String & name, bool allow_table_namespace
     setCurrentDatabaseWithLock(name, !info.table_prefix.empty(), lock);
 }
 
+void Context::setCurrentDatabase(const CurrentDatabaseInfo & database_info)
+{
+    const bool has_table_prefix = !database_info.table_prefix.empty();
+    const String name = has_table_prefix ? database_info.database + "." + database_info.table_prefix : database_info.database;
+
+    std::lock_guard lock(mutex);
+    setCurrentDatabaseWithLock(name, has_table_prefix, lock);
+}
+
 void Context::setCurrentDatabaseUnchecked(const String & name)
 {
     if (name.empty())

@@ -1131,6 +1131,8 @@ public:
 
     void setCurrentDatabase(const String & name);
     void setCurrentDatabase(const String & name, bool allow_table_namespaces);
+    /// Transfer an already validated binding from another context, without re-validation
+    void setCurrentDatabase(const CurrentDatabaseInfo & database_info);
     /// Set current_database without validating that database exists.
     /// Use during bootstrap/restore scenarios where database may not be loaded yet.
     void setCurrentDatabaseUnchecked(const String & name);
