@@ -2645,6 +2645,11 @@ Only the S3 schemes that the S3 URI mapper resolves to a concrete endpoint witho
 
 The [url_base](/operations/settings/settings.md#url_base) setting is applied before scheme dispatch, so a relative reference is first resolved against the base and then routed to the matching engine.
 
+```sql
+CREATE TABLE file_via_url (a UInt32, b String) ENGINE = URL('file://data.csv', CSV);
+CREATE TABLE s3_via_url (a UInt32, b String) ENGINE = URL('s3://bucket/key.csv', CSV);
+```
+
 ## Usage {#using-the-engine-in-the-clickhouse-server}
 
 `INSERT` and `SELECT` queries are transformed to `POST` and `GET` requests,
@@ -2652,6 +2657,13 @@ respectively. For processing `POST` requests, the remote server must support
 [Chunked transfer encoding](https://en.wikipedia.org/wiki/Chunked_transfer_encoding).
 
 You can limit the maximum number of HTTP GET redirect hops using the [max_http_get_redirects](/operations/settings/settings#max_http_get_redirects) setting.
+
+## Wildcards with HTTP index pages {#wildcards-with-http-index-pages}
+
+When [allow_experimental_url_wildcard_from_index_pages](/operations/settings/settings#allow_experimental_url_wildcard_from_index_pages) is enabled, the `URL` table engine can expand wildcards by fetching HTTP index pages and extracting links from them.
+This is the same mechanism as the [`url`](/sql-reference/table-functions/url#wildcards-with-http-index-pages) table function.
+
+Expansion is limited by [max_http_index_page_size](/operations/server-configuration-parameters/settings#max_http_index_page_size) for each fetched index page and by [url_wildcard_max_directories_to_read](/operations/settings/settings#url_wildcard_max_directories_to_read) for recursive directory traversal.
 
 ## Example {#example}
 
