@@ -416,6 +416,7 @@ std::unordered_map<String, CHSetting> performanceSettings
        {"optimize_qbit_distance_function_reads", trueOrFalseSetting},
        {"optimize_read_in_order", trueOrFalseSetting},
        {"optimize_read_in_window_order", trueOrFalseSetting},
+       {"optimize_redundant_comparisons", trueOrFalseSetting},
        {"optimize_redundant_functions_in_order_by", trueOrFalseSetting},
        {"optimize_respect_aliases", trueOrFalseSetting},
        {"optimize_rewrite_aggregate_function_with_if", trueOrFalseSetting},
