@@ -64,7 +64,7 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
-static EvaluateConstantExpressionResult getFieldAndDataTypeFromLiteral(ASTLiteral * literal)
+static EvaluateConstantExpressionColumnResult getColumnAndDataTypeFromLiteral(ASTLiteral * literal)
 {
     auto type = applyVisitor(FieldToDataType(), literal->value);
     /// In case of Array field nested fields can have different types.
@@ -72,13 +72,13 @@ static EvaluateConstantExpressionResult getFieldAndDataTypeFromLiteral(ASTLitera
     /// when result type is Array(Float64).
     /// So, we need to convert this field to the result type.
     Field res = convertFieldToType(literal->value, *type);
-    return {res, type};
+    return {type->createColumnConst(1, res), type};
 }
 
-static std::optional<EvaluateConstantExpressionResult> evaluateConstantExpressionImpl(const ASTPtr & node, const ContextPtr & context, bool no_throw)
+static std::optional<EvaluateConstantExpressionColumnResult> evaluateConstantExpressionAsColumnImpl(const ASTPtr & node, const ContextPtr & context, bool no_throw)
 {
     if (ASTLiteral * literal = node->as<ASTLiteral>())
-        return getFieldAndDataTypeFromLiteral(literal);
+        return getColumnAndDataTypeFromLiteral(literal);
 
     NamesAndTypesList source_columns = {{ "_dummy", std::make_shared<DataTypeUInt8>() }};
 
@@ -165,7 +165,7 @@ static std::optional<EvaluateConstantExpressionResult> evaluateConstantExpressio
         /// AST potentially could be transformed to literal during TreeRewriter analyze.
         /// For example if we have SQL user defined function that return literal AS subquery.
         if (ASTLiteral * literal = ast->as<ASTLiteral>())
-            return getFieldAndDataTypeFromLiteral(literal);
+            return getColumnAndDataTypeFromLiteral(literal);
 
         auto actions = ExpressionAnalyzer(ast, syntax_result, context).getConstActionsDAG();
 
@@ -202,17 +202,41 @@ static std::optional<EvaluateConstantExpressionResult> evaluateConstantExpressio
                         "Element of set in IN, VALUES, or LIMIT, or aggregate function parameter, or a table function argument "
                         "is not a constant expression (result column is not const): {}", result_name);
 
-    return std::make_pair((*result_column)[0], result_type);
+    /// Keep the value as a size-1 const column: this preserves the exact SQL type (no `Field`
+    /// `NearestFieldType` collapse) and lets callers read it without materializing a `Field`.
+    return std::make_pair(result_column, result_type);
+}
+
+/// Materialize the column result into the legacy `Field` result. Used by the `Field`-returning
+/// entry points below, which remain for callers not yet migrated to the column API.
+static std::optional<EvaluateConstantExpressionResult> materializeToField(std::optional<EvaluateConstantExpressionColumnResult> column_result)
+{
+    if (!column_result)
+        return {};
+    return std::make_pair((*column_result->first)[0], std::move(column_result->second));
+}
+
+std::optional<EvaluateConstantExpressionColumnResult> tryEvaluateConstantExpressionAsColumn(const ASTPtr & node, const ContextPtr & context)
+{
+    return evaluateConstantExpressionAsColumnImpl(node, context, true);
+}
+
+EvaluateConstantExpressionColumnResult evaluateConstantExpressionAsColumn(const ASTPtr & node, const ContextPtr & context)
+{
+    auto res = evaluateConstantExpressionAsColumnImpl(node, context, false);
+    if (!res)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "evaluateConstantExpression expected to return a result or throw an exception");
+    return *res;
 }
 
 std::optional<EvaluateConstantExpressionResult> tryEvaluateConstantExpression(const ASTPtr & node, const ContextPtr & context)
 {
-    return evaluateConstantExpressionImpl(node, context, true);
+    return materializeToField(evaluateConstantExpressionAsColumnImpl(node, context, true));
 }
 
 EvaluateConstantExpressionResult evaluateConstantExpression(const ASTPtr & node, const ContextPtr & context)
 {
-    auto res = evaluateConstantExpressionImpl(node, context, false);
+    auto res = materializeToField(evaluateConstantExpressionAsColumnImpl(node, context, false));
     if (!res)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "evaluateConstantExpression expected to return a result or throw an exception");
     return *res;
