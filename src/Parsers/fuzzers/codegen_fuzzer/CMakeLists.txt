@@ -16,13 +16,27 @@ configure_file(
     "${CURRENT_DIR_IN_BINARY}/clickhouse-template.g"
     COPYONLY)
 
-# The grammar is seeded from the committed curated dictionary. The full all.dict
-# is generated from a release binary at fuzzing time (see tests/fuzz/update_dict.sh)
-# and is not available here at build time.
+# The grammar is embedded at build time, when no runnable binary exists yet, so
+# the binary-derived all.dict (see tests/fuzz/update_dict.sh) is not available
+# here. Seed it from a dictionary derived from the sources instead: parser
+# keywords, function and data type names extracted from their registration
+# code, merged with the committed curated dictionary. It regenerates with the
+# sources, so it cannot drift the way a committed snapshot does.
+add_custom_command(
+    OUTPUT
+        "${CURRENT_DIR_IN_BINARY}/codegen.dict"
+    COMMAND "${ClickHouse_SOURCE_DIR}/tests/fuzz/generate_source_dict.sh" "${ClickHouse_SOURCE_DIR}" "${CURRENT_DIR_IN_BINARY}/codegen.dict"
+    DEPENDS
+        "${ClickHouse_SOURCE_DIR}/tests/fuzz/generate_source_dict.sh"
+        "${ClickHouse_SOURCE_DIR}/src/Parsers/CommonParsers.h"
+        "${ClickHouse_SOURCE_DIR}/tests/fuzz/dictionaries/old.dict"
+)
+
 add_custom_command(
     OUTPUT
         "${CURRENT_DIR_IN_BINARY}/clickhouse.g"
-    COMMAND ./update.sh "${ClickHouse_SOURCE_DIR}/tests/fuzz/dictionaries/old.dict"
+    COMMAND ./update.sh "${CURRENT_DIR_IN_BINARY}/codegen.dict"
+    DEPENDS "${CURRENT_DIR_IN_BINARY}/codegen.dict"
 )
 
 add_custom_command(
