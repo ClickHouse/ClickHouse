@@ -98,6 +98,21 @@ void ASTShowColumnsQuery::readJSON(const Poco::JSON::Object & json)
     limit_length = r.readChild("limit_length");
     if (limit_length)
         children.push_back(limit_length);
+
+    /// `ParserShowColumnsQuery` consumes `NOT` and `ILIKE` only as part of a LIKE clause, so these
+    /// flags cannot exist without a pattern; `formatQueryImpl` silently drops them when 'like' is empty.
+    if (like.empty() && (not_like || case_insensitive_like))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "'not_like' and 'case_insensitive_like' require a non-empty 'like' during AST JSON deserialization");
+
+    /// The parser accepts either a LIKE clause or a WHERE clause, never both, and
+    /// `InterpreterShowColumnsQuery` ignores 'where_expression' whenever 'like' is set, so the
+    /// formatted SQL and the executed query would diverge.
+    if (where_expression && !like.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "'like' and 'where_expression' are mutually exclusive in `ShowColumnsQuery` "
+            "during AST JSON deserialization");
+
     readOutputOptionsJSON(r);
 }
 

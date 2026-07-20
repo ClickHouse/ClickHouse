@@ -93,7 +93,10 @@ void ASTShowTablesQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSetting
     }
     else
     {
-        ostr << "SHOW " << (temporary ? "TEMPORARY " : "") <<
+        /// `full` changes the result schema of the table/dictionary form (`InterpreterShowTablesQuery`
+        /// selects `name, engine` instead of `name`), so dropping it here would make the formatted
+        /// query execute differently from the original.
+        ostr << "SHOW " << (full ? "FULL " : "") << (temporary ? "TEMPORARY " : "") <<
              (dictionaries ? "DICTIONARIES" : "TABLES");
 
         if (from)
@@ -244,6 +247,20 @@ void ASTShowTablesQuery::readJSON(const Poco::JSON::Object & json)
     if (where_expression && !table_form)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "'where_expression' is only valid for the `SHOW TABLES`/`SHOW DICTIONARIES` form "
+            "during AST JSON deserialization");
+
+    /// In every form, the parser consumes `NOT` and `ILIKE` only as part of a LIKE clause, so these
+    /// flags cannot exist without a pattern; `formatQueryImpl` silently drops them when 'like' is empty.
+    if (like.empty() && (not_like || case_insensitive_like))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "'not_like' and 'case_insensitive_like' require a non-empty 'like' during AST JSON deserialization");
+
+    /// In the table/dictionary form, the parser accepts either a LIKE clause or a WHERE clause,
+    /// never both, and `InterpreterShowTablesQuery` ignores 'where_expression' whenever 'like' is
+    /// set, so the formatted SQL and the executed query would diverge.
+    if (where_expression && !like.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "'like' and 'where_expression' are mutually exclusive in `ShowTablesQuery` "
             "during AST JSON deserialization");
 
     /// `SHOW CLUSTER` and `SHOW FILESYSTEM CACHES` accept neither a LIKE pattern nor a LIMIT.

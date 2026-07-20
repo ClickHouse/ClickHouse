@@ -78,6 +78,8 @@ void ASTOptimizeQuery::writeJSON(WriteBuffer & out) const
         w.writeBool("deduplicate", true);
     if (cleanup)
         w.writeBool("cleanup", true);
+    if (manifest)
+        w.writeBool("manifest", true);
     if (dry_run)
         w.writeBool("dry_run", true);
     w.writeChild("deduplicate_by_columns", deduplicate_by_columns);
@@ -105,6 +107,7 @@ void ASTOptimizeQuery::readJSON(const Poco::JSON::Object & json)
     final = r.getBool("final");
     deduplicate = r.getBool("deduplicate");
     cleanup = r.getBool("cleanup");
+    manifest = r.getBool("manifest");
     dry_run = r.getBool("dry_run");
     deduplicate_by_columns = r.readChild("deduplicate_by_columns");
     if (deduplicate_by_columns)
