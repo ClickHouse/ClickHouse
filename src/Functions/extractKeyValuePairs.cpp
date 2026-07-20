@@ -148,7 +148,8 @@ public:
         return false;
     }
 
-    bool canThrow(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    /// Throws when a row produces more pairs than extract_key_value_pairs_max_pairs_per_row.
+    bool canThrow(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     std::size_t getNumberOfArguments() const override
     {

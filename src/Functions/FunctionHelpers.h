@@ -217,6 +217,13 @@ bool isLowCardinalityType(const IDataType & type);
 /// Comparing such values resolves the common type of the stored values per row, so comparison
 /// functions (and wrappers executing them) can throw depending on the processed rows.
 bool containsDynamicOrVariant(const IDataType & type);
+/// Returns true if the type is or contains Enum anywhere inside (e.g. Array(Enum8(...))).
+bool containsEnum(const IDataType & type);
+/// Whether a comparison function over these argument types can throw depending on the processed rows.
+/// False only for the proven-safe cases: identical types (no conversion, equal decimal scales),
+/// two string types (compared without casts) and two non-decimal numeric types. Everything else is
+/// conservatively true.
+bool comparisonCanThrow(const DataTypePtr & left_type, const DataTypePtr & right_type);
 /// Returns true if any of the argument types is or contains LowCardinality
 /// (e.g. LowCardinality(UInt8), Array(LowCardinality(String)) or Map(LowCardinality(String), String)).
 bool hasLowCardinalityTypes(const ColumnsWithTypeAndName & args);

@@ -539,4 +539,38 @@ bool containsDynamicOrVariant(const IDataType & type)
     });
     return contains;
 }
+
+bool containsEnum(const IDataType & type)
+{
+    if (isEnum(type))
+        return true;
+
+    bool contains = false;
+    type.forEachChild([&](const IDataType & child)
+    {
+        contains = contains || isEnum(child);
+    });
+    return contains;
+}
+
+bool comparisonCanThrow(const DataTypePtr & left_type, const DataTypePtr & right_type)
+{
+    if (containsDynamicOrVariant(*left_type) || containsDynamicOrVariant(*right_type))
+        return true;
+
+    DataTypePtr left = removeNullable(removeLowCardinality(left_type));
+    DataTypePtr right = removeNullable(removeLowCardinality(right_type));
+
+    if (left->equals(*right))
+        return false;
+
+    if (isStringOrFixedString(left) && isStringOrFixedString(right))
+        return false;
+
+    /// Can not use isNumber which also accepts Decimal and can overflow.
+    if ((isInteger(left) || isFloat(left)) && (isInteger(right) || isFloat(right)))
+        return false;
+
+    return true;
+}
 }

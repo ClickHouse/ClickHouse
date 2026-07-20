@@ -71,7 +71,7 @@ public:
 
     bool canThrow(const DataTypesWithConstInfo & arguments) const override
     {
-        return containsDynamicOrVariant(*arguments[0].type) || containsDynamicOrVariant(*arguments[1].type);
+        return comparisonCanThrow(arguments[0].type, arguments[1].type);
     }
 
     bool useDefaultImplementationForNulls() const override { return false; }

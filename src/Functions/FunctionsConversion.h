@@ -3053,9 +3053,20 @@ public:
 
     bool canThrow(const DataTypesWithConstInfo & arguments) const override
     {
-        return !std::is_same_v<ToDataType, DataTypeString>
-            && !(IsDataTypeDateOrDateTime<ToDataType> && isNumber(*arguments[0].type)
-            && settings.date_time_overflow_behavior != FormatSettings::DateTimeOverflowBehavior::Throw);
+        bool has_non_const_argument = false;
+        for (size_t i = 1; i < arguments.size(); ++i)
+            has_non_const_argument = has_non_const_argument || !arguments[i].is_const;
+
+        if constexpr (std::is_same_v<ToDataType, DataTypeString>)
+        {
+            /// Serializing an Enum value that is missing from the enum definition throws per row;
+            /// Dynamic/Variant values can carry Enum values too.
+            return has_non_const_argument || containsEnum(*arguments[0].type) || containsDynamicOrVariant(*arguments[0].type);
+        }
+
+        return has_non_const_argument
+            || !(IsDataTypeDateOrDateTime<ToDataType> && isNumber(*arguments[0].type)
+                && settings.date_time_overflow_behavior != FormatSettings::DateTimeOverflowBehavior::Throw);
     }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override

@@ -1273,12 +1273,9 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    /// Comparing Dynamic/Variant values resolves the common type of the stored values per row, so
-    /// incomparable value types raise an exception depending on the processed rows. Tuple comparison
-    /// builds per-element comparators, so Dynamic/Variant nested anywhere in the arguments count too.
     bool canThrow(const DataTypesWithConstInfo & arguments) const override
     {
-        return containsDynamicOrVariant(*arguments[0].type) || containsDynamicOrVariant(*arguments[1].type);
+        return comparisonCanThrow(arguments[0].type, arguments[1].type);
     }
 
     /// Get result types by argument types. If the function does not apply to these arguments, throw an exception.
