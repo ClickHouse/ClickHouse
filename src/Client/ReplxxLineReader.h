@@ -61,6 +61,8 @@ private:
     void recomputeCurswant(int pos, std::string &text);
     int vimReps() const;
     void vimWordMotion(int &pos, std::string &text, char motion);
+    void vimWordObject(int &pos, std::string &text, bool bigword);
+    void vimBracketObject(int &pos, std::string &text, char open_char, char close_char);
     void find(std::string &text, int &pos, char direction, char c);
 
     /// Whether the text cursor is at the very end of the input (where as-you-type hints render).
