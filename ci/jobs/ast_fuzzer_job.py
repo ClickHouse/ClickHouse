@@ -2,12 +2,11 @@
 import logging
 import os
 import random
-import subprocess
 import sys
 import traceback
 from pathlib import Path
 
-from ci.jobs.scripts.clickhouse_proc import collect_and_encrypt_cores
+from ci.jobs.scripts.clickhouse_service import ClickHouseService
 from ci.jobs.scripts.find_tests import Targeting
 from ci.jobs.scripts.docker_image import DockerImage
 from ci.jobs.scripts.log_parser import FuzzerLogParser
@@ -32,6 +31,71 @@ JOB_ARTIFACTS = (
     WORKSPACE_PATH / "dmesg.log",
     WORKSPACE_PATH / "fatal.log",
 )
+
+
+def _log_tail(path: Path, max_lines: int = 50, max_bytes: int = 65536) -> str:
+    """Last `max_lines` lines of `path` (bounded read), or "" if absent/empty."""
+    try:
+        size = path.stat().st_size
+        if size == 0:
+            return ""
+        with open(path, "rb") as fh:
+            if size > max_bytes:
+                fh.seek(-max_bytes, os.SEEK_END)
+            data = fh.read()
+    except OSError:
+        return ""
+    return "\n".join(data.decode("utf-8", errors="replace").splitlines()[-max_lines:])
+
+
+def _read_fuzzer_status(status_path: Path) -> tuple[bool, int, int]:
+    """Parse (server_died, server_exit_code, fuzzer_exit_code) from status.tsv.
+
+    Raises FileNotFoundError when the file is missing or empty (the runner
+    aborted before writing it) and ValueError when its contents are malformed.
+    """
+    if not status_path.exists():
+        raise FileNotFoundError(f"{status_path} was not produced by the fuzzer runner")
+    first_line = status_path.read_text(encoding="utf-8").split("\n", 1)[0]
+    if not first_line.strip():
+        raise FileNotFoundError(f"{status_path} is empty")
+    fields = first_line.split("\t")
+    if len(fields) != 3:
+        raise ValueError(
+            f"expected 3 tab-separated fields, got {len(fields)}: {first_line!r}"
+        )
+    server_died, server_exit_code, fuzzer_exit_code = fields
+    return bool(int(server_died)), int(server_exit_code), int(fuzzer_exit_code)
+
+
+def _format_status_error(exc: Exception, log_paths) -> str:
+    """Actionable job-error text for a missing/malformed status.tsv, with log tails."""
+    tails = []
+    for path in log_paths:
+        tail = _log_tail(path)
+        if tail:
+            tails.append(f"--- {path.name} (last lines) ---\n{tail}")
+    tails_str = ("\n\n" + "\n\n".join(tails)) if tails else ""
+
+    if isinstance(exc, FileNotFoundError):
+        return (
+            "Fuzzer runner aborted before writing status.tsv. run-fuzzer.sh runs "
+            "under 'set -e' and writes status.tsv only at the very end, so any "
+            "earlier failure lands here: a server startup failure (e.g. the "
+            "clickhouse-server pid file is never created), a fuzzer-harness "
+            "error, or an infrastructure problem (job timeout, out of memory, "
+            "docker/orchestration). Inspect the log tails below to determine the "
+            "cause; a normal fuzzer finding instead writes a complete status.tsv "
+            "(the three numeric fields server_died, server_exit_code, "
+            "fuzzer_exit_code), which run_fuzz_job then reports as FAIL with a "
+            "stack trace parsed from the logs." + tails_str
+        )
+
+    tb = "".join(traceback.format_exception(type(exc), exc, exc.__traceback__))
+    return (
+        f"Fuzzer runner wrote an unparseable status.tsv ({exc}). This is a "
+        f"fuzzer-harness bug. Traceback:\n{tb}" + tails_str
+    )
 
 
 def get_run_command(
@@ -94,7 +158,7 @@ def _collect_targeted_queries(info: Info) -> tuple[list[str], Result]:
     except Exception as e:
         logging.warning("[targeted-fuzzer] Step 3 — failed to fetch coverage-relevant tests: %s", e)
         relevant_tests = []
-        relevant_tests_result = Result(name="tests found by coverage", status=Result.StatusExtended.OK, info=f"Skipped: {e}")
+        relevant_tests_result = Result(name="tests found by coverage", status=Result.Status.OK, info=f"Skipped: {e}")
     logging.info("[targeted-fuzzer] Step 3 — coverage-relevant tests (%d)", len(relevant_tests))
 
     # Merge all three sets preserving priority order (changed first)
@@ -220,10 +284,7 @@ def run_fuzz_job(check_name: str):
 
     # Fix file ownership after running docker as root
     logging.info("Fuzzer: Fixing file ownership after running docker as root")
-    uid = os.getuid()
-    gid = os.getgid()
-    chown_cmd = f"docker run --rm --user root --volume {cwd}:/repo --workdir=/repo {docker_image} chown -R {uid}:{gid} /repo"
-    Shell.check(chown_cmd, verbose=True)
+    Utils.fix_ownership_after_docker(cwd, docker_image)
 
     server_log, fuzzer_log, stderr_log, dmesg_log, fatal_log = JOB_ARTIFACTS
     paths = list(JOB_ARTIFACTS)
@@ -231,23 +292,33 @@ def run_fuzz_job(check_name: str):
     if buzzhouse:
         paths.extend([WORKSPACE_PATH / "fuzzerout.sql", WORKSPACE_PATH / "fuzz.json"])
 
+    # Raw sanitizer reports written via *SAN_OPTIONS=log_path (see run-fuzzer.sh).
+    # Their contents are also merged into stderr.log/server.log, but upload the
+    # originals too for debugging truncated reports.
+    paths.extend(sorted(WORKSPACE_PATH.glob("sanitizer.log.*")))
+
     server_died = False
     server_exit_code = 0
     fuzzer_exit_code = 0
     try:
-        with open(WORKSPACE_PATH / "status.tsv", "r", encoding="utf-8") as status_f:
-            server_died, server_exit_code, fuzzer_exit_code = (
-                status_f.readline().rstrip("\n").split("\t")
-            )
-            server_died = bool(int(server_died))
-            server_exit_code = int(server_exit_code)
-            fuzzer_exit_code = int(fuzzer_exit_code)
-    except Exception:
-        error_info = f"Unknown error in fuzzer runner script. Traceback:\n{traceback.format_exc()}"
-        Result.create_from(status=Result.Status.ERROR, info=error_info).complete_job()
+        server_died, server_exit_code, fuzzer_exit_code = _read_fuzzer_status(
+            WORKSPACE_PATH / "status.tsv"
+        )
+    except Exception as e:
+        # Missing/empty status.tsv -> runner aborted before reporting (server
+        # start failure, harness error, or infra); malformed status.tsv ->
+        # harness bug. _format_status_error inlines the log tails so the abort
+        # cause is visible instead of an opaque FileNotFoundError traceback.
+        # Attach available artifacts (incl. sanitizer.log.*) so nothing is lost.
+        error_info = _format_status_error(e, paths)
+        early_result = Result.create_from(status=Result.Status.ERROR, info=error_info)
+        for file in paths:
+            if file.exists() and file.stat().st_size > 0:
+                early_result.set_files(file)
+        early_result.complete_job()
 
     # parse runner script exit status
-    status = Result.Status.FAILED
+    status = Result.Status.FAIL
     info = []
     is_failed = True
     if server_died:
@@ -256,7 +327,7 @@ def run_fuzz_job(check_name: str):
     elif fuzzer_exit_code in (0, 137, 143):
         # normal exit with timeout or OOM kill
         is_failed = False
-        status = Result.Status.SUCCESS
+        status = Result.Status.OK
         if fuzzer_exit_code == 0:
             info.append("Fuzzer exited with success")
         elif fuzzer_exit_code == 137:
@@ -293,10 +364,25 @@ def run_fuzz_job(check_name: str):
             sanitizer_oom = Shell.get_output(
                 f"rg --text 'Sanitizer:? (out-of-memory|out of memory|failed to allocate)|Child process was terminated by signal 9' {server_log}"
             )
-            if sanitizer_oom:
+            # Sanitizer shadow memory is invisible to the server's memory tracker,
+            # so the kernel OOM killer may SIGKILL the server before any limit
+            # fires. It may also kill the watchdog, losing the "terminated by
+            # signal 9" message in the server log. A SIGKILLed server (exit 137)
+            # with no sanitizer report is an OOM, not a bug.
+            has_sanitizer_report = any(WORKSPACE_PATH.glob("sanitizer.log.*"))
+            kernel_oom_kill = (
+                server_died and server_exit_code == 137 and not has_sanitizer_report
+            )
+            if sanitizer_oom or kernel_oom_kill:
                 print("Sanitizer OOM")
-                info.append("WARNING: Sanitizer OOM - test considered passed")
-                status = Result.Status.SUCCESS
+                if sanitizer_oom:
+                    info.append("WARNING: Sanitizer OOM - test considered passed")
+                else:
+                    info.append(
+                        "WARNING: Server was killed by the kernel OOM killer "
+                        "(sanitizer build) - test considered passed"
+                    )
+                status = Result.Status.OK
                 is_failed = False
         else:
             # Check for OOM in dmesg for non-sanitized builds
@@ -327,7 +413,7 @@ def run_fuzz_job(check_name: str):
                 Result(
                     name=parsed_name,
                     info=parsed_info,
-                    status=Result.StatusExtended.FAIL,
+                    status=Result.Status.FAIL,
                     files=files,
                 )
             )
@@ -341,7 +427,7 @@ def run_fuzz_job(check_name: str):
     if is_failed:
         # generate fatal log
         Shell.check(f"rg --text '\\s<Fatal>\\s' {server_log} > {fatal_log}")
-        result.set_files(collect_and_encrypt_cores(WORKSPACE_PATH, f"{cwd}/ci/defs/public.pem"))
+        result.set_files(ClickHouseService.collect_cores(WORKSPACE_PATH))
         for file in paths:
             if file.exists() and file.stat().st_size > 0:
                 result.set_files(file)

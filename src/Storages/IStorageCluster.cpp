@@ -20,10 +20,17 @@
 #include <Storages/IStorage.h>
 #include <Storages/SelectQueryInfo.h>
 
+#include <Common/ProfileEvents.h>
+
 #include <algorithm>
 #include <memory>
 #include <string>
 
+
+namespace ProfileEvents
+{
+    extern const Event Shards;
+}
 
 namespace DB
 {
@@ -158,6 +165,8 @@ void ReadFromCluster::initializePipeline(QueryPipelineBuilder & pipeline, const 
 
     createExtension(nullptr);
 
+    ProfileEvents::increment(ProfileEvents::Shards, max_replicas_to_use);
+
     for (const auto & shard_info : cluster->getShardsInfo())
     {
         if (pipes.size() >= max_replicas_to_use)
@@ -213,8 +222,10 @@ void ReadFromCluster::initializePipeline(QueryPipelineBuilder & pipeline, const 
 QueryProcessingStage::Enum IStorageCluster::getQueryProcessingStage(
     ContextPtr context, QueryProcessingStage::Enum to_stage, const StorageSnapshotPtr &, SelectQueryInfo &) const
 {
-    /// Initiator executes query on remote node.
-    if (context->getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
+    /// Only a follower reached by another node's cluster function (SECONDARY_QUERY) just fetches
+    /// raw data. Everything else is the initiator of the distributed read, including internal
+    /// contexts that never set the kind (NO_QUERY), e.g. a Replicated database DDL worker.
+    if (context->getClientInfo().query_kind != ClientInfo::QueryKind::SECONDARY_QUERY)
         if (to_stage >= QueryProcessingStage::Enum::WithMergeableState)
             return QueryProcessingStage::Enum::WithMergeableState;
 

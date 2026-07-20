@@ -1,0 +1,148 @@
+---
+alias: []
+description: 'BSONEachRow 格式文档'
+input_format: true
+keywords: ['BSONEachRow']
+output_format: true
+slug: /interfaces/formats/BSONEachRow
+title: 'BSONEachRow'
+doc_type: 'reference'
+---
+
+| 输入 | 输出 | 别名 |
+| -- | -- | -- |
+| ✔  | ✔  |    |
+
+<div id="description">
+  ## 描述
+</div>
+
+`BSONEachRow` 格式会将数据解析为一系列彼此之间没有任何分隔符的二进制 JSON (BSON) 文档。
+每一行会被格式化为一个单独的文档，而每一列会被格式化为 BSON 文档中的一个独立字段，并以列名作为键。
+
+<div id="data-types-matching">
+  ## 数据类型匹配
+</div>
+
+对于输出，使用以下 ClickHouse 类型与 BSON 类型之间的对应关系：
+
+| ClickHouse 类型                                                                           | BSON 类型                                                                                                               |
+| --------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| [Bool](/zh/reference/data-types/boolean)                                                   | `\x08` boolean                                                                                                        |
+| [Int8/UInt8](/zh/reference/data-types/int-uint)/[Enum8](/zh/reference/data-types/enum)        | `\x10` int32                                                                                                          |
+| [Int16/UInt16](/zh/reference/data-types/int-uint)/[Enum16](/zh/reference/data-types/enum)     | `\x10` int32                                                                                                          |
+| [Int32](/zh/reference/data-types/int-uint)                                                 | `\x10` int32                                                                                                          |
+| [UInt32](/zh/reference/data-types/int-uint)                                                | `\x12` int64                                                                                                          |
+| [Int64/UInt64](/zh/reference/data-types/int-uint)                                          | `\x12` int64                                                                                                          |
+| [Float32/Float64](/zh/reference/data-types/float)                                          | `\x01` double                                                                                                         |
+| [Date](/zh/reference/data-types/date)/[Date32](/zh/reference/data-types/date32)               | `\x10` int32                                                                                                          |
+| [DateTime](/zh/reference/data-types/datetime)                                              | `\x12` int64                                                                                                          |
+| [DateTime64](/zh/reference/data-types/datetime64)                                          | `\x09` datetime                                                                                                       |
+| [Decimal32](/zh/reference/data-types/decimal)                                              | `\x10` int32                                                                                                          |
+| [Decimal64](/zh/reference/data-types/decimal)                                              | `\x12` int64                                                                                                          |
+| [Decimal128](/zh/reference/data-types/decimal)                                             | `\x05` binary, `\x00` 二进制子类型, size = 16                                                                       |
+| [Decimal256](/zh/reference/data-types/decimal)                                             | `\x05` binary, `\x00` 二进制子类型, size = 32                                                                       |
+| [Int128/UInt128](/zh/reference/data-types/int-uint)                                        | `\x05` binary, `\x00` 二进制子类型, size = 16                                                                       |
+| [Int256/UInt256](/zh/reference/data-types/int-uint)                                        | `\x05` binary, `\x00` 二进制子类型, size = 32                                                                       |
+| [String](/zh/reference/data-types/string)/[FixedString](/zh/reference/data-types/fixedstring) | `\x05` binary、`\x00` 二进制子类型；如果启用了 output&#95;format&#95;bson&#95;string&#95;as&#95;string 设置，则为 `\x02` string |
+| [UUID](/zh/reference/data-types/uuid)                                                      | `\x05` binary, `\x04` uuid subtype, size = 16                                                                         |
+| [Array](/zh/reference/data-types/array)                                                    | `\x04` 数组                                                                                                          |
+| [Tuple](/zh/reference/data-types/tuple)                                                    | `\x04` 数组                                                                                                          |
+| [命名元组](/zh/reference/data-types/tuple)                                                     | `\x03` 文档                                                                                                       |
+| [Map](/zh/reference/data-types/map)                                                        | `\x03` 文档                                                                                                       |
+| [IPv4](/zh/reference/data-types/ipv4)                                                      | `\x10` int32                                                                                                          |
+| [IPv6](/zh/reference/data-types/ipv6)                                                      | `\x05` binary, `\x00` 二进制子类型                                                                                  |
+
+对于输入，使用以下 BSON 类型与 ClickHouse 类型之间的对应关系：
+
+| BSON 类型                          | ClickHouse 类型                                                                                                                                                           |
+| -------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `\x01` double                    | [Float32/Float64](/zh/reference/data-types/float)                                                                                                                          |
+| `\x02` string                    | [String](/zh/reference/data-types/string)/[FixedString](/zh/reference/data-types/fixedstring)                                                                                 |
+| `\x03` 文档                        | [Map](/zh/reference/data-types/map)/[命名元组](/zh/reference/data-types/tuple)                                                                                                    |
+| `\x04` 数组                        | [Array](/zh/reference/data-types/array)/[Tuple](/zh/reference/data-types/tuple)                                                                                               |
+| `\x05` binary, `\x00` 二进制子类型     | [String](/zh/reference/data-types/string)/[FixedString](/zh/reference/data-types/fixedstring)/[IPv6](/zh/reference/data-types/ipv6)                                              |
+| `\x05` binary, `\x02` 旧二进制子类型    | [String](/zh/reference/data-types/string)/[FixedString](/zh/reference/data-types/fixedstring)                                                                                 |
+| `\x05` binary, `\x03` 旧 UUID 子类型 | [UUID](/zh/reference/data-types/uuid)                                                                                                                                      |
+| `\x05` binary, `\x04` UUID 子类型   | [UUID](/zh/reference/data-types/uuid)                                                                                                                                      |
+| `\x07` ObjectId                  | [String](/zh/reference/data-types/string)/[FixedString](/zh/reference/data-types/fixedstring)                                                                                 |
+| `\x08` boolean                   | [Bool](/zh/reference/data-types/boolean)                                                                                                                                   |
+| `\x09` datetime                  | [DateTime64](/zh/reference/data-types/datetime64)                                                                                                                          |
+| `\x0A` NULL 值                    | [NULL](/zh/reference/data-types/nullable)                                                                                                                                  |
+| `\x0D` JavaScript 代码             | [String](/zh/reference/data-types/string)/[FixedString](/zh/reference/data-types/fixedstring)                                                                                 |
+| `\x0E` symbol                    | [String](/zh/reference/data-types/string)/[FixedString](/zh/reference/data-types/fixedstring)                                                                                 |
+| `\x10` int32                     | [Int32/UInt32](/zh/reference/data-types/int-uint)/[Decimal32](/zh/reference/data-types/decimal)/[IPv4](/zh/reference/data-types/ipv4)/[Enum8/Enum16](/zh/reference/data-types/enum) |
+| `\x12` int64                     | [Int64/UInt64](/zh/reference/data-types/int-uint)/[Decimal64](/zh/reference/data-types/decimal)/[DateTime64](/zh/reference/data-types/datetime64)                                |
+
+不支持其他 BSON 类型。此外，它还会在不同整数类型之间进行转换。
+例如，可以将 BSON `int32` 值作为 [`UInt8`](/zh/reference/data-types/int-uint) 插入 ClickHouse。
+
+`Int128`/`UInt128`/`Int256`/`UInt256`/`Decimal128`/`Decimal256` 等大整数和 Decimal，可从二进制子类型为 `\x00` 的 BSON Binary 值中解析。
+在这种情况下，该格式会验证二进制数据的大小是否与预期值的大小一致。
+
+<Note>
+  此格式在 Big-Endian 平台上无法正常工作。
+</Note>
+
+<div id="example-usage">
+  ## 示例用法
+</div>
+
+<div id="inserting-data">
+  ### 插入数据
+</div>
+
+使用一个名为 `football.bson`、包含以下数据的 BSON 文件：
+
+```text
+    ┌───────date─┬─season─┬─home_team─────────────┬─away_team───────────┬─home_team_goals─┬─away_team_goals─┐
+ 1. │ 2022-04-30 │   2021 │ Sutton United         │ Bradford City       │               1 │               4 │
+ 2. │ 2022-04-30 │   2021 │ Swindon Town          │ Barrow              │               2 │               1 │
+ 3. │ 2022-04-30 │   2021 │ Tranmere Rovers       │ Oldham Athletic     │               2 │               0 │
+ 4. │ 2022-05-02 │   2021 │ Port Vale             │ Newport County      │               1 │               2 │
+ 5. │ 2022-05-02 │   2021 │ Salford City          │ Mansfield Town      │               2 │               2 │
+ 6. │ 2022-05-07 │   2021 │ Barrow                │ Northampton Town    │               1 │               3 │
+ 7. │ 2022-05-07 │   2021 │ Bradford City         │ Carlisle United     │               2 │               0 │
+ 8. │ 2022-05-07 │   2021 │ Bristol Rovers        │ Scunthorpe United   │               7 │               0 │
+ 9. │ 2022-05-07 │   2021 │ Exeter City           │ Port Vale           │               0 │               1 │
+10. │ 2022-05-07 │   2021 │ Harrogate Town A.F.C. │ Sutton United       │               0 │               2 │
+11. │ 2022-05-07 │   2021 │ Hartlepool United     │ Colchester United   │               0 │               2 │
+12. │ 2022-05-07 │   2021 │ Leyton Orient         │ Tranmere Rovers     │               0 │               1 │
+13. │ 2022-05-07 │   2021 │ Mansfield Town        │ Forest Green Rovers │               2 │               2 │
+14. │ 2022-05-07 │   2021 │ Newport County        │ Rochdale            │               0 │               2 │
+15. │ 2022-05-07 │   2021 │ Oldham Athletic       │ Crawley Town        │               3 │               3 │
+16. │ 2022-05-07 │   2021 │ Stevenage Borough     │ Salford City        │               4 │               2 │
+17. │ 2022-05-07 │   2021 │ Walsall               │ Swindon Town        │               0 │               3 │
+    └────────────┴────────┴───────────────────────┴─────────────────────┴─────────────────┴─────────────────┘
+```
+
+插入数据：
+
+```sql
+INSERT INTO football FROM INFILE 'football.bson' FORMAT BSONEachRow;
+```
+
+<div id="reading-data">
+  ### 读取数据
+</div>
+
+使用 `BSONEachRow` 格式读取数据：
+
+```sql
+SELECT *
+FROM football INTO OUTFILE 'docs_data/bson/football.bson'
+FORMAT BSONEachRow
+```
+
+<Tip>
+  BSON 是一种二进制格式，无法在终端中以人类可读的形式显示。请使用 `INTO OUTFILE` 将其输出为 BSON 文件。
+</Tip>
+
+<div id="format-settings">
+  ## 格式设置
+</div>
+
+| 设置                                                                                                                                                                                 | 描述                                           | 默认值     |
+| ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------- | ------- |
+| [`output_format_bson_string_as_string`](/zh/reference/settings/formats#output_format_bson_string_as_string)                                                                           | 对 String 列使用 BSON String 类型，而不是 Binary。      | `false` |
+| [`input_format_bson_skip_fields_with_unsupported_types_in_schema_inference`](/zh/reference/settings/formats#input_format_bson_skip_fields_with_unsupported_types_in_schema_inference) | 在对 BSONEachRow 格式进行 schema 推断时，允许跳过类型不受支持的列。 | `false` |

@@ -4,6 +4,7 @@
 #include <IO/WriteBuffer.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/PODArray.h>
+#include <base/defines.h>
 #include <base/sort.h>
 
 
@@ -245,7 +246,7 @@ namespace detail
 
     /** For a large number of values. The size is about 22 680 bytes.
       */
-    class QuantileTimingLarge
+    class QuantileTimingLarge /// NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - zeroed by memset in the constructor
     {
     private:
         /// Total number of values.
@@ -307,7 +308,7 @@ namespace detail
         };
 
     public:
-        QuantileTimingLarge()
+        QuantileTimingLarge() // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - zeroed by memset
         {
             memset(this, 0, sizeof(*this));
         }
@@ -390,6 +391,8 @@ namespace detail
                     readBinaryLittleEndian(index, buf);
                     if (index == BIG_THRESHOLD)
                         break;
+                    if (index - SMALL_THRESHOLD >= BIG_SIZE)
+                        throw Exception(ErrorCodes::INCORRECT_DATA, "Incorrect index {} in 'large' kind of quantileTiming deserialization", index);
 
                     UInt64 elem_count = 0;
                     readBinaryLittleEndian(elem_count, buf);
@@ -490,7 +493,7 @@ template <typename>     /// Unused template parameter is for AggregateFunctionQu
 class QuantileTiming : private boost::noncopyable
 {
 private:
-    union
+    union // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - `tiny.count` is initialized in `QuantileTiming` ctor
     {
         detail::QuantileTimingTiny tiny;
         detail::QuantileTimingMedium medium;
@@ -551,7 +554,7 @@ private:
     }
 
 public:
-    QuantileTiming()
+    QuantileTiming() // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - union members are mutually exclusive; only `tiny.count` needs initialization
     {
         tiny.count = 0;
     }
@@ -619,72 +622,74 @@ public:
         }
     }
 
-    /// NOTE Too complicated.
+    /// On x86-64-v3, keep the cold transition path out-of-line so the hot tiny-merge body doesn't drag in YMM histogram
+    /// copies that force `vzeroupper` around every call.
     void merge(const QuantileTiming & rhs)
     {
         if (tiny.count + rhs.tiny.count <= TINY_MAX_ELEMS)
-        {
             tiny.merge(rhs.tiny);
+        else
+            mergeSlow(rhs);
+    }
+
+    NO_INLINE void mergeSlow(const QuantileTiming & rhs)
+    {
+        auto kind = which();
+        auto rhs_kind = rhs.which();
+
+        /// If one with which we merge has a larger data structure, then we bring the current structure to the same one.
+        if (kind == Kind::Tiny && rhs_kind == Kind::Medium)
+        {
+            tinyToMedium();
+            kind = Kind::Medium;
+        }
+        else if (kind == Kind::Tiny && rhs_kind == Kind::Large)
+        {
+            tinyToLarge();
+            kind = Kind::Large;
+        }
+        else if (kind == Kind::Medium && rhs_kind == Kind::Large)
+        {
+            mediumToLarge();
+            kind = Kind::Large;
+        }
+        /// Case when two states are small, but when merged, they will turn into average.
+        else if (kind == Kind::Tiny && rhs_kind == Kind::Tiny)
+        {
+            tinyToMedium();
+            kind = Kind::Medium;
+        }
+
+        if (kind == Kind::Medium && rhs_kind == Kind::Medium)
+        {
+            medium.merge(rhs.medium);
+        }
+        else if (kind == Kind::Large && rhs_kind == Kind::Large)
+        {
+            large->merge(*rhs.large);
+        }
+        else if (kind == Kind::Medium && rhs_kind == Kind::Tiny)
+        {
+            medium.elems.insert(rhs.tiny.elems, rhs.tiny.elems + rhs.tiny.count);
+        }
+        else if (kind == Kind::Large && rhs_kind == Kind::Tiny)
+        {
+            for (size_t i = 0; i < rhs.tiny.count; ++i)
+                large->insert(rhs.tiny.elems[i]);
+        }
+        else if (kind == Kind::Large && rhs_kind == Kind::Medium)
+        {
+            for (const auto & elem : rhs.medium.elems)
+                large->insert(elem);
         }
         else
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error in QuantileTiming::merge function: not all cases are covered");
+
+        /// For determinism, we should always convert to `large` when size condition is reached
+        ///  - regardless of merge order.
+        if (kind == Kind::Medium && unlikely(mediumIsWorthToConvertToLarge()))
         {
-            auto kind = which();
-            auto rhs_kind = rhs.which();
-
-            /// If one with which we merge has a larger data structure, then we bring the current structure to the same one.
-            if (kind == Kind::Tiny && rhs_kind == Kind::Medium)
-            {
-                tinyToMedium();
-                kind = Kind::Medium;
-            }
-            else if (kind == Kind::Tiny && rhs_kind == Kind::Large)
-            {
-                tinyToLarge();
-                kind = Kind::Large;
-            }
-            else if (kind == Kind::Medium && rhs_kind == Kind::Large)
-            {
-                mediumToLarge();
-                kind = Kind::Large;
-            }
-            /// Case when two states are small, but when merged, they will turn into average.
-            else if (kind == Kind::Tiny && rhs_kind == Kind::Tiny)
-            {
-                tinyToMedium();
-                kind = Kind::Medium;
-            }
-
-            if (kind == Kind::Medium && rhs_kind == Kind::Medium)
-            {
-                medium.merge(rhs.medium);
-            }
-            else if (kind == Kind::Large && rhs_kind == Kind::Large)
-            {
-                large->merge(*rhs.large);
-            }
-            else if (kind == Kind::Medium && rhs_kind == Kind::Tiny)
-            {
-                medium.elems.insert(rhs.tiny.elems, rhs.tiny.elems + rhs.tiny.count);
-            }
-            else if (kind == Kind::Large && rhs_kind == Kind::Tiny)
-            {
-                for (size_t i = 0; i < rhs.tiny.count; ++i)
-                    large->insert(rhs.tiny.elems[i]);
-            }
-            else if (kind == Kind::Large && rhs_kind == Kind::Medium)
-            {
-                for (const auto & elem : rhs.medium.elems)
-                    large->insert(elem);
-            }
-            else
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Logical error in QuantileTiming::merge function: not all cases are covered");
-
-            /// For determinism, we should always convert to `large` when size condition is reached
-            ///  - regardless of merge order.
-            if (kind == Kind::Medium && unlikely(mediumIsWorthToConvertToLarge()))
-            {
-                mediumToLarge();
-            }
+            mediumToLarge();
         }
     }
 
@@ -704,7 +709,7 @@ public:
     /// Called for an empty object.
     void deserialize(ReadBuffer & buf)
     {
-        Kind kind;
+        Kind kind = {};
         readBinaryLittleEndian(kind, buf);
 
         if (kind == Kind::Tiny)

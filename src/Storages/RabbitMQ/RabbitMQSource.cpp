@@ -24,7 +24,7 @@ static std::pair<Block, Block> getHeaders(const StorageSnapshotPtr & storage_sna
     auto all_columns_header = storage_snapshot->metadata->getSampleBlock();
 
     auto non_virtual_header = storage_snapshot->metadata->getSampleBlockNonMaterialized();
-    auto virtual_header = storage_snapshot->virtual_columns->getSampleBlock(VirtualsKind::All, VirtualsMaterializationPlace::Reader);
+    auto virtual_header = storage_snapshot->metadata->virtuals.getSampleBlock(VirtualsKind::All, VirtualsMaterializationPlace::Reader);
 
     for (const auto & column_name : column_names)
     {
@@ -300,7 +300,7 @@ Chunk RabbitMQSource::generateImpl()
 
             if (is_dead_letter)
             {
-                assert(exception_message);
+                chassert(exception_message);
                 const auto time_now = std::chrono::system_clock::now();
                 auto storage_id = storage.getStorageID();
 

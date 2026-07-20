@@ -20,6 +20,8 @@ VirtualColumnDescription::VirtualColumnDescription(
 
 void VirtualColumnsDescription::add(VirtualColumnDescription desc)
 {
+    chassert(!desc.name.empty());
+
     if (container.get<1>().contains(desc.name))
         throw Exception(ErrorCodes::DUPLICATE_COLUMN, "Virtual column {} already exists", desc.name);
 
@@ -87,6 +89,27 @@ Block VirtualColumnsDescription::getSampleBlock(VirtualsKind kind, VirtualsMater
         if (static_cast<UInt8>(desc.kind) & static_cast<UInt8>(kind))
             if (static_cast<UInt8>(desc.place) & static_cast<UInt8>(place))
                 result.insert({desc.type->createColumn(), desc.type, desc.name});
+    return result;
+}
+
+
+ColumnsDescription VirtualColumnsDescription::toColumnsDescription(VirtualsKind kind, VirtualsMaterializationPlace place) const
+{
+    ColumnsDescription result;
+    for (const auto & desc : container)
+        if (static_cast<UInt8>(desc.kind) & static_cast<UInt8>(kind))
+            if (static_cast<UInt8>(desc.place) & static_cast<UInt8>(place))
+                result.add(static_cast<const ColumnDescription &>(desc));
+    return result;
+}
+
+NamesAndTypesList VirtualColumnsDescription::getNamesAndTypes(VirtualsKind kind, VirtualsMaterializationPlace place) const
+{
+    NamesAndTypesList result;
+    for (const auto & desc : container)
+        if (static_cast<UInt8>(desc.kind) & static_cast<UInt8>(kind))
+            if (static_cast<UInt8>(desc.place) & static_cast<UInt8>(place))
+                result.emplace_back(desc.name, desc.type);
 
     return result;
 }

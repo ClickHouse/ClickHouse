@@ -1,0 +1,65 @@
+---
+description: 'GenerateRandom 테이블 엔진은 지정된 테이블 스키마에 맞는 무작위 데이터를
+  생성합니다.'
+sidebarTitle: 'GenerateRandom'
+slug: /engines/table-engines/special/generate
+title: 'GenerateRandom 테이블 엔진'
+doc_type: 'reference'
+---
+
+GenerateRandom 테이블 엔진은 지정된 테이블 스키마에 맞는 무작위 데이터를 생성합니다.
+
+사용 예시:
+
+* 테스트에서 재현 가능한 대규모 테이블을 채우는 데 사용합니다.
+* 퍼징 테스트용 무작위 입력을 생성합니다.
+
+<div id="usage-in-clickhouse-server">
+  ## ClickHouse 서버에서 사용
+</div>
+
+```sql
+ENGINE = GenerateRandom([random_seed [,max_string_length [,max_array_length]]])
+```
+
+`max_array_length` 및 `max_string_length` 매개변수는 생성된 데이터에서 각각 모든
+배열 또는 맵 컬럼, 그리고 문자열의 최대 길이를 지정합니다.
+
+Generate 테이블 엔진은 `SELECT` 쿼리만 지원합니다.
+
+`AggregateFunction`을 제외하고, 테이블에 저장할 수 있는 모든 [DataTypes](/ko/reference/data-types/index)를 지원합니다.
+
+<div id="example">
+  ## 예시
+</div>
+
+**1.** `generate_engine_table` 테이블을 생성합니다:
+
+```sql
+CREATE TABLE generate_engine_table (name String, value UInt32) ENGINE = GenerateRandom(1, 5, 3)
+```
+
+**2.** 데이터를 조회하세요:
+
+```sql
+SELECT * FROM generate_engine_table LIMIT 3
+```
+
+```text
+┌─name─┬──────value─┐
+│ c4xJ │ 1412771199 │
+│ r    │ 1791099446 │
+│ 7#$  │  124312908 │
+└──────┴────────────┘
+```
+
+<div id="details-of-implementation">
+  ## 구현 세부 정보
+</div>
+
+* 지원되지 않는 항목:
+  * `ALTER`
+  * `SELECT ... SAMPLE`
+  * `INSERT`
+  * 인덱스
+  * 복제

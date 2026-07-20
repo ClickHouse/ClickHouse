@@ -19,7 +19,7 @@ public:
 
     std::string getName() const override { return "StorageDummy"; }
 
-    static VirtualColumnsDescription createVirtuals();
+    static VirtualColumnsDescription createVirtuals(const StorageSnapshotPtr & original_storage_snapshot);
 
     bool supportsSampling() const override { return true; }
     bool supportsFinal() const override { return true; }
@@ -40,11 +40,6 @@ public:
     bool hasEvenlyDistributedRead() const override
     {
         return original_storage_snapshot ? original_storage_snapshot->storage.hasEvenlyDistributedRead() : false;
-    }
-
-    StorageSnapshotPtr getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr /*query_context*/) const override
-    {
-        return std::make_shared<StorageSnapshot>(*this, metadata_snapshot);
     }
 
     QueryProcessingStage::Enum getQueryProcessingStage(
@@ -84,11 +79,6 @@ public:
     const StorageDummy & getStorage() const
     {
         return storage;
-    }
-
-    const StorageSnapshotPtr & getStorageSnapshot() const
-    {
-        return storage_snapshot;
     }
 
     const Names & getColumnNames() const

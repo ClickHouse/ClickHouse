@@ -1,5 +1,6 @@
 -- Tags: no-replicated-database, no-parallel-replicas, no-random-merge-tree-settings
 -- EXPLAIN output may differ
+SET explain_query_plan_default = 'legacy';
 
 SET optimize_use_projections = 1;
 SET optimize_use_implicit_projections = 1;

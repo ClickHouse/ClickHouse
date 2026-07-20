@@ -42,8 +42,8 @@ public:
     {
         StorageInMemoryMetadata storage_metadata;
         storage_metadata.setColumns(std::move(columns_description));
+        storage_metadata.setVirtuals(createVirtuals());
         setInMemoryMetadata(storage_metadata);
-        setVirtuals(createVirtuals());
     }
 
     static VirtualColumnsDescription createVirtuals();

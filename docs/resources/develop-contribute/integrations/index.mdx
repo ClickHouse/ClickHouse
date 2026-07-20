@@ -1,0 +1,28 @@
+---
+slug: /integrations/integration-development
+title: 'Integration development'
+sidebarTitle: 'Overview'
+description: 'Guides for building, testing, and documenting ClickHouse integrations.'
+keywords: ['integration development', 'build integration', 'partner', 'integration partner']
+doc_type: 'landing-page'
+---
+
+These guides orient you if you build a product that connects to ClickHouse. They cover the integration surface, how to validate your connector, and how to publish documentation on this site.
+
+<Info>
+**Partner portal**
+
+Use the [partner portal](https://clickhouse.com/partners) to register your integration and access partner resources. The guides below cover how to build, test, and document your connector.
+</Info>
+
+## Guides {#guides}
+
+Read them in this order:
+
+| Guide | What it covers |
+| ----- | -------------- |
+| [Building integrations](/resources/develop-contribute/integrations/building-integrations) | Ingestion and consumption paths, wire protocols, clients, and user-agent conventions |
+| [Testing your integration](/resources/develop-contribute/integrations/testing-your-integration) | Deployment modes, datasets, type coverage, and what to report before review |
+| [Documenting your integration](/resources/develop-contribute/integrations/documenting-your-integration) | Required doc sections, style rules, and a PR skeleton for your product page |
+
+After you prototype and test, contribute your integration page under [`/docs/integrations/<category>/<your-integration>/`](/resources/develop-contribute/integrations/documenting-your-integration) and open a pull request against [`clickhouse-docs`](https://github.com/ClickHouse/clickhouse-docs).

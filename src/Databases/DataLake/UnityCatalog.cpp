@@ -1,4 +1,5 @@
 #include <Databases/DataLake/UnityCatalog.h>
+#include <Interpreters/StorageID.h>
 
 #if USE_PARQUET
 
@@ -18,6 +19,7 @@ namespace DB::ErrorCodes
 {
     extern const int DATALAKE_DATABASE_ERROR;
     extern const int LOGICAL_ERROR;
+    extern const int BAD_ARGUMENTS;
 }
 
 namespace
@@ -36,13 +38,35 @@ static const auto TEMPORARY_CREDENTIALS_ENDPOINT = "temporary-table-credentials"
 static const std::unordered_set<std::string> READABLE_TABLES = {"TABLE_DELTA", "TABLE_DELTA_EXTERNAL"};
 static const auto READABLE_DATA_SOURCE_FORMAT = "DELTA";
 
+/// A Unity table is readable only if it is a DeltaLake table. `securable_kind`,
+/// `data_source_format` and `storage_location` are in the bulk listing, so this matches `tryGetTableMetadata`.
+static bool isReadableUnityTable(const Poco::JSON::Object::Ptr & table)
+{
+    if (!hasValueAndItsNotNone("storage_location", table))
+        return false;
+
+    const bool has_securable_kind = hasValueAndItsNotNone("securable_kind", table);
+    const bool has_data_source_format = hasValueAndItsNotNone("data_source_format", table);
+
+    if (has_securable_kind && !READABLE_TABLES.contains(table->get("securable_kind").extract<String>()))
+        return false;
+
+    if (has_data_source_format && table->get("data_source_format").extract<String>() != READABLE_DATA_SOURCE_FORMAT)
+        return false;
+
+    if (!has_securable_kind && !has_data_source_format)
+        return false;
+
+    return true;
+}
+
 struct UnityCatalogFullSchemaName
 {
     std::string catalog_name;
     std::string schema_name;
 };
 
-UnityCatalogFullSchemaName parseFullSchemaName(const std::string & full_name)
+static UnityCatalogFullSchemaName parseFullSchemaName(const std::string & full_name)
 {
     auto first_dot = full_name.find('.');
     auto catalog_name = full_name.substr(0, first_dot);
@@ -74,9 +98,9 @@ bool UnityCatalog::empty() const
     return true;
 }
 
-DB::Names UnityCatalog::getTables() const
+CatalogTables UnityCatalog::getTables() const
 {
-    DB::Names result;
+    CatalogTables result;
 
     auto all_schemas = getSchemas("");
     for (const auto & schema : all_schemas)
@@ -88,6 +112,17 @@ DB::Names UnityCatalog::getTables() const
     return result;
 }
 
+DataLake::ICatalog::Namespaces UnityCatalog::getNamespaces() const
+{
+    /// Unity schemas are flat — they cannot contain nested namespaces.
+    return getSchemas("");
+}
+
+CatalogTables UnityCatalog::listTablesInNamespaceDirect(const std::string & namespace_name) const
+{
+    return getTablesForSchema(namespace_name);
+}
+
 void UnityCatalog::getTableMetadata(
     const std::string & namespace_name,
     const std::string & table_name,
@@ -97,63 +132,62 @@ void UnityCatalog::getTableMetadata(
         throw DB::Exception(DB::ErrorCodes::DATALAKE_DATABASE_ERROR, "No response from unity catalog");
 }
 
-void UnityCatalog::getCredentials(const std::string & table_id, TableMetadata & metadata) const
+Poco::JSON::Object::Ptr UnityCatalog::requestReadCredentials(const String & table_id) const
+{
+    Poco::JSON::Object request_body;
+    request_body.set("table_id", table_id);
+    request_body.set("operation", "READ");
+
+    auto callback = [&request_body] (std::ostream & os) { request_body.stringify(os); };
+    auto [json, _] = postJSONRequest(TEMPORARY_CREDENTIALS_ENDPOINT, callback);
+    return json.extract<Poco::JSON::Object::Ptr>();
+}
+
+std::shared_ptr<IStorageCredentials> UnityCatalog::parseS3Credentials(const Poco::JSON::Object::Ptr & response) const
+{
+    if (!hasValueAndItsNotNone("aws_temp_credentials", response))
+        return nullptr;
+
+    const Poco::JSON::Object::Ptr & creds_object = response->getObject("aws_temp_credentials");
+    return std::make_shared<S3Credentials>(
+        creds_object->get("access_key_id").extract<String>(),
+        creds_object->get("secret_access_key").extract<String>(),
+        creds_object->get("session_token").extract<String>());
+}
+
+std::shared_ptr<IStorageCredentials> UnityCatalog::parseAzureCredentials(const Poco::JSON::Object::Ptr & response) const
+{
+    if (!hasValueAndItsNotNone("azure_user_delegation_sas", response))
+        return nullptr;
+
+    const Poco::JSON::Object::Ptr & creds_object = response->getObject("azure_user_delegation_sas");
+    return std::make_shared<AzureCredentials>(
+        creds_object->get("sas_token").extract<String>());
+}
+
+void UnityCatalog::getCredentials(const String & table_id, TableMetadata & metadata) const
 {
     LOG_DEBUG(log, "Getting credentials for table {}", table_id);
     auto storage_type = parseStorageTypeFromLocation(metadata.getLocation());
+    if (storage_type != StorageType::S3 && storage_type != StorageType::Azure)
+        return;
+
+    auto response = requestReadCredentials(table_id);
+
+    std::shared_ptr<IStorageCredentials> creds;
     switch (storage_type)
     {
-        case StorageType::S3:
-        {
-            auto callback = [table_id] (std::ostream & os)
-            {
-                Poco::JSON::Object obj;
-                obj.set("table_id", table_id);
-                obj.set("operation", "READ");
-                obj.stringify(os);
-            };
-
-            auto [json, _] = postJSONRequest(TEMPORARY_CREDENTIALS_ENDPOINT, callback);
-            const Poco::JSON::Object::Ptr & object = json.extract<Poco::JSON::Object::Ptr>();
-
-            if (hasValueAndItsNotNone("aws_temp_credentials", object))
-            {
-                const Poco::JSON::Object::Ptr & creds_object = object->getObject("aws_temp_credentials");
-                std::string access_key_id = creds_object->get("access_key_id").extract<String>();
-                std::string secret_access_key = creds_object->get("secret_access_key").extract<String>();
-                std::string session_token = creds_object->get("session_token").extract<String>();
-
-                auto creds = std::make_shared<S3Credentials>(access_key_id, secret_access_key, session_token);
-                metadata.setStorageCredentials(creds);
-            }
-            break;
-        }
-        case StorageType::Azure:
-        {
-            auto callback = [table_id] (std::ostream & os)
-            {
-                Poco::JSON::Object obj;
-                obj.set("table_id", table_id);
-                obj.set("operation", "READ");
-                obj.stringify(os);
-            };
-
-            auto [json, _] = postJSONRequest(TEMPORARY_CREDENTIALS_ENDPOINT, callback);
-            const Poco::JSON::Object::Ptr & object = json.extract<Poco::JSON::Object::Ptr>();
-
-            if (hasValueAndItsNotNone("azure_user_delegation_sas", object))
-            {
-                const Poco::JSON::Object::Ptr & creds_object = object->getObject("azure_user_delegation_sas");
-                std::string sas_token = creds_object->get("sas_token").extract<String>();
-
-                auto creds = std::make_shared<AzureCredentials>(sas_token);
-                metadata.setStorageCredentials(creds);
-            }
-            break;
-        }
-        default:
-            break;
+    case StorageType::S3:
+        creds = parseS3Credentials(response);
+        break;
+    case StorageType::Azure:
+        creds = parseAzureCredentials(response);
+        break;
+    default:
+        break;
     }
+    if (creds)
+        metadata.setStorageCredentials(creds);
 }
 
 bool UnityCatalog::tryGetTableMetadata(
@@ -264,6 +298,9 @@ bool UnityCatalog::tryGetTableMetadata(
                 LOG_DEBUG(log, "Doesn't require schema");
             }
 
+            if (hasValueAndItsNotNone("table_id", object))
+                result.setTableUUID(object->get("table_id").extract<String>());
+
             if (result.isDefaultReadableTable() && result.requiresCredentials())
                 getCredentials(object->get("table_id"), result);
 
@@ -297,14 +334,14 @@ bool UnityCatalog::existsTable(const std::string & schema_name, const std::strin
     }
 }
 
-DB::Names UnityCatalog::getTablesForSchema(const std::string & schema, size_t limit) const
+CatalogTables UnityCatalog::getTablesForSchema(const std::string & schema, size_t limit) const
 {
     Poco::URI::QueryParameters params;
     params.push_back({"catalog_name", warehouse});
     params.push_back({"schema_name", schema});
     params.push_back({"max_results", DB::toString(limit)});
 
-    DB::Names tables;
+    CatalogTables tables;
     do
     {
         String json_str;
@@ -327,7 +364,10 @@ DB::Names UnityCatalog::getTablesForSchema(const std::string & schema, size_t li
                 const auto current_table_json = tables_object->get(static_cast<int>(i)).extract<Poco::JSON::Object::Ptr>();
                 const auto table_name = current_table_json->get("name").extract<String>();
 
-                tables.push_back(schema + "." + table_name);
+                tables.push_back(CatalogTable{
+                    .name = schema + "." + table_name,
+                    .is_readable = isReadableUnityTable(current_table_json),
+                });
                 if (limit && tables.size() >= limit)
                     break;
             }
@@ -440,26 +480,21 @@ UnityCatalog::UnityCatalog(
 {
 }
 
-ICatalog::CredentialsRefreshCallback UnityCatalog::getCredentialsConfigurationCallback(const DB::StorageID &)
+/// getCredentialsConfigurationCallback method is supported only for S3 storage
+ICatalog::CredentialsRefreshCallback UnityCatalog::getCredentialsConfigurationCallback(const DB::StorageID & table_id)
 {
-    return [this] () -> std::shared_ptr<IStorageCredentials>
-    {
+    if (!table_id.hasUUID())
+        throw DB::Exception(
+            DB::ErrorCodes::BAD_ARGUMENTS,
+            "Cannot build a Unity credentials refresh callback for `{}`: StorageID has no UUID",
+            table_id.getNameForLogs());
+
+    const String unity_table_id = toString(table_id.uuid);
+
+    return [this, unity_table_id] () -> std::shared_ptr<IStorageCredentials>    {
         LOG_DEBUG(log, "Update credentials in the catalog");
 
-        auto [json, _] = postJSONRequest(TEMPORARY_CREDENTIALS_ENDPOINT, {});
-        const Poco::JSON::Object::Ptr & object = json.extract<Poco::JSON::Object::Ptr>();
-
-        if (hasValueAndItsNotNone("aws_temp_credentials", object))
-        {
-            const Poco::JSON::Object::Ptr & creds_object = object->getObject("aws_temp_credentials");
-            std::string access_key_id = creds_object->get("access_key_id").extract<String>();
-            std::string secret_access_key = creds_object->get("secret_access_key").extract<String>();
-            std::string session_token = creds_object->get("session_token").extract<String>();
-
-            auto creds = std::make_shared<S3Credentials>(access_key_id, secret_access_key, session_token);
-            return creds;
-        }
-        return nullptr;
+        return parseS3Credentials(requestReadCredentials(unity_table_id));
     };
 }
 

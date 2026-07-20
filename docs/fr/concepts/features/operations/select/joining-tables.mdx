@@ -1,0 +1,202 @@
+---
+title: 'Utiliser les jointures dans ClickHouse'
+description: 'Comment joindre des tables dans ClickHouse'
+keywords: ['jointures', 'tables Join']
+slug: /guides/joining-tables
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/fr/components/Image.jsx";
+
+ClickHouse offre une [prise en charge complète de `JOIN`](https://clickhouse.com/blog/clickhouse-fully-supports-joins-part1), avec un large choix d’algorithmes de jointure. Pour maximiser les performances, nous recommandons de suivre les conseils d’optimisation des jointures présentés dans ce guide.
+
+* Pour des performances optimales, essayez de réduire le nombre de `JOIN` dans les requêtes, en particulier pour les workloads analytiques en temps réel où des performances de l’ordre de la milliseconde sont requises. Visez un maximum de 3 à 4 jointures par requête. Nous détaillons plusieurs approches pour minimiser les jointures dans la [section sur la modélisation des données](/fr/guides/clickhouse/data-modelling/schema-design), notamment la dénormalisation, les Dictionaries et les vues matérialisées.
+* À partir de ClickHouse 24.12, le planner de requêtes réordonne automatiquement les jointures entre deux tables afin de placer la plus petite à droite pour des performances optimales. Dans la version 25.9, cette optimisation a été étendue à l’ordre des jointures dans les requêtes qui joignent trois tables ou plus.
+* Si votre requête nécessite une jointure directe, c’est-à-dire un `LEFT ANY JOIN`, comme illustré ci-dessous, nous vous recommandons d’utiliser des [Dictionaries](/fr/concepts/features/dictionaries/index) lorsque c’est possible.
+
+<Image img="/images/guides/joins-1.webp" size="sm" alt="Left any join" />
+
+* Pour les jointures internes, il est souvent plus efficace de les écrire sous forme de sous-requêtes avec la clause `IN`. Considérez les requêtes suivantes, qui sont fonctionnellement équivalentes. Toutes deux calculent le nombre de `posts` qui ne mentionnent pas ClickHouse dans la question, mais le mentionnent dans les `comments`.
+
+```sql
+SELECT count()
+FROM stackoverflow.posts AS p
+ANY INNER `JOIN` stackoverflow.comments AS c ON p.Id = c.PostId
+WHERE (p.Title != '') AND (p.Title NOT ILIKE '%clickhouse%') AND (p.Body NOT ILIKE '%clickhouse%') AND (c.Text ILIKE '%clickhouse%')
+```
+
+```response
+┌─count()─┐
+│       86 │
+└─────────┘
+
+1 row in set. Elapsed: 8.209 sec. Processed 150.20 million rows, 56.05 GB (18.30 million rows/s., 6.83 GB/s.)
+Peak memory usage: 1.23 GiB.
+```
+
+Notez que nous utilisons un `ANY INNER JOIN` plutôt qu’une simple jointure `INNER`, car nous ne voulons pas de produit cartésien, c.-à-d. que nous voulons une seule correspondance pour chaque publication.
+
+Cette jointure peut être réécrite à l’aide d’une sous-requête, ce qui améliore considérablement les performances :
+
+```sql
+SELECT count()
+FROM stackoverflow.posts
+WHERE (Title != '') AND (Title NOT ILIKE '%clickhouse%') AND (Body NOT ILIKE '%clickhouse%') AND (Id IN (
+        SELECT PostId
+        FROM stackoverflow.comments
+        WHERE Text ILIKE '%clickhouse%'
+))
+```
+
+```response
+┌─count()─┐
+│       86 │
+└─────────┘
+
+1 row in set. Elapsed: 2.284 sec. Processed 150.20 million rows, 16.61 GB (65.76 million rows/s., 7.27 GB/s.)
+Peak memory usage: 323.52 MiB.
+```
+
+Bien que ClickHouse essaie de pousser les conditions dans toutes les clauses de jointure et sous-requêtes, nous recommandons aux utilisateurs d’appliquer systématiquement ces conditions manuellement à toutes les sous-clauses, lorsque c’est possible, afin de minimiser la taille des données à `JOIN`. Prenons l’exemple suivant, où nous voulons calculer le nombre de votes positifs pour les posts liés à Java depuis 2020.
+
+Une requête naïve, avec la plus grande table à gauche, s’exécute en 56 s :
+
+```sql
+SELECT countIf(VoteTypeId = 2) AS upvotes
+FROM stackoverflow.posts AS p
+INNER JOIN stackoverflow.votes AS v ON p.Id = v.PostId
+WHERE has(arrayFilter(t -> (t != ''), splitByChar('|', p.Tags)), 'java') AND (p.CreationDate >= '2020-01-01')
+```
+
+```response
+┌─upvotes─┐
+│  261915 │
+└─────────┘
+
+1 row in set. Elapsed: 56.642 sec. Processed 252.30 million rows, 1.62 GB (4.45 million rows/s., 28.60 MB/s.)
+```
+
+Le fait de réordonner cette jointure améliore considérablement les performances, ramenant le temps d’exécution à 1,5 s :
+
+```sql
+SELECT countIf(VoteTypeId = 2) AS upvotes
+FROM stackoverflow.votes AS v
+INNER JOIN stackoverflow.posts AS p ON v.PostId = p.Id
+WHERE has(arrayFilter(t -> (t != ''), splitByChar('|', p.Tags)), 'java') AND (p.CreationDate >= '2020-01-01')
+```
+
+```response
+┌─upvotes─┐
+│  261915 │
+└─────────┘
+
+1 row in set. Elapsed: 1.519 sec. Processed 252.30 million rows, 1.62 GB (166.06 million rows/s., 1.07 GB/s.)
+```
+
+L’ajout d’un filtre à la table de gauche améliore encore les performances et ramène le temps d’exécution à 0,5 s.
+
+```sql
+SELECT countIf(VoteTypeId = 2) AS upvotes
+FROM stackoverflow.votes AS v
+INNER JOIN stackoverflow.posts AS p ON v.PostId = p.Id
+WHERE has(arrayFilter(t -> (t != ''), splitByChar('|', p.Tags)), 'java') AND (p.CreationDate >= '2020-01-01') AND (v.CreationDate >= '2020-01-01')
+```
+
+```response
+┌─upvotes─┐
+│  261915 │
+└─────────┘
+
+1 row in set. Elapsed: 0.597 sec. Processed 81.14 million rows, 1.31 GB (135.82 million rows/s., 2.19 GB/s.)
+Peak memory usage: 249.42 MiB.
+```
+
+Cette requête peut être encore améliorée en déplaçant le `INNER JOIN` dans une sous-requête, comme indiqué précédemment, tout en conservant le filtre dans la requête externe comme dans la sous-requête.
+
+```sql
+SELECT count() AS upvotes
+FROM stackoverflow.votes
+WHERE (VoteTypeId = 2) AND (PostId IN (
+        SELECT Id
+        FROM stackoverflow.posts
+        WHERE (CreationDate >= '2020-01-01') AND has(arrayFilter(t -> (t != ''), splitByChar('|', Tags)), 'java')
+))
+```
+
+```response
+┌─upvotes─┐
+│  261915 │
+└─────────┘
+
+1 row in set. Elapsed: 0.383 sec. Processed 99.64 million rows, 804.55 MB (259.85 million rows/s., 2.10 GB/s.)
+Peak memory usage: 250.66 MiB.
+```
+
+<div id="choosing-a-join-algorithm">
+  ## Choisir un algorithme de JOIN
+</div>
+
+ClickHouse prend en charge plusieurs [algorithmes de jointure](https://clickhouse.com/blog/clickhouse-fully-supports-joins-part1). Ces algorithmes impliquent généralement un compromis entre consommation mémoire et performances. Voici un aperçu des algorithmes de jointure de ClickHouse en fonction de leur consommation mémoire relative et de leur temps d’exécution :
+
+<br />
+
+<Image img="/images/guides/joins-2.png" size="lg" alt="vitesse selon la mémoire pour les jointures" />
+
+<br />
+
+Ces algorithmes déterminent la façon dont une requête avec jointure est planifiée et exécutée. Par défaut, ClickHouse utilise l’algorithme de jointure directe ou le hash join selon le type de jointure utilisé, la strictness et le moteur des tables jointes. ClickHouse peut également être configuré pour choisir l’algorithme de jointure de manière adaptative et en changer dynamiquement à l’exécution, selon la disponibilité et l’utilisation des ressources : lorsque `join_algorithm=auto`, ClickHouse essaie d’abord le hash join et, si la limite mémoire de cet algorithme est dépassée, bascule à la volée vers le partial merge join. Vous pouvez voir quel algorithme a été choisi dans les logs de trace. ClickHouse vous permet aussi de spécifier directement l’algorithme de jointure souhaité via le paramètre `join_algorithm`.
+
+Les types de `JOIN` pris en charge par chaque algorithme de jointure sont indiqués ci-dessous et doivent être pris en compte avant toute optimisation :
+
+<br />
+
+<Image img="/images/guides/joins-3.webp" size="lg" alt="fonctionnalités des jointures" />
+
+<br />
+
+Vous trouverez [ici](https://clickhouse.com/blog/clickhouse-fully-supports-joins-hash-joins-part2) une description complète de chaque algorithme de `JOIN`, avec ses avantages, ses inconvénients et ses propriétés en matière de scaling.
+
+Le choix de l’algorithme de jointure approprié dépend de votre objectif : optimiser la mémoire ou les performances.
+
+<div id="optimizing-join-performance">
+  ## Optimiser les performances de JOIN
+</div>
+
+Si votre principal critère d’optimisation est la performance et que vous souhaitez exécuter la jointure le plus rapidement possible, vous pouvez utiliser l’arbre de décision suivant pour choisir le bon algorithme de jointure :
+
+<br />
+
+<Image img="/images/guides/joins-4.webp" size="lg" alt="organigramme de jointure" />
+
+<br />
+
+* **(1)** Si les données de la table de droite peuvent être préchargées dans une structure de données clé-valeur en mémoire à faible latence, par exemple un dictionnaire, si la clé de jointure correspond à l’attribut clé du stockage clé-valeur sous-jacent, et si la sémantique `LEFT ANY JOIN` convient, alors le **direct join** peut être utilisé et constitue l’approche la plus rapide.
+
+* **(2)** Si l’[ordre physique des lignes](/fr/guides/clickhouse/data-modelling/sparse-primary-indexes#data-is-stored-on-disk-ordered-by-primary-key-columns) de votre table correspond à l’ordre de tri de la clé de jointure, alors cela dépend. Dans ce cas, le **full sorting merge join** [saute](https://clickhouse.com/blog/clickhouse-fully-supports-joins-full-sort-partial-merge-part3#utilizing-physical-row-order) l’étape de tri, ce qui réduit considérablement l’utilisation de la mémoire et peut, selon la taille des données et la distribution des valeurs des colonnes de clé de jointure, offrir des temps d’exécution plus rapides que certains algorithmes de hash join.
+
+* **(3)** Si la table de droite tient en mémoire, même avec le [surcoût de mémoire supplémentaire](https://clickhouse.com/blog/clickhouse-fully-supports-joins-hash-joins-part2#summary) du **parallel hash join**, alors cet algorithme, ou le hash join, peut être plus rapide. Cela dépend de la taille des données, des types de données et de la distribution des valeurs des colonnes de clé de jointure.
+
+* **(4)** Si la table de droite ne tient pas en mémoire, alors là encore, cela dépend. ClickHouse propose trois algorithmes de jointure non contraints par la mémoire. Tous les trois écrivent temporairement les données sur disque. Le **full sorting merge join** et le **partial merge join** nécessitent un tri préalable des données. Le **grace hash join**, lui, construit des tables de hachage à partir des données. Selon le volume de données, les types de données et la distribution des valeurs des colonnes de clé de jointure, il existe des scénarios dans lesquels construire des tables de hachage à partir des données est plus rapide que trier les données. Et inversement.
+
+Le partial merge join est optimisé pour minimiser l’utilisation de la mémoire lorsque de grandes tables sont jointes, au détriment de la vitesse de jointure, qui est assez faible. C’est particulièrement le cas lorsque l’ordre physique des lignes de la table de gauche ne correspond pas à l’ordre de tri de la clé de jointure.
+
+Le grace hash join est le plus flexible des trois algorithmes de jointure non contraints par la mémoire et offre un bon contrôle du compromis entre utilisation de la mémoire et vitesse de jointure grâce au paramètre [grace&#95;hash&#95;join&#95;initial&#95;buckets](https://github.com/ClickHouse/ClickHouse/blob/23.5/src/Core/Settings.h#L759). Selon le volume de données, le grace hash peut être plus rapide ou plus lent que l’algorithme partial merge lorsque le nombre de [buckets](https://clickhouse.com/blog/clickhouse-fully-supports-joins-hash-joins-part2#description-2) est choisi de sorte que l’utilisation de la mémoire des deux algorithmes soit approximativement comparable. Lorsque l’utilisation de la mémoire du grace hash join est configurée pour être approximativement comparable à celle du full sorting merge, alors le full sorting merge s’est toujours révélé plus rapide lors de nos tests.
+
+Le plus rapide des trois algorithmes non contraints par la mémoire dépend du volume de données, des types de données et de la distribution des valeurs des colonnes de clé de jointure. Il est toujours préférable d’exécuter quelques benchmarks avec des volumes de données réalistes afin de déterminer quel algorithme est le plus rapide.
+
+<div id="optimizing-for-memory">
+  ## Optimisation de l’utilisation mémoire
+</div>
+
+Si vous cherchez à optimiser une jointure pour minimiser l’utilisation mémoire plutôt que pour obtenir le temps d’exécution le plus rapide, vous pouvez utiliser cet arbre de décision à la place :
+
+<br />
+
+<Image img="/images/guides/joins-5.webp" size="lg" alt="Arbre de décision pour l’optimisation mémoire des jointures" />
+
+<br />
+
+* **(1)** Si l’ordre physique des lignes de votre table correspond à l’ordre de tri de la clé de jointure, alors l’utilisation mémoire du **full sorting merge join** est minimale. Avec en plus de bonnes performances de jointure, puisque la phase de tri est [désactivée](https://clickhouse.com/blog/clickhouse-fully-supports-joins-full-sort-partial-merge-part3#utilizing-physical-row-order).
+* **(2)** Le **grace hash join** peut être réglé pour une très faible utilisation mémoire en [configurant](https://github.com/ClickHouse/ClickHouse/blob/23.5/src/Core/Settings.h#L759) un grand nombre de [buckets](https://clickhouse.com/blog/clickhouse-fully-supports-joins-hash-joins-part2#description-2), au détriment de la vitesse de jointure. Le **partial merge join** utilise volontairement peu de mémoire principale. Le **full sorting merge join** avec tri externe activé utilise généralement plus de mémoire que le partial merge join (en supposant que l’ordre des lignes ne corresponde pas à l’ordre de tri de la clé), avec l’avantage d’un temps d’exécution nettement meilleur.
+
+Si vous souhaitez plus de détails à ce sujet, nous vous recommandons la [série d’articles de blog](https://clickhouse.com/blog/clickhouse-fully-supports-joins-part1) suivante.

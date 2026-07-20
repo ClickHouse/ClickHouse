@@ -1,0 +1,135 @@
+---
+title: '지원되는 클라우드 리전'
+sidebarTitle: '지원되는 클라우드 리전'
+keywords: ['aws', 'gcp', 'google cloud', 'azure', 'cloud', 'regions']
+description: 'ClickHouse Cloud에서 지원되는 리전'
+slug: /cloud/reference/supported-regions
+doc_type: 'reference'
+---
+
+import EnterprisePlanFeatureBadge from "/snippets/ko/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
+
+<div id="aws-regions">
+  ## AWS 리전
+</div>
+
+* ap-northeast-1 (도쿄)
+* ap-northeast-2 (대한민국, 서울)
+* ap-south-1 (뭄바이)
+* ap-southeast-1 (싱가포르)
+* ap-southeast-2 (시드니)
+* eu-central-1 (프랑크푸르트)
+* eu-west-1 (아일랜드)
+* eu-west-2 (런던)
+* us-east-1 (북부 버지니아)
+* us-east-2 (오하이오)
+* us-west-2 (오리건)
+* il-central-1 (이스라엘, 텔아비브)
+
+**프라이빗 리전:**
+
+* ca-central-1 (캐나다)
+* af-south-1 (남아프리카공화국)
+* eu-north-1 (스톡홀름)
+* sa-east-1 (남아메리카)
+* ap-southeast-3 (자카르타)
+* ap-east-1 (홍콩)
+* mx-central-1 (멕시코)
+
+<div id="google-cloud-regions">
+  ## Google Cloud 리전
+</div>
+
+* asia-southeast1 (싱가포르)
+* asia-northeast1 (도쿄)
+* europe-west2 (런던)
+* europe-west4 (네덜란드)
+* us-central1 (아이오와)
+* us-east1 (사우스캐롤라이나)
+
+**프라이빗 리전:**
+
+* australia-southeast1(시드니)
+* europe-west3 (프랑크푸르트)
+* europe-west6 (취리히)
+* northamerica-northeast1 (몬트리올)
+* us-west1 (오리건)
+
+<div id="azure-regions">
+  ## Azure 리전
+</div>
+
+* West US 3 (Arizona)
+* East US 2 (Virginia)
+* Germany West Central (Frankfurt)
+
+**프라이빗 리전:**
+
+* Japan East (Tokyo, Saitama)
+* UAE North (Dubai)
+* Australia East (New South Wales)
+
+<Note>
+  현재 목록에 없는 리전에 배포해야 하는 경우 [요청을 제출하세요](https://clickhouse.com/pricing?modal=open).
+</Note>
+
+<div id="private-regions">
+  ## 프라이빗 리전
+</div>
+
+<EnterprisePlanFeatureBadge feature="프라이빗 리전 기능" />
+
+Enterprise tier 서비스에 프라이빗 리전을 제공합니다. 프라이빗 리전을 요청하려면 [문의하십시오](https://clickhouse.com/company/contact).
+
+프라이빗 리전의 주요 고려 사항은 다음과 같습니다.
+
+* 서비스는 자동 스케일링되지 않지만, 수동 수직 스케일링 및 수평 스케일링은 지원됩니다.
+* 서비스를 유휴 상태로 전환할 수 없습니다.
+* 프라이빗 리전에서는 상태 페이지를 사용할 수 없습니다.
+
+HIPAA 컴플라이언스를 위해 추가 요구 사항이 적용될 수 있습니다(BAA 서명 포함). 현재 HIPAA는 Enterprise tier 서비스에서만 사용할 수 있습니다.
+
+<div id="hipaa-compliant-regions">
+  ## HIPAA 컴플라이언스 리전
+</div>
+
+<EnterprisePlanFeatureBadge feature="HIPAA" support="true" />
+
+고객은 HIPAA 컴플라이언스 리전에서 서비스를 설정하려면 Business Associate Agreement (BAA)를 체결하고 Sales 또는 Support를 통해 온보딩을 요청해야 합니다. 다음 리전에서 HIPAA 컴플라이언스를 지원합니다:
+
+* AWS af-south-1 (남아프리카) **프라이빗 리전**
+* AWS ca-central-1 (캐나다) **프라이빗 리전**
+* AWS eu-central-1 (프랑크푸르트)
+* AWS eu-north-1 (스톡홀름) **프라이빗 리전**
+* AWS eu-west-1 (아일랜드)
+* AWS eu-west-2 (런던)
+* AWS sa-east-1 (남아메리카) **프라이빗 리전**
+* AWS us-east-1 (N. 버지니아)
+* AWS us-east-2 (오하이오)
+* AWS us-west-2 (오리건)
+* GCP europe-west4 (네덜란드)
+* GCP us-central1 (아이오와)
+* GCP us-east1 (사우스캐롤라이나)
+
+<div id="pci-compliant-regions">
+  ## PCI 규정을 준수하는 리전
+</div>
+
+<EnterprisePlanFeatureBadge feature="PCI" support="true" />
+
+고객은 PCI 규정을 준수하는 리전에서 서비스를 구성하려면 Sales 또는 Support를 통해 온보딩을 요청해야 합니다. 다음 리전은 PCI 컴플라이언스를 지원합니다.
+
+* AWS af-south-1 (남아프리카) **프라이빗 리전**
+* AWS ca-central-1 (캐나다) **프라이빗 리전**
+* AWS eu-central-1 (프랑크푸르트)
+* AWS eu-north-1 (스톡홀름) **프라이빗 리전**
+* AWS eu-west-1 (아일랜드)
+* AWS eu-west-2 (런던)
+* AWS mx-central-1 (멕시코) **프라이빗 리전**
+* AWS sa-east-1 (남아메리카) **프라이빗 리전**
+* AWS us-east-1 (N. 버지니아)
+* AWS us-east-2 (오하이오)
+* AWS us-west-2 (오리건)
+* GCP europe-west4 (네덜란드)
+* GCP us-central1 (아이오와)
+* GCP us-east1 (사우스캐롤라이나)

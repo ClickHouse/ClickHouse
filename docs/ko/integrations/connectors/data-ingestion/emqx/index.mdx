@@ -1,0 +1,296 @@
+---
+sidebarTitle: 'EMQX'
+slug: /integrations/emqx
+description: 'ClickHouse와의 EMQX 통합 소개'
+title: 'EMQX를 ClickHouse와 통합하기'
+doc_type: 'guide'
+integration:
+  - support_level: 'partner'
+  - category: 'data_ingestion'
+keywords: ['EMQX ClickHouse 통합', 'MQTT ClickHouse 커넥터', 'EMQX Cloud ClickHouse', 'IoT 데이터 ClickHouse', 'MQTT 브로커 ClickHouse']
+---
+
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+<div id="connecting-emqx">
+  ## EMQX 연결하기
+</div>
+
+[EMQX](https://www.emqx.com/en/try?product=enterprise)는 고성능 실시간 메시지 처리 엔진을 갖춘 오픈 소스 MQTT 브로커로, 대규모 IoT 디바이스를 위한 이벤트 스트리밍을 지원합니다. 확장성이 뛰어난 MQTT 브로커인 EMQX는 어떤 디바이스든 어떤 규모에서든 연결할 수 있도록 지원합니다. IoT 데이터를 어디서나 이동하고 처리할 수 있습니다.
+
+[EMQX Cloud](https://www.emqx.com/en/try?product=cloud)는 [EMQ](https://www.emqx.com/en)에서 호스팅하는 IoT 도메인용 MQTT 메시징 미들웨어 제품입니다. 세계 최초의 완전관리형 MQTT 5.0 클라우드 메시징 서비스인 EMQX Cloud는 MQTT 메시징 서비스를 위한 원스톱 운영 및 유지관리 환경과 고유한 격리 환경을 제공합니다. 만물인터넷 시대에 EMQX Cloud는 IoT 도메인용 산업 애플리케이션을 빠르게 구축하고, IoT 데이터를 쉽게 수집, 전송, 처리 및 저장할 수 있도록 지원합니다.
+
+클라우드 제공업체가 제공하는 인프라를 기반으로 EMQX Cloud는 전 세계 수십 개 국가와 지역에 서비스를 제공하며, 5G 및 만물인터넷 애플리케이션을 위한 저비용의 안전하고 신뢰할 수 있는 클라우드 서비스를 제공합니다.
+
+<Image img="/images/integrations/data-ingestion/emqx/emqx-cloud-artitecture.png" size="lg" border alt="클라우드 인프라 구성 요소를 보여주는 EMQX Cloud 아키텍처 다이어그램" />
+
+<div id="assumptions">
+  ### 가정 사항
+</div>
+
+* 매우 가벼운 publish/subscribe 메시징 전송 프로토콜로 설계된 [MQTT protocol](https://mqtt.org/)에 익숙하다고 가정합니다.
+* 대규모 IoT 디바이스의 event streaming을 지원하는 실시간 메시지 처리 engine으로 EMQX 또는 EMQX Cloud를 사용하고 있다고 가정합니다.
+* 디바이스 데이터를 저장할 ClickHouse Cloud 인스턴스를 준비했다고 가정합니다.
+* EMQX Cloud 배포에 연결해 MQTT 데이터를 게시하는 MQTT 클라이언트 테스트 도구로 [MQTT X](https://mqttx.app/)를 사용합니다. 또는 MQTT broker에 연결할 수 있는 다른 방법을 사용해도 됩니다.
+
+<div id="get-your-clickhouse-cloudservice">
+  ## ClickHouse Cloud 서비스 준비하기
+</div>
+
+이 설정에서는 AWS의 N. Virginia(us-east-1)에 ClickHouse 인스턴스를 배포했으며, EMQX Cloud 인스턴스도 동일한 리전에 배포했습니다.
+
+<Image img="/images/integrations/data-ingestion/emqx/clickhouse_cloud_1.webp" size="sm" border alt="AWS 리전 선택을 보여주는 ClickHouse Cloud 서비스 배포 인터페이스" />
+
+설정 과정에서는 연결 설정도 확인해야 합니다. 이 튜토리얼에서는 &quot;Anywhere&quot;를 선택하지만, 특정 위치를 사용하는 경우에는 EMQX Cloud 배포에서 받은 [NAT gateway](https://docs.emqx.com/en/cloud/latest/vas/nat-gateway.html) IP 주소를 허용 목록에 추가해야 합니다.
+
+<Image img="/images/integrations/data-ingestion/emqx/clickhouse_cloud_2.webp" size="sm" border alt="IP 액세스 구성을 보여주는 ClickHouse Cloud 연결 설정" />
+
+그런 다음 나중에 사용할 수 있도록 사용자 이름과 비밀번호를 저장해야 합니다.
+
+<Image img="/images/integrations/data-ingestion/emqx/clickhouse_cloud_3.webp" size="sm" border alt="사용자 이름과 비밀번호를 보여주는 ClickHouse Cloud 자격 증명 화면" />
+
+그 후 실행 중인 ClickHouse 인스턴스를 확인할 수 있습니다. ClickHouse Cloud 인스턴스의 연결 주소를 확인하려면 &quot;Connect&quot;를 클릭하십시오.
+
+<Image img="/images/integrations/data-ingestion/emqx/clickhouse_cloud_4.webp" size="lg" border alt="연결 옵션이 있는 ClickHouse Cloud 실행 인스턴스 dashboard" />
+
+EMQX Cloud와 통합하기 위한 데이터베이스와 테이블을 생성하려면 &quot;Connect to SQL Console&quot;을 클릭하십시오.
+
+<Image img="/images/integrations/data-ingestion/emqx/clickhouse_cloud_5.webp" size="lg" border alt="ClickHouse Cloud SQL 콘솔 인터페이스" />
+
+다음 SQL 문을 참고하거나 실제 환경에 맞게 SQL을 수정할 수 있습니다.
+
+```sql
+CREATE TABLE emqx.temp_hum
+(
+   client_id String,
+   timestamp DateTime,
+   topic String,
+   temp Float32,
+   hum Float32
+)
+ENGINE = MergeTree()
+PRIMARY KEY (client_id, timestamp)
+```
+
+<Image img="/images/integrations/data-ingestion/emqx/clickhouse_cloud_6.webp" size="lg" border alt="ClickHouse Cloud에서 데이터베이스 및 테이블 CREATE SQL 쿼리 실행" />
+
+<div id="create-an-mqtt-service-on-emqx-cloud">
+  ## EMQX Cloud에서 MQTT 서비스 만들기
+</div>
+
+EMQX Cloud에서 전용 MQTT 브로커를 만드는 것은 몇 번만 클릭하면 됩니다.
+
+<div id="get-an-account">
+  ### 계정 생성
+</div>
+
+EMQX Cloud는 모든 계정에 표준 배포와 프로페셔널 배포 모두에 대해 14일 무료 체험을 제공합니다.
+
+EMQX Cloud를 처음 사용하는 경우 [EMQX Cloud sign up](https://accounts.emqx.com/signup?continue=https%3A%2F%2Fwww.emqx.com%2Fen%2Fcloud) 페이지로 이동한 다음 start free를 클릭하여 계정을 등록하세요.
+
+<Image img="/images/integrations/data-ingestion/emqx/emqx_cloud_sign_up.webp" size="lg" border alt="등록 양식이 있는 EMQX Cloud 가입 페이지" />
+
+<div id="create-an-mqtt-cluster">
+  ### MQTT 클러스터 생성
+</div>
+
+로그인한 후 계정 메뉴에서 &quot;Cloud Console&quot;을 클릭하면 새 배포를 생성하는 초록색 버튼이 표시됩니다.
+
+<Image img="/images/integrations/data-ingestion/emqx/emqx_cloud_create_1.webp" size="lg" border alt="배포 옵션을 보여주는 EMQX Cloud 배포 생성 1단계" />
+
+이 튜토리얼에서는 프로페셔널 배포를 사용합니다. Pro 버전에서만 데이터 통합 기능을 제공하므로, 코드 한 줄 작성하지 않고도 MQTT 데이터를 ClickHouse로 직접 전송할 수 있습니다.
+
+Pro 버전을 선택하고 `N.Virginial` 지역을 고른 다음 `Create Now`를 클릭하십시오. 몇 분이면 완전 관리형 MQTT 브로커가 준비됩니다.
+
+<Image img="/images/integrations/data-ingestion/emqx/emqx_cloud_create_2.png" size="lg" border alt="지역 선택을 보여주는 EMQX Cloud 배포 생성 2단계" />
+
+이제 패널을 클릭해 클러스터 보기로 이동하십시오. 이 대시보드에서 MQTT 브로커의 개요를 확인할 수 있습니다.
+
+<Image img="/images/integrations/data-ingestion/emqx/emqx_cloud_overview.webp" size="lg" border alt="브로커 메트릭을 보여주는 EMQX Cloud 개요 대시보드" />
+
+<div id="add-client-credential">
+  ### 클라이언트 자격 증명 추가
+</div>
+
+EMQX Cloud는 기본적으로 익명 연결을 허용하지 않으므로 MQTT 클라이언트 도구를 사용해 이 브로커로 데이터를 전송할 수 있도록 클라이언트 자격 증명을 추가해야 합니다.
+
+왼쪽 메뉴에서 &#39;Authentication &amp; ACL&#39;을 클릭한 다음 하위 메뉴에서 &#39;Authentication&#39;을 클릭합니다. 오른쪽의 &#39;Add&#39; 버튼을 클릭하고 나중에 MQTT 연결에 사용할 사용자 이름과 비밀번호를 입력합니다. 여기서는 사용자 이름과 비밀번호로 `emqx`와 `xxxxxx`를 사용합니다.
+
+<Image img="/images/integrations/data-ingestion/emqx/emqx_cloud_auth.webp" size="lg" border alt="자격 증명을 추가하기 위한 EMQX Cloud Authentication Setup 인터페이스" />
+
+&#39;Confirm&#39;을 클릭하면 이제 완전 관리형 MQTT 브로커를 사용할 준비가 완료됩니다.
+
+<div id="enable-nat-gateway">
+  ### NAT gateway 활성화
+</div>
+
+ClickHouse 통합 설정을 시작하기 전에 먼저 NAT gateway를 활성화해야 합니다. 기본적으로 MQTT 브로커는 프라이빗 VPC에 배포되므로 공용 네트워크를 통해 서드파티 시스템으로 데이터를 전송할 수 없습니다.
+
+Overview 페이지로 돌아가 페이지 맨 아래까지 스크롤하면 NAT gateway 위젯이 표시됩니다. Subscribe 버튼을 클릭한 다음 안내에 따라 진행하십시오. NAT Gateway는 부가 서비스이지만 14일 무료 체험도 제공합니다.
+
+<Image img="/images/integrations/data-ingestion/emqx/emqx_cloud_nat_gateway.webp" size="lg" border alt="EMQX Cloud NAT Gateway 구성 패널" />
+
+생성이 완료되면 위젯에서 공인 IP 주소를 확인할 수 있습니다. ClickHouse Cloud 설정 중에 &quot;Connect from a specific location&quot;을 선택했다면 이 IP 주소를 허용 목록에 추가해야 합니다.
+
+<div id="integration-emqx-cloud-with-clickhouse-cloud">
+  ## EMQX Cloud와 ClickHouse Cloud 통합
+</div>
+
+[EMQX Cloud Data Integrations](https://docs.emqx.com/en/cloud/latest/rule_engine/introduction.html#general-flow)는 EMQX 메시지 흐름과 디바이스 이벤트를 처리하고 대응하는 규칙을 구성하는 데 사용됩니다. Data Integrations는 명확하고 유연한 &quot;구성 가능한&quot; 아키텍처를 제공할 뿐만 아니라, 개발 과정을 간소화하고 사용 편의성을 높이며 비즈니스 시스템과 EMQX Cloud 간의 결합도를 낮춥니다. 또한 EMQX Cloud의 고유 capability를 맞춤화할 수 있는 뛰어난 인프라도 제공합니다.
+
+<Image img="/images/integrations/data-ingestion/emqx/emqx_cloud_data_integration.png" size="lg" border alt="사용 가능한 커넥터를 보여주는 EMQX Cloud Data Integration 옵션" />
+
+EMQX Cloud는 널리 사용되는 데이터 시스템과 30개 이상의 네이티브 통합을 제공합니다. ClickHouse도 그중 하나입니다.
+
+<Image img="/images/integrations/data-ingestion/emqx/data_integration_clickhouse.webp" size="lg" border alt="EMQX Cloud ClickHouse Data Integration 커넥터 세부 정보" />
+
+<div id="create-clickhouse-resource">
+  ### ClickHouse 리소스 생성
+</div>
+
+왼쪽 메뉴에서 &quot;Data Integrations&quot;를 클릭한 다음 &quot;View All Resources&quot;를 클릭하십시오. Data Persistence 섹션에서 ClickHouse를 찾을 수 있으며, 검색창에서 ClickHouse를 검색해도 됩니다.
+
+ClickHouse 카드를 클릭하여 새 리소스를 생성하십시오.
+
+* 참고: 이 리소스에 대한 메모를 추가합니다.
+* 서버 주소: ClickHouse Cloud 서비스의 주소입니다. 포트를 빠뜨리지 않도록 주의하십시오.
+* 데이터베이스 이름: 위 단계에서 생성한 `emqx`입니다.
+* 사용자: ClickHouse Cloud 서비스에 연결할 때 사용하는 사용자 이름입니다.
+* Key: 연결에 사용하는 비밀번호입니다.
+
+<Image img="/images/integrations/data-ingestion/emqx/data_integration_resource.webp" size="lg" border alt="연결 정보가 표시된 EMQX Cloud ClickHouse 리소스 설정 양식" />
+
+<div id="create-a-new-rule">
+  ### 새 규칙 만들기
+</div>
+
+리소스를 생성하는 동안 팝업이 표시되며, &#39;New&#39;를 클릭하면 규칙 생성 페이지로 이동합니다.
+
+EMQX는 강력한 [규칙 엔진](https://docs.emqx.com/en/cloud/latest/rule_engine/rules.html)을 제공하며, 이를 통해 원시 MQTT 메시지를 서드파티 시스템으로 전송하기 전에 변환하고 보강할 수 있습니다.
+
+다음은 이 튜토리얼에서 사용하는 규칙입니다:
+
+```sql
+SELECT
+   clientid AS client_id,
+   (timestamp div 1000) AS timestamp,
+   topic AS topic,
+   payload.temp AS temp,
+   payload.hum AS hum
+FROM
+"temp_hum/emqx"
+```
+
+`temp_hum/emqx` 토픽에서 메시지를 읽고 client&#95;id, topic, timestamp 정보를 추가해 JSON 객체를 보강합니다.
+
+따라서 토픽에 전송하는 원시 JSON은 다음과 같습니다:
+
+```bash
+{"temp": 28.5, "hum": 0.68}
+```
+
+<Image img="/images/integrations/data-ingestion/emqx/data_integration_rule_1.webp" size="md" border alt="SQL 쿼리를 보여주는 EMQX Cloud 데이터 통합 규칙 생성 1단계" />
+
+SQL 테스트를 실행해 결과를 확인할 수 있습니다.
+
+<Image img="/images/integrations/data-ingestion/emqx/data_integration_rule_2.webp" size="md" border alt="테스트 결과를 보여주는 EMQX Cloud 데이터 통합 규칙 생성 2단계" />
+
+이제 &quot;다음&quot; 버튼을 클릭하세요. 이 단계에서는 정제된 데이터를 ClickHouse 데이터베이스에 삽입하는 방법을 EMQX Cloud에 지정합니다.
+
+<div id="add-a-response-action">
+  ### 응답 작업 추가
+</div>
+
+리소스가 하나뿐이라면 &#39;Resource&#39;와 &#39;Action Type&#39;은 수정할 필요가 없습니다.
+SQL 템플릿만 설정하면 됩니다. 이 튜토리얼에서 사용하는 예시는 다음과 같습니다:
+
+```bash
+INSERT INTO temp_hum (client_id, timestamp, topic, temp, hum) VALUES ('${client_id}', ${timestamp}, '${topic}', ${temp}, ${hum})
+```
+
+<Image img="/images/integrations/data-ingestion/emqx/data_integration_rule_action.webp" size="md" border alt="SQL 템플릿을 사용한 EMQX Cloud 데이터 통합 규칙 작업 설정" />
+
+이는 데이터를 ClickHouse에 삽입하기 위한 템플릿으로, 여기에서 변수가 사용되는 것을 확인할 수 있습니다.
+
+<div id="view-rules-details">
+  ### 규칙 세부 정보 보기
+</div>
+
+&quot;Confirm&quot; 및 &quot;View Details&quot;를 클릭하세요. 이제 모든 설정이 정상적으로 완료됩니다. 규칙 세부 정보 페이지에서 데이터 통합이 정상적으로 작동하는지 확인할 수 있습니다.
+
+<Image img="/images/integrations/data-ingestion/emqx/data_integration_details.webp" size="md" border alt="구성 요약을 보여주는 EMQX Cloud 데이터 통합 규칙 세부 정보" />
+
+`temp_hum/emqx` 토픽으로 전송된 모든 MQTT 메시지는 ClickHouse Cloud 데이터베이스에 영구적으로 저장됩니다.
+
+<div id="saving-data-into-clickhouse">
+  ## ClickHouse에 데이터 저장
+</div>
+
+온도와 습도 데이터를 시뮬레이션하고, MQTT X를 통해 해당 데이터를 EMQX Cloud로 전송한 다음, EMQX Cloud의 Data Integrations를 사용해 데이터를 ClickHouse Cloud에 저장합니다.
+
+<Image img="/images/integrations/data-ingestion/emqx/work-flow.png" size="lg" border alt="데이터 흐름을 보여주는 EMQX Cloud에서 ClickHouse로의 워크플로 다이어그램" />
+
+<div id="publish-mqtt-messages-to-emqx-cloud">
+  ### MQTT 메시지를 EMQX Cloud에 게시하기
+</div>
+
+메시지를 게시할 때는 원하는 MQTT 클라이언트나 SDK를 사용할 수 있습니다. 이 튜토리얼에서는 EMQ에서 제공하는 사용하기 쉬운 MQTT 클라이언트 애플리케이션인 [MQTT X](https://mqttx.app/)를 사용합니다.
+
+<Image img="/images/integrations/data-ingestion/emqx/mqttx-overview.webp" size="lg" border alt="클라이언트 인터페이스를 보여주는 MQTTX Overview" />
+
+MQTTX에서 &quot;New Connection&quot;을 클릭한 다음 연결 양식을 입력하세요:
+
+* Name: 연결 이름입니다. 원하는 이름을 사용하세요.
+* Host: MQTT 브로커의 연결 주소입니다. EMQX Cloud 개요 페이지에서 확인할 수 있습니다.
+* Port: MQTT 브로커의 연결 포트입니다. EMQX Cloud 개요 페이지에서 확인할 수 있습니다.
+* Username/Password: 앞에서 생성한 자격 증명을 사용하세요. 이 튜토리얼에서는 `emqx` 및 `xxxxxx`입니다.
+
+<Image img="/images/integrations/data-ingestion/emqx/mqttx-new.webp" size="lg" border alt="연결 세부 정보를 포함한 MQTTX 새 연결 설정 양식" />
+
+오른쪽 상단의 &quot;Connect&quot; 버튼을 클릭하면 연결이 설정됩니다.
+
+이제 이 도구를 사용해 MQTT 브로커에 메시지를 보낼 수 있습니다.
+입력값:
+
+1. payload 포맷을 &quot;JSON&quot;으로 설정합니다.
+2. 토픽을 `temp_hum/emqx`로 설정합니다(방금 규칙에서 설정한 토픽).
+3. JSON 본문:
+
+```bash
+{"temp": 23.1, "hum": 0.68}
+```
+
+오른쪽의 전송 버튼을 클릭하세요. 온도 값을 변경하고 MQTT 브로커로 더 많은 데이터를 보낼 수 있습니다.
+
+EMQX Cloud로 전송한 데이터는 규칙 엔진에서 처리된 후 ClickHouse Cloud에 자동으로 삽입됩니다.
+
+<Image img="/images/integrations/data-ingestion/emqx/mqttx-publish.webp" size="lg" border alt="메시지 작성을 보여주는 MQTTX의 MQTT 메시지 게시 인터페이스" />
+
+<div id="view-rules-monitoring">
+  ### 규칙 모니터링 확인
+</div>
+
+규칙 모니터링을 확인하고 성공 횟수가 1 증가했는지 확인합니다.
+
+<Image img="/images/integrations/data-ingestion/emqx/rule_monitor.webp" size="lg" border alt="메시지 처리 메트릭을 보여주는 EMQX Cloud 규칙 모니터링 대시보드" />
+
+<div id="check-the-data-persisted">
+  ### 저장된 데이터 확인
+</div>
+
+이제 ClickHouse Cloud에 저장된 데이터를 살펴볼 차례입니다. 이상적으로는 MQTTX를 사용해 전송한 데이터가 EMQX Cloud로 전달된 후, 네이티브 데이터 통합을 통해 ClickHouse Cloud의 데이터베이스에 저장됩니다.
+
+ClickHouse Cloud 패널의 SQL 콘솔에 연결하거나 다른 클라이언트 도구를 사용해 ClickHouse에서 데이터를 조회할 수 있습니다. 이 튜토리얼에서는 SQL 콘솔을 사용했습니다.
+다음 SQL을 실행합니다:
+
+```bash
+SELECT * FROM emqx.temp_hum;
+```
+
+<Image img="/images/integrations/data-ingestion/emqx/clickhouse_result.webp" size="lg" border alt="저장된 IoT 데이터가 표시된 ClickHouse 쿼리 결과" />
+
+<div id="summary">
+  ### 요약
+</div>
+
+코드 한 줄도 작성하지 않고 이제 MQTT 데이터를 EMQX cloud에서 ClickHouse Cloud로 옮길 수 있습니다. EMQX Cloud와 ClickHouse Cloud를 사용하면 인프라를 직접 관리할 필요 없이, 데이터를 ClickHouse Cloud에 안전하게 저장하고 IoT 애플리케이션 개발에만 집중할 수 있습니다.

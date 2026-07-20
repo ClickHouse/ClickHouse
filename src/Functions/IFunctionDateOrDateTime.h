@@ -1,7 +1,9 @@
 #pragma once
+#include <Common/IntervalKind.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDate32.h>
 #include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypeInterval.h>
 #include <DataTypes/DataTypeTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeTime64.h>
@@ -43,25 +45,49 @@ class FunctionDateOrDateTimeBase : public IFunction
     }
 
 protected:
+    /// True iff this function is a calendar-field extractor (`toYear`, `toMonth`,
+    /// `toDayOfMonth`, ...) that supports PostgreSQL-style
+    /// `EXTRACT(<unit> FROM INTERVAL ...)` on a matching-kind interval. Other
+    /// `FunctionDateOrDateTimeToSomething`-shaped transforms (e.g.
+    /// `toStartOfDay`, `toUnixTimestamp`) keep rejecting `Interval`.
+    bool acceptsIntervalArgument() const
+    {
+        IntervalKind::Kind unused = IntervalKind::Kind::Second;
+        return IntervalKind::tryParseFromNameOfFunctionExtractTimePart(getName(), unused);
+    }
+
+    static bool isAcceptableFirstArgument(const DataTypePtr & type, bool accept_interval)
+    {
+        return isDateOrDate32OrDateTimeOrDateTime64(type) || (accept_interval && isInterval(type));
+    }
+
     void checkArguments(const ColumnsWithTypeAndName & arguments, bool is_result_type_date_or_date32) const
     {
+        const bool accept_interval = acceptsIntervalArgument();
+        const char * expected = accept_interval
+            ? "Date, Date32, DateTime, DateTime64 or Interval"
+            : "Date, Date32, DateTime or DateTime64";
         if (arguments.size() == 1)
         {
-            if (!isDateOrDate32OrDateTimeOrDateTime64(arguments[0].type))
+            if (!isAcceptableFirstArgument(arguments[0].type, accept_interval))
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Illegal type {} of argument of function {}. Should be Date, Date32, DateTime or DateTime64",
-                    arguments[0].type->getName(), getName());
+                    "Illegal type {} of argument of function {}. Should be {}",
+                    arguments[0].type->getName(), getName(), expected);
         }
         else if (arguments.size() == 2)
         {
-            if (!isDateOrDate32OrDateTimeOrDateTime64(arguments[0].type))
+            if (!isAcceptableFirstArgument(arguments[0].type, accept_interval))
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Illegal type {} of argument of function {}. Should be Date, Date32, DateTime or DateTime64",
-                    arguments[0].type->getName(), getName());
+                    "Illegal type {} of argument of function {}. Should be {}",
+                    arguments[0].type->getName(), getName(), expected);
             if (!isString(arguments[1].type))
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                     "Function {} supports 1 or 2 arguments. The optional 2nd argument must be "
                     "a constant string with a timezone name",
+                    getName());
+            if (isInterval(arguments[0].type))
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "The timezone argument of function {} is not allowed when the 1st argument is an Interval",
                     getName());
             if (isDateOrDate32(arguments[0].type) && is_result_type_date_or_date32)
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
@@ -86,35 +112,6 @@ public:
     {
         if constexpr (std::is_same_v<typename Transform::FactorTransform, ZeroTransform>)
         {
-            const IDataType * type_ptr = &type;
-
-            if (const auto * lc_type = checkAndGetDataType<DataTypeLowCardinality>(type_ptr))
-                type_ptr = lc_type->getDictionaryType().get();
-
-            if (const auto * nullable_type = checkAndGetDataType<DataTypeNullable>(type_ptr))
-                type_ptr = nullable_type->getNestedType().get();
-
-            /// Date32 values outside the valid LUT range get clamped to sentinel values,
-            /// which breaks monotonicity. Only claim monotonic if the range is within bounds.
-            if (checkAndGetDataType<DataTypeDate32>(type_ptr))
-            {
-                /// Valid Date32 range: -DAYNUM_OFFSET_EPOCH .. DATE_LUT_MAX_EXTEND_DAY_NUM
-                static constexpr Int32 MIN_DATE32_DAY_NUM = -static_cast<Int32>(DAYNUM_OFFSET_EPOCH);
-                static constexpr Int32 MAX_DATE32_DAY_NUM = static_cast<Int32>(DATE_LUT_MAX_EXTEND_DAY_NUM);
-
-                if (left.isNull() || right.isNull())
-                    return { .is_monotonic = false };
-
-                Int64 left_val = left.safeGet<Int64>();
-                Int64 right_val = right.safeGet<Int64>();
-
-                if (left_val >= MIN_DATE32_DAY_NUM && left_val <= MAX_DATE32_DAY_NUM
-                    && right_val >= MIN_DATE32_DAY_NUM && right_val <= MAX_DATE32_DAY_NUM)
-                    return { .is_monotonic = true, .is_always_monotonic = true };
-
-                return { .is_monotonic = false };
-            }
-
             return { .is_monotonic = true, .is_always_monotonic = true };
         }
         else
@@ -147,8 +144,8 @@ public:
             }
             if (checkAndGetDataType<DataTypeDate32>(type_ptr))
             {
-                return Transform::FactorTransform::execute(Int32(left.safeGet<UInt64>()), *date_lut)
-                        == Transform::FactorTransform::execute(Int32(right.safeGet<UInt64>()), *date_lut)
+                return extendedFactorForMonotonicity<typename Transform::FactorTransform>(Int32(left.safeGet<UInt64>()), *date_lut)
+                        == extendedFactorForMonotonicity<typename Transform::FactorTransform>(Int32(right.safeGet<UInt64>()), *date_lut)
                     ? is_monotonic
                     : is_not_monotonic;
             }
@@ -189,10 +186,18 @@ public:
             const auto & right_date_time = right.safeGet<DateTime64>();
             TransformDateTime64<typename Transform::FactorTransform> transformer_right(right_date_time.getScale());
 
-            return transformer_left.execute(left_date_time.getValue(), *date_lut)
-                    == transformer_right.execute(right_date_time.getValue(), *date_lut)
-                ? is_monotonic
-                : is_not_monotonic;
+            /// Use the unclamped extended result so pre-epoch values keep distinct, order-preserving
+            /// factors (see extendedFactorForMonotonicity).
+            if constexpr (requires { Transform::FactorTransform::executeExtendedResult(Int64{}, *date_lut); })
+                return transformer_left.executeExtendedResult(left_date_time.getValue(), *date_lut)
+                        == transformer_right.executeExtendedResult(right_date_time.getValue(), *date_lut)
+                    ? is_monotonic
+                    : is_not_monotonic;
+            else
+                return transformer_left.execute(left_date_time.getValue(), *date_lut)
+                        == transformer_right.execute(right_date_time.getValue(), *date_lut)
+                    ? is_monotonic
+                    : is_not_monotonic;
         }
     }
 };

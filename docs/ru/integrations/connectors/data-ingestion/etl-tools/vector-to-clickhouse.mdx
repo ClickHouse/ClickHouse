@@ -1,0 +1,236 @@
+---
+sidebarTitle: 'Vector'
+slug: /integrations/vector
+description: 'Как отправлять данные из файла журнала в ClickHouse с помощью Vector'
+title: 'Интеграция Vector с ClickHouse'
+show_related_blogs: true
+doc_type: 'guide'
+integration:
+  - support_level: 'partner'
+  - category: 'data_ingestion'
+  - website: 'https://vector.dev/'
+keywords: ['vector', 'сбор журналов', 'обсервабилити', 'ингестия данных', 'конвейер']
+---
+
+import { Image } from "/snippets/ru/components/Image.jsx";
+
+import PartnerBadge from "/snippets/ru/components/PartnerBadge/PartnerBadge.jsx";
+
+<PartnerBadge />
+
+Возможность анализировать журналы в реальном времени критически важна для приложений в продакшне.
+ClickHouse отлично подходит для хранения и анализа данных журналов благодаря превосходному сжатию (до [170x](https://clickhouse.com/blog/log-compression-170x) для журналов)
+и способности быстро агрегировать большие объёмы данных.
+
+В этом руководстве показано, как использовать популярный конвейер данных [Vector](https://vector.dev/docs/about/what-is-vector/) для отслеживания файла журнала Nginx и отправки данных в ClickHouse.
+Приведённые ниже шаги аналогичны для отслеживания любого файла журнала.
+
+**Предварительные требования:**
+
+* У вас уже есть работающий ClickHouse
+* У вас установлен Vector
+
+<Steps>
+  <Step>
+    ## Создайте базу данных и таблицу
+
+    Создайте таблицу для хранения событий журнала:
+
+    1. Начните с создания новой базы данных `nginxdb`:
+
+    ```sql
+    CREATE DATABASE IF NOT EXISTS nginxdb
+    ```
+
+    2. Вставьте всё событие лога как одну строку. Очевидно, это не лучший формат для анализа логов, но ниже мы решим эту проблему с помощью ***materialized views***.
+
+    ```sql
+    CREATE TABLE IF NOT EXISTS  nginxdb.access_logs (
+      message String
+    )
+    ENGINE = MergeTree()
+    ORDER BY tuple()
+    ```
+
+    <Note>
+      **ORDER BY** задан как **tuple()** (пустой кортеж), так как первичный ключ пока не нужен.
+    </Note>
+  </Step>
+
+  <Step>
+    ## Настройка Nginx
+
+    На этом шаге показано, как настроить ведение журналов в Nginx.
+
+    1. Следующее свойство `access_log` направляет журнал в `/var/log/nginx/my_access.log` в формате **combined**.
+       Это значение нужно указать в разделе `http` файла `nginx.conf`:
+
+    ```bash
+    http {
+      include       /etc/nginx/mime.types;
+      default_type  application/octet-stream;
+      access_log  /var/log/nginx/my_access.log combined;
+      sendfile        on;
+      keepalive_timeout  65;
+      include /etc/nginx/conf.d/*.conf;
+    }
+    ```
+
+    2. Обязательно перезапустите Nginx, если вам пришлось изменить `nginx.conf`.
+
+    3. Откройте страницы на вашем веб-сервере, чтобы сгенерировать несколько событий в журнале доступа.
+       Записи журнала в формате **combined** выглядят следующим образом:
+
+    ```bash
+    192.168.208.1 - - [12/Oct/2021:03:31:44 +0000] "GET / HTTP/1.1" 200 615 "-" "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/93.0.4577.63 Safari/537.36"
+    192.168.208.1 - - [12/Oct/2021:03:31:44 +0000] "GET /favicon.ico HTTP/1.1" 404 555 "http://localhost/" "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/93.0.4577.63 Safari/537.36"
+    192.168.208.1 - - [12/Oct/2021:03:31:49 +0000] "GET / HTTP/1.1" 304 0 "-" "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/93.0.4577.63 Safari/537.36"
+    ```
+  </Step>
+
+  <Step>
+    ## Настройка Vector
+
+    Vector собирает, преобразует и маршрутизирует журналы, метрики и трассировки (так называемые **источники**) в различные системы назначения (так называемые **приемники**), включая встроенную совместимость с ClickHouse.
+    Источники и приемники задаются в файле конфигурации **vector.toml**.
+
+    1. Следующий файл **vector.toml** определяет **источник** типа **file**, который читает новые записи с конца файла **my&#95;access.log**, а также **приемник** — таблицу **access&#95;logs**, определенную выше:
+
+    ```bash
+    [sources.nginx_logs]
+    type = "file"
+    include = [ "/var/log/nginx/my_access.log" ]
+    read_from = "end"
+
+    [sinks.clickhouse]
+    type = "clickhouse"
+    inputs = ["nginx_logs"]
+    endpoint = "http://clickhouse-server:8123"
+    database = "nginxdb"
+    table = "access_logs"
+    skip_unknown_fields = true
+    ```
+
+    2. Запустите Vector, используя приведённую выше конфигурацию. Подробнее о настройке источников и приёмников см. в [документации](https://vector.dev/docs/) Vector.
+
+    3. Убедитесь, что журналы доступа записываются в ClickHouse, выполнив следующий запрос. В таблице должны появиться журналы доступа:
+
+    ```sql
+    SELECT * FROM nginxdb.access_logs
+    ```
+
+    <Image img="/images/integrations/data-ingestion/etl-tools/vector_01.webp" size="lg" border alt="Просмотр журналов ClickHouse в табличном формате" />
+  </Step>
+
+  <Step>
+    ## Разбор журналов
+
+    Хранить журналы в ClickHouse удобно, однако запись каждого события в виде одной строки существенно ограничивает возможности анализа данных.
+    Далее рассмотрим, как разобрать события журнала с помощью [materialized view](/ru/concepts/features/materialized-views/incremental-materialized-view).
+
+    **Materialized view** работает аналогично триггеру вставки в SQL. Когда строки данных вставляются в исходную таблицу, materialized view выполняет некоторое преобразование этих строк и вставляет результаты в целевую таблицу.
+    Materialized view можно настроить для получения разобранного представления событий журнала в **access&#95;logs**.
+    Пример одного такого события журнала приведён ниже:
+
+    ```bash
+    192.168.208.1 - - [12/Oct/2021:15:32:43 +0000] "GET / HTTP/1.1" 304 0 "-" "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/93.0.4577.63 Safari/537.36"
+    ```
+
+    В ClickHouse есть различные функции для разбора приведённой выше строки. Функция [`splitByWhitespace`](/ru/reference/functions/regular-functions/splitting-merging-functions#splitByWhitespace) разбивает строку по пробельным символам и возвращает каждый токен в виде массива.
+    Для демонстрации выполните следующую команду:
+
+    ```sql title="Query"
+    SELECT splitByWhitespace('192.168.208.1 - - [12/Oct/2021:15:32:43 +0000] "GET / HTTP/1.1" 304 0 "-" "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/93.0.4577.63 Safari/537.36"')
+    ```
+
+    ```text title="Response"
+    ["192.168.208.1","-","-","[12/Oct/2021:15:32:43","+0000]","\"GET","/","HTTP/1.1\"","304","0","\"-\"","\"Mozilla/5.0","(Macintosh;","Intel","Mac","OS","X","10_15_7)","AppleWebKit/537.36","(KHTML,","like","Gecko)","Chrome/93.0.4577.63","Safari/537.36\""]
+    ```
+
+    В некоторых строках есть лишние символы, а user agent (сведения о браузере) не нуждался в разборе, однако
+    результирующий массив близок к тому, что требуется.
+
+    Аналогично `splitByWhitespace`, функция [`splitByRegexp`](/ru/reference/functions/regular-functions/splitting-merging-functions#splitByRegexp) разбивает строку на массив по регулярному выражению.
+    Выполните следующую команду, которая возвращает две строки.
+
+    ```sql
+    SELECT splitByRegexp('\S \d+ "([^"]*)"', '192.168.208.1 - - [12/Oct/2021:15:32:43 +0000] "GET / HTTP/1.1" 304 0 "-" "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/93.0.4577.63 Safari/537.36"')
+    ```
+
+    Обратите внимание, что вторая возвращённая строка — это user agent, успешно извлечённый из лога:
+
+    ```text
+    ["192.168.208.1 - - [12/Oct/2021:15:32:43 +0000] \"GET / HTTP/1.1\" 30"," \"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/93.0.4577.63 Safari/537.36\""]
+    ```
+
+    Прежде чем рассмотреть финальную команду `CREATE MATERIALIZED VIEW`, ознакомимся ещё с несколькими функциями для очистки данных.
+    Например, значение `RequestMethod` равно `"GET` и содержит лишнюю двойную кавычку.
+    Для её удаления можно воспользоваться функцией [`trimBoth` (alias `trim`)](/ru/reference/functions/regular-functions/string-functions#trimBoth):
+
+    ```sql
+    SELECT trim(LEADING '"' FROM '"GET')
+    ```
+
+    Строка времени начинается с символа `[` и не имеет формата, который ClickHouse может разобрать как дату.
+    Однако если изменить разделитель с двоеточия (**:**) на запятую (**,**), разбор выполняется корректно:
+
+    ```sql
+    SELECT parseDateTimeBestEffort(replaceOne(trim(LEADING '[' FROM '[12/Oct/2021:15:32:43'), ':', ' '))
+    ```
+
+    Теперь можно определить materialized view.
+    Приведённое ниже определение включает `POPULATE`, что означает: существующие строки в **access&#95;logs** будут обработаны и вставлены немедленно.
+    Выполните следующий SQL-оператор:
+
+    ```sql
+    CREATE MATERIALIZED VIEW nginxdb.access_logs_view
+    (
+      RemoteAddr String,
+      Client String,
+      RemoteUser String,
+      TimeLocal DateTime,
+      RequestMethod String,
+      Request String,
+      HttpVersion String,
+      Status Int32,
+      BytesSent Int64,
+      UserAgent String
+    )
+    ENGINE = MergeTree()
+    ORDER BY RemoteAddr
+    POPULATE AS
+    WITH
+      splitByWhitespace(message) as split,
+      splitByRegexp('\S \d+ "([^"]*)"', message) as referer
+    SELECT
+      split[1] AS RemoteAddr,
+      split[2] AS Client,
+      split[3] AS RemoteUser,
+      parseDateTimeBestEffort(replaceOne(trim(LEADING '[' FROM split[4]), ':', ' ')) AS TimeLocal,
+      trim(LEADING '"' FROM split[6]) AS RequestMethod,
+      split[7] AS Request,
+      trim(TRAILING '"' FROM split[8]) AS HttpVersion,
+      split[9] AS Status,
+      split[10] AS BytesSent,
+      trim(BOTH '"' from referer[2]) AS UserAgent
+    FROM
+      (SELECT message FROM nginxdb.access_logs)
+    ```
+
+    Теперь убедитесь, что всё работает.
+    Журналы доступа должны быть аккуратно разобраны по столбцам:
+
+    ```sql
+    SELECT * FROM nginxdb.access_logs_view
+    ```
+
+    <Image img="/images/integrations/data-ingestion/etl-tools/vector_02.webp" size="lg" border alt="Просмотр разобранных журналов ClickHouse в табличном формате" />
+
+    <Note>
+      В уроке выше данные сохранялись в двух таблицах, но вы можете изменить исходную таблицу `nginxdb.access_logs`, чтобы использовать для неё движок таблицы [`Null`](/ru/reference/engines/table-engines/special/null).
+      Разобранные данные по-прежнему будут попадать в таблицу `nginxdb.access_logs_view`, но сырые данные не будут храниться в таблице.
+    </Note>
+  </Step>
+</Steps>
+
+> С помощью Vector, для которого нужны лишь простая установка и быстрая настройка, вы можете отправлять журналы с сервера Nginx в таблицу ClickHouse. С помощью materialized view можно разобрать эти журналы на столбцы для более удобной аналитики.

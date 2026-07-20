@@ -136,12 +136,7 @@ public:
     virtual PathState getPathState(std::string & failure_message) const = 0;
 
     const std::string & getFailedNodePath() const { return failed_node_path; }
-
-    /// Return the Keeper node path to watch for processing completion.
-    /// For unordered mode this is the per-file processed node.
-    /// For ordered mode this is the processed pointer node (bucket-aware), with the
-    /// partition key appended when HIVE/REGEX partitioning is in use.
-    virtual const std::string & getProcessedWatchPath() const { return processed_node_path; }
+    const std::string & getProcessedNodePath() const { return processed_node_path; }
 
     virtual bool useBucketsForProcessing() const { return false; }
     virtual size_t getBucket() const { throw Exception(ErrorCodes::LOGICAL_ERROR, "Buckets are not supported"); }

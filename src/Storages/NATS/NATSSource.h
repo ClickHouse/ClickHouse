@@ -9,7 +9,7 @@
 namespace DB
 {
 
-class NATSSource : public ISource
+class NATSSource final : public ISource
 {
 public:
     NATSSource(

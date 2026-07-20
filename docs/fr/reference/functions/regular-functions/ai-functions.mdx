@@ -1,0 +1,455 @@
+---
+description: 'Documentation des fonctions d''IA'
+sidebarTitle: 'AI'
+slug: /sql-reference/functions/ai-functions
+title: 'Fonctions d''IA'
+doc_type: 'reference'
+---
+
+Les fonctions d’IA sont des fonctions intégrées de ClickHouse que vous pouvez utiliser pour faire appel à l’IA ou générer des embeddings afin de travailler avec vos données, d’en extraire des informations, de classer des données, etc.
+
+<Note>
+  Les fonctions d’IA sont expérimentales. Définissez [`allow_experimental_ai_functions`](/fr/reference/settings/session-settings#allow_experimental_ai_functions) pour les activer.
+</Note>
+
+<Note>
+  Les fonctions d’IA peuvent produire des résultats imprévisibles. Le résultat dépendra fortement de la qualité du prompt et du modèle utilisés.
+</Note>
+
+Toutes les fonctions partagent une infrastructure commune qui fournit :
+
+* **Application des quotas** : limites par requête sur les tokens ([`ai_function_max_input_tokens_per_query`](/fr/reference/settings/session-settings#ai_function_max_input_tokens_per_query), [`ai_function_max_output_tokens_per_query`](/fr/reference/settings/session-settings#ai_function_max_output_tokens_per_query)) et sur les appels d’API ([`ai_function_max_api_calls_per_query`](/fr/reference/settings/session-settings#ai_function_max_api_calls_per_query)).
+* **Nouvelle tentative avec backoff** : les échecs temporaires sont réessayés ([`ai_function_max_retries`](/fr/reference/settings/session-settings#ai_function_max_retries)) avec un backoff exponentiel ([`ai_function_retry_initial_delay_ms`](/fr/reference/settings/session-settings#ai_function_retry_initial_delay_ms)).
+
+<div id="configuration">
+  ## Configuration
+</div>
+
+Les fonctions d’IA récupèrent les identifiants du fournisseur et la configuration à partir d’une [**collection nommée**](/fr/concepts/features/configuration/server-config/named-collections). Pour définir la collection nommée à utiliser pour les identifiants, utilisez le paramètre [`ai_function_credentials`](/fr/reference/settings/session-settings#ai_function_credentials).
+
+Exemple d’instruction pour créer une collection nommée avec les identifiants du fournisseur :
+
+```sql
+CREATE NAMED COLLECTION my_ai_credentials AS
+    provider = 'openai',
+    endpoint = 'https://api.openai.com/v1/chat/completions',
+    model = 'gpt-4o-mini',
+    api_key = 'sk-...';
+```
+
+Sélectionnez la collection avec le paramètre `ai_function_credentials`, pour la session ou pour une seule requête :
+
+```sql
+-- For the session:
+SET allow_experimental_ai_functions = 1;
+SET ai_function_credentials = 'my_ai_credentials';
+SELECT aiClassify('I love this product!', ['positive', 'negative', 'neutral']);
+
+-- Or for a single query:
+SELECT aiClassify('I love this product!', ['positive', 'negative', 'neutral'])
+SETTINGS allow_experimental_ai_functions = 1, ai_function_credentials = 'my_ai_credentials';
+```
+
+Lorsqu’`ai_function_credentials` est vide (par défaut), une exception est levée.
+
+<div id="named-collection-parameters">
+  ### Paramètres de la collection nommée
+</div>
+
+| Paramètre     | Type   | Par défaut | Description                                                                                                                                                                                                              |
+| ------------- | ------ | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `provider`    | String | —          | Fournisseur du modèle. Valeurs prises en charge : `'openai'`, `'anthropic'`. Voir la note ci-dessous.                                                                                                                    |
+| `endpoint`    | String | —          | URL du point de terminaison de l’API.                                                                                                                                                                                    |
+| `model`       | String | —          | Nom du modèle (par ex. `'gpt-4o-mini'`, `'text-embedding-3-small'`).                                                                                                                                                     |
+| `api_key`     | String | —          | Clé d’authentification du fournisseur. Facultatif : si elle est omise, l’en-tête d’authentification n’est pas envoyé, ce qui permet de cibler des serveurs compatibles OpenAI qui ne nécessitent pas d’authentification. |
+| `max_tokens`  | UInt64 | `1024`     | Nombre maximal de tokens de sortie par appel d’API.                                                                                                                                                                      |
+| `api_version` | String | —          | Chaîne de version de l’API. Utilisée par Anthropic (`'2023-06-01'`).                                                                                                                                                     |
+
+<Note>
+  Toute API compatible OpenAI (par ex. vLLM, Ollama, LiteLLM) peut être utilisée en définissant `provider = 'openai'` et en pointant `endpoint` vers votre service.
+</Note>
+
+<div id="query-level-settings">
+  ### Paramètres au niveau de la requête
+</div>
+
+Le choix de la collection nommée à utiliser est déterminé par le paramètre [`ai_function_credentials`](/fr/reference/settings/session-settings#ai_function_credentials). Les autres paramètres liés à l’IA sont répertoriés dans [Paramètres](/fr/reference/settings/session-settings) sous le préfixe `ai_function_`.
+
+<div id="default-and-materialized-columns">
+  ### Utilisation dans les colonnes `DEFAULT` et `MATERIALIZED`
+</div>
+
+Le paramètre `ai_function_credentials` est lu au moment de l’évaluation de l’expression par défaut, et NON lors de la définition de la colonne. Le nom de la collection n’est pas stocké dans la définition de la colonne :
+
+```sql
+CREATE TABLE t (id UInt32, doc String, vector Array(Float32) DEFAULT aiEmbed(doc)) ...;
+-- The stored default is `aiEmbed(doc)`; no collection is captured.
+```
+
+L’évaluation de l’expression requiert trois éléments : `allow_experimental_ai_functions` et `ai_function_credentials` doivent être définis, et l’utilisateur qui l’évalue doit disposer de `GRANT NAMED COLLECTION` sur la collection nommée (la résolution des identifiants déclenche une vérification d’accès `NAMED COLLECTION`). Si l’un d’eux manque, une exception est levée (`SUPPORT_IS_DISABLED`, une erreur d’identifiants vides ou `ACCESS_DENIED`).
+
+Une colonne `DEFAULT` est évaluée au moment de l’`INSERT`, les deux paramètres doivent donc être définis dans la session ou la requête d’insertion :
+
+```sql
+GRANT NAMED COLLECTION ON my_ai_credentials TO user;
+SET allow_experimental_ai_functions = 1;
+SET ai_function_credentials = 'my_ai_credentials';
+INSERT INTO t (id, doc) VALUES (1, 'hello');
+```
+
+Pour pouvoir insérer des données dans ces tables sans devoir définir ces deux paramètres pour chaque session, définissez-les tous les deux dans un [profil de paramètres](/fr/concepts/features/configuration/settings/settings-profiles) :
+
+```xml
+<profiles>
+    <default>
+        <allow_experimental_ai_functions>1</allow_experimental_ai_functions>
+        <ai_function_credentials>my_ai_credentials</ai_function_credentials>
+    </default>
+</profiles>
+```
+
+Une colonne `MATERIALIZED` est calculée lors d’un `INSERT`, comme une colonne `DEFAULT`, et elle est également recalculée par des mutations telles que `ALTER TABLE ... MATERIALIZE COLUMN`. Les mutations s’exécutent en dehors d’une session utilisateur et n’héritent pas de la clause `SETTINGS` d’une requête, mais elles héritent des paramètres d’un profil de paramètres. Définissez les deux paramètres dans un profil de paramètres et accordez le privilège `NAMED COLLECTION` au propriétaire de la table pour que le recalcul déclenché par une mutation puisse aboutir.
+
+<div id="restricting-endpoint-hosts">
+  ### Restreindre les hôtes de point de terminaison
+</div>
+
+L’URL `endpoint` d’une collection nommée d’IA est une destination sortante à laquelle le serveur se connecte avec sa propre identité, en transmettant potentiellement (si elle est spécifiée) l’`api_key` de la collection nommée dans les en-têtes de requête. Par défaut, ClickHouse autorise n’importe quel hôte. Pour limiter les fonctions à un ensemble spécifique de fournisseurs, configurez [`remote_url_allow_hosts`](/fr/reference/settings/server-settings/settings#remote_url_allow_hosts) dans la configuration du serveur, par exemple :
+
+```xml
+<remote_url_allow_hosts>
+    <host>api.openai.com</host>
+    <host>api.anthropic.com</host>
+</remote_url_allow_hosts>
+```
+
+Notez que ce paramètre s’applique à l’ensemble du serveur et à toutes les fonctionnalités utilisant HTTP.
+
+<div id="supported-providers">
+  ## Fournisseurs pris en charge
+</div>
+
+| Fournisseur | valeur de `provider` | Fonctions de chat | Notes                                  |
+| ----------- | -------------------- | ----------------- | -------------------------------------- |
+| OpenAI      | `'openai'`           | Oui               | Fournisseur par défaut.                |
+| Anthropic   | `'anthropic'`        | Oui               | Utilise le point de terminaison `/v1/messages`. |
+
+<div id="observability">
+  ## Observabilité
+</div>
+
+L’activité de la fonction d’IA est suivie via les [ProfileEvents](/fr/reference/system-tables/query_log) de ClickHouse :
+
+| ProfileEvent      | Description                                                                                |
+| ----------------- | ------------------------------------------------------------------------------------------ |
+| `AIAPICalls`      | Nombre de requêtes HTTP envoyées au fournisseur d’IA.                                      |
+| `AIInputTokens`   | Nombre total de tokens d’entrée consommés.                                                 |
+| `AIOutputTokens`  | Nombre total de tokens de sortie consommés.                                                |
+| `AIRowsProcessed` | Nombre de lignes ayant reçu un résultat.                                                   |
+| `AIRowsSkipped`   | Nombre de lignes ignorées (quota dépassé ou erreur avec `ai_function_throw_on_error = 0`). |
+
+Interrogez ces événements :
+
+```sql
+SELECT
+    ProfileEvents['AIAPICalls'] AS api_calls,
+    ProfileEvents['AIInputTokens'] AS input_tokens,
+    ProfileEvents['AIOutputTokens'] AS output_tokens
+FROM system.query_log
+WHERE query_id = 'query_id'
+AND type = 'QueryFinish'
+ORDER BY event_time DESC;
+```
+
+{/*
+  Le contenu interne des balises ci-dessous est remplacé, lors de la génération de la documentation, par
+  la documentation générée à partir de system.functions. Veuillez ne pas modifier ni supprimer ces balises.
+  Voir : https://github.com/ClickHouse/clickhouse-docs/blob/main/contribute/autogenerated-documentation-from-source.md
+  */}
+
+{/*AUTOGENERATED_START*/}
+
+<div id="aiClassify">
+  ## aiClassify
+</div>
+
+Introduit dans : v26.4.0
+
+Classe le texte donné dans l’une des catégories fournies via un fournisseur de LLM.
+
+La fonction envoie le texte avec une invite de classification fixe et un format de réponse basé sur un schéma JSON,
+qui contraint le modèle à renvoyer exactement l’un des libellés fournis. Lorsque la réponse est renvoyée sous la forme d’un objet JSON
+de la forme `{"category": "..."}`, le libellé est extrait et sa chaîne de caractères est renvoyée.
+
+Les identifiants du fournisseur et la configuration sont récupérés à partir de la collection nommée spécifiée par le paramètre `ai_function_credentials`.
+
+**Syntaxe**
+
+```sql
+aiClassify(text, categories[, temperature])
+```
+
+**Alias** : `AIClassify`
+
+**Arguments**
+
+* `text` — Texte à classifier. [`String`](/fr/reference/data-types/string)
+* `categories` — Liste constante des libellés des catégories candidates. [`Array(String)`](/fr/reference/data-types/array)
+* `temperature` — Température d’échantillonnage contrôlant l’aléa. Par défaut : `0.0`. [`Float64`](/fr/reference/data-types/float)
+
+**Valeur renvoyée**
+
+L’un des libellés de catégorie fournis, ou la valeur par défaut du type de colonne (chaîne vide) si la requête a échoué et que `ai_function_throw_on_error` est désactivé. [`String`](/fr/reference/data-types/string)
+
+**Exemples**
+
+**Classifier le sentiment**
+
+```sql title=Query
+SELECT aiClassify('I love this product!', ['positive', 'negative', 'neutral']) SETTINGS ai_function_credentials = 'my_ai_credentials'
+```
+
+```response title=Response
+positive
+```
+
+**Classifier une colonne**
+
+```sql title=Query
+SELECT body, aiClassify(body, ['bug', 'question', 'feature']) AS kind FROM issues LIMIT 5
+```
+
+```response title=Response
+```
+
+<div id="aiEmbed">
+  ## aiEmbed
+</div>
+
+Introduit dans : v26.6.0
+
+Génère un vecteur d’embedding pour le texte donné à l’aide du fournisseur d’IA configuré.
+
+La fonction envoie le texte au point de terminaison d’embedding configuré et renvoie le vecteur obtenu sous la forme `Array(Float32)`.
+Au sein d’un même bloc de lignes, les entrées sont regroupées en lots de
+[`ai_function_embedding_max_batch_size`](/fr/reference/settings/session-settings#ai_function_embedding_max_batch_size)
+entrées maximum par requête HTTP afin de réduire la surcharge de chaque appel.
+
+Les identifiants du fournisseur et la configuration sont récupérés à partir de la collection nommée spécifiée par le paramètre `ai_function_credentials`.
+L’argument facultatif `dimensions`, lorsqu’il est pris en charge par le modèle (par exemple `text-embedding-3-*` d’OpenAI),
+demande un vecteur de la taille indiquée ; sinon, la taille native du modèle est renvoyée.
+
+**Syntaxe**
+
+```sql
+aiEmbed(text[, dimensions])
+```
+
+**Arguments**
+
+* `text` — Texte à encoder. [`String`](/fr/reference/data-types/string)
+* `dimensions` — Nombre de dimensions cible facultatif pour le vecteur de sortie. `0` ou l’omission de ce paramètre signifie utiliser la dimension native du modèle. [`UInt64`](/fr/reference/data-types/int-uint)
+
+**Valeur renvoyée**
+
+Le vecteur d’embedding, ou un tableau vide si l’entrée est NULL ou vide, si la requête a échoué et que `ai_function_throw_on_error` est désactivé, ou si un quota a été dépassé alors que `ai_function_throw_on_quota_exceeded` est désactivé. [`Array(Float32)`](/fr/reference/data-types/array)
+
+**Exemples**
+
+**Encoder une seule chaîne**
+
+```sql title=Query
+SELECT aiEmbed('Hello world') SETTINGS ai_function_credentials = 'my_ai_credentials'
+```
+
+```response title=Response
+```
+
+**Avec des dimensions explicites**
+
+```sql title=Query
+SELECT aiEmbed('Hello world', 256) SETTINGS ai_function_credentials = 'my_ai_credentials'
+```
+
+```response title=Response
+```
+
+**Intégrer une colonne de texte**
+
+```sql title=Query
+SELECT aiEmbed(title, 256) FROM articles LIMIT 10
+```
+
+```response title=Response
+```
+
+<div id="aiExtract">
+  ## aiExtract
+</div>
+
+Introduit dans : v26.4.0
+
+Extrait des informations structurées à partir de texte non structuré à l’aide d’un fournisseur de LLM.
+
+Le deuxième argument peut être soit une instruction en langage naturel librement formulée (par ex. `'the main complaint'`), soit un
+schéma au format JSON de la forme `'{"field_a": "description of field a", "field_b": "description of field b"}'`.
+
+En mode instruction, la fonction renvoie la valeur extraite sous la forme d’une simple chaîne de caractères, ou une chaîne vide si rien n’a été trouvé.
+En mode schéma, la fonction renvoie une chaîne JSON représentant un objet dont les clés correspondent au schéma demandé ; les champs manquants sont `null`.
+
+L’identifiant du fournisseur et la configuration proviennent de la collection nommée spécifiée par le paramètre `ai_function_credentials`.
+
+**Syntaxe**
+
+```sql
+aiExtract(text, instruction_or_schema[, temperature])
+```
+
+**Alias** : `AIExtract`
+
+**Arguments**
+
+* `text` — Texte à partir duquel extraire des informations. [`String`](/fr/reference/data-types/string)
+* `instruction_or_schema` — Instruction d’extraction en texte libre, ou objet JSON constant décrivant les champs à extraire. [`const String`](/fr/reference/data-types/string)
+* `temperature` — Température d’échantillonnage qui contrôle le caractère aléatoire. Par défaut : `0.0`. [`const Float64`](/fr/reference/data-types/float)
+
+**Valeur renvoyée**
+
+Une valeur extraite (mode instruction) ou une chaîne JSON représentant un objet (mode schéma). Renvoie la valeur par défaut du type de colonne (chaîne vide) si la requête a échoué et que `ai_function_throw_on_error` est désactivé. [`String`](/fr/reference/data-types/string)
+
+**Exemples**
+
+**Instruction en texte libre**
+
+```sql title=Query
+SELECT aiExtract('The package arrived late and was damaged.', 'the main complaint') SETTINGS ai_function_credentials = 'my_ai_credentials'
+```
+
+```response title=Response
+late and damaged package
+```
+
+**Extraction du schéma**
+
+```sql title=Query
+SELECT aiExtract(review, '{"sentiment": "positive, negative or neutral", "topic": "main topic of the review"}') FROM reviews LIMIT 5
+```
+
+```response title=Response
+```
+
+<div id="aiGenerate">
+  ## aiGenerate
+</div>
+
+Introduite dans : v26.4.0
+
+Génère du texte libre à partir d’un prompt à l’aide d’un fournisseur de LLM.
+
+La fonction envoie le prompt au fournisseur d’IA configuré et renvoie le texte généré.
+Un system prompt facultatif peut être fourni pour guider le comportement du modèle (par exemple, le ton, le format ou le rôle).
+Si aucun system prompt n’est fourni, le system prompt par défaut est : `You are a helpful assistant. Provide a clear and concise response.`
+
+Les identifiants du fournisseur et la configuration sont extraits de la collection nommée spécifiée par le paramètre `ai_function_credentials`.
+
+**Syntaxe**
+
+```sql
+aiGenerate(prompt[, system_prompt[, temperature]])
+```
+
+**Alias** : `AIGenerate`
+
+**Arguments**
+
+* `prompt` — Le prompt ou la question de l’utilisateur à envoyer au modèle. [`String`](/fr/reference/data-types/string)
+* `system_prompt` — Instruction système constante facultative qui guide le comportement du modèle (par ex. persona, format de sortie) et est envoyée avec chaque prompt. [`String`](/fr/reference/data-types/string)
+* `temperature` — Température d’échantillonnage contrôlant le caractère aléatoire. Par défaut : `0.7`. [`Float64`](/fr/reference/data-types/float)
+
+**Valeur renvoyée**
+
+La réponse textuelle générée, ou la valeur par défaut du type de colonne (chaîne vide) si la requête a échoué et que `ai_function_throw_on_error` est désactivé. [`String`](/fr/reference/data-types/string)
+
+**Exemples**
+
+**Question simple**
+
+```sql title=Query
+SELECT aiGenerate('What is 2 + 2? Reply with just the number.') SETTINGS ai_function_credentials = 'my_ai_credentials'
+```
+
+```response title=Response
+4
+```
+
+**Avec le system prompt**
+
+```sql title=Query
+SELECT aiGenerate('Explain ClickHouse', 'You are a database expert. Be concise.') SETTINGS ai_function_credentials = 'my_ai_credentials'
+```
+
+```response title=Response
+```
+
+**Résumer les valeurs d’une colonne**
+
+```sql title=Query
+SELECT article_title, aiGenerate(concat('Summarize in one sentence: ', article_body)) AS summary FROM articles LIMIT 5
+```
+
+```response title=Response
+```
+
+<div id="aiTranslate">
+  ## aiTranslate
+</div>
+
+Introduit dans : v26.4.0
+
+Traduit le texte donné vers la langue cible spécifiée à l’aide d’un fournisseur de LLM.
+
+Des instructions supplémentaires de style ou de dialecte peuvent être passées comme troisième argument (par ex. `'keep technical terms untranslated'`).
+
+L’identifiant du fournisseur et la configuration sont récupérés à partir de la collection nommée spécifiée par le paramètre `ai_function_credentials`.
+
+**Syntaxe**
+
+```sql
+aiTranslate(text, target_language[, instructions[, temperature]])
+```
+
+**Alias** : `AITranslate`
+
+**Arguments**
+
+* `text` — Texte à traduire. [`String`](/fr/reference/data-types/string)
+* `target_language` — Nom de la langue cible ou code BCP-47 (par exemple, `'French'`, `'es-MX'`). [`String`](/fr/reference/data-types/string)
+* `instructions` — Instructions supplémentaires facultatives et constantes destinées au traducteur. [`String`](/fr/reference/data-types/string)
+* `temperature` — Température d’échantillonnage qui contrôle le caractère aléatoire. Valeur par défaut : `0.3`. [`Float64`](/fr/reference/data-types/float)
+
+**Valeur renvoyée**
+
+Le texte traduit, ou la valeur par défaut du type de la colonne (chaîne vide) si la requête a échoué et que `ai_function_throw_on_error` est désactivé. [`String`](/fr/reference/data-types/string)
+
+**Exemples**
+
+**Traduire en français**
+
+```sql title=Query
+SELECT aiTranslate('Hello, world!', 'French') SETTINGS ai_function_credentials = 'my_ai_credentials'
+```
+
+```response title=Response
+Bonjour le monde!
+```
+
+**Traduire en japonais avec des consignes de style**
+
+```sql title=Query
+SELECT aiTranslate(body, 'Japanese', 'Use polite form (desu/masu)') FROM articles LIMIT 5
+```
+
+```response title=Response
+```
+
+{/*AUTOGENERATED_END*/}

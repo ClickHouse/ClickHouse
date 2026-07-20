@@ -1,0 +1,78 @@
+---
+sidebarTitle: 'Artie'
+keywords: ['clickhouse', 'Artie', 'conectar', 'integrar', 'cdc', 'etl', 'integración de datos', 'tiempo real', 'streaming']
+slug: /integrations/artie
+description: 'Envía datos a ClickHouse con la plataforma de streaming CDC de Artie'
+title: 'Conectar Artie con ClickHouse'
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/es/components/Image.jsx";
+
+import ConnectionDetails from '/snippets/es/_gather_your_details_http.mdx';
+
+<a href="https://www.artie.com/" target="_blank">Artie</a> es una plataforma de streaming de datos en tiempo real totalmente gestionada que replica los datos de producción en ClickHouse, lo que permite análisis orientados al cliente, flujos de trabajo operativos e IA agéntica en producción.
+
+<div id="overview">
+  ## Descripción general
+</div>
+
+Artie es la capa moderna de infraestructura de datos para la era de la IA: una plataforma de streaming de datos en tiempo real totalmente gestionada que mantiene los datos de producción sincronizados de forma continua con su data warehouse.
+
+A medida que las empresas habilitan sus data warehouses para cargas de trabajo de IA en tiempo real, analítica operativa y productos de datos orientados al cliente, están estandarizando una infraestructura rápida, fiable y preparada para escalar.
+
+Ofrecemos a las empresas el tipo de pipelines de streaming y el nivel de observabilidad que Netflix, DoorDash e Instacart desarrollaron internamente, sin necesidad de contratar a más de 10 ingenieros ni dedicar entre 1 y 2 años al trabajo de plataforma. Artie automatiza todo el ciclo de vida de la ingestión — captura de cambios, merges, backfills y observabilidad — sin mantenimiento por parte del equipo de ingeniería y se despliega en minutos.
+
+Empresas líderes como ClickUp, Substack y Alloy usan Artie no solo para resolver los problemas actuales de sus pipelines, sino también para preparar su stack de datos para el futuro a medida que su estrategia de IA se acelera.
+
+<Steps>
+  <Step>
+    ## Crear una cuenta de Artie
+
+    Visite <a href="https://www.artie.com/contact" target="_blank">artie.com/contact</a> y complete el formulario para solicitar acceso.
+
+    <Image img="/images/integrations/data-ingestion/etl-tools/artie/artie_signup.webp" size="md" border alt="Página de registro de Artie" />
+  </Step>
+
+  <Step>
+    ## Encuentre sus credenciales de ClickHouse
+
+    Después de crear un servicio en ClickHouse Cloud, encuentre la siguiente configuración obligatoria:
+
+    <ConnectionDetails />
+  </Step>
+
+  <Step>
+    ## Cree un nuevo pipeline en Artie
+
+    Vaya a Artie con la información recopilada en los pasos anteriores y cree un nuevo pipeline siguiendo un proceso de 3 pasos.
+
+    1. **Conecte su origen** - Configure su base de datos de origen (Postgres, MySQL, Events API, etc.)
+    2. **Elija las tablas que desea replicar** - Seleccione qué tablas sincronizar con ClickHouse
+    3. **Conecte su destino** - Introduzca sus credenciales de ClickHouse
+
+    <Image img="/images/integrations/data-ingestion/etl-tools/artie/artie_edit_pipeline.webp" size="lg" border alt="Interfaz Edit Pipeline de Artie" />
+  </Step>
+</Steps>
+
+<div id="contact-us">
+  ## Contáctanos
+</div>
+
+Si tienes alguna pregunta, consulta nuestra <a href="https://www.artie.com/docs/destinations/clickhouse" target="_blank">documentación de ClickHouse</a> o comunícate con el equipo en <a href="mailto:hi@artie.com">hi@artie.com</a>.
+
+<div id="product-screenshots">
+  ## Capturas de pantalla del producto
+</div>
+
+Portal de análisis
+
+<Image img="/images/integrations/data-ingestion/etl-tools/artie/analytics.webp" size="md" border alt="Portal de análisis" />
+
+Monitores específicos para pipelines y tablas
+
+<Image img="/images/integrations/data-ingestion/etl-tools/artie/monitor.webp" size="md" border alt="Monitorización integrada" />
+
+Notificaciones diarias de cambios de esquema
+
+<Image img="/images/integrations/data-ingestion/etl-tools/artie/schema_notification.webp" size="md" border alt="Notificación de esquema" />

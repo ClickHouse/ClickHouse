@@ -8,6 +8,7 @@
 #include <string>
 #include <Poco/URI.h>
 
+#include <Core/SettingsEnums.h>
 
 namespace DB::S3
 {
@@ -33,17 +34,22 @@ struct URI
     std::optional<std::string> archive_pattern;
     std::string uri_str;
 
-    bool is_virtual_hosted_style;
+    bool is_virtual_hosted_style = false;
 
     URI() = default;
     explicit URI(
         const std::string & uri_,
         bool allow_archive_path_syntax = false,
-        bool keep_presigned_query_parameters = true);
+        bool keep_presigned_query_parameters = true,
+        S3UriStyle uri_style = S3UriStyle::AUTO);
     void addRegionToURI(const std::string & region);
 
     static void validateBucket(const std::string & bucket, const Poco::URI & uri);
     static void validateKey(const std::string & key, const Poco::URI & uri);
+
+private:
+    bool tryInitPathStyle();
+    bool tryInitVirtualHostedStyle(bool is_using_aws_private_link_interface, bool use_strict_pattern);
 };
 
 }

@@ -1,5 +1,7 @@
 #include <Storages/System/StorageSystemOne.h>
+#include <Storages/System/SystemTableSourceRegistry.h>
 
+#include <Columns/ColumnConst.h>
 #include <Columns/ColumnsNumber.h>
 #include <Common/Exception.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -22,8 +24,8 @@ StorageSystemOne::StorageSystemOne(const StorageID & table_id_)
     /// This column doesn't have a comment, because otherwise it will be added to all tables created via:
     /// CREATE TABLE test (dummy UInt8) ENGINE = Distributed(`default`, `system.one`)
     storage_metadata.setColumns(ColumnsDescription({{"dummy", std::make_shared<DataTypeUInt8>()}}));
+    storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
-    setVirtuals(createVirtuals());
 }
 
 VirtualColumnsDescription StorageSystemOne::createVirtuals()
@@ -72,3 +74,6 @@ void ReadFromSystemOneStep::initializePipeline(QueryPipelineBuilder & pipeline, 
 }
 
 }
+
+/// Register the source file of this system table for `system.documentation`.
+namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemOne) }

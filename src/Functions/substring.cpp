@@ -32,7 +32,7 @@ namespace
 {
 
 /// If 'is_utf8' - measure offset and length in code points instead of bytes.
-class FunctionSubstring : public IFunction
+class FunctionSubstring final : public IFunction
 {
 public:
     FunctionSubstring(const char * name_, bool is_utf8_) : function_name(name_), is_utf8(is_utf8_) {}

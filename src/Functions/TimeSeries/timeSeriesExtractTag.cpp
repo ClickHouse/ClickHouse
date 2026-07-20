@@ -19,7 +19,7 @@ namespace ErrorCodes
 
 /// Function timeSeriesExtractTag(group, tag_to_extract) returns a Nullable(String) containing either the value of a specified tag
 /// or NULL if there is no such tag in the specified group.
-class FunctionTimeSeriesExtractTag : public IFunction
+class FunctionTimeSeriesExtractTag final : public IFunction
 {
 public:
     static constexpr auto name = "timeSeriesExtractTag";
@@ -35,6 +35,12 @@ public:
     /// Function timeSeriesExtractTag returns information stored in the query context, it's deterministic in the scope of the current query.
     bool isDeterministic() const override { return false; }
     bool isDeterministicInScopeOfQuery() const override { return true; }
+
+    /// Stateful: result depends on the per-query tags collector populated by timeSeriesStoreTags().
+    bool isStateful() const override { return true; }
+
+    /// Disable constant folding: the per-query tags collector is not populated at analysis time.
+    bool isSuitableForConstantFolding() const override { return false; }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 

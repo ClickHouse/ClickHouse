@@ -1,0 +1,40 @@
+-- extractAll
+['123','456']
+['1','22','333']
+['test','user']
+[]
+[]
+['a','bb','ccc']
+['key1','key2']
+-- replaceRegexpOne
+hello N world 456
+01/2024-02
+abc
+host.user.com
+-- replaceRegexpAll
+hello N world N
+a/b/c
+path_to_file
+bbbbbb
+[one] [two] [three]
+example.com/p
+x
+|abc|
+-- dot vs newline: extractAll and replaceRegexp* both build RE2 with RE_DOT_NL / dot_nl, so . matches newline
+XXX
+['a','\n','b']
+XXXXX
+X
+X
+-- vectorized over many rows, JIT path equals RE2 (one side compiled, the other forced onto RE2)
+1
+1
+-- patterns outside the subset fall back to RE2
+['1','2']
+X X X
+-- ReDoS-shaped patterns must fall back (no exponential backtracking) and stay correct/fast
+0
+1
+0
+0
+1

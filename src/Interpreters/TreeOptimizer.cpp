@@ -16,25 +16,26 @@
 #include <Interpreters/RedundantFunctionsInOrderByVisitor.h>
 #include <Interpreters/RewriteCountVariantsVisitor.h>
 #include <Interpreters/ConvertStringsToEnumVisitor.h>
-#include <Interpreters/ConvertFunctionOrLikeVisitor.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Interpreters/GatherFunctionQuantileVisitor.h>
-#include <Interpreters/RewriteArrayExistsFunctionVisitor.h>
 #include <Interpreters/RewriteSumFunctionWithSumAndCountVisitor.h>
 #include <Interpreters/OptimizeDateOrDateTimeConverterWithPreimageVisitor.h>
 
+#include <Parsers/ASTCreateWasmFunctionQuery.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTOrderByElement.h>
 #include <Parsers/ASTSelectQuery.h>
-#include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 
 #include <Functions/FunctionFactory.h>
 #include <Functions/UserDefined/UserDefinedExecutableFunctionFactory.h>
+#include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
+#include <Functions/UserDefined/UserDefinedWebAssembly.h>
 #include <Storages/IStorage.h>
 
 
@@ -42,11 +43,8 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsBool allow_hyperscan;
     extern const SettingsBool convert_query_to_cnf;
     extern const SettingsBool enable_positional_arguments;
-    extern const SettingsUInt64 max_hyperscan_regexp_length;
-    extern const SettingsUInt64 max_hyperscan_regexp_total_length;
     extern const SettingsBool optimize_aggregators_of_group_by_keys;
     extern const SettingsBool optimize_append_index;
     extern const SettingsBool optimize_arithmetic_operations_in_aggregate_functions;
@@ -58,8 +56,6 @@ namespace Setting
     extern const SettingsBool optimize_time_filter_with_preimage;
     extern const SettingsBool optimize_using_constraints;
     extern const SettingsBool optimize_redundant_functions_in_order_by;
-    extern const SettingsBool optimize_rewrite_array_exists_to_has;
-    extern const SettingsBool optimize_or_like_chain;
 }
 
 namespace ErrorCodes
@@ -163,6 +159,13 @@ void optimizeGroupBy(ASTSelectQuery * select_query, ContextPtr context)
             else
             {
                 FunctionOverloadResolverPtr function_builder = UserDefinedExecutableFunctionFactory::instance().tryGet(function->name, context); /// NOLINT(readability-static-accessed-through-instance)
+
+                if (!function_builder)
+                {
+                    auto user_defined_function = UserDefinedSQLFunctionFactory::instance().tryGet(function->name);
+                    if (user_defined_function && user_defined_function->as<ASTCreateWasmFunctionQuery>())
+                        function_builder = UserDefinedWebAssemblyFunctionFactory::instance().tryGet(function->name, context);
+                }
 
                 if (!function_builder)
                     function_builder = function_factory.get(function->name, context);
@@ -533,12 +536,6 @@ void optimizeAggregationFunctions(ASTPtr & query)
     ArithmeticOperationsInAgrFuncVisitor(data).visit(query);
 }
 
-void optimizeArrayExistsFunctions(ASTPtr & query)
-{
-    RewriteArrayExistsFunctionVisitor::Data data = {};
-    RewriteArrayExistsFunctionVisitor(data).visit(query);
-}
-
 void optimizeMultiIfToIf(ASTPtr & query)
 {
     OptimizeMultiIfToIfVisitor::Data data;
@@ -582,12 +579,6 @@ void transformIfStringsIntoEnum(ASTPtr & query)
 
     ConvertStringsToEnumVisitor::Data convert_data{used_as_argument};
     ConvertStringsToEnumVisitor(convert_data).visit(query);
-}
-
-void optimizeOrLikeChain(ASTPtr & query)
-{
-    ConvertFunctionOrLikeVisitor::Data data = {};
-    ConvertFunctionOrLikeVisitor(data).visit(query);
 }
 
 }
@@ -690,9 +681,6 @@ void TreeOptimizer::apply(ASTPtr & query, TreeRewriterResult & result,
     if (settings[Setting::optimize_normalize_count_variants])
         optimizeCountConstantAndSumOne(query, context);
 
-    if (settings[Setting::optimize_rewrite_array_exists_to_has])
-        optimizeArrayExistsFunctions(query);
-
     /// Remove injective functions inside uniq
     if (settings[Setting::optimize_injective_functions_inside_uniq])
         optimizeInjectiveFunctionsInsideUniq(query, context);
@@ -723,11 +711,8 @@ void TreeOptimizer::apply(ASTPtr & query, TreeRewriterResult & result,
     /// Remove duplicated columns from USING(...).
     optimizeUsing(select_query);
 
-    if (settings[Setting::optimize_or_like_chain] && settings[Setting::allow_hyperscan] && settings[Setting::max_hyperscan_regexp_length] == 0
-        && settings[Setting::max_hyperscan_regexp_total_length] == 0)
-    {
-        optimizeOrLikeChain(query);
-    }
+    /// Note: `optimize_or_like_chain` is an analyzer-only optimization (`ConvertOrLikeChainPass`);
+    /// the old analyzer does not rewrite `OR LIKE` chains.
 }
 
 }

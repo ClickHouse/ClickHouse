@@ -2,6 +2,7 @@
 
 #include <Common/SharedMutex.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
+#include <Storages/MergeTree/ConditionTemplate.h>
 #include <Storages/MergeTree/VectorSimilarityIndexCache.h>
 #include <Storages/MergeTree/MergeTreeIndexMinMax.h>
 
@@ -29,7 +30,7 @@ class MergeTreeSkipIndexReader
 public:
     MergeTreeSkipIndexReader(
         UsefulSkipIndexes skip_indexes_,
-        std::optional<KeyCondition> & key_condition_rpn_template_,
+        ConditionTemplate<KeyCondition>::Ptr key_condition_rpn_template_,
         bool use_for_disjunctions_,
         MarkCachePtr mark_cache_,
         UncompressedCachePtr uncompressed_cache_,
@@ -37,13 +38,13 @@ public:
         MergeTreeReaderSettings reader_settings_,
         LoggerPtr log_);
 
-    SkipIndexReadResultPtr read(const RangesInDataPart & part);
+    SkipIndexReadResultPtr read(const RangesInDataPart & part, const StorageMetadataPtr & metadata_snapshot, const NameSet & all_updated_columns);
 
     void cancel() noexcept { is_cancelled = true; }
 
 private:
     UsefulSkipIndexes skip_indexes;
-    std::optional<KeyCondition> key_condition_rpn_template;
+    ConditionTemplate<KeyCondition>::Ptr key_condition_rpn_template;
     bool use_for_disjunctions;
     MarkCachePtr mark_cache;
     UncompressedCachePtr uncompressed_cache;
@@ -200,7 +201,7 @@ public:
     /// another thread, waits for its result. Throws if the builder fails.
     ///
     /// This map uses raw pointer of data part as key because it is unique and stable for the lifetime of the part.
-    MergeTreeIndexReadResultPtr getOrBuildIndexReadResult(const RangesInDataPart & part, const RangesInDataParts & projection_parts);
+    MergeTreeIndexReadResultPtr getOrBuildIndexReadResult(const RangesInDataPart & part, const RangesInDataParts & projection_parts, const StorageMetadataPtr & metadata_snapshot, const NameSet & all_updated_columns);
 
     /// Cleans up the cached MergeTreeIndexReadResult for a given part if it exists.
     /// Should be called when the last task for the part has finished.
