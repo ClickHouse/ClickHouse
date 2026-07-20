@@ -415,6 +415,13 @@ struct BackupsWorker::BackupStarter
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "experimental_backup_pack_format is not supported with ON CLUSTER yet");
 
+        /// A lightweight snapshot stores files by object_key (kept in lightweight_snapshot_file_infos, not
+        /// file_infos). Packing has no path for those, and the read-side pack accounting assumes a packed
+        /// backup has no object_key files -- reject the combination rather than silently mis-account.
+        if (backup_settings.experimental_backup_pack_format && backup_settings.experimental_lightweight_snapshot)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "experimental_backup_pack_format is not supported with experimental_lightweight_snapshot");
+
         if (!backup_settings.backup_uuid)
             backup_settings.backup_uuid = UUIDHelpers::generateV4();
 

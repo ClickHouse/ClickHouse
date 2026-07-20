@@ -754,6 +754,27 @@ def test_backup_to_s3_object_packing_on_cluster_rejected(cluster):
         node.query("DROP TABLE IF EXISTS data SYNC;")
 
 
+def test_backup_to_s3_object_packing_lightweight_snapshot_rejected(cluster):
+    # A lightweight snapshot stores files by object_key, which packing has no path for and the read-side pack
+    # accounting doesn't account. The combination must be rejected, not silently mis-counted.
+    node = cluster.instances["node"]
+    node.query(
+        """
+    DROP TABLE IF EXISTS data SYNC;
+    CREATE TABLE data (key Int, value String, array Array(String)) Engine=MergeTree() ORDER BY tuple() SETTINGS storage_policy='policy_s3';
+    INSERT INTO data SELECT * FROM generateRandom('key Int, value String, array Array(String)') LIMIT 100;
+    """
+    )
+    try:
+        backup_dest = f"S3('http://minio1:9001/root/data/backups/{new_backup_name()}', 'minio', '{minio_secret_key}')"
+        error = node.query_and_get_error(
+            f"BACKUP TABLE data TO {backup_dest} SETTINGS experimental_backup_pack_format = 1, experimental_lightweight_snapshot = 1"
+        )
+        assert "not supported with experimental_lightweight_snapshot" in error, error
+    finally:
+        node.query("DROP TABLE IF EXISTS data SYNC;")
+
+
 @pytest.fixture(scope="module")
 def init_broken_s3(cluster):
     yield start_s3_mock(cluster, "broken_s3", "8084")

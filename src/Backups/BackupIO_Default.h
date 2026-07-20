@@ -29,6 +29,10 @@ public:
     void copyFileToDisk(const String & path_in_backup, size_t offset, size_t size, bool encrypted_in_backup,
                         DiskPtr destination_disk, const String & destination_path, WriteMode write_mode) override;
 
+    /// Default: plain readFile. S3/Azure never produce mmap/direct-io buffers, so the view can wrap them as is;
+    /// local Disk/File readers override this. See IBackupReader::readFileForView.
+    std::unique_ptr<ReadBufferFromFileBase> readFileForView(const String & file_name) override;
+
     const ReadSettings & getReadSettings() const override { return read_settings; }
     const WriteSettings & getWriteSettings() const override { return write_settings; }
     size_t getWriteBufferSize() const override { return write_buffer_size; }

@@ -29,6 +29,12 @@ public:
 
     virtual std::unique_ptr<ReadBufferFromFileBase> readFile(const String & file_name) = 0;
 
+    /// Opens `file_name` for reading through ReadBufferFromFileView (packed backups wrap the pack object in a
+    /// view over one member's byte range). BackupReaderDefault forwards to plain readFile -- correct for
+    /// S3/Azure readers, which never produce mmap/direct-io buffers. Local readers (Disk/File) override it to
+    /// strip mmap/direct-io, which the view cannot wrap. Not for whole-file restores: they keep mmap/direct-io.
+    virtual std::unique_ptr<ReadBufferFromFileBase> readFileForView(const String & file_name) = 0;
+
     /// The function copyFileToDisk() can be much faster than reading the file with readFile() and then writing it to some disk.
     /// (especially for S3 where it can use CopyObject to copy objects inside S3 instead of downloading and uploading them).
     /// Parameters:

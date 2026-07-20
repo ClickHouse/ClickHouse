@@ -8,6 +8,7 @@
 #include <Backups/BackupPacker.h>
 #include <Backups/getBackupDataFileName.h>
 #include <IO/PackedFilesReader.h>
+#include <IO/PackedFilesWriter.h>
 #include <IO/PackedFilesIO.h>
 #include <fmt/format.h>
 #include <Common/CurrentThread.h>
@@ -573,13 +574,25 @@ void BackupImpl::writeBackupMetadata()
                     || info.data_file_name == getBackupDataFileName(info, data_file_name_generator, data_file_name_prefix_length)));
         if (has_entry)
         {
-            ++num_entries;
-            size_of_entries += info.size - info.base_size;
+            /// A packed member is not its own stored object -- the pack is. Count packs once, below, using the
+            /// serialized pack sizes recorded at write time (they include the front-index bytes).
+            if (info.pack_id < 0)
+            {
+                ++num_entries;
+                size_of_entries += info.size - info.base_size;
+            }
         }
 
         *out << "</file>";
     });
     *out << "</contents>";
+
+    /// Each written pack object is one entry whose size (index + member bodies) was recorded by writeFilePack.
+    for (const auto & [pack_id, pack_size] : pack_object_sizes)
+    {
+        ++num_entries;
+        size_of_entries += pack_size;
+    }
 
     *out << "</config>";
 
@@ -823,7 +836,50 @@ void BackupImpl::readBackupMetadata()
 
     /// Packed backup: load each pack's front index once so packed members can be located at read time.
     if ((open_mode == OpenMode::READ) && (num_packs > 0))
+    {
         loadPackIndexes();
+
+        /// The per-file SAX pass above counted each packed member as its own entry with only its body bytes.
+        /// But a pack is a single stored object whose size includes the serialized front index, and the write
+        /// side accounts it that way -- so recompute pack-aware here to make the RESTORE row match the BACKUP
+        /// row. Own-object data files (a data_file_name absent from packed_members, e.g. a large blob that kept
+        /// its own object) stay individual entries; each pack object is one entry sized (front index + member
+        /// bodies). Pack geometry comes from packed_members (pack_id is not persisted in the manifest); the
+        /// front-index size of a pack is its smallest member offset, since bodies follow the index.
+        ///
+        /// The reset-and-rebuild is complete only because a packed backup has no object_key files -- those live
+        /// in lightweight_snapshot_file_infos (not file_infos) and would be dropped by the reset. Packing is
+        /// rejected together with experimental_lightweight_snapshot (see BackupsWorker), so this holds; assert
+        /// it so a future relaxation of that guard can't silently reintroduce the under-count.
+        chassert(lightweight_snapshot_file_infos.empty());
+
+        std::unordered_map<String, UInt64> pack_index_size;
+        std::unordered_map<String, UInt64> pack_body_size;
+        for (const auto & [member_name, location] : packed_members)
+        {
+            auto [it, inserted] = pack_index_size.try_emplace(location.pack_object, location.offset);
+            if (!inserted)
+                it->second = std::min(it->second, location.offset);
+            pack_body_size[location.pack_object] += location.size;
+        }
+
+        num_entries = 0;
+        size_of_entries = 0;
+        for (const auto & [size_and_checksum, info] : file_infos)
+        {
+            if (info.size <= info.base_size)
+                continue; /// Fully from the base backup: no body stored in this backup.
+            if (packed_members.contains(info.data_file_name))
+                continue; /// A packed member; accounted per pack object below.
+            ++num_entries;
+            size_of_entries += info.size - info.base_size;
+        }
+        for (const auto & [pack_object, body_size] : pack_body_size)
+        {
+            ++num_entries;
+            size_of_entries += pack_index_size[pack_object] + body_size;
+        }
+    }
 
     uncompressed_size = size_of_entries + str.size();
     compressed_size = uncompressed_size;
@@ -1046,7 +1102,9 @@ std::unique_ptr<ReadBufferFromFileBase> BackupImpl::readPackedMember(const Membe
 {
     /// PackedFilesReader::readFile can't be reused wholesale: it opens the archive through a DiskPtr, but a
     /// pack is read through IBackupReader (S3/Disk/File), whose readFile takes no ReadSettings. Only the view
-    /// construction is shared (viewMember); the S3 target never uses mmap/direct-io, which the view forbids.
+    /// construction is shared (viewMember). readFileForView opens the pack with view-safe settings -- local
+    /// Disk/File readers strip mmap/direct-io (which ReadBufferFromFileView can't wrap); S3/Azure never produce
+    /// such buffers so their default is plain readFile.
     ///
     /// TODO(backup-packing): this opens the pack object once per member (one ranged GET per member on S3).
     /// It reads only the member's [offset, size) range -- no whole-pack re-read -- but when several members
@@ -1054,7 +1112,7 @@ std::unique_ptr<ReadBufferFromFileBase> BackupImpl::readPackedMember(const Membe
     /// slice out all its members (~num_packs reads instead of one per member). Deferred: the native
     /// server-side-copy path (S3->S3) can't be range-batched anyway, and coalescing needs pack-grouping
     /// plumbed into the restore driver + reconciled with restore parallelism. See status doc v2 items.
-    return PackedFilesReader::viewMember(reader->readFile(member.pack_object), member.pack_object, member.offset, member.size);
+    return PackedFilesReader::viewMember(reader->readFileForView(member.pack_object), member.pack_object, member.offset, member.size);
 }
 
 std::unique_ptr<ReadBufferFromFileBase>
@@ -1424,14 +1482,28 @@ void BackupImpl::writeFilePack(size_t pack_id, const PackMembers & members)
 
     const String pack_object = getBackupPackObjectName(pack_id);
     LOG_TRACE(log, "Writing backup pack {} with {} members", pack_object, members.size());
-    BackupPacker::writePack(writer->writeFile(pack_object), pack_members, PackedFilesIO::VERSION_WITHOUT_UNCOMPRESSED_SIZE);
+    constexpr UInt8 pack_version = PackedFilesIO::VERSION_WITHOUT_UNCOMPRESSED_SIZE;
+    BackupPacker::writePack(writer->writeFile(pack_object), pack_members, pack_version);
+
+    /// Accounting mirrors the non-packed writeFile, but per PACK OBJECT rather than per member. num_files /
+    /// total_size track logical files, so a pack still counts as members.size() files of total_logical_size
+    /// bytes. But the pack is a single stored object -- one entry -- whose serialized byte size is the front
+    /// index plus every member's physical bytes; the index bytes would be lost if we summed member sizes alone.
+    Strings member_names;
+    member_names.reserve(pack_members.size());
+    for (const auto & pack_member : pack_members)
+        member_names.push_back(pack_member.name);
+    const UInt64 pack_object_size
+        = PackedFilesWriter::getSerializedIndexSize(member_names, pack_version) + total_physical_size;
 
     std::lock_guard lock{mutex};
     num_files += members.size();
     total_size += total_logical_size;
-    num_entries += members.size();
-    size_of_entries += total_physical_size;
-    uncompressed_size += total_physical_size;
+    ++num_entries;
+    size_of_entries += pack_object_size;
+    uncompressed_size += pack_object_size;
+    /// Recorded for the authoritative recompute in writeBackupMetadata (which resets these counters).
+    pack_object_sizes[pack_id] = pack_object_size;
 }
 
 

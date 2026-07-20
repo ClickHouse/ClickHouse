@@ -69,4 +69,29 @@ if [ "$incr_before" = "$incr_after" ]; then echo "incremental identical"; else e
 ${CLICKHOUSE_CLIENT} --query "BACKUP TABLE t TO Disk('backups', '${name}_7.zip') SETTINGS experimental_backup_pack_format=1" 2>&1 \
     | grep -o "cannot be used with an archive destination" | head -1
 
+# Case 8: system.backups accounting. A pack is one entry whose stored size includes the serialized front index.
+# Back up the same data unpacked and packed: packing collapses many small member objects into few pack objects
+# (strictly fewer entries) and the pack's index bytes make its stored size larger than the raw member payload.
+${CLICKHOUSE_CLIENT} -m --query "DROP TABLE IF EXISTS t; $small_create"
+${CLICKHOUSE_CLIENT} --query "$small_insert"
+${CLICKHOUSE_CLIENT} --query "BACKUP TABLE t TO Disk('backups', '${name}_8off') SETTINGS id='${name}_8off'" | grep -o BACKUP_CREATED
+${CLICKHOUSE_CLIENT} --query "BACKUP TABLE t TO Disk('backups', '${name}_8on') SETTINGS id='${name}_8on', experimental_backup_pack_format=1" | grep -o BACKUP_CREATED
+${CLICKHOUSE_CLIENT} --query "
+SELECT
+    (SELECT num_entries FROM system.backups WHERE id='${name}_8on') <
+    (SELECT num_entries FROM system.backups WHERE id='${name}_8off') AS packed_has_fewer_entries,
+    (SELECT uncompressed_size FROM system.backups WHERE id='${name}_8on') >
+    (SELECT uncompressed_size FROM system.backups WHERE id='${name}_8off') AS packed_size_includes_index"
+
+# The RESTORE (read-side) row must report the same num_entries and uncompressed_size as the BACKUP (write-side)
+# row for a packed backup -- the read side accounts packs the same way, not per member.
+${CLICKHOUSE_CLIENT} --query "DROP TABLE t"
+${CLICKHOUSE_CLIENT} --query "RESTORE TABLE t FROM Disk('backups', '${name}_8on') SETTINGS id='${name}_8restore'" | grep -o RESTORED
+${CLICKHOUSE_CLIENT} --query "
+SELECT
+    (SELECT num_entries FROM system.backups WHERE id='${name}_8restore') =
+    (SELECT num_entries FROM system.backups WHERE id='${name}_8on') AS restore_entries_match_backup,
+    (SELECT uncompressed_size FROM system.backups WHERE id='${name}_8restore') =
+    (SELECT uncompressed_size FROM system.backups WHERE id='${name}_8on') AS restore_size_matches_backup"
+
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS t"

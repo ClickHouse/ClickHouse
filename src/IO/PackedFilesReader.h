@@ -58,6 +58,11 @@ public:
     static std::unique_ptr<ReadBufferFromFileBase> viewMember(
         std::unique_ptr<ReadBufferFromFileBase> archive_buffer, const String & member_name, size_t offset, size_t size);
 
+    /// ReadBufferFromFileView (used by viewMember) requires plain pread-style buffers: mmap/direct-io buffers
+    /// carry alignment constraints the view cannot satisfy. A caller that will wrap a local buffer in a view
+    /// must open it with these patched settings (mmap -> pread, direct-io disabled).
+    static ReadSettings patchSettings(ReadSettings settings);
+
 private:
     /// Index of archive: immutable and path-independent.
     const PackedFilesIO::Index index;

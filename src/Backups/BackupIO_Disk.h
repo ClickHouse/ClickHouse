@@ -21,6 +21,7 @@ public:
     UInt64 getFileSize(const String & file_name) override;
 
     std::unique_ptr<ReadBufferFromFileBase> readFile(const String & file_name) override;
+    std::unique_ptr<ReadBufferFromFileBase> readFileForView(const String & file_name) override;
 
     void copyFileToDisk(const String & path_in_backup, size_t offset, size_t size, bool encrypted_in_backup,
                         DiskPtr destination_disk, const String & destination_path, WriteMode write_mode) override;

@@ -18,3 +18,8 @@ BACKUP_CREATED
 RESTORED
 incremental identical
 cannot be used with an archive destination
+BACKUP_CREATED
+BACKUP_CREATED
+1	1
+RESTORED
+1	1

@@ -188,6 +188,9 @@ private:
     /// immutable afterwards. Empty for non-packed backups.
     std::unordered_map<String, MemberLocation> packed_members TSA_GUARDED_BY(mutex);
     size_t num_packs = 0; /// Number of pack objects (from the manifest on read; computed on write).
+    /// pack_id -> serialized size of the pack object (front index + member bodies), recorded as each pack is
+    /// written. Used by writeBackupMetadata to account a pack as one entry whose size includes the index.
+    std::map<size_t, UInt64> pack_object_sizes TSA_GUARDED_BY(mutex);
     /// object_key -> file name, only used by lightweight snapshot
     std::unordered_map<String, String> file_object_keys TSA_GUARDED_BY(mutex);
     std::unordered_map<String, BackupFileInfo> lightweight_snapshot_file_infos TSA_GUARDED_BY(mutex);
