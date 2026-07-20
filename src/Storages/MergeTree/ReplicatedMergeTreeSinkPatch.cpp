@@ -1,7 +1,7 @@
 #include <Storages/MergeTree/ReplicatedMergeTreeSinkPatch.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/MergeTree/MergeTreeDataWriter.h>
-#include <Storages/MergeTree/PatchParts/SourcePartsSetForPatch.h>
+#include <Storages/MergeTree/PatchParts/PatchPartIndex.h>
 #include <Interpreters/InsertDeduplication.h>
 
 namespace DB
@@ -82,9 +82,9 @@ TemporaryPartPtr ReplicatedMergeTreeSinkPatch::writeNewTempPart(BlockWithPartiti
 
     auto partition_id = getPartitionIdForPatch(block.partition);
     auto data_version = getDataVersionInPartition(partition_id);
-    auto source_parts_set = buildSourceSetForPatch(*block.block, data_version, patch_metadata);
+    auto patch_part_index = buildPatchPartIndex(*block.block, data_version, patch_metadata);
 
-    return storage.writer.writeTempPatchPart(block, patch_metadata.metadata, std::move(partition_id), std::move(source_parts_set), context);
+    return storage.writer.writeTempPatchPart(block, patch_metadata.metadata, std::move(partition_id), std::move(patch_part_index), context);
 }
 
 UInt64 ReplicatedMergeTreeSinkPatch::getDataVersionInPartition(const String & partition_id) const

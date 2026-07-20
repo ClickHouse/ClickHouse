@@ -13,7 +13,7 @@ struct KeyDescription;
 /** A helper index of source parts for which updated data is stored in the patch part.
   * It is used to get patches for the regular parts.
   */
-class SourcePartsSetForPatch
+class PatchPartIndex
 {
 public:
     /// On-disk format version of the patch part.
@@ -25,8 +25,8 @@ public:
 
     static constexpr auto FILENAME = "source_parts.dat";
 
-    SourcePartsSetForPatch() = default;
-    SourcePartsSetForPatch(UInt8 format_version_, String sorting_key_desc_);
+    PatchPartIndex() = default;
+    PatchPartIndex(UInt8 format_version_, String sorting_key_desc_);
 
     bool empty() const { return min_max_versions_by_part.empty(); }
     UInt64 getMinDataVersion() const { return min_data_version; }
@@ -40,8 +40,8 @@ public:
     /// The table's sorting key the v2 patch was written with, as a one-line formatted text.
     const String & getSortingKeyDesc() const { return sorting_key_desc; }
 
-    /// Returns a set with the same format version and sorting key but without source parts.
-    SourcePartsSetForPatch cloneEmpty() const { return SourcePartsSetForPatch(format_version, sorting_key_desc); }
+    /// Returns an index with the same format version and sorting key but without source parts.
+    PatchPartIndex cloneEmpty() const { return PatchPartIndex(format_version, sorting_key_desc); }
 
     void addSourcePart(const String & name, UInt64 data_version);
 
@@ -51,19 +51,19 @@ public:
         const DataPartPtr & patch_part,
         std::shared_ptr<const KeyDescription> effective_sorting_key) const;
 
-    static SourcePartsSetForPatch build(
+    static PatchPartIndex build(
         const Block & block,
         UInt64 data_version,
         UInt8 format_version,
         String sorting_key_desc);
 
-    static SourcePartsSetForPatch merge(const DataPartsVector & source_parts);
+    static PatchPartIndex merge(const DataPartsVector & source_parts);
 
     void writeBinary(WriteBuffer & out) const;
     void readBinary(ReadBuffer & in);
 
 private:
-    void buildSourcePartsSet();
+    void buildSourcePartsByVersion();
 
     /// Max data version -> part set that contains all parts from min_max_versions_by_part with this max data version.
     /// Can be reconstructed from source_parts_by_version.
@@ -82,7 +82,7 @@ private:
 
 /// Returns set with source parts with _part column from block and data_version.
 /// Updates _data_version in block with const value (data_version).
-SourcePartsSetForPatch buildSourceSetForPatch(
+PatchPartIndex buildPatchPartIndex(
     Block & block,
     UInt64 data_version,
     const PatchPartMetadata & patch_metadata);

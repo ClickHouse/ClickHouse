@@ -1,6 +1,6 @@
 #include <Storages/MergeTree/MergeTreeSinkPatch.h>
 #include <Storages/StorageMergeTree.h>
-#include <Storages/MergeTree/PatchParts/SourcePartsSetForPatch.h>
+#include <Storages/MergeTree/PatchParts/PatchPartIndex.h>
 #include <Interpreters/InsertDeduplication.h>
 #include <Common/ProfileEventsScope.h>
 
@@ -64,9 +64,9 @@ TemporaryPartPtr MergeTreeSinkPatch::writeNewTempPart(BlockWithPartition & block
 
     auto partition_id = getPartitionIdForPatch(block.partition);
     UInt64 block_number = update_holder.block_holder->block.number;
-    auto source_parts_set = buildSourceSetForPatch(*block.block, block_number, patch_metadata);
+    auto patch_part_index = buildPatchPartIndex(*block.block, block_number, patch_metadata);
 
-    return storage.writer.writeTempPatchPart(block, patch_metadata.metadata, std::move(partition_id), std::move(source_parts_set), context);
+    return storage.writer.writeTempPatchPart(block, patch_metadata.metadata, std::move(partition_id), std::move(patch_part_index), context);
 }
 
 }

@@ -2504,7 +2504,7 @@ struct FutureNewEmptyPart
     std::string part_name;
     /// Metadata of the source part being covered; see `MergeTreeData::createEmptyPart`.
     StorageMetadataPtr metadata_snapshot;
-    std::optional<SourcePartsSetForPatch> source_parts_set;
+    std::optional<PatchPartIndex> patch_part_index;
 
     StorageMergeTree::MutableDataPartPtr data_part;
 };
@@ -2535,7 +2535,7 @@ static FutureNewEmptyParts initCoverageWithNewEmptyParts(const DataPartsVector &
         new_part.metadata_snapshot = old_part->getMetadataSnapshot();
 
         if (old_part->info.isPatch())
-            new_part.source_parts_set = old_part->getSourcePartsSet().cloneEmpty();
+            new_part.patch_part_index = old_part->getPatchPartIndex().cloneEmpty();
     }
 
     return future_parts;
@@ -2547,7 +2547,7 @@ static std::pair<StorageMergeTree::MutableDataPartsVector, std::vector<scope_gua
     std::pair<StorageMergeTree::MutableDataPartsVector, std::vector<scope_guard>> data_parts;
     for (auto & part: future_parts)
     {
-        auto [new_data_part, tmp_dir_holder] = data.createEmptyPart(part.part_info, part.partition, part.part_name, part.metadata_snapshot, txn, std::move(part.source_parts_set));
+        auto [new_data_part, tmp_dir_holder] = data.createEmptyPart(part.part_info, part.partition, part.part_name, part.metadata_snapshot, txn, std::move(part.patch_part_index));
         data_parts.first.emplace_back(std::move(new_data_part));
         data_parts.second.emplace_back(std::move(tmp_dir_holder));
     }

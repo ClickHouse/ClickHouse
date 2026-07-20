@@ -4172,7 +4172,7 @@ size_t MergeTreeData::clearUnusedPatchParts()
     for (const auto & patch : patch_parts)
     {
         auto partition_id = patch->info.getOriginalPartitionId();
-        UInt64 max_data_version = patch->getSourcePartsSet().getMaxDataVersion();
+        UInt64 max_data_version = patch->getPatchPartIndex().getMaxDataVersion();
 
         auto it = min_data_version_by_partition.find(partition_id);
         if (it == min_data_version_by_partition.end() || max_data_version <= it->second)
@@ -6076,7 +6076,7 @@ MergeTreeData::PartsToRemoveFromZooKeeper MergeTreeData::removePartsInRangeFromW
             empty_part_name,
             source_part->getMetadataSnapshot(),
             NO_TRANSACTION_PTR,
-            source_part->info.isPatch() ? std::optional(source_part->getSourcePartsSet().cloneEmpty()) : std::nullopt);
+            source_part->info.isPatch() ? std::optional(source_part->getPatchPartIndex().cloneEmpty()) : std::nullopt);
 
         MergeTreeData::Transaction transaction(*this, NO_TRANSACTION_RAW);
         renameTempPartAndAdd(new_data_part, transaction, lock, /*rename_in_transaction=*/ false);     /// All covered parts must be already removed
@@ -10886,24 +10886,24 @@ PatchPartMetadata MergeTreeData::getPatchPartMetadata(const IMergeTreeDataPart &
     if (patch_metadata.metadata)
         return patch_metadata;
 
-    const auto & source_parts_set = patch_part.getSourcePartsSet();
+    const auto & patch_part_index = patch_part.getPatchPartIndex();
 
-    switch (source_parts_set.getFormatVersion())
+    switch (patch_part_index.getFormatVersion())
     {
-        case SourcePartsSetForPatch::V1_FORMAT_VERSION:
+        case PatchPartIndex::V1_FORMAT_VERSION:
         {
             patch_metadata.version = MergeTreePatchPartsVersion::V1;
             patch_metadata.metadata = DB::getPatchPartMetadataV1(patch_part.getColumnsDescription(), local_context);
             break;
         }
-        case SourcePartsSetForPatch::V2_FORMAT_VERSION:
+        case PatchPartIndex::V2_FORMAT_VERSION:
         {
             patch_metadata.version = MergeTreePatchPartsVersion::V2;
-            patch_metadata.metadata = DB::getPatchPartMetadataV2(patch_part.getColumnsDescription(), source_parts_set.getSortingKeyDesc(), local_context);
+            patch_metadata.metadata = DB::getPatchPartMetadataV2(patch_part.getColumnsDescription(), patch_part_index.getSortingKeyDesc(), local_context);
             break;
         }
         default:
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown patch part format version: {}", static_cast<UInt32>(source_parts_set.getFormatVersion()));
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown patch part format version: {}", static_cast<UInt32>(patch_part_index.getFormatVersion()));
     }
 
     return patch_metadata;
@@ -10911,7 +10911,7 @@ PatchPartMetadata MergeTreeData::getPatchPartMetadata(const IMergeTreeDataPart &
 
 std::shared_ptr<const KeyDescription> MergeTreeData::getPatchPartSortingKey(const IMergeTreeDataPart & patch_part) const
 {
-    const auto & sorting_key_desc = patch_part.getSourcePartsSet().getSortingKeyDesc();
+    const auto & sorting_key_desc = patch_part.getPatchPartIndex().getSortingKeyDesc();
     auto patch_metadata = getPatchPartMetadata(patch_part, getContext());
 
     std::lock_guard lock(patch_parts_sorting_keys_mutex);
@@ -11605,7 +11605,7 @@ void MergeTreeData::incrementMergedPartsProfileEvent(MergeTreeDataPartType type)
 std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::createEmptyPart(
         MergeTreePartInfo & new_part_info, const MergeTreePartition & partition, const String & new_part_name,
         const StorageMetadataPtr & metadata_snapshot, const MergeTreeTransactionPtr & txn,
-        std::optional<SourcePartsSetForPatch> source_parts_set) const
+        std::optional<PatchPartIndex> patch_part_index) const
 {
     auto settings = getSettings();
 
@@ -11628,7 +11628,7 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::createE
 
     /// Keep the format version and sort-key columns of the patch partition.
     if (new_part_info.isPatch())
-        new_data_part->setSourcePartsSet(source_parts_set ? std::move(*source_parts_set) : SourcePartsSetForPatch{});
+        new_data_part->setPatchPartIndex(patch_part_index ? std::move(*patch_part_index) : PatchPartIndex{});
 
     if ((*settings)[MergeTreeSetting::assign_part_uuids])
         new_data_part->uuid = UUIDHelpers::generateV4();

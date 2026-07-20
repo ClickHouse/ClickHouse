@@ -339,13 +339,13 @@ MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePartOnDis
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "MinMax index was not initialized for new non-empty part {}", new_part->name);
             }
 
-            /// Every patch part must have `source_parts.dat` on disk: `loadSourcePartsSet`
+            /// Every patch part must have `source_parts.dat` on disk: `loadPatchPartIndex`
             /// throws `CORRUPTED_DATA` otherwise, including for empty covering parts.
             if (new_part->info.isPatch())
             {
-                write_hashed_file(SourcePartsSetForPatch::FILENAME, [&](auto & buffer)
+                write_hashed_file(PatchPartIndex::FILENAME, [&](auto & buffer)
                 {
-                    new_part->getSourcePartsSet().writeBinary(buffer);
+                    new_part->getPatchPartIndex().writeBinary(buffer);
                 });
             }
         }

@@ -35,7 +35,7 @@ struct KeyDescription;
   * System columns are related to the virtual columns in the original part,
   * which are added for reading if patch parts should be applied.
   *
-  * Patch parts have special index which helps to understand whether it is needed to apply patch part to the original part (see SourcePartsSetForPatch.h).
+  * Patch parts have special index which helps to understand whether it is needed to apply patch part to the original part (see PatchPartIndex.h).
   *
   * Patch parts belong to the different partitions than the original part.
   * The partition id of the patch part is 'patch-<hash of column names in patch part>-<original_partition_id>'.

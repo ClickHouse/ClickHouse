@@ -33,16 +33,16 @@ PatchParts getPatchesForPart(const MergeTreePartInfo & source_part, const DataPa
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected patch part, got: {}", patch_part->name);
 
     std::shared_ptr<const KeyDescription> sorting_key;
-    const auto & source_parts_set = patch_part->getSourcePartsSet();
+    const auto & patch_part_index = patch_part->getPatchPartIndex();
 
-    if (source_parts_set.getFormatVersion() == SourcePartsSetForPatch::V2_FORMAT_VERSION)
+    if (patch_part_index.getFormatVersion() == PatchPartIndex::V2_FORMAT_VERSION)
     {
         /// The effective key for `MergeOnKey` may be shorter than the key the patch was written
         /// with if the table's sorting key was changed by ALTER after the patch had been written.
         sorting_key = patch_part->storage.getPatchPartSortingKey(*patch_part);
     }
 
-    return source_parts_set.getPatchParts(source_part, patch_part, std::move(sorting_key));
+    return patch_part_index.getPatchParts(source_part, patch_part, std::move(sorting_key));
 }
 
 static String getColumnsHash(Names column_names)
@@ -448,8 +448,8 @@ static bool patchHasHigherDataVersion(const String & part_name, Int64 min_patch_
 
 bool patchHasHigherDataVersion(const IMergeTreeDataPart & patch, Int64 max_data_version)
 {
-    Int64 min_patch_version = patch.getSourcePartsSet().getMinDataVersion();
-    Int64 max_patch_version = patch.getSourcePartsSet().getMaxDataVersion();
+    Int64 min_patch_version = patch.getPatchPartIndex().getMinDataVersion();
+    Int64 max_patch_version = patch.getPatchPartIndex().getMaxDataVersion();
 
     return patchHasHigherDataVersion(patch.name, min_patch_version, max_patch_version, max_data_version);
 }

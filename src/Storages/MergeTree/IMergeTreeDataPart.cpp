@@ -1289,7 +1289,7 @@ void IMergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checks
 
     /// Everything loaded here (columns, substreams, checksums, index granularity, primary index,
     /// per-column sizes, rows count, partition / minmax index, TTL infos, projections, default
-    /// compression codec, source parts set) lives for the whole part lifetime. Route the heap
+    /// compression codec, patch part index) lives for the whole part lifetime. Route the heap
     /// allocations into the dedicated parts arena. This block is on the hot server-startup path
     /// (`MergeTreeData::loadDataPart` → `loadColumnsChecksumsIndexes`), so per-part metadata
     /// allocated at boot also lands in the arena from the start.
@@ -1307,7 +1307,7 @@ void IMergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checks
 
         /// Load `source_parts.dat` before the primary index: a v2 patch's rebuilt metadata takes
         /// the sort-key columns from it, and the index cannot be deserialized without them.
-        loadSourcePartsSet();
+        loadPatchPartIndex();
 
         /// It's important to load index after index granularity.
         if (!(*storage.getSettings())[MergeTreeSetting::primary_key_lazy_load])
@@ -1643,30 +1643,30 @@ void IMergeTreeDataPart::loadDefaultCompressionCodec()
         default_codec = detectDefaultCompressionCodec();
 }
 
-void IMergeTreeDataPart::setSourcePartsSet(SourcePartsSetForPatch source_parts_set_)
+void IMergeTreeDataPart::setPatchPartIndex(PatchPartIndex patch_part_index_)
 {
-    source_parts_set = std::move(source_parts_set_);
+    patch_part_index = std::move(patch_part_index_);
 }
 
-const SourcePartsSetForPatch & IMergeTreeDataPart::getSourcePartsSet() const
+const PatchPartIndex & IMergeTreeDataPart::getPatchPartIndex() const
 {
-    /// Reading the set of a patch part before it is loaded or set explicitly
+    /// Reading the index of a patch part before it is loaded or set explicitly
     /// would silently misinterpret the patch as v1 (the default format version).
-    if (!source_parts_set)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Source parts set is not initialized for part {}", name);
+    if (!patch_part_index)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Patch part index is not initialized for part {}", name);
 
-    return *source_parts_set;
+    return *patch_part_index;
 }
 
-void IMergeTreeDataPart::loadSourcePartsSet()
+void IMergeTreeDataPart::loadPatchPartIndex()
 {
     if (!info.isPatch())
         return;
 
-    if (auto in = readFileIfExists(SourcePartsSetForPatch::FILENAME))
-        source_parts_set.emplace().readBinary(*in);
+    if (auto in = readFileIfExists(PatchPartIndex::FILENAME))
+        patch_part_index.emplace().readBinary(*in);
     else
-        throw Exception(ErrorCodes::CORRUPTED_DATA, "Missing file {} in patch part {}", SourcePartsSetForPatch::FILENAME, name);
+        throw Exception(ErrorCodes::CORRUPTED_DATA, "Missing file {} in patch part {}", PatchPartIndex::FILENAME, name);
 }
 
 template <typename Writer>

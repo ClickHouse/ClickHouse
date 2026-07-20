@@ -11323,7 +11323,7 @@ bool StorageReplicatedMergeTree::createEmptyPartInsteadOfLost(zkutil::ZooKeeperP
     MergeTreePartition partition;
     /// Use a sibling part's metadata when possible so patch parts get patch-part metadata.
     StorageMetadataPtr metadata_snapshot = table_metadata;
-    std::optional<SourcePartsSetForPatch> source_parts_set;
+    std::optional<PatchPartIndex> patch_part_index;
     {
         auto lock = readLockParts();
 
@@ -11335,7 +11335,7 @@ bool StorageReplicatedMergeTree::createEmptyPartInsteadOfLost(zkutil::ZooKeeperP
             metadata_snapshot = source_part->getMetadataSnapshot();
 
             if (source_part->info.isPatch())
-                source_parts_set = source_part->getSourcePartsSet().cloneEmpty();
+                patch_part_index = source_part->getPatchPartIndex().cloneEmpty();
         }
         else if (auto parsed_partition = MergeTreePartition::tryParseValueFromID(
                      new_part_info.getPartitionId(),
@@ -11351,7 +11351,7 @@ bool StorageReplicatedMergeTree::createEmptyPartInsteadOfLost(zkutil::ZooKeeperP
         }
     }
 
-    auto [new_data_part, tmp_dir_holder] = createEmptyPart(new_part_info, partition, lost_part_name, metadata_snapshot, NO_TRANSACTION_PTR, std::move(source_parts_set));
+    auto [new_data_part, tmp_dir_holder] = createEmptyPart(new_part_info, partition, lost_part_name, metadata_snapshot, NO_TRANSACTION_PTR, std::move(patch_part_index));
     new_data_part->setName(lost_part_name);
 
     try

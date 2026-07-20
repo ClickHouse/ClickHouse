@@ -3413,7 +3413,7 @@ bool MutateTask::prepare()
                 ctx->future_part->name,
                 ctx->source_part->getMetadataSnapshot(),
                 ctx->txn,
-                /*source_parts_set=*/ std::nullopt);
+                /*patch_part_index=*/ std::nullopt);
 
             /// Keep the temporary-directory holder alive until the part is renamed/committed, so
             /// the in-memory `temporary_parts` entry outlives the physical `tmp_empty_<part>`

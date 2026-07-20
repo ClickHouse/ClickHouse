@@ -1,4 +1,4 @@
-#include <Storages/MergeTree/PatchParts/SourcePartsSetForPatch.h>
+#include <Storages/MergeTree/PatchParts/PatchPartIndex.h>
 #include <Storages/MergeTree/PatchParts/PatchPartsUtils.h>
 #include <Storages/MergeTree/PatchParts/applyPatches.h>
 #include <Columns/ColumnConst.h>
@@ -20,7 +20,7 @@ namespace ErrorCodes
     extern const int INCORRECT_DATA;
 }
 
-SourcePartsSetForPatch::SourcePartsSetForPatch(UInt8 format_version_, String sorting_key_desc_)
+PatchPartIndex::PatchPartIndex(UInt8 format_version_, String sorting_key_desc_)
     : format_version(format_version_)
     , sorting_key_desc(std::move(sorting_key_desc_))
 {
@@ -28,7 +28,7 @@ SourcePartsSetForPatch::SourcePartsSetForPatch(UInt8 format_version_, String sor
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Sorting key description must be empty for v1 patch part. Got: {}", sorting_key_desc);
 }
 
-void SourcePartsSetForPatch::addSourcePart(const String & name, UInt64 data_version)
+void PatchPartIndex::addSourcePart(const String & name, UInt64 data_version)
 {
     if (min_max_versions_by_part.contains(name))
         throw Exception(ErrorCodes::DUPLICATE_DATA_PART, "Source part {} already exists", name);
@@ -48,7 +48,7 @@ void SourcePartsSetForPatch::addSourcePart(const String & name, UInt64 data_vers
     min_max_versions_by_part[name] = {data_version, data_version};
 }
 
-void SourcePartsSetForPatch::buildSourcePartsSet()
+void PatchPartIndex::buildSourcePartsByVersion()
 {
     min_data_version = 0;
     max_data_version = 0;
@@ -72,7 +72,7 @@ void SourcePartsSetForPatch::buildSourcePartsSet()
     }
 }
 
-PatchParts SourcePartsSetForPatch::getPatchParts(
+PatchParts PatchPartIndex::getPatchParts(
     const MergeTreePartInfo & original_part,
     const DataPartPtr & patch_part,
     std::shared_ptr<const KeyDescription> effective_sorting_key) const
@@ -159,7 +159,7 @@ PatchParts SourcePartsSetForPatch::getPatchParts(
     return patch_parts;
 }
 
-SourcePartsSetForPatch SourcePartsSetForPatch::build(
+PatchPartIndex PatchPartIndex::build(
     const Block & block,
     UInt64 data_version,
     UInt8 format_version,
@@ -170,7 +170,7 @@ SourcePartsSetForPatch SourcePartsSetForPatch::build(
     const auto & part_name_dict = part_name_lc.getDictionary().getNestedColumn();
     const auto & part_name_str = assert_cast<const ColumnString &>(*part_name_dict);
 
-    SourcePartsSetForPatch parts_set(format_version, std::move(sorting_key_));
+    PatchPartIndex parts_set(format_version, std::move(sorting_key_));
 
     for (size_t i = 0; i < part_name_str.size(); ++i)
     {
@@ -184,25 +184,25 @@ SourcePartsSetForPatch SourcePartsSetForPatch::build(
     return parts_set;
 }
 
-SourcePartsSetForPatch SourcePartsSetForPatch::merge(const DataPartsVector & source_parts)
+PatchPartIndex PatchPartIndex::merge(const DataPartsVector & source_parts)
 {
-    SourcePartsSetForPatch merged_set;
+    PatchPartIndex merged_set;
     if (source_parts.empty())
         return merged_set;
 
-    const auto & first_set = source_parts.front()->getSourcePartsSet();
+    const auto & first_set = source_parts.front()->getPatchPartIndex();
     merged_set.format_version = first_set.format_version;
     merged_set.sorting_key_desc = first_set.sorting_key_desc;
 
     for (const auto & part : source_parts)
     {
-        const auto & set = part->getSourcePartsSet();
+        const auto & set = part->getPatchPartIndex();
 
         if (set.format_version != merged_set.format_version)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Format version mismatch in source parts set. Got: {}, expected: {}", static_cast<UInt64>(set.format_version), static_cast<UInt64>(merged_set.format_version));
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Format version mismatch in patch part index. Got: {}, expected: {}", static_cast<UInt64>(set.format_version), static_cast<UInt64>(merged_set.format_version));
 
         if (set.sorting_key_desc != merged_set.sorting_key_desc)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Sorting key description mismatch in source parts set. Got: {}, expected: {}", set.sorting_key_desc, merged_set.sorting_key_desc);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Sorting key description mismatch in patch part index. Got: {}, expected: {}", set.sorting_key_desc, merged_set.sorting_key_desc);
 
         for (const auto & [part_name, min_max] : set.min_max_versions_by_part)
         {
@@ -217,11 +217,11 @@ SourcePartsSetForPatch SourcePartsSetForPatch::merge(const DataPartsVector & sou
         }
     }
 
-    merged_set.buildSourcePartsSet();
+    merged_set.buildSourcePartsByVersion();
     return merged_set;
 }
 
-void SourcePartsSetForPatch::writeBinary(WriteBuffer & out) const
+void PatchPartIndex::writeBinary(WriteBuffer & out) const
 {
     writeBinaryLittleEndian(format_version, out);
 
@@ -240,13 +240,13 @@ void SourcePartsSetForPatch::writeBinary(WriteBuffer & out) const
     }
 }
 
-void SourcePartsSetForPatch::readBinary(ReadBuffer & in)
+void PatchPartIndex::readBinary(ReadBuffer & in)
 {
     UInt8 version = 0;
     readBinaryLittleEndian(version, in);
 
     if (version > MAX_SUPPORTED_FORMAT_VERSION)
-        throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid version of SourcePartsSetForPatch: {}", std::to_string(version));
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid version of PatchPartIndex: {}", std::to_string(version));
 
     format_version = version;
 
@@ -266,10 +266,10 @@ void SourcePartsSetForPatch::readBinary(ReadBuffer & in)
         readBinaryLittleEndian(min_max.second, in);
     }
 
-    buildSourcePartsSet();
+    buildSourcePartsByVersion();
 }
 
-SourcePartsSetForPatch buildSourceSetForPatch(
+PatchPartIndex buildPatchPartIndex(
     Block & block,
     UInt64 data_version,
     const PatchPartMetadata & patch_metadata)
@@ -279,17 +279,17 @@ SourcePartsSetForPatch buildSourceSetForPatch(
     auto & data_version_column = block.getByName(PartDataVersionColumn::name).column;
     data_version_column = PartDataVersionColumn::type->createColumnConst(block.rows(), data_version)->convertToFullColumnIfConst();
 
-    UInt8 format_version = SourcePartsSetForPatch::V1_FORMAT_VERSION;
+    UInt8 format_version = PatchPartIndex::V1_FORMAT_VERSION;
     String sorting_key_desc;
 
     if (patch_metadata.version == MergeTreePatchPartsVersion::V2)
     {
-        format_version = SourcePartsSetForPatch::V2_FORMAT_VERSION;
+        format_version = PatchPartIndex::V2_FORMAT_VERSION;
         auto sorting_key_expr_list = getTableSortingKeyExpressionFromPatch(patch_metadata.metadata->getSortingKey());
         sorting_key_desc = sorting_key_expr_list->formatWithSecretsOneLine();
     }
 
-    return SourcePartsSetForPatch::build(block, data_version, format_version, std::move(sorting_key_desc));
+    return PatchPartIndex::build(block, data_version, format_version, std::move(sorting_key_desc));
 }
 
 }

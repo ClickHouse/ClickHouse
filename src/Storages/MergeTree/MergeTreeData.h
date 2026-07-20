@@ -39,7 +39,7 @@
 #include <Poco/Timestamp.h>
 #include <Common/ThreadPool_fwd.h>
 #include <Storages/MergeTree/PatchParts/PatchPartsUtils.h>
-#include <Storages/MergeTree/PatchParts/SourcePartsSetForPatch.h>
+#include <Storages/MergeTree/PatchParts/PatchPartIndex.h>
 
 #include <boost/multi_index_container.hpp>
 #include <boost/multi_index/ordered_index.hpp>
@@ -1327,13 +1327,13 @@ public:
     constexpr static auto EMPTY_PART_TMP_PREFIX = "tmp_empty_";
     /// `metadata_snapshot` must come from the source part being covered
     /// (via `IMergeTreeDataPart::getMetadataSnapshot`) so patch parts get patch-part metadata.
-    /// For a part in a patch partition, `source_parts_set` must be seeded from a covered or
-    /// sibling part (see `SourcePartsSetForPatch::cloneEmpty`) to keep the partition uniform.
+    /// For a part in a patch partition, `patch_part_index` must be seeded from a covered or
+    /// sibling part (see `PatchPartIndex::cloneEmpty`) to keep the partition uniform.
     std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> createEmptyPart(
         MergeTreePartInfo & new_part_info, const MergeTreePartition & partition,
         const String & new_part_name, const StorageMetadataPtr & metadata_snapshot,
         const MergeTreeTransactionPtr & txn,
-        std::optional<SourcePartsSetForPatch> source_parts_set) const;
+        std::optional<PatchPartIndex> patch_part_index) const;
 
     MergeTreeDataFormatVersion format_version;
 

@@ -22,7 +22,7 @@
 #include <Storages/MergeTree/MergeTreeIndexGranularityInfo.h>
 #include <Storages/MergeTree/MergeTreePartInfo.h>
 #include <Storages/MergeTree/MergeTreePartition.h>
-#include <Storages/MergeTree/PatchParts/SourcePartsSetForPatch.h>
+#include <Storages/MergeTree/PatchParts/PatchPartIndex.h>
 #include <Storages/MergeTree/UniqueKey/DeleteBitmap.h>
 #include <Storages/MergeTree/VectorSimilarityIndexCache.h>
 #include <Storages/Statistics/Statistics.h>
@@ -504,8 +504,8 @@ public:
 
     bool isProjectionPart() const { return parent_part != nullptr; }
 
-    void setSourcePartsSet(SourcePartsSetForPatch source_parts_set_);
-    const SourcePartsSetForPatch & getSourcePartsSet() const;
+    void setPatchPartIndex(PatchPartIndex patch_part_index_);
+    const PatchPartIndex & getPatchPartIndex() const;
 
     /// Check if the part is in the `/moving` directory
     bool isMovingPart() const;
@@ -742,10 +742,10 @@ protected:
 
     mutable std::map<String, std::shared_ptr<IMergeTreeDataPart>> projection_parts;
 
-    /// Set of source parts for patch parts, loaded from disk or set explicitly at part
-    /// creation. Disengaged for regular parts and for patch parts that are not loaded yet;
+    /// Index of source parts covered by a patch part, loaded from disk or set explicitly at
+    /// part creation. Disengaged for regular parts and for patch parts that are not loaded yet;
     /// reading it too early would silently misinterpret the patch as v1.
-    std::optional<SourcePartsSetForPatch> source_parts_set;
+    std::optional<PatchPartIndex> patch_part_index;
 
     /// Fill each_columns_size and total_size with sizes from columns files on
     /// disk using columns and checksums.
@@ -837,7 +837,7 @@ private:
     /// if it not exists tries to deduce codec from compressed column without
     /// any specifial compression.
     void loadDefaultCompressionCodec();
-    void loadSourcePartsSet();
+    void loadPatchPartIndex();
 
     ColumnsStatistics loadStatisticsPacked(const PackedFilesReader & reader, const NameSet & required_columns) const;
     ColumnsStatistics loadStatisticsWide(const NameSet & required_columns) const;
