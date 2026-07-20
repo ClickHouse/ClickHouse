@@ -1,0 +1,99 @@
+#!/usr/bin/expect -f
+
+# Verify that <enable-progress-table-toggle/> (and its underscore-style alias
+# <enable_progress_table_toggle/>) in a config file is respected and is not
+# silently overwritten by the CLI default (true). This guards the !defaulted()
+# precedence fix in ClientBase::addOptionsToTheClientConfiguration for
+# enable-progress-table-toggle: without it, the CLI default always wins over
+# the value loaded from the client XML config.
+#
+# Observable behavior: when the toggle is disabled, the client prints the
+# final progress table (with its "Event name" header) after each query in
+# interactive mode; when the toggle is enabled and the space key is never
+# pressed, the final progress table is not printed.
+#
+# Three cases are exercised:
+#   1. <enable-progress-table-toggle>false</...> in config, no CLI flag
+#      → the final progress table must appear after the query.
+#   2. <enable_progress_table_toggle>false</...> (underscore alias) in config
+#      → same as case 1.
+#   3. config disables the toggle, explicit --enable-progress-table-toggle=1
+#      on the CLI → CLI wins: no final progress table may appear.
+
+set basedir [file dirname $argv0]
+set basename [file tail $argv0]
+if {[info exists env(CLICKHOUSE_TMP)]} {
+    set CLICKHOUSE_TMP $env(CLICKHOUSE_TMP)
+} else {
+    set CLICKHOUSE_TMP "."
+}
+exp_internal -f $CLICKHOUSE_TMP/$basename.debuglog 0
+set history_file $CLICKHOUSE_TMP/$basename.history
+
+# The progress table is only rendered when the terminal is wide enough for the
+# event name, value and progress columns; make it comfortably wide.
+set stty_init "rows 40 cols 300"
+
+log_user 0
+set timeout 60
+match_max 100000
+expect_after {
+    # Do not ignore eof from expect
+    -i $any_spawn_id eof { exp_continue }
+    # A default timeout action is to do nothing, change it to fail
+    -i $any_spawn_id timeout { exit 1 }
+}
+
+# Write temporary config files used across test cases.
+set dashed_cfg     "$CLICKHOUSE_TMP/$basename.dashed.xml"
+set underscore_cfg "$CLICKHOUSE_TMP/$basename.underscore.xml"
+
+set fd [open $dashed_cfg w]
+puts $fd {<config><enable-progress-table-toggle>false</enable-progress-table-toggle></config>}
+close $fd
+
+set fd [open $underscore_cfg w]
+puts $fd {<config><enable_progress_table_toggle>false</enable_progress_table_toggle></config>}
+close $fd
+
+# CLICKHOUSE_CLIENT_EXPECT_OPT contains "--enable-progress-table-toggle 0";
+# strip it so the config file (not an explicit CLI flag) is what disables the
+# toggle, and so the explicit flag in case 3 is not passed twice.
+
+# ─── 1. toggle disabled by <enable-progress-table-toggle> in config ──────────
+spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_CLIENT_BINARY \${CLICKHOUSE_CLIENT_EXPECT_OPT/--enable-progress-table-toggle 0/} --config $dashed_cfg --history_file=$history_file"
+expect ":) "
+
+send -- "SELECT sum(number) FROM numbers(1000000)\r"
+expect "Event name"
+expect ":) "
+send -- "\4"
+expect eof
+
+# ─── 2. toggle disabled by the underscore alias in config ────────────────────
+spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_CLIENT_BINARY \${CLICKHOUSE_CLIENT_EXPECT_OPT/--enable-progress-table-toggle 0/} --config $underscore_cfg --history_file=$history_file"
+expect ":) "
+
+send -- "SELECT sum(number) FROM numbers(1000000)\r"
+expect "Event name"
+expect ":) "
+send -- "\4"
+expect eof
+
+# ─── 3. config disables the toggle, explicit CLI flag re-enables it ──────────
+# CLI must win over the config file: since the space key is never pressed, the
+# final progress table must not be printed before the prompt returns.
+spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_CLIENT_BINARY \${CLICKHOUSE_CLIENT_EXPECT_OPT/--enable-progress-table-toggle 0/} --config $dashed_cfg --enable-progress-table-toggle=1 --history_file=$history_file"
+expect ":) "
+
+send -- "SELECT sum(number) FROM numbers(1000000)\r"
+expect {
+    "Event name" { exit 1 }
+    -re {499999500000.*:\) } {}
+}
+send -- "\4"
+expect eof
+
+file delete $dashed_cfg
+file delete $underscore_cfg
+exec bash -c "rm -f $history_file"
