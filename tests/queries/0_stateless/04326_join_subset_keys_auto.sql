@@ -9,6 +9,11 @@ SET enable_analyzer = 1;
 SET enable_parallel_replicas = 0;
 SET enable_join_runtime_filters = 0;
 SET join_algorithm = 'hash';
+-- Key demotion operates on the build (right) side, and the `EXPLAIN` output below prints the
+-- join clauses with a fixed table order. Pin `query_plan_join_swap_table` so join reordering
+-- does not swap the tables (which would flip the printed clauses and change which side's NDV
+-- drives demotion), keeping this plan-shape test deterministic under randomized CI settings.
+SET query_plan_join_swap_table = 'false';
 
 DROP TABLE IF EXISTS jks_left;
 DROP TABLE IF EXISTS jks_right;
