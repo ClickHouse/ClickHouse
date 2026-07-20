@@ -10,3 +10,15 @@
   status:       applicable
   source:           applicability_only
   empirical_status: disabled
+--- statistical: synthetic nullable .null input maps to parent ---
+  status:       applicable
+  source:           statistical
+  empirical_status: disabled
+--- statistical: exact synthetic .null index remains applicable ---
+  status:       applicable
+  source:           statistical
+  empirical_status: disabled
+--- applicability_only: physical .null shadow has no statistics ---
+  status:       applicable
+  source:           applicability_only
+  empirical_status: disabled

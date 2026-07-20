@@ -842,6 +842,25 @@ std::optional<NameAndTypePair> ColumnsDescription::tryGetColumn(const GetColumns
     return {};
 }
 
+std::optional<String> tryGetNullableParentColumnName(const ColumnsDescription & columns, const String & column_name)
+{
+    /// A literal top-level column named e.g. `m.null` is a normal column, not
+    /// the synthetic null map of `m`, and must never borrow `m` statistics.
+    if (columns.tryGet(column_name))
+        return std::nullopt;
+
+    static constexpr char null_suffix[] = ".null";
+    if (!column_name.ends_with(null_suffix))
+        return std::nullopt;
+
+    String parent_name = column_name.substr(0, column_name.size() - (sizeof(null_suffix) - 1));
+    const auto * parent_column = columns.tryGet(parent_name);
+    if (!parent_column || !isNullableOrLowCardinalityNullable(parent_column->type))
+        return std::nullopt;
+
+    return parent_name;
+}
+
 NameAndTypePair ColumnsDescription::getColumn(const GetColumnsOptions & options, const String & column_name) const
 {
     auto column = tryGetColumn(options, column_name);

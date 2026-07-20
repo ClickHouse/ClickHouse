@@ -213,28 +213,22 @@ RelationProfile ConditionSelectivityEstimator::estimateRelationProfile() const
 
 bool ConditionSelectivityEstimator::hasStatisticsFor(const StorageMetadataPtr & metadata, const Names & columns) const
 {
-    return std::all_of(columns.begin(), columns.end(), [&](const auto & column)
-    {
-        /// The analyzer may expose a nullable column's `.null` subcolumn as the
-        /// filter input, while persisted statistics are keyed by the parent column.
-        constexpr std::string_view null_suffix = ".null";
-        String statistics_column = column;
-        if (!column_estimators.contains(statistics_column)
-            && column.size() > null_suffix.size()
-            && column.ends_with(null_suffix)
-            && metadata)
+    return std::all_of(
+        columns.begin(),
+        columns.end(),
+        [&](const auto & column)
         {
-            String parent_name = column.substr(0, column.size() - null_suffix.size());
-            const auto * parent_column = metadata->getColumns().tryGet(parent_name);
-            if (parent_column && isNullableOrLowCardinalityNullable(parent_column->type))
-                statistics_column = parent_name;
-        }
+            String statistics_column = column;
+            if (!column_estimators.contains(statistics_column) && metadata)
+            {
+                if (auto parent_name = tryGetNullableParentColumnName(metadata->getColumns(), column))
+                    statistics_column = *parent_name;
+            }
 
-        auto it = column_estimators.find(statistics_column);
-        return it != column_estimators.end()
-            && it->second.stats != nullptr
-            && isCompatibleStatistics(metadata, it->second.stats, statistics_column);
-    });
+            auto it = column_estimators.find(statistics_column);
+            return it != column_estimators.end() && it->second.stats != nullptr
+                && isCompatibleStatistics(metadata, it->second.stats, statistics_column);
+        });
 }
 
 RelationProfile ConditionSelectivityEstimator::estimateRelationProfile(const StorageMetadataPtr & metadata, const ActionsDAG::Node * node) const
@@ -493,17 +487,11 @@ bool ConditionSelectivityEstimator::extractAtomFromTree(const StorageMetadataPtr
     {
         String bare_column_name = node.getColumnName();
 
-        auto dot_pos = bare_column_name.rfind('.');
-        if (dot_pos != std::string::npos && bare_column_name.compare(dot_pos + 1, std::string::npos, "null") == 0)
+        if (auto parent_name = tryGetNullableParentColumnName(metadata->getColumns(), bare_column_name))
         {
-            String parent_name = bare_column_name.substr(0, dot_pos);
-            const ColumnDescription * parent_col = metadata->getColumns().tryGet(parent_name);
-            if (parent_col && isNullableOrLowCardinalityNullable(parent_col->type))
-            {
-                out.function = RPNElement::FUNCTION_IS_NULL;
-                out.null_check_columns.insert(parent_name);
-                return true;
-            }
+            out.function = RPNElement::FUNCTION_IS_NULL;
+            out.null_check_columns.insert(*parent_name);
+            return true;
         }
     }
 

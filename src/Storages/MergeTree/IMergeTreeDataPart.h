@@ -189,6 +189,7 @@ public:
 
     ColumnsStatistics loadStatistics() const;
     ColumnsStatistics loadStatistics(const Names & required_columns) const;
+    ColumnsStatistics loadStatistics(const Names & required_columns, const ColumnsDescription & current_columns) const;
     Estimates getEstimates() const;
     void setEstimates(const Estimates & new_estimates);
 
@@ -837,8 +838,9 @@ private:
     void loadDefaultCompressionCodec();
     void loadSourcePartsSet();
 
-    ColumnsStatistics loadStatisticsPacked(const PackedFilesReader & reader, const NameSet & required_columns) const;
-    ColumnsStatistics loadStatisticsWide(const NameSet & required_columns) const;
+    ColumnsStatistics loadStatisticsPacked(
+        const PackedFilesReader & reader, const NameSet & required_columns, const ColumnsDescription & current_columns) const;
+    ColumnsStatistics loadStatisticsWide(const NameSet & required_columns, const ColumnsDescription & current_columns) const;
     PackedFilesReader * getStatisticsPackedReader() const;
 
     void writeColumns(const NamesAndTypesList & columns_, const WriteSettings & settings);

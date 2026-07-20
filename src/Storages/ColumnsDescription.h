@@ -317,6 +317,11 @@ private:
     mutable std::vector<std::pair<GetCacheKey, std::shared_ptr<const NamesAndTypesList>>> get_cache;
 };
 
+/// Resolve a synthetic Nullable `.null` subcolumn to its parent column name.
+/// A real top-level column with the exact subcolumn name always takes precedence;
+/// other dotted names are not mapped.
+std::optional<String> tryGetNullableParentColumnName(const ColumnsDescription & columns, const String & column_name);
+
 class ASTColumnDeclaration;
 
 struct DefaultExpressionsInfo

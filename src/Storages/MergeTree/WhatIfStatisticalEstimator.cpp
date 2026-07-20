@@ -1,5 +1,6 @@
 #include <Storages/MergeTree/WhatIfStatisticalEstimator.h>
 
+#include <Storages/ColumnsDescription.h>
 #include <Storages/MergeTree/WhatIfFilterAnalysis.h>
 #include <Storages/Statistics/ConditionSelectivityEstimator.h>
 #include <Common/Exception.h>
@@ -34,8 +35,14 @@ bool tryEstimateWithStatistics(
     collectFilterInputColumns(filter_node, filter_input_columns);
 
     for (const auto & col : filter_input_columns)
-        if (!index_columns_set.contains(col))
+    {
+        if (index_columns_set.contains(col))
+            continue;
+
+        const auto matching_column = tryGetNullableParentColumnName(metadata->getColumns(), col);
+        if (!matching_column || !index_columns_set.contains(*matching_column))
             return false;
+    }
 
     Names required_stats_columns(filter_input_columns.begin(), filter_input_columns.end());
 
@@ -49,7 +56,7 @@ bool tryEstimateWithStatistics(
 
         try
         {
-            auto stats = part.data_part->loadStatistics(required_stats_columns);
+            auto stats = part.data_part->loadStatistics(required_stats_columns, metadata->getColumns());
             builder.addDataPartStatistics(part.data_part, stats);
         }
         catch (const Exception &) /// Ok — statistical estimation is best-effort

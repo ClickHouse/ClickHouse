@@ -1136,7 +1136,11 @@ PackedFilesReader * IMergeTreeDataPart::getStatisticsPackedReader() const
     return statistics_reader.get();
 }
 
-static const ColumnDescription * getColumnForStatisticsFile(const String & filename, const ColumnsDescription & all_columns, const NameSet & required_columns)
+static const ColumnDescription * getColumnForStatisticsFile(
+    const String & filename,
+    const ColumnsDescription & part_columns,
+    const NameSet & required_columns,
+    const ColumnsDescription & current_columns)
 {
     chassert(filename.starts_with(STATS_FILE_PREFIX));
     chassert(filename.ends_with(STATS_FILE_SUFFIX));
@@ -1144,19 +1148,23 @@ static const ColumnDescription * getColumnForStatisticsFile(const String & filen
     size_t num_chars_to_truncate = STATS_FILE_PREFIX.size() + STATS_FILE_SUFFIX.size();
     String column_name = unescapeForFileName(filename.substr(STATS_FILE_PREFIX.size(), filename.size() - num_chars_to_truncate));
 
-    /// `<col>.null` subcolumn may appear in required_columns when
-    /// `optimize_functions_to_subcolumns=1`, keep stats for the parent column in that case.
-    if (!required_columns.empty()
-        && !required_columns.contains(column_name)
-        && !required_columns.contains(column_name + ".null"))
+    /// A synthetic `<col>.null` subcolumn may appear in required_columns when
+    /// `optimize_functions_to_subcolumns=1`; keep stats for the Nullable parent
+    /// in that case. A real top-level column named `<col>.null` must not make us
+    /// load the unrelated parent statistics file.
+    if (!required_columns.empty() && !required_columns.contains(column_name))
     {
-        return nullptr;
+        const String null_subcolumn = column_name + ".null";
+        const auto nullable_parent = tryGetNullableParentColumnName(current_columns, null_subcolumn);
+        if (!required_columns.contains(null_subcolumn) || !nullable_parent || *nullable_parent != column_name)
+            return nullptr;
     }
 
-    return all_columns.tryGet(column_name);
+    return part_columns.tryGet(column_name);
 }
 
-ColumnsStatistics IMergeTreeDataPart::loadStatisticsPacked(const PackedFilesReader & reader, const NameSet & required_columns) const
+ColumnsStatistics IMergeTreeDataPart::loadStatisticsPacked(
+    const PackedFilesReader & reader, const NameSet & required_columns, const ColumnsDescription & current_columns) const
 {
     ColumnsStatistics result;
     auto read_settings = storage.getContext()->getReadSettings();
@@ -1174,7 +1182,7 @@ ColumnsStatistics IMergeTreeDataPart::loadStatisticsPacked(const PackedFilesRead
         if (!filename.ends_with(STATS_FILE_SUFFIX) || !filename.starts_with(STATS_FILE_PREFIX))
             throw Exception(ErrorCodes::CORRUPTED_DATA, "File {} is not a statistics file", filename);
 
-        const auto * column_desc = getColumnForStatisticsFile(filename, *columns_description, required_columns);
+        const auto * column_desc = getColumnForStatisticsFile(filename, *columns_description, required_columns, current_columns);
         if (!column_desc)
             continue;
 
@@ -1198,7 +1206,7 @@ ColumnsStatistics IMergeTreeDataPart::loadStatisticsPacked(const PackedFilesRead
     return result;
 }
 
-ColumnsStatistics IMergeTreeDataPart::loadStatisticsWide(const NameSet & required_columns) const
+ColumnsStatistics IMergeTreeDataPart::loadStatisticsWide(const NameSet & required_columns, const ColumnsDescription & current_columns) const
 {
     ColumnsStatistics result;
     auto read_settings = storage.getContext()->getReadSettings();
@@ -1208,7 +1216,7 @@ ColumnsStatistics IMergeTreeDataPart::loadStatisticsWide(const NameSet & require
         if (!filename.ends_with(STATS_FILE_SUFFIX) || !filename.starts_with(STATS_FILE_PREFIX))
             continue;
 
-        const auto * column_desc = getColumnForStatisticsFile(filename, *columns_description, required_columns);
+        const auto * column_desc = getColumnForStatisticsFile(filename, *columns_description, required_columns, current_columns);
         if (!column_desc)
             continue;
 
@@ -1241,20 +1249,25 @@ ColumnsStatistics IMergeTreeDataPart::loadStatistics() const
     auto component_guard = Coordination::setCurrentComponent("IMergeTreeDataPart::loadStatistics");
 
     if (auto * reader = getStatisticsPackedReader())
-        return loadStatisticsPacked(*reader, {});
+        return loadStatisticsPacked(*reader, {}, *columns_description);
 
-    return loadStatisticsWide({});
+    return loadStatisticsWide({}, *columns_description);
 }
 
-ColumnsStatistics IMergeTreeDataPart::loadStatistics(const Names & required_columns) const
+ColumnsStatistics IMergeTreeDataPart::loadStatistics(const Names & required_columns, const ColumnsDescription & current_columns) const
 {
     auto component_guard = Coordination::setCurrentComponent("IMergeTreeDataPart::loadStatistics");
     NameSet required_columns_set(required_columns.begin(), required_columns.end());
 
     if (auto * reader = getStatisticsPackedReader())
-        return loadStatisticsPacked(*reader, required_columns_set);
+        return loadStatisticsPacked(*reader, required_columns_set, current_columns);
 
-    return loadStatisticsWide(required_columns_set);
+    return loadStatisticsWide(required_columns_set, current_columns);
+}
+
+ColumnsStatistics IMergeTreeDataPart::loadStatistics(const Names & required_columns) const
+{
+    return loadStatistics(required_columns, *columns_description);
 }
 
 Estimates IMergeTreeDataPart::getEstimates() const

@@ -59,3 +59,59 @@ $CLICKHOUSE_CLIENT -n -q "
 " | grep -E '^\s+status:|^\s+source:|^\s+empirical_status:'
 
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_hypo_stat_mc"
+
+DROP_TABLE=t_hypo_stat_nullable
+$CLICKHOUSE_CLIENT -n -q "
+    SET allow_experimental_statistics = 1;
+    SET allow_statistics_optimize = 1;
+    SET materialize_statistics_on_insert = 1;
+
+    DROP TABLE IF EXISTS ${DROP_TABLE};
+    CREATE TABLE ${DROP_TABLE}
+    (
+        id UInt64,
+        v Nullable(UInt64) STATISTICS(basic, tdigest),
+        m Nullable(UInt64) STATISTICS(basic, tdigest)
+    )
+    ENGINE = MergeTree ORDER BY id
+    SETTINGS index_granularity = 100, index_granularity_bytes = 0, min_bytes_for_wide_part = 0, auto_statistics_types = '';
+    INSERT INTO ${DROP_TABLE}
+    SELECT number,
+           if(number % 4 = 0, NULL, toUInt64(number % 100)),
+           if(number % 2 = 0, NULL, toUInt64(number % 100))
+    FROM numbers(10000);
+    ALTER TABLE ${DROP_TABLE} ADD COLUMN \`m.null\` UInt8 DEFAULT 1;
+"
+
+# The analyzer exposes the synthetic `v.null` input while statistics are keyed
+# by `v`. Matching may resolve only this Nullable null subcolumn to its parent.
+echo "--- statistical: synthetic nullable .null input maps to parent ---"
+$CLICKHOUSE_CLIENT -n -q "
+    SET allow_experimental_statistics = 1;
+    SET allow_statistics_optimize = 1;
+    CREATE HYPOTHETICAL INDEX idx_v_null_synthetic ON ${DROP_TABLE} (v) TYPE minmax GRANULARITY 1;
+    EXPLAIN WHATIF empirical = 0 SELECT * FROM ${DROP_TABLE} WHERE v < 50 AND NOT v.null;
+" | grep -E '^\s+status:|^\s+source:|^\s+empirical_status:'
+
+# An index explicitly defined on the synthetic subcolumn was already accepted
+# by exact-name matching. Keep that behavior before falling back to the parent.
+echo "--- statistical: exact synthetic .null index remains applicable ---"
+$CLICKHOUSE_CLIENT -n -q "
+    SET allow_experimental_statistics = 1;
+    SET allow_statistics_optimize = 1;
+    CREATE HYPOTHETICAL INDEX idx_v_null_exact ON ${DROP_TABLE} (v.null) TYPE minmax GRANULARITY 1;
+    EXPLAIN WHATIF empirical = 0 SELECT * FROM ${DROP_TABLE} WHERE NOT v.null;
+" | grep -E '^\s+status:|^\s+source:|^\s+empirical_status:'
+
+# A physical top-level `m.null` added after the part was written shadows the
+# synthetic subcolumn. Even though the old part schema does not contain it, the
+# current schema must prevent borrowing the unrelated parent `m` statistics.
+echo "--- applicability_only: physical .null shadow has no statistics ---"
+$CLICKHOUSE_CLIENT -n -q "
+    SET allow_experimental_statistics = 1;
+    SET allow_statistics_optimize = 1;
+    CREATE HYPOTHETICAL INDEX idx_m_null_physical ON ${DROP_TABLE} (\`m.null\`) TYPE minmax GRANULARITY 1;
+    EXPLAIN WHATIF empirical = 0 SELECT * FROM ${DROP_TABLE} WHERE \`m.null\`;
+" | grep -E '^\s+status:|^\s+source:|^\s+empirical_status:'
+
+$CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS ${DROP_TABLE}"
