@@ -435,17 +435,8 @@ std::optional<bool> ValuesBlockInputFormat::tryReadValueStreaming(
     }
     else if (deserialize_text_state.decimal_overflow)
     {
-        /// A failed Decimal parse at a digit or literal delimiter can be an overflow. Retry it with
-        /// exceptions so a raw overflowing literal still reports ARGUMENT_OUT_OF_BOUND. Other
-        /// failure positions indicate an expression inside a composite value.
-        skipWhitespaceIfAny(*buf);
-        retry_with_exceptions = buf->eof()
-            || (*buf->position() >= '0' && *buf->position() <= '9')
-            || *buf->position() == ','
-            || *buf->position() == ')'
-            || *buf->position() == ']'
-            || *buf->position() == '}'
-            || *buf->position() == ':';
+        /// Preserve the old behavior of rejecting an overflowing `Decimal` prefix before expression fallback.
+        retry_with_exceptions = true;
     }
 
     buf->rollbackToCheckpoint();
@@ -628,11 +619,8 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
             std::string_view(buf->position(), std::min(SHOW_CHARS_ON_SYNTAX_ERROR, buf->buffer().end() - buf->position())));
     ++(*token_iterator);
 
-    WhichDataType which(removeNullable(removeLowCardinality(types[column_idx])));
-    const bool starts_with_identifier = !buf->eof() && (isAlphaASCII(*buf->position()) || *buf->position() == '_');
     if (parser_type_for_column[column_idx] != ParserType::Streaming
-        && dynamic_cast<const ASTLiteral *>(ast.get())
-        && (!starts_with_identifier || which.isDynamic() || which.isVariant()))
+        && dynamic_cast<const ASTLiteral *>(ast.get()))
     {
         /// It's possible that streaming parsing has failed on some row (e.g. because of '+' sign before integer),
         /// but it still can parse the following rows

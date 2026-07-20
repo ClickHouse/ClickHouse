@@ -138,6 +138,10 @@ $CLICKHOUSE_CLIENT --allow_experimental_qbit_type=1 -q "SELECT CAST(q AS Array(F
 echo '--- decimal overflow still fails ---'
 ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" --data-binary "INSERT INTO t_values_decimal VALUES (12345678.91)" | grep -o "ARGUMENT_OUT_OF_BOUND" | head -1
 
+echo '--- decimal overflow before operator still fails ---'
+${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" --data-binary \
+    "INSERT INTO t_values_decimal VALUES (1e8 - 99999999)" | grep -o "ARGUMENT_OUT_OF_BOUND" | head -1
+
 echo '--- nested decimal overflow still fails ---'
 ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" --data-binary "INSERT INTO t_values_nested_decimal VALUES ([12345678.91], {})" | grep -o "ARGUMENT_OUT_OF_BOUND" | head -1
 

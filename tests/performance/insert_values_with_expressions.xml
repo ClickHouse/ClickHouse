@@ -13,4 +13,5 @@
 
     <query>select * from file('test_all_expr_matches.values', Values, 'd DateTime, i UInt32, s String, ni Nullable(UInt64), ns Nullable(String), ars Array(String)') format Null</query>
     <query>select * from file('test_some_expr_matches.values', Values, 'i Int64, ari Array(Int64), ars Array(String)') format Null</query>
+    <query>select count() from format(Values, 'x Bool', concat('(NOT false),', repeat('(true),', 500000), '(true)')) settings input_format_values_deduce_templates_of_expressions = 0, input_format_values_accurate_types_of_literals = 0</query>
 </test>

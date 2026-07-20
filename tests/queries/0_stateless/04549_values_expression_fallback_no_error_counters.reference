@@ -35,6 +35,8 @@ no new parse errors
 [2]
 --- decimal overflow still fails ---
 ARGUMENT_OUT_OF_BOUND
+--- decimal overflow before operator still fails ---
+ARGUMENT_OUT_OF_BOUND
 --- nested decimal overflow still fails ---
 ARGUMENT_OUT_OF_BOUND
 --- decimal map key overflow still fails ---
