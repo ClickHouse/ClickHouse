@@ -47,6 +47,10 @@ std::optional<ColumnPtr> tryConvertNumericColumnNative(
 
     ColumnWithTypeAndName arg{value.getPtr(), from, ""};
     ColumnPtr casted = castColumnAccurateOrNull(arg, to);
+    /// `ExecutableFunctionCast` uses the default implementation for constants, so a `ColumnConst`
+    /// argument yields a `ColumnConst` result. Callers already pass a full column, but unwrap here too
+    /// so the `assert_cast` below is correct regardless of the argument's constness.
+    casted = casted->convertToFullColumnIfConst();
     const auto & nullable = assert_cast<const ColumnNullable &>(*casted);
     if (nullable.isNullAt(0))
         return ColumnPtr{};
