@@ -224,6 +224,33 @@ ASTPtr KeyDescription::getOriginalExpressionList() const
     return expr_list;
 }
 
+namespace
+{
+    /// Drop the `parenthesized` flag from a key element and its children. The flag is set for
+    /// `PARTITION BY (a)` but not `PARTITION BY a`, so keeping it makes equal keys format
+    /// differently. Recurses into `ASTStorageOrderByElement` (from getOriginalExpressionList),
+    /// whose child holds the actual expression.
+    void stripArtificialParens(const ASTPtr & node)
+    {
+        if (!node)
+            return;
+        node->setParenthesized(false);
+        if (node->as<ASTExpressionList>() || node->as<ASTStorageOrderByElement>())
+            for (const auto & child : node->children)
+                stripArtificialParens(child);
+    }
+}
+
+String KeyDescription::formatBackwardCompatibleOneLine() const
+{
+    auto expr_list = getOriginalExpressionList();
+    if (!expr_list)
+        return "";
+    auto cloned = expr_list->clone();
+    stripArtificialParens(cloned);
+    return cloned->formatWithSecretsOneLine();
+}
+
 KeyDescription KeyDescription::buildEmptyKey()
 {
     KeyDescription result;

@@ -1,3 +1,5 @@
 partition a<-tuple(a)	2
 ordering a<-tuple(a)	1
 ordering asc<-desc rejected	0
+partition/primary a<-(a)	2
+ordering a<-(a)	2

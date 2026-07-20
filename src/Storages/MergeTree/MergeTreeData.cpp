@@ -10190,29 +10190,25 @@ MergeTreeData & MergeTreeData::checkStructureAndGetMergeTreeData(IStorage & sour
     if (my_snapshot->getColumns().getAllPhysical().sizeOfDifference(src_snapshot->getColumns().getAllPhysical()))
         throw Exception(ErrorCodes::INCOMPATIBLE_COLUMNS, "Tables have different structure");
 
-    auto query_to_string = [] (const ASTPtr & ast)
-    {
-        return ast ? ast->formatWithSecretsOneLine() : "";
-    };
-
-    /// Compare the normalized key expression, not the raw definition AST: `a` and `tuple(a)` are the
-    /// same key but format to different strings, so a syntactic compare rejects them across versions
-    /// that serialize the single-column form differently. This matches the primary-key check below.
-    /// For the sorting key, getOriginalExpressionList() carries the per-column sort direction from
-    /// reverse_flags, so `ORDER BY a` and `ORDER BY a DESC` still compare as different.
-    if (query_to_string(my_snapshot->getSortingKey().getOriginalExpressionList())
-        != query_to_string(src_snapshot->getSortingKey().getOriginalExpressionList()))
+    /// Compare keys by their backward-compatible canonical form, not the raw definition AST.
+    /// `a`, `(a)` and `tuple(a)` are the same key but format to different strings, so a syntactic
+    /// compare rejects them across versions that serialize the single-column form differently
+    /// (see #92340). formatBackwardCompatibleOneLine unwraps the tuple, strips redundant
+    /// parentheses, and keeps the per-column sort direction so `ORDER BY a` and `ORDER BY a DESC`
+    /// still differ.
+    if (my_snapshot->getSortingKey().formatBackwardCompatibleOneLine()
+        != src_snapshot->getSortingKey().formatBackwardCompatibleOneLine())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Tables have different ordering");
 
-    if (query_to_string(my_snapshot->getPartitionKey().expression_list_ast)
-        != query_to_string(src_snapshot->getPartitionKey().expression_list_ast))
+    if (my_snapshot->getPartitionKey().formatBackwardCompatibleOneLine()
+        != src_snapshot->getPartitionKey().formatBackwardCompatibleOneLine())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Tables have different partition key");
 
     if (format_version != src_data->format_version)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Tables have different format_version");
 
-    if (query_to_string(my_snapshot->getPrimaryKey().expression_list_ast)
-        != query_to_string(src_snapshot->getPrimaryKey().expression_list_ast))
+    if (my_snapshot->getPrimaryKey().formatBackwardCompatibleOneLine()
+        != src_snapshot->getPrimaryKey().formatBackwardCompatibleOneLine())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Tables have different primary key");
 
     const auto check_definitions = [this](const auto & my_descriptions, const auto & src_descriptions)

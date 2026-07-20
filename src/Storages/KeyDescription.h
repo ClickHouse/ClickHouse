@@ -82,6 +82,14 @@ struct KeyDescription
 
     ASTPtr getOriginalExpressionList() const;
 
+    /// One-line canonical form of the key used for backward-compatible equality checks.
+    /// #92340 started preserving redundant parentheses (`PARTITION BY (a)`) and the single-column
+    /// `tuple(a)` form, so the same key stored by different versions formats to different strings.
+    /// This returns the direction-aware expression list (see getOriginalExpressionList) with the
+    /// artificial parentheses stripped, so `a`, `(a)` and `tuple(a)` all compare equal while
+    /// genuinely different keys (`a` vs `b`, `a` vs `a DESC`) still differ.
+    String formatBackwardCompatibleOneLine() const;
+
     KeyDescription() = default;
 
     /// We need custom copy constructors because we don't want

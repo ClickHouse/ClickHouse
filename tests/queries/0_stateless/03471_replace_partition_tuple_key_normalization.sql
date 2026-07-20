@@ -45,3 +45,25 @@ SELECT 'ordering asc<-desc rejected', count() FROM t_asc;
 
 DROP TABLE t_asc;
 DROP TABLE t_desc;
+
+-- Redundant parentheses (`PARTITION BY (a)`) are the same key as `PARTITION BY a`. #92340 started
+-- preserving them in stored metadata, breaking ATTACH/REPLACE PARTITION between a table created by
+-- an older version (canonical `a`) and a newer one (`(a)`). All three keys must normalize equally.
+CREATE TABLE t_plain (a UInt32, b UInt32) ENGINE = MergeTree PARTITION BY a PRIMARY KEY a ORDER BY (a, b) SAMPLE BY a;
+CREATE TABLE t_paren (a UInt32, b UInt32) ENGINE = MergeTree PARTITION BY (a) PRIMARY KEY (a) ORDER BY (a, b) SAMPLE BY (a);
+INSERT INTO t_paren VALUES (1, 1), (1, 2), (2, 1);
+ALTER TABLE t_plain ATTACH PARTITION 1 FROM t_paren;
+SELECT 'partition/primary a<-(a)', count() FROM t_plain;
+
+DROP TABLE t_plain;
+DROP TABLE t_paren;
+
+-- Same for a parenthesized single-element sorting key.
+CREATE TABLE t_plain (a UInt32, v UInt32) ENGINE = MergeTree PARTITION BY a ORDER BY a;
+CREATE TABLE t_paren (a UInt32, v UInt32) ENGINE = MergeTree PARTITION BY (a) ORDER BY (a);
+INSERT INTO t_paren VALUES (1, 10), (1, 11);
+ALTER TABLE t_plain ATTACH PARTITION 1 FROM t_paren;
+SELECT 'ordering a<-(a)', count() FROM t_plain;
+
+DROP TABLE t_plain;
+DROP TABLE t_paren;
