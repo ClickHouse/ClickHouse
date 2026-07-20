@@ -1,0 +1,536 @@
+---
+slug: /deployment-guides/parallel-replicas
+title: 'Répliques parallèles'
+keywords: ['réplique parallèle']
+description: 'Dans ce guide, nous verrons d’abord comment ClickHouse répartit une requête entre plusieurs shards au moyen de tables distribuées, puis comment une requête peut exploiter plusieurs répliques lors de son exécution.'
+doc_type: 'reference'
+---
+
+import { Image } from "/snippets/fr/components/Image.jsx";
+
+<div id="introduction">
+  ## Introduction
+</div>
+
+ClickHouse traite les requêtes extrêmement rapidement, mais comment ces requêtes
+sont-elles réparties et parallélisées sur plusieurs serveurs ?
+
+> Dans ce guide, nous verrons d&#39;abord comment ClickHouse répartit une requête sur
+> plusieurs shards via des tables distribuées, puis comment une requête peut tirer parti
+> de plusieurs répliques pour son exécution.
+
+<div id="sharded-architecture">
+  ## Architecture shardée
+</div>
+
+Dans une architecture shared-nothing, les clusters sont généralement répartis en
+plusieurs shards, chaque shard contenant un sous-ensemble de l&#39;ensemble des données. Une
+table distribuée se place au-dessus de ces shards et fournit une vue unifiée de
+l&#39;intégralité des données.
+
+Les lectures peuvent être envoyées à la table locale. L&#39;exécution de la requête n&#39;aura lieu
+que sur le shard spécifié, ou bien elle peut être envoyée à la table distribuée, auquel
+cas chaque shard exécutera la requête donnée. Le serveur sur lequel la table distribuée
+a été interrogée agrégera les données et renverra la réponse au client :
+
+<Image img="/images/deployment-guides/parallel-replicas-1.webp" size="md" alt="architecture shardée" />
+
+La figure ci-dessus illustre ce qui se passe lorsqu&#39;un client interroge une table distribuée :
+
+<ol className="docs-ordered-list">
+  <li>
+    La requête SELECT est envoyée à une table distribuée sur un nœud choisi arbitrairement
+    (via une stratégie round-robin ou après avoir été redirigée vers un serveur spécifique
+    par un répartiteur de charge). Ce nœud va alors jouer le rôle de coordinateur.
+  </li>
+
+  <li>
+    Le nœud localise chaque shard qui doit exécuter la requête
+    à l&#39;aide des informations spécifiées par la table distribuée, puis la requête est
+    envoyée à chaque shard.
+  </li>
+
+  <li>
+    Chaque shard lit, filtre et agrège les données localement, puis
+    renvoie un état fusionnable au coordinateur.
+  </li>
+
+  <li>
+    Le nœud coordinateur fusionne les données, puis renvoie la réponse
+    au client.
+  </li>
+</ol>
+
+Lorsque l&#39;on ajoute des réplicas à l&#39;ensemble, le processus reste globalement le même, la seule
+différence étant qu&#39;une seule réplique de chaque shard exécutera la requête.
+Cela signifie qu&#39;un plus grand nombre de requêtes peut alors être traité en parallèle.
+
+<div id="non-sharded-architecture">
+  ## Architecture non shardée
+</div>
+
+ClickHouse Cloud présente une architecture très différente de celle décrite ci-dessus.
+(Voir [&quot;Architecture de ClickHouse Cloud&quot;](/fr/products/cloud/reference/architecture)
+pour plus de détails). Avec la séparation du calcul et du stockage, ainsi qu&#39;une capacité de stockage virtuellement
+infinie, le besoin de shards devient moins important.
+
+La figure ci-dessous montre l&#39;architecture de ClickHouse Cloud :
+
+<Image img="/images/deployment-guides/parallel-replicas-2.webp" size="md" alt="architecture non shardée" />
+
+Cette architecture permet d&#39;ajouter et de supprimer des répliques presque
+instantanément, ce qui garantit une très forte scalabilité du cluster. Le cluster
+ClickHouse Keeper (illustré à droite) garantit l&#39;existence d&#39;une source de vérité unique
+pour les métadonnées. Les répliques peuvent récupérer les métadonnées depuis le cluster ClickHouse Keeper
+et conservent toutes les mêmes données. Les données elles-mêmes sont stockées dans
+le stockage objet, et le cache SSD permet d&#39;accélérer les requêtes.
+
+Mais comment distribuer désormais l&#39;exécution des requêtes sur plusieurs serveurs ? Dans une
+architecture shardée, c&#39;était assez évident puisque chaque shard pouvait effectivement
+exécuter une requête sur un sous-ensemble des données. Comment cela fonctionne-t-il lorsqu&#39;il n&#39;y a pas de sharding ?
+
+<div id="introducing-parallel-replicas">
+  ## Présentation des répliques parallèles
+</div>
+
+Pour paralléliser l&#39;exécution des requêtes sur plusieurs serveurs, nous devons d&#39;abord être
+en mesure de désigner l&#39;un de nos serveurs comme coordinateur. Le coordinateur est celui
+qui crée la liste des tâches à exécuter, veille à ce qu&#39;elles soient toutes
+exécutées et agrégées, puis à ce que le résultat soit renvoyé au client. Comme
+dans la plupart des systèmes distribués, ce sera le rôle du nœud qui reçoit la
+requête initiale. Nous devons également définir l&#39;unité de travail. Dans une architecture shardée,
+l&#39;unité de travail est le shard, c&#39;est-à-dire un sous-ensemble des données. Avec les répliques parallèles, nous
+utiliserons une petite portion de la table, appelée [granules](/fr/guides/clickhouse/data-modelling/sparse-primary-indexes#data-is-organized-into-granules-for-parallel-data-processing),
+comme unité de travail.
+
+Voyons maintenant comment cela fonctionne en pratique à l&#39;aide de la figure ci-dessous :
+
+<Image img="/images/deployment-guides/parallel-replicas-3.webp" size="md" alt="Répliques parallèles" />
+
+Avec les répliques parallèles :
+
+<ol className="docs-ordered-list">
+  <li>
+    La requête du client est envoyée à un nœud après être passée par un
+    répartiteur de charge. Ce nœud devient le coordinateur de cette requête.
+  </li>
+
+  <li>
+    Le nœud analyse l&#39;index de chaque partie et sélectionne les bonnes parties et
+    granules à traiter.
+  </li>
+
+  <li>
+    Le coordinateur répartit la charge de travail en un ensemble de granules pouvant être
+    attribués à différentes répliques.
+  </li>
+
+  <li>
+    Chaque ensemble de granules est traité par les répliques correspondantes, puis un
+    état fusionnable est envoyé au coordinateur une fois le traitement terminé.
+  </li>
+
+  <li>
+    Enfin, le coordinateur fusionne tous les résultats des répliques puis
+    renvoie la réponse au client.
+  </li>
+</ol>
+
+Les étapes ci-dessus décrivent le fonctionnement théorique des répliques parallèles.
+Cependant, en pratique, de nombreux facteurs peuvent empêcher cette logique
+de fonctionner parfaitement :
+
+<ol className="docs-ordered-list">
+  <li>
+    Certaines répliques peuvent être indisponibles.
+  </li>
+
+  <li>
+    La réplication dans ClickHouse est asynchrone ; à un instant donné, certaines répliques peuvent ne pas
+    avoir les mêmes parties.
+  </li>
+
+  <li>
+    Il faut également gérer la tail latency.
+  </li>
+
+  <li>
+    Le cache du système de fichiers varie d&#39;une réplique à l&#39;autre en fonction de
+    l&#39;activité sur chacune d&#39;elles, ce qui signifie qu&#39;une attribution aléatoire des tâches pourrait
+    entraîner des performances moins bonnes en raison de la localité du cache.
+  </li>
+</ol>
+
+Nous verrons dans les sections suivantes comment ces facteurs sont pris en compte.
+
+<div id="announcements">
+  ### Annonces
+</div>
+
+Pour répondre aux points (1) et (2) de la liste ci-dessus, nous avons introduit le concept d&#39;annonce. Visualisons son fonctionnement à l&#39;aide de la figure ci-dessous :
+
+<Image img="/images/deployment-guides/parallel-replicas-4.webp" size="md" alt="Annonces" />
+
+<ol className="docs-ordered-list">
+  <li>
+    La requête du client est envoyée à un nœud après être passée par un répartiteur de charge. Ce nœud devient le coordinateur de cette requête.
+  </li>
+
+  <li>
+    Le nœud coordinateur envoie ensuite une requête pour récupérer les annonces de
+    toutes les répliques du cluster. Les répliques peuvent avoir des vues légèrement différentes
+    de l&#39;ensemble actuel des parts d&#39;une table. Il faut donc
+    collecter ces informations afin d&#39;éviter des décisions de planification incorrectes.
+  </li>
+
+  <li>
+    Le nœud coordinateur utilise ensuite les annonces pour définir un ensemble de
+    granules pouvant être attribuées aux différentes répliques. Ici, par exemple,
+    on peut voir qu&#39;aucune granule de la part 3 n&#39;a été attribuée à la réplique 2,
+    car cette réplique n&#39;a pas indiqué cette part dans son annonce.
+    Notez également qu&#39;aucune tâche n&#39;a été attribuée à la réplique 3, car la
+    réplique n&#39;a fourni aucune annonce.
+  </li>
+
+  <li>
+    Une fois que chaque réplique a traité la requête sur son sous-ensemble de granules
+    et que l&#39;état fusionnable a été renvoyé au coordinateur, celui-ci
+    fusionne les résultats et renvoie la réponse au client.
+  </li>
+</ol>
+
+<div id="dynamic-coordination">
+  ### Coordination dynamique
+</div>
+
+Pour remédier au problème de latence des requêtes les plus lentes, nous avons ajouté la coordination dynamique. Cela signifie
+que toutes les granules ne sont pas envoyées à une réplique en une seule requête, mais que chaque réplique
+peut demander une nouvelle tâche (un ensemble de granules à traiter) au
+coordinateur. Le coordinateur fournit alors à la réplique l&#39;ensemble de granules en fonction de
+l&#39;annonce reçue.
+
+Supposons que nous soyons à l&#39;étape du processus où toutes les répliques ont envoyé
+une annonce avec toutes les parts.
+
+La figure ci-dessous illustre le fonctionnement de la coordination dynamique :
+
+<Image img="/images/deployment-guides/parallel-replicas-5.webp" size="md" alt="Coordination dynamique - partie 1" />
+
+<ol className="docs-ordered-list">
+  <li>
+    Les répliques indiquent au nœud coordinateur qu&#39;elles sont en mesure de traiter
+    des tâches, et peuvent également préciser la quantité de travail qu&#39;elles peuvent prendre en charge.
+  </li>
+
+  <li>
+    Le coordinateur attribue des tâches aux répliques.
+  </li>
+</ol>
+
+<Image img="/images/deployment-guides/parallel-replicas-6.webp" size="md" alt="Coordination dynamique - partie 2" />
+
+<ol className="docs-ordered-list">
+  <li>
+    Les répliques 1 et 2 terminent leur tâche très rapidement. Elles
+    demandent alors une autre tâche au nœud coordinateur.
+  </li>
+
+  <li>
+    Le coordinateur attribue de nouvelles tâches aux répliques 1 et 2.
+  </li>
+</ol>
+
+<Image img="/images/deployment-guides/parallel-replicas-7.webp" size="md" alt="Coordination dynamique - partie 3" />
+
+<ol className="docs-ordered-list">
+  <li>
+    Toutes les répliques ont maintenant terminé le traitement de leur tâche. Elles
+    demandent davantage de tâches.
+  </li>
+
+  <li>
+    Le coordinateur, à l&#39;aide des annonces, vérifie quelles tâches restent à
+    traiter, mais il n&#39;en reste aucune.
+  </li>
+
+  <li>
+    Le coordinateur indique aux répliques que tout a été traité.
+    Il va maintenant fusionner tous les états fusionnables et répondre à la requête.
+  </li>
+</ol>
+
+<div id="managing-cache-locality">
+  ### Gestion de la localité du cache
+</div>
+
+Le dernier problème potentiel concerne la manière de préserver la localité du cache. Si la requête
+est exécutée plusieurs fois, comment garantir que la même tâche soit envoyée à la
+même réplique ? Dans l’exemple précédent, les tâches suivantes étaient attribuées :
+
+<table>
+  <thead>
+    <tr>
+      <th />
+
+      <th>Réplique 1</th>
+      <th>Réplique 2</th>
+      <th>Réplique 3</th>
+    </tr>
+  </thead>
+
+  <tbody>
+    <tr>
+      <td>Part 1</td>
+      <td>g1, g6, g7</td>
+      <td>g2, g4, g5</td>
+      <td>g3</td>
+    </tr>
+
+    <tr>
+      <td>Part 2</td>
+      <td>g1</td>
+      <td>g2, g4, g5</td>
+      <td>g3</td>
+    </tr>
+
+    <tr>
+      <td>Part 3</td>
+      <td>g1, g6</td>
+      <td>g2, g4, g5</td>
+      <td>g3</td>
+    </tr>
+  </tbody>
+</table>
+
+Pour garantir que les mêmes tâches soient attribuées aux mêmes répliques et puissent
+bénéficier du cache, deux mécanismes entrent en jeu. On calcule un hachage de la part et de l’ensemble de
+granules (autrement dit, d’une tâche). On applique ensuite un modulo sur le nombre de répliques pour
+attribuer la tâche.
+
+Sur le papier, cela semble pertinent, mais en pratique, une charge soudaine sur une réplique ou une
+dégradation du réseau peut introduire de la tail latency si la même réplique est
+systématiquement utilisée pour exécuter certaines tâches. Si `max_parallel_replicas` est inférieur
+au nombre de répliques, des répliques aléatoires sont alors sélectionnées pour l’exécution des requêtes.
+
+<div id="task-stealing">
+  ### Vol de tâches
+</div>
+
+si une réplique traite les tâches plus lentement que les autres, celles-ci essaieront de
+« voler » les tâches qui, en principe, lui sont attribuées par hachage afin de réduire la
+tail latency.
+
+<div id="limitations">
+  ### Limitations
+</div>
+
+Cette fonctionnalité présente des limitations connues, dont les principales sont documentées dans
+cette section.
+
+<Note>
+  Si vous trouvez un ticket qui ne figure pas parmi les limitations indiquées ci-dessous et
+  soupçonnez les répliques parallèles d’en être la cause, veuillez ouvrir un ticket sur GitHub avec
+  le label `comp-parallel-replicas`.
+</Note>
+
+| Limitation                                                         | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| ------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Requêtes complexes                                                 | Actuellement, les répliques parallèles fonctionnent assez bien pour les requêtes simples. Des couches de complexité comme les CTE, les sous-requêtes, les JOIN, les requêtes à structure non plate, etc. peuvent avoir un impact négatif sur les performances des requêtes.                                                                                                                                                                                                                                        |
+| Petites requêtes                                                   | Si vous exécutez une requête qui ne traite pas beaucoup de lignes, l’exécuter sur plusieurs répliques peut ne pas améliorer les performances, étant donné que le temps réseau nécessaire à la coordination entre les répliques peut entraîner des cycles supplémentaires dans l’exécution de la requête. Vous pouvez limiter ces problèmes en utilisant le paramètre : [`parallel_replicas_min_number_of_rows_per_replica`](/fr/reference/settings/session-settings#parallel_replicas_min_number_of_rows_per_replica). |
+| Les répliques parallèles sont désactivés avec FINAL                 |                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| Les projections ne sont pas utilisées avec les répliques parallèles |                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| Données à forte cardinalité et agrégation complexe                 | Une agrégation à forte cardinalité qui doit envoyer beaucoup de données peut ralentir considérablement vos requêtes.                                                                                                                                                                                                                                                                                                                                                                                              |
+| Compatibilité avec le nouvel analyseur                             | Le nouvel analyseur peut considérablement ralentir ou accélérer l’exécution des requêtes dans certains scénarios.                                                                                                                                                                                                                                                                                                                                                                                                 |
+
+<div id="settings-related-to-parallel-replicas">
+  ## Paramètres liés aux répliques parallèles
+</div>
+
+| Paramètre                                          | Description                                                                                                                                                                                                                                                                                                     |
+| -------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `enable_parallel_replicas`                         | `0` : désactivé<br /> `1` : activé <br />`2` : force l&#39;utilisation d&#39;une réplique parallèle et lèvera une exception si ce n&#39;est pas le cas.                                                                                                                                                           |
+| `cluster_for_parallel_replicas`                    | Nom du cluster à utiliser pour la réplication parallèle ; si vous utilisez ClickHouse Cloud, utilisez `default`.                                                                                                                                                                                                |
+| `max_parallel_replicas`                            | Nombre maximal de répliques à utiliser pour exécuter la requête sur plusieurs répliques. Si un nombre inférieur au nombre de répliques du cluster est spécifié, les nœuds seront sélectionnés aléatoirement. Cette valeur peut également être surallouée pour tenir compte de la mise à l&#39;échelle horizontale. |
+| `parallel_replicas_min_number_of_rows_per_replica` | Permet de limiter le nombre de répliques utilisées en fonction du nombre de lignes à traiter. Le nombre de répliques utilisées est défini par : <br /> `estimated rows to read` / `min_number_of_rows_per_replica`.                                                                                               |
+| `enable_analyzer`                                  | L&#39;exécution des requêtes avec des répliques parallèles n&#39;est prise en charge que lorsque l&#39;analyseur est activé                                                                                                                                                                                      |
+
+<div id="investigating-issues-with-parallel-replicas">
+  ## Investiguer les problèmes liés aux répliques parallèles
+</div>
+
+Vous pouvez vérifier quels paramètres sont utilisés pour chaque requête dans la
+table [`system.query_log`](/fr/reference/system-tables/query_log). Vous pouvez
+également consulter la table [`system.events`](/fr/reference/system-tables/events)
+pour voir tous les événements survenus sur le serveur, et vous pouvez utiliser la
+table function [`clusterAllReplicas`](/fr/reference/functions/table-functions/cluster) pour voir les tables sur tous les répliques
+(si vous utilisez ClickHouse Cloud, utilisez `default`).
+
+```sql title="Query"
+SELECT
+   hostname(),
+   *
+FROM clusterAllReplicas('default', system.events)
+WHERE event ILIKE '%ParallelReplicas%'
+```
+
+<Accordion title="Réponse">
+  ```response title="Response"
+  ┌─hostname()───────────────────────┬─event──────────────────────────────────────────┬─value─┬─description──────────────────────────────────────────────────────────────────────────────────────────┐
+  │ c-crimson-vd-86-server-rdhnsx3-0 │ ParallelReplicasHandleRequestMicroseconds      │   438 │ Time spent processing requests for marks from replicas                                               │
+  │ c-crimson-vd-86-server-rdhnsx3-0 │ ParallelReplicasHandleAnnouncementMicroseconds │   558 │ Time spent processing replicas announcements                                                         │
+  │ c-crimson-vd-86-server-rdhnsx3-0 │ ParallelReplicasReadUnassignedMarks            │   240 │ Sum across all replicas of how many unassigned marks were scheduled                                  │
+  │ c-crimson-vd-86-server-rdhnsx3-0 │ ParallelReplicasReadAssignedForStealingMarks   │     4 │ Sum across all replicas of how many of scheduled marks were assigned for stealing by consistent hash │
+  │ c-crimson-vd-86-server-rdhnsx3-0 │ ParallelReplicasStealingByHashMicroseconds     │     5 │ Time spent collecting segments meant for stealing by hash                                            │
+  │ c-crimson-vd-86-server-rdhnsx3-0 │ ParallelReplicasProcessingPartsMicroseconds    │     5 │ Time spent processing data parts                                                                     │
+  │ c-crimson-vd-86-server-rdhnsx3-0 │ ParallelReplicasStealingLeftoversMicroseconds  │     3 │ Time spent collecting orphaned segments                                                              │
+  │ c-crimson-vd-86-server-rdhnsx3-0 │ ParallelReplicasUsedCount                      │     2 │ Number of replicas used to execute a query with task-based parallel replicas                         │
+  │ c-crimson-vd-86-server-rdhnsx3-0 │ ParallelReplicasAvailableCount                 │     6 │ Number of replicas available to execute a query with task-based parallel replicas                    │
+  └──────────────────────────────────┴────────────────────────────────────────────────┴───────┴──────────────────────────────────────────────────────────────────────────────────────────────────────┘
+  ┌─hostname()───────────────────────┬─event──────────────────────────────────────────┬─value─┬─description──────────────────────────────────────────────────────────────────────────────────────────┐
+  │ c-crimson-vd-86-server-e9kp5f0-0 │ ParallelReplicasHandleRequestMicroseconds      │   698 │ Time spent processing requests for marks from replicas                                               │
+  │ c-crimson-vd-86-server-e9kp5f0-0 │ ParallelReplicasHandleAnnouncementMicroseconds │   644 │ Time spent processing replicas announcements                                                         │
+  │ c-crimson-vd-86-server-e9kp5f0-0 │ ParallelReplicasReadUnassignedMarks            │   190 │ Sum across all replicas of how many unassigned marks were scheduled                                  │
+  │ c-crimson-vd-86-server-e9kp5f0-0 │ ParallelReplicasReadAssignedForStealingMarks   │    54 │ Sum across all replicas of how many of scheduled marks were assigned for stealing by consistent hash │
+  │ c-crimson-vd-86-server-e9kp5f0-0 │ ParallelReplicasStealingByHashMicroseconds     │     8 │ Time spent collecting segments meant for stealing by hash                                            │
+  │ c-crimson-vd-86-server-e9kp5f0-0 │ ParallelReplicasProcessingPartsMicroseconds    │     4 │ Time spent processing data parts                                                                     │
+  │ c-crimson-vd-86-server-e9kp5f0-0 │ ParallelReplicasStealingLeftoversMicroseconds  │     2 │ Time spent collecting orphaned segments                                                              │
+  │ c-crimson-vd-86-server-e9kp5f0-0 │ ParallelReplicasUsedCount                      │     2 │ Number of replicas used to execute a query with task-based parallel replicas                         │
+  │ c-crimson-vd-86-server-e9kp5f0-0 │ ParallelReplicasAvailableCount                 │     6 │ Number of replicas available to execute a query with task-based parallel replicas                    │
+  └──────────────────────────────────┴────────────────────────────────────────────────┴───────┴──────────────────────────────────────────────────────────────────────────────────────────────────────┘
+  ┌─hostname()───────────────────────┬─event──────────────────────────────────────────┬─value─┬─description──────────────────────────────────────────────────────────────────────────────────────────┐
+  │ c-crimson-vd-86-server-ybtm18n-0 │ ParallelReplicasHandleRequestMicroseconds      │   620 │ Time spent processing requests for marks from replicas                                               │
+  │ c-crimson-vd-86-server-ybtm18n-0 │ ParallelReplicasHandleAnnouncementMicroseconds │   656 │ Time spent processing replicas announcements                                                         │
+  │ c-crimson-vd-86-server-ybtm18n-0 │ ParallelReplicasReadUnassignedMarks            │     1 │ Sum across all replicas of how many unassigned marks were scheduled                                  │
+  │ c-crimson-vd-86-server-ybtm18n-0 │ ParallelReplicasReadAssignedForStealingMarks   │     1 │ Sum across all replicas of how many of scheduled marks were assigned for stealing by consistent hash │
+  │ c-crimson-vd-86-server-ybtm18n-0 │ ParallelReplicasStealingByHashMicroseconds     │     4 │ Time spent collecting segments meant for stealing by hash                                            │
+  │ c-crimson-vd-86-server-ybtm18n-0 │ ParallelReplicasProcessingPartsMicroseconds    │     3 │ Time spent processing data parts                                                                     │
+  │ c-crimson-vd-86-server-ybtm18n-0 │ ParallelReplicasStealingLeftoversMicroseconds  │     1 │ Time spent collecting orphaned segments                                                              │
+  │ c-crimson-vd-86-server-ybtm18n-0 │ ParallelReplicasUsedCount                      │     2 │ Number of replicas used to execute a query with task-based parallel replicas                         │
+  │ c-crimson-vd-86-server-ybtm18n-0 │ ParallelReplicasAvailableCount                 │    12 │ Number of replicas available to execute a query with task-based parallel replicas                    │
+  └──────────────────────────────────┴────────────────────────────────────────────────┴───────┴──────────────────────────────────────────────────────────────────────────────────────────────────────┘
+  ┌─hostname()───────────────────────┬─event──────────────────────────────────────────┬─value─┬─description──────────────────────────────────────────────────────────────────────────────────────────┐
+  │ c-crimson-vd-86-server-16j1ncj-0 │ ParallelReplicasHandleRequestMicroseconds      │   696 │ Time spent processing requests for marks from replicas                                               │
+  │ c-crimson-vd-86-server-16j1ncj-0 │ ParallelReplicasHandleAnnouncementMicroseconds │   717 │ Time spent processing replicas announcements                                                         │
+  │ c-crimson-vd-86-server-16j1ncj-0 │ ParallelReplicasReadUnassignedMarks            │     2 │ Sum across all replicas of how many unassigned marks were scheduled                                  │
+  │ c-crimson-vd-86-server-16j1ncj-0 │ ParallelReplicasReadAssignedForStealingMarks   │     2 │ Sum across all replicas of how many of scheduled marks were assigned for stealing by consistent hash │
+  │ c-crimson-vd-86-server-16j1ncj-0 │ ParallelReplicasStealingByHashMicroseconds     │    10 │ Time spent collecting segments meant for stealing by hash                                            │
+  │ c-crimson-vd-86-server-16j1ncj-0 │ ParallelReplicasProcessingPartsMicroseconds    │     6 │ Time spent processing data parts                                                                     │
+  │ c-crimson-vd-86-server-16j1ncj-0 │ ParallelReplicasStealingLeftoversMicroseconds  │     2 │ Time spent collecting orphaned segments                                                              │
+  │ c-crimson-vd-86-server-16j1ncj-0 │ ParallelReplicasUsedCount                      │     2 │ Number of replicas used to execute a query with task-based parallel replicas                         │
+  │ c-crimson-vd-86-server-16j1ncj-0 │ ParallelReplicasAvailableCount                 │    12 │ Number of replicas available to execute a query with task-based parallel replicas                    │
+  └──────────────────────────────────┴────────────────────────────────────────────────┴───────┴──────────────────────────────────────────────────────────────────────────────────────────────────────┘
+  ```
+</Accordion>
+
+La table [`system.text_log`](/fr/reference/system-tables/text_log) contient également des informations sur l’exécution de requêtes utilisant des répliques parallèles :
+
+```sql title="Query"
+SELECT message
+FROM clusterAllReplicas('default', system.text_log)
+WHERE query_id = 'ad40c712-d25d-45c4-b1a1-a28ba8d4019c'
+ORDER BY event_time_microseconds ASC
+```
+
+<Accordion title="Réponse">
+  ```response title="Response"
+  ┌─message────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+  │ (from 54.218.178.249:59198) SELECT * FROM session_events WHERE type='type2' LIMIT 10 SETTINGS allow_experimental_parallel_reading_from_replicas=2; (stage: Complete)                                                                                       │
+  │ Query SELECT __table1.clientId AS clientId, __table1.sessionId AS sessionId, __table1.pageId AS pageId, __table1.timestamp AS timestamp, __table1.type AS type FROM default.session_events AS __table1 WHERE __table1.type = 'type2' LIMIT _CAST(10, 'UInt64') SETTINGS allow_experimental_parallel_reading_from_replicas = 2 to stage Complete │
+  │ Access granted: SELECT(clientId, sessionId, pageId, timestamp, type) ON default.session_events                                                                                                                                                             │
+  │ Query SELECT __table1.clientId AS clientId, __table1.sessionId AS sessionId, __table1.pageId AS pageId, __table1.timestamp AS timestamp, __table1.type AS type FROM default.session_events AS __table1 WHERE __table1.type = 'type2' LIMIT _CAST(10, 'UInt64') to stage WithMergeableState only analyze │
+  │ Access granted: SELECT(clientId, sessionId, pageId, timestamp, type) ON default.session_events                                                                                                                                                             │
+  │ Query SELECT __table1.clientId AS clientId, __table1.sessionId AS sessionId, __table1.pageId AS pageId, __table1.timestamp AS timestamp, __table1.type AS type FROM default.session_events AS __table1 WHERE __table1.type = 'type2' LIMIT _CAST(10, 'UInt64') from stage FetchColumns to stage WithMergeableState only analyze │
+  │ Query SELECT __table1.clientId AS clientId, __table1.sessionId AS sessionId, __table1.pageId AS pageId, __table1.timestamp AS timestamp, __table1.type AS type FROM default.session_events AS __table1 WHERE __table1.type = 'type2' LIMIT _CAST(10, 'UInt64') SETTINGS allow_experimental_parallel_reading_from_replicas = 2 to stage WithMergeableState only analyze │
+  │ Access granted: SELECT(clientId, sessionId, pageId, timestamp, type) ON default.session_events                                                                                                                                                             │
+  │ Query SELECT __table1.clientId AS clientId, __table1.sessionId AS sessionId, __table1.pageId AS pageId, __table1.timestamp AS timestamp, __table1.type AS type FROM default.session_events AS __table1 WHERE __table1.type = 'type2' LIMIT _CAST(10, 'UInt64') SETTINGS allow_experimental_parallel_reading_from_replicas = 2 from stage FetchColumns to stage WithMergeableState only analyze │
+  │ Query SELECT __table1.clientId AS clientId, __table1.sessionId AS sessionId, __table1.pageId AS pageId, __table1.timestamp AS timestamp, __table1.type AS type FROM default.session_events AS __table1 WHERE __table1.type = 'type2' LIMIT _CAST(10, 'UInt64') SETTINGS allow_experimental_parallel_reading_from_replicas = 2 from stage WithMergeableState to stage Complete │
+  │ The number of replicas requested (100) is bigger than the real number available in the cluster (6). Will use the latter number to execute the query.                                                                                                       │
+  │ Initial request from replica 4: 2 parts: [part all_0_2_1 with ranges [(0, 182)], part all_3_3_0 with ranges [(0, 62)]]----------
+  Received from 4 replica
+                                                                                                     │
+  │ Reading state is fully initialized: part all_0_2_1 with ranges [(0, 182)] in replicas [4]; part all_3_3_0 with ranges [(0, 62)] in replicas [4]                                                                                                            │
+  │ Sent initial requests: 1 Replicas count: 6                                                                                                                                                                                                                 │
+  │ Initial request from replica 2: 2 parts: [part all_0_2_1 with ranges [(0, 182)], part all_3_3_0 with ranges [(0, 62)]]----------
+  Received from 2 replica
+                                                                                                     │
+  │ Sent initial requests: 2 Replicas count: 6                                                                                                                                                                                                                 │
+  │ Handling request from replica 4, minimal marks size is 240                                                                                                                                                                                                 │
+  │ Going to respond to replica 4 with 1 parts: [part all_0_2_1 with ranges [(128, 182)]]. Finish: false; mine_marks=0, stolen_by_hash=54, stolen_rest=0                                                                                                       │
+  │ Initial request from replica 1: 2 parts: [part all_0_2_1 with ranges [(0, 182)], part all_3_3_0 with ranges [(0, 62)]]----------
+  Received from 1 replica
+                                                                                                     │
+  │ Sent initial requests: 3 Replicas count: 6                                                                                                                                                                                                                 │
+  │ Handling request from replica 4, minimal marks size is 240                                                                                                                                                                                                 │
+  │ Going to respond to replica 4 with 2 parts: [part all_0_2_1 with ranges [(0, 128)], part all_3_3_0 with ranges [(0, 62)]]. Finish: false; mine_marks=0, stolen_by_hash=0, stolen_rest=190                                                                  │
+  │ Initial request from replica 0: 2 parts: [part all_0_2_1 with ranges [(0, 182)], part all_3_3_0 with ranges [(0, 62)]]----------
+  Received from 0 replica
+                                                                                                     │
+  │ Sent initial requests: 4 Replicas count: 6                                                                                                                                                                                                                 │
+  │ Initial request from replica 5: 2 parts: [part all_0_2_1 with ranges [(0, 182)], part all_3_3_0 with ranges [(0, 62)]]----------
+  Received from 5 replica
+                                                                                                     │
+  │ Sent initial requests: 5 Replicas count: 6                                                                                                                                                                                                                 │
+  │ Handling request from replica 2, minimal marks size is 240                                                                                                                                                                                                 │
+  │ Going to respond to replica 2 with 0 parts: []. Finish: true; mine_marks=0, stolen_by_hash=0, stolen_rest=0                                                                                                                                                │
+  │ Initial request from replica 3: 2 parts: [part all_0_2_1 with ranges [(0, 182)], part all_3_3_0 with ranges [(0, 62)]]----------
+  Received from 3 replica
+                                                                                                     │
+  │ Sent initial requests: 6 Replicas count: 6                                                                                                                                                                                                                 │
+  │ Total rows to read: 2000000                                                                                                                                                                                                                                │
+  │ Handling request from replica 5, minimal marks size is 240                                                                                                                                                                                                 │
+  │ Going to respond to replica 5 with 0 parts: []. Finish: true; mine_marks=0, stolen_by_hash=0, stolen_rest=0                                                                                                                                                │
+  │ Handling request from replica 0, minimal marks size is 240                                                                                                                                                                                                 │
+  │ Going to respond to replica 0 with 0 parts: []. Finish: true; mine_marks=0, stolen_by_hash=0, stolen_rest=0                                                                                                                                                │
+  │ Handling request from replica 1, minimal marks size is 240                                                                                                                                                                                                 │
+  │ Going to respond to replica 1 with 0 parts: []. Finish: true; mine_marks=0, stolen_by_hash=0, stolen_rest=0                                                                                                                                                │
+  │ Handling request from replica 3, minimal marks size is 240                                                                                                                                                                                                 │
+  │ Going to respond to replica 3 with 0 parts: []. Finish: true; mine_marks=0, stolen_by_hash=0, stolen_rest=0                                                                                                                                                │
+  │ (c-crimson-vd-86-server-rdhnsx3-0.c-crimson-vd-86-server-headless.ns-crimson-vd-86.svc.cluster.local:9000) Cancelling query because enough data has been read                                                                                              │
+  │ Read 81920 rows, 5.16 MiB in 0.013166 sec., 6222087.194288318 rows/sec., 391.63 MiB/sec.                                                                                                                                                                   │
+  │ Coordination done: Statistics: replica 0 - {requests: 2 marks: 0 assigned_to_me: 0 stolen_by_hash: 0 stolen_unassigned: 0}; replica 1 - {requests: 2 marks: 0 assigned_to_me: 0 stolen_by_hash: 0 stolen_unassigned: 0}; replica 2 - {requests: 2 marks: 0 assigned_to_me: 0 stolen_by_hash: 0 stolen_unassigned: 0}; replica 3 - {requests: 2 marks: 0 assigned_to_me: 0 stolen_by_hash: 0 stolen_unassigned: 0}; replica 4 - {requests: 3 marks: 244 assigned_to_me: 0 stolen_by_hash: 54 stolen_unassigned: 190}; replica 5 - {requests: 2 marks: 0 assigned_to_me: 0 stolen_by_hash: 0 stolen_unassigned: 0} │
+  │ Peak memory usage (for query): 1.81 MiB.                                                                                                                                                                                                                   │
+  │ Processed in 0.024095586 sec.                                                                                                                                                                                                                              │
+  └────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+  ```
+</Accordion>
+
+Enfin, vous pouvez également utiliser `EXPLAIN PIPELINE`. Il met en évidence la manière dont ClickHouse
+va exécuter une requête et quelles ressources seront utilisées pour
+son exécution. Prenons la requête suivante comme exemple :
+
+```sql
+SELECT count(), uniq(pageId) , min(timestamp), max(timestamp) 
+FROM session_events 
+WHERE type='type3' 
+GROUP BY toYear(timestamp) LIMIT 10
+```
+
+Voyons le pipeline de requête sans réplica parallèle :
+
+```sql title="EXPLAIN PIPELINE (without parallel replica)"
+EXPLAIN PIPELINE graph = 1, compact = 0 
+SELECT count(), uniq(pageId) , min(timestamp), max(timestamp) 
+FROM session_events 
+WHERE type='type3' 
+GROUP BY toYear(timestamp) 
+LIMIT 10 
+SETTINGS allow_experimental_parallel_reading_from_replicas=0 
+FORMAT TSV;
+```
+
+<Image img="/images/deployment-guides/parallel-replicas-8.webp" size="lg" alt="EXPLAIN sans parallel_replica" />
+
+Et maintenant avec la réplique parallèle :
+
+```sql title="EXPLAIN PIPELINE (with parallel replica)"
+EXPLAIN PIPELINE graph = 1, compact = 0 
+SELECT count(), uniq(pageId) , min(timestamp), max(timestamp) 
+FROM session_events 
+WHERE type='type3' 
+GROUP BY toYear(timestamp) 
+LIMIT 10 
+SETTINGS allow_experimental_parallel_reading_from_replicas=2 
+FORMAT TSV;
+```
+
+<Image img="/images/deployment-guides/parallel-replicas-9.webp" size="lg" alt="EXPLAIN avec parallel_replica" />

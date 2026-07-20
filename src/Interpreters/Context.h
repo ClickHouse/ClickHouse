@@ -101,11 +101,14 @@ class RefreshSet;
 class Cluster;
 class Compiler;
 class MarkCache;
+class UniqueKeyIndexCache;
+class DeleteBitmapCache;
 class PrimaryIndexCache;
 class PageCache;
 class MMappedFileCache;
 class UncompressedCache;
 class IcebergMetadataFilesCache;
+class PaimonMetadataFilesCache;
 class ParquetMetadataCache;
 class VectorSimilarityIndexCache;
 class TextIndexTokensCache;
@@ -120,6 +123,7 @@ struct FileProgress;
 class Clusters;
 class QueryResultCache;
 class QueryConditionCache;
+class EncryptionHeaderCache;
 class ISystemLog;
 class QueryLog;
 class QueryMetricLog;
@@ -138,6 +142,7 @@ class ZooKeeperConnectionLog;
 class AggregatedZooKeeperLog;
 class IcebergMetadataLog;
 class DeltaMetadataLog;
+class PredicateStatisticsLog;
 class SessionLog;
 class BackupsWorker;
 class TransactionsInfoLog;
@@ -149,12 +154,14 @@ class AsynchronousInsertLog;
 class BackupLog;
 class BlobStorageLog;
 class DeadLetterQueue;
+class HypotheticalIndexStore;
 class IAsynchronousReader;
 class IOUringReader;
 struct MergeTreeSettings;
 struct DatabaseReplicatedSettings;
 struct DistributedSettings;
 struct InitialAllRangesAnnouncement;
+struct InitialAllRangesAnnouncementResponse;
 struct ParallelReadRequest;
 struct ParallelReadResponse;
 class S3SettingsByEndpoint;
@@ -190,6 +197,7 @@ class ServerType;
 template <class Queue>
 class MergeTreeBackgroundExecutor;
 class AsyncLoader;
+class LongConnectionLimit;
 class HTTPHeaderFilter;
 struct AsyncReadCounters;
 struct ICgroupsReader;
@@ -220,8 +228,6 @@ using MergeMutateBackgroundExecutorPtr = std::shared_ptr<MergeMutateBackgroundEx
 class RoundRobinRuntimeQueue;
 using OrdinaryBackgroundExecutor = MergeTreeBackgroundExecutor<RoundRobinRuntimeQueue>;
 using OrdinaryBackgroundExecutorPtr = std::shared_ptr<OrdinaryBackgroundExecutor>;
-struct PartUUIDs;
-using PartUUIDsPtr = std::shared_ptr<PartUUIDs>;
 class KeeperDispatcher;
 struct WriteSettings;
 
@@ -257,7 +263,7 @@ struct ClusterFunctionReadTaskResponse;
 using ClusterFunctionReadTaskResponsePtr = std::shared_ptr<ClusterFunctionReadTaskResponse>;
 using ClusterFunctionReadTaskCallback = std::function<ClusterFunctionReadTaskResponsePtr()>;
 
-using MergeTreeAllRangesCallback = std::function<void(InitialAllRangesAnnouncement)>;
+using MergeTreeAllRangesCallback = std::function<std::optional<InitialAllRangesAnnouncementResponse>(InitialAllRangesAnnouncement)>;
 using MergeTreeReadTaskCallback = std::function<std::optional<ParallelReadResponse>(ParallelReadRequest)>;
 
 using BlockMarshallingCallback = std::function<Block(const Block & block)>;
@@ -277,6 +283,12 @@ using PreparedSetsCachePtr = std::shared_ptr<PreparedSetsCache>;
 class ReverseLookupCache;
 using ReverseLookupCachePtr = std::shared_ptr<ReverseLookupCache>;
 
+/// IRuntimeFilterLookup stores and finds per-query join runtime-filter handles under (random) names.
+/// Runtime filters optimize some JOINs by building a filter from the right side and pre-filtering the left side.
+struct IRuntimeFilterLookup;
+using RuntimeFilterLookupPtr = std::shared_ptr<IRuntimeFilterLookup>;
+RuntimeFilterLookupPtr createRuntimeFilterLookup();
+
 class ContextTimeSeriesTagsCollector;
 
 using PartitionIdToMaxBlock = std::unordered_map<String, Int64>;
@@ -294,13 +306,6 @@ using StorageSnapshotPtr = std::shared_ptr<StorageSnapshot>;
 
 class SystemAllocatedMemoryHolder;
 using SystemAllocatedMemoryHolderPtr = std::shared_ptr<SystemAllocatedMemoryHolder>;
-
-/// IRuntimeFilterLookup allows to store and find per-query runtime filters under unique names.
-/// Runtime filters are used to optimize JOINs in some cases by building a bloom filter from the right side
-/// of the JOIN and use it to do early pre-filtering on the left side of the JOIN.
-struct IRuntimeFilterLookup;
-using RuntimeFilterLookupPtr = std::shared_ptr<IRuntimeFilterLookup>;
-RuntimeFilterLookupPtr createRuntimeFilterLookup();
 
 class QueryMetadataCache;
 using QueryMetadataCachePtr = std::shared_ptr<QueryMetadataCache>;
@@ -350,7 +355,7 @@ private:
 class ContextData
 {
 protected:
-    ContextSharedPart * shared;
+    ContextSharedPart * shared{};
 
     ClientInfo client_info;
     ExternalTablesInitializer external_tables_initializer_callback;
@@ -366,6 +371,7 @@ protected:
     mutable std::shared_ptr<const ContextAccess> access;
     mutable bool need_recalculate_access = true;
     String current_database;
+    bool can_use_query_result_cache = false;
     std::unique_ptr<Settings> settings{};  /// Setting for query execution.
 
     using ProgressCallback = std::function<void(const Progress & progress)>;
@@ -379,6 +385,7 @@ protected:
 
     std::weak_ptr<QueryStatus> process_list_elem;  /// For tracking total resource usage for query.
     bool has_process_list_elem = false;     /// It's impossible to check if weak_ptr was initialized or not
+    UInt64 normalized_query_hash = 0;       /// Hash of the normalized query text, used for `NORMALIZED_QUERY_HASH` quotas.
     struct InsertionTableInfo
     {
         StorageID table = StorageID::createEmpty();
@@ -395,6 +402,7 @@ protected:
     String insert_format; /// Format, used in insert query.
 
     TemporaryTablesMapping external_tables_mapping;
+    mutable std::shared_ptr<HypotheticalIndexStore> hypothetical_index_store;
     /// Query scalars
     Scalars scalars;
     /// Used to store constant values which are different on each instance during distributed plan, such as _shard_num.
@@ -440,6 +448,7 @@ public:
             partitions = rhs.partitions;
             projections = rhs.projections;
             views = rhs.views;
+            row_policies = rhs.row_policies;
         }
 
         QueryAccessInfo(QueryAccessInfo && rhs) = delete;
@@ -460,6 +469,7 @@ public:
             std::swap(partitions, rhs.partitions);
             std::swap(projections, rhs.projections);
             std::swap(views, rhs.views);
+            std::swap(row_policies, rhs.row_policies);
         }
 
         /// To prevent a race between copy-constructor and other uses of this structure.
@@ -470,6 +480,7 @@ public:
         std::set<std::string> partitions TSA_GUARDED_BY(mutex){};
         std::set<std::string> projections TSA_GUARDED_BY(mutex){};
         std::set<std::string> views TSA_GUARDED_BY(mutex){};
+        std::set<std::string> row_policies TSA_GUARDED_BY(mutex){};
     };
     using QueryAccessInfoPtr = std::shared_ptr<QueryAccessInfo>;
 
@@ -562,6 +573,22 @@ protected:
     bool is_internal_query = false;
     /// A flag, used to detect sub-operations of background operations - in this case we won't need to build another background contexts
     bool is_background_operation = false;
+    /// Set for queries created internally by the server for DDL replication (ON CLUSTER, DatabaseReplicated)
+    /// and internal backup coordination.
+    /// Unlike query_kind == SECONDARY_QUERY (which comes from the client and can be spoofed),
+    /// this flag can only be set server-side and is safe to use for security-sensitive checks.
+    bool is_ddl_or_on_cluster_internal = false;
+    /// True when this context belongs to the inner query of an expanded view.
+    /// Positional arguments inside views must be resolved even on remote/secondary nodes where
+    /// enable_positional_arguments would otherwise be skipped (views are expanded on remote nodes,
+    /// not on the initiator).
+    bool is_view_inner_query = false;
+    /// True when positional arguments in the outer query have already been resolved by the
+    /// initiator node. Set by distributed/parallel-replicas local plan builders to prevent
+    /// double-resolution. Unlike disabling enable_positional_arguments, this flag is a context
+    /// field and does not propagate through settings copies (e.g. getSQLSecurityOverriddenContext),
+    /// so view-inner queries on the same node are unaffected.
+    bool positional_arguments_already_resolved = false;
 
     inline static ContextPtr global_context_instance;
     inline static ContextPtr background_context_instance;   /// Global holder to maintain ownership of background_context
@@ -595,7 +622,7 @@ protected:
 
         static size_t shardIndex(const StorageID & id)
         {
-            return StorageID::DatabaseAndTableNameHash{}(id) & (NumShards - 1);
+            return StorageID::DatabaseAndTableNameHash{}(id) % NumShards;
         }
     };
 
@@ -609,7 +636,7 @@ protected:
     /// if we already use a different mode of parallel replicas we want to disable this mode
     bool offset_parallel_replicas_enabled = true;
 
-    /// Used at query runtime to save per-query runtime filters and find them by names
+    /// Used at query runtime to save per-query runtime-filter handles and find them by (random) names.
     RuntimeFilterLookupPtr runtime_filter_lookup;
 
 public:
@@ -638,15 +665,20 @@ public:
 
     void resetSharedContext();
 
+    /// Returns the global configuration, or nullptr after resetSharedContext()
+    /// (late shutdown), when the global Context object may still be reachable
+    /// via getGlobalContextInstance() while its shared part is already
+    /// destroyed. The check and the config copy happen under one lock, and the
+    /// returned pointer keeps the configuration alive afterwards - unlike
+    /// getConfigRef, this cannot race with the shutdown thread.
+    Poco::AutoPtr<Poco::Util::AbstractConfiguration> tryGetConfig() const;
+
 protected:
     using SampleBlockCache = std::unordered_map<std::string, SharedHeader>;
     mutable SampleBlockCache sample_block_cache;
     mutable std::mutex sample_block_cache_mutex;
 
     QueryMetadataCacheWeakPtr query_metadata_cache;
-
-    PartUUIDsPtr part_uuids; /// set of parts' uuids, is used for query parts deduplication
-    PartUUIDsPtr ignored_part_uuids; /// set of parts' uuids are meant to be excluded from query processing
 
     NameToNameMap query_parameters;   /// Dictionary with query parameters for prepared statements.
                                                      /// (key=name, value)
@@ -724,6 +756,7 @@ public:
     String getUserFilesPath() const;
     String getDictionariesLibPath() const;
     String getUserScriptsPath() const;
+    String getDynamicUserDefinedExecutableFunctionsPath() const;
     String getFilesystemCachesPath() const;
     String getFilesystemCacheUser() const;
 
@@ -744,6 +777,8 @@ public:
         DB_ORDINARY_DEPRECATED,
         DELAY_ACCOUNTING_DISABLED,
         LINUX_FAST_CLOCK_SOURCE_NOT_USED,
+        LINUX_MDRAID_IS_BEING_RESYNCHRONIZED,
+        LINUX_MDRAID_IS_DEGRADED,
         LINUX_MAX_PID_TOO_LOW,
         LINUX_MAX_THREADS_COUNT_TOO_LOW,
         LINUX_MEMORY_OVERCOMMIT_DISABLED,
@@ -755,6 +790,7 @@ public:
         MAX_ATTACHED_VIEWS,
         MAX_NAMED_COLLECTIONS,
         MAX_NUM_THREADS_LOWER_THAN_LIMIT,
+        MEMORY_THREAD_STACKS_METRIC_UNAVAILABLE,
         MAX_PENDING_MUTATIONS_EXCEEDS_LIMIT,
         MAX_PENDING_MUTATIONS_OVER_THRESHOLD,
         MAYBE_BROKEN_TABLES,
@@ -778,6 +814,7 @@ public:
 
     std::unordered_map<WarningType, PreformattedMessage> getWarnings() const;
     void addOrUpdateWarningMessage(WarningType warning, const PreformattedMessage & message) const;
+    void addOrUpdateWarningMessage(WarningType warning, std::optional<PreformattedMessage> message) const;
     void addWarningMessageAboutDatabaseOrdinary(const String & database_name) const;
     void removeWarningMessage(WarningType warning) const;
     void removeAllWarnings() const;
@@ -789,13 +826,14 @@ public:
     void setTempDataOnDisk(TemporaryDataOnDiskScopePtr temp_data_on_disk_);
 
     void setFilesystemCachesPath(const String & path);
-    void setFilesystemCacheUser(const String & user);
+    void setFilesystemCacheUser(const String & user) const;
 
     void setPath(const String & path);
     void setFlagsPath(const String & path);
     void setUserFilesPath(const String & path);
     void setDictionariesLibPath(const String & path);
     void setUserScriptsPath(const String & path);
+    void setDynamicUserDefinedExecutableFunctionsPath(const String & path);
 
     void setTemporaryStorageInCache(const String & cache_disk_name, size_t max_size);
     void setTemporaryStoragePolicy(const String & policy_name, size_t max_size);
@@ -846,8 +884,8 @@ public:
     void setCurrentProfile(const String & profile_name, bool check_constraints = true);
     void setCurrentProfile(const UUID & profile_id, bool check_constraints = true);
     void setCurrentProfiles(const SettingsProfilesInfo & profiles_info, bool check_constraints = true);
-    std::vector<UUID> getCurrentProfiles() const;
-    std::vector<UUID> getEnabledProfiles() const;
+    UUIDs getCurrentProfiles() const;
+    UUIDs getEnabledProfiles() const;
 
     /// Checks access rights.
     /// Empty database means the current database.
@@ -869,16 +907,21 @@ public:
     RowPolicyFilterPtr getRowPolicyFilter(const String & database, const String & table_name, RowPolicyFilterType filter_type) const;
 
     std::shared_ptr<const EnabledQuota> getQuota() const;
-    std::optional<QuotaUsage> getQuotaUsage() const;
+    std::vector<QuotaUsage> getQuotaUsages() const;
 
     /// Resource management related
     ResourceManagerPtr getResourceManager() const;
     ClassifierPtr getWorkloadClassifier() const;
+    /// Release the query slot early so the client can reuse it for its next query.
+    /// Only the query slot is released, not the memory reservation: pipeline threads still hold raw
+    /// pointers to it, so it is released later by `BlockIO::onFinish` after the pipeline is finalized.
     void releaseQuerySlot() const;
     String getMergeWorkload() const;
     void setMergeWorkload(const String & value);
     String getLicenseFile() const;
     void setLicenseFile(const String & value);
+    bool getShowLicenseExpirationWarnings() const;
+    void setShowLicenseExpirationWarnings(bool value);
     String getMutationWorkload() const;
     void setMutationWorkload(const String & value);
     bool getThrowOnUnknownWorkload() const;
@@ -890,7 +933,8 @@ public:
     UInt64 getConcurrentThreadsSoftLimitNum() const;
     UInt64 getConcurrentThreadsSoftLimitRatioToCores() const;
     String getConcurrentThreadsScheduler() const;
-    std::pair<UInt64, String> setConcurrentThreadsSoftLimit(UInt64 num, UInt64 ratio_to_cores, const String & scheduler);
+    bool getConcurrentThreadsLazyAllocation() const;
+    std::pair<UInt64, String> setConcurrentThreadsSoftLimit(UInt64 num, UInt64 ratio_to_cores, const String & scheduler, bool lazy_allocation);
 
     /// We have to copy external tables inside executeQuery() to track limits. Therefore, set callback for it. Must set once.
     void setExternalTablesInitializer(ExternalTablesInitializer && initializer);
@@ -917,6 +961,7 @@ public:
 
     /// Returns information about the client executing a query.
     const ClientInfo & getClientInfo() const { return client_info; }
+    ClientInfo & getClientInfo() { return client_info; }
 
     /// Modify stored in the context information about the client executing a query.
     void setClientInfo(const ClientInfo & client_info_);
@@ -933,6 +978,7 @@ public:
     void setCurrentUserName(const String & current_user_name);
     void setCurrentAddress(const Poco::Net::SocketAddress & current_address);
     void setInitialUserName(const String & initial_user_name);
+    void setAuthenticatedUserName(const String & authenticated_user_name);
     void setInitialAddress(const Poco::Net::SocketAddress & initial_address);
     void setInitialQueryId(const String & initial_query_id);
     void setInitialQueryStartTime(std::chrono::time_point<std::chrono::system_clock> initial_query_start_time);
@@ -967,6 +1013,8 @@ public:
     std::shared_ptr<TemporaryTableHolder> findExternalTable(const String & table_name) const;
     std::shared_ptr<TemporaryTableHolder> removeExternalTable(const String & table_name);
 
+    HypotheticalIndexStore & getHypotheticalIndexStore() const;
+
     Scalars getScalars() const;
     Block getScalar(const String & name) const;
     void addScalar(const String & name, const Block & block);
@@ -992,8 +1040,14 @@ public:
         const String & full_quoted_table_name,
         const Names & column_names);
 
+    /// Remove a table (and any columns recorded under it) from the query access info. Used to drop an
+    /// internal temporary table that was accessed while executing the query but should not be exposed to
+    /// the user (e.g. the temporary table used to publish a `CREATE ... AS SELECT` atomically).
+    void removeQueryAccessInfoTable(const String & full_quoted_table_name);
+
     void addQueryAccessInfo(const Names & partition_names);
     void addViewAccessInfo(const String & view_name);
+    void addUsedRowPolicy(const String & policy_name);
 
     struct QualifiedProjectionName
     {
@@ -1023,8 +1077,29 @@ public:
     QueryFactoriesInfo getQueryFactoriesInfo() const;
     void addQueryFactoriesInfo(QueryLogFactories factory_type, const String & created_object) const;
 
+    /// RAII scope that suppresses calls to addQueryFactoriesInfo() on the current thread.
+    /// Use it in introspection paths (e.g. reading system.functions) where instantiating
+    /// every function — and the helper functions they construct internally — must not
+    /// pollute query_log.used_functions for the user's query.
+    class SuppressQueryFactoriesInfoScope
+    {
+    public:
+        SuppressQueryFactoriesInfoScope();
+        ~SuppressQueryFactoriesInfoScope();
+
+        SuppressQueryFactoriesInfoScope(const SuppressQueryFactoriesInfoScope &) = delete;
+        SuppressQueryFactoriesInfoScope & operator=(const SuppressQueryFactoriesInfoScope &) = delete;
+
+    private:
+        bool prev;
+    };
+
     const QueryPrivilegesInfo & getQueryPrivilegesInfo() const { return *getQueryPrivilegesInfoPtr(); }
     QueryPrivilegesInfoPtr getQueryPrivilegesInfoPtr() const { return query_privileges_info; }
+    /// Share the privilege-accounting object with another context, so privileges checked on this context are
+    /// reported for the same query in `system.query_log`. Used when a background worker (e.g. RESTORE) runs on
+    /// a copy of the original query context but should still account its access checks to the original query.
+    void setQueryPrivilegesInfo(const QueryPrivilegesInfoPtr & query_privileges_info_) { query_privileges_info = query_privileges_info_; }
     void addQueryPrivilegesInfo(const String & privilege, bool granted) const;
 
     /// For table functions s3/file/url/hdfs/input we can use structure from
@@ -1114,6 +1189,10 @@ public:
 
     AsyncLoader & getAsyncLoader() const;
 
+    /// Global limit on source connections `ReaderExecutor` keeps open for sequential-read
+    /// reuse (lazily created from `max_remote_read_connections`).
+    std::shared_ptr<LongConnectionLimit> getLongConnectionLimit() const;
+
     const ExternalDictionariesLoader & getExternalDictionariesLoader() const;
     ExternalDictionariesLoader & getExternalDictionariesLoader();
     const EmbeddedDictionaries & getEmbeddedDictionaries() const;
@@ -1128,7 +1207,10 @@ public:
     IUserDefinedSQLObjectsStorage & getUserDefinedSQLObjectsStorage();
     void loadOrReloadUserDefinedExecutableFunctions(const Poco::Util::AbstractConfiguration & config);
 
-    IWorkloadEntityStorage & getWorkloadEntityStorage() const;
+    /// Load driver definitions from configuration files matching `<user_defined_executable_function_drivers_config>` patterns.
+    void loadUserDefinedExecutableFunctionDrivers(const Poco::Util::AbstractConfiguration & config) const;
+
+    std::shared_ptr<IWorkloadEntityStorage> getWorkloadEntityStoragePtr() const;
 
     bool hasWasmModuleManager() const;
     WasmModuleManager & getWasmModuleManager() const;
@@ -1181,20 +1263,37 @@ public:
     void setHTTPHeaderFilter(const Poco::Util::AbstractConfiguration & config);
     const HTTPHeaderFilter & getHTTPHeaderFilter() const;
 
-    size_t getMaxNamedCollectionNumToWarn() const;
-    size_t getMaxTableNumToWarn() const;
-    size_t getMaxViewNumToWarn() const;
-    size_t getMaxDictionaryNumToWarn() const;
-    size_t getMaxDatabaseNumToWarn() const;
     size_t getMaxPartNumToWarn() const;
     size_t getMaxPendingMutationsToWarn() const;
     size_t getMaxPendingMutationsExecutionTimeToWarn() const;
 
-    void setMaxNamedCollectionNumToWarn(size_t max_named_collection_to_warn);
-    void setMaxTableNumToWarn(size_t max_table_to_warn);
-    void setMaxViewNumToWarn(size_t max_view_to_warn);
-    void setMaxDictionaryNumToWarn(size_t max_dictionary_to_warn);
-    void setMaxDatabaseNumToWarn(size_t max_database_to_warn);
+#define APPLY_FOR_CONTEXT_LIMITED_ENTITIES_WITH_WARNING(M) \
+    M(named_collection, NamedCollection, 1000lu, max_named_collection_num_to_warn, "max_named_collection_num_to_warn") \
+    M(table, Table, 5000lu, max_table_num_to_warn, "max_table_num_to_warn") \
+    M(view, View, 10000lu, max_view_num_to_warn, "max_view_num_to_warn") \
+    M(dictionary, Dictionary, 1000lu, max_dictionary_num_to_warn, "max_dictionary_num_to_warn") \
+    M(database, Database, 1000lu, max_database_num_to_warn, "max_database_num_to_warn")
+
+#define APPLY_FOR_CONTEXT_LIMITED_ENTITIES_WITH_THROW(M) \
+    M(named_collection, NamedCollection, 0lu, max_named_collection_num_to_throw, "max_named_collection_num_to_throw") \
+    M(table, Table, 0lu, max_table_num_to_throw, "max_table_num_to_throw") \
+    M(view, View, 0lu, max_view_num_to_throw, "max_view_num_to_throw") \
+    M(dictionary, Dictionary, 0lu, max_dictionary_num_to_throw, "max_dictionary_num_to_throw") \
+    M(database, Database, 0lu, max_database_num_to_throw, "max_database_num_to_throw") \
+    M(replicated_table, ReplicatedTable, 0lu, max_replicated_table_num_to_throw, "max_replicated_table_num_to_throw")
+
+#define DECLARE_ENTITY_LIMIT_WITH_WARNING(ename, EName, warn_default, warn_setting, warn_setting_name) \
+    size_t getMax##EName##NumToWarn() const; \
+    void setMax##EName##NumToWarn(size_t max_##ename##_to_warn);
+    APPLY_FOR_CONTEXT_LIMITED_ENTITIES_WITH_WARNING(DECLARE_ENTITY_LIMIT_WITH_WARNING)
+#undef DECLARE_ENTITY_LIMIT_WITH_WARNING
+
+#define DECLARE_ENTITY_LIMIT_WITH_THROW(ename, EName, throw_default, throw_setting, throw_setting_name) \
+    size_t getMax##EName##NumToThrow() const; \
+    void setMax##EName##NumToThrow(size_t max_##ename##_to_throw);
+    APPLY_FOR_CONTEXT_LIMITED_ENTITIES_WITH_THROW(DECLARE_ENTITY_LIMIT_WITH_THROW)
+#undef DECLARE_ENTITY_LIMIT_WITH_THROW
+
     void setMaxPartNumToWarn(size_t max_part_to_warn);
     // Based on asynchronous metrics
     void setMaxPendingMutationsToWarn(size_t max_pending_mutations_to_warn);
@@ -1207,12 +1306,18 @@ public:
     bool getS3QueueDisableStreaming() const;
     void setS3QueueDisableStreaming(bool s3queue_disable_streaming) const;
 
+    bool getMessageQueueDisableInsertion() const;
+    void setMessageQueueDisableInsertion(bool message_queue_disable_insertion) const;
+
     /// The port that the server listens for executing SQL queries.
     UInt16 getTCPPort() const;
 
     std::optional<UInt16> getTCPPortSecure() const;
 
-    /// Register server ports during server starting up. No lock is held.
+    /// Register a server listener port. May be called concurrently from
+    /// `SYSTEM START LISTEN` at runtime (in `clickhouse-local`); re-registering
+    /// the same `port_name` overwrites the previous value, e.g. when an
+    /// ephemeral port-0 listener is stopped and started again on a new port.
     void registerServerPort(String port_name, UInt16 port);
 
     UInt16 getServerPort(const String & port_name) const;
@@ -1274,6 +1379,11 @@ public:
     QueryStatusPtr getProcessListElement() const;
     QueryStatusPtr getProcessListElementSafe() const;
 
+    /// Hash of the normalized query text. Set once before execution; used to account resources of
+    /// `NORMALIZED_QUERY_HASH` quotas (e.g. on the insert path, where the hash is not otherwise available).
+    void setNormalizedQueryHash(UInt64 normalized_query_hash_);
+    UInt64 getNormalizedQueryHash() const;
+
     /// List all queries.
     ProcessList & getProcessList();
     const ProcessList & getProcessList() const;
@@ -1323,7 +1433,7 @@ public:
 #endif
     void initializeKeeperDispatcher(bool start_async) const;
     void signalKeeperDispatcherShutdown() const;
-    void shutdownKeeperDispatcher() const;
+    void shutdownKeeperDispatcher(bool closed_all_connections) const;
     void updateKeeperConfiguration(const Poco::Util::AbstractConfiguration & config) const;
 
     /// Set auxiliary zookeepers configuration at server starting or configuration reloading.
@@ -1359,6 +1469,21 @@ public:
     void clearMarkCache() const;
     ThreadPool & getLoadMarksThreadpool() const;
 
+    /// UNIQUE KEY index cache: ClickHouse-side `CacheBase` adapter
+    /// over the RocksDB block cache used by SST-backed UNIQUE KEY indexes.
+    void setUniqueKeyIndexCache(const String & cache_policy, size_t max_cache_size_in_bytes, double size_ratio);
+    void updateUniqueKeyIndexCacheConfiguration(const Poco::Util::AbstractConfiguration & config, size_t max_cache_size);
+    std::shared_ptr<UniqueKeyIndexCache> getUniqueKeyIndexCache() const;
+    void clearUniqueKeyIndexCache() const;
+
+    /// UNIQUE KEY delete-bitmap cache. Registration mirrors `setMarkCache` /
+    /// `setPrimaryIndexCache`. `max_cache_size_in_bytes == 0` leaves the
+    /// cache unregistered — callers get `nullptr` from `getDeleteBitmapCache`.
+    void setDeleteBitmapCache(const String & cache_policy, size_t max_cache_size_in_bytes, double size_ratio);
+    void updateDeleteBitmapCacheConfiguration(const Poco::Util::AbstractConfiguration & config, size_t max_cache_size);
+    std::shared_ptr<DeleteBitmapCache> getDeleteBitmapCache() const;
+    void clearDeleteBitmapCache() const;
+
     void setPrimaryIndexCache(const String & cache_policy, size_t max_cache_size_in_bytes, double size_ratio);
     void updatePrimaryIndexCacheConfiguration(const Poco::Util::AbstractConfiguration & config, size_t max_cache_size);
     std::shared_ptr<PrimaryIndexCache> getPrimaryIndexCache() const;
@@ -1374,7 +1499,7 @@ public:
 
     void setIndexUncompressedCache(const String & cache_policy, size_t max_size_in_bytes, double size_ratio);
     void updateIndexUncompressedCacheConfiguration(const Poco::Util::AbstractConfiguration & config, size_t max_cache_size);
-    std::shared_ptr<UncompressedCache> getIndexUncompressedCache() const;
+    std::shared_ptr<UncompressedCache> getIndexUncompressedCache(bool only_if_enabled = true) const;
     void clearIndexUncompressedCache() const;
 
     void setIndexMarkCache(const String & cache_policy, size_t max_cache_size_in_bytes, double size_ratio);
@@ -1411,18 +1536,29 @@ public:
     void updateQueryResultCacheConfiguration(const Poco::Util::AbstractConfiguration & config, size_t max_cache_size);
     std::shared_ptr<QueryResultCache> getQueryResultCache() const;
     void clearQueryResultCache(const std::optional<String> & tag) const;
+    bool getCanUseQueryResultCache() const;
+    void setCanUseQueryResultCache(bool can_use_query_result_cache_);
 
 #if USE_AVRO
     void setIcebergMetadataFilesCache(const String & cache_policy, size_t max_size_in_bytes, size_t max_entries, double size_ratio);
     void updateIcebergMetadataFilesCacheConfiguration(const Poco::Util::AbstractConfiguration & config, size_t max_cache_size);
     std::shared_ptr<IcebergMetadataFilesCache> getIcebergMetadataFilesCache() const;
     void clearIcebergMetadataFilesCache() const;
+
+    void setPaimonMetadataFilesCache(const String & cache_policy, size_t max_size_in_bytes, size_t max_entries, double size_ratio);
+    void updatePaimonMetadataFilesCacheConfiguration(const Poco::Util::AbstractConfiguration & config, size_t max_cache_size);
+    std::shared_ptr<PaimonMetadataFilesCache> getPaimonMetadataFilesCache() const;
+    void clearPaimonMetadataFilesCache() const;
 #endif
 
 #if USE_PARQUET
     void setParquetMetadataCache(const String & cache_policy, size_t max_size_in_bytes, size_t max_entries, double size_ratio);
     void updateParquetMetadataCacheConfiguration(const Poco::Util::AbstractConfiguration & config, size_t max_cache_size);
     std::shared_ptr<ParquetMetadataCache> getParquetMetadataCache() const;
+    /// Same as `getParquetMetadataCache`, but returns nullptr if the cache has not been
+    /// initialised (e.g. on the client side of `INSERT ... FROM INFILE`) instead of throwing.
+    /// Use this from code paths that can run in such contexts.
+    std::shared_ptr<ParquetMetadataCache> tryGetParquetMetadataCache() const;
     void clearParquetMetadataCache() const;
 #endif
 
@@ -1433,6 +1569,11 @@ public:
     void updateQueryConditionCacheConfiguration(const Poco::Util::AbstractConfiguration & config, size_t max_cache_size);
     std::shared_ptr<QueryConditionCache> getQueryConditionCache() const;
     void clearQueryConditionCache() const;
+
+    void setEncryptionHeaderCache(const String & cache_policy, size_t max_size_in_bytes, double size_ratio);
+    void updateEncryptionHeaderCacheConfiguration(const Poco::Util::AbstractConfiguration & config, size_t max_cache_size);
+    std::shared_ptr<EncryptionHeaderCache> getEncryptionHeaderCache() const;
+    void clearEncryptionHeaderCache() const;
 
     /** Clear the caches of the uncompressed blocks and marks.
       * This is usually done when renaming tables, changing the type of columns, deleting a table.
@@ -1460,12 +1601,14 @@ public:
     /// Settings for MergeTree background tasks stored in config.xml
     BackgroundTaskSchedulingSettings getBackgroundProcessingTaskSchedulingSettings() const;
     BackgroundTaskSchedulingSettings getBackgroundMoveTaskSchedulingSettings() const;
+    BackgroundTaskSchedulingSettings getBackgroundStreamingTaskSchedulingSettings() const;
 
     BackgroundSchedulePool & getBufferFlushSchedulePool() const;
     BackgroundSchedulePool & getSchedulePool() const;
     BackgroundSchedulePool & getMessageBrokerSchedulePool() const;
     BackgroundSchedulePool & getDistributedSchedulePool() const;
     BackgroundSchedulePool & getIcebergSchedulePool() const;
+    BackgroundSchedulePool & getStreamingSchedulePool() const;
 
     /// Has distributed_ddl configuration or not.
     bool hasDistributedDDL() const;
@@ -1526,6 +1669,7 @@ public:
     std::shared_ptr<AggregatedZooKeeperLog> getAggregatedZooKeeperLog() const;
     std::shared_ptr<IcebergMetadataLog> getIcebergMetadataLog() const;
     std::shared_ptr<DeltaMetadataLog> getDeltaMetadataLog() const;
+    std::shared_ptr<PredicateStatisticsLog> getPredicateStatisticsLog() const;
 
     SystemLogs getSystemLogs() const;
 
@@ -1560,6 +1704,12 @@ public:
     /// Only for system.server_settings, actual value is stored in ConfigReloader
     void setConfigReloaderInterval(size_t value_ms);
     size_t getConfigReloaderInterval() const;
+
+    /// Server-wide override for the analyzer in mutations.
+    /// `std::nullopt` means there is no override (the session setting `allow_experimental_analyzer` is used).
+    /// Set from the main config reload callback.
+    void setMutationsUseAnalyzerOverride(std::optional<bool> value);
+    std::optional<bool> getMutationsUseAnalyzerOverride() const;
 
     /// Lets you select the compression codec according to the conditions described in the configuration file.
     std::shared_ptr<ICompressionCodec> chooseCompressionCodec(size_t part_size, double part_size_ratio) const;
@@ -1601,6 +1751,15 @@ public:
     bool isInternalQuery() const { return is_internal_query; }
     void setInternalQuery(bool internal) { is_internal_query = internal; }
 
+    bool isDDLOrOnClusterInternal() const { return is_ddl_or_on_cluster_internal; }
+    void setDDLOrOnClusterInternal(bool value) { is_ddl_or_on_cluster_internal = value; }
+
+    bool isViewInnerQuery() const { return is_view_inner_query; }
+    void setIsViewInnerQuery(bool value) { is_view_inner_query = value; }
+
+    bool isPositionalArgumentsAlreadyResolved() const { return positional_arguments_already_resolved; }
+    void setPositionalArgumentsAlreadyResolved(bool value) { positional_arguments_already_resolved = value; }
+
     ActionLocksManagerPtr getActionLocksManager() const;
 
     enum class ApplicationType : uint8_t
@@ -1614,6 +1773,20 @@ public:
 
     ApplicationType getApplicationType() const;
     void setApplicationType(ApplicationType type);
+
+    /// Whether S3 access originating from user SQL must be denied the server's own ambient credentials
+    /// (environment, IMDS/IRSA, ECS, instance profile, SSO, AWS config files, role_arn-based STS, and the
+    /// GCP OAuth metadata service). Explicitly supplied credentials (in the query, or static keys in a
+    /// named collection or the server `<s3>` config) are unaffected.
+    /// True only in clickhouse-server with the `s3_allow_server_credentials_in_user_queries` setting
+    /// disabled (the default). Always false in clickhouse-local, where the user is the operator.
+    bool shouldRestrictUserQueryS3Credentials() const;
+
+    /// Same, but uses an explicitly captured value of `s3_allow_server_credentials_in_user_queries` instead of
+    /// this context's live setting. For callers whose context no longer reflects the creating session -- e.g.
+    /// a cached DataLake catalog that runs against the global context -- so a permissive global/default profile
+    /// cannot override the stricter value that applied when the object was created.
+    bool shouldRestrictUserQueryS3Credentials(bool allow_server_credentials_in_user_queries) const;
 
     /// Sets default_profile and system_profile, must be called once during the initialization
     void setDefaultProfiles(const Poco::Util::AbstractConfiguration & config);
@@ -1680,9 +1853,6 @@ public:
     bool isServerCompletelyStarted() const;
     void setServerCompletelyStarted();
 
-    PartUUIDsPtr getPartUUIDs() const;
-    PartUUIDsPtr getIgnoredPartUUIDs() const;
-
     AsynchronousInsertQueue * tryGetAsynchronousInsertQueue() const;
     void setAsynchronousInsertQueue(const std::shared_ptr<AsynchronousInsertQueue> & ptr);
 
@@ -1706,6 +1876,9 @@ public:
     /// Background executors related methods
     void initializeBackgroundExecutorsIfNeeded();
     bool areBackgroundExecutorsInitialized() const;
+
+    /// True if the low-memory auto-tuning heuristic lowered background_pool_size at startup.
+    bool wasBackgroundPoolAutoLowered() const;
 
     MergeMutateBackgroundExecutorPtr getMergeMutateExecutor() const;
     OrdinaryBackgroundExecutorPtr getMovesExecutor() const;
@@ -1744,8 +1917,8 @@ public:
 
     ReverseLookupCache & getReverseLookupCache() const;
 
-    /// IRuntimeFilterLookup allows to store and find per-query runtime filters under unique names. Those are used
-    /// to optimize some JOINs by early pre-filtering left side of the JOIN by a filter built form the right side.
+    /// IRuntimeFilterLookup stores and finds per-query join runtime-filter handles by (random) names,
+    /// used to optimize some JOINs by early pre-filtering the left side with a filter built from the right.
     void setRuntimeFilterLookup(const RuntimeFilterLookupPtr & filter_lookup);
     RuntimeFilterLookupPtr getRuntimeFilterLookup() const;
 
@@ -1753,6 +1926,13 @@ public:
     PartitionIdToMaxBlockPtr getPartitionIdToMaxBlock(const UUID & table_uuid) const;
 
     const ServerSettings & getServerSettings() const;
+
+    /// Returns a consistent snapshot (copy) of the server settings taken under `shared->mutex`.
+    /// A few server settings are mutated at runtime on config reload (e.g. `s3queue_disable_streaming`),
+    /// so reading the whole struct without synchronization races with those writers. Use this accessor
+    /// whenever a copy of the settings is needed; the reference returned by `getServerSettings` must only
+    /// be used to read fields that are never changed after startup.
+    ServerSettings getServerSettingsCopy() const;
 
 private:
     std::shared_ptr<const SettingsConstraintsAndProfileIDs> getSettingsConstraintsAndCurrentProfilesWithLock() const;
@@ -1843,6 +2023,7 @@ public:
 
     void reloadRemoteThrottlerConfig(size_t read_bandwidth, size_t write_bandwidth) const;
     void reloadLocalThrottlerConfig(size_t read_bandwidth, size_t write_bandwidth) const;
+    void reloadLongConnectionLimitConfig(size_t max_remote_read_connections) const;
 
     /// Kitchen sink
     using ContextData::KitchenSink;
@@ -1864,6 +2045,10 @@ struct HTTPContext : public IHTTPContext
     uint64_t getMaxFieldNameSize() const override;
 
     uint64_t getMaxFieldValueSize() const override;
+
+    uint64_t getMaxRequestHeaderSize() const override;
+
+    Poco::Timespan getHeadersReadTimeout() const override;
 
     Poco::Timespan getReceiveTimeout() const override;
 

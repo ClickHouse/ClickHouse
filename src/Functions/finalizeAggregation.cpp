@@ -20,7 +20,7 @@ namespace
 /** finalizeAggregation(agg_state) - get the result from the aggregation state.
   * Takes state of aggregate function. Returns result of aggregation (finalized state).
   */
-class FunctionFinalizeAggregation : public IFunction
+class FunctionFinalizeAggregation final : public IFunction
 {
 public:
     static constexpr auto name = "finalizeAggregation";
@@ -96,6 +96,7 @@ SELECT finalizeAggregation(arrayReduce('maxState', [1, 2, 3]));
     {
         "Combined with initializeAggregation",
         R"(
+SET allow_deprecated_error_prone_window_functions = 1;
 WITH initializeAggregation('sumState', number) AS one_row_sum_state
 SELECT
     number,

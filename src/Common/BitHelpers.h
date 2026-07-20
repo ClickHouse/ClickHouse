@@ -1,7 +1,6 @@
 #pragma once
 
 #include <algorithm>
-#include <cassert>
 #include <concepts>
 #include <cstddef>
 #include <cstdint>
@@ -28,7 +27,7 @@ inline size_t roundUpToPowerOfTwoOrZero(size_t n)
 template <typename T>
 inline uint32_t getLeadingZeroBitsUnsafe(T x)
 {
-    assert(x != 0);
+    chassert(x != 0);
 
     if constexpr (sizeof(T) <= sizeof(unsigned int))
     {
@@ -68,7 +67,7 @@ inline uint32_t bitScanReverse(T x)
 template <typename T>
 inline size_t getTrailingZeroBitsUnsafe(T x)
 {
-    assert(x != 0);
+    chassert(x != 0);
 
     if constexpr (sizeof(T) <= sizeof(unsigned int))
     {
@@ -119,4 +118,28 @@ template <std::integral T>
 constexpr bool isPowerOf2(T number)
 {
     return number > 0 && (number & (number - 1)) == 0;
+}
+
+/** Writes a value into a bit-packed array at the given bit offset.
+  * The array must be overallocated by one element.
+  * The bit range must be pre-filled with zeros.
+  */
+inline void writeBitsPacked64(uint64_t * dest, size_t bit_offset, uint64_t value)
+{
+    size_t mod = bit_offset % 64;
+    dest[bit_offset / 64] |= value << mod;
+    if (mod)
+        dest[bit_offset / 64 + 1] |= value >> (64 - mod);
+}
+
+/** Reads a range of bits from a bit-packed array.
+  * The array must be overallocated by one element.
+  */
+inline uint64_t readBitsPacked64(const uint64_t * src, size_t bit_offset, size_t num_bits)
+{
+    size_t mod = bit_offset % 64;
+    uint64_t value = src[bit_offset / 64] >> mod;
+    if (mod)
+        value |= src[bit_offset / 64 + 1] << (64 - mod);
+    return value & maskLowBits<uint64_t>(static_cast<unsigned char>(num_bits));
 }

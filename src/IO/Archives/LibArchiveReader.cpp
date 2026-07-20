@@ -23,7 +23,8 @@ extern const int UNSUPPORTED_METHOD;
 class LibArchiveReader::StreamInfo
 {
 public:
-    explicit StreamInfo(std::unique_ptr<SeekableReadBuffer> read_buffer_, size_t archive_size_ = 0)
+    /// `buf` is intentionally left uninitialized — it is filled by `read` before use.
+    explicit StreamInfo(std::unique_ptr<SeekableReadBuffer> read_buffer_, size_t archive_size_ = 0) // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init)
         : read_buffer(std::move(read_buffer_)), archive_size(archive_size_) { }
 
     static ssize_t read(struct archive *, void * client_data, const void ** buff)
@@ -79,7 +80,7 @@ public:
 
     std::unique_ptr<SeekableReadBuffer> read_buffer;
     size_t archive_size;
-    char buf[DBMS_DEFAULT_BUFFER_SIZE];
+    char buf[DBMS_DEFAULT_BUFFER_SIZE]; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - filled by `read` before use
     std::exception_ptr stored_exception;
 };
 
@@ -160,7 +161,7 @@ public:
         return valid;
     }
 
-    std::vector<std::string> getAllFiles(NameFilter filter)
+    Strings getAllFiles(NameFilter filter)
     {
         std::unique_ptr<LibArchiveReader::StreamInfo> rs
             = archive_read_function ? std::make_unique<StreamInfo>(archive_read_function(), archive_size) : nullptr;
@@ -170,7 +171,7 @@ public:
 
         Entry entry = nullptr;
 
-        std::vector<std::string> files;
+        Strings files;
         int error = readNextHeader(archive, &entry, rs.get());
         while (error == ARCHIVE_OK || error == ARCHIVE_RETRY)
         {
@@ -252,6 +253,8 @@ private:
     Archive openWithReader(StreamInfo * read_stream_)
     {
         auto * archive = archive_read_new();
+        if (!archive)
+            throw Exception(ErrorCodes::CANNOT_UNPACK_ARCHIVE, "Couldn't create archive reader");
         try
         {
             // Support for bzip2, gzip, lzip, xz, zstd and lz4
@@ -289,6 +292,8 @@ private:
     Archive openWithPath(const String & path_to_archive_)
     {
         auto * archive = archive_read_new();
+        if (!archive)
+            throw Exception(ErrorCodes::CANNOT_UNPACK_ARCHIVE, "Couldn't create archive reader");
         try
         {
             // Support for bzip2, gzip, lzip, xz, zstd and lz4
@@ -534,12 +539,12 @@ std::unique_ptr<LibArchiveReader::FileEnumerator> LibArchiveReader::currentFile(
     return std::make_unique<FileEnumeratorImpl>(std::move(handle));
 }
 
-std::vector<std::string> LibArchiveReader::getAllFiles()
+Strings LibArchiveReader::getAllFiles()
 {
     return getAllFiles({});
 }
 
-std::vector<std::string> LibArchiveReader::getAllFiles(NameFilter filter)
+Strings LibArchiveReader::getAllFiles(NameFilter filter)
 {
     Handle handle = acquireHandle();
     return handle.getAllFiles(filter);

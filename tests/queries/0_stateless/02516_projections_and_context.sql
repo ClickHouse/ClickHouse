@@ -1,6 +1,10 @@
 DROP TABLE IF EXISTS test1__fuzz_37;
 CREATE TABLE test1__fuzz_37 (`i` Date) ENGINE = MergeTree ORDER BY i;
 insert into test1__fuzz_37 values ('2020-10-10');
+-- Disable parallel replicas: randomized PR rewrite masks the expected
+-- `BAD_ARGUMENTS` from `dictHas` with a `THERE_IS_NO_COLUMN` from pipeline
+-- column matching.
+set enable_parallel_replicas = 0;
 set enable_analyzer = 0;
 set optimize_functions_to_subcolumns = 1;
 set optimize_use_projections = 0;

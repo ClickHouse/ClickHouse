@@ -1,0 +1,83 @@
+---
+description: 'mécanisme de mise en cache qui permet de stocker des 
+données dans la mémoire du processus plutôt que de s''appuyer sur le cache de pages du système d''exploitation.'
+sidebarTitle: 'Cache de pages en espace utilisateur'
+slug: /operations/userspace-page-cache
+title: 'Cache de pages en espace utilisateur'
+doc_type: 'reference'
+---
+
+<div id="overview">
+  ## Vue d’ensemble
+</div>
+
+> Le cache de pages en espace utilisateur est un nouveau mécanisme de mise en cache qui permet de stocker les données en cache dans la mémoire du processus, plutôt que de s’appuyer sur le cache de pages de l’OS.
+
+ClickHouse propose déjà le [cache du système de fichiers](/fr/concepts/features/configuration/server-config/storing-data)
+comme mécanisme de mise en cache au-dessus d’un stockage d’objets distant tel qu’Amazon S3, Google
+Cloud Storage (GCS) ou Azure Blob Storage. Le cache de pages en espace utilisateur est conçu
+pour accélérer l’accès aux données distantes lorsque le cache de l’OS n’est pas suffisamment efficace.
+
+Il diffère du cache du système de fichiers de la manière suivante :
+
+| Cache du système de fichiers                                                      | Cache de pages en espace utilisateur            |
+| --------------------------------------------------------------------------------- | ----------------------------------------------- |
+| Écrit les données sur le système de fichiers local                                | Présent uniquement en mémoire                   |
+| Occupe de l’espace disque (également configurable sur tmpfs)                      | Indépendant du système de fichiers              |
+| Persiste après le redémarrage du serveur                                          | Ne persiste pas après le redémarrage du serveur |
+| N’apparaît pas dans l’utilisation mémoire du serveur                              | Apparaît dans l’utilisation mémoire du serveur  |
+| Convient aussi bien au stockage sur disque qu’en mémoire (cache de pages de l’OS) | **Bien adapté aux serveurs sans disque**        |
+
+<div id="configuration-settings-and-usage">
+  ## Paramètres de configuration et utilisation
+</div>
+
+<div id="usage">
+  ### Utilisation
+</div>
+
+Pour activer le cache de pages en espace utilisateur, commencez par le configurer sur le serveur :
+
+```bash
+cat config.d/page_cache.yaml
+page_cache_max_size: 100G
+```
+
+<Note>
+  Le cache de pages en espace utilisateur utilisera jusqu&#39;à la quantité de mémoire spécifiée, mais
+  cette quantité de mémoire n&#39;est pas réservée. Cette mémoire sera libérée lorsqu&#39;elle sera nécessaire
+  pour d&#39;autres besoins du serveur.
+</Note>
+
+Ensuite, activez son utilisation au niveau de la requête :
+
+```sql
+SET use_page_cache_for_disks_without_file_cache=1;
+```
+
+<div id="settings">
+  ### Paramètres
+</div>
+
+| Paramètre                                               | Description                                                                                                                                                                                                                                                                                                                                                                                                | Valeur par défaut |
+| ------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------- |
+| `use_page_cache_for_disks_without_file_cache`           | Utilise le cache de pages en espace utilisateur pour les disques distants pour lesquels le cache du système de fichiers n’est pas activé.                                                                                                                                                                                                                                                                  | `0`               |
+| `use_page_cache_with_distributed_cache`                 | Utilise le cache de pages en espace utilisateur lorsque Distributed Cache est utilisé.                                                                                                                                                                                                                                                                                                                     | `0`               |
+| `read_from_page_cache_if_exists_otherwise_bypass_cache` | Utilise le cache de pages en espace utilisateur en mode passif, comme [`read_from_filesystem_cache_if_exists_otherwise_bypass_cache`](/fr/reference/settings/session-settings#read_from_filesystem_cache_if_exists_otherwise_bypass_cache).                                                                                                                                                                   | `0`               |
+| `page_cache_inject_eviction`                            | Le cache de pages en espace utilisateur invalide parfois certaines pages de manière aléatoire. Destiné aux tests.                                                                                                                                                                                                                                                                                          | `0`               |
+| `page_cache_block_size`                                 | Taille des fragments de fichier à stocker dans le cache de pages en espace utilisateur, en octets. Toutes les lectures qui passent par le cache sont arrondies au multiple supérieur de cette taille.                                                                                                                                                                                                      | `1048576`         |
+| `page_cache_history_window_ms`                          | Délai avant que la mémoire libérée puisse être réutilisée par le cache de pages en espace utilisateur.                                                                                                                                                                                                                                                                                                     | `1000`            |
+| `page_cache_policy`                                     | Nom de la stratégie du cache de pages en espace utilisateur.                                                                                                                                                                                                                                                                                                                                               | `SLRU`            |
+| `page_cache_size_ratio`                                 | Taille de la file protégée dans le cache de pages en espace utilisateur par rapport à la taille totale du cache.                                                                                                                                                                                                                                                                                           | `0.5`             |
+| `page_cache_min_size`                                   | Taille minimale du cache de pages en espace utilisateur.                                                                                                                                                                                                                                                                                                                                                   | `104857600`       |
+| `page_cache_max_size`                                   | Taille maximale du cache de pages en espace utilisateur. Définissez-la sur 0 pour désactiver le cache. Si elle est supérieure à page&#95;cache&#95;min&#95;size, la taille du cache sera ajustée en continu dans cette plage afin d’utiliser la majeure partie de la mémoire disponible tout en maintenant l’utilisation totale de la mémoire sous la limite (`max_server_memory_usage`[`_to_ram_ratio`]). | `0`               |
+| `page_cache_free_memory_ratio`                          | Fraction de la limite de mémoire à conserver libre du cache de pages en espace utilisateur. Analogue au paramètre Linux min&#95;free&#95;kbytes.                                                                                                                                                                                                                                                           | `0.15`            |
+| `page_cache_lookahead_blocks`                           | En cas d’absence dans le cache de pages en espace utilisateur, lit en une seule fois jusqu’à ce nombre de blocs consécutifs depuis le stockage sous-jacent, s’ils ne sont pas non plus dans le cache. Chaque bloc a une taille de page&#95;cache&#95;block&#95;size octets.                                                                                                                                | `16`              |
+| `page_cache_shards`                                     | Répartit le cache de pages en espace utilisateur sur ce nombre de segments afin de réduire la contention sur les mutex. Expérimental, peu susceptible d’améliorer les performances.                                                                                                                                                                                                                        | `4`               |
+
+<div id="related-content">
+  ## Contenu associé
+</div>
+
+* [Cache du système de fichiers](/fr/concepts/features/configuration/server-config/storing-data)
+* [Webinaire de présentation de ClickHouse v25.3](https://www.youtube.com/live/iCKEzp0_Z2Q?feature=shared\&t=1320)

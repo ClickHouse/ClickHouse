@@ -25,7 +25,7 @@ ClickHouseVersion::ClickHouseVersion(std::string_view version)
 
     for (const auto & split_element : split)
     {
-        size_t component;
+        size_t component = 0;
         ReadBufferFromString buf(split_element);
         if (!tryReadIntText(component, buf) || !buf.eof())
             throw Exception{ErrorCodes::BAD_ARGUMENTS, "Cannot parse ClickHouse version here: {}", version};

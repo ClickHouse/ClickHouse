@@ -28,7 +28,7 @@ public:
         bool use_const_size_tasks_for_remote_reading = false;
 
         // Not the same as the similar field in `ParallelReadingExtension`. Accounts for `max_parallel_replicas`.
-        const size_t total_query_nodes;
+        const size_t total_query_nodes{};
     };
 
     MergeTreeReadPoolBase(
@@ -59,6 +59,12 @@ public:
         const ContextPtr & context_);
 
     Block getHeader() const override { return header; }
+
+    /// Build the descriptions list for the initial parallel-replicas announcement: same as
+    /// `parts_ranges.getDescriptions()` but with per-part `min_marks_per_task` filled in from
+    /// `per_part_infos`. The caller (ReadFromMergeTree) sends the announcement via the
+    /// `ParallelReadingExtension` it constructed before passing into the pool.
+    RangesInDataPartsDescription buildAnnouncementDescriptions() const;
 
 protected:
     /// Initialized in constructor

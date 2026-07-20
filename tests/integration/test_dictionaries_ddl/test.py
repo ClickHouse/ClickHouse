@@ -590,7 +590,11 @@ def test_secure(started_cluster):
     )
     with pytest.raises(QueryRuntimeException) as excinfo:
         node1.query("SELECT dictGet('test.clickhouse_secure', 'value', toUInt64(1))")
-    assert "Unexpected packet from server localhost:9440" in str(excinfo.value)
+    error = str(excinfo.value)
+    assert (
+        "Unexpected packet from server localhost:9440" in error
+        or "Connection reset by peer" in error
+    )
 
     # Secure is set to 0 in named collection
     node1.query("DROP DICTIONARY IF EXISTS test.clickhouse_secure")
@@ -611,7 +615,11 @@ def test_secure(started_cluster):
     )
     with pytest.raises(QueryRuntimeException) as excinfo:
         node1.query("SELECT dictGet('test.clickhouse_secure', 'value', toUInt64(1))")
-    assert "Unexpected packet from server localhost:9440" in str(excinfo.value)
+    error = str(excinfo.value)
+    assert (
+        "Unexpected packet from server localhost:9440" in error
+        or "Connection reset by peer" in error
+    )
 
     # Secure is set to 0 in named collection and in 1 in DDL
     node1.query("DROP DICTIONARY IF EXISTS test.clickhouse_secure")

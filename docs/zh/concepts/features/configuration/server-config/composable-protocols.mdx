@@ -1,0 +1,256 @@
+---
+description: '组合式协议可更灵活地配置对 ClickHouse server 的 TCP 访问。'
+sidebarTitle: '组合式协议'
+slug: /operations/settings/composable-protocols
+title: '组合式协议'
+doc_type: 'reference'
+---
+
+<div id="overview">
+  ## 概述
+</div>
+
+组合式协议让 ClickHouse server 的 TCP 访问配置更加灵活。此配置既可与传统配置并存，也可替代传统配置。
+
+<div id="composable-protocols-section-is-denoted-as-protocols-in-configuration-xml">
+  ## 配置 组合式协议
+</div>
+
+组合式协议 可以在 XML 配置文件中进行配置。协议
+部分在 XML 配置文件中由 `protocols` 标签标识：
+
+```xml
+<protocols>
+
+</protocols>
+```
+
+<div id="basic-modules-define-protocol-layers">
+  ### 配置协议 layer
+</div>
+
+你可以使用基础模块来定义协议 layer。例如，要定义
+HTTP layer，可以在 `protocols` 部分添加一个新的基础模块：
+
+```xml
+<protocols>
+
+  <!-- plain_http 模块 -->
+  <plain_http>
+    <type>http</type>
+  </plain_http>
+
+</protocols>
+```
+
+模块可按以下内容进行配置：
+
+* `plain_http` - 可供另一 layer 引用的名称
+* `type` - 指定将被实例化以处理数据的协议处理程序。
+  可使用以下预定义协议处理程序：
+  * `tcp` - 原生 ClickHouse 协议处理程序
+  * `http` - HTTP ClickHouse 协议处理程序
+  * `tls` - TLS 加密 layer
+  * `proxy1` - PROXYv1 layer
+  * `mysql` - MySQL 兼容协议处理程序
+  * `postgres` - PostgreSQL 兼容协议处理程序
+  * `prometheus` - Prometheus 协议处理程序
+  * `interserver` - ClickHouse 服务器间处理程序
+
+<Note>
+  `组合式协议` 尚未实现 `gRPC` 协议处理程序
+</Note>
+
+<div id="endpoint-ie-listening-port-is-denoted-by-port-and-optional-host-tags">
+  ### 配置端点
+</div>
+
+端点 (监听端口) 用 `<port>` 和可选的 `<host>` 标签表示。
+例如，要在前面添加的 HTTP layer 上配置端点，我们
+可以按如下方式修改配置：
+
+```xml
+<protocols>
+
+  <plain_http>
+
+    <type>http</type>
+    <!-- 端点 -->
+    <host>127.0.0.1</host>
+    <port>8123</port>
+
+  </plain_http>
+
+</protocols>
+```
+
+如果省略 `<host>` 标签，则使用根配置中的 `<listen_host>`。
+
+<div id="layers-sequence-is-defined-by-impl-tag-referencing-another-module">
+  ### 配置 layer 序列
+</div>
+
+layer 序列通过 `<impl>` 标签定义，并引用另一个
+模块。例如，要在我们的 plain&#95;http 模块之上配置一个 TLS layer，
+可以进一步按如下方式修改配置：
+
+```xml
+<protocols>
+
+  <!-- http 模块 -->
+  <plain_http>
+    <type>http</type>
+  </plain_http>
+
+  <!-- https 模块配置为叠加在 plain_http 模块之上的 TLS layer -->
+  <https>
+    <type>tls</type>
+    <impl>plain_http</impl>
+    <host>127.0.0.1</host>
+    <port>8443</port>
+  </https>
+
+</protocols>
+```
+
+<div id="endpoint-can-be-attached-to-any-layer">
+  ### 将端点绑定到 layer
+</div>
+
+端点可以绑定到任何 layer。例如，我们可以为
+HTTP (端口 8123) 和 HTTPS (端口 8443) 定义端点：
+
+```xml
+<protocols>
+
+  <plain_http>
+    <type>http</type>
+    <host>127.0.0.1</host>
+    <port>8123</port>
+  </plain_http>
+
+  <https>
+    <type>tls</type>
+    <impl>plain_http</impl>
+    <host>127.0.0.1</host>
+    <port>8443</port>
+  </https>
+
+</protocols>
+```
+
+<div id="additional-endpoints-can-be-defined-by-referencing-any-module-and-omitting-type-tag">
+  ### 定义其他端点
+</div>
+
+通过引用任意模块并省略
+`<type>` 标签，即可定义其他端点。例如，可以为
+`plain_http` 模块定义一个 `another_http` 端点，如下所示：
+
+```xml
+<protocols>
+
+  <plain_http>
+    <type>http</type>
+    <host>127.0.0.1</host>
+    <port>8123</port>
+  </plain_http>
+
+  <https>
+    <type>tls</type>
+    <impl>plain_http</impl>
+    <host>127.0.0.1</host>
+    <port>8443</port>
+  </https>
+
+  <another_http>
+    <impl>plain_http</impl>
+    <host>127.0.0.1</host>
+    <port>8223</port>
+  </another_http>
+
+</protocols>
+```
+
+<div id="custom-http-handlers-per-endpoint">
+  ### 每个端点的自定义 HTTP 处理程序
+</div>
+
+默认情况下，所有 `type=http` 协议条目共享同一个 `<http_handlers>`
+配置。你可以通过添加一个指向其他配置节的 `<handlers>` 标签
+来覆盖这一默认行为。这样，每个 HTTP 端口都可以提供一组不同的 HTTP 路由规则。
+
+例如，要在 8124 端口上运行一个使用独立处理程序的备用 HTTP API：
+
+```xml
+<protocols>
+
+  <plain_http>
+    <type>http</type>
+    <host>127.0.0.1</host>
+    <port>8123</port>
+  </plain_http>
+
+  <alt_http>
+    <type>http</type>
+    <host>127.0.0.1</host>
+    <port>8124</port>
+    <handlers>http_handlers_alt</handlers>
+  </alt_http>
+
+</protocols>
+
+<!-- plain_http（端口 8123）使用的默认处理程序 -->
+<http_handlers>
+    <defaults/>
+</http_handlers>
+
+<!-- alt_http（端口 8124）使用的备用处理程序 -->
+<http_handlers_alt>
+    <rule>
+        <url>/custom</url>
+        <handler>
+            <type>predefined_query_handler</type>
+            <query>SELECT 'custom_endpoint'</query>
+        </handler>
+    </rule>
+    <defaults/>
+</http_handlers_alt>
+```
+
+在此示例中，发往 8123 端口的请求使用标准的 `<http_handlers>` 规则，
+而发往 8124 端口的请求使用 `<http_handlers_alt>` 规则。如果省略 `<handlers>`，
+该端点会回退到默认的 `<http_handlers>`。
+
+自定义 handlers 部分的格式与
+[`<http_handlers>`](/zh/reference/settings/server-settings/settings#http_handlers)
+相同。重新加载 config 时，会检测到自定义 handlers 部分的更改，并自动重启
+相应的端点。
+
+<div id="some-modules-can-contain-specific-for-its-layer-parameters">
+  ### 指定额外的 layer 参数
+</div>
+
+某些模块可以包含额外的 layer 参数。例如，TLS layer
+支持按如下方式指定私钥 (`privateKeyFile`) 和证书文件 (`certificateFile`) ：
+
+```xml
+<protocols>
+
+  <plain_http>
+    <type>http</type>
+    <host>127.0.0.1</host>
+    <port>8123</port>
+  </plain_http>
+
+  <https>
+    <type>tls</type>
+    <impl>plain_http</impl>
+    <host>127.0.0.1</host>
+    <port>8443</port>
+    <privateKeyFile>another_server.key</privateKeyFile>
+    <certificateFile>another_server.crt</certificateFile>
+  </https>
+
+</protocols>
+```

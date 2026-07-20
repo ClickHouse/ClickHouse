@@ -23,6 +23,9 @@ public:
     /// Check if any of the given blobs are still in the queue.
     bool containsAny(const StoredObjects & blobs) const;
 
+    /// Return current number of entries in the queue.
+    size_t size() const { return index.size(); }
+
 private:
     int64_t next_slot = 0;
     std::map<int64_t, StoredObject> queue;

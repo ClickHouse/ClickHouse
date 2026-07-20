@@ -1,6 +1,8 @@
 #include <Storages/StorageLog.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageLogSettings.h>
+#include <Storages/StorageWithCommonVirtualColumns.h>
+#include <Storages/VirtualColumnUtils.h>
 
 #include <Columns/IColumn.h>
 #include <Common/Exception.h>
@@ -21,6 +23,8 @@
 #include <IO/WriteHelpers.h>
 #include <IO/copyData.h>
 
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeString.h>
 #include <DataTypes/NestedUtils.h>
 
 #include <Interpreters/Context.h>
@@ -41,7 +45,6 @@
 #include <Disks/TemporaryFileOnDisk.h>
 #include <Disks/IDiskTransaction.h>
 
-#include <cassert>
 #include <chrono>
 
 #include <boost/range/adaptor/map.hpp>
@@ -77,29 +80,31 @@ namespace ErrorCodes
 /// because we read ranges of data that do not change.
 class LogSource final : public ISource
 {
-public:
-    static Block getHeader(const NamesAndTypesList & columns)
+    static Block getHeader(const NamesAndTypesList & physical, const NamesAndTypesList & virtuals)
     {
         Block res;
-
-        for (const auto & name_type : columns)
-            res.insert({ name_type.type->createColumn(), name_type.type, name_type.name });
-
+        for (const auto & name_type : physical)
+            res.insert({name_type.type->createColumn(), name_type.type, name_type.name});
+        for (const auto & name_type : virtuals)
+            res.insert({name_type.type->createColumn(), name_type.type, name_type.name});
         return res;
     }
 
+public:
     LogSource(
+        NamesAndTypesList physical_columns_,
+        NamesAndTypesList virtual_columns_,
         size_t block_size_,
-        const NamesAndTypesList & columns_,
         std::shared_ptr<const StorageLog> storage_,
         size_t rows_limit_,
         const std::vector<size_t> & offsets_,
         const std::vector<size_t> & file_sizes_,
         bool limited_by_file_sizes_,
         ReadSettings read_settings_)
-        : ISource(std::make_shared<const Block>(getHeader(columns_)))
+        : ISource(std::make_shared<const Block>(getHeader(physical_columns_, virtual_columns_)))
+        , physical_columns(std::move(physical_columns_))
+        , virtual_columns(std::move(virtual_columns_))
         , block_size(block_size_)
-        , columns(columns_)
         , storage(std::move(storage_))
         , rows_limit(rows_limit_)
         , offsets(offsets_)
@@ -122,9 +127,12 @@ private:
     /// so that shared substreams (like Nested array offsets) are read only once
     /// from the underlying file stream.
     String getCacheKey(const NameAndTypePair & name_and_type_on_disk) const;
+    void fillPhysicalColumns(Columns & result_columns, size_t max_rows_to_read);
+    void fillVirtualColumns(Columns & result_columns, UInt64 num_rows) const;
 
+    const NamesAndTypesList physical_columns;
+    const NamesAndTypesList virtual_columns;
     const size_t block_size;
-    const NamesAndTypesList columns;
     const std::shared_ptr<const StorageLog> storage;
     const size_t rows_limit;      /// The maximum number of rows that can be read
     size_t rows_read = 0;
@@ -216,22 +224,47 @@ Chunk LogSource::generate()
         return {};
     }
 
-    /// How many rows to read for the next block.
     size_t max_rows_to_read = std::min(block_size, rows_limit - rows_read);
+
+    Columns result_columns;
+    result_columns.reserve(getPort().getHeader().columns());
+    fillPhysicalColumns(result_columns, max_rows_to_read);
+
+    UInt64 num_rows = result_columns.empty() ? 0 : result_columns.front()->size();
+    if (!result_columns.empty())
+        fillVirtualColumns(result_columns, num_rows);
+
+    if (num_rows)
+        rows_read += num_rows;
+    else
+        is_finished = true;
+
+    if (isFinished())
+    {
+        /// Close the files (before destroying the object).
+        /// When many sources are created, but simultaneously reading only a few of them,
+        /// buffers don't waste memory.
+        streams.clear();
+    }
+
+    return Chunk(std::move(result_columns), num_rows);
+}
+
+void LogSource::fillPhysicalColumns(Columns & result_columns, size_t max_rows_to_read)
+{
     std::unordered_map<String, ISerialization::SubstreamsCache> caches;
     std::unordered_map<String, ISerialization::SubstreamsDeserializeStatesCache> deserialize_states_caches;
-    Block res;
 
-    /// First, read prefixes for all columns/subcolumns.
-    for (const auto & name_and_type : columns)
+    /// First, read prefixes for all physical columns/subcolumns.
+    for (const auto & name_and_type : physical_columns)
     {
         auto name_and_type_on_disk = getColumnOnDisk(name_and_type);
         auto cache_key = getCacheKey(name_and_type_on_disk);
         readPrefix(name_and_type_on_disk, caches[cache_key], deserialize_states_caches[cache_key]);
     }
 
-    /// Second, read the data of all columns/subcolumns.
-    for (const auto & name_type : columns)
+    /// Second, read the data of all physical columns/subcolumns.
+    for (const auto & name_type : physical_columns)
     {
         ColumnPtr column;
         auto name_type_on_disk = getColumnOnDisk(name_type);
@@ -248,25 +281,14 @@ Chunk LogSource::generate()
         }
 
         if (!column->empty())
-            res.insert(ColumnWithTypeAndName(column, name_type_on_disk.type, name_type_on_disk.name));
+            result_columns.emplace_back(std::move(column));
     }
+}
 
-    if (!res.empty())
-        rows_read += res.rows();
-
-    if (res.empty())
-        is_finished = true;
-
-    if (isFinished())
-    {
-        /// Close the files (before destroying the object).
-        /// When many sources are created, but simultaneously reading only a few of them,
-        /// buffers don't waste memory.
-        streams.clear();
-    }
-
-    UInt64 num_rows = res.rows();
-    return Chunk(res.getColumns(), num_rows);
+void LogSource::fillVirtualColumns([[maybe_unused]] Columns & result_columns, [[maybe_unused]] UInt64 num_rows) const
+{
+    if (!virtual_columns.empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown virtual columns: '{}'", virtual_columns.getNames());
 }
 
 void LogSource::readPrefix(const NameAndTypePair & name_and_type, ISerialization::SubstreamsCache & cache, ISerialization::SubstreamsDeserializeStatesCache & deserialize_state_cache)
@@ -557,12 +579,12 @@ CompressionCodecPtr LogSink::getCodecOrDefault(const String & column_name, Compr
             : default_codec;
     };
 
-    const auto & columns = metadata_snapshot->getColumns();
+    const auto & columns = metadata_snapshot->columns;
     if (const auto * column_desc = columns.tryGet(column_name))
         return get_codec_or_default(*column_desc);
 
-    const auto & virtual_columns = storage.getVirtualsPtr();
-    if (const auto * virtual_desc = virtual_columns->tryGetDescription(column_name))
+    const auto & virtual_columns = metadata_snapshot->virtuals;
+    if (const auto * virtual_desc = virtual_columns.tryGetDescription(column_name, VirtualsKind::All, VirtualsMaterializationPlace::Reader))
         return get_codec_or_default(*virtual_desc);
 
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected column name: {}", column_name);
@@ -697,7 +719,7 @@ StorageLog::StorageLog(
     const String & comment,
     LoadingStrictnessLevel mode,
     ContextMutablePtr context_)
-    : IStorage(table_id_)
+    : StorageWithCommonVirtualColumns(table_id_)
     , WithMutableContext(context_)
     , engine_name(engine_name_)
     , disk(std::move(disk_))
@@ -712,6 +734,7 @@ StorageLog::StorageLog(
     storage_metadata.setColumns(columns_);
     storage_metadata.setConstraints(constraints_);
     storage_metadata.setComment(comment);
+    storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
 
     if (relative_path_.empty())
@@ -751,6 +774,13 @@ StorageLog::StorageLog(
     total_bytes = file_checker.getTotalSize();
 }
 
+VirtualColumnsDescription StorageLog::createVirtuals()
+{
+    VirtualColumnsDescription desc;
+    desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
+    desc.addEphemeral("_database", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
+    return desc;
+}
 
 void StorageLog::addDataFiles(const NameAndTypePair & column)
 {
@@ -814,7 +844,7 @@ void StorageLog::loadMarks(const WriteLock & lock /* already locked exclusively 
         {
             for (auto & data_file : data_files)
             {
-                Mark mark;
+                Mark mark{};
                 mark.read(*marks_rb);
                 data_file.marks[i] = mark;
             }
@@ -890,7 +920,7 @@ void StorageLog::saveFileSizes(const WriteLock & /* already locked for writing *
 
 void StorageLog::rename(const String & new_path_to_table_data, const StorageID & new_table_id)
 {
-    assert(table_path != new_path_to_table_data);
+    chassert(table_path != new_path_to_table_data);
     {
         disk->createDirectories(new_path_to_table_data);
         disk->moveDirectory(table_path, new_path_to_table_data);
@@ -994,11 +1024,9 @@ Pipe StorageLog::createReadingPipe(
     ReadSettings read_settings = local_context->getReadSettings();
     Pipes pipes;
 
-    /// Converting to subcolumns of Nested is needed for
-    /// correct reading of parts of Nested with shared offsets.
-    auto options = GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns();
-    auto all_columns = storage_snapshot->getColumnsByNames(options, column_names);
-    all_columns = Nested::convertToSubcolumns(all_columns);
+    auto [physical_column_names, virtual_column_names] = VirtualColumnUtils::splitPhysicalAndVirtualColumnNames(column_names, storage_snapshot);
+    auto physical_columns = Nested::convertToSubcolumns(storage_snapshot->getColumnsByNames(GetColumnsOptions(GetColumnsOptions::All).withSubcolumns(), physical_column_names));
+    auto virtual_columns = storage_snapshot->getColumnsByNames(GetColumnsOptions(GetColumnsOptions::All).withVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::Reader), virtual_column_names);
 
     for (size_t stream = 0; stream < num_streams; ++stream)
     {
@@ -1014,8 +1042,9 @@ Pipe StorageLog::createReadingPipe(
         }
 
         pipes.emplace_back(std::make_shared<LogSource>(
+            physical_columns,
+            virtual_columns,
             max_block_size,
-            all_columns,
             std::static_pointer_cast<const StorageLog>(shared_from_this()),
             row_limit,
             offsets,
@@ -1028,7 +1057,7 @@ Pipe StorageLog::createReadingPipe(
     return Pipe::unitePipes(std::move(pipes));
 }
 
-void StorageLog::read(
+void StorageLog::readImpl(
     QueryPlan & plan,
     const Names & column_names,
     const StorageSnapshotPtr & storage_snapshot,
@@ -1084,7 +1113,8 @@ IStorage::ColumnSizeByName StorageLog::getColumnSizes() const
 
     ColumnSizeByName column_sizes;
 
-    for (const auto & column : getInMemoryMetadata().getColumns().getAllPhysical())
+    auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
+    for (const auto & column : metadata_snapshot->getColumns().getAllPhysical())
     {
         ISerialization::StreamCallback stream_callback = [&, this] (const ISerialization::SubstreamPath & substream_path)
         {
@@ -1186,9 +1216,10 @@ void StorageLog::backupData(BackupEntriesCollector & backup_entries_collector, c
         data_path_in_backup_fs / fileName(files_info_path), std::make_unique<BackupEntryFromSmallFile>(disk, files_info_path, read_settings, copy_encrypted));
 
     /// columns.txt
+    auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
     backup_entries_collector.addBackupEntry(
         data_path_in_backup_fs / "columns.txt",
-        std::make_unique<BackupEntryFromMemory>(getInMemoryMetadata().getColumns().getAllPhysical().toString()));
+        std::make_unique<BackupEntryFromMemory>(metadata_snapshot->getColumns().getAllPhysical().toString()));
 
     /// count.txt
     if (use_marks_file)
@@ -1277,7 +1308,7 @@ void StorageLog::restoreDataImpl(const BackupPtr & backup, const String & data_p
             {
                 for (size_t j = 0; j != num_data_files; ++j)
                 {
-                    Mark mark;
+                    Mark mark{};
                     mark.read(*marks_rb);
                     mark.rows += old_num_rows[j];     /// Adjust the number of rows.
                     mark.offset += old_data_sizes[j]; /// Adjust the offset.
@@ -1300,23 +1331,6 @@ void StorageLog::restoreDataImpl(const BackupPtr & backup, const String & data_p
     }
 }
 
-namespace
-{
-
-SharedHeader getHeader(
-    const Names & column_names,
-    const StorageSnapshotPtr & storage_snapshot
-)
-{
-    auto options = GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns();
-    auto all_columns = storage_snapshot->getColumnsByNames(options, column_names);
-    all_columns = Nested::convertToSubcolumns(all_columns);
-
-    return std::make_shared<const Block>(LogSource::getHeader(all_columns));
-}
-
-}
-
 ReadFromStorageLogStep::ReadFromStorageLogStep(
         const Names & column_names_,
         ContextPtr local_context_,
@@ -1325,7 +1339,7 @@ ReadFromStorageLogStep::ReadFromStorageLogStep(
         size_t max_block_size_,
         size_t num_streams_
 )
-    : ISourceStep(getHeader(column_names_, storage_snapshot_))
+    : ISourceStep(std::make_shared<const Block>(storage_snapshot_->getSampleBlockForColumns(column_names_)))
     , column_names(column_names_)
     , local_context(local_context_)
     , storage(std::move(storage_))
@@ -1341,6 +1355,7 @@ void ReadFromStorageLogStep::initializePipeline(QueryPipelineBuilder & pipeline,
     pipeline.init(std::move(pipe));
 }
 
+void registerStorageLog(StorageFactory & factory);
 void registerStorageLog(StorageFactory & factory)
 {
     StorageFactory::StorageFeatures features{
@@ -1369,8 +1384,192 @@ void registerStorageLog(StorageFactory & factory)
             args.getContext());
     };
 
-    factory.registerStorage("Log", create_fn, features);
-    factory.registerStorage("TinyLog", create_fn, features);
+    factory.registerStorage("Log", create_fn, features, Documentation{
+        .description = R"DOCS_MD(
+import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
+
+# Log table engine
+
+<CloudNotSupportedBadge/>
+
+The engine belongs to the family of `Log` engines. See the common properties of `Log` engines and their differences in the [Log Engine Family](../../../engines/table-engines/log-family/index.md) article.
+
+`Log` differs from [TinyLog](../../../engines/table-engines/log-family/tinylog.md) in that a small file of "marks" resides with the column files. These marks are written on every data block and contain offsets that indicate where to start reading the file in order to skip the specified number of rows. This makes it possible to read table data in multiple threads.
+For concurrent data access, the read operations can be performed simultaneously, while write operations block reads and each other.
+The `Log` engine does not support indexes. Similarly, if writing to a table failed, the table is broken, and reading from it returns an error. The `Log` engine is appropriate for temporary data, write-once tables, and for testing or demonstration purposes.
+
+## Creating a table {#table_engines-log-creating-a-table}
+
+```sql
+CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
+(
+    column1_name [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
+    column2_name [type2] [DEFAULT|MATERIALIZED|ALIAS expr2],
+    ...
+) ENGINE = Log
+```
+
+See the detailed description of the [CREATE TABLE](/sql-reference/statements/create/table) query.
+
+## Writing the data {#table_engines-log-writing-the-data}
+
+The `Log` engine efficiently stores data by writing each column to its own file.  For every table, the Log engine writes the following files to the specified storage path:
+
+- `<column>.bin`: A data file for each column, containing the serialized and compressed data.
+`__marks.mrk`: A marks file, storing offsets and row counts for each data block inserted. Marks are used to facilitate efficient query execution by allowing the engine to skip irrelevant data blocks during reads.
+
+### Writing process {#writing-process}
+
+When data is written to a `Log` table:
+
+1.    Data is serialized and compressed into blocks.
+2.    For each column, the compressed data is appended to its respective `<column>.bin` file.
+3.    Corresponding entries are added to the `__marks.mrk` file to record the offset and row count of the newly inserted data.
+
+## Reading the data {#table_engines-log-reading-the-data}
+
+The file with marks allows ClickHouse to parallelize the reading of data. This means that a `SELECT` query returns rows in an unpredictable order. Use the `ORDER BY` clause to sort rows.
+
+## Example of use {#table_engines-log-example-of-use}
+
+Creating a table:
+
+```sql
+CREATE TABLE log_table
+(
+    timestamp DateTime,
+    message_type String,
+    message String
+)
+ENGINE = Log
+```
+
+Inserting data:
+
+```sql
+INSERT INTO log_table VALUES (now(),'REGULAR','The first regular message')
+INSERT INTO log_table VALUES (now(),'REGULAR','The second regular message'),(now(),'WARNING','The first warning message')
+```
+
+We used two `INSERT` queries to create two data blocks inside the `<column>.bin` files.
+
+ClickHouse uses multiple threads when selecting data. Each thread reads a separate data block and returns resulting rows independently as it finishes. As a result, the order of blocks of rows in the output may not match the order of the same blocks in the input. For example:
+
+```sql
+SELECT * FROM log_table
+```
+
+```text
+┌───────────timestamp─┬─message_type─┬─message────────────────────┐
+│ 2019-01-18 14:27:32 │ REGULAR      │ The second regular message │
+│ 2019-01-18 14:34:53 │ WARNING      │ The first warning message  │
+└─────────────────────┴──────────────┴────────────────────────────┘
+┌───────────timestamp─┬─message_type─┬─message───────────────────┐
+│ 2019-01-18 14:23:43 │ REGULAR      │ The first regular message │
+└─────────────────────┴──────────────┴───────────────────────────┘
+```
+
+Sorting the results (ascending order by default):
+
+```sql
+SELECT * FROM log_table ORDER BY timestamp
+```
+
+```text
+┌───────────timestamp─┬─message_type─┬─message────────────────────┐
+│ 2019-01-18 14:23:43 │ REGULAR      │ The first regular message  │
+│ 2019-01-18 14:27:32 │ REGULAR      │ The second regular message │
+│ 2019-01-18 14:34:53 │ WARNING      │ The first warning message  │
+└─────────────────────┴──────────────┴────────────────────────────┘
+```
+)DOCS_MD",
+        .syntax = "ENGINE = Log",
+        .related = {"TinyLog", "StripeLog"}});
+
+    factory.registerStorage("TinyLog", create_fn, features, Documentation{
+        .description = R"DOCS_MD(
+import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
+
+# TinyLog table engine
+
+<CloudNotSupportedBadge/>
+
+The engine belongs to the log engine family. See [Log Engine Family](../../../engines/table-engines/log-family/index.md) for common properties of log engines and their differences.
+
+This table engine is typically used with the write-once method: write data one time, then read it as many times as necessary. For example, you can use `TinyLog`-type tables for intermediary data that is processed in small batches. Note that storing data in a large number of small tables is inefficient.
+
+Queries are executed in a single stream. In other words, this engine is intended for relatively small tables (up to about 1,000,000 rows). It makes sense to use this table engine if you have many small tables, since it's simpler than the [Log](../../../engines/table-engines/log-family/log.md) engine (fewer files need to be opened).
+
+## Characteristics {#characteristics}
+
+- **Simpler Structure**: Unlike the Log engine, TinyLog does not use mark files. This reduces complexity but also limits performance optimizations for large datasets.
+- **Single Stream Queries**: Queries on TinyLog tables are executed in a single stream, making it suitable for relatively small tables, typically up to 1,000,000 rows.
+- **Efficient for Small Table**: The simplicity of the TinyLog engine makes it advantageous when managing many small tables, as it requires fewer file operations compared to the Log engine.
+
+Unlike the Log engine, TinyLog does not use mark files. This reduces complexity but also limits performance optimizations for larger datasets.
+
+## Creating a table {#table_engines-tinylog-creating-a-table}
+
+```sql
+CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
+(
+    column1_name [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
+    column2_name [type2] [DEFAULT|MATERIALIZED|ALIAS expr2],
+    ...
+) ENGINE = TinyLog
+```
+
+See the detailed description of the [CREATE TABLE](/sql-reference/statements/create/table) query.
+
+## Writing the data {#table_engines-tinylog-writing-the-data}
+
+The `TinyLog` engine stores all the columns in one file. For each `INSERT` query, ClickHouse appends the data block to the end of a table file, writing columns one by one.
+
+For each table ClickHouse writes the files:
+
+- `<column>.bin`: A data file for each column, containing the serialized and compressed data.
+
+The `TinyLog` engine does not support the `ALTER UPDATE` and `ALTER DELETE` operations.
+
+## Example of use {#table_engines-tinylog-example-of-use}
+
+Creating a table:
+
+```sql
+CREATE TABLE tiny_log_table
+(
+    timestamp DateTime,
+    message_type String,
+    message String
+)
+ENGINE = TinyLog
+```
+
+Inserting data:
+
+```sql
+INSERT INTO tiny_log_table VALUES (now(),'REGULAR','The first regular message')
+INSERT INTO tiny_log_table VALUES (now(),'REGULAR','The second regular message'),(now(),'WARNING','The first warning message')
+```
+
+We used two `INSERT` queries to create two data blocks inside the `<column>.bin` files.
+
+ClickHouse uses a single stream selecting data. As a result, the order of blocks of rows in the output matches the order of the same blocks in the input. For example:
+
+```sql
+SELECT * FROM tiny_log_table
+```
+
+```text
+┌───────────timestamp─┬─message_type─┬─message────────────────────┐
+│ 2024-12-10 13:11:58 │ REGULAR      │ The first regular message  │
+│ 2024-12-10 13:12:12 │ REGULAR      │ The second regular message │
+│ 2024-12-10 13:12:12 │ WARNING      │ The first warning message  │
+└─────────────────────┴──────────────┴────────────────────────────┘
+```
+)DOCS_MD",
+        .syntax = "ENGINE = TinyLog",
+        .related = {"Log", "StripeLog"}});
 }
 
 }

@@ -39,15 +39,13 @@ geohashEncode(longitude, latitude, [precision])
 
 **Example**
 
-Query:
 
-```sql
+```sql title="Query"
 SELECT geohashEncode(-5.60302734375, 42.593994140625, 0) AS res;
 ```
 
-Result:
 
-```text
+```text title="Response"
 ┌─res──────────┐
 │ ezs42d000000 │
 └──────────────┘
@@ -116,15 +114,13 @@ Function throws an exception if resulting array is over 10'000'000 items long.
 
 **Example**
 
-Query:
 
-```sql
+```sql title="Query"
 SELECT geohashesInBox(24.48, 40.56, 24.785, 40.81, 4) AS thasos;
 ```
 
-Result:
 
-```text
+```text title="Response"
 ┌─thasos──────────────────────────────────────┐
 │ ['sx1q','sx1r','sx32','sx1w','sx1x','sx38'] │
 └─────────────────────────────────────────────┘

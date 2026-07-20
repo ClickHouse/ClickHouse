@@ -1,0 +1,60 @@
+---
+description: 'امتداد لدالة الجدول iceberg يتيح معالجة ملفات
+  Apache Iceberg بالتوازي عبر عدة عقد ضمن عنقود محدد.'
+sidebarTitle: 'icebergCluster'
+slug: /sql-reference/table-functions/icebergCluster
+title: 'icebergCluster'
+doc_type: 'reference'
+---
+
+هذا امتداد لدالة الجدول [iceberg](/ar/reference/functions/table-functions/iceberg).
+
+يتيح معالجة ملفات [Apache Iceberg](https://iceberg.apache.org/) بالتوازي عبر عدة عقد ضمن عنقود محدد. على العقدة البادئة، ينشئ اتصالًا بجميع العقد في العنقود ويوزّع كل ملف ديناميكيًا. وعلى العقدة العاملة، يطلب من العقدة البادئة المهمة التالية المطلوب معالجتها ثم يعالجها. ويتكرر ذلك حتى تكتمل جميع المهام.
+
+<div id="syntax">
+  ## بناء الجملة
+</div>
+
+```sql
+icebergS3Cluster(cluster_name, url [, NOSIGN | access_key_id, secret_access_key, [session_token]] [,format] [,compression_method] [,extra_credentials])
+icebergS3Cluster(cluster_name, named_collection[, option=value [,..]])
+
+icebergAzureCluster(cluster_name, connection_string|storage_account_url, container_name, blobpath, [,account_name], [,account_key] [,format] [,compression_method])
+icebergAzureCluster(cluster_name, named_collection[, option=value [,..]])
+
+icebergHDFSCluster(cluster_name, path_to_table, [,format] [,compression_method])
+icebergHDFSCluster(cluster_name, named_collection[, option=value [,..]])
+```
+
+<div id="arguments">
+  ## الوسيطات
+</div>
+
+* `cluster_name` — اسم عنقود يُستخدم لإنشاء مجموعة من العناوين ومعلمات الاتصال بالخوادم البعيدة والمحلية.
+* يتوافق وصف جميع الوسيطات الأخرى مع وصف الوسيطات في دالة الجدول المكافئة [iceberg](/ar/reference/functions/table-functions/iceberg).
+* يمكن استخدام المعلَمة الاختيارية `extra_credentials` لتمرير `role_arn` من أجل الوصول المستند إلى الدور في ClickHouse Cloud. راجع [Secure S3](/ar/products/cloud/guides/data-sources/accessing-s3-data-securely) للاطلاع على خطوات التكوين.
+
+**القيمة المعادة**
+
+جدول بالبنية المحددة لقراءة البيانات من الـ عنقود في جدول Iceberg المحدد.
+
+**أمثلة**
+
+```sql
+SELECT * FROM icebergS3Cluster('cluster_simple', 'http://test.s3.amazonaws.com/clickhouse-bucket/test_table', 'test', 'test')
+```
+
+<div id="virtual-columns">
+  ## الأعمدة الافتراضية
+</div>
+
+* `_path` — مسار الملف. النوع: `LowCardinality(String)`.
+* `_file` — اسم الملف. النوع: `LowCardinality(String)`.
+* `_size` — حجم الملف بالبايت. النوع: `Nullable(UInt64)`. إذا كان حجم الملف غير معروف، فستكون القيمة `NULL`.
+* `_time` — وقت آخر تعديل للملف. النوع: `Nullable(DateTime)`. إذا كان الوقت غير معروف، فستكون القيمة `NULL`.
+* `_etag` — قيمة etag للملف. النوع: `LowCardinality(String)`. إذا كانت قيمة etag غير معروفة، فستكون القيمة `NULL`.
+
+**انظر أيضًا**
+
+* [محرك Iceberg](/ar/reference/engines/table-engines/integrations/iceberg)
+* [دالة الجدول Iceberg](/ar/reference/functions/table-functions/iceberg)

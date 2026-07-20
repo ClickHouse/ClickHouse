@@ -71,7 +71,7 @@ For a detailed description of the parameters, see the [CREATE TABLE](/sql-refere
 
 A tuple of column names or arbitrary expressions. Example: `ORDER BY (CounterID + 1, EventDate)`.
 
-If no primary key is defined (i.e. `PRIMARY KEY` was not specified), ClickHouse uses the the sorting key as primary key.
+If no primary key is defined (i.e. `PRIMARY KEY` was not specified), ClickHouse uses the sorting key as primary key.
 
 If no sorting is required, you can use syntax `ORDER BY tuple()`.
 Alternatively, if setting `create_table_empty_primary_key_by_default` is enabled, `ORDER BY ()` is implicitly added to `CREATE TABLE` statements. See [Selecting a Primary Key](#selecting-a-primary-key).
@@ -381,6 +381,9 @@ Data skipping indexes can also be created on composite columns:
 INDEX map_key_index mapKeys(map_column) TYPE bloom_filter
 INDEX map_value_index mapValues(map_column) TYPE bloom_filter
 
+-- on columns of type JSON:
+INDEX json_paths_index JSONAllPaths(json_column) TYPE bloom_filter
+
 -- on columns of type Tuple:
 INDEX tuple_1_index tuple_column.1 TYPE bloom_filter
 INDEX tuple_2_index tuple_column.2 TYPE bloom_filter
@@ -448,6 +451,10 @@ The following data types are supported:
 
 :::note Map data type: specifying index creation with keys or values
 For the `Map` data type, the client can specify if the index should be created for keys or for values using the [`mapKeys`](/sql-reference/functions/tuple-map-functions.md/#mapKeys) or [`mapValues`](/sql-reference/functions/tuple-map-functions.md/#mapValues) functions.
+:::
+
+:::note JSON data type: indexing JSON paths
+For the [`JSON`](/sql-reference/data-types/newjson) data type, a bloom filter index can be created on the set of paths using the [`JSONAllPaths`](/sql-reference/functions/json-functions#JSONAllPaths) function. This allows skipping granules where a queried JSON path is absent. See [Data skipping indexes for JSON](/sql-reference/data-types/newjson#data-skipping-indexes-for-json) for details.
 :::
 
 #### N-gram bloom filter *(Deprecated)* {#n-gram-bloom-filter}
@@ -565,7 +572,9 @@ Indexes of type `set` can be utilized by all functions. The other index types ar
 | [match](/sql-reference/functions/string-search-functions.md/#match)                                                            | ✗           | ✗      | ✔          | ✔          | ✗            | ✔            | ✔    |
 | [startsWith](/sql-reference/functions/string-functions.md/#startsWith)                                                         | ✔           | ✔      | ✔          | ✔          | ✗            | ✔            | ✔    |
 | [endsWith](/sql-reference/functions/string-functions.md/#endsWith)                                                             | ✗           | ✗      | ✔          | ✔          | ✗            | ✔            | ✔    |
-| [multiSearchAny](/sql-reference/functions/string-search-functions.md/#multiSearchAny)                                          | ✗           | ✗      | ✔          | ✗          | ✗            | ✗            | ✗    |
+| [multiSearchAny](/sql-reference/functions/string-search-functions.md/#multiSearchAny)                                          | ✗           | ✗      | ✔          | ✗          | ✗            | ✗            | ✔    |
+| [multiSearchAnyUTF8](/sql-reference/functions/string-search-functions.md/#multiSearchAnyUTF8)                                  | ✗           | ✗      | ✗          | ✗          | ✗            | ✗            | ✔    |
+| [multiMatchAny](/sql-reference/functions/string-search-functions.md/#multiMatchAny)                                            | ✗           | ✗      | ✗          | ✗          | ✗            | ✗            | ✔    |
 | [in](/sql-reference/functions/in-functions)                                                                                    | ✔           | ✔      | ✔          | ✔          | ✔            | ✔            | ✔    |
 | [notIn](/sql-reference/functions/in-functions)                                                                                 | ✔           | ✔      | ✔          | ✔          | ✔            | ✔            | ✗    |
 | [less (`<`)](/sql-reference/functions/comparison-functions.md/#less)                                                           | ✔           | ✔      | ✗          | ✗          | ✗            | ✗            | ✗    |
@@ -633,13 +642,16 @@ Projections can be modified or dropped with the [ALTER](/sql-reference/statement
 
 ### Projection indexes {#projection-index}
 
-Projection indexes extend the projection subsystem by providing a lightweight, explicit way to define projection-level indexes. 
-Conceptually, a projection index is still a projection, but with simplified syntax and clearer intent: it defines an expression which is dedicated to filtering, rather than serving as materialized data.
+Projection indexes extend the projection subsystem by providing a lightweight and explicit way to define projection-level indexes.
+Externally, a projection index is still a projection, but with simplified syntax and clearer intent: it defines an expression which is dedicated to filtering, rather than serving materialized data.
+Internally, a projection index does not materialize the original table in permuted row order like a regular projection.
+Instead, the permutation is stored in the form of a numeric permutation column `_part_offset`, i.e. `SELECT _part_offset ORDER BY <index_expr>`.
 
 #### Syntax {#projection-index-syntax}
+
 ```sql
 PROJECTION <name> INDEX <index_expr> TYPE <index_type>
-````
+```
 
 Example:
 
@@ -685,6 +697,12 @@ Determines the lifetime of values.
 The `TTL` clause can be set for the whole table and for each individual column. Table-level `TTL` can also specify the logic of automatic moving data between disks and volumes, or recompressing parts where all the data has been expired.
 
 Expressions must evaluate to [Date](/sql-reference/data-types/date.md), [Date32](/sql-reference/data-types/date32.md), [DateTime](/sql-reference/data-types/datetime.md) or [DateTime64](/sql-reference/data-types/datetime64.md) data type.
+
+:::tip[Avoid non-deterministic functions in TTL expressions]
+TTL is evaluated during background merges, and not at insert time.
+Functions like `rand()`, `now()`, or `now64()` will be re-evaluated on every merge, leading to unpredictable deletion behavior.
+ClickHouse blocks expressions with no column dependency at all, but does not currently reject non-deterministic functions mixed with a column reference (e.g. `ts + rand()`). TTL expressions should be based solely on deterministic, column-derived values for predictable results.
+:::
 
 **Syntax**
 
@@ -1212,14 +1230,12 @@ ClickHouse versions 22.3 through 22.7 use a different cache configuration, see [
 
 ## Column statistics {#column-statistics}
 
-<CloudNotSupportedBadge/>
-
 The statistics declaration is in the columns section of the `CREATE` query for tables from the `*MergeTree*` Family:
 
 ```sql
 CREATE TABLE tab
 (
-    a Int64 STATISTICS(TDigest, Uniq),
+    a Int64 STATISTICS(tdigest, uniq),
     b Float64
 )
 ENGINE = MergeTree
@@ -1229,7 +1245,7 @@ ORDER BY a
 We can also manipulate statistics with `ALTER` statements:
 
 ```sql
-ALTER TABLE tab ADD STATISTICS b TYPE TDigest, Uniq;
+ALTER TABLE tab ADD STATISTICS b TYPE tdigest, uniq;
 ALTER TABLE tab DROP STATISTICS a;
 ```
 
@@ -1239,17 +1255,17 @@ They can be used for prewhere optimization only if we enable `set use_statistics
 #### Part Pruning with Statistics {#part-pruning-with-statistics}
 
 When `use_statistics_for_part_pruning` is enabled, statistics can be used for part pruning.
-Currently, only `MinMax` statistics support part pruning. When MinMax statistics are defined on a column, ClickHouse tracks the minimum and maximum values for that column in each part.
+Currently, only `basic` statistics (and the deprecated `minmax` statistics) support part pruning. When such statistics are defined on a column, ClickHouse tracks the minimum and maximum values for that column in each part.
 Part pruning allows to skip reading entire data parts when the query filter condition cannot match any rows in that part.
 
 **Example:**
 
 ```sql
--- Create a table with MinMax statistics on the 'value' column
+-- Create a table with basic statistics on the 'value' column
 CREATE TABLE test_stats
 (
     id UInt64,
-    value Int64 STATISTICS(MinMax)
+    value Int64 STATISTICS(basic)
 )
 ENGINE = MergeTree
 ORDER BY id;
@@ -1272,47 +1288,74 @@ EXPLAIN indexes = 1 SELECT count() FROM test_stats WHERE value > 5000;
 
 ### Available types of column statistics {#available-types-of-column-statistics}
 
-- `MinMax`
+- `basic`
+
+    A compact bundle of single-value summaries derived from a column. Depending on the column type, the following pieces are populated:
+  - for any column whose values are represented by a number (integers, floats, `Decimal*`, `Date*`, `DateTime*`, `Enum*`, `IPv4`, ...): the minimum and maximum value, which allow to estimate the selectivity of range filters and enable part pruning;
+  - for `String` and `FixedString` columns: the total byte length of non-`NULL` values (from which the average string length can be derived);
+  - for `Nullable` and `LowCardinality(Nullable)` columns: the count of `NULL` values, which the optimizer uses to discount `NULL` rows from selectivity estimates.
+
+    A single `basic` statistic can populate several of these at once — for example on a `Nullable(UInt32)` column it tracks both numeric min/max and the null count. Compared to `minmax`, `basic` additionally works on `String` / `FixedString` columns and can be declared on `Nullable` wrappers of types like `UUID` or `IPv6` purely to track the null count.
+
+- `minmax` (deprecated)
+
+    :::note
+    `minmax` statistics are deprecated and can no longer be created (`CREATE TABLE ... STATISTICS(minmax)` and `ALTER TABLE ... ADD/MODIFY STATISTICS ... TYPE minmax` return an error). Existing tables and parts with `minmax` statistics keep working. Use `basic` statistics instead.
+    :::
 
     The minimum and maximum column value which allows to estimate the selectivity of range filters on numeric columns.
 
-    Syntax: `minmax`
+- `tdigest`
 
-- `TDigest`
+:::warning
+Statistics of type `tdigest` have high creation costs and potentially slow down data ingest.
+:::
 
     [TDigest](https://github.com/tdunning/t-digest) sketches which allow to compute approximate percentiles (e.g. the 90th percentile) for numeric columns.
 
-    Syntax: `tdigest`
+- `uniq`
 
-- `Uniq`
+    [BJKST](https://people.iith.ac.in/aravind/Files-CS5120/pc-lec14-BJKST.pdf) sketches which provide an estimation how many distinct values a column contains. Internally uses [`uniq`](/sql-reference/aggregate-functions/reference/uniq).
 
-    [HyperLogLog](https://en.wikipedia.org/wiki/HyperLogLog) sketches which provide an estimation how many distinct values a column contains.
+- `uniq_v2`
 
-    Syntax: `uniq`
+    Similar to `uniq` but internally uses [`uniqCombined`](/sql-reference/aggregate-functions/reference/uniqcombined)`(12)` (a variant of [HyperLogLog](https://en.wikipedia.org/wiki/HyperLogLog)). Consumes less memory than `uniq` and can be build faster.
 
-- `CountMin`
+- `countmin`
+
+:::warning
+Statistics of type `countmin` have high creation costs and potentially slow down data ingest.
+:::
 
     [CountMin](https://en.wikipedia.org/wiki/Count%E2%80%93min_sketch) sketches which provide an approximate count of the frequency of each value in a column.
 
-    Syntax `countmin`
-
 ### Supported data types {#supported-data-types}
 
-|           | (U)Int*, Float*, Decimal(*), Date*, Boolean, Enum* | String or FixedString |
-|-----------|----------------------------------------------------|-----------------------|
-| CountMin  | ✔                                                  | ✔                     |
-| MinMax    | ✔                                                  | ✗                     |
-| TDigest   | ✔                                                  | ✗                     |
-| Uniq      | ✔                                                  | ✔                     |
+|               | (U)Int*, Float*, Decimal(*), Date*, Boolean, Enum* | IPv4 | String or FixedString |
+|---------------|----------------------------------------------------|----- |-----------------------|
+| basic         | ✔                                                  | ✔    | ✔                     |
+| countmin      | ✔                                                  | ✔    | ✔                     |
+| minmax        | ✔                                                  | ✔    | ✗                     |
+| tdigest       | ✔                                                  | ✗    | ✗                     |
+| uniq          | ✔                                                  | ✔    | ✔                     |
+| uniq_v2       | ✔                                                  | ✔    | ✔                     |
+
+All of the above also accept `Nullable` and `LowCardinality(Nullable)` wrappers of the listed types. `Basic` may additionally be declared on `Nullable` wrappers of types like `UUID` or `IPv6` purely to track the null count.
 
 ### Supported operations {#supported-operations}
 
-|           | Equality filters (==) | Range filters (`>, >=, <, <=`) |
-|-----------|-----------------------|------------------------------|
-| CountMin  | ✔                     | ✗                            |
-| MinMax    | ✗                     | ✔                            |
-| TDigest   | ✗                     | ✔                            |
-| Uniq      | ✔                     | ✗                            |
+|               | Equality filters (==) | Range filters (`>, >=, <, <=`) |
+|---------------|------------------------|---------------------------------|
+| basic         | ✗                      | ✔ (numeric columns only)        |
+| countmin      | ✔                      | ✗                               |
+| minmax        | ✗                      | ✔ (numeric columns only)        |
+| tdigest       | ✗                      | ✔ (numeric columns only)        |
+| uniq          | ✔                      | ✗                               |
+| uniq_v2       | ✔                      | ✗                               |
+
+For `basic` on `String` / `FixedString` columns the statistic only records the total
+non-NULL byte length (used to estimate average string length) and the null count;
+range filters and part pruning are not driven by it.
 
 ## Column-level settings {#column-level-settings}
 

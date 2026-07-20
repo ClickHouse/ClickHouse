@@ -1,0 +1,138 @@
+---
+sidebarTitle: 'Amazon RDS Postgres'
+description: 'Настройте Amazon RDS Postgres в качестве источника для ClickPipes'
+slug: /integrations/clickpipes/postgres/source/rds
+title: 'Руководство по настройке источника Amazon RDS Postgres'
+doc_type: 'guide'
+keywords: ['clickpipes', 'postgresql', 'CDC', 'ингестия данных', 'синхронизация в реальном времени']
+integration:
+   - support_level: 'core'
+   - category: 'clickpipes'
+---
+
+import { Image } from "/snippets/ru/components/Image.jsx";
+
+<div id="supported-postgres-versions">
+  ## Поддерживаемые версии Postgres
+</div>
+
+ClickPipes поддерживает Postgres версии 12 и новее.
+
+<div id="enable-logical-replication">
+  ## Включите логическую репликацию
+</div>
+
+Вы можете пропустить этот раздел, если для вашего экземпляра RDS уже задан следующий параметр:
+
+* `rds.logical_replication = 1`
+
+Обычно этот параметр уже настроен, если вы ранее использовали другой инструмент для репликации данных.
+
+```text
+postgres=> SHOW rds.logical_replication ;
+ rds.logical_replication
+-------------------------
+ on
+(1 row)
+```
+
+Если это ещё не настроено, выполните следующие действия:
+
+1. Создайте новую группу параметров для вашей версии Postgres с требуемыми настройками:
+   * Установите `rds.logical_replication` в значение 1
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/rds/parameter_group_in_blade.webp" alt="Где в RDS находятся группы параметров?" size="lg" border />
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/rds/change_rds_logical_replication.webp" alt="Изменение значения rds.logical_replication" size="lg" border />
+
+2. Примените новую группу параметров к вашей базе данных RDS Postgres
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/rds/modify_parameter_group.webp" alt="Изменение RDS Postgres с использованием новой группы параметров" size="lg" border />
+
+3. Перезагрузите экземпляр RDS, чтобы изменения вступили в силу
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/rds/reboot_rds.webp" alt="Перезагрузка RDS Postgres" size="lg" border />
+
+<div id="configure-database-user">
+  ## Настройка пользователя базы данных
+</div>
+
+Подключитесь к своему экземпляру RDS Postgres от имени администратора и выполните следующие команды:
+
+1. Создайте отдельного пользователя для ClickPipes:
+
+   ```sql
+   CREATE USER clickpipes_user PASSWORD 'some-password';
+   ```
+
+2. Выдайте пользователю, созданному на предыдущем шаге, права только для чтения на уровне схемы. В следующем примере показаны разрешения для схемы `public`. Повторите эти команды для каждой схемы, содержащей таблицы, которые вы хотите реплицировать:
+
+   ```sql
+   GRANT USAGE ON SCHEMA "public" TO clickpipes_user;
+   GRANT SELECT ON ALL TABLES IN SCHEMA "public" TO clickpipes_user;
+   ALTER DEFAULT PRIVILEGES IN SCHEMA "public" GRANT SELECT ON TABLES TO clickpipes_user;
+   ```
+
+3. Выдайте пользователю права на репликацию:
+
+   ```sql
+   GRANT rds_replication TO clickpipes_user;
+   ```
+
+4. Создайте [публикацию](https://www.postgresql.org/docs/current/logical-replication-publication.html) с таблицами, которые вы хотите реплицировать. Мы настоятельно рекомендуем включать в публикацию только необходимые таблицы, чтобы избежать лишних накладных расходов на производительность.
+
+<Warning>
+  Любая таблица, включённая в публикацию, должна либо иметь **первичный ключ**, *либо* иметь настроенный параметр **replica identity** со значением `FULL`. Рекомендации по выбору состава публикации см. в [FAQ по Postgres](/ru/integrations/clickpipes/postgres/faq#how-should-i-scope-my-publications-when-setting-up-replication).
+</Warning>
+
+* Чтобы создать публикацию для определённых таблиц:
+
+  ```sql
+  CREATE PUBLICATION clickpipes FOR TABLE table_to_replicate, table_to_replicate2;
+  ```
+
+  * Чтобы создать публикацию для всех таблиц в определённой схеме:
+
+    ```sql
+    CREATE PUBLICATION clickpipes FOR TABLES IN SCHEMA "public";
+    ```
+
+Публикация `clickpipes` будет содержать набор событий изменений для указанных таблиц и позже будет использоваться для приёма потока репликации.
+
+<div id="configure-network-access">
+  ## Настройка сетевого доступа
+</div>
+
+<div id="ip-based-access-control">
+  ### Управление доступом по IP-адресам
+</div>
+
+Если вы хотите ограничить трафик к своему экземпляру RDS, добавьте [задокументированные статические NAT IP-адреса](/ru/integrations/clickpipes/home#list-of-static-ips) в раздел `Inbound rules` группы безопасности RDS.
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/rds/security_group_in_rds_postgres.webp" alt="Где найти группу безопасности в RDS Postgres?" size="lg" border />
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/rds/edit_inbound_rules.webp" alt="Изменение inbound rules для указанной выше группы безопасности" size="lg" border />
+
+<div id="private-access-via-aws-privatelink">
+  ### Частный доступ через AWS PrivateLink
+</div>
+
+Чтобы подключиться к экземпляру RDS через частную сеть, можно использовать AWS PrivateLink. Для настройки подключения следуйте нашему [руководству по настройке AWS PrivateLink для ClickPipes](/ru/resources/support-center/knowledge-base/cloud-services/aws-privatelink-setup-for-clickpipes).
+
+<div id="workarounds-for-rds-proxy">
+  ### Варианты обхода для RDS Proxy
+</div>
+
+RDS Proxy не поддерживает подключения для логической репликации. Если в RDS у вас используются динамические IP-адреса и вы не можете использовать DNS-имя или Lambda, вот несколько альтернатив:
+
+1. Используйте задание cron, чтобы периодически определять IP-адрес конечной точки RDS и обновлять NLB, если он изменился.
+2. Используйте уведомления о событиях RDS с EventBridge/SNS: автоматически запускайте обновления через уведомления AWS RDS о событиях.
+3. Стабильный EC2: разверните экземпляр EC2, который будет выступать в роли сервиса опроса или IP-прокси.
+4. Автоматизируйте управление IP-адресами с помощью таких инструментов, как Terraform или CloudFormation.
+
+<div id="whats-next">
+  ## Что дальше?
+</div>
+
+Теперь вы можете [создать свой ClickPipe](/ru/integrations/clickpipes/postgres/index) и начать ингестию данных из вашего экземпляра Postgres в ClickHouse Cloud.
+Обязательно сохраните сведения о подключении, которые вы использовали при настройке экземпляра Postgres, так как они понадобятся вам при создании ClickPipe.

@@ -8,8 +8,18 @@ SET enable_parallel_replicas=1, automatic_parallel_replicas_mode=2, parallel_rep
 -- Reading of aggregation states from disk will affect `ReadCompressedBytes`
 SET max_bytes_before_external_group_by=0, max_bytes_ratio_before_external_group_by=0;
 
+-- External sort spills data to disk and reads it back, which inflates `ReadCompressedBytes`
+-- and breaks the estimation accuracy check. Keep sorting fully in-memory.
+SET max_bytes_before_external_sort=0, max_bytes_ratio_before_external_sort=0;
+
 -- Override randomized max_threads to avoid timeout on slow builds (ASan)
 SET max_threads=0;
+
+-- query_23 does SELECT * with ORDER BY on the full hits table, which needs significant
+-- memory for in-memory sorting. CI environments have a ~4.66 GiB limit that is too tight
+-- when external sort is disabled. Remove the memory cap since this test measures byte
+-- estimation accuracy, not memory consumption.
+SET max_memory_usage=0;
 
 -- settings override: while the total amount of data to be read is small (in order of 100KB), with different settings we may wastefully overread much more data
 SELECT COUNT(*) FROM test.hits WHERE AdvEngineID <> 0 FORMAT Null SETTINGS log_comment='query_1',

@@ -1,0 +1,83 @@
+---
+sidebarTitle: 'チャット'
+slug: /cloud/features/ai-ml/agents/chat
+title: 'チャット'
+description: 'ClickHouse Agents のチャットにおける会話、ブックマーク、フォーク、複数会話、共有'
+keywords: ['AI', 'ClickHouse Cloud', 'agents', 'チャット', '会話', 'ブックマーク', 'フォーク', '共有', '複数会話']
+doc_type: 'reference'
+---
+
+import BetaBadge from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+<BetaBadge />
+
+ClickHouse Agents のチャット画面では、会話、ブランチ、並べて比較、共有を行えます。
+
+<Image img="/images/cloud/agent-builder/chat/chat.webp" alt="左側のナビゲーション、エージェントの識別情報ヘッダー、メッセージのコンポーザーが表示された ClickHouse Agent のチャット画面" size="lg" />
+
+<div id="conversations">
+  ## 会話
+</div>
+
+左側のナビゲーションにある作成アイコンをクリックして、新しい会話を開始します。
+会話ウィンドウの左上にある Agent selector ダイアログで、使用するエージェントを選択します。デフォルトでは **ClickHouse Agent** が選択されています。
+コンポーザーにメッセージを入力して送信すると、各会話はサイドバーの履歴に保存され、後から再度開いたり、名前を変更したり、削除したりできます。
+
+<Image img="/images/cloud/agent-builder/chat/conversation.webp" alt="左側のナビゲーションで作成アイコンが強調表示されたチャット画面。サイドバーには、保存済みの Top 10 Tables Ranked 会話を含む Chats の履歴が表示され、コンポーザーにはサンプルの質問が入力されている" size="lg" />
+
+どのメッセージもその場で編集でき、エージェントは会話履歴のその時点から応答を再生成します。
+また、メッセージを再送信せずに、エージェントの直前の応答だけを再生成することもできます。
+
+<div id="bookmarks">
+  ## ブックマーク
+</div>
+
+メッセージまたは会話全体をブックマークしておくと、後ですぐに見つけられます。ブックマークは自分にのみ表示され、会話名を変更しても保持されます。
+
+<Image img="/images/cloud/agent-builder/chat/bookmark.webp" alt="ブックマークアイコンが強調表示され、「Add Bookmarks」のツールチップが表示されているチャットヘッダー" size="lg" />
+
+<div id="forking">
+  ## フォーク
+</div>
+
+フォークすると、特定のメッセージからブランチした新しい会話が作成されます。これにより、元の会話スレッドに影響を与えることなく、別の分岐を試せます。
+利用できるフォークモードは 3 つあります。
+
+* **Visible messages only** - フォークしたメッセージまでの直接の経路だけをコピーできます。
+* **Include related branches** - メインの経路に加えて、既存のブランチもコピーできます。
+* **Include all to here** - フォークしたメッセージまでの内容をすべてコピーできます。
+
+フォークした会話は独立しているため、変更が元の会話に同期されることはありません。
+
+<Image img="/images/cloud/agent-builder/chat/fork.webp" alt="3 つのフォークモードのアイコン、[Start fork here] と [Remember] のチェックボックス、および下部のメッセージアクションツールバーが表示されたフォークオプション選択ダイアログ" size="lg" />
+
+<div id="multi-conversation">
+  ## 複数会話
+</div>
+
+複数会話では、2 つの会話を並べて表示し、同じプロンプトを両方に送信できます。モデルごとの応答を比較したり、異なるエージェント構成を A/B テストしたりする際に使用します。
+
+チャットヘッダーの **+** ボタンをクリックすると、現在の会話の横に並列の会話が作成されます。
+
+<Image img="/images/cloud/agent-builder/chat/multi-conversation.webp" alt="複数会話を追加するボタンが強調表示されたチャットヘッダーと、コンポーザーの上にある + ClickHouse Agent インジケーター" size="lg" />
+
+すると、2 つの会話が横に並び、同じプロンプトを受け取ります。
+
+<Image img="/images/cloud/agent-builder/chat/multi-conversation-2.webp" alt="2 つの ClickHouse Agent の会話が横に並んで実行され、どちらも同じ run_select_query ツール呼び出しを実行している複数会話ビュー" size="lg" />
+
+<div id="sharing-chats">
+  ## チャットの共有
+</div>
+
+任意の会話に共有リンクを作成して、チームメイトに送信したり、参照用に保存したりできます。受信者には、アーティファクトや表示されているブランチを含む読み取り専用ビューが表示されます。リンクは共有ダッシュボードからいつでも取り消せます。
+
+既存のメッセージへの編集は共有ビューに反映されますが、リンクの生成後に追加されたメッセージは反映されません。
+
+会話を共有するには、サイドバーでそのメニューを開き、**Share** を選択します。
+
+<Image img="/images/cloud/agent-builder/chat/share.webp" alt="サイドバーの会話メニュー。Share、Rename、Duplicate、Archive、Delete の各オプションが表示されています" size="lg" />
+
+次に、共有ダイアログで **Create link** をクリックします。
+
+<Image img="/images/cloud/agent-builder/chat/share-modal.webp" alt="チャット共有ダイアログ。Create link ボタンと、共有後に追加されたメッセージとあなたの名前は非公開のままであることを示す注記が表示されています" size="md" />

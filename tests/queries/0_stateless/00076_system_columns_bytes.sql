@@ -2,7 +2,7 @@
 -- NOTE:
 -- - database = currentDatabase() is not mandatory
 -- - Merge tables may cause UNKNOWN_DATABASE/CANNOT_EXTRACT_TABLE_STRUCTURE from StorageMerge::getColumnSizes() since the table/database can be removed
--- - StorageProxy can wrap any table function, so they also have to be excluded if their nested table function is merge
+-- - Proxy can wrap any table function, so they also have to be excluded if their nested table function is merge
 SELECT
     sum(data_compressed_bytes) > 0,
     sum(data_uncompressed_bytes) > 0,
@@ -13,5 +13,5 @@ WHERE (database, `table`) IN (
         database,
         `table`
     FROM system.tables
-    WHERE engine != 'Merge' AND (engine != 'StorageProxy' OR create_table_query NOT ILIKE '%merge%')
+    WHERE engine != 'Merge' AND (engine != 'Proxy' OR create_table_query NOT ILIKE '%merge%')
 )

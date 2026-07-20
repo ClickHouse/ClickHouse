@@ -114,7 +114,7 @@ IOUringReader::IOUringReader(uint32_t entries_)
 
 std::future<IAsynchronousReader::Result> IOUringReader::submit(Request request)
 {
-    assert(request.size);
+    chassert(request.size);
 
     // take lock here because we're modifying containers and submitting to the ring,
     // the monitor thread can also do the same

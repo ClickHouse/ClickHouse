@@ -4,69 +4,68 @@
 #include <Common/HashTable/Hash.h>
 #include <Common/randomSeed.h>
 #include <base/unaligned.h>
-#if USE_MULTITARGET_CODE
+#if defined(__AVX2__)
 #  include <x86intrin.h>
 #endif
 
 
 namespace DB
 {
-
 namespace
 {
-    /// NOTE Probably
-    ///    http://www.pcg-random.org/
-    /// or http://www.math.sci.hiroshima-u.ac.jp/~m-mat/MT/SFMT/
-    /// or http://docs.yeppp.info/c/group__yep_random___w_e_l_l1024a.html
-    /// could go better.
+/// NOTE Probably
+///    http://www.pcg-random.org/
+/// or http://www.math.sci.hiroshima-u.ac.jp/~m-mat/MT/SFMT/
+/// or http://docs.yeppp.info/c/group__yep_random___w_e_l_l1024a.html
+/// could go better.
 
-    struct LinearCongruentialGenerator
+struct LinearCongruentialGenerator
+{
+    /// Constants from `man lrand48_r`.
+    static constexpr UInt64 a = 0x5DEECE66D;
+    static constexpr UInt64 c = 0xB;
+
+    /// And this is from `head -c8 /dev/urandom | xxd -p`
+    UInt64 current = 0x09826f4a081cee35ULL;
+
+    void seed(UInt64 value)
     {
-        /// Constants from `man lrand48_r`.
-        static constexpr UInt64 a = 0x5DEECE66D;
-        static constexpr UInt64 c = 0xB;
-
-        /// And this is from `head -c8 /dev/urandom | xxd -p`
-        UInt64 current = 0x09826f4a081cee35ULL;
-
-        void seed(UInt64 value)
-        {
-            current = value;
-        }
-
-        UInt32 next()
-        {
-            current = current * a + c;
-            return static_cast<UInt32>(current >> 16);
-        }
-    };
-
-    UInt64 calcSeed(UInt64 rand_seed, UInt64 additional_seed)
-    {
-        return intHash64(rand_seed ^ intHash64(additional_seed));
+        current = value;
     }
 
-    void seed(LinearCongruentialGenerator & generator, UInt64 rand_seed, intptr_t additional_seed)
+    [[maybe_unused]] UInt32 next()
     {
-        generator.seed(calcSeed(rand_seed, additional_seed));
+        current = current * a + c;
+        return static_cast<UInt32>(current >> 16);
     }
+};
 
-    /// The array of random numbers from 'head -c8 /dev/urandom | xxd -p'.
-    /// Can be used for creating seeds for random generators.
-    constexpr std::array<UInt64, 32> random_numbers = {
-        0x0c8ff307dabc0c4cULL, 0xf4bce78bf3821c1bULL, 0x4eb628a1e189c21aULL, 0x85ae000d253e0dbcULL,
-        0xc98073e6480f8a10ULL, 0xb17e9b70a084d570ULL, 0x1361c752b768da8cULL, 0x3d915f60c06d144dULL,
-        0xd5bc9b7aced79587ULL, 0x66c28000ba8a66cfULL, 0x0fb58da7a48820f5ULL, 0x540ee1b57aa861a1ULL,
-        0x212f11936ef2db04ULL, 0xa3939cd900edcc58ULL, 0xc676c84420170102ULL, 0xcbdc824e8b4bf3edULL,
-
-        0x8296f9d93cc94e3bULL, 0x78a7e826d62085b2ULL, 0xaa30620211fc6c69ULL, 0xbd38de52f0a93677ULL,
-        0x19983de8d79dcc4eULL, 0x8afe883ef2199e6fULL, 0xb7160f7ed022b60aULL, 0x2ce173d373ddafd4ULL,
-        0x15762761bb55b9acULL, 0x3e448fc94fdd28e7ULL, 0xa5121232adfbe70aULL, 0xb1e0f6d286112804ULL,
-        0x6062e96de9554806ULL, 0xcc679b329c28882aULL, 0x5c6d29f45cbc060eULL, 0x1af1325a86ffb162ULL,
-    };
+UInt64 calcSeed(UInt64 rand_seed, UInt64 additional_seed)
+{
+    return intHash64(rand_seed ^ intHash64(additional_seed));
 }
 
-DECLARE_DEFAULT_CODE(
+[[maybe_unused]] void seed(LinearCongruentialGenerator & generator, UInt64 rand_seed, intptr_t additional_seed)
+{
+    generator.seed(calcSeed(rand_seed, additional_seed));
+}
+
+/// The array of random numbers from 'head -c8 /dev/urandom | xxd -p'.
+/// Can be used for creating seeds for random generators.
+constexpr std::array<UInt64, 32> random_numbers = {
+    0x0c8ff307dabc0c4cULL, 0xf4bce78bf3821c1bULL, 0x4eb628a1e189c21aULL, 0x85ae000d253e0dbcULL,
+    0xc98073e6480f8a10ULL, 0xb17e9b70a084d570ULL, 0x1361c752b768da8cULL, 0x3d915f60c06d144dULL,
+    0xd5bc9b7aced79587ULL, 0x66c28000ba8a66cfULL, 0x0fb58da7a48820f5ULL, 0x540ee1b57aa861a1ULL,
+    0x212f11936ef2db04ULL, 0xa3939cd900edcc58ULL, 0xc676c84420170102ULL, 0xcbdc824e8b4bf3edULL,
+
+    0x8296f9d93cc94e3bULL, 0x78a7e826d62085b2ULL, 0xaa30620211fc6c69ULL, 0xbd38de52f0a93677ULL,
+    0x19983de8d79dcc4eULL, 0x8afe883ef2199e6fULL, 0xb7160f7ed022b60aULL, 0x2ce173d373ddafd4ULL,
+    0x15762761bb55b9acULL, 0x3e448fc94fdd28e7ULL, 0xa5121232adfbe70aULL, 0xb1e0f6d286112804ULL,
+    0x6062e96de9554806ULL, 0xcc679b329c28882aULL, 0x5c6d29f45cbc060eULL, 0x1af1325a86ffb162ULL,
+};
+}
+
+#if !defined(__AVX2__)
 
 void RandImpl::execute(char * output, size_t size)
 {
@@ -92,9 +91,7 @@ void RandImpl::execute(char * output, size_t size)
     /// It is guaranteed (by PaddedPODArray) that we can overwrite up to 15 bytes after end.
 }
 
-) // DECLARE_DEFAULT_CODE
-
-DECLARE_X86_64_V3_SPECIFIC_CODE(
+#else
 
 using namespace VectorExtension;
 
@@ -176,6 +173,6 @@ void RandImpl::execute(char * output, size_t size)
     }
 }
 
-) // DECLARE_X86_64_V3_SPECIFIC_CODE
+#endif
 
 }

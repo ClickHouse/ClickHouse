@@ -1,0 +1,321 @@
+---
+slug: /use-cases/observability/clickstack/monitoring-aws-cloudwatch-logs
+title: 'Managed ClickStack로 AWS CloudWatch 로그 모니터링'
+description: 'OpenTelemetry CloudWatch 수신기를 통해 AWS CloudWatch 로그를 Managed ClickStack로 전달'
+doc_type: 'guide'
+keywords: ['clickstack', 'aws', 'cloudwatch', '로그', 'managed', '관측성', 'otel']
+unlisted: true
+custom_edit_url: null
+hide_advert: true
+---
+
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+import { TrackedLink } from "/snippets/ko/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
+
+이 가이드에서는 OpenTelemetry [`awscloudwatch` 수신기](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/receiver/awscloudwatchreceiver)를 사용해 AWS CloudWatch Logs를 Managed ClickStack으로 전달한 뒤, ClickStack UI에서 확인하는 방법을 안내합니다.
+
+별도의 collector를 실행해 AWS API를 통해 CloudWatch를 폴링하고, 이벤트를 OTLP를 통해 ClickStack collector로 전달합니다. API 지연 시간과 비용을 최소화하려면 이 collector를 로그 그룹과 동일한 AWS 계정 및 리전에 두십시오.
+
+이 가이드는 [Setting up your OpenTelemetry Collector](/ko/clickstack/managed-onboarding/setting-up-your-opentelemetry-collector)를 완료했고 ClickStack collector가 실행 중이라고 가정합니다.
+
+ClickStack collector는 **Docker 컨테이너**로 배포할 수도 있고([Setting up your OpenTelemetry Collector](/ko/clickstack/managed-onboarding/setting-up-your-opentelemetry-collector) 참조), Kubernetes에서 ClickStack collector 이미지와 upstream OpenTelemetry Helm 차트를 사용해 **Helm 릴리스**로 배포할 수도 있습니다([Deploying the collector](/ko/clickstack/ingesting-data/collector#configuring-the-collector) 참조). **해당 OTLP 엔드포인트**와 배포 시 설정한 `OTLP_AUTH_TOKEN`을 반드시 기록해 두십시오.
+
+<Steps>
+  <Step>
+    ## 사전 요구 사항을 준비합니다
+
+    다음이 필요합니다:
+
+    * 하나 이상의 CloudWatch 로그 그룹과 아래에 명시된 IAM 권한이 있는 자격 증명을 갖춘 **AWS 계정**
+    * **Docker**가 설치되어 있고, AWS API에 액세스할 수 있으며, ClickStack collector로 나가는 네트워크 액세스가 가능한 호스트. 일반적으로 이는 로그 그룹과 동일한 AWS 계정 및 리전에 있는 EC2 인스턴스입니다.
+    * 이 호스트에서 연결할 수 있는 ClickStack collector의 **OTLP endpoint**. 동일한 머신에서 Docker로 실행 중이라면 `http://host.docker.internal:4318`을 사용하십시오([CloudWatch receiver 구성](#configure-receiver)의 안내 참조). 원격 collector의 경우 전체 URL(예: `https://otel.example.com:4318`)을 사용하십시오.
+    * ClickStack collector에 설정한 `OTLP_AUTH_TOKEN` 값. 보안 설정을 하지 않았다면 아래 구성에서 `authorization` 헤더를 제거할 수 있습니다.
+  </Step>
+
+  <Step>
+    ## AWS 자격 증명 구성
+
+    수신기는 표준 환경 변수에서 AWS 자격 증명을 읽어옵니다. collector를 실행할 호스트에서 이를 export하십시오.
+
+    **AWS SSO 사용자용:**
+
+    ```shell
+    aws sso login --profile YOUR_PROFILE_NAME
+    eval $(aws configure export-credentials --profile YOUR_PROFILE_NAME --format env)
+    aws sts get-caller-identity
+    ```
+
+    **장기 자격 증명을 사용하는 IAM 사용자:**
+
+    ```shell
+    export AWS_ACCESS_KEY_ID="your-access-key-id"
+    export AWS_SECRET_ACCESS_KEY="your-secret-access-key"
+    export AWS_REGION="us-east-1"
+    aws sts get-caller-identity
+    ```
+
+    자격 증명에는 CloudWatch Logs를 읽는 데 필요한 다음 IAM 정책이 있어야 합니다:
+
+    ```json
+    {
+      "Version": "2012-10-17",
+      "Statement": [
+        {
+          "Sid": "CloudWatchLogsRead",
+          "Effect": "Allow",
+          "Action": [
+            "logs:DescribeLogGroups",
+            "logs:FilterLogEvents"
+          ],
+          "Resource": "arn:aws:logs:*:YOUR_ACCOUNT_ID:log-group:*"
+        }
+      ]
+    }
+    ```
+
+    `YOUR_ACCOUNT_ID`를 AWS 계정 ID로 바꾸십시오.
+
+    <Info>
+      **프로덕션 자격 증명**
+
+      프로덕션 환경에서는 장기 키보다 인스턴스에 연결된 자격 증명을 우선 사용하는 것이 좋습니다. 예를 들어 EC2의 IAM role, EKS의 IRSA, ECS의 task role이 있습니다. 수신기가 인스턴스 metadata 서비스에서 자격 증명을 확인할 수 있다면, 아래의 동일한 collector 구성은 자격 증명 환경 변수 없이도 작동합니다.
+    </Info>
+  </Step>
+
+  <Step>
+    ## CloudWatch 수신기 구성
+
+    ClickStack collector 엔드포인트와 인증 토큰을 export한 다음 `otel-collector-config.yaml`을 생성합니다.
+
+    <Info>
+      **동일 호스트 설정**
+
+      아래 예시는 ClickStack collector와 이 CloudWatch collector가 동일한 호스트에서 실행된다고 가정하므로, 수신기는 `host.docker.internal`(컨테이너 내부에서 본 Docker 호스트의 주소)을 통해 여기에 연결합니다. ClickStack collector가 다른 위치(클러스터 내부 서비스, 공용 URL, 비공개 IP)에 있는 경우 아래의 `OTEL_COLLECTOR_ENDPOINT`에 해당 주소를 대신 입력하십시오.
+    </Info>
+
+    ```shell
+    export OTEL_COLLECTOR_ENDPOINT="http://host.docker.internal:4318"
+    export OTLP_AUTH_TOKEN="a-strong-shared-secret"
+    ```
+
+    <Accordion title="계정에서 사용할 수 있는 로그 그룹 확인">
+      구성을 편집하기 전에 현재 리전에 있는 로그 그룹을 확인하여 실제 이름을 선택하고, 리전 설정이 올바른지도 확인하십시오:
+
+      ```shell
+      aws logs describe-log-groups --region eu-central-1 \
+        --query 'logGroups[].logGroupName' --output table
+      ```
+
+      예시 출력:
+
+      ```text
+      -------------------------------
+      |      DescribeLogGroups      |
+      +-----------------------------+
+      |  /aws-glue/jobs/error       |
+      |  /aws-glue/jobs/logs-v2     |
+      |  /aws-glue/jobs/output      |
+      |  /aws-glue/sessions/error   |
+      |  /aws-glue/sessions/output  |
+      +-----------------------------+
+      ```
+
+      아래 예시 1의 `groups.named` 블록에는 이 목록에 있는 이름을 그대로 사용하십시오. 위 계정의 경우 named-groups 섹션은 다음과 같이 됩니다:
+
+      ```yaml
+      groups:
+        named:
+          /aws-glue/jobs/error:
+          /aws-glue/jobs/logs-v2:
+          /aws-glue/jobs/output:
+          /aws-glue/sessions/error:
+          /aws-glue/sessions/output:
+      ```
+
+      또는 원하는 그룹들이 공통 접두사(여기서는 `/aws-glue/`)를 공유한다면, 개별적으로 나열하는 대신 `prefix: /aws-glue/`를 사용해 예시 2를 적용하십시오.
+    </Accordion>
+
+    **예시 1: 지정된 로그 그룹(권장)**
+
+    ```shell
+    cat > otel-collector-config.yaml <<'EOF'
+    receivers:
+      awscloudwatch:
+        region: eu-central-1
+        logs:
+          poll_interval: 1m
+          max_events_per_request: 100
+          groups:
+            named:
+              /aws-glue/jobs/error:
+              /aws-glue/jobs/output:
+              /aws-glue/sessions/error:
+
+    processors:
+      batch:
+        timeout: 10s
+
+    exporters:
+      otlphttp:
+        endpoint: ${OTEL_COLLECTOR_ENDPOINT}
+        headers:
+          authorization: ${OTLP_AUTH_TOKEN}
+
+    service:
+      pipelines:
+        logs:
+          receivers: [awscloudwatch]
+          processors: [batch]
+          exporters: [otlphttp]
+    EOF
+    ```
+
+    **예시 2: prefix를 기준으로 로그 그룹 자동 검색**
+
+    ```shell
+    cat > otel-collector-config.yaml <<'EOF'
+    receivers:
+      awscloudwatch:
+        region: eu-central-1
+        logs:
+          poll_interval: 1m
+          max_events_per_request: 100
+          groups:
+            autodiscover:
+              limit: 100
+              prefix: /aws-glue/
+
+    processors:
+      batch:
+        timeout: 10s
+
+    exporters:
+      otlphttp:
+        endpoint: ${OTEL_COLLECTOR_ENDPOINT}
+        headers:
+          authorization: ${OTLP_AUTH_TOKEN}
+
+    service:
+      pipelines:
+        logs:
+          receivers: [awscloudwatch]
+          processors: [batch]
+          exporters: [otlphttp]
+    EOF
+    ```
+
+    조정할 주요 설정:
+
+    * 로그 그룹이 있는 Region에 맞게 `region`을 설정합니다.
+    * `poll_interval`(기본값 `1m`). 값을 낮추면 AWS API 호출 수는 늘어나지만 거의 real-time에 가까운 로그를 받을 수 있습니다.
+    * 명시적인 목록을 지정하려면 `groups.named`를 사용하고, 접두사와 일치하는 모든 그룹을 찾으려면 `groups.autodiscover.prefix`를 사용합니다.
+
+    전체 옵션은 [CloudWatch receiver 문서](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/receiver/awscloudwatchreceiver)를 참조하십시오.
+
+    <Info>
+      **최근 로그만**
+
+      처음 실행할 때 수신기는 현재 시점을 체크포인트로 기록하고, 그 이후의 로그만 가져옵니다. 과거 로그는 백필되지 않습니다.
+    </Info>
+  </Step>
+
+  <Step>
+    ## 수신기 collector 시작하기
+
+    `otel-collector-config.yaml`과 같은 위치에 `docker-compose.yaml`을 만드세요. `extra_hosts` 항목을 사용하면 컨테이너가 `host.docker.internal`을 통해 동일한 호스트에서 실행 중인 ClickStack collector에 연결할 수 있습니다. 또한 긴 형식의 bind 마운트는 구성 파일이 없을 때 빈 디렉터리를 조용히 생성하는 대신, 명시적으로 오류를 발생시킵니다:
+
+    ```shell
+    cat > docker-compose.yaml <<'EOF'
+    services:
+      otel-collector:
+        image: otel/opentelemetry-collector-contrib:latest
+        command: ["--config=/etc/otel-config.yaml"]
+        volumes:
+          - type: bind
+            source: ./otel-collector-config.yaml
+            target: /etc/otel-config.yaml
+            read_only: true
+        environment:
+          - AWS_ACCESS_KEY_ID
+          - AWS_SECRET_ACCESS_KEY
+          - AWS_SESSION_TOKEN
+          - AWS_REGION
+          - OTEL_COLLECTOR_ENDPOINT
+          - OTLP_AUTH_TOKEN
+        extra_hosts:
+          - "host.docker.internal:host-gateway"
+        restart: unless-stopped
+    EOF
+    ```
+
+    collector를 시작합니다:
+
+    ```shell
+    docker compose up -d
+    ```
+
+    로그를 실시간으로 확인하여 CloudWatch를 폴링하고 ClickStack collector로 내보내는지 확인하세요:
+
+    ```shell
+    docker compose logs -f otel-collector
+    ```
+  </Step>
+
+  <Step>
+    ## ClickStack UI에서 확인
+
+    [ClickHouse Cloud 콘솔](https://console.clickhouse.cloud)에서 서비스를 열고 왼쪽 메뉴에서 **ClickStack**을 선택합니다.
+
+    <Image img="/images/use-cases/observability/clickstack-cloud-v2.webp" size="lg" alt="ClickStack 실행" border />
+
+    **검색** 보기에서 소스를 `Logs`로 전환하고 시간 범위를 **최근 15분**으로 설정합니다. CloudWatch 이벤트는 두어 번의 폴링 주기 내에 표시됩니다.
+
+    <Image img="/images/clickstack/cloudwatch/log-search-view-clickstack.webp" size="lg" alt="CloudWatch 로그가 표시된 ClickStack 검색 보기" />
+
+    각 이벤트에는 원본 로그 그룹과 스트림이 리소스 속성으로 포함됩니다:
+
+    * `ResourceAttributes['aws.region']`: AWS 리전(예: `eu-central-1`)
+    * `ResourceAttributes['cloudwatch.log.group.name']`: 원본 로그 그룹
+    * `ResourceAttributes['cloudwatch.log.stream']`: 원본 로그 스트림
+    * `Body`: 원본 로그 한 줄
+
+    다음 속성이 포함되도록 검색을 `Timestamp, SeverityText as level, ResourceAttributes['aws.region'], ResourceAttributes['cloudwatch.log.group.name'], ResourceAttributes['cloudwatch.log.stream'], Body`로 수정합니다:
+
+    <Image img="/images/clickstack/cloudwatch/log-search-attributes-clickstack.webp" size="lg" alt="CloudWatch 로그와 속성이 표시된 ClickStack 검색 보기" />
+
+    메타데이터를 확인하려면 로그 항목을 선택합니다:
+
+    <Image img="/images/clickstack/cloudwatch/error-log-column-values-clickstack.webp" size="lg" alt="로그 상세 보기의 CloudWatch 속성" />
+
+    아무것도 표시되지 않으면 다음을 확인합니다:
+
+    * collector 호스트에서 `aws sts get-caller-identity`를 실행하여 자격 증명이 유효한지 확인합니다.
+    * `docker compose logs -f otel-collector`로 collector 로그를 추적하고 `AccessDeniedException`(IAM), `security token` 오류(만료된 SSO 자격 증명), `ResourceNotFoundException`(로그 그룹 이름 오타 또는 잘못된 리전), 또는 `connection refused`(컨테이너 내부에서 ClickStack collector 엔드포인트에 연결할 수 없음, [CloudWatch receiver 구성](#configure-receiver)의 `host.docker.internal` 참고)를 찾습니다.
+    * 컨테이너 내부에서 `OTEL_COLLECTOR_ENDPOINT`에 연결할 수 있는지 확인합니다: `docker compose exec otel-collector wget -qO- ${OTEL_COLLECTOR_ENDPOINT}/v1/logs -S 2>&1 | head -5`.
+    * `OTLP_AUTH_TOKEN`이 ClickStack collector에 설정한 값과 일치하는지 확인합니다.
+  </Step>
+
+  <Step>
+    ## CloudWatch 대시보드 가져오기(선택 사항)
+
+    로그 볼륨, 심각도별 분류, 오류 분포를 포함한 사전 구축된 대시보드를 다운로드할 수 있습니다.
+
+    <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/cloudwatch-logs-dashboard.json'} download="cloudwatch-logs-dashboard.json" eventName="docs.cloudwatch_logs_monitoring.dashboard_download">`cloudwatch-logs-dashboard.json` 다운로드</TrackedLink>한 다음 ClickStack UI에서 **Dashboards**로 이동해 **Import**를 클릭합니다.
+
+    <Image img="/images/clickstack/clickstack-import-dashboard.webp" size="lg" alt="대시보드 가져오기 버튼" />
+
+    JSON 파일을 업로드하고 **Finish Import**를 클릭합니다.
+
+    <Image img="/images/clickstack/cloudwatch/finish-clickstack-import.webp" size="lg" alt="가져오기 완료 대화 상자" />
+  </Step>
+
+  <Step>
+    ## 추가 참고 자료
+
+    * 데모 데이터세트, 전체 문제 해결 방법, 조정 옵션은 [AWS CloudWatch Logs 통합 참고](/ko/clickstack/integration-examples/cloudwatch)를 참조하십시오.
+    * OTLP endpoint의 TLS와 최소 권한 수집 사용자를 통한 [collector 보안 설정](/ko/clickstack/ingesting-data/collector#securing-the-collector).
+    * collector에서 [이벤트 처리, 필터링 및 보강](/ko/clickstack/ingesting-data/collector#processing-filtering-transforming-enriching).
+    * 운영 환경으로 전환할 때의 권장 사항은 [운영 환경으로 전환](/ko/clickstack/managing/production)을 참조하십시오.
+  </Step>
+</Steps>

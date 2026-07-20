@@ -1,0 +1,158 @@
+---
+sidebarTitle: 'NiFi'
+keywords: ['clickhouse', 'NiFi', 'conectar', 'integrar', 'etl', 'integración de datos']
+slug: /integrations/nifi
+description: 'Envía datos a ClickHouse mediante canalizaciones de datos de NiFi'
+title: 'Conectar Apache NiFi a ClickHouse'
+doc_type: 'guide'
+integration:
+  - support_level: 'community'
+  - category: 'data_ingestion'
+---
+
+import ConnectionDetails from '/snippets/es/_gather_your_details_http.mdx';
+import { Image } from "/snippets/es/components/Image.jsx";
+
+import CommunityMaintainedBadge from "/snippets/es/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
+
+<CommunityMaintainedBadge />
+
+<a href="https://nifi.apache.org/" target="_blank">Apache NiFi</a> es un software de gestión de flujos de trabajo de código abierto diseñado para automatizar el flujo de datos entre sistemas de software. Permite crear pipelines de datos ETL e incluye más de 300 procesadores de datos. Este tutorial paso a paso muestra cómo conectar Apache NiFi a ClickHouse tanto como origen como destino, y cómo cargar un conjunto de datos de ejemplo.
+
+<Steps>
+  <Step>
+    ## Recopila los datos de conexión
+
+    <ConnectionDetails />
+  </Step>
+
+  <Step>
+    ## Descargar y ejecutar Apache NiFi
+
+    Para una instalación nueva, descargue el binario desde https://nifi.apache.org/download.html y ejecútelo con `./bin/nifi.sh start`
+  </Step>
+
+  <Step>
+    ## Descargar el controlador JDBC de ClickHouse
+
+    1. Ve a la <a href="https://github.com/ClickHouse/clickhouse-java/releases" target="_blank">página de versiones del controlador JDBC de ClickHouse</a> en GitHub y busca la versión más reciente
+    2. En esa versión, haz clic en &quot;Show all xx assets&quot; y busca el archivo JAR que contenga la palabra clave &quot;shaded&quot; o &quot;all&quot;, por ejemplo, `clickhouse-jdbc-0.5.0-all.jar`
+    3. Coloca el archivo JAR en una carpeta a la que Apache NiFi pueda acceder y toma nota de la ruta absoluta
+  </Step>
+
+  <Step>
+    ## Agregue el servicio de controlador `DBCPConnectionPool` y configure sus propiedades
+
+    1. Para configurar un servicio de controlador en Apache NiFi, vaya a la página de configuración del flujo de NiFi haciendo clic en el botón de &quot;engranaje&quot;
+
+       <Image img="/images/integrations/data-ingestion/etl-tools/nifi_01.webp" size="sm" border alt="Página de configuración del flujo de NiFi con el botón de engranaje resaltado" />
+
+    2. Seleccione la pestaña Controller Services y agregue un nuevo servicio de controlador haciendo clic en el botón `+` de la esquina superior derecha
+
+       <Image img="/images/integrations/data-ingestion/etl-tools/nifi_02.webp" size="lg" border alt="Pestaña Controller Services con el botón para agregar resaltado" />
+
+    3. Busque `DBCPConnectionPool` y haga clic en el botón &quot;Add&quot;
+
+       <Image img="/images/integrations/data-ingestion/etl-tools/nifi_03.webp" size="lg" border alt="Cuadro de diálogo de selección de servicio de controlador con DBCPConnectionPool resaltado" />
+
+    4. El `DBCPConnectionPool` recién agregado estará en estado no válido de forma predeterminada. Haga clic en el botón de &quot;engranaje&quot; para comenzar a configurarlo
+
+       <Image img="/images/integrations/data-ingestion/etl-tools/nifi_04.webp" size="lg" border alt="Lista de servicios de controlador que muestra un DBCPConnectionPool no válido con el botón de engranaje resaltado" />
+
+    5. En la sección &quot;Properties&quot;, introduzca los siguientes valores
+
+    | Propiedad                                         | Valor                                                              | Observación                                                |
+    | ------------------------------------------------- | ------------------------------------------------------------------ | ---------------------------------------------------------- |
+    | URL de conexión de la base de datos               | jdbc:ch:https://HOSTNAME:8443/default?ssl=true                     | Reemplace HOSTNAME en la URL de conexión según corresponda |
+    | Nombre de la clase del driver de la base de datos | com.clickhouse.jdbc.ClickHouseDriver                               |                                                            |
+    | Ubicación del driver de la base de datos          | /etc/nifi/nifi-X.XX.X/lib/clickhouse-jdbc-0.X.X-patchXX-shaded.jar | Ruta absoluta al archivo JAR del driver JDBC de ClickHouse |
+    | Usuario de la base de datos                       | default                                                            | Nombre de usuario de ClickHouse                            |
+    | Contraseña                                        | password                                                           | Contraseña de ClickHouse                                   |
+
+    6. En la sección Settings, cambie el nombre del servicio de controlador a &quot;ClickHouse JDBC&quot; para poder identificarlo fácilmente
+
+       <Image img="/images/integrations/data-ingestion/etl-tools/nifi_05.webp" size="lg" border alt="Cuadro de diálogo de configuración de DBCPConnectionPool con las propiedades completadas" />
+
+    7. Active el servicio de controlador `DBCPConnectionPool` haciendo clic en el botón de &quot;rayo&quot; y luego en el botón &quot;Enable&quot;
+
+       <Image img="/images/integrations/data-ingestion/etl-tools/nifi_06.webp" size="lg" border alt="Lista de servicios de controlador con el botón de rayo resaltado" />
+
+       <br />
+
+       <Image img="/images/integrations/data-ingestion/etl-tools/nifi_07.webp" size="lg" border alt="Cuadro de diálogo de confirmación para habilitar el servicio de controlador" />
+
+    8. Revise la pestaña Controller Services y asegúrese de que el servicio de controlador esté habilitado
+
+       <Image img="/images/integrations/data-ingestion/etl-tools/nifi_08.webp" size="lg" border alt="Lista de servicios de controlador que muestra el servicio ClickHouse JDBC habilitado" />
+  </Step>
+
+  <Step>
+    ## Leer datos de una tabla con el procesador `ExecuteSQL`
+
+    1. Añade un procesador `​ExecuteSQL`, junto con los procesadores upstream y downstream correspondientes
+
+       <Image img="/images/integrations/data-ingestion/etl-tools/nifi_09.webp" size="md" border alt="Lienzo de NiFi que muestra el procesador ExecuteSQL en un flujo de trabajo" />
+
+    2. En la sección &quot;Properties&quot; del procesador `​ExecuteSQL`, introduce los siguientes valores
+
+       | Propiedad                           | Valor                        | Observación                                                  |
+       | ----------------------------------- | ---------------------------- | ------------------------------------------------------------ |
+       | Database Connection Pooling Service | ClickHouse JDBC              | Selecciona el Controller Service configurado para ClickHouse |
+       | SQL select query                    | SELECT * FROM system.metrics | Introduce aquí tu consulta                                   |
+
+    3. Inicia el procesador `​​ExecuteSQL`
+
+       <Image img="/images/integrations/data-ingestion/etl-tools/nifi_10.webp" size="lg" border alt="Configuración del procesador ExecuteSQL con las propiedades rellenadas" />
+
+    4. Para confirmar que la consulta se ha procesado correctamente, inspecciona uno de los `FlowFile` de la cola de salida
+
+       <Image img="/images/integrations/data-ingestion/etl-tools/nifi_11.webp" size="lg" border alt="Cuadro de diálogo de la cola que muestra flowfiles listos para su inspección" />
+
+    5. Cambia a la vista &quot;formatted&quot; para ver el resultado del `FlowFile` de salida
+
+       <Image img="/images/integrations/data-ingestion/etl-tools/nifi_12.webp" size="lg" border alt="Visor de contenido de FlowFile que muestra los resultados de la consulta en la vista con formato" />
+  </Step>
+
+  <Step>
+    ## Escribir en una tabla con el procesador `MergeRecord` y `PutDatabaseRecord`
+
+    1. Para escribir varias filas en una sola inserción, primero debemos fusionar varios registros en uno solo. Esto puede hacerse con el procesador `MergeRecord`
+
+    2. En la sección &quot;Properties&quot; del procesador `MergeRecord`, introduzca los siguientes valores
+
+       | Property                  | Value               | Remark                                                                                                                            |
+       | ------------------------- | ------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+       | Record Reader             | `JSONTreeReader`    | Seleccione el lector de registros adecuado                                                                                        |
+       | Record Writer             | `JSONReadSetWriter` | Seleccione el escritor de registros adecuado                                                                                      |
+       | Minimum Number of Records | 1000                | Cámbielo por un número mayor para que se fusionen suficientes filas y formen un único registro. El valor predeterminado es 1 fila |
+       | Maximum Number of Records | 10000               | Cámbielo por un número mayor que &quot;Minimum Number of Records&quot;. El valor predeterminado es 1000 filas                     |
+
+    3. Para confirmar que varios registros se fusionan en uno, examine la entrada y la salida del procesador `MergeRecord`. Tenga en cuenta que la salida es un array con varios registros de entrada
+
+       Entrada
+
+       <Image img="/images/integrations/data-ingestion/etl-tools/nifi_13.webp" size="sm" border alt="Entrada del procesador MergeRecord que muestra registros individuales" />
+
+       Salida
+
+       <Image img="/images/integrations/data-ingestion/etl-tools/nifi_14.webp" size="sm" border alt="Salida del procesador MergeRecord que muestra un array fusionado de registros" />
+
+    4. En la sección &quot;Properties&quot; del procesador `PutDatabaseRecord`, introduzca los siguientes valores
+
+       | Property                            | Value            | Remark                                                                                                                                               |
+       | ----------------------------------- | ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+       | Record Reader                       | `JSONTreeReader` | Seleccione el lector de registros adecuado                                                                                                           |
+       | Database Type                       | Generic          | Déjelo con el valor predeterminado                                                                                                                   |
+       | Statement Type                      | INSERT           |                                                                                                                                                      |
+       | Database Connection Pooling Service | ClickHouse JDBC  | Seleccione el servicio controlador de ClickHouse                                                                                                     |
+       | Table Name                          | tbl              | Introduzca aquí el nombre de su tabla                                                                                                                |
+       | Translate Field Names               | false            | Establézcalo en &quot;false&quot; para que los nombres de los campos insertados coincidan con el nombre de la columna                                |
+       | Maximum Batch Size                  | 1000             | Número máximo de filas por inserción. Este valor no debe ser inferior al valor de &quot;Minimum Number of Records&quot; del procesador `MergeRecord` |
+
+    5. Para confirmar que cada inserción contiene varias filas, compruebe que el conteo de filas de la tabla aumenta al menos en el valor de &quot;Minimum Number of Records&quot; definido en `MergeRecord`.
+
+       <Image img="/images/integrations/data-ingestion/etl-tools/nifi_15.webp" size="sm" border alt="Resultados de la consulta que muestran el conteo de filas en la tabla de destino" />
+
+    6. Enhorabuena: ha cargado correctamente sus datos en ClickHouse con Apache NiFi!
+  </Step>
+</Steps>

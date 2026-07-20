@@ -15,13 +15,6 @@ SELECT * FROM t0 JOIN t1 ON t0.c1 = t1.c1; -- {serverError ILLEGAL_COLUMN}
 SELECT * FROM t0 JOIN t1 ON t0.c2 = t1.c2; -- {serverError ILLEGAL_COLUMN}
 
 SET enable_analyzer = 1;
-SET query_plan_use_new_logical_join_step = 0;
-
-SELECT * FROM t0 JOIN t1 ON t0.c0 = t1.c0; -- {serverError ILLEGAL_COLUMN}
-SELECT * FROM t0 JOIN t1 ON t0.c1 = t1.c1; -- {serverError ILLEGAL_COLUMN}
-SELECT * FROM t0 JOIN t1 ON t0.c2 = t1.c2; -- {serverError ILLEGAL_COLUMN}
-
-SET query_plan_use_new_logical_join_step = 1;
 
 SELECT * FROM t0 JOIN t1 ON t0.c0 = t1.c0; -- {serverError ILLEGAL_COLUMN}
 SELECT * FROM t0 JOIN t1 ON t0.c1 = t1.c1; -- {serverError ILLEGAL_COLUMN}

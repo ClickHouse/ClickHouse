@@ -1,9 +1,12 @@
 import argparse
+import json
 import os
 import random
 import subprocess
+import zlib
 from pathlib import Path
 
+from ci.jobs.scripts.bugfix_validation import bugfix_build_types, find_master_builds
 from ci.jobs.scripts.cidb_cluster import CIDBCluster
 from ci.jobs.scripts.clickhouse_proc import ClickHouseProc
 from ci.jobs.scripts.find_tests import Targeting
@@ -16,11 +19,31 @@ from ci.praktika.utils import MetaClasses, Shell, Utils
 
 temp_dir = f"{Utils.cwd()}/ci/tmp"
 
+# Substrings identifying a sanitizer build in a build type ("amd_asan_ubsan"),
+# a job parameter string ("amd_asan_ubsan, distributed plan, parallel"), or a
+# job name. Sanitizer builds get the tighter server memory cap and reduced
+# concurrency (see the `set_memory_ratio` and `nproc` logic in `main`).
+SANITIZERS = ("asan", "tsan", "msan", "ubsan")
+
+
+def stateless_memory_limit(source):
+    """Per-test cgroup memory limit (`clickhouse-test --memory-limit`) for a run
+    identified by `source` (a build type, job-parameter string, or job name).
+
+    Sanitizer clients are memory-heavy (~500 MiB RSS each), so a test running
+    ~10 concurrent clients needs 10 GiB or the per-test cgroup OOM-kills them
+    mid-test. Every sanitizer build gets 10 GiB, others 5 GiB. Match via
+    `SANITIZERS`, not the literal `asan_ubsan` substring: the `tsan`/`msan` lanes
+    (and the private `amd_ubsan` lane, an ASan+UBSan binary) lack that substring.
+    """
+    return 10 * 2**30 if any(san in source for san in SANITIZERS) else 5 * 2**30
+
+
 class JobStages(metaclass=MetaClasses.WithIter):
     INSTALL_CLICKHOUSE = "install"
     START = "start"
     TEST = "test"
-    RETRIES = "retries"
+    DIAGNOSTICS = "diagnostics"
     CHECK_ERRORS = "check_errors"
     COLLECT_LOGS = "collect_logs"
     COLLECT_COVERAGE = "collect_coverage"
@@ -32,7 +55,7 @@ def parse_args():
     )
     parser.add_argument(
         "--options",
-        help="Comma-separated options. Examples: parallel|sequential|BATCH_NUM/BATCH_TOT|s3 storage|DatabaseReplicated|azure|AsyncInsert|BugfixValidation|coverage",
+        help="Comma-separated options. Examples: parallel|sequential|BATCH_NUM/BATCH_TOT|s3 storage|DBReplicated|azure|AsyncInsert|BugfixValidation|coverage",
         default="",
     )
     parser.add_argument(
@@ -76,11 +99,12 @@ def parse_args():
 def run_tests(
     batch_num: int,
     batch_total: int,
-    tests: list[str] = None,
+    tests: list[str] | None = None,
     extra_args="",
     rerun_count=1,
     random_order=False,
     global_time_limit=0,
+    build_type=None,
 ):
     test_output_file = f"{temp_dir}/test_result.txt"
     if batch_num and batch_total:
@@ -92,25 +116,48 @@ def run_tests(
     if "--no-zookeeper" not in extra_args:
         extra_args += " --zookeeper"
     # Remove --report-logs-stats, it hides sanitizer errors in def reportLogStats(args): clickhouse_execute(args, "SYSTEM FLUSH LOGS")
-    global_time_limit_option = (
-        f"--global_time_limit={global_time_limit}" if global_time_limit > 0 else ""
+    # Bugfix validation runs several builds per job, so size the limit from the
+    # tested `build_type` over the job name (else a master-side memory-limit
+    # failure would be inverted as a reproduced bug).
+    limit_source = build_type if build_type is not None else Info().job_name
+    memory_limit = stateless_memory_limit(limit_source)
+    # Hand the time budget to `clickhouse-test` itself via `--global_time_limit`
+    # so it stops *gracefully* between tests and exits with
+    # `GLOBAL_TIME_LIMIT_EXIT_CODE` - reported as a benign "time limit reached"
+    # rather than "Server died". The external `Shell.run` timeout below is kept
+    # only as a larger safety net: it sends SIGTERM to the whole process group
+    # and so should fire only for a genuinely frozen process, not pre-empt the
+    # graceful stop.
+    global_time_limit_arg = (
+        f" --global_time_limit {global_time_limit}" if global_time_limit > 0 else ""
     )
-    memory_limit = 10 * 2**30 if "asan_ubsan" in Info().job_name else 5 * 2**30
-    command = f"clickhouse-test --testname --check-zookeeper-session --hung-check --memory-limit {memory_limit} --trace \
-                --capture-client-stacktrace --queries ./tests/queries --test-runs {rerun_count} \
-                {extra_args} {global_time_limit_option} \
+    # `set -o pipefail` is required so that the pipeline's exit code reflects
+    # `clickhouse-test`'s exit code rather than `tee`'s. Without it, a non-zero
+    # exit from `clickhouse-test` is silently swallowed by `tee` returning 0.
+    command = f"set -o pipefail; clickhouse-test --testname --check-zookeeper-session --hung-check --memory-limit {memory_limit} --trace \
+                --capture-client-stacktrace --queries ./tests/queries --test-runs {rerun_count}{global_time_limit_arg} \
+                {extra_args} \
                 --queries ./tests/queries {('--order=random' if random_order else '')} -- {' '.join(tests) if tests else ''} | ts '%Y-%m-%d %H:%M:%S' \
                 | tee -a \"{test_output_file}\""
     if Path(test_output_file).exists():
         Path(test_output_file).unlink()
-    Shell.run(command, verbose=True)
+    # Allow a margin over the graceful budget for the run to wind down before the
+    # external hard kill engages. The last in-flight test can be deep inside its
+    # own per-test alarm window when the deadline is reached: `clickhouse-test`
+    # arms that alarm as `int(args.timeout * 1.1) + 60` (720s with the default
+    # `--timeout 600`), after which it stops gracefully. The margin must exceed
+    # that bound (plus the worker shutdown wind-down) so the external SIGTERM
+    # fires only for a genuinely frozen process and never pre-empts the graceful
+    # `GLOBAL_TIME_LIMIT_EXIT_CODE` stop (which would be reported as "Server died").
+    outer_timeout = global_time_limit + 900 if global_time_limit > 0 else None
+    return Shell.run(command, verbose=True, timeout=outer_timeout)
 
 
 OPTIONS_TO_INSTALL_ARGUMENTS = {
     "old analyzer": "--analyzer",
     "WasmEdge": "--wasm-engine wasmedge",
     "s3 storage": "--s3-storage",
-    "DatabaseReplicated": "--db-replicated",
+    "DBReplicated": "--db-replicated",
     "DatabaseOrdinary": "--db-ordinary",
     "wide parts enabled": "--wide-parts",
     "ParallelReplicas": "--parallel-rep",
@@ -125,13 +172,96 @@ OPTIONS_TO_TEST_RUNNER_ARGUMENTS = {
     "s3 storage": "--s3-storage --no-stateful",
     "ParallelReplicas": "--no-zookeeper --no-shard --no-parallel-replicas",
     "AsyncInsert": " --no-async-insert",
-    "DatabaseReplicated": " --no-stateful --replicated-database",
+    "DBReplicated": " --no-stateful --replicated-database",
     "azure": " --azure-blob-storage --no-random-settings --no-random-merge-tree-settings",  # azurite is slow, with randomization it can be super slow
     "parallel": "--no-sequential",
     "sequential": "--no-parallel",
     "flaky check": "--flaky-check",
-    "targeted": "--flaky-check",  # to disable tests not compatible with the thread fuzzer
+    "targeted": "--flaky-check --no-self-parallel",
 }
+
+
+def invert_bugfix_validation_status(test_result: Result) -> bool:
+    """Invert FAIL/OK in `test_result.results` for bugfix validation.
+
+    On master HEAD a regression test for the bug is expected to FAIL; the
+    inverter flips that to OK so the job reads as "bug reproduced".
+
+    Returns True iff the bug did not reproduce on this arch (no-repro). In
+    that case the caller must propagate `SKIPPED` to the top-level result so
+    the per-arch job exits 0 without being counted as a validation by the
+    `new_tests_check.py` post-hook (which uses strict `is_success`). This is
+    the per-arch contract: a regression test that passes on master HEAD on
+    one arch (e.g. an x86-only fix validated on aarch64 where the bug never
+    existed) must not block the PR - another arch can still validate it.
+
+    When the run ended in `Result.Status.ERROR` (runner did not finish,
+    e.g. server crash without proper exit code, Python exception,
+    infrastructure outage) the per-test list is empty or partial and the
+    pre-inversion `ERROR` already tells the truth. Preserve it instead of
+    overwriting with a validation verdict - an infra-induced failure is
+    never counted as a validation. See #105789.
+
+    The aggregate check is not enough: `FTResultsProcessor` can leave the
+    top-level status `OK` while still emitting `ERROR` per-test rows
+    (parser failure for a single test, unexpected runner termination
+    propagated as a row). A mix of `FAIL` + `ERROR` rows would otherwise
+    set `has_failure = True` from the `FAIL` rows and call `set_success`,
+    masking the `ERROR` and flipping the job to green. Treat any per-row
+    `ERROR` the same as an aggregate `ERROR`. Mirrors the `has_error`
+    dominant guard in `integration_test_job.py`.
+
+    Rows produced by `check_fatal_messages_in_logs` (labelled `LOG_CHECK`:
+    "Lost s3 keys", "OOM in dmesg", "Exception in test runner", etc.) are
+    server-log / runner health checks, not test cases. A LOG_CHECK *failure*
+    on the validated binary is itself evidence the bug reproduced (a crash /
+    sanitizer assert / lost key triggered by the regression test), so it is
+    flipped like a test failure. But a *clean* LOG_CHECK must stay `OK`: the
+    absence of a fatal is not "failed to reproduce", and flipping it to
+    `FAIL` is what produced the spurious xfail rows.
+    """
+    if test_result.status == Result.Status.ERROR or any(
+        r.status == Result.Status.ERROR for r in test_result.results
+    ):
+        for r in test_result.results:
+            r.set_label(Result.Label.XFAIL)
+        print(
+            "Bugfix validation inconclusive: the test runner did not "
+            "finish; preserving ERROR rather than reporting a validation "
+            "verdict."
+        )
+        return False
+
+    has_failure = False
+    for r in test_result.results:
+        if r.status == Result.Status.OK and r.has_label(Result.Label.LOG_CHECK):
+            # A clean health check is not a test that "failed to reproduce";
+            # leave it untouched so it does not become a spurious failure.
+            continue
+        r.set_label(Result.Label.XFAIL)
+        if r.status == Result.Status.FAIL:
+            # A failing test, or a fatal / sanitizer assert / lost key on the
+            # validated binary, both mean the bug was reproduced.
+            r.status = Result.Status.OK
+            has_failure = True
+        elif r.status == Result.Status.OK:
+            r.status = Result.Status.FAIL
+    if not has_failure:
+        # The bug did not reproduce on this arch - every regression test case
+        # still passed on master HEAD here. Report SKIPPED so the per-arch job
+        # exits 0 (`Result.is_ok` includes SKIPPED) and the GitHub status is
+        # not red. The post-hook in `new_tests_check.py` uses `is_success`
+        # (strict - `OK`/`XFAIL` only), so a SKIPPED per-arch job does NOT
+        # count as a validation, preserving the contract that at least one
+        # arch must reproduce the bug. The caller propagates this SKIPPED to
+        # the top-level `R` (see `bugfix_validation_no_repro`).
+        print("Bug does not reproduce on this arch - bugfix validation N/A")
+        test_result.set_status(Result.Status.SKIPPED).set_info(
+            "Bug does not reproduce on this arch - bugfix validation N/A"
+        )
+        return True
+    test_result.set_success()
+    return False
 
 
 def main():
@@ -149,7 +279,9 @@ def main():
     is_encrypted_storage = random.choice([True, False])
     is_parallel_replicas = False
     is_llvm_coverage = False
-    is_coverage = False
+    is_excluded_from_llvm = False
+    is_per_test_coverage = False
+    is_distributed_plan = False
     runner_options = ""
     # optimal value for most of the jobs
     nproc = int(Utils.cpu_count() * 0.6)
@@ -163,6 +295,8 @@ def main():
         elif to.startswith("amd_") or to.startswith("arm_"):
             pass
         elif to in OPTIONS_TO_TEST_RUNNER_ARGUMENTS:
+            pass
+        elif to == "per_test_coverage":
             pass
         else:
             assert False, f"Unknown option [{to}]"
@@ -187,20 +321,103 @@ def main():
             is_flaky_check = True
         elif "BugfixValidation" in to:
             is_bugfix_validation = True
-        elif "amd_llvm_coverage" in to:
+        elif to.startswith("amd_") and "coverage" in to:
             is_llvm_coverage = True
-        elif "coverage" in to:
-            is_coverage = True
+        if "excluded_from_llvm" in to:
+            is_excluded_from_llvm = True
+        if "per_test_coverage" in to:
+            is_per_test_coverage = True
         if "s3 storage" in to:
             is_s3_storage = True
         if "azure" in to:
             is_azure_storage = True
-        if "DatabaseReplicated" in to:
+        if "DBReplicated" in to:
             is_database_replicated = True
         if "SharedCatalog" in to:
             is_shared_catalog = True
         if "ParallelReplicas" in to:
             is_parallel_replicas = True
+        if "distributed plan" in to:
+            is_distributed_plan = True
+
+    # If this PR only touches test files (no production/config code changed),
+    # this job only needs to run if one of the changed tests would even be
+    # selected here - and, when the job is also hash-batched (N/M), only the
+    # batch(es) containing a changed test need to run. Other jobs/batches
+    # would produce results identical to master and can be skipped. Note:
+    # "parallel"/"sequential" job flavors need no batch number of their own
+    # (e.g. "amd_debug, parallel") - the flavor-applicability check below must
+    # not be gated on batching being active.
+    if (
+        not is_flaky_check
+        and not is_targeted_check
+        and not is_bugfix_validation
+        and not is_per_test_coverage
+        and not args.test
+    ):
+        changed_files = info.get_changed_files()
+        if changed_files and all(
+            Targeting.is_functional_test_file(f)
+            or Targeting.is_integration_test_file(f)
+            or Targeting.is_ci_job_script(f)
+            for f in changed_files
+        ):
+            changed_functional_files = [
+                f for f in changed_files if Targeting.is_functional_test_file(f)
+            ]
+            if not changed_functional_files:
+                Result.create_from(
+                    status=Result.Status.SKIPPED,
+                    info="Only non-functional test files changed in this PR - nothing for this job to run",
+                ).complete_job()
+            # "parallel"/"sequential" is a second, independent sharding dimension:
+            # each is hash-batched separately (--no-sequential/--no-parallel), and
+            # a test tagged no-parallel/sequential never runs under the "parallel"
+            # flavor (and vice versa) regardless of batch. Restrict to the changed
+            # tests that this job flavor would even select before checking batches.
+            is_parallel_flavor = "parallel" in test_options
+            is_sequential_flavor = "sequential" in test_options
+            hash_batch_files = []
+            for f in changed_functional_files:
+                hash_batch_file = Targeting.functional_test_hash_batch_file(f)
+                if hash_batch_file is None:
+                    # Could not resolve to a concrete test source file (e.g. an
+                    # orphan data file) - be conservative and run the batch normally.
+                    hash_batch_files = None
+                    break
+                is_sequential_test = Targeting.is_sequential_functional_test(
+                    hash_batch_file
+                )
+                if is_parallel_flavor and is_sequential_test:
+                    continue
+                if is_sequential_flavor and not is_sequential_test:
+                    continue
+                hash_batch_files.append(hash_batch_file)
+            if hash_batch_files is not None and not hash_batch_files:
+                Result.create_from(
+                    status=Result.Status.SKIPPED,
+                    info="Only test files changed in this PR and none of the changed tests apply to this job's parallel/sequential flavor",
+                ).complete_job()
+            if (
+                hash_batch_files is not None
+                and batch_num
+                and total_batches > 1
+                and not any(
+                    zlib.crc32(f.encode("utf-8")) % total_batches == batch_num - 1
+                    for f in hash_batch_files
+                )
+            ):
+                Result.create_from(
+                    status=Result.Status.SKIPPED,
+                    info="Only test files changed in this PR and none of the changed tests fall into this batch",
+                ).complete_job()
+
+    if is_llvm_coverage:
+        # Pin random-by-default fault injection seeds server-side (in the default
+        # profile) so coverage is deterministic, instead of injecting them as
+        # per-query client settings (which broke tests that switch to readonly
+        # mode mid-session). See tests/config/users.d/coverage_fault_injection_seeds.xml.
+        config_installs_args += " --llvm-coverage"
 
     if is_shared_catalog or is_parallel_replicas:
         pass
@@ -213,9 +430,49 @@ def main():
         elif "msan" in args.options:
             # MSan is slow
             nproc = int(Utils.cpu_count() * 0.4)
-        elif is_coverage:
+        elif is_azure_storage:
+            # azure FT runs only under ASan; concurrent heavy queries overrun the
+            # shared server memory cap, so the OvercommitTracker kills queries across
+            # all co-scheduled tests. Lower concurrency to keep peak total RSS under it.
+            nproc = int(Utils.cpu_count() * 0.4)
+        elif (
+            is_distributed_plan
+            and "parallel" in test_options
+            and any(san in args.options for san in SANITIZERS)
+        ):
+            # `--distributed-plan` fans each query across local parallel replicas,
+            # multiplying the server-side memory of every in-flight query. Under the
+            # parallel runner dozens of such queries share one server, so their
+            # aggregate RSS overruns the sanitizer memory cap
+            # (`max_server_memory_usage_to_ram_ratio` 0.7) and the OvercommitTracker
+            # rejects queries across all co-scheduled tests with
+            # `MEMORY_LIMIT_EXCEEDED`. This is the same failure mode as azure above,
+            # but the per-query multiplication makes it heavier, so cut concurrency
+            # below the azure level to keep peak total RSS under the cap. The job
+            # gets a larger `timeout` (see `job_configs.py`) to absorb the reduced
+            # throughput. Gated to sanitizer builds: only they carry the 0.7 cap,
+            # and the non-sanitizer distributed-plan parallel jobs (e.g. amd_debug)
+            # run comfortably at the default concurrency.
+            #
+            # Tuned down in steps against observed peak RSS on the 32-vCPU
+            # `c7i.8xlarge` runner (cap 41.84 GiB at ratio 0.7): 0.35 -> 11 workers
+            # hit Code 241 at 43.01 GiB (~3% over); 0.3 -> 9 workers still landed
+            # right on the cap (41.90 GiB); 0.25 -> 8 workers reached 41.76 GiB;
+            # 0.22 -> 7 workers reached 41.71 GiB - each run still grazing the cap
+            # with a single rejected query. That near-flat response shows the RSS
+            # baseline is dominated by ASan overhead that accumulates with the
+            # amount of work done, not with concurrency, so cutting workers
+            # further cannot open a gap under the cap; the residual headroom comes
+            # from this job's slightly higher memory ratio instead (0.75, see the
+            # install stage below). The concurrency cut stays: it is what shrank
+            # the aggregate client RSS enough to make the higher server cap safe
+            # for the host, and 7 workers finish in ~2h44m, inside the 3.5h
+            # `timeout` (see `job_configs.py`).
+            nproc = int(Utils.cpu_count() * 0.22)
+        elif is_per_test_coverage:
             cidb_cluster = CIDBCluster()
-            assert cidb_cluster.is_ready()
+            if not info.is_local_run:
+                assert cidb_cluster.is_ready()
             nproc = 1
         else:
             pass
@@ -224,16 +481,33 @@ def main():
     if args.workers:
         print(f"Workers count set from --workers: {args.workers}")
         workers = args.workers
+    elif is_flaky_check:
+        workers = max(1, nproc - 1)
+        print(f"Workers count set to nproc-1 for flaky check: {workers}")
     else:
-        print(f"Workers count set to optimal value: {nproc}")
-        workers = nproc
+        workers = max(1, nproc)
+        print(f"Workers count set to optimal value: {workers}")
 
     runner_options += f" --jobs {workers}"
 
-    if is_llvm_coverage:
+    if is_flaky_check or is_targeted_check:
+        # Stop after 5 total failures across all parallel workers (fast feedback on broken PRs).
+        runner_options += " --max-failures 5"
+
+    if is_excluded_from_llvm:
+        # Run only tests that are normally disabled under LLVM coverage
+        runner_options += " --excluded-from-llvm"
+    elif is_llvm_coverage:
         # Randomization makes coverage non-deterministic, long tests are slow to collect coverage
-        runner_options += " --no-random-settings --no-random-merge-tree-settings --no-long --llvm-coverage"
+        runner_options += " --llvm-coverage"
         os.environ["LLVM_PROFILE_FILE"] = f"ft-{batch_num}-%2m.profraw"
+        if is_per_test_coverage:
+            runner_options += " --collect-per-test-coverage"
+        else:
+            runner_options += " --no-random-settings --no-random-merge-tree-settings  --no-long"
+
+    diagnostics_dir = f"{temp_dir}/random-settings-diagnostics"
+    runner_options += f" --random-settings-diagnostics-dir {diagnostics_dir}"
 
     if (
         not is_flaky_check
@@ -249,40 +523,65 @@ def main():
     if args.count:
         print(f"Rerun count set from --count: {args.count}")
         rerun_count = args.count
+    elif is_flaky_check and info.is_merge_queue_event:
+        # The merge-queue flaky check is a drift guard, not a full flakiness
+        # hunt: the PR CI already ran the full flaky check, and this rerun only
+        # needs to catch new tests broken by the current `master` state (e.g. a
+        # setting randomization added to `tests/clickhouse-test` after the PR's
+        # last CI run). A randomized setting drawn with probability 0.4 per run
+        # escapes 20 iterations with probability 0.6^20 ~= 4e-5, so a reduced
+        # count keeps merge-queue latency bounded without losing the signal.
+        rerun_count = 20
     elif is_flaky_check:
-        print(f"Rerun count set to 50 for flaky check")
+        # Large repeat count so the 45-min global_time_limit is the effective stopping
+        # condition, not the repeat count.  Tests run in parallel (--jobs N) with fresh
+        # random settings per TestCase; --max-failures 5 stops early on broken PRs.
         rerun_count = 50
     elif is_targeted_check:
-        print(f"Rerun count set to 5 for targeted check")
-        rerun_count = 5
+        rerun_count = 50
 
-    if not info.is_local_run:
-        # TODO: find a way to work with Azure secret so it's ok for local tests as well, for now keep azure disabled
-        azure_connection_string = Shell.get_output(
-            f"aws ssm get-parameter --region us-east-1 --name azure_connection_string --with-decryption --output text --query Parameter.Value",
-            verbose=True,
-            strict=True,
-        )
-        os.environ["AZURE_CONNECTION_STRING"] = azure_connection_string
-    else:
-        print("Disable azure for a local run")
-        config_installs_args += " --no-azure"
+    if is_flaky_check:
+        # Run no-parallel and no-flaky-check tests sequentially with fewer iterations.
+        # Derived from rerun_count so the ratio stays stable as policy evolves.
+        runner_options += f" --sequential-test-runs {rerun_count // 2}"
 
     if (is_azure_storage or is_s3_storage) and is_encrypted_storage:
         config_installs_args += " --encrypted-storage"
-        runner_options += f" --encrypted-storage"
+        runner_options += " --encrypted-storage"
 
     if is_bugfix_validation:
         os.environ["GLOBAL_TAGS"] = "no-random-settings"
         ch_path = temp_dir
-        if not info.is_local_run or not (Path(temp_dir) / "clickhouse").is_file():
-            link_arch = "aarch64" if Utils.is_arm() else "amd64"
-            link_to_master_head_binary = f"https://clickhouse-builds.s3.us-east-1.amazonaws.com/master/{link_arch}/clickhouse"
-            Shell.run(
-                f"wget -nv -P {temp_dir} {link_to_master_head_binary}",
-                verbose=True,
-                strict=True,
+        # Download the master-HEAD binaries matching this job's runner arch:
+        # the aarch64 job runs on an ARM runner and must use the ARM builds.
+        build_types = bugfix_build_types(info.job_name)
+        bt_paths = {bt: f"{temp_dir}/clickhouse_{bt}" for bt in build_types}
+        # In local runs, only reuse existing binaries; probing master commits in S3
+        # depends on `master_commits` workflow data populated by CI workflow hooks
+        # and is not available locally.
+        if info.is_local_run:
+            missing = [str(p) for p in bt_paths.values() if not Path(p).is_file()]
+            assert not missing, (
+                "Local bugfix validation requires all build-type binaries to be "
+                f"present under {temp_dir}; missing: {missing}"
             )
+            build_urls = None
+        else:
+            build_urls = find_master_builds(build_types)
+            assert build_urls, "Could not find master builds in S3"
+        if build_urls:
+            for bt, url in build_urls.items():
+                bt_path = bt_paths[bt]
+                if not info.is_local_run or not Path(bt_path).is_file():
+                    Shell.run(
+                        f"wget -nv -O {bt_path} {url}", verbose=True, strict=True
+                    )
+                    Shell.run(f"chmod +x {bt_path}", verbose=True)
+        Shell.run(
+            f"cp {temp_dir}/clickhouse_{build_types[0]} {temp_dir}/clickhouse",
+            verbose=True,
+            strict=True,
+        )
     elif args.path:
         assert Path(args.path).is_dir(), f"Path [{args.path}] is not a directory"
         ch_path = str(Path(args.path).absolute())
@@ -312,13 +611,13 @@ def main():
     debug_files = []
 
     stages = list(JobStages)
-    if not is_coverage:
+    if not is_per_test_coverage:
         stages.remove(JobStages.COLLECT_COVERAGE)
     else:
         stages.remove(JobStages.COLLECT_LOGS)
-    if is_coverage or info.is_local_run or is_bugfix_validation:
-        # For bugfix validation, we intentionally skip the check error stage (checks FATAL messages):
-        # regular test failures are assumed to be sufficient to validate the test
+    if is_per_test_coverage or info.is_local_run or is_bugfix_validation:
+        # For bugfix validation, fatal message checking is done per-build-type
+        # inside the bugfix validation loop below, so skip the outer stage.
         stages.remove(JobStages.CHECK_ERRORS)
     if info.is_local_run:
         if JobStages.COLLECT_LOGS in stages:
@@ -327,12 +626,12 @@ def main():
             stages.remove(JobStages.COLLECT_COVERAGE)
     if (
         is_flaky_check
-        or is_coverage
+        or is_per_test_coverage
         or is_bugfix_validation
         or is_targeted_check
         or info.is_local_run
     ):
-        stages.remove(JobStages.RETRIES)
+        stages.remove(JobStages.DIAGNOSTICS)
 
     tests = args.test
 
@@ -371,9 +670,16 @@ def main():
                 args.test
             ), "For running flaky or bugfix_validation check locally, test case name must be provided via --test"
         else:
-            if is_bugfix_validation and Labels.PR_BUGFIX not in info.pr_labels:
+            if is_bugfix_validation and Labels.PR_BUGFIX not in info.pr_labels and Labels.PR_CRITICAL_BUGFIX not in info.pr_labels:
                 # Not a bugfix PR - run a simple sanity test
                 tests = ["00001_select_1"]
+            elif is_flaky_check:
+                # Flaky check runs only changed/new test files in this PR.
+                # Previously failed and coverage-relevant tests are handled
+                # by the separate targeted check jobs.
+                tests = targeter.get_changed_tests()
+                tests_str = ", ".join(tests) if tests else "(none)"
+                print(f"[flaky-check] Changed/new tests ({len(tests)}): {tests_str}")
             else:
                 tests = targeter.get_changed_tests()
 
@@ -386,9 +692,10 @@ def main():
             ).complete_job()
 
     if is_targeted_check:
-        assert not args.test, "--test not supposed to be used for targeted check ???"
-        tests, results_with_info = targeter.get_all_relevant_tests_with_info(ch_path)
+        assert not args.test, "--test not supposed to be used for targeted check"
+        tests, results_with_info = targeter.get_all_relevant_tests_with_info()
         results.append(results_with_info)
+
         if not tests:
             # early exit
             Result.create_from(
@@ -406,7 +713,9 @@ def main():
 
     Utils.add_to_PATH(f"{ch_path}:tests")
     CH = ClickHouseProc(
-        is_db_replicated=is_database_replicated, is_shared_catalog=is_shared_catalog
+        is_db_replicated=is_database_replicated,
+        is_shared_catalog=is_shared_catalog,
+        is_per_test_coverage=is_per_test_coverage,
     )
 
     job_info = ""
@@ -421,9 +730,9 @@ def main():
                 print("skip log export config for local run")
 
         commands = [
-            f"rm -rf /etc/clickhouse-client/* /etc/clickhouse-server/* /etc/clickhouse-server1/* /etc/clickhouse-server2/*",
+            "rm -rf /etc/clickhouse-client/* /etc/clickhouse-server/* /etc/clickhouse-server1/* /etc/clickhouse-server2/*",
             # google *.proto files
-            f"mkdir -p /usr/share/clickhouse/ && ln -sf /usr/local/include /usr/share/clickhouse/protos",
+            "mkdir -p /usr/share/clickhouse/ && ln -sf /usr/local/include /usr/share/clickhouse/protos",
             f"ln -sf {ch_path}/clickhouse {ch_path}/clickhouse-server",
             f"ln -sf {ch_path}/clickhouse {ch_path}/clickhouse-client",
             f"ln -sf {ch_path}/clickhouse {ch_path}/clickhouse-compressor",
@@ -433,24 +742,70 @@ def main():
             f"ln -sf {ch_path}/clickhouse {ch_path}/clickhouse-format",
             f"ln -sf {ch_path}/clickhouse {ch_path}/ch",
             f"ln -sf /usr/bin/clickhouse-odbc-bridge {ch_path}/clickhouse-odbc-bridge",
-            f"cp programs/server/config.xml programs/server/users.xml /etc/clickhouse-server/",
+            "cp programs/server/config.xml programs/server/users.xml /etc/clickhouse-server/",
             f"./tests/config/install.sh /etc/clickhouse-server /etc/clickhouse-client {config_installs_args}",
-            f"clickhouse-server --version",
+            "clickhouse-server --version",
             f"sed -i 's|>/test/chroot|>{temp_dir}/chroot|' /etc/clickhouse-server**/config.d/*.xml",
             CH.set_random_timezone,
         ]
 
-        if is_flaky_check or is_targeted_check:
+        # Sanitizer builds run under heavy memory pressure: besides the server's
+        # own ASan overhead, the parallel runner keeps dozens of ASan-instrumented
+        # `clickhouse-client` processes alive at once (~0.4 GiB each, ~17 GiB in
+        # total on a 60 GiB host). With the default 0.9
+        # `max_server_memory_usage_to_ram_ratio` the server is allowed to grow to
+        # ~0.9 of RAM on its own, so it can drive the host into a global OOM and be
+        # killed at an RSS well below its own memory limit - before any query hits
+        # `MEMORY_LIMIT_EXCEEDED` - which surfaces as a "Server died" failure.
+        # Cap the server low enough that the clients' footprint still fits, so the
+        # server kills a runaway query gracefully instead of being OOM-killed by
+        # the host. This applies to every sanitizer run, not just the flaky check
+        # (which previously used 0.8, sufficient there only because it runs a small
+        # test subset at reduced concurrency). 0.7 stays comfortably above the
+        # largest legitimate single-query need (the ~25 GiB stateful-load INSERT).
+        # The heaviest configs also cut test concurrency (see the `nproc` block
+        # above, e.g. azure and distributed-plan) so that the *aggregate* RSS of
+        # concurrent queries stays under this cap too.
+        #
+        # The cap must follow the binary actually being launched, not the job
+        # option string: bugfix validation passes only `BugfixValidation` in
+        # `--options` yet starts with the `build_types[0]` master-HEAD binary
+        # (always `*_asan_ubsan`), and its validation loop later swaps to the
+        # other build types, re-deriving the cap on every swap (sanitizer ->
+        # 0.7, debug -> server default; see the TEST stage below).
+        #
+        # The distributed-plan parallel job gets a slightly higher cap (0.75).
+        # The global memory check compares the server's *OS RSS* against the
+        # cap, and on an ASan server RSS carries tens of GiB the tracker can
+        # neither see nor free by killing queries: ASan shadow memory,
+        # quarantine and redzones, plus file-backed pages from mmap reads. On
+        # the 32-vCPU runner that overhead accumulates over the run towards
+        # ~41.7 GiB regardless of concurrency - cutting workers 11 -> 9 -> 8
+        # -> 7 moved the peak RSS only 43.01 -> 41.90 -> 41.76 -> 41.71 GiB
+        # against the 41.84 GiB cap that 0.7 yields, and every run still
+        # grazed the cap (one query rejected on a 512 MiB chunk while RSS sat
+        # just under it). Concurrency is exhausted as a lever, so the cap
+        # itself must give the untrackable overhead room: 0.75 (~44.8 GiB)
+        # leaves ~3 GiB of headroom above the observed RSS equilibrium. The
+        # host-OOM invariant this cap protects (server cap + aggregate client
+        # RSS < RAM) still holds with >10 GiB to spare, because this job's
+        # concurrency is already cut to 0.22 * CPU (see `nproc` above), which
+        # shrinks the ASan client footprint from ~17 GiB to ~3 GiB.
+        memory_cap_source = build_types[0] if is_bugfix_validation else args.options
+        if any(san in memory_cap_source for san in SANITIZERS):
+            memory_ratio = (
+                0.75 if is_distributed_plan and "parallel" in test_options else 0.7
+            )
+            commands.append(lambda: CH.set_memory_ratio(memory_ratio))
+
+        if is_flaky_check:
             commands.append(CH.enable_thread_fuzzer_config)
-            sanitizers = ("asan", "tsan", "msan", "ubsan")
-            if any(san in args.options for san in sanitizers):
-                commands.append(lambda: CH.set_memory_ratio(0.8))
 
         os.environ["MALLOC_CONF"] = (
             f"prof_prefix:{temp_dir}/jemalloc_profiles/clickhouse.jemalloc"
         )
 
-        if not is_coverage:
+        if not is_llvm_coverage:
             commands.append(configure_log_export)
 
         results.append(
@@ -467,34 +822,86 @@ def main():
         step_name = "Start ClickHouse Server"
         print(step_name)
 
+        # Reasons recorded by the setup closure that must reach the persisted
+        # Result.info (CIDB test_context_raw) even when setup ultimately
+        # succeeds - e.g. a non-fatal minio log-table/restart failure that would
+        # otherwise be invisible in CIDB (only visible as a report-page warning).
+        setup_notes = []
+
         def start():
-            res = CH.start_minio(test_type="stateless") and CH.start_azurite()
-            res = res and CH.start()
-            res = res and CH.wait_ready()
-            if res:
-                if not CH.start_kafka():
-                    print("WARNING: Failed to start Kafka")
+            # `from_commands_run` captures this closure's stdout into the step
+            # Result.info (hence CIDB test_context_raw) only when it returns a
+            # failing value. Print a concise "SETUP FAILURE: <sub-step>" marker
+            # at each failure point so the opaque "Start ClickHouse Server"
+            # umbrella can be split into measurable sub-causes (minio /
+            # wait_ready / kafka / stateful) instead of one bucket.
+            if not (CH.start_minio(test_type="stateless") and CH.start_azurite()):
+                print("SETUP FAILURE: minio/azurite did not start")
+                return False
+            if not CH.start():
+                print("SETUP FAILURE: clickhouse-server process did not start")
+                return False
+            if not CH.wait_ready():
+                # wait_ready() already tails the server err log to stdout on
+                # timeout; the marker just names the sub-step for triage.
+                print("SETUP FAILURE: clickhouse-server not ready (wait_ready)")
+                return False
 
-                if not Info().is_local_run:
-                    if not CH.start_log_exports(stop_watch.start_time):
-                        info.add_workflow_report_message(
-                            "WARNING: Failed to start log export"
-                        )
-                        print("Failed to start log export")
-                if not CH.create_minio_log_tables():
-                    info.add_workflow_report_message(
-                        "WARNING: Failed to create minio log tables"
-                    )
-                    print("Failed to create minio log tables")
+            if not CH.start_kafka():
+                info.add_workflow_warning("Failed to start Kafka")
+                print("SETUP FAILURE: kafka did not start")
+                # Fail fast on infra setup errors so we don't burn time
+                # triaging Kafka/Avro test failures caused by a broken setup.
+                return False
 
-                if has_stateful_tests:
-                    res = (
-                        CH.prepare_stateful_data(
-                            with_s3_storage=is_s3_storage,
-                            is_db_replicated=is_database_replicated,
+            if not Info().is_local_run:
+                if not CH.start_log_exports(stop_watch.start_time):
+                    info.add_workflow_warning("Failed to start log export")
+                    print("Failed to start log export")
+            # MinIO log tables are non-fatal (tests still run without the
+            # webhook log tables), so keep going - but record the concrete
+            # failure reason (the real clickminio restart status, carried out of
+            # create_minio_log_tables via CH.minio_setup_error) so broken minio
+            # restarts are visible in test_context_raw rather than silently
+            # collapsing into the umbrella.
+            if not CH.create_minio_log_tables():
+                info.add_workflow_warning("Failed to create minio log tables")
+                note = "SETUP WARNING: " + (
+                    CH.minio_setup_error or "failed to create minio log tables"
+                )
+                print(note)
+                # Keep it for the persisted Result too: on the success path
+                # from_commands_run does not capture this closure's stdout, so
+                # without this the minio failure would not reach CIDB.
+                setup_notes.append(note)
+
+            res = True
+            if has_stateful_tests:
+                if not CH.prepare_stateful_data(
+                    with_s3_storage=is_s3_storage,
+                    is_db_replicated=is_database_replicated,
+                    # `args.options` (e.g. "amd_asan_ubsan, distributed plan, parallel")
+                    # already carries the sanitizer name in the same format
+                    # `prepare_stateful_data`'s `is_sanitizer` check expects, so the
+                    # normal (non-bugfix-validation) path can reuse it directly - it
+                    # must not stay `None` here, since every sanitizer stateless run
+                    # now sets the tighter 0.7 memory ratio (see below) and needs the
+                    # reduced `MAX_INSERT_THREADS` to fit under it.
+                    build_type=(
+                        build_types[0] if is_bugfix_validation else args.options
+                    ),
+                ):
+                    print(
+                        "SETUP FAILURE: "
+                        + (
+                            CH.stateful_setup_error
+                            or "prepare_stateful_data failed"
                         )
-                        and CH.insert_system_zookeeper_config()
                     )
+                    res = False
+                elif not CH.insert_system_zookeeper_config():
+                    print("SETUP FAILURE: insert_system_zookeeper_config failed")
+                    res = False
             if res:
                 print("stateful data prepared")
             return res
@@ -505,6 +912,10 @@ def main():
                 command=start,
             )
         )
+        # Surface non-fatal setup notes (e.g. minio) into the persisted Result
+        # so they are queryable in CIDB test_context_raw even on the success path.
+        for note in setup_notes:
+            results[-1].set_info(note)
         res = results[-1].is_ok()
 
     test_result = None
@@ -513,123 +924,260 @@ def main():
         step_name = "Tests"
         print(step_name)
 
-        # FIXME: Determine optimal mode for targeted job:
-        # Mode (1): Run all tests N times in one go (flaky-mode)
-        #   - Drawback: Noisy errors when tests can't run in parallel with themselves
-        #   - Skips tests marked as no-flaky-check
-        # Mode (2): N consequent runs for chosen tests
-        #   - Drawback: Might eliminate mode (1) issues but potentially catches fewer problems
-        #
-        # Mode (1):
-        # run_sets_cnt = 1
-        # Mode (2):
-        run_sets_cnt = rerun_count if is_targeted_check else 1
-        rerun_count = 1 if is_targeted_check else rerun_count
-
         ft_res_processor = FTResultsProcessor(wd=temp_dir)
 
-        # For flaky check, set a soft time limit so that the test runner stops
-        # gracefully before the job hard timeout, allowing results to be posted.
-        # The job timeout is 2.5 hours (9000s); leave a 1-hour margin for cleanup
-        # (server shutdown, system table export, log collection — all slow under sanitizers).
-        job_timeout = int(3600 * 2.5)
-        soft_limit_margin = 3600
         global_time_limit = 0
-        if is_flaky_check or is_targeted_check:
+        if is_flaky_check:
+            # The merge-queue run gets a tighter budget: it delays merges
+            # directly, and its reduced rerun_count needs less time anyway.
+            FLAKY_CHECK_TIME_LIMIT = 20 * 60 if info.is_merge_queue_event else 45 * 60
+            # Floor the budget at a small positive value: `run_tests` interprets
+            # `global_time_limit == 0` as "pass no `--global_time_limit`", i.e. no
+            # cap at all. If setup already consumed the whole budget (more likely
+            # under the tighter merge-queue limit) a `0` here would turn the run
+            # unbounded, defeating the very latency bound it is meant to enforce.
+            # A minimal explicit limit keeps the run bounded while still doing one
+            # quick pass. Mirrors the targeted-check floor below.
             global_time_limit = max(
-                job_timeout - soft_limit_margin - int(stop_watch.duration), 0
+                FLAKY_CHECK_TIME_LIMIT - int(stop_watch.duration), 60
             )
             print(
-                f"Soft time limit for test runner: {global_time_limit}s"
-                f" (elapsed so far: {int(stop_watch.duration)}s)"
+                f"Flaky-check time limit: {FLAKY_CHECK_TIME_LIMIT}s"
+                f" (elapsed so far: {int(stop_watch.duration)}s,"
+                f" remaining: {global_time_limit}s)"
             )
 
-        # Track collected test results across multiple runs (only used when run_sets_cnt > 1)
-        collected_test_results = []
-        seen_test_names = set()
-        # Track accumulated run time per test for the targeted check per-test time cap
-        test_time_accumulated: dict[str, float] = {}
-        TIME_CAP_PER_TEST_SEC = 10 * 60
-        tests_to_run = list(tests) if tests else tests
-
-        for cnt in range(run_sets_cnt):
-            # For targeted checks with multiple iterations, recalculate
-            # the remaining time for each invocation of the test runner.
-            if global_time_limit > 0 and run_sets_cnt > 1:
-                global_time_limit = max(
-                    job_timeout - soft_limit_margin - int(stop_watch.duration), 0
-                )
-                if global_time_limit <= 0:
-                    print(
-                        "NOTE: Soft time limit exhausted; stopping before next iteration"
-                    )
-                    break
-
-            run_tests(
-                batch_num=batch_num if not tests_to_run else 0,
-                batch_total=total_batches if not tests_to_run else 0,
-                tests=tests_to_run,
+            runner_exit_code = run_tests(
+                batch_num=0,
+                batch_total=0,
+                tests=list(tests) if tests else tests,
                 extra_args=runner_options,
-                random_order=is_flaky_check
-                or is_targeted_check
-                or is_bugfix_validation,
+                random_order=True,
                 rerun_count=rerun_count,
                 global_time_limit=global_time_limit,
             )
-            test_result = ft_res_processor.run()
 
-            # Experimental mode for targeted check: collect first failure of each test,
-            # or all results on the final attempt
-            if run_sets_cnt > 1:
-                is_final_run = cnt == run_sets_cnt - 1
+        elif is_targeted_check:
+            TARGETED_CHECK_TIME_LIMIT = 50 * 60  # 50 min
+            global_time_limit = max(
+                TARGETED_CHECK_TIME_LIMIT - int(stop_watch.duration), 60
+            )
+            print(
+                f"Targeted-check time limit: {TARGETED_CHECK_TIME_LIMIT}s"
+                f" (elapsed so far: {int(stop_watch.duration)}s,"
+                f" remaining: {global_time_limit}s)"
+            )
 
-                # Accumulate per-test run time and filter tests that exceeded the time cap
-                if is_targeted_check:
-                    for test_case_result in test_result.results:
-                        if test_case_result.duration is not None:
-                            test_time_accumulated[test_case_result.name] = (
-                                test_time_accumulated.get(test_case_result.name, 0.0)
-                                + test_case_result.duration
+            runner_exit_code = run_tests(
+                batch_num=0,
+                batch_total=0,
+                tests=list(tests) if tests else tests,
+                extra_args=runner_options,
+                random_order=True,
+                rerun_count=rerun_count,
+                global_time_limit=global_time_limit,
+            )
+
+        else:
+            runner_exit_code = run_tests(
+                batch_num=batch_num,
+                batch_total=total_batches,
+                tests=list(tests) if tests else tests,
+                extra_args=runner_options,
+                random_order=is_bugfix_validation,
+                rerun_count=rerun_count,
+                global_time_limit=global_time_limit,
+                build_type=build_types[0] if is_bugfix_validation else None,
+            )
+
+        test_result = ft_res_processor.run(runner_exit_code=runner_exit_code)
+
+        # Run additional build types for bugfix validation.
+        # Exit early on first failure to avoid duplicate test names,
+        # workspace pollution, and to preserve logs for analysis.
+        # Fatal message checking (CHECK_ERRORS) is done per-build-type here
+        # rather than in the outer CHECK_ERRORS stage, so that crashes in any
+        # build type are detected even when logs are cleaned between builds.
+        if is_bugfix_validation:
+            for r in test_result.results:
+                r.set_label(build_types[0])
+
+            # Check fatal messages for the first build type before cleaning logs
+            first_bt_fatals = CH.check_fatal_messages_in_logs()
+            for r in first_bt_fatals:
+                r.set_label(build_types[0])
+            # `extend_sub_results` recomputes the aggregate status from child
+            # rows only, which would erase a runner-level `ERROR` set by
+            # `FTResultsProcessor` (e.g. `not s.success_finish`) when the
+            # parsed rows are all `OK`/`FAIL`. Restore it so that
+            # `invert_bugfix_validation_status` still sees the error and
+            # does not flip a harness-level termination into green.
+            runner_level_error = test_result.is_error()
+            test_result.extend_sub_results(first_bt_fatals)
+            if runner_level_error:
+                test_result.status = Result.Status.ERROR
+
+            if test_result.is_ok():
+                for bugfix_bt in build_types[1:]:
+                    print(f"\n=== Bugfix validation with {bugfix_bt} ===")
+                    # Stop the server before overwriting the binary: on Linux,
+                    # `cp` over a running ELF fails with `Text file busy`,
+                    # and `strict=True` ensures a failed switch is not ignored.
+                    # Use `stop_server` rather than `terminate` so the auxiliary
+                    # services (Kafka/Redpanda, MinIO and its webhooks) started
+                    # in the outer setup keep running for the next build type;
+                    # `terminate` would tear them down, making Kafka/MinIO tests
+                    # spuriously "reproduce" a bug under later build types.
+                    # `stop_server` does not guarantee that every descendant
+                    # process (transient `clickhouse-client` invocations, stray
+                    # workers) has released the binary by the time we replace
+                    # it, so unlink the destination first: any process still
+                    # holding the old inode keeps executing from it, while
+                    # `cp` creates a fresh inode for the new binary.
+                    CH.stop_server()
+                    Shell.run(
+                        f"rm -f {ch_path}/clickhouse && "
+                        f"cp {temp_dir}/clickhouse_{bugfix_bt} {ch_path}/clickhouse",
+                        verbose=True,
+                        strict=True,
+                    )
+                    Shell.run(
+                        f"chmod +x {ch_path}/clickhouse",
+                        verbose=True,
+                        strict=True,
+                    )
+                    # The downloaded build-type binaries are self-extracting:
+                    # the first invocation decompresses the real ELF in place.
+                    # Trigger that synchronously here - exactly as the install
+                    # stage does via `clickhouse-server --version` - instead of
+                    # letting the server self-extract during `start`.
+                    # Decompressing a sanitizer binary takes longer than
+                    # `start`'s 15s pid-file wait, so the swap would otherwise
+                    # time out; worse, a later `clickhouse local` (log scraping)
+                    # racing the half-written binary fails with
+                    # `open: Is a directory`.
+                    Shell.run(
+                        "clickhouse-server --version",
+                        verbose=True,
+                        strict=True,
+                    )
+                    CH.clean_logs()
+                    # The server memory cap must follow the binary being
+                    # launched (see the install-stage comment): sanitizer
+                    # builds get the tighter 0.7 ratio, the debug build
+                    # reverts to the server default. The config tree is not
+                    # reinstalled on a binary swap, so the override written
+                    # for the previous build type would otherwise persist.
+                    if any(san in bugfix_bt for san in SANITIZERS):
+                        CH.set_memory_ratio(0.7)
+                    else:
+                        CH.reset_memory_ratio()
+                    # Fail closed if the server cannot come back up after the
+                    # binary swap: running tests against a dead server would
+                    # produce `Server died` FAILs that the bugfix inverter
+                    # then flips into a successful reproduction, even though
+                    # the selected binary never became ready. Record an ERROR
+                    # row (preserved by `invert_bugfix_validation_status`) and
+                    # stop before running tests for this build type.
+                    if not (CH.start() and CH.wait_ready()):
+                        startup_error = Result(
+                            name=f"Server startup ({bugfix_bt})",
+                            status=Result.Status.ERROR,
+                            info="Server failed to start after switching to the "
+                            f"{bugfix_bt} binary",
+                        )
+                        startup_error.set_label(bugfix_bt)
+                        test_result.results.append(startup_error)
+                        test_result.status = Result.Status.ERROR
+                        break
+
+                    # `start` wipes the server data directory (`run_path0`), so
+                    # the environment built once in the START stage is gone:
+                    # re-create the MinIO log tables and, for stateful suites,
+                    # reload the stateful data and the `system.zookeeper`
+                    # config. Auxiliary services (Kafka/Redpanda, MinIO) keep
+                    # running across `stop_server`, so only the server-side
+                    # state has to be rebuilt. Without this a stateful changed
+                    # test fails only because `test.hits`/`datasets`/the
+                    # auxiliary ZooKeeper row disappeared, and the bugfix
+                    # inverter reports that false failure as a successful bug
+                    # reproduction.
+                    reprepared = CH.create_minio_log_tables()
+                    reprepare_error = CH.minio_setup_error
+                    if reprepared and has_stateful_tests:
+                        # Split the two sub-steps like the START stage does so the
+                        # persisted Environment setup row names the operation that
+                        # actually failed instead of collapsing both into the
+                        # generic "failed to re-prepare stateful data" bucket.
+                        if not CH.prepare_stateful_data(
+                            with_s3_storage=is_s3_storage,
+                            is_db_replicated=is_database_replicated,
+                            build_type=bugfix_bt,
+                        ):
+                            # Prefer the concrete sub-command + ClickHouse error
+                            # captured by prepare_stateful_data() over the generic
+                            # message, so the (intermittent, msan) re-prepare
+                            # failure is diagnosable in CIDB test_context_raw.
+                            reprepared = False
+                            reprepare_error = (
+                                CH.stateful_setup_error
+                                or "failed to re-prepare stateful data"
                             )
-                    if not is_final_run:
-                        tests_to_run = [
-                            t
-                            for t in tests_to_run
-                            if test_time_accumulated.get(t, 0.0)
-                            < TIME_CAP_PER_TEST_SEC
-                        ]
-                        if not tests_to_run:
-                            print(
-                                "NOTE: All tests exceeded the time cap; stopping early"
-                            )
-                            is_final_run = True
+                        elif not CH.insert_system_zookeeper_config():
+                            reprepared = False
+                            reprepare_error = "insert_system_zookeeper_config failed"
+                    if not reprepared:
+                        info_text = (
+                            "Failed to re-prepare the test environment "
+                            f"after switching to the {bugfix_bt} binary"
+                        )
+                        if reprepare_error:
+                            info_text += f" ({reprepare_error})"
+                        setup_error = Result(
+                            name=f"Environment setup ({bugfix_bt})",
+                            status=Result.Status.ERROR,
+                            info=info_text,
+                        )
+                        setup_error.set_label(bugfix_bt)
+                        test_result.results.append(setup_error)
+                        test_result.status = Result.Status.ERROR
+                        break
 
-                for test_case_result in test_result.results:
-                    # Only collect each test once (first failure or final result)
-                    if test_case_result.name not in seen_test_names:
-                        # On non-final runs: collect only failed test cases
-                        # On final run: collect all remaining test cases
-                        should_collect = not test_case_result.is_ok() or is_final_run
-                        if should_collect:
-                            test_case_result.set_info(
-                                f"Run attempt {cnt + 1} out of {run_sets_cnt}"
-                            )
-                            collected_test_results.append(test_case_result)
-                            seen_test_names.add(test_case_result.name)
+                    ft_res_processor_bt = FTResultsProcessor(wd=temp_dir)
+                    bt_runner_exit_code = run_tests(
+                        batch_num=0,
+                        batch_total=0,
+                        tests=tests,
+                        extra_args=runner_options,
+                        random_order=True,
+                        rerun_count=1,
+                        build_type=bugfix_bt,
+                    )
+                    bt_result = ft_res_processor_bt.run(
+                        runner_exit_code=bt_runner_exit_code
+                    )
 
-                stop_by_elapsed_time = global_time_limit <= 0
+                    # Check fatal messages for this build type
+                    bt_fatals = CH.check_fatal_messages_in_logs()
+                    for r in bt_fatals:
+                        r.set_label(bugfix_bt)
+                    # As with the first build type above: keep a runner-level
+                    # `ERROR` from being recomputed away by
+                    # `extend_sub_results` before it is copied into
+                    # `test_result.status` and checked by the inverter.
+                    bt_runner_level_error = bt_result.is_error()
+                    bt_result.extend_sub_results(bt_fatals)
+                    if bt_runner_level_error:
+                        bt_result.status = Result.Status.ERROR
 
-                # On final run, replace results with collected ones
-                if is_final_run or stop_by_elapsed_time:
-                    break
+                    for r in bt_result.results:
+                        r.set_label(bugfix_bt)
+                    test_result.results = bt_result.results
+                    test_result.status = bt_result.status
+                    debug_files += ft_res_processor_bt.debug_files
 
-        # Apply collected results from multi-run mode
-        if run_sets_cnt > 1 and collected_test_results:
-            test_result.results = collected_test_results
-            # Set overall status to failed if any collected test cases failed
-            has_failures = any(not t.is_ok() for t in collected_test_results)
-            if has_failures and test_result.is_ok():
-                test_result.set_failed()
+                    if not bt_result.is_ok():
+                        break
 
         if not info.is_local_run:
             CH.stop_log_exports()
@@ -644,60 +1192,97 @@ def main():
 
         res = results[-1].is_ok()
 
-    if JobStages.RETRIES in stages and test_result and test_result.is_failure():
-        # retry all failed tests and mark original failed either as success on retry or failed on retry
+    if JobStages.DIAGNOSTICS in stages and test_result and test_result.is_failure():
+        diag_stopwatch = Utils.Stopwatch()
+        failed_tests_seen = set()
         failed_tests = []
+        has_errors = False
         for t in test_result.results:
             if t.is_failure() and t.name and t.name[0].isdigit():
-                failed_tests.append(t.name)
+                if t.name not in failed_tests_seen:
+                    failed_tests_seen.add(t.name)
+                    failed_tests.append(t.name)
             elif t.is_error():
-                failed_tests = []
+                has_errors = True
                 print(
-                    "NOTE: Skipping retry stage because the main test run ended with errors"
+                    "NOTE: Skipping diagnostics because the main test run ended with errors"
                 )
                 break
 
-        if len(failed_tests) > 10:
+        if has_errors:
+            pass
+        elif len(failed_tests) > 10:
             results.append(
                 Result(
-                    name="Retries",
+                    name="Diagnostics",
                     status=Result.Status.SKIPPED,
                     info="Too many failed tests",
-                )
+                ).set_timing(stopwatch=diag_stopwatch)
             )
         elif failed_tests:
-            ft_res_processor = FTResultsProcessor(wd=temp_dir)
-            run_tests(
-                batch_num=0,
-                batch_total=0,
-                tests=failed_tests,
-                extra_args=runner_options,
-                random_order=True,
-                rerun_count=1,
+            memory_limit = stateless_memory_limit(Info().job_name)
+            diag_command = (
+                f"clickhouse-test --testname --check-zookeeper-session --hung-check"
+                f" --memory-limit {memory_limit} --trace --capture-client-stacktrace"
+                f" --queries ./tests/queries --shard --zookeeper"
+                f" --diagnose-random-settings"
+                f" --random-settings-diagnostics-dir {diagnostics_dir}"
+                f" --no-random-settings --no-random-merge-tree-settings"
+                f" -- {' '.join(failed_tests)}"
             )
-            retry_result = ft_res_processor.run(task_name="Retries")
-            if retry_result.is_failure():
-                # do not produce noise failures
-                retry_result.set_success()
-            success_after_rerun = [t.name for t in retry_result.results if t.is_ok()]
-            failed_after_rerun = [
-                t.name for t in retry_result.results if t.is_failure()
-            ]
-            if success_after_rerun or failed_after_rerun:
-                for test_case in test_result.results:
-                    if test_case.name in success_after_rerun:
-                        if is_llvm_coverage:
-                            print(
-                                f"Test {test_case.name} has succeeded after rerun. Mark it as OK"
-                            )
-                            test_case.remove_label(Result.Status.FAILED)
-                            test_case.remove_label(Result.StatusExtended.FAIL)
-                            test_case.set_status(Result.StatusExtended.OK)
-                        else:
-                            test_case.set_label(Result.Label.OK_ON_RETRY)
-                    elif test_case.name in failed_after_rerun:
-                        test_case.set_label(Result.Label.FAILED_ON_RETRY)
-            results.append(retry_result)
+            print(f"Running diagnostics for {len(failed_tests)} test(s)...")
+            diag_exit_code = Shell.run(diag_command, verbose=True)
+
+            # Read diagnostics results and prepend to original test info
+            diag_results_path = os.path.join(
+                diagnostics_dir, "random_settings_diagnostics_results.jsonl"
+            )
+            diag_results = {}
+            if os.path.isfile(diag_results_path):
+                with open(diag_results_path, "r", encoding="utf-8") as f:
+                    for line in f:
+                        line = line.strip()
+                        if line:
+                            entry = json.loads(line)
+                            diag_results[entry["test_name"]] = entry
+            label_map = {
+                "setting": Result.Label.SETTING_VALUE,
+                "flaky": Result.Label.FLAKY,
+                "reproducible": Result.Label.REPRODUCIBLE,
+            }
+            for test_case in test_result.results:
+                diag = diag_results.get(test_case.name)
+                if not diag:
+                    continue
+                if diag.get("diagnosis"):
+                    test_case.info = diag["diagnosis"] + "\n" + test_case.info
+                label_key = diag.get("label", "")
+                if label_key in label_map:
+                    test_case.set_label(label_map[label_key])
+                if label_key == "flaky" and is_llvm_coverage:
+                    # Coverage binaries are slow and prone to timing-related flakiness
+                    # (e.g. TIMEOUT_EXCEEDED on SystemLogQueue). Don't penalise them
+                    # for it — mark the test green so it doesn't block coverage jobs.
+                    # See: https://github.com/ClickHouse/ClickHouse/pull/95763
+                    test_case.set_status(Result.Status.OK)
+            if diag_exit_code != 0:
+                diag_status = Result.Status.FAIL
+                diag_info = (
+                    f"Diagnostics runner exited with code {diag_exit_code}; "
+                    f"diagnosed {len(diag_results)} out of {len(failed_tests)} failed test(s)"
+                )
+            else:
+                diag_status = Result.Status.OK
+                diag_info = (
+                    f"Diagnosed {len(diag_results)} out of {len(failed_tests)} failed test(s)"
+                )
+            results.append(
+                Result(
+                    name="Diagnostics",
+                    status=diag_status,
+                    info=diag_info,
+                ).set_timing(stopwatch=diag_stopwatch)
+            )
 
     if args.debug:
         print("\n\n=== Debug mode enabled, starting clickhouse-client ===\n")
@@ -727,14 +1312,13 @@ def main():
             reset_success = True
 
     if test_result and JobStages.CHECK_ERRORS in stages:
-        # must not be performed for a test validation - test must fail and log errors are not respected
         print("Check fatal errors")
         sw_ = Utils.Stopwatch()
         results.append(
             Result.create_from(
                 name="Check errors",
                 results=CH.check_fatal_messages_in_logs(),
-                status=Result.Status.SUCCESS,
+                status=Result.Status.OK,
                 stopwatch=sw_,
             )
         )
@@ -743,23 +1327,16 @@ def main():
         results[-1].results = []
 
     # invert result status for bugfix validation
-    if is_bugfix_validation and test_result and Labels.PR_BUGFIX in info.pr_labels:
-        has_failure = False
-        for r in test_result.results:
-            r.set_label("xfail")
-            if r.status == Result.StatusExtended.FAIL:
-                r.status = Result.StatusExtended.OK
-                has_failure = True
-            elif r.status == Result.StatusExtended.OK:
-                r.status = Result.StatusExtended.FAIL
-        if not has_failure:
-            print("Failed to reproduce the bug")
-            test_result.set_failed().set_info("Failed to reproduce the bug")
-        else:
-            # For bugfix validation, the expected behavior is:
-            # - At least one test must fail (bug reproduced)
-            # - The overall Tests result is treated as success in that case
-            test_result.set_success()
+    bugfix_validation_no_repro = False
+    if is_bugfix_validation and test_result and (Labels.PR_BUGFIX in info.pr_labels or Labels.PR_CRITICAL_BUGFIX in info.pr_labels):
+        # `invert_bugfix_validation_status` returns True when the bug did not
+        # reproduce on this arch. In that case it sets `test_result` to
+        # SKIPPED; the SKIPPED status must also be propagated to the top-level
+        # `R` below, because `Result.create_from` treats SKIPPED child results
+        # as benign and defaults the parent status to OK - which would let the
+        # post-hook in `new_tests_check.py` count this per-arch job as a
+        # validation via `is_success()`.
+        bugfix_validation_no_repro = invert_bugfix_validation_status(test_result)
 
     if JobStages.COLLECT_LOGS in stages:
         print("Collect logs")
@@ -778,7 +1355,7 @@ def main():
 
     # Decide whether to block the CI pipeline on test failures
     force_ok_exit = False
-    if "parallel" in test_options and test_result:
+    if test_result:
         failures_cnt = len([r for r in test_result.results if not r.is_ok()])
         if failures_cnt > 0 and failures_cnt < 4:
             print(
@@ -794,6 +1371,23 @@ def main():
         # do not block pipeline on amd_llvm_coverage job failures
         print("NOTE: LLVM coverage job - do not block pipeline - exit with 0")
         force_ok_exit = True
+    if is_bugfix_validation:
+        # Per-arch bugfix-validation jobs are advisory: their pass/fail status
+        # records "did the bug reproduce on this arch?", not whether the PR
+        # should be blocked. Setting `do_not_block_pipeline_on_failure=True`
+        # marks the job as non-blocking so downstream jobs are not dropped
+        # when this job reports FAIL. The process itself still exits with
+        # the natural status (`Result.complete_job` calls `sys.exit(1)` on
+        # non-OK results); the non-blocking flag is metadata for the
+        # pipeline scheduler. The PR-merge-blocking decision lives in the
+        # `new_tests_check.py` workflow post-hook, which OR's the per-arch
+        # bugfix-validation job statuses.
+        print(
+            "NOTE: Bugfix validation job - marking as non-blocking; "
+            "failure here will not block downstream pipeline jobs "
+            "(process exit code still reflects the actual job status)"
+        )
+        force_ok_exit = True
 
     if test_result:
         test_result.sort()
@@ -805,7 +1399,18 @@ def main():
         info=job_info,
     )
 
-    if is_llvm_coverage:
+    if bugfix_validation_no_repro:
+        # See the comment above where `bugfix_validation_no_repro` is set.
+        # `R` is otherwise OK because `Result.create_from` skips over SKIPPED
+        # children when deriving the parent status. Mirror the per-arch
+        # integration-test path (`integration_test_job.py`) and set SKIPPED on
+        # `R` directly so the post-hook does not treat this arch as a
+        # validation.
+        R.set_status(Result.Status.SKIPPED).set_info(
+            "Bug does not reproduce on this arch - bugfix validation N/A"
+        )
+
+    if is_llvm_coverage and not is_per_test_coverage:
         print("Collecting and merging LLVM coverage files...")
         Shell.get_output("pwd", verbose=True).strip().split("\n")
         profraw_files = (

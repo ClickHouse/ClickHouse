@@ -27,7 +27,7 @@ namespace
 
 using namespace GatherUtils;
 
-class FunctionStringToH3 : public IFunction
+class FunctionStringToH3 final : public IFunction
 {
 public:
     static constexpr auto name = "stringToH3";

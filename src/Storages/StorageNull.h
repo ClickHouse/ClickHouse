@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Core/NamesAndTypes.h>
 #include <Storages/IStorage.h>
 #include <Processors/Sources/NullSource.h>
 #include <Processors/Sinks/SinkToStorage.h>

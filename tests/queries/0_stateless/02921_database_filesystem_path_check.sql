@@ -1,2 +1,2 @@
-create database db_filesystem ENGINE=Filesystem('/etc'); -- { serverError BAD_ARGUMENTS }
-create database db_filesystem ENGINE=Filesystem('../../../../../../../../etc'); -- { serverError BAD_ARGUMENTS }
+create database {CLICKHOUSE_DATABASE_1:Identifier} ENGINE=Filesystem('/etc'); -- { serverError BAD_ARGUMENTS }
+create database {CLICKHOUSE_DATABASE_1:Identifier} ENGINE=Filesystem('../../../../../../../../etc'); -- { serverError BAD_ARGUMENTS }

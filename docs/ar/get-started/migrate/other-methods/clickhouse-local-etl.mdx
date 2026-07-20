@@ -1,0 +1,142 @@
+---
+sidebarTitle: 'استخدام clickhouse-local'
+keywords: ['clickhouse', 'ترحيل', 'الترحيل', 'الانتقال', 'بيانات', 'etl', 'elt', 'clickhouse-local', 'clickhouse-client']
+slug: /cloud/migration/clickhouse-local
+title: 'ترحيل إلى ClickHouse باستخدام clickhouse-local'
+description: 'دليل يوضح كيفية ترحيل إلى ClickHouse باستخدام clickhouse-local'
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ar/components/Image.jsx";
+
+import AddARemoteSystem from '/snippets/ar/_add_remote_ip_access_list_detail.mdx';
+
+<Image img="/images/integrations/migration/ch-local-01.webp" size="lg" alt="ترحيل ClickHouse مُدار ذاتيًا" />
+
+يمكنك استخدام ClickHouse، أو بشكل أكثر تحديدًا، [`clickhouse-local`](/ar/concepts/features/tools-and-utilities/clickhouse-local)
+كأداة ETL لترحيل البيانات من نظام قاعدة البيانات الحالي لديك إلى ClickHouse Cloud، ما دام يتوفر لنظام قاعدة البيانات الحالي لديك إما
+[محرك تكامل](/ar/reference/engines/table-engines/index#integration-engines) توفّره ClickHouse أو [دالة جدول](/ar/reference/functions/table-functions/index)، بحسب الحالة،
+أو JDBC driver أو ODBC driver يوفّره مورّد النظام.
+
+نُطلق أحيانًا على طريقة الترحيل هذه اسم طريقة &quot;pivot&quot;، لأنها تستخدم نقطة ارتكاز أو محطة وسيطة لنقل البيانات من قاعدة البيانات المصدر إلى قاعدة البيانات الوجهة. على سبيل المثال، قد تكون هذه الطريقة مطلوبة إذا كانت الاتصالات الصادرة فقط مسموحًا بها من داخل شبكة خاصة أو داخلية بسبب متطلبات الأمان، وبالتالي تحتاج إلى سحب البيانات من قاعدة البيانات المصدر باستخدام clickhouse-local، ثم دفع البيانات إلى قاعدة بيانات ClickHouse الوجهة، بحيث يعمل clickhouse-local كنقطة ارتكاز.
+
+يوفّر ClickHouse محركات تكامل ودوال جداول (تنشئ محركات تكامل ديناميكيًا) لـ [MySQL](/ar/reference/engines/table-engines/integrations/mysql)، و[PostgreSQL](/ar/reference/engines/table-engines/integrations/postgresql)، و[MongoDB](/ar/reference/engines/table-engines/integrations/mongodb)، و[SQLite](/ar/reference/engines/table-engines/integrations/sqlite).
+أما بالنسبة إلى جميع أنظمة قواعد البيانات الشائعة الأخرى، فتتوفّر JDBC driver أو ODBC driver من مورّد النظام.
+
+<div id="what-is-clickhouse-local">
+  ## ما هو clickhouse-local؟
+</div>
+
+<Image img="/images/integrations/migration/ch-local-02.webp" size="lg" alt="ترحيل ClickHouse المُدار ذاتيًا" />
+
+عادةً ما يُشغَّل ClickHouse على شكل عنقود، حيث تعمل عدة مثيلات من محرك قاعدة بيانات ClickHouse بصورة موزعة عبر خوادم مختلفة.
+
+على خادم واحد، يُشغَّل محرك قاعدة بيانات ClickHouse كجزء من برنامج `clickhouse-server`. ويُضبط الوصول إلى قاعدة البيانات (paths وusers وsecurity و...) باستخدام ملف إعدادات الخادم.
+
+تتيح لك أداة `clickhouse-local` استخدام محرك قاعدة بيانات ClickHouse بصورة معزولة كأداة لسطر الأوامر، لتنفيذ معالجة سريعة جدًا لبيانات SQL على قدر كبير من المدخلات والمخرجات، من دون الحاجة إلى إعداد خادم ClickHouse وتشغيله.
+
+<div id="installing-clickhouse-local">
+  ## تثبيت clickhouse-local
+</div>
+
+تحتاج إلى جهاز مضيف لـ `clickhouse-local` لديه وصول شبكي إلى كلٍّ من نظام قاعدة البيانات المصدر الحالي لديك وخدمة ClickHouse Cloud المستهدفة.
+
+على هذا الجهاز المضيف، نزّل الإصدار المناسب من `clickhouse-local` وفقًا لنظام التشغيل على جهازك:
+
+<Tabs>
+  <Tab title="Linux">
+    1. أبسط طريقة لتنزيل `clickhouse-local` محليًا هي تشغيل الأمر التالي:
+
+    ```bash
+    curl https://clickhouse.com/ | sh
+    ```
+
+    1. شغّل `clickhouse-local` (سيطبع رقم إصداره فقط):
+
+    ```bash
+    ./clickhouse-local
+    ```
+  </Tab>
+
+  <Tab title="macOS">
+    1. أبسط طريقة لتنزيل `clickhouse-local` محليًا هي تشغيل الأمر التالي:
+
+    ```bash
+    curl https://clickhouse.com/ | sh
+    ```
+
+    1. شغّل `clickhouse-local` (سيطبع رقم إصداره فقط):
+
+    ```bash
+    ./clickhouse local
+    ```
+  </Tab>
+</Tabs>
+
+<Info>
+  **مهم**
+
+  تستخدم الأمثلة الواردة في هذا الدليل أوامر Linux لتشغيل `clickhouse-local` (`./clickhouse-local`).
+  لتشغيل `clickhouse-local` على macOS، استخدم `./clickhouse local`.
+</Info>
+
+<Tip>
+  **أضف النظام البعيد إلى IP Access List الخاصة بخدمة ClickHouse Cloud لديك**
+
+  لكي تتمكن الدالة `remoteSecure` من الاتصال بخدمة ClickHouse Cloud لديك، يجب السماح بعنوان IP الخاص بالنظام البعيد ضمن IP Access List. وسّع **إدارة IP Access List الخاصة بك** أسفل هذه النصيحة لمزيد من المعلومات.
+</Tip>
+
+<AddARemoteSystem />
+
+<div id="example-1-migrating-from-mysql-to-clickhouse-cloud-with-an-integration-engine">
+  ## مثال: الترحيل من MySQL إلى ClickHouse Cloud باستخدام محرك Integration
+</div>
+
+سنستخدم [محرك جدول Integration](/ar/reference/engines/table-engines/integrations/mysql) (الذي يُنشأ لحظيًا بواسطة [دالة الجدول mysql](/ar/reference/functions/table-functions/mysql)) لقراءة البيانات من قاعدة بيانات MySQL المصدر، وسنستخدم [دالة الجدول remoteSecure](/ar/reference/functions/table-functions/remote)
+لكتابة البيانات في جدول وجهة على خدمة ClickHouse Cloud الخاصة بك.
+
+<Image img="/images/integrations/migration/ch-local-03.webp" size="lg" alt="ترحيل ClickHouse المُدار ذاتيًا" />
+
+<div id="on-the-destination-clickhouse-cloud-service">
+  ### في خدمة ClickHouse Cloud الوجهة:
+</div>
+
+<div id="create-the-destination-database">
+  #### أنشئ قاعدة البيانات الهدف:
+</div>
+
+```sql
+  CREATE DATABASE db
+```
+
+<div id="create-a-destination-table-that-has-a-schema-equivalent-to-the-mysql-table">
+  #### أنشئ جدول الوجهة ببنية مكافئة لجدول MySQL:
+</div>
+
+```sql
+  CREATE TABLE db.table ...
+```
+
+<Note>
+  يجب أن يكون مخطط جدول الوجهة في ClickHouse Cloud ومخطط جدول MySQL المصدر متطابقين (يجب أن تكون أسماء الأعمدة وترتيبها متماثلة، وأن تكون أنواع بيانات الأعمدة متوافقة).
+</Note>
+
+<div id="on-the-clickhouse-local-host-machine">
+  ### على الجهاز المضيف الذي يعمل عليه clickhouse-local:
+</div>
+
+<div id="run-clickhouse-local-with-the-migration-query">
+  #### شغِّل `clickhouse-local` باستخدام استعلام الترحيل:
+</div>
+
+```sql
+  ./clickhouse-local --query "
+INSERT INTO FUNCTION
+remoteSecure('HOSTNAME.clickhouse.cloud:9440', 'db.table', 'default', 'PASS')
+SELECT * FROM mysql('host:port', 'database', 'table', 'user', 'password');"
+```
+
+<Note>
+  لا تُخزَّن أي بيانات محليًا على الجهاز المضيف `clickhouse-local`. بدلًا من ذلك، تُقرأ البيانات من جدول MySQL المصدر
+  ثم تُكتَب مباشرةً إلى الجدول الوجهة في خدمة ClickHouse Cloud.
+</Note>

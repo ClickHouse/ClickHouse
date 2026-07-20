@@ -1,0 +1,162 @@
+---
+slug: /use-cases/observability/clickstack/overview
+title: 'ClickStack - ClickHouseのオブザーバビリティスタック'
+sidebarTitle: '概要'
+description: 'ClickStack - ClickHouseのオブザーバビリティスタックの概要'
+doc_type: 'guide'
+keywords: ['clickstack', 'オブザーバビリティ', 'ログ', '監視', 'プラットフォーム']
+---
+
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+<Image img="/images/use-cases/observability/hyperdx-landing.webp" alt="ランディングページ" size="lg" />
+
+**ClickStack** は ClickHouse 上に構築された本番環境対応のオブザーバビリティプラットフォームで、ログ、トレース、メトリクス、セッションを単一の高性能なソリューションに統合します。複雑なシステムの監視やデバッグ向けに設計されており、ClickStack を使えば、開発者や SRE はツールを切り替えたり、タイムスタンプや相関 ID を使って手作業でデータをつなぎ合わせたりすることなく、問題をエンドツーエンドで追跡できます。
+
+ClickStack の中核にあるのは、シンプルでありながら強力な発想です。すべてのオブザーバビリティデータは、多くの情報を含むリッチなイベントとして取り込まれるべきだという考え方です。これらのイベントは、ログ、トレース、メトリクス、セッションといったデータ型ごとに ClickHouse テーブルへ保存されますが、データベースレベルでは引き続き完全にクエリ可能であり、相互に関連付けて分析できます。
+
+ClickStack は、ClickHouse のカラム指向アーキテクチャ、高カーディナリティ属性に対応する柔軟なスキーマ、完全に並列化された実行エンジンを活用することで、高カーディナリティのワークロードを効率的に処理できるよう設計されています。これにより、大規模なデータセットに対してサブ秒でクエリを実行でき、広い時間範囲にわたる高速な集計や、個々のトレースの詳細な調査が可能になります。
+
+<div id="features">
+  ## 機能
+</div>
+
+このスタックには、デバッグや根本原因分析のための主要な機能がいくつか含まれています。
+
+* ログ、メトリクス、セッションリプレイ、トレースを 1 か所で相関付け・検索
+* スキーマ非依存で、既存の ClickHouse スキーマ上で動作
+* ClickHouse 向けに最適化された超高速の検索と可視化
+* 直感的な全文検索とプロパティ検索構文 (例: `level:err`) 。SQL は必須ではありません。
+* イベントデルタで異常の傾向を分析
+* 数クリックでアラートを設定
+* 複雑なクエリ言語なしで、高カーディナリティのイベントをダッシュボードで可視化
+* JSON 文字列をネイティブにクエリ可能
+* ログとトレースをライブテールし、常に最新のイベントを確認
+* OpenTelemetry (OTel) を標準でサポート
+* HTTP リクエストから DB クエリまで、正常性とパフォーマンスを監視 (APM)
+* イベントデルタで異常やパフォーマンス低下を特定
+* ログパターンの認識
+
+<div id="components">
+  ## コンポーネント
+</div>
+
+ClickStack は、3 つの中核コンポーネントで構成されています。
+
+1. **ClickStack UI (HyperDX)** – オブザーバビリティデータの探索と可視化に特化したフロントエンド
+2. **OpenTelemetry collector** – ログ、トレース、メトリクス向けに明確な設計方針に基づくスキーマを備えた、カスタム構築済みかつ事前設定済みの collector
+3. **ClickHouse** – スタックの中核を担う高性能な分析データベース
+
+これらのコンポーネントは、完全な **セルフマネージド ClickStack Open Source** 構成としてまとめてデプロイすることも、マネージド環境とセルフホスト環境に分けて配置することもできます。**Managed ClickStack** では、ClickHouse と HyperDX UI は [ClickHouse Cloud](/ja/products/cloud/getting-started/cloud-get-started) 上でホストおよび運用され、ユーザーは OpenTelemetry Collector のみを実行します。
+
+また、ブラウザで利用できる HyperDX UI も提供されており、追加の UI インフラストラクチャをデプロイしなくても、既存の ClickHouse デプロイメントに直接接続できます。
+
+開始するには、まず [Getting Started ガイド](/ja/clickstack/getting-started/index) を参照し、その後で [サンプルデータセット](/ja/clickstack/example-datasets/index) を読み込んでください。[デプロイオプション](/ja/clickstack/deployment/overview) や [本番環境のベストプラクティス](/ja/clickstack/managing/production) に関するドキュメントも参照できます。
+
+<div id="clickstack-principles">
+  ## 原則
+</div>
+
+ClickStack は、オブザーバビリティスタックのあらゆるレイヤーで、使いやすさ、パフォーマンス、柔軟性を重視する一連の基本原則に基づいて設計されています。
+
+<div id="clickstack-easy-to-setup">
+  ### 数分で簡単にセットアップ
+</div>
+
+ClickStack は、あらゆる ClickHouse インスタンスやスキーマですぐに使い始められ、必要な設定も最小限です。新規導入でも既存環境への統合でも、数分で稼働を開始できます。
+
+<div id="user-friendly-purpose-built">
+  ### 使いやすく、用途に即した設計
+</div>
+
+HyperDX UI は SQL と Lucene 形式の構文の両方をサポートしており、ユーザーは自分のワークフローに合ったクエリインターフェイスを選択できます。オブザーバビリティ向けに設計されたこの UI は、チームが根本原因をすばやく特定し、複雑なデータもスムーズにたどれるよう最適化されています。
+
+<div id="end-to-end-observability">
+  ### エンドツーエンドのオブザーバビリティ
+</div>
+
+ClickStack は、フロントエンドのユーザーセッションからバックエンドのインフラストラクチャのメトリクス、アプリケーションログ、分散トレースまで、スタック全体を可視化します。この統合ビューにより、システム全体にわたって詳細な相関分析を行えます。
+
+<div id="built-for-clickhouse">
+  ### ClickHouse 向けに構築
+</div>
+
+スタックの各レイヤーは、ClickHouse の機能を最大限に活用できるよう設計されています。クエリは ClickHouse の分析関数と列指向エンジンを活かせるよう最適化されており、膨大なデータに対しても高速な検索と集計を実現します。
+
+<div id="open-telemetry-native">
+  ### OpenTelemetry ネイティブ
+</div>
+
+ClickStack は OpenTelemetry にネイティブ対応しており、すべてのデータを OpenTelemetry collector のエンドポイント経由で取り込みます。上級ユーザー向けには、ネイティブのファイルフォーマット、カスタムパイプライン、または Vector などのサードパーティツールを使って、ClickHouse に直接インジェストすることもサポートしています。
+
+<div id="open-source-and-customizable">
+  ### オープンソースで高いカスタマイズ性
+</div>
+
+ClickStack は完全なオープンソースで、どこにでもデプロイできます。スキーマは柔軟でユーザー自身が変更可能であり、UI も変更を加えることなくカスタムスキーマに対応できるよう設計されています。collector、ClickHouse、UI を含む各コンポーネントは、インジェスト、クエリ、ストレージの要件に応じてそれぞれ個別にスケールできます。
+
+<div id="architectural-overview">
+  ## アーキテクチャの概要
+</div>
+
+ClickStack のアーキテクチャは、デプロイ方法によって異なります。すべてのコンポーネントをセルフマネージドで運用する **ClickStack Open Source** と、ClickHouse および HyperDX UI が ClickHouse Cloud でホスト・運用される **Managed ClickStack** では、アーキテクチャ上の重要な違いがあります。どちらのモデルでも中核となるコンポーネントは同じですが、各コンポーネントのホスティング、スケーリング、セキュリティ確保の責任範囲は異なります。
+
+<Tabs>
+  <Tab title="Managed ClickStack">
+    <Image img="/images/use-cases/observability/clickstack-simple-managed-architecture.webp" alt="Managed ClickStack architecture" size="md" />
+
+    Managed ClickStack は **ClickHouse Cloud** 上で完全に動作し、ClickStack と同じデータモデルとユーザー体験を維持しながら、完全マネージド型のオブザーバビリティ基盤を提供します。
+
+    このモデルでは、**ClickHouse と ClickStack UI (HyperDX)** は ClickHouse Cloud によってホスト、運用、保護されます。ユーザーが担うのは、テレメトリーデータをマネージドサービスに送信するための OpenTelemetry Collector を実行することだけです。
+
+    Managed ClickStack は次のコンポーネントで構成されます。
+
+    1. **ClickStack UI (HyperDX)**
+       HyperDX UI は ClickHouse Cloud に完全に統合されており、サービスの一部として管理されます。ログ検索、トレース探索、ダッシュボード、アラート、テレメトリー種別をまたいだ相関分析を提供し、認証とアクセス制御も統合されています。
+
+    2. **OpenTelemetry collector (セルフマネージド)**
+       ユーザーは、アプリケーションやインフラストラクチャからテレメトリーデータを受信する OpenTelemetry Collector を実行します。この collector は OTLP 経由でデータを ClickHouse Cloud に転送します。標準準拠の OpenTelemetry Collector であればどれでも使用できますが、ClickHouse へのインジェスト向けに事前設定・最適化されており、ClickStack のスキーマですぐに利用できる **ClickStack distribution** を強く推奨します。
+
+    3. **ClickHouse Cloud**
+       ClickHouse は ClickHouse Cloud 上で完全に管理され、すべてのオブザーバビリティデータのストレージおよびクエリエンジンとして機能します。ユーザーがクラスター、アップグレード、その他の運用上の課題を管理する必要はありません。
+
+    Managed ClickStack には、主に次の利点があります。
+
+    * **ストレージから独立したコンピュートの自動スケーリング**
+    * オブジェクトストレージを基盤とした **低コストで実質的に無制限の保持期間**
+    * ClickHouse Cloud Warehouses を使用した **読み取りと書き込みの独立した分離**
+    * **統合された認証とアクセス制御**
+    * **自動バックアップ**
+    * **セキュリティおよびコンプライアンス機能**
+    * **運用停止を伴わないシームレスなアップグレード**
+
+    このデプロイモデルにより、チームは ClickHouse や ClickStack UI 自体を運用する負担を負うことなく、オブザーバビリティのワークフローとインストルメンテーションに専念できます。
+
+    本番環境で ClickStack をデプロイする場合は、Managed ClickStack を推奨します。ClickHouse Cloud で ClickStack をデプロイする手順については、[Getting started guide](/ja/clickstack/getting-started/managed) を参照してください。
+
+    <br />
+  </Tab>
+
+  <Tab title="Open Source ClickStack">
+    <Image img="/images/use-cases/observability/clickstack-simple-oss-architecture.webp" alt="OSS Simple architecture" size="md" />
+
+    Open Source ClickStack は、3 つの中核コンポーネントで構成されます。
+
+    1. **ClickStack UI (HyperDX)**
+       オブザーバビリティ向けに構築された使いやすいインターフェイスです。Lucene 形式と SQL の両方のクエリ、対話型ダッシュボード、アラート、トレース探索などをサポートしており、いずれもバックエンドとしての ClickHouse 向けに最適化されています。
+
+    2. **OpenTelemetry collector**
+       ClickHouse へのインジェスト向けに最適化された、明確な設計方針に基づくスキーマで構成されたカスタムビルドの collector です。OpenTelemetry プロトコル経由でログ、メトリクス、トレースを受信し、効率的なバッチ insert によって ClickHouse に直接書き込みます。
+
+    3. **ClickHouse**
+       wide events の中心的なデータストアとして機能する高性能な分析用データベースです。ClickHouse は、列指向 engine と JSON のネイティブサポートを活用し、大規模環境でも高速な検索、フィルタリング、aggregation を実現します。
+
+    これら 3 つのコンポーネントに加えて、ClickStack はダッシュボード、ユーザーアカウント、設定などのアプリケーション状態を保存するために **MongoDB インスタンス** を使用します。
+
+    完全なアーキテクチャ図とデプロイの詳細は、[Architecture section](/ja/clickstack/architecture) にあります。
+
+    Open Source ClickStack を本番環境にデプロイしたい場合は、[&quot;Production&quot;](/ja/clickstack/managing/production) ガイドを読むことをお勧めします。
+
+    <br />
+  </Tab>
+</Tabs>

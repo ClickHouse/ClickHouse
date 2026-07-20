@@ -7,8 +7,6 @@ title: 'Tuple(T1, T2, ...)'
 doc_type: 'reference'
 ---
 
-# Tuple(T1, T2, ...)
-
 A tuple of elements, each having an individual [type](/sql-reference/data-types). Tuple must contain at least one element.
 
 Tuples are used for temporary column grouping. Columns can be grouped when an IN expression is used in a query, and for specifying certain formal parameters of lambda functions. For more information, see the sections [IN operators](../../sql-reference/operators/in.md) and [Higher order functions](/sql-reference/functions/overview#higher-order-functions).
@@ -83,7 +81,7 @@ SELECT tuple(1, NULL) AS x, toTypeName(x)
 
 Tuple elements can be referred to by name or by index:
 
-```sql
+```sql title="Query"
 CREATE TABLE named_tuples (`a` Tuple(s String, i Int64)) ENGINE = Memory;
 INSERT INTO named_tuples VALUES (('y', 10)), (('x',-10));
 
@@ -91,9 +89,7 @@ SELECT a.s FROM named_tuples; -- by name
 SELECT a.2 FROM named_tuples; -- by index
 ```
 
-Result:
-
-```text
+```text title="Response"
 ┌─a.s─┐
 │ y   │
 │ x   │
@@ -185,9 +181,9 @@ ORDER BY key ASC;
 
 ## Nullable(Tuple(T1, T2, ...)) {#nullable-tuple}
 
-:::warning Experimental Feature
-Requires `SET allow_experimental_nullable_tuple_type = 1`
-This is an experimental feature and may change in future versions.
+:::note Beta Feature
+Requires `SET enable_nullable_tuple_type = 1`
+This is a Beta feature.
 :::
 
 Allows the entire tuple to be `NULL`, as opposed to `Tuple(Nullable(T1), Nullable(T2), ...)` where only individual elements can be `NULL`.
@@ -200,7 +196,7 @@ Allows the entire tuple to be `NULL`, as opposed to `Tuple(Nullable(T1), Nullabl
 Example:
 
 ```sql
-SET allow_experimental_nullable_tuple_type = 1;
+SET enable_nullable_tuple_type = 1;
 
 CREATE TABLE test (
     id UInt32,

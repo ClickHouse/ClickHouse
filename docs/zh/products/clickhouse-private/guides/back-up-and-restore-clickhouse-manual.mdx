@@ -1,0 +1,68 @@
+---
+noindex: true
+title: "备份和恢复 ClickHouse（手动）"
+sidebarTitle: "备份和恢复"
+description: "使用 SQL 命令和 S3 存储手动备份和恢复 ClickHouse 数据。"
+---
+
+使用 SQL 命令和 S3 存储手动备份和恢复 ClickHouse 数据。有关完整的语法说明，请参阅 [ClickHouse 官方备份文档](https://clickhouse.com/docs/operations/backup)。
+
+如需通过 API 执行备份操作，请参阅 [通过 API 管理备份](/zh/products/clickhouse-private/guides/manage-backups-via-the-private-api)。
+
+<div id="prerequisites">
+  ## 前置条件
+</div>
+
+* 与您的集群位于同一区域的 S3 存储桶
+* 绑定到 Kubernetes 服务账号的 IAM role 必须对该 S3 存储桶 具有读取、写入和列出权限
+
+<div id="s3-path-format">
+  ## S3 路径格式
+</div>
+
+所有备份命令均使用以下 S3 路径：
+
+```text
+https://s3.$REGION.amazonaws.com/$S3_BUCKET/$CLUSTER_S3_PREFIX/$BACKUP_ID
+```
+
+| Variable             | 描述                                                                                 |
+| -------------------- | ---------------------------------------------------------------------------------- |
+| `$REGION`            | S3 区域 (例如：`us-west-2`)                                                             |
+| `$S3_BUCKET`         | 用于备份的 S3 存储桶名称                                                                     |
+| `$CLUSTER_S3_PREFIX` | 集群的 S3 键前缀，可在 `clickhousecluster` 资源的 `spec.s3.keyPrefix` 下找到 (例如：`ch-s3-{uuid}`)  |
+| `$BACKUP_ID`         | 此备份的唯一标识符 (UUID)                                                                   |
+
+<div id="perform-a-full-backup">
+  ## 执行全量备份
+</div>
+
+在其中一个服务器 pod (容器组) 中，运行：
+
+```sql
+BACKUP TABLE system.users, TABLE system.roles, TABLE system.settings_profiles, TABLE system.row_policies, TABLE system.quotas, TABLE system.functions, ALL EXCEPT DATABASES INFORMATION_SCHEMA,information_schema, system TO S3('https://s3.$REGION.amazonaws.com/$S3_BUCKET/$CLUSTER_S3_PREFIX/$BACKUP_ID') SETTINGS id='$BACKUP_ID' ASYNC;
+```
+
+备份会异步执行。可通过 [`system.backups`](https://clickhouse.com/docs/operations/system-tables/backups) 表查看进度：
+
+```sql
+SELECT * FROM system.backups WHERE id = '$BACKUP_ID';
+```
+
+<div id="incremental-backups">
+  ## 增量备份
+</div>
+
+请参阅上游文档中的[执行增量备份](https://clickhouse.com/docs/operations/backup#take-an-incremental-backup)。
+
+<div id="restore-from-a-backup">
+  ## 从备份中恢复
+</div>
+
+在要恢复到的目标集群上运行：
+
+```sql
+RESTORE ALL FROM S3('https://s3.$REGION.amazonaws.com/$S3_BUCKET/$CLUSTER_S3_PREFIX/$BACKUP_ID') SETTINGS id='$RESTORE_ID', allow_different_database_def=true;
+```
+
+`$RESTORE_ID` 是你为恢复操作指定的任意唯一标识符。

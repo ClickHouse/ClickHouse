@@ -1,0 +1,116 @@
+---
+slug: /use-cases/AI/MCP/ai-agent-libraries/slackbot
+sidebarTitle: 'ربط SlackBot'
+title: 'كيفية إنشاء وكيل SlackBot باستخدام ClickHouse MCP server.'
+description: 'تعرّف على كيفية إنشاء وكيل SlackBot يمكنه التفاعل مع ClickHouse MCP server.'
+keywords: ['ClickHouse', 'MCP', 'Slack', 'SlackBot', 'PydanticAI']
+show_related_blogs: true
+doc_type: 'guide'
+---
+
+في هذا الدليل، ستتعلّم كيفية إنشاء وكيل [SlackBot](https://slack.com/intl/en-gb/help/articles/202026038-An-introduction-to-Slackbot).
+يتيح لك هذا البوت طرح أسئلة حول بيانات ClickHouse مباشرةً من Slack باستخدام اللغة الطبيعية. ويعتمد على
+[ClickHouse MCP server](https://github.com/ClickHouse/mcp-clickhouse) و[PydanticAI](https://ai.pydantic.dev/mcp/client/#__tabbed_1_1).
+
+<Info>
+  **مشروع نموذجي**
+
+  يمكن العثور على الشيفرة الخاصة بهذا المثال في [مستودع examples](https://github.com/ClickHouse/examples/blob/main/ai/mcp/slackbot/README.md).
+</Info>
+
+<div id="prerequisites">
+  ## المتطلبات الأساسية
+</div>
+
+* ستحتاج إلى تثبيت [`uv`](https://docs.astral.sh/uv/getting-started/installation/)
+* ستحتاج إلى الوصول إلى مساحة عمل في Slack
+* ستحتاج إلى مفتاح API من Anthropic، أو مفتاح API من مزوّد LLM آخر
+
+<Steps>
+  <Step>
+    ## أنشئ تطبيق Slack
+
+    1. انتقل إلى [slack.com/apps](https://slack.com/apps) وانقر على `Create New App`.
+    2. اختر الخيار `From scratch` وامنح تطبيقك اسمًا.
+    3. حدّد مساحة العمل الخاصة بك في Slack.
+  </Step>
+
+  <Step>
+    ## ثبّت التطبيق في مساحة العمل الخاصة بك
+
+    بعد ذلك، ستحتاج إلى إضافة التطبيق الذي أنشأته في الخطوة السابقة إلى مساحة العمل الخاصة بك.
+    يمكنك اتباع التعليمات الواردة في [&quot;Add apps to your Slack workspace&quot;](https://slack.com/intl/en-gb/help/articles/202035138-Add-apps-to-your-Slack-workspace)
+    ضمن وثائق Slack.
+  </Step>
+
+  <Step>
+    ## اضبط إعدادات تطبيق Slack
+
+    * انتقل إلى `App Home`
+      * ضمن `Show Tabs` → `Messages Tab`: فعّل `Allow users to send Slash commands and messages from the messages tab`
+      * انتقل إلى `Socket Mode`
+        * فعّل `Socket Mode`
+        * دوّن قيمة `Socket Mode Handler` لمتغير البيئة `SLACK_APP_TOKEN`
+      * انتقل إلى `OAuth & Permissions`
+        * أضف عناصر `Bot Token Scopes` التالية:
+          * `app_mentions:read`
+          * `assistant:write`
+          * `chat:write`
+          * `im:history`
+          * `im:read`
+          * `im:write`
+          * `channels:history`
+        * ثبّت التطبيق في مساحة العمل الخاصة بك، ودوّن قيمة `Bot User OAuth Token` لمتغير البيئة `SLACK_BOT_TOKEN`.
+      * انتقل إلى `Event Subscriptions`
+        * فعّل `Events`
+        * ضمن `Subscribe to bot events`، أضف:
+          * `app_mention`
+          * `assistant_thread_started`
+          * `message:im`
+        * Save Changes
+  </Step>
+
+  <Step>
+    ## أضف متغيرات البيئة (`.env`)
+
+    أنشئ ملف `.env` في جذر المشروع باستخدام متغيرات البيئة التالية،
+    والتي ستسمح لتطبيقك بالاتصال بـ [بيئة SQL التفاعلية الخاصة بـ ClickHouse](https://sql.clickhouse.com/).
+
+    ```env
+    SLACK_BOT_TOKEN=your-slack-bot-token
+    SLACK_APP_TOKEN=your-slack-app-level-token
+    ANTHROPIC_API_KEY=your-anthropic-api-key
+    CLICKHOUSE_HOST=sql-clickhouse.clickhouse.com
+    CLICKHOUSE_PORT=8443
+    CLICKHOUSE_USER=demo
+    CLICKHOUSE_PASSWORD=
+    CLICKHOUSE_SECURE=true
+    ```
+
+    يمكنك تعديل متغيرات ClickHouse لاستخدام ClickHouse server الخاص بك
+    أو instance على Cloud، إذا كنت تفضّل ذلك.
+  </Step>
+
+  <Step>
+    ## استخدام البوت
+
+    1. **ابدأ تشغيل البوت:**
+
+       ```sh
+       uv run main.py
+       ```
+    2. **في Slack:**
+       * اذكر البوت في قناة: `@yourbot Who are the top contributors to the ClickHouse git repo?`
+       * ردّ داخل سلسلة الرسائل مع الإشارة إليه: `@yourbot how many contributions did these users make last week?`
+       * أرسل رسالة مباشرة إلى البوت: `Show me all tables in the demo database.`
+
+    سيردّ البوت داخل سلسلة الرسائل، مستخدمًا جميع الرسائل السابقة فيها بوصفها سياقًا
+    عند الاقتضاء.
+
+    **سياق سلسلة الرسائل:**
+    عند الرد داخل سلسلة رسائل، يحمّل البوت جميع الرسائل السابقة (باستثناء الرسالة الحالية) ويضمّنها بوصفها سياقًا للذكاء الاصطناعي.
+
+    **استخدام الأدوات:**
+    يستخدم البوت فقط الأدوات المتاحة عبر MCP (مثل schema discovery وتنفيذ SQL)، وسيعرض دائمًا استعلام SQL المستخدم وملخصًا لكيفية التوصل إلى الإجابة.
+  </Step>
+</Steps>
