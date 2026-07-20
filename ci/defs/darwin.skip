@@ -20,10 +20,6 @@
 03803_transaction_mutation_race
 03916_attach_as_replicated_implicit_transaction
 
-# Memory limit not hit as expected on macOS (the query that should exceed MEMORY_LIMIT_EXCEEDED
-# succeeds), likely a memory-accounting difference.
-01961_roaring_memory_tracking
-
 # ─────── NOT a macOS platform gap: env/harness/portability - verify on CI or fix ───────
 
 # Local fast-test server lacks these cluster/keeper definitions (CLUSTER_DOESNT_EXIST / NO_ZOOKEEPER);
