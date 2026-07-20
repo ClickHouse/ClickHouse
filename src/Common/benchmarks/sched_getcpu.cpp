@@ -44,18 +44,25 @@ extern "C"
 namespace
 {
 
-bool rseqRegistered()
-{
-    /// The registered area must cover at least the `cpu_id` field (offset 4, size 4);
-    /// `__rseq_size` is 0 when registration was disabled or failed.
-    return &__rseq_size != nullptr && __rseq_size >= 8;
-}
-
 /// `cpu_id` lives at offset 4 in the kernel rseq ABI.
 int32_t rseqCurrentCPU()
 {
     const char * tp = static_cast<const char *>(__builtin_thread_pointer());
     return static_cast<int32_t>(*reinterpret_cast<const volatile uint32_t *>(tp + __rseq_offset + 4));
+}
+
+bool rseqUsable()
+{
+    /// The registered area must cover at least the `cpu_id` field (offset 4, size 4);
+    /// `__rseq_size` is 0 when registration was disabled or failed.
+    if (&__rseq_size == nullptr || __rseq_size < 8)
+        return false;
+    /// The kernel uses negative sentinels in `cpu_id`: -1 (UNINITIALIZED) and
+    /// -2 (REGISTRATION_FAILED). The production `sched_getcpu`
+    /// (base/glibc-compatibility/musl/sched_getcpu.c) rejects them before taking
+    /// the rseq fast path; do the same so the benchmark measures the mechanism
+    /// that is actually used, instead of timing a read of a sentinel value.
+    return rseqCurrentCPU() >= 0;
 }
 
 void BM_sched_getcpu_current(benchmark::State & state)
@@ -67,9 +74,9 @@ BENCHMARK(BM_sched_getcpu_current);
 
 void BM_sched_getcpu_rseq(benchmark::State & state)
 {
-    if (!rseqRegistered())
+    if (!rseqUsable())
     {
-        state.SkipWithError("rseq is not registered by libc");
+        state.SkipWithError("rseq is not registered by libc or its cpu_id is not initialized");
         return;
     }
     for (auto _ : state)
