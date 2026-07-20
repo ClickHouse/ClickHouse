@@ -1335,13 +1335,14 @@ private:
 
         const size_t num_elements = idx0.size();
 
-        /// Now we can gather aligned elements into two equally-sized columns and compare them all at once
-        const DataTypePtr & nested_type0 = assert_cast<const DataTypeArray &>(*column_type_name0.type).getNestedType();
-        const DataTypePtr & nested_type1 = assert_cast<const DataTypeArray &>(*column_type_name1.type).getNestedType();
-        /// `full_elements{0,1}` own the gathered (possibly `Nullable`) columns and are kept alive for the
-        /// whole function so the null maps borrowed from them stay valid.
-        ColumnPtr full_elements0 = column_array0.getDataPtr()->index(*indexes0, 0);
-        ColumnPtr full_elements1 = column_array1.getDataPtr()->index(*indexes1, 0);
+        /// Now we can gather aligned elements into two equally-sized columns and compare them all at once.
+        /// The element types may be wrapped in `LowCardinality` (e.g. `Array(LowCardinality(Nullable(UInt64)))`);
+        DataTypePtr nested_type0 = recursiveRemoveLowCardinality(assert_cast<const DataTypeArray &>(*column_type_name0.type).getNestedType());
+        DataTypePtr nested_type1 = recursiveRemoveLowCardinality(assert_cast<const DataTypeArray &>(*column_type_name1.type).getNestedType());
+        /// Strip it recursively from both the types and the gathered columns so the `Nullable` unwrapping just
+        /// below and the scalar comparison see plain columns.
+        ColumnPtr full_elements0 = recursiveRemoveLowCardinality(column_array0.getDataPtr()->index(*indexes0, 0));
+        ColumnPtr full_elements1 = recursiveRemoveLowCardinality(column_array1.getDataPtr()->index(*indexes1, 0));
 
         /// `Nullable` elements are compared with array semantics: a NULL is a regular comparable value
         /// that is equal only to another NULL and sorts after every non-NULL value.
