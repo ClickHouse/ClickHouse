@@ -184,7 +184,7 @@ std::shared_ptr<RowDataStore> RowDataStore::create(const Columns & columns)
     Columns materialized_columns;
     materialized_columns.reserve(columns.size());
     for (const auto & col : columns)
-        materialized_columns.push_back(col->convertToFullIfNeeded());
+        materialized_columns.push_back(col->convertToFullIfWrapped()->convertToFullColumnIfLowCardinality());
 
     RowLayout layout = computeLayout(materialized_columns);
     auto row_store = std::shared_ptr<RowDataStore>(new RowDataStore(std::move(layout)));
