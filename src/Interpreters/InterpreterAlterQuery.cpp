@@ -438,26 +438,18 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
                 has_mutation_command = true;
                 if (metadata_ptr)
                 {
-                    rejectMutationSubqueryWhenValidationDisabled(command.predicate, settings[Setting::validate_mutation_query]);
                     addExpressionColumnsSelectAccess(read_access, command.predicate, table_id.database_name, table_id.table_name, *metadata_ptr);
                     for (const ASTPtr & assignment : command.update_assignments->children)
-                    {
-                        const auto * assignment_expression = assignment->as<const ASTAssignment &>().expression().get();
-                        rejectMutationSubqueryWhenValidationDisabled(assignment_expression, settings[Setting::validate_mutation_query]);
                         addExpressionColumnsSelectAccess(
-                            read_access, assignment_expression,
+                            read_access, assignment->as<const ASTAssignment &>().expression().get(),
                             table_id.database_name, table_id.table_name, *metadata_ptr);
-                    }
                 }
             }
             else if (command.type == ASTAlterCommand::DELETE)
             {
                 has_mutation_command = true;
                 if (metadata_ptr)
-                {
-                    rejectMutationSubqueryWhenValidationDisabled(command.predicate, settings[Setting::validate_mutation_query]);
                     addExpressionColumnsSelectAccess(read_access, command.predicate, table_id.database_name, table_id.table_name, *metadata_ptr);
-                }
             }
         }
         /// Table is not present locally (e.g. ON CLUSTER issued from a node without it): the read

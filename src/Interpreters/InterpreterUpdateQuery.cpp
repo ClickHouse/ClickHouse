@@ -39,7 +39,6 @@ namespace Setting
     extern const SettingsBool enable_lightweight_update;
     extern const SettingsUInt64 max_parser_depth;
     extern const SettingsUInt64 max_parser_backtracks;
-    extern const SettingsBool validate_mutation_query;
 }
 
 namespace ServerSetting
@@ -107,16 +106,11 @@ BlockIO InterpreterUpdateQuery::execute()
         {
             const auto metadata_snapshot = resolved_table->getInMemoryMetadataPtr(getContext(), false);
             const auto & metadata = *metadata_snapshot;
-            rejectMutationSubqueryWhenValidationDisabled(update_query.predicate.get(), settings[Setting::validate_mutation_query]);
             addExpressionColumnsSelectAccess(read_access, update_query.predicate.get(), resolved_id.database_name, resolved_id.table_name, metadata);
             for (const ASTPtr & assignment : update_query.assignments->children)
-            {
-                const auto * assignment_expression = assignment->as<const ASTAssignment &>().expression().get();
-                rejectMutationSubqueryWhenValidationDisabled(assignment_expression, settings[Setting::validate_mutation_query]);
                 addExpressionColumnsSelectAccess(
-                    read_access, assignment_expression,
+                    read_access, assignment->as<const ASTAssignment &>().expression().get(),
                     resolved_id.database_name, resolved_id.table_name, metadata);
-            }
         }
         else if (!update_query.cluster.empty())
         {
