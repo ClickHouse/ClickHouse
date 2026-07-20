@@ -59,6 +59,10 @@ Float64 estimateReadBytesPerRowFromStep(const ReadFromMergeTree & read_step);
 /// of the data); otherwise type-based estimates scaled to match the measured row width.
 std::unordered_map<String, Float64> estimateReadColumnWidths(const ReadFromMergeTree & read_step);
 
+/// Column widths for a read whose table-level row width is hinted: type-based estimates scaled so
+/// their sum over the table's columns matches the hinted row width, ignoring the parts' sizes.
+std::unordered_map<String, Float64> estimateReadColumnWidthsScaledToRow(const ReadFromMergeTree & read_step, Float64 row_bytes);
+
 OptimizerStatisticsPtr createStatisticsFromHint(const String & statistics_hint_json);
 
 /// Estimate average bytes of one value of the type.

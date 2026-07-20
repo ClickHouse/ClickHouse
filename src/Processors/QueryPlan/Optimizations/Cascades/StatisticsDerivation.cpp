@@ -368,10 +368,15 @@ ExpressionStatistics StatisticsDerivation::deriveReadStatistics(const ReadFromMe
 
 void StatisticsDerivation::fillReadColumnWidths(ExpressionStatistics & statistics, const ReadFromMergeTree & read_step, const String & table_name)
 {
-    for (const auto & [column_name, width] : estimateReadColumnWidths(read_step))
+    /// A table-level width hint marks the parts as stand-ins, so it beats their real sizes.
+    auto avg_row_bytes_hint = statistics_lookup.getAvgRowBytes(table_name);
+    auto storage_widths = avg_row_bytes_hint
+        ? estimateReadColumnWidthsScaledToRow(read_step, *avg_row_bytes_hint)
+        : estimateReadColumnWidths(read_step);
+    for (const auto & [column_name, width] : storage_widths)
         statistics.column_statistics[column_name].avg_bytes = width;
 
-    /// A hint overrides the storage-derived width, like the table-level `avg_row_bytes` does.
+    /// A per-column hint overrides the derived width.
     for (const auto & column_name : read_step.getAllColumnNames())
     {
         auto hint = statistics_lookup.getColumnAvgBytes(table_name, column_name);

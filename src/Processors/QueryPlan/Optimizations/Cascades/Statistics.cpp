@@ -225,6 +225,24 @@ std::unordered_map<String, Float64> estimateReadColumnWidths(const ReadFromMerge
     return widths;
 }
 
+/// Column widths for a read whose table-level row width is hinted: the parts are tiny stand-ins
+/// for a big relation, so distribute the hinted row width over the columns by type instead of
+/// trusting the parts' sizes.
+std::unordered_map<String, Float64> estimateReadColumnWidthsScaledToRow(const ReadFromMergeTree & read_step, Float64 row_bytes)
+{
+    Float64 type_width_sum = 0;
+    for (const auto & column : read_step.getStorageSnapshot()->metadata->getColumns().getAllPhysical())
+        type_width_sum += estimateColumnWidthFromType(*column.type);
+    const Float64 scale = type_width_sum > 0 ? row_bytes / type_width_sum : 1.0;
+
+    const auto & header = *read_step.getOutputHeader();
+    std::unordered_map<String, Float64> widths;
+    for (const auto & column_name : read_step.getAllColumnNames())
+        if (const auto * header_column = header.findByName(column_name))
+            widths[column_name] = estimateColumnWidthFromType(*header_column->type) * scale;
+    return widths;
+}
+
 /// Estimate bytes per row of a read: the sum of the per-column widths, the output header as fallback.
 Float64 estimateReadBytesPerRowFromStep(const ReadFromMergeTree & read_step)
 {
@@ -265,9 +283,13 @@ std::optional<ExpressionStatistics> estimateStatistics(QueryPlan::Node & node)
             stats.emplace();
             stats->estimated_row_count = Float64(*relation_stats.estimated_rows);
             stats->column_statistics = relation_stats.column_stats;
-            /// Hinted column widths are already in the stats; fill the rest from storage so
-            /// downstream width estimates (join, aggregation) know every column's real size.
-            for (const auto & [column_name, width] : estimateReadColumnWidths(*read_step))
+            /// Hinted column widths are already in the stats; fill the rest so downstream width
+            /// estimates (join, aggregation) know every column's size. A table-level width hint
+            /// marks the parts as stand-ins, so it beats their real sizes.
+            auto storage_widths = relation_stats.avg_row_bytes
+                ? estimateReadColumnWidthsScaledToRow(*read_step, *relation_stats.avg_row_bytes)
+                : estimateReadColumnWidths(*read_step);
+            for (const auto & [column_name, width] : storage_widths)
             {
                 auto & column_stats = stats->column_statistics[column_name];
                 if (column_stats.avg_bytes == 0)

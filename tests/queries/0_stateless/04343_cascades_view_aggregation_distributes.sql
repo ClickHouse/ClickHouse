@@ -31,9 +31,11 @@ SET query_plan_optimize_join_order_randomize = 0;
 -- Simulate a 20 node cluster and weight the cost model towards parallelism.
 SET param__internal_cascades_cluster_node_count = 20;
 SET param__internal_cascades_cost_config = '{"work_weight":1,"exchange_fixed_overhead":100,"network_weight":1,"sequential_weight":1000}';
+-- `column_bytes` pins the widths derived from the sentinel rows' parts; without it the join's
+-- build-side choice sits on a cost near-tie that flips with the part format (wide vs compact).
 SET param__internal_join_table_stat_hints = '{
-    "facts": { "cardinality": 21400000, "avg_row_bytes": 16, "distinct_keys": { "key": 1000000 } },
-    "dims":  { "cardinality": 1000000,  "avg_row_bytes": 40, "distinct_keys": { "key": 1000000 } }
+    "facts": { "cardinality": 21400000, "avg_row_bytes": 16, "distinct_keys": { "key": 1000000 }, "column_bytes": { "key": 4, "val": 8 } },
+    "dims":  { "cardinality": 1000000,  "avg_row_bytes": 40, "distinct_keys": { "key": 1000000 }, "column_bytes": { "key": 4, "name": 36 } }
 }';
 
 EXPLAIN SELECT d.name, total FROM dims AS d, agg_view WHERE d.key = k ORDER BY d.name;
