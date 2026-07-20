@@ -139,6 +139,10 @@ namespace FailPoints
 namespace
 {
 
+/// In refresh-token mode a single token, minted with `auth_scope`, serves both the OneLake
+/// catalog and Azure storage requests, so the scope must be the Azure storage audience.
+constexpr auto ONELAKE_STORAGE_AUTH_SCOPE = "https://storage.azure.com/.default";
+
 /// Translate the database-layer `TablesFilter` into the catalog-layer
 /// `TableNameFilter` so the catalog can restrict which namespaces it lists.
 DataLake::TableNameFilter toCatalogTableNameFilter(const TablesFilter & tables_filter)
@@ -265,7 +269,7 @@ void DatabaseDataLake::initialize() const
             /// token audience is Azure storage unless the user overrides it explicitly.
             const std::string onelake_auth_scope = settings[DatabaseDataLakeSetting::auth_scope].changed
                 ? settings[DatabaseDataLakeSetting::auth_scope].value
-                : "https://storage.azure.com/.default";
+                : ONELAKE_STORAGE_AUTH_SCOPE;
             catalog_impl = std::make_shared<DataLake::OneLakeCatalog>(
                 settings[DatabaseDataLakeSetting::warehouse].value,
                 url,
@@ -1460,13 +1464,27 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
                         if (!has_client_id)
                             throw_invalid_auth();
 
-                        /// The refresh token grant always goes to the Entra ID token endpoint,
-                        /// which accepts parameters only in the request body; the query-parameter
-                        /// flavor selected by this setting cannot work there.
+                        /// The refresh token grant always sends parameters in the request body,
+                        /// no matter whether it goes to the default Entra ID token endpoint or to
+                        /// a custom `oauth_server_uri`; the query-parameter flavor selected by
+                        /// this setting is not implemented for it.
                         if (!database_settings[DatabaseDataLakeSetting::oauth_server_use_request_body].value)
                             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                                 "`oauth_server_use_request_body = 0` is not supported together with `onelake_refresh_token`: "
-                                "the Entra ID token endpoint accepts parameters only in the request body");
+                                "the refresh token grant always sends parameters in the request body, "
+                                "regardless of `oauth_server_uri`");
+
+                        /// In refresh-token mode the storage layer reuses the catalog access token,
+                        /// so a scope accepted by the catalog but not by Azure storage would pass
+                        /// CREATE and then fail on the first table read.
+                        if (database_settings[DatabaseDataLakeSetting::auth_scope].changed
+                            && database_settings[DatabaseDataLakeSetting::auth_scope].value != ONELAKE_STORAGE_AUTH_SCOPE)
+                            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                "`onelake_refresh_token` requires `auth_scope` to be the Azure storage audience '{}' "
+                                "(or unset), because the same access token is used for both the catalog and Azure "
+                                "storage requests. Got `auth_scope` = '{}'",
+                                ONELAKE_STORAGE_AUTH_SCOPE,
+                                database_settings[DatabaseDataLakeSetting::auth_scope].value);
                     }
                     else if (!has_client_id || !has_client_secret)
                         throw_invalid_auth();
