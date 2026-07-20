@@ -22,6 +22,20 @@ configure_file(
 # keywords, function and data type names extracted from their registration
 # code, merged with the committed curated dictionary. It regenerates with the
 # sources, so it cannot drift the way a committed snapshot does.
+# The dictionary is derived from the registration code, so an incremental
+# build must rerun it when any scanned source changes, not only when the
+# script itself does.
+file(GLOB_RECURSE CODEGEN_DICT_SCANNED_SOURCES CONFIGURE_DEPENDS
+    "${ClickHouse_SOURCE_DIR}/src/Functions/*.h"
+    "${ClickHouse_SOURCE_DIR}/src/Functions/*.cpp"
+    "${ClickHouse_SOURCE_DIR}/src/AggregateFunctions/*.h"
+    "${ClickHouse_SOURCE_DIR}/src/AggregateFunctions/*.cpp"
+    "${ClickHouse_SOURCE_DIR}/src/TableFunctions/*.h"
+    "${ClickHouse_SOURCE_DIR}/src/TableFunctions/*.cpp"
+    "${ClickHouse_SOURCE_DIR}/src/DataTypes/*.h"
+    "${ClickHouse_SOURCE_DIR}/src/DataTypes/*.cpp"
+)
+
 add_custom_command(
     OUTPUT
         "${CURRENT_DIR_IN_BINARY}/codegen.dict"
@@ -30,6 +44,7 @@ add_custom_command(
         "${ClickHouse_SOURCE_DIR}/tests/fuzz/generate_source_dict.sh"
         "${ClickHouse_SOURCE_DIR}/src/Parsers/CommonParsers.h"
         "${ClickHouse_SOURCE_DIR}/tests/fuzz/dictionaries/old.dict"
+        ${CODEGEN_DICT_SCANNED_SOURCES}
 )
 
 add_custom_command(

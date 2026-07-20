@@ -32,26 +32,30 @@ trap 'rm -f "$TMP_FILE"' EXIT
     sed -n 's/.*MR_MACROS([A-Z_0-9]*, *"\([^"]*\)").*/\1/p' \
         "$SOURCE_ROOT/src/Parsers/CommonParsers.h"
 
-    # Function, aggregate function (incl. combinators) and table function names,
-    # declared as: static constexpr auto name = "plus";
-    grep -rhoE 'static constexpr [a-zA-Z_:<> *]+ name(\[\])? *= *"[^"]+"' \
+    # Function, aggregate function (incl. combinators) and table function names.
+    # The -z (NUL-separated) match spans lines, so besides the common
+    #     static constexpr auto name = "plus";
+    # it also covers multiline conditional initializers
+    #     static constexpr auto name = cond ? "IPv4StringToNum" : "IPv4StringToNumOrNull";
+    # and trait name constants referenced as name = Traits::makeDateName:
+    #     static constexpr auto makeDateName = "makeDate";
+    # Every string literal in the initializer is taken.
+    grep -rhozE 'constexpr [a-zA-Z_:<> *]+ [A-Za-z_]*[Nn]ame(\[\])?[[:space:]]*=[^;]*;' \
         "$SOURCE_ROOT/src/Functions" \
         "$SOURCE_ROOT/src/AggregateFunctions" \
         "$SOURCE_ROOT/src/TableFunctions" \
-        | sed -E 's/.*"([^"]+)".*/\1/'
+        | tr '\0' '\n' | grep -aoE '"[^"]+"' | tr -d '"'
 
-    # Functions and aliases registered with a string literal,
-    # e.g. factory.registerAlias("SUBSTRING", ...).
-    grep -rhoE '(registerFunction|registerAlias)\("[^"]+"' \
+    # Functions, aliases and data type families registered with a string
+    # literal, e.g. factory.registerAlias("SUBSTRING", ...), including calls
+    # with a line break before the name, e.g. factory.registerSimpleDataType(
+    #     "Date32", ...).
+    grep -rhozE '(registerFunction|registerAlias|factory\.register[A-Za-z]+)[[:space:]]*\([[:space:]]*"[^"]+"' \
         "$SOURCE_ROOT/src/Functions" \
         "$SOURCE_ROOT/src/AggregateFunctions" \
         "$SOURCE_ROOT/src/TableFunctions" \
-        | sed -E 's/.*"([^"]+)".*/\1/'
-
-    # Data type families and their aliases, e.g. factory.registerDataType("Array", ...).
-    grep -rhoE 'factory\.register[A-Za-z]+\("[^"]+"' \
         "$SOURCE_ROOT/src/DataTypes" \
-        | sed -E 's/.*"([^"]+)".*/\1/'
+        | tr '\0' '\n' | grep -aoE '"[^"]+"' | tr -d '"'
 } > "$TMP_FILE"
 
 # Quote the extracted tokens (dropping the rare ones with characters that are
