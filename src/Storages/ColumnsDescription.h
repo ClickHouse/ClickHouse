@@ -150,6 +150,8 @@ public:
 
     /// `after_column` can be a Nested column name;
     void add(ColumnDescription column, const String & after_column = String(), bool first = false, bool add_subcolumns = true);
+    /// Adds a column at the end if a column with the same name doesn't exist.
+    void addIfNotExists(ColumnDescription column);
     /// `column_name` can be a Nested column name;
     void remove(const String & column_name);
 

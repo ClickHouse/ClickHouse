@@ -77,12 +77,10 @@ struct PatchReadResultToApply
 
 /// Builds patches of all modes from patch read results and applies them to result_block.
 /// Patches updating the same set of columns are combined and applied together.
-/// If min_version is set, updated rows get a data version of at least min_version.
 void applyPatchesToBlock(
     Block & result_block,
     Block & versions_block,
     const std::vector<PatchReadResultToApply> & patch_read_results,
-    std::optional<UInt64> min_version,
     UInt64 source_data_version);
 
 }

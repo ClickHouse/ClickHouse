@@ -775,7 +775,11 @@ void MergeTreeReadersChain::applyPatches(
         }
     }
 
-    applyPatchesToBlock(result_block, versions_block, patch_read_results, min_version, source_data_version);
+    /// Prevent patch rows with versions <= min_version from re-applying stale updates.
+    if (min_version.has_value())
+        source_data_version = std::max(source_data_version, *min_version);
+
+    applyPatchesToBlock(result_block, versions_block, patch_read_results, source_data_version);
 
     result_columns = result_block.getColumns();
     result_columns.resize(result_header.columns());

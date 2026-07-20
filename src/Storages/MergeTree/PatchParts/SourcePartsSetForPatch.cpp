@@ -25,7 +25,7 @@ SourcePartsSetForPatch::SourcePartsSetForPatch(UInt8 format_version_, String sor
     , sorting_key_desc(std::move(sorting_key_desc_))
 {
     if (format_version == V1_FORMAT_VERSION && !sorting_key_desc.empty())
-        throw Exception(ErrorCodes::INCORRECT_DATA, "Sorting key description must be empty for v1 patch part. Got: {}", sorting_key_desc);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Sorting key description must be empty for v1 patch part. Got: {}", sorting_key_desc);
 }
 
 void SourcePartsSetForPatch::addSourcePart(const String & name, UInt64 data_version)

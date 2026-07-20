@@ -79,12 +79,6 @@ static void addCodecsForPatchSystemColumns(ColumnsDescription & columns_desc)
     }
 }
 
-static void addColumnIfNotExists(ColumnsDescription & columns_desc, const String & name, const DataTypePtr & type)
-{
-    if (!columns_desc.has(name))
-        columns_desc.add(ColumnDescription(name, type));
-}
-
 StorageMetadataPtr getPatchPartMetadataV1(Block sample_block, ContextPtr local_context)
 {
     ColumnsDescription columns_desc(sample_block.getNamesAndTypesList());
@@ -97,7 +91,7 @@ StorageMetadataPtr getPatchPartMetadataV1(ColumnsDescription patch_part_desc, Co
 
     /// Ensure patch part system columns are present.
     for (const auto & col : getPatchPartSystemColumns())
-        addColumnIfNotExists(patch_part_desc, col.name, col.type);
+        patch_part_desc.addIfNotExists(ColumnDescription(col.name, col.type));
 
     /// Use hash of column names to put patch parts with different structure to different partitions.
     auto part_identifier = make_intrusive<ASTIdentifier>("_part");
@@ -134,12 +128,11 @@ StorageMetadataPtr getPatchPartMetadataV2(ColumnsDescription patch_part_desc, co
     StorageInMemoryMetadata part_metadata;
 
     /// Keep `_part` on disk — it's an argument of the partition expression and the sink's header must
-    /// match the mutation pipeline, which always emits it. Drop `_part_offset` — v1's tie-breaker, dead
-    /// weight for v2. Ensure identity + version columns are present (may be missing for `createEmptyPart`).
-    addColumnIfNotExists(patch_part_desc, "_part", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()));
-    addColumnIfNotExists(patch_part_desc, BlockNumberColumn::name, BlockNumberColumn::type);
-    addColumnIfNotExists(patch_part_desc, BlockOffsetColumn::name, BlockOffsetColumn::type);
-    addColumnIfNotExists(patch_part_desc, PartDataVersionColumn::name, PartDataVersionColumn::type);
+    /// match the mutation pipeline, which always emits it. Ensure identity + version columns are present.
+    patch_part_desc.addIfNotExists(ColumnDescription("_part", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())));
+    patch_part_desc.addIfNotExists(ColumnDescription(BlockNumberColumn::name, BlockNumberColumn::type));
+    patch_part_desc.addIfNotExists(ColumnDescription(BlockOffsetColumn::name, BlockOffsetColumn::type));
+    patch_part_desc.addIfNotExists(ColumnDescription(PartDataVersionColumn::name, PartDataVersionColumn::type));
 
     /// Partition id: `__patchPartitionID(_part, hash(...))`.
     auto part_identifier = make_intrusive<ASTIdentifier>("_part");

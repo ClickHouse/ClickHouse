@@ -415,7 +415,7 @@ struct EqualRunScratch
 /// Processes one run of equal sort keys: matches result rows [result_cursor.row, result_cursor.run_end)
 /// with rows [cursor.row, cursor.run_end) of cursors in `equal_cursors` by the
 /// (block_number, block_offset) identity and emits matches into the groups' patches.
-void processEqualRun(
+void processEqualKeyCursors(
     const BlockCursor & result_cursor,
     size_t num_patch_rows_in_run,
     const std::vector<size_t> & equal_cursors,
@@ -567,7 +567,7 @@ void applyCursorsLinear(
             equal_cursors.push_back(live_cursors[i]);
         }
 
-        processEqualRun(result_cursor, num_patch_rows_in_run, equal_cursors, cursors, groups, run_scratch);
+        processEqualKeyCursors(result_cursor, num_patch_rows_in_run, equal_cursors, cursors, groups, run_scratch);
 
         for (size_t cursor_idx : equal_cursors)
         {
@@ -661,7 +661,7 @@ void applyCursorsHeap(
             heap.pop_back();
         }
 
-        processEqualRun(result_cursor, num_patch_rows_in_run, equal_cursors, cursors, groups, run_scratch);
+        processEqualKeyCursors(result_cursor, num_patch_rows_in_run, equal_cursors, cursors, groups, run_scratch);
 
         for (size_t cursor_idx : equal_cursors)
         {
@@ -784,7 +784,6 @@ void applyPatchesToBlock(
     Block & result_block,
     Block & versions_block,
     const std::vector<PatchReadResultToApply> & patch_read_results,
-    std::optional<UInt64> min_version,
     UInt64 source_data_version)
 {
     applyPatchesToBlockLegacy(result_block, versions_block, patch_read_results, source_data_version);
@@ -810,9 +809,6 @@ void applyPatchesToBlock(
         group_it->blocks.emplace_back(&patch_data.block);
         group_it->updated_columns.emplace_back(&updated_columns);
     }
-
-    if (min_version.has_value())
-        source_data_version = std::max(source_data_version, *min_version);
 
     /// A combined MergeOnKey patch already has version-resolved row indices
     /// and is applied directly, without combining with other patches.
