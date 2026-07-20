@@ -341,6 +341,20 @@ String getInsertDataSchemaMismatchDescription(
     const bool match_by_name = expected_names.size() == expected.size()
         && (format_reads_by_name || !format_has_strict_order_of_columns);
 
+    /// With `input_format_import_nested_json` enabled, the row-based JSON parsers map a top-level
+    /// object field (`{"n": {...}}`) onto the dotted columns of a `Nested` carrier (`n.i`, ...).
+    /// Schema inference cannot represent that mapping — it reports the top-level field as a single
+    /// `Tuple` column — so the name-based comparison below would either treat the carrier field as
+    /// unknown (hiding a real mismatch inside the nested data) or report a mismatch for perfectly
+    /// valid nested input. Skip the diagnostic when that mode can actually apply: the setting is
+    /// enabled, the format identifies fields by name and reads JSON values, and the destination has a
+    /// dotted column for the parser to register as a `Nested` prefix.
+    if (format_settings.import_nested_json && match_by_name
+        && (format_reads_typed_json_value_tokens || format_reads_string_values_as_whole_text)
+        && std::any_of(
+            expected.begin(), expected.end(), [](const auto & column) { return column.name.find('.') != String::npos; }))
+        return {};
+
     bool corresponds = true;
     if (match_by_name)
     {
