@@ -97,6 +97,15 @@ void IFramingFormat::onProgress(const Progress & progress)
     writing = false;
 }
 
+void IFramingFormat::setFinalProgress(const Progress & progress)
+{
+    if (finalized)
+        return;
+
+    final_progress.incrementPiecewiseAtomically(progress);
+    has_final_progress = true;
+}
+
 void IFramingFormat::finalize()
 {
     if (finalized || failClosedAfterPartialWrite())
@@ -106,6 +115,12 @@ void IFramingFormat::finalize()
     extractAndWritePayload(FramedPacketKind::Data);
     pumpLogs();
     pumpProfileEvents(/*force=*/ true);
+
+    /// The final progress is written after the logs and profile events above, so a successful
+    /// stream ends with it (see `setFinalProgress`). On a failure the `exception` packet below
+    /// stays terminal.
+    if (has_final_progress)
+        writeProgressPacket(final_progress);
 
     if (!exception_message.empty())
         writeExceptionPacket(exception_message);

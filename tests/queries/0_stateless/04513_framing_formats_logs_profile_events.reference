@@ -45,9 +45,13 @@ failing INSERT exception packet: OK
 failing INSERT no data packets: OK
 --- a framed INSERT ends with a final progress packet carrying the final counters
 INSERT progress packets: OK
+INSERT log packets: OK
+INSERT final progress is the last packet: OK
 INSERT final progress result_rows: OK
 --- a framed SELECT ends with a final progress packet carrying the final counters
 SELECT progress packets: OK
+SELECT log packets: OK
+SELECT final progress is the last packet: OK
 SELECT final progress result_rows: OK
 --- a framed no-result query does not depend on the output format
 INSERT with unknown default_format no exception: OK

@@ -2,6 +2,7 @@
 
 #include <Core/Types.h>
 #include <Formats/FormatSettings.h>
+#include <IO/Progress.h>
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/ProfileEventsExt.h>
 #include <Common/Stopwatch.h>
@@ -12,7 +13,6 @@ namespace DB
 {
 
 class Block;
-struct Progress;
 class InternalTextLogsQueue;
 
 /// Which part of the query result a formatted payload belongs to.
@@ -86,8 +86,16 @@ public:
     /// Remember an exception to be written as the last packet on `finalize`.
     void setException(const String & message) { exception_message = message; }
 
-    /// Write the remaining payload, pending logs and profile events, and the exception if any,
-    /// then flush the output. No more packets can be written after this call.
+    /// Remember the final progress (with the final counters: `result_rows`, `result_bytes`,
+    /// `memory_usage`, known only after the query finished) to be written as the last `progress`
+    /// packet on `finalize` - after the trailing logs and profile events emitted by the
+    /// query-finish logging are drained, so that a successful stream really ends with it, as
+    /// `docs/en/interfaces/framing-formats.md` documents. Writing it eagerly would order it
+    /// before that trailing drain. The passed value is accumulated, so passing deltas is fine.
+    void setFinalProgress(const Progress & progress);
+
+    /// Write the remaining payload, pending logs and profile events, the final progress if any,
+    /// and the exception if any, then flush the output. No more packets can be written after this call.
     void finalize();
 
     /// Server logs (as selected by the `send_logs_level` setting) will be written as packets.
@@ -153,6 +161,11 @@ private:
     ProfileEvents::ThreadIdToCountersSnapshot profile_events_snapshots;
 
     String exception_message;
+
+    /// The final progress, deferred to `finalize` (see `setFinalProgress`).
+    Progress final_progress;
+    bool has_final_progress = false;
+
     bool finalized = false;
 
     /// Set while a packet is being written to `out`, and cleared once the write completes. The public
