@@ -6,6 +6,7 @@
 #include <Interpreters/TreeCNFConverter.h>
 #include <Interpreters/createSubcolumnsExtractionActions.h>
 #include <Interpreters/misc.h>
+#include <Functions/UserDefined/UserDefinedSQLFunctionVisitor.h>
 #include <Planner/AnalyzeExpression.h>
 
 #include <Parsers/ASTConstraintDeclaration.h>
@@ -205,7 +206,13 @@ ConstraintsExpressions ConstraintsDescription::getExpressions(const DB::ContextP
         if (constraint_ptr->type == ASTConstraintDeclaration::Type::CHECK)
         {
             ASTPtr expr = constraint_ptr->expr->clone();
-            if (containsForbiddenSubquery(expr))
+            /// SQL user-defined functions are inlined by the Analyzer during `analyzeExpressionToActionsDAG`,
+            /// so a subquery hidden inside a UDF body would bypass an AST-level check of `expr` itself.
+            /// Run the check on a copy with SQL UDFs expanded the same way the Analyzer would inline them
+            /// (the expansion rejects recursive UDFs, so it always terminates).
+            ASTPtr expanded_expr = expr->clone();
+            UserDefinedSQLFunctionVisitor::visit(expanded_expr, context);
+            if (containsForbiddenSubquery(expanded_expr))
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "Subqueries are not allowed in CHECK constraints, except a direct subquery on the right-hand side of an IN operator");
             /// Do not build `IN (subquery)` sets eagerly here: the constraint actions are
