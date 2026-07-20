@@ -114,6 +114,13 @@ size_t tryMergeFilters(QueryPlan::Node * parent_node, QueryPlan::Nodes &, const 
         if (child_actions.hasArrayJoin())
             return 0;
 
+        /// A stateful outer filter must observe the rows produced by the child filter. Merging the two
+        /// filters into a single `and(...)` would evaluate the stateful predicate on the child filter's
+        /// input instead of its output. The child filter sees the same input rows either way, so a
+        /// stateful child does not prevent the merge.
+        if (parent_actions.hasStatefulFunctions())
+            return 0;
+
         const auto & child_filter_node = child_actions.findInOutputs(child_filter->getFilterColumnName());
         if (child_filter->removesFilterColumn())
             removeFromOutputs(child_actions, child_filter_node);

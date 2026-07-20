@@ -57,7 +57,10 @@ namespace
         /// `optimizeUseAggregateProjections`) from substituting a projection read or index whose different sort
         /// key and granularity would change the observed row and block stream, and keeps join reordering
         /// (`optimizeJoin`) from flattening an expression that wraps a child join into the global join graph,
-        /// which could reattach the call at a different (reordered) join and change the rows and blocks it sees.
+        /// which could reattach the call at a different (reordered) join and change the rows and blocks it sees,
+        /// and keeps `tryMergeFilters` from collapsing a stateful outer filter together with an inner filter
+        /// (e.g. from a subquery or view boundary) into one `and(...)` filter, which would evaluate the stateful
+        /// predicate on the inner filter's input instead of its output.
         /// This mirrors other functions with block-level semantics such as `neighbor`.
         bool isStateful() const override { return true; }
 
