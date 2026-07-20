@@ -246,28 +246,12 @@ namespace
             if (!table_function_node_ptr)
                 return;
 
-            if (FunctionSecretArgumentsFinder::Result secret_arguments = TableFunctionSecretArgumentsFinderTreeNode(*table_function_node_ptr).getResult(); secret_arguments.count)
+            if (FunctionSecretArgumentsFinder::Result secret_arguments = TableFunctionSecretArgumentsFinderTreeNode(*table_function_node_ptr).getResult(); secret_arguments.hasSecrets())
             {
-                auto & argument_nodes = table_function_node_ptr->getArguments().getNodes();
+                const auto & argument_nodes = table_function_node_ptr->getArguments().getNodes();
 
-                for (size_t n = secret_arguments.start; n < secret_arguments.start + secret_arguments.count; ++n)
-                {
-                    ConstantNode * constant_node = nullptr;
-                    if (secret_arguments.are_named)
-                    {
-                        auto * function_node = argument_nodes[n]->as<FunctionNode>();
-                        if (function_node && function_node->getArguments().getNodes().size() >= 2)
-                            constant_node = function_node->getArguments().getNodes().at(1)->as<ConstantNode>();
-                    }
-
-                    if (!constant_node)
-                    {
-                        constant_node = argument_nodes[n]->as<ConstantNode>();
-                    }
-
-                    if (constant_node)
-                        constant_node->setMaskId();
-                }
+                forEachSecretArgumentConstantNode(
+                    argument_nodes, secret_arguments, [](size_t, ConstantNode & constant) { constant.setMaskId(); });
             }
         }
     };

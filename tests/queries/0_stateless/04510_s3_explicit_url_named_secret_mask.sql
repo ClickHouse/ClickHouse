@@ -219,6 +219,14 @@ DROP DATABASE IF EXISTS {CLICKHOUSE_DATABASE_1:Identifier};
 CREATE DATABASE {CLICKHOUSE_DATABASE_1:Identifier} ENGINE = S3('url_dbenv', 'ak', 'SEKRIT_SAK', use_environment_credentials = 1);
 DROP DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
 
+-- The query-tree surface (EXPLAIN QUERY TREE) must hide the same carriers as the logged query text:
+-- a credential-bearing url (masked whole, since a tree dump cannot represent partial masking), the
+-- positional secrets, and the values of headers(...) / extra_credentials(...).
+SET enable_analyzer = 1;
+EXPLAIN QUERY TREE SELECT * FROM s3('https://user:SEKRIT_PW@localhost:11111/test/04510qt?X-Amz-Signature=SEKRIT_SIG', 'ak', 'SEKRIT_SAK', 'TSV', 'x UInt8');
+EXPLAIN QUERY TREE SELECT * FROM s3('http://localhost:11111/test/04510qt', NOSIGN, 'TSV', 'x UInt8', headers('Authorization' = 'SEKRIT_HDR'));
+EXPLAIN QUERY TREE SELECT * FROM s3('http://localhost:11111/test/04510qt', 'ak', 'SEKRIT_SAK', 'TSV', 'x UInt8', extra_credentials(external_id = 'SEKRIT_EID'));
+
 SYSTEM FLUSH LOGS query_log;
 
 -- The exact logged text of every query above, in execution order: secrets must appear as '[HIDDEN]'
