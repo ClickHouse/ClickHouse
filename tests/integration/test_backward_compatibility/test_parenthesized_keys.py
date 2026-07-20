@@ -92,6 +92,56 @@ def test_old_replica_joins_new_table(start_cluster):
     check_replication("t_parens_new_first")
 
 
+def test_alter_writes_canonical_metadata_to_zookeeper(start_cluster):
+    """A replicated ALTER must write the same backward-compatible canonical metadata to ZooKeeper
+    that CREATE writes, so the stored form stays comparable with older versions. The ALTER write
+    path used the raw serializer and persisted the parenthesized form that #92340 preserves
+    (`SAMPLE BY (a)` -> `sampling expression: (a)`, `CHECK (a > 0)` -> `constraints: cc CHECK (a > 0)`),
+    while CREATE and the old version store the canonical form (`a`, `cc CHECK a > 0`)."""
+
+    def zk_metadata(node, table):
+        return node.query(
+            "SELECT value FROM system.zookeeper "
+            f"WHERE path = '/clickhouse/tables/{table}' AND name = 'metadata'"
+        )
+
+    # Reach the schema two ways: everything via CREATE, or a minimal table plus ALTERs.
+    node_new.query(
+        """
+        CREATE TABLE t_parens_created (a UInt32, b UInt32, c UInt32, d DateTime,
+            CONSTRAINT cc CHECK (a > 0))
+        ENGINE = ReplicatedMergeTree('/clickhouse/tables/t_parens_created', 'r1')
+        ORDER BY (b) SAMPLE BY (b) TTL (d + INTERVAL 10 YEAR)
+        """
+    )
+    node_new.query(
+        """
+        CREATE TABLE t_parens_altered (a UInt32, b UInt32, c UInt32, d DateTime)
+        ENGINE = ReplicatedMergeTree('/clickhouse/tables/t_parens_altered', 'r1')
+        ORDER BY (b)
+        """
+    )
+    node_new.query("ALTER TABLE t_parens_altered MODIFY SAMPLE BY (b)")
+    node_new.query("ALTER TABLE t_parens_altered MODIFY TTL (d + INTERVAL 10 YEAR)")
+    node_new.query("ALTER TABLE t_parens_altered ADD CONSTRAINT cc CHECK (a > 0)")
+
+    # The ALTER path must store the same canonical metadata as CREATE (no redundant parentheses).
+    assert zk_metadata(node_new, "t_parens_altered") == zk_metadata(
+        node_new, "t_parens_created"
+    )
+
+    # The old version joins the table whose metadata was written entirely by ALTER.
+    node_old.query(
+        """
+        CREATE TABLE t_parens_altered (a UInt32, b UInt32, c UInt32, d DateTime,
+            CONSTRAINT cc CHECK (a > 0))
+        ENGINE = ReplicatedMergeTree('/clickhouse/tables/t_parens_altered', 'r2')
+        ORDER BY (b) SAMPLE BY (b) TTL (d + INTERVAL 10 YEAR)
+        """
+    )
+    check_replication("t_parens_altered")
+
+
 def test_upgrade_and_attach_partition_from(start_cluster):
     """A table created by the old version must load after an upgrade, keep the canonical
     formatting, and be compatible with a freshly created parenthesized table in

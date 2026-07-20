@@ -44,6 +44,12 @@ struct ReplicatedMergeTreeTableMetadata
     ReplicatedMergeTreeTableMetadata() = default;
     explicit ReplicatedMergeTreeTableMetadata(const MergeTreeData & data, const StorageMetadataPtr & metadata_snapshot);
 
+    /// Serializes a key expression to the canonical one-line form stored in ZooKeeper: normalizes
+    /// function names and strips the redundant `parenthesized` flag (`(a)` -> `a`). Exposed so the
+    /// ALTER metadata write path produces byte-identical key strings to this constructor, keeping
+    /// the form comparable with older replicas (see #92340).
+    static String formattedASTNormalized(const ASTPtr & ast);
+
     void read(ReadBuffer & in);
     /// Pure deserialization without any backward-compatibility normalization.
     static ReplicatedMergeTreeTableMetadata parseRaw(const String & s);

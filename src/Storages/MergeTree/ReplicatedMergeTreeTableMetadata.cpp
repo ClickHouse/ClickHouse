@@ -54,7 +54,7 @@ static String formattedAST(const ASTPtr & ast)
     return cloned->formatWithSecretsOneLine();
 }
 
-static String formattedASTNormalized(const ASTPtr & ast)
+String ReplicatedMergeTreeTableMetadata::formattedASTNormalized(const ASTPtr & ast)
 {
     if (!ast)
         return "";

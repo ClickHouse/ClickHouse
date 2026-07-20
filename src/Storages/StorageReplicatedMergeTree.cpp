@@ -6924,39 +6924,39 @@ void StorageReplicatedMergeTree::alter(
         auto current_metadata = getInMemoryMetadataPtr(query_context, false);
 
         ReplicatedMergeTreeTableMetadata future_metadata_in_zk(*this, current_metadata);
+        /// Each changed field below must be serialized to the same backward-compatible canonical form
+        /// the constructor above writes for unchanged fields, otherwise an ALTER would persist the
+        /// parenthesized form that #92340 preserves (`CHECK (a > 0)`, `SAMPLE BY (a)`, ...) while an
+        /// older replica stores and compares the canonical form (`CHECK a > 0`), causing METADATA_MISMATCH.
         if (ast_to_str(future_metadata.sorting_key.definition_ast) != ast_to_str(current_metadata->sorting_key.definition_ast))
         {
             /// We serialize definition_ast as list, because code which apply ALTER (setTableStructure) expect serialized non empty expression
             /// list here and we cannot change this representation for compatibility. Also we have preparsed AST `sorting_key.expression_list_ast`
             /// in KeyDescription, but it contain version column for VersionedCollapsingMergeTree, which shouldn't be defined as a part of key definition AST.
             /// So the best compatible way is just to convert definition_ast to list and serialize it. In all other places key.expression_list_ast should be used.
-            future_metadata_in_zk.sorting_key = extractKeyExpressionList(future_metadata.sorting_key.definition_ast)->formatWithSecretsOneLine();
+            future_metadata_in_zk.sorting_key = ReplicatedMergeTreeTableMetadata::formattedASTNormalized(extractKeyExpressionList(future_metadata.sorting_key.definition_ast));
         }
 
         if (ast_to_str(future_metadata.sampling_key.definition_ast) != ast_to_str(current_metadata->sampling_key.definition_ast))
-            future_metadata_in_zk.sampling_expression = extractKeyExpressionList(future_metadata.sampling_key.definition_ast)->formatWithSecretsOneLine();
+            future_metadata_in_zk.sampling_expression = ReplicatedMergeTreeTableMetadata::formattedASTNormalized(extractKeyExpressionList(future_metadata.sampling_key.definition_ast));
 
         if (ast_to_str(future_metadata.partition_key.definition_ast) != ast_to_str(current_metadata->partition_key.definition_ast))
-            future_metadata_in_zk.partition_key = extractKeyExpressionList(future_metadata.partition_key.definition_ast)->formatWithSecretsOneLine();
+            future_metadata_in_zk.partition_key = ReplicatedMergeTreeTableMetadata::formattedASTNormalized(extractKeyExpressionList(future_metadata.partition_key.definition_ast));
 
         if (ast_to_str(future_metadata.table_ttl.definition_ast) != ast_to_str(current_metadata->table_ttl.definition_ast))
-        {
-            if (future_metadata.table_ttl.definition_ast)
-                future_metadata_in_zk.ttl_table = future_metadata.table_ttl.definition_ast->formatWithSecretsOneLine();
-            else /// TTL was removed
-                future_metadata_in_zk.ttl_table = "";
-        }
+            /// formatBackwardCompatibleOneLine() already returns "" when the TTL was removed.
+            future_metadata_in_zk.ttl_table = future_metadata.getTableTTLs().formatBackwardCompatibleOneLine();
 
-        String new_indices_str = future_metadata.secondary_indices.explicitToString();
-        if (new_indices_str != current_metadata->secondary_indices.explicitToString())
+        String new_indices_str = future_metadata.secondary_indices.formatBackwardCompatibleOneLine(/* only_explicit = */ true);
+        if (new_indices_str != current_metadata->secondary_indices.formatBackwardCompatibleOneLine(/* only_explicit = */ true))
             future_metadata_in_zk.skip_indices = new_indices_str;
 
-        String new_projections_str = future_metadata.projections.toString();
-        if (new_projections_str != current_metadata->projections.toString())
+        String new_projections_str = future_metadata.projections.formatBackwardCompatibleOneLine();
+        if (new_projections_str != current_metadata->projections.formatBackwardCompatibleOneLine())
             future_metadata_in_zk.projections = new_projections_str;
 
-        String new_constraints_str = future_metadata.constraints.toString();
-        if (new_constraints_str != current_metadata->constraints.toString())
+        String new_constraints_str = future_metadata.constraints.formatBackwardCompatibleOneLine();
+        if (new_constraints_str != current_metadata->constraints.formatBackwardCompatibleOneLine())
             future_metadata_in_zk.constraints = new_constraints_str;
 
         Coordination::Requests ops;
