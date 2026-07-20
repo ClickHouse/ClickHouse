@@ -186,13 +186,11 @@ PatchPartIndex PatchPartIndex::build(
 
 PatchPartIndex PatchPartIndex::merge(const DataPartsVector & source_parts)
 {
-    PatchPartIndex merged_set;
     if (source_parts.empty())
-        return merged_set;
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot patch part indexes from empty vector of source parts");
 
     const auto & first_set = source_parts.front()->getPatchPartIndex();
-    merged_set.format_version = first_set.format_version;
-    merged_set.sorting_key_desc = first_set.sorting_key_desc;
+    PatchPartIndex merged_set(first_set.format_version, first_set.sorting_key_desc);
 
     for (const auto & part : source_parts)
     {
@@ -240,18 +238,19 @@ void PatchPartIndex::writeBinary(WriteBuffer & out) const
     }
 }
 
-void PatchPartIndex::readBinary(ReadBuffer & in)
+PatchPartIndex PatchPartIndex::readBinary(ReadBuffer & in)
 {
-    UInt8 version = 0;
-    readBinaryLittleEndian(version, in);
+    UInt8 read_version = 0;
+    String read_sorting_key_desc;
+    readBinaryLittleEndian(read_version, in);
 
-    if (version > MAX_SUPPORTED_FORMAT_VERSION)
-        throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid version of PatchPartIndex: {}", std::to_string(version));
+    if (read_version > MAX_SUPPORTED_FORMAT_VERSION)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid version of PatchPartIndex: {}", std::to_string(read_version));
 
-    format_version = version;
+    if (read_version == V2_FORMAT_VERSION)
+        readStringBinary(read_sorting_key_desc, in);
 
-    if (format_version == V2_FORMAT_VERSION)
-        readStringBinary(sorting_key_desc, in);
+    PatchPartIndex res(read_version, std::move(read_sorting_key_desc));
 
     UInt64 num_parts = 0;
     readBinaryLittleEndian(num_parts, in);
@@ -261,12 +260,13 @@ void PatchPartIndex::readBinary(ReadBuffer & in)
         String part_name;
         readStringBinary(part_name, in);
 
-        auto & min_max = min_max_versions_by_part[part_name];
+        auto & min_max = res.min_max_versions_by_part[part_name];
         readBinaryLittleEndian(min_max.first, in);
         readBinaryLittleEndian(min_max.second, in);
     }
 
-    buildSourcePartsByVersion();
+    res.buildSourcePartsByVersion();
+    return res;
 }
 
 PatchPartIndex buildPatchPartIndex(

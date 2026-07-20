@@ -1664,7 +1664,7 @@ void IMergeTreeDataPart::loadPatchPartIndex()
         return;
 
     if (auto in = readFileIfExists(PatchPartIndex::FILENAME))
-        patch_part_index.emplace().readBinary(*in);
+        patch_part_index = PatchPartIndex::readBinary(*in);
     else
         throw Exception(ErrorCodes::CORRUPTED_DATA, "Missing file {} in patch part {}", PatchPartIndex::FILENAME, name);
 }

@@ -25,7 +25,6 @@ public:
 
     static constexpr auto FILENAME = "source_parts.dat";
 
-    PatchPartIndex() = default;
     PatchPartIndex(UInt8 format_version_, String sorting_key_desc_);
 
     bool empty() const { return min_max_versions_by_part.empty(); }
@@ -60,7 +59,7 @@ public:
     static PatchPartIndex merge(const DataPartsVector & source_parts);
 
     void writeBinary(WriteBuffer & out) const;
-    void readBinary(ReadBuffer & in);
+    static PatchPartIndex readBinary(ReadBuffer & in);
 
 private:
     void buildSourcePartsByVersion();

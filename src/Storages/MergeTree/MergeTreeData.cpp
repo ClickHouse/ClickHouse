@@ -11603,9 +11603,12 @@ void MergeTreeData::incrementMergedPartsProfileEvent(MergeTreeDataPartType type)
 }
 
 std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::createEmptyPart(
-        MergeTreePartInfo & new_part_info, const MergeTreePartition & partition, const String & new_part_name,
-        const StorageMetadataPtr & metadata_snapshot, const MergeTreeTransactionPtr & txn,
-        std::optional<PatchPartIndex> patch_part_index) const
+    MergeTreePartInfo & new_part_info,
+    const MergeTreePartition & partition,
+    const String & new_part_name,
+    const StorageMetadataPtr & metadata_snapshot,
+    const MergeTreeTransactionPtr & txn,
+    std::optional<PatchPartIndex> patch_part_index) const
 {
     auto settings = getSettings();
 
@@ -11628,7 +11631,12 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::createE
 
     /// Keep the format version and sort-key columns of the patch partition.
     if (new_part_info.isPatch())
-        new_data_part->setPatchPartIndex(patch_part_index ? std::move(*patch_part_index) : PatchPartIndex{});
+    {
+        if (!patch_part_index)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Patch part index is required for a patch part");
+
+        new_data_part->setPatchPartIndex(std::move(*patch_part_index));
+    }
 
     if ((*settings)[MergeTreeSetting::assign_part_uuids])
         new_data_part->uuid = UUIDHelpers::generateV4();
