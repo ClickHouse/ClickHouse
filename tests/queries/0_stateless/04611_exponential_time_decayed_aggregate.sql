@@ -18,6 +18,28 @@ SELECT exponentialTimeDecayedCount(10)(toFloat64(0)); -- { serverError UNKNOWN_A
 
 SET allow_experimental_time_decay_aggregate_functions = 1;
 
+-- A value observed exactly one half-life before the greatest timestamp has
+-- weight 1/2. Aggregate and window execution must use the same definition.
+SELECT
+    round(exponentialTimeDecayedSum(10)(value, time), 6),
+    round(exponentialTimeDecayedAvg(10)(value, time), 6),
+    round(exponentialTimeDecayedCount(10)(time), 6)
+FROM VALUES('value Float64, time Float64', (2, 0), (0, 10));
+
+SELECT weighted_sum, weighted_avg, weight
+FROM
+(
+    SELECT
+        time,
+        round(exponentialTimeDecayedSum(10)(value, time) OVER w, 6) AS weighted_sum,
+        round(exponentialTimeDecayedAvg(10)(value, time) OVER w, 6) AS weighted_avg,
+        round(exponentialTimeDecayedCount(10)(time) OVER w, 6) AS weight
+    FROM VALUES('value Float64, time Float64', (2, 0), (0, 10))
+    WINDOW w AS (ORDER BY time ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)
+)
+ORDER BY time DESC
+LIMIT 1;
+
 SELECT
     round(exponentialTimeDecayedSum(10)(value, time), 6),
     round(exponentialTimeDecayedAvg(10)(value, time), 6),
