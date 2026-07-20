@@ -1,0 +1,6 @@
+-- print-memory-to-stderr=readable from config, no CLI override (readable size on stderr)
+1
+-- print-memory-to-stderr=readable from config, CLI --memory-usage none wins (nothing on stderr)
+0
+-- print-memory-to-stderr=readable from config, CLI --memory-usage default wins (plain byte count)
+1

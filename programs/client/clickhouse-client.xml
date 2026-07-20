@@ -89,6 +89,14 @@
          the progress table is printed after each query in interactive mode. -->
     <!-- <enable_progress_table_toggle>false</enable_progress_table_toggle> -->
 
+    <!-- Print memory usage to stderr in non-interactive mode (same as &#45;&#45;memory-usage).
+         Values: 'none', 'default', 'readable'. -->
+    <!-- <print-memory-to-stderr>readable</print-memory-to-stderr> -->
+
+    <!-- Emit the ASCII BEL character to stderr when a query finishes after running for at
+         least this many seconds (same as &#45;&#45;chime). Set to 0 to disable. -->
+    <!-- <chime-threshold-seconds>0</chime-threshold-seconds> -->
+
     <!-- Fall back CLI client to Ctrl+R for regular search like before, while Ctrl+T does fuzzy search. -->
     <!-- <interactive_history_legacy_keymap>true</interactive_history_legacy_keymap> -->
 
