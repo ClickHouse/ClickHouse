@@ -682,6 +682,14 @@ class JobConfigs:
             parameter="amd_asan_ubsan, distributed plan, parallel",
             runs_on=RunnerLabels.AMD_MEDIUM_CPU,
             requires=[ArtifactNames.CH_AMD_ASAN_UBSAN],
+            # This variant runs the parallel suite at reduced concurrency (see the
+            # distributed-plan branch in `functional_tests.py`) to keep the
+            # aggregate server RSS under the sanitizer memory cap, which lowers
+            # throughput. Allow more wall-clock than the common 2.5h budget so the
+            # reduced concurrency cannot turn into a job timeout: the job ran ~2h36m
+            # at 8 workers, and the further cut to 7 workers pushes it to ~2h57m, so
+            # 3.5h keeps a comfortable margin.
+            timeout=int(3600 * 3.5),
         ),
         *[
             Job.ParamSet(
