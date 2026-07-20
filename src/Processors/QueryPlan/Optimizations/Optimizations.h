@@ -44,6 +44,8 @@ struct Optimization
         /// Other settings
         size_t use_index_for_in_with_subqueries_max_values{};
         SizeLimits network_transfer_limits;
+        bool optimize_prewhere{};
+        bool remove_unused_columns{};
 
         bool use_skip_indexes_for_top_k{};
         bool use_top_k_dynamic_filtering{};
@@ -198,7 +200,7 @@ using Stack = std::vector<Frame>;
 void optimizePrimaryKeyConditionAndLimit(const Stack & stack);
 void processAndOptimizeTextIndexFunctions(const Stack & stack, QueryPlan::Nodes & nodes, bool direct_read_from_text_index);
 void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
-void optimizePrewhere(QueryPlan::Node & parent_node, bool remove_unused_columns);
+void optimizePrewhere(QueryPlan::Node & parent_node, bool remove_unused_columns, bool suppress_for_vector_search = true);
 void optimizeAggregationInOrder(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings &);
 bool optimizeLazyMaterialization2(QueryPlan::Node & root, QueryPlan & query_plan, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & settings, size_t max_limit_for_lazy_materialization);
 void optimizeLazyFinal(const Stack & stack, QueryPlan & query_plan, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);

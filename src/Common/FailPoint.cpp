@@ -41,6 +41,7 @@ static struct InitFiu
     REGULAR(smt_dedup_conflict_part_name_missing) \
     REGULAR(use_delayed_remote_source) \
     ONCE(remote_query_executor_cancel_before_send) \
+    ONCE(connection_stale_on_establish) \
     REGULAR(cluster_discovery_faults) \
     REGULAR(stripe_log_sink_write_fallpoint) \
     ONCE(smt_commit_merge_mutate_zk_fail_after_op) \
@@ -248,7 +249,8 @@ static struct InitFiu
     REGULAR(distributed_plan_status_check_reenqueue_fault) \
     ONCE(zk_send_thread_request_window_throw) \
     ONCE(zk_send_thread_operations_insert_throw) \
-    REGULAR(replicated_database_status_finished_node_missing)
+    REGULAR(replicated_database_status_finished_node_missing) \
+    PAUSEABLE_ONCE(rmt_cancel_removed_parts_check_pause_in_gap)
 
 namespace FailPoints
 {
