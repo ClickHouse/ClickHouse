@@ -6986,7 +6986,10 @@ async function postImpl(posted_request_num, query, targetResultEl, abortControll
                     /// mark the run failed so the single view shows the error state and `Run all`
                     /// stops after it, mirroring the framed and raw NDJSON paths. The snapshot stays
                     /// `response_ok: true` so it restores through this same table path (rows followed
-                    /// by the exception), rather than as one opaque error string.
+                    /// by the exception), rather than as one opaque error string; the failure
+                    /// travels separately as the snapshot's `error` bit, so the restore paths
+                    /// re-apply the error state (no idle logo, no success chrome) after replaying
+                    /// the rows.
                     if (data.exception) { is_error = true; }
                     cont = targetResultEl.update(data, fragment);
                     if (!cont) { break; }
@@ -7118,6 +7121,10 @@ async function postSingle(posted_request_num, query, history_query_text, params_
                 resultQuery: query,
                 format: result.format,
                 ok: result.response_ok,
+                /// A run can fail while `response_ok` stays true (an in-band `{"exception":...}`
+                /// after rows already streamed under 200 OK); persist the failure separately so a
+                /// reload / tab switch restores the error state and not a success.
+                error: !!result.is_error,
                 data: result.reply.length > 100000 ? null : result.reply,
                 base64: result.is_base64,
                 framing_kind: result.framing_kind,
@@ -7167,6 +7174,7 @@ async function postSingle(posted_request_num, query, history_query_text, params_
         resultQuery: query,
         format: result.format,
         ok: result.response_ok,
+        error: !!result.is_error,
         data: result.reply.length > 100000 ? null : result.reply,
         base64: result.is_base64,
         framing_kind: result.framing_kind,
@@ -7342,6 +7350,10 @@ async function postMulti(posted_request_num, parsed, params_restore_pending)
         query: parsed[i].query,
         format: r ? r.format : null,
         ok: r ? !!r.response_ok : false,
+        /// A statement can fail with `response_ok` still true (an in-band `{"exception":...}` after
+        /// rows streamed under 200 OK); persist the failure separately so the restored run does not
+        /// look successful (see `restoreMultiQuery`'s logo condition).
+        error: r ? !!r.is_error : false,
         data: (r && (!r.is_image || r.is_base64)) ? r.reply : null,
         base64: r ? !!r.is_base64 : false,
         framing_kind: r ? (r.framing_kind ?? '') : '',
@@ -7542,8 +7554,10 @@ async function restoreMultiQuery(snapshot, token) {
         if (token !== request_num) return;
     }
 
-    /// The logo returns only for a fully successful run, matching the live `postMulti` path.
-    if (!snapshot.multi.some(s => !s.ok)) logoEl.style.display = 'block';
+    /// The logo returns only for a fully successful run, matching the live `postMulti` path. A
+    /// statement that failed in-band keeps `ok: true` (its rows replay through the table path) but
+    /// carries the `error` bit, so it counts as a failure here too.
+    if (!snapshot.multi.some(s => !s.ok || s.error)) logoEl.style.display = 'block';
 
     let total_rows = 0;
     let max_elapsed_ns = 0;
@@ -7769,6 +7783,17 @@ async function restoreFromHistory(state, token) {
         resultEl.applyColumnColors();
         if (is_table) resultEl.transposeIfNeeded();
         if (is_table) resultEl._changeTableLayout();
+    }
+
+    /// The run failed even though `ok` is true: an in-band `{"exception":...}` after rows already
+    /// streamed under 200 OK (a retried plain `JSON*WithProgress` format). The rows plus the
+    /// exception were replayed through the format's normal path above; re-apply the error state -
+    /// no idle logo, no download/copy, progress cleared - matching the live run and the other
+    /// error branches, instead of restoring the failed run as a success.
+    if (result.error) {
+        logoEl.style.display = 'none';
+        progressEl.clear();
+        return;
     }
 
     progressEl.finish();
@@ -8723,6 +8748,10 @@ function saveHistory(stateData, titleForDoc) {
         user: stateData.user,
         format: stateData.format,
         ok: stateData.ok,
+        /// Whether the run failed even though `ok` (the HTTP-level success) is true: an in-band
+        /// `{"exception":...}` arriving after rows were already streamed under 200 OK. The data
+        /// still replays through the format's normal path; the restore re-applies the error state.
+        error: stateData.error ?? false,
         data: stateData.data,
         /// Whether the `EventStream` `data` snapshot carries base64-encoded payloads (a binary or raw
         /// output format); the replay path decodes them to bytes instead of showing the base64 text.
@@ -8876,6 +8905,7 @@ window.onpopstate = function(event) {
             database: flat.database,
             format: flat.format,
             ok: flat.ok,
+            error: flat.error ?? false,
             data: flat.data ?? null,
             base64: flat.base64 ?? false,
             framing_kind: flat.framing_kind ?? '',
