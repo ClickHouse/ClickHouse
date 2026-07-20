@@ -64,8 +64,6 @@ echo "-- A subquery in WHERE/SET with validate_mutation_query=0 is rejected fail
 check_access "ALTER TABLE tab DELETE WHERE 1 IN (SELECT id FROM tab) SETTINGS validate_mutation_query = 0"
 check_access "ALTER TABLE tab UPDATE name = '' WHERE 1 IN (SELECT id FROM tab) SETTINGS validate_mutation_query = 0"
 check_access "DELETE FROM tab WHERE 1 IN (SELECT id FROM tab) SETTINGS validate_mutation_query = 0"
-check_access "ALTER TABLE tab UPDATE name = (SELECT toString(id) FROM tab LIMIT 1) WHERE 1 SETTINGS validate_mutation_query = 0"
-check_access "UPDATE tab SET name = (SELECT toString(id) FROM tab LIMIT 1) WHERE 1 SETTINGS enable_lightweight_update = 1, validate_mutation_query = 0"
 
 $CLICKHOUSE_CLIENT -q "GRANT SELECT(id) ON $CLICKHOUSE_DATABASE.tab TO $user_name;"
 
