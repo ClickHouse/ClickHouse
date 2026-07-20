@@ -107,8 +107,11 @@ bool parseOptions(int argc, char ** argv, Options & opts)
 ALWAYS_INLINE void atomicBump(Slot * slots, int slot_count)
 {
     int cpu = ::sched_getcpu();
+    /// `_SC_NPROCESSORS_CONF` is a count, not an upper bound for logical CPU ids, so on
+    /// sparse numbering (or a `sched_getcpu` error) the id may fall outside the slot array.
+    /// Fall back to slot 0 — one increment per iteration, like `ProfileEvents::Counters::fetchAdd`.
     if (unlikely(static_cast<unsigned>(cpu) >= static_cast<unsigned>(slot_count)))
-        return;
+        cpu = 0;
     __atomic_add_fetch(&slots[cpu].value, 1, __ATOMIC_RELAXED);
 }
 
@@ -122,11 +125,18 @@ ALWAYS_INLINE void sharedBump(Slot * slots)
 ALWAYS_INLINE void rseqBump(Slot * slots, int slot_count)
 {
     int cpu = static_cast<int>(rseq_cpu_start());
-    if (unlikely(static_cast<unsigned>(cpu) >= static_cast<unsigned>(slot_count)))
-        return;
 
     while (true)
     {
+        /// The rseq critical section only commits while running on `cpu`, so an out-of-range id
+        /// cannot be redirected to another slot within it. Fall back to an atomic increment on
+        /// slot 0 instead — one increment per iteration, like `ProfileEvents::Counters::fetchAdd`.
+        if (unlikely(static_cast<unsigned>(cpu) >= static_cast<unsigned>(slot_count)))
+        {
+            __atomic_add_fetch(&slots[0].value, 1, __ATOMIC_RELAXED);
+            return;
+        }
+
         UInt64 * counter = &slots[cpu].value;
         UInt64 current = __atomic_load_n(counter, __ATOMIC_RELAXED);
         UInt64 next = current + 1;
@@ -140,8 +150,6 @@ ALWAYS_INLINE void rseqBump(Slot * slots, int slot_count)
         if (likely(r == 0))
             return;
         cpu = static_cast<int>(rseq_cpu_start());
-        if (unlikely(static_cast<unsigned>(cpu) >= static_cast<unsigned>(slot_count)))
-            return;
     }
 }
 #endif
