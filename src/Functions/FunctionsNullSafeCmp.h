@@ -122,7 +122,21 @@ public:
                 std::make_shared<FunctionComparison<CompareOp, CompareName, true /*is null safe*/>>(params));
             ColumnsWithTypeAndName probe_args{
                 {nullptr, removeNullable(left_ele_type), ""}, {nullptr, removeNullable(right_ele_type), ""}};
-            comparator->build(probe_args);
+            try
+            {
+                comparator->build(probe_args);
+            }
+            catch (Exception &)
+            {
+                /// Rethrow with our own name so the diagnostics match the actual query, e.g.
+                /// `Array(String)` vs `Array(Int64)` reports `isDistinctFrom`
+                throw Exception(
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Illegal types of arguments ({}, {}) of function {}",
+                    backQuote(left_ele_type->getName()),
+                    backQuote(right_ele_type->getName()),
+                    backQuote(name));
+            }
         }
 
         return std::make_shared<DataTypeUInt8>();
