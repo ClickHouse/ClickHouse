@@ -6,11 +6,13 @@
 #include <Processors/Sources/SQLiteSource.h>
 #include <Databases/SQLite/SQLiteUtils.h>
 #include <Databases/SQLite/fetchSQLiteTableStructure.h>
+#include <Columns/ColumnNullable.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/IDataType.h>
+#include <DataTypes/Serializations/ISerialization.h>
 #include <Formats/FormatFactory.h>
-#include <Processors/Formats/IOutputFormat.h>
 #include <IO/Operators.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/evaluateConstantExpression.h>
@@ -30,13 +32,6 @@ namespace
 {
 
 using namespace DB;
-
-ContextPtr makeSQLiteWriteContext(ContextPtr context)
-{
-    auto write_context = Context::createCopy(context);
-    write_context->setSetting("output_format_values_escape_quote_with_quote", Field(true));
-    return write_context;
-}
 
 /// The `MATERIALIZED` classification of SQLite generated columns is derived from the remote schema and is
 /// not preserved by the local metadata: a `MATERIALIZED` column without a default expression is formatted
@@ -124,7 +119,6 @@ StorageSQLite::StorageSQLite(
     , database_path(database_path_)
     , sqlite_db(sqlite_db_)
     , log(getLogger("StorageSQLite (" + table_id_.getFullTableName() + ")"))
-    , write_context(makeSQLiteWriteContext(getContext()))
 {
     StorageInMemoryMetadata storage_metadata;
 
@@ -286,11 +280,13 @@ Pipe StorageSQLite::read(
             /// set: SQLite can filter on generated columns too, so a `WHERE` over them is still pushed down.
             storage_snapshot->metadata->getColumns().getAllPhysical(),
             /// SQLite has no escape sequences inside quoted identifiers or string literals: an embedded quote
-            /// is doubled and a backslash is a literal character, so the ClickHouse-style backslash escaping
-            /// of `DoubleQuotes`/`Regular` would make the pushed-down query look up a different identifier
-            /// (or match a different literal) than the one written by `quoteSQLiteIdentifier` on the write path.
+            /// is doubled and every other byte - a backslash or a control character such as `\n`/`\t` - stays
+            /// literal. The ClickHouse-style backslash escaping of `DoubleQuotes`/`Regular` (and even the
+            /// `PostgreSQL` literal style, which still backslash-escapes control characters) would make the
+            /// pushed-down query look up a different identifier or match a different literal than the value
+            /// actually stored, so a filter such as `WHERE s = 'a\nb'` would silently miss its rows.
             IdentifierQuotingStyle::DoubleQuotesStandard,
-            LiteralEscapingStyle::PostgreSQL,
+            LiteralEscapingStyle::StandardSQL,
             "",
             remote_table_or_query.getTableName(),
             context_);
@@ -307,6 +303,50 @@ Pipe StorageSQLite::read(
 }
 
 
+namespace
+{
+
+/// Bind one cell of a ClickHouse column as a parameter of a prepared SQLite statement. Binding (rather than
+/// formatting an `INSERT ... VALUES` SQL string) is the only way to pass values to SQLite faithfully: SQLite
+/// string literals have no escape sequences at all, so control characters would be corrupted when written as
+/// text and a NUL byte would truncate the whole statement. Numeric values are bound with their native SQLite
+/// type; every other value is bound as text using its ClickHouse text serialization, with an explicit byte
+/// length so that control characters and embedded NUL bytes survive. SQLite then applies the target column's
+/// affinity to the bound value, exactly as it did to the literals this path used to emit.
+void bindSQLiteValue(
+    sqlite3_stmt * stmt, int index, const ColumnWithTypeAndName & column, size_t row, const FormatSettings & format_settings)
+{
+    const IColumn * data = column.column.get();
+    DataTypePtr type = column.type;
+
+    if (const auto * nullable = typeid_cast<const ColumnNullable *>(data))
+    {
+        if (nullable->isNullAt(row))
+        {
+            sqlite3_bind_null(stmt, index);
+            return;
+        }
+        data = &nullable->getNestedColumn();
+        type = removeNullable(type);
+    }
+
+    WhichDataType which(type);
+    if (which.isFloat())
+        sqlite3_bind_double(stmt, index, data->getFloat64(row));
+    else if (which.isNativeInteger())
+        sqlite3_bind_int64(stmt, index, data->getInt(row));
+    else
+    {
+        WriteBufferFromOwnString wb;
+        type->getDefaultSerialization()->serializeText(*data, row, wb, format_settings);
+        const auto text = wb.str();
+        sqlite3_bind_text64(stmt, index, text.data(), text.size(), SQLITE_TRANSIENT, SQLITE_UTF8);
+    }
+}
+
+}
+
+
 class SQLiteSink final : public SinkToStorage
 {
 public:
@@ -317,11 +357,11 @@ public:
         const String & remote_table_name_,
         const Names & explicitly_inserted_columns_)
         : SinkToStorage(std::make_shared<const Block>(metadata_snapshot_->getSampleBlock()))
-        , storage{storage_}
         , metadata_snapshot(metadata_snapshot_)
         , sqlite_db(sqlite_db_)
         , remote_table_name(remote_table_name_)
         , explicitly_inserted_columns(explicitly_inserted_columns_.begin(), explicitly_inserted_columns_.end())
+        , format_settings(getFormatSettings(storage_.getContext()))
     {
         /// SQLite generated columns are kept in the table structure as `MATERIALIZED` (readable but not
         /// insertable). ClickHouse still computes a placeholder for them and includes them in the block
@@ -345,46 +385,68 @@ public:
             if (!generated_columns.contains(elem.name) || explicitly_inserted_columns.contains(elem.name))
                 insertable_block.insert(elem);
 
+        const size_t num_columns = insertable_block.columns();
+        if (num_columns == 0)
+            return;
+
+        /// Build a parameterized statement `INSERT INTO t (c1, ...) VALUES (?, ...)` and bind each row's
+        /// values instead of formatting them into the SQL text. SQLite string literals have no escape
+        /// sequences, so serializing values as text would corrupt control characters and truncate on NUL;
+        /// binding passes every byte to SQLite faithfully.
         WriteBufferFromOwnString sqlbuf;
-
-        sqlbuf << "INSERT INTO ";
-        sqlbuf << quoteSQLiteIdentifier(remote_table_name);
-        sqlbuf << " (";
-
-        for (auto it = insertable_block.begin(); it != insertable_block.end(); ++it)
+        sqlbuf << "INSERT INTO " << quoteSQLiteIdentifier(remote_table_name) << " (";
+        for (size_t i = 0; i < num_columns; ++i)
         {
-            if (it != insertable_block.begin())
+            if (i != 0)
                 sqlbuf << ", ";
-            sqlbuf << quoteSQLiteIdentifier(it->name);
+            sqlbuf << quoteSQLiteIdentifier(insertable_block.getByPosition(i).name);
         }
+        sqlbuf << ") VALUES (";
+        for (size_t i = 0; i < num_columns; ++i)
+            sqlbuf << (i == 0 ? "?" : ", ?");
+        sqlbuf << ")";
 
-        sqlbuf << ") VALUES ";
+        const auto query = sqlbuf.str();
 
-        auto writer = FormatFactory::instance().getOutputFormat("Values", sqlbuf, insertable_block.cloneEmpty(), storage.write_context);
-        writer->write(insertable_block);
-
-        sqlbuf << ";";
-
-        char * err_message = nullptr;
-        int status = sqlite3_exec(sqlite_db.get(), sqlbuf.str().c_str(), nullptr, nullptr, &err_message);
-
+        sqlite3_stmt * compiled_stmt = nullptr;
+        int status = sqlite3_prepare_v2(
+            sqlite_db.get(), query.c_str(), static_cast<int>(query.size() + 1), &compiled_stmt, nullptr);
         if (status != SQLITE_OK)
-        {
-            String err_msg(err_message);
-            sqlite3_free(err_message);
             throw Exception(ErrorCodes::SQLITE_ENGINE_ERROR,
-                            "Failed to execute sqlite INSERT query. Status: {}. Message: {}",
-                            status, err_msg);
+                            "Cannot prepare sqlite INSERT statement. Status: {}. Message: {}",
+                            status, sqlite3_errmsg(sqlite_db.get()));
+
+        std::unique_ptr<sqlite3_stmt, StatementDeleter> statement(compiled_stmt, StatementDeleter());
+
+        const size_t num_rows = insertable_block.rows();
+        for (size_t row = 0; row < num_rows; ++row)
+        {
+            for (size_t i = 0; i < num_columns; ++i)
+                bindSQLiteValue(statement.get(), static_cast<int>(i + 1), insertable_block.getByPosition(i), row, format_settings);
+
+            status = sqlite3_step(statement.get());
+            if (status != SQLITE_DONE)
+                throw Exception(ErrorCodes::SQLITE_ENGINE_ERROR,
+                                "Failed to execute sqlite INSERT query. Status: {}. Message: {}",
+                                status, sqlite3_errmsg(sqlite_db.get()));
+
+            sqlite3_reset(statement.get());
+            sqlite3_clear_bindings(statement.get());
         }
     }
 
 private:
-    const StorageSQLite & storage;
+    struct StatementDeleter
+    {
+        void operator()(sqlite3_stmt * stmt) const { sqlite3_finalize(stmt); }
+    };
+
     StorageMetadataPtr metadata_snapshot;
     StorageSQLite::SQLitePtr sqlite_db;
     String remote_table_name;
     std::unordered_set<String> generated_columns;
     std::unordered_set<String> explicitly_inserted_columns;
+    FormatSettings format_settings;
 };
 
 
@@ -438,7 +500,7 @@ void registerStorageSQLite(StorageFactory & factory)
 
         /// The 2nd argument is either a table name, or a query passed to SQLite as is - `(SELECT ...)` or `query('SELECT ...')`.
         auto maybe_query = tryGetExternalDatabaseQuery(
-            engine_args[1], args.getLocalContext(), IdentifierQuotingStyle::DoubleQuotesStandard, LiteralEscapingStyle::PostgreSQL);
+            engine_args[1], args.getLocalContext(), IdentifierQuotingStyle::DoubleQuotesStandard, LiteralEscapingStyle::StandardSQL);
         for (size_t i = 0; i < engine_args.size(); ++i)
         {
             if (i == 1 && maybe_query)

@@ -159,12 +159,55 @@ String FieldVisitorToStringPostgreSQL::operator() (const String & x) const
     return wb.str();
 }
 
+/// Outputs a string as a standard SQL string literal: only the enclosing single quote is escaped, by
+/// doubling it (''); every other byte, including backslashes and control characters, is emitted literally -
+/// the rules of SQLite, where a string literal has no backslash escape sequences at all. A NUL byte cannot be
+/// represented in SQL text passed to `sqlite3_exec`/`sqlite3_prepare`, so it is not handled here.
+static void writeQuotedStringStandardSQL(std::string_view ref, WriteBuffer & buf)
+{
+    writeChar('\'', buf);
+    for (char c : ref)
+    {
+        if (c == '\'')
+            writeChar('\'', buf);
+        writeChar(c, buf);
+    }
+    writeChar('\'', buf);
+}
+
+/// Escape string literals as standard SQL: only the quote is doubled, everything else stays literal
+class FieldVisitorToStringStandardSQL : public StaticVisitor<String>
+{
+public:
+    template<typename T>
+    String operator() (const T & x) const { return visitor(x); }
+
+private:
+    FieldVisitorToString visitor;
+};
+
+template<>
+String FieldVisitorToStringStandardSQL::operator() (const String & x) const
+{
+    WriteBufferFromOwnString wb;
+    writeQuotedStringStandardSQL(x, wb);
+    return wb.str();
+}
+
 void ASTLiteral::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSettings & settings, IAST::FormatState &, IAST::FormatStateStacked) const
 {
-    if (settings.literal_escaping_style == LiteralEscapingStyle::Regular)
-        ostr << applyVisitor(FieldVisitorToString(), value);
-    else
-        ostr << applyVisitor(FieldVisitorToStringPostgreSQL(), value);
+    switch (settings.literal_escaping_style)
+    {
+        case LiteralEscapingStyle::Regular:
+            ostr << applyVisitor(FieldVisitorToString(), value);
+            break;
+        case LiteralEscapingStyle::PostgreSQL:
+            ostr << applyVisitor(FieldVisitorToStringPostgreSQL(), value);
+            break;
+        case LiteralEscapingStyle::StandardSQL:
+            ostr << applyVisitor(FieldVisitorToStringStandardSQL(), value);
+            break;
+    }
 }
 
 }

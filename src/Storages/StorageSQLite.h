@@ -62,8 +62,6 @@ public:
         const TableNameOrQuery & table_or_query);
 
 private:
-    friend class SQLiteSink; /// for write_context
-
     /// Lazily open the SQLite connection on first use. Guards the one-time initialization so that concurrent
     /// first queries (`read`, `write`, and the `updateExternalDynamicMetadataIfExists` metadata hook) do not
     /// race on the `sqlite_db` shared_ptr member. Returns the open connection (also stored in `sqlite_db`), or
@@ -79,7 +77,6 @@ private:
     String database_path;
     SQLitePtr sqlite_db;
     LoggerPtr log;
-    ContextPtr write_context;
 
     /// True while the generated-column classification of an explicitly declared column list still has to be
     /// re-derived from the remote schema because the database file or table schema was unavailable when the
