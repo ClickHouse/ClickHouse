@@ -171,6 +171,53 @@ size_t ALWAYS_INLINE nextDistinct(FullMergeJoinCursor & impl)
     return run_end - start_pos;
 }
 
+/// Advances the cursor to the first row that is not less than the current row of `other`
+/// (or to the end of the block) and returns the number of rows skipped.
+/// Precondition: the current row of the cursor is less than the current row of `other`.
+size_t ALWAYS_INLINE nextNotLess(FullMergeJoinCursor & cursor, const FullMergeJoinCursor & other, int null_direction_hint)
+{
+    chassert(cursor.isValid() && other.isValid());
+
+    const size_t start_pos = cursor.getRow();
+    const IColumn & first_column = *cursor.sort_columns.front();
+
+    /// A row whose first key column is strictly less than the other row's one is less regardless
+    /// of the remaining key columns, so the whole run of such rows can be skipped with a single
+    /// compareTrackAt call. The fast path is taken only for fixed-and-contiguous columns
+    /// (ColumnVector, ColumnDecimal, ColumnFixedString) - exactly those devirtualize
+    /// compareTrackAt, for the rest it degrades to a row-by-row virtual compareAt loop.
+    /// Rows with NULL in the first key column are ordered by the null map, not by the values
+    /// of the nested column, so the track is not applicable when either current row is NULL.
+    Int64 track = 0;
+    const auto * null_map = getNullMapData(cursor.null_maps.front());
+    const auto * other_null_map = getNullMapData(other.null_maps.front());
+    bool any_null = (null_map && (*null_map)[start_pos]) || (other_null_map && (*other_null_map)[other.getRow()]);
+    if (!any_null && first_column.isFixedAndContiguous())
+        track = first_column.compareTrackAt(start_pos, other.getRow(), *other.sort_columns.front(), null_direction_hint);
+
+    chassert(track <= 0);
+    if (track == 0)
+    {
+        /// The first key columns are equal (or the fast path is not applicable):
+        /// skip the run of rows with all key columns equal.
+        return nextDistinct(cursor);
+    }
+
+    size_t run_end = start_pos + static_cast<size_t>(-track);
+
+    /// Values of the nested column at NULL positions are unspecified, cut the track at the first NULL row.
+    if (null_map)
+    {
+        size_t pos = start_pos + 1;
+        while (pos < run_end && !(*null_map)[pos])
+            ++pos;
+        run_end = pos;
+    }
+
+    cursor.pos = run_end;
+    return run_end - start_pos;
+}
+
 ColumnPtr replicateRow(const IColumn & column, size_t num)
 {
     MutableColumnPtr res = column.cloneEmpty();
@@ -567,7 +614,7 @@ struct AllJoinImpl
             }
             else if (cmp < 0)
             {
-                size_t num = nextDistinct(left_cursor);
+                size_t num = nextNotLess(left_cursor, right_cursor, null_direction_hint);
                 if constexpr (isLeftOrFull(kind))
                 {
                     right_map.resize_fill(right_map.size() + num, right_cursor.rows);
@@ -577,7 +624,7 @@ struct AllJoinImpl
             }
             else
             {
-                size_t num = nextDistinct(right_cursor);
+                size_t num = nextNotLess(right_cursor, left_cursor, null_direction_hint);
                 if constexpr (isRightOrFull(kind))
                 {
                     left_map.resize_fill(left_map.size() + num, left_cursor.rows);
@@ -851,13 +898,13 @@ struct AnyJoinImpl
             }
             else if (cmp < 0)
             {
-                size_t num = nextDistinct(left_cursor);
+                size_t num = nextNotLess(left_cursor, right_cursor, null_direction_hint);
                 if constexpr (isLeftOrFull(kind))
                     right_map.resize_fill(right_map.size() + num, right_cursor.rows);
             }
             else
             {
-                size_t num = nextDistinct(right_cursor);
+                size_t num = nextNotLess(right_cursor, left_cursor, null_direction_hint);
                 if constexpr (isRightOrFull(kind))
                     left_map.resize_fill(left_map.size() + num, left_cursor.rows);
             }
