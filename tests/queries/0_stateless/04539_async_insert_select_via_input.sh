@@ -152,6 +152,30 @@ printf '9\tauto_row\n' | ${CLICKHOUSE_CURL} -sS \
     -H 'Content-Type: application/octet-stream' \
     --data-binary @- 2>&1 | grep -oF 'UNKNOWN_TABLE'
 
+# Case 10: KILL QUERY interrupts the async SELECT pull before the block is committed.
+# Proves the inner SELECT pipeline is registered with the process list via
+# BuildQueryPipelineSettings, not only caught by the post-loop check.
+QID="04539_kill_${CLICKHOUSE_DATABASE}_$$"
+Q=$(urlencode "INSERT INTO test_async_input SELECT id, if(sleepEachRow(2) = 0, s, '') AS s, '' FROM input('id UInt32, s String') FORMAT TSV")
+seq 1 3 | sed 's/$/\tkill_row/' | ${CLICKHOUSE_CURL} -sS \
+    "${CLICKHOUSE_URL}&async_insert=1&wait_for_async_insert=1&function_sleep_max_microseconds_per_block=15000000&query_id=${QID}&query=${Q}" \
+    -H 'Content-Type: application/octet-stream' \
+    --data-binary @- > /dev/null 2>&1 &
+CURL_PID=$!
+for _ in $(seq 1 30); do
+    ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM system.processes WHERE query_id = '${QID}'" | grep -q '^1$' && break
+    sleep 0.3
+done
+${CLICKHOUSE_CLIENT} -q "KILL QUERY WHERE query_id = '${QID}' SYNC" > /dev/null
+wait $CURL_PID
+for _ in $(seq 1 30); do
+    ${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS query_log"
+    count=$(${CLICKHOUSE_CLIENT} -q "SELECT count() FROM system.query_log WHERE current_database = currentDatabase() AND query_id = '${QID}' AND exception LIKE '%QUERY_WAS_CANCELLED%'")
+    [ "$count" -ge 1 ] && break
+    sleep 0.3
+done
+${CLICKHOUSE_CLIENT} -q "SELECT 'QUERY_WAS_CANCELLED' FROM system.query_log WHERE current_database = currentDatabase() AND query_id = '${QID}' AND exception LIKE '%QUERY_WAS_CANCELLED%' LIMIT 1"
+
 # Cleanup
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE test_async_input"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE test_async_input_tcp"
