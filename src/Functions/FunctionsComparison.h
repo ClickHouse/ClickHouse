@@ -1529,8 +1529,8 @@ public:
                     /// Array element comparison treats inner NULLs as regular comparable values (a NULL
                     /// is equal only to another NULL and sorts after every non-NULL value), producing a
                     /// definite non-`Nullable` `UInt8` result.
-                    auto left_nested_type = removeNullable(left_array->getNestedType());
-                    auto right_nested_type = removeNullable(right_array->getNestedType());
+                    auto left_nested_type = removeLowCardinalityAndNullable(left_array->getNestedType());
+                    auto right_nested_type = removeLowCardinalityAndNullable(right_array->getNestedType());
 
                     auto element_comparison
                         = std::make_shared<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionComparison<Op, Name, is_null_safe_cmp_mode>>(params));
