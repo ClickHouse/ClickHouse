@@ -826,15 +826,15 @@ Chunk PuffinInputFormat::read()
         }
 
         const Block & out_header = getPort().getHeader();
+        std::unordered_map<String, MutableColumnPtr> built;
+        built.emplace("referenced_data_file", std::move(col_file));
+        if (need_deleted_rows)
+            built.emplace("deleted_rows", std::move(col_rows));
+
         MutableColumns result;
         result.reserve(out_header.columns());
         for (const auto & col_with_name : out_header)
-        {
-            if (col_with_name.name == "referenced_data_file")
-                result.push_back(std::move(col_file));
-            else
-                result.push_back(std::move(col_rows));
-        }
+            result.push_back(std::move(built.at(col_with_name.name)));
         return Chunk(std::move(result), 1);
     }
 
