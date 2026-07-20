@@ -1135,6 +1135,13 @@ static bool demoteLowNdvKeysToResidual(
         if (!kept_mask[i])
             demote_idx.push_back(i);
 
+    /// The chosen candidate can cover the whole key set (e.g. a `HashTablesStatistics` entry
+    /// for all keys). Nothing is demoted then, so report no demotion rather than returning
+    /// `true` with an empty `demoted_conditions` (which would leave the caller building an
+    /// empty mixed-condition expression).
+    if (demote_idx.empty())
+        return false;
+
     /// Resolve DAG nodes before mutating clause state, bail atomically on miss.
     /// Join key names may live either in the DAG outputs (when transformed) or in the
     /// inputs (when used directly without transformation), so try both lookups.
@@ -1622,7 +1629,7 @@ static QueryPlanNode buildPhysicalJoinImpl(
     /// `join_operator.residual_filter`, which may already hold genuine post-join filters
     /// with different outer-join semantics) and routed into `mixed_join_expression` below.
     std::vector<JoinActionRef> demoted_conditions;
-    bool keys_demoted_to_residual = demoteLowNdvKeysToResidual(
+    demoteLowNdvKeysToResidual(
         table_join_clauses, demoted_conditions, expression_actions, join_settings, children,
         join_algorithm_params, join_operator.kind, join_operator.strictness);
 
@@ -1747,7 +1754,7 @@ static QueryPlanNode buildPhysicalJoinImpl(
     ///    `residual_filter_condition` predicate stays a post-join filter.
     const bool on_clause_to_mixed
         = on_clause_condition && (is_disjunctive_condition || !canPushDownFromOn(join_operator));
-    if (on_clause_to_mixed || keys_demoted_to_residual)
+    if (on_clause_to_mixed || demoted_condition)
     {
         std::vector<JoinActionRef> mixed_conditions;
         if (on_clause_to_mixed)
@@ -1755,7 +1762,7 @@ static QueryPlanNode buildPhysicalJoinImpl(
             mixed_conditions.push_back(on_clause_condition);
             on_clause_condition = JoinActionRef(nullptr);
         }
-        if (keys_demoted_to_residual && demoted_condition)
+        if (demoted_condition)
             mixed_conditions.push_back(demoted_condition);
         JoinActionRef mixed_condition = concatConditions(mixed_conditions);
         auto mixed_dag = JoinExpressionActions::getSubDAG(std::views::single(mixed_condition));

@@ -1,5 +1,4 @@
 merge_pref_inner	1
-prefer_partial_merge_pref_inner	1
 left_outer	1
 left_outer_nulls	1
 full_outer	1
