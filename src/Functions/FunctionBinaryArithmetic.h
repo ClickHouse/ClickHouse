@@ -2180,12 +2180,14 @@ public:
         const DataTypePtr & type0 = arguments[0].type;
         const DataTypePtr & type1 = arguments[1].type;
 
+        auto locked_context = context.lock();
+
         /// executeDateAndTimeAddition throws when date_time_overflow_behavior is 'throw'.
         if (isDateAndTimeAddition(type0, type1))
-            return getDateTimeOverflowBehavior(context) == FormatSettings::DateTimeOverflowBehavior::Throw;
+            return getDateTimeOverflowBehavior(locked_context) == FormatSettings::DateTimeOverflowBehavior::Throw;
 
         /// The following cases are executed by a separately built function; delegate to its canThrow.
-        if (auto function_builder = getFunctionForIntervalArithmetic(type0, type1, context))
+        if (auto function_builder = getFunctionForIntervalArithmetic(type0, type1, locked_context))
         {
             DataTypesWithConstInfo new_arguments = arguments;
             if (isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64(new_arguments[1].type) || isString(new_arguments[1].type))
@@ -2195,7 +2197,7 @@ public:
             return builtFunctionCanThrow(function_builder, new_arguments);
         }
 
-        if (auto function_builder = getFunctionForDateTupleOfIntervalsArithmetic(type0, type1, context))
+        if (auto function_builder = getFunctionForDateTupleOfIntervalsArithmetic(type0, type1, locked_context))
         {
             DataTypesWithConstInfo new_arguments = arguments;
             if (isTuple(new_arguments[0].type))
@@ -2203,13 +2205,13 @@ public:
             return builtFunctionCanThrow(function_builder, new_arguments);
         }
 
-        if (auto function_builder = getFunctionForMergeIntervalsArithmetic(type0, type1, context))
+        if (auto function_builder = getFunctionForMergeIntervalsArithmetic(type0, type1, locked_context))
             return builtFunctionCanThrow(function_builder, arguments);
 
-        if (auto function_builder = getFunctionForTupleArithmetic(type0, type1, context))
+        if (auto function_builder = getFunctionForTupleArithmetic(type0, type1, locked_context))
             return builtFunctionCanThrow(function_builder, arguments);
 
-        if (auto function_builder = getFunctionForTupleAndNumberArithmetic(type0, type1, context))
+        if (auto function_builder = getFunctionForTupleAndNumberArithmetic(type0, type1, locked_context))
         {
             DataTypesWithConstInfo new_arguments = arguments;
             if (isNumber(new_arguments[0].type))
