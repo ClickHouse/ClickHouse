@@ -2,6 +2,8 @@
 
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
+#include <Common/StringUtils.h>
+#include <Common/UTF8Helpers.h>
 #include <Core/Field.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
@@ -41,12 +43,106 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
+    extern const int NOT_IMPLEMENTED;
 }
 
 namespace TimeSeriesSetting
 {
     extern const TimeSeriesSettingsBool filter_by_min_time_and_max_time;
     extern const TimeSeriesSettingsMap tags_to_columns;
+}
+
+namespace
+{
+
+/// A Prometheus metric name is a "bare" name when it matches `[a-zA-Z_:][a-zA-Z0-9_:]*`.
+bool isBareMetricName(const String & name)
+{
+    if (name.empty())
+        return false;
+    if (!(isAlphaASCII(name[0]) || name[0] == '_' || name[0] == ':'))
+        return false;
+    for (size_t i = 1; i < name.size(); ++i)
+        if (!(isAlphaNumericASCII(name[i]) || name[i] == '_' || name[i] == ':'))
+            return false;
+    return true;
+}
+
+/// The `match[]` parameter of the metadata endpoints is, in general, a Prometheus series selector such
+/// as `go_info{group="PROD"}` (Grafana emits selectors to narrow label names / label values). These
+/// endpoints only support a bare metric name so far: they translate `match[]` into an exact
+/// `metric_name = '<match>'` predicate. Treating a full selector as a literal metric name would look up
+/// a metric literally named `go_info{group="PROD"}` and silently return the wrong metadata, so reject
+/// anything that is not a bare metric name with a clear `NOT_IMPLEMENTED` error (fail closed) instead.
+void checkMatchParamIsSupported(const String & match_param)
+{
+    if (!match_param.empty() && !isBareMetricName(match_param))
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "The Prometheus metadata endpoints currently support only a bare metric name in the 'match[]' "
+            "parameter, not a full series selector with label matchers (e.g. '{{group=\"PROD\"}}'). Got: '{}'",
+            match_param);
+}
+
+/// Prometheus escapes label names that are not legacy names (`[a-zA-Z_][a-zA-Z0-9_]*`) using the "values"
+/// escaping scheme before putting them into the `/api/v1/label/<name>/values` path: e.g. the tag
+/// `http.status_code` is requested as `U__http_2e_status__code`. Decode it back so the endpoint looks up
+/// the real stored tag key; otherwise a whole class of valid `TimeSeries` tag names (dotted, slashed, ...)
+/// is unqueryable. This mirrors Prometheus' `model.UnescapeName` for `ValueEncoding`: a name is decoded
+/// only when it starts with `U__`; then `__` is an escaped underscore and `_<hex>_` is an escaped code
+/// point. A malformed escape leaves the name unchanged (fail-safe), matching Prometheus.
+String unescapePrometheusLabelName(const String & name)
+{
+    static constexpr std::string_view prefix = "U__";
+    if (!name.starts_with(prefix))
+        return name;
+
+    String result;
+    result.reserve(name.size());
+    size_t i = prefix.size();
+    while (i < name.size())
+    {
+        char c = name[i];
+        if (c != '_')
+        {
+            result += c;
+            ++i;
+            continue;
+        }
+
+        /// `__` -> a literal underscore.
+        if (i + 1 < name.size() && name[i + 1] == '_')
+        {
+            result += '_';
+            i += 2;
+            continue;
+        }
+
+        /// `_<hex>_` -> the code point with that value.
+        size_t closing = name.find('_', i + 1);
+        if (closing == String::npos || closing == i + 1)
+            return name; /// Not a well-formed escape; leave the name unchanged.
+
+        UInt32 code_point = 0;
+        for (size_t j = i + 1; j < closing; ++j)
+        {
+            if (!isHexDigit(name[j]))
+                return name; /// Not a well-formed escape; leave the name unchanged.
+            char h = name[j];
+            UInt32 digit = (h >= '0' && h <= '9') ? (h - '0') : ((h | 0x20) - 'a' + 10);
+            code_point = code_point * 16 + digit;
+        }
+
+        char utf8_bytes[4];
+        size_t utf8_length = UTF8::convertCodePointToUTF8(static_cast<int>(code_point), utf8_bytes, sizeof(utf8_bytes));
+        if (utf8_length == 0)
+            return name; /// Not a valid code point; leave the name unchanged.
+        result.append(utf8_bytes, utf8_length);
+        i = closing + 1;
+    }
+    return result;
+}
+
 }
 
 PrometheusHTTPProtocolAPI::PrometheusHTTPProtocolAPI(ConstStoragePtr time_series_storage_, const ContextMutablePtr & context_)
@@ -479,10 +575,11 @@ void PrometheusHTTPProtocolAPI::getSeries(
     String query = fmt::format("SELECT DISTINCT {} FROM {}", select_columns, tags_table_id.getFullTableName());
 
     std::vector<String> conditions;
+    checkMatchParamIsSupported(match_param);
     if (!match_param.empty())
     {
-        /// Simple metric name matching: match[] parameter can be a metric name or {label=value} selector.
-        /// For now, support plain metric name matching.
+        /// Only a bare metric name is supported so far (a full series selector is rejected above), so the
+        /// `match[]` parameter maps directly to an exact metric name predicate.
         conditions.push_back(fmt::format("{} = {}", TimeSeriesColumnNames::MetricName, quoteString(match_param)));
     }
     appendTimeRangeConditions(conditions, tags_table, start_param, end_param);
@@ -633,6 +730,7 @@ void PrometheusHTTPProtocolAPI::getLabels(
         "SELECT DISTINCT arrayJoin({}) AS label_key FROM {}", label_keys_expr, tags_table_id.getFullTableName());
 
     std::vector<String> conditions;
+    checkMatchParamIsSupported(match_param);
     if (!match_param.empty())
         conditions.push_back(fmt::format("{} = {}", TimeSeriesColumnNames::MetricName, quoteString(match_param)));
     appendTimeRangeConditions(conditions, tags_table, start_param, end_param);
@@ -706,7 +804,7 @@ void PrometheusHTTPProtocolAPI::getLabels(
 /// `tags_to_columns`, reads that column; otherwise extracts values from the tags Map.
 void PrometheusHTTPProtocolAPI::getLabelValues(
     WriteBuffer & response,
-    const String & label_name,
+    const String & label_name_param,
     const String & match_param,
     const String & start_param,
     const String & end_param,
@@ -714,6 +812,13 @@ void PrometheusHTTPProtocolAPI::getLabelValues(
 {
     auto tags_table = time_series_storage->getTargetTable(ViewTarget::Tags, getContext());
     auto tags_table_id = tags_table->getStorageID();
+
+    /// Prometheus escapes non-legacy label names in the `/api/v1/label/<name>/values` path (e.g. a tag
+    /// `http.status_code` arrives as `U__http_2e_status__code`). Decode it back before comparing against
+    /// `tags_to_columns` or indexing the `tags` map, otherwise dotted/slashed tag names are unqueryable.
+    const String label_name = unescapePrometheusLabelName(label_name_param);
+
+    checkMatchParamIsSupported(match_param);
 
     String query;
     /// Collect WHERE conditions and join them, so the query stays valid regardless of which branch is taken.
