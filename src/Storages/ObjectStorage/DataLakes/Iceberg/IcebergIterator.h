@@ -16,9 +16,11 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Snapshot.h>
 
 #include <Common/ConcurrentBoundedQueue.h>
-#include <Common/ThreadPool_fwd.h>
-
+#include <Common/ThreadPool.h>
+#include <Common/threadPoolCallbackRunner.h>
 #include <optional>
+#include <future>
+#include <vector>
 #include <base/defines.h>
 
 #include <Core/BackgroundSchedulePool.h>
@@ -48,7 +50,11 @@ public:
 
     std::optional<DB::Iceberg::ProcessedManifestFileEntryPtr> next();
 
+    ~SingleThreadIcebergKeysIterator();
+
 private:
+    void initParallelPrefetch();
+
     ObjectStoragePtr object_storage;
     std::shared_ptr<const ActionsDAG> filter_dag;
     ContextPtr local_context;
@@ -57,10 +63,31 @@ private:
     PersistentTableComponents persistent_components;
     LoggerPtr log;
 
+    /// Serial iteration state (used when parallel_loading_threads == 1)
     size_t manifest_file_index = 0;
     Iceberg::ManifestIteratorPtr current_manifest_file_iterator;
 
     const Iceberg::ManifestFileContentType manifest_file_content_type;
+
+    /// Parallel prefetch state (used when parallel_loading_threads > 1)
+    UInt64 parallel_loading_threads = 1;
+
+    using ManifestFetchRunner = ThreadPoolCallbackRunnerLocal<Iceberg::ManifestFileCacheableInfo>;
+
+    /// Dedicated K-sized pool + runner for parallel manifest prefetch; concurrency is bounded
+    /// by the pool size K (the codebase convention, see BlobCopierThread).
+    /// enqueueAndGiveOwnership tasks are NOT tracked by the runner, so its destructor does not
+    /// wait for them, and the running task wrapper dereferences the runner (this->thread_name).
+    /// The destructor therefore MUST drain the give-ownership tasks (while both runner and pool
+    /// are still alive) before any member tears down. After that drain nothing is in flight, so
+    /// the relative destruction order of these members is immaterial.
+    std::optional<ThreadPool> prefetch_pool;
+    std::optional<ManifestFetchRunner> prefetch_runner;
+    /// Task handles and their manifest_list indices, both in submission (manifest_list) order.
+    std::vector<size_t> prefetch_manifest_indices;
+    std::vector<std::shared_ptr<ManifestFetchRunner::Task>> prefetch_tasks;
+    size_t prefetch_consume_pos = 0;
+    bool prefetch_initialized = false;
 };
 
 }
