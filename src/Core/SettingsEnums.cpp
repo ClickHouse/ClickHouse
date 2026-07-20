@@ -59,7 +59,8 @@ IMPLEMENT_SETTING_MULTI_ENUM(JoinAlgorithm, ErrorCodes::UNKNOWN_JOIN,
      {"direct",               JoinAlgorithm::DIRECT},
      {"full_sorting_merge",   JoinAlgorithm::FULL_SORTING_MERGE},
      {"grace_hash",           JoinAlgorithm::GRACE_HASH},
-     {"ie_join",              JoinAlgorithm::IE_JOIN}})
+     {"ie_join",              JoinAlgorithm::IE_JOIN},
+     {"band_join",            JoinAlgorithm::BAND_JOIN}})
 
 
 IMPLEMENT_SETTING_MULTI_ENUM(JoinOrderAlgorithm, ErrorCodes::BAD_ARGUMENTS,

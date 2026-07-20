@@ -1,0 +1,6 @@
+plan	1
+nullable int	1	1	9320
+all null intervals	0
+float nan inf	1	1	12447
+float strict	1	9334
+nullable float	1

@@ -240,10 +240,12 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
     if (!can_use_runtime_filter)
         return false;
 
-    /// When IEJoin takes this join (`ie_join` listed first in `join_algorithm` with a suitable
-    /// ON expression), it is not executed by a hash-family algorithm: a runtime filter cannot
-    /// be attached, and the algorithm list must not be pinned to hash-family ones below.
-    if (isIEJoinPreferred(join_operator, join_step->getJoinSettings()))
+    /// When a specialized inequality join takes this join (`ie_join`/`band_join` listed ahead
+    /// in `join_algorithm` with a suitable ON expression), it is not executed by a hash-family
+    /// algorithm: a runtime filter cannot be attached, and the algorithm list must not be
+    /// pinned to hash-family ones below.
+    if (isIEJoinPreferred(join_operator, join_step->getJoinSettings())
+        || isBandJoinPreferred(join_operator, join_step->getJoinSettings()))
         return false;
 
     /// Sometimes cross join can be represented by inner join without expressions

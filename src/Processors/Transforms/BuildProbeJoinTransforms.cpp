@@ -186,7 +186,14 @@ void JoinProbeSideTransform::work()
     {
         output_chunk = produceChunk();
         if (output_chunk)
-            ProfileEvents::increment(ProfileEvents::JoinResultRowCount, output_chunk->getNumRows());
+        {
+            /// A chunk with no rows and no infos is a pure yield (e.g. a work-budget pause):
+            /// nothing goes downstream, the next round calls produceChunk again.
+            if (!output_chunk->hasRows() && output_chunk->getChunkInfos().empty())
+                output_chunk.reset();
+            else
+                ProfileEvents::increment(ProfileEvents::JoinResultRowCount, output_chunk->getNumRows());
+        }
         else
             producing = false;
     }

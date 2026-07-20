@@ -1,0 +1,12 @@
+Int16	1	1
+UInt64	1	1
+Date	1	1
+DateTime	1
+Float64	1	1
+Decimal64	1
+String plan	1
+String	1	1
+LowCardinality(String)	1
+Int128	1
+mixed Int64/Int128	1	1
+Int32 vs Int64	1

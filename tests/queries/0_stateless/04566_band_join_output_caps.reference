@@ -1,0 +1,5 @@
+plan	1
+output larger than cap	51000	3799500	2524500
+one row over row cap	100000	4999950000	0	1099999
+fat rows over byte cap	180900	1809000000	99066200
+caps disabled	51000	3799500	2524500

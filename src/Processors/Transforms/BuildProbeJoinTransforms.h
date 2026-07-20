@@ -69,7 +69,9 @@ protected:
 
     /// The next output chunk for the last consumed chunk, or nullopt when it is exhausted
     /// and the transform needs more input. Called once per scheduling round, so a probe
-    /// producing many chunks observes cancellation between them.
+    /// producing many chunks observes cancellation between them. A returned chunk with no
+    /// rows and no chunk infos is a pure yield: nothing is pushed and the call repeats on
+    /// the next round (for work-budget pacing of long low-output scans).
     virtual std::optional<Chunk> produceChunk() = 0;
 
 private:

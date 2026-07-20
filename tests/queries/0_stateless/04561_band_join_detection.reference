@@ -1,0 +1,16 @@
+band shape	1
+point side line	1
+band count	2000
+strict brackets	1
+reversed spelling	1
+between	1
+non-band to iejoin	1	0
+same direction	1	0
+right orientation	1	0
+left kind	1	0
+ie_join first	1	0
+hash first, no equality	1
+hash first, equality	0
+band first, equality	1
+band first, equality parity	1
+not listed	0

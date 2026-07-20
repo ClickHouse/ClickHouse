@@ -1,0 +1,13 @@
+both empty	0
+empty intervals	0
+empty points	0
+small dense	1	3000
+single row match	1
+single row miss	0
+loose endpoints	2
+strict endpoints	0
+all equal loose	2500
+all equal strict	0
+inverted intervals	0
+shared interval column	1	1000
+extra inequality	1	1472

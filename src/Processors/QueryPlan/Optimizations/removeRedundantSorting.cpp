@@ -6,6 +6,7 @@
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/FractionalLimitStep.h>
 #include <Processors/QueryPlan/FractionalOffsetStep.h>
+#include <Processors/QueryPlan/BandJoinStep.h>
 #include <Processors/QueryPlan/IEJoinStep.h>
 #include <Processors/QueryPlan/ITransformingStep.h>
 #include <Processors/QueryPlan/JoinStep.h>
@@ -274,8 +275,9 @@ private:
                     return false;
             }
 
-            /// (3) IEJoin merges its pre-sorted inputs, its sortings are not redundant
-            if (typeid_cast<const IEJoinStep *>(step))
+            /// (3) IEJoin merges its pre-sorted inputs and band join binary-searches its
+            /// pre-sorted interval side, so their sortings are not redundant
+            if (typeid_cast<const IEJoinStep *>(step) || typeid_cast<const BandJoinStep *>(step))
                 return false;
         }
 

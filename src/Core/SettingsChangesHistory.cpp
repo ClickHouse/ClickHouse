@@ -86,7 +86,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"show_remote_databases_in_system_tables", true, true, "New setting to control whether `MySQL` and `PostgreSQL` databases are shown in `system.tables`, `system.columns` and `system.completions`."},
             {"use_constant_folding_in_index_analysis", false, false, "New setting to fold partition-level constants into the filter predicate per part during MergeTree index analysis, improving pruning for filters whose branches depend on partition values."},
             {"join_runtime_filter_size_from_hash_table_stats", false, true, "Use hash table size statistics collected from previous executions to size the JOIN runtime filter. When disabled, fall back to the fixed `join_runtime_bloom_filter_bytes`."},
-            {"join_algorithm", "direct,parallel_hash,hash", "direct,parallel_hash,hash", "New value 'ie_join' (not enabled by default): execute a JOIN with two inequality conditions in the ON section with the IEJoin algorithm (ALL INNER/LEFT/RIGHT/FULL and SEMI/ANTI LEFT/RIGHT kinds)."},
+            {"join_algorithm", "direct,parallel_hash,hash", "direct,parallel_hash,hash", "New values 'ie_join' and 'band_join' (not enabled by default): 'ie_join' executes a JOIN with two inequality conditions in the ON section with the IEJoin algorithm (ALL INNER/LEFT/RIGHT/FULL and SEMI/ANTI LEFT/RIGHT kinds); 'band_join' executes the band shape (one expression bracketed between two expressions of the other table) with a streaming operator that materializes only the interval side."},
         });
 
         addSettingsChanges(settings_changes_history, "26.6",
