@@ -98,21 +98,30 @@ bool statementIsReadOnly(const std::vector<Tok> & tokens)
     int depth = 0;
     /// Bracket depth at which the leading `WITH` sits; -1 until the leading keyword is seen.
     int with_depth = -1;
-    for (const Tok & t : tokens)
+    /// Whether the previous same-level token was `AS`, making the current bare word a CTE alias.
+    /// Cleared by any non-bare-word token: after `AS (subquery)` there is no bare-word alias.
+    bool alias_follows = false;
+    for (size_t i = 0; i < tokens.size(); ++i)
     {
+        const Tok & t = tokens[i];
         if (isOpeningBracket(t.type))
         {
+            alias_follows = false;
             ++depth;
             continue;
         }
         if (isClosingBracket(t.type))
         {
+            alias_follows = false;
             if (depth > 0)
                 --depth;
             continue;
         }
         if (t.type != DB::TokenType::BareWord)
+        {
+            alias_follows = false;
             continue;
+        }
         const std::string keyword = toUpper(t.text);
         if (with_depth < 0)
         {
@@ -124,9 +133,25 @@ bool statementIsReadOnly(const std::vector<Tok> & tokens)
             continue;
         }
         /// After the leading `WITH`: the real statement keyword sits at the CTE-list level; CTE
-        /// subqueries are nested deeper and are skipped, and CTE aliases / `AS` / `RECURSIVE` are
-        /// neither write nor read-only keywords, so they are skipped too.
+        /// subqueries are nested deeper and are skipped.
         if (depth != with_depth)
+            continue;
+        /// A bare word right after `AS` is the CTE alias of the `expr AS alias` form - skip it even
+        /// when it is keyword-shaped (with an explicit `AS`, the parser accepts any bare word as
+        /// the alias; only alias-without-`AS` rejects keywords).
+        if (alias_follows)
+        {
+            alias_follows = false;
+            continue;
+        }
+        if (keyword == "AS")
+        {
+            alias_follows = true;
+            continue;
+        }
+        /// A bare word immediately followed by `AS` is the CTE name of the `name AS (subquery)`
+        /// form - skip it too; a real statement keyword is never followed by `AS`.
+        if (i + 1 < tokens.size() && tokens[i + 1].type == DB::TokenType::BareWord && toUpper(tokens[i + 1].text) == "AS")
             continue;
         if (write_statement_keywords.contains(keyword))
             return false;
@@ -232,6 +257,25 @@ TEST(PlayQueryIsReadOnly, LeadingWithWriteIsNotReadOnly)
     EXPECT_FALSE(queryIsReadOnly("WITH 42 AS v INSERT INTO x SELECT v"));
     /// Whitespace and comments before the `WITH` do not matter.
     EXPECT_FALSE(queryIsReadOnly("  /* c */ WITH y AS (SELECT 1) INSERT INTO x SELECT * FROM y"));
+}
+
+TEST(PlayQueryIsReadOnly, KeywordAliasesInWithList)
+{
+    /// The reported bug: with an explicit `AS`, the alias may be ANY bare word, including a
+    /// reserved keyword (`ParserAlias` only rejects keyword aliases when `AS` is omitted). The
+    /// keyword-shaped alias must not be taken as the statement kind: the real kind here is the
+    /// `INSERT` that follows, so the statement is a write and must not be resubmitted or
+    /// parallelized.
+    EXPECT_FALSE(queryIsReadOnly("WITH 1 AS SELECT INSERT INTO t SELECT SELECT"));
+    EXPECT_FALSE(queryIsReadOnly("WITH 1 AS select INSERT INTO t SELECT select"));
+    EXPECT_FALSE(queryIsReadOnly("WITH 1 AS show, 2 AS explain INSERT INTO t SELECT show + explain"));
+    /// The same alias positions in a read-only statement stay read-only, including a write keyword
+    /// used as an alias.
+    EXPECT_TRUE(queryIsReadOnly("WITH 1 AS insert SELECT insert"));
+    EXPECT_TRUE(queryIsReadOnly("WITH 1 AS drop, 2 AS b SELECT drop + b"));
+    /// The `name AS (subquery)` form: the CTE name precedes `AS`, and may be keyword-shaped too.
+    EXPECT_FALSE(queryIsReadOnly("WITH select AS (SELECT 1) INSERT INTO t SELECT * FROM select"));
+    EXPECT_TRUE(queryIsReadOnly("WITH insert AS (SELECT 1) SELECT * FROM insert"));
 }
 
 TEST(PlayQueryIsReadOnly, SplitAllQueriesUsesStatementKind)

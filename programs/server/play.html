@@ -9690,6 +9690,13 @@ const WRITE_STATEMENT_KEYWORDS = new Set([
 /// level as ordinary identifiers or nested one level deeper). A write/DDL keyword there means the
 /// whole statement is a write; a read-only keyword means it is read-only.
 ///
+/// A CTE alias is NOT restricted to non-keyword words: with an explicit `AS`, the parser accepts any
+/// bare word as the alias (`ParserAlias` only rejects keyword aliases when `AS` is omitted), so
+/// `WITH 1 AS select INSERT INTO t ...` carries a keyword-shaped alias before the real statement
+/// keyword. Aliases are therefore skipped positionally, not by keyword set: the bare word right
+/// after a same-level `AS` (the `expr AS alias` form), and a bare word immediately followed by `AS`
+/// (the name in the `name AS (subquery)` form), are never taken as the statement kind.
+///
 /// Regression coverage lives in `src/Parsers/tests/gtest_play_query_is_read_only.cpp` (a port of the
 /// token-walking algorithm on top of the same `DB::Lexer`). Keep the two in sync.
 function statementIsReadOnly(tokens)
@@ -9698,10 +9705,14 @@ function statementIsReadOnly(tokens)
     /// Bracket depth at which the leading `WITH` sits (so the CTE list is scanned at the same level
     /// even when the whole statement is wrapped in parentheses); -1 until the leading keyword is seen.
     let with_depth = -1;
-    for (const t of tokens) {
-        if (OPENING_BRACKETS.has(t.type)) { ++depth; continue; }
-        if (CLOSING_BRACKETS.has(t.type)) { if (depth > 0) --depth; continue; }
-        if (t.type !== TT.BareWord) continue;
+    /// Whether the previous same-level token was `AS`, making the current bare word a CTE alias.
+    /// Cleared by any non-bare-word token: after `AS (subquery)` there is no bare-word alias.
+    let alias_follows = false;
+    for (let i = 0; i < tokens.length; ++i) {
+        const t = tokens[i];
+        if (OPENING_BRACKETS.has(t.type)) { alias_follows = false; ++depth; continue; }
+        if (CLOSING_BRACKETS.has(t.type)) { alias_follows = false; if (depth > 0) --depth; continue; }
+        if (t.type !== TT.BareWord) { alias_follows = false; continue; }
         const keyword = t.token.toUpperCase();
         if (with_depth < 0) {
             /// The first significant keyword (possibly wrapped in leading brackets). If it is not a
@@ -9711,9 +9722,16 @@ function statementIsReadOnly(tokens)
             continue;
         }
         /// After the leading `WITH`: the real statement keyword sits at the CTE-list level; CTE
-        /// subqueries are nested deeper and are skipped, and CTE aliases / `AS` / `RECURSIVE` are
-        /// neither write nor read-only keywords, so they are skipped too.
+        /// subqueries are nested deeper and are skipped.
         if (depth !== with_depth) continue;
+        /// A bare word right after `AS` is the CTE alias of the `expr AS alias` form - skip it even
+        /// when it is keyword-shaped.
+        if (alias_follows) { alias_follows = false; continue; }
+        if (keyword === 'AS') { alias_follows = true; continue; }
+        /// A bare word immediately followed by `AS` is the CTE name of the `name AS (subquery)`
+        /// form - skip it too; a real statement keyword is never followed by `AS`.
+        const next = tokens[i + 1];
+        if (next && next.type === TT.BareWord && next.token.toUpperCase() === 'AS') continue;
         if (WRITE_STATEMENT_KEYWORDS.has(keyword)) return false;
         if (PARALLELIZABLE_KEYWORDS.has(keyword)) return true;
     }
