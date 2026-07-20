@@ -2073,7 +2073,7 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
                 {
                     /// The column of the primary key was not loaded in memory - we'll skip it.
                     index_columns->emplace_back();
-                    reverse_flags.push_back(false);
+                    reverse_flags.push_back(!sorting_key.reverse_flags.empty() && sorting_key.reverse_flags[i]);
                 }
 
                 key_types.emplace_back(primary_key.data_types[i]);
@@ -2084,6 +2084,13 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
         index_left.resize(used_key_size);
         index_right.resize(used_key_size);
     }
+
+    /// The boundary tuples handed to `checkInRange` are the physical boundary tuples in key order: a
+    /// reverse (DESC) key column keeps its stored descending values, and `KeyCondition` itself maps its
+    /// key-order bounds to value bounds with the sides swapped. Pass the flags only when some analyzed
+    /// key column is reversed.
+    const bool has_reverse_key_columns = std::find(reverse_flags.begin(), reverse_flags.end(), true) != reverse_flags.end();
+    const std::vector<bool> * reverse_flags_ptr = has_reverse_key_columns ? &reverse_flags : nullptr;
 
     /// If there are no monotonic functions, there is no need to save block reference.
     /// Passing explicit field to FieldRef allows to optimize ranges and shows better performance.
@@ -2173,13 +2180,11 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
                     {
                         const size_t key_col = used_key_indices[sparse_pos];
 
-                        auto & left = reverse_flags[key_col] ? sparse_key_right[sparse_pos] : sparse_key_left[sparse_pos];
-                        auto & right = reverse_flags[key_col] ? sparse_key_left[sparse_pos] : sparse_key_right[sparse_pos];
+                        create_field_ref(range.begin, key_col, sparse_key_left[sparse_pos]);
 
-                        create_field_ref(range.begin, key_col, left);
-
-                        /// If reverse_flags[key_col] is true, the right points to sparse_key_left[sparse_pos].
-                        right = reverse_flags[key_col] ? NEGATIVE_INFINITY : POSITIVE_INFINITY;
+                        /// The end of the part is a virtual +inf in key order: the largest value for an
+                        /// ascending column and the smallest one for a reversed column.
+                        sparse_key_right[sparse_pos] = reverse_flags[key_col] ? NEGATIVE_INFINITY : POSITIVE_INFINITY;
                     }
                 }
                 else
@@ -2201,11 +2206,8 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
                     {
                         const size_t key_col = used_key_indices[sparse_pos];
 
-                        auto & left = reverse_flags[key_col] ? sparse_key_right[sparse_pos] : sparse_key_left[sparse_pos];
-                        auto & right = reverse_flags[key_col] ? sparse_key_left[sparse_pos] : sparse_key_right[sparse_pos];
-
-                        create_field_ref(range.begin, key_col, left);
-                        create_field_ref(range.end, key_col, right);
+                        create_field_ref(range.begin, key_col, sparse_key_left[sparse_pos]);
+                        create_field_ref(range.end, key_col, sparse_key_right[sparse_pos]);
                     }
                 }
 
@@ -2216,47 +2218,46 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
                     sparse_key_types,
                     equal_boundaries_mask,
                     initial_mask,
-                    &index_bounds);
+                    &index_bounds,
+                    reverse_flags_ptr);
             }
 
             if (range.end == marks_count)
             {
                 for (size_t i = 0; i < used_key_size; ++i)
                 {
-                    auto & left = reverse_flags[i] ? index_right[i] : index_left[i];
-                    auto & right = reverse_flags[i] ? index_left[i] : index_right[i];
                     if ((*index_columns)[i].column)
-                        create_field_ref(range.begin, i, left);
+                        create_field_ref(range.begin, i, index_left[i]);
                     else
-                        /// If reverse_flags[i] is true, the left points to index_right[i].
-                        left = reverse_flags[i] ? POSITIVE_INFINITY : NEGATIVE_INFINITY;
+                        /// Unknown boundary of an unloaded column: unbounded from below in key order,
+                        /// which is the smallest value for an ascending column and the largest one for
+                        /// a reversed column.
+                        index_left[i] = reverse_flags[i] ? POSITIVE_INFINITY : NEGATIVE_INFINITY;
 
-                    /// If reverse_flags[i] is true, the right points to index_left[i].
-                    right = reverse_flags[i] ? NEGATIVE_INFINITY : POSITIVE_INFINITY;
+                    /// The end of the part is a virtual +inf in key order: the largest value for an
+                    /// ascending column and the smallest one for a reversed column.
+                    index_right[i] = reverse_flags[i] ? NEGATIVE_INFINITY : POSITIVE_INFINITY;
                 }
             }
             else
             {
                 for (size_t i = 0; i < used_key_size; ++i)
                 {
-                    auto & left = reverse_flags[i] ? index_right[i] : index_left[i];
-                    auto & right = reverse_flags[i] ? index_left[i] : index_right[i];
                     if ((*index_columns)[i].column)
                     {
-                        create_field_ref(range.begin, i, left);
-                        create_field_ref(range.end, i, right);
+                        create_field_ref(range.begin, i, index_left[i]);
+                        create_field_ref(range.end, i, index_right[i]);
                     }
                     else
                     {
-                        /// If reverse_flags[i] is true, the left points to index_right[i].
-                        left = reverse_flags[i] ? POSITIVE_INFINITY : NEGATIVE_INFINITY;
-
-                        /// If reverse_flags[i] is true, the right points to index_left[i].
-                        right = reverse_flags[i] ? NEGATIVE_INFINITY : POSITIVE_INFINITY;
+                        /// Unknown boundaries of an unloaded column: the whole universe in key order.
+                        index_left[i] = reverse_flags[i] ? POSITIVE_INFINITY : NEGATIVE_INFINITY;
+                        index_right[i] = reverse_flags[i] ? NEGATIVE_INFINITY : POSITIVE_INFINITY;
                     }
                 }
             }
-            return key_condition.checkInRange(used_key_size, index_left.data(), index_right.data(), key_types, initial_mask, &index_bounds);
+            return key_condition.checkInRange(
+                used_key_size, index_left.data(), index_right.data(), key_types, initial_mask, &index_bounds, reverse_flags_ptr);
         };
 
         auto check_part_offset_condition = [&]()

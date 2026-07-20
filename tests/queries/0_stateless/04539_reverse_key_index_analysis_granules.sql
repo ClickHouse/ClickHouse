@@ -6,6 +6,8 @@
 -- of the `org_m` slice; the threshold below leaves generous slack and only catches selecting
 -- (almost) the whole slice.
 
+SET explain_query_plan_default = 'legacy';
+
 DROP TABLE IF EXISTS t_reverse_key_granules;
 
 CREATE TABLE t_reverse_key_granules (org String, dt DateTime, id UInt64)

@@ -130,18 +130,24 @@ public:
 
     /// Whether the condition and its negation are (independently) feasible in the key range.
     /// left_key and right_key must contain all fields in the sort_descr in the appropriate order.
+    /// They are the physical boundary tuples in key order: a reverse (DESC) key column keeps its
+    /// stored descending values, the caller must not swap its boundaries per column.
     /// data_types - the types of the key columns.
     /// Argument initial_mask is used for early exiting the implementation when we do not care about
     /// one of the resulting mask components (see BoolMask::consider_only_can_be_XXX).
     /// key_bounds - optional per-column bounds the key values are known to lie within (e.g. the part's
     /// partition minmax). A key without a bound defaults to (-inf, +inf).
+    /// reverse_flags - optional per-column flags marking reverse (DESC) key columns: such a column
+    /// stores values in descending order, so its key-order bounds map to value bounds with the sides
+    /// swapped. When null, all key columns are ascending.
     BoolMask checkInRange(
         size_t key_size,
         const FieldRef * left_keys,
         const FieldRef * right_keys,
         const DataTypes & data_types,
         BoolMask initial_mask = BoolMask(false, false),
-        const Hyperrectangle * key_bounds = nullptr) const;
+        const Hyperrectangle * key_bounds = nullptr,
+        const std::vector<bool> * reverse_flags = nullptr) const;
 
     /// Optimized overload. Instead of all/prefix of key columns, any subsequence of key column information (in order) can be given.
     /// However, `equal_boundaries_mask` must have the information about all/prefix keys. `equal_boundaries_mask` specifies whether ith key's
@@ -159,6 +165,8 @@ public:
     /// present in the in-memory index but bounded by the part's partition minmax). Such columns are constant
     /// coordinates: their range is `(*key_bounds)[key_index]` for the whole call, they do not participate in
     /// the hyperrectangle enumeration, and their entries in `sparse_left_keys`/`sparse_right_keys` are ignored.
+    /// `reverse_flags` - optional flags marking reverse (DESC) key columns, indexed by full key column
+    /// position and covering at least the prefix of `equal_boundaries_mask`. See the non-sparse overload.
     BoolMask checkInRange(
         const std::vector<size_t> & sparse_key_indices,
         const FieldRef * sparse_left_keys,
@@ -166,7 +174,8 @@ public:
         const DataTypes & sparse_data_types,
         const std::vector<UInt8> & equal_boundaries_mask,
         BoolMask initial_mask,
-        const Hyperrectangle * key_bounds = nullptr) const;
+        const Hyperrectangle * key_bounds = nullptr,
+        const std::vector<bool> * reverse_flags = nullptr) const;
 
     /// Same as checkInRange, but calculate only may_be_true component of a result.
     /// This is more efficient than checkInRange(...).can_be_true.
