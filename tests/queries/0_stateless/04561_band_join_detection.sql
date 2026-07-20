@@ -17,8 +17,8 @@ CREATE TABLE det_i (id Int32, lo Int64, hi Int64) ENGINE = MergeTree ORDER BY id
 INSERT INTO det_p SELECT number, number % 20 FROM numbers(100);
 INSERT INTO det_i SELECT number, number % 15, number % 15 + 3 FROM numbers(100);
 
--- Keep the written join order: the band join detects only the point-side-on-the-left
--- orientation for now, so a planner swap would silently change the executed algorithm.
+-- Keep the written join order so the EXPLAIN pins below see the orientation as written
+-- instead of whatever the join order optimizer prefers.
 SET query_plan_optimize_join_order_limit = 0;
 SET join_algorithm = 'band_join,ie_join,hash';
 
@@ -39,8 +39,8 @@ FROM (EXPLAIN SELECT count() FROM det_p p JOIN det_i i ON p.t < i.lo AND p.id > 
 SELECT 'same direction', countIf(explain LIKE '%IEJoin%') > 0, countIf(explain LIKE '%BandJoin%')
 FROM (EXPLAIN SELECT count() FROM det_p p JOIN det_i i ON p.t >= i.lo AND p.t >= i.hi);
 
--- The point side on the right is out of scope for now and falls through to IEJoin
-SELECT 'right orientation', countIf(explain LIKE '%IEJoin%') > 0, countIf(explain LIKE '%BandJoin%')
+-- The point side on the right is executed as the swapped mirror (details in 04569)
+SELECT 'right orientation', countIf(explain LIKE '%BandJoin%') > 0
 FROM (EXPLAIN SELECT count() FROM det_i i JOIN det_p p ON p.t >= i.lo AND p.t <= i.hi);
 
 -- Non-INNER kinds are out of scope for now and fall through to IEJoin

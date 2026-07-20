@@ -10,7 +10,9 @@ namespace DB
 /// Joins two data streams by the band shape `point {>,>=} lo AND point {<,<=} hi`, where the
 /// point expression comes from one table and both bounds from the other. Only the interval
 /// side is materialized (pre-sorted by `lo` at plan level); the point side streams and probes
-/// a shared read-only index in parallel. The point side is the query's left table.
+/// a shared read-only index in parallel. The point side may be either query input: when it is
+/// the right one, the step swaps the input pipelines so the point side probes and restores the
+/// query column order on top of the join (`Swapped: true` in EXPLAIN).
 class BandJoinStep : public IQueryPlanStep
 {
 public:
@@ -20,12 +22,13 @@ public:
         BandJoinConditions conditions_,
         JoinKind kind_,
         JoinStrictness strictness_,
+        bool point_side_is_right_,
         const SizeLimits & size_limits_,
         size_t max_joined_block_rows_,
         size_t max_joined_block_bytes_);
 
-    /// Whether the step can execute this join type.
-    static bool isSupportedJoinType(JoinKind kind, JoinStrictness strictness);
+    /// Whether the step can execute this join type with the point expression on that side.
+    static bool isSupportedJoinType(JoinKind kind, JoinStrictness strictness, bool point_side_is_right);
 
     String getName() const override { return "BandJoin"; }
 
@@ -41,11 +44,14 @@ private:
 
     String formatConditions() const;
 
-    /// The two bounds with the point side's positions in the left header and the interval
-    /// side's in the right one; [0] is the lower bound, [1] the upper.
+    /// The two bounds with the positions resolved against the point-side and interval-side
+    /// headers; [0] is the lower bound, [1] the upper.
     BandJoinConditions conditions;
 
     BandJoinKind kind = BandJoinKind::Inner;
+    /// Whether to swap the input pipelines so the point side probes; set when the point
+    /// expression comes from the query's right table.
+    bool swap_inputs = false;
 
     /// Limits on the materialized interval side, from `max_rows_in_join` / `max_bytes_in_join`.
     SizeLimits size_limits;

@@ -5,8 +5,8 @@
 -- mixed band whose lower bound is encoded while the upper one is generic. Every case is
 -- verified against the cross-join oracle and byte-for-byte against `ie_join`.
 
--- Keep the written join order: the band join detects only the point-side-on-the-left
--- orientation for now, so a planner swap would silently change the executed algorithm.
+-- Keep the written join order so the checks below exercise the orientation as written
+-- instead of whatever the join order optimizer prefers.
 SET query_plan_optimize_join_order_limit = 0;
 SET join_algorithm = 'band_join,hash';
 SET cross_to_inner_join_rewrite = 0;

@@ -943,14 +943,15 @@ static std::optional<IEJoinPlanDescription> tryExtractIEJoinDescription(
 
 /// The band shape extracted from the JOIN ON expression: one point-side expression bracketed
 /// from below and above by two interval-side expressions. Key names refer to the outputs of
-/// the pre-join actions; [0] is the lower bound, [1] the upper one, with the operators
-/// normalized to the `point op bound` orientation. The point side is the query's left table
-/// (the swapped orientation is not detected yet).
+/// the pre-join actions of the respective query side; [0] is the lower bound, [1] the upper
+/// one, with the operators normalized to the `point op bound` orientation. The point side may
+/// be either query input.
 struct BandJoinPlanDescription
 {
-    Names key_names_left;
-    Names key_names_right;
+    Names point_key_names;
+    Names interval_key_names;
     std::array<JoinConditionOperator, 2> operators = {};
+    bool point_side_is_right = false;
 };
 
 static bool isLowerBoundOperator(JoinConditionOperator op)
@@ -960,9 +961,10 @@ static bool isLowerBoundOperator(JoinConditionOperator op)
 
 /// Try to interpret the JOIN ON expression as a band: two inequality conditions whose
 /// point-side keys are the same expression, bracketing it in opposite directions
-/// (`t {>,>=} lo AND t {<,<=} hi`). Consumption of the conditions and the handling of the
-/// extra conjuncts follow tryExtractIEJoinDescription; only ALL INNER is in scope, so the
-/// extra conjuncts always become a filter over the join result.
+/// (`t {>,>=} lo AND t {<,<=} hi`). The shared expression may come from either table.
+/// Consumption of the conditions and the handling of the extra conjuncts follow
+/// tryExtractIEJoinDescription; only ALL INNER is in scope, so the extra conjuncts always
+/// become a filter over the join result.
 static std::optional<BandJoinPlanDescription> tryExtractBandJoinDescription(
     std::vector<JoinActionRef> & join_expression,
     const JoinOperator & join_operator,
@@ -970,7 +972,9 @@ static std::optional<BandJoinPlanDescription> tryExtractBandJoinDescription(
     const JoinSettings & join_settings,
     const JoinPlanningContext & planning_context)
 {
-    if (!BandJoinStep::isSupportedJoinType(join_operator.kind, join_operator.strictness))
+    bool point_left_supported = BandJoinStep::isSupportedJoinType(join_operator.kind, join_operator.strictness, /*point_side_is_right=*/ false);
+    bool point_right_supported = BandJoinStep::isSupportedJoinType(join_operator.kind, join_operator.strictness, /*point_side_is_right=*/ true);
+    if (!point_left_supported && !point_right_supported)
         return {};
 
     if (planning_context.is_storage_join)
@@ -989,18 +993,31 @@ static std::optional<BandJoinPlanDescription> tryExtractBandJoinDescription(
 
     /// The first pair (in expression order) whose point-side keys are the same expression
     /// (the same DAG node, before the common-type casts) and whose operators bracket in
-    /// opposite directions; which pair to choose is a planner degree of freedom.
+    /// opposite directions, trying the left point side first; which pair and orientation to
+    /// choose is a planner degree of freedom. The conditions are normalized to `lhs op rhs`
+    /// with lhs from the left table, so a shared rhs means the point side is the right one and
+    /// the bound roles read from the reversed operators.
     std::optional<std::pair<size_t, size_t>> chosen;
+    bool point_side_is_right = false;
     for (size_t j = 1; j < candidates.size() && !chosen; ++j)
     {
         for (size_t i = 0; i < j && !chosen; ++i)
         {
-            const auto & lhs_i = std::get<1>(candidates[i]);
-            const auto & lhs_j = std::get<1>(candidates[j]);
-            bool i_is_lower = isLowerBoundOperator(std::get<0>(candidates[i]));
-            bool j_is_lower = isLowerBoundOperator(std::get<0>(candidates[j]));
-            if (lhs_i.getNode() == lhs_j.getNode() && i_is_lower != j_is_lower)
-                chosen = i_is_lower ? std::make_pair(i, j) : std::make_pair(j, i);
+            for (bool on_right : {false, true})
+            {
+                if (!(on_right ? point_right_supported : point_left_supported))
+                    continue;
+                const auto * key_i = on_right ? std::get<2>(candidates[i]).getNode() : std::get<1>(candidates[i]).getNode();
+                const auto * key_j = on_right ? std::get<2>(candidates[j]).getNode() : std::get<1>(candidates[j]).getNode();
+                bool i_is_lower = isLowerBoundOperator(std::get<0>(candidates[i])) != on_right;
+                bool j_is_lower = isLowerBoundOperator(std::get<0>(candidates[j])) != on_right;
+                if (key_i == key_j && i_is_lower != j_is_lower)
+                {
+                    chosen = i_is_lower ? std::make_pair(i, j) : std::make_pair(j, i);
+                    point_side_is_right = on_right;
+                    break;
+                }
+            }
         }
     }
     if (!chosen)
@@ -1008,14 +1025,15 @@ static std::optional<BandJoinPlanDescription> tryExtractBandJoinDescription(
 
     /// Both bounds are validated, commit: mutate the DAG.
     BandJoinPlanDescription description;
+    description.point_side_is_right = point_side_is_right;
     for (size_t bound = 0; bound < 2; ++bound)
     {
         auto & [predicate_op, lhs, rhs] = candidates[bound == 0 ? chosen->first : chosen->second];
         predicateOperandsToCommonType(lhs, rhs, join_settings, planning_context);
 
-        description.operators[bound] = predicate_op;
-        description.key_names_left.push_back(lhs.getColumnName());
-        description.key_names_right.push_back(rhs.getColumnName());
+        description.operators[bound] = point_side_is_right ? reverseInequalityOperator(predicate_op) : predicate_op;
+        description.point_key_names.push_back((point_side_is_right ? rhs : lhs).getColumnName());
+        description.interval_key_names.push_back((point_side_is_right ? lhs : rhs).getColumnName());
 
         used_expressions.push_back(lhs);
         used_expressions.push_back(rhs);
@@ -1069,23 +1087,32 @@ bool isBandJoinPreferred(const JoinOperator & join_operator, const JoinSettings 
     if (!isInSpecializedJoinAlgorithmPrefix(join_settings.join_algorithms, JoinAlgorithm::BAND_JOIN))
         return false;
 
-    if (!BandJoinStep::isSupportedJoinType(join_operator.kind, join_operator.strictness))
+    bool point_left_supported = BandJoinStep::isSupportedJoinType(join_operator.kind, join_operator.strictness, /*point_side_is_right=*/ false);
+    bool point_right_supported = BandJoinStep::isSupportedJoinType(join_operator.kind, join_operator.strictness, /*point_side_is_right=*/ true);
+    if (!point_left_supported && !point_right_supported)
         return false;
 
-    /// Two inequality conditions bracketing the same left-side expression in opposite
-    /// directions (the cheap shape check; the conversion re-checks in full).
-    std::vector<std::pair<const ActionsDAG::Node *, bool>> found;
+    /// Two inequality conditions bracketing the same expression of either table in opposite
+    /// directions (the cheap shape check; the conversion re-checks in full). Opposite bracket
+    /// directions mean the same operator-direction mismatch in both orientations, so one flag
+    /// per condition covers both.
+    std::vector<std::tuple<const ActionsDAG::Node *, const ActionsDAG::Node *, bool>> found;
     for (const auto & condition : join_operator.expression)
     {
         auto inequality = tryGetInequalityBetweenTables(condition);
         if (!inequality)
             continue;
-        const auto * point_node = std::get<1>(*inequality).getNode();
+        const auto * left_node = std::get<1>(*inequality).getNode();
+        const auto * right_node = std::get<2>(*inequality).getNode();
         bool is_lower = isLowerBoundOperator(std::get<0>(*inequality));
-        for (const auto & [other_node, other_is_lower] : found)
-            if (other_node == point_node && other_is_lower != is_lower)
+        for (const auto & [other_left, other_right, other_is_lower] : found)
+        {
+            if (other_is_lower == is_lower)
+                continue;
+            if ((point_left_supported && other_left == left_node) || (point_right_supported && other_right == right_node))
                 return true;
-        found.emplace_back(point_node, is_lower);
+        }
+        found.emplace_back(left_node, right_node, is_lower);
     }
     return false;
 }
@@ -1461,29 +1488,34 @@ static void constructBandJoinStep(
     /// ascending with NULLS LAST, which lets `optimizeReadInOrder` relax or elide it when the
     /// table is already ordered by the key.
     {
+        QueryPlan::Node *& interval_node = description.point_side_is_right ? join_left_node : join_right_node;
+        JoinTableSide interval_side = description.point_side_is_right ? JoinTableSide::Left : JoinTableSide::Right;
+
         SortDescription sort_description;
-        sort_description.emplace_back(description.key_names_right[0]);
+        sort_description.emplace_back(description.interval_key_names[0]);
 
         auto sorting_step = std::make_unique<SortingStep>(
-            join_right_node->step->getOutputHeader(), std::move(sort_description), 0 /*limit*/, sort_settings, true /*is_sorting_for_merge_join*/);
-        sorting_step->setStepDescription(fmt::format("Sort {} before JOIN", JoinTableSide::Right), max_step_description_length);
-        join_right_node = &nodes.emplace_back(QueryPlan::Node{std::move(sorting_step), {join_right_node}});
+            interval_node->step->getOutputHeader(), std::move(sort_description), 0 /*limit*/, sort_settings, true /*is_sorting_for_merge_join*/);
+        sorting_step->setStepDescription(fmt::format("Sort {} before JOIN", interval_side), max_step_description_length);
+        interval_node = &nodes.emplace_back(QueryPlan::Node{std::move(sorting_step), {interval_node}});
     }
 
     const auto & left_header = join_left_node->step->getOutputHeader();
     const auto & right_header = join_right_node->step->getOutputHeader();
+    const auto & point_header = description.point_side_is_right ? right_header : left_header;
+    const auto & interval_header = description.point_side_is_right ? left_header : right_header;
 
     BandJoinConditions conditions;
     for (size_t i = 0; i < 2; ++i)
     {
         conditions[i].op = description.operators[i];
-        conditions[i].point_key_position = left_header->getPositionByName(description.key_names_left[i]);
-        conditions[i].interval_key_position = right_header->getPositionByName(description.key_names_right[i]);
+        conditions[i].point_key_position = point_header->getPositionByName(description.point_key_names[i]);
+        conditions[i].interval_key_position = interval_header->getPositionByName(description.interval_key_names[i]);
     }
 
     SizeLimits size_limits(join_settings.max_rows_in_join, join_settings.max_bytes_in_join, join_settings.join_overflow_mode);
     node.step = std::make_unique<BandJoinStep>(
-        left_header, right_header, conditions, kind, strictness, size_limits,
+        left_header, right_header, conditions, kind, strictness, description.point_side_is_right, size_limits,
         join_settings.max_joined_block_size_rows, join_settings.max_joined_block_size_bytes);
 
     node.children = {join_left_node, join_right_node};
