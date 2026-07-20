@@ -7735,19 +7735,25 @@ async function saveHistory(stateData, titleForDoc) {
         /// query's placeholder into the entry (see the header comment). `run=1` is dropped below
         /// anyway, since the query diverged.
         ///
-        /// The derivation awaits tokenization, and the user may keep typing meanwhile (a cold-page
+        /// The derivation awaits tokenization, and the user may keep editing meanwhile (a cold-page
         /// lexer load / large draft is enough), while `writeHistoryEntry` below serializes the
         /// THEN-current `tab.query` — so params derived from the draft as it was when the await
         /// started could be recorded under a newer draft's text (e.g. `#SELECT {z:Int32}` with
-        /// `params={y:''}`). Re-derive until the draft is stable, so the recorded parameters always
-        /// belong to the query text the entry carries.
+        /// `params={y:''}`). The same applies to the draft's PARAMETER values: a trusted param edit
+        /// during the await updates `tab.params` (and the live input), but the derivation already
+        /// snapshotted the inputs when it started, so committing its result would silently revert
+        /// the newer binding in `tab.params` and the entry. Re-derive until BOTH the draft text and
+        /// its parameter values are stable, so the recorded parameters always belong to — and carry
+        /// the newest values for — the query text the entry carries.
         let draft_query;
         let draft_params;
+        let params_at_derivation;
         do
         {
             draft_query = tab.query;
+            params_at_derivation = { ...tab.params };
             draft_params = await paramValuesForQuery(draft_query);
-        } while (tab.query !== draft_query);
+        } while (tab.query !== draft_query || !sameParams(tab.params, params_at_derivation));
         tab.params = draft_params;
     }
     else

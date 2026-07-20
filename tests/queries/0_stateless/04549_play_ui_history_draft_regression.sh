@@ -1539,6 +1539,42 @@ async function reload()
     assert_eq("second edit during delayed completion: the completed run's result is still kept", active().result && active().result.query, 'SELECT 1');
     sandbox.tokenize = async () => [];
 
+    /// A trusted PARAM edit while `saveHistory`'s diverged-branch derivation is still awaiting the
+    /// draft's tokenization. `paramValuesForQuery` snapshots the live inputs when the derivation
+    /// starts, so a binding edited during the await must trigger a re-derivation — the branch
+    /// re-derives until the draft text AND its parameter values are stable — or the stale snapshot
+    /// would be committed back into `tab.params` and the entry, silently reverting the newer value.
+    /// Launch `SELECT {x:Int32}`, edit to `SELECT {y:Int32}` (its rebuild landed, y=2) mid-flight,
+    /// complete the run with the diverged-branch tokenization hung, change y to 9 while it is
+    /// pending, then release the derivations.
+    reset();
+    const paramEditRun = startRun('SELECT {x:Int32}');
+    type('SELECT {y:Int32}');                      /// mid-flight edit: a diverged draft
+    sandbox.param_inputs = { y: '2' };             /// the edit's `updateQueryParams` rebuild HAS landed
+    sandbox.currentQueryParams = [{ name: 'y', type: 'String' }];
+    active().params = { y: '2' };
+    const pendingParamEditTokenize = [];
+    sandbox.tokenize = () => new Promise(resolve =>
+        pendingParamEditTokenize.push(() => resolve(draftTokens('y'))));
+    const paramEditFinishPromise = finishRun(paramEditRun);
+    await drain();                                 /// `saveHistory` is now awaiting the draft's tokenize
+    setParam('y', '9');                            /// the user edits the binding while that await is pending
+    pendingParamEditTokenize.shift()();            /// first derivation resolves against the OLD snapshot
+    await drain();                                 /// the branch sees the newer binding and re-derives
+    /// A regressed query-only stability check queues no second tokenize; guard the release so it
+    /// fails on the assertions below (a reverted `{y:'2'}`) rather than a TypeError.
+    if (pendingParamEditTokenize.length) { pendingParamEditTokenize.shift()(); }
+    await drain();
+    await paramEditFinishPromise;
+    await drain();
+    assert_params('param edit during draft derivation: the newer binding survives in the tab', active().params, { y: '9' });
+    assert_eq('param edit during draft derivation: the live input keeps the newer value', sandbox.param_inputs.y, '9');
+    assert_eq('param edit during draft derivation: the stale binding does not reach the URL', sandbox.history.stack[sandbox.history.idx].url.includes('param_y=2'), false);
+    assert_eq('param edit during draft derivation: the entry drops run=1', sandbox.history.stack[sandbox.history.idx].url.includes('run=1'), false);
+    assert_eq("param edit during draft derivation: the completed run's result is still kept", active().result && active().result.query, 'SELECT {x:Int32}');
+    sandbox.tokenize = async () => [];
+    sandbox.currentQueryParams = [];
+
     /// Reload after a preserved-draft Back/Forward round-trip. The debounced save persists the
     /// draft (query != lastSavedQuery, the shape reconcileStartup treats as a stale reload), so
     /// the reload restores the draft as editor text — but the stale-reload branch drops the URL's

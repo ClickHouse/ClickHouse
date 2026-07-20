@@ -108,6 +108,11 @@ second edit during delayed completion: the entry carries the latest draft's own 
 second edit during delayed completion: the first draft param does not leak into the URL
 second edit during delayed completion: the entry drops run=1
 second edit during delayed completion: the completed run's result is still kept
+param edit during draft derivation: the newer binding survives in the tab
+param edit during draft derivation: the live input keeps the newer value
+param edit during draft derivation: the stale binding does not reach the URL
+param edit during draft derivation: the entry drops run=1
+param edit during draft derivation: the completed run's result is still kept
 reload after a preserved draft: the draft is restored as editor text
 reload after a preserved draft: the draft is not auto-run
 stale reload then rerun: the draft is restored unrun first
