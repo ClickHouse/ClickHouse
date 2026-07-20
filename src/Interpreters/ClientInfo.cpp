@@ -155,6 +155,9 @@ std::optional<Poco::Net::SocketAddress> ClientInfo::getLastForwardedFor() const
     if (forwarded_for.empty())
         return {};
 
+    if (last_forwarded_for_cache && last_forwarded_for_cache->source == forwarded_for)
+        return last_forwarded_for_cache->address;
+
     String last = forwarded_for.substr(forwarded_for.find_last_of(',') + 1);
     boost::trim(last);
 
@@ -173,6 +176,8 @@ std::optional<Poco::Net::SocketAddress> ClientInfo::getLastForwardedFor() const
                 address.emplace(ip, 0);
         }
     }
+
+    last_forwarded_for_cache.emplace(ForwardedForCache{forwarded_for, address});
 
     if (!address)
         LOG_WARNING(getLogger("ClientInfo"), "Invalid address in `X-Forwarded-For` HTTP header: '{}'", last);

@@ -54,8 +54,8 @@ ${CLICKHOUSE_CLIENT} --query "
 # The warning is written asynchronously after the HTTP response is sent, so retry until it appears.
 for _ in {1..60}; do
     ${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS text_log"
-    warning_found=$(${CLICKHOUSE_CLIENT} --query "
-        SELECT count() > 0
+    warning_count=$(${CLICKHOUSE_CLIENT} --query "
+        SELECT count()
         FROM system.text_log
         WHERE event_time_microseconds >= toDateTime64('${log_start_time}', 6)
             AND logger_name = 'ClientInfo'
@@ -66,8 +66,8 @@ for _ in {1..60}; do
         SETTINGS max_rows_to_read = 0
         FORMAT TSV
     ")
-    [ "${warning_found}" = "1" ] && break
+    [ "${warning_count}" -gt 0 ] && break
     sleep 0.5
 done
 
-echo "${warning_found}"
+echo "${warning_count}"

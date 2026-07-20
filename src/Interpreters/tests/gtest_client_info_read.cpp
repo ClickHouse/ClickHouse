@@ -8,6 +8,7 @@
 #include <Poco/AutoPtr.h>
 #include <Poco/Net/SocketAddress.h>
 #include <Poco/StreamChannel.h>
+#include <fmt/format.h>
 #include <gtest/gtest.h>
 
 #include <sstream>
@@ -298,7 +299,7 @@ TEST(ClientInfoForwardedFor, RejectsNonNumericAndMalformedAddresses)
     EXPECT_EQ(hostname.getLastForwardedForHost(), "");
 }
 
-TEST(ClientInfoForwardedFor, LogsRejectedAddressAtWarning)
+TEST(ClientInfoForwardedFor, LogsEachRejectedAddressOnlyOnce)
 {
     std::ostringstream log_output; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
     auto stream_channel = Poco::AutoPtr<Poco::StreamChannel>(new Poco::StreamChannel(log_output));
@@ -310,8 +311,20 @@ TEST(ClientInfoForwardedFor, LogsRejectedAddressAtWarning)
     ClientInfo info;
     info.forwarded_for = "attacker.example";
     EXPECT_FALSE(info.getLastForwardedFor());
+    EXPECT_EQ(info.getLastForwardedForHost(), "");
+    EXPECT_FALSE(info.getLastForwardedFor());
 
-    EXPECT_NE(
-        log_output.str().find("Invalid address in `X-Forwarded-For` HTTP header: 'attacker.example'"),
-        std::string::npos);
+    /// Replacing the public raw field must invalidate the cached parse result.
+    info.forwarded_for = "second-attacker.example";
+    EXPECT_FALSE(info.getLastForwardedFor());
+    EXPECT_EQ(info.getLastForwardedForHost(), "");
+
+    const String log_text = log_output.str();
+    for (const String & rejected : {"attacker.example", "second-attacker.example"})
+    {
+        const String message = fmt::format("Invalid address in `X-Forwarded-For` HTTP header: '{}'", rejected);
+        const auto first_position = log_text.find(message);
+        ASSERT_NE(first_position, std::string::npos);
+        EXPECT_EQ(log_text.find(message, first_position + message.size()), std::string::npos);
+    }
 }
