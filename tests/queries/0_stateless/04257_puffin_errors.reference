@@ -22,6 +22,8 @@ property 'cardinality' must be an unsigned integer
 property 'cardinality' must be an unsigned integer
 --- inflated_lz4_content_size.puffin ---
 Puffin footer LZ4 content size
+--- lz4_content_size_over_absolute_cap.puffin ---
+absolute decompression limit
 --- missing_lz4_content_size.puffin ---
 Puffin footer LZ4 frame must declare content size
 --- lz4_trailing_bytes.puffin ---

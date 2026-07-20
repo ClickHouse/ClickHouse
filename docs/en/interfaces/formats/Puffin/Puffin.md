@@ -19,6 +19,8 @@ Fixed output columns:
 
 Deletion vectors whose declared `cardinality` exceeds an absolute materialization ceiling are rejected.
 
+LZ4-compressed puffin footers are supported. Declared decompressed footer size is bounded by a compression ratio and an absolute ceiling; oversized frames are rejected before allocation.
+
 Only a subset of output columns can be requested. A user-provided structure with unexpected column names or types is rejected when the format is created.
 
 ## Example usage {#example-usage}

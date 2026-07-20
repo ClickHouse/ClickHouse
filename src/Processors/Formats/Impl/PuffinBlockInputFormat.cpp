@@ -47,6 +47,9 @@ constexpr UInt8 PUFFIN_MAGIC[4] = {0x50, 0x46, 0x41, 0x31};
 constexpr UInt8 PUFFIN_FOOTER_COMPRESSED_FLAG = 0x01;
 constexpr size_t PUFFIN_FOOTER_TRAILER_SIZE = 12;
 constexpr size_t PUFFIN_FOOTER_LZ4_MAX_RATIO = 255;
+/// Absolute cap on declared LZ4 footer content size. The ratio guard alone still allows
+/// a few-MiB compressed payload to request ~GiB allocations via a forged contentSize.
+constexpr size_t PUFFIN_FOOTER_LZ4_MAX_DECOMPRESSED_SIZE = 16 * 1024 * 1024;
 /// Absolute cap on materialized deleted positions (~800 MiB of UInt64s at this limit).
 constexpr UInt64 PUFFIN_DV_MAX_MATERIALIZED_POSITIONS = 100'000'000;
 constexpr UInt8 DELETION_VECTOR_MAGIC[4] = {0xD1, 0xD3, 0x39, 0x64};
@@ -135,6 +138,13 @@ String decompressPuffinFooterPayload(const char * data, size_t size)
             "Puffin footer LZ4 content size {} exceeds decompression limit {}",
             frame_info.contentSize,
             max_decompressed_size);
+
+    if (frame_info.contentSize > PUFFIN_FOOTER_LZ4_MAX_DECOMPRESSED_SIZE)
+        throw Exception(
+            ErrorCodes::LZ4_DECODER_FAILED,
+            "Puffin footer LZ4 content size {} exceeds absolute decompression limit {}",
+            frame_info.contentSize,
+            PUFFIN_FOOTER_LZ4_MAX_DECOMPRESSED_SIZE);
 
     String result;
     result.resize(static_cast<size_t>(frame_info.contentSize));
@@ -892,7 +902,7 @@ Fixed output columns:
 - `compression_codec` (`String`) - compression codec of the blob payload, if present
 - `properties` (`Map(String, String)`) - blob-specific properties
 
-LZ4-compressed puffin footers are supported.
+LZ4-compressed puffin footers are supported. Declared decompressed footer size is bounded by a compression ratio and an absolute ceiling; oversized frames are rejected before allocation.
 
 ## Example usage {#example-usage}
 
@@ -929,6 +939,8 @@ Fixed output columns:
 - `deleted_rows` (`Array(UInt64)`) - 64-bit row positions deleted according to the deletion vector roaring bitmap
 
 Deletion vectors whose declared `cardinality` exceeds an absolute materialization ceiling are rejected.
+
+LZ4-compressed puffin footers are supported. Declared decompressed footer size is bounded by a compression ratio and an absolute ceiling; oversized frames are rejected before allocation.
 
 Only a subset of output columns can be requested. A user-provided structure with unexpected column names or types is rejected when the format is created.
 

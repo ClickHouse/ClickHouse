@@ -21,7 +21,7 @@ Fixed output columns:
 - `compression_codec` (`String`) - compression codec of the blob payload, if present
 - `properties` (`Map(String, String)`) - blob-specific properties
 
-LZ4-compressed puffin footers are supported.
+LZ4-compressed puffin footers are supported. Declared decompressed footer size is bounded by a compression ratio and an absolute ceiling; oversized frames are rejected before allocation.
 
 ## Example usage {#example-usage}
 

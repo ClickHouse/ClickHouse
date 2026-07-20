@@ -45,6 +45,7 @@ do
 done
 
 expect_meta "$DATA/inflated_lz4_content_size.puffin" 'Puffin footer LZ4 content size'
+expect_meta "$DATA/lz4_content_size_over_absolute_cap.puffin" 'absolute decompression limit'
 expect_meta "$DATA/missing_lz4_content_size.puffin" 'Puffin footer LZ4 frame must declare content size'
 expect_meta "$DATA/lz4_trailing_bytes.puffin" 'trailing bytes'
 expect_meta "$DATA/incomplete_lz4_footer.puffin" 'Puffin footer LZ4 frame is incomplete'

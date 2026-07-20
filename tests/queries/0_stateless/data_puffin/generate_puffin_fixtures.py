@@ -28,6 +28,9 @@ OUTPUT_DIR = Path(__file__).parent
 PUFFIN_MAGIC = b"PFA1"
 DELETION_VECTOR_MAGIC = bytes([0xD1, 0xD3, 0x39, 0x64])
 INFLATED_CONTENT_SIZE = 0x40000000
+# Must stay in sync with PUFFIN_FOOTER_LZ4_MAX_DECOMPRESSED_SIZE in PuffinBlockInputFormat.cpp.
+FOOTER_LZ4_ABSOLUTE_DECOMPRESSED_LIMIT = 16 * 1024 * 1024
+FOOTER_LZ4_MAX_RATIO = 255
 INVALID_KEY = 0x7FFFFFFF
 LARGE_KEY = 1_000_000
 SPARSE_SUB_POSITION = 42
@@ -183,6 +186,29 @@ def generate_inflated_lz4_content_size(source: Path) -> None:
     write_fixture(
         "inflated_lz4_content_size.puffin",
         PUFFIN_MAGIC + blob + PUFFIN_MAGIC + footer_payload + footer_length + flags + PUFFIN_MAGIC,
+    )
+
+
+def generate_lz4_content_size_within_ratio_over_absolute_cap(source: Path) -> None:
+    """contentSize passes size*255 but exceeds the absolute decompressed-footer cap.
+
+    Pads the compressed footer payload so the ratio guard would allow the forged size;
+    the parser must reject on the absolute ceiling before allocating.
+    """
+    puffin = source.read_bytes()
+    blob, footer_json = extract_blob_and_footer_json(puffin)
+    forged_content_size = FOOTER_LZ4_ABSOLUTE_DECOMPRESSED_LIMIT + 1
+    min_payload_for_ratio = (forged_content_size + FOOTER_LZ4_MAX_RATIO - 1) // FOOTER_LZ4_MAX_RATIO
+    footer_payload = bytearray(
+        set_lz4_content_size(lz4.frame.compress(footer_json, store_size=True), forged_content_size)
+    )
+    if len(footer_payload) < min_payload_for_ratio:
+        footer_payload.extend(b"\x00" * (min_payload_for_ratio - len(footer_payload)))
+    footer_length = struct.pack("<i", len(footer_payload))
+    flags = bytes([0x01, 0x00, 0x00, 0x00])
+    write_fixture(
+        "lz4_content_size_over_absolute_cap.puffin",
+        PUFFIN_MAGIC + blob + PUFFIN_MAGIC + bytes(footer_payload) + footer_length + flags + PUFFIN_MAGIC,
     )
 
 
@@ -621,6 +647,7 @@ def main() -> None:
     generate_invalid_roaring_bitmap()
     generate_invalid_bitmap_key()
     generate_inflated_lz4_content_size(spark_fixture)
+    generate_lz4_content_size_within_ratio_over_absolute_cap(spark_fixture)
     generate_missing_lz4_content_size()
     generate_lz4_trailing_bytes()
     generate_incomplete_lz4_footer()
