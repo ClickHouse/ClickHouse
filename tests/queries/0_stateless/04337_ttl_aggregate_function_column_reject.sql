@@ -444,7 +444,7 @@ SET allow_suspicious_ttl_expressions = 0;
 
 -- Lowering `variant_throw_on_type_mismatch` to 0 makes the Variant function adaptor return NULL instead of
 -- throwing on a type mismatch. The validation probe must still reject a suspicious TTL, because TTL merges
--- rebuild the expression under the strict server-default storage context and would otherwise break every merge.
+-- rebuild the expression under the background context (strict by default) and would otherwise break every merge.
 SET variant_throw_on_type_mismatch = 0;
 
 CREATE TABLE test_ttl_agg_variant_lenient
@@ -486,3 +486,37 @@ TTL d + INTERVAL 1 DAY DELETE WHERE isNotNull(dyn);
 DROP TABLE test_ttl_agg_dynamic_lenient_agnostic;
 
 SET dynamic_throw_on_type_mismatch = 1;
+
+-- The conversion functions above (`toDateTime`) ignore the mismatch settings, so they alone cannot tell
+-- whether the probe follows the session or the background profile. Consumers that go through the
+-- `Variant`/`Dynamic` function adaptors (e.g. `length`) do honor the settings: under a lenient session the
+-- adaptor would silently return NULL in the probe, while background TTL merges (strict by default) would
+-- throw on the first row carrying an AggregateFunction state. The probe must follow the background profile,
+-- not the session, so a lenient session must still get such a TTL rejected.
+SET dynamic_throw_on_type_mismatch = 0;
+
+CREATE TABLE test_ttl_agg_dynamic_lenient_adaptor
+(
+    key UInt64,
+    dyn Dynamic,
+    d DateTime
+)
+ENGINE = MergeTree()
+ORDER BY key
+TTL d + INTERVAL 1 DAY DELETE WHERE length(dyn) > 3; -- { serverError BAD_TTL_EXPRESSION }
+
+SET dynamic_throw_on_type_mismatch = 1;
+
+SET variant_throw_on_type_mismatch = 0;
+
+CREATE TABLE test_ttl_agg_variant_lenient_adaptor
+(
+    key UInt64,
+    v Variant(AggregateFunction(max, DateTime64(3)), String),
+    d DateTime
+)
+ENGINE = MergeTree()
+ORDER BY key
+TTL d + INTERVAL 1 DAY DELETE WHERE length(v) > 3; -- { serverError BAD_TTL_EXPRESSION }
+
+SET variant_throw_on_type_mismatch = 1;
