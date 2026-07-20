@@ -20,6 +20,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ABORTED;
+    extern const int CORRUPTED_DATA;
 }
 
 namespace
@@ -391,6 +392,12 @@ void MergeTreeDeduplicationLog::rotate()
     auto new_path = getLogPath(logs_dir, new_log_number);
     auto new_writer = disk->writeFile(new_path, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite);
 
+    /// A failed compaction can leave an orphan snapshot pending neutralization at
+    /// exactly this number (`current_log_number + 1`; see prepareToWrite). The Rewrite
+    /// above has truncated it away and the path now belongs to a live log file, so it
+    /// must not be neutralized later - that would empty a legitimate log.
+    orphan_logs_pending_neutralization.erase(new_path);
+
     /// Register the new log file before finalizing the old writer. This is the only
     /// remaining bookkeeping step that can throw - `std::map::emplace` allocates a
     /// node - and it must not run after the old writer has been finalized: if it did
@@ -605,11 +612,18 @@ void MergeTreeDeduplicationLog::compact()
         existing_logs.erase(snapshot_log_number);
         if (!reopen_snapshot)
             existing_logs.erase(writer_log_number);
-        neutralizeOrphanLog(snapshot_path);
+        /// If a file can neither be removed nor emptied, it must not be forgotten: the
+        /// server would keep appending newer committed records to the older, lower-
+        /// numbered file, and the next restart would replay the stale higher-numbered
+        /// snapshot last, silently forgetting them. Record it and have every subsequent
+        /// operation retry the neutralization - failing closed until it succeeds - in
+        /// prepareToWrite.
+        if (!neutralizeOrphanLog(snapshot_path))
+            orphan_logs_pending_neutralization.insert(snapshot_path);
         /// writer_path == snapshot_path when the snapshot is reopened, so only a separate
         /// fresh writer file needs its own cleanup.
-        if (!reopen_snapshot)
-            neutralizeOrphanLog(writer_path);
+        if (!reopen_snapshot && !neutralizeOrphanLog(writer_path))
+            orphan_logs_pending_neutralization.insert(writer_path);
         return;
     }
 
@@ -646,7 +660,11 @@ void MergeTreeDeduplicationLog::compact()
             /// alone determines the reloaded state and its order.
             tryLogCurrentException(
                 __PRETTY_FUNCTION__, "Cannot remove an outdated deduplication log file during compaction; will empty it instead");
-            neutralizeOrphanLog(it->second.path);
+            /// If it can neither be removed nor emptied, its stale record order stays on
+            /// disk, so record it and retry - failing new operations closed until it is
+            /// neutralized - in prepareToWrite.
+            if (!neutralizeOrphanLog(it->second.path))
+                orphan_logs_pending_neutralization.insert(it->second.path);
             it = existing_logs.erase(it);
         }
     }
@@ -655,14 +673,14 @@ void MergeTreeDeduplicationLog::compact()
     current_writer = std::move(new_writer);
 }
 
-void MergeTreeDeduplicationLog::neutralizeOrphanLog(const std::string & path)
+bool MergeTreeDeduplicationLog::neutralizeOrphanLog(const std::string & path)
 {
-    /// Best effort: try to remove the orphan file first (see the header for why leaving a
-    /// durable, higher-numbered snapshot behind would corrupt the next replay).
+    /// Try to remove the orphan file first (see the header for why leaving a durable,
+    /// higher-numbered snapshot behind would corrupt the next replay).
     try
     {
         disk->removeFileIfExists(path);
-        return;
+        return true;
     }
     catch (...)
     {
@@ -676,12 +694,15 @@ void MergeTreeDeduplicationLog::neutralizeOrphanLog(const std::string & path)
     /// no-op wherever it sits, so it can no longer resurrect evicted or drop committed
     /// block ids on the next restart. Rewrite creates the file afresh, so even a partial
     /// snapshot is truncated away, and finalize makes the emptiness durable on object
-    /// storage. If this fails as well the disk is unwritable and nothing more can be done.
+    /// storage. If this fails as well the disk is unwritable, so report the failure: the
+    /// caller must not carry on as if the on-disk history were consistent, but record the
+    /// file as pending and fail closed until a retry neutralizes it (see prepareToWrite).
     try
     {
         auto empty_writer = disk->writeFile(path, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite);
         empty_writer->finalize();
         empty_writer->sync();
+        return true;
     }
     catch (...)
     {
@@ -689,7 +710,37 @@ void MergeTreeDeduplicationLog::neutralizeOrphanLog(const std::string & path)
             __PRETTY_FUNCTION__,
             "Cannot overwrite an orphan file left by a failed deduplication log compaction with an empty file: " + path
                 + "; a restart may replay stale records from it");
+        return false;
     }
+}
+
+void MergeTreeDeduplicationLog::prepareToWrite()
+{
+    /// Retry neutralizing the files a failed compaction left behind (see the header).
+    /// While one remains on disk with its stale content intact, a restart would replay
+    /// it - after or before files holding the live state, either way reconstructing
+    /// wrong deduplication history - so refuse to write any new record until the disk
+    /// recovers far enough to neutralize them all: failing the operation loudly here is
+    /// recoverable (the caller retries), silently deduplicating wrongly after a restart
+    /// is not.
+    for (auto it = orphan_logs_pending_neutralization.begin(); it != orphan_logs_pending_neutralization.end();)
+    {
+        if (!neutralizeOrphanLog(*it))
+            throw Exception(
+                ErrorCodes::CORRUPTED_DATA,
+                "Deduplication log contains a stale file {} left by a failed compaction that can neither be removed nor emptied; "
+                "refusing to write new records because a restart would replay inconsistent deduplication history",
+                *it);
+        it = orphan_logs_pending_neutralization.erase(it);
+    }
+
+    /// Heal a canceled writer. A failed write cancels the buffer; the rollback of that
+    /// failed operation rotates to a fresh writer, but the rotation can itself fail and
+    /// leave the canceled writer in place - and writes to a canceled buffer throw. Rotate
+    /// up front, before this operation writes anything, so the first retry after the
+    /// disk recovers succeeds instead of failing once more just to heal the writer.
+    if (current_writer && current_writer->isCanceled())
+        rotate();
 }
 
 std::vector<MergeTreeDeduplicationLog::AddPartResult> MergeTreeDeduplicationLog::addPart(const std::vector<std::string> & block_ids, const MergeTreePartInfo & part_info)
@@ -724,6 +775,12 @@ std::vector<MergeTreeDeduplicationLog::AddPartResult> MergeTreeDeduplicationLog:
     }
 
     chassert(current_writer != nullptr);
+
+    /// Repair any damage a previously failed operation or compaction left behind -
+    /// a canceled writer, or a stale file that still needs neutralizing - before
+    /// writing anything, so this operation either starts from a consistent state or
+    /// fails cleanly here, with nothing written, and can be retried.
+    prepareToWrite();
 
     /// Adding a part must be all-or-nothing: both the durable ADD records and the
     /// in-memory publication either all take effect or none do. If anything below
@@ -909,6 +966,11 @@ void MergeTreeDeduplicationLog::dropPart(const MergeTreePartInfo & drop_part_inf
 
     if (block_ids.empty())
         return;
+
+    /// See addPart: heal a canceled writer and retry any pending neutralization before
+    /// writing anything, so the drop either starts from a consistent state or fails
+    /// cleanly with nothing written.
+    prepareToWrite();
 
     /// Write all the DROP records first. If a write or the rotation throws partway,
     /// no block id has been erased yet, so every covered block id stays published in

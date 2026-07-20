@@ -321,6 +321,78 @@ public:
     }
 };
 
+/// A DiskLocal whose writer fails once on a chosen flush (like DiskThrowingOnNthFlush)
+/// and that additionally fails once on a chosen `writeFile` call. It reproduces a
+/// double fault: a record write fails - canceling the writer - and the rotation the
+/// rollback then attempts to reopen a fresh writer fails as well, so the operation
+/// ends with `current_writer` still canceled. Both counters are shared across the
+/// disk's lifetime, so each fault fires exactly once and the disk then recovers.
+class DiskThrowingOnNthFlushAndNthWrite : public DiskLocal
+{
+public:
+    DiskThrowingOnNthFlushAndNthWrite(const String & name_, const String & path_, size_t fail_on_flush_, size_t fail_on_write_)
+        : DiskLocal(name_, path_), fail_on_flush(fail_on_flush_), fail_on_write(fail_on_write_)
+    {
+    }
+
+    std::unique_ptr<WriteBufferFromFileBase>
+    writeFile(const String & path, size_t buf_size, WriteMode mode, const WriteSettings & settings) override
+    {
+        ++write_count;
+        if (write_count == fail_on_write)
+            throw Exception(ErrorCodes::CANNOT_WRITE_TO_FILE_DESCRIPTOR, "Injected write failure");
+        return std::make_unique<FailingOnNthFlushWriteBuffer>(DiskLocal::writeFile(path, buf_size, mode, settings), flush_count, fail_on_flush);
+    }
+
+    size_t flush_count = 0;
+    const size_t fail_on_flush;
+    size_t write_count = 0;
+    const size_t fail_on_write;
+};
+
+/// A DiskLocal that makes a compaction fail after its snapshot is durable and then
+/// defeats the failure cleanup completely - until it is healed. While `broken`:
+/// reopening a file this disk has already rewritten (the just-written compaction
+/// snapshot, and never the pre-existing file `load` reopens) throws, removing files
+/// throws, and rewriting an already-rewritten file (the cleanup's empty-overwrite of
+/// that same snapshot) throws too, so the orphan snapshot can neither be removed nor
+/// emptied. Setting `broken = false` simulates the disk recovering.
+class DiskFailingCompactionCleanupCompletely : public DiskLocal
+{
+public:
+    DiskFailingCompactionCleanupCompletely(const String & name_, const String & path_)
+        : DiskLocal(name_, path_)
+    {
+    }
+
+    std::unique_ptr<WriteBufferFromFileBase>
+    writeFile(const String & path, size_t buf_size, WriteMode mode, const WriteSettings & settings) override
+    {
+        if (broken && rewritten.contains(path))
+            throw Exception(ErrorCodes::CANNOT_WRITE_TO_FILE_DESCRIPTOR, "Injected write failure");
+        if (mode == WriteMode::Rewrite)
+            rewritten.insert(path);
+        return DiskLocal::writeFile(path, buf_size, mode, settings);
+    }
+
+    void removeFile(const String & path) override
+    {
+        if (broken)
+            throw Exception(ErrorCodes::CANNOT_UNLINK, "Injected remove failure");
+        DiskLocal::removeFile(path);
+    }
+
+    void removeFileIfExists(const String & path) override
+    {
+        if (broken)
+            throw Exception(ErrorCodes::CANNOT_UNLINK, "Injected remove failure");
+        DiskLocal::removeFileIfExists(path);
+    }
+
+    bool broken = true;
+    std::unordered_set<String> rewritten;
+};
+
 /// Read the raw records of every deduplication log file under `logs_root`, in
 /// chronological (log-number) order, without any of the rollback-pairing logic -
 /// the way every server version reads them off the disk.
@@ -1751,6 +1823,145 @@ TEST(MergeTreeDeduplicationLog, CompactionCleanupFailureNeutralizesOrphanSnapsho
 
         EXPECT_FALSE(log.addPart({"block1"}, part("all_9_9_0")).empty());
         EXPECT_TRUE(log.addPart({"block2"}, part("all_10_10_0")).empty());
+    }
+
+    std::filesystem::remove_all(work_dir);
+}
+
+/// Regression test: a canceled writer must be healed before the next operation, not
+/// only while rolling back the operation that canceled it. A failed record write
+/// cancels `current_writer`; the rollback then rotates to a fresh writer, but that
+/// rotation can fail too (the disk is still down). Without healing at the start of
+/// the next operation, the first retry after the disk recovers throws "Cannot write
+/// to canceled buffer" before reaching any recovery code - only its own rollback
+/// reopens a writer - so the first retry always fails, breaking the contract that
+/// a failed operation can simply be retried.
+TEST(MergeTreeDeduplicationLog, CanceledWriterIsHealedBeforeNextOperation)
+{
+    const std::string work_dir = "tmp/gtest_dedup_log_canceled_writer_heal/";
+    std::filesystem::remove_all(work_dir);
+    std::filesystem::create_directories(work_dir);
+
+    const MergeTreeDataFormatVersion format_version = MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING;
+    auto part = [&](const String & name) { return MergeTreePartInfo::fromPartName(name, format_version); };
+
+    {
+        /// writeFile #1 creates the first log during load(). flush #1 is the first ADD
+        /// record, which fails and cancels the writer; the rollback's rotate() then
+        /// issues writeFile #2, which fails as well, leaving the writer canceled after
+        /// the operation. Both faults fire once, so the disk has recovered by the retry.
+        /// The window is large enough that no rotation interferes.
+        auto disk = std::make_shared<DiskThrowingOnNthFlushAndNthWrite>(
+            "faulty", work_dir, /*fail_on_flush=*/ 1, /*fail_on_write=*/ 2);
+        MergeTreeDeduplicationLog log("dedup_logs", /*deduplication_window=*/ 10, format_version, disk);
+        log.load();
+
+        /// The double fault: the ADD write fails and the rollback cannot reopen a writer.
+        EXPECT_ANY_THROW(log.addPart({"block1"}, part("all_1_1_0")));
+
+        /// The disk has recovered, so the FIRST retry must already succeed: the
+        /// operation heals the canceled writer up front instead of tripping over it.
+        EXPECT_TRUE(log.addPart({"block1"}, part("all_1_1_0")).empty());
+
+        /// And the retried block deduplicates as usual.
+        EXPECT_FALSE(log.addPart({"block1"}, part("all_2_2_0")).empty());
+
+        log.shutdown();
+    }
+
+    {
+        /// The retried insert's ADD record went to a live writer, so it must have
+        /// reached the disk and must survive a restart.
+        auto disk = std::make_shared<DiskLocal>("healthy", work_dir);
+        MergeTreeDeduplicationLog log("dedup_logs", /*deduplication_window=*/ 10, format_version, disk);
+        log.load();
+
+        EXPECT_FALSE(log.addPart({"block1"}, part("all_3_3_0")).empty());
+    }
+
+    std::filesystem::remove_all(work_dir);
+}
+
+/// Regression test: when a failed compaction leaves an orphan file behind that can
+/// neither be removed nor overwritten with an empty file, the log must fail closed
+/// instead of carrying on. The orphan snapshot sits at a HIGHER log number than the
+/// file the server keeps appending to, so any record committed after it would be
+/// clobbered on the next replay by the stale snapshot replaying last - silent wrong
+/// deduplication after a restart. New operations must therefore refuse to write until
+/// a retry manages to neutralize the orphan, and succeed again once the disk recovers.
+TEST(MergeTreeDeduplicationLog, OrphanNeutralizationFailureFailsClosedUntilHealed)
+{
+    const std::string work_dir = "tmp/gtest_dedup_log_orphan_fail_closed/";
+    std::filesystem::remove_all(work_dir);
+    std::filesystem::create_directories(work_dir);
+
+    const MergeTreeDataFormatVersion format_version = MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING;
+    auto part = [&](const String & name) { return MergeTreePartInfo::fromPartName(name, format_version); };
+
+    {
+        /// Accumulate the unreclaimable rollback garbage that makes the next restart
+        /// want to compact, exactly as in the compaction tests above.
+        auto disk = std::make_shared<DiskThrowingFromNthSync>("faulty", work_dir, /*fail_from_sync=*/ 1);
+        MergeTreeDeduplicationLog log("dedup_logs", /*deduplication_window=*/ 1, format_version, disk);
+        log.load();
+
+        log.addPart({"block1"}, part("all_1_1_0"));
+        for (int i = 2; i <= 8; ++i)
+        {
+            const std::string suffix = std::to_string(i) + "_" + std::to_string(i) + "_0";
+            EXPECT_ANY_THROW(log.addPart({"block" + std::to_string(i)}, part("all_" + suffix)));
+        }
+
+        log.shutdown();
+    }
+
+    {
+        /// Restart on a disk that lets the compaction write and fsync its snapshot, then
+        /// fails the reopen for appending AND the whole failure cleanup: the orphan
+        /// snapshot can neither be removed nor emptied, so it survives at the highest
+        /// log number with the stale live state ({"block1"}) inside. The window is
+        /// bumped to 2 (rotate_interval 4) so the inserts below do not trigger a
+        /// rotation of their own - a rotation would rewrite the orphan's very slot and
+        /// mask the hazard by accident.
+        auto disk = std::make_shared<DiskFailingCompactionCleanupCompletely>("faulty-cleanup", work_dir);
+        MergeTreeDeduplicationLog log("dedup_logs", /*deduplication_window=*/ 2, format_version, disk);
+        log.load();
+
+        /// Fail closed: while the stale orphan is on disk, committing a new block would
+        /// append it to a lower-numbered file, and once the window rolled over, the
+        /// orphan's replay would clobber the state on the next restart (see the last
+        /// section). The insert must fail - retryably - not carry on.
+        EXPECT_ANY_THROW(log.addPart({"block9"}, part("all_9_9_0")));
+
+        /// Reading is unaffected: the committed block still deduplicates (probing a
+        /// duplicate writes no record).
+        EXPECT_FALSE(log.addPart({"block1"}, part("all_10_10_0")).empty());
+
+        /// The disk recovers. The first operation retries the neutralization, removes
+        /// the orphan, and the inserts go through. Without the fail-closed behavior the
+        /// first of these would have been committed while the disk was still broken, and
+        /// this retry would wrongly report it as a duplicate.
+        disk->broken = false;
+        EXPECT_TRUE(log.addPart({"block9"}, part("all_11_11_0")).empty());
+        EXPECT_TRUE(log.addPart({"block10"}, part("all_12_12_0")).empty());
+
+        log.shutdown();
+    }
+
+    {
+        /// A healthy restart reconstructs the state the live process had: committing
+        /// "block9" and "block10" filled the window of 2 and evicted "block1", and no
+        /// stale snapshot is left to clobber that. Had the inserts been accepted while
+        /// the orphan was still on disk, its stale ADD of "block1" would replay last
+        /// here, re-inserting "block1" and evicting "block9" - whose retry would then
+        /// wrongly be accepted, duplicating the data.
+        auto disk = std::make_shared<DiskLocal>("healthy", work_dir);
+        MergeTreeDeduplicationLog log("dedup_logs", /*deduplication_window=*/ 2, format_version, disk);
+        log.load();
+
+        EXPECT_FALSE(log.addPart({"block9"}, part("all_13_13_0")).empty());
+        EXPECT_FALSE(log.addPart({"block10"}, part("all_14_14_0")).empty());
+        EXPECT_TRUE(log.addPart({"block2"}, part("all_15_15_0")).empty());
     }
 
     std::filesystem::remove_all(work_dir);

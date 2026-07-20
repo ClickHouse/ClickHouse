@@ -6,6 +6,7 @@
 #include <map>
 #include <list>
 #include <mutex>
+#include <set>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -285,6 +286,12 @@ private:
     DiskPtr disk;
     bool disk_supports_writing_with_append;
 
+    /// Files left behind by a failed compaction that could neither be removed nor
+    /// overwritten with an empty file (see neutralizeOrphanLog). While any is pending,
+    /// the on-disk history is known to replay incorrectly on a restart, so operations
+    /// fail closed until a retry (in prepareToWrite) neutralizes them all.
+    std::set<std::string> orphan_logs_pending_neutralization;
+
     bool stopped{false};
 
     /// Start new log
@@ -323,7 +330,30 @@ private:
     /// therefore not optional; if the removal fails too, overwriting it with an empty
     /// file makes it replay as a no-op no matter where it sits, which preserves a
     /// consistent state instead of leaving a stale higher-numbered trap.
-    void neutralizeOrphanLog(const std::string & path);
+    /// Returns whether the file is no longer a hazard (removed or emptied). When both
+    /// attempts fail the caller must not carry on as if the history were consistent:
+    /// compact records the path in `orphan_logs_pending_neutralization`, and every
+    /// subsequent operation retries the neutralization - refusing to write new records
+    /// until it succeeds - in prepareToWrite.
+    bool neutralizeOrphanLog(const std::string & path);
+
+    /// Bring the log back to a writable, consistent state before an operation writes
+    /// new records; called at the start of addPart and dropPart, before anything is
+    /// written, so a throw here fails the operation cleanly and it can be retried.
+    /// Two kinds of damage from an earlier failure are repaired:
+    /// - A file left behind by a failed compaction that could neither be removed nor
+    ///   emptied (see neutralizeOrphanLog). Retry the neutralization; if it still
+    ///   fails, throw - fail closed - because appending to a lower-numbered file while
+    ///   a stale higher-numbered file survives would corrupt the next replay, silently
+    ///   deduplicating wrongly after a restart.
+    /// - A canceled `current_writer`. A failed write cancels the buffer, and the
+    ///   rollback of the failed operation normally rotates to a fresh writer - but that
+    ///   rotation can itself fail (e.g. the disk is still down), leaving the canceled
+    ///   writer in place. Writes to a canceled buffer throw, so without healing it here
+    ///   the first retry after the disk recovers would still fail (its own rollback
+    ///   only then rotating), breaking the retryability contract for the double-fault
+    ///   case. Rotating to a fresh writer up front makes the first retry succeed.
+    void prepareToWrite();
 
     /// Compact when the raw record count has grown well beyond the effective coverage,
     /// i.e. when repeated rolled-back operations have left enough cancelled record pairs
