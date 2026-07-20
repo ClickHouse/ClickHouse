@@ -575,3 +575,33 @@ echo '--- JSONEachPacketString is rejected for GeoJSON with a non-UTF-8 property
 ${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=JSONEachPacketString" \
     -d 'SELECT (0, 0)::Point AS g, 1 AS `p\xFFq` FORMAT GeoJSON' \
     | grep -o -m1 'is not compatible with the output format GeoJSON'
+
+# `JSONObjectEachRow` inherits the `JSONEachRow` header-key path, so a non-UTF-8 column name is
+# detected the same way.
+echo '--- JSONEachPacketString is rejected for JSONObjectEachRow with a non-UTF-8 column name'
+${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=JSONEachPacketString" \
+    -d 'SELECT 1 AS `a\xFFb` FORMAT JSONObjectEachRow' \
+    | grep -o -m1 'is not compatible with the output format JSONObjectEachRow'
+
+echo '--- EventStream base64-encodes JSONObjectEachRow with a non-UTF-8 column name'
+${CLICKHOUSE_CURL} -sS -o /dev/null -w '%{content_type}\n' "${URL}&framing_output_format=EventStream" \
+    -d 'SELECT 1 AS `a\xFFb` FORMAT JSONObjectEachRow'
+${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=EventStream${SINGLE_BLOCK}" \
+    -d 'SELECT 1 AS `a\xFFb` FORMAT JSONObjectEachRow' \
+    | awk '/^event: data$/ { getline; sub(/^data: /, ""); print }' | while IFS= read -r payload; do printf '%s' "$payload" | base64 -d; done \
+    | cmp -s - <(${CLICKHOUSE_CURL} -sS "${URL}" -d 'SELECT 1 AS `a\xFFb` FORMAT JSONObjectEachRow') \
+    && echo 'JSONObjectEachRow payload with a non-UTF-8 column name round-trips' || echo 'MISMATCH'
+
+# The column selected by `format_json_object_each_row_column_for_object_name` is not emitted as an
+# inner object key (its values become the outer object names), so a non-UTF-8 name on that column
+# alone does not make the header keys non-textual and the query is accepted.
+echo '--- JSONEachPacketString accepts JSONObjectEachRow when only the object-name column has a non-UTF-8 name'
+data_packets=$(${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=JSONEachPacketString&format_json_object_each_row_column_for_object_name=a%FFb" \
+    -d 'SELECT '\''k'\'' AS `a\xFFb`, 1 AS v FORMAT JSONObjectEachRow' | grep -c '"packet":"data"')
+[ "$data_packets" -ge 1 ] && echo 'JSONObjectEachRow (non-UTF-8 object-name column, name not emitted) accepted: OK'
+
+# A non-UTF-8 name on an emitted field is still rejected when the object-name column is configured.
+echo '--- JSONEachPacketString is rejected for JSONObjectEachRow with a non-UTF-8 emitted field name and an object-name column'
+${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=JSONEachPacketString&format_json_object_each_row_column_for_object_name=name_col" \
+    -d 'SELECT '\''k'\'' AS name_col, 1 AS `a\xFFb` FORMAT JSONObjectEachRow' \
+    | grep -o -m1 'is not compatible with the output format JSONObjectEachRow'

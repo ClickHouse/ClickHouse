@@ -219,3 +219,12 @@ is not compatible with the output format JSONCompactEachRowWithNamesAndTypes
 plain JSONCompactEachRow (non-UTF-8 column name, no header) accepted: OK
 --- JSONEachPacketString is rejected for GeoJSON with a non-UTF-8 property column name
 is not compatible with the output format GeoJSON
+--- JSONEachPacketString is rejected for JSONObjectEachRow with a non-UTF-8 column name
+is not compatible with the output format JSONObjectEachRow
+--- EventStream base64-encodes JSONObjectEachRow with a non-UTF-8 column name
+text/event-stream; charset=UTF-8; payload=base64
+JSONObjectEachRow payload with a non-UTF-8 column name round-trips
+--- JSONEachPacketString accepts JSONObjectEachRow when only the object-name column has a non-UTF-8 name
+JSONObjectEachRow (non-UTF-8 object-name column, name not emitted) accepted: OK
+--- JSONEachPacketString is rejected for JSONObjectEachRow with a non-UTF-8 emitted field name and an object-name column
+is not compatible with the output format JSONObjectEachRow
