@@ -890,12 +890,14 @@ static std::optional<RelationProfile> tryEstimateRelationProfile(
 /// remaining keys (with much higher NDV) become equality predicates evaluated at probe
 /// time.
 ///
-/// Returns `true` if at least one key was demoted. The caller must then force
-/// `mixed_join_expression` (so the equality is checked during probe rather than as a
-/// post-join filter) to actually realize the smaller-hash-table benefit.
+/// Returns `true` if at least one key was demoted, appending the demoted equalities to
+/// `demoted_conditions` (kept separate from `join_operator.residual_filter`, which may hold
+/// genuine post-join filters with different outer-join semantics). The caller must route
+/// these into `mixed_join_expression` (so the equality is checked during probe rather than
+/// as a post-join filter) to actually realize the smaller-hash-table benefit.
 static bool demoteLowNdvKeysToResidual(
     TableJoin::Clauses & clauses,
-    std::vector<JoinActionRef> & residual_filter,
+    std::vector<JoinActionRef> & demoted_conditions,
     JoinExpressionActions & expression_actions,
     const JoinSettings & join_settings,
     const std::vector<QueryPlan::Node *> & children,
@@ -923,6 +925,22 @@ static bool demoteLowNdvKeysToResidual(
                 || a == JoinAlgorithm::DEFAULT;
         };
         if (std::ranges::none_of(algos, supports_mixed))
+            return false;
+        /// `chooseJoinAlgorithm` selects the FIRST enabled algorithm applicable to the join,
+        /// not the first mixed-capable one. A merge-family algorithm (and `auto`) applies to
+        /// ordinary joins but its `isSupported` does not reject a `mixed_join_expression` and
+        /// it never evaluates one. So with e.g. `join_algorithm = 'full_sorting_merge,hash'`
+        /// the merge join would be selected and silently drop the demoted equality, turning a
+        /// two-key join into a one-key join with extra rows. Only demote when no such
+        /// algorithm is enabled, so the join is guaranteed to run on a mixed-capable one.
+        auto ignores_mixed = [](JoinAlgorithm a)
+        {
+            return a == JoinAlgorithm::FULL_SORTING_MERGE
+                || a == JoinAlgorithm::PARTIAL_MERGE
+                || a == JoinAlgorithm::PREFER_PARTIAL_MERGE
+                || a == JoinAlgorithm::AUTO;
+        };
+        if (std::ranges::any_of(algos, ignores_mixed))
             return false;
     }
     /// `HashJoin::validateAdditionalFilterExpression` (see `Interpreters/HashJoin/HashJoin.cpp`)
@@ -1151,7 +1169,7 @@ static bool demoteLowNdvKeysToResidual(
     for (const auto & [lhs, rhs] : demoted_pairs)
     {
         auto eq = JoinActionRef::transform({lhs, rhs}, JoinActionRef::AddFunction(JoinConditionOperator::Equals));
-        residual_filter.push_back(eq);
+        demoted_conditions.push_back(eq);
     }
 
     left = std::move(new_left);
@@ -1599,8 +1617,13 @@ static QueryPlanNode buildPhysicalJoinImpl(
     /// filter during probe. Reduces hash table memory on multi-key joins where the trailing
     /// keys are high-cardinality (e.g. `ON user_id = user_id AND request_id = request_id`
     /// where `request_id` is near-unique while `user_id` has many duplicates).
+    ///
+    /// Demoted equalities are collected separately (not appended to
+    /// `join_operator.residual_filter`, which may already hold genuine post-join filters
+    /// with different outer-join semantics) and routed into `mixed_join_expression` below.
+    std::vector<JoinActionRef> demoted_conditions;
     bool keys_demoted_to_residual = demoteLowNdvKeysToResidual(
-        table_join_clauses, join_operator.residual_filter, expression_actions, join_settings, children,
+        table_join_clauses, demoted_conditions, expression_actions, join_settings, children,
         join_algorithm_params, join_operator.kind, join_operator.strictness);
 
     /// Derive the `HashTablesStatistics` cache key from the post-demote kept equi keys (the
@@ -1658,12 +1681,14 @@ static QueryPlanNode buildPhysicalJoinImpl(
     /// NULL-extended, not dropped), so they are evaluated during the join as a mixed join
     /// expression, while the residual filter still drops rows from the result.
     ///
-    /// The equi-keys demoted by `demoteLowNdvKeysToResidual` were appended to
-    /// `join_operator.residual_filter`; they are JOIN ON conditions too and are routed into
-    /// the mixed join expression below (never applied as a post-join filter) so that outer
-    /// joins keep NULL-extending non-matching rows correctly.
+    /// The equi-keys demoted by `demoteLowNdvKeysToResidual` are kept in their own
+    /// `demoted_conditions` list (NOT mixed into `join_operator.residual_filter`); they are
+    /// JOIN ON conditions and are routed into the mixed join expression below (never applied
+    /// as a post-join filter) so that outer joins keep NULL-extending non-matching rows
+    /// correctly, while any genuine post-join `residual_filter` predicate is left untouched.
     JoinActionRef on_clause_condition = concatConditions(join_expression);
     JoinActionRef residual_filter_condition = concatConditions(join_operator.residual_filter);
+    JoinActionRef demoted_condition = concatConditions(demoted_conditions);
     std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *> actions_after_join_fold;
     for (const auto * action : actions_after_join)
     {
@@ -1709,19 +1734,20 @@ static QueryPlanNode buildPhysicalJoinImpl(
     };
     collect_required_input_nodes(on_clause_condition);
     collect_required_input_nodes(residual_filter_condition);
+    collect_required_input_nodes(demoted_condition);
 
     /// Route conditions that must be evaluated during the probe (rather than as a post-join
     /// filter) into the mixed join expression:
     ///  - non-pushdownable ON conditions (disjunctive, or outer-join semantics that
     ///    NULL-extend non-matching rows);
-    ///  - equi-keys demoted by `demoteLowNdvKeysToResidual` (they live in
-    ///    `residual_filter_condition` now): being JOIN ON conditions, applying them as a
-    ///    post-join filter would drop NULL-extended rows on outer joins and inflate the
-    ///    intermediate result on inner joins, so they are always evaluated during the probe.
+    ///  - equi-keys demoted by `demoteLowNdvKeysToResidual`: being JOIN ON conditions,
+    ///    applying them as a post-join filter would drop NULL-extended rows on outer joins
+    ///    and inflate the intermediate result on inner joins, so they are always evaluated
+    ///    during the probe. Only the demoted equalities are moved here; a genuine
+    ///    `residual_filter_condition` predicate stays a post-join filter.
     const bool on_clause_to_mixed
         = on_clause_condition && (is_disjunctive_condition || !canPushDownFromOn(join_operator));
-    const bool residual_to_mixed = residual_filter_condition && keys_demoted_to_residual;
-    if (on_clause_to_mixed || residual_to_mixed)
+    if (on_clause_to_mixed || keys_demoted_to_residual)
     {
         std::vector<JoinActionRef> mixed_conditions;
         if (on_clause_to_mixed)
@@ -1729,11 +1755,8 @@ static QueryPlanNode buildPhysicalJoinImpl(
             mixed_conditions.push_back(on_clause_condition);
             on_clause_condition = JoinActionRef(nullptr);
         }
-        if (residual_to_mixed)
-        {
-            mixed_conditions.push_back(residual_filter_condition);
-            residual_filter_condition = JoinActionRef(nullptr);
-        }
+        if (keys_demoted_to_residual && demoted_condition)
+            mixed_conditions.push_back(demoted_condition);
         JoinActionRef mixed_condition = concatConditions(mixed_conditions);
         auto mixed_dag = JoinExpressionActions::getSubDAG(std::views::single(mixed_condition));
         ExpressionActionsPtr & mixed_join_expression = table_join->getMixedJoinExpression();
