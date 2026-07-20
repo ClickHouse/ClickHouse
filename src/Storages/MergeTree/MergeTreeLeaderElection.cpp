@@ -354,7 +354,23 @@ void MergeTreeLeaderElection::run()
             CurrentMetrics::sub(CurrentMetrics::MergeTreeLeaderElectionLeader);
             CurrentMetrics::add(CurrentMetrics::MergeTreeLeaderElectionFollower);
             if (on_leadership_change)
-                on_leadership_change(false);
+            {
+                /// Shield the callback, like the `stop` and error paths do. Leadership-change
+                /// callbacks fire only on transitions: `is_leader` is already false here, so a
+                /// later heartbeat would see `was_leader == false` and never retry the follower
+                /// transition — an escaping exception would otherwise permanently skip whatever
+                /// part of it had not run yet. Writes are already fail-closed (`writes_enabled`
+                /// and `is_leader` cleared above), and the storage-side callback orders its own
+                /// steps fail-closed, so logging is the correct handling here.
+                try
+                {
+                    on_leadership_change(false);
+                }
+                catch (...)
+                {
+                    tryLogCurrentException(log, "Exception in leadership-loss callback");
+                }
+            }
         }
     }
     catch (...)

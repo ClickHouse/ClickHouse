@@ -62,6 +62,10 @@ private:
 
     State state{State::NEED_PREPARE};
     StorageMergeTree & storage;
+    /// Leadership epoch captured when the mutation is prepared (as the leader). Re-checked
+    /// before publishing the result part, so a mutation that survives a `leader_election`
+    /// lease loss+reacquire cannot publish a part prepared under the previous epoch.
+    UInt64 admission_epoch = 0;
     StorageMetadataPtr metadata_snapshot;
     MergeMutateSelectedEntryPtr merge_mutate_entry{nullptr};
     TableLockHolder table_lock_holder;

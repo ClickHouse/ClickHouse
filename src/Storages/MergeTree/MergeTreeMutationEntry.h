@@ -52,9 +52,12 @@ struct MergeTreeMutationEntry
     /// or UnknownCSN if it's not committed (yet) or RolledBackCSN if it's rolled back or NonTransactionalCSN if there is no transaction.
     CSN csn = Tx::UnknownCSN;
 
-    /// Create a new entry and write it to a temporary file.
+    /// Create a new entry and write it to a temporary file. `tmp_name_postfix` scopes the
+    /// temporary file name to this server process — under `leader_election` several processes
+    /// share `path_prefix` on shared storage and `tmp_number` alone (a process-local counter)
+    /// can collide across them.
     MergeTreeMutationEntry(MutationCommands commands_, DiskPtr disk, const String & path_prefix_, UInt64 tmp_number,
-                           const TransactionID & tid_, const WriteSettings & settings);
+                           const TransactionID & tid_, const WriteSettings & settings, const String & tmp_name_postfix = "");
     MergeTreeMutationEntry(const MergeTreeMutationEntry &) = delete;
     /// Must clear the moved-from ownership token (`file_name`, `is_temp`,
     /// `is_registered`); a defaulted move leaves `file_name` unspecified (SSO

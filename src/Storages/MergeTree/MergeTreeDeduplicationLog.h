@@ -3,6 +3,7 @@
 #include <Core/Types.h>
 #include <Storages/MergeTree/MergeTreePartInfo.h>
 #include <Disks/IDisk.h>
+#include <functional>
 #include <map>
 #include <list>
 #include <mutex>
@@ -134,11 +135,17 @@ public:
 class MergeTreeDeduplicationLog
 {
 public:
+    /// `may_write_shared_state_`, when set, is consulted immediately before `load` rewrites
+    /// shared on-disk state (log rotation / dropping outdated logs). Used under
+    /// `leader_election`, where the log directory is shared between server processes and only
+    /// a node whose lease is still fresh may rewrite it: the post-failover reload can outlast
+    /// the lease, and rotating/dropping logs as a stale leader would race the next leader.
     MergeTreeDeduplicationLog(
         const std::string & logs_dir_,
         size_t deduplication_window_,
         const MergeTreeDataFormatVersion & format_version_,
-        DiskPtr disk_);
+        DiskPtr disk_,
+        std::function<bool()> may_write_shared_state_ = {});
 
     struct AddPartResult
     {
@@ -165,6 +172,9 @@ private:
     const std::string logs_dir;
     /// Size of deduplication window
     size_t deduplication_window;
+
+    /// See the constructor comment. Empty for tables that own their data outright.
+    const std::function<bool()> may_write_shared_state;
 
     /// How often we create new logs. Not very important,
     /// default value equals deduplication_window * 2

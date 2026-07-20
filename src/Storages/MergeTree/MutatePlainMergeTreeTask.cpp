@@ -39,6 +39,12 @@ void MutatePlainMergeTreeTask::prepare()
 {
     future_part = merge_mutate_entry->future_part;
 
+    /// Capture the leadership epoch at the start of the mutation (just after selection, as the
+    /// leader). It is re-checked before publishing the result part, so a mutation that survives
+    /// a leadership loss+reacquire is rejected rather than publishing a part whose source parts
+    /// and block range belong to the previous epoch. Same pattern as `MergePlainMergeTreeTask`.
+    admission_epoch = storage.currentLeadershipEpoch();
+
     task_context = createTaskContext();
     merge_list_entry = storage.getContext()->getMergeList().insert(
         storage.getStorageID(),
@@ -131,6 +137,12 @@ bool MutatePlainMergeTreeTask::executeStep()
                 /// the PreActive part to Active, "resurrecting" old data.
                 {
                     auto lock = storage.lockParts();
+                    /// Under `leader_election`, enforce the writable-leader check at the epoch
+                    /// captured in `prepare` BEFORE the rename publishes the mutation result on
+                    /// shared storage. `transaction.commit` re-checks leadership, but by then the
+                    /// rename has already happened, and it cannot detect a lease that was lost
+                    /// and reacquired while the mutation was executing.
+                    storage.assertWritableLeaderAtEpoch(admission_epoch);
                     storage.renameTempPartAndReplaceUnlocked(new_part, transaction, lock, /*rename_in_transaction=*/ false);
                     transaction.commit(lock);
                 }

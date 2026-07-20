@@ -69,7 +69,8 @@ MergeTreeSink::MergeTreeSink(
     StorageMergeTree & storage_,
     StorageMetadataPtr metadata_snapshot_,
     size_t max_parts_per_block_,
-    ContextPtr context_)
+    ContextPtr context_,
+    UInt64 commit_epoch_)
     : SinkToStorage(std::make_shared<const Block>(metadata_snapshot_->getSampleBlock()))
     , storage(storage_)
     , metadata_snapshot(metadata_snapshot_)
@@ -77,7 +78,7 @@ MergeTreeSink::MergeTreeSink(
     , context(context_)
     , storage_snapshot(storage.getStorageSnapshotWithoutData(metadata_snapshot, context_))
     , deduplicate((*storage.getSettings())[MergeTreeSetting::non_replicated_deduplication_window] > 0 && storage.getDeduplicationLog() != nullptr)
-    , commit_epoch(storage_.currentLeadershipEpoch())
+    , commit_epoch(commit_epoch_)
 {
     LOG_DEBUG(storage.log, "Create MergeTreeSink, deduplicate={}", deduplicate);
 }

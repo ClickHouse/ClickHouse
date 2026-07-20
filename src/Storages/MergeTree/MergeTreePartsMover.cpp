@@ -361,6 +361,15 @@ void MergeTreePartsMover::swapClonedPart(TemporaryClonedPart & cloned_part) cons
     cloned_part.part->remove_tmp_policy = IMergeTreeDataPart::BlobsRemovalPolicyForTemporaryParts::ASK_KEEPER;
     data->lockSharedData(*cloned_part.part, /* replace_existing_lock = */ true);
 
+    /// Under `leader_election`, re-check lease freshness immediately before the rename publishes
+    /// the cloned part: the `moves_blocker` check at the entry of this function is not enough,
+    /// because the leadership-loss callback (which cancels moves) may not have run yet — or may
+    /// be stalled together with the heartbeat — while the lease has already expired. For storages
+    /// without leader election `mayMutateSharedStorage` is always true.
+    if (!data->mayMutateSharedStorage())
+        throw Exception(ErrorCodes::ABORTED,
+            "Cancelled moving parts: the leader lease is no longer fresh (leader_election).");
+
     renameClonedPart(*cloned_part.part);
 
     /// If server goes down here we will get two copy of the part with the same name on different disks.

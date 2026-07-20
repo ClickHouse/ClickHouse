@@ -11785,8 +11785,16 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::createE
     ReservationPtr reservation = reserveSpacePreferringTTLRules(metadata_snapshot, 0, move_ttl_infos, time(nullptr), 0, true);
     VolumePtr data_part_volume = createVolumeFromReservation(reservation, volume);
 
-    auto tmp_dir_holder = getTemporaryPartDirectoryHolder(EMPTY_PART_TMP_PREFIX + new_part_name);
-    auto new_data_part = getDataPartBuilder(new_part_name, data_part_volume, EMPTY_PART_TMP_PREFIX + new_part_name, getReadSettings())
+    /// Scope the temporary directory name to this server process: under `leader_election`,
+    /// several processes share the data path and empty covering parts for the same partition
+    /// could otherwise collide by name. See `getPostfixForTempInsertName`.
+    String tmp_dir_name = EMPTY_PART_TMP_PREFIX;
+    if (const auto temp_postfix = getPostfixForTempInsertName(); !temp_postfix.empty())
+        tmp_dir_name += temp_postfix + "_";
+    tmp_dir_name += new_part_name;
+
+    auto tmp_dir_holder = getTemporaryPartDirectoryHolder(tmp_dir_name);
+    auto new_data_part = getDataPartBuilder(new_part_name, data_part_volume, tmp_dir_name, getReadSettings())
         .withBytesAndRows(0, 0, 0)
         .withPartInfo(new_part_info)
         .build();

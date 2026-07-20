@@ -20,6 +20,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ABORTED;
+    extern const int TABLE_IS_READ_ONLY;
 }
 
 namespace
@@ -84,9 +85,11 @@ size_t getLogNumber(const std::string & path_str)
 }
 
 MergeTreeDeduplicationLog::MergeTreeDeduplicationLog(
-    const std::string & logs_dir_, size_t deduplication_window_, const MergeTreeDataFormatVersion & format_version_, DiskPtr disk_)
+    const std::string & logs_dir_, size_t deduplication_window_, const MergeTreeDataFormatVersion & format_version_, DiskPtr disk_,
+    std::function<bool()> may_write_shared_state_)
     : logs_dir(logs_dir_)
     , deduplication_window(deduplication_window_)
+    , may_write_shared_state(std::move(may_write_shared_state_))
     , rotate_interval(deduplication_window_ * 2) /// actually it doesn't matter
     , format_version(format_version_)
     , deduplication_map(deduplication_window)
@@ -135,6 +138,15 @@ void MergeTreeDeduplicationLog::load()
                 tryLogCurrentException(__PRETTY_FUNCTION__, "Error while loading MergeTree deduplication log on path " + desc.path);
             }
         }
+
+        /// Re-check that this node may still rewrite the shared log state immediately before the
+        /// rotation/drop below. Reading the history above can take long; under `leader_election`
+        /// the post-failover reload runs on the heartbeat task, which cannot renew the lease
+        /// meanwhile, so the lease can expire mid-load and rotating/dropping shared logs then
+        /// would race the next leader's own deduplication log.
+        if (may_write_shared_state && !may_write_shared_state())
+            throw Exception(ErrorCodes::TABLE_IS_READ_ONLY,
+                "Refusing to rotate the deduplication log: the leader lease is no longer fresh (leader_election)");
 
         /// Start new log, drop previous
         rotateAndDropIfNeeded();

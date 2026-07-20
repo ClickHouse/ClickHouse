@@ -9,6 +9,7 @@
 #include <Core/MergeSelectorAlgorithm.h>
 #include <Core/Names.h>
 #include <Core/QueryProcessingStage.h>
+#include <Core/ServerUUID.h>
 #include <Core/Settings.h>
 #include <Core/UUID.h>
 #include <Databases/DatabasesCommon.h>
@@ -55,9 +56,12 @@
 #include <Storages/MergeTree/checkDataPart.h>
 #include <Storages/PartitionCommands.h>
 #include <Storages/buildQueryTreeForShard.h>
+#include <base/hex.h>
+#include <base/scope_guard.h>
 #include <base/sleep.h>
 #include <fmt/core.h>
 #include <Common/CurrentThread.h>
+#include <Common/SipHash.h>
 #include <Common/ThreadStatus.h>
 #include <Common/ErrorCodes.h>
 #include <Common/Exception.h>
@@ -481,19 +485,27 @@ void StorageMergeTree::startup()
                     /// but a long-running merge can extend the dual-writer window beyond the
                     /// session timeout — the action blockers cause active tasks to bail out
                     /// at the next cancellation check (e.g. `swapClonedPart`, merge-task loop).
+                    /// Ordered fail-closed: the blockers are set first, so even if a later step
+                    /// throws, no new destructive work can start.
                     follower_merges_cancellation = merger_mutator.merges_blocker.cancel();
                     follower_moves_cancellation = parts_mover.moves_blocker.cancel();
-
-                    background_operations_assignee.finish();
-                    background_moves_assignee.finish();
-                    cleanup_thread.stop();
 
                     /// Followers periodically re-scan shared object storage so that `SELECT`
                     /// observes parts the current leader has committed since this replica
                     /// started up. The task is created in `MergeTreeData::loadDataParts` and
-                    /// is owned by `MergeTreeData::refresh_parts_task`.
-                    if (refresh_parts_task)
-                        refresh_parts_task->activateAndSchedule();
+                    /// is owned by `MergeTreeData::refresh_parts_task`. Reactivate it via a
+                    /// scope guard: leadership-change callbacks fire only on transitions, so if
+                    /// draining the background machinery below threw and the refresh task were
+                    /// left deactivated, this node would serve permanently stale reads with no
+                    /// retry.
+                    SCOPE_EXIT({
+                        if (refresh_parts_task)
+                            refresh_parts_task->activateAndSchedule();
+                    });
+
+                    background_operations_assignee.finish();
+                    background_moves_assignee.finish();
+                    cleanup_thread.stop();
                 }
             });
 
@@ -711,10 +723,17 @@ std::optional<UInt64> StorageMergeTree::totalBytesUncompressed(const Settings &)
 SinkToStoragePtr
 StorageMergeTree::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context, bool /*async_insert*/)
 {
+    /// Capture the leadership epoch BEFORE the admission gate and hand it to the sink. If it
+    /// were sampled after the gate, an `INSERT` that passes the gate under one lease, survives
+    /// a lose-and-reacquire window, and only then samples the epoch would inherit the new epoch
+    /// without ever passing the new epoch's writable-leader check. Captured first, any leadership
+    /// change after the gate makes the sink's commit-time `assertWritableLeaderAtEpoch` fail closed.
+    const UInt64 admission_epoch = currentLeadershipEpoch();
     assertNotReadonly();
 
     const auto & settings = local_context->getSettingsRef();
-    return std::make_shared<MergeTreeSink>(*this, metadata_snapshot, settings[Setting::max_partitions_per_insert_block], local_context);
+    return std::make_shared<MergeTreeSink>(
+        *this, metadata_snapshot, settings[Setting::max_partitions_per_insert_block], local_context, admission_epoch);
 }
 
 void StorageMergeTree::drop()
@@ -1267,6 +1286,12 @@ MergeMutateSelectedEntry::~MergeMutateSelectedEntry()
 StorageMergeTree::PreparedMutationEntry StorageMergeTree::prepareMutationEntry(
     const MutationCommands & commands, ContextPtr query_context)
 {
+    /// Capture the leadership epoch before any shared state is prepared (the temporary mutation
+    /// file written by the entry constructor and the block number allocated below), so the fence
+    /// before `entry.commit` can reject an entry whose block number was allocated under a lease
+    /// that was lost and reacquired in between.
+    const UInt64 admission_epoch = currentLeadershipEpoch();
+
     /// Choose any disk, because when we load mutations we search them at each disk
     /// where storage can be placed. See `loadMutations`.
     auto disk = getStoragePolicy()->getAnyDisk();
@@ -1279,7 +1304,9 @@ StorageMergeTree::PreparedMutationEntry StorageMergeTree::prepareMutationEntry(
         additional_info = fmt::format(" (TID: {}; TIDH: {})", current_tid, current_tid.getHash());
     }
 
-    MergeTreeMutationEntry entry(commands, disk, relative_data_path, insert_increment.get(), current_tid, getContext()->getWriteSettings());
+    MergeTreeMutationEntry entry(
+        commands, disk, relative_data_path, insert_increment.get(), current_tid, getContext()->getWriteSettings(),
+        getPostfixForTempInsertName());
     auto block_holder = allocateBlockNumber(CommittingBlock::Op::Mutation);
 
     Int64 version = block_holder->block.number;
@@ -1289,7 +1316,11 @@ StorageMergeTree::PreparedMutationEntry StorageMergeTree::prepareMutationEntry(
     /// waiting in `delayMutationOrThrowIfNeeded` / `tryLockForAlter` before we get here. `entry.commit`
     /// is a non-transactional write to shared object storage that a new leader would later load and
     /// apply, so committing it after losing the lease would break the single-writer contract.
+    /// The check is against the epoch captured at admission, not merely the current writable state:
+    /// a lease lost and reacquired while waiting would look writable again, but the block number
+    /// above belongs to the previous epoch.
     assertNotReadonly();
+    assertWritableLeaderAtEpoch(admission_epoch);
     entry.commit(version);
 
     /// From here until `addPreparedMutationEntry` registers the entry in
@@ -1528,6 +1559,10 @@ std::unique_ptr<PlainLightweightUpdateLock> StorageMergeTree::getLockForLightwei
 
 QueryPipeline StorageMergeTree::updateLightweight(const MutationCommands & commands, ContextPtr query_context)
 {
+    /// Same ordering as `write`: capture the epoch before the admission gate so the patch sink's
+    /// commit-time epoch check covers the whole window from admission (including the block number
+    /// allocated below) to publish.
+    const UInt64 admission_epoch = currentLeadershipEpoch();
     assertNotReadonly();
     auto context_copy = Context::createCopy(query_context);
 
@@ -1554,7 +1589,7 @@ QueryPipeline StorageMergeTree::updateLightweight(const MutationCommands & comma
 
     auto pipeline = updateLightweightImpl(commands, context_copy);
     auto patch_metadata = DB::getPatchPartMetadata(pipeline.getHeader(), context_copy);
-    auto sink = std::make_shared<MergeTreeSinkPatch>(*this, std::move(patch_metadata), std::move(update_holder), context_copy);
+    auto sink = std::make_shared<MergeTreeSinkPatch>(*this, std::move(patch_metadata), std::move(update_holder), context_copy, admission_epoch);
 
     chassert(!pipeline.completed());
     pipeline.complete(std::move(sink));
@@ -1854,7 +1889,17 @@ void StorageMergeTree::loadDeduplicationLog()
     /// `mayMutateSharedStorage() == false` and leave `deduplication_log` null.
     if (!disk->isReadOnly() && mayMutateSharedStorage())
     {
-        deduplication_log = std::make_unique<MergeTreeDeduplicationLog>(path, (*settings)[MergeTreeSetting::non_replicated_deduplication_window], format_version, disk);
+        /// Under `leader_election`, let the log re-check lease freshness immediately before it
+        /// rewrites shared state (rotation / dropping outdated logs) during `load`: the takeover
+        /// reload runs on the heartbeat task and can outlast the lease, and the check at the top
+        /// of this function covers only its beginning.
+        std::function<bool()> may_write_shared_state;
+        if ((*settings)[MergeTreeSetting::leader_election])
+            may_write_shared_state = [this] { return mayMutateSharedStorage(); };
+
+        deduplication_log = std::make_unique<MergeTreeDeduplicationLog>(
+            path, (*settings)[MergeTreeSetting::non_replicated_deduplication_window], format_version, disk,
+            std::move(may_write_shared_state));
         deduplication_log->load();
     }
 }
@@ -1863,19 +1908,35 @@ void StorageMergeTree::loadMutations(bool reloading)
 {
     auto component_guard = Coordination::setCurrentComponent("StorageMergeTree::loadMutations");
 
-    /// Called only from the constructor, before this storage is published to any
-    /// database, so no other thread holds a reference and the lock is unnecessary.
-    /// Avoiding it also breaks a TSan lock-order edge between `DatabaseAtomic::mutex`
-    /// (held during lazy table construction via `tryCreateSymlink`) and
-    /// `currently_processing_in_background_mutex`. See STID 3367-4813.
-    chassert(current_mutations_by_version.empty());
+    std::unique_lock<std::mutex> lock;
+    if (reloading)
+    {
+        /// The leadership-takeover reload runs on a live, published table:
+        /// `current_mutations_by_version` and `mutation_counters` are concurrently read (and
+        /// written) under `currently_processing_in_background_mutex` by `system.mutations`,
+        /// `waitForMutation`, mutation snapshots, and merge/mutation selection, so the reload
+        /// must update them under the same mutex.
+        lock = std::unique_lock(currently_processing_in_background_mutex);
+    }
+    else
+    {
+        /// The constructor path is called before this storage is published to any database, so
+        /// no other thread holds a reference and the lock is unnecessary. Avoiding it also
+        /// breaks a TSan lock-order edge between `DatabaseAtomic::mutex` (held during lazy
+        /// table construction via `tryCreateSymlink`) and
+        /// `currently_processing_in_background_mutex`. See STID 3367-4813.
+        chassert(current_mutations_by_version.empty());
+    }
 
     /// Under `leader_election` a follower (or a node that has not yet acquired the lease) must
     /// not delete or rewrite files on shared storage; it still loads the mutation state into
     /// memory so reads observe the correct mutated view. The leadership-acquisition callback
     /// calls this again with `reloading = true` once the lease is held, which both performs the
     /// deferred file maintenance and picks up entries the previous leader created meanwhile.
-    const bool may_mutate = mayMutateSharedStorage();
+    /// `mayMutateSharedStorage` is re-evaluated immediately before EVERY shared write/delete
+    /// below (it is a couple of atomic loads) rather than hoisted: the takeover reload runs on
+    /// the heartbeat task, which cannot renew the lease meanwhile, so the lease can expire
+    /// mid-reload and the remaining shared writes must then fail closed.
 
     for (const auto & disk : getDisks())
     {
@@ -1899,7 +1960,7 @@ void StorageMergeTree::loadMutations(bool reloading)
                     if (existing != current_mutations_by_version.end())
                     {
                         auto & loaded = existing->second;
-                        if (may_mutate && !loaded.tid.isNonTransactional() && !loaded.csn)
+                        if (!loaded.tid.isNonTransactional() && !loaded.csn && mayMutateSharedStorage())
                         {
                             if (auto csn = TransactionLog::getCSN(loaded.tid))
                                 loaded.writeCSN(csn);
@@ -1915,7 +1976,7 @@ void StorageMergeTree::loadMutations(bool reloading)
                     if (auto csn = TransactionLog::getCSN(entry.tid))
                     {
                         /// Transaction is committed => mutation is finished, but let's load it anyway (so it will be shown in system.mutations)
-                        if (may_mutate)
+                        if (mayMutateSharedStorage())
                             entry.writeCSN(csn);
                     }
                     else
@@ -1925,7 +1986,7 @@ void StorageMergeTree::loadMutations(bool reloading)
                         /// In either case the mutation was not committed and should be removed (by the leader).
                         LOG_DEBUG(log, "Mutation entry {} was created by transaction {}, but it was not committed. Removing mutation entry",
                                   it->name(), entry.tid);
-                        if (may_mutate)
+                        if (mayMutateSharedStorage())
                             disk->removeFile(it->path());
                         continue;
                     }
@@ -1939,7 +2000,7 @@ void StorageMergeTree::loadMutations(bool reloading)
             }
             else if (startsWith(it->name(), "tmp_mutation_"))
             {
-                if (may_mutate)
+                if (mayMutateSharedStorage())
                     disk->removeFile(it->path());
             }
         }
@@ -2678,6 +2739,18 @@ size_t StorageMergeTree::clearOldPartsFromFilesystem(bool force, bool with_pause
         FailPointInjection::pauseFailPoint(FailPoints::storage_merge_tree_background_clear_old_parts_pause);
     }
 
+    /// Re-check lease freshness at the actual deletion point, not only at the entry into the
+    /// cleanup pass: selecting the parts above (and the pause point) can hold this thread past
+    /// `leader_election_session_timeout`, and deleting the selected parts as a stale leader
+    /// would destroy data the next leader still serves. Return the parts to the Outdated state
+    /// so a later pass (as the leader) can retry.
+    if (!canRunDestructiveCleanup())
+    {
+        LOG_WARNING(log, "Not removing {} old parts: the leader lease is no longer fresh (leader_election)", parts_to_remove.size());
+        rollbackDeletingParts(parts_to_remove);
+        return 0;
+    }
+
     clearPartsFromFilesystemAndRollbackIfError(parts_to_remove, "old");
 
     /// This is needed to close files to avoid they reside on disk after being deleted.
@@ -3366,6 +3439,11 @@ PartitionCommandsResultInfo StorageMergeTree::attachPartition(
 
 void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, const ASTPtr & partition, bool replace, ContextPtr local_context)
 {
+    /// Capture the leadership epoch before the admission gate (same ordering as `write`); it is
+    /// re-checked immediately before the cloned parts are published below, so a lease lost and
+    /// reacquired while parts were being cloned fails closed instead of publishing parts named
+    /// with block numbers from the previous epoch.
+    const UInt64 admission_epoch = currentLeadershipEpoch();
     assertNotReadonly();
     LOG_DEBUG(log, "StorageMergeTree::replacePartitionFrom\tsource_table: {}, replace: {}", source_table->getStorageID().getShortName(), replace);
 
@@ -3483,7 +3561,12 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
     MutableDataPartsVector dst_parts;
     std::vector<scope_guard> dst_parts_locks;
 
-    static const String TMP_PREFIX = "tmp_replace_from_";
+    /// Scope the temporary directory names to this server process: under `leader_election`,
+    /// several processes share the destination data path and the process-local `temp_index`
+    /// below is not unique across them. See `getPostfixForTempInsertName`.
+    String tmp_prefix = "tmp_replace_from_";
+    if (const auto temp_postfix = getPostfixForTempInsertName(); !temp_postfix.empty())
+        tmp_prefix += temp_postfix + "_";
 
     bool are_policies_partition_op_compatible = getStoragePolicy()->isCompatibleForPartitionOps(source_table->getStoragePolicy());
     for (const DataPartPtr & src_part : src_parts)
@@ -3506,7 +3589,7 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
             /// Replace can only work on the same disk
             auto [dst_part, part_lock] = cloneAndLoadDataPart(
                 src_part,
-                TMP_PREFIX,
+                tmp_prefix,
                 dst_part_info,
                 my_metadata_snapshot,
                 clone_params,
@@ -3521,7 +3604,7 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
             /// Attach can work on another disk
             auto [dst_part, part_lock] = cloneAndLoadDataPart(
                 src_part,
-                TMP_PREFIX,
+                tmp_prefix,
                 dst_part_info,
                 my_metadata_snapshot,
                 clone_params,
@@ -3560,6 +3643,12 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
             auto data_parts_lock = lockParts();
             std::vector<std::unique_ptr<PlainCommittingBlockHolder>> block_holders;
 
+            /// Under `leader_election`, re-fence at the epoch captured at admission BEFORE the
+            /// renames below publish the cloned parts on shared storage. `transaction.commit`
+            /// re-checks leadership, but by then the renames have already happened, and it cannot
+            /// detect a lease lost and reacquired while the parts were being cloned.
+            assertWritableLeaderAtEpoch(admission_epoch);
+
             /** It is important that obtaining new block number and adding that block to parts set is done atomically.
               * Otherwise there is race condition - merge of blocks could happen in interval that doesn't yet contain new part.
               */
@@ -3590,6 +3679,10 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
 /// Clang's thread-safety analyzer, which cannot track mutex ownership across `std::lock`.
 void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const ASTPtr & partition, ContextPtr local_context) TSA_NO_THREAD_SAFETY_ANALYSIS
 {
+    /// Capture the source-side leadership epoch before the admission gate (same ordering as
+    /// `write`); both the source and the destination epoch are re-checked immediately before
+    /// the renames publish parts on shared storage below.
+    const UInt64 src_admission_epoch = currentLeadershipEpoch();
     assertNotReadonly();
     auto dest_table_storage = std::dynamic_pointer_cast<StorageMergeTree>(dest_table);
     if (!dest_table_storage)
@@ -3602,7 +3695,9 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
     /// destination transaction. The source check above does not cover that, so fence the destination
     /// here — before any destination-side work — so a `leader_election` destination on which this node
     /// is a follower (or is still in post-failover takeover sync) fails closed rather than publishing
-    /// parts with a stale destination block counter.
+    /// parts with a stale destination block counter. As with the source, capture the destination
+    /// epoch before its admission gate.
+    const UInt64 dest_admission_epoch = dest_table_storage->currentLeadershipEpoch();
     dest_table_storage->assertNotReadonly();
 
     /// Destination-side UK reject (source-side rejection is centralized in
@@ -3687,7 +3782,13 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
     MutableDataPartsVector dst_parts;
     std::vector<scope_guard> dst_parts_locks;
 
-    static const String TMP_PREFIX = "tmp_move_from_";
+    /// Scope the temporary directory names (created under the DESTINATION data path by
+    /// `cloneAndLoadDataPart`) to this server process: under `leader_election`, several
+    /// processes share that path and the process-local `temp_index` below is not unique
+    /// across them. See `getPostfixForTempInsertName`.
+    String tmp_prefix = "tmp_move_from_";
+    if (const auto temp_postfix = dest_table_storage->getPostfixForTempInsertName(); !temp_postfix.empty())
+        tmp_prefix += temp_postfix + "_";
 
     for (const DataPartPtr & src_part : src_parts)
     {
@@ -3708,7 +3809,7 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
 
         auto [dst_part, part_lock] = dest_table_storage->cloneAndLoadDataPart(
             src_part,
-            TMP_PREFIX,
+            tmp_prefix,
             dst_part_info,
             dest_metadata_snapshot,
             clone_params,
@@ -3751,6 +3852,13 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
             {
                 renameTempPartAndReplaceUnlocked(part, src_data_parts_lock, src_transaction, /*rename_in_transaction=*/true);
             }
+
+            /// Under `leader_election`, re-fence both tables at the epochs captured at admission
+            /// BEFORE `renameParts` publishes anything on shared storage. The `commit` calls below
+            /// re-check leadership, but by then the renames have already happened, and they cannot
+            /// detect a lease lost and reacquired while the parts were being cloned.
+            dest_table_storage->assertWritableLeaderAtEpoch(dest_admission_epoch);
+            assertWritableLeaderAtEpoch(src_admission_epoch);
 
             dest_transaction.renameParts();
             dest_transaction.commit(dest_data_parts_lock);
@@ -4116,6 +4224,22 @@ void StorageMergeTree::assertWritableLeaderAtEpoch(UInt64 admission_epoch) const
             "Leadership epoch changed ({} -> {}) between this write's admission and its commit; "
             "rejecting before publishing a part prepared under a stale lease (leader_election)",
             admission_epoch, current_epoch);
+}
+
+std::string StorageMergeTree::getPostfixForTempInsertName() const
+{
+    /// See the comment in the header. The token must be stable within the process (temporary
+    /// cleanup on restart matches only the `tmp_*` prefixes, not the token) and distinct across
+    /// the server processes sharing the data path; a hash of the server UUID satisfies both.
+    if (!(*getSettings())[MergeTreeSetting::leader_election])
+        return "";
+
+    static const std::string node_token = [] {
+        SipHash hash;
+        hash.update(toString(ServerUUID::get()));
+        return getHexUIntLowercase(hash.get64());
+    }();
+    return node_token;
 }
 
 bool StorageMergeTree::mayMutateSharedStorage() const
