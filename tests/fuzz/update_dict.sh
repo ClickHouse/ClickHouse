@@ -2,19 +2,40 @@
 
 set -euo pipefail
 
+# Generate the libFuzzer dictionary (all.dict) from a ClickHouse binary.
+#
+# The dictionary lists every function, data type family and keyword known to the
+# server. Deriving it from the binary - instead of committing a snapshot that
+# has to be refreshed by hand - guarantees it never drifts from the actual SQL
+# grammar. In CI this runs in the libFuzzer test job against the release binary,
+# see ci/jobs/libfuzzer_test_check.py.
+#
+# Environment variables:
+#   CLICKHOUSE_BIN - path to the clickhouse binary (default: the local build).
+#   OUTPUT_DIR     - directory to write all.dict into (default: this directory).
+
 SCRIPT_DIR=$(dirname "$(realpath "$0")")
-ROOT_PATH="$(git rev-parse --show-toplevel)"
-CLICKHOUSE_BIN="${CLICKHOUSE_BIN:-$ROOT_PATH/build/programs/clickhouse}"
-DICTIONARIES_DIR="$SCRIPT_DIR/dictionaries"
+CLICKHOUSE_BIN="${CLICKHOUSE_BIN:-$SCRIPT_DIR/../../build/programs/clickhouse}"
+OUTPUT_DIR="${OUTPUT_DIR:-$SCRIPT_DIR}"
+
+# Curated tokens that cannot be derived from the system tables (multi-word
+# keywords, historical names, etc.). This is the only committed dictionary.
+CURATED_DICT="$SCRIPT_DIR/dictionaries/old.dict"
+
+TMP_DIR=$(mktemp -d)
+trap 'rm -rf "$TMP_DIR"' EXIT
+
+echo "Using ClickHouse binary: $CLICKHOUSE_BIN"
 
 echo "Generating functions dict"
-$CLICKHOUSE_BIN local -q "SELECT * FROM (SELECT DISTINCT concat('\"', name, '\"') as res FROM system.functions ORDER BY name UNION ALL SELECT concat('\"', a.name, b.name, '\"') as res FROM system.functions as a CROSS JOIN system.aggregate_function_combinators as b WHERE a.is_aggregate = 1) ORDER BY res" > "$DICTIONARIES_DIR/functions.dict"
+"$CLICKHOUSE_BIN" local -q "SELECT * FROM (SELECT DISTINCT concat('\"', name, '\"') as res FROM system.functions ORDER BY name UNION ALL SELECT concat('\"', a.name, b.name, '\"') as res FROM system.functions as a CROSS JOIN system.aggregate_function_combinators as b WHERE a.is_aggregate = 1) ORDER BY res" > "$TMP_DIR/functions.dict"
 
 echo "Generating data types dict"
-$CLICKHOUSE_BIN local -q "SELECT DISTINCT concat('\"', name, '\"') as res FROM system.data_type_families ORDER BY name" > "$DICTIONARIES_DIR/datatypes.dict"
+"$CLICKHOUSE_BIN" local -q "SELECT DISTINCT concat('\"', name, '\"') as res FROM system.data_type_families ORDER BY name" > "$TMP_DIR/datatypes.dict"
 
 echo "Generating keywords dict"
-$CLICKHOUSE_BIN local -q "SELECT DISTINCT concat('\"', keyword, '\"') as res FROM system.keywords ORDER BY keyword" > "$DICTIONARIES_DIR/keywords.dict"
+"$CLICKHOUSE_BIN" local -q "SELECT DISTINCT concat('\"', keyword, '\"') as res FROM system.keywords ORDER BY keyword" > "$TMP_DIR/keywords.dict"
 
-echo "Merging dictionaries into all.dict"
-cat "$DICTIONARIES_DIR"/* | LC_ALL=C sort | uniq > "$SCRIPT_DIR/all.dict"
+echo "Merging dictionaries into $OUTPUT_DIR/all.dict"
+mkdir -p "$OUTPUT_DIR"
+cat "$TMP_DIR"/*.dict "$CURATED_DICT" | LC_ALL=C sort | uniq > "$OUTPUT_DIR/all.dict"

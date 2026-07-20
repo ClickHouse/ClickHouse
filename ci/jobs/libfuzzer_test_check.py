@@ -107,6 +107,33 @@ def get_run_command(
     )
 
 
+def generate_dictionary(
+    fuzzers_path: Path, repo_path: Path, image: DockerImage
+) -> None:
+    # The libFuzzer dictionary (all.dict) lists every function, data type and
+    # keyword known to the server. It is generated here from the release binary,
+    # so it never drifts from the actual SQL grammar (see tests/fuzz/update_dict.sh).
+    clickhouse_bin = fuzzers_path / "clickhouse"
+    assert clickhouse_bin.exists(), "ClickHouse release binary not found"
+    clickhouse_bin.chmod(clickhouse_bin.stat().st_mode | 0o111)
+
+    uid = os.getuid()
+    gid = os.getgid()
+    cmd = (
+        f"docker run --rm "
+        f"--user {uid}:{gid} "
+        f"--workdir=/fuzzers "
+        f"--volume={fuzzers_path}:/fuzzers "
+        f"--volume={repo_path}/tests:/usr/share/clickhouse-test "
+        f'-e CLICKHOUSE_BIN="/fuzzers/clickhouse" '
+        f'-e OUTPUT_DIR="/fuzzers" '
+        f"{image} "
+        f"bash /usr/share/clickhouse-test/fuzz/update_dict.sh"
+    )
+    logging.info("Generating fuzzer dictionary: %s", cmd)
+    subprocess.check_call(cmd, shell=True)
+
+
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("check_name")
@@ -414,6 +441,8 @@ def main():
             )
             with zipfile.ZipFile(fuzzers_path / file, "r") as zfd:
                 zfd.extractall(seed_corpus_path)
+
+    generate_dictionary(fuzzers_path, repo_path, docker_image)
 
     result_path = temp_path / "result_path"
     result_path.mkdir(parents=True, exist_ok=True)

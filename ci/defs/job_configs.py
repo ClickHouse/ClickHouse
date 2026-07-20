@@ -1569,9 +1569,19 @@ class JobConfigs:
         name=JobNames.LIBFUZZER_TEST,
         runs_on=RunnerLabels.ARM_MEDIUM,
         command="python3 ./ci/jobs/libfuzzer_test_check.py 'libFuzzer tests'",
-        requires=[ArtifactNames.ARM_FUZZERS, ArtifactNames.FUZZERS_CORPUS],
+        # The release binary is used to generate the fuzzer dictionary (all.dict)
+        # from the actual set of functions, data types and keywords.
+        requires=[
+            ArtifactNames.ARM_FUZZERS,
+            ArtifactNames.FUZZERS_CORPUS,
+            ArtifactNames.CH_ARM_RELEASE,
+        ],
         digest_config=Job.CacheDigestConfig(
-            include_paths=["./ci/jobs/libfuzzer_test_check.py"],
+            include_paths=[
+                "./ci/jobs/libfuzzer_test_check.py",
+                "./tests/fuzz/update_dict.sh",
+                "./tests/fuzz/dictionaries/old.dict",
+            ],
         ),
     )
     collect_clickhouse_profiles_jobs = Job.Config(

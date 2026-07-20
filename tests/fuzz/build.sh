@@ -1,7 +1,7 @@
 #!/bin/bash -eu
 
-# copy fuzzer options and dictionaries
-cp $SRC/tests/fuzz/*.dict $OUT/
+# copy fuzzer options; the all.dict dictionary is generated at test time from a
+# release binary (see tests/fuzz/update_dict.sh and ci/jobs/libfuzzer_test_check.py)
 cp $SRC/tests/fuzz/*.options $OUT/
 
 # prepare corpus dirs

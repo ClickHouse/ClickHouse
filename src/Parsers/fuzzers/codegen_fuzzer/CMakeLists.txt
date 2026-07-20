@@ -16,11 +16,13 @@ configure_file(
     "${CURRENT_DIR_IN_BINARY}/clickhouse-template.g"
     COPYONLY)
 
-# Note that it depends on all.dict file!
+# The grammar is seeded from the committed curated dictionary. The full all.dict
+# is generated from a release binary at fuzzing time (see tests/fuzz/update_dict.sh)
+# and is not available here at build time.
 add_custom_command(
     OUTPUT
         "${CURRENT_DIR_IN_BINARY}/clickhouse.g"
-    COMMAND ./update.sh "${ClickHouse_SOURCE_DIR}/tests/fuzz/all.dict"
+    COMMAND ./update.sh "${ClickHouse_SOURCE_DIR}/tests/fuzz/dictionaries/old.dict"
 )
 
 add_custom_command(
