@@ -54,7 +54,7 @@ enum class ToStartOfIntervalOverload
 /// rounding is defined in DateLUTImpl and must not be clamped here), and the wider result types
 /// (Date32 = Int32, DateTime64 = Int64, used by the extended-results and DateTime64 paths) hold the full range.
 template <bool saturate, typename FieldType>
-static FieldType saturatingResultCast(Int64 value)
+FieldType saturatingResultCast(Int64 value)
 {
     if constexpr (saturate && (std::is_same_v<FieldType, UInt16> || std::is_same_v<FieldType, UInt32>))
         return static_cast<FieldType>(std::clamp<Int64>(value, 0, static_cast<Int64>(std::numeric_limits<FieldType>::max())));
