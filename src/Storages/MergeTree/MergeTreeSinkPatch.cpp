@@ -49,6 +49,8 @@ void MergeTreeSinkPatch::finishDelayedChunk()
         PartLog::addNewPart(storage.getContext(), PartLog::PartLogEntry(part, partition.elapsed_ns, counters_snapshot), block_ids);
         StorageMergeTree::incrementInsertedPartsProfileEvent(part->getType());
 
+        active_insert_scope.notePartCommitted();
+
         /// Initiate async merge - it will be done if it's good time for merge and if there are space in 'background_pool'.
         storage.background_operations_assignee.trigger();
     }

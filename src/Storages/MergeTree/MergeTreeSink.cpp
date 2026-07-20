@@ -36,6 +36,7 @@ namespace Setting
 {
     extern const SettingsUInt64 input_format_max_block_wait_ms;
     extern const SettingsUInt64 max_insert_delayed_streams_for_parallel_write;
+    extern const SettingsUInt64 parts_to_delay_insert;
     extern const SettingsBool wait_for_part_commit_in_dependent_materialized_views;
 }
 
@@ -71,7 +72,7 @@ MergeTreeSink::MergeTreeSink(
     , context(context_)
     , storage_snapshot(storage.getStorageSnapshotWithoutData(metadata_snapshot, context_))
     , deduplicate((*storage.getSettings())[MergeTreeSetting::non_replicated_deduplication_window] > 0 && storage.getDeduplicationLog() != nullptr)
-    , active_insert_scope(storage_)
+    , active_insert_scope(storage_, context_->getSettingsRef()[Setting::parts_to_delay_insert])
 {
     LOG_DEBUG(storage.log, "Create MergeTreeSink, deduplicate={}", deduplicate);
 }

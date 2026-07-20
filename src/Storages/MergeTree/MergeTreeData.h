@@ -865,17 +865,23 @@ public:
 
     struct ActiveInsertInfo
     {
-        explicit ActiveInsertInfo(UInt64 start_time_ns_) : start_time_ns(start_time_ns_) {}
+        ActiveInsertInfo(UInt64 start_time_ns_, UInt64 query_parts_to_delay_insert_)
+            : start_time_ns(start_time_ns_), query_parts_to_delay_insert(query_parts_to_delay_insert_)
+        {
+        }
 
         UInt64 start_time_ns;
+        /// Query-level override of parts_to_delay_insert (0 if not set).
+        UInt64 query_parts_to_delay_insert;
         std::atomic<UInt64> last_part_commit_time_ns{0};
+        std::atomic<UInt64> committed_parts_count{0};
     };
 
     /// RAII registration of an insert writing into the table, for shouldDeferMergesDueToActiveInserts.
     class ActiveInsertScope
     {
     public:
-        explicit ActiveInsertScope(MergeTreeData & storage_);
+        ActiveInsertScope(MergeTreeData & storage_, UInt64 query_parts_to_delay_insert);
         ~ActiveInsertScope();
 
         ActiveInsertScope(const ActiveInsertScope &) = delete;

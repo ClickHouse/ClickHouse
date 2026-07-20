@@ -1322,7 +1322,7 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
             {"dead_blobs_to_delay_insert", 0, 100000, "New setting to artificially slow down inserts when the dead blobs queues of the table's disks accumulate too many blobs pending removal."},
             {"dead_blobs_to_throw_insert", 0, 1000000, "New setting to reject inserts when the dead blobs queues of the table's disks accumulate too many blobs pending removal."},
             {"min_insert_duration_to_defer_merges_ms", 0, 10000, "New setting. Postpone background merge selection while a long-running INSERT is actively committing parts into the table, so that bulk inserts write their data exactly once instead of competing with concurrent merges for disk bandwidth."},
-            {"max_parts_in_partition_to_defer_merges", 500, 500, "New setting accompanying min_insert_duration_to_defer_merges_ms: stop deferring merges once some partition has this many active parts."},
+            {"max_parts_to_defer_merges", 500, 500, "New setting accompanying min_insert_duration_to_defer_merges_ms: stop deferring merges once the running inserts have committed this many parts."},
             {"max_insert_commit_gap_to_defer_merges_ms", 30000, 30000, "New setting accompanying min_insert_duration_to_defer_merges_ms: keep deferring merges only while the insert keeps committing parts at least this often."},
         });
 

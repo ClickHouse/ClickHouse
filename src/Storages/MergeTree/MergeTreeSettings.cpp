@@ -739,11 +739,14 @@ cheaper than merging concurrently with it: concurrent merges re-read and
 re-write freshly inserted parts, competing with the insert for disk bandwidth.
 
 The deferral ends as soon as the insert finishes (or stops committing parts for
-`max_insert_commit_gap_to_defer_merges_ms`), and never applies once the number
-of active parts in some partition reaches
-`max_parts_in_partition_to_defer_merges`.
+`max_insert_commit_gap_to_defer_merges_ms`), and never applies once the running
+inserts have committed `max_parts_to_defer_merges` parts or the number of
+active parts in some partition reaches half of `parts_to_delay_insert`.
 
-Only takes effect for non-replicated `MergeTree` tables.
+The deferral applies to all background merges of the table, including
+TTL-driven ones, so TTL enforcement may be delayed while a bulk insert is
+running. Mutations are not deferred. Only takes effect for non-replicated
+`MergeTree` tables.
 
 Possible values:
 - Positive integer - the minimum elapsed insert time, in milliseconds.
@@ -755,12 +758,12 @@ While a long-running `INSERT` defers background merges (see
 last part was committed at most this long ago. An insert that trickles data
 slowly does not hold merges back.
 )", 0) \
-    DECLARE(UInt64, max_parts_in_partition_to_defer_merges, 500, R"(
+    DECLARE(UInt64, max_parts_to_defer_merges, 500, R"(
 While a long-running `INSERT` defers background merges (see
-`min_insert_duration_to_defer_merges_ms`), stop deferring as soon as some
-partition has at least this many active parts. The effective limit is capped by
-half of `parts_to_delay_insert`, so that merges stay well ahead of the
-'too many parts' backpressure even under continuous inserts.
+`min_insert_duration_to_defer_merges_ms`), stop deferring once the currently
+running inserts have committed this many parts in total, so that the backlog of
+parts to merge after a bulk insert stays bounded no matter how many partitions
+the insert writes to.
 )", 0) \
     DECLARE(UInt64, min_age_to_force_merge_seconds, 0, R"(
 Merge parts if every part in the range is older than the value of
