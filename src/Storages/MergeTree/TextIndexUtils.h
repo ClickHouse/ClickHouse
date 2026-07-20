@@ -4,6 +4,7 @@
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeProjectionsIndexesTask.h>
 #include <Storages/MergeTree/MergeTreeIndexText.h>
+#include <Storages/MergeTree/TextIndexPositionData.h>
 #include <Storages/MergeTree/MergedPartOffsets.h>
 #include <Storages/MergeTree/TextIndexSegment.h>
 #include <Core/SortCursor.h>
@@ -74,6 +75,7 @@ public:
     MergeTextIndexesTask(
         std::vector<TextIndexSegment> segments,
         MergeTreeMutableDataPartPtr new_data_part_,
+        size_t num_rows_,
         MergeTreeIndexPtr index_ptr_,
         std::shared_ptr<MergedPartOffsets> merged_part_offsets_,
         const MergeTreeReaderSettings & reader_settings_,
@@ -107,6 +109,7 @@ private:
 
     std::vector<TextIndexSegment> segments;
     MergeTreeMutableDataPartPtr new_data_part;
+    size_t num_rows;
     MergeTreeIndexPtr index_ptr;
     MergeTreeIndexTextParams params;
 
@@ -131,11 +134,16 @@ private:
     std::vector<TokenPostingsInfo> output_infos;
     /// Postings accumulated for the current token.
     PostingList output_postings;
+    /// Positions accumulated for the current token (phrase query support).
+    PODArray<RoaringishEntry> output_positions;
     /// Sparse index accumulated for the task. Flushed only once in the end of the task.
     MutableColumnPtr sparse_index_tokens;
     MutableColumnPtr sparse_index_offsets;
 
+    /// Deserializer for the merged output part, using the destination codec resolved from the index definition.
     PostingsSerialization postings_serialization;
+    /// Per-source deserializers, each using the codec read from that source part's own header.
+    std::vector<PostingsSerialization> source_postings_serializations;
 
     bool is_initialized = false;
 };

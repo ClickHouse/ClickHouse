@@ -1,0 +1,311 @@
+---
+sidebarTitle: 'HTTP 인터페이스 사용'
+slug: /integrations/azure-data-factory/http-interface
+description: 'ClickHouse HTTP 인터페이스를 사용하여 Azure Data Factory에서 ClickHouse로 데이터를 가져오는 방법'
+keywords: ['azure data factory', 'azure', 'microsoft', 'data', 'http interface']
+title: 'Azure Data Factory에서 ClickHouse HTTP 인터페이스 사용'
+doc_type: 'guide'
+integration:
+   - support_level: 'core'
+   - category: 'data_ingestion'
+---
+
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+[`azureBlobStorage` 테이블 함수](/ko/reference/functions/table-functions/azureBlobStorage)는 Azure Blob Storage에서
+ClickHouse로 데이터를 수집하는 빠르고 편리한 방법입니다. 하지만 다음과 같은 이유로
+항상 적합한 것은 아닐 수 있습니다:
+
+* 데이터가 Azure Blob Storage에 저장되어 있지 않을 수 있습니다. 예를 들어 Azure SQL Database, Microsoft SQL Server 또는 Cosmos DB에 저장되어 있을 수 있습니다.
+* 보안 정책에 따라 Blob Storage에 대한 외부 액세스가
+  완전히 차단될 수 있습니다. 예를 들어 스토리지 계정이 공개 엔드포인트 없이 잠겨 있는 경우입니다.
+
+이러한 상황에서는 Azure Data Factory를
+[ClickHouse HTTP 인터페이스](/ko/concepts/features/interfaces/http)와 함께 사용하여
+Azure 서비스에서 ClickHouse로 데이터를 전송할 수 있습니다.
+
+이 방법은 데이터 흐름을 반대로 바꿉니다. ClickHouse가 Azure에서 데이터를
+가져오는 대신 Azure Data Factory가 데이터를 ClickHouse로 푸시합니다. 이 방식에서는
+일반적으로 ClickHouse 인스턴스가 공용
+인터넷에서 접근 가능해야 합니다.
+
+<Info>
+  Azure Data Factory의 통합 런타임을 사용하면
+  ClickHouse 인스턴스를 인터넷에 노출하지 않고도 데이터를 전송할 수 있습니다. 이 구성에서는
+  사설 네트워크를 통해 데이터를 보낼 수 있습니다. 하지만 이는 이
+  문서의 범위를 벗어납니다. 자세한 내용은 공식 가이드를 참조하십시오:
+  [통합 런타임 만들기 및 구성](https://learn.microsoft.com/en-us/azure/data-factory/create-self-hosted-integration-runtime?tabs=data-factory)
+</Info>
+
+<div id="turning-clickhouse-to-a-rest-service">
+  ## ClickHouse를 REST 서비스로 사용하기
+</div>
+
+Azure Data Factory는 HTTP를 통해 JSON
+포맷으로 외부 시스템에 데이터를 전송하는 기능을 지원합니다. 이 기능을 사용하면
+[ClickHouse HTTP 인터페이스](/ko/concepts/features/interfaces/http)를 사용해 데이터를 ClickHouse에 직접
+삽입할 수 있습니다.
+자세한 내용은 [ClickHouse HTTP 인터페이스
+문서](/ko/concepts/features/interfaces/http)에서 확인할 수 있습니다.
+
+이 예시에서는 대상 테이블만 지정하고,
+입력 데이터 포맷을 JSON으로 정의한 다음, 더 유연한 타임스탬프
+파싱을 허용하는 옵션을 포함하면 됩니다.
+
+```sql
+INSERT INTO my_table
+SETTINGS 
+    date_time_input_format='best_effort',
+    input_format_json_read_objects_as_strings=1
+FORMAT JSONEachRow
+```
+
+이 쿼리를 HTTP 요청의 일부로 전송하려면, ClickHouse endpoint의 query 매개변수에
+URL 인코딩된 문자열로 전달하면 됩니다:
+
+```text
+https://your-clickhouse-url.com?query=INSERT%20INTO%20my_table%20SETTINGS%20date_time_input_format%3D%27best_effort%27%2C%20input_format_json_read_objects_as_strings%3D1%20FORMAT%20JSONEachRow%0A
+```
+
+<Info>
+  Azure Data Factory는 기본 제공 `encodeUriComponent` 함수를 사용해 이 인코딩을 자동으로 처리하므로 수동으로 인코딩할 필요가 없습니다.
+</Info>
+
+이제 이 URL로 JSON 형식의 데이터를 보낼 수 있습니다. 데이터는 대상 테이블의
+구조와 일치해야 합니다. 다음은 `col_1`, `col_2`, `col_3`의 3개 컬럼이 있는
+테이블을 가정한 간단한 curl 예시입니다.
+
+```text
+curl \
+    -XPOST "https://your-clickhouse-url.com?query=<our_URL_encded_query>" \
+    --data '{"col_1":9119,"col_2":50.994,"col_3":"2019-06-01 00:00:00"}'
+```
+
+객체로 이루어진 JSON 배열 또는 JSON Lines(줄바꿈으로 구분된
+JSON 객체)도 전송할 수 있습니다. Azure Data Factory는 JSON 배열 포맷을 사용하며, 이 포맷은
+ClickHouse의 `JSONEachRow` 입력과 완벽하게 호환됩니다.
+
+보시다시피 이 단계에서는 ClickHouse
+측에서 특별히 할 작업이 없습니다. HTTP 인터페이스에서 이미
+REST 스타일 엔드포인트로 동작하는 데 필요한 모든 기능을 제공하므로
+추가 구성이 필요하지 않습니다.
+
+이제 ClickHouse가 REST 엔드포인트처럼 동작하도록 설정했으므로,
+이를 사용하도록 Azure Data Factory를 구성할 차례입니다.
+
+다음 단계에서는 Azure Data Factory 인스턴스를 생성하고, ClickHouse 인스턴스에 대한 Linked
+Service를 설정하고,
+[REST 싱크](https://learn.microsoft.com/en-us/azure/data-factory/connector-rest)를 위한 데이터셋을 정의한
+다음, Azure에서 ClickHouse로 데이터를 전송하는 Copy Data 활동을 생성합니다.
+
+<div id="create-an-azure-data-factory-instance">
+  ## Azure Data Factory 인스턴스 만들기
+</div>
+
+이 가이드는 Microsoft Azure 계정에 액세스할 수 있으며, subscription과 resource group이 이미 구성되어 있다고 가정합니다. Azure Data Factory가 이미 구성되어 있다면 이 단계는 건너뛰고 기존 서비스를 사용하여 다음 단계로 진행하면 됩니다.
+
+1. [Microsoft Azure Portal](https://portal.azure.com/)에 로그인한 다음
+   **Create a resource**를 클릭합니다.
+   <Image img="/images/integrations/data-ingestion/azure-data-factory/azure-home-page.webp" size="lg" alt="Azure Portal 홈 페이지" border />
+
+2. 왼쪽의 Categories 창에서 **Analytics**를 선택한 다음, 인기 서비스 목록에서
+   **Data Factory**를 클릭합니다.
+   <Image img="/images/integrations/data-ingestion/azure-data-factory/azure-new-resource-analytics.webp" size="lg" alt="Azure Portal 새 리소스" border />
+
+3. subscription과 resource group을 선택하고, 새 Data
+   Factory 인스턴스의 이름을 입력한 다음, 지역을 선택하고 버전은 V2로 그대로 둡니다.
+   <Image img="/images/integrations/data-ingestion/azure-data-factory/azure-new-data-factory.webp" size="lg" alt="Azure Portal 새 Data Factory" border />
+
+4. **Review + Create**를 클릭한 다음, **Create**를 클릭하여 배포를 시작합니다.
+
+   <Image img="/images/integrations/data-ingestion/azure-data-factory/azure-new-data-factory-confirm.webp" size="lg" alt="Azure Portal 새 Data Factory 확인" border />
+
+   <Image img="/images/integrations/data-ingestion/azure-data-factory/azure-new-data-factory-success.webp" size="lg" alt="Azure Portal 새 Data Factory 성공" border />
+
+배포가 성공적으로 완료되면 새 Azure
+Data Factory 인스턴스를 사용할 수 있습니다.
+
+<div id="-creating-new-rest-based-linked-service">
+  ## 새 REST 기반 Linked Service 만들기
+</div>
+
+1. Microsoft Azure Portal에 로그인한 후 Data Factory 인스턴스를 엽니다.
+   <Image img="/images/integrations/data-ingestion/azure-data-factory/azure-home-with-data-factory.webp" size="lg" alt="Data Factory가 있는 Azure Portal 홈 페이지" border />
+
+2. Data Factory 개요 페이지에서 **Launch Studio**를 클릭합니다.
+   <Image img="/images/integrations/data-ingestion/azure-data-factory/azure-data-factory-page.webp" size="lg" alt="Azure Portal Data Factory 페이지" border />
+
+3. 왼쪽 메뉴에서 **Manage**를 선택한 다음 **Linked services**로 이동하고,
+   **+ New**를 클릭하여 새 Linked Service를 만듭니다.
+   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-create-linked-service-button.webp" size="lg" alt="Azure Data Factory 새 Linked Service 버튼" border />
+
+4. **New linked service 검색창**에 **REST**를 입력하고 **REST**를 선택한 다음 **Continue**를 클릭하여
+   [REST 커넥터](https://learn.microsoft.com/en-us/azure/data-factory/connector-rest)
+   인스턴스를 생성합니다.
+   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-new-linked-service-search.webp" size="lg" alt="Azure Data Factory 새 Linked Service 검색" border />
+
+5. Linked Service 구성 창에서 새 서비스 이름을 입력하고,
+   **Base URL** 필드를 클릭한 다음 **Add dynamic content**를 클릭합니다(이 링크는
+   해당 필드를 선택했을 때만 표시됩니다).
+   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-new-lined-service-pane.webp" size="lg" alt="새 Linked Service 창" border />
+
+6. 동적 콘텐츠 창에서는 매개변수화된 URL을 만들 수 있으며, 이를 사용하면
+   나중에 서로 다른 테이블용 데이터셋을 만들 때 쿼리를 정의할 수 있습니다.
+   이렇게 하면 Linked Service를 재사용할 수 있습니다.
+   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-new-linked-service-base-url-empty.webp" size="lg" alt="비어 있는 새 Linked Service Base Url" border />
+
+7. 필터 입력 옆의 **&quot;+&quot;**를 클릭해 새 매개변수를 추가하고,
+   이름을 `pQuery`로 지정한 뒤 유형을 String으로 설정하고 기본값을 `SELECT 1`로 설정합니다.
+   **Save**를 클릭합니다.
+   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-new-linked-service-params.webp" size="lg" alt="새 Linked Service 매개변수" border />
+
+8. 표현식 필드에 다음 내용을 입력한 다음 **OK**를 클릭합니다.
+   `your-clickhouse-url.com`은 실제 ClickHouse
+   인스턴스 주소로 바꾸십시오.
+   ```text
+   @{concat('https://your-clickhouse-url.com:8443/?query=', encodeUriComponent(linkedService().pQuery))}
+   ```
+   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-new-linked-service-expression-field-filled.webp" size="lg" alt="값이 입력된 새 Linked Service 표현식 필드" border />
+
+9. 기본 양식으로 돌아가 기본 인증을 선택하고, ClickHouse HTTP 인터페이스에 연결할 때 사용하는 사용자 이름과
+   비밀번호를 입력한 다음 **Test
+   connection**을 클릭합니다. 모든 구성이 올바르면 성공
+   메시지가 표시됩니다.
+   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-new-linked-service-check-connection.webp" size="lg" alt="새 Linked Service 연결 확인" border />
+
+10. 설정을 완료하려면 **Create**를 클릭합니다.
+    <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-linked-services-list.webp" size="lg" alt="Linked Services 목록" border />
+
+이제 목록에서 새로 등록한 REST 기반 Linked Service를 확인할 수 있습니다.
+
+<div id="creating-a-new-dataset-for-the-clickhouse-http-interface">
+  ## ClickHouse HTTP 인터페이스용 새 데이터셋 만들기
+</div>
+
+이제 ClickHouse HTTP 인터페이스용 Linked Service 구성이 완료되었으므로,
+Azure Data Factory가 ClickHouse로 데이터를 전송할 때 사용할 데이터셋을 만들 수
+있습니다.
+
+이 예시에서는 [Environmental Sensors
+Data](/ko/get-started/sample-datasets/environmental-sensors)의 일부만 소량으로 삽입합니다.
+
+1. 사용할 ClickHouse 쿼리 콘솔을 엽니다. ClickHouse Cloud 웹 UI, CLI 클라이언트 또는
+   평소 쿼리 실행에 사용하는 다른 인터페이스를 사용할 수 있습니다. 그런 다음 대상
+   테이블을 생성합니다:
+   ```sql
+   CREATE TABLE sensors
+   (
+       sensor_id UInt16,
+       lat Float32,
+       lon Float32,
+       timestamp DateTime,
+       temperature Float32
+   )
+   ENGINE = MergeTree
+   ORDER BY (timestamp, sensor_id);
+   ```
+
+2. Azure Data Factory Studio에서 왼쪽 창의 Author를 선택합니다. 데이터셋 항목에
+   마우스를 올리고 점 3개 아이콘을 클릭한 다음 New dataset을 선택합니다.
+   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-new-dataset-item.webp" size="lg" alt="새 데이터셋 항목" border />
+
+3. 검색창에 **REST**를 입력하고 **REST**를 선택한 다음 **Continue**를 클릭합니다.
+   데이터셋 이름을 입력하고 이전 단계에서 만든 **linked service**를 선택합니다.
+   **OK**를 클릭해 데이터셋을 생성합니다.
+   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-new-dataset-page.webp" size="lg" alt="새 데이터셋 페이지" border />
+
+4. 이제 왼쪽의 Factory Resources 창에 있는 데이터셋 섹션 아래에 방금 생성한
+   데이터셋이 표시됩니다. 데이터셋을 선택해 속성을 엽니다. Linked Service에서
+   정의한 `pQuery` 매개변수가 표시됩니다. **Value** 텍스트 필드를 클릭한 다음
+   **Add dynamic** content를 클릭합니다.
+   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-new-dataset-properties.webp" size="lg" alt="새 데이터셋 속성" border />
+
+5. 열리는 창에 다음 쿼리를 붙여넣습니다:
+   ```sql
+   INSERT INTO sensors
+   SETTINGS 
+       date_time_input_format=''best_effort'', 
+       input_format_json_read_objects_as_strings=1 
+   FORMAT JSONEachRow
+   ```
+
+<Danger>
+  쿼리에 있는 모든 작은따옴표 `'`는 작은따옴표 두 개
+  `''`로 바꿔야 합니다. 이는 Azure Data Factory의 표현식 parser 때문에
+  필요합니다. 이를 이스케이프하지 않으면 바로 오류가 표시되지 않을 수 있지만,
+  나중에 데이터셋을 사용하거나 저장할 때 실패합니다. 예를 들어, `'best_effort'`
+  는 `''best_effort''`로 작성해야 합니다.
+</Danger>
+
+<Image img="/images/integrations/data-ingestion/azure-data-factory/adf-new-dataset-query.webp" size="xl" alt="새 데이터셋 쿼리" border />
+
+6. 표현식을 저장하려면 OK를 클릭합니다. Test connection을 클릭합니다. 모든 것이
+   올바르게 구성되었다면 Connection successful 메시지가 표시됩니다. 페이지
+   상단의 Publish all을 클릭해 변경 사항을 저장합니다.
+   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-new-dataset-connection-successful.webp" size="xl" alt="새 데이터셋 연결 성공" border />
+
+<div id="setting-up-an-example-dataset">
+  ### 예시 데이터셋 설정하기
+</div>
+
+이 예시에서는 전체 Environmental Sensors Dataset을 사용하지 않고,
+[Sensors Dataset Sample](https://datasets-documentation.s3.eu-west-3.amazonaws.com/environmental/sensors.csv)에서
+제공되는 작은 하위 집합만 사용합니다.
+
+<Info>
+  이 가이드의 핵심 내용에 집중하기 위해 Azure Data Factory에서 소스 데이터셋을
+  생성하는 구체적인 단계는 다루지 않겠습니다. 샘플 데이터는 원하는 스토리지 서비스(예: Azure Blob Storage, Microsoft SQL
+  Server 또는 Azure Data Factory에서 지원하는 다른 파일 포맷)에 업로드할 수 있습니다.
+</Info>
+
+데이터셋을 Azure Blob Storage(또는 원하는 다른 스토리지
+서비스)에 업로드한 다음, Azure Data Factory Studio에서 Factory Resources 창으로 이동하세요.
+업로드한 데이터를 가리키는 새 데이터셋을 생성하세요. 변경 사항을 저장하려면 Publish all을 클릭하세요.
+
+<div id="creating-the-copy-activity-to-transfer-data-to-clickhouse">
+  ## ClickHouse로 데이터를 전송하는 Copy Activity 만들기
+</div>
+
+이제 입력 및 출력 데이터셋 구성이 모두 완료되었으므로, 예시 데이터셋의 데이터를 ClickHouse의
+`sensors` 테이블로 전송하는 **Copy Data** 활동을 설정할 수 있습니다.
+
+1. **Azure Data Factory Studio**를 열고 **Author 탭**으로 이동합니다.
+   **Factory Resources** 창에서 **Pipeline** 위에 마우스를 올린 다음 점 3개 아이콘을 클릭하고 **New pipeline**을 선택합니다.
+   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-new-pipeline-item.webp" size="lg" alt="ADF 새 Pipeline 항목" border />
+
+2. **Activities** 창에서 **Move and transform** 섹션을 펼친 후
+   **Copy data** 활동을 캔버스로 끌어옵니다.
+   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-new-copy-data-item.webp" size="lg" alt="새 Copy Data 항목" border />
+
+3. **Source** 탭을 선택하고 앞서 만든 원본 데이터셋을 선택합니다.
+   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-copy-data-source.webp" size="lg" alt="Copy Data Source" border />
+
+4. **Sink** 탭으로 이동하여 `sensors` 테이블용으로 만든 ClickHouse 데이터셋을 선택합니다. **Request method**를 POST로 설정합니다. **HTTP compression
+   type**이 **None**으로 설정되어 있는지 확인합니다.
+
+<Warning>
+  Azure Data Factory의 Copy Data 활동에서는 HTTP compression이 올바르게 동작하지 않습니다. 활성화하면 Azure가 0바이트로만 구성된 payload를 전송하는데,
+  이는 서비스의 버그로 보입니다. compression은 반드시 비활성화된 상태로 두십시오.
+</Warning>
+
+<Info>
+  기본 Batch 크기인 10,000을 유지하거나 더 늘리는 것을 권장합니다. 자세한 내용은
+  [Selecting an Insert Strategy / Batch inserts if synchronous](/ko/concepts/best-practices/selecting-an-insert-strategy#batch-inserts-if-synchronous)를
+  참조하십시오.
+</Info>
+
+<Image img="/images/integrations/data-ingestion/azure-data-factory/adf-copy-data-sink-select-post.webp" size="lg" alt="Copy Data Sink에서 POST 선택" border />
+
+5. 캔버스 상단의 **Debug**를 클릭하여 파이프라인을 실행합니다. 잠시 후 활동이 큐에 들어가 실행됩니다. 모든 구성이 올바르면 작업은 **Success** 상태로 완료됩니다.
+   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-copy-data-debug-success.webp" size="lg" alt="Copy Data Debug Success" border />
+
+6. 완료되면 **Publish all**을 클릭하여 파이프라인과 데이터셋 변경 사항을 저장합니다.
+
+<div id="additional-resources-1">
+  ## 추가 리소스
+</div>
+
+* [HTTP 인터페이스](/ko/concepts/features/interfaces/http)
+* [Azure Data Factory를 사용한 REST 엔드포인트와의 데이터 복사 및 변환](https://learn.microsoft.com/en-us/azure/data-factory/connector-rest?tabs=data-factory)
+* [삽입 전략 선택](/ko/concepts/best-practices/selecting-an-insert-strategy)
+* [자체 호스팅 통합 런타임 생성 및 구성](https://learn.microsoft.com/en-us/azure/data-factory/create-self-hosted-integration-runtime?tabs=data-factory)

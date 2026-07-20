@@ -1,0 +1,184 @@
+---
+sidebarTitle: 'Apify'
+keywords: ['apify', '웹 스크래핑', '데이터 수집', 'Actor', '데이터셋', '자동화', '웹훅']
+slug: /integrations/apify
+description: 'Apify의 웹 스크래핑 및 자동화 데이터를 ClickHouse로 적재합니다'
+title: 'Apify를 ClickHouse에 연결하기'
+doc_type: 'guide'
+integration:
+  - support_level: 'community'
+  - category: 'data_ingestion'
+  - website: 'https://apify.com/'
+---
+
+import CommunityMaintainedBadge from "/snippets/ko/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
+import ConnectionDetails from '/snippets/ko/_gather_your_details_http.mdx';
+
+<CommunityMaintainedBadge />
+
+[Apify](https://apify.com/)는 웹 스크래핑 및 자동화 플랫폼입니다. [**Actor**](https://docs.apify.com/platform/actors)라고 하는 서버리스 클라우드 프로그램을 구축, 실행, 확장할 수 있습니다. Actor는 웹사이트를 스크레이프하고, 웹을 크롤링하며, 데이터를 처리하거나 워크플로를 자동화합니다. Actor를 실행할 때마다 구조화된 출력이 생성되며, 이 출력은 [**데이터셋**](https://docs.apify.com/platform/storage/dataset)(JSON 객체 모음)에 저장됩니다.
+
+스크레이프했거나 처리한 데이터를 분석, 모니터링 또는 보강 파이프라인에 활용하기 위해 ClickHouse에 적재합니다.
+
+<div id="key-concepts">
+  ## 핵심 개념
+</div>
+
+| Apify 개념                                                             | 설명                                                                                                                                 |
+| -------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| **[Actor](https://docs.apify.com/platform/actors)**                  | Apify 플랫폼에서 실행되는 서버리스 클라우드 프로그램입니다. [Apify Store](https://apify.com/store)에서는 바로 사용할 수 있는 수천 개의 Actor를 제공합니다.                      |
+| **[Dataset](https://docs.apify.com/platform/storage/dataset)**       | Actor 실행 결과물입니다. JSON 객체로 구성된 테이블 형태의 데이터셋이며, [Apify API](https://docs.apify.com/api/v2)를 통해 JSON, CSV, XML 또는 기타 포맷으로 가져올 수 있습니다. |
+| **[Webhook](https://docs.apify.com/platform/integrations/webhooks)** | Actor 실행이 성공, 실패하거나 기타 수명 주기 이벤트에 도달할 때 트리거되는 이벤트 기반 HTTP 호출입니다. 웹훅을 사용해 Apify-to-ClickHouse 파이프라인을 자동화할 수 있습니다.                   |
+
+<div id="setup-guide">
+  ## 설정 가이드
+</div>
+
+<Steps>
+  <Step>
+    ### ClickHouse 연결 정보를 확인하세요
+
+    <ConnectionDetails />
+  </Step>
+
+  <Step>
+    ### Apify 사전 요구 사항
+
+    추가로 다음이 필요합니다:
+
+    * [Apify 계정](https://console.apify.com/sign-up) (무료 tier 사용 가능)
+    * [Apify API token](https://docs.apify.com/platform/integrations/api#api-token) — [Apify Console](https://console.apify.com/)의 **Settings &gt; Integrations**에서 확인할 수 있습니다.
+    * 로컬에 설치된 Node.js 18+ (JavaScript 예시용)
+  </Step>
+
+  <Step>
+    ### 종속성 설치
+
+    Apify JavaScript client와 ClickHouse JavaScript client를 설치합니다:
+
+    ```bash
+    npm install apify-client @clickhouse/client
+    ```
+
+    <Note>
+      Apify는 [Python client](https://docs.apify.com/api/client/python)도 제공합니다. Python을 선호한다면 pip로 `apify-client`를 설치하고, ClickHouse에는 [clickhouse-connect](/ko/integrations/language-clients/python/index)를 사용하십시오.
+    </Note>
+  </Step>
+
+  <Step>
+    ### ClickHouse에 대상 테이블을 생성하세요
+
+    스크레이프한 데이터를 저장할 테이블을 생성합니다. 스키마는 사용하는 Actor에 따라 달라집니다. 이 예시에서는 제품 스크레이핑 Actor용으로 [MergeTree](/ko/reference/engines/table-engines/mergetree-family/mergetree)를 사용합니다:
+
+    ```sql
+    CREATE TABLE apify_products
+    (
+        url        String,
+        title      String,
+        price      Float64,
+        currency   String,
+        scraped_at DateTime DEFAULT now()
+    )
+    ENGINE = MergeTree()
+    ORDER BY (scraped_at, url);
+    ```
+  </Step>
+
+  <Step>
+    ### Apify 데이터셋을 가져와 ClickHouse에 적재하세요
+
+    다음 스크립트는 Apify Actor 실행 결과를 가져와 ClickHouse에 삽입합니다:
+
+    ```javascript
+    import { ApifyClient } from 'apify-client';
+    import { createClient } from '@clickhouse/client';
+
+    // 클라이언트 초기화
+    const apify = new ApifyClient({ token: 'YOUR_APIFY_API_TOKEN' });
+    const clickhouse = createClient({
+        url: 'https://YOUR_CLICKHOUSE_HOST:8443',
+        username: 'default',
+        password: 'YOUR_CLICKHOUSE_PASSWORD',
+        database: 'default',
+    });
+
+    // Actor의 마지막 실행에서 데이터셋 항목 가져오기
+    const run = await apify.actor('YOUR_ACTOR_ID').call();
+    const { items } = await apify.dataset(run.defaultDatasetId).listItems();
+
+    console.log(`Fetched ${items.length} items from Apify dataset.`);
+
+    // ClickHouse에 삽입
+    await clickhouse.insert({
+        table: 'apify_products',
+        values: items,
+        format: 'JSONEachRow',
+    });
+
+    console.log(`Inserted ${items.length} rows into ClickHouse.`);
+    await clickhouse.close();
+    ```
+
+    <Tip>
+      대규모 데이터셋의 경우 [List dataset items](https://docs.apify.com/api/v2#/reference/datasets/item-collection/list-items) endpoint의 `limit` 및 `offset` 매개변수를 사용해 결과를 페이지 단위로 가져오십시오. `clean=true`를 전달하면 비어 있지 않고 중복이 제거된 항목만 가져올 수도 있습니다.
+    </Tip>
+  </Step>
+
+  <Step>
+    ### 웹훅으로 자동화하세요
+
+    스크립트를 수동으로 실행하는 대신, Actor가 완료될 때마다 데이터가 ClickHouse에 적재되도록 파이프라인을 자동화합니다:
+
+    1. [Apify Console](https://console.apify.com/)에서 Actor로 이동한 다음 **Integrations** 탭을 엽니다.
+    2. 다음과 같이 새 웹훅을 추가합니다:
+       * **Event type:** `ACTOR.RUN.SUCCEEDED`
+       * **Action:** 로더 endpoint로 HTTP POST를 보내거나, ClickHouse 삽입을 처리하는 다른 Actor를 트리거합니다.
+    3. 웹훅 payload에는 `defaultDatasetId`가 포함되며, 이를 사용해 실행 결과를 가져올 수 있습니다.
+
+    payload 세부 정보와 구성 옵션은 [Apify 웹훅 documentation](https://docs.apify.com/platform/integrations/webhooks)을 참고하십시오.
+
+    대안으로는 [Apify Schedules](https://docs.apify.com/platform/schedules)를 사용해 cron과 유사한 일정으로 Actor를 실행하고, 적재 단계에는 웹훅을 함께 사용할 수도 있습니다.
+  </Step>
+</Steps>
+
+<div id="best-practices">
+  ## 모범 사례
+</div>
+
+<div id="fetching-data-from-apify">
+  ### Apify에서 데이터 가져오기
+</div>
+
+직접 HTTP 호출을 사용하는 대신 Apify 클라이언트 라이브러리([JavaScript](https://docs.apify.com/api/client/js)용 `apify-client` 또는 [Python](https://docs.apify.com/api/client/python))를 사용하십시오. 이 라이브러리는 페이지네이션, 재시도, 인증을 대신 처리해 줍니다. 대규모 데이터셋의 경우 [List dataset items](https://docs.apify.com/api/v2#/reference/datasets/item-collection/list-items) endpoint의 `limit` 및 `offset` 매개변수를 사용해 결과를 페이지별로 조회하십시오.
+
+<div id="loading-into-clickhouse">
+  ### ClickHouse에 적재하기
+</div>
+
+ClickHouse에 삽입할 때는 [`JSONEachRow`](/ko/reference/formats/JSON/JSONEachRow) 포맷을 사용하십시오. Apify의 JSON 출력과 직접 대응하므로 별도의 변환이 필요하지 않습니다.
+
+ClickHouse 테이블 스키마를 Actor의 출력 필드에 맞추십시오. Actor의 출력 스키마는 [Apify Store](https://apify.com/store) 페이지 또는 실행 후 **Dataset** 탭에서 확인할 수 있습니다.
+
+<div id="performance">
+  ### 성능
+</div>
+
+JavaScript client에서 높은 처리량으로 데이터를 삽입하려면 [성능 최적화를 위한 팁](/ko/integrations/language-clients/js#tips-for-performance-optimizations)을 따르십시오. 행을 한 번에 하나씩 삽입하는 대신 여러 행을 묶어 더 큰 단위로 삽입하고, 클라이언트 측 배칭이 실용적이지 않은 경우 [async inserts](/ko/concepts/features/operations/insert/asyncinserts)를 고려하십시오.
+
+<div id="security">
+  ### 보안
+</div>
+
+이 페이지의 예시는 설명을 단순하게 하기 위해 `default` 사용자와 데이터베이스를 사용합니다. 프로덕션 환경에서는 대상 테이블(target table)에 삽입하는 데 필요한 최소 권한만 가진 전용 사용자를 생성하고, 자격 증명은 안전하게 저장하십시오(예: 소스 코드에 커밋하지 말고 환경 변수나 시크릿 관리 도구에 저장). 자세한 내용은 [Cloud 접근 관리](/ko/products/cloud/guides/security/cloud-access-management/index)를 참조하십시오.
+
+<div id="related-resources">
+  ## 관련 리소스
+</div>
+
+* [Apify Platform 문서](https://docs.apify.com)
+* [Apify API 참조](https://docs.apify.com/api/v2)
+* [Apify JavaScript client](https://docs.apify.com/api/client/js)
+* [Apify Python client](https://docs.apify.com/api/client/python)
+* [Apify Store (즉시 사용 가능한 Actor)](https://apify.com/store)
+* [Apify 통합 개요](https://docs.apify.com/platform/integrations)
+* [ClickHouse JavaScript client](/ko/integrations/language-clients/js)

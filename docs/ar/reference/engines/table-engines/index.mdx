@@ -1,0 +1,124 @@
+---
+description: 'توثيق محركات الجداول'
+slug: /engines/table-engines/
+toc_folder_title: 'محركات الجداول'
+toc_priority: 26
+toc_title: 'مقدمة'
+title: 'محركات الجداول'
+doc_type: 'مرجع'
+---
+
+يحدد محرك الجدول (نوع الجدول) ما يلي:
+
+* كيفية تخزين البيانات ومكان تخزينها، وأين تُكتَب، ومن أين تُقرَأ.
+* الاستعلامات المدعومة وكيفية تنفيذها.
+* الوصول المتزامن إلى البيانات.
+* استخدام الفهارس، إن وُجدت.
+* ما إذا كان تنفيذ الطلبات على عدة خيوط ممكنًا.
+* معلمات النسخ المتماثل.
+
+<div id="engine-families">
+  ## عائلات المحرّكات
+</div>
+
+<div id="mergetree">
+  ### MergeTree
+</div>
+
+أكثر محركات الجداول شمولًا ومرونةً للمهام ذات الأحمال المرتفعة. والسمة المشتركة بين هذه المحركات هي سرعة إدخال البيانات، ثم معالجتها لاحقًا في الخلفية. تدعم محركات عائلة `MergeTree` نسخ البيانات المتماثل (من خلال إصدارات [Replicated*](/ar/reference/engines/table-engines/mergetree-family/replication) من المحركات)، والتقسيم، والفهارس الثانوية لتخطّي البيانات، وميزات أخرى لا تدعمها المحركات الأخرى.
+
+المحركات في هذه العائلة:
+
+| محركات MergeTree                                                                                               |
+| -------------------------------------------------------------------------------------------------------------- |
+| [MergeTree](/ar/reference/engines/table-engines/mergetree-family/mergetree)                                       |
+| [ReplacingMergeTree](/ar/reference/engines/table-engines/mergetree-family/replacingmergetree)                     |
+| [SummingMergeTree](/ar/reference/engines/table-engines/mergetree-family/summingmergetree)                         |
+| [AggregatingMergeTree](/ar/reference/engines/table-engines/mergetree-family/aggregatingmergetree)                 |
+| [CollapsingMergeTree](/ar/reference/engines/table-engines/mergetree-family/collapsingmergetree)                   |
+| [VersionedCollapsingMergeTree](/ar/reference/engines/table-engines/mergetree-family/versionedcollapsingmergetree) |
+| [GraphiteMergeTree](/ar/reference/engines/table-engines/mergetree-family/graphitemergetree)                       |
+| [CoalescingMergeTree](/ar/reference/engines/table-engines/mergetree-family/coalescingmergetree)                   |
+
+<div id="log">
+  ### Log
+</div>
+
+[محركات](/ar/reference/engines/table-engines/log-family/index) خفيفة بحدٍّ أدنى من الوظائف. تكون أكثر فعالية عندما تحتاج إلى كتابة عدد كبير من الجداول الصغيرة بسرعة (حتى نحو مليون صف) ثم قراءتها لاحقًا بالكامل.
+
+المحركات في هذه العائلة:
+
+| محركات Log                                                         |
+| ------------------------------------------------------------------ |
+| [TinyLog](/ar/reference/engines/table-engines/log-family/tinylog)     |
+| [StripeLog](/ar/reference/engines/table-engines/log-family/stripelog) |
+| [Log](/ar/reference/engines/table-engines/log-family/log)             |
+
+<div id="integration-engines">
+  ### محركات التكامل
+</div>
+
+محركات للتواصل مع أنظمة أخرى لتخزين البيانات ومعالجتها.
+
+المحركات ضمن هذه العائلة:
+
+| محركات التكامل                                                                    |
+| --------------------------------------------------------------------------------- |
+| [ODBC](/ar/reference/engines/table-engines/integrations/odbc)                         |
+| [JDBC](/ar/reference/engines/table-engines/integrations/jdbc)                        |
+| [MySQL](/ar/reference/engines/table-engines/integrations/mysql)                      |
+| [MongoDB](/ar/reference/engines/table-engines/integrations/mongodb)                  |
+| [Redis](/ar/reference/engines/table-engines/integrations/redis)                      |
+| [HDFS](/ar/reference/engines/table-engines/integrations/hdfs)                        |
+| [S3](/ar/reference/engines/table-engines/integrations/s3)                            |
+| [Kafka](/ar/reference/engines/table-engines/integrations/kafka)                      |
+| [EmbeddedRocksDB](/ar/reference/engines/table-engines/integrations/embedded-rocksdb) |
+| [RabbitMQ](/ar/reference/engines/table-engines/integrations/rabbitmq)                |
+| [PostgreSQL](/ar/reference/engines/table-engines/integrations/postgresql)            |
+| [S3Queue](/ar/reference/engines/table-engines/integrations/s3queue)                  |
+| [TimeSeries](/ar/reference/engines/table-engines/integrations/time-series)           |
+
+<div id="special-engines">
+  ### المحركات الخاصة
+</div>
+
+المحركات في هذه العائلة:
+
+| المحركات الخاصة                                                         |
+| ----------------------------------------------------------------------- |
+| [Distributed](/ar/reference/engines/table-engines/special/distributed)     |
+| [Dictionary](/ar/reference/engines/table-engines/special/dictionary)       |
+| [Merge](/ar/reference/engines/table-engines/special/merge)                 |
+| [Executable](/ar/reference/engines/table-engines/special/executable)       |
+| [File](/ar/reference/engines/table-engines/special/file)                   |
+| [Null](/ar/reference/engines/table-engines/special/null)                   |
+| [Set](/ar/reference/engines/table-engines/special/set)                     |
+| [Join](/ar/reference/engines/table-engines/special/join)                   |
+| [URL](/ar/reference/engines/table-engines/special/url)                     |
+| [View](/ar/reference/engines/table-engines/special/view)                   |
+| [Memory](/ar/reference/engines/table-engines/special/memory)               |
+| [Buffer](/ar/reference/engines/table-engines/special/buffer)               |
+| [External Data](/ar/reference/engines/table-engines/special/external-data) |
+| [GenerateRandom](/ar/reference/engines/table-engines/special/generate)     |
+| [KeeperMap](/ar/reference/engines/table-engines/special/keepermap)         |
+| [FileLog](/ar/reference/engines/table-engines/special/filelog)             |
+
+<div id="table_engines-virtual_columns">
+  ## الأعمدة الافتراضية
+</div>
+
+العمود الافتراضي هو سمة أساسية في محرك الجدول، وتكون معرَّفة في الشيفرة المصدرية للمحرك.
+
+يجب ألا تحدد الأعمدة الافتراضية في استعلام `CREATE TABLE`، ولا يمكنك رؤيتها في نتائج استعلامَي `SHOW CREATE TABLE` و`DESCRIBE TABLE`. كما أن الأعمدة الافتراضية للقراءة فقط، لذا لا يمكنك إدراج البيانات فيها.
+
+لاختيار البيانات من عمود افتراضي، يجب تحديد اسمه في استعلام `SELECT`. ولا يعيد `SELECT *` قيماً من الأعمدة الافتراضية.
+
+إذا أنشأت جدولاً يحتوي على عمود له الاسم نفسه لأحد الأعمدة الافتراضية في الجدول، يصبح العمود الافتراضي غير متاح. لا نوصي بذلك. وللمساعدة في تجنب التعارضات، تبدأ أسماء الأعمدة الافتراضية عادةً بشرطة سفلية.
+
+* `_table` — يحتوي على اسم الجدول الذي قُرئت منه البيانات. النوع: [String](/ar/reference/data-types/string).
+
+  بغض النظر عن محرك الجدول المستخدم، يتضمن كل جدول عمودًا افتراضيًا عامًا باسم `_table`.
+
+  عند الاستعلام عن جدول يستخدم محرك Merge table، يمكنك تعيين شروط ثابتة على `_table` في عبارة `WHERE/PREWHERE` (على سبيل المثال، `WHERE _table='xyz'`). في هذه الحالة، تُنفَّذ عملية القراءة فقط على الجداول التي يتحقق فيها الشرط على `_table`، ولذلك يعمل العمود `_table` بوصفه فهرسًا.
+
+  عند استخدام استعلامات منسقة مثل `SELECT ... FROM (... UNION ALL ...)`، يمكننا تحديد الجدول الفعلي الذي تنشأ منه الصفوف المُعادة من خلال تحديد العمود `_table`.

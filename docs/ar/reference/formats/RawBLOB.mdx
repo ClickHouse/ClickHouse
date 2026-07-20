@@ -1,0 +1,66 @@
+---
+description: 'توثيق تنسيق RawBLOB'
+keywords: ['RawBLOB']
+slug: /interfaces/formats/RawBLOB
+title: 'RawBLOB'
+doc_type: 'reference'
+---
+
+<div id="description">
+  ## الوصف
+</div>
+
+تقرأ تنسيقات `RawBLOB` جميع بيانات الإدخال كقيمة واحدة. ولا يمكن تحليل إلا جدول يحتوي على حقل واحد من النوع [`String`](/ar/reference/data-types/string) أو نوع مشابه.
+ويُخرَج الناتج بتنسيق ثنائي من دون فواصل أو محارف إفلات. وإذا أُخرجت أكثر من قيمة واحدة، يصبح التنسيق ملتبسًا، ويستحيل قراءة البيانات مرة أخرى.
+
+<div id="raw-formats-comparison">
+  ### مقارنة التنسيقات الخام
+</div>
+
+فيما يلي مقارنة بين التنسيقين `RawBLOB` و[`TabSeparatedRaw`](/ar/reference/formats/TabSeparated/TabSeparatedRaw).
+
+`RawBLOB`:
+
+* تُخرَج البيانات بتنسيق ثنائي، من دون أي إفلات؛
+* لا توجد فواصل بين القيم؛
+* لا يوجد سطر جديد في نهاية كل قيمة.
+
+`TabSeparatedRaw`:
+
+* تُخرَج البيانات من دون أي إفلات؛
+* تحتوي الصفوف على قيم مفصولة بعلامات تبويب؛
+* يوجد محرف line feed بعد آخر قيمة في كل صف.
+
+فيما يلي مقارنة بين التنسيقين `RawBLOB` و[RowBinary](/ar/reference/formats/RowBinary/RowBinary).
+
+`RawBLOB`:
+
+* تُخرَج حقول String من دون أن يُسبَق كلٌّ منها بالطول.
+
+`RowBinary`:
+
+* تُمثَّل حقول String على شكل طول بتنسيق varint (غير موقَّع [LEB128] (https://en.wikipedia.org/wiki/LEB128))، متبوعًا ببايتات السلسلة.
+
+عند تمرير بيانات فارغة إلى مُدخل `RawBLOB`، يرمي ClickHouse استثناءً:
+
+```text
+Code: 108. DB::Exception: No data to insert
+```
+
+<div id="example-usage">
+  ## مثال للاستخدام
+</div>
+
+```bash title="Query"
+$ clickhouse-client --query "CREATE TABLE {some_table} (a String) ENGINE = Memory;"
+$ cat {filename} | clickhouse-client --query="INSERT INTO {some_table} FORMAT RawBLOB"
+$ clickhouse-client --query "SELECT * FROM {some_table} FORMAT RawBLOB" | md5sum
+```
+
+```text title="Response"
+f9725a22f9191e064120d718e26862a9  -
+```
+
+<div id="format-settings">
+  ## إعدادات التنسيق
+</div>

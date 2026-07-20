@@ -198,11 +198,51 @@ namespace
             hash.update(x);
         }
     };
+
+    /// During INSERT, partition values are extracted from columns via `column->get()`,
+    /// which produces UInt64 Fields for Bool columns (ColumnUInt8 → NearestFieldType → UInt64).
+    /// But the query path (ALTER TABLE DROP/DETACH/ATTACH PARTITION) uses `convertFieldToType`,
+    /// which faithfully produces Bool-typed Fields. Since `LegacyFieldVisitorHash` hashes
+    /// Bool (type tag 28) differently from UInt64 (type tag 1), partition IDs won't match.
+    /// We cannot change the INSERT path or the hash without breaking existing partition IDs on disk,
+    /// so normalize Bool → UInt64 recursively to cover Tuple/Array/Map containers.
+    void normalizeBoolFields(Field & field)
+    {
+        if (field.getType() == Field::Types::Bool)
+        {
+            field = field.safeGet<UInt64>();
+        }
+        else if (field.getType() == Field::Types::Tuple)
+        {
+            auto & tuple = field.safeGet<Tuple>();
+            for (auto & elem : tuple)
+                normalizeBoolFields(elem);
+        }
+        else if (field.getType() == Field::Types::Array)
+        {
+            auto & array = field.safeGet<Array>();
+            for (auto & elem : array)
+                normalizeBoolFields(elem);
+        }
+        else if (field.getType() == Field::Types::Map)
+        {
+            auto & map = field.safeGet<Map>();
+            for (auto & elem : map)
+                normalizeBoolFields(elem);
+        }
+    }
+}
+
+MergeTreePartition::MergeTreePartition(Row value_) : value(std::move(value_))
+{
+    for (auto & field : value)
+        normalizeBoolFields(field);
 }
 
 String MergeTreePartition::getID(const MergeTreeData & storage) const
 {
-    return getID(storage.getInMemoryMetadataPtr(storage.getContext(), false)->getPartitionKey().sample_block);
+    auto storage_metadata_snapshot = storage.getInMemoryMetadataPtr(storage.getContext(), false);
+    return getID(storage_metadata_snapshot->getPartitionKey().sample_block);
 }
 
 /// NOTE: This ID is used to create part names which are then persisted in ZK and as directory names on the file system.
@@ -470,6 +510,14 @@ void MergeTreePartition::create(const StorageMetadataPtr & metadata_snapshot, Bl
 NamesAndTypesList MergeTreePartition::executePartitionByExpression(const StorageMetadataPtr & metadata_snapshot, Block & block, ContextPtr context)
 {
     auto adjusted_partition_key = adjustPartitionKey(metadata_snapshot, context);
+    /// Materialize subcolumns that the partition key expression needs.
+    /// The block may contain only parent columns (e.g. a Tuple or JSON column),
+    /// while the expression requires individual subcolumns as separate inputs.
+    for (const auto & required_column : adjusted_partition_key.expression->getRequiredColumns())
+    {
+        if (!block.has(required_column))
+            block.insert(block.getSubcolumnByName(required_column));
+    }
     adjusted_partition_key.expression->execute(block);
     return adjusted_partition_key.sample_block.getNamesAndTypesList();
 }

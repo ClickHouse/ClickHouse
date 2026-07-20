@@ -1,0 +1,54 @@
+---
+sidebar_title: 'Query Insights'
+slug: /cloud/get-started/query-insights
+description: '将 system.query_log 数据可视化，简化查询调试和性能优化'
+keywords: ['query insights', '查询日志', '查询日志 UI', 'system.query_log 分析']
+title: 'Query Insights'
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+**Query Insights** 功能通过可视化视图和表格，让 ClickHouse 内置的查询日志更易于使用。ClickHouse 的 `system.query_log` 表是查询优化、调试以及监控整个集群健康状况和性能的关键信息来源。
+
+<div id="query-overview">
+  ## 查询概览
+</div>
+
+选择某个服务后，左侧边栏中的 **Monitoring** 导航项会展开，并显示新的 **Query insights** 子项。点击该选项将打开新的 Query insights 页面：
+
+<Image img="/images/cloud/sqlconsole/insights_overview.webp" size="md" alt="Query Insights UI 概览" border />
+
+<div id="top-level-metrics">
+  ## 顶层指标
+</div>
+
+顶部的统计框展示了所选时间段内的一些基础顶层查询指标。下方提供了三个时间序列图表，按查询 Kind (select、insert、other) 细分，展示所选时间窗口内的查询量、延迟和错误率。延迟图表还可进一步切换为显示 p50、p90 和 p99 延迟：
+
+<Image img="/images/cloud/sqlconsole/insights_latency.webp" size="md" alt="Query Insights UI 延迟图表" border />
+
+<div id="recent-queries">
+  ## Recent queries
+</div>
+
+在顶层指标下方，表格会显示所选时间窗口内的查询日志条目 (按归一化查询哈希和用户分组) ：
+
+<Image img="/images/cloud/sqlconsole/insights_recent.webp" size="md" alt="Query Insights UI Recent Queries 表格" border />
+
+Recent queries 可按任意可用字段进行过滤和排序。该表格还可配置为显示或隐藏其他字段，例如表、p90 和 p99 延迟。
+
+<div id="query-drill-down">
+  ## 查询下钻
+</div>
+
+在 Recent queries 表中选择某个查询后，会打开一个弹出面板，其中显示该查询特有的指标和信息：
+
+<Image img="/images/cloud/sqlconsole/insights_drilldown.webp" size="md" alt="Query Insights UI 查询下钻" border />
+
+从弹出面板中可以看到，这个查询在过去 24 小时内已运行超过 3000 次。**Query info** 选项卡中的所有指标均为聚合指标；如果选择 **Query history** 选项卡，还可以查看每次单独运行的指标：
+
+<Image img="/images/cloud/sqlconsole/insights_query_info.webp" size="sm" alt="Query Insights UI 查询信息" border />
+
+<br />
+
+在此面板中，可以展开每次查询运行对应的 `Settings` 和 `Profile Events` 项，以查看更多信息。

@@ -1,0 +1,179 @@
+---
+description: 'ClickHouse의 MySQL 프로토콜 인터페이스 문서로, MySQL 클라이언트가
+  ClickHouse에 연결할 수 있도록 지원합니다'
+sidebarTitle: 'MySQL 인터페이스'
+slug: /interfaces/mysql
+title: 'MySQL 인터페이스'
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+ClickHouse는 MySQL wire 프로토콜을 지원합니다. 이를 통해 네이티브 ClickHouse 커넥터가 없는 일부 클라이언트도 MySQL 프로토콜을 대신 사용할 수 있으며, 다음 BI 도구에서 검증되었습니다.
+
+* [Looker Studio](/ko/integrations/connectors/data-visualization/looker-studio-and-clickhouse)
+* [Tableau Online](/ko/integrations/connectors/data-visualization/tableau/tableau-online-and-clickhouse)
+* [QuickSight](/ko/integrations/connectors/data-visualization/quicksight-and-clickhouse)
+
+아직 테스트되지 않은 다른 클라이언트나 통합을 사용하려는 경우에는 다음과 같은 제한 사항이 있을 수 있습니다.
+
+* SSL 구현이 완전히 호환되지 않을 수 있으며, [TLS SNI](https://www.cloudflare.com/learning/ssl/what-is-sni/) 관련 문제가 발생할 가능성이 있습니다.
+* 특정 도구는 아직 구현되지 않은 방언 기능(예: MySQL 전용 함수 또는 설정)을 요구할 수 있습니다.
+
+네이티브 드라이버를 사용할 수 있다면(예: [DBeaver](/ko/integrations/connectors/sql-clients/dbeaver)), MySQL 인터페이스 대신 해당 드라이버를 사용하는 것이 항상 더 바람직합니다. 또한 대부분의 MySQL 언어 클라이언트는 정상적으로 작동해야 하지만, 기존 MySQL 쿼리를 사용하는 코드베이스에서 MySQL 인터페이스가 완전한 대체 수단이 되는 것은 보장되지 않습니다.
+
+네이티브 ClickHouse 드라이버가 없는 특정 도구를 MySQL 인터페이스를 통해 사용하려고 하며, 그 과정에서 일부 비호환성을 발견했다면 ClickHouse 리포지토리에 [이슈를 생성해 주십시오](https://github.com/ClickHouse/ClickHouse/issues).
+
+<Note>
+위 BI 도구의 SQL 방언을 더 잘 지원하기 위해 ClickHouse의 MySQL 인터페이스는 [prefer&#95;column&#95;name&#95;to&#95;alias = 1](/ko/reference/settings/session-settings#prefer_column_name_to_alias) 설정을 사용해 SELECT 쿼리를 암묵적으로 실행합니다.
+이 설정은 비활성화할 수 없으며, 드문 경우 ClickHouse의 일반 쿼리 인터페이스와 MySQL 쿼리 인터페이스로 전송된 쿼리 간에 동작 차이가 발생할 수 있습니다.
+</Note>
+
+<div id="enabling-the-mysql-interface-on-clickhouse-cloud">
+  ## ClickHouse Cloud에서 MySQL 인터페이스 활성화
+</div>
+
+1. ClickHouse Cloud 서비스를 생성한 후 `Connect` 버튼을 클릭하세요.
+
+<br />
+
+<Image img="/images/interfaces/mysql0.webp" alt="자격 증명 화면 - Prompt" size="md" />
+
+2. `Connect with` 드롭다운을 `MySQL`로 변경하세요.
+
+<br />
+
+<Image img="/images/interfaces/mysql1.webp" alt="자격 증명 화면 - MySQL 선택" size="md" />
+
+3. 해당 서비스에서 MySQL 인터페이스를 활성화하도록 스위치를 켜세요. 그러면 이 서비스에 포트 `3306`이 열리고, 고유한 MySQL 사용자 이름이 포함된 MySQL 연결 화면이 표시됩니다. 비밀번호는 서비스의 기본 사용자 비밀번호와 동일합니다.
+
+<br />
+
+<Image img="/images/interfaces/mysql2.webp" alt="자격 증명 화면 - MySQL 활성화" size="md" />
+
+표시된 MySQL 연결 문자열(connection string)을 복사하세요.
+
+<Image img="/images/interfaces/mysql3.webp" alt="자격 증명 화면 - Connection String" size="md" />
+
+<div id="creating-multiple-mysql-users-in-clickhouse-cloud">
+  ## ClickHouse Cloud에서 여러 MySQL 사용자 생성하기
+</div>
+
+기본적으로 `mysql4<subdomain>`라는 내장 사용자가 있으며, 이 사용자는 `default` 사용자와 동일한 비밀번호를 사용합니다. `<subdomain>` 부분은 ClickHouse Cloud 호스트명의 첫 번째 세그먼트입니다. 이 형식은 보안 연결을 구현하지만 [TLS 핸드셰이크에서 SNI 정보를 제공하지 않는](https://www.cloudflare.com/learning/ssl/what-is-sni) 도구와 함께 사용하려면 필요합니다. 이런 도구는 사용자 이름에 추가 힌트가 없으면 내부 라우팅을 수행할 수 없기 때문입니다(MySQL 콘솔 클라이언트가 이러한 도구의 한 예입니다).
+
+따라서 MySQL 인터페이스와 함께 사용할 새 사용자를 만들 때는 `mysql4<subdomain>_<username>` 형식을 따를 것을 *강력히 권장합니다*. 여기서 `<subdomain>`은 Cloud 서비스를 식별하기 위한 힌트이고, `<username>`은 임의로 선택할 수 있는 접미사입니다.
+
+<Tip>
+  ClickHouse Cloud 호스트명이 `foobar.us-east1.aws.clickhouse.cloud`인 경우 `<subdomain>` 부분은 `foobar`이며, 사용자 지정 MySQL 사용자 이름은 `mysql4foobar_team1`처럼 만들 수 있습니다.
+</Tip>
+
+예를 들어 추가 설정을 적용해야 하는 경우, MySQL 인터페이스와 함께 사용할 추가 사용자를 만들 수 있습니다.
+
+1. 선택 사항 - 사용자 지정 사용자에 적용할 [설정 프로필(settings profile)](/ko/reference/statements/create/settings-profile)을 생성합니다. 예를 들어, 나중에 만들 사용자로 연결할 때 기본적으로 적용될 추가 설정이 포함된 `my_custom_profile`을 생성할 수 있습니다.
+
+   ```sql
+   CREATE SETTINGS PROFILE my_custom_profile SETTINGS prefer_column_name_to_alias=1;
+   ```
+
+   `prefer_column_name_to_alias`는 단지 예시일 뿐이며, 다른 설정을 사용할 수도 있습니다.
+
+2. 다음 형식으로 [사용자 생성](/ko/reference/statements/create/user)을 수행합니다: `mysql4<subdomain>_<username>`([위 참조](#creating-multiple-mysql-users-in-clickhouse-cloud)). 비밀번호는 double SHA1 형식이어야 합니다. 예를 들면 다음과 같습니다.
+
+   ```sql
+   CREATE USER mysql4foobar_team1 IDENTIFIED WITH double_sha1_password BY 'YourPassword42$';
+   ```
+
+   또는 이 사용자에 사용자 지정 프로필을 적용하려는 경우:
+
+   ```sql
+   CREATE USER mysql4foobar_team1 IDENTIFIED WITH double_sha1_password BY 'YourPassword42$' SETTINGS PROFILE 'my_custom_profile';
+   ```
+
+   여기서 `my_custom_profile`은 앞에서 생성한 프로필 이름입니다.
+
+3. 원하는 테이블 또는 데이터베이스와 상호작용하는 데 필요한 권한을 새 사용자에게 [부여](/ko/reference/statements/grant)합니다. 예를 들어 `system.query_log`에만 접근 권한을 부여하려면 다음과 같습니다.
+
+   ```sql
+   GRANT SELECT ON system.query_log TO mysql4foobar_team1;
+   ```
+
+4. 생성한 사용자를 사용해 MySQL 인터페이스로 ClickHouse Cloud 서비스에 연결합니다.
+
+<div id="troubleshooting-multiple-mysql-users-in-clickhouse-cloud">
+  ### ClickHouse Cloud에서 여러 MySQL 사용자 문제 해결
+</div>
+
+새 MySQL 사용자를 생성한 후 MySQL CLI 클라이언트로 연결할 때 다음 오류가 표시되는 경우:
+
+```sql
+ERROR 2013 (HY000): Lost connection to MySQL server at 'reading authorization packet', system error: 54
+```
+
+이 경우 사용자 이름이 [위](#creating-multiple-mysql-users-in-clickhouse-cloud)에서 설명한 대로 `mysql4<subdomain>_<username>` 포맷을 따르는지 확인하십시오.
+
+<div id="enabling-the-mysql-interface-on-self-managed-clickhouse">
+  ## 자가 관리형 ClickHouse에서 MySQL 인터페이스 활성화
+</div>
+
+서버의 설정 파일에 [mysql&#95;port](/ko/reference/settings/server-settings/settings#mysql_port) 설정을 추가합니다. 예를 들어, `config.d/` [폴더](/ko/concepts/features/configuration/server-config/configuration-files)에 새 XML 파일을 만들어 포트를 정의할 수 있습니다:
+
+```xml
+<clickhouse>
+    <mysql_port>9004</mysql_port>
+</clickhouse>
+```
+
+ClickHouse 서버를 시작한 다음, `Listening for MySQL compatibility protocol`이 포함된 아래와 유사한 로그 메시지를 찾으십시오:
+
+```bash
+{} <Information> Application: Listening for MySQL compatibility protocol: 127.0.0.1:9004
+```
+
+<div id="connect-mysql-to-clickhouse">
+  ## MySQL을 ClickHouse에 연결하기
+</div>
+
+다음 명령은 MySQL 클라이언트 `mysql`을 ClickHouse에 연결하는 예를 보여줍니다.
+
+```bash
+mysql --protocol tcp -h [hostname] -u [username] -P [port_number] [database_name]
+```
+
+예를 들어:
+
+```bash
+$ mysql --protocol tcp -h 127.0.0.1 -u default -P 9004 default
+```
+
+연결이 성공하면 다음과 같이 출력됩니다:
+
+```text
+Welcome to the MySQL monitor.  Commands end with ; or \g.
+Your MySQL connection id is 4
+Server version: 20.2.1.1-ClickHouse
+
+Copyright (c) 2000, 2019, Oracle and/or its affiliates. All rights reserved.
+
+Oracle is a registered trademark of Oracle Corporation and/or its
+affiliates. Other names may be trademarks of their respective
+owners.
+
+Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
+
+mysql>
+```
+
+모든 MySQL 클라이언트와의 호환성을 위해 설정 파일에서 사용자 비밀번호를 [double SHA1](/ko/concepts/features/configuration/settings/settings-users#user-namepassword)로 지정하는 것을 권장합니다.
+사용자 비밀번호를 [SHA256](/ko/reference/functions/regular-functions/hash-functions#SHA256)로 지정하면 일부 클라이언트(mysqljs, 그리고 MySQL 및 MariaDB 명령줄 도구의 이전 버전)에서는 인증할 수 없습니다.
+
+제약 사항:
+
+* prepared 쿼리는 지원되지 않습니다
+
+* 일부 데이터 타입은 문자열로 전송됩니다
+
+오래 실행되는 쿼리를 취소하려면 `KILL QUERY connection_id` 문을 사용하십시오(처리 중 `KILL QUERY WHERE query_id = connection_id`로 대체됩니다). 예시:
+
+```bash
+$ mysql --protocol tcp -h mysql_server -P 9004 default -u default --password=123 -e "KILL QUERY 123456;"
+```

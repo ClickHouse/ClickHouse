@@ -40,10 +40,14 @@ public:
     bool withTies() const { return with_ties; }
     bool alwaysReadTillEnd() const { return always_read_till_end; }
 
+    void markAsShardLimit() { is_shard_limit = true; }
+
     void serialize(Serialization & ctx) const override;
     bool isSerializable() const override { return true; }
 
     static QueryPlanStepPtr deserialize(Deserialization & ctx);
+
+    QueryPlanStepPtr clone() const override;
 
     bool hasCorrelatedExpressions() const override { return false; }
 
@@ -61,6 +65,7 @@ private:
 
     bool with_ties;
     const SortDescription description;
+    bool is_shard_limit = false;
 };
 
 }

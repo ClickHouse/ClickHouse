@@ -1,3 +1,4 @@
+#include <Columns/ColumnConst.h>
 #include <Columns/ColumnString.h>
 #include <DataTypes/DataTypeString.h>
 #include <IO/WriteHelpers.h>
@@ -59,7 +60,7 @@ public:
         const DataTypePtr & result_type,
         size_t input_rows_count) const override
     {
-        auto month_column = DataTypeString().createColumnConst(arguments[0].column->size(), month_str);
+        ColumnPtr month_column = DataTypeString().createColumnConst(arguments[0].column->size(), month_str);
         ColumnsWithTypeAndName temporary_columns
         {
             ColumnWithTypeAndName(month_column, std::make_shared<DataTypeString>(), ""),

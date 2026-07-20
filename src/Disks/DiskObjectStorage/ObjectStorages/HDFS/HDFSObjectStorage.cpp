@@ -99,7 +99,9 @@ std::unique_ptr<ReadBufferFromFileBase> HDFSObjectStorage::readObject( /// NOLIN
         patchSettings(read_settings),
         /* read_until_position */0,
         use_external_buffer,
-        object.bytes_size ? std::optional<size_t>(object.bytes_size) : std::nullopt,
+        /// `bytes_size` may be `StoredObject::UnknownSize` when the object size is not known; it is a
+        /// sentinel, not a real size, so map it (and the legacy `0`) to `std::nullopt` (read to EOF).
+        (object.bytes_size && object.bytes_size != StoredObject::UnknownSize) ? std::optional<size_t>(object.bytes_size) : std::nullopt,
         std::move(blob_storage_log));
 }
 

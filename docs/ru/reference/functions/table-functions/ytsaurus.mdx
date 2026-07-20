@@ -1,0 +1,49 @@
+---
+description: 'Табличная функция позволяет читать данные из кластера YTsaurus.'
+sidebarTitle: 'ytsaurus'
+slug: /sql-reference/table-functions/ytsaurus
+title: 'ytsaurus'
+doc_type: 'reference'
+---
+
+import ExperimentalBadge from "/snippets/ru/components/ExperimentalBadge/ExperimentalBadge.jsx";
+
+<div id="ytsaurus-table-function">
+  # Табличная функция ytsaurus
+</div>
+
+<ExperimentalBadge />
+
+Табличная функция позволяет читать данные из кластера YTsaurus.
+
+<div id="syntax">
+  ## Синтаксис
+</div>
+
+```sql
+ytsaurus(http_proxy_url, cypress_path, oauth_token, format)
+```
+
+<Info>
+  Это экспериментальная возможность, которая в будущих выпусках может измениться с нарушением обратной совместимости.
+  Включите использование табличной функции YTsaurus
+  с помощью настройки [allow&#95;experimental&#95;ytsaurus&#95;table&#95;function](/ru/reference/settings/session-settings#allow_experimental_ytsaurus_table_engine).
+  Выполните команду `set allow_experimental_ytsaurus_table_function = 1`.
+</Info>
+
+<div id="arguments">
+  ## Аргументы
+</div>
+
+* `http_proxy_url` — URL-адрес HTTP-прокси YTsaurus.
+* `cypress_path` — путь Cypress к источнику данных.
+* `oauth_token` — токен OAuth.
+* `format` — [формат](/ru/reference/formats/index) источника данных.
+
+**Возвращаемое значение**
+
+Таблица с указанной структурой для чтения данных по указанному пути Cypress в кластере YTsaurus.
+
+**См. также**
+
+* [движок YTsaurus](/ru/reference/engines/table-engines/integrations/ytsaurus)

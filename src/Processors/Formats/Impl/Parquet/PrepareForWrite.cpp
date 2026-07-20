@@ -62,6 +62,7 @@ namespace DB::ErrorCodes
     extern const int UNKNOWN_COMPRESSION_METHOD;
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
+    extern const int INCORRECT_DATA;
 }
 
 namespace DB::Parquet
@@ -692,6 +693,73 @@ void prepareColumnMap(
     }
 }
 
+/// Look up a leaf column's field id. Tolerates a missing name (returns nullopt) the same
+/// way the composite tuple/array/map branches do: a nested sub-map built by buildSubFieldIds()
+/// may legitimately omit some leaves. Must NOT use unordered_map::at(), which throws
+/// std::out_of_range (not a DB::Exception) and escalates to a fatal abort.
+std::optional<Int64> lookupLeafFieldId(
+    const std::optional<std::unordered_map<String, Int64>> & column_field_ids, const String & name)
+{
+    if (!column_field_ids)
+        return std::nullopt;
+    auto it = column_field_ids->find(name);
+    if (it == column_field_ids->end())
+        return std::nullopt;
+    return it->second;
+}
+
+void validateIcebergFieldIds(
+    const DataTypePtr & type, const String & path, const std::unordered_map<String, Int64> & field_ids)
+{
+    /// Nullable/LowCardinality are transparent in Iceberg field naming: the field id sits on
+    /// the inner type and the path is unchanged. Strip them and keep the same path, mirroring
+    /// prepareColumnNullable/the LowCardinality branch of prepareColumnRecursive.
+    switch (type->getTypeId())
+    {
+        case TypeIndex::Nullable:
+            validateIcebergFieldIds(assert_cast<const DataTypeNullable &>(*type).getNestedType(), path, field_ids);
+            return;
+        case TypeIndex::LowCardinality:
+            validateIcebergFieldIds(assert_cast<const DataTypeLowCardinality &>(*type).getDictionaryType(), path, field_ids);
+            return;
+        default:
+            break;
+    }
+
+    if (!field_ids.contains(path))
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA,
+            "Column '{}' has no field id in the Iceberg schema being written. The table schema "
+            "likely changed concurrently (e.g. a column was renamed); retry the INSERT.",
+            path);
+
+    /// Recurse into composites, building the same dotted paths that buildSubFieldIds() and the
+    /// composite branches use, so every nested logical field is validated against the latest schema.
+    switch (type->getTypeId())
+    {
+        case TypeIndex::Tuple:
+        {
+            const auto & tuple = assert_cast<const DataTypeTuple &>(*type);
+            size_t num_elements = tuple.getElements().size();
+            for (size_t i = 0; i < num_elements; ++i)
+                validateIcebergFieldIds(tuple.getElement(i), path + "." + tuple.getNameByPosition(i + 1), field_ids);
+            break;
+        }
+        case TypeIndex::Array:
+            validateIcebergFieldIds(assert_cast<const DataTypeArray &>(*type).getNestedType(), path + ".element", field_ids);
+            break;
+        case TypeIndex::Map:
+        {
+            const auto & map = assert_cast<const DataTypeMap &>(*type);
+            validateIcebergFieldIds(map.getKeyType(), path + ".key", field_ids);
+            validateIcebergFieldIds(map.getValueType(), path + ".value", field_ids);
+            break;
+        }
+        default:
+            break;
+    }
+}
+
 void prepareColumnRecursive(
     ColumnPtr column, DataTypePtr type, const std::string & name, const WriteOptions & options,
     ColumnChunkWriteStates & states, SchemaElements & schemas, const std::optional<std::unordered_map<String, Int64>> & column_field_ids)
@@ -714,11 +782,11 @@ void prepareColumnRecursive(
                     column->convertToFullColumnIfLowCardinality(), nested_type, name, options, states, schemas, column_field_ids);
             else
                 /// Use nested data type, but keep ColumnLowCardinality. The encoder can deal with it.
-                preparePrimitiveColumn(column, nested_type, name, options, states, schemas, column_field_ids ? std::optional(column_field_ids->at(name)) : std::nullopt);
+                preparePrimitiveColumn(column, nested_type, name, options, states, schemas, lookupLeafFieldId(column_field_ids, name));
             break;
         }
         default:
-            preparePrimitiveColumn(column, type, name, options, states, schemas, column_field_ids ? std::optional(column_field_ids->at(name)) : std::nullopt);
+            preparePrimitiveColumn(column, type, name, options, states, schemas, lookupLeafFieldId(column_field_ids, name));
             break;
     }
 }
@@ -733,7 +801,15 @@ SchemaElements convertSchema(const Block & sample, const WriteOptions & options,
     root.__set_num_children(static_cast<Int32>(sample.columns()));
 
     for (const auto & c : sample)
+    {
+        /// The field-id map is supplied only on the Iceberg write path. Validate the whole nested
+        /// tree (not just top-level names): every logical field must have a field id, else the block
+        /// and the sink's latest schema disagree and the footer would silently mismatch its manifest.
+        if (column_field_ids)
+            validateIcebergFieldIds(c.type, c.name, *column_field_ids);
+
         prepareColumnForWrite(c.column, c.type, c.name, options, nullptr, &schema, column_field_ids);
+    }
 
     return schema;
 }

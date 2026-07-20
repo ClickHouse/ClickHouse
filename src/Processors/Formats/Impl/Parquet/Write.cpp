@@ -19,6 +19,7 @@
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnObject.h>
 #include <IO/WriteHelpers.h>
+#include <IO/Libdeflate.h>
 #include <Common/WKB.h>
 #include <Common/config_version.h>
 #include <base/arithmeticOverflow.h>
@@ -454,7 +455,12 @@ struct ConverterEnumAsString
 
 struct ConverterUUID
 {
-    using Statistics = StatisticsFixedStringRef;
+    /// Use ...Copy, not ...Ref: each batch reuses `swapped_buf` storage which can be reallocated
+    /// between successive `getBatch` calls (when `data_count` exceeds the current capacity, e.g.
+    /// after a low-density null run). Statistics that hold raw pointers into `swapped_buf` would
+    /// then dereference freed memory when merging the next page's stats — a heap-use-after-free.
+    /// `StatisticsFixedStringCopy` keeps min/max as inline 16-byte arrays, so no dangling refs.
+    using Statistics = StatisticsFixedStringCopy<sizeof(UUID), /*SIGNED=*/ false>;
 
     const ColumnVector<UUID> & column;
     PODArray<parquet::FixedLenByteArray> buf;
@@ -625,6 +631,19 @@ PODArray<char> & compress(PODArray<char> & source, PODArray<char> & scratch, Com
 {
     /// We could use wrapWriteBufferWithCompressionMethod() for everything, but I worry about the
     /// overhead of creating a bunch of WriteBuffers on each page (thousands of values).
+#if USE_LIBDEFLATE
+    /// One-shot libdeflate for gzip: the page is already fully in memory, and libdeflate is faster
+    /// and compresses better than the streaming zlib path. Levels outside libdeflate's [1, 12]
+    /// range (e.g. level 0 = store) keep using the streaming path below.
+    if (method == CompressionMethod::Gzip && level >= 1 && level <= 12)
+    {
+        scratch.resize(Libdeflate::compressBound(method, level, source.size()));
+        size_t compressed_size = Libdeflate::compress(method, level, source.data(), source.size(), scratch.data(), scratch.size());
+        scratch.resize(compressed_size);
+        return scratch;
+    }
+#endif
+
     switch (method)
     {
         case CompressionMethod::None:
@@ -680,6 +699,9 @@ PODArray<char> & compress(PODArray<char> & source, PODArray<char> & scratch, Com
                 method,
                 level,
                 /*zstd_window_log*/ 0,
+                /// Parquet's `SNAPPY` codec is raw block compression and is special-cased above —
+                /// this dispatch never sees it, so the snappy mode here is irrelevant.
+                SnappyMode::Basic,
                 source.size(),
                 /*existing_memory*/ source.data());
             chassert(compressed_buf->position() == source.data());

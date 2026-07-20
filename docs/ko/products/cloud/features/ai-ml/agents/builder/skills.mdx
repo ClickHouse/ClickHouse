@@ -1,0 +1,76 @@
+---
+sidebarTitle: '스킬'
+slug: /cloud/features/ai-ml/agents/builder/skills
+title: '스킬'
+description: 'ClickHouse Agents용 재사용 가능한 지침 패키지'
+keywords: ['AI', 'ClickHouse Cloud', 'agents', 'skills', 'SKILL.md']
+doc_type: 'reference'
+---
+
+import BetaBadge from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge />
+
+스킬은 에이전트가 필요할 때마다 적용할 수 있는 재사용 가능한 지침 묶음입니다. 브랜드 스타일 가이드, 코드 리뷰 체크리스트, 특정 워크플로용 런북처럼 여러 에이전트에서 반복해서 사용하는 절차에는 각 에이전트의 시스템 프롬프트에 지침을 중복해 넣는 대신 스킬을 사용하십시오.
+
+<div id="anatomy-of-a-skill">
+  ## 스킬의 구성
+</div>
+
+스킬은 간단한 프론트매터가 포함된 Markdown 파일입니다:
+
+```markdown
+---
+name: revenue-report
+description: Generates the weekly revenue report using our standard segments
+always-apply: false
+user-invocable: true
+---
+
+When asked to generate a revenue report:
+1. Filter to the requested period.
+2. Apply the standard MRR formula:
+     SUM(CASE
+       WHEN billing_cycle = 'monthly' THEN amount
+       WHEN billing_cycle = 'yearly'  THEN amount / 12
+       ELSE 0
+     END)
+3. Break down by segment: Enterprise, Mid-Market, SMB.
+4. Render the result as a Markdown table.
+```
+
+가장 중요한 프론트매터 설정은 다음과 같습니다.
+
+* **`name`** - 케밥 케이스 식별자입니다.
+* **`description`** - 이 스킬이 관련 있는지 모델이 판단할 때 사용하는 짧은 요약입니다. 가장 중요한 항목으로 간주하십시오. 구체적으로 작성하세요. 설명이 모호하면 잘못된 스킬이 호출될 수 있습니다.
+* **`always-apply`** - `true`이면 선택되는 대신 모든 턴에 이 스킬이 자동으로 포함됩니다. 꼭 필요한 경우에만 사용하세요. always-apply 스킬은 모든 메시지에서 컨텍스트를 소모합니다.
+* **`user-invocable`** - `true`이면(기본값) 수동으로 선택할 수 있도록 이 스킬이 `$` 팝오버에 표시됩니다.
+
+`SKILL.md`와 관련 자산이 포함된 `.zip` 파일을 업로드하면 참고 문서, 예시 쿼리, 간단한 스크립트 같은 지원 파일을 스킬과 함께 묶을 수 있습니다.
+
+<div id="use-a-skill">
+  ## 스킬 사용하기
+</div>
+
+대화 중 에이전트가 스킬을 사용하는 방법은 3가지입니다.
+
+* **사용자 호출** - 컴포저에서 `$`를 누른 다음 팝오버에서 스킬을 선택합니다. 그러면 다음 턴에 사용할 수 있도록 스킬 내용이 미리 준비됩니다.
+* **모델 자동 선택** - 스킬의 `description`을 바탕으로 에이전트가 적용 시점을 스스로 판단합니다.
+* **항상 적용** - 이렇게 구성된 스킬은 모든 턴에 미리 적용됩니다.
+
+<div id="manage-skills">
+  ## 스킬 관리
+</div>
+
+Cloud Console의 스킬 패널에서는 바로 스킬을 만들고, `.md` 또는 `.zip` 파일을 업로드하고, 사용자에게 활성화할 스킬을 관리할 수 있습니다. 소유한 스킬은 기본적으로 활성 상태이며, 삭제하지 않고 비활성화하면 팝오버와 모델의 카탈로그에서 제거됩니다.
+
+스킬은 다른 사용자와 공유할 수 있습니다([sharing and access](/ko/products/cloud/features/ai-ml/agents/sharing-and-access) 참조).
+
+<div id="skills-vs-instructions">
+  ## 스킬과 지침
+</div>
+
+* **에이전트 지침**은 에이전트의 역할과 전반적인 동작 방식을 정의합니다. 해당 에이전트에 항상 적용됩니다.
+* **스킬**은 상황에 따라 적용됩니다 — 관련이 있을 때만 적용되며, 특정 워크플로에 한정됩니다.
+
+여러 에이전트에서 동일한 단계별 지침이 반복해서 나타나거나, 모든 대화에서가 아니라 특정 사용자 요청에 대해서만 트리거되도록 하려면 스킬을 사용하십시오.

@@ -614,6 +614,14 @@ struct Data
 
 void addNewPoint(IPolygonDictionary::Coord x, IPolygonDictionary::Coord y, Data & data, Offset & offset)
 {
+    if (isNaN(x) || isNaN(y))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "PolygonDictionary polygon point component must not be NaN");
+
+    if (std::isinf(x) || std::isinf(y))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "PolygonDictionary polygon point component must not be infinite");
+
     if (offset.atLastPointOfRing())
     {
         if (offset.atLastRingOfPolygon())

@@ -47,7 +47,11 @@ public:
 
     bool containsDefault() const;
 
-    WeakHash32 getWeakHash(const WeakHash32 & dict_hash) const;
+    /// Per-row hash of indexed data: gathers the precomputed per-dictionary-row hashes
+    /// `dict_hash` by index and writes (or combines, when initial == false) into `hash_out`.
+    /// `hash_out[i]` corresponds to row `row_begin + i`.
+    void computeHashInto(
+        const PaddedPODArray<UInt32> & dict_hash, size_t row_begin, size_t row_end, UInt32 * hash_out, bool initial) const;
 
     void collectSerializedValueSizes(PaddedPODArray<UInt64> & sizes, const PaddedPODArray<UInt64> & dict_sizes) const;
 
@@ -72,6 +76,11 @@ public:
     void getIndexesByMask(IColumn::Offsets & result_indexes, const PaddedPODArray<UInt8> & mask, size_t start, size_t end) const;
 
     void expand(const IColumn::Filter & mask, bool inverted);
+
+    /// Set the stored index to `value` for every row where `mask` is zero.
+    /// When `offset` is given, only the rows in `[offset, offset + mask.size())` are affected and `mask`
+    /// covers just that range; otherwise it must cover the whole column.
+    void setIndexesWhereMaskZero(const IColumn::Filter & mask, UInt64 value, size_t offset = 0);
 
 private:
     size_t getMaxIndexForCurrentType() const;

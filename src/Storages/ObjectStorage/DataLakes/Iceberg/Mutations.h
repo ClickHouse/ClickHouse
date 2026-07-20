@@ -36,10 +36,12 @@ void mutate(
 void alter(
     const AlterCommands & params,
     ContextPtr context,
+    StorageID storage_id,
     ObjectStoragePtr object_storage,
     const DataLakeStorageSettings & data_lake_settings,
     const PersistentTableComponents & persistent_table_components,
-    const String & write_format);
+    const String & write_format,
+    std::shared_ptr<DataLake::ICatalog> catalog);
 
 }
 

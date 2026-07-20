@@ -1,0 +1,72 @@
+---
+description: 'Установка ClickHouse'
+keywords: ['clickhouse', 'install', 'начало работы', 'быстрый старт']
+sidebarTitle: 'Установка'
+slug: /install
+title: 'Инструкция по установке'
+doc_type: 'guide'
+---
+
+import {galaxyOnClick} from "/snippets/ru/lib/galaxy.jsx";
+
+<Card title="ClickHouse Cloud" icon="cloud" href="https://console.clickhouse.cloud/signUp?loc=docs-install-page-banner" cta="Начать бесплатно">
+  Начните работу сразу, без необходимости заниматься сайзингом и масштабированием кластера. ClickHouse Cloud берет на себя сайзинг, масштабирование
+  , безопасность, надежность и обновления.
+</Card>
+
+<br />
+
+Если вы предпочитаете самостоятельное управление, выберите один из вариантов ClickHouse с открытым исходным кодом ниже.
+Используйте скрипт быстрой установки или CLI `clickhousectl` для локального развертывания либо установите
+ClickHouse Server из пакетов или бинарных файлов для развертывания в продакшне.
+
+<h3 className="install-group-heading">Локальная разработка</h3>
+
+<p className="install-group-description">
+  Запустите ClickHouse на своей машине для разработки, тестирования и экспериментов.
+  Быстрая установка позволяет быстро получить единый бинарный файл, либо используйте clickhousectl
+  для установки и управления локальными версиями и серверами.
+</p>
+
+<div className="installContainer">
+  <a href="/ru/install/quick-install" style={{textDecoration: 'none'}}>
+    <Card title="Быстрая установка" />
+  </a>
+
+  <a href="/ru/install/clickhousectl" style={{textDecoration: 'none'}}>
+    <Card title="clickhousectl (CLI)" icon="console" />
+  </a>
+
+  <a href="/ru/install/docker" style={{textDecoration: 'none'}}>
+    <Card title="Docker" />
+  </a>
+
+  <a href="/ru/install/advanced" style={{textDecoration: 'none'}}>
+    <Card title="Сборка из исходного кода" icon="code" />
+  </a>
+</div>
+
+<h3 className="install-group-heading">Сервер для продакшна</h3>
+
+<p className="install-group-description">
+  Установите ClickHouse Server из пакетов или бинарных файлов для
+  длительно работающего развертывания в собственной инфраструктуре.
+</p>
+
+<div className="installContainer">
+  <a href="/ru/install/debian_ubuntu" style={{textDecoration: 'none'}}>
+    <Card title="Debian/Ubuntu" />
+  </a>
+
+  <a href="/ru/install/redhat" style={{textDecoration: 'none'}}>
+    <Card title="Redhat" />
+  </a>
+
+  <a href="/ru/install/nixos" style={{textDecoration: 'none'}}>
+    <Card title="NixOS" />
+  </a>
+
+  <a href="/ru/install/linux_other" style={{textDecoration: 'none'}}>
+    <Card title="Другие дистрибутивы Linux" />
+  </a>
+</div>

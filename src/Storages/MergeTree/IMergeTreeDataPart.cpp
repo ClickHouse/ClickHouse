@@ -3,6 +3,7 @@
 #include <Storages/MergeTree/IDataPartStorage.h>
 #include <Storages/MergeTree/DataPartStorageOnDiskBase.h>
 
+#include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnNullable.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressionFactory.h>
@@ -36,6 +37,7 @@
 #include <Storages/MergeTree/MergeTreeMarksLoader.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/PatchParts/PatchPartsUtils.h>
+#include <Storages/MergeTree/UniqueKey/DeleteBitmapCache.h>
 #include <Storages/MergeTree/PrimaryIndexCache.h>
 #include <Storages/MergeTree/checkDataPart.h>
 #include <Storages/StorageReplicatedMergeTree.h>
@@ -119,6 +121,7 @@ namespace MergeTreeSetting
 namespace Setting
 {
     extern const SettingsBool merge_tree_use_prefixes_deserialization_thread_pool;
+    extern const SettingsBool use_streaming_marks_compression;
 }
 
 namespace ErrorCodes
@@ -240,7 +243,7 @@ IMergeTreeDataPart::MinMaxIndex::WrittenFiles IMergeTreeDataPart::MinMaxIndex::s
         if (i >= hyperrectangle.size())
             break;
 
-        if (!column_type->isNullable() && (hyperrectangle[i].left.isNull() || hyperrectangle[i].right.isNull()))
+        if (!isNullableOrLowCardinalityNullable(column_type) && (hyperrectangle[i].left.isNull() || hyperrectangle[i].right.isNull()))
             break;
 
         String file_name = "minmax_" + getFileColumnName(column_name, storage_settings, part_storage) + ".idx";
@@ -274,11 +277,17 @@ void IMergeTreeDataPart::MinMaxIndex::update(const Block & block, const NamesAnd
     {
         FieldRef min_value;
         FieldRef max_value;
-        const ColumnWithTypeAndName & column = block.getColumnOrSubcolumnByName(column_name);
-        if (const auto * column_nullable = typeid_cast<const ColumnNullable *>(column.column.get()))
-            column_nullable->getExtremesNullLast(min_value, max_value, 0, column.column->size());
+        const ColumnWithTypeAndName & column_and_type = block.getColumnOrSubcolumnByName(column_name);
+        const auto & src_column = column_and_type.column;
+        /// Only LowCardinality needs unwrapping to expose a nested Nullable; gate the call so other
+        /// columns are untouched. LC(Nullable(T)) then takes getExtremesNullLast (keeps the +inf NULL
+        /// sentinel; otherwise mixed NULL/non-NULL parts lose it and IS NULL wrongly prunes). getExtremes
+        /// on LC materializes internally too, so this adds no extra work.
+        const auto column = src_column->lowCardinality() ? src_column->convertToFullColumnIfLowCardinality() : src_column;
+        if (const auto * column_nullable = typeid_cast<const ColumnNullable *>(column.get()))
+            column_nullable->getExtremesNullLast(min_value, max_value, 0, column->size());
         else
-            column.column->getExtremes(min_value, max_value, 0, column.column->size());
+            column->getExtremes(min_value, max_value, 0, column->size());
 
         if (!initialized)
             hyperrectangle.emplace_back(min_value, true, max_value, true);
@@ -760,9 +769,9 @@ StorageMetadataPtr IMergeTreeDataPart::getMetadataSnapshot() const
     if (info.isPatch())
         return storage.getPatchPartMetadata(*columns_description, info.getPartitionId(), storage.getContext());
 
-    auto metadata_snapshot = storage.getInMemoryMetadataPtr(storage.getContext(), false);
+    const auto metadata_snapshot = storage.getInMemoryMetadataPtr(storage.getContext(), false);
     if (!parent_part)
-        return metadata_snapshot;
+        return StorageMetadataPtr(metadata_snapshot);
 
     return metadata_snapshot->projections.get(getProjectionName()).metadata;
 }
@@ -817,29 +826,32 @@ void IMergeTreeDataPart::loadIndexMarksToCache(MarkCache * index_mark_cache) con
 
     for (const auto & index_description : secondary_indices)
     {
-        auto skip_index = MergeTreeIndexFactory::instance().get(index_description);
+        auto skip_index = MergeTreeIndexFactory::instance().get(metadata_snapshot, index_description, *storage.getSettings());
         auto index_name = skip_index->getFileName();
-        auto index_format = skip_index->getDeserializedFormat(checksums, index_name);
+        auto index_format = skip_index->getDeserializedFormat(checksums, index_name, &getDataPartStorage());
 
         if (!index_format)
             continue;
 
         for (const auto & substream : index_format.substreams)
         {
-            auto stream_name = getStreamNameOrHash(index_name + substream.suffix, substream.extension, checksums);
-            if (!stream_name)
-                continue;
+            auto full_stream_name = index_name + substream.suffix;
+            auto stream_name_opt = getStreamNameOrHash(full_stream_name, substream.extension, checksums);
+            /// For packed substreams the per-virtual-file entry is not in checksums; use the
+            /// non-hashed name and rely on the storage overlay to resolve it.
+            String stream_name = stream_name_opt.value_or(full_stream_name);
 
             loaders.emplace_back(std::make_unique<MergeTreeMarksLoader>(
                 info_for_read,
                 index_mark_cache,
-                index_granularity_info.getMarksFilePath(*stream_name),
+                index_granularity_info.getMarksFilePath(stream_name),
                 index_granularity->getMarksCountForSkipIndex(index_description.granularity),
                 index_granularity_info,
                 /*save_marks_in_cache=*/ true,
                 read_settings,
                 /*load_marks_threadpool=*/ nullptr,
-                /*num_columns_in_mark=*/ 1));
+                /*num_columns_in_mark=*/ 1,
+                storage.getContext()->getSettingsRef()[Setting::use_streaming_marks_compression]));
 
             loaders.back()->startAsyncLoad();
         }
@@ -854,6 +866,8 @@ void IMergeTreeDataPart::removeIndexMarksFromCache(MarkCache * index_mark_cache)
     if (!index_mark_cache)
         return;
 
+    auto component_guard = Coordination::setCurrentComponent("IMergeTreeDataPart::removeIndexMarksFromCache");
+
     /// Bypass QueryMetadataCache: this runs during part destruction, and caching a dying
     /// storage's pointer would poison lookups if a new storage is allocated at the same address.
     auto metadata_snapshot = storage.getInMemoryMetadataPtr(storage.getContext(), true);
@@ -863,20 +877,20 @@ void IMergeTreeDataPart::removeIndexMarksFromCache(MarkCache * index_mark_cache)
 
     for (const auto & index_description : secondary_indices)
     {
-        auto skip_index = MergeTreeIndexFactory::instance().get(index_description);
+        auto skip_index = MergeTreeIndexFactory::instance().get(metadata_snapshot, index_description, *storage.getSettings());
         auto index_name = skip_index->getFileName();
-        auto index_format = skip_index->getDeserializedFormat(checksums, index_name);
+        auto index_format = skip_index->getDeserializedFormat(checksums, index_name, &getDataPartStorage());
 
         if (!index_format)
             continue;
 
         for (const auto & substream : index_format.substreams)
         {
-            auto stream_name = getStreamNameOrHash(index_name + substream.suffix, substream.extension, checksums);
-            if (!stream_name)
-                continue;
+            auto full_stream_name = index_name + substream.suffix;
+            auto stream_name_opt = getStreamNameOrHash(full_stream_name, substream.extension, checksums);
+            String stream_name = stream_name_opt.value_or(full_stream_name);
 
-            auto marks_file = index_granularity_info.getMarksFilePath(*stream_name);
+            auto marks_file = index_granularity_info.getMarksFilePath(stream_name);
             auto key = MarkCache::hash(getDataPartStorage().getDiskName() + ":" + (fs::path(getRelativePathOfActivePart()) / marks_file).string());
             index_mark_cache->remove(key);
         }
@@ -1059,6 +1073,19 @@ size_t IMergeTreeDataPart::getFileSizeOrZero(const String & file_name) const
     return checksum->second.file_size;
 }
 
+size_t IMergeTreeDataPart::getFileSizeOrZeroResolved(const String & stream_name, const String & extension) const
+{
+    /// Resolve the stream's actual on-disk name (original or hashed) from checksums and read its
+    /// size there (no I/O). A stream with no checksums entry -- e.g. a substream bundled in
+    /// skp_idx.packed -- is sized via the storage instead. Lets callers ask for a stream's size
+    /// without knowing its on-disk name or layout. Mirrors getStreamNameOrHashResolved.
+    if (auto actual = getStreamNameOrHash(stream_name, extension, checksums))
+        return getFileSizeOrZero(*actual + extension);
+    const auto & part_storage = getDataPartStorage();
+    const String file_name = stream_name + extension;
+    return part_storage.existsFile(file_name) ? part_storage.getFileSize(file_name) : 0;
+}
+
 String IMergeTreeDataPart::getColumnNameWithMinimumCompressedSize(const NamesAndTypesList & available_columns) const
 {
     std::optional<std::string> minimum_size_column;
@@ -1117,8 +1144,14 @@ static const ColumnDescription * getColumnForStatisticsFile(const String & filen
     size_t num_chars_to_truncate = STATS_FILE_PREFIX.size() + STATS_FILE_SUFFIX.size();
     String column_name = unescapeForFileName(filename.substr(STATS_FILE_PREFIX.size(), filename.size() - num_chars_to_truncate));
 
-    if (!required_columns.empty() && !required_columns.contains(column_name))
+    /// `<col>.null` subcolumn may appear in required_columns when
+    /// `optimize_functions_to_subcolumns=1`, keep stats for the parent column in that case.
+    if (!required_columns.empty()
+        && !required_columns.contains(column_name)
+        && !required_columns.contains(column_name + ".null"))
+    {
         return nullptr;
+    }
 
     return all_columns.tryGet(column_name);
 }
@@ -1127,6 +1160,14 @@ ColumnsStatistics IMergeTreeDataPart::loadStatisticsPacked(const PackedFilesRead
 {
     ColumnsStatistics result;
     auto read_settings = storage.getContext()->getReadSettings();
+
+    /// The reader holds only the index; resolve the archive's current location here so a part
+    /// that has since been renamed or moved still reads from the right place.
+    const auto * disk_storage = dynamic_cast<const DataPartStorageOnDiskBase *>(&getDataPartStorage());
+    if (!disk_storage)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Statistics packed reader requires on-disk part storage");
+    const auto disk = disk_storage->getDisk();
+    const String packed_file = fs::path(getDataPartStorage().getRelativePath()) / String(ColumnsStatistics::FILENAME);
 
     for (const auto & filename : reader.getFileNames())
     {
@@ -1138,13 +1179,14 @@ ColumnsStatistics IMergeTreeDataPart::loadStatisticsPacked(const PackedFilesRead
             continue;
 
         size_t file_size = reader.getFileSize(filename);
-        auto file_buf = reader.readFile(filename, read_settings, file_size);
+        auto file_buf = reader.readFile(disk, packed_file, filename, read_settings, file_size);
 
         CompressedReadBuffer compressed_buf(*file_buf);
         try
         {
             auto column_stat = ColumnStatistics::deserialize(compressed_buf, column_desc->type);
-            result.emplace(column_desc->name, std::move(column_stat));
+            if (column_stat)
+                result.emplace(column_desc->name, std::move(column_stat));
         }
         catch (...)
         {
@@ -1175,7 +1217,8 @@ ColumnsStatistics IMergeTreeDataPart::loadStatisticsWide(const NameSet & require
         try
         {
             auto column_stat = ColumnStatistics::deserialize(compressed_buf, column_desc->type);
-            result.emplace(column_desc->name, std::move(column_stat));
+            if (column_stat)
+                result.emplace(column_desc->name, std::move(column_stat));
         }
         catch (...)
         {
@@ -1551,6 +1594,13 @@ NameSet IMergeTreeDataPart::getFileNamesWithoutChecksums() const
     return result;
 }
 
+std::string IMergeTreeDataPart::getDeleteBitmapCacheIdentity() const
+{
+    if (uuid == UUIDHelpers::Nil)
+        return getDataPartStorage().getDiskName() + ":" + getRelativePathOfActivePart();
+    return toString(uuid);
+}
+
 void IMergeTreeDataPart::loadDefaultCompressionCodec()
 {
     String path = fs::path(getDataPartStorage().getRelativePath()) / DEFAULT_COMPRESSION_CODEC_FILE_NAME;
@@ -1657,6 +1707,13 @@ void IMergeTreeDataPart::removeDeleteOnDestroyMarker()
 
 void IMergeTreeDataPart::removeVersionMetadata()
 {
+    /// Remove both the committed metadata file and any leftover temporary file. A stale
+    /// `txn_version.txt.tmp` left behind without `txn_version.txt` makes the part load as a
+    /// rolled-back transaction (see `VersionMetadataOnDisk::loadMetadata`) and get discarded as
+    /// `Outdated`, so it must be cleaned up together with the main file. Remove the temporary file
+    /// first so the cleanup is fail-closed: a failure between the two removals leaves a valid
+    /// `txn_version.txt` rather than the dangerous tmp-only state.
+    getDataPartStorage().removeFileIfExists(VersionMetadata::TMP_TXN_VERSION_METADATA_FILE_NAME);
     getDataPartStorage().removeFileIfExists(VersionMetadata::TXN_VERSION_METADATA_FILE_NAME);
 }
 
@@ -1954,7 +2011,7 @@ UInt64 IMergeTreeDataPart::readExistingRowsCount()
     NamesAndTypesList cols;
     cols.emplace_back(RowExistsColumn::name, RowExistsColumn::type);
 
-    StorageMetadataPtr metadata_ptr = storage.getInMemoryMetadataPtr(storage.getContext(), false);
+    const auto metadata_ptr = storage.getInMemoryMetadataPtr(storage.getContext(), false);
     StorageSnapshotPtr storage_snapshot_ptr = std::make_shared<StorageSnapshot>(storage, metadata_ptr);
 
     auto alter_conversions = std::make_shared<AlterConversions>();
@@ -2643,12 +2700,20 @@ void IMergeTreeDataPart::calculateSecondaryIndicesSizesOnDisk() const
     if (checksums.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot calculate secondary indexes sizes when columns or checksums are not initialized");
 
-    auto secondary_indices_descriptions = storage.getInMemoryMetadataPtr(storage.getContext(), false)->secondary_indices;
+    /// The packed-substream fallback below issues existsFile / getFileSize through the storage
+    /// overlay, which reaches Keeper in the metadata-in-Keeper configuration; set the component
+    /// for those requests like the other Keeper-touching paths in this class.
+    auto component_guard = Coordination::setCurrentComponent("IMergeTreeDataPart::calculateSecondaryIndicesSizesOnDisk");
+
+    auto storage_metadata_snapshot = storage.getInMemoryMetadataPtr(storage.getContext(), false);
+    auto secondary_indices_descriptions = storage_metadata_snapshot->secondary_indices;
     IndexSizeByName new_secondary_index_sizes;
 
+    /// A substream with no standalone checksums entry (e.g. bundled in skp_idx.packed) is sized
+    /// via getFileSizeOrZeroResolved below, so `secondary_indices_compressed_bytes` reflects it too.
     for (auto & index_description : secondary_indices_descriptions)
     {
-        auto index_ptr = MergeTreeIndexFactory::instance().get(index_description);
+        auto index_ptr = MergeTreeIndexFactory::instance().get(storage_metadata_snapshot, index_description, *storage.getSettings());
         auto index_name = index_ptr->getFileName();
         auto index_substreams = index_ptr->getSubstreams();
 
@@ -2675,15 +2740,20 @@ void IMergeTreeDataPart::calculateSecondaryIndicesSizesOnDisk() const
                         substream_size.data_uncompressed = bin_checksum->second.file_size;
                 }
             }
-
-            auto actual_marks_file_name = getStreamNameOrHash(index_stream_name, getMarksFileExtension(), checksums);
-            if (actual_marks_file_name)
+            else if (size_t size = getFileSizeOrZeroResolved(index_stream_name, index_substream.extension))
             {
-                auto full_marks_file_name = *actual_marks_file_name + getMarksFileExtension();
-                auto mrk_checksum = checksums.files.find(full_marks_file_name);
-                if (mrk_checksum != checksums.files.end())
-                    substream_size.marks = mrk_checksum->second.file_size;
+                /// Substreams bundled in skp_idx.packed have no standalone checksums entry. The
+                /// uncompressed size is recorded in the archive index (v1+); fall back to the
+                /// compressed size for uncompressed substreams and for v0 archives.
+                substream_size.data_compressed = size;
+                if (MergeTreeIndexSubstream::isCompressed(index_substream.type))
+                    substream_size.data_uncompressed
+                        = getDataPartStorage().getPackedFileUncompressedSize(index_stream_name + index_substream.extension).value_or(size);
+                else
+                    substream_size.data_uncompressed = size;
             }
+
+            substream_size.marks = getFileSizeOrZeroResolved(index_stream_name, getMarksFileExtension());
 
             total_secondary_indices_size.add(substream_size);
             new_secondary_index_sizes[index_description.name].add(substream_size);
@@ -2769,9 +2839,20 @@ IndexSize IMergeTreeDataPart::getTotalSecondaryIndicesSize() const
 bool IMergeTreeDataPart::hasSecondaryIndex(const String & index_name, const StorageMetadataPtr & metadata) const
 {
     auto file_name = getIndexFileName(index_name, metadata->escape_index_filenames);
-    /// Check for both original and hashed filenames
-    return getStreamNameOrHash(file_name, ".idx", checksums).has_value()
-        || getStreamNameOrHash(file_name, ".idx2", checksums).has_value();
+    return getStreamNameOrHashResolved(file_name, ".idx").has_value()
+        || getStreamNameOrHashResolved(file_name, ".idx2").has_value();
+}
+
+bool IMergeTreeDataPart::isSkipIndexInPackedArchive(const IMergeTreeIndex & skip_index) const
+{
+    const auto * disk_storage = dynamic_cast<const DataPartStorageOnDiskBase *>(&getDataPartStorage());
+    if (!disk_storage)
+        return false;
+    const String file_name = skip_index.getFileName();
+    for (const auto & substream : skip_index.getSubstreams())
+        if (disk_storage->isFileInPackedSkipIndicesArchive(file_name + substream.suffix + substream.extension))
+            return true;
+    return false;
 }
 
 void IMergeTreeDataPart::accumulateColumnSizes(ColumnToSize & column_to_size) const
@@ -2832,22 +2913,6 @@ String IMergeTreeDataPart::getUniqueId() const
     return getDataPartStorage().getUniqueId();
 }
 
-UInt128 IMergeTreeDataPart::getPartBlockIDHash() const
-{
-    SipHash hash;
-    checksums.computeTotalChecksumDataOnly(hash);
-    return hash.get128();
-}
-
-String IMergeTreeDataPart::getNewPartBlockID() const
-{
-    if (info.min_block != info.max_block)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to get block id for part {} that contains more than one block", name);
-
-    const auto hash_value = getPartBlockIDHash();
-    return info.getPartitionId() + "_" + toString(hash_value.items[0]) + "_" + toString(hash_value.items[1]);
-}
-
 std::optional<String> IMergeTreeDataPart::getStreamNameOrHash(
     const String & stream_name,
     const String & extension,
@@ -2876,6 +2941,16 @@ std::optional<String> IMergeTreeDataPart::getStreamNameOrHash(
         return hash;
 
     return {};
+}
+
+std::optional<String> IMergeTreeDataPart::getStreamNameOrHashResolved(const String & stream_name, const String & extension) const
+{
+    /// Fast path: resolve against checksums (no I/O). A stream with no checksums entry -- e.g. a
+    /// substream bundled in skp_idx.packed -- is resolved against the storage, which knows the
+    /// archive's members. Mirrors getFileSizeOrZeroResolved.
+    if (auto result = getStreamNameOrHash(stream_name, extension, checksums))
+        return result;
+    return getStreamNameOrHash(stream_name, extension, getDataPartStorage());
 }
 
 std::optional<String> IMergeTreeDataPart::getStreamNameForColumn(
@@ -3003,7 +3078,7 @@ ColumnPtr IMergeTreeDataPart::getColumnSample(const NameAndTypePair & column) co
     NamesAndTypesList cols;
     cols.emplace_back(column);
 
-    StorageMetadataPtr metadata_ptr = storage.getInMemoryMetadataPtr(storage.getContext(), false);
+    const auto metadata_ptr = storage.getInMemoryMetadataPtr(storage.getContext(), false);
     StorageSnapshotPtr storage_snapshot_ptr = std::make_shared<StorageSnapshot>(storage, metadata_ptr);
 
     /// We need to read only prefixes, so no data will be read.

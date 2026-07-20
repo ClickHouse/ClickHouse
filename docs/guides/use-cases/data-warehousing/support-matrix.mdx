@@ -1,0 +1,175 @@
+---
+title: 'Support matrix'
+sidebarTitle: 'Support matrix'
+slug: /use-cases/data-lake/support-matrix
+description: 'Comprehensive support matrices for ClickHouse open table format integrations and data catalog connections.'
+keywords: ['data lake', 'lakehouse', 'support', 'iceberg', 'delta lake', 'hudi', 'paimon', 'catalog', 'features']
+doc_type: 'reference'
+---
+
+This page provides comprehensive support matrices for ClickHouse's data lake integrations. It covers the features available for each open table format, the catalogs ClickHouse can connect to, and the capabilities supported by each catalog.
+
+## Open table format support {#format-support}
+
+ClickHouse integrates with four open table formats: [Apache Iceberg](/reference/engines/table-engines/integrations/iceberg), [Delta Lake](/reference/engines/table-engines/integrations/deltalake), [Apache Hudi](/reference/engines/table-engines/integrations/hudi), and [Apache Paimon](/reference/functions/table-functions/paimon). Select a format below to view its support matrix.
+
+**Legend:** ✅ Supported | ⚠️ Partial / Experimental | ❌ Not supported
+
+<Tabs>
+<Tab title="Apache Iceberg">
+
+| Feature | Status | Notes |
+|---------|:-:|-------|
+| **Storage backends** | | |
+| AWS S3 | ✅ | Via [`icebergS3()`](/reference/functions/table-functions/iceberg) or `iceberg()` alias |
+| GCS | ✅ | Via [`icebergS3()`](/reference/functions/table-functions/iceberg) or `iceberg()` alias |
+| Azure Blob Storage | ✅ | Via [`icebergAzure()`](/reference/functions/table-functions/iceberg) |
+| HDFS | ⚠️ | Via [`icebergHDFS()`](/reference/functions/table-functions/iceberg). Deprecated. |
+| Local filesystem | ✅ | Via [`icebergLocal()`](/reference/functions/table-functions/iceberg) |
+| **Access methods** | | |
+| Table function | ✅ | [`icebergS3()`](/reference/functions/table-functions/iceberg) with variants per backend |
+| Table engine | ✅ | [`IcebergS3`](/reference/engines/table-engines/integrations/iceberg) with variants per backend |
+| Cluster-distributed reads | ✅ | [`icebergS3Cluster`](/reference/functions/table-functions/icebergCluster), [`icebergAzureCluster`](/reference/functions/table-functions/icebergCluster), [`icebergHDFSCluster`](/reference/functions/table-functions/icebergCluster) |
+| Named collections | ✅ | [Defining a named collection](/reference/functions/table-functions/iceberg#defining-a-named-collection) |
+|  |  |  |
+| **Read features** | | |
+| Read support | ✅ | Full SELECT support with all ClickHouse SQL functions |
+| Partition pruning | ✅ | See [Partition pruning](/reference/engines/table-engines/integrations/iceberg#partition-pruning). |
+| Hidden partitioning | ✅ | Iceberg transform-based partitioning supported |
+| Partition evolution | ✅ | Reading tables with changing partition specs over time supported |
+| Schema evolution | ✅ | Column addition, removal, and reordering. See [Schema evolution](/reference/engines/table-engines/integrations/iceberg#schema-evolution). |
+| Type promotion / widening | ✅ | `int` → `long`, `float` → `double`, `decimal(P,S)` → `decimal(P',S)` where P' > P. See [Schema evolution](/reference/engines/table-engines/integrations/iceberg#schema-evolution). |
+| Time travel / snapshots | ✅ | Via `iceberg_timestamp_ms` or `iceberg_snapshot_id` settings. See [Time travel](/reference/engines/table-engines/integrations/iceberg#time-travel). |
+| Position deletes | ✅ | See [Processing deleted rows](/reference/engines/table-engines/integrations/iceberg#deleted-rows). |
+| Equality deletes | ✅ | Table engine only, from v25.8+. See [Processing deleted rows](/reference/engines/table-engines/integrations/iceberg#deleted-rows). |
+| Merge-on-read | ⚠️ | Experimental. Supported for [delete operations](/reference/functions/table-functions/iceberg#iceberg-writes-delete). |
+| Format versions | ⚠️ | v1 and v2 supported. V3 not supported. |
+| Column statistics | ✅ | |
+| Bloom filters / puffin files | ❌ | Bloom filter indexes in puffin files not supported |
+| Virtual columns | ✅ | `_path`, `_file`, `_size`, `_time`, `_etag`. See [Virtual columns](/reference/functions/table-functions/iceberg#virtual-columns). |
+|  |  |  |
+| **Write features** | | |
+| Table creation | ✅ | Experimental. Requires `allow_insert_into_iceberg = 1`. From v25.7+. See [Creating a table](/reference/functions/table-functions/iceberg#create-iceberg-table). |
+| INSERT | ✅ | Beta from 26.2. Requires `allow_insert_into_iceberg = 1`. See [Inserting data](/reference/functions/table-functions/iceberg#writes-inserts). |
+| DELETE | ✅ | Experimental. Requires `allow_insert_into_iceberg = 1`. Via `ALTER TABLE ... DELETE WHERE`. See [Deleting data](/reference/functions/table-functions/iceberg#iceberg-writes-delete). |
+| ALTER TABLE (schema changes) | ✅ | Experimental. Requires `allow_insert_into_iceberg = 1`. Add, drop, modify, rename columns. See [Schema evolution](/reference/functions/table-functions/iceberg#iceberg-writes-schema-evolution). |
+| Compaction | ⚠️ | Experimental. Requires `allow_experimental_iceberg_compaction = 1`. Merges position delete files into data files. See [Compaction](/reference/functions/table-functions/iceberg#iceberg-writes-compaction). Other Iceberg compaction operations not supported. |
+| UPDATE / MERGE | ❌ | Not supported. See Compaction. |
+| Copy-on-write | ❌ | Not supported |
+| Expire snapshots | ❌ | Not supported |
+| Remove orphan files | ❌ | Not supported |
+| Writing partitions | ✅ | Supported. |
+| Altering partitions | ❌ | The changing of the partitioning scheme from ClickHouse is not supported. ClickHouse can write to iceberg tables which have an evolved partitioning. |
+|  |  |  |
+| **Metadata** | | |
+| Branching and tagging | ❌ | Iceberg branch/tag references not supported |
+| Metadata file resolution | ✅ | Support for metadata resolution through catalogs, simple directory listing, using 'version-hint' and specific path. Configurable via `iceberg_metadata_file_path` and `iceberg_metadata_table_uuid`. See [Metadata file resolution](/reference/engines/table-engines/integrations/iceberg#metadata-file-resolution). |
+| Data caching | ✅ | Same mechanism as S3/Azure/HDFS storage engines. See [Data cache](/reference/engines/table-engines/integrations/iceberg#data-cache). |
+| Metadata caching | ✅ | Manifest and metadata files cached in memory. Enabled by default via `use_iceberg_metadata_files_cache`. See [Metadata cache](/reference/engines/table-engines/integrations/iceberg#metadata-cache). |
+
+</Tab>
+<Tab title="Delta Lake">
+
+From version 25.6, ClickHouse reads Delta Lake tables using the Delta Lake Rust kernel, providing broader feature support; however, known issues occur when accessing data in Azure Blob Storage. For this reason the Kernel is disabled when reading data on Azure Blob Storage. We indicate below which features require this kernel.
+
+| Feature | Status | Notes |
+|---------|:-:|-------|
+| **Storage backends** | | |
+| AWS S3 | ✅ | Via [`deltaLake()`](/reference/functions/table-functions/deltalake) or `deltaLakeS3()` |
+| GCS | ✅ | Via [`deltaLake()`](/reference/functions/table-functions/deltalake) or `deltaLakeS3()` |
+| Azure Blob Storage | ✅ | Via [`deltaLakeAzure()`](/reference/functions/table-functions/deltalake) |
+| HDFS | ❌ | Not supported |
+| Local filesystem | ✅ | Via [`deltaLakeLocal()`](/reference/functions/table-functions/deltalake) |
+| **Access methods** | | |
+| Table function | ✅ | [`deltaLake()`](/reference/functions/table-functions/deltalake) with variants per backend |
+| Table engine | ✅ | [`DeltaLake`](/reference/engines/table-engines/integrations/deltalake) |
+| Cluster-distributed reads | ✅ | [`deltaLakeCluster`](/reference/functions/table-functions/deltalakeCluster), [`deltaLakeAzureCluster`](/reference/functions/table-functions/deltalakeCluster) |
+| Named collections | ✅ | [Named collection](/reference/functions/table-functions/deltalake#arguments) |
+| **Read features** | | |
+| Read support | ✅ | Full SELECT support with all ClickHouse SQL functions |
+| Partition pruning | ✅ |  Requires Delta Kernel. |
+| Schema evolution | ✅ |  Requires Delta Kernel. |
+| Time travel | ✅ |  Requires Delta Kernel. |
+| Deletion vectors | ✅ | |
+| Column mapping | ✅ | |
+| Change data feed | ✅ |  Requires Delta Kernel. |
+| Virtual columns | ✅ | `_path`, `_file`, `_size`, `_time`, `_etag`. See [Virtual columns](/reference/functions/table-functions/deltalake#virtual-columns). |
+| **Write features** | | |
+| INSERT | ✅ | Experimental. Requires `allow_experimental_delta_lake_writes = 1`. See [DeltaLake engine](/reference/engines/table-engines/integrations/deltalake). Requires Delta Kernel. |
+| DELETE / UPDATE / MERGE | ❌ | Not supported |
+| CREATE empty table | ❌ | Creation of a new empty Delta Lake table is not supported. `CREATE TABLE` operation assumes existence of existing Delta Lake on object storage. |
+| **Caching** | | |
+| Data caching | ✅ | Same mechanism as S3/Azure/HDFS storage engines. See [Data cache](/reference/engines/table-engines/integrations/deltalake#data-cache). |
+
+</Tab>
+<Tab title="Apache Hudi">
+
+| Feature | Status | Notes |
+|---------|:-:|-------|
+| **Storage backends** | | |
+| AWS S3 | ✅ | Via [`hudi()`](/reference/functions/table-functions/hudi) |
+| GCS | ✅ | Via [`hudi()`](/reference/functions/table-functions/hudi) |
+| Azure Blob Storage | ❌ | Not supported |
+| HDFS | ❌ | Not supported |
+| Local filesystem | ❌ | Not supported |
+| **Access methods** | | |
+| Table function | ✅ | [`hudi()`](/reference/functions/table-functions/hudi) |
+| Table engine | ✅ | [`Hudi`](/reference/engines/table-engines/integrations/hudi) |
+| Cluster-distributed reads | ✅ | [`hudiCluster`](/reference/functions/table-functions/hudiCluster) (S3 only) |
+| Named collections | ✅ | [Hudi arguments](/reference/functions/table-functions/hudi#arguments) |
+| **Read features** | | |
+| Read support | ✅ | Full SELECT support with all ClickHouse SQL functions |
+| Schema evolution | ❌ | Not supported |
+| Time travel | ❌ | Not supported |
+| Virtual columns | ✅ | `_path`, `_file`, `_size`, `_time`, `_etag`. See [Virtual columns](/reference/functions/table-functions/hudi#virtual-columns). |
+| **Write features** | | |
+| INSERT / DELETE / UPDATE | ❌ | Read-only integration |
+| **Caching** | | |
+| Data caching | ❌ | Not supported |
+
+</Tab>
+<Tab title="Apache Paimon">
+
+| Feature | Status | Notes |
+|---------|:-:|-------|
+| **Storage backends** | | |
+| S3 | ✅ | Experimental. Via [`paimon()`](/reference/functions/table-functions/paimon) or `paimonS3()` |
+| GCS | ✅ | Experimental. Via [`paimon()`](/reference/functions/table-functions/paimon) or `paimonS3()` |
+| Azure Blob Storage | ✅ | Experimental. Via [`paimonAzure()`](/reference/functions/table-functions/paimon) |
+| HDFS | ⚠️ | Experimental. Via [`paimonHDFS()`](/reference/functions/table-functions/paimon). Deprecated. |
+| Local filesystem | ✅ | Experimental. Via [`paimonLocal()`](/reference/functions/table-functions/paimon) |
+| **Access methods** | | |
+| Table function | ✅ | Experimental. [`paimon()`](/reference/functions/table-functions/paimon) with variants per backend |
+| Table engine | ❌ | No dedicated table engine |
+| Cluster-distributed reads | ✅ | Experimental. [`paimonS3Cluster`](/reference/functions/table-functions/paimonCluster), [`paimonAzureCluster`](/reference/functions/table-functions/paimonCluster), [`paimonHDFSCluster`](/reference/functions/table-functions/paimonCluster) |
+| Named collections | ✅ | Experimental. [Defining a named collection](/reference/functions/table-functions/paimon#defining-a-named-collection) |
+| **Read features** | | |
+| Read support | ✅ | Experimental. Full SELECT support with all ClickHouse SQL functions |
+| Schema evolution | ❌ | Not supported |
+| Time travel | ❌ | Not supported |
+| Virtual columns | ✅ | Experimental. `_path`, `_file`, `_size`, `_time`, `_etag`. See [Virtual columns](/reference/functions/table-functions/paimon#virtual-columns). |
+| **Write features** | | |
+| INSERT / DELETE / UPDATE | ❌ | Read-only integration |
+| **Caching** | | |
+| Data caching | ❌ | Not supported |
+
+</Tab>
+</Tabs>
+
+## Catalog support {#catalog-support}
+
+ClickHouse can connect to external data catalogs using the [`DataLakeCatalog`](/reference/engines/database-engines/datalake) database engine, which exposes the catalog as a ClickHouse database. Tables registered in the catalog appear automatically and can be queried with standard SQL.
+
+The following catalogs are currently supported. Refer to each catalog's reference guide for full setup instructions.
+
+| Catalog | Formats | Read | Create table | INSERT | Reference guide |
+|---------|---------|:-:|:-:|:-:|---------|
+| [AWS Glue Catalog](/guides/use-cases/data-warehousing/glue-catalog) | Iceberg | ✅ Beta | ❌ | ❌ | [Glue catalog guide](/guides/use-cases/data-warehousing/glue-catalog) |
+| [BigLake Metastore](/guides/use-cases/data-warehousing/biglake-catalog) | Iceberg | ✅ Beta | ❌ | ❌ | [BigLake Metastore guide](/guides/use-cases/data-warehousing/biglake-catalog) |
+| [Databricks Unity Catalog](/guides/use-cases/data-warehousing/unity-catalog) | Delta, Iceberg | ✅ Beta | ✅ Beta | ✅ Beta | [Unity Catalog guide](/guides/use-cases/data-warehousing/unity-catalog) |
+| [Iceberg REST](/guides/use-cases/data-warehousing/rest-catalog) | Iceberg | ✅ Beta | ❌ | ❌ | [REST catalog guide](/guides/use-cases/data-warehousing/rest-catalog) |
+| [Lakekeeper](/guides/use-cases/data-warehousing/lakekeeper-catalog) | Iceberg | ✅ Beta | ❌ | ❌ | [Lakekeeper catalog guide](/guides/use-cases/data-warehousing/lakekeeper-catalog) |
+| [Project Nessie](/guides/use-cases/data-warehousing/nessie-catalog) | Iceberg | ✅ Experimental | ❌ | ❌ | [Nessie catalog guide](/guides/use-cases/data-warehousing/nessie-catalog) |
+| [Microsoft OneLake](/guides/use-cases/data-warehousing/onelake-catalog) | Iceberg | ✅ Beta | ✅ Beta | ✅ Beta | [OneLake catalog guide](/guides/use-cases/data-warehousing/onelake-catalog) |
+
+All catalog integrations currently require an experimental or beta setting to be enabled. With the exception of Microsoft OneLake and Databricks Unity Catalog, all catalogs expose **read-only** access — tables can be queried but not created or written to through the catalog connection. To load data from a catalog into ClickHouse for faster analytics, use `INSERT INTO SELECT` as described in the [accelerating analytics guide](/guides/use-cases/data-warehousing/getting-started/accelerating-analytics). To write data back to open table formats, create standalone Iceberg tables as described in the [writing data guide](/guides/use-cases/data-warehousing/getting-started/writing-data).

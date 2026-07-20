@@ -1,6 +1,7 @@
 #include <Common/ThreadFuzzer.h>
 #include <Functions/FunctionFactory.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <Columns/ColumnConst.h>
 #include <Core/Field.h>
 
 

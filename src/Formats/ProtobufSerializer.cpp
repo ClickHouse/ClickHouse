@@ -1046,7 +1046,7 @@ namespace
 
         void checkEnumDataTypeValue(NumberType value)
         {
-            enum_data_type->findByValue(value); /// Throws an exception if the value isn't defined in the DataTypeEnum.
+            enum_data_type->getNameForValue(value); /// Throws an exception if the value isn't defined in the DataTypeEnum.
         }
 
         std::string_view enumDataTypeValueToString(NumberType value) const { return std::string_view{enum_data_type->getNameForValue(value)}; }
@@ -2559,7 +2559,7 @@ namespace
             if (!num_columns_)
                 wrongNumberOfColumns(num_columns_, ">0");
 
-            std::vector<ColumnPtr> field_columns;
+            Columns field_columns;
             for (const FieldInfo & info : field_infos)
             {
                 if (info.field_serializer)

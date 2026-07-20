@@ -1,0 +1,47 @@
+---
+date: 2025-11-11
+title: How to generate a HAR file for support
+tags: ['Tools and Utilities']
+keywords: ['HAR file', 'HTTP Archive']
+description: 'A HAR (HTTP Archive) file captures the network activity in your browser. It can help our support team diagnose slow page loads, failed requests, or other network issues.'
+---
+
+{frontMatter.description}
+{/* truncate */}
+
+## From Google Chrome {#from-google-chrome}
+1. Open Developer Tools by pressing <kbd>F12</kbd> or <kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>I</kbd> (Windows/Linux) / <kbd>Cmd</kbd> + <kbd>Option</kbd> + <kbd>I</kbd> (Mac).
+2. Click the "Network" tab.
+3. Reload the page and reproduce the issue.
+4. From Developer Tools, click the download button.
+
+## From Mozilla Firefox {#from-mozilla-firefox}
+1. Open Developer Tools by pressing <kbd>F12</kbd> or <kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>E</kbd> (Windows/Linux) / <kbd>Cmd</kbd> + <kbd>Option</kbd> + <kbd>E</kbd> (Mac).
+2. Click the "Network" tab.
+3. Reload the page and reproduce the issue.
+4. From Developer Tools, right-click in the request list and select "Save All As HAR".
+
+## From Microsoft Edge {#from-microsoft-edge}
+1. Open Developer Tools by pressing <kbd>F12</kbd> or <kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>I</kbd> (Windows/Linux) / <kbd>Cmd</kbd> + <kbd>Option</kbd> + <kbd>I</kbd> (Mac).
+2. Click the "Network" tab.
+3. Reload the page and reproduce the issue.
+4. From Developer Tools, right-click in the network list and choose "Save all as HAR with content".
+
+## From Safari {#from-safari}
+1. Enable Developer Tools (if not already enabled):
+    - Go to Safari > Settings > Advanced.
+    - Check "Show Develop menu in menu bar" at the bottom.
+2. Click Develop > Show Web Inspector.
+3. Click the "Network" tab.
+4. Reload the page and reproduce the issue.
+5. From Developer Tools, click the "Export" button.
+
+## Sending the .HAR file {#sending-har-file}
+1. Rename the file to something short and descriptive (e.g., login-issue.har).
+2. Compress the file (optional but recommended).
+3. Attach it to your support case or email it to your assigned support contact.
+
+<Note>
+HAR files may contain session cookies or other sensitive data.
+Only share them with authorized support personnel.
+</Note>

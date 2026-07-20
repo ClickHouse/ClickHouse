@@ -361,7 +361,7 @@ void ExpressionAnalyzer::analyzeAggregation(ActionsDAG & temp_actions)
                         if (getContext()->getClientInfo().distributed_depth == 0 || settings.distributed_group_by_no_merge > 0)
                         {
                             /// Constant expressions have non-null column pointer at this stage.
-                            if (node->column && isColumnConst(*node->column))
+                            if (node->column)
                             {
                                 select_query->group_by_with_constant_keys = true;
 
@@ -415,7 +415,7 @@ void ExpressionAnalyzer::analyzeAggregation(ActionsDAG & temp_actions)
                     if (getContext()->getClientInfo().distributed_depth == 0 || settings.distributed_group_by_no_merge > 0)
                     {
                         /// Constant expressions have non-null column pointer at this stage.
-                        if (node->column && isColumnConst(*node->column))
+                        if (node->column)
                         {
                             select_query->group_by_with_constant_keys = true;
 
@@ -1130,7 +1130,7 @@ static std::shared_ptr<IJoin> tryCreateJoin(
         }
 
         if (MergeJoin::isSupported(analyzed_join))
-            return std::make_shared<JoinSwitcher>(analyzed_join, right_sample_block);
+            return std::make_shared<JoinSwitcher>(analyzed_join, right_sample_block, /*any_take_last_row_=*/false);
         return std::make_shared<HashJoin>(analyzed_join, right_sample_block);
     }
     return nullptr;
