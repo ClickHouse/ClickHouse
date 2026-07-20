@@ -11,6 +11,7 @@
 
 #include <Common/Exception.h>
 #include <Common/Macros.h>
+#include <Common/RemoteHostFilter.h>
 #include <Core/ServerSettings.h>
 #include <IO/ConnectionTimeouts.h>
 #include <IO/GCPOAuth.h>
@@ -30,6 +31,12 @@ namespace ErrorCodes
 }
 
 static constexpr auto DEFAULT_GCS_HOST = "storage.googleapis.com";
+
+bool isDefaultGCSHost(const String & host)
+{
+    static const String default_suffix = String(".") + DEFAULT_GCS_HOST;
+    return host == DEFAULT_GCS_HOST || host.ends_with(default_suffix);
+}
 
 void parseGCSEndpoint(const String & endpoint, String & bucket, String & key_prefix, String & endpoint_override)
 {
@@ -52,7 +59,7 @@ void parseGCSEndpoint(const String & endpoint, String & bucket, String & key_pre
         String path = uri.getPath();
 
         static const String default_suffix = String(".") + DEFAULT_GCS_HOST;
-        if (host != DEFAULT_GCS_HOST && !host.ends_with(default_suffix))
+        if (!isDefaultGCSHost(host))
         {
             /// A non-default host means an emulator / private endpoint: keep it as an override.
             endpoint_override = uri.getScheme() + "://" + host;
@@ -164,8 +171,16 @@ static String readFileToString(const String & path)
     return contents;
 }
 
-std::unique_ptr<gcs::Client> getGCSClient(const GCSObjectStorageSettings & settings)
+std::unique_ptr<gcs::Client> getGCSClient(const GCSObjectStorageSettings & settings, const ContextPtr & context)
 {
+    /// Fail-closed validation of the actual network destination against `remote_url_allow_hosts`,
+    /// mirroring what the S3, Azure and web object storage transports do before a user-configurable
+    /// endpoint is used. Throws when a filter is configured and the host is not allowed.
+    const String resolved_endpoint = settings.endpoint_override.empty()
+        ? String("https://") + DEFAULT_GCS_HOST
+        : settings.endpoint_override;
+    context->getRemoteHostFilter().checkURL(Poco::URI(resolved_endpoint));
+
     gc::Options options;
 
     std::shared_ptr<gc::Credentials> credentials;

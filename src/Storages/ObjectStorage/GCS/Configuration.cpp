@@ -5,6 +5,7 @@
 #include <Disks/DiskObjectStorage/ObjectStorages/GCS/GCSObjectStorage.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/GCS/gcsSettings.h>
 #include <IO/S3AuthSettings.h>
+#include <Poco/URI.h>
 
 namespace DB
 {
@@ -27,7 +28,10 @@ ObjectStoragePtr StorageGCSConfiguration::createObjectStorage(
     gcs_settings.bucket = url.bucket;
     gcs_settings.key_prefix = url.key;
     /// A non-default endpoint (e.g. the GCS emulator) is kept as a REST endpoint override.
-    if (url.endpoint.find("storage.googleapis.com") == String::npos)
+    /// The decision is made on the exact parsed host, not on a substring: a host such as
+    /// `storage.googleapis.com.evil.example` must stay an override, so the client talks to the same
+    /// host that the URL validation saw instead of silently falling back to the real default.
+    if (!isDefaultGCSHost(Poco::URI(url.endpoint).getHost()))
         gcs_settings.endpoint_override = url.endpoint;
 
     const auto & auth = s3_settings->auth_settings;
@@ -40,7 +44,7 @@ ObjectStoragePtr StorageGCSConfiguration::createObjectStorage(
 
     resolveGCSCredentialsToken(gcs_settings, context);
 
-    auto client = getGCSClient(gcs_settings);
+    auto client = getGCSClient(gcs_settings, context);
     const auto description = url.endpoint;
 
     return std::make_shared<GCSObjectStorage>(

@@ -316,7 +316,7 @@ void GCSObjectStorage::applyNewSettings(
 
     if (options.allow_client_change)
     {
-        auto new_client = getGCSClient(new_settings);
+        auto new_client = getGCSClient(new_settings, context);
         std::lock_guard lock(client_mutex);
         client = std::move(new_client);
     }

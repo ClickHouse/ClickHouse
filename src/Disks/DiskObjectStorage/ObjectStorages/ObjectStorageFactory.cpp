@@ -260,7 +260,7 @@ static void registerGCSObjectStorage(ObjectStorageFactory & factory)
     {
         auto settings = GCSObjectStorageSettings::loadFromConfig(config, config_prefix, context);
         auto endpoint = context->getMacros()->expand(config.getString(config_prefix + ".endpoint"));
-        auto client = getGCSClient(settings);
+        auto client = getGCSClient(settings, context);
         auto key_generator = getGCSKeyGenerator(settings.key_prefix, config, config_prefix);
 
         return std::make_shared<GCSObjectStorage>(std::move(client), std::move(settings), endpoint, key_generator, name);

@@ -67,6 +67,11 @@ struct GCSObjectStorageSettings
     bool describesSameClientAs(const GCSObjectStorageSettings & other) const;
 };
 
+/// Whether `host` is the default GCS host (`storage.googleapis.com`) or one of its virtual-hosted
+/// subdomains (`<bucket>.storage.googleapis.com`). The comparison is on the whole parsed host, so a
+/// host merely containing that string (e.g. `storage.googleapis.com.evil.example`) does not match.
+bool isDefaultGCSHost(const String & host);
+
 /// Split a GCS endpoint into bucket, key prefix and an optional REST endpoint override.
 /// Accepts `gs://bucket/prefix`, `https://storage.googleapis.com/bucket/prefix`, and
 /// `http(s)://host[:port]/bucket/prefix` (the last is treated as an emulator endpoint override).
@@ -76,8 +81,10 @@ void parseGCSEndpoint(const String & endpoint, String & bucket, String & key_pre
 /// it for an access token via IO/GCPOAuth. No-op otherwise. Shared by the disk and table-function paths.
 void resolveGCSCredentialsToken(GCSObjectStorageSettings & settings, const ContextPtr & context);
 
-/// Build a native GCS storage client from the parsed settings.
-std::unique_ptr<google::cloud::storage::Client> getGCSClient(const GCSObjectStorageSettings & settings);
+/// Build a native GCS storage client from the parsed settings. The resolved network destination
+/// (the endpoint override, or the default GCS endpoint) is validated against the context's
+/// `RemoteHostFilter` (`remote_url_allow_hosts`) before the client is constructed.
+std::unique_ptr<google::cloud::storage::Client> getGCSClient(const GCSObjectStorageSettings & settings, const ContextPtr & context);
 
 /// Build the object-storage key generator for a GCS disk (mirrors S3's getKeyGenerator, but keyed on
 /// the parsed prefix instead of an S3::URI).
