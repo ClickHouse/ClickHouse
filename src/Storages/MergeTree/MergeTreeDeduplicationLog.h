@@ -341,9 +341,12 @@ private:
         std::vector<size_t> & record_log_numbers);
 
     /// Replay a chronologically ordered record stream into the in-memory map.
-    /// Each rollback record - a CANCEL, or a DROP carrying
-    /// DEDUPLICATION_LOG_CANCELLED_ADD_PART_NAME - cancels the matching
-    /// preceding ADD or DROP (both are skipped), so an insert that failed and
+    /// Each rollback record cancels the matching preceding record of the same
+    /// block id AND OF THE KIND IT UNDOES (both are skipped): a DROP carrying
+    /// DEDUPLICATION_LOG_CANCELLED_ADD_PART_NAME undoes a preceding ADD, a CANCEL
+    /// undoes a preceding real DROP. Matching by kind keeps a rollback record
+    /// whose target never reached disk from latching onto an older committed
+    /// record of the other kind. An insert that failed and
     /// rolled back consumes no deduplication-window slot and a drop that failed
     /// and rolled back erases nothing; the remaining ADD/DROP records are
     /// applied exactly as they were live. Also recomputes each log's counts

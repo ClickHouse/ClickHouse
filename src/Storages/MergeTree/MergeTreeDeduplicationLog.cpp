@@ -200,39 +200,58 @@ void MergeTreeDeduplicationLog::applyRecords(
     /// First, cancel out the record pairs left behind by operations that failed
     /// and rolled back: (ADD, DROP with the reserved cancelled-add part name) for
     /// a failed insert and (DROP, CANCEL) for a failed part drop. Each rollback
-    /// record cancels the most recent preceding, not-yet-cancelled ADD or DROP of
-    /// the same block id - which is exactly the record the failed operation
-    /// wrote, because the rollback writes its records immediately after the
-    /// failed batch under the same lock, with no other operation in between.
-    /// Dropping both records means the transient record never touches the
-    /// in-memory map on replay: a rolled-back ADD neither publishes its block id
-    /// nor consumes a deduplication-window slot (which could otherwise evict an
-    /// unrelated, still-active block before the rollback record is seen), and a
-    /// rolled-back DROP does not erase a block id that stayed published in the
-    /// live map. An older server replays the rollback records themselves with
-    /// the correct net effect instead (see MergeTreeDeduplicationOp), so the
-    /// encoding needs no format version.
+    /// record cancels the most recent preceding, not-yet-cancelled record of the
+    /// same block id AND OF THE KIND IT UNDOES - a cancelled-add DROP undoes an
+    /// ADD, a CANCEL undoes a real DROP. Matching by kind matters: a rollback
+    /// record can survive on disk while the very record it was meant to undo did
+    /// not (for example, on the failed-drop + failed-sync path the DROP that a
+    /// CANCEL undoes may never have reached durable storage). Pairing only by
+    /// block id would then let the rollback record latch onto an older committed
+    /// record of the other kind and cancel it instead - forgetting a still
+    /// published block id, or resurrecting a dropped one, after a restart.
+    /// Restricting each rollback record to its own kind leaves the unrelated
+    /// committed record untouched: the surviving rollback record is simply a
+    /// stray that reconstructs no state on its own. Under normal operation the
+    /// rollback record is always found next to its match, because the rollback
+    /// writes its records immediately after the failed batch under the same lock,
+    /// with no other operation in between. Dropping both records of a pair means
+    /// the transient records never touch the in-memory map on replay: a
+    /// rolled-back ADD neither publishes its block id nor consumes a
+    /// deduplication-window slot (which could otherwise evict an unrelated, still
+    /// active block before the rollback record is seen), and a rolled-back DROP
+    /// does not erase a block id that stayed published in the live map. An older
+    /// server replays the rollback records themselves with the correct net effect
+    /// instead (see MergeTreeDeduplicationOp), so the encoding needs no format
+    /// version.
     std::vector<bool> cancelled(records.size(), false);
-    std::unordered_map<std::string_view, std::vector<size_t>, StringViewHash> pending_indices;
+    std::unordered_map<std::string_view, std::vector<size_t>, StringViewHash> pending_adds;
+    std::unordered_map<std::string_view, std::vector<size_t>, StringViewHash> pending_drops;
     for (size_t i = 0; i < records.size(); ++i)
     {
         const auto & record = records[i];
-        const bool is_rollback = record.operation == MergeTreeDeduplicationOp::CANCEL
-            || (record.operation == MergeTreeDeduplicationOp::DROP && record.part_name == DEDUPLICATION_LOG_CANCELLED_ADD_PART_NAME);
-        if (is_rollback)
+        const bool cancels_add = record.operation == MergeTreeDeduplicationOp::DROP
+            && record.part_name == DEDUPLICATION_LOG_CANCELLED_ADD_PART_NAME;
+        const bool cancels_drop = record.operation == MergeTreeDeduplicationOp::CANCEL;
+        if (cancels_add || cancels_drop)
         {
-            /// The rollback record itself is never replayed.
+            /// The rollback record itself is never replayed. Only ever consume a
+            /// pending record of the exact kind this rollback undoes.
             cancelled[i] = true;
-            auto it = pending_indices.find(record.block_id);
-            if (it != pending_indices.end() && !it->second.empty())
+            auto & pending = cancels_add ? pending_adds : pending_drops;
+            auto it = pending.find(record.block_id);
+            if (it != pending.end() && !it->second.empty())
             {
                 cancelled[it->second.back()] = true;
                 it->second.pop_back();
             }
         }
+        else if (record.operation == MergeTreeDeduplicationOp::DROP)
+        {
+            pending_drops[record.block_id].push_back(i);
+        }
         else
         {
-            pending_indices[record.block_id].push_back(i);
+            pending_adds[record.block_id].push_back(i);
         }
     }
 

@@ -918,6 +918,56 @@ TEST(MergeTreeDeduplicationLog, DropPartRotationSyncFailureIsAllOrNothing)
     std::filesystem::remove_all(work_dir);
 }
 
+/// Regression test (after-restart variant of DropPartRotationSyncFailureIsAllOrNothing):
+/// when a part drop fails on the fsync of the previous log file and rolls back, the
+/// rollback keeps the block id published live and writes a compensating CANCEL. On the
+/// fsync-failure path the DROP records the CANCEL undoes may never have reached durable
+/// storage, so after a restart the log can hold the committed ADD and the rollback CANCEL
+/// but not the DROP in between. Replay must NOT let that CANCEL cancel the committed ADD:
+/// the failed drop left the block id published, so a retry must still be deduplicated.
+/// This is why applyRecords pairs a CANCEL only with a preceding real DROP of the same
+/// block id, never with an ADD.
+///
+/// The state is constructed directly on disk because the fault-injection disk cannot
+/// reproduce it: DiskLocal keeps every flushed record even when the fsync is made to
+/// throw, so the DROP would still be present after a "restart". Losing the un-fsynced
+/// DROP file while keeping the earlier, already-durable ADD file and the later CANCEL
+/// file is exactly the reachable state after an fsync failure followed by a crash.
+TEST(MergeTreeDeduplicationLog, DropPartRotationSyncFailureIsAllOrNothingAfterRestart)
+{
+    const std::string work_dir = "tmp/gtest_dedup_log_drop_sync_failure_restart/";
+    const std::string logs_dir = work_dir + "dedup_logs/";
+    std::filesystem::remove_all(work_dir);
+    std::filesystem::create_directories(logs_dir);
+
+    const MergeTreeDataFormatVersion format_version = MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING;
+    auto part = [&](const String & name) { return MergeTreePartInfo::fromPartName(name, format_version); };
+
+    auto write_log = [&](size_t number, const std::string & contents)
+    {
+        std::ofstream out(logs_dir + "deduplication_log_" + std::to_string(number) + ".txt");
+        out << contents;
+    };
+
+    /// Log 1: the committed ADD of "block1" (its own fsync had succeeded earlier).
+    write_log(1, "1\tall_1_1_0\tblock1\n");
+    /// Log 2: only the rollback CANCEL of the failed drop survived. The DROP it undoes
+    /// lived in the file whose fsync failed and was lost on the crash, so it is absent.
+    write_log(2, "3\tall_0_9_999\tblock1\n");
+
+    /// Replay on restart with a healthy disk.
+    auto disk = std::make_shared<DiskLocal>("healthy", work_dir);
+    MergeTreeDeduplicationLog log("dedup_logs", /*deduplication_window=*/ 10, format_version, disk);
+    log.load();
+
+    /// The drop failed as a whole, so "block1" stays published: a retry must still be
+    /// deduplicated. Pairing the CANCEL with the committed ADD (as matching by block id
+    /// alone would) forgets "block1" and wrongly accepts this retry.
+    EXPECT_FALSE(log.addPart({"block1"}, part("all_6_6_0")).empty());
+
+    std::filesystem::remove_all(work_dir);
+}
+
 /// Regression test: dropPart must stay all-or-nothing across a restart when one
 /// of its DROP records fails to write partway through a multi-block drop.
 /// writeRecord flushes every record, so when the write of the second DROP fails,
