@@ -3933,6 +3933,10 @@ CONV_FN(OptimizeTable, ot)
     {
         ret += " CLEANUP";
     }
+    if (ot.manifest())
+    {
+        ret += " MANIFEST";
+    }
     if (ot.has_setting_values())
     {
         ret += " SETTINGS ";

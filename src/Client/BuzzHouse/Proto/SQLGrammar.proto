@@ -1919,6 +1919,7 @@ message OptimizeTable {
     optional bool cleanup = 8;
     optional SettingValues setting_values = 9;
     optional string format = 10;
+    optional bool manifest = 11;
 }
 
 message Exchange {

@@ -2115,7 +2115,8 @@ void QueryFuzzer::fuzzCodecFunction(ASTFunction & codec_fn)
            "Gorilla",
            "FPC",
            "ALP",
-           "SZ3"};
+           "SZ3",
+           "Quantized"};
 
     const String chosen = pickRandomly(fuzz_rand, pool);
     if (chosen == "ZSTD" && fuzz_rand() % 2 == 0)
@@ -2169,6 +2170,37 @@ void QueryFuzzer::fuzzCodecFunction(ASTFunction & codec_fn)
             make_intrusive<ASTLiteral>(String(sz3_algorithms[fuzz_rand() % std::size(sz3_algorithms)])),
             make_intrusive<ASTLiteral>(String(sz3_error_modes[fuzz_rand() % std::size(sz3_error_modes)])),
             make_intrusive<ASTLiteral>(sz3_error_values[fuzz_rand() % std::size(sz3_error_values)])));
+    }
+    else if (chosen == "Quantized")
+    {
+        /// Vector-quantization codec for Array(Float32/Float64/BFloat16) columns; arguments are mandatory.
+        /// Quantized(method, dimensions[, ...]); use a multiple of 8 for dimensions so every method accepts it.
+        static const char * quant_methods[] = {"turboquant", "rabitq", "int8", "prefix", "product"};
+        const String method = quant_methods[fuzz_rand() % std::size(quant_methods)];
+        const UInt64 dimensions = (fuzz_rand() % 64 + 1) * 8;
+        if (method == "prefix")
+            /// Quantized('prefix', dimensions, leading_dimensions in [1, dimensions], 'int8'|'bf16').
+            codec_fn.arguments->children.push_back(makeASTFunction(
+                "Quantized",
+                make_intrusive<ASTLiteral>(String("prefix")),
+                make_intrusive<ASTLiteral>(dimensions),
+                make_intrusive<ASTLiteral>(UInt64(fuzz_rand() % dimensions + 1)),
+                make_intrusive<ASTLiteral>(String(fuzz_rand() % 2 == 0 ? "int8" : "bf16"))));
+        else if (method == "product")
+        {
+            /// Quantized('product', dimensions, nbits in [1, 16], m > 0 dividing dimensions).
+            /// Keep nbits <= 8 so the codebook stays within MAX_FIXEDSTRING_SIZE.
+            static const UInt64 subspaces[] = {1, 2, 4, 8};
+            codec_fn.arguments->children.push_back(makeASTFunction(
+                "Quantized",
+                make_intrusive<ASTLiteral>(String("product")),
+                make_intrusive<ASTLiteral>(dimensions),
+                make_intrusive<ASTLiteral>(UInt64(fuzz_rand() % 8 + 1)),
+                make_intrusive<ASTLiteral>(subspaces[fuzz_rand() % std::size(subspaces)])));
+        }
+        else
+            codec_fn.arguments->children.push_back(makeASTFunction(
+                "Quantized", make_intrusive<ASTLiteral>(method), make_intrusive<ASTLiteral>(dimensions)));
     }
     else
         codec_fn.arguments->children.push_back(makeASTFunction(chosen));
@@ -6771,6 +6803,11 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
         if (fuzz_rand() % 20 == 0)
         {
             optimize_query->cleanup = !optimize_query->cleanup;
+        }
+        /// Toggle MANIFEST (manifest-only compaction for Iceberg tables)
+        if (fuzz_rand() % 30 == 0)
+        {
+            optimize_query->manifest = !optimize_query->manifest;
         }
         /// Toggle DRY RUN (executes the merge without committing the result)
         if (fuzz_rand() % 20 == 0)

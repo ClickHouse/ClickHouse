@@ -151,6 +151,36 @@ static String formatCodecChoices(RandomGenerator & rg, const DB::Strings & choic
             res += rg.pickRandomly(sz3_error_values);
             res += ")";
         }
+        else if (choices[i] == "Quantized")
+        {
+            /// Vector-quantization codec, only for Array(Float32/Float64/BFloat16); arguments are mandatory.
+            /// Quantized('<method>', dimensions[, ...]); dimensions is a multiple of 8 so every method accepts it.
+            static const DB::Strings quant_methods = {"turboquant", "rabitq", "int8", "prefix", "product"};
+            const String method = rg.pickRandomly(quant_methods);
+            const uint32_t dimensions = rg.randomInt<uint32_t>(1, 64) * 8;
+
+            res += "('";
+            res += method;
+            res += "', ";
+            res += std::to_string(dimensions);
+            if (method == "prefix")
+            {
+                /// leading dimensions in [1, dimensions], then format 'int8' or 'bf16'.
+                res += ", ";
+                res += std::to_string(rg.randomInt<uint32_t>(1, dimensions));
+                res += rg.nextBool() ? ", 'int8'" : ", 'bf16'";
+            }
+            else if (method == "product")
+            {
+                /// nbits in [1, 16] (capped at 8 to keep the codebook within limits), m > 0 dividing dimensions.
+                static const std::vector<uint32_t> subspaces = {1, 2, 4, 8};
+                res += ", ";
+                res += std::to_string(rg.randomInt<uint32_t>(1, 8));
+                res += ", ";
+                res += std::to_string(rg.pickRandomly(subspaces));
+            }
+            res += ")";
+        }
     }
     return res;
 }
@@ -255,6 +285,14 @@ String generateNextCodecStringForType(RandomGenerator & rg, const SQLType * tp)
             /// Delta works for Decimal32/64; for wider precisions it may fail but is rare enough.
             pool.emplace_back("Delta");
             break;
+        case SQLTypeClass::ARRAY: {
+            /// The Quantized (vector quantization) codec applies only to Array(Float32/Float64/BFloat16),
+            /// i.e. an array whose element is a bare Float (a Nullable/LowCardinality element is rejected).
+            const auto * subtype = static_cast<const ArrayType *>(leaf)->subtype.get();
+            if (subtype && subtype->getTypeClass() == SQLTypeClass::FLOAT)
+                pool.emplace_back("Quantized");
+            break;
+        }
         default:
             /// Other types just support general-purpose codecs
             break;

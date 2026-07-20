@@ -911,17 +911,25 @@ void StatementGenerator::generateNextTablePartition(
 
 void StatementGenerator::generateNextOptimizeTableInternal(RandomGenerator & rg, const SQLTable & t, bool strict, OptimizeTable * ot)
 {
-    const bool has_final = t.can_run_merges && (t.supportsFinal(true) || t.isMergeTreeFamily(true) || rg.nextMediumNumber() < 21)
-        && (strict || rg.nextSmallNumber() < 4);
-    const bool has_partition = rg.nextBool();
+    /// MANIFEST is manifest-only compaction for Iceberg tables. It is incompatible with
+    /// FINAL/PARTITION/DEDUPLICATE/CLEANUP/DRY RUN, so when chosen it is emitted on its own.
+    const bool manifest = rg.nextMediumNumber() < 6;
+    const bool has_final = !manifest && t.can_run_merges
+        && (t.supportsFinal(true) || t.isMergeTreeFamily(true) || rg.nextMediumNumber() < 21) && (strict || rg.nextSmallNumber() < 4);
+    const bool has_partition = !manifest && rg.nextBool();
 
     t.setName(ot->mutable_est(), false);
     if (has_partition)
     {
         generateNextTablePartition(rg, 0, rg.nextSmallNumber() < 3, false, t, ot->mutable_single_partition()->mutable_partition());
     }
-    ot->set_cleanup(rg.nextSmallNumber() < 3);
-    if (!strict && rg.nextSmallNumber() < 4)
+    if (manifest)
+    {
+        ot->set_manifest(true);
+    }
+    else
+        ot->set_cleanup(rg.nextSmallNumber() < 3);
+    if (!manifest && !strict && rg.nextSmallNumber() < 4)
     {
         const uint32_t noption = rg.nextMediumNumber();
         DeduplicateExpr * dde = ot->mutable_dedup();
@@ -944,7 +952,7 @@ void StatementGenerator::generateNextOptimizeTableInternal(RandomGenerator & rg,
             dde->set_ded_star(true);
         }
     }
-    if (!strict && ((!has_final && !has_partition) || rg.nextLargeNumber() < 6) && rg.nextSmallNumber() < 4)
+    if (!manifest && !strict && ((!has_final && !has_partition) || rg.nextLargeNumber() < 6) && rg.nextSmallNumber() < 4)
     {
         const bool detached = rg.nextSmallNumber() < 3;
         const String dname = t.getDatabaseName();
