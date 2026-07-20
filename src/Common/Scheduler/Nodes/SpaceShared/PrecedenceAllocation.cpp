@@ -154,7 +154,7 @@ void PrecedenceAllocation::propagateUpdate(ISpaceSharedNode & from_child, Update
         else
             update.resetDecrease();
     }
-    // Membership in `reclaimable_children` follows `from_child.reclaimable` (invariant I7). Precedence keys
+    // Membership in `reclaimable_children` follows `from_child.reclaimable`. Precedence keys
     // are constant (a precedence change forces detach/reattach), so no re-keying is ever needed — only
     // add/remove. `from_child.reclaimable` is already final here.
     syncReclaimableMembership(from_child, update.detached == &from_child);
@@ -211,8 +211,8 @@ void PrecedenceAllocation::syncReclaimableMembership(ISpaceSharedNode & from_chi
 ResourceAllocation * PrecedenceAllocation::selectAllocationToSpill(ResourceCost at_least, String & details)
 {
     if (reclaimable_children.empty())
-        return nullptr; // No reclaimable child in this subtree — fail-close (invariant I6).
-    // Descend into the least-precedence reclaimable child (the tail), matching the kill order (invariant I8).
+        return nullptr; // No reclaimable child in this subtree — fail-close.
+    // Descend into the least-precedence reclaimable child (the tail), matching the kill order.
     return reclaimable_children.rbegin()->selectAllocationToSpill(at_least, details);
 }
 

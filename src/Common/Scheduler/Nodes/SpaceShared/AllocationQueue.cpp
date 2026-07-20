@@ -87,7 +87,7 @@ void AllocationQueue::increaseAllocation(ResourceAllocation & allocation, Resour
 
     chassert(!allocation.increasing_hook.is_linked());
 
-    // Update the key of running allocation. Re-key the reclaimable set in lockstep (invariant I8) if this
+    // Update the key of running allocation. Re-key the reclaimable set in lockstep if this
     // allocation is a member, so its position stays consistent with `running_allocations`.
     bool reclaimable_member = allocation.reclaimable_hook.is_linked();
     running_allocations.erase(running_allocations.iterator_to(allocation));
@@ -139,7 +139,7 @@ void AllocationQueue::setReclaimable(ResourceAllocation & allocation, ResourceCo
     bool now_member = new_reclaimable > 0;
     allocation.reclaimable = new_reclaimable;
     pending_reclaimable_delta += delta;
-    // Maintain the reclaimable-filtered set (invariant I7). It is keyed by `fair_key`, which is valid here
+    // Maintain the reclaimable-filtered set. It is keyed by `fair_key`, which is valid here
     // because `new_reclaimable > 0` implies `allocated > 0`, i.e. a running allocation with a live key.
     if (now_member && !was_member)
         reclaimable_allocations.insert(allocation);
@@ -304,9 +304,9 @@ void AllocationQueue::approveDecrease()
     bool is_increasing = allocation.increasing_hook.is_linked();
     if (is_increasing)
         increasing_allocations.erase(increasing_allocations.iterator_to(allocation));
-    // Re-key the reclaimable set in lockstep (invariant I8). A removal has already zeroed `reclaimable`
+    // Re-key the reclaimable set in lockstep. A removal has already zeroed `reclaimable`
     // and unlinked the allocation in `processActivation`, so `reclaimable_member` is false for removals.
-    // For a non-removing shrink we restore invariant I3 (`reclaimable <= allocated`) just below.
+    // For a non-removing shrink we restore `reclaimable <= allocated` just below.
     bool reclaimable_member = allocation.reclaimable_hook.is_linked();
     if (reclaimable_member)
         reclaimable_allocations.erase(reclaimable_allocations.iterator_to(allocation));
@@ -316,14 +316,14 @@ void AllocationQueue::approveDecrease()
     allocation.allocated -= decrease->size;
     allocation.fair_key -= decrease->size;
 
-    // Restore invariant I3 (`reclaimable <= allocated`) after a non-removing shrink. A spill-signaled
+    // Restore `reclaimable <= allocated` after a non-removing shrink. A spill-signaled
     // allocation may decrease before it re-reports a lower reclaimable total; without this clamp it would
     // linger in `reclaimable_allocations` with `reclaimable > allocated` (even `allocated == 0` for a full
     // shrink) and could be re-picked as a spill victim for memory it has already released. We do not touch
     // the `reclaimable` aggregate directly (that would double-count against `processActivation`): the
     // negative delta is accumulated into `pending_reclaimable_delta` and drained/propagated to every
     // ancestor on the next activation, exactly like `setReclaimable`. `reclaimable_member` is updated so
-    // an allocation that drops to zero reclaimable is not re-inserted below (invariant I7).
+    // an allocation that drops to zero reclaimable is not re-inserted below.
     if (allocation.reclaimable > allocation.allocated)
     {
         pending_reclaimable_delta += allocation.allocated - allocation.reclaimable; // negative
@@ -387,10 +387,10 @@ ResourceAllocation * AllocationQueue::selectAllocationToSpill(ResourceCost at_le
 {
     std::lock_guard lock(mutex);
     if (reclaimable_allocations.empty())
-        return nullptr; // Nothing reclaimable here — fail-close (invariant I6).
+        return nullptr; // Nothing reclaimable here — fail-close.
 
     // Spill the largest reclaimable allocation (the tail of the set, ordered by `fair_key`), matching the
-    // order the kill path uses (invariant I8): victim selection applies no cross-child fairness of its own,
+    // order the kill path uses: victim selection applies no cross-child fairness of its own,
     // so the biggest reclaimable allocation is asked to spill first.
     ResourceAllocation & victim = *reclaimable_allocations.rbegin();
     details = fmt::format("Asking the largest reclaimable allocation of size {} (reclaimable {}) in workload '{}' to reclaim at least {}.",
@@ -419,7 +419,7 @@ void AllocationQueue::processActivation()
             {
                 pending_reclaimable_delta -= allocation.reclaimable;
                 allocation.reclaimable = 0;
-                if (allocation.reclaimable_hook.is_linked()) // Keep invariant I7: unlink from the reclaimable set
+                if (allocation.reclaimable_hook.is_linked()) // Unlink from the reclaimable set: it only holds allocations with reclaimable > 0
                     reclaimable_allocations.erase(reclaimable_allocations.iterator_to(allocation));
             }
 

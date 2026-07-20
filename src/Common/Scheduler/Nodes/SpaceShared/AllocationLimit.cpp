@@ -115,7 +115,7 @@ void AllocationLimit::checkSoftLimit()
     if (spill_requested)
         return; // A spill is already outstanding; wait for the victim to make progress before signalling another one.
     if (reclaimable == 0)
-        return; // Nothing reclaimable under this limit — fail-close (I6); the hard limit governs.
+        return; // Nothing reclaimable under this limit — fail-close; the hard limit governs.
 
     String details;
     ResourceCost need = allocated - soft_limit;

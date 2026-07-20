@@ -742,8 +742,8 @@ TEST(SchedulerSpaceShared, RapidCreateDestroy)
 }
 
 
-/// A query over the soft limit but reporting nothing reclaimable is never asked to spill (fail-close,
-/// invariant I6). Once it reports reclaimable memory, the scheduler asks it to reclaim `allocated - soft`.
+/// A query over the soft limit but reporting nothing reclaimable is never asked to spill (fail-close).
+/// Once it reports reclaimable memory, the scheduler asks it to reclaim `allocated - soft`.
 TEST(SchedulerSpaceShared, SoftLimitFailCloseThenSpill)
 {
     SpaceSharedTest t;
@@ -764,7 +764,7 @@ TEST(SchedulerSpaceShared, SoftLimitFailCloseThenSpill)
 
 
 /// Among several reclaimable allocations in one queue, the largest is asked to spill first (the same order
-/// the kill path uses, invariant I8), and only one spill is in flight at a time.
+/// the kill path uses), and no second signal is issued while the first request is outstanding.
 TEST(SchedulerSpaceShared, SoftLimitSpillsLargestInQueue)
 {
     SpaceSharedTest t;
@@ -851,7 +851,7 @@ TEST(SchedulerSpaceShared, SpillReSignalsUntilUnderSoftLimit)
 
 
 /// A non-removing shrink clamps the allocation's reported reclaimable down to the new `allocated`
-/// (invariant I3) and keeps the reclaimable aggregate consistent up the whole tree. Without the clamp a
+/// and keeps the reclaimable aggregate consistent up the whole tree. Without the clamp a
 /// spill-signaled allocation that decreases before re-reporting would keep `reclaimable > allocated` and
 /// could be re-picked as a spill victim for memory it has already released.
 TEST(SchedulerSpaceShared, ReclaimableClampedOnShrink)

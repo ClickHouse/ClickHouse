@@ -18,21 +18,21 @@ namespace DB
 /// NOTE: All fields and methods can only be accessed from the scheduler thread.
 ///
 /// Reclaimable-memory / spilling invariants (maintained by all subclasses):
-///  I1. All `reclaimable` state (the aggregate and the reclaimable-filtered sets) is read and written
+///  - All `reclaimable` state (the aggregate and the reclaimable-filtered sets) is read and written
 ///      only on the scheduler thread; queries touch it exclusively through `IAllocationQueue::setReclaimable`.
-///  I2. `reclaimable` is a bottom-up aggregate: each `setReclaimable` change travels one leaf-to-root path
+///  - `reclaimable` is a bottom-up aggregate: each `setReclaimable` change travels one leaf-to-root path
 ///      as `Update::reclaimable_delta`, adding to every ancestor (cost O(depth)). It never descends.
-///  I3. Per allocation `0 <= reclaimable <= allocated`; per node `reclaimable == sum of children reclaimable`
+///  - Per allocation `0 <= reclaimable <= allocated`; per node `reclaimable == sum of children reclaimable`
 ///      and therefore `0 <= reclaimable <= allocated`.
-///  I4. Spilling never blocks the increase chain. Only the hard limit (`AllocationLimit::max_allocated`)
+///  - Spilling never blocks the increase chain. Only the hard limit (`AllocationLimit::max_allocated`)
 ///      can null out `increase`; a soft-limit breach merely issues a `spillAllocation` signal.
-///  I5. Spill victim selection (`selectAllocationToSpill`) touches at most one root-to-leaf path — no more
+///  - Spill victim selection (`selectAllocationToSpill`) touches at most one root-to-leaf path — no more
 ///      scheduling nodes than the existing kill path (`selectAllocationToKill`).
-///  I6. Fail-close: if nothing on the chosen path is reclaimable, no spill is issued and the hard limit
+///  - Fail-close: if nothing on the chosen path is reclaimable, no spill is issued and the hard limit
 ///      remains the sole enforcement mechanism (reclaimable == 0 everywhere reproduces today's behavior).
-///  I7. Membership: a child is in its parent's reclaimable set iff its aggregate `reclaimable > 0`; an
+///  - Membership: a child is in its parent's reclaimable set iff its aggregate `reclaimable > 0`; an
 ///      allocation is in its queue's reclaimable set iff its `reclaimable > 0`.
-///  I8. The reclaimable set uses the SAME order as the primary running set at each node, so the spill
+///  - The reclaimable set uses the SAME order as the primary running set at each node, so the spill
 ///      victim (top of the reclaimable set) is the same choice the kill path would make among reclaimable
 ///      candidates — deterministic, largest-usage / least-precedence / largest-allocation first.
 class ISpaceSharedNode : public ISchedulerNode
@@ -128,12 +128,12 @@ public:
 
     /// Returns an allocation that should be asked to spill (reclaim) `at_least` bytes, or nullptr if this
     /// subtree has nothing reclaimable. Selection descends the reclaimable-filtered ordering set at each
-    /// node, using the SAME order as the kill path (see invariant I8), so it visits exactly one root-to-leaf
-    /// path (invariant I5) and never touches idle/unreclaimable subtrees. Unlike `selectAllocationToKill`,
+    /// node, using the SAME order as the kill path, so it visits exactly one root-to-leaf
+    /// path and never touches idle/unreclaimable subtrees. Unlike `selectAllocationToKill`,
     /// this carries no cross-child fairness logic: the largest reclaimable allocation is spilled first,
     /// even if it is below its fair share. Returns nullptr when nothing on
     /// the chosen path is reclaimable, in which case no spill is issued and the hard limit governs
-    /// (fail-close, invariant I6).
+    /// (fail-close).
     virtual ResourceAllocation * selectAllocationToSpill(ResourceCost at_least, String & details) = 0;
 
     /// For parent only. Sets the usage key.
@@ -158,7 +158,7 @@ public:
     bool isDecreasing() const noexcept { return decreasing_hook.is_linked(); }
 
     /// For parent only. True iff this child is currently listed in the parent's reclaimable-filtered set.
-    /// By invariant I7 this holds exactly when `reclaimable > 0` (and the child is attached).
+    /// This holds exactly when `reclaimable > 0` (and the child is attached).
     bool isReclaimable() const noexcept { return reclaimable_hook.is_linked(); }
 
     void apply(Update & update)
@@ -258,7 +258,7 @@ protected:
 
     /// Reclaimable-filtered ordering sets: a parallel set holding only children with `reclaimable > 0`,
     /// kept in the SAME order as the corresponding running set so that the spill victim (the top of the
-    /// reclaimable set) matches the kill order (invariant I8). See `selectAllocationToSpill`.
+    /// reclaimable set) matches the kill order. See `selectAllocationToSpill`.
     using ReclaimableSetByUsage = boost::intrusive::set<ISpaceSharedNode, ReclaimableHook, boost::intrusive::compare<ByUsage>>;
     using ReclaimableSetByPrecedence = boost::intrusive::set<ISpaceSharedNode, ReclaimableHook, boost::intrusive::compare<ByPrecedence>>;
 

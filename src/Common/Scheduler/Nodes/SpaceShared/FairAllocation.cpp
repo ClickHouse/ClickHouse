@@ -137,7 +137,7 @@ void FairAllocation::propagateUpdate(ISpaceSharedNode & from_child, Update && up
         else
             update.resetDecrease();
     }
-    // Membership in `reclaimable_children` follows `from_child.reclaimable` (invariant I7). Re-keying of an
+    // Membership in `reclaimable_children` follows `from_child.reclaimable`. Re-keying of an
     // existing member on a usage-key change is handled inside `updateKey`; this only adds/removes members
     // (including a pure `reclaimable_delta` update, which does not touch `increase`/`decrease` and so does
     // not reach `updateKey`). `from_child.reclaimable` is already final here (the child applied its delta
@@ -214,7 +214,7 @@ void FairAllocation::updateKey(ISpaceSharedNode & from_child, IncreaseRequest * 
             pending_children.erase(pending_children.iterator_to(from_child));
         if (from_child.isRunning())
             running_children.erase(running_children.iterator_to(from_child));
-        // Re-key an existing reclaimable member in lockstep (invariant I8). Membership changes (0<->>0)
+        // Re-key an existing reclaimable member in lockstep. Membership changes (0<->>0)
         // are handled separately by `syncReclaimableMembership`; here we only preserve ordering for a
         // child that is already listed.
         bool reclaimable_member = from_child.isReclaimable();
@@ -277,8 +277,8 @@ void FairAllocation::syncReclaimableMembership(ISpaceSharedNode & from_child, bo
 ResourceAllocation * FairAllocation::selectAllocationToSpill(ResourceCost at_least, String & details)
 {
     if (reclaimable_children.empty())
-        return nullptr; // No reclaimable child in this subtree — fail-close (invariant I6).
-    // Descend into the highest-usage reclaimable child (the tail), matching the kill order (invariant I8).
+        return nullptr; // No reclaimable child in this subtree — fail-close.
+    // Descend into the highest-usage reclaimable child (the tail), matching the kill order.
     return reclaimable_children.rbegin()->selectAllocationToSpill(at_least, details);
 }
 

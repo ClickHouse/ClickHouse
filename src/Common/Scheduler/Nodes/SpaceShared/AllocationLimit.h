@@ -40,7 +40,7 @@ private:
     bool setDecrease(DecreaseRequest * new_decrease);
 
     /// Issues at most one spill signal while `allocated` exceeds `soft_limit`. Non-blocking: it never
-    /// touches `increase`/`decrease`, so it cannot stall admission (invariant I4). Must be called with no
+    /// touches `increase`/`decrease`, so it cannot stall admission. Must be called with no
     /// AllocationQueue mutex held (it descends into `selectAllocationToSpill`, which locks the queue).
     void checkSoftLimit();
 
@@ -55,7 +55,6 @@ private:
     /// after an unrelated decrease may target a different allocation while an earlier victim has not
     /// reacted yet: several allocations can hold outstanding spill requests at once. Each signal carries
     /// the then-current excess and the query side coalesces repeated signals, which bounds the overshoot.
-    /// See the `SpillGateReopensOnUnrelatedDecrease` test for the pinned semantics.
     bool spill_requested = false;
 
     /// Allocation that is being killed (if any)
