@@ -22,6 +22,9 @@ SET enable_parallel_replicas = 0;
 SET collect_hash_table_stats_during_joins = 0;
 SET max_memory_usage = 80000000;  -- fail a spilled read mid-join
 
-SELECT count() FROM (SELECT l.s, l.k FROM grace_hash_cancel_04545 AS l JOIN grace_hash_cancel_04545 AS r ON l.k = r.k) FORMAT Null; -- { serverError MEMORY_LIMIT_EXCEEDED }
+-- Read l.s directly (not through count()): count() lets the analyzer prune the wide l.s column,
+-- so the payload would never be materialized from the spilled left blocks and the shared-reader
+-- path this PR fixes could go uncovered. Selecting l.s makes it a required output column.
+SELECT l.s, l.k FROM grace_hash_cancel_04545 AS l JOIN grace_hash_cancel_04545 AS r ON l.k = r.k FORMAT Null; -- { serverError MEMORY_LIMIT_EXCEEDED }
 
 DROP TABLE grace_hash_cancel_04545;
