@@ -41,6 +41,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "26.7",
         {
+            {"function_base62_max_input_size", 10000, 10000, "New setting that limits the input size of the new functions `base62Encode`, `base62Decode` and `tryBase62Decode` (whose conversion is quadratic in the input length) to 10 KB by default. A value of `0` disables the limit."},
             {"analyzer_compatibility_allow_non_aggregate_in_having", false, false, "New compatibility setting. When enabled, the analyzer mimics the legacy `HAVING`-to-`WHERE` rewrite for non-aggregate AND-conjuncts instead of raising `NOT_AN_AGGREGATE`."},
             {"dictionary_lazy_load", "auto", "auto", "New setting overriding the server setting `dictionaries_lazy_load` for an individual dictionary."},
             {"discard_query_data", false, false, "New setting to skip sending query result rows to the client over the native TCP protocol."},

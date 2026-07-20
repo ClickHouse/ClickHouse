@@ -4599,9 +4599,9 @@ static const std::vector<std::unordered_set<String>> & swapFuncs
         /// Higher-order map functions (lambda, map → map or UInt8)
         higher_order_map_funcs,
         /// Binary encoding (bytes → encoded String)
-        {"hex", "bin", "base58Encode", "base64Encode", "base64URLEncode"},
+        {"hex", "bin", "base58Encode", "base62Encode", "base64Encode", "base64URLEncode"},
         /// Binary decoding (encoded String → bytes)
-        {"unhex", "unbin", "base58Decode", "tryBase58Decode", "base64Decode", "base64URLDecode", "tryBase64Decode", "tryBase64URLDecode"},
+        {"unhex", "unbin", "base58Decode", "tryBase58Decode", "base62Decode", "tryBase62Decode", "base64Decode", "base64URLDecode", "tryBase64Decode", "tryBase64URLDecode"},
         /// Sign/magnitude
         {"abs", "sign"},
         /// JSONExtract* family (json, path → typed value)

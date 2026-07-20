@@ -921,6 +921,7 @@ std::unordered_map<String, CHSetting> serverSettings = {
     {"formatdatetime_parsedatetime_m_is_month_name", trueOrFalseSettingNoOracle},
     {"fsync_metadata", trueOrFalseSettingNoOracle},
     {"function_base58_max_input_size", CHSetting(highRange, {}, false)},
+    {"function_base62_max_input_size", CHSetting(highRange, {}, false)},
     {"function_date_trunc_return_type_behavior", trueOrFalseSettingNoOracle},
     {"function_json_value_return_type_allow_complex", trueOrFalseSettingNoOracle},
     {"function_json_value_return_type_allow_nullable", trueOrFalseSettingNoOracle},
