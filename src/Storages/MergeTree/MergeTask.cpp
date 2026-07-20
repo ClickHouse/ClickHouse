@@ -709,6 +709,13 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         /// `old -> new` on a part that already has `new` and aborts. Falling back to the default
         /// behavior (expire `new`) lets the rename mutation re-derive it and defaults the re-added
         /// `old`, matching the pre-fix result for this case.
+        ///
+        /// A merge never sees a mix of parts from before and after the pending rename: all source
+        /// parts of one merge must have the same current mutation version (enforced by `canMergeParts`
+        /// in every merge predicate), so a part inserted after the rename — physically holding `new`
+        /// (and possibly the re-added `old`) — can only be merged with the pre-rename parts once the
+        /// rename mutation has materialized in all of them. Hence either every source part still
+        /// stores `old` (handled here), or none does and the rename map is empty.
         NameSet renamed_column_targets;
         for (const auto & part : global_ctx->future_part->parts)
         {

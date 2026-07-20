@@ -137,4 +137,52 @@ fi
 ${CLICKHOUSE_CLIENT} --query="DROP TABLE IF EXISTS t_rename_merge_race"
 ${CLICKHOUSE_CLIENT} --query="DROP TABLE IF EXISTS t_rename_merge_race_dynamic"
 ${CLICKHOUSE_CLIENT} --query="DROP TABLE IF EXISTS t_rename_merge_race_reuse"
+
+# Phase 4: mixed generations. Same setup as Phase 3, but a fresh insert lands after the RENAME and
+# the re-ADD, so a new part already physically stores b (and the re-added a) while the old part
+# still stores only the pre-rename a. A single merge can never see such a mix: parts on different
+# sides of a pending mutation have different current mutation versions and every merge predicate
+# refuses to merge them, so OPTIMIZE FINAL must be refused while the rename is pending. Once the
+# rename materializes, the merge must combine both generations without misbinding the old physical
+# a bytes to the re-added a.
+${CLICKHOUSE_CLIENT} --query="
+    DROP TABLE IF EXISTS t_rename_merge_race_mixed;
+    CREATE TABLE t_rename_merge_race_mixed (id UInt64, a String)
+    ENGINE = MergeTree() ORDER BY id
+    SETTINGS min_bytes_for_wide_part = 0;
+    INSERT INTO t_rename_merge_race_mixed VALUES (1, 'AAA'), (2, 'BBB'), (3, 'CCC');
+"
+
+${CLICKHOUSE_CLIENT} --query="SYSTEM ENABLE FAILPOINT mt_select_parts_to_mutate_no_free_threads"
+${CLICKHOUSE_CLIENT} --query="ALTER TABLE t_rename_merge_race_mixed RENAME COLUMN a TO b SETTINGS alter_sync = 0"
+${CLICKHOUSE_CLIENT} --query="ALTER TABLE t_rename_merge_race_mixed ADD COLUMN a String DEFAULT 'reused_default' SETTINGS alter_sync = 0"
+${CLICKHOUSE_CLIENT} --query="INSERT INTO t_rename_merge_race_mixed (id, b, a) VALUES (4, 'DDD', 'ddd')"
+
+# The failpoint pins the pending mutation only for plain MergeTree; the suite may run with the
+# table converted to ReplicatedMergeTree, where the rename can materialize at any moment, so the
+# refusal is asserted only for the plain engine.
+engine=$(${CLICKHOUSE_CLIENT} --query="SELECT engine FROM system.tables WHERE database = currentDatabase() AND name = 't_rename_merge_race_mixed'")
+if [ "$engine" = "MergeTree" ]; then
+    optimize_error=$(${CLICKHOUSE_CLIENT} --query="OPTIMIZE TABLE t_rename_merge_race_mixed FINAL SETTINGS optimize_throw_if_noop = 1" 2>&1 || true)
+    if ! echo "$optimize_error" | grep -q "CANNOT_ASSIGN_OPTIMIZE"; then
+        echo "FAIL (mixed generations): expected OPTIMIZE FINAL to be refused while the rename is pending, got: $optimize_error"
+        exit 1
+    fi
+fi
+
+disable_failpoint
+wait_mutation t_rename_merge_race_mixed
+${CLICKHOUSE_CLIENT} --query="OPTIMIZE TABLE t_rename_merge_race_mixed FINAL"
+
+count=$(${CLICKHOUSE_CLIENT} --query="
+    SELECT count() FROM t_rename_merge_race_mixed
+    WHERE (id <= 3 AND b = ['AAA', 'BBB', 'CCC'][id] AND a = 'reused_default')
+       OR (id = 4 AND b = 'DDD' AND a = 'ddd')")
+if [ "$count" != "4" ]; then
+    echo "FAIL (mixed generations): expected 4 correct rows after the rename materialized, got $count"
+    ${CLICKHOUSE_CLIENT} --query="SELECT id, a, b FROM t_rename_merge_race_mixed ORDER BY id"
+    exit 1
+fi
+
+${CLICKHOUSE_CLIENT} --query="DROP TABLE IF EXISTS t_rename_merge_race_mixed"
 echo "OK"
