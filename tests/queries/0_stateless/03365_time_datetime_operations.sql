@@ -1,3 +1,4 @@
+SET enable_time_time64_type = 1;
 SET session_timezone = 'UTC';
 SET use_legacy_to_time = false;
 
@@ -101,3 +102,5 @@ SELECT toDateTime64('2299-12-31 23:59:59', 0) + CAST(toDecimal128('-1200000000.0
 SET date_time_overflow_behavior = 'saturate';
 SELECT toDateTime('2106-02-07 06:28:15') + toTime('00:00:01');
 SELECT toDateTime('1970-01-01 00:00:00') - toTime('00:00:01');
+-- DateTime64(9) overflow saturates to the last representable value
+SELECT toDateTime64('2262-04-11 23:47:16.854775807', 9) + toTime64('00:00:00.000000001', 9);

@@ -443,6 +443,46 @@ SELECT toTime64('23:59:59.999', 3) + toDate32('2024-07-15') AS dt, toTypeName(dt
 └─────────────────────────┴────────────────┘
 ```
 
+### DateTime and Time Arithmetic {#datetime-time-arithmetic}
+
+A [Time](../../sql-reference/data-types/time.md) or [Time64](../../sql-reference/data-types/time64.md) value can also be added to or subtracted from a [DateTime](../../sql-reference/data-types/datetime.md) or [DateTime64](../../sql-reference/data-types/datetime64.md) value using the `+` and `-` operators. The time value is applied as an offset in seconds (with sub-second precision for `Time64`). The addition is commutative; for subtraction the `DateTime`/`DateTime64` value must be the left operand.
+
+The result type depends on the operand types:
+
+| Left operand | Right operand | Result type |
+|---|---|---|
+| `DateTime` | `Time` | `DateTime` |
+| `DateTime` | `Time64(s)` | `DateTime64(s)` |
+| `DateTime64(s1)` | `Time` | `DateTime64(s1)` |
+| `DateTime64(s1)` | `Time64(s2)` | `DateTime64(max(s1, s2))` |
+
+:::note
+The explicit timezone of the `DateTime`/`DateTime64` operand, if any, is preserved in the result. The [`date_time_overflow_behavior`](../../operations/settings/settings-formats.md#date_time_overflow_behavior) setting controls what happens when the result is outside the representable range.
+:::
+
+Examples:
+
+```sql
+SET use_legacy_to_time = 0;
+SELECT toDateTime('2024-07-15 10:00:00') + toTime('01:30:00') AS dt, toTypeName(dt);
+```
+
+```text
+┌──────────────────dt─┬─toTypeName(dt)─┐
+│ 2024-07-15 11:30:00 │ DateTime       │
+└─────────────────────┴────────────────┘
+```
+
+```sql
+SELECT toDateTime64('2024-07-15 10:00:00.123', 3) - toTime('01:30:00') AS dt, toTypeName(dt);
+```
+
+```text
+┌──────────────────────dt─┬─toTypeName(dt)─┐
+│ 2024-07-15 08:30:00.123 │ DateTime64(3)  │
+└─────────────────────────┴────────────────┘
+```
+
 ### AT TIME ZONE and AT LOCAL {#at-time-zone}
 
 The postfix operators `AT TIME ZONE` and `AT LOCAL` convert a `DateTime` or `DateTime64` value to a different timezone. They are syntactic sugar for the existing [`toTimeZone`](/sql-reference/functions/date-time-functions#totimezone) function:
