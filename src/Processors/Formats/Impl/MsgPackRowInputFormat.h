@@ -92,6 +92,11 @@ class MsgPackSchemaReader final : public IRowSchemaReader
 public:
     MsgPackSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_);
 
+    /// The values are typed MessagePack objects; the parser rejects a non-string value for a `String`
+    /// destination column (see `insertInteger` and its siblings), unlike the flat-text formats, which
+    /// read every field verbatim into a `String` column.
+    bool readsAnyValueIntoStringColumn() const override { return false; }
+
 private:
     msgpack::object_handle readObject();
     DataTypePtr getDataType(const msgpack::object & object, size_t depth);

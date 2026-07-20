@@ -104,6 +104,11 @@ class BSONEachRowSchemaReader final : public IRowWithNamesSchemaReader
 public:
     BSONEachRowSchemaReader(ReadBuffer & in_, const FormatSettings & settings_);
 
+    /// The values are typed BSON elements; the parser rejects a non-string value for a `String`
+    /// destination column (see `readAndInsertString`), unlike the flat-text formats, which read
+    /// every field verbatim into a `String` column.
+    bool readsAnyValueIntoStringColumn() const override { return false; }
+
 private:
     NamesAndTypesList readRowAndGetNamesAndDataTypes(bool & eof) override;
     void transformTypesIfNeeded(DataTypePtr & type, DataTypePtr & new_type) override;

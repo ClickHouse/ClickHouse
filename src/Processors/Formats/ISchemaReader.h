@@ -77,6 +77,16 @@ public:
     /// nothing about the parsability of its content into the destination type.
     virtual bool readsStringValuesAsWholeText() const { return false; }
 
+    /// True if the parser reads the raw representation of a field of any type verbatim into a `String`
+    /// destination column, as the flat-text formats (`TSV`, `CSV`, ...) do. It is false for formats
+    /// that store typed values and reject a non-string value for a `String` column (`BSONEachRow`,
+    /// `MsgPack`). It is not consulted for the typed-token JSON formats, which govern this per token
+    /// type via the `input_format_json_read_*_as_strings` settings (see `readsTypedJSONValueTokens`
+    /// above). A caller that compares an inferred schema against an expected one can use this to know
+    /// when an inferred non-`String` type going into a `String` destination is a genuine structure
+    /// mismatch.
+    virtual bool readsAnyValueIntoStringColumn() const { return true; }
+
     virtual bool needContext() const { return false; }
     virtual void setContext(const ContextPtr &) {}
 
