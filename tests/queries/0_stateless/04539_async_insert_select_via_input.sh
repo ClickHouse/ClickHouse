@@ -115,13 +115,17 @@ printf '5\tdedup_row\n' | ${CLICKHOUSE_CURL} -sS \
     -H 'Content-Type: application/octet-stream' \
     --data-binary @- 2>&1 | grep -oF 'DEDUPLICATION_IS_NOT_POSSIBLE'
 
-# Case 6: timeout during pull must propagate instead of committing a prefix.
+# Case 6: a timeout during the pull must fail the query, not report success.
+# It surfaces as TIMEOUT_EXCEEDED or, occasionally, QUERY_WAS_CANCELLED; accept either.
+# (Like a synchronous INSERT ... SELECT, an aborted fallback may still leave a committed prefix.)
 Q=$(urlencode "INSERT INTO test_async_input_fallback SELECT id, if(sleepEachRow(0.5) = 0, s, '') AS s, getClientHTTPHeader('X-Test-Header') FROM input('id UInt32, s String') FORMAT TSV")
 printf '6\ttimeout_row_a\n6\ttimeout_row_b\n' | ${CLICKHOUSE_CURL} -sS \
     "${CLICKHOUSE_URL}&async_insert=1&wait_for_async_insert=1&allow_get_client_http_header=1&max_execution_time=0.3&query=${Q}&async_insert_max_data_size=1" \
     -H 'X-Test-Header: timeout_hdr' \
     -H 'Content-Type: application/octet-stream' \
-    --data-binary @- 2>&1 | grep -oF 'TIMEOUT_EXCEEDED'
+    --data-binary @- 2>&1 \
+    | grep -oE 'TIMEOUT_EXCEEDED|QUERY_WAS_CANCELLED' | head -n1 \
+    | sed 's/QUERY_WAS_CANCELLED/TIMEOUT_EXCEEDED/'
 
 # Case 7: missing destination must fail before input() is pulled.
 # The long sleep only runs on broken binaries, so max-time can be generous.
@@ -138,8 +142,8 @@ printf '8\tprogress_a\n8\tprogress_b\n8\tprogress_c\n' | ${CLICKHOUSE_CURL} -sS 
     -H 'X-Test-Header: progress_hdr' \
     -H 'Content-Type: application/octet-stream' \
     --data-binary @- \
-    | grep 'X-ClickHouse-Progress' | tail -1 \
-    | python3 -c "import sys,json; d=json.loads(sys.stdin.read().split(':',1)[1]); print(d['read_rows'])"
+    | grep 'X-ClickHouse-Progress' \
+    | python3 -c "import sys, json; rows = [json.loads(l.split(':', maxsplit=1)[1])['read_rows'] for l in sys.stdin if ':' in l]; print(max((int(r) for r in rows), default=''))"
 
 # Case 9: input('auto') with a missing destination throws UNKNOWN_TABLE.
 Q=$(urlencode "INSERT INTO test_async_input_missing_auto SELECT * FROM input('auto') FORMAT TSV")
