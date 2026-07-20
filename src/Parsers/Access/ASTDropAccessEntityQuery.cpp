@@ -1,6 +1,7 @@
 #include <Parsers/Access/ASTDropAccessEntityQuery.h>
 #include <Parsers/Access/ASTRowPolicyName.h>
 #include <Access/MaskingPolicy.h>
+#include <Common/SipHash.h>
 #include <Common/quoteString.h>
 #include <IO/Operators.h>
 
@@ -39,6 +40,41 @@ ASTPtr ASTDropAccessEntityQuery::clone() const
         res->masking_policy_name = std::make_shared<MaskingPolicyName>(*masking_policy_name);
 
     return res;
+}
+
+
+void ASTDropAccessEntityQuery::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
+{
+    IAST::updateTreeHashImpl(hash_state, ignore_aliases);
+    /// Fold the semantic fields kept outside `children`. See the header comment for why the
+    /// rewrite-rule matcher needs this. Mirror the formatter exactly — it emits `row_policy_names`
+    /// for `ROW_POLICY`, `masking_policy_name` for `MASKING_POLICY` and the plain `names`
+    /// otherwise — so every folded field survives the format -> parse round-trip that the
+    /// debug-build AST consistency check requires.
+    hash_state.update(type);
+    hash_state.update(if_exists);
+
+    if (type == AccessEntityType::ROW_POLICY)
+    {
+        hash_state.update(static_cast<bool>(row_policy_names));
+        if (row_policy_names)
+            row_policy_names->updateTreeHash(hash_state, ignore_aliases);
+    }
+    else if (type == AccessEntityType::MASKING_POLICY)
+    {
+        hash_state.update(static_cast<bool>(masking_policy_name));
+        if (masking_policy_name)
+            hash_state.update(masking_policy_name->toString());
+    }
+    else
+    {
+        hash_state.update(names.size());
+        for (const auto & name : names)
+            hash_state.update(name);
+    }
+
+    hash_state.update(storage_name);
+    hash_state.update(cluster);
 }
 
 

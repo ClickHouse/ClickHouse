@@ -17,7 +17,8 @@ class IAST;
 /// Visits each AST subtree that `node` keeps OUTSIDE `IAST::children` but that the rewrite-rule
 /// matcher's tree hash folds in (via the node class's `updateTreeHashImpl`) — currently the
 /// `SHOW ... WHERE` / `LIMIT` expressions, the `BACKUP` settings / `ON CLUSTER` host ids /
-/// per-element partitions, and the `CREATE ROW POLICY` filter expressions. The matcher, the AST
+/// per-element partitions, the `CREATE ROW POLICY` filter expressions, and the
+/// `CREATE MASKING POLICY` `UPDATE` assignments / `WHERE` condition. The matcher, the AST
 /// size/depth limits and the placeholder screening otherwise follow only `children`, so they must
 /// be told about these members explicitly. Only non-null members are visited; the callback is not
 /// recursed automatically (the caller decides how to descend). Keep this in sync with the

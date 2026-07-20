@@ -21,6 +21,7 @@
 #include <Parsers/ASTShowIndexesQuery.h>
 #include <Parsers/ASTBackupQuery.h>
 #include <Parsers/Access/ASTCreateRowPolicyQuery.h>
+#include <Parsers/Access/ASTCreateMaskingPolicyQuery.h>
 
 namespace DB
 {
@@ -442,6 +443,11 @@ void forEachRewriteRuleNonChildAST(const IAST & node, const std::function<void(c
     {
         for (const auto & filter_pair : row_policy->filters)
             visit_if(filter_pair.second);
+    }
+    else if (const auto * masking_policy = node.as<ASTCreateMaskingPolicyQuery>())
+    {
+        visit_if(masking_policy->update_assignments);
+        visit_if(masking_policy->where_condition);
     }
 }
 

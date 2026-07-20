@@ -1,5 +1,6 @@
 #include <Parsers/Access/ASTSetRoleQuery.h>
 #include <Parsers/Access/ASTRolesOrUsersSet.h>
+#include <Common/SipHash.h>
 #include <Common/quoteString.h>
 #include <IO/Operators.h>
 
@@ -23,6 +24,32 @@ ASTPtr ASTSetRoleQuery::clone() const
         res->to_users = boost::static_pointer_cast<ASTRolesOrUsersSet>(to_users->clone());
 
     return res;
+}
+
+
+void ASTSetRoleQuery::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
+{
+    IAST::updateTreeHashImpl(hash_state, ignore_aliases);
+    /// Fold the semantic fields kept outside `children`. See the header comment for why the
+    /// rewrite-rule matcher needs this. Mirror the formatter exactly — it emits `roles` only for
+    /// `SET ROLE` / `SET DEFAULT ROLE` and `to_users` only for `SET DEFAULT ROLE` — so every
+    /// folded field survives the format -> parse round-trip that the debug-build AST consistency
+    /// check requires.
+    hash_state.update(kind);
+
+    if (kind == Kind::SET_ROLE_DEFAULT)
+        return;
+
+    hash_state.update(static_cast<bool>(roles));
+    if (roles)
+        roles->updateTreeHash(hash_state, ignore_aliases);
+
+    if (kind == Kind::SET_ROLE)
+        return;
+
+    hash_state.update(static_cast<bool>(to_users));
+    if (to_users)
+        to_users->updateTreeHash(hash_state, ignore_aliases);
 }
 
 
