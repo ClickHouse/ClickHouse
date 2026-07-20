@@ -925,7 +925,9 @@ struct ToStartOfMinuteImpl
 
     static UInt32 execute(const DecimalUtils::DecimalComponents<DateTime64> & t, const DateLUTImpl & time_zone)
     {
-        return static_cast<UInt32>(time_zone.toStartOfMinute(t.whole));
+        /// Saturate: the start-of-minute seconds exceed the UInt32 result for inputs beyond 2106 and would
+        /// otherwise wrap, breaking toStartOfMinute's always-monotonic claim used for primary-key pruning.
+        return static_cast<UInt32>(std::clamp<Int64>(time_zone.toStartOfMinute(t.whole), 0, std::numeric_limits<UInt32>::max()));
     }
     static UInt32 execute(const DecimalUtils::DecimalComponents<Time64> & t, const DateLUTImpl & time_zone)
     {
@@ -1230,7 +1232,9 @@ struct ToStartOfFiveMinutesImpl
 
     static UInt32 execute(const DecimalUtils::DecimalComponents<DateTime64> & t, const DateLUTImpl & time_zone)
     {
-        return static_cast<UInt32>(time_zone.toStartOfFiveMinutes(t.whole));
+        /// Saturate: the interval-start seconds exceed the UInt32 result for inputs beyond 2106 and would
+        /// otherwise wrap, breaking toStartOfFiveMinutes's always-monotonic claim used for primary-key pruning.
+        return static_cast<UInt32>(std::clamp<Int64>(time_zone.toStartOfFiveMinutes(t.whole), 0, std::numeric_limits<UInt32>::max()));
     }
     static UInt32 execute(const DecimalUtils::DecimalComponents<Time64> & t, const DateLUTImpl & time_zone)
     {
@@ -1270,7 +1274,9 @@ struct ToStartOfTenMinutesImpl
 
     static UInt32 execute(const DecimalUtils::DecimalComponents<DateTime64> & t, const DateLUTImpl & time_zone)
     {
-        return static_cast<UInt32>(time_zone.toStartOfTenMinutes(t.whole));
+        /// Saturate: the interval-start seconds exceed the UInt32 result for inputs beyond 2106 and would
+        /// otherwise wrap, breaking toStartOfTenMinutes's always-monotonic claim used for primary-key pruning.
+        return static_cast<UInt32>(std::clamp<Int64>(time_zone.toStartOfTenMinutes(t.whole), 0, std::numeric_limits<UInt32>::max()));
     }
     static UInt32 execute(const DecimalUtils::DecimalComponents<Time64> & t, const DateLUTImpl & time_zone)
     {
@@ -1314,7 +1320,9 @@ struct ToStartOfFifteenMinutesImpl
 
     static UInt32 execute(const DecimalUtils::DecimalComponents<DateTime64> & t, const DateLUTImpl & time_zone)
     {
-        return static_cast<UInt32>(time_zone.toStartOfFifteenMinutes(t.whole));
+        /// Saturate: the interval-start seconds exceed the UInt32 result for inputs beyond 2106 and would
+        /// otherwise wrap, breaking toStartOfFifteenMinutes's always-monotonic claim used for primary-key pruning.
+        return static_cast<UInt32>(std::clamp<Int64>(time_zone.toStartOfFifteenMinutes(t.whole), 0, std::numeric_limits<UInt32>::max()));
     }
     static UInt32 execute(const DecimalUtils::DecimalComponents<Time64> & t, const DateLUTImpl & time_zone)
     {
@@ -1359,7 +1367,9 @@ struct TimeSlotImpl
 
     static UInt32 execute(const DecimalUtils::DecimalComponents<DateTime64> & t, const DateLUTImpl &)
     {
-        return static_cast<UInt32>(t.whole / 1800 * 1800);
+        /// Saturate: the half-hour slot in seconds exceeds the UInt32 result for inputs beyond 2106 and would
+        /// otherwise wrap, breaking timeSlot's always-monotonic claim used for primary-key pruning.
+        return static_cast<UInt32>(std::clamp<Int64>(t.whole / 1800 * 1800, 0, std::numeric_limits<UInt32>::max()));
     }
 
     static UInt32 execute(const DecimalUtils::DecimalComponents<Time64> & t, const DateLUTImpl &)
@@ -1415,7 +1425,9 @@ struct ToStartOfHourImpl
 
     static UInt32 execute(const DecimalUtils::DecimalComponents<DateTime64> & t, const DateLUTImpl & time_zone)
     {
-        return static_cast<UInt32>(time_zone.toStartOfHour(t.whole));
+        /// Saturate: the start-of-hour seconds exceed the UInt32 result for inputs beyond 2106 and would
+        /// otherwise wrap, breaking toStartOfHour's always-monotonic claim used for primary-key pruning.
+        return static_cast<UInt32>(std::clamp<Int64>(time_zone.toStartOfHour(t.whole), 0, std::numeric_limits<UInt32>::max()));
     }
 
     static UInt32 execute(const DecimalUtils::DecimalComponents<Time64> & t, const DateLUTImpl & time_zone)

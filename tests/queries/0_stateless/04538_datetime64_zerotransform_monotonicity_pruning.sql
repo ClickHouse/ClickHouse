@@ -1,10 +1,17 @@
 -- DateTime64 ZeroTransform date/time functions report themselves monotonic to the primary index, so they
 -- must be monotonic over the whole DateTime64 range. Several previously wrapped for out-of-range arguments
--- (toStartOfDay and the relative-number / *NumSinceEpoch transforms narrowed the result to UInt32/UInt16
--- without saturating), which made primary-key pruning drop granules that actually contain matching rows
--- (and tripped the exact_ranges assertion in the trivial-count projection optimization). They now saturate.
+-- (toStartOfDay, the round-down toStartOf{Minute,FiveMinutes,TenMinutes,FifteenMinutes,Hour}, timeSlot,
+-- the default toStartOfInterval, and the relative-number / *NumSinceEpoch transforms narrowed the result to
+-- UInt32/UInt16 without saturating), which made primary-key pruning drop granules that actually contain
+-- matching rows (and tripped the exact_ranges assertion in the trivial-count projection optimization).
+-- They now saturate. Each check compares the primary-key-pruned count() against the unpruned countIf(): a
+-- monotonic function makes them equal, a wrapping one made the pruned count too small (or too large).
 
 SET session_timezone = 'UTC';
+-- Pin standard-precision results: the wrapping narrow-cast paths this test covers are only reached when
+-- extended results are off. With extended results the transforms return wider Date32/DateTime64 values that
+-- never wrap, so the checks would pass regardless of the fix.
+SET enable_extended_results_for_datetime_functions = 0;
 
 DROP TABLE IF EXISTS t_dt64_mono;
 CREATE TABLE t_dt64_mono (d DateTime64(5)) ENGINE = MergeTree ORDER BY d
@@ -44,6 +51,46 @@ SELECT countIf(toMonthNumSinceEpoch(d) >= 360) FROM t_dt64_mono;
 SELECT '-- toYearNumSinceEpoch';
 SELECT count() FROM t_dt64_mono WHERE toYearNumSinceEpoch(d) >= 30 SETTINGS force_primary_key = 1;
 SELECT countIf(toYearNumSinceEpoch(d) >= 30) FROM t_dt64_mono;
+
+-- Round-down transforms: their standard-precision DateTime64 result is seconds-since-epoch and exceeds the
+-- UInt32 result beyond 2106, so it used to wrap. The 2000-01-01 threshold matches four of the seven rows.
+SELECT '-- toStartOfHour';
+SELECT count() FROM t_dt64_mono WHERE toStartOfHour(d) >= toDateTime('2000-01-01 00:00:00', 'UTC') SETTINGS force_primary_key = 1;
+SELECT countIf(toStartOfHour(d) >= toDateTime('2000-01-01 00:00:00', 'UTC')) FROM t_dt64_mono;
+
+SELECT '-- toStartOfMinute';
+SELECT count() FROM t_dt64_mono WHERE toStartOfMinute(d) >= toDateTime('2000-01-01 00:00:00', 'UTC') SETTINGS force_primary_key = 1;
+SELECT countIf(toStartOfMinute(d) >= toDateTime('2000-01-01 00:00:00', 'UTC')) FROM t_dt64_mono;
+
+SELECT '-- toStartOfFiveMinutes';
+SELECT count() FROM t_dt64_mono WHERE toStartOfFiveMinutes(d) >= toDateTime('2000-01-01 00:00:00', 'UTC') SETTINGS force_primary_key = 1;
+SELECT countIf(toStartOfFiveMinutes(d) >= toDateTime('2000-01-01 00:00:00', 'UTC')) FROM t_dt64_mono;
+
+SELECT '-- toStartOfTenMinutes';
+SELECT count() FROM t_dt64_mono WHERE toStartOfTenMinutes(d) >= toDateTime('2000-01-01 00:00:00', 'UTC') SETTINGS force_primary_key = 1;
+SELECT countIf(toStartOfTenMinutes(d) >= toDateTime('2000-01-01 00:00:00', 'UTC')) FROM t_dt64_mono;
+
+SELECT '-- toStartOfFifteenMinutes';
+SELECT count() FROM t_dt64_mono WHERE toStartOfFifteenMinutes(d) >= toDateTime('2000-01-01 00:00:00', 'UTC') SETTINGS force_primary_key = 1;
+SELECT countIf(toStartOfFifteenMinutes(d) >= toDateTime('2000-01-01 00:00:00', 'UTC')) FROM t_dt64_mono;
+
+SELECT '-- timeSlot';
+SELECT count() FROM t_dt64_mono WHERE timeSlot(d) >= toDateTime('2000-01-01 00:00:00', 'UTC') SETTINGS force_primary_key = 1;
+SELECT countIf(timeSlot(d) >= toDateTime('2000-01-01 00:00:00', 'UTC')) FROM t_dt64_mono;
+
+-- Default toStartOfInterval: INTERVAL 1 {MINUTE,HOUR,DAY} yields a DateTime (UInt32 seconds) result that
+-- wrapped for out-of-range arguments; INTERVAL 1 {WEEK,YEAR} yields a Date (UInt16 days) result that wrapped.
+SELECT '-- toStartOfInterval 1 HOUR';
+SELECT count() FROM t_dt64_mono WHERE toStartOfInterval(d, INTERVAL 1 HOUR) >= toDateTime('2000-01-01 00:00:00', 'UTC') SETTINGS force_primary_key = 1;
+SELECT countIf(toStartOfInterval(d, INTERVAL 1 HOUR) >= toDateTime('2000-01-01 00:00:00', 'UTC')) FROM t_dt64_mono;
+
+SELECT '-- toStartOfInterval 1 DAY';
+SELECT count() FROM t_dt64_mono WHERE toStartOfInterval(d, INTERVAL 1 DAY) >= toDateTime('2000-01-01 00:00:00', 'UTC') SETTINGS force_primary_key = 1;
+SELECT countIf(toStartOfInterval(d, INTERVAL 1 DAY) >= toDateTime('2000-01-01 00:00:00', 'UTC')) FROM t_dt64_mono;
+
+SELECT '-- toStartOfInterval 1 YEAR';
+SELECT count() FROM t_dt64_mono WHERE toStartOfInterval(d, INTERVAL 1 YEAR) >= toDate('2000-01-01') SETTINGS force_primary_key = 1;
+SELECT countIf(toStartOfInterval(d, INTERVAL 1 YEAR) >= toDate('2000-01-01')) FROM t_dt64_mono;
 
 -- Trivial-count projection path (the exact_ranges assertion): count() with an AggregatingMergeTree key.
 SELECT '-- toStartOfDay trivial count with projection';

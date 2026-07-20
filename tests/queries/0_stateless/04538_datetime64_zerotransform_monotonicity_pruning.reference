@@ -22,5 +22,32 @@
 -- toYearNumSinceEpoch
 4
 4
+-- toStartOfHour
+4
+4
+-- toStartOfMinute
+4
+4
+-- toStartOfFiveMinutes
+4
+4
+-- toStartOfTenMinutes
+4
+4
+-- toStartOfFifteenMinutes
+4
+4
+-- timeSlot
+4
+4
+-- toStartOfInterval 1 HOUR
+4
+4
+-- toStartOfInterval 1 DAY
+4
+4
+-- toStartOfInterval 1 YEAR
+4
+4
 -- toStartOfDay trivial count with projection
 4

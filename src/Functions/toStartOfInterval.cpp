@@ -46,6 +46,21 @@ enum class ToStartOfIntervalOverload
     Origin      /// toStartOfInterval(time, interval, origin) or toStartOfInterval(time, interval, origin, timezone)
 };
 
+/// toStartOfInterval reports itself as always monotonic to the primary index, so its result must be
+/// monotonic over the whole argument range. For the standard-precision result types Date (UInt16 days)
+/// and DateTime (UInt32 seconds) an out-of-range DateTime64 argument produces a value that a plain
+/// static_cast would wrap, breaking monotonicity and mis-pruning granules. Saturate those narrowing
+/// results to [0, type max]. Wider result types (Date32 = Int32, DateTime64 = Int64, used by the
+/// extended-results and DateTime64 paths) hold the full range and are cast through unchanged.
+template <typename FieldType>
+static FieldType saturatingResultCast(Int64 value)
+{
+    if constexpr (std::is_same_v<FieldType, UInt16> || std::is_same_v<FieldType, UInt32>)
+        return static_cast<FieldType>(std::clamp<Int64>(value, 0, static_cast<Int64>(std::numeric_limits<FieldType>::max())));
+    else
+        return static_cast<FieldType>(value);
+}
+
 class FunctionToStartOfInterval final : public IFunction
 {
 private:
@@ -295,8 +310,12 @@ private:
         }
         else // Overload: Default
         {
+            /// The default overload is the one used for primary-key pruning (getMonotonicityForRange reports
+            /// always-monotonic), so its narrowing standard-precision results (Date/DateTime) must saturate
+            /// rather than wrap for out-of-range DateTime64 arguments. See saturatingResultCast.
             for (size_t i = 0; i != size; ++i)
-                result_data[i] = static_cast<typename ResultDataType::FieldType>(ToStartOfInterval<unit>::execute(time_data[i], num_units, time_zone, scale_multiplier));
+                result_data[i] = saturatingResultCast<typename ResultDataType::FieldType>(
+                    ToStartOfInterval<unit>::execute(time_data[i], num_units, time_zone, scale_multiplier));
         }
 
         return result_col;
