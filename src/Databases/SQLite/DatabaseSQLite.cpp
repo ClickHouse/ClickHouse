@@ -286,13 +286,11 @@ Allows to connect to [SQLite](https://www.sqlite.org/index.html) database and pe
 
 The table below shows the default type mapping when ClickHouse automatically infers schema from SQLite:
 
-|  SQLite   | ClickHouse                                              |
-|---------------|---------------------------------------------------------|
-| INTEGER       | [Int32](../../sql-reference/data-types/int-uint.md)     |
-| REAL          | [Float32](../../sql-reference/data-types/float.md)      |
-| TEXT          | [String](../../sql-reference/data-types/string.md)      |
-| TEXT          | [UUID](../../sql-reference/data-types/uuid.md)          |
-| BLOB          | [String](../../sql-reference/data-types/string.md)      |
+| SQLite declared type | ClickHouse |
+|----------------------|------------|
+| Type name contains `INT` | [`Int64`](../../sql-reference/data-types/int-uint.md) |
+| `REAL`, `FLOAT`, `DOUBLE` | [`Float64`](../../sql-reference/data-types/float.md) |
+| Other types, including `TEXT` and `BLOB` | [`String`](../../sql-reference/data-types/string.md) |
 
 When you explicitly define a table with specific ClickHouse types using the [SQLite table engine](../../engines/table-engines/integrations/sqlite.md), the following ClickHouse types can be parsed from SQLite TEXT columns:
 
