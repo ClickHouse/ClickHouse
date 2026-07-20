@@ -1230,8 +1230,8 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
                 if (target_type && i < argument_names.size())
                 {
                     String new_name = data.getUniqueName("__number_literal");
-                    data.addColumn(ColumnWithTypeAndName(
-                        target_type->createColumnConst(1, parsed), target_type, new_name));
+                    ColumnConstPtr column = target_type->createColumnConst(1, parsed);
+                    data.addColumn(std::move(column), target_type, new_name);
                     argument_names[i] = new_name;
                 }
             }

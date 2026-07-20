@@ -256,7 +256,7 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
     if (src.getType() == Field::Types::Number)
     {
         Field resolved = src.resolveNumberLiteral();
-        return convertFieldToTypeImpl(resolved, type, from_type_hint, format_settings, strict);
+        return convertFieldToTypeImpl(resolved, type, from_type_hint, format_settings, strict, convert_inexact_floats);
     }
 
     if (from_type_hint && from_type_hint->equals(type))
