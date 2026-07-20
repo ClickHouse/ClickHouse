@@ -21,7 +21,7 @@ The `filter_expr` must be of type `UInt8`. The query deletes rows in the table f
 
 One query can contain several commands separated by commas.
 
-The `IN PARTITION` clause limits the mutation to the listed partitions. Without it, when the [optimize_mutations_with_partition_pruning](/operations/settings/settings#optimize_mutations_with_partition_pruning) setting is enabled (the default), ClickHouse automatically detects partition key conditions in `filter_expr` and only mutates the affected partitions.
+The `IN PARTITION` clause limits the mutation to the listed partitions. Without it, on tables of the `ReplicatedMergeTree` family, when the [optimize_mutations_with_partition_pruning](/operations/settings/settings#optimize_mutations_with_partition_pruning) setting is enabled (the default), ClickHouse automatically detects partition key conditions in `filter_expr` and only mutates the affected partitions. On non-replicated `MergeTree` tables, use an explicit `IN PARTITION` clause to limit the mutation to specific partitions.
 
 The synchronicity of the query processing is defined by the [mutations_sync](/operations/settings/settings.md/#mutations_sync) setting. By default, it is asynchronous.
 

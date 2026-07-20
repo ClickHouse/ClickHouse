@@ -1780,7 +1780,9 @@ Possible values:
 - 1 — Enabled.
 )", 0) \
     DECLARE(Bool, optimize_mutations_with_partition_pruning, true, R"(
-When enabled, ClickHouse automatically detects partition key conditions in the WHERE clause of ALTER TABLE UPDATE/DELETE mutations and only mutates the affected partitions instead of all partitions.
+When enabled, ClickHouse automatically detects partition key conditions in the WHERE clause of ALTER TABLE UPDATE/DELETE mutations on tables of the `ReplicatedMergeTree` family and only mutates the affected partitions instead of all partitions.
+
+This automatic pruning currently applies only to replicated tables. On non-replicated `MergeTree` tables, use an explicit `IN PARTITION` clause to limit a mutation to specific partitions.
 
 Possible values:
 
