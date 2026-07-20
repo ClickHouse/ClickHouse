@@ -115,6 +115,11 @@ void MergeTreeSink::consume(Chunk & chunk)
 
     auto process_list_element = context->getProcessListElement();
 
+    /// Warm the data hashes once here: the per-partition clones below share this object's
+    /// tokens via the copy ctor, so they reuse the cache instead of rehashing per partition.
+    if (deduplicate)
+        deduplication_info->prewarmDataHashes();
+
     for (auto & current_block : part_blocks)
     {
         /// A single INSERT can split into very many parts (e.g. high-cardinality partition key with

@@ -345,6 +345,20 @@ UInt128 DeduplicationInfo::calculateDataHashColumnWise(size_t offset, const Bloc
 }
 
 
+void DeduplicationInfo::prewarmDataHashes() const
+{
+    if (disabled || !original_block || original_block->empty())
+        return;
+
+    for (size_t offset = 0; offset < offsets.size(); ++offset)
+    {
+        /// User-token tokens never hash the data (getBlockUnifiedHash), so skip them.
+        if (tokens[offset].by_user.empty())
+            calculateDataHashColumnWise(offset, *original_block);
+    }
+}
+
+
 DeduplicationHash DeduplicationInfo::getBlockUnifiedHash(size_t offset, const std::string & partition_id) const
 {
     // when there is no user token, compute the full column-wise hash of the data

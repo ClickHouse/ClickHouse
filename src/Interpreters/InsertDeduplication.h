@@ -64,6 +64,7 @@ protected:
     /// src/Storages/MergeTree/tests/gtest_async_inserts.cpp
     friend std::vector<Int64> testSelfDeduplicate(std::vector<Int64> data, std::vector<size_t> offsets, std::vector<String> hashes);
     friend std::vector<String> testSelfDeduplicateStrings(std::vector<String> data, std::vector<size_t> offsets, std::vector<String> hashes);
+    friend std::vector<bool> testPrewarmDataHashes(std::vector<Int64> data, std::vector<size_t> offsets, std::vector<String> hashes);
 
 public:
     using Ptr = std::shared_ptr<DeduplicationInfo>;
@@ -92,6 +93,10 @@ public:
     FilterResult deduplicateBlock(const std::vector<std::string> & existing_block_ids, const std::string & partition_id, ContextPtr context) const;
 
     std::vector<DeduplicationHash> getDeduplicationHashes(const std::string & partition_id, bool deduplication_enabled) const;
+
+    /// Cache the partition-independent per-token data hashes once, so per-partition
+    /// clones reuse them (via the copy ctor) instead of recomputing per partition.
+    void prewarmDataHashes() const;
 
     size_t getCount() const;
     size_t getRows() const;

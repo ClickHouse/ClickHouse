@@ -136,4 +136,84 @@ TEST(AsyncInsertsTest, testSelfDeduplicateStrings)
     test_impl({"ab","c","a","bc"},{2,4},{"",""},{"ab","c","a","bc"});
 }
 
+
+/// Build a DeduplicationInfo with the given tokens and return, per token,
+/// {cold before prewarm, warm after prewarm on the original, warm on a fresh cloneSelf()}.
+/// An empty hash string means "no user token" (data hash is used). This exercises the
+/// per-partition reuse: the sinks clone the original once per partition, so a warm original
+/// must make every clone inherit the cache instead of rehashing.
+std::vector<bool> testPrewarmDataHashes(std::vector<Int64> data, std::vector<size_t> offsets, std::vector<String> hashes)
+{
+    MutableColumnPtr column = DataTypeInt64().createColumn();
+    for (auto datum : data)
+        column->insert(datum);
+    Block block({ColumnWithTypeAndName(std::move(column), DataTypePtr(new DataTypeInt64()), "a")});
+
+    auto deduplication_info = DeduplicationInfo::create(true);
+    deduplication_info->setRootViewID({});
+    deduplication_info->disabled = false; // there is no insert dependencies instance in this test
+    deduplication_info->updateOriginalBlock(Chunk(block.getColumns(), block.rows()), std::make_shared<const Block>(block.cloneEmpty()));
+
+    chassert(offsets.size() == hashes.size());
+    chassert(!offsets.empty());
+
+    deduplication_info->setUserToken(hashes[0], offsets[0]);
+    for (size_t i = 1; i < offsets.size(); ++i)
+        deduplication_info->setUserToken(hashes[i], offsets[i] - offsets[i - 1]);
+
+    chassert(offsets.size() == deduplication_info->getCount());
+
+    std::vector<bool> result;
+    result.reserve(hashes.size() * 3);
+
+    /// (a) cold before prewarm
+    for (size_t i = 0; i < hashes.size(); ++i)
+        result.push_back(deduplication_info->tokens[i].data_hash_batch.has_value());
+
+    deduplication_info->prewarmDataHashes();
+
+    /// (b) warm on the original after prewarm
+    for (size_t i = 0; i < hashes.size(); ++i)
+        result.push_back(deduplication_info->tokens[i].data_hash_batch.has_value());
+
+    /// (c) warm on a fresh clone (per-partition clones must inherit the cache)
+    auto clone = deduplication_info->cloneSelf();
+    for (size_t i = 0; i < hashes.size(); ++i)
+        result.push_back(clone->tokens[i].data_hash_batch.has_value());
+
+    return result;
+}
+
+TEST(AsyncInsertsTest, testPrewarmDataHashes)
+{
+    /// Three no-user-token tokens (getCount() > 1): all cold before, all warm after, clone inherits.
+    {
+        auto r = testPrewarmDataHashes({1, 2, 3, 4, 5, 6}, {2, 4, 6}, {"", "", ""});
+        ASSERT_EQ(r, (std::vector<bool>{
+            false, false, false, // cold before
+            true,  true,  true,  // warm after prewarm
+            true,  true,  true})); // clone inherits the warm cache
+    }
+    /// Mixed: user-token tokens must NOT be warmed (they never hash the data); only the
+    /// data tokens get cached, and the clone inherits exactly that set.
+    {
+        auto r = testPrewarmDataHashes({1, 2, 3, 4, 5, 6}, {2, 4, 6}, {"u", "", "u"});
+        ASSERT_EQ(r, (std::vector<bool>{
+            false, false, false,
+            false, true,  false,
+            false, true,  false}));
+    }
+    /// A single no-user-token token that spans several partitions is rehashed once per
+    /// partition on the commit path, so it must be warmed too (getCount()==1 is in scope).
+    {
+        auto r = testPrewarmDataHashes({1, 2, 3}, {3}, {""});
+        ASSERT_EQ(r, (std::vector<bool>{false, true, true}));
+    }
+    /// A single user-token token has nothing to warm (data hash is never used).
+    {
+        auto r = testPrewarmDataHashes({1, 2, 3}, {3}, {"u"});
+        ASSERT_EQ(r, (std::vector<bool>{false, false, false}));
+    }
+}
+
 }

@@ -299,6 +299,11 @@ void ReplicatedMergeTreeSink::consume(Chunk & chunk)
     size_t total_streams = 0;
     bool support_parallel_write = false;
 
+    /// Warm the data hashes once here: the per-partition clones below share this object's
+    /// tokens via the copy ctor, so they reuse the cache instead of rehashing per partition.
+    if (deduplicate)
+        deduplication_info->prewarmDataHashes();
+
     for (auto & current_block : part_blocks)
     {
         Stopwatch watch;
