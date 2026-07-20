@@ -11,8 +11,13 @@ CREATE TABLE skip_index_alias_lambda_normalization
 ENGINE = MergeTree
 ORDER BY tuple();
 
+-- The persisted definition keeps alias references (matcher expansion only is frozen).
 SELECT extract(create_table_query, 'INDEX idx .* TYPE minmax GRANULARITY 1')
 FROM system.tables
 WHERE database = currentDatabase() AND name = 'skip_index_alias_lambda_normalization';
+
+-- The analyzed expression recursively replaces nested aliases but keeps the lambda argument `x`.
+SELECT expr FROM system.data_skipping_indices
+WHERE database = currentDatabase() AND table = 'skip_index_alias_lambda_normalization';
 
 DROP TABLE skip_index_alias_lambda_normalization;

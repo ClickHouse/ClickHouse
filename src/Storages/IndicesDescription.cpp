@@ -27,21 +27,6 @@ namespace ErrorCodes
 namespace
 {
 
-/// Skip index expressions are analyzed with physical columns only. Matchers may
-/// expand to ALIAS columns, and ALIAS expressions may contain matchers, so
-/// normalize both recursively before passing the expression to TreeRewriter.
-void normalizeIndexExpressionList(ASTPtr & expression_list, const ColumnsDescription & columns, ContextPtr context)
-{
-    expandColumnMatchersInExpressionList(expression_list, columns, context);
-    replaceAliasColumnsInQuery(
-        expression_list,
-        columns,
-        {},
-        context,
-        {},
-        ColumnAliasReplacementMode::MetadataNormalization);
-}
-
 ASTPtr makePersistedIndexDefinitionAST(
     const String & name,
     const ASTPtr & expression_list_ast,
@@ -156,7 +141,7 @@ IndexDescription IndexDescription::getIndexFromAST(
     result.escape_filenames = escape_filenames;
 
     checkExpressionDoesntContainSubqueries(*index_definition->getExpression());
-    result.initExpressionInfo(index_definition->getExpression(), columns, context);
+    auto persisted_expression_list = result.initExpressionInfo(index_definition->getExpression(), columns, context);
 
     for (auto & elem : result.sample_block)
     {
@@ -174,7 +159,7 @@ IndexDescription IndexDescription::getIndexFromAST(
         result.arguments = index_type->arguments->clone();
 
     result.definition_ast = makePersistedIndexDefinitionAST(
-        result.name, result.expression_list_ast, *index_type, result.granularity);
+        result.name, persisted_expression_list, *index_type, result.granularity);
 
     return result;
 }
@@ -184,7 +169,7 @@ void IndexDescription::recalculateWithNewColumns(const ColumnsDescription & new_
     *this = getIndexFromAST(definition_ast, new_columns, is_implicitly_created, escape_filenames, context);
 }
 
-void IndexDescription::initExpressionInfo(ASTPtr index_expression, const ColumnsDescription & columns, ContextPtr context)
+ASTPtr IndexDescription::initExpressionInfo(ASTPtr index_expression, const ColumnsDescription & columns, ContextPtr context)
 {
     chassert(index_expression != nullptr);
 
@@ -192,7 +177,22 @@ void IndexDescription::initExpressionInfo(ASTPtr index_expression, const Columns
     if (expr_list == nullptr)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Expression is not set");
 
-    normalizeIndexExpressionList(expr_list, columns, context);
+    /// Skip index expressions are analyzed with physical columns only. Matchers may
+    /// expand to ALIAS columns, and ALIAS expressions may contain matchers, so
+    /// normalize both recursively before passing the expression to TreeRewriter.
+    /// The matcher-expanded (but not alias-replaced) list is persisted in
+    /// `definition_ast`: matcher expansion is frozen at creation time, while alias
+    /// references stay live so that later `ALTER MODIFY COLUMN ... ALIAS` picks up
+    /// the new alias body on `recalculateWithNewColumns`.
+    expandColumnMatchersInExpressionList(expr_list, columns, context);
+    ASTPtr persisted_expression_list = expr_list->clone();
+    replaceAliasColumnsInQuery(
+        expr_list,
+        columns,
+        {},
+        context,
+        {},
+        ColumnAliasReplacementMode::MetadataNormalization);
 
     expression_list_ast = expr_list->clone();
 
@@ -204,6 +204,8 @@ void IndexDescription::initExpressionInfo(ASTPtr index_expression, const Columns
     expression = ExpressionAnalyzer(expr_list, syntax, context).getActions(true);
 
     sample_block = expression->getSampleBlock();
+
+    return persisted_expression_list;
 }
 
 Field getFieldFromIndexArgumentAST(const ASTPtr & ast)
