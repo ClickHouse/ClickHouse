@@ -180,8 +180,22 @@ public:
 
     /// The -WithNamesAndTypes formats carry the declared column types in the second header row; when the
     /// parser is configured to use that header (`input_format_with_types_use_header`), it validates those
-    /// types against the destination exactly (see RowInputFormatWithNamesAndTypes::readPrefix).
-    bool hasExactTypesFromData() const override { return with_types && format_settings.with_types_use_header; }
+    /// types against the destination exactly (see RowInputFormatWithNamesAndTypes::readPrefix). The same
+    /// applies to a types row auto-detected in the data of a plain format (`*_detect_header`), which
+    /// `readSchema` latches in `types_detected_from_data`.
+    bool hasExactTypesFromData() const override
+    {
+        return (with_types || types_detected_from_data) && format_settings.with_types_use_header;
+    }
+
+    /// A header row with column names auto-detected in the data of a plain format (`*_detect_header`,
+    /// latched by `readSchema` in `names_detected_from_data`) makes the parser map the columns by name,
+    /// like the -WithNames formats do, as long as the parser is configured to use a names header
+    /// (`input_format_with_names_use_header`).
+    bool hasStrictOrderOfColumns() const override
+    {
+        return !(names_detected_from_data && format_settings.with_names_use_header);
+    }
 
 protected:
     std::optional<DataTypes> readRowAndGetDataTypes() override;
@@ -206,6 +220,8 @@ private:
 
     FormatWithNamesAndTypesReader * format_reader;
     bool try_detect_header;
+    bool names_detected_from_data = false;
+    bool types_detected_from_data = false;
     DataTypes buffered_types;
 };
 
