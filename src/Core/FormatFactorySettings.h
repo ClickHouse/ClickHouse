@@ -773,7 +773,10 @@ paths holds up to `Float64` precision. Enable it (or use `SET compatibility = '2
 to restore the behavior of versions up to and including 26.6, where a bare unquoted integer fed to a `DateTime64`
 column was interpreted as the raw scaled value (ticks).
 
-This setting governs only the `JSON`, `Values`/`Quoted` and `JSONExtract`/typed `JSON` paths. The tab-separated,
+This setting governs only the `JSON`, `Values`/`Quoted` and `JSONExtract`/typed `JSON` paths. The `Quoted` path
+covers every format that parses fields with the `Quoted` escaping rule: besides the `Values` format, this includes
+`MySQLDump` and the `Template`/`CustomSeparated`/`Regexp` formats when they are configured with `Quoted` field
+escaping. The tab-separated,
 CSV and other escaped/whole-text input formats are not affected by it: there an unquoted `DateTime64` number
 keeps its existing interpretation, where a large value is read as ticks.
 )", 0) \
