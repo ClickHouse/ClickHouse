@@ -130,6 +130,12 @@ public:
     /// Puts a new entry to the backup.
     virtual void writeFile(const BackupFileInfo & file_info, BackupEntryPtr entry) = 0;
 
+    /// Writes one pack object bundling several small blobs (packed mode, see BackupCoordinationFileInfos).
+    /// `members` are the pack's unique blobs (already deduplicated); each writes its physical suffix.
+    /// Called serially per pack, off the parallel per-entry writeFile path.
+    using PackMembers = std::vector<std::pair<BackupFileInfo, BackupEntryPtr>>;
+    virtual void writeFilePack(size_t pack_id, const PackMembers & members) = 0;
+
     /// Whether it's possible to add new entries to the backup in multiple threads.
     virtual bool supportsWritingInMultipleThreads() const = 0;
 

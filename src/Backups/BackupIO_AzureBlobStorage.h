@@ -30,7 +30,8 @@ public:
 
     void copyFileToDisk(
         const String & path_in_backup,
-        size_t file_size,
+        size_t offset,
+        size_t size,
         bool encrypted_in_backup,
         DiskPtr destination_disk,
         const String & destination_path,

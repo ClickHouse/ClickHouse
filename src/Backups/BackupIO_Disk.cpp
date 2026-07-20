@@ -34,13 +34,14 @@ std::unique_ptr<ReadBufferFromFileBase> BackupReaderDisk::readFile(const String 
     return disk->readFile(root_path / file_name, read_settings);
 }
 
-void BackupReaderDisk::copyFileToDisk(const String & path_in_backup, size_t file_size, bool encrypted_in_backup,
+void BackupReaderDisk::copyFileToDisk(const String & path_in_backup, size_t offset, size_t size, bool encrypted_in_backup,
                                       DiskPtr destination_disk, const String & destination_path, WriteMode write_mode)
 {
     /// Use IDisk::copyFile() as a more optimal way to copy a file if it's possible.
-    /// However IDisk::copyFile() can't use throttling for reading, and can't copy an encrypted file or do appending.
+    /// However IDisk::copyFile() can't use throttling for reading, can't copy an encrypted file or do appending,
+    /// and copies the whole object -- so a ranged copy (offset != 0, a packed member) must go through buffers.
     bool has_throttling = disk->isRemote() ? static_cast<bool>(read_settings.remote_throttler) : static_cast<bool>(read_settings.local_throttler);
-    if (!has_throttling && (write_mode == WriteMode::Rewrite) && !encrypted_in_backup)
+    if (!has_throttling && (write_mode == WriteMode::Rewrite) && !encrypted_in_backup && (offset == 0))
     {
         auto destination_data_source_description = destination_disk->getDataSourceDescription();
         if (destination_data_source_description.sameKind(data_source_description) && !data_source_description.is_encrypted)
@@ -53,7 +54,7 @@ void BackupReaderDisk::copyFileToDisk(const String & path_in_backup, size_t file
     }
 
     /// Fallback to copy through buffers.
-    BackupReaderDefault::copyFileToDisk(path_in_backup, file_size, encrypted_in_backup, destination_disk, destination_path, write_mode);
+    BackupReaderDefault::copyFileToDisk(path_in_backup, offset, size, encrypted_in_backup, destination_disk, destination_path, write_mode);
 }
 
 

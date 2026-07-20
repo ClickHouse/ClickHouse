@@ -42,6 +42,9 @@ namespace ErrorCodes
     M(Bool, allow_checksums_from_remote_paths) \
     M(BackupDataFileNameGeneratorType, data_file_name_generator) \
     M(Bool, backup_data_from_refreshable_materialized_view_targets) \
+    M(Bool, experimental_backup_pack_format) \
+    M(UInt64, backup_pack_size) \
+    M(UInt64, backup_pack_min_size) \
     M(Bool, internal) \
     M(Bool, experimental_lightweight_snapshot) \
     M(String, host_id) \

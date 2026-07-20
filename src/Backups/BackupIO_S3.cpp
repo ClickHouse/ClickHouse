@@ -432,7 +432,7 @@ std::unique_ptr<ReadBufferFromFileBase> BackupReaderS3::readFile(const String & 
         client, s3_uri.bucket, fs::path(s3_uri.key) / file_name, s3_uri.version_id, s3_settings.request_settings, read_settings);
 }
 
-void BackupReaderS3::copyFileToDisk(const String & path_in_backup, size_t file_size, bool encrypted_in_backup,
+void BackupReaderS3::copyFileToDisk(const String & path_in_backup, size_t offset, size_t size, bool encrypted_in_backup,
                                     DiskPtr destination_disk, const String & destination_path, WriteMode write_mode)
 {
     /// Use the native copy as a more optimal way to copy a file from S3 to S3 if it's possible.
@@ -441,6 +441,8 @@ void BackupReaderS3::copyFileToDisk(const String & path_in_backup, size_t file_s
     if (destination_data_source_description.sameKind(data_source_description)
         && (destination_data_source_description.is_encrypted == encrypted_in_backup))
     {
+        /// A non-zero offset (a packed member inside a pack object) copies only a byte range; copyS3File
+        /// infers that from the offset and forces UploadPartCopy instead of whole-object CopyObject.
         LOG_TRACE(log, "Copying {} from S3 to disk {}", path_in_backup, destination_disk->getName());
         auto write_blob_function = [&](const Strings & blob_path, WriteMode mode, const std::optional<ObjectAttributes> & object_attributes) -> size_t
         {
@@ -454,8 +456,8 @@ void BackupReaderS3::copyFileToDisk(const String & path_in_backup, size_t file_s
                 client,
                 s3_uri.bucket,
                 fs::path(s3_uri.key) / path_in_backup,
-                0,
-                file_size,
+                offset,
+                size,
                 /* dest_s3_client= */ destination_disk->getS3StorageClient(),
                 /* dest_bucket= */ blob_path[1],
                 /* dest_key= */ blob_path[0],
@@ -466,15 +468,15 @@ void BackupReaderS3::copyFileToDisk(const String & path_in_backup, size_t file_s
                 [&, this] { return readFile(path_in_backup); },
                 object_attributes);
 
-            return file_size;
+            return size;
         };
 
         destination_disk->writeFileUsingBlobWritingFunction(destination_path, write_mode, write_blob_function);
         return; /// copied!
     }
 
-    /// Fallback to copy through buffers.
-    BackupReaderDefault::copyFileToDisk(path_in_backup, file_size, encrypted_in_backup, destination_disk, destination_path, write_mode);
+    /// Fallback to copy through buffers (reads exactly [offset, offset + size) of the source).
+    BackupReaderDefault::copyFileToDisk(path_in_backup, offset, size, encrypted_in_backup, destination_disk, destination_path, write_mode);
 }
 
 BackupWriterS3::BackupWriterS3(

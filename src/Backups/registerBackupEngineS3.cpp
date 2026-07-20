@@ -171,6 +171,12 @@ void registerBackupEngineS3(BackupFactory & factory)
         BackupImpl::ArchiveParams archive_params;
         if (hasRegisteredArchiveFileExtension(s3_uri))
         {
+            if (params.experimental_backup_pack_format)
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "experimental_backup_pack_format cannot be used with an archive destination ({})",
+                    s3_uri);
+
             if (params.is_internal_backup)
                 throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Using archives with backups on clusters is disabled");
 

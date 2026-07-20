@@ -37,6 +37,9 @@ public:
         ContextPtr context;
         bool is_internal_backup = false;
         bool is_lightweight_snapshot = false;
+        /// Experimental object packing: bundle small blobs into a few pack objects. S3 / single-node only;
+        /// mutually exclusive with an archive extension in the destination.
+        bool experimental_backup_pack_format = false;
         BackupDataFileNameGeneratorType data_file_name_generator = BackupDataFileNameGeneratorType::FirstFileName;
         size_t data_file_name_prefix_length = 3;
         std::shared_ptr<IBackupCoordination> backup_coordination;

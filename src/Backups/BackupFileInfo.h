@@ -37,6 +37,12 @@ struct BackupFileInfo
     /// This field is set during backup coordination (see the class BackupCoordinationFileInfos).
     size_t data_file_index = static_cast<size_t>(-1);
 
+    /// Index of the pack object holding this blob's bytes when `experimental_backup_pack_format` is on;
+    /// -1 means the blob is its own object (the default and the only value in non-packed backups).
+    /// In-memory only: set during coordination and used to route writing; not stored in the .backup manifest
+    /// (a pack's own front index locates its members at restore, see BackupImpl).
+    Int64 pack_id = -1;
+
     /// Whether this file is encrypted by an encrypted disk.
     bool encrypted_by_disk = false;
 

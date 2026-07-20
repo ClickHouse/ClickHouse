@@ -9,6 +9,7 @@
 #include <atomic>
 #include <map>
 #include <mutex>
+#include <unordered_map>
 
 
 namespace DB
@@ -88,7 +89,8 @@ public:
     size_t copyFileToDisk(const String & file_name, DiskPtr destination_disk, const String & destination_path, WriteMode write_mode) const override;
     size_t copyFileToDisk(const SizeAndChecksum & size_and_checksum, DiskPtr destination_disk, const String & destination_path, WriteMode write_mode) const override;
     void writeFile(const BackupFileInfo & info, BackupEntryPtr entry) override;
-    bool supportsWritingInMultipleThreads() const override { return !use_archive; }
+    void writeFilePack(size_t pack_id, const PackMembers & members) override;
+    bool supportsWritingInMultipleThreads() const override { return !isArchive(); }
     void finalizeWriting() override;
     bool setIsCorrupted() noexcept override;
     bool tryRemoveAllFiles() noexcept override;
@@ -129,10 +131,38 @@ private:
     std::unique_ptr<ReadBufferFromFileBase>
     readFileImpl(const String & file_name, const SizeAndChecksum & size_and_checksum, bool read_encrypted) const;
 
+    /// Location of a small blob inside a pack object (packed mode). The pack object name is not stored in
+    /// the manifest -- it is derived from the pack index -- so restore reads each pack's own front index
+    /// once and builds this map, keyed by the member's data_file id.
+    struct MemberLocation
+    {
+        String pack_object;
+        UInt64 offset = 0;
+        UInt64 size = 0;
+    };
+
+    /// Reads each pack's front index (packs_0000 .. packs_{num_packs-1}) and fills `packed_members`.
+    void loadPackIndexes() TSA_REQUIRES(mutex);
+    std::unique_ptr<ReadBufferFromFileBase> readPackedMember(const MemberLocation & member) const;
+
+    /// How the backup's objects are laid out. Mutually exclusive; the archive-vs-pack conflict is rejected
+    /// earlier (backup engine registration). Set to Archive/Plain at construction; the read path upgrades a
+    /// plain-opened backup to Packed once the manifest reports num_packs > 0 (packing is detected on read,
+    /// not carried in a setting), so mixed and old backups just work.
+    enum class BackupLayout : uint8_t
+    {
+        Plain,
+        Archive,
+        Packed,
+    };
+
+    bool isArchive() const { return layout == BackupLayout::Archive; }
+    bool isPacked() const { return layout == BackupLayout::Packed; }
+
     const BackupFactory::CreateParams params;
     BackupInfo backup_info;
     const String backup_name_for_logging;
-    const bool use_archive;
+    BackupLayout layout;
     const ArchiveParams archive_params;
     const OpenMode open_mode;
     /// Used to write data to destinated object storage.
@@ -154,6 +184,10 @@ private:
     using SizeAndChecksum = std::pair<UInt64, UInt128>;
     std::map<String /* file_name */, SizeAndChecksum> file_names TSA_GUARDED_BY(mutex); /// Should be ordered alphabetically, see listFiles(). For empty files we assume checksum = 0.
     std::map<SizeAndChecksum, BackupFileInfo> file_infos TSA_GUARDED_BY(mutex); /// Information about files. Without empty files.
+    /// data_file id -> its location inside a pack. Built once at restore start (see loadPackIndexes),
+    /// immutable afterwards. Empty for non-packed backups.
+    std::unordered_map<String, MemberLocation> packed_members TSA_GUARDED_BY(mutex);
+    size_t num_packs = 0; /// Number of pack objects (from the manifest on read; computed on write).
     /// object_key -> file name, only used by lightweight snapshot
     std::unordered_map<String, String> file_object_keys TSA_GUARDED_BY(mutex);
     std::unordered_map<String, BackupFileInfo> lightweight_snapshot_file_infos TSA_GUARDED_BY(mutex);

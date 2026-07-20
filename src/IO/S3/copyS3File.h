@@ -38,6 +38,12 @@ std::unique_ptr<StdStreamFromReadBuffer> createS3UploadBody(
 /// because it is a known issue, it is fallbacks to read-write copy
 /// (copyDataToS3File()).
 ///
+/// A non-zero `src_offset` means only `[src_offset, src_offset + src_size)` of the source is copied (the
+/// source key holds more bytes). A whole-object `CopyObject` carries no byte range and would copy the entire
+/// source object, so such a ranged copy is forced onto the multipart `UploadPartCopy` path (per-part
+/// `CopySourceRange`), or, if multipart copy is unavailable, onto the buffered ranged read. This is inferred
+/// from `src_offset` here, so no caller can accidentally omit the signal and copy the whole object.
+///
 /// read_settings - is used for throttling in case of native copy is not possible
 void copyS3File(
     std::shared_ptr<const S3::Client> src_s3_client,

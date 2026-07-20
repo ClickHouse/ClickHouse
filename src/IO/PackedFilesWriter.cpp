@@ -84,6 +84,16 @@ static UInt64 getLengthOfSerializedString(const String & str)
     return getLengthOfVarUInt(str.size()) + str.size();
 }
 
+UInt64 PackedFilesWriter::getSerializedIndexSize(const Strings & file_names, UInt8 version)
+{
+    /// Per-file fields: file_name, offset, size [, uncompressed_size in v1+].
+    const UInt64 num_size_fields = version >= PackedFilesIO::VERSION_WITH_UNCOMPRESSED_SIZE ? 3 : 2;
+    UInt64 index_size = getSizeOfHeader();
+    for (const auto & name : file_names)
+        index_size += getLengthOfSerializedString(name) + sizeof(UInt64) * num_size_fields;
+    return index_size;
+}
+
 void PackedFilesWriter::applyMetadataChanges(PackedFilesIO::Index & index)
 {
     for (auto & change : metadata_changes)
@@ -216,12 +226,8 @@ std::pair<PackedFilesIO::Index, bool> PackedFilesWriter::finalize(WriteBuffer & 
     }
     chassert(ordered_file_names.size() == num_files, "Number of files in ordered list doesn't match the number of written files");
 
-    /// Calculate the size of index.
-    /// Per-file fields: file_name, offset, size [, uncompressed_size in v1+].
-    const UInt64 num_size_fields = with_uncompressed_size ? 3 : 2;
-    UInt64 data_offset = getSizeOfHeader();
-    for (const auto & name : ordered_file_names)
-        data_offset += getLengthOfSerializedString(name) + sizeof(UInt64) * num_size_fields;
+    /// Bodies start right after the serialized front index.
+    UInt64 data_offset = getSerializedIndexSize(ordered_file_names, version);
 
     PackedFilesIO::Index index;
     for (const auto & name : ordered_file_names)

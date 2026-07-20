@@ -93,6 +93,11 @@ public:
 
     static void writePackedIndex(WriteBuffer & out, const PackedFilesIO::Index & index, UInt8 version);
 
+    /// Byte length of the serialized front index (header + per-file entries) for these files at the
+    /// given version. Member bodies begin at this offset. Shared with streaming writers so the
+    /// ".packed" layout keeps a single source of truth for header/entry sizes.
+    static UInt64 getSerializedIndexSize(const Strings & file_names, UInt8 version);
+
 private:
     static size_t getSizeOfHeader();
 

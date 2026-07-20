@@ -51,6 +51,13 @@ public:
 
     static PackedFilesIO::Index readIndex(ReadBuffer & in);
 
+    /// Wraps an already-opened archive buffer as a view over one member's [offset, offset + size) range.
+    /// Shared with callers that open the archive buffer themselves (e.g. a backup reader that goes through
+    /// IBackupReader rather than a DiskPtr). The view seeks into the archive, so `archive_buffer` must not
+    /// come from an mmap/direct-io read method.
+    static std::unique_ptr<ReadBufferFromFileBase> viewMember(
+        std::unique_ptr<ReadBufferFromFileBase> archive_buffer, const String & member_name, size_t offset, size_t size);
+
 private:
     /// Index of archive: immutable and path-independent.
     const PackedFilesIO::Index index;

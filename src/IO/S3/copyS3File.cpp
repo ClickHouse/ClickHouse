@@ -620,7 +620,8 @@ namespace
             const std::optional<ObjectAttributes> & object_metadata_,
             ThreadPoolCallbackRunnerUnsafe<void> schedule_,
             BlobStorageLogWriterPtr blob_storage_log_,
-            std::function<void()> fallback_method_)
+            std::function<void()> fallback_method_,
+            bool is_ranged_copy_)
             : UploadHelper(
                 client_ptr_,
                 dest_bucket_,
@@ -635,6 +636,7 @@ namespace
             , offset(src_offset_)
             , size(src_size_)
             , supports_multipart_copy(client_ptr_->supportsMultiPartCopy())
+            , is_ranged_copy(is_ranged_copy_)
             , read_settings(read_settings_)
             , fallback_method(std::move(fallback_method_))
         {
@@ -643,8 +645,23 @@ namespace
         void performCopy()
         {
             LOG_TEST(log, "Copy object {} to {} using native copy", src_key, dest_key);
-            bool use_single_operation_copy = !supports_multipart_copy || !request_settings[S3RequestSetting::allow_multipart_copy]
-                || (size <= request_settings[S3RequestSetting::max_single_operation_copy_size]);
+
+            /// A ranged copy carries a byte range that whole-object CopyObject ignores, so it must not take
+            /// the single-operation path -- doing so would copy the entire source object. Force multipart
+            /// UploadPartCopy (which sets a CopySourceRange per part); if that is unavailable, fall back to
+            /// the buffered ranged read, which reads exactly [offset, offset + size).
+            bool multipart_copy_available = supports_multipart_copy && request_settings[S3RequestSetting::allow_multipart_copy];
+            if (is_ranged_copy && !multipart_copy_available)
+            {
+                fallback_method();
+                return;
+            }
+
+            bool use_single_operation_copy = !is_ranged_copy
+                && (!multipart_copy_available || (size <= request_settings[S3RequestSetting::max_single_operation_copy_size]));
+
+            /// A ranged copy must never reach whole-object CopyObject (it would copy the entire source).
+            chassert(!(is_ranged_copy && use_single_operation_copy));
 
             if (use_single_operation_copy)
                 performSingleOperationCopy();
@@ -661,6 +678,7 @@ namespace
         size_t offset;
         size_t size;
         bool supports_multipart_copy;
+        bool is_ranged_copy;
         const ReadSettings read_settings;
         std::function<void()> fallback_method;
 
@@ -882,6 +900,11 @@ void copyS3File(
     const CreateReadBuffer& fallback_file_reader,
     const std::optional<ObjectAttributes> & object_metadata)
 {
+    /// A copy that starts past the object's beginning is inherently partial: only [src_offset, src_offset +
+    /// src_size) is wanted, and a whole-object CopyObject would copy the entire source. Deriving the flag
+    /// from the offset here keeps a caller from silently falling into that whole-object path.
+    const bool is_ranged_copy = src_offset != 0;
+
     if (!dest_s3_client)
         dest_s3_client = src_s3_client;
 
@@ -920,7 +943,8 @@ void copyS3File(
         object_metadata,
         schedule,
         blob_storage_log,
-        std::move(fallback_method)};
+        std::move(fallback_method),
+        is_ranged_copy};
     helper.performCopy();
 }
 

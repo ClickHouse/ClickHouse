@@ -163,8 +163,9 @@ void BackupCoordinationFileInfos::prepare() const
             return true;
         };
 
-        /// For non-plain backups files with the same size and checksum are stored only once,
-        /// in order to find those files we'll use this map.
+        /// Files with the same (size, checksum) are byte-for-byte identical and stored once, regardless of
+        /// each file's base_size: restore keys on (size, checksum) and reconstructs from the representative.
+        /// Packing keeps this identity -- a packed member is addressed by the identity-derived data_file_name.
         std::map<SizeAndChecksum, size_t> data_file_index_by_checksum;
 
         for (size_t i = 0; i != file_infos_for_all_hosts.size(); ++i)
@@ -187,8 +188,7 @@ void BackupCoordinationFileInfos::prepare() const
             }
             else
             {
-                SizeAndChecksum size_and_checksum{info.size, info.checksum};
-                auto [it, inserted] = data_file_index_by_checksum.emplace(size_and_checksum, i);
+                auto [it, inserted] = data_file_index_by_checksum.emplace(SizeAndChecksum{info.size, info.checksum}, i);
                 if (inserted)
                 {
                     /// Found a new file.
@@ -210,10 +210,50 @@ void BackupCoordinationFileInfos::prepare() const
 
         handle_unresolved_references(try_resolve_reference);
 
+        if (config.pack_format)
+            assignPacks();
+
         num_files = file_infos_for_all_hosts.size();
     }
 
     prepared = true;
+}
+
+void BackupCoordinationFileInfos::assignPacks() const
+{
+    /// Bin-pack representatives (each unique blob, where data_file_index == its own position) whose physical
+    /// payload is below the threshold into packs of about config.pack_size. Offsets inside a pack are not
+    /// decided here -- the pack writer derives them from the member manifest it is given -- so only pack
+    /// membership and the running byte total (to bound the pack size) matter.
+    Int64 current_pack_id = -1;
+    UInt64 current_pack_bytes = 0;
+    for (size_t i = 0; i != file_infos_for_all_hosts.size(); ++i)
+    {
+        auto & info = *(file_infos_for_all_hosts[i]);
+        if (!info.reference_target.empty() || info.data_file_index != i || info.data_file_name.empty())
+            continue;
+
+        const UInt64 physical = info.size - info.base_size;
+        if (physical >= config.pack_min_size)
+            continue; /// Large blob keeps its own object (pack_id stays -1).
+
+        if (current_pack_id < 0 || current_pack_bytes + physical > config.pack_size)
+        {
+            ++current_pack_id;
+            current_pack_bytes = 0;
+        }
+        info.pack_id = current_pack_id;
+        current_pack_bytes += physical;
+    }
+
+    /// Duplicates and same-blob references inherit the representative's pack_id so writing routes them with
+    /// their member; references (no bytes) keep pack_id == -1 and stay on the own-object path.
+    for (auto * info_ptr : file_infos_for_all_hosts)
+    {
+        auto & info = *info_ptr;
+        if (info.reference_target.empty() && info.data_file_index != static_cast<size_t>(-1))
+            info.pack_id = file_infos_for_all_hosts[info.data_file_index]->pack_id;
+    }
 }
 
 size_t BackupCoordinationFileInfos::getNumFiles() const

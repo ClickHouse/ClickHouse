@@ -114,7 +114,13 @@ std::unique_ptr<ReadBufferFromFileBase> PackedFilesReader::readFile(
     /// they require special alignment which cannot be achieved while reading archive file.
     /// So just disable them.
     auto in = disk->readFile(data_file_name, patchSettings(settings), read_hint);
-    return std::make_unique<ReadBufferFromFileView>(std::move(in), file_name, offset, offset + size);
+    return viewMember(std::move(in), file_name, offset, size);
+}
+
+std::unique_ptr<ReadBufferFromFileBase> PackedFilesReader::viewMember(
+    std::unique_ptr<ReadBufferFromFileBase> archive_buffer, const String & member_name, size_t offset, size_t size)
+{
+    return std::make_unique<ReadBufferFromFileView>(std::move(archive_buffer), member_name, offset, offset + size);
 }
 
 }
