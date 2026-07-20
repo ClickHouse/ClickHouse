@@ -157,7 +157,6 @@ void registerBackupEnginesFileAndDisk(BackupFactory & factory)
         BackupImpl::ArchiveParams archive_params;
         if (hasRegisteredArchiveFileExtension(path))
         {
-            /// The archive+pack mutual exclusion is enforced centrally in the BackupImpl write constructor.
             if (params.is_internal_backup)
                 throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Using archives with backups on clusters is disabled");
 
