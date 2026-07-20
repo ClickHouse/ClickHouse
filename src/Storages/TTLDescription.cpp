@@ -32,6 +32,7 @@
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseQuery.h>
 #include <base/scope_guard.h>
+#include <Common/CurrentThread.h>
 
 
 namespace DB
@@ -244,36 +245,53 @@ void checkTTLExpressionForAggregateFunctions(
     const ExpressionActionsPtr & expression, std::string_view expression_kind, const ContextPtr & context)
 {
     /// The synthetic probe in `checkActionsDAGForAggregateFunctions` exercises consumers over `Variant`/`Dynamic`
-    /// columns carrying an AggregateFunction state. Whether a type mismatch throws or is silently turned into NULL
-    /// is decided by the `Variant`/`Dynamic` function adaptors based on `variant_throw_on_type_mismatch` /
-    /// `dynamic_throw_on_type_mismatch`, which they read from the query context. A session that lowered either of
-    /// these to 0 would make the probe accept a suspicious TTL, while TTL merges - which rebuild and execute the
-    /// expression under the strict server-default storage context - would still throw, breaking every merge of the
-    /// table. Force strict mismatch behavior for the validation pass so DDL matches TTL execution.
-    ContextMutablePtr query_context = context && context->hasQueryContext() ? context->getQueryContext() : nullptr;
+    /// columns carrying an AggregateFunction state. For consumers wrapped in the `Variant`/`Dynamic` function
+    /// adaptors, whether a type mismatch throws or is silently turned into NULL is decided by
+    /// `variant_throw_on_type_mismatch` / `dynamic_throw_on_type_mismatch`, which the adaptors read from the
+    /// query context of the *current thread* at execution - i.e. from the DDL session here, but from the
+    /// background context (whose settings come from the `background_profile` server config, strict by default)
+    /// during background TTL merges. Align the probe with that merge runtime: a session that lowered these
+    /// settings must not sneak in a TTL that would throw in every background merge, and a server whose
+    /// background profile deliberately runs lenient must not get such a `CREATE` rejected.
+    /// Note the `context` argument cannot be used for this: on a server it has no query context, and the
+    /// adaptors would not see settings changed on it - only the thread's query context reaches them.
+    /// (Conversion functions such as `toDateTime` handle `Variant`/`Dynamic` natively, ignore both settings
+    /// and always throw on a stored type they cannot convert, so for them the probe's verdict is the same
+    /// under any settings.)
+    ContextMutablePtr probe_context;
+    if (CurrentThread::isInitialized())
+    {
+        if (auto thread_query_context = CurrentThread::tryGetQueryContext())
+            probe_context = std::const_pointer_cast<Context>(thread_query_context);
+    }
+
     std::optional<bool> old_variant_throw;
     std::optional<bool> old_dynamic_throw;
-    if (query_context)
+    if (probe_context)
     {
-        const auto & settings = query_context->getSettingsRef();
-        if (!settings[Setting::variant_throw_on_type_mismatch])
+        const auto & background_settings = context->getGlobalContext()->getBackgroundContext()->getSettingsRef();
+        const bool background_variant_throw = background_settings[Setting::variant_throw_on_type_mismatch];
+        const bool background_dynamic_throw = background_settings[Setting::dynamic_throw_on_type_mismatch];
+
+        const auto & settings = probe_context->getSettingsRef();
+        if (settings[Setting::variant_throw_on_type_mismatch] != background_variant_throw)
         {
-            old_variant_throw = false;
-            query_context->setSetting("variant_throw_on_type_mismatch", Field(true));
+            old_variant_throw = settings[Setting::variant_throw_on_type_mismatch];
+            probe_context->setSetting("variant_throw_on_type_mismatch", Field(background_variant_throw));
         }
-        if (!settings[Setting::dynamic_throw_on_type_mismatch])
+        if (settings[Setting::dynamic_throw_on_type_mismatch] != background_dynamic_throw)
         {
-            old_dynamic_throw = false;
-            query_context->setSetting("dynamic_throw_on_type_mismatch", Field(true));
+            old_dynamic_throw = settings[Setting::dynamic_throw_on_type_mismatch];
+            probe_context->setSetting("dynamic_throw_on_type_mismatch", Field(background_dynamic_throw));
         }
     }
     SCOPE_EXIT({
-        if (query_context)
+        if (probe_context)
         {
             if (old_variant_throw)
-                query_context->setSetting("variant_throw_on_type_mismatch", Field(*old_variant_throw));
+                probe_context->setSetting("variant_throw_on_type_mismatch", Field(*old_variant_throw));
             if (old_dynamic_throw)
-                query_context->setSetting("dynamic_throw_on_type_mismatch", Field(*old_dynamic_throw));
+                probe_context->setSetting("dynamic_throw_on_type_mismatch", Field(*old_dynamic_throw));
         }
     });
 
