@@ -252,8 +252,11 @@ def _build_rerun_workflow(check_obj, payload, event_ts):
         "title": "",
         "draft": False,
         "labels": [],
+        # check_suite / check_run payloads don't carry the PR head repo's
+        # full name, so a rerun is treated as an internal PR (external_pr is
+        # False and head_repo is the base repo). Keep both consistent.
         "external_pr": False,
-        "head_repo": "",
+        "head_repo": repo,
     }
     return workflow, pr_number
 

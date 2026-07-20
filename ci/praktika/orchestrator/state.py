@@ -992,7 +992,9 @@ class WorkflowState:
         """
         task = {
             "type": "job_task",
+            "event_type": self._event.get("type", ""),
             "repo": self._event.get("repo", ""),
+            "head_repo": self._event.get("head_repo", ""),
             "pr_number": self._event.get("pr_number"),
             "head_sha": self._event.get("head_sha", ""),
             "head_ref": self._event.get("head_ref", ""),

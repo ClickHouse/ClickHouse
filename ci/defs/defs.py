@@ -31,7 +31,6 @@ class RunnerLabels:
     AMD_SMALL_MEM = ["self-hosted", "amd-small-mem"]
     ARM_SMALL_MEM = ["self-hosted", "arm-small-mem"]
     MACOS_ARM_SMALL = ["self-hosted", "macos-m2"]
-    MACOS_AMD_SMALL = ["self-hosted", "amd_macos_m1"]
     AMD_TINY = ["self-hosted", "amd-tiny"]
     ARM_TINY = ["self-hosted", "arm-tiny"]
 

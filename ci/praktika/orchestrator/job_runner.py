@@ -117,7 +117,6 @@ def _build_ci_environment(task, job_name=None, job=None, local_run=False):
     TODO — missing, need Lambda / webhook enhancement:
         PR_BODY       — PR description body (not in our webhook payload)
         EVENT_TIME    — PR updated_at timestamp (not captured by Lambda)
-        FORK_NAME     — real fork repo for cross-fork PRs (we default to REPOSITORY)
     """
     from .. import Workflow
     from .._environment import _Environment
@@ -125,6 +124,24 @@ def _build_ci_environment(task, job_name=None, job=None, local_run=False):
     from ..utils import Shell
 
     repo = task.get("repo", "")
+    # GitHub event type ("pull_request", "push", ...). Required: do not guess a
+    # default — mislabeling a push as a PR (or vice versa) silently skips
+    # push-only steps like image publishing and corrupts CIDB records.
+    event_type = task.get("event_type", "")
+    assert event_type, f"task is missing 'event_type': {task}"
+    if event_type == Workflow.Event.PULL_REQUEST:
+        # Real head repo for the PR. Required and never defaulted to the base
+        # repo: doing so would make a fork PR look like an internal one and
+        # bypass the trust checks that key off FORK_NAME == REPOSITORY.
+        head_repo = task.get("head_repo", "")
+        assert head_repo, (
+            f"pull_request task is missing 'head_repo'; refusing to treat it as "
+            f"an internal PR: {task}"
+        )
+    else:
+        # push / dispatch / cron: the ref lives in the base repo itself, so
+        # there is no separate head repo.
+        head_repo = repo
     pr_number = task.get("pr_number") or 0  # set to 0 for non-pr event (push, dispatch, cron)
     sha = task.get("head_sha", "")
 
@@ -137,6 +154,23 @@ def _build_ci_environment(task, job_name=None, job=None, local_run=False):
         e for e in (Shell.get_output("git log -1 --pretty=%ae HEAD") or "").splitlines()
         if "@" in e
     ]
+
+    # For push and merge-queue events there is no PR_NUMBER, but workflow hooks
+    # may need the number of the PR this ref corresponds to. Mirror
+    # _Environment.from_env: for a push, parse it from the merge commit subject
+    # ("Merge pull request #<N> from ..."); for a merge-queue run, parse it from
+    # the merge group head ref (".../pr-<N>-...").
+    linked_pr_number = 0
+    if event_type == Workflow.Event.PUSH:
+        parts = commit_message.split("pull request #")
+        if len(parts) >= 2:
+            pr_str = parts[1].split()[0]
+            linked_pr_number = int(pr_str) if pr_str.isdigit() else 0
+    elif event_type == Workflow.Event.MERGE_QUEUE:
+        head_ref = task.get("head_ref", "")
+        if "/pr-" in head_ref:
+            pr_number_part = head_ref.split("/pr-")[1].split("-")[0]
+            linked_pr_number = int(pr_number_part) if pr_number_part.isdigit() else 0
 
     instance_id = (
         os.environ.get("INSTANCE_ID")
@@ -193,7 +227,7 @@ def _build_ci_environment(task, job_name=None, job=None, local_run=False):
             BASE_BRANCH=task.get("base_ref", ""),
             SHA=sha,
             PR_NUMBER=pr_number,
-            EVENT_TYPE=Workflow.Event.PULL_REQUEST,
+            EVENT_TYPE=event_type,
             EVENT_TIME="",
             JOB_OUTPUT_STREAM=job_output,
             EVENT_FILE_PATH=f"{Settings.TEMP_DIR}/event.json",
@@ -207,14 +241,20 @@ def _build_ci_environment(task, job_name=None, job=None, local_run=False):
             PR_BODY="",
             PR_TITLE=task.get("title", ""),
             USER_LOGIN=task.get("sender", ""),
-            FORK_NAME=repo,
+            FORK_NAME=head_repo,
             COMMIT_MESSAGE=commit_message,
             PR_LABELS=task.get("labels", []),
             COMMIT_AUTHORS=commit_authors,
+            LINKED_PR_NUMBER=linked_pr_number,
             # TODO: runner.py reads commit_authors via info.get_kv_data("commit_authors")
             # instead of directly from env.COMMIT_AUTHORS — fix that in runner.py so
             # JOB_KV_DATA doesn't need to mirror COMMIT_AUTHORS.
-            JOB_KV_DATA={"commit_authors": commit_authors},
+            JOB_KV_DATA={
+                "commit_authors": commit_authors,
+                # Initial parent PR inference; can be overridden later via
+                # workflow hooks (see Info.set_parent_pr_number).
+                "parent_pr_number": linked_pr_number,
+            },
             WORKFLOW_CONFIG=None,
             LOCAL_RUN=bool(local_run),
         )

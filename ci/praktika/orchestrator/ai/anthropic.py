@@ -59,7 +59,8 @@ _SYSTEM = (
     "  - use `grep_repo` to locate code in the checked-out PR (a symbol, an "
     "error string, a filename) and `read_file` to read the relevant source. "
     "Use these to confirm whether the failure is a real code defect.\n\n"
-    "Then choose exactly ONE action for the run:\n"
+    "Then choose exactly ONE action for the run. Your response must always "
+    "contain exactly one decision item.\n"
     "  - \"continue\": nothing is wrong, or the failure is flaky/expected/"
     "unrelated — let the run proceed.\n"
     "  - \"cancel_run\": a failure makes the rest of the run pointless or "
@@ -82,7 +83,8 @@ _SYSTEM = (
     '"root_cause": "<root cause, or empty if none/unknown>", '
     '"decision": [{"type": "<action>", "detail": "<what and why>", '
     '"edits": [ ... only for cancel_and_patch ... ]}]}\n'
-    'Use type "continue" when there is nothing to act on.'
+    'Use type "continue" when there is nothing to act on. If you are unsure, '
+    'choose "continue" and explain why.'
 )
 
 # `decision` items keep the {type, detail} shape the mock and the (future)

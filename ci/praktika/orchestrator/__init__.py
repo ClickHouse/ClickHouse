@@ -718,6 +718,7 @@ def _build_event(args):
         "type": args.event_type,
         "action": "synchronize",
         "repo": repo,
+        "head_repo": repo,
         "head_sha": head_sha,
         "head_ref": head_ref,
         "base_ref": args.base_ref,

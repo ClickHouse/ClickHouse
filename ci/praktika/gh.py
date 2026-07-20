@@ -84,34 +84,90 @@ class GH:
         assert repo_name
         print(repo_name)
 
-        for attempt in range(3):
-            # store changed files
-            if info.pr_number > 0:
-                exit_code, changed_files_str, err = Shell.get_res_stdout_stderr(
-                    f"gh pr view {info.pr_number} --repo {repo_name} --json files --jq '.files[].path'",
-                )
-                assert exit_code == 0, "Failed to retrieve changed files list"
-            else:
-                exit_code, changed_files_str, err = Shell.get_res_stdout_stderr(
-                    f"gh api repos/{repo_name}/commits/{sha} | jq -r '.files[].filename'",
+        # Include both sides of renames: .filename is the destination path and
+        # .previous_filename (REST API only, absent for non-renames) is the
+        # source path. Without the source path a rename out of a watched
+        # directory is invisible to consumers such as job filtering and the
+        # read-only docs guard. Rename sources do not exist in the checkout at
+        # HEAD, same as deleted files, which were always included.
+        jq_both_sides = ".filename, (.previous_filename // empty)"
+
+        # In a merge-queue run PR_NUMBER is 0, but the queue entry is built for
+        # exactly one PR (parsed from the merge group head ref). Use that PR's
+        # paginated files list: the merge group SHA is a merge commit, and the
+        # commits API caps a commit's file list at 300 entries.
+        pr_number = info.pr_number
+        if pr_number <= 0 and info.is_merge_queue_event:
+            pr_number = info.linked_pr_number
+            if pr_number <= 0 and strict:
+                # The linked PR number could not be parsed from the merge group
+                # head ref. Falling back to `repos/{repo}/commits/{sha}` would
+                # reintroduce the 300-entry cap this branch exists to avoid, so a
+                # large PR could silently lose changed test files and turn the
+                # merge-queue flaky check into a false green. Fail closed instead:
+                # a merge-queue run always corresponds to exactly one PR, so a
+                # missing linked PR number is a real fault, not a skip condition.
+                raise RuntimeError(
+                    "Merge-queue run has no linked PR number (could not parse it "
+                    "from the merge group head ref); refusing to fall back to the "
+                    "capped commits API for changed-file detection."
                 )
 
+        if pr_number > 0:
+            command = (
+                f"gh api repos/{repo_name}/pulls/{pr_number}/files "
+                f"--paginate --jq '.[] | {jq_both_sides}'"
+            )
+        else:
+            command = (
+                f"gh api repos/{repo_name}/commits/{sha} "
+                f"--jq '.files[] | {jq_both_sides}'"
+            )
+
+        # The GitHub API call is an idempotent read that occasionally fails with
+        # a transient error (rate limiting, a 5xx, or a GraphQL "Something went
+        # wrong" hiccup). Retry a few times with a small backoff so a momentary
+        # blip does not take down the whole workflow. Every non-zero exit code
+        # is treated as retryable: this is a read, so a spurious retry is cheap
+        # and we cannot reliably tell transient from permanent errors apart by
+        # the exit code alone.
+        attempts = 5
+        last_exit_code = 0
+        last_err = ""
+        last_out = ""
+        for attempt in range(attempts):
+            exit_code, changed_files_str, err = Shell.get_res_stdout_stderr(command)
             if exit_code == 0:
-                res = changed_files_str.split("\n") if changed_files_str else []
-                break
-            else:
-                print(
-                    f"Failed to get changed files, attempt [{attempt+1}], exit code [{exit_code}], error [{err}]"
+                res = (
+                    list(dict.fromkeys(changed_files_str.split("\n")))
+                    if changed_files_str
+                    else []
                 )
-                if exit_code > 1:
-                    # assume that exit code == 1 is retryable - Fix if not true
-                    # exit_code 1 for this type of errors:  WARNING: stderr: GraphQL: Something went wrong while executing your query on 2025-08-05T15:33:56Z. Please include `E746:1CAA99:44F9F67:8B9B520:68922464` when reporting this issue.
-                    print("error is not retryable - break")
-                    break
-                time.sleep(1)
+                break
 
-        if res is None and strict:
-            raise RuntimeError("Failed to get changed files")
+            last_exit_code, last_err, last_out = exit_code, err, changed_files_str
+            print(
+                f"Failed to get changed files, attempt [{attempt + 1}/{attempts}], "
+                f"exit code [{exit_code}], stderr [{err}]"
+            )
+            if attempt + 1 < attempts:
+                time.sleep(attempt + 1)
+
+        if res is None:
+            # Surface the actual command, exit code and stderr so the failure is
+            # diagnosable directly from the report, instead of resurfacing later
+            # as a confusing "NoneType is not iterable" in a downstream consumer
+            # that read the (never stored) changed files from the KV data.
+            message = (
+                f"Failed to retrieve the list of changed files after {attempts} attempts.\n"
+                f"  command:   {command}\n"
+                f"  exit code: {last_exit_code}\n"
+                f"  stderr:    {last_err}\n"
+                f"  stdout:    {last_out}"
+            )
+            print(message)
+            if strict:
+                raise RuntimeError(message)
 
         return res
 
@@ -558,6 +614,178 @@ class GH:
                 break
             thread_cursor = page["pageInfo"]["endCursor"]
         return threads
+
+    @classmethod
+    def post_pr_line_comment(
+        cls,
+        body_file,
+        commit_id=None,
+        path=None,
+        line=None,
+        side="RIGHT",
+        in_reply_to=None,
+        pr=None,
+        repo=None,
+    ):
+        """Post an inline review comment on a specific line of a PR diff,
+        or a reply on an existing inline thread.
+
+        When ``in_reply_to`` is set, the comment is posted as a reply on
+        the thread whose parent comment has that database id, and
+        ``commit_id``/``path``/``line``/``side`` are ignored. Otherwise a
+        new top-level inline comment is created at the given location and
+        all four are required.
+
+        The body is read from ``body_file`` and passed via ``-F body=@<file>``,
+        which avoids two classes of bugs we have hit before:
+          1) Newlines collapsing to literal `\\n` when the body is inlined.
+          2) The body being posted as the literal `@<file>` string when a
+             caller mistakenly uses `-f` (raw field) instead of `-F` (typed
+             field with `@file` expansion).
+        """
+        if not repo:
+            repo = _Environment.get().REPOSITORY
+        if not pr:
+            pr = _Environment.get().PR_NUMBER
+
+        if not os.path.exists(body_file):
+            raise FileNotFoundError(f"Body file [{body_file}] not found")
+        if os.path.getsize(body_file) == 0:
+            raise ValueError(f"Body file [{body_file}] is empty")
+
+        if in_reply_to is not None:
+            cmd = (
+                f"gh api -X POST "
+                f'-H "Accept: application/vnd.github.v3+json" '
+                f'"/repos/{repo}/pulls/{pr}/comments/{int(in_reply_to)}/replies" '
+                f"-F body=@{shlex.quote(body_file)}"
+            )
+        else:
+            if commit_id is None or path is None or line is None:
+                raise ValueError(
+                    "post_pr_line_comment requires commit_id, path, and line "
+                    "when in_reply_to is not set"
+                )
+            cmd = (
+                f"gh api -X POST "
+                f'-H "Accept: application/vnd.github.v3+json" '
+                f'"/repos/{repo}/pulls/{pr}/comments" '
+                f"-F body=@{shlex.quote(body_file)} "
+                f"-f commit_id={shlex.quote(commit_id)} "
+                f"-f path={shlex.quote(path)} "
+                f"-F line={int(line)} "
+                f"-f side={shlex.quote(side)}"
+            )
+        return cls.do_command_with_retries(cmd)
+
+    @classmethod
+    def post_pr_review(
+        cls,
+        commit_id,
+        comments,
+        body="",
+        pr=None,
+        repo=None,
+    ):
+        """Post all inline findings as a single ``COMMENT`` PR review (one
+        review event, one notification) instead of many standalone inline
+        comments.
+
+        Only the ``COMMENT`` event is supported; this helper never approves or
+        requests changes, so an empty review is always a no-op rather than a
+        meaningful action.
+
+        ``comments`` is a list of dicts, each describing one inline comment::
+
+            {"path": <file>, "line": <int>, "side": "RIGHT"|"LEFT",
+             "start_line": <int> (optional), "start_side": <str> (optional),
+             "body_file": <path>}
+
+        Each comment body is read from its ``body_file`` and the whole payload
+        is assembled with ``json.dumps``, so multi-line Markdown is escaped
+        correctly. This avoids the ``-f`` vs ``-F`` / literal ``@<file>`` and
+        literal ``\\n`` footguns that standalone ``gh api`` calls have hit.
+
+        GitHub rejects a ``COMMENT`` review with neither a body nor any
+        comments, so when ``comments`` is empty and ``body`` is empty the call
+        is skipped and True is returned.
+        """
+        if not repo:
+            repo = _Environment.get().REPOSITORY
+        if not pr:
+            pr = _Environment.get().PR_NUMBER
+
+        payload_comments = []
+        for c in comments:
+            body_file = c["body_file"]
+            if not os.path.exists(body_file):
+                raise FileNotFoundError(f"Body file [{body_file}] not found")
+            if os.path.getsize(body_file) == 0:
+                raise ValueError(f"Body file [{body_file}] is empty")
+            with open(body_file, "r", encoding="utf-8") as f:
+                comment = {"path": c["path"], "body": f.read()}
+            if c.get("start_line") is not None:
+                comment["start_line"] = int(c["start_line"])
+                comment["start_side"] = c.get("start_side", c.get("side", "RIGHT"))
+            comment["line"] = int(c["line"])
+            comment["side"] = c.get("side", "RIGHT")
+            payload_comments.append(comment)
+
+        if not payload_comments and not body:
+            print("No review body and no inline comments; skipping review post")
+            return True
+
+        payload = {"event": "COMMENT", "comments": payload_comments}
+        if commit_id:
+            payload["commit_id"] = commit_id
+        if body:
+            payload["body"] = body
+
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".json", delete=False, encoding="utf-8"
+        ) as f:
+            json.dump(payload, f)
+            payload_file = f.name
+        try:
+            cmd = (
+                f"gh api -X POST "
+                f'-H "Accept: application/vnd.github.v3+json" '
+                f'"/repos/{repo}/pulls/{pr}/reviews" '
+                f"--input {shlex.quote(payload_file)}"
+            )
+            return cls.do_command_with_retries(cmd)
+        finally:
+            os.unlink(payload_file)
+
+    @classmethod
+    def _set_review_thread_resolution(cls, thread_id, resolve, verbose=False):
+        mutation_name = "resolveReviewThread" if resolve else "unresolveReviewThread"
+        query = (
+            f"mutation($threadId:ID!){{"
+            f"{mutation_name}(input:{{threadId:$threadId}}){{thread{{isResolved}}}}"
+            f"}}"
+        )
+        cmd = (
+            f"gh api graphql "
+            f"-f query={shlex.quote(query)} "
+            f"-f threadId={shlex.quote(thread_id)}"
+        )
+        return cls.do_command_with_retries(cmd, verbose=verbose)
+
+    @classmethod
+    def resolve_pr_review_thread(cls, thread_id, verbose=False):
+        """Mark a PR review thread as resolved (GraphQL ``resolveReviewThread``).
+
+        ``thread_id`` is the GraphQL node id from
+        :meth:`list_pr_review_threads`, not the REST comment id.
+        """
+        return cls._set_review_thread_resolution(thread_id, resolve=True, verbose=verbose)
+
+    @classmethod
+    def unresolve_pr_review_thread(cls, thread_id, verbose=False):
+        """Re-open a previously resolved PR review thread
+        (GraphQL ``unresolveReviewThread``)."""
+        return cls._set_review_thread_resolution(thread_id, resolve=False, verbose=verbose)
 
     @classmethod
     def post_pr_comment(
@@ -1348,15 +1576,20 @@ class GH:
                 symbol = "⏳"  # Hourglass (in progress)
 
             body = f"**Summary:** {symbol}\n"
-            if self.extra_links:
-                for job_name, links_md in self.extra_links:
-                    body += f"- {job_name}: {links_md}\n"
-                body += "\n"
+            # Render each extra_links group as a plain bullet under the Summary
+            # line. Keeping the (un-bolded) job-name prefix tells the reader
+            # which job(s) the labels came from without adding extra weight.
+            for job_name, links_md in self.extra_links:
+                body += f"- {job_name}: {links_md}\n"
             if self.failed_results:
+                # Blank line so the failure section isn't parsed as continuation
+                # of the Summary paragraph or the preceding bullet list.
+                body += "\n"
                 if len(self.failed_results) > 15:
-                    body += (
-                        f"    *15 failures out of {len(self.failed_results)} shown*:\n"
-                    )
+                    # Unindented + terminated with a blank line, otherwise the
+                    # 4-space indent turns this into an indented code block that
+                    # swallows the table that follows.
+                    body += f"*15 failures out of {len(self.failed_results)} shown*:\n\n"
                     self.failed_results = self.failed_results[:15]
                 body += "|job_name|test_name|status|info|comment|\n"
                 body += "|:--|:--|:-:|:--|:--|\n"
@@ -1426,6 +1659,108 @@ if __name__ == "__main__":
         help="Only update an existing comment; do not create a new one",
     )
 
+    line_parser = subparsers.add_parser(
+        "post-pr-line-comment",
+        help="Post an inline review comment on a specific line of a PR diff",
+    )
+    line_parser.add_argument(
+        "--file",
+        required=True,
+        dest="body_file",
+        help="Path to file containing the comment body (read via -F body=@<file>)",
+    )
+    line_parser.add_argument(
+        "--commit",
+        default=None,
+        help="Commit SHA the comment refers to (required unless --reply-to is set)",
+    )
+    line_parser.add_argument(
+        "--path",
+        default=None,
+        help="Path of the file to comment on (required unless --reply-to is set)",
+    )
+    line_parser.add_argument(
+        "--line",
+        type=int,
+        default=None,
+        help="Line number in the PR diff (required unless --reply-to is set)",
+    )
+    line_parser.add_argument(
+        "--side", default="RIGHT", choices=["RIGHT", "LEFT"], help="Diff side"
+    )
+    line_parser.add_argument(
+        "--reply-to",
+        type=int,
+        default=None,
+        dest="reply_to",
+        help="databaseId of the parent comment to reply to. "
+        "When set, the comment is posted as a reply on the existing thread "
+        "and --commit/--path/--line are ignored.",
+    )
+    line_parser.add_argument("--pr", type=int, default=None, help="PR number")
+    line_parser.add_argument(
+        "--repo", default=None, help="Repository in owner/repo format"
+    )
+
+    review_parser = subparsers.add_parser(
+        "post-pr-review",
+        help="Post all inline findings as a single batched PR review",
+    )
+    review_parser.add_argument(
+        "--comments-file",
+        required=True,
+        dest="comments_file",
+        help="Path to a JSON file with a list of "
+        '{"path", "line", "side", "start_line"?, "start_side"?, "body_file"} '
+        "objects; each body_file holds that comment's Markdown body",
+    )
+    review_parser.add_argument(
+        "--body-file",
+        default=None,
+        dest="body_file",
+        help="Optional file with the top-level review body",
+    )
+    review_parser.add_argument(
+        "--commit",
+        default=None,
+        help="Commit SHA the review refers to",
+    )
+    review_parser.add_argument("--pr", type=int, default=None, help="PR number")
+    review_parser.add_argument(
+        "--repo", default=None, help="Repository in owner/repo format"
+    )
+
+    threads_parser = subparsers.add_parser(
+        "list-pr-review-threads",
+        help="List PR review threads via GraphQL (prints JSON to stdout)",
+    )
+    threads_parser.add_argument("--pr", type=int, default=None, help="PR number")
+    threads_parser.add_argument(
+        "--repo", default=None, help="Repository in owner/repo format"
+    )
+
+    resolve_parser = subparsers.add_parser(
+        "resolve-pr-review-thread",
+        help="Resolve a PR review thread via GraphQL",
+    )
+    resolve_parser.add_argument(
+        "--thread-id",
+        required=True,
+        dest="thread_id",
+        help="GraphQL node id of the review thread (from list-pr-review-threads)",
+    )
+
+    unresolve_parser = subparsers.add_parser(
+        "unresolve-pr-review-thread",
+        help="Re-open (unresolve) a PR review thread via GraphQL",
+    )
+    unresolve_parser.add_argument(
+        "--thread-id",
+        required=True,
+        dest="thread_id",
+        help="GraphQL node id of the review thread (from list-pr-review-threads)",
+    )
+
     args = parser.parse_args()
 
     if args.command == "post-or-update":
@@ -1440,6 +1775,54 @@ if __name__ == "__main__":
         if args.repo is not None:
             kwargs["repo"] = args.repo
         ok = GH.post_updateable_comment(**kwargs)
+        sys.exit(0 if ok else 1)
+    elif args.command == "post-pr-line-comment":
+        kwargs = dict(
+            body_file=args.body_file,
+            commit_id=args.commit,
+            path=args.path,
+            line=args.line,
+            side=args.side,
+            in_reply_to=args.reply_to,
+        )
+        if args.pr is not None:
+            kwargs["pr"] = args.pr
+        if args.repo is not None:
+            kwargs["repo"] = args.repo
+        ok = GH.post_pr_line_comment(**kwargs)
+        sys.exit(0 if ok else 1)
+    elif args.command == "post-pr-review":
+        with open(args.comments_file, "r", encoding="utf-8") as f:
+            comments = json.load(f)
+        body = ""
+        if args.body_file is not None:
+            with open(args.body_file, "r", encoding="utf-8") as f:
+                body = f.read()
+        kwargs = dict(
+            commit_id=args.commit,
+            comments=comments,
+            body=body,
+        )
+        if args.pr is not None:
+            kwargs["pr"] = args.pr
+        if args.repo is not None:
+            kwargs["repo"] = args.repo
+        ok = GH.post_pr_review(**kwargs)
+        sys.exit(0 if ok else 1)
+    elif args.command == "list-pr-review-threads":
+        kwargs = {}
+        if args.pr is not None:
+            kwargs["pr"] = args.pr
+        if args.repo is not None:
+            kwargs["repo"] = args.repo
+        threads = GH.list_pr_review_threads(**kwargs)
+        print(json.dumps(threads, indent=2))
+        sys.exit(0)
+    elif args.command == "resolve-pr-review-thread":
+        ok = GH.resolve_pr_review_thread(args.thread_id)
+        sys.exit(0 if ok else 1)
+    elif args.command == "unresolve-pr-review-thread":
+        ok = GH.unresolve_pr_review_thread(args.thread_id)
         sys.exit(0 if ok else 1)
     else:
         parser.print_help()

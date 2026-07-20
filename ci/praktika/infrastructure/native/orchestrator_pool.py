@@ -55,7 +55,8 @@ class OrchestratorPool:
     is required.
 
     `ext["allowed_push_branches"]` controls which GitHub push branch refs the
-    webhook Lambda accepts for this pool. The default is `["main"]`.
+    webhook Lambda accepts for this pool. The default is
+    `[Settings.MAIN_BRANCH]` (the project's main branch).
     `ext["allowed_users"]` optionally restricts pull_request webhook events to
     a fixed set of GitHub logins.
     `ext["allowed_repositories"]` optionally restricts the webhook Lambda to a
@@ -153,7 +154,9 @@ class OrchestratorPool:
         assert (
             self.capacity_reserve >= 0
         ), f"capacity_reserve={self.capacity_reserve} must be >= 0"
-        allowed_push_branches = self.ext.get("allowed_push_branches", ["main"])
+        allowed_push_branches = self.ext.get(
+            "allowed_push_branches", [Settings.MAIN_BRANCH]
+        )
         assert isinstance(
             allowed_push_branches, list
         ), "ext['allowed_push_branches'] must be a list of branch names"

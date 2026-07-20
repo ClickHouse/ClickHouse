@@ -131,19 +131,33 @@ _DECISION_CELL_LIMIT = 800
 
 
 def _decision_cell(turn):
-    """Summarize the model's turn: decision type(s) + detail (or the error)."""
+    """Summarize the model's turn: decision type(s) + reasoning/detail."""
     if getattr(turn, "error", None):
         return _md_cell(f"⚠ error: {turn.error}", limit=_DECISION_CELL_LIMIT)
     decision = getattr(turn, "decision", None) or []
+    reasoning = _md_cell(getattr(turn, "reasoning", ""), limit=240)
     types = [d.get("type", "?") for d in decision if isinstance(d, dict)]
     if not types:
-        return "_(none)_"
+        return (
+            _md_cell(f"`continue` — {reasoning}", limit=_DECISION_CELL_LIMIT)
+            if reasoning
+            else "`continue`"
+        )
     label = "`" + ", ".join(types) + "`"
     detail = next(
         (d.get("detail", "") for d in decision if isinstance(d, dict) and d.get("detail")),
         "",
     )
-    return _md_cell(f"{label} — {detail}", limit=_DECISION_CELL_LIMIT) if detail else label
+    if detail and reasoning:
+        return _md_cell(
+            f"{label} — {detail}. Reasoning: {reasoning}",
+            limit=_DECISION_CELL_LIMIT,
+        )
+    if detail:
+        return _md_cell(f"{label} — {detail}", limit=_DECISION_CELL_LIMIT)
+    if reasoning:
+        return _md_cell(f"{label} — {reasoning}", limit=_DECISION_CELL_LIMIT)
+    return label
 
 
 class AIProvider(ABC):

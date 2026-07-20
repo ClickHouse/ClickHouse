@@ -24,14 +24,25 @@ class Secret:
         def is_gh_var(self):
             return self.type == Secret.Type.GH_VAR
 
+        def _resolve_region(self):
+            from .settings import Settings
+
+            return (
+                self.region
+                or getattr(Settings, "AWS_REGION", "")
+                or os.environ.get("AWS_DEFAULT_REGION", "")
+                or os.environ.get("AWS_REGION", "")
+            )
+
         def _boto3_client(self, service):
             import boto3
 
-            if not self.region:
+            region = self._resolve_region()
+            if not region:
                 raise RuntimeError(
                     f"AWS region is not set for secret [{self.name}]"
                 )
-            return boto3.client(service, region_name=self.region)
+            return boto3.client(service, region_name=region)
 
         def get_value(self):
             if self.type == Secret.Type.AWS_SSM_PARAMETER:

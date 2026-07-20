@@ -121,9 +121,21 @@ def test_cleanup_kills_orphaned_test_process():
         f"{result.stdout}\n{result.stderr}"
     )
 
-    # All test processes must now be dead.
-    procs = pgrep(pgid=pgid)
-    assert not procs, (
-        "all test processes should be dead after clickhouse-test --cleanup" + got_procs(procs)
+    # All test processes must now be dead.  --cleanup SIGKILLs the whole
+    # process group, but the orphaned processes were reparented to init (pid 1)
+    # and reaping them is asynchronous and outside clickhouse-test's control: it
+    # can killpg the group but cannot wait() on processes it never forked.  On a
+    # runner without a zombie-reaping init the killed processes linger as
+    # <defunct> zombies for a while.  A zombie is already dead, so poll briefly
+    # for the group to drain and then require that anything left is a zombie.
+    deadline_dead = time.monotonic() + 5
+    while time.monotonic() < deadline_dead:
+        procs = pgrep(pgid=pgid)
+        if not procs:
+            break
+        time.sleep(0.1)
+    alive = [p for p in procs if "<defunct>" not in p[3]]
+    assert not alive, (
+        "all test processes should be dead after clickhouse-test --cleanup" + got_procs(alive)
     )
 
