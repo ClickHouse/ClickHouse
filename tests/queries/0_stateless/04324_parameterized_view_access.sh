@@ -29,8 +29,10 @@ CREATE VIEW pv_definer SQL SECURITY DEFINER AS SELECT x, s FROM base WHERE x < {
 echo "-- SELECT without any grant must be denied --"
 ${CLICKHOUSE_CLIENT} --user "${user}" --query "SELECT * FROM pv_invoker(n = 3)" 2>&1 | grep -o "ACCESS_DENIED" | head -n 1
 
-echo "-- DESCRIBE without SHOW COLUMNS grant must be denied --"
-${CLICKHOUSE_CLIENT} --user "${user}" --query "DESCRIBE pv_invoker(n = 3)" 2>&1 | grep -o "ACCESS_DENIED" | head -n 1
+echo "-- DESCRIBE without SHOW COLUMNS grant must not leak the view's existence --"
+# An inaccessible parameterized view must be indistinguishable from a nonexistent one: the name falls
+# through to the table-function lookup and reports UNKNOWN_FUNCTION, not ACCESS_DENIED.
+${CLICKHOUSE_CLIENT} --user "${user}" --query "DESCRIBE pv_invoker(n = 3)" 2>&1 | grep -o "UNKNOWN_FUNCTION" | head -n 1
 
 echo "-- SELECT after granting SELECT on the view --"
 ${CLICKHOUSE_CLIENT} --query "GRANT SELECT ON ${CLICKHOUSE_DATABASE}.pv_definer TO ${user}"

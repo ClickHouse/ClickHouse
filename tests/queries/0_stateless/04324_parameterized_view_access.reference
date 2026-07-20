@@ -1,7 +1,7 @@
 -- SELECT without any grant must be denied --
 ACCESS_DENIED
--- DESCRIBE without SHOW COLUMNS grant must be denied --
-ACCESS_DENIED
+-- DESCRIBE without SHOW COLUMNS grant must not leak the view's existence --
+UNKNOWN_FUNCTION
 -- SELECT after granting SELECT on the view --
 1	a
 2	b

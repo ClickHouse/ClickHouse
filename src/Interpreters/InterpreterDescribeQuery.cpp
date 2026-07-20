@@ -23,6 +23,7 @@
 #include <Interpreters/InterpreterDescribeQuery.h>
 #include <Interpreters/IdentifierSemantic.h>
 #include <Access/Common/AccessFlags.h>
+#include <Access/ContextAccess.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
@@ -187,9 +188,13 @@ void InterpreterDescribeQuery::fillColumnsFromTableFunction(const ASTTableExpres
         if (!table_name.empty())
             table = DatabaseCatalog::instance().tryGetTable({database_name, table_name}, current_context);
 
-        if (auto * storage_view = table ? table->as<StorageView>() : nullptr; storage_view && storage_view->isParameterizedView())
+        /// An existing parameterized view the user cannot see (`SHOW COLUMNS` not granted) must also fall
+        /// through to the `UNKNOWN_FUNCTION` branch rather than throw `ACCESS_DENIED`, which would leak
+        /// the existence of the view.
+        if (auto * storage_view = table ? table->as<StorageView>() : nullptr;
+            storage_view && storage_view->isParameterizedView()
+            && current_context->getAccess()->isGranted(AccessType::SHOW_COLUMNS, database_name, table_name))
         {
-            current_context->checkAccess(AccessType::SHOW_COLUMNS, storage_view->getStorageID());
             auto view_metadata = storage_view->getInMemoryMetadataPtr(current_context, false);
             auto query = view_metadata->getSelectQuery().inner_query->clone();
             NameToNameMap parameterized_view_values = analyzeFunctionParamValues(table_expression.table_function, current_context);
