@@ -8505,6 +8505,9 @@ If the number of set bits in a runtime bloom filter exceeds this ratio the filte
     DECLARE(Bool, join_runtime_filter_from_fixed_hash_table, true, R"(
 When the hash join build side was converted to a FixedHashMap (see `enable_join_fixed_hash_table_conversion`), use that hash map directly as the runtime filter.
 )", 0) \
+    DECLARE(Bool, enable_join_runtime_filters_index_analysis, false, R"(
+Run a second pass index analysis (via use_skip_indexes_on_data_read) to prune granules on LHS of a join.
+)", EXPERIMENTAL) \
     DECLARE(Bool, join_runtime_filter_size_from_hash_table_stats, true, R"(
 Use hash table size statistics collected from previous executions to size the JOIN runtime filter. When disabled, fall back to the fixed `join_runtime_bloom_filter_bytes`.
 )", 0) \
@@ -9171,17 +9174,32 @@ void Settings::dumpToMapColumn(IColumn * column, bool changed_only) const
     impl->dumpToMapColumn(column, changed_only);
 }
 
-NameToNameMap Settings::toNameToNameMap() const
+void writeQueryParameters(const NameToNameMap & parameters, WriteBuffer & out)
 {
-    NameToNameMap query_parameters;
-    for (const auto & param : *impl)
+    for (const auto & [name, value] : parameters)
     {
-        std::string value;
-        ReadBufferFromOwnString buf(param.getValueString());
-        readQuoted(value, buf);
-        query_parameters.emplace(param.getName(), value);
+        BaseSettingsHelpers::writeString(name, out);
+        BaseSettingsHelpers::writeFlags(BaseSettingsHelpers::Flags::CUSTOM, out);
+        BaseSettingsHelpers::writeString(SettingFieldCustom(Field(value)).toString(), out);
     }
-    return query_parameters;
+    BaseSettingsHelpers::writeString(std::string_view{}, out);
+}
+
+NameToNameMap readQueryParameters(ReadBuffer & in)
+{
+    NameToNameMap parameters;
+    while (true)
+    {
+        String name = BaseSettingsHelpers::readString(in);
+        if (name.empty())
+            break;
+        std::ignore = BaseSettingsHelpers::readFlags(in);
+        String value;
+        ReadBufferFromOwnString buf(BaseSettingsHelpers::readString(in));
+        readQuoted(value, buf);
+        parameters.insert_or_assign(std::move(name), std::move(value));
+    }
+    return parameters;
 }
 
 void Settings::write(WriteBuffer & out, SettingsWriteFormat format) const
