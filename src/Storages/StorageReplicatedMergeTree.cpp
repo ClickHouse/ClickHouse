@@ -265,6 +265,7 @@ namespace FailPoints
     extern const char replicated_table_remove_zk_before_get_children[];
     extern const char replicated_table_remove_zk_before_final_multi[];
     extern const char rmt_mutation_prune_pause_before_block_allocation[];
+    extern const char rmt_mutation_prune_pause_before_zk_partition_list[];
     extern const char check_table_inject_retryable_zk_error[];
 }
 
@@ -6759,9 +6760,24 @@ PartitionBlockNumbersHolder StorageReplicatedMergeTree::allocateBlockNumbersInAf
     /// catch it (the partition is local), only re-running the pruning does.
     while (true)
     {
+        /// The local partition set must be read before the pruning analysis, which takes its
+        /// own (later) snapshot of the local parts. A partition the pruner could not have
+        /// analyzed is then either absent from this earlier local set (and the ZK widening
+        /// below adds it back), or its `block_numbers` znode appears only after `getChildren`
+        /// (and the version check catches it). Reading the local set after pruning would leave
+        /// a hole: a partition created by a same-replica insert in between would be already
+        /// local (so not widened) and already visible to `getChildren` (so no version bump).
+        std::unordered_set<String> local_partition_ids;
+        if (has_pruned_commands)
+            local_partition_ids = getAllPartitionIds();
+
         const auto mutation_affected_partition_ids = getPartitionIdsAffectedByCommands(commands, query_context);
         if (!mutation_affected_partition_ids.has_value())
             break;
+
+        /// Test-only pause between the pruning analysis and reading the partition list from
+        /// ZooKeeper, to let a test create a new matching partition concurrently.
+        FailPointInjection::pauseFailPoint(FailPoints::rmt_mutation_prune_pause_before_zk_partition_list);
 
         Coordination::Stat block_numbers_stat;
         Strings zk_partitions = zookeeper->getChildren(
@@ -6771,7 +6787,6 @@ PartitionBlockNumbersHolder StorageReplicatedMergeTree::allocateBlockNumbersInAf
 
         if (has_pruned_commands)
         {
-            auto local_partition_ids = getAllPartitionIds();
             for (const auto & zk_partition : zk_partitions)
             {
                 if (zk_partition.starts_with(MergeTreePartInfo::PATCH_PART_PREFIX))
