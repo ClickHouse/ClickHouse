@@ -1017,7 +1017,12 @@ void FunctionSecretArgumentsFinder::findBackupDatabaseSecretArguments()
                 {
                     if (j > 0)
                         masked_map += ", ";
-                    masked_map += cred_key + " = '[HIDDEN]'";
+                    String cred_value;
+                    if (isNonSecretExtraCredentialsKey(cred_key)
+                        && cred_kv->arguments->at(1)->tryGetString(&cred_value, /* allow_identifier= */ true))
+                        masked_map += cred_key + " = '" + cred_value + "'";
+                    else
+                        masked_map += cred_key + " = '[HIDDEN]'";
                 }
                 else
                 {

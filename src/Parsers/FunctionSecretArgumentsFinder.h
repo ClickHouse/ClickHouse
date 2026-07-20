@@ -77,21 +77,31 @@ public:
 
     FunctionSecretArgumentsFinder::Result getResult() const { return result; }
 
+    /// Whether a key of the `extra_credentials(..)` nested map carries a non-secret identifier whose
+    /// value stays visible when the map is masked (`role_arn` and `role_session_name`; the map's
+    /// secret is `external_id`). Any other key - unknown, malformed or an expression - fails closed.
+    static bool isNonSecretExtraCredentialsKey(std::string_view key)
+    {
+        return key == "role_arn" || key == "role_session_name";
+    }
+
 protected:
     const std::unique_ptr<AbstractFunction> function;
     Result result;
 
     /// Named arguments carrying S3 secrets, shared by every S3 form (explicit-url and named-collection).
     /// `external_id` is the shared secret of the assume-role triple; the other two (`role_arn`,
-    /// `role_session_name`) are identifiers passed inside `extra_credentials`, masked by maskNestedSecretMaps.
+    /// `role_session_name`) are non-secret identifiers passed inside `extra_credentials` and stay
+    /// visible (see isNonSecretExtraCredentialsKey).
     static constexpr std::string_view s3_secret_keys[]
         = {"secret_access_key", "session_token", "google_adc_client_secret", "google_adc_refresh_token", "external_id"};
 
     void markSecretArgument(size_t index, bool argument_is_named = false);
 
     /// `headers(..)` and `extra_credentials(..)` are nested maps whose values are secret auth material
-    /// (`extra_credentials` carries the assume-role secret `external_id`). The parsers accept them at any
-    /// position, not just at the tail. Record them so their values are hidden with the keys kept.
+    /// (`extra_credentials` carries the assume-role secret `external_id`; its non-secret identifiers
+    /// stay visible, see isNonSecretExtraCredentialsKey). The parsers accept them at any position, not
+    /// just at the tail. Record them so their values are hidden with the keys kept.
     /// Idempotent: each map is recorded at most once.
     void maskNestedSecretMaps();
 

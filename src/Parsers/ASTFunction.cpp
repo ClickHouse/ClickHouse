@@ -240,6 +240,24 @@ ASTSelectWithUnionQuery * ASTFunction::tryGetQueryArgument() const
 }
 
 
+/// Whether a nested secret map child is a `key = value` argument whose value stays visible when the
+/// map is masked (the non-secret identifiers of `extra_credentials`; `headers` values are all hidden).
+static bool isNonSecretMapChild(const String & map_name, const IAST * arg)
+{
+    if (map_name != "extra_credentials")
+        return false;
+    const auto * equals_func = arg->as<ASTFunction>();
+    if (!equals_func || equals_func->name != "equals" || !equals_func->arguments || equals_func->arguments->children.size() != 2)
+        return false;
+    const auto & key_ast = equals_func->arguments->children[0];
+    if (const auto * key_literal = key_ast->as<ASTLiteral>())
+        return key_literal->value.getType() == Field::Types::String
+            && FunctionSecretArgumentsFinder::isNonSecretExtraCredentialsKey(key_literal->value.safeGet<String>());
+    if (const auto * key_identifier = key_ast->as<ASTIdentifier>())
+        return FunctionSecretArgumentsFinder::isNonSecretExtraCredentialsKey(key_identifier->name());
+    return false;
+}
+
 static bool formatNamedArgWithHiddenValue(IAST * arg, WriteBuffer & ostr, const IAST::FormatSettings & settings, IAST::FormatState & state, IAST::FormatStateStacked frame)
 {
     const auto * equals_func = arg->as<ASTFunction>();
@@ -836,9 +854,12 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
                         if (j != 0)
                             ostr << ", ";
                         auto inner_arg = function->arguments->children[j];
-                        /// A child that is not `key = value` cannot be split into a visible key and a
-                        /// hidden value; it may be the secret itself, so fail closed and hide it whole.
-                        if (!formatNamedArgWithHiddenValue(inner_arg.get(), ostr, settings, state, nested_dont_need_parens))
+                        /// Known non-secret identifiers keep their values; a child that is not
+                        /// `key = value` cannot be split into a visible key and a hidden value and may
+                        /// be the secret itself, so it fails closed and is hidden whole.
+                        if (isNonSecretMapChild(function->name, inner_arg.get()))
+                            inner_arg->format(ostr, settings, state, nested_dont_need_parens);
+                        else if (!formatNamedArgWithHiddenValue(inner_arg.get(), ostr, settings, state, nested_dont_need_parens))
                             ostr << "'[HIDDEN]'";
                     }
                     ostr << ")";
