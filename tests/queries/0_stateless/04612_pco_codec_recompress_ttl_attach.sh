@@ -37,6 +37,13 @@ cat > "${WORKING_FOLDER}/metadata/local/t_chain.sql" <<EOF
 ATTACH TABLE local.t_chain (dt DateTime, s String) ENGINE=MergeTree ORDER BY tuple() TTL dt + INTERVAL 1 SECOND RECOMPRESS CODEC(SZ3, LZ4) SETTINGS min_bytes_for_wide_part=0;
 EOF
 
+# The normalized codec must follow the same default selection as an ordinary part write: with a non-default
+# 'default_compression_codec' table setting, the recompression merge must produce a part compressed with that
+# setting's codec, not with the factory fallback ('LZ4').
+cat > "${WORKING_FOLDER}/metadata/local/t_zstd_default.sql" <<EOF
+ATTACH TABLE local.t_zstd_default (dt DateTime, s String) ENGINE=MergeTree ORDER BY tuple() TTL dt + INTERVAL 1 SECOND RECOMPRESS CODEC(SZ3) SETTINGS min_bytes_for_wide_part=0, default_compression_codec='ZSTD(3)';
+EOF
+
 # Each table loads through the ATTACH path (codec checks relaxed). The rows are inserted with an already
 # expired TTL, so `OPTIMIZE ... FINAL` performs the recompression merge, which resolves the recompression
 # codec without a column type. After the unsafe codec is reset to the default codec on load, the merge must
@@ -59,6 +66,10 @@ SELECT 'alp_after_alter', count(), sum(length(s)) FROM local.t_alp;
 INSERT INTO local.t_chain SELECT now() - INTERVAL 1 DAY, repeat('c', 100) FROM numbers(1000);
 OPTIMIZE TABLE local.t_chain FINAL;
 SELECT 'chain', count(), sum(length(s)) FROM local.t_chain;
+INSERT INTO local.t_zstd_default SELECT now() - INTERVAL 1 DAY, repeat('d', 100) FROM numbers(1000);
+OPTIMIZE TABLE local.t_zstd_default FINAL;
+SELECT 'zstd_default', count(), sum(length(s)) FROM local.t_zstd_default;
+SELECT 'zstd_default_part_codec', default_compression_codec FROM system.parts WHERE database = 'local' AND table = 't_zstd_default' AND active;
 "
 
 rm -rf "${WORKING_FOLDER}"

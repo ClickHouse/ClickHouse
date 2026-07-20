@@ -91,6 +91,13 @@ public:
     /// `TTL ... RECOMPRESS CODEC(...)` clause), so the caller need not round-trip it through a string.
     String getReasonUnsafeForUntypedData(const ASTPtr & codec_ast) const;
 
+    /// Whether the `CODEC(...)` AST consists of exactly the `Default` alias and nothing else. Callers
+    /// that resolve codecs without a column type (e.g. `MergeTreeData::getCompressionCodecForPart`) use
+    /// this to treat `CODEC(Default)` as "no forced codec, follow the normal default selection"
+    /// (the `default_compression_codec` setting, then the server `<compression>` selector) instead of
+    /// resolving the alias to the factory's hardcoded fallback codec.
+    static bool isDefaultCodecAlias(const ASTPtr & codec_ast);
+
     /// Insert codec information into MutableColumns to show in the system table
     void fillCodecDescriptions(MutableColumns & res_columns) const;
 

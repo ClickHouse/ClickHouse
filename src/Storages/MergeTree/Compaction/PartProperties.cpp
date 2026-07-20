@@ -1,3 +1,4 @@
+#include <Compression/CompressionFactory.h>
 #include <Storages/MergeTree/Compaction/PartProperties.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
@@ -38,12 +39,17 @@ std::optional<PartProperties::RecompressTTLInfo> buildRecompressTTLInfo(StorageM
 
     if (ttl_description)
     {
+        /// A `CODEC(Default)` entry does not force a codec — `MergeTreeData::getCompressionCodecForPart`
+        /// falls through to the normal default selection for it — so it never makes a recompression-only
+        /// merge worthwhile.
+        const bool forces_codec = !CompressionCodecFactory::isDefaultCodecAlias(ttl_description->recompression_codec);
+
         /// FIXME: Implement in other way -- not string comparison
         const std::string next_codec = astToString(ttl_description->recompression_codec);
         const std::string current_codec = astToString(part->default_codec->getFullCodecDesc());
 
         return PartProperties::RecompressTTLInfo{
-            .will_change_codec = (next_codec != current_codec),
+            .will_change_codec = forces_codec && (next_codec != current_codec),
             .next_recompress_ttl = part->ttl_infos.getMinimalMaxRecompressionTTL(),
         };
     }

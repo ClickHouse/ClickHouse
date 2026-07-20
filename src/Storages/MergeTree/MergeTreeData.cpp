@@ -9433,7 +9433,12 @@ CompressionCodecPtr MergeTreeData::getCompressionCodecForPart(size_t part_size_c
     const auto & recompression_ttl_entries = metadata_snapshot->getRecompressionTTLs();
     auto best_ttl_entry = selectTTLDescriptionForTTLInfos(recompression_ttl_entries, ttl_infos.recompression_ttl, current_time, true);
 
-    if (best_ttl_entry)
+    /// A `RECOMPRESS CODEC(Default)` entry — user-specified, or the result of normalizing a codec that is
+    /// unsafe for untyped data on the metadata-load path (see `TTLDescription::getTTLFromAST`) — does not
+    /// force a codec: fall through to the normal default selection below (the `default_compression_codec`
+    /// setting, then the server `<compression>` selector), matching an ordinary part write, instead of
+    /// resolving the `Default` alias to the factory's hardcoded fallback (`LZ4`) here.
+    if (best_ttl_entry && !CompressionCodecFactory::isDefaultCodecAlias(best_ttl_entry->recompression_codec))
         return CompressionCodecFactory::instance().get(best_ttl_entry->recompression_codec, {});
 
     auto codec_setting = (*getSettings())[MergeTreeSetting::default_compression_codec].value;

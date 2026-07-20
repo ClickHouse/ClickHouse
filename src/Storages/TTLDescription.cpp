@@ -333,9 +333,11 @@ TTLDescription TTLDescription::getTTLFromAST(
             /// merge.
             ///
             /// Only on a genuine metadata load (`is_metadata_load`), where rejecting would make an existing table
-            /// unloadable, normalize such a codec to the server default codec so the table stays loadable and
-            /// writable, mirroring the marks / primary key / default codec sanitization in the `MergeTreeData`
-            /// constructor. `getTTLForTableFromAST` rewrites the stored TTL AST accordingly so the normalization is
+            /// unloadable, normalize such a codec to `CODEC(Default)` so the table stays loadable and writable,
+            /// mirroring the marks / primary key / default codec sanitization in the `MergeTreeData` constructor.
+            /// `MergeTreeData::getCompressionCodecForPart` treats a `CODEC(Default)` recompression entry as "no
+            /// forced codec" and falls through to the normal default selection (the `default_compression_codec`
+            /// setting, then the server `<compression>` selector), the same path an ordinary part write takes. `getTTLForTableFromAST` rewrites the stored TTL AST accordingly so the normalization is
             /// durable. `allow_suspicious_ttl_expressions` deliberately does not trigger this: it only relaxes the
             /// checks, so a `CREATE` / `ALTER ... MODIFY TTL` keeps the user-specified codec (as for the sibling
             /// per-column codec handling) instead of having it silently rewritten. At `CREATE` an unsafe codec is

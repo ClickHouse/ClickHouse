@@ -3,3 +3,5 @@ sz3_after_alter	1000	100000
 alp	1000	100000
 alp_after_alter	1000	100000
 chain	1000	100000
+zstd_default	1000	100000
+zstd_default_part_codec	ZSTD(3)

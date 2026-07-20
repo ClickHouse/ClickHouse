@@ -68,6 +68,23 @@ String CompressionCodecFactory::getReasonUnsafeForUntypedData(const String & com
     return getReasonUnsafeForUntypedData(ast);
 }
 
+bool CompressionCodecFactory::isDefaultCodecAlias(const ASTPtr & codec_ast)
+{
+    if (!codec_ast)
+        return false;
+
+    const auto * func = codec_ast->as<ASTFunction>();
+    if (!func || !func->arguments || func->arguments->children.size() != 1)
+        return false;
+
+    const auto & inner_codec_ast = func->arguments->children.front();
+    if (const auto * family_name = inner_codec_ast->as<ASTIdentifier>())
+        return family_name->name() == DEFAULT_CODEC_NAME;
+    if (const auto * ast_func = inner_codec_ast->as<ASTFunction>())
+        return ast_func->name == DEFAULT_CODEC_NAME && (!ast_func->arguments || ast_func->arguments->children.empty());
+    return false;
+}
+
 String CompressionCodecFactory::getReasonUnsafeForUntypedData(const ASTPtr & codec_ast) const
 {
     if (!codec_ast)
