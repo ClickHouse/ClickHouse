@@ -280,12 +280,19 @@ constexpr size_t DYNAMIC_BASE_STREAMS = 3;
 
 /// Worst-case number of on-disk streams a single materialized variant of a Dynamic value writes. A variant's
 /// concrete type is runtime data, invisible in the declared Dynamic / JSON type, so it cannot be enumerated
-/// statically: a scalar variant is one data stream, and the nested wrappers a synthesized value commonly
-/// carries - Nullable, Array, Map, a small Tuple - add a null-map / offsets / element stream each. An
-/// arbitrarily wide synthesized composite variant (for example CAST(tuple(<many columns>) AS Dynamic)) can
-/// write more than this and has no bound derivable from the declared type; that residual is covered by the
-/// soft reservation throttle, which always admits a single merge (see MergeMemoryReservation and the rebuilt
-/// projection note in estimateNeededMemoryForMerge).
+/// statically: a scalar variant is one data stream, and the nested wrappers a value commonly carries -
+/// Nullable, Array, Map, a small Tuple - add a null-map / offsets / element stream each. An arbitrarily wide
+/// composite variant (for example CAST(tuple(<many columns>) AS Dynamic), or a wide tuple stored in a
+/// Dynamic column) can write more than this and has no bound derivable from the declared type. This constant
+/// backs the type-capacity fallback used wherever a column's real streams are not visible at selection time:
+/// a synthesized rebuilt-projection column (no source data exists yet), a type-widened output column (priced
+/// at max(capacity, the streams visible in the source parts), see countOutputStreams), and a
+/// dynamic-structure column of a compact source part that records no substreams (a single data.bin, nothing
+/// per-column to recover from disk). On those paths a wide composite variant can therefore still be
+/// under-estimated; that residual is irreducible without reading the parts' data, and it is covered by the
+/// reservation being a soft throttle: MergeMemoryReservation::tryReserve always admits a single merge, so an
+/// under-estimate only weakens the throttling of CONCURRENT merges - the oversubscription master allows for
+/// every merge today - and never skips or fails a merge.
 constexpr size_t STREAMS_PER_DYNAMIC_VARIANT = 4;
 
 /// Worst-case number of on-disk streams the dynamic structure of a type materializes when a column of it is
@@ -420,9 +427,15 @@ size_t countRebuiltProjectionStreams(
 /// ALTER MODIFY COLUMN widening (plain JSON / Dynamic(max_types=0) later widened, then merged with newer parts
 /// of the wider type - 03918_json_lazy_type_hints_merge) reserializes the old rows under the current, wider
 /// type on merge, but the old part's recorded substreams are named for its own, narrower type, so the union
-/// undercounts what the merged part writes. Such a widened column is bounded by the output type's own write-time
-/// capacity instead (countDynamicCapacityStreams, the same conservative bound the compact-source recovery below
-/// and a rebuilt projection use), which no merged column can exceed.
+/// undercounts what the merged part writes. Such a widened column is bounded by the LARGER of the output
+/// type's own write-time capacity (countDynamicCapacityStreams, the same conservative bound the
+/// compact-source recovery below and a rebuilt projection use) and the streams actually visible in the source
+/// parts for that name - the recorded substream union plus the real dynamic .bin files of unrecorded legacy
+/// wide parts. The capacity constant prices a variant at a fixed worst case, which a wide composite variant
+/// (a fat tuple inside Dynamic) already materialized in a source part can exceed; the visible streams are the
+/// ground truth for exactly that case, so the max never prices a widened column below what its sources
+/// demonstrably wrote. What stays invisible - a wide variant hidden in a shared-variant stream or inside a
+/// compact part's data.bin - is the irreducible residual documented on STREAMS_PER_DYNAMIC_VARIANT.
 ///
 /// The per-column union can still miss dynamic substreams that live only in a source part without
 /// columns_substreams.txt (there the default serialization collapses JSON / Dynamic to a single stream, and
@@ -442,9 +455,10 @@ size_t countOutputStreams(const NamesAndTypesList & output_columns, const MergeT
 {
     /// Per-column union of the source parts' recorded substreams, matched by name, except for a column any
     /// source part stores under a different type than the merged metadata - a metadata-only widening whose old
-    /// rows are reserialized under the current, wider type - which is bounded by the output type's write-time
-    /// capacity, a bound no merged column can exceed. Widened columns are remembered so the recovery and floor
-    /// below do not price them again.
+    /// rows are reserialized under the current, wider type. Widened columns are remembered and priced after
+    /// the legacy-part recovery below, once the streams visible for them in the source parts (recorded
+    /// substreams and real .bin files alike) are known, so neither the recovery nor the floor prices them
+    /// again.
     size_t streams = 0;
     std::unordered_set<std::string_view> type_widened_columns;
     for (const auto & column : output_columns)
@@ -458,10 +472,7 @@ size_t countOutputStreams(const NamesAndTypesList & output_columns, const MergeT
             });
 
         if (type_widened)
-        {
             type_widened_columns.insert(column.name);
-            streams += countColumnStreams({column}) + countDynamicCapacityStreams(*column.type, settings);
-        }
         else
             streams += tryCountColumnSubstreamsFromParts(column.name, source_parts).value_or(countColumnStreams({column}));
     }
@@ -497,6 +508,7 @@ size_t countOutputStreams(const NamesAndTypesList & output_columns, const MergeT
     /// this adds nothing.
     const ISerialization::StreamFileNameSettings stream_file_name_settings(settings);
     std::unordered_set<std::string> unrecorded_dynamic_files;
+    std::unordered_map<std::string, std::unordered_set<std::string>> widened_dynamic_files;
     std::unordered_set<std::string> compact_recovered_columns;
     size_t compact_dynamic_streams = 0;
     for (const auto & part : source_parts)
@@ -526,14 +538,22 @@ size_t countOutputStreams(const NamesAndTypesList & output_columns, const MergeT
             /// subtracting only whole non-dynamic columns (as if a dynamic-structure column had no enumerable
             /// streams at all) would count that static skeleton twice and over-reserve upgrade-path merges.
             /// What remains after the subtraction is exactly the part's dynamic files - but only recover those
-            /// of columns the merged part still writes under the same type: a column dropped by a metadata-only
-            /// ALTER (absent from output_columns) is not written, and a widened column is already priced by its
-            /// output-type capacity above, so both must be excluded here.
+            /// of columns the merged part still writes: a column dropped by a metadata-only ALTER (absent from
+            /// output_columns) is not written and must be excluded. A widened column's dynamic files are
+            /// collected separately, per column, and folded into the max(capacity, visible streams) pricing of
+            /// widened columns below rather than into the shared union, so they are not priced twice.
             const auto static_files = collectStaticStreamFileNames(part_columns, stream_file_name_settings);
             std::vector<std::string> recoverable_escaped_columns;
+            std::vector<std::pair<std::string, std::string>> widened_escaped_columns;
             for (const auto & column : part_columns)
-                if (!type_widened_columns.contains(column.name) && output_columns.contains(column.name))
+            {
+                if (!output_columns.contains(column.name))
+                    continue;
+                if (type_widened_columns.contains(column.name))
+                    widened_escaped_columns.emplace_back(escapeForFileName(column.name), column.name);
+                else
                     recoverable_escaped_columns.push_back(escapeForFileName(column.name));
+            }
 
             for (const auto & file_name : collectWidePartDataFileNames(*part))
             {
@@ -542,7 +562,18 @@ size_t countOutputStreams(const NamesAndTypesList & output_columns, const MergeT
                 if (std::any_of(
                         recoverable_escaped_columns.begin(), recoverable_escaped_columns.end(),
                         [&](const auto & escaped) { return streamFileBelongsToColumn(file_name, escaped); }))
+                {
                     unrecorded_dynamic_files.insert(file_name);
+                    continue;
+                }
+                for (const auto & [escaped, name] : widened_escaped_columns)
+                {
+                    if (streamFileBelongsToColumn(file_name, escaped))
+                    {
+                        widened_dynamic_files[name].insert(file_name);
+                        break;
+                    }
+                }
             }
         }
         else
@@ -554,7 +585,7 @@ size_t countOutputStreams(const NamesAndTypesList & output_columns, const MergeT
             /// Dynamic(max_types=0) or unhinted JSON part merged into a Dynamic(max_types=5) / JSON(...) column
             /// writes the output type's streams, not the smaller source type's - so pricing the source type
             /// would under-reserve. A column absent from the merged part (dropped by ALTER) is not written and
-            /// is skipped, and a widened column is already priced by its output-type capacity above.
+            /// is skipped, and a widened column is priced at no less than its output-type capacity below.
             for (const auto & column : part_columns)
             {
                 if (!column.type->hasDynamicStructure())
@@ -568,6 +599,25 @@ size_t countOutputStreams(const NamesAndTypesList & output_columns, const MergeT
         }
     }
     streams += unrecorded_dynamic_files.size() + compact_dynamic_streams;
+
+    /// Price the widened columns now that every stream visible for them in the source parts is known: the
+    /// recorded substream union by name (tryCountColumnSubstreamsFromParts does not require type equality, so
+    /// it sees the old, narrower type's recorded substreams too) plus the real dynamic .bin files recovered
+    /// above from unrecorded legacy wide parts. The output type's write-time capacity prices a variant at a
+    /// fixed worst case (STREAMS_PER_DYNAMIC_VARIANT), which a wide composite variant a source part already
+    /// materialized can exceed - there the visible streams are the ground truth - while the capacity covers
+    /// what the sources cannot show (paths and variants the wider output type materializes beyond what the
+    /// narrower source type could record). Taking the max never prices a widened column below either bound
+    /// and stays proportional to real data, so it cannot re-introduce the saturating over-reservation.
+    for (const auto & column : output_columns)
+    {
+        if (!type_widened_columns.contains(column.name))
+            continue;
+        size_t visible_streams = tryCountColumnSubstreamsFromParts(column.name, source_parts).value_or(0);
+        if (const auto it = widened_dynamic_files.find(column.name); it != widened_dynamic_files.end())
+            visible_streams += it->second.size();
+        streams += countColumnStreams({column}) + std::max(countDynamicCapacityStreams(*column.type, settings), visible_streams);
+    }
 
     /// The merged wide part is never narrower than any single source part, so floor the estimate at the
     /// widest source part's actual stream count - but counting only the columns the merged part still writes,
