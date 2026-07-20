@@ -274,6 +274,13 @@ namespace
                 concrete = serializer.finalize();
                 concrete_type_name = "MultiPolygon";
             }
+            else if constexpr (std::is_same_v<T, MultiPoint<CartesianPoint>>)
+            {
+                MultiPointSerializer<CartesianPoint> serializer;
+                serializer.add(geometry);
+                concrete = serializer.finalize();
+                concrete_type_name = "MultiPoint";
+            }
         }, object);
 
         if (const auto * variant_type = typeid_cast<const DataTypeVariant *>(&data_type))
