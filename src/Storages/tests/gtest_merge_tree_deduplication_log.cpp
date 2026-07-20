@@ -991,6 +991,65 @@ TEST(MergeTreeDeduplicationLog, DropPartRotationSyncFailureIsAllOrNothingAfterRe
     std::filesystem::remove_all(work_dir);
 }
 
+/// Regression test: a rollback CANCEL must pair with the exact DROP generation it
+/// undoes - same block id AND same part name - not just the same block id. A block
+/// id can be reused across part generations (committed as partA, dropped, committed
+/// again as partB). When dropping the second generation fails on the fsync path and
+/// the DROP it wrote never becomes durable while the rollback CANCEL does, replay
+/// sees ADD partA, DROP partA, ADD partB, CANCEL partB. Pairing the CANCEL by block
+/// id alone consumes the older generation's committed DROP, so the surviving stream
+/// is (ADD partA, ADD partB) and the map keeps the stale partA (the second insert is
+/// a duplicate no-op) - after which dropping partB no longer covers the block id and
+/// a legitimate reinsert is wrongly deduplicated.
+///
+/// The state is constructed directly on disk for the same reason as the test above:
+/// the fault-injection disk cannot lose a flushed-but-not-fsynced record.
+TEST(MergeTreeDeduplicationLog, DropPartRollbackCancelMatchesExactDropGeneration)
+{
+    const std::string work_dir = "tmp/gtest_dedup_log_cancel_exact_generation/";
+    const std::string logs_dir = work_dir + "dedup_logs/";
+    std::filesystem::remove_all(work_dir);
+    std::filesystem::create_directories(logs_dir);
+
+    const MergeTreeDataFormatVersion format_version = MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING;
+    auto part = [&](const String & name) { return MergeTreePartInfo::fromPartName(name, format_version); };
+
+    auto write_log = [&](size_t number, const std::string & contents)
+    {
+        std::ofstream out(logs_dir + "deduplication_log_" + std::to_string(number) + ".txt");
+        out << contents;
+    };
+
+    /// Log 1: the first generation of "block1" was committed as all_1_1_0 and
+    /// dropped; the block id was then reused and committed again as all_2_2_0.
+    write_log(1,
+        "1\tall_1_1_0\tblock1\n"
+        "2\tall_1_1_0\tblock1\n"
+        "1\tall_2_2_0\tblock1\n");
+    /// Log 2: dropping all_2_2_0 failed on the fsync of the previous log file and
+    /// rolled back. Only the rollback CANCEL survived the crash - the DROP of
+    /// all_2_2_0 it undoes lived in the file whose fsync failed and was lost.
+    write_log(2, "3\tall_2_2_0\tblock1\n");
+
+    /// Replay on restart with a healthy disk.
+    auto disk = std::make_shared<DiskLocal>("healthy", work_dir);
+    MergeTreeDeduplicationLog log("dedup_logs", /*deduplication_window=*/ 10, format_version, disk);
+    log.load();
+
+    /// The failed drop rolled back, so "block1" must still be published (as the
+    /// current generation all_2_2_0): a retry of it must be deduplicated.
+    EXPECT_FALSE(log.addPart({"block1"}, part("all_3_3_0")).empty());
+
+    /// Dropping the current generation must clear the block id. With the stale
+    /// first generation in the map (the by-block-id-only pairing), the drop does
+    /// not cover it, "block1" stays published, and this legitimate reinsert after
+    /// the drop is wrongly deduplicated.
+    log.dropPart(part("all_2_2_1"));
+    EXPECT_TRUE(log.addPart({"block1"}, part("all_4_4_0")).empty());
+
+    std::filesystem::remove_all(work_dir);
+}
+
 /// Regression test: dropPart must stay all-or-nothing across a restart when one
 /// of its DROP records fails to write partway through a multi-block drop.
 /// writeRecord flushes every record, so when the write of the second DROP fails,

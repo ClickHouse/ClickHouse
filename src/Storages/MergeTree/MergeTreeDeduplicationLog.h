@@ -22,7 +22,9 @@ enum class MergeTreeDeduplicationOp : uint8_t
     /// Written when a part drop that had already durably written some of its
     /// DROP records fails and must be rolled back (e.g. a write, rotation or
     /// fsync failure right after the writes): one CANCEL per written DROP. On
-    /// replay it cancels the matching preceding DROP of the same block id, so a
+    /// replay it cancels the matching preceding DROP of the same block id and
+    /// the same part name (block ids can be reused across part generations, so
+    /// the part name pins the exact DROP this rollback undoes), so a
     /// rolled-back drop does not erase a block id that stayed published. The
     /// record carries the real part name, so a server from before this op
     /// existed replays it as the insert that restores the block id - the
@@ -341,12 +343,14 @@ private:
         std::vector<size_t> & record_log_numbers);
 
     /// Replay a chronologically ordered record stream into the in-memory map.
-    /// Each rollback record cancels the matching preceding record of the same
-    /// block id AND OF THE KIND IT UNDOES (both are skipped): a DROP carrying
-    /// DEDUPLICATION_LOG_CANCELLED_ADD_PART_NAME undoes a preceding ADD, a CANCEL
-    /// undoes a preceding real DROP. Matching by kind keeps a rollback record
-    /// whose target never reached disk from latching onto an older committed
-    /// record of the other kind. An insert that failed and
+    /// Each rollback record cancels the matching preceding record OF THE EXACT
+    /// GENERATION IT UNDOES (both are skipped): a DROP carrying
+    /// DEDUPLICATION_LOG_CANCELLED_ADD_PART_NAME undoes a preceding ADD of the
+    /// same block id, a CANCEL undoes a preceding real DROP of the same block id
+    /// and the same part name. Matching precisely keeps a rollback record whose
+    /// target never reached disk from latching onto an older committed record -
+    /// of the other kind, or of an earlier part generation that reused the same
+    /// block id. An insert that failed and
     /// rolled back consumes no deduplication-window slot and a drop that failed
     /// and rolled back erases nothing; the remaining ADD/DROP records are
     /// applied exactly as they were live. Also recomputes each log's counts

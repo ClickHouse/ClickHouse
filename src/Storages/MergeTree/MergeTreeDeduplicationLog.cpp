@@ -49,6 +49,16 @@ void readRecord(MergeTreeDeduplicationLogRecord & record, ReadBuffer & in)
 }
 
 
+/// Hash of a (block id, part name) pair, for pairing a CANCEL with the exact
+/// DROP generation it undoes in applyRecords.
+struct StringViewPairHash
+{
+    size_t operator()(const std::pair<std::string_view, std::string_view> & pair) const
+    {
+        return StringViewHash{}(pair.first) * 0x9e3779b97f4a7c15ULL + StringViewHash{}(pair.second);
+    }
+};
+
 std::string getLogPath(const std::string & prefix, size_t number)
 {
     std::filesystem::path path(prefix);
@@ -200,18 +210,32 @@ void MergeTreeDeduplicationLog::applyRecords(
     /// First, cancel out the record pairs left behind by operations that failed
     /// and rolled back: (ADD, DROP with the reserved cancelled-add part name) for
     /// a failed insert and (DROP, CANCEL) for a failed part drop. Each rollback
-    /// record cancels the most recent preceding, not-yet-cancelled record of the
-    /// same block id AND OF THE KIND IT UNDOES - a cancelled-add DROP undoes an
-    /// ADD, a CANCEL undoes a real DROP. Matching by kind matters: a rollback
-    /// record can survive on disk while the very record it was meant to undo did
-    /// not (for example, on the failed-drop + failed-sync path the DROP that a
-    /// CANCEL undoes may never have reached durable storage). Pairing only by
-    /// block id would then let the rollback record latch onto an older committed
-    /// record of the other kind and cancel it instead - forgetting a still
-    /// published block id, or resurrecting a dropped one, after a restart.
-    /// Restricting each rollback record to its own kind leaves the unrelated
-    /// committed record untouched: the surviving rollback record is simply a
-    /// stray that reconstructs no state on its own. Under normal operation the
+    /// record cancels the most recent preceding, not-yet-cancelled record OF THE
+    /// EXACT GENERATION IT UNDOES - a cancelled-add DROP undoes an ADD of the
+    /// same block id, a CANCEL undoes a real DROP of the same block id AND the
+    /// same part name (a CANCEL carries the part name of the DROP it rolls back,
+    /// so the exact generation is known; the cancelled-add marker occupies the
+    /// part name field with the sentinel, so an ADD can only be matched by block
+    /// id - which is sufficient, see below). Matching precisely matters: a
+    /// rollback record can survive on disk while the very record it was meant to
+    /// undo did not (for example, on the failed-drop + failed-sync path the DROP
+    /// that a CANCEL undoes may never have reached durable storage). Pairing
+    /// only by block id would then let the rollback record latch onto an older
+    /// committed record and cancel it instead - forgetting a still published
+    /// block id, resurrecting a dropped one, or, when a block id was reused
+    /// across part generations (ADD partA, DROP partA, ADD partB, lost DROP
+    /// partB, CANCEL partB), cancelling the older generation's committed DROP so
+    /// the replayed map keeps partA where the live map kept partB - after which
+    /// dropping partB no longer clears the block id and a legitimate reinsert is
+    /// wrongly deduplicated. Restricting each rollback record to its exact
+    /// target leaves the unrelated committed record untouched: the surviving
+    /// rollback record is simply a stray that reconstructs no state on its own.
+    /// Matching an ADD by block id alone is safe because a second ADD of the
+    /// same block id can only be written once the live map no longer holds the
+    /// block id (the insert would have been deduplicated otherwise), so any
+    /// older surviving ADD of that block id is followed by a surviving DROP that
+    /// erases it on replay regardless of whether the marker latched onto it.
+    /// Under normal operation the
     /// rollback record is always found next to its match, because the rollback
     /// writes its records immediately after the failed batch under the same lock,
     /// with no other operation in between. Dropping both records of a pair means
@@ -225,21 +249,33 @@ void MergeTreeDeduplicationLog::applyRecords(
     /// version.
     std::vector<bool> cancelled(records.size(), false);
     std::unordered_map<std::string_view, std::vector<size_t>, StringViewHash> pending_adds;
-    std::unordered_map<std::string_view, std::vector<size_t>, StringViewHash> pending_drops;
+    std::unordered_map<std::pair<std::string_view, std::string_view>, std::vector<size_t>, StringViewPairHash> pending_drops;
     for (size_t i = 0; i < records.size(); ++i)
     {
         const auto & record = records[i];
         const bool cancels_add = record.operation == MergeTreeDeduplicationOp::DROP
             && record.part_name == DEDUPLICATION_LOG_CANCELLED_ADD_PART_NAME;
         const bool cancels_drop = record.operation == MergeTreeDeduplicationOp::CANCEL;
-        if (cancels_add || cancels_drop)
+        if (cancels_add)
         {
             /// The rollback record itself is never replayed. Only ever consume a
-            /// pending record of the exact kind this rollback undoes.
+            /// pending ADD of the same block id.
             cancelled[i] = true;
-            auto & pending = cancels_add ? pending_adds : pending_drops;
-            auto it = pending.find(record.block_id);
-            if (it != pending.end() && !it->second.empty())
+            auto it = pending_adds.find(record.block_id);
+            if (it != pending_adds.end() && !it->second.empty())
+            {
+                cancelled[it->second.back()] = true;
+                it->second.pop_back();
+            }
+        }
+        else if (cancels_drop)
+        {
+            /// The rollback record itself is never replayed. Only ever consume a
+            /// pending DROP of the same block id and the same part name - the
+            /// exact record generation this CANCEL was written to undo.
+            cancelled[i] = true;
+            auto it = pending_drops.find({record.block_id, record.part_name});
+            if (it != pending_drops.end() && !it->second.empty())
             {
                 cancelled[it->second.back()] = true;
                 it->second.pop_back();
@@ -247,7 +283,7 @@ void MergeTreeDeduplicationLog::applyRecords(
         }
         else if (record.operation == MergeTreeDeduplicationOp::DROP)
         {
-            pending_drops[record.block_id].push_back(i);
+            pending_drops[{record.block_id, record.part_name}].push_back(i);
         }
         else
         {
