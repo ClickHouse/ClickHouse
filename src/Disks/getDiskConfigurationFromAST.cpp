@@ -95,6 +95,7 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & 
     bool is_gcs_disk_via_type = false;
     bool is_gcs_disk_via_object_storage_type = false;
     bool has_service_account_key_file = false;
+    bool has_indirect_gcs_credential_field = false;
 
     /// `from_env`/`from_zk` substitute the value from a server-side source (an environment variable or a
     /// ZooKeeper node), so for credential/auth/type fields the literal placeholder must not be treated as a
@@ -108,6 +109,13 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & 
             || k == "google_adc_client_id" || k == "google_adc_client_secret" || k == "google_adc_refresh_token"
             || k == "server_side_encryption_customer_key_base64" || k == "server_side_encryption_kms_key_id"
             || k == "server_side_encryption_kms_encryption_context" || startsWith(k, "header") || startsWith(k, "access_header");
+    };
+    /// The credential fields the native GCS backend reads (see gcsSettings.cpp / getGCSClient).
+    /// `service_account_key_file` is tracked separately above, since it is rejected even as a literal.
+    auto is_gcs_credential_field = [](const std::string & k)
+    {
+        return k == "service_account_key" || k == "access_token"
+            || k == "google_adc_client_id" || k == "google_adc_client_secret" || k == "google_adc_refresh_token";
     };
 
     for (const auto & arg : disk_args)
@@ -141,6 +149,8 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & 
         const bool indirect = is_indirect_value(value_str);
         if (indirect && is_s3_credential_or_auth_field(key))
             has_indirect_auth_field = true;
+        if (indirect && is_gcs_credential_field(key))
+            has_indirect_gcs_credential_field = true;
 
         if (key == "include")
             has_include = true;
@@ -247,6 +257,20 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & 
             "or the backend type, is supplied indirectly via `from_env`/`from_zk`). Provide the service account "
             "key inline with `service_account_key`, or configure `service_account_key_file` on a server-managed "
             "disk in the server configuration instead.");
+
+    /// The other native GCS credential fields (`service_account_key`, `access_token`, `google_adc_*`) are
+    /// accepted as literals -- the user supplies their own credential material -- but not indirectly: a
+    /// `from_env`/`from_zk` placeholder resolves on the server, so it would authenticate the query as whatever
+    /// identity the server keeps in its environment or ZooKeeper. Fail closed like the `service_account_key_file`
+    /// check above (unconditional, not opt-in-gated), with the same `system`-database exemption.
+    if (maybe_gcs_disk && has_indirect_gcs_credential_field && !for_system_database)
+        throw Exception(
+            ErrorCodes::ACCESS_DENIED,
+            "A dynamic GCS disk created from user SQL may not supply a credential field (`service_account_key`, "
+            "`access_token`, or `google_adc_*`) indirectly via `from_env`/`from_zk`: the placeholder resolves on "
+            "the server, so the disk would authenticate with server-managed auth material (this also applies when "
+            "the backend type is supplied indirectly). Provide the credential as a literal value, or configure "
+            "the disk in the server configuration instead.");
 
     /// A user-created S3 disk must not resolve the server's own credentials. Indirection (`from_env`/`from_zk`
     /// on the type or auth fields, or an `include`) is treated as potentially-S3 unless the backend is an

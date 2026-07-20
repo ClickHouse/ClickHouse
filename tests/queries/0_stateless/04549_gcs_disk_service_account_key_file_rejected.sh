@@ -7,8 +7,10 @@
 # reject it outright (this check does not depend on `USE_GOOGLE_CLOUD`, since it runs on the AST before the
 # disk is handed to the object storage factory). The rejection must also cover an indirect value supplied
 # via `from_env`/`from_zk` (which still resolves to a server-side path) and a backend whose type is supplied
-# indirectly and could resolve to `gcs`. An inline `service_account_key` (not a path) must still be allowed
-# by this check.
+# indirectly and could resolve to `gcs`. The other native credential fields (`service_account_key`,
+# `access_token`, `google_adc_*`) must likewise be refused when supplied indirectly, since the placeholder
+# resolves to server-managed auth material. An inline `service_account_key` (not a path) must still be
+# allowed by this check.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -48,6 +50,32 @@ $CLICKHOUSE_CLIENT --dynamic_disk_allow_from_env=1 --dynamic_disk_allow_from_zk=
         object_storage_type = 'from_env ${DB}_OST',
         endpoint = 'https://storage.googleapis.com/${DB}_it/',
         service_account_key_file = '/etc/passwd'); -- { serverError ACCESS_DENIED }
+"
+
+# The other native GCS credential fields (service_account_key, access_token, google_adc_*) are accepted as
+# literals but must be refused when supplied indirectly: a from_env/from_zk placeholder resolves on the
+# server, so the disk would authenticate the user query with server-managed auth material (an environment
+# secret or a ZooKeeper node). Like the cases above, these are rejected on the AST, before any object
+# storage is created, so they are safe in every build type.
+$CLICKHOUSE_CLIENT --dynamic_disk_allow_from_env=1 --dynamic_disk_allow_from_zk=1 -m -q "
+    CREATE TABLE ${TABLE} (x UInt8) ENGINE = MergeTree ORDER BY tuple()
+    SETTINGS disk = disk(name = '${DISK}_key_env', type = gcs,
+        endpoint = 'https://storage.googleapis.com/${DB}_ke/',
+        service_account_key = 'from_env ${DB}_SA_KEY'); -- { serverError ACCESS_DENIED }
+    CREATE TABLE ${TABLE} (x UInt8) ENGINE = MergeTree ORDER BY tuple()
+    SETTINGS disk = disk(name = '${DISK}_token_zk', type = object_storage, object_storage_type = gcs,
+        endpoint = 'https://storage.googleapis.com/${DB}_tz/',
+        access_token = 'from_zk /${DB}/access_token'); -- { serverError ACCESS_DENIED }
+    CREATE TABLE ${TABLE} (x UInt8) ENGINE = MergeTree ORDER BY tuple()
+    SETTINGS disk = disk(name = '${DISK}_adc_env', type = gcs,
+        endpoint = 'https://storage.googleapis.com/${DB}_ae/',
+        google_adc_client_id = 'id', google_adc_client_secret = 'secret',
+        google_adc_refresh_token = 'from_env ${DB}_ADC_RT'); -- { serverError ACCESS_DENIED }
+    CREATE TABLE ${TABLE} (x UInt8) ENGINE = MergeTree ORDER BY tuple()
+    SETTINGS disk = disk(name = '${DISK}_key_indirect_type', type = object_storage,
+        object_storage_type = 'from_env ${DB}_OST2',
+        endpoint = 'https://storage.googleapis.com/${DB}_ki/',
+        service_account_key = 'from_env ${DB}_SA_KEY2'); -- { serverError ACCESS_DENIED }
 "
 
 # Positive control: an inline `service_account_key` (not a path) must not be rejected by this check. Unlike
