@@ -1724,14 +1724,21 @@ bool KeyCondition::hasOnlyConjunctions() const
 }
 
 
+DataTypePtr getArgumentTypeOfMonotonicFunction(const IFunctionBase & func);
+
 static Field applyFunctionForField(
     const FunctionBasePtr & func,
     const DataTypePtr & arg_type,
     const Field & arg_value)
 {
+    /// The const column's outer `LowCardinality` wrapper must match the function's declared argument
+    /// type (`arg_type` is the running chain type, which can be out of step). Same as the cached branch
+    /// of `applyFunction` and `applyFunctionChainToColumn`.
+    auto declared_type = getArgumentTypeOfMonotonicFunction(*func);
+    auto column_type = declared_type->lowCardinality() == arg_type->lowCardinality() ? arg_type : declared_type;
     ColumnsWithTypeAndName columns
     {
-            { arg_type->createColumnConst(1, arg_value), arg_type, "x" },
+            { column_type->createColumnConst(1, arg_value), column_type, "x" },
         };
 
     auto col = func->execute(columns, func->getResultType(), 1, /* dry_run = */ false);
@@ -1767,17 +1774,25 @@ static FieldRef applyFunction(const FunctionBasePtr & func, const DataTypePtr & 
     {
         /// When cache is missed, we calculate the whole column where the field comes from. This will avoid repeated calculation.
         ColumnsWithTypeAndName args{(*columns)[field.column_idx]};
-        /// Strip outer `LowCardinality` from the argument column and type before executing, keeping the
-        /// cached result full too. A monotonic-function chain is built against the outer-LowCardinality
-        /// stripped key type (`applyFunctionChainToColumn` strips it the same way), so a specialized
-        /// wrapper such as the UInt8->Bool `CAST` does `checkAndGetColumn<ColumnUInt8>` on the raw
-        /// column and aborts with a bad cast on a `ColumnLowCardinality` (e.g. a `LowCardinality(Bool)`
-        /// key compared with a `LowCardinality` constant). `removeLowCardinality` /
-        /// `convertToFullColumnIfLowCardinality` are no-ops for non-LC inputs.
-        if (args[0].column && args[0].column->lowCardinality())
+        /// The argument column's outer `LowCardinality` wrapper must match the function's declared
+        /// argument type before executing (strip if the declared type is plain, re-wrap if it is
+        /// `LowCardinality`), as the sibling `applyFunctionChainToColumn` does.
+        auto arg_type = getArgumentTypeOfMonotonicFunction(*func);
+        if (args[0].column)
         {
-            args[0].column = args[0].column->convertToFullColumnIfLowCardinality();
-            args[0].type = removeLowCardinality(args[0].type);
+            if (!arg_type->lowCardinality() && args[0].column->lowCardinality())
+            {
+                args[0].column = args[0].column->convertToFullColumnIfLowCardinality();
+                args[0].type = removeLowCardinality(args[0].type);
+            }
+            else if (arg_type->lowCardinality() && !args[0].column->lowCardinality())
+            {
+                auto lc_col = arg_type->createColumn();
+                assert_cast<ColumnLowCardinality &>(*lc_col)
+                    .insertRangeFromFullColumn(*args[0].column, 0, args[0].column->size());
+                args[0].column = std::move(lc_col);
+                args[0].type = arg_type;
+            }
         }
         field.columns->emplace_back(ColumnWithTypeAndName {nullptr, removeLowCardinality(func->getResultType()), result_name});
         (*columns)[result_idx].column
@@ -1787,8 +1802,6 @@ static FieldRef applyFunction(const FunctionBasePtr & func, const DataTypePtr & 
 
     return {field.columns, field.row_idx, result_idx};
 }
-
-DataTypePtr getArgumentTypeOfMonotonicFunction(const IFunctionBase & func);
 
 /// Sequentially applies functions to the column, returns `true`
 /// if all function arguments are compatible with functions
