@@ -2701,7 +2701,9 @@ void ClientBase::processParsedSingleQuery(
     /// redirected to a file or a pipe (for example when running under
     /// `clickhouse-test` or any other automation), there is no terminal to chime
     /// at, and emitting `BEL` would just contaminate the captured stderr stream.
-    UInt64 chime_threshold_seconds = getClientConfiguration().getUInt64("chime-threshold-seconds", 0);
+    /// The default lives here (not in the CLI option) so that a value from the
+    /// client config file is not clobbered when the flag is omitted.
+    UInt64 chime_threshold_seconds = getClientConfiguration().getUInt64("chime-threshold-seconds", 5);
     if (chime_threshold_seconds > 0
         && stderr_is_a_tty
         && progress_indication.elapsedSeconds() >= static_cast<double>(chime_threshold_seconds))
@@ -3934,7 +3936,7 @@ void ClientBase::addOptionsToTheClientConfiguration(const CommandLineOptions & o
     if (options.contains("time"))
         getClientConfiguration().setBool("print-time-to-stderr", true);
 
-    if (options.contains("memory-usage"))
+    if (options.contains("memory-usage") && !options["memory-usage"].defaulted())
     {
         const auto & memory_usage_mode = options["memory-usage"].as<std::string>();
         if (memory_usage_mode != "none" && memory_usage_mode != "default" && memory_usage_mode != "readable")
@@ -3972,7 +3974,7 @@ void ClientBase::addOptionsToTheClientConfiguration(const CommandLineOptions & o
         getClientConfiguration().setBool("print-profile-events", true);
     if (options.contains("profile-events-delay-ms"))
         getClientConfiguration().setUInt64("profile-events-delay-ms", options["profile-events-delay-ms"].as<UInt64>());
-    if (options.contains("chime"))
+    if (options.contains("chime") && !options["chime"].defaulted())
         getClientConfiguration().setUInt64("chime-threshold-seconds", options["chime"].as<UInt64>());
     /// Whether to print the number of processed rows at
     if (options.contains("processed-rows"))
