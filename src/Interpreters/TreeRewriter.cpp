@@ -782,37 +782,80 @@ void collectJoinedColumns(TableJoin & analyzed_join, ASTTableJoin & table_join,
     }
 }
 
-std::pair<bool, UInt64> recursivelyCollectMaxOrdinaryExpressions(const ASTPtr & expr, ASTExpressionList & into)
+/// Result of collecting GROUP BY ALL key expressions from a SELECT sub-expression.
+/// `referenced_lambda_arguments` holds the names of lambda parameters referenced by the collected
+/// sub-expression whose binding lambda has not been left yet. While it is non-empty the
+/// sub-expression is not a valid GROUP BY key.
+struct MaxOrdinaryExpressionsResult
+{
+    bool has_aggregate = false;
+    NameSet referenced_lambda_arguments;
+    UInt64 pushed_children = 0;
+};
+
+/// `lambda_arguments` holds the names of lambda parameters bound by enclosing higher-order functions,
+/// used to tell a lambda parameter apart from an ordinary column in the (pre-resolution) AST.
+MaxOrdinaryExpressionsResult recursivelyCollectMaxOrdinaryExpressions(const ASTPtr & expr, ASTExpressionList & into, const NameSet & lambda_arguments)
 {
     checkStackSize();
 
-    if (expr->as<ASTIdentifier>())
+    if (const auto * identifier = expr->as<ASTIdentifier>())
     {
+        /// An identifier that resolves to a lambda parameter is not a valid GROUP BY key. Report it
+        /// so the function that owns the binding lambda does not collapse into a key; the name is
+        /// dropped once that lambda is left (see the lambda case below).
+        if (lambda_arguments.contains(identifier->name()))
+            return {false, {identifier->name()}, 0};
+
         into.children.push_back(expr);
-        return {false, 1};
+        return {false, {}, 1};
     }
 
     auto * function = expr->as<ASTFunction>();
 
     if (!function)
-        return {false, 0};
+        return {false, {}, 0};
+
+    /// A lambda of a higher-order function (e.g. arrayMap/arrayFilter) is not itself a GROUP BY key.
+    /// Collect the max-ordinary key expressions from the lambda body and report whether the body
+    /// carries an aggregate function so the enclosing function is not collapsed into a single key.
+    /// References to this lambda's own parameters do not escape it, but references to enclosing
+    /// lambdas' parameters still do.
+    /// See https://github.com/ClickHouse/ClickHouse/issues/56019.
+    if (function->name == "lambda")
+    {
+        if (function->arguments->children.size() != 2)
+            return {false, {}, 0};
+
+        auto own_arguments = RequiredSourceColumnsMatcher::extractNamesFromLambda(*function);
+        NameSet lambda_arguments_with_body = lambda_arguments;
+        lambda_arguments_with_body.insert(own_arguments.begin(), own_arguments.end());
+
+        auto body_result = recursivelyCollectMaxOrdinaryExpressions(function->arguments->children[1], into, lambda_arguments_with_body);
+        for (const auto & name : own_arguments)
+            body_result.referenced_lambda_arguments.erase(name);
+        return body_result;
+    }
 
     if (AggregateUtils::isAggregateFunction(*function))
-        return {true, 0};
+        return {true, {}, 0};
 
     UInt64 pushed_children = 0;
     bool has_aggregate = false;
+    NameSet referenced_lambda_arguments;
 
     for (const auto & child : function->arguments->children)
     {
-        auto [child_has_aggregate, child_pushed_children] = recursivelyCollectMaxOrdinaryExpressions(child, into);
-        has_aggregate |= child_has_aggregate;
-        pushed_children += child_pushed_children;
+        auto child_result = recursivelyCollectMaxOrdinaryExpressions(child, into, lambda_arguments);
+        has_aggregate |= child_result.has_aggregate;
+        pushed_children += child_result.pushed_children;
+        referenced_lambda_arguments.merge(child_result.referenced_lambda_arguments);
     }
 
-    /// The current function is not aggregate function and there is no aggregate function in its arguments,
-    /// so use the current function to replace its arguments
-    if (!has_aggregate)
+    /// Collapse to the current function only if it contains neither an aggregate function nor a
+    /// reference to an (unbound) lambda parameter; a subtree that references a lambda parameter is
+    /// not a valid GROUP BY key, so its already-collected ordinary sub-expressions are kept instead.
+    if (!has_aggregate && referenced_lambda_arguments.empty())
     {
         for (UInt64 i = 0; i < pushed_children; i++)
             into.children.pop_back();
@@ -821,7 +864,7 @@ std::pair<bool, UInt64> recursivelyCollectMaxOrdinaryExpressions(const ASTPtr & 
         pushed_children = 1;
     }
 
-    return {has_aggregate, pushed_children};
+    return {has_aggregate, std::move(referenced_lambda_arguments), pushed_children};
 }
 
 /** Expand GROUP BY ALL by extracting all the SELECT-ed expressions that are not aggregate functions.
@@ -839,7 +882,7 @@ void expandGroupByAll(ASTSelectQuery * select_query)
     auto group_expression_list = make_intrusive<ASTExpressionList>();
 
     for (const auto & expr : select_query->select()->children)
-        recursivelyCollectMaxOrdinaryExpressions(expr, *group_expression_list);
+        recursivelyCollectMaxOrdinaryExpressions(expr, *group_expression_list, {});
 
     select_query->setExpression(ASTSelectQuery::Expression::GROUP_BY, group_expression_list);
 }

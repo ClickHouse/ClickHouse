@@ -889,39 +889,62 @@ void QueryAnalyzer::validateJoinTableExpressionWithoutAlias(const QueryTreeNodeP
                         scope.scope_node->formatASTForErrorMessage());
 }
 
-std::pair<bool, UInt64> QueryAnalyzer::recursivelyCollectMaxOrdinaryExpressions(QueryTreeNodePtr & node, QueryTreeNodes & into)
+QueryAnalyzer::MaxOrdinaryExpressionsResult QueryAnalyzer::recursivelyCollectMaxOrdinaryExpressions(QueryTreeNodePtr & node, QueryTreeNodes & into)
 {
     checkStackSize();
 
-    if (node->as<ColumnNode>())
+    if (const auto * column_node = node->as<ColumnNode>())
     {
+        /// A column that resolves to a lambda parameter is not a valid GROUP BY key. Report the
+        /// binding lambda so the enclosing function that owns this lambda does not collapse into a
+        /// key. The flag is cleared once that lambda is left (see the LambdaNode case below).
+        if (auto column_source = column_node->getColumnSourceOrNull();
+            column_source && column_source->getNodeType() == QueryTreeNodeType::LAMBDA)
+            return {false, {column_source.get()}, 0};
+
         into.push_back(node);
-        return {false, 1};
+        return {false, {}, 1};
+    }
+
+    /// A lambda argument of a higher-order function (e.g. arrayMap/arrayFilter) is not itself a
+    /// GROUP BY key. Collect the max-ordinary key expressions from the lambda body and report
+    /// whether the body carries an aggregate/window function so the enclosing function is not
+    /// collapsed into a single key. References to this lambda's own parameters do not escape it,
+    /// but references to enclosing lambdas' parameters still do.
+    /// See https://github.com/ClickHouse/ClickHouse/issues/56019.
+    if (auto * lambda_node = node->as<LambdaNode>())
+    {
+        auto body_result = recursivelyCollectMaxOrdinaryExpressions(lambda_node->getExpression(), into);
+        body_result.referenced_lambdas.erase(lambda_node);
+        return body_result;
     }
 
     auto * function = node->as<FunctionNode>();
 
     if (!function)
-        return {false, 0};
+        return {false, {}, 0};
 
     // We don't need to have GROUPING under GROUP BY ALL, so we treat GROUPING
     // as an aggregate function for GROUP BY ALL expansion
     if (function->isAggregateFunction() || function->isWindowFunction() || Poco::icompare(function->getFunctionName(), "grouping") == 0)
-        return {true, 0};
+        return {true, {}, 0};
 
     UInt64 pushed_children = 0;
     bool has_aggregate = false;
+    std::unordered_set<const IQueryTreeNode *> referenced_lambdas;
 
     for (auto & child : function->getArguments().getNodes())
     {
-        auto [child_has_aggregate, child_pushed_children] = recursivelyCollectMaxOrdinaryExpressions(child, into);
-        has_aggregate |= child_has_aggregate;
-        pushed_children += child_pushed_children;
+        auto child_result = recursivelyCollectMaxOrdinaryExpressions(child, into);
+        has_aggregate |= child_result.has_aggregate;
+        pushed_children += child_result.pushed_children;
+        referenced_lambdas.merge(child_result.referenced_lambdas);
     }
 
-    /// The current function is not aggregate function and there is no aggregate function in its arguments,
-    /// so use the current function to replace its arguments
-    if (!has_aggregate)
+    /// Collapse to the current function only if it contains neither an aggregate function nor a
+    /// reference to an (unbound) lambda parameter; a subtree that references a lambda parameter is
+    /// not a valid GROUP BY key, so its already-collected ordinary sub-expressions are kept instead.
+    if (!has_aggregate && referenced_lambdas.empty())
     {
         for (UInt64 i = 0; i < pushed_children; i++)
             into.pop_back();
@@ -930,7 +953,7 @@ std::pair<bool, UInt64> QueryAnalyzer::recursivelyCollectMaxOrdinaryExpressions(
         pushed_children = 1;
     }
 
-    return {has_aggregate, pushed_children};
+    return {has_aggregate, std::move(referenced_lambdas), pushed_children};
 }
 
 /** Expand GROUP BY ALL by extracting all the SELECT-ed expressions that are not aggregate functions.
