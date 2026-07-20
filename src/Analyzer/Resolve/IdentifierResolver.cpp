@@ -881,15 +881,30 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromTableExpress
     const auto & table_name = table_expression_data.table_name;
     const auto & database_name = table_expression_data.database_name;
 
-    /** A table can have the same name as its database. Then the identifier first part matches both the table
-      * name and the database name, and the identifier as a whole can be qualified with the table name, with the
-      * database name and the table name, or refer to another table expression from the same database.
+    /** The identifier first part can match a table name or an alias of one table expression and at the same
+      * time be the database name of some table expression in the scope. Then the identifier as a whole can be
+      * qualified with the table name or the alias, with the database name and the table name, or refer to
+      * another table expression from that database.
       * Resolution with a single-part qualifier is attempted first, but it must be allowed to fail, so that the
       * other interpretations are attempted next.
       * Example: SELECT db1.db1.id FROM db1.db1;
       * Example: SELECT db1.tbl.id FROM db1.db1 JOIN db1.tbl USING (id);
+      * Example: SELECT db1.tbl.id FROM (SELECT 1 AS id) AS db1 JOIN db1.tbl USING (id);
       */
     bool identifier_first_part_matches_database_name = !database_name.empty() && path_start == database_name;
+
+    bool identifier_first_part_is_database_name_in_scope = identifier_first_part_matches_database_name;
+    if (!identifier_first_part_is_database_name_in_scope)
+    {
+        for (const auto & [_, other_table_expression_data] : scope.table_expression_node_to_data)
+        {
+            if (!other_table_expression_data.database_name.empty() && path_start == other_table_expression_data.database_name)
+            {
+                identifier_first_part_is_database_name_in_scope = true;
+                break;
+            }
+        }
+    }
 
     if ((!table_name.empty() && path_start == table_name) || (table_expression_node->hasAlias() && path_start == table_expression_node->getAlias()))
     {
@@ -899,9 +914,9 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromTableExpress
             table_expression_data,
             scope,
             1 /*identifier_column_qualifier_parts*/,
-            identifier_first_part_matches_database_name /*can_be_not_found*/);
+            identifier_first_part_is_database_name_in_scope /*can_be_not_found*/);
 
-        if (lookup_result.resolved_identifier || !identifier_first_part_matches_database_name)
+        if (lookup_result.resolved_identifier || !identifier_first_part_is_database_name_in_scope)
             return lookup_result;
     }
 

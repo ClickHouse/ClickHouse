@@ -26,5 +26,26 @@ SELECT {CLICKHOUSE_DATABASE:Identifier}.{CLICKHOUSE_DATABASE:Identifier}.id, {CL
 FROM {CLICKHOUSE_DATABASE:Identifier}.{CLICKHOUSE_DATABASE:Identifier}
 JOIN {CLICKHOUSE_DATABASE:Identifier}.other USING (id);
 
+-- The first part of a qualified column name can match the name of one table expression while being
+-- the database name of a different table expression in the same scope (a table named like another
+-- database). A failed lookup behind the table name must fall through, so that the database-qualified
+-- interpretation is attempted next.
+CREATE DATABASE IF NOT EXISTS {CLICKHOUSE_DATABASE_1:Identifier};
+CREATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.tbl (id Int32, value Int32) ENGINE = MergeTree ORDER BY ();
+INSERT INTO {CLICKHOUSE_DATABASE_1:Identifier}.tbl VALUES (42, 5);
+CREATE TABLE {CLICKHOUSE_DATABASE:Identifier}.{CLICKHOUSE_DATABASE_1:Identifier} (id Int32) ENGINE = MergeTree ORDER BY ();
+INSERT INTO {CLICKHOUSE_DATABASE:Identifier}.{CLICKHOUSE_DATABASE_1:Identifier} VALUES (42);
+
+SELECT {CLICKHOUSE_DATABASE_1:Identifier}.tbl.value
+FROM {CLICKHOUSE_DATABASE:Identifier}.{CLICKHOUSE_DATABASE_1:Identifier}
+JOIN {CLICKHOUSE_DATABASE_1:Identifier}.tbl USING (id);
+
+-- The table name interpretation still takes precedence when the lookup behind it succeeds.
+SELECT {CLICKHOUSE_DATABASE_1:Identifier}.id
+FROM {CLICKHOUSE_DATABASE:Identifier}.{CLICKHOUSE_DATABASE_1:Identifier}
+JOIN {CLICKHOUSE_DATABASE_1:Identifier}.tbl USING (id);
+
+DROP DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
+
 -- A missing column must still produce an error.
 SELECT {CLICKHOUSE_DATABASE:Identifier}.{CLICKHOUSE_DATABASE:Identifier}.nonexistent FROM {CLICKHOUSE_DATABASE:Identifier}.{CLICKHOUSE_DATABASE:Identifier}; -- { serverError UNKNOWN_IDENTIFIER }
