@@ -28,7 +28,7 @@ SELECT id FROM t_map_kv WHERE m['foo'] = 'v2' ORDER BY id;
 SELECT id FROM t_map_kv WHERE m['nope'] = 'bar' ORDER BY id;
 
 -- The text index is used for the equality.
-SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT id FROM t_map_kv WHERE m['foo'] = 'bar') WHERE explain LIKE '%Name: idx%';
+SELECT extract(explain, 'Name: idx') FROM (EXPLAIN indexes = 1 SELECT id FROM t_map_kv WHERE m['foo'] = 'bar') WHERE explain LIKE '%Name: idx%';
 
 -- Value-only search, resolved by a decode-aware dictionary scan.
 SELECT id FROM t_map_kv WHERE mapContainsValue(m, 'baz') ORDER BY id;
@@ -39,7 +39,7 @@ SELECT id FROM t_map_kv WHERE m['foo'] LIKE 'ba%' ORDER BY id;
 SELECT id FROM t_map_kv WHERE startsWith(m['k2'], 'v') ORDER BY id;
 
 -- The text index is used for value-only search too.
-SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT id FROM t_map_kv WHERE mapContainsValue(m, 'bar')) WHERE explain LIKE '%Name: idx%';
+SELECT extract(explain, 'Name: idx') FROM (EXPLAIN indexes = 1 SELECT id FROM t_map_kv WHERE mapContainsValue(m, 'bar')) WHERE explain LIKE '%Name: idx%';
 
 -- Value-only search also engages direct read (a text-index virtual column replaces the predicate).
 -- Pin query_plan_direct_read_from_text_index: the flaky check randomizes it, and with direct read
@@ -50,7 +50,7 @@ SELECT count() > 0 FROM (EXPLAIN actions = 1 SELECT id FROM t_map_kv WHERE mapCo
 SELECT id FROM t_map_kv WHERE mapContainsKey(m, 'foo') ORDER BY id;
 SELECT id FROM t_map_kv WHERE mapContainsKey(m, 'k2') ORDER BY id;
 SELECT id FROM t_map_kv WHERE mapContainsKeyLike(m, 'k%') ORDER BY id;
-SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT id FROM t_map_kv WHERE mapContainsKey(m, 'foo')) WHERE explain LIKE '%Name: idx%';
+SELECT extract(explain, 'Name: idx') FROM (EXPLAIN indexes = 1 SELECT id FROM t_map_kv WHERE mapContainsKey(m, 'foo')) WHERE explain LIKE '%Name: idx%';
 
 -- Map default-value semantics: m['absent'] is '', so a predicate that is true on '' must still
 -- match rows lacking the key (which have no token). Such predicates fall back to a full scan.
