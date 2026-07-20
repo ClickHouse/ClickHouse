@@ -45,8 +45,8 @@ FROM orders |> ORDER BY amount DESC |> LIMIT 2;
 FROM orders |> ORDER BY amount DESC |> LIMIT 2 OFFSET 1;
 FROM orders |> ORDER BY amount DESC |> LIMIT 100 |> OFFSET 3;
 
-SELECT '-- AS and JOIN';
-FROM orders |> AGGREGATE sum(amount) AS total GROUP BY customer |> AS agg |> JOIN orders AS o ON agg.customer = o.customer |> WHERE o.amount = 300 |> SELECT agg.customer, total;
+SELECT '-- AS and JOIN: table aliases are visible inside the same operator, following operators see the combined columns';
+FROM orders |> AGGREGATE sum(amount) AS total GROUP BY customer |> AS agg |> JOIN (FROM orders |> WHERE amount = 300 |> SELECT customer AS c) AS big ON agg.customer = big.c |> SELECT customer, total;
 
 SELECT '-- ARRAY JOIN';
 FROM orders |> WHERE customer = 'alice' |> EXTEND [1, 2] AS arr |> ARRAY JOIN arr |> SELECT customer, amount, arr |> ORDER BY amount, arr;

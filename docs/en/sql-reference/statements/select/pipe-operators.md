@@ -145,6 +145,8 @@ FROM customers
 |> ARRAY JOIN tags
 ```
 
+Since every operator is a new subquery scope, table aliases are visible only inside the same operator (in the `ON` condition). The following operators see the combined columns of the join result, as after `SELECT *`.
+
 ### UNION, INTERSECT, and EXCEPT {#union-intersect-and-except}
 
 `|> UNION [ALL/DISTINCT] (query1) [, (query2), ...]`, `|> INTERSECT [ALL/DISTINCT] ...`, and `|> EXCEPT [ALL/DISTINCT] ...` combine the input with the results of other queries:

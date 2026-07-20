@@ -224,7 +224,7 @@ bool parsePipeOperators(IParser::Pos & pos, ASTPtr & query, Expected & expected)
 
             while (pos->type == TokenType::Comma)
             {
-                Pos saved_pos = pos;
+                IParser::Pos saved_pos = pos;
                 ++pos;
                 if (!parse_replacement())
                 {
@@ -259,7 +259,7 @@ bool parsePipeOperators(IParser::Pos & pos, ASTPtr & query, Expected & expected)
 
             while (pos->type == TokenType::Comma)
             {
-                Pos saved_pos = pos;
+                IParser::Pos saved_pos = pos;
                 ++pos;
                 if (!parse_column())
                 {
@@ -395,7 +395,7 @@ bool parsePipeOperators(IParser::Pos & pos, ASTPtr & query, Expected & expected)
 
             while (pos->type == TokenType::Comma)
             {
-                Pos saved_pos = pos;
+                IParser::Pos saved_pos = pos;
                 ++pos;
 
                 ASTPtr next_element;
@@ -445,7 +445,7 @@ bool parsePipeOperators(IParser::Pos & pos, ASTPtr & query, Expected & expected)
 
             while (true)
             {
-                Pos saved_pos = pos;
+                IParser::Pos saved_pos = pos;
                 ASTPtr next_element;
                 if (!ParserTablesInSelectQueryElement(false).parse(pos, next_element, expected))
                 {

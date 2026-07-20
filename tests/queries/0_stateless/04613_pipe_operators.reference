@@ -1,0 +1,71 @@
+-- A query can start with FROM, and SELECT is optional
+alice	100
+alice	250
+alice	250	0
+charlie	300	0
+charlie	300	0
+-- WHERE
+alice	100	0
+alice	250	0
+charlie	300	0
+-- SELECT
+alice	200
+alice	500
+-- SELECT DISTINCT and DISTINCT
+0
+1
+0
+1
+-- EXTEND
+bob	50	1	500	3
+bob	75	0	750	3
+-- SET
+bob	1050	1
+bob	1075	0
+-- DROP
+charlie	300
+-- AGGREGATE with GROUP BY: grouping columns come first
+alice	2	350
+bob	1	75
+charlie	1	300
+-- AGGREGATE with an alias in GROUP BY
+0	725
+1	50
+-- AGGREGATE of the whole table
+5	300
+-- WHERE after AGGREGATE works as HAVING
+alice	350
+bob	125
+charlie	300
+-- ORDER BY, LIMIT, OFFSET
+charlie	300	0
+alice	250	0
+alice	250	0
+alice	100	0
+bob	75	0
+bob	50	1
+-- AS and JOIN: table aliases are visible inside the same operator, following operators see the combined columns
+charlie	300
+-- ARRAY JOIN
+alice	100	1
+alice	100	2
+alice	250	1
+alice	250	2
+-- Set operations
+alice
+bob
+bob
+alice
+charlie
+2
+-- Pipe operators after a regular SELECT query
+4
+-- Pipe operators in a subquery
+4
+-- INSERT from a pipe query
+alice	250
+charlie	300
+-- The resulting AST is the same as with nested subqueries
+SELECT * FROM (SELECT * FROM (SELECT customer, sum(amount) AS total FROM (SELECT * FROM (SELECT * FROM orders) WHERE equals(cancelled, 0)) GROUP BY customer) ORDER BY total DESC) LIMIT 3
+SELECT * FROM (SELECT * EXCEPT cancelled FROM (SELECT * REPLACE (plus(amount, 1) AS amount) FROM (SELECT * FROM orders))) AS t ALL LEFT JOIN big_orders AS b USING (customer)
+-- Errors
