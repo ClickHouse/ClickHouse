@@ -86,7 +86,8 @@ class JSONCompactEachRowRowSchemaReader final : public FormatWithNamesAndTypesSc
 public:
     JSONCompactEachRowRowSchemaReader(ReadBuffer & in_, bool with_names_, bool with_types_, bool yield_strings_, const FormatSettings & format_settings_);
 
-    bool readsTypedJSONValueTokens() const override { return true; }
+    bool readsTypedJSONValueTokens() const override { return !reader.yieldStrings(); }
+    bool readsStringValuesAsWholeText() const override { return reader.yieldStrings(); }
 
 private:
     bool allowVariableNumberOfColumns() const override { return format_settings.json.compact_allow_variable_number_of_columns; }

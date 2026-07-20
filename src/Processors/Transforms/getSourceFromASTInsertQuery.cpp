@@ -72,6 +72,7 @@ String getInsertDataSchemaMismatchDescription(
     bool format_schema_describes_parsed_data = true;
     bool format_allows_variable_number_of_columns = false;
     bool format_reads_typed_json_value_tokens = false;
+    bool format_reads_string_values_as_whole_text = false;
     try
     {
         auto probe_buffer = std::make_unique<ReadBufferFromMemory>(data.data(), data.size());
@@ -96,6 +97,7 @@ String getInsertDataSchemaMismatchDescription(
         format_schema_describes_parsed_data = schema_reader->schemaDescribesParsedData();
         format_allows_variable_number_of_columns = schema_reader->allowVariableNumberOfColumns();
         format_reads_typed_json_value_tokens = schema_reader->readsTypedJSONValueTokens();
+        format_reads_string_values_as_whole_text = schema_reader->readsStringValuesAsWholeText();
     }
     catch (...) // NOLINT(bugprone-empty-catch)
     {
@@ -204,7 +206,10 @@ String getInsertDataSchemaMismatchDescription(
     /// explanation to an unrelated parse error, we treat a column as mismatched only when the inferred
     /// and expected types have no common supertype at all (e.g. a `String` inferred for a numeric column):
     /// a strong, low-false-positive signal that the data really has a different shape than the query expects.
-    auto types_are_compatible = [format_has_exact_types_from_data, format_reads_typed_json_value_tokens, &format_settings](
+    auto types_are_compatible = [format_has_exact_types_from_data,
+                                 format_reads_typed_json_value_tokens,
+                                 format_reads_string_values_as_whole_text,
+                                 &format_settings](
                                     const DataTypePtr & inferred_type, const DataTypePtr & expected_type, bool inferred_is_text)
     {
         if (inferred_type->equals(*expected_type))
@@ -284,6 +289,18 @@ String getInsertDataSchemaMismatchDescription(
         /// cannot be built from a single scalar string.
         if (which_inferred.isString())
         {
+            /// `Bool` is backed by `UInt8` but is not a generic numeric destination: its deserializers
+            /// accept only the bare literal tokens (`true` / `false` / `1` / `0`, ...), so a string
+            /// value is a genuine structure mismatch even when it holds a quoted numeric (`"1"`) that a
+            /// real numeric column would accept — the typed-token JSON formats reject any string token
+            /// for a `Bool` column, and the `CSV` `Bool` deserializer reads the raw field without
+            /// unquoting it. The exception are the formats that re-parse the content of every string
+            /// value with the whole-text deserializer of the destination type (`JSONStringsEachRow`,
+            /// ...), where a quoted `"1"` does parse into `Bool`; those follow the generic numeric
+            /// rule below.
+            if (isBool(expected_unwrapped) && !format_reads_string_values_as_whole_text)
+                return false;
+
             const bool expected_is_numeric = which_expected.isInt() || which_expected.isUInt() || which_expected.isFloat();
             return !(expected_is_numeric && inferred_is_text) && !expected_is_nested;
         }

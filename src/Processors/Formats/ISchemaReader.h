@@ -61,10 +61,21 @@ public:
     /// an array, an object) and consults the `input_format_json_read_*_as_strings` settings to decide
     /// whether such a token may be read into a `String` column. It is false for the flat-text formats
     /// (`TSV`, `CSV`, `TSKV`, ...), which read every field verbatim into a `String` column regardless of
-    /// those settings. A caller that compares an inferred schema against an expected one can use this to
+    /// those settings, and for the `-Strings` JSON variants, whose values are all strings rather than
+    /// typed tokens (see `readsStringValuesAsWholeText` below). A caller that compares an inferred schema against an expected one can use this to
     /// know when an inferred non-`String` type going into a `String` destination follows the JSON
     /// settings and when it is unconditionally accepted.
     virtual bool readsTypedJSONValueTokens() const { return false; }
+
+    /// True if every value in the format is a string whose content the parser re-parses with the
+    /// whole-text deserializer of the destination type (the `-Strings` JSON variants,
+    /// `JSONStringsEachRow` / `JSONCompactStringsEachRow` / ...). There the destination type sees the
+    /// unquoted content of the string, so, for example, a quoted `"1"` is accepted into a `Bool`
+    /// column, while the typed-token JSON formats reject any string token there and the flat-text
+    /// formats hand the `Bool` deserializer the raw (still quoted) field. A caller that compares an
+    /// inferred schema against an expected one can use this to know when an inferred `String` says
+    /// nothing about the parsability of its content into the destination type.
+    virtual bool readsStringValuesAsWholeText() const { return false; }
 
     virtual bool needContext() const { return false; }
     virtual void setContext(const ContextPtr &) {}

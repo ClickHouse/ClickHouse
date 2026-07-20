@@ -341,8 +341,9 @@ size_t JSONEachRowRowInputFormat::countRows(size_t max_block_size)
     return num_rows;
 }
 
-JSONEachRowSchemaReader::JSONEachRowSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_)
+JSONEachRowSchemaReader::JSONEachRowSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_, bool json_strings_)
     : IRowWithNamesSchemaReader(in_, format_settings_)
+    , json_strings(json_strings_)
 {
 }
 
@@ -694,11 +695,11 @@ void registerNonTrivialPrefixAndSuffixCheckerJSONEachRow(FormatFactory & factory
 void registerJSONEachRowSchemaReader(FormatFactory & factory);
 void registerJSONEachRowSchemaReader(FormatFactory & factory)
 {
-    auto register_schema_reader = [&](const String & format_name)
+    auto register_schema_reader = [&](const String & format_name, bool json_strings = false)
     {
-        factory.registerSchemaReader(format_name, [](ReadBuffer & buf, const FormatSettings & settings)
+        factory.registerSchemaReader(format_name, [json_strings](ReadBuffer & buf, const FormatSettings & settings)
         {
-            return std::make_unique<JSONEachRowSchemaReader>(buf, settings);
+            return std::make_unique<JSONEachRowSchemaReader>(buf, settings, json_strings);
         });
         factory.registerAdditionalInfoForSchemaCacheGetter(format_name, [](const FormatSettings & settings)
         {
@@ -710,7 +711,7 @@ void registerJSONEachRowSchemaReader(FormatFactory & factory)
     register_schema_reader("JSONLines");
     register_schema_reader("NDJSON");
     register_schema_reader("JSONL");
-    register_schema_reader("JSONStringsEachRow");
+    register_schema_reader("JSONStringsEachRow", /*json_strings=*/ true);
 }
 
 }

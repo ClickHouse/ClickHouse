@@ -102,9 +102,10 @@ protected:
 class JSONEachRowSchemaReader : public IRowWithNamesSchemaReader
 {
 public:
-    JSONEachRowSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_);
+    JSONEachRowSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_, bool json_strings_ = false);
 
-    bool readsTypedJSONValueTokens() const override { return true; }
+    bool readsTypedJSONValueTokens() const override { return !json_strings; }
+    bool readsStringValuesAsWholeText() const override { return json_strings; }
 
 private:
     NamesAndTypesList readRowAndGetNamesAndDataTypes(bool & eof) override;
@@ -113,6 +114,9 @@ private:
     void transformFinalTypeIfNeeded(DataTypePtr & type) override;
 
     bool first_row = true;
+    /// True for the `JSONStringsEachRow` variant, where every value is a string whose content is
+    /// re-parsed with the whole-text deserializer of the destination type.
+    bool json_strings = false;
     bool data_in_square_brackets = false;
     JSONInferenceInfo inference_info;
 };
