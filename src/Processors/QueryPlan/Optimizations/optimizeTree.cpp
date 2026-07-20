@@ -83,6 +83,8 @@ void optimizeTreeFirstPass(const QueryPlanOptimizationSettings & optimization_se
         optimization_settings.vector_search_filter_strategy,
         optimization_settings.use_index_for_in_with_subqueries_max_values,
         optimization_settings.network_transfer_limits,
+        optimization_settings.optimize_prewhere,
+        optimization_settings.remove_unused_columns,
         optimization_settings.use_skip_indexes_for_top_k,
         optimization_settings.use_top_k_dynamic_filtering,
         optimization_settings.use_top_k_dynamic_filtering_for_variable_length_types,
@@ -185,6 +187,8 @@ void optimizeExchanges(QueryPlan::Node & root);
 void materializeConstantsForSetOperationBranches(QueryPlan::Node & root, QueryPlan::Nodes & nodes);
 bool planHasUnsupportedDistributedStep(const QueryPlan::Node & root);
 void checkDistributedReadSupported(const QueryPlan::Node & root);
+void validateDistributedPlanBucketCounts(const QueryPlanOptimizationSettings & optimization_settings);
+void applyParallelReplicas(QueryPlan & query_plan, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
 
 void optimizeTreeSecondPass(
     const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root, QueryPlan::Nodes & nodes, QueryPlan & query_plan)
@@ -200,6 +204,8 @@ void optimizeTreeSecondPass(
         optimization_settings.vector_search_filter_strategy,
         optimization_settings.use_index_for_in_with_subqueries_max_values,
         optimization_settings.network_transfer_limits,
+        optimization_settings.optimize_prewhere,
+        optimization_settings.remove_unused_columns,
         optimization_settings.use_skip_indexes_for_top_k,
         optimization_settings.use_top_k_dynamic_filtering,
         optimization_settings.use_top_k_dynamic_filtering_for_variable_length_types,
@@ -327,6 +333,10 @@ void optimizeTreeSecondPass(
     /// Reject reads whose coordinator snapshot/part-order state a worker cannot reproduce.
     if (optimization_settings.make_distributed_plan)
         checkDistributedReadSupported(root);
+    /// Reject out-of-range bucket counts before any distributed optimization sizes exchange fan-outs or
+    /// read-bucket vectors from them. The tryMakeDistributed* pass below uses the raw setting values.
+    if (optimization_settings.make_distributed_plan)
+        validateDistributedPlanBucketCounts(optimization_settings);
     const bool make_distributed_plan = optimization_settings.make_distributed_plan;
 
     traverseQueryPlan(stack, root,
@@ -343,8 +353,9 @@ void optimizeTreeSecondPass(
             }
         });
 
-    stack.push_back({.node = &root});
+    applyParallelReplicas(query_plan, nodes, optimization_settings);
 
+    stack.push_back({.node = &root});
     while (!stack.empty())
     {
         {
@@ -467,6 +478,7 @@ void optimizeTreeSecondPass(
                 local_optimization_settings.distinct_in_order = subquery_optimization_settings.distinct_in_order;
                 local_optimization_settings.reuse_storage_ordering_for_window_functions
                     = subquery_optimization_settings.reuse_storage_ordering_for_window_functions;
+                local_optimization_settings.enable_parallel_replicas = false;
             }
 
             auto local_plan = read_from_local->extractQueryPlan();
@@ -493,8 +505,9 @@ void optimizeTreeSecondPass(
         materializeConstantsForSetOperationBranches(root, nodes);
 
     /// Vector search first pass optimization sets up everything for vector index usage.
-    /// In the 2nd pass, we optimize further by attempting to do an "index-only scan".
-    if (optimization_settings.try_use_vector_search && !extra_settings.vector_search_with_rescoring)
+    /// In the 2nd pass, we optimize further by attempting to do an "index-only scan"
+    /// or by filtering rescoring queries to vector-index candidate rows.
+    if (optimization_settings.try_use_vector_search)
     {
         chassert(stack.empty());
         stack.push_back({.node = &root});
@@ -504,7 +517,7 @@ void optimizeTreeSecondPass(
 
             if (frame.next_child == 0)
             {
-                if (optimizeVectorSearchSecondPass(root, stack, nodes, extra_settings))
+                if (optimizeVectorSearchWithVectorIndexSecondPass(root, stack, nodes, extra_settings))
                     break;
             }
 
@@ -523,8 +536,41 @@ void optimizeTreeSecondPass(
             stack.pop_back();
     }
 
+    /// Quantized-codes brute-force vector search: for tables without a vector similarity index but with a vector column
+    /// carrying a `Quantize(...)` codec (which stores a quantized companion subcolumn), rewrite ORDER BY distance LIMIT
+    /// into a two-stage shortlist-then-rescore. It must run before lazy materialization so that the latter defers the
+    /// heavy vector column on the inner shortlist.
+    if (optimization_settings.try_use_vector_search)
+    {
+        chassert(stack.empty());
+        stack.push_back({.node = &root});
+        while (!stack.empty())
+        {
+            auto & frame = stack.back();
+
+            if (frame.next_child == 0)
+            {
+                if (optimizeVectorSearchWithQuantizedCodes(root, stack, nodes, extra_settings, optimization_settings.max_limit_for_lazy_materialization))
+                    break;
+            }
+
+            if (frame.next_child < frame.node->children.size())
+            {
+                auto next_frame = Frame{.node = frame.node->children[frame.next_child]};
+                ++frame.next_child;
+                stack.push_back(next_frame);
+                continue;
+            }
+
+            stack.pop_back();
+        }
+        while (!stack.empty())
+            stack.pop_back();
+    }
+
     /// projection optimizations can introduce additional reading step
     /// so, applying lazy materialization after it, since it's dependent on reading step
+    bool lazy_materialization_applied = false;
     if (optimization_settings.optimize_lazy_materialization || optimization_settings.optimize_lazy_final)
     {
         chassert(stack.empty());
@@ -537,6 +583,8 @@ void optimizeTreeSecondPass(
             {
                 if (optimizeLazyMaterialization2(*frame.node, query_plan, nodes, optimization_settings, optimization_settings.max_limit_for_lazy_materialization))
                 {
+                    lazy_materialization_applied = true;
+
                     /// Merge Expression/Filter steps (on enter) and apply lazy FINAL
                     /// (on leave) in the transformed subtree.
                     Optimization::ExtraSettings extra{};
@@ -571,6 +619,30 @@ void optimizeTreeSecondPass(
                 optimizeLazyFinal(stack, query_plan, nodes, optimization_settings);
 
             stack.pop_back();
+        }
+    }
+
+    /// Lazy materialization and the post-lazy `tryMergeFilters` pass replace `FilterStep`s
+    /// without carrying over the QCC key that `updateQueryConditionCache` set earlier in
+    /// this pass. Re-walk the plan so the surviving main-branch `FilterStep` gets the key.
+    if (optimization_settings.use_query_condition_cache && lazy_materialization_applied)
+    {
+        Stack qcc_stack;
+        qcc_stack.push_back({.node = &root});
+        while (!qcc_stack.empty())
+        {
+            updateQueryConditionCache(qcc_stack, optimization_settings);
+
+            auto & qcc_frame = qcc_stack.back();
+            if (qcc_frame.next_child < qcc_frame.node->children.size())
+            {
+                auto * next_node = qcc_frame.node->children[qcc_frame.next_child];
+                ++qcc_frame.next_child;
+                qcc_stack.push_back({.node = next_node});
+                continue;
+            }
+
+            qcc_stack.pop_back();
         }
     }
 

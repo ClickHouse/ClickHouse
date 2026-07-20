@@ -3,6 +3,7 @@ import json
 import os
 import random
 import subprocess
+import zlib
 from pathlib import Path
 
 from ci.jobs.scripts.bugfix_validation import bugfix_build_types, find_master_builds
@@ -18,6 +19,11 @@ from ci.praktika.utils import MetaClasses, Shell, Utils
 
 temp_dir = f"{Utils.cwd()}/ci/tmp"
 
+# Substrings identifying a sanitizer build in a build type ("amd_asan_ubsan"),
+# a job parameter string ("amd_asan_ubsan, distributed plan, parallel"), or a
+# job name. Sanitizer builds get the tighter server memory cap and reduced
+# concurrency (see the `set_memory_ratio` and `nproc` logic in `main`).
+SANITIZERS = ("asan", "tsan", "msan", "ubsan")
 
 
 class JobStages(metaclass=MetaClasses.WithIter):
@@ -36,7 +42,7 @@ def parse_args():
     )
     parser.add_argument(
         "--options",
-        help="Comma-separated options. Examples: parallel|sequential|BATCH_NUM/BATCH_TOT|s3 storage|DatabaseReplicated|azure|AsyncInsert|BugfixValidation|coverage",
+        help="Comma-separated options. Examples: parallel|sequential|BATCH_NUM/BATCH_TOT|s3 storage|DBReplicated|azure|AsyncInsert|BugfixValidation|coverage",
         default="",
     )
     parser.add_argument(
@@ -139,7 +145,7 @@ OPTIONS_TO_INSTALL_ARGUMENTS = {
     "old analyzer": "--analyzer",
     "WasmEdge": "--wasm-engine wasmedge",
     "s3 storage": "--s3-storage",
-    "DatabaseReplicated": "--db-replicated",
+    "DBReplicated": "--db-replicated",
     "DatabaseOrdinary": "--db-ordinary",
     "wide parts enabled": "--wide-parts",
     "ParallelReplicas": "--parallel-rep",
@@ -154,7 +160,7 @@ OPTIONS_TO_TEST_RUNNER_ARGUMENTS = {
     "s3 storage": "--s3-storage --no-stateful",
     "ParallelReplicas": "--no-zookeeper --no-shard --no-parallel-replicas",
     "AsyncInsert": " --no-async-insert",
-    "DatabaseReplicated": " --no-stateful --replicated-database",
+    "DBReplicated": " --no-stateful --replicated-database",
     "azure": " --azure-blob-storage --no-random-settings --no-random-merge-tree-settings",  # azurite is slow, with randomization it can be super slow
     "parallel": "--no-sequential",
     "sequential": "--no-parallel",
@@ -263,6 +269,7 @@ def main():
     is_llvm_coverage = False
     is_excluded_from_llvm = False
     is_per_test_coverage = False
+    is_distributed_plan = False
     runner_options = ""
     # optimal value for most of the jobs
     nproc = int(Utils.cpu_count() * 0.6)
@@ -312,12 +319,86 @@ def main():
             is_s3_storage = True
         if "azure" in to:
             is_azure_storage = True
-        if "DatabaseReplicated" in to:
+        if "DBReplicated" in to:
             is_database_replicated = True
         if "SharedCatalog" in to:
             is_shared_catalog = True
         if "ParallelReplicas" in to:
             is_parallel_replicas = True
+        if "distributed plan" in to:
+            is_distributed_plan = True
+
+    # If this PR only touches test files (no production/config code changed),
+    # this job only needs to run if one of the changed tests would even be
+    # selected here - and, when the job is also hash-batched (N/M), only the
+    # batch(es) containing a changed test need to run. Other jobs/batches
+    # would produce results identical to master and can be skipped. Note:
+    # "parallel"/"sequential" job flavors need no batch number of their own
+    # (e.g. "amd_debug, parallel") - the flavor-applicability check below must
+    # not be gated on batching being active.
+    if (
+        not is_flaky_check
+        and not is_targeted_check
+        and not is_bugfix_validation
+        and not is_per_test_coverage
+        and not args.test
+    ):
+        changed_files = info.get_changed_files()
+        if changed_files and all(
+            Targeting.is_functional_test_file(f)
+            or Targeting.is_integration_test_file(f)
+            or Targeting.is_ci_job_script(f)
+            for f in changed_files
+        ):
+            changed_functional_files = [
+                f for f in changed_files if Targeting.is_functional_test_file(f)
+            ]
+            if not changed_functional_files:
+                Result.create_from(
+                    status=Result.Status.SKIPPED,
+                    info="Only non-functional test files changed in this PR - nothing for this job to run",
+                ).complete_job()
+            # "parallel"/"sequential" is a second, independent sharding dimension:
+            # each is hash-batched separately (--no-sequential/--no-parallel), and
+            # a test tagged no-parallel/sequential never runs under the "parallel"
+            # flavor (and vice versa) regardless of batch. Restrict to the changed
+            # tests that this job flavor would even select before checking batches.
+            is_parallel_flavor = "parallel" in test_options
+            is_sequential_flavor = "sequential" in test_options
+            hash_batch_files = []
+            for f in changed_functional_files:
+                hash_batch_file = Targeting.functional_test_hash_batch_file(f)
+                if hash_batch_file is None:
+                    # Could not resolve to a concrete test source file (e.g. an
+                    # orphan data file) - be conservative and run the batch normally.
+                    hash_batch_files = None
+                    break
+                is_sequential_test = Targeting.is_sequential_functional_test(
+                    hash_batch_file
+                )
+                if is_parallel_flavor and is_sequential_test:
+                    continue
+                if is_sequential_flavor and not is_sequential_test:
+                    continue
+                hash_batch_files.append(hash_batch_file)
+            if hash_batch_files is not None and not hash_batch_files:
+                Result.create_from(
+                    status=Result.Status.SKIPPED,
+                    info="Only test files changed in this PR and none of the changed tests apply to this job's parallel/sequential flavor",
+                ).complete_job()
+            if (
+                hash_batch_files is not None
+                and batch_num
+                and total_batches > 1
+                and not any(
+                    zlib.crc32(f.encode("utf-8")) % total_batches == batch_num - 1
+                    for f in hash_batch_files
+                )
+            ):
+                Result.create_from(
+                    status=Result.Status.SKIPPED,
+                    info="Only test files changed in this PR and none of the changed tests fall into this batch",
+                ).complete_job()
 
     if is_llvm_coverage:
         # Pin random-by-default fault injection seeds server-side (in the default
@@ -342,6 +423,40 @@ def main():
             # shared server memory cap, so the OvercommitTracker kills queries across
             # all co-scheduled tests. Lower concurrency to keep peak total RSS under it.
             nproc = int(Utils.cpu_count() * 0.4)
+        elif (
+            is_distributed_plan
+            and "parallel" in test_options
+            and any(san in args.options for san in SANITIZERS)
+        ):
+            # `--distributed-plan` fans each query across local parallel replicas,
+            # multiplying the server-side memory of every in-flight query. Under the
+            # parallel runner dozens of such queries share one server, so their
+            # aggregate RSS overruns the sanitizer memory cap
+            # (`max_server_memory_usage_to_ram_ratio` 0.7) and the OvercommitTracker
+            # rejects queries across all co-scheduled tests with
+            # `MEMORY_LIMIT_EXCEEDED`. This is the same failure mode as azure above,
+            # but the per-query multiplication makes it heavier, so cut concurrency
+            # below the azure level to keep peak total RSS under the cap. The job
+            # gets a larger `timeout` (see `job_configs.py`) to absorb the reduced
+            # throughput. Gated to sanitizer builds: only they carry the 0.7 cap,
+            # and the non-sanitizer distributed-plan parallel jobs (e.g. amd_debug)
+            # run comfortably at the default concurrency.
+            #
+            # Tuned down in steps against observed peak RSS on the 32-vCPU
+            # `c7i.8xlarge` runner (cap 41.84 GiB at ratio 0.7): 0.35 -> 11 workers
+            # hit Code 241 at 43.01 GiB (~3% over); 0.3 -> 9 workers still landed
+            # right on the cap (41.90 GiB); 0.25 -> 8 workers reached 41.76 GiB;
+            # 0.22 -> 7 workers reached 41.71 GiB - each run still grazing the cap
+            # with a single rejected query. That near-flat response shows the RSS
+            # baseline is dominated by ASan overhead that accumulates with the
+            # amount of work done, not with concurrency, so cutting workers
+            # further cannot open a gap under the cap; the residual headroom comes
+            # from this job's slightly higher memory ratio instead (0.75, see the
+            # install stage below). The concurrency cut stays: it is what shrank
+            # the aggregate client RSS enough to make the higher server cap safe
+            # for the host, and 7 workers finish in ~2h44m, inside the 3.5h
+            # `timeout` (see `job_configs.py`).
+            nproc = int(Utils.cpu_count() * 0.22)
         elif is_per_test_coverage:
             cidb_cluster = CIDBCluster()
             if not info.is_local_run:
@@ -358,8 +473,8 @@ def main():
         workers = max(1, nproc - 1)
         print(f"Workers count set to nproc-1 for flaky check: {workers}")
     else:
-        print(f"Workers count set to optimal value: {nproc}")
-        workers = nproc
+        workers = max(1, nproc)
+        print(f"Workers count set to optimal value: {workers}")
 
     runner_options += f" --jobs {workers}"
 
@@ -396,6 +511,15 @@ def main():
     if args.count:
         print(f"Rerun count set from --count: {args.count}")
         rerun_count = args.count
+    elif is_flaky_check and info.is_merge_queue_event:
+        # The merge-queue flaky check is a drift guard, not a full flakiness
+        # hunt: the PR CI already ran the full flaky check, and this rerun only
+        # needs to catch new tests broken by the current `master` state (e.g. a
+        # setting randomization added to `tests/clickhouse-test` after the PR's
+        # last CI run). A randomized setting drawn with probability 0.4 per run
+        # escapes 20 iterations with probability 0.6^20 ~= 4e-5, so a reduced
+        # count keeps merge-queue latency bounded without losing the signal.
+        rerun_count = 20
     elif is_flaky_check:
         # Large repeat count so the 45-min global_time_limit is the effective stopping
         # condition, not the repeat count.  Tests run in parallel (--jobs N) with fresh
@@ -613,11 +737,57 @@ def main():
             CH.set_random_timezone,
         ]
 
+        # Sanitizer builds run under heavy memory pressure: besides the server's
+        # own ASan overhead, the parallel runner keeps dozens of ASan-instrumented
+        # `clickhouse-client` processes alive at once (~0.4 GiB each, ~17 GiB in
+        # total on a 60 GiB host). With the default 0.9
+        # `max_server_memory_usage_to_ram_ratio` the server is allowed to grow to
+        # ~0.9 of RAM on its own, so it can drive the host into a global OOM and be
+        # killed at an RSS well below its own memory limit - before any query hits
+        # `MEMORY_LIMIT_EXCEEDED` - which surfaces as a "Server died" failure.
+        # Cap the server low enough that the clients' footprint still fits, so the
+        # server kills a runaway query gracefully instead of being OOM-killed by
+        # the host. This applies to every sanitizer run, not just the flaky check
+        # (which previously used 0.8, sufficient there only because it runs a small
+        # test subset at reduced concurrency). 0.7 stays comfortably above the
+        # largest legitimate single-query need (the ~25 GiB stateful-load INSERT).
+        # The heaviest configs also cut test concurrency (see the `nproc` block
+        # above, e.g. azure and distributed-plan) so that the *aggregate* RSS of
+        # concurrent queries stays under this cap too.
+        #
+        # The cap must follow the binary actually being launched, not the job
+        # option string: bugfix validation passes only `BugfixValidation` in
+        # `--options` yet starts with the `build_types[0]` master-HEAD binary
+        # (always `*_asan_ubsan`), and its validation loop later swaps to the
+        # other build types, re-deriving the cap on every swap (sanitizer ->
+        # 0.7, debug -> server default; see the TEST stage below).
+        #
+        # The distributed-plan parallel job gets a slightly higher cap (0.75).
+        # The global memory check compares the server's *OS RSS* against the
+        # cap, and on an ASan server RSS carries tens of GiB the tracker can
+        # neither see nor free by killing queries: ASan shadow memory,
+        # quarantine and redzones, plus file-backed pages from mmap reads. On
+        # the 32-vCPU runner that overhead accumulates over the run towards
+        # ~41.7 GiB regardless of concurrency - cutting workers 11 -> 9 -> 8
+        # -> 7 moved the peak RSS only 43.01 -> 41.90 -> 41.76 -> 41.71 GiB
+        # against the 41.84 GiB cap that 0.7 yields, and every run still
+        # grazed the cap (one query rejected on a 512 MiB chunk while RSS sat
+        # just under it). Concurrency is exhausted as a lever, so the cap
+        # itself must give the untrackable overhead room: 0.75 (~44.8 GiB)
+        # leaves ~3 GiB of headroom above the observed RSS equilibrium. The
+        # host-OOM invariant this cap protects (server cap + aggregate client
+        # RSS < RAM) still holds with >10 GiB to spare, because this job's
+        # concurrency is already cut to 0.22 * CPU (see `nproc` above), which
+        # shrinks the ASan client footprint from ~17 GiB to ~3 GiB.
+        memory_cap_source = build_types[0] if is_bugfix_validation else args.options
+        if any(san in memory_cap_source for san in SANITIZERS):
+            memory_ratio = (
+                0.75 if is_distributed_plan and "parallel" in test_options else 0.7
+            )
+            commands.append(lambda: CH.set_memory_ratio(memory_ratio))
+
         if is_flaky_check:
             commands.append(CH.enable_thread_fuzzer_config)
-            sanitizers = ("asan", "tsan", "msan", "ubsan")
-            if any(san in args.options for san in sanitizers):
-                commands.append(lambda: CH.set_memory_ratio(0.8))
 
         os.environ["MALLOC_CONF"] = (
             f"prof_prefix:{temp_dir}/jemalloc_profiles/clickhouse.jemalloc"
@@ -698,6 +868,16 @@ def main():
                 if not CH.prepare_stateful_data(
                     with_s3_storage=is_s3_storage,
                     is_db_replicated=is_database_replicated,
+                    # `args.options` (e.g. "amd_asan_ubsan, distributed plan, parallel")
+                    # already carries the sanitizer name in the same format
+                    # `prepare_stateful_data`'s `is_sanitizer` check expects, so the
+                    # normal (non-bugfix-validation) path can reuse it directly - it
+                    # must not stay `None` here, since every sanitizer stateless run
+                    # now sets the tighter 0.7 memory ratio (see below) and needs the
+                    # reduced `MAX_INSERT_THREADS` to fit under it.
+                    build_type=(
+                        build_types[0] if is_bugfix_validation else args.options
+                    ),
                 ):
                     print(
                         "SETUP FAILURE: "
@@ -736,9 +916,18 @@ def main():
 
         global_time_limit = 0
         if is_flaky_check:
-            FLAKY_CHECK_TIME_LIMIT = 45 * 60  # 45 min
+            # The merge-queue run gets a tighter budget: it delays merges
+            # directly, and its reduced rerun_count needs less time anyway.
+            FLAKY_CHECK_TIME_LIMIT = 20 * 60 if info.is_merge_queue_event else 45 * 60
+            # Floor the budget at a small positive value: `run_tests` interprets
+            # `global_time_limit == 0` as "pass no `--global_time_limit`", i.e. no
+            # cap at all. If setup already consumed the whole budget (more likely
+            # under the tighter merge-queue limit) a `0` here would turn the run
+            # unbounded, defeating the very latency bound it is meant to enforce.
+            # A minimal explicit limit keeps the run bounded while still doing one
+            # quick pass. Mirrors the targeted-check floor below.
             global_time_limit = max(
-                FLAKY_CHECK_TIME_LIMIT - int(stop_watch.duration), 0
+                FLAKY_CHECK_TIME_LIMIT - int(stop_watch.duration), 60
             )
             print(
                 f"Flaky-check time limit: {FLAKY_CHECK_TIME_LIMIT}s"
@@ -861,6 +1050,16 @@ def main():
                         strict=True,
                     )
                     CH.clean_logs()
+                    # The server memory cap must follow the binary being
+                    # launched (see the install-stage comment): sanitizer
+                    # builds get the tighter 0.7 ratio, the debug build
+                    # reverts to the server default. The config tree is not
+                    # reinstalled on a binary swap, so the override written
+                    # for the previous build type would otherwise persist.
+                    if any(san in bugfix_bt for san in SANITIZERS):
+                        CH.set_memory_ratio(0.7)
+                    else:
+                        CH.reset_memory_ratio()
                     # Fail closed if the server cannot come back up after the
                     # binary swap: running tests against a dead server would
                     # produce `Server died` FAILs that the bugfix inverter
@@ -901,6 +1100,7 @@ def main():
                         if not CH.prepare_stateful_data(
                             with_s3_storage=is_s3_storage,
                             is_db_replicated=is_database_replicated,
+                            build_type=bugfix_bt,
                         ):
                             # Prefer the concrete sub-command + ClickHouse error
                             # captured by prepare_stateful_data() over the generic
@@ -1145,7 +1345,7 @@ def main():
 
     # Decide whether to block the CI pipeline on test failures
     force_ok_exit = False
-    if "parallel" in test_options and test_result:
+    if test_result:
         failures_cnt = len([r for r in test_result.results if not r.is_ok()])
         if failures_cnt > 0 and failures_cnt < 4:
             print(

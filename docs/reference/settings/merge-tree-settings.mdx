@@ -113,6 +113,24 @@ the partition or sorting key.
 Enables commit-order projections that store `_block_number` and `_block_offset` virtual columns, preserving original insertion order through merges.
 Requires `enable_block_number_column` and `enable_block_offset_column` to be enabled.
 
+## allow_dimensions_outside_sorting_key {#allow_dimensions_outside_sorting_key} 
+<SettingsInfoBlock type="Bool" default_value="0" />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "0"},{"label": "AggregatingMergeTree now rejects, at table creation, schemas where a column is neither part of the sorting key nor an aggregate-state measure; previously such schemas were accepted (the old behavior corresponds to the value 'true')."}]}]}/>
+
+In `AggregatingMergeTree`, background merges collapse rows that share the same value of the sorting
+key, combining their aggregate states. A column that is neither part of the sorting key nor an
+aggregate-state *measure* (`AggregateFunction` or `SimpleAggregateFunction`) is a *dimension*: after
+a merge it keeps an arbitrary value of one of the collapsed rows, which silently produces wrong
+results for queries that `GROUP BY` or filter on it (see
+https://github.com/ClickHouse/ClickHouse/issues/751).
+
+By default, such a schema is rejected when the table is created. Enable this setting if the column is
+functionally dependent on the sorting key (so all collapsed rows share the same value) and the
+behavior is intentional.
+
+The check applies only to tables that actually aggregate (those with at least one aggregate-state
+column) and is skipped when `allow_tuple_element_aggregation` is enabled.
+
 ## allow_experimental_replacing_merge_with_cleanup {#allow_experimental_replacing_merge_with_cleanup} 
 
 <ExperimentalBadge/>
@@ -133,14 +151,14 @@ with settings `min_age_to_force_merge_seconds`,
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.12"},{"label": "0"},{"label": "New setting"}]}]}/>
 
 Obsolete setting, does nothing.
-## allow_experimental_text_index_positions {#allow_experimental_text_index_positions} 
+## allow_experimental_text_index_phrase_search {#allow_experimental_text_index_phrase_search} 
 
 <ExperimentalBadge/>
 <SettingsInfoBlock type="Bool" default_value="0" />
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "0"},{"label": "New setting"}]}]}/>
 
-Allow creating text indexes with the experimental `positions` argument which
-stores token positions to support exact phrase matching.
+Allow creating text indexes with the experimental `support_phrase_search` argument
+which stores token positions to support exact phrase matching.
 
 ## allow_floating_point_partition_key {#allow_floating_point_partition_key} 
 <SettingsInfoBlock type="Bool" default_value="0" />
@@ -150,6 +168,13 @@ Enables to allow floating-point number as a partition key.
 Possible values:
 - `0` — Floating-point partition key not allowed.
 - `1` — Floating-point partition key allowed.
+
+## allow_minmax_index_for_json {#allow_minmax_index_for_json} 
+<SettingsInfoBlock type="Bool" default_value="0" />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "0"},{"label": "Forbid creating minmax skip index on JSON columns by default because the index serialization cannot handle heterogeneous Field values"}]}]}/>
+
+Allow creating minmax skip indexes on JSON (Object) columns. Disabled by default because the minmax
+index serialization path cannot handle heterogeneous Field values that JSON columns may contain.
 
 ## allow_nullable_key {#allow_nullable_key} 
 <SettingsInfoBlock type="Bool" default_value="0" />
@@ -248,7 +273,9 @@ Before enabling, check that all replicas support UUID version 4.
 ## async_block_ids_cache_update_wait_ms {#async_block_ids_cache_update_wait_ms} 
 <SettingsInfoBlock type="Milliseconds" default_value="100" />
 
-How long each insert iteration will wait for async_block_ids_cache update
+Deprecated alias of `deduplication_hashes_cache_update_wait_ms`, kept for one release for backward
+compatibility. It is honored only when `deduplication_hashes_cache_update_wait_ms` is left at its
+default; this setting will be removed in a future release.
 
 ## async_insert {#async_insert} 
 <SettingsInfoBlock type="Bool" default_value="0" />
@@ -257,11 +284,12 @@ If true, data from INSERT query is stored in queue and later flushed to
 table in background.
 
 ## auto_statistics_types {#auto_statistics_types} 
-<SettingsInfoBlock type="String" default_value="minmax, uniq" />
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.4"},{"label": "minmax, uniq"},{"label": "Enable auto statistics by default"}]}, {"id": "row-2","items": [{"label": "25.10"},{"label": ""},{"label": "New setting"}]}]}/>
+<SettingsInfoBlock type="String" default_value="basic, uniq" />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "basic, uniq"},{"label": "Deprecate the `minmax` statistics type and replace it with `basic` (a superset of `minmax`) in the default auto statistics"}]}, {"id": "row-2","items": [{"label": "26.4"},{"label": "minmax, uniq"},{"label": "Enable auto statistics by default"}]}, {"id": "row-3","items": [{"label": "25.10"},{"label": ""},{"label": "New setting"}]}]}/>
 
 Comma-separated list of statistics types to calculate automatically on all suitable columns.
-Supported statistics types: basic, tdigest, countmin, minmax, uniq.
+Supported statistics types: basic, tdigest, countmin, uniq, uniq_v2.
+The `minmax` statistics type is deprecated: it is a subset of `basic`, which should be used instead.
 
 ## background_task_preferred_step_execution_time_ms {#background_task_preferred_step_execution_time_ms} 
 <SettingsInfoBlock type="Milliseconds" default_value="50" />
@@ -272,9 +300,9 @@ one step takes longer time
 ## cache_populated_by_fetch {#cache_populated_by_fetch} 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-:::note
+<Note>
 This setting applies only to ClickHouse Cloud.
-:::
+</Note>
 
 When `cache_populated_by_fetch` is disabled (the default setting), new data
 parts are loaded into the filesystem cache only when a query is run that requires
@@ -294,9 +322,9 @@ to trigger such an action.
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.6"},{"label": ""},{"label": "New setting"}]}]}/>
 
-:::note
+<Note>
 This setting applies only to ClickHouse Cloud.
-:::
+</Note>
 
 If not empty, only files that match this regex will be prewarmed into the cache after fetch (if `cache_populated_by_fetch` is enabled).
 
@@ -410,6 +438,20 @@ This is beneficial for workloads that always read all columns (e.g. projections)
 Primary key support compression, reduce primary key file size and speed up
 network transmission.
 
+## compute_exact_num_defaults_for_sparse_columns {#compute_exact_num_defaults_for_sparse_columns} 
+
+<ExperimentalBadge/>
+<SettingsInfoBlock type="Bool" default_value="0" />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "0"},{"label": "New setting gating exact per-column num_defaults computation for sparsity-based pruning and trivial-count rewrite"}]}]}/>
+
+Compute the exact count of default values per column during inserts and
+merges, instead of the cheaper sampling estimate used to decide on sparse
+serialization. Required by `optimize_trivial_count_with_sparsity_filter`,
+which consumes the persisted `num_defaults` counter (Nullable columns
+additionally need `nullable_serialization_version = 'allow_sparse'`).
+Leaving it disabled keeps inserts/merges as fast as before; enabling it
+adds an O(rows) pass per sparse-eligible column.
+
 ## concurrent_part_removal_threshold {#concurrent_part_removal_threshold} 
 <SettingsInfoBlock type="UInt64" default_value="100" />
 
@@ -426,6 +468,41 @@ because each part removal on remote storage typically requires a network
 round-trip (e.g. one HTTP `DELETE` per part on object storage), so a
 serial removal of even 100 parts can stall a `DROP TABLE` for tens of
 seconds.
+
+## dead_blobs_to_delay_insert {#dead_blobs_to_delay_insert} 
+<SettingsInfoBlock type="UInt64" default_value="100000" />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "100000"},{"label": "New setting to artificially slow down inserts when the dead blobs queues of the table's disks accumulate too many blobs pending removal."}]}]}/>
+
+If the number of blobs pending removal in the dead blobs queues of the table's disks exceeds the
+`dead_blobs_to_delay_insert` value, an `INSERT` is artificially slowed down (up to `max_delay_to_insert`).
+
+The dead blobs queue belongs to the disk and is shared by all tables on it (including blobs of already
+dropped tables), so size the threshold for the whole disk rather than a single table.
+
+<Tip>
+It is useful when a server fails to clean up blobs quickly enough.
+</Tip>
+
+Possible values:
+- Any positive integer.
+- 0 — disabled.
+
+## dead_blobs_to_throw_insert {#dead_blobs_to_throw_insert} 
+<SettingsInfoBlock type="UInt64" default_value="1000000" />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "1000000"},{"label": "New setting to reject inserts when the dead blobs queues of the table's disks accumulate too many blobs pending removal."}]}]}/>
+
+If the number of blobs pending removal in the dead blobs queues of the table's disks is more than the
+`dead_blobs_to_throw_insert` value, `INSERT` is interrupted with the following error:
+
+> "Too many dead blobs in queue (N) on disks of table. Blobs cleanup is processing significantly
+slower than inserts"
+
+The dead blobs queue belongs to the disk and is shared by all tables on it (including blobs of already
+dropped tables), so size the threshold for the whole disk rather than a single table.
+
+Possible values:
+- Any positive integer.
+- 0 — disabled.
 
 ## deduplicate_merge_projection_mode {#deduplicate_merge_projection_mode} 
 <SettingsInfoBlock type="DeduplicateMergeProjectionMode" default_value="throw" />
@@ -444,6 +521,15 @@ Possible values:
 - `throw`
 - `drop`
 - `rebuild`
+
+## deduplication_hashes_cache_update_wait_ms {#deduplication_hashes_cache_update_wait_ms} 
+<SettingsInfoBlock type="Milliseconds" default_value="100" />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "100"},{"label": "New setting. The properly-named replacement for async_block_ids_cache_update_wait_ms; controls how long an insert waits for the unified deduplication_hashes cache to refresh."}]}]}/>
+
+How long each insert iteration waits for the in-memory `deduplication_hashes` cache to refresh to a
+newer version before re-checking it for already-inserted blocks. The cache mirrors the
+`deduplication_hashes` directory in ClickHouse Keeper so inserts can detect duplicates without a
+Keeper round-trip.
 
 ## default_compression_codec {#default_compression_codec} 
 
@@ -544,7 +630,7 @@ Compress in memory values of index granularity if it is possible
 
 ## enable_max_bytes_limit_for_min_age_to_force_merge {#enable_max_bytes_limit_for_min_age_to_force_merge} 
 <SettingsInfoBlock type="Bool" default_value="1" />
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.2"},{"label": "1"},{"label": "Limit part sizes even with min_age_to_force_merge_seconds by default"}]}, {"id": "row-2","items": [{"label": "25.1"},{"label": "0"},{"label": "New setting"}]}, {"id": "row-3","items": [{"label": "25.1"},{"label": "0"},{"label": "Added new setting to limit max bytes for min_age_to_force_merge."}]}]}/>
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.2"},{"label": "1"},{"label": "Limit part sizes even with min_age_to_force_merge_seconds by default"}]}, {"id": "row-2","items": [{"label": "25.1"},{"label": "0"},{"label": "Added new setting to limit max bytes for min_age_to_force_merge."}]}, {"id": "row-3","items": [{"label": "25.1"},{"label": "0"},{"label": "New setting"}]}]}/>
 
 If settings `min_age_to_force_merge_seconds` and
 `min_age_to_force_merge_on_partition_only` should respect setting
@@ -724,9 +810,9 @@ If the number of inactive parts in a single partition in the table exceeds
 the `inactive_parts_to_delay_insert` value, an `INSERT` is artificially
 slowed down.
 
-:::tip
+<Tip>
 It is useful when a server fails to clean up parts quickly enough.
-:::
+</Tip>
 
 Possible values:
 - Any positive integer.
@@ -1578,11 +1664,11 @@ insert is not executed. Note that this setting:
 Possible values:
 - Any positive integer.
 
-:::note
+<Note>
 If both `min_free_disk_bytes_to_perform_insert` and `min_free_disk_ratio_to_perform_insert`
 are specified, ClickHouse will count on the value that will allow to perform
 inserts on a bigger amount of free memory.
-:::
+</Note>
 
 ## min_free_disk_ratio_to_perform_insert {#min_free_disk_ratio_to_perform_insert} 
 <SettingsInfoBlock type="Float" default_value="0" />
@@ -1629,9 +1715,9 @@ Minimal part level to create a data part in `Wide` format instead of `Compact`.
 The minimal number of marks read by the query for applying the [max_concurrent_queries](#max_concurrent_queries)
 setting.
 
-:::note
+<Note>
 Queries will still be limited by other `max_concurrent_queries` settings.
-:::
+</Note>
 
 Possible values:
 - Positive integer.
@@ -1726,9 +1812,8 @@ Possible values:
 - `0` (disable deduplication).
 
 A deduplication mechanism is used, similar to replicated tables (see
-[replicated_deduplication_window](#replicated_deduplication_window) setting), including the
-`insert_deduplication_version` granularity (whole inserted block under the default
-`new_unified_hash`, per created part under the legacy versions). The hash sums are written to
+[replicated_deduplication_window](#replicated_deduplication_window) setting): the deduplication
+hash sum covers the whole inserted block. The hash sums are written to
 a local file on a disk rather than to ClickHouse Keeper.
 
 ## notify_newest_block_number {#notify_newest_block_number} 
@@ -2000,15 +2085,6 @@ The on-disk format is self-describing: readers detect `skp_idx.packed` and serve
 substreams from inside it transparently. Changing this setting affects newly written parts
 only; existing parts retain whatever layout they had at write time.
 
-Known limitation: `system.data_skipping_indices.data_uncompressed_bytes` and
-`system.parts.secondary_indices_uncompressed_bytes` report the compressed size for packed
-substreams (the archive index doesn't store uncompressed sizes). This is cosmetic in
-monitoring with one functional consequence:
-`distributed_index_analysis_min_indexes_bytes_to_activate` compares against
-`data_uncompressed`, so a packed index that compresses well (`set` or `bloom_filter` over
-strings) may not cross the activation threshold even if the real uncompressed size would.
-The fallback is the normal query plan, not a wrong result.
-
 ## part_minmax_index_columns {#part_minmax_index_columns} 
 <SettingsInfoBlock type="MergeTreePartMinMaxIndexColumns" default_value="partition_key_only" />
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.5"},{"label": "partition_key_only"},{"label": "New setting."}]}]}/>
@@ -2274,13 +2350,13 @@ The interval of refreshing statistics cache in seconds. If it is set to zero, th
 When this setting has a value greater than zero only a single replica starts
 the merge immediately if merged part on shared storage.
 
-:::note
+<Note>
 Zero-copy replication is not ready for production
 Zero-copy replication is disabled by default in ClickHouse version 22.8 and
 higher.
 
 This feature is not recommended for production use.
-:::
+</Note>
 
 Possible values:
 - Any positive integer.
@@ -2351,11 +2427,8 @@ ClickHouse Keeper. Hash sums are stored only for the most recent
 `replicated_deduplication_window` blocks. The oldest hash sums are removed from
 ClickHouse Keeper.
 
-Under the default `insert_deduplication_version = new_unified_hash` the hash sum covers the
-whole inserted block, so an insert is deduplicated only when its entire data matches a
-previous insert (a retry), not per individual part. Under the legacy `old_separate_hashes` /
-`compatible_double_hashes` the hash sum is instead calculated per created part, from the
-composition of the field names and types and the data of that part (stream of bytes).
+The hash sum covers the whole inserted block, so an insert is deduplicated only when its
+entire data matches a previous insert (a retry), not per individual part.
 
 A large number for `replicated_deduplication_window` slows down `Inserts` because more
 entries need to be compared.
@@ -2363,29 +2436,12 @@ entries need to be compared.
 ## replicated_deduplication_window_for_async_inserts {#replicated_deduplication_window_for_async_inserts} 
 <SettingsInfoBlock type="UInt64" default_value="10000" />
 
-The number of most recently async inserted blocks for which ClickHouse Keeper
-stores hash sums to check for duplicates.
-
-Possible values:
-- Any positive integer.
-- 0 (disable deduplication for async_inserts)
-
-The [Async Insert](/reference/settings/session-settings#async_insert) command will
-be cached in one or more blocks (parts). For [insert deduplication](/reference/engines/table-engines/mergetree-family/replication),
-when writing into replicated tables, ClickHouse writes the hash sums of each
-insert into ClickHouse Keeper. Hash sums are stored only for the most recent
-`replicated_deduplication_window_for_async_inserts` blocks. The oldest hash
-sums are removed from ClickHouse Keeper.
-A large number of `replicated_deduplication_window_for_async_inserts` slows
-down `Async Inserts` because it needs to compare more entries.
-The hash sum is calculated from the composition of the field names and types
-and the data of the insert (stream of bytes).
-
-This setting applies only under `insert_deduplication_version = old_separate_hashes` or
-`compatible_double_hashes`, which keep async-insert hashes in a separate `async_blocks`
-directory. Under the default `new_unified_hash`, async inserts share the unified
-`deduplication_hashes` directory with sync inserts and are governed by
-`replicated_deduplication_window` / `replicated_deduplication_window_seconds` instead.
+Legacy setting retained for mixed-version rolling upgrades. New inserts deduplicate with the
+unified hash governed by `replicated_deduplication_window`; this setting now only bounds how many
+legacy async-insert hashes are kept in the `async_blocks` directory in ClickHouse Keeper, which is
+still written by older replicas during a rolling upgrade and cleaned up by the current leader.
+A value of `0` retains none of them — the next cleanup pass removes every entry — so keep the
+default (or a larger value) to preserve the legacy async deduplication window during the upgrade.
 
 ## replicated_deduplication_window_seconds {#replicated_deduplication_window_seconds} 
 <SettingsInfoBlock type="UInt64" default_value="3600" />
@@ -2409,25 +2465,11 @@ time. If it's the only record it will be stored forever.
 ## replicated_deduplication_window_seconds_for_async_inserts {#replicated_deduplication_window_seconds_for_async_inserts} 
 <SettingsInfoBlock type="UInt64" default_value="604800" />
 
-The number of seconds after which the hash sums of the async inserts are
-removed from ClickHouse Keeper.
-
-Possible values:
-- Any positive integer.
-
-Similar to [replicated_deduplication_window_for_async_inserts](#replicated_deduplication_window_for_async_inserts),
-`replicated_deduplication_window_seconds_for_async_inserts` specifies how
-long to store hash sums of blocks for async insert deduplication. Hash sums
-older than `replicated_deduplication_window_seconds_for_async_inserts` are
-removed from ClickHouse Keeper, even if they are less than
-`replicated_deduplication_window_for_async_inserts`.
-
-The time is relative to the time of the most recent record, not to the wall
-time. If it's the only record it will be stored forever.
-
-Like `replicated_deduplication_window_for_async_inserts`, this applies only under
-`insert_deduplication_version = old_separate_hashes` / `compatible_double_hashes`; under the
-default `new_unified_hash`, async inserts use `replicated_deduplication_window_seconds`.
+Legacy setting retained for mixed-version rolling upgrades. Together with
+`replicated_deduplication_window_for_async_inserts` it bounds how long legacy async-insert hashes
+are kept in the `async_blocks` directory in ClickHouse Keeper (written by older replicas during a
+rolling upgrade and cleaned up by the current leader). New inserts use
+`replicated_deduplication_window_seconds`.
 
 ## replicated_fetches_http_connection_timeout {#replicated_fetches_http_connection_timeout} 
 <SettingsInfoBlock type="Seconds" default_value="0" />
@@ -2849,12 +2891,16 @@ local replica state. Only available in ClickHouse Cloud
 If enabled, SharedMergeTree uses one of server-level pooled ZooKeeper sessions.
 
 ## shared_merge_tree_virtual_parts_discovery_batch {#shared_merge_tree_virtual_parts_discovery_batch} 
-
-<ExperimentalBadge/>
 <SettingsInfoBlock type="UInt64" default_value="1" />
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "1"},{"label": "New setting"}]}]}/>
 
 How many partition discoveries should be packed into batch
+
+## shared_merge_tree_virtual_parts_partition_atomic_discovery {#shared_merge_tree_virtual_parts_partition_atomic_discovery} 
+<SettingsInfoBlock type="Bool" default_value="1" />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "1"},{"label": "New setting"}]}]}/>
+
+Will SMT discover virtual parts partition atomically with extra data fetch and watches setup.
 
 ## simultaneous_parts_removal_limit {#simultaneous_parts_removal_limit} 
 <SettingsInfoBlock type="UInt64" default_value="0" />
@@ -2989,20 +3035,7 @@ reduce memory usage
 
 ## use_async_block_ids_cache {#use_async_block_ids_cache} 
 <SettingsInfoBlock type="Bool" default_value="1" />
-
-If true, we cache the hash sums of the async inserts.
-
-Possible values:
-- `true`
-- `false`
-
-A block bearing multiple async inserts will generate multiple hash sums.
-When some of the inserts are duplicated, keeper will only return one
-duplicated hash sum in one RPC, which will cause unnecessary RPC retries.
-This cache will watch the hash sums path in Keeper. If updates are watched
-in the Keeper, the cache will update as soon as possible, so that we are
-able to filter the duplicated inserts in the memory.
-
+Obsolete setting, does nothing.
 ## use_compact_variant_discriminators_serialization {#use_compact_variant_discriminators_serialization} 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
