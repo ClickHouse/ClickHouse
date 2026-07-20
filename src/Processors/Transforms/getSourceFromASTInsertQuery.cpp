@@ -443,6 +443,13 @@ String getInsertDataSchemaMismatchDescriptionFromFile(
     return getInsertDataSchemaMismatchDescription(prefix, format_name, expected_header, context);
 }
 
+size_t getInsertDataPrefixCaptureLimitForDiagnostic(const ContextPtr & context)
+{
+    static constexpr size_t max_bytes_to_capture_for_diagnostic = 1_MiB;
+    return std::min<size_t>(
+        context->getSettingsRef()[Setting::input_format_max_bytes_to_read_for_schema_inference], max_bytes_to_capture_for_diagnostic);
+}
+
 void setInsertSchemaMismatchDiagnostic(
     IInputFormat & format, const ASTPtr & ast, const Block & expected_header, const ContextPtr & context)
 {
@@ -558,14 +565,8 @@ InputFormatPtr getInputFormatFromASTInsertQuery(
         /// Unlike the inline (`ASTInsertQuery::data`) and INFILE paths — where the data is re-read only on
         /// the error path — a streamed insert (network / HTTP body / stdin) is consumed while parsing and
         /// cannot be re-read, so the prefix has to be captured eagerly, on every insert, including the ones
-        /// that succeed. Capturing up to the full schema-inference sampling bound
-        /// (`input_format_max_bytes_to_read_for_schema_inference`, 32 MiB by default) would add a large copy
-        /// to the hot path for a best-effort error message. A small prefix is enough to infer the structure
-        /// (column count and types) for the diagnostic, so cap the capture at a much smaller dedicated size.
-        static constexpr size_t max_bytes_to_capture_for_diagnostic = 1_MiB;
-        const size_t capture_limit = std::min<size_t>(
-            settings[Setting::input_format_max_bytes_to_read_for_schema_inference], max_bytes_to_capture_for_diagnostic);
-        capturing_buffer = std::make_unique<PrefixCapturingReadBuffer>(*input_buffer, capture_limit);
+        /// that succeed; see getInsertDataPrefixCaptureLimitForDiagnostic for why the capture is bounded.
+        capturing_buffer = std::make_unique<PrefixCapturingReadBuffer>(*input_buffer, getInsertDataPrefixCaptureLimitForDiagnostic(context));
     }
 
     ReadBuffer & format_input = capturing_buffer ? static_cast<ReadBuffer &>(*capturing_buffer) : *input_buffer;

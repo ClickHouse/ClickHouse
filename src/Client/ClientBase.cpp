@@ -137,7 +137,6 @@ namespace Setting
     extern const SettingsUInt64 max_insert_block_size_bytes;
     extern const SettingsUInt64 min_insert_block_size_rows;
     extern const SettingsUInt64 min_insert_block_size_bytes;
-    extern const SettingsUInt64 input_format_max_bytes_to_read_for_schema_inference;
     extern const SettingsUInt64 max_parser_backtracks;
     extern const SettingsUInt64 max_parser_depth;
     extern const SettingsUInt64 max_query_size;
@@ -2268,9 +2267,11 @@ void ClientBase::sendDataFrom(ReadBuffer & buf, Block & sample, const ColumnsDes
     /// `data_is_inline`, because the same ASTInsertQuery is reused for the streamed stdin tail even when
     /// it also carries an inline prefix, so ASTInsertQuery::data alone cannot tell the two sources apart.
     /// When the data is not inline, capture a bounded prefix of it as it streams through instead.
+    /// The capture happens on every insert, including the ones that succeed, so it is capped the same
+    /// way as the streamed server-side path (see getInsertDataPrefixCaptureLimitForDiagnostic).
     std::optional<PrefixCapturingReadBuffer> capturing_buf;
     if (!data_is_inline)
-        capturing_buf.emplace(buf, settings[Setting::input_format_max_bytes_to_read_for_schema_inference]);
+        capturing_buf.emplace(buf, getInsertDataPrefixCaptureLimitForDiagnostic(client_context));
 
     auto source = client_context->getInputFormat(
         current_format,

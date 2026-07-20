@@ -64,6 +64,15 @@ String getInsertDataSchemaMismatchDescriptionFromFile(
     const Block & expected_header,
     const ContextPtr & context);
 
+/// The bound for the prefix of a streamed (network / HTTP body / stdin) insert captured eagerly for the
+/// parse-error diagnostic above. Unlike the inline and INFILE paths, which re-read the data only on the
+/// error path, a streamed insert is consumed while parsing and cannot be re-read, so the prefix is
+/// captured on every insert, including the ones that succeed. The full schema-inference sampling bound
+/// (`input_format_max_bytes_to_read_for_schema_inference`, 32 MiB by default) would add a large copy to
+/// the hot path for a best-effort error message; a small prefix is enough to infer the structure (column
+/// count and types), so the capture is capped at a much smaller dedicated size.
+size_t getInsertDataPrefixCaptureLimitForDiagnostic(const ContextPtr & context);
+
 /// Attaches getInsertDataSchemaMismatchDescription as a lazy diagnostic to the input format that
 /// reads the inline data of an INSERT query: if parsing fails with a parse error, the resulting
 /// explanation (if any) is appended to the exception message.
