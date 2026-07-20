@@ -225,34 +225,34 @@ Processors LazyReadFromMergeTreeSource::buildReaders()
 {
     const auto & ctx_settings = context->getSettingsRef();
 
-    /// Point-read fast path: when the (single) lazy column is a fixed-size Array carrying a `Quantized(...)` codec
-    /// and every part stores it one-vector-per-block, fetch each shortlisted row's single compressed block instead
-    /// of decompressing whole granules. Requires the whole batch to be eligible; otherwise fall through to the
-    /// ordinary granule read below. See MergeTreePointReadSource.
+    /// Point-read fast path: if the lazy read includes a fixed-size Array column carrying a `Quantized(...)` codec, and
+    /// every part stores it one-vector-per-block, fetch each shortlisted row's single compressed block for that column
+    /// instead of decompressing whole granules. Any other lazy columns are read normally (granule read) alongside it and
+    /// merged into the same chunk. Requires the whole batch to be eligible; otherwise fall through to the ordinary
+    /// granule read below. See MergeTreePointReadSource.
     {
         const Block & lazy_header = outputs.front().getHeader();
-        std::optional<NameAndTypePair> point_read_column;
+        std::optional<NameAndTypePair> vector_column;
         size_t point_read_dims = 0;
-        if (lazy_header.columns() == 1)
+        const auto & columns_desc = storage_snapshot->metadata->getColumns();
+        for (const auto & col : lazy_header)
         {
-            const auto & col = lazy_header.getByPosition(0);
-            const auto & columns_desc = storage_snapshot->metadata->getColumns();
-            if (columns_desc.has(col.name))
+            if (!columns_desc.has(col.name))
+                continue;
+            if (auto params = tryExtractQuantizedCodecParams(columns_desc.get(col.name).codec))
             {
-                if (auto params = tryExtractQuantizedCodecParams(columns_desc.get(col.name).codec))
-                {
-                    point_read_column = NameAndTypePair(col.name, col.type);
-                    point_read_dims = params->dimensions;
-                }
+                vector_column = NameAndTypePair(col.name, col.type);
+                point_read_dims = params->dimensions;
+                break;
             }
         }
 
-        if (point_read_column)
+        if (vector_column)
         {
             bool all_eligible = true;
             for (const auto & part_with_ranges : lazy_materializing_rows->ranges_in_data_parts)
             {
-                if (!MergeTreePointReadSource::isEligible(part_with_ranges, *point_read_column, point_read_dims))
+                if (!MergeTreePointReadSource::isEligible(part_with_ranges, *vector_column, point_read_dims))
                 {
                     all_eligible = false;
                     break;
@@ -261,6 +261,13 @@ Processors LazyReadFromMergeTreeSource::buildReaders()
 
             if (all_eligible)
             {
+                /// The remaining lazy columns (in header order, minus the vector column) are read with a standard reader.
+                NamesAndTypesList other_columns;
+                for (const auto & col : lazy_header)
+                    if (col.name != vector_column->name)
+                        other_columns.emplace_back(col.name, col.type);
+
+                auto mark_cache = context->getMarkCache();
                 Processors processors;
                 auto lazy_header_ptr = std::make_shared<const Block>(lazy_header);
                 for (const auto & part_with_ranges : lazy_materializing_rows->ranges_in_data_parts)
@@ -271,9 +278,12 @@ Processors LazyReadFromMergeTreeSource::buildReaders()
                         lazy_header_ptr,
                         part_with_ranges,
                         std::move(offsets),
-                        *point_read_column,
+                        *vector_column,
                         point_read_dims,
+                        other_columns,
+                        storage_snapshot,
                         reader_settings,
+                        mark_cache,
                         max_block_size);
                     source->addTotalRowsApprox(total_rows);
                     processors.emplace_back(std::move(source));
