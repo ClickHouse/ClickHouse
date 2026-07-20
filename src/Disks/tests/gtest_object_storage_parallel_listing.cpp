@@ -10,10 +10,10 @@
 #include <algorithm>
 #include <cstdint>
 #include <future>
-#include <set>
 #include <stdexcept>
 #include <string>
 #include <thread>
+#include <utility>
 #include <vector>
 
 #include <fmt/format.h>
@@ -61,13 +61,33 @@ struct FakeS3
         if (delimiter.empty())
             requests_with_empty_delimiter.fetch_add(1, std::memory_order_relaxed);
 
-        const std::string & marker = token.empty() ? start_after : token;
-        const bool marker_is_group = !delimiter.empty() && marker.ends_with(delimiter);
+        /// The continuation token is opaque in real `ListObjectsV2`, so its meaning cannot be recovered
+        /// from the marker text: a real object key can itself end with the delimiter (a directory-marker
+        /// object like `root/dir/`). The fake therefore encodes the kind in the token it mints below —
+        /// "P:<prefix>" = the page ended on a `CommonPrefixes` entry (resume after the whole group),
+        /// "O:<key>" = it ended on a `Contents` key (resume right after that single key, keeping the
+        /// keys below a same-named directory marker).
+        std::string marker;
+        bool marker_is_group = false;
+        if (!token.empty())
+        {
+            if (token.starts_with("P:"))
+                marker_is_group = true;
+            else if (!token.starts_with("O:"))
+                throw std::logic_error("FakeS3: unknown continuation token: " + token);
+            marker = token.substr(2);
+        }
+        else
+        {
+            /// `StartAfter` is a plain key with no group meaning (as in real S3): if remaining keys fall
+            /// under a common prefix equal to it, that group is emitted afresh, not skipped.
+            marker = start_after;
+        }
 
         ObjectStorageListResult res;
         size_t count = 0;
         std::string last_group;
-        std::string last_item;
+        std::string last_token;
 
         for (const auto & key : keys)
         {
@@ -92,12 +112,12 @@ struct FakeS3
                     if (count >= page_size)
                     {
                         res.is_truncated = true;
-                        res.next_continuation_token = last_item;
+                        res.next_continuation_token = last_token;
                         return res;
                     }
                     res.common_prefixes.push_back(cp);
                     last_group = cp;
-                    last_item = std::move(cp);
+                    last_token = "P:" + std::move(cp);
                     ++count;
                     continue;
                 }
@@ -106,11 +126,11 @@ struct FakeS3
             if (count >= page_size)
             {
                 res.is_truncated = true;
-                res.next_continuation_token = last_item;
+                res.next_continuation_token = last_token;
                 return res;
             }
             res.objects.push_back(std::make_shared<RelativePathWithMetadata>(key));
-            last_item = key;
+            last_token = "O:" + key;
             ++count;
         }
         return res;
@@ -183,6 +203,28 @@ std::vector<std::string> expectedUnder(const FakeS3 & s3, const std::string & pr
             e.push_back(k);
     std::sort(e.begin(), e.end());
     return e;
+}
+
+/// Serially paginate the fake exactly as a plain (non-parallel) `ListObjectsV2` consumer would,
+/// following continuation tokens, and collect the objects and common prefixes across all pages.
+std::pair<std::vector<std::string>, std::vector<std::string>> paginateSerially(
+    const FakeS3 & s3, const std::string & prefix, const std::string & delimiter)
+{
+    std::vector<std::string> objects;
+    std::vector<std::string> prefixes;
+    std::string token;
+    while (true)
+    {
+        auto res = s3.list(prefix, delimiter, /* start_after */ "", token);
+        for (const auto & object : res.objects)
+            objects.push_back(object->relative_path);
+        for (const auto & cp : res.common_prefixes)
+            prefixes.push_back(cp);
+        if (!res.is_truncated)
+            break;
+        token = res.next_continuation_token;
+    }
+    return {objects, prefixes};
 }
 
 auto descendAll = [](const std::string &) { return true; };
@@ -579,6 +621,64 @@ TEST(ObjectStorageParallelListing, DirectoryMarkerMatchesTrailingSlashGlob)
                 matched.push_back(key);
         std::sort(matched.begin(), matched.end());
         EXPECT_EQ(matched, expected) << "threads=" << threads;
+    }
+}
+
+TEST(ObjectStorageParallelListing, DirectoryMarkerOnTruncatedPageBoundary)
+{
+    /// Regression test for the fake itself and for the walk over it: a directory-marker object key
+    /// (`root/dir/`) landing exactly on a page boundary. The continuation token is opaque in real
+    /// `ListObjectsV2`, so "the previous page ended on a common prefix" cannot be reconstructed from the
+    /// marker text — `root/dir/` is simultaneously a real object key and the name of a group. With the
+    /// kind encoded in the fake token, resuming after the *object* `root/dir/` must keep listing the
+    /// keys below it, while resuming after the *common prefix* `root/dir/` must skip the whole group.
+    /// `page_size = 1` forces every entry onto its own page, so both resume kinds are exercised.
+    FakeS3 s3;
+    s3.page_size = 1;
+    s3.add("root/dir/");           /// directory-marker object
+    s3.add("root/dir/a.csv");
+    s3.add("root/dir/b.csv");
+    s3.add("root/dir2/");          /// another marker, so a group boundary also lands on a page break
+    s3.add("root/dir2/c.csv");
+    s3.add("root/eee.csv");        /// a plain sibling file after all the groups
+    s3.finalize();
+
+    /// Listing the marker's own prefix returns the marker and its children as `Contents`; ending the
+    /// first page on the object `root/dir/` must not skip `root/dir/a.csv` and `root/dir/b.csv`.
+    {
+        auto [objects, prefixes] = paginateSerially(s3, "root/dir/", "/");
+        EXPECT_EQ(objects, (std::vector<std::string>{"root/dir/", "root/dir/a.csv", "root/dir/b.csv"}));
+        EXPECT_TRUE(prefixes.empty());
+    }
+
+    /// Listing the parent groups each directory into one `CommonPrefixes` entry (the marker never shows
+    /// up as `Contents` here, exactly like real S3), and a page ending on a group resumes after it.
+    {
+        auto [objects, prefixes] = paginateSerially(s3, "root/", "/");
+        EXPECT_EQ(objects, (std::vector<std::string>{"root/eee.csv"}));
+        EXPECT_EQ(prefixes, (std::vector<std::string>{"root/dir/", "root/dir2/"}));
+    }
+
+    /// The parallel walk over this maximally truncated layout must still produce every key exactly once.
+    assertCompleteForAllParallelism(s3, "root/", expectedUnder(s3, "root/"));
+    assertCompleteForAllParallelism(s3, "root/dir/", expectedUnder(s3, "root/dir/"));
+
+    /// And the glob-driven walk (as in `DirectoryMarkerMatchesTrailingSlashGlob`, but under truncation)
+    /// must still surface each matching marker exactly once.
+    const std::string glob = "root/*/";
+    const re2::RE2 matcher(makeRegexpPatternFromGlobs(glob));
+    ASSERT_TRUE(matcher.ok());
+    for (size_t threads : {1, 2, 4, 16})
+    {
+        ObjectStorageParallelListingIterator iterator(
+            "root/", threads, /* max_buffered_keys */ 256, makeListLevel(s3), makeProbeLevel(s3), makeShouldDescendPredicate(glob));
+        auto listed = drain(iterator);
+        std::vector<std::string> matched;
+        for (const auto & key : listed)
+            if (re2::RE2::FullMatch(key, matcher))
+                matched.push_back(key);
+        std::sort(matched.begin(), matched.end());
+        EXPECT_EQ(matched, (std::vector<std::string>{"root/dir/", "root/dir2/"})) << "threads=" << threads;
     }
 }
 
