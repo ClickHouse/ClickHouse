@@ -1,5 +1,6 @@
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTCollation.h>
+#include <Parsers/ASTDataType.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSetQuery.h>
@@ -219,7 +220,16 @@ void ASTColumnDeclaration::readJSON(const Poco::JSON::Object & json)
     ephemeral_default = r.getBool("ephemeral_default");
     primary_key_specifier = r.getBool("primary_key_specifier");
 
-    setType(r.readChild("data_type"));
+    /// `ParserColumnDeclaration` produces this slot only through `ParserDataType`, whose top-level node
+    /// is always a data type (`ASTDataType`/`ASTEnumDataType`/`ASTTupleDataType`), and downstream code
+    /// (`InterpreterCreateQuery::getColumnType`, `AlterCommand::parse`) hands it to `DataTypeFactory`.
+    /// Reject any other subtree so malformed `clickhouse_json` fails here with `BAD_ARGUMENTS` instead of
+    /// formatting parser-impossible DDL or failing later inside the factory.
+    ASTPtr data_type = r.readChild("data_type");
+    if (data_type && !dynamic_cast<const ASTDataType *>(data_type.get()))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "`ColumnDeclaration` 'data_type' must be a data type during AST JSON deserialization");
+    setType(std::move(data_type));
 
     ASTPtr default_expression = r.readChild("default_expression");
 
@@ -246,8 +256,7 @@ void ASTColumnDeclaration::readJSON(const Poco::JSON::Object & json)
     /// (`InterpreterCreateQuery` reads `comment->as<ASTLiteral &>()` and `settings->as<ASTSetQuery &>()`;
     /// the compression/statistics factories take the `CODEC`/`STATISTICS` `ASTFunction`s). Validate them
     /// so malformed `clickhouse_json` fails with `BAD_ARGUMENTS` instead of a later internal cast.
-    /// `data_type` is left untyped (a type can be `ASTDataType`/`ASTEnumDataType`/`ASTTupleDataType`/...),
-    /// and `ttl`/`default_expression` are arbitrary expressions.
+    /// `ttl`/`default_expression` are arbitrary expressions and stay untyped.
     setComment(r.readStringLiteralChild("comment"));
     setCodec(r.readChildOfType<ASTFunction>("codec"));
     setStatisticsDesc(r.readChildOfType<ASTFunction>("statistics_desc"));
