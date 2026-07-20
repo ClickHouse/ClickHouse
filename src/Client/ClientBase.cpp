@@ -2079,6 +2079,13 @@ void ClientBase::resetOutput()
     if (pager_cmd)
     {
         pager_cmd->in.close();
+
+        /// Re-check the live interrupt state immediately before the potentially blocking wait:
+        /// a Ctrl+C that arrived after the promotion above would leave `cancelled` stale, and
+        /// the wait below would block on a stuck pager as if nothing was cancelled.
+        if (!cancelled && query_interrupt_handler.isRunning() && query_interrupt_handler.cancelled())
+            cancelled = true;
+
         /// The process will terminated in destructor anyway (due to terminate_in_destructor_strategy.terminate_in_destructor=true)
         if (!cancelled)
             pager_cmd->wait();
