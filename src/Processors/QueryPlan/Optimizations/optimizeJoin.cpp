@@ -1029,50 +1029,6 @@ constexpr bool isSwapOnlyJoinStrictness(JoinStrictness strictness)
     return strictness == JoinStrictness::Any || strictness == JoinStrictness::Semi || strictness == JoinStrictness::Anti;
 }
 
-/// Whether every equi-join key of this join step has column statistics, mirroring the
-/// lookup in `getColumnStats` (joinOrder.cpp): a single-relation key is looked up in
-/// its base relation's stats, a multi-relation key in the propagated stats of the child
-/// subtree containing it. A key missing from the map makes `getColumnStats` fall back
-/// to `estimated_rows` as an NDV proxy, and since `computeSelectivity` takes the minimum
-/// across all equality predicates, a single proxy-based key (e.g. a fact table's join
-/// key, whose proxy NDV is far too high) can dominate the step's estimate even when the
-/// other keys have statistics. Used by the star-schema swap guard below.
-static bool stepJoinKeysHaveColumnStats(const DPJoinEntry & entry, const std::vector<RelationStats> & base_relation_stats)
-{
-    for (const auto & predicate : entry.join_operator.expression)
-    {
-        auto [op, lhs, rhs] = predicate.asBinaryPredicate();
-        if (op != JoinConditionOperator::Equals && op != JoinConditionOperator::NullSafeEquals)
-            continue;
-
-        for (const auto & side : {lhs, rhs})
-        {
-            const auto & side_rels = side.getSourceRelations();
-            if (side_rels.count() == 0)
-                continue;
-
-            if (auto rel_id = side_rels.getSingleBit(); rel_id.has_value() && rel_id.value() < base_relation_stats.size())
-            {
-                if (!base_relation_stats[rel_id.value()].column_stats.contains(side.getColumnName()))
-                    return false;
-            }
-            else if (entry.left && isSubsetOf(side_rels, entry.left->relations))
-            {
-                if (!entry.left->column_stats.contains(side.getColumnName()))
-                    return false;
-            }
-            else if (entry.right && isSubsetOf(side_rels, entry.right->relations))
-            {
-                if (!entry.right->column_stats.contains(side.getColumnName()))
-                    return false;
-            }
-            else
-                return false;
-        }
-    }
-    return true;
-}
-
 /// Largest base-relation row count within a set of relations, ignoring relations
 /// whose row count is unknown. Used by the star-schema swap guard below.
 static std::optional<UInt64> getMaxBaseRelationRows(const BitSet & relations, const std::vector<RelationStats> & relation_stats)
@@ -1165,24 +1121,6 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
         }
     }
 
-    /// Whether each subtree's cardinality estimate was derived from real column statistics:
-    /// true iff every equi-join key at every join step inside the subtree has column stats.
-    /// Otherwise some step fell back to the `estimated_rows` NDV proxy, and the resulting
-    /// underestimation propagates to all enclosing subtrees (see the star-schema swap guard
-    /// below). Computed up front, in post-order (children precede parents in `sequence`),
-    /// because the main loop below moves `join_operator` out of the entries.
-    std::unordered_map<const DPJoinEntry *, bool> subtree_estimate_is_stats_based;
-    for (const auto * seq_entry : sequence)
-    {
-        if (seq_entry->isLeaf())
-            subtree_estimate_is_stats_based[seq_entry] = true;
-        else
-            subtree_estimate_is_stats_based[seq_entry]
-                = subtree_estimate_is_stats_based[seq_entry->left.get()]
-                && subtree_estimate_is_stats_based[seq_entry->right.get()]
-                && stepJoinKeysHaveColumnStats(*seq_entry, base_relation_stats);
-    }
-
     std::stack<QueryPlan::Node *> nodeStack;
     auto & input_nodes = query_graph_builder.inputs;
 
@@ -1270,13 +1208,13 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
             ///
             /// Guard against this by not swapping when all of the following hold:
             ///  - the left side is composite (multi-table) and its cardinality estimate
-            ///    is proxy-based: some equi-join key at some step inside the subtree has
-            ///    no column stats. The check is recursive over the whole subtree because
-            ///    the underestimation propagates upward — an earlier proxy-based join
-            ///    leaves the composite's `estimated_rows` poisoned even when the keys of
-            ///    later steps do have statistics; and it requires all keys of a step
-            ///    because `computeSelectivity` takes the minimum across predicates, so
-            ///    one proxy-based key dominates a multi-key join,
+            ///    is proxy-based: some NDV lookup at some join step inside the subtree
+            ///    fell back to the `estimated_rows` proxy. The flag is recorded by the
+            ///    join order optimizer itself (see `markStatsBasedEstimates` in
+            ///    joinOrder.cpp), mirroring every lookup `computeSelectivity` makes —
+            ///    direct equi-predicates as well as spanning column-equivalence classes —
+            ///    and recursively over the whole subtree, because the underestimation of
+            ///    an earlier proxy-based join propagates upward,
             ///  - the right side is a single table (a dimension),
             ///  - the composite contains a base table larger than the right side.
             /// This is deliberately narrow so it only fires when a composite whose
@@ -1285,7 +1223,7 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
             /// cardinality estimates, so the enumerated join order is unaffected.
             if (swap_on_sizes && !optimization_settings.join_swap_table.has_value()
                 && left_rels.count() > 1 && right_rels.count() == 1
-                && !subtree_estimate_is_stats_based[entry->left.get()])
+                && !entry->left->estimate_is_stats_based)
             {
                 auto lhs_max_base_rows = getMaxBaseRelationRows(left_rels, base_relation_stats);
                 if (lhs_max_base_rows && rhs_estimation && lhs_max_base_rows.value() > rhs_estimation.value())
