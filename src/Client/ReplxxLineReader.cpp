@@ -408,11 +408,9 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
     rx.set_completion_callback(callback);
 
     rx.set_complete_on_empty(false);
-    rx.set_subword_break_characters(word_break_characters);
-    rx.set_word_break_characters(" \t\v\f\a\b\r");
+    rx.set_word_break_characters(word_break_characters);
     rx.set_ignore_case(true);
     rx.set_indent_multiline(false);
-    rx.set_escdelay(10);
 
     if (highlighter)
         rx.set_highlighter_callback(highlighter);
@@ -490,8 +488,6 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
         /// replxx; the hint-navigation keys re-set it *after* invoking, so a real navigation stays.
         rx.set_modify_callback([this] (std::string &, int &) { hint_selection = -1; });
     }
-
-    setupVimKeybindings();
 
     /// By default C-p/C-n bound to COMPLETE_NEXT/COMPLETE_PREV,
     /// bind C-p/C-n to history-previous/history-next like readline.
@@ -708,6 +704,12 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
             rx.print("%s", "\033[0 q");
         return rx.invoke(Replxx::ACTION::TOGGLE_OVERWRITE_MODE, 0);
     });
+
+    if (options.vim)
+    {
+        rx.set_escdelay(10);
+        setupVimKeybindings();
+    }
 }
 
 bool ReplxxLineReader::isCursorAtEndOfInput()

@@ -23,6 +23,7 @@ public:
         bool interactive_history_legacy_keymap = false;
         /// Show as-you-type autocompletion hints (ghost text). Requires color (highlighting).
         bool enable_hints = true;
+        bool vim = false;
         Patterns extenders;
         Patterns delimiters;
         std::span<char> word_break_characters;
