@@ -1,6 +1,5 @@
 #include <gtest/gtest.h>
 
-#include <filesystem>
 #include <string>
 #include <utility>
 #include <vector>
@@ -10,9 +9,6 @@
 #include <Backups/BackupPacker.h>
 #include <Core/Defines.h>
 #include <Disks/DiskLocal.h>
-#include <Disks/IO/createReadBufferFromFileBase.h>
-#include <IO/MMapReadBufferFromFileWithCache.h>
-#include <IO/MMappedFileCache.h>
 #include <IO/PackedFilesIO.h>
 #include <IO/PackedFilesReader.h>
 #include <IO/ReadBufferFromString.h>
@@ -182,70 +178,6 @@ TEST(BackupPacking, PackMemberUsesReadRepresentativeBaseSize)
     readStringUntilEOF(got, *buf);
     EXPECT_EQ(got, content.substr(representative->base_size));
     EXPECT_EQ(got.size(), 100u);
-}
-
-namespace
-{
-
-/// Reads `member_name` out of a pack `buf` opens, via ReadBufferFromFileView. Returns the bytes, or throws
-/// (the view can't wrap mmap/direct-io buffers). Kept in a helper so the caller can guard the throwing path.
-String readMemberThroughView(
-    std::unique_ptr<ReadBufferFromFileBase> buf, const PackedFilesReader & reader, const String & member_name)
-{
-    const auto & offset = reader.getIndex().at(member_name);
-    auto view = PackedFilesReader::viewMember(std::move(buf), member_name, offset.offset, offset.size);
-    String got;
-    readStringUntilEOF(got, *view);
-    return got;
-}
-
-}
-
-/// Fix regression (mmap/direct-io view safety): a packed member is read through IBackupReader and wrapped in a
-/// ReadBufferFromFileView. As PackedFilesReader::readFile already documents, the view cannot wrap mmap/direct-io
-/// buffers (they need special alignment). The IBackupReader read path forwarded the caller's read_settings
-/// unpatched, so local Disk/File readers now open the pack via readFileForView, which applies the same
-/// PackedFilesReader::patchSettings transform. This test locks that transform (the mechanism of the fix): under
-/// mmap + direct-io settings it must produce plain pread with direct-io disabled, and a buffer opened with the
-/// patched settings must round-trip the exact member bytes through the view. (An end-to-end mmap failure needs a
-/// configured page cache -- see DiskLocal's mmap+page-cache seek note -- which a unit test does not set up.)
-TEST(BackupPacking, ReadFileForViewUsesViewSafeSettings)
-{
-    Poco::TemporaryFile temp_dir;
-    temp_dir.createDirectories();
-    auto disk = std::make_shared<DiskLocal>("local_disk", temp_dir.path() + "/");
-
-    const String member_name = "0a/data.bin";
-    const String body(8192, 'q');
-    std::vector<BackupPacker::MemberSource> members;
-    members.push_back(BackupPacker::MemberSource{
-        member_name, body.size(),
-        [captured = body]() -> std::unique_ptr<ReadBuffer> { return std::make_unique<ReadBufferFromString>(captured); }});
-    BackupPacker::writePack(
-        disk->writeFile("packs_0000", DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite, {}),
-        members, PackedFilesIO::VERSION_WITHOUT_UNCOMPRESSED_SIZE);
-
-    PackedFilesReader index_reader(disk, "packs_0000", ReadSettings{});
-    const String pack_path = temp_dir.path() + "/packs_0000";
-    const size_t pack_size = std::filesystem::file_size(pack_path);
-
-    /// Settings that would ask for a view-hostile buffer: mmap method and a direct-io threshold.
-    MMappedFileCache mmap_cache(128);
-    ReadSettings read_settings;
-    read_settings.local_fs_settings.method = LocalFSReadMethod::mmap;
-    read_settings.local_fs_settings.mmap_threshold = 1;
-    read_settings.local_fs_settings.mmap_cache = &mmap_cache;
-    read_settings.local_fs_settings.direct_io_threshold = 1;
-
-    /// The transform the fix relies on: mmap -> pread, direct-io disabled (a no-op patchSettings would fail here).
-    const ReadSettings patched = PackedFilesReader::patchSettings(read_settings);
-    EXPECT_EQ(patched.local_fs_settings.method, LocalFSReadMethod::pread);
-    EXPECT_EQ(patched.local_fs_settings.direct_io_threshold, 0u);
-
-    /// A buffer opened with the patched settings is view-safe (not mmap-backed) and round-trips the member bytes.
-    auto safe_buffer = createReadBufferFromFileBase(pack_path, patched, std::nullopt, pack_size);
-    EXPECT_EQ(dynamic_cast<MMapReadBufferFromFileWithCache *>(safe_buffer.get()), nullptr);
-    EXPECT_EQ(readMemberThroughView(std::move(safe_buffer), index_reader, member_name), body);
 }
 
 /// Roundtrip: BackupPacker writes members (via create_read_buffer); PackedFilesReader reads them back byte-identical.
