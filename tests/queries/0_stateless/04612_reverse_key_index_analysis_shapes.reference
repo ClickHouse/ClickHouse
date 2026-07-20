@@ -1,0 +1,66 @@
+equality on both key columns, DESC Enum second
+2
+2
+bounds on the DESC column in each direction
+2
+2
+2
+2
+2
+1
+1
+0
+DESC column first
+1
+1
+1
+3
+2
+two DESC columns
+1
+1
+2
+4
+NULLs sit physically first on a DESC column
+1
+1
+1
+2
+1
+2
+3
+binary search over many granules
+1
+1
+10
+10
+10
+1
+10
+2
+pruning is still effective, not just correct
+Granules: 1/250
+Granules: 1/250
+Granules: 4/250
+part without a final mark
+1
+1
+2
+2
+1
+middle DESC column not referenced by the filter
+10
+10
+1
+4
+2
+DESC key column not loaded in the in-memory index
+10
+10
+1
+explicit PRIMARY KEY clause inherits ORDER BY directions
+2
+2
+2
+ascending control
+2

@@ -4945,6 +4945,24 @@ static BoolMask forAnySparseHyperrectangle(
     return result;
 }
 
+/// Debug helper for the `checkInRange` contract: the boundary tuples must be physical boundaries
+/// in key order, left not after right. A key column that is not loaded in the in-memory index has
+/// both boundaries unknown, passed as the pair bounding the whole universe in key order; comparison
+/// stops there, as nothing after an unknown column is ordered.
+[[maybe_unused]] static int compareBoundaryTuples(
+    const FieldRef * left_keys, const FieldRef * right_keys, size_t key_size, const std::vector<bool> * reverse_flags)
+{
+    for (size_t i = 0; i < key_size; ++i)
+    {
+        if (Range::equals(left_keys[i], right_keys[i]))
+            continue;
+
+        int cmp = Range::less(left_keys[i], right_keys[i]) ? -1 : 1;
+        return (reverse_flags && (*reverse_flags)[i]) ? -cmp : cmp;
+    }
+    return 0;
+}
+
 BoolMask KeyCondition::checkInRange(
     size_t used_key_size,
     const FieldRef * left_keys,
@@ -4954,6 +4972,8 @@ BoolMask KeyCondition::checkInRange(
     const Hyperrectangle * key_bounds,
     const std::vector<bool> * reverse_flags) const
 {
+    chassert(compareBoundaryTuples(left_keys, right_keys, used_key_size, reverse_flags) <= 0);
+
     Hyperrectangle key_ranges;
     key_ranges.reserve(used_key_size);
     for (size_t i = 0; i < used_key_size; ++i)
