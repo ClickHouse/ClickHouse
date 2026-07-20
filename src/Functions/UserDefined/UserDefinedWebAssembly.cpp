@@ -272,21 +272,7 @@ public:
         while (true)
         {
             Chunk chunk;
-            bool has_data;
-            try
-            {
-                has_data = pipeline_executor->pull(chunk);
-            }
-            catch (const Exception & e)
-            {
-                /// The bytes being parsed come from the guest; a result buffer that does not
-                /// parse under the configured serialization_format (e.g. truncated mid-row) is
-                /// guest misbehavior, not a ClickHouse bug, and must stay catchable per-query.
-                throw Exception(
-                    ErrorCodes::WASM_ERROR,
-                    "Cannot deserialize result of WebAssembly function: {}",
-                    e.message());
-            }
+            bool has_data = pipeline_executor->pull(chunk);
 
             if (chunk && chunk.getNumColumns() != result_block.columns())
                 throw Exception(
