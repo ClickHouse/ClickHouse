@@ -927,6 +927,12 @@ void QueryAnalyzer::validateJoinTableExpressionWithoutAlias(const QueryTreeNodeP
       * requires the table expression alias just like a sibling-column collision does. This is checked
       * regardless of `prefer_column_name_to_alias`, matching the strictness of the old unconditional
       * behavior for such queries.
+      *
+      * An enclosing `ARRAY JOIN` introduces the same kind of shadowing binders. In `SELECT a FROM numbers(1),
+      * (SELECT 2 AS a) ARRAY JOIN [30] AS a` the bare `a` binds to the `ARRAY JOIN` alias, so the subquery
+      * column is only reachable if the subquery is aliased. The `ARRAY JOIN` aliases are registered in the
+      * scope only after its inner join tree is validated, so they are tracked separately in
+      * `enclosing_array_join_alias_names_stack` and consulted here alongside the scope aliases.
       */
     NameSet table_expression_columns;
     NameSet sibling_columns;
@@ -952,6 +958,14 @@ void QueryAnalyzer::validateJoinTableExpressionWithoutAlias(const QueryTreeNodeP
         columns_are_known &= getColumnsFromTableExpression(sibling, sibling_columns, JoinVirtualColumnsPolicy::Include);
     }
 
+    auto collides_with_enclosing_array_join_alias = [&](const String & column_name)
+    {
+        for (const auto & array_join_alias_names : enclosing_array_join_alias_names_stack)
+            if (array_join_alias_names.contains(column_name))
+                return true;
+        return false;
+    };
+
     /// If the columns of any table expression cannot be determined, keep the strict behavior and require an alias.
     if (columns_are_known)
     {
@@ -961,7 +975,9 @@ void QueryAnalyzer::validateJoinTableExpressionWithoutAlias(const QueryTreeNodeP
             /// Sub-columns (e.g. `x.size0`) are addressed with a dot and cannot collide with a bare identifier.
             if (column_name.find('.') != std::string::npos)
                 continue;
-            if (sibling_columns.contains(column_name) || scope.aliases.alias_name_to_expression_node.contains(column_name))
+            if (sibling_columns.contains(column_name)
+                || scope.aliases.alias_name_to_expression_node.contains(column_name)
+                || collides_with_enclosing_array_join_alias(column_name))
             {
                 has_name_collision = true;
                 break;
@@ -4979,7 +4995,24 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
 void QueryAnalyzer::resolveArrayJoin(QueryTreeNodePtr & array_join_node, IdentifierResolveScope & scope, QueryExpressionsAliasVisitor & expressions_visitor)
 {
     auto & array_join_node_typed = array_join_node->as<ArrayJoinNode &>();
+
+    /// Collect the names this `ARRAY JOIN` binds (explicit `AS` aliases and bare identifier expressions) before
+    /// resolving the inner join tree, so that `validateJoinTableExpressionWithoutAlias` can treat a joined
+    /// subquery/table function column colliding with one of them as requiring an alias. The names are registered
+    /// in the scope proper only after this point, so they must be threaded down separately.
+    NameSet array_join_alias_names;
+    for (const auto & array_join_expression : array_join_node_typed.getJoinExpressions().getNodes())
+    {
+        const auto & alias = array_join_expression->getAlias();
+        if (!alias.empty())
+            array_join_alias_names.insert(alias);
+        else if (const auto * identifier_node = array_join_expression->as<IdentifierNode>())
+            array_join_alias_names.insert(identifier_node->getIdentifier().getFullName());
+    }
+
+    enclosing_array_join_alias_names_stack.push_back(std::move(array_join_alias_names));
     resolveQueryJoinTreeNode(array_join_node_typed.getTableExpression(), scope, expressions_visitor);
+    enclosing_array_join_alias_names_stack.pop_back();
 
     std::unordered_set<String> array_join_column_names;
 

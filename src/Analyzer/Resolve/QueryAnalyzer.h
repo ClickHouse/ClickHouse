@@ -161,7 +161,7 @@ private:
 
     static void validateTableExpressionModifiers(const QueryTreeNodePtr & table_expression_node, IdentifierResolveScope & scope);
 
-    static void validateJoinTableExpressionWithoutAlias(const QueryTreeNodePtr & join_node, const QueryTreeNodePtr & table_expression_node, IdentifierResolveScope & scope);
+    void validateJoinTableExpressionWithoutAlias(const QueryTreeNodePtr & join_node, const QueryTreeNodePtr & table_expression_node, IdentifierResolveScope & scope);
 
     static void checkDuplicateTableNamesOrAliasForPasteJoin(const JoinNode & join_node, IdentifierResolveScope & scope);
 
@@ -302,6 +302,12 @@ private:
 
     /// CTEs that are currently in resolve process
     QueryTreeNodePtrWithHashSet ctes_in_resolve_process;
+
+    /// Aliases introduced by enclosing `ARRAY JOIN` clauses whose table expression is currently in resolve process.
+    /// These shadow join-tree columns just like `WITH` / projection aliases, so a joined subquery/table function that
+    /// exposes a colliding column name still needs an explicit alias even though the `ARRAY JOIN` aliases are only
+    /// registered in the scope after the inner join tree is validated (see `validateJoinTableExpressionWithoutAlias`).
+    std::vector<NameSet> enclosing_array_join_alias_names_stack;
 
     /// Window definitions that are currently in resolve process
     std::unordered_set<IQueryTreeNode *> windows_in_resolve_process;

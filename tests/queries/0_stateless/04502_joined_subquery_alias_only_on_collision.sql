@@ -99,6 +99,21 @@ WITH 1 AS x SELECT x, not_x FROM numbers(1), (SELECT 2 AS not_x);
 -- ... and the restriction can still be disabled entirely.
 WITH 1 AS x SELECT x FROM numbers(1), (SELECT 2 AS x) SETTINGS joined_subquery_requires_alias = 0;
 
+-- An enclosing `ARRAY JOIN` alias is a bare-identifier binder as well: it shadows join-tree columns and is
+-- resolved before them, so a joined subquery output colliding with an `ARRAY JOIN` alias is only reachable
+-- when the subquery is aliased. The alias is therefore required (the `ARRAY JOIN` aliases are registered in
+-- the scope only after the inner join tree is validated, so they are tracked separately).
+SELECT a FROM numbers(1), (SELECT 2 AS a) ARRAY JOIN [30] AS a; -- { serverError ALIAS_REQUIRED }
+
+-- With the subquery aliased, the shadowed column becomes reachable again via qualification.
+SELECT a, rhs.a FROM numbers(1), (SELECT 2 AS a) AS rhs ARRAY JOIN [30] AS a;
+
+-- No collision with the `ARRAY JOIN` alias: still allowed without an alias.
+SELECT a FROM numbers(1), (SELECT 2 AS not_a) ARRAY JOIN [30] AS a;
+
+-- ... and the restriction can still be disabled entirely.
+SELECT a FROM numbers(1), (SELECT 2 AS a) ARRAY JOIN [30] AS a SETTINGS joined_subquery_requires_alias = 0;
+
 DROP TABLE item;
 DROP TABLE sales;
 DROP TABLE with_number;
