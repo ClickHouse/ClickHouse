@@ -5720,6 +5720,14 @@ function resetCredentialsStatus() {
 /// keyboard `Tab` away), or the drop-down closing without returning focus inside (see the `Escape`
 /// handler). A field regaining focus (`focusin` inside the surface) means editing resumed and the
 /// normal exit will commit, so the deferred flag is dropped then.
+///
+/// A blur caused by the page itself losing focus — clicking the browser address bar or another
+/// window — is not a commit either: the user may be mid-switch (e.g. typed the credentials for a new
+/// server and left to copy its URL), and committing would probe the *previous* server with the new
+/// password. The settled `activeElement` is `<body>` with no pointer press inside the surface, so it
+/// would fall through to the commit; `document.hasFocus()` (false once the page has lost focus) tells
+/// this apart from a keyboard exit to nothing. Defer it like the internal-click blur: the commit runs
+/// on the first later transition that really leaves the surface once focus is back in the page.
 function connectionSurface() {
     /// Resolved live via `getElementById` (not the `const`s declared later in the file), so it is
     /// safe to call from the handlers registered just below, which run before those declarations.
@@ -5765,6 +5773,12 @@ document.addEventListener('focusout', (event) => {
         /// interaction stayed in the connection UI, so this is not a commit. Defer it to the next
         /// transition that really leaves the surface.
         if (pointer_was_inside) {
+            if (connection_edited) { commit_deferred = true; }
+            return;
+        }
+        /// The page itself lost focus (browser address bar, another window) — the user may be
+        /// mid-switch to a different server, so this is not a commit; defer it as above.
+        if (!document.hasFocus()) {
             if (connection_edited) { commit_deferred = true; }
             return;
         }
