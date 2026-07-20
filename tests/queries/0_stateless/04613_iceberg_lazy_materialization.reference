@@ -31,3 +31,11 @@
 -- the lazy read step is in the plan only when the optimization is enabled
 1
 0
+-- schema evolution keeps the lazy path off
+0
+10099	val_10099	20198
+10098	val_10098	20196
+10097	val_10097	20194
+10099	val_10099	20198
+10098	val_10098	20196
+10097	val_10097	20194
