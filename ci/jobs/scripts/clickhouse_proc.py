@@ -266,17 +266,51 @@ class ClickHouseProc:
         os.environ["THREAD_FUZZER_pthread_mutex_unlock_AFTER_SLEEP_TIME_US_MAX"] = "10000"
 
     @staticmethod
+    def memory_ratio_config_files():
+        """All installed server config trees the ratio override must cover.
+        `DBReplicated` mode installs copies of the main tree under
+        `/etc/clickhouse-server1` and `/etc/clickhouse-server2` and starts a
+        server from each (tests/config/install.sh), and that copy happens
+        before `set_memory_ratio` runs, so writing only the main tree would
+        leave the two extra servers at the default 0.9 ratio - keeping the
+        host-OOM / `Server died` failure mode reachable there. The replica
+        trees exist (with a populated `config.d`) only in `DBReplicated`
+        runs, so probing for them selects exactly the installed trees."""
+        config_dirs = [Path("/etc/clickhouse-server/config.d")]
+        config_dirs += [
+            p
+            for p in (
+                Path("/etc/clickhouse-server1/config.d"),
+                Path("/etc/clickhouse-server2/config.d"),
+            )
+            if p.is_dir()
+        ]
+        return [d / "max_server_memory_usage_to_ram_ratio.xml" for d in config_dirs]
+
+    @staticmethod
     def set_memory_ratio(ratio):
         config = f"""<clickhouse>
     <max_server_memory_usage_to_ram_ratio>{ratio}</max_server_memory_usage_to_ram_ratio>
 </clickhouse>
 """
-        file_path = "/etc/clickhouse-server/config.d/max_server_memory_usage_to_ram_ratio.xml"
-        with open(file_path, "w") as f:
-            f.write(config)
-        print(
-            f"Set max_server_memory_usage_to_ram_ratio to {ratio} in {file_path}"
-        )
+        for file_path in ClickHouseProc.memory_ratio_config_files():
+            with open(file_path, "w") as f:
+                f.write(config)
+            print(
+                f"Set max_server_memory_usage_to_ram_ratio to {ratio} in {file_path}"
+            )
+
+    @staticmethod
+    def reset_memory_ratio():
+        """Remove the override written by `set_memory_ratio` so the server
+        default applies again. Needed when the same installed config tree is
+        reused to launch a non-sanitizer binary (the bugfix-validation loop
+        swaps binaries without reinstalling configs). No-op if absent."""
+        for file_path in ClickHouseProc.memory_ratio_config_files():
+            Path(file_path).unlink(missing_ok=True)
+            print(
+                f"Removed {file_path}; server default max_server_memory_usage_to_ram_ratio applies"
+            )
 
     def create_log_export_config(self, config_dir=None):
         print("Create log export config")
