@@ -253,8 +253,33 @@ void StorageMaterializedPostgreSQL::set(StoragePtr nested_storage)
 }
 
 
-void StorageMaterializedPostgreSQL::shutdown(bool)
+void StorageMaterializedPostgreSQL::shutdown(bool is_drop)
 {
+    /// On the DROP path (`InterpreterDropQuery` calls `flushAndShutdown(true)` before `dropInnerTableIfAny`),
+    /// run the coordinated fail-close teardown BEFORE anything is stopped: every refusable (throwing) Keeper
+    /// step of the teardown then executes while the replication handler and the nested table are still fully
+    /// alive, so a refused (thrown) drop leaves the table consuming as if the DROP had never been issued.
+    /// Waiting until `dropInnerTableIfAny` instead would refuse the drop only after this shutdown had already
+    /// stopped the handler and the nested table, leaving the table mounted but dead until a server restart.
+    if (is_drop && replication_handler && replication_handler->isCoordinated() && !coordinated_teardown_done)
+    {
+        try
+        {
+            replication_handler->coordinatedTeardownBeforeDataDrop();
+            coordinated_teardown_done = true;
+        }
+        catch (...)
+        {
+            /// The drop is refused. The teardown stops the handler only after all its refusable Keeper work
+            /// has succeeded - except the last replica's removal of the shared coordination nodes; if it
+            /// failed there, re-arm the handler's retrying startup path so the table resumes replicating
+            /// once Keeper is reachable again instead of staying mounted but dead.
+            if (replication_handler->isStopped())
+                replication_handler->restartCoordinatedReplicationAfterFailedTeardown();
+            throw;
+        }
+    }
+
     if (replication_handler)
         replication_handler->shutdown();
     auto nested = tryGetNested();
@@ -312,7 +337,25 @@ void StorageMaterializedPostgreSQL::dropInnerTableIfAny(bool sync, ContextPtr lo
         /// case this keeps /replicas/<name> registered until the nested table has actually been dropped, so a
         /// failure while dropping it never leaves this replica unregistered while it still holds a live copy of
         /// the shared data (which a peer's later last-replica drop would then tear down around).
-        replication_handler->coordinatedTeardownBeforeDataDrop();
+        ///
+        /// The regular DROP TABLE path has already run the teardown in `shutdown(/* is_drop */ true)` - while
+        /// the handler and the nested table were still alive, so a refusal there leaves the table consuming.
+        /// This is a fallback for drop paths that do not go through it; the handler is typically already
+        /// stopped here, so on failure re-arm its retrying startup path rather than leaving the table dead.
+        if (!coordinated_teardown_done)
+        {
+            try
+            {
+                replication_handler->coordinatedTeardownBeforeDataDrop();
+                coordinated_teardown_done = true;
+            }
+            catch (...)
+            {
+                if (replication_handler->isStopped())
+                    replication_handler->restartCoordinatedReplicationAfterFailedTeardown();
+                throw;
+            }
+        }
 
         /// Drop the nested replicated table synchronously (ignoring the delayed-drop window): the shared
         /// teardown above already runs now, so leaving the nested table's Keeper tree behind for

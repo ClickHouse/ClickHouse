@@ -89,8 +89,22 @@ public:
     ///   * if this is not the last replica, it re-registers /replicas/<name> so this replica keeps counting as
     ///     a live data holder until its nested tables have actually been dropped - the authoritative removal
     ///     then happens in shutdownFinal, AFTER the caller has dropped the nested tables.
-    /// A Keeper error propagates (aborting the drop before any table is removed).
+    /// A Keeper error propagates (aborting the drop before any table is removed). Every refusable (throwing)
+    /// step runs before the handler is stopped, except the last replica's removal of the shared coordination
+    /// nodes; if that step fails, the caller must recover the stopped handler (see `isStopped` /
+    /// `restartCoordinatedReplicationAfterFailedTeardown`) so a refused drop does not leave the
+    /// database/table mounted but never consuming again.
     void coordinatedTeardownBeforeDataDrop();
+
+    /// Whether `shutdown` has been called (the background tasks are deactivated and the consumer destroyed).
+    bool isStopped() const { return stop_synchronization; }
+
+    /// Recovery for a refused (thrown) coordinatedTeardownBeforeDataDrop that had already stopped this
+    /// handler: re-arm the retrying background startup path (as on attach), so replication rebuilds itself -
+    /// re-registering the replica and re-entering leader election - once Keeper/PostgreSQL are reachable
+    /// again, instead of leaving the table mounted but dead until a server restart. Used by the single-table
+    /// engine; the database engine instead discards the stopped handler and rebuilds one from scratch.
+    void restartCoordinatedReplicationAfterFailedTeardown();
 
     /// Add storage pointer to let handler know which tables it needs to keep in sync.
     void addStorage(const std::string & table_name, StorageMaterializedPostgreSQL * storage);
@@ -280,6 +294,11 @@ private:
     UInt64 milliseconds_to_wait;
 
     std::atomic<bool> stop_synchronization = false;
+
+    /// Set by restartCoordinatedReplicationAfterFailedTeardown: makes the background startup task keep
+    /// retrying on error even when `is_attach` is false, mirroring the attach behavior (the setup already
+    /// exists, so a synchronous failure cannot be reported to any query anyway).
+    std::atomic<bool> retry_startup_on_error = false;
 
     /// MaterializedPostgreSQL tables. Used for managing all operations with its internal nested tables.
     MaterializedStorages materialized_storages;

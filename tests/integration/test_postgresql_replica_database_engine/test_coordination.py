@@ -1127,3 +1127,110 @@ def test_refused_drop_in_restart_window_does_not_disable_startup(started_cluster
         "INSERT INTO postgres_database.test_table SELECT number, number FROM numbers(100, 100)"
     )
     check_tables_are_synchronized(standby, "test_table")
+
+
+def test_refused_drop_after_handler_shutdown_recovers_database(started_cluster):
+    # The only teardown step that runs after the replication handler has been stopped is the last
+    # replica's removal of the shared coordination nodes. If it fails, the refused DROP DATABASE must
+    # not leave the database mounted but dead: the stopped handler is discarded and the startup task
+    # rebuilds replication from scratch.
+    pg_manager.create_postgres_table("test_table")
+    instance.query(
+        "INSERT INTO postgres_database.test_table SELECT number, number FROM numbers(100)"
+    )
+
+    # A single replica, so its DROP DATABASE takes the last-replica path.
+    settings = COORDINATION_SETTINGS + [
+        "materialized_postgresql_tables_list = 'test_table'"
+    ]
+    pg_manager.create_materialized_db(
+        ip=cluster.postgres_ip, port=cluster.postgres_port, settings=settings
+    )
+    check_tables_are_synchronized(instance, "test_table")
+    wait_for_marker(instance)
+
+    try:
+        instance.query(
+            "SYSTEM ENABLE FAILPOINT materialized_postgresql_fail_teardown_after_shutdown"
+        )
+        error = instance.query_and_get_error("DROP DATABASE test_database SYNC")
+        assert "Injected failure" in error
+        assert "test_database" in instance.query("SHOW DATABASES")
+    finally:
+        instance.query(
+            "SYSTEM DISABLE FAILPOINT materialized_postgresql_fail_teardown_after_shutdown"
+        )
+
+    # Replication must recover without a server restart. There is no peer to receive the rows from,
+    # so their arrival proves this replica's own rebuilt handler is consuming again.
+    instance.query(
+        "INSERT INTO postgres_database.test_table SELECT number, number FROM numbers(100, 100)"
+    )
+    check_tables_are_synchronized(instance, "test_table")
+    assert int(instance.query("SELECT count() FROM test_database.test_table")) == 200
+
+    # A retried drop succeeds and removes the shared state.
+    instance.query("DROP DATABASE test_database SYNC")
+    assert not replication_slot_exists()
+    assert not publication_exists()
+
+
+def test_refused_drop_after_handler_shutdown_recovers_single_table_engine(started_cluster):
+    # Same scenario for the coordinated single-table engine: a DROP TABLE refused after the handler
+    # was stopped re-arms the handler's retrying startup path, so the table resumes replicating
+    # instead of staying mounted but dead until a server restart.
+    pg_manager.create_postgres_table("test_table")
+    instance.query(
+        "INSERT INTO postgres_database.test_table SELECT number, number FROM numbers(100)"
+    )
+
+    single_table_keeper_path = "/clickhouse/mat_pg/{shard}/single_table"
+    instance.query(
+        f"CREATE TABLE test_single_table (key Int64, value Int64) "
+        f"ENGINE = MaterializedPostgreSQL("
+        f"'{cluster.postgres_ip}:{cluster.postgres_port}', 'postgres_database', 'test_table', 'postgres', '{pg_pass}') "
+        f"PRIMARY KEY key "
+        f"SETTINGS materialized_postgresql_table_engine = 'ReplicatedReplacingMergeTree', "
+        f"materialized_postgresql_keeper_path = '{single_table_keeper_path}', "
+        f"materialized_postgresql_replica_name = '{{replica}}'",
+        settings={"allow_experimental_materialized_postgresql_table": 1},
+    )
+
+    def wait_for_count(expected, timeout=90):
+        for _ in range(timeout):
+            try:
+                if int(instance.query("SELECT count() FROM test_single_table")) == expected:
+                    return
+            except Exception:
+                pass
+            time.sleep(1)
+        raise AssertionError(f"test_single_table did not reach {expected} rows")
+
+    try:
+        wait_for_count(100)
+
+        try:
+            instance.query(
+                "SYSTEM ENABLE FAILPOINT materialized_postgresql_fail_teardown_after_shutdown"
+            )
+            error = instance.query_and_get_error("DROP TABLE test_single_table SYNC")
+            assert "Injected failure" in error
+            assert "test_single_table" in instance.query("SHOW TABLES").split()
+        finally:
+            instance.query(
+                "SYSTEM DISABLE FAILPOINT materialized_postgresql_fail_teardown_after_shutdown"
+            )
+
+        # The single replica's own handler must resume consuming (no peer to replicate from).
+        instance.query(
+            "INSERT INTO postgres_database.test_table SELECT number, number FROM numbers(100, 100)"
+        )
+        wait_for_count(200)
+
+        # A retried drop succeeds and removes the shared state.
+        instance.query("DROP TABLE test_single_table SYNC")
+    finally:
+        instance.query("DROP TABLE IF EXISTS test_single_table SYNC")
+
+    assert len(pg_query("SELECT slot_name FROM pg_replication_slots")) == 0
+    assert not publication_exists()

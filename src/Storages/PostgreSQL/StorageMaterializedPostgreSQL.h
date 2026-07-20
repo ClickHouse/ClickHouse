@@ -183,6 +183,11 @@ private:
     /// Set for wrappers that belong to a coordinated (Keeper-managed) MaterializedPostgreSQL database.
     bool is_coordinated = false;
 
+    /// Single-table engine only: the coordinated pre-data teardown has already run successfully for the
+    /// in-flight DROP - normally in `shutdown(/* is_drop */ true)`, before the handler and the nested table
+    /// were stopped - so `dropInnerTableIfAny` must not run it again.
+    bool coordinated_teardown_done = false;
+
     /// Will be set to `true` only once - when nested table was loaded by replication thread.
     /// After that, it will never be changed. Needed for MaterializedPostgreSQL database engine
     /// because there is an invariant - table exists only if its nested table exists, but nested

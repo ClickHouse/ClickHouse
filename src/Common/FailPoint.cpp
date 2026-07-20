@@ -39,6 +39,7 @@ static struct InitFiu
     REGULAR(replicated_merge_tree_commit_zk_fail_when_recovering_from_hw_fault) \
     REGULAR(rmt_dedup_conflict_part_name_missing) \
     REGULAR(smt_dedup_conflict_part_name_missing) \
+    REGULAR(materialized_postgresql_fail_teardown_after_shutdown) \
     REGULAR(use_delayed_remote_source) \
     ONCE(remote_query_executor_cancel_before_send) \
     ONCE(connection_stale_on_establish) \

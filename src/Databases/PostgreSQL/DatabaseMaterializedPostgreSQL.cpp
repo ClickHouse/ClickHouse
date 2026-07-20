@@ -645,17 +645,6 @@ void DatabaseMaterializedPostgreSQL::beforeDropDatabase(ContextPtr)
     if (!isCoordinated())
         return;
 
-    /// `startSynchronization` may never have run: on attach or after a restart the coordinated nested tables and
-    /// the persistent `<keeper_path>/replicas/<name>` registration already exist, but `replication_handler` is
-    /// still null until the background startup task builds it. Build it from the persisted settings now, purely
-    /// to run the fail-close teardown below (constructing the handler only resolves the coordination path /
-    /// replica-name macros; it does not connect to PostgreSQL or start replication). Without this, dropping the
-    /// database in that window would delete the local nested tables without unregistering this replica or
-    /// removing the shared slot/publication/`snapshot_completed` marker, and a later recreate on the same keeper
-    /// path could resume from `confirmed_flush_lsn` into empty tables.
-    if (!replication_handler)
-        replication_handler = makeReplicationHandler();
-
     /// `coordinatedTeardownBeforeDataDrop` makes the last-replica decision fail-close: if Keeper is unreachable
     /// it throws, aborting the drop before any nested table is removed (retry once Keeper is reachable again); if
     /// this is the last replica it removes the shared coordination nodes now so a Keeper outage or a failure
@@ -664,6 +653,17 @@ void DatabaseMaterializedPostgreSQL::beforeDropDatabase(ContextPtr)
     /// the nested tables have actually been dropped.
     try
     {
+        /// `startSynchronization` may never have run: on attach or after a restart the coordinated nested tables
+        /// and the persistent `<keeper_path>/replicas/<name>` registration already exist, but `replication_handler`
+        /// is still null until the background startup task builds it. Build it from the persisted settings now,
+        /// purely to run the fail-close teardown below (constructing the handler only resolves the coordination
+        /// path / replica-name macros; it does not connect to PostgreSQL or start replication). Without this,
+        /// dropping the database in that window would delete the local nested tables without unregistering this
+        /// replica or removing the shared slot/publication/`snapshot_completed` marker, and a later recreate on
+        /// the same keeper path could resume from `confirmed_flush_lsn` into empty tables.
+        if (!replication_handler)
+            replication_handler = makeReplicationHandler();
+
         replication_handler->coordinatedTeardownBeforeDataDrop();
     }
     catch (...)
@@ -673,6 +673,17 @@ void DatabaseMaterializedPostgreSQL::beforeDropDatabase(ContextPtr)
         /// and rejoin the coordinated setup; without this it would stay mounted but dead until a server
         /// restart. For a database whose synchronization already started the rescheduled task is a no-op
         /// (see the `synchronization_started` guard in `startSynchronization`).
+        ///
+        /// If the teardown failed only after it had already stopped the live handler (its one post-shutdown
+        /// step: the last replica's removal of the shared coordination nodes), re-arming the startup task
+        /// alone would not recover - `synchronization_started` would make it a no-op while the handler stays
+        /// dead. Discard the stopped handler and clear the flag, so the startup task rebuilds replication
+        /// from scratch once Keeper is reachable again.
+        if (replication_handler && replication_handler->isStopped())
+        {
+            replication_handler.reset();
+            synchronization_started = false;
+        }
         if (!shutdown_called)
             startup_task->activateAndSchedule();
         throw;
