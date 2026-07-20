@@ -80,17 +80,17 @@ toLastDayOfMonth;toDateTime64;false	1970-01-01
 type;toLastDayOfMonth;toDateTime64;false	Date
 toStartOfDay;toDateTime64;false	1970-01-01 00:00:00
 type;toStartOfDay;toDateTime64;false	DateTime(\'UTC\')
-toStartOfHour;toDateTime64;false	2056-03-09 16:28:16
+toStartOfHour;toDateTime64;false	1970-01-01 00:00:00
 type;toStartOfHour;toDateTime64;false	DateTime(\'UTC\')
-toStartOfMinute;toDateTime64;false	2056-03-09 16:51:16
+toStartOfMinute;toDateTime64;false	1970-01-01 00:00:00
 type;toStartOfMinute;toDateTime64;false	DateTime(\'UTC\')
-toStartOfFiveMinutes;toDateTime64;false	2056-03-09 16:48:16
+toStartOfFiveMinutes;toDateTime64;false	1970-01-01 00:00:00
 type;toStartOfFiveMinutes;toDateTime64;false	DateTime(\'UTC\')
-toStartOfTenMinutes;toDateTime64;false	2056-03-09 16:48:16
+toStartOfTenMinutes;toDateTime64;false	1970-01-01 00:00:00
 type;toStartOfTenMinutes;toDateTime64;false	DateTime(\'UTC\')
-toStartOfFifteenMinutes;toDateTime64;false	2056-03-09 16:43:16
+toStartOfFifteenMinutes;toDateTime64;false	1970-01-01 00:00:00
 type;toStartOfFifteenMinutes;toDateTime64;false	DateTime(\'UTC\')
-timeSlot;toDateTime64;false	2056-03-09 16:58:16
+timeSlot;toDateTime64;false	1970-01-01 00:00:00
 type;timeSlot;toDateTime64;false	DateTime(\'UTC\')
 toStartOfDay;toDate32;false	1970-01-01 00:00:00
 type;toStartOfDay;toDate32;false	DateTime(\'UTC\')
