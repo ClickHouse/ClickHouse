@@ -99,6 +99,12 @@ FramingSetting detectFramingSetting(const std::string & query)
     /// True at the start of the query and right after a top-level `;`, so a leading `SET` is
     /// recognized per statement.
     bool at_statement_start = true;
+    /// The server keeps duplicate `SETTINGS` entries and applies them in order, so the last
+    /// assignment wins: `SETTINGS framing_output_format = 'None', framing_output_format =
+    /// 'EventStream'` leaves framing enabled. The walk therefore records every assignment
+    /// (each overwriting the previous) and classifies after it, instead of exiting on the first.
+    bool saw_query_setting = false;
+    bool query_setting_disables = false;
     for (size_t i = 0; i < tokens.size(); ++i)
     {
         const Tok & t = tokens[i];
@@ -140,13 +146,18 @@ FramingSetting detectFramingSetting(const std::string & query)
                 std::string value = (i + 2 < tokens.size()) ? tokens[i + 2].text : "";
                 if (i + 2 < tokens.size() && tokens[i + 2].type == DB::TokenType::StringLiteral && value.size() >= 2)
                     value = value.substr(1, value.size() - 2);
-                if (toLower(value) == "none")
-                    return {false, true, false};
-                return {true, false, false};
+                saw_query_setting = true;
+                query_setting_disables = toLower(value) == "none";
             }
         }
         /// The next token starts a new statement only right after a top-level `;`.
         at_statement_start = is_top_level_semicolon;
+    }
+    if (saw_query_setting)
+    {
+        if (query_setting_disables)
+            return {false, true, false};
+        return {true, false, false};
     }
     return {false, false, false};
 }
@@ -232,6 +243,29 @@ TEST(PlayDetectFramingSetting, CommentIsNotASetting)
 {
     expectFraming("SELECT 1 -- framing_output_format = None\n", false, false);
     expectFraming("SELECT 1 /* framing_output_format = 'EventStream' */", false, false);
+}
+
+TEST(PlayDetectFramingSetting, DuplicateAssignmentsLastWins)
+{
+    /// The reported bug: the server keeps duplicate `SETTINGS` entries and applies them in order
+    /// (`ParserSetQuery` pushes every change, `BaseSettings::applyChanges` walks them sequentially),
+    /// so the last assignment is the effective one. The detection must not exit on the first
+    /// assignment: here the effective value is `EventStream`, so the query must be treated as a
+    /// user framing choice, not refused as a disable.
+    expectFraming("SELECT 1 SETTINGS framing_output_format = 'None', framing_output_format = 'EventStream'", true, false);
+    /// The reverse order effectively disables framing, so the page must refuse it rather than skip
+    /// its own framing and render the plain compact response as raw text.
+    expectFraming("SELECT 1 SETTINGS framing_output_format = 'EventStream', framing_output_format = 'None'", false, true);
+    /// Three assignments: still the last one wins.
+    expectFraming(
+        "SELECT 1 SETTINGS framing_output_format = 'None', framing_output_format = 'EventStream', framing_output_format = 'None'",
+        false, true);
+    /// Other settings interleaved between the duplicates do not change the outcome.
+    expectFraming(
+        "SELECT 1 SETTINGS framing_output_format = 'None', max_threads = 1, framing_output_format = 'JSONEachPacketString'",
+        true, false);
+    /// A standalone `SET` is refused as a session-level change regardless of later assignments.
+    expectFraming("SET framing_output_format = 'None', framing_output_format = 'EventStream'", false, false, true);
 }
 
 TEST(PlayDetectFramingSetting, RealSettingWinsOverStringMention)

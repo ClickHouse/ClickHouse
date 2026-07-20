@@ -9489,8 +9489,11 @@ async function detectFramingSetting(query)
         /// A standalone `SET framing_output_format = ...` (the statement begins with `SET`) changes the
         /// session default, which this page cannot honor; detect it by the leading keyword.
         const sets_session = /^\s*set\b[\s\S]*\bframing_output_format\s*=/i.test(query);
-        const disables = has_setting && !sets_session
-            && /\b(?:settings|set)\b[\s\S]*\bframing_output_format\s*=\s*'?none'?\b/i.test(query);
+        /// The server applies duplicate `SETTINGS` entries in order, so classify by the last
+        /// assignment's value rather than by any `= 'None'` occurrence.
+        const assignments = [...query.matchAll(/\bframing_output_format\s*=\s*'?(\w+)'?/gi)];
+        const last_value = assignments.length ? assignments[assignments.length - 1][1] : '';
+        const disables = has_setting && !sets_session && last_value.toLowerCase() === 'none';
         return {
             user_framing: has_setting && !disables && !sets_session,
             user_disables_framing: disables,
@@ -9506,6 +9509,12 @@ async function detectFramingSetting(query)
     /// True at the start of the query and right after a top-level `;`, so a leading `SET` is
     /// recognized per statement.
     let at_statement_start = true;
+    /// The server keeps duplicate `SETTINGS` entries and applies them in order, so the last
+    /// assignment wins: `SETTINGS framing_output_format = 'None', framing_output_format =
+    /// 'EventStream'` leaves framing enabled. The walk therefore records every assignment
+    /// (each overwriting the previous) and classifies after it, instead of exiting on the first.
+    let saw_query_setting = false;
+    let query_setting_disables = false;
     for (let i = 0; i < tokens.length; ++i) {
         const t = tokens[i];
         const is_top_level_semicolon = depth === 0 && t.type === TT.Semicolon;
@@ -9536,14 +9545,18 @@ async function detectFramingSetting(query)
                 if (value_token && value_token.type === TT.StringLiteral) {
                     value = value.slice(1, -1);
                 }
-                if (value.toLowerCase() === 'none') {
-                    return { user_framing: false, user_disables_framing: true, user_sets_session_framing: false };
-                }
-                return { user_framing: true, user_disables_framing: false, user_sets_session_framing: false };
+                saw_query_setting = true;
+                query_setting_disables = value.toLowerCase() === 'none';
             }
         }
         /// The next token starts a new statement only right after a top-level `;`.
         at_statement_start = is_top_level_semicolon;
+    }
+    if (saw_query_setting) {
+        if (query_setting_disables) {
+            return { user_framing: false, user_disables_framing: true, user_sets_session_framing: false };
+        }
+        return { user_framing: true, user_disables_framing: false, user_sets_session_framing: false };
     }
     return { user_framing: false, user_disables_framing: false, user_sets_session_framing: false };
 }
