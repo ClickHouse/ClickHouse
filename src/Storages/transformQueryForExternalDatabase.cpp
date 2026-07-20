@@ -168,7 +168,34 @@ bool containsUUIDColumn(const ASTPtr & node, const NamesAndTypesList & available
     return false;
 }
 
-bool isCompatible(ASTPtr & node, const NamesAndTypesList & available_columns)
+/// Whether the field contains a String with an embedded NUL byte anywhere inside (including nested inside a
+/// Tuple, e.g. the right-hand side of IN).
+bool fieldContainsNulByte(const Field & field)
+{
+    switch (field.getType())
+    {
+        case Field::Types::String:
+            return field.safeGet<String>().find('\0') != String::npos;
+        case Field::Types::Tuple:
+        {
+            for (const auto & element : field.safeGet<Tuple>())
+                if (fieldContainsNulByte(element))
+                    return true;
+            return false;
+        }
+        case Field::Types::Array:
+        {
+            for (const auto & element : field.safeGet<Array>())
+                if (fieldContainsNulByte(element))
+                    return true;
+            return false;
+        }
+        default:
+            return false;
+    }
+}
+
+bool isCompatible(ASTPtr & node, const NamesAndTypesList & available_columns, LiteralEscapingStyle literal_escaping_style)
 {
     if (auto * function = node->as<ASTFunction>())
     {
@@ -228,7 +255,7 @@ bool isCompatible(ASTPtr & node, const NamesAndTypesList & available_columns)
             return false;
 
         for (auto & expr : function->arguments->children)
-            if (!isCompatible(expr, available_columns))
+            if (!isCompatible(expr, available_columns, literal_escaping_style))
                 return false;
 
         /// When the parser's fast-path literal conversion produces
@@ -280,6 +307,13 @@ bool isCompatible(ASTPtr & node, const NamesAndTypesList & available_columns)
 
     if (const auto * literal = node->as<ASTLiteral>())
     {
+        /// A standard SQL string literal has no escape sequences at all, so a String containing a NUL byte
+        /// cannot be represented in the pushed-down SQL text (the statement text would be truncated at the
+        /// NUL). Keep such a predicate local instead of pushing it down (the external database this style is
+        /// used for, SQLite, receives the statement as NUL-terminated text).
+        if (literal_escaping_style == LiteralEscapingStyle::StandardSQL && fieldContainsNulByte(literal->value))
+            return false;
+
         if (literal->value.getType() == Field::Types::Tuple)
         {
             /// Represent a tuple with zero or one elements as (x) instead of tuple(x).
@@ -408,7 +442,7 @@ String transformQueryForExternalDatabaseImpl(
         ReplaceLiteralToExprVisitor::Data replace_literal_to_expr_data;
         ReplaceLiteralToExprVisitor(replace_literal_to_expr_data).visit(original_where);
 
-        if (isCompatible(original_where, available_columns))
+        if (isCompatible(original_where, available_columns, literal_escaping_style))
         {
             select->setExpression(ASTSelectQuery::Expression::WHERE, ASTPtr(original_where));
         }
@@ -431,7 +465,7 @@ String transformQueryForExternalDatabaseImpl(
 
                     for (auto & elem : func->arguments->children)
                     {
-                        if (isCompatible(elem, available_columns))
+                        if (isCompatible(elem, available_columns, literal_escaping_style))
                             new_function_and->arguments->children.push_back(elem);
                         else if (const auto * child = elem->as<ASTFunction>(); child && (child->name == "and" || child->name == "tuple"))
                             predicates.push(child);

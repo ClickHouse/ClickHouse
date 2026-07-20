@@ -7,10 +7,16 @@
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
+#include <Common/Exception.h>
 
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
 
 void ASTLiteral::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
 {
@@ -162,9 +168,16 @@ String FieldVisitorToStringPostgreSQL::operator() (const String & x) const
 /// Outputs a string as a standard SQL string literal: only the enclosing single quote is escaped, by
 /// doubling it (''); every other byte, including backslashes and control characters, is emitted literally -
 /// the rules of SQLite, where a string literal has no backslash escape sequences at all. A NUL byte cannot be
-/// represented in SQL text passed to `sqlite3_exec`/`sqlite3_prepare`, so it is not handled here.
+/// represented at all: the SQL text is passed to `sqlite3_exec`/`sqlite3_prepare` as NUL-terminated text and
+/// would be silently truncated at the embedded NUL, so fail closed instead. Predicate pushdown filters such
+/// literals out beforehand (see `transformQueryForExternalDatabase`), so this throws only for an explicit
+/// user-written query - e.g. a `(SELECT ...)` argument - that no rewrite could represent faithfully.
 static void writeQuotedStringStandardSQL(std::string_view ref, WriteBuffer & buf)
 {
+    if (ref.find('\0') != std::string_view::npos)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "A string literal with an embedded NUL byte cannot be represented as standard SQL text");
+
     writeChar('\'', buf);
     for (char c : ref)
     {
