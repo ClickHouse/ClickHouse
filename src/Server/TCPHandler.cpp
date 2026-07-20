@@ -2485,9 +2485,9 @@ void TCPHandler::processQuery(std::shared_ptr<QueryState> & state)
 
     readStringBinary(state->query, *in);
 
-    Settings passed_params;
+    NameToNameMap passed_params;
     if (client_tcp_protocol_version >= DBMS_MIN_PROTOCOL_VERSION_WITH_PARAMETERS)
-        passed_params.read(*in, settings_format);
+        passed_params = readQueryParameters(*in);
 
     if (is_interserver_mode)
     {
@@ -2677,7 +2677,7 @@ void TCPHandler::processQuery(std::shared_ptr<QueryState> & state)
     /// so we have to apply the changes first.
     state->query_context->setCurrentQueryId(state->query_id);
 
-    state->query_context->addQueryParameters(passed_params.toNameToNameMap());
+    state->query_context->addQueryParameters(passed_params);
 
     state->allow_partial_result_on_first_cancel = state->query_context->getSettingsRef()[Setting::partial_result_on_first_cancel];
 
