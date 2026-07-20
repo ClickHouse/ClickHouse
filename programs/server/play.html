@@ -5908,12 +5908,12 @@ async function postImpl(posted_request_num, query, targetResultEl, abortControll
 /// Execute a single query (legacy path, used for single-query mode).
 /// When `history_query_text` is provided, it overrides `query` for browser history/URL storage,
 /// preserving the full textarea content when running a selected query in multi-query mode.
-async function postSingle(posted_request_num, query, history_query_text, params_restore_pending, queryStart, partial)
+async function postSingle(posted_request_num, query, history_query_text, params_restore_pending, queryStart, partial, live_params)
 {
     /// Compare the FULL launched editor (not the single statement) against the restore's destination
     /// query: `history_query_text` is the whole editor in multi-query mode, and in single-query mode
     /// `query` already IS the whole editor.
-    const paramValuesSnapshot = await resolveRunParams(params_restore_pending, history_query_text || query);
+    const paramValuesSnapshot = await resolveRunParams(params_restore_pending, history_query_text || query, live_params);
     /// `resolveRunParams` is async (its `tokenize` may still be pending on a cold page), so a `cancel`
     /// or tab switch could have superseded this run while we were awaiting it. Bail out immediately —
     /// before `clear`, creating a new `AbortController`, or issuing any `fetch` — otherwise this stale
@@ -6042,9 +6042,9 @@ let multiQueryControllers = [];
 
 /// Execute multiple queries with parallelization of consecutive SELECTs.
 /// `parsed` is an array of { query, is_select } objects from splitAllQueries.
-async function postMulti(posted_request_num, parsed, params_restore_pending, launch_query_text, partial)
+async function postMulti(posted_request_num, parsed, params_restore_pending, launch_query_text, partial, live_params)
 {
-    const paramValuesSnapshot = await resolveRunParams(params_restore_pending, launch_query_text);
+    const paramValuesSnapshot = await resolveRunParams(params_restore_pending, launch_query_text, live_params);
     /// See `postSingle`: `resolveRunParams` is async, so a `cancel` or tab switch could have superseded
     /// this run during the await. Bail out before touching the UI or issuing any request.
     if (posted_request_num != request_num) { return; }
@@ -7738,7 +7738,21 @@ async function saveHistory(stateData, titleForDoc) {
         /// query text so a not-yet-landed `updateQueryParams` rebuild can never leak the previous
         /// query's placeholder into the entry (see the header comment). `run=1` is dropped below
         /// anyway, since the query diverged.
-        tab.params = await paramValuesForQuery(tab.query);
+        ///
+        /// The derivation awaits tokenization, and the user may keep typing meanwhile (a cold-page
+        /// lexer load / large draft is enough), while `writeHistoryEntry` below serializes the
+        /// THEN-current `tab.query` — so params derived from the draft as it was when the await
+        /// started could be recorded under a newer draft's text (e.g. `#SELECT {z:Int32}` with
+        /// `params={y:''}`). Re-derive until the draft is stable, so the recorded parameters always
+        /// belong to the query text the entry carries.
+        let draft_query;
+        let draft_params;
+        do
+        {
+            draft_query = tab.query;
+            draft_params = await paramValuesForQuery(draft_query);
+        } while (tab.query !== draft_query);
+        tab.params = draft_params;
     }
     else
     {
@@ -8052,6 +8066,12 @@ async function postOne()
     /// destination tab's own saved snapshot instead of the previous tab's stale DOM inputs.
     const params_restore_pending = params_restore_pending_token === request_num;
     const my_request_num = ++request_num;
+    /// Snapshot the live parameter inputs NOW, synchronously in the click's own task: the lexer
+    /// awaits below (and `resolveRunParams`'s own tokenization) can leave a long window on a cold
+    /// page, and an input moved during it must not retroactively change the bindings this `Run`
+    /// executes with. `resolveRunParams` filters this snapshot down to the launched query's own
+    /// placeholders.
+    const live_params = getParamValues();
     document.body.scrollTo(0, 0);
     beginFlight();
 
@@ -8084,9 +8104,9 @@ async function postOne()
         /// statements that were never launched, so such an entry must not be marked auto-runnable.
         const partial = selected.length !== parsed.length;
         if (selected.length > 1) {
-            await postMulti(my_request_num, selected, params_restore_pending, all_text, partial);
+            await postMulti(my_request_num, selected, params_restore_pending, all_text, partial, live_params);
         } else if (selected.length === 1) {
-            await postSingle(my_request_num, selected[0].query, all_text, params_restore_pending, selected[0].queryStart, partial);
+            await postSingle(my_request_num, selected[0].query, all_text, params_restore_pending, selected[0].queryStart, partial, live_params);
         }
     } else {
         /// Snapshot the full editor at launch time, before the tokenization await: typing during
@@ -8103,7 +8123,7 @@ async function postOne()
         /// `run=1` reload would `postAll` and run the other statements too. In single-query mode the
         /// history text is the launched statement itself (`undefined` above), so it stays runnable.
         const partial = isMultiQuery && queryUnderCursorIsPartial;
-        await postSingle(my_request_num, query, isMultiQuery ? all_text : undefined, params_restore_pending, queryUnderCursorStart, partial);
+        await postSingle(my_request_num, query, isMultiQuery ? all_text : undefined, params_restore_pending, queryUnderCursorStart, partial, live_params);
     }
 
     /// Only reset the run/favicon/cancel state if this entrypoint still owns the in-flight
@@ -8119,6 +8139,9 @@ async function postAll()
     /// saved parameters rather than the previously active tab's stale DOM inputs.
     const params_restore_pending = params_restore_pending_token === request_num;
     const my_request_num = ++request_num;
+    /// See `postOne`: snapshot the live parameter inputs synchronously at entry, so an input moved
+    /// during the lexer awaits does not change what this run executes with.
+    const live_params = getParamValues();
     document.body.scrollTo(0, 0);
     beginFlight();
 
@@ -8129,7 +8152,7 @@ async function postAll()
     if (parsed.length > 1) {
         /// "Run all" runs every statement, so the entry is reproducible by re-running the full
         /// editor on reload: not partial, may carry `run=1`.
-        await postMulti(my_request_num, parsed, params_restore_pending, all_text, /*partial=*/ false);
+        await postMulti(my_request_num, parsed, params_restore_pending, all_text, /*partial=*/ false, live_params);
     } else {
         /// A single statement (or none): run the launch-time snapshot `splitAllQueries` produced
         /// from `all_text`, never a fresh `getQueryUnderCursor` read of the live editor. `postAll`
@@ -8140,7 +8163,7 @@ async function postAll()
         /// multi-query branch above and `postOne` already use.
         const query = parsed.length ? parsed[0].query : all_text;
         const queryStart = parsed.length ? parsed[0].queryStart : 0;
-        await postSingle(my_request_num, query, undefined, params_restore_pending, queryStart, /*partial=*/ false);
+        await postSingle(my_request_num, query, undefined, params_restore_pending, queryStart, /*partial=*/ false, live_params);
     }
 
     /// Only reset the run/favicon/cancel state if this entrypoint still owns the in-flight
@@ -10153,15 +10176,17 @@ function setParamValues(values)
 /// `SELECT 1` would keep the destination's `param_y`, marked `run=1`). Fall back to the same
 /// launched-text derivation as the ordinary path (`paramValuesForQuery`), never the live inputs
 /// (which the edit's own not-yet-landed rebuild can leave describing the previous tab).
-async function resolveRunParams(params_restore_pending, launch_query)
+async function resolveRunParams(params_restore_pending, launch_query, live_params)
 {
     /// The ordinary run path, OR a pending restore whose destination query the user has since edited:
     /// in both cases the live inputs may lag the launched query (see above), so derive the parameter
-    /// set from the launched query text rather than reading them.
+    /// set from the launched query text rather than reading them — filtering the entrypoint's
+    /// click-time input snapshot (`live_params`), so an input moved during the lexer awaits does not
+    /// retroactively change what the pressed `Run` executes with.
     if (!params_restore_pending
         || (params_restore_pending_query !== null && launch_query !== params_restore_pending_query))
     {
-        return await paramValuesForQuery(launch_query);
+        return await paramValuesForQuery(launch_query, live_params);
     }
     const tab = getActiveTab();
     const saved = (tab && tab.params) || {};
@@ -10177,17 +10202,26 @@ async function resolveRunParams(params_restore_pending, launch_query)
 /// The parameter values a specific query would run with, derived from the query TEXT rather than
 /// the live `currentQueryParams`/inputs (which a still-pending `updateQueryParams` may leave
 /// describing a different query — see `resolveRunParams`). Tokenizes the query, enumerates its own
-/// placeholders, and reads each one's value from its `param_*` input when that input already exists
-/// (else blank, since the user could not have typed a value into an input that is not there yet).
+/// placeholders, and reads each one's value from a call-time snapshot of the live inputs when that
+/// input existed (else blank, since the user could not have typed a value into an input that is
+/// not there yet).
 /// Fails closed to no parameters when the query cannot be tokenized (empty, WASM lexer unavailable,
 /// or too large): an un-analyzable query at most loses a default binding rather than leaking a
 /// foreign placeholder onto the run's history entry / URL.
-async function paramValuesForQuery(query)
+async function paramValuesForQuery(query, live_params)
 {
     if (!query || typeof WebAssembly !== 'object' || typeof WebAssembly.instantiate !== 'function')
     {
         return {};
     }
+    /// Read the input values from a SYNCHRONOUS snapshot, never after the tokenization await: the
+    /// user can move an input while the lexer runs (a cold page / large query is enough), and the
+    /// caller needs the values that were on screen when the work started — at launch, the request
+    /// must execute with the bindings visible when `Run` was pressed, not with a later edit. The
+    /// run entrypoints pass their own click-time snapshot (`live_params`, taken before their lexer
+    /// awaits); otherwise snapshot at entry. The tokenized placeholder set below then only FILTERS
+    /// the snapshot down to the query's own placeholders.
+    const live = live_params || getParamValues();
     let names;
     try
     {
@@ -10200,8 +10234,7 @@ async function paramValuesForQuery(query)
     const values = {};
     for (const name of names)
     {
-        const input = document.getElementById('param-' + name);
-        values[name] = input ? input.value : '';
+        values[name] = Object.prototype.hasOwnProperty.call(live, name) ? live[name] : '';
     }
     return values;
 }

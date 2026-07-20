@@ -94,6 +94,15 @@ reordered params: a later tab switch keeps run=1
 cancel during param resolution: the superseded run issues no request
 cancel during param resolution: no history entry is written for the canceled run
 cancel during param resolution: the previous run's result snapshot is untouched
+param moved during launch resolution: the run executes with the click-time binding
+param moved during launch resolution: the live input keeps the newer value
+param moved during launch resolution: the tab records the live binding
+param moved during launch resolution: the entry drops run=1 (shown binding was never run)
+second edit during delayed completion: the latest draft survives in the editor
+second edit during delayed completion: the entry carries the latest draft's own params
+second edit during delayed completion: the first draft param does not leak into the URL
+second edit during delayed completion: the entry drops run=1
+second edit during delayed completion: the completed run's result is still kept
 reload after a preserved draft: the draft is restored as editor text
 reload after a preserved draft: the draft is not auto-run
 stale reload then rerun: the draft is restored unrun first
