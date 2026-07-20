@@ -19,6 +19,7 @@
 #include <Processors/RowsBeforeStepCounter.h>
 #include <Processors/Sources/RemoteSource.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
+#include <Processors/Transforms/BuildProbeJoinTransforms.h>
 #include <Processors/Transforms/CreatingSetsTransform.h>
 #include <Processors/Transforms/DroppingTransform.h>
 #include <Processors/Transforms/InputSelectorTransform.h>
@@ -399,6 +400,78 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesPaired(
             "Join is supported only for pipelines with one output port, got {} and {}", left->getNumStreams(), right->getNumStreams());
 
     return mergePipelines(std::move(left), std::move(right), std::move(joining), collected_processors);
+}
+
+std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesBuildProbe(
+    std::unique_ptr<QueryPipelineBuilder> build,
+    std::unique_ptr<QueryPipelineBuilder> probe,
+    std::shared_ptr<JoinBuildSideTransform> build_transform,
+    std::function<std::shared_ptr<JoinProbeSideTransform>()> probe_transform_factory,
+    Processors * collected_processors)
+{
+    build->checkInitializedAndNotCompleted();
+    probe->checkInitializedAndNotCompleted();
+
+    /// Extremes before join are useless. They will be calculated after if needed.
+    build->pipe.dropExtremes();
+    probe->pipe.dropExtremes();
+
+    if (build->hasTotals() || probe->hasTotals())
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Build/probe join is supported only for pipelines without totals");
+
+    /// The build transform may rely on the order of its input (e.g. a pre-sorted stream),
+    /// so a multi-stream build pipeline cannot be silently squashed here.
+    if (build->getNumStreams() != 1)
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Build side of a build/probe join requires a pipeline with one output port, got {}", build->getNumStreams());
+
+    if (!build_transform->getOutputs().front().getHeader().empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Build transform of a build/probe join must have a data-free output");
+
+    /// Attribute the processors added to the build pipeline to its last plan step,
+    /// as joinPipelinesRightLeft does for the right pipeline.
+    IQueryPlanStep * step = build->pipe.processors->back()->getQueryPlanStep();
+    QueryPipelineProcessorsCollector collector(*build, step);
+
+    ///  (probe) ──────────────────────┐
+    ///                                ╞> Probing ─> (joined)
+    ///  (probe) ───────────────┐┌─────┘
+    ///                         └┼───┐
+    ///                          │   ╞> Probing ─> (joined)
+    ///  (build) ─> Building ─> Resize
+    ///        barrier (no data) └───┐
+    ///                              ╞> Probing ─> (joined)
+    ///  (probe) ────────────────────┘
+
+    build->addTransform(build_transform);
+
+    size_t num_streams = probe->getNumStreams();
+    build->resize(num_streams);
+
+    for (size_t i = 0; i < num_streams; ++i)
+    {
+        auto probe_transform = probe_transform_factory();
+        if (probe_transform->getInputs().size() != 2 || probe_transform->getOutputs().size() != 1)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Probe transform of a build/probe join must have two inputs and one output");
+
+        connect(*probe->pipe.output_ports[i], probe_transform->getInputs().front());
+        connect(*build->pipe.output_ports[i], probe_transform->getInputs().back());
+        probe->pipe.output_ports[i] = &probe_transform->getOutputs().front();
+
+        if (collected_processors)
+            collected_processors->emplace_back(probe_transform);
+        probe->pipe.processors->emplace_back(std::move(probe_transform));
+    }
+
+    Processors build_processors = collector.detachProcessors();
+    if (step)
+        step->appendExtraProcessors(build_processors);
+
+    probe->pipe.processors->insert(probe->pipe.processors->end(), build->pipe.processors->begin(), build->pipe.processors->end());
+    probe->resources = std::move(build->resources);
+    probe->pipe.header = probe->pipe.output_ports.front()->getSharedHeader();
+    probe->pipe.max_parallel_streams = std::max(probe->pipe.max_parallel_streams, build->pipe.max_parallel_streams);
+    return probe;
 }
 
 std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesYShapedByShards(

@@ -30,6 +30,9 @@ class IJoin;
 using JoinPtr = std::shared_ptr<IJoin>;
 class TableJoin;
 
+class JoinBuildSideTransform;
+class JoinProbeSideTransform;
+
 class QueryPipelineBuilder;
 using QueryPipelineBuilderPtr = std::unique_ptr<QueryPipelineBuilder>;
 
@@ -164,6 +167,17 @@ public:
         std::unique_ptr<QueryPipelineBuilder> left,
         std::unique_ptr<QueryPipelineBuilder> right,
         ProcessorPtr joining,
+        Processors * collected_processors);
+
+    /// Wire a build/probe join: the build pipeline (single stream, it may be order-sensitive)
+    /// ends in `build_transform`, whose data-free output is fanned out to the barrier input
+    /// of one probe transform per probe stream, so probing starts only after the build state
+    /// is published. See BuildProbeJoinTransforms.h for the contract.
+    static std::unique_ptr<QueryPipelineBuilder> joinPipelinesBuildProbe(
+        std::unique_ptr<QueryPipelineBuilder> build,
+        std::unique_ptr<QueryPipelineBuilder> probe,
+        std::shared_ptr<JoinBuildSideTransform> build_transform,
+        std::function<std::shared_ptr<JoinProbeSideTransform>()> probe_transform_factory,
         Processors * collected_processors);
 
     static std::unique_ptr<QueryPipelineBuilder> joinPipelinesYShapedByShards(
