@@ -3,6 +3,7 @@
 #if USE_NURAFT
 
 #include <Coordination/KeeperStorage.h>
+#include <Server/HTTP/HTTPResponseHelpers.h>
 #include <Server/HTTP/WriteBufferFromHTTPServerResponse.h>
 
 #include <Poco/Net/HTTPServerResponse.h>
@@ -37,9 +38,9 @@ void KeeperDashboardWebUIRequestHandler::handleRequest(
 
     setResponseDefaultHeaders(response);
     response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_OK);
-    auto wb = WriteBufferFromHTTPServerResponse(response, request.getMethod() == HTTPRequest::HTTP_HEAD);
-    wb.write(html.data(), html.size());
-    wb.finalize();
+    auto buf = responseWriteBuffer(request, response);
+    buf.get()->write(html.data(), html.size());
+    buf.get()->finalize();
 }
 
 void KeeperDashboardContentRequestHandler::handleRequest(
