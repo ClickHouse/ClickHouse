@@ -44,7 +44,7 @@ void checkEquivalent(const Case & c)
 
     auto column = from->createColumn();
     column->insert(c.from_value);
-    const ColumnPtr actual = tryConvertColumnToTypeOrNull(*column, *from, *to, {}, c.strict, c.inexact);
+    const ColumnPtr actual = tryConvertColumnToTypeOrNull(*column, from, to, {}, c.strict, c.inexact);
 
     SCOPED_TRACE(std::string(c.from_type) + " -> " + c.to_type + (c.strict ? " strict" : "")
         + (c.inexact ? " inexact" : ""));
@@ -153,13 +153,13 @@ TEST(ConvertColumnToType, OrThrow)
 
     auto in_range = u64->createColumn();
     in_range->insert(Field(UInt64(200)));
-    const ColumnPtr ok = convertColumnToTypeOrThrow(*in_range, *u64, *u8);
+    const ColumnPtr ok = convertColumnToTypeOrThrow(*in_range, u64, u8);
     ASSERT_NE(ok, nullptr);
     EXPECT_EQ((*ok)[0], Field(UInt64(200)));
 
     auto out_of_range = u64->createColumn();
     out_of_range->insert(Field(UInt64(256)));
-    EXPECT_ANY_THROW(convertColumnToTypeOrThrow(*out_of_range, *u64, *u8));
+    EXPECT_ANY_THROW(convertColumnToTypeOrThrow(*out_of_range, u64, u8));
 
     /// NULL handling mirrors convertFieldToTypeOrThrow: NULL into a non-nullable target throws;
     /// NULL into a nullable target is a valid NULL result (a size-1 column holding NULL).
@@ -169,9 +169,9 @@ TEST(ConvertColumnToType, OrThrow)
 
     auto null_value = nullable_i32->createColumn();
     null_value->insert(Field());
-    EXPECT_ANY_THROW(convertColumnToTypeOrThrow(*null_value, *nullable_i32, *i64));
+    EXPECT_ANY_THROW(convertColumnToTypeOrThrow(*null_value, nullable_i32, i64));
 
-    const ColumnPtr null_ok = convertColumnToTypeOrThrow(*null_value, *nullable_i32, *nullable_i64);
+    const ColumnPtr null_ok = convertColumnToTypeOrThrow(*null_value, nullable_i32, nullable_i64);
     ASSERT_NE(null_ok, nullptr);
     ASSERT_EQ(null_ok->size(), 1u);
     EXPECT_TRUE(null_ok->isNullAt(0));
