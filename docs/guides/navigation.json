@@ -191,7 +191,8 @@
                 "guides/use-cases/data-warehousing/getting-started/querying-directly",
                 "guides/use-cases/data-warehousing/getting-started/connecting-catalogs",
                 "guides/use-cases/data-warehousing/getting-started/accelerating-analytics",
-                "guides/use-cases/data-warehousing/getting-started/writing-data"
+                "guides/use-cases/data-warehousing/getting-started/writing-data",
+                "guides/use-cases/data-warehousing/getting-started/best-practices"
               ],
               "root": "guides/use-cases/data-warehousing/getting-started/overview"
             },

@@ -1111,7 +1111,7 @@ bool RestCatalog::empty() const
     return !found_table;
 }
 
-DB::Names RestCatalog::getTables() const
+CatalogTables RestCatalog::getTables() const
 {
     auto & pool = getContext()->getIcebergCatalogThreadpool();
     DB::Names tables;
@@ -1142,7 +1142,12 @@ DB::Names RestCatalog::getTables() const
         runner.waitForAllToFinishAndRethrowFirstError();
     }
 
-    return tables;
+    /// A REST catalog is Iceberg-only, so every listed table is readable.
+    CatalogTables result;
+    result.reserve(tables.size());
+    for (auto & name : tables)
+        result.push_back(CatalogTable{.name = std::move(name)});
+    return result;
 }
 
 RestCatalog::Namespaces RestCatalog::getNamespaces() const
@@ -1158,9 +1163,15 @@ RestCatalog::Namespaces RestCatalog::getNamespaces() const
     return namespaces;
 }
 
-DB::Names RestCatalog::listTablesInNamespaceDirect(const std::string & namespace_name) const
+CatalogTables RestCatalog::listTablesInNamespaceDirect(const std::string & namespace_name) const
 {
-    return listTablesInNamespace(namespace_name);
+    /// A REST catalog is Iceberg-only, so every listed table is readable.
+    CatalogTables result;
+    auto names = listTablesInNamespace(namespace_name);
+    result.reserve(names.size());
+    for (auto & name : names)
+        result.push_back(CatalogTable{.name = std::move(name)});
+    return result;
 }
 
 void RestCatalog::getNamespacesRecursive(
