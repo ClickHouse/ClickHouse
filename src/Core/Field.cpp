@@ -566,6 +566,24 @@ Field readFieldBinary(ReadBuffer & buf)
 
 Field Field::resolveNumberLiteral() const
 {
+    /// Recurse into containers so nested literals (e.g. `[6.7]` used as an aggregate function
+    /// parameter, parsed as an Array of NumberLiteral) are resolved element-wise.
+    auto resolve_vector = [](const auto & container)
+    {
+        std::decay_t<decltype(container)> result;
+        result.reserve(container.size());
+        for (const auto & elem : container)
+            result.push_back(elem.resolveNumberLiteral());
+        return result;
+    };
+
+    if (which == Types::Array)
+        return resolve_vector(get<Array>());
+    if (which == Types::Tuple)
+        return resolve_vector(get<Tuple>());
+    if (which == Types::Map)
+        return resolve_vector(get<Map>());
+
     if (which != Types::Number)
         return *this;
 
