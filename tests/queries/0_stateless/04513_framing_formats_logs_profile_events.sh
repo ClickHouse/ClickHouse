@@ -191,31 +191,38 @@ ${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=JSONEachPacketString&send_l
 [ "$(grep -c '"packet":"data"' "$result_file")" -eq 0 ] && echo 'failing INSERT no data packets: OK'
 rm "$result_file"
 
-# The final progress flush after the query finishes must reach the framed stream too. The `Null` payload
-# carrier of the no-result path is not part of the pipeline, so it is finalized explicitly, flushing the
-# pending (throttled) progress update: the last `progress` packet carries the final counters
-# (`result_rows` / `result_bytes`), like the final progress packet of the native protocol.
+# The final progress flush after the query finishes must reach the framed stream too: the final
+# `progress` packet carries the final counters (`result_rows` / `result_bytes`), like the final
+# progress packet of the native protocol. It must be the last packet of the whole stream: the
+# query-finish logging (`onFinish`, the "peak memory usage" entry) emits trailing `log` and
+# `profile_events` packets, and the framing format writes the final progress only after draining
+# them (`IFramingFormat::setFinalProgress`). `send_logs_level=trace` forces those trailing `log`
+# packets, so ordering the final progress too early would put a `log` packet last and fail below.
 echo '--- a framed INSERT ends with a final progress packet carrying the final counters'
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS framing_no_result_04513"
 ${CLICKHOUSE_CLIENT} -q "CREATE TABLE framing_no_result_04513 (x UInt64) ENGINE = Memory"
-${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=JSONEachPacketString" \
+${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=JSONEachPacketString&send_logs_level=trace" \
     -d "INSERT INTO framing_no_result_04513 SELECT number FROM numbers(1000000)" > "$result_file"
 [ "$(grep -c '"packet":"progress"' "$result_file")" -ge 1 ] && echo 'INSERT progress packets: OK'
-grep '"packet":"progress"' "$result_file" | tail -1 | grep -q '"result_rows":"1000000"' && echo 'INSERT final progress result_rows: OK'
+[ "$(grep -c '"packet":"log"' "$result_file")" -ge 1 ] && echo 'INSERT log packets: OK'
+tail -1 "$result_file" | grep -q '"packet":"progress"' && echo 'INSERT final progress is the last packet: OK'
+tail -1 "$result_file" | grep -q '"result_rows":"1000000"' && echo 'INSERT final progress result_rows: OK'
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE framing_no_result_04513"
 rm "$result_file"
 
 # The final progress flush must reach the framed stream for ordinary pulling (`SELECT`) queries too.
 # The output format is finalized by the pipeline before the final counters (`result_rows` /
 # `result_bytes`) are known, so they are routed to the framing format explicitly
-# (`IOutputFormat::writeFinalProgress`): the last `progress` packet carries them, like the final
-# progress packet of the native protocol. Without this the counters would only reach the
-# `X-ClickHouse-Summary` HTTP header, not the stream.
+# (`IOutputFormat::writeFinalProgress`). Without this the counters would only reach the
+# `X-ClickHouse-Summary` HTTP header, not the stream. As above, the final progress must be the
+# last packet of the whole stream, after the trailing `log` and `profile_events` packets.
 echo '--- a framed SELECT ends with a final progress packet carrying the final counters'
-${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=JSONEachPacketString" \
+${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=JSONEachPacketString&send_logs_level=trace" \
     -d "SELECT number FROM numbers(1000000) FORMAT JSONEachRow" > "$result_file"
 [ "$(grep -c '"packet":"progress"' "$result_file")" -ge 1 ] && echo 'SELECT progress packets: OK'
-grep '"packet":"progress"' "$result_file" | tail -1 | grep -q '"result_rows":"1000000"' && echo 'SELECT final progress result_rows: OK'
+[ "$(grep -c '"packet":"log"' "$result_file")" -ge 1 ] && echo 'SELECT log packets: OK'
+tail -1 "$result_file" | grep -q '"packet":"progress"' && echo 'SELECT final progress is the last packet: OK'
+tail -1 "$result_file" | grep -q '"result_rows":"1000000"' && echo 'SELECT final progress result_rows: OK'
 rm "$result_file"
 
 # The output format is irrelevant for a no-result query (no payload is formatted), so the framing must

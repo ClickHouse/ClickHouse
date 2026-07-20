@@ -19,6 +19,8 @@ The framing format is selected by the query-level setting `framing_output_format
 
 Server logs are included as packets if the `send_logs_level` setting is set. Profile events are included if the `send_profile_events` setting is enabled (default). Progress and profile events packets are sent at most once in `interactive_delay` microseconds.
 
+A successful stream ends with a final `progress` packet carrying the final counters (`result_rows`, `result_bytes`, `memory_usage`), like the final progress packet of the native protocol. These counters are known only after the query has finished, so no earlier `progress` packet carries them. The final `progress` packet is written after the trailing `log` and `profile_events` packets emitted by the query-finish logging (for example the "peak memory usage" log entry), so it is really the last packet of the stream. On failure, the `exception` packet is the last packet instead.
+
 Anything a query enables only through its own `SETTINGS` clause - a framing format, `send_logs_level`, or `send_profile_events` - is not known until the query has been parsed, so the corresponding logs and profile events are captured only from query execution onwards. The logs and profile events of the parse, plan, and analysis phase are captured only when the setting comes from the session or the URL. In particular, a query that fails during analysis (before pipeline execution) - for example a reference to an unknown table - and enables `send_logs_level` only in its `SETTINGS` clause delivers just the `exception` packet, not the analysis-phase logs. Set `send_logs_level` on the session or the URL to capture those.
 
 If an exception happens during query execution, it is sent as an `exception` packet (the last packet of the stream), regardless of the `http_write_exception_in_output_format` setting, so the client can always parse the response as a stream of packets.
@@ -69,11 +71,11 @@ data: {"number":"1"}
 data: {"number":"2"}
 data: 
 
-event: progress
-data: {"read_rows":"3","read_bytes":"24","total_rows_to_read":"3","result_rows":"3","result_bytes":"24","elapsed_ns":"1174415"}
-
 event: profile_events
 data: [{"host_name":"localhost","current_time":"2026-07-11 00:00:00","thread_id":"0","type":"increment","name":"SelectedRows","value":"3"},{"host_name":"localhost","current_time":"2026-07-11 00:00:00","thread_id":"0","type":"increment","name":"SelectedBytes","value":"24"}]
+
+event: progress
+data: {"read_rows":"3","read_bytes":"24","total_rows_to_read":"3","result_rows":"3","result_bytes":"24","elapsed_ns":"1174415"}
 
 ```
 
@@ -91,8 +93,8 @@ curl "http://localhost:8123/?framing_output_format=JSONEachPacketString" -d "SEL
 
 ```text
 {"packet":"data","data":"{\"number\":\"0\"}\n{\"number\":\"1\"}\n{\"number\":\"2\"}\n"}
-{"packet":"progress","progress":{"read_rows":"3","read_bytes":"24","total_rows_to_read":"3","result_rows":"3","result_bytes":"24","elapsed_ns":"1265958"}}
 {"packet":"profile_events","profile_events":[{"host_name":"localhost","current_time":"2026-07-11 00:00:00","thread_id":"0","type":"increment","name":"SelectedRows","value":"3"}]}
+{"packet":"progress","progress":{"read_rows":"3","read_bytes":"24","total_rows_to_read":"3","result_rows":"3","result_bytes":"24","elapsed_ns":"1265958"}}
 ```
 
 With `JSONEachPacketBase64`, the same `data` packet looks like:

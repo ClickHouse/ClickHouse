@@ -304,12 +304,17 @@ void IOutputFormat::writeFinalProgress(const Progress & progress)
     statistics.progress.incrementPiecewiseAtomically(progress);
     statistics.progress.elapsed_ns = statistics.watch.elapsedNanoseconds();
 
-    /// The output format itself is already finalized here (for a pulling query the pipeline finalized
-    /// it before the final counters were known), so its own `finalized` guard would drop the update.
-    /// Write straight to the framing format, which is finalized separately (its own guard makes this a
-    /// no-op once finalized). This emits the final `progress` packet carrying `result_rows` /
-    /// `result_bytes` / `memory_usage`, like the native protocol's final progress packet.
-    framing->onProgress(statistics.progress);
+    /// The output format itself may already be finalized here (for a pulling query the pipeline
+    /// finalized it before the final counters were known), so its own `finalized` guard would drop
+    /// the update. Hand the accumulated progress to the framing format, which defers it to its own
+    /// (separate, deferred) finalization: the query-finish logging still emits trailing `log` and
+    /// `profile_events` packets after this point, and the framing writes the final `progress`
+    /// packet - carrying `result_rows` / `result_bytes` / `memory_usage`, like the native
+    /// protocol's final progress packet - after draining them, so a successful stream really ends
+    /// with it. Also clear the pending (throttled) intermediate update, which is now folded into
+    /// the final one, so a later `finalize` of this format does not write it as a stale extra
+    /// `progress` packet.
+    framing->setFinalProgress(statistics.progress);
     has_progress_update_to_write = false;
 }
 

@@ -3113,9 +3113,12 @@ void executeQuery(
             /// The framing format's finalization was deferred (see `deferFramingFinalize`), so that the
             /// trailing server logs and profile events - emitted by the query-finish logging in
             /// `onFinish` - are included in the stream, like the native protocol does. The order is:
-            ///   1. flush the progress (so the `X-ClickHouse-Summary` HTTP header is correct),
+            ///   1. flush the progress (so the `X-ClickHouse-Summary` HTTP header is correct) and
+            ///      stash the final counters in the framing format (see below),
             ///   2. `onFinish` (inside `finishExecutedQuery`) emits the trailing logs into the queue,
-            ///   3. finalize the framing format: it drains those logs and writes the final packets,
+            ///   3. finalize the framing format: it drains those logs and profile events, and then
+            ///      writes the final `progress` packet, so it is really the last packet of a
+            ///      successful stream,
             ///   4. run the HTTP `query_finish_callback`, which closes the response stream.
             finishExecutedQuery(streams, [&]()
             {
@@ -3126,32 +3129,22 @@ void executeQuery(
                 /// carrying the final counters, like the native protocol does and as
                 /// `docs/en/interfaces/framing-formats.md` documents. These counters are known only
                 /// after the query finished, so no earlier `progress` packet carries them.
-                if (pulling_pipeline)
+                ///
+                /// `writeFinalProgress` hands them to the framing format, which writes the packet at
+                /// the very end of its (deferred, see above) finalization - after the trailing logs
+                /// and profile events emitted by `onFinish` and `logPeakMemoryUsage` below. Writing
+                /// the packet here directly would order it before that trailing drain, and the stream
+                /// would not actually end with `progress`. It works uniformly for both paths: for a
+                /// pulling query the output format was finalized by the pipeline (its data is already
+                /// written) before these counters were known, and on the no-result path the `Null`
+                /// payload carrier is not part of the pipeline, so its pending (throttled) progress
+                /// update is folded into the final one.
+                progress_callback = [captured_output_format = output_format, previous_progress_callback = progress_callback](const Progress & progress)
                 {
-                    /// The output format was finalized by the pipeline (its data is already written)
-                    /// before these counters were known, so `onProgress` would drop the update (it
-                    /// writes only while the format is not finalized). `writeFinalProgress` writes it
-                    /// straight to the framing format, which is finalized separately (deferred) below.
-                    progress_callback = [captured_output_format = output_format, previous_progress_callback = progress_callback](const Progress & progress)
-                    {
-                        if (previous_progress_callback)
-                            previous_progress_callback(progress);
-                        captured_output_format->writeFinalProgress(progress);
-                    };
-                }
-                else
-                {
-                    /// On the no-result path the `Null` payload carrier is not part of the pipeline, so
-                    /// the pipeline's progress callback is not called anymore: forward the flush to the
-                    /// carrier via `onProgress` and let its finalize (below) write it as the final
-                    /// `progress` packet (the update may otherwise be pending because of throttling).
-                    progress_callback = [captured_output_format = output_format, previous_progress_callback = progress_callback](const Progress & progress)
-                    {
-                        if (previous_progress_callback)
-                            previous_progress_callback(progress);
-                        captured_output_format->onProgress(progress);
-                    };
-                }
+                    if (previous_progress_callback)
+                        previous_progress_callback(progress);
+                    captured_output_format->writeFinalProgress(progress);
+                };
 
                 flushQueryProgress(pipeline, pulling_pipeline, progress_callback, context->getProcessListElement());
             });
@@ -3164,11 +3157,11 @@ void executeQuery(
                 thread_group->memory_tracker.logPeakMemoryUsage();
 
             /// On the no-result path nothing else finalizes the `Null` carrier (it is not part of the
-            /// pipeline), and the last progress update - including the final one flushed above - may still
-            /// be pending because of throttling (see `onProgress`): finalize the carrier now, which writes
-            /// it as the final `progress` packet. The framing finalization itself is deferred (see
-            /// `deferFramingFinalize` above), and for a pulling query the output format was already
-            /// finalized by the pipeline, so this is a no-op.
+            /// pipeline): finalize it now, so its wrapping buffers are released and the trailing logs
+            /// are pumped. Its pending (throttled) progress update was folded into the final progress
+            /// stashed in the framing format above (see `writeFinalProgress`). The framing finalization
+            /// itself is deferred (see `deferFramingFinalize` above), and for a pulling query the
+            /// output format was already finalized by the pipeline, so this is a no-op.
             output_format->finalize();
 
             framing->finalize();
