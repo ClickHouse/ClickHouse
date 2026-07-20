@@ -1,6 +1,8 @@
 #include <Processors/Formats/Impl/HiveTextRowOutputFormat.h>
 #include <Formats/FormatFactory.h>
 
+#include "config.h"
+
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -92,8 +94,13 @@ void registerOutputFormatHiveText(FormatFactory & factory)
     /// The documentation is registered here rather than next to the input format, because the
     /// output format is compiled unconditionally while the input format is gated behind `USE_HIVE`.
     /// Registering it here guarantees a non-empty description for `HiveText` in every build.
+    /// The page mirrors `docs/en/interfaces/formats/HiveText.md`; the input-related parts are
+    /// included only when the input format is actually compiled in, so builds without `USE_HIVE`
+    /// advertise an explicitly output-only contract.
     factory.setDocumentation("HiveText", Documentation{
-        .description = R"DOCS_MD(
+        .description =
+#if USE_HIVE
+        R"DOCS_MD(
 | Input | Output | Alias |
 |-------|--------|-------|
 | ✔     | ✔      |       |
@@ -106,7 +113,7 @@ format, similar to [`CSV`](/reference/formats/CSV/CSV), in which fields are
 separated by the Hive default `\x01` (Ctrl-A) delimiter. The field delimiter is
 configurable via [`input_format_hive_text_fields_delimiter`](#format-settings).
 
-The data has no header row: values are
+When used as an input format, the data has no header row: values are
 mapped positionally onto the columns of the destination table, so the column
 names and types are taken from the table (or from an explicitly provided
 structure) rather than inferred from the data. While reading, ClickHouse parses
@@ -133,15 +140,6 @@ By default, rows are allowed to have a variable number of fields (see
 [`input_format_hive_text_allow_variable_number_of_columns`](#format-settings)):
 rows with fewer fields than the table have the missing columns filled with
 default values, and rows with extra trailing fields have the extras skipped.
-
-On the output side, `HiveText` writes rows using the Hive `LazySimpleSerDe`
-delimiters: fields are separated by `input_format_hive_text_fields_delimiter`,
-rows by [`format_hive_text_rows_delimiter`](#format-settings), and nested
-`Array`/`Map`/`Tuple` values by the Hive collection-items and map-keys
-delimiters. `NULL` is written as `\N`. Types that have no Hive text
-representation (such as `AggregateFunction`, `Dynamic`, `Variant`,
-`LowCardinality`, `Object`, `Enum`, `Time`, `Time64`, and `Interval`) are not
-supported and raise an exception.
 
 ## Example usage {#example-usage}
 
@@ -212,16 +210,124 @@ SELECT * FROM test_extras ORDER BY a;
 Setting `input_format_hive_text_allow_variable_number_of_columns = 0` instead
 enforces a strict field count, and a row with fewer fields than the table raises
 a parsing exception.
+)DOCS_MD"
+#else
+        R"DOCS_MD(
+| Input | Output | Alias |
+|-------|--------|-------|
+| ✗     | ✔      |       |
+
+## Description {#description}
+
+`HiveText` writes the text serialization format used by [Apache Hive](https://hive.apache.org/)
+tables (the format produced by Hive's `LazySimpleSerDe`). It is a delimited text
+format, similar to [`CSV`](/reference/formats/CSV/CSV), in which fields are
+separated by the Hive default `\x01` (Ctrl-A) delimiter. The field delimiter is
+configurable via [`input_format_hive_text_fields_delimiter`](#format-settings).
+
+<Info>
+**Output-only in this build**
+
+This ClickHouse build was compiled without Apache Hive support, so `HiveText`
+is available only as an output format. Reading `HiveText` input requires a
+build with Hive support enabled.
+</Info>
+)DOCS_MD"
+#endif
+        R"DOCS_MD(
+## Output {#output}
+
+When used as an output format, `HiveText` writes each row without any quoting:
+top-level fields are separated by the fields delimiter (`\x01` by default) and
+rows are separated by the rows delimiter (`\n` by default, configurable via
+[`format_hive_text_rows_delimiter`](#format-settings)). Values of nested types
+([`Array`](/reference/data-types/array), [`Map`](/reference/data-types/map)
+and [`Tuple`](/reference/data-types/tuple)) are written without brackets and
+are separated by the Hive separator for their nesting level, the same way Hive's
+`LazySimpleSerDe` does it. The first three separators are the configurable fields
+delimiter, [`input_format_hive_text_collection_items_delimiter`](#format-settings)
+(`\x02` by default, used for array elements, map entries and tuple elements) and
+[`input_format_hive_text_map_keys_delimiter`](#format-settings) (`\x03` by default,
+used between a map key and its value); deeper levels default to consecutive control
+characters (`\x04`, `\x05`, and so on, up to eight levels). Data types that have no natural
+Hive text representation are not supported for output and raise a
+`NOT_IMPLEMENTED` exception. This includes `AggregateFunction`, `Dynamic`,
+`Variant`, `LowCardinality` and `Object`, as well as the numeric-backed types
+`Enum`, `Time`, `Time64` and `Interval` — Hive has no matching type for the
+latter, so they are rejected rather than written as their raw underlying
+numbers. The wide numeric types `Int128`, `UInt128`, `Int256` and `UInt256`
+are rejected for the same reason: the widest Hive integer is `BIGINT` (64-bit),
+and even Hive `DECIMAL` with its maximum precision of 38 cannot hold their
+value range. Likewise, `Decimal` values with a precision above 38 (that is,
+`Decimal256`) exceed the maximum precision of Hive `DECIMAL` and are rejected.
+Likewise, `Map` keys must be of a primitive type: Hive declares maps
+as `MAP<primitive_type, data_type>`, so a `Map` whose key type is an `Array`,
+`Map` or `Tuple` (which ClickHouse permits) is rejected with a
+`NOT_IMPLEMENTED` exception, because no Hive schema could read such values
+back.
+
+`Date`, `Date32`, `DateTime` and `DateTime64` are always written in the plain
+Hive date and timestamp text (`yyyy-MM-dd` and `yyyy-MM-dd HH:mm:ss[.fffffffff]`),
+independent of the [`date_time_output_format`](/reference/settings/formats#date_time_output_format)
+setting, so the output stays parseable by Hive even when that setting is
+`unix_timestamp` or `iso`.
+
+For the same reason, `Bool` values are always written as `true`/`false`,
+independent of the [`bool_true_representation`](/reference/settings/formats#bool_true_representation)
+and [`bool_false_representation`](/reference/settings/formats#bool_false_representation)
+settings, and `NULL` values are always written as Hive's default null sequence
+`\N`, independent of the [`format_csv_null_representation`](/reference/settings/formats#format_csv_null_representation)
+setting. This keeps the output readable by Hive's `LazySimpleSerDe` regardless of
+these generic text settings.
+
+Non-finite `Float32` and `Float64` values are written using Hive's Java spellings
+`NaN`, `Infinity` and `-Infinity`, rather than ClickHouse's usual `nan`/`inf`/`-inf`
+tokens, so that Hive's `FLOAT`/`DOUBLE` parser reads them back as the same values
+instead of `NULL`.
+
+<Info>
+**Hive-compatible output, not a full round-trip through the input format**
+
+The output side targets Hive's default `LazySimpleSerDe` and is not symmetric with
+ClickHouse's own `HiveText` input:
+
+- Nested [`Array`](/reference/data-types/array), [`Map`](/reference/data-types/map)
+  and [`Tuple`](/reference/data-types/tuple) values are written with Hive's nested
+  separators (without brackets), but the input format parses each field with
+  `CSV`/bracketed rules and ignores
+  [`input_format_hive_text_collection_items_delimiter`](#format-settings) /
+  [`input_format_hive_text_map_keys_delimiter`](#format-settings). So nested output such
+  as `SELECT [1, 2] FORMAT HiveText` is **not** read back by
+  `INSERT ... FORMAT HiveText` — only top-level scalar fields round-trip, and only with
+  the default `\n` row delimiter (see the next point).
+- Round-tripping also requires the default `\n` row delimiter. When
+  [`format_hive_text_rows_delimiter`](#format-settings) is changed, the output separates
+  rows with the configured byte, but the input side is still the newline-based
+  `CSVRowInputFormat` and there is no matching `input_format_hive_text_rows_delimiter`. So
+  multi-row scalar output such as
+  `SELECT number FROM numbers(3) FORMAT HiveText SETTINGS format_hive_text_rows_delimiter=';'`
+  (which produces `0;1;2;`) is **not** read back by `INSERT ... FORMAT HiveText` as three rows.
+- Only the default, unescaped `LazySimpleSerDe` subset is implemented. Fields are written
+  without escaping (there is no equivalent of Hive's optional `ROW FORMAT DELIMITED ...
+  ESCAPED BY`), and `NULL` is always written as `\N` (there is no equivalent of
+  `NULL DEFINED AS`). A `String` that itself contains an active field, row or nested
+  separator is therefore written literally and will be misread when parsed back — this
+  matches how Hive itself behaves with a non-escaping serde.
+</Info>
+
+```sql title="Query"
+SELECT '20240305', tuple(123567, 'e01001', map('action1', 33333, 'act2', 5555)) FORMAT HiveText;
+```
 
 ## Format settings {#format-settings}
 
 | Setting                                                | Description                                                                                                                           | Default |
 |--------------------------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------|---------|
 | `input_format_hive_text_fields_delimiter`              | Delimiter between fields in Hive Text File                                                                                             | `\x01`  |
-| `input_format_hive_text_collection_items_delimiter`    | Delimiter between collection (array or map) items in Hive Text File. Accepted but not used during input parsing; used on output.       | `\x02`  |
-| `input_format_hive_text_map_keys_delimiter`            | Delimiter between a pair of map key/values in Hive Text File. Accepted but not used during input parsing; used on output.              | `\x03`  |
+| `input_format_hive_text_collection_items_delimiter`    | Delimiter between collection (array or map) items in Hive Text File. Used by the output format; accepted but currently not used during input parsing.   | `\x02`  |
+| `input_format_hive_text_map_keys_delimiter`            | Delimiter between a pair of map key/values in Hive Text File. Used by the output format; accepted but currently not used during input parsing.          | `\x03`  |
 | `input_format_hive_text_allow_variable_number_of_columns` | Ignore extra columns in Hive Text input (if file has more columns than expected) and treat missing fields as default values        | `1`     |
-| `format_hive_text_rows_delimiter`                      | Delimiter between rows in the Hive Text output format                                                                                  | `\n`    |
+| `format_hive_text_rows_delimiter`                      | Delimiter at the end of each row in Hive Text output                                                                                   | `\n`    |
 )DOCS_MD"});
 }
 
