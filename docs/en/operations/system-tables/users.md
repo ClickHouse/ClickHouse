@@ -18,7 +18,7 @@ Contains a list of [user accounts](../../guides/sre/user-management/index.md#use
 - `storage` ([String](/sql-reference/data-types/string)) — Path to the storage of users. Configured in the access_control_path parameter.
 - `auth_type` ([Array(Enum8('no_password' = 0, 'plaintext_password' = 1, 'sha256_password' = 2, 'double_sha1_password' = 3, 'ldap' = 4, 'kerberos' = 5, 'ssl_certificate' = 6, 'bcrypt_password' = 7, 'ssh_key' = 8, 'http' = 9, 'jwt' = 10, 'scram_sha256_password' = 11, 'no_authentication' = 12))](/sql-reference/data-types/array)) — Shows the authentication types. There are multiple ways of user identification: with no password, with plain text password, with SHA256-encoded password, with double SHA-1-encoded password or with bcrypt-encoded password.
 - `auth_params` ([Array(String)](/sql-reference/data-types/array)) — Authentication parameters in the JSON format depending on the auth_type.
-- `valid_until` ([Array(DateTime)](/sql-reference/data-types/array)) — The expiration date and time for user credentials.
+- `valid_until` ([Array(DateTime64)](/sql-reference/data-types/array)) — The expiration date and time for user credentials, one per authentication method. `1970-01-01 00:00:00` means the credentials never expire.
 - `host_ip` ([Array(String)](/sql-reference/data-types/array)) — IP addresses of hosts that are allowed to connect to the ClickHouse server.
 - `host_names` ([Array(String)](/sql-reference/data-types/array)) — Names of hosts that are allowed to connect to the ClickHouse server.
 - `host_names_regexp` ([Array(String)](/sql-reference/data-types/array)) — Regular expression for host names that are allowed to connect to the ClickHouse server.

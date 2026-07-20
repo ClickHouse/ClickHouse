@@ -174,13 +174,13 @@ def test_valid_for_interval_overflow(started_cluster):
     assert "VALID UNTIL \\'9999-" in node.query(
         "SHOW CREATE USER user_valid_for_overflow"
     )
-    # The `valid_until` column of `system.users` is a `DateTime`, which cannot hold year 9999;
-    # the value is clamped to the upper bound of `DateTime` instead of wrapping around.
+    # The `valid_until` column of `system.users` is a `DateTime64`, so it reports the same
+    # year-9999 deadline the authentication check enforces, without clamping.
     assert (
         node.query(
             "SELECT valid_until[1] > now() + INTERVAL 50 YEAR, toYear(valid_until[1]) FROM system.users WHERE name = 'user_valid_for_overflow'"
         )
-        == "1\t2106\n"
+        == "1\t9999\n"
     )
 
     node.query("DROP USER IF EXISTS user_valid_for_overflow")
