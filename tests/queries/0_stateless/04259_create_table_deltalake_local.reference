@@ -7,3 +7,4 @@
 5
 partition by rejected
 fresh create without kernel rejected
+fresh create with writes off rejected

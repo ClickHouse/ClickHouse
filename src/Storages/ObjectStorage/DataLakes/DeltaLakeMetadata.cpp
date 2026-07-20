@@ -770,9 +770,9 @@ void DeltaLakeMetadata::createInitial(
         /// enforce `RemoteHostFilter`/`HTTPHeaderFilter` here, before the first remote commit.
         configuration_ptr->check(local_context);
 
-        /// Whether we register the freshly created/attached table with a catalog. Only this path needs to
-        /// probe storage, so a plain CREATE (no catalog, or writes off) stays lazy and never connects here
-        /// -- matching the `S3`/`Iceberg` engines.
+        /// Only a catalog registration needs to know the pre-`createTable` state, so probe storage for it
+        /// only when we will register (a fresh create writes commit 0, which would otherwise make the
+        /// post-create `deltaLogExists` always true); `createTable` itself makes the create/attach decision.
         const bool register_with_catalog = catalog && local_context->getSettingsRef()[Setting::allow_experimental_delta_lake_writes];
 
         /// If a Delta table already exists at the location, `createTable` attaches to it (no new commit);

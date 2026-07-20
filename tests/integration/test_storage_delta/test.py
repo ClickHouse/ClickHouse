@@ -488,6 +488,44 @@ def test_single_log_file(started_cluster, use_delta_kernel, storage_type):
     )
 
 
+def test_delta_lake_engine_secret_masked(started_cluster):
+    # A `CREATE TABLE ... ENGINE = DeltaLake('<url>', '<key>', '<secret>')` must mask the S3 secret
+    # access key as `[HIDDEN]` in `SHOW CREATE TABLE` and `system.tables`. Masking is applied when the
+    # query is formatted (see `FunctionSecretArgumentsFinder`), so it is independent of query execution.
+    instance = started_cluster.instances["node1"]
+    spark = started_cluster.spark_session
+    TABLE_NAME = randomize_table_name("test_delta_secret_masked")
+
+    inserted_data = "SELECT number as a, toString(number + 1) as b FROM numbers(10)"
+    parquet_data_path = create_initial_data_file(
+        started_cluster, instance, inserted_data, TABLE_NAME, node_name=instance.name
+    )
+    delta_path = f"/{TABLE_NAME}"
+    write_delta_from_file(spark, parquet_data_path, delta_path)
+    default_upload_directory(started_cluster, "s3", delta_path, "")
+
+    url = f"http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{started_cluster.minio_bucket}/{TABLE_NAME}/"
+    instance.query(
+        f"""
+        DROP TABLE IF EXISTS {TABLE_NAME};
+        CREATE TABLE {TABLE_NAME}
+        ENGINE=DeltaLake('{url}', 'minio', '{minio_secret_key}')
+        """
+    )
+
+    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 10
+
+    for query in (
+        f"SHOW CREATE TABLE {TABLE_NAME}",
+        f"SELECT create_table_query FROM system.tables WHERE name = '{TABLE_NAME}' AND database = currentDatabase()",
+    ):
+        result = instance.query(query)
+        assert "[HIDDEN]" in result, result
+        assert minio_secret_key not in result, result
+
+    instance.query(f"DROP TABLE {TABLE_NAME}")
+
+
 def test_single_log_file_azure_connection_string(started_cluster):
     """Test DeltaLakeAzure with connection string authentication and delta kernel enabled."""
     instance = started_cluster.instances["node1"]
