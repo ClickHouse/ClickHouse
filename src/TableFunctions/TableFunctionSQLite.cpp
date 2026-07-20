@@ -52,9 +52,10 @@ private:
     void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
 
     /// Open the SQLite database lazily, on the first external contact (structure inference or execution),
-    /// rather than in `parseArguments`. A non-insert query passes `allow_create = false`, so a `SELECT` /
-    /// `DESCRIBE` of a missing path fails closed instead of fabricating an empty database (matching the
-    /// storage engine and the `SQLite` format reader). Runs at most once per table-function instance.
+    /// rather than in `parseArguments`. The table function never creates the database file (`allow_create` is
+    /// always false), so a `SELECT` / `DESCRIBE` / `INSERT` against a missing path fails closed instead of
+    /// fabricating an empty database (matching the storage engine and the `SQLite` format reader). Runs at
+    /// most once per table-function instance.
     std::shared_ptr<sqlite3> openConnection(ContextPtr context, bool allow_create) const;
 
     String database_path;
@@ -71,10 +72,13 @@ StoragePtr TableFunctionSQLite::executeImpl(const ASTPtr & /*ast_function*/,
         throw Exception(ErrorCodes::INCORRECT_QUERY,
             "Cannot INSERT into the 'sqlite' table function: it represents the result of a query passed to SQLite, which is read-only");
 
-    /// Open lazily here (not in `parseArguments`): only a genuine `INSERT` may create the target file; a read
-    /// of a missing path fails closed. Reuses the connection already opened by `getActualTableStructure`.
+    /// Open lazily here (not in `parseArguments`), and never create the database file: a table function
+    /// always refers to an already-existing table, so a missing path can only be a mistake. Even an `INSERT`
+    /// would fail with `no such table` after fabricating an empty database, so opening with `allow_create`
+    /// would only leave a junk file behind. A missing path therefore fails closed for reads and writes alike.
+    /// Reuses the connection already opened by `getActualTableStructure`.
     auto storage = std::make_shared<StorageSQLite>(StorageID(getDatabaseName(), table_name),
-                                         openConnection(context, /* allow_create */ is_insert_query),
+                                         openConnection(context, /* allow_create */ false),
                                          database_path,
                                          remote_table_or_query,
                                          cached_columns, ConstraintsDescription{}, /* comment = */ "", context,
@@ -120,7 +124,7 @@ void TableFunctionSQLite::parseArguments(const ASTPtr & ast_function, ContextPtr
 
     /// The 2nd argument is either a table name, or a query passed to SQLite as is - `(SELECT ...)` or `query('SELECT ...')`.
     auto maybe_query = tryGetExternalDatabaseQuery(
-        args[1], context, IdentifierQuotingStyle::DoubleQuotesStandard, LiteralEscapingStyle::PostgreSQL);
+        args[1], context, IdentifierQuotingStyle::DoubleQuotesStandard, LiteralEscapingStyle::StandardSQL);
     for (size_t i = 0; i < args.size(); ++i)
     {
         if (i == 1 && maybe_query)
