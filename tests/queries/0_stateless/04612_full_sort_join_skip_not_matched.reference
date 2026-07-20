@@ -1,0 +1,30 @@
+-- inner, dense left with duplicates vs sparse right
+1002	1668330	1668330	5005992	166833
+-- inner, sparse left vs dense right with duplicates
+1002	1668330	1668330	166833	5005992
+-- left, sparse right
+10000	49995000	122500	49995000	1225	9951
+-- right, sparse left
+10000	122500	49995000	1225	49995000	9951
+-- full, interleaved multiples of 2 and 3
+8333	24995000	37492500	3333	3333
+-- any inner, duplicates on both sides
+334	556110	556110
+-- any left, sparse right with distinct keys
+10000	16661667	49995000	1668330	166833
+-- any right, sparse left with distinct keys
+10000	1668330	166833	16661667	49995000
+-- inner, multi-column key, first column with duplicate runs
+1000	34470	49500	34470	49500
+-- inner, nullable keys, nulls never match
+480	672000	672000	0	0
+-- left, nullable keys
+3000	3855858	672000	429	2520
+-- inner, string keys
+500	4000	4000
+-- inner, decimal keys
+500	1247500	1247500
+-- inner, fixed string keys
+500	4000	4000
+-- disjoint key ranges, no matches at all
+10000	12497500	5012497500
