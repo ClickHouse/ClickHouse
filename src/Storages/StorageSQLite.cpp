@@ -6,7 +6,6 @@
 #include <Processors/Sources/SQLiteSource.h>
 #include <Databases/SQLite/SQLiteUtils.h>
 #include <Databases/SQLite/fetchSQLiteTableStructure.h>
-#include <Columns/ColumnNullable.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
@@ -19,6 +18,7 @@
 #include <Interpreters/Context.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTLiteral.h>
+#include <Processors/Formats/Impl/SQLiteCommon.h>
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/TableNameOrQuery.h>
@@ -303,50 +303,6 @@ Pipe StorageSQLite::read(
 }
 
 
-namespace
-{
-
-/// Bind one cell of a ClickHouse column as a parameter of a prepared SQLite statement. Binding (rather than
-/// formatting an `INSERT ... VALUES` SQL string) is the only way to pass values to SQLite faithfully: SQLite
-/// string literals have no escape sequences at all, so control characters would be corrupted when written as
-/// text and a NUL byte would truncate the whole statement. Numeric values are bound with their native SQLite
-/// type; every other value is bound as text using its ClickHouse text serialization, with an explicit byte
-/// length so that control characters and embedded NUL bytes survive. SQLite then applies the target column's
-/// affinity to the bound value, exactly as it did to the literals this path used to emit.
-void bindSQLiteValue(
-    sqlite3_stmt * stmt, int index, const ColumnWithTypeAndName & column, size_t row, const FormatSettings & format_settings)
-{
-    const IColumn * data = column.column.get();
-    DataTypePtr type = column.type;
-
-    if (const auto * nullable = typeid_cast<const ColumnNullable *>(data))
-    {
-        if (nullable->isNullAt(row))
-        {
-            sqlite3_bind_null(stmt, index);
-            return;
-        }
-        data = &nullable->getNestedColumn();
-        type = removeNullable(type);
-    }
-
-    WhichDataType which(type);
-    if (which.isFloat())
-        sqlite3_bind_double(stmt, index, data->getFloat64(row));
-    else if (which.isNativeInteger())
-        sqlite3_bind_int64(stmt, index, data->getInt(row));
-    else
-    {
-        WriteBufferFromOwnString wb;
-        type->getDefaultSerialization()->serializeText(*data, row, wb, format_settings);
-        const auto text = wb.str();
-        sqlite3_bind_text64(stmt, index, text.data(), text.size(), SQLITE_TRANSIENT, SQLITE_UTF8);
-    }
-}
-
-}
-
-
 class SQLiteSink final : public SinkToStorage
 {
 public:
@@ -418,11 +374,28 @@ public:
 
         std::unique_ptr<sqlite3_stmt, StatementDeleter> statement(compiled_stmt, StatementDeleter());
 
+        std::vector<SerializationPtr> serializations;
+        serializations.reserve(num_columns);
+        for (size_t i = 0; i < num_columns; ++i)
+            serializations.emplace_back(insertable_block.getByPosition(i).type->getDefaultSerialization());
+
         const size_t num_rows = insertable_block.rows();
         for (size_t row = 0; row < num_rows; ++row)
         {
             for (size_t i = 0; i < num_columns; ++i)
-                bindSQLiteValue(statement.get(), static_cast<int>(i + 1), insertable_block.getByPosition(i), row, format_settings);
+            {
+                const auto & elem = insertable_block.getByPosition(i);
+                const int sqlite_index = static_cast<int>(i + 1);
+                if (elem.column->isNullAt(row))
+                    SQLiteFormatImpl::checkSQLiteStatus(
+                        sqlite_db.get(), sqlite3_bind_null(statement.get(), sqlite_index), "Cannot bind NULL value");
+                else
+                    /// The shared binder keeps the dispatch identical to the `SQLite` output format: `Bool` is
+                    /// bound as 0/1, `UInt64` (which can exceed the SQLite INTEGER range) and NaN (which
+                    /// `sqlite3_bind_double` would turn into SQLite NULL) go through the text path.
+                    SQLiteFormatImpl::bindSQLiteValue(
+                        sqlite_db.get(), statement.get(), sqlite_index, *elem.column, row, elem.type, *serializations[i], format_settings);
+            }
 
             status = sqlite3_step(statement.get());
             if (status != SQLITE_DONE)

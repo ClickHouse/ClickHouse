@@ -4,12 +4,19 @@
 
 #if USE_SQLITE
 
+#    include <Columns/IColumn.h>
+#    include <Core/Field.h>
+#    include <DataTypes/DataTypeLowCardinality.h>
+#    include <DataTypes/DataTypeNullable.h>
+#    include <DataTypes/IDataType.h>
+#    include <DataTypes/Serializations/ISerialization.h>
 #    include <Formats/FormatSettings.h>
 #    include <IO/ReadBuffer.h>
 #    include <IO/ReadBufferFromFileBase.h>
 #    include <IO/WriteBufferFromString.h>
 #    include <IO/copyData.h>
 #    include <Common/Exception.h>
+#    include <Common/NaNUtils.h>
 
 #    include <sqlite3.h>
 
@@ -144,6 +151,93 @@ inline SQLiteStatementPtr prepareSQLiteStatement(sqlite3 * db, const String & qu
     int status = sqlite3_prepare_v2(db, query.c_str(), static_cast<int>(query.size() + 1), &statement, nullptr);
     checkSQLiteStatus(db, status, fmt::format("Cannot prepare SQLite query: {}", query));
     return SQLiteStatementPtr(statement, sqlite3_finalize);
+}
+
+inline void bindSQLiteTextValue(
+    sqlite3 * db,
+    sqlite3_stmt * statement,
+    int sqlite_index,
+    const IColumn & column,
+    size_t row,
+    const ISerialization & serialization,
+    const FormatSettings & settings)
+{
+    WriteBufferFromOwnString value;
+    serialization.serializeText(column, row, value, settings);
+    const auto value_string = value.str();
+    checkSQLiteStatus(
+        db,
+        sqlite3_bind_text(statement, sqlite_index, value_string.data(), static_cast<int>(value_string.size()), SQLITE_TRANSIENT),
+        "Cannot bind text value");
+}
+
+/// Bind one non-NULL cell of a ClickHouse column as a parameter of a prepared SQLite statement (the caller
+/// binds NULL cells itself). Binding (rather than formatting an `INSERT ... VALUES` SQL string) is the only
+/// way to pass values to SQLite faithfully: SQLite string literals have no escape sequences at all, so control
+/// characters would be corrupted when written as text and a NUL byte would truncate the whole statement.
+/// Signed native integers and Bool are bound as SQLite INTEGER, finite floats as REAL; everything else -
+/// including `UInt64` (which can exceed the INTEGER range) and NaN (which `sqlite3_bind_double` would turn
+/// into SQLite NULL) - is bound as text using its ClickHouse text serialization, with an explicit byte length
+/// so that control characters and embedded NUL bytes survive. SQLite then applies the target column's
+/// affinity to the bound value. This single dispatch is shared by the `SQLite` output format and the
+/// `SQLite` storage engine / `sqlite` table function sink, so both write paths round-trip values identically.
+inline void bindSQLiteValue(
+    sqlite3 * db,
+    sqlite3_stmt * statement,
+    int sqlite_index,
+    const IColumn & column,
+    size_t row,
+    const DataTypePtr & type,
+    const ISerialization & serialization,
+    const FormatSettings & settings)
+{
+    auto nested_type = removeLowCardinalityAndNullable(type);
+    WhichDataType which(nested_type);
+
+    if (isBool(nested_type))
+    {
+        checkSQLiteStatus(
+            db,
+            sqlite3_bind_int64(statement, sqlite_index, column[row].safeGet<UInt64>() != 0),
+            "Cannot bind boolean value");
+        return;
+    }
+
+    if (which.isNativeInt())
+    {
+        checkSQLiteStatus(
+            db,
+            sqlite3_bind_int64(statement, sqlite_index, column[row].safeGet<Int64>()),
+            "Cannot bind integer value");
+        return;
+    }
+
+    if (which.isUInt8() || which.isUInt16() || which.isUInt32())
+    {
+        checkSQLiteStatus(
+            db,
+            sqlite3_bind_int64(statement, sqlite_index, static_cast<sqlite3_int64>(column[row].safeGet<UInt64>())),
+            "Cannot bind unsigned integer value");
+        return;
+    }
+
+    if (which.isFloat())
+    {
+        const auto float_value = column[row].safeGet<Float64>();
+        if (isNaN(float_value))
+        {
+            bindSQLiteTextValue(db, statement, sqlite_index, column, row, serialization, settings);
+            return;
+        }
+
+        checkSQLiteStatus(
+            db,
+            sqlite3_bind_double(statement, sqlite_index, float_value),
+            "Cannot bind floating-point value");
+        return;
+    }
+
+    bindSQLiteTextValue(db, statement, sqlite_index, column, row, serialization, settings);
 }
 
 }
