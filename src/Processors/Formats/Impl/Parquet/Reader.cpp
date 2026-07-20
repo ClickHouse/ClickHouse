@@ -1181,24 +1181,36 @@ static std::optional<HashSet<UInt64>> hashDictionaryValues(
     /// `estimated_value_set_bytes` must be an upper bound on the peak transient memory allocated below,
     /// so that once the reservation succeeds the value set is guaranteed to stay within budget while it
     /// is built. The `hashes` vector (allocated at exactly `count` capacity by `parquetTryHashColumn`, so
-    /// exactly `count * sizeof(UInt64)`) and the resulting `value_hashes` HashSet (power-of-two capacity,
-    /// up to ~2 UInt64 cells per value) are always built. When the dictionary is not already an `IColumn`
-    /// (FixedSize / StringPlain modes) the values are first materialized into a fresh column of `count`
-    /// values plus an identity `indexes` vector: a `ColumnString` there reserves only its UInt64 offsets
-    /// and grows its `chars` buffer geometrically (up to ~2x the final size) as `insertData` appends, so
-    /// count twice the average value size for the payload plus a UInt64 per-value offset - the raw
-    /// `getAverageValueSize` alone understates that materialized footprint. The `Mode::Column` path
-    /// hashes the already-decoded (and already-charged) column in place, so it needs none of the
-    /// materialization terms.
-    size_t per_value_bytes =
-        sizeof(UInt64)          /// `hashes` vector
-        + 2 * sizeof(UInt64);   /// `value_hashes` HashSet (rounds capacity up to a power of two)
+    /// exactly `count * sizeof(UInt64)`) and the resulting `value_hashes` HashSet are always built. When
+    /// the dictionary is not already an `IColumn` (FixedSize / StringPlain modes) the values are first
+    /// materialized into a fresh column of `count` values plus an identity `indexes` vector: a
+    /// `ColumnString` there reserves only its UInt64 offsets and grows its `chars` buffer geometrically
+    /// (up to ~2x the final size) as `insertData` appends, so count twice the average value size for the
+    /// payload plus a UInt64 per-value offset - the raw `getAverageValueSize` alone understates that
+    /// materialized footprint. The `Mode::Column` path hashes the already-decoded (and already-charged)
+    /// column in place, so it needs none of the materialization terms.
+    ///
+    /// The `HashSet` term cannot be approximated per value: `HashSet::reserve` picks a power-of-two
+    /// buffer with a maximum fill factor of 0.5 (`HashTableGrowerWithPrecalculation::set`), so the
+    /// table holds up to ~4 cells per inserted hash and never fewer than its initial 256 cells.
+    /// Compute the buffer size with the set's own growth rule so the reservation matches what
+    /// `reserve` really allocates, for the full insert cardinality: all `count` dictionary hashes
+    /// plus the one extra default-value hash possibly added under `input_format_null_as_default`
+    /// below (reserving for it up front also guarantees that insert never triggers a rehash past the
+    /// reservation). Add the set's initial constructor-allocated buffer, which can transiently
+    /// coexist with the resized one inside `realloc`.
+    using ValueHashSet = HashSet<UInt64>;
+    ValueHashSet::grower_type value_set_grower;
+    value_set_grower.set(count + 1);
+    size_t value_set_buffer_bytes =
+        (value_set_grower.bufSize() + ValueHashSet::grower_type::initial_count) * sizeof(ValueHashSet::cell_type);
+    size_t per_value_bytes = sizeof(UInt64);    /// `hashes` vector
     if (column.dictionary.mode != Dictionary::Mode::Column)
         per_value_bytes +=
             2 * size_t(column.dictionary.getAverageValueSize())  /// materialized column payload, incl. geometric chars growth
             + sizeof(UInt64)    /// materialized `ColumnString` offsets (0 for fixed types; counted conservatively)
             + sizeof(UInt32);   /// identity `indexes`
-    size_t estimated_value_set_bytes = count * per_value_bytes;
+    size_t estimated_value_set_bytes = count * per_value_bytes + value_set_buffer_bytes;
     /// Reserve the peak footprint before allocating anything. If it does not fit, skip pruning.
     if (!reservation.tryReserve(estimated_value_set_bytes))
         return std::nullopt;
@@ -1234,8 +1246,10 @@ static std::optional<HashSet<UInt64>> hashDictionaryValues(
     }
     if (!hashes.has_value())
         return std::nullopt;
-    HashSet<UInt64> value_hashes;
-    value_hashes.reserve(hashes->size());
+    ValueHashSet value_hashes;
+    /// +1 for the possible extra default-value hash below: when `hashes->size()` lands exactly on the
+    /// table's maximum fill, that late insert would otherwise rehash past the reserved buffer.
+    value_hashes.reserve(hashes->size() + 1);
     for (UInt64 h : *hashes)
         value_hashes.insert(h);
 
@@ -1269,14 +1283,25 @@ static std::optional<HashSet<UInt64>> hashDictionaryValues(
     }
 
     /// The value set is kept alive (in its `DictionaryLookup`) until this whole row-group filter
-    /// evaluation finishes, so keep its persistent footprint - the `HashSet` buffer - reserved against
-    /// the shared budget and hand the amount to the caller to release when the value set is freed. The
-    /// transient `indexes`/`values`/`hashes` allocations were already freed above, so release that part
-    /// of the reservation now: a second dictionary-filtered column, or another row group pruning in
-    /// parallel, then sees only the persistent part still held, keeping the combined footprint within
-    /// the watermark without over-reserving for the transients.
-    size_t persistent_bytes = std::min(value_hashes.getBufferSizeInBytes(), estimated_value_set_bytes);
-    reservation.release(estimated_value_set_bytes - persistent_bytes);
+    /// evaluation finishes, so keep its persistent footprint - the real `HashSet` buffer - reserved
+    /// against the shared budget and hand the amount to the caller to release when the value set is
+    /// freed. The transient `indexes`/`values`/`hashes` allocations were already freed above, so
+    /// release that part of the reservation now: a second dictionary-filtered column, or another row
+    /// group pruning in parallel, then sees only the persistent part still held, keeping the combined
+    /// footprint within the watermark without over-reserving for the transients. The estimate above
+    /// follows the set's own growth rule, so it never under-predicts the buffer; the grow branch is a
+    /// defensive backstop (mirroring `decodeDictionaryPage`) in case the two ever drift apart, falling
+    /// back to a full scan if the correction no longer fits the budget.
+    size_t persistent_bytes = value_hashes.getBufferSizeInBytes();
+    if (persistent_bytes > estimated_value_set_bytes)
+    {
+        if (!reservation.tryReserve(persistent_bytes - estimated_value_set_bytes))
+            return std::nullopt;
+    }
+    else
+    {
+        reservation.release(estimated_value_set_bytes - persistent_bytes);
+    }
     held_pruning_bytes = persistent_bytes;
     committed = true;
 
