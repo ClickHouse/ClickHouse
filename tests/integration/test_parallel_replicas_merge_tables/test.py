@@ -32,6 +32,13 @@ parallel_replicas_settings = {
     # single (usually local) replica grabbing a whole underlying table at once — otherwise
     # `_assert_all_replicas_participated` is racy on the small test dataset.
     "parallel_replicas_mark_segment_size": 10,
+    # The query condition cache remembers which granules matched on previous runs of the same
+    # query (e.g. flaky-check reruns), shrinking the read to a few marks that all fit into a
+    # single read task on one replica, which breaks `_assert_all_replicas_participated`.
+    "use_query_condition_cache": 0,
+    # Do not silently drop remote replicas that connect slowly on an overloaded CI runner —
+    # a dropped replica does not participate in reading.
+    "parallel_replicas_connect_timeout_ms": 30000,
 }
 
 
@@ -118,7 +125,19 @@ def test_non_aggregate_query(start_cluster):
 
     query_id = "pr_merge_plain"
     assert (
-        nodes[0].query(query, settings={**parallel_replicas_settings, "query_id": query_id})
+        nodes[0].query(
+            query,
+            settings={
+                **parallel_replicas_settings,
+                "query_id": query_id,
+                # With read-in-order the coordinator works in the `WithOrder` mode, which hands out
+                # up to `min_marks_per_task` marks (much more than the whole test table) to whichever
+                # replica requests work first, so `_assert_all_replicas_participated` cannot be
+                # asserted reliably. Force the default coordinator mode, which spreads
+                # `parallel_replicas_mark_segment_size` segments across replicas.
+                "optimize_read_in_order": 0,
+            },
+        )
         == expected
     )
     _assert_all_replicas_participated(query_id)
