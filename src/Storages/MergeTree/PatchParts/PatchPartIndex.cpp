@@ -18,6 +18,7 @@ namespace ErrorCodes
 {
     extern const int DUPLICATE_DATA_PART;
     extern const int INCORRECT_DATA;
+    extern const int LOGICAL_ERROR;
 }
 
 PatchPartIndex::PatchPartIndex(UInt8 format_version_, String sorting_key_desc_)
