@@ -11,6 +11,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadBufferFromString.h>
+#include <IO/readFloatText.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/readDecimalText.h>
 
@@ -70,6 +71,23 @@ bool NumberLiteral::operator > (const NumberLiteral &) const
 bool NumberLiteral::operator >= (const NumberLiteral &) const
 {
     throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Operator >= is not implemented for NumberLiteral (resolve to concrete type first).");
+}
+
+Float64 NumberLiteral::toFloat64() const
+{
+    /// Hex floats (0x1p4) and hex integers can't be parsed by readFloatText, so use strtod for them.
+    std::string_view digits = value;
+    if (digits.starts_with('-'))
+        digits.remove_prefix(1);
+    if (digits.starts_with("0x") || digits.starts_with("0X"))
+        return std::strtod(value.c_str(), nullptr);
+
+    /// Decimal/exponent literals: use ClickHouse's own precise reader so the resolved value is
+    /// deterministic and identical to how the same text is parsed elsewhere as Float64.
+    ReadBufferFromString buf(value);
+    Float64 result = 0;
+    readFloatTextPrecise(result, buf);
+    return result;
 }
 
 bool AggregateFunctionStateData::operator == (const AggregateFunctionStateData & rhs) const
@@ -604,7 +622,7 @@ Field Field::resolveNumberLiteral() const
     if (!is_integer)
     {
         /// Decimal/exponent literal → resolve to Float64 (backward compat).
-        return std::strtod(s.c_str(), nullptr);
+        return num.toFloat64();
     }
 
     /// Integer literal → resolve to the smallest fitting integer type.
@@ -654,7 +672,7 @@ Field Field::resolveNumberLiteral() const
     }
 
     /// Value doesn't fit in any integer type. Fall back to Float64 (approximate).
-    return std::strtod(s.c_str(), nullptr);
+    return num.toFloat64();
 }
 
 String Field::dump() const

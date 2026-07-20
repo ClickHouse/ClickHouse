@@ -99,8 +99,7 @@ Field convertNumberLiteralToType(const Field & from)
     const auto & num = from.safeGet<NumberLiteral>();
     if constexpr (is_floating_point<To>)
     {
-        /// For float targets, parse via strtod
-        return static_cast<To>(std::strtod(num.value.c_str(), nullptr));
+        return static_cast<To>(num.toFloat64());
     }
     else
     {

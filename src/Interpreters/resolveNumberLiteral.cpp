@@ -56,8 +56,7 @@ std::pair<Field, DataTypePtr> resolveNumberLiteralForFunction(
     }
 
     /// For Decimal targets, convert from string text directly (preserves precision).
-    /// For other targets, resolve the NumberLiteral first (uses strtod for floats,
-    /// which handles subnormals and edge cases that readFloatText doesn't).
+    /// For other targets, resolve the NumberLiteral first (see NumberLiteral::toFloat64 for floats).
     Field parsed_field;
     if (isDecimal(*target_type))
         parsed_field = tryConvertFieldToType(Field(text), *target_type);

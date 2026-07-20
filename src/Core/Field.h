@@ -110,6 +110,12 @@ struct NumberLiteral
     NumberLiteral() = default;
     explicit NumberLiteral(String s) : value(std::move(s)) {}
 
+    /// Parse the literal text as Float64. This is the single place that turns a numeric literal
+    /// into a float, so every resolution path stays consistent. Decimal/exponent literals go
+    /// through ClickHouse's own precise reader (deterministic, locale-independent); hex floats,
+    /// which the reader can't parse, fall back to strtod.
+    Float64 toFloat64() const;
+
     bool operator == (const NumberLiteral & rhs) const { return value == rhs.value; }
     bool operator < (const NumberLiteral &) const;
     bool operator <= (const NumberLiteral &) const;
