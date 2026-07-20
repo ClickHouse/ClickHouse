@@ -1,3 +1,4 @@
+import logging
 
 from helpers.iceberg_utils import get_uuid_str
 

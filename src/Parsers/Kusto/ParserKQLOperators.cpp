@@ -165,7 +165,7 @@ String KQLOperators::genHasAnyAllOpExpr(std::vector<String> & tokens, IParser::P
     return new_expr;
 }
 
-static String genEqOpExprCis(std::vector<String> & tokens, IParser::Pos & token_pos, const String & ch_op)
+String genEqOpExprCis(std::vector<String> & tokens, IParser::Pos & token_pos, const String & ch_op)
 {
     String tmp_arg(token_pos->begin, token_pos->end);
 
@@ -186,7 +186,7 @@ static String genEqOpExprCis(std::vector<String> & tokens, IParser::Pos & token_
     return new_expr;
 }
 
-static String genInOpExprCis(std::vector<String> & tokens, IParser::Pos & token_pos, const String & kql_op, const String & ch_op)
+String genInOpExprCis(std::vector<String> & tokens, IParser::Pos & token_pos, const String & kql_op, const String & ch_op)
 {
     ParserKQLParenExpression kqlfun_p;
     ParserToken s_lparen(TokenType::OpeningRoundBracket);
@@ -239,7 +239,7 @@ static String genInOpExprCis(std::vector<String> & tokens, IParser::Pos & token_
     return new_expr;
 }
 
-static std::string genInOpExpr(IParser::Pos & token_pos, const std::string & kql_op, const std::string & ch_op)
+std::string genInOpExpr(IParser::Pos & token_pos, const std::string & kql_op, const std::string & ch_op)
 {
     ParserKQLParenExpression kqlfun_p;
     ParserToken s_lparen(TokenType::OpeningRoundBracket);

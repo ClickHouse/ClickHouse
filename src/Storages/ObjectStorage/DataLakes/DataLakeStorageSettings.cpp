@@ -22,7 +22,10 @@ DataLakeStorageSettings::DataLakeStorageSettings(const DataLakeStorageSettings &
 {
 }
 
-DataLakeStorageSettings::DataLakeStorageSettings(DataLakeStorageSettings && settings) noexcept = default;
+DataLakeStorageSettings::DataLakeStorageSettings(DataLakeStorageSettings && settings) noexcept
+    : impl(std::make_unique<DataLakeStorageSettingsImpl>(std::move(*settings.impl)))
+{
+}
 
 
 DataLakeStorageSettings::~DataLakeStorageSettings() = default;

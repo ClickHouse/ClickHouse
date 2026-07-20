@@ -22,7 +22,6 @@ JSONCompactStringsEachRow
 JSONCompactStringsEachRowWithNames
 JSONCompactStringsEachRowWithNamesAndTypes
 JSONEachRow
-JSONL
 JSONLines
 JSONObjectEachRow
 JSONStringsEachRow

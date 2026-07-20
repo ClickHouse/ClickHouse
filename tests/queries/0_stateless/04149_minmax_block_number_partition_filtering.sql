@@ -1,7 +1,6 @@
 -- Tags: no-shared-merge-tree, no-random-merge-tree-settings
 -- Tag no-shared-merge-tree: RMT/SMT allocate block numbers starting from 0
 
-SET explain_query_plan_default = 'legacy';
 DROP TABLE IF EXISTS t;
 
 CREATE TABLE t (a UInt64, b UInt64, c UInt64) ENGINE = MergeTree

@@ -11,15 +11,13 @@ wtf
 -- Some headers cannot be obtained.
 
 
-
 -- The setting matters.
 FUNCTION_NOT_ALLOWED
 -- The setting is not enabled by default.
 FUNCTION_NOT_ALLOWED
--- Headers are case-insensitive per RFC.
+-- Are headers case-sentitive?
 application/x-www-form-urlencoded
-application/x-www-form-urlencoded
-application/x-www-form-urlencoded
+
 -- Using it from non-HTTP does not make sense.
 
 

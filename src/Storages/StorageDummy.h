@@ -19,7 +19,7 @@ public:
 
     std::string getName() const override { return "StorageDummy"; }
 
-    static VirtualColumnsDescription createVirtuals(const StorageSnapshotPtr & original_storage_snapshot);
+    static VirtualColumnsDescription createVirtuals();
 
     bool supportsSampling() const override { return true; }
     bool supportsFinal() const override { return true; }
