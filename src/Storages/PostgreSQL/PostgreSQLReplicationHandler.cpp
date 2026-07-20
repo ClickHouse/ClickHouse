@@ -1024,7 +1024,15 @@ StorageInfo PostgreSQLReplicationHandler::loadFromSnapshot(postgres::Connection 
     auto insert = make_intrusive<ASTInsertQuery>();
     insert->table_id = nested_storage->getStorageID();
 
-    auto insert_context = materialized_storage->getNestedTableContext();
+    auto insert_context = Context::createCopy(materialized_storage->getNestedTableContext());
+    /// The snapshot is a bulk reload, not a user INSERT: it must never be silently thrown away by the
+    /// Replicated insert deduplication. The nested replicated table may carry block-deduplication hashes
+    /// from a previous load of the same data - a previous incarnation of the shared table whose Keeper tree
+    /// is still being removed by a background drop, or the pre-truncate parts of the mid-snapshot failover
+    /// recovery (TRUNCATE removes the parts, but the block hashes in Keeper are cleaned up lazily). With
+    /// deduplication on, re-inserting identical blocks would be ignored, leaving the nested table silently
+    /// empty (or partial) while the snapshot is marked as completed.
+    insert_context->setSetting("insert_deduplicate", false);
 
     InterpreterInsertQuery interpreter(
         insert,
@@ -1551,6 +1559,28 @@ void PostgreSQLReplicationHandler::removeCoordinationNodes()
 }
 
 
+bool PostgreSQLReplicationHandler::hasSurvivingCoordinationState()
+{
+    /// Whether any coordination state of this setup survives in Keeper: the `snapshot_completed` marker or
+    /// at least one registered replica. Used to distinguish a live shared publication (to adopt) from one
+    /// leaked by a failed final teardown (to drop). Keeper errors propagate: adopting or dropping a shared
+    /// publication on an unverified guess must not happen (fail-close), the caller retries.
+    auto component_guard = Coordination::setCurrentComponent("PostgreSQLReplicationHandler::hasSurvivingCoordinationState");
+
+    auto zookeeper = getContext()->getZooKeeper();
+    if (zookeeper->exists(coordination_keeper_path + "/snapshot_completed"))
+        return true;
+
+    Strings replicas;
+    auto code = zookeeper->tryGetChildren(coordination_keeper_path + "/replicas", replicas);
+    if (code == Coordination::Error::ZNONODE)
+        return false;
+    if (code != Coordination::Error::ZOK)
+        throw zkutil::KeeperException::fromPath(code, coordination_keeper_path + "/replicas");
+    return !replicas.empty();
+}
+
+
 bool PostgreSQLReplicationHandler::isInitialSnapshotCompleted()
 {
     auto component_guard = Coordination::setCurrentComponent("PostgreSQLReplicationHandler::isInitialSnapshotCompleted");
@@ -1902,6 +1932,29 @@ std::set<String> PostgreSQLReplicationHandler::fetchRequiredTables()
     }
 
     LOG_DEBUG(log, "Publication exists: {}, is attach: {}", publication_exists_before_startup, is_attach);
+
+    /// A publication that outlived its coordinated setup must not be adopted as live shared state. The
+    /// last-replica teardown removes the Keeper coordination nodes first and only then drops the shared
+    /// slot/publication in PostgreSQL, so if that final step failed the publication leaks - with the table
+    /// set of the OLD setup. A fresh coordinated CREATE on the same keeper path would otherwise silently
+    /// adopt that stale table set instead of the requested `materialized_postgresql_tables_list` / current
+    /// schema. A live publication always has surviving coordination state (a replica registers itself
+    /// before it creates the publication, and the `snapshot_completed` marker persists after that), so if
+    /// neither the marker nor any registered replica exists, nothing can be consuming through the
+    /// publication anymore: drop it and start fresh. Keeper errors propagate (fail-close) - the background
+    /// startup task retries. On ATTACH the local nested tables mirror the publication's old table set, so
+    /// it is kept and the slot-without-marker recovery redoes the snapshot as needed.
+    if (publication_exists_before_startup && coordination_enabled && !is_attach && !hasSurvivingCoordinationState())
+    {
+        LOG_WARNING(log,
+                    "Publication {} exists, but there is no coordination state under {} (no snapshot marker and no "
+                    "registered replicas): it was left behind by an incompletely dropped coordinated setup and its "
+                    "table set is stale. Dropping it; it will be recreated",
+                    doubleQuoteString(publication_name), coordination_keeper_path);
+
+        execWithRetryAndFaultInjection(connection, [&](pqxx::nontransaction & tx_){ dropPublication(tx_); });
+        publication_exists_before_startup = false;
+    }
 
     Strings expected_tables;
     if (!tables_list.empty())

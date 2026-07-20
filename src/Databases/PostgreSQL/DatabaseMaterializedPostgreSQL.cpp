@@ -118,6 +118,14 @@ void DatabaseMaterializedPostgreSQL::startSynchronization()
     if (shutdown_called)
         return;
 
+    /// The startup task can be rescheduled after synchronization has already started - e.g. by a refused
+    /// (fail-close) DROP DATABASE, which had deactivated it up front and must restore it on failure (see
+    /// `beforeDropDatabase`). Replacing a live handler here would leak its running consumer, so make the
+    /// task idempotent instead. Failed startups never set the flag: `tryStartSynchronization` keeps
+    /// retrying them as before.
+    if (synchronization_started)
+        return;
+
     replication_handler = makeReplicationHandler();
 
     std::set<String> tables_to_replicate;
@@ -164,6 +172,7 @@ void DatabaseMaterializedPostgreSQL::startSynchronization()
     LOG_TRACE(log, "Loaded {} tables. Starting synchronization", materialized_tables.size());
 
     replication_handler->startup(/* delayed */false);
+    synchronization_started = true;
 }
 
 
@@ -550,6 +559,7 @@ void DatabaseMaterializedPostgreSQL::stopReplication()
 
     /// Clear wrappers over nested, all access is not done to nested tables directly.
     materialized_tables.clear();
+    synchronization_started = false;
 }
 
 
@@ -568,7 +578,13 @@ void DatabaseMaterializedPostgreSQL::dropTable(ContextPtr local_context, const S
             "Recreate the database with an updated materialized_postgresql_tables_list instead");
 
     /// Modify context into nested_context and pass query to Atomic database.
-    DatabaseAtomic::dropTable(StorageMaterializedPostgreSQL::makeNestedTableContext(local_context), table_name, sync);
+    /// In coordinated mode drop the nested replicated table without the usual
+    /// `database_atomic_delay_before_drop_table_sec` delay. The DROP DATABASE teardown removes this replica's
+    /// registration (and, for the last replica, the shared coordination nodes) synchronously, so leaving the
+    /// nested tables' Keeper trees behind for the delay window would let a prompt CREATE on the same keeper
+    /// path adopt a half-dead shared tree: a ghost replica that never answers part fetches, and stale block
+    /// deduplication hashes.
+    DatabaseAtomic::dropTable(StorageMaterializedPostgreSQL::makeNestedTableContext(local_context), table_name, isCoordinated() || sync);
 }
 
 
@@ -646,7 +662,21 @@ void DatabaseMaterializedPostgreSQL::beforeDropDatabase(ContextPtr)
     /// during the subsequent nested-table drop can never leave the shared state behind after the last copy is
     /// deleted; and if it is not the last replica it keeps this replica registered until `drop` removes it, after
     /// the nested tables have actually been dropped.
-    replication_handler->coordinatedTeardownBeforeDataDrop();
+    try
+    {
+        replication_handler->coordinatedTeardownBeforeDataDrop();
+    }
+    catch (...)
+    {
+        /// The drop is refused and the database stays alive, so undo the `deactivate` above: a database whose
+        /// background startup had not run yet (attach/restart window) must still be able to build its handler
+        /// and rejoin the coordinated setup; without this it would stay mounted but dead until a server
+        /// restart. For a database whose synchronization already started the rescheduled task is a no-op
+        /// (see the `synchronization_started` guard in `startSynchronization`).
+        if (!shutdown_called)
+            startup_task->activateAndSchedule();
+        throw;
+    }
 }
 
 

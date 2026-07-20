@@ -965,7 +965,9 @@ def test_drop_immediately_after_restart_unregisters_replica(started_cluster):
     # Restart the standby and drop the database immediately, before the background startup task has reconnected
     # to PostgreSQL and rebuilt the replication handler.
     standby.restart_clickhouse()
-    standby.query("DROP DATABASE test_database")
+    # SYNC so the nested table's Keeper subtree is fully removed before the assertions (and before any
+    # following test recreates a database on the same keeper path).
+    standby.query("DROP DATABASE test_database SYNC")
 
     # The standby must have unregistered itself even though its handler had not been rebuilt from a running
     # startup - the teardown was constructed from the persisted settings.
@@ -1003,7 +1005,9 @@ def test_concurrent_drop_on_both_replicas_removes_shared_state(started_cluster):
 
     def drop(node, key):
         try:
-            node.query("DROP DATABASE test_database")
+            # SYNC so both drops have fully removed their nested tables' Keeper subtrees before the
+            # assertions (and before any following test recreates a database on the same keeper path).
+            node.query("DROP DATABASE test_database SYNC")
             errors[key] = ""
         except Exception as e:  # noqa: BLE001
             errors[key] = str(e)
@@ -1025,3 +1029,101 @@ def test_concurrent_drop_on_both_replicas_removes_shared_state(started_cluster):
     assert not replication_slot_exists()
     assert not publication_exists()
     assert not marker_znode_exists(instance)
+
+
+def test_leaked_publication_is_not_adopted_by_fresh_coordinated_create(started_cluster):
+    # If the last-replica teardown removed the Keeper coordination nodes but then failed to drop the shared
+    # publication in PostgreSQL, the publication leaks - with the table set of the OLD setup. A fresh
+    # coordinated CREATE on the same keeper path must not silently adopt that stale table set: with no
+    # surviving coordination state (no snapshot marker and no registered replicas) nothing can be consuming
+    # through the publication, so it is dropped and recreated for the new setup.
+    pg_manager.create_postgres_table("test_table")
+    pg_manager.create_postgres_table("old_table")
+    instance.query(
+        "INSERT INTO postgres_database.test_table SELECT number, number FROM numbers(100)"
+    )
+    instance.query(
+        "INSERT INTO postgres_database.old_table SELECT number, number FROM numbers(10)"
+    )
+
+    # Learn the engine's generated publication name from a real setup, then drop the setup cleanly.
+    create_coordinated_db("old_table")
+    check_tables_are_synchronized(instance, "old_table")
+    publications = pg_query("SELECT pubname FROM pg_publication")
+    assert len(publications) == 1
+    publication_name = publications[0][0]
+    pg_manager2.drop_materialized_db()
+    pg_manager.drop_materialized_db()
+    assert not publication_exists()
+    assert not marker_znode_exists(instance)
+
+    # Simulate the leak: the old setup's publication (FOR TABLE ONLY old_table) survives while all of its
+    # coordination state in Keeper is gone.
+    pg_query(f'CREATE PUBLICATION "{publication_name}" FOR TABLE ONLY "old_table"')
+
+    # A fresh coordinated CREATE with a different tables list must replace the leaked publication instead
+    # of adopting its stale table set.
+    create_coordinated_db("test_table")
+    check_tables_are_synchronized(instance, "test_table")
+    check_tables_are_synchronized(instance2, "test_table")
+
+    publication_tables = {
+        row[0]
+        for row in pg_query(
+            f"SELECT tablename FROM pg_publication_tables WHERE pubname = '{publication_name}'"
+        )
+    }
+    assert publication_tables == {"test_table"}
+    assert "old_table" not in instance.query("SHOW TABLES FROM test_database").split()
+
+    pg_query('DROP TABLE IF EXISTS "old_table"')
+
+
+def test_refused_drop_in_restart_window_does_not_disable_startup(started_cluster):
+    # A fail-close refused DROP DATABASE deactivates the background startup task up front. In the
+    # attach/restart window - where the replication handler has not been rebuilt yet - the refusal must
+    # reactivate the task, otherwise the database stays mounted but never rebuilds its handler (no leader
+    # election, no failover) until a server restart.
+    pg_manager.create_postgres_table("test_table")
+    instance.query(
+        "INSERT INTO postgres_database.test_table SELECT number, number FROM numbers(100)"
+    )
+
+    create_coordinated_db("test_table")
+    check_tables_are_synchronized(instance, "test_table")
+    check_tables_are_synchronized(instance2, "test_table")
+
+    leader_name = wait_for_leader(instance)
+    leader_instance = instance if leader_name == "coord_instance1" else instance2
+    standby = instance2 if leader_name == "coord_instance1" else instance
+    standby_name = "coord_instance2" if leader_name == "coord_instance1" else "coord_instance1"
+
+    zk_nodes = ["zoo1", "zoo2", "zoo3"]
+    try:
+        # Restart the standby while Keeper is down, so its background startup task cannot finish rebuilding
+        # the replication handler before the drop arrives.
+        standby.stop_clickhouse()
+        started_cluster.stop_zookeeper_nodes(zk_nodes)
+        standby.start_clickhouse()
+
+        error = standby.query_and_get_error("DROP DATABASE test_database")
+        assert error != ""
+        assert "test_database" in standby.query("SHOW DATABASES")
+    finally:
+        started_cluster.start_zookeeper_nodes(zk_nodes)
+        for _ in range(120):
+            try:
+                standby.query("SELECT count() FROM system.zookeeper WHERE path = '/'")
+                break
+            except Exception:
+                time.sleep(1)
+
+    # With Keeper reachable again, the reactivated startup task must rebuild the standby's handler without
+    # a server restart: when the leader goes away, the standby takes over the leadership and keeps
+    # replicating from PostgreSQL.
+    leader_instance.stop_clickhouse()
+    wait_for_leader(standby, expected=standby_name)
+    standby.query(
+        "INSERT INTO postgres_database.test_table SELECT number, number FROM numbers(100, 100)"
+    )
+    check_tables_are_synchronized(standby, "test_table")

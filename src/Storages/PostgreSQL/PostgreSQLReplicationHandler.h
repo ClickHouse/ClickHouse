@@ -201,6 +201,7 @@ private:
     /// died mid-snapshot, and WAL replay from the slot would then permanently miss the rows it never
     /// copied. A new leader may resume from the slot's confirmed LSN only when this marker exists;
     /// otherwise it has to redo the snapshot from scratch.
+    bool hasSurvivingCoordinationState();
     bool isInitialSnapshotCompleted();
     void markInitialSnapshotCompleted(const String & lsn);
 

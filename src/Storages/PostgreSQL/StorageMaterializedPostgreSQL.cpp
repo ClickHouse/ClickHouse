@@ -314,8 +314,12 @@ void StorageMaterializedPostgreSQL::dropInnerTableIfAny(bool sync, ContextPtr lo
         /// the shared data (which a peer's later last-replica drop would then tear down around).
         replication_handler->coordinatedTeardownBeforeDataDrop();
 
+        /// Drop the nested replicated table synchronously (ignoring the delayed-drop window): the shared
+        /// teardown above already runs now, so leaving the nested table's Keeper tree behind for
+        /// `database_atomic_delay_before_drop_table_sec` would let a prompt CREATE on the same keeper path
+        /// adopt a half-dead shared tree (a ghost replica and stale block deduplication hashes).
         if (tryGetNested())
-            InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind::Drop, getContext(), local_context, getNestedStorageID(), sync, /* ignore_sync_setting */ true);
+            InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind::Drop, getContext(), local_context, getNestedStorageID(), /* sync */ true, /* ignore_sync_setting */ true);
 
         /// The local copy is gone: finalize the teardown authoritatively (drops this replica's registration
         /// for the non-last case; a no-op for the last case, whose registration was already removed above).

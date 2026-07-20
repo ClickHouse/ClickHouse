@@ -123,6 +123,11 @@ private:
     std::map<std::string, StoragePtr> materialized_tables;
     mutable std::mutex tables_mutex;
     mutable std::mutex handler_mutex;
+    /// Whether `startSynchronization` completed successfully (guarded by `handler_mutex`). Makes the startup
+    /// task idempotent: it may be rescheduled after synchronization has already started (e.g. by a refused
+    /// fail-close DROP DATABASE restoring the task it had deactivated), and replacing a live handler would
+    /// leak its running consumer.
+    bool synchronization_started = false;
 
     BackgroundSchedulePoolTaskHolder startup_task;
     std::atomic<bool> shutdown_called = false;
