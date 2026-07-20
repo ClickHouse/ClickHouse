@@ -669,6 +669,15 @@ StorageMaterializedView::prepareRefresh(bool append, ContextMutablePtr refresh_c
         if (create_query->targets)
             create_query->targets->resetInnerUUIDs();
 
+        /// Bypass the dropped-table size limits so CREATE OR REPLACE can drop a large leftover temp
+        /// table from a previous failed refresh instead of leaking it as `_tmp_replace_*` (issue #104900).
+        /// Set the settings on refresh_context itself rather than on a copy: createCopy does not preserve
+        /// the refresh DDL metadata (parent table UUID, DDL cancellation, enqueue checks) that
+        /// RefreshTask set on refresh_context, and DatabaseReplicated needs it to skip stale temp-table
+        /// entries. doCreateOrReplaceTable's internal drop inherits these settings via the create context.
+        refresh_context->setSetting("max_table_size_to_drop", Field(UInt64{0}));
+        refresh_context->setSetting("max_partition_size_to_drop", Field(UInt64{0}));
+
         InterpreterCreateQuery create_interpreter(create_query, refresh_context);
         create_interpreter.setInternal(true);
         /// Notice that we discard the BlockIO that execute() returns. This means that in case of DatabaseReplicated we don't wait
@@ -727,6 +736,13 @@ std::optional<StorageID> StorageMaterializedView::exchangeTargetTable(StorageID 
 
 void StorageMaterializedView::dropTempTable(StorageID table_id, ContextMutablePtr refresh_context, String & out_exception)
 {
+    /// Don't apply dropped table size limits to tables produced by refreshable materialized views.
+    /// Set the settings on refresh_context itself rather than on a copy: createCopy does not preserve
+    /// the refresh DDL metadata (parent table UUID, DDL cancellation, enqueue checks) that RefreshTask
+    /// set on refresh_context, and DatabaseReplicated needs it to skip stale temp-table entries.
+    refresh_context->setSetting("max_table_size_to_drop", Field(UInt64{0}));
+    refresh_context->setSetting("max_partition_size_to_drop", Field(UInt64{0}));
+
     auto query_scope = QueryScope::create(refresh_context);
 
     auto drop_query = make_intrusive<ASTDropQuery>();
