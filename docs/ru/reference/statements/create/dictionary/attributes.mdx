@@ -1,0 +1,182 @@
+---
+description: 'Настройка ключа словаря и его атрибутов'
+sidebarTitle: 'Атрибуты'
+slug: /sql-reference/statements/create/dictionary/attributes
+title: 'Атрибуты словаря'
+doc_type: 'reference'
+---
+
+import CloudDetails from '/snippets/ru/_snippet_dictionary_in_cloud.mdx';
+
+<CloudDetails />
+
+Клауза `structure` описывает ключ словаря и поля, доступные в запросах.
+
+Описание XML:
+
+```xml
+<dictionary>
+    <structure>
+        <id>
+            <name>Id</name>
+        </id>
+
+        <attribute>
+            <!-- Параметры атрибута -->
+        </attribute>
+
+        ...
+
+    </structure>
+</dictionary>
+```
+
+Атрибуты описываются в элементах:
+
+* `<id>` — ключевой столбец
+* `<attribute>` — столбец данных: атрибутов может быть несколько.
+
+DDL-запрос:
+
+```sql
+CREATE DICTIONARY dict_name (
+    Id UInt64,
+    -- атрибуты
+)
+PRIMARY KEY Id
+...
+```
+
+Атрибуты задаются в теле запроса:
+
+* `PRIMARY KEY` — ключевой столбец
+* `AttrName AttrType` — столбец данных. Атрибутов может быть несколько.
+
+<div id="key">
+  ## Ключ
+</div>
+
+ClickHouse поддерживает следующие типы ключей:
+
+* Числовой ключ. `UInt64`. Задаётся в теге `<id>` или с помощью ключевого слова `PRIMARY KEY`.
+* Составной ключ. Набор значений разных типов. Задаётся в теге `<key>` или с помощью ключевого слова `PRIMARY KEY`.
+
+XML-структура может содержать либо `<id>`, либо `<key>`. DDL-запрос должен содержать только один `PRIMARY KEY`.
+
+<Note>
+  Не следует описывать ключ как атрибут.
+</Note>
+
+<div id="numeric-key">
+  ### Числовой ключ
+</div>
+
+Тип: `UInt64`.
+
+Пример конфигурации:
+
+```xml
+<id>
+    <name>Id</name>
+</id>
+```
+
+Поля конфигурации:
+
+* `name` – имя столбца с ключами.
+
+Для DDL-запроса:
+
+```sql
+CREATE DICTIONARY (
+    Id UInt64,
+    ...
+)
+PRIMARY KEY Id
+...
+```
+
+* `PRIMARY KEY` – Имя столбца, содержащего ключи.
+
+<div id="composite-key">
+  ### Составной ключ
+</div>
+
+Ключом может быть `Tuple` из полей любых типов. [Структура](/ru/reference/statements/create/dictionary/layouts/overview) в этом случае должна быть `complex_key_hashed` или `complex_key_cache`.
+
+<Tip>
+  Составной ключ может состоять и из одного элемента. Это позволяет, например, использовать в качестве ключа строку.
+</Tip>
+
+Структура ключа задаётся в элементе `<key>`. Поля ключа указываются в том же формате, что и [атрибуты](#attributes) словаря. Пример:
+
+```xml
+<structure>
+    <key>
+        <attribute>
+            <name>field1</name>
+            <type>String</type>
+        </attribute>
+        <attribute>
+            <name>field2</name>
+            <type>UInt32</type>
+        </attribute>
+        ...
+    </key>
+...
+```
+
+or
+
+```sql
+CREATE DICTIONARY (
+    field1 String,
+    field2 UInt32
+    ...
+)
+PRIMARY KEY field1, field2
+...
+```
+
+В запросе к функции `dictGet*` в качестве ключа передаётся Tuple. Пример: `dictGetString('dict_name', 'attr_name', tuple('string for field1', num_for_field2))`.
+
+<div id="attributes">
+  ## Атрибуты
+</div>
+
+Пример конфигурации:
+
+```xml
+<structure>
+    ...
+    <attribute>
+        <name>Name</name>
+        <type>ClickHouseDataType</type>
+        <null_value></null_value>
+        <expression>rand64()</expression>
+        <hierarchical>true</hierarchical>
+        <injective>true</injective>
+        <is_object_id>true</is_object_id>
+    </attribute>
+</structure>
+```
+
+или
+
+```sql
+CREATE DICTIONARY somename (
+    Name ClickHouseDataType DEFAULT '' EXPRESSION rand64() HIERARCHICAL INJECTIVE IS_OBJECT_ID
+)
+```
+
+Поля конфигурации:
+
+| Tag                                                | Описание                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        | Обязательно |
+| -------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------- |
+| `name`                                             | Имя столбца.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | Да          |
+| `type`                                             | Тип данных ClickHouse: [UInt8](/ru/reference/data-types/int-uint), [UInt16](/ru/reference/data-types/int-uint), [UInt32](/ru/reference/data-types/int-uint), [UInt64](/ru/reference/data-types/int-uint), [Int8](/ru/reference/data-types/int-uint), [Int16](/ru/reference/data-types/int-uint), [Int32](/ru/reference/data-types/int-uint), [Int64](/ru/reference/data-types/int-uint), [Float32](/ru/reference/data-types/float), [Float64](/ru/reference/data-types/float), [UUID](/ru/reference/data-types/uuid), [Decimal32](/ru/reference/data-types/decimal), [Decimal64](/ru/reference/data-types/decimal), [Decimal128](/ru/reference/data-types/decimal), [Decimal256](/ru/reference/data-types/decimal),[Date](/ru/reference/data-types/date), [Date32](/ru/reference/data-types/date32), [DateTime](/ru/reference/data-types/datetime), [DateTime64](/ru/reference/data-types/datetime64), [String](/ru/reference/data-types/string), [Array](/ru/reference/data-types/array).<br />ClickHouse пытается привести значение из словаря к указанному типу данных. Например, в MySQL поле исходной таблицы может иметь тип `TEXT`, `VARCHAR` или `BLOB`, но в ClickHouse его можно загрузить как `String`.<br />[Nullable](/ru/reference/data-types/nullable) в настоящее время поддерживается для словарей [Flat](/ru/reference/statements/create/dictionary/layouts/flat), [Hashed](/ru/reference/statements/create/dictionary/layouts/hashed), [ComplexKeyHashed](/ru/reference/statements/create/dictionary/layouts/hashed#complex_key_hashed), [Direct](/ru/reference/statements/create/dictionary/layouts/direct), [ComplexKeyDirect](/ru/reference/statements/create/dictionary/layouts/direct#complex_key_direct), [RangeHashed](/ru/reference/statements/create/dictionary/layouts/range-hashed), Polygon, [Cache](/ru/reference/statements/create/dictionary/layouts/cache), [ComplexKeyCache](/ru/reference/statements/create/dictionary/layouts/cache), [SSDCache](/ru/reference/statements/create/dictionary/layouts/ssd-cache), [SSDComplexKeyCache](/ru/reference/statements/create/dictionary/layouts/ssd-cache#complex_key_ssd_cache). В словарях [IPTrie](/ru/reference/statements/create/dictionary/layouts/ip-trie) типы `Nullable` не поддерживаются. | Да          |
+| `null_value`                                       | Значение по умолчанию для несуществующего элемента.<br />В примере это пустая строка. Значение [NULL](/ru/reference/syntax#null) можно использовать только для типов `Nullable` (см. предыдущую строку с описанием типов).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | Да          |
+| `expression`                                       | [Выражение](/ru/reference/syntax#expressions), которое ClickHouse выполняет над значением.<br />Выражение может быть именем столбца в удалённой SQL-базе данных. Таким образом, его можно использовать для создания псевдонима удалённого столбца.<br /><br />Значение по умолчанию: выражение отсутствует.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        | Нет         |
+| <a name="hierarchical-dict-attr" /> `hierarchical` | Если `true`, атрибут содержит значение родительского ключа для текущего ключа. См. [Иерархические словари](/ru/reference/statements/create/dictionary/layouts/hierarchical).<br /><br />Значение по умолчанию: `false`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | Нет         |
+| `injective`                                        | Флаг, показывающий, является ли отображение `id -> attribute` [инъективным](https://en.wikipedia.org/wiki/Injective_function).<br />Если `true`, ClickHouse может автоматически размещать после предложения `GROUP BY` запросы к словарям с инъективным отображением. Обычно это значительно уменьшает количество таких запросов.<br /><br />Значение по умолчанию: `false`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | Нет         |
+| `is_object_id`                                     | Флаг, показывающий, выполняется ли запрос для документа MongoDB по `ObjectID`.<br /><br />Значение по умолчанию: `false`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |             |

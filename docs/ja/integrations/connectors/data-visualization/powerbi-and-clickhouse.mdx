@@ -1,0 +1,324 @@
+---
+sidebarTitle: 'Power BI'
+slug: /integrations/powerbi
+keywords: ['clickhouse', 'Power BI', 'connect', 'integrate', 'ui']
+description: 'Microsoft Power BI は、Microsoft が開発した、ビジネスインテリジェンスを主目的とする対話型のデータ可視化ソフトウェア製品です。'
+title: 'Power BI'
+doc_type: 'guide'
+integration:
+  - support_level: 'core'
+  - category: 'data_visualization'
+---
+
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+import ClickHouseSupportedBadge from "/snippets/ja/components/ClickHouseSupported/ClickHouseSupported.jsx";
+
+<ClickHouseSupportedBadge />
+
+Microsoft Power BI では、[ClickHouse Cloud](https://clickhouse.com/cloud) またはセルフマネージド環境のデータをクエリしたり、メモリに読み込んだりできます。
+
+データの可視化に使用できる Power BI には、いくつかの種類があります。
+
+* Power BI Desktop: ダッシュボードやビジュアライゼーションを作成するための Windows デスクトップアプリケーション
+* Power BI サービス: Azure で利用できる SaaS で、Power BI Desktop で作成したダッシュボードをホストします
+
+Power BI では、ダッシュボードを Desktop 版で作成し、Power BI サービスに公開する必要があります。
+
+このチュートリアルでは、次の手順を説明します。
+
+* [ClickHouse ODBC ドライバのインストール](#install-the-odbc-driver)
+* [Power BI Desktop への ClickHouse Power BI Connector のインストール](#power-bi-installation)
+* [Power BI Desktop で可視化するための ClickHouse データのクエリ](#query-and-visualise-data)
+* [Power BI サービス用のオンプレミス データ ゲートウェイの設定](#power-bi-service)
+
+<div id="prerequisites">
+  ## 前提条件
+</div>
+
+<div id="power-bi-installation">
+  ### Power BI のインストール
+</div>
+
+このチュートリアルでは、Windows マシンに Microsoft Power BI Desktop がインストールされていることを前提としています。Power BI Desktop は[こちら](https://www.microsoft.com/en-us/download/details.aspx?id=58494)からダウンロードしてインストールできます。
+
+Power BI は最新バージョンに更新することを推奨します。ClickHouse Connector は、バージョン `2.137.751.0` 以降でデフォルトで利用できます。
+
+<div id="gather-your-clickhouse-connection-details">
+  ### ClickHouseの接続情報を確認する
+</div>
+
+ClickHouseインスタンスに接続するには、次の情報が必要です。
+
+* ホスト名 - ClickHouseのホスト名
+* ユーザー名 - ユーザー認証情報のユーザー名
+* パスワード - ユーザーのパスワード
+* データベース - 接続先のインスタンス上のデータベース名
+
+<div id="power-bi-desktop">
+  ## Power BI デスクトップ
+</div>
+
+Power BI Desktop でデータのクエリを始めるには、次の手順を実行する必要があります。
+
+1. ClickHouse ODBC ドライバをインストールする
+2. ClickHouse Connector を見つける
+3. ClickHouse に接続する
+4. データをクエリして可視化する
+
+<div id="install-the-odbc-driver">
+  ### ODBC ドライバをインストールする
+</div>
+
+最新の [ClickHouse ODBC リリース](https://github.com/ClickHouse/clickhouse-odbc/releases)をダウンロードします。
+
+付属の `.msi` インストーラーを実行し、ウィザードの指示に従います。
+
+<Image size="md" img="/images/integrations/data-visualization/powerbi_odbc_install.webp" alt="インストール オプションを表示する ClickHouse ODBC ドライバのインストール ウィザード" border />
+
+<br />
+
+<Note>
+  `Debug symbols` は任意で、必須ではありません
+</Note>
+
+<div id="verify-odbc-driver">
+  #### ODBC ドライバを確認する
+</div>
+
+ドライバのインストールが完了したら、次の手順で正しくインストールされたことを確認できます。
+
+スタートメニューで ODBC を検索し、&quot;ODBC Data Sources **(64-bit)**&quot; を選択します。
+
+<Image size="md" img="/images/integrations/data-visualization/powerbi_odbc_search.webp" alt="ODBC Data Sources (64-bit) オプションが表示された Windows の検索画面" border />
+
+<br />
+
+ClickHouse Driver が一覧に表示されていることを確認します。
+
+<Image size="md" img="/images/integrations/data-visualization/powerbi_odbc_verify.webp" alt="Drivers タブに ClickHouse ドライバが表示されている ODBC Data Source Administrator" border />
+
+<br />
+
+<div id="find-the-clickhouse-connector">
+  ### ClickHouse Connector を探す
+</div>
+
+<Note>
+  Power BI Desktop のバージョン `2.137.751.0` で利用できます
+</Note>
+
+Power BI Desktop のスタート画面で、「Get Data」をクリックします。
+
+<Image size="md" img="/images/integrations/data-visualization/powerbi_get_data.webp" alt="「Get Data」ボタンが表示された Power BI Desktop のホーム画面" border />
+
+<br />
+
+「ClickHouse」を検索します
+
+<Image size="md" img="/images/integrations/data-visualization/powerbi_search_clickhouse.webp" alt="検索バーで「ClickHouse」を検索した Power BI の「Get Data」ダイアログ" border />
+
+<br />
+
+<div id="connect-to-clickhouse">
+  ### ClickHouse に接続する
+</div>
+
+コネクタを選択し、ClickHouse インスタンスの認証情報を入力します。
+
+* Host (必須) - インスタンスのドメインまたはアドレスです。プレフィックスや接尾辞は付けずに入力してください。
+* Port (必須) - インスタンスのポートです。
+* Database - データベース名です。
+* Options - [ClickHouse ODBC GitHub Page](https://github.com/ClickHouse/clickhouse-odbc#configuration)
+  に記載されている任意の ODBC オプションです
+* Data Connectivity mode - DirectQuery
+
+<Image size="md" img="/images/integrations/data-visualization/powerbi_connect_db.webp" alt="Host、Port、Database、接続モードのフィールドを示す ClickHouse 接続ダイアログ" border />
+
+<br />
+
+<Note>
+  ClickHouse に直接クエリする場合は、DirectQuery を選択することを推奨します。
+
+  データ量が少ないユースケースでは、インポート モードを選択することもでき、その場合はデータ全体が Power BI に読み込まれます。
+</Note>
+
+* ユーザー名とパスワードを指定します
+
+<Image size="md" img="/images/integrations/data-visualization/powerbi_connect_user.webp" alt="ユーザー名とパスワードを入力する ClickHouse 接続の認証情報ダイアログ" border />
+
+<br />
+
+<div id="query-and-visualise-data">
+  ### データをクエリして可視化する
+</div>
+
+最後に、Navigator ビューにデータベースとテーブルが表示されます。目的のテーブルを選択し、「Load」をクリックして
+ClickHouse からデータをインポートします。
+
+<Image size="md" img="/images/integrations/data-visualization/powerbi_table_navigation.webp" alt="ClickHouse のデータベース テーブルとサンプル データを表示する Power BI の Navigator ビュー" border />
+
+<br />
+
+インポートが完了すると、通常どおり Power BI で ClickHouse のデータにアクセスできるようになります。
+
+<br />
+
+<div id="power-bi-service">
+  ## Power BI サービス
+</div>
+
+Microsoft Power BI サービスを使用するには、[オンプレミス データ ゲートウェイ](https://learn.microsoft.com/en-us/power-bi/connect-data/service-gateway-onprem)を作成する必要があります。
+
+カスタム コネクタの設定方法について詳しくは、Microsoft の[オンプレミス データ ゲートウェイでカスタム データ コネクタを使用する方法](https://learn.microsoft.com/en-us/power-bi/connect-data/service-gateway-custom-connectors)に関するドキュメントを参照してください。
+
+<div id="odbc-driver-import-only">
+  ## ODBC ドライバ (インポートのみ)
+</div>
+
+DirectQuery を使用する ClickHouse Connector の利用を推奨します。
+
+前述のとおり、[ODBC ドライバ](#install-the-odbc-driver)をオンプレミス データ ゲートウェイ インスタンスにインストールし、[確認](#verify-odbc-driver)してください。
+
+<div id="create-a-new-user-dsn">
+  ### 新しい User DSN を作成する
+</div>
+
+ドライバのインストールが完了したら、ODBC データソースを作成できます。スタートメニューで ODBC を検索し、「ODBC Data Sources (64-bit)」を選択します。
+
+<Image size="md" img="/images/integrations/data-visualization/powerbi_odbc_search.webp" alt="「ODBC Data Sources (64-bit)」オプションが表示された Windows の検索画面" border />
+
+<br />
+
+ここで新しい User DSN を追加します。左側の「Add」ボタンをクリックしてください。
+
+<Image size="md" img="/images/integrations/data-visualization/powerbi_add_dsn.webp" alt="新しい DSN を作成するために Add ボタンが強調表示された ODBC Data Source Administrator" border />
+
+<br />
+
+ODBC ドライバの Unicode 版を選択します。
+
+<Image size="md" img="/images/integrations/data-visualization/powerbi_select_unicode.webp" alt="ClickHouse Unicode Driver の選択が表示された Create New Data Source ダイアログ" border />
+
+<br />
+
+connection details を入力します。
+
+<Image size="sm" img="/images/integrations/data-visualization/powerbi_connection_details.webp" alt="connection parameters が表示された ClickHouse ODBC Driver の設定ダイアログ" border />
+
+<br />
+
+<Note>
+  SSL が有効なデプロイメント (例: ClickHouse Cloud またはセルフマネージドのインスタンス) を使用している場合は、`SSLMode` フィールドに `require` を指定してください。
+
+  * `Host` には、プロトコル (`http://` または `https://`) を含めないでください。
+  * `Timeout` は秒数を表す整数です。デフォルト値: `30 seconds`。
+</Note>
+
+<div id="get-data-into-power-bi">
+  ### Power BI にデータを取り込む
+</div>
+
+まだ Power BI をインストールしていない場合は、
+[Power BI Desktop をダウンロードしてインストールしてください](https://www.microsoft.com/en-us/download/details.aspx?id=58494)。
+
+Power BI Desktop のスタート画面で、&quot;Get Data&quot; をクリックします。
+
+<Image size="md" img="/images/integrations/data-visualization/powerbi_get_data.webp" alt="「Get Data」ボタンが表示された Power BI Desktop のホーム画面" border />
+
+<br />
+
+&quot;Other&quot; -&gt; &quot;ODBC&quot; を選択します。
+
+<Image size="md" img="/images/integrations/data-visualization/powerbi_select_odbc.webp" alt="Other カテゴリで ODBC オプションが選択された Power BI の Get Data ダイアログ" border />
+
+<br />
+
+一覧から、先ほど作成したデータソースを選択します。
+
+<Image size="md" img="/images/integrations/data-visualization/powerbi_select_dsn.webp" alt="設定済みの ClickHouse DSN が表示された ODBC ドライバの選択ダイアログ" border />
+
+<br />
+
+<Note>
+  データソースの作成時に認証情報を指定しなかった場合は、ユーザー名とパスワードの入力を求められます。
+</Note>
+
+<Image size="md" img="/images/integrations/data-visualization/powerbi_dsn_credentials.webp" alt="ODBC DSN 接続の認証情報ダイアログ" border />
+
+<br />
+
+最後に、Navigator ビューにデータベースとテーブルが表示されます。目的のテーブルを選択し、&quot;Load&quot; をクリックして ClickHouse からデータをインポートします。
+
+<Image size="md" img="/images/integrations/data-visualization/powerbi_table_navigation.webp" alt="ClickHouse のデータベースとテーブル、およびサンプルデータが表示された Power BI の Navigator ビュー" border />
+
+<br />
+
+インポートが完了すると、通常どおり Power BI で ClickHouse のデータにアクセスできるようになります。
+
+<div id="optimizing-work-with-large-datasets">
+  ## 大規模データセットの扱いを最適化する
+</div>
+
+Power BI は、中程度のデータ量を扱う従来型の行ベースのデータベース向けに設計されています。大規模な ClickHouse (数十億行規模) を扱う場合は、最適なパフォーマンスを得るために特定のアーキテクチャパターンが必要です。
+
+Power BI は、ネストしたサブクエリ、複雑な JOIN、実行時の変換を含む SQL クエリを自動生成します。これらのパターンは従来の SQL データベースでは効果的に機能しますが、ClickHouse のような大規模な列指向データベースに対するクエリでは非効率になることがあります。
+
+**大規模なデータセットに対する推奨アプローチ:** 生のテーブルを直接クエリするのではなく、ダッシュボードの各可視化に対して専用の `materialized views` を ClickHouse に作成してください。これにより、次の利点が得られます。
+
+* データ量に関係なく一貫した高速パフォーマンス
+* ClickHouse クラスターへの負荷を軽減
+* コストの予測がしやすくなる
+
+<Warning>
+  ダッシュボードの動作が遅い場合は、ClickHouse の [`query_log`](/ja/reference/system-tables/query_log) を確認して、Power BI が実際にどの SQL クエリを実行しているかを把握してください。よくある問題としては、ネストしたサブクエリ、テーブル全体のスキャン、非効率な JOIN などがあります。問題を特定したら、その問題を解決する [materialized views](/ja/concepts/features/materialized-views/index) を作成してください。
+</Warning>
+
+<div id="implementation-best-practices">
+  ### 実装時のベストプラクティス
+</div>
+
+<div id="pre-aggregation-strategy">
+  #### 事前集計の戦略
+</div>
+
+複数の集計レベルで materialized view を作成します。
+
+* 直近の詳細なダッシュボード向けの時間単位の集計
+* 過去の傾向分析向けの日単位の集計
+* 長期的なレポート向けの月単位のロールアップ
+* アドホック分析に備えて、適切な有効期限 (TTL) を設定した生データを保持する
+
+<div id="data-modelling-optimization">
+  #### データモデリングの最適化
+</div>
+
+* クエリパターンに合った `ORDER BY` キーを定義する
+* 時系列データにはパーティション化を利用する
+* 効率的なルックアップのために、小規模なディメンションテーブルをディクショナリに変換する
+* さらなるクエリ最適化のためにプロジェクションを活用する
+
+<div id="known-limitations">
+  ## 既知の制限事項
+</div>
+
+<div id="uint64">
+  ### UInt64
+</div>
+
+UInt64 以上の符号なし整数型は、データセットに自動では読み込まれません。Power BI がサポートする整数型の最大値は Int64 であるためです。
+
+<Note>
+  データを正しくインポートするには、Navigator で &quot;Load&quot; ボタンをクリックする前に、まず &quot;Transform Data&quot; をクリックしてください。
+</Note>
+
+この例では、`pageviews` テーブルには UInt64 のカラムがあり、デフォルトでは &quot;Binary&quot; と認識されます。
+&quot;Transform Data&quot; をクリックすると Power Query Editor が開き、そこでカラムの型を再設定できます。たとえば、
+Text
+に設定できます。
+
+<Image size="md" img="/images/integrations/data-visualization/powerbi_16.webp" alt="UInt64 カラムのデータ型変換を表示する Power Query Editor" border />
+
+<br />
+
+完了したら、左上の &quot;Close &amp; Apply&quot; をクリックして、データの読み込みに進んでください。

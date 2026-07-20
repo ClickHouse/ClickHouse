@@ -1,0 +1,48 @@
+--- list_view / Arrow: SELECT a, c (unsupported middle column 'b' skipped) — native == library ---
+OK
+10	100
+20	200
+30	300
+--- list_view / Arrow: SELECT b (requested) -> both readers reject the type ---
+UNKNOWN_TYPE
+UNKNOWN_TYPE
+--- list_view / ArrowStream: SELECT a, c (unsupported middle column 'b' skipped) — native == library ---
+OK
+10	100
+20	200
+30	300
+--- list_view / ArrowStream: SELECT b (requested) -> both readers reject the type ---
+UNKNOWN_TYPE
+UNKNOWN_TYPE
+--- large_list_view / Arrow: SELECT a, c (unsupported middle column 'b' skipped) — native == library ---
+OK
+10	100
+20	200
+30	300
+--- large_list_view / Arrow: SELECT b (requested) -> both readers reject the type ---
+UNKNOWN_TYPE
+UNKNOWN_TYPE
+--- large_list_view / ArrowStream: SELECT a, c (unsupported middle column 'b' skipped) — native == library ---
+OK
+10	100
+20	200
+30	300
+--- large_list_view / ArrowStream: SELECT b (requested) -> both readers reject the type ---
+UNKNOWN_TYPE
+UNKNOWN_TYPE
+--- run_end_encoded / Arrow: SELECT a, c (unsupported middle column 'b' skipped) — native == library ---
+OK
+10	100
+20	200
+30	300
+--- run_end_encoded / Arrow: SELECT b (requested) -> both readers reject the type ---
+UNKNOWN_TYPE
+UNKNOWN_TYPE
+--- run_end_encoded / ArrowStream: SELECT a, c (unsupported middle column 'b' skipped) — native == library ---
+OK
+10	100
+20	200
+30	300
+--- run_end_encoded / ArrowStream: SELECT b (requested) -> both readers reject the type ---
+UNKNOWN_TYPE
+UNKNOWN_TYPE

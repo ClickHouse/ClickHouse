@@ -1,0 +1,689 @@
+---
+sidebar_title: 'эндпоинты Query API'
+slug: /cloud/get-started/query-endpoints
+description: 'Легко создавайте конечные точки REST API из сохранённых запросов'
+keywords: ['api', 'конечные точки query api', 'конечные точки запросов', 'query rest api']
+title: 'Настройка эндпоинтов Query API'
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ru/components/Image.jsx";
+
+Возможность **Query API Endpoints** позволяет создавать API-конечные точки напрямую из любого сохранённого SQL-запроса в консоли ClickHouse Cloud. Вы сможете обращаться к API-конечным точкам по HTTP, чтобы выполнять сохранённые запросы без необходимости подключаться к своему сервису ClickHouse Cloud через нативный драйвер.
+
+<div id="quick-start-guide">
+  ## Предварительные требования
+</div>
+
+Прежде чем продолжить, убедитесь, что у вас есть:
+
+* API-ключ с соответствующими разрешениями
+* роль Admin в консоли
+
+Если у вас ещё нет API-ключа, воспользуйтесь этим руководством, чтобы [создать API-ключ](/ru/products/cloud/features/admin-features/api/openapi).
+
+<Info>
+  **Минимальные разрешения**
+
+  Чтобы отправлять запросы к конечной точке API, API-ключу нужна роль организации `Member` с доступом к сервису `Query Endpoints`. Роль базы данных настраивается при создании конечной точки.
+</Info>
+
+<Steps>
+  <Step>
+    ### Создание сохраненного запроса
+
+    Если у вас уже есть сохраненный запрос, этот шаг можно пропустить.
+
+    Откройте новую вкладку запроса. Для примера мы будем использовать [датасет YouTube](/ru/get-started/sample-datasets/youtube-dislikes), который содержит примерно 4,5 миллиарда записей.
+    Следуйте инструкциям в разделе [&quot;Create table&quot;](/ru/get-started/sample-datasets/youtube-dislikes#create-the-table), чтобы создать таблицу в вашем сервисе Cloud и вставить в нее данные.
+
+    <Tip>
+      **Ограничьте количество строк с помощью `LIMIT`**
+
+      В руководстве по этому датасету выполняется вставка большого объема данных — 4,65 миллиарда строк, и это может занять некоторое время.
+      Для целей этого руководства рекомендуем использовать предложение `LIMIT`, чтобы вставить меньший объем данных,
+      например 10 миллионов строк.
+    </Tip>
+
+    В качестве примера мы получим 10 лучших загрузчиков по среднему числу просмотров на видео с параметром `year`, который задает пользователь.
+
+    ```sql highlight={11}
+    WITH sum(view_count) AS view_sum,
+      round(view_sum / num_uploads, 2) AS per_upload
+    SELECT
+      uploader,
+      count() AS num_uploads,
+      formatReadableQuantity(view_sum) AS total_views,
+      formatReadableQuantity(per_upload) AS views_per_video
+    FROM
+      youtube
+    WHERE
+      toYear(upload_date) = {year: UInt16}
+    GROUP BY uploader
+    ORDER BY per_upload desc
+      LIMIT 10
+    ```
+
+    Обратите внимание, что этот запрос содержит параметр (`year`), который выделен в примере выше.
+    Параметры запроса можно задавать в формате `{ }` вместе с типом параметра.
+    Редактор запросов в консоли SQL автоматически распознает выражения параметров в запросах к ClickHouse и показывает отдельное поле ввода для каждого параметра.
+
+    Давайте быстро выполним этот запрос, чтобы убедиться, что он работает: укажите год `2010` в поле переменных запроса справа в редакторе SQL:
+
+    <Image img="/images/cloud/sqlconsole/endpoints-testquery.webp" size="md" alt="Проверка примера запроса" />
+
+    Затем сохраните запрос:
+
+    <Image img="/images/cloud/sqlconsole/endpoints-savequery.webp" size="md" alt="Сохранение примера запроса" />
+
+    Дополнительную информацию о сохраненных запросах можно найти в разделе [&quot;Saving a query&quot;](/ru/products/cloud/features/sql-console-features/sql-console#saving-a-query).
+  </Step>
+
+  <Step>
+    ### Настройка конечной точки Query API
+
+    Конечные точки Query API можно настраивать прямо из представления запроса: нажмите кнопку **Share** и выберите `API Endpoint`.
+    Затем вам будет предложено указать, какие ключ API смогут обращаться к этой конечной точке:
+
+    <Image img="/images/cloud/sqlconsole/endpoints-configure.webp" size="md" alt="Настройка конечной точки запроса" />
+
+    После выбора ключа API вам будет предложено:
+
+    * Выбрать роль базы данных, которая будет использоваться для выполнения запроса (`Full access`, `Read only` или `Create a custom role`)
+    * Указать разрешенные домены CORS
+
+    После выбора этих параметров конечная точка Query API будет создана автоматически.
+
+    Затем будет показан пример команды `curl`, чтобы вы могли отправить тестовый запрос:
+
+    <Image img="/images/cloud/sqlconsole/endpoints-completed.webp" size="md" alt="Команда curl для конечной точки" />
+
+    Для удобства ниже приведена команда `curl`, отображаемая в интерфейсе:
+
+    ```bash
+    curl -H "Content-Type: application/json" -s --user '<key_id>:<key_secret>' '<API-endpoint>?format=JSONEachRow&param_year=<value>'
+    ```
+  </Step>
+
+  <Step>
+    ### Параметры Query API
+
+    Параметры в запросе можно задавать с помощью синтаксиса `{parameter_name: type}`. Эти параметры будут автоматически обнаружены, а пример тела запроса будет содержать объект `queryVariables`, через который их можно передавать.
+  </Step>
+
+  <Step>
+    ### Тестирование и мониторинг
+
+    После создания конечной точки Query API вы можете проверить его работу с помощью `curl` или любого другого HTTP-клиента:
+
+    <Image img="/images/cloud/sqlconsole/endpoints-curltest.webp" size="md" alt="тест curl для конечной точки" />
+
+    После отправки первого запроса сразу справа от кнопки **Share** должна появиться новая кнопка. При нажатии на нее откроется выдвижная панель с данными мониторинга по запросу:
+
+    <Image img="/images/cloud/sqlconsole/endpoints-monitoring.webp" size="sm" alt="Мониторинг конечной точки" />
+  </Step>
+</Steps>
+
+<div id="implementation-details">
+  ## Подробности реализации
+</div>
+
+Эта конечная точка выполняет запросы к вашим сохранённым эндпоинтам Query API.
+Она поддерживает несколько версий, гибкие форматы ответов, параметризованные запросы и опциональную потоковую передачу ответов (только в версии 2).
+
+**Конечная точка:**
+
+```text
+GET /query-endpoints/{queryEndpointId}/run
+POST /query-endpoints/{queryEndpointId}/run
+```
+
+<div id="http-methods">
+  ### HTTP-методы
+</div>
+
+| Метод    | Сценарий использования                                      | Параметры                                                                |
+| -------- | ----------------------------------------------------------- | ------------------------------------------------------------------------ |
+| **GET**  | Простые запросы с параметрами                               | Передавайте переменные запроса через параметры URL (`?param_name=value`) |
+| **POST** | Сложные запросы или случаи, когда используется тело запроса | Передавайте переменные запроса в теле запроса (объект `queryVariables`)  |
+
+**Когда использовать GET:**
+
+* Простые запросы без сложных вложенных данных
+* Параметры легко передаются в URL-кодировке
+* Кэширование использует преимущества семантики HTTP GET
+
+**Когда использовать POST:**
+
+* Сложные переменные запроса (массивы, объекты, длинные строки)
+* Когда тело запроса предпочтительнее с точки зрения безопасности и конфиденциальности
+* Потоковая загрузка файлов или больших объёмов данных
+
+<div id="authentication">
+  ### Аутентификация
+</div>
+
+**Требуется:** Да
+**Метод:** Basic Auth с помощью OpenAPI Key/Secret
+**Разрешения:** Соответствующие разрешения для эндпоинта запроса
+
+<div id="request-configuration">
+  ### Настройка запроса
+</div>
+
+<div id="url-params">
+  #### Параметры URL
+</div>
+
+| Параметр          | Обязательно | Описание                                                        |
+| ----------------- | ----------- | --------------------------------------------------------------- |
+| `queryEndpointId` | **Да**      | Уникальный идентификатор конечной точки запроса для выполнения |
+
+<div id="query-params">
+  #### Параметры запроса
+</div>
+
+| Параметр              | Обязательно | Описание                                                                                             | Пример                   |
+| --------------------- | ----------- | ---------------------------------------------------------------------------------------------------- | ------------------------ |
+| `format`              | Нет         | Формат ответа (поддерживаются все форматы ClickHouse)                                                | `?format=JSONEachRow`    |
+| `param_:name`         | Нет         | Переменные запроса, если тело запроса передаётся как поток. Замените `:name` на имя своей переменной | `?param_year=2024`       |
+| `request_timeout`     | Нет         | Тайм-аут запроса в миллисекундах (по умолчанию: 30000)                                               | `?request_timeout=60000` |
+| `:clickhouse_setting` | Нет         | Любая поддерживаемая [настройка ClickHouse](/ru/reference/settings/session-settings)                    | `?max_threads=8`         |
+
+<div id="headers">
+  #### Заголовки
+</div>
+
+| Заголовок                       | Обязательно | Описание                                                                             | Значения                                                             |
+| ------------------------------- | ----------- | ------------------------------------------------------------------------------------ | -------------------------------------------------------------------- |
+| `x-clickhouse-endpoint-version` | Нет         | Указывает версию конечной точки                                                      | `1` или `2` (по умолчанию используется последняя сохранённая версия) |
+| `x-clickhouse-endpoint-upgrade` | Нет         | Инициирует обновление версии конечной точки (используйте вместе с заголовком версии) | `1` для обновления                                                   |
+
+***
+
+<div id="request-body">
+  ### Тело запроса
+</div>
+
+<div id="params">
+  #### Параметры
+</div>
+
+| Параметр         | Тип    | Обязательный | Описание                           |
+| ---------------- | ------ | ------------ | ---------------------------------- |
+| `queryVariables` | объект | Нет          | Переменные, используемые в запросе |
+| `format`         | строка | Нет          | Формат ответа                      |
+
+<div id="supported-formats">
+  #### Поддерживаемые форматы
+</div>
+
+| Версия                                | Поддерживаемые форматы                                                                                                                                                   |
+| ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Версия 2**                          | Все форматы, поддерживаемые ClickHouse                                                                                                                                   |
+| **Версия 1 (ограниченная поддержка)** | TabSeparated <br /> TabSeparatedWithNames <br /> TabSeparatedWithNamesAndTypes <br /> JSON <br /> JSONEachRow <br /> CSV <br /> CSVWithNames <br /> CSVWithNamesAndTypes |
+
+***
+
+<div id="responses">
+  ### Ответы
+</div>
+
+<div id="success">
+  #### Успех
+</div>
+
+**Статус:** `200 OK`
+Запрос успешно выполнен.
+
+<div id="error-codes">
+  #### Коды ошибок
+</div>
+
+| Код состояния      | Описание                                               |
+| ------------------ | ------------------------------------------------------ |
+| `400 Bad Request`  | Запрос имеет неверный формат                           |
+| `401 Unauthorized` | Отсутствует аутентификация или недостаточно разрешений |
+| `404 Not Found`    | Указанная конечная точка запроса не найдена            |
+
+<div id="error-handling-best-practices">
+  #### Рекомендации по обработке ошибок
+</div>
+
+* Убедитесь, что запрос содержит действительные учетные данные для аутентификации
+* Проверьте `queryEndpointId` и `queryVariables` перед отправкой
+* Реализуйте корректную обработку ошибок с понятными сообщениями
+
+***
+
+<div id="upgrading-endpoint-versions">
+  ### Обновление версий конечных точек
+</div>
+
+Чтобы перейти с версии 1 на версию 2:
+
+1. Добавьте заголовок `x-clickhouse-endpoint-upgrade` со значением `1`
+2. Добавьте заголовок `x-clickhouse-endpoint-version` со значением `2`
+
+Это дает доступ к возможностям версии 2, включая:
+
+* Поддержку всех форматов ClickHouse
+* Возможность потоковой передачи ответов
+* Более высокую производительность и расширенную функциональность
+
+<div id="examples">
+  ## Примеры
+</div>
+
+<div id="basic-request">
+  ### Простой запрос
+</div>
+
+**SQL для эндпоинта Query API:**
+
+```sql
+SELECT database, name AS num_tables FROM system.tables LIMIT 3;
+```
+
+<div id="version-1">
+  #### Версия 1
+</div>
+
+<Tabs>
+  <Tab title="cURL">
+    ```bash
+    curl -X POST 'https://console-api.clickhouse.cloud/.api/query-endpoints/<endpoint id>/run' \
+    --user '<openApiKeyId:openApiKeySecret>' \
+    -H 'Content-Type: application/json' \
+    -d '{ "format": "JSONEachRow" }'
+    ```
+  </Tab>
+
+  <Tab title="JavaScript">
+    ```javascript
+    fetch(
+      "https://console-api.clickhouse.cloud/.api/query-endpoints/<endpoint id>/run",
+      {
+        method: "POST",
+        headers: {
+          Authorization: "Basic <base64_encoded_credentials>",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          format: "JSONEachRow",
+        }),
+      }
+    )
+      .then((response) => response.json())
+      .then((data) => console.log(data))
+      .catch((error) => console.error("Error:", error));
+    ```
+
+    ```json title="Ответ"
+    {
+      "data": {
+        "columns": [
+          {
+            "name": "database",
+            "type": "String"
+          },
+          {
+            "name": "num_tables",
+            "type": "String"
+          }
+        ],
+        "rows": [
+          ["INFORMATION_SCHEMA", "COLUMNS"],
+          ["INFORMATION_SCHEMA", "KEY_COLUMN_USAGE"],
+          ["INFORMATION_SCHEMA", "REFERENTIAL_CONSTRAINTS"]
+        ]
+      }
+    }
+    ```
+  </Tab>
+</Tabs>
+
+<div id="version-2">
+  #### Версия 2
+</div>
+
+<Tabs>
+  <Tab title="GET (cURL)">
+    ```bash
+    curl 'https://console-api.clickhouse.cloud/.api/query-endpoints/<endpoint id>/run?format=JSONEachRow' \
+    --user '<openApiKeyId:openApiKeySecret>' \
+    -H 'x-clickhouse-endpoint-version: 2'
+    ```
+
+    ```application/x-ndjson title="Ответ"
+    {"database":"INFORMATION_SCHEMA","num_tables":"COLUMNS"}
+    {"database":"INFORMATION_SCHEMA","num_tables":"KEY_COLUMN_USAGE"}
+    {"database":"INFORMATION_SCHEMA","num_tables":"REFERENTIAL_CONSTRAINTS"}
+    ```
+  </Tab>
+
+  <Tab title="POST (cURL)">
+    ```bash
+    curl -X POST 'https://console-api.clickhouse.cloud/.api/query-endpoints/<endpoint id>/run?format=JSONEachRow' \
+    --user '<openApiKeyId:openApiKeySecret>' \
+    -H 'Content-Type: application/json' \
+    -H 'x-clickhouse-endpoint-version: 2'
+    ```
+  </Tab>
+
+  <Tab title="JavaScript">
+    ```javascript
+    fetch(
+      "https://console-api.clickhouse.cloud/.api/query-endpoints/<endpoint id>/run?format=JSONEachRow",
+      {
+        method: "POST",
+        headers: {
+          Authorization: "Basic <base64_encoded_credentials>",
+          "Content-Type": "application/json",
+          "x-clickhouse-endpoint-version": "2",
+        },
+      }
+    )
+      .then((response) => response.json())
+      .then((data) => console.log(data))
+      .catch((error) => console.error("Error:", error));
+    ```
+
+    ```application/x-ndjson title="Ответ"
+    {"database":"INFORMATION_SCHEMA","num_tables":"COLUMNS"}
+    {"database":"INFORMATION_SCHEMA","num_tables":"KEY_COLUMN_USAGE"}
+    {"database":"INFORMATION_SCHEMA","num_tables":"REFERENTIAL_CONSTRAINTS"}
+    ```
+  </Tab>
+</Tabs>
+
+<div id="request-with-query-variables-and-version-2-on-jsoncompacteachrow-format">
+  ### Запрос с переменными запроса и версией 2 в формате JSONCompactEachRow
+</div>
+
+**SQL для эндпоинта Query API:**
+
+```sql
+SELECT name, database FROM system.tables WHERE match(name, {tableNameRegex: String}) AND database = {database: String};
+```
+
+<Tabs>
+  <Tab title="GET (cURL)">
+    ```bash
+    curl 'https://console-api.clickhouse.cloud/.api/query-endpoints/<endpoint id>/run?format=JSONCompactEachRow&param_tableNameRegex=query.*&param_database=system' \
+    --user '<openApiKeyId:openApiKeySecret>' \
+    -H 'x-clickhouse-endpoint-version: 2'
+    ```
+
+    ```application/x-ndjson title="Ответ"
+    ["query_cache", "system"]
+    ["query_log", "system"]
+    ["query_views_log", "system"]
+    ```
+  </Tab>
+
+  <Tab title="POST (cURL)">
+    ```bash
+    curl -X POST 'https://console-api.clickhouse.cloud/.api/query-endpoints/<endpoint id>/run?format=JSONCompactEachRow' \
+    --user '<openApiKeyId:openApiKeySecret>' \
+    -H 'Content-Type: application/json' \
+    -H 'x-clickhouse-endpoint-version: 2' \
+    -d '{ "queryVariables": { "tableNameRegex": "query.*", "database": "system" } }'
+    ```
+  </Tab>
+
+  <Tab title="JavaScript">
+    ```javascript
+    fetch(
+      "https://console-api.clickhouse.cloud/.api/query-endpoints/<endpoint id>/run?format=JSONCompactEachRow",
+      {
+        method: "POST",
+        headers: {
+          Authorization: "Basic <base64_encoded_credentials>",
+          "Content-Type": "application/json",
+          "x-clickhouse-endpoint-version": "2",
+        },
+        body: JSON.stringify({
+          queryVariables: {
+            tableNameRegex: "query.*",
+            database: "system",
+          },
+        }),
+      }
+    )
+      .then((response) => response.json())
+      .then((data) => console.log(data))
+      .catch((error) => console.error("Error:", error));
+    ```
+
+    ```application/x-ndjson title="Ответ"
+    ["query_cache", "system"]
+    ["query_log", "system"]
+    ["query_views_log", "system"]
+    ```
+  </Tab>
+</Tabs>
+
+<div id="request-with-array-in-the-query-variables-that-inserts-data-into-a-table">
+  ### Запрос с массивом в параметрах запроса для вставки данных в таблицу
+</div>
+
+**SQL таблицы:**
+
+```SQL
+CREATE TABLE default.t_arr
+(
+    `arr` Array(Array(Array(UInt32)))
+)
+ENGINE = MergeTree
+ORDER BY tuple()
+```
+
+**SQL для эндпоинта Query API:**
+
+```sql
+INSERT INTO default.t_arr VALUES ({arr: Array(Array(Array(UInt32)))});
+```
+
+<Tabs>
+  <Tab title="cURL">
+    ```bash
+    curl -X POST 'https://console-api.clickhouse.cloud/.api/query-endpoints/<endpoint id>/run' \
+    --user '<openApiKeyId:openApiKeySecret>' \
+    -H 'Content-Type: application/json' \
+    -H 'x-clickhouse-endpoint-version: 2' \
+    -d '{
+      "queryVariables": {
+        "arr": [[[12, 13, 0, 1], [12]]]
+      }
+    }'
+    ```
+  </Tab>
+
+  <Tab title="JavaScript">
+    ```javascript
+    fetch(
+      "https://console-api.clickhouse.cloud/.api/query-endpoints/<endpoint id>/run",
+      {
+        method: "POST",
+        headers: {
+          Authorization: "Basic <base64_encoded_credentials>",
+          "Content-Type": "application/json",
+          "x-clickhouse-endpoint-version": "2",
+        },
+        body: JSON.stringify({
+          queryVariables: {
+            arr: [[[12, 13, 0, 1], [12]]],
+          },
+        }),
+      }
+    )
+      .then((response) => response.json())
+      .then((data) => console.log(data))
+      .catch((error) => console.error("Error:", error));
+    ```
+
+    ```text title="Ответ"
+    OK
+    ```
+  </Tab>
+</Tabs>
+
+<div id="request-with-clickhouse-settings-max_threads-set-to-8">
+  ### Запрос с настройкой ClickHouse `max_threads`, равной 8
+</div>
+
+**SQL для эндпоинта Query API:**
+
+```sql
+SELECT * FROM system.tables;
+```
+
+<Tabs>
+  <Tab title="GET (cURL)">
+    ```bash
+    curl 'https://console-api.clickhouse.cloud/.api/query-endpoints/<endpoint id>/run?max_threads=8' \
+    --user '<openApiKeyId:openApiKeySecret>' \
+    -H 'x-clickhouse-endpoint-version: 2'
+    ```
+  </Tab>
+
+  <Tab title="POST (cURL)">
+    ```bash
+    curl -X POST 'https://console-api.clickhouse.cloud/.api/query-endpoints/<endpoint id>/run?max_threads=8,' \
+    --user '<openApiKeyId:openApiKeySecret>' \
+    -H 'Content-Type: application/json' \
+    -H 'x-clickhouse-endpoint-version: 2' \
+    ```
+  </Tab>
+
+  <Tab title="JavaScript">
+    ```javascript
+    fetch(
+      "https://console-api.clickhouse.cloud/.api/query-endpoints/<endpoint id>/run?max_threads=8",
+      {
+        method: "POST",
+        headers: {
+          Authorization: "Basic <base64_encoded_credentials>",
+          "Content-Type": "application/json",
+          "x-clickhouse-endpoint-version": "2",
+        },
+      }
+    )
+      .then((response) => response.json())
+      .then((data) => console.log(data))
+      .catch((error) => console.error("Error:", error));
+    ```
+  </Tab>
+</Tabs>
+
+<div id="request-and-parse-the-response-as-a-stream">
+  ### Запрос и разбор потокового ответа
+</div>
+
+**SQL для эндпоинта Query API:**
+
+```sql
+SELECT name, database FROM system.tables;
+```
+
+<Tabs>
+  <Tab title="TypeScript">
+    ```typescript
+    async function fetchAndLogChunks(
+      url: string,
+      openApiKeyId: string,
+      openApiKeySecret: string
+    ) {
+      const auth = Buffer.from(`${openApiKeyId}:${openApiKeySecret}`).toString(
+        "base64"
+      );
+
+      const headers = {
+        Authorization: `Basic ${auth}`,
+        "x-clickhouse-endpoint-version": "2",
+      };
+
+      const response = await fetch(url, {
+        headers,
+        method: "POST",
+        body: JSON.stringify({ format: "JSONEachRow" }),
+      });
+
+      if (!response.ok) {
+        console.error(`HTTP error! Status: ${response.status}`);
+        return;
+      }
+
+      const reader = response.body as unknown as Readable;
+      reader.on("data", (chunk) => {
+        console.log(chunk.toString());
+      });
+
+      reader.on("end", () => {
+        console.log("Stream ended.");
+      });
+
+      reader.on("error", (err) => {
+        console.error("Stream error:", err);
+      });
+    }
+
+    const endpointUrl =
+      "https://console-api.clickhouse.cloud/.api/query-endpoints/<endpoint id>/run?format=JSONEachRow";
+    const openApiKeyId = "<myOpenApiKeyId>";
+    const openApiKeySecret = "<myOpenApiKeySecret>";
+    // Пример использования
+    fetchAndLogChunks(endpointUrl, openApiKeyId, openApiKeySecret).catch((err) =>
+      console.error(err)
+    );
+    ```
+
+    ```shell title="Вывод"
+    > npx tsx index.ts
+    > {"name":"COLUMNS","database":"INFORMATION_SCHEMA"}
+    > {"name":"KEY_COLUMN_USAGE","database":"INFORMATION_SCHEMA"}
+    ...
+    > Stream ended.
+    ```
+  </Tab>
+</Tabs>
+
+<div id="insert-a-stream-from-a-file-into-a-table">
+  ### Вставка потока из файла в таблицу
+</div>
+
+Создайте файл `./samples/my_first_table_2024-07-11.csv` со следующим содержимым:
+
+```csv
+"user_id","json","name"
+"1","{""name"":""John"",""age"":30}","John"
+"2","{""name"":""Jane"",""age"":25}","Jane"
+```
+
+**SQL-запрос CREATE TABLE:**
+
+```sql
+create table default.my_first_table
+(
+    user_id String,
+    json String,
+    name String,
+) ENGINE = MergeTree()
+ORDER BY user_id;
+```
+
+**SQL-код для эндпоинта Query API:**
+
+```sql
+INSERT INTO default.my_first_table
+```
+
+```bash
+cat ./samples/my_first_table_2024-07-11.csv | curl --user '<openApiKeyId:openApiKeySecret>' \
+                                                   -X POST \
+                                                   -H 'Content-Type: application/octet-stream' \
+                                                   -H 'x-clickhouse-endpoint-version: 2' \
+                                                   "https://console-api.clickhouse.cloud/.api/query-endpoints/<endpoint id>/run?format=CSV" \
+                                                   --data-binary @-
+```

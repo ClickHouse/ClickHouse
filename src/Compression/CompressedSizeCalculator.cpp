@@ -30,9 +30,6 @@ UInt32 CompressedSizeCalculator::getCompressedBlockSize(
 
 void CompressedSizeCalculator::nextImpl()
 {
-    if (!offset())
-        return;
-
     chassert(offset() <= INT_MAX);
     const UInt32 decompressed_size = static_cast<UInt32>(offset());
 

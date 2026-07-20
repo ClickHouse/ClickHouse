@@ -1,0 +1,37 @@
+---
+sidebarTitle: 'ビジョン'
+slug: /cloud/features/ai-ml/agents/builder/vision
+title: 'ビジョン'
+description: 'ClickHouse Agents における画像入力と視覚的理解'
+keywords: ['AI', 'ClickHouse Cloud', 'agents', 'ビジョン', '画像入力', 'マルチモーダル']
+doc_type: 'reference'
+---
+
+import BetaBadge from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+<BetaBadge />
+
+ビジョンでは、ユーザーがエージェントに解析させる画像をアップロードできます。エージェントはその画像をビジョン対応モデルに渡し、モデルが画像の内容を説明したり、要約したり、画像についての質問に答えたりします。
+
+<div id="enable-it">
+  ## ビジョン機能を有効にする
+</div>
+
+ビジョンは、画像入力をサポートするモデルでのみ使用できます。選択したモデルが画像入力に対応していない場合、メッセージコンポーザーのアップロードコントロールは無効になります。再度有効にするには、ビジョン対応モデルに切り替えてください。
+
+<div id="use-it">
+  ## ビジョン機能を使う
+</div>
+
+メッセージコンポーザーの左下にあるクリップアイコンをクリックし、**Upload to Provider** を選んでイメージを添付します。スクリーンショット、写真、チャート、図表などを追加できます。続いて、そのイメージを読み取る必要がある質問をします。たとえば、*&quot;このクエリプランの何が問題ですか？&quot;*、*&quot;このスクリーンショット内のテキストを書き起こしてください&quot;*、*&quot;このダッシュボードを先週のものと比較してください&quot;* といった質問です。
+
+<Image img="/images/cloud/agent-builder/vision/vision.webp" alt="Upload to Provider、Upload as Text、Upload to Code Environment の各オプションが表示された、クリップメニューを開いた状態のメッセージコンポーザー" size="lg" />
+
+エージェントはイメージをメッセージコンテキストの一部として扱うため、同じターン内の追加の質問では、再アップロードしなくても見た内容を参照できます。
+
+<div id="combine-with-other-tools">
+  ## ビジョンを他のツールと組み合わせる
+</div>
+
+ビジョンは、画像ベースの分析では[コードインタープリター](/ja/products/cloud/features/ai-ml/agents/builder/code-interpreter)と特に相性がよく、たとえばエージェントがスクリーンショットから数値を読み取り、その後 Python を実行して合計を計算できます。また、画像にモデルが調べる必要のある対象への言及が含まれている場合は、[ウェブ検索](/ja/products/cloud/features/ai-ml/agents/builder/web-search)も効果的です。

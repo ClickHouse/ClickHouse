@@ -1,0 +1,290 @@
+---
+slug: /use-cases/observability/clickstack/dashboards/sql-visualizations
+title: 'SQLベースの可視化'
+sidebarTitle: 'SQLベースの可視化'
+description: 'ClickStackでSQLクエリを使用して可視化を作成する'
+doc_type: 'guide'
+keywords: ['ClickStack', 'ダッシュボード', '可視化', 'sql', 'オブザーバビリティ']
+---
+
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+ClickStack は、生の SQL クエリに基づく可視化をサポートしています。これにより、ダッシュボード レベルの時間範囲、フィルター、チャートの描画と連携しながら、クエリ ロジックを完全に制御できます。
+
+SQL ベースの可視化は、組み込みの Chart Explorer では対応しきれないことを行いたい場合に有用です。たとえば、テーブルを結合したり、chart builder ではサポートされていない複雑な集計を作成したりする場合です。
+
+<div id="creating-a-raw-sql-chart">
+  ## SQL ベースの可視化の作成
+</div>
+
+SQL ベースの可視化を作成するには、ダッシュボードのタイルエディタを開き、**SQL** タブを選択します。
+
+<Image img="/images/use-cases/observability/sql-editor-button.webp" alt="SQL エディタのボタン" size="lg" />
+
+その後、次の手順で進めます。
+
+1. クエリの実行先となる **ClickHouse 接続** を選択します。
+2. 必要に応じて **ログソース** を選択します。これにより、`$__filters` マクロを介してダッシュボードレベルのフィルタをグラフに適用できるようになります。
+3. エディタで SQL クエリを記述し、クエリパラメータとマクロを使ってダッシュボードの時間範囲やフィルタと連携させます。
+4. **play** ボタンをクリックして結果をプレビューし、**Save** をクリックします。
+
+<div id="query-parameters">
+  ## クエリパラメータ
+</div>
+
+[クエリパラメータ](/ja/reference/syntax#defining-and-using-query-parameters) を使用すると、SQL からダッシュボードの現在の時間範囲と粒度を参照できます。構文には、ClickHouse のパラメータ化クエリ構文 `{paramName:Type}` を使用します。
+
+<div id="available-parameters">
+  ### 利用可能なパラメータ
+</div>
+
+使用できるパラメータは、チャートの種類によって異なります。
+
+**折れ線グラフ チャートおよび 積み上げ棒グラフ チャート:**
+
+| パラメータ                           | 型     | 説明                            |
+| ------------------------------- | ----- | ----------------------------- |
+| `{startDateMilliseconds:Int64}` | Int64 | ダッシュボードの日付範囲の開始 (エポックからのミリ秒)  |
+| `{endDateMilliseconds:Int64}`   | Int64 | ダッシュボードの日付範囲の終了 (エポックからのミリ秒)  |
+| `{intervalSeconds:Int64}`       | Int64 | 時間バケットのサイズ (粒度に基づく、秒単位)       |
+| `{intervalMilliseconds:Int64}`  | Int64 | 時間バケットのサイズ (粒度に基づく、ミリ秒単位)     |
+
+**Table、Pie、および Number チャート:**
+
+| パラメータ                           | 型     | 説明                            |
+| ------------------------------- | ----- | ----------------------------- |
+| `{startDateMilliseconds:Int64}` | Int64 | ダッシュボードの日付範囲の開始 (エポックからのミリ秒)  |
+| `{endDateMilliseconds:Int64}`   | Int64 | ダッシュボードの日付範囲の終了 (エポックからのミリ秒)  |
+
+<div id="macros">
+  ## マクロ
+</div>
+
+マクロは、よく使われる ClickHouse SQL の式に展開されるショートカットです。`$__` というプレフィックスが付き、クエリが ClickHouse に送信される前に置換されます。
+
+<div id="time-boundary-macros">
+  ### 時間境界マクロ
+</div>
+
+これらのマクロは、ダッシュボードの開始時刻または終了時刻を表す ClickHouse の式を返します。引数はありません。
+
+| Macro            | Expands to                                                            | Column type |
+| ---------------- | --------------------------------------------------------------------- | ----------- |
+| `$__fromTime`    | `toDateTime(fromUnixTimestamp64Milli({startDateMilliseconds:Int64}))` | DateTime    |
+| `$__toTime`      | `toDateTime(fromUnixTimestamp64Milli({endDateMilliseconds:Int64}))`   | DateTime    |
+| `$__fromTime_ms` | `fromUnixTimestamp64Milli({startDateMilliseconds:Int64})`             | DateTime64  |
+| `$__toTime_ms`   | `fromUnixTimestamp64Milli({endDateMilliseconds:Int64})`               | DateTime64  |
+| `$__interval_s`  | `{intervalSeconds:Int64}`                                             | Int64       |
+
+<div id="time-filter-macros">
+  ### 時間フィルターマクロ
+</div>
+
+これらのマクロは、カラムをダッシュボードの時間範囲で絞り込む `WHERE` 句のフラグメントを生成します。
+
+| Macro                                 | Description                                |
+| ------------------------------------- | ------------------------------------------ |
+| `$__timeFilter(column)`               | `DateTime` カラムをダッシュボードの時間範囲で絞り込みます         |
+| `$__timeFilter_ms(column)`            | `DateTime64` (ミリ秒) カラムをダッシュボードの時間範囲で絞り込みます |
+| `$__dateFilter(column)`               | `Date` カラムをダッシュボードの時間範囲で絞り込みます             |
+| `$__dateTimeFilter(dateCol, timeCol)` | 個別の `Date` カラムと `DateTime` カラムを使って絞り込みます   |
+| `$__dt(dateCol, timeCol)`             | `$__dateTimeFilter` のエイリアス                 |
+
+`$__timeFilter(TimestampTime)` の**展開例**:
+
+```sql
+TimestampTime >= toDateTime(fromUnixTimestamp64Milli({startDateMilliseconds:Int64}))
+AND TimestampTime <= toDateTime(fromUnixTimestamp64Milli({endDateMilliseconds:Int64}))
+```
+
+<div id="time-interval-macros">
+  ### 時間インターバルマクロ
+</div>
+
+これらのマクロは、タイムスタンプのカラムをダッシュボードの粒度に合わせたインターバルにまとめます。通常は、時系列チャートの `SELECT` 句および `GROUP BY` 句で使用します。利用できるのは、折れ線グラフ と Stacked-bar の可視化のみです。
+
+| Macro                        | Description                                              |
+| ---------------------------- | -------------------------------------------------------- |
+| `$__timeInterval(column)`    | `DateTime` カラムを `intervalSeconds` 単位のインターバルにまとめます        |
+| `$__timeInterval_ms(column)` | `DateTime64` カラムを `intervalMilliseconds` 単位のインターバルにまとめます |
+
+`$__timeInterval(TimestampTime)` の**展開例**:
+
+```sql
+toStartOfInterval(toDateTime(TimestampTime), INTERVAL {intervalSeconds:Int64} second)
+```
+
+<div id="dashboard-filter-macro">
+  ### ダッシュボードフィルタ用マクロ
+</div>
+
+| Macro        | Description                                       |
+| ------------ | ------------------------------------------------- |
+| `$__filters` | ダッシュボードレベルのフィルタ条件に置き換えられます (ログソースを選択している必要があります)  |
+
+グラフで**ログソース**が選択されており、ダッシュボードフィルタが有効な場合、`$__filters` は対応する SQL の `WHERE` 条件に展開されます。ログソースが選択されていない場合、またはフィルタが適用されていない場合は、`(1=1)` に展開されるため、`WHERE` 句に含めても常に安全です。
+
+<div id="how-results-are-plotted">
+  ## クエリ結果の表示方法
+</div>
+
+ClickStack は、カラムの型に基づいて、クエリ結果のカラムをグラフ要素に自動的に対応付けます。対応付けのルールは、グラフの種類によって異なります。
+
+<div id="line-and-stacked-bar-charts">
+  ### 折れ線グラフと積み上げ棒グラフ
+</div>
+
+| 役割          | カラム型                          | 説明                                      |
+| ----------- | ----------------------------- | --------------------------------------- |
+| **タイムスタンプ** | 最初の `Date` または `DateTime` カラム | x軸として使用されます。                            |
+| **シリーズ値**   | すべての数値カラム                     | 各数値カラムは個別のシリーズとしてプロットされます。通常、これらは集計値です。 |
+| **グループ名**   | String、Map、または Array カラム      | 任意です。グループ値が異なる行は、それぞれ別のシリーズとしてプロットされます。 |
+
+<div id="pie-chart">
+  ### 円グラフ
+</div>
+
+| 役割           | カラムの型                    | 説明                        |
+| ------------ | ------------------------ | ------------------------- |
+| **スライスの値**   | 最初の数値カラム                 | 各スライスの大きさを決定します。          |
+| **スライスのラベル** | String、Map、または Array カラム | 任意です。各一意の値がスライスのラベルになります。 |
+
+<div id="number-chart">
+  ### Number チャート
+</div>
+
+| ロール        | カラムの種類   | 説明                     |
+| ---------- | -------- | ---------------------- |
+| **Number** | 最初の数値カラム | 最初の数値カラムの先頭行の値が表示されます。 |
+
+<div id="table-chart">
+  ### テーブルチャート
+</div>
+
+すべての結果カラムが、そのままテーブルのカラムとして表示されます。
+
+<div id="examples">
+  ## 例
+</div>
+
+<Info>
+  **必要な system table へのアクセス権**
+
+  以下の例を [play-clickstack.clickhouse.com](https://play-clickstack.clickhouse.com) 上で実行する場合は、`otel_v2.otel_logs` または `otel_v2.otel_traces` を指定する必要があります。
+</Info>
+
+<div id="example-line-chart">
+  ### 折れ線グラフ — サービス別の時間ごとのログ件数
+</div>
+
+このクエリは、ダッシュボードの粒度に合わせた時間間隔で区切り、サービスごとのログイベント数を集計します。
+
+```sql
+SELECT
+  toStartOfInterval(TimestampTime, INTERVAL {intervalSeconds:Int64} second) AS ts,
+  ServiceName,
+  count() AS count
+FROM otel_logs
+WHERE TimestampTime >= fromUnixTimestamp64Milli({startDateMilliseconds:Int64})
+  AND TimestampTime < fromUnixTimestamp64Milli({endDateMilliseconds:Int64})
+  AND $__filters
+GROUP BY ServiceName, ts
+ORDER BY ts ASC
+```
+
+* `ts` (DateTime) は、x軸のタイムスタンプとして使用されます。
+* `count` (数値) は、系列の値としてプロットされます。
+* `ServiceName` (文字列) は、サービスごとに別々の線として表示されます。
+
+<div id="example-line-chart-macros">
+  ### 折れ線グラフ — マクロを使う場合
+</div>
+
+簡潔にするため、マクロを使って同じクエリを記述すると次のようになります。
+
+```sql
+SELECT
+  $__timeInterval(TimestampTime) AS ts,
+  ServiceName,
+  count() AS count
+FROM otel_logs
+WHERE $__timeFilter(TimestampTime)
+  AND $__filters
+GROUP BY ServiceName, ts
+ORDER BY ts ASC
+```
+
+<div id="example-stacked-bar">
+  ### 積み上げ棒グラフ — 重大度別エラー数
+</div>
+
+```sql
+SELECT
+  $__timeInterval(TimestampTime) AS ts,
+  lower(SeverityText),
+  count() AS count
+FROM otel_logs
+WHERE $__timeFilter(TimestampTime)
+  AND lower(SeverityText) IN ('error', 'warn')
+  AND $__filters
+GROUP BY SeverityText, ts
+ORDER BY ts ASC
+```
+
+<div id="example-table">
+  ### テーブルチャート — 応答が最も遅いエンドポイント上位10件
+</div>
+
+```sql
+SELECT
+  SpanName AS endpoint,
+  avg(Duration) / 1000 AS avg_duration_ms,
+  count() AS request_count
+FROM otel_traces
+WHERE $__timeFilter(Timestamp)
+  AND $__filters
+GROUP BY SpanName
+ORDER BY avg_duration_ms DESC
+LIMIT 10
+```
+
+<div id="example-pie">
+  ### 円グラフ — サービス別リクエスト分布
+</div>
+
+```sql
+SELECT
+  ServiceName,
+  count() AS request_count
+FROM otel_traces
+WHERE $__timeFilter(Timestamp)
+  AND $__filters
+GROUP BY ServiceName
+```
+
+* `request_count` (数値) は各スライスの大きさを決定します。
+* `ServiceName` (文字列) は各スライスのラベルを表します。
+
+<div id="example-number">
+  ### Number チャート — エラーの総数
+</div>
+
+```sql
+SELECT
+  count() AS total_errors
+FROM otel_logs
+WHERE $__timeFilter(TimestampTime)
+  AND SeverityText = 'error'
+  AND $__filters
+```
+
+最初の行の数値 `total_errors` が表示されます。
+
+<div id="notes">
+  ## 注記
+</div>
+
+* SQL ベースの可視化は `readonly` モードを有効にして実行されるため、`SELECT` クエリのみ実行できます。
+* SQL ベースの可視化では、SQL クエリは必ず 1 つだけ指定する必要があります。複数クエリには対応していません。
+* SQL エディタでは、クエリパラメータとマクロの両方でオートコンプリート候補が表示されます。
+* SQL ベースの可視化にダッシュボードフィルタを適用するには、ログソースを選択する必要があります。正しくフィルタリングするには、ログソースをクエリ対象のテーブルに一致させる必要があります。

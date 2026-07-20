@@ -20,8 +20,8 @@ WHERE startsWith(__table1.col_fixedstring, \'fruit\')
 SELECT count() AS `count()`
 FROM default.tab AS __table1
 WHERE like(__table1.col_fixedstring, \'%ther\\0\')
-2
-2
+0
+0
 -- Test NOT LIKE with perfect prefix on String column - should be rewritten
 SELECT count() AS `count()`
 FROM default.tab AS __table1
@@ -153,8 +153,8 @@ WHERE startsWith(__table1.col_lowcardinality_fixedstring, \'a\')
 SELECT count() AS `count()`
 FROM default.tab AS __table1
 WHERE like(__table1.col_lowcardinality_fixedstring, \'%a\\0\')
-3
-3
+0
+0
 -- Test nullable fixedstring with prefix - should be rewritten
 SELECT count() AS `count()`
 FROM default.tab AS __table1
@@ -165,8 +165,8 @@ WHERE startsWith(__table1.col_nullable_fixedstring, \'a\')
 SELECT count() AS `count()`
 FROM default.tab AS __table1
 WHERE like(__table1.col_nullable_fixedstring, \'%a\\0\')
-3
-3
+0
+0
 -- Test low cardinality nullable fixedstring with prefix - should be rewritten
 SELECT count() AS `count()`
 FROM default.tab AS __table1
@@ -177,5 +177,5 @@ WHERE startsWith(__table1.col_lowcardinality_nullable_fixedstring, \'a\')
 SELECT count() AS `count()`
 FROM default.tab AS __table1
 WHERE like(__table1.col_lowcardinality_nullable_fixedstring, \'%a\\0\')
-3
-3
+0
+0

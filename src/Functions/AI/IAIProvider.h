@@ -11,12 +11,6 @@
 namespace DB
 {
 
-/// Thrown when an AI provider returns a non-2xx HTTP response. Carries the HTTP status code so the
-/// retry logic (`FunctionBaseAI::isRetriableProviderError`) can apply the same retriable-status
-/// policy as the `url` table function (`isRetriableHTTPError`): deterministic client errors
-/// (e.g. 400, 401, 403, 404, 405, 501) are surfaced immediately, while transient/server-side errors
-/// are retried. Uses the `RECEIVED_ERROR_FROM_REMOTE_IO_SERVER` error code, as the providers did
-/// before the status was preserved, so error messages and `throw_on_error` behavior are unchanged.
 class AIProviderHTTPException : public Exception
 {
 public:

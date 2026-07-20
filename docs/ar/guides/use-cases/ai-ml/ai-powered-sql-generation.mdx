@@ -1,0 +1,202 @@
+---
+slug: /use-cases/AI/ai-powered-sql-generation
+sidebarTitle: 'توليد SQL بالذكاء الاصطناعي'
+title: 'توليد SQL بالذكاء الاصطناعي'
+description: 'يشرح هذا الدليل كيفية استخدام الذكاء الاصطناعي لتوليد استعلامات SQL في ClickHouse Client أو clickhouse-local.'
+keywords: ['AI', 'توليد SQL']
+show_related_blogs: true
+doc_type: 'guide'
+---
+
+بدءًا من ClickHouse 25.7، يتضمن كلٌّ من [ClickHouse Client](/ar/concepts/features/interfaces/cli) و[clickhouse-local](/ar/concepts/features/tools-and-utilities/clickhouse-local) [وظائف مدعومة بالذكاء الاصطناعي](/ar/concepts/features/interfaces/cli#ai-sql-generation) تحوّل الأوصاف المكتوبة باللغة الطبيعية إلى استعلامات SQL. تتيح لك هذه الميزة وصف متطلباتك المتعلقة بالبيانات بنص عادي، ثم يترجم النظام ذلك إلى عبارات SQL المقابلة.
+
+تكون هذه الإمكانية مفيدة بشكل خاص إذا لم تكن على دراية ببنية SQL المعقدة أو كنت بحاجة إلى توليد استعلامات بسرعة لأغراض تحليل البيانات الاستكشافي. تعمل هذه الميزة مع جداول ClickHouse القياسية وتدعم أنماط الاستعلامات الشائعة، بما في ذلك التصفية والتجميع وعمليات JOIN.
+
+ويتم ذلك بمساعدة الأدوات/الدوال المضمنة التالية:
+
+* `list_databases` - سرد جميع قواعد البيانات المتاحة في مثيل ClickHouse
+* `list_tables_in_database` - سرد جميع الجداول في قاعدة بيانات محددة
+* `get_schema_for_table` - الحصول على عبارة `CREATE TABLE`‏ (`مخطط`) لجدول محدد
+
+<div id="prerequisites">
+  ## المتطلبات الأساسية
+</div>
+
+سنحتاج إلى إضافة مفتاح Anthropic أو OpenAI كمتغير بيئة:
+
+```bash
+export ANTHROPIC_API_KEY=your_api_key
+export OPENAI_API_KEY=your_api_key
+```
+
+بدلًا من ذلك، يمكنك [تقديم ملف إعدادات](/ar/concepts/features/interfaces/cli#ai-sql-generation-configuration).
+
+<div id="connecting-to-the-clickhouse-sql-playground">
+  ## الاتصال بـ ClickHouse SQL playground
+</div>
+
+سنستكشف هذه الميزة من خلال [ClickHouse SQL playground](https://sql.clickhouse.com/).
+
+يمكننا الاتصال بـ ClickHouse SQL playground باستخدام الأمر التالي:
+
+```bash
+clickhouse client -mn \
+--host sql-clickhouse.clickhouse.com \
+--secure \
+--user demo --password ''
+```
+
+<Note>
+  سنفترض أن ClickHouse مُثبَّت لديك، ولكن إن لم يكن الأمر كذلك، فارجع إلى [دليل التثبيت](/ar/get-started/setup/install)
+</Note>
+
+<div id="asking-clickhouse-questions-in-natural-language">
+  ## طرح أسئلة على ClickHouse باللغة الطبيعية
+</div>
+
+الآن حان وقت البدء بطرح بعض الأسئلة!
+
+تُعد ميزة تحويل النص إلى SQL في الأساس أداةً لتوليد الاستعلامات لمرة واحدة. ونظرًا لأنها لا تحتفظ بسجل المحادثة، فأدرِج أكبر قدر ممكن من السياق المفيد في سؤالك. كن محددًا بشأن:
+
+الفترات الزمنية أو نطاقات التاريخ
+نوع التحليل الذي تريده (المتوسطات، الإجماليات، الترتيب، وما إلى ذلك)
+أي معايير للتصفية
+
+<div id="finding-expensive-housing-markets">
+  ### العثور على أسواق الإسكان الباهظة
+</div>
+
+لنبدأ بطرح سؤال عن أسعار المنازل. تحتوي بيئة SQL التفاعلية على مجموعة بيانات لأسعار المنازل في المملكة المتحدة، وسيكتشفها الذكاء الاصطناعي تلقائيًا:
+
+```sql
+?? Can you tell me the most expensive place to buy a house in 2021?;
+```
+
+بمجرد الضغط على Enter، سنرى مسار تفكير الذكاء الاصطناعي وهو يحاول الإجابة عن سؤالنا.
+
+```text
+• Starting AI SQL generation with schema discovery...
+─────────────────────────────────────────────────
+🧠 thinking...[INFO] Text generation successful - model: claude-3-5-sonnet-latest, response_id: msg_01QpQd35ZD8HM9QSYFZuQ8Wh
+🔧 Calling: list_databases [toolu_01...]
+🧠 thinking✓ list_databases completed
+  └─ Found 37 databases: - amazon - bluesky - country - covid - default - dns - en...
+🔧 Calling: list_databases [toolu_01...]
+✓ list_databases completed
+  └─ Found 37 databases: - amazon - bluesky - country - covid - default - dns - en...
+🧠 thinking[INFO] Text generation successful - model: claude-3-5-sonnet-latest, response_id: msg_016DxK8SMVKGrUPfFwi43AzE
+🔧 Calling: list_tables_in_database [toolu_01...]
+  └─ Args: {"database":"uk"}
+🧠 thinking.✓ list_tables_in_database completed
+  └─ Found 9 tables in database 'uk': - uk_codes - uk_postcode_to_iso - uk_price_p...
+🔧 Calling: list_tables_in_database [toolu_01...]
+  └─ Args: {"database":"uk"}
+✓ list_tables_in_database completed
+  └─ Found 9 tables in database 'uk': - uk_codes - uk_postcode_to_iso - uk_price_p...
+🧠 thinking.[INFO] Text generation successful - model: claude-3-5-sonnet-latest, response_id: msg_015giF12wm619beNGC5aTrmw
+🔧 Calling: get_schema_for_table [toolu_01...]
+  └─ Args: {"database":"uk","table":"uk_price_paid"}
+✓ get_schema_for_table completed
+  └─ Schema for uk.uk_price_paid: CREATE TABLE uk.uk_price_paid (     `price` UInt...
+🔧 Calling: get_schema_for_table [toolu_01...]
+  └─ Args: {"database":"uk","table":"uk_price_paid"}
+🧠 thinking..✓ get_schema_for_table completed
+  └─ Schema for uk.uk_price_paid: CREATE TABLE uk.uk_price_paid (     `price` UInt...
+🧠 thinking[INFO] Text generation successful - model: claude-3-5-sonnet-latest, response_id: msg_01HxT1HKbaTT3165Wx5bDtY9
+─────────────────────────────────────────────────
+• ✨ SQL query generated successfully!
+:) SELECT     town,     district,     county,     round(avg(price), 2) as avg_price,     count() as total_sales FROM uk.uk_price_paid WHERE date >= '2021-01-01' AND date <= '2021-12-31' GROUP BY     town,     district,     county HAVING total_sales >= 10 ORDER BY avg_price DESC LIMIT 10
+```
+
+يتبع الذكاء الاصطناعي هذه الخطوات:
+
+1. اكتشاف المخطط - يستعرض قواعد البيانات والجداول المتاحة
+2. تحليل الجدول - يفحص بنية الجداول ذات الصلة
+3. إنشاء الاستعلام - ينشئ SQL استنادًا إلى سؤالك والمخطط المكتشف
+
+يمكننا أن نرى أنه عثر بالفعل على الجدول `uk_price_paid` وأنشأ استعلامًا ليتم تشغيله.
+إذا شغّلنا ذلك الاستعلام، فسنرى المخرجات التالية:
+
+```text
+┌─town───────────┬─district───────────────┬─county──────────┬──avg_price─┬─total_sales─┐
+│ ILKLEY         │ HARROGATE              │ NORTH YORKSHIRE │    4310200 │          10 │
+│ LONDON         │ CITY OF LONDON         │ GREATER LONDON  │ 4008117.32 │         311 │
+│ LONDON         │ CITY OF WESTMINSTER    │ GREATER LONDON  │ 2847409.81 │        3984 │
+│ LONDON         │ KENSINGTON AND CHELSEA │ GREATER LONDON  │  2331433.1 │        2594 │
+│ EAST MOLESEY   │ RICHMOND UPON THAMES   │ GREATER LONDON  │ 2244845.83 │          12 │
+│ LEATHERHEAD    │ ELMBRIDGE              │ SURREY          │ 2051836.42 │         102 │
+│ VIRGINIA WATER │ RUNNYMEDE              │ SURREY          │ 1914137.53 │         169 │
+│ REIGATE        │ MOLE VALLEY            │ SURREY          │ 1715780.89 │          18 │
+│ BROADWAY       │ TEWKESBURY             │ GLOUCESTERSHIRE │ 1633421.05 │          19 │
+│ OXFORD         │ SOUTH OXFORDSHIRE      │ OXFORDSHIRE     │ 1628319.07 │         405 │
+└────────────────┴────────────────────────┴─────────────────┴────────────┴─────────────┘
+```
+
+إذا أردنا طرح أسئلة متابعة، فعلينا إعادة طرح سؤالنا من الصفر.
+
+<div id="finding-expensive-properties-in-greater-london">
+  ### العثور على العقارات مرتفعة الثمن في لندن الكبرى
+</div>
+
+نظرًا لأن الميزة لا تحتفظ بسجل المحادثة، يجب أن يكون كل استعلام مستقلًا بذاته. وعند طرح أسئلة متابعة، عليك تقديم السياق الكامل بدلًا من الإشارة إلى الاستعلامات السابقة.
+على سبيل المثال، بعد الاطلاع على النتائج السابقة، قد نرغب في التركيز تحديدًا على عقارات لندن الكبرى. وبدلًا من أن نسأل &quot;ماذا عن لندن الكبرى؟&quot;، نحتاج إلى تضمين السياق الكامل:
+
+```sql
+?? Can you tell me the most expensive place to buy a house in Greater London across the years?;
+```
+
+لاحظ أن الذكاء الاصطناعي يمر بعملية الاستكشاف نفسها، رغم أنه اطّلع للتو على هذه البيانات:
+
+```text
+• Starting AI SQL generation with schema discovery...
+─────────────────────────────────────────────────
+🧠 thinking[INFO] Text generation successful - model: claude-3-5-sonnet-latest, response_id: msg_012m4ayaSHTYtX98gxrDy1rz
+🔧 Calling: list_databases [toolu_01...]
+✓ list_databases completed
+  └─ Found 37 databases: - amazon - bluesky - country - covid - default - dns - en...
+🔧 Calling: list_databases [toolu_01...]
+🧠 thinking.✓ list_databases completed
+  └─ Found 37 databases: - amazon - bluesky - country - covid - default - dns - en...
+🧠 thinking.[INFO] Text generation successful - model: claude-3-5-sonnet-latest, response_id: msg_01KU4SZRrJckutXUzfJ4NQtA
+🔧 Calling: list_tables_in_database [toolu_01...]
+  └─ Args: {"database":"uk"}
+🧠 thinking..✓ list_tables_in_database completed
+  └─ Found 9 tables in database 'uk': - uk_codes - uk_postcode_to_iso - uk_price_p...
+🔧 Calling: list_tables_in_database [toolu_01...]
+  └─ Args: {"database":"uk"}
+✓ list_tables_in_database completed
+  └─ Found 9 tables in database 'uk': - uk_codes - uk_postcode_to_iso - uk_price_p...
+🧠 thinking[INFO] Text generation successful - model: claude-3-5-sonnet-latest, response_id: msg_01X9CnxoBpbD2xj2UzuRy2is
+🔧 Calling: get_schema_for_table [toolu_01...]
+  └─ Args: {"database":"uk","table":"uk_price_paid"}
+🧠 thinking.✓ get_schema_for_table completed
+  └─ Schema for uk.uk_price_paid: CREATE TABLE uk.uk_price_paid (     `price` UInt...
+🔧 Calling: get_schema_for_table [toolu_01...]
+  └─ Args: {"database":"uk","table":"uk_price_paid"}
+✓ get_schema_for_table completed
+  └─ Schema for uk.uk_price_paid: CREATE TABLE uk.uk_price_paid (     `price` UInt...
+🧠 thinking...[INFO] Text generation successful - model: claude-3-5-sonnet-latest, response_id: msg_01QTMypS1XuhjgVpDir7N9wD
+─────────────────────────────────────────────────
+• ✨ SQL query generated successfully!
+:) SELECT     district,     toYear(date) AS year,     round(avg(price), 2) AS avg_price,     count() AS total_sales FROM uk.uk_price_paid WHERE county = 'GREATER LONDON' GROUP BY district, year HAVING total_sales >= 10 ORDER BY avg_price DESC LIMIT 10;
+```
+
+ينشئ هذا استعلامًا أكثر تحديدًا يقتصر على لندن الكبرى ويقسّم النتائج حسب السنة.
+يظهر ناتج الاستعلام أدناه:
+
+```text
+┌─district────────────┬─year─┬───avg_price─┬─total_sales─┐
+│ CITY OF LONDON      │ 2019 │ 14504772.73 │         299 │
+│ CITY OF LONDON      │ 2017 │  6351366.11 │         367 │
+│ CITY OF LONDON      │ 2016 │  5596348.25 │         243 │
+│ CITY OF LONDON      │ 2023 │  5576333.72 │         252 │
+│ CITY OF LONDON      │ 2018 │  4905094.54 │         523 │
+│ CITY OF LONDON      │ 2021 │  4008117.32 │         311 │
+│ CITY OF LONDON      │ 2025 │  3954212.39 │          56 │
+│ CITY OF LONDON      │ 2014 │  3914057.39 │         416 │
+│ CITY OF LONDON      │ 2022 │  3700867.19 │         290 │
+│ CITY OF WESTMINSTER │ 2018 │  3562457.76 │        3346 │
+└─────────────────────┴──────┴─────────────┴─────────────┘
+```
+
+تظهر City of London باستمرار باعتبارها المنطقة الأعلى تكلفة! ستلاحظ أن الذكاء الاصطناعي أنشأ استعلامًا معقولًا، لكن النتائج مرتبة حسب متوسط السعر بدلًا من ترتيبها زمنيًا. ولإجراء تحليل سنوي على أساس سنة بسنة، يمكننا تحسين سؤالك ليطلب تحديدًا &quot;المنطقة الأعلى تكلفة في كل عام&quot; للحصول على نتائج مجمّعة بشكل مختلف.

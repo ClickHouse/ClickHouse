@@ -39,6 +39,7 @@ ASTPtr ASTProjectionSelectQuery::clone() const
         */
     CLONE(Expression::WITH);
     CLONE(Expression::SELECT);
+    CLONE(Expression::WHERE);
     CLONE(Expression::GROUP_BY);
     CLONE(Expression::ORDER_BY);
 
@@ -58,13 +59,28 @@ void ASTProjectionSelectQuery::formatImpl(WriteBuffer & ostr, const FormatSettin
     if (with())
     {
         ostr << indent_str << "WITH";
-        s.one_line ? with()->format(ostr, s, state, frame) : with()->as<ASTExpressionList &>().formatImplMultiline(ostr, s, state, frame);
+        if (s.one_line)
+            with()->format(ostr, s, state, frame);
+        else
+        {
+            /// Put every CTE on its own indented line, even a single one, for consistent formatting.
+            FormatStateStacked with_frame = frame;
+            with_frame.expression_list_always_start_on_new_line = true;
+            with()->as<ASTExpressionList &>().formatImplMultiline(ostr, s, state, with_frame);
+        }
         ostr << s.nl_or_ws;
     }
 
     ostr << indent_str << "SELECT";
 
     s.one_line ? select()->format(ostr, s, state, frame) : select()->as<ASTExpressionList &>().formatImplMultiline(ostr, s, state, frame);
+
+    if (where())
+    {
+        ostr << s.nl_or_ws << indent_str << "WHERE";
+        ostr << ' ';
+        where()->format(ostr, s, state, frame);
+    }
 
     if (groupBy())
     {
@@ -141,6 +157,13 @@ ASTPtr ASTProjectionSelectQuery::cloneToASTSelect() const
         }
         select_query->setExpression(ASTSelectQuery::Expression::SELECT, std::move(select_list));
     }
+    /// `WHERE` must be inserted before `GROUP BY` to match the canonical child order produced by
+    /// `ParserSelectQuery` (see `ASTSelectQuery::normalizeChildrenOrder`). `ASTSelectQuery` tree hashes
+    /// depend on the `children` order and are used for column identifiers and scalar/cache keys, so a
+    /// non-canonical order here would give a filtered aggregate projection different identifiers than
+    /// the same `SELECT` parsed from text.
+    if (where())
+        select_query->setExpression(ASTSelectQuery::Expression::WHERE, where()->clone());
     if (groupBy())
         select_query->setExpression(ASTSelectQuery::Expression::GROUP_BY, groupBy()->clone());
 

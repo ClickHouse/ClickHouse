@@ -1,0 +1,761 @@
+---
+description: 'Documentación sobre búsqueda vectorial exacta y aproximada'
+keywords: ['búsqueda de similitud vectorial', 'ann', 'knn', 'hnsw', 'índices', 'índice', 'vecino más cercano', 'búsqueda vectorial']
+sidebarTitle: 'Búsqueda vectorial exacta y aproximada'
+slug: /engines/table-engines/mergetree-family/annindexes
+title: 'Búsqueda vectorial exacta y aproximada'
+doc_type: 'guide'
+---
+
+El problema de encontrar los N puntos más cercanos en un espacio multidimensional (vectorial) para un punto dado se conoce como [búsqueda del vecino más cercano](https://en.wikipedia.org/wiki/Nearest_neighbor_search) o, de forma abreviada, búsqueda vectorial.
+Existen dos enfoques generales para resolver la búsqueda vectorial:
+
+* La búsqueda vectorial exacta calcula la distancia entre el punto dado y todos los puntos del espacio vectorial. Esto garantiza la máxima precisión posible; es decir, los puntos devueltos son necesariamente los vecinos más cercanos reales. Como el espacio vectorial se recorre de forma exhaustiva, la búsqueda vectorial exacta puede resultar demasiado lenta para su uso en escenarios reales.
+* La búsqueda vectorial aproximada engloba un conjunto de técnicas (por ejemplo, estructuras de datos especiales como grafos y bosques aleatorios) que calculan resultados mucho más rápido que la búsqueda vectorial exacta. Por lo general, la precisión del resultado es &quot;lo bastante buena&quot; para un uso práctico. Muchas técnicas aproximadas ofrecen parámetros para ajustar el equilibrio entre la precisión del resultado y el tiempo de búsqueda.
+
+Una búsqueda vectorial (exacta o aproximada) puede expresarse en SQL de la siguiente manera:
+
+```sql
+WITH [...] AS reference_vector
+SELECT [...]
+FROM table
+WHERE [...] -- una cláusula WHERE es opcional
+ORDER BY <DistanceFunction>(vectors, reference_vector)
+LIMIT <N>
+```
+
+Los puntos del espacio vectorial se almacenan en una columna `vectors` de tipo Array, p. ej., [Array(Float64)](/es/reference/data-types/array), [Array(Float32)](/es/reference/data-types/array) o [Array(BFloat16)](/es/reference/data-types/array).
+El vector de referencia es un Array constante y se define como una expresión de tabla común.
+`<DistanceFunction>` calcula la distancia entre el punto de referencia y todos los puntos almacenados.
+Para ello, puede utilizarse cualquiera de las [funciones de distancia](/es/reference/functions/regular-functions/distance-functions) disponibles.
+`<N>` especifica cuántos vecinos se deben devolver.
+
+<div id="exact-nearest-neighbor-search">
+  ## Búsqueda vectorial exacta
+</div>
+
+Se puede realizar una búsqueda vectorial exacta usando la consulta SELECT anterior tal cual.
+El tiempo de ejecución de estas consultas suele ser proporcional al número de vectores almacenados y a su dimensión, es decir, al número de elementos del array.
+Además, dado que ClickHouse realiza un escaneo por fuerza bruta de todos los vectores, el tiempo de ejecución también depende del número de hilos que utiliza la consulta (consulta la configuración [max&#95;threads](/es/reference/settings/session-settings#max_threads)).
+
+<div id="exact-nearest-neighbor-search-example">
+  ### Ejemplo
+</div>
+
+```sql
+CREATE TABLE tab(id Int32, vec Array(Float32)) ENGINE = MergeTree ORDER BY id;
+
+INSERT INTO tab VALUES (0, [1.0, 0.0]), (1, [1.1, 0.0]), (2, [1.2, 0.0]), (3, [1.3, 0.0]), (4, [1.4, 0.0]), (5, [1.5, 0.0]), (6, [0.0, 2.0]), (7, [0.0, 2.1]), (8, [0.0, 2.2]), (9, [0.0, 2.3]), (10, [0.0, 2.4]), (11, [0.0, 2.5]);
+
+WITH [0., 2.] AS reference_vec
+SELECT id, vec
+FROM tab
+ORDER BY L2Distance(vec, reference_vec) ASC
+LIMIT 3;
+```
+
+devuelve
+
+```result
+   ┌─id─┬─vec─────┐
+1. │  6 │ [0,2]   │
+2. │  7 │ [0,2.1] │
+3. │  8 │ [0,2.2] │
+   └────┴─────────┘
+```
+
+<div id="approximate-nearest-neighbor-search">
+  ## Búsqueda vectorial aproximada
+</div>
+
+<div id="vector-similarity-index">
+  ### Índices de similitud vectorial
+</div>
+
+ClickHouse proporciona un índice especial de &quot;similitud vectorial&quot; para realizar búsqueda vectorial aproximada.
+
+<Note>
+  Los índices de similitud vectorial están disponibles en la versión 25.8 de ClickHouse y posteriores.
+  Si tiene algún problema, abra una incidencia en el [repositorio de ClickHouse](https://github.com/clickhouse/clickhouse/issues).
+</Note>
+
+<div id="creating-a-vector-similarity-index">
+  #### Crear un índice de similitud vectorial
+</div>
+
+Se puede crear un índice de similitud vectorial en una tabla nueva de esta forma:
+
+```sql
+CREATE TABLE table
+(
+  [...],
+  vectors Array(Float*),
+  INDEX <index_name> vectors TYPE vector_similarity(<type>, <distance_function>, <dimensions>) [GRANULARITY <N>]
+)
+ENGINE = MergeTree
+ORDER BY [...]
+```
+
+Como alternativa, para añadir un índice de similitud vectorial a una tabla existente:
+
+```sql
+ALTER TABLE table ADD INDEX <index_name> vectors TYPE vector_similarity(<type>, <distance_function>, <dimensions>) [GRANULARITY <N>];
+```
+
+Los índices de similitud vectorial son tipos especiales de índices de omisión de datos (consulta [aquí](/es/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-data_skipping-indexes) y [aquí](/es/concepts/features/performance/skip-indexes/skipping-indexes)).
+En consecuencia, la sentencia `ALTER TABLE` anterior solo hace que el índice se construya para los nuevos datos que se inserten en la tabla a partir de ese momento.
+Para construir también el índice para los datos existentes, debes materializarlo:
+
+```sql
+ALTER TABLE table MATERIALIZE INDEX <index_name> SETTINGS mutations_sync = 2;
+```
+
+La función `<distance_function>` debe ser
+
+* `L2Distance`, la [distancia euclidiana](https://en.wikipedia.org/wiki/Euclidean_distance), que representa la longitud de una recta entre dos puntos en el espacio euclidiano,
+* `cosineDistance`, la [distancia de coseno](https://en.wikipedia.org/wiki/Cosine_similarity#Cosine_distance), que representa el ángulo entre dos vectores no nulos, o
+* `dotProduct`, el [producto escalar](https://en.wikipedia.org/wiki/Dot_product) (producto interno), que representa la suma de los productos elemento a elemento de dos vectores. Es equivalente a `cosineDistance` en datos normalizados.
+
+Para datos normalizados, `L2Distance` suele ser la mejor opción; en caso contrario, se recomienda `cosineDistance` para compensar la escala.
+
+<Note>
+  Para las funciones de distancia `L2Distance` y `cosineDistance`, un valor más pequeño implica una mayor similitud, mientras que para `dotProduct`, un valor más alto implica una mayor similitud.
+  Como resultado, los índices vectoriales con `L2Distance` y `cosineDistance` solo pueden ser utilizados por consultas `SELECT [...] ORDER BY [...] ASC` (`ASC` es el valor predeterminado de `ORDER BY`), mientras que los índices vectoriales creados para `dotProduct` solo pueden ser utilizados por consultas `SELECT [...] ORDER BY [...] DESC`.
+</Note>
+
+`<dimensions>` especifica la cardinalidad del array (número de elementos) en la columna subyacente.
+Si ClickHouse encuentra un array con una cardinalidad distinta durante la creación del índice, el índice se descarta y se devuelve un error.
+
+El parámetro opcional GRANULARITY `<N>` se refiere al tamaño de los gránulos del índice (consulte [aquí](/es/concepts/features/performance/skip-indexes/skipping-indexes)).
+A diferencia de los skip indexes normales, que usan una granularidad de índice predeterminada de 1, los índices de similitud vectorial usan 100 millones como granularidad de índice predeterminada.
+Este valor garantiza que internamente solo se creen unos pocos índices, incluso para partes grandes.
+Recomendamos cambiar la granularidad del índice solo a usuarios avanzados que comprendan las implicaciones de lo que están haciendo (consulte [abajo](#differences-to-regular-skipping-indexes)).
+
+Los índices de similitud vectorial son genéricos en el sentido de que pueden admitir distintos métodos de búsqueda aproximada.
+El método que se usa realmente se especifica mediante el parámetro `<type>`.
+Por ahora, el único método disponible es HNSW ([artículo académico](https://arxiv.org/abs/1603.09320)), una técnica popular y de última generación para la búsqueda vectorial aproximada basada en grafos jerárquicos de proximidad.
+Si se usa HNSW como tipo, los usuarios pueden especificar opcionalmente más parámetros específicos de HNSW:
+
+```sql
+CREATE TABLE table
+(
+  [...],
+  vectors Array(Float*),
+  INDEX index_name vectors TYPE vector_similarity('hnsw', <distance_function>, <dimensions>[, <quantization>, <hnsw_max_connections_per_layer>, <hnsw_candidate_list_size_for_construction>]) [GRANULARITY N]
+)
+ENGINE = MergeTree
+ORDER BY [...]
+```
+
+Estos son los parámetros específicos de HNSW disponibles:
+
+* `<quantization>` controla la cuantización de los vectores en el grafo de proximidad. Los valores posibles son `f64`, `f32`, `f16`, `bf16`, `i8` o `b1`. El valor predeterminado es `bf16`. Tenga en cuenta que este parámetro no afecta a la representación de los vectores en la columna subyacente.
+* `<hnsw_max_connections_per_layer>` controla el número de vecinos por nodo del grafo, también conocido como el hiperparámetro `M` de HNSW. El valor predeterminado es `32`. El valor `0` significa que se usa el valor predeterminado.
+* `<hnsw_candidate_list_size_for_construction>` controla el tamaño de la lista dinámica de candidatos durante la construcción del grafo HNSW, también conocido como el hiperparámetro `ef_construction` de HNSW. El valor predeterminado es `128`. El valor `0` significa que se usa el valor predeterminado.
+
+Los valores predeterminados de todos los parámetros específicos de HNSW funcionan razonablemente bien en la mayoría de los casos de uso.
+Por lo tanto, no recomendamos personalizar los parámetros específicos de HNSW.
+
+Se aplican restricciones adicionales:
+
+* Los índices de similitud vectorial solo pueden crearse sobre columnas de tipo [Array(Float32)](/es/reference/data-types/array), [Array(Float64)](/es/reference/data-types/array) o [Array(BFloat16)](/es/reference/data-types/array). No se permiten Arrays de valores de coma flotante Nullable ni LowCardinality, como `Array(Nullable(Float32))` y `Array(LowCardinality(Float32))`.
+* Los índices de similitud vectorial deben crearse sobre una única columna.
+* Los índices de similitud vectorial pueden crearse sobre expresiones calculadas (p. ej., `INDEX index_name arraySort(vectors) TYPE vector_similarity([...])`), pero esos índices no podrán usarse más adelante para la búsqueda aproximada de vecinos.
+* Los índices de similitud vectorial requieren que todos los arrays de la columna subyacente tengan `<dimension>` elementos; esto se comprueba durante la creación del índice. Para detectar incumplimientos de este requisito lo antes posible, los usuarios pueden añadir una [restricción](/es/reference/statements/create/table#constraints) a la columna del vector, por ejemplo, `CONSTRAINT same_length CHECK length(vectors) = 256`.
+* Del mismo modo, los valores de array de la columna subyacente no deben estar vacíos (`[]`) ni tener un valor predeterminado (también `[]`).
+
+**Estimación del consumo de almacenamiento y memoria**
+
+Un vector generado para usarse con un modelo típico de IA (p. ej., un Large Language Model, [LLMs](https://en.wikipedia.org/wiki/Large_language_model)) consta de cientos o miles de valores de coma flotante.
+Por lo tanto, un único valor vectorial puede consumir varios kilobytes de memoria.
+Los usuarios que deseen estimar el almacenamiento necesario para la columna vectorial subyacente de la tabla, así como la memoria principal necesaria para el índice de similitud vectorial, pueden usar las dos fórmulas siguientes:
+
+Consumo de almacenamiento de la columna vectorial en la tabla (sin comprimir):
+
+```text
+Storage consumption = Number of vectors * Dimension * Size of column data type
+```
+
+Ejemplo del [conjunto de datos dbpedia](https://huggingface.co/datasets/KShivendu/dbpedia-entities-openai-1M):
+
+```text
+Storage consumption = 1 million * 1536 * 4 (for Float32) = 6.1 GB
+```
+
+El índice de similitud vectorial debe cargarse por completo desde el disco en la memoria principal para poder realizar búsquedas.
+Del mismo modo, el índice vectorial también se construye íntegramente en memoria y luego se guarda en el disco.
+
+Consumo de memoria necesario para cargar un índice vectorial:
+
+```text
+Memoria para vectores en el índice (mv) = Número de vectores * Dimensión * Tamaño del tipo de dato cuantizado
+Memoria para el grafo en memoria (mg) = Número de vectores * hnsw_max_connections_per_layer * Bytes_per_node_id (= 4) * Layer_node_repetition_factor (= 2)
+
+Consumo de memoria: mv + mg
+```
+
+Ejemplo con el [conjunto de datos dbpedia](https://huggingface.co/datasets/KShivendu/dbpedia-entities-openai-1M):
+
+```text
+Memoria para vectores en el índice (mv) = 1 millón * 1536 * 2 (para BFloat16) = 3072 MB
+Memoria para el grafo en memoria (mg) = 1 millón * 64 * 2 * 4 = 512 MB
+
+Consumo de memoria = 3072 + 512 = 3584 MB
+```
+
+La fórmula anterior no contempla la memoria adicional que necesitan los índices de similitud vectorial para asignar estructuras de datos en tiempo de ejecución, como búferes y cachés preasignados.
+
+<div id="using-a-vector-similarity-index">
+  #### Uso de un índice de similitud vectorial
+</div>
+
+<Note>
+  Para usar índices de similitud vectorial, la configuración [compatibility](/es/reference/settings/session-settings) debe estar establecida en `''` (el valor predeterminado), o en `'25.1'` o una versión posterior.
+</Note>
+
+Los índices de similitud vectorial admiten consultas SELECT con la siguiente forma:
+
+```sql
+WITH [...] AS reference_vector
+SELECT [...]
+FROM table
+WHERE [...] -- la cláusula WHERE es opcional
+ORDER BY <DistanceFunction>(vectors, reference_vector)
+LIMIT <N>
+```
+
+El optimizador de consultas de ClickHouse intenta hacer coincidir la plantilla de consulta anterior y aprovechar los índices de similitud vectorial disponibles.
+Una consulta solo puede usar un índice de similitud vectorial si la función de distancia en la consulta SELECT coincide con la función de distancia especificada en la definición del índice.
+
+Los usuarios avanzados pueden proporcionar un valor personalizado para el parámetro [hnsw&#95;candidate&#95;list&#95;size&#95;for&#95;search](/es/reference/settings/session-settings#hnsw_candidate_list_size_for_search) (también conocido como el hiperparámetro HNSW &quot;ef&#95;search&quot;) para ajustar el tamaño de la lista de candidatos durante la búsqueda (p. ej., `SELECT [...] SETTINGS hnsw_candidate_list_size_for_search = <value>`).
+El valor predeterminado de 256 para este parámetro funciona bien en la mayoría de los casos de uso.
+Valores más altos implican mayor precisión a costa de un rendimiento más lento.
+
+Si la consulta puede utilizar un índice de similitud vectorial, ClickHouse comprueba que el LIMIT `<N>` proporcionado en las consultas SELECT esté dentro de límites razonables.
+Más concretamente, se devuelve un error si `<N>` es mayor que el valor del parámetro [max&#95;limit&#95;for&#95;vector&#95;search&#95;queries](/es/reference/settings/session-settings#max_limit_for_vector_search_queries), cuyo valor predeterminado es 100.
+Valores de LIMIT demasiado grandes pueden ralentizar las búsquedas y, por lo general, indican un error de uso.
+
+Para comprobar si una consulta SELECT utiliza un índice de similitud vectorial, puede agregar el prefijo `EXPLAIN indexes = 1` a la consulta.
+
+A modo de ejemplo, consulta
+
+```sql
+EXPLAIN indexes = 1
+WITH [0.462, 0.084, ..., -0.110] AS reference_vec
+SELECT id, vec
+FROM tab
+ORDER BY L2Distance(vec, reference_vec) ASC
+LIMIT 10;
+```
+
+puede devolver
+
+```result
+┌─explain─────────────────────────────────────────────────────────────────────────────────────────┐
+ 1. │ Expression (Project names)                                                                      │
+ 2. │   Limit (preliminary LIMIT (without OFFSET))                                                    │
+ 3. │     Sorting (Sorting for ORDER BY)                                                              │
+ 4. │       Expression ((Before ORDER BY + (Projection + Change column names to column identifiers))) │
+ 5. │         ReadFromMergeTree (default.tab)                                                         │
+ 6. │         Indexes:                                                                                │
+ 7. │           PrimaryKey                                                                            │
+ 8. │             Condition: true                                                                     │
+ 9. │             Parts: 1/1                                                                          │
+10. │             Granules: 575/575                                                                   │
+11. │           Skip                                                                                  │
+12. │             Name: idx                                                                           │
+13. │             Description: vector_similarity GRANULARITY 100000000                                │
+14. │             Parts: 1/1                                                                          │
+15. │             Granules: 10/575                                                                    │
+    └─────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+En este ejemplo, 1 millón de vectores del [dataset dbpedia](https://huggingface.co/datasets/KShivendu/dbpedia-entities-openai-1M), cada uno con dimensión 1536, se almacenan en 575 granules, es decir, 1,7k filas por granule.
+La consulta solicita 10 vecinos y el índice de similitud vectorial los encuentra en 10 granules distintos.
+Estos 10 granules se leerán durante la ejecución de la consulta.
+
+Los índices de similitud vectorial se utilizan si la salida contiene `Skip` y el nombre y tipo del índice vectorial (en el ejemplo, `idx` y `vector_similarity`).
+En este caso, el índice de similitud vectorial descartó dos de cuatro gránulos, es decir, el 50 % de los datos.
+Cuantos más gránulos se puedan descartar, más efectivo será el uso del índice.
+
+<Tip>
+  Para forzar el uso del índice, puedes ejecutar la consulta SELECT con la configuración [force&#95;data&#95;skipping&#95;indexes](/es/reference/settings/session-settings#force_data_skipping_indices) (indica el nombre del índice como valor de la configuración).
+</Tip>
+
+**Post-filtrado y pre-filtrado**
+
+Los usuarios pueden especificar opcionalmente una cláusula `WHERE` con condiciones de filtro adicionales para la consulta SELECT.
+ClickHouse evaluará estas condiciones de filtro mediante la estrategia de post-filtering o pre-filtering.
+En resumen, ambas estrategias determinan el orden en que se evalúan los filtros:
+
+* El posfiltrado significa que primero se evalúa el índice de similitud vectorial y, después, ClickHouse evalúa los filtros adicionales especificados en la cláusula `WHERE`.
+* Con el prefiltrado, el orden de evaluación del filtro es el contrario.
+
+Cada estrategia tiene sus propias ventajas y desventajas:
+
+* El posfiltrado tiene el problema general de que puede devolver menos filas de las solicitadas en la cláusula `LIMIT <N>`. Esta situación se produce cuando una o más filas de resultado devueltas por el índice de similitud vectorial no cumplen los filtros adicionales.
+* El prefiltrado es, por lo general, un problema no resuelto. Algunas bases de datos vectoriales especializadas proporcionan algoritmos de prefiltrado, pero la mayoría de las bases de datos relacionales (incluido ClickHouse) recurren a la búsqueda exacta de vecinos, es decir, a un escaneo por fuerza bruta sin índice.
+
+La estrategia utilizada depende de la condición de filtrado.
+
+*Los filtros adicionales forman parte de la clave de partición*
+
+Si la condición de filtrado adicional forma parte de la clave de partición, ClickHouse aplicará la poda de particiones.
+Por ejemplo, una tabla está particionada por rango según la columna `year` y se ejecuta la siguiente consulta:
+
+```sql
+WITH [0., 2.] AS reference_vec
+SELECT id, vec
+FROM tab
+WHERE year = 2025
+ORDER BY L2Distance(vec, reference_vec) ASC
+LIMIT 3;
+```
+
+ClickHouse descartará todas las particiones excepto la de 2025.
+
+*Los filtros adicionales no pueden evaluarse mediante índices*
+
+Si las condiciones de filtro adicionales no pueden evaluarse mediante índices (índice de clave primaria, índice de omisión de dato), ClickHouse aplicará postfiltrado.
+
+*Los filtros adicionales pueden evaluarse mediante el índice de clave primaria*
+
+Si las condiciones de filtro adicionales pueden evaluarse mediante la [clave primaria](/es/reference/engines/table-engines/mergetree-family/mergetree#primary-key) (es decir, si forman un prefijo de la clave primaria) y
+
+* la condición de filtro elimina al menos una fila dentro de una parte, ClickHouse recurrirá al prefiltrado para los rangos &quot;supervivientes&quot; dentro de la parte,
+* la condición de filtro no elimina ninguna fila dentro de una parte, ClickHouse realizará postfiltrado para esa parte.
+
+En la práctica, este último caso es bastante poco probable.
+
+*Los filtros adicionales pueden evaluarse mediante índices de omisión de dato*
+
+Si las condiciones de filtro adicionales pueden evaluarse mediante [índices de omisión de dato](/es/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-data_skipping-indexes) (índice minmax, índice Set, etc.), ClickHouse realiza postfiltrado.
+En esos casos, el índice de similitud vectorial se evalúa primero, ya que se espera que descarte más filas que los demás índices de omisión de dato.
+
+Para un control más preciso del postfiltrado frente al prefiltrado, pueden usarse dos configuraciones:
+
+La configuración [vector&#95;search&#95;filter&#95;strategy](/es/reference/settings/session-settings#vector_search_filter_strategy) (valor predeterminado: `auto`, que implementa las heurísticas anteriores) puede establecerse en `prefilter`.
+Esto resulta útil para forzar el prefiltrado en los casos en que las condiciones de filtro adicionales son extremadamente selectivas.
+Como ejemplo, la siguiente consulta puede beneficiarse del prefiltrado:
+
+```sql
+SELECT bookid, author, title
+FROM books
+WHERE price < 2.00
+ORDER BY cosineDistance(book_vector, getEmbedding('Books on ancient Asian empires'))
+LIMIT 10
+```
+
+Suponiendo que solo un número muy pequeño de libros cuesta menos de 2 dólares, el posfiltrado puede devolver cero filas porque las 10 coincidencias principales devueltas por el índice vectorial podrían tener todas un precio superior a 2 dólares.
+Al forzar el prefiltrado (añada `SETTINGS vector_search_filter_strategy = 'prefilter'` a la consulta), ClickHouse primero encuentra todos los libros con un precio inferior a 2 dólares y luego ejecuta una búsqueda vectorial por fuerza bruta sobre los libros encontrados.
+
+Como enfoque alternativo para resolver el problema anterior, [vector&#95;search&#95;index&#95;fetch&#95;multiplier](/es/reference/settings/session-settings#vector_search_index_fetch_multiplier) (valor predeterminado: `1.0`, máximo: `1000.0`) puede configurarse con un valor &gt; `1.0` (por ejemplo, `2.0`).
+La cantidad de vecinos más cercanos obtenidos del índice vectorial se multiplica por el valor de esta configuración y, a continuación, se aplica el filtro adicional sobre esas filas para devolver tantas filas como indique LIMIT.
+Por ejemplo, podemos volver a ejecutar la consulta, pero con un multiplicador de `3.0`:
+
+```sql
+SELECT bookid, author, title
+FROM books
+WHERE price < 2.00
+ORDER BY cosineDistance(book_vector, getEmbedding('Books on ancient Asian empires'))
+LIMIT 10
+SETTING vector_search_index_fetch_multiplier = 3.0;
+```
+
+ClickHouse recuperará 3.0 x 10 = 30 vecinos más cercanos del índice vectorial en cada parte y, después, evaluará los filtros adicionales.
+Solo se devolverán los diez vecinos más cercanos.
+Cabe señalar que configurar `vector_search_index_fetch_multiplier` puede mitigar el problema, pero en casos extremos (una condición WHERE muy selectiva) sigue siendo posible que se devuelvan menos de N filas de las solicitadas.
+
+**Reclasificación**
+
+Los índices de omisión de dato en ClickHouse suelen filtrar a nivel de gránulo; es decir, una búsqueda en un índice de omisión de dato (internamente) devuelve una lista de gránulos que podrían coincidir, lo que reduce la cantidad de datos leídos en el escaneo posterior.
+Esto funciona bien para los índices de omisión de dato en general, pero en el caso de los índices de similitud vectorial, crea un &quot;desajuste de granularidad&quot;.
+En más detalle, el índice de similitud vectorial determina los números de fila de los N vectores más similares para un vector de referencia dado, pero luego necesita extrapolar esos números de fila a números de gránulo.
+ClickHouse cargará entonces estos gránulos desde disco y repetirá el cálculo de distancias para todos los vectores de esos gránulos.
+Este paso se llama reclasificación y, aunque en teoría puede mejorar la precisión —recuerde que el índice de similitud vectorial solo devuelve un resultado *aproximado*—, claramente no es óptimo en términos de rendimiento.
+
+Por lo tanto, ClickHouse proporciona una optimización que desactiva la reclasificación y devuelve los vectores más similares y sus distancias directamente desde el índice.
+La optimización está habilitada de forma predeterminada; consulte la configuración [vector&#95;search&#95;with&#95;rescoring](/es/reference/settings/session-settings#vector_search_with_rescoring).
+A grandes rasgos, funciona así: ClickHouse pone los vectores más similares y sus distancias a disposición como una columna virtual `_distances`.
+Para verlo, ejecute una consulta de búsqueda vectorial con `EXPLAIN header = 1`:
+
+```sql
+EXPLAIN header = 1
+WITH [0., 2.] AS reference_vec
+SELECT id
+FROM tab
+ORDER BY L2Distance(vec, reference_vec) ASC
+LIMIT 3
+SETTINGS vector_search_with_rescoring = 0
+```
+
+```result
+Query id: a2a9d0c8-a525-45c1-96ca-c5a11fa66f47
+
+    ┌─explain─────────────────────────────────────────────────────────────────────────────────────────────────┐
+ 1. │ Expression (Project names)                                                                              │
+ 2. │ Header: id Int32                                                                                        │
+ 3. │   Limit (preliminary LIMIT (without OFFSET))                                                            │
+ 4. │   Header: L2Distance(__table1.vec, _CAST([0., 2.]_Array(Float64), 'Array(Float64)'_String)) Float64     │
+ 5. │           __table1.id Int32                                                                             │
+ 6. │     Sorting (Sorting for ORDER BY)                                                                      │
+ 7. │     Header: L2Distance(__table1.vec, _CAST([0., 2.]_Array(Float64), 'Array(Float64)'_String)) Float64   │
+ 8. │             __table1.id Int32                                                                           │
+ 9. │       Expression ((Before ORDER BY + (Projection + Change column names to column identifiers)))         │
+10. │       Header: L2Distance(__table1.vec, _CAST([0., 2.]_Array(Float64), 'Array(Float64)'_String)) Float64 │
+11. │               __table1.id Int32                                                                         │
+12. │         ReadFromMergeTree (default.tab)                                                                 │
+13. │         Header: id Int32                                                                                │
+14. │                 _distance Float32                                                                       │
+    └─────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+<Note>
+  Una consulta ejecutada sin reclasificación (`vector_search_with_rescoring = 0`) y con las réplicas paralelas habilitadas puede recurrir a la reclasificación.
+</Note>
+
+<div id="performance-tuning">
+  #### Optimización del rendimiento
+</div>
+
+**Ajuste de la compresión**
+
+En prácticamente todos los casos de uso, los vectores de la columna subyacente son densos y no se comprimen bien.
+Como resultado, la [compresión](/es/reference/statements/create/table#column_compression_codec) ralentiza las inserciones y las lecturas de la columna de vectores.
+Por lo tanto, recomendamos desactivar la compresión.
+Para ello, especifique `CODEC(NONE)` para la columna de vectores de esta manera:
+
+```sql
+CREATE TABLE tab(id Int32, vec Array(Float32) CODEC(NONE), INDEX idx vec TYPE vector_similarity('hnsw', 'L2Distance', 2)) ENGINE = MergeTree ORDER BY id;
+```
+
+**Ajuste de la creación de índices**
+
+El ciclo de vida de los índices de similitud vectorial está vinculado al ciclo de vida de las partes.
+En otras palabras, cada vez que se crea una nueva parte con un índice de similitud vectorial definido, ese índice también se crea.
+Esto suele ocurrir cuando los datos se [insertan](/es/concepts/features/operations/insert/inserting-data) o durante las [fusiones](/es/concepts/core-concepts/merges).
+Por desgracia, HNSW es conocido por sus prolongados tiempos de creación de índices, lo que puede ralentizar considerablemente las inserciones y las fusiones.
+Lo ideal es usar índices de similitud vectorial solo si los datos son inmutables o cambian rara vez.
+
+Para acelerar la creación de índices, se pueden utilizar las siguientes técnicas:
+
+En primer lugar, la creación de índices puede paralelizarse.
+El número máximo de hilos para la creación de índices puede configurarse mediante la configuración del servidor [max&#95;build&#95;vector&#95;similarity&#95;index&#95;thread&#95;pool&#95;size](/es/reference/settings/server-settings/settings#max_build_vector_similarity_index_thread_pool_size).
+Para obtener un rendimiento óptimo, el valor de esta configuración debe ajustarse al número de núcleos de CPU.
+
+En segundo lugar, para acelerar las sentencias INSERT, los usuarios pueden desactivar la creación de índices de omisión de dato en las partes recién insertadas mediante la configuración de sesión [materialize&#95;skip&#95;indexes&#95;on&#95;insert](/es/reference/settings/session-settings#materialize_skip_indexes_on_insert).
+Las consultas SELECT sobre esas partes recurrirán a la búsqueda exacta.
+Dado que las partes insertadas suelen ser pequeñas en comparación con el tamaño total de la tabla, se espera que el impacto en el rendimiento sea insignificante.
+
+En tercer lugar, para acelerar las fusiones, los usuarios pueden desactivar la creación de índices de omisión de dato en las partes fusionadas mediante la configuración de sesión [materialize&#95;skip&#95;indexes&#95;on&#95;merge](/es/reference/settings/merge-tree-settings#materialize_skip_indexes_on_merge).
+Esto, junto con la sentencia [ALTER TABLE [...] MATERIALIZE INDEX [...]](/es/reference/statements/alter/skipping-index#materialize-index), proporciona un control explícito sobre el ciclo de vida de los índices de similitud vectorial.
+Por ejemplo, la creación de índices puede posponerse hasta que se hayan ingestado todos los datos o hasta un periodo de baja carga del sistema, como el fin de semana.
+
+**Ajuste del uso de índices**
+
+Las consultas SELECT necesitan cargar los índices de similitud vectorial en la memoria principal para poder utilizarlos.
+Para evitar que el mismo índice de similitud vectorial se cargue repetidamente en la memoria principal, ClickHouse proporciona una caché en memoria específica para estos índices.
+Cuanto mayor sea esta caché, menos cargas innecesarias se producirán.
+El tamaño máximo de la caché puede configurarse mediante la configuración del servidor [vector&#95;similarity&#95;index&#95;cache&#95;size](/es/reference/settings/server-settings/settings#vector_similarity_index_cache_size).
+De forma predeterminada, la caché puede crecer hasta 5 GB.
+
+Los siguientes mensajes de registro (`system.text_log`) indican que se está cargando el índice de similitud vectorial.
+Si estos mensajes aparecen repetidamente para distintas consultas de búsqueda vectorial, esto indica que el tamaño de la caché es demasiado pequeño.
+
+```text
+2026-02-03 07:39:10.351635 [1386] f0ac5c85-1b1c-4f35-8848-87a1d1aa00ba : VectorSimilarityIndex Start loading vector similarity index
+
+<...>
+
+2026-02-03 07:40:25.217603 [1386] f0ac5c85-1b1c-4f35-8848-87a1d1aa00ba : VectorSimilarityIndex Loaded vector similarity index: max_level = 2, connectivity = 64, size = 1808111, capacity = 1808111, memory_usage = 8.00 GiB, bytes_per_vector = 4096, scalar_words = 1024, nodes = 1808111, edges = 51356964, max_edges = 233395072
+```
+
+<Note>
+  La caché del índice de similitud vectorial almacena gránulos del índice vectorial.
+  Si los gránulos individuales del índice vectorial son más grandes que la caché, no se almacenarán en caché.
+  Por lo tanto, asegúrese de calcular el tamaño del índice vectorial (según la fórmula de &quot;Estimación del consumo de almacenamiento y memoria&quot; o [system.data&#95;skipping&#95;indices](/es/reference/system-tables/data_skipping_indices)) y dimensionar la caché en consecuencia.
+</Note>
+
+*Reiteramos que verificar y, si es necesario, aumentar la caché del índice vectorial debe ser el primer paso al investigar consultas lentas de búsqueda vectorial.*
+
+El tamaño actual de la caché del índice de similitud vectorial se muestra en [system.metrics](/es/reference/system-tables/metrics):
+
+```sql
+SELECT metric, value
+FROM system.metrics
+WHERE metric = 'VectorSimilarityIndexCacheBytes'
+```
+
+Los aciertos y fallos de caché de una consulta con un identificador de consulta determinado se pueden obtener de [system.query&#95;log](/es/reference/system-tables/query_log):
+
+```sql
+SYSTEM FLUSH LOGS query_log;
+
+SELECT ProfileEvents['VectorSimilarityIndexCacheHits'], ProfileEvents['VectorSimilarityIndexCacheMisses']
+FROM system.query_log
+WHERE type = 'QueryFinish' AND query_id = '<...>'
+ORDER BY event_time_microseconds;
+```
+
+Para casos de uso en producción, recomendamos dimensionar la caché lo suficientemente grande para que todos los índices vectoriales permanezcan en memoria en todo momento.
+
+**Ajuste de la cuantización**
+
+La [cuantización](https://huggingface.co/blog/embedding-quantization) es una técnica para reducir la huella de memoria de los vectores y los costes computacionales de crear y recorrer índices vectoriales.
+Los índices vectoriales de ClickHouse admiten las siguientes opciones de cuantización:
+
+| Quantization   | Name                          | Storage per dimension |
+| -------------- | ----------------------------- | --------------------- |
+| f32            | Precisión simple              | 4 bytes               |
+| f16            | Precisión media               | 2 bytes               |
+| bf16 (default) | Precisión media (brain float) | 2 bytes               |
+| i8             | Precisión de cuarto           | 1 byte                |
+| b1             | Binario                       | 1 bit                 |
+
+La cuantización reduce la precisión de las búsquedas vectoriales en comparación con la búsqueda sobre los valores originales de coma flotante de precisión completa (`f32`).
+Sin embargo, en la mayoría de los conjuntos de datos, la cuantización brain float de precisión media (`bf16`) da como resultado una pérdida de precisión insignificante, por lo que los índices de similitud vectorial usan esta técnica de cuantización de forma predeterminada.
+La cuantización de cuarto de precisión (`i8`) y la cuantización binaria (`b1`) provocan una pérdida de precisión apreciable en las búsquedas vectoriales.
+Recomendamos ambas cuantizaciones solo si el tamaño del índice de similitud vectorial es significativamente mayor que la DRAM disponible.
+En ese caso, también sugerimos habilitar el rescoring ([vector&#95;search&#95;index&#95;fetch&#95;multiplier](/es/reference/settings/session-settings#vector_search_index_fetch_multiplier), [vector&#95;search&#95;with&#95;rescoring](/es/reference/settings/session-settings#vector_search_with_rescoring)) para mejorar la precisión.
+La cuantización binaria solo se recomienda para 1) embeddings normalizados (es decir, longitud del vector = 1; los modelos de OpenAI suelen estar normalizados), y 2) si se utiliza la distancia de coseno como función de distancia.
+La cuantización binaria usa internamente la distancia de Hamming para construir el grafo de proximidad y buscar en él.
+El paso de rescoring utiliza los vectores originales de precisión completa almacenados en la tabla para identificar los vecinos más cercanos mediante la distancia de coseno.
+
+**Ajuste de la transferencia de datos**
+
+El vector de referencia en una consulta de búsqueda vectorial lo proporciona el usuario y, por lo general, se obtiene mediante una llamada a un Large Language Model (LLM).
+El código Python típico que ejecuta una búsqueda vectorial en ClickHouse podría verse así
+
+```python
+search_v = openai_client.embeddings.create(input = "[Good Books]", model='text-embedding-3-large', dimensions=1536).data[0].embedding
+
+params = {'search_v': search_v}
+result = chclient.query(
+   "SELECT id FROM items
+    ORDER BY cosineDistance(vector, %(search_v)s)
+    LIMIT 10",
+    parameters = params)
+```
+
+Los vectores de embedding (`search_v` en el fragmento anterior) pueden tener una dimensión muy grande.
+Por ejemplo, OpenAI ofrece modelos que generan vectores de embeddings con 1536 o incluso 3072 dimensiones.
+En el código anterior, el driver de Python de ClickHouse sustituye el vector de embedding por una cadena legible para las personas y luego envía la consulta SELECT completa como una cadena.
+Suponiendo que el vector de embedding consta de 1536 valores de coma flotante de precisión simple, la cadena enviada alcanza una longitud de 20 kB.
+Esto genera un uso elevado de CPU para la tokenización, el análisis sintáctico y la realización de miles de conversiones de cadena a float.
+Además, se requiere una cantidad considerable de espacio en el archivo de registro del servidor de ClickHouse, lo que también provoca un aumento de tamaño en `system.query_log`.
+
+Tenga en cuenta que la mayoría de los modelos LLM devuelven un vector de embedding como una lista o un array de NumPy de floats nativos.
+Por lo tanto, recomendamos que las aplicaciones de Python vinculen el parámetro del vector de referencia en formato binario usando el siguiente estilo:
+
+```python
+search_v = openai_client.embeddings.create(input = "[Good Books]", model='text-embedding-3-large', dimensions=1536).data[0].embedding
+
+params = {'$search_v_binary$': np.array(search_v, dtype=np.float32).tobytes()}
+result = chclient.query(
+   "SELECT id FROM items
+    ORDER BY cosineDistance(vector, reinterpret($search_v_binary$, 'Array(Float32)'))
+    LIMIT 10"
+    parameters = params)
+```
+
+En el ejemplo, el vector de referencia se envía tal cual en formato binario y se reinterpreta como un array de números de coma flotante en el servidor.
+Esto ahorra tiempo de CPU en el servidor y evita generar volumen innecesario en los logs del servidor y en `system.query_log`.
+
+<div id="administration">
+  #### Administración y monitorización
+</div>
+
+El tamaño en disco de los índices de similitud vectorial puede consultarse en [system.data&#95;skipping&#95;indices](/es/reference/system-tables/data_skipping_indices):
+
+```sql
+SELECT database, table, name, formatReadableSize(data_compressed_bytes)
+FROM system.data_skipping_indices
+WHERE type = 'vector_similarity';
+```
+
+Salida de ejemplo:
+
+```result
+┌─database─┬─table─┬─name─┬─formatReadab⋯ssed_bytes)─┐
+│ default  │ tab   │ idx  │ 348.00 MB                │
+└──────────┴───────┴──────┴──────────────────────────┘
+```
+
+<div id="differences-to-regular-skipping-indexes">
+  #### Diferencias con los índices de omisión normales
+</div>
+
+Como todos los [índices de omisión](/es/concepts/features/performance/skip-indexes/skipping-indexes) normales, los índices de similitud vectorial se construyen sobre gránulos, y cada bloque indexado consta de `GRANULARITY = [N]` gránulos (`[N]` = 1 de forma predeterminada para los índices de omisión normales).
+Por ejemplo, si la granularidad del índice primario de la tabla es 8192 (configuración `index_granularity = 8192`) y `GRANULARITY = 2`, entonces cada bloque indexado contendrá 16384 filas.
+Sin embargo, las estructuras de datos y los algoritmos para la búsqueda aproximada de vecinos son intrínsecamente orientados a filas.
+Almacenan una representación compacta de un conjunto de filas y también devuelven filas para las consultas de búsqueda vectorial.
+Esto da lugar a algunas diferencias poco intuitivas en la forma en que se comportan los índices de similitud vectorial en comparación con los índices de omisión normales.
+
+Cuando un usuario define un índice de similitud vectorial sobre una columna, ClickHouse crea internamente un &quot;subíndice&quot; de similitud vectorial para cada bloque de índice.
+El subíndice es &quot;local&quot; en el sentido de que solo conoce las filas del bloque de índice al que pertenece.
+En el ejemplo anterior, y suponiendo que una columna tiene 65536 filas, obtenemos cuatro bloques de índice (que abarcan ocho gránulos) y un subíndice de similitud vectorial para cada bloque de índice.
+En teoría, un subíndice puede devolver directamente las filas con los N puntos más cercanos dentro de su bloque de índice.
+Sin embargo, como ClickHouse carga datos del disco a la memoria con la granularidad de los gránulos, los subíndices extrapolan las filas coincidentes a la granularidad de los gránulos.
+Esto difiere de los índices de omisión normales, que omiten datos con la granularidad de los bloques de índice.
+
+El parámetro `GRANULARITY` determina cuántos subíndices de similitud vectorial se crean.
+Los valores más grandes de `GRANULARITY` implican menos subíndices de similitud vectorial, pero más grandes, hasta el punto en que una columna (o una parte de datos de una columna) tiene un único subíndice.
+En ese caso, el subíndice tiene una vista &quot;global&quot; de todas las filas de la columna y puede devolver directamente todos los gránulos de la columna (parte) con filas relevantes (hay como máximo `LIMIT [N]` gránulos de este tipo).
+En un segundo paso, ClickHouse cargará estos gránulos e identificará las mejores filas reales realizando un cálculo de distancia por fuerza bruta sobre todas las filas de esos gránulos.
+Con un valor pequeño de `GRANULARITY`, cada subíndice devuelve hasta `LIMIT N` gránulos.
+Como resultado, es necesario cargar más gránulos y posfiltrarlos.
+Tenga en cuenta que la precisión de la búsqueda es igual de buena en ambos casos; solo difiere el rendimiento del procesamiento.
+En general, se recomienda usar un valor grande de `GRANULARITY` para los índices de similitud vectorial y recurrir a valores más pequeños de `GRANULARITY` solo en caso de problemas, como un consumo excesivo de memoria de las estructuras de similitud vectorial.
+Si no se especifica `GRANULARITY` para los índices de similitud vectorial, el valor predeterminado es 100 millones.
+
+<div id="approximate-nearest-neighbor-search-example">
+  #### Ejemplo
+</div>
+
+Consultas:
+
+```sql title="Query"
+CREATE TABLE tab(id Int32, vec Array(Float32), INDEX idx vec TYPE vector_similarity('hnsw', 'L2Distance', 2)) ENGINE = MergeTree ORDER BY id;
+
+INSERT INTO tab VALUES (0, [1.0, 0.0]), (1, [1.1, 0.0]), (2, [1.2, 0.0]), (3, [1.3, 0.0]), (4, [1.4, 0.0]), (5, [1.5, 0.0]), (6, [0.0, 2.0]), (7, [0.0, 2.1]), (8, [0.0, 2.2]), (9, [0.0, 2.3]), (10, [0.0, 2.4]), (11, [0.0, 2.5]);
+
+WITH [0., 2.] AS reference_vec
+SELECT id, vec
+FROM tab
+ORDER BY L2Distance(vec, reference_vec) ASC
+LIMIT 3;
+```
+
+```result title="Response"
+   ┌─id─┬─vec─────┐
+1. │  6 │ [0,2]   │
+2. │  7 │ [0,2.1] │
+3. │  8 │ [0,2.2] │
+   └────┴─────────┘
+```
+
+Más conjuntos de datos de ejemplo que usan búsqueda vectorial aproximada:
+
+* [LAION-400M](/es/get-started/sample-datasets/laion)
+* [LAION-5B](/es/get-started/sample-datasets/laion5b)
+* [dbpedia](/es/get-started/sample-datasets/dbpedia)
+* [hackernews](/es/get-started/sample-datasets/hacker-news-vector-search)
+
+<div id="approximate-nearest-neighbor-search-qbit">
+  ### Bit cuantizado (QBit)
+</div>
+
+Un enfoque habitual para acelerar la búsqueda vectorial exacta es usar un [tipo de dato float](/es/reference/data-types/float) de menor precisión.
+Por ejemplo, si los vectores se almacenan como `Array(BFloat16)` en lugar de `Array(Float32)`, el tamaño de los datos se reduce a la mitad y cabe esperar que los tiempos de ejecución de las consultas disminuyan proporcionalmente.
+Este método se conoce como cuantización. Aunque acelera el procesamiento, puede reducir la precisión de los resultados a pesar de realizar un escaneo exhaustivo de todos los vectores.
+
+Con la cuantización tradicional, perdemos precisión tanto durante la búsqueda como al almacenar los datos. En el ejemplo anterior, almacenaríamos `BFloat16` en lugar de `Float32`, lo que significa que nunca podríamos realizar después una búsqueda más precisa, aunque lo quisiéramos. Otra alternativa es almacenar dos copias de los datos: una cuantizada y otra con precisión completa. Aunque esto funciona, requiere almacenamiento redundante. Imagina un caso en el que tenemos `Float64` como dato original y queremos ejecutar búsquedas con distinta precisión (16 bits, 32 bits o los 64 bits completos). Necesitaríamos almacenar tres copias independientes de los datos.
+
+ClickHouse ofrece el tipo de dato Quantized Bit (`QBit`), que resuelve estas limitaciones de la siguiente manera:
+
+1. Almacena los datos originales con precisión completa.
+2. Permite especificar la precisión de cuantización en tiempo de consulta.
+
+Esto se consigue almacenando los datos en un formato agrupado por bits (es decir, todos los bits en la posición i de todos los vectores se almacenan juntos), lo que permite leer los datos solo con el nivel de precisión solicitado. Así se obtienen las ventajas de velocidad derivadas de la reducción de E/S y de procesamiento que aporta la cuantización, manteniendo al mismo tiempo disponibles todos los datos originales cuando hagan falta. Cuando se selecciona la precisión máxima, la búsqueda pasa a ser exacta.
+
+Para declarar una columna de tipo `QBit`, usa la siguiente sintaxis:
+
+```sql
+column_name QBit(element_type, dimension)
+```
+
+Donde:
+
+* `element_type` – el tipo de cada elemento del vector. Los tipos admitidos son `BFloat16`, `Float32` y `Float64`
+* `dimension` – la cantidad de elementos de cada vector
+
+<div id="qbit-create">
+  #### Creación de una tabla `QBit` y adición de datos
+</div>
+
+```sql
+CREATE TABLE fruit_animal (
+    word String,
+    vec QBit(Float64, 5)
+) ENGINE = MergeTree
+ORDER BY word;
+
+INSERT INTO fruit_animal VALUES
+    ('apple', [-0.99105519, 1.28887844, -0.43526649, -0.98520696, 0.66154391]),
+    ('banana', [-0.69372815, 0.25587061, -0.88226235, -2.54593015, 0.05300475]),
+    ('orange', [0.93338752, 2.06571317, -0.54612565, -1.51625717, 0.69775337]),
+    ('dog', [0.72138876, 1.55757105, 2.10953259, -0.33961248, -0.62217325]),
+    ('cat', [-0.56611276, 0.52267331, 1.27839863, -0.59809804, -1.26721048]),
+    ('horse', [-0.61435682, 0.48542571, 1.21091247, -0.62530446, -1.33082533]);
+```
+
+<div id="qbit-search">
+  #### Búsqueda vectorial con `QBit`
+</div>
+
+Busquemos los vecinos más cercanos a un vector que representa la palabra &#39;lemon&#39; mediante la distancia L2. El tercer parámetro de la función de distancia especifica la precisión en bits: los valores más altos ofrecen mayor precisión, pero requieren más procesamiento.
+
+Puedes encontrar todas las funciones de distancia disponibles para `QBit` [aquí](/es/reference/data-types/qbit#vector-search-functions).
+
+**Búsqueda con precisión completa (64 bits):**
+
+```sql
+SELECT
+    word,
+    L2DistanceTransposed(vec, [-0.88693672, 1.31532824, -0.51182908, -0.99652702, 0.59907770], 64) AS distance
+FROM fruit_animal
+ORDER BY distance;
+```
+
+```text
+   ┌─word───┬────────────distance─┐
+1. │ apple  │ 0.14639757188169716 │
+2. │ banana │   1.998961369007679 │
+3. │ orange │   2.039041552613732 │
+4. │ cat    │   2.752802631487914 │
+5. │ horse  │  2.7555776805484813 │
+6. │ dog    │   3.382295083120104 │
+   └────────┴─────────────────────┘
+```
+
+**Búsqueda con precisión reducida:**
+
+```sql
+SELECT
+    word,
+    L2DistanceTransposed(vec, [-0.88693672, 1.31532824, -0.51182908, -0.99652702, 0.59907770], 12) AS distance
+FROM fruit_animal
+ORDER BY distance;
+```
+
+```text
+   ┌─word───┬───────────distance─┐
+1. │ apple  │  0.757668703053566 │
+2. │ orange │ 1.5499475034938677 │
+3. │ banana │ 1.6168396735102937 │
+4. │ cat    │  2.429752230904804 │
+5. │ horse  │  2.524650475528617 │
+6. │ dog    │   3.17766975527459 │
+   └────────┴────────────────────┘
+```
+
+Observa que, con una cuantización de 12 bits, obtenemos una buena aproximación de las distancias y las consultas se ejecutan más rápido. El orden relativo se mantiene prácticamente igual, y &#39;apple&#39; sigue siendo la coincidencia más cercana.
+
+<div id="qbit-performance">
+  #### Consideraciones de rendimiento
+</div>
+
+La mejora de rendimiento de `QBit` se debe a la reducción de las operaciones de E/S, ya que al usar una precisión menor es necesario leer menos datos desde el almacenamiento. Además, cuando `QBit` contiene datos `Float32`, si el parámetro de precisión es 16 o menos, se obtienen beneficios adicionales al reducirse el cómputo. El parámetro de precisión controla directamente el equilibrio entre exactitud y velocidad:
+
+* **Mayor precisión** (más cercana al ancho original de los datos): resultados más precisos, consultas más lentas
+* **Menor precisión**: consultas más rápidas con resultados aproximados y menor uso de memoria
+
+<div id="references">
+  ### Referencias
+</div>
+
+Blogs:
+
+* [Búsqueda vectorial con ClickHouse - Parte 1](https://clickhouse.com/blog/vector-search-clickhouse-p1)
+* [Búsqueda vectorial con ClickHouse - Parte 2](https://clickhouse.com/blog/vector-search-clickhouse-p2)
+* [Creamos un motor de búsqueda vectorial que permite elegir la precisión durante la consulta](https://clickhouse.com/blog/qbit-vector-search)

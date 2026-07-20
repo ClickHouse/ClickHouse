@@ -1,0 +1,218 @@
+---
+slug: /use-cases/observability/clickstack/integration-partners/bindplane
+title: 'إرسال OpenTelemetry إلى ClickStack عبر Bindplane'
+sidebarTitle: 'Bindplane'
+description: 'توجيه بيانات القياس عن بُعد إلى ClickStack باستخدام Bindplane للإدارة المركزية للمجمّع'
+doc_type: 'guide'
+keywords: ['Bindplane', 'OTEL', 'ClickStack', 'OpenTelemetry', 'الإدارة المركزية للمجمّع']
+---
+
+import { Image } from "/snippets/ar/components/Image.jsx";
+
+import PartnerBadge from "/snippets/ar/components/PartnerBadge/PartnerBadge.jsx";
+
+<PartnerBadge />
+
+<Info>
+  **باختصار**
+
+  يوضح هذا الدليل كيفية توجيه بيانات القياس عن بُعد إلى ClickStack باستخدام وجهة ClickStack الأصلية في Bindplane. ستتعلّم كيفية:
+
+  * إعداد ClickStack كوجهة في Bindplane
+  * إنشاء تهيئة لمعالجة بيانات القياس عن بُعد وتوجيهها
+  * نشر التهيئات عن بُعد إلى مجمّعات OTel وبدء جمع البيانات
+  * عرض بيانات القياس عن بُعد في ClickStack
+
+  يجمع هذا التكامل بين الاستيعاب عالي الأداء في ClickStack والإدارة المركزية للمجمّعات في Bindplane، ما يسهّل توسيع observability من دون أعباء تشغيلية إضافية.
+
+  الوقت المطلوب: 10-15 دقيقة
+</Info>
+
+<div id="what-is-bindplane">
+  ## ما هو Bindplane؟
+</div>
+
+Bindplane هو مسار بيانات القياس عن بُعد مبني على OpenTelemetry يوفّر إدارة مركزية لـ OpenTelemetry مجمّعات. وهو يبسّط تشغيل أعداد كبيرة من وحدات مجمّع من خلال توفير تحرير مرئي للإعدادات، وعمليات نشر تدريجي آمنة، وذكاء المسارات.
+
+<div id="why-bindplane-clickstack">
+  ## لماذا Bindplane + ClickStack؟
+</div>
+
+على نطاق واسع، تصبح إدارة أساطيل OpenTelemetry Collectors عنق الزجاجة التشغيلي. وقد أثبت ClickStack قدرته على التعامل مع أحجام استيعاب هائلة جدًا، إذ يستوعب العملاء بيانات القياس عن بُعد بمعدلات تصل إلى غيغابايتات في الثانية ويخزّنون مئات البيتابايتات. وهنا ينتقل التحدي من أداء الاستعلامات إلى التشغيل الموثوق لبنية المجمعات التي تغذي ClickHouse.
+
+يعالج Bindplane ذلك من خلال توفير:
+
+* إدارة مركزية لـ OpenTelemetry Collectors، من الآلاف إلى أكثر من مليون
+* تحرير مرئي للإعدادات مع عمليات طرح آمنة بنقرة واحدة
+* اكتشاف تلقائي للموارد وإثراء يُطبَّقان بشكل متسق قبل وصول البيانات إلى ClickStack
+* التوجيه المتشعّب، بحيث يمكن إرسال تدفقات بيانات القياس عن بُعد نفسها إلى ClickStack ووجهات أخرى في الوقت نفسه
+* رؤية كاملة لخط المعالجة، بما في ذلك صحة المجمعات ومعدل النقل والأداء من طرف إلى طرف
+
+<Tip>
+  **أهم النقاط**
+
+  * **يتعامل ClickStack مع أحجام استيعاب هائلة، وتخزين واسع النطاق، واستعلامات تحليلية سريعة**
+  * **يدير Bindplane مسار الاستيعاب والتعقيد التشغيلي لتشغيل أساطيل المجمعات**
+</Tip>
+
+<div id="prerequisites">
+  ## المتطلبات الأساسية
+</div>
+
+* مثيل ClickStack قيد التشغيل (محليًا، أو على الخادم، أو على ClickHouse Cloud)
+* حساب على Bindplane ([أنشئ حسابًا على `app.bindplane.com`](https://app.bindplane.com))
+* تثبيت Bindplane OTel مجمّع (راجع [تثبيت أول مجمّع لك](https://docs.bindplane.com/readme/install-your-first-collector))
+* توفّر اتصال شبكي من مجمّعات Bindplane إلى نقطة نهاية OTLP الخاصة بـ ClickStack
+* مفتاح API لإدخال البيانات في ClickStack (يمكن العثور عليه في ClickStack Team Settings &gt; API Keys، [راجع الوثائق هنا](/ar/clickstack/ingesting-data/opentelemetry#sending-otel-data))
+* فتح منافذ الشبكة المناسبة (`4318` لـ HTTP/s أو `4317` لـ gRPC)
+
+<div id="integrate-bindplane-clickstack">
+  ## دمج ClickStack مع Bindplane
+</div>
+
+<Steps>
+  <Step>
+    #### تهيئة ClickStack كوجهة
+
+    1. سجّل الدخول إلى حسابك في Bindplane
+    2. انتقل إلى **Library**
+    3. انقر على **Add Destination**
+    4. اختر **ClickStack** من قائمة الوجهات المتاحة
+    5. هيّئ الاتصال:
+       * **Protocol**: اختر HTTP أو gRPC (الافتراضي: HTTP على المنفذ `4318`)
+       * **Hostname**: أدخل اسم مضيف نقطة نهاية OTLP الخاصة بـ ClickStack أو عنوان IP
+       * **Port**: أدخل المنفذ (`4318` لـ HTTP و`4317` لـ gRPC)
+       * **API Ingestion Key**: أدخل مفتاح API لإدخال البيانات الخاص بـ ClickStack
+    6. سمِّ الوجهة (على سبيل المثال: &quot;ClickStack Production&quot;)
+    7. انقر على **Save** لإنشاء الوجهة
+
+    <Tip>
+      **أهم النقاط**
+
+      تدعم وجهة ClickStack بروتوكولي HTTP وgRPC. وفي السيناريوهات ذات الأحجام الكبيرة، يُنصح باستخدام gRPC مع الضغط (gzip أو zstd أو snappy) للحصول على أداء أفضل.
+    </Tip>
+  </Step>
+
+  <Step>
+    #### إنشاء تهيئة
+
+    بعد تهيئة وجهة ClickStack، أنشئ تهيئة لمعالجة بيانات القياس عن بُعد وتوجيهها:
+
+    1. انتقل إلى **Configurations** → **Create Configuration**
+    2. امنح التهيئة اسمًا (على سبيل المثال: &quot;ClickStack Pipeline&quot;)
+    3. اختر **Collector Type** و**Platform** لعملية النشر لديك
+    4. أضف المصادر:
+       * انقر على **Add Source** للاختيار من بين أكثر من 80 مصدرًا متاحًا
+       * للاختبار، يمكنك إضافة مصدر لمولّد بيانات القياس عن بُعد لمحاكاة الحركة
+       * في بيئة الإنتاج، أضف مصادر بيانات القياس عن بُعد الفعلية لديك (السجلات والمقاييس والتتبعات)
+    5. أضف وجهة ClickStack:
+       * انقر على **Add Destination**
+       * اختر وجهة ClickStack التي أنشأتها في الخطوة السابقة
+       * اختر أنواع بيانات القياس عن بُعد التي تريد إرسالها (Logs أو Metrics أو Traces أو جميعها)
+
+    <Tip>
+      **أهم النقاط**
+
+      يمكنك إضافة معالجات للتصفية وأخذ العينات والإخفاء والإثراء والتجميع على دفعات وغير ذلك، لتشكيل بيانات القياس عن بُعد قبل وصولها إلى ClickStack. ويضمن ذلك وصول بيانات متسقة ومنظمة إلى ClickHouse.
+    </Tip>
+  </Step>
+
+  <Step>
+    #### إضافة المعالجات (اختياري)
+
+    يوفّر Bindplane إمكانات pipeline intelligence وتوصيات للمعالجات. يمكنك إضافة معالجات من أجل:
+
+    * **Filter**: تقليل حجم البيانات عبر استبعاد بيانات القياس عن بُعد غير الضرورية
+    * **Sample**: تطبيق استراتيجيات أخذ العينات على التتبعات ذات الحجم الكبير
+    * **Enrich**: إضافة resource attributes أو labels أو metadata
+    * **Transform**: تعديل بنية بيانات القياس عن بُعد أو محتواها
+    * **Batch**: تحسين أحجام الدُفعات لتحقيق نقل أكثر كفاءة
+
+    تُطبَّق هذه المعالجات بشكل متسق على جميع المجمّعات لديك قبل وصول البيانات إلى ClickStack.
+  </Step>
+
+  <Step>
+    #### نشر المجمّعات وبدء الطرح
+
+    1. أضف مجمّعًا (BDOT Collector) إلى التهيئة الخاصة بك:
+       * انتقل إلى **Agents** في Bindplane
+       * ثبّت مجمّع Bindplane على أنظمتك المستهدفة [باتباع تعليمات التثبيت الخاصة بـ Bindplane](https://docs.bindplane.com/readme/install-your-first-collector)
+       * سيظهر المجمّع في قائمة المجمّعات لديك بمجرد اتصاله
+
+    2. عيّن التهيئة إلى المجمّعات لديك:
+       * اختر المجمّعات التي تريد استخدامها
+       * عيّن إليها تهيئة ClickStack الخاصة بك
+
+    3. ابدأ عملية طرح:
+       * انقر على **Start Rollout** لنشر التهيئة
+       * سيتحقق Bindplane من التهيئة قبل طرحها
+       * راقب حالة الطرح في واجهة Bindplane
+
+    <Tip>
+      **أهم النقاط**
+
+      يوفّر Bindplane عمليات طرح آمنة بنقرة واحدة مع التحقق. ويمكنك مراقبة صحة المجمّعات ومعدل النقل وأي أخطاء في الوقت الفعلي من خلال واجهة Bindplane.
+    </Tip>
+
+    <Image img="/images/clickstack/bindplane/bindplane-configuration.webp" alt="إشارات بيانات القياس عن بُعد في ClickStack عبر Bindplane" size="lg" />
+  </Step>
+
+  <Step>
+    #### التحقق من بيانات القياس عن بُعد في ClickStack
+
+    بمجرد طرح التهيئة، تبدأ بيانات القياس عن بُعد بالتدفق إلى ClickStack من مجموعة المجمّعات المُدارة لديك:
+
+    1. سجّل الدخول إلى مثيل ClickStack لديك (واجهة HyperDX)
+    2. انتقل إلى مستكشف **Logs** أو **Metrics** أو **Traces**
+    3. ينبغي أن ترى بيانات القياس عن بُعد الواردة من المجمّعات التي يديرها Bindplane
+    4. تكون البيانات التي تصل إلى ClickStack مُثرّاة ومنظمة مسبقًا بواسطة معالجات Bindplane
+
+    <Image img="/images/clickstack/bindplane/bindplane-hyperdx.webp" alt="إشارات بيانات القياس عن بُعد في ClickStack عبر Bindplane" size="lg" />
+  </Step>
+</Steps>
+
+<div id="advanced-configuration">
+  ## التهيئة المتقدمة
+</div>
+
+<div id="fan-out-routing">
+  ### التوجيه المتشعّب
+</div>
+
+يدعم Bindplane التوجيه المتشعّب، ما يتيح لك إرسال تدفقات بيانات القياس عن بُعد نفسها إلى وجهات متعددة في الوقت نفسه. يمكنك:
+
+* إرسال logs وmetrics وtraces إلى ClickStack للتخزين طويل الأمد والتحليل
+* توجيه البيانات نفسها إلى منصات observability أخرى للتنبيه في الوقت الفعلي
+* إعادة توجيه بيانات القياس عن بُعد محددة إلى منصات SIEM لتحليل الأمان
+
+يُضبط ذلك بإضافة وجهات متعددة إلى تهيئة الخاصة بـ Bindplane.
+
+<div id="compression">
+  ### الضغط والأداء
+</div>
+
+في السيناريوهات ذات الحجم المرتفع، قم بتكوين الضغط في وجهة ClickStack لديك:
+
+* **HTTP**: يدعم gzip وdeflate وsnappy وzstd أو none (الافتراضي: gzip)
+* **gRPC**: يدعم gzip وsnappy وzstd أو none (الافتراضي: gzip)
+
+يقلل الضغط من استهلاك عرض النطاق الترددي عند إرسال بيانات القياس عن بُعد إلى ClickStack، وهو مهم خصوصًا عند التشغيل على نطاق واسع.
+
+<div id="next-steps">
+  ## الخطوات التالية
+</div>
+
+الآن بعد أن أصبحت بيانات القياس عن بُعد تتدفق من Bindplane إلى ClickStack، يمكنك:
+
+* **إنشاء لوحات معلومات**: أنشئ مرئيات في ClickStack (HyperDX) للسجلات والمقاييس والتتبعات
+* **إعداد التنبيهات**: اضبط التنبيهات في ClickStack للحالات الحرجة
+* **توسيع نطاق النشر**: أضف المزيد من المجمّعات والمصادر مع تزايد احتياجات observability لديك
+* **تحسين مسار المعالجة**: استخدم ميزة pipeline intelligence في Bindplane لتحديد فرص التحسين
+
+<div id="read-more">
+  ## اطّلع على المزيد
+</div>
+
+* [تكامل ClickStack في وثائق Bindplane](https://docs.bindplane.com/integrations/destinations/clickstack)
+
+{/* - ["تكامل Bindplane وClickStack: إرسال OpenTelemetry ‏(OTel) إلى ClickStack" في مدونة Bindplane](tbd) -- أضف الرابط فور نشره */}

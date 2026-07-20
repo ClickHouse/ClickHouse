@@ -554,10 +554,10 @@ template <typename T>
 struct T64Layout
 {
     UInt8 bytes_to_skip = 0;
-    UInt32 bytes_size = 0;
-    UInt32 num_full = 0;
-    UInt32 tail = 0;
-    UInt32 num_bits = 0;
+    UInt32 bytes_to_compress = 0;
+    UInt32 full_matrices_count = 0;
+    UInt32 tail_elements = 0;
+    UInt32 valuable_bits = 0;
     MinMaxType<T> min64 = 0;
     MinMaxType<T> max64 = 0;
     UInt32 total_size = 0;
@@ -568,33 +568,33 @@ T64Layout<T> computeT64Layout(const char * src, UInt32 bytes_size)
 {
     T64Layout<T> layout;
     layout.bytes_to_skip = bytes_size % sizeof(T);
-    layout.bytes_size = bytes_size - layout.bytes_to_skip;
+    layout.bytes_to_compress = bytes_size - layout.bytes_to_skip;
 
-    if (layout.bytes_size == 0)
+    if (layout.bytes_to_compress == 0)
     {
         layout.total_size = layout.bytes_to_skip;
         return layout;
     }
 
-    const UInt32 src_size = layout.bytes_size / sizeof(T);
-    layout.num_full = src_size / CompressionCodecT64::MATRIX_SIZE;
-    layout.tail = src_size % CompressionCodecT64::MATRIX_SIZE;
+    const UInt32 src_size = layout.bytes_to_compress / sizeof(T);
+    layout.full_matrices_count = src_size / CompressionCodecT64::MATRIX_SIZE;
+    layout.tail_elements = src_size % CompressionCodecT64::MATRIX_SIZE;
 
     T min;
     T max;
-    findMinMax<T>(src + layout.bytes_to_skip, layout.bytes_size, min, max);
+    findMinMax<T>(src + layout.bytes_to_skip, layout.bytes_to_compress, min, max);
     layout.min64 = static_cast<MinMaxType<T>>(min);
     layout.max64 = static_cast<MinMaxType<T>>(max);
 
-    layout.num_bits = getValuableBitsNumber(layout.min64, layout.max64);
-    if (layout.num_bits == 0)
+    layout.valuable_bits = getValuableBitsNumber(layout.min64, layout.max64);
+    if (layout.valuable_bits == 0)
     {
         layout.total_size = CompressionCodecT64::HEADER_SIZE + layout.bytes_to_skip;
         return layout;
     }
 
-    const UInt32 dst_shift = sizeof(UInt64) * layout.num_bits;
-    const UInt32 dst_bytes = layout.num_full * dst_shift + (layout.tail ? dst_shift : 0);
+    const UInt32 dst_shift = sizeof(UInt64) * layout.valuable_bits;
+    const UInt32 dst_bytes = layout.full_matrices_count * dst_shift + (layout.tail_elements ? dst_shift : 0);
     layout.total_size = CompressionCodecT64::HEADER_SIZE + dst_bytes + layout.bytes_to_skip;
     return layout;
 }
@@ -608,7 +608,7 @@ UInt32 compressData(const char * src, UInt32 bytes_size, char * dst)
     src += layout.bytes_to_skip;
     dst += layout.bytes_to_skip;
 
-    if (layout.bytes_size == 0)
+    if (layout.bytes_to_compress == 0)
         return layout.total_size;
 
     /// Write header
@@ -616,24 +616,24 @@ UInt32 compressData(const char * src, UInt32 bytes_size, char * dst)
     memcpy(dst + 8, &layout.max64, sizeof(MinMaxType<T>));
     dst += CompressionCodecT64::HEADER_SIZE;
 
-    if (layout.num_bits == 0)
+    if (layout.valuable_bits == 0)
         return layout.total_size;
 
     T buf[CompressionCodecT64::MATRIX_SIZE];
     const UInt32 src_shift = sizeof(T) * CompressionCodecT64::MATRIX_SIZE;
-    const UInt32 dst_shift = sizeof(UInt64) * layout.num_bits;
-    for (UInt32 i = 0; i < layout.num_full; ++i)
+    const UInt32 dst_shift = sizeof(UInt64) * layout.valuable_bits;
+    for (UInt32 i = 0; i < layout.full_matrices_count; ++i)
     {
         load<T>(src, buf, CompressionCodecT64::MATRIX_SIZE);
-        transpose<T, full>(buf, dst, layout.num_bits);
+        transpose<T, full>(buf, dst, layout.valuable_bits);
         src += src_shift;
         dst += dst_shift;
     }
 
-    if (layout.tail)
+    if (layout.tail_elements)
     {
-        load<T>(src, buf, layout.tail);
-        transpose<T, full>(buf, dst, layout.num_bits, layout.tail);
+        load<T>(src, buf, layout.tail_elements);
+        transpose<T, full>(buf, dst, layout.valuable_bits, layout.tail_elements);
     }
 
     return layout.total_size;

@@ -1,0 +1,50 @@
+---
+description: 'セレクタで絞り込み、指定した interval 内の timestamp を持つ TimeSeries テーブルから時系列を読み取ります。'
+sidebarTitle: 'timeSeriesSelector'
+slug: /sql-reference/table-functions/timeSeriesSelector
+title: 'timeSeriesSelector'
+doc_type: 'reference'
+---
+
+セレクタで絞り込み、指定した interval 内の timestamp を持つ TimeSeries テーブルから時系列を読み取ります。
+この関数は [range selectors](https://prometheus.io/docs/prometheus/latest/querying/basics/#range-vector-selectors) に似ていますが、[インスタントセレクタ](https://prometheus.io/docs/prometheus/latest/querying/basics/#instant-vector-selectors) の実装にも使用されます。
+
+<div id="syntax">
+  ## 構文
+</div>
+
+```sql
+timeSeriesSelector('db_name', 'time_series_table', 'instant_query', min_time, max_time)
+timeSeriesSelector(db_name.time_series_table, 'instant_query', min_time, max_time)
+timeSeriesSelector('time_series_table', 'instant_query', min_time, max_time)
+```
+
+<div id="arguments">
+  ## 引数
+</div>
+
+* `db_name` - TimeSeriesテーブルが存在するデータベースの名前。
+* `time_series_table` - TimeSeriesテーブルの名前。
+* `instant_query` - `@` または `offset` 修飾子を含まない、[PromQL構文](https://prometheus.io/docs/prometheus/latest/querying/basics/#instant-vector-selectors)で記述されたインスタントセレクタ。
+* &#96;min&#95;time - 開始タイムスタンプ (この値を含む) 。
+* &#96;max&#95;time - 終了タイムスタンプ (この値を含む) 。
+
+<div id="returned_value">
+  ## 戻り値
+</div>
+
+この関数は 3 つのカラムを返します。
+
+* `id` - 指定したセレクタに一致する時系列の識別子を含みます。
+* `timestamp` - タイムスタンプを含みます。
+* `value` - 値を含みます。
+
+返されるデータの順序は定められていません。
+
+<div id="example">
+  ## 例
+</div>
+
+```sql
+SELECT * FROM timeSeriesSelector(mytable, 'http_requests{job="prometheus"}', now() - INTERVAL 10 MINUTES, now())
+```

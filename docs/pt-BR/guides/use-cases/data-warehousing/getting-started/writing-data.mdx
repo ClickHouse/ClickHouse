@@ -1,0 +1,257 @@
+---
+title: 'Gravando dados em formatos de tabela abertos'
+sidebarTitle: 'Gravando em lagos de dados'
+slug: /use-cases/data-lake/getting-started/writing-data
+toc_max_heading_level: 3
+description: 'Grave dados do ClickHouse de volta em tabelas Iceberg no armazenamento de objetos para retenção de longo prazo e consumo downstream.'
+keywords: ['lago de dados', 'lakehouse', 'gravação', 'iceberg', 'ETL reverso', 'INSERT INTO', 'IcebergS3']
+doc_type: 'guide'
+---
+
+Nos guias anteriores, você consultou formatos de tabela abertos diretamente e carregou dados no MergeTree para análises rápidas. Em muitas arquiteturas, os dados também precisam fluir na direção oposta — do ClickHouse de volta para formatos de tabela abertos. Dois cenários comuns motivam isso:
+
+* **Transferência para armazenamento de longo prazo** - Os dados chegam ao ClickHouse como uma camada de analytics em tempo real, alimentando dashboards e relatórios operacionais. Quando os dados ultrapassam sua janela de tempo real, eles podem ser gravados no Iceberg em armazenamento de objetos para retenção durável e econômica em um formato interoperável.
+* **ETL reverso** - Transformações, agregações e enriquecimento realizados dentro do ClickHouse produzem conjuntos de dados derivados que ferramentas downstream e outras equipes precisam consumir. Gravar esses resultados em tabelas Iceberg os disponibiliza para todo o ecossistema de dados.
+
+Em ambos os casos, `INSERT INTO SELECT` permite mover dados de tabelas do ClickHouse para tabelas Iceberg armazenadas em armazenamento de objetos.
+
+<Note>
+  No momento, a gravação em formatos de tabela abertos é compatível **apenas com tabelas Iceberg**. O suporte parcial para tabelas Delta Lake está em desenvolvimento. As tabelas não devem ser gerenciadas por um catálogo.
+</Note>
+
+<div id="prepare-source">
+  ## Prepare um dataset de origem
+</div>
+
+Para este guia, usaremos o dataset [UK Price Paid](/pt-BR/get-started/sample-datasets/uk-price-paid) — um registro público de todas as transações de imóveis residenciais na Inglaterra e no País de Gales.
+
+<div id="create-source-table">
+  ### Criar e popular uma tabela MergeTree
+</div>
+
+```sql
+CREATE DATABASE uk;
+
+CREATE TABLE uk.uk_price_paid
+(
+    price UInt32,
+    date Date,
+    postcode1 LowCardinality(String),
+    postcode2 LowCardinality(String),
+    type Enum8('terraced' = 1, 'semi-detached' = 2, 'detached' = 3, 'flat' = 4, 'other' = 0),
+    is_new UInt8,
+    duration Enum8('freehold' = 1, 'leasehold' = 2, 'unknown' = 0),
+    addr1 String,
+    addr2 String,
+    street LowCardinality(String),
+    locality LowCardinality(String),
+    town LowCardinality(String),
+    district LowCardinality(String),
+    county LowCardinality(String)
+)
+ENGINE = MergeTree
+ORDER BY (postcode1, postcode2, addr1, addr2);
+```
+
+Popule a tabela diretamente a partir da fonte CSV pública:
+
+```sql
+INSERT INTO uk.uk_price_paid
+SELECT
+    toUInt32(price_string) AS price,
+    parseDateTimeBestEffortUS(time) AS date,
+    splitByChar(' ', postcode)[1] AS postcode1,
+    splitByChar(' ', postcode)[2] AS postcode2,
+    transform(a, ['T', 'S', 'D', 'F', 'O'], ['terraced', 'semi-detached', 'detached', 'flat', 'other']) AS type,
+    b = 'Y' AS is_new,
+    transform(c, ['F', 'L', 'U'], ['freehold', 'leasehold', 'unknown']) AS duration,
+    addr1,
+    addr2,
+    street,
+    locality,
+    town,
+    district,
+    county
+FROM url(
+    'http://prod1.publicdata.landregistry.gov.uk.s3-website-eu-west-1.amazonaws.com/pp-complete.csv',
+    'CSV',
+    'uuid_string String,
+    price_string String,
+    time String,
+    postcode String,
+    a String,
+    b String,
+    c String,
+    addr1 String,
+    addr2 String,
+    street String,
+    locality String,
+    town String,
+    district String,
+    county String,
+    d String,
+    e String'
+) SETTINGS max_http_get_redirects=10;
+```
+
+```response
+30906560 rows in set. Elapsed: 59.852 sec. Processed 30.91 million rows, 5.41 GB (516.39 thousand rows/s., 90.40 MB/s.)
+Peak memory usage: 485.15 MiB.
+```
+
+<div id="write-iceberg">
+  ## Gravar dados em uma tabela Iceberg
+</div>
+
+<div id="create-iceberg-table">
+  ### Criar a tabela Iceberg
+</div>
+
+Para gravar dados no Iceberg, crie uma tabela usando o [motor de tabela `IcebergS3`](/pt-BR/reference/engines/table-engines/integrations/iceberg).
+
+Observe que o esquema precisa ser simplificado em comparação com a tabela de origem no MergeTree. O ClickHouse oferece suporte a um sistema de tipos mais rico que o Iceberg e os arquivos Parquet subjacentes — tipos como `Enum`, `LowCardinality` e `UInt8` não são compatíveis com o Iceberg e precisam ser mapeados para tipos compatíveis.
+
+```sql
+CREATE TABLE uk.uk_iceberg
+(
+    price UInt32,
+    date Date,
+    postcode1 String,
+    postcode2 String,
+    type UInt32,
+    is_new UInt32,
+    duration UInt32,
+    addr1 String,
+    addr2 String,
+    street String,
+    locality String,
+    town String,
+    district String,
+    county String
+)
+ENGINE = IcebergS3('https://datasets-documentation.s3.amazonaws.com/lake_formats/iceberg_uk_price_paid/', '<aws_access_key>', '<aws_secret_key>', '<session_token>')
+```
+
+<div id="insert-subset">
+  ### Insira um subconjunto dos dados
+</div>
+
+Use `INSERT INTO SELECT` para gravar dados da tabela MergeTree na tabela Iceberg. Neste exemplo, gravamos apenas as transações de Londres:
+
+```sql
+SET allow_experimental_insert_into_iceberg = 1;
+
+INSERT INTO uk.uk_iceberg SELECT *
+FROM uk.uk_price_paid
+WHERE town = 'LONDON'
+```
+
+```response
+2346741 rows in set. Elapsed: 1.419 sec. Processed 30.91 million rows, 153.43 MB (21.78 million rows/s., 108.15 MB/s.)
+Peak memory usage: 371.60 MiB.
+```
+
+<div id="query-iceberg">
+  ### Consulte a tabela Iceberg
+</div>
+
+Os dados agora estão armazenados no formato Iceberg em armazenamento de objetos e podem ser consultados a partir do ClickHouse — ou de qualquer outra ferramenta que leia Iceberg:
+
+```sql
+SELECT
+    locality,
+    count()
+FROM uk.uk_iceberg
+WHERE locality != ''
+GROUP BY locality
+ORDER BY count() DESC
+LIMIT 10
+```
+
+```response
+┌─locality────┬─count()─┐
+│ LONDON      │  896796 │
+│ WALTHAMSTOW │    8610 │
+│ LEYTON      │    3525 │
+│ CHINGFORD   │    3133 │
+│ HORNSEY     │    2794 │
+│ STREATHAM   │    2760 │
+│ WOOD GREEN  │    2443 │
+│ ACTON       │    2155 │
+│ LEYTONSTONE │    2102 │
+│ EAST HAM    │    2085 │
+└─────────────┴─────────┘
+
+10 rows in set. Elapsed: 0.329 sec. Processed 457.86 thousand rows, 2.62 MB (1.39 million rows/s., 7.95 MB/s.)
+Peak memory usage: 12.19 MiB.
+```
+
+<div id="write-aggregates">
+  ## Gravar resultados agregados
+</div>
+
+As tabelas Iceberg não se limitam a armazenar linhas brutas. Elas também podem armazenar a saída de agregações e transformações — os resultados de processos de ETL executados no ClickHouse. Isso é útil para publicar resumos pré-computados em um lakehouse para consumo downstream.
+
+<div id="create-aggregate-table">
+  ### Criar uma tabela Iceberg para dados agregados
+</div>
+
+```sql
+CREATE TABLE uk.uk_avg_town
+(
+    price Float64,
+    town String
+)
+ENGINE = IcebergS3('https://datasets-documentation.s3.amazonaws.com/lake_formats/iceberg_uk_avg_town/', '<aws_access_key>', '<aws_secret_key>', '<session_token>')
+```
+
+<div id="insert-aggregates">
+  ### Inserir dados agregados
+</div>
+
+Calcule o preço médio dos imóveis por cidade e grave os resultados diretamente no Iceberg:
+
+```sql
+INSERT INTO uk.uk_avg_town SELECT
+    avg(price) AS price,
+    town
+FROM uk.uk_price_paid
+GROUP BY town
+```
+
+```response
+1173 rows in set. Elapsed: 0.480 sec. Processed 30.91 million rows, 185.44 MB (64.34 million rows/s., 386.05 MB/s.)
+Peak memory usage: 4.18 MiB.
+```
+
+<div id="query-aggregates">
+  ### Consulte a tabela agregada
+</div>
+
+Outras ferramentas — e outras instâncias do ClickHouse — agora podem ler esse conjunto de dados pré-calculado:
+
+```sql
+SELECT
+    town,
+    price
+FROM uk.uk_avg_town
+ORDER BY price DESC
+LIMIT 10
+```
+
+```response
+┌─town───────────────┬──────────────price─┐
+│ GATWICK            │ 28232811.583333332 │
+│ THORNHILL          │             985000 │
+│ VIRGINIA WATER     │  984633.2938574939 │
+│ CHALFONT ST GILES  │  863347.7280187573 │
+│ COBHAM             │    775251.47313278 │
+│ PURFLEET-ON-THAMES │           772651.8 │
+│ BEACONSFIELD       │  746052.9327405858 │
+│ ESHER              │  686708.4969745865 │
+│ KESTON             │  654541.1774842045 │
+│ GERRARDS CROSS     │  639109.4084023251 │
+└────────────────────┴────────────────────┘
+
+10 rows in set. Elapsed: 0.210 sec.
+```

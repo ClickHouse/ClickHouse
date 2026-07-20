@@ -1,0 +1,44 @@
+---
+sidebarTitle: 'Inatividade automática'
+slug: /cloud/features/autoscaling/idling
+description: 'Inatividade automática e inatividade adaptativa no ClickHouse Cloud'
+keywords: ['inatividade', 'inatividade automática', 'inatividade adaptativa', 'economia de custos', 'pausa']
+title: 'Inatividade automática'
+doc_type: 'guide'
+---
+
+<div id="automatic-idling">
+  ## Inatividade automática
+</div>
+
+Na página **Settings**, você também pode escolher se deseja permitir ou não a inatividade automática do seu serviço quando ele permanecer inativo por um determinado período (ou seja, quando o serviço não estiver executando nenhuma consulta enviada por usuários). A inatividade automática reduz o custo do seu serviço, já que você não é cobrado pelos recursos de computação quando o serviço está pausado.
+
+<Warning>
+  **Configure a lista de acesso por IP do seu serviço**
+
+  Ao criar um serviço no ClickHouse Cloud, a configuração padrão da lista de permissões de IP é &#39;Allow from anywhere&#39;. Recomendamos fortemente restringir o acesso a endereços ou intervalos de IP específicos o quanto antes. Serviços configurados como `Allow from anywhere` podem ser periodicamente movidos de um estado inativo para um estado ativo por rastreadores e scanners da internet que procuram IPs públicos, o que pode resultar em custos inesperados.
+</Warning>
+
+<div id="adaptive-idling">
+  ### Inatividade adaptativa
+</div>
+
+O ClickHouse Cloud implementa a inatividade adaptativa para evitar interrupções e, ao mesmo tempo, otimizar a redução de custos. O sistema avalia várias condições antes de colocar um serviço em estado de inatividade. A inatividade adaptativa substitui a configuração de duração da inatividade quando qualquer uma das condições listadas abaixo é atendida:
+
+* Quando o número de partes excede o limite máximo de partes para inatividade (padrão: 10.000), o serviço não entra em inatividade, para que a manutenção em segundo plano possa continuar
+* Quando há operações de merge em andamento, o serviço não entra em inatividade até que esses merges sejam concluídos, para evitar interromper uma consolidação crítica de dados
+* Além disso, o serviço também ajusta os tempos limite de inatividade com base no tempo de inicialização do servidor:
+  * Se o tempo de inicialização do servidor for inferior a 15 minutos, nenhum tempo limite adaptativo será aplicado, e será usado o tempo limite de inatividade padrão configurado pelo cliente
+  * Se o tempo de inicialização do servidor estiver entre 15 e 30 minutos, o tempo limite de inatividade será definido como 15 minutos
+  * Se o tempo de inicialização do servidor estiver entre 30 e 60 minutos, o tempo limite de inatividade será definido como 30 minutos.
+  * Se o tempo de inicialização do servidor for superior a 60 minutos, o tempo limite de inatividade será definido como 1 hora
+
+<Note>
+  O serviço pode entrar em um estado de inatividade no qual suspende as atualizações de [refreshable materialized views](/pt-BR/concepts/features/materialized-views/refreshable-materialized-view), o consumo de [S3Queue](/pt-BR/reference/engines/table-engines/integrations/s3queue) e o agendamento de novos merges. As operações de merge em andamento serão concluídas antes que o serviço entre no estado de inatividade. Para garantir a operação contínua de refreshable materialized views e do consumo de S3Queue, desative a funcionalidade de estado de inatividade.
+</Note>
+
+<Danger>
+  **Quando não usar a inatividade automática**
+
+  Use a inatividade automática somente se o seu caso de uso puder tolerar um atraso antes de responder às consultas, pois, quando um serviço é pausado, as conexões com ele expiram. A inatividade automática é ideal para serviços usados com pouca frequência e em que um atraso pode ser tolerado. Ela não é recomendada para serviços que dão suporte a recursos voltados para o cliente e usados com frequência.
+</Danger>

@@ -249,8 +249,33 @@ void Block::insertUnique(ColumnWithTypeAndName elem)
 
 void Block::erase(const std::set<size_t> & positions)
 {
-    for (auto it = positions.rbegin(); it != positions.rend(); ++it)
-        erase(*it);
+    if (positions.empty())
+        return;
+
+    if (*positions.rbegin() >= data.size())
+        throw Exception(ErrorCodes::POSITION_OUT_OF_BOUND, "Position out of bound in Block::erase(), max position = {}",
+            data.empty() ? 0 : data.size() - 1);
+
+    /// Compact `data` in a single pass, dropping the erased positions, then rebuild the name index once.
+    /// This is O(columns) instead of O(columns * erased) that repeated single-position erases would cost.
+    size_t next = 0;
+    auto pos_it = positions.begin();
+    for (size_t i = 0; i < data.size(); ++i)
+    {
+        if (pos_it != positions.end() && *pos_it == i)
+        {
+            ++pos_it;
+            continue;
+        }
+        if (next != i)
+            data[next] = std::move(data[i]);
+        ++next;
+    }
+    data.resize(next);
+
+    index_by_name.clear();
+    for (size_t i = 0; i < data.size(); ++i)
+        index_by_name.emplace(data[i].name, i);
 }
 
 

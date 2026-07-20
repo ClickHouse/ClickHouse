@@ -1,0 +1,53 @@
+---
+description: 'Role 参考文档'
+sidebarTitle: 'ROLE'
+slug: /sql-reference/statements/create/role
+title: 'CREATE ROLE'
+doc_type: 'reference'
+---
+
+创建新的[角色](/zh/concepts/features/security/access-rights#role-management)。角色是一组[权限](/zh/reference/statements/grant#granting-privilege-syntax)。被分配某个角色的[用户](/zh/reference/statements/create/user)将获得该角色的所有权限。
+
+语法：
+
+```sql
+CREATE ROLE [IF NOT EXISTS | OR REPLACE] name1 [, name2 [,...]] [ON CLUSTER cluster_name]
+    [IN access_storage_type]
+    [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [CONST|READONLY|WRITABLE|CHANGEABLE_IN_READONLY] | PROFILE 'profile_name'] [,...]
+```
+
+<div id="managing-roles">
+  ## 管理角色
+</div>
+
+一个用户可以被分配多个角色。用户可以通过 [SET ROLE](/zh/reference/statements/set-role) 语句，以任意组合启用分配给自己的角色。最终的权限范围是所有已启用角色权限的并集。如果某个用户的用户账户还被直接授予了权限，这些权限也会与通过角色授予的权限合并。
+
+用户可以拥有在登录时自动生效的默认角色。要设置默认角色，请使用 [SET DEFAULT ROLE](/zh/reference/statements/set-role#set-default-role) 语句或 [ALTER USER](/zh/reference/statements/alter/user) 语句。
+
+要撤销角色，请使用 [REVOKE](/zh/reference/statements/revoke) 语句。
+
+要删除角色，请使用 [DROP ROLE](/zh/reference/statements/drop#drop-role) 语句。删除角色后，系统会自动从所有被分配了该角色的用户和其他角色中撤销该角色。
+
+<div id="examples">
+  ## 示例
+</div>
+
+```sql
+CREATE ROLE accountant;
+GRANT SELECT ON db.* TO accountant;
+```
+
+这一组查询会创建角色 `accountant`，该角色拥有读取 `db` 数据库中数据的权限。
+
+将该角色授予用户 `mira`：
+
+```sql
+GRANT accountant TO mira;
+```
+
+分配该角色后，用户即可启用该角色并执行获准的查询。例如：
+
+```sql
+SET ROLE accountant;
+SELECT * FROM db.*;
+```

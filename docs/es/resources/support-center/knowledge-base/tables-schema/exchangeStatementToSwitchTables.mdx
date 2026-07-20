@@ -1,0 +1,95 @@
+---
+title: Cómo usar el comando EXCHANGE para intercambiar tablas
+description: "Cómo usar el comando EXCHANGE para intercambiar tablas"
+date: 2024-11-21
+tags: ['Gestión de datos']
+keywords: ['EXCHANGE']
+---
+
+{frontMatter.description}
+
+{/* truncate */}
+
+***
+
+<div id="question">
+  ## Pregunta
+</div>
+
+¿Cómo uso el comando [`EXCHANGE`](/es/reference/statements/exchange) para intercambiar los nombres de las tablas?
+
+<div id="answer">
+  ## Respuesta
+</div>
+
+El comando `EXCHANGE` es útil cuando necesitas intercambiar una tabla actual por otra tabla temporal en la que posiblemente se hayan actualizado las claves primarias u otras configuraciones.
+Esto se realiza de forma atómica, a diferencia del comando `RENAME`.
+También es útil cuando tienes vistas materializadas que se activan sobre una tabla de origen y quieres evitar reconstruir la vista.
+
+A continuación se muestra un ejemplo sencillo de cómo funciona y cómo probarlo:
+
+* Crear una base de datos de ejemplo
+
+```sql
+create database db1;
+```
+
+* Crear una tabla de ejemplo
+
+```sql
+create table db1.table1_exchange
+(
+ id Int32,
+ string_field String
+)
+engine = MergeTree()
+order by id;
+```
+
+* Insertar una fila de ejemplo
+
+```sql
+insert into db1.table1_exchange
+values
+(1, 'a');
+```
+
+* Cree una tabla temporal de ejemplo que luego se intercambiará
+
+```sql
+create table db1.table1_exchange_temp
+(
+ id Int32,
+ string_field String
+)
+engine = MergeTree()
+order by id;
+```
+
+* Insertar una fila de ejemplo en la tabla temporal
+
+```sql
+insert into db1.table1_exchange_temp
+values
+(2, 'b');
+```
+
+* Ejecuta el comando `EXCHANGE` para intercambiar las tablas
+
+```sql
+exchange tables db1.table1_exchange and db1.table1_exchange_temp;
+```
+
+* Compruebe que ahora las tablas se han intercambiado y que las filas han cambiado de lugar
+
+```sql
+select * from db1.table1_exchange;
+```
+
+```text
+┌─id─┬─string_field─┐
+│  2 │ b            │
+└────┴──────────────┘
+
+1 row in set. Elapsed: 0.002 sec. 
+```
