@@ -14,7 +14,7 @@ String ASTSampleRatio::toString(BigNum num)
 
     char tmp[MAX_WIDTH];
 
-    char * pos;
+    char * pos = nullptr;
     for (pos = tmp + MAX_WIDTH - 1; num != 0; --pos)
     {
         *pos = '0' + num % 10;

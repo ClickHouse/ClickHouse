@@ -7,8 +7,6 @@ title: 'Build on Linux for s390x (zLinux)'
 doc_type: 'guide'
 ---
 
-# Build on Linux for s390x (zLinux)
-
 ClickHouse has experimental support for s390x.
 
 ## Building ClickHouse for s390x {#building-clickhouse-for-s390x}

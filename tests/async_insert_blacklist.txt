@@ -32,6 +32,8 @@
 02421_truncate_isolation_with_mutations
 03167_transactions_are_really_disabled
 01167_isolation_hermitage
+04057_transaction_version_metadata_lifecycle
+04060_transaction_snapshot_visibility
 
     Async inserts with 'implicit_transaction' are not supported. (NOT_IMPLEMENTED)
 01168_mutations_isolation

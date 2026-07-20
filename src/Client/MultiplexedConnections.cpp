@@ -1,7 +1,6 @@
 #include <Client/MultiplexedConnections.h>
 
-#include <cmath>
-#include <Common/thread_local_rng.h>
+#include <Client/scaleInteractiveDelayByFanout.h>
 #include <Core/Protocol.h>
 #include <Core/ProtocolDefines.h>
 #include <Core/Settings.h>
@@ -160,23 +159,9 @@ void MultiplexedConnections::sendQuery(
     modified_settings[Setting::dialect] = Dialect::clickhouse;
     modified_settings[Setting::dialect].changed = false;
 
-    /// Scale interactive_delay by sqrt(fanout) to reduce progress/profile event traffic
-    /// from distributed queries. Each remote server will send updates less frequently,
-    /// proportional to the square root of the total number of remote connections.
-    /// Also add per-connection jitter to avoid TCP incast and make the progress bar smooth.
-    {
-        size_t total_fanout = distributed_fanout * replica_states.size();
-        if (total_fanout > 1)
-        {
-            UInt64 delay = modified_settings[Setting::interactive_delay];
-            double scale = std::sqrt(static_cast<double>(total_fanout));
-            /// Add random jitter in range [1.0, 2.0) to desynchronize progress reports
-            /// across connections, avoiding TCP incast and making the progress bar smooth.
-            double jitter = 1.0 + (thread_local_rng() % 1000) / 1000.0;
-            delay = static_cast<UInt64>(std::ceil(static_cast<double>(delay) * scale * jitter));
-            modified_settings[Setting::interactive_delay] = delay;
-        }
-    }
+    modified_settings[Setting::interactive_delay] = scaleInteractiveDelayByFanout(
+        modified_settings[Setting::interactive_delay],
+        distributed_fanout * replica_states.size());
 
     for (auto & replica : replica_states)
     {
@@ -233,22 +218,6 @@ void MultiplexedConnections::sendQuery(
 }
 
 
-void MultiplexedConnections::sendIgnoredPartUUIDs(const std::vector<UUID> & uuids)
-{
-    std::lock_guard lock(cancel_mutex);
-
-    if (sent_query)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot send uuids after query is sent.");
-
-    for (ReplicaState & state : replica_states)
-    {
-        Connection * connection = state.connection;
-        if (connection != nullptr)
-            connection->sendIgnoredPartUUIDs(uuids);
-    }
-}
-
-
 void MultiplexedConnections::sendClusterFunctionReadTaskResponse(const ClusterFunctionReadTaskResponse & response)
 {
     std::lock_guard lock(cancel_mutex);
@@ -264,6 +233,15 @@ void MultiplexedConnections::sendMergeTreeReadTaskResponse(const ParallelReadRes
     if (cancelled)
         return;
     current_connection->sendMergeTreeReadTaskResponse(response);
+}
+
+
+void MultiplexedConnections::sendMergeTreeAllRangesAnnouncementResponse(const InitialAllRangesAnnouncementResponse & response)
+{
+    std::lock_guard lock(cancel_mutex);
+    if (cancelled)
+        return;
+    current_connection->sendMergeTreeAllRangesAnnouncementResponse(response);
 }
 
 

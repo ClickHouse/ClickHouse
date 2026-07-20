@@ -1,0 +1,139 @@
+---
+sidebarTitle: '升级'
+slug: /manage/updates
+title: '升级'
+description: '使用 ClickHouse Cloud，您完全无需操心补丁和升级。我们会定期推出升级，包含问题修复、新功能和性能改进。'
+doc_type: 'guide'
+keywords: ['升级', '版本管理', '云功能', '维护', '更新']
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+import EnterprisePlanFeatureBadge from "/snippets/zh/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
+import ScalePlanFeatureBadge from "/snippets/zh/components/ScalePlanFeatureBadge/ScalePlanFeatureBadge.jsx";
+
+使用 ClickHouse Cloud 时，您完全不必操心打补丁和升级。我们会定期推出升级，其中包含缺陷修复、新功能和性能改进。要查看 ClickHouse 的完整更新内容列表，请参阅我们的 [Cloud 更新日志](/zh/resources/changelogs/cloud/2026)。
+
+<Note>
+  我们正在引入一种新的升级机制，即我们称之为 &quot;make before break&quot; (简称 MBB) 的理念。采用这种新方法后，在升级过程中，我们会先添加更新后的副本，再移除旧副本。这样可以让升级更加平滑，并尽可能减少对正在运行的工作负载的影响。
+
+  作为这项变更的一部分，在升级事件中，历史系统表数据最多会保留 30 天。此外，对于 AWS 或 GCP 上的服务，早于 2024 年 12 月 19 日的任何系统表数据，以及对于 Azure 上的服务，早于 2025 年 1 月 14 日的任何系统表数据，在迁移到新的组织层级时都不会被保留。
+</Note>
+
+<div id="version-compatibility">
+  ## 版本兼容性
+</div>
+
+创建 service 时，[`compatibility`](/zh/reference/settings/session-settings#compatibility) 设置会被设为该 service 初始预配时 ClickHouse Cloud 提供的最新 ClickHouse 版本。
+
+`compatibility` 设置允许你使用旧版本中各项设置的默认值。当你的 service 升级到新版本时，`compatibility` 设置中指定的版本不会改变。这意味着，在你首次创建 service 时已存在的设置，其默认值不会发生变化 (除非你已经覆盖了这些默认值，在这种情况下，它们会在升级后继续保留) 。
+
+你无法管理 service 的 service 级默认 `compatibility` 设置。如果你想更改 service 默认 `compatibility` 设置所使用的版本，则必须[联系支持团队](https://clickhouse.com/support/program)。不过，你可以使用标准的 ClickHouse 设置机制，在 user、role、profile、query 或 session 级别覆盖 `compatibility` 设置，例如在 session 中使用 `SET compatibility = '22.3'`，或在 query 中使用 `SETTINGS compatibility = '22.3'`。
+
+<div id="maintenance-mode">
+  ## 维护模式
+</div>
+
+有时，我们可能需要更新您的服务，这可能需要暂时禁用某些功能，例如扩缩容或自动进入空闲状态。在极少数情况下，如果某个服务出现问题，我们可能需要采取措施使其恢复到健康状态。在此类维护期间，您会在服务页面上看到一条横幅，显示 *“维护进行中”*。在此期间，您仍可能可以使用该服务执行查询。
+
+服务处于维护期间的时间不会计费。*维护模式* 极少出现，不应与常规的服务升级混淆。
+
+<div id="release-channels-upgrade-schedule">
+  ## 发布渠道 (升级安排)
+</div>
+
+用户可以通过订阅特定的发布渠道，为其 ClickHouse Cloud 服务指定升级安排。共有三种发布渠道，用户还可以使用 **计划升级** 功能来配置每周升级的星期和时间。
+
+三种发布渠道如下：
+
+* [**快速发布渠道**](#fast-release-channel-early-upgrades)：用于提前获得升级。
+* [**常规发布渠道**](#regular-release-channel) 是默认选项，该渠道中的升级会在快速发布渠道升级开始两周后进行。如果您的 Scale 和 Enterprise 层级服务未设置发布渠道，则默认使用常规发布渠道。
+* [**慢速发布渠道**](#slow-release-channel-deferred-upgrades) 用于延后发布。该渠道中的升级会在常规发布渠道升级两周后进行。
+
+<Note>
+  基础版服务会自动加入快速发布渠道
+</Note>
+
+<div id="fast-release-channel-early-upgrades">
+  ### 快速发布渠道 (提前升级)
+</div>
+
+<ScalePlanFeatureBadge feature="快速发布渠道" />
+
+除了常规升级计划外，如果您希望服务早于常规发布计划接收更新，我们还提供 **快速发布** 渠道。
+
+具体来说，服务将会：
+
+* 接收最新的 ClickHouse 发行版
+* 在新发行版完成测试后，更频繁地接收升级
+
+您可以按下图所示，在 Cloud 控制台中修改服务的发布计划：
+
+<div class="eighty-percent">
+  <Image img="/images/cloud/manage/fast_release.webp" size="lg" alt="选择发布渠道类型" border />
+</div>
+
+<br />
+
+此 **快速发布** 渠道适合在非关键环境中测试新功能。**不建议将其用于对运行时间和可靠性有严格要求的生产工作负载。**
+
+<div id="regular-release-channel">
+  ### 常规发布渠道
+</div>
+
+对于所有未配置发布渠道或升级计划的 Scale 和 Enterprise 层级服务，系统将作为常规发布渠道的一部分进行升级。建议在生产环境中使用此渠道。
+
+常规发布渠道的升级通常会在 **快速发布渠道** 之后两周进行。
+
+<Note>
+  基础版服务通常会在快速发布渠道后不久升级。
+</Note>
+
+<div id="slow-release-channel-deferred-upgrades">
+  ### 慢速发布渠道 (延后升级)
+</div>
+
+<EnterprisePlanFeatureBadge feature="The slow release channel" />
+
+如果您希望服务在常规发布计划之后再接收升级，我们提供 **Slow release** 发布渠道。
+
+具体而言，服务将会：
+
+* 在 Fast 和 Regular 发布渠道完成发布后再升级
+* 在常规发布后约 2 周接收 ClickHouse 发行版
+* 适用于希望在生产环境升级前，先在非生产环境中有更多时间测试 ClickHouse 发行版的客户。非生产环境可使用 Fast 或 Regular 发布渠道进行测试和验证。
+
+<Note>
+  您可以随时更改发布渠道。不过在某些情况下，更改只会应用于后续发行版。
+
+  * 切换到更快的渠道会立即升级您的服务。例如：从 Slow 切换到 Regular，或从 Regular 切换到 Fast
+  * 如果您的服务使用了[计划升级](#scheduled-upgrades)，则会在下一个计划升级时间执行升级。
+  * 切换到更慢的渠道不会将您的服务降级；您的服务会继续停留在当前版本，直到该渠道有更新版本可用。例如：从 Regular 切换到 Slow，或从 Fast 切换到 Regular 或 Slow
+</Note>
+
+<div id="scheduled-upgrades">
+  ## 计划升级
+</div>
+
+<EnterprisePlanFeatureBadge feature="计划升级" linking_verb_are="true" />
+
+您可以为 Enterprise 层级中的服务配置升级时间窗口。
+
+选择要为其设置计划升级的服务，然后在左侧菜单中选择 `Settings`。向下滚动到 `Scheduled upgrades`。
+
+<div class="eighty-percent">
+  <Image img="/images/cloud/manage/scheduled_upgrades.webp" size="lg" alt="计划升级" border />
+</div>
+
+<br />
+
+选择此选项后，您可以为数据库和 Cloud 升级设置星期和时间窗口。
+
+<div class="eighty-percent">
+  <Image img="/images/cloud/manage/scheduled_upgrade_window.webp" size="lg" alt="计划升级时间窗口" border />
+</div>
+
+<br />
+
+<Note>
+  虽然计划升级会按照已定义的计划执行，但关键安全补丁、漏洞修复，以及可能导致数据损坏或数据丢失的潜在问题不受此限制。如果发现紧急安全问题，升级可能会在计划窗口之外进行。必要时，客户会收到此类例外情况的通知。
+</Note>

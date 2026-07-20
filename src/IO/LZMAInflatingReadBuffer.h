@@ -22,7 +22,7 @@ public:
 private:
     bool nextImpl() override;
 
-    lzma_stream lstr;
+    lzma_stream lstr{};
     bool eof_flag;
 };
 

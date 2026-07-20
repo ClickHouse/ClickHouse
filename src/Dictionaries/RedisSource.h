@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Core/Block.h>
 
 #include <Core/ExternalResultDescription.h>
 #include <Processors/ISource.h>

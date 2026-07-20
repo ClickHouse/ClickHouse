@@ -1,3 +1,4 @@
+import argparse
 import os
 
 from ci.praktika.info import Info
@@ -5,24 +6,26 @@ from ci.praktika.result import Result
 from ci.praktika.utils import Shell
 
 if __name__ == "__main__":
-    # The CI Docker image installs an uninstrumented FIPS provider (`fips.so`) for OpenSSL.
-    # Sanitizers cannot track writes from uninstrumented shared libraries, causing false
-    # positives during OpenSSL global initialization (e.g. "use-of-uninitialized-value"
-    # in MSan). Disable FIPS provider loading for sanitizer builds.
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--gtest_filter", default="")
+    args = parser.parse_args()
+
+    # Our static OpenSSL must ignore the image's system openssl.cnf.
+    os.environ["OPENSSL_CONF"] = "/dev/null"
+
     job_name = Info().job_name
-    if any(san in job_name for san in ("msan", "asan", "tsan", "ubsan")):
-        os.environ["OPENSSL_CONF"] = "/dev/null"
 
     # Note, LSan does not compatible with debugger
     if "asan" not in job_name:
         # With gdb we will capture stacktrace in case of abnormal termination and timeout (45 mins)
-        command_launcher = f"timeout -s INT -v 45m gdb -batch -ex 'handle all nostop' -ex 'set print thread-events off' -ex run -ex bt -ex 'thread apply all bt' -arg"
+        command_launcher = "timeout -s INT -v 45m gdb -batch -ex 'handle all nostop' -ex 'set print thread-events off' -ex run -ex bt -ex 'thread apply all bt' -arg"
     else:
         command_launcher = ""
 
     R = Result.from_gtest_run(
         unit_tests_path="./ci/tmp/unit_tests_dbms",
         command_launcher=command_launcher,
+        gtest_filter=args.gtest_filter,
     )
 
     profraw_files = (

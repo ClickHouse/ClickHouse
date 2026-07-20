@@ -1,0 +1,707 @@
+---
+description: 'Documentação do EXPLAIN'
+sidebarTitle: 'EXPLAIN'
+slug: /sql-reference/statements/explain
+title: 'Instrução EXPLAIN'
+doc_type: 'reference'
+---
+
+Mostra o plano de execução de uma instrução.
+
+<div class="vimeo-container">
+  <Frame>
+    <iframe
+      src="//www.youtube.com/embed/hP6G2Nlz_cA"
+      frameborder="0"
+      allow="autoplay;
+fullscreen;
+picture-in-picture"
+      allowfullscreen
+    />
+  </Frame>
+</div>
+
+Sintaxe:
+
+```sql
+EXPLAIN [AST | SYNTAX | QUERY TREE | PLAN | PIPELINE | ESTIMATE | TABLE OVERRIDE] [setting = value, ...]
+    [
+      SELECT ... |
+      tableFunction(...) [COLUMNS (...)] [ORDER BY ...] [PARTITION BY ...] [PRIMARY KEY] [SAMPLE BY ...] [TTL ...]
+    ]
+    [FORMAT ...]
+```
+
+Exemplo:
+
+```sql
+EXPLAIN SELECT sum(number) FROM numbers(10) UNION ALL SELECT sum(number) FROM numbers(10) ORDER BY sum(number) ASC FORMAT TSV;
+```
+
+```sql
+Union
+  Expression (Projection)
+    Expression (Before ORDER BY and SELECT)
+      Aggregating
+        Expression (Before GROUP BY)
+          SettingQuotaAndLimits (Set limits and quota after reading from storage)
+            ReadFromStorage (SystemNumbers)
+  Expression (Projection)
+    MergingSorted (Merge sorted streams for ORDER BY)
+      MergeSorting (Merge sorted blocks for ORDER BY)
+        PartialSorting (Sort each block for ORDER BY)
+          Expression (Before ORDER BY and SELECT)
+            Aggregating
+              Expression (Before GROUP BY)
+                SettingQuotaAndLimits (Set limits and quota after reading from storage)
+                  ReadFromStorage (SystemNumbers)
+```
+
+<div id="explain-types">
+  ## Tipos de EXPLAIN
+</div>
+
+* `AST` — Árvore de sintaxe abstrata.
+* `SYNTAX` — Texto da consulta após otimizações no nível da AST.
+* `QUERY TREE` — Árvore de consulta após otimizações no nível da Query Tree.
+* `PLAN` — Plano de execução da consulta.
+* `PIPELINE` — Pipeline de execução da consulta.
+
+<div id="explain-ast">
+  ### EXPLAIN AST
+</div>
+
+Exibe a AST da consulta. Compatível com todos os tipos de consulta, não apenas `SELECT`.
+
+Configurações:
+
+* `graph` – Exibe a AST como um grafo descrito na linguagem de descrição de grafos [DOT](https://en.wikipedia.org/wiki/DOT_\(graph_description_language\)). Padrão: 0.
+
+Exemplos:
+
+```sql
+EXPLAIN AST SELECT 1;
+```
+
+```sql
+SelectWithUnionQuery (children 1)
+ ExpressionList (children 1)
+  SelectQuery (children 1)
+   ExpressionList (children 1)
+    Literal UInt64_1
+```
+
+```sql
+EXPLAIN AST ALTER TABLE t1 DELETE WHERE date = today();
+```
+
+```sql
+  explain
+  AlterQuery  t1 (children 1)
+   ExpressionList (children 1)
+    AlterCommand 27 (children 1)
+     Function equals (children 1)
+      ExpressionList (children 2)
+       Identifier date
+       Function today (children 1)
+        ExpressionList
+```
+
+<div id="explain-syntax">
+  ### EXPLAIN SYNTAX
+</div>
+
+Mostra a Árvore de Sintaxe Abstrata (AST) de uma consulta após a análise de sintaxe.
+
+Isso é feito fazendo o parsing da consulta, construindo a AST e a árvore de consulta da consulta, opcionalmente executando o analisador de consultas e os passes de otimização, e então convertendo a árvore de consulta de volta para a AST da consulta.
+
+Configurações:
+
+* `oneline` – Imprime a consulta em uma única linha. Padrão: `0`.
+* `run_query_tree_passes` – Executa os passes da árvore de consulta antes de exibi-la. Padrão: `0`.
+* `query_tree_passes` – Se `run_query_tree_passes` estiver definido, especifica quantos passes executar. Sem especificar `query_tree_passes`, ele executa todos os passes.
+
+Exemplos:
+
+```sql title="Query"
+EXPLAIN SYNTAX SELECT * FROM system.numbers AS a, system.numbers AS b, system.numbers AS c WHERE a.number = b.number AND b.number = c.number;
+```
+
+```sql title="Response"
+SELECT *
+FROM system.numbers AS a, system.numbers AS b, system.numbers AS c
+WHERE (a.number = b.number) AND (b.number = c.number)
+```
+
+Usando `run_query_tree_passes`:
+
+```sql title="Query"
+EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT * FROM system.numbers AS a, system.numbers AS b, system.numbers AS c WHERE a.number = b.number AND b.number = c.number;
+```
+
+```sql title="Response"
+SELECT
+    __table1.number AS `a.number`,
+    __table2.number AS `b.number`,
+    __table3.number AS `c.number`
+FROM system.numbers AS __table1
+ALL INNER JOIN system.numbers AS __table2 ON __table1.number = __table2.number
+ALL INNER JOIN system.numbers AS __table3 ON __table2.number = __table3.number
+```
+
+<div id="explain-query-tree">
+  ### EXPLAIN QUERY TREE
+</div>
+
+Configurações:
+
+* `run_passes` — Executa todos os passes da árvore de consulta antes de exibir a árvore de consulta. Padrão: `1`.
+* `dump_passes` — Exibe informações sobre os passes usados antes de exibir a árvore de consulta. Padrão: `0`.
+* `passes` — Especifica quantos passes devem ser executados. Se definido como `-1`, executa todos os passes. Padrão: `-1`.
+* `dump_tree` — Exibe a árvore de consulta. Padrão: `1`.
+* `dump_ast` — Exibe a AST da consulta gerada a partir da árvore de consulta. Padrão: `0`.
+
+Exemplo:
+
+```sql
+EXPLAIN QUERY TREE SELECT id, value FROM test_table;
+```
+
+```sql
+QUERY id: 0
+  PROJECTION COLUMNS
+    id UInt64
+    value String
+  PROJECTION
+    LIST id: 1, nodes: 2
+      COLUMN id: 2, column_name: id, result_type: UInt64, source_id: 3
+      COLUMN id: 4, column_name: value, result_type: String, source_id: 3
+  JOIN TREE
+    TABLE id: 3, table_name: default.test_table
+```
+
+<div id="explain-plan">
+  ### EXPLAIN PLAN
+</div>
+
+Exibe os passos do plano de consulta.
+
+Configurações:
+
+* `optimize` — Controla se as otimizações do plano de consulta são aplicadas antes da exibição do plano. Padrão: 1.
+* `header` — Exibe o cabeçalho de saída do passo. Padrão: 0.
+* `description` — Exibe a descrição do passo. Padrão: 1.
+* `indexes` — Mostra os índices usados, o número de partes filtradas e o número de grânulos filtrados para cada índice aplicado. Padrão: 0. Compatível com tabelas [MergeTree](/pt-BR/reference/engines/table-engines/mergetree-family/mergetree). A partir do ClickHouse &gt;= v25.9, esta instrução só exibe uma saída adequada quando usada com `SETTINGS use_query_condition_cache = 0, use_skip_indexes_on_data_read = 0`.
+* `projections` — Mostra todas as projeções analisadas e seu efeito na filtragem no nível de partes com base nas condições da chave primária da projeção. Para cada projeção, esta seção inclui estatísticas como o número de partes, linhas, marcas e intervalos avaliados usando a chave primária da projeção. Também mostra quantas partes de dados foram ignoradas devido a essa filtragem, sem ler a própria projeção. Se uma projeção foi realmente usada para leitura ou apenas analisada para filtragem pode ser determinado pelo campo `description`. Padrão: 0. Compatível com tabelas [MergeTree](/pt-BR/reference/engines/table-engines/mergetree-family/mergetree).
+* `actions` — Exibe informações detalhadas sobre as ações do passo. Padrão: 0.
+* `sorting` — Exibe a descrição da ordenação para cada passo do plano que produz saída ordenada. Padrão: 0.
+* `keep_logical_steps` — Mantém os passos lógicos do plano para junções em vez de convertê-los em implementações físicas de junção. Padrão: 0.
+* `json` — Exibe os passos do plano de consulta como uma linha no formato [JSON](/pt-BR/reference/formats/JSON/JSON). Padrão: 0. Recomenda-se usar o formato [TabSeparatedRaw (TSVRaw)](/pt-BR/reference/formats/TabSeparated/TabSeparatedRaw) para evitar escapes desnecessários.
+* `input_headers` — Exibe os cabeçalhos de entrada do passo. Padrão: 0. Em geral, isso só é útil para desenvolvedores depurarem problemas relacionados à incompatibilidade entre cabeçalhos de entrada e saída.
+* `column_structure` — Exibe também a estrutura das colunas nos cabeçalhos, além do nome e do tipo. Padrão: 0. Em geral, isso só é útil para desenvolvedores depurarem problemas relacionados à incompatibilidade entre cabeçalhos de entrada e saída.
+* `distributed` — Mostra os planos de consulta executados em nós remotos para tabelas distribuídas ou réplicas paralelas. Padrão: 0.
+* `compact` — Quando ativado, oculta do plano os passos de expressão e as informações detalhadas das ações (entradas, funções, aliases e posições de saída). Só tem efeito quando actions = 1. Padrão: 0.
+* `pretty` — Exibe a árvore do plano usando caracteres de desenho de linha (├──, └──, │) em vez de indentação para visualizar a hierarquia. Também formata as propriedades do passo de junção em linha. Padrão: 0.
+
+Quando `json=1`, os nomes dos passos contêm um sufixo adicional com um identificador único do passo.
+
+Exemplo:
+
+```sql
+EXPLAIN SELECT sum(number) FROM numbers(10) GROUP BY number % 4;
+```
+
+```sql
+Union
+  Expression (Projection)
+  Expression (Before ORDER BY and SELECT)
+    Aggregating
+      Expression (Before GROUP BY)
+        SettingQuotaAndLimits (Set limits and quota after reading from storage)
+          ReadFromStorage (SystemNumbers)
+```
+
+<Note>
+  Não há suporte à estimativa de custo do passo e da consulta.
+</Note>
+
+Quando `json = 1`, o plano da consulta é representado em formato JSON. Cada nó é um dicionário que sempre contém as chaves `Node Type` e `Plans`. `Node Type` é uma string com o nome de um passo. `Plans` é um array com descrições dos passos filhos. Outras chaves opcionais podem ser adicionadas dependendo do tipo de nó e das configurações.
+
+Exemplo:
+
+```sql
+EXPLAIN json = 1, description = 0 SELECT 1 UNION ALL SELECT 2 FORMAT TSVRaw;
+```
+
+```json
+[
+  {
+    "Plan": {
+      "Node Type": "Union",
+      "Node Id": "Union_10",
+      "Plans": [
+        {
+          "Node Type": "Expression",
+          "Node Id": "Expression_13",
+          "Plans": [
+            {
+              "Node Type": "ReadFromStorage",
+              "Node Id": "ReadFromStorage_0"
+            }
+          ]
+        },
+        {
+          "Node Type": "Expression",
+          "Node Id": "Expression_16",
+          "Plans": [
+            {
+              "Node Type": "ReadFromStorage",
+              "Node Id": "ReadFromStorage_4"
+            }
+          ]
+        }
+      ]
+    }
+  }
+]
+```
+
+Com `description` = 1, a chave `Description` é adicionada ao passo:
+
+```json
+{
+  "Node Type": "ReadFromStorage",
+  "Description": "SystemOne"
+}
+```
+
+Com `header` = 1, a chave `Header` é adicionada ao passo na forma de um array de colunas.
+
+Exemplo:
+
+```sql
+EXPLAIN json = 1, description = 0, header = 1 SELECT 1, 2 + dummy;
+```
+
+```json
+[
+  {
+    "Plan": {
+      "Node Type": "Expression",
+      "Node Id": "Expression_5",
+      "Header": [
+        {
+          "Name": "1",
+          "Type": "UInt8"
+        },
+        {
+          "Name": "plus(2, dummy)",
+          "Type": "UInt16"
+        }
+      ],
+      "Plans": [
+        {
+          "Node Type": "ReadFromStorage",
+          "Node Id": "ReadFromStorage_0",
+          "Header": [
+            {
+              "Name": "dummy",
+              "Type": "UInt8"
+            }
+          ]
+        }
+      ]
+    }
+  }
+]
+```
+
+Com `indexes` = 1, a chave `Indexes` é adicionada. Ela contém um array dos índices usados. Cada índice é descrito como JSON com a chave `Type` (uma string `Partition Min-Max`, `Partition`, `Statistics`, `PrimaryKey` ou `Skip`) e chaves opcionais:
+
+* `Name` — O nome do índice (atualmente usado apenas para índices `Skip`).
+* `Keys` — O array de colunas usado pelo índice.
+* `Condition` — A condição usada.
+* `Description` — A descrição do índice (atualmente usada apenas para índices `Skip`).
+* `Parts` — O número de partes após/antes da aplicação do índice.
+* `Granules` — O número de grânulos após/antes da aplicação do índice.
+* `Ranges` — O número de intervalos de grânulos após a aplicação do índice.
+
+Exemplo:
+
+```json
+"Node Type": "ReadFromMergeTree",
+"Indexes": [
+  {
+    "Type": "Partition Min-Max",
+    "Keys": ["y"],
+    "Condition": "(y in [1, +inf))",
+    "Parts": 4/5,
+    "Granules": 11/12
+  },
+  {
+    "Type": "Partition",
+    "Keys": ["y", "bitAnd(z, 3)"],
+    "Condition": "and((bitAnd(z, 3) not in [1, 1]), and((y in [1, +inf)), (bitAnd(z, 3) not in [1, 1])))",
+    "Parts": 3/4,
+    "Granules": 10/11
+  },
+  {
+    "Type": "PrimaryKey",
+    "Keys": ["x", "y"],
+    "Condition": "and((x in [11, +inf)), (y in [1, +inf)))",
+    "Parts": 2/3,
+    "Granules": 6/10,
+    "Search Algorithm": "generic exclusion search"
+  },
+  {
+    "Type": "Skip",
+    "Name": "t_minmax",
+    "Description": "minmax GRANULARITY 2",
+    "Parts": 1/2,
+    "Granules": 2/6
+  },
+  {
+    "Type": "Skip",
+    "Name": "t_set",
+    "Description": "set GRANULARITY 2",
+    "": 1/1,
+    "Granules": 1/2
+  }
+]
+```
+
+Com `projections` = 1, a chave `Projections` é adicionada. Ela contém um array de projeções analisadas. Cada projeção é descrita em JSON com as seguintes chaves:
+
+* `Name` — O nome da projeção.
+* `Condition` — A condição usada na chave primária da projeção.
+* `Description` — A descrição de como a projeção é usada (por exemplo, filtragem em nível de parte).
+* `Selected Parts` — Número de partes selecionadas pela projeção.
+* `Selected Marks` — Número de marcas selecionadas.
+* `Selected Ranges` — Número de intervalos selecionados.
+* `Selected Rows` — Número de linhas selecionadas.
+* `Filtered Parts` — Número de partes ignoradas devido à filtragem em nível de parte.
+
+Exemplo:
+
+```json
+"Node Type": "ReadFromMergeTree",
+"Projections": [
+  {
+    "Name": "region_proj",
+    "Description": "Projection has been analyzed and is used for part-level filtering",
+    "Condition": "(region in ['us_west', 'us_west'])",
+    "Search Algorithm": "binary search",
+    "Selected Parts": 3,
+    "Selected Marks": 3,
+    "Selected Ranges": 3,
+    "Selected Rows": 3,
+    "Filtered Parts": 2
+  },
+  {
+    "Name": "user_id_proj",
+    "Description": "Projection has been analyzed and is used for part-level filtering",
+    "Condition": "(user_id in [107, 107])",
+    "Search Algorithm": "binary search",
+    "Selected Parts": 1,
+    "Selected Marks": 1,
+    "Selected Ranges": 1,
+    "Selected Rows": 1,
+    "Filtered Parts": 2
+  }
+]
+```
+
+Com `actions` = 1, as chaves adicionadas dependem do tipo de passo.
+
+Exemplo:
+
+```sql
+EXPLAIN json = 1, actions = 1, description = 0 SELECT 1 FORMAT TSVRaw;
+```
+
+```json
+[
+  {
+    "Plan": {
+      "Node Type": "Expression",
+      "Node Id": "Expression_5",
+      "Expression": {
+        "Inputs": [
+          {
+            "Name": "dummy",
+            "Type": "UInt8"
+          }
+        ],
+        "Actions": [
+          {
+            "Node Type": "INPUT",
+            "Result Type": "UInt8",
+            "Result Name": "dummy",
+            "Arguments": [0],
+            "Removed Arguments": [0],
+            "Result": 0
+          },
+          {
+            "Node Type": "COLUMN",
+            "Result Type": "UInt8",
+            "Result Name": "1",
+            "Column": "Const(UInt8)",
+            "Arguments": [],
+            "Removed Arguments": [],
+            "Result": 1
+          }
+        ],
+        "Outputs": [
+          {
+            "Name": "1",
+            "Type": "UInt8"
+          }
+        ],
+        "Positions": [1]
+      },
+      "Plans": [
+        {
+          "Node Type": "ReadFromStorage",
+          "Node Id": "ReadFromStorage_0"
+        }
+      ]
+    }
+  }
+]
+```
+
+Com `compact = 1`, cada passo de `Expression` é removido. Além disso, se `actions = 1` estiver definido, as linhas `Actions` e `Positions` ficam ocultas, deixando apenas as descrições dos passos:
+
+```sql
+EXPLAIN actions = 1, compact = 1 SELECT sum(number) FROM numbers(10) GROUP BY number % 4 FORMAT Raw;
+```
+
+```text
+Aggregating
+Keys: modulo(__table1.number, 4_UInt8)
+Aggregates:
+    sum(__table1.number)
+      Function: sum(UInt64) → UInt64
+      Arguments: __table1.number
+Skip merging: 0
+  ReadFromSystemNumbers
+```
+
+Com `distributed` = 1, a saída inclui não apenas o plano de consulta local, mas também os planos de consulta que serão executados nos nós remotos. Isso é útil para analisar e depurar consultas distribuídas.
+
+Exemplo com tabela distribuída:
+
+```sql
+EXPLAIN distributed=1 SELECT * FROM remote('127.0.0.{1,2}', numbers(2)) WHERE number = 1;
+```
+
+```sql
+Union
+  Expression ((Project names + (Projection + (Change column names to column identifiers + (Project names + Projection)))))
+    Filter ((WHERE + Change column names to column identifiers))
+      ReadFromSystemNumbers
+  Expression ((Project names + (Projection + Change column names to column identifiers)))
+    ReadFromRemote (Read from remote replica)
+      Expression ((Project names + Projection))
+        Filter ((WHERE + Change column names to column identifiers))
+          ReadFromSystemNumbers
+```
+
+Exemplo com réplicas paralelas:
+
+```sql
+SET enable_parallel_replicas = 2, max_parallel_replicas = 2, cluster_for_parallel_replicas = 'default';
+
+EXPLAIN distributed=1 SELECT sum(number) FROM test_table GROUP BY number % 4;
+```
+
+```sql
+Expression ((Project names + Projection))
+  MergingAggregated
+    Union
+      Aggregating
+        Expression ((Before GROUP BY + Change column names to column identifiers))
+          ReadFromMergeTree (default.test_table)
+      ReadFromRemoteParallelReplicas
+        BlocksMarshalling
+          Aggregating
+            Expression ((Before GROUP BY + Change column names to column identifiers))
+              ReadFromMergeTree (default.test_table)
+```
+
+Em ambos os exemplos, o plano de consulta exibe o fluxo de execução completo, incluindo etapas locais e remotas.
+
+Com `pretty` = 1, a árvore do plano é exibida usando caracteres de desenho de linhas em vez de recuo, e informações adicionais são mostradas para os passos principais:
+
+* **As colunas de saída da consulta** são exibidas no topo do plano.
+* **As expressões** em filtros, chaves de agregação, descrições de ordenação e funções de janela são exibidas em uma notação semelhante a SQL e legível por humanos (por exemplo, `a + 1 > 5` em vez de `greater(plus(a, 1), 5)`). Os prefixos internos de identificadores de coluna (como `__table1.`) são removidos para maior clareza.
+* **Os passos de source** (como `ReadFromMergeTree`) exibem suas colunas de saída.
+* **Os passos de filtro** exibem a condição de filtro em notação SQL. Quando há filtros de join em runtime, eles são mostrados separadamente.
+* **Os passos de agregação** exibem chaves e funções de agregação com seus argumentos (por exemplo, `sum(c)`, `count()`).
+* **Os conjuntos `IN`** de literais Tuple mostram seus valores (truncados para conjuntos grandes), os conjuntos baseados em subquery são rotulados como `subquery1`, `subquery2` etc., e os conjuntos de tabelas com engine `Set` mostram o nome da tabela.
+* **Os passos de join** exibem a relação de join usando notação matemática, a contagem estimada de linhas do resultado
+  e quais colunas de saída vêm do lado esquerdo e quais vêm do lado direito. Os símbolos a seguir são usados para
+  representar diferentes tipos de join:
+
+| Símbolo                | Tipo de join    |
+| ---------------------- | --------------- |
+| `⋈`                    | Inner Join      |
+| `⟕`                    | Left Join       |
+| `⟖`                    | Right Join      |
+| `⟗`                    | Full Join       |
+| `⋉`                    | Left Semi Join  |
+| `⋊`                    | Right Semi Join |
+| `⋉` with strikethrough | Left Anti Join  |
+| `⋊` with strikethrough | Right Anti Join |
+| `×`                    | Cross Join      |
+
+Por exemplo, `t1 ⟕ t2` significa um left join entre as tabelas `t1` e `t2`.
+O número entre colchetes após o nome da tabela (por exemplo, `t1[100]`) indica a contagem estimada de linhas
+quando há estatísticas da tabela disponíveis.
+
+A opção `pretty` funciona bem em conjunto com `compact = 1`, que oculta os passos `Expression` e as informações detalhadas de ações, tornando o plano mais fácil de ler.
+
+```sql
+EXPLAIN pretty = 1 SELECT sum(number) FROM numbers(10) GROUP BY number % 4 FORMAT Raw;
+```
+
+```text
+Expression ((Project names + Projection))
+└──Aggregating
+   └──Expression ((Before GROUP BY + Change column names to column identifiers))
+      └──ReadFromSystemNumbers
+```
+
+Um exemplo mais detalhado com junções:
+
+```sql
+CREATE TABLE t1 (id UInt64, value String) ENGINE = MergeTree ORDER BY id;
+CREATE TABLE t2 (id UInt64, value String) ENGINE = MergeTree ORDER BY id;
+INSERT INTO t1 SELECT number, toString(number) FROM numbers(100);
+INSERT INTO t2 SELECT number, toString(number) FROM numbers(100);
+
+EXPLAIN actions = 1, compact = 1, pretty = 1
+SELECT * FROM t1 INNER JOIN t2 ON t1.id = t2.id FORMAT Raw;
+```
+
+```text
+Output: id, value, t2.id, t2.value
+
+Join (JOIN FillRightFirst)
+│  t1[100] ⋈ t2[100]
+│  Type: inner | Strictness: all | Algorithm: ConcurrentHashJoin
+│  Result rows: 100
+│  Output:
+│    Left:  id, value
+│    Right: id, value
+│  Join conditions: id = id
+├──ReadFromMergeTree (default.t1)
+│     Read type: Default
+│     Parts: 1 | Granules: 1
+│     Output: id, value
+└──ReadFromMergeTree (default.t2)
+      Read type: Default
+      Parts: 1 | Granules: 1
+      Output: id, value
+```
+
+<div id="explain-pipeline">
+  ### EXPLAIN PIPELINE
+</div>
+
+Configurações:
+
+* `header` — Imprime o cabeçalho de cada porta de saída. Padrão: 0.
+* `graph` — Imprime um grafo descrito na linguagem de descrição de grafos [DOT](https://en.wikipedia.org/wiki/DOT_\(graph_description_language\)). Padrão: 0.
+* `compact` — Imprime o grafo no modo compacto se a configuração `graph` estiver habilitada. Padrão: 1.
+* `compact_repeated_processor_chains` — Compacta cadeias repetidas adjacentes de processadores na saída de texto, mostrando uma cópia da cadeia com uma contagem de repetições. Isso pode facilitar a leitura de pipelines paralelos quando a mesma cadeia aparece muitas vezes, por exemplo, em junções. Isso não afeta a saída do grafo. Padrão: 0.
+
+```text
+Resize 16 → 1
+  FillingRightJoinSide          │
+    SimpleSquashingTransform    │ × 16
+      Resize 1 → 16
+```
+
+Quando `compact=0` e `graph=1`, os nomes dos processadores conterão um sufixo adicional com um identificador exclusivo do processador.
+
+Exemplo:
+
+```sql
+EXPLAIN PIPELINE SELECT sum(number) FROM numbers_mt(100000) GROUP BY number % 4;
+```
+
+```sql
+(Union)
+(Expression)
+ExpressionTransform
+  (Expression)
+  ExpressionTransform
+    (Aggregating)
+    Resize 2 → 1
+      AggregatingTransform × 2
+        (Expression)
+        ExpressionTransform × 2
+          (SettingQuotaAndLimits)
+            (ReadFromStorage)
+            NumbersRange × 2 0 → 1
+```
+
+<div id="explain-estimate">
+  ### EXPLAIN ESTIMATE
+</div>
+
+Mostra o número estimado de linhas, marcas e partes que serão lidas das tabelas durante o processamento da consulta. Funciona com tabelas da família [MergeTree](/pt-BR/reference/engines/table-engines/mergetree-family/mergetree).
+
+**Exemplo**
+
+Criando uma tabela:
+
+```sql title="Query"
+CREATE TABLE ttt (i Int64) ENGINE = MergeTree() ORDER BY i SETTINGS index_granularity = 16, write_final_mark = 0;
+INSERT INTO ttt SELECT number FROM numbers(128);
+OPTIMIZE TABLE ttt;
+```
+
+```sql title="Query"
+EXPLAIN ESTIMATE SELECT * FROM ttt;
+```
+
+```text title="Response"
+┌─database─┬─table─┬─parts─┬─rows─┬─marks─┐
+│ default  │ ttt   │     1 │  128 │     8 │
+└──────────┴───────┴───────┴──────┴───────┘
+```
+
+<div id="explain-table-override">
+  ### EXPLAIN TABLE OVERRIDE
+</div>
+
+Mostra o resultado de um override de tabela em um esquema acessado por meio de uma função de tabela.
+Também faz algumas validações, gerando uma exceção se o override causar algum tipo de falha.
+
+**Exemplo**
+
+Suponha que você tenha uma tabela MySQL remota como esta:
+
+```sql title="Query"
+CREATE TABLE db.tbl (
+    id INT PRIMARY KEY,
+    created DATETIME DEFAULT now()
+)
+```
+
+```sql title="Query"
+EXPLAIN TABLE OVERRIDE mysql('127.0.0.1:3306', 'db', 'tbl', 'root', 'clickhouse')
+PARTITION BY toYYYYMM(assumeNotNull(created))
+```
+
+```text title="Response"
+┌─explain─────────────────────────────────────────────────┐
+│ PARTITION BY uses columns: `created` Nullable(DateTime) │
+└─────────────────────────────────────────────────────────┘
+```
+
+<Note>
+  A validação não está completa, portanto uma consulta bem-sucedida não garante que o override não cause problemas.
+</Note>

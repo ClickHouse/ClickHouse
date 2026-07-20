@@ -411,9 +411,10 @@ def _add_grafana_links(result, commit_sha, stop_watch, run_faults, run_no_faults
     }
     if scenario_ids:
         p_details["var-scenario"] = scenario_ids
-    result.set_clickable_label(
+    result.set_label(
         "Grafana: Run details (this run)",
-        _url(GRAFANA_DASH_UID["run_details"], p_details),
+        link=_url(GRAFANA_DASH_UID["run_details"], p_details),
+        hint="Open the per-run Grafana dashboard for this Keeper stress run",
     )
 
     p_comp = {
@@ -426,9 +427,10 @@ def _add_grafana_links(result, commit_sha, stop_watch, run_faults, run_no_faults
         "var-baseline_version": compare_short,
         "refresh": "1m",
     }
-    result.set_clickable_label(
+    result.set_label(
         "Grafana: 1vs1 Comparison",
-        _url(GRAFANA_DASH_UID["comparison"], p_comp),
+        link=_url(GRAFANA_DASH_UID["comparison"], p_comp),
+        hint="Compare this run against the baseline branch in Grafana",
     )
 
     p_hist = {
@@ -439,9 +441,10 @@ def _add_grafana_links(result, commit_sha, stop_watch, run_faults, run_no_faults
         "var-scenario": scenario_val,
         "refresh": "1m",
     }
-    result.set_clickable_label(
+    result.set_label(
         "Grafana: Historical progression",
-        _url(GRAFANA_DASH_UID["historical"], p_hist),
+        link=_url(GRAFANA_DASH_UID["historical"], p_hist),
+        hint="View the historical progression of this scenario in Grafana",
     )
 
 

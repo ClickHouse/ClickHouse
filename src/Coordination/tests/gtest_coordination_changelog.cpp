@@ -1444,6 +1444,11 @@ TYPED_TEST(CoordinationChangelogTest, TestLogGap)
         changelog.end_of_append_batch(0, 0);
     }
 
+    /// append/end_of_append_batch flush asynchronously on a background thread. Wait for the
+    /// log to be durable before opening a second store that reads the same file, otherwise
+    /// the reader races the writer.
+    waitDurableLogs(changelog);
+
     DB::KeeperLogStore changelog1(
         DB::LogFileSettings{.force_sync = true, .compress_logs = this->enable_compression, .rotate_interval = 100},
         DB::FlushSettings(),

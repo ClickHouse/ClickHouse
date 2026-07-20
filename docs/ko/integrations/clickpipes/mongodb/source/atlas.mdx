@@ -1,0 +1,63 @@
+---
+sidebarTitle: 'MongoDB Atlas'
+description: 'MongoDB Atlas를 ClickPipes 소스로 설정하는 단계별 안내'
+slug: /integrations/clickpipes/mongodb/source/atlas
+title: 'MongoDB Atlas 소스 설정 안내'
+doc_type: 'guide'
+keywords: ['ClickPipes', 'MongoDB', 'CDC', '데이터 수집', '실시간 동기화']
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+<div id="enable-oplog-retention">
+  ## oplog 보존 기간 설정
+</div>
+
+복제를 위해서는 최소 24시간의 oplog 보존 기간이 필요합니다. 초기 스냅샷이 완료되기 전에 oplog가 잘리지 않도록 oplog 보존 기간을 72시간 이상으로 설정하는 것이 좋습니다. UI를 통해 oplog 보존 기간을 설정하려면 다음과 같이 하십시오.
+
+1. MongoDB Atlas console에서 클러스터의 `Overview` 탭으로 이동한 다음 `Configuration` 탭을 클릭합니다.
+
+<Image img="/images/integrations/data-ingestion/clickpipes/mongodb/mongo-atlas-cluster-overview-configuration.webp" alt="클러스터 구성으로 이동" size="lg" border />
+
+2. `Additional Settings`를 클릭하고 아래로 스크롤하여 `More Configuration Options`로 이동합니다.
+
+<Image img="/images/integrations/data-ingestion/clickpipes/mongodb/mongo-atlas-expand-additional-settings.webp" alt="추가 설정 확장" size="lg" border />
+
+3. `More Configuration Options`를 클릭하고 최소 oplog 보존 기간을 `72 hours` 이상으로 설정합니다.
+
+<Image img="/images/integrations/data-ingestion/clickpipes/mongodb/mongo-atlas-set-retention-hours.webp" alt="oplog 보존 시간 설정" size="lg" border />
+
+4. `Review Changes`를 클릭해 변경 사항을 검토한 다음 `Apply Changes`를 클릭해 적용합니다.
+
+<div id="configure-database-user">
+  ## 데이터베이스 사용자 구성
+</div>
+
+MongoDB Atlas 콘솔에 로그인한 후 왼쪽 탐색 모음의 Security 탭에서 `Database Access`를 클릭하십시오. 그런 다음 &quot;Add New Database User&quot;를 클릭하십시오.
+
+ClickPipes는 비밀번호 인증이 필요합니다:
+
+<Image img="/images/integrations/data-ingestion/clickpipes/mongodb/mongo-atlas-add-new-database-user.webp" alt="데이터베이스 사용자 추가" size="lg" border />
+
+ClickPipes에는 다음 역할이 있는 사용자가 필요합니다:
+
+* `readAnyDatabase`
+* `clusterMonitor`
+
+이 역할은 `Specific Privileges` 섹션에서 찾을 수 있습니다:
+
+<Image img="/images/integrations/data-ingestion/clickpipes/mongodb/mongo-atlas-database-user-privilege.webp" alt="사용자 역할 구성" size="lg" border />
+
+추가로 ClickPipes 사용자에게 액세스를 부여할 클러스터/인스턴스를 지정할 수 있습니다:
+
+<Image img="/images/integrations/data-ingestion/clickpipes/mongodb/mongo-atlas-restrict-access.webp" alt="클러스터/인스턴스 액세스 제한" size="lg" border />
+
+<div id="whats-next">
+  ## 다음 단계
+</div>
+
+이제 [ClickPipe를 생성](/ko/integrations/clickpipes/mongodb/index)하고 MongoDB 인스턴스에서 ClickHouse Cloud로 데이터 수집을 시작할 수 있습니다.
+ClickPipe 생성 과정에서 필요하므로 MongoDB 인스턴스를 설정할 때 사용한 연결 정보를 반드시 기록해 두십시오.

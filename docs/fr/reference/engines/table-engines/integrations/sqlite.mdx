@@ -1,0 +1,85 @@
+---
+description: "Le moteur permet d'importer et d'exporter des données vers SQLite, et prend en charge les requêtes directes sur les tables SQLite depuis ClickHouse."
+sidebarTitle: 'SQLite'
+slug: /engines/table-engines/integrations/sqlite
+title: 'Moteur de table SQLite'
+doc_type: 'référence'
+---
+
+import CloudNotSupportedBadge from "/snippets/fr/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+
+<CloudNotSupportedBadge />
+
+Le moteur permet d’importer et d’exporter des données vers SQLite et prend en charge les requêtes sur des tables SQLite directement depuis ClickHouse.
+
+<div id="creating-a-table">
+  ## Créer une table
+</div>
+
+```sql
+    CREATE TABLE [IF NOT EXISTS] [db.]table_name
+    (
+        name1 [type1],
+        name2 [type2], ...
+    ) ENGINE = SQLite('db_path', 'table')
+```
+
+**Paramètres du moteur**
+
+* `db_path` — Chemin vers le fichier SQLite contenant une base de données.
+* `table` — Nom d’une table de la base de données SQLite.
+
+<div id="data-types-support">
+  ## Prise en charge des types de données
+</div>
+
+Lorsque vous spécifiez explicitement les types de colonnes ClickHouse dans la définition de la table, les types ClickHouse suivants peuvent être interprétés à partir de colonnes TEXT SQLite :
+
+* [Date](/fr/reference/data-types/date), [Date32](/fr/reference/data-types/date32)
+* [DateTime](/fr/reference/data-types/datetime), [DateTime64](/fr/reference/data-types/datetime64)
+* [UUID](/fr/reference/data-types/uuid)
+* [Enum8, Enum16](/fr/reference/data-types/enum)
+* [Decimal32, Decimal64, Decimal128, Decimal256](/fr/reference/data-types/decimal)
+* [FixedString](/fr/reference/data-types/fixedstring)
+* Tous les types entiers ([UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64](/fr/reference/data-types/int-uint))
+* [Float32, Float64](/fr/reference/data-types/float)
+
+Consultez le [moteur de base de données SQLite](/fr/reference/engines/database-engines/sqlite#data_types-support) pour la correspondance de types par défaut.
+
+<div id="usage-example">
+  ## Exemple d&#39;utilisation
+</div>
+
+Affiche une requête qui crée la table SQLite :
+
+```sql
+SHOW CREATE TABLE sqlite_db.table2;
+```
+
+```text
+CREATE TABLE SQLite.table2
+(
+    `col1` Nullable(Int32),
+    `col2` Nullable(String)
+)
+ENGINE = SQLite('sqlite.db','table2');
+```
+
+Renvoie les données contenues dans la table :
+
+```sql
+SELECT * FROM sqlite_db.table2 ORDER BY col1;
+```
+
+```text
+┌─col1─┬─col2──┐
+│    1 │ text1 │
+│    2 │ text2 │
+│    3 │ text3 │
+└──────┴───────┘
+```
+
+**Voir aussi**
+
+* moteur [SQLite](/fr/reference/engines/database-engines/sqlite)
+* fonction de table [sqlite](/fr/reference/functions/table-functions/sqlite)

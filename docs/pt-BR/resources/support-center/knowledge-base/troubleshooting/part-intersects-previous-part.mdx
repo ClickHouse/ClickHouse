@@ -1,0 +1,76 @@
+---
+title: "DB::Exception: Parte XXXXX se sobrepõe à parte anterior YYYYY. É um bug ou resultado de uma intervenção manual nos dados do ZooKeeper."
+date: 2023-05-02
+description: "Este artigo explica como resolver o erro DB::Exception relacionado a partes que se sobrepõem no ClickHouse, geralmente causado por uma condição de corrida ou por intervenção manual nos dados do ZooKeeper."
+tags: ['Erros e Exceções', 'Tabelas do Sistema']
+keywords: ['Part Intersects', 'system.replicas']
+---
+
+<div id="why-it-occurs">
+  ## Por que isso ocorre
+</div>
+
+Quando esse erro ocorre, uma tabela fica como somente leitura, e a mensagem de erro indica partes sobrepostas.
+
+Você pode ver o erro nos logs ou por meio de
+
+```sql
+SELECT *
+FROM system.replicas
+WHERE is_readonly = 1
+```
+
+A mensagem de erro é semelhante a:
+
+```
+Code: 49. DB::Exception: Part XXXXX intersects previous part YYYYY. It is a bug or a result of manual intervention in the ZooKeeper data. (LOGICAL_ERROR) (version 21.12.4.1 (official build))
+```
+
+<div id="cause-of-the-error">
+  ## Causa do erro
+</div>
+
+Esse erro pode ser causado por uma condição de corrida entre `mergeSelectingTask` e a reinicialização da fila.
+
+<div id="solution">
+  ## Solução
+</div>
+
+Execute as consultas a seguir em todas as réplicas:
+
+```sql
+DETACH TABLE table_name;  -- Necessário para DROP REPLICA
+
+SYSTEM DROP REPLICA 'replica_name' FROM ZKPATH '/table_path_in_zk/'; -- Isso removerá tudo de /table_path_in_zk
+
+ATTACH TABLE table_name;  -- A tabela ficará em modo somente leitura, pois não há metadados no ZK
+```
+
+Em seguida, execute o seguinte em todas as réplicas:
+
+```sql
+SYSTEM RESTORE REPLICA table_name;  -- Irá desanexar todas as partições, recriar os metadados no ZK (como se fosse uma nova tabela vazia) e então reanexar todas as partições
+
+SYSTEM SYNC REPLICA table_name; -- Aguarda as réplicas sincronizarem as partes. Também é recomendável verificar `system.detached_parts` em todas as réplicas após a conclusão da recuperação.
+```
+
+<Tip>
+  Recomendamos atualizar para a versão mais recente do ClickHouse
+</Tip>
+
+<div id="additional-resources">
+  ## Recursos adicionais
+</div>
+
+PRs e issues relacionadas no GitHub:
+
+* [ClickHouse/ClickHouse#34096](https://github.com/ClickHouse/ClickHouse/pull/34096)
+* [ClickHouse/ClickHouse#30651](https://github.com/ClickHouse/ClickHouse/pull/30651)
+* [ClickHouse/ClickHouse#31060](https://github.com/ClickHouse/ClickHouse/pull/31060)
+* [ClickHouse/ClickHouse#35863](https://github.com/ClickHouse/ClickHouse/issues/35863)
+
+<div id="versions-affected">
+  ## Versões afetadas:
+</div>
+
+ClickHouse v22.12 e anteriores

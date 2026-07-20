@@ -1,0 +1,114 @@
+---
+alias: []
+description: 'وثائق تنسيق Buffers'
+input_format: true
+keywords: ['Buffers']
+output_format: true
+slug: /interfaces/formats/Buffers
+title: 'Buffers'
+doc_type: 'مرجع'
+---
+
+| إدخال | إخراج | اسم بديل |
+| ----- | ----- | -------- |
+| ✔     | ✔     |          |
+
+<div id="description">
+  ## الوصف
+</div>
+
+`Buffers` هو تنسيق ثنائي بسيط جدًا لتبادل البيانات **العابرة**، حيث يكون كلٌّ من المستهلك والمنتِج على معرفة مسبقة بالمخطط وترتيب الأعمدة.
+
+وعلى خلاف [Native](/ar/reference/formats/Native)، فهو **لا** يخزّن أسماء الأعمدة أو أنواعها أو أي بيانات وصفية إضافية.
+
+في هذا التنسيق، تُكتب البيانات وتُقرأ على هيئة [كتل](/ar/resources/develop-contribute/introduction/architecture#block) بتنسيق ثنائي. ويستخدم Buffers التمثيل الثنائي نفسه لكل عمود كما في تنسيق [Native](/ar/reference/formats/Native)، كما يلتزم بإعدادات تنسيق Native نفسها.
+
+لكل كتلة، يُكتب التسلسل التالي:
+
+1. عدد الأعمدة (UInt64، little-endian).
+2. عدد الصفوف (UInt64، little-endian).
+3. لكل عمود:
+
+* الحجم الإجمالي بالبايت لبيانات العمود المُسلسلة (UInt64، little-endian).
+* بايتات بيانات العمود المُسلسلة، تمامًا كما في تنسيق [Native](/ar/reference/formats/Native).
+
+<div id="example-usage">
+  ## مثال للاستخدام
+</div>
+
+اكتب في ملف:
+
+```sql
+SELECT
+    number AS num,
+    number * number AS num_square
+FROM numbers(10)
+INTO OUTFILE 'squares.buffers'
+FORMAT Buffers;
+```
+
+اقرأه مجددًا مع تحديد أنواع الأعمدة صراحةً:
+
+```sql
+SELECT
+    *
+FROM file(
+    'squares.buffers',
+    'Buffers',
+    'col_1 UInt64, col_2 UInt64'
+);
+```
+
+```txt
+  ┌─col_1─┬─col_2─┐
+  │     0 │     0 │
+  │     1 │     1 │
+  │     2 │     4 │
+  │     3 │     9 │
+  │     4 │    16 │
+  │     5 │    25 │
+  │     6 │    36 │
+  │     7 │    49 │
+  │     8 │    64 │
+  │     9 │    81 │
+  └───────┴───────┘
+```
+
+إذا كان لديك جدول له أنواع الأعمدة نفسها، فيمكنك ملؤه مباشرةً:
+
+```sql
+CREATE TABLE number_squares
+(
+    a UInt64,
+    b UInt64
+) ENGINE = Memory;
+
+INSERT INTO number_squares
+FROM INFILE 'squares.buffers'
+FORMAT Buffers;
+```
+
+عاين الجدول:
+
+```sql
+SELECT * FROM number_squares;
+```
+
+```txt
+  ┌─a─┬──b─┐
+  │ 0 │  0 │
+  │ 1 │  1 │
+  │ 2 │  4 │
+  │ 3 │  9 │
+  │ 4 │ 16 │
+  │ 5 │ 25 │
+  │ 6 │ 36 │
+  │ 7 │ 49 │
+  │ 8 │ 64 │
+  │ 9 │ 81 │
+  └───┴────┘
+```
+
+<div id="format-settings">
+  ## إعدادات التنسيق
+</div>

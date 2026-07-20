@@ -148,6 +148,11 @@ void SyncRequest::addRootPath(const String & root_path) { Coordination::addRootP
 
 void CreateResponse::removeRootPath(const String & root_path) { Coordination::removeRootPath(path_created, root_path); }
 void WatchResponse::removeRootPath(const String & root_path) { Coordination::removeRootPath(path, root_path); }
+void ListRecursiveResponse::removeRootPath(const String & root_path)
+{
+    for (auto & child : children)
+        Coordination::removeRootPath(child, root_path);
+}
 
 void MultiResponse::removeRootPath(const String & root_path)
 {

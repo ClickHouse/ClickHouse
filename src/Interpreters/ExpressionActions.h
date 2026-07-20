@@ -113,6 +113,24 @@ public:
     void
     execute(Block & block, bool dry_run = false, bool allow_duplicates_in_input = false, CheckCancelled check_cancelled = nullptr) const;
 
+    /// Positional execution for callers whose input structure is fixed (e.g. ExpressionTransform).
+    ///
+    /// `getInputPositions(header)` precomputes, once, the mapping (required input slot -> position in
+    /// `header`); the result is passed to `executeOnColumns` on every chunk. This avoids the per-chunk
+    /// name lookups and the construction of a `Block` name index (`index_by_name`) on both the input and
+    /// the output, which is significant when the header has very many columns.
+    ///
+    /// `executeOnColumns` consumes `columns` (chunk data, in `header` order) and returns the result
+    /// columns in `getSampleBlock()` order. It assumes `allow_duplicates_in_input == false`.
+    std::vector<ssize_t> getInputPositions(const Block & header) const;
+    Columns executeOnColumns(
+        Columns columns,
+        const Block & header,
+        const std::vector<ssize_t> & input_positions_for_header,
+        size_t & num_rows,
+        bool dry_run = false,
+        CheckCancelled check_cancelled = nullptr) const;
+
     bool hasArrayJoin() const;
     void assertDeterministic() const;
 
@@ -125,11 +143,11 @@ public:
 
     JSONBuilder::ItemPtr toTree() const;
 
-    static NameAndTypePair getSmallestColumn(const NamesAndTypesList & columns);
-
-    /// Check if column is always zero. True if it's definite, false if we can't say for sure.
-    /// Call it only after subqueries for sets were executed.
-    bool checkColumnIsAlwaysFalse(const String & column_name) const;
+    /// Find the column with the smallest estimated in-memory size.
+    /// When skip_subcolumns=true (default), meta-subcolumns like .size0/.keys
+    /// are skipped — correct for storage column lists but not for subquery
+    /// projections where all entries are valid query-level outputs.
+    static NameAndTypePair getSmallestColumn(const NamesAndTypesList & columns, bool skip_subcolumns = true);
 
     ExpressionActionsPtr clone() const;
 

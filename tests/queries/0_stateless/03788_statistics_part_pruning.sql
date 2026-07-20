@@ -1,4 +1,5 @@
 -- This test validates Statistics-based part pruning functionality.
+SET explain_query_plan_default = 'legacy';
 
 DROP TABLE IF EXISTS test_stats_pruning;
 
@@ -13,13 +14,14 @@ CREATE TABLE test_stats_pruning (
 ) ENGINE = ReplacingMergeTree(version)
 PARTITION BY toYYYYMMDD(dt)
 ORDER BY id
-SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi', auto_statistics_types = 'minmax';
+SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi', auto_statistics_types = 'basic';
 
 SET use_statistics_for_part_pruning = 1;
 SET enable_analyzer = 1;
 SET parallel_replicas_local_plan = 1;
 SET optimize_move_to_prewhere = 1;
 SET query_plan_optimize_prewhere = 1;
+SET materialize_statistics_on_insert = 1;
 
 -- Part 1: 202501, id [0, 99], value [0, 99], version [0, 99]
 INSERT INTO test_stats_pruning SELECT '2025-01-11', number, number, number, toDecimal128(number, 0), 'a', number FROM numbers(100);
@@ -53,23 +55,23 @@ SELECT if((SELECT is_pr FROM has_pr), replaceRegexpOne(explain, '^    ', ''), ex
 SELECT count() FROM test_stats_pruning WHERE id < 50 OR version > 3050;
 
 -- =============================================================================
--- Test 3: AND with column without statistics (str has no minmax), should prune parts
+-- Test 3: AND with column without statistics (str (String) has only basic, which does not drive range pruning), should prune parts
 -- =============================================================================
 -- Query: value = 50 AND str = 'a'
 -- Expected: Only Part 1 matches (value=50 exists in Part 1)
 -- Statistics on 'value' can still prune parts even though 'str' has no statistics
-SELECT '-- AND with column without statistics (str has no minmax), should prune parts';
+SELECT '-- AND with column without statistics (str (String) has only basic, which does not drive range pruning), should prune parts';
 WITH has_pr AS (SELECT count() > 0 AS is_pr FROM (EXPLAIN indexes = 1 SELECT count() FROM test_stats_pruning WHERE value = 50 AND str = 'a') WHERE explain LIKE '%ReadFromRemoteParallelReplicas%')
 SELECT if((SELECT is_pr FROM has_pr), replaceRegexpOne(explain, '^    ', ''), explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_stats_pruning WHERE value = 50 AND str = 'a') WHERE explain NOT LIKE '%MergingAggregated%' AND explain NOT LIKE '%Union%' AND explain NOT LIKE '%ReadFromRemoteParallelReplicas%';
 SELECT count() FROM test_stats_pruning WHERE value = 50 AND str = 'a';
 
 -- =============================================================================
--- Test 4: OR with column without statistics (str has no minmax), should NOT prune parts
+-- Test 4: OR with column without statistics (str (String) has only basic, which does not drive range pruning), should NOT prune parts
 -- =============================================================================
 -- Query: value = 50 OR str = 'x'
 -- Expected: Cannot prune any parts because OR requires all branches to be safe
 -- Statistics pruning should not reduce parts (4/4 remain)
-SELECT '-- OR with column without statistics (str has no minmax), should NOT prune parts';
+SELECT '-- OR with column without statistics (str (String) has only basic, which does not drive range pruning), should NOT prune parts';
 WITH has_pr AS (SELECT count() > 0 AS is_pr FROM (EXPLAIN indexes = 1 SELECT count() FROM test_stats_pruning WHERE value = 50 OR str = 'x') WHERE explain LIKE '%ReadFromRemoteParallelReplicas%')
 SELECT if((SELECT is_pr FROM has_pr), replaceRegexpOne(explain, '^    ', ''), explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_stats_pruning WHERE value = 50 OR str = 'x') WHERE explain NOT LIKE '%MergingAggregated%' AND explain NOT LIKE '%Union%' AND explain NOT LIKE '%ReadFromRemoteParallelReplicas%';
 SELECT count() FROM test_stats_pruning WHERE value = 50 OR str = 'x';

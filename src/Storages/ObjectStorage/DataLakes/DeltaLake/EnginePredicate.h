@@ -25,7 +25,7 @@ class EnginePredicate : public ffi::EnginePredicate
 {
     friend struct EngineIteratorData;
 public:
-    explicit EnginePredicate(
+    explicit EnginePredicate( // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init)
         const DB::ActionsDAG & filter_,
         std::exception_ptr & exception_,
         DB::ContextPtr context_)

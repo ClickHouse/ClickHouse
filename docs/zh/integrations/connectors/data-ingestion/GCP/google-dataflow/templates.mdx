@@ -1,0 +1,37 @@
+---
+sidebarTitle: '模板'
+slug: /integrations/google-dataflow/templates
+description: '您可以使用 Google Dataflow 模板将数据摄取到 ClickHouse'
+title: 'Google Dataflow 模板'
+doc_type: 'guide'
+keywords: ['google dataflow', 'gcp', '数据管道', '模板', '批处理']
+---
+
+import ClickHouseSupportedBadge from "/snippets/zh/components/ClickHouseSupported/ClickHouseSupported.jsx";
+
+<ClickHouseSupportedBadge />
+
+Google Dataflow 模板 提供了一种便捷方式，让你无需编写自定义代码即可运行预构建、开箱即用的数据管道。这些模板旨在简化常见的数据处理任务，基于 [Apache Beam](https://beam.apache.org/) 构建，并借助 `ClickHouseIO` 等连接器与 ClickHouse 数据库无缝集成。通过在 Google Dataflow 上运行这些模板，你可以以极低的工作量实现高度可扩展的分布式数据处理。
+
+<div id="why-use-dataflow-templates">
+  ## 为什么使用 Dataflow 模板？
+</div>
+
+* **易用性**：模板提供针对特定用例预先配置好的管道，无需编写代码。
+* **可扩展性**：Dataflow 可确保你的管道高效扩展，并通过分布式处理应对海量数据。
+* **成本效益**：你只需为实际使用的资源付费，同时还能优化管道的执行成本。
+
+<div id="how-to-run-dataflow-templates">
+  ## 如何运行 Dataflow 模板
+</div>
+
+目前，ClickHouse 官方模板可通过 Google Cloud Console、CLI 或 Dataflow REST API 使用。
+如需详细的分步说明，请参阅 [Google Dataflow“从模板运行管道”指南](https://cloud.google.com/dataflow/docs/templates/provided-templates)。
+
+<div id="list-of-clickhouse-templates">
+  ## ClickHouse 模板列表
+</div>
+
+* [BigQuery 到 ClickHouse](/zh/integrations/connectors/data-ingestion/GCP/google-dataflow/templates/bigquery-to-clickhouse)
+* [Pub/Sub 到 ClickHouse](/zh/integrations/connectors/data-ingestion/GCP/google-dataflow/templates/pubsub-to-clickhouse)
+* [GCS 到 ClickHouse](https://github.com/ClickHouse/DataflowTemplates/issues/3) (即将上线！)

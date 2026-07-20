@@ -7,7 +7,7 @@
 namespace DB
 {
 
-class DataTypeLowCardinality : public IDataType
+class DataTypeLowCardinality final : public IDataType
 {
 private:
     DataTypePtr dictionary_type;

@@ -1,0 +1,51 @@
+---
+title: 'MySQL ClickPipe の一時停止と再開'
+description: 'MySQL ClickPipe の一時停止と再開'
+sidebarTitle: 'テーブルの一時停止'
+slug: /integrations/clickpipes/mysql/pause_and_resume
+doc_type: 'guide'
+keywords: ['clickpipes', 'mysql', 'CDC', 'データインジェスト', 'リアルタイム同期']
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+MySQL ClickPipe を一時停止すると便利なケースがあります。たとえば、既存データを静的な状態で分析したい場合です。また、MySQL のアップグレードを実施している場合にも役立ちます。以下では、MySQL ClickPipe を一時停止および再開する方法を説明します。
+
+<div id="pause-clickpipe-steps">
+  ## MySQL ClickPipe を一時停止する手順
+</div>
+
+1. **Data Sources** タブで、一時停止したい MySQL ClickPipe をクリックします。
+2. **Settings** タブを開きます。
+3. **Pause** ボタンをクリックします。
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/pause_button.webp" border size="md" />
+
+4. 確認ダイアログが表示されるので、もう一度 **Pause** をクリックします。
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/pause_dialog.webp" border size="md" />
+
+4. **メトリクス** タブを開きます。
+5. 5 秒ほどすると (ページを更新した場合も同様に) 、パイプのステータスが **Paused** になります。
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/pause_status.webp" border size="md" />
+
+<div id="resume-clickpipe-steps">
+  ## MySQL ClickPipe を再開する手順
+</div>
+
+1. **Data Sources** タブで、再開したい MySQL ClickPipe をクリックします。最初は mirror のステータスが **Paused** になっているはずです。
+2. **Settings** タブに移動します。
+3. **Resume** ボタンをクリックします。
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/resume_button.webp" border size="md" />
+
+4. 確認ダイアログが表示されるので、もう一度 **Resume** をクリックします。
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/resume_dialog.webp" border size="md" />
+
+5. **メトリクス** タブに移動します。
+6. 5 秒ほどで (またはページを更新すると) 、パイプのステータスが **Running** になるはずです。

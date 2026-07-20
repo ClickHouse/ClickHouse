@@ -110,7 +110,12 @@ export CLICKHOUSE_KEEPER_IDENTITY=${CLICKHOUSE_KEEPER_IDENTITY:=""}
 
 # keeper-client
 
-KEEPER_CLIENT_DEFAULT_ARGS=" --port $CLICKHOUSE_PORT_KEEPER"
+# The default keeper-client timeouts are 10s each. Under heavy sanitizer builds
+# (msan/asan) the keeper handshake or a response can legitimately take longer,
+# which makes keeper-client tests flake with a client-side
+# "Nothing is received in session timeout of 10000 ms" (KEEPER_EXCEPTION).
+# Raise the timeouts so the client waits out a slow-but-alive server.
+KEEPER_CLIENT_DEFAULT_ARGS=" --port $CLICKHOUSE_PORT_KEEPER --connection-timeout 60 --session-timeout 60 --operation-timeout 60"
 
 if [ -n "$CLICKHOUSE_KEEPER_IDENTITY" ] && [ "$CLICKHOUSE_KEEPER_IDENTITY" != "" ]
 then
@@ -204,7 +209,9 @@ function wait_for_queries_to_finish()
 function random_str()
 {
     local n=$1 && shift
-    tr -cd '[:lower:]' < /dev/urandom | head -c"$n"
+    # LC_ALL=C: macOS `tr` errors with "Illegal byte sequence" on the non-UTF-8
+    # bytes from /dev/urandom under a UTF-8 locale.
+    LC_ALL=C tr -cd '[:lower:]' < /dev/urandom | head -c"$n"
 }
 
 function query_with_retry()
@@ -251,7 +258,7 @@ function with_lock()
 }
 
 # BASH_XTRACEFD is supported only since 4.1
-if [[ -v CLICKHOUSE_BASH_TRACING_FILE ]] && [[ ${BASH_VERSINFO[0]} -gt 4 || (${BASH_VERSINFO[0]} -eq 4 && ${BASH_VERSINFO[1]} -ge 1) ]]; then
+if [[ -n "${CLICKHOUSE_BASH_TRACING_FILE+x}" ]] && [[ ${BASH_VERSINFO[0]} -gt 4 || (${BASH_VERSINFO[0]} -eq 4 && ${BASH_VERSINFO[1]} -ge 1) ]]; then
     exec 3>"$CLICKHOUSE_BASH_TRACING_FILE"
     # It will be also nice to have stderr in the tracing output, but:
     # - exec 2>&3

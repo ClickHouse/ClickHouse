@@ -72,11 +72,20 @@ enum class FilterResult
 
 [[nodiscard]] FilterResult getFilterResult(const ColumnWithTypeAndName & column);
 
+[[nodiscard]] bool dagContainsNonReadySet(const ActionsDAG & dag);
+
+[[nodiscard]] bool dagContainsNonDeterministicFunction(const ActionsDAG & dag);
+
 [[nodiscard]] FilterResult filterResultForNotMatchedRows(
     const ActionsDAG & filter_dag,
     const String & filter_column_name,
     const Block & input_stream_header,
     bool allow_unknown_function_arguments = false);
+
+[[nodiscard]] FilterResult filterResultForMatchedRows(
+    ActionsDAG pre_actions_dag,
+    const ActionsDAG & filter_dag,
+    const String & filter_column_name);
 
 struct NoOp
 {

@@ -1,0 +1,57 @@
+---
+slug: /cloud/managed-postgres/rbac
+sidebarTitle: 'RBAC'
+title: 'RBAC de ClickHouse Managed Postgres'
+description: 'Découvrez le contrôle d’accès basé sur les rôles (RBAC) dans ClickHouse Managed Postgres'
+keywords: ['RBAC ClickHouse Managed Postgres', 'contrôle d’accès', 'rôles', 'privilèges', 'permission']
+doc_type: 'reference'
+---
+
+import BetaBadge from "/snippets/fr/components/BetaBadge/BetaBadge.jsx";
+import { Image } from "/snippets/fr/components/Image.jsx";
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.rbac-beta" />
+
+ClickHouse Cloud prend en charge le contrôle d’accès basé sur les rôles (RBAC) pour les services Managed Postgres. Vous pouvez créer des rôles personnalisés avec des autorisations spécifiques et les attribuer aux membres de l’organisation afin de contrôler qui peut consulter ou gérer vos services Postgres.
+
+<div id="available-permissions">
+  ## Permissions disponibles
+</div>
+
+Managed Postgres prend actuellement en charge deux permissions :
+
+| Permission                         | Description                                                                                |
+| ---------------------------------- | ------------------------------------------------------------------------------------------ |
+| **Afficher les services Postgres** | Permet à un utilisateur de voir le service Postgres et ses détails.                        |
+| **Gérer les services Postgres**    | Permet à un utilisateur de modifier, mettre à l’échelle et configurer le service Postgres. |
+
+La création d’un nouveau service Postgres nécessite la permission existante **Organization manage**. Les permissions ci-dessus s’appliquent uniquement aux services existants.
+
+<Note>
+  Des permissions plus fines seront disponibles dans une prochaine version.
+</Note>
+
+<div id="creating-a-custom-role">
+  ## Créer un rôle personnalisé
+</div>
+
+1. Cliquez sur le nom de votre organisation dans la barre latérale de gauche, puis sélectionnez **Utilisateurs et rôles**.
+
+<Image img="/images/managed-postgres/rbac/usersandroles.webp" alt="Menu Utilisateurs et rôles" size="md" border />
+
+2. Ouvrez l’onglet **Rôles**, puis cliquez sur **Créer un rôle**.
+3. Saisissez un nom pour le rôle, puis cliquez sur **+ Autoriser** et sélectionnez **Service Postgres** dans la liste des entités.
+
+<Image img="/images/managed-postgres/rbac/postgresentity.webp" alt="Sélection de l’entité Service Postgres" size="md" border />
+
+4. Choisissez le service Postgres auquel limiter le rôle, puis sélectionnez les permissions à accorder.
+
+<Image img="/images/managed-postgres/rbac/newpostgresperms.webp" alt="Configuration des permissions Postgres pour un rôle" size="md" border />
+
+5. Cliquez sur **Créer un rôle** pour enregistrer les modifications.
+
+<div id="assigning-a-role">
+  ## Attribution d’un rôle
+</div>
+
+Une fois le rôle créé, attribuez-le aux utilisateurs depuis l’onglet **Users** de la page **Utilisateurs et rôles**. Un utilisateur peut avoir plusieurs rôles, et vous pouvez les combiner pour obtenir exactement le profil d’accès dont vous avez besoin.

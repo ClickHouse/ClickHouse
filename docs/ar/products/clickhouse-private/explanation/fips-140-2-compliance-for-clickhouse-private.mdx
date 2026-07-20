@@ -1,0 +1,96 @@
+---
+noindex: true
+title: "امتثال FIPS 140-2 في ClickHouse Private"
+sidebarTitle: "امتثال FIPS"
+description: "تشرح هذه الوثيقة معنى امتثال FIPS 140-2 في سياق ClickHouse Private وما الذي يتغيّر عند النشر باستخدام تكوين متوافق مع FIPS."
+---
+
+تشرح هذه الوثيقة معنى امتثال FIPS 140-2 في سياق ClickHouse Private وما الذي يتغيّر عند النشر باستخدام تكوين متوافق مع FIPS.
+
+<div id="what-fips-140-2-means-for-clickhouse-private">
+  ## ما المقصود بـ FIPS 140-2 بالنسبة إلى ClickHouse Private
+</div>
+
+يُعد FIPS 140-2 (المعيار الفيدرالي لمعالجة المعلومات) معيارًا حكوميًا أمريكيًا خاصًا بالوحدات التشفيرية. وغالبًا ما يُطلب من المؤسسات التي تعمل في بيئات حكومية (مثل AWS GovCloud) أو تتعامل مع بيانات حكومية حساسة التأكد من أن جميع العمليات التشفيرية تستخدم خوارزميات وتطبيقات معتمدة من FIPS.
+
+عند نشر ClickHouse Private في وضع FIPS، يجب أن تستخدم جميع العمليات التشفيرية -- بما في ذلك اتصالات TLS بين المكوّنات، والاتصالات بخدمات AWS، وإنشاء الشهادات -- خوارزميات ومكتبات متوافقة مع FIPS.
+
+<div id="what-changes-in-a-fips-deployment">
+  ## ما الذي يتغير في نشر متوافق مع FIPS
+</div>
+
+يختلف النشر المتوافق مع FIPS عن نشر ClickHouse Private القياسي في عدة جوانب رئيسية:
+
+<div id="fips-server-images">
+  ### صور FIPS للخادم
+</div>
+
+يجب أن تستخدم صور ClickHouse server وKeeper الإصدارات المخصّصة لـ FIPS. ويُشار إليها بوجود اللاحقة `-fips` في وسم الصورة (على سبيل المثال، `25.12.1.1497-fips` للخادم و`26.2.1.258-fips` لـ Keeper). تُبنى صور FIPS باستخدام مكتبات تشفير معتمدة وفقًا لمعيار FIPS. ولا تتوفر لصورة المشغّل نسخة FIPS منفصلة.
+
+<div id="fips-ecr-endpoints">
+  ### نقاط نهاية ECR المتوافقة مع FIPS
+</div>
+
+عند سحب صور الحاويات من Amazon ECR، يجب استخدام نقاط نهاية ECR المتوافقة مع FIPS. تكون نقاط النهاية هذه بالصيغة `0000000000.dkr-ecr-fips.<region>.on.aws` بدلًا من اسم مضيف ECR القياسي.
+
+<div id="fips-s3-endpoints">
+  ### نقاط نهاية FIPS لـ S3
+</div>
+
+يخزّن ClickHouse البيانات في S3، وفي وضع FIPS يجب تهيئة نقاط نهاية S3 المتوافقة مع FIPS. وتنشر AWS قائمة نقاط نهاية FIPS لكل خدمة ومنطقة على [https://aws.amazon.com/compliance/fips/](https://aws.amazon.com/compliance/fips/).
+
+<div id="s3-bucket-naming-restriction">
+  ### قيد تسمية حاوية S3
+</div>
+
+في وضع FIPS، **يجب ألا يحتوي اسم حاوية S3 على نقاط** (`.`). يوجد هذا القيد لأن نقاط نهاية FIPS S3 تتطلب عنونة بأسلوب المضيف الافتراضي (على سبيل المثال: `https://my-bucket.s3-fips.us-gov-west-1.amazonaws.com`). وعندما يحتوي اسم الحاوية على نقاط، فإن ذلك يعطّل التحقق من شهادة TLS لعناوين URL بأسلوب المضيف الافتراضي، لأن هذه النقاط تُنشئ مستويات إضافية من النطاقات الفرعية لا تتطابق مع شهادة wildcard.
+
+هذه نقطة مهمة ينبغي مراعاتها عند إعداد البنية التحتية لـ S3. وإذا كانت لديك حاويات حالية تحتوي أسماؤها على نقاط، فلا يمكن استخدامها مع نقاط نهاية FIPS S3.
+
+<div id="certificate-requirements">
+  ## متطلبات الشهادات
+</div>
+
+يتطلب نشر متوافق مع FIPS شهادات TLS لتأمين الاتصال المشفّر بين جميع مكوّنات ClickHouse. يجب إنشاء ثلاث مجموعات من الشهادات:
+
+| مجموعة الشهادات | الغرض                                                                         | الملفات                    |
+| --------------- | ----------------------------------------------------------------------------- | -------------------------- |
+| **الخادم**      | تؤمّن الاتصالات الواردة إلى clickhouse-server                                 | `server.crt`, `server.key` |
+| **Keeper**      | تؤمّن الاتصالات إلى clickhouse-keeper                                         | `keeper.crt`, `keeper.key` |
+| **العميل**      | يستخدمها clickhouse-server للاتصالات الصادرة (مثلًا إلى keeper وقواميس HTTPS) | `client.crt`, `client.key` |
+
+تُوقَّع المجموعات الثلاث كلها من قِبل سلطة شهادات مشتركة (`ca.crt`).
+
+<div id="fips-compliant-algorithm-requirements">
+  ### متطلبات الخوارزميات المتوافقة مع FIPS
+</div>
+
+عندما يكون امتثال FIPS مطلوبًا، يجب أن تكون جميع الشهادات:
+
+* **مُنشأة باستخدام خوارزميات متوافقة مع FIPS** -- على سبيل المثال، RSA بحجم مفتاح لا يقل عن 3072 بت.
+* **مُنشأة في بيئة مفعَّل فيها FIPS** -- يجب أن تستخدم العمليات التشفيرية أثناء إنشاء المفتاح والتوقيع وحدةً معتمدة وفقًا لـ FIPS. ومن بين الأساليب الممكنة استخدام حاوية Red Hat UBI مع تفعيل وضع FIPS.
+* **موقَّعة من سلطة شهادات** يكون مفتاحها قد أُنشئ أيضًا بطريقة متوافقة مع FIPS.
+
+<div id="subject-alternative-names-sans">
+  ### الأسماء البديلة للموضوع (SANs)
+</div>
+
+يجب أن تتضمن كل شهادة إدخالات SAN الصحيحة كي ينجح التحقق عبر TLS للاتصال بين المكوّنات داخل عنقود Kubernetes. ويتبع تنسيق SAN النمط التالي:
+
+* الخادم: `*.c-<cluster-name>-server-headless.ns-<cluster-name>.svc.cluster.local` و `c-<cluster-name>-server-any.ns-<cluster-name>.svc.cluster.local`
+* Keeper: `*.c-<cluster-name>-keeper-headless.ns-<cluster-name>.svc.cluster.local`
+
+يجب إنشاء مجموعة فريدة من الشهادات (باستثناء شهادة CA) لكل عنقود ClickHouse يجري توفيره.
+
+<div id="certificate-expiration">
+  ### انتهاء صلاحية الشهادات
+</div>
+
+للشهادات فترة صلاحية محددة. ينبغي وضع آلية لمراقبة انتهاء صلاحية الشهادات وتدويرها قبل انقضاء صلاحيتها. ومن القيم الافتراضية الشائعة 365 يومًا، لكن ينبغي تعديل ذلك بما يتوافق مع متطلبات الأمان في مؤسستك.
+
+<div id="further-reading">
+  ## قراءة إضافية
+</div>
+
+* للحصول على إرشادات خطوة بخطوة حول إنشاء شهادات متوافقة مع FIPS، راجع دليل How-To ‏[تهيئة شهادات FIPS](/ar/products/clickhouse-private/guides/generate-fips-compliant-certificates-for-clickhouse).
+* للاطلاع على كيفية عمل PKI وmTLS في ClickHouse Private — بما في ذلك الغرض من الشهادات، وأوضاع التحقق، وآلية التدوير — راجع [PKI وmTLS في ClickHouse Private](/ar/products/clickhouse-private/explanation/pki-and-mtls-in-clickhouse-private).

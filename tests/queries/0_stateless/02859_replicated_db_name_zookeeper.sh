@@ -16,7 +16,7 @@ FROM
 (
     WITH '/clickhouse/databases/' AS prefix
     SELECT
-        toUUID(substr(path, length(prefix) + 1)) AS uuid,
+        toUUIDOrNull(substr(path, length(prefix) + 1)) AS uuid,
         value AS db_name
     FROM system.zookeeper
     WHERE (path IN (
@@ -24,6 +24,7 @@ FROM
         FROM system.zookeeper
         WHERE path = prefix
     )) AND (name = 'first_replica_database_name')
+    HAVING uuid IS NOT NULL
 ) AS t1
 INNER JOIN system.databases AS t2 USING (uuid)
 WHERE db_name like '%$CLICKHOUSE_DATABASE%'

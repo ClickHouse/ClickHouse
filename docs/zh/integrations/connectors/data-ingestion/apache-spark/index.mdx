@@ -1,0 +1,44 @@
+---
+sidebarTitle: '集成 Apache Spark 与 ClickHouse'
+slug: /integrations/apache-spark
+description: 'Apache Spark 与 ClickHouse 简介'
+keywords: ['clickhouse', 'Apache Spark', '迁移', '数据']
+title: '集成 Apache Spark 与 ClickHouse'
+doc_type: 'guide'
+integration:
+  - support_level: 'core'
+  - category: 'data_ingestion'
+---
+
+import ClickHouseSupportedBadge from "/snippets/zh/components/ClickHouseSupported/ClickHouseSupported.jsx";
+
+<ClickHouseSupportedBadge />
+
+[Apache Spark](https://spark.apache.org/) 是一个多语言引擎，可在单节点机器或集群上执行数据工程、数据科学和机器学习工作。
+
+连接 Apache Spark 和 ClickHouse 主要有两种方式：
+
+1. [Spark Connector](/zh/integrations/connectors/data-ingestion/apache-spark/spark-native-connector) - Spark Connector 实现了 `DataSourceV2`，并提供自己的 Catalog
+   管理功能。目前，这是集成 ClickHouse 与 Spark 的推荐方式。
+2. [Spark JDBC](/zh/integrations/connectors/data-ingestion/apache-spark/spark-jdbc) - 使用 [JDBC 数据源](https://spark.apache.org/docs/latest/sql-data-sources-jdbc.html) 来集成 Spark 和 ClickHouse。
+
+<br />
+
+这两种方案都已成功通过测试，并与多种 API 完全兼容，包括 Java、Scala、PySpark 和 Spark SQL。
+
+<div id="spark-runtime-environment">
+  ### Spark 运行时环境
+</div>
+
+<div id="standard-spark-runtime">
+  #### 标准 Spark 运行时环境
+</div>
+
+Spark Connector 可在与上游 Apache Spark 运行时高度一致的环境中直接使用，例如 Amazon EMR 或基于 Kubernetes 的 Spark 部署环境。
+
+<div id="managed-spark-platforms">
+  #### 托管 Spark 平台
+</div>
+
+[AWS Glue](/zh/integrations/connectors/data-ingestion/AWS/glue) 和 [Databricks](/zh/integrations/connectors/data-ingestion/apache-spark/databricks) 等平台会引入额外的抽象层以及特定环境下的行为差异。
+虽然核心集成方式不变，但它们可能需要专门的配置和设置步骤。详情请参阅相应的文档页面。

@@ -104,7 +104,7 @@ SELECT id > 1, d.id FROM (SELECT (toLowCardinality(1)) AS id, 1 AS value) AS a
 ANTI LEFT JOIN (SELECT (toLowCardinality(2)) AS id) AS d
 USING (id)
 ;
-0	1
+0	0
 SELECT id > 1, d.id FROM (SELECT (toLowCardinality(0)) AS id, 1 AS value) AS a
 ANTI LEFT JOIN (SELECT (toLowCardinality(0)) AS id) AS d
 ON a.id = d.id
@@ -141,7 +141,7 @@ SELECT id > 1, d.id FROM (SELECT materialize(toLowCardinality(1)) AS id, 1 AS va
 ANTI LEFT JOIN (SELECT materialize(toLowCardinality(2)) AS id) AS d
 USING (id)
 ;
-0	1
+0	0
 SELECT id > 1, d.id FROM (SELECT materialize(toLowCardinality(0)) AS id, 1 AS value) AS a
 ANTI LEFT JOIN (SELECT materialize(toLowCardinality(0)) AS id) AS d
 ON a.id = d.id
@@ -416,7 +416,7 @@ SELECT id > 1, d.id FROM (SELECT (toLowCardinality(1)) AS id, 1 AS value) AS a
 ANTI LEFT JOIN (SELECT (toLowCardinality(2)) AS id) AS d
 USING (id)
 ;
-0	1
+0	\N
 SELECT id > 1, d.id FROM (SELECT (toLowCardinality(0)) AS id, 1 AS value) AS a
 ANTI LEFT JOIN (SELECT (toLowCardinality(0)) AS id) AS d
 ON a.id = d.id
@@ -453,7 +453,7 @@ SELECT id > 1, d.id FROM (SELECT materialize(toLowCardinality(1)) AS id, 1 AS va
 ANTI LEFT JOIN (SELECT materialize(toLowCardinality(2)) AS id) AS d
 USING (id)
 ;
-0	1
+0	\N
 SELECT id > 1, d.id FROM (SELECT materialize(toLowCardinality(0)) AS id, 1 AS value) AS a
 ANTI LEFT JOIN (SELECT materialize(toLowCardinality(0)) AS id) AS d
 ON a.id = d.id
@@ -728,7 +728,7 @@ SELECT id > 1, d.id FROM (SELECT (toLowCardinality(1)) AS id, 1 AS value) AS a
 ANTI LEFT JOIN (SELECT (toLowCardinality(2)) AS id) AS d
 USING (id)
 ;
-0	1
+0	0
 SELECT id > 1, d.id FROM (SELECT (toLowCardinality(0)) AS id, 1 AS value) AS a
 ANTI LEFT JOIN (SELECT (toLowCardinality(0)) AS id) AS d
 ON a.id = d.id
@@ -765,7 +765,7 @@ SELECT id > 1, d.id FROM (SELECT materialize(toLowCardinality(1)) AS id, 1 AS va
 ANTI LEFT JOIN (SELECT materialize(toLowCardinality(2)) AS id) AS d
 USING (id)
 ;
-0	1
+0	0
 SELECT id > 1, d.id FROM (SELECT materialize(toLowCardinality(0)) AS id, 1 AS value) AS a
 ANTI LEFT JOIN (SELECT materialize(toLowCardinality(0)) AS id) AS d
 ON a.id = d.id

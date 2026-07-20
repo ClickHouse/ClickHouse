@@ -3,7 +3,9 @@
 #include <Functions/ExtractString.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsHashing.h>
+#include <Common/MapWithMemoryTracking.h>
 #include <Common/PODArray.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <Core/Defines.h>
 
@@ -153,7 +155,7 @@ struct Hash
     }
 
     template <bool CaseInsensitive>
-    static ALWAYS_INLINE inline UInt64 shingleHash(const std::vector<BytesRef> & shingle, size_t offset = 0)
+    static ALWAYS_INLINE inline UInt64 shingleHash(const VectorWithMemoryTracking<BytesRef> & shingle, size_t offset = 0)
     {
         UInt64 crc = -1ULL;
 
@@ -267,7 +269,7 @@ struct SimHashImpl
         // A 64 bit vector initialized to zero.
         Int64 finger_vec[64] = {};
         // An array to store N words.
-        std::vector<BytesRef> words;
+        VectorWithMemoryTracking<BytesRef> words;
         words.reserve(shingle_size);
 
         // get first word shingle
@@ -394,7 +396,7 @@ struct MinHashImpl
             }
         }
 
-        std::map<UInt64, BytesRef, Comp> values;
+        MapWithMemoryTracking<UInt64, BytesRef, Comp> values;
     };
 
     using MaxHeap = Heap<std::less<>>;
@@ -484,7 +486,7 @@ struct MinHashImpl
         const UInt8 * end = data + size;
 
         // An array to store N words.
-        std::vector<BytesRef> words;
+        VectorWithMemoryTracking<BytesRef> words;
         words.reserve(shingle_size);
 
         // get first word shingle

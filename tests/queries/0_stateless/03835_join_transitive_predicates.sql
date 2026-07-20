@@ -5,7 +5,9 @@
 -- so that direct joins between transitively-connected tables are possible.
 -- After optimization, `cleanupJoinPredicates` removes redundant predicates
 -- and synthesizes missing ones for transitive-only joins.
+SET explain_query_plan_default = 'legacy';
 
+SET query_plan_optimize_join_order_randomize = 0; -- Pinned because the test asserts on join plan/order
 SET allow_experimental_analyzer = 1;
 SET query_plan_optimize_join_order_limit = 10;
 SET use_statistics = 1;
@@ -13,6 +15,7 @@ SET query_plan_join_swap_table = 'auto';
 SET enable_join_runtime_filters = 0;
 SET enable_parallel_replicas = 0;
 SET enable_join_transitive_predicates = 1;
+SET materialize_statistics_on_insert = 1;
 
 -- Dim_A: small dimension (10 rows), unique key
 CREATE TABLE Dim_A (

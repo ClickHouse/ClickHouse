@@ -129,6 +129,7 @@ void InterpreterCreateRoleQuery::updateRoleFromQuery(Role & role, const ASTCreat
     updateRoleFromQueryImpl(role, query, {}, {});
 }
 
+void registerInterpreterCreateRoleQuery(InterpreterFactory & factory);
 void registerInterpreterCreateRoleQuery(InterpreterFactory & factory)
 {
     auto create_fn = [] (const InterpreterFactory::Arguments & args)

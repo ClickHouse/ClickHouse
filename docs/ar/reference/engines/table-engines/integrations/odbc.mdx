@@ -1,0 +1,145 @@
+---
+description: 'يتيح لـ ClickHouse الاتصال بقواعد البيانات الخارجية عبر ODBC.'
+sidebarTitle: 'ODBC'
+slug: /engines/table-engines/integrations/odbc
+title: 'محرك الجدول ODBC'
+doc_type: 'reference'
+---
+
+import CloudNotSupportedBadge from "/snippets/ar/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+
+<CloudNotSupportedBadge />
+
+يتيح لـ ClickHouse الاتصال بقواعد بيانات خارجية عبر [ODBC](https://en.wikipedia.org/wiki/Open_Database_Connectivity).
+
+لتنفيذ اتصالات ODBC بأمان، يستخدم ClickHouse برنامجًا منفصلًا هو `clickhouse-odbc-bridge`. وإذا جرى تحميل برنامج تشغيل ODBC مباشرةً من `clickhouse-server`، فقد تتسبب مشكلات برنامج التشغيل في تعطّل خادم ClickHouse. ويشغّل ClickHouse تلقائيًا `clickhouse-odbc-bridge` عند الحاجة إليه. ويُثبَّت برنامج جسر ODBC من الحزمة نفسها التي تتضمن `clickhouse-server`.
+
+يدعم هذا المحرّك نوع البيانات [Nullable](/ar/reference/data-types/nullable).
+
+<div id="creating-a-table">
+  ## إنشاء جدول
+</div>
+
+```sql
+CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
+(
+    name1 [type1],
+    name2 [type2],
+    ...
+)
+ENGINE = ODBC(datasource, external_database, external_table)
+```
+
+اطّلع على وصف مفصل لاستعلام [CREATE TABLE](/ar/reference/statements/create/table).
+
+يمكن أن تختلف بنية الجدول عن بنية الجدول المصدر:
+
+* يجب أن تكون أسماء الأعمدة مطابقةً لما هي عليه في الجدول المصدر، لكن يمكنك استخدام بعض هذه الأعمدة فقط وبأي ترتيب.
+* قد تختلف أنواع الأعمدة عن تلك الموجودة في الجدول المصدر. يحاول ClickHouse [تحويل](/ar/reference/functions/regular-functions/type-conversion-functions#CAST) القيم إلى أنواع بيانات ClickHouse.
+* يحدّد الإعداد [external&#95;table&#95;functions&#95;use&#95;nulls](/ar/reference/settings/session-settings#external_table_functions_use_nulls) كيفية التعامل مع أعمدة Nullable. القيمة الافتراضية: 1. إذا كانت القيمة 0، فلن تُنشئ دالة الجدول أعمدة Nullable، وستُدرج القيم الافتراضية بدلًا من NULL. وينطبق ذلك أيضًا على قيم NULL داخل المصفوفات.
+
+**معلمات المحرّك**
+
+* `datasource` — اسم القسم الذي يحتوي على إعدادات الاتصال في ملف `odbc.ini`.
+* `external_database` — اسم قاعدة بيانات في نظام إدارة قواعد بيانات خارجي.
+* `external_table` — اسم جدول في `external_database`.
+
+يمكن أيضًا تمرير هذه المعلمات باستخدام [المجموعات المسماة](/ar/concepts/features/configuration/server-config/named-collections).
+
+<div id="usage-example">
+  ## مثال على الاستخدام
+</div>
+
+**استرجاع البيانات من تثبيت MySQL المحلي عبر ODBC**
+
+جرى التحقق من هذا المثال على Ubuntu Linux 18.04 وMySQL server 5.7.
+
+تأكد من تثبيت unixODBC وMySQL Connector.
+
+افتراضيًا (إذا تم التثبيت من الحزم)، يبدأ ClickHouse العمل تحت المستخدم `clickhouse`. لذلك، تحتاج إلى إنشاء هذا المستخدم وتهيئته على MySQL server.
+
+```bash
+$ sudo mysql
+```
+
+```sql
+mysql> CREATE USER 'clickhouse'@'localhost' IDENTIFIED BY 'clickhouse';
+mysql> GRANT ALL PRIVILEGES ON *.* TO 'clickhouse'@'localhost' WITH GRANT OPTION;
+```
+
+ثم هيِّئ الاتصال في `/etc/odbc.ini`.
+
+```bash
+$ cat /etc/odbc.ini
+[mysqlconn]
+DRIVER = /usr/local/lib/libmyodbc5w.so
+SERVER = 127.0.0.1
+PORT = 3306
+DATABASE = test
+USER = clickhouse
+PASSWORD = clickhouse
+```
+
+يمكنك التحقق من الاتصال باستخدام الأداة `isql` المتوفرة ضمن تثبيت unixODBC.
+
+```bash
+$ isql -v mysqlconn
++-------------------------+
+| Connected!                            |
+|                                       |
+...
+```
+
+جدول في MySQL:
+
+```text
+mysql> CREATE DATABASE test;
+Query OK, 1 row affected (0,01 sec)
+
+mysql> CREATE TABLE `test`.`test` (
+    ->   `int_id` INT NOT NULL AUTO_INCREMENT,
+    ->   `int_nullable` INT NULL DEFAULT NULL,
+    ->   `float` FLOAT NOT NULL,
+    ->   `float_nullable` FLOAT NULL DEFAULT NULL,
+    ->   PRIMARY KEY (`int_id`));
+Query OK, 0 rows affected (0,09 sec)
+
+mysql> insert into test.test (`int_id`, `float`) VALUES (1,2);
+Query OK, 1 row affected (0,00 sec)
+
+mysql> select * from test.test;
++------+----------+-----+----------+
+| int_id | int_nullable | float | float_nullable |
++------+----------+-----+----------+
+|      1 |         NULL |     2 |           NULL |
++------+----------+-----+----------+
+1 row in set (0,00 sec)
+```
+
+جدول في ClickHouse يسترجع البيانات من جدول MySQL:
+
+```sql
+CREATE TABLE odbc_t
+(
+    `int_id` Int32,
+    `float_nullable` Nullable(Float32)
+)
+ENGINE = ODBC('DSN=mysqlconn', 'test', 'test')
+```
+
+```sql
+SELECT * FROM odbc_t
+```
+
+```text
+┌─int_id─┬─float_nullable─┐
+│      1 │           ᴺᵁᴸᴸ │
+└────────┴────────────────┘
+```
+
+<div id="see-also">
+  ## انظر أيضًا
+</div>
+
+* [قواميس ODBC](/ar/reference/statements/create/dictionary/sources/odbc)
+* [دالة الجدول ODBC](/ar/reference/functions/table-functions/odbc)

@@ -52,13 +52,21 @@ public:
     using BucketPtr = std::shared_ptr<FileBucket>;
     using Buckets = std::vector<BucketPtr>;
 
+    /// `external_join_threshold_` is the auto-spill memory cap supplied by `SpillingHashJoin`
+    /// when this instance is wrapped. It triggers in-bucket rehashing whenever the in-memory
+    /// hash table approaches half of the cap, so the configured spill ceiling is honored.
+    /// Pass 0 for standalone use (`join_algorithm = 'grace_hash'`); the user-visible
+    /// `max_bytes_before_external_join` setting deliberately does NOT apply to standalone
+    /// instances - those still rely on `max_rows_in_join` / `max_bytes_in_join` for spill
+    /// decisions.
     GraceHashJoin(
         size_t initial_num_buckets_,
         size_t max_num_buckets_,
         std::shared_ptr<TableJoin> table_join_,
         SharedHeader left_sample_block_, SharedHeader right_sample_block_,
         TemporaryDataOnDiskScopePtr tmp_data_,
-        bool any_take_last_row_ = false);
+        bool any_take_last_row_ = false,
+        size_t external_join_threshold_ = 0);
 
     ~GraceHashJoin() override;
 
@@ -87,8 +95,6 @@ public:
     /// Must be called after all @joinBlock calls.
     IBlocksStreamPtr getDelayedBlocks() override;
     bool hasDelayedBlocks() const override { return true; }
-    bool rightTableCanBeReranged() const override;
-    void tryRerangeRightTableData() override;
 
     void onBuildPhaseFinish() override;
 
@@ -137,6 +143,7 @@ private:
     bool any_take_last_row;
     const size_t initial_num_buckets;
     const size_t max_num_buckets;
+    const size_t external_join_threshold;
 
     Names left_key_names;
     Names right_key_names;
