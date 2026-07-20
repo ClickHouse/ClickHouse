@@ -79,7 +79,6 @@
 #include <Processors/QueryPlan/Optimizations/Utils.h>
 #include <Processors/QueryPlan/ParallelReplicasLocalPlan.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
-#include <Processors/QueryPlan/ParallelReplicasSplitStep.h>
 
 #include <Interpreters/ArrayJoinAction.h>
 #include <Interpreters/Context.h>
@@ -1948,6 +1947,10 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                             }
                             else
                             {
+                                /// With `parallel_replicas_plan_based` the planner builds only the plain local
+                                /// plan. Deciding whether to use parallel replicas and where to place the
+                                /// local/remote boundary is done later, as an analysis of the whole plan
+                                /// (QueryPlanOptimizations::applyParallelReplicas), which inserts the split step.
                                 QueryPlan query_plan_parallel_replicas;
                                 storage->read(
                                     query_plan_parallel_replicas,
@@ -1958,9 +1961,6 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                                     till_stage,
                                     max_block_size,
                                     max_streams);
-                                QueryPlanStepPtr split_step = std::make_unique<DB::ParallelReplicasSplitStep>(
-                                    query_plan_parallel_replicas.getRootNode()->step->getOutputHeader(), query_context);
-                                query_plan_parallel_replicas.addStep(std::move(split_step));
                                 query_plan = std::move(query_plan_parallel_replicas);
                             }
                         }

@@ -58,6 +58,7 @@ namespace Setting
     extern const SettingsUInt64 max_result_bytes;
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
     extern const SettingsBool parallel_replicas_allow_view_over_mergetree;
+    extern const SettingsBool parallel_replicas_plan_based;
     extern const SettingsBool enable_positional_arguments;
 }
 
@@ -130,7 +131,15 @@ ContextPtr getViewContext(ContextPtr context, const StorageSnapshotPtr & storage
     auto view_context = storage_snapshot->metadata->getSQLSecurityOverriddenContext(context);
     Settings view_settings = view_context->getSettingsCopy();
 
-    if (context->canUseParallelReplicasOnInitiator() && view_settings[Setting::parallel_replicas_allow_view_over_mergetree])
+    /// With plan-based parallel replicas the view's inner reads are distributed by the
+    /// applyParallelReplicas plan optimization, which takes the context from each read; so the inner
+    /// query must keep parallel replicas enabled. It still builds a plain local plan (the old
+    /// parallel-replicas planning paths are skipped under parallel_replicas_plan_based), so there is no
+    /// double distribution. In the non-plan-based path the inner read is distributed by the outer walker
+    /// using the outer context, and parallel replicas is disabled here to keep the inner query from
+    /// re-entering parallel-replicas execution.
+    if (context->canUseParallelReplicasOnInitiator() && view_settings[Setting::parallel_replicas_allow_view_over_mergetree]
+        && !view_settings[Setting::parallel_replicas_plan_based])
     {
         if (auto storage = view->getUnderlyingMergeTreeStorageForParallelReplicas(context))
             view_settings[Setting::allow_experimental_parallel_reading_from_replicas] = Field{0};

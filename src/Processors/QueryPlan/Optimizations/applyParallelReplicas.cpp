@@ -6,12 +6,19 @@
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/MergingAggregatedStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
+#include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/Optimizations/Utils.h>
+#include <Processors/QueryPlan/ParallelReplicasLocalPlan.h>
 #include <Processors/QueryPlan/ParallelReplicasSplitStep.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/QueryPlanVisitor.h>
+#include <Processors/QueryPlan/ReadFromLocalReplica.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/ReadFromParallelReplicas.h>
+#include <Processors/QueryPlan/ReadFromRemote.h>
+#include <Processors/QueryPlan/UnionStep.h>
+
+#include <unordered_set>
 
 namespace DB
 {
@@ -44,8 +51,39 @@ public:
         return true;
     }
 
+    /// If `node` is a UnionStep whose every branch is a split marker, pull a single split above the
+    /// union (the union then operates on the reads directly). `node` becomes that split, so the split
+    /// keeps lifting through the code below (e.g. to a partial aggregation above the union) and the whole
+    /// union ships as one fragment. Branches are left untouched if not all of them are split markers
+    /// (e.g. a mixed view over MergeTree + non-MergeTree), so those distribute per branch instead.
+    void liftSplitsAboveUnion(QueryPlan::Node * node)
+    {
+        if (!typeid_cast<UnionStep *>(node->step.get()) || node->children.empty())
+            return;
+
+        ContextPtr context;
+        for (const auto * child : node->children)
+        {
+            const auto * split = typeid_cast<const ParallelReplicasSplitStep *>(child->step.get());
+            if (!split)
+                return;
+            context = split->getContext();
+        }
+
+        auto & union_node = nodes.emplace_back();
+        union_node.step = std::move(node->step);
+        union_node.children.reserve(node->children.size());
+        for (auto * child : node->children)
+            union_node.children.push_back(child->children.front());
+
+        node->step = std::make_unique<ParallelReplicasSplitStep>(union_node.step->getOutputHeader(), context);
+        node->children = {&union_node};
+    }
+
     void visitBottomUpImpl(QueryPlan::Node * current_node, QueryPlan::Node * parent_node)
     {
+        liftSplitsAboveUnion(current_node);
+
         if (!parent_node)
             return;
 
@@ -178,12 +216,68 @@ private:
 };
 
 
+/// Insertion phase: put a ParallelReplicasSplitStep directly above every eligible MergeTree read.
+/// Raising the markers up the plan (through expressions, aggregation and unions) and rewriting them
+/// into a distributed read is done by the phases below. The planner now builds only a plain local plan.
+static void insertParallelReplicasSplit(QueryPlan & query_plan, QueryPlan::Nodes & nodes)
+{
+    auto * root = query_plan.getRootNode();
+    if (!root)
+        return;
+
+    /// Eligible reads: the MergeTree reads that carry the query load (one JOIN side, or every branch of
+    /// a view that expands to UNION ALL). A view is already expanded at plan level, so this needs no
+    /// query-tree-level flag (that flag matters only when analyzing the query tree).
+    std::unordered_set<const QueryPlan::Node *> eligible;
+    for (auto * node : findReadingSteps(root, /*allow_view_over_mergetree=*/true))
+        if (typeid_cast<ReadFromMergeTree *>(node->step.get()))
+            eligible.insert(node);
+    if (eligible.empty())
+        return;
+
+    /// The split step is created above the read and takes its context: the read that is going to be
+    /// shipped to the replicas knows the context it will be read with.
+    auto make_split_above = [&](QueryPlan::Node * read_node) -> QueryPlan::Node *
+    {
+        auto & split_node = nodes.emplace_back();
+        auto context = typeid_cast<ReadFromMergeTree &>(*read_node->step).getContext();
+        split_node.step = std::make_unique<ParallelReplicasSplitStep>(read_node->step->getOutputHeader(), context);
+        split_node.children = {read_node};
+        return &split_node;
+    };
+
+    if (eligible.contains(root))
+    {
+        query_plan.replaceRootNode(make_split_above(root));
+        return;
+    }
+
+    /// Collect (parent, child index) of every eligible read first, then wrap — avoids mutating the tree
+    /// while traversing it.
+    std::vector<std::pair<QueryPlan::Node *, size_t>> to_wrap;
+    Stack stack;
+    traverseQueryPlan(
+        stack,
+        *root,
+        [&](QueryPlan::Node & node)
+        {
+            for (size_t i = 0; i < node.children.size(); ++i)
+                if (eligible.contains(node.children[i]))
+                    to_wrap.emplace_back(&node, i);
+        });
+
+    for (auto & [parent, i] : to_wrap)
+        parent->children[i] = make_split_above(parent->children[i]);
+}
+
 void applyParallelReplicas(QueryPlan & query_plan, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings &);
 
 void applyParallelReplicas(QueryPlan & query_plan, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & settings)
 {
     if (!settings.enable_parallel_replicas)
         return;
+
+    insertParallelReplicasSplit(query_plan, nodes);
 
     ApplyParallelReplicasVisitor(query_plan.getRootNode(), nodes).visit();
 

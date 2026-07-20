@@ -2314,8 +2314,13 @@ void Planner::buildPlanForQueryNode()
     }
 
     JoinTreeQueryPlan join_tree_query_plan;
+    /// With plan-based parallel replicas the planner builds a plain, normal local plan; distribution is
+    /// applied later as a plan transformation (QueryPlanOptimizations::applyParallelReplicas). So skip the
+    /// old parallel-replicas planning path here (it would emit ReadFromLocalReplica /
+    /// ReadFromRemoteParallelReplicas, e.g. inside a view/union inner query) and use the normal plan.
     if (planner_context->getMutableQueryContext()->canUseTaskBasedParallelReplicas()
-        && planner_context->getGlobalPlannerContext()->parallel_replicas_node == &query_node)
+        && planner_context->getGlobalPlannerContext()->parallel_replicas_node == &query_node
+        && !settings[Setting::parallel_replicas_plan_based])
     {
         join_tree_query_plan = buildQueryPlanForParallelReplicas(query_node, planner_context, select_query_info.storage_limits);
     }
