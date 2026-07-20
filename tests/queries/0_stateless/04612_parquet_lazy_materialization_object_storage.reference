@@ -1,65 +1,75 @@
+-- query_plan_optimize_lazy_materialization_for_object_storage = 1
 -- simple ORDER BY ... LIMIT
 0	val_0
 1	val_1
 2	val_2
 3	val_3
 4	val_4
-0	val_0
-1	val_1
-2	val_2
-3	val_3
-4	val_4
 -- ORDER BY ... DESC LIMIT across files
-29999	val_29999	[0,1,2,3]
-29998	val_29998	[0,1,2]
-29997	val_29997	[0,1]
-29996	val_29996	[0]
-29995	val_29995	[]
-29994	val_29994	[0,1,2,3]
-29993	val_29993	[0,1,2]
-29999	val_29999	[0,1,2,3]
-29998	val_29998	[0,1,2]
-29997	val_29997	[0,1]
-29996	val_29996	[0]
-29995	val_29995	[]
-29994	val_29994	[0,1,2,3]
-29993	val_29993	[0,1,2]
+2999	val_2999	[0,1,2,3]
+2998	val_2998	[0,1,2]
+2997	val_2997	[0,1]
+2996	val_2996	[0]
+2995	val_2995	[]
+2994	val_2994	[0,1,2,3]
+2993	val_2993	[0,1,2]
 -- with a filter (moved to PREWHERE)
-29991	val_29991
-29974	val_29974
-29957	val_29957
-29940	val_29940
-29991	val_29991
-29974	val_29974
-29957	val_29957
-29940	val_29940
+2995	val_2995
+2978	val_2978
+2961	val_2961
+2944	val_2944
 -- expressions on lazy columns are applied after the LIMIT
-23	VAL_29900
-24	VAL_29901
-25	VAL_29902
-23	VAL_29900
-24	VAL_29901
-25	VAL_29902
+18	VAL_2900
+19	VAL_2901
+20	VAL_2902
 -- sorting by a column with duplicate values
 0	val_0
 0	val_17
 0	val_34
 0	val_51
 0	val_68
+-- virtual columns together with lazy columns
+data_1.parquet	998	998	val_998
+data_1.parquet	999	999	val_999
+data_2.parquet	0	1000	val_1000
+-- the number of lazy read steps in the plan
+1
+-- lazily read columns are shown in EXPLAIN
+Lazily read columns: s, arr
+-- query_plan_optimize_lazy_materialization_for_object_storage = 0
+-- simple ORDER BY ... LIMIT
+0	val_0
+1	val_1
+2	val_2
+3	val_3
+4	val_4
+-- ORDER BY ... DESC LIMIT across files
+2999	val_2999	[0,1,2,3]
+2998	val_2998	[0,1,2]
+2997	val_2997	[0,1]
+2996	val_2996	[0]
+2995	val_2995	[]
+2994	val_2994	[0,1,2,3]
+2993	val_2993	[0,1,2]
+-- with a filter (moved to PREWHERE)
+2995	val_2995
+2978	val_2978
+2961	val_2961
+2944	val_2944
+-- expressions on lazy columns are applied after the LIMIT
+18	VAL_2900
+19	VAL_2901
+20	VAL_2902
+-- sorting by a column with duplicate values
 0	val_0
 0	val_17
 0	val_34
 0	val_51
 0	val_68
 -- virtual columns together with lazy columns
-data_1.parquet	9998	9998	val_9998
-data_1.parquet	9999	9999	val_9999
-data_2.parquet	0	10000	val_10000
-data_1.parquet	9998	9998	val_9998
-data_1.parquet	9999	9999	val_9999
-data_2.parquet	0	10000	val_10000
--- the lazy read step is in the plan only when the optimization is enabled
-1
+data_1.parquet	998	998	val_998
+data_1.parquet	999	999	val_999
+data_2.parquet	0	1000	val_1000
+-- the number of lazy read steps in the plan
 0
 -- lazily read columns are shown in EXPLAIN
-Lazily read columns: s, arr
