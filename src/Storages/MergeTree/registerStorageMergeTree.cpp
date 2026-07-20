@@ -69,8 +69,6 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool add_minmax_index_for_numeric_columns;
     extern const MergeTreeSettingsBool add_minmax_index_for_string_columns;
     extern const MergeTreeSettingsBool add_minmax_index_for_temporal_columns;
-    extern const MergeTreeSettingsUInt64 max_compress_block_size;
-    extern const MergeTreeSettingsUInt64 min_compress_block_size;
     extern const MergeTreeSettingsBool add_minmax_index_for_block_number_column;
     extern const MergeTreeSettingsBool add_minmax_index_for_block_offset_column;
     extern const MergeTreeSettingsBool enable_block_number_column;
@@ -668,6 +666,30 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     else
         columns = args.columns;
 
+    /// For a dense-vector column carrying a `Quantized(...)` codec (a fixed-size Array stored uncompressed), set a
+    /// per-column `max_compress_block_size` equal to one vector's byte size (`dimensions * sizeof(element)`), i.e. one
+    /// vector per compressed block. This lets the two-phase quantized-codes vector search rescore a single vector with a
+    /// single-block point read instead of decompressing a whole granule (see MergeTreePointReadSource), without shrinking
+    /// the blocks of any other column. Only applied when the user has not already set a per-column block size on it.
+    {
+        std::vector<std::pair<String, UInt64>> columns_to_align;
+        for (const auto & column : columns)
+        {
+            auto params = tryExtractQuantizedCodecParams(column.codec);
+            if (!params)
+                continue;
+            const auto * array_type = typeid_cast<const DataTypeArray *>(column.type.get());
+            if (!array_type)
+                continue;
+            const UInt64 row_size = params->dimensions * array_type->getNestedType()->getSizeOfValueInMemory();
+            if (row_size == 0 || column.settings.tryGet("max_compress_block_size"))
+                continue;
+            columns_to_align.emplace_back(column.name, row_size);
+        }
+        for (const auto & [name, row_size] : columns_to_align)
+            columns.modify(name, [row_size](ColumnDescription & c) { c.settings.push_back(SettingChange{"max_compress_block_size", row_size}); });
+    }
+
     metadata.setColumns(columns);
     metadata.setComment(args.comment);
 
@@ -838,44 +860,6 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             if (args.mode <= LoadingStrictnessLevel::CREATE)
                 args.getLocalContext()->checkMergeTreeSettingsConstraints(initial_storage_settings, storage_settings->changes());
             metadata.settings_changes = args.storage_def->settings->ptr();
-        }
-
-        /// For dense-vector columns carrying a `Quantized(...)` codec, align the compress block size to the vector's
-        /// on-disk row size (`dimensions * sizeof(element)`), i.e. one row per compressed block. Because the base is
-        /// stored uncompressed and fixed-stride, this lets the two-phase quantized-codes vector search rescore a single
-        /// vector with a single-block point read instead of decompressing a whole granule. It is derived deterministically
-        /// from the column (re-applied on every load) and only kicks in when the user has not set the block size
-        /// explicitly. See `optimizeVectorSearchWithQuantizedCodes`.
-        if (!(*storage_settings)[MergeTreeSetting::max_compress_block_size].changed
-            && !(*storage_settings)[MergeTreeSetting::min_compress_block_size].changed)
-        {
-            std::optional<size_t> aligned_block_size;
-            bool conflicting_row_sizes = false;
-            for (const auto & column : columns)
-            {
-                auto params = tryExtractQuantizedCodecParams(column.codec);
-                if (!params)
-                    continue;
-                const auto * array_type = typeid_cast<const DataTypeArray *>(column.type.get());
-                if (!array_type)
-                    continue;
-                const size_t row_size = params->dimensions * array_type->getNestedType()->getSizeOfValueInMemory();
-                if (row_size == 0)
-                    continue;
-                /// A single table-level block size cannot align two vector columns of different row sizes; leave the
-                /// block size at its default in that case (the point-read path just falls back to the granule read).
-                if (aligned_block_size && *aligned_block_size != row_size)
-                {
-                    conflicting_row_sizes = true;
-                    break;
-                }
-                aligned_block_size = row_size;
-            }
-            if (aligned_block_size && !conflicting_row_sizes)
-            {
-                storage_settings->set("max_compress_block_size", *aligned_block_size);
-                storage_settings->set("min_compress_block_size", *aligned_block_size);
-            }
         }
 
         /// UNIQUE KEY tables must reside on local-only storage policies.
