@@ -77,6 +77,16 @@ static constexpr auto DBMS_QUERY_PLAN_SERIALIZATION_VERSION = 4;
 /// First query-plan serialization version that carries the parallel-replicas flag (bit 32) on a
 /// serialized `ReadFromMergeTree`. Used to gate the flag and to skip replicas that are too old.
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_PARALLEL_REPLICAS = 3;
+/// The stateless-worker task protocol (DistributedPlanExecutor -> StatelessWorkerEndpoint) has no
+/// query-plan version negotiation: the initiator cannot learn the worker's supported version before
+/// sending a task, and the worker rejects a stream that is newer than what it understands in
+/// QueryPlan::deserialize. The query plan embedded in a task is therefore serialized at this pinned
+/// version - the newest version every deployed worker already understands - so a rolling upgrade of a
+/// mixed-version deployment does not make not-yet-upgraded workers reject tasks. Settings introduced
+/// by newer versions are omitted for this version by writeChangedBinary; they only tune in-memory
+/// behavior, so the omission degrades gracefully. Bump it only after the task protocol learns to
+/// negotiate the query-plan version, or when every supported worker release understands the newer one.
+static constexpr auto DBMS_STATELESS_WORKER_QUERY_PLAN_SERIALIZATION_VERSION = 3;
 /// Version 1 added the initiator's settings changes to the task.
 /// Version 2 added per-stream streaming-exchange ports to exchange_stream_sources.
 static constexpr auto DBMS_DISTRIBUTED_TASK_SERIALIZATION_VERSION = 2;

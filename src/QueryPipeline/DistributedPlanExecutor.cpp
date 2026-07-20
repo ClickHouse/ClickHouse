@@ -601,7 +601,11 @@ ExchangeLookupPtr createExchangeLookup(
 static String serializeQueryPlan(const QueryPlan & query_plan)
 {
     WriteBufferFromOwnString out;
-    query_plan.serialize(out, DBMS_QUERY_PLAN_SERIALIZATION_VERSION);
+    /// The stateless-worker task protocol carries no query-plan version negotiation, so the plan is
+    /// serialized at the pinned version every deployed worker understands, not at this server's newest
+    /// DBMS_QUERY_PLAN_SERIALIZATION_VERSION: a not-yet-upgraded worker in a rolling upgrade would
+    /// reject a newer-versioned stream in QueryPlan::deserialize before executing the task.
+    query_plan.serialize(out, DBMS_STATELESS_WORKER_QUERY_PLAN_SERIALIZATION_VERSION);
     return out.str();
 }
 
