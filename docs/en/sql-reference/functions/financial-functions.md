@@ -7,6 +7,8 @@ keywords: ['Financial', 'rate of return', 'net present value']
 doc_type: 'reference'
 ---
 
+# Financial functions
+
 :::note
 The documentation below is generated from the `system.functions` system table
 :::

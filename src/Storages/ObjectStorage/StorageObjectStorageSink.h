@@ -6,7 +6,7 @@
 
 namespace DB
 {
-class StorageObjectStorageSink final : public SinkToStorage
+class StorageObjectStorageSink : public SinkToStorage
 {
 public:
     StorageObjectStorageSink(
@@ -42,7 +42,7 @@ private:
     void cancelBuffers();
 };
 
-class PartitionedStorageObjectStorageSink final : public PartitionedSink
+class PartitionedStorageObjectStorageSink : public PartitionedSink
 {
 public:
     PartitionedStorageObjectStorageSink(
@@ -54,11 +54,6 @@ public:
 
     SinkPtr createSinkForPartition(const String & partition_id) override;
 
-    /// Returns the object path of the last object written by `createSinkForPartition`.
-    /// This is the final resolved path (after any rewrite by `checkAndGetNewFileOnInsertIfNeeded`),
-    /// not the partition id passed to `createSinkForPartition`.
-    const String & getLastWrittenObjectPath() const { return last_written_object_path; }
-
 private:
     ObjectStoragePtr object_storage;
     StorageObjectStorageConfigurationPtr configuration;
@@ -67,7 +62,6 @@ private:
     const std::optional<FormatSettings> format_settings;
     SharedHeader sample_block;
     const ContextPtr context;
-    String last_written_object_path;
 };
 
 }

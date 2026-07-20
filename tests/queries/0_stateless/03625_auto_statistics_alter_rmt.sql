@@ -3,7 +3,6 @@
 
 SET mutations_sync = 2;
 SET allow_statistics = 1;
-SET materialize_statistics_on_insert = 1;
 DROP TABLE IF EXISTS t_alter_auto_statistics SYNC;
 
 CREATE TABLE t_alter_auto_statistics
@@ -20,7 +19,7 @@ SELECT 'no auto statistics';
 
 SELECT column, type, statistics, estimates.cardinality, estimates.min, estimates.max
 FROM system.parts_columns
-WHERE table = 't_alter_auto_statistics' AND database = currentDatabase() AND active = 1 AND column IN ('a', 'b', 'c')
+WHERE table = 't_alter_auto_statistics' AND database = currentDatabase() AND active = 1
 ORDER BY name, column;
 
 ALTER TABLE t_alter_auto_statistics MODIFY SETTING auto_statistics_types = 'minmax, uniq, tdigest';
@@ -30,7 +29,7 @@ SELECT 'materialized minmax, uniq, tdigest';
 
 SELECT column, type, statistics, estimates.cardinality, estimates.min, estimates.max
 FROM system.parts_columns
-WHERE table = 't_alter_auto_statistics' AND database = currentDatabase() AND active = 1 AND column IN ('a', 'b', 'c')
+WHERE table = 't_alter_auto_statistics' AND database = currentDatabase() AND active = 1
 ORDER BY name, column;
 
 ALTER TABLE t_alter_auto_statistics MODIFY SETTING auto_statistics_types = 'minmax, uniq, countmin';
@@ -40,7 +39,7 @@ SELECT 'added minmax, uniq, countmin';
 
 SELECT column, type, statistics, estimates.cardinality, estimates.min, estimates.max
 FROM system.parts_columns
-WHERE table = 't_alter_auto_statistics' AND database = currentDatabase() AND active = 1 AND column IN ('a', 'b', 'c')
+WHERE table = 't_alter_auto_statistics' AND database = currentDatabase() AND active = 1
 ORDER BY name, column;
 
 ALTER TABLE t_alter_auto_statistics MATERIALIZE STATISTICS ALL;
@@ -49,7 +48,7 @@ SELECT 'materialized minmax, uniq, countmin';
 
 SELECT column, type, statistics, estimates.cardinality, estimates.min, estimates.max
 FROM system.parts_columns
-WHERE table = 't_alter_auto_statistics' AND database = currentDatabase() AND active = 1 AND column IN ('a', 'b', 'c')
+WHERE table = 't_alter_auto_statistics' AND database = currentDatabase() AND active = 1
 ORDER BY name, column;
 
 ALTER TABLE t_alter_auto_statistics CLEAR STATISTICS ALL;
@@ -58,7 +57,7 @@ SELECT 'cleared statistics';
 
 SELECT column, type, statistics, estimates.cardinality, estimates.min, estimates.max
 FROM system.parts_columns
-WHERE table = 't_alter_auto_statistics' AND database = currentDatabase() AND active = 1 AND column IN ('a', 'b', 'c')
+WHERE table = 't_alter_auto_statistics' AND database = currentDatabase() AND active = 1
 ORDER BY name, column;
 
 DROP TABLE IF EXISTS t_alter_auto_statistics SYNC;

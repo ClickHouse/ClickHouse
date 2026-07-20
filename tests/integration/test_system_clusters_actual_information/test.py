@@ -10,10 +10,7 @@ from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(
-    "node",
-    with_zookeeper=True,
-    main_configs=["configs/remote_servers.xml"],
-    user_configs=["configs/users.xml"],
+    "node", with_zookeeper=True, main_configs=["configs/remote_servers.xml"]
 )
 
 
@@ -34,7 +31,7 @@ def started_cluster():
 def test(started_cluster):
     node.query("SYSTEM RELOAD CONFIG")
     # serialize_query_plan=0 because local table does not exist and distributed query fails with a different error
-    node.query_and_get_error(
+    error = node.query_and_get_error(
         "SELECT count() FROM distributed SETTINGS receive_timeout=1, handshake_timeout_ms=1, serialize_query_plan=0"
     )
 

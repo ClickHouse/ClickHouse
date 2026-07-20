@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import os
+import signal
 import sys
 
 CURDIR = os.path.dirname(os.path.realpath(__file__))

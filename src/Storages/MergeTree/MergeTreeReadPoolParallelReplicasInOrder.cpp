@@ -1,4 +1,5 @@
 #include <Storages/MergeTree/MergeTreeReadPoolParallelReplicasInOrder.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
 
 namespace ProfileEvents
 {
@@ -14,6 +15,11 @@ extern const int LOGICAL_ERROR;
 extern const int BAD_ARGUMENTS;
 }
 
+namespace MergeTreeSetting
+{
+extern const MergeTreeSettingsUInt64 index_granularity;
+}
+
 MergeTreeReadPoolParallelReplicasInOrder::MergeTreeReadPoolParallelReplicasInOrder(
     ParallelReadingExtension extension_,
     CoordinationMode mode_,
@@ -21,8 +27,7 @@ MergeTreeReadPoolParallelReplicasInOrder::MergeTreeReadPoolParallelReplicasInOrd
     MutationsSnapshotPtr mutations_snapshot_,
     VirtualFields shared_virtual_fields_,
     const IndexReadTasks & index_read_tasks_,
-    bool has_hard_limit_below_one_block_,
-    bool has_soft_limit_below_one_block_,
+    bool has_limit_below_one_block_,
     const StorageSnapshotPtr & storage_snapshot_,
     const FilterDAGInfoPtr & row_level_filter_,
     const PrewhereInfoPtr & prewhere_info_,
@@ -48,8 +53,7 @@ MergeTreeReadPoolParallelReplicasInOrder::MergeTreeReadPoolParallelReplicasInOrd
         context_)
     , extension(std::move(extension_))
     , mode(mode_)
-    , has_hard_limit_below_one_block(has_hard_limit_below_one_block_)
-    , has_soft_limit_below_one_block(has_soft_limit_below_one_block_)
+    , has_limit_below_one_block(has_limit_below_one_block_)
     , min_marks_per_task(pool_settings.min_marks_for_concurrent_read)
 {
     for (const auto & info : per_part_infos)
@@ -58,8 +62,6 @@ MergeTreeReadPoolParallelReplicasInOrder::MergeTreeReadPoolParallelReplicasInOrd
     if (min_marks_per_task == 0)
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS, "Chosen number of marks to read is zero (likely because of weird interference of settings)");
-
-    min_marks_per_request = min_marks_per_task * pool_settings.threads;
 
     for (const auto & part : parts_ranges)
     {
@@ -72,6 +74,8 @@ MergeTreeReadPoolParallelReplicasInOrder::MergeTreeReadPoolParallelReplicasInOrd
         request.push_back({.info = info, .ranges = MarkRanges{}, .projection_name = projection_name});
         buffered_tasks.push_back({.info = std::move(info), .ranges = MarkRanges{}, .projection_name = std::move(projection_name)});
     }
+
+    extension.sendInitialRequest(mode, parts_ranges, /*mark_segment_size_=*/0);
 
     per_part_marks_in_range.resize(per_part_infos.size(), 1);
 }
@@ -89,22 +93,21 @@ MergeTreeReadTaskPtr MergeTreeReadPoolParallelReplicasInOrder::getTask(size_t ta
 
     const auto & part_info = is_projection ? per_part_infos[task_idx]->parent_part->info : per_part_infos[task_idx]->data_part->info;
     const auto & projection_name = is_projection ? per_part_infos[task_idx]->data_part->name : "";
-
+    const auto & data_settings = per_part_infos[task_idx]->data_part->storage.getSettings();
     auto & marks_in_range = per_part_marks_in_range[task_idx];
-    auto get_from_buffer = [&]() -> std::optional<MarkRanges>
+    auto get_from_buffer = [&,
+                            rows_granularity = (*data_settings)[MergeTreeSetting::index_granularity],
+                            my_max_block_size = this->block_size_params.max_block_size_rows]() -> std::optional<MarkRanges>
     {
-        /// Cap the warmup growth at `min_marks_per_task` so that steady-state task size
-        /// matches what the Default pool uses. The initial small ranges still allow early
-        /// termination for LIMIT queries.
-        const size_t task_size_cap = min_marks_per_task;
+        const size_t max_marks_in_range = (my_max_block_size + rows_granularity - 1) / rows_granularity;
         for (auto & desc : buffered_tasks)
         {
             if (desc.info == part_info && desc.projection_name == projection_name && !desc.ranges.empty())
             {
                 if (mode == CoordinationMode::WithOrder)
                 {
-                    /// Past warmup: return all remaining ranges as one task.
-                    if (marks_in_range > task_size_cap)
+                    /// if already splited, just return desc.ranges
+                    if (marks_in_range > max_marks_in_range)
                     {
                         auto result = std::move(desc.ranges);
                         desc.ranges = MarkRanges{};
@@ -112,12 +115,8 @@ MergeTreeReadTaskPtr MergeTreeReadPoolParallelReplicasInOrder::getTask(size_t ta
                         return result;
                     }
 
-                    /// For asc limit, just return one range.
-                    /// With a hard limit (no filter) reading stops exactly at the limit, so always emit
-                    /// single-range tasks. With a soft limit (filter + LIMIT) the estimation may be off,
-                    /// so apply this only to the first task per part: if it didn't reach the limit, the
-                    /// filter is likely selective and we should continue with regular block size.
-                    if (has_hard_limit_below_one_block || (has_soft_limit_below_one_block && !previous_task))
+                    /// for asc limit, just return one range
+                    if (has_limit_below_one_block)
                     {
                         MarkRanges result;
                         auto & range = desc.ranges.front();
@@ -142,7 +141,7 @@ MergeTreeReadTaskPtr MergeTreeReadPoolParallelReplicasInOrder::getTask(size_t ta
                     MarkRanges result;
                     for (auto range : desc.ranges)
                     {
-                        while (marks_in_range <= task_size_cap && range.begin + marks_in_range < range.end)
+                        while (marks_in_range <= max_marks_in_range && range.begin + marks_in_range < range.end)
                         {
                             result.emplace_back(range.begin, range.begin + marks_in_range);
                             range.begin += marks_in_range;
@@ -164,7 +163,7 @@ MergeTreeReadTaskPtr MergeTreeReadPoolParallelReplicasInOrder::getTask(size_t ta
                     {
                         result.emplace_front(range.end - marks_in_range, range.end);
                         range.end -= marks_in_range;
-                        marks_in_range = std::min(marks_in_range * 2, task_size_cap);
+                        marks_in_range = std::min(marks_in_range * 2, max_marks_in_range);
                     }
                     else
                     {
@@ -193,7 +192,7 @@ MergeTreeReadTaskPtr MergeTreeReadPoolParallelReplicasInOrder::getTask(size_t ta
     std::optional<ParallelReadResponse> response;
     try
     {
-        response = extension.sendReadInOrderRequest(mode, min_marks_per_request, request);
+        response = extension.sendReadRequest(mode, min_marks_per_task * request.size(), request);
         if (response)
         {
             LOG_DEBUG(log, "Got response: {}", response->describe());
@@ -215,26 +214,15 @@ MergeTreeReadTaskPtr MergeTreeReadPoolParallelReplicasInOrder::getTask(size_t ta
     if (no_more_tasks)
         return nullptr;
 
-    /// Fill the buffer — match response parts to buffered_tasks by part info,
-    /// not by position, because the coordinator may return parts in a different order.
-    for (auto & received_part : response->description)
+    /// Fill the buffer
+    for (size_t i = 0; i < request.size(); ++i)
     {
-        auto it = std::find_if(buffered_tasks.begin(), buffered_tasks.end(),
-            [&](const RangesInDataPartDescription & task)
-            {
-                return task.info == received_part.info && task.projection_name == received_part.projection_name;
-            });
-
-        if (it == buffered_tasks.end())
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
-                "Coordinator returned part {} that wasn't announced by this replica",
-                received_part.describe());
-
+        auto & received_ranges = response->description[i].ranges;
+        auto & ranges = buffered_tasks[i].ranges;
         if (mode == CoordinationMode::WithOrder)
-            it->ranges.insert(it->ranges.end(), std::make_move_iterator(received_part.ranges.begin()), std::make_move_iterator(received_part.ranges.end()));
+            ranges.insert(ranges.end(), std::make_move_iterator(received_ranges.begin()), std::make_move_iterator(received_ranges.end()));
         else
-            it->ranges.insert(it->ranges.begin(), std::make_move_iterator(received_part.ranges.begin()), std::make_move_iterator(received_part.ranges.end()));
+            ranges.insert(ranges.begin(), std::make_move_iterator(received_ranges.begin()), std::make_move_iterator(received_ranges.end()));
     }
 
     if (auto result = get_from_buffer())
