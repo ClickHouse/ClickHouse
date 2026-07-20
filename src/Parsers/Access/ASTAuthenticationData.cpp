@@ -22,6 +22,35 @@ namespace
     }
 }
 
+ASTPtr ASTAuthenticationData::clone() const
+{
+    auto res = make_intrusive<ASTAuthenticationData>(*this);
+    res->children.clear();
+    res->valid_until = nullptr;
+
+    for (const auto & child : children)
+    {
+        auto child_clone = child->clone();
+        if (valid_until && child.get() == valid_until.get())
+            res->valid_until = child_clone;
+        res->children.push_back(std::move(child_clone));
+    }
+
+    return res;
+}
+
+void ASTAuthenticationData::setValidUntil(ASTPtr ast)
+{
+    if (!ast)
+        return;
+    setOrReplace(valid_until, std::move(ast));
+}
+
+void ASTAuthenticationData::forEachPointerToChild(std::function<void(IAST **, boost::intrusive_ptr<IAST> *)> f)
+{
+    f(nullptr, &valid_until);
+}
+
 std::optional<String> ASTAuthenticationData::getPassword() const
 {
     if (contains_password)
@@ -37,7 +66,7 @@ std::optional<String> ASTAuthenticationData::getPassword() const
 
 std::optional<String> ASTAuthenticationData::getSalt() const
 {
-    if (type && (*type == AuthenticationType::SHA256_PASSWORD || *type == AuthenticationType::SCRAM_SHA256_PASSWORD) && children.size() == 2)
+    if (type && (*type == AuthenticationType::SHA256_PASSWORD || *type == AuthenticationType::SCRAM_SHA256_PASSWORD) && numPayloadChildren() == 2)
     {
         if (const auto * salt = children[1]->as<const ASTLiteral>())
         {
@@ -90,7 +119,7 @@ void ASTAuthenticationData::formatImpl(WriteBuffer & ostr, const FormatSettings 
 
                 prefix = "BY";
                 password = true;
-                if (children.size() == 2)
+                if (numPayloadChildren() == 2)
                     salt = true;
                 break;
             }
@@ -101,7 +130,7 @@ void ASTAuthenticationData::formatImpl(WriteBuffer & ostr, const FormatSettings 
 
                 prefix = "BY";
                 password = true;
-                if (children.size() == 2)
+                if (numPayloadChildren() == 2)
                     salt = true;
                 break;
             }
@@ -128,7 +157,7 @@ void ASTAuthenticationData::formatImpl(WriteBuffer & ostr, const FormatSettings 
             }
             case AuthenticationType::KERBEROS:
             {
-                if (!children.empty())
+                if (numPayloadChildren() != 0)
                 {
                     prefix = "REALM";
                     parameter = true;
@@ -160,7 +189,7 @@ void ASTAuthenticationData::formatImpl(WriteBuffer & ostr, const FormatSettings 
             {
                 prefix = "SERVER";
                 parameter = true;
-                if (children.size() == 2)
+                if (numPayloadChildren() == 2)
                     scheme = true;
                 break;
             }
@@ -218,11 +247,11 @@ void ASTAuthenticationData::formatImpl(WriteBuffer & ostr, const FormatSettings 
     {
         ostr << " ";
         bool need_comma = false;
-        for (const auto & child : children)
+        for (size_t i = 0; i < numPayloadChildren(); ++i)
         {
             if (std::exchange(need_comma, true))
                 ostr << ", ";
-            child->format(ostr, settings);
+            children[i]->format(ostr, settings);
         }
     }
 

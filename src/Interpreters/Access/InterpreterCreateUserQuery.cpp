@@ -298,7 +298,7 @@ BlockIO InterpreterCreateUserQuery::execute()
         auto cluster_query_ptr = updated_query_ptr->clone();
         auto & cluster_query = cluster_query_ptr->as<ASTCreateUserQuery &>();
 
-        auto rewrite_deadline = [](ASTPtr & valid_until, bool & is_interval, time_t deadline)
+        auto rewrite_deadline = [](IAST & owner, ASTPtr & valid_until, bool & is_interval, time_t deadline)
         {
             /// No clause to canonicalize, or the deadline is the `VALID UNTIL 'infinity'` sentinel
             /// (`0` == "no expiration"), which is time-zone independent and is left untouched.
@@ -308,17 +308,18 @@ BlockIO InterpreterCreateUserQuery::execute()
             /// The explicit `UTC` suffix in the literal makes every replica parse the resulting
             /// `VALID UNTIL` string to the same instant. Without the zone, a bare `'2026-07-14 12:00:00'`
             /// would be interpreted in each replica's own default time zone and the stored `valid_until`
-            /// would diverge on mixed-time-zone clusters.
-            valid_until = make_intrusive<ASTLiteral>(formatValidUntilInUTC(deadline));
+            /// would diverge on mixed-time-zone clusters. The clause subtree is registered in the owner's
+            /// `children`, so it is replaced there too (not just the member pointer).
+            owner.setOrReplace(valid_until, make_intrusive<ASTLiteral>(formatValidUntilInUTC(deadline)));
             is_interval = false;
         };
 
-        rewrite_deadline(cluster_query.global_valid_until, cluster_query.global_valid_until_is_interval, global_valid_until.value_or(0));
+        rewrite_deadline(cluster_query, cluster_query.global_valid_until, cluster_query.global_valid_until_is_interval, global_valid_until.value_or(0));
 
         for (size_t i = 0; i < cluster_query.authentication_methods.size(); ++i)
         {
             auto & method = *cluster_query.authentication_methods[i];
-            rewrite_deadline(method.valid_until, method.valid_until_is_interval, authentication_methods[i].getValidUntil());
+            rewrite_deadline(method, method.valid_until, method.valid_until_is_interval, authentication_methods[i].getValidUntil());
         }
 
         return executeDDLQueryOnCluster(cluster_query_ptr, getContext());

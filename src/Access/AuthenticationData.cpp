@@ -491,7 +491,7 @@ boost::intrusive_ptr<ASTAuthenticationData> AuthenticationData::toAST(bool attac
             /// `VALID UNTIL` / `VALID FOR` deadline to `1` (see `getValidUntilFromAST`); this guard also
             /// fail-closes an `AuthenticationData` object built directly via `setValidUntil`, without
             /// going through query parsing.
-            node->valid_until = make_intrusive<ASTLiteral>(fmt::format("{:010}", std::max<time_t>(valid_until, 1)));
+            node->setValidUntil(make_intrusive<ASTLiteral>(fmt::format("{:010}", std::max<time_t>(valid_until, 1))));
         }
         else
         {
@@ -499,7 +499,7 @@ boost::intrusive_ptr<ASTAuthenticationData> AuthenticationData::toAST(bool attac
             WriteBufferFromOwnString out;
             writeDateTimeText(valid_until, out);
 
-            node->valid_until = make_intrusive<ASTLiteral>(out.str());
+            node->setValidUntil(make_intrusive<ASTLiteral>(out.str()));
         }
     }
 
@@ -537,7 +537,7 @@ AuthenticationData AuthenticationData::fromAST(const ASTAuthenticationData & que
         AuthenticationData auth_data(*query.type);
         std::vector<SSHKey> keys;
 
-        size_t args_size = query.children.size();
+        size_t args_size = query.numPayloadChildren();
         for (size_t i = 0; i < args_size; ++i)
         {
             const auto & ssh_key = query.children[i]->as<ASTPublicSSHKey &>();
@@ -562,7 +562,7 @@ AuthenticationData AuthenticationData::fromAST(const ASTAuthenticationData & que
 #endif
     }
 
-    size_t args_size = query.children.size();
+    size_t args_size = query.numPayloadChildren();
     ASTs args(args_size);
     for (size_t i = 0; i < args_size; ++i)
         args[i] = evaluateConstantExpressionAsLiteral(query.children[i], context);

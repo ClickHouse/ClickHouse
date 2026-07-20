@@ -216,7 +216,18 @@ ASTPtr ASTCreateUserQuery::clone() const
         res->children.push_back(ast_clone);
     }
 
+    if (global_valid_until)
+    {
+        res->global_valid_until = global_valid_until->clone();
+        res->children.push_back(res->global_valid_until);
+    }
+
     return res;
+}
+
+void ASTCreateUserQuery::forEachPointerToChild(std::function<void(IAST **, boost::intrusive_ptr<IAST> *)> f)
+{
+    f(nullptr, &global_valid_until);
 }
 
 

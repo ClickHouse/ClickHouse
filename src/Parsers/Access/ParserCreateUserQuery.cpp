@@ -265,7 +265,9 @@ namespace
             if (http_auth_scheme)
                 auth_data->children.push_back(std::move(http_auth_scheme));
 
-            parseValidUntil(pos, expected, auth_data->valid_until, auth_data->valid_until_is_interval);
+            ASTPtr method_valid_until;
+            if (parseValidUntil(pos, expected, method_valid_until, auth_data->valid_until_is_interval))
+                auth_data->setValidUntil(std::move(method_valid_until));
 
             return true;
         });
@@ -327,7 +329,9 @@ namespace
                 authentication_methods.emplace_back(make_intrusive<ASTAuthenticationData>());
                 authentication_methods.back()->type = AuthenticationType::NO_PASSWORD;
 
-                parseValidUntil(pos, expected, authentication_methods.back()->valid_until, authentication_methods.back()->valid_until_is_interval);
+                ASTPtr method_valid_until;
+                if (parseValidUntil(pos, expected, method_valid_until, authentication_methods.back()->valid_until_is_interval))
+                    authentication_methods.back()->setValidUntil(std::move(method_valid_until));
 
                 return true;
             }
