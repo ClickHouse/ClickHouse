@@ -67,7 +67,7 @@ if [ "$incr_before" = "$incr_after" ]; then echo "incremental identical"; else e
 
 # Case 7: packing is mutually exclusive with an archive destination.
 ${CLICKHOUSE_CLIENT} --query "BACKUP TABLE t TO Disk('backups', '${name}_7.zip') SETTINGS experimental_backup_pack_format=1" 2>&1 \
-    | grep -o "cannot be used with an archive destination" | head -1
+    | grep -o "is not supported with an archive destination" | head -1
 
 # Case 8: system.backups accounting. A pack is one entry whose stored size includes the serialized front index.
 # Back up the same data unpacked and packed: packing collapses many small member objects into few pack objects
@@ -93,5 +93,28 @@ SELECT
     (SELECT num_entries FROM system.backups WHERE id='${name}_8on') AS restore_entries_match_backup,
     (SELECT uncompressed_size FROM system.backups WHERE id='${name}_8restore') =
     (SELECT uncompressed_size FROM system.backups WHERE id='${name}_8on') AS restore_size_matches_backup"
+
+# Case 9: a tampered archive manifest carrying <num_packs> must fail closed on read. An archive is never packed
+# on write (rejected), so num_packs>0 in an archive backup is corruption -- RESTORE must reject it as
+# BACKUP_DAMAGED instead of chasing a non-existent sibling packs_* object through the plain reader.
+${CLICKHOUSE_CLIENT} -m --query "DROP TABLE IF EXISTS t; $small_create"
+${CLICKHOUSE_CLIENT} --query "$small_insert"
+${CLICKHOUSE_CLIENT} --query "BACKUP TABLE t TO Disk('backups', '${name}_9.zip')" | grep -o BACKUP_CREATED
+archive_path="$(${CLICKHOUSE_CLIENT} --query "SELECT path FROM system.disks WHERE name='backups'")/${name}_9.zip"
+python3 - "$archive_path" <<'PY'
+import sys, zipfile, os
+path = sys.argv[1]
+tmp = path + ".tmp"
+with zipfile.ZipFile(path, "r") as zin, zipfile.ZipFile(tmp, "w", zipfile.ZIP_DEFLATED) as zout:
+    for item in zin.infolist():
+        data = zin.read(item.filename)
+        if item.filename == ".backup":
+            data = data.decode("utf-8").replace("<contents>", "<num_packs>1</num_packs><contents>", 1).encode("utf-8")
+        zout.writestr(item, data)
+os.replace(tmp, path)
+PY
+${CLICKHOUSE_CLIENT} --query "DROP TABLE t"
+${CLICKHOUSE_CLIENT} --query "RESTORE TABLE t FROM Disk('backups', '${name}_9.zip')" 2>&1 \
+    | grep -o "Archive backup cannot contain packed objects" | head -1
 
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS t"

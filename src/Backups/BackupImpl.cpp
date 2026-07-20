@@ -202,6 +202,12 @@ BackupImpl::BackupImpl(
     , base_backup_info(params.base_backup_info)
     , log(getLogger("BackupImpl"))
 {
+    /// Single source of truth for the archive+pack mutual exclusion (covers S3, File/Disk, Azure, and any
+    /// future engine): packing bundles objects, which an archive destination has no path for.
+    if (!archive_params_.archive_name.empty() && params.experimental_backup_pack_format)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Object packing (experimental_backup_pack_format) is not supported with an archive destination");
+
     open();
 }
 
@@ -688,9 +694,16 @@ void BackupImpl::readBackupMetadata()
         {
             num_packs = to_uint64(req("num_packs"), "num_packs");
             /// Packing is detected on read from the manifest, not from a setting -- promote the layout so the
-            /// read path routes packed members. Archive and packing are mutually exclusive (rejected earlier).
+            /// read path routes packed members. Archive and packing are mutually exclusive on write, so a
+            /// legit archive never has num_packs > 0; a tampered archive manifest carrying it must fail closed
+            /// rather than read sibling packs_* objects through the archive-opened backup.
             if (num_packs > 0)
+            {
+                if (layout == BackupLayout::Archive)
+                    throw Exception(ErrorCodes::BACKUP_DAMAGED,
+                        "Archive backup cannot contain packed objects (num_packs > 0)");
                 layout = BackupLayout::Packed;
+            }
         }
 
         if (h.contains("base_backup") && !base_backup_info)
@@ -1442,6 +1455,10 @@ void BackupImpl::writeFile(const BackupFileInfo & info, BackupEntryPtr entry)
 
 void BackupImpl::writeFilePack(size_t pack_id, const PackMembers & members)
 {
+    /// Packs are driven by pack_id from coordination, independent of layout; an archive destination is rejected
+    /// at construction, so a pack must never be written into an archive.
+    chassert(!isArchive());
+
     if (open_mode == OpenMode::READ)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "The backup file should not be opened for reading. Something is wrong internally");
 
