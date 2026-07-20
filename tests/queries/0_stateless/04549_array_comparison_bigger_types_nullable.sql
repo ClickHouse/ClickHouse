@@ -57,7 +57,7 @@ SELECT [[1, NULL]]::Array(Array(Nullable(Int64))) = [[1, NULL]]::Array(Array(Nul
 DROP TABLE IF EXISTS t_arr_cmp_null;
 CREATE TABLE t_arr_cmp_null (a Array(Nullable(Int64)), b Array(Nullable(UInt64))) ENGINE = Memory;
 INSERT INTO t_arr_cmp_null VALUES ([1, NULL], [1, 3]), ([NULL], [1]), ([1], [NULL]), ([NULL], [NULL]), ([1, 2], [1, 2]);
-SELECT a < b, a = b, a > b FROM t_arr_cmp_null ORDER BY a;
+SELECT a < b, a = b, a > b FROM t_arr_cmp_null ORDER BY a, b;
 DROP TABLE t_arr_cmp_null;
 
 -- result type is definite UInt8 (not Nullable)
