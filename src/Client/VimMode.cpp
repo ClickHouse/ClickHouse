@@ -601,6 +601,20 @@ void ReplxxLineReader::setupVimKeybindings()
         resetVim(&pos, &text);
     }, MODE_NORMAL);
 
+    bindKey('~', [this](int &pos, std::string &text, char32_t) {
+        if (pos > static_cast<int>(text.length()))
+            return;
+        char c = text[pos];
+        if ('a' <= c && c <= 'z') {
+            text[pos] = c + 'A' - 'a';
+            resetVim(&pos, &text);
+        }
+        else if ('A' <= c && c <= 'Z') {
+            text[pos] = c + 'a' - 'A';
+            resetVim(&pos, &text);
+        }
+    }, MODE_NORMAL);
+
     bindKey('i', [this](char32_t) {
         if (op) {
             if (!flag)
