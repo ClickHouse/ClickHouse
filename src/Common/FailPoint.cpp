@@ -204,6 +204,7 @@ static struct InitFiu
     ONCE(mt_alter_throw_in_durable_rollback) \
     REGULAR(rmt_merge_selecting_task_no_free_threads) \
     REGULAR(rmt_merge_selecting_task_max_part_size) \
+    ONCE(merge_tree_load_statistics_file_throw_once) \
     REGULAR(merge_tree_load_statistics_throw) \
     PAUSEABLE(smt_mutate_task_pause_in_prepare) \
     PAUSEABLE(smt_merge_selecting_task_pause_when_scheduled) \

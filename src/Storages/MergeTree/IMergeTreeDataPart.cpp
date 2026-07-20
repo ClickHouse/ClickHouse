@@ -142,6 +142,7 @@ namespace ErrorCodes
 namespace FailPoints
 {
     extern const char remove_merge_tree_part_delay[];
+    extern const char merge_tree_load_statistics_file_throw_once[];
     extern const char merge_tree_load_statistics_throw[];
 }
 
@@ -1186,12 +1187,19 @@ ColumnsStatistics IMergeTreeDataPart::loadStatisticsPacked(
         if (!column_desc)
             continue;
 
-        size_t file_size = reader.getFileSize(filename);
-        auto file_buf = reader.readFile(disk, packed_file, filename, read_settings, file_size);
-
-        CompressedReadBuffer compressed_buf(*file_buf);
         try
         {
+            if (!required_columns.empty())
+            {
+                fiu_do_on(FailPoints::merge_tree_load_statistics_file_throw_once, {
+                    throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Injected failure in statistics member load");
+                });
+            }
+
+            size_t file_size = reader.getFileSize(filename);
+            auto file_buf = reader.readFile(disk, packed_file, filename, read_settings, file_size);
+
+            CompressedReadBuffer compressed_buf(*file_buf);
             auto column_stat = ColumnStatistics::deserialize(compressed_buf, column_desc->type);
             if (column_stat)
                 result.emplace(column_desc->name, std::move(column_stat));
@@ -1220,10 +1228,17 @@ ColumnsStatistics IMergeTreeDataPart::loadStatisticsWide(const NameSet & require
         if (!column_desc)
             continue;
 
-        auto file_buf = getDataPartStorage().readFile(filename, read_settings, checksum.file_size);
-        CompressedReadBuffer compressed_buf(*file_buf);
         try
         {
+            if (!required_columns.empty())
+            {
+                fiu_do_on(FailPoints::merge_tree_load_statistics_file_throw_once, {
+                    throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Injected failure in statistics member load");
+                });
+            }
+
+            auto file_buf = getDataPartStorage().readFile(filename, read_settings, checksum.file_size);
+            CompressedReadBuffer compressed_buf(*file_buf);
             auto column_stat = ColumnStatistics::deserialize(compressed_buf, column_desc->type);
             if (column_stat)
                 result.emplace(column_desc->name, std::move(column_stat));

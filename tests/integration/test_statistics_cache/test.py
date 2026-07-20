@@ -528,6 +528,103 @@ def test_join_statistics_corruption_falls_back_without_partial_estimates():
         FORMAT TabSeparated
     """).strip() == "500"
 
+def test_join_statistics_unreadable_unrelated_column_preserves_complete_stats():
+    """An unreadable non-filter statistic must not discard complete filter statistics."""
+    partial = "unrelated_stats_111016"
+    dim = "unrelated_dim_111016"
+    _query_retry(ch1, f"DROP TABLE IF EXISTS {partial} SYNC")
+    _query_retry(ch1, f"DROP TABLE IF EXISTS {dim} SYNC")
+    _query_retry(ch1, f"""
+        CREATE TABLE {partial} (k UInt32, a UInt32, z UInt32)
+        ENGINE = MergeTree PARTITION BY intDiv(k, 1000) ORDER BY k
+        SETTINGS refresh_statistics_interval = 0,
+                 auto_statistics_types = ''
+    """)
+    _query(ch1, f"INSERT INTO {partial} SELECT number, number, number FROM numbers(1000)")
+    _query(ch1, f"INSERT INTO {partial} SELECT number + 1000, number + 1000, number + 1000 FROM numbers(1000)")
+    _query_retry(ch1, f"ALTER TABLE {partial} ADD STATISTICS a TYPE Basic")
+    _query_retry(ch1, f"ALTER TABLE {partial} ADD STATISTICS z TYPE Basic")
+    _query_retry(ch1, f"ALTER TABLE {partial} MATERIALIZE STATISTICS a")
+    _query_retry(ch1, f"ALTER TABLE {partial} MATERIALIZE STATISTICS z")
+
+    _query_retry(ch1, f"""
+        CREATE TABLE {dim} (k UInt32)
+        ENGINE = MergeTree ORDER BY k
+        SETTINGS auto_statistics_types = ''
+    """)
+    _query(ch1, f"INSERT INTO {dim} SELECT number FROM numbers(2000)")
+
+    join_sql = f"""
+        SELECT sum(s.a)
+        FROM {partial} AS s INNER JOIN {dim} AS d ON s.k = d.k
+        WHERE s.z >= 1500
+    """
+
+    def _plan(use_statistics):
+        return _query(ch1, f"""
+            EXPLAIN PLAN keep_logical_steps=1, actions=1
+            {join_sql}
+            SETTINGS use_statistics={use_statistics}, use_statistics_cache=0,
+                     use_statistics_for_part_pruning=0,
+                     optimize_use_projections=0, optimize_use_implicit_projections=0,
+                     query_plan_optimize_join_order_limit=10
+        """)
+
+    def _result_rows(plan):
+        return tuple(line.strip() for line in plan.splitlines() if "ResultRows:" in line)
+
+    no_stats_rows = _result_rows(_plan(0))
+    clean_rows = _result_rows(_plan(1))
+    assert clean_rows and no_stats_rows, {
+        "clean_rows": clean_rows,
+        "no_stats_rows": no_stats_rows,
+        "reason": "EXPLAIN PLAN did not expose a ResultRows estimate",
+    }
+    assert clean_rows != no_stats_rows, {
+        "clean_rows": clean_rows,
+        "no_stats_rows": no_stats_rows,
+        "reason": "clean filter statistics did not affect the visible join estimate",
+    }
+    clean_result = _query(ch1, f"""
+        {join_sql}
+        SETTINGS use_statistics_for_part_pruning=0,
+                 optimize_use_projections=0, optimize_use_implicit_projections=0
+        FORMAT TabSeparated
+    """).strip()
+
+    # Column statistics are serialized in std::map order, so the ONCE failpoint omits a before loading z.
+    failpoint = "merge_tree_load_statistics_file_throw_once"
+    _query(ch1, f"SYSTEM ENABLE FAILPOINT {failpoint}")
+    try:
+        unreadable_rows = _result_rows(_plan(1))
+        failpoint_enabled = _query(ch1, f"""
+            SELECT enabled
+            FROM system.fail_points
+            WHERE name = '{failpoint}'
+            FORMAT TabSeparated
+        """).strip()
+        unreadable_result = _query(ch1, f"""
+            {join_sql}
+            SETTINGS use_statistics_for_part_pruning=0,
+                     optimize_use_projections=0, optimize_use_implicit_projections=0
+            FORMAT TabSeparated
+        """).strip()
+    finally:
+        _query(ch1, f"SYSTEM DISABLE FAILPOINT {failpoint}")
+
+    assert unreadable_rows == clean_rows, {
+        "clean_rows": clean_rows,
+        "no_stats_rows": no_stats_rows,
+        "unreadable_rows": unreadable_rows,
+        "reason": "an unrelated unreadable statistic discarded complete filter statistics",
+    }
+    assert failpoint_enabled == "0", f"{failpoint} did not fire during the statistics load"
+    assert unreadable_result == clean_result, {
+        "clean_result": clean_result,
+        "unreadable_result": unreadable_result,
+        "reason": "statistics corruption changed the query result",
+    }
+
 def test_alter_interval_requires_detach_attach():
     _create_tbl(ch1, "alt_tbl", 0)
     _query(ch1, "SELECT count() FROM alt_tbl WHERE v>0.99 AND k>=0 SETTINGS use_statistics_cache=1, log_comment='alt-pre' FORMAT Null")
