@@ -36,8 +36,51 @@ public:
     Promise getPromise() const override { return 1000; }
     bool isTransformation() const override { return false; }
 
+    class EnforcerEnumerator;
+
 protected:
     std::vector<GroupExpressionPtr> applyImpl(GroupExpressionPtr expression, const ExpressionProperties & required_properties, Memo & memo) const override;
+};
+
+/// Emits the exchange enforcers that can bridge one distribution gap, one method per
+/// exchange kind. addEnforcer centralizes the construction of the self-referential
+/// enforcer expression: it lives in the source group, its single input points back to
+/// the same group with a relaxed requirement, the output distribution is the required
+/// one, and the expression carries the Distribution enforcer axis that the
+/// cycle-avoidance rules key on.
+class DistributionEnforcer::EnforcerEnumerator
+{
+public:
+    EnforcerEnumerator(
+        const DistributionEnforcer & rule_,
+        GroupExpressionPtr expression_,
+        const ExpressionProperties & required_properties_,
+        Memo & memo_,
+        std::vector<GroupExpressionPtr> & result_)
+        : rule(rule_)
+        , expression(std::move(expression_))
+        , input_header(expression->getQueryPlanStep()->getOutputHeader())
+        , required_properties(required_properties_)
+        , memo(memo_)
+        , result(result_)
+    {
+    }
+
+    void addBroadcast();
+    void addRoundRobinScatter();
+    void addGather();
+    void addSortedGather();
+    void addKeyedShuffle();
+
+private:
+    void addEnforcer(QueryPlanStepPtr step, ExpressionProperties input_required, SortDescription output_sorting = {});
+
+    const DistributionEnforcer & rule;
+    GroupExpressionPtr expression;
+    const SharedHeader & input_header;
+    const ExpressionProperties & required_properties;
+    Memo & memo;
+    std::vector<GroupExpressionPtr> & result;
 };
 
 bool DistributionEnforcer::checkPattern(GroupExpressionPtr expression, const ExpressionProperties & required_properties, const Memo & /*memo*/) const
@@ -45,175 +88,177 @@ bool DistributionEnforcer::checkPattern(GroupExpressionPtr expression, const Exp
     return !ExpressionProperties::isDistributionSatisfiedBy(required_properties.distribution, expression->properties.distribution);
 }
 
+void DistributionEnforcer::EnforcerEnumerator::addEnforcer(QueryPlanStepPtr step, ExpressionProperties input_required, SortDescription output_sorting)
+{
+    auto enforcer_expr = std::make_shared<GroupExpression>(std::move(step));
+    enforcer_expr->group_id = expression->group_id;
+    enforcer_expr->inputs.push_back({.group_id = expression->group_id, .required_properties = std::move(input_required)});
+    enforcer_expr->properties.distribution = required_properties.distribution;
+    enforcer_expr->properties.sorting = std::move(output_sorting);
+    enforcer_expr->enforcer_axis = EnforcerAxis::Distribution;
+
+    rule.addPhysicalToMemo(enforcer_expr, required_properties, memo, result);
+}
+
+/// BroadcastExchangeStep only supports single-source input (1->N).
+/// The input always requires {1 node}; the optimizer will recursively
+/// create a GatherExchange to satisfy this when the source has multiple nodes.
+void DistributionEnforcer::EnforcerEnumerator::addBroadcast()
+{
+    ExpressionProperties input_required;
+    input_required.distribution.node_count = 1;
+
+    addEnforcer(
+        std::make_unique<BroadcastExchangeStep>(input_header, required_properties.distribution.node_count),
+        std::move(input_required));
+}
+
+/// Column-less scatter: rows go round-robin, any node may get any row. Like the
+/// broadcast, the input always requires {1 node}; a multi-node source composes
+/// through a gather.
+void DistributionEnforcer::EnforcerEnumerator::addRoundRobinScatter()
+{
+    ExpressionProperties input_required;
+    input_required.distribution.node_count = 1;
+
+    addEnforcer(
+        std::make_unique<ScatterExchangeStep>(input_header, Names{}, required_properties.distribution.node_count),
+        std::move(input_required));
+}
+
+/// Regular gather: N nodes -> 1 node, sorting NOT preserved.
+void DistributionEnforcer::EnforcerEnumerator::addGather()
+{
+    ExpressionProperties input_required;
+    input_required.distribution.node_count = expression->properties.distribution.node_count;
+    input_required.distribution.is_replicated = expression->properties.distribution.is_replicated;
+
+    /// Sorting is destroyed by a regular gather.
+    addEnforcer(
+        std::make_unique<GatherExchangeStep>(input_header, expression->properties.distribution.node_count),
+        std::move(input_required));
+}
+
+/// Sorted-merge gather: N nodes -> 1 node, sorting PRESERVED.
+/// Only produced when the source expression already has sorting, so that
+/// the composition SortOnEachNode -> SortedGather yields Strategy B.
+void DistributionEnforcer::EnforcerEnumerator::addSortedGather()
+{
+    ExpressionProperties input_required;
+    input_required.distribution.node_count = expression->properties.distribution.node_count;
+    input_required.distribution.is_replicated = expression->properties.distribution.is_replicated;
+    input_required.sorting = expression->properties.sorting;
+
+    addEnforcer(
+        std::make_unique<GatherExchangeStep>(
+            input_header,
+            expression->properties.distribution.node_count,
+            expression->properties.sorting),
+        std::move(input_required),
+        expression->properties.sorting);
+}
+
+/// Keyed shuffle: repartition by the required columns, as a 1->N scatter when the source
+/// is on one node and an N->M shuffle otherwise.
+void DistributionEnforcer::EnforcerEnumerator::addKeyedShuffle()
+{
+    if (required_properties.distribution.is_replicated)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot enforce replicated distribution with specific columns");
+
+    /// Shuffling a replicated source hashes every node's full copy, multiplying the output by
+    /// the replica count. Do not emit this invalid plan; the keyed requirement is satisfied
+    /// from a non-replicated implementation of the same group instead.
+    if (expression->properties.distribution.is_replicated && expression->properties.distribution.node_count > 1)
+    {
+        LOG_TEST(getLogger("DistributionEnforcer"), "No shuffle from replicated '{}': it would multiply rows by the replica count",
+            expression->getName());
+        return;
+    }
+
+    Names shuffle_columns;
+    for (const auto & distribution_column : required_properties.distribution.columns)
+    {
+        /// Pick the equivalent name that is present in the input header: the shuffle step
+        /// resolves the column by name, so a dropped equivalent would fail at execution.
+        String chosen_column;
+        for (const auto & equivalent_name : distribution_column)
+        {
+            if (input_header->has(equivalent_name))
+            {
+                chosen_column = equivalent_name;
+                break;
+            }
+        }
+        /// None of the equivalents survive in the input: this shuffle cannot be built.
+        if (chosen_column.empty())
+        {
+            LOG_TEST(getLogger("DistributionEnforcer"), "No shuffle for '{}': no equivalent of a required distribution column is in the input header",
+                expression->getName());
+            return;
+        }
+        shuffle_columns.push_back(chosen_column);
+    }
+
+    /// Cast keys before hashing when the requirement pins hash types (mismatched
+    /// join key types), so both sides of the join hash into the same buckets.
+    DataTypes hash_cast_types;
+    if (!required_properties.distribution.hash_type_names.empty())
+    {
+        const auto & type_factory = DataTypeFactory::instance();
+        for (const auto & type_name : required_properties.distribution.hash_type_names)
+            hash_cast_types.push_back(type_factory.get(type_name));
+    }
+
+    QueryPlanStepPtr exchange_step =
+        (expression->properties.distribution.node_count == 1)
+        ? QueryPlanStepPtr(std::make_unique<ScatterExchangeStep>(
+            input_header,
+            std::move(shuffle_columns),
+            required_properties.distribution.node_count,
+            std::move(hash_cast_types)))
+        : QueryPlanStepPtr(std::make_unique<ShuffleExchangeStep>(
+            input_header,
+            std::move(shuffle_columns),
+            expression->properties.distribution.node_count,
+            required_properties.distribution.node_count,
+            std::move(hash_cast_types)));
+
+    ExpressionProperties input_required;
+    input_required.distribution.node_count = expression->properties.distribution.node_count;
+    input_required.distribution.is_replicated = expression->properties.distribution.is_replicated;
+
+    /// Shuffle/scatter destroys sorting.
+    addEnforcer(std::move(exchange_step), std::move(input_required));
+}
+
 std::vector<GroupExpressionPtr> DistributionEnforcer::applyImpl(GroupExpressionPtr expression, const ExpressionProperties & required_properties, Memo & memo) const
 {
-    const auto & input_header = expression->getQueryPlanStep()->getOutputHeader();
     std::vector<GroupExpressionPtr> result;
+    EnforcerEnumerator enforcers(*this, expression, required_properties, memo, result);
 
     if (required_properties.distribution.columns.empty())
     {
         if (required_properties.distribution.is_replicated)
         {
-            /// BroadcastExchangeStep only supports single-source input (1->N).
-            /// The input always requires {1 node}; the optimizer will recursively
-            /// create a GatherExchange to satisfy this when the source has multiple nodes.
-            ExpressionProperties input_required;
-            input_required.distribution.node_count = 1;
-
-            auto enforcer_expr = std::make_shared<GroupExpression>(
-                std::make_unique<BroadcastExchangeStep>(
-                    input_header,
-                    required_properties.distribution.node_count));
-            enforcer_expr->group_id = expression->group_id;
-            enforcer_expr->inputs.push_back({.group_id = expression->group_id, .required_properties = input_required});
-            enforcer_expr->properties.distribution = required_properties.distribution;
-            enforcer_expr->enforcer_axis = EnforcerAxis::Distribution;
-
-            addPhysicalToMemo(enforcer_expr, required_properties, memo, result);
+            enforcers.addBroadcast();
         }
         else if (required_properties.distribution.node_count > 1)
         {
-            /// Column-less scatter: rows go round-robin, any node may get any row. Like the
-            /// broadcast above, the input always requires {1 node}; a multi-node source
-            /// composes through a gather.
-            ExpressionProperties input_required;
-            input_required.distribution.node_count = 1;
-
-            auto enforcer_expr = std::make_shared<GroupExpression>(
-                std::make_unique<ScatterExchangeStep>(
-                    input_header,
-                    Names{},
-                    required_properties.distribution.node_count));
-            enforcer_expr->group_id = expression->group_id;
-            enforcer_expr->inputs.push_back({.group_id = expression->group_id, .required_properties = input_required});
-            enforcer_expr->properties.distribution = required_properties.distribution;
-            enforcer_expr->enforcer_axis = EnforcerAxis::Distribution;
-
-            addPhysicalToMemo(enforcer_expr, required_properties, memo, result);
+            enforcers.addRoundRobinScatter();
         }
         else if (required_properties.distribution.node_count == 1
                  && expression->properties.distribution.node_count > 1
                  && !expression->properties.distribution.is_replicated)
         {
-            /// Regular gather: N nodes -> 1 node, sorting NOT preserved.
-            {
-                ExpressionProperties input_required;
-                input_required.distribution.node_count = expression->properties.distribution.node_count;
-                input_required.distribution.is_replicated = expression->properties.distribution.is_replicated;
+            enforcers.addGather();
 
-                auto enforcer_expr = std::make_shared<GroupExpression>(
-                    std::make_unique<GatherExchangeStep>(
-                        input_header,
-                        expression->properties.distribution.node_count));
-                enforcer_expr->group_id = expression->group_id;
-                enforcer_expr->inputs.push_back({.group_id = expression->group_id, .required_properties = input_required});
-                enforcer_expr->properties.distribution = required_properties.distribution;
-                enforcer_expr->enforcer_axis = EnforcerAxis::Distribution;
-                /// Sorting is destroyed by a regular gather.
-
-                addPhysicalToMemo(enforcer_expr, required_properties, memo, result);
-            }
-
-            /// Sorted-merge gather: N nodes -> 1 node, sorting PRESERVED.
-            /// Only produced when the source expression already has sorting, so that
-            /// the composition SortOnEachNode -> SortedGather yields Strategy B.
             if (!expression->properties.sorting.empty())
-            {
-                ExpressionProperties input_required;
-                input_required.distribution.node_count = expression->properties.distribution.node_count;
-                input_required.distribution.is_replicated = expression->properties.distribution.is_replicated;
-                input_required.sorting = expression->properties.sorting;
-
-                auto enforcer_expr = std::make_shared<GroupExpression>(
-                    std::make_unique<GatherExchangeStep>(
-                        input_header,
-                        expression->properties.distribution.node_count,
-                        expression->properties.sorting));
-                enforcer_expr->group_id = expression->group_id;
-                enforcer_expr->inputs.push_back({.group_id = expression->group_id, .required_properties = input_required});
-                enforcer_expr->properties.distribution = required_properties.distribution;
-                enforcer_expr->properties.sorting = expression->properties.sorting;
-                enforcer_expr->enforcer_axis = EnforcerAxis::Distribution;
-
-                addPhysicalToMemo(enforcer_expr, required_properties, memo, result);
-            }
+                enforcers.addSortedGather();
         }
     }
     else
     {
-        if (required_properties.distribution.is_replicated)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot enforce replicated distribution with specific columns");
-
-        /// Shuffling a replicated source hashes every node's full copy, multiplying the output by
-        /// the replica count. Do not emit this invalid plan; the keyed requirement is satisfied
-        /// from a non-replicated implementation of the same group instead.
-        if (expression->properties.distribution.is_replicated && expression->properties.distribution.node_count > 1)
-        {
-            LOG_TEST(getLogger("DistributionEnforcer"), "No shuffle from replicated '{}': it would multiply rows by the replica count",
-                expression->getName());
-            return result;
-        }
-
-        Names shuffle_columns;
-        for (const auto & distribution_column : required_properties.distribution.columns)
-        {
-            /// Pick the equivalent name that is present in the input header: the shuffle step
-            /// resolves the column by name, so a dropped equivalent would fail at execution.
-            String chosen_column;
-            for (const auto & equivalent_name : distribution_column)
-            {
-                if (input_header->has(equivalent_name))
-                {
-                    chosen_column = equivalent_name;
-                    break;
-                }
-            }
-            /// None of the equivalents survive in the input: this shuffle cannot be built.
-            if (chosen_column.empty())
-            {
-                LOG_TEST(getLogger("DistributionEnforcer"), "No shuffle for '{}': no equivalent of a required distribution column is in the input header",
-                    expression->getName());
-                return result;
-            }
-            shuffle_columns.push_back(chosen_column);
-        }
-
-        /// Cast keys before hashing when the requirement pins hash types (mismatched
-        /// join key types), so both sides of the join hash into the same buckets.
-        DataTypes hash_cast_types;
-        if (!required_properties.distribution.hash_type_names.empty())
-        {
-            const auto & type_factory = DataTypeFactory::instance();
-            for (const auto & type_name : required_properties.distribution.hash_type_names)
-                hash_cast_types.push_back(type_factory.get(type_name));
-        }
-
-        QueryPlanStepPtr exchange_step =
-            (expression->properties.distribution.node_count == 1)
-            ? QueryPlanStepPtr(std::make_unique<ScatterExchangeStep>(
-                input_header,
-                std::move(shuffle_columns),
-                required_properties.distribution.node_count,
-                std::move(hash_cast_types)))
-            : QueryPlanStepPtr(std::make_unique<ShuffleExchangeStep>(
-                input_header,
-                std::move(shuffle_columns),
-                expression->properties.distribution.node_count,
-                required_properties.distribution.node_count,
-                std::move(hash_cast_types)));
-
-        ExpressionProperties input_required;
-        input_required.distribution.node_count = expression->properties.distribution.node_count;
-        input_required.distribution.is_replicated = expression->properties.distribution.is_replicated;
-
-        auto enforcer_expr = std::make_shared<GroupExpression>(std::move(exchange_step));
-        enforcer_expr->group_id = expression->group_id;
-        enforcer_expr->inputs.push_back({.group_id = expression->group_id, .required_properties = input_required});
-        enforcer_expr->properties.distribution = required_properties.distribution;
-        enforcer_expr->enforcer_axis = EnforcerAxis::Distribution;
-        /// Shuffle/scatter destroys sorting.
-
-        addPhysicalToMemo(enforcer_expr, required_properties, memo, result);
+        enforcers.addKeyedShuffle();
     }
 
     return result;
