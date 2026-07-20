@@ -162,6 +162,13 @@ namespace
         const auto & type_info = QuotaTypeInfo::get(quota_type);
         if (type_info.output_denominator == 1)
         {
+            /// Reject negative literals explicitly: FieldVisitorConvertToNumber wraps a negative signed
+            /// integer around instead of throwing (e.g. MAX queries = -1 would become 18446744073709551615).
+            bool is_negative = (max_field.getType() == Field::Types::Int64 && max_field.safeGet<Int64>() < 0)
+                || (max_field.getType() == Field::Types::Int128 && max_field.safeGet<Int128>() < 0)
+                || (max_field.getType() == Field::Types::Int256 && max_field.safeGet<Int256>() < 0);
+            if (is_negative)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Quota max value is out of range");
             max_value = fieldToNumber<QuotaValue>(max_field);
         }
         else
