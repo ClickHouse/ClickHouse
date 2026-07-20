@@ -6,7 +6,6 @@
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
-#include <Functions/LowCardinalityExecutionHelpers.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -837,13 +836,6 @@ private:
      */
     static ColumnPtr executeArrayLowCardinality(const ColumnsWithTypeAndName & arguments)
     {
-        /// The LowCardinality optimization compares dictionary indices instead of actual values.
-        /// This is correct for linear scan (indexOf, has, countEqual) where only equality is checked,
-        /// but incorrect for binary search (indexOfAssumeSorted) where ordering matters --
-        /// dictionary indices are assigned in insertion order, not in sorted order of values.
-        if constexpr (std::is_same_v<ConcreteAction, IndexOfAssumeSorted>)
-            return nullptr;
-
         const auto * col_array = checkAndGetColumn<ColumnArray>(arguments[0].column.get());
         const auto * col_array_const = checkAndGetColumnConstData<ColumnArray>(arguments[0].column.get());
 
@@ -863,20 +855,36 @@ private:
 
         const auto & array_type  = assert_cast<const DataTypeArray &>(*arguments[0].type);
         const auto target_type = recursiveRemoveLowCardinality(array_type.getNestedType());
+        auto right = recursiveRemoveLowCardinality(right_const->getDataColumnPtr());
 
         UInt64 index = 0;
         UInt64 left_size = arguments[0].column->size();
         ResultColumnPtr col_result = ResultColumnType::create();
 
-        if (!LowCardinalityExecutionHelpers::dictionaryIndexForConstant(
-                *left_lc, right_const->getDataColumnPtr(), arguments[1].type, target_type, index))
+        if (!right->isNullAt(0))
         {
-            col_result->getData().resize_fill(col_array->size());
+            auto right_type = recursiveRemoveLowCardinality(arguments[1].type);
+            right = castColumn({right, right_type, ""}, target_type);
 
-            if (col_array_const)
-                return ColumnConst::create(std::move(col_result), left_size);
+            if (right->isNullable())
+                right = checkAndGetColumn<ColumnNullable>(*right).getNestedColumnPtr();
 
-            return col_result;
+            std::string_view elem = right->getDataAt(0);
+            const auto & left_dict = left_lc->getDictionary();
+
+            if (std::optional<UInt64> maybe_index = left_dict.getOrFindValueIndex(elem); maybe_index)
+            {
+                index = *maybe_index;
+            }
+            else
+            {
+                col_result->getData().resize_fill(col_array->size());
+
+                if (col_array_const)
+                    return ColumnConst::create(std::move(col_result), left_size);
+
+                return col_result;
+            }
         }
 
         Impl::Main<ConcreteAction, true>::vector(

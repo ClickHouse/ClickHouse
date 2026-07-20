@@ -1,6 +1,6 @@
 #pragma once
 
-#if defined(OS_LINUX) || defined(OS_DARWIN)
+#ifdef OS_LINUX
 
 #include <Server/DistributedQuery/ExchangeConnections.h>
 #include <Processors/QueryPlan/ExchangeLookup.h>

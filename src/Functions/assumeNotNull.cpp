@@ -120,7 +120,7 @@ ORDER BY x;
 
 INSERT INTO t_null VALUES (1, NULL), (2, 3);
 
-SELECT assumeNotNull(y) FROM t_null;
+SELECT assumeNotNull(y) FROM table;
 SELECT toTypeName(assumeNotNull(y)) FROM t_null;
         )",
          R"(
