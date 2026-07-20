@@ -1,8 +1,8 @@
 #pragma once
 
 #include <atomic>
+#include <list>
 #include <mutex>
-#include <set>
 #include <tuple>
 #include <base/defines.h>
 #include <Common/AggregatedMetrics.h>
@@ -863,9 +863,15 @@ public:
     /// The decision to delay or throw is made according to settings 'parts_to_delay_insert' and 'parts_to_throw_insert'.
     void delayInsertOrThrowIfNeeded(Poco::Event * until, const ContextPtr & query_context, bool allow_throw) const;
 
-    /// RAII registration of an insert that is writing into the table. While at least one
-    /// long-running insert is registered and keeps committing parts, background merge selection
-    /// may be deferred (see shouldDeferMergesDueToActiveInserts).
+    struct ActiveInsertInfo
+    {
+        explicit ActiveInsertInfo(UInt64 start_time_ns_) : start_time_ns(start_time_ns_) {}
+
+        UInt64 start_time_ns;
+        std::atomic<UInt64> last_part_commit_time_ns{0};
+    };
+
+    /// RAII registration of an insert writing into the table, for shouldDeferMergesDueToActiveInserts.
     class ActiveInsertScope
     {
     public:
@@ -875,23 +881,15 @@ public:
         ActiveInsertScope(const ActiveInsertScope &) = delete;
         ActiveInsertScope & operator=(const ActiveInsertScope &) = delete;
 
+        void notePartCommitted();
+
     private:
         MergeTreeData & storage;
-        std::multiset<UInt64>::iterator it;
+        std::list<ActiveInsertInfo>::iterator it;
     };
 
-    using ActiveInsertScopePtr = std::unique_ptr<ActiveInsertScope>;
-
-    ActiveInsertScopePtr startActiveInsert() { return std::make_unique<ActiveInsertScope>(*this); }
-
-    /// Called by insert sinks after committing a part; keeps the merge deferral window open.
-    void noteActiveInsertPartCommitted();
-
-    /// Whether background merge selection should be postponed because a long-running insert
-    /// is actively writing into the table and the number of parts is still small.
-    /// Writing the inserted data exactly once and merging after such an insert finishes is cheaper
-    /// than merging concurrently with it: concurrent merges re-read and re-write fresh parts,
-    /// competing with the insert for disk bandwidth, and their results get merged again later anyway.
+    /// Postpone background merge selection while a long-running insert keeps committing parts:
+    /// merging concurrently with it competes for disk bandwidth, and the results get merged again later anyway.
     bool shouldDeferMergesDueToActiveInserts() const;
 
     /// If the table contains too many unfinished mutations, sleep for a while to give them time to execute.
@@ -1680,11 +1678,10 @@ protected:
 
     MergeTreePartsMover parts_mover;
 
-    /// Start times (monotonic clock, ns) of inserts currently writing into the table,
-    /// and the time of the last part committed by any of them. See ActiveInsertScope.
+    /// std::list for stable iterators: each ActiveInsertScope erases its own element
+    /// and updates its atomic last-commit field without the mutex.
     mutable std::mutex active_inserts_mutex;
-    std::multiset<UInt64> active_insert_start_times_ns;
-    std::atomic<UInt64> last_active_insert_part_commit_time_ns{0};
+    std::list<ActiveInsertInfo> active_inserts;
 
     /// Executors are common for both ReplicatedMergeTree and plain MergeTree
     /// but they are being started and finished in derived classes, so let them be protected.

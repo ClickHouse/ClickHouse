@@ -67,8 +67,7 @@ protected:
     bool synchronously_commit_part_for_dependent_views = false;
     /// We can delay processing for previous chunk and start writing a new one.
     std::unique_ptr<MergeTreeDelayedChunk> delayed_chunk;
-    /// While this sink exists, background merges on the table may be deferred.
-    MergeTreeData::ActiveInsertScopePtr active_insert_scope;
+    MergeTreeData::ActiveInsertScope active_insert_scope;
 
     std::vector<std::string> commitPart(MutableDataPartPtr & part, const std::vector<DeduplicationHash> & deduplication_hashes);
     virtual void finishDelayedChunk();

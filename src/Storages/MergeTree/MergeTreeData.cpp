@@ -6752,7 +6752,7 @@ MergeTreeData::ActiveInsertScope::ActiveInsertScope(MergeTreeData & storage_)
     : storage(storage_)
 {
     std::lock_guard lock(storage.active_inserts_mutex);
-    it = storage.active_insert_start_times_ns.insert(clock_gettime_ns(CLOCK_MONOTONIC));
+    it = storage.active_inserts.emplace(storage.active_inserts.end(), clock_gettime_ns(CLOCK_MONOTONIC));
 }
 
 MergeTreeData::ActiveInsertScope::~ActiveInsertScope()
@@ -6760,18 +6760,17 @@ MergeTreeData::ActiveInsertScope::~ActiveInsertScope()
     bool no_more_active_inserts;
     {
         std::lock_guard lock(storage.active_inserts_mutex);
-        storage.active_insert_start_times_ns.erase(it);
-        no_more_active_inserts = storage.active_insert_start_times_ns.empty();
+        storage.active_inserts.erase(it);
+        no_more_active_inserts = storage.active_inserts.empty();
     }
 
-    /// The insert could have kept merges deferred; let them start right away.
     if (no_more_active_inserts)
         storage.background_operations_assignee.trigger();
 }
 
-void MergeTreeData::noteActiveInsertPartCommitted()
+void MergeTreeData::ActiveInsertScope::notePartCommitted()
 {
-    last_active_insert_part_commit_time_ns.store(clock_gettime_ns(CLOCK_MONOTONIC), std::memory_order_relaxed);
+    it->last_part_commit_time_ns.store(clock_gettime_ns(CLOCK_MONOTONIC), std::memory_order_relaxed);
 }
 
 bool MergeTreeData::shouldDeferMergesDueToActiveInserts() const
@@ -6785,35 +6784,33 @@ bool MergeTreeData::shouldDeferMergesDueToActiveInserts() const
     if ((*settings)[MergeTreeSetting::merge_selector_algorithm] == MergeSelectorAlgorithm::MANUAL)
         return false;
 
-    UInt64 oldest_insert_start_ns;
+    const UInt64 max_commit_gap_ms = (*settings)[MergeTreeSetting::max_insert_commit_gap_to_defer_merges_ms];
+    bool has_long_committing_insert = false;
     {
         std::lock_guard lock(active_inserts_mutex);
-        if (active_insert_start_times_ns.empty())
-            return false;
-        oldest_insert_start_ns = *active_insert_start_times_ns.begin();
+        const UInt64 now_ns = clock_gettime_ns(CLOCK_MONOTONIC);
+        for (const auto & insert : active_inserts)
+        {
+            if ((now_ns - insert.start_time_ns) / 1000000 < min_duration_ms)
+                continue;
+            const UInt64 last_commit_ns = insert.last_part_commit_time_ns.load(std::memory_order_relaxed);
+            /// The commit may have happened after now_ns was taken; treat it as "just now".
+            const UInt64 since_last_commit_ns = now_ns > last_commit_ns ? now_ns - last_commit_ns : 0;
+            if (last_commit_ns != 0 && since_last_commit_ns / 1000000 < max_commit_gap_ms)
+            {
+                has_long_committing_insert = true;
+                break;
+            }
+        }
     }
-
-    const UInt64 now_ns = clock_gettime_ns(CLOCK_MONOTONIC);
-    if ((now_ns - oldest_insert_start_ns) / 1000000 < min_duration_ms)
+    if (!has_long_committing_insert)
         return false;
 
-    /// Defer only for inserts that keep committing parts. An insert that trickles data slowly
-    /// (e.g. streaming from a slow client) must not hold merges back indefinitely.
-    const UInt64 last_commit_ns = last_active_insert_part_commit_time_ns.load(std::memory_order_relaxed);
-    if (last_commit_ns == 0)
-        return false;
-    /// The commit may have happened after now_ns was taken; treat it as "just now".
-    const UInt64 since_last_commit_ns = now_ns > last_commit_ns ? now_ns - last_commit_ns : 0;
-    if (since_last_commit_ns / 1000000 >= (*settings)[MergeTreeSetting::max_insert_commit_gap_to_defer_merges_ms])
-        return false;
-
-    /// Never let parts pile up too much: queries over many small parts are slow, and merges
-    /// must stay ahead of the 'too many parts' insert backpressure.
+    /// Merges must stay ahead of the 'too many parts' insert backpressure.
     const UInt64 max_parts_to_defer = std::min(
         (*settings)[MergeTreeSetting::max_parts_in_partition_to_defer_merges].value,
         (*settings)[MergeTreeSetting::parts_to_delay_insert].value / 2);
-    const size_t max_parts_in_partition = getMaxPartsCountAndSizeForPartition().first;
-    return max_parts_in_partition < max_parts_to_defer;
+    return getMaxPartsCountAndSizeForPartition().first < max_parts_to_defer;
 }
 
 void MergeTreeData::delayInsertOrThrowIfNeeded(Poco::Event * until, const ContextPtr & query_context, bool allow_throw) const

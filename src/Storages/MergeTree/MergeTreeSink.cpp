@@ -71,7 +71,7 @@ MergeTreeSink::MergeTreeSink(
     , context(context_)
     , storage_snapshot(storage.getStorageSnapshotWithoutData(metadata_snapshot, context_))
     , deduplicate((*storage.getSettings())[MergeTreeSetting::non_replicated_deduplication_window] > 0 && storage.getDeduplicationLog() != nullptr)
-    , active_insert_scope(storage.startActiveInsert())
+    , active_insert_scope(storage_)
 {
     LOG_DEBUG(storage.log, "Create MergeTreeSink, deduplicate={}", deduplicate);
 }
@@ -272,7 +272,7 @@ void MergeTreeSink::finishDelayedChunk()
                     getDeduplicationBlockIds(deduplication_hashes));
                 StorageMergeTree::incrementInsertedPartsProfileEvent(part->getType());
 
-                storage.noteActiveInsertPartCommitted();
+                active_insert_scope.notePartCommitted();
 
                 /// Initiate async merge - it will be done if it's good time for merge and if there are space in 'background_pool'.
                 storage.background_operations_assignee.trigger();
