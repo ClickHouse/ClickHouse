@@ -34,6 +34,47 @@ void ReplxxLineReader::resetVim(int *pos, std::string *text) {
     }
 }
 
+void ReplxxLineReader::find(std::string &text, int &pos, char direction, char c) {
+    int oldpos = pos;
+    int length = static_cast<int>(text.length());
+    bool forward = direction == 'f' || direction == 't';
+
+    int found = text[pos] == '\n' ? -1 : pos;
+    for (int reps = vimReps(); reps > 0 && found >= 0; reps--) {
+        int i = forward ? found + 1 : found - 1;
+        for (found = -1; (forward ? i < length : i >= 0) && text[i] != '\n'; i += forward ? 1 : -1) {
+            if (text[i] == c) {
+                found = i;
+                break;
+            }
+        }
+    }
+    if (found >= 0) {
+        pos = found;
+        if (direction == 't')
+            pos--;
+        if (direction == 'T')
+            pos++;
+    }
+    if (op) {
+        if (pos > oldpos) {
+            text.erase(oldpos, pos - oldpos + 1 - inclusivity_flip);
+            pos = oldpos;
+        }
+        if (oldpos > pos) {
+            text.erase(pos, oldpos - pos + inclusivity_flip);
+        }
+    }
+    if (op == OPERATOR_C && found >= 0) {
+        rx.set_editing_mode(MODE_INSERT);
+        resetVim();
+    }
+    else {
+        rx.set_editing_mode(MODE_NORMAL);
+        resetVim(&pos, &text);
+    }
+}
+
 static int iskeyword(unsigned char c) {
     return ('0' <= c && c <= '9') || ('a' <= c && c <= 'z') || ('A' <= c && c <= 'Z') || c == '_' || (192 <= c);
 }
@@ -612,47 +653,16 @@ void ReplxxLineReader::setupVimKeybindings()
         rx.set_editing_mode(MODE_FIND);
     }, MODE_NORMAL);
 
+    bindKey(';', [this](int &pos, std::string &text, char32_t) {
+        if (strchr("fFtT", last_find_direction) && last_find_char)
+            find(text, pos, last_find_direction, last_find_char);
+    }, MODE_NORMAL);
+
     for (char c = 32; c < 127; c++) {
         bindKey(c, [this, c](int &pos, std::string &text, char32_t) {
-            int oldpos = pos;
-            int length = static_cast<int>(text.length());
-            bool forward = find_direction == 'f' || find_direction == 't';
-
-            int found = text[pos] == '\n' ? -1 : pos;
-            for (int reps = vimReps(); reps > 0 && found >= 0; reps--) {
-                int i = forward ? found + 1 : found - 1;
-                for (found = -1; (forward ? i < length : i >= 0) && text[i] != '\n'; i += forward ? 1 : -1) {
-                    if (text[i] == c) {
-                        found = i;
-                        break;
-                    }
-                }
-            }
-            if (found >= 0) {
-                pos = found;
-                if (find_direction == 't')
-                    pos--;
-                if (find_direction == 'T')
-                    pos++;
-            }
-            bool moved = pos != oldpos;
-            if (op) {
-                if (pos > oldpos) {
-                    text.erase(oldpos, pos - oldpos + 1 - inclusivity_flip);
-                    pos = oldpos;
-                }
-                if (oldpos > pos) {
-                    text.erase(pos, oldpos - pos + inclusivity_flip);
-                }
-            }
-            if (op == OPERATOR_C && moved) {
-                rx.set_editing_mode(MODE_INSERT);
-                resetVim();
-            }
-            else {
-                rx.set_editing_mode(MODE_NORMAL);
-                resetVim(&pos, &text);
-            }
+            last_find_char = c;
+            last_find_direction = find_direction;
+            find(text, pos, find_direction, c);
         }, MODE_FIND);
 
         if (c != 'g') {
