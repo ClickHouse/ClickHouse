@@ -206,6 +206,11 @@ std::optional<std::string> PathGetter::getPath(GenerateContext & ctx) const
     return set->samplePath(ctx.rng, ctx.thread_idx);
 }
 
+std::optional<std::string> PathGetter::takePath(GenerateContext & ctx) const
+{
+    return set->takeRandom(ctx.rng, ctx.thread_idx);
+}
+
 std::string PathGetter::description() const
 {
     return set->name;
@@ -231,6 +236,12 @@ RequestGetter RequestGetter::fromConfig(const std::string & key, const Poco::Uti
 
         if (generator_key.starts_with("create"))
             request_generator = std::make_unique<CreateRequestGenerator>();
+        else if (generator_key.starts_with("remove_recursive"))
+        {
+            if (for_multi)
+                throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "remove_recursive requests are not supported inside multi");
+            request_generator = std::make_unique<RemoveRecursiveRequestGenerator>();
+        }
         else if (generator_key.starts_with("set"))
             request_generator = std::make_unique<SetRequestGenerator>();
         else if (generator_key.starts_with("get"))
@@ -399,7 +410,14 @@ void CreateRequestGenerator::getFromConfigImpl(const std::string & key, const Po
         }
     }
 
+    remove_recursive = config.getBool(key + ".remove_recursive", false);
+    if (config.has(key + ".remove_nodes_limit"))
+        remove_nodes_limit = static_cast<uint32_t>(config.getUInt64(key + ".remove_nodes_limit"));
+
     bool needs_removes = remove_factor.has_value() || keep_count.has_value();
+    if (remove_recursive && !needs_removes)
+        throw DB::Exception(
+            DB::ErrorCodes::BAD_ARGUMENTS, "remove_recursive requires remove_factor or keep_count (key '{}')", key);
 
     /// Resolve the set that tracks the created nodes: an explicit output `tag`,
     /// the `children_of` set of a fixed parent, or an anonymous set if the
@@ -447,6 +465,8 @@ std::string CreateRequestGenerator::descriptionImpl()
         remove_factor_string = fmt::format("- remove factor: {}", *remove_factor);
     else if (keep_count.has_value())
         remove_factor_string = *keep_count == 0 ? "- keep node count: auto" : fmt::format("- keep node count: {}", *keep_count);
+    if (remove_recursive)
+        remove_factor_string += fmt::format(" (recursive, limit {})", remove_nodes_limit);
     std::string output_string
         = output_set && output_set->used_as_input ? fmt::format("\n- created nodes tracked in: {}", output_set->name) : "";
     return fmt::format(
@@ -493,8 +513,20 @@ ZooKeeperRequestWithCallbacks CreateRequestGenerator::generateImpl(GenerateConte
     {
         if (auto taken = output_set->takeRandom(ctx.rng, ctx.thread_idx))
         {
-            auto request = std::make_shared<ZooKeeperRemoveRequest>();
-            request->path = *taken;
+            Coordination::ZooKeeperRequestPtr request;
+            if (remove_recursive)
+            {
+                auto remove_request = std::make_shared<ZooKeeperRemoveRecursiveRequest>();
+                remove_request->path = *taken;
+                remove_request->remove_nodes_limit = remove_nodes_limit;
+                request = std::move(remove_request);
+            }
+            else
+            {
+                auto remove_request = std::make_shared<ZooKeeperRemoveRequest>();
+                remove_request->path = *taken;
+                request = std::move(remove_request);
+            }
 
             auto callback = [set = output_set, path = *std::move(taken), thread_idx = ctx.thread_idx](const Coordination::Response * response) mutable
             {
@@ -505,7 +537,7 @@ ZooKeeperRequestWithCallbacks CreateRequestGenerator::generateImpl(GenerateConte
                 set->add(std::move(path), thread_idx);
             };
 
-            return {.request = request, .callback = std::move(callback), .ignore_missing_nodes = true};
+            return {.request = std::move(request), .callback = std::move(callback), .ignore_missing_nodes = true};
         }
         /// The shard is empty, nothing to remove: fall through to create.
     }
@@ -642,6 +674,51 @@ ZooKeeperRequestWithCallbacks ListRequestGenerator::generateImpl(GenerateContext
         request->watch_callback = watch_callback_ptr;
     }
     return {.request = request, .ignore_missing_nodes = path.isDynamic()};
+}
+
+void RemoveRecursiveRequestGenerator::getFromConfigImpl(const std::string & key, const Poco::Util::AbstractConfiguration & config, NodesSetup & nodes_setup)
+{
+    if (config.has(key + ".watch_probability"))
+        throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "watch_probability is not supported for remove_recursive requests (key '{}')", key);
+
+    path = PathGetter::fromConfig(key, config, nodes_setup);
+    /// This generator removes paths from the set, so the set is dynamic.
+    path.pathSet()->used_as_output = true;
+
+    if (config.has(key + ".remove_nodes_limit"))
+        remove_nodes_limit = static_cast<uint32_t>(config.getUInt64(key + ".remove_nodes_limit"));
+}
+
+std::string RemoveRecursiveRequestGenerator::descriptionImpl()
+{
+    return fmt::format(
+        "Remove Recursive Request Generator\n"
+        "- path(s) to remove: {}\n"
+        "- remove nodes limit: {}",
+        path.description(),
+        remove_nodes_limit);
+}
+
+ZooKeeperRequestWithCallbacks RemoveRecursiveRequestGenerator::generateImpl(GenerateContext & ctx, const Coordination::ACLs & /*acls*/)
+{
+    auto taken = path.takePath(ctx);
+    if (!taken)
+        return {};
+
+    auto request = std::make_shared<ZooKeeperRemoveRecursiveRequest>();
+    request->path = *taken;
+    request->remove_nodes_limit = remove_nodes_limit;
+
+    auto callback = [set = path.pathSet(), removed_path = *std::move(taken), thread_idx = ctx.thread_idx](const Coordination::Response * response) mutable
+    {
+        /// ZOK: removed. ZNONODE: was already gone. Anything else (including no
+        /// response at all): the node may still exist, put it back.
+        if (response && (response->error == Coordination::Error::ZOK || response->error == Coordination::Error::ZNONODE))
+            return;
+        set->add(std::move(removed_path), thread_idx);
+    };
+
+    return {.request = std::move(request), .callback = std::move(callback), .ignore_missing_nodes = true};
 }
 
 void MultiRequestGenerator::getFromConfigImpl(const std::string & key, const Poco::Util::AbstractConfiguration & config, NodesSetup & nodes_setup)

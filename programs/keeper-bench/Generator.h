@@ -61,6 +61,9 @@ struct PathGetter
     /// nullopt if the set (shard) is currently empty, which can happen for
     /// dynamic sets; the request generator then declines to produce a request.
     std::optional<std::string> getPath(GenerateContext & ctx) const;
+    /// Like getPath, but also removes the path from the set (for generators that
+    /// remove the node).
+    std::optional<std::string> takePath(GenerateContext & ctx) const;
     std::string description() const;
 
     bool isDynamic() const { return set->is_dynamic; }
@@ -129,6 +132,11 @@ private:
     /// and Remove based on the current size. 0 means "auto": use the size at the
     /// end of setup as the target. Mutually exclusive with `remove_factor`.
     std::optional<size_t> keep_count;
+    /// Issue `RemoveRecursive` (with `remove_nodes_limit`) instead of plain
+    /// `Remove`, e.g. when other generators create children under the removable
+    /// nodes.
+    bool remove_recursive = false;
+    uint32_t remove_nodes_limit = 100;
 
     /// Where the created paths are recorded (and taken from for removes): the
     /// explicit output `tag`, the `children_of` set of a fixed parent, or an
@@ -168,6 +176,21 @@ private:
 
     PathGetter path;
     std::optional<double> watch_probability;
+};
+
+/// Recursively removes a random node drawn from a path set (which makes the set
+/// dynamic), together with its whole subtree. Note that only the removed root is
+/// taken out of the set; if the subtree contains other tracked paths, they go
+/// stale (their requests get ignored "node doesn't exist" errors).
+struct RemoveRecursiveRequestGenerator final : public RequestGenerator
+{
+private:
+    void getFromConfigImpl(const std::string & key, const Poco::Util::AbstractConfiguration & config, NodesSetup & nodes_setup) override;
+    std::string descriptionImpl() override;
+    ZooKeeperRequestWithCallbacks generateImpl(GenerateContext & ctx, const Coordination::ACLs & acls) override;
+
+    PathGetter path;
+    uint32_t remove_nodes_limit = 100;
 };
 
 struct RequestGetter
