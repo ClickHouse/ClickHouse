@@ -47,15 +47,16 @@ enum class ToStartOfIntervalOverload
 };
 
 /// toStartOfInterval reports itself as always monotonic to the primary index, so its result must be
-/// monotonic over the whole argument range. For the standard-precision result types Date (UInt16 days)
-/// and DateTime (UInt32 seconds) an out-of-range DateTime64 argument produces a value that a plain
-/// static_cast would wrap, breaking monotonicity and mis-pruning granules. Saturate those narrowing
-/// results to [0, type max]. Wider result types (Date32 = Int32, DateTime64 = Int64, used by the
-/// extended-results and DateTime64 paths) hold the full range and are cast through unchanged.
-template <typename FieldType>
+/// monotonic over the whole argument range. Only a DateTime64 argument reaches values whose start-of-interval
+/// exceeds the standard-precision result types Date (UInt16 days) and DateTime (UInt32 seconds); there a plain
+/// static_cast would wrap, breaking monotonicity and mis-pruning granules, so those narrowing results are
+/// saturated to [0, type max]. Date / Date32 / DateTime arguments keep the plain cast (their out-of-range
+/// rounding is defined in DateLUTImpl and must not be clamped here), and the wider result types
+/// (Date32 = Int32, DateTime64 = Int64, used by the extended-results and DateTime64 paths) hold the full range.
+template <bool saturate, typename FieldType>
 static FieldType saturatingResultCast(Int64 value)
 {
-    if constexpr (std::is_same_v<FieldType, UInt16> || std::is_same_v<FieldType, UInt32>)
+    if constexpr (saturate && (std::is_same_v<FieldType, UInt16> || std::is_same_v<FieldType, UInt32>))
         return static_cast<FieldType>(std::clamp<Int64>(value, 0, static_cast<Int64>(std::numeric_limits<FieldType>::max())));
     else
         return static_cast<FieldType>(value);
@@ -312,9 +313,11 @@ private:
         {
             /// The default overload is the one used for primary-key pruning (getMonotonicityForRange reports
             /// always-monotonic), so its narrowing standard-precision results (Date/DateTime) must saturate
-            /// rather than wrap for out-of-range DateTime64 arguments. See saturatingResultCast.
+            /// rather than wrap for out-of-range DateTime64 arguments. Only DateTime64 arguments reach those
+            /// out-of-range values; Date/Date32/DateTime rounding is defined in DateLUTImpl and is left intact.
+            constexpr bool saturate = std::is_same_v<TimeDataType, DataTypeDateTime64>;
             for (size_t i = 0; i != size; ++i)
-                result_data[i] = saturatingResultCast<typename ResultDataType::FieldType>(
+                result_data[i] = saturatingResultCast<saturate, typename ResultDataType::FieldType>(
                     ToStartOfInterval<unit>::execute(time_data[i], num_units, time_zone, scale_multiplier));
         }
 
