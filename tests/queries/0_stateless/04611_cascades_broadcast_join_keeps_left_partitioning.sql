@@ -19,8 +19,12 @@ SET query_plan_join_swap_table = 'false';
 
 DROP TABLE IF EXISTS t_bk_fact;
 DROP TABLE IF EXISTS t_bk_dim;
-CREATE TABLE t_bk_fact (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY k;
-CREATE TABLE t_bk_dim (g UInt64, name String) ENGINE = MergeTree ORDER BY g;
+-- `auto_statistics_types = ''` keeps the selectivity estimator off so the plan follows the hint
+-- even when `materialize_statistics_on_insert` is randomized on.
+CREATE TABLE t_bk_fact (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY k
+  SETTINGS auto_statistics_types = '';
+CREATE TABLE t_bk_dim (g UInt64, name String) ENGINE = MergeTree ORDER BY g
+  SETTINGS auto_statistics_types = '';
 INSERT INTO t_bk_fact SELECT number % 1000, number FROM numbers(10000);
 INSERT INTO t_bk_dim SELECT number, toString(number) FROM numbers(10);
 

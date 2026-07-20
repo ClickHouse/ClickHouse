@@ -18,8 +18,12 @@ SET param__internal_join_table_stat_hints = '{"t_wd_fact": {"cardinality": 10000
 
 DROP TABLE IF EXISTS t_wd_fact;
 DROP TABLE IF EXISTS t_wd_dim;
-CREATE TABLE t_wd_fact (k UInt64, g UInt64, v UInt64) ENGINE = MergeTree ORDER BY k;
-CREATE TABLE t_wd_dim (g UInt64, name String) ENGINE = MergeTree ORDER BY g;
+-- Without `auto_statistics_types = ''` a randomized `materialize_statistics_on_insert` would
+-- activate the selectivity estimator, which sees the real tiny tables instead of the hint.
+CREATE TABLE t_wd_fact (k UInt64, g UInt64, v UInt64) ENGINE = MergeTree ORDER BY k
+  SETTINGS auto_statistics_types = '';
+CREATE TABLE t_wd_dim (g UInt64, name String) ENGINE = MergeTree ORDER BY g
+  SETTINGS auto_statistics_types = '';
 INSERT INTO t_wd_fact SELECT number, number % 10, number FROM numbers(1000);
 INSERT INTO t_wd_dim SELECT number, concat('nm_', toString(number)) FROM numbers(5);
 
