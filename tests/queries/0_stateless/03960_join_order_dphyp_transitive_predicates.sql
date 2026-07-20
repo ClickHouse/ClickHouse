@@ -6,7 +6,7 @@
 
 SET allow_experimental_analyzer = 1;
 SET use_statistics = 1;
-SET materialize_statistics_on_insert = 0; -- pin (randomized in CI): statistics built on INSERT change the join order
+SET materialize_statistics_on_insert = 1; -- pin (randomized in CI) and actually build the `uniq` statistics declared below, so NDV estimates come from real statistics
 SET query_plan_join_swap_table = 'auto';
 SET enable_join_runtime_filters = 0;
 SET enable_parallel_replicas = 0;
