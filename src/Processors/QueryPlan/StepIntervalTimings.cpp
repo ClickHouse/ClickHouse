@@ -49,7 +49,7 @@ StepIntervalTimings::Intervals StepIntervalTimings::computeBranchTime(QueryPlan:
         [](const Interval & lhs, const Interval & rhs) { return lhs.start < rhs.start; });
 
     std::vector<Intervals> branch_sequences;
-    branch_sequences.push_back(uniteSortedSequences({own}));
+    branch_sequences.push_back(collapseSorted(std::move(own)));
     const UInt64 step_time_ns = totalLength(branch_sequences.front());
 
     for (auto * child : node->children)
@@ -69,28 +69,67 @@ StepIntervalTimings::Intervals StepIntervalTimings::computeBranchTime(QueryPlan:
     return branch;
 }
 
+StepIntervalTimings::Intervals StepIntervalTimings::collapseSorted(Intervals sorted)
+{
+    size_t write = 0;
+    for (size_t read = 0; read < sorted.size(); ++read)
+    {
+        if (write > 0 && sorted[read].start <= sorted[write - 1].end)
+            sorted[write - 1].end = std::max(sorted[write - 1].end, sorted[read].end);
+        else
+            sorted[write++] = sorted[read];
+    }
+    sorted.resize(write);
+    return sorted;
+}
+
+StepIntervalTimings::Intervals StepIntervalTimings::mergeSortedSequences(const std::vector<Intervals> & sorted_sequences)
+{
+    /// Cursor into one input sequence: which sequence, and the next unread position in it.
+    struct Cursor
+    {
+        size_t sequence;
+        size_t position;
+    };
+
+    size_t total = 0;
+    for (const auto & sequence : sorted_sequences)
+        total += sequence.size();
+
+    /// Min-heap over the current head of each non-empty sequence, ordered by interval start.
+    const auto later_start = [&](const Cursor & lhs, const Cursor & rhs)
+    {
+        return sorted_sequences[lhs.sequence][lhs.position].start
+             > sorted_sequences[rhs.sequence][rhs.position].start;
+    };
+
+    std::vector<Cursor> heads;
+    heads.reserve(sorted_sequences.size());
+    for (size_t i = 0; i < sorted_sequences.size(); ++i)
+        if (!sorted_sequences[i].empty())
+            heads.push_back({i, 0});
+    std::make_heap(heads.begin(), heads.end(), later_start);
+
+    Intervals merged;
+    merged.reserve(total);
+    while (!heads.empty())
+    {
+        std::pop_heap(heads.begin(), heads.end(), later_start);
+        Cursor & head = heads.back();
+        merged.push_back(sorted_sequences[head.sequence][head.position]);
+
+        if (++head.position < sorted_sequences[head.sequence].size())
+            std::push_heap(heads.begin(), heads.end(), later_start);
+        else
+            heads.pop_back();
+    }
+
+    return merged;
+}
+
 StepIntervalTimings::Intervals StepIntervalTimings::uniteSortedSequences(const std::vector<Intervals> & sorted_sequences)
 {
-    Intervals merged;
-    for (const auto & sequence : sorted_sequences)
-    {
-        Intervals next;
-        next.reserve(merged.size() + sequence.size());
-        std::merge(merged.begin(), merged.end(), sequence.begin(), sequence.end(), std::back_inserter(next),
-            [](const Interval & lhs, const Interval & rhs) { return lhs.start < rhs.start; });
-        merged = std::move(next);
-    }
-
-    Intervals united;
-    for (const auto & interval : merged)
-    {
-        if (!united.empty() && interval.start <= united.back().end)
-            united.back().end = std::max(united.back().end, interval.end);
-        else
-            united.push_back(interval);
-    }
-
-    return united;
+    return collapseSorted(mergeSortedSequences(sorted_sequences));
 }
 
 UInt64 StepIntervalTimings::totalLength(const Intervals & intervals)

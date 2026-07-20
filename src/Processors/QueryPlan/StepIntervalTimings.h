@@ -49,6 +49,12 @@ private:
     /// branch's intervals as one sorted, non-overlapping sequence for the parent to reuse.
     Intervals computeBranchTime(QueryPlan::Node * node);
 
+    /// Collapse overlaps in a start-sorted sequence into one sorted, non-overlapping sequence, in place.
+    static Intervals collapseSorted(Intervals sorted);
+
+    /// k-way merge of already start-sorted sequences into one start-sorted (possibly overlapping) sequence.
+    static Intervals mergeSortedSequences(const std::vector<Intervals> & sorted_sequences);
+
     /// Merge sorted sequences and collapse overlaps into one sorted, non-overlapping sequence.
     static Intervals uniteSortedSequences(const std::vector<Intervals> & sorted_sequences);
 
