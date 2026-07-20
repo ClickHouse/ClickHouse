@@ -31,7 +31,6 @@
 #include <Interpreters/FunctionNameNormalizer.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseQuery.h>
-#include <base/scope_guard.h>
 #include <Common/CurrentThread.h>
 
 
@@ -241,59 +240,73 @@ void checkActionsDAGForAggregateFunctions(const ActionsDAG & actions_dag, std::s
     }
 }
 
+/// RAII guard setting `variant_throw_on_type_mismatch` / `dynamic_throw_on_type_mismatch` on the query
+/// context of the *current thread* - the only place the `Variant`/`Dynamic` function adaptors read them
+/// from - and restoring the previous values on scope exit. Note the DDL `context` cannot be used for this:
+/// on a server it has no query context, and the adaptors would not see settings changed on it.
+class MismatchSettingsGuard
+{
+public:
+    MismatchSettingsGuard(bool variant_throw, bool dynamic_throw)
+    {
+        if (CurrentThread::isInitialized())
+        {
+            if (auto thread_query_context = CurrentThread::tryGetQueryContext())
+                thread_context = std::const_pointer_cast<Context>(thread_query_context);
+        }
+
+        if (!thread_context)
+            return;
+
+        const auto & settings = thread_context->getSettingsRef();
+        if (settings[Setting::variant_throw_on_type_mismatch] != variant_throw)
+        {
+            old_variant_throw = settings[Setting::variant_throw_on_type_mismatch];
+            thread_context->setSetting("variant_throw_on_type_mismatch", Field(variant_throw));
+        }
+        if (settings[Setting::dynamic_throw_on_type_mismatch] != dynamic_throw)
+        {
+            old_dynamic_throw = settings[Setting::dynamic_throw_on_type_mismatch];
+            thread_context->setSetting("dynamic_throw_on_type_mismatch", Field(dynamic_throw));
+        }
+    }
+
+    ~MismatchSettingsGuard()
+    {
+        if (!thread_context)
+            return;
+
+        if (old_variant_throw)
+            thread_context->setSetting("variant_throw_on_type_mismatch", Field(*old_variant_throw));
+        if (old_dynamic_throw)
+            thread_context->setSetting("dynamic_throw_on_type_mismatch", Field(*old_dynamic_throw));
+    }
+
+private:
+    ContextMutablePtr thread_context;
+    std::optional<bool> old_variant_throw;
+    std::optional<bool> old_dynamic_throw;
+};
+
 void checkTTLExpressionForAggregateFunctions(
     const ExpressionActionsPtr & expression, std::string_view expression_kind, const ContextPtr & context)
 {
     /// The synthetic probe in `checkActionsDAGForAggregateFunctions` exercises consumers over `Variant`/`Dynamic`
     /// columns carrying an AggregateFunction state. For consumers wrapped in the `Variant`/`Dynamic` function
-    /// adaptors, whether a type mismatch throws or is silently turned into NULL is decided by
+    /// adaptors, whether a type mismatch throws or is silently turned into NULL at *execution* is decided by
     /// `variant_throw_on_type_mismatch` / `dynamic_throw_on_type_mismatch`, which the adaptors read from the
-    /// query context of the *current thread* at execution - i.e. from the DDL session here, but from the
-    /// background context (whose settings come from the `background_profile` server config, strict by default)
-    /// during background TTL merges. Align the probe with that merge runtime: a session that lowered these
-    /// settings must not sneak in a TTL that would throw in every background merge, and a server whose
-    /// background profile deliberately runs lenient must not get such a `CREATE` rejected.
-    /// Note the `context` argument cannot be used for this: on a server it has no query context, and the
-    /// adaptors would not see settings changed on it - only the thread's query context reaches them.
+    /// query context of the current thread - i.e. from the DDL session here, but from the background context
+    /// (whose settings come from the `background_profile` server config, strict by default) during background
+    /// TTL merges. Align the probe with that merge runtime: a session that lowered these settings must not
+    /// sneak in a TTL that would throw in every background merge, and a server whose background profile
+    /// deliberately runs lenient must not get such a `CREATE` rejected.
     /// (Conversion functions such as `toDateTime` handle `Variant`/`Dynamic` natively, ignore both settings
     /// and always throw on a stored type they cannot convert, so for them the probe's verdict is the same
     /// under any settings.)
-    ContextMutablePtr probe_context;
-    if (CurrentThread::isInitialized())
-    {
-        if (auto thread_query_context = CurrentThread::tryGetQueryContext())
-            probe_context = std::const_pointer_cast<Context>(thread_query_context);
-    }
-
-    std::optional<bool> old_variant_throw;
-    std::optional<bool> old_dynamic_throw;
-    if (probe_context)
-    {
-        const auto & background_settings = context->getGlobalContext()->getBackgroundContext()->getSettingsRef();
-        const bool background_variant_throw = background_settings[Setting::variant_throw_on_type_mismatch];
-        const bool background_dynamic_throw = background_settings[Setting::dynamic_throw_on_type_mismatch];
-
-        const auto & settings = probe_context->getSettingsRef();
-        if (settings[Setting::variant_throw_on_type_mismatch] != background_variant_throw)
-        {
-            old_variant_throw = settings[Setting::variant_throw_on_type_mismatch];
-            probe_context->setSetting("variant_throw_on_type_mismatch", Field(background_variant_throw));
-        }
-        if (settings[Setting::dynamic_throw_on_type_mismatch] != background_dynamic_throw)
-        {
-            old_dynamic_throw = settings[Setting::dynamic_throw_on_type_mismatch];
-            probe_context->setSetting("dynamic_throw_on_type_mismatch", Field(background_dynamic_throw));
-        }
-    }
-    SCOPE_EXIT({
-        if (probe_context)
-        {
-            if (old_variant_throw)
-                probe_context->setSetting("variant_throw_on_type_mismatch", Field(*old_variant_throw));
-            if (old_dynamic_throw)
-                probe_context->setSetting("dynamic_throw_on_type_mismatch", Field(*old_dynamic_throw));
-        }
-    });
+    const auto & background_settings = context->getGlobalContext()->getBackgroundContext()->getSettingsRef();
+    MismatchSettingsGuard probe_guard(
+        background_settings[Setting::variant_throw_on_type_mismatch],
+        background_settings[Setting::dynamic_throw_on_type_mismatch]);
 
     checkActionsDAGForAggregateFunctions(expression->getActionsDAG(), expression_kind);
 }
@@ -496,6 +509,20 @@ TTLDescription TTLDescription::getTTLFromAST(
         result.expression_ast = definition_ast->clone();
 
     checkExpressionDoesntContainSubqueries(*result.expression_ast);
+
+    /// Building a TTL expression can itself consult `variant_throw_on_type_mismatch`: the `Variant`
+    /// function adaptor throws in its constructor when none of the alternatives is compatible with the
+    /// consumer, and under a lenient setting resolves the result to constant NULL instead. Such a lenient
+    /// build must not slip through DDL validation regardless of the session (or even the background
+    /// profile) settings, because it produces a table that is broken no matter how TTL runs later: the
+    /// constant fold prunes the referenced column from the stored TTL column list, so every subsequent
+    /// rebuild of the TTL expression fails with "Missing columns", and the table cannot even be re-attached
+    /// on server restart (loading has no query context, so the adaptor defaults to strict and throws).
+    /// Hence the validation build always runs strict. The escape hatches stay intact: on ATTACH or with
+    /// `allow_suspicious_ttl_expressions` the build behaves exactly as the session dictates.
+    std::optional<MismatchSettingsGuard> build_guard;
+    if (!is_attach && !context->getSettingsRef()[Setting::allow_suspicious_ttl_expressions])
+        build_guard.emplace(/*variant_throw=*/ true, /*dynamic_throw=*/ true);
 
     auto ttl_ast = result.expression_ast->clone();
     auto expression = buildExpressionAndSets(ttl_ast, columns.getAllPhysical(), context).expression;
