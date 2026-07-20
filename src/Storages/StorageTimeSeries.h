@@ -43,6 +43,9 @@ public:
 
     std::shared_ptr<const TimeSeriesSettings> getStorageSettings() const { return storage_settings.get(); }
 
+    /// Returns the schema version of this table (the `version` setting, see TimeSeriesVersion.h).
+    UInt64 getVersion() const;
+
     /// Returns the target table (works for both inner and external targets).
     StoragePtr getTargetTable(ViewTarget::Kind target_kind, const ContextPtr & local_context) const;
     StoragePtr tryGetTargetTable(ViewTarget::Kind target_kind, const ContextPtr & local_context) const;

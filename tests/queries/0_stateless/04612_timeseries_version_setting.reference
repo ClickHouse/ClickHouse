@@ -1,0 +1,13 @@
+--- the version is stamped into a new table ---
+1	1
+--- the version survives DETACH/ATTACH ---
+1
+--- PromQL works on a table with the latest version ---
+0
+--- the version cannot be altered ---
+--- altering another setting does not drop the version or other settings from the metadata ---
+1	1	1
+--- CREATE AS copies the version ---
+1
+--- an explicit version in CREATE: the latest one is allowed, others are rejected ---
+1
