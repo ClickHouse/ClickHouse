@@ -461,11 +461,6 @@ struct MergeTreeIndexTextGranuleBuilder
 
     /// Extracts tokens from the document and adds them to the granule.
     void addDocument(std::string_view document);
-    /// Like addDocument, but for a document whose bytes are not backed by padded column memory
-    /// (e.g. a freshly encoded keyValuePairs token held in a local String). Copies it into the
-    /// arena first: the token views handed to StringHashTable must live in memory that tolerates
-    /// the wide (8-byte) key reads dispatch performs, which a transient stack/heap buffer does not.
-    void addTransientDocument(std::string_view document);
     // Adds a document to the granule. The document is inserted directly as a single token.
     void addToken(std::string_view token, UInt32 token_position);
 

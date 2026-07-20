@@ -1638,16 +1638,6 @@ void MergeTreeIndexTextGranuleBuilder::addDocument(std::string_view document)
         });
 }
 
-void MergeTreeIndexTextGranuleBuilder::addTransientDocument(std::string_view document)
-{
-    /// `document` is not backed by padded column memory (unlike tokenizer input read from a column),
-    /// so the token views produced from it would not survive StringHashTable::dispatch, which reads a
-    /// full 8-byte machine word around each key and can over-read a transient (e.g. stack) buffer.
-    /// Persist the document into the arena first — the same padded storage all keys are persisted to.
-    std::string_view arena_document{arena->insert(document.data(), document.size()), document.size()};
-    addDocument(arena_document);
-}
-
 void MergeTreeIndexTextGranuleBuilder::addToken(std::string_view token, UInt32 token_position)
 {
     bool inserted = false;
@@ -1789,15 +1779,26 @@ void MergeTreeIndexAggregatorText::update(const Block & block, size_t * pos, siz
         const auto & keys = tuple.getColumn(0);
         const auto & values = tuple.getColumn(1);
 
+        /// Encode each (key, value) pair into a ColumnString before indexing. The token bytes must
+        /// live in padded memory: StringHashTable::dispatch reads a full 8-byte machine word around
+        /// each key, and its backward-read branch reads the word *ending* at the key end, which
+        /// under-reads before the allocation for a token shorter than 8 bytes. Arena pads only on
+        /// the right, so a bare Arena/String buffer is not enough; ColumnString's PaddedPODArray
+        /// pads both sides, exactly like the plain-String and Array index paths.
+        auto tokens_column = ColumnString::create();
         for (size_t i = offset; i < offset + rows_read; ++i)
         {
+            tokens_column->popBack(tokens_column->size());
             for (size_t j = offsets[i - 1]; j < offsets[i]; ++j)
             {
-                std::string_view key = keys.getDataAt(j);
-                std::string_view value = values.getDataAt(j);
-                String token = encodeMapKeyValueToken(key, value);
-                granule_builder.addTransientDocument(token);
+                String token = encodeMapKeyValueToken(keys.getDataAt(j), values.getDataAt(j));
+                tokens_column->insertData(token.data(), token.size());
             }
+
+            /// One position per map entry, in the map's stored order (mirrors the Array path).
+            UInt32 token_position = 0;
+            for (size_t j = 0; j < tokens_column->size(); ++j)
+                granule_builder.addToken(tokens_column->getDataAt(j), token_position++);
             granule_builder.incrementCurrentRow();
         }
     }
