@@ -1,0 +1,75 @@
+---
+description: '允许在不创建 Distributed 表的情况下访问集群的所有分片（在 `remote_servers` 部分中配置）。'
+sidebarTitle: 'cluster'
+slug: /sql-reference/table-functions/cluster
+title: 'clusterAllReplicas'
+doc_type: 'reference'
+---
+
+允许在不创建 [Distributed](/zh/reference/engines/table-engines/special/distributed) 表的情况下访问集群的所有分片 (这些分片在 `remote_servers` 部分中配置) 。每个分片只会查询一个副本。
+
+`clusterAllReplicas` 函数——与 `cluster` 相同，但会查询所有副本。集群中的每个副本都会作为单独的分片/连接来使用。
+
+<Note>
+  所有可用的集群都列在 [system.clusters](/zh/reference/system-tables/clusters) 表中。
+</Note>
+
+<div id="syntax">
+  ## 语法
+</div>
+
+```sql
+cluster(['cluster_name', db.table, sharding_key])
+cluster(['cluster_name', db, table, sharding_key])
+clusterAllReplicas(['cluster_name', db.table, sharding_key])
+clusterAllReplicas(['cluster_name', db, table, sharding_key])
+```
+
+<div id="arguments">
+  ## 参数
+</div>
+
+| 参数                          | 类型                                               |
+| --------------------------- | ------------------------------------------------ |
+| `cluster_name`              | 用于构建远程和本地服务器的地址集合及连接参数的集群名称；如果未指定，则设为 `default`。 |
+| `db.table` or `db`, `table` | 数据库和表的名称。                                        |
+| `sharding_key`              | 分片键。可选。如果集群包含多个分片，则需要指定。                         |
+
+<div id="returned_value">
+  ## 返回值
+</div>
+
+来自集群的数据。
+
+<div id="using_macros">
+  ## 使用宏
+</div>
+
+`cluster_name` 可以包含宏，即 `{}` 中的替换内容。替换后的值取自服务器配置文件中的 [macros](/zh/reference/settings/server-settings/settings#macros) 部分。
+
+示例：
+
+```sql
+SELECT * FROM cluster('{cluster}', default.example_table);
+```
+
+<div id="usage_recommendations">
+  ## 使用与建议
+</div>
+
+与创建 `Distributed` 表相比，使用 `cluster` 和 `clusterAllReplicas` 表函数的效率较低，因为在这种情况下，每次请求都会重新建立服务器连接。处理大量查询时，请务必预先创建 `Distributed` 表，而不要使用 `cluster` 和 `clusterAllReplicas` 表函数。
+
+在以下情况下，`cluster` 和 `clusterAllReplicas` 表函数会比较有用：
+
+* 访问特定集群以进行数据对比、调试和测试。
+* 出于研究目的，查询不同的 ClickHouse 集群和副本。
+* 手动发起的不频繁分布式请求。
+
+`host`、`port`、`user`、`password`、`compression`、`secure` 等连接设置取自 `<remote_servers>` 配置部分。详见 [Distributed 引擎](/zh/reference/engines/table-engines/special/distributed)。
+
+<div id="related">
+  ## 相关
+</div>
+
+* [skip&#95;unavailable&#95;shards](/zh/reference/settings/session-settings#skip_unavailable_shards)
+* [load&#95;balancing](/zh/reference/settings/session-settings#load_balancing)

@@ -10,6 +10,37 @@ from ci.praktika.utils import Shell, Utils
 temp_dir = "./ci/tmp"
 build_dir = "./ci/tmp/build"
 
+# Build profile telemetry is collected only for this explicit subset of builds.
+# The analytics DB is shared by every Build variant; on a master push ~25
+# variants finish and upload near-simultaneously, and the combined load crosses
+# the cluster's per-user memory limit (Code 241 MEMORY_LIMIT_EXCEEDED). Two
+# representative release builds keep the profile we actually look at (the
+# production binaries) while removing that contention at the source. Uncomment a
+# build below to profile it too; the full set of build names is BuildTypes in
+# ci/defs/defs.py.
+_PROFILED_BUILDS = (
+    "amd_release",
+    "arm_release",
+    # "amd_debug",
+    # "arm_debug",
+    # "amd_binary",
+    # "arm_binary",
+    # "amd_asan_ubsan",
+    # "arm_asan_ubsan",
+    # "amd_tsan",
+    # "arm_tsan",
+    # "amd_msan",
+    # "arm_msan",
+    # "arm_ubsan",
+    # "amd_darwin",
+    # "arm_darwin",
+)
+
+
+def _should_profile(build_type):
+    """Whether build profile telemetry is collected for this build variant."""
+    return build_type in _PROFILED_BUILDS
+
 
 def _has_data(file):
     """Whether prepare-time-trace.sh actually produced this artifact.
@@ -26,11 +57,11 @@ def _has_data(file):
 
 
 def _upload_profile_artifacts(build_type, start_time, artifacts):
-    """No-op for builds without profile data; upload it for builds that have it.
+    """Upload the profile artifacts this build produced.
 
-    Skips only artifacts that are genuinely empty (no data for this build).
-    A non-empty artifact is always uploaded, and any failure uploading it
-    propagates so the caller can fail loudly: we never swallow a real error.
+    Skips artifacts that are genuinely empty (no data for this build, see
+    _has_data). Upload failures are NOT swallowed: an INSERT rejection
+    propagates so the lost telemetry stays visible and the hook fails loudly.
     """
     for insert, file in artifacts:
         if not _has_data(file):
@@ -40,6 +71,11 @@ def _upload_profile_artifacts(build_type, start_time, artifacts):
 
 
 def check():
+    build_type = Info().job_name.split("(")[1].rstrip(")")
+    assert build_type
+    if not _should_profile(build_type):
+        print(f"Build profile telemetry not collected for [{build_type}]")
+        return
     print("Prepare build profile data")
     profiles_dir = Path("./ci/tmp") / "profiles_source"
     profiles_dir.mkdir(parents=True, exist_ok=True)
@@ -64,8 +100,6 @@ def check():
         check_start_time = Utils.timestamp_to_str(
             Result.from_fs(Info().job_name).start_time
         )
-        build_type = Info().job_name.split("(")[1].rstrip(")")
-        assert build_type
         queries = LogClusterBuildProfileQueries()
         _upload_profile_artifacts(
             build_type,
@@ -77,9 +111,9 @@ def check():
             ],
         )
     except Exception:
-        # Fail loudly on any genuine error (producer crashed, upload rejected,
-        # malformed data): never let the post-hook pass silently.
-        print("ERROR: Failed to upload build profile data:")
+        # Fail loudly on any error producing, assembling, or uploading the
+        # profile data: never let the post-hook pass silently.
+        print("ERROR: Failed to collect build profile data:")
         traceback.print_exc()
         sys.exit(1)
 

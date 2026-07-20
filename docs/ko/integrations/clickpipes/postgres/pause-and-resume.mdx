@@ -1,0 +1,55 @@
+---
+title: 'Postgres ClickPipe 일시 중지 및 재개'
+description: 'Postgres ClickPipe 일시 중지 및 재개'
+sidebarTitle: '테이블 일시 중지'
+slug: /integrations/clickpipes/postgres/pause_and_resume
+doc_type: 'guide'
+keywords: ['clickpipes', 'postgresql', 'CDC', '데이터 수집', '실시간 동기화']
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+Postgres ClickPipe를 일시 중지하면 유용한 경우가 있습니다. 예를 들어, 기존 데이터를 고정된 상태로 유지한 채 일부 분석을 수행해야 할 수 있습니다. 또는 Postgres 업그레이드를 진행 중일 수도 있습니다. 아래에서는 Postgres ClickPipe를 일시 중지하고 다시 재개하는 방법을 설명합니다.
+
+<div id="pause-clickpipe-steps">
+  ## Postgres ClickPipe를 일시 중지하는 방법
+</div>
+
+1. Data Sources 탭에서 일시 중지할 Postgres ClickPipe를 클릭합니다.
+2. **설정** 탭으로 이동합니다.
+3. **Pause** 버튼을 클릭합니다.
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/pause_button.webp" border size="md" />
+
+4. 확인 대화 상자가 나타나면 **Pause**를 다시 클릭합니다.
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/pause_dialog.webp" border size="md" />
+
+4. **메트릭** 탭으로 이동합니다.
+5. 약 5초 후(또는 페이지를 새로 고치면) 파이프 상태가 **Paused**로 표시됩니다.
+
+<Warning>
+  Postgres ClickPipe를 일시 중지해도 replication slot은 계속 증가합니다.
+</Warning>
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/pause_status.webp" border size="md" />
+
+<div id="resume-clickpipe-steps">
+  ## Postgres ClickPipe 재개 단계
+</div>
+
+1. **Data Sources** 탭에서 재개하려는 Postgres ClickPipe를 클릭하십시오. 처음에는 미러 상태가 **Paused**여야 합니다.
+2. **설정** 탭으로 이동하십시오.
+3. **Resume** 버튼을 클릭하십시오.
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/resume_button.webp" border size="md" />
+
+4. 확인 대화 상자가 나타나면 **Resume**를 다시 클릭하십시오.
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/resume_dialog.webp" border size="md" />
+
+5. **메트릭** 탭으로 이동하십시오.
+6. 약 5초 후(또는 페이지를 새로 고치면) 파이프 상태가 **Running**이어야 합니다.

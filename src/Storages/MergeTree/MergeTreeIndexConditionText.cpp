@@ -1,5 +1,6 @@
 #include <Storages/MergeTree/MergeTreeIndexConditionText.h>
 
+#include <set>
 #include <Common/StringUtils.h>
 #include <Common/OptimizedRegularExpression.h>
 #include <Common/isValidUTF8.h>
@@ -53,38 +54,46 @@ namespace Setting
     extern const SettingsBool reject_expensive_hyperscan_regexps;
 }
 
-TextSearchQuery::TextSearchQuery(String function_name_, TextSearchMode search_mode_, TextIndexDirectReadMode direct_read_mode_, VectorWithMemoryTracking<String> tokens_, std::vector<OptimizedRegularExpression> patterns_)
+TextSearchQuery::TextSearchQuery(
+    String function_name_,
+    TextSearchMode search_mode_,
+    TextIndexDirectReadMode direct_read_mode_,
+    VectorWithMemoryTracking<String> tokens_,
+    std::vector<OptimizedRegularExpression> patterns_,
+    VectorWithMemoryTracking<String> phrase_tokens_)
     : function_name(std::move(function_name_))
     , search_mode(search_mode_)
     , direct_read_mode(direct_read_mode_)
     , tokens(std::move(tokens_))
     , patterns(std::move(patterns_))
+    , phrase_tokens(std::move(phrase_tokens_))
 {
     std::sort(tokens.begin(), tokens.end());
+    initializeHash();
 }
 
-SipHash TextSearchQuery::getHash() const
+void TextSearchQuery::initializeHash()
 {
-    SipHash hash;
-    hash.update(function_name);
-    hash.update(search_mode);
-    hash.update(direct_read_mode);
+    SipHash hash_state;
+    hash_state.update(function_name);
+    hash_state.update(search_mode);
+    hash_state.update(direct_read_mode);
 
-    hash.update(tokens.size());
+    hash_state.update(tokens.size());
     for (const auto & token : tokens)
     {
-        hash.update(token.size());
-        hash.update(token);
+        hash_state.update(token.size());
+        hash_state.update(token);
     }
 
     if (!patterns.empty())
     {
-        hash.update(patterns.size());
+        hash_state.update(patterns.size());
         for (const auto & pattern : patterns)
         {
             if (const auto & re2 = pattern.getRE2())
             {
-                hash.update(re2->pattern());
+                hash_state.update(re2->pattern());
             }
             else
             {
@@ -92,24 +101,24 @@ SipHash TextSearchQuery::getHash() const
                 bool is_trivial = false;
                 bool required_substring_is_prefix = false;
                 pattern.getAnalyzeResult(required_substring, is_trivial, required_substring_is_prefix);
-                hash.update(required_substring);
-                hash.update(is_trivial);
-                hash.update(required_substring_is_prefix);
+                hash_state.update(required_substring);
+                hash_state.update(is_trivial);
+                hash_state.update(required_substring_is_prefix);
             }
         }
     }
 
     if (!phrase_tokens.empty())
     {
-        hash.update(phrase_tokens.size());
+        hash_state.update(phrase_tokens.size());
         for (const auto & token : phrase_tokens)
         {
-            hash.update(token.size());
-            hash.update(token);
+            hash_state.update(token.size());
+            hash_state.update(token);
         }
     }
 
-    return hash;
+    hash = hash_state.get128();
 }
 
 MergeTreeIndexConditionText::MergeTreeIndexConditionText(
@@ -150,7 +159,8 @@ MergeTreeIndexConditionText::MergeTreeIndexConditionText(
     else
         tokens_cache = std::make_shared<TextIndexTokensCache>(cache_policy, local_cache_max_size, 0, 1.0);
 
-    if (settings[Setting::use_text_index_header_cache])
+    use_global_header_cache = settings[Setting::use_text_index_header_cache];
+    if (use_global_header_cache)
         header_cache = context_->getTextIndexHeaderCache();
     else
         header_cache = std::make_shared<TextIndexHeaderCache>(cache_policy, local_cache_max_size, 0, 1.0);
@@ -174,8 +184,8 @@ MergeTreeIndexConditionText::MergeTreeIndexConditionText(
     {
         for (const auto & search_query : element.text_search_queries)
         {
-            all_search_tokens_set.insert(search_query->tokens.begin(), search_query->tokens.end());
-            all_search_queries[search_query->getHash().get128()] = search_query;
+            all_search_tokens_set.insert(search_query->getTokens().begin(), search_query->getTokens().end());
+            all_search_queries[search_query->getHash()] = search_query;
         }
 
         if (requiresReadingAllTokens(element))
@@ -311,17 +321,17 @@ TextSearchQueryPtr MergeTreeIndexConditionText::createTextSearchQuery(const Acti
 
 std::optional<String> MergeTreeIndexConditionText::replaceToVirtualColumn(const TextSearchQuery & query, const String & index_name)
 {
-    if (query.tokens.empty() && query.patterns.empty() && query.direct_read_mode == TextIndexDirectReadMode::Hint)
+    if (query.getTokens().empty() && query.getPatterns().empty() && query.getDirectReadMode() == TextIndexDirectReadMode::Hint)
         return std::nullopt;
 
     auto query_hash = query.getHash();
-    auto it = all_search_queries.find(query_hash.get128());
+    auto it = all_search_queries.find(query_hash);
 
     if (it == all_search_queries.end())
         return std::nullopt;
 
     auto hash_str = getSipHash128AsHexString(query_hash);
-    String virtual_column_name = fmt::format("{}{}_{}_{}", TEXT_INDEX_VIRTUAL_COLUMN_PREFIX, index_name, query.function_name, hash_str);
+    String virtual_column_name = fmt::format("{}{}_{}_{}", TEXT_INDEX_VIRTUAL_COLUMN_PREFIX, index_name, query.getFunctionName(), hash_str);
 
     virtual_column_to_search_query[virtual_column_name] = it->second;
     return virtual_column_name;
@@ -486,7 +496,7 @@ std::string MergeTreeIndexConditionText::getDescription() const
 
 bool MergeTreeIndexConditionText::hasSearchPatterns() const
 {
-    return std::ranges::any_of(all_search_queries, [](const auto & query) { return !query.second->patterns.empty(); });
+    return std::ranges::any_of(all_search_queries, [](const auto & query) { return !query.second->getPatterns().empty(); });
 }
 
 bool MergeTreeIndexConditionText::traverseAtomNode(const RPNBuilderTreeNode & node, RPNElement & out) const
@@ -1003,21 +1013,26 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     }
     if (function_name == "hasToken" || function_name == "hasTokenOrNull")
     {
-        /// Unlike hasToken, hasTokenOrNull is never rewritten on the direct-read / row-scan path, so the
-        /// pre/postprocessor is not applied to its row-level needle. Using the index here (where
-        /// stringToTokens does apply them, e.g. mapping a dropped token to the empty sentinel that prunes
-        /// every granule) would disagree with the row-level result. Bail out so the index is not used for
-        /// hasTokenOrNull when a pre/postprocessor is configured; the plain index path is unaffected.
+        // hasToken and hasTokenOrNull are legacy functions which assume splitByNonAlpha as
+        /// tokenizer. The text index can answer it only correctly if this is the index tokenizer.
+        /// In all other cases, bypass the index.
+        if (tokenizer->getType() != ITokenizer::Type::SplitByNonAlpha)
+            return false;
+
+        /// Unlike hasToken, hasTokenOrNull is never rewritten to direct-read, so the pre/postprocessor
+        /// is also not applied to its needle. Using the index here (where stringToTokens does apply them,
+        /// e.g. mapping a dropped token to the empty sentinel that prunes every granule) would disagree
+        /// with the scan result. Bail out so the index is not used for hasTokenOrNull when a
+        /// pre/postprocessor is configured; the plain index path is unaffected.
         if (function_name == "hasTokenOrNull" && (has_preprocessor || has_postprocessor))
             return false;
 
-        /// stringToTokens applies both preprocessor and postprocessor.
-        /// A needle containing a token separator is invalid for hasToken and raises BAD_ARGUMENTS during a
-        /// brute-force scan. hasToken uses Exact direct read, so the index would tokenize the needle and
-        /// silently replace the predicate (or prune the granule that would have thrown), hiding the exception;
-        /// bypass the index so the row-level function runs. hasTokenOrNull is not affected: it returns NULL
-        /// instead of throwing and only uses the index for granule pruning, which never changes its result.
-        /// A separator is any ASCII non-alphanumeric character, matching HasTokenImpl.
+        /// A needle containing a token separator is invalid for `hasToken` and the brute-force scan raises
+        /// BAD_ARGUMENTS for this. hasToken uses Exact direct read, so the index would tokenize the needle and
+        /// silently replace the predicate (or prune the granule that would have thrown), hiding the exception.
+        /// Therefore bypass the index and do a brute-force scan. hasTokenOrNull is not affected: it returns NULL
+        ///
+        /// A separator is any ASCII non-alphanumeric character.
         if (function_name == "hasToken"
             && std::ranges::any_of(value_field.safeGet<String>(), [](unsigned char c) { return isASCII(c) && !isAlphaNumericASCII(c); }))
             return false;
@@ -1040,6 +1055,8 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
                 if (std::ranges::none_of(string_needle, [](unsigned char c) { return !isASCII(c) || isAlphaNumericASCII(c); }))
                     return false;
             }
+            /// - If the needle does contain word characters (e.g. "abc" with ngrams(4)), it is valid but too short for the index's tokenizer:
+            ///   Fall through but push "" so all granules are pruned and the query returns 0 rows.
             tokens.push_back("");
         }
 
@@ -1062,22 +1079,35 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         const String value = preprocessor->processConstant(value_field.safeGet<String>());
 
         /// When positions are available, use phrase search with positional intersection.
-        /// NOTE: positional phrase search is incompatible with a token-rewriting postprocessor
-        /// (it may drop/reorder tokens); the two are not expected to be configured together.
         if (has_positions)
         {
-            /// For phrase queries, we need tokens in their original order with duplicates preserved.
+            /// phrase_tokens keeps order and duplicates for positional search; unique_tokens is the
+            /// sorted distinct set used for granule-level filtering (all tokens must exist).
             VectorWithMemoryTracking<String> phrase_tokens;
             tokenizer->stringToTokens(value.data(), value.size(), phrase_tokens);
-            if (phrase_tokens.empty())
-                return false;
 
-            /// The sorted+deduplicated tokens are used for granule-level filtering (all tokens must exist).
-            auto unique_tokens = tokenizer->compactTokens(phrase_tokens);
-            std::sort(unique_tokens.begin(), unique_tokens.end());
+            VectorWithMemoryTracking<String> unique_tokens;
+            if (has_postprocessor)
+            {
+                /// Dense positions: a token the postprocessor drops leaves no gap, so 'see cat' matches 'see the cat'.
+                phrase_tokens = postprocessor->processTokens(std::move(phrase_tokens));
+                std::set<String> dedup(phrase_tokens.begin(), phrase_tokens.end());
+                unique_tokens = VectorWithMemoryTracking<String>(dedup.begin(), dedup.end());
+            }
+            else
+            {
+                unique_tokens = tokenizer->compactTokens(phrase_tokens);
+                std::sort(unique_tokens.begin(), unique_tokens.end());
+            }
 
-            auto query = std::make_shared<TextSearchQuery>(function_name, TextSearchMode::Phrase, direct_read_mode, std::move(unique_tokens));
-            query->phrase_tokens = std::move(phrase_tokens);
+            auto query = std::make_shared<TextSearchQuery>(
+                function_name,
+                TextSearchMode::Phrase,
+                direct_read_mode,
+                std::move(unique_tokens),
+                std::vector<OptimizedRegularExpression>{},
+                std::move(phrase_tokens));
+
             out.function = RPNElement::FUNCTION_HAS_PHRASE;
             out.text_search_queries.emplace_back(std::move(query));
             return true;
@@ -1086,14 +1116,8 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         /// Without positions, fall back to "all tokens must exist". stringToTokens applies both the
         /// preprocessor and the postprocessor so the lookup tokens match what was stored in the index;
         /// in Hint mode any false positives are resolved by the row-level filter.
+        /// An all-dropped phrase yields empty tokens, i.e. a query that matches nothing (consistent with hasAllTokens).
         auto tokens = stringToTokens(value_field);
-
-        /// If a pre/postprocessor maps the whole phrase to no tokens, an empty FUNCTION_HAS_ALL_TOKENS
-        /// would prune every granule (hasAllQueryTokens returns false for empty tokens). hasPhrase is
-        /// hint-only and is not postprocessed at row level, so it can still match. Bail out of index use
-        /// instead of producing an unsatisfiable hint, letting the row-level filter decide.
-        if (tokens.empty())
-            return false;
 
         out.function = RPNElement::FUNCTION_HAS_ALL_TOKENS;
         out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, direct_read_mode, std::move(tokens)));
@@ -1254,7 +1278,17 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
                 return false;
             }
 
-            auto tokens_for_queries = regexpToTokensForQueries(pattern.safeGet<String>());
+            /// `multiMatchAny` is executed by vectorscan, which compiles each pattern as a NUL-terminated
+            /// C-string (`hs_compile_multi` takes no length), so it stops at the first NUL byte. The regexp
+            /// analyzer below is binary-safe and keeps the NUL as a literal, so it would extract a required
+            /// substring spanning the NUL that the matcher never requires, and the index would wrongly prune
+            /// granules that the function matches. Truncate the pattern at the first NUL to analyze exactly
+            /// what vectorscan sees. (This differs from `match`, which is executed by binary-safe re2.)
+            String pattern_string = pattern.safeGet<String>();
+            if (const auto nul_pos = pattern_string.find('\0'); nul_pos != String::npos)
+                pattern_string.resize(nul_pos);
+
+            auto tokens_for_queries = regexpToTokensForQueries(pattern_string);
 
             if (tokens_for_queries.empty())
             {

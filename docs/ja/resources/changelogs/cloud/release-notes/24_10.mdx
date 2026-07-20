@@ -1,0 +1,58 @@
+---
+slug: /changelogs/24.10
+title: 'Cloud 向け v24.10 変更履歴'
+description: 'v24.10 の迅速リリース変更履歴'
+keywords: ['変更履歴', 'cloud']
+sidebarTitle: '24.10'
+doc_type: 'changelog'
+---
+
+v24.10 リリースに基づく、ClickHouse Cloud サービス向けの主な変更です。
+
+<div id="backward-incompatible-change">
+  ## 後方互換性を持たない変更
+</div>
+
+* サブクエリが括弧内にある `UNION` を含むクエリチェーンで、`FORMAT` の前に `SETTINGS` を記述できるようになりました。これにより [#39712](https://github.com/ClickHouse/ClickHouse/issues/39712) をクローズします。また、クエリチェーン内で SETTINGS 句が 2 回指定された場合の動作も変更されました。対応するサブクエリでは、最も近い SETTINGS 句が優先されます。以前のバージョンでは、最も外側の SETTINGS 句が内側の句より優先される場合がありました。 [#60197](https://github.com/ClickHouse/ClickHouse/pull/60197)[#68614](https://github.com/ClickHouse/ClickHouse/pull/68614) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+* Dynamic 型を再実装しました。動的な型の上限に達した場合、新しい型は String に CAST されず、バイナリエンコードされたデータ型を持つバイナリ形式の特別なデータ構造に格納されるようになりました。これにより、Dynamic カラムにこれまで挿入されたあらゆる型をサブカラムとして読み取れるようになりました。 [#68132](https://github.com/ClickHouse/ClickHouse/pull/68132) ([Pavel Kruglov](https://github.com/Avogar)).
+* `a[b].c` のような式が named tuple でサポートされるようになり、`expr().name` のように任意の式に対する名前付き添字もサポートされます。これは JSON の処理に役立ちます。これにより [#54965](https://github.com/ClickHouse/ClickHouse/issues/54965) をクローズします。以前のバージョンでは、`expr().name` 形式の式は `tupleElement(expr(), name)` としてパースされ、クエリ アナライザは対応する tuple 要素ではなく `name` というカラムを探していました。一方、新しいバージョンでは `tupleElement(expr(), 'name')` に変更されています。ほとんどの場合、以前のバージョンは正しく動作していませんでしたが、この変更が非互換性につながる非常に特殊なケースは考えられます。たとえば、tuple 要素名を、その tuple 要素名とは異なる名前を持つカラムまたは alias に格納していた場合です: `SELECT 'b' AS a, CAST([tuple(123)] AS 'Array(Tuple(b UInt8))') AS t, t[1].a`。このようなクエリを使っていた可能性はきわめて低いものの、この変更は後方互換性を損なう可能性があるものとして扱う必要があります。 [#68435](https://github.com/ClickHouse/ClickHouse/pull/68435) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+* 設定 `print_pretty_type_names` を有効にすると、`SHOW CREATE TABLE` ステートメント、`formatQuery` 関数、および `clickhouse-client` と `clickhouse-local` の対話型モードで、`Tuple` データ型が Pretty 形式で表示されるようになります。以前のバージョンでは、この設定は `DESCRIBE` クエリと `toTypeName` にのみ適用されていました。これにより [#65753](https://github.com/ClickHouse/ClickHouse/issues/65753) をクローズします。 [#68492](https://github.com/ClickHouse/ClickHouse/pull/68492) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+* `[PRE]WHERE` 句のフィルタ条件の並べ替えが、デフォルトで許可されるようになりました。これは `allow_reorder_prewhere_conditions` を `false` に設定することで無効にできます。 [#70657](https://github.com/ClickHouse/ClickHouse/pull/70657) ([Nikita Taranov](https://github.com/nickitat)).
+* `mapKeys`/`mapValues` で `LowCardinality` 型を保持するようにして、`optimize_functions_to_subcolumns` 最適化を修正しました (以前は `Invalid column type for ColumnUnique::insertRangeFrom. Expected String, got LowCardinality(String)` エラーを引き起こす可能性がありました) 。 [#70716](https://github.com/ClickHouse/ClickHouse/pull/70716) ([Azat Khuzhin](https://github.com/azat)).
+
+<div id="new-feature">
+  ## 新機能
+</div>
+
+* リフレッシュ可能なマテリアライズドビューが本番環境対応になりました。 [#70550](https://github.com/ClickHouse/ClickHouse/pull/70550) ([Michael Kolupaev](https://github.com/al13n321)). リフレッシュ可能なマテリアライズドビューが Replicated データベースでサポートされるようになりました。 [#60669](https://github.com/ClickHouse/ClickHouse/pull/60669) ([Michael Kolupaev](https://github.com/al13n321)).
+* 関数 `toStartOfInterval()` に、TimescaleDB の `time_bucket()` 関数および PostgreSQL の `date_bin()` 関数を再現する新しいオーバーロードが追加されました。([#55619](https://github.com/ClickHouse/ClickHouse/issues/55619))。これにより、日付またはタイムスタンプの値を、*固定* の始点である 0000-01-01 00:00:00.000 ではなく、*任意* の始点を基準として、指定したインターバルの倍数に揃えられるようになりました。たとえば、`SELECT toStartOfInterval(toDateTime('2023-01-01 14:45:00'), INTERVAL 1 MINUTE, toDateTime('2023-01-01 14:35:30'));` は `2023-01-01 14:44:30` を返します。これは、始点 `2023-01-01 14:35:30` から始まる 1 分インターバルの倍数です。 [#56738](https://github.com/ClickHouse/ClickHouse/pull/56738) ([Yarik Briukhovetskyi](https://github.com/yariks5s))。
+* MongoDBインテグレーションをリファクタリング: 非推奨の Poco::MongoDB から新しいドライバー mongocxx への移行、非推奨の旧プロトコルのサポートの削除、URI による接続のサポート、すべての MongoDB 型のサポート、MongoDB 側での WHERE および ORDER BY ステートメントのサポート、MongoDB でサポートされない式の制限。 [#63279](https://github.com/ClickHouse/ClickHouse/pull/63279) ([Kirill Nikiforov](https://github.com/allmazz)).
+* clickhouse-client の新しい `--progress-table` オプションでは、クエリの実行中に変化するメトリクスを表形式で表示できます。新しい `--enable-progress-table-toggle` は `--progress-table` オプションに対応しており、control キー (Space) を押すと進行状況テーブルの表示/非表示を切り替えられます。[#63689](https://github.com/ClickHouse/ClickHouse/pull/63689) ([Maria Khristenko](https://github.com/mariaKhr)).
+* これにより、ワイルドカード付きプレフィックスへのアクセスを許可できるようになります。 `GRANT SELECT ON db.table_pefix_* TO user`. [#65311](https://github.com/ClickHouse/ClickHouse/pull/65311) ([pufit](https://github.com/pufit)).
+* ClickHouse が各行を、メタデータ、データ、progress、totals、統計情報を含む改行区切りの JSON オブジェクトとして出力する JSONCompactWithProgress フォーマットが導入されました。 [#66205](https://github.com/ClickHouse/ClickHouse/pull/66205) ([Alexey Korepanov](https://github.com/alexkorep)).
+* 各クエリごとの、テーブル system.events にあるメモリおよびメトリクスの値の履歴を含み、定期的にディスクへフラッシュされる system.query&#95;metric&#95;log を追加しました。 [#66532](https://github.com/ClickHouse/ClickHouse/pull/66532) ([Pablo Marcos](https://github.com/pamarcos)).
+* `input_format_json_empty_as_default` 設定を追加しました。有効にすると、JSON入力内の空のフィールドをデフォルト値として扱います。[#59339](https://github.com/ClickHouse/ClickHouse/issues/59339) をクローズしました。[#66782](https://github.com/ClickHouse/ClickHouse/pull/66782) ([Alexis Arnaud](https://github.com/a-a-f)).
+* 文字列の一部を別の文字列で置き換える関数 `overlay` および `overlayUTF8` を追加しました。例: `SELECT overlay('Hello New York', 'Jersey', 11)` は `Hello New Jersey` を返します。[#66933](https://github.com/ClickHouse/ClickHouse/pull/66933) ([李扬](https://github.com/taiyang-li)).
+* 新しいコマンド「パーティション内の論理削除」を追加 `DELETE FROM [db.]table [ON CLUSTER cluster] [IN PARTITION partition_expr] WHERE expr;` &#96;&#96;&#96; VM-114-29-tos :) select * from ads&#95;app&#95;poster&#95;ip&#95;source&#95;channel&#95;di&#95;replicated&#95;local;. [#67805](https://github.com/ClickHouse/ClickHouse/pull/67805) ([sunny](https://github.com/sunny19930321)).
+* `Interval` データ型の値どうしの比較を実装し、比較時に最小の上位型へ変換されるようになりました。[#68057](https://github.com/ClickHouse/ClickHouse/pull/68057) ([Yarik Briukhovetskyi](https://github.com/yariks5s)) 。
+* CREATEステートメントで IF NOT EXISTS の動作をデフォルトにする create&#95;if&#95;not&#95;exists 設定を追加しました。 [#68164](https://github.com/ClickHouse/ClickHouse/pull/68164) ([Peter Nguyen](https://github.com/petern48)).
+* Azure およびローカル環境で Iceberg テーブルを読み取れるようになりました。 [#68210](https://github.com/ClickHouse/ClickHouse/pull/68210) ([Daniil Ivanik](https://github.com/divanik)).
+* JSON column type の内容をより詳しく把握するため、集約関数 distinctDynamicTypes/distinctJSONPaths/distinctJSONPathsAndTypes を追加しました。[#68463](https://github.com/ClickHouse/ClickHouse/pull/68463) ([Pavel Kruglov](https://github.com/Avogar)) 。
+* クエリキャッシュのエントリをtagでdropできるようになりました。たとえば、`SELECT 1 SETTINGS use_query_cache = true, query_cache_tag = 'abc'` で作成されたクエリキャッシュのエントリは、`SYSTEM DROP QUERY CACHE TAG 'abc'` でdropできます (もちろん、`SYSTEM DROP QUERY CACHE` を実行してクエリキャッシュ全体をクリアすることもできます) 。[#68477](https://github.com/ClickHouse/ClickHouse/pull/68477) ([Michał Tabaszewski](https://github.com/pinsvin00)) 。
+* 暗黙のSELECTを使うと、簡単なSELECTクエリを電卓のような式として書けます。たとえば、`ch "1 + 2"` のように記述できます。これは新しい設定 `implicit_select` で制御されます。[#68502](https://github.com/ClickHouse/ClickHouse/pull/68502) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+* フォーマット変換の簡易手段として、clickhouse local の --copy モードをサポートしました [#68503](https://github.com/ClickHouse/ClickHouse/issues/68503)。 [#68583](https://github.com/ClickHouse/ClickHouse/pull/68583) ([Denis Hananein](https://github.com/denis-hananein)).
+* 文字列の RIPEMD-160 暗号学的ハッシュを計算する `ripeMD160` 関数を追加しました。Example: `SELECT hex(ripeMD160('The quick brown fox jumps over the lazy dog'))` は `37F332F68DB77BD9D7EDD4969571AD671CF9DD3B` を返します。 [#68639](https://github.com/ClickHouse/ClickHouse/pull/68639) ([Dergousov Maxim](https://github.com/m7kss1)).
+* URL table engine に仮想カラム &#95;headers を追加しました。[#65026](https://github.com/ClickHouse/ClickHouse/issues/65026) をクローズします。[#68867](https://github.com/ClickHouse/ClickHouse/pull/68867) ([flynn](https://github.com/ucasfl)).
+* 利用可能なプロジェクションを追跡するため、`system.projections` テーブルを追加しました。[#68901](https://github.com/ClickHouse/ClickHouse/pull/68901) ([Jordi Villar](https://github.com/jrdi)) 。
+* `arrayUnion` 関数のサポートが追加されました。[#68989](https://github.com/ClickHouse/ClickHouse/pull/68989) ([Peter Nguyen](https://github.com/petern48)) 。
+* Spark との互換性(arrays&#95;zip)のため、元の `arrayZip` をベースに、長さのそろっていない配列も扱える新しい関数 `arrayZipUnaligned` を追加しました。 &#96;&#96;&#96; sql SELECT arrayZipUnaligned([1], [1, 2, 3]). [#69030](https://github.com/ClickHouse/ClickHouse/pull/69030) ([李扬](https://github.com/taiyang-li)).
+* 集約関数 `quantileExactWeightedInterpolated` のサポートを追加しました。これは quantileExactWeighted に基づく補間版です。すでに `quantileExactInterpolatedWeighted` があるのに、なぜ新たに `quantileExactWeightedInterpolated` が必要なのか疑問に思う人もいるかもしれません。その理由は、新しいほうが従来のものよりも高精度だからです。ちなみに、これは Apache Gluten での Spark 互換性のためのものです。[#69619](https://github.com/ClickHouse/ClickHouse/pull/69619) ([李扬](https://github.com/taiyang-li)).
+* 関数 arrayElementOrNull のサポートを追加しました。配列の添字が範囲外の場合、または map のキーが見つからない場合は null を返します。[#69646](https://github.com/ClickHouse/ClickHouse/pull/69646) ([李扬](https://github.com/taiyang-li)) 。
+* Dynamic 内部の型に対して実行することで、ほとんどの関数で Dynamic type をサポートしました。[#69691](https://github.com/ClickHouse/ClickHouse/pull/69691) ([Pavel Kruglov](https://github.com/Avogar)) 。
+* 関数 `arrayAUC` に引数 `scale` (デフォルト: `true`) が追加され、正規化の手順をスキップできるようになりました (issue [#69609](https://github.com/ClickHouse/ClickHouse/issues/69609)) 。[#69717](https://github.com/ClickHouse/ClickHouse/pull/69717) ([gabrielmcg44](https://github.com/gabrielmcg44)) 。
+* 文字列の RIPEMD-160 暗号学的ハッシュを計算する `RIPEMD160` 関数を再度追加しました。例: `SELECT HEX(RIPEMD160('The quick brown fox jumps over the lazy dog'))` は `37F332F68DB77BD9D7EDD4969571AD671CF9DD3B` を返します。 [#70087](https://github.com/ClickHouse/ClickHouse/pull/70087) ([Dergousov Maxim](https://github.com/m7kss1)).
+* ETag + file path のハッシュを cache キーとして使用し、オブジェクトストレージのテーブルエンジンおよびデータレイクで読み込んだファイルを cache できるようにしました。 [#70135](https://github.com/ClickHouse/ClickHouse/pull/70135) ([Kseniia Sumarokova](https://github.com/kssenii)) 。
+* HDFS上のIcebergテーブルの読み取りをサポート。 [#70268](https://github.com/ClickHouse/ClickHouse/pull/70268) ([flynn](https://github.com/ucasfl)).
+* 設定 `input_format_binary_read_json_as_string/output_format_binary_write_json_as_string` により、RowBinary フォーマットで JSON type を binary string として読み書きできるようになりました。[#70288](https://github.com/ClickHouse/ClickHouse/pull/70288) ([Pavel Kruglov](https://github.com/Avogar)).
+* Native format で、JSONカラムを単一の String カラムとしてシリアライズ/デシリアライズできるようになりました。出力時は設定 `output_format_native_write_json_as_string` を使用します。入力時は、カラムデータの前にシリアル化バージョン `1` を使用します。 [#70312](https://github.com/ClickHouse/ClickHouse/pull/70312) ([Pavel Kruglov](https://github.com/Avogar)).
+* 標準的な CTE と `with insert` をサポートしました。これまでは `insert ... with ...` のみサポートしていました。 [#70593](https://github.com/ClickHouse/ClickHouse/pull/70593) ([Shichao Jin](https://github.com/jsc0218)).

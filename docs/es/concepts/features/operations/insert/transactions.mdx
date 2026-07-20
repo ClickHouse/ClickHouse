@@ -1,0 +1,355 @@
+---
+description: 'Página que describe la compatibilidad con transacciones (ACID) en ClickHouse'
+slug: /guides/developer/transactional
+title: 'Compatibilidad con transacciones (ACID)'
+doc_type: 'guide'
+---
+
+import ExperimentalBadge from "/snippets/es/components/ExperimentalBadge/ExperimentalBadge.jsx";
+import CloudNotSupportedBadge from "/snippets/es/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+
+<div id="case-1-insert-into-one-partition-of-one-table-of-the-mergetree-family">
+  ## Caso 1: INSERT en una partición de una tabla de la familia MergeTree*
+</div>
+
+Esto es transaccional (ACID) si las filas insertadas están compactadas y se insertan como un único bloque (consulta las notas):
+
+* Atómico: un INSERT se completa correctamente o se rechaza por completo: si se envía una confirmación al cliente, se insertaron todas las filas; si se envía un error al cliente, no se insertó ninguna fila.
+* Consistente: si no se viola ninguna restricción de la tabla, se insertan todas las filas de un INSERT y el INSERT se completa correctamente; si se violan restricciones, no se inserta ninguna fila.
+* Aislado: los clientes concurrentes observan una instantánea coherente de la tabla: el estado de la tabla tal como era antes del intento de INSERT o después de que el INSERT se complete correctamente; no se observa ningún estado parcial. Los clientes dentro de otra transacción tienen aislamiento de [instantánea](https://en.wikipedia.org/wiki/Snapshot_isolation), mientras que los clientes fuera de una transacción tienen el nivel de aislamiento [read uncommitted](https://en.wikipedia.org/wiki/Isolation_\(database_systems\)#Read_uncommitted).
+* Duradero: un INSERT completado correctamente se escribe en el sistema de archivos antes de responder al cliente, en una sola réplica o en varias réplicas (controlado por la configuración `insert_quorum`), y ClickHouse puede pedirle al SO que sincronice los datos del sistema de archivos en el medio de almacenamiento (controlado por la configuración `fsync_after_insert`).
+* Es posible hacer INSERT en varias tablas con una sola sentencia si intervienen vistas materializadas (el INSERT del cliente se hace en una tabla que tiene vistas materializadas asociadas).
+
+<div id="case-2-insert-into-multiple-partitions-of-one-table-of-the-mergetree-family">
+  ## Caso 2: INSERT en varias particiones de una tabla de la familia MergeTree*
+</div>
+
+Igual que en el caso 1 anterior, con este detalle:
+
+* Si la tabla tiene muchas particiones y el INSERT abarca varias particiones, la inserción en cada partición es transaccional por separado
+
+<div id="case-3-insert-into-one-distributed-table-of-the-mergetree-family">
+  ## Caso 3: INSERT en una tabla distribuida de la familia MergeTree*
+</div>
+
+Igual que el caso 1 anterior, con este detalle:
+
+* Un INSERT en una tabla Distributed no es transaccional en su conjunto, mientras que la inserción en cada segmento sí lo es
+
+<div id="case-4-using-a-buffer-table">
+  ## Caso 4: Uso de una tabla Buffer
+</div>
+
+* las inserciones en tablas Buffer no son atómicas, aisladas, consistentes ni duraderas
+
+<div id="case-5-using-async_insert">
+  ## Caso 5: Uso de async_insert
+</div>
+
+Igual que el caso 1 anterior, con este detalle:
+
+* la atomicidad está garantizada incluso si `async_insert` está habilitado y `wait_for_async_insert` está configurado en 1 (valor predeterminado), pero si `wait_for_async_insert` está configurado en 0, la atomicidad no está garantizada.
+
+<div id="notes">
+  ## Notas
+</div>
+
+* las filas insertadas desde el cliente en algún formato de datos se empaquetan en un único bloque cuando:
+  * el formato de inserción está basado en filas (como CSV, TSV, Values, JSONEachRow, etc.) y los datos contienen menos de `max_insert_block_size` filas (~1 000 000 de forma predeterminada) o menos de `min_chunk_bytes_for_parallel_parsing` bytes (10 MB de forma predeterminada) en caso de usar parsing paralelo (activado de forma predeterminada)
+  * el formato de inserción está basado en columnas (como Native, Parquet, ORC, etc.) y los datos contienen un único bloque de datos
+* el tamaño del bloque insertado, en general, puede depender de muchos ajustes (por ejemplo: `max_block_size`, `max_insert_block_size`, `min_insert_block_size_rows`, `min_insert_block_size_bytes`, `preferred_block_size_bytes`, etc.)
+* si el cliente no recibió respuesta del servidor, no sabe si la transacción se completó correctamente y puede repetirla usando las propiedades de inserción exactly-once
+* ClickHouse usa [MVCC](https://en.wikipedia.org/wiki/Multiversion_concurrency_control) con [aislamiento de instantánea](https://en.wikipedia.org/wiki/Snapshot_isolation) internamente para transacciones concurrentes
+* todas las propiedades ACID se mantienen incluso en caso de terminación forzada o fallo del servidor
+* para garantizar inserciones duraderas en la configuración típica, debe habilitarse insert&#95;quorum en distintas AZ o fsync
+* la &quot;consistencia&quot; en términos ACID no cubre la semántica de los sistemas distribuidos; consulte https://jepsen.io/consistency, que se controla mediante distintos ajustes (select&#95;sequential&#95;consistency)
+* esta explicación no cubre una nueva funcionalidad de transacciones que permite tener transacciones completas sobre múltiples tablas, vistas materializadas y múltiples SELECT, etc. (consulte la siguiente sección sobre Transactions, Commit, and Rollback)
+
+<div id="transactions-commit-and-rollback">
+  ## Transacciones, Commit y Rollback
+</div>
+
+<ExperimentalBadge />
+
+<CloudNotSupportedBadge />
+
+Además de la funcionalidad descrita al inicio de este documento, ClickHouse ofrece soporte experimental para transacciones y operaciones de commit y rollback.
+
+<div id="requirements">
+  ### Requisitos
+</div>
+
+* Implemente ClickHouse Keeper o ZooKeeper para hacer seguimiento de las transacciones
+* Solo BD Atomic (predeterminada)
+* Solo el motor de tabla MergeTree no replicado
+* Habilite la compatibilidad Experimental con transacciones añadiendo esta configuración en `config.d/transactions.xml`:
+  ```xml
+  <clickhouse>
+    <allow_experimental_transactions>1</allow_experimental_transactions>
+  </clickhouse>
+  ```
+
+<div id="notes-1">
+  ### Notas
+</div>
+
+* Esta es una funcionalidad experimental, por lo que es de esperar que haya cambios.
+* Si se produce una excepción durante una transacción, no puede hacer commit de la transacción. Esto incluye todas las excepciones, incluidas las excepciones `UNKNOWN_FUNCTION` causadas por errores tipográficos.
+* No se admiten transacciones anidadas; en su lugar, finalice la transacción actual e inicie una nueva
+
+<div id="configuration">
+  ### Configuración
+</div>
+
+Estos ejemplos corresponden a un servidor ClickHouse de un solo nodo con ClickHouse Keeper habilitado.
+
+<div id="enable-experimental-transaction-support">
+  #### Habilitar la compatibilidad con transacciones experimentales
+</div>
+
+```xml title=/etc/clickhouse-server/config.d/transactions.xml
+<clickhouse>
+    <allow_experimental_transactions>1</allow_experimental_transactions>
+</clickhouse>
+```
+
+<div id="basic-configuration-for-a-single-clickhouse-server-node-with-clickhouse-keeper-enabled">
+  #### Configuración básica para un único nodo del servidor ClickHouse con ClickHouse Keeper habilitado
+</div>
+
+<Note>
+  Consulta la documentación de [despliegue](/es/guides/oss/deployment-and-scaling/terminology) para obtener más información sobre cómo desplegar el servidor ClickHouse y un quórum adecuado de nodos de ClickHouse Keeper. La configuración que se muestra aquí es solo para fines experimentales.
+</Note>
+
+```xml title=/etc/clickhouse-server/config.d/config.xml
+<clickhouse replace="true">
+    <logger>
+        <level>debug</level>
+        <log>/var/log/clickhouse-server/clickhouse-server.log</log>
+        <errorlog>/var/log/clickhouse-server/clickhouse-server.err.log</errorlog>
+        <size>1000M</size>
+        <count>3</count>
+    </logger>
+    <display_name>node 1</display_name>
+    <listen_host>0.0.0.0</listen_host>
+    <http_port>8123</http_port>
+    <tcp_port>9000</tcp_port>
+    <zookeeper>
+        <node>
+            <host>clickhouse-01</host>
+            <port>9181</port>
+        </node>
+    </zookeeper>
+    <keeper_server>
+        <tcp_port>9181</tcp_port>
+        <server_id>1</server_id>
+        <log_storage_path>/var/lib/clickhouse/coordination/log</log_storage_path>
+        <snapshot_storage_path>/var/lib/clickhouse/coordination/snapshots</snapshot_storage_path>
+        <coordination_settings>
+            <operation_timeout_ms>10000</operation_timeout_ms>
+            <session_timeout_ms>30000</session_timeout_ms>
+            <raft_logs_level>information</raft_logs_level>
+        </coordination_settings>
+        <raft_configuration>
+            <server>
+                <id>1</id>
+                <hostname>clickhouse-keeper-01</hostname>
+                <port>9234</port>
+            </server>
+        </raft_configuration>
+    </keeper_server>
+</clickhouse>
+```
+
+<div id="example">
+  ### Ejemplo
+</div>
+
+<div id="verify-that-experimental-transactions-are-enabled">
+  #### Verifica que las transacciones experimentales estén habilitadas
+</div>
+
+Ejecuta un `BEGIN TRANSACTION` o `START TRANSACTION`, seguido de un `ROLLBACK`, para verificar que las transacciones experimentales estén habilitadas y que ClickHouse Keeper también lo esté, ya que se utiliza para hacer el seguimiento de las transacciones.
+
+```sql
+BEGIN TRANSACTION
+```
+
+```response
+Ok.
+```
+
+<Tip>
+  Si aparece el siguiente error, revisa el archivo de configuración para asegurarte de que `allow_experimental_transactions` esté establecido en `1` (o en cualquier valor distinto de `0` o `false`).
+
+  ```response
+  Code: 48. DB::Exception: Received from localhost:9000.
+  DB::Exception: Transactions are not supported.
+  (NOT_IMPLEMENTED)
+  ```
+
+  También puedes comprobar ClickHouse Keeper ejecutando lo siguiente:
+
+  ```bash
+  echo ruok | nc localhost 9181
+  ```
+
+  ClickHouse Keeper debería responder con `imok`.
+</Tip>
+
+```sql
+ROLLBACK
+```
+
+```response
+Ok.
+```
+
+<div id="create-a-table-for-testing">
+  #### Cree una tabla para pruebas
+</div>
+
+<Tip>
+  La creación de tablas no es transaccional. Ejecute esta consulta DDL fuera de una transacción.
+</Tip>
+
+```sql
+CREATE TABLE mergetree_table
+(
+    `n` Int64
+)
+ENGINE = MergeTree
+ORDER BY n
+```
+
+```response
+Ok.
+```
+
+<div id="begin-a-transaction-and-insert-a-row">
+  #### Iniciar una transacción e insertar una fila
+</div>
+
+```sql
+BEGIN TRANSACTION
+```
+
+```response
+Ok.
+```
+
+```sql
+INSERT INTO mergetree_table FORMAT Values (10)
+```
+
+```response
+Ok.
+```
+
+```sql
+SELECT *
+FROM mergetree_table
+```
+
+```response
+┌──n─┐
+│ 10 │
+└────┘
+```
+
+<Note>
+  Puedes consultar la tabla desde dentro de una transacción y ver que la fila se insertó, aunque aún no se haya confirmado.
+</Note>
+
+<div id="rollback-the-transaction-and-query-the-table-again">
+  #### Revierte la transacción y vuelve a consultar la tabla
+</div>
+
+Verifica que la transacción se haya revertido:
+
+```sql
+ROLLBACK
+```
+
+```response
+Ok.
+```
+
+```sql
+SELECT *
+FROM mergetree_table
+```
+
+```response
+Ok.
+
+0 rows in set. Elapsed: 0.002 sec.
+```
+
+<div id="complete-a-transaction-and-query-the-table-again">
+  #### Complete la transacción y vuelva a consultar la tabla
+</div>
+
+```sql
+BEGIN TRANSACTION
+```
+
+```response
+Ok.
+```
+
+```sql
+INSERT INTO mergetree_table FORMAT Values (42)
+```
+
+```response
+Ok.
+```
+
+```sql
+COMMIT
+```
+
+```response
+Ok. Elapsed: 0.002 sec.
+```
+
+```sql
+SELECT *
+FROM mergetree_table
+```
+
+```response
+┌──n─┐
+│ 42 │
+└────┘
+```
+
+<div id="transactions-introspection">
+  ### Inspección de transacciones
+</div>
+
+Puede inspeccionar las transacciones consultando la tabla `system.transactions`, pero tenga en cuenta que no puede consultar esa
+tabla desde una sesión que se encuentre dentro de una transacción. Abra una segunda sesión de `clickhouse client` para consultar esa tabla.
+
+```sql
+SELECT *
+FROM system.transactions
+FORMAT Vertical
+```
+
+```response
+Row 1:
+──────
+tid:         (33,61,'51e60bce-6b82-4732-9e1d-b40705ae9ab8')
+tid_hash:    11240433987908122467
+elapsed:     210.017820947
+is_readonly: 1
+state:       RUNNING
+```
+
+<div id="more-details">
+  ## Más detalles
+</div>
+
+Consulta este [meta issue](https://github.com/ClickHouse/ClickHouse/issues/48794) para ver pruebas mucho más exhaustivas y mantenerte al día sobre los avances.

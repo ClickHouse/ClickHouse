@@ -1,0 +1,105 @@
+---
+alias: []
+description: 'توثيق تنسيق Pretty'
+input_format: false
+keywords: ['Pretty']
+output_format: true
+slug: /interfaces/formats/Pretty
+title: 'Pretty'
+doc_type: 'مرجع'
+---
+
+import PrettyFormatSettings from '/snippets/ar/common-pretty-format-settings.mdx';
+
+| الإدخال | الإخراج | الاسم البديل |
+| ------- | ------- | ------------ |
+| ✗       | ✔       |              |
+
+<div id="description">
+  ## الوصف
+</div>
+
+يُخرج التنسيق `Pretty` البيانات على شكل جداول مرسومة بأحرف Unicode،
+باستخدام تسلسلات إفلات ANSI لعرض الألوان في الطرفية.
+يُرسَم للجدول إطار كامل، ويشغل كل صف سطرين في الطرفية.
+تُخرَج كل كتلة من النتائج كجدول منفصل.
+وهذا ضروري حتى يمكن إخراج الكتل دون التخزين المؤقت للنتائج (إذ يلزم التخزين المؤقت لحساب العرض المرئي لجميع القيم مسبقًا).
+
+يُخرَج [NULL](/ar/reference/syntax) على هيئة `ᴺᵁᴸᴸ`.
+
+<div id="example-usage">
+  ## مثال على الاستخدام
+</div>
+
+مثال (بصيغة [`PrettyCompact`](/ar/reference/formats/Pretty/PrettyCompact)):
+
+```sql title="Query"
+SELECT * FROM t_null
+```
+
+```response title="Response"
+┌─x─┬────y─┐
+│ 1 │ ᴺᵁᴸᴸ │
+└───┴──────┘
+```
+
+لا يُطبَّق الإفلات على الصفوف في أيٍّ من تنسيقات `Pretty`. ويُعرض المثال التالي لتنسيق [`PrettyCompact`](/ar/reference/formats/Pretty/PrettyCompact):
+
+```sql title="Query"
+SELECT 'String with \'quotes\' and \t character' AS Escaping_test
+```
+
+```response title="Response"
+┌─Escaping_test────────────────────────┐
+│ String with 'quotes' and      character │
+└──────────────────────────────────────┘
+```
+
+لتجنّب إخراج كمية كبيرة جدًا من البيانات إلى الطرفية، لا يُطبع سوى أول `10,000` صف.
+إذا كان عدد الصفوف أكبر من أو يساوي `10,000`، فستُطبع الرسالة &quot;تم عرض أول 10 000&quot;.
+
+<Note>
+  هذا التنسيق مناسب فقط لإخراج نتيجة استعلام، وليس لتحليل البيانات.
+</Note>
+
+يدعم تنسيق Pretty إخراج القيم الإجمالية (عند استخدام `WITH TOTALS`) والقيم القصوى (عند ضبط &#39;extremes&#39; على 1).
+في هذه الحالات، تُخرَج القيم الإجمالية والقيم القصوى بعد البيانات الرئيسية، في جداول منفصلة.
+يوضح المثال التالي ذلك باستخدام تنسيق [`PrettyCompact`](/ar/reference/formats/Pretty/PrettyCompact):
+
+```sql title="Query"
+SELECT EventDate, count() AS c 
+FROM test.hits 
+GROUP BY EventDate 
+WITH TOTALS 
+ORDER BY EventDate 
+FORMAT PrettyCompact
+```
+
+```response title="Response"
+┌──EventDate─┬───────c─┐
+│ 2014-03-17 │ 1406958 │
+│ 2014-03-18 │ 1383658 │
+│ 2014-03-19 │ 1405797 │
+│ 2014-03-20 │ 1353623 │
+│ 2014-03-21 │ 1245779 │
+│ 2014-03-22 │ 1031592 │
+│ 2014-03-23 │ 1046491 │
+└────────────┴─────────┘
+
+Totals:
+┌──EventDate─┬───────c─┐
+│ 1970-01-01 │ 8873898 │
+└────────────┴─────────┘
+
+Extremes:
+┌──EventDate─┬───────c─┐
+│ 2014-03-17 │ 1031592 │
+│ 2014-03-23 │ 1406958 │
+└────────────┴─────────┘
+```
+
+<div id="format-settings">
+  ## إعدادات الصيغة
+</div>
+
+<PrettyFormatSettings />

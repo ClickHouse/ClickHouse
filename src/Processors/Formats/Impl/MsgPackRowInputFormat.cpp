@@ -612,24 +612,69 @@ msgpack::object_handle MsgPackSchemaReader::readObject()
     size_t offset = 0;
     bool need_more_data = true;
     msgpack::object_handle object_handle;
+
+    /// Pull the next chunk into the peekable window and retry, or reject at end of input.
+    auto grow_or_reject = [&]
+    {
+        buf.position() = buf.buffer().end();
+        if (buf.eof())
+            throw Exception(ErrorCodes::UNEXPECTED_END_OF_FILE, "Unexpected end of file while parsing msgpack object");
+        buf.position() = buf.buffer().end();
+        buf.makeContinuousMemoryFromCheckpointToPos();
+        buf.rollbackToCheckpoint();
+    };
+
     while (need_more_data)
     {
         offset = 0;
+        /// msgpack::unpack builds the whole object tree up front: for every array/map/str/bin/ext it
+        /// eagerly allocates storage sized by the count/length declared in the header, before reading the
+        /// payload. A corrupted or fuzzed header can declare up to 0xffffffff elements, driving a single
+        /// multi-gigabyte allocation that bypasses the query memory tracker and aborts under a sanitizer
+        /// (allocation-size-too-big) or throws std::bad_alloc in release. Bound every container by the
+        /// bytes currently buffered: a valid element occupies at least one encoded byte, so a fully
+        /// buffered object never trips the bound, while an over-declaration throws msgpack::size_overflow,
+        /// handled below exactly like insufficient_bytes (grow and retry, reject once the whole input is
+        /// buffered and it still does not fit).
+        const size_t available = buf.buffer().end() - buf.position();
+        /// A map is the exception: msgpack allocates sizeof(object_kv) (a key plus a value) per declared
+        /// pair, but a valid pair is two encoded objects and so occupies at least two bytes. Bounding the
+        /// pair count by the byte count (like arrays/str/bin) would let a malformed map32 over-declare by
+        /// almost 2x and still drive a large allocation before the payload is found short. Cap map pairs by
+        /// available / 2 instead: a fully buffered valid map has payload >= 2 * pairs, so it never trips the
+        /// bound, while an over-declaration is rejected before the allocation.
+        const size_t map_available = available / 2;
+        /// Also bound the nesting depth. msgpack::unpack builds the DOM tree eagerly, so a deeply nested
+        /// header (arrays/maps nested many levels deep) would allocate the whole deep tree before
+        /// getDataType gets to enforce max_parser_depth. Thread the setting through so unpack rejects it
+        /// while building. max_parser_depth == 0 means unlimited (matching getDataType and the SQL parser);
+        /// msgpack spells unlimited as 0xffffffff.
+        const size_t depth_limit = format_settings.max_parser_depth ? format_settings.max_parser_depth : 0xffffffff;
+        const msgpack::unpack_limit limit(available, map_available, available, available, available, depth_limit);
         try
         {
             object_handle = msgpack::unpack(
-                buf.position(), buf.buffer().end() - buf.position(), offset,
-                msgpackReferenceEmptyData, nullptr, msgpack::unpack_limit());
+                buf.position(), available, offset,
+                msgpackReferenceEmptyData, nullptr, limit);
             need_more_data = false;
+        }
+        catch (msgpack::depth_size_overflow &)
+        {
+            /// depth_size_overflow derives from size_overflow, so this catch must precede it. Deep nesting
+            /// is not a "need more data" condition: reject with the same message getDataType uses.
+            throw Exception(
+                ErrorCodes::TOO_DEEP_RECURSION,
+                "Too deep recursion while inferring the MsgPack schema: the nesting depth exceeds the limit ({}). "
+                "It can be raised with the setting 'max_parser_depth', but a very deep schema is rarely intentional",
+                format_settings.max_parser_depth);
         }
         catch (msgpack::insufficient_bytes &)
         {
-            buf.position() = buf.buffer().end();
-            if (buf.eof())
-                throw Exception(ErrorCodes::UNEXPECTED_END_OF_FILE, "Unexpected end of file while parsing msgpack object");
-            buf.position() = buf.buffer().end();
-            buf.makeContinuousMemoryFromCheckpointToPos();
-            buf.rollbackToCheckpoint();
+            grow_or_reject();
+        }
+        catch (msgpack::size_overflow &)
+        {
+            grow_or_reject();
         }
     }
     buf.position() += offset;
@@ -762,26 +807,26 @@ ClickHouse supports reading and writing [MessagePack](https://msgpack.org/) data
 
 | MessagePack data type (`INSERT`)                                   | ClickHouse data type                                                                                    | MessagePack data type (`SELECT`) |
 |--------------------------------------------------------------------|---------------------------------------------------------------------------------------------------------|----------------------------------|
-| `uint N`, `positive fixint`                                        | [`UIntN`](/sql-reference/data-types/int-uint.md)                                                  | `uint N`                         |
-| `int N`, `negative fixint`                                         | [`IntN`](/sql-reference/data-types/int-uint.md)                                                   | `int N`                          |
-| `bool`                                                             | [`UInt8`](/sql-reference/data-types/int-uint.md)                                                  | `uint 8`                         |
-| `fixstr`, `str 8`, `str 16`, `str 32`, `bin 8`, `bin 16`, `bin 32` | [`String`](/sql-reference/data-types/string.md)                                                   | `bin 8`, `bin 16`, `bin 32`      |
-| `fixstr`, `str 8`, `str 16`, `str 32`, `bin 8`, `bin 16`, `bin 32` | [`FixedString`](/sql-reference/data-types/fixedstring.md)                                         | `bin 8`, `bin 16`, `bin 32`      |
-| `float 32`                                                         | [`Float32`](/sql-reference/data-types/float.md)                                                   | `float 32`                       |
-| `float 64`                                                         | [`Float64`](/sql-reference/data-types/float.md)                                                   | `float 64`                       |
-| `uint 16`                                                          | [`Date`](/sql-reference/data-types/date.md)                                                       | `uint 16`                        |
-| `int 32`                                                           | [`Date32`](/sql-reference/data-types/date32.md)                                                   | `int 32`                         |
-| `uint 32`                                                          | [`DateTime`](/sql-reference/data-types/datetime.md)                                               | `uint 32`                        |
-| `uint 64`                                                          | [`DateTime64`](/sql-reference/data-types/datetime.md)                                             | `uint 64`                        |
-| `fixarray`, `array 16`, `array 32`                                 | [`Array`](/sql-reference/data-types/array.md)/[`Tuple`](/sql-reference/data-types/tuple.md) | `fixarray`, `array 16`, `array 32` |
-| `fixmap`, `map 16`, `map 32`                                       | [`Map`](/sql-reference/data-types/map.md)                                                         | `fixmap`, `map 16`, `map 32`     |
-| `uint 32`                                                          | [`IPv4`](/sql-reference/data-types/ipv4.md)                                                       | `uint 32`                        |
-| `bin 8`                                                            | [`String`](/sql-reference/data-types/string.md)                                                   | `bin 8`                          |
-| `int 8`                                                            | [`Enum8`](/sql-reference/data-types/enum.md)                                                      | `int 8`                          |
-| `bin 8`                                                            | [`(U)Int128`/`(U)Int256`](/sql-reference/data-types/int-uint.md)                                    | `bin 8`                          |
-| `int 32`                                                           | [`Decimal32`](/sql-reference/data-types/decimal.md)                                               | `int 32`                         |
-| `int 64`                                                           | [`Decimal64`](/sql-reference/data-types/decimal.md)                                               | `int 64`                         |
-| `bin 8`                                                            | [`Decimal128`/`Decimal256`](/sql-reference/data-types/decimal.md)                                   | `bin 8 `                         |
+| `uint N`, `positive fixint`                                        | [`UIntN`](/reference/data-types/int-uint)                                                  | `uint N`                         |
+| `int N`, `negative fixint`                                         | [`IntN`](/reference/data-types/int-uint)                                                   | `int N`                          |
+| `bool`                                                             | [`UInt8`](/reference/data-types/int-uint)                                                  | `uint 8`                         |
+| `fixstr`, `str 8`, `str 16`, `str 32`, `bin 8`, `bin 16`, `bin 32` | [`String`](/reference/data-types/string)                                                   | `bin 8`, `bin 16`, `bin 32`      |
+| `fixstr`, `str 8`, `str 16`, `str 32`, `bin 8`, `bin 16`, `bin 32` | [`FixedString`](/reference/data-types/fixedstring)                                         | `bin 8`, `bin 16`, `bin 32`      |
+| `float 32`                                                         | [`Float32`](/reference/data-types/float)                                                   | `float 32`                       |
+| `float 64`                                                         | [`Float64`](/reference/data-types/float)                                                   | `float 64`                       |
+| `uint 16`                                                          | [`Date`](/reference/data-types/date)                                                       | `uint 16`                        |
+| `int 32`                                                           | [`Date32`](/reference/data-types/date32)                                                   | `int 32`                         |
+| `uint 32`                                                          | [`DateTime`](/reference/data-types/datetime)                                               | `uint 32`                        |
+| `uint 64`                                                          | [`DateTime64`](/reference/data-types/datetime)                                             | `uint 64`                        |
+| `fixarray`, `array 16`, `array 32`                                 | [`Array`](/reference/data-types/array)/[`Tuple`](/reference/data-types/tuple) | `fixarray`, `array 16`, `array 32` |
+| `fixmap`, `map 16`, `map 32`                                       | [`Map`](/reference/data-types/map)                                                         | `fixmap`, `map 16`, `map 32`     |
+| `uint 32`                                                          | [`IPv4`](/reference/data-types/ipv4)                                                       | `uint 32`                        |
+| `bin 8`                                                            | [`String`](/reference/data-types/string)                                                   | `bin 8`                          |
+| `int 8`                                                            | [`Enum8`](/reference/data-types/enum)                                                      | `int 8`                          |
+| `bin 8`                                                            | [`(U)Int128`/`(U)Int256`](/reference/data-types/int-uint)                                    | `bin 8`                          |
+| `int 32`                                                           | [`Decimal32`](/reference/data-types/decimal)                                               | `int 32`                         |
+| `int 64`                                                           | [`Decimal64`](/reference/data-types/decimal)                                               | `int 64`                         |
+| `bin 8`                                                            | [`Decimal128`/`Decimal256`](/reference/data-types/decimal)                                   | `bin 8 `                         |
 
 ## Example usage {#example-usage}
 
@@ -797,8 +842,8 @@ $ clickhouse-client --query="SELECT * FROM msgpack FORMAT MsgPack" > tmp_msgpack
 
 | Setting                                                                                                                                    | Description                                                                                    | Default |
 |--------------------------------------------------------------------------------------------------------------------------------------------|------------------------------------------------------------------------------------------------|---------|
-| [`input_format_msgpack_number_of_columns`](/operations/settings/settings-formats.md/#input_format_msgpack_number_of_columns)       | the number of columns in inserted MsgPack data. Used for automatic schema inference from data. | `0`     |
-| [`output_format_msgpack_uuid_representation`](/operations/settings/settings-formats.md/#output_format_msgpack_uuid_representation) | the way how to output UUID in MsgPack format.                                                  | `EXT`   |
+| [`input_format_msgpack_number_of_columns`](/reference/settings/formats#input_format_msgpack_number_of_columns)       | the number of columns in inserted MsgPack data. Used for automatic schema inference from data. | `0`     |
+| [`output_format_msgpack_uuid_representation`](/reference/settings/formats#output_format_msgpack_uuid_representation) | the way how to output UUID in MsgPack format.                                                  | `EXT`   |
 )DOCS_MD"});
 }
 

@@ -201,8 +201,8 @@ SELECT count() FROM tab WHERE hasToken(val, 'world');
 -- hasAllTokens(val, 'hello the world') is equivalent to hasAllTokens(val, 'hello world').
 SELECT count() FROM tab WHERE hasAllTokens(val, 'hello world');
 SELECT count() FROM tab WHERE hasAllTokens(val, 'hello the world');
--- hasPhrase is hint-only and not postprocessed at row level: a phrase whose tokens are all dropped by
--- the postprocessor ('the the') must still match via the row scan instead of pruning every granule.
+-- A phrase whose tokens are all dropped by the postprocessor ('the the') normalizes to an empty phrase
+-- and matches nothing, consistent with hasAllTokens.
 SELECT count() FROM tab WHERE hasPhrase(val, 'the the');
 SELECT count() FROM tab WHERE hasPhrase(val, 'foo bar');
 -- Tokens present but not in this adjacent order: granule kept, row-level rejects.
@@ -327,15 +327,5 @@ INSERT INTO tab VALUES (1, 'foo');
 SELECT count() FROM tab WHERE hasToken(val, 'foo');  -- { serverError BAD_ARGUMENTS }
 
 DROP TABLE tab;
-
-SELECT '- A postprocessor cannot be combined with positions (would break positional phrase search)';
-CREATE TABLE tab
-(
-    id UInt64,
-    val String,
-    INDEX idx(val) TYPE text(tokenizer = 'splitByNonAlpha', postprocessor = lower(val), positions = 1)
-)
-ENGINE = MergeTree ORDER BY id
-SETTINGS allow_experimental_text_index_positions = 1;  -- { serverError BAD_ARGUMENTS }
 
 DROP TABLE IF EXISTS tab;

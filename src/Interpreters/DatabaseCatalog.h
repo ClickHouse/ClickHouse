@@ -88,11 +88,8 @@ class BackgroundSchedulePoolTaskHolder;
 
 struct GetDatabasesOptions
 {
-    /// Include remote databases (data lake catalogs, MySQL, PostgreSQL).
-    /// These are excluded by default because listing their tables can be expensive
-    /// (network calls to remote services). Controlled by the
-    /// `show_remote_databases_in_system_tables` setting in system.tables/columns/completions.
-    bool with_remote_databases{false};
+    bool with_datalake_catalogs{false};
+    bool with_remote_databases{true};
 };
 
 /// For some reason Context is required to get Storage from Database object.
@@ -157,13 +154,15 @@ public:
     DatabasePtr getDatabase(const UUID & uuid) const;
     DatabasePtr tryGetDatabase(const UUID & uuid) const;
     bool isDatabaseExist(std::string_view database_name) const;
-    /// Remote databases (data lake catalogs, MySQL, PostgreSQL) are implemented at IDatabase level in ClickHouse.
-    /// Listing their tables typically requires calls to a remote service (sometimes paid).
-    /// GetDatabasesOptions::with_remote_databases explicitly protects us from accidentally querying the remote service for trivial
-    /// things like autocompletion hints or system.tables / system.columns queries.
-    /// The `show_remote_databases_in_system_tables` setting allows the user to opt in.
-    /// Note: system.databases always passes with_remote_databases = true because listing a database
-    /// name is purely local metadata and never requires calls to a remote service.
+    /// Datalake catalogs are implemented at `IDatabase` level in ClickHouse.
+    /// In general case Datalake catalog is a remote service which contains iceberg/delta tables.
+    /// Sometimes this service charges money for requests. With this flag we explicitly protect ourselves
+    /// to not accidentally query external non-free service for some trivial things like
+    /// autocompletion hints or `system.tables` / `system.columns` queries. We have a setting which allows showing
+    /// these databases everywhere, but user must explicitly specify it.
+    /// Remote databases such as `MySQL`/`PostgreSQL` are controlled separately by `GetDatabasesOptions::with_remote_databases`.
+    /// Note: `system.databases` always passes both flags as true because listing a database name
+    /// is purely local metadata and never requires calls to an external service.
     Databases getDatabases(GetDatabasesOptions options) const;
 
     /// Same as getDatabase(const String & database_name), but if database_name is empty, current database of local_context is used
@@ -279,6 +278,8 @@ public:
     bool canPerformReplicatedDDLQueries() const;
 
     void updateMetadataFile(const String & database_name, const ASTPtr & create_query);
+    bool hasDatalakeCatalogs() const;
+    bool isDatalakeCatalog(const String & database_name) const;
     bool hasRemoteDatabases() const;
     bool isRemoteDatabase(const String & database_name) const;
 
@@ -328,6 +329,7 @@ private:
     mutable std::mutex databases_mutex;
 
     Databases databases TSA_GUARDED_BY(databases_mutex);
+    Databases databases_without_datalake_catalogs TSA_GUARDED_BY(databases_mutex);
     Databases databases_without_remote TSA_GUARDED_BY(databases_mutex);
     UUIDToStorageMap uuid_map;
 
@@ -367,7 +369,9 @@ private:
 
     TablesMarkedAsDropped tables_marked_dropped TSA_GUARDED_BY(tables_marked_dropped_mutex);
     TablesMarkedAsDropped::iterator first_async_drop_in_queue TSA_GUARDED_BY(tables_marked_dropped_mutex);
-    std::unordered_set<UUID> tables_marked_dropped_ids TSA_GUARDED_BY(tables_marked_dropped_mutex);
+    /// A multiset: the same UUID may appear more than once when a fixed explicit UUID is reused across
+    /// CREATE OR REPLACE TABLE, which enqueues several intermediate tables sharing that UUID for drop.
+    std::unordered_multiset<UUID> tables_marked_dropped_ids TSA_GUARDED_BY(tables_marked_dropped_mutex);
     mutable std::mutex tables_marked_dropped_mutex;
 
     std::unique_ptr<BackgroundSchedulePoolTaskHolder> drop_task;

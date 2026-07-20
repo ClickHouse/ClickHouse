@@ -1,0 +1,82 @@
+---
+slug: /deletes/overview
+title: '删除概览'
+description: '如何在 ClickHouse 中删除数据'
+keywords: ['删除', '截断', 'drop', '轻量级删除']
+doc_type: 'guide'
+---
+
+在 ClickHouse 中，有多种删除数据的方法，每种方法都有各自的优势和性能特点。应根据数据模型以及计划删除的数据量来选择合适的方法。
+
+| 方法                                                               | 语法                           | 适用场景                                                               |
+| ---------------------------------------------------------------- | ---------------------------- | ------------------------------------------------------------------ |
+| [轻量级删除](/zh/concepts/features/operations/delete/lightweight-delete) | `DELETE FROM [table]`        | 适用于删除少量数据。后续所有 `SELECT` 查询都会立即过滤掉这些行，但起初这些行只是在内部被标记为已删除，并不会从磁盘中移除。 |
+| [删除变更](/zh/reference/statements/alter/delete)                       | `ALTER TABLE [table] DELETE` | 适用于必须立即从磁盘删除数据的情况 (例如满足合规要求) 。会对 `SELECT` 性能产生负面影响。                |
+| [截断表](/zh/reference/statements/truncate)                            | `TRUNCATE TABLE [db.table]`  | 高效移除表中的所有数据。                                                       |
+| [删除分区](/zh/reference/statements/alter/partition#drop-partitionpart) | `DROP PARTITION`             | 高效移除某个分区中的所有数据。                                                    |
+
+以下总结了在 ClickHouse 中删除数据的不同方式：
+
+<div id="lightweight-deletes">
+  ## 轻量级删除
+</div>
+
+轻量级删除会立即将行标记为已删除，使其在后续所有 `SELECT` 查询中都会被自动过滤掉。之后，这些已删除的行会在自然的 merge 周期中被移除，因此产生的 I/O 更少。因此，在一段未明确的时间内，数据实际上可能并未从存储中真正删除，而只是被标记为已删除。如果你需要确保数据已被删除，请考虑使用上述变更命令。
+
+```sql
+-- delete all data from 2018 with a lightweight delete. Not recommended.
+DELETE FROM posts WHERE toYear(CreationDate) = 2018
+```
+
+使用轻量级 `DELETE` 语句删除大量数据，也可能对 `SELECT` 查询性能产生负面影响。该命令也不兼容带有投影的表。
+
+请注意，此操作会使用变更来[标记已删除的行](/zh/reference/statements/delete#how-lightweight-deletes-work-internally-in-clickhouse) (添加一个 `_row_exists` 列) ，因此会产生一定的 I/O 开销。
+
+一般来说，如果可以容忍已删除的数据仍保留在磁盘上 (例如在非合规场景中) ，应优先选择轻量级删除而不是变更。但如果需要删除所有数据，仍应避免使用这种方法。
+
+阅读更多关于[轻量级删除](/zh/concepts/features/operations/delete/lightweight-delete)的内容。
+
+<div id="delete-mutations">
+  ## 删除变更
+</div>
+
+可以通过 `ALTER TABLE ... DELETE` 命令执行删除变更，例如：
+
+```sql
+-- 通过变更删除 2018 年的所有数据。不推荐。
+ALTER TABLE posts DELETE WHERE toYear(CreationDate) = 2018
+```
+
+这些操作既可以同步执行 (对于非复制表，默认如此) ，也可以异步执行 (由 [mutations&#95;sync](/zh/reference/settings/session-settings#mutations_sync) 设置决定) 。这类操作的 I/O 开销极大，会重写所有匹配 `WHERE` 表达式的 parts。这个过程不具备原子性——变更后的parts一旦准备就绪，就会立即替换原parts；因此，如果某个 `SELECT` 查询在变更过程中开始执行，就会同时看到已完成变更的parts中的数据和仍未变更的parts中的数据。用户可以通过 [system.mutations](/zh/reference/system-tables/mutations#monitoring-mutations) 表跟踪其进度状态。这些都是 I/O 密集型操作，应谨慎使用，因为它们可能会影响集群的 `SELECT` 性能。
+
+阅读更多关于[删除变更](/zh/reference/statements/alter/delete)的信息。
+
+<div id="truncate-table">
+  ## TRUNCATE 表
+</div>
+
+如果需要删除表中的所有数据，请使用下面的 `TRUNCATE TABLE` 命令。这是一项轻量级操作。
+
+```sql
+TRUNCATE TABLE posts
+```
+
+阅读更多有关 [TRUNCATE TABLE](/zh/reference/statements/truncate) 的内容。
+
+<div id="drop-partition">
+  ## 删除分区
+</div>
+
+如果为数据指定了自定义分区键，就可以高效删除分区。避免采用高基数分区。
+
+```sql
+ALTER TABLE posts (DROP PARTITION '2008')
+```
+
+更多信息，请参阅 [DROP PARTITION](/zh/reference/statements/alter/partition)。
+
+<div id="more-resources">
+  ## 更多资源
+</div>
+
+* [ClickHouse 中更新与删除的处理](https://clickhouse.com/blog/handling-updates-and-deletes-in-clickhouse)

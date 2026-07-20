@@ -123,6 +123,7 @@ namespace ErrorCodes
     extern const int ASYNC_LOAD_CANCELED;
     extern const int KEEPER_EXCEPTION;
     extern const int SYNTAX_ERROR;
+    extern const int FAULT_INJECTED;
     }
 namespace FailPoints
 {
@@ -130,6 +131,9 @@ namespace FailPoints
     extern const char database_replicated_drop_before_removing_keeper_failed[];
     extern const char database_replicated_drop_after_removing_keeper_failed[];
     extern const char database_replicated_force_metadata_digest_check[];
+    extern const char database_replicated_pause_after_reading_log_pointer[];
+    extern const char database_replicated_pause_after_snapshot_identity_check[];
+    extern const char database_replicated_throw_on_stop_replication[];
 }
 
 static constexpr const char * REPLICATED_DATABASE_MARK = "DatabaseReplicated";
@@ -335,7 +339,30 @@ ClusterPtr DatabaseReplicated::tryGetCluster() const
     }
     catch (...)
     {
-        tryLogCurrentException(log);
+        /// Coordination errors (`KEEPER_EXCEPTION`), connection failures
+        /// (`ALL_CONNECTION_TRIES_FAILED`), and the "no active replicas"
+        /// state (`NO_ACTIVE_REPLICAS`, thrown by `getClusterImpl` when
+        /// `/replicas` exists but is empty -- i.e. the first replica is
+        /// not fully created yet or the last replica was just dropped)
+        /// are all expected during concurrent database lifecycle
+        /// operations. The caller treats nullptr as "no cluster info
+        /// available for this database, skip it". Logging those at
+        /// `error` is misleading and noisy: the test runner forwards
+        /// server logs at `warning` and above to the client stderr,
+        /// which makes any otherwise-passing test that touches
+        /// `system.clusters` flaky (e.g. `01293_show_clusters`). Log
+        /// them at `information` so administrators still see the message
+        /// in normal server logs but it does not propagate to clients.
+        /// Anything else is unexpected (malformed Keeper payloads, logic
+        /// bugs in `getClusterImpl`, ...) and stays at the default
+        /// `error` level so operators notice it.
+        const auto code = getCurrentExceptionCode();
+        if (code == ErrorCodes::KEEPER_EXCEPTION
+            || code == ErrorCodes::ALL_CONNECTION_TRIES_FAILED
+            || code == ErrorCodes::NO_ACTIVE_REPLICAS)
+            tryLogCurrentException(log, "Failed to get cluster info (possibly due to concurrent database lifecycle operations)", LogsLevel::information);
+        else
+            tryLogCurrentException(log);
     }
     return cluster;
 }
@@ -359,7 +386,18 @@ ClusterPtr DatabaseReplicated::tryGetAllGroupsCluster() const
     }
     catch (...)
     {
-        tryLogCurrentException(log);
+        /// See the note in `tryGetCluster` above: downgrade the expected
+        /// coordination/connection failures and the "no active replicas"
+        /// state (all reachable through `getClusterImpl`) to
+        /// `information`, leave anything else at the default `error`
+        /// level so unexpected problems are visible.
+        const auto code = getCurrentExceptionCode();
+        if (code == ErrorCodes::KEEPER_EXCEPTION
+            || code == ErrorCodes::ALL_CONNECTION_TRIES_FAILED
+            || code == ErrorCodes::NO_ACTIVE_REPLICAS)
+            tryLogCurrentException(log, "Failed to get all-groups cluster info (possibly due to concurrent database lifecycle operations)", LogsLevel::information);
+        else
+            tryLogCurrentException(log);
     }
     return cluster_all_groups;
 }
@@ -541,15 +579,22 @@ ReplicasInfo DatabaseReplicated::tryGetReplicasInfo(const ClusterPtr & cluster_)
                 auto replica_log_ptr = zk_res[2 * global_replica_index + 2];
 
                 UInt64 recovery_time = 0;
+                bool unsynced_after_recovery = false;
                 {
+                    /// `ddl_worker` is reset under `ddl_worker_mutex` in shutdown(), so every
+                    /// access to it must hold the lock. Read both members here.
                     std::lock_guard lock(ddl_worker_mutex);
-                    if (replica.is_local && ddl_worker)
-                        recovery_time = ddl_worker->getCurrentInitializationDurationMs();
+                    if (ddl_worker)
+                    {
+                        if (replica.is_local)
+                            recovery_time = ddl_worker->getCurrentInitializationDurationMs();
+                        unsynced_after_recovery = ddl_worker->isUnsyncedAfterRecovery();
+                    }
                 }
 
                 replicas_info[global_replica_index] = ReplicaInfo{
                     .is_active = replica_active.error == Coordination::Error::ZOK,
-                    .unsynced_after_recovery = ddl_worker && ddl_worker->isUnsyncedAfterRecovery(),
+                    .unsynced_after_recovery = unsynced_after_recovery,
                     .replication_lag = replica_log_ptr.error != Coordination::Error::ZNONODE ? std::optional(max_log_ptr - parse<UInt32>(replica_log_ptr.data)) : std::nullopt,
                     .recovery_time = recovery_time,
                 };
@@ -562,7 +607,19 @@ ReplicasInfo DatabaseReplicated::tryGetReplicasInfo(const ClusterPtr & cluster_)
     }
     catch (...)
     {
-        tryLogCurrentException(log);
+        /// Same rationale as in `tryGetCluster` above: the caller (e.g.
+        /// `system.clusters`) treats an empty `ReplicasInfo` as "skip the
+        /// replica state columns for this database", and the Keeper state
+        /// of a Replicated database can be in flux during normal lifecycle
+        /// operations. Log expected coordination/connection failures at
+        /// `information` so they do not leak into the client stderr at the
+        /// default `send_logs_level = warning`, but keep anything
+        /// unexpected at the default `error` level.
+        const auto code = getCurrentExceptionCode();
+        if (code == ErrorCodes::KEEPER_EXCEPTION || code == ErrorCodes::ALL_CONNECTION_TRIES_FAILED)
+            tryLogCurrentException(log, "Failed to get replicas info (possibly due to concurrent database lifecycle operations)", LogsLevel::information);
+        else
+            tryLogCurrentException(log);
         return {};
     }
 }
@@ -1471,7 +1528,8 @@ static UUID getTableUUIDIfReplicated(const String & metadata, ContextPtr context
     return create.uuid;
 }
 
-void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeeper, UInt32 our_log_ptr, UInt32 & max_log_ptr)
+void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeeper, UInt32 our_log_ptr, UInt32 & max_log_ptr,
+                                            int64_t expected_max_log_ptr_czxid)
 {
     auto component_guard = Coordination::setCurrentComponent("DatabaseReplicated::recoverLostReplica");
     waitDatabaseStarted();
@@ -1490,7 +1548,7 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
     else
         LOG_WARNING(log, "Will recover replica with staled log pointer {} from log pointer {}", our_log_ptr, max_log_ptr);
 
-    auto table_name_to_metadata = tryGetConsistentMetadataSnapshot(current_zookeeper, max_log_ptr);
+    auto table_name_to_metadata = tryGetConsistentMetadataSnapshot(current_zookeeper, max_log_ptr, expected_max_log_ptr_czxid);
 
     /// For ReplicatedMergeTree tables we can compare only UUIDs to ensure that it's the same table.
     /// Metadata can be different, it's handled on table replication level.
@@ -1880,39 +1938,158 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
     current_zookeeper->set(replica_path + "/digest", toString(tables_metadata_digest));
 }
 
-std::map<String, String> DatabaseReplicated::tryGetConsistentMetadataSnapshot(const ZooKeeperPtr & zookeeper, UInt32 & max_log_ptr) const
+std::map<String, String> DatabaseReplicated::tryGetConsistentMetadataSnapshot(const ZooKeeperPtr & zookeeper, UInt32 & max_log_ptr,
+                                                                              int64_t expected_max_log_ptr_czxid) const
 {
-    return getConsistentMetadataSnapshotImpl(zookeeper, {}, /* max_retries= */ 10, max_log_ptr);
+    return getConsistentMetadataSnapshotImpl(zookeeper, {}, /* max_retries= */ 10, max_log_ptr, expected_max_log_ptr_czxid);
 }
 
 std::map<String, String> DatabaseReplicated::getConsistentMetadataSnapshotImpl(
     const ZooKeeperPtr & zookeeper,
     const FilterByNameFunction & filter_by_table_name,
     size_t max_retries,
-    UInt32 & max_log_ptr) const
+    UInt32 & max_log_ptr,
+    int64_t expected_max_log_ptr_czxid) const
 {
     std::map<String, String> table_name_to_metadata;
+
+    /// Capture the `czxid` of `/max_log_ptr` at the start of the snapshot operation. `czxid` is
+    /// set when the node is created and is stable across `Set`s, so any change implies the entire
+    /// database subtree was dropped by `DROP DATABASE` and a new `Replicated` database was
+    /// created at the same Keeper path during the snapshot. This identity check is strictly
+    /// stronger than the `max_log_ptr` rollback guards below: it catches recreates regardless of
+    /// whether the new database's pointer ended up below or above the original, and it applies
+    /// to every caller of this function (`getTablesForBackup`, `recoverLostReplica`,
+    /// `tryCompareLocalAndZooKeeperTablesAndDumpDiffForDebugOnly`).
+    ///
+    /// Use `tryGet` instead of `get`: if the node is already gone at function entry the database
+    /// has been dropped concurrently (the in-memory `DatabaseReplicated` object is stale), and we
+    /// surface the same `Replicated database was dropped` error as the post-snapshot identity
+    /// check below, instead of leaking a generic `KEEPER_EXCEPTION` to the caller.
+    Coordination::Stat initial_max_log_ptr_stat;
+    String unused_initial_value;
+    if (!zookeeper->tryGet(zookeeper_path + "/max_log_ptr", unused_initial_value, &initial_max_log_ptr_stat))
+    {
+        throw Exception(
+            ErrorCodes::CANNOT_GET_REPLICATED_DATABASE_SNAPSHOT,
+            "Replicated database was dropped and a new one was created at the same Keeper path during the operation "
+            "(max_log_ptr node missing at snapshot start)");
+    }
+
+    /// If the caller pre-observed a specific identity (`getTablesForBackup` reads `/max_log_ptr`
+    /// to fix `snapshot_version` before this call; `DatabaseReplicatedWorker` reads it before
+    /// calling `recoverLostReplica`), reject mismatches at function entry. Without this, a
+    /// `DROP`+recreate that happens between the caller's read and the function-entry stat read
+    /// above would advance both the value and the `czxid` to the new database; subsequent
+    /// in-function identity checks would then compare new-to-new and pass, silently substituting
+    /// the recreated database's metadata for the dropped one. The internal
+    /// `max_log_ptr > new_max_log_ptr` rollback check only catches recreates where the new
+    /// database has not yet advanced past the caller's pointer, so this entry-time identity
+    /// check is required to close the remaining race window.
+    if (expected_max_log_ptr_czxid != 0 && initial_max_log_ptr_stat.czxid != expected_max_log_ptr_czxid)
+    {
+        throw Exception(
+            ErrorCodes::CANNOT_GET_REPLICATED_DATABASE_SNAPSHOT,
+            "Replicated database was dropped and a new one was created at the same Keeper path during the operation "
+            "(Keeper path identity changed between caller's read and snapshot start)");
+    }
+
+    /// Test-only: pause here, after the entry-time identity check has already passed with the
+    /// original `czxid`, but before any metadata or `max_log_ptr` is read below. A test enables
+    /// this failpoint, triggers a snapshot, waits for the pause, runs `DROP DATABASE` + recreate
+    /// so the new database starts with a smaller `max_log_ptr`, then resumes. On resume the
+    /// in-function `max_log_ptr > new_max_log_ptr` rollback guard fires. Unlike
+    /// `database_replicated_pause_after_reading_log_pointer` (which pauses before the entry
+    /// identity check and is therefore caught by it), this failpoint deterministically exercises
+    /// the rollback guard itself, so a regression of that guard is detectable.
+    FailPointInjection::pauseFailPoint(FailPoints::database_replicated_pause_after_snapshot_identity_check);
 
     if (zookeeper->isFeatureEnabled(KeeperFeatureFlag::FILTERED_LIST) &&
         zookeeper->isFeatureEnabled(KeeperFeatureFlag::MULTI_READ) &&
         zookeeper->isFeatureEnabled(KeeperFeatureFlag::LIST_WITH_STAT_AND_DATA) &&
         !filter_by_table_name)
     {
-        auto paths = {
+        std::vector<std::string> paths = {
             zookeeper_path + "/metadata",
             zookeeper_path
         };
 
-        auto responses = zookeeper->getChildren(paths, Coordination::ListRequestType::ALL, /* with_stat = */ false, /* with_data = */ true);
+        /// Use `tryGetChildren` so a concurrent `DROP DATABASE` between the entry-time
+        /// stat read and this multi-read surfaces as `ZNONODE` per response rather than
+        /// throwing a generic `KEEPER_EXCEPTION` from the multi-call boundary. We then
+        /// map `ZNONODE` to the same operation-level `CANNOT_GET_REPLICATED_DATABASE_SNAPSHOT`
+        /// error as every other drop/recreate guard in this function.
+        auto responses = zookeeper->tryGetChildren(paths, Coordination::ListRequestType::ALL, /* with_stat = */ false, /* with_data = */ true);
+
+        /// Handle every non-`ZOK` per-path error explicitly. `ZNONODE` is the drop/recreate
+        /// race and maps to the operation-level error; any other Keeper error (e.g. a
+        /// connection loss on one path) must propagate rather than be silently ignored,
+        /// otherwise `responses[0].names` could be empty and we would accept an
+        /// incomplete/empty metadata snapshot as if the database had no tables.
+        for (size_t i = 0; i < paths.size(); ++i)
+        {
+            if (responses[i].error == Coordination::Error::ZNONODE)
+            {
+                throw Exception(
+                    ErrorCodes::CANNOT_GET_REPLICATED_DATABASE_SNAPSHOT,
+                    "Replicated database was dropped and a new one was created at the same Keeper path during the operation "
+                    "(node {} missing during snapshot read)",
+                    paths[i]);
+            }
+            if (responses[i].error != Coordination::Error::ZOK)
+                throw Coordination::Exception::fromPath(responses[i].error, paths[i]);
+        }
 
         for (size_t i = 0; i < responses[0].names.size(); ++i)
             table_name_to_metadata.emplace(unescapeForFileName(responses[0].names[i]), std::move(responses[0].data[i]));
 
         auto it = std::find(responses[1].names.begin(), responses[1].names.end(), "max_log_ptr");
         if (it == responses[1].names.end())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "max_log_ptr node not found in ZooKeeper path {}", zookeeper_path);
+        {
+            /// `/max_log_ptr` is created together with the database root and only disappears
+            /// when the whole subtree is removed by `DROP DATABASE`. Treat its absence as
+            /// the same drop/recreate race surfaced by the other guards in this function,
+            /// so callers see one operation-level error rather than a `LOGICAL_ERROR`
+            /// depending on whether the multi-read landed before or after the drop.
+            throw Exception(
+                ErrorCodes::CANNOT_GET_REPLICATED_DATABASE_SNAPSHOT,
+                "Replicated database was dropped and a new one was created at the same Keeper path during the operation "
+                "(max_log_ptr node missing in children of {})",
+                zookeeper_path);
+        }
 
-        max_log_ptr = parse<UInt32>(responses[1].data[it - responses[1].names.begin()]);
+        UInt32 new_max_log_ptr = parse<UInt32>(responses[1].data[it - responses[1].names.begin()]);
+        if (max_log_ptr > new_max_log_ptr)
+        {
+            /// Same backwards-rollback check as the retry-loop branch below: if the
+            /// caller observed a higher pointer just before this call (typically by
+            /// reading `/max_log_ptr` themselves) but this read returns a lower one,
+            /// the only explanation is `DROP DATABASE` + recreate at the same Keeper
+            /// path. Refuse to substitute the new database's metadata for the old.
+            throw Exception(
+                ErrorCodes::CANNOT_GET_REPLICATED_DATABASE_SNAPSHOT,
+                "Replicated database was dropped and a new one was created at the same Keeper path during the operation "
+                "(log pointer moved from {} to {})",
+                max_log_ptr, new_max_log_ptr);
+        }
+        max_log_ptr = new_max_log_ptr;
+
+        /// Revalidate identity after the snapshot: catches the case where the recreated database
+        /// advanced past the original `max_log_ptr` before this read and would otherwise pass
+        /// the monotonicity guard above silently. Also catches the in-between case where the
+        /// node has been removed by `DROP DATABASE` but not yet recreated (`tryGet` returns
+        /// `false` for a missing node, which we treat as identity changed).
+        Coordination::Stat final_max_log_ptr_stat;
+        String unused_value;
+        bool final_exists = zookeeper->tryGet(zookeeper_path + "/max_log_ptr", unused_value, &final_max_log_ptr_stat);
+        if (!final_exists || final_max_log_ptr_stat.czxid != initial_max_log_ptr_stat.czxid)
+        {
+            throw Exception(
+                ErrorCodes::CANNOT_GET_REPLICATED_DATABASE_SNAPSHOT,
+                "Replicated database was dropped and a new one was created at the same Keeper path during the operation "
+                "(Keeper path identity changed)");
+        }
+
         LOG_DEBUG(log, "Got consistent metadata snapshot for log pointer {}", max_log_ptr);
         return table_name_to_metadata;
     }
@@ -1923,13 +2100,41 @@ std::map<String, String> DatabaseReplicated::getConsistentMetadataSnapshotImpl(
     {
         table_name_to_metadata.clear();
 
+        /// Symmetric to the fast-path `tryGet` at the top of the function: if the metadata node
+        /// is gone, the database was dropped concurrently. Surface the same
+        /// `Replicated database was dropped` error instead of a generic `KEEPER_EXCEPTION`.
         Coordination::Stat prev_metadata_path_stat;
-        zookeeper->get(metadata_path, &prev_metadata_path_stat);
+        String unused_metadata_value;
+        if (!zookeeper->tryGet(metadata_path, unused_metadata_value, &prev_metadata_path_stat))
+        {
+            throw Exception(
+                ErrorCodes::CANNOT_GET_REPLICATED_DATABASE_SNAPSHOT,
+                "Replicated database was dropped and a new one was created at the same Keeper path during the operation "
+                "(metadata node missing at retry iteration {})",
+                iteration);
+        }
 
         LOG_DEBUG(log, "Trying to get consistent metadata snapshot for log pointer {}", max_log_ptr);
 
         Strings escaped_table_names;
-        escaped_table_names = zookeeper->getChildren(metadata_path);
+        /// Use `tryGetChildren` so a concurrent `DROP DATABASE` between the prior
+        /// `tryGet(metadata_path, ...)` and this list call surfaces as `ZNONODE`
+        /// instead of leaking a generic `KEEPER_EXCEPTION`. Map it to the same
+        /// `CANNOT_GET_REPLICATED_DATABASE_SNAPSHOT` operation-level error as the
+        /// surrounding drop/recreate guards.
+        auto get_children_err = zookeeper->tryGetChildren(metadata_path, escaped_table_names);
+        if (get_children_err == Coordination::Error::ZNONODE)
+        {
+            throw Exception(
+                ErrorCodes::CANNOT_GET_REPLICATED_DATABASE_SNAPSHOT,
+                "Replicated database was dropped and a new one was created at the same Keeper path during the operation "
+                "(metadata node missing during list at retry iteration {})",
+                iteration);
+        }
+        /// Any other non-`ZOK` error (e.g. connection loss) must propagate instead of
+        /// leaving `escaped_table_names` empty and silently producing an empty snapshot.
+        if (get_children_err != Coordination::Error::ZOK)
+            throw Coordination::Exception::fromPath(get_children_err, metadata_path);
         if (filter_by_table_name)
             std::erase_if(escaped_table_names, [&](const String & table) { return !filter_by_table_name(unescapeForFileName(table)); });
 
@@ -1943,8 +2148,19 @@ std::map<String, String> DatabaseReplicated::getConsistentMetadataSnapshotImpl(
 
         auto table_metadata_and_version = zookeeper->tryGet(paths_to_fetch);
 
+        /// Symmetric to the `tryGet` at the top of this iteration: if `DROP DATABASE` removed
+        /// `/metadata` between the initial check and here, surface the same operation-level
+        /// error as the other drop/recreate windows instead of leaking a `KEEPER_EXCEPTION`.
         Coordination::Stat current_metadata_path_stat;
-        zookeeper->get(metadata_path, &current_metadata_path_stat);
+        String unused_current_metadata_value;
+        if (!zookeeper->tryGet(metadata_path, unused_current_metadata_value, &current_metadata_path_stat))
+        {
+            throw Exception(
+                ErrorCodes::CANNOT_GET_REPLICATED_DATABASE_SNAPSHOT,
+                "Replicated database was dropped and a new one was created at the same Keeper path during the operation "
+                "(metadata node missing during retry iteration {})",
+                iteration);
+        }
 
         if (current_metadata_path_stat.czxid != prev_metadata_path_stat.czxid)
         {
@@ -1968,8 +2184,20 @@ std::map<String, String> DatabaseReplicated::getConsistentMetadataSnapshotImpl(
         auto current_max_log_ptr_idx = paths_to_fetch.size() - 1;
         auto current_max_log_ptr = table_metadata_and_version[current_max_log_ptr_idx];
 
+        if (current_max_log_ptr.error == Coordination::Error::ZNONODE)
+        {
+            /// Symmetric to the fast-path handling: a missing `/max_log_ptr` here means
+            /// `DROP DATABASE` removed the subtree between the children read and this
+            /// multi-get. Surface the operation-level error instead of a generic Keeper
+            /// exception so all drop/recreate windows produce the same outcome.
+            throw Exception(
+                ErrorCodes::CANNOT_GET_REPLICATED_DATABASE_SNAPSHOT,
+                "Replicated database was dropped and a new one was created at the same Keeper path during the operation "
+                "(max_log_ptr node missing during retry iteration {})",
+                iteration);
+        }
         if (current_max_log_ptr.error != Coordination::Error::ZOK)
-            Coordination::Exception::fromPath(current_max_log_ptr.error, zookeeper_path + "/max_log_ptr");
+            throw Coordination::Exception::fromPath(current_max_log_ptr.error, zookeeper_path + "/max_log_ptr");
 
         UInt32 new_max_log_ptr = parse<UInt32>(current_max_log_ptr.data);
         if (new_max_log_ptr == max_log_ptr && escaped_table_names.size() == table_name_to_metadata.size())
@@ -1980,9 +2208,29 @@ std::map<String, String> DatabaseReplicated::getConsistentMetadataSnapshotImpl(
             LOG_DEBUG(log, "Log pointer moved from {} to {}, will retry", max_log_ptr, new_max_log_ptr);
             max_log_ptr = new_max_log_ptr;
         }
+        else if (max_log_ptr > new_max_log_ptr)
+        {
+            /// `max_log_ptr` should never move backwards under normal operation. The
+            /// only way to observe this is if the entire Keeper subtree was removed
+            /// by `DROP DATABASE` and a new `Replicated` database was created at the
+            /// same Keeper path: that new database starts with `max_log_ptr = 0`,
+            /// below whatever pointer this snapshot iteration had previously
+            /// observed. The caller still holds a reference to the old
+            /// `DatabaseReplicated` in-memory object, but the metadata it would now
+            /// read from Keeper belongs to a different, unrelated database. Refuse
+            /// to use the dropped database rather than silently substituting the
+            /// new one. This is reachable from any caller of
+            /// `getConsistentMetadataSnapshotImpl` (`getTablesForBackup`,
+            /// `recoverLostReplica`, `tryCompareLocalAndZooKeeperTablesAndDumpDiffForDebugOnly`),
+            /// so the message is phrased without referring to a specific operation.
+            throw Exception(
+                ErrorCodes::CANNOT_GET_REPLICATED_DATABASE_SNAPSHOT,
+                "Replicated database was dropped and a new one was created at the same Keeper path during the operation "
+                "(log pointer moved from {} to {})",
+                max_log_ptr, new_max_log_ptr);
+        }
         else
         {
-            chassert(max_log_ptr == new_max_log_ptr);
             chassert(escaped_table_names.size() != table_name_to_metadata.size());
             LOG_DEBUG(log, "Cannot get metadata of some tables due to ZooKeeper error, will retry");
         }
@@ -1990,6 +2238,22 @@ std::map<String, String> DatabaseReplicated::getConsistentMetadataSnapshotImpl(
 
     if (max_retries < iteration)
         throw Exception(ErrorCodes::CANNOT_GET_REPLICATED_DATABASE_SNAPSHOT, "Cannot get consistent metadata snapshot");
+
+    /// Revalidate identity at the end of the retry loop too: see the matching check at the top
+    /// of the fast path. The retry loop already rejects rollback (`max_log_ptr > new_max_log_ptr`)
+    /// and uses a `czxid` check on `/metadata` for retry, but neither catches the case where the
+    /// recreated database advanced its pointer past the original before the loop saw a stable
+    /// state.
+    Coordination::Stat final_max_log_ptr_stat;
+    String unused_value;
+    bool final_exists = zookeeper->tryGet(zookeeper_path + "/max_log_ptr", unused_value, &final_max_log_ptr_stat);
+    if (!final_exists || final_max_log_ptr_stat.czxid != initial_max_log_ptr_stat.czxid)
+    {
+        throw Exception(
+            ErrorCodes::CANNOT_GET_REPLICATED_DATABASE_SNAPSHOT,
+            "Replicated database was dropped and a new one was created at the same Keeper path during the operation "
+            "(Keeper path identity changed)");
+    }
 
     LOG_DEBUG(log, "Got consistent metadata snapshot for log pointer {}", max_log_ptr);
 
@@ -2189,13 +2453,37 @@ void DatabaseReplicated::stopReplication()
 void DatabaseReplicated::shutdown()
 {
     auto component_guard = Coordination::setCurrentComponent("DatabaseReplicated::shutdown");
-    stopReplication();
+
+    /// DatabaseAtomic::shutdown() (below) is what releases this database's table references (the
+    /// UUID -> storage mappings and the tables). stopReplication() runs first and can throw before
+    /// we get there (e.g. a ZooKeeper timeout in the DDL worker's tryRemove). If we let that escape,
+    /// the cleanup is skipped and the storages survive until DatabaseCatalog is destroyed at process
+    /// exit, which aborts. So remember the first error, still run the cleanup, then rethrow it.
+    std::exception_ptr first_error;
+    try
+    {
+        fiu_do_on(FailPoints::database_replicated_throw_on_stop_replication,
+        {
+            throw Exception(ErrorCodes::FAULT_INJECTED, "Injecting fault while stopping replication of database {}", backQuoteIfNeed(getDatabaseName()));
+        });
+        stopReplication();
+    }
+    catch (...)
+    {
+        first_error = std::current_exception();
+        tryLogCurrentException(log, fmt::format("Failed to stop replication of database {}", backQuoteIfNeed(getDatabaseName())));
+    }
+
     {
         std::lock_guard lock{ddl_worker_mutex};
         ddl_worker_initialized = false;
         ddl_worker = nullptr;
     }
+
     DatabaseAtomic::shutdown();
+
+    if (first_error)
+        std::rethrow_exception(first_error);
 }
 
 void DatabaseReplicated::dropTable(ContextPtr local_context, const String & table_name, bool sync)
@@ -2470,8 +2758,61 @@ DatabaseReplicated::getTablesForBackup(const FilterByNameFunction & filter, cons
     /// Here we read metadata from ZooKeeper. We could do that by simple call of DatabaseAtomic::getTablesForBackup() however
     /// reading from ZooKeeper is better because thus we won't be dependent on how fast the replication queue of this database is.
     auto zookeeper = getZooKeeper();
-    UInt32 snapshot_version = parse<UInt32>(zookeeper->get(zookeeper_path + "/max_log_ptr"));
-    auto snapshot = getConsistentMetadataSnapshotImpl(zookeeper, filter, /* max_retries= */ 20, snapshot_version);
+
+    /// Read `/max_log_ptr` together with its `Stat` so we can pin the database identity
+    /// (`czxid` of the node) at this point. The expected `czxid` is forwarded to
+    /// `getConsistentMetadataSnapshotImpl`, which rejects the snapshot if it observes a
+    /// different identity at function entry. Without this, a `DROP`+recreate that lands
+    /// between this read and `getConsistentMetadataSnapshotImpl`'s own initial read can
+    /// advance both the value and the `czxid` to the new database, after which all
+    /// in-function checks compare new-to-new and silently substitute the wrong instance.
+    ///
+    /// The residual window *before* this first read — where the backup collector still holds a
+    /// stale `DatabaseReplicated` object (looked up earlier in the same attempt) and a `DROP`+recreate
+    /// completes before we read `/max_log_ptr` here — cannot make the *written* backup substitute a
+    /// different database. `BackupEntriesCollector` re-gathers all metadata from scratch on every
+    /// attempt: it clears `database_infos`/`table_infos` and re-fetches a fresh `DatabasePtr` from
+    /// `DatabaseCatalog`, so a stale object never carries across attempts, and `compareWithPrevious`
+    /// requires two consecutive attempts to agree on both the database `CREATE` text and the full
+    /// table set. A transitional attempt that mixes the stale object's old `CREATE` (different UUID)
+    /// with the recreated subtree's new tables therefore disagrees with the next (all-new) attempt
+    /// and is discarded; the loop converges to a consistent snapshot of the current database or fails
+    /// with `INCONSISTENT_METADATA_FOR_BACKUP` at the deadline. The `czxid` pinning below only has to
+    /// close the narrower intra-operation window between this read and the reads inside
+    /// `getConsistentMetadataSnapshotImpl`.
+    /// Use `tryGet` (not `get`): a concurrent `DROP DATABASE` can remove the Keeper subtree after
+    /// the backup captured this (now stale) `DatabaseReplicated` object but before this read. Map
+    /// the missing node to the same `CANNOT_GET_REPLICATED_DATABASE_SNAPSHOT` that
+    /// `getConsistentMetadataSnapshotImpl` surfaces for the drop/recreate race, instead of leaking
+    /// a generic Keeper `ZNONODE` to the caller.
+    Coordination::Stat snapshot_version_stat;
+    String snapshot_version_str;
+    if (!zookeeper->tryGet(zookeeper_path + "/max_log_ptr", snapshot_version_str, &snapshot_version_stat))
+    {
+        throw Exception(
+            ErrorCodes::CANNOT_GET_REPLICATED_DATABASE_SNAPSHOT,
+            "Replicated database was dropped and a new one was created at the same Keeper path during the operation "
+            "(max_log_ptr node missing before backup snapshot start)");
+    }
+    UInt32 snapshot_version = parse<UInt32>(snapshot_version_str);
+
+    /// Test-only: deterministically reproduce the DROP+RECREATE race that originally
+    /// surfaced as a `chassert(max_log_ptr == new_max_log_ptr)` LOGICAL_ERROR. The test
+    /// enables this failpoint, submits a backup, waits for the pause, runs DROP+RECREATE
+    /// to give `/max_log_ptr` a new `czxid`, then notifies the failpoint. On resume,
+    /// `getConsistentMetadataSnapshotImpl` is called with the `czxid` captured above as
+    /// `expected_max_log_ptr_czxid`; because this pause happens before that call, the
+    /// recreate is caught by the function's entry-time `czxid` identity check (which
+    /// fires regardless of whether the new pointer ended up below or above the original),
+    /// not by the in-loop `max_log_ptr > new_max_log_ptr` rollback guard. Either way it
+    /// throws `Replicated database was dropped` instead of firing the pre-fix chassert /
+    /// retry-exhaustion path. The rollback guard itself is exercised separately by
+    /// `04320_backup_replicated_db_recreate_rollback_guard.sh`, which pauses after the
+    /// entry-time identity check via `database_replicated_pause_after_snapshot_identity_check`.
+    FailPointInjection::pauseFailPoint(FailPoints::database_replicated_pause_after_reading_log_pointer);
+
+    auto snapshot = getConsistentMetadataSnapshotImpl(
+        zookeeper, filter, /* max_retries= */ 20, snapshot_version, snapshot_version_stat.czxid);
 
     std::vector<std::pair<ASTPtr, StoragePtr>> res;
     for (const auto & [table_name, metadata] : snapshot)

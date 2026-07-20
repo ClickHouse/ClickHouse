@@ -1,0 +1,78 @@
+---
+sidebarTitle: '支出アラート'
+slug: /cloud/manage/billing/spend-alerts
+title: '組織の支出アラートを設定する'
+description: '請求期間内のしきい値に基づいて ClickHouse Cloud の利用額を監視するためのアラートを設定します。'
+keywords: ['請求', '支出アラート', '利用しきい値', '通知', 'コスト監視', '組織の請求']
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+支出アラートは、請求期間内に組織の利用量が設定したしきい値に達すると通知を行い、想定外の請求を防ぐのに役立ちます。送信されるのは通知のみです。自動請求の対象となるしきい値については、[Payment thresholds](/ja/products/cloud/reference/billing/payment-thresholds)を参照してください。
+
+<div id="prerequisites">
+  ## 前提条件
+</div>
+
+* 支出アラートを設定・確認するには、**Organization Admin** または **Billing Admin** ロールが必要です。
+
+<div id="how-spend-alerts-work">
+  ## 支出アラートの仕組み
+</div>
+
+* アラートは請求期間内の総使用量に基づき、各請求サイクルの開始時にリセットされます。
+* アラートはその時点で計算された総使用量に基づいて毎時発報されるため、しきい値を超えた後に通知されます。
+
+<Info>
+  **支出アラートは使用量を制限しません**
+
+  支出アラートが100%に達しても、使用量が制限されたり上限が設定されたりすることはありません。100%のしきい値を超えても、支出は引き続き加算されます。
+</Info>
+
+<div id="set-up-spend-alert">
+  ## 支出アラートを設定する
+</div>
+
+<Steps>
+  <Step>
+    ### 支出アラートのダイアログを開く
+
+    1. ClickHouse Cloud コンソールで **Organization &gt; Billing** に移動します。
+    2. **Actions &gt; Add spend alerts** をクリックします。
+
+    <Image img="/images/cloud/reference/billing/spend-alerts-actions.webp" alt="Actions メニューが開き、Add spend alerts が強調表示された Billing ページ" size="lg" />
+  </Step>
+
+  <Step>
+    ### アラートを設定して保存する
+
+    1. 請求期間ごとの支出アラート額を、ドルまたはクレジットで入力します。
+    2. 通知チャネル (**Email**、**UI**、**Slack** のいずれか、または複数) を選択します。
+    3. **Save** をクリックします。
+
+    <Image img="/images/cloud/reference/billing/spend-alerts-config.webp" alt="支出上限、自動しきい値アラート、通知チャネルが表示された Organization の支出アラート ダイアログ" size="md" />
+  </Step>
+</Steps>
+
+<div id="threshold-alerts">
+  ## 自動しきい値アラート
+</div>
+
+設定した支出アラート金額に基づいて、3 つのアラートが自動的に作成され、発動されます。
+
+| しきい値     | 発動条件               | 例 ($10 のアラート) |
+| -------- | ------------------ | ------------- |
+| **50%**  | 支出額の半分に達した時点       | $5            |
+| **75%**  | 支出額の 4 分の 3 に達した時点 | $7.50         |
+| **100%** | 支出額の全額に達した時点       | $10           |
+
+<div id="notification-channels">
+  ## 通知チャネル
+</div>
+
+| チャネル      | 説明                                                 |
+| --------- | -------------------------------------------------- |
+| **Email** | 設定されたメールアドレスにアラートを送信します。受信者を変更するには、編集アイコンをクリックします。 |
+| **UI**    | ClickHouse Cloud コンソールにアラートを表示します。                 |
+| **Slack** | Slack チャンネルにアラートを送信します。設定するには、編集アイコンをクリックします。      |
