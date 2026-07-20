@@ -96,11 +96,14 @@ def test_convert_to_replicated_rejected_for_config_table_readonly(started_cluste
     ch2.query(f"DROP DATABASE IF EXISTS {database_name} SYNC")
     ch2.query(f"CREATE DATABASE {database_name}")
 
+    # The table inherits `table_readonly = 1` from the global `merge_tree` config, so it is
+    # read-only and cannot be written to (that is exactly the resolved setting the converter must
+    # reject). We therefore leave it empty; data survival across a rejected conversion is covered
+    # by test_convert_to_replicated_rejected_for_unique_key above.
     ch2.query(
         database=database_name,
         sql="CREATE TABLE ro ( A Int64 ) ENGINE = MergeTree() ORDER BY tuple()",
     )
-    ch2.query(database=database_name, sql="INSERT INTO ro VALUES (1), (2)")
 
     set_convert_flags(ch2, database_name, ["ro"])
 
@@ -113,7 +116,8 @@ def test_convert_to_replicated_rejected_for_config_table_readonly(started_cluste
     ch2.start_clickhouse(start_wait_sec=120, expected_to_fail=True)
 
     # Crucially, the metadata was NOT rewritten: after removing the flag the table loads with its
-    # original MergeTree engine and its data intact.
+    # original MergeTree engine and is queryable (this is the load path that was broken before the
+    # fix, where the metadata had been corrupted to an unloadable ReplicatedMergeTree definition).
     ch2.exec_in_container(["rm", f"{table_data_path}convert_to_replicated"])
     ch2.start_clickhouse()
 
@@ -125,7 +129,7 @@ def test_convert_to_replicated_rejected_for_config_table_readonly(started_cluste
         == "MergeTree"
     )
     assert (
-        ch2.query(database=database_name, sql="SELECT count() FROM ro").strip() == "2"
+        ch2.query(database=database_name, sql="SELECT count() FROM ro").strip() == "0"
     )
 
     ch2.query(f"DROP DATABASE IF EXISTS {database_name} SYNC")
