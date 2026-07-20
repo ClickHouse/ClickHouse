@@ -104,9 +104,11 @@ public:
         {
             /// A top-level `String`/`FixedString` on one side with no least common supertype can
             /// never be compared null-safely (unlike the regular `=` / `!=` operators.
+            auto left_nested_type = removeLowCardinalityAndNullable(left_ele_type);
+            auto right_nested_type = removeLowCardinalityAndNullable(right_ele_type);
             const bool has_string_type
-                = WhichDataType(removeLowCardinalityAndNullable(left_ele_type)).isStringOrFixedString()
-                || WhichDataType(removeLowCardinalityAndNullable(right_ele_type)).isStringOrFixedString();
+                = isStringOrFixedStringOrArrayOrTupleOfString(*left_nested_type)
+                || isStringOrFixedStringOrArrayOrTupleOfString(*right_nested_type);
             if (has_string_type)
                 throw Exception(
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
@@ -264,9 +266,11 @@ public:
 
         // get common type for null-safe comparison;
         DataTypePtr common_type = tryGetLeastSupertype(DataTypes{arguments[0].type, arguments[1].type});
+        auto left_nested_type = removeLowCardinalityAndNullable(arguments[0].type);
+        auto right_nested_type = removeLowCardinalityAndNullable(arguments[1].type);
         // handle string types compared with null
-        bool has_string_type = WhichDataType(removeLowCardinalityAndNullable(arguments[0].type)).isStringOrFixedString()
-                        || WhichDataType(removeLowCardinalityAndNullable(arguments[1].type)).isStringOrFixedString();
+        bool has_string_type = isStringOrFixedStringOrArrayOrTupleOfString(*left_nested_type)
+                        || isStringOrFixedStringOrArrayOrTupleOfString(*right_nested_type);
         if (common_type)
         {
             ColumnPtr c0_converted = castColumn(arguments[0], common_type);

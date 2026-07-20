@@ -57,6 +57,43 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
+/// Function input accepts string, fixed string, array of string/fixed string, tuple of string/fixed string
+static bool isStringOrFixedStringOrArrayOrTupleOfString(const IDataType & type)
+{
+    const IDataType * nested_type = &type;
+
+    /// Unwrap an optional top-level Nullable.
+    if (const auto * nullable = typeid_cast<const DataTypeNullable *>(nested_type))
+        nested_type = nullable->getNestedType().get();
+
+    if (WhichDataType(nested_type).isStringOrFixedString())
+        return true;
+
+    if (const auto * array_type = checkAndGetDataType<DataTypeArray>(nested_type))
+    {
+        const IDataType * element_type = array_type->getNestedType().get();
+
+        /// Array elements may also be Nullable(String) or Nullable(FixedString).
+        if (const auto * nullable_elem = typeid_cast<const DataTypeNullable *>(element_type))
+            element_type = nullable_elem->getNestedType().get();
+
+        return WhichDataType(element_type).isStringOrFixedString();
+    }
+
+    if (const auto * tuple_type = checkAndGetDataType<DataTypeTuple>(nested_type))
+    {
+        const DataTypes types_vec = tuple_type->getElements();
+        bool has_string = false;
+        for (auto & elem_type : types_vec)
+        {
+            has_string = WhichDataType(elem_type).isStringOrFixedString();
+        }
+        return has_string;
+    }
+
+    return false;
+}
+
 template <bool _int, bool _float, bool _decimal, bool _datetime, typename F>
 static inline bool callOnAtLeastOneDecimalType(TypeIndex type_num1, TypeIndex type_num2, F && f)
 {
@@ -1541,8 +1578,8 @@ public:
 
                     /// Supported only when the element comparison produces a non-Nullable result
                     /// (covers the mixed signed/unsigned integer case). The same apply for String/FixedString types
-                    bool has_string_type = WhichDataType(left_nested_type).isStringOrFixedString()
-                        || WhichDataType(right_nested_type).isStringOrFixedString();
+                    bool has_string_type = isStringOrFixedStringOrArrayOrTupleOfString(*left_nested_type)
+                        || isStringOrFixedStringOrArrayOrTupleOfString(*right_nested_type);
                     if (!element_result_type->isNullable() && !element_result_type->onlyNull() && !isNothing(element_result_type)
                         && !has_string_type)
                         return std::make_shared<DataTypeUInt8>();
