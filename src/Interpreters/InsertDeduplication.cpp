@@ -417,6 +417,22 @@ std::vector<DeduplicationHash> DeduplicationInfo::getDeduplicationHashes(const s
 }
 
 
+void DeduplicationInfo::cacheDataHashes() const
+{
+    if (disabled)
+        return;
+
+    for (size_t offset = 0; offset < offsets.size(); ++offset)
+    {
+        if (!tokens[offset].by_user.empty() || tokens[offset].data_hash_batch.has_value())
+            continue;
+
+        chassert(original_block);
+        calculateDataHashColumnWise(offset, *original_block);
+    }
+}
+
+
 size_t DeduplicationInfo::getCount() const
 {
     return offsets.size();

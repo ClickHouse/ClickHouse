@@ -110,6 +110,14 @@ public:
     void setInsertDependencies(InsertDependenciesBuilderConstPtr insert_dependencies_);
     void updateOriginalBlock(const Chunk & chunk, SharedHeader header);
 
+    /// Compute and cache the data hashes of all tokens while `original_block` still matches
+    /// `offsets`. Must be called before handing the info to a nested INSERT pipeline (an `Alias`
+    /// hop) whose squashing and `AddDeduplicationInfoTransform` re-anchor `original_block` to the
+    /// chunks of that pipeline: a dependent view with a row-count-changing inner query makes those
+    /// chunks differ from the rows the offsets describe, and a hash computed after such
+    /// re-anchoring would read out of the block's bounds.
+    void cacheDataHashes() const;
+
     const std::vector<StorageIDMaybeEmpty> & getVisitedViews() const;
 
 private:

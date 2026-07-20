@@ -4,6 +4,7 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/evaluateConstantExpression.h>
+#include <Interpreters/InsertDeduplication.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTInsertQuery.h>
@@ -146,6 +147,16 @@ public:
 
         Chunk non_materialized_chunk(non_materialized_block.getColumns(), non_materialized_block.rows());
         non_materialized_chunk.setChunkInfos(chunk.getChunkInfos().clone());
+
+        /// The nested INSERT re-anchors the deduplication info to its own chunks (its squashing and
+        /// `AddDeduplicationInfoTransform` call `updateOriginalBlock`). When this sink is fed by a
+        /// dependent materialized view whose inner query changed the number of rows, those chunks
+        /// no longer match the rows the info's offsets describe, and computing a data hash after
+        /// that re-anchoring would read out of the block's bounds. Cache the hashes now, while the
+        /// info is still consistent.
+        if (auto deduplication_info = non_materialized_chunk.getChunkInfos().get<DeduplicationInfo>())
+            deduplication_info->cacheDataHashes();
+
         executor->push(std::move(non_materialized_chunk));
     }
 
