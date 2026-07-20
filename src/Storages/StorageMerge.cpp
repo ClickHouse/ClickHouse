@@ -315,6 +315,11 @@ bool StorageMerge::supportsPrewhere() const
     return traverseTablesUntil([](const auto & table) { return !table->supportsPrewhere(); }) == nullptr;
 }
 
+bool StorageMerge::supportsOptimizationToSubcolumns() const
+{
+    return traverseTablesUntil([](const auto & table) { return !table->supportsOptimizationToSubcolumns(); }) == nullptr;
+}
+
 bool StorageMerge::canMoveConditionsToPrewhere() const
 {
     /// NOTE: This check and the above check are used during query analysis as condition for applying
