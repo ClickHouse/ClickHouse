@@ -75,6 +75,9 @@ Please note: no additional experimental features are allowed to be enabled in Cl
 | Name | Default |
 |------|--------|
 | [use_reader_executor](/reference/settings/session-settings#use_reader_executor) | `0` |
+| [reader_executor_use_long_connections](/reference/settings/session-settings#reader_executor_use_long_connections) | `0` |
+| [reader_executor_min_bytes_for_seek](/reference/settings/session-settings#reader_executor_min_bytes_for_seek) | `2097152` |
+| [reader_executor_max_tail_for_drain](/reference/settings/session-settings#reader_executor_max_tail_for_drain) | `1048576` |
 | [query_plan_optimize_join_order_max_searched_plans](/reference/settings/session-settings#query_plan_optimize_join_order_max_searched_plans) | `100000` |
 | [query_plan_optimize_join_order_randomize](/reference/settings/session-settings#query_plan_optimize_join_order_randomize) | `0` |
 | [ast_fuzzer_runs](/reference/settings/session-settings#ast_fuzzer_runs) | `0` |
@@ -82,11 +85,13 @@ Please note: no additional experimental features are allowed to be enabled in Cl
 | [allow_fuzz_query_functions](/reference/settings/session-settings#allow_fuzz_query_functions) | `0` |
 | [reserve_memory](/reference/settings/session-settings#reserve_memory) | `0` |
 | [allow_experimental_url_wildcard_from_index_pages](/reference/settings/session-settings#allow_experimental_url_wildcard_from_index_pages) | `0` |
+| [optimize_trivial_count_with_sparsity_filter](/reference/settings/session-settings#optimize_trivial_count_with_sparsity_filter) | `0` |
 | [enable_materialized_cte](/reference/settings/session-settings#enable_materialized_cte) | `0` |
 | [analyzer_inline_views](/reference/settings/session-settings#analyzer_inline_views) | `0` |
 | [allow_experimental_kafka_offsets_storage_in_keeper](/reference/settings/session-settings#allow_experimental_kafka_offsets_storage_in_keeper) | `0` |
 | [automatic_parallel_replicas_mode](/reference/settings/session-settings#automatic_parallel_replicas_mode) | `0` |
 | [automatic_parallel_replicas_min_bytes_per_replica](/reference/settings/session-settings#automatic_parallel_replicas_min_bytes_per_replica) | `1048576` |
+| [parallel_replicas_plan_based](/reference/settings/session-settings#parallel_replicas_plan_based) | `0` |
 | [distributed_index_analysis](/reference/settings/session-settings#distributed_index_analysis) | `0` |
 | [allow_experimental_materialized_postgresql_table](/reference/settings/session-settings#allow_experimental_materialized_postgresql_table) | `0` |
 | [allow_experimental_funnel_functions](/reference/settings/session-settings#allow_experimental_funnel_functions) | `0` |
@@ -120,6 +125,7 @@ Please note: no additional experimental features are allowed to be enabled in Cl
 | [enable_adaptive_memory_spill_scheduler](/reference/settings/session-settings#enable_adaptive_memory_spill_scheduler) | `0` |
 | [allow_experimental_cleanup_old_data_files_compaction](/reference/settings/session-settings#allow_experimental_cleanup_old_data_files_compaction) | `0` |
 | [allow_experimental_iceberg_compaction](/reference/settings/session-settings#allow_experimental_iceberg_compaction) | `0` |
+| [iceberg_manifest_min_count_to_compact](/reference/settings/session-settings#iceberg_manifest_min_count_to_compact) | `30` |
 | [allow_iceberg_remove_orphan_files](/reference/settings/session-settings#allow_iceberg_remove_orphan_files) | `0` |
 | [iceberg_orphan_files_older_than_seconds](/reference/settings/session-settings#iceberg_orphan_files_older_than_seconds) | `259200` |
 | [allow_experimental_expire_snapshots](/reference/settings/session-settings#allow_experimental_expire_snapshots) | `0` |
@@ -159,6 +165,7 @@ Please note: no additional experimental features are allowed to be enabled in Cl
 | [webassembly_udf_max_memory](/reference/settings/session-settings#webassembly_udf_max_memory) | `134217728` |
 | [webassembly_udf_max_input_block_size](/reference/settings/session-settings#webassembly_udf_max_input_block_size) | `0` |
 | [webassembly_udf_max_instances](/reference/settings/session-settings#webassembly_udf_max_instances) | `32` |
+| [allow_experimental_eval_table_function](/reference/settings/session-settings#allow_experimental_eval_table_function) | `0` |
 | [allow_experimental_ai_functions](/reference/settings/session-settings#allow_experimental_ai_functions) | `0` |
 | [ai_function_request_timeout_sec](/reference/settings/session-settings#ai_function_request_timeout_sec) | `60` |
 | [ai_function_max_retries](/reference/settings/session-settings#ai_function_max_retries) | `0` |
@@ -175,6 +182,7 @@ Please note: no additional experimental features are allowed to be enabled in Cl
 | [allow_experimental_replacing_merge_with_cleanup](/reference/settings/merge-tree-settings#allow_experimental_replacing_merge_with_cleanup) | `0` |
 | [allow_experimental_text_index_phrase_search](/reference/settings/merge-tree-settings#allow_experimental_text_index_phrase_search) | `0` |
 | [allow_remote_fs_zero_copy_replication](/reference/settings/merge-tree-settings#allow_remote_fs_zero_copy_replication) | `0` |
+| [compute_exact_num_defaults_for_sparse_columns](/reference/settings/merge-tree-settings#compute_exact_num_defaults_for_sparse_columns) | `0` |
 | [distributed_index_analysis_min_indexes_bytes_to_activate](/reference/settings/merge-tree-settings#distributed_index_analysis_min_indexes_bytes_to_activate) | `1073741824` |
 | [distributed_index_analysis_min_parts_to_activate](/reference/settings/merge-tree-settings#distributed_index_analysis_min_parts_to_activate) | `10` |
 | [enable_replacing_merge_with_cleanup_for_min_age_to_force_merge](/reference/settings/merge-tree-settings#enable_replacing_merge_with_cleanup_for_min_age_to_force_merge) | `0` |
@@ -189,5 +197,4 @@ Please note: no additional experimental features are allowed to be enabled in Cl
 | [remote_fs_zero_copy_path_compatible_mode](/reference/settings/merge-tree-settings#remote_fs_zero_copy_path_compatible_mode) | `0` |
 | [remote_fs_zero_copy_zookeeper_path](/reference/settings/merge-tree-settings#remote_fs_zero_copy_zookeeper_path) | `/clickhouse/zero_copy` |
 | [remove_rolled_back_parts_immediately](/reference/settings/merge-tree-settings#remove_rolled_back_parts_immediately) | `1` |
-| [shared_merge_tree_virtual_parts_discovery_batch](/reference/settings/merge-tree-settings#shared_merge_tree_virtual_parts_discovery_batch) | `1` |
 {/*AUTOGENERATED_END*/}

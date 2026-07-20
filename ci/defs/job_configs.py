@@ -1448,7 +1448,9 @@ class JobConfigs:
     docker_server = Job.Config(
         name=JobNames.DOCKER_SERVER,
         runs_on=RunnerLabels.STYLE_CHECK_AMD,
-        command="python3 ./ci/jobs/docker_server.py --tag-type head --allow-build-reuse",
+        # --apt-mirror-region points apt at the in-region AWS Ubuntu mirror; the
+        # runners are in us-east-1, where Canonical's mirrors are often unreachable.
+        command="python3 ./ci/jobs/docker_server.py --tag-type head --allow-build-reuse --apt-mirror-region us-east-1",
         digest_config=Job.CacheDigestConfig(
             include_paths=[
                 "./ci/jobs/docker_server.py",
@@ -1462,7 +1464,9 @@ class JobConfigs:
     docker_keeper = Job.Config(
         name=JobNames.DOCKER_KEEPER,
         runs_on=RunnerLabels.STYLE_CHECK_AMD,
-        command="python3 ./ci/jobs/docker_server.py --tag-type head --allow-build-reuse",
+        # --apt-mirror-region points apt at the in-region AWS Ubuntu mirror; the
+        # runners are in us-east-1, where Canonical's mirrors are often unreachable.
+        command="python3 ./ci/jobs/docker_server.py --tag-type head --allow-build-reuse --apt-mirror-region us-east-1",
         digest_config=Job.CacheDigestConfig(
             include_paths=[
                 "./ci/jobs/docker_server.py",
