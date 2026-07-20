@@ -264,6 +264,7 @@ namespace FailPoints
     extern const char rmt_delay_execute_drop_range[];
     extern const char replicated_table_remove_zk_before_get_children[];
     extern const char replicated_table_remove_zk_before_final_multi[];
+    extern const char rmt_mutation_prune_pause_before_block_allocation[];
     extern const char check_table_inject_retryable_zk_error[];
 }
 
@@ -6739,80 +6740,88 @@ PartitionBlockNumbersHolder StorageReplicatedMergeTree::allocateBlockNumbersInAf
     ContextPtr query_context,
     const zkutil::ZooKeeperPtr & zookeeper) const
 {
-    const auto mutation_affected_partition_ids = getPartitionIdsAffectedByCommands(commands, query_context);
     auto block_data = serializeCommittingBlockOpToString(op);
 
-    if (mutation_affected_partition_ids.has_value())
-    {
-        /// Widening with ZK-only partitions is needed when any command uses
-        /// predicate pruning (no explicit IN PARTITION). The pruner only sees local
-        /// parts and may miss partitions that exist in ZK but haven't been fetched
-        /// to this replica yet. For explicit IN PARTITION the target set is exact.
-        bool has_pruned_commands = std::any_of(commands.begin(), commands.end(),
-            [](const MutationCommand & cmd)
-            {
-                auto alter = cmd.ast();
-                return alter && !alter->partition && !alter->partitions && alter->predicate;
-            });
-
-        while (true)
+    /// Widening with ZK-only partitions is needed when any command uses
+    /// predicate pruning (no explicit IN PARTITION). The pruner only sees local
+    /// parts and may miss partitions that exist in ZK but haven't been fetched
+    /// to this replica yet. For explicit IN PARTITION the target set is exact.
+    bool has_pruned_commands = std::any_of(commands.begin(), commands.end(),
+        [](const MutationCommand & cmd)
         {
-            Coordination::Stat block_numbers_stat;
-            Strings zk_partitions = zookeeper->getChildren(
-                fs::path(zookeeper_path) / "block_numbers", &block_numbers_stat);
+            auto alter = cmd.ast();
+            return alter && !alter->partition && !alter->partitions && alter->predicate;
+        });
 
-            auto affected = *mutation_affected_partition_ids;
+    /// The pruned set must be recomputed on every retry: a `ZBADVERSION` means the partition
+    /// list changed concurrently, and the new partition may have been created by an insert
+    /// on this very replica. In that case widening with ZK-only partitions below does not
+    /// catch it (the partition is local), only re-running the pruning does.
+    while (true)
+    {
+        const auto mutation_affected_partition_ids = getPartitionIdsAffectedByCommands(commands, query_context);
+        if (!mutation_affected_partition_ids.has_value())
+            break;
 
-            if (has_pruned_commands)
+        Coordination::Stat block_numbers_stat;
+        Strings zk_partitions = zookeeper->getChildren(
+            fs::path(zookeeper_path) / "block_numbers", &block_numbers_stat);
+
+        auto affected = *mutation_affected_partition_ids;
+
+        if (has_pruned_commands)
+        {
+            auto local_partition_ids = getAllPartitionIds();
+            for (const auto & zk_partition : zk_partitions)
             {
-                auto local_partition_ids = getAllPartitionIds();
-                for (const auto & zk_partition : zk_partitions)
-                {
-                    if (zk_partition.starts_with(MergeTreePartInfo::PATCH_PART_PREFIX))
-                        continue;
-
-                    if (!local_partition_ids.contains(zk_partition))
-                        affected.insert(zk_partition);
-                }
-            }
-
-            if (affected.empty())
-                return {};
-
-            try
-            {
-                /// Lock only the specific affected partitions instead of all partitions.
-                /// For predicate-pruned commands pass the block_numbers version to detect new
-                /// partitions appearing concurrently (the pruned set was derived from the observed
-                /// partition list). For explicit IN PARTITION the target set is exact and does not
-                /// depend on the partition list, so no version check is needed.
-                EphemeralLocksInPartitions lock_holder(
-                    fs::path(zookeeper_path) / "block_numbers",
-                    "block-",
-                    fs::path(zookeeper_path) / "temp",
-                    block_data,
-                    *zookeeper,
-                    affected,
-                    has_pruned_commands ? std::optional<int32_t>(block_numbers_stat.version) : std::nullopt);
-
-                PartitionBlockNumbersHolder::BlockNumbersType block_numbers;
-                for (const auto & lock : lock_holder.getLocks())
-                {
-                    block_numbers[lock.partition_id] = lock.number;
-                    LOG_TRACE(log, "Allocated block number {} in partition {}", lock.number, lock.partition_id);
-                }
-
-                return {std::move(block_numbers), std::move(lock_holder)};
-            }
-            catch (const Coordination::Exception & e)
-            {
-                if (e.code == Coordination::Error::ZBADVERSION)
-                {
-                    LOG_TRACE(log, "A new partition appeared while allocating block numbers for pruned mutation. Retry.");
+                if (zk_partition.starts_with(MergeTreePartInfo::PATCH_PART_PREFIX))
                     continue;
-                }
-                throw;
+
+                if (!local_partition_ids.contains(zk_partition))
+                    affected.insert(zk_partition);
             }
+        }
+
+        if (affected.empty())
+            return {};
+
+        /// Test-only pause between computing the pruned partition set and locking it,
+        /// to let a test create a new matching partition concurrently.
+        FailPointInjection::pauseFailPoint(FailPoints::rmt_mutation_prune_pause_before_block_allocation);
+
+        try
+        {
+            /// Lock only the specific affected partitions instead of all partitions.
+            /// For predicate-pruned commands pass the block_numbers version to detect new
+            /// partitions appearing concurrently (the pruned set was derived from the observed
+            /// partition list). For explicit IN PARTITION the target set is exact and does not
+            /// depend on the partition list, so no version check is needed.
+            EphemeralLocksInPartitions lock_holder(
+                fs::path(zookeeper_path) / "block_numbers",
+                "block-",
+                fs::path(zookeeper_path) / "temp",
+                block_data,
+                *zookeeper,
+                affected,
+                has_pruned_commands ? std::optional<int32_t>(block_numbers_stat.version) : std::nullopt);
+
+            PartitionBlockNumbersHolder::BlockNumbersType block_numbers;
+            for (const auto & lock : lock_holder.getLocks())
+            {
+                block_numbers[lock.partition_id] = lock.number;
+                LOG_TRACE(log, "Allocated block number {} in partition {}", lock.number, lock.partition_id);
+            }
+
+            return {std::move(block_numbers), std::move(lock_holder)};
+        }
+        catch (const Coordination::Exception & e)
+        {
+            if (e.code == Coordination::Error::ZBADVERSION)
+            {
+                LOG_TRACE(log, "A new partition appeared while allocating block numbers for pruned mutation. Retry.");
+                continue;
+            }
+            throw;
         }
     }
 
