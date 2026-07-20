@@ -13,9 +13,7 @@
 #include <Common/PoolId.h>
 #include <Common/parseAddress.h>
 #include <Common/parseRemoteDescription.h>
-#include <Common/RemoteHostFilter.h>
 #include <Common/AsyncLoader.h>
-#include <IO/WriteHelpers.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Core/Settings.h>
 #include <Core/UUID.h>
@@ -638,17 +636,10 @@ void registerDatabaseMaterializedPostgreSQL(DatabaseFactory & factory)
 
             configuration.host = parsed_host_port.first;
             configuration.port = parsed_host_port.second;
-            configuration.addresses = {std::make_pair(configuration.host, configuration.port)};
             configuration.database = safeGetLiteralValue<String>(engine_args[1], engine_name);
             configuration.username = safeGetLiteralValue<String>(engine_args[2], engine_name);
             configuration.password = safeGetLiteralValue<String>(engine_args[3], engine_name);
         }
-
-        /// Enforce the server's outbound-host policy, exactly like the table engine and the table
-        /// function do in `StoragePostgreSQL::getConfiguration`: a user must not be able to open a
-        /// long-lived replication connection to a host that `remote_url_allow_hosts` forbids elsewhere.
-        for (const auto & address : configuration.addresses)
-            args.context->getRemoteHostFilter().checkHostAndPort(address.first, toString(address.second));
 
         auto postgresql_replica_settings = std::make_unique<MaterializedPostgreSQLSettings>();
         if (engine_define->settings)
