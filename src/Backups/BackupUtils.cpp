@@ -5,6 +5,8 @@
 #include <Databases/LoadingStrictnessLevel.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTSetQuery.h>
+#include <Storages/TimeSeries/TimeSeriesVersion.h>
 #include <Storages/TimeSeries/normalizeTimeSeriesDefinition.h>
 #include <Common/typeid_cast.h>
 
@@ -123,6 +125,22 @@ bool compareRestoredTableDef(const IAST & restored_table_create_query, const IAS
         {
             /// Use the same mode as InterpreterCreateQuery uses during RESTORE.
             normalizeTimeSeriesDefinition(query, global_context, LoadingStrictnessLevel::SECONDARY_CREATE, /*is_restore_from_backup=*/true);
+
+            /// A TimeSeries table definition without the `version` setting means the initial version
+            /// (see TimeSeriesVersion.h), so drop an explicit `version = <initial>` before the comparison:
+            /// otherwise a definition from a backup made before versioning was introduced would not match
+            /// the same table re-created by a server which stamps the version (and vice versa).
+            if (query.storage && query.storage->settings)
+            {
+                auto & settings_changes = query.storage->settings->changes;
+                std::erase_if(settings_changes, [](const SettingChange & change)
+                {
+                    UInt64 version = 0;
+                    return (change.name == "version") && change.value.tryGet(version) && (version == TimeSeriesVersion::INITIAL);
+                });
+                if (settings_changes.empty())
+                    query.storage->reset(query.storage->settings);
+            }
         };
         normalize_time_series(*query1);
         normalize_time_series(*query2);

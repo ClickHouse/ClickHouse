@@ -1,0 +1,6 @@
+--- backup of a table stamped with the initial version ---
+BACKUP_CREATED
+--- re-create the same table without the version in the stored definition (as if created by a pre-versioning server) ---
+0
+--- restoring the stamped backup into the unstamped table succeeds ---
+RESTORED

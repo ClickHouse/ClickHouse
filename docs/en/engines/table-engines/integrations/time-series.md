@@ -430,7 +430,9 @@ targets only the latest schema instead of supporting all the historical ones, so
   create a new `TimeSeries` table, copy the data with an `INSERT ... SELECT` query from the old table into the new one,
   and then replace the old table with the new one.
 - If a `TimeSeries` table has a version newer than the latest version known to the server (which is possible after a ClickHouse downgrade),
-  queries over it are rejected with an exception asking to upgrade ClickHouse.
+  queries over it, as well as `INSERT` queries, the Prometheus remote-write protocol, and `ALTER` queries,
+  are rejected with an exception asking to upgrade ClickHouse: an older server must not modify data
+  which only a newer server understands. Such a table can still be attached, detached and dropped.
 
 # Functions {#functions}
 

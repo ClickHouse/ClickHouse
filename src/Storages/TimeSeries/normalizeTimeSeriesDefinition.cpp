@@ -11,6 +11,7 @@
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/StorageID.h>
 #include <Common/logger_useful.h>
+#include <Common/quoteString.h>
 #include <Common/typeid_cast.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeFactory.h>
@@ -826,15 +827,26 @@ namespace
     /// Stamps the latest schema version into the CREATE query of a new table, so that the version is persisted
     /// in the table metadata, or validates the version if it's specified in the query already.
     /// The version can be present in the query not only when the user specifies it explicitly:
-    /// the `AS other_table` clause copies the settings of another table, and a replica of a Replicated database
-    /// executes CREATE queries prepared by another server (`SECONDARY_CREATE`).
-    void setOrCheckVersion(ASTCreateQuery & create_query, TimeSeriesSettings & time_series_settings, LoadingStrictnessLevel mode)
+    /// the `AS other_table` clause copies the settings of another table, and CREATE queries prepared by
+    /// another server are replayed by a replica of a Replicated database (`SECONDARY_CREATE`) or by a host
+    /// executing an ON CLUSTER query (`is_ddl_or_on_cluster_internal`, with mode == CREATE).
+    void setOrCheckVersion(
+        ASTCreateQuery & create_query,
+        TimeSeriesSettings & time_series_settings,
+        LoadingStrictnessLevel mode,
+        const ContextPtr & context)
     {
         StorageID table_id{create_query.getDatabase(), create_query.getTable()};
+        bool is_replay_of_prepared_query = (mode != LoadingStrictnessLevel::CREATE) || context->isDDLOrOnClusterInternal();
 
         if (time_series_settings[TimeSeriesSetting::version].isChanged())
         {
             UInt64 version = time_series_settings[TimeSeriesSetting::version];
+
+            if (version < TimeSeriesVersion::INITIAL)
+                throw Exception(ErrorCodes::INVALID_SETTING_VALUE,
+                    "{}: Cannot create a TimeSeries table with version {}: TimeSeries versions start at {}",
+                    table_id.getNameForLogs(), version, TimeSeriesVersion::INITIAL);
 
             if (version > TimeSeriesVersion::LATEST)
                 throw Exception(ErrorCodes::INVALID_SETTING_VALUE,
@@ -842,22 +854,33 @@ namespace
                     "known to this server. Please upgrade ClickHouse",
                     table_id.getNameForLogs(), version, TimeSeriesVersion::LATEST);
 
-            /// Replaying a CREATE query prepared by another server (`SECONDARY_CREATE`) is allowed to keep
-            /// an older version, but a new table can be created with the latest version only.
-            if ((mode == LoadingStrictnessLevel::CREATE) && (version != TimeSeriesVersion::LATEST))
+            /// A replay of a query prepared by another server is allowed to keep an older version,
+            /// but a new table can be created with the latest version only.
+            if (!is_replay_of_prepared_query && (version != TimeSeriesVersion::LATEST))
+            {
+                /// The `AS other_table` clause copies the settings of another table, so the version can be
+                /// present in the query even though the user didn't write it.
+                if (!create_query.as_table.empty())
+                    throw Exception(ErrorCodes::INVALID_SETTING_VALUE,
+                        "{}: Cannot create a TimeSeries table with version {} copied by the AS clause from table {}: "
+                        "this server creates TimeSeries tables with version {}. Create the new table with a plain "
+                        "CREATE TABLE query and copy the data with an INSERT-SELECT query",
+                        table_id.getNameForLogs(), version, backQuoteIfNeed(create_query.as_table), TimeSeriesVersion::LATEST);
+
                 throw Exception(ErrorCodes::INVALID_SETTING_VALUE,
                     "{}: Cannot create a TimeSeries table with version {}: this server creates TimeSeries tables "
                     "with version {}. The `version` setting is stamped automatically when a table is created, "
                     "omit it in the CREATE query",
                     table_id.getNameForLogs(), version, TimeSeriesVersion::LATEST);
+            }
 
             return;
         }
 
-        /// `SECONDARY_CREATE` without a version in the query means the query was prepared by a server which
+        /// A replay of a prepared query without a version in it means the query was prepared by a server which
         /// didn't support versioning yet; keep the setting unset so that the table resolves to the default
         /// (initial) version, the same as on the server which prepared the query.
-        if (mode != LoadingStrictnessLevel::CREATE)
+        if (is_replay_of_prepared_query)
             return;
 
         if (!create_query.storage)
@@ -1352,7 +1375,7 @@ void normalizeTimeSeriesDefinition(ASTCreateQuery & create_query, const ContextP
         if (create_query.storage)
             settings.loadFromQuery(*create_query.storage);
 
-        setOrCheckVersion(create_query, settings, mode);
+        setOrCheckVersion(create_query, settings, mode, context);
         checkTimeSeriesSettings(settings);
 
         /// Pin `recent_samples_ttl_seconds`, so that the table keeps its TTL if a future version changes the default.

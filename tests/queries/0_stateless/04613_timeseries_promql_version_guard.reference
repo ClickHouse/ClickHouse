@@ -4,5 +4,12 @@ TimeSeries
 INCOMPATIBLE_SCHEMA
 INCOMPATIBLE_SCHEMA
 INCOMPATIBLE_SCHEMA
+INCOMPATIBLE_SCHEMA
+--- writes and alters are rejected too ---
+INCOMPATIBLE_SCHEMA
+INCOMPATIBLE_SCHEMA
 --- the error is instructive ---
 newer than the latest version
+--- a table with a version older than the PromQL layer supports is rejected with a migration hint ---
+INCOMPATIBLE_SCHEMA
+copy the data with an INSERT-SELECT query

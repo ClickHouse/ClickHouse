@@ -27,6 +27,13 @@ void checkTimeSeriesVersionSupportedByPromQL(const StorageTimeSeries & time_seri
             time_series_storage.getStorageID().getNameForLogs(), version, TimeSeriesVersion::MIN_SUPPORTED_BY_PROMQL);
     }
 
+    checkTimeSeriesVersionIsKnown(time_series_storage);
+}
+
+void checkTimeSeriesVersionIsKnown(const StorageTimeSeries & time_series_storage)
+{
+    UInt64 version = time_series_storage.getVersion();
+
     if (version > TimeSeriesVersion::LATEST)
     {
         throw Exception(ErrorCodes::INCOMPATIBLE_SCHEMA,

@@ -25,6 +25,7 @@
 #include <Storages/TimeSeries/TimeSeriesSink.h>
 #include <Storages/TimeSeries/TimeSeriesSettings.h>
 #include <Storages/SelectQueryInfo.h>
+#include <Storages/TimeSeries/TimeSeriesVersion.h>
 #include <Storages/TimeSeries/createTimeSeriesInnerTable.h>
 #include <Storages/TimeSeries/makeASTSelectFromTimeSeries.h>
 #include <Storages/TimeSeries/normalizeTimeSeriesDefinition.h>
@@ -173,7 +174,22 @@ StorageTimeSeries::StorageTimeSeries(
     if (normalized_create_query->storage && normalized_create_query->storage->settings
         && !normalized_create_query->storage->settings->changes.empty())
     {
-        storage_metadata.setSettingsChanges(normalized_create_query->storage->settings->clone());
+        auto settings_ast = boost::static_pointer_cast<ASTSetQuery>(normalized_create_query->storage->settings->clone());
+
+        /// The stored SETTINGS clause may contain duplicate entries, and the last one wins when the settings
+        /// are applied. Keep only the winning entry for each name - otherwise ALTER, which updates the first
+        /// matching entry of the list, would resolve settings to a stale duplicate.
+        SettingsChanges deduplicated;
+        for (const auto & change : settings_ast->changes)
+        {
+            if (auto * existing_value = deduplicated.tryGet(change.name))
+                *existing_value = change.value;
+            else
+                deduplicated.push_back(change);
+        }
+        settings_ast->changes = std::move(deduplicated);
+
+        storage_metadata.setSettingsChanges(settings_ast);
     }
 
     /// Re-derive columns from the normalized AST rather than trusting the `columns` argument.
@@ -516,6 +532,10 @@ bool StorageTimeSeries::optimize(
 
 void StorageTimeSeries::checkAlterIsPossible(const AlterCommands & commands, ContextPtr) const
 {
+    /// Fail close: a server must not alter the definition of a table created by a newer version of ClickHouse
+    /// (an older server would rewrite the stored definition according to its own, older schema).
+    checkTimeSeriesVersionIsKnown(*this);
+
     for (const auto & command : commands)
     {
         if (command.isCommentAlter() || command.type == AlterCommand::MODIFY_SQL_SECURITY)
@@ -557,14 +577,16 @@ void StorageTimeSeries::alter(const AlterCommands & params, ContextPtr local_con
         checkTimeSeriesSettings(*new_settings);
         auto settings_changes = new_settings->changes();
 
-        boost::intrusive_ptr<ASTSetQuery> settings_ast;
         /// Here `settings_changes` can be empty if `RESET SETTING` removed the last override.
-        if (!settings_changes.empty())
-        {
-            settings_ast = make_intrusive<ASTSetQuery>();
-            settings_ast->is_standalone = false;
-            settings_ast->changes = std::move(settings_changes);
-        }
+        /// The stored SETTINGS clause of the table definition is replaced only when the new list is non-empty
+        /// (see applyMetadataChangesToCreateQuery), so pin the `version` setting to keep the list non-empty -
+        /// otherwise the reset would not be persisted and would silently revert after a server restart.
+        if (settings_changes.empty())
+            settings_changes.push_back(SettingChange{"version", Field{static_cast<UInt64>((*new_settings)[TimeSeriesSetting::version])}});
+
+        auto settings_ast = make_intrusive<ASTSetQuery>();
+        settings_ast->is_standalone = false;
+        settings_ast->changes = std::move(settings_changes);
         new_metadata.settings_changes = settings_ast;
     }
 
@@ -710,6 +732,9 @@ void StorageTimeSeries::readImpl(
 SinkToStoragePtr StorageTimeSeries::write(
     const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context, bool async_insert)
 {
+    /// Fail close: a server must not write into a table created by a newer version of ClickHouse.
+    checkTimeSeriesVersionIsKnown(*this);
+
     Names insert_columns;
     if (const auto * insert_query = query->as<ASTInsertQuery>())
     {
@@ -1258,7 +1283,9 @@ targets only the latest schema instead of supporting all the historical ones, so
   create a new `TimeSeries` table, copy the data with an `INSERT ... SELECT` query from the old table into the new one,
   and then replace the old table with the new one.
 - If a `TimeSeries` table has a version newer than the latest version known to the server (which is possible after a ClickHouse downgrade),
-  queries over it are rejected with an exception asking to upgrade ClickHouse.
+  queries over it, as well as `INSERT` queries, the Prometheus remote-write protocol, and `ALTER` queries,
+  are rejected with an exception asking to upgrade ClickHouse: an older server must not modify data
+  which only a newer server understands. Such a table can still be attached, detached and dropped.
 
 # Functions {#functions}
 

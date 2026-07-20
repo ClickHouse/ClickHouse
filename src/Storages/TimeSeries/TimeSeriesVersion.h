@@ -20,6 +20,11 @@ class StorageTimeSeries;
 /// tables created before the setting was introduced don't have it in their metadata and must resolve to version 1.
 namespace TimeSeriesVersion
 {
+    /// The initial version, and the version implied when the metadata of a table doesn't contain
+    /// the `version` setting. This constant must never change - it matches the pinned default value
+    /// of the `version` setting.
+    constexpr UInt64 INITIAL = 1;
+
     /// The latest version of TimeSeries tables known to this server. New tables are always created with this version.
     /// Bump this constant each time the schema of the target tables or the semantics of the stored data changes.
     ///
@@ -40,5 +45,12 @@ namespace TimeSeriesVersion
 /// The check is used by every PromQL evaluation path: the `prometheusQuery`, `prometheusQueryRange` and
 /// `timeSeriesSelector` table functions, the `promql` dialect, and the Prometheus HTTP query API.
 void checkTimeSeriesVersionSupportedByPromQL(const StorageTimeSeries & time_series_storage);
+
+/// Checks that the version of a TimeSeries table is not newer than the latest version known to this server,
+/// throws otherwise. Such a table can appear after a downgrade of ClickHouse; it can still be attached,
+/// inspected and dropped, but the server must not write into it or alter it (that could corrupt data
+/// which only a newer server understands). Tables of older versions stay writable so that the data
+/// can keep flowing while they are being migrated.
+void checkTimeSeriesVersionIsKnown(const StorageTimeSeries & time_series_storage);
 
 }
