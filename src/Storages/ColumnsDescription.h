@@ -244,6 +244,12 @@ public:
     /// Does column has non default specified compression codec
     bool hasCompressionCodec(const String & column_name) const;
 
+    /// Is the column's compression codec exactly `CODEC(Default)`? Such a column carries a codec
+    /// descriptor (so `hasCompressionCodec` is true), yet its data on disk is compressed with the
+    /// part's default codec, so its `.bin` proves the default codec family - unlike a column with an
+    /// explicit non-default codec.
+    bool hasExplicitDefaultCompressionCodec(const String & column_name) const;
+
     String toString(bool include_comments) const;
     static ColumnsDescription parse(const String & str);
 

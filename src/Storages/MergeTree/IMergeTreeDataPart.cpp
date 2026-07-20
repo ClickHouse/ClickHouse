@@ -1803,9 +1803,14 @@ CompressionCodecPtr IMergeTreeDataPart::detectDefaultCompressionCodec(const Comp
     CompressionCodecPtr result = nullptr;
     for (const auto & part_column : columns)
     {
-        /// It was compressed with default codec and it's not empty
+        /// It was compressed with default codec and it's not empty. A column with no codec and a
+        /// column with an explicit `CODEC(Default)` are both compressed with the part's default
+        /// codec, so either one proves the default codec family; only a column with an explicit
+        /// non-default codec must be skipped (its data does not represent the default codec).
         auto column_size = getColumnSize(part_column.name);
-        if (column_size.data_compressed != 0 && !storage_columns.hasCompressionCodec(part_column.name))
+        if (column_size.data_compressed != 0
+            && (!storage_columns.hasCompressionCodec(part_column.name)
+                || storage_columns.hasExplicitDefaultCompressionCodec(part_column.name)))
         {
             String path_to_data_file;
             getSerialization(part_column.name)->enumerateStreams([&](const ISerialization::SubstreamPath & substream_path)

@@ -635,6 +635,62 @@ def test_default_codec_not_recovered_from_regenerated_checksums(start_cluster):
     node4.query("DROP TABLE no_codec_no_checksums SYNC")
 
 
+def test_default_codec_recovered_from_explicit_default_codec_column(start_cluster):
+    # A column declared with an explicit `CODEC(Default)` is still compressed with the part's default
+    # codec, exactly like a column with no CODEC at all, so its `.bin` proves the default codec family.
+    # `hasCompressionCodec` is true for such a column (it carries a codec descriptor), so before the
+    # fix the recovery treated `CODEC(Default)` like an explicit non-default codec and skipped it,
+    # dropping to the lossy `checksums.txt` fallback and mislabeling the part.
+    #
+    # Here `key` has an explicit non-default codec (skipped) and `data` has `CODEC(Default)`, so no
+    # plain no-codec column exists. On `node4` a small merged part uses the size-aware default `LZ4`,
+    # so the `data` column `.bin` is an `LZ4` frame, while `checksums.txt` is always a `ZSTD(3)` frame.
+    # After dropping the codec file the recovered default must be `LZ4` (read from the `CODEC(Default)`
+    # column data) - `ZSTD(1)` (from the checksums fallback) is the pre-fix, wrong result.
+    node4.query(
+        """
+    CREATE TABLE explicit_default_codec_column (
+        key UInt64 CODEC(ZSTD(1)),
+        data String CODEC(Default)
+    )
+    ENGINE MergeTree ORDER BY tuple()
+    """
+    )
+
+    # Two inserts and a merge, so the part whose codec file we drop is a merged part.
+    node4.query("INSERT INTO explicit_default_codec_column VALUES (1, 'Hello world')")
+    node4.query("INSERT INTO explicit_default_codec_column VALUES (2, 'Goodbye world')")
+    node4.query("OPTIMIZE TABLE explicit_default_codec_column FINAL")
+
+    part_name = node4.query(
+        "SELECT name FROM system.parts WHERE database='default' AND table='explicit_default_codec_column' AND active"
+    ).strip()
+
+    node4.query(f"ALTER TABLE explicit_default_codec_column DETACH PART '{part_name}'")
+
+    data_path = node4.query(
+        "SELECT arrayElement(data_paths, 1) FROM system.tables WHERE database='default' AND name='explicit_default_codec_column'"
+    ).strip()
+    node4.exec_in_container(
+        ["rm", f"{data_path}detached/{part_name}/default_compression_codec.txt"]
+    )
+
+    node4.query(f"ALTER TABLE explicit_default_codec_column ATTACH PART '{part_name}'")
+
+    assert node4.query("SELECT COUNT() FROM explicit_default_codec_column") == "2\n"
+
+    # Recovered from the `CODEC(Default)` column's `LZ4` frame, not from the `ZSTD(3)` `checksums.txt`.
+    assert (
+        node4.query(
+            "SELECT default_compression_codec FROM system.parts "
+            "WHERE database='default' AND table='explicit_default_codec_column' AND active"
+        ).strip()
+        == "LZ4"
+    )
+
+    node4.query("DROP TABLE explicit_default_codec_column SYNC")
+
+
 def test_default_codec_approximate_when_recovered_from_column_data(start_cluster):
     # The recovery cases above use tables where *every* column has an explicit CODEC, so no column
     # proves the default codec and `detectDefaultCompressionCodec` recovers it from `checksums.txt`.

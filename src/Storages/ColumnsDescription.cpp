@@ -32,6 +32,7 @@
 #include <Interpreters/addTypeConversionToAST.h>
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectQuery.h>
@@ -985,6 +986,23 @@ bool ColumnsDescription::hasCompressionCodec(const String & column_name) const
     const auto it = columns.get<1>().find(column_name);
 
     return it != columns.get<1>().end() && it->codec != nullptr;
+}
+
+bool ColumnsDescription::hasExplicitDefaultCompressionCodec(const String & column_name) const
+{
+    const auto it = columns.get<1>().find(column_name);
+    if (it == columns.get<1>().end() || it->codec == nullptr)
+        return false;
+
+    /// The stored codec descriptor is a `CODEC(...)` function; a plain `CODEC(Default)` keeps a single
+    /// `Default` identifier argument (see `CompressionCodecFactory::validateCodecAndGetPreprocessedAST`)
+    /// and means "compressed with the part's default codec".
+    const auto * codec_func = it->codec->as<ASTFunction>();
+    if (!codec_func || !codec_func->arguments || codec_func->arguments->children.size() != 1)
+        return false;
+
+    const auto * argument = codec_func->arguments->children.front()->as<ASTIdentifier>();
+    return argument && argument->name() == DEFAULT_CODEC_NAME;
 }
 
 ColumnsDescription::ColumnTTLs ColumnsDescription::getColumnTTLs() const
