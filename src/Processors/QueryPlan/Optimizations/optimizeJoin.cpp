@@ -1029,6 +1029,37 @@ constexpr bool isSwapOnlyJoinStrictness(JoinStrictness strictness)
     return strictness == JoinStrictness::Any || strictness == JoinStrictness::Semi || strictness == JoinStrictness::Anti;
 }
 
+/// Whether any left-side equi-join key of this join step has column statistics in the
+/// per-column stats propagated to the left subtree. `getColumnStats` in joinOrder.cpp
+/// falls back to `estimated_rows` as an NDV proxy exactly when the key is absent from
+/// this map, so the composite's cardinality estimate for this join is proxy-based iff
+/// none of its join keys are present. Checking the actual keys (rather than whether the
+/// map is empty) matters for mixed-stats composites: an unrelated stat contributed by
+/// one dimension must not mask missing stats on the fact table's next join key.
+/// Used by the star-schema swap guard below.
+static bool anyLeftJoinKeyHasColumnStats(
+    const std::vector<JoinActionRef> & join_expression,
+    const BitSet & left_rels,
+    const std::unordered_map<String, ColumnStats> & left_column_stats)
+{
+    for (const auto & predicate : join_expression)
+    {
+        auto [op, lhs, rhs] = predicate.asBinaryPredicate();
+        if (op != JoinConditionOperator::Equals && op != JoinConditionOperator::NullSafeEquals)
+            continue;
+
+        for (const auto & side : {lhs, rhs})
+        {
+            const auto & side_rels = side.getSourceRelations();
+            if (side_rels.count() == 0 || !isSubsetOf(side_rels, left_rels))
+                continue;
+            if (left_column_stats.contains(side.getColumnName()))
+                return true;
+        }
+    }
+    return false;
+}
+
 /// Largest base-relation row count within a set of relations, ignoring relations
 /// whose row count is unknown. Used by the star-schema swap guard below.
 static std::optional<UInt64> getMaxBaseRelationRows(const BitSet & relations, const std::vector<RelationStats> & relation_stats)
@@ -1207,16 +1238,17 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
             /// to the hash-join build side.
             ///
             /// Guard against this by not swapping when all of the following hold:
-            ///  - the left side is composite (multi-table) with no column stats,
+            ///  - the left side is composite (multi-table) and none of its join keys
+            ///    for this step have column stats (so its estimate is proxy-based),
             ///  - the right side is a single table (a dimension),
             ///  - the composite contains a base table larger than the right side.
-            /// This is deliberately narrow so it only fires when a statistics-less
-            /// composite is joined against a single smaller table. It only gates
-            /// the physical build/probe-side choice and never changes cardinality
-            /// estimates, so the enumerated join order is unaffected.
+            /// This is deliberately narrow so it only fires when a composite whose
+            /// estimate is proxy-based is joined against a single smaller table. It
+            /// only gates the physical build/probe-side choice and never changes
+            /// cardinality estimates, so the enumerated join order is unaffected.
             if (swap_on_sizes && !optimization_settings.join_swap_table.has_value()
                 && left_rels.count() > 1 && right_rels.count() == 1
-                && entry->left->column_stats.empty())
+                && !anyLeftJoinKeyHasColumnStats(join_operator.expression, left_rels, entry->left->column_stats))
             {
                 auto lhs_max_base_rows = getMaxBaseRelationRows(left_rels, base_relation_stats);
                 if (lhs_max_base_rows && rhs_estimation && lhs_max_base_rows.value() > rhs_estimation.value())
