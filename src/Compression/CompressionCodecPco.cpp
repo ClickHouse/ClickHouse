@@ -244,6 +244,18 @@ UInt32 CompressionCodecPco::doDecompressData(const char * source, UInt32 source_
         throw Exception(
             ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress PCO-encoded data: invalid element width {}", static_cast<UInt16>(width));
 
+    /// A typed codec instance (created from a concrete column type) knows the exact element width its
+    /// blocks were written with. A block that declares a different width — even one that would decode
+    /// successfully, e.g. a `U64` payload read back as pairs of `UInt32` values — is corrupt or
+    /// mismatched: fail closed instead of reinterpreting the data. The untyped method-byte instance
+    /// (`data_bytes_size == 0`) has no expectation and validates the block against itself only.
+    if (data_bytes_size != 0 && width != data_bytes_size)
+        throw Exception(
+            ErrorCodes::CANNOT_DECOMPRESS,
+            "Cannot decompress PCO-encoded data: the block declares element width {} but the codec was created for width {}",
+            static_cast<UInt16>(width),
+            static_cast<UInt16>(data_bytes_size));
+
     UInt8 bytes_to_skip = uncompressed_size % width;
     UInt8 stored_bytes_to_skip = static_cast<UInt8>(source[1]);
     if (stored_bytes_to_skip != bytes_to_skip)
@@ -275,8 +287,12 @@ UInt32 CompressionCodecPco::doDecompressData(const char * source, UInt32 source_
     }
 
     UInt64 n = expected / width;
+    /// A typed instance also pins the exact pcodec number type its blocks embed (`pco_type_byte`), so a
+    /// same-width stream of a different type fails closed too; the untyped instance passes 0 (no
+    /// expectation) and the stream is validated against the declared width only.
     int rc = pco_decompress(
         width,
+        pco_type_byte,
         reinterpret_cast<const uint8_t *>(source) + 2 + bytes_to_skip,
         payload_len,
         out,

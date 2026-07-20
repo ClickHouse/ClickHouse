@@ -63,13 +63,18 @@ int32_t pco_compress(
 /// to contain exactly `n_values` numbers, each `element_width` bytes, writing
 /// them to `dst` (which has `dst_capacity` bytes). The stream is decoded using
 /// its own self-described number type; the decode fails if that type's width
-/// does not equal `element_width`. This is the only type information needed on
-/// the untyped method-byte decode path (e.g. HTTP `decompress=1`). Returns
-/// `PCO_OK` on success, or `PCO_ERROR` if the stream is corrupt, its width does
-/// not match, the element count differs, or `dst_capacity` is too small. `dst`
-/// may be unaligned.
+/// does not equal `element_width`. This is the only type information available
+/// on the untyped method-byte decode path (e.g. HTTP `decompress=1`), where
+/// `expected_number_type` is `0`. When the caller knows the exact number type
+/// the stream must carry (a codec instance created from a concrete column
+/// type), pass it as `expected_number_type` and the decode additionally fails
+/// on a stream whose embedded type merely shares the width (e.g. an `I32`
+/// stream for a `U32` column). Returns `PCO_OK` on success, or `PCO_ERROR` if
+/// the stream is corrupt, its width or number type does not match, the element
+/// count differs, or `dst_capacity` is too small. `dst` may be unaligned.
 int32_t pco_decompress(
     uint32_t element_width,
+    uint8_t expected_number_type,
     const uint8_t * src,
     uint64_t src_size,
     uint8_t * dst,

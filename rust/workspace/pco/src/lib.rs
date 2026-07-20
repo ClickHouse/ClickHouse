@@ -197,6 +197,7 @@ fn peek_number_type(source: &[u8]) -> Result<Option<u8>, ()> {
 #[no_mangle]
 pub unsafe extern "C" fn pco_decompress(
     element_width: u32,
+    expected_number_type: u8,
     src: *const u8,
     src_size: u64,
     dst: *mut u8,
@@ -227,6 +228,15 @@ pub unsafe extern "C" fn pco_decompress(
             // even when n == 0.
             Err(()) => return PCO_ERROR,
         };
+
+        // When the caller knows the exact number type the stream must carry (a
+        // codec instance created from a concrete column type), a stream whose
+        // embedded type merely shares the width (e.g. an `i32` stream for a
+        // `u32` column) is corrupt or mismatched: fail closed instead of
+        // reinterpreting the values.
+        if expected_number_type != 0 && number_type != expected_number_type {
+            return PCO_ERROR;
+        }
 
         match number_type {
             1 if width == 4 => decompress_typed::<u32>(source, dst, n, cap),
@@ -268,17 +278,22 @@ mod tests {
         );
         assert_eq!(rc, PCO_OK, "compress rc for type {number_type}");
 
-        let mut restored = vec![0u8; bytes.len()];
-        let rc = pco_decompress(
-            width,
-            compressed.as_ptr(),
-            out_size,
-            restored.as_mut_ptr(),
-            n,
-            restored.len() as u64,
-        );
-        assert_eq!(rc, PCO_OK, "decompress rc for type {number_type}");
-        assert_eq!(&restored, bytes, "roundtrip bytes for type {number_type}");
+        // Decode both as a typed reader (expecting the exact number type) and
+        // as an untyped one (expected type 0, width match only).
+        for expected in [number_type, 0] {
+            let mut restored = vec![0u8; bytes.len()];
+            let rc = pco_decompress(
+                width,
+                expected,
+                compressed.as_ptr(),
+                out_size,
+                restored.as_mut_ptr(),
+                n,
+                restored.len() as u64,
+            );
+            assert_eq!(rc, PCO_OK, "decompress rc for type {number_type} expecting {expected}");
+            assert_eq!(&restored, bytes, "roundtrip bytes for type {number_type} expecting {expected}");
+        }
     }
 
     #[test]
@@ -325,6 +340,7 @@ mod tests {
             let mut restored = vec![0u8; expected.len()];
             let rc = pco_decompress(
                 2,
+                0,
                 compressed.as_ptr(),
                 compressed.len() as u64,
                 restored.as_mut_ptr(),
@@ -337,7 +353,7 @@ mod tests {
             // A width that disagrees with the stream's f16 (2 bytes) fails closed.
             let mut wide = vec![0u8; expected.len() * 2];
             assert_eq!(
-                pco_decompress(4, compressed.as_ptr(), compressed.len() as u64, wide.as_mut_ptr(), nums.len() as u64, wide.len() as u64),
+                pco_decompress(4, 0, compressed.as_ptr(), compressed.len() as u64, wide.as_mut_ptr(), nums.len() as u64, wide.len() as u64),
                 PCO_ERROR
             );
         }
@@ -374,12 +390,12 @@ mod tests {
                 .expect("compress empty stream");
             let mut dst = [0u8; 4];
             assert_eq!(
-                pco_decompress(4, empty.as_ptr(), empty.len() as u64, dst.as_mut_ptr(), 0, dst.len() as u64),
+                pco_decompress(4, 0, empty.as_ptr(), empty.len() as u64, dst.as_mut_ptr(), 0, dst.len() as u64),
                 PCO_OK
             );
             // ...but not when values are expected.
             assert_eq!(
-                pco_decompress(4, empty.as_ptr(), empty.len() as u64, dst.as_mut_ptr(), 1, dst.len() as u64),
+                pco_decompress(4, 0, empty.as_ptr(), empty.len() as u64, dst.as_mut_ptr(), 1, dst.len() as u64),
                 PCO_ERROR
             );
 
@@ -387,7 +403,7 @@ mod tests {
             // silently accepted as an empty stream.
             let garbage = [0xabu8; 32];
             assert_eq!(
-                pco_decompress(4, garbage.as_ptr(), garbage.len() as u64, dst.as_mut_ptr(), 0, dst.len() as u64),
+                pco_decompress(4, 0, garbage.as_ptr(), garbage.len() as u64, dst.as_mut_ptr(), 0, dst.len() as u64),
                 PCO_ERROR
             );
 
@@ -395,7 +411,7 @@ mod tests {
             // closed with n_values == 0.
             for len in 0..empty.len() - 1 {
                 assert_eq!(
-                    pco_decompress(4, empty.as_ptr(), len as u64, dst.as_mut_ptr(), 0, dst.len() as u64),
+                    pco_decompress(4, 0, empty.as_ptr(), len as u64, dst.as_mut_ptr(), 0, dst.len() as u64),
                     PCO_ERROR,
                     "truncated to {len} bytes"
                 );
@@ -406,7 +422,7 @@ mod tests {
             let mut trailing = empty.clone();
             trailing.extend_from_slice(&[0xab, 0xcd, 0xef]);
             assert_eq!(
-                pco_decompress(4, trailing.as_ptr(), trailing.len() as u64, dst.as_mut_ptr(), 0, dst.len() as u64),
+                pco_decompress(4, 0, trailing.as_ptr(), trailing.len() as u64, dst.as_mut_ptr(), 0, dst.len() as u64),
                 PCO_ERROR
             );
         }
@@ -427,7 +443,7 @@ mod tests {
             // Wrong declared width (8 for a 4-byte stream) must fail closed.
             let mut restored = vec![0u8; 8000];
             assert_eq!(
-                pco_decompress(8, compressed.as_ptr(), out_size, restored.as_mut_ptr(), 1000, restored.len() as u64),
+                pco_decompress(8, 0, compressed.as_ptr(), out_size, restored.as_mut_ptr(), 1000, restored.len() as u64),
                 PCO_ERROR
             );
 
@@ -435,9 +451,39 @@ mod tests {
             let garbage = [0xabu8; 32];
             let mut out = vec![0u8; 64];
             assert_eq!(
-                pco_decompress(4, garbage.as_ptr(), garbage.len() as u64, out.as_mut_ptr(), 1, out.len() as u64),
+                pco_decompress(4, 0, garbage.as_ptr(), garbage.len() as u64, out.as_mut_ptr(), 1, out.len() as u64),
                 PCO_ERROR
             );
+        }
+    }
+
+    #[test]
+    fn expected_number_type_mismatch_fails_closed() {
+        unsafe {
+            // Valid i32 stream (number type byte 3).
+            let i32s: Vec<u8> = (0..1000i32).flat_map(|i| i.to_le_bytes()).collect();
+            let mut compressed = vec![0u8; i32s.len() + 64];
+            let mut out_size = 0u64;
+            assert_eq!(
+                pco_compress(3, i32s.as_ptr(), 1000, 8, compressed.as_mut_ptr(), compressed.len() as u64, &mut out_size),
+                PCO_OK
+            );
+
+            let mut restored = vec![0u8; i32s.len()];
+            // A reader expecting u32 (type byte 1) must reject the same-width
+            // i32 stream instead of reinterpreting the values...
+            assert_eq!(
+                pco_decompress(4, 1, compressed.as_ptr(), out_size, restored.as_mut_ptr(), 1000, restored.len() as u64),
+                PCO_ERROR
+            );
+            // ...while the matching typed reader and the untyped reader accept it.
+            for expected in [3u8, 0u8] {
+                assert_eq!(
+                    pco_decompress(4, expected, compressed.as_ptr(), out_size, restored.as_mut_ptr(), 1000, restored.len() as u64),
+                    PCO_OK
+                );
+                assert_eq!(&restored, &i32s);
+            }
         }
     }
 }
