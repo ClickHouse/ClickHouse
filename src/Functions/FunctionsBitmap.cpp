@@ -50,12 +50,12 @@ REGISTER_FUNCTION(Bitmap)
     factory.registerFunction<FunctionBitmapToArray>(documentation_bitmapToArray);
 
     /// Documentation for bitmapSubsetInRange
-    FunctionDocumentation::Description description_bitmapSubsetInRange = "Returns a subset of the bitmap, containing only the set bits in the specified range [start, end). Uses 1-based indexing.";
+    FunctionDocumentation::Description description_bitmapSubsetInRange = "Returns a subset of the bitmap containing elements in the value range `[start, end)`. Element values are compared as unsigned integers of the bitmap element type.";
     FunctionDocumentation::Syntax syntax_bitmapSubsetInRange = "bitmapSubsetInRange(bitmap, start, end)";
     FunctionDocumentation::Arguments arguments_bitmapSubsetInRange = {
         {"bitmap", "Bitmap to extract the subset from. [`AggregateFunction(groupBitmap, T)`](/sql-reference/data-types/aggregatefunction)."},
-        {"start", "Start of the range (inclusive). [`UInt*`](/sql-reference/data-types/int-uint)"},
-        {"end", "End of the range (exclusive). [`UInt*`](/sql-reference/data-types/int-uint)"}
+        {"start", "Start of the value range (inclusive). [`UInt*`](/sql-reference/data-types/int-uint)"},
+        {"end", "End of the value range (exclusive). [`UInt*`](/sql-reference/data-types/int-uint)"}
     };
     FunctionDocumentation::ReturnedValue returned_value_bitmapSubsetInRange = {"Returns a bitmap containing only the set bits in the specified range", {"AggregateFunction(groupBitmap, T)"}};
     FunctionDocumentation::Examples examples_bitmapSubsetInRange = {{"Usage example", "SELECT bitmapToArray(bitmapSubsetInRange(bitmapBuild([1, 2, 3, 4, 5]), 2, 5)) AS res;",
@@ -72,12 +72,12 @@ REGISTER_FUNCTION(Bitmap)
     factory.registerFunction<FunctionBitmapSubsetInRange>(documentation_bitmapSubsetInRange);
 
     /// Documentation for bitmapSubsetLimit
-    FunctionDocumentation::Description description_bitmapSubsetLimit = "Returns a subset of a bitmap from position `range_start` with at most `cardinality_limit` set bits. Uses 1-based indexing.";
+    FunctionDocumentation::Description description_bitmapSubsetLimit = "Returns a subset of at most `cardinality_limit` elements whose values are greater than or equal to `range_start`, selecting the smallest such values in unsigned order.";
     FunctionDocumentation::Syntax syntax_bitmapSubsetLimit = "bitmapSubsetLimit(bitmap, range_start, cardinality_limit)";
     FunctionDocumentation::Arguments arguments_bitmapSubsetLimit = {
         {"bitmap", "Bitmap object. [`AggregateFunction(groupBitmap, T)`](/sql-reference/data-types/aggregatefunction)."},
-        {"range_start", "Start of the range (inclusive). [`UInt32`](/sql-reference/data-types/int-uint)"},
-        {"cardinality_limit", "Maximum cardinality of the subset. [`UInt32`](/sql-reference/data-types/int-uint)"}
+        {"range_start", "Minimum element value to include (inclusive). [`UInt*`](/sql-reference/data-types/int-uint)"},
+        {"cardinality_limit", "Maximum cardinality of the subset. [`UInt*`](/sql-reference/data-types/int-uint)"}
     };
     FunctionDocumentation::ReturnedValue returned_value_bitmapSubsetLimit = {"Returns a bitmap containing at most `cardinality_limit` set bits, starting from `range_start`", {"AggregateFunction(groupBitmap, T)"}};
     FunctionDocumentation::Examples examples_bitmapSubsetLimit = {{"Usage example", "SELECT bitmapToArray(bitmapSubsetLimit(bitmapBuild([1, 5, 3, 2, 8]), 3, 2)) AS res;",
@@ -94,12 +94,12 @@ REGISTER_FUNCTION(Bitmap)
     factory.registerFunction<FunctionBitmapSubsetLimit>(documentation_bitmapSubsetLimit);
 
     /// Documentation for subBitmap (bitmapSubsetOffsetLimit is the unregistered alias see: https://github.com/ClickHouse/ClickHouse/pull/27234)
-    FunctionDocumentation::Description description_subBitmap = "Returns a subset of the bitmap, starting from position `offset`. The maximum cardinality of the returned bitmap is `cardinality_limit`.";
+    FunctionDocumentation::Description description_subBitmap = "Returns a subset of the bitmap after skipping `offset` elements in ascending unsigned value order. The maximum cardinality of the returned bitmap is `cardinality_limit`.";
     FunctionDocumentation::Syntax syntax_subBitmap = "subBitmap(bitmap, offset, cardinality_limit)";
     FunctionDocumentation::Arguments arguments_subBitmap = {
         {"bitmap", "Bitmap object. [`AggregateFunction(groupBitmap, T)`](/sql-reference/data-types/aggregatefunction)."},
-        {"offset", "Number of set bits to skip from the beginning (zero-based). [`UInt32`](/sql-reference/data-types/int-uint)"},
-        {"cardinality_limit", "Maximum number of set bits to include in the subset. [`UInt32`](/sql-reference/data-types/int-uint)"}
+        {"offset", "Number of elements to skip in ascending unsigned value order (zero-based). [`UInt*`](/sql-reference/data-types/int-uint)"},
+        {"cardinality_limit", "Maximum number of elements to include in the subset. [`UInt*`](/sql-reference/data-types/int-uint)"}
     };
     FunctionDocumentation::ReturnedValue returned_value_subBitmap = {"Returns a bitmap containing at most `limit` set bits, starting after skipping `offset` set bits in ascending order", {"AggregateFunction(groupBitmap, T)"}};
     FunctionDocumentation::Examples examples_subBitmap = {{"Usage example", "SELECT bitmapToArray(subBitmap(bitmapBuild([1, 2, 3, 4, 5]), 2, 2)) AS res;",

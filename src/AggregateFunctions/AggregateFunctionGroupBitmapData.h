@@ -496,8 +496,8 @@ public:
     }
 
     /**
-     * Return new set with specified range (not include the range_end)
-     * It's used in subset and currently only support UInt32
+     * Return new set with specified value range (not including range_end).
+     * Element values are compared as UnsignedT.
      */
     UInt64 rb_range(UInt64 range_start, UInt64 range_end, RoaringBitmapWithSmallSet & r1) const /// NOLINT
     {
@@ -509,7 +509,7 @@ public:
             for (const auto & x : small)
             {
                 T val = x.getValue();
-                if (UInt32(val) >= range_start && UInt32(val) < range_end)
+                if (static_cast<UnsignedT>(val) >= range_start && static_cast<UnsignedT>(val) < range_end)
                 {
                     r1.add(val);
                     ++count;
@@ -536,8 +536,7 @@ public:
     }
 
     /**
-     * Return new set of the smallest `limit` values in set which is no less than `range_start`.
-     * It's used in subset and currently only support UInt32
+     * Return new set of the smallest `limit` values (as UnsignedT) which are no less than `range_start`.
      */
     UInt64 rb_limit(UInt64 range_start, UInt64 limit, RoaringBitmapWithSmallSet & r1) const /// NOLINT
     {
@@ -550,14 +549,18 @@ public:
             for (const auto & x : small)
             {
                 T val = x.getValue();
-                if (UInt32(val) >= range_start)
+                if (static_cast<UnsignedT>(val) >= range_start)
                 {
                     answer.push_back(val);
                 }
             }
             if (limit < answer.size())
             {
-                ::nth_element(answer.begin(), answer.begin() + limit, answer.end());
+                ::nth_element(
+                    answer.begin(),
+                    answer.begin() + limit,
+                    answer.end(),
+                    [](const T & lhs, const T & rhs) { return static_cast<UnsignedT>(lhs) < static_cast<UnsignedT>(rhs); });
                 answer.resize(limit);
             }
 
