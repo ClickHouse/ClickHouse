@@ -56,6 +56,10 @@ class QueryPipeline;
 class IStoragePolicy;
 using StoragePolicyPtr = std::shared_ptr<const IStoragePolicy>;
 
+class IDisk;
+using DiskPtr = std::shared_ptr<IDisk>;
+using Disks = std::vector<DiskPtr>;
+
 struct StreamLocalLimits;
 class EnabledQuota;
 struct SelectQueryInfo;
@@ -680,6 +684,12 @@ public:
 
     /// Same as getStoragePolicy() but may return nullopt in some specific engines like Alias
     virtual std::optional<StoragePolicyPtr> tryGetStoragePolicy() const { return getStoragePolicy(); }
+
+    /// Returns the disks that hold this storage's data, if the storage exposes them.
+    /// The default derives them from the storage policy; engines that take a disk directly
+    /// (e.g. `Log`, `StripeLog`, `TinyLog`) override this to report their own disk. Used to
+    /// decide whether the data lives on the local filesystem (see `IDisk::isPathOnLocalFilesystem`).
+    virtual Disks getDataDisks() const;
 
     /// Returns true if all disks of storage are read-only or write-once.
     /// NOTE: write-once also does not support INSERTs/merges/... for MergeTree

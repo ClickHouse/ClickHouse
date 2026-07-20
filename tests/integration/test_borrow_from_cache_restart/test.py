@@ -62,6 +62,52 @@ def test_borrow_from_cache_atomic_db_creates_no_host_root_symlink(started_cluste
     node.query("DROP TABLE borrowed_symlink SYNC")
 
 
+def test_borrow_from_cache_atomic_db_no_symlink_for_direct_disk_engine(started_cluster):
+    # Regression: the `tryCreateSymlink` guard originally only inspected `tryGetStoragePolicy`, which
+    # is populated for `MergeTree`-family engines but empty for engines that take a `DiskPtr` directly
+    # (`Log`, `StripeLog`, `TinyLog`, `Set`, `Join`). Such a table on a `borrow_from_cache` disk would
+    # therefore still fall through and create the same dangling `data/<db>/<table>` -> `/store/...`
+    # symlink. `tryCreateSymlink` now consults `IStorage::getDataDisks`, which reports the disk for
+    # direct-disk engines too, so no host-root symlink must be created for them either.
+    #
+    # Log-family engines cannot take an inline `disk(...)` definition (their `disk` setting must be a
+    # named disk), so first register the named borrow disk via a throwaway `MergeTree` CREATE, then
+    # reference it by name from a `StripeLog` table.
+    node.query("DROP TABLE IF EXISTS borrowed_disk_register SYNC")
+    node.query("DROP TABLE IF EXISTS borrowed_stripelog SYNC")
+    node.query(
+        """
+        CREATE TABLE borrowed_disk_register (key UInt64)
+        ENGINE = MergeTree ORDER BY key
+        SETTINGS disk = disk(
+            type = object_storage,
+            object_storage_type = 'borrow_from_cache',
+            cache_name = 'borrowed_cache',
+            name = 'borrowed_directdisk')
+        """
+    )
+    node.query(
+        "CREATE TABLE borrowed_stripelog (key UInt64) ENGINE = StripeLog SETTINGS disk = 'borrowed_directdisk'"
+    )
+    node.query("INSERT INTO borrowed_stripelog VALUES (1), (2), (3)")
+    assert node.query("SELECT count() FROM borrowed_stripelog").strip() == "3"
+
+    # No symlink under the data directory may point into the (non-existent) host filesystem root.
+    dangling = node.exec_in_container(
+        [
+            "bash",
+            "-c",
+            "find /var/lib/clickhouse/data -maxdepth 3 -type l -lname '/store/*' -print || true",
+        ]
+    ).strip()
+    assert (
+        dangling == ""
+    ), f"borrow_from_cache direct-disk engine created a host-root symlink: {dangling}"
+
+    node.query("DROP TABLE borrowed_stripelog SYNC")
+    node.query("DROP TABLE borrowed_disk_register SYNC")
+
+
 def test_borrow_from_cache_freeze_and_detach_part(started_cluster):
     # Regression: `FREEZE` and detached-part cloning of a `MergeTree` table on a `borrow_from_cache`
     # disk go through `BackupImpl` with `make_source_readonly`, which calls

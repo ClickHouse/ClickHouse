@@ -79,6 +79,7 @@ public:
 
     bool storesDataOnDisk() const override { return true; }
     Strings getDataPaths() const override { return {DB::fullPath(disk, table_path)}; }
+    Disks getDataDisks() const override { return {disk}; }
     bool supportsSubcolumns() const override { return true; }
     ColumnSizeByName getColumnSizes() const override;
 

@@ -29,6 +29,7 @@ public:
 
     bool storesDataOnDisk() const override { return true; }
     Strings getDataPaths() const override { return {path}; }
+    Disks getDataDisks() const override { return {disk}; }
 
 protected:
     StorageSetOrJoinBase(

@@ -388,6 +388,13 @@ bool IStorage::isStaticStorage() const
     return false;
 }
 
+Disks IStorage::getDataDisks() const
+{
+    if (auto storage_policy = getStoragePolicy())
+        return storage_policy->getDisks();
+    return {};
+}
+
 IStorage::DataValidationTasksPtr IStorage::getCheckTaskList(const CheckTaskFilter &, ContextPtr)
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Check query is not supported for {} storage", getName());

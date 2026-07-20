@@ -641,10 +641,11 @@ void DatabaseAtomic::tryCreateSymlink(const StoragePtr & table, bool if_data_pat
     /// `getDataPaths` then produces a host-looking path (`/store/...` built from that placeholder), so
     /// creating a symlink to it would point into a non-existent location under the filesystem root.
     /// Skip symlink creation for tables whose data lives on such a disk (see `IDisk::isPathOnLocalFilesystem`).
-    if (auto policy = table->tryGetStoragePolicy(); policy.has_value() && *policy)
+    /// `getDataDisks` covers both storage-policy engines (e.g. `MergeTree`) and engines that take a disk
+    /// directly (e.g. `Log`, `StripeLog`, `TinyLog`, `Set`, `Join`).
+    for (const auto & disk : table->getDataDisks())
     {
-        const auto & disks = (*policy)->getDisks();
-        if (!disks.empty() && !disks.front()->isPathOnLocalFilesystem())
+        if (disk && !disk->isPathOnLocalFilesystem())
             return;
     }
 
