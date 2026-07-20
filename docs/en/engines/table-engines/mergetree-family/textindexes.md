@@ -466,6 +466,8 @@ Search tokens that the postprocessor maps to an empty string are ignored, i.e. t
 There is no fallback to using the index as a hint: if the setting is disabled or the tokenizer is not in the supported set, the index is not used for `ILIKE`.
 The preprocessor, if present, must be `lower` or `upper`; postprocessors are not supported.
 
+The `keyValuePairs` tokenizer (for `Map(String, String)` or `Map(LowCardinality(String), LowCardinality(String))` columns) does **not** accept a `preprocessor` or `postprocessor` (both are rejected at table creation), so the *Supports a preprocessor* and *Supports a postprocessor* columns above do not apply to it. It is built directly on the `Map` column — not on `mapKeys` / `mapValues` — and answers `=` (`map['key'] = 'value'`), `map['key']` prefix/suffix (`LIKE`, `startsWith`, `endsWith`), and `mapContainsKey` / `mapContainsValue` / `mapContainsKeyLike` / `mapContainsValueLike` from the index. See [The `keyValuePairs` tokenizer for maps](#tokenizer-key-value-pairs).
+
 **Experimental: Support phrase search argument (optional)**.
 
 Experimental parameter `support_phrase_search` (default: `0`) controls whether the index stores token positions.
@@ -589,6 +591,8 @@ The index accelerates several map searches:
   scanning the index dictionary of distinct pairs rather than reading the map column.
 - Key existence and key pattern search (`mapContainsKey(attributes, 'level')`,
   `mapContainsKeyLike(attributes, 'lev%')`), also answered by the dictionary scan.
+
+The `keyValuePairs` tokenizer does not accept a `preprocessor` or `postprocessor` argument — both are rejected at table creation, since the encoding applies to whole `(key, value)` pairs rather than to free text.
 
 ## Using a Text Index {#using-a-text-index}
 
@@ -806,7 +810,7 @@ SELECT count() FROM table WHERE hasAll(tags, ['clickhouse', 'olap']);
 
 Function [mapContains](/sql-reference/functions/tuple-map-functions#mapContainsKey) (an alias of `mapContainsKey`) matches against tokens extracted from the searched string in the keys of a map.
 The behaviour is similar to the `equals` function with a `String` column.
-The text index is only used if it was created on a `mapKeys(map)` expression.
+The text index is used if it was created on a `mapKeys(map)` expression, or on the `Map` column directly with the [`keyValuePairs`](#tokenizer-key-value-pairs) tokenizer.
 
 Example:
 
@@ -820,7 +824,7 @@ SELECT count() FROM table WHERE mapContains(map, 'clickhouse');
 
 Function [mapContainsValue](/sql-reference/functions/tuple-map-functions#mapContainsValue) matches against tokens extracted from the searched string in the values of a map.
 The behaviour is similar to the `equals` function with a `String` column.
-The text index is only used if it was created on a `mapValues(map)` expression.
+The text index is used if it was created on a `mapValues(map)` expression, or on the `Map` column directly with the [`keyValuePairs`](#tokenizer-key-value-pairs) tokenizer.
 
 Example:
 
@@ -841,7 +845,7 @@ SELECT count() FROM table WHERE mapContainsValueLike(map, '% clickhouse %');
 
 #### `operator[]` {#functions-example-access-operator}
 
-Access [operator[]](/sql-reference/operators#access-operators) can be used with the text index to filter out keys and values. The text index is only used if it is created on `mapKeys(map)` or `mapValues(map)` expressions, or both.
+Access [operator[]](/sql-reference/operators#access-operators) can be used with the text index to filter out keys and values. The text index is used if it is created on `mapKeys(map)` or `mapValues(map)` expressions, or both, or on the `Map` column directly with the [`keyValuePairs`](#tokenizer-key-value-pairs) tokenizer (which answers exact `map['key'] = 'value'` lookups from the index).
 
 Example:
 
@@ -1237,6 +1241,7 @@ Direct read is controlled by two settings:
 
 The direct read optimization supports functions `hasToken`, `hasAllTokens`, and `hasAnyTokens`.
 If the text index is defined with an `array` tokenizer, direct read is also supported for functions `equals`, `has`, `hasAny`, `hasAll`, `mapContainsKey`, and `mapContainsValue`.
+If the text index is defined with a `keyValuePairs` tokenizer (on a `Map` column), the map searches listed in [The `keyValuePairs` tokenizer for maps](#tokenizer-key-value-pairs) — exact `map['key'] = 'value'`, `mapContainsValue` / `mapContainsValueLike`, and `mapContainsKey` / `mapContainsKeyLike` — are answered directly from the index dictionary.
 These functions can also be combined by `AND`, `OR`, and `NOT` operators.
 The `WHERE` or `PREWHERE` clauses can also contain additional non-text-search-functions filters (for text columns or other columns) - in that case, the direct read optimization will still be used but less effective (it only applies to the supported text search functions).
 
