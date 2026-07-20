@@ -3205,6 +3205,10 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
         else if (global_ctx->future_part->part_format.part_type == MergeTreeDataPartType::Compact)
             max_dynamic_subcolumns = (*merge_tree_settings)[MergeTreeSetting::merge_max_dynamic_subcolumns_in_compact_part].valueOrNullopt();
 
+        const auto sorting_queue_strategy = global_ctx->merge_may_reduce_rows || global_ctx->projection
+            ? SortingQueueStrategy::Default
+            : getSortingQueueStrategy((*merge_tree_settings)[MergeTreeSetting::merge_sorting_queue_strategy]);
+
         auto merge_step = std::make_unique<MergePartsStep>(
             merge_parts_query_plan.getCurrentHeader(),
             sort_description,
@@ -3216,7 +3220,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
             (*merge_tree_settings)[MergeTreeSetting::merge_max_block_size_bytes],
             max_dynamic_subcolumns,
             is_vertical_merge,
-            getSortingQueueStrategy((*merge_tree_settings)[MergeTreeSetting::merge_sorting_queue_strategy]),
+            sorting_queue_strategy,
             cleanup,
             global_ctx->time_of_merge);
 
