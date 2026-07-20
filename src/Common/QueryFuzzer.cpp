@@ -5150,7 +5150,7 @@ static const std::vector<std::unordered_set<String>> & swapFuncs
          "dictGetUUIDOrDefault"},
         /// Dictionary key probes and hierarchy walks (dict, key[, level/ancestor key]);
         /// the hierarchy functions additionally require a hierarchical layout
-        {"dictGetChildren", "dictGetDescendants", "dictGetHierarchy", "dictHas", "dictIsIn"},
+        {"dictGetChildren", "dictGetDescendants", "dictGetHierarchy", "dictGetRoot", "dictHas", "dictIsIn"},
         /// Geometry intersection: Cartesian vs Spherical point model, identical (geom1, geom2) signature
         {"geometryIntersectCartesian", "geometryIntersectSpherical"}};
 

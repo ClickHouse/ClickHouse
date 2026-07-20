@@ -112,6 +112,8 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings = {
     {"concurrent_part_removal_threshold_for_remote_disk",
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 0, 100)); }, {}, false)},
+    {"dead_blobs_to_delay_insert", highRangeSetting},
+    {"dead_blobs_to_throw_insert", highRangeSetting},
     {"deduplicate_merge_projection_mode",
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &)
@@ -622,6 +624,7 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings = {
     {"shared_merge_tree_use_too_many_parts_count_from_virtual_parts", trueOrFalseSetting},
     {"shared_merge_tree_use_zookeeper_connection_pool", trueOrFalseSetting},
     {"shared_merge_tree_virtual_parts_discovery_batch", rowsRangeSetting},
+    {"shared_merge_tree_virtual_parts_partition_atomic_discovery", trueOrFalseSetting},
     {"simultaneous_parts_removal_limit",
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 0, 128)); },
