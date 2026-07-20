@@ -548,7 +548,7 @@ void MergeTreeReadersChain::addPatchVirtuals(ReadResult & result, const Block & 
 
 void MergeTreeReadersChain::addPatchVirtuals(Block & to, const Block & from) const
 {
-    const auto & system_columns = getPatchPartSystemColumns();
+    const auto & system_columns = getAllPatchPartSystemColumns();
     for (const auto & column : system_columns)
     {
         /// All system columns must be read on previous steps.

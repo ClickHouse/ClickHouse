@@ -38,9 +38,9 @@ ASTPtr getTableSortingKeyExpressionFromPatch(const KeyDescription & patch_sortin
 /// of the patch part's sorting key and the table's current sorting key.
 std::shared_ptr<const KeyDescription> getEffectivePatchSortingKey(const KeyDescription & patch_sorting_key, const StorageMetadataPtr & storage_metadata);
 
-/// Returns system columns which are common for all v1 patch parts.
-const NamesAndTypesList & getPatchPartKeyColumns();
-const NamesAndTypesList & getPatchPartSystemColumns();
+const NamesAndTypesList & getPatchPartSystemColumnsV1();
+const NamesAndTypesList & getPatchPartSystemColumnsV2();
+const NamesAndTypesList & getAllPatchPartSystemColumns();
 bool isPatchPartSystemColumn(const String & column_name);
 
 /// Returns range of rows in part_name_column that equal part_name.

@@ -10975,30 +10975,37 @@ MergeTreeData::LightweightUpdateResult MergeTreeData::updateLightweightImpl(cons
 
     LOG_DEBUG(log, "Executing lightweight update with commands: {}", commands.toString(false));
 
+    NamesAndTypesList system_columns;
     MutationCommands commands_to_run;
-    auto system_columns = getPatchPartSystemColumns();
     const auto metadata_snapshot = getInMemoryMetadataPtr(query_context, /*bypass_metadata_cache=*/ false);
     const MergeTreePatchPartsVersion patch_parts_version = (*getSettings())[MergeTreeSetting::patch_parts_version];
 
-    /// For v2 patches, additionally read the source columns of the target table's sorting key expression.
-    if (patch_parts_version == MergeTreePatchPartsVersion::V2)
+    switch (patch_parts_version)
     {
-        system_columns.erase(std::ranges::find(system_columns, "_part_offset", &NameAndTypePair::name));
-
-        NameSet already_read = system_columns.getNameSet();
-        const auto & main_columns = metadata_snapshot->getColumns();
-
-        if (metadata_snapshot->hasSortingKey())
+        case MergeTreePatchPartsVersion::V1:
         {
-            auto sorting_key_source_columns = metadata_snapshot->getSortingKey().expression->getRequiredColumns();
+            system_columns = getPatchPartSystemColumnsV1();
+            break;
+        }
+        /// For v2 patches, additionally read the source columns of the target table's sorting key expression.
+        case MergeTreePatchPartsVersion::V2:
+        {
+            system_columns = getPatchPartSystemColumnsV2();
+            const auto & main_columns = metadata_snapshot->getColumns();
 
-            for (const auto & name : sorting_key_source_columns)
+            if (metadata_snapshot->hasSortingKey())
             {
-                if (!already_read.insert(name).second)
-                    continue;
+                NameSet already_read = system_columns.getNameSet();
+                auto sorting_key_source_columns = metadata_snapshot->getSortingKey().expression->getRequiredColumns();
 
-                auto column = main_columns.getColumnOrSubcolumn(GetColumnsOptions::AllPhysical, name);
-                system_columns.push_back(NameAndTypePair{name, column.type});
+                for (const auto & name : sorting_key_source_columns)
+                {
+                    if (!already_read.insert(name).second)
+                        continue;
+
+                    auto column = main_columns.getColumnOrSubcolumn(GetColumnsOptions::AllPhysical, name);
+                    system_columns.push_back(NameAndTypePair{name, column.type});
+                }
             }
         }
     }

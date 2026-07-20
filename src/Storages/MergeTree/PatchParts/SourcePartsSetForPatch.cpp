@@ -199,10 +199,10 @@ SourcePartsSetForPatch SourcePartsSetForPatch::merge(const DataPartsVector & sou
         const auto & set = part->getSourcePartsSet();
 
         if (set.format_version != merged_set.format_version)
-            throw Exception(ErrorCodes::INCORRECT_DATA, "Format version mismatch in source parts set. Got: {}, expected: {}", static_cast<UInt64>(set.format_version), static_cast<UInt64>(merged_set.format_version));
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Format version mismatch in source parts set. Got: {}, expected: {}", static_cast<UInt64>(set.format_version), static_cast<UInt64>(merged_set.format_version));
 
         if (set.sorting_key_desc != merged_set.sorting_key_desc)
-            throw Exception(ErrorCodes::INCORRECT_DATA, "Sorting key description mismatch in source parts set. Got: {}, expected: {}", set.sorting_key_desc, merged_set.sorting_key_desc);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Sorting key description mismatch in source parts set. Got: {}, expected: {}", set.sorting_key_desc, merged_set.sorting_key_desc);
 
         for (const auto & [part_name, min_max] : set.min_max_versions_by_part)
         {

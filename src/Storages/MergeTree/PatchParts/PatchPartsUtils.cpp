@@ -90,7 +90,7 @@ StorageMetadataPtr getPatchPartMetadataV1(ColumnsDescription patch_part_desc, Co
     StorageInMemoryMetadata part_metadata;
 
     /// Ensure patch part system columns are present.
-    for (const auto & col : getPatchPartSystemColumns())
+    for (const auto & col : getPatchPartSystemColumnsV1())
         patch_part_desc.addIfNotExists(ColumnDescription(col.name, col.type));
 
     /// Use hash of column names to put patch parts with different structure to different partitions.
@@ -101,10 +101,10 @@ StorageMetadataPtr getPatchPartMetadataV1(ColumnsDescription patch_part_desc, Co
     auto partition_by_expression = makeASTFunction("__patchPartitionID", part_identifier, hash_literal);
     part_metadata.partition_key = KeyDescription::getKeyFromAST(partition_by_expression, patch_part_desc, {}, local_context);
 
-    const auto & key_columns = getPatchPartKeyColumns();
+    const auto & key_column_names = {"_part", "_part_offset"};
     auto order_by_expression = makeASTOperator("tuple");
 
-    for (const auto & [key_column_name, _] : key_columns)
+    for (const auto & key_column_name : key_column_names)
         order_by_expression->arguments->children.push_back(make_intrusive<ASTIdentifier>(key_column_name));
 
     addCodecsForPatchSystemColumns(patch_part_desc);
@@ -236,39 +236,51 @@ std::shared_ptr<const KeyDescription> getEffectivePatchSortingKey(const KeyDescr
         Context::getGlobalContextInstance()));
 }
 
-const NamesAndTypesList & getPatchPartKeyColumns()
+const NamesAndTypesList & getPatchPartSystemColumnsV1()
 {
-    static const NamesAndTypesList key_columns
+    static const NamesAndTypesList system_columns_v1
     {
         {"_part", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
         {"_part_offset", std::make_shared<DataTypeUInt64>()},
-    };
-
-    return key_columns;
-}
-
-const NamesAndTypesList & getPatchPartSystemColumns()
-{
-    static const NamesAndTypesList other_columns
-    {
         {BlockNumberColumn::name, BlockNumberColumn::type},
         {BlockOffsetColumn::name, BlockOffsetColumn::type},
         {PartDataVersionColumn::name, PartDataVersionColumn::type},
     };
 
-    static const NamesAndTypesList all_columns = []
-    {
-        auto columns = getPatchPartKeyColumns();
-        columns.insert(columns.end(), other_columns.begin(), other_columns.end());
-        return columns;
-    }();
+    return system_columns_v1;
+}
 
-    return all_columns;
+const NamesAndTypesList & getPatchPartSystemColumnsV2()
+{
+    static const NamesAndTypesList system_columns_v2
+    {
+        {"_part", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
+        {BlockNumberColumn::name, BlockNumberColumn::type},
+        {BlockOffsetColumn::name, BlockOffsetColumn::type},
+        {PartDataVersionColumn::name, PartDataVersionColumn::type},
+    };
+
+    return system_columns_v2;
+}
+
+const NamesAndTypesList & getAllPatchPartSystemColumns()
+{
+    static const NamesAndTypesList all_system_columns
+    {
+        {"_part", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
+        {"_part_offset", std::make_shared<DataTypeUInt64>()},
+        {BlockNumberColumn::name, BlockNumberColumn::type},
+        {BlockOffsetColumn::name, BlockOffsetColumn::type},
+        {PartDataVersionColumn::name, PartDataVersionColumn::type},
+    };
+
+    return all_system_columns;
 }
 
 bool isPatchPartSystemColumn(const String & column_name)
 {
-    static const NameSet system_columns_set = getPatchPartSystemColumns().getNameSet();
+
+    static const NameSet system_columns_set = getAllPatchPartSystemColumns().getNameSet();
     return system_columns_set.contains(column_name);
 }
 
