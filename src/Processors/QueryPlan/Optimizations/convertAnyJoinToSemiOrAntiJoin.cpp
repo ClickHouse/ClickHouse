@@ -6,6 +6,8 @@
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Core/Joins.h>
 #include <Interpreters/ActionsDAG.h>
+#include <Interpreters/FullSortingMergeJoin.h>
+#include <Interpreters/MergeJoin.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
@@ -118,6 +120,40 @@ ActionsDAG getPreFilterActionsDAG(QueryPlan::Node * join_node, JoinStepLogical *
     return join->getActionsDAG().clone();
 };
 
+/// Can at least one of the enabled join algorithms execute a join of this (kind, strictness)?
+/// Mirrors the per-algorithm dispatch in PlannerJoins.cpp::tryCreateJoin so the guard matches
+/// what the executor will actually accept for the SEMI/ANTI join produced by the rewrite below.
+bool anyEnabledAlgorithmSupports(const std::vector<JoinAlgorithm> & join_algorithms, JoinKind kind, JoinStrictness strictness)
+{
+    for (auto algorithm : join_algorithms)
+    {
+        switch (algorithm)
+        {
+            /// Hash family (and the hash fallbacks) execute any kind/strictness.
+            case JoinAlgorithm::HASH:
+            case JoinAlgorithm::PARALLEL_HASH:
+            case JoinAlgorithm::PREFER_PARTIAL_MERGE: /// falls back to hash when merge can't do it
+            case JoinAlgorithm::GRACE_HASH:
+            case JoinAlgorithm::AUTO:
+            case JoinAlgorithm::DEFAULT:
+                return true;
+            /// Plain partial merge has no hash fallback: only what MergeJoin implements.
+            case JoinAlgorithm::PARTIAL_MERGE:
+                if (MergeJoin::isSupported(kind, strictness))
+                    return true;
+                break;
+            case JoinAlgorithm::FULL_SORTING_MERGE:
+                if (FullSortingMergeJoin::isMergeAlgorithmStrictnessAndKindSupported(kind, strictness))
+                    return true;
+                break;
+            /// DIRECT joins only special key-value storages and has no hash fallback.
+            case JoinAlgorithm::DIRECT:
+                break;
+        }
+    }
+    return false;
+}
+
 }
 
 size_t tryConvertAnyJoinToSemiOrAntiJoin(QueryPlan::Node * parent_node, QueryPlan::Nodes & /*nodes*/, const Optimization::ExtraSettings & /*settings*/)
@@ -140,6 +176,16 @@ size_t tryConvertAnyJoinToSemiOrAntiJoin(QueryPlan::Node * parent_node, QueryPla
     if (!isLeftOrRight(join_operator.kind))
         return 0;
 
+    /// The rewrite below turns ANY into SEMI/ANTI. Only do it when some enabled join algorithm
+    /// can execute the converted join: full_sorting_merge and partial_merge don't implement
+    /// SEMI/ANTI for this kind and there is no fallback, so converting would turn a runnable
+    /// query into a NOT_IMPLEMENTED error. Leaving the ANY join intact keeps it runnable.
+    const auto & join_algorithms = join->getJoinSettings().join_algorithms;
+    const bool semi_supported = anyEnabledAlgorithmSupports(join_algorithms, join_operator.kind, JoinStrictness::Semi);
+    const bool anti_supported = anyEnabledAlgorithmSupports(join_algorithms, join_operator.kind, JoinStrictness::Anti);
+    if (!semi_supported && !anti_supported)
+        return 0;
+
     const auto & filter_dag = filter->getExpression();
     const auto & filter_column_name = filter->getFilterColumnName();
     const auto & left_stream_input_header = join->getInputHeaders().front();
@@ -152,7 +198,7 @@ size_t tryConvertAnyJoinToSemiOrAntiJoin(QueryPlan::Node * parent_node, QueryPla
             auto result_for_not_matched_rows = filterResultForNotMatchedRows(filter_dag, filter_column_name, *right_stream_input_header);
             auto result_for_matched_rows = filterResultForMatchedRows(getPreFilterActionsDAG<JoinSide::Right>(child_node, join), filter_dag, filter_column_name);
 
-            if (result_for_not_matched_rows == FilterResult::FALSE)
+            if (result_for_not_matched_rows == FilterResult::FALSE && semi_supported)
             {
                 LOG_DEBUG(getLogger("QueryPlanConvertAnyJoinToSemiOrAntiJoin"), "Converting ANY JOIN to SEMI JOIN");
                 join_operator.strictness = JoinStrictness::Semi;
@@ -164,7 +210,7 @@ size_t tryConvertAnyJoinToSemiOrAntiJoin(QueryPlan::Node * parent_node, QueryPla
                 }
                 return 2;
             }
-            if (result_for_matched_rows == FilterResult::FALSE)
+            if (result_for_matched_rows == FilterResult::FALSE && anti_supported)
             {
                 LOG_DEBUG(getLogger("QueryPlanConvertAnyJoinToSemiOrAntiJoin"), "Converting ANY JOIN to ANTI JOIN");
                 join_operator.strictness = JoinStrictness::Anti;
@@ -183,7 +229,7 @@ size_t tryConvertAnyJoinToSemiOrAntiJoin(QueryPlan::Node * parent_node, QueryPla
             auto result_for_not_matched_rows = filterResultForNotMatchedRows(filter_dag, filter_column_name, *left_stream_input_header);
             auto result_for_matched_rows = filterResultForMatchedRows(getPreFilterActionsDAG<JoinSide::Left>(child_node, join), filter_dag, filter_column_name);
 
-            if (result_for_not_matched_rows == FilterResult::FALSE)
+            if (result_for_not_matched_rows == FilterResult::FALSE && semi_supported)
             {
                 LOG_DEBUG(getLogger("QueryPlanConvertAnyJoinToSemiOrAntiJoin"), "Converting ANY JOIN to SEMI JOIN");
                 join_operator.strictness = JoinStrictness::Semi;
@@ -195,7 +241,7 @@ size_t tryConvertAnyJoinToSemiOrAntiJoin(QueryPlan::Node * parent_node, QueryPla
                 }
                 return 2;
             }
-            if (result_for_matched_rows == FilterResult::FALSE)
+            if (result_for_matched_rows == FilterResult::FALSE && anti_supported)
             {
                 LOG_DEBUG(getLogger("QueryPlanConvertAnyJoinToSemiOrAntiJoin"), "Converting ANY JOIN to ANTI JOIN");
                 join_operator.strictness = JoinStrictness::Anti;
