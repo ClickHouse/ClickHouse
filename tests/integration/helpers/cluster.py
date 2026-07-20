@@ -1,4 +1,5 @@
 import base64
+import concurrent
 import errno
 import http.client
 import json
@@ -4663,12 +4664,19 @@ class ClickHouseCluster:
 
     def process_integration_nodes(self, integration: str, nodes: list, action: str):
         base_cmd = getattr(self, f"base_{integration}_cmd")
-        # One `docker compose` invocation for all nodes: concurrent compose commands on
-        # the same project race on shared project state and can silently drop a node's
-        # action. compose parallelizes the services internally.
-        logging.info("%sing %s nodes: %s", action.capitalize(), integration, nodes)
-        subprocess_check_call(base_cmd + [action] + list(nodes))
-        logging.info("%sed %s nodes: %s", action.capitalize(), integration, nodes)
+
+        def process_single_node(node):
+            logging.info("%sing %s node: %s", action.capitalize(), integration, node)
+            subprocess_check_call(base_cmd + [action, node])
+            logging.info("%sed %s node: %s", action.capitalize(), integration, node)
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=len(nodes)) as executor:
+            futures = []
+            for n in nodes:
+                futures += [executor.submit(process_single_node, n)]
+
+            for future in concurrent.futures.as_completed(futures):
+                future.result()
 
     # Faster than waiting for clean stop
     def kill_zookeeper_nodes(self, zk_nodes):

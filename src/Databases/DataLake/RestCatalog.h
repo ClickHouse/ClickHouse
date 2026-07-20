@@ -51,8 +51,6 @@ public:
 
     DB::Names getTables() const override;
 
-    Namespaces getNamespaces() const override;
-
     bool existsTable(const std::string & namespace_name, const std::string & table_name) const override;
 
     void getTableMetadata(
@@ -151,17 +149,11 @@ protected:
         StopCondition stop_condition,
         ExecuteFunc func) const;
 
-    /// List the immediate child namespaces directly under `base_namespace`
-    /// (single level, not recursive). An empty base lists the root namespaces.
-    Namespaces listChildNamespaces(const std::string & base_namespace) const;
+    Namespaces getNamespaces(const std::string & base_namespace) const;
 
     Namespaces parseNamespaces(DB::ReadBuffer & buf, const std::string & base_namespace, String & next_page_token) const;
 
-    /// Non-recursive list of tables directly in `base_namespace` (not in sub-namespaces).
-    /// `limit` is a soft cap on the number of returned names; 0 means no limit.
-    DB::Names listTablesInNamespace(const std::string & base_namespace, size_t limit = 0) const;
-
-    DB::Names listTablesInNamespaceDirect(const std::string & namespace_name) const override;
+    DB::Names getTables(const std::string & base_namespace, size_t limit = 0) const;
 
     DB::Names parseTables(DB::ReadBuffer & buf, const std::string & base_namespace, size_t limit, String & next_page_token) const;
 
@@ -206,8 +198,6 @@ public:
 
     String getTenantId() const { return tenant_id; }
 
-    DB::HTTPHeaderEntries getAuthHeaders(bool update_token) const override;
-
 protected:
     /// Parameters for OneLake OAuth.
     const std::string tenant_id;
@@ -226,8 +216,7 @@ public:
         const std::string & google_adc_client_secret_,
         const std::string & google_adc_refresh_token_,
         const std::string & google_adc_quota_project_id_,
-        DB::ContextPtr context_,
-        bool allow_server_credentials_in_user_queries_);
+        DB::ContextPtr context_);
 
     DB::DatabaseDataLakeCatalogType getCatalogType() const override
     {
@@ -249,9 +238,6 @@ private:
     const std::string google_adc_client_secret;
     const std::string google_adc_refresh_token;
     const std::string google_adc_quota_project_id;
-    /// Effective `s3_allow_server_credentials_in_user_queries` captured when the database was created; the
-    /// catalog is cached and holds the global context, whose settings never reflect the creating session.
-    const bool allow_server_credentials_in_user_queries;
 
     AccessToken retrieveGoogleCloudAccessToken() const;
     AccessToken retrieveGoogleCloudAccessTokenFromRefreshToken() const;

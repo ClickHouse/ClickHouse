@@ -77,6 +77,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool aggregate_functions_null_for_empty;
+    extern const SettingsBool analyzer_compatibility_allow_non_aggregate_in_having;
     extern const SettingsBool enable_streaming_queries;
     extern const SettingsBool analyzer_compatibility_join_using_top_level_identifier;
     extern const SettingsBool analyzer_inline_views;
@@ -1790,20 +1791,14 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::getMatchedColumnNodesWithN
 }
 
 
-/// Columns resolved from a matcher can also be JOIN USING keys, whose type the join changes
-/// (the supertype of both sides, and Nullable when an OUTER side makes the data Nullable).
+/// Columns that resolved from matcher can also match columns from JOIN USING.
+/// In that case we update type to type of column in USING section.
 ///
-/// Unqualified matcher (`*`): the matched column IS the merged USING key of the top join, so it
-/// takes that key's type directly.
-///
-/// Qualified matcher (`t.*`): the matched column is `t`'s own column, so its type must equal what
-/// the explicit reference `t.col` resolves to. Rather than inspect the USING joins here, resolve
-/// `t.col` through the normal identifier flow and adopt its type. That flow
-/// (IdentifierResolver::tryResolveIdentifierFromJoin) follows only the joins `t` participates in,
-/// wherever the USING join sits in the tree, applies the same type correction, and registers the
-/// changed type in `scope.join_columns_with_changed_types`. So a USING key that `t.col` matches
-/// only by name in a join `t` does not take part in is naturally not applied, and no separate
-/// participation check or registration is needed.
+/// Unqualified matcher (`*`): the matched column IS the merged USING key, so it takes the
+/// key type as-is. Qualified matcher (`t.*`): the matched column is `t`'s own column, so its
+/// type must equal what the explicit reference `t.col` resolves to. The merged key's type is
+/// not correct here: in a nested JOIN it reflects the outer join's other side, while `t.col`
+/// only follows the joins `t` participates in.
 void QueryAnalyzer::updateMatchedColumnsFromJoinUsing(
     QueryTreeNodesWithNames & result_matched_column_nodes_with_names,
     bool is_qualified_matcher,
@@ -1819,47 +1814,6 @@ void QueryAnalyzer::updateMatchedColumnsFromJoinUsing(
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
             "There are no table sources. In scope {}",
             scope.scope_node->formatASTForErrorMessage());
-    }
-
-    if (is_qualified_matcher)
-    {
-        /// Only a JOIN USING key can change a matched column's type here; `join_use_nulls`
-        /// nullability for the matcher is applied later in resolveMatcher. With no USING join in
-        /// scope there is nothing to correct, so skip the per-column identifier resolution.
-        /// The count lives on the query scope whose join tree is inspected above, not on the
-        /// current scope: a matcher in a lambda body (`arrayMap(x -> t.*, ...)`) resolves through
-        /// a fresh child scope whose counter is zero, but still expands `t.*` from the parent query.
-        if (nearest_query_scope->using_joins_count == 0)
-            return;
-
-        for (auto & [matched_column_node, _] : result_matched_column_nodes_with_names)
-        {
-            auto & matched_column_node_typed = matched_column_node->as<ColumnNode &>();
-
-            Identifier explicit_identifier = matched_qualified_identifier;
-            explicit_identifier.push_back(matched_column_node_typed.getColumnName());
-            auto explicit_lookup = IdentifierLookup{explicit_identifier, IdentifierLookupContext::EXPRESSION};
-            IdentifierResolveContext explicit_resolve_settings;
-            explicit_resolve_settings.allow_to_check_cte = false;
-            explicit_resolve_settings.allow_to_check_database_catalog = false;
-            auto explicit_resolve_result = tryResolveIdentifier(explicit_lookup, scope, explicit_resolve_settings);
-            if (!explicit_resolve_result.resolved_identifier)
-                continue;
-
-            auto resolved_type = explicit_resolve_result.resolved_identifier->getResultType();
-            if (resolved_type->equals(*matched_column_node_typed.getColumnType()))
-                continue;
-
-            auto it = node_to_projection_name.find(matched_column_node);
-            matched_column_node = matched_column_node->clone();
-            if (it != node_to_projection_name.end())
-                node_to_projection_name.emplace(matched_column_node, it->second);
-
-            matched_column_node->as<ColumnNode &>().setColumnType(resolved_type);
-            correctColumnExpressionType(matched_column_node->as<ColumnNode &>(), scope.context);
-        }
-
-        return;
     }
 
     const auto & join_tree = nearest_query_scope_query_node->getJoinTree();
@@ -1900,6 +1854,24 @@ void QueryAnalyzer::updateMatchedColumnsFromJoinUsing(
                 }
 
                 auto using_column_type = join_using_column_node.getResultType();
+
+                /// Qualified matcher: the matched column is `t.col`, NOT the merged USING key.
+                /// Resolve the explicit identifier `t.col` and adopt its type, exactly matching
+                /// how an explicit reference is typed (IdentifierResolver::tryResolveIdentifierFromJoin).
+                /// The merged key's type is wrong here: in a nested JOIN it reflects the OUTER
+                /// join's siblings, while `t.col` only follows the joins `t` participates in.
+                if (is_qualified_matcher)
+                {
+                    Identifier explicit_identifier = matched_qualified_identifier;
+                    explicit_identifier.push_back(matched_column_name);
+                    auto explicit_lookup = IdentifierLookup{explicit_identifier, IdentifierLookupContext::EXPRESSION};
+                    IdentifierResolveContext explicit_resolve_settings;
+                    explicit_resolve_settings.allow_to_check_cte = false;
+                    explicit_resolve_settings.allow_to_check_database_catalog = false;
+                    auto explicit_resolve_result = tryResolveIdentifier(explicit_lookup, scope, explicit_resolve_settings);
+                    if (explicit_resolve_result.resolved_identifier)
+                        using_column_type = explicit_resolve_result.resolved_identifier->getResultType();
+                }
 
                 auto it = node_to_projection_name.find(matched_column_node);
                 matched_column_node = matched_column_node->clone();
@@ -2984,19 +2956,14 @@ ProjectionNames QueryAnalyzer::resolveLambda(const QueryTreeNodePtr & lambda_nod
 
     /** Register lambda as being resolved, to prevent recursive lambdas resolution.
       * Example: WITH (x -> x + lambda_2(x)) AS lambda_1, (x -> x + lambda_1(x)) AS lambda_2 SELECT 1;
-      *
-      * A recursive reference resolves to a fresh clone of the alias node, so re-entry must be
-      * detected by structure (tree hash), not by pointer identity. Compute that hash once here and
-      * reuse it for the contains/insert/erase below, instead of letting each operation recompute the
-      * lambda body's full getTreeHash (this guard is on the hot path for queries with large lambdas).
       */
-    const QueryTreeNodePtrWithHash lambda_with_hash{lambda_node};
-    if (lambdas_in_resolve_process.contains(lambda_with_hash))
+    auto it = lambdas_in_resolve_process.find(lambda_node);
+    if (it != lambdas_in_resolve_process.end())
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
             "Recursive lambda {}. In scope {}",
             lambda_node->formatASTForErrorMessage(),
             scope.scope_node->formatASTForErrorMessage());
-    lambdas_in_resolve_process.insert(lambda_with_hash);
+    lambdas_in_resolve_process.emplace(lambda_node);
 
     size_t arguments_size = lambda_arguments.size();
     if (lambda_arguments_nodes_size != arguments_size)
@@ -3049,7 +3016,7 @@ ProjectionNames QueryAnalyzer::resolveLambda(const QueryTreeNodePtr & lambda_nod
     /// Lambda body expression is resolved as standard query expression node.
     auto result_projection_names = resolveExpressionNode(lambda_to_resolve.getExpression(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
 
-    lambdas_in_resolve_process.erase(lambda_with_hash);
+    lambdas_in_resolve_process.erase(lambda_node);
 
     return result_projection_names;
 }
@@ -4197,8 +4164,6 @@ void QueryAnalyzer::initializeQueryJoinTreeNode(QueryTreeNodePtr & join_tree_nod
                 join_tree_node_ptrs_to_process_queue.push_back(&join.getRightTableExpression());
                 scope.table_expressions_in_resolve_process.insert(current_join_tree_node.get());
                 ++scope.joins_count;
-                if (join.isUsingJoinExpression())
-                    ++scope.using_joins_count;
                 break;
             }
             default:
@@ -5242,11 +5207,6 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
 
         join_node_typed.getJoinExpression() = std::make_shared<ListNode>(std::move(using_nodes));
         join_node_typed.setUsingJoinExpression();
-
-        /// initializeQueryJoinTreeNode counts USING joins before this NATURAL -> USING conversion,
-        /// when the join still has no USING expression. Count it here so the qualified-matcher guard
-        /// in updateMatchedColumnsFromJoinUsing sees the synthesized key and corrects the matched type.
-        ++scope.using_joins_count;
     }
 
     if (join_node_typed.isOnJoinExpression())
@@ -5838,6 +5798,193 @@ void QueryAnalyzer::resolveQueryJoinTreeNode(QueryTreeNodePtr & join_tree_node, 
     scope.table_expressions_in_resolve_process.erase(join_tree_node.get());
 }
 
+namespace
+{
+
+/** Classify a HAVING conjunct subtree for the `HAVING` -> `WHERE` rewrite.
+  *
+  * `AbortRewrite` outranks `KeepInHaving` outranks `Move`:
+  * - any window function or stateful function -> `AbortRewrite` (matches legacy `return false`);
+  * - else any aggregate function -> `KeepInHaving`;
+  * - else any `grouping` function -> `KeepInHaving` (stricter than legacy; required because
+  *   `validateAggregates` rejects `grouping` in `WHERE`);
+  * - else any non-deterministic function -> `KeepInHaving` (stricter than legacy, which moved them);
+  * - else -> `Move`.
+  */
+enum class HavingConjunctMoveAction
+{
+    Move,
+    KeepInHaving,
+    AbortRewrite,
+};
+
+HavingConjunctMoveAction classifyHavingConjunctForMove(const QueryTreeNodePtr & node)
+{
+    HavingConjunctMoveAction verdict = HavingConjunctMoveAction::Move;
+
+    QueryTreeNodes nodes_to_visit = {node};
+    while (!nodes_to_visit.empty())
+    {
+        auto current = nodes_to_visit.back();
+        nodes_to_visit.pop_back();
+
+        auto current_type = current->getNodeType();
+        if (current_type == QueryTreeNodeType::QUERY || current_type == QueryTreeNodeType::UNION)
+            continue;
+
+        if (auto * function_node = current->as<FunctionNode>())
+        {
+            if (function_node->isWindowFunction())
+                return HavingConjunctMoveAction::AbortRewrite;
+
+            if (function_node->isOrdinaryFunction())
+            {
+                if (auto function_base = function_node->getFunction())
+                {
+                    if (function_base->isStateful())
+                        return HavingConjunctMoveAction::AbortRewrite;
+
+                    if (!function_base->isDeterministicInScopeOfQuery() && verdict == HavingConjunctMoveAction::Move)
+                        verdict = HavingConjunctMoveAction::KeepInHaving;
+                }
+            }
+
+            if (function_node->isAggregateFunction() && verdict == HavingConjunctMoveAction::Move)
+                verdict = HavingConjunctMoveAction::KeepInHaving;
+
+            if (function_node->getFunctionName() == "grouping" && verdict == HavingConjunctMoveAction::Move)
+                verdict = HavingConjunctMoveAction::KeepInHaving;
+        }
+
+        for (const auto & child : current->getChildren())
+            if (child)
+                nodes_to_visit.push_back(child);
+    }
+
+    return verdict;
+}
+
+/** Mimic the legacy `tryMovePredicatesFromHavingToWhere` rewrite at the QueryTree level.
+  *
+  * All-or-nothing for stateful and window functions: if any conjunct contains either,
+  * the entire rewrite is skipped (matches legacy `return false`).
+  *
+  * Stricter than legacy for non-determinism: conjuncts containing non-deterministic calls
+  * (e.g. `rand`) stay in `HAVING` instead of moving. Legacy moved them, silently changing
+  * per-group evaluation to per-row; we intentionally keep them in `HAVING`.
+  *
+  * Gated behind `analyzer_compatibility_allow_non_aggregate_in_having`. Skipped for
+  * `WITH CUBE`/`WITH ROLLUP`/`WITH TOTALS`/`GROUPING SETS` and when `group_by_use_nulls`
+  * is in effect.
+  */
+void tryMoveNonAggregateHavingPredicatesToWhere(const QueryTreeNodePtr & query_node, const IdentifierResolveScope & scope)
+{
+    auto & query_node_typed = query_node->as<QueryNode &>();
+    if (!query_node_typed.hasHaving())
+        return;
+
+    if (!scope.context->getSettingsRef()[Setting::analyzer_compatibility_allow_non_aggregate_in_having])
+        return;
+
+    if (query_node_typed.isGroupByWithCube()
+        || query_node_typed.isGroupByWithRollup()
+        || query_node_typed.isGroupByWithTotals()
+        || query_node_typed.isGroupByWithGroupingSets())
+        return;
+
+    if (scope.group_by_use_nulls)
+        return;
+
+    /// HAVING without aggregation is handled by other validation paths; do not interfere.
+    QueryTreeNodes aggregate_function_nodes;
+    collectAggregateFunctionNodes(query_node, aggregate_function_nodes);
+    if (!query_node_typed.hasGroupBy() && aggregate_function_nodes.empty())
+        return;
+
+    auto & having_node = query_node_typed.getHaving();
+
+    /// The parser builds left-associative binary `and` trees, so `(a AND b) AND c`
+    /// arrives as `and(and(a, b), c)`. Flatten the whole chain into atomic conjuncts,
+    /// mirroring the legacy `splitConjunctionsAst` used by `PredicateExpressionsOptimizer`.
+    /// Without this, a nested `and` containing an aggregate is classified as a single
+    /// `KeepInHaving` conjunct and its non-aggregate siblings stay trapped in `HAVING`.
+    QueryTreeNodes conjuncts;
+    {
+        QueryTreeNodes worklist{having_node};
+        while (!worklist.empty())
+        {
+            auto current = std::move(worklist.back());
+            worklist.pop_back();
+
+            auto * current_function = current->as<FunctionNode>();
+            if (current_function && current_function->getFunctionName() == "and")
+            {
+                const auto & args = current_function->getArguments().getNodes();
+                /// Reverse-iterate into the LIFO worklist to preserve left-to-right order.
+                for (auto it = args.rbegin(); it != args.rend(); ++it)
+                    worklist.push_back(*it);
+            }
+            else
+            {
+                conjuncts.push_back(std::move(current));
+            }
+        }
+    }
+
+    std::vector<HavingConjunctMoveAction> classifications;
+    classifications.reserve(conjuncts.size());
+    for (const auto & conjunct : conjuncts)
+    {
+        auto action = classifyHavingConjunctForMove(conjunct);
+        if (action == HavingConjunctMoveAction::AbortRewrite)
+            return;
+        classifications.push_back(action);
+    }
+
+    QueryTreeNodes keep_in_having;
+    QueryTreeNodes move_to_where;
+    keep_in_having.reserve(conjuncts.size());
+    move_to_where.reserve(conjuncts.size());
+
+    for (size_t i = 0; i < conjuncts.size(); ++i)
+    {
+        if (classifications[i] == HavingConjunctMoveAction::KeepInHaving)
+            keep_in_having.push_back(std::move(conjuncts[i]));
+        else
+            move_to_where.push_back(std::move(conjuncts[i]));
+    }
+
+    if (move_to_where.empty())
+        return;
+
+    auto build_and = [&scope](QueryTreeNodes && args) -> QueryTreeNodePtr
+    {
+        if (args.size() == 1)
+            return std::move(args.front());
+        auto and_function = std::make_shared<FunctionNode>("and");
+        and_function->markAsOperator();
+        and_function->getArguments().getNodes() = std::move(args);
+        and_function->resolveAsFunction(FunctionFactory::instance().get("and", scope.context));
+        return and_function;
+    };
+
+    if (keep_in_having.empty())
+        having_node = nullptr;
+    else
+        having_node = build_and(std::move(keep_in_having));
+
+    QueryTreeNodes new_where_args;
+    new_where_args.reserve(1 + move_to_where.size());
+    if (query_node_typed.hasWhere())
+        new_where_args.push_back(query_node_typed.getWhere());
+    for (auto & moved : move_to_where)
+        new_where_args.push_back(std::move(moved));
+
+    query_node_typed.getWhere() = build_and(std::move(new_where_args));
+}
+
+}
+
 /** Resolve query.
   * This function modifies query node during resolve. It is caller responsibility to clone query node before resolve
   * if it is needed for later use.
@@ -6233,6 +6380,8 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
     }
 
     expandGroupByAll(query_node_typed);
+
+    tryMoveNonAggregateHavingPredicatesToWhere(query_node, scope);
 
     validateFromClause(query_node);
     validateFilters(query_node);

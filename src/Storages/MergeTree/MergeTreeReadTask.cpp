@@ -235,8 +235,7 @@ MergeTreeReadTask::Readers MergeTreeReadTask::createReaders(
 MergeTreeReadersChain MergeTreeReadTask::createReadersChain(
     const Readers & task_readers,
     const PrewhereExprInfo & prewhere_actions,
-    const ReadStepsPerformanceCounters & read_steps_performance_counters,
-    bool collect_predicate_statistics)
+    const ReadStepsPerformanceCounters & read_steps_performance_counters)
 {
     if (prewhere_actions.steps.size() != task_readers.prewhere.size())
     {
@@ -260,22 +259,13 @@ MergeTreeReadersChain MergeTreeReadTask::createReadersChain(
             return reader->canReadIncompleteGranules();
         });
 
-    /// Only hand counters to the readers when system.predicate_statistics_log collection is on.
-    /// Otherwise the per-granule counter updates are dead work (see MergeTreeRangeReader).
-    auto index_counter = collect_predicate_statistics
-        ? read_steps_performance_counters.getCounterForIndexStep() : nullptr;
-    auto step_counter = [&](size_t step) -> ReadStepPerformanceCountersPtr
-    {
-        return collect_predicate_statistics ? read_steps_performance_counters.getCountersForStep(step) : nullptr;
-    };
-
     if (task_readers.prepared_index)
     {
         range_readers.emplace_back(
             task_readers.prepared_index.get(),
             Block{},
             /*prewhere_info_=*/ nullptr,
-            index_counter,
+            read_steps_performance_counters.getCounterForIndexStep(),
             /*main_reader_=*/ false,
             can_read_incomplete_granules);
     }
@@ -287,7 +277,7 @@ MergeTreeReadersChain MergeTreeReadTask::createReadersChain(
             task_readers.prewhere[i].get(),
             range_readers.empty() ? Block{} : range_readers.back().getSampleBlock(),
             prewhere_actions.steps[i].get(),
-            step_counter(counter_idx++),
+            read_steps_performance_counters.getCountersForStep(counter_idx++),
             /*main_reader_=*/ false,
             can_read_incomplete_granules);
     }
@@ -298,7 +288,7 @@ MergeTreeReadersChain MergeTreeReadTask::createReadersChain(
             task_readers.main.get(),
             range_readers.empty() ? Block{} : range_readers.back().getSampleBlock(),
             /*prewhere_info_=*/ nullptr,
-            step_counter(counter_idx),
+            read_steps_performance_counters.getCountersForStep(counter_idx),
             /*main_reader_=*/ true,
             can_read_incomplete_granules);
     }
@@ -310,8 +300,7 @@ void MergeTreeReadTask::initializeReadersChain(
     const PrewhereExprInfo & prewhere_actions,
     MergeTreeIndexBuildContextPtr index_build_context,
     LazyMaterializingRowsPtr lazy_materializing_rows,
-    const ReadStepsPerformanceCounters & read_steps_performance_counters,
-    bool collect_predicate_statistics)
+    const ReadStepsPerformanceCounters & read_steps_performance_counters)
 {
     if (readers_chain.isInitialized())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Range readers chain is already initialized");
@@ -327,9 +316,7 @@ void MergeTreeReadTask::initializeReadersChain(
     for (const auto & step : prewhere_actions.steps)
         all_prewhere_actions.steps.push_back(step);
 
-    readers_chain = createReadersChain(
-        readers, all_prewhere_actions, read_steps_performance_counters,
-        collect_predicate_statistics);
+    readers_chain = createReadersChain(readers, all_prewhere_actions, read_steps_performance_counters);
 }
 
 void MergeTreeReadTask::initializeIndexReader(const MergeTreeIndexBuildContextPtr & index_build_context, const LazyMaterializingRowsPtr & lazy_materializing_rows)

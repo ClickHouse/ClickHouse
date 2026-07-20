@@ -12,7 +12,6 @@
 #include <Poco/Net/HTTPResponse.h>
 #include <Poco/URI.h>
 #include <Common/logger_useful.h>
-#include <Common/maskSensitiveQueryParameters.h>
 #include <Common/setThreadName.h>
 #include "config.h"
 
@@ -426,9 +425,7 @@ public:
     void handlingRequestWithContext(HTTPServerRequest & request, HTTPServerResponse & response) override
     {
         const String & uri = request.getURI();
-        /// This endpoint accepts user/password (and other secrets) as query-string parameters via
-        /// authenticateUserByHTTP, so the URI must be masked before it reaches the logs.
-        LOG_DEBUG(log(), "Processing Prometheus HTTP API query request: method={}, uri={}", request.getMethod(), maskSensitiveQueryParametersInURI(uri));
+        LOG_DEBUG(log(), "Processing Prometheus HTTP API query request: method={}, uri={}", request.getMethod(), uri);
 
         response.setContentType("application/json");
 
@@ -436,11 +433,6 @@ public:
         {
             auto table = DatabaseCatalog::instance().getTable(getTimeSeriesTableID(), context);
             PrometheusHTTPProtocolAPI protocol{table, context};
-
-            auto query_finish_callback = [&]()
-            {
-                getOutputStream(response).finalize();
-            };
 
             /// Dispatch by the trailing path segment only (e.g. "/query_range", "/query"), so the same
             /// endpoint works both bare ("/api/v1/query") and behind a configured prefix ("/prefix/api/v1/query").
@@ -470,7 +462,7 @@ public:
                     .step_param = step,
                 };
 
-                protocol.executePromQLQuery(getOutputStream(response), params, query_finish_callback);
+                protocol.executePromQLQuery(getOutputStream(response), params);
             }
             else if (uri_path.ends_with("/query"))
             {
@@ -489,7 +481,7 @@ public:
                     .step_param = "",
                 };
 
-                protocol.executePromQLQuery(getOutputStream(response), params, query_finish_callback);
+                protocol.executePromQLQuery(getOutputStream(response), params);
             }
             else if (uri_path.ends_with("/format_query"))
             {
@@ -527,7 +519,7 @@ public:
             }
             else
             {
-                LOG_ERROR(log(), "No matching endpoint found for URI: {}, method: {}", maskSensitiveQueryParametersInURI(uri), request.getMethod());
+                LOG_ERROR(log(), "No matching endpoint found for URI: {}, method: {}", uri, request.getMethod());
                 response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_NOT_FOUND);
                 writeString(R"({"status":"error","errorType":"not_found","error":"API endpoint not found"})", getOutputStream(response));
             }
