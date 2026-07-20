@@ -1,6 +1,8 @@
 # pylint: disable=unused-argument
 # pylint: disable=redefined-outer-name
 
+import uuid
+
 import pytest
 
 from helpers.cluster import ClickHouseCluster
@@ -988,3 +990,100 @@ def test_encrypted_disk_rejects_catboost():
         "SELECT catboostEvaluate('model.bin', 1.0)"
     )
     assert "not a plain local filesystem disk" not in err_local, err_local
+
+
+def test_local_count_from_cache_fast_path():
+    """The count-from-cache shortcut (`use_cache_for_count_from_files`) must keep working when a
+    plain local disk is configured via `user_files_policy`, exactly as it does with the legacy
+    `user_files_path`: the first `count()` reads the file and populates the per-path row-count
+    cache, the second is served from the cache and never opens the file.
+
+    Regression for the `user_files_volume` read branch in `StorageFileSource::generate`, which
+    used to skip the `stat`-based fast paths entirely, so every policy-backed `count()` re-read
+    the file."""
+    node_local.query(
+        "INSERT INTO FUNCTION file('count_cache_test.csv', 'CSV', 'x UInt64') "
+        "SELECT number FROM numbers(1000) "
+        "SETTINGS engine_file_truncate_on_insert = 1"
+    )
+
+    # The row-count cache treats an entry as stale when the file's mtime is not strictly older
+    # than the entry's registration time (second resolution), so a file written in the same
+    # second as the first `count()` would defeat the cache. Backdate the mtime to make the
+    # cache hit deterministic.
+    node_local.exec_in_container(
+        [
+            "bash",
+            "-c",
+            "touch -d '1 minute ago' /test_user_files_disk1/count_cache_test.csv",
+        ]
+    )
+
+    # The `log_comment` is unique per invocation so a rerun in the same cluster does not pick
+    # up rows an earlier run of this test left in `query_log`.
+    run_id = uuid.uuid4().hex
+    settings = (
+        "SETTINGS use_cache_for_count_from_files = 1, optimize_count_from_files = 1, "
+        f"max_threads = 1, log_comment = 'count-cache-{{}}-{run_id}'"
+    )
+    q1 = node_local.query(
+        "SELECT count() FROM file('count_cache_test.csv', 'CSV', 'x UInt64') "
+        + settings.format("q1")
+    )
+    q2 = node_local.query(
+        "SELECT count() FROM file('count_cache_test.csv', 'CSV', 'x UInt64') "
+        + settings.format("q2")
+    )
+    assert q1.strip() == "1000", q1
+    assert q2 == q1, q2
+
+    node_local.query("SYSTEM FLUSH LOGS query_log")
+    # `EngineFileLikeReadFiles` increments only when a real reader over the file is built;
+    # a `count()` served from the row-count cache returns before that point.
+    reads = node_local.query(
+        "SELECT ProfileEvents['EngineFileLikeReadFiles'] FROM system.query_log "
+        f"WHERE type = 'QueryFinish' AND log_comment LIKE 'count-cache-q%-{run_id}' "
+        "ORDER BY log_comment"
+    )
+    assert reads.strip() == "1\n0", reads
+
+
+def test_local_parquet_metadata_cache():
+    """The format-level metadata cache (here the Parquet footer cache) must be reachable for files
+    on a plain local `user_files_policy` disk: the read path has to compute the same stat-based
+    file version token as the legacy `user_files_path` branch and hand it to the input format as
+    the object "etag", otherwise every policy-backed read re-parses the footer.
+
+    Regression for the `user_files_volume` read branch in `StorageFileSource::generate` (see
+    `test_local_count_from_cache_fast_path`)."""
+    node_local.query(
+        "INSERT INTO FUNCTION file('metadata_cache_test.parquet', 'Parquet', 'x UInt64') "
+        "SELECT number FROM numbers(1000) "
+        "SETTINGS engine_file_truncate_on_insert = 1"
+    )
+    node_local.query("SYSTEM DROP PARQUET METADATA CACHE")
+
+    # The row-count cache would serve the second `count()` before the Parquet reader is built,
+    # so disable it to force both queries through the metadata cache. Single-threaded so the
+    # hit/miss counts are deterministic. The `log_comment` is unique per invocation so a rerun
+    # in the same cluster does not pick up rows an earlier run of this test left in `query_log`.
+    run_id = uuid.uuid4().hex
+    settings = (
+        "SETTINGS use_parquet_metadata_cache = 1, use_cache_for_count_from_files = 0, "
+        f"max_threads = 1, log_comment = 'parquet-meta-{{}}-{run_id}'"
+    )
+    for comment in ["q1", "q2"]:
+        result = node_local.query(
+            "SELECT count() FROM file('metadata_cache_test.parquet', 'Parquet', 'x UInt64') "
+            + settings.format(comment)
+        )
+        assert result.strip() == "1000", result
+
+    node_local.query("SYSTEM FLUSH LOGS query_log")
+    counters = node_local.query(
+        "SELECT ProfileEvents['ParquetMetadataCacheHits'], "
+        "ProfileEvents['ParquetMetadataCacheMisses'] FROM system.query_log "
+        f"WHERE type = 'QueryFinish' AND log_comment LIKE 'parquet-meta-q%-{run_id}' "
+        "ORDER BY log_comment"
+    )
+    assert counters.strip() == "0\t1\n1\t0", counters

@@ -1146,6 +1146,26 @@ bool fileCacheVersionTokenStillHolds(const String & path, const String & expecte
     return 0 == stat(path.c_str(), &current_stat) && computeFileCacheVersionToken(current_stat) == expected_token;
 }
 
+/// The version token proves a rewrite only after the file has settled. Filesystem timestamps
+/// are coarser than the wall clock (one clock tick of ~1-10 ms on most Linux filesystems, a
+/// full second on ext3, two seconds on FAT), so a rewrite that keeps the inode and the byte
+/// size and lands in the same timestamp tick as the previous write produces an identical
+/// token. Once the last modification is comfortably in the past, its tick is over and any
+/// further write is guaranteed to change the token. The query condition cache skips whole
+/// row groups based on this token, so for files modified more recently - or with an mtime
+/// in the future, e.g. due to clock skew on a network mount - it fails close and stays
+/// bypassed (see the gates at the call sites) rather than risking stale results.
+bool computeFileCacheVersionSettled(const struct stat & file_stat)
+{
+#if defined(OS_DARWIN)
+    const auto mtim_sec = file_stat.st_mtimespec.tv_sec;
+#else
+    const auto mtim_sec = file_stat.st_mtim.tv_sec;
+#endif
+    static constexpr Int64 file_version_settle_seconds = 3;
+    return static_cast<Int64>(mtim_sec) + file_version_settle_seconds <= static_cast<Int64>(time(nullptr));
+}
+
 std::unique_ptr<ReadBuffer> createReadBuffer(
     const String & current_path,
     const struct stat & file_stat,
@@ -2363,7 +2383,29 @@ Chunk StorageFileSource::generate()
                     current_file_last_modified = disk->getLastModified(relative_path);
                     current_file_is_remote = disk->isRemote();
 
+                    /// On a plain-local disk `current_path` is the real local filesystem path, so
+                    /// the same stat-based fast paths as the plain `user_files_path` branch below
+                    /// apply: the version token enables the format metadata cache (e.g. the Parquet
+                    /// footer cache) and the Query Condition Cache, and the count-from-cache
+                    /// shortcut serves `optimize_count_from_files`. Other disks have no stable
+                    /// local inode/mtime to build the token from, so they fail close and skip
+                    /// these caches. Reset first: files of one query may live on different disks
+                    /// of the volume, and a token left over from a previous file must not leak
+                    /// into this one.
+                    current_file_cache_version.reset();
+                    current_file_version_settled = false;
+                    std::optional<struct stat> file_stat;
+                    if (isPlainLocalDisk(*disk))
+                    {
+                        file_stat = getFileStat(current_path, /*use_table_fd=*/false, /*table_fd=*/-1, storage->getName());
+                        current_file_cache_version = computeFileCacheVersionToken(*file_stat);
+                        current_file_version_settled = computeFileCacheVersionSettled(*file_stat);
+                    }
+
                     if (getContext()->getSettingsRef()[Setting::engine_file_skip_empty_files] && current_file_size == 0)
+                        continue;
+
+                    if (file_stat.has_value() && need_only_count && tryGetCountFromCache(*file_stat))
                         continue;
 
                     if (is_one_format)
@@ -2372,7 +2414,18 @@ Chunk StorageFileSource::generate()
                         read_buf = std::make_unique<EmptyReadBuffer>();
                     }
                     else
+                    {
                         read_buf = createReadBufferFromDisk(disk, relative_path, storage->compression_method, getContext());
+
+                        /// Same bracketing re-check as the plain `user_files_path` branch below:
+                        /// the buffer opens the file by path strictly after the `stat` above, and
+                        /// another writer could truncate and rewrite the file in that window. If
+                        /// the token no longer matches what we just opened, it cannot be trusted
+                        /// to pin this read's generation, so fail close.
+                        if (current_file_cache_version.has_value() && current_file_version_settled
+                            && !fileCacheVersionTokenStillHolds(current_path, *current_file_cache_version))
+                            current_file_version_settled = false;
+                    }
                 }
                 else
                 {
@@ -2386,25 +2439,7 @@ Chunk StorageFileSource::generate()
                     /// second that keeps the file size unchanged would otherwise reuse a stale entry.
                     current_file_cache_version = computeFileCacheVersionToken(file_stat);
 
-                    /// The version token above proves a rewrite only after the file has settled.
-                    /// Filesystem timestamps are coarser than the wall clock (one clock tick of
-                    /// ~1-10 ms on most Linux filesystems, a full second on ext3, two seconds on
-                    /// FAT), so a rewrite that keeps the inode and the byte size and lands in the
-                    /// same timestamp tick as the previous write produces an identical token. Once
-                    /// the last modification is comfortably in the past, its tick is over and any
-                    /// further write is guaranteed to change the token. The query condition cache
-                    /// skips whole row groups based on this token, so for files modified more
-                    /// recently - or with an mtime in the future, e.g. due to clock skew on a
-                    /// network mount - it fails close and stays bypassed (see the gates below)
-                    /// rather than risking stale results.
-#if defined(OS_DARWIN)
-                    const auto mtim_sec = file_stat.st_mtimespec.tv_sec;
-#else
-                    const auto mtim_sec = file_stat.st_mtim.tv_sec;
-#endif
-                    static constexpr Int64 file_version_settle_seconds = 3;
-                    current_file_version_settled
-                        = static_cast<Int64>(mtim_sec) + file_version_settle_seconds <= static_cast<Int64>(time(nullptr));
+                    current_file_version_settled = computeFileCacheVersionSettled(file_stat);
 
                     if (getContext()->getSettingsRef()[Setting::engine_file_skip_empty_files] && file_stat.st_size == 0)
                         continue;
