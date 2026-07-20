@@ -618,8 +618,8 @@ private:
     mutable WasmCompartmentPool compartment_pool;
 };
 
-std::shared_ptr<UserDefinedWebAssemblyFunction>
-UserDefinedWebAssemblyFunctionFactory::addOrReplace(ASTPtr create_function_query, WasmModuleManager & module_manager)
+UserDefinedWebAssemblyFunctionFactory::RegisteredFunction
+UserDefinedWebAssemblyFunctionFactory::prepareFunction(ASTPtr create_function_query, WasmModuleManager & module_manager) const
 {
     auto * create_query = typeid_cast<ASTCreateWasmFunctionQuery *>(create_function_query.get());
     if (!create_query)
@@ -659,9 +659,33 @@ UserDefinedWebAssemblyFunctionFactory::addOrReplace(ASTPtr create_function_query
         function_def.settings,
         function_def.is_deterministic);
 
-    std::unique_lock lock(registry_mutex);
-    registry[function_def.function_name] = RegistryEntry{wasm_func, create_function_query};
+    return RegisteredFunction{function_def.function_name, std::move(wasm_func), std::move(create_function_query)};
+}
+
+std::shared_ptr<UserDefinedWebAssemblyFunction>
+UserDefinedWebAssemblyFunctionFactory::addOrReplace(ASTPtr create_function_query, WasmModuleManager & module_manager)
+{
+    auto registered_function = prepareFunction(std::move(create_function_query), module_manager);
+    auto wasm_func = registered_function.function;
+    addOrReplace(std::move(registered_function));
     return wasm_func;
+}
+
+void UserDefinedWebAssemblyFunctionFactory::addOrReplace(RegisteredFunction registered_function)
+{
+    std::unique_lock lock(registry_mutex);
+    registry[registered_function.sql_name] = RegistryEntry{std::move(registered_function.function), std::move(registered_function.create_query)};
+}
+
+void UserDefinedWebAssemblyFunctionFactory::replaceAll(VectorWithMemoryTracking<RegisteredFunction> registered_functions)
+{
+    UnorderedMapWithMemoryTracking<String, RegistryEntry> new_registry;
+    new_registry.reserve(registered_functions.size());
+    for (auto & registered_function : registered_functions)
+        new_registry[registered_function.sql_name] = RegistryEntry{std::move(registered_function.function), std::move(registered_function.create_query)};
+
+    std::unique_lock lock(registry_mutex);
+    registry = std::move(new_registry);
 }
 
 bool UserDefinedWebAssemblyFunctionFactory::has(const String & function_name) const
@@ -803,9 +827,9 @@ struct WebAssemblyFunctionSettingsConstraits : public IHints<>
         {"webassembly_udf_enable_fuel", SettingBool{}.withDefault(true)},
     };
 
-    Strings getAllRegisteredNames() const override
+    VectorWithMemoryTracking<String> getAllRegisteredNames() const override
     {
-        Strings result;
+        VectorWithMemoryTracking<String> result;
         result.reserve(settings_def.size());
         for (const auto & [name, _] : settings_def)
             result.push_back(name);

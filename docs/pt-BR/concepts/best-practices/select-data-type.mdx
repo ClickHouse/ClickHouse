@@ -1,0 +1,147 @@
+---
+slug: /best-practices/select-data-types
+sidebarTitle: 'Como escolher tipos de dados'
+title: 'Como escolher tipos de dados'
+description: 'Página que descreve como escolher tipos de dados no ClickHouse'
+keywords: ['tipos de dados']
+doc_type: 'reference'
+---
+
+import NullableColumns from '/snippets/pt-BR/_avoid_nullable_columns.mdx';
+
+Um dos principais motivos do desempenho de consulta do ClickHouse é sua eficiente compressão de dados. Menos dados em disco resultam em consultas e inserções mais rápidas ao minimizar a sobrecarga de I/O. A arquitetura orientada por colunas do ClickHouse organiza naturalmente dados semelhantes lado a lado, permitindo que algoritmos de compressão e codecs reduzam drasticamente o tamanho dos dados. Para maximizar esses benefícios de compressão, é essencial escolher cuidadosamente os tipos de dados adequados.
+
+A eficiência da compressão no ClickHouse depende principalmente de três fatores: a chave de ordenação, os tipos de dados e os codecs, todos definidos pelo esquema da tabela. Escolher os tipos de dados ideais traz melhorias imediatas tanto no armazenamento quanto no desempenho das consultas.
+
+Algumas diretrizes simples podem melhorar significativamente o esquema:
+
+* **Use tipos estritos:** Sempre selecione o tipo de dados correto para as colunas. Campos numéricos e de data devem usar os tipos numéricos e de data apropriados, em vez de tipos String de uso geral. Isso garante a semântica correta para filtragem e agregações.
+
+* **Evite colunas Nullable:** Colunas Nullable introduzem sobrecarga adicional ao manter colunas separadas para rastrear valores nulos. Use Nullable apenas quando for explicitamente necessário distinguir entre estados vazios e nulos. Caso contrário, valores padrão ou equivalentes a zero normalmente são suficientes. Para mais informações sobre por que esse tipo deve ser evitado quando não for necessário, consulte [Evite colunas Nullable](/pt-BR/concepts/best-practices/select-data-type#avoid-nullable-columns).
+
+* **Minimize a precisão numérica:** Selecione tipos numéricos com a menor largura em bits possível que ainda acomode o intervalo de dados esperado. Por exemplo, prefira [UInt16 em vez de Int32](/pt-BR/reference/data-types/int-uint) se valores negativos não forem necessários e o intervalo couber entre 0 e 65535.
+
+* **Otimize a precisão de data e hora:** Escolha o tipo de data ou datetime mais amplo que ainda atenda aos requisitos da consulta. Use Date ou Date32 para campos que contenham apenas data e prefira DateTime a DateTime64, a menos que precisão de milissegundos ou superior seja essencial.
+
+* **Aproveite LowCardinality e tipos especializados:** Para colunas com menos de aproximadamente 10.000 valores únicos, use tipos LowCardinality para reduzir significativamente o armazenamento por meio de codificação por dicionário. Da mesma forma, use FixedString apenas quando os valores da coluna forem estritamente strings de comprimento fixo (por exemplo, códigos de país ou moeda) e prefira tipos Enum para colunas com um conjunto finito de valores possíveis, a fim de permitir armazenamento eficiente e validação de dados integrada.
+
+* **Enums para validação de dados:** O tipo Enum pode ser usado para codificar com eficiência tipos enumerados. Enums podem ter 8 ou 16 bits, dependendo do número de valores únicos que precisam armazenar. Considere usá-lo se você precisar da validação associada no momento da inserção (valores não declarados serão rejeitados) ou se quiser executar consultas que explorem uma ordenação natural nos valores de Enum; por exemplo, imagine uma coluna de feedback contendo respostas de usuários Enum(&#39;:(&#39; = 1, &#39;:|&#39; = 2, &#39;:)&#39; = 3).
+
+<div id="example">
+  ## Exemplo
+</div>
+
+O ClickHouse oferece ferramentas integradas para facilitar a otimização de tipos. Por exemplo, a inferência de esquema pode identificar automaticamente os tipos iniciais. Considere o conjunto de dados do Stack Overflow, disponível publicamente no formato Parquet. Executar uma inferência de esquema simples com o comando [`DESCRIBE`](/pt-BR/reference/statements/describe-table) fornece um esquema inicial não otimizado.
+
+<Note>
+  Por padrão, o ClickHouse os mapeia para tipos Nullable equivalentes. Isso é preferível, pois o esquema se baseia apenas em uma amostra das linhas.
+</Note>
+
+```sql
+DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/*.parquet')
+SETTINGS describe_compact_output = 1
+```
+
+```response
+┌─name───────────────────────┬─type──────────────────────────────┐
+│ Id                         │ Nullable(Int64)                   │
+│ PostTypeId                 │ Nullable(Int64)                   │
+│ AcceptedAnswerId           │ Nullable(Int64)                   │
+│ CreationDate               │ Nullable(DateTime64(3, 'UTC'))    │
+│ Score                      │ Nullable(Int64)                   │
+│ ViewCount                  │ Nullable(Int64)                   │
+│ Body                       │ Nullable(String)                  │
+│ OwnerUserId                │ Nullable(Int64)                   │
+│ OwnerDisplayName           │ Nullable(String)                  │
+│ LastEditorUserId           │ Nullable(Int64)                   │
+│ LastEditorDisplayName      │ Nullable(String)                  │
+│ LastEditDate               │ Nullable(DateTime64(3, 'UTC'))    │
+│ LastActivityDate           │ Nullable(DateTime64(3, 'UTC'))    │
+│ Title                      │ Nullable(String)                  │
+│ Tags                       │ Nullable(String)                  │
+│ AnswerCount                │ Nullable(Int64)                   │
+│ CommentCount               │ Nullable(Int64)                   │
+│ FavoriteCount              │ Nullable(Int64)                   │
+│ ContentLicense             │ Nullable(String)                  │
+│ ParentId                   │ Nullable(String)                  │
+│ CommunityOwnedDate         │ Nullable(DateTime64(3, 'UTC'))    │
+│ ClosedDate                 │ Nullable(DateTime64(3, 'UTC'))    │
+└────────────────────────────┴───────────────────────────────────┘
+
+22 rows in set. Elapsed: 0.130 sec.
+```
+
+<Note>
+  Observe que, abaixo, usamos o padrão glob *.parquet para ler todos os arquivos da pasta stackoverflow/parquet/posts.
+</Note>
+
+Ao aplicar nossas regras simples iniciais à tabela posts, podemos identificar o tipo ideal para cada coluna:
+
+| Coluna                  | É numérico | Mín., máx.                                                   | Valores únicos | Nulos | Comentário                                                                                                             | Tipo otimizado                                                                                                                                               |
+| ----------------------- | ---------- | ------------------------------------------------------------ | -------------- | ----- | ---------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `PostTypeId`            | Sim        | 1, 8                                                         | 8              | Não   |                                                                                                                        | `Enum('Question' = 1, 'Answer' = 2, 'Wiki' = 3, 'TagWikiExcerpt' = 4, 'TagWiki' = 5, 'ModeratorNomination' = 6, 'WikiPlaceholder' = 7, 'PrivilegeWiki' = 8)` |
+| `AcceptedAnswerId`      | Sim        | 0, 78285170                                                  | 12282094       | Sim   | Diferencie NULL do valor 0                                                                                             | UInt32                                                                                                                                                       |
+| `CreationDate`          | Não        | 2008-07-31 21:42:52.667000000, 2024-03-31 23:59:17.697000000 | *              | Não   | A granularidade de milissegundos não é necessária; use DateTime                                                        | DateTime                                                                                                                                                     |
+| `Score`                 | Sim        | -217, 34970                                                  | 3236           | Não   |                                                                                                                        | Int32                                                                                                                                                        |
+| `ViewCount`             | Sim        | 2, 13962748                                                  | 170867         | Não   |                                                                                                                        | UInt32                                                                                                                                                       |
+| `Body`                  | Não        | -                                                            | *              | Não   |                                                                                                                        | String                                                                                                                                                       |
+| `OwnerUserId`           | Sim        | -1, 4056915                                                  | 6256237        | Sim   |                                                                                                                        | Int32                                                                                                                                                        |
+| `OwnerDisplayName`      | Não        | -                                                            | 181251         | Sim   | Considere NULL como string vazia                                                                                       | String                                                                                                                                                       |
+| `LastEditorUserId`      | Sim        | -1, 9999993                                                  | 1104694        | Sim   | 0 é um valor não utilizado que pode ser usado para nulos                                                               | Int32                                                                                                                                                        |
+| `LastEditorDisplayName` | Não        | *                                                            | 70952          | Sim   | Considere Null como string vazia. LowCardinality foi testado e não trouxe benefícios                                   | String                                                                                                                                                       |
+| `LastEditDate`          | Não        | 2008-08-01 13:24:35.051000000, 2024-04-06 21:01:22.697000000 | -              | Não   | A granularidade em milissegundos não é necessária; use DateTime                                                        | DateTime                                                                                                                                                     |
+| `LastActivityDate`      | Não        | 2008-08-01 12:19:17.417000000, 2024-04-06 21:01:22.697000000 | *              | Não   | Granularidade de milissegundos não é necessária; use DateTime                                                          | DateTime                                                                                                                                                     |
+| `Title`                 | Não        | -                                                            | *              | Não   | Considere Null como string vazia                                                                                       | String                                                                                                                                                       |
+| `Tags`                  | Não        | -                                                            | *              | Não   | Considere Null como string vazia                                                                                       | String                                                                                                                                                       |
+| `AnswerCount`           | Sim        | 0, 518                                                       | 216            | Não   | Considere NULL e 0 como equivalentes                                                                                   | UInt16                                                                                                                                                       |
+| `CommentCount`          | Sim        | 0, 135                                                       | 100            | Não   | Considerar NULL e 0 como iguais                                                                                        | UInt8                                                                                                                                                        |
+| `FavoriteCount`         | Sim        | 0, 225                                                       | 6              | Sim   | Considere NULL e 0 como equivalentes                                                                                   | UInt8                                                                                                                                                        |
+| `ContentLicense`        | Não        | -                                                            | 3              | Não   | LowCardinality tem melhor desempenho que FixedString                                                                   | LowCardinality(String)                                                                                                                                       |
+| `ParentId`              | Não        | *                                                            | 20696028       | Sim   | Considere NULL uma string vazia                                                                                        | String                                                                                                                                                       |
+| `CommunityOwnedDate`    | Não        | 2008-08-12 04:59:35.017000000, 2024-04-01 05:36:41.380000000 | -              | Sim   | Considere usar o padrão 1970-01-01 para valores nulos. A granularidade de milissegundos não é necessária; use DateTime | DateTime                                                                                                                                                     |
+| `ClosedDate`            | Não        | 2008-09-04 20:56:44, 2024-04-06 18:49:25.393000000           | *              | Sim   | Considere o valor padrão 1970-01-01 para NULL. A granularidade de milissegundos não é necessária; use DateTime         | DateTime                                                                                                                                                     |
+
+<Info>
+  **Dica**
+
+  A identificação do tipo de uma coluna depende de entender seu intervalo numérico e a quantidade de valores únicos. Para encontrar o intervalo de todas as colunas e o número de valores distintos, você pode usar a consulta simples `SELECT * APPLY min, * APPLY max, * APPLY uniq FROM table FORMAT Vertical`. Recomendamos fazer isso em um subconjunto menor dos dados, pois essa operação pode ser custosa.
+</Info>
+
+Isso resulta no seguinte esquema otimizado (em termos de tipos):
+
+```sql
+CREATE TABLE posts
+(
+   Id Int32,
+   PostTypeId Enum('Question' = 1, 'Answer' = 2, 'Wiki' = 3, 'TagWikiExcerpt' = 4, 'TagWiki' = 5, 
+   'ModeratorNomination' = 6, 'WikiPlaceholder' = 7, 'PrivilegeWiki' = 8),
+   AcceptedAnswerId UInt32,
+   CreationDate DateTime,
+   Score Int32,
+   ViewCount UInt32,
+   Body String,
+   OwnerUserId Int32,
+   OwnerDisplayName String,
+   LastEditorUserId Int32,
+   LastEditorDisplayName String,
+   LastEditDate DateTime,
+   LastActivityDate DateTime,
+   Title String,
+   Tags String,
+   AnswerCount UInt16,
+   CommentCount UInt8,
+   FavoriteCount UInt8,
+   ContentLicense LowCardinality(String),
+   ParentId String,
+   CommunityOwnedDate DateTime,
+   ClosedDate DateTime
+)
+ENGINE = MergeTree
+ORDER BY tuple()
+```
+
+<div id="avoid-nullable-columns">
+  ## Evite usar colunas Nullable
+</div>
+
+<NullableColumns />

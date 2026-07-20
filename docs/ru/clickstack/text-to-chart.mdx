@@ -1,0 +1,146 @@
+---
+slug: /use-cases/observability/clickstack/text-to-chart
+title: 'Text-to-Chart'
+sidebarTitle: 'Text-to-Chart'
+description: 'Создавайте графики по промптам на естественном языке в ClickStack с помощью функции Text-to-Chart на базе ИИ.'
+doc_type: 'guide'
+keywords: ['ClickStack', 'text-to-chart', 'ИИ', 'визуализация', 'Chart Explorer', 'естественный язык', 'обсервабилити']
+---
+
+import { Image } from "/snippets/ru/components/Image.jsx";
+
+Возможность Text-to-Chart в ClickStack позволяет создавать визуализации, просто описывая обычным текстом, что вы хотите увидеть. Вместо того чтобы вручную выбирать метрики, фильтры и поля для группировки, вы можете ввести промпт, например &quot;уровень ошибок по сервисам за последние 24 часа&quot;, и ClickStack автоматически создаст соответствующий график.
+
+Эта возможность использует большую языковую модель (LLM), чтобы преобразовать ваш текстовый промпт в запрос, а затем создать визуализацию в [Chart Explorer](/ru/clickstack/features/dashboards/overview#navigate-chart-explorer). Она работает с любым настроенным источником данных.
+
+<div id="prerequisites">
+  ## Предварительные требования
+</div>
+
+Для Text-to-Chart требуется [API-ключ Anthropic](https://console.anthropic.com/). При запуске ClickStack задайте переменную окружения `ANTHROPIC_API_KEY`.
+
+Для развертываний с открытым исходным кодом передайте ключ через переменную окружения. Способ зависит от типа развертывания:
+
+<Tabs>
+  <Tab title="Docker (All-in-One или локальный режим)">
+    ```bash
+    docker run -e ANTHROPIC_API_KEY='<YOUR_KEY>' -p 8080:8080 -p 4317:4317 -p 4318:4318 clickhouse/clickstack-all-in-one:latest
+    ```
+  </Tab>
+
+  <Tab title="Docker (только HyperDX)">
+    ```bash
+    docker run -e ANTHROPIC_API_KEY='<YOUR_KEY>' -p 8080:8080 docker.hyperdx.io/hyperdx/hyperdx-local
+    ```
+  </Tab>
+
+  <Tab title="Docker Compose">
+    Добавьте переменную в файл `.env` или укажите её напрямую в `docker-compose.yaml`:
+
+    ```yaml
+    services:
+      app:
+        environment:
+          ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+    ```
+  </Tab>
+
+  <Tab title="Helm">
+    Передайте ключ с помощью `--set`:
+
+    ```bash
+    helm install my-hyperdx hyperdx/hdx-oss-v2 \
+      --set env[0].name=ANTHROPIC_API_KEY \
+      --set env[0].value=<YOUR_KEY>
+    ```
+  </Tab>
+</Tabs>
+
+<div id="using-text-to-chart">
+  ## Использование Text-to-Chart
+</div>
+
+<Steps>
+  <Step>
+    ### Перейдите в Chart Explorer
+
+    В левом меню HyperDX выберите **Chart Explorer**.
+  </Step>
+
+  <Step>
+    ### Выберите источник данных
+
+    Выберите источник данных, который хотите визуализировать, — например, **журналы**, **Traces** или **Metrics**.
+
+    <Image img="/images/clickstack/text-to-chart/chart-explorer.webp" alt="Chart Explorer" />
+  </Step>
+
+  <Step>
+    ### Введите текстовый промпт
+
+    В верхней части страницы Chart Explorer найдите поле ввода **AI Assistant**. Введите на естественном языке описание диаграммы, которую хотите создать. Например:
+
+    * `Show error rates by service over the last 24 hours`
+    * `Latency breakdown by endpoint`
+    * `Count of events over time grouped by severity`
+
+    ClickStack преобразует промпт в запрос и автоматически построит визуализацию.
+
+    <Image img="/images/clickstack/text-to-chart/text-to-chart.webp" alt="Text to chart" />
+  </Step>
+</Steps>
+
+<div id="demo-data">
+  ## Пробуем с демо-данными
+</div>
+
+Самый быстрый способ попробовать Text-to-Chart — воспользоваться Docker-образом [Local Mode](/ru/clickstack/deployment/local-mode-only) и [удалённым демо-набором данных](/ru/clickstack/example-datasets/remote-demo-data):
+
+```bash
+docker run -e ANTHROPIC_API_KEY='<YOUR_KEY>' -p 8080:8080 clickhouse/clickstack-local:latest
+```
+
+Перейдите по адресу `localhost:8080`. Чтобы подключиться к демо-данным, перейдите в **Team Settings** и создайте новое подключение со следующими данными:
+
+* **Connection Name**: `Demo`
+* **Host**: `https://sql-clickhouse.clickhouse.com`
+* **Username**: `otel_demo`
+* **Password**: Оставьте пустым
+
+<Image img="/images/clickstack/text-to-chart/create-connection.webp" alt="Создание подключения" />
+
+Затем измените каждый из источников — **журналы**, **Traces**, **Metrics** и **Sessions** — так, чтобы они использовали базу данных `otel_v2`. Подробные сведения о настройке источников см. в [руководстве по удалённому демо-набору данных](/ru/clickstack/example-datasets/remote-demo-data).
+
+После подключения откройте **Chart Explorer** и попробуйте промпты для доступных журналов, трассировок и метрик.
+
+<div id="example-prompts">
+  ## Примеры промптов
+</div>
+
+Следующие промпты демонстрируют типичные сценарии использования при работе с данными обсервабилити:
+
+| Промпт                                            | Источник данных | Описание                                                  |
+| ------------------------------------------------- | --------------- | --------------------------------------------------------- |
+| `Error count by service over time`                | Журналы         | Показывает частоту ошибок по сервисам во времени          |
+| `Average request duration grouped by endpoint`    | Traces          | Показывает характер латентности для каждой конечной точки |
+| `P99 latency by service`                          | Traces          | Помогает выявить хвостовую латентность по сервисам        |
+| `Count of 5xx status codes over the last 6 hours` | Журналы         | Отслеживает динамику серверных ошибок                     |
+
+Промпты могут ссылаться на любой столбец или атрибут, доступный в настроенных источниках данных. Чем конкретнее промпт, тем точнее будет сгенерированный график.
+
+<div id="limitations">
+  ## Ограничения
+</div>
+
+* Text-to-Chart сейчас поддерживает только Anthropic в качестве провайдера LLM. Поддержка других провайдеров, включая OpenAI, планируется в будущих релизах.
+* В качестве источников данных поддерживаются только журналы и трассировки. Метрики Prometheus пока не поддерживаются.
+* Точность диаграммы зависит от ясности промпта и структуры исходных данных. Если созданная диаграмма не соответствует ожиданиям, попробуйте переформулировать промпт или явно указать имена столбцов.
+
+<div id="further-reading">
+  ## Дополнительные материалы
+</div>
+
+* [От текста к графикам: более быстрый способ создавать визуализации в ClickStack](https://clickhouse.com/blog/text-to-charts-faster-way-to-visualize-clickstack) — пост в блоге, представляющий эту возможность
+* [Панели мониторинга и визуализации](/ru/clickstack/features/dashboards/overview) — ручное создание графиков с помощью Chart Explorer
+* [Поиск](/ru/clickstack/features/search) — синтаксис полнотекстового поиска и поиска по свойствам
+* [Конфигурация](/ru/clickstack/managing/config) — все переменные окружения ClickStack

@@ -275,4 +275,4 @@ FROM azureBlobStorage('https://clickhousedocstest.blob.core.windows.net/?sp=r&st
 ```
 
 ## Related {#related}
-- [AzureBlobStorage Table Engine](engines/table-engines/integrations/azureBlobStorage.md)
+- [AzureBlobStorage Table Engine](/engines/table-engines/integrations/azureBlobStorage.md)

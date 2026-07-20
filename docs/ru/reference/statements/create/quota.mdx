@@ -1,0 +1,65 @@
+---
+description: 'Документация по QUOTA'
+sidebarTitle: 'QUOTA'
+slug: /sql-reference/statements/create/quota
+title: 'CREATE QUOTA'
+doc_type: 'reference'
+---
+
+Создаёт [QUOTA](/ru/concepts/features/security/access-rights#quotas-management), которую можно назначить пользователю или роли.
+
+Синтаксис:
+
+```sql
+CREATE QUOTA [IF NOT EXISTS | OR REPLACE] name [ON CLUSTER cluster_name]
+    [IN access_storage_type]
+    [KEYED BY {user_name | ip_address | forwarded_ip_address | client_key | client_key,user_name | client_key,ip_address | normalized_query_hash} | NOT KEYED]
+    [IPV4_PREFIX_BITS number]
+    [IPV6_PREFIX_BITS number]
+    [FOR [RANDOMIZED] INTERVAL number {second | minute | hour | day | week | month | quarter | year}
+        {MAX { {queries | query_selects | query_inserts | errors | result_rows | result_bytes | read_rows | read_bytes | written_bytes | execution_time | failed_sequential_authentications | queries_per_normalized_hash} = number } [,...] |
+         NO LIMITS | TRACKING ONLY} [,...]]
+    [TO {role [,...] | ALL | ALL EXCEPT role [,...]}]
+```
+
+Ключи `user_name`, `ip_address`, `forwarded_ip_address`, `client_key`, `client_key, user_name`, `client_key, ip_address` и `normalized_query_hash` соответствуют полям таблицы [system.quotas](/ru/reference/system-tables/quotas).
+
+Параметры `IPV4_PREFIX_BITS` и `IPV6_PREFIX_BITS` можно использовать только когда `KEYED BY` имеет значение `ip_address` или `forwarded_ip_address`. Они соответствуют полю таблицы [system.quotas](/ru/reference/system-tables/quotas).
+
+Параметры `queries`, `query_selects`, `query_inserts`, `errors`, `result_rows`, `result_bytes`, `read_rows`, `read_bytes`, `written_bytes`, `execution_time`, `failed_sequential_authentications`, `queries_per_normalized_hash` соответствуют полям таблицы [system.quotas&#95;usage](/ru/reference/system-tables/quotas_usage).
+
+Предложение `ON CLUSTER` позволяет создавать QUOTA в кластере, см. [распределённый DDL](/ru/reference/statements/distributed-ddl).
+
+**Примеры**
+
+Ограничьте максимальное количество запросов для текущего пользователя условием: 123 запроса за 15 месяцев:
+
+```sql
+CREATE QUOTA qA FOR INTERVAL 15 month MAX queries = 123 TO CURRENT_USER;
+```
+
+Для пользователя по умолчанию установите максимальное время выполнения в полсекунды на интервал в 30 минут, а также ограничьте максимальное число запросов до 321 и максимальное число ошибок до 10 за 5 кварталов:
+
+```sql
+CREATE QUOTA qB FOR INTERVAL 30 minute MAX execution_time = 0.5, FOR INTERVAL 5 quarter MAX queries = 321, errors = 10 TO default;
+```
+
+Создайте QUOTA, в которой для каждого отдельного нормализованного шаблона запроса выделяется собственный бакет с ограничением в 100 выполнений в час:
+
+```sql
+CREATE QUOTA qC KEYED BY normalized_query_hash FOR INTERVAL 1 hour MAX queries = 100 TO default;
+```
+
+Ограничьте число выполнений любого отдельного нормализованного шаблона запроса до 50 в час (независимо от типа ключа QUOTA):
+
+```sql
+CREATE QUOTA qD FOR INTERVAL 1 hour MAX queries_per_normalized_hash = 50 TO default;
+```
+
+Дополнительные примеры с использованием XML-конфигурации (не поддерживается в ClickHouse Cloud) можно найти в [руководстве по QUOTA](/ru/concepts/features/configuration/server-config/quotas).
+
+<div id="related-content">
+  ## См. также
+</div>
+
+* Блог: [Создание одностраничных приложений с ClickHouse](https://clickhouse.com/blog/building-single-page-applications-with-clickhouse-and-http)

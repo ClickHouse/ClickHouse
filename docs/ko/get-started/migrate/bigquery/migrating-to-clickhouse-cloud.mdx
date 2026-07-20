@@ -1,0 +1,594 @@
+---
+title: 'BigQuery에서 ClickHouse Cloud로 마이그레이션'
+slug: /migrations/bigquery/migrating-to-clickhouse-cloud
+description: 'BigQuery에서 ClickHouse Cloud로 데이터를 마이그레이션하는 방법'
+keywords: ['BigQuery']
+show_related_blogs: true
+sidebarTitle: '마이그레이션 가이드'
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+<div id="why-use-clickhouse-cloud-over-bigquery">
+  ## BigQuery 대신 ClickHouse Cloud를 사용하는 이유
+</div>
+
+요약: 최신 데이터 분석에서는 ClickHouse가 BigQuery보다 더 빠르고, 더 저렴하며, 더 강력하기 때문입니다.
+
+<Image img="/images/migrations/bigquery-2.webp" size="md" alt="ClickHouse와 BigQuery 비교" />
+
+<div id="loading-data-from-bigquery-to-clickhouse-cloud">
+  ## BigQuery에서 ClickHouse Cloud로 데이터 가져오기
+</div>
+
+<div id="dataset">
+  ### 데이터셋
+</div>
+
+BigQuery에서 ClickHouse Cloud로의 일반적인 마이그레이션을 보여주는 예시 데이터셋으로 [여기](/ko/get-started/sample-datasets/stackoverflow)에 문서화된 Stack Overflow 데이터셋을 사용합니다. 이 데이터셋에는 2008년부터 2024년 4월까지 Stack Overflow에서 생성된 모든 `post`, `vote`, `user`, `comment`, `badge`가 포함되어 있습니다. 이 데이터의 BigQuery 스키마는 아래와 같습니다.
+
+<Image img="/images/migrations/bigquery-3.webp" size="lg" alt="스키마" />
+
+이 데이터셋을 BigQuery 인스턴스에 적재하여 마이그레이션 단계를 테스트하려는 사용자를 위해, 해당 테이블의 데이터를 Parquet 포맷으로 GCS 버킷에 제공하고 있습니다. 또한 BigQuery에서 테이블을 생성하고 로드하는 DDL 명령은 [여기](https://pastila.nl/?003fd86b/2b93b1a2302cfee5ef79fd374e73f431#hVPC52YDsUfXg2eTLrBdbA==)에서 확인할 수 있습니다.
+
+<div id="migrating-data">
+  ### 데이터 마이그레이션
+</div>
+
+BigQuery와 ClickHouse Cloud 간 데이터 마이그레이션은 크게 두 가지 작업 유형으로 나뉩니다:
+
+* **주기적 업데이트가 있는 초기 대량 적재** - 초기 데이터셋을 마이그레이션한 뒤, 정해진 인터벌(예: 매일)마다 주기적으로 업데이트해야 합니다. 여기서 업데이트는 변경된 행을 다시 전송하는 방식으로 처리하며, 변경 여부는 비교에 사용할 수 있는 컬럼(예: 날짜)으로 식별합니다. 삭제는 데이터셋 전체를 주기적으로 다시 로드하는 방식으로 처리합니다.
+* **실시간 복제 또는 CDC** - 초기 데이터셋을 마이그레이션해야 합니다. 이후 이 데이터셋의 변경 사항은 수초 수준의 지연만 허용되는 거의 실시간으로 ClickHouse에 반영되어야 합니다. 이는 사실상 [Change Data Capture (CDC) 프로세스](https://en.wikipedia.org/wiki/Change_data_capture)이며, BigQuery의 테이블을 ClickHouse와 동기화해야 한다는 의미입니다. 즉, BigQuery 테이블의 삽입, 업데이트, 삭제가 ClickHouse의 해당 테이블에도 적용되어야 합니다.
+
+<div id="bulk-loading-via-google-cloud-storage-gcs">
+  #### Google Cloud Storage (GCS)를 통한 대량 적재
+</div>
+
+BigQuery는 데이터를 Google의 객체 스토리지(GCS)로 내보내는 기능을 지원합니다. 예시 데이터 세트의 경우 다음과 같습니다.
+
+1. 7개의 테이블을 GCS로 내보내십시오. 필요한 명령은 [여기](https://pastila.nl/?014e1ae9/cb9b07d89e9bb2c56954102fd0c37abd#0Pzj52uPYeu1jG35nmMqRQ==)에서 확인할 수 있습니다.
+
+2. 데이터를 ClickHouse Cloud로 가져오십시오. 이를 위해 [gcs 테이블 함수](/ko/reference/functions/table-functions/gcs)를 사용할 수 있습니다. DDL 및 가져오기 쿼리는 [여기](https://pastila.nl/?00531abf/f055a61cc96b1ba1383d618721059976#Wf4Tn43D3VCU5Hx7tbf1Qw==)에서 확인할 수 있습니다. ClickHouse Cloud 인스턴스는 여러 컴퓨트 노드로 구성되므로 `gcs` 테이블 함수 대신 [s3Cluster 테이블 함수](/ko/reference/functions/table-functions/s3Cluster)를 사용합니다. 이 함수는 GCS 버킷에서도 사용할 수 있으며, 데이터를 병렬로 적재하기 위해 [ClickHouse Cloud 서비스의 모든 노드를 활용합니다](https://clickhouse.com/blog/supercharge-your-clickhouse-data-loads-part1#parallel-servers).
+
+<Image img="/images/migrations/bigquery-4.webp" size="md" alt="대량 적재" />
+
+이 접근 방식에는 여러 가지 장점이 있습니다:
+
+* BigQuery의 내보내기 기능은 데이터의 부분 집합을 내보낼 수 있도록 필터를 지원합니다.
+* BigQuery는 [Parquet, Avro, JSON, CSV](https://cloud.google.com/bigquery/docs/exporting-data) 포맷과 여러 [압축 유형](https://cloud.google.com/bigquery/docs/exporting-data)으로 내보내기를 지원하며, 이 모두를 ClickHouse에서 지원합니다.
+* GCS는 [객체 수명 주기 관리](https://cloud.google.com/storage/docs/lifecycle)를 지원하므로, ClickHouse로 내보내고 가져온 데이터를 지정된 기간이 지난 후 삭제할 수 있습니다.
+* [Google은 하루 최대 50TB까지 GCS로 무료 내보내기를 허용합니다](https://cloud.google.com/bigquery/quotas#export_jobs). 사용자는 GCS 스토리지 비용만 지불하면 됩니다.
+* 내보내기를 수행하면 자동으로 여러 파일이 생성되며, 각 파일은 최대 1GB의 테이블 데이터로 제한됩니다. 이는 가져오기를 병렬화할 수 있으므로 ClickHouse에 유리합니다.
+
+다음 예시를 시도하기 전에, 내보내기 및 가져오기 성능을 최대화할 수 있도록 [내보내기에 필요한 권한](https://cloud.google.com/bigquery/docs/exporting-data#required_permissions)과 [지역성 관련 권장 사항](https://cloud.google.com/bigquery/docs/exporting-data#data-locations)을 검토할 것을 권장합니다.
+
+<div id="real-time-replication-or-cdc-via-scheduled-queries">
+  ### 예약된 쿼리를 통한 실시간 복제 또는 CDC
+</div>
+
+Change Data Capture(CDC)는 두 데이터베이스 간에 테이블을 동기화 상태로 유지하는 프로세스입니다. 업데이트와 삭제까지 거의 실시간으로 처리해야 하면 훨씬 더 복잡해집니다. 한 가지 방법은 BigQuery의 [예약된 쿼리 기능](https://cloud.google.com/bigquery/docs/scheduling-queries)을 사용해 주기적으로 내보내기를 예약하는 것입니다. 데이터가 ClickHouse에 삽입되기까지 어느 정도 지연이 허용된다면, 이 방식은 구현과 유지 관리가 쉽습니다. [이 블로그 게시물](https://clickhouse.com/blog/clickhouse-bigquery-migrating-data-for-realtime-queries#using-scheduled-queries)에서 예시를 확인할 수 있습니다.
+
+<div id="designing-schemas">
+  ## 스키마 설계
+</div>
+
+Stack Overflow 데이터셋에는 서로 연관된 여러 테이블이 있습니다. 먼저 프라이머리 테이블부터 마이그레이션하는 것을 권장합니다. 이 테이블이 반드시 가장 큰 테이블일 필요는 없으며, 분석 쿼리가 가장 많이 발생할 것으로 예상되는 테이블일 가능성이 높습니다. 이렇게 하면 ClickHouse의 핵심 개념을 익히는 데 도움이 됩니다. 이후 추가 테이블을 더해 ClickHouse 기능을 최대한 활용하고 최적의 성능을 얻으려면 이 테이블의 모델을 다시 설계해야 할 수 있습니다. 이러한 모델링 과정은 [데이터 모델링 문서](/ko/guides/clickhouse/data-modelling/schema-design#next-data-modeling-techniques)에서 자세히 다룹니다.
+
+이 원칙에 따라 여기서는 핵심 `posts` 테이블에 집중합니다. 이에 대한 BigQuery 스키마는 아래와 같습니다:
+
+```sql
+CREATE TABLE stackoverflow.posts (
+    id INTEGER,
+    posttypeid INTEGER,
+    acceptedanswerid STRING,
+    creationdate TIMESTAMP,
+    score INTEGER,
+    viewcount INTEGER,
+    body STRING,
+    owneruserid INTEGER,
+    ownerdisplayname STRING,
+    lasteditoruserid STRING,
+    lasteditordisplayname STRING,
+    lasteditdate TIMESTAMP,
+    lastactivitydate TIMESTAMP,
+    title STRING,
+    tags STRING,
+    answercount INTEGER,
+    commentcount INTEGER,
+    favoritecount INTEGER,
+    conentlicense STRING,
+    parentid STRING,
+    communityowneddate TIMESTAMP,
+    closeddate TIMESTAMP
+);
+```
+
+<div id="optimizing-types">
+  ### 타입 최적화
+</div>
+
+[여기](/ko/guides/clickhouse/data-modelling/schema-design)에 설명된 절차를 적용하면 다음과 같은 스키마(schema)가 됩니다:
+
+```sql
+CREATE TABLE stackoverflow.posts
+(
+   `Id` Int32,
+   `PostTypeId` Enum('Question' = 1, 'Answer' = 2, 'Wiki' = 3, 'TagWikiExcerpt' = 4, 'TagWiki' = 5, 'ModeratorNomination' = 6, 'WikiPlaceholder' = 7, 'PrivilegeWiki' = 8),
+   `AcceptedAnswerId` UInt32,
+   `CreationDate` DateTime,
+   `Score` Int32,
+   `ViewCount` UInt32,
+   `Body` String,
+   `OwnerUserId` Int32,
+   `OwnerDisplayName` String,
+   `LastEditorUserId` Int32,
+   `LastEditorDisplayName` String,
+   `LastEditDate` DateTime,
+   `LastActivityDate` DateTime,
+   `Title` String,
+   `Tags` String,
+   `AnswerCount` UInt16,
+   `CommentCount` UInt8,
+   `FavoriteCount` UInt8,
+   `ContentLicense`LowCardinality(String),
+   `ParentId` String,
+   `CommunityOwnedDate` DateTime,
+   `ClosedDate` DateTime
+)
+ENGINE = MergeTree
+ORDER BY tuple()
+COMMENT 'Optimized types'
+```
+
+이 테이블은 [`INSERT INTO SELECT`](/ko/reference/statements/insert-into)를 사용해 간단히 채울 수 있으며, [`gcs` 테이블 함수](/ko/reference/functions/table-functions/gcs)로 gcs에 내보낸 데이터를 읽어옵니다. ClickHouse Cloud에서는 gcs와 호환되는 [`s3Cluster` 테이블 함수](/ko/reference/functions/table-functions/s3Cluster)도 사용해 여러 노드에서 적재를 병렬화할 수 있습니다:
+
+```sql
+INSERT INTO stackoverflow.posts SELECT * FROM gcs( 'gs://clickhouse-public-datasets/stackoverflow/parquet/posts/*.parquet', NOSIGN);
+```
+
+새 스키마에서는 NULL 값을 전혀 유지하지 않습니다. 위의 삽입에서는 이를 각 타입의 기본값으로 암묵적으로 변환합니다. 정수는 0으로, 문자열은 빈 값으로 변환됩니다. 또한 ClickHouse는 모든 숫자 값을 대상 정밀도에 맞게 자동으로 변환합니다.
+
+<div id="how-are-clickhouse-primary-keys-different">
+  ## ClickHouse 프라이머리 키는 어떻게 다릅니까?
+</div>
+
+[여기](/ko/get-started/migrate/bigquery/index)에 설명했듯이, BigQuery와 마찬가지로 ClickHouse는 테이블의 프라이머리 키(primary key) 컬럼 값에 고유성을 강제하지 않습니다.
+
+BigQuery의 클러스터링과 유사하게 ClickHouse 테이블의 데이터는 프라이머리 키 컬럼 순서대로 정렬되어 디스크에 저장됩니다. 이 정렬 순서는 쿼리 최적화기가 재정렬을 피하고, 조인 시 메모리 사용량을 줄이며, LIMIT 절에서 short-circuit를 수행하는 데 활용됩니다.
+반면 BigQuery와 달리 ClickHouse는 프라이머리 키 컬럼 값을 기반으로 [희소 프라이머리 인덱스(sparse primary index)](/ko/guides/clickhouse/data-modelling/sparse-primary-indexes)를 자동으로 생성합니다. 이 인덱스는 프라이머리 키 컬럼에 대한 필터가 포함된 모든 쿼리의 속도를 높이는 데 사용됩니다. 구체적으로는 다음과 같습니다.
+
+* ClickHouse가 주로 사용되는 규모에서는 메모리와 디스크 효율성이 매우 중요합니다. 데이터는 파트라고 하는 청크 단위로 ClickHouse 테이블에 기록되며, 백그라운드에서 이 파트들을 머지하는 규칙이 적용됩니다. ClickHouse에서는 각 파트가 자체 프라이머리 인덱스를 가집니다. 파트가 머지되면 병합된 파트의 프라이머리 인덱스도 함께 머지됩니다. 다만 이러한 인덱스는 각 행마다 생성되지 않습니다. 대신 파트의 프라이머리 인덱스에는 각 행 그룹마다 하나의 인덱스 엔트리가 있습니다. 이 기법을 희소 인덱싱이라고 합니다.
+* 희소 인덱싱이 가능한 이유는 ClickHouse가 파트의 행을 지정된 키 순서대로 정렬해 디스크에 저장하기 때문입니다. 희소 프라이머리 인덱스는 단일 행을 직접 찾는 대신(B-Tree 기반 인덱스처럼), 쿼리와 일치할 가능성이 있는 행 그룹을 빠르게 식별할 수 있게 해줍니다(인덱스 엔트리에 대해 이진 검색 수행). 이렇게 찾아낸 잠재적 일치 행 그룹은 실제 일치 항목을 찾기 위해 병렬로 ClickHouse engine에 순서대로 스트리밍됩니다. 이러한 인덱스 설계 덕분에 프라이머리 인덱스는 작게 유지할 수 있으며(전체가 main memory에 완전히 들어감), 동시에 쿼리 실행 시간을 크게 단축할 수 있습니다. 특히 데이터 분석 사용 사례에서 흔한 범위 쿼리에서 효과적입니다. 자세한 내용은 [이 심층 가이드](/ko/guides/clickhouse/data-modelling/sparse-primary-indexes)를 참조하십시오.
+
+<Image img="/images/migrations/bigquery-5.webp" size="md" alt="ClickHouse 프라이머리 키" />
+
+ClickHouse에서 선택한 프라이머리 키는 인덱스뿐 아니라 데이터가 디스크에 기록되는 순서도 결정합니다. 따라서 이는 압축 수준에 큰 영향을 줄 수 있으며, 결과적으로 쿼리 성능에도 영향을 미칠 수 있습니다. 대부분의 컬럼 값이 연속된 순서로 기록되도록 하는 순서 지정 키(ordering key)를 선택하면, 선택한 압축 알고리즘(및 코덱)이 데이터를 더 효과적으로 압축할 수 있습니다.
+
+> 테이블의 모든 컬럼은 키 자체에 포함되어 있는지와 관계없이 지정된 순서 지정 키의 값을 기준으로 정렬됩니다. 예를 들어 `CreationDate`를 키로 사용하면 다른 모든 컬럼의 값 순서도 `CreationDate` 컬럼의 값 순서를 따르게 됩니다. 여러 개의 순서 지정 키를 지정할 수도 있으며, 이 경우 `SELECT` 쿼리의 `ORDER BY` 절과 동일한 의미로 정렬됩니다。
+
+<div id="choosing-an-ordering-key">
+  ### 순서 지정 키 선택하기
+</div>
+
+Posts 테이블을 예시로 한 순서 지정 키 선택 시 고려 사항과 단계는 [여기](/ko/guides/clickhouse/data-modelling/schema-design#choosing-an-ordering-key)를 참조하십시오.
+
+<div id="data-modeling-techniques">
+  ## 데이터 모델링 기법
+</div>
+
+BigQuery에서 마이그레이션하는 사용자는 [ClickHouse에서의 데이터 모델링 가이드](/ko/guides/clickhouse/data-modelling/schema-design)를 읽어볼 것을 권장합니다. 이 가이드에서는 동일한 Stack Overflow 데이터셋을 사용해 ClickHouse 기능을 활용하는 여러 접근 방식을 살펴봅니다.
+
+<div id="partitions">
+  ### 파티션
+</div>
+
+BigQuery를 사용해 보았다면, 대규모 데이터베이스의 성능과 관리 편의성을 높이기 위해 테이블을 파티션이라는 더 작고 관리하기 쉬운 단위로 나누는 테이블 파티셔닝 개념에 익숙할 것입니다. 이러한 파티셔닝은 지정된 컬럼의 범위(예: 날짜), 미리 정의된 목록 또는 키의 해시를 사용해 수행할 수 있습니다. 이를 통해 관리자는 날짜 범위나 지리적 위치와 같은 특정 기준에 따라 데이터를 구성할 수 있습니다.
+
+파티셔닝은 파티션 프루닝과 더 효율적인 인덱싱을 통해 데이터 접근 속도를 높여 쿼리 성능을 개선하는 데 도움이 됩니다. 또한 전체 테이블이 아니라 개별 파티션 단위로 작업할 수 있으므로 백업 및 데이터 삭제 같은 유지 관리 작업에도 유리합니다. 더불어 파티셔닝은 부하를 여러 파티션에 분산하여 BigQuery 데이터베이스의 확장성을 크게 높일 수 있습니다.
+
+ClickHouse에서는 테이블을 처음 정의할 때 [`PARTITION BY`](/ko/reference/engines/table-engines/mergetree-family/custom-partitioning-key) 절로 파티셔닝을 지정합니다. 이 절에는 하나 이상의 컬럼에 대한 SQL 표현식을 포함할 수 있으며, 그 결과에 따라 각 행이 어느 파티션으로 전송될지가 결정됩니다.
+
+<Image img="/images/migrations/bigquery-6.webp" size="md" alt="파티션" />
+
+데이터 파트는 디스크에서 각 파티션과 논리적으로 연결되며, 각각 독립적으로 쿼리할 수 있습니다. 아래 예시에서는 [`toYear(CreationDate)`](/ko/reference/functions/regular-functions/date-time-functions#toYear) 표현식을 사용해 `posts` 테이블을 연도별로 파티셔닝합니다. 행이 ClickHouse에 삽입되면 이 표현식이 각 행에 대해 평가되며, 이후 각 행은 해당 파티션에 속하는 새로운 데이터 파트 형태로 결과 파티션에 배치됩니다.
+
+```sql
+CREATE TABLE posts
+(
+        `Id` Int32 CODEC(Delta(4), ZSTD(1)),
+        `PostTypeId` Enum8('Question' = 1, 'Answer' = 2, 'Wiki' = 3, 'TagWikiExcerpt' = 4, 'TagWiki' = 5, 'ModeratorNomination' = 6, 'WikiPlaceholder' = 7, 'PrivilegeWiki' = 8),
+        `AcceptedAnswerId` UInt32,
+        `CreationDate` DateTime64(3, 'UTC'),
+...
+        `ClosedDate` DateTime64(3, 'UTC')
+)
+ENGINE = MergeTree
+ORDER BY (PostTypeId, toDate(CreationDate), CreationDate)
+PARTITION BY toYear(CreationDate)
+```
+
+<div id="applications">
+  #### 적용 사례
+</div>
+
+ClickHouse의 파티셔닝은 BigQuery와 비슷하게 활용되지만, 몇 가지 미묘한 차이가 있습니다. 구체적으로는 다음과 같습니다.
+
+* **데이터 관리** - ClickHouse에서는 파티셔닝을 쿼리 최적화 기법이 아니라, 우선적으로 데이터 관리 기능으로 보아야 합니다. 키를 기준으로 데이터를 논리적으로 분리하면 각 파티션을 독립적으로 작업할 수 있으며, 예를 들어 삭제할 수 있습니다. 이를 통해 시간 기준으로 파티션, 즉 부분 집합을 [스토리지 계층](/ko/integrations/connectors/data-ingestion/AWS/integrating-s3-with-clickhouse#storage-tiers) 간에 효율적으로 이동하거나 [데이터를 만료시키거나 클러스터에서 효율적으로 삭제할 수 있습니다](/ko/reference/statements/alter/partition). 아래 예시에서는 2008년의 게시물을 제거합니다:
+
+```sql
+SELECT DISTINCT partition
+FROM system.parts
+WHERE `table` = 'posts'
+```
+
+```response
+┌─partition─┐
+│ 2008      │
+│ 2009      │
+│ 2010      │
+│ 2011      │
+│ 2012      │
+│ 2013      │
+│ 2014      │
+│ 2015      │
+│ 2016      │
+│ 2017      │
+│ 2018      │
+│ 2019      │
+│ 2020      │
+│ 2021      │
+│ 2022      │
+│ 2023      │
+│ 2024      │
+└───────────┘
+
+17 rows in set. Elapsed: 0.002 sec.
+```
+
+```sql
+ALTER TABLE posts
+(DROP PARTITION '2008')
+```
+
+```response
+Ok.
+
+0 rows in set. Elapsed: 0.103 sec.
+```
+
+* **쿼리 최적화** - 파티션은 쿼리 성능 향상에 도움이 될 수 있지만, 이는 액세스 패턴에 크게 좌우됩니다. 쿼리가 소수의 파티션만 대상으로 하는 경우(이상적으로는 1개), 성능이 향상될 수 있습니다. 이는 일반적으로 파티셔닝 키가 프라이머리 키에 포함되어 있지 않고, 해당 키로 필터링하는 경우에만 유용합니다. 반면 많은 파티션을 대상으로 해야 하는 쿼리는 파티셔닝을 사용하지 않을 때보다 성능이 더 나빠질 수 있습니다(파티셔닝으로 인해 파트 수가 더 많아질 수 있기 때문입니다). 또한 파티셔닝 키가 이미 프라이머리 키의 앞부분에 있다면, 단일 파티션만 대상으로 할 때의 이점은 매우 미미하거나 사실상 없을 수 있습니다. 또한 각 파티션 내 값이 고유하다면 파티셔닝을 사용해 [`GROUP BY` 쿼리 최적화](/ko/reference/engines/table-engines/mergetree-family/custom-partitioning-key#group-by-optimisation-using-partition-key)도 할 수 있습니다. 그러나 일반적으로는 먼저 프라이머리 키가 최적화되어 있는지 확인하고, 파티셔닝은 액세스 패턴이 하루 중 예측 가능한 특정 부분 집합만 대상으로 하는 예외적인 경우에만 쿼리 최적화 기법으로 고려해야 합니다. 예를 들어 일 단위로 파티셔닝하고 대부분의 쿼리가 최근 1일치 데이터만 조회하는 경우가 이에 해당합니다.
+
+<div id="recommendations">
+  #### 권장 사항
+</div>
+
+파티셔닝은 데이터 관리 기법으로 고려해 볼 수 있습니다. 특히 시계열 데이터를 운영할 때 클러스터에서 데이터를 만료 처리해야 하는 경우에 적합합니다. 예를 들어 가장 오래된 파티션은 [간단히 삭제할 수 있습니다](/ko/reference/statements/alter/partition#drop-partitionpart).
+
+중요: 파티셔닝 키 표현식이 카디널리티가 높은 집합을 만들지 않도록 하십시오. 즉, 100개가 넘는 파티션을 생성하는 것은 피해야 합니다. 예를 들어 클라이언트 식별자나 이름처럼 카디널리티가 높은 컬럼으로 데이터를 파티셔닝하지 마십시오. 대신 클라이언트 식별자나 이름을 `ORDER BY` 표현식의 첫 번째 컬럼으로 두십시오.
+
+> 내부적으로 ClickHouse는 삽입된 데이터에 대해 [파트를 생성합니다](/ko/guides/clickhouse/data-modelling/sparse-primary-indexes#clickhouse-index-design). 더 많은 데이터가 삽입될수록 파트 수는 증가합니다. 쿼리 성능을 저하시킬 수 있는 과도한 파트 수(읽어야 할 파일 수가 더 많아지기 때문입니다)를 방지하기 위해, 파트는 백그라운드 비동기 프로세스에서 함께 머지됩니다. 파트 수가 [미리 구성된 한도](/ko/reference/settings/merge-tree-settings#parts_to_throw_insert)를 초과하면 ClickHouse는 삽입 시 [&quot;too many parts&quot; 오류](/ko/resources/support-center/knowledge-base/troubleshooting/exception-too-many-parts)와 함께 예외를 발생시킵니다. 이는 정상적인 운영에서는 발생하지 않아야 하며, ClickHouse가 잘못 구성되었거나 잘못 사용된 경우(예: 작은 삽입이 너무 많은 경우)에만 발생합니다. 파트는 각 파티션마다 서로 독립적으로 생성되므로, 파티션 수가 증가하면 파트 수도 증가합니다. 즉, 파티션 수의 배수가 됩니다. 따라서 카디널리티가 높은 파티셔닝 키는 이 오류를 유발할 수 있으므로 피해야 합니다.
+
+<div id="materialized-views-vs-projections">
+  ## 구체화된 뷰(Materialized View)와 PROJECTION
+</div>
+
+ClickHouse의 PROJECTION 개념을 사용하면 하나의 테이블에 여러 `ORDER BY` 절을 지정할 수 있습니다.
+
+[ClickHouse data modeling](/ko/guides/clickhouse/data-modelling/schema-design)에서는 ClickHouse에서 구체화된 뷰(Materialized View)를 사용해
+집계를 미리 계산하고, 행을 변환하며, 서로 다른 액세스 패턴에 맞게 쿼리를
+최적화하는 방법을 살펴봅니다. 이와 관련해 [예시를 소개했습니다](/ko/concepts/features/materialized-views/incremental-materialized-view#lookup-table). 여기서는
+구체화된 뷰가 삽입을 받는 원본 테이블과 다른 순서 지정 키를 가진 대상 테이블로
+행을 전달합니다.
+
+예를 들어, 다음 쿼리를 살펴보겠습니다:
+
+```sql highlight={8}
+SELECT avg(Score)
+FROM comments
+WHERE UserId = 8592047
+
+   ┌──────────avg(Score)─┐
+   │ 0.18181818181818182 │
+   └─────────────────────┘
+1 row in set. Elapsed: 0.040 sec. Processed 90.38 million rows, 361.59 MB (2.25 billion rows/s., 9.01 GB/s.)
+Peak memory usage: 201.93 MiB.
+```
+
+이 쿼리는 `UserId`가
+순서 지정 키가 아니기 때문에 9천만 개의 행을 모두 스캔해야 합니다(그래도 빠르게 수행되기는 합니다).
+이전에는 `PostId` lookup 역할을 하는 구체화된 뷰(materialized view)로 이 문제를 해결했습니다.
+같은 문제는 PROJECTION으로도 해결할 수 있습니다.
+아래 명령은 `ORDER BY user_id`가 있는 PROJECTION을 추가합니다.
+
+```sql
+ALTER TABLE comments ADD PROJECTION comments_user_id (
+SELECT * ORDER BY UserId
+)
+
+ALTER TABLE comments MATERIALIZE PROJECTION comments_user_id
+```
+
+먼저 PROJECTION을 생성한 다음 이를 구체화해야 한다는 점에 유의하십시오.
+이 두 번째 명령을 실행하면 데이터가 디스크에 서로 다른 두 가지
+정렬 순서로 두 번 저장됩니다. 아래와 같이 데이터를 생성할 때 PROJECTION을 함께 정의할 수도 있으며,
+데이터가 삽입될 때 자동으로 유지됩니다.
+
+```sql highlight={10-14}
+CREATE TABLE comments
+(
+    `Id` UInt32,
+    `PostId` UInt32,
+    `Score` UInt16,
+    `Text` String,
+    `CreationDate` DateTime64(3, 'UTC'),
+    `UserId` Int32,
+    `UserDisplayName` LowCardinality(String),
+    PROJECTION comments_user_id
+    (
+    SELECT *
+    ORDER BY UserId
+    )
+)
+ENGINE = MergeTree
+ORDER BY PostId
+```
+
+PROJECTION을 `ALTER` 명령으로 생성한 경우, `MATERIALIZE PROJECTION` 명령을
+실행하면 생성은 비동기적으로 수행됩니다. 다음 쿼리로 이 작업의 진행 상태를
+확인할 수 있으며, `is_done=1`이 될 때까지 기다리십시오.
+
+```sql
+SELECT
+    parts_to_do,
+    is_done,
+    latest_fail_reason
+FROM system.mutations
+WHERE (`table` = 'comments') AND (command LIKE '%MATERIALIZE%')
+```
+
+```response
+   ┌─parts_to_do─┬─is_done─┬─latest_fail_reason─┐
+1. │           1 │       0 │                    │
+   └─────────────┴─────────┴────────────────────┘
+
+1 row in set. Elapsed: 0.003 sec.
+```
+
+위의 쿼리를 다시 실행해 보면 추가 저장 공간이 필요한
+대신 성능이 크게 향상된 것을 확인할 수 있습니다.
+
+```sql highlight={8}
+SELECT avg(Score)
+FROM comments
+WHERE UserId = 8592047
+
+   ┌──────────avg(Score)─┐
+1. │ 0.18181818181818182 │
+   └─────────────────────┘
+1 row in set. Elapsed: 0.008 sec. Processed 16.36 thousand rows, 98.17 KB (2.15 million rows/s., 12.92 MB/s.)
+Peak memory usage: 4.06 MiB.
+```
+
+[`EXPLAIN` 명령](/ko/reference/statements/explain)을 사용하면 이 쿼리를 실행할 때 PROJECTION이 사용되었는지도 확인할 수 있습니다:
+
+```sql
+EXPLAIN indexes = 1
+SELECT avg(Score)
+FROM comments
+WHERE UserId = 8592047
+```
+
+```response
+    ┌─explain─────────────────────────────────────────────┐
+ 1. │ Expression ((Projection + Before ORDER BY))         │
+ 2. │   Aggregating                                       │
+ 3. │   Filter                                            │
+ 4. │           ReadFromMergeTree (comments_user_id)      │
+ 5. │           Indexes:                                  │
+ 6. │           PrimaryKey                                │
+ 7. │           Keys:                                     │
+ 8. │           UserId                                    │
+ 9. │           Condition: (UserId in [8592047, 8592047]) │
+10. │           Parts: 2/2                                │
+11. │           Granules: 2/11360                         │
+    └─────────────────────────────────────────────────────┘
+
+11 rows in set. Elapsed: 0.004 sec.
+```
+
+<div id="when-to-use-projections">
+  ### PROJECTION을 사용해야 하는 경우
+</div>
+
+PROJECTION은 데이터가 삽입될 때 자동으로 유지되므로, 처음 사용하는 사용자에게 매력적인 기능입니다.
+또한 쿼리를 단일 테이블에만 보내면 되고, 가능한 경우 PROJECTION이 활용되어 응답
+시간을 단축할 수 있습니다.
+
+<Image img="/images/migrations/bigquery-7.webp" size="md" alt="PROJECTION" />
+
+이는 구체화된 뷰(Materialized View)와는 대조적입니다. 구체화된 뷰에서는 필터에 따라
+적절히 최적화된 대상 테이블을 선택하거나 쿼리를 재작성해야 합니다.
+이 때문에 사용자 애플리케이션에 더 많이 의존하게 되고 클라이언트 측
+복잡성도 증가합니다.
+
+이러한 장점에도 불구하고 PROJECTION에는 본질적인 몇 가지 제한 사항이 있으므로
+이를 충분히 인지한 뒤 꼭 필요한 경우에만 제한적으로 사용해야 합니다. 자세한 내용은
+[&quot;구체화된 뷰와 PROJECTION 비교&quot;](/ko/concepts/features/projections/materialized-views-versus-projections)를 참조하십시오.
+
+다음과 같은 경우 PROJECTION 사용을 권장합니다:
+
+* 데이터의 전체적인 재정렬이 필요한 경우입니다. 이론적으로는 PROJECTION의 표현식에서 `GROUP BY,`를 사용할 수 있지만, 집계를 유지하는 데에는 구체화된 뷰가 더 효과적입니다. 또한 쿼리 최적화기는 `SELECT * ORDER BY x`처럼 단순한 재정렬을 사용하는 PROJECTION을 활용할 가능성이 더 높습니다. 저장 공간 사용량을 줄이기 위해 이 표현식에서 컬럼의 부분 집합만 선택할 수도 있습니다.
+* 저장 공간 사용량 증가와 데이터를 두 번 기록하는 오버헤드를 감수할 수 있는 경우입니다. 삽입 속도에 미치는 영향을 테스트하고 [저장 공간 오버헤드도 평가하십시오](/ko/guides/clickhouse/data-modelling/compression/compression-in-clickhouse).
+
+<div id="rewriting-bigquery-queries-in-clickhouse">
+  ## ClickHouse에서 BigQuery 쿼리 재작성하기
+</div>
+
+다음은 BigQuery와 ClickHouse를 비교하는 예시 쿼리입니다. 이 목록은 ClickHouse 기능을 활용해 쿼리를 훨씬 더 간단하게 만들 수 있는 방법을 보여주기 위한 것입니다. 여기의 예시는 전체 Stack Overflow 데이터셋(2024년 4월까지)을 사용합니다.
+
+**조회수가 가장 많은 Users(질문 10개 초과):**
+
+*BigQuery*
+
+<Image img="/images/migrations/bigquery-8.webp" size="sm" alt="BigQuery 쿼리 재작성하기" border />
+
+*ClickHouse*
+
+```sql
+SELECT
+    OwnerDisplayName,
+    sum(ViewCount) AS total_views
+FROM stackoverflow.posts
+WHERE (PostTypeId = 'Question') AND (OwnerDisplayName != '')
+GROUP BY OwnerDisplayName
+HAVING count() > 10
+ORDER BY total_views DESC
+LIMIT 5
+```
+
+```response
+   ┌─OwnerDisplayName─┬─total_views─┐
+1. │ Joan Venge       │    25520387 │
+2. │ Ray Vega         │    21576470 │
+3. │ anon             │    19814224 │
+4. │ Tim              │    19028260 │
+5. │ John             │    17638812 │
+   └──────────────────┴─────────────┘
+
+5 rows in set. Elapsed: 0.076 sec. Processed 24.35 million rows, 140.21 MB (320.82 million rows/s., 1.85 GB/s.)
+Peak memory usage: 323.37 MiB.
+```
+
+**조회수가 가장 많은 태그:**
+
+*BigQuery*
+
+<br />
+
+<Image img="/images/migrations/bigquery-9.webp" size="sm" alt="BigQuery 1" border />
+
+*ClickHouse*
+
+```sql
+-- ClickHouse
+SELECT
+    arrayJoin(arrayFilter(t -> (t != ''), splitByChar('|', Tags))) AS tags,
+    sum(ViewCount) AS views
+FROM stackoverflow.posts
+GROUP BY tags
+ORDER BY views DESC
+LIMIT 5
+```
+
+```response
+   ┌─tags───────┬──────views─┐
+1. │ javascript │ 8190916894 │
+2. │ python     │ 8175132834 │
+3. │ java       │ 7258379211 │
+4. │ c#         │ 5476932513 │
+5. │ android    │ 4258320338 │
+   └────────────┴────────────┘
+
+5 rows in set. Elapsed: 0.318 sec. Processed 59.82 million rows, 1.45 GB (188.01 million rows/s., 4.54 GB/s.)
+Peak memory usage: 567.41 MiB.
+```
+
+<div id="aggregate-functions">
+  ## 집계 함수
+</div>
+
+가능하면 ClickHouse 집계 함수를 활용하십시오. 아래에서는 각 연도에서 가장 많이 조회된 질문을 계산할 때 [`argMax` 함수](/ko/reference/functions/aggregate-functions/argMax)를 사용하는 예를 보여줍니다.
+
+*BigQuery*
+
+<Image img="/images/migrations/bigquery-10.webp" border size="sm" alt="집계 함수 1" />
+
+<Image img="/images/migrations/bigquery-11.webp" border size="sm" alt="집계 함수 2" />
+
+*ClickHouse*
+
+```sql
+-- ClickHouse
+SELECT
+    toYear(CreationDate) AS Year,
+    argMax(Title, ViewCount) AS MostViewedQuestionTitle,
+    max(ViewCount) AS MaxViewCount
+FROM stackoverflow.posts
+WHERE PostTypeId = 'Question'
+GROUP BY Year
+ORDER BY Year ASC
+FORMAT Vertical
+```
+
+```response
+Row 1:
+──────
+Year:                    2008
+MostViewedQuestionTitle: How to find the index for a given item in a list?
+MaxViewCount:            6316987
+
+Row 2:
+──────
+Year:                    2009
+MostViewedQuestionTitle: How do I undo the most recent local commits in Git?
+MaxViewCount:            13962748
+
+...
+
+Row 16:
+───────
+Year:                    2023
+MostViewedQuestionTitle: How do I solve "error: externally-managed-environment" every time I use pip 3?
+MaxViewCount:            506822
+
+Row 17:
+───────
+Year:                    2024
+MostViewedQuestionTitle: Warning "Third-party cookie will be blocked. Learn more in the Issues tab"
+MaxViewCount:            66975
+
+17 rows in set. Elapsed: 0.225 sec. Processed 24.35 million rows, 1.86 GB (107.99 million rows/s., 8.26 GB/s.)
+Peak memory usage: 377.26 MiB.
+```
+
+<div id="conditionals-and-arrays">
+  ## 조건식과 배열
+</div>
+
+조건식과 배열 함수는 쿼리를 훨씬 더 단순하게 만들어 줍니다. 다음 쿼리는 2022년부터 2023년까지 증가율이 가장 큰 태그(출현 횟수가 10000회를 초과하는 태그)를 계산합니다. 아래 ClickHouse 쿼리가 조건식, 배열 함수, 그리고 `HAVING` 및 `SELECT` 절에서 별칭을 재사용할 수 있는 기능 덕분에 얼마나 간결한지 확인해 보십시오.
+
+*BigQuery*
+
+<Image img="/images/migrations/bigquery-12.webp" size="sm" border alt="조건식과 배열" />
+
+*ClickHouse*
+
+```sql
+SELECT
+    arrayJoin(arrayFilter(t -> (t != ''), splitByChar('|', Tags))) AS tag,
+    countIf(toYear(CreationDate) = 2023) AS count_2023,
+    countIf(toYear(CreationDate) = 2022) AS count_2022,
+    ((count_2023 - count_2022) / count_2022) * 100 AS percent_change
+FROM stackoverflow.posts
+WHERE toYear(CreationDate) IN (2022, 2023)
+GROUP BY tag
+HAVING (count_2022 > 10000) AND (count_2023 > 10000)
+ORDER BY percent_change DESC
+LIMIT 5
+```
+
+```response
+┌─tag─────────┬─count_2023─┬─count_2022─┬──────percent_change─┐
+│ next.js     │      13788 │      10520 │   31.06463878326996 │
+│ spring-boot │      16573 │      17721 │  -6.478189718413183 │
+│ .net        │      11458 │      12968 │ -11.644046884639112 │
+│ azure       │      11996 │      14049 │ -14.613139725247349 │
+│ docker      │      13885 │      16877 │  -17.72826924216389 │
+└─────────────┴────────────┴────────────┴─────────────────────┘
+
+5 rows in set. Elapsed: 0.096 sec. Processed 5.08 million rows, 155.73 MB (53.10 million rows/s., 1.63 GB/s.)
+Peak memory usage: 410.37 MiB.
+```
+
+BigQuery에서 ClickHouse로 마이그레이션하는 사용자를 위한 기본 가이드는 여기까지입니다. ClickHouse의 고급 기능을 더 자세히 알아보려면 [ClickHouse에서 데이터 모델링하기](/ko/guides/clickhouse/data-modelling/schema-design) 가이드를 읽어보시기 바랍니다.

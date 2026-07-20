@@ -1,0 +1,69 @@
+---
+title: テーブルの各カラムにおける空またはゼロの値の比率を計算する方法
+description: スパースなカラムのシリアライゼーションを最適化するために、ClickHouseテーブルの各カラムにおける空またはゼロの値の比率を計算する方法を学びます。
+date: 2023-05-18
+tags: ['パフォーマンスと最適化']
+keywords: ['空/ゼロ比率', '計算']
+---
+
+<div id="how-to-calculate-the-ratio-of-emptyzero-values-in-every-column-in-a-table">
+  ## テーブル内のすべてのカラムにおける空値/ゼロ値の比率を計算する方法
+</div>
+
+カラムがスパース (空、またはほとんどがゼロ) である場合、ClickHouse はそれをスパースフォーマットでエンコードし、計算を自動的に最適化できます。つまり、クエリ実行時にデータを完全に展開する必要はありません。実際、カラムがどの程度スパースかがわかっていれば、シリアライゼーションを最適化するために [`ratio_of_defaults_for_sparse_serialization` 設定](/ja/reference/settings/merge-tree-settings#ratio_of_defaults_for_sparse_serialization) を使ってその比率を指定できます。
+
+この便利なクエリは実行に少し時間がかかることがありますが、テーブル内のすべての行を分析し、指定したテーブルの各カラムで値がゼロ (またはデフォルト値) である割合を判定します。
+
+```sql
+SELECT *
+    APPLY x -> (x = defaultValueOfArgumentType(x)) APPLY avg APPLY x -> round(x, 3)
+FROM table_name
+FORMAT Vertical
+```
+
+例えば、上で実行したクエリは、200億行超・19カラムを持つ、`sensors` という名前の [environmental sensors dataset](/ja/get-started/sample-datasets/environmental-sensors) テーブルに対するものです。
+
+```sql
+SELECT *
+    APPLY x -> (x = defaultValueOfArgumentType(x)) APPLY avg APPLY x -> round(x, 3)
+FROM sensors
+FORMAT Vertical
+```
+
+レスポンスは以下のとおりです。
+
+```response
+
+Row 1:
+──────
+round(avg(equals(sensor_id, defaultValueOfArgumentType(sensor_id))), 3):                 0
+round(avg(equals(sensor_type, defaultValueOfArgumentType(sensor_type))), 3):             0.159
+round(avg(equals(location, defaultValueOfArgumentType(location))), 3):                   0
+round(avg(equals(lat, defaultValueOfArgumentType(lat))), 3):                             0.001
+round(avg(equals(lon, defaultValueOfArgumentType(lon))), 3):                             0.001
+round(avg(equals(timestamp, defaultValueOfArgumentType(timestamp))), 3):                 0
+round(avg(equals(P1, defaultValueOfArgumentType(P1))), 3):                               0.474
+round(avg(equals(P2, defaultValueOfArgumentType(P2))), 3):                               0.475
+round(avg(equals(P0, defaultValueOfArgumentType(P0))), 3):                               0.995
+round(avg(equals(durP1, defaultValueOfArgumentType(durP1))), 3):                         0.999
+round(avg(equals(ratioP1, defaultValueOfArgumentType(ratioP1))), 3):                     0.999
+round(avg(equals(durP2, defaultValueOfArgumentType(durP2))), 3):                         1
+round(avg(equals(ratioP2, defaultValueOfArgumentType(ratioP2))), 3):                     1
+round(avg(equals(pressure, defaultValueOfArgumentType(pressure))), 3):                   0.83
+round(avg(equals(altitude, defaultValueOfArgumentType(altitude))), 3):                   1
+round(avg(equals(pressure_sealevel, defaultValueOfArgumentType(pressure_sealevel))), 3): 1
+round(avg(equals(temperature, defaultValueOfArgumentType(temperature))), 3):             0.532
+round(avg(equals(humidity, defaultValueOfArgumentType(humidity))), 3):                   0.544
+
+1 row in set. Elapsed: 992.041 sec. Processed 20.69 billion rows, 1.39 TB (20.86 million rows/s., 1.40 GB/s.)
+```
+
+上記の結果から、次のことがわかります。
+
+* `sensor_id` カラムはまったくスパースではありません。実際、すべての行で値は 0 ではありません
+* `sensor_type` はスパースなのが全体の約 15.9% にすぎません
+* `P0` カラムは非常にスパースで、値の 99.9% が 0 です
+* `pressure` カラムは 83% と、かなりスパースです
+* また、`temperature` カラムでは値の 53.2% が欠損しているか 0 です
+
+前述のとおり、これは ClickHouse テーブル内の各カラムがどの程度スパースかを計算するのに便利なクエリです。

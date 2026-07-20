@@ -161,6 +161,24 @@ To exit the client, press `Ctrl+D`, or enter one of the following instead of a q
 - `q`, `Q` or `:q`
 - `logout` or `logout;`
 
+### Getting help {#getting-help}
+
+You can look up the documentation of any function, table engine, data type, format, setting and other component of the system without leaving the client. Enter `help` followed by a name (the equivalent forms `/help`, `man` and `/man` also work):
+
+```text
+help domainWithoutWWW
+```
+
+The lookup is case-insensitive and queries the [`system.documentation`](../operations/system-tables/documentation.md) table. The matching documentation is rendered from Markdown in the terminal, with bold/italic text, tables, and syntax-highlighted code blocks. When a name is shared by several components (for example `file`, which is both a function and a table engine), all of them are shown.
+
+When nothing matches exactly, the client lists similar names (allowing for typos) and the components whose documentation mentions the word:
+
+```text
+help maxx_threads
+```
+
+Entering `help` on its own prints a short usage summary.
+
 ### Query processing information {#processing-info}
 
 When processing a query, the client shows:
@@ -450,7 +468,9 @@ For more control over AI settings, configure them in your ClickHouse Client conf
             <enable_schema_access>true</enable_schema_access>
 
             <!-- Generation parameters -->
-            <temperature>0.0</temperature>
+            <!-- Optional: temperature is only sent to the model when set here.
+                 It is omitted by default because some models reject this parameter. -->
+            <!-- <temperature>0.0</temperature> -->
             <max_tokens>1000</max_tokens>
             <timeout_seconds>30</timeout_seconds>
             <max_steps>10</max_steps>
@@ -480,7 +500,9 @@ For more control over AI settings, configure them in your ClickHouse Client conf
       enable_schema_access: true
 
       # Generation parameters
-      temperature: 0.0      # Controls randomness (0.0 = deterministic)
+      # temperature is only sent to the model when set here; omitted by default
+      # because some models reject this parameter.
+      # temperature: 0.0    # Controls randomness (0.0 = deterministic)
       max_tokens: 1000      # Maximum response length
       timeout_seconds: 30   # Request timeout
       max_steps: 10         # Maximum schema exploration steps
@@ -565,7 +587,7 @@ ai:
 <details>
 <summary>Generation parameters</summary>
 
-- `temperature` - Controls randomness, 0.0 = deterministic, 1.0 = creative (default: `0.0`)
+- `temperature` - Controls randomness, 0.0 = deterministic, 1.0 = creative. Omitted by default and only sent to the model when explicitly set, because some models reject this parameter.
 - `max_tokens` - Maximum response length in tokens (default: `1000`)
 - `system_prompt` - Custom instructions for the AI (optional)
 
@@ -877,11 +899,18 @@ See [Settings](../operations/settings/settings.md) for a list of settings.
 | `-f [ --format ] <format>` | Use the specified format to output the result. <br/><br/>See [Formats for Input and Output Data](formats.md) for a list of supported formats.                                                                                | `TabSeparated` |
 | `--pager <command>`       | Pipe all output into this command. Typically `less` (e.g., `less -S` to display wide result sets) or similar.                                                                                                                | -              |
 | `-E [ --vertical ]`       | Use the [Vertical format](/interfaces/formats/Vertical) to output the result. This is the same as `–-format Vertical`. In this format, each value is printed on a separate line, which is helpful when displaying wide tables. | -              |
+| `--echo [ <bool> ]`       | Print each query before execution. Takes an optional boolean value.                                                                                                                                                          | `true` in interactive mode, `false` in non-interactive (batch) mode |
+| `--echo-formatted [ <bool> ]` | Format the echoed queries. Takes an optional boolean value.                                                                                                                                                              | `true` in interactive mode, `false` in non-interactive (batch) mode |
+| `--echo-query-id [ <bool> ]` | Print the query id before execution. Takes an optional boolean value.                                                                                                                                                    | `true` in interactive mode, `false` in non-interactive (batch) mode |
+| `--echo-query-separator <string>` | Print this separator before the formatted echoed query (requires `--echo-formatted`), making it easier to tell the typed query apart from its reformatted echo.                                                     | Empty (disabled) |
+| `--highlight [ --hilite ] <bool>` | Toggle syntax highlighting of the command prompt and the echoed queries.                                                                                                                                            | `true`         |
+| `--hints <bool>`                  | Show as-you-type autocompletion hints (inline "ghost" text) for the best matching suggestion when the cursor is at the end of the input. Navigate the hints with Up/Down (or Ctrl-Up/Ctrl-Down); accept the inline hint with Tab or Right; `Enter` accepts a hint only after one has been explicitly selected and otherwise runs the query; `Tab` also opens the classic completion list. Requires `--highlight` (hints need color) and the suggestion machinery (so `--disable_suggestion` also turns them off). | `true`         |
 
 ### Execution details {#command-line-options-execution-details}
 
 | Option                            | Description                                                                                                                                                                                                                                                                                                         | Default                                                             |
 |-----------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---------------------------------------------------------------------|
+| `--chime [N]`                     | Write the `BEL` control character to `stderr` when a query finishes (on success and on error) after running for at least `N` seconds. Only emitted when `stderr` is attached to a terminal (TTY); redirecting `stderr` (e.g. `2>err.log`) suppresses it, while redirecting `stdout` (e.g. `> result.tsv`) does not. Passing `--chime` without a value uses the default threshold. Set `--chime 0` to disable. | `5` seconds                                                         |
 | `--enable-progress-table-toggle`  | Enable toggling of the progress table by pressing the control key (Space). Only applicable in interactive mode with progress table printing enabled.                                                                                                                                                                | `enabled`                                                           |
 | `--hardware-utilization`          | Print hardware utilization information in progress bar.                                                                                                                                                                                                                                                             | -                                                                   |
 | `--memory-usage`                  | If specified, print memory usage to `stderr` in non-interactive mode. <br/><br/>Possible values: <br/>• `none` - do not print memory usage <br/>• `default` - print number of bytes <br/>• `readable` - print memory usage in human-readable format                                                                | -                                                                   |

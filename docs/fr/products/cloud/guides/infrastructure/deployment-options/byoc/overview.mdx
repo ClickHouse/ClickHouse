@@ -1,0 +1,73 @@
+---
+title: 'Vue d’ensemble'
+slug: /cloud/reference/byoc/overview
+sidebarTitle: 'Vue d’ensemble'
+keywords: ['BYOC', 'cloud', 'Bring Your Own Cloud']
+description: 'Déployer ClickHouse sur votre propre infrastructure cloud'
+doc_type: 'reference'
+---
+
+import { Image } from "/snippets/fr/components/Image.jsx";
+
+<div id="overview">
+  ## Vue d’ensemble
+</div>
+
+Bring Your Own Cloud (BYOC) vous permet de déployer des services ClickHouse et de stocker vos données directement dans vos propres comptes cloud, plutôt que de vous appuyer sur l’infrastructure ClickHouse Cloud par défaut. Cette approche convient particulièrement aux organisations soumises à des politiques de sécurité strictes ou à des exigences de conformité réglementaire imposant un contrôle total et une souveraineté complète sur leurs données.
+
+Dans les grandes lignes, BYOC sépare le plan de contrôle, qui s’exécute dans le VPC ClickHouse et est géré par ClickHouse Cloud, du plan de données, qui s’exécute entièrement dans votre compte cloud et contient vos clusters ClickHouse, vos données et vos sauvegardes. Pour une vue détaillée des composants impliqués et de la manière dont le trafic circule entre eux, consultez la page [Architecture](/fr/products/bring-your-own-cloud/overview/architecture).
+
+> **Si vous souhaitez y avoir accès, veuillez [nous contacter](https://clickhouse.com/cloud/bring-your-own-cloud).** Consultez nos [Conditions d’utilisation](https://clickhouse.com/legal/agreements/terms-of-service) pour plus d’informations.
+
+<Note>
+  BYOC est conçu spécifiquement pour les déploiements à grande échelle et nécessite que les clients signent un contrat d’engagement.
+</Note>
+
+**Fournisseurs de services cloud pris en charge :**
+
+* AWS (GA)
+* GCP (GA)
+* Azure (préversion privée). Si cela vous intéresse, veuillez vous inscrire sur la liste d’attente [ici](https://clickhouse.com/cloud/bring-your-own-cloud).
+
+**Régions Cloud prises en charge :**
+Toutes les **régions publiques** répertoriées dans notre documentation sur les [régions prises en charge](/fr/products/cloud/reference/supported-regions) sont disponibles pour les déploiements BYOC. Les régions privées ne sont pas prises en charge pour le moment.
+
+<div id="features">
+  ## Fonctionnalités
+</div>
+
+<div id="supported-features">
+  ### Fonctionnalités prises en charge
+</div>
+
+* **SharedMergeTree** : ClickHouse Cloud et BYOC utilisent le même binaire et la même configuration. Par conséquent, toutes les fonctionnalités du cœur de ClickHouse sont prises en charge dans BYOC, y compris SharedMergeTree.
+* **Shared Catalog**
+* **Accès à la Console pour gérer l’état du service** :
+  * Prend en charge des opérations telles que le démarrage, l’arrêt et la suppression.
+  * Afficher les services et leur statut.
+* **Sauvegarde et restauration gérées**
+* **Mise à l’échelle verticale et horizontale manuelle.**
+* **Mise en veille/réveil automatiques**
+* **Warehouses** : Compute-Compute Separation
+* **Réseau Zero Trust via Tailscale.**
+* **Monitoring** :
+  * Collecte Prometheus pour une supervision centralisée avec Prometheus, Grafana et Datadog. Consultez [BYOC Observability](/fr/products/bring-your-own-cloud/reference/observability-aws) pour les instructions de configuration.
+* **VPC Peering**
+* **S3 sécurisé**
+* **[AWS PrivateLink](https://aws.amazon.com/privatelink/)**
+* **[GCP Private Service Connect](https://docs.cloud.google.com/vpc/docs/private-service-connect)**
+* **Intégration** : Consultez la liste complète sur [cette page](/fr/integrations/home).
+
+<div id="planned-features-currently-unsupported">
+  ### Fonctionnalités prévues (actuellement non prises en charge)
+</div>
+
+Les fonctionnalités suivantes présentent des limitations ou ne sont pas entièrement prises en charge dans les déploiements Bring Your Own Cloud (BYOC).
+
+* SQL Console : la console SQL standard n’est pas disponible pour les déploiements BYOC, mais elle figure sur notre feuille de route.
+* Prise en charge de ClickPipes : actuellement disponible en préversion privée avec des intégrations de streaming telles que Kafka et Kinesis. D’autres intégrations (CDC, object storage, etc.) figurent sur la feuille de route.
+* Autoscaling : prévu sur la feuille de route pour une ajout dans de futures versions.
+* Interface MySQL
+* AWS KMS, également appelé CMEK (clés de chiffrement gérées par le client)
+* Advanced Dashboard : cette interface uniquement côté client nécessite que votre navigateur ait un accès direct à votre serveur ClickHouse et puisse s’y connecter via son point de terminaison. Si les politiques réseau de votre VPC restreignent l’accès entrant du navigateur au point de terminaison ClickHouse, l’Advanced Dashboard ne fonctionnera pas.
+* Dashboards de monitoring : actuellement, seules les métriques d’allocation mémoire sont disponibles dans le dashboard de monitoring. La prise en charge de métriques supplémentaires est en cours et devrait être disponible dans une prochaine version.

@@ -301,6 +301,12 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
     FormatStateStacked nested_dont_need_parens = frame;
     nested_need_parens.need_parens = true;
     nested_dont_need_parens.need_parens = false;
+    /// `list_element_index` describes the node's position among the direct elements of the
+    /// enclosing expression list and is only meaningful one level deep. Operands reached
+    /// through an operator (tupleElement, arrayElement, etc.) are not list elements, so reset
+    /// it here; the argument-list loops below re-set it explicitly per argument when needed.
+    nested_need_parens.list_element_index = 0;
+    nested_dont_need_parens.list_element_index = 0;
 
     if (auto * query = tryGetQueryArgument())
     {
@@ -783,7 +789,11 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
     /// If the function has a NULLS modifier (IGNORE NULLS / RESPECT NULLS), we must always print
     /// parentheses, otherwise the modifier cannot be parsed back (e.g. `count IGNORE NULLS` is not parseable).
     bool has_nulls_action = getNullsAction() != NullsAction::EMPTY;
-    bool need_parens = (arguments && !arguments->children.empty()) || !noEmptyArgs() || has_nulls_action;
+    /// A window function must always print its parentheses too: `f() OVER (...)` re-parses with the empty
+    /// `()`, so dropping them (e.g. when `noEmptyArgs()` was set on a no-argument window function parsed in a
+    /// CODEC/engine context) would make the formatting inconsistent across a parse round-trip.
+    bool need_parens
+        = (arguments && !arguments->children.empty()) || !noEmptyArgs() || has_nulls_action || isWindowFunction();
 
     if (need_parens)
         ostr << '(';
@@ -857,7 +867,16 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
             /// Mark that we're formatting an argument of this function (needed for IN operator parentheses)
             if (arguments->children.size() > 1)
                 nested_dont_need_parens.current_function = this;
-            argument->format(ostr, settings, state, nested_dont_need_parens);
+            /// When formatting in function-call form (operators disabled, e.g. `EXPLAIN SYNTAX`),
+            /// the function call's own `(arg1, arg2, ...)` parens already group each argument, so the
+            /// argument's own `parenthesized` flag would emit redundant parens like
+            /// `multiply((plus(1, 2)), 3)` for `(1 + 2) * 3`. Suppress them. We leave the normal
+            /// formatting path (`allow_operators = true`) unchanged so non-`EXPLAIN SYNTAX` queries
+            /// keep round-tripping the user's parens.
+            FormatStateStacked argument_frame = nested_dont_need_parens;
+            if (!frame.allow_operators)
+                argument_frame.wrapped_in_parens = true;
+            argument->format(ostr, settings, state, argument_frame);
         }
 
     }

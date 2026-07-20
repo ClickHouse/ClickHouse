@@ -84,20 +84,29 @@ TypeIndex AvroForIcebergDeserializer::getTypeForPath(const std::string & path) c
 Int64 AvroForIcebergDeserializer::getFormatVersionFromManifestFileMetadata() const
 {
     auto format_version_value = tryGetAvroMetadataValue("format-version");
-    if (!format_version_value.has_value())
-        return 1;
-    try
+    if (format_version_value.has_value())
     {
-        return std::stoi(format_version_value.value());
+        try
+        {
+            return std::stoi(format_version_value.value());
+        }
+        catch (const std::exception & e)
+        {
+            throw Exception(
+                ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+                "Cannot read iceberg table format version from Iceberg avro manifest file '{}': {}",
+                manifest_file_path,
+                e.what());
+        }
     }
-    catch (const std::exception & e)
-    {
-        throw Exception(
-            ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
-            "Cannot read iceberg table format version from Iceberg avro manifest file '{}': {}",
-            manifest_file_path,
-            e.what());
-    }
+
+    /// Older ClickHouse versions wrote both manifest lists and manifest files without the
+    /// `format-version` Avro metadata key, so we fall back to schema-based detection: the
+    /// `sequence_number` field appears at the top level of v2 manifest lists and v2
+    /// manifest entries, but is absent from their v1 counterparts.
+    if (hasPath(f_sequence_number))
+        return 2;
+    return 1;
 }
 
 
@@ -148,6 +157,16 @@ ParsedManifestFileEntryPtr AvroForIcebergDeserializer::createParsedManifestFileE
         }
     }
 
+    /// `file_sequence_number` can differ from the data `sequence_number` and, like it, is inherited from the
+    /// manifest's sequence number when null. Keep it raw here; the inherited value is resolved by the caller.
+    std::optional<Int64> file_sequence_number;
+
+    if (format_version > 1 && hasPath(f_file_sequence_number))
+    {
+        const auto file_sequence_number_value = getValueFromRowByName(row_index, f_file_sequence_number);
+        if (!file_sequence_number_value.isNull())
+            file_sequence_number = file_sequence_number_value.safeGet<Int64>();
+    }
 
     const auto file_path_key = IcebergPathFromMetadata::deserialize(
         getValueFromRowByName(row_index, c_data_file_file_path, TypeIndex::String).safeGet<String>());
@@ -242,6 +261,7 @@ ParsedManifestFileEntryPtr AvroForIcebergDeserializer::createParsedManifestFileE
                 row_index,
                 status,
                 sequence_number,
+                file_sequence_number,
                 snapshot_id,
                 partition_key_value,
                 columns_infos,
@@ -289,6 +309,7 @@ ParsedManifestFileEntryPtr AvroForIcebergDeserializer::createParsedManifestFileE
                 row_index,
                 status,
                 sequence_number,
+                file_sequence_number,
                 snapshot_id,
                 partition_key_value,
                 columns_infos,
@@ -320,6 +341,7 @@ ParsedManifestFileEntryPtr AvroForIcebergDeserializer::createParsedManifestFileE
                 row_index,
                 status,
                 sequence_number,
+                file_sequence_number,
                 snapshot_id,
                 partition_key_value,
                 columns_infos,

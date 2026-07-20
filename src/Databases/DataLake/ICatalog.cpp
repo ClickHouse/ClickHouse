@@ -1,9 +1,14 @@
 #include <Databases/DataLake/ICatalog.h>
+#include <Databases/DataLake/DatabaseDataLakeSettings.h>
 #include <Common/Exception.h>
+#include <Common/StringUtils.h>
 #include <Common/logger_useful.h>
 #include <Poco/String.h>
 
+#include <algorithm>
 #include <filesystem>
+#include <iterator>
+#include <tuple>
 
 #include <Common/FailPoint.h>
 #include <Poco/URI.h>
@@ -13,6 +18,11 @@ namespace DB::ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
+}
+
+namespace DB::DatabaseDataLakeSetting
+{
+    extern const DatabaseDataLakeSettingsDatabaseDataLakeCatalogType catalog_type;
 }
 
 namespace DB::FailPoints
@@ -305,8 +315,58 @@ DB::SettingsChanges CatalogSettings::allChanged() const
     changes.emplace_back("region", region);
     changes.emplace_back("aws_role_arn", aws_role_arn);
     changes.emplace_back("aws_role_session_name", aws_role_session_name);
+    changes.emplace_back("aws_external_id", aws_external_id);
 
     return changes;
+}
+
+CatalogTables ICatalog::getTables(const TableNameFilter & filter) const
+{
+    switch (filter.kind)
+    {
+        case TableNameFilter::Kind::All:
+            return getTables();
+
+        case TableNameFilter::Kind::Equals:
+        {
+            /// `name = 'ns.table'` -> list only namespace `ns`; the outer filter keeps the exact row.
+            const auto pos = filter.value.rfind('.');
+            if (pos == std::string::npos)
+                return getTables();
+            return listTablesInNamespaceDirect(filter.value.substr(0, pos));
+        }
+
+        case TableNameFilter::Kind::Like:
+        {
+            /// Every table name matching `pattern` must start with the pattern's
+            /// fixed prefix — the literal part before the first LIKE wildcard
+            /// (`%`/`_`) — extracted here the same way `KeyCondition` prunes ranges.
+            /// A namespace `N` can hold such a table (full name `N + "." + <...>`)
+            /// only if `N + "."` and the fixed prefix are consistent, i.e. one is a
+            /// prefix of the other. This never rejects a namespace `LIKE` could match
+            /// (the fixed prefix is a *necessary* prefix of any match), so no
+            /// `system.tables` row is dropped; a looser match only costs an extra
+            /// table listing.
+            const String fixed_prefix = std::get<0>(extractFixedPrefixFromLikePattern(filter.value, /*requires_perfect_prefix*/ false));
+
+            /// A leading wildcard (e.g. `%foo%`) yields an empty prefix, so we must list all namespaces and tables.
+            /// Calling getTables() is better as its parallel.
+            if (fixed_prefix.empty())
+                return getTables();
+
+            CatalogTables result;
+            for (const auto & namespace_name : getNamespaces())
+            {
+                const std::string namespace_prefix = namespace_name + ".";
+                if (!startsWith(namespace_prefix, fixed_prefix) && !startsWith(fixed_prefix, namespace_prefix))
+                    continue;
+                auto tables = listTablesInNamespaceDirect(namespace_name);
+                std::move(tables.begin(), tables.end(), std::back_inserter(result));
+            }
+            return result;
+        }
+    }
+    return {};
 }
 
 void ICatalog::createTable(const String & /*namespace_name*/, const String & /*table_name*/, const String & /*new_metadata_path*/, Poco::JSON::Object::Ptr /*metadata_content*/) const
@@ -319,9 +379,56 @@ bool ICatalog::updateMetadata(const String & /*namespace_name*/, const String & 
     throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "updateMetadata is not implemented");
 }
 
+bool ICatalog::updateSchema(
+    const String & /*namespace_name*/,
+    const String & /*table_name*/,
+    const String & /*new_metadata_path*/,
+    Poco::JSON::Object::Ptr /*new_schema*/,
+    Int32 /*previous_schema_id*/) const
+{
+    throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "updateSchema is not implemented");
+}
+
 void ICatalog::dropTable(const String & /*namespace_name*/, const String & /*table_name*/) const
 {
     throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "dropTable is not implemented");
+}
+
+ICatalog::PreparedSettingsChangesPtr ICatalog::prepareSettingsChanges(const DB::SettingsChanges & /*changes*/)
+{
+    throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "Settings of a catalog of this type cannot be altered");
+}
+
+void ICatalog::commitSettingsChanges(PreparedSettingsChangesPtr /*prepared*/)
+{
+    throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Settings changes were prepared for a catalog that cannot commit them");
+}
+
+CatalogSettingsAlterValidatorFactory & CatalogSettingsAlterValidatorFactory::instance()
+{
+    static CatalogSettingsAlterValidatorFactory factory;
+    return factory;
+}
+
+void CatalogSettingsAlterValidatorFactory::registerValidator(DB::DatabaseDataLakeCatalogType catalog_type, Validator validator)
+{
+    if (!validators.emplace(catalog_type, std::move(validator)).second)
+        throw DB::Exception(
+            DB::ErrorCodes::LOGICAL_ERROR,
+            "Settings alter validator for catalog type '{}' is already registered",
+            DB::SettingFieldDatabaseDataLakeCatalogType(catalog_type).toString());
+}
+
+void CatalogSettingsAlterValidatorFactory::validate(const DB::DatabaseDataLakeSettings & current_settings, const DB::SettingsChanges & changes) const
+{
+    const auto it = validators.find(current_settings[DB::DatabaseDataLakeSetting::catalog_type].value);
+    if (it == validators.end())
+        throw DB::Exception(
+            DB::ErrorCodes::NOT_IMPLEMENTED,
+            "ALTER MODIFY SETTING is not supported for catalog type '{}'",
+            current_settings[DB::DatabaseDataLakeSetting::catalog_type].toString());
+
+    it->second(current_settings, changes);
 }
 
 }

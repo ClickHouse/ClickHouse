@@ -1,0 +1,62 @@
+---
+slug: /use-cases/observability/clickstack/getting-started/managed
+title: '托管 ClickStack 入门'
+sidebarTitle: '托管'
+description: '托管 ClickStack 入门'
+doc_type: 'guide'
+keywords: ['托管 ClickStack', '入门', 'ClickHouse Cloud']
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+import SetupManagedIngestion from '/snippets/zh/clickstack/_setup_managed_ingestion.mdx';
+import ProviderSelection from '/snippets/zh/clickstack/_select_provider.mdx';
+import NavigateClickStackUI from '/snippets/zh/clickstack/_navigate_managed.mdx';
+
+最简单的入门方式是在 **ClickHouse Cloud** 上部署 **托管 ClickStack**。它提供完全托管且安全的后端，同时仍保留对摄取、schema 和可观测性工作流的完全控制。这样一来，你无需自行运维 ClickHouse，还可获得以下一系列优势：
+
+* 计算资源自动扩缩容，并与存储分离
+* 基于对象存储的低成本、近乎无限的保留能力
+* 可通过仓库独立隔离读写工作负载
+* 集成身份验证
+* 自动备份
+* 安全与合规功能
+* 无缝升级
+
+<Steps>
+  <Step>
+    ## 注册 ClickHouse Cloud
+
+    要在 [ClickHouse Cloud](https://console.clickhouse.cloud) 中创建托管 ClickStack 服务，请先完成 [ClickHouse Cloud 快速入门指南](/zh/get-started/setup/cloud)中的**第一步**。
+
+    <ProviderSelection />
+  </Step>
+
+  <Step>
+    ## 设置摄取
+
+    服务预配完成后，请确保已选中该服务，然后在左侧菜单中点击 &quot;ClickStack&quot;。
+
+    <SetupManagedIngestion />
+  </Step>
+
+  <Step>
+    ## 进入 ClickStack UI
+
+    <NavigateClickStackUI />
+  </Step>
+
+  <Step>
+    ## 后续步骤
+
+    <Warning>
+      **记录默认凭据**
+
+      如果你在上述步骤中尚未记录默认凭据，请进入该服务并选择 `Connect`，记下密码以及 HTTP/native 端点。请妥善保管这些管理员凭据，以便在后续指南中重复使用。
+    </Warning>
+
+    <Image img="/images/_snippets/service_connect.webp" size="lg" alt="Service Connect" border />
+
+    如需执行预配新用户或添加更多数据源等任务，请参阅[托管 ClickStack 部署指南](/zh/clickstack/deployment/managed#additional-tasks)。
+  </Step>
+</Steps>

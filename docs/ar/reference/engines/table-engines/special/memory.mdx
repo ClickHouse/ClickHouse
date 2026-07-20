@@ -1,0 +1,117 @@
+---
+description: 'يخزّن محرك Memory البيانات في RAM بصيغة غير مضغوطة. وتُخزَّن البيانات
+  تمامًا بالشكل الذي استُقبلت به. وبعبارة أخرى، فالقراءة من هذا الجدول مجانية
+  بالكامل.'
+sidebarTitle: 'Memory'
+slug: /engines/table-engines/special/memory
+title: 'محرك جدول Memory'
+doc_type: 'reference'
+---
+
+<Note>
+  عند استخدام محرك جدول Memory على ClickHouse Cloud، لا تُنسخ البيانات عبر جميع العقد (بحكم التصميم). ولضمان توجيه جميع الاستعلامات إلى العقدة نفسها وأن يعمل محرك جدول Memory كما هو متوقع، يمكنك القيام بأحد الإجراءات التالية:
+
+  * تنفيذ جميع العمليات ضمن الجلسة نفسها
+  * استخدام عميل يعتمد TCP أو الواجهة الأصلية (مما يوفّر دعم الاتصالات الثابتة)، مثل [clickhouse-client](/ar/concepts/features/interfaces/client)
+</Note>
+
+يخزّن محرك Memory البيانات في RAM بصيغة غير مضغوطة. وتُخزَّن البيانات تمامًا بالشكل الذي استُقبلت به. وبعبارة أخرى، فالقراءة من هذا الجدول مجانية بالكامل.
+تتم مزامنة الوصول المتزامن إلى البيانات. وتكون الأقفال قصيرة: فلا تعيق عمليات القراءة والكتابة بعضها بعضًا.
+الفهارس غير مدعومة. وتتم القراءة بشكل متوازٍ.
+
+تتحقق أعلى إنتاجية (أكثر من 10 GB/sec) في الاستعلامات البسيطة، لأنه لا توجد قراءة من القرص، ولا فك ضغط، ولا إلغاء تسلسل للبيانات. (ويجدر بالذكر أن إنتاجية محرك MergeTree تكون في كثير من الحالات مرتفعة بالقدر نفسه تقريبًا.)
+عند إعادة تشغيل الخادم، تختفي البيانات من الجدول ويصبح الجدول فارغًا.
+وعادةً لا يكون استخدام محرك الجدول هذا مبررًا. ومع ذلك، يمكن استخدامه للاختبارات، وللمهام التي تتطلب أقصى سرعة مع عدد صغير نسبيًا من الصفوف (حتى نحو 100,000,000 تقريبًا).
+
+يستخدم النظام محرك Memory للجداول المؤقتة التي تحتوي على بيانات استعلام خارجية (انظر قسم &quot;البيانات الخارجية لمعالجة استعلام&quot;)، وكذلك لتنفيذ `GLOBAL IN` (انظر قسم &quot;معاملات IN&quot;).
+
+يمكن تحديد حدود دنيا وعليا لتقييد حجم جدول محرك Memory، مما يتيح له فعليًا أن يعمل كمخزن مؤقت دائري (انظر [معلمات المحرك](#engine-parameters)).
+
+<div id="engine-parameters">
+  ## معلمات المحرك
+</div>
+
+* `min_bytes_to_keep` — الحد الأدنى من البايتات التي يجب الاحتفاظ بها عندما يكون جدول الذاكرة محدود الحجم.
+  * القيمة الافتراضية: `0`
+  * يتطلب `max_bytes_to_keep`
+* `max_bytes_to_keep` — الحد الأقصى من البايتات التي يجب الاحتفاظ بها في جدول الذاكرة، حيث تُحذف أقدم الصفوف عند كل إدراج (أي مخزن مؤقت دائري). قد يتجاوز الحد الأقصى للبايتات الحد المحدد إذا كانت أقدم دفعة من الصفوف المطلوب حذفها ستنخفض عن حد `min_bytes_to_keep` عند إضافة كتلة كبيرة.
+  * القيمة الافتراضية: `0`
+* `min_rows_to_keep` — الحد الأدنى من الصفوف التي يجب الاحتفاظ بها عندما يكون جدول الذاكرة محدود الحجم.
+  * القيمة الافتراضية: `0`
+  * يتطلب `max_rows_to_keep`
+* `max_rows_to_keep` — الحد الأقصى من الصفوف التي يجب الاحتفاظ بها في جدول الذاكرة، حيث تُحذف أقدم الصفوف عند كل إدراج (أي مخزن مؤقت دائري). قد يتجاوز الحد الأقصى للصفوف الحد المحدد إذا كانت أقدم دفعة من الصفوف المطلوب حذفها ستنخفض عن حد `min_rows_to_keep` عند إضافة كتلة كبيرة.
+  * القيمة الافتراضية: `0`
+* `compress` - ما إذا كانت البيانات تُضغط في الذاكرة.
+  * القيمة الافتراضية: `false`
+
+<div id="usage">
+  ## الاستخدام
+</div>
+
+**ضبط الإعدادات**
+
+```sql
+CREATE TABLE memory (i UInt32) ENGINE = Memory SETTINGS min_rows_to_keep = 100, max_rows_to_keep = 1000;
+```
+
+**تعديل الإعدادات**
+
+```sql
+ALTER TABLE memory MODIFY SETTING min_rows_to_keep = 100, max_rows_to_keep = 1000;
+```
+
+**ملاحظة:** يمكن تعيين معامِلَي الحدّ الأقصى لكل من `bytes` و`rows` في الوقت نفسه، ومع ذلك سيُلتزم بالحدود الدنيا لـ `max` و`min`.
+
+<div id="examples">
+  ## أمثلة
+</div>
+
+```sql
+CREATE TABLE memory (i UInt32) ENGINE = Memory SETTINGS min_bytes_to_keep = 4096, max_bytes_to_keep = 16384;
+
+/* 1. testing oldest block doesn't get deleted due to min-threshold - 3000 rows */
+INSERT INTO memory SELECT * FROM numbers(0, 1600); -- 8'192 bytes
+
+/* 2. adding block that doesn't get deleted */
+INSERT INTO memory SELECT * FROM numbers(1000, 100); -- 1'024 bytes
+
+/* 3. testing oldest block gets deleted - 9216 bytes - 1100 */
+INSERT INTO memory SELECT * FROM numbers(9000, 1000); -- 8'192 bytes
+
+/* 4. checking a very large block overrides all */
+INSERT INTO memory SELECT * FROM numbers(9000, 10000); -- 65'536 bytes
+
+SELECT total_bytes, total_rows FROM system.tables WHERE name = 'memory' AND database = currentDatabase();
+```
+
+```text
+┌─total_bytes─┬─total_rows─┐
+│       65536 │      10000 │
+└─────────────┴────────────┘
+```
+
+وأيضًا، بالنسبة للصفوف:
+
+```sql
+CREATE TABLE memory (i UInt32) ENGINE = Memory SETTINGS min_rows_to_keep = 4000, max_rows_to_keep = 10000;
+
+/* 1. testing oldest block doesn't get deleted due to min-threshold - 3000 rows */
+INSERT INTO memory SELECT * FROM numbers(0, 1600); -- 1'600 rows
+
+/* 2. adding block that doesn't get deleted */
+INSERT INTO memory SELECT * FROM numbers(1000, 100); -- 100 rows
+
+/* 3. testing oldest block gets deleted - 9216 bytes - 1100 */
+INSERT INTO memory SELECT * FROM numbers(9000, 1000); -- 1'000 rows
+
+/* 4. checking a very large block overrides all */
+INSERT INTO memory SELECT * FROM numbers(9000, 10000); -- 10'000 rows
+
+SELECT total_bytes, total_rows FROM system.tables WHERE name = 'memory' AND database = currentDatabase();
+```
+
+```text
+┌─total_bytes─┬─total_rows─┐
+│       65536 │      10000 │
+└─────────────┴────────────┘
+```

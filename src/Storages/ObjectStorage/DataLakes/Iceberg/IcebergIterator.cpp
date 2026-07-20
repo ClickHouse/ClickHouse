@@ -27,6 +27,7 @@
 #include <Interpreters/Context.h>
 
 #include <IO/CompressedReadBufferWrapper.h>
+#include <IO/Progress.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Storages/ObjectStorage/DataLakes/Common/Common.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
@@ -189,7 +190,6 @@ std::optional<ProcessedManifestFileEntryPtr> SingleThreadIcebergKeysIterator::ne
             current_manifest_file_iterator = Iceberg::ManifestFileIterator::create(
                 manifest_file_cacheable_part.deserializer,
                 manifest_list_entry.manifest_file_path,
-                persistent_components.format_version,
                 persistent_components.path_resolver,
                 *persistent_components.schema_processor,
                 manifest_list_entry.added_sequence_number,
@@ -398,6 +398,10 @@ ObjectInfoPtr IcebergIterator::next(size_t)
         }
 
         ProfileEvents::increment(ProfileEvents::IcebergMetadataReturnedObjectInfos);
+
+        if (callback)
+            callback(FileProgress(0, size_t(manifest_file_entry->parsed_entry->file_size_in_bytes)));
+
         return object_info;
     }
     {

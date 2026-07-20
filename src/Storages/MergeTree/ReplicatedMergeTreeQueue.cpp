@@ -24,6 +24,12 @@
 #include <shared_mutex>
 #include <Poco/Timestamp.h>
 
+namespace ProfileEvents
+{
+    extern const Event ZooKeeperWatchTriggeredReplicatedMergeTreeLog;
+    extern const Event ZooKeeperWatchTriggeredReplicatedMergeTreeMutations;
+}
+
 namespace DB
 {
 
@@ -836,7 +842,10 @@ std::pair<int32_t, int32_t> ReplicatedMergeTreeQueue::pullLogsToQueue(zkutil::Zo
     Coordination::Stat stat;
     zookeeper->get(fs::path(zookeeper_path) / "log", &stat);
 
-    Strings log_entries = zookeeper->getChildrenWatch(fs::path(zookeeper_path) / "log", nullptr, watch_callback);
+    Strings log_entries = zookeeper->getChildrenWatch(
+        fs::path(zookeeper_path) / "log",
+        nullptr,
+        Coordination::WatchCallbackPtrOrEventPtr{watch_callback, ProfileEvents::ZooKeeperWatchTriggeredReplicatedMergeTreeLog});
 
     /// We update mutations after we have loaded the list of log entries, but before we insert them
     /// in the queue.
@@ -1138,7 +1147,10 @@ int32_t ReplicatedMergeTreeQueue::updateMutations(zkutil::ZooKeeperPtr zookeeper
     std::lock_guard lock(update_mutations_mutex);
 
     Coordination::Stat mutations_stat;
-    Strings entries_in_zk = zookeeper->getChildrenWatch(fs::path(zookeeper_path) / "mutations", &mutations_stat, watch_callback);
+    Strings entries_in_zk = zookeeper->getChildrenWatch(
+        fs::path(zookeeper_path) / "mutations",
+        &mutations_stat,
+        Coordination::WatchCallbackPtrOrEventPtr{watch_callback, ProfileEvents::ZooKeeperWatchTriggeredReplicatedMergeTreeMutations});
     StringSet entries_in_zk_set(entries_in_zk.begin(), entries_in_zk.end());
 
     /// Compare with the local state, delete obsolete entries and determine which new entries to load.

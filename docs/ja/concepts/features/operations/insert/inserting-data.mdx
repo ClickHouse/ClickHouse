@@ -1,0 +1,295 @@
+---
+title: 'ClickHouse へのデータ挿入'
+description: 'ClickHouse にデータを挿入する方法'
+keywords: ['INSERT', 'バッチ挿入']
+sidebarTitle: 'ClickHouse へのデータ挿入'
+slug: /guides/inserting-data
+show_related_blogs: true
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+<div id="inserting-into-clickhouse-vs-oltp-databases">
+  ## ClickHouse への挿入と OLTP データベースの違い
+</div>
+
+OLAP (オンライン分析処理) データベースである ClickHouse は、高いパフォーマンスとスケーラビリティに最適化されており、条件によっては 1 秒あたり数百万行を挿入できます。
+これは、高度に並列化されたアーキテクチャと効率的なカラム指向の圧縮を組み合わせることで実現されていますが、その代わりに即時整合性は犠牲になります。
+より具体的には、ClickHouse は追記専用の操作向けに最適化されており、整合性については結果整合性のみを保証します。
+
+これに対して、Postgres などの OLTP データベースは、完全な ACID 準拠を備えたトランザクション単位の挿入向けに特化して最適化されており、強い整合性と高い信頼性を保証します。
+PostgreSQL は、同時実行トランザクションを処理するために MVCC (Multi-Version Concurrency Control) を使用しており、そのためにデータの複数のバージョンを保持します。
+これらのトランザクションは一度に扱う行数が少ないこともありますが、信頼性を保証するための大きなオーバーヘッドが発生するため、挿入性能は制限されます。
+
+強い整合性を保ちながら高い挿入性能を実現するには、ClickHouse にデータを挿入する際に、以下で説明するシンプルなルールに従う必要があります。
+これらのルールに従うことで、ClickHouse を初めて使うユーザーがよく遭遇する問題や、OLTP データベースで有効な挿入戦略をそのまま再現しようとして生じる問題を避けることができます。
+
+<div id="best-practices-for-inserts">
+  ## インサートのベストプラクティス
+</div>
+
+<div id="insert-in-large-batch-sizes">
+  ### 大きなバッチサイズで挿入する
+</div>
+
+デフォルトでは、ClickHouse に送信される挿入ごとに、その挿入データと保存が必要なその他のメタデータを含むストレージパーツが ClickHouse によって即座に作成されます。
+そのため、各挿入に含まれるデータ量が少ない多数の挿入を送るよりも、各挿入により多くのデータを含む少数の挿入を送るほうが、必要な書き込み回数を減らせます。
+一般的には、1 回あたり少なくとも 1,000 行、理想的には 10,000 ～ 100,000 行程度の、比較的大きなバッチでデータを挿入することを推奨します。
+(詳しくは[こちら](https://clickhouse.com/blog/asynchronous-data-inserts-in-clickhouse#data-needs-to-be-batched-for-optimal-performance)を参照してください) 。
+
+大きなバッチが難しい場合は、以下で説明する非同期挿入を使用してください。
+
+<div id="ensure-consistent-batches-for-idempotent-retries">
+  ### 冪等な再試行のために、一貫したバッチを保つ
+</div>
+
+デフォルトでは、ClickHouse への insert は同期的かつ冪等です (つまり、同じ insert 操作を複数回実行しても、1 回だけ実行した場合と結果は変わりません) 。
+MergeTree engine family の table では、ClickHouse はデフォルトで自動的に [insert の重複排除](https://clickhouse.com/blog/common-getting-started-issues-with-clickhouse#5-deduplication-at-insert-time) を行います。
+
+これは、次のような場合でも insert の耐障害性が保たれることを意味します。
+
+* 1. データを受信するノードに問題がある場合、INSERT クエリ はタイムアウトするか、より具体的なエラーを返し、確認応答は返されません。
+* 2. ノードがデータの書き込みには成功しても、ネットワークの中断によって確認応答をクエリの送信元に返せない場合、送信元ではタイムアウトまたはネットワークエラーが発生します。
+
+クライアント側から見ると、(i) と (ii) を見分けるのは難しい場合があります。ただし、どちらのケースでも、確認応答のない insert はすぐに再試行できます。
+再試行した INSERT クエリ に同じデータが同じ順序で含まれている限り、 (確認応答のない) 元の insert が成功していた場合、ClickHouse は再試行された insert を自動的に無視します。
+
+<div id="insert-to-a-mergetree-table-or-a-distributed-table">
+  ### MergeTree テーブルまたは分散テーブルへの insert
+</div>
+
+MergeTree (または Replicated テーブル) に直接 insert し、データが分片化されている場合は一連のノードに対してリクエストを分散し、`internal_replication=true` を設定することを推奨します。
+これにより、ClickHouse が利用可能な任意のレプリカ分片へデータをレプリケートし、データの結果整合性が最終的に確保されます。
+
+このクライアント側の負荷分散が難しい場合は、[分散テーブル](/ja/reference/engines/table-engines/special/distributed) 経由で insert することもできます。この場合、書き込みは各ノードに分散されます。ここでも、`internal_replication=true` を設定することを推奨します。
+ただし、この方法ではまず分散テーブルを持つノードにローカル書き込みを行い、その後で各分片に送信する必要があるため、パフォーマンスはやや低下します。
+
+<div id="use-asynchronous-inserts-for-small-batches">
+  ### 小さなバッチには非同期挿入を使用する
+</div>
+
+クライアント側でのバッチ処理が難しいケースもあります。たとえば、数百〜数千の単機能の agent がログ、メトリクス、トレースなどを送信するオブザーバビリティのユースケースです。
+このようなシナリオでは、問題や異常をできるだけ早く検知するために、そうしたデータをリアルタイムで転送することが重要です。
+さらに、監視対象のシステムでイベントのスパイクが発生する可能性もあり、オブザーバビリティデータをクライアント側でバッファリングしようとすると、大きなメモリ使用量の急増や、それに伴う問題を引き起こすおそれがあります。
+大きなバッチで挿入できない場合は、[非同期挿入](/ja/concepts/best-practices/selecting-an-insert-strategy#asynchronous-inserts)を使用して、バッチ処理を ClickHouse に委ねることができます。
+
+非同期挿入では、以下の図にあるように、データはまずバッファに入れられ、その後 3 つのステップでデータベースストレージに書き込まれます。
+
+<Image img="/images/guides/postgres-inserts.webp" size="md" alt="Postgres inserts" />
+
+非同期挿入を有効にすると、ClickHouse は次のように動作します。
+
+(1) INSERT クエリを非同期で受け取ります。
+(2) まず、そのクエリのデータをインメモリバッファに書き込みます。
+(3) 次回バッファが flush されるタイミングでのみ、データをソートし、パーツとしてデータベースストレージに書き込みます。
+
+バッファが flush される前であれば、同一または別のクライアントから送られた、ほかの非同期挿入クエリのデータもバッファに集約できます。
+バッファの flush によって作成される パーツ には、複数の非同期挿入クエリのデータが含まれる可能性があります。
+一般に、これらの仕組みによって、データのバッチ処理はクライアント側からサーバー側 (ClickHouse インスタンス) へ移されます。
+
+<Note>
+  データベースストレージに flush される前のデータはクエリで検索できず、また buffer の flush は設定可能である点に注意してください。
+
+  非同期挿入の設定に関する詳細は[こちら](/ja/concepts/features/operations/insert/asyncinserts#enabling-asynchronous-inserts)、より詳しい解説は[こちら](https://clickhouse.com/blog/asynchronous-data-inserts-in-clickhouse)を参照してください。
+</Note>
+
+<div id="use-official-clickhouse-clients">
+  ### 公式のClickHouseクライアントを使用する
+</div>
+
+ClickHouseには、主要なプログラミング言語向けのクライアントが用意されています。
+これらはinsertが正しく実行されるよう最適化されており、たとえば [Go client](/ja/integrations/language-clients/go/clickhouse-api#async-insert) のように直接、またはクエリ、ユーザー、接続レベルの設定で有効にした場合に間接的に、非同期挿入をネイティブでサポートしています。
+
+利用可能なClickHouseクライアントとドライバーの一覧については、[Clients and Drivers](/ja/concepts/features/interfaces/cli)を参照してください。
+
+<div id="prefer-the-native-format">
+  ### Native フォーマットを優先する
+</div>
+
+ClickHouse は、インサート時 (およびクエリ時) に多数の[入力フォーマット](/ja/reference/formats/index)をサポートしています。
+これは OLTP データベースとの大きな違いであり、特に[テーブル関数](/ja/reference/functions/table-functions/index)やディスク上のファイルからデータを読み込む機能と組み合わせることで、外部ソースからのデータ読み込みが大幅に容易になります。
+これらのフォーマットは、アドホックなデータの読み込みやデータエンジニアリングのタスクに最適です。
+
+アプリケーションで最適な挿入性能を実現したい場合は、[Native](/ja/reference/formats/Native) フォーマットで挿入することを推奨します。
+これはほとんどのクライアント (Go や Python など) でサポートされており、このフォーマットはすでにカラム指向であるため、サーバー側の処理を最小限に抑えられます。
+これにより、データをカラム指向フォーマットに変換する責任はクライアント側に移ります。これは挿入を効率よくスケールさせるうえで重要です。
+
+また、行フォーマットのほうが望ましい場合は、[RowBinary フォーマット](/ja/reference/formats/RowBinary/RowBinary) (Java クライアントで使用) も利用できます。通常、これは Native フォーマットより記述しやすいです。
+これは、[JSON](/ja/reference/formats/JSON/JSON) のような他の行フォーマットと比べて、圧縮、ネットワークオーバーヘッド、サーバー側での処理の点でより効率的です。
+迅速に統合したいものの、書き込みスループット要件がそれほど高くない場合は、[JSONEachRow](/ja/reference/formats/JSON/JSONEachRow) フォーマットも検討できます。ただし、このフォーマットでは ClickHouse 側でのパースに CPU オーバーヘッドが発生する点に注意してください。
+
+<div id="use-the-http-interface">
+  ### HTTPインターフェイスを使用する
+</div>
+
+多くの従来型データベースとは異なり、ClickHouse は HTTPインターフェイスをサポートしています。
+これを使うと、上記のどのフォーマットでも、データの挿入とクエリの実行を行えます。
+HTTPインターフェイスは、ロードバランサーでトラフィックを簡単に切り替えられるため、ClickHouse のネイティブプロトコルより適していることがよくあります。
+一方、ネイティブプロトコルはオーバーヘッドがやや少ないため、insert のパフォーマンスはわずかに高くなることがあります。
+既存のクライアントは、これらのプロトコルのいずれか、または場合によっては両方 (例: Go client) を使用しています。
+また、ネイティブプロトコルではクエリの進行状況を簡単に追跡できます。
+
+詳細については、[HTTPインターフェイス](/ja/concepts/features/interfaces/http) を参照してください。
+
+<div id="basic-example">
+  ## 基本的な例
+</div>
+
+ClickHouse では、おなじみの `INSERT INTO TABLE` コマンドを使用できます。スタートガイド[&quot;ClickHouse でテーブルを作成する&quot;](/ja/get-started/quickstarts/creating-tables)で作成したテーブルに、データをいくつか挿入してみましょう。
+
+```sql
+INSERT INTO helloworld.my_first_table (user_id, message, timestamp, metric) VALUES
+    (101, 'Hello, ClickHouse!',                                 now(),       -1.0    ),
+    (102, 'Insert a lot of rows per batch',                     yesterday(), 1.41421 ),
+    (102, 'Sort your data based on your commonly-used queries', today(),     2.718   ),
+    (101, 'Granules are the smallest chunks of data read',      now() + 5,   3.14159 )
+```
+
+正しく動作したことを確認するため、次の`SELECT`クエリを実行します:
+
+```sql
+SELECT * FROM helloworld.my_first_table
+```
+
+返される結果は次のとおりです。
+
+```response
+user_id message                                             timestamp           metric
+101         Hello, ClickHouse!                                  2024-11-13 20:01:22     -1
+101         Granules are the smallest chunks of data read           2024-11-13 20:01:27 3.14159
+102         Insert a lot of rows per batch                          2024-11-12 00:00:00 1.41421
+102         Sort your data based on your commonly-used queries  2024-11-13 00:00:00     2.718
+```
+
+<div id="loading-data-from-postgres">
+  ## Postgres からのデータの読み込み
+</div>
+
+Postgres からデータを読み込むには、次の方法があります。
+
+* `ClickPipes`。PostgreSQL データベースのレプリケーション向けに特化して設計された ETL ツールです。以下の両方で利用できます。
+  * ClickHouse Cloud - ClickPipes の[マネージドインジェストサービス](/ja/integrations/clickpipes/postgres/index)から利用できます。
+  * セルフマネージド - [PeerDB オープンソースプロジェクト](https://github.com/PeerDB-io/peerdb)経由で利用できます。
+* 前の例で示したように、[PostgreSQL table engine](/ja/integrations/connectors/data-sources/postgres#using-the-postgresql-table-engine)を使用してデータを直接読み取る方法。通常は、既知の watermark (たとえば timestamp) に基づくバッチレプリケーションで十分な場合や、一度限りの移行の場合に適しています。このアプローチは数千万行規模までスケールします。さらに大きなデータセットを移行する場合は、それぞれでデータの chunk を処理する複数のリクエストを検討してください。各 chunk については、パーティションを最終テーブルに移動する前にステージングテーブルを使用できます。これにより、失敗したリクエストを再試行できます。この一括ロード戦略の詳細については、こちらを参照してください。
+* PostgreSQL からデータを CSV形式でエクスポートできます。その後、テーブル関数 を使用して、ローカルファイルまたは object storage 経由で ClickHouse に挿入できます。
+
+<Info>
+  **大規模なデータセットの挿入でお困りですか？**
+
+  大規模なデータセットの挿入で支援が必要な場合や、ClickHouse Cloud へのデータのインポート時にエラーが発生した場合は、support@clickhouse.com までお問い合わせください。サポートいたします。
+</Info>
+
+<div id="inserting-data-from-command-line">
+  ## コマンドラインからのデータ挿入
+</div>
+
+**前提条件**
+
+* ClickHouse を[インストール](/ja/get-started/setup/install)している
+* `clickhouse-server` が実行中である
+* `wget`、`zcat`、`curl` を使用できるターミナルにアクセスできる
+
+この例では、`clickhouse-client` をバッチモードで使用して、コマンドラインから CSV ファイルを ClickHouse に挿入する方法を説明します。`clickhouse-client` をバッチモードで使用してコマンドライン経由でデータを挿入する方法の詳細と例については、[&quot;Batch mode&quot;](/ja/concepts/features/interfaces/client#batch-mode) を参照してください。
+
+この例では、2,800 万行の Hacker News データを含む [Hacker News dataset](/ja/get-started/sample-datasets/hacker-news) を使用します。
+
+<Steps>
+  <Step>
+    ### CSV のダウンロード
+
+    次のコマンドを実行して、公開 S3 バケットからデータセットの CSV 版をダウンロードします:
+
+    ```bash
+    wget https://datasets-documentation.s3.eu-west-3.amazonaws.com/hackernews/hacknernews.csv.gz
+    ```
+
+    4.6GB、2,800 万行あるため、この圧縮ファイルのダウンロードには 5〜10 分ほどかかります。
+  </Step>
+
+  <Step>
+    ### テーブルの作成
+
+    `clickhouse-server` が実行中であれば、`clickhouse-client` をバッチモードで使用して、次のスキーマを持つ空のテーブルをコマンドラインから直接作成できます:
+
+    ```bash
+    clickhouse-client <<'_EOF'
+    CREATE TABLE hackernews(
+        `id` UInt32,
+        `deleted` UInt8,
+        `type` Enum('story' = 1, 'comment' = 2, 'poll' = 3, 'pollopt' = 4, 'job' = 5),
+        `by` LowCardinality(String),
+        `time` DateTime,
+        `text` String,
+        `dead` UInt8,
+        `parent` UInt32,
+        `poll` UInt32,
+        `kids` Array(UInt32),
+        `url` String,
+        `score` Int32,
+        `title` String,
+        `parts` Array(UInt32),
+        `descendants` Int32
+    )
+    ENGINE = MergeTree
+    ORDER BY id
+    _EOF
+    ```
+
+    エラーがなければ、テーブルは正常に作成されています。上記のコマンドでは、heredoc の区切り文字 (`_EOF`) をシングルクォートで囲んでいるため、補間が行われません。シングルクォートがない場合は、カラム名を囲むバッククォートをエスケープする必要があります。
+  </Step>
+
+  <Step>
+    ### コマンドラインからデータを挿入する
+
+    次に、以下のコマンドを実行して、先ほどダウンロードしたファイルのデータをテーブルに挿入します:
+
+    ```bash
+    zcat < hacknernews.csv.gz | ./clickhouse client --query "INSERT INTO hackernews FORMAT CSV"
+    ```
+
+    データは圧縮されているため、まず `gzip`、`zcat` などのツールでファイルを展開し、その後、適切な `INSERT` ステートメントと `FORMAT` を指定して、展開したデータを `clickhouse-client` にパイプで渡す必要があります。
+
+    <Note>
+      `clickhouse-client` を対話型モードで使用してデータを挿入する場合は、`COMPRESSION` 句を使うことで、INSERT 時の展開を ClickHouse に任せることができます。ClickHouse はファイル拡張子から圧縮形式を自動検出できますが、明示的に指定することも可能です。
+
+      その場合、挿入クエリは次のようになります:
+
+      ```bash
+      clickhouse-client --query "INSERT INTO hackernews FROM INFILE 'hacknernews.csv.gz' COMPRESSION 'gzip' FORMAT CSV;"
+      ```
+    </Note>
+
+    データの挿入が完了したら、次のコマンドを実行して `hackernews` テーブルの行数を確認できます:
+
+    ```bash
+    clickhouse-client --query "SELECT formatReadableQuantity(count(*)) FROM hackernews"
+    28.74 million
+    ```
+  </Step>
+
+  <Step>
+    ### curl を使用してコマンドライン経由でデータを挿入する
+
+    前の手順では、まず `wget` を使って CSV ファイルをローカルマシンにダウンロードしました。1 つのコマンドで、リモート URL から直接データを挿入することもできます。
+
+    次のコマンドを実行して `hackernews` テーブルのデータを削除し、ローカルマシンにダウンロードする中間手順なしで再度挿入できるようにします:
+
+    ```bash
+    clickhouse-client --query "TRUNCATE hackernews"
+    ```
+
+    次に、以下を実行します:
+
+    ```bash
+    curl https://datasets-documentation.s3.eu-west-3.amazonaws.com/hackernews/hacknernews.csv.gz | zcat | clickhouse-client --query "INSERT INTO hackernews FORMAT CSV"
+    ```
+
+    これで、先ほどと同じコマンドを実行して、データが再度挿入されたことを確認できます:
+
+    ```bash
+    clickhouse-client --query "SELECT formatReadableQuantity(count(*)) FROM hackernews"
+    28.74 million
+    ```
+  </Step>
+</Steps>

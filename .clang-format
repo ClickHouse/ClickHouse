@@ -60,7 +60,7 @@ AlignConsecutiveAssignments: false
 AlignOperands: false
 AllowAllParametersOfDeclarationOnNextLine: true
 AllowShortBlocksOnASingleLine: false
-AllowShortCaseLabelsOnASingleLine: false
+AllowShortCaseLabelsOnASingleLine: true
 AllowShortIfStatementsOnASingleLine: false
 AllowShortLoopsOnASingleLine: false
 AlwaysBreakAfterDefinitionReturnType: None
@@ -79,6 +79,9 @@ IndentWidth: 4
 IndentWrappedFunctionNames: false
 MacroBlockBegin: ''
 MacroBlockEnd: ''
+WhitespaceSensitiveMacros:
+  - DECLARE_X86_64_V3_SPECIFIC_CODE
+  - DECLARE_X86_64_V4_SPECIFIC_CODE
 NamespaceIndentation: None
 ObjCBlockIndentWidth: 4
 ObjCSpaceAfterProperty: true

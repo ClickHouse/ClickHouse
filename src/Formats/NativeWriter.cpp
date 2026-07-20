@@ -13,6 +13,7 @@
 #include <Common/typeid_cast.h>
 #include <Columns/ColumnSparse.h>
 #include <Columns/ColumnTuple.h>
+#include <Columns/ColumnReplicated.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypesBinaryEncoding.h>
@@ -145,6 +146,10 @@ size_t NativeWriter::write(const Block & block)
         index_block.columns.resize(columns);
     }
 
+    /// Remove unreferenced data from replicated columns before serialization.
+    Columns compacted_columns = block.getColumns();
+    compactReplicatedColumns(compacted_columns);
+
     for (size_t i = 0; i < columns; ++i)
     {
         /// For the index.
@@ -158,6 +163,7 @@ size_t NativeWriter::write(const Block & block)
         }
 
         auto column = block.safeGetByPosition(i);
+        column.column = compacted_columns[i];
 
         /// Send data to old clients without low cardinality type.
         if (remove_low_cardinality || (client_revision && client_revision < DBMS_MIN_REVISION_WITH_LOW_CARDINALITY_TYPE))

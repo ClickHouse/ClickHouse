@@ -1,3 +1,4 @@
+#include <filesystem>
 #include <memory>
 #include <DataTypes/DataTypeArray.h>
 #include <mutex>
@@ -103,7 +104,8 @@ public:
             CreateFileSegmentSettings(FileSegmentKind::Ephemeral), FileCache::getCommonOrigin());
 
         chassert(segment_holder->size() == 1);
-        segment_holder->front().getKeyMetadata()->createBaseDirectory(/* throw_if_failed */true);
+        if (auto ec = segment_holder->front().getKeyMetadata()->createBaseDirectory(); ec)
+            throw std::filesystem::filesystem_error(fmt::format("createBaseDirectory failed for {}", key), ec);
     }
 
     std::unique_ptr<WriteBuffer> write() override

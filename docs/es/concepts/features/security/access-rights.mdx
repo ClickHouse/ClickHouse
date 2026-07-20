@@ -1,0 +1,580 @@
+---
+slug: /operations/access-rights
+sidebarTitle: 'Usuarios y roles'
+title: 'Control de acceso y gestión de cuentas'
+keywords: ['ClickHouse Cloud', 'Control de acceso', 'Gestión de usuarios', 'RBAC', 'Seguridad']
+description: 'Describe el control de acceso y la gestión de cuentas en ClickHouse Cloud'
+doc_type: 'guide'
+---
+
+ClickHouse admite la gestión del control de acceso basada en [RBAC](https://en.wikipedia.org/wiki/Role-based_access_control).
+
+Entidades de acceso de ClickHouse:
+
+* [Cuenta de usuario](#user-account-management)
+* [Rol](#role-management)
+* [Política de filas](#row-policy-management)
+* [Perfil de configuración](#settings-profiles-management)
+* [Cuota](#quotas-management)
+
+Puede configurar las entidades de acceso mediante:
+
+* Un flujo de trabajo basado en SQL.
+
+  Debe [habilitar](#enabling-access-control) esta funcionalidad.
+
+* Los archivos de [configuración del servidor](/es/concepts/features/configuration/server-config/configuration-files) `users.xml` y `config.xml`.
+
+Recomendamos usar el flujo de trabajo basado en SQL. Ambos métodos de configuración funcionan simultáneamente, por lo que, si usa los archivos de configuración del servidor para gestionar cuentas y permisos de acceso, puede pasar sin problemas al flujo de trabajo basado en SQL.
+
+<Note>
+  No puede gestionar la misma entidad de acceso con ambos métodos de configuración al mismo tiempo.
+</Note>
+
+<Note>
+  Si desea gestionar los usuarios de la consola de ClickHouse Cloud, consulte esta [página](/es/products/cloud/guides/security/cloud-access-management/manage-cloud-users)
+</Note>
+
+Para ver todos los usuarios, roles, perfiles, etc., y todos sus permisos concedidos, use la sentencia [`SHOW ACCESS`](/es/reference/statements/show#show-access).
+
+<div id="access-control-usage">
+  ## Descripción general
+</div>
+
+De forma predeterminada, el servidor ClickHouse proporciona la cuenta de usuario `default`, que no puede usar el control de acceso y la gestión de cuentas basados en SQL, pero sí tiene todos los derechos y permisos. La cuenta de usuario `default` se utiliza siempre que no se define un nombre de usuario; por ejemplo, al iniciar sesión desde un cliente o en consultas distribuidas. En el procesamiento de consultas distribuidas, se utiliza una cuenta de usuario predeterminada si la configuración del servidor o del clúster no especifica las propiedades de [usuario y contraseña](/es/reference/engines/table-engines/special/distributed).
+
+Si acaba de empezar a usar ClickHouse, tenga en cuenta el siguiente escenario:
+
+1. [Habilite](#enabling-access-control) el control de acceso y la gestión de cuentas basados en SQL para el usuario `default`.
+2. Inicie sesión en la cuenta de usuario `default` y cree todos los usuarios necesarios. No olvide crear una cuenta de administrador (`GRANT ALL ON *.* TO admin_user_account WITH GRANT OPTION`).
+3. [Restrinja los permisos](/es/concepts/features/configuration/settings/permissions-for-queries) del usuario `default` y deshabilite para esa cuenta el control de acceso y la gestión de cuentas basados en SQL.
+
+<div id="access-control-properties">
+  ### Propiedades de la solución actual
+</div>
+
+* Se pueden otorgar permisos para bases de datos y tablas aunque no existan.
+* Si se elimina una tabla, no se revoca ninguno de los privilegios correspondientes a esa tabla. Esto significa que, incluso si más adelante crea una tabla nueva con el mismo nombre, todos los privilegios siguen siendo válidos. Para revocar los privilegios correspondientes a la tabla eliminada, debe ejecutar, por ejemplo, la consulta `REVOKE ALL PRIVILEGES ON db.table FROM ALL`.
+* No hay ajustes de vigencia para los privilegios.
+
+<div id="user-account-management">
+  ### Cuenta de usuario
+</div>
+
+Una cuenta de usuario es una entidad de acceso que permite autorizar a alguien en ClickHouse. Una cuenta de usuario contiene:
+
+* Información de identificación.
+* [Privilegios](/es/reference/statements/grant#privileges) que definen el alcance de las consultas que el usuario puede ejecutar.
+* Hosts autorizados para conectarse al servidor de ClickHouse.
+* Roles asignados y predeterminados.
+* Configuraciones con sus restricciones aplicadas de forma predeterminada al iniciar sesión.
+* Perfiles de configuración asignados.
+
+Los privilegios pueden concederse a una cuenta de usuario mediante la consulta [GRANT](/es/reference/statements/grant) o asignando [roles](#role-management). Para revocar privilegios de un usuario, ClickHouse proporciona la consulta [REVOKE](/es/reference/statements/revoke). Para listar los privilegios de un usuario, use la sentencia [SHOW GRANTS](/es/reference/statements/show#show-grants).
+
+Consultas de gestión:
+
+* [CREATE USER](/es/reference/statements/create/user)
+* [ALTER USER](/es/reference/statements/alter/user)
+* [DROP USER](/es/reference/statements/drop)
+* [SHOW CREATE USER](/es/reference/statements/show#show-create-user)
+* [SHOW USERS](/es/reference/statements/show#show-users)
+
+<div id="access-control-settings-applying">
+  ### Aplicación de la configuración
+</div>
+
+La configuración puede definirse de distintas formas: para una cuenta de usuario, en sus roles concedidos y en los perfiles de configuración. Cuando un usuario inicia sesión, si una configuración está definida para distintas entidades de acceso, el valor y las restricciones de esta configuración se aplican de la siguiente manera (de mayor a menor prioridad):
+
+1. Configuración de la cuenta de usuario.
+2. La configuración de los roles predeterminados de la cuenta de usuario. Si una configuración está definida en algunos roles, el orden en que se aplica no está definido.
+3. La configuración de los perfiles de configuración asignados a un usuario o a sus roles predeterminados. Si una configuración está definida en algunos perfiles, el orden en que se aplica no está definido.
+4. Configuración aplicada a todo el servidor de forma predeterminada o desde el [perfil predeterminado](/es/reference/settings/server-settings/settings#default_profile).
+
+<div id="role-management">
+  ### Rol
+</div>
+
+Un rol es un contenedor de entidades de acceso que pueden concederse a una cuenta de usuario.
+
+Un rol contiene:
+
+* [Privilegios](/es/reference/statements/grant#privileges)
+* Configuración y restricciones
+* Lista de roles asignados
+
+Consultas de gestión:
+
+* [CREATE ROLE](/es/reference/statements/create/role)
+* [ALTER ROLE](/es/reference/statements/alter/role)
+* [DROP ROLE](/es/reference/statements/drop#drop-role)
+* [SET ROLE](/es/reference/statements/set-role)
+* [SET DEFAULT ROLE](/es/reference/statements/set-role)
+* [SHOW CREATE ROLE](/es/reference/statements/show#show-create-role)
+* [SHOW ROLES](/es/reference/statements/show#show-roles)
+
+Los privilegios pueden concederse a un rol mediante la consulta [GRANT](/es/reference/statements/grant). Para revocar privilegios de un rol, ClickHouse ofrece la consulta [REVOKE](/es/reference/statements/revoke).
+
+<div id="row-policy-management">
+  #### Política de filas
+</div>
+
+La política de filas es un filtro que define qué filas están disponibles para un usuario o un rol. Una política de filas contiene filtros para una tabla concreta, así como una lista de roles y/o usuarios a los que se aplica esta política de filas.
+
+<Note>
+  Las políticas de filas solo tienen sentido si tienes acceso de solo lectura. Si puedes modificar una tabla o copiar particiones entre tablas, las restricciones de las políticas de filas dejan de tener efecto.
+</Note>
+
+Consultas de gestión:
+
+* [CREATE ROW POLICY](/es/reference/statements/create/row-policy)
+* [ALTER ROW POLICY](/es/reference/statements/alter/row-policy)
+* [DROP ROW POLICY](/es/reference/statements/drop#drop-row-policy)
+* [SHOW CREATE ROW POLICY](/es/reference/statements/show#show-create-row-policy)
+* [SHOW POLICIES](/es/reference/statements/show#show-policies)
+
+<div id="settings-profiles-management">
+  ### Perfil de configuración
+</div>
+
+Un perfil de configuración es una colección de [configuraciones](/es/reference/settings/index). Un perfil de configuración contiene configuraciones y restricciones, así como una lista de roles y/o usuarios a los que se aplica este perfil.
+
+Consultas de gestión:
+
+* [CREATE SETTINGS PROFILE](/es/reference/statements/create/settings-profile)
+* [ALTER SETTINGS PROFILE](/es/reference/statements/alter/settings-profile)
+* [DROP SETTINGS PROFILE](/es/reference/statements/drop#drop-settings-profile)
+* [SHOW CREATE SETTINGS PROFILE](/es/reference/statements/show#show-create-settings-profile)
+* [SHOW PROFILES](/es/reference/statements/show#show-profiles)
+
+<div id="quotas-management">
+  ### Cuota
+</div>
+
+La cuota limita el uso de recursos. Consulte [Cuotas](/es/concepts/features/configuration/server-config/quotas).
+
+Una cuota contiene un conjunto de límites para determinados períodos de tiempo, así como una lista de roles y/o usuarios que deben usar esta cuota.
+
+Consultas de gestión:
+
+* [CREATE QUOTA](/es/reference/statements/create/quota)
+* [ALTER QUOTA](/es/reference/statements/alter/quota)
+* [DROP QUOTA](/es/reference/statements/drop#drop-quota)
+* [SHOW CREATE QUOTA](/es/reference/statements/show#show-create-quota)
+* [SHOW QUOTA](/es/reference/statements/show#show-quota)
+* [SHOW QUOTAS](/es/reference/statements/show#show-quotas)
+
+<div id="enabling-access-control">
+  ### Habilitar el control de acceso y la gestión de cuentas basado en SQL
+</div>
+
+* Configure un directorio para almacenar la configuración.
+
+  ClickHouse almacena las configuraciones de las entidades de acceso en la carpeta definida en el parámetro de configuración del servidor [access&#95;control&#95;path](/es/reference/settings/server-settings/settings#access_control_path).
+
+* Habilite el control de acceso y la gestión de cuentas basado en SQL para al menos una cuenta de usuario.
+
+  De forma predeterminada, el control de acceso y la gestión de cuentas basado en SQL están deshabilitados para todos los usuarios. Debe configurar al menos un usuario en el archivo de configuración `users.xml` y establecer en 1 los valores de las opciones [`access_management`](/es/concepts/features/configuration/settings/settings-users#access_management-user-setting), `named_collection_control`, `show_named_collections` y `show_named_collections_secrets`.
+
+<div id="defining-sql-users-and-roles">
+  ## Definición de usuarios y roles de SQL
+</div>
+
+<Tip>
+  Si trabaja con ClickHouse Cloud, consulte [Administración de acceso a Cloud](/es/products/cloud/reference/security/console-roles).
+</Tip>
+
+En este artículo se explican los conceptos básicos para definir usuarios y roles de SQL y aplicar esos privilegios y permisos a bases de datos, tablas, filas y columnas.
+
+<div id="enabling-sql-user-mode">
+  ### Habilitación del modo de usuario SQL
+</div>
+
+1. Habilite el modo de usuario SQL en el archivo `users.xml`, dentro del usuario `<default>`:
+   ```xml
+   <access_management>1</access_management>
+   <named_collection_control>1</named_collection_control>
+   <show_named_collections>1</show_named_collections>
+   <show_named_collections_secrets>1</show_named_collections_secrets>
+   ```
+
+<Note>
+  El usuario `default` es el único que se crea con una instalación nueva y, de forma predeterminada, también es la cuenta que se usa para la comunicación entre nodos.
+
+  En producción, se recomienda deshabilitar este usuario una vez que la comunicación entre nodos se haya configurado con un usuario administrador SQL y se hayan establecido las comunicaciones entre nodos con `<secret>`, credenciales del clúster y/o credenciales HTTP y del protocolo de transporte entre nodos, ya que la cuenta `default` se utiliza para la comunicación entre nodos.
+</Note>
+
+2. Reinicie los nodos para aplicar los cambios.
+
+3. Inicie el cliente de ClickHouse:
+   ```sql
+   clickhouse-client --user default --password <password>
+   ```
+
+<div id="defining-users">
+  ### Definir usuarios
+</div>
+
+1. Cree una cuenta de administrador de SQL:
+   ```sql
+   CREATE USER clickhouse_admin IDENTIFIED BY 'password';
+   ```
+2. Conceda al nuevo usuario privilegios administrativos completos
+   ```sql
+   GRANT ALL ON *.* TO clickhouse_admin WITH GRANT OPTION;
+   ```
+
+<div id="alter-permissions">
+  ## Permisos de ALTER
+</div>
+
+Este artículo tiene como objetivo brindarte una mejor comprensión de cómo definir permisos y de cómo funcionan los permisos al usar sentencias `ALTER` para usuarios con privilegios.
+
+Las sentencias `ALTER` se dividen en varias categorías; algunas son jerárquicas y otras no, por lo que deben definirse explícitamente.
+
+**Configuración de ejemplo de la DB, la tabla y el usuario**
+
+1. Con un usuario administrador, crea un usuario de ejemplo
+
+```sql
+CREATE USER my_user IDENTIFIED BY 'password';
+```
+
+2. Crear una base de datos de ejemplo
+
+```sql
+CREATE DATABASE my_db;
+```
+
+3. Crear una tabla de muestra
+
+```sql
+CREATE TABLE my_db.my_table (id UInt64, column1 String) ENGINE = MergeTree() ORDER BY id;
+```
+
+4. Cree un usuario administrador de ejemplo para otorgar/revocar privilegios
+
+```sql
+CREATE USER my_alter_admin IDENTIFIED BY 'password';
+```
+
+<Note>
+  Para conceder o revocar permisos, el usuario administrador debe tener el privilegio `WITH GRANT OPTION`.
+  Por ejemplo:
+
+  ```sql
+  GRANT ALTER ON my_db.* WITH GRANT OPTION
+  ```
+
+  Para ejecutar `GRANT` o `REVOKE` sobre privilegios, el usuario primero debe tener esos mismos privilegios.
+</Note>
+
+**Concesión o revocación de privilegios**
+
+La jerarquía de `ALTER`:
+
+```response
+├── ALTER (solo para tabla y vista)/
+│   ├── ALTER TABLE/
+│   │   ├── ALTER UPDATE
+│   │   ├── ALTER DELETE
+│   │   ├── ALTER COLUMN/
+│   │   │   ├── ALTER ADD COLUMN
+│   │   │   ├── ALTER DROP COLUMN
+│   │   │   ├── ALTER MODIFY COLUMN
+│   │   │   ├── ALTER COMMENT COLUMN
+│   │   │   ├── ALTER CLEAR COLUMN
+│   │   │   └── ALTER RENAME COLUMN
+│   │   ├── ALTER INDEX/
+│   │   │   ├── ALTER ORDER BY
+│   │   │   ├── ALTER SAMPLE BY
+│   │   │   ├── ALTER ADD INDEX
+│   │   │   ├── ALTER DROP INDEX
+│   │   │   ├── ALTER MATERIALIZE INDEX
+│   │   │   └── ALTER CLEAR INDEX
+│   │   ├── ALTER CONSTRAINT/
+│   │   │   ├── ALTER ADD CONSTRAINT
+│   │   │   └── ALTER DROP CONSTRAINT
+│   │   ├── ALTER TTL/
+│   │   │   └── ALTER MATERIALIZE TTL
+│   │   ├── ALTER SETTINGS
+│   │   ├── ALTER MOVE PARTITION
+│   │   ├── ALTER FETCH PARTITION
+│   │   └── ALTER FREEZE PARTITION
+│   └── ALTER LIVE VIEW/
+│       ├── ALTER LIVE VIEW REFRESH
+│       └── ALTER LIVE VIEW MODIFY QUERY
+├── ALTER DATABASE
+├── ALTER USER
+├── ALTER ROLE
+├── ALTER QUOTA
+├── ALTER [ROW] POLICY
+└── ALTER [SETTINGS] PROFILE
+```
+
+1. Concesión de privilegios `ALTER` a un usuario o rol
+
+Usar `GRANT ALTER on *.* TO my_user` solo afecta a `ALTER TABLE` y `ALTER VIEW` de nivel superior; las demás sentencias `ALTER` deben concederse o revocarse individualmente.
+
+Por ejemplo, para conceder el privilegio básico de `ALTER`:
+
+```sql
+GRANT ALTER ON my_db.my_table TO my_user;
+```
+
+Conjunto de privilegios resultante:
+
+```sql
+SHOW GRANTS FOR  my_user;
+```
+
+```response
+SHOW GRANTS FOR my_user
+
+Query id: 706befbc-525e-4ec1-a1a2-ba2508cc09e3
+
+┌─GRANTS FOR my_user───────────────────────────────────────────┐
+│ GRANT ALTER TABLE, ALTER VIEW ON my_db.my_table TO my_user   │
+└──────────────────────────────────────────────────────────────┘
+```
+
+Esto otorgará todos los permisos incluidos en `ALTER TABLE` y `ALTER VIEW` del ejemplo anterior; sin embargo, no otorgará algunos otros permisos de `ALTER`, como `ALTER ROW POLICY` (vuelva a la jerarquía y verá que `ALTER ROW POLICY` no depende de `ALTER TABLE` ni de `ALTER VIEW`). Estos deben otorgarse o revocarse explícitamente.
+
+Si solo se necesita un subconjunto de permisos de `ALTER`, cada uno puede otorgarse por separado; si ese permiso tiene subprivilegios, estos también se otorgarán automáticamente.
+
+Por ejemplo:
+
+```sql
+GRANT ALTER COLUMN ON my_db.my_table TO my_user;
+```
+
+Los grants se definirían así:
+
+```sql
+SHOW GRANTS FOR my_user;
+```
+
+```response
+SHOW GRANTS FOR my_user
+
+Query id: 47b3d03f-46ac-4385-91ec-41119010e4e2
+
+┌─GRANTS FOR my_user────────────────────────────────┐
+│ GRANT ALTER COLUMN ON default.my_table TO my_user │
+└───────────────────────────────────────────────────┘
+
+1 row in set. Elapsed: 0.004 sec.
+```
+
+Esto también otorga los siguientes subprivilegios:
+
+```sql
+ALTER ADD COLUMN
+ALTER DROP COLUMN
+ALTER MODIFY COLUMN
+ALTER COMMENT COLUMN
+ALTER CLEAR COLUMN
+ALTER RENAME COLUMN
+```
+
+2. Revocar privilegios `ALTER` a usuarios y roles
+
+La sentencia `REVOKE` funciona de forma similar a la sentencia `GRANT`.
+
+Si a un usuario/rol se le otorgó un subprivilegio, puede revocar dicho subprivilegio directamente o revocar el privilegio de nivel superior del que este hereda.
+
+Por ejemplo, si al usuario se le concedió `ALTER ADD COLUMN`
+
+```sql
+GRANT ALTER ADD COLUMN ON my_db.my_table TO my_user;
+```
+
+```response
+GRANT ALTER ADD COLUMN ON my_db.my_table TO my_user
+
+Query id: 61fe0fdc-1442-4cd6-b2f3-e8f2a853c739
+
+Ok.
+
+0 rows in set. Elapsed: 0.002 sec.
+```
+
+```sql
+SHOW GRANTS FOR my_user;
+```
+
+```response
+SHOW GRANTS FOR my_user
+
+Query id: 27791226-a18f-46c8-b2b4-a9e64baeb683
+
+┌─GRANTS FOR my_user──────────────────────────────────┐
+│ GRANT ALTER ADD COLUMN ON my_db.my_table TO my_user │
+└─────────────────────────────────────────────────────┘
+```
+
+Un privilegio puede revocarse de forma individual:
+
+```sql
+REVOKE ALTER ADD COLUMN ON my_db.my_table FROM my_user;
+```
+
+O puede revocarse desde cualquiera de los niveles superiores (revoca todos los subprivilegios de COLUMN):
+
+```response
+REVOKE ALTER COLUMN ON my_db.my_table FROM my_user;
+```
+
+```response
+REVOKE ALTER COLUMN ON my_db.my_table FROM my_user
+
+Query id: b882ba1b-90fb-45b9-b10f-3cda251e2ccc
+
+Ok.
+
+0 rows in set. Elapsed: 0.002 sec.
+```
+
+```sql
+SHOW GRANTS FOR my_user;
+```
+
+```response
+SHOW GRANTS FOR my_user
+
+Query id: e7d341de-de65-490b-852c-fa8bb8991174
+
+Ok.
+
+0 rows in set. Elapsed: 0.003 sec.
+```
+
+**Adicional**
+
+Los privilegios deben ser otorgados por un usuario que no solo tenga la opción `WITH GRANT OPTION`, sino que también cuente con dichos privilegios.
+
+1. Para otorgar a un usuario Admin este privilegio y permitirle además administrar un conjunto de privilegios
+   A continuación se muestra un ejemplo:
+
+```sql
+GRANT SELECT, ALTER COLUMN ON my_db.my_table TO my_alter_admin WITH GRANT OPTION;
+```
+
+Ahora el usuario puede otorgar o revocar `ALTER COLUMN` y todos los subprivilegios.
+
+**Pruebas**
+
+1. Añadir el privilegio `SELECT`
+
+```sql
+GRANT SELECT ON my_db.my_table TO my_user;
+```
+
+2. Conceda al usuario el privilegio para agregar columnas
+
+```sql
+GRANT ADD COLUMN ON my_db.my_table TO my_user;
+```
+
+3. Inicia sesión con el usuario restringido
+
+```bash
+clickhouse-client --user my_user --password password --port 9000 --host <your_clickhouse_host>
+```
+
+4. Probar la adición de una columna
+
+```sql
+ALTER TABLE my_db.my_table ADD COLUMN column2 String;
+```
+
+```response
+ALTER TABLE my_db.my_table
+    ADD COLUMN `column2` String
+
+Query id: d5d6bfa1-b80c-4d9f-8dcd-d13e7bd401a5
+
+Ok.
+
+0 rows in set. Elapsed: 0.010 sec.
+```
+
+```sql
+DESCRIBE my_db.my_table;
+```
+
+```response
+DESCRIBE TABLE my_db.my_table
+
+Query id: ab9cb2d0-5b1a-42e1-bc9c-c7ff351cb272
+
+┌─name────┬─type───┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ id      │ UInt64 │              │                    │         │                  │                │
+│ column1 │ String │              │                    │         │                  │                │
+│ column2 │ String │              │                    │         │                  │                │
+└─────────┴────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+4. Probar a eliminar una columna
+
+```sql
+ALTER TABLE my_db.my_table DROP COLUMN column2;
+```
+
+```response
+ALTER TABLE my_db.my_table
+    DROP COLUMN column2
+
+Query id: 50ad5f6b-f64b-4c96-8f5f-ace87cea6c47
+
+0 rows in set. Elapsed: 0.004 sec.
+
+Received exception from server (version 22.5.1):
+Code: 497. DB::Exception: Received from chnode1.marsnet.local:9440. DB::Exception: my_user: Not enough privileges. To execute this query it's necessary to have grant ALTER DROP COLUMN(column2) ON my_db.my_table. (ACCESS_DENIED)
+```
+
+5. Probar ALTER ADMIN otorgando el permiso
+
+```sql
+GRANT SELECT, ALTER COLUMN ON my_db.my_table TO my_alter_admin WITH GRANT OPTION;
+```
+
+6. Inicia sesión con el usuario administrador de alter
+
+```bash
+clickhouse-client --user my_alter_admin --password password --port 9000 --host <my_clickhouse_host>
+```
+
+7. Conceda un subprivilegio
+
+```sql
+GRANT ALTER ADD COLUMN ON my_db.my_table TO my_user;
+```
+
+```response
+GRANT ALTER ADD COLUMN ON my_db.my_table TO my_user
+
+Query id: 1c7622fa-9df1-4c54-9fc3-f984c716aeba
+
+Ok.
+```
+
+8. Compruebe que otorgar un privilegio que el usuario administrador de ALTER no tiene no sea un subprivilegio de los grants del usuario administrador.
+
+```sql
+GRANT ALTER UPDATE ON my_db.my_table TO my_user;
+```
+
+```response
+GRANT ALTER UPDATE ON my_db.my_table TO my_user
+
+Query id: 191690dc-55a6-4625-8fee-abc3d14a5545
+
+0 rows in set. Elapsed: 0.004 sec.
+
+Received exception from server (version 22.5.1):
+Code: 497. DB::Exception: Received from chnode1.marsnet.local:9440. DB::Exception: my_alter_admin: Not enough privileges. To execute this query it's necessary to have grant ALTER UPDATE ON my_db.my_table WITH GRANT OPTION. (ACCESS_DENIED)
+```
+
+**Resumen**
+Los privilegios de ALTER son jerárquicos para `ALTER` en tablas y vistas, pero no para otras sentencias `ALTER`. Los permisos pueden establecerse de forma granular o mediante grupos de permisos, y también revocarse de la misma manera. El usuario que otorga o revoca debe tener `WITH GRANT OPTION` para establecer privilegios a usuarios, incluido el propio usuario que realiza la acción, y ya debe contar con ese privilegio. El usuario que realiza la acción no puede revocar sus propios privilegios si él mismo no tiene el privilegio de opción de concesión.

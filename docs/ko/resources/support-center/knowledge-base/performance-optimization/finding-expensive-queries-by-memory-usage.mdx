@@ -1,0 +1,78 @@
+---
+title: "ClickHouse에서 메모리 사용량으로 고비용 쿼리 식별하기"
+description: "`system.query_log` 테이블을 사용해 ClickHouse에서 메모리 사용량이 가장 큰 쿼리를 찾는 방법을 클러스터 및 독립형 환경의 예시와 함께 알아봅니다."
+date: 2023-06-07
+tags: ['성능 및 최적화']
+keywords: ['고비용 쿼리', '메모리 사용량']
+---
+
+<div id="using-the-systemquery_log-table">
+  ## `system.query_log` 테이블 사용하기
+</div>
+
+다음의 유용한 쿼리는 실행된 쿼리 중 어떤 쿼리가 가장 많은 메모리를 사용했는지 보여줍니다.
+
+이 쿼리에 대해 몇 가지 설명드리면 다음과 같습니다.
+
+* 결과는 지난 1일(`now() - toIntervalDay(1))`)을 기준으로 계산되지만, 시간 인터벌은 쉽게 수정할 수 있습니다
+* `default`라는 이름의 클러스터(cluster)가 있다고 가정합니다. 이는 [ClickHouse Cloud](https://console.clickhouse.cloud)에서 사용하는 클러스터 이름입니다. `default`를 클러스터 이름으로 변경하세요
+* 클러스터가 없다면 이 문서 끝에 나와 있는 쿼리를 참조하세요
+
+```sql
+SELECT
+    count() as nb_query,
+    user,
+    query,
+    sum(memory_usage) AS memory,
+    normalized_query_hash
+FROM
+    clusterAllReplicas(default, system.query_log)
+WHERE
+    (event_time >= (now() - toIntervalDay(1)))
+    AND query_kind = 'Select'
+    AND type = 'QueryFinish'
+    and user != 'monitoring-internal'
+GROUP BY
+    normalized_query_hash,
+    query,
+    user
+ORDER BY
+    memory DESC;
+```
+
+응답은 다음과 같습니다:
+
+```response
+┌─nb_query─┬─user────┬─query─────────────────────────────────────────────────────────┬───memory─┬─normalized_query_hash─┐
+│       11 │ default │ select version()                                              │ 46178924 │   7202516440347714159 │
+│        2 │ default │ SELECT * FROM "system"."table_functions" LIMIT 31 OFFSET 0    │  8391544 │  12830067173062987695 │
+└──────────┴─────────┴───────────────────────────────────────────────────────────────┴──────────┴───────────────────────┘
+```
+
+<Note>
+  `system.query_log` 테이블이 없다면 쿼리 로깅이 활성화되어 있지 않을 가능성이 높습니다. 활성화 방법에 대한 자세한 내용은 [`query_log` 설정](/ko/reference/settings/server-settings/settings#server_configuration_parameters-query-log)을 참조하십시오.
+</Note>
+
+클러스터가 없다면 `system.query_log` 테이블 하나에 직접 쿼리하면 됩니다:
+
+```sql
+SELECT
+    count() as nb_query,
+    user,
+    query,
+    sum(memory_usage) AS memory,
+    normalized_query_hash
+FROM
+    system.query_log
+WHERE
+    (event_time >= (now() - toIntervalDay(1)))
+    AND query_kind = 'Select'
+    AND type = 'QueryFinish'
+    and user != 'monitoring-internal'
+GROUP BY
+    normalized_query_hash,
+    query,
+    user
+ORDER BY
+    memory DESC;
+```

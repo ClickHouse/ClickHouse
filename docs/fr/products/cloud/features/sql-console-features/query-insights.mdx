@@ -1,0 +1,54 @@
+---
+sidebar_title: 'Query insights'
+slug: /cloud/get-started/query-insights
+description: 'Visualisez les données de system.query_log pour simplifier le débogage des requêtes et optimiser leurs performances'
+keywords: ['query insights', 'journal des requêtes', 'UI du journal des requêtes', 'insights de system.query_log']
+title: 'Query insights'
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/fr/components/Image.jsx";
+
+La fonctionnalité **Query Insights** facilite l’exploitation du journal des requêtes intégré de ClickHouse grâce à des visualisations et des tableaux. La table `system.query_log` de ClickHouse est une source d’information essentielle pour l’optimisation des requêtes, le débogage, ainsi que la surveillance de l’état général et des performances du cluster.
+
+<div id="query-overview">
+  ## Vue d’ensemble des requêtes
+</div>
+
+Après avoir sélectionné un service, l’élément de navigation **Monitoring** dans la barre latérale gauche devrait se déployer pour afficher un nouveau sous-élément **Query insights**. Cliquer sur cette option ouvre la nouvelle page Query insights :
+
+<Image img="/images/cloud/sqlconsole/insights_overview.webp" size="md" alt="Vue d’ensemble de l’UI de Query Insights" border />
+
+<div id="top-level-metrics">
+  ## Métriques de haut niveau
+</div>
+
+Les encadrés statistiques en haut représentent quelques métriques de haut niveau de base des requêtes sur la période sélectionnée. En dessous, trois graphiques de séries temporelles affichent le volume de requêtes, la latence et le taux d’erreur, ventilés par type de requête (select, insert, other) sur la fenêtre temporelle sélectionnée. Le graphique de latence peut également être ajusté pour afficher les latences p50, p90 et p99 :
+
+<Image img="/images/cloud/sqlconsole/insights_latency.webp" size="md" alt="Graphique de latence de l’UI Query Insights" border />
+
+<div id="recent-queries">
+  ## Requêtes récentes
+</div>
+
+Sous les métriques de haut niveau, un tableau affiche les entrées du journal des requêtes (regroupées par hash de requête normalisée et par utilisateur) sur l’intervalle de temps sélectionné :
+
+<Image img="/images/cloud/sqlconsole/insights_recent.webp" size="md" alt="Tableau des requêtes récentes dans l’UI Query Insights" border />
+
+Les requêtes récentes peuvent être filtrées et triées selon n’importe quel champ disponible. Le tableau peut également être configuré pour afficher ou masquer des champs supplémentaires, tels que les tables et les latences p90 et p99.
+
+<div id="query-drill-down">
+  ## Drill-down sur les requêtes
+</div>
+
+Sélectionner une requête dans le tableau **Requêtes récentes** ouvre un volet latéral contenant des métriques et des informations propres à la requête sélectionnée :
+
+<Image img="/images/cloud/sqlconsole/insights_drilldown.webp" size="md" alt="UI de Query Insights, drill-down sur une requête" border />
+
+Comme nous pouvons le voir dans le volet latéral, cette requête a été exécutée plus de 3 000 fois au cours des dernières 24 heures. Toutes les métriques de l&#39;onglet **Query info** sont agrégées, mais nous pouvons également afficher les métriques de chaque exécution en sélectionnant l&#39;onglet **Query history** :
+
+<Image img="/images/cloud/sqlconsole/insights_query_info.webp" size="sm" alt="UI de Query Insights, informations sur la requête" border />
+
+<br />
+
+Dans ce panneau, les éléments `Settings` et `Profile Events` de chaque exécution de requête peuvent être développés pour afficher des informations supplémentaires.

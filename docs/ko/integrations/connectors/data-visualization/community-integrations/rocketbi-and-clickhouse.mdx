@@ -1,0 +1,179 @@
+---
+sidebarTitle: 'Rocket BI'
+slug: /integrations/rocketbi
+keywords: ['clickhouse', 'RocketBI', '연결', '통합', 'UI']
+description: 'RocketBI는 웹 브라우저에서 바로 데이터를 빠르게 분석하고, 드래그 앤 드롭 시각화를 만들며, 동료와 협업할 수 있도록 지원하는 셀프서비스 비즈니스 인텔리전스 플랫폼입니다.'
+title: '목표: Rocket.BI로 첫 대시보드 만들기'
+doc_type: 'guide'
+integration:
+  - support_level: 'community'
+  - category: 'data_visualization'
+---
+
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+import CommunityMaintainedBadge from "/snippets/ko/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
+
+<CommunityMaintainedBadge />
+
+이 가이드에서는 Rocket.BI를 설치한 후 간단한 대시보드를 만들어 봅니다.
+다음은 완성된 대시보드입니다:
+
+<Image size="md" img="/images/integrations/data-visualization/rocketbi_01.webp" alt="차트와 KPI로 판매 메트릭을 보여주는 Rocket BI 대시보드" border />
+
+<br />
+
+[이 링크에서 대시보드를 확인할 수 있습니다.](https://demo.rocket.bi/dashboard/sales-dashboard-7?token=7eecf750-cbde-4c53-8fa8-8b905fec667e)
+
+<div id="install">
+  ## 설치
+</div>
+
+사전 구축된 Docker 이미지로 RocketBI를 실행합니다.
+
+docker-compose.yml과 설정 파일을 다운로드합니다:
+
+```bash
+wget https://raw.githubusercontent.com/datainsider-co/rocket-bi/main/docker/docker-compose.yml
+wget https://raw.githubusercontent.com/datainsider-co/rocket-bi/main/docker/.clickhouse.env
+```
+
+.clickhouse.env를 편집한 다음 ClickHouse 서버 정보를 추가합니다.
+
+`docker-compose up -d .` 명령을 실행하여 RocketBI를 시작합니다.
+
+브라우저를 열고 `localhost:5050`으로 이동한 후 다음 계정으로 로그인합니다: `hello@gmail.com/123456`
+
+소스에서 빌드하거나 고급 구성을 적용하려면 [Rocket.BI Readme](https://github.com/datainsider-co/rocket-bi/blob/main/README.md)를 확인하십시오.
+
+<div id="lets-build-the-dashboard">
+  ## 대시보드를 만들어 보겠습니다
+</div>
+
+대시보드에서 보고서를 확인할 수 있으며, **+New**를 클릭해 시각화를 시작하세요.
+
+**무제한 대시보드**를 만들고, 각 대시보드에 **무제한 차트**를 추가할 수 있습니다.
+
+<Image size="md" img="/images/integrations/data-visualization/rocketbi_02.webp" alt="Rocket BI에서 새 차트를 만드는 과정을 보여주는 애니메이션" border />
+
+<br />
+
+고해상도 튜토리얼은 YouTube에서 확인하세요: [https://www.youtube.com/watch?v=TMkdMHHfvqY](https://www.youtube.com/watch?v=TMkdMHHfvqY)
+
+<div id="build-the-chart-controls">
+  ### 차트 컨트롤 구성하기
+</div>
+
+<div id="create-a-metrics-control">
+  #### 메트릭 컨트롤 만들기
+</div>
+
+Tab 필터에서 사용할 메트릭 필드를 선택합니다. 집계 설정이 체크된 상태인지 확인하십시오.
+
+<Image size="md" img="/images/integrations/data-visualization/rocketbi_03.webp" alt="선택한 필드와 집계 설정이 표시된 Rocket BI 메트릭 컨트롤 구성 패널" border />
+
+<br />
+
+필터 이름을 변경한 다음 컨트롤을 대시보드에 저장합니다
+
+<Image size="md" img="/images/integrations/data-visualization/rocketbi_04.webp" alt="필터 이름을 변경하고 대시보드에 저장할 준비가 된 메트릭 컨트롤" border />
+
+<div id="create-a-date-type-control">
+  #### 날짜 유형 컨트롤 만들기
+</div>
+
+Date 필드를 Main Date 컬럼으로 선택하세요:
+
+<Image size="md" img="/images/integrations/data-visualization/rocketbi_05.webp" alt="Rocket BI에서 사용 가능한 날짜 컬럼을 보여주는 Date 필드 선택 인터페이스" border />
+
+<br />
+
+조회 범위가 다른 복제 항목을 추가합니다. 예를 들어 Year, Monthly, Daily date 또는 Day of Week입니다.
+
+<Image size="md" img="/images/integrations/data-visualization/rocketbi_06.webp" alt="연, 월, 일과 같은 다양한 시간 범위 옵션을 보여주는 날짜 범위 구성" border />
+
+<br />
+
+필터 이름을 변경하고 컨트롤을 대시보드에 저장합니다
+
+<Image size="md" img="/images/integrations/data-visualization/rocketbi_07.webp" alt="이름이 변경된 필터가 적용되어 대시보드에 저장할 준비가 된 날짜 범위 컨트롤" border />
+
+<div id="now-let-build-the-charts">
+  ### 이제 차트를 만들어 보겠습니다
+</div>
+
+<div id="pie-chart-sales-metrics-by-regions">
+  #### 원형 차트: 지역별 매출 메트릭
+</div>
+
+Adding new chart를 선택한 다음 Pie Chart를 선택합니다
+
+<Image size="md" img="/images/integrations/data-visualization/rocketbi_08.webp" alt="원형 차트 옵션이 강조 표시된 차트 유형 선택 패널" border />
+
+<br />
+
+먼저 Dataset에서 &quot;Region&quot; 컬럼을 Legend Field로 드래그 앤 드롭합니다
+
+<Image size="md" img="/images/integrations/data-visualization/rocketbi_09.webp" alt="Region 컬럼이 범례 필드에 추가되는 드래그 앤 드롭 인터페이스" border />
+
+<br />
+
+그런 다음 Chart Control 탭으로 이동합니다
+
+<Image size="md" img="/images/integrations/data-visualization/rocketbi_10.webp" alt="시각화 구성 옵션을 보여주는 Chart Control 탭 인터페이스" border />
+
+<br />
+
+Metrics Control을 Value Field로 드래그 앤 드롭합니다
+
+<Image size="md" img="/images/integrations/data-visualization/rocketbi_11.webp" alt="원형 차트의 값 필드에 Metrics Control이 추가되는 모습" border />
+
+<br />
+
+(Metrics Control은 정렬 기준으로도 사용할 수 있습니다)
+
+추가 사용자 지정을 위해 Chart Setting으로 이동합니다
+
+<Image size="md" img="/images/integrations/data-visualization/rocketbi_12.webp" alt="원형 차트의 사용자 지정 옵션을 보여주는 차트 설정 패널" border />
+
+<br />
+
+예를 들어 Data label을 Percentage로 변경합니다
+
+<Image size="md" img="/images/integrations/data-visualization/rocketbi_13.webp" alt="원형 차트에 백분율이 표시되도록 Data label 설정을 변경하는 모습" border />
+
+<br />
+
+차트를 저장한 다음 대시보드에 추가합니다
+
+<Image size="md" img="/images/integrations/data-visualization/rocketbi_14.webp" alt="다른 컨트롤과 함께 새로 추가된 원형 차트를 보여주는 대시보드 보기" border />
+
+<div id="use-date-control-in-a-time-series-chart">
+  #### 시계열 차트에서 날짜 컨트롤 사용하기
+</div>
+
+누적 컬럼 차트를 사용합니다
+
+<Image size="md" img="/images/integrations/data-visualization/rocketbi_15.webp" alt="시계열 데이터가 포함된 누적 컬럼 차트 생성 인터페이스" border />
+
+<br />
+
+Chart Control에서 Y축은 Metrics Control로, X축은 Date Range로 설정합니다
+
+<Image size="md" img="/images/integrations/data-visualization/rocketbi_16.webp" alt="Y축에 메트릭, X축에 날짜 범위가 설정된 Chart Control 구성" border />
+
+<br />
+
+Breakdown에 Region 컬럼을 추가합니다
+
+<Image size="md" img="/images/integrations/data-visualization/rocketbi_17.webp" alt="누적 컬럼 차트에서 Breakdown 차원으로 추가되는 Region 컬럼" border />
+
+<br />
+
+KPI로 Number Chart를 추가해 대시보드를 더 돋보이게 합니다
+
+<Image size="md" img="/images/integrations/data-visualization/rocketbi_18.webp" alt="KPI Number Chart, 원형 차트, 시계열 시각화가 포함된 완성된 대시보드" border />
+
+<br />
+
+이제 rocket.BI로 첫 번째 대시보드를 성공적으로 만들었습니다

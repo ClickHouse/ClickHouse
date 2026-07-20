@@ -1,0 +1,77 @@
+---
+description: 'Documentação de APPLY PATCHES para atualizações leves'
+sidebarTitle: 'APPLY PATCHES'
+slug: /sql-reference/statements/alter/apply-patches
+title: 'APPLY PATCHES para atualizações leves'
+doc_type: 'reference'
+---
+
+import BetaBadge from "/snippets/pt-BR/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge />
+
+```sql
+ALTER TABLE [db.]table [ON CLUSTER cluster] APPLY PATCHES [IN PARTITION partition_id]
+```
+
+O comando aciona manualmente a materialização física das partes de patch criadas por instruções de [`UPDATE` lightweight](/pt-BR/reference/statements/update). Ele força a aplicação dos patches pendentes às partes de dados, reescrevendo apenas as colunas afetadas.
+
+<Note>
+  * Funciona apenas para tabelas da família [`MergeTree`](/pt-BR/reference/engines/table-engines/mergetree-family/mergetree) (incluindo tabelas [replicadas](/pt-BR/reference/engines/table-engines/mergetree-family/replication)).
+  * Esta é uma operação de mutação e é executada de forma assíncrona em segundo plano.
+</Note>
+
+<div id="when-to-use">
+  ## Quando usar APPLY PATCHES
+</div>
+
+<Tip>
+  Em geral, você não deve precisar usar `APPLY PATCHES`
+</Tip>
+
+As partes de patch normalmente são aplicadas automaticamente durante os merges quando a configuração [`apply_patches_on_merge`](/pt-BR/reference/settings/merge-tree-settings#apply_patches_on_merge) está habilitada (padrão). No entanto, talvez você queira acionar manualmente a aplicação de patches nestes cenários:
+
+* Para reduzir a sobrecarga de aplicar patches durante consultas `SELECT`
+* Para consolidar várias partes de patch antes que se acumulem
+* Para preparar os dados para backup ou exportação com os patches já materializados
+* Quando `apply_patches_on_merge` está desabilitada e você quer controlar quando os patches são aplicados
+
+<div id="examples">
+  ## Exemplos
+</div>
+
+Aplique todos os patches pendentes em uma tabela:
+
+```sql
+ALTER TABLE my_table APPLY PATCHES;
+```
+
+Aplique patches somente a uma partição específica:
+
+```sql
+ALTER TABLE my_table APPLY PATCHES IN PARTITION '2024-01';
+```
+
+Combine-o com outras operações:
+
+```sql
+ALTER TABLE my_table APPLY PATCHES, UPDATE column = value WHERE condition;
+```
+
+<div id="monitor">
+  ## Monitoramento da aplicação de patch
+</div>
+
+Você pode monitorar o andamento da aplicação de patch usando a tabela [`system.mutations`](/pt-BR/reference/system-tables/mutations):
+
+```sql
+SELECT * FROM system.mutations
+WHERE table = 'my_table' AND command LIKE '%APPLY PATCHES%';
+```
+
+<div id="see-also">
+  ## Veja também
+</div>
+
+* [`UPDATE` leve](/pt-BR/reference/statements/update) - Criar parte de patch com atualizações leves
+* [configuração `apply_patches_on_merge`](/pt-BR/reference/settings/merge-tree-settings#apply_patches_on_merge) - Controlar a aplicação automática de patches durante os merges

@@ -1,10 +1,8 @@
-import json
 import logging
 import os
 import time
 
 import pytest
-import requests
 
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
@@ -99,7 +97,7 @@ def test_gcp_auth(started_cluster):
     def get_num_requests():
         count_response = started_cluster.exec_in_container(
             resolver_id,
-            ["curl", "-s", f"http://localhost/counter"],
+            ["curl", "-s", "http://localhost/counter"],
             nothrow=True,
         )
 

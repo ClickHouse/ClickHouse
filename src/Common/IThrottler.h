@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Poco/Net/Throttler.h>
-#include <Common/ProfileEvents.h>
 #include <base/types.h>
 #include <boost/core/noncopyable.hpp>
 #include <memory>
