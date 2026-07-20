@@ -1,12 +1,10 @@
 #include <algorithm>
 #include <bit>
 #include <optional>
-#include <type_traits>
 
 #include <base/defines.h>
 #include <base/sort.h>
 
-#include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnsNumber.h>
@@ -16,6 +14,7 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Common/assert_cast.h>
 #include <Processors/Transforms/IEJoinTransform.h>
+#include <Processors/Transforms/JoinKeyEncoding.h>
 #include <Common/NaNUtils.h>
 #include <Common/iota.h>
 
@@ -33,99 +32,6 @@ static bool isInequalityOperator(JoinConditionOperator op)
 {
     return op == JoinConditionOperator::Less || op == JoinConditionOperator::LessOrEquals
         || op == JoinConditionOperator::Greater || op == JoinConditionOperator::GreaterOrEquals;
-}
-
-namespace
-{
-
-/// The fixed-width key fast path encodes a condition's key values once into UInt64 values whose
-/// unsigned order reproduces the column's `compareAt(..., nan_direction_hint = 1)` order exactly,
-/// including equality (the L1 merge tie policy and the frontier's non-strict comparisons depend
-/// on it). The hot loops then compare plain integers instead of calling the virtual comparator.
-
-/// Everything whose order is its underlying signed integer's order (signed integers, Date32,
-/// DateTime64, Decimal32/64, Enum8/16): offset the sign bit so the unsigned order matches.
-UInt64 encodeSignedKey(Int64 value)
-{
-    return static_cast<UInt64>(value) ^ (UInt64(1) << 63);
-}
-
-/// `compareAt` with nan_direction_hint = 1 treats every NaN, of either sign, as equal to other
-/// NaNs and greater than all numbers, and -0.0 as equal to +0.0. The plain total-order bit trick
-/// preserves neither (a negative NaN would sort below -inf), so every NaN maps to the greatest
-/// encoding and -0.0 is canonicalized to +0.0 before the trick. (NaN-keyed rows never enter the
-/// union - the validity mask in `materializeSide` excludes them - so the NaN mapping is defensive.)
-UInt64 encodeFloatKey(Float64 value)
-{
-    if (isNaN(value))
-        return ~UInt64(0);
-    UInt64 bits = std::bit_cast<UInt64>(value == 0.0 ? 0.0 : value);
-    return bits & (UInt64(1) << 63) ? ~bits : bits | (UInt64(1) << 63);
-}
-
-UInt64 encodeFloatKey(Float32 value)
-{
-    if (isNaN(value))
-        return ~UInt64(0);
-    UInt32 bits = std::bit_cast<UInt32>(value == 0.0f ? 0.0f : value);
-    return bits & (UInt32(1) << 31) ? ~bits : bits | (UInt32(1) << 31);
-}
-
-template <typename T>
-UInt64 encodeKeyValue(T value)
-{
-    if constexpr (std::is_floating_point_v<T>)
-        return encodeFloatKey(value);
-    else if constexpr (is_decimal<T>)
-        return encodeSignedKey(value.value);
-    else if constexpr (std::is_signed_v<T>)
-        return encodeSignedKey(value);
-    else
-        return static_cast<UInt64>(value);
-}
-
-/// Append the column's keys, encoded and XOR-ed with `flip_mask` (all-ones folds a descending
-/// sort direction into the unsigned order). The dispatch is on the column type: the order the
-/// encoding must reproduce is the column's own `compareAt`, so it covers exactly the types
-/// stored in these columns (integers, Date/DateTime/Enum/Bool over them, floats, Decimal32/64,
-/// DateTime64). Nullable encodes its nested column: rows with NULL keys never enter the union,
-/// so their cells are never read and need no sentinel. Returns false when the column has no
-/// fixed-width encoding (the caller then keeps the generic comparator).
-bool tryAppendEncodedKeys(const IColumn & column, UInt64 flip_mask, PaddedPODArray<UInt64> & out)
-{
-    const IColumn * data_column = &column;
-    if (const auto * nullable = checkAndGetColumn<ColumnNullable>(data_column))
-        data_column = &nullable->getNestedColumn();
-
-    auto try_column_type = [&]<typename ColumnType>()
-    {
-        const auto * concrete = checkAndGetColumn<ColumnType>(data_column);
-        if (!concrete)
-            return false;
-
-        const auto & data = concrete->getData();
-        const size_t old_size = out.size();
-        out.resize(old_size + data.size());
-        for (size_t i = 0; i < data.size(); ++i)
-            out[old_size + i] = encodeKeyValue(data[i]) ^ flip_mask;
-        return true;
-    };
-
-    return try_column_type.operator()<ColumnUInt8>()
-        || try_column_type.operator()<ColumnUInt16>()
-        || try_column_type.operator()<ColumnUInt32>()
-        || try_column_type.operator()<ColumnUInt64>()
-        || try_column_type.operator()<ColumnInt8>()
-        || try_column_type.operator()<ColumnInt16>()
-        || try_column_type.operator()<ColumnInt32>()
-        || try_column_type.operator()<ColumnInt64>()
-        || try_column_type.operator()<ColumnFloat32>()
-        || try_column_type.operator()<ColumnFloat64>()
-        || try_column_type.operator()<ColumnDecimal<Decimal32>>()
-        || try_column_type.operator()<ColumnDecimal<Decimal64>>()
-        || try_column_type.operator()<ColumnDecimal<DateTime64>>();
-}
-
 }
 
 const char * toString(IEJoinKind kind)
