@@ -85,6 +85,10 @@
     <!-- Show as-you-type autocompletion hints. -->
     <!-- <hints>false</hints> -->
 
+    <!-- Toggle the display of the progress table by pressing the space key. When disabled,
+         the progress table is printed after each query in interactive mode. -->
+    <!-- <enable_progress_table_toggle>false</enable_progress_table_toggle> -->
+
     <!-- Fall back CLI client to Ctrl+R for regular search like before, while Ctrl+T does fuzzy search. -->
     <!-- <interactive_history_legacy_keymap>true</interactive_history_legacy_keymap> -->
 
