@@ -414,10 +414,19 @@ static Strings getAllDatabases(const ContextPtr & context)
     Strings res;
     const auto & databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false});
     res.reserve(databases.size());
-    for (const auto & [database_name, _] : databases)
+    for (const auto & [database_name, database] : databases)
     {
         if (DatabaseCatalog::isPredefinedDatabase(database_name))
             continue;
+
+        /// A read-only `Overlay` facade owns no tables: its iterator returns the underlying
+        /// source tables, which this scan already visits through their own databases. Walking
+        /// the facade too would check every overlay-backed table a second time and emit
+        /// duplicate result rows under the source table's name (the all-tables output reports
+        /// the storage's own id, not the facade name).
+        if (DatabaseOverlay::isReadonlyFacade(database.get()))
+            continue;
+
         context->checkAccess(AccessType::SHOW_DATABASES, database_name);
         res.emplace_back(database_name);
     }
