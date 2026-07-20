@@ -2288,7 +2288,6 @@ message AlterItem {
         SinglePartitionExpr detach_partition = 34;
         SinglePartitionExpr drop_partition = 35;
         SinglePartitionExpr drop_detached_partition = 36;
-        SinglePartitionExpr forget_partition = 37;
         SinglePartitionExpr attach_partition = 38;
         AttachPartitionFrom attach_partition_from = 39;
         AttachPartitionFrom replace_partition_from = 40;
