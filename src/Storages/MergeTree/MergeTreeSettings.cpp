@@ -6,6 +6,7 @@
 #include <Core/BaseSettingsFwdMacrosImpl.h>
 #include <Core/BaseSettingsProgramOptions.h>
 #include <Core/MergeSelectorAlgorithm.h>
+#include <Core/MergeTreeSerializationEnums.h>
 #include <Core/SettingsChangesHistory.h>
 #include <Disks/DiskFromAST.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -1948,7 +1949,7 @@ When enabled, an implicit min-max (skipping) index is added for the persistent v
 Requires `enable_block_offset_column = 1` to take effect. The index is built only during merges,
 not during inserts.
 )", 0) \
-    DECLARE(String, auto_statistics_types, "basic, uniq", R"(
+    DECLARE(String, auto_statistics_types, "basic, uniq_v2", R"(
 Comma-separated list of statistics types to calculate automatically on all suitable columns.
 Supported statistics types: basic, tdigest, countmin, uniq, uniq_v2.
 The `minmax` statistics type is deprecated: it is a subset of `basic`, which should be used instead.
@@ -2604,22 +2605,24 @@ void MergeTreeSettingsImpl::sanityCheck(size_t background_pool_tasks, bool allow
             (*this)[MergeTreeSetting::map_buckets_coefficient].value);
     }
 
-    if ((*this)[MergeTreeSetting::object_shared_data_buckets_for_compact_part] > max_allowed_buckets)
+    /// The reader validates the on-wire bucket count against the same bound
+    /// (`MAX_OBJECT_SHARED_DATA_BUCKETS`), so keep this cap and that guard in sync via the constant.
+    if ((*this)[MergeTreeSetting::object_shared_data_buckets_for_compact_part] > MAX_OBJECT_SHARED_DATA_BUCKETS)
     {
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "The value of object_shared_data_buckets_for_compact_part setting ({}) exceeds the maximum allowed value of {}",
             (*this)[MergeTreeSetting::object_shared_data_buckets_for_compact_part].value,
-            max_allowed_buckets);
+            MAX_OBJECT_SHARED_DATA_BUCKETS);
     }
 
-    if ((*this)[MergeTreeSetting::object_shared_data_buckets_for_wide_part] > max_allowed_buckets)
+    if ((*this)[MergeTreeSetting::object_shared_data_buckets_for_wide_part] > MAX_OBJECT_SHARED_DATA_BUCKETS)
     {
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "The value of object_shared_data_buckets_for_wide_part setting ({}) exceeds the maximum allowed value of {}",
             (*this)[MergeTreeSetting::object_shared_data_buckets_for_wide_part].value,
-            max_allowed_buckets);
+            MAX_OBJECT_SHARED_DATA_BUCKETS);
     }
 
     if ((*this)[MergeTreeSetting::zero_copy_merge_mutation_min_parts_size_sleep_before_lock] != 0

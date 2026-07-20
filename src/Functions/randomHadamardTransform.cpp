@@ -43,7 +43,15 @@
   *   variable CLICKHOUSE_RHT_KERNEL = "scalar" | "neon" (default: neon on AArch64, scalar elsewhere).
   * - When the length is 2^k * m with m in {12, 20} (orders with a Hadamard matrix), the transform
   *   is the exact Kronecker product H_(2^k) (x) H_m applied without padding, so the output keeps the
-  *   input dimension. H_m is built once via the Paley construction. See hadamardOrderFor / kronecker*.
+  *   input dimension. H_m is built once via the Paley construction. See kroneckerFactorFor / kronecker*.
+  * - Order 9 has no +-1 Hadamard matrix (those exist only for orders 1, 2, and multiples of 4), so for
+  *   the length 2^k * 9 family (e.g. 1152 = 128 * 9) the small factor is a real orthogonal Discrete
+  *   Hartley Transform matrix C_9 applied with float multiplies: the exact Kronecker product
+  *   H_(2^k) (x) C_9, again without padding. See buildHartleyMatrix / kroneckerHartleyScalar.
+  *   Unlike the +-1 Hadamard factors, C_9's rows do not have uniform leverage, so a truncated prefix of
+  *   them is a position-biased projection instead of a valid SRHT one. The exact C_9 path is therefore
+  *   used only for the full transform; a genuine truncation (output_dims < length) of the 2^k * 9 family
+  *   falls back to the zero-padded power-of-two FWHT, which does have the uniform-leverage property.
   */
 namespace DB
 {
@@ -169,6 +177,7 @@ private:
         PaddedPODArray<Mask> sign_masks;
         size_t sign_dim = 0;
         HmMasks<Compute> hm;
+        HartleyMatrix<Compute> hc;
         PaddedPODArray<Compute> buffer;
         size_t written = 0;
         size_t start = 0;
@@ -178,10 +187,29 @@ private:
             const size_t length = offsets[row] - start;
             if (length != 0)
             {
-                /// Exact Kronecker transform for length = 2^k * m (m in {12, 20}); otherwise zero-pad
-                /// to the next power of two. The working dimension is the input length in the exact
-                /// case and the padded length otherwise.
-                const auto [kron_m, kron_blocks] = hadamardOrderFor(length);
+                /// Exact Kronecker transform for length = 2^k * m (m in {12, 20} via a +-1 Hadamard
+                /// factor, or m = 9 via a DHT factor); otherwise zero-pad to the next power of two.
+                /// The working dimension is the input length in the exact case and the padded length
+                /// otherwise.
+                auto [kron_m, kron_blocks, kron_kind] = kroneckerFactorFor(length);
+
+                /// The dense order-9 Hartley small factor C_9 is orthogonal, so the full transform is
+                /// norm-preserving, but its rows do NOT have uniform leverage, unlike the +-1 Hadamard
+                /// factors. A truncated prefix of C_9 rows is therefore a position-biased projection
+                /// rather than a valid Johnson-Lindenstrauss / SRHT one -- e.g. for length 18 and
+                /// output_dims 2 a one-hot input at lane 1 comes out with squared norm ~1.49 while lane 8
+                /// gives ~0.51. So the exact C_9 path is kept only for the full transform; a genuine
+                /// truncation (output_dims < length) of the 2^k * 9 family falls back to the zero-padded
+                /// power-of-two FWHT, whose flat +-1 rows give a correct truncated projection. The +-1
+                /// Hadamard Kronecker factors (m in {12, 20}) keep uniform leverage under truncation and
+                /// are unaffected. An output_dims larger than length still throws below in every case.
+                if (kron_kind == SmallFactorKind::Hartley && fixed_out_dims != 0 && fixed_out_dims < length)
+                {
+                    kron_m = 0;
+                    kron_blocks = 0;
+                    kron_kind = SmallFactorKind::None;
+                }
+
                 const size_t working_dim = kron_m ? length : std::bit_ceil(length);
                 const size_t k = fixed_out_dims ? fixed_out_dims : working_dim;
                 if (k > working_dim)
@@ -210,7 +238,14 @@ private:
 
                 /// Core transform via the selected kernel: an exact Kronecker product for the
                 /// supported non-power-of-two dimensions, or a fast Walsh-Hadamard transform otherwise.
-                if (kron_m)
+                if (kron_kind == SmallFactorKind::Hartley)
+                {
+                    /// Dense DHT small factor (m = 9): scalar-only, so kernel-independent.
+                    if (hc.order != kron_m)
+                        buildHartleyMatrix<Compute>(hc, kron_m);
+                    kroneckerHartleyScalar<Compute>(buffer.data(), kron_blocks, kron_m, hc);
+                }
+                else if (kron_m)
                 {
                     if (hm.order != kron_m)
                         buildHmMasks<Compute>(hm, kron_m);
@@ -276,8 +311,18 @@ truncated -- as a Johnson-Lindenstrauss / subsampled-randomized-Hadamard (SRHT) 
 When the input length is `2^k * m` with `m` in `{12, 20}` (orders that have a Hadamard matrix, e.g.
 `768 = 64 * 12`, `1536 = 128 * 12`, `3072 = 256 * 12`, `2560 = 128 * 20`), an exact Kronecker
 transform `H_(2^k) (x) H_m` is used instead of padding, so the output keeps the input dimension
-rather than growing to the next power of two. All other lengths are zero-padded to `m`, the next
-power of two.
+rather than growing to the next power of two.
+
+Order `9` has no `+/-1` Hadamard matrix (those exist only for orders `1`, `2`, and multiples of
+`4`), so for the `2^k * 9` family (e.g. `1152 = 128 * 9`, `2304 = 256 * 9`) the small factor is a
+real orthogonal Discrete Hartley Transform matrix `C_9` applied with float multiplies -- the exact
+Kronecker transform `H_(2^k) (x) C_9`, again without padding. This exact `C_9` path is used only for
+the full transform: its rows do not have the uniform leverage of a `+/-1` Hadamard matrix, so a
+truncated prefix of them would be a position-biased projection rather than a valid SRHT one.
+Consequently, a truncating `output_dims` (smaller than the input length) on the `2^k * 9` family
+falls back to the zero-padded power-of-two transform, which does keep that property.
+
+All other lengths are zero-padded to `m`, the next power of two.
 
 The result has the same element type as the input; an empty input array returns an empty array.
 
@@ -286,7 +331,9 @@ The result has the same element type as the input; an empty input array returns 
 - `output_dims` (optional, default the transform length): keeps only the first `output_dims`
   coordinates. The `1/sqrt(output_dims)` scaling keeps the result norm-preserving for the full
   transform and norm-preserving in expectation when truncated. It must not exceed the transform
-  length (the next power of two, or the input length for the exact Kronecker case).
+  length (the next power of two, or the input length for the exact Kronecker case). Truncating the
+  `2^k * 9` family uses the zero-padded power-of-two transform rather than the exact `C_9` one, so
+  that the truncated projection keeps the uniform-leverage (SRHT) property.
 )DOCS_MD";
     FunctionDocumentation::Syntax syntax = "randomHadamardTransform(vector[, seed[, output_dims]])";
     FunctionDocumentation::Arguments arguments = {
@@ -300,7 +347,9 @@ The result has the same element type as the input; an empty input array returns 
         {"Norm is preserved",
          "SELECT round(arraySum(x -> x * x, randomHadamardTransform([1, 2, 3, 4]::Array(Float32))) - 30, 4)", "0"},
         {"Truncated projection to 3 dimensions",
-         "SELECT length(randomHadamardTransform([1, 2, 3, 4, 5, 6, 7, 8]::Array(Float32), 42, 3))", "3"}};
+         "SELECT length(randomHadamardTransform([1, 2, 3, 4, 5, 6, 7, 8]::Array(Float32), 42, 3))", "3"},
+        {"Exact transform of a 2^k * 9 dimension keeps the input length (no padding)",
+         "SELECT length(randomHadamardTransform(CAST(range(1152), 'Array(Float32)')))", "1152"}};
     FunctionDocumentation::IntroducedIn introduced_in = {26, 7};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
