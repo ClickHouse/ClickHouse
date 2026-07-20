@@ -921,11 +921,14 @@ void ColumnString::serializeAsComparable(size_t n, String & out) const
 void ColumnString::batchSerializeAsComparable(
     size_t num_rows,
     VectorWithMemoryTracking<String> & out,
-    const IColumn::Permutation * permutation) const
+    const IColumn::Permutation * permutation,
+    const UInt8 * null_map) const
 {
     for (size_t r = 0; r < num_rows; ++r)
     {
         const size_t src = permutation ? (*permutation)[r] : r;
+        if (null_map && null_map[src])
+            continue;
         serializeAsComparable(src, out[r]);
     }
 }

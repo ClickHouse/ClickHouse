@@ -1241,16 +1241,23 @@ TEST(UniqueKeyEncoding, LowCardinalityThrowsNotImplemented)
 }
 
 /// ---------------------------------------------------------------------------
-/// Nullable wrapping unsupported types with all-NULL rows. Without eager
+/// Nullable wrapping an unsupported type with all-NULL rows. Without eager
 /// validation in ColumnNullable::serializeAsComparable, a NULL row would skip
 /// the nested column's serializeAsComparable entirely, silently accepting
-/// unsupported nested types. These regressions pin that the validation catches
+/// unsupported nested types. This regression pins that the validation catches
 /// them via the batch/encodeBlock path.
+///
+/// The nested type must be one that ColumnNullable can actually hold
+/// (canBeInsideNullable() == true) yet serializeAsComparable does not support.
+/// Tuple fits: it can be inside Nullable but has no comparable encoding.
+/// LowCardinality and Array cannot be inside Nullable at all, so they can
+/// never reach this code path.
 /// ---------------------------------------------------------------------------
-TEST(UniqueKeyEncoding, NullableLowCardinalityAllNullThrowsNotImplemented)
+TEST(UniqueKeyEncoding, NullableTupleAllNullThrowsNotImplemented)
 {
-    auto type_lc = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
-    auto nested = type_lc->createColumn();
+    DataTypes inner{std::make_shared<DataTypeUInt64>(), std::make_shared<DataTypeUInt64>()};
+    auto type_tup = std::make_shared<DataTypeTuple>(inner);
+    auto nested = type_tup->createColumn();
     nested->insertDefault();
     auto null_map = ColumnUInt8::create();
     null_map->insert(Field(UInt64(1)));
@@ -1258,34 +1265,20 @@ TEST(UniqueKeyEncoding, NullableLowCardinalityAllNullThrowsNotImplemented)
     auto col = ColumnNullable::create(std::move(nested), std::move(null_map));
     Columns cols;
     cols.push_back(std::move(col));
-    expectEncodeRowThrowsNotImplemented(cols, "Nullable(LowCardinality(String)) all-NULL");
-}
-
-TEST(UniqueKeyEncoding, NullableArrayAllNullThrowsNotImplemented)
-{
-    auto type_arr = std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>());
-    auto nested = type_arr->createColumn();
-    nested->insertDefault();
-    auto null_map = ColumnUInt8::create();
-    null_map->insert(Field(UInt64(1)));
-
-    auto col = ColumnNullable::create(std::move(nested), std::move(null_map));
-    Columns cols;
-    cols.push_back(std::move(col));
-    expectEncodeRowThrowsNotImplemented(cols, "Nullable(Array(UInt64)) all-NULL");
+    expectEncodeRowThrowsNotImplemented(cols, "Nullable(Tuple(UInt64,UInt64)) all-NULL");
 }
 
 /// ---------------------------------------------------------------------------
 /// Direct single-row serializeAsComparable on a NULL row of an unsupported
 /// nullable column. The NULL branch must still validate the nested type, so an
 /// unsupported nullable schema is rejected on every row, not only once a
-/// non-NULL value is hit. One nested type suffices: LowCardinality and Array
-/// go through the same NULL-branch probe.
+/// non-NULL value is hit.
 /// ---------------------------------------------------------------------------
 TEST(UniqueKeyEncoding, NullableUnsupportedNullRowDirectSerializeThrowsNotImplemented)
 {
-    auto type_lc = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
-    auto nested = type_lc->createColumn();
+    DataTypes inner{std::make_shared<DataTypeUInt64>(), std::make_shared<DataTypeUInt64>()};
+    auto type_tup = std::make_shared<DataTypeTuple>(inner);
+    auto nested = type_tup->createColumn();
     nested->insertDefault();
     auto null_map = ColumnUInt8::create();
     null_map->insert(Field(UInt64(1)));
@@ -1296,7 +1289,7 @@ TEST(UniqueKeyEncoding, NullableUnsupportedNullRowDirectSerializeThrowsNotImplem
     {
         String out;
         col->serializeAsComparable(0, out);
-        FAIL() << "serializeAsComparable on NULL row of Nullable(LowCardinality(String)) did not throw";
+        FAIL() << "serializeAsComparable on NULL row of Nullable(Tuple(UInt64,UInt64)) did not throw";
     }
     catch (const Exception & e)
     {

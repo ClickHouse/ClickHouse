@@ -35,6 +35,16 @@ void encodeBlock(
                             c, sz, num_rows);
     }
 
+    if (permutation && permutation->size() != num_rows)
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+                        "UNIQUE KEY encoding: permutation size {} != number of rows {}",
+                        permutation->size(), num_rows);
+
+    if (permutation && std::any_of(permutation->begin(), permutation->end(), [&](size_t src) { return src >= num_rows; }))
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+                        "UNIQUE KEY encoding: permutation contains an out-of-range index (number of rows {})",
+                        num_rows);
+
     out.resize(num_rows);
     if (num_rows == 0)
         return;

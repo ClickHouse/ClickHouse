@@ -189,11 +189,13 @@ public:
     }
 
     /// All rows are identical: encode row 0 once and append to every output row.
-    /// Permutation is irrelevant for a constant column.
+    /// Permutation is irrelevant for a constant column. Rows masked by `null_map`
+    /// (set by a Nullable wrapper) are skipped, matching the other columns.
     void batchSerializeAsComparable(
         size_t num_rows,
         VectorWithMemoryTracking<String> & out,
-        const IColumn::Permutation * /*permutation*/) const override
+        const IColumn::Permutation * permutation,
+        const UInt8 * null_map = nullptr) const override
     {
         /// Match the base class no-op for empty batches: avoid touching the payload
         /// (and a possible NOT_IMPLEMENTED from an unsupported nested type).
@@ -202,7 +204,12 @@ public:
         String encoded;
         data->serializeAsComparable(0, encoded);
         for (size_t r = 0; r < num_rows; ++r)
+        {
+            const size_t src = permutation ? (*permutation)[r] : r;
+            if (null_map && null_map[src])
+                continue;
             out[r].append(encoded);
+        }
     }
 
     void deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings * settings) override

@@ -164,7 +164,7 @@ public:
 
     void serializeAsComparable(size_t n, String & out) const final;
 
-    void batchSerializeAsComparable(size_t num_rows, VectorWithMemoryTracking<String> & out, const IColumn::Permutation * permutation) const override;
+    void batchSerializeAsComparable(size_t num_rows, VectorWithMemoryTracking<String> & out, const IColumn::Permutation * permutation, const UInt8 * null_map = nullptr) const override;
 
 protected:
     Container data;

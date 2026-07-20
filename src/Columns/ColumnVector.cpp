@@ -1492,17 +1492,15 @@ template <typename T>
 void ColumnVector<T>::batchSerializeAsComparable(
     size_t num_rows,
     VectorWithMemoryTracking<String> & out,
-    const IColumn::Permutation * permutation) const
+    const IColumn::Permutation * permutation,
+    const UInt8 * null_map) const
 {
-    if (permutation)
+    for (size_t r = 0; r < num_rows; ++r)
     {
-        for (size_t r = 0; r < num_rows; ++r)
-            serializeAsComparable((*permutation)[r], out[r]);
-    }
-    else
-    {
-        for (size_t r = 0; r < num_rows; ++r)
-            serializeAsComparable(r, out[r]);
+        const size_t src = permutation ? (*permutation)[r] : r;
+        if (null_map && null_map[src])
+            continue;
+        serializeAsComparable(src, out[r]);
     }
 }
 

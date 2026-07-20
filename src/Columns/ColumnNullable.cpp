@@ -1094,36 +1094,44 @@ void ColumnNullable::serializeAsComparable(size_t n, String & out) const
 void ColumnNullable::batchSerializeAsComparable(
     size_t num_rows,
     VectorWithMemoryTracking<String> & out,
-    const IColumn::Permutation * permutation) const
+    const IColumn::Permutation * permutation,
+    const UInt8 * outer_null_map) const
 {
     if (num_rows == 0)
         return;
 
     validateNestedComparable();
 
-    /// Encode the nested values in one shot: a single virtual dispatch into the nested
-    /// concrete type, then its own monomorphic row loop (e.g. ColumnVector<UInt64>).
-    /// This is what keeps Nullable(UInt64) / Nullable(DateTime64) UNIQUE KEY batches
-    /// off the per-row single-row virtual. `nested_out` is a scratch buffer because the
-    /// nested column knows nothing about the NULL flag: we splice the flag in below.
-    VectorWithMemoryTracking<String> nested_out;
-    nested_out.resize(num_rows);
-    nested_column->batchSerializeAsComparable(num_rows, nested_out, permutation);
-
+    /// Write the null flag for every row first: NULL=0x01 (sorts after),
+    /// non-NULL=0x00 (sorts before) — matches compareAt with nulls_direction=1.
+    /// A row that is NULL either here or in an outer wrapper contributes only
+    /// this flag and no nested payload.
     const auto & null_map_data = getNullMapData();
     for (size_t r = 0; r < num_rows; ++r)
     {
         const size_t src = permutation ? (*permutation)[r] : r;
-        if (null_map_data[src])
-        {
-            out[r].push_back('\x01');
-        }
-        else
-        {
-            out[r].push_back('\x00');
-            out[r].append(nested_out[r]);
-        }
+        if (outer_null_map && outer_null_map[src])
+            continue;
+        out[r].push_back(null_map_data[src] ? '\x01' : '\x00');
     }
+
+    /// Encode the nested values in one shot: a single virtual dispatch into the
+    /// nested concrete type, then its own monomorphic row loop (e.g.
+    /// ColumnVector<UInt64>). Passing our null map lets the nested loop skip NULL
+    /// rows and append non-NULL payload directly into `out[r]` — no scratch buffer,
+    /// no second copy, and NULL rows never materialize hidden nested payload.
+    /// `outer_null_map` (if any) also propagates so a row masked by an enclosing
+    /// wrapper is skipped too.
+    const UInt8 * effective_null_map = null_map_data.data();
+    PaddedPODArray<UInt8> merged_null_map;
+    if (outer_null_map)
+    {
+        merged_null_map.resize(null_map_data.size());
+        for (size_t i = 0; i < null_map_data.size(); ++i)
+            merged_null_map[i] = null_map_data[i] | outer_null_map[i];
+        effective_null_map = merged_null_map.data();
+    }
+    nested_column->batchSerializeAsComparable(num_rows, out, permutation, effective_null_map);
 }
 
 ColumnPtr makeNullable(const ColumnPtr & column)

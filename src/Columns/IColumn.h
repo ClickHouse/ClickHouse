@@ -374,12 +374,17 @@ public:
     /// Batch serialize rows in column-outer fashion: one virtual dispatch per
     /// column, tight row loop inside. `out[r]` gets the encoding of row `src`
     /// where `src = permutation ? (*permutation)[r] : r`.
+    /// When `null_map` is non-null (set by a Nullable wrapper), rows whose
+    /// `null_map[src]` is set are skipped: nothing is appended for them, so the
+    /// wrapper's null flag is the whole encoding of a NULL row. This keeps NULL
+    /// rows from materializing hidden nested payload and avoids a second copy.
     /// Default implementation calls serializeAsComparable in a loop.
     using Permutation = IColumnPermutation;
     virtual void batchSerializeAsComparable(
         size_t num_rows,
         VectorWithMemoryTracking<String> & out,
-        const Permutation * permutation) const;
+        const Permutation * permutation,
+        const UInt8 * null_map = nullptr) const;
 
     /// Deserializes a value that was serialized using IColumn::serializeValueIntoArena method.
     /// Note that it needs to deal with user input
