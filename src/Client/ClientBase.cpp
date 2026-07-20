@@ -1110,7 +1110,7 @@ void ClientBase::initTTYBuffer(ProgressOption progress_option, ProgressOption pr
     if (!need_render_progress && !need_render_progress_table)
         return;
 
-    progress_table_toggle_enabled = getClientConfiguration().getBool("enable-progress-table-toggle");
+    progress_table_toggle_enabled = getClientConfiguration().getBool("enable-progress-table-toggle", true);
     progress_table_toggle_on = !progress_table_toggle_enabled;
 
     /// If need_render_progress and need_render_progress_table are enabled,
@@ -4013,7 +4013,7 @@ void ClientBase::addOptionsToTheClientConfiguration(const CommandLineOptions & o
                 break;
         }
     }
-    if (options.contains("enable-progress-table-toggle"))
+    if (options.contains("enable-progress-table-toggle") && !options["enable-progress-table-toggle"].defaulted())
         getClientConfiguration().setBool("enable-progress-table-toggle", options["enable-progress-table-toggle"].as<bool>());
     if (options.contains("echo"))
         getClientConfiguration().setBool("echo", options["echo"].as<bool>());

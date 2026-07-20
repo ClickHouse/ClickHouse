@@ -356,6 +356,10 @@ void Client::initialize(Poco::Util::Application & self)
     /// Use <echo_query_id/> unless --echo-query-id is specified
     if (!config().has("echo-query-id") && config().has("echo_query_id"))
         config().setBool("echo-query-id", config().getBool("echo_query_id"));
+
+    /// Use <enable_progress_table_toggle/> unless --enable-progress-table-toggle is specified
+    if (!config().has("enable-progress-table-toggle") && config().has("enable_progress_table_toggle"))
+        config().setBool("enable-progress-table-toggle", config().getBool("enable_progress_table_toggle"));
 }
 
 
