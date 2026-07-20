@@ -6,6 +6,7 @@
 #include <Storages/MergeTree/FutureMergedMutatedPart.h>
 #include <Storages/MergeTree/MergeProjectionPartsTask.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
+#include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/ColumnsSubstreams.h>
 #include <Storages/ProjectionsDescription.h>
 #include <Storages/StorageInMemoryMetadata.h>
@@ -208,6 +209,28 @@ size_t countPartStreamsForColumns(const IMergeTreeDataPart & part, const NamesAn
     }
 
     return countColumnStreams(written_columns);
+}
+
+/// On-disk bytes (compressed and uncompressed) of the data a merge actually reads from a source part:
+/// the sizes of the part's columns that appear in read_columns. This is deliberately not the whole part:
+/// a metadata-only ALTER DROP COLUMN leaves a dead column's files on disk (and in columns.txt) that the
+/// merge never opens, and a parent part's bytes_on_disk / bytes_uncompressed_on_disk include its
+/// projection parts, whose IO is priced separately (see projection_memory in
+/// estimateNeededMemoryForMerge) - charging either would over-reserve on a table with dropped wide
+/// JSON / Dynamic columns or large projections and needlessly serialize background merges. A compact
+/// part does not track per-column sizes, and its single shared stream reads the whole data file anyway
+/// (dead columns are interleaved with live ones), so its total columns size - the data file itself,
+/// which likewise excludes projections - is the cap there.
+ColumnSize partReadBytes(const IMergeTreeDataPart & part, const NamesAndTypesList & read_columns)
+{
+    if (part.getType() != MergeTreeDataPartType::Wide)
+        return part.getTotalColumnsSize();
+
+    ColumnSize read_size;
+    for (const auto & column : part.getColumns())
+        if (read_columns.contains(column.name))
+            read_size.add(part.getColumnSize(column.name));
+    return read_size;
 }
 
 /// The .bin file names the default serialization can enumerate for a set of columns - the static skeleton
@@ -746,14 +769,36 @@ UInt64 estimateNeededMemoryForMerge(
     MergeTreeData::DataPartsVector source_and_patch_parts = future_part.parts;
     source_and_patch_parts.insert(source_and_patch_parts.end(), future_part.patch_parts.begin(), future_part.patch_parts.end());
 
-    /// Input side: one reader stream per column substream of every source part. The reader buffers hold
-    /// a window of the compressed file plus the decompressed block, so they can never hold more than the
-    /// part's own data: cap the per-part estimate by the part size.
+    /// The merge reads and writes the current metadata's physical columns, not everything a source part
+    /// stores: a column removed by a metadata-only ALTER DROP COLUMN still has its files on disk (and in
+    /// columns.txt), but MergeTask never opens a reader for it. The lightweight-delete mask (_row_exists)
+    /// is not a metadata column, yet it is read from every part that stores it, so it joins the read set.
+    const auto output_columns = metadata_snapshot->getColumns().getAllPhysical();
+    NamesAndTypesList input_columns = output_columns;
+    input_columns.emplace_back(RowExistsColumn::name, RowExistsColumn::type);
+
+    /// Input side: one reader stream per column substream a base merge reader actually opens on every
+    /// source part. The reader buffers hold a window of the compressed file plus the decompressed block,
+    /// so they can never hold more than the data they read through: cap the per-part estimate by the size
+    /// of the columns the merge reads (see partReadBytes) - not the whole part, which also counts dead
+    /// dropped columns and the projection parts priced separately below. A patch part is accounted whole:
+    /// it physically stores only the columns it patches plus the system columns needed to apply them, all
+    /// of which its reader reads, and it has no projection parts.
     UInt64 input_memory = 0;
     UInt64 sum_input_bytes_uncompressed = 0;
-    for (const auto & part : source_and_patch_parts)
+    for (const auto & part : future_part.parts)
     {
         /// Compact and in-memory parts read all columns through a single shared stream.
+        const size_t streams = part->getType() == MergeTreeDataPartType::Wide
+            ? countPartStreamsForColumns(*part, input_columns)
+            : 1;
+        const UInt64 read_buffer_size = part->isStoredOnRemoteDisk() ? remote_read_buffer_size : local_read_buffer_size;
+        const ColumnSize read_bytes = partReadBytes(*part, input_columns);
+        input_memory += std::min<UInt64>(streams * read_buffer_size, read_bytes.data_compressed + read_bytes.data_uncompressed);
+        sum_input_bytes_uncompressed += read_bytes.data_uncompressed;
+    }
+    for (const auto & part : future_part.patch_parts)
+    {
         const size_t streams = part->getType() == MergeTreeDataPartType::Wide
             ? countPartStreams(*part)
             : 1;
@@ -770,8 +815,7 @@ UInt64 estimateNeededMemoryForMerge(
     /// dynamic substreams and covers the case where different source parts contribute disjoint dynamic
     /// paths that all appear in the merged part. Patch parts are included: a patched JSON / Dynamic column
     /// can carry a path that exists only in a patch, not in any base part.
-    const auto output_columns = metadata_snapshot->getColumns().getAllPhysical();
-
+    ///
     /// A dynamic-structure (JSON / Dynamic) output column absent from some base part but with a default
     /// expression in the merged metadata is materialized from that default during the merge: MergeTask keeps
     /// such a column live (a missing column is expired only when it has no default), and IMergeTreeReader
@@ -818,9 +862,11 @@ UInt64 estimateNeededMemoryForMerge(
     /// odd primary keys with per-part constant values) can merge into a row order that compresses far
     /// worse, so the produced compressed output - which the multipart writers keep alive in their upload
     /// buffers - can be much larger than 2 * sum_input_bytes_compressed. The merged part never holds more
-    /// uncompressed data than the source parts do (a merge does not add rows, and dedup / cleanup / TTL
-    /// only remove them), and its compressed size cannot exceed that uncompressed volume, so
-    /// sum_input_bytes_uncompressed is a sound upper bound on the produced compressed output. Cap the
+    /// uncompressed data than the merge reads from the source parts (a merge does not add rows, and
+    /// dedup / cleanup / TTL only remove them; a dead dropped column is never written and the projection
+    /// parts are priced separately, so their bytes rightly do not enter this bound), and its compressed
+    /// size cannot exceed that uncompressed volume, so sum_input_bytes_uncompressed - accumulated over the
+    /// columns actually read - is a sound upper bound on the produced compressed output. Cap the
     /// data-dependent buffers at the compressed output in flight twice over (double buffering of uploads)
     /// plus one uncompressed working block per stream, all bounded by the uncompressed input volume.
     /// Without this cap a merge of tiny parts in a table with many columns on object storage would reserve
