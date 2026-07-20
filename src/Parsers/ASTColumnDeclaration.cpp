@@ -139,6 +139,13 @@ void ASTColumnDeclaration::formatImpl(WriteBuffer & ostr, const FormatSettings &
             default_expression->format(ostr, format_settings, state, nested_frame);
         }
     }
+    else if (default_specifier == ColumnDefaultSpecifier::AutoIncrement)
+    {
+        /// `AUTO_INCREMENT` is the only specifier the parser allows without an expression; it must still be
+        /// printed, otherwise formatting silently drops it — and with it the rejection of the column under
+        /// `compatibility_ignore_auto_increment_in_create_table = 0` when the formatted query is executed.
+        ostr << ' ' << toString(default_specifier);
+    }
 
     if (auto comment = getComment())
     {
@@ -242,6 +249,13 @@ void ASTColumnDeclaration::readJSON(const Poco::JSON::Object & json)
     if (default_expression && default_specifier == ColumnDefaultSpecifier::Empty)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "A 'default_expression' was provided without a 'default_specifier' during AST JSON deserialization");
+
+    /// The parser never combines `AUTO_INCREMENT` with an expression (it is an alternative branch to the
+    /// `DEFAULT`/`MATERIALIZED`/`ALIAS`/`EPHEMERAL` expression forms), and formatting such a pair would emit
+    /// parser-impossible DDL.
+    if (default_expression && default_specifier == ColumnDefaultSpecifier::AutoIncrement)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "A 'default_expression' cannot be combined with the `AUTO_INCREMENT` 'default_specifier' during AST JSON deserialization");
 
     if (!default_expression
         && default_specifier != ColumnDefaultSpecifier::Empty

@@ -1,5 +1,6 @@
 #include <Parsers/ASTCreateWasmFunctionQuery.h>
 
+#include <Parsers/ASTDataType.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -199,8 +200,10 @@ void ASTCreateWasmFunctionQuery::readJSON(const Poco::JSON::Object & json)
     /// `ASTLiteral`s). Restore them with concrete type checks so malformed `clickhouse_json`
     /// cannot build a parser-impossible AST that silently changes semantics (e.g. an `arguments`
     /// `Identifier` formatting as `ARGUMENTS (x)` but contributing zero argument types) or reaches
-    /// an `UNEXPECTED_AST_STRUCTURE`/`Field`-cast path later. `result_type` is validated by
-    /// `DataTypeFactory::get`, which already rejects non-type ASTs.
+    /// an `UNEXPECTED_AST_STRUCTURE`/`Field`-cast path later. `result_type` is parser-produced only
+    /// through `ParserDataType`, whose top-level node is always a data type (`ASTDataType` or a
+    /// subclass), so a non-type subtree there is rejected as well instead of surviving until
+    /// `validateAndGetDefinition` or formatting a parser-impossible `RETURNS` clause.
     auto read_string_literal = [&](const char * key) -> ASTPtr
     {
         ASTPtr ast = r.readChildOfType<ASTLiteral>(key);
@@ -218,7 +221,12 @@ void ASTCreateWasmFunctionQuery::readJSON(const Poco::JSON::Object & json)
     else
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'arguments' for `CreateWasmFunctionQuery` during AST JSON deserialization");
     if (auto ast = r.readChild("result_type"))
+    {
+        if (!dynamic_cast<const ASTDataType *>(ast.get()))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "'result_type' must be a data type for `CreateWasmFunctionQuery` during AST JSON deserialization");
         setReturnType(std::move(ast));
+    }
     else
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'result_type' for `CreateWasmFunctionQuery` during AST JSON deserialization");
     if (auto ast = read_string_literal("module_name"))

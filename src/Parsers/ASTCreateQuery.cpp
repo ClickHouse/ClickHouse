@@ -98,6 +98,10 @@ void ASTColumns::writeJSON(WriteBuffer & out) const
     w.writeChild("indices", indices);
     w.writeChild("constraints", constraints);
     w.writeChild("projections", projections);
+    /// `primary_key`/`primary_key_from_columns` are parser-intermediate slots that are always cleared
+    /// on the final AST, so for any parser-produced query nothing is emitted here. They are still
+    /// written (rather than skipped) so that a parser-impossible in-memory AST fails loudly in
+    /// `readJSON` instead of losing the hidden primary-key state silently.
     w.writeChild("primary_key", primary_key);
     w.writeChild("primary_key_from_columns", primary_key_from_columns);
 }
@@ -127,10 +131,14 @@ void ASTColumns::readJSON(const Poco::JSON::Object & json)
     readDeclarationList.operator()<ASTConstraintDeclaration>("constraints", constraints);
     readDeclarationList.operator()<ASTProjectionDeclaration>("projections", projections);
 
-    auto pk = r.readChild("primary_key");
-    if (pk) set(primary_key, pk);
-    auto pkfc = r.readChild("primary_key_from_columns");
-    if (pkfc) set(primary_key_from_columns, pkfc);
+    /// `primary_key`/`primary_key_from_columns` are parser-intermediate slots: `ParserCreateQuery`
+    /// normalizes them into `storage->primary_key` and resets them here before returning the final AST,
+    /// and both `ASTColumns::formatImpl` and `InterpreterCreateQuery` ignore them afterwards. Accepting
+    /// them from JSON would carry a hidden primary-key request that formatting and execution silently
+    /// drop, so reject them as parser-impossible.
+    if (r.has("primary_key") || r.has("primary_key_from_columns"))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "'primary_key' and 'primary_key_from_columns' are not allowed in `Columns` during AST JSON deserialization");
 }
 
 void ASTStorage::writeJSON(WriteBuffer & out) const
