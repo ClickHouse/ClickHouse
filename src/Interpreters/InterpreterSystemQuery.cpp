@@ -469,6 +469,14 @@ BlockIO InterpreterSystemQuery::execute()
 #else
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "The server was compiled without the support for AVRO");
 #endif
+        case Type::CLEAR_PAIMON_METADATA_CACHE:
+#if USE_AVRO
+            getContext()->checkAccess(AccessType::SYSTEM_DROP_PAIMON_METADATA_CACHE);
+            system_context->clearPaimonMetadataFilesCache();
+            break;
+#else
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "The server was compiled without the support for Paimon");
+#endif
         case Type::CLEAR_AVRO_SCHEMA_CACHE:
 #if USE_AVRO
             getContext()->checkAccess(AccessType::SYSTEM_DROP_AVRO_SCHEMA_CACHE);
@@ -636,15 +644,15 @@ BlockIO InterpreterSystemQuery::execute()
 
             MutableColumns res_columns = sample_block.cloneEmptyColumns();
 
-            auto fill_data = [&](const std::string & cache_name, const FileCachePtr & cache, const std::vector<FileSegment::Info> & file_segments)
+            auto fill_data = [&](const std::string & cache_name, const std::vector<FileSegment::Info> & file_segments)
             {
                 for (const auto & file_segment : file_segments)
                 {
                     size_t i = 0;
-                    const auto path = cache->getFileSegmentPath(
-                        file_segment.key, file_segment.offset, file_segment.kind, file_segment.origin);
+                    /// `file_segment.path` already reflects the real on-disk name (including the
+                    /// size suffix for downloaded segments); do not recompute it from the offset.
                     res_columns[i++]->insert(cache_name);
-                    res_columns[i++]->insert(path);
+                    res_columns[i++]->insert(file_segment.path);
                     res_columns[i++]->insert(file_segment.downloaded_size);
                 }
             };
@@ -654,14 +662,14 @@ BlockIO InterpreterSystemQuery::execute()
                 for (const auto & cache_data : FileCacheFactory::instance().getUniqueInstances())
                 {
                     auto file_segments = cache_data->cache->sync();
-                    fill_data(cache_data->cache->getName(), cache_data->cache, file_segments);
+                    fill_data(cache_data->cache->getName(), file_segments);
                 }
             }
             else
             {
                 auto cache = FileCacheFactory::instance().getByName(query.filesystem_cache_name)->cache;
                 auto file_segments = cache->sync();
-                fill_data(query.filesystem_cache_name, cache, file_segments);
+                fill_data(query.filesystem_cache_name, file_segments);
             }
 
             size_t num_rows = res_columns[0]->size();
@@ -2571,6 +2579,7 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::CLEAR_CONNECTIONS_CACHE:
         case Type::CLEAR_MARK_CACHE:
         case Type::CLEAR_ICEBERG_METADATA_CACHE:
+        case Type::CLEAR_PAIMON_METADATA_CACHE:
         case Type::CLEAR_AVRO_SCHEMA_CACHE:
         case Type::CLEAR_PARQUET_METADATA_CACHE:
         case Type::CLEAR_POINT_IN_POLYGON_CACHE:

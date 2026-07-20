@@ -90,7 +90,6 @@
             "integrations/connectors/data-visualization/community-integrations/luzmo-and-clickhouse",
             "integrations/connectors/data-visualization/community-integrations/mitzu-and-clickhouse",
             "integrations/connectors/data-visualization/community-integrations/rocketbi-and-clickhouse",
-            "integrations/connectors/data-visualization/community-integrations/zingdata-and-clickhouse",
             "integrations/connectors/data-visualization/community-integrations/querio-and-clickhouse",
             "integrations/connectors/data-visualization/community-integrations/holistics-and-clickhouse"
           ]

@@ -1156,7 +1156,7 @@ void TCPHandler::logQueryDuration(QueryState & state)
     /// We already logged more detailed info if we read some rows
     if (elapsed_sec < 1.0 && state.progress.read_rows)
         return;
-    LOG_DEBUG(log, "Processed in {} sec.", elapsed_sec);
+    LOG_DEBUG(log, "Processed in {:.3f} sec.", elapsed_sec);
 }
 
 
@@ -2485,9 +2485,9 @@ void TCPHandler::processQuery(std::shared_ptr<QueryState> & state)
 
     readStringBinary(state->query, *in);
 
-    Settings passed_params;
+    NameToNameMap passed_params;
     if (client_tcp_protocol_version >= DBMS_MIN_PROTOCOL_VERSION_WITH_PARAMETERS)
-        passed_params.read(*in, settings_format);
+        passed_params = readQueryParameters(*in);
 
     if (is_interserver_mode)
     {
@@ -2677,7 +2677,7 @@ void TCPHandler::processQuery(std::shared_ptr<QueryState> & state)
     /// so we have to apply the changes first.
     state->query_context->setCurrentQueryId(state->query_id);
 
-    state->query_context->addQueryParameters(passed_params.toNameToNameMap());
+    state->query_context->addQueryParameters(passed_params);
 
     state->allow_partial_result_on_first_cancel = state->query_context->getSettingsRef()[Setting::partial_result_on_first_cancel];
 
@@ -2740,12 +2740,22 @@ bool TCPHandler::receiveQueryPlan(QueryState & state)
     bool unexpected_packet = state.stage != QueryProcessingStage::QueryPlan || state.plan_and_sets || !state.query_context || state.read_all_data;
     auto context = unexpected_packet ? Context::getGlobalContextInstance() : state.query_context;
 
+    /// The plan will not be executed when we are draining leftover packets (skipping_data) or when it
+    /// arrives unexpectedly (deserialized against the global context, which lacks the parallel-replicas
+    /// coordinator callbacks). Only consume the bytes off the buffer, without building a runnable plan.
+    if (state.skipping_data || unexpected_packet)
+    {
+        QueryPlan::deserialize(*in, context, getBinaryTypeDecodingComplexityLimit(context), /*skip_data=*/true);
+
+        if (!state.skipping_data && unexpected_packet)
+            throw NetException(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Unexpected packet QueryPlan received from client");
+
+        return true;
+    }
+
     /// Query plans can be sent by a client here, so guard type decoding with the effective input limit.
     auto plan_and_sets = QueryPlan::deserialize(*in, context, getBinaryTypeDecodingComplexityLimit(context));
     LOG_TRACE(log, "Received query plan");
-
-    if (!state.skipping_data && unexpected_packet)
-        throw NetException(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Unexpected packet QueryPlan received from client");
 
     state.plan_and_sets = std::make_shared<QueryPlanAndSets>(std::move(plan_and_sets));
     return true;
