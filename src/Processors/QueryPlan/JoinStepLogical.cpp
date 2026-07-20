@@ -2264,7 +2264,7 @@ QueryPlanStepPtr JoinStepLogical::clone() const
     result_step->left_rows_estimation = left_rows_estimation;
     result_step->right_rows_estimation = right_rows_estimation;
     result_step->result_column_stats = result_column_stats;
-    result_step->right_hash_table_cache_key = right_hash_table_cache_key;
+    result_step->right_subtree_raw_hash = right_subtree_raw_hash;
     result_step->left_table_label = left_table_label;
     result_step->right_table_label = right_table_label;
     result_step->dummy_stats = dummy_stats;
