@@ -61,7 +61,7 @@ grep -q "Either there is no database" <<<"$(error_as_user "DESCRIBE TABLE ${merg
 $CLICKHOUSE_CLIENT --query "GRANT SHOW TABLES ON ${CLICKHOUSE_DATABASE}.${table1} TO ${user_name}"
 grep -q "it's necessary to have the grant SHOW COLUMNS ON ${CLICKHOUSE_DATABASE}.${table1}" <<<"$(error_as_user "DESCRIBE TABLE ${merge_spec}")"
 $CLICKHOUSE_CLIENT --query "GRANT SHOW COLUMNS ON ${CLICKHOUSE_DATABASE}.${table1} TO ${user_name}"
-[ "$($CLICKHOUSE_CLIENT --query "DESCRIBE TABLE ${merge_spec}")" = $'x\tUInt32\t\t\t\t\t' ]
+[ "$(query_as_user "DESCRIBE TABLE ${merge_spec}")" = $'x\tUInt32\t\t\t\t\t' ]
 echo "OK"
 
 echo "view_if_permitted"

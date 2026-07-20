@@ -32,7 +32,7 @@ def cleanup_after_test():
     try:
         yield
     finally:
-        instance.query("DROP USER IF EXISTS A, B, C, ure, extra_user")
+        instance.query("DROP USER IF EXISTS A, B, ure, extra_user")
         instance.query("DROP ROLE IF EXISTS R1, R2, R3, R4, rre, extra_role")
         instance.query("DROP TABLE IF EXISTS tbl")
         instance.query("DROP TABLE IF EXISTS table1")
@@ -82,13 +82,20 @@ def test_role_expiration(with_extra_role):
 
 
 def test_login_as_dropped_user_xml():
-    for _ in range(0, 2):
+    def remove_user_c_xml():
         instance.exec_in_container(
-            [
-                "bash",
-                "-c",
-                """
-            cat > /etc/clickhouse-server/users.d/user_c.xml << EOF
+            ["bash", "-c", "rm -f /etc/clickhouse-server/users.d/user_c.xml"]
+        )
+        instance.query("SYSTEM RELOAD CONFIG")
+
+    for _ in range(0, 2):
+        try:
+            instance.exec_in_container(
+                [
+                    "bash",
+                    "-c",
+                    """
+                cat > /etc/clickhouse-server/users.d/user_c.xml << EOF
 <clickhouse>
     <users>
         <C>
@@ -97,42 +104,41 @@ def test_login_as_dropped_user_xml():
     </users>
 </clickhouse>
 EOF""",
-            ]
-        )
-
-        assert_eq_with_retry(
-            instance, "SELECT name FROM system.users WHERE name='C'", "C"
-        )
-
-        instance.exec_in_container(
-            ["bash", "-c", "rm /etc/clickhouse-server/users.d/user_c.xml"]
-        )
-        instance.query("SYSTEM RELOAD CONFIG")
-
-        expected_errors = [
-            "no user with such name",
-            "not found in `user directories`",
-            "User has been dropped",
-        ]
-        while True:
-            out, err = instance.query_and_get_answer_with_error("SELECT 1", user="C")
-            found_error = [
-                expected_error
-                for expected_error in expected_errors
-                if (expected_error in err)
-            ]
-            if found_error:
-                logging.debug(f"Got error '{found_error}' just as expected")
-                break
-            if out == "1\n":
-                logging.debug("Got output '1', retrying...")
-                time.sleep(0.5)
-                continue
-            raise Exception(
-                f"Expected either output '1' or one of errors '{expected_errors}', got output={out} and error={err}"
+                ]
             )
 
-        assert instance.query("SELECT name FROM system.users WHERE name='C'") == ""
+            assert_eq_with_retry(
+                instance, "SELECT name FROM system.users WHERE name='C'", "C"
+            )
+
+            remove_user_c_xml()
+
+            expected_errors = [
+                "no user with such name",
+                "not found in `user directories`",
+                "User has been dropped",
+            ]
+            while True:
+                out, err = instance.query_and_get_answer_with_error("SELECT 1", user="C")
+                found_error = [
+                    expected_error
+                    for expected_error in expected_errors
+                    if (expected_error in err)
+                ]
+                if found_error:
+                    logging.debug(f"Got error '{found_error}' just as expected")
+                    break
+                if out == "1\n":
+                    logging.debug("Got output '1', retrying...")
+                    time.sleep(0.5)
+                    continue
+                raise Exception(
+                    f"Expected either output '1' or one of errors '{expected_errors}', got output={out} and error={err}"
+                )
+
+            assert instance.query("SELECT name FROM system.users WHERE name='C'") == ""
+        finally:
+            remove_user_c_xml()
 
 
 def test_roles_cache():
