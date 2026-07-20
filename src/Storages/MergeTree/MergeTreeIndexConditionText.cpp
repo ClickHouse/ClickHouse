@@ -952,6 +952,12 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
 
     if (typeid_cast<const KeyValuePairsTokenizer *>(tokenizer) && WhichDataType(value_type).isStringOrFixedString())
     {
+        /// LIKE rewrites over the keyValuePairs dictionary follow the same opt-in as the non-map LIKE
+        /// path: scanning the dictionary for pattern matches is only done when
+        /// use_text_index_like_evaluation_by_dictionary_scan is set. Exact key/value lookups below are
+        /// precise and always eligible, so this gate applies only to the LIKE-pattern branches.
+        const bool like_dict_scan_enabled = getContext()->getSettingsRef()[Setting::use_text_index_like_evaluation_by_dictionary_scan];
+
         /// `m['key'] = 'value'`: exact lookup of the combined key-value token. Correct precisely
         /// because the token encodes the pair unambiguously, so its posting list contains exactly
         /// the matching rows — hence exact direct read.
@@ -991,8 +997,16 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         /// `mapContainsValueLike(m, pattern)`: value-only LIKE search over decoded token values.
         else if (function_name == "mapContainsValueLike" && header.has(index_column_node.getColumnName()))
         {
-            auto value_pattern = std::make_shared<OptimizedRegularExpression>(
-                Regexps::createRegexp</*like=*/ true, /*no_capture=*/ true, /*case_insensitive=*/ false>(value_field.safeGet<String>()));
+            /// Gate the dictionary scan exactly like the non-map LIKE path: opt-in setting, plus the
+            /// `%token%` form with a token no shorter than text_index_like_min_pattern_length
+            /// (stringLikeToPatterns enforces both). Otherwise bail to a brute-force scan.
+            if (!like_dict_scan_enabled)
+                return false;
+            auto patterns = stringLikeToPatterns(value_field, /*case_insensitive=*/ false);
+            if (patterns.size() != 1)
+                return false;
+
+            auto value_pattern = std::make_shared<OptimizedRegularExpression>(std::move(patterns.front()));
 
             std::vector<TokenValueMatcher> value_matchers;
             value_matchers.push_back(TokenValueMatcher{.key = std::nullopt, .value = std::nullopt, .value_pattern = std::move(value_pattern)});
@@ -1008,13 +1022,16 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         {
             if (auto key = tryGetMapElementKeyForKeyValueIndex(index_column_node))
             {
-                auto value_pattern = std::make_shared<OptimizedRegularExpression>(
-                    Regexps::createRegexp</*like=*/ true, /*no_capture=*/ true, /*case_insensitive=*/ false>(value_field.safeGet<String>()));
-
-                /// If the pattern matches the empty string (e.g. `LIKE '%'`), it is true for rows
-                /// lacking the key (default value ''), which have no token. Bail to a full scan.
-                if (value_pattern->match("", 0))
+                /// Same opt-in + minimum-length gate as the non-map LIKE path. A `%token%` pattern
+                /// never matches the empty string, so an absent key (default value '') is correctly
+                /// excluded without a separate empty-match bail; anything else bails to a full scan.
+                if (!like_dict_scan_enabled)
                     return false;
+                auto patterns = stringLikeToPatterns(value_field, /*case_insensitive=*/ false);
+                if (patterns.size() != 1)
+                    return false;
+
+                auto value_pattern = std::make_shared<OptimizedRegularExpression>(std::move(patterns.front()));
 
                 std::vector<TokenValueMatcher> value_matchers;
                 value_matchers.push_back(TokenValueMatcher{.key = std::move(key), .value = std::nullopt, .value_pattern = std::move(value_pattern)});
@@ -1068,8 +1085,14 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         /// `mapContainsKeyLike(m, pattern)`: key LIKE search over decoded token keys.
         else if (function_name == "mapContainsKeyLike" && header.has(index_column_node.getColumnName()))
         {
-            auto key_pattern = std::make_shared<OptimizedRegularExpression>(
-                Regexps::createRegexp</*like=*/ true, /*no_capture=*/ true, /*case_insensitive=*/ false>(value_field.safeGet<String>()));
+            /// Same opt-in + minimum-length gate as the non-map LIKE path; otherwise bail to a full scan.
+            if (!like_dict_scan_enabled)
+                return false;
+            auto patterns = stringLikeToPatterns(value_field, /*case_insensitive=*/ false);
+            if (patterns.size() != 1)
+                return false;
+
+            auto key_pattern = std::make_shared<OptimizedRegularExpression>(std::move(patterns.front()));
 
             std::vector<TokenValueMatcher> value_matchers;
             value_matchers.push_back(TokenValueMatcher{.key_pattern = std::move(key_pattern)});
