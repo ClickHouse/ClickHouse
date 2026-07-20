@@ -5,6 +5,8 @@
 2. The `match[]` parameter is only supported as a bare metric name so far; a full series selector with
    label matchers is rejected with a clear error instead of being treated as a literal metric name and
    silently returning the wrong metadata.
+3. Prometheus allows `match[]` to be repeated; the result is the union over all the given metric names,
+   and a repeated value must not be silently dropped.
 """
 
 import pytest
@@ -48,6 +50,13 @@ def send_test_data():
                 "path/segment": "b",
             },
             {1000: 0.3},
+        ),
+        (
+            {
+                "__name__": "memory_usage",
+                "host": "server1",
+            },
+            {1000: 0.8},
         ),
     ]
     protobuf = convert_time_series_to_protobuf(time_series)
@@ -117,3 +126,34 @@ def test_bare_metric_name_match_still_works():
     """A bare metric name in `match[]` keeps filtering the series set."""
     data = get_json_from_api("/api/v1/series?match[]=cpu_usage")
     assert len(data) == 2, f"Expected 2 cpu_usage series, got: {data}"
+
+
+def test_repeated_match_returns_union_of_series():
+    """Prometheus allows `match[]` to be repeated: the result is the union of the matched series,
+    so the second value must not be silently dropped."""
+    data = get_json_from_api("/api/v1/series?match[]=cpu_usage&match[]=memory_usage")
+    names = sorted(series["__name__"] for series in data)
+    assert names == ["cpu_usage", "cpu_usage", "memory_usage"], f"Unexpected series: {data}"
+
+
+def test_repeated_match_returns_union_of_labels():
+    data = get_json_from_api("/api/v1/labels?match[]=cpu_usage&match[]=memory_usage")
+    assert set(data) == {"__name__", "host", "http.status_code", "path/segment"}, f"Unexpected labels: {data}"
+
+
+def test_repeated_match_returns_union_of_label_values():
+    data = get_json_from_api("/api/v1/label/host/values?match[]=memory_usage")
+    assert data == ["server1"], f"Unexpected values: {data}"
+
+    data = get_json_from_api("/api/v1/label/host/values?match[]=cpu_usage&match[]=memory_usage")
+    assert set(data) == {"server1", "server2"}, f"Unexpected values: {data}"
+
+
+def test_selector_anywhere_in_repeated_match_rejected():
+    """A full series selector must be rejected even when it is not the first `match[]` value."""
+    url = f'http://{node.ip_address}:9093/api/v1/series?match[]=cpu_usage&match[]=memory_usage{{host="server1"}}'
+    response = requests.get(url)
+    assert response.status_code == 400, f"Expected 400, got {response.status_code}: {response.text}"
+    data = response.json()
+    assert data["status"] == "error", f"Expected error status, got: {data}"
+    assert "match[]" in data["error"], f"Unexpected error message: {data}"

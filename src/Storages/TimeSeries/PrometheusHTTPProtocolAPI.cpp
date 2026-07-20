@@ -84,6 +84,37 @@ void checkMatchParamIsSupported(const String & match_param)
             match_param);
 }
 
+/// Prometheus allows the `match[]` parameter to be repeated, and the result is the union of the series
+/// matched by each selector. Within the bare-metric-name subset supported so far that union is an exact
+/// `metric_name IN (...)` predicate. Returns an empty string when there is no filter to apply (no
+/// `match[]` values, or only empty ones). Each value is validated by `checkMatchParamIsSupported`, so a
+/// full series selector anywhere in the list is rejected (fail closed) instead of being silently dropped.
+String makeMetricNameCondition(const Strings & match_params)
+{
+    Strings metric_names;
+    for (const auto & match_param : match_params)
+    {
+        checkMatchParamIsSupported(match_param);
+        if (!match_param.empty())
+            metric_names.push_back(match_param);
+    }
+
+    if (metric_names.empty())
+        return {};
+
+    if (metric_names.size() == 1)
+        return fmt::format("{} = {}", TimeSeriesColumnNames::MetricName, quoteString(metric_names[0]));
+
+    String list;
+    for (const auto & metric_name : metric_names)
+    {
+        if (!list.empty())
+            list += ", ";
+        list += quoteString(metric_name);
+    }
+    return fmt::format("{} IN ({})", TimeSeriesColumnNames::MetricName, list);
+}
+
 /// Prometheus escapes label names that are not legacy names (`[a-zA-Z_][a-zA-Z0-9_]*`) using the "values"
 /// escaping scheme before putting them into the `/api/v1/label/<name>/values` path: e.g. the tag
 /// `http.status_code` is requested as `U__http_2e_status__code`. Decode it back so the endpoint looks up
@@ -562,7 +593,7 @@ void PrometheusHTTPProtocolAPI::appendTimeRangeConditions(
 /// Queries the tags table and serializes each series as a JSON object with __name__ and all tag key-value pairs.
 void PrometheusHTTPProtocolAPI::getSeries(
     WriteBuffer & response,
-    const String & match_param,
+    const Strings & match_params,
     const String & start_param,
     const String & end_param,
     UInt64 limit,
@@ -587,13 +618,10 @@ void PrometheusHTTPProtocolAPI::getSeries(
     String query = fmt::format("SELECT DISTINCT {} FROM {}", select_columns, tags_table_id.getFullTableName());
 
     std::vector<String> conditions;
-    checkMatchParamIsSupported(match_param);
-    if (!match_param.empty())
-    {
-        /// Only a bare metric name is supported so far (a full series selector is rejected above), so the
-        /// `match[]` parameter maps directly to an exact metric name predicate.
-        conditions.push_back(fmt::format("{} = {}", TimeSeriesColumnNames::MetricName, quoteString(match_param)));
-    }
+    /// Only bare metric names are supported so far (a full series selector is rejected inside), so the
+    /// `match[]` parameters map directly to an exact metric name predicate (the union of the names).
+    if (String metric_name_condition = makeMetricNameCondition(match_params); !metric_name_condition.empty())
+        conditions.push_back(metric_name_condition);
     appendTimeRangeConditions(conditions, tags_table, start_param, end_param);
 
     for (size_t i = 0; i < conditions.size(); ++i)
@@ -721,7 +749,7 @@ void PrometheusHTTPProtocolAPI::getSeries(
 /// Always includes "__name__" as a virtual label, then queries distinct keys from the tags Map column.
 void PrometheusHTTPProtocolAPI::getLabels(
     WriteBuffer & response,
-    const String & match_param,
+    const Strings & match_params,
     const String & start_param,
     const String & end_param,
     UInt64 limit,
@@ -759,9 +787,8 @@ void PrometheusHTTPProtocolAPI::getLabels(
         "SELECT DISTINCT arrayJoin({}) AS label_key FROM {}", label_keys_expr, tags_table_id.getFullTableName());
 
     std::vector<String> conditions;
-    checkMatchParamIsSupported(match_param);
-    if (!match_param.empty())
-        conditions.push_back(fmt::format("{} = {}", TimeSeriesColumnNames::MetricName, quoteString(match_param)));
+    if (String metric_name_condition = makeMetricNameCondition(match_params); !metric_name_condition.empty())
+        conditions.push_back(metric_name_condition);
     appendTimeRangeConditions(conditions, tags_table, start_param, end_param);
 
     for (size_t i = 0; i < conditions.size(); ++i)
@@ -850,7 +877,7 @@ void PrometheusHTTPProtocolAPI::getLabels(
 void PrometheusHTTPProtocolAPI::getLabelValues(
     WriteBuffer & response,
     const String & label_name_param,
-    const String & match_param,
+    const Strings & match_params,
     const String & start_param,
     const String & end_param,
     UInt64 limit,
@@ -863,8 +890,6 @@ void PrometheusHTTPProtocolAPI::getLabelValues(
     /// `http.status_code` arrives as `U__http_2e_status__code`). Decode it back before comparing against
     /// `tags_to_columns` or indexing the `tags` map, otherwise dotted/slashed tag names are unqueryable.
     const String label_name = unescapePrometheusLabelName(label_name_param);
-
-    checkMatchParamIsSupported(match_param);
 
     String query;
     /// Collect WHERE conditions and join them, so the query stays valid regardless of which branch is taken.
@@ -918,12 +943,8 @@ void PrometheusHTTPProtocolAPI::getLabelValues(
         }
     }
 
-    if (!match_param.empty())
-    {
-        conditions.push_back(fmt::format("{} = {}",
-            TimeSeriesColumnNames::MetricName,
-            quoteString(match_param)));
-    }
+    if (String metric_name_condition = makeMetricNameCondition(match_params); !metric_name_condition.empty())
+        conditions.push_back(metric_name_condition);
     appendTimeRangeConditions(conditions, tags_table, start_param, end_param);
 
     for (size_t i = 0; i < conditions.size(); ++i)

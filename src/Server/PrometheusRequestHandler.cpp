@@ -1,5 +1,7 @@
 #include <Server/PrometheusRequestHandler.h>
 
+#include <limits>
+
 #include <IO/HTTPCommon.h>
 #include <IO/ReadBuffer.h>
 #include <Server/HTTP/WriteBufferFromHTTPServerResponse.h>
@@ -468,6 +470,16 @@ public:
                 ErrorCodes::BAD_ARGUMENTS,
                 "Invalid value of the 'limit' parameter: '{}', expected a non-negative integer",
                 limit_str);
+
+        /// The metadata endpoints detect truncation by querying `LIMIT limit + 1` rows, so the maximum
+        /// representable value cannot be served: the addition would wrap to zero and turn a valid request
+        /// into an empty response with no truncation warning. Reject it up front (fail closed).
+        if (limit == std::numeric_limits<UInt64>::max())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "The value of the 'limit' parameter is too large: {}, the maximum supported value is {}",
+                limit, std::numeric_limits<UInt64>::max() - 1);
+
         return limit;
     }
 
@@ -562,7 +574,7 @@ public:
             }
             else if (uri_path.ends_with("/series"))
             {
-                String match = params->get("match[]", "");
+                Strings match = params->getAll("match[]");
                 String start = params->get("start", "");
                 String end = params->get("end", "");
                 UInt64 limit = getLimitParam();
@@ -571,7 +583,7 @@ public:
             }
             else if (uri_path.ends_with("/labels"))
             {
-                String match = params->get("match[]", "");
+                Strings match = params->getAll("match[]");
                 String start = params->get("start", "");
                 String end = params->get("end", "");
                 UInt64 limit = getLimitParam();
@@ -580,7 +592,7 @@ public:
             }
             else if (auto label_name = extractLabelValuesName(uri_path))
             {
-                String match = params->get("match[]", "");
+                Strings match = params->getAll("match[]");
                 String start = params->get("start", "");
                 String end = params->get("end", "");
                 UInt64 limit = getLimitParam();

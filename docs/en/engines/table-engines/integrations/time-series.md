@@ -418,7 +418,7 @@ A `TimeSeries` table can be exposed through a Prometheus-compatible HTTP API con
 
 These endpoints read from the [tags](#tags-table) target table and deduplicate by series identity.
 
-The optional `match[]` parameter restricts the result to a single metric name, for example `/api/v1/series?match[]=cpu_usage`.
+The optional `match[]` parameter restricts the result by metric name, for example `/api/v1/series?match[]=cpu_usage`. The parameter can be repeated, in which case the result is the union over all the given metric names, for example `/api/v1/series?match[]=cpu_usage&match[]=memory_usage`.
 
 The optional `limit` parameter caps the number of returned items, for example `/api/v1/labels?limit=10` (`0` means no limit, which is also the default). When the result is truncated, the response carries the standard Prometheus warning `results truncated due to limit`. The query endpoints (`/api/v1/query` and `/api/v1/query_range`) do not implement `limit` yet and reject a request that specifies it.
 
@@ -460,7 +460,7 @@ Each endpoint needs a handler of type `query_api`. Because the label-values endp
 ```
 
 :::note
-The `match[]` parameter currently supports a plain metric name only. A full series selector with label matchers (e.g. `cpu_usage{host="server1"}`) is not yet parsed and is rejected with an explicit error rather than being treated as a metric literally named `cpu_usage{host="server1"}`.
+Each `match[]` value currently supports a plain metric name only. A full series selector with label matchers (e.g. `cpu_usage{host="server1"}`) is not yet parsed and is rejected with an explicit error rather than being treated as a metric literally named `cpu_usage{host="server1"}`.
 :::
 
 # Functions {#functions}

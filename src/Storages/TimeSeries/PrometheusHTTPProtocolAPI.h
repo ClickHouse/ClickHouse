@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Common/Logger_fwd.h>
+#include <Core/Names.h>
 #include <Formats/FormatSettings.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/executeQuery.h>
@@ -48,11 +49,13 @@ public:
         QueryFinishCallback query_finish_callback = {});
 
     /// Get series metadata (/api/v1/series).
+    /// `match_params` are the values of the repeated `match[]` parameter (each one a bare metric name;
+    /// the result is the union over all of them, and an empty list means no filter).
     /// `limit` is the maximum number of returned items (0 means no limit); when the result is
     /// truncated, the response carries the Prometheus "results truncated due to limit" warning.
     void getSeries(
         WriteBuffer & response,
-        const String & match_param,
+        const Strings & match_params,
         const String & start_param,
         const String & end_param,
         UInt64 limit,
@@ -61,7 +64,7 @@ public:
     /// Get all label names (/api/v1/labels). See getSeries for the meaning of `limit`.
     void getLabels(
         WriteBuffer & response,
-        const String & match_param,
+        const Strings & match_params,
         const String & start_param,
         const String & end_param,
         UInt64 limit,
@@ -71,7 +74,7 @@ public:
     void getLabelValues(
         WriteBuffer & response,
         const String & label_name,
-        const String & match_param,
+        const Strings & match_params,
         const String & start_param,
         const String & end_param,
         UInt64 limit,
