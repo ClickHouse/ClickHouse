@@ -1027,8 +1027,6 @@ void RemoteQueryExecutor::finish()
                         LOG_TRACE(log, "Replica reported expected cancellation during drain: {}", packet.exception->displayText());
                     break;
                 }
-                got_exception_from_replica.store(true, std::memory_order_release);
-
                 if (shouldIgnoreShardException(packet.exception->code()))
                 {
                     if (log)
@@ -1039,11 +1037,20 @@ void RemoteQueryExecutor::finish()
 
                     reportShardSkipped();
 
-                    /// Stop draining: the server terminated the query with this exception.
-                    finished = true;
+                    /// Treat an ignored shard exception like `EndOfStream` for that one connection.
+                    /// `receivePacket` has already disconnected and invalidated the replica that sent
+                    /// the `Exception` packet, while the other parallel/hedged replicas can still be
+                    /// active with unread trailing packets. Keep draining until `hasActiveConnections`
+                    /// says otherwise, and do not publish `got_exception_from_replica` or `finished`
+                    /// here: that would make `isQueryPending` false with connections still active, so
+                    /// cleanup would skip `disconnect` and could return out-of-sync connections to the
+                    /// pool, and it would discard the remaining replicas' trailing `Progress` packets
+                    /// (under-counting `rows_read` — the bug this drain exists to fix). The `finished`
+                    /// flag is published by the `SCOPE_EXIT` above once every replica is drained.
                     break;
                 }
 
+                got_exception_from_replica.store(true, std::memory_order_release);
                 packet.exception->rethrow();
                 break;
 
