@@ -3613,6 +3613,9 @@ private:
   *  try to convert from String to type T through parsing,
   *  if cannot parse, return default value instead of throwing exception.
   * Function toTOrNull will return Nullable type with NULL when cannot parse.
+  * Functions toDateOrNull, toDateTimeOrNull and toDateTime64OrNull also accept native integer
+  *  arguments (interpreted the same way as by toDate, toDateTime and toDateTime64) and return
+  *  NULL only for values that are out of range of the result type.
   * NOTE Also need to implement tryToUnixTimestamp with timezone.
   */
 template <typename ToDataType, typename Name,
@@ -3625,6 +3628,9 @@ public:
     static constexpr bool to_datetime64 = std::is_same_v<ToDataType, DataTypeDateTime64>;
     static constexpr bool to_time64 = std::is_same_v<ToDataType, DataTypeTime64>;
     static constexpr bool to_decimal = IsDataTypeDecimal<ToDataType> && !(to_datetime64 || to_time64);
+    static constexpr bool support_integer_input = exception_mode == ConvertFromStringExceptionMode::Null
+        && parsing_mode == ConvertFromStringParsingMode::Basic
+        && (std::is_same_v<ToDataType, DataTypeDate> || std::is_same_v<ToDataType, DataTypeDateTime> || to_datetime64);
 
     static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionConvertFromString>(context); }
 
@@ -3648,15 +3654,22 @@ public:
 
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
+    static bool isStringOrFixedStringOrNativeInteger(const IDataType & type)
+    {
+        return isStringOrFixedString(type) || isNativeInteger(type);
+    }
+
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         DataTypePtr res;
 
         if (isDateTime64<Name, ToDataType>(arguments) || isTime64<Name, ToDataType>(arguments))
         {
-            const auto required = FunctionArgumentDescriptors{
-                {"string", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), nullptr, "String or FixedString"}
-            };
+            const auto required = support_integer_input
+                ? FunctionArgumentDescriptors{
+                    {"value", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedStringOrNativeInteger), nullptr, "String, FixedString or integer"}}
+                : FunctionArgumentDescriptors{
+                    {"string", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), nullptr, "String or FixedString"}};
             const auto precision_opt = FunctionArgumentDescriptors{
                 {"precision", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isUInt8), isColumnConst, "const UInt8"}
             };
@@ -3689,12 +3702,16 @@ public:
                     "Second argument only make sense for DateTime (time zone, optional) and Decimal (scale).",
                     getName(), arguments.size());
 
-            if (!isStringOrFixedString(arguments[0].type))
+            bool is_first_argument_valid = isStringOrFixedString(arguments[0].type);
+            if constexpr (support_integer_input)
+                is_first_argument_valid = is_first_argument_valid || isNativeInteger(arguments[0].type);
+
+            if (!is_first_argument_valid)
             {
                 if (this->getName().contains("OrZero") || this->getName().contains("OrNull"))
                     throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of first argument of function {}. "
-                            "Conversion functions with postfix 'OrZero' or 'OrNull' should take String argument",
-                            arguments[0].type->getName(), getName());
+                            "Conversion functions with postfix 'OrZero' or 'OrNull' should take String{} argument",
+                            arguments[0].type->getName(), getName(), support_integer_input ? " or integer" : "");
                 else
                     throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of first argument of function {}",
                             arguments[0].type->getName(), getName());
@@ -3762,7 +3779,115 @@ public:
                 arguments, result_type, input_rows_count, settings, scale);
         }
 
+        if constexpr (support_integer_input)
+        {
+            if (isNativeInteger(*from_type))
+                return executeIntegerInput<ConvertToDataType>(arguments, result_type, input_rows_count, scale);
+        }
+
         return nullptr;
+    }
+
+    /** Conversion of a native integer argument for toDateOrNull, toDateTimeOrNull and toDateTime64OrNull.
+      * The value is interpreted the same way as by toDate, toDateTime and toDateTime64,
+      * but values out of range of the result type produce NULL instead of saturation or an exception.
+      */
+    template <typename ConvertToDataType>
+    ColumnPtr executeIntegerInput(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, UInt32 scale) const
+    {
+        auto convert = [&]<typename FromDataType>(const FromDataType *) -> ColumnPtr
+        {
+            if constexpr (std::is_same_v<ConvertToDataType, DataTypeDateTime64>)
+            {
+                /// ConvertImpl saturates out of range values for DateTime64 even with the accurate
+                /// conversion additions, so the conversion is implemented separately here.
+                return convertIntegerToDateTime64OrNull<FromDataType>(arguments, input_rows_count, scale);
+            }
+            else
+            {
+                /// The same conversion as accurateCastOrNull: NULL for values out of range of the result type.
+                ColumnPtr res = ConvertImpl<FromDataType, ConvertToDataType, Name>::execute(
+                    arguments, removeNullable(result_type), input_rows_count,
+                    BehaviourOnErrorFromString::ConvertDefaultBehaviorTag, settings,
+                    DateTimeAccurateOrNullConvertStrategyAdditions{});
+
+                /// Conversions that cannot fail (e.g. UInt8 to Date) take a generic code path
+                /// that returns a non-Nullable column.
+                if (!checkAndGetColumn<ColumnNullable>(res.get()))
+                    res = ColumnNullable::create(res, ColumnUInt8::create(res->size(), false));
+
+                return res;
+            }
+        };
+
+        const IDataType * from_type = arguments[0].type.get();
+
+        if (const auto * type_uint8 = checkAndGetDataType<DataTypeUInt8>(from_type))
+            return convert(type_uint8);
+        if (const auto * type_uint16 = checkAndGetDataType<DataTypeUInt16>(from_type))
+            return convert(type_uint16);
+        if (const auto * type_uint32 = checkAndGetDataType<DataTypeUInt32>(from_type))
+            return convert(type_uint32);
+        if (const auto * type_uint64 = checkAndGetDataType<DataTypeUInt64>(from_type))
+            return convert(type_uint64);
+        if (const auto * type_int8 = checkAndGetDataType<DataTypeInt8>(from_type))
+            return convert(type_int8);
+        if (const auto * type_int16 = checkAndGetDataType<DataTypeInt16>(from_type))
+            return convert(type_int16);
+        if (const auto * type_int32 = checkAndGetDataType<DataTypeInt32>(from_type))
+            return convert(type_int32);
+        if (const auto * type_int64 = checkAndGetDataType<DataTypeInt64>(from_type))
+            return convert(type_int64);
+
+        return nullptr;
+    }
+
+    /// Conversion of a native integer (Unix timestamp in whole seconds) to Nullable(DateTime64):
+    /// NULL for values out of the [MIN_DATETIME64_TIMESTAMP, MAX_DATETIME64_TIMESTAMP] range of DateTime64.
+    template <typename FromDataType>
+    ColumnPtr convertIntegerToDateTime64OrNull(const ColumnsWithTypeAndName & arguments, size_t input_rows_count, UInt32 scale) const
+    {
+        using FromFieldType = typename FromDataType::FieldType;
+
+        const auto * col_from = checkAndGetColumn<typename FromDataType::ColumnType>(arguments[0].column.get());
+        if (!col_from)
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}",
+                arguments[0].column->getName(), getName());
+
+        const auto & vec_from = col_from->getData();
+
+        auto col_to = DataTypeDateTime64::ColumnType::create(input_rows_count, scale);
+        auto & vec_to = col_to->getData();
+
+        auto col_null_map_to = ColumnUInt8::create(input_rows_count, false);
+        auto & vec_null_map_to = col_null_map_to->getData();
+
+        const auto scale_multiplier = DecimalUtils::scaleMultiplier<DateTime64::NativeType>(scale);
+
+        for (size_t i = 0; i < input_rows_count; ++i)
+        {
+            /// UInt8, UInt16 and UInt32 always fit into the DateTime64 range.
+            bool is_out_of_range = false;
+            if constexpr (std::is_same_v<FromFieldType, UInt64>)
+                is_out_of_range = vec_from[i] > static_cast<UInt64>(MAX_DATETIME64_TIMESTAMP);
+            else if constexpr (is_signed_v<FromFieldType>)
+                is_out_of_range = vec_from[i] < MIN_DATETIME64_TIMESTAMP || vec_from[i] > MAX_DATETIME64_TIMESTAMP;
+
+            DateTime64::NativeType scaled_value = 0;
+            /// The scaled value can overflow DateTime64::NativeType for large scales.
+            if (is_out_of_range
+                || common::mulOverflow(static_cast<DateTime64::NativeType>(vec_from[i]), scale_multiplier, scaled_value))
+            {
+                vec_to[i] = DateTime64(0);
+                vec_null_map_to[i] = true;
+            }
+            else
+            {
+                vec_to[i] = DateTime64(scaled_value);
+            }
+        }
+
+        return ColumnNullable::create(std::move(col_to), std::move(col_null_map_to));
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
@@ -3826,9 +3951,16 @@ public:
         }
 
         if (!result_column)
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}. "
-                "Only String or FixedString argument is accepted for try-conversion function. For other arguments, "
-                "use function without 'orZero' or 'orNull'.", arguments[0].type->getName(), getName());
+        {
+            if constexpr (support_integer_input)
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}. "
+                    "Only String, FixedString or native integer arguments are accepted for try-conversion function. For other arguments, "
+                    "use function without 'orZero' or 'orNull'.", arguments[0].type->getName(), getName());
+            else
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}. "
+                    "Only String or FixedString argument is accepted for try-conversion function. For other arguments, "
+                    "use function without 'orZero' or 'orNull'.", arguments[0].type->getName(), getName());
+        }
 
         return result_column;
     }
