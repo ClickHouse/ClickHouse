@@ -1071,7 +1071,7 @@ TEST(UniqueKeyEncoding, ColumnConstEncodeBlockMatchesFullColumn)
     for (int i = 0; i < 4; ++i)
         full->insert(Field(UInt64(42)));
 
-    Columns const_cols{const_col};
+    Columns const_cols{std::move(const_col)};
     Columns full_cols{std::move(full)};
 
     VectorWithMemoryTracking<String> const_out;
