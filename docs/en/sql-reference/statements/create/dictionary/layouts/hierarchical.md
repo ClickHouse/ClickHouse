@@ -44,7 +44,7 @@ This table contains a column `parent_region` that contains the key of the neares
 
 ClickHouse supports the hierarchical property for external dictionary attributes. This property allows you to configure the hierarchical dictionary similar to what is described above.
 
-The [dictGetHierarchy](/sql-reference/functions/ext-dict-functions.md#dictGetHierarchy) function allows you to get the parent chain of an element.
+The [dictGetHierarchy](/sql-reference/functions/ext-dict-functions.md#dictGetHierarchy) function allows you to get the parent chain of an element. The [dictGetRoot](/sql-reference/functions/ext-dict-functions.md#dictGetRoot) function returns just the topmost ancestor (the root) of an element.
 
 For our example, the structure of the dictionary can be the following:
 
