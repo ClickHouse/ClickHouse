@@ -7,6 +7,7 @@
 --- parse error counters ---
 no new parse errors
 --- dynamic data ---
+[12]	Array(UInt64)
 2021-01-01	Date
 192.168.0.1	IPv4
 --- dynamic literal retry data ---
@@ -30,6 +31,7 @@ no new parse errors
 {}
 --- aggregate and QBit data ---
 1
+3
 [2]
 --- decimal overflow still fails ---
 ARGUMENT_OUT_OF_BOUND
@@ -39,7 +41,10 @@ ARGUMENT_OUT_OF_BOUND
 ARGUMENT_OUT_OF_BOUND
 --- decimal outside Variant overflow still fails ---
 ARGUMENT_OUT_OF_BOUND
+--- aggregate decimal overflow still fails ---
+ARGUMENT_OUT_OF_BOUND
 --- decimal data ---
+0
 1.23
 1.23
 3

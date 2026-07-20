@@ -1046,10 +1046,46 @@ bool SerializationDynamic::tryDeserializeTextQuoted(DB::IColumn & column, DB::Re
     if (!tryReadQuotedField(field, istr))
         return false;
 
+    auto & dynamic_column = assert_cast<ColumnDynamic &>(column);
+    JSONInferenceInfo json_info;
+    auto variant_type = tryInferDataTypeByEscapingRule(field, settings, FormatSettings::EscapingRule::Quoted, &json_info);
+
+    auto try_deserialize_variant = [&settings](const ISerialization & serialization, IColumn & col, ReadBuffer & buf)
+    {
+        return serialization.tryDeserializeTextQuoted(col, buf, settings);
+    };
+
+    if (checkIfTypeIsComplete(variant_type))
+    {
+        auto variant_type_name = variant_type->getName();
+        const auto & serialization = dynamic_column.getVariantSerialization(variant_type, variant_type_name);
+        const auto & variant_info = dynamic_column.getVariantInfo();
+        ReadBufferFromString field_buf(field);
+
+        if (auto it = variant_info.variant_name_to_discriminator.find(variant_type_name);
+            it != variant_info.variant_name_to_discriminator.end())
+            return deserializeVariant<bool>(
+                dynamic_column.getVariantColumn(), serialization, it->second, field_buf, try_deserialize_variant);
+
+        auto tmp_variant_column = variant_type->createColumn();
+        if (!try_deserialize_variant(*serialization, *tmp_variant_column, field_buf))
+            return false;
+
+        if (dynamic_column.addNewVariant(variant_type, variant_type_name))
+        {
+            auto discr = variant_info.variant_name_to_discriminator.at(variant_type_name);
+            dynamic_column.getVariantColumn().insertIntoVariantFrom(discr, *tmp_variant_column, 0);
+        }
+        else
+            dynamic_column.insertValueIntoSharedVariant(*tmp_variant_column, variant_type, variant_type_name, 0);
+
+        return true;
+    }
+
     FormatSettings modified_settings = settings;
     modified_settings.values.deserialize_text_state = nullptr;
 
-    auto try_deserialize_variant = [&modified_settings](const ISerialization & serialization, IColumn & col, ReadBuffer & buf)
+    auto try_deserialize_existing_variant = [&modified_settings](const ISerialization & serialization, IColumn & col, ReadBuffer & buf)
     {
         return serialization.tryDeserializeTextQuoted(col, buf, modified_settings);
     };
@@ -1060,7 +1096,7 @@ bool SerializationDynamic::tryDeserializeTextQuoted(DB::IColumn & column, DB::Re
     };
 
     deserializeTextField(
-        column, std::move(field), settings, FormatSettings::EscapingRule::Quoted, try_deserialize_variant, deserialize_variant);
+        column, std::move(field), settings, FormatSettings::EscapingRule::Quoted, try_deserialize_existing_variant, deserialize_variant);
     return true;
 }
 

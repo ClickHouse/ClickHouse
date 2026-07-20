@@ -306,7 +306,10 @@ bool ValuesBlockInputFormat::tryParseExpressionUsingTemplate(MutableColumnPtr & 
 
 bool ValuesBlockInputFormat::tryReadValue(IColumn & column, size_t column_idx)
 {
-    if (!buf->eof() && (isAlphaASCII(*buf->position()) || *buf->position() == '_'))
+    const bool starts_with_aggregate_function_string = !buf->eof()
+        && *buf->position() == '\''
+        && WhichDataType(removeNullable(removeLowCardinality(types[column_idx]))).isAggregateFunction();
+    if (!buf->eof() && (isAlphaASCII(*buf->position()) || *buf->position() == '_' || starts_with_aggregate_function_string))
     {
         bool is_plain_value = checkStringCaseInsensitive("DEFAULT", *buf) && checkDelimiterAfterValue(column_idx);
         buf->rollbackToCheckpoint();
@@ -314,7 +317,10 @@ bool ValuesBlockInputFormat::tryReadValue(IColumn & column, size_t column_idx)
         if (!is_plain_value)
         {
             String field;
-            is_plain_value = tryReadQuotedField(field, *buf) && checkDelimiterAfterValue(column_idx);
+            is_plain_value = (starts_with_aggregate_function_string
+                    ? tryReadQuotedStringWithSQLStyle(field, *buf)
+                    : tryReadQuotedField(field, *buf))
+                && checkDelimiterAfterValue(column_idx);
             buf->rollbackToCheckpoint();
         }
 
@@ -345,7 +351,9 @@ bool ValuesBlockInputFormat::tryReadValue(IColumn & column, size_t column_idx)
             if (parsed_string)
             {
                 ReadBufferFromString in_buffer(string_value);
-                if (serializations[column_idx]->tryDeserializeWholeText(column, in_buffer, format_settings))
+                FormatSettings modified_settings = format_settings;
+                modified_settings.values.deserialize_text_state = nullptr;
+                if (serializations[column_idx]->tryDeserializeWholeText(column, in_buffer, modified_settings))
                     return true;
             }
 
@@ -370,7 +378,7 @@ std::optional<bool> ValuesBlockInputFormat::tryReadValueStreaming(
     IColumn & column, size_t column_idx, bool use_null_as_default, bool & retry_with_exceptions)
 {
     retry_with_exceptions = false;
-    deserialize_text_state.decimal_parse_failed = false;
+    deserialize_text_state.decimal_overflow = false;
     bool read = true;
     bool parsed = true;
 
@@ -410,7 +418,7 @@ std::optional<bool> ValuesBlockInputFormat::tryReadValueStreaming(
         /// of an expression like `1 + 1`. Remove the read value and let the SQL parser handle it.
         column.popBack(1);
     }
-    else if (deserialize_text_state.decimal_parse_failed)
+    else if (deserialize_text_state.decimal_overflow)
     {
         /// A failed Decimal parse at a digit or literal delimiter can be an overflow. Retry it with
         /// exceptions so a raw overflowing literal still reports ARGUMENT_OUT_OF_BOUND. Other

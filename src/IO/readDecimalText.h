@@ -19,7 +19,8 @@ namespace ErrorCodes
 /// Use 'digits' input as max allowed meaning decimal digits in result. Place actual number of meaning digits in 'digits' output.
 /// Does not care about decimal scale, only about meaningful digits in decimal text representation.
 template <bool _throw_on_error, typename T>
-inline bool readDigits(ReadBuffer & buf, T & x, uint32_t & digits, int32_t & exponent, bool digits_only = false)
+inline bool readDigits(
+    ReadBuffer & buf, T & x, uint32_t & digits, int32_t & exponent, bool digits_only = false, bool * is_overflow = nullptr)
 {
     x = T(0);
     exponent = 0;
@@ -97,6 +98,8 @@ inline bool readDigits(ReadBuffer & buf, T & x, uint32_t & digits, int32_t & exp
                             std::to_string(digits + places),
                             std::to_string(max_digits));
 
+                    if (is_overflow)
+                        *is_overflow = true;
                     return false;
                 }
 
@@ -146,13 +149,17 @@ inline bool readDigits(ReadBuffer & buf, T & x, uint32_t & digits, int32_t & exp
 }
 
 template <typename T, typename ReturnType=void>
-inline ReturnType readDecimalText(ReadBuffer & buf, T & x, uint32_t precision, uint32_t & scale, bool digits_only = false)
+inline ReturnType readDecimalText(
+    ReadBuffer & buf, T & x, uint32_t precision, uint32_t & scale, bool digits_only = false, bool * is_overflow = nullptr)
 {
     static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
 
+    if (is_overflow)
+        *is_overflow = false;
+
     uint32_t digits = precision;
     int32_t exponent = 0;
-    auto ok = readDigits<throw_exception>(buf, x, digits, exponent, digits_only);
+    auto ok = readDigits<throw_exception>(buf, x, digits, exponent, digits_only, is_overflow);
 
     if (!throw_exception && !ok)
         return ReturnType(false);
@@ -166,7 +173,11 @@ inline ReturnType readDecimalText(ReadBuffer & buf, T & x, uint32_t precision, u
                 digits, convertFieldToString(x), exponent, scale, precision);
         }
         else
+        {
+            if (is_overflow)
+                *is_overflow = true;
             return ReturnType(false);
+        }
     }
 
     if (static_cast<int32_t>(scale) + exponent < 0)
@@ -194,9 +205,9 @@ inline ReturnType readDecimalText(ReadBuffer & buf, T & x, uint32_t precision, u
 }
 
 template <typename T>
-inline bool tryReadDecimalText(ReadBuffer & buf, T & x, uint32_t precision, uint32_t & scale)
+inline bool tryReadDecimalText(ReadBuffer & buf, T & x, uint32_t precision, uint32_t & scale, bool * is_overflow = nullptr)
 {
-    return readDecimalText<T, bool>(buf, x, precision, scale, true);
+    return readDecimalText<T, bool>(buf, x, precision, scale, true, is_overflow);
 }
 
 template <typename T>

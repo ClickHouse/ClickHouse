@@ -40,6 +40,7 @@ $CLICKHOUSE_CLIENT -q "CREATE TABLE t_values_decimal_string (v Tuple(Decimal32(2
 $CLICKHOUSE_CLIENT -q "CREATE TABLE t_values_decimal_map_key (m Map(Decimal64(2), UInt8)) ENGINE = Memory"
 $CLICKHOUSE_CLIENT -q "CREATE TABLE t_values_json (j JSON) ENGINE = Memory"
 $CLICKHOUSE_CLIENT -q "CREATE TABLE t_values_aggregate (x AggregateFunction(sum, UInt64)) ENGINE = Memory"
+$CLICKHOUSE_CLIENT -q "CREATE TABLE t_values_aggregate_decimal (x AggregateFunction(sum, Decimal32(2))) ENGINE = Memory"
 $CLICKHOUSE_CLIENT --allow_experimental_qbit_type=1 -q "CREATE TABLE t_values_qbit (q QBit(Float32, 1)) ENGINE = Memory"
 
 counters_before=$(get_parse_error_counters)
@@ -52,11 +53,11 @@ ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" --data-binary \
 
 # Decimal expression fallback, including an expression starting with 'd', must not construct exceptions either.
 ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" --data-binary \
-    "INSERT INTO t_values_decimal VALUES (1.23), (1.20 + 0.03), (divide(9, 3))"
+    "INSERT INTO t_values_decimal VALUES (1.23), (1.20 + 0.03), (divide(9, 3)), (1e-2147483649)"
 
 # Dynamic type inference must report a failed literal probe without throwing before SQL expression fallback.
 ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&allow_experimental_dynamic_type=1" --data-binary \
-    "INSERT INTO t_values_dynamic VALUES (toDate('2021-01-01')), (toIPv4('192.168.0.1'))"
+    "INSERT INTO t_values_dynamic VALUES (toDate('2021-01-01')), (toIPv4('192.168.0.1')), ([+12])"
 
 # Once a Dynamic column switches to expression parsing, retrying a later literal must preserve
 # the previous literal semantics and not apply NULL-as-default handling from the initial probe.
@@ -90,6 +91,8 @@ ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" --data-binary \
 # Parenthesized AggregateFunction and QBit expressions used to reach exception-backed probes.
 ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" --data-binary \
     "INSERT INTO t_values_aggregate VALUES ((initializeAggregation('sumState', 1::UInt64)))"
+${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&aggregate_function_input_format=array" --data-binary \
+    "INSERT INTO t_values_aggregate VALUES ('[1' || ',2]')"
 ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&allow_experimental_qbit_type=1" --data-binary \
     "INSERT INTO t_values_qbit VALUES ([1.0 + 1.0])"
 
@@ -127,7 +130,7 @@ echo '--- JSON data ---'
 $CLICKHOUSE_CLIENT -q "SELECT j FROM t_values_json ORDER BY toString(j)"
 
 echo '--- aggregate and QBit data ---'
-$CLICKHOUSE_CLIENT -q "SELECT finalizeAggregation(x) FROM t_values_aggregate"
+$CLICKHOUSE_CLIENT -q "SELECT finalizeAggregation(x) FROM t_values_aggregate ORDER BY 1"
 $CLICKHOUSE_CLIENT --allow_experimental_qbit_type=1 -q "SELECT CAST(q AS Array(Float32)) FROM t_values_qbit"
 
 # Decimal columns keep the old behavior: an overflowing decimal literal must fail the query
@@ -145,6 +148,11 @@ ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" --data-binary \
 echo '--- decimal outside Variant overflow still fails ---'
 ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" --data-binary \
     "INSERT INTO t_values_mixed_variant_decimal VALUES ((12345678.91, 'x'))" | grep -o "ARGUMENT_OUT_OF_BOUND" | head -1
+
+echo '--- aggregate decimal overflow still fails ---'
+${CLICKHOUSE_CURL} -sS \
+    "${CLICKHOUSE_URL}&aggregate_function_input_format=value&input_format_values_deduce_templates_of_expressions=0" \
+    --data-binary "INSERT INTO t_values_aggregate_decimal VALUES ('12345678.91')" | grep -o "ARGUMENT_OUT_OF_BOUND" | head -1
 
 echo '--- decimal data ---'
 $CLICKHOUSE_CLIENT -q "SELECT * FROM t_values_decimal ORDER BY d"

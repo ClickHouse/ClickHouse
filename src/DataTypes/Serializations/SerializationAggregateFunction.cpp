@@ -25,6 +25,7 @@ namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
     extern const int BAD_ARGUMENTS;
+    extern const int ARGUMENT_OUT_OF_BOUND;
 }
 
 
@@ -341,9 +342,11 @@ bool SerializationAggregateFunction::tryDeserializeTextQuoted(IColumn & column, 
         deserializeBasedOnInput(column, settings, s);
         return true;
     }
-    catch (...) // Ok: tryDeserializeTextQuoted is a try-pattern
+    catch (const Exception & e)
     {
-        rethrowIfNotParseError();
+        if (!isParseError(e.code())
+            || (settings.values.deserialize_text_state && e.code() == ErrorCodes::ARGUMENT_OUT_OF_BOUND))
+            throw;
         return false;
     }
 }

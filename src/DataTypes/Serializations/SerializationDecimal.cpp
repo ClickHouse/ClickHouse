@@ -18,8 +18,12 @@ namespace ErrorCodes
 }
 
 template <typename T>
-bool SerializationDecimal<T>::tryReadText(T & x, ReadBuffer & istr, UInt32 precision, UInt32 scale, bool csv, bool whole)
+bool SerializationDecimal<T>::tryReadText(
+    T & x, ReadBuffer & istr, UInt32 precision, UInt32 scale, bool csv, bool whole, bool * is_overflow)
 {
+    if (is_overflow)
+        *is_overflow = false;
+
     UInt32 unread_scale = scale;
     if (csv)
     {
@@ -29,14 +33,18 @@ bool SerializationDecimal<T>::tryReadText(T & x, ReadBuffer & istr, UInt32 preci
     else
     {
         bool parsed = whole
-            ? tryReadDecimalText(istr, x, precision, unread_scale)
-            : readDecimalText<T, bool>(istr, x, precision, unread_scale, false);
+            ? tryReadDecimalText(istr, x, precision, unread_scale, is_overflow)
+            : readDecimalText<T, bool>(istr, x, precision, unread_scale, false, is_overflow);
         if (!parsed)
             return false;
     }
 
     if (common::mulOverflow(x.value, DecimalUtils::scaleMultiplier<T>(unread_scale), x.value))
+    {
+        if (is_overflow)
+            *is_overflow = true;
         return false;
+    }
 
     return true;
 }
@@ -78,10 +86,11 @@ template <typename T>
 bool SerializationDecimal<T>::tryDeserializeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings, bool whole) const
 {
     T x{};
-    if (!tryReadText(x, istr, false, whole))
+    bool is_overflow = false;
+    if (!tryReadText(x, istr, false, whole, &is_overflow))
     {
-        if (settings.values.deserialize_text_state)
-            settings.values.deserialize_text_state->decimal_parse_failed = true;
+        if (is_overflow && settings.values.deserialize_text_state)
+            settings.values.deserialize_text_state->decimal_overflow = true;
         return false;
     }
 

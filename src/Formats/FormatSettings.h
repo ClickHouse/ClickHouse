@@ -514,7 +514,7 @@ struct FormatSettings
     /// Internal state passed through serializations while `Values` probes a literal.
     struct ValuesDeserializeTextState
     {
-        bool decimal_parse_failed = false;
+        bool decimal_overflow = false;
     };
 
     struct
