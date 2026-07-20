@@ -87,7 +87,7 @@ FileCachePtr FileCacheFactory::getOrCreate(
     {
         auto cache = std::make_shared<FileCache>(cache_name, file_cache_settings);
 
-        bool inserted = false;
+        bool inserted;
         std::tie(it, inserted) = caches_by_name.emplace(
             cache_name, std::make_unique<FileCacheData>(cache, file_cache_settings, config_path));
 

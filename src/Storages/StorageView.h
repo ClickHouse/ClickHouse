@@ -23,7 +23,6 @@ public:
 
     std::string getName() const override { return "View"; }
     bool isView() const override { return true; }
-    bool supportsTruncate() const override { return false; }
     bool isParameterizedView() const { return is_parameterized_view; }
 
     /// It is passed inside the query and solved at its level.

@@ -183,7 +183,6 @@ BlockIO InterpreterShowColumnsQuery::execute()
     return executeQuery(getRewrittenQuery(), query_context, QueryFlags{ .internal = true }).second;
 }
 
-void registerInterpreterShowColumnsQuery(InterpreterFactory & factory);
 void registerInterpreterShowColumnsQuery(InterpreterFactory & factory)
 {
     auto create_fn = [] (const InterpreterFactory::Arguments & args)

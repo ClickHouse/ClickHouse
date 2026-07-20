@@ -1,6 +1,0 @@
-3	['one','two','three']
-2	[('@system@','@repo@','log-a'),('@system@','@repo@','log-b')]
-binary content here
-2	['{"a": 1}','{"b": 2}']
-CANNOT_EXTRACT_TABLE_STRUCTURE
-2	['still','works']

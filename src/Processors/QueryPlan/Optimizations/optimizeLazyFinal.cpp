@@ -24,14 +24,7 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeIOSettings.h>
 
-namespace DB
-{
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
-
-namespace QueryPlanOptimizations
+namespace DB::QueryPlanOptimizations
 {
 
 /// Clone only the filter computation sub-DAG from a larger DAG.
@@ -80,19 +73,8 @@ static void addIsDeletedFilter(QueryPlan & plan, const String & is_deleted_colum
         }
     }
 
-    /// `createNonIntersectingPlan` must guarantee that `is_deleted_column` is in the
-    /// upstream header. Throw rather than passing a null pointer to `addFunction` —
-    /// any future regression in the upstream invariant should surface, not turn into UB.
-    if (!col_node)
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "Lazy FINAL optimization: column `{}` is missing from the non-intersecting reading step header. "
-            "This is a bug in `createNonIntersectingPlan`.",
-            is_deleted_column);
-
-    auto zero_type = std::make_shared<DataTypeUInt8>();
-    auto zero_column = zero_type->createColumnConst(0, Field(UInt8(0)));
-    const auto * zero_node = &dag.addColumn(std::move(zero_column), std::move(zero_type), "__is_deleted_zero");
+    const auto * zero_node = &dag.addColumn(
+        ColumnWithTypeAndName(DataTypeUInt8().createColumnConst(1, Field(UInt8(0))), std::make_shared<DataTypeUInt8>(), "__is_deleted_zero"));
 
     auto equals_func = FunctionFactory::instance().get("equals", context);
     const auto * filter_node = &dag.addFunction(equals_func, {col_node, zero_node}, "__is_deleted_filter");
@@ -101,27 +83,6 @@ static void addIsDeletedFilter(QueryPlan & plan, const String & is_deleted_colum
 
     plan.addStep(std::make_unique<FilterStep>(
         plan.getCurrentHeader(), std::move(dag), "__is_deleted_filter", /*remove_filter_column=*/ true));
-}
-
-/// Ensure `column_name` (if present as a DAG input) is also exposed as a DAG output,
-/// so that `ActionsDAG::updateHeader` does not erase it from the block.
-/// Used by the lazy-FINAL non-intersecting plan to keep the `is_deleted` column
-/// available for the downstream `is_deleted = 0` filter, even when prewhere/row-level
-/// filter has consumed it.
-static bool exposeInputAsDAGOutput(ActionsDAG & dag, const String & column_name)
-{
-    std::unordered_set<const ActionsDAG::Node *> outputs(dag.getOutputs().begin(), dag.getOutputs().end());
-    bool added = false;
-    for (const auto * input : dag.getInputs())
-    {
-        if (input->result_name == column_name && !outputs.contains(input))
-        {
-            dag.getOutputs().push_back(input);
-            added = true;
-            break;
-        }
-    }
-    return added;
 }
 
 /// Create a non-FINAL ReadFromMergeTree plan for non-intersecting parts,
@@ -149,50 +110,6 @@ static std::optional<QueryPlan> createNonIntersectingPlan(
             columns.push_back(merging_params.is_deleted_column);
             is_deleted_added = true;
         }
-
-        /// If the prewhere or row-level filter on the ORIGINAL (FINAL) reading step
-        /// consumed `is_deleted` as an input but did not expose it as an output,
-        /// the column is missing from the read step's output header. Two consequences
-        /// for the non-intersecting plan we are about to build:
-        ///   1. `addIsDeletedFilter` reads `is_deleted` from the read step's output,
-        ///      so we must keep the column in the output of `non_final_reading`.
-        ///   2. The non-intersecting plan is later unioned with the FINAL plan
-        ///      (whose output also lacks `is_deleted` for the same prewhere reason).
-        ///      To keep the two union branches header-compatible, `addIsDeletedFilter`
-        ///      must then drop `is_deleted` from its output.
-        ///
-        /// Clone the filter info(s) before mutating to avoid affecting the original
-        /// reading step's prewhere/row-level filter (shared via `getQueryInfo()`).
-        const auto & original_output_header = reading_step->getOutputHeader();
-        const bool is_deleted_in_original_output
-            = original_output_header && original_output_header->has(merging_params.is_deleted_column);
-        if (!is_deleted_in_original_output)
-        {
-            bool exposed = false;
-            if (non_final_query_info.prewhere_info)
-            {
-                auto cloned_prewhere = std::make_shared<PrewhereInfo>(non_final_query_info.prewhere_info->clone());
-                exposed |= exposeInputAsDAGOutput(cloned_prewhere->prewhere_actions, merging_params.is_deleted_column);
-                non_final_query_info.prewhere_info = std::move(cloned_prewhere);
-            }
-            if (non_final_query_info.row_level_filter)
-            {
-                const auto & original = *non_final_query_info.row_level_filter;
-                auto cloned_row_level = std::make_shared<FilterDAGInfo>();
-                cloned_row_level->actions = original.actions.clone();
-                cloned_row_level->column_name = original.column_name;
-                cloned_row_level->do_remove_column = original.do_remove_column;
-                exposed |= exposeInputAsDAGOutput(cloned_row_level->actions, merging_params.is_deleted_column);
-                non_final_query_info.row_level_filter = std::move(cloned_row_level);
-            }
-
-            /// If we successfully re-exposed `is_deleted` in the prewhere/row-level
-            /// filter outputs, the column will be present in `non_final_reading`'s
-            /// output header. We must drop it again after `addIsDeletedFilter` has
-            /// done its work, to keep header parity with the FINAL branch.
-            if (exposed)
-                is_deleted_added = true;
-        }
     }
 
     auto non_final_reading = std::make_unique<ReadFromMergeTree>(
@@ -212,12 +129,6 @@ static std::optional<QueryPlan> createNonIntersectingPlan(
         false);
 
     non_final_reading->disableQueryConditionCache();
-
-    /// The synthetic step inherits the filter rewritten to `__text_index_*` virtual columns, but not the read tasks that produce them
-    /// from the index.
-    /// Copy them over, otherwise the filter drops every row.
-    if (const IndexReadTasks & index_read_tasks = reading_step->getIndexReadTasks(); !index_read_tasks.empty())
-        non_final_reading->setIndexReadTasks(index_read_tasks); // Pass by value
 
     if (filter_step)
         non_final_reading->addFilter(filter_step->getExpression().clone(), filter_step->getFilterColumnName());
@@ -240,9 +151,7 @@ static std::optional<QueryPlan> createNonIntersectingPlan(
 struct SplitResult
 {
     std::unique_ptr<QueryPlan> non_intersecting_plan;
-    /// Set when `optimizeLazyFinal` must stop right after the split: either the plan was replaced in-place
-    /// (all parts non-intersecting), or lazy FINAL does not apply and the reading step was left untouched.
-    bool fully_replaced = false;
+    bool fully_replaced = false; /// True when all parts are non-intersecting and the plan was replaced in-place.
 };
 
 /// Try to split parts into non-intersecting and intersecting by primary key.
@@ -290,13 +199,6 @@ static SplitResult trySplitNonIntersectingParts(
         query_plan.replaceNodeWithPlan(read_node, std::move(*plan), expected_header);
         return {.non_intersecting_plan = nullptr, .fully_replaced = true};
     }
-
-    /// The set/true-branch machinery built for intersecting parts reads through the lazy true-branch
-    /// source, which cannot produce the `__text_index_*` virtual columns of a direct read from a text
-    /// index. Leave the reading step untouched so the query falls back to a regular FINAL read.
-    /// Must come before the `non_intersecting_parts_ranges.empty()` check to cover the all-intersecting case.
-    if (!reading_step->getIndexReadTasks().empty())
-        return {.non_intersecting_plan = nullptr, .fully_replaced = true};
 
     if (split.non_intersecting_parts_ranges.empty())
         return {};
@@ -703,5 +605,4 @@ void optimizeLazyFinal(const Stack & stack, QueryPlan & query_plan, QueryPlan::N
     query_plan.replaceNodeWithPlan(read_node, std::move(result_plan), expected_header);
 }
 
-}
 }

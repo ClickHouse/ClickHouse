@@ -125,7 +125,7 @@ public:
         data(place).add(x, y);
     }
 
-    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
+    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         data(place).merge(data(rhs));
     }
@@ -199,7 +199,6 @@ AggregateFunctionPtr createAggregateFunctionSimpleLinearRegression(
 
 }
 
-void registerAggregateFunctionSimpleLinearRegression(AggregateFunctionFactory & factory);
 void registerAggregateFunctionSimpleLinearRegression(AggregateFunctionFactory & factory)
 {
     FunctionDocumentation::Description description_simpleLinearRegression = R"(

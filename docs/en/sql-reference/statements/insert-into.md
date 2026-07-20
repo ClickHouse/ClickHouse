@@ -7,6 +7,8 @@ title: 'INSERT INTO Statement'
 doc_type: 'reference'
 ---
 
+# INSERT INTO Statement
+
 Inserts data into a table.
 
 **Syntax**
@@ -189,14 +191,16 @@ This functionality is available in the [command-line client](../../interfaces/cl
 
 Execute the following queries using [command-line client](../../interfaces/client.md):
 
-```bash title="Query"
+```bash
 echo 1,A > input.csv ; echo 2,B >> input.csv
 clickhouse-client --query="CREATE TABLE table_from_file (id UInt32, text String) ENGINE=MergeTree() ORDER BY id;"
 clickhouse-client --query="INSERT INTO table_from_file FROM INFILE 'input.csv' FORMAT CSV;"
 clickhouse-client --query="SELECT * FROM table_from_file FORMAT PrettyCompact;"
 ```
 
-```text title="Response"
+Result:
+
+```text
 ┌─id─┬─text─┐
 │  1 │ A    │
 │  2 │ B    │
@@ -238,14 +242,16 @@ INSERT INTO [TABLE] FUNCTION table_func ...
 
 The [remote](/sql-reference/table-functions/remote) table function is used in the following queries:
 
-```sql title="Query"
+```sql
 CREATE TABLE simple_table (id UInt32, text String) ENGINE=MergeTree() ORDER BY id;
 INSERT INTO TABLE FUNCTION remote('localhost', default.simple_table)
     VALUES (100, 'inserted via remote()');
 SELECT * FROM simple_table;
 ```
 
-```text title="Response"
+Result:
+
+```text
 ┌──id─┬─text──────────────────┐
 │ 100 │ inserted via remote() │
 └─────┴───────────────────────┘
