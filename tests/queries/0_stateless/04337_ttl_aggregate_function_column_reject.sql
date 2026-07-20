@@ -520,3 +520,42 @@ ORDER BY key
 TTL d + INTERVAL 1 DAY DELETE WHERE length(v) > 3; -- { serverError BAD_TTL_EXPRESSION }
 
 SET variant_throw_on_type_mismatch = 1;
+
+-- The Variant function adaptor also consults `variant_throw_on_type_mismatch` while *building* the
+-- expression: when none of the alternatives is compatible with the consumer, the build itself either
+-- throws (strict) or resolves the result to constant NULL (lenient). The lenient build must not slip
+-- through DDL validation: the constant fold prunes the referenced column from the stored TTL column list,
+-- so every later rebuild of the TTL expression fails with "Missing columns" (broken INSERTs and merges),
+-- and the table cannot be re-attached on restart (loading has no query context, so the adaptor is strict
+-- and throws). The validation build therefore always runs strict, and a lenient session gets the same
+-- rejection a strict one does.
+SET variant_throw_on_type_mismatch = 0;
+
+CREATE TABLE test_ttl_agg_variant_lenient_build
+(
+    key UInt64,
+    v Variant(AggregateFunction(max, UInt64)),
+    d DateTime
+)
+ENGINE = MergeTree()
+ORDER BY key
+TTL d + INTERVAL 1 DAY DELETE WHERE isNull(length(v)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+
+-- The escape hatch keeps the plain session behavior: with `allow_suspicious_ttl_expressions` the lenient
+-- session resolves the all-incompatible consumer to NULL at build time and the CREATE is accepted.
+SET allow_suspicious_ttl_expressions = 1;
+
+CREATE TABLE test_ttl_agg_variant_lenient_build_suspicious
+(
+    key UInt64,
+    v Variant(AggregateFunction(max, UInt64)),
+    d DateTime
+)
+ENGINE = MergeTree()
+ORDER BY key
+TTL d + INTERVAL 1 DAY DELETE WHERE isNull(length(v));
+
+DROP TABLE test_ttl_agg_variant_lenient_build_suspicious;
+
+SET allow_suspicious_ttl_expressions = 0;
+SET variant_throw_on_type_mismatch = 1;
