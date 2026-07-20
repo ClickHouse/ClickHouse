@@ -501,7 +501,7 @@ void preparePrimitiveColumn(ColumnPtr column, DataTypePtr type, const std::strin
             parq::TimeUnit unit;
             const auto & dt = assert_cast<const DataTypeTime64 &>(*type);
             UInt32 scale = dt.getScale();
-            UInt32 converted_scale;
+            UInt32 converted_scale = 0;
             if (scale <= 6)
             {
                 converted = parq::ConvertedType::TIME_MICROS;
