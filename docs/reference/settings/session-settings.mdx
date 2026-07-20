@@ -12204,7 +12204,7 @@ Controls whether function [splitBy*()](/reference/functions/regular-functions/sp
 Possible values:
 
 - `0` - The remaining string will not be included in the last element of the result array.
-- `1` - The remaining string will be included in the last element of the result array. This is the behavior of Spark's [`split()`](https://spark.apache.org/docs/3.1.2/api/python/reference/api/pyspark.sql.functions.split.html) function and Python's ['string.split()'](https://docs.python.org/3/library/stdtypes.html#str.split) method.
+- `1` - The remaining string will be included in the last element of the result array. This is the behavior of Spark's [`split()`](https://spark.apache.org/docs/latest/api/python/reference/pyspark.sql/api/pyspark.sql.functions.split.html) function and Python's ['string.split()'](https://docs.python.org/3/library/stdtypes.html#str.split) method.
 
 ## stop_refreshable_materialized_views_on_startup {#stop_refreshable_materialized_views_on_startup} 
 
@@ -13478,4 +13478,3 @@ Only has an effect in ClickHouse Cloud. Set buffer size for write-through distri
 <SettingsInfoBlock type="Int64" default_value="0" />
 
 Allows you to select the max window log of ZSTD (it will not be used for MergeTree family)
-
