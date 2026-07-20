@@ -82,7 +82,7 @@ struct WorkerState
     struct Task
     {
         DiskPtr disk;
-        String path;
+        Strings paths;
         std::atomic<size_t> * counter = nullptr;
     };
 
@@ -164,9 +164,13 @@ private:
         for (auto p_id = begin; p_id < detached_parts.size(); ++p_id)
         {
             auto & part = detached_parts[p_id];
-            auto part_path = fs::path(MergeTreeData::DETACHED_DIR_NAME) / part.dir_name;
-            auto relative_path = fs::path(current_info.data->getRelativeDataPath()) / part_path;
-            worker_state.tasks.push_back({part.disk, relative_path, &parts_sizes.at(p_id - begin)});
+            auto detached_path = fs::path(current_info.data->getRelativeDataPath()) / MergeTreeData::DETACHED_DIR_NAME;
+            /// The entry's size includes its FLAT projection siblings.
+            Strings paths;
+            paths.push_back(detached_path / part.dir_name);
+            for (const auto & sibling : part.projection_siblings)
+                paths.push_back(detached_path / sibling);
+            worker_state.tasks.push_back({part.disk, std::move(paths), &parts_sizes.at(p_id - begin)});
         }
 
         auto max_thread_to_run = std::max(size_t(1), std::min(support_threads, worker_state.tasks.size() / 10));
@@ -184,7 +188,9 @@ private:
                 for (auto id = worker_state.next_task++; id < worker_state.tasks.size(); id = worker_state.next_task++)
                 {
                     auto & task = worker_state.tasks.at(id);
-                    size_t size = calculateTotalSizeOnDisk(task.disk, task.path);
+                    size_t size = 0;
+                    for (const auto & path : task.paths)
+                        size += calculateTotalSizeOnDisk(task.disk, path);
                     task.counter->store(size);
                 }
             };

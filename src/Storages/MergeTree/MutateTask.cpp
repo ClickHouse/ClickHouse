@@ -1216,8 +1216,8 @@ static NameToNameVector collectFilesForRenames(
         }
         else if (command.type == MutationCommand::Type::DROP_PROJECTION)
         {
-            if (source_part->checksums.has(command.column_name + ".proj"))
-                add_rename(command.column_name + ".proj", "");
+            if (source_part->checksums.has(IDataPartStorage::Projection::dirName(command.column_name, false)))
+                add_rename(IDataPartStorage::Projection::dirName(command.column_name, false), "");
         }
         else if (isWidePart(source_part))
         {
@@ -2242,32 +2242,33 @@ private:
         /// Create hardlinks for unchanged files
         for (auto it = ctx->source_part->getDataPartStorage().iterate(); it->isValid(); it->next())
         {
-            if (!entries_to_hardlink.contains(it->name()))
-            {
-                /// Do nothing for skipped files
-            }
-            else if (it->isFile())
+            if (it->isFile() && entries_to_hardlink.contains(it->name()))
             {
                 ctx->new_data_part->getDataPartStorage().createHardLinkFrom(
                     ctx->source_part->getDataPartStorage(), it->name(), it->name());
                 hardlinked_files.insert(it->name());
             }
-            else
+        }
+
+        /// Hardlink unchanged projections. getProjections() is the owned set (layout-independent), so residue siblings of an unrelated
+        /// same-named part are not carried into the new part.
+        for (const auto & [projection_dir, projection] : ctx->source_part->getDataPartStorage().getProjections())
+        {
+            if (projection.is_temp || !entries_to_hardlink.contains(projection_dir))
+                continue;
+
+            ctx->new_data_part->getDataPartStorage().createProjection(projection_dir);
+
+            auto projection_data_part_storage_src = ctx->source_part->getDataPartStorage().getProjectionStorage(projection_dir);
+            auto projection_data_part_storage_dst = ctx->new_data_part->getDataPartStorage().getProjectionStorage(projection_dir);
+
+            for (auto p_it = projection_data_part_storage_src->iterate(); p_it->isValid(); p_it->next())
             {
-                // it's a projection part directory
-                ctx->new_data_part->getDataPartStorage().createProjection(it->name());
+                projection_data_part_storage_dst->createHardLinkFrom(
+                    *projection_data_part_storage_src, p_it->name(), p_it->name());
 
-                auto projection_data_part_storage_src = ctx->source_part->getDataPartStorage().getProjection(it->name());
-                auto projection_data_part_storage_dst = ctx->new_data_part->getDataPartStorage().getProjection(it->name());
-
-                for (auto p_it = projection_data_part_storage_src->iterate(); p_it->isValid(); p_it->next())
-                {
-                    projection_data_part_storage_dst->createHardLinkFrom(
-                        *projection_data_part_storage_src, p_it->name(), p_it->name());
-
-                    auto file_name_with_projection_prefix = fs::path(projection_data_part_storage_src->getPartDirectory()) / p_it->name();
-                    hardlinked_files.insert(file_name_with_projection_prefix);
-                }
+                /// The zero-copy keep-list uses the logical projection dir name regardless of the on-disk projection layout.
+                hardlinked_files.insert(fs::path(projection_dir) / p_it->name());
             }
         }
 
@@ -2548,30 +2549,41 @@ private:
                     hardlinked_files.insert(it->name());
                 }
             }
-            else if (!endsWith(it->name(), ".tmp_proj")) // ignore projection tmp merge dir
+        }
+
+        /// Hardlink unchanged projections from the owned set. No checksums.has() filter here: legacy parts own metadata-declared
+        /// projections that checksums.txt does not reference.
+        for (const auto & [projection_dir, projection] : ctx->source_part->getDataPartStorage().getProjections())
+        {
+            if (projection.is_temp || ctx->files_to_skip.contains(projection_dir))
+                continue;
+
+            auto rename_it = std::find_if(ctx->files_to_rename.begin(), ctx->files_to_rename.end(), [&projection_dir](const auto & rename_pair)
             {
-                // it's a projection part directory
-                ctx->new_data_part->getDataPartStorage().createProjection(destination);
+                return rename_pair.first == projection_dir;
+            });
+            if (rename_it != ctx->files_to_rename.end())
+                continue;
 
-                auto projection_data_part_storage_src = ctx->source_part->getDataPartStorage().getProjection(destination);
-                auto projection_data_part_storage_dst = ctx->new_data_part->getDataPartStorage().getProjection(destination);
+            ctx->new_data_part->getDataPartStorage().createProjection(projection_dir);
 
-                for (auto p_it = projection_data_part_storage_src->iterate(); p_it->isValid(); p_it->next())
+            auto projection_data_part_storage_src = ctx->source_part->getDataPartStorage().getProjectionStorage(projection_dir);
+            auto projection_data_part_storage_dst = ctx->new_data_part->getDataPartStorage().getProjectionStorage(projection_dir);
+
+            for (auto p_it = projection_data_part_storage_src->iterate(); p_it->isValid(); p_it->next())
+            {
+                if ((*settings)[MergeTreeSetting::always_use_copy_instead_of_hardlinks])
                 {
-                    if ((*settings)[MergeTreeSetting::always_use_copy_instead_of_hardlinks])
-                    {
-                        projection_data_part_storage_dst->copyFileFrom(
-                            *projection_data_part_storage_src, p_it->name(), p_it->name());
-                    }
-                    else
-                    {
-                        auto file_name_with_projection_prefix = fs::path(projection_data_part_storage_src->getPartDirectory()) / p_it->name();
+                    projection_data_part_storage_dst->copyFileFrom(
+                        *projection_data_part_storage_src, p_it->name(), p_it->name());
+                }
+                else
+                {
+                    projection_data_part_storage_dst->createHardLinkFrom(
+                        *projection_data_part_storage_src, p_it->name(), p_it->name());
 
-                        projection_data_part_storage_dst->createHardLinkFrom(
-                            *projection_data_part_storage_src, p_it->name(), p_it->name());
-
-                        hardlinked_files.insert(file_name_with_projection_prefix);
-                    }
+                    /// The zero-copy keep-list uses the logical projection dir name regardless of the on-disk projection layout.
+                    hardlinked_files.insert(fs::path(projection_dir) / p_it->name());
                 }
             }
         }
@@ -2768,7 +2780,7 @@ private:
                 if (projection_part->checksums.empty())
                     continue;
                 ctx->new_data_part->checksums.addFile(
-                    projection_name + ".proj",
+                    IDataPartStorage::Projection::dirName(projection_name, false),
                     projection_part->checksums.getTotalSizeOnDisk(),
                     projection_part->checksums.getTotalChecksumUInt128());
             }

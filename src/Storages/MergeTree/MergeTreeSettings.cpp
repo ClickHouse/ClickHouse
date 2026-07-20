@@ -2194,6 +2194,13 @@ Possible values:
 - `drop`
 - `rebuild`
 )", 0) \
+    DECLARE(ProjectionStorageFormat, projection_storage_format, ProjectionStorageFormat::LEGACY_NESTED, R"(
+On-disk layout of projection sub-parts: `legacy_nested` stores each projection inside its parent part directory, `flat` stores it as a sibling directory at the part root. `flat` is intended for engines with atomic multi-directory commit.
+
+Both layouts are always read transparently; the setting only controls the layout of newly written parts.
+
+Downgrade note: a server version without `flat` support loads a `flat` part with its projections marked broken (queries fall back to reading the parent part; projections can be rebuilt with `ALTER TABLE ... MATERIALIZE PROJECTION`), and it never removes the sibling directories, so they remain on disk until a version with `flat` support cleans them up. To downgrade cleanly, set `projection_storage_format = 'legacy_nested'` and rewrite `flat` parts first (for example with `OPTIMIZE TABLE ... FINAL`).
+)", EXPERIMENTAL) \
     DECLARE(DeduplicateMergeProjectionMode, deduplicate_merge_projection_mode, DeduplicateMergeProjectionMode::THROW, R"(
 Whether to allow create projection for the table with non-classic MergeTree,
 that is not (Replicated, Shared) MergeTree. Ignore option is purely for

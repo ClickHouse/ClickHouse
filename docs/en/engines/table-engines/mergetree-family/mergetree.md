@@ -677,7 +677,14 @@ Currently supported:
 The framework allows adding more index types in the future.
 
 ### Projection storage {#projection-storage}
-Projections are stored inside the part directory. It's similar to an index but contains a subdirectory that stores an anonymous `MergeTree` table's part. The table is induced by the definition query of the projection. If there is a `GROUP BY` clause, the underlying storage engine becomes [AggregatingMergeTree](aggregatingmergetree.md), and all aggregate functions are converted to `AggregateFunction`. If there is an `ORDER BY` clause, the `MergeTree` table uses it as its primary key expression. During the merge process the projection part is merged via its storage's merge routine. The checksum of the parent table's part is combined with the projection's part. Other maintenance jobs are similar to skip indices.
+A projection is stored alongside the data part it belongs to. It is similar to an index but holds an anonymous `MergeTree` table's part, induced by the projection's definition query. If there is a `GROUP BY` clause, the underlying storage engine becomes [AggregatingMergeTree](aggregatingmergetree.md), and all aggregate functions are converted to `AggregateFunction`. If there is an `ORDER BY` clause, the `MergeTree` table uses it as its primary key expression. During the merge process the projection part is merged via its storage's merge routine. The checksum of the parent table's part is combined with the projection's part. Other maintenance jobs are similar to skip indices.
+
+The on-disk layout is controlled by the experimental [`projection_storage_format`](/operations/settings/merge-tree-settings#projection_storage_format) setting. For a part `all_1_1_0` with a projection `p`:
+
+- `legacy_nested` (default) — a subdirectory inside the part directory: `store/uuid/all_1_1_0/p.proj`
+- `flat` — a sibling directory at the part root: `store/uuid/all_1_1_0.p.proj`
+
+Both layouts are always read transparently; the setting only controls the layout of newly written parts. Changing it does not rewrite existing parts — every subsequent insert, merge, mutation, or materialization writes new parts in the chosen layout. `flat` is intended for storage engines with atomic multi-directory commit.
 
 ### Query analysis {#projection-query-analysis}
 1. Check if the projection can be used to answer the given query, that is, it generates the same answer as querying the base table.

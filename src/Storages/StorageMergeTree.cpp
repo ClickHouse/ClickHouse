@@ -242,6 +242,7 @@ void StorageMergeTree::startup()
     /// Temporary directories contain incomplete results of merges (after forced restart)
     ///  and don't allow to reinitialize them, so delete each of them immediately
     clearOldTemporaryDirectories(0, {"tmp_", "delete_tmp_", "tmp-fetch_"});
+    clearOrphanProjectionSiblings(/*max_age_seconds=*/ 0);
 
     /// NOTE background task will also do the above cleanups periodically.
 
@@ -3396,7 +3397,7 @@ std::optional<CheckResult> StorageMergeTree::checkDataNext(DataValidationTasksPt
         {
             try
             {
-                auto calculated_checksums = checkDataPart(part, false, noop, /* is_cancelled */[]{ return false; }, /* throw_on_broken_projection */true);
+                auto calculated_checksums = checkDataPart(part, false, noop, /* is_cancelled */[]{ return false; }, /* throw_on_broken_projection */true).computed_checksums;
                 calculated_checksums.checkEqual(part->checksums, true, part->name);
 
                 auto & part_mutable = const_cast<IMergeTreeDataPart &>(*part);

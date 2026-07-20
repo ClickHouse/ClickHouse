@@ -9,6 +9,7 @@
 #include <IO/WriteBufferFromFileBase.h>
 #include <Interpreters/Context.h>
 #include <Storages/MergeTree/MergeTreeIndicesSerialization.h>
+#include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
 
 namespace DB
@@ -19,31 +20,69 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-DataPartStorageOnDiskFull::DataPartStorageOnDiskFull(VolumePtr volume_, std::string root_path_, std::string part_dir_)
+DataPartStorageOnDiskFull::DataPartStorageOnDiskFull(
+    VolumePtr volume_,
+    std::string root_path_,
+    std::string part_dir_)
     : DataPartStorageOnDiskBase(std::move(volume_), std::move(root_path_), std::move(part_dir_))
 {
 }
 
 DataPartStorageOnDiskFull::DataPartStorageOnDiskFull(
-    VolumePtr volume_, std::string root_path_, std::string part_dir_, DiskTransactionPtr transaction_)
-    : DataPartStorageOnDiskBase(std::move(volume_), std::move(root_path_), std::move(part_dir_), std::move(transaction_))
+    VolumePtr volume_,
+    std::string root_path_,
+    std::string part_dir_,
+    DiskTransactionPtr transaction_)
+    : DataPartStorageOnDiskBase(
+        std::move(volume_), std::move(root_path_), std::move(part_dir_), std::move(transaction_))
 {
 }
 
 MutableDataPartStoragePtr DataPartStorageOnDiskFull::create(
-    VolumePtr volume_, std::string root_path_, std::string part_dir_, bool /*initialize_*/) const
+    VolumePtr volume_,
+    std::string root_path_,
+    std::string part_dir_,
+    bool /*initialize_*/) const
 {
-    return std::make_shared<DataPartStorageOnDiskFull>(std::move(volume_), std::move(root_path_), std::move(part_dir_));
+    return std::make_shared<DataPartStorageOnDiskFull>(
+        std::move(volume_), std::move(root_path_), std::move(part_dir_));
 }
 
-MutableDataPartStoragePtr DataPartStorageOnDiskFull::getProjection(const std::string & name, bool use_parent_transaction) // NOLINT
+MutableDataPartStoragePtr DataPartStorageOnDiskFull::getProjectionStorage(const std::string & dir_name, bool use_parent_transaction) // NOLINT
 {
-    return std::shared_ptr<DataPartStorageOnDiskFull>(new DataPartStorageOnDiskFull(volume, std::string(fs::path(root_path) / part_dir), name, use_parent_transaction ? transaction : nullptr));
+    /// Not owned: resolve where the dir would live (e.g. a broken-projection placeholder) without registering anything; directories come
+    /// into existence only through createProjection.
+    auto owned = tryGetProjection(dir_name);
+    const auto projection = owned ? *owned : projectionPlacement(dir_name);
+
+    auto [proj_root, proj_dir] = getProjectionRootAndDir(projection.dirName(), projection.format);
+    auto projection_storage = std::shared_ptr<DataPartStorageOnDiskFull>(new DataPartStorageOnDiskFull(
+        volume,
+        std::move(proj_root),
+        std::move(proj_dir),
+        use_parent_transaction ? transaction : nullptr));
+    projection_storage->projection_storage_format = projection_storage_format;
+    projection_storage->zero_copy_replication_enabled = zero_copy_replication_enabled;
+    /// A projection sub-part owns no projections of its own.
+    projection_storage->setProjections({});
+    return projection_storage;
 }
 
-DataPartStoragePtr DataPartStorageOnDiskFull::getProjection(const std::string & name) const
+DataPartStoragePtr DataPartStorageOnDiskFull::getProjectionStorage(const std::string & dir_name) const
 {
-    return std::make_shared<DataPartStorageOnDiskFull>(volume, std::string(fs::path(root_path) / part_dir), name);
+    /// See the mutable overload.
+    auto owned = tryGetProjection(dir_name);
+    const auto projection = owned ? *owned : projectionPlacement(dir_name);
+
+    auto [proj_root, proj_dir] = getProjectionRootAndDir(projection.dirName(), projection.format);
+    auto projection_storage = std::make_shared<DataPartStorageOnDiskFull>(
+        volume,
+        std::move(proj_root),
+        std::move(proj_dir));
+    projection_storage->projection_storage_format = projection_storage_format;
+    projection_storage->zero_copy_replication_enabled = zero_copy_replication_enabled;
+    projection_storage->setProjections({});
+    return projection_storage;
 }
 
 bool DataPartStorageOnDiskFull::exists() const
@@ -229,9 +268,16 @@ void DataPartStorageOnDiskFull::copyFileFrom(const IDataPartStorage & source, co
         getReadSettings());
 }
 
-void DataPartStorageOnDiskFull::createProjection(const std::string & name)
+IDataPartStorage::Projection DataPartStorageOnDiskFull::createProjection(const std::string & dir_name)
 {
-    executeWriteOperation([&](auto & disk) { disk.createDirectory(fs::path(root_path) / part_dir / name); });
+    auto projection = projectionPlacement(dir_name);
+
+    /// A leftover directory is residue of a failed operation on a same-named part (tmp part names repeat).
+    removeProjectionResidue(projection);
+
+    executeWriteOperation([&](auto & disk) { disk.createDirectory(projection.relativePath()); });
+    addProjection(projection);
+    return projection;
 }
 
 void DataPartStorageOnDiskFull::beginTransaction()

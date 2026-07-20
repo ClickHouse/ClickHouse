@@ -146,7 +146,7 @@ bool isRetryableException(std::exception_ptr exception_ptr)
     }
 }
 
-static IMergeTreeDataPart::Checksums checkDataPart(
+static CheckDataPartResult checkDataPart(
     MergeTreeData::DataPartPtr data_part,
     const IDataPartStorage & data_part_storage,
     const NamesAndTypesList & columns_list,
@@ -318,18 +318,14 @@ static IMergeTreeDataPart::Checksums checkDataPart(
         assertEOF(*buf);
     }
 
-    NameSet projections_on_disk;
     const auto & checksums_txt_files = checksums_txt.files;
     for (auto it = data_part_storage.iterate(); it->isValid(); it->next())
     {
         auto file_name = it->name();
 
         /// We will check projections later.
-        if (data_part_storage.existsDirectory(file_name) && file_name.ends_with(".proj"))
-        {
-            projections_on_disk.insert(file_name);
+        if (data_part_storage.existsDirectory(file_name) && IDataPartStorage::Projection::dirNameType(file_name) == IDataPartStorage::Projection::Status::Live)
             continue;
-        }
 
         auto checksum_it = checksums_data.files.find(file_name);
         /// Skip files that we already calculated. Also skip metadata files that are not checksummed.
@@ -353,105 +349,133 @@ static IMergeTreeDataPart::Checksums checkDataPart(
         }
     }
 
+    std::vector<std::pair<String, IMergeTreeDataPart::Checksums>> computed_projections_checksums;
     std::string broken_projections_message;
-    for (const auto & [name, projection] : data_part->getProjectionParts())
+
+    /// now checking projections of all storage types
+    NameSet remaining_projections_on_disk;
+    if (!data_part->isProjectionPart())
+        for (const auto & [projection_dir, projection] : data_part_storage.detectProjections())
+            if (!projection.is_temp)
+                remaining_projections_on_disk.insert(projection_dir);
+
+    if (!data_part->isProjectionPart())
     {
-        if (is_cancelled())
-            return {};
-
-        auto projection_file = name + ".proj";
-
-        IMergeTreeDataPart::Checksums projection_checksums;
-        try
+        auto metadata_snapshot = data_part->getMetadataSnapshot();
+        for (const auto & projection_desc : metadata_snapshot->projections)
         {
-            bool noop = false;
-            auto projection_storage = data_part_storage.getProjection(projection_file);
+            if (is_cancelled())
+                return {};
 
-            /// A projection part that failed to load before its columns were set (e.g. because of a
-            /// corrupted serialization.json) has an empty column list. Checking against it would
-            /// report a misleading "columns don't match" error and hide the real corruption, so
-            /// read the expected columns from the part's own columns.txt in that case. The current
-            /// projection metadata would not do: existing parts can legitimately lag behind it
-            /// after an ALTER (readable through alter conversions). If
-            /// columns.txt itself is unreadable, this throws the actual problem into the catch
-            /// below.
-            NamesAndTypesList projection_columns = projection->getColumns();
-            if (projection_columns.empty())
+            const auto projection_file = IDataPartStorage::Projection::dirName(projection_desc.name, false);
+            if (!remaining_projections_on_disk.erase(projection_file))
+                continue;
+
+            const String & name = projection_desc.name;
+            auto proj_it = data_part->getProjectionParts().find(name);
+            const bool loaded = proj_it != data_part->getProjectionParts().end();
+
+            IMergeTreeDataPart::Checksums projection_checksums;
+            bool recomputed = false;
+            try
             {
-                auto buf = projection_storage->readFile("columns.txt", read_settings, std::nullopt);
-                projection_columns.readText(*buf);
-                assertEOF(*buf);
+                bool noop = false;
+                auto projection_storage = data_part_storage.getProjectionStorage(projection_file);
+
+                /// Existing parts can lag the current metadata after an ALTER, so the expected columns are the part's own columns.txt.
+                NamesAndTypesList projection_columns = loaded ? proj_it->second->getColumns() : NamesAndTypesList{};
+                if (projection_columns.empty())
+                {
+                    auto buf = projection_storage->readFile("columns.txt", read_settings, std::nullopt);
+                    projection_columns.readText(*buf);
+                    assertEOF(*buf);
+                }
+
+                /// Advisory only - data integrity is enforced by the recompute below.
+                for (const auto & declared_col : projection_desc.sample_block)
+                {
+                    auto on_disk = projection_columns.tryGetByName(declared_col.name);
+                    if (!on_disk || !on_disk->type->equals(*declared_col.type))
+                        LOG_WARNING(log, "Part {} projection {} - column {} type {} doesn't match on-disk type {} - post-ALTER lag or stale orphan",
+                            data_part->name, name, declared_col.name, declared_col.type->getName(),
+                            on_disk ? on_disk->type->getName() : "missing");
+                }
+
+                if (loaded)
+                    projection_checksums = checkDataPart(
+                        proj_it->second, *projection_storage, projection_columns, proj_it->second->getType(),
+                        proj_it->second->getFileNamesWithoutChecksums(),
+                        read_settings, require_checksums, is_cancelled, noop, /* throw_on_broken_projection */false).computed_checksums;
+                else if (projection_storage->existsFile("checksums.txt"))
+                {
+                    auto buf = projection_storage->readFile("checksums.txt", read_settings, std::nullopt);
+                    if (!projection_checksums.read(*buf))
+                        throw Exception(ErrorCodes::CORRUPTED_DATA, "Unreadable checksums.txt for projection {}", name);
+                    assertEOF(*buf);
+                }
+                else
+                {
+                    LOG_WARNING(log, "Part {} projection {} - checksums.txt missing, recomputing from data", data_part->name, name);
+                    /// Throwaway sub-part just to drive the recompute; data_part is const here.
+                    auto projection = const_cast<IMergeTreeDataPart &>(*data_part)
+                        .getProjectionPartBuilder(name, &projection_desc).withPartFormatFromDisk().build();
+                    projection_checksums = checkDataPart(
+                        projection, *projection_storage, projection_columns, projection->getType(),
+                        projection->getFileNamesWithoutChecksums(),
+                        read_settings, require_checksums, is_cancelled, noop, /* throw_on_broken_projection */false).computed_checksums;
+                    recomputed = true;
+                }
+            }
+            catch (...)
+            {
+                if (isRetryableException(std::current_exception()))
+                    throw;
+
+                is_broken_projection = true;
+                checksums_txt.remove(projection_file);
+
+                const auto exception_message = getCurrentExceptionMessage(true);
+                LOG_WARNING(log, "Marking projection {} as broken ({}). Reason: {}", name, projection_file, exception_message);
+                if (loaded && !proj_it->second->is_broken)
+                    proj_it->second->setBrokenReason(exception_message, getCurrentExceptionCode());
+
+                if (throw_on_broken_projection)
+                {
+                    if (!broken_projections_message.empty())
+                        broken_projections_message += "\n";
+                    broken_projections_message += fmt::format(
+                        "Part `{}` has broken projection `{}` (error: {})", data_part->name, name, exception_message);
+                }
+
+                continue;
             }
 
-            projection_checksums = checkDataPart(
-                projection, *projection_storage,
-                projection_columns, projection->getType(),
-                projection->getFileNamesWithoutChecksums(),
-                read_settings, require_checksums, is_cancelled, noop, /* throw_on_broken_projection */false);
+            checksums_data.files[projection_file] = IMergeTreeDataPart::Checksums::Checksum(
+                projection_checksums.getTotalSizeOnDisk(),
+                projection_checksums.getTotalChecksumUInt128());
+            if (recomputed)
+                computed_projections_checksums.emplace_back(name, projection_checksums);
         }
-        catch (...)
-        {
-            if (isRetryableException(std::current_exception()))
-                throw;
-
-            is_broken_projection = true;
-            projections_on_disk.erase(projection_file);
-            checksums_txt.remove(projection_file);
-
-            const auto exception_message = getCurrentExceptionMessage(true);
-
-            if (!projection->is_broken)
-            {
-                LOG_WARNING(log, "Marking projection {} as broken ({}). Reason: {}",
-                            name, projection_file, exception_message);
-                projection->setBrokenReason(exception_message, getCurrentExceptionCode());
-            }
-
-            if (throw_on_broken_projection)
-            {
-                if (!broken_projections_message.empty())
-                    broken_projections_message += "\n";
-
-                broken_projections_message += fmt::format(
-                    "Part `{}` has broken projection `{}` (error: {})",
-                    data_part->name, name, exception_message);
-            }
-
-            continue;
-        }
-
-        checksums_data.files[projection_file] = IMergeTreeDataPart::Checksums::Checksum(
-            projection_checksums.getTotalSizeOnDisk(),
-            projection_checksums.getTotalChecksumUInt128());
-
-        projections_on_disk.erase(projection_file);
     }
 
-    /// Handle unknown projections: on disk and in checksums but not in the
-    /// part's projection list (e.g. a projection was dropped while the part
-    /// was detached, then re-attached).  Remove them from checksums_txt so
-    /// that the checkEqual below does not fail, and mark the part as having
-    /// a broken projection so the caller can handle it gracefully.
-    if (!projections_on_disk.empty())
+    /// Left over = on disk but not declared in metadata: residue, or a projection dropped while the part was detached.
+    if (!remaining_projections_on_disk.empty())
     {
         is_broken_projection = true;
-        for (const auto & projection_file : projections_on_disk)
-            checksums_txt.remove(projection_file);
+        for (const auto & projection_file : remaining_projections_on_disk)
+            if (checksums_txt.files.contains(projection_file))
+                checksums_txt.remove(projection_file);
     }
 
     if (throw_on_broken_projection)
     {
         if (!broken_projections_message.empty())
-        {
             throw Exception(ErrorCodes::BROKEN_PROJECTION, "{}", broken_projections_message);
-        }
 
-        if (require_checksums && !projections_on_disk.empty())
-        {
+        if (require_checksums && !remaining_projections_on_disk.empty())
             throw Exception(ErrorCodes::UNEXPECTED_FILE_IN_DATA_PART,
                 "Found unexpected projection directories: {}",
-                fmt::join(projections_on_disk, ","));
-        }
+                fmt::join(remaining_projections_on_disk, ","));
     }
 
     if (is_cancelled())
@@ -460,10 +484,10 @@ static IMergeTreeDataPart::Checksums checkDataPart(
     if (require_checksums || !checksums_txt.files.empty())
         checksums_txt.checkEqual(checksums_data, check_uncompressed, data_part->name);
 
-    return checksums_data;
+    return {std::move(checksums_data), std::move(computed_projections_checksums)};
 }
 
-IMergeTreeDataPart::Checksums checkDataPart(
+CheckDataPartResult checkDataPart(
     MergeTreeData::DataPartPtr data_part,
     bool require_checksums,
     bool & is_broken_projection,
@@ -527,7 +551,7 @@ IMergeTreeDataPart::Checksums checkDataPart(
                 /// We were unable to check data part because of some temporary exception
                 /// like Memory limit exceeded. If part is actually broken we will retry check
                 /// with the next read attempt of this data part.
-                return IMergeTreeDataPart::Checksums{};
+                return CheckDataPartResult{};
             }
             throw;
         }

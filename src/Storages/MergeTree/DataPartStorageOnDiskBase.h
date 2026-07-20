@@ -17,7 +17,39 @@ class PackedFilesWriter;
 class DataPartStorageOnDiskBase : public IDataPartStorage
 {
 public:
-    DataPartStorageOnDiskBase(VolumePtr volume_, std::string root_path_, std::string part_dir_);
+    DataPartStorageOnDiskBase(
+        VolumePtr volume_,
+        std::string root_path_,
+        std::string part_dir_);
+
+    Projections getProjections() const override;
+    void setProjections(Projections projections_) override;
+    Projections detectProjections() const override;
+    Projections detectProjections(const Strings & root_dir_entries) const override;
+    Projections probeProjections(const Strings & candidate_dir_names) const override;
+
+    bool hasProjection(const std::string & dir_name) const override;
+    Projection getProjection(const std::string & dir_name) const override;
+    std::optional<Projection> tryGetProjection(const std::string & dir_name) const override;
+    Projection projectionPlacement(const std::string & dir_name) const override;
+
+    std::pair<std::string, std::string> getProjectionRootAndDir(const std::string & dir_name, ProjectionStorageFormat format) const override;
+    bool existsProjectionDir(const std::string & dir_name, ProjectionStorageFormat format) const override;
+
+    void removeProjection(const Projection & projection) override;
+    Projection renameProjection(const Projection & projection, const std::string & new_dir_name, bool fsync) override;
+    void syncProjectionStoragePath(const Projection & projection, IDataPartStorage & projection_storage) const override;
+    void removeProjectionResidue(const Projection & placement) override;
+
+    bool isZeroCopyReplicationEnabled() const override { return zero_copy_replication_enabled; }
+    void setZeroCopyReplicationEnabled(bool value) override { zero_copy_replication_enabled = value; }
+
+    ProjectionStorageFormat getProjectionStorageFormat() const override { return projection_storage_format; }
+    void setProjectionStorageFormat(ProjectionStorageFormat format) override
+    {
+        chassert(format != ProjectionStorageFormat::NONE);
+        projection_storage_format = format;
+    }
 
     std::string getFullPath() const override;
     std::string getRelativePath() const override;
@@ -125,19 +157,11 @@ public:
     MutableDataPartStoragePtr freeze(
         const std::string & to,
         const std::string & dir_path,
+        const DiskPtr & dst_disk,
         const ReadSettings & read_settings,
         const WriteSettings & write_settings,
         std::function<void(const DiskPtr &)> save_metadata_callback,
         const ClonePartParams & params) const override;
-
-    MutableDataPartStoragePtr freezeRemote(
-    const std::string & to,
-    const std::string & dir_path,
-    const DiskPtr & dst_disk,
-    const ReadSettings & read_settings,
-    const WriteSettings & write_settings,
-    std::function<void(const DiskPtr &)> save_metadata_callback,
-    const ClonePartParams & params) const override;
 
     MutableDataPartStoragePtr clonePart(
         const std::string & to,
@@ -178,8 +202,24 @@ public:
 
 protected:
 
-    DataPartStorageOnDiskBase(VolumePtr volume_, std::string root_path_, std::string part_dir_, DiskTransactionPtr transaction_);
-    virtual MutableDataPartStoragePtr create(VolumePtr volume_, std::string root_path_, std::string part_dir_, bool initialize_) const = 0;
+    DataPartStorageOnDiskBase(
+        VolumePtr volume_,
+        std::string root_path_,
+        std::string part_dir_,
+        DiskTransactionPtr transaction_);
+
+    virtual MutableDataPartStoragePtr create(
+        VolumePtr volume_,
+        std::string root_path_,
+        std::string part_dir_,
+        bool initialize_) const = 0;
+
+    /// Incremental owned-set updates for createProjection/renameProjection/removeProjection; require an already-seeded set.
+    void addProjection(Projection projection_);
+    void dropProjection(const std::string & dir_name);
+
+    /// Repoint at a moved location; unlike setRelativePath, content is guaranteed unchanged, so caches stay.
+    void setPathKeepingCaches(std::string new_root_path, std::string new_part_dir);
 
     /// Lazily load the per-part skp_idx.packed archive (if any), reading it as a standalone disk
     /// file. Subsequent calls return the cached reader, or nullptr when there is no such file --
@@ -231,6 +271,18 @@ protected:
     std::string part_dir;
     DiskTransactionPtr transaction;
     bool has_shared_transaction = false;
+
+    /// Layout for projection directories created through this storage.
+    ProjectionStorageFormat projection_storage_format = ProjectionStorageFormat::NONE;
+
+    /// See isZeroCopyReplicationEnabled; default true keeps residue blobs (fail-safe until seeded).
+    bool zero_copy_replication_enabled = true;
+
+    /// The owned projection set. ready=false: never seeded (reads throw); ready=true: authoritative (absent key = no projection). Paths are
+    /// derived, so only setRelativePath drops it.
+    mutable std::mutex projections_mutex;
+    mutable bool owned_projections_ready TSA_GUARDED_BY(projections_mutex) = false;
+    mutable Projections owned_projections TSA_GUARDED_BY(projections_mutex);
 
     /// Cached probe state for skp_idx.packed. probed=false means we haven't checked the disk yet;
     /// probed=true with reader=null means we checked and the archive isn't present.

@@ -180,6 +180,10 @@ struct DetachedPartInfo : public MergeTreePartInfo
 
     DiskPtr disk;
 
+    /// FLAT projection sibling dirs ("<dir_name>.<projection>.proj") belonging to this entry. They are data of this part, not detached
+    /// entries of their own.
+    std::vector<String> projection_siblings;
+
     /// If false, MergeTreePartInfo is in invalid state (directory name was not successfully parsed).
     bool valid_name{};
 

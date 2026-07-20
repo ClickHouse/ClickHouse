@@ -9,11 +9,15 @@ namespace DB
 class DataPartStorageOnDiskFull final : public DataPartStorageOnDiskBase
 {
 public:
-    DataPartStorageOnDiskFull(VolumePtr volume_, std::string root_path_, std::string part_dir_);
+    DataPartStorageOnDiskFull(
+        VolumePtr volume_,
+        std::string root_path_,
+        std::string part_dir_);
+
     MergeTreeDataPartStorageType getType() const override { return MergeTreeDataPartStorageType::Full; }
 
-    MutableDataPartStoragePtr getProjection(const std::string & name, bool use_parent_transaction = true) override; // NOLINT
-    DataPartStoragePtr getProjection(const std::string & name) const override;
+    MutableDataPartStoragePtr getProjectionStorage(const std::string & dir_name, bool use_parent_transaction) override; /// NOLINT
+    DataPartStoragePtr getProjectionStorage(const std::string & dir_name) const override;
 
     bool exists() const override;
     bool existsDirectory(const std::string & name) const override;
@@ -25,7 +29,7 @@ public:
     std::vector<std::string> getRemotePaths(const std::string & file_name) const override;
     String getUniqueId() const override;
 
-    void createProjection(const std::string & name) override;
+    Projection createProjection(const std::string & dir_name) override;
 
     std::unique_ptr<WriteBufferFromFileBase> writeFile(
         const String & name,
@@ -55,8 +59,17 @@ public:
 #endif
 
 private:
-    DataPartStorageOnDiskFull(VolumePtr volume_, std::string root_path_, std::string part_dir_, DiskTransactionPtr transaction_);
-    MutableDataPartStoragePtr create(VolumePtr volume_, std::string root_path_, std::string part_dir_, bool initialize_) const override;
+    DataPartStorageOnDiskFull(
+        VolumePtr volume_,
+        std::string root_path_,
+        std::string part_dir_,
+        DiskTransactionPtr transaction_);
+
+    MutableDataPartStoragePtr create(
+        VolumePtr volume_,
+        std::string root_path_,
+        std::string part_dir_,
+        bool initialize_) const override;
 
     NameSet getActualFileNamesOnDisk(const NameSet & file_names) const override { return file_names; }
 

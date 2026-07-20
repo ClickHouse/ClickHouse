@@ -466,6 +466,10 @@ public:
     /// Moves a part to detached/ directory and adds prefix to its name
     void renameToDetached(const String & prefix, bool ignore_error = false);
 
+    /// Re-seed the owned projection set from disk before detaching a part that broke before loadProjections ran; otherwise its FLAT
+    /// siblings are stranded for the orphan GC.
+    void adoptOnDiskProjectionsForDetach();
+
     /// Makes checks and move part to new directory
     /// Changes only relative_dir_name, you need to update other metadata (name, is_temp) explicitly
     virtual void renameTo(const String & new_relative_path, bool remove_new_dir_if_exists);
