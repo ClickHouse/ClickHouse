@@ -26,4 +26,13 @@ void addExpressionColumnsSelectAccess(
     const String & table,
     const StorageInMemoryMetadata & metadata);
 
+/// `RequiredSourceColumnsVisitor` (used by `addExpressionColumnsSelectAccess`) does not descend into
+/// subqueries, so columns read only inside a subquery of a mutation's `WHERE` / `SET` expression get
+/// no `SELECT` requirement from it. Such a subquery's read access is instead enforced when
+/// `validate_mutation_query` (default on) builds and interprets the mutation query under the user's
+/// context. If that validation is disabled, the subquery's read access cannot be verified here, so
+/// fail closed: reject the mutation rather than let it read columns without a grant. Does nothing when
+/// `expression` is null or `validate_mutation_query` is true.
+void rejectMutationSubqueryWhenValidationDisabled(const IAST * expression, bool validate_mutation_query);
+
 }

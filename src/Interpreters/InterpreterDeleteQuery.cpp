@@ -85,6 +85,8 @@ BlockIO InterpreterDeleteQuery::execute()
     {
         AccessRightsElements read_access;
         const auto metadata_snapshot = table->getInMemoryMetadataPtr(getContext(), false);
+        rejectMutationSubqueryWhenValidationDisabled(
+            delete_query.predicate.get(), settings[Setting::validate_mutation_query]);
         addExpressionColumnsSelectAccess(
             read_access, delete_query.predicate.get(), table_id.database_name, table_id.table_name,
             *metadata_snapshot);

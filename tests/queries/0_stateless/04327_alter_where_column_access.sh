@@ -32,6 +32,8 @@ function check_access()
     local rc=$?
     if [ $rc -eq 0 ]; then
         echo "OK"
+    elif echo "$output" | grep -q "validate_mutation_query=1"; then
+        echo "REJECTED_NO_VALIDATION"
     elif echo "$output" | grep -q "ACCESS_DENIED"; then
         echo "ACCESS_DENIED"
     else
@@ -54,6 +56,14 @@ check_access "ALTER TABLE tab UPDATE name = upper(name) WHERE name = 'z'"
 
 echo "-- Virtual columns in the predicate need no SELECT grant"
 check_access "ALTER TABLE tab DELETE WHERE _part = 'nonexistent'"
+
+# RequiredSourceColumnsVisitor does not descend into subqueries, so a subquery's read access cannot be
+# checked here. It is normally enforced by the validate_mutation_query path; with that disabled the
+# mutation is rejected fail-closed rather than allowed to read columns via the subquery without a grant.
+echo "-- A subquery in WHERE/SET with validate_mutation_query=0 is rejected fail-closed"
+check_access "ALTER TABLE tab DELETE WHERE 1 IN (SELECT id FROM tab) SETTINGS validate_mutation_query = 0"
+check_access "ALTER TABLE tab UPDATE name = '' WHERE 1 IN (SELECT id FROM tab) SETTINGS validate_mutation_query = 0"
+check_access "DELETE FROM tab WHERE 1 IN (SELECT id FROM tab) SETTINGS validate_mutation_query = 0"
 
 $CLICKHOUSE_CLIENT -q "GRANT SELECT(id) ON $CLICKHOUSE_DATABASE.tab TO $user_name;"
 

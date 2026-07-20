@@ -11,6 +11,10 @@ OK
 OK
 -- Virtual columns in the predicate need no SELECT grant
 OK
+-- A subquery in WHERE/SET with validate_mutation_query=0 is rejected fail-closed
+REJECTED_NO_VALIDATION
+REJECTED_NO_VALIDATION
+REJECTED_NO_VALIDATION
 -- With SELECT(id): reading id via WHERE or the SET right-hand side is allowed
 OK
 OK

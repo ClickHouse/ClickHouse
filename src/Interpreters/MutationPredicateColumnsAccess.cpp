@@ -1,13 +1,37 @@
 #include <Interpreters/MutationPredicateColumnsAccess.h>
 
 #include <Access/Common/AccessRightsElement.h>
+#include <Common/Exception.h>
 #include <Interpreters/RequiredSourceColumnsVisitor.h>
 #include <Parsers/IAST.h>
+#include <Parsers/ASTSubquery.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/StorageInMemoryMetadata.h>
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int SUPPORT_IS_DISABLED;
+}
+
+namespace
+{
+
+bool expressionContainsSubquery(const IAST * node)
+{
+    if (!node)
+        return false;
+    if (node->as<ASTSubquery>())
+        return true;
+    for (const auto & child : node->children)
+        if (expressionContainsSubquery(child.get()))
+            return true;
+    return false;
+}
+
+}
 
 void addExpressionColumnsSelectAccess(
     AccessRightsElements & required_access,
@@ -54,6 +78,18 @@ void addExpressionColumnsSelectAccess(
 
     if (!columns.empty())
         required_access.emplace_back(AccessType::SELECT, database, table, columns);
+}
+
+void rejectMutationSubqueryWhenValidationDisabled(const IAST * expression, bool validate_mutation_query)
+{
+    if (validate_mutation_query || !expression)
+        return;
+
+    if (expressionContainsSubquery(expression))
+        throw Exception(
+            ErrorCodes::SUPPORT_IS_DISABLED,
+            "A subquery in a mutation WHERE/SET expression requires validate_mutation_query=1, so that "
+            "read access to the columns it reads can be verified");
 }
 
 }
