@@ -160,10 +160,96 @@ std::vector<GroupExpressionPtr> HashJoinImplementation::applyImpl(GroupExpressio
             broadcast_join->strategy = std::make_shared<BroadcastJoinStrategy>();
             broadcast_join->inputs[0].required_properties.distribution = left_dist;
             broadcast_join->inputs[1].required_properties.distribution = right_dist;
-            /// Output inherits the left input's partitioning (any N-node partitioned distribution)
+            /// The output distribution carries no columns: the left input is allowed to be
+            /// partitioned any way, so no specific partitioning can be promised.
             broadcast_join->properties.distribution = left_dist;
 
             addPhysicalToMemo(broadcast_join, required_properties, memo, result);
+
+            /// Keyed variant: when every parent-required distribution column maps to an
+            /// equi-join key or to a left-side column that survives to the join output,
+            /// require the left input partitioned by those columns and advertise them on the
+            /// output. Every output row stays on its left row's node, so the partitioning
+            /// holds; without this variant the parent's requirement would always cost a
+            /// shuffle of the joined rows.
+            if (!required_properties.distribution.columns.empty()
+                && !required_properties.distribution.is_replicated
+                && required_properties.distribution.node_count == candidate_node_count)
+            {
+                const auto & left_header = join_step->getInputHeaders().front();
+                const auto & right_header = join_step->getInputHeaders().back();
+                const auto & output_header = join_step->getOutputHeader();
+
+                /// A left column carries its partitioning to the output when it reaches the
+                /// output unchanged and cannot be confused with a right-side column.
+                auto is_surviving_left_column = [&](const String & name)
+                {
+                    if (!left_header->has(name) || right_header->has(name) || !output_header->has(name))
+                        return false;
+                    return left_header->getByName(name).type->equals(*output_header->getByName(name).type);
+                };
+
+                DistributionDescription keyed_left_dist;
+                keyed_left_dist.node_count = candidate_node_count;
+                DistributionDescription keyed_output_dist;
+                keyed_output_dist.node_count = candidate_node_count;
+
+                bool all_matched = true;
+                for (const auto & required_col_set : required_properties.distribution.columns)
+                {
+                    bool found = false;
+                    for (const auto & key : equi_keys)
+                    {
+                        /// A pinned hash type never satisfies the parent's typeless requirement,
+                        /// so a cast-needing key cannot help here.
+                        if (!key.hash_type_name.empty())
+                            continue;
+                        if (required_col_set.contains(key.left)
+                            || (right_preserved && required_col_set.contains(key.right)))
+                        {
+                            keyed_left_dist.columns.push_back({key.left});
+                            NameSet output_key;
+                            output_key.insert(key.left);
+                            /// The right name is an equivalent partitioning key only when no
+                            /// null-extended right values can appear (both sides preserved).
+                            if (right_preserved)
+                                output_key.insert(key.right);
+                            keyed_output_dist.columns.push_back(std::move(output_key));
+                            found = true;
+                            break;
+                        }
+                    }
+                    if (!found)
+                    {
+                        for (const auto & required_column : required_col_set)
+                        {
+                            if (is_surviving_left_column(required_column))
+                            {
+                                keyed_left_dist.columns.push_back({required_column});
+                                keyed_output_dist.columns.push_back({required_column});
+                                found = true;
+                                break;
+                            }
+                        }
+                    }
+                    if (!found)
+                    {
+                        all_matched = false;
+                        break;
+                    }
+                }
+
+                if (all_matched)
+                {
+                    GroupExpressionPtr keyed_broadcast_join = std::make_shared<GroupExpression>(*expression);
+                    keyed_broadcast_join->strategy = std::make_shared<BroadcastJoinStrategy>();
+                    keyed_broadcast_join->inputs[0].required_properties.distribution = keyed_left_dist;
+                    keyed_broadcast_join->inputs[1].required_properties.distribution = right_dist;
+                    keyed_broadcast_join->properties.distribution = keyed_output_dist;
+
+                    addPhysicalToMemo(keyed_broadcast_join, required_properties, memo, result);
+                }
+            }
         }
 
         /// Strategy 3: Partitioned (shuffle) join - both inputs shuffled by join key columns.

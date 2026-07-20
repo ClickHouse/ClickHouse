@@ -386,7 +386,11 @@ The lists below use class names; `getName` log names may omit the `Implementatio
 **Implementation rules** (generate physical expressions with properties):
 - `HashJoinImplementation` — creates local joins, broadcast joins (skipped for join
   kinds where a replicated build side would duplicate output rows), full-key shuffle
-  joins, and single-key shuffle alternatives for multi-key equi-joins
+  joins, and single-key shuffle alternatives for multi-key equi-joins. A broadcast
+  join keeps every left row on its node, so when the parent-required distribution
+  columns map to equi-join keys or to surviving left-side columns, a keyed broadcast
+  variant requires the left input partitioned by them and advertises them on the
+  output instead of forcing a shuffle above the join.
 - `AggregationImplementation` — creates local and shuffle aggregation (including
   single-key alternatives for multi-key `GROUP BY`) and implements the partial
   aggregations; shuffle is not created for global aggregation, grouping sets, overflow
