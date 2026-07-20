@@ -3110,7 +3110,8 @@ If memory usage after remerge does not reduced by this ratio, remerge will be di
 )", 0) \
     \
     DECLARE(UInt64, max_bytes_before_external_distinct, 0, R"(
-Enables or disables execution of `DISTINCT` clauses in external memory.
+Enables or disables execution of `DISTINCT` clauses in external memory
+(see [DISTINCT in external memory](/sql-reference/statements/select/distinct#distinct-in-external-memory)).
 If memory usage during a `DISTINCT` operation exceeds this threshold in bytes, the 'external distinct' mode (spill data to disk) is activated.
 
 Possible values:
