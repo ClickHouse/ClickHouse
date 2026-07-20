@@ -32,6 +32,7 @@
 #include <Server/HTTP/authenticateUserByHTTP.h>
 #include <Server/HTTP/checkHTTPHeader.h>
 #include <Server/HTTP/setReadOnlyIfHTTPMethodIdempotent.h>
+#include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <Core/Settings.h>
@@ -446,9 +447,39 @@ public:
             return false;
 
         /// Some parameters (database, table, default_format, everything used in the code above) do not
-        /// belong to the Settings class. `match[]` is consumed by the metadata endpoints.
-        static const NameSet reserved_param_names{"user", "password", "query", "time", "start", "end", "step", "match[]", "database", "table"};
+        /// belong to the Settings class. `match[]` and `limit` are consumed by the metadata endpoints:
+        /// Prometheus defines `limit` on /api/v1/series, /api/v1/labels and /api/v1/label/<name>/values,
+        /// so it must not fall through to ClickHouse's generic `limit` setting.
+        static const NameSet reserved_param_names{"user", "password", "query", "time", "start", "end", "step", "match[]", "limit", "database", "table"};
         return !reserved_param_names.contains(name);
+    }
+
+    /// Parses the optional `limit` parameter of the Prometheus metadata endpoints
+    /// (the maximum number of returned items; 0 means no limit, which is also the default).
+    UInt64 getLimitParam() const
+    {
+        String limit_str = params->get("limit", "");
+        if (limit_str.empty())
+            return 0;
+
+        UInt64 limit = 0;
+        if (!tryParse(limit, limit_str.data(), limit_str.size()))
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Invalid value of the 'limit' parameter: '{}', expected a non-negative integer",
+                limit_str);
+        return limit;
+    }
+
+    /// The PromQL query endpoints (/api/v1/query, /api/v1/query_range) do not implement the `limit`
+    /// parameter yet. Since `limit` is reserved above (it no longer reaches the ClickHouse `limit`
+    /// setting), reject it explicitly instead of silently ignoring the requested cap (fail closed).
+    void checkNoLimitParam() const
+    {
+        if (!params->get("limit", "").empty())
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "The 'limit' parameter is not implemented for the PromQL query endpoints");
     }
 
     void handlingRequestWithContext(HTTPServerRequest & request, HTTPServerResponse & response) override
@@ -482,6 +513,7 @@ public:
                 String start = params->get("start", "");
                 String end = params->get("end", "");
                 String step = params->get("step", "");
+                checkNoLimitParam();
 
                 /// TODO: Support the following **optional** query parameters:
                 /// - timeout=<duration>: Evaluation timeout
@@ -504,6 +536,7 @@ public:
             {
                 String query = params->get("query", "");
                 String time = params->get("time", "");
+                checkNoLimitParam();
 
                 /// TODO: Support optional parameters same as for the range query.
 
@@ -532,26 +565,27 @@ public:
                 String match = params->get("match[]", "");
                 String start = params->get("start", "");
                 String end = params->get("end", "");
+                UInt64 limit = getLimitParam();
 
-                /// TODO: Support limit=<number> optional parameter
-
-                protocol.getSeries(getOutputStream(response), match, start, end, query_finish_callback);
+                protocol.getSeries(getOutputStream(response), match, start, end, limit, query_finish_callback);
             }
             else if (uri_path.ends_with("/labels"))
             {
                 String match = params->get("match[]", "");
                 String start = params->get("start", "");
                 String end = params->get("end", "");
+                UInt64 limit = getLimitParam();
 
-                protocol.getLabels(getOutputStream(response), match, start, end, query_finish_callback);
+                protocol.getLabels(getOutputStream(response), match, start, end, limit, query_finish_callback);
             }
             else if (auto label_name = extractLabelValuesName(uri_path))
             {
                 String match = params->get("match[]", "");
                 String start = params->get("start", "");
                 String end = params->get("end", "");
+                UInt64 limit = getLimitParam();
 
-                protocol.getLabelValues(getOutputStream(response), *label_name, match, start, end, query_finish_callback);
+                protocol.getLabelValues(getOutputStream(response), *label_name, match, start, end, limit, query_finish_callback);
             }
             else
             {

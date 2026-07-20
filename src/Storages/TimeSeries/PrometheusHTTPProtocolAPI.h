@@ -47,29 +47,34 @@ public:
         const Params & params,
         QueryFinishCallback query_finish_callback = {});
 
-    /// Get series metadata (/api/v1/series)
+    /// Get series metadata (/api/v1/series).
+    /// `limit` is the maximum number of returned items (0 means no limit); when the result is
+    /// truncated, the response carries the Prometheus "results truncated due to limit" warning.
     void getSeries(
         WriteBuffer & response,
         const String & match_param,
         const String & start_param,
         const String & end_param,
+        UInt64 limit,
         QueryFinishCallback query_finish_callback = {});
 
-    /// Get all label names (/api/v1/labels)
+    /// Get all label names (/api/v1/labels). See getSeries for the meaning of `limit`.
     void getLabels(
         WriteBuffer & response,
         const String & match_param,
         const String & start_param,
         const String & end_param,
+        UInt64 limit,
         QueryFinishCallback query_finish_callback = {});
 
-    /// Get values for a specific label (/api/v1/label/<name>/values)
+    /// Get values for a specific label (/api/v1/label/<name>/values). See getSeries for the meaning of `limit`.
     void getLabelValues(
         WriteBuffer & response,
         const String & label_name,
         const String & match_param,
         const String & start_param,
         const String & end_param,
+        UInt64 limit,
         QueryFinishCallback query_finish_callback = {});
 
 private:

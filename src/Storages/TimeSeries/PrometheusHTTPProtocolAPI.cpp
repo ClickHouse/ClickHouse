@@ -143,6 +143,17 @@ String unescapePrometheusLabelName(const String & name)
     return result;
 }
 
+/// Closes the "data" array of a metadata endpoint response. When the optional `limit` parameter cut
+/// the result short, the response carries the same warning Prometheus produces for a truncated
+/// /api/v1/series, /api/v1/labels or /api/v1/label/<name>/values result.
+void writeMetadataResponseFooter(WriteBuffer & response, bool truncated)
+{
+    if (truncated)
+        writeString(R"(],"warnings":["results truncated due to limit"]})", response);
+    else
+        writeString("]}", response);
+}
+
 }
 
 PrometheusHTTPProtocolAPI::PrometheusHTTPProtocolAPI(ConstStoragePtr time_series_storage_, const ContextMutablePtr & context_)
@@ -554,6 +565,7 @@ void PrometheusHTTPProtocolAPI::getSeries(
     const String & match_param,
     const String & start_param,
     const String & end_param,
+    UInt64 limit,
     QueryFinishCallback query_finish_callback)
 {
     auto tags_table = time_series_storage->getTargetTable(ViewTarget::Tags, getContext());
@@ -587,6 +599,11 @@ void PrometheusHTTPProtocolAPI::getSeries(
     for (size_t i = 0; i < conditions.size(); ++i)
         query += (i == 0 ? " WHERE " : " AND ") + conditions[i];
 
+    /// Each result row is emitted as exactly one series, so `LIMIT limit + 1` bounds the scan while still
+    /// letting the emission loop below see whether the result was truncated (the one extra row).
+    if (limit)
+        query += fmt::format(" LIMIT {}", limit + 1);
+
     LOG_TRACE(log, "Prometheus series query: {}", query);
 
     auto [ast, io] = executeQuery(query, getContext(), {}, QueryProcessingStage::Complete);
@@ -615,6 +632,8 @@ void PrometheusHTTPProtocolAPI::getSeries(
         writeString(R"({"status":"success","data":[)", response);
 
         bool first_row = true;
+        UInt64 emitted = 0;
+        bool truncated = false;
         while (has_output)
         {
             const auto & metric_name_col = result_block.getByName(TimeSeriesColumnNames::MetricName).column;
@@ -627,6 +646,15 @@ void PrometheusHTTPProtocolAPI::getSeries(
 
             for (size_t i = 0; i < result_block.rows(); ++i)
             {
+                /// The SQL `LIMIT limit + 1` above bounds the scan, so at most one extra row shows up
+                /// here; it only signals that the result is truncated and is not emitted itself.
+                if (limit && emitted == limit)
+                {
+                    truncated = true;
+                    break;
+                }
+                ++emitted;
+
                 if (!first_row)
                     writeString(",", response);
                 first_row = false;
@@ -674,7 +702,7 @@ void PrometheusHTTPProtocolAPI::getSeries(
             has_output = pull_next_nonempty();
         }
 
-        writeString("]}", response);
+        writeMetadataResponseFooter(response, truncated);
     }
     catch (...)
     {
@@ -696,6 +724,7 @@ void PrometheusHTTPProtocolAPI::getLabels(
     const String & match_param,
     const String & start_param,
     const String & end_param,
+    UInt64 limit,
     QueryFinishCallback query_finish_callback)
 {
     auto tags_table = time_series_storage->getTargetTable(ViewTarget::Tags, getContext());
@@ -740,6 +769,13 @@ void PrometheusHTTPProtocolAPI::getLabels(
 
     query += " ORDER BY label_key";
 
+    /// Each result row is emitted as one label name, except the row for `__name__` which is skipped
+    /// (it is always prepended as a virtual label and occurs at most once thanks to `DISTINCT`), so
+    /// `LIMIT limit + 1` gives the emission loop below enough rows to fill the limit and to see
+    /// whether the result was truncated.
+    if (limit)
+        query += fmt::format(" LIMIT {}", limit + 1);
+
     LOG_TRACE(log, "Prometheus labels query: {}", query);
 
     auto [ast, io] = executeQuery(query, getContext(), {}, QueryProcessingStage::Complete);
@@ -767,6 +803,9 @@ void PrometheusHTTPProtocolAPI::getLabels(
 
         writeString(R"({"status":"success","data":["__name__")", response);
 
+        /// The virtual `__name__` label emitted above is the first item and counts towards the limit.
+        UInt64 emitted = 1;
+        bool truncated = false;
         while (has_output)
         {
             const auto & label_col = result_block.getByName("label_key").column;
@@ -777,6 +816,12 @@ void PrometheusHTTPProtocolAPI::getLabels(
                 /// Skip __name__ since we already included it
                 if (label == "__name__")
                     continue;
+                if (limit && emitted == limit)
+                {
+                    truncated = true;
+                    break;
+                }
+                ++emitted;
                 writeString(",", response);
                 writeJSONString(label, response, format_settings);
             }
@@ -784,7 +829,7 @@ void PrometheusHTTPProtocolAPI::getLabels(
             has_output = pull_next_nonempty();
         }
 
-        writeString("]}", response);
+        writeMetadataResponseFooter(response, truncated);
     }
     catch (...)
     {
@@ -808,6 +853,7 @@ void PrometheusHTTPProtocolAPI::getLabelValues(
     const String & match_param,
     const String & start_param,
     const String & end_param,
+    UInt64 limit,
     QueryFinishCallback query_finish_callback)
 {
     auto tags_table = time_series_storage->getTargetTable(ViewTarget::Tags, getContext());
@@ -826,11 +872,14 @@ void PrometheusHTTPProtocolAPI::getLabelValues(
 
     if (label_name == "__name__")
     {
-        /// __name__ maps to the metric_name column directly
+        /// __name__ maps to the metric_name column directly. An empty metric name is treated as an
+        /// absent label (the emission loop below skips empty values anyway), so filter it out in SQL
+        /// to keep result rows one-to-one with emitted items - the `LIMIT limit + 1` bound relies on it.
         query = fmt::format(
             "SELECT DISTINCT {} AS label_value FROM {}",
             TimeSeriesColumnNames::MetricName,
             tags_table_id.getFullTableName());
+        conditions.push_back(fmt::format("{} != ''", TimeSeriesColumnNames::MetricName));
     }
     else
     {
@@ -854,13 +903,16 @@ void PrometheusHTTPProtocolAPI::getLabelValues(
         }
         else
         {
-            /// Extract distinct values for a specific key from the tags Map
+            /// Extract distinct values for a specific key from the tags Map. A key stored with an empty
+            /// value is treated as an absent label (the emission loop below skips empty values anyway),
+            /// so require a non-empty value in SQL - which also implies the key is present - to keep
+            /// result rows one-to-one with emitted items; the `LIMIT limit + 1` bound relies on it.
             query = fmt::format(
                 "SELECT DISTINCT {}[{}] AS label_value FROM {}",
                 TimeSeriesColumnNames::Tags,
                 quoteString(label_name),
                 tags_table_id.getFullTableName());
-            conditions.push_back(fmt::format("mapContains({}, {})",
+            conditions.push_back(fmt::format("{}[{}] != ''",
                 TimeSeriesColumnNames::Tags,
                 quoteString(label_name)));
         }
@@ -878,6 +930,12 @@ void PrometheusHTTPProtocolAPI::getLabelValues(
         query += (i == 0 ? " WHERE " : " AND ") + conditions[i];
 
     query += " ORDER BY label_value";
+
+    /// Thanks to the non-empty-value conditions above each result row is emitted as exactly one label
+    /// value, so `LIMIT limit + 1` bounds the scan while still letting the emission loop below see
+    /// whether the result was truncated (the one extra row).
+    if (limit)
+        query += fmt::format(" LIMIT {}", limit + 1);
 
     LOG_TRACE(log, "Prometheus label values query: {}", query);
 
@@ -907,6 +965,8 @@ void PrometheusHTTPProtocolAPI::getLabelValues(
         writeString(R"({"status":"success","data":[)", response);
 
         bool first = true;
+        UInt64 emitted = 0;
+        bool truncated = false;
         while (has_output)
         {
             const auto & value_col = result_block.getByName("label_value").column;
@@ -916,6 +976,12 @@ void PrometheusHTTPProtocolAPI::getLabelValues(
                 auto value = value_col->getDataAt(i);
                 if (value.empty())
                     continue;
+                if (limit && emitted == limit)
+                {
+                    truncated = true;
+                    break;
+                }
+                ++emitted;
                 if (!first)
                     writeString(",", response);
                 first = false;
@@ -925,7 +991,7 @@ void PrometheusHTTPProtocolAPI::getLabelValues(
             has_output = pull_next_nonempty();
         }
 
-        writeString("]}", response);
+        writeMetadataResponseFooter(response, truncated);
     }
     catch (...)
     {

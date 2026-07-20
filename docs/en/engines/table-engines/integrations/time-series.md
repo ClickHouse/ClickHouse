@@ -420,6 +420,8 @@ These endpoints read from the [tags](#tags-table) target table and deduplicate b
 
 The optional `match[]` parameter restricts the result to a single metric name, for example `/api/v1/series?match[]=cpu_usage`.
 
+The optional `limit` parameter caps the number of returned items, for example `/api/v1/labels?limit=10` (`0` means no limit, which is also the default). When the result is truncated, the response carries the standard Prometheus warning `results truncated due to limit`. The query endpoints (`/api/v1/query` and `/api/v1/query_range`) do not implement `limit` yet and reject a request that specifies it.
+
 Tags moved into separate columns via the `tags_to_columns` setting are included in the results of all three endpoints.
 
 Label names in the `/api/v1/label/<name>/values` path that are not legacy Prometheus names (for example `http.status_code` or `path/segment`) are expected in Prometheus' escaped form (`U__http_2e_status__code`, `U__path_2f_segment`); they are decoded back to the stored tag name before being looked up.
