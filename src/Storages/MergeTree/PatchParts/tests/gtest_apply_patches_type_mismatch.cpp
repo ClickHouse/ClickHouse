@@ -1,6 +1,6 @@
 #include <gtest/gtest.h>
 
-#include <Storages/MergeTree/PatchParts/applyPatchesLegacy.h>
+#include <Storages/MergeTree/PatchParts/applyPatches.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnString.h>

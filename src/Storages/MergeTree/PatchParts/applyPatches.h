@@ -1,6 +1,7 @@
 #pragma once
 #include <Storages/MergeTree/PatchParts/PatchPartInfo.h>
 #include <Storages/MergeTree/PatchParts/PatchJoinCache.h>
+#include <Columns/IColumn.h>
 #include <Common/PODArray.h>
 #include <Core/Block.h>
 
@@ -81,6 +82,22 @@ void applyPatchesToBlock(
     Block & result_block,
     Block & versions_block,
     const std::vector<PatchReadResultToApply> & patch_read_results,
+    UInt64 source_data_version);
+
+/// Helpers defined in applyPatches.cpp, shared with the legacy formats (applyPatchesLegacy.cpp).
+const PaddedPODArray<UInt64> & getColumnUInt64Data(const Block & block, const String & column_name);
+PaddedPODArray<UInt64> & getColumnUInt64Data(Block & block, const String & column_name);
+bool canApplyPatchInplace(const IColumn & column);
+IColumn::Versions & addDataVersionForColumn(Block & block, const String & column_name, UInt64 num_rows, UInt64 data_version);
+Block getUpdatedHeader(const PatchesIndices & patches);
+
+/// Applies each patch as-is, without combining row indices across patches.
+/// Patches may have multiple source blocks (e.g. built by applyPatchesMergeOnKey).
+void applyPatchesIndices(
+    Block & result_block,
+    Block & versions_block,
+    const PatchesIndices & patches,
+    const Block & updated_header,
     UInt64 source_data_version);
 
 }

@@ -1,6 +1,5 @@
 #pragma once
 #include <Storages/MergeTree/PatchParts/applyPatches.h>
-#include <Columns/IColumn.h>
 
 namespace DB
 {
@@ -14,22 +13,6 @@ void applyPatchesToBlockLegacy(
     Block & result_block,
     Block & versions_block,
     const std::vector<PatchReadResultToApply> & patch_read_results,
-    UInt64 source_data_version);
-
-/// Helpers shared with the current format, defined in applyPatches.cpp.
-const PaddedPODArray<UInt64> & getColumnUInt64Data(const Block & block, const String & column_name);
-PaddedPODArray<UInt64> & getColumnUInt64Data(Block & block, const String & column_name);
-bool canApplyPatchInplace(const IColumn & column);
-IColumn::Versions & addDataVersionForColumn(Block & block, const String & column_name, UInt64 num_rows, UInt64 data_version);
-Block getUpdatedHeader(const PatchesIndices & patches);
-
-/// Applies each patch as-is, without combining row indices across patches.
-/// Patches may have multiple source blocks (e.g. built by applyPatchesMergeOnKey).
-void applyPatchesIndices(
-    Block & result_block,
-    Block & versions_block,
-    const PatchesIndices & patches,
-    const Block & updated_header,
     UInt64 source_data_version);
 
 }
