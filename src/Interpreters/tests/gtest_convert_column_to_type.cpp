@@ -4,6 +4,7 @@
 
 #include <Core/Field.h>
 #include <Columns/IColumn.h>
+#include <Columns/ColumnConst.h>
 #include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeFactory.h>
@@ -46,8 +47,17 @@ void checkEquivalent(const Case & c)
     column->insert(c.from_value);
     const ColumnPtr actual = tryConvertColumnToTypeOrNull(*column, from, to, {}, c.strict, c.inexact);
 
+    /// Real callers (e.g. evaluateConstantExpressionAsColumn) pass a ColumnConst; it must work too.
+    const auto const_column = ColumnConst::create(std::move(column), 1);
+    const ColumnPtr actual_const = tryConvertColumnToTypeOrNull(*const_column, from, to, {}, c.strict, c.inexact);
+
     SCOPED_TRACE(std::string(c.from_type) + " -> " + c.to_type + (c.strict ? " strict" : "")
         + (c.inexact ? " inexact" : ""));
+
+    /// The const and non-const inputs must agree.
+    ASSERT_EQ(actual == nullptr, actual_const == nullptr);
+    if (actual && actual_const)
+        EXPECT_EQ(actual->compareAt(0, 0, *actual_const->convertToFullColumnIfConst(), 1), 0);
 
     if (expected.isNull())
     {

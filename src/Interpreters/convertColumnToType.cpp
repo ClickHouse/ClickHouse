@@ -65,13 +65,19 @@ ColumnPtr convertColumnToTypeOrNull(
 {
     chassert(value.size() == 1);
 
-    if (auto native = tryConvertNumericColumnNative(value, from, to, strict, convert_inexact_floats))
+    /// Callers usually pass a `ColumnConst` (e.g. from `evaluateConstantExpressionAsColumn`); operate
+    /// on the underlying full column so the fast path's CAST returns a plain (non-const) column and the
+    /// `Field` fallback reads the value directly.
+    const ColumnPtr full = value.convertToFullColumnIfConst();
+    const IColumn & unwrapped = *full;
+
+    if (auto native = tryConvertNumericColumnNative(unwrapped, from, to, strict, convert_inexact_floats))
         return std::move(*native);
 
     /// Fallback: materialize a `Field`, reuse `convertFieldToType`, rebuild a column. Column-native
     /// fast paths above shrink this over time; the differential test pins equivalence.
     Field field;
-    value.get(0, field);
+    unwrapped.get(0, field);
 
     const Field converted = convertFieldToType(field, *to, from.get(), format_settings, strict, convert_inexact_floats);
 
