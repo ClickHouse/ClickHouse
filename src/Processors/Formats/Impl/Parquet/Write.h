@@ -35,6 +35,7 @@ struct WriteOptions
 
     size_t data_page_size = 1024 * 1024;
     size_t write_batch_size = 1024;
+    std::optional<size_t> max_rows_per_page;
 
     bool use_dictionary_encoding = true;
     size_t max_dictionary_size = 1024 * 1024;

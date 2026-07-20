@@ -50,6 +50,8 @@ public:
 
     virtual bool isWidePart() const = 0;
 
+    virtual bool isParquetPart() const = 0;
+
     virtual bool isProjectionPart() const = 0;
 
     virtual bool hasLightweightDelete() const = 0;

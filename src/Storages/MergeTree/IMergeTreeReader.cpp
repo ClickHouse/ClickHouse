@@ -557,6 +557,20 @@ MergeTreeReaderPtr createMergeTreeReaderWide(
     const ValueSizeMap & avg_value_size_hints,
     const ReadBufferFromFileBase::ProfileCallback & profile_callback);
 
+MergeTreeReaderPtr createMergeTreeReaderParquet(
+    const MergeTreeDataPartInfoForReaderPtr & read_info,
+    const NamesAndTypesList & columns_to_read,
+    const StorageSnapshotPtr & storage_snapshot,
+    const MergeTreeSettingsPtr & storage_settings,
+    const MarkRanges & mark_ranges,
+    const VirtualFields & virtual_fields,
+    UncompressedCache * uncompressed_cache,
+    MarkCache * mark_cache,
+    DeserializationPrefixesCache * deserialization_prefixes_cache,
+    const MergeTreeReaderSettings & reader_settings,
+    const ValueSizeMap & avg_value_size_hints,
+    const ReadBufferFromFileBase::ProfileCallback & profile_callback);
+
 MergeTreeReaderPtr createMergeTreeReader(
     const MergeTreeDataPartInfoForReaderPtr & read_info,
     const NamesAndTypesList & columns_to_read,
@@ -588,6 +602,21 @@ MergeTreeReaderPtr createMergeTreeReader(
 
     if (read_info->isWidePart())
         return createMergeTreeReaderWide(
+            read_info,
+            columns_to_read,
+            storage_snapshot,
+            storage_settings,
+            mark_ranges,
+            virtual_fields,
+            uncompressed_cache,
+            mark_cache,
+            deserialization_prefixes_cache,
+            reader_settings,
+            avg_value_size_hints,
+            profile_callback);
+
+    if (read_info->isParquetPart())
+        return createMergeTreeReaderParquet(
             read_info,
             columns_to_read,
             storage_snapshot,

@@ -6,6 +6,7 @@
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Interpreters/Context.h>
 
+#include <Storages/MergeTree/MergeTreeReaderParquetSingleBuffer.h>
 
 namespace DB
 {
@@ -61,60 +62,12 @@ MergeTreeReaderPtr createMergeTreeReaderParquet(
     const ValueSizeMap & avg_value_size_hints,
     const ReadBufferFromFileBase::ProfileCallback & profile_callback)
 {
-    return std::make_unique<MergeTreeReaderCompactSingleBuffer>(
+    return std::make_unique<MergeTreeReaderParquetSingleBuffer>(
         read_info, columns_to_read, virtual_fields,
         storage_snapshot, storage_settings, uncompressed_cache,
         mark_cache, deserialization_prefixes_cache, mark_ranges, reader_settings,
         avg_value_size_hints, profile_callback, CLOCK_MONOTONIC_COARSE);
 }
-
-MergeTreeDataPartWriterPtr createMergeTreeDataPartParquetWriter(
-    const String & data_part_name_,
-    const String & logger_name_,
-    const SerializationByName & serializations_,
-    MutableDataPartStoragePtr data_part_storage_,
-    const MergeTreeIndexGranularityInfo & index_granularity_info_,
-    const MergeTreeSettingsPtr & storage_settings_,
-    const NamesAndTypesList & columns_list,
-    const ColumnPositions & column_positions,
-    const StorageMetadataPtr & metadata_snapshot,
-    const std::vector<MergeTreeIndexPtr> & indices_to_recalc,
-    const String & marks_file_extension_,
-    const CompressionCodecPtr & default_codec_,
-    const MergeTreeWriterSettings & writer_settings,
-    MergeTreeIndexGranularityPtr computed_index_granularity);
-
-MergeTreeDataPartWriterPtr createMergeTreeDataPartParquetWriter(
-    const String & data_part_name_,
-    const String & logger_name_,
-    const SerializationByName & serializations_,
-    MutableDataPartStoragePtr data_part_storage_,
-    const MergeTreeIndexGranularityInfo & index_granularity_info_,
-    const MergeTreeSettingsPtr & storage_settings_,
-    const NamesAndTypesList & columns_list,
-    const ColumnPositions & column_positions,
-    const StorageMetadataPtr & metadata_snapshot,
-    const std::vector<MergeTreeIndexPtr> & indices_to_recalc,
-    const String & marks_file_extension_,
-    const CompressionCodecPtr & default_codec_,
-    const MergeTreeWriterSettings & writer_settings,
-    MergeTreeIndexGranularityPtr computed_index_granularity)
-{
-    NamesAndTypesList ordered_columns_list;
-    std::copy_if(columns_list.begin(), columns_list.end(), std::back_inserter(ordered_columns_list),
-        [&column_positions](const auto & column) { return column_positions.contains(column.name); });
-
-    /// Order of writing is important in compact format
-    ordered_columns_list.sort([&column_positions](const auto & lhs, const auto & rhs)
-        { return column_positions.at(lhs.name) < column_positions.at(rhs.name); });
-
-    return std::make_unique<MergeTreeDataPartWriterCompact>(
-        data_part_name_, logger_name_, serializations_, data_part_storage_,
-        index_granularity_info_, storage_settings_, ordered_columns_list, metadata_snapshot,
-        indices_to_recalc, marks_file_extension_,
-        default_codec_, writer_settings, std::move(computed_index_granularity));
-}
-
 
 void MergeTreeDataPartParquet::calculateEachColumnSizes(ColumnSizeByName & /*each_columns_size*/, ColumnSize & total_size) const
 {

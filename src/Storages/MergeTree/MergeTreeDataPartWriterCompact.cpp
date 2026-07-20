@@ -8,6 +8,8 @@
 #include <IO/NullWriteBuffer.h>
 #include <Common/FailPoint.h>
 
+#include <iostream>
+
 namespace DB
 {
 
@@ -275,6 +277,7 @@ void MergeTreeDataPartWriterCompact::write(const Block & block, const IColumnPer
     {
         auto granules_to_write = getGranulesToWrite(*index_granularity, flushed_block.rows(), getCurrentMark(), /* last_block = */ false);
         writeDataBlockPrimaryIndexAndSkipIndices(flushed_block, granules_to_write);
+        std::cerr << "granules_to_write.size() = " << granules_to_write.size() << std::endl;
         setCurrentMark(getCurrentMark() + granules_to_write.size());
     }
 }

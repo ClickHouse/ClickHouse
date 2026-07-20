@@ -50,6 +50,26 @@ ParquetBlockOutputFormat::~ParquetBlockOutputFormat()
     }
 }
 
+std::vector<size_t> ParquetBlockOutputFormat::getPageRowCounts() const
+{
+    std::vector<size_t> result;
+    for (const auto & rg : file_state.completed_row_groups)
+    {
+        if (rg.column_indexes.empty())
+            continue;
+
+        const auto & page_locations = rg.column_indexes.front().offset_index.page_locations;
+        const Int64 num_rows = rg.row_group.num_rows;
+        for (size_t i = 0; i < page_locations.size(); ++i)
+        {
+            const Int64 start = page_locations[i].first_row_index;
+            const Int64 end = (i + 1 < page_locations.size()) ? page_locations[i + 1].first_row_index : num_rows;
+            result.push_back(static_cast<size_t>(end - start));
+        }
+    }
+    return result;
+}
+
 void ParquetBlockOutputFormat::consume(Chunk chunk)
 {
     /// Poll background tasks.

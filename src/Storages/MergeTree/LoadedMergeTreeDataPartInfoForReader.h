@@ -22,6 +22,8 @@ public:
 
     bool isWidePart() const override { return DB::isWidePart(data_part); }
 
+    bool isParquetPart() const override { return DB::isParquetPart(data_part); }
+
     bool isProjectionPart() const override { return data_part->isProjectionPart(); }
 
     bool hasLightweightDelete() const override { return data_part->hasLightweightDelete(); }

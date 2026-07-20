@@ -74,6 +74,8 @@ WriteOptions writeOptionsFromFormatSettings(const FormatSettings & format_settin
     options.write_geometadata = format_settings.parquet.write_geometadata;
     options.max_dictionary_size = format_settings.parquet.max_dictionary_size;
     options.use_dictionary_encoding = options.max_dictionary_size > 0;
+    if (format_settings.parquet.max_rows_per_page)
+        options.max_rows_per_page = format_settings.parquet.max_rows_per_page;
 
     return options;
 }
@@ -1161,8 +1163,11 @@ void writeColumnImpl(
                 break;
             }
 
-            if (next_def_offset == num_values ||
-                static_cast<size_t>(encoder->EstimatedDataEncodedSize()) >= options.data_page_size)
+            const bool cut_by_rows = options.max_rows_per_page
+                && (next_def_offset - def_offset) >= *options.max_rows_per_page;
+            const bool cut_by_bytes = !options.max_rows_per_page
+                && static_cast<size_t>(encoder->EstimatedDataEncodedSize()) >= options.data_page_size;
+            if (next_def_offset == num_values || cut_by_rows || cut_by_bytes)
             {
                 flush_page(next_def_offset - def_offset, next_data_offset - data_offset);
                 break;

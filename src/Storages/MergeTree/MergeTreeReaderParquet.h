@@ -7,6 +7,8 @@
 
 #include <Processors/Formats/Impl/Parquet/Decoding.h>
 
+#include <Processors/Formats/IInputFormat.h>
+
 #if USE_PARQUET
 
 #include <parquet/encoding.h>
@@ -23,7 +25,6 @@ using DataPartCompactPtr = std::shared_ptr<const MergeTreeDataPartCompact>;
 class IMergeTreeDataPart;
 using DataPartPtr = std::shared_ptr<const IMergeTreeDataPart>;
 
-/// Base class of readers for compact parts.
 class MergeTreeReaderParquet : public IMergeTreeReader
 {
 public:
@@ -45,24 +46,10 @@ public:
     bool canReadIncompleteGranules() const final { return false; }
 
 protected:
-    //void fillColumnPositions();   // columns_to_read[i] -> индекс leaf-колонки в parquet (по имени / field-id)
-
-    struct ColumnStream
-    {
-        parquet::format::ColumnChunk chunk;
-        parquet::format::OffsetIndex offset_index;
-        Parquet::PageDecoderInfo decoder_info;
-        Parquet::Dictionary dictionary;
-    };
-
-    parquet::FileMetaData footer;                        // распарсен 1 раз (или из ParquetMetadataCache)
-    std::vector<std::optional<size_t>> column_positions; // nullopt = колонки нет в парте
-    std::vector<ColumnStream> streams;
-
     ReadBufferFromFileBase::ProfileCallback profile_callback;
     clockid_t clock_type;
 
-    size_t next_mark = 0;                     // для continue_reading, как в Compact
+    size_t next_mark = 0;
 };
 
 }

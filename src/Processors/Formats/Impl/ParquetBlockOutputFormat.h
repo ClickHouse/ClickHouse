@@ -20,6 +20,8 @@ public:
 
     String getName() const override { return "ParquetBlockOutputFormat"; }
 
+    std::vector<size_t> getPageRowCounts() const;
+
 private:
     struct MemoryToken
     {

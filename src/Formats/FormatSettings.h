@@ -379,6 +379,7 @@ struct FormatSettings
         uint64_t output_compression_level;
         size_t data_page_size = 1024 * 1024;
         size_t write_batch_size = 1024;
+        size_t max_rows_per_page = 0;
         double bloom_filter_bits_per_value = 10.5;
         size_t bloom_filter_flush_threshold_bytes = 1024 * 1024 * 128;
         bool allow_geoparquet_parser = true;

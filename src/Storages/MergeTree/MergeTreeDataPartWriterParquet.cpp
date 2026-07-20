@@ -4,17 +4,14 @@
 
 #include <Storages/MergeTree/MergeTreeDataPartParquet.h>
 #include <Storages/StorageInMemoryMetadata.h>
+#include <Formats/FormatSettings.h>
 #include <IO/HashingWriteBuffer.h>
-#include <IO/WriteBufferFromString.h>
+#include <Core/Block.h>
+#include <algorithm>
+#include <limits>
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int NOT_IMPLEMENTED;
-    extern const int LOGICAL_ERROR;
-}
 
 static constexpr const char * parquet_file_extension = ".parquet";
 
@@ -45,17 +42,10 @@ MergeTreeDataPartWriterParquet::MergeTreeDataPartWriterParquet(
         settings_.query_write_settings);
     data_hashing = std::make_unique<HashingWriteBuffer>(*parquet_plain_file);
 
-    /// All parquet write knobs (compression, dictionary, bloom filter, ...) come from the query
-    /// FormatSettings, mapped in one shared place; see writeOptionsFromFormatSettings.
-    options = Parquet::writeOptionsFromFormatSettings(settings.format_settings);
+    for (const auto & column : columns_list_)
+        header.insert(ColumnWithTypeAndName(column.type, column.name));
 
-    /// Forced invariants that the mapping must never override: the OffsetIndex is the mark index
-    /// of a Parquet part, so it must always be written.
-    options.write_page_index = true;
-    options.write_checksums = true;
-
-    /// Row group target from FormatSettings, rounded down to a whole number of granules.
-    const size_t granule_rows = index_granularity_info.fixed_index_granularity;
+    const size_t granule_rows = index_granularity_info_.fixed_index_granularity;
     const size_t target_rows = settings.format_settings.parquet.row_group_rows;
     if (granule_rows > 0)
     {
@@ -65,63 +55,57 @@ MergeTreeDataPartWriterParquet::MergeTreeDataPartWriterParquet(
     }
     else
         row_group_size_rows = target_rows;
-}
 
-void MergeTreeDataPartWriterParquet::flushRowGroup()
-{
-    Columns cols = columns_buffer.releaseColumns();
-    size_t num_rows = cols.empty() ? 0 : cols[0]->size();
+    FormatSettings format_settings = settings.format_settings;
+    format_settings.parquet.row_group_rows = row_group_size_rows;
+    format_settings.parquet.row_group_bytes = std::numeric_limits<size_t>::max();
+    format_settings.parquet.max_rows_per_page = granule_rows;
+    format_settings.parquet.write_page_index = true;
+    format_settings.parquet.output_compression_method = FormatSettings::ParquetCompression::NONE;
+    format_settings.parquet.max_dictionary_size = 0;
 
-    Parquet::ColumnChunkWriteStates states;
-    size_t i = 0;
-    for (const auto & col_name_type : columns_list)
-    {
-        Parquet::prepareColumnForWrite(cols[i], col_name_type.type, col_name_type.name, options, &states);
-        ++i;
-    }
-
-    for (auto & s : states)
-    {
-        Parquet::writeColumnChunkBody(s, options, format_settings, *data_hashing);
-        Parquet::finalizeColumnChunkAndWriteFooter(std::move(s), file_state, *data_hashing);
-    }
-
-    Parquet::finalizeRowGroup(file_state, num_rows, options, *data_hashing);
+    output_format = std::make_shared<ParquetBlockOutputFormat>(
+        *data_hashing, std::make_shared<const Block>(header), format_settings, nullptr);
 }
 
 namespace
 {
 
-/// Split the block into granules according to index_granularity.
-Granules getGranulesToWrite(const MergeTreeIndexGranularity & index_granularity, size_t block_rows, size_t current_mark, bool last_block)
+void appendBlock(Block & acc, Block && block)
 {
-    if (current_mark >= index_granularity.getMarksCount())
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
-                        "Request to get granules from mark {} but index granularity size is {}",
-                        current_mark, index_granularity.getMarksCount());
+    if (block.rows() == 0)
+        return;
 
+    if (acc.columns() == 0)
+    {
+        acc = std::move(block);
+        return;
+    }
+
+    MutableColumns cols = acc.mutateColumns();
+    for (size_t i = 0; i < cols.size(); ++i)
+        cols[i]->insertRangeFrom(*block.getByPosition(i).column, 0, block.rows());
+    acc.setColumns(std::move(cols));
+}
+
+Granules getGranulesToWrite(const MergeTreeIndexGranularity & index_granularity, size_t block_rows)
+{
     Granules result;
     size_t current_row = 0;
+    size_t current_mark = 0;
     while (current_row < block_rows)
     {
-        size_t expected_rows_in_mark = index_granularity.getMarkRows(current_mark);
-        size_t rows_left_in_block = block_rows - current_row;
-        if (rows_left_in_block < expected_rows_in_mark && !last_block)
-            throw Exception(ErrorCodes::LOGICAL_ERROR,
-                            "Required to write {} rows, but only {} rows was written for the non last granule",
-                            expected_rows_in_mark, rows_left_in_block);
-
+        size_t rows_in_mark = index_granularity.getMarkRows(current_mark);
         result.emplace_back(Granule{
             .start_row = current_row,
-            .rows_to_write = std::min(rows_left_in_block, expected_rows_in_mark),
+            .rows_to_write = std::min(block_rows - current_row, rows_in_mark),
             .mark_number = current_mark,
             .mark_on_start = true,
-            .is_complete = (rows_left_in_block >= expected_rows_in_mark)
+            .is_complete = (block_rows - current_row >= rows_in_mark)
         });
         current_row += result.back().rows_to_write;
         ++current_mark;
     }
-
     return result;
 }
 
@@ -131,35 +115,37 @@ void MergeTreeDataPartWriterParquet::write(const Block & block, const IColumnPer
 {
     Block result_block = block;
     prepareBlockForWriting(result_block);
+    result_block = permuteBlockIfNeeded(result_block, permutation, nullptr);
 
-    if (!file_header_written)
-    {
-        header = result_block.cloneEmpty();
-        schema = Parquet::convertSchema(header, options, /*field_ids*/ std::nullopt);
-        Parquet::writeFileHeader(file_state, *data_hashing);
-        file_header_written = true;
-    }
+    output_format->write(result_block);
 
-    auto granules = getGranulesToWrite(*index_granularity, result_block.rows(), getCurrentMark(), /*last_block=*/ false);
-    calculateAndSerializePrimaryIndex(getIndexBlockAndPermute(block, metadata_snapshot->getPrimaryKeyColumns(), permutation), granules);
-    calculateAndSerializeSkipIndices(getIndexBlockAndPermute(block, getSkipIndicesColumns(), permutation), granules);
+    if (settings.rewrite_primary_key)
+        appendBlock(primary_index_block, getIndexBlockAndPermute(block, metadata_snapshot->getPrimaryKeyColumns(), permutation));
+    appendBlock(skip_indices_block, getIndexBlockAndPermute(block, getSkipIndicesColumns(), permutation));
 
-    columns_buffer.add(result_block.mutateColumns());
-    while (columns_buffer.size() >= row_group_size_rows)
-        flushRowGroup();
-
-    setCurrentMark(getCurrentMark() + granules.size());
     data_written = true;
 }
 
 void MergeTreeDataPartWriterParquet::fillIndexGranularity(size_t /*index_granularity_for_block*/, size_t /*rows_in_block*/)
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "MergeTreeDataPartWriterParquet::fillIndexGranularity is not implemented");
 }
 
 void MergeTreeDataPartWriterParquet::finalizeIndexGranularity()
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "MergeTreeDataPartWriterParquet::finalizeIndexGranularity is not implemented");
+    output_format->finalize();
+    data_hashing->next();
+
+    for (size_t page_rows : output_format->getPageRowCounts())
+        index_granularity->appendMark(page_rows);
+
+    if (index_granularity->getMarksCount() == 0)
+        return;
+
+    auto granules = getGranulesToWrite(*index_granularity, index_granularity->getTotalRows());
+
+    if (settings.rewrite_primary_key)
+        calculateAndSerializePrimaryIndex(primary_index_block, granules);
+    calculateAndSerializeSkipIndices(skip_indices_block, granules);
 }
 
 void MergeTreeDataPartWriterParquet::fillChecksums(MergeTreeDataPartChecksums & checksums, NameSet & /*checksums_to_remove*/)
@@ -174,14 +160,7 @@ void MergeTreeDataPartWriterParquet::fillChecksums(MergeTreeDataPartChecksums & 
     if (settings.rewrite_primary_key)
         fillPrimaryIndexChecksums(checksums);
 
-    String checksum_representation;
-    WriteBufferFromString checksum_out(checksum_representation);
-    checksums.write(checksum_out);
-    checksum_out.finalize();
-
-    if (auto status = key_value_metadata.Set(checksums_key, checksum_representation); !status.ok())
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
-            "Failed to store checksums in parquet key-value metadata: {}", status.ToString());
+    fillSkipIndicesChecksums(checksums);
 }
 
 void MergeTreeDataPartWriterParquet::finish(bool sync)
@@ -189,18 +168,6 @@ void MergeTreeDataPartWriterParquet::finish(bool sync)
     if (settings.rewrite_primary_key)
         finishPrimaryIndexSerialization(sync);
     finishSkipIndicesSerialization(sync);
-
-    std::vector<parquet::format::KeyValue> footer_metadata;
-    footer_metadata.reserve(key_value_metadata.size());
-    for (int64_t i = 0; i < key_value_metadata.size(); ++i)
-    {
-        parquet::format::KeyValue kv;
-        kv.__set_key(key_value_metadata.key(i));
-        kv.__set_value(key_value_metadata.value(i));
-        footer_metadata.push_back(std::move(kv));
-    }
-
-    Parquet::writeFileFooter(file_state, std::move(schema), options, *data_hashing, header, footer_metadata);
 
     data_hashing->finalize();
     parquet_plain_file->preFinalize();
@@ -252,7 +219,6 @@ MergeTreeDataPartWriterPtr createMergeTreeDataPartParquetWriter(
     std::copy_if(columns_list.begin(), columns_list.end(), std::back_inserter(ordered_columns_list),
         [&column_positions](const auto & column) { return column_positions.contains(column.name); });
 
-    /// Order of writing is important in compact format
     ordered_columns_list.sort([&column_positions](const auto & lhs, const auto & rhs)
         { return column_positions.at(lhs.name) < column_positions.at(rhs.name); });
 
@@ -262,7 +228,6 @@ MergeTreeDataPartWriterPtr createMergeTreeDataPartParquetWriter(
         indices_to_recalc,
         default_codec_, writer_settings, std::move(computed_index_granularity));
 }
-
 
 }
 
