@@ -1242,10 +1242,13 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromJoin(const I
 
     /// Check SEMI/ANTI JOIN side access restrictions
     SemiAntiJoinSideChecker side_checker(from_join_node, join_strictness, join_kind, scope.context, scope.resolving_join_on_expression);
+    std::optional<JoinTableSide> denied_qualified_access;
 
     auto try_resolve_identifier_from_join_tree_node = [&](const QueryTreeNodePtr & join_tree_node, bool may_be_override_by_using_column, JoinTableSide side)
     {
-        /// Early check: if this side should be skipped, return immediately
+        /// Do not resolve identifiers from a non-preserved side. For an explicitly qualified
+        /// identifier, defer the dedicated access-denied exception until the preserved side has
+        /// also been tried: the qualifier can name a column with a matching subcolumn there.
         if (side_checker.shouldSkipSide(side))
         {
             /// Surface a dedicated error code when the user is explicitly requesting something
@@ -1266,17 +1269,7 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromJoin(const I
             {
                 const auto & prefix = identifier_lookup.identifier.front();
                 if (qualifierBindsToJoinSubtree(join_tree_node, prefix, scope))
-                {
-                    const char * join_type_str = side_checker.is_semi ? "SEMI" : "ANTI";
-                    const char * side_str = side == JoinTableSide::Left ? "left" : "right";
-                    throw Exception(ErrorCodes::SEMI_ANTI_JOIN_COLUMN_ACCESS_DENIED,
-                        "Cannot access columns from the {} side of {} JOIN in this context. "
-                        "Expression {} is not available. In scope {}",
-                        side_str,
-                        join_type_str,
-                        identifier_lookup.identifier.getFullName(),
-                        scope.scope_node->formatASTForErrorMessage());
-                }
+                    denied_qualified_access = side;
             }
             return QueryTreeNodePtr{};
         }
@@ -1328,6 +1321,19 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromJoin(const I
         left_resolved_identifier = try_resolve_identifier_from_join_tree_node(from_join_node.getLeftTableExpression(), join_kind == JoinKind::Right, JoinTableSide::Left);
     if (!binds_left || binds_right)
         right_resolved_identifier = try_resolve_identifier_from_join_tree_node(from_join_node.getRightTableExpression(), join_kind != JoinKind::Right, JoinTableSide::Right);
+
+    if (!left_resolved_identifier && !right_resolved_identifier && denied_qualified_access)
+    {
+        const char * join_type_str = side_checker.is_semi ? "SEMI" : "ANTI";
+        const char * side_str = *denied_qualified_access == JoinTableSide::Left ? "left" : "right";
+        throw Exception(ErrorCodes::SEMI_ANTI_JOIN_COLUMN_ACCESS_DENIED,
+            "Cannot access columns from the {} side of {} JOIN in this context. "
+            "Expression {} is not available. In scope {}",
+            side_str,
+            join_type_str,
+            identifier_lookup.identifier.getFullName(),
+            scope.scope_node->formatASTForErrorMessage());
+    }
 
     if (!identifier_lookup.isExpressionLookup())
     {

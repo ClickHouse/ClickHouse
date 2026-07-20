@@ -13,7 +13,7 @@
 --
 -- Note: JOIN ON expressions can access both sides regardless of settings.
 
--- only with the analyzer
+-- These settings require the analyzer.
 SET allow_experimental_analyzer = 1;
 
 -- Test ANTI JOIN setting
@@ -50,6 +50,18 @@ SELECT * FROM (SELECT 1 AS a) t1 RIGHT SEMI JOIN (SELECT 2 AS b) t2 ON true;
 -- Explicit column reference: preserved side works, non-preserved side fails
 SELECT t1.* FROM (SELECT 1 AS a) t1 LEFT ANTI JOIN (SELECT 2 AS b) t2 ON false;
 SELECT t2.* FROM (SELECT 1 AS a) t1 LEFT ANTI JOIN (SELECT 2 AS b) t2 ON false; -- { serverError SEMI_ANTI_JOIN_COLUMN_ACCESS_DENIED }
+
+-- With the default subcolumn-over-alias resolution rule, a qualified-looking identifier can
+-- still resolve to a Tuple subcolumn on the preserved side. Only reject it when alias-prefix
+-- resolution is explicitly preferred.
+SELECT t2.b
+FROM (SELECT CAST(tuple(1), 'Tuple(b UInt8)') AS t2) AS l
+LEFT SEMI JOIN (SELECT 1 AS b) AS t2 ON true
+SETTINGS analyzer_compatibility_prefer_alias_over_subcolumn = 0;
+SELECT t2.b
+FROM (SELECT CAST(tuple(1), 'Tuple(b UInt8)') AS t2) AS l
+LEFT SEMI JOIN (SELECT 1 AS b) AS t2 ON true
+SETTINGS analyzer_compatibility_prefer_alias_over_subcolumn = 1; -- { serverError SEMI_ANTI_JOIN_COLUMN_ACCESS_DENIED }
 
 -- Default behavior (both settings = 0): returns columns from both sides
 SELECT * FROM (SELECT 1 AS a) t1 LEFT ANTI JOIN (SELECT 2 AS b) t2 ON false
