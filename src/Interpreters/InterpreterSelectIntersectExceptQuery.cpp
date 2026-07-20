@@ -25,9 +25,6 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsOverflowMode distinct_overflow_mode;
-    extern const SettingsUInt64 max_rows_in_distinct;
-    extern const SettingsUInt64 max_bytes_in_distinct;
     extern const SettingsMaxThreads max_threads;
     extern const SettingsUInt64 max_threads_min_free_memory_per_thread;
     extern const SettingsBool optimize_distinct_in_order;
@@ -165,11 +162,9 @@ void InterpreterSelectIntersectExceptQuery::buildQueryPlan(QueryPlan & query_pla
         || query.final_operator == ASTSelectIntersectExceptQuery::Operator::EXCEPT_DISTINCT)
     {
         /// Add distinct transform
-        SizeLimits limits(settings[Setting::max_rows_in_distinct], settings[Setting::max_bytes_in_distinct], settings[Setting::distinct_overflow_mode]);
-
         auto distinct_step = std::make_unique<DistinctStep>(
             query_plan.getCurrentHeader(),
-            limits,
+            DistinctStep::Settings(settings),
             0,
             result_header->getNames(),
             false);
