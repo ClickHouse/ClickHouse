@@ -76,7 +76,7 @@ void CompletedPipelineExecutor::execute()
     if (interactive_timeout_ms)
     {
         data = std::make_unique<Data>();
-        data->executor = std::make_shared<PipelineExecutor>(pipeline.processors, pipeline.process_list_element);
+        data->executor = std::make_shared<PipelineExecutor>(pipeline.processors, pipeline.process_list_element, pipeline.step_wall_clock_registry.get());
         data->executor->setReadProgressCallback(pipeline.getReadProgressCallback());
         set_deferred_statistics_callback(*data->executor);
 
@@ -109,7 +109,7 @@ void CompletedPipelineExecutor::execute()
     }
     else
     {
-        PipelineExecutor executor(pipeline.processors, pipeline.process_list_element);
+        PipelineExecutor executor(pipeline.processors, pipeline.process_list_element, pipeline.step_wall_clock_registry.get());
         executor.setReadProgressCallback(pipeline.getReadProgressCallback());
         set_deferred_statistics_callback(executor);
         executor.execute(pipeline.getNumThreads(), pipeline.getConcurrencyControl());

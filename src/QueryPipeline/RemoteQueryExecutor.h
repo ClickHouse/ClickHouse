@@ -407,4 +407,5 @@ private:
     ReadResult processPacket(Packet packet);
 };
 
+ThrottlerPtr getThrottler(const ContextPtr & context);
 }
