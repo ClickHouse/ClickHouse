@@ -78,7 +78,8 @@ def create_table(node, table, replica, data_prefix="", aggressive_merge=True):
         -- statistics on freshly-inserted parts, and statistics-based part pruning drops the `d == 12` /
         -- `c == 12` predicate so no part uses the projection and force_optimize_projection=1 throws.
         auto_statistics_types='',
-        compress_primary_key=0;
+        compress_primary_key=0,
+        merge_selector_enable_heuristic_to_lower_max_parts_to_merge_at_once=0;
     """
     )
 

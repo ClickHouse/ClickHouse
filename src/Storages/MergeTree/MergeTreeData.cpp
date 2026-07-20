@@ -2053,15 +2053,117 @@ void MergeTreeData::PartLoadingTree::add(const MergeTreePartInfo & info, const S
     if (!current_ptr)
         current_ptr = std::make_shared<Node>(MergeTreePartInfo{}, "", disk);
 
-    /// Check if a part directory has transaction version metadata on disk.
-    auto has_transaction_metadata = [&](const String & part_name, const DiskPtr & part_disk) -> bool
+    /// Possible rollback states for a part, determined from txn_version.txt on disk and, when the
+    /// on-disk CSN is still Tx::UnknownCSN, from TransactionLog.
+    ///
+    /// Resolution is eager (not deferred to loadDataPart) because loadDataPart only runs on
+    /// top-level nodes of the loading tree. If we leave an incoming committed peer out of the tree
+    /// when the existing tree-resident part has an unresolved CSN, and loadDataPart later resolves
+    /// the existing part to RolledBackCSN, the incoming part is permanently lost for this startup.
+    ///
+    /// The TransactionLog lookup follows the same logic as `VersionMetadata::tryGetCSN`: if the tid
+    /// has no CSN and no running transaction, treat it as rolled back. The only residual ambiguous
+    /// case is "committed long ago and pruned past tail_ptr without the on-disk CSN being flushed
+    /// back" — this is a rare corruption-class state and is resolved here as RolledBack, which
+    /// favors keeping the unambiguously committed peer.
+    enum class RollbackStatus
+    {
+        RolledBack,  /// definitively rolled back
+        Committed,   /// definitively committed
+        NoMetadata,  /// txn_version.txt does not exist → non-transactional part
+        UnknownCSN,  /// transaction is still running and creation_csn is not yet known
+        Unreadable,  /// file exists but could not be parsed → corruption or partial write in progress
+    };
+
+    auto read_txn_status = [&](const String & part_name, const DiskPtr & part_disk) -> RollbackStatus
     {
         if (relative_data_path.empty())
-            return false;
-        return part_disk->existsFile(fs::path(relative_data_path) / part_name / VersionMetadata::TXN_VERSION_METADATA_FILE_NAME);
+            return RollbackStatus::NoMetadata;
+
+        auto version_path = fs::path(relative_data_path) / part_name / VersionMetadata::TXN_VERSION_METADATA_FILE_NAME;
+        if (!part_disk->existsFile(version_path))
+        {
+            /// Mirror VersionMetadataOnDisk::loadMetadata: a lone txn_version.txt.tmp (no final
+            /// txn_version.txt) means the creating transaction never renamed its metadata into place,
+            /// i.e. it was interrupted before commit. Such a part is rolled back, so classify it as
+            /// such here too — otherwise it would be treated as a non-transactional part and an
+            /// intersecting committed peer would fall through to the LOGICAL_ERROR path below.
+            auto tmp_version_path = fs::path(relative_data_path) / part_name / VersionMetadata::TMP_TXN_VERSION_METADATA_FILE_NAME;
+            if (part_disk->existsFile(tmp_version_path))
+                return RollbackStatus::RolledBack;
+            return RollbackStatus::NoMetadata;
+        }
+
+        try
+        {
+            VersionInfo version_info;
+            auto buf = part_disk->readFile(version_path, ReadSettings{});
+            version_info.readFromBuffer(*buf, /*one_line=*/false);
+
+            CSN csn = version_info.creation_csn;
+            if (csn == Tx::RolledBackCSN)
+                return RollbackStatus::RolledBack;
+            if (csn != Tx::UnknownCSN)
+                return RollbackStatus::Committed;
+
+            /// On-disk CSN is unresolved — consult TransactionLog (mirrors VersionMetadata::tryGetCSN).
+            csn = TransactionLog::getCSN(version_info.creation_tid);
+            if (!csn
+                && TransactionLog::instance().tryGetRunningTransaction(version_info.creation_tid.getHash()) == nullptr)
+            {
+                csn = TransactionLog::getCSN(version_info.creation_tid);  /// re-check after the race window
+                if (!csn)
+                    return RollbackStatus::RolledBack;
+            }
+            if (csn == Tx::RolledBackCSN)
+                return RollbackStatus::RolledBack;
+            if (csn)
+                return RollbackStatus::Committed;
+
+            return RollbackStatus::UnknownCSN;
+        }
+        catch (...)
+        {
+            tryLogCurrentException(getLogger("MergeTreeData"), fmt::format("Failed to read version metadata for part {}", part_name));
+            return RollbackStatus::Unreadable;
+        }
     };
 
     auto * current = current_ptr.get();
+
+    /// Replace a superseded node (rolled back, or in flight while the incoming peer is committed)
+    /// with the incoming committed peer in the intersection case: erase the victim, then re-insert
+    /// its orphans and the incoming part sorted by (level, mutation) descending so that covering
+    /// parts are added before the parts they contain. The containment case doesn't need this —
+    /// `loadDataPartsFromDisk` promotes orphans of any top-level part demoted to Outdated.
+    auto evict_and_reinsert = [&](auto victim_iter, std::string_view reason)
+    {
+        LOG_INFO(
+            getLogger("MergeTreeData"),
+            "Removing {} part {} from loading tree (its descendants and incoming part {} will be re-inserted)",
+            reason,
+            victim_iter->second->name,
+            name);
+        std::vector<std::tuple<MergeTreePartInfo, String, DiskPtr>> to_reinsert;
+        std::function<void(const NodePtr &)> collect = [&](const NodePtr & node)
+        {
+            to_reinsert.emplace_back(node->info, node->name, node->disk);
+            for (const auto & [_, cn] : node->children)
+                collect(cn);
+        };
+        for (const auto & [_, cn] : victim_iter->second->children)
+            collect(cn);
+        to_reinsert.emplace_back(info, name, disk);
+        std::sort(to_reinsert.begin(), to_reinsert.end(), [](const auto & a, const auto & b)
+        {
+            return std::tie(std::get<0>(a).level, std::get<0>(a).mutation)
+                 > std::tie(std::get<0>(b).level, std::get<0>(b).mutation);
+        });
+        current->children.erase(victim_iter);
+        for (auto & [oi, on, od] : to_reinsert)
+            add(oi, on, od);
+    };
+
     while (true)
     {
         auto it = current->children.lower_bound(info);
@@ -2077,17 +2179,53 @@ void MergeTreeData::PartLoadingTree::add(const MergeTreePartInfo & info, const S
             }
             if (!prev_info.isDisjoint(info))
             {
-                if (has_transaction_metadata(name, disk) || has_transaction_metadata(prev->second->name, prev->second->disk))
-                {
-                    /// If one of the intersecting parts was involved in a transaction,
-                    /// it's likely a result of a rolled-back transaction that left a part on disk.
-                    /// Skip the part for now; the proper fix should handle transaction metadata
-                    /// before building the parts loading tree.
-                    LOG_WARNING(getLogger("MergeTreeData"), "Skipping part {} because it intersects part {}"
-                        " and one of them has transaction metadata (likely a rolled-back transaction)",
+                const auto incoming_status = read_txn_status(name, disk);
+                const auto existing_status = read_txn_status(prev->second->name, prev->second->disk);
+
+                if (incoming_status == RollbackStatus::Unreadable || existing_status == RollbackStatus::Unreadable)
+                    throw Exception(ErrorCodes::CORRUPTED_DATA,
+                        "Part {} intersects previous part {} and the transaction metadata of at least one"
+                        " of them could not be read. This indicates disk corruption or a partial write.",
                         name, prev->second->name);
+
+                if (incoming_status == RollbackStatus::RolledBack)
+                {
+                    /// The incoming part is from a rolled-back transaction; skip it regardless of the
+                    /// existing part's status (covers both the committed-existing and both-rolled-back cases).
+                    LOG_INFO(
+                        getLogger("MergeTreeData"),
+                        "Skipping rolled-back part {} (intersects part {})",
+                        name,
+                        prev->second->name);
                     return;
                 }
+                if (existing_status == RollbackStatus::RolledBack)
+                {
+                    evict_and_reinsert(prev, "rolled-back");
+                    return;
+                }
+                if (incoming_status == RollbackStatus::UnknownCSN || existing_status == RollbackStatus::UnknownCSN)
+                {
+                    /// At least one part is still being created by a running transaction (TransactionLog
+                    /// has no CSN and `tryGetRunningTransaction` returned non-null in `read_txn_status`).
+                    /// Two intersecting parts can never both commit, so when the incoming part is already
+                    /// definitive (committed or non-transactional) and the existing tree-resident part is
+                    /// still in flight, the in-flight part is bound to roll back: evict it and keep the
+                    /// incoming part rather than risk losing committed data. Otherwise the incoming part is
+                    /// the in-flight one (or both are), so skip it and let a later load settle the intersection.
+                    if (existing_status == RollbackStatus::UnknownCSN && incoming_status != RollbackStatus::UnknownCSN)
+                    {
+                        evict_and_reinsert(prev, "in-flight (superseded by a committed intersecting part)");
+                        return;
+                    }
+                    LOG_WARNING(
+                        getLogger("MergeTreeData"),
+                        "Skipping part {} (intersects part {}): transaction is still in flight",
+                        name,
+                        prev->second->name);
+                    return;
+                }
+
                 throw Exception(ErrorCodes::LOGICAL_ERROR,
                     "Part {} intersects previous part {}. It is a bug or a result of manual intervention",
                     name, prev->second->name);
@@ -2105,13 +2243,45 @@ void MergeTreeData::PartLoadingTree::add(const MergeTreePartInfo & info, const S
             }
             if (!next_info.isDisjoint(info))
             {
-                if (has_transaction_metadata(name, disk) || has_transaction_metadata(it->second->name, it->second->disk))
-                {
-                    LOG_WARNING(getLogger("MergeTreeData"), "Skipping part {} because it intersects part {}"
-                        " and one of them has transaction metadata (likely a rolled-back transaction)",
+                const auto incoming_status = read_txn_status(name, disk);
+                const auto existing_status = read_txn_status(it->second->name, it->second->disk);
+
+                if (incoming_status == RollbackStatus::Unreadable || existing_status == RollbackStatus::Unreadable)
+                    throw Exception(ErrorCodes::CORRUPTED_DATA,
+                        "Part {} intersects next part {} and the transaction metadata of at least one"
+                        " of them could not be read. This indicates disk corruption or a partial write.",
                         name, it->second->name);
+
+                if (incoming_status == RollbackStatus::RolledBack)
+                {
+                    LOG_INFO(
+                        getLogger("MergeTreeData"),
+                        "Skipping rolled-back part {} (intersects part {})",
+                        name,
+                        it->second->name);
                     return;
                 }
+                if (existing_status == RollbackStatus::RolledBack)
+                {
+                    evict_and_reinsert(it, "rolled-back");
+                    return;
+                }
+                if (incoming_status == RollbackStatus::UnknownCSN || existing_status == RollbackStatus::UnknownCSN)
+                {
+                    /// See the equivalent branch in the `prev` arm above.
+                    if (existing_status == RollbackStatus::UnknownCSN && incoming_status != RollbackStatus::UnknownCSN)
+                    {
+                        evict_and_reinsert(it, "in-flight (superseded by a committed intersecting part)");
+                        return;
+                    }
+                    LOG_WARNING(
+                        getLogger("MergeTreeData"),
+                        "Skipping part {} (intersects part {}): transaction is still in flight",
+                        name,
+                        it->second->name);
+                    return;
+                }
+
                 throw Exception(ErrorCodes::LOGICAL_ERROR,
                     "Part {} intersects next part {}. It is a bug or a result of manual intervention",
                     name, it->second->name);
@@ -2138,6 +2308,7 @@ void MergeTreeData::PartLoadingTree::traverse(bool recursive, Func && func)
         for (const auto & [_, node] : elem.second->children)
             traverse_impl(node);
 }
+
 
 MergeTreeData::PartLoadingTree
 MergeTreeData::PartLoadingTree::build(PartLoadingInfos nodes, const String & relative_data_path_)
