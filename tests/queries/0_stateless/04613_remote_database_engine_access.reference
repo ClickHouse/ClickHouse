@@ -1,0 +1,9 @@
+-- the table of the Remote database resolves for the user (SHOW COLUMNS is granted)
+id	UInt64
+-- SELECT through it is rejected without SELECT on the underlying table (prints 1 if rejected)
+1
+-- INSERT through it is rejected without INSERT on the underlying table (prints 1 if rejected)
+1
+-- both work once the rights on the underlying table are granted
+1
+2

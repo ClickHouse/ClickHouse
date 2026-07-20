@@ -1,5 +1,7 @@
 #include <Storages/StorageDistributed.h>
 
+#include <Access/Common/AccessFlags.h>
+
 #include <Databases/IDatabase.h>
 
 #include <Disks/IDisk.h>
@@ -432,7 +434,8 @@ StorageDistributed::StorageDistributed(
     LoadingStrictnessLevel mode,
     ClusterPtr owned_cluster_,
     ASTPtr remote_table_function_ptr_,
-    bool is_remote_function_)
+    bool is_remote_function_,
+    bool check_local_shard_access_)
     : IStorage(id_)
     , WithContext(context_->getGlobalContext())
     , remote_database(remote_database_)
@@ -448,6 +451,7 @@ StorageDistributed::StorageDistributed(
     , distributed_settings(std::make_unique<DistributedSettings>(distributed_settings_))
     , rng(randomSeed())
     , is_remote_function(is_remote_function_)
+    , check_local_shard_access(check_local_shard_access_)
 {
     if (!(*distributed_settings)[DistributedSetting::flush_on_detach] && (*distributed_settings)[DistributedSetting::background_insert_batch])
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Settings flush_on_detach=0 and background_insert_batch=1 are incompatible");
@@ -1005,6 +1009,21 @@ QueryTreeNodePtr buildQueryTreeDistributed(SelectQueryInfo & query_info,
 
 }
 
+void StorageDistributed::checkLocalShardAccess(const AccessFlags & access, const ContextPtr & local_context) const
+{
+    if (!check_local_shard_access)
+        return;
+
+    for (const auto & shard_info : getCluster()->getShardsInfo())
+    {
+        if (shard_info.isLocal())
+        {
+            local_context->checkAccess(access, remote_database, remote_table);
+            return;
+        }
+    }
+}
+
 void StorageDistributed::read(
     QueryPlan & query_plan,
     const Names &,
@@ -1015,6 +1034,8 @@ void StorageDistributed::read(
     const size_t /*max_block_size*/,
     const size_t /*num_streams*/)
 {
+    checkLocalShardAccess(AccessType::SELECT, local_context);
+
     SharedHeader header;
 
     SelectQueryInfo modified_query_info = query_info;
@@ -1106,6 +1127,8 @@ void StorageDistributed::read(
 
 SinkToStoragePtr StorageDistributed::write(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context, bool /*async_insert*/)
 {
+    checkLocalShardAccess(AccessType::INSERT, local_context);
+
     auto cluster = getCluster();
     const auto & settings = local_context->getSettingsRef();
 
@@ -1417,6 +1440,8 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteFromClusterStor
 
 std::optional<QueryPipeline> StorageDistributed::distributedWrite(const ASTInsertQuery & query, ContextPtr local_context)
 {
+    checkLocalShardAccess(AccessType::INSERT, local_context);
+
     const Settings & settings = local_context->getSettingsRef();
     if (settings[Setting::max_distributed_depth] && local_context->getClientInfo().distributed_depth >= settings[Setting::max_distributed_depth])
         throw Exception(ErrorCodes::TOO_LARGE_DISTRIBUTED_DEPTH, "Maximum distributed depth exceeded");

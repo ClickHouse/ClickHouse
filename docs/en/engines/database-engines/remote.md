@@ -36,7 +36,7 @@ ENGINE = RemoteSecure('addresses_expr', 'database'[, 'user'[, 'password']]);
 - `user` — The remote user name. Optional, default: `default`.
 - `password` — The remote user password. Optional, default: empty.
 
-The addresses and credentials are stored in the database definition, so the password is hidden in `SHOW CREATE DATABASE`. As with the `remote` table function, an address that points to the current server is treated as a local shard: `SELECT` and `INSERT` are executed directly under the current user and the stored credentials are used only for genuinely remote servers.
+The addresses and credentials are stored in the database definition, so the password is hidden in `SHOW CREATE DATABASE`. As with the `remote` table function, an address that points to the current server is treated as a local shard: `SELECT` and `INSERT` are executed directly under the current user — who therefore needs the corresponding privileges on the underlying database and its tables — and the stored credentials are used only for genuinely remote servers. If the local replica of a shard does not have the database or a table, the lookup falls back to the remote replicas of the shard, like a [`Distributed`](/engines/table-engines/special/distributed) table does.
 
 Named collections are supported as well:
 

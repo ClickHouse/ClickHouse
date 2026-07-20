@@ -36,6 +36,7 @@ public:
         const String & database_name_,
         const String & remote_database_,
         ClusterPtr cluster_,
+        ClusterPtr remote_only_cluster_,
         bool secure_,
         UUID uuid);
 
@@ -87,6 +88,11 @@ private:
     const ASTPtr database_engine_define;
     const String remote_database;
     const ClusterPtr cluster;
+    /// The subset of `cluster` without the replicas that point to this server; used as the
+    /// metadata-lookup fallback when the local replica does not have the database or the table
+    /// (see `fetchTablesList` / `fetchTableStructure`). Null when `cluster` has no local replicas
+    /// (the fallback is never needed) or no remote replicas (there is nothing to fall back to).
+    const ClusterPtr remote_only_cluster;
     const bool secure;
     LoggerPtr log;
     bool persistent = true;
@@ -101,9 +107,12 @@ private:
 
     /// Infer the column structure of `remote_database.table_name`, from the local catalog for a local
     /// shard (without the name-hint machinery of `DatabaseCatalog::getTable`, which would recurse back
-    /// into this database) and via `DESC TABLE` on the remote server otherwise. Returns an empty set
-    /// when the table does not exist.
-    ColumnsDescription fetchTableStructure(const String & table_name, ContextPtr local_context) const;
+    /// into this database) and via `DESC TABLE` on the remote server otherwise. When the local replica
+    /// does not have the database or the table, falls back to the remote replicas, like the
+    /// `Distributed` read path does. Returns an empty set when the table does not exist, and sets
+    /// `table_cluster` to the cluster through which the table should be accessed (`remote_only_cluster`
+    /// when the structure came from the fallback, `cluster` otherwise).
+    ColumnsDescription fetchTableStructure(const String & table_name, ContextPtr local_context, ClusterPtr & table_cluster) const;
 
     /// Build a `Distributed` storage that forwards to `remote_database.table_name` on the remote
     /// server, inferring the column structure from it. Returns `nullptr` if the table genuinely
