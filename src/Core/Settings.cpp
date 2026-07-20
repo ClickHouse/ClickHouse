@@ -7791,7 +7791,9 @@ Use local pipeline during distributed INSERT SELECT with parallel replicas
 The timeout in milliseconds for connecting to a remote replica during query execution with parallel replicas. If the timeout is expired, the corresponding replicas is not used for query execution
 )", 0) \
     DECLARE(Bool, parallel_replicas_for_queries_with_multiple_tables, true, R"(
-If enabled, parallel replicas can be used for queries with multiple tables (e.g. JOINs). If disabled, parallel replicas are not used for such queries, and they are executed without parallel replicas.
+If enabled, parallel replicas can be used for queries joining multiple tables (queries with `JOIN`). If disabled, parallel replicas are not used for such queries, and they are executed without parallel replicas.
+
+The setting affects only queries with `JOIN`, where the non-leftmost side is read in full on every replica. It does not affect `UNION` queries: each `UNION` branch is an independent single-table read, so parallel replicas remain applicable to it. `ARRAY JOIN` does not count as a join between tables.
 )", BETA) \
     DECLARE(Bool, parallel_replicas_for_cluster_engines, true, R"(
 Replace table function engines with their -Cluster alternatives

@@ -2636,7 +2636,7 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
     const auto & settings = planner_context->getQueryContext()->getSettingsRef();
     if (!settings[Setting::parallel_replicas_for_queries_with_multiple_tables] && joins_count > 0)
     {
-        LOG_DEBUG(getLogger("Planner"), "Disabling parallel replicas because parallel_replicas_for_queries_with_multiple_tables is disabled and the query has multiple tables");
+        LOG_DEBUG(getLogger("Planner"), "Disabling parallel replicas because parallel_replicas_for_queries_with_multiple_tables is disabled and the query joins multiple tables");
         planner_context->getMutableQueryContext()->setSetting("enable_parallel_replicas", Field{0});
     }
 
