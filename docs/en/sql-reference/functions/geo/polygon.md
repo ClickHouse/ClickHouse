@@ -637,7 +637,7 @@ UInt8, 0 for false, 1 for true
 Returns true if two geometries intersect (share any common point, line or area).
 
 Unlike [`polygonsIntersectCartesian`](#polygonsintersectcartesian), it accepts any geometry data type
-(`Point`, `LineString`, `MultiLineString`, `Ring`, `Polygon`, `MultiPolygon`), including the common
+(`Point`, `MultiPoint`, `LineString`, `MultiLineString`, `Ring`, `Polygon`, `MultiPolygon`), including the common
 [`Geometry`](../../data-types/geo.md#geometry) type, and the two arguments may be of different types.
 
 Coordinates are in the Cartesian coordinate system.
@@ -664,7 +664,7 @@ UInt8, 0 for false, 1 for true
 Returns true if two geometries intersect (share any common point, line or area).
 
 Unlike [`polygonsIntersectSpherical`](#polygonsintersectspherical), it accepts any geometry data type
-(`Point`, `LineString`, `MultiLineString`, `Ring`, `Polygon`, `MultiPolygon`), including the common
+(`Point`, `MultiPoint`, `LineString`, `MultiLineString`, `Ring`, `Polygon`, `MultiPolygon`), including the common
 [`Geometry`](../../data-types/geo.md#geometry) type, and the two arguments may be of different types.
 
 Coordinates are interpreted as being on an ideal sphere.

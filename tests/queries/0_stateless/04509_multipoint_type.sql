@@ -53,6 +53,13 @@ SELECT flipCoordinates([(1, 2), (3, 4)]::MultiPoint) AS f, toTypeName(f);
 SELECT MVTEncodeGeom([(13.4, 52.5), (13.5, 52.55)]::MultiPoint, 10, 550, 335) AS g, variantType(g);
 SELECT hex(MVTEncode('layer')(MVTEncodeGeom([(13.4, 52.5), (13.5, 52.55)]::MultiPoint, 10, 550, 335)));
 
+-- geometryIntersect accepts MultiPoint, both as a concrete type and through Geometry.
+SELECT geometryIntersectCartesian([(1., 2.), (3., 4.)]::MultiPoint, [(3., 4.)]::MultiPoint);
+SELECT geometryIntersectCartesian([(1., 2.)]::MultiPoint, [(3., 4.)]::MultiPoint);
+SELECT geometryIntersectCartesian([(1., 1.), (9., 9.)]::MultiPoint, [[(0., 0.), (2., 0.), (2., 2.), (0., 2.), (0., 0.)]]::Polygon);
+SELECT geometryIntersectCartesian([(1., 1.)]::MultiPoint::Geometry, [[(0., 0.), (2., 0.), (2., 2.), (0., 2.), (0., 0.)]]::Polygon::Geometry);
+SELECT geometryIntersectSpherical([(4.36, 50.85)]::MultiPoint, (4.36, 50.85)::Point);
+
 -- Functions with polygon semantics reject MultiPoint like LineString and MultiLineString.
 SELECT polygonsIntersectionCartesian([(1., 2.)]::MultiPoint, [(1., 2.)]::MultiPoint); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT polygonsUnionCartesian([(1., 2.)]::MultiPoint, [(1., 2.)]::MultiPoint); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
