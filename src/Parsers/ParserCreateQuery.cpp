@@ -698,7 +698,12 @@ bool ParserStorage::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         if ((engine_kind == TABLE_ENGINE || parsed_engine_keyword) && s_settings.ignore(pos, expected))
         {
             if (!settings_p.parse(pos, settings, expected))
-                return false;
+            {
+                /// Older versions could persist an empty SETTINGS clause for NATS tables created from named collections.
+                /// Accept this exact legacy form so the table metadata can still be loaded.
+                if (!engine || engine->as<ASTFunction &>().name != "NATS" || pos->type != TokenType::EndOfStream)
+                    return false;
+            }
             storage_like = true;
         }
 

@@ -1,0 +1,10 @@
+<clickhouse>
+    <named_collections>
+        <nats_default>
+            <nats_url>nats://nats1:4444</nats_url>
+            <nats_username>clickhouse</nats_username>
+            <nats_password>ClickHouse_NATS_P@ssw0rd</nats_password>
+            <nats_secure>true</nats_secure>
+        </nats_default>
+    </named_collections>
+</clickhouse>
