@@ -814,9 +814,11 @@ class Utils:
 
     @classmethod
     def encrypt(cls, path: str, key_path: str, aes_key_path: str) -> str:
+        # -base64: raw bytes can contain \0 or a leading newline, which breaks
+        # openssl enc -pass file: (it reads only the first line as the password).
         if not Path(f"{aes_key_path}.rsa").exists():
             Shell.run(f"""
-openssl rand 32 >{aes_key_path}
+openssl rand -base64 32 >{aes_key_path}
 openssl pkeyutl -encrypt -pubin -inkey {key_path} -in {aes_key_path} -out {aes_key_path}.rsa \
     -pkeyopt rsa_padding_mode:oaep -pkeyopt rsa_oaep_md:sha256
 """)
