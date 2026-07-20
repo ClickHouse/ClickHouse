@@ -31,6 +31,7 @@ public:
         /// `clickhouse-disks` reuse this reader and have commands of their own, so a leading `/`
         /// means something else there (the beginning of a path).
         bool enable_slash_commands = false;
+        bool vim = false;
         Patterns extenders;
         Patterns delimiters;
         std::span<char> word_break_characters;
