@@ -30,8 +30,65 @@ public:
     Promise getPromise() const override { return 2000; }
     bool isTransformation() const override { return false; }
 
+    class StrategyEnumerator;
+
 protected:
     std::vector<GroupExpressionPtr> applyImpl(GroupExpressionPtr expression, const ExpressionProperties & required_properties, Memo & memo) const override;
+};
+
+/// Emits the physical alternatives of one logical join into the memo, one method per strategy.
+class HashJoinImplementation::StrategyEnumerator
+{
+public:
+    StrategyEnumerator(
+        const HashJoinImplementation & rule_,
+        GroupExpressionPtr expression_,
+        const ExpressionProperties & required_properties_,
+        Memo & memo_,
+        std::vector<GroupExpressionPtr> & result_);
+
+    void addLocalJoin();
+    void addBroadcastJoins(size_t node_count);
+    void addShuffleJoin(size_t node_count);
+    void addSingleKeyShuffleJoins(size_t node_count);
+
+    bool hasEquiKeys() const { return !equi_keys.empty(); }
+    bool hasMultipleEquiKeys() const { return equi_keys.size() >= 2; }
+    bool broadcastUnsafe() const { return !left_preserved; }
+
+private:
+    /// `hash_type_name` is the least supertype both sides are cast to before hashing when
+    /// the raw key types differ (otherwise the sides hash to different buckets); empty when
+    /// they agree.
+    struct JoinKeyPair
+    {
+        String left;
+        String right;
+        String hash_type_name;
+        String raw_type_name;
+    };
+
+    void extractEquiJoinKeys();
+
+    /// Clones the logical join into a physical alternative with the given strategy and
+    /// distributions and offers it to the memo.
+    void addAlternative(
+        ImplementationStrategyPtr strategy,
+        const DistributionDescription & left_dist,
+        const DistributionDescription & right_dist,
+        const DistributionDescription & output_dist,
+        String description_suffix = {});
+
+    const HashJoinImplementation & rule;
+    GroupExpressionPtr expression;
+    const JoinStepLogical & join_step;
+    const ExpressionProperties & required_properties;
+    Memo & memo;
+    std::vector<GroupExpressionPtr> & result;
+    std::vector<JoinKeyPair> equi_keys;
+    bool needs_hash_cast = false;
+    bool left_preserved = false;
+    bool right_preserved = false;
 };
 
 bool HashJoinImplementation::checkPattern(GroupExpressionPtr expression, const ExpressionProperties & /*required_properties*/, const Memo & /*memo*/) const
@@ -53,349 +110,349 @@ static bool joinPreservesRightSide(JoinKind kind)
     return kind == JoinKind::Inner || kind == JoinKind::Right || kind == JoinKind::Cross || kind == JoinKind::Comma;
 }
 
+HashJoinImplementation::StrategyEnumerator::StrategyEnumerator(
+    const HashJoinImplementation & rule_,
+    GroupExpressionPtr expression_,
+    const ExpressionProperties & required_properties_,
+    Memo & memo_,
+    std::vector<GroupExpressionPtr> & result_)
+    : rule(rule_)
+    , expression(std::move(expression_))
+    , join_step(*typeid_cast<const JoinStepLogical *>(expression->getQueryPlanStep()))
+    , required_properties(required_properties_)
+    , memo(memo_)
+    , result(result_)
+{
+    extractEquiJoinKeys();
+
+    /// Which sides never emit unmatched null/default-extended rows: every output row carries a
+    /// real key from a preserved side. FULL preserves neither side.
+    const auto join_kind = join_step.getJoinOperator().kind;
+    left_preserved = joinPreservesLeftSide(join_kind);
+    right_preserved = joinPreservesRightSide(join_kind);
+}
+
+void HashJoinImplementation::StrategyEnumerator::extractEquiJoinKeys()
+{
+    /// Keys with no common supertype are skipped.
+    if (join_step.getJoinOperator().expression.empty())
+        return;
+
+    for (const auto & predicate : join_step.getJoinOperator().expression)
+    {
+        auto [op, left_node, right_node] = predicate.asBinaryPredicate();
+        if (op != JoinConditionOperator::Equals)
+            continue;
+
+        if (left_node.fromRight() && right_node.fromLeft())
+            std::swap(left_node, right_node);
+        else if (!left_node.fromLeft() || !right_node.fromRight())
+            continue;
+
+        String hash_type_name;
+        DataTypePtr left_type = left_node.getType();
+        DataTypePtr right_type = right_node.getType();
+        if (!left_type->equals(*right_type))
+        {
+            DataTypePtr common_type = tryGetLeastSupertype(DataTypes{left_type, right_type});
+            if (!common_type)
+                continue;
+            hash_type_name = common_type->getName();
+            needs_hash_cast = true;
+        }
+
+        equi_keys.push_back({left_node.getColumnName(), right_node.getColumnName(), std::move(hash_type_name), left_type->getName()});
+    }
+}
+
+void HashJoinImplementation::StrategyEnumerator::addAlternative(
+    ImplementationStrategyPtr strategy,
+    const DistributionDescription & left_dist,
+    const DistributionDescription & right_dist,
+    const DistributionDescription & output_dist,
+    String description_suffix)
+{
+    GroupExpressionPtr alternative = std::make_shared<GroupExpression>(*expression);
+    alternative->strategy = std::move(strategy);
+    alternative->description_suffix = std::move(description_suffix);
+    alternative->inputs[0].required_properties.distribution = left_dist;
+    alternative->inputs[1].required_properties.distribution = right_dist;
+    alternative->properties.distribution = output_dist;
+
+    rule.addPhysicalToMemo(alternative, required_properties, memo, result);
+}
+
+/// Local join - both inputs gathered to a single node.
+/// Always applicable; when cluster has only 1 node it is also the only strategy
+/// because all distributed strategies produce the same plan on a single-node cluster.
+void HashJoinImplementation::StrategyEnumerator::addLocalJoin()
+{
+    DistributionDescription single_node;     /// node_count=1, not replicated (default)
+    addAlternative(std::make_shared<LocalJoinStrategy>(), single_node, single_node, single_node);
+}
+
+/// Broadcast join - left input partitioned any way across N nodes, right input replicated
+/// to all N nodes.
+void HashJoinImplementation::StrategyEnumerator::addBroadcastJoins(size_t node_count)
+{
+    /// Left input: partitioned across N nodes (any column set is acceptable)
+    DistributionDescription left_dist;
+    left_dist.node_count = node_count;
+
+    /// Right input: replicated to all N nodes
+    DistributionDescription right_dist;
+    right_dist.node_count = node_count;
+    right_dist.is_replicated = true;
+
+    /// The output distribution carries no columns: the left input is allowed to be
+    /// partitioned any way, so no specific partitioning can be promised.
+    addAlternative(std::make_shared<BroadcastJoinStrategy>(), left_dist, right_dist, left_dist);
+
+    /// Keyed variant: when every parent-required distribution column maps to an
+    /// equi-join key or to a left-side column that survives to the join output,
+    /// require the left input partitioned by those columns and advertise them on the
+    /// output. Every output row stays on its left row's node, so the partitioning
+    /// holds; without this variant the parent's requirement would always cost a
+    /// shuffle of the joined rows.
+    if (required_properties.distribution.columns.empty()
+        || required_properties.distribution.is_replicated
+        || required_properties.distribution.node_count != node_count)
+        return;
+
+    const auto & left_header = join_step.getInputHeaders().front();
+    const auto & right_header = join_step.getInputHeaders().back();
+    const auto & output_header = join_step.getOutputHeader();
+
+    /// A left column carries its partitioning to the output when it reaches the
+    /// output unchanged and cannot be confused with a right-side column.
+    auto is_surviving_left_column = [&](const String & name)
+    {
+        if (!left_header->has(name) || right_header->has(name) || !output_header->has(name))
+            return false;
+        return left_header->getByName(name).type->equals(*output_header->getByName(name).type);
+    };
+
+    DistributionDescription keyed_left_dist;
+    keyed_left_dist.node_count = node_count;
+    DistributionDescription keyed_output_dist;
+    keyed_output_dist.node_count = node_count;
+
+    for (const auto & required_col_set : required_properties.distribution.columns)
+    {
+        bool found = false;
+        for (const auto & key : equi_keys)
+        {
+            /// A pinned hash type never satisfies the parent's typeless requirement,
+            /// so a cast-needing key cannot help here.
+            if (!key.hash_type_name.empty())
+                continue;
+            if (required_col_set.contains(key.left)
+                || (right_preserved && required_col_set.contains(key.right)))
+            {
+                keyed_left_dist.columns.push_back({key.left});
+                NameSet output_key;
+                output_key.insert(key.left);
+                /// The right name is an equivalent partitioning key only when no
+                /// null-extended right values can appear (both sides preserved).
+                if (right_preserved)
+                    output_key.insert(key.right);
+                keyed_output_dist.columns.push_back(std::move(output_key));
+                found = true;
+                break;
+            }
+        }
+        if (!found)
+        {
+            for (const auto & required_column : required_col_set)
+            {
+                if (is_surviving_left_column(required_column))
+                {
+                    keyed_left_dist.columns.push_back({required_column});
+                    keyed_output_dist.columns.push_back({required_column});
+                    found = true;
+                    break;
+                }
+            }
+        }
+        if (!found)
+            return;
+    }
+
+    addAlternative(std::make_shared<BroadcastJoinStrategy>(), keyed_left_dist, right_dist, keyed_output_dist);
+}
+
+/// Partitioned (shuffle) join - both inputs shuffled by join key columns.
+/// Only applicable when the join has equi-join predicates.
+void HashJoinImplementation::StrategyEnumerator::addShuffleJoin(size_t node_count)
+{
+    /// When any key needs a cast, the cast type must be pinned for every shuffle key so
+    /// that the per-key type lists on both sides stay aligned with the key order.
+    auto hash_type_for = [](const JoinKeyPair & key) -> const String &
+    {
+        return key.hash_type_name.empty() ? key.raw_type_name : key.hash_type_name;
+    };
+
+    DistributionDescription left_dist;
+    left_dist.node_count = node_count;
+
+    DistributionDescription right_dist;
+    right_dist.node_count = node_count;
+
+    DistributionDescription output_dist;
+    output_dist.node_count = node_count;
+
+    auto add_key = [&](const JoinKeyPair & key)
+    {
+        left_dist.columns.push_back({key.left});
+        right_dist.columns.push_back({key.right});
+        if (needs_hash_cast)
+        {
+            const String & type_name = hash_type_for(key);
+            left_dist.hash_type_names.push_back(type_name);
+            right_dist.hash_type_names.push_back(type_name);
+        }
+        /// Advertise the output partitioning only on the preserved side(s).
+        NameSet output_key;
+        if (left_preserved)
+            output_key.insert(key.left);
+        if (right_preserved)
+            output_key.insert(key.right);
+        if (!output_key.empty())
+        {
+            output_dist.columns.push_back(std::move(output_key));
+            if (needs_hash_cast)
+                output_dist.hash_type_names.push_back(hash_type_for(key));
+        }
+    };
+    auto clear_keys = [&]()
+    {
+        left_dist.columns.clear();
+        right_dist.columns.clear();
+        output_dist.columns.clear();
+        left_dist.hash_type_names.clear();
+        right_dist.hash_type_names.clear();
+        output_dist.hash_type_names.clear();
+    };
+
+    /// If the parent requires specific distribution columns, try to match them to join
+    /// keys so the join output directly satisfies the parent's distribution requirement.
+    /// Fall back to all equi-join keys if not all required columns can be matched.
+    /// Note: with pinned hash types the parent requirement (no types) never matches,
+    /// so this colocation shortcut applies only to equal-type keys.
+    if (!required_properties.distribution.columns.empty())
+    {
+        bool all_matched = true;
+        for (const auto & required_col_set : required_properties.distribution.columns)
+        {
+            bool found = false;
+            for (const auto & key : equi_keys)
+            {
+                if (required_col_set.contains(key.left) || required_col_set.contains(key.right))
+                {
+                    add_key(key);
+                    found = true;
+                    break;
+                }
+            }
+            if (!found)
+            {
+                all_matched = false;
+                break;
+            }
+        }
+
+        if (!all_matched)
+        {
+            /// Required columns cannot all be matched to join keys - use all equi-join keys.
+            clear_keys();
+            for (const auto & key : equi_keys)
+                add_key(key);
+        }
+    }
+    else
+    {
+        for (const auto & key : equi_keys)
+            add_key(key);
+    }
+
+    addAlternative(std::make_shared<ShuffleJoinStrategy>(), left_dist, right_dist, output_dist);
+}
+
+/// Single-key shuffle alternatives.
+/// For joins with 2+ equi-join keys, generate a shuffle alternative for EACH individual
+/// key pair. This lets the cost model pick a single-key shuffle when the input is already
+/// distributed by that key, avoiding unnecessary re-shuffles.
+/// Correctness: hash join on (A=A', B=B') shuffled by only A/A' is correct because
+/// matching pairs where A=A' are co-located; B=B' is checked locally in the hash table.
+void HashJoinImplementation::StrategyEnumerator::addSingleKeyShuffleJoins(size_t node_count)
+{
+    for (const auto & key : equi_keys)
+    {
+        DistributionDescription left_dist;
+        left_dist.node_count = node_count;
+        left_dist.columns.push_back({key.left});
+
+        DistributionDescription right_dist;
+        right_dist.node_count = node_count;
+        right_dist.columns.push_back({key.right});
+
+        DistributionDescription output_dist;
+        output_dist.node_count = node_count;
+        NameSet output_key;
+        if (left_preserved)
+            output_key.insert(key.left);
+        if (right_preserved)
+            output_key.insert(key.right);
+
+        if (!key.hash_type_name.empty())
+        {
+            left_dist.hash_type_names.push_back(key.hash_type_name);
+            right_dist.hash_type_names.push_back(key.hash_type_name);
+        }
+        if (!output_key.empty())
+        {
+            output_dist.columns.push_back(std::move(output_key));
+            if (!key.hash_type_name.empty())
+                output_dist.hash_type_names.push_back(key.hash_type_name);
+        }
+
+        addAlternative(std::make_shared<ShuffleJoinStrategy>(), left_dist, right_dist, output_dist,
+            fmt::format("(by {})", key.left));
+    }
+}
+
 std::vector<GroupExpressionPtr> HashJoinImplementation::applyImpl(GroupExpressionPtr expression, const ExpressionProperties & required_properties, Memo & memo) const
 {
-    const auto * join_step = typeid_cast<const JoinStepLogical *>(expression->getQueryPlanStep());
-    chassert(join_step);
+    chassert(typeid_cast<const JoinStepLogical *>(expression->getQueryPlanStep()));
     chassert(expression->inputs.size() == 2);
 
     const size_t cluster_node_count = memo.getEnvironment().cluster_node_count;
     const auto candidate_node_counts = getCandidateNodeCounts(cluster_node_count);
 
     std::vector<GroupExpressionPtr> result;
+    StrategyEnumerator strategies(*this, expression, required_properties, memo, result);
 
-    /// Strategy 1: Local join - both inputs gathered to a single node.
-    /// Always applicable; when cluster has only 1 node it is also the only strategy
-    /// because all distributed strategies produce the same plan on a single-node cluster.
-    {
-        GroupExpressionPtr local_join = std::make_shared<GroupExpression>(*expression);
-        local_join->strategy = std::make_shared<LocalJoinStrategy>();
-
-        DistributionDescription single_node;     /// node_count=1, not replicated (default)
-        local_join->inputs[0].required_properties.distribution = single_node;
-        local_join->inputs[1].required_properties.distribution = single_node;
-        local_join->properties.distribution = single_node;
-
-        addPhysicalToMemo(local_join, required_properties, memo, result);
-    }
+    strategies.addLocalJoin();
 
     /// For a single-node cluster all distributed strategies are identical to local join - skip them.
     if (candidate_node_counts.empty())
         return result;
 
-    /// Pre-compute equi-join key pairs for shuffle strategies (shared across all node counts).
-    /// `hash_type_name` is the least supertype both sides are cast to before hashing when
-    /// the raw key types differ (otherwise the sides hash to different buckets); empty when
-    /// they agree. Keys with no common supertype are skipped.
-    struct JoinKeyPair { String left; String right; String hash_type_name; String raw_type_name; };
-    std::vector<JoinKeyPair> equi_keys;
-    bool needs_hash_cast = false;
-    if (!join_step->getJoinOperator().expression.empty())
-    {
-        for (const auto & predicate : join_step->getJoinOperator().expression)
-        {
-            auto [op, left_node, right_node] = predicate.asBinaryPredicate();
-            if (op != JoinConditionOperator::Equals)
-                continue;
-
-            if (left_node.fromRight() && right_node.fromLeft())
-                std::swap(left_node, right_node);
-            else if (!left_node.fromLeft() || !right_node.fromRight())
-                continue;
-
-            String hash_type_name;
-            DataTypePtr left_type = left_node.getType();
-            DataTypePtr right_type = right_node.getType();
-            if (!left_type->equals(*right_type))
-            {
-                DataTypePtr common_type = tryGetLeastSupertype(DataTypes{left_type, right_type});
-                if (!common_type)
-                    continue;
-                hash_type_name = common_type->getName();
-                needs_hash_cast = true;
-            }
-
-            equi_keys.push_back({left_node.getColumnName(), right_node.getColumnName(), std::move(hash_type_name), left_type->getName()});
-        }
-    }
-
-    /// When any key needs a cast, the cast type must be pinned for every shuffle key so
-    /// that the per-key type lists on both sides stay aligned with the key order.
-    auto hash_type_for = [&](const JoinKeyPair & key) -> const String &
-    {
-        return key.hash_type_name.empty() ? key.raw_type_name : key.hash_type_name;
-    };
-
-    /// Which sides never emit unmatched null/default-extended rows: every output row carries a
-    /// real key from a preserved side. FULL preserves neither side.
-    const auto join_kind = join_step->getJoinOperator().kind;
-    const bool left_preserved = joinPreservesLeftSide(join_kind);
-    const bool right_preserved = joinPreservesRightSide(join_kind);
-
-    /// Broadcast replicates the right side, so it is only safe when every output row is driven
-    /// by the partitioned left side: RIGHT and FULL emit unmatched right-side rows on every
-    /// node, and PASTE pairs rows by position. JoinCommutativity can turn RIGHT Semi/Anti/Any
-    /// into LEFT, but not RIGHT ALL or FULL.
-    const bool broadcast_unsafe = !left_preserved;
-
     /// Enumerate distributed strategies at each candidate node count.
     for (size_t candidate_node_count : candidate_node_counts)
     {
-        /// Strategy 2: Broadcast join - left input partitioned any way across N nodes,
-        /// right input replicated to all N nodes.
-        /// Skip when the replicated (right) side can produce output rows -
-        /// replicating it causes duplicate rows across nodes.
-        if (!broadcast_unsafe)
-        {
-            /// Left input: partitioned across N nodes (any column set is acceptable)
-            DistributionDescription left_dist;
-            left_dist.node_count = candidate_node_count;
+        /// Broadcast replicates the right side, so it is only safe when every output row is
+        /// driven by the partitioned left side: RIGHT and FULL emit unmatched right-side rows
+        /// on every node, and PASTE pairs rows by position. JoinCommutativity can turn RIGHT
+        /// Semi/Anti/Any into LEFT, but not RIGHT ALL or FULL.
+        if (!strategies.broadcastUnsafe())
+            strategies.addBroadcastJoins(candidate_node_count);
 
-            /// Right input: replicated to all N nodes
-            DistributionDescription right_dist;
-            right_dist.node_count = candidate_node_count;
-            right_dist.is_replicated = true;
+        if (strategies.hasEquiKeys())
+            strategies.addShuffleJoin(candidate_node_count);
 
-            GroupExpressionPtr broadcast_join = std::make_shared<GroupExpression>(*expression);
-            broadcast_join->strategy = std::make_shared<BroadcastJoinStrategy>();
-            broadcast_join->inputs[0].required_properties.distribution = left_dist;
-            broadcast_join->inputs[1].required_properties.distribution = right_dist;
-            /// The output distribution carries no columns: the left input is allowed to be
-            /// partitioned any way, so no specific partitioning can be promised.
-            broadcast_join->properties.distribution = left_dist;
-
-            addPhysicalToMemo(broadcast_join, required_properties, memo, result);
-
-            /// Keyed variant: when every parent-required distribution column maps to an
-            /// equi-join key or to a left-side column that survives to the join output,
-            /// require the left input partitioned by those columns and advertise them on the
-            /// output. Every output row stays on its left row's node, so the partitioning
-            /// holds; without this variant the parent's requirement would always cost a
-            /// shuffle of the joined rows.
-            if (!required_properties.distribution.columns.empty()
-                && !required_properties.distribution.is_replicated
-                && required_properties.distribution.node_count == candidate_node_count)
-            {
-                const auto & left_header = join_step->getInputHeaders().front();
-                const auto & right_header = join_step->getInputHeaders().back();
-                const auto & output_header = join_step->getOutputHeader();
-
-                /// A left column carries its partitioning to the output when it reaches the
-                /// output unchanged and cannot be confused with a right-side column.
-                auto is_surviving_left_column = [&](const String & name)
-                {
-                    if (!left_header->has(name) || right_header->has(name) || !output_header->has(name))
-                        return false;
-                    return left_header->getByName(name).type->equals(*output_header->getByName(name).type);
-                };
-
-                DistributionDescription keyed_left_dist;
-                keyed_left_dist.node_count = candidate_node_count;
-                DistributionDescription keyed_output_dist;
-                keyed_output_dist.node_count = candidate_node_count;
-
-                bool all_matched = true;
-                for (const auto & required_col_set : required_properties.distribution.columns)
-                {
-                    bool found = false;
-                    for (const auto & key : equi_keys)
-                    {
-                        /// A pinned hash type never satisfies the parent's typeless requirement,
-                        /// so a cast-needing key cannot help here.
-                        if (!key.hash_type_name.empty())
-                            continue;
-                        if (required_col_set.contains(key.left)
-                            || (right_preserved && required_col_set.contains(key.right)))
-                        {
-                            keyed_left_dist.columns.push_back({key.left});
-                            NameSet output_key;
-                            output_key.insert(key.left);
-                            /// The right name is an equivalent partitioning key only when no
-                            /// null-extended right values can appear (both sides preserved).
-                            if (right_preserved)
-                                output_key.insert(key.right);
-                            keyed_output_dist.columns.push_back(std::move(output_key));
-                            found = true;
-                            break;
-                        }
-                    }
-                    if (!found)
-                    {
-                        for (const auto & required_column : required_col_set)
-                        {
-                            if (is_surviving_left_column(required_column))
-                            {
-                                keyed_left_dist.columns.push_back({required_column});
-                                keyed_output_dist.columns.push_back({required_column});
-                                found = true;
-                                break;
-                            }
-                        }
-                    }
-                    if (!found)
-                    {
-                        all_matched = false;
-                        break;
-                    }
-                }
-
-                if (all_matched)
-                {
-                    GroupExpressionPtr keyed_broadcast_join = std::make_shared<GroupExpression>(*expression);
-                    keyed_broadcast_join->strategy = std::make_shared<BroadcastJoinStrategy>();
-                    keyed_broadcast_join->inputs[0].required_properties.distribution = keyed_left_dist;
-                    keyed_broadcast_join->inputs[1].required_properties.distribution = right_dist;
-                    keyed_broadcast_join->properties.distribution = keyed_output_dist;
-
-                    addPhysicalToMemo(keyed_broadcast_join, required_properties, memo, result);
-                }
-            }
-        }
-
-        /// Strategy 3: Partitioned (shuffle) join - both inputs shuffled by join key columns.
-        /// Only applicable when the join has equi-join predicates.
-        if (!equi_keys.empty())
-        {
-            DistributionDescription left_dist;
-            left_dist.node_count = candidate_node_count;
-
-            DistributionDescription right_dist;
-            right_dist.node_count = candidate_node_count;
-
-            DistributionDescription output_dist;
-            output_dist.node_count = candidate_node_count;
-
-            auto add_key = [&](const JoinKeyPair & key)
-            {
-                left_dist.columns.push_back({key.left});
-                right_dist.columns.push_back({key.right});
-                if (needs_hash_cast)
-                {
-                    const String & type_name = hash_type_for(key);
-                    left_dist.hash_type_names.push_back(type_name);
-                    right_dist.hash_type_names.push_back(type_name);
-                }
-                /// Advertise the output partitioning only on the preserved side(s).
-                NameSet output_key;
-                if (left_preserved)
-                    output_key.insert(key.left);
-                if (right_preserved)
-                    output_key.insert(key.right);
-                if (!output_key.empty())
-                {
-                    output_dist.columns.push_back(std::move(output_key));
-                    if (needs_hash_cast)
-                        output_dist.hash_type_names.push_back(hash_type_for(key));
-                }
-            };
-            auto clear_keys = [&]()
-            {
-                left_dist.columns.clear();
-                right_dist.columns.clear();
-                output_dist.columns.clear();
-                left_dist.hash_type_names.clear();
-                right_dist.hash_type_names.clear();
-                output_dist.hash_type_names.clear();
-            };
-
-            /// If the parent requires specific distribution columns, try to match them to join
-            /// keys so the join output directly satisfies the parent's distribution requirement.
-            /// Fall back to all equi-join keys if not all required columns can be matched.
-            /// Note: with pinned hash types the parent requirement (no types) never matches,
-            /// so this colocation shortcut applies only to equal-type keys.
-            if (!required_properties.distribution.columns.empty())
-            {
-                bool all_matched = true;
-                for (const auto & required_col_set : required_properties.distribution.columns)
-                {
-                    bool found = false;
-                    for (const auto & key : equi_keys)
-                    {
-                        if (required_col_set.contains(key.left) || required_col_set.contains(key.right))
-                        {
-                            add_key(key);
-                            found = true;
-                            break;
-                        }
-                    }
-                    if (!found)
-                    {
-                        all_matched = false;
-                        break;
-                    }
-                }
-
-                if (!all_matched)
-                {
-                    /// Required columns cannot all be matched to join keys - use all equi-join keys.
-                    clear_keys();
-                    for (const auto & key : equi_keys)
-                        add_key(key);
-                }
-            }
-            else
-            {
-                for (const auto & key : equi_keys)
-                    add_key(key);
-            }
-
-            GroupExpressionPtr partitioned_join = std::make_shared<GroupExpression>(*expression);
-            partitioned_join->strategy = std::make_shared<ShuffleJoinStrategy>();
-            partitioned_join->inputs[0].required_properties.distribution = left_dist;
-            partitioned_join->inputs[1].required_properties.distribution = right_dist;
-            partitioned_join->properties.distribution = output_dist;
-
-            addPhysicalToMemo(partitioned_join, required_properties, memo, result);
-        }
-
-        /// Strategy 3b: Single-key shuffle alternatives.
-        /// For joins with 2+ equi-join keys, generate a shuffle alternative for EACH individual
-        /// key pair. This lets the cost model pick a single-key shuffle when the input is already
-        /// distributed by that key, avoiding unnecessary re-shuffles.
-        /// Correctness: hash join on (A=A', B=B') shuffled by only A/A' is correct because
-        /// matching pairs where A=A' are co-located; B=B' is checked locally in the hash table.
-        if (equi_keys.size() >= 2)
-        {
-            for (const auto & key : equi_keys)
-            {
-                DistributionDescription single_left_dist;
-                single_left_dist.node_count = candidate_node_count;
-                single_left_dist.columns.push_back({key.left});
-
-                DistributionDescription single_right_dist;
-                single_right_dist.node_count = candidate_node_count;
-                single_right_dist.columns.push_back({key.right});
-
-                DistributionDescription single_output_dist;
-                single_output_dist.node_count = candidate_node_count;
-                NameSet single_output_key;
-                if (left_preserved)
-                    single_output_key.insert(key.left);
-                if (right_preserved)
-                    single_output_key.insert(key.right);
-
-                if (!key.hash_type_name.empty())
-                {
-                    single_left_dist.hash_type_names.push_back(key.hash_type_name);
-                    single_right_dist.hash_type_names.push_back(key.hash_type_name);
-                }
-                if (!single_output_key.empty())
-                {
-                    single_output_dist.columns.push_back(std::move(single_output_key));
-                    if (!key.hash_type_name.empty())
-                        single_output_dist.hash_type_names.push_back(key.hash_type_name);
-                }
-
-                GroupExpressionPtr single_key_join = std::make_shared<GroupExpression>(*expression);
-                single_key_join->strategy = std::make_shared<ShuffleJoinStrategy>();
-                single_key_join->description_suffix = fmt::format("(by {})", key.left);
-                single_key_join->inputs[0].required_properties.distribution = single_left_dist;
-                single_key_join->inputs[1].required_properties.distribution = single_right_dist;
-                single_key_join->properties.distribution = single_output_dist;
-
-                addPhysicalToMemo(single_key_join, required_properties, memo, result);
-            }
-        }
+        if (strategies.hasMultipleEquiKeys())
+            strategies.addSingleKeyShuffleJoins(candidate_node_count);
     }
 
     return result;
