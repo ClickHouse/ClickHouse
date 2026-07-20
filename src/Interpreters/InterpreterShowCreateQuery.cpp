@@ -90,10 +90,21 @@ QueryPipeline InterpreterShowCreateQuery::executeImpl()
 
         /// Through a read-only `Overlay` facade the returned definition is that of the underlying
         /// source table, so the same privilege is required on the source too: the facade must not
-        /// widen access (see the `Overlay` access-control contract).
-        if (auto source_id = DatabaseOverlay::getSourceTableIdForReadonlyFacade(
-                table_id, DatabaseCatalog::instance().tryGetTable(table_id, getContext())))
-            getContext()->checkAccess(is_dictionary ? AccessType::SHOW_DICTIONARIES : AccessType::SHOW_COLUMNS, *source_id);
+        /// widen access (see the `Overlay` access-control contract). The source id is resolved
+        /// from metadata only, without loading the source table: the check must run *before* any
+        /// lookup that could throw the source table's own load error, otherwise a user without
+        /// the source-side grant could observe that error and use the facade as an oracle for
+        /// hidden broken sources.
+        auto check_overlay_source_grant = [&]
+        {
+            if (!table_id.hasDatabase())
+                return;
+            if (const auto * facade
+                = DatabaseOverlay::asReadonlyFacade(DatabaseCatalog::instance().tryGetDatabase(table_id.database_name).get()))
+                if (auto source_id = facade->resolveSourceTableIdNoLoad(table_id.table_name, getContext()))
+                    getContext()->checkAccess(is_dictionary ? AccessType::SHOW_DICTIONARIES : AccessType::SHOW_COLUMNS, *source_id);
+        };
+        check_overlay_source_grant();
 
         /// `SHOW CREATE DICTIONARY` is authorized with `SHOW DICTIONARIES`, which does not imply
         /// `SHOW TABLES`/`SHOW COLUMNS`. A user with only `SHOW DICTIONARIES` must not be able to tell
@@ -163,6 +174,11 @@ QueryPipeline InterpreterShowCreateQuery::executeImpl()
 
         if (!create_query)
             create_query = DatabaseCatalog::instance().getDatabase(table_id.database_name)->getCreateTableQuery(table_id.table_name, getContext());
+
+        /// Re-verify the source-side grant now that the definition is fetched: the name could
+        /// have started resolving through the facade only between the pre-lookup check above and
+        /// the fetch, and the fetched definition must not be shown without the source-side grant.
+        check_overlay_source_grant();
 
         auto & ast_create_query = create_query->as<ASTCreateQuery &>();
         if (query_ptr->as<ASTShowCreateViewQuery>())

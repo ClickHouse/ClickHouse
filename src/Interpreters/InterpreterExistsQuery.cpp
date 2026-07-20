@@ -75,10 +75,16 @@ QueryPipeline InterpreterExistsQuery::executeImpl()
                 /// only when `SHOW_DICTIONARIES` is also granted on the underlying source dictionary, so
                 /// the facade cannot widen visibility. Report "does not exist" rather than throwing — the
                 /// source-side check can only run when the dictionary exists, so a denial would itself leak
-                /// existence.
-                if (auto storage = DatabaseCatalog::instance().tryGetTable(dictionary_id, getContext()))
-                    if (auto source_id = DatabaseOverlay::getSourceTableIdForReadonlyFacade(dictionary_id, storage))
-                        result = access->isGranted(AccessType::SHOW_DICTIONARIES, source_id->database_name, source_id->table_name);
+                /// existence. The source id is resolved from metadata only, without loading the source
+                /// table: a load could throw the source's own error before the grant is proven, turning
+                /// the facade into an oracle for hidden broken sources.
+                if (const auto * facade
+                    = DatabaseOverlay::asReadonlyFacade(DatabaseCatalog::instance().tryGetDatabase(database).get()))
+                {
+                    auto source_id = facade->resolveSourceTableIdNoLoad(table, getContext());
+                    result = source_id
+                        && access->isGranted(AccessType::SHOW_DICTIONARIES, source_id->database_name, source_id->table_name);
+                }
             }
             else
             {
@@ -89,14 +95,18 @@ QueryPipeline InterpreterExistsQuery::executeImpl()
                 /// `SHOW_TABLES` is also granted on the underlying source table: the facade must
                 /// not widen visibility. Report "does not exist" instead of throwing — a denial
                 /// here would itself leak existence, because the source-side check can only run
-                /// when the table exists.
-                if (result
-                    && DatabaseOverlay::isReadonlyFacade(DatabaseCatalog::instance().tryGetDatabase(database).get()))
+                /// when the table exists. The source id is resolved from metadata only, without
+                /// loading the source table: a load could throw the source's own error before the
+                /// grant is proven, turning the facade into an oracle for hidden broken sources.
+                if (result)
                 {
-                    auto storage = DatabaseCatalog::instance().tryGetTable({database, table}, getContext());
-                    result = storage
-                        && access->isGranted(
-                            AccessType::SHOW_TABLES, storage->getStorageID().database_name, storage->getStorageID().table_name);
+                    if (const auto * facade
+                        = DatabaseOverlay::asReadonlyFacade(DatabaseCatalog::instance().tryGetDatabase(database).get()))
+                    {
+                        auto source_id = facade->resolveSourceTableIdNoLoad(table, getContext());
+                        result = source_id
+                            && access->isGranted(AccessType::SHOW_TABLES, source_id->database_name, source_id->table_name);
+                    }
                 }
             }
         }
@@ -121,14 +131,32 @@ QueryPipeline InterpreterExistsQuery::executeImpl()
         {
             String database = getContext()->resolveDatabase(exists_query->getDatabase());
             getContext()->checkAccess(AccessType::SHOW_TABLES, database, exists_query->getTable());
-            auto table = DatabaseCatalog::instance().tryGetTable({database, exists_query->getTable()}, getContext());
-            result = table && table->isView();
 
             /// Same rule as for `EXISTS TABLE`: through a read-only `Overlay` facade a view is
-            /// visible only when `SHOW_TABLES` is also granted on the underlying source.
-            if (result)
-                if (auto source_id = DatabaseOverlay::getSourceTableIdForReadonlyFacade(StorageID{database, exists_query->getTable()}, table))
-                    result = getContext()->getAccess()->isGranted(AccessType::SHOW_TABLES, source_id->database_name, source_id->table_name);
+            /// visible only when `SHOW_TABLES` is also granted on the underlying source. The
+            /// grant is checked from a metadata-only resolution *before* the lookup that loads
+            /// the source table: the load could throw the source's own error before the grant is
+            /// proven, turning the facade into an oracle for hidden broken sources.
+            bool source_visible = true;
+            if (const auto * facade
+                = DatabaseOverlay::asReadonlyFacade(DatabaseCatalog::instance().tryGetDatabase(database).get()))
+            {
+                auto source_id = facade->resolveSourceTableIdNoLoad(exists_query->getTable(), getContext());
+                source_visible = source_id
+                    && getContext()->getAccess()->isGranted(AccessType::SHOW_TABLES, source_id->database_name, source_id->table_name);
+            }
+
+            if (source_visible)
+            {
+                auto table = DatabaseCatalog::instance().tryGetTable({database, exists_query->getTable()}, getContext());
+                result = table && table->isView();
+
+                /// Re-verify against the loaded storage: the name could have started resolving to a
+                /// different source between the metadata-only check above and the lookup.
+                if (result)
+                    if (auto source_id = DatabaseOverlay::getSourceTableIdForReadonlyFacade(StorageID{database, exists_query->getTable()}, table))
+                        result = getContext()->getAccess()->isGranted(AccessType::SHOW_TABLES, source_id->database_name, source_id->table_name);
+            }
         }
     }
     else if ((exists_query = query_ptr->as<ASTExistsDatabaseQuery>()))
@@ -144,14 +172,32 @@ QueryPipeline InterpreterExistsQuery::executeImpl()
         String database = getContext()->resolveDatabase(exists_query->getDatabase());
         const auto & dictionary = exists_query->getTable();
         getContext()->checkAccess(AccessType::SHOW_DICTIONARIES, database, dictionary);
-        auto storage = DatabaseCatalog::instance().tryGetTable({database, dictionary}, getContext());
-        result = storage && storage->isDictionary();
 
         /// Same rule as for `EXISTS TABLE`: through a read-only `Overlay` facade a dictionary is
         /// visible only when `SHOW_DICTIONARIES` is also granted on the underlying source dictionary.
-        if (result)
-            if (auto source_id = DatabaseOverlay::getSourceTableIdForReadonlyFacade(StorageID{database, dictionary}, storage))
-                result = getContext()->getAccess()->isGranted(AccessType::SHOW_DICTIONARIES, source_id->database_name, source_id->table_name);
+        /// The grant is checked from a metadata-only resolution *before* the lookup that loads the
+        /// source table: the load could throw the source's own error before the grant is proven,
+        /// turning the facade into an oracle for hidden broken sources.
+        bool source_visible = true;
+        if (const auto * facade
+            = DatabaseOverlay::asReadonlyFacade(DatabaseCatalog::instance().tryGetDatabase(database).get()))
+        {
+            auto source_id = facade->resolveSourceTableIdNoLoad(dictionary, getContext());
+            source_visible = source_id
+                && getContext()->getAccess()->isGranted(AccessType::SHOW_DICTIONARIES, source_id->database_name, source_id->table_name);
+        }
+
+        if (source_visible)
+        {
+            auto storage = DatabaseCatalog::instance().tryGetTable({database, dictionary}, getContext());
+            result = storage && storage->isDictionary();
+
+            /// Re-verify against the loaded storage: the name could have started resolving to a
+            /// different source between the metadata-only check above and the lookup.
+            if (result)
+                if (auto source_id = DatabaseOverlay::getSourceTableIdForReadonlyFacade(StorageID{database, dictionary}, storage))
+                    result = getContext()->getAccess()->isGranted(AccessType::SHOW_DICTIONARIES, source_id->database_name, source_id->table_name);
+        }
     }
 
     return QueryPipeline(std::make_shared<SourceFromSingleChunk>(std::make_shared<const Block>(Block{{

@@ -182,11 +182,23 @@ void InterpreterDescribeQuery::fillColumnsFromTable(const ASTTableExpression & t
     auto table_id = query_context->resolveStorageID(table_expression.database_and_table_name, resolve_type);
     query_context->checkAccess(AccessType::SHOW_COLUMNS, table_id);
 
-    auto table = DatabaseCatalog::instance().getTable(table_id, query_context);
-
     /// Through a read-only `Overlay` facade the described columns are those of the underlying
     /// source table, so `SHOW_COLUMNS` is required on the source too: the facade must not widen
-    /// access (see the `Overlay` access-control contract).
+    /// access (see the `Overlay` access-control contract). The source id is resolved from
+    /// metadata only, without loading the source table: the check must run *before* the lookup
+    /// below, which loads the source table and could throw its own load error — otherwise a user
+    /// without the source-side grant could observe that error and use the facade as an oracle for
+    /// hidden broken sources.
+    if (table_id.hasDatabase())
+        if (const auto * facade
+            = DatabaseOverlay::asReadonlyFacade(DatabaseCatalog::instance().tryGetDatabase(table_id.database_name).get()))
+            if (auto source_id = facade->resolveSourceTableIdNoLoad(table_id.table_name, query_context))
+                query_context->checkAccess(AccessType::SHOW_COLUMNS, *source_id);
+
+    auto table = DatabaseCatalog::instance().getTable(table_id, query_context);
+
+    /// Re-verify against the loaded storage: the name could have started resolving to a
+    /// (different) source between the metadata-only check above and the lookup.
     if (auto source_id = DatabaseOverlay::getSourceTableIdForReadonlyFacade(table_id, table))
         query_context->checkAccess(AccessType::SHOW_COLUMNS, *source_id);
 

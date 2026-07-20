@@ -66,8 +66,23 @@ DatabaseOverlay & DatabaseOverlay::registerNextDatabaseByName(const String & sou
 
 bool DatabaseOverlay::isReadonlyFacade(const IDatabase * database)
 {
+    return asReadonlyFacade(database) != nullptr;
+}
+
+const DatabaseOverlay * DatabaseOverlay::asReadonlyFacade(const IDatabase * database)
+{
     const auto * overlay = typeid_cast<const DatabaseOverlay *>(database);
-    return overlay && overlay->readonly;
+    return (overlay && overlay->readonly) ? overlay : nullptr;
+}
+
+std::optional<StorageID> DatabaseOverlay::resolveSourceTableIdNoLoad(const String & table_name, ContextPtr context_) const
+{
+    for (const auto & db : resolveDatabases())
+    {
+        if (db->isTableExist(table_name, context_))
+            return StorageID{db->getDatabaseName(), table_name};
+    }
+    return {};
 }
 
 std::optional<StorageID> DatabaseOverlay::getSourceTableIdForReadonlyFacade(const StorageID & written_id, const StoragePtr & storage)

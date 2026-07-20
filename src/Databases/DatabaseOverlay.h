@@ -127,6 +127,19 @@ public:
     /// Accepts a null pointer for convenience of callers holding a `tryGetDatabase` result.
     static bool isReadonlyFacade(const IDatabase * database);
 
+    /// Returns `database` typed as a read-only `Overlay` facade, or nullptr when it is not one.
+    /// Accepts a null pointer for convenience of callers holding a `tryGetDatabase` result.
+    static const DatabaseOverlay * asReadonlyFacade(const IDatabase * database);
+
+    /// Resolves `table_name` through the facade's sources WITHOUT loading the table: returns the
+    /// id the name resolves to — the first listed source database whose metadata contains the
+    /// name — or `std::nullopt` when no source has it. Because the resolution is metadata-only
+    /// (`isTableExist`), a source table that is broken or still starting up cannot surface its
+    /// load error here. Callers use this to check source-side grants *before* any lookup that
+    /// would load the source table, so metadata queries through the facade stay fail-closed: a
+    /// user without the source-side grant must not observe the source table's own exception.
+    std::optional<StorageID> resolveSourceTableIdNoLoad(const String & table_name, ContextPtr context) const;
+
     /// When `written_id` refers to a table reached through a read-only `Overlay` facade — the
     /// database of `written_id` is a read-only `Overlay` while `storage` belongs to a different
     /// table (the underlying source) — returns the id of that source table, so the caller can
