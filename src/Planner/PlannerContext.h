@@ -39,7 +39,7 @@ class GlobalPlannerContext
 public:
     GlobalPlannerContext(
         const QueryNode * parallel_replicas_node_,
-        const TableNode * parallel_replicas_table_,
+        const IQueryTreeNode * parallel_replicas_table_,
         const UnionNode * parallel_replicas_table_union_,
         FiltersForTableExpressionMap filters_for_table_expressions_)
         : parallel_replicas_node(parallel_replicas_node_)
@@ -78,9 +78,10 @@ public:
     /// The query which will be executed with parallel replicas.
     /// In case if only the most inner subquery can be executed with parallel replicas, node is nullptr.
     const QueryNode * const parallel_replicas_node = nullptr;
-    /// Table which is used with parallel replicas reading.
+    /// Table expression (a TableNode, or a TableFunctionNode for the `merge` table function)
+    /// which is used with parallel replicas reading.
     /// It is the left-most table of the query (in JOINs, UNIONs and subqueries).
-    const TableNode * const parallel_replicas_table = nullptr;
+    const IQueryTreeNode * const parallel_replicas_table = nullptr;
     /// UNION node whose every child query reads from a table eligible for parallel replicas.
     /// When set, each branch retains parallel replicas reading instead of having it disabled.
     const UnionNode * const parallel_replicas_table_union = nullptr;

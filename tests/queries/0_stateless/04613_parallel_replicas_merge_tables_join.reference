@@ -1,0 +1,19 @@
+-- merge() INNER JOIN a MergeTree table: the join is offloaded
+1
+-- merge() joined in a subquery: the join is offloaded
+1
+-- merge() INNER JOIN a MergeTree table
+200	1485000
+-- merge() LEFT JOIN a MergeTree table
+20000	149985000	200
+-- MergeTree table RIGHT JOIN merge()
+20000	149985000
+-- Merge table INNER JOIN a MergeTree table
+200	1485000
+-- merge() in a subquery
+20000	149985000
+-- merge() joined in a subquery
+200
+-- merge() FINAL joined
+0
+200	1485000

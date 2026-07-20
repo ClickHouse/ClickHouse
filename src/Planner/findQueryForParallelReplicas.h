@@ -18,8 +18,9 @@ struct SelectQueryOptions;
 /// Returned query will always contain some (>1) subqueries, possibly with joins.
 const QueryNode * findQueryForParallelReplicas(const QueryTreeNodePtr & query_tree_node, const SelectQueryOptions & select_query_options);
 
-/// Find a table from which we should read on follower replica. It's the left-most table within all JOINs and UNIONs.
-const TableNode * findTableForParallelReplicas(const QueryTreeNodePtr & query_tree_node, const SelectQueryOptions & select_query_options);
+/// Find a table expression from which we should read on follower replica. It's the left-most table within all JOINs and UNIONs.
+/// The result is either a TableNode or a TableFunctionNode (for the `merge` table function).
+const IQueryTreeNode * findTableForParallelReplicas(const QueryTreeNodePtr & query_tree_node, const SelectQueryOptions & select_query_options);
 
 class IStorage;
 using StoragePtr = std::shared_ptr<IStorage>;

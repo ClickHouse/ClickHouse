@@ -1798,9 +1798,16 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                     /// It is just a safety check needed until we have a proper sending plan to replicas.
                     /// If we have a non-trivial storage like View it might create its own Planner inside read(), run findTableForParallelReplicas()
                     /// and find some other table that might be used for reading with parallel replicas. It will lead to errors.
+                    /// The designated table expression can also be the merge(...) table function
+                    /// (the only table function eligible for parallel replicas).
+                    const IQueryTreeNode * table_expression_for_parallel_replicas = table_node;
+                    if (!table_expression_for_parallel_replicas && table_function_node
+                        && typeid_cast<const StorageMerge *>(storage.get()))
+                        table_expression_for_parallel_replicas = table_function_node;
+
                     const bool no_tables_or_another_table_chosen_for_reading_with_parallel_replicas_mode
                         = query_context->canUseParallelReplicasOnFollower()
-                        && table_node != planner_context->getGlobalPlannerContext()->parallel_replicas_table;
+                        && table_expression_for_parallel_replicas != planner_context->getGlobalPlannerContext()->parallel_replicas_table;
                     if (no_tables_or_another_table_chosen_for_reading_with_parallel_replicas_mode)
                     {
                         bool disable_parallel_replicas_for_storage = true;
@@ -1810,7 +1817,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                             SelectQueryOptions options;
                             for (const auto & child : table_union->getQueries().getNodes())
                             {
-                                if (table_node == findTableForParallelReplicas(child, options))
+                                if (table_expression_for_parallel_replicas == findTableForParallelReplicas(child, options))
                                 {
                                     disable_parallel_replicas_for_storage = false;
                                     break;

@@ -2,6 +2,7 @@
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/JoinNode.h>
 #include <Analyzer/QueryNode.h>
+#include <Analyzer/TableFunctionNode.h>
 #include <Analyzer/TableNode.h>
 #include <Analyzer/UnionNode.h>
 #include <Core/Settings.h>
@@ -107,6 +108,27 @@ static bool canUseTableForParallelReplicas(const TableNode & table_node, const C
     return isTableNodeEligibleForParallelReplicas(table_node, storage, context);
 }
 
+/// Among table functions, only merge(...) can be used with parallel replicas: it is eligible
+/// when every underlying table can be read with parallel replicas (each underlying table forms
+/// its own data stream in the reading coordinator).
+static bool canUseTableFunctionForParallelReplicas(const TableFunctionNode & table_function_node, const ContextPtr & context)
+{
+    const auto & storage = table_function_node.getStorage();
+
+    const auto * merge = typeid_cast<const StorageMerge *>(storage.get());
+    if (!merge)
+        return false;
+
+    if (!merge->canUseParallelReplicas(context))
+        return false;
+
+    /// Parallel replicas not supported with FINAL.
+    if (table_function_node.hasTableExpressionModifiers() && table_function_node.getTableExpressionModifiers()->hasFinal())
+        return false;
+
+    return true;
+}
+
 /// Returns a list of (sub)queries (candidates) which may support parallel replicas.
 /// The rule is :
 /// subquery has only LEFT / RIGHT / ALL INNER JOIN (or none), and left / right part is MergeTree table or subquery candidate as well.
@@ -132,6 +154,10 @@ static std::vector<const QueryNode *> getSupportingParallelReplicasQueries(const
             }
             case QueryTreeNodeType::TABLE_FUNCTION:
             {
+                const auto & table_function_node = query_tree_node->as<TableFunctionNode &>();
+                if (canUseTableFunctionForParallelReplicas(table_function_node, context))
+                    return res;
+
                 return {};
             }
             case QueryTreeNodeType::QUERY:
@@ -170,7 +196,8 @@ static std::vector<const QueryNode *> getSupportingParallelReplicasQueries(const
                 const auto join_strictness = join_node.getStrictness();
 
                 /// Do not apply for non-leftmost RIGHT JOIN
-                std::unordered_set<QueryTreeNodeType> supported_table_expression_types = {QueryTreeNodeType::TABLE, QueryTreeNodeType::QUERY, QueryTreeNodeType::UNION};
+                std::unordered_set<QueryTreeNodeType> supported_table_expression_types
+                    = {QueryTreeNodeType::TABLE, QueryTreeNodeType::TABLE_FUNCTION, QueryTreeNodeType::QUERY, QueryTreeNodeType::UNION};
 
                 if (join_kind == JoinKind::Left || (join_kind == JoinKind::Inner && join_strictness == JoinStrictness::All))
                     query_tree_node = join_node.getLeftTableExpression().get();
@@ -226,6 +253,8 @@ public:
             auto dummy_table_node = std::make_shared<TableNode>(std::move(storage_dummy), getContext());
             if (table_node && table_node->hasTableExpressionModifiers())
                 dummy_table_node->getTableExpressionModifiers() = table_node->getTableExpressionModifiers();
+            else if (table_function_node && table_function_node->hasTableExpressionModifiers())
+                dummy_table_node->getTableExpressionModifiers() = table_function_node->getTableExpressionModifiers();
 
             dummy_table_node->setAlias(node->getAlias());
             replacement_map.emplace(node.get(), std::move(dummy_table_node));
@@ -429,7 +458,7 @@ const QueryNode * findQueryForParallelReplicas(const QueryTreeNodePtr & query_tr
     return res;
 }
 
-static const TableNode * findTableForParallelReplicas(const IQueryTreeNode * query_tree_node, const ContextPtr & context)
+static const IQueryTreeNode * findTableForParallelReplicas(const IQueryTreeNode * query_tree_node, const ContextPtr & context)
 {
     std::stack<const IQueryTreeNode *> join_nodes;
     while (query_tree_node || !join_nodes.empty())
@@ -455,6 +484,10 @@ static const TableNode * findTableForParallelReplicas(const IQueryTreeNode * que
             }
             case QueryTreeNodeType::TABLE_FUNCTION:
             {
+                const auto & table_function_node = query_tree_node->as<TableFunctionNode &>();
+                if (canUseTableFunctionForParallelReplicas(table_function_node, context))
+                    return &table_function_node;
+
                 query_tree_node = nullptr;
                 break;
             }
@@ -521,7 +554,7 @@ static const TableNode * findTableForParallelReplicas(const IQueryTreeNode * que
     return nullptr;
 }
 
-const TableNode * findTableForParallelReplicas(const QueryTreeNodePtr & query_tree_node, const SelectQueryOptions & select_query_options)
+const IQueryTreeNode * findTableForParallelReplicas(const QueryTreeNodePtr & query_tree_node, const SelectQueryOptions & select_query_options)
 {
     if (select_query_options.only_analyze)
         return nullptr;
@@ -644,14 +677,20 @@ JoinTreeQueryPlan buildQueryPlanForParallelReplicas(
     removeGroupingFunctionSpecializations(modified_query_tree_for_ast);
     ASTPtr modified_query_ast = queryNodeToDistributedSelectQuery(modified_query_tree_for_ast);
 
-    const TableNode * table_node = findTableForParallelReplicas(modified_query_tree.get(), context);
-    if (!table_node)
+    const IQueryTreeNode * table_expression = findTableForParallelReplicas(modified_query_tree.get(), context);
+    if (!table_expression)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't determine table for parallel replicas");
+
+    /// A storage created by a table function (e.g. merge(...)) does not exist on remote replicas
+    /// under its generated id, so the id must not be used to check tables status on remote replicas.
+    StorageID storage_id = StorageID::createEmpty();
+    if (const auto * table_node = table_expression->as<TableNode>())
+        storage_id = table_node->getStorageID();
 
     QueryPlan query_plan;
     ClusterProxy::executeQueryWithParallelReplicas(
         query_plan,
-        table_node->getStorageID(),
+        storage_id,
         header,
         processed_stage,
         modified_query_ast,
