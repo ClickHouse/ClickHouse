@@ -254,3 +254,21 @@ Span * returns_empty_buffer(Span * input, uint32_t n) {
 
     return clickhouse_create_buffer(0);
 }
+
+/* Returns a non-empty but truncated buffer: 4 bytes where one full RowBinary
+   row of a UInt64 result needs 8. The host-side parser fails mid-row, and that
+   failure must surface as a catchable WASM_ERROR, not as a low-level read
+   error leaking from the input format. */
+Span * returns_truncated_buffer(Span * input, uint32_t n) {
+    (void)input;
+    (void)n;
+
+    Span * res = clickhouse_create_buffer(4);
+    if (!res) return NULL;
+
+    res->data[0] = 42;
+    res->data[1] = 0;
+    res->data[2] = 0;
+    res->data[3] = 0;
+    return res;
+}
