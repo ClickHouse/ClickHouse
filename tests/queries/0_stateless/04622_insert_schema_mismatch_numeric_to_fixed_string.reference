@@ -1,0 +1,9 @@
+-- JSONEachRow, number into FixedString (genuine mismatch)
+insert failed as expected
+explanation present
+-- JSONEachRow, number into FixedString with input_format_json_read_numbers_as_strings = 1 (still a genuine mismatch: the setting covers only the String destination)
+insert failed as expected
+explanation present
+-- TSV, number into FixedString plus an unrelated bad numeric column (read verbatim, no false positive)
+insert failed as expected
+explanation missing

@@ -102,6 +102,8 @@ public:
     /// data need not match the destination.
     bool allowVariableNumberOfColumns() const override { return true; }
 
+    bool readsTypedJSONValueTokens() const override { return true; }
+
 private:
     NamesAndTypesList readSchema() override;
 

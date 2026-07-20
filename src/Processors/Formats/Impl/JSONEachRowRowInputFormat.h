@@ -104,6 +104,8 @@ class JSONEachRowSchemaReader : public IRowWithNamesSchemaReader
 public:
     JSONEachRowSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_);
 
+    bool readsTypedJSONValueTokens() const override { return true; }
+
 private:
     NamesAndTypesList readRowAndGetNamesAndDataTypes(bool & eof) override;
     void transformTypesIfNeeded(DataTypePtr & type, DataTypePtr & new_type) override;

@@ -71,6 +71,7 @@ String getInsertDataSchemaMismatchDescription(
     bool format_has_exact_types_from_data = false;
     bool format_schema_describes_parsed_data = true;
     bool format_allows_variable_number_of_columns = false;
+    bool format_reads_typed_json_value_tokens = false;
     try
     {
         auto probe_buffer = std::make_unique<ReadBufferFromMemory>(data.data(), data.size());
@@ -94,6 +95,7 @@ String getInsertDataSchemaMismatchDescription(
         format_has_exact_types_from_data = schema_reader->hasExactTypesFromData();
         format_schema_describes_parsed_data = schema_reader->schemaDescribesParsedData();
         format_allows_variable_number_of_columns = schema_reader->allowVariableNumberOfColumns();
+        format_reads_typed_json_value_tokens = schema_reader->readsTypedJSONValueTokens();
     }
     catch (...) // NOLINT(bugprone-empty-catch)
     {
@@ -202,8 +204,8 @@ String getInsertDataSchemaMismatchDescription(
     /// explanation to an unrelated parse error, we treat a column as mismatched only when the inferred
     /// and expected types have no common supertype at all (e.g. a `String` inferred for a numeric column):
     /// a strong, low-false-positive signal that the data really has a different shape than the query expects.
-    auto types_are_compatible
-        = [format_has_exact_types_from_data](const DataTypePtr & inferred_type, const DataTypePtr & expected_type, bool inferred_is_text)
+    auto types_are_compatible = [format_has_exact_types_from_data, format_reads_typed_json_value_tokens, &format_settings](
+                                    const DataTypePtr & inferred_type, const DataTypePtr & expected_type, bool inferred_is_text)
     {
         if (inferred_type->equals(*expected_type))
             return true;
@@ -227,25 +229,44 @@ String getInsertDataSchemaMismatchDescription(
         /// JSON deserializers require a (quoted) string and reject a number in every format — `UUID`, `IPv4`
         /// and `IPv6` (e.g. `{"u": 1}` into `(u UUID)`). This is checked before the supertype rule below
         /// because `IPv4` is backed by a `UInt32` and does share a least supertype with a widened numeric
-        /// type, so the supertype rule would otherwise wrongly treat it as compatible. `FixedString` is
-        /// deliberately not listed: `TSV` / `CSV` read the raw field verbatim into a `FixedString` column, so
-        /// a number is accepted there and flagging it would be a false positive.
-        if (inferred_is_numeric && (which_expected.isUUID() || which_expected.isIPv4() || which_expected.isIPv6()))
+        /// type, so the supertype rule would otherwise wrongly treat it as compatible. `FixedString` also
+        /// rejects a bare number, but only in the typed-token JSON formats
+        /// (`SerializationFixedString::deserializeTextJSON` requires a quoted string, regardless of the
+        /// `input_format_json_read_numbers_as_strings` setting, which covers only the plain `String`
+        /// destination); `TSV` / `CSV` read the raw field verbatim into a `FixedString` column, so a number
+        /// is accepted there and flagging it would be a false positive.
+        if (inferred_is_numeric
+            && (which_expected.isUUID() || which_expected.isIPv4() || which_expected.isIPv6()
+                || (format_reads_typed_json_value_tokens && which_expected.isFixedString())))
             return false;
 
-        if (tryGetLeastSupertype(DataTypes{inferred_type, expected_type}) != nullptr)
-            return true;
-
-        /// The mirror image of the rule below: a `String` destination accepts values that schema inference
-        /// widened to a richer scalar type. The text parsers read a number, a boolean, a date, ... straight
-        /// into a `String` column — `SerializationString::deserializeText*` for `TSV` / `CSV` takes the raw
-        /// field verbatim, and `JSONEachRow` reads a JSON number / boolean into a `String` under the default
-        /// `input_format_json_read_numbers_as_strings` / `read_bools_as_strings` settings — so an inferred
-        /// non-`String` type going into a `String` destination is not a reliable structure mismatch (e.g.
-        /// `1\t1.5` into `(s String, n UInt8)`, where only `n` is invalid). Treat a `String` destination as
-        /// compatible, so a genuine value-level parse error elsewhere in the row is not given a misleading
-        /// "structure mismatch" suffix.
+        /// The mirror image of the "inferred `String`" rule below: a `String` destination accepts values
+        /// that schema inference widened to a richer type. The flat-text parsers read a number, a boolean,
+        /// a date, ... straight into a `String` column — `SerializationString::deserializeText*` for
+        /// `TSV` / `CSV` takes the raw field verbatim — so there an inferred non-`String` type going into a
+        /// `String` destination is never a structure mismatch (e.g. `1\t1.5` into `(s String, n UInt8)`,
+        /// where only `n` is invalid). The typed-token JSON formats, however, accept a bare number /
+        /// boolean / array / object token into a `String` column only under the corresponding
+        /// `input_format_json_read_*_as_strings` setting (all enabled by default), so for them the inferred
+        /// token type is a genuine structure mismatch exactly when the respective setting is disabled.
+        /// Anything else inferred (a date, a `UUID`, ... — necessarily inferred from a quoted string
+        /// token) is read into a `String` column verbatim in every format.
         if (which_expected.isString())
+        {
+            if (!format_reads_typed_json_value_tokens)
+                return true;
+            if (isBool(inferred_unwrapped))
+                return format_settings.json.read_bools_as_strings;
+            if (inferred_is_numeric)
+                return format_settings.json.read_numbers_as_strings;
+            if (which_inferred.isArray())
+                return format_settings.json.read_arrays_as_strings;
+            if (which_inferred.isTuple() || which_inferred.isMap() || which_inferred.isObject())
+                return format_settings.json.read_objects_as_strings;
+            return true;
+        }
+
+        if (tryGetLeastSupertype(DataTypes{inferred_type, expected_type}) != nullptr)
             return true;
 
         /// Formats that read values from text (e.g. every quoted string in `JSONEachRow`) keep fields as

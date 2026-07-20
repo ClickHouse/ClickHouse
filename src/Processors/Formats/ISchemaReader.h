@@ -57,6 +57,15 @@ public:
     /// `IRowSchemaReader::readSchema` to decide whether rows with a varying number of values are allowed.
     virtual bool allowVariableNumberOfColumns() const { return false; }
 
+    /// True if the parser of the format reads typed JSON value tokens (a bare number, `true` / `false`,
+    /// an array, an object) and consults the `input_format_json_read_*_as_strings` settings to decide
+    /// whether such a token may be read into a `String` column. It is false for the flat-text formats
+    /// (`TSV`, `CSV`, `TSKV`, ...), which read every field verbatim into a `String` column regardless of
+    /// those settings. A caller that compares an inferred schema against an expected one can use this to
+    /// know when an inferred non-`String` type going into a `String` destination follows the JSON
+    /// settings and when it is unconditionally accepted.
+    virtual bool readsTypedJSONValueTokens() const { return false; }
+
     virtual bool needContext() const { return false; }
     virtual void setContext(const ContextPtr &) {}
 
