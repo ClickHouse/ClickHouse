@@ -1561,8 +1561,16 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
             /// planning further down: whenever those hidden reader-side filters actually apply,
             /// they can drop rows before the LIMIT, so the source cap / `trivial_limit` is unsafe
             /// (it could drop output rows the LIMIT should keep), so the flags must agree.
+            /// The parallel-replicas custom-key filter (appended to `where_filters` further down)
+            /// is a hidden reader-side filter as well: on a replica it discards the rows outside
+            /// this replica's share of the key space, so the source cap would truncate the read
+            /// before the surviving rows are reached. The predicate mirrors the conditions under
+            /// which `buildCustomKeyFilterIfNeeded` actually produces the filter.
             bool has_additional_filters = !!table_expression_query_info.additional_filter_ast
-                || !!getEffectiveRowPolicyFilter(storage, query_context);
+                || !!getEffectiveRowPolicyFilter(storage, query_context)
+                || (query_context->canUseParallelReplicasCustomKey()
+                    && settings[Setting::parallel_replicas_count] > 1
+                    && !settings[Setting::parallel_replicas_custom_key].value.empty());
             bool stateful_function_blocked_trivial_limit = false;
             max_block_size_limited = mainQueryNodeBlockSizeByLimit(select_query_info, stateful_function_blocked_trivial_limit);
             /// Suppress ONLY the source cap when a hidden filter is present -- but keep
