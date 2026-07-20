@@ -1,6 +1,7 @@
 #pragma once
 #include <Common/HashTable/HashMap.h>
 #include <Common/ArenaUtils.h>
+#include <Common/logger_useful.h>
 #include <algorithm>
 #include <atomic>
 #include <iterator>
@@ -112,7 +113,7 @@ private:
     /// Superseded and erased elements, reclaimed once no view is outstanding.
     std::vector<Mapped> stale_nodes;
 
-    uint64_t approximate_data_size{0};
+    std::atomic<uint64_t> approximate_data_size{0};
 
     enum OperationType
     {
@@ -133,32 +134,21 @@ private:
         switch (op_type)
         {
             case INSERT_OR_REPLACE:
-                approximate_data_size += key_size;
-                approximate_data_size += value_size;
+                approximate_data_size.fetch_add(key_size + value_size, std::memory_order_relaxed);
                 if (remove_old && old_value_size != 0)
-                {
-                    approximate_data_size -= key_size;
-                    approximate_data_size -= old_value_size;
-                }
+                    approximate_data_size.fetch_sub(key_size + old_value_size, std::memory_order_relaxed);
                 break;
             case UPDATE:
-                approximate_data_size += key_size;
-                approximate_data_size += value_size;
+                approximate_data_size.fetch_add(key_size + value_size, std::memory_order_relaxed);
                 if (remove_old)
-                {
-                    approximate_data_size -= key_size;
-                    approximate_data_size -= old_value_size;
-                }
+                    approximate_data_size.fetch_sub(key_size + old_value_size, std::memory_order_relaxed);
                 break;
             case ERASE:
                 if (remove_old)
-                {
-                    approximate_data_size -= key_size;
-                    approximate_data_size -= old_value_size;
-                }
+                    approximate_data_size.fetch_sub(key_size + old_value_size, std::memory_order_relaxed);
                 break;
             case CLEAR:
-                approximate_data_size = 0;
+                approximate_data_size.store(0, std::memory_order_relaxed);
                 break;
         }
     }
@@ -505,7 +495,13 @@ public:
     {
         chassert(map.size() <= list.size());
         chassert(outstanding.empty() || current_version > outstanding.back());
-        chassert(current_version < ListElem::MAX_VERSION);
+        if (current_version == ListElem::MAX_VERSION)
+        {
+            LOG_ERROR(
+                getLogger("SnapshotableHashTable"),
+                "Read view version reached the maximum value. Terminating.");
+            std::terminate();
+        }
 
         const uint32_t pinned_version = current_version;
         ++current_version;
@@ -539,17 +535,18 @@ public:
 
     uint64_t getApproximateDataSize() const
     {
-        return approximate_data_size;
+        return approximate_data_size.load(std::memory_order_relaxed);
     }
 
     void recalculateDataSize()
     {
-        approximate_data_size = 0;
+        uint64_t data_size = 0;
         for (auto & node : list)
         {
-            approximate_data_size += node.key.size();
-            approximate_data_size += node.value.sizeInBytes();
+            data_size += node.key.size();
+            data_size += node.value.sizeInBytes();
         }
+        approximate_data_size.store(data_size, std::memory_order_relaxed);
     }
 
     uint64_t keyArenaSize() const { return 0; }
