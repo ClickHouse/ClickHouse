@@ -435,9 +435,9 @@ struct AsciiCJKTokenizer final : public ITokenizerHelper<AsciiCJKTokenizer>
     bool supportsStringLike() const override { return true; }
 };
 
-/// Tokenizer based on ICU's word `BreakIterator`. It performs locale-aware Unicode word
-/// segmentation (UAX #29 plus dictionary-based breaking), so it can split languages that do not
-/// use whitespace between words (e.g. Chinese, Japanese, Thai) into meaningful word tokens.
+/// Tokenizer based on ICU's word break iteration (UAX #29). For scripts without whitespace between
+/// words (e.g. Chinese, Japanese, Thai) ICU applies dictionary-based segmentation, so such text is
+/// split into meaningful word tokens rather than single characters.
 struct IcuTokenizer final : public ITokenizerHelper<IcuTokenizer>
 {
     explicit IcuTokenizer(String locale_) : ITokenizerHelper(Type::Icu), locale(std::move(locale_)) {}
