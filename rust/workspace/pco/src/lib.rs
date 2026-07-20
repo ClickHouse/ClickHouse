@@ -176,12 +176,21 @@ pub unsafe extern "C" fn pco_compress(
 }
 
 /// Reads the number type declared by a standalone pco stream without decoding
-/// its body. Returns `None` if the header is malformed or the stream is empty
-/// (immediate termination).
-unsafe fn peek_number_type(source: &[u8]) -> Option<u8> {
-    let (file_decompressor, rest) = pco::standalone::FileDecompressor::new(source).ok()?;
-    let number_type = file_decompressor.peek_number_type_or_termination(rest).ok()?;
-    number_type.map(|t| t as u8)
+/// its body. Returns `Ok(Some(type_byte))` for a stream with chunks,
+/// `Ok(None)` for a well-formed empty stream (a header immediately followed by
+/// the termination byte and nothing else), and `Err(())` for a malformed or
+/// truncated header, or for trailing bytes after the termination. Parse errors
+/// are kept distinct from the genuine empty-stream case so the caller can fail
+/// closed on corrupt input even when no values are expected.
+fn peek_number_type(source: &[u8]) -> Result<Option<u8>, ()> {
+    let (file_decompressor, rest) = pco::standalone::FileDecompressor::new(source).map_err(|_| ())?;
+    match file_decompressor.peek_number_type_or_termination(rest).map_err(|_| ())? {
+        Some(number_type) => Ok(Some(number_type as u8)),
+        // A well-formed empty stream ends right at the termination byte; any
+        // trailing payload bytes mean corruption rather than emptiness.
+        None if rest.len() == 1 => Ok(None),
+        None => Err(()),
+    }
 }
 
 /// See include/pco.h.
@@ -211,9 +220,12 @@ pub unsafe extern "C" fn pco_decompress(
         // path (e.g. HTTP decompress=1), and it makes a malformed block whose
         // declared width disagrees with the embedded stream fail closed.
         let number_type = match peek_number_type(source) {
-            Some(byte) => byte,
-            // No chunks: only valid when nothing was expected.
-            None => return if n == 0 { PCO_OK } else { PCO_ERROR },
+            Ok(Some(byte)) => byte,
+            // A well-formed empty stream: only valid when nothing was expected.
+            Ok(None) => return if n == 0 { PCO_OK } else { PCO_ERROR },
+            // Malformed or truncated header, or trailing garbage: fail closed
+            // even when n == 0.
+            Err(()) => return PCO_ERROR,
         };
 
         match number_type {
@@ -350,6 +362,53 @@ mod tests {
             let mut out_size = 0u64;
             let rc = pco_compress(2, raw.as_ptr(), n, 8, compressed.as_mut_ptr(), compressed.len() as u64, &mut out_size);
             assert_eq!(rc, PCO_WONT_FIT);
+        }
+    }
+
+    #[test]
+    fn zero_values_accepts_only_a_well_formed_empty_stream() {
+        unsafe {
+            // A genuine empty stream (header + termination byte) built with the
+            // reference API decodes successfully when no values are expected...
+            let empty = pco::standalone::simple_compress::<u32>(&[], &ChunkConfig::default())
+                .expect("compress empty stream");
+            let mut dst = [0u8; 4];
+            assert_eq!(
+                pco_decompress(4, empty.as_ptr(), empty.len() as u64, dst.as_mut_ptr(), 0, dst.len() as u64),
+                PCO_OK
+            );
+            // ...but not when values are expected.
+            assert_eq!(
+                pco_decompress(4, empty.as_ptr(), empty.len() as u64, dst.as_mut_ptr(), 1, dst.len() as u64),
+                PCO_ERROR
+            );
+
+            // Garbage payload with n_values == 0 must fail closed, not be
+            // silently accepted as an empty stream.
+            let garbage = [0xabu8; 32];
+            assert_eq!(
+                pco_decompress(4, garbage.as_ptr(), garbage.len() as u64, dst.as_mut_ptr(), 0, dst.len() as u64),
+                PCO_ERROR
+            );
+
+            // A truncated header (a prefix of a valid empty stream) must fail
+            // closed with n_values == 0.
+            for len in 0..empty.len() - 1 {
+                assert_eq!(
+                    pco_decompress(4, empty.as_ptr(), len as u64, dst.as_mut_ptr(), 0, dst.len() as u64),
+                    PCO_ERROR,
+                    "truncated to {len} bytes"
+                );
+            }
+
+            // Trailing bytes after the termination byte must fail closed
+            // instead of being silently ignored.
+            let mut trailing = empty.clone();
+            trailing.extend_from_slice(&[0xab, 0xcd, 0xef]);
+            assert_eq!(
+                pco_decompress(4, trailing.as_ptr(), trailing.len() as u64, dst.as_mut_ptr(), 0, dst.len() as u64),
+                PCO_ERROR
+            );
         }
     }
 
