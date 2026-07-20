@@ -1626,6 +1626,11 @@ static BlockIO executeQueryImpl(
                         async_insert_destination_table = destination_interpreter.getTable(*insert_query);
                     }
 
+                    /// Refresh dynamic external schema before snapshotting metadata, like
+                    /// InterpreterInsertQuery::execute does for the synchronous path.
+                    if (async_insert_destination_table)
+                        async_insert_destination_table->updateExternalDynamicMetadataIfExists(context);
+
                     /// For input('auto'), make sure that Context::insertion_table_info is set.
                     if (async_insert_destination_table && !context->hasInsertionTableColumnsDescription())
                         InterpreterInsertQuery::setInsertContextValues(context, *insert_query, async_insert_destination_table);
