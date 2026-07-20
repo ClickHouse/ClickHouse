@@ -14,6 +14,48 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+/// Wait for the async insert flush and report its rows/bytes as progress, so that query_log
+/// and the HTTP X-ClickHouse-Summary reflect the insert stats.
+inline void waitForAsyncInsertAndReportProgress(
+    std::future<AsyncInsertProgress> & insert_future,
+    size_t timeout_ms,
+    const QueryStatusPtr & process_list_elem,
+    const ProgressCallback & progress_callback,
+    bool report_read_progress)
+{
+    auto status = insert_future.wait_for(std::chrono::milliseconds(timeout_ms));
+    if (status == std::future_status::deferred)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Got future in deferred state");
+
+    if (status == std::future_status::timeout)
+        throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Wait for async insert timeout ({} ms) exceeded", timeout_ms);
+
+    auto progress_result = insert_future.get();
+
+    if (process_list_elem)
+    {
+        process_list_elem->updateProgressOut(Progress(WriteProgress(progress_result.rows, progress_result.bytes)));
+        if (report_read_progress)
+            process_list_elem->updateProgressIn(Progress(ReadProgress(progress_result.rows, progress_result.bytes)));
+    }
+
+    if (progress_callback)
+    {
+        Progress p;
+        p.written_rows = progress_result.rows;
+        p.written_bytes = progress_result.bytes;
+        if (report_read_progress)
+        {
+            p.read_rows = progress_result.rows;
+            p.read_bytes = progress_result.bytes;
+        }
+        /// Do not set p.result_rows/result_bytes here: flushQueryProgress
+        /// in executeQuery.cpp will derive them from progress_out.written_rows,
+        /// so setting them here would cause double-counting in X-ClickHouse-Summary.
+        progress_callback(p);
+    }
+}
+
 /// Source, that allow to wait until processing of
 /// asynchronous insert for specified query_id will be finished.
 class WaitForAsyncInsertSource final : public ISource
@@ -41,40 +83,8 @@ public:
 protected:
     Chunk generate() override
     {
-        auto status = insert_future.wait_for(std::chrono::milliseconds(timeout_ms));
-        if (status == std::future_status::deferred)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Got future in deferred state");
-
-        if (status == std::future_status::timeout)
-            throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Wait for async insert timeout ({} ms) exceeded", timeout_ms);
-
-        auto progress_result = insert_future.get();
-
-        /// Report the written rows/bytes as progress so that query_log
-        /// and HTTP X-ClickHouse-Summary reflect the actual insert stats.
-        if (process_list_elem)
-        {
-            process_list_elem->updateProgressOut(Progress(WriteProgress(progress_result.rows, progress_result.bytes)));
-            if (report_read_progress)
-                process_list_elem->updateProgressIn(Progress(DB::ReadProgress(progress_result.rows, progress_result.bytes)));
-        }
-
-        if (progress_callback)
-        {
-            Progress p;
-            p.written_rows = progress_result.rows;
-            p.written_bytes = progress_result.bytes;
-            if (report_read_progress)
-            {
-                p.read_rows = progress_result.rows;
-                p.read_bytes = progress_result.bytes;
-            }
-            /// Do not set p.result_rows/result_bytes here: flushQueryProgress
-            /// in executeQuery.cpp will derive them from progress_out.written_rows,
-            /// so setting them here would cause double-counting in X-ClickHouse-Summary.
-            progress_callback(p);
-        }
-
+        waitForAsyncInsertAndReportProgress(
+            insert_future, timeout_ms, process_list_elem, progress_callback, report_read_progress);
         return Chunk();
     }
 
