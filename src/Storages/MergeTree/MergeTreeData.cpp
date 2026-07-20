@@ -6800,6 +6800,9 @@ bool MergeTreeData::shouldDeferMergesDueToActiveInserts() const
     bool has_long_committing_insert = false;
     {
         std::lock_guard lock(active_inserts_mutex);
+        if (active_inserts.empty())
+            return false;
+
         const UInt64 now_ns = clock_gettime_ns(CLOCK_MONOTONIC);
         for (const auto & insert : active_inserts)
         {

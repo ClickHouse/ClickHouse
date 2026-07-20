@@ -273,8 +273,6 @@ void MergeTreeSink::finishDelayedChunk()
                     getDeduplicationBlockIds(deduplication_hashes));
                 StorageMergeTree::incrementInsertedPartsProfileEvent(part->getType());
 
-                active_insert_scope.notePartCommitted();
-
                 /// Initiate async merge - it will be done if it's good time for merge and if there are space in 'background_pool'.
                 storage.background_operations_assignee.trigger();
                 break;
@@ -394,6 +392,8 @@ std::vector<std::string> MergeTreeSink::commitPart(MergeTreeMutableDataPartPtr &
         storage.renameTempPartAndAdd(part, transaction, lock, /*rename_in_transaction=*/ false);
         transaction.commit(lock);
     }
+
+    active_insert_scope.notePartCommitted();
 
     return {};
 }
