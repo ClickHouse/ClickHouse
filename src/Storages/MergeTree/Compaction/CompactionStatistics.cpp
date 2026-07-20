@@ -360,9 +360,19 @@ size_t countDynamicCapacityStreams(const IDataType & type, const MergeTreeSettin
 /// union would drop the legacy part's dynamic paths - exactly the mixed legacy/new undercount countOutputStreams
 /// has to recover explicitly for base parts. The type-capacity fallback the caller then takes cannot be
 /// exceeded by any rebuilt column, a safe over-estimate for that transient window.
+///
+/// The same bailout applies to a base column the merge materializes from its DEFAULT expression
+/// (default_filled_dynamic_columns, see estimateNeededMemoryForMerge): after ALTER ... ADD COLUMN d JSON(...)
+/// DEFAULT ..., parts that predate the ALTER do not store d at all, yet the projection rebuild runs on the
+/// merged base rows AFTER IMergeTreeReader has filled and evaluated the missing defaults, so a rebuilt
+/// SELECT d ... projection can write dynamic substreams that come only from the old, default-filled rows.
+/// The recorded union over the parts that do store d cannot see those, so it must not be treated as exact.
 std::optional<size_t> tryCountBareIdentifierProjectionSubstreams(
-    const NameAndTypePair & column, const MergeTreeDataPartsVector & source_parts)
+    const NameAndTypePair & column, const MergeTreeDataPartsVector & source_parts, const NameSet & default_filled_dynamic_columns)
 {
+    if (default_filled_dynamic_columns.contains(column.name))
+        return std::nullopt;
+
     std::unordered_set<std::string_view> union_substreams;
     bool recorded = false;
     for (const auto & part : source_parts)
@@ -407,12 +417,15 @@ std::optional<size_t> tryCountBareIdentifierProjectionSubstreams(
 /// own write-time capacity instead (countDynamicCapacityStreams), which no written column can exceed. For
 /// simple projection columns this equals the default serialization count.
 size_t countRebuiltProjectionStreams(
-    const NamesAndTypesList & projection_columns, const MergeTreeDataPartsVector & source_parts, const MergeTreeSettings & settings)
+    const NamesAndTypesList & projection_columns,
+    const MergeTreeDataPartsVector & source_parts,
+    const MergeTreeSettings & settings,
+    const NameSet & default_filled_dynamic_columns)
 {
     size_t streams = 0;
     for (const auto & column : projection_columns)
     {
-        if (auto recorded = tryCountBareIdentifierProjectionSubstreams(column, source_parts))
+        if (auto recorded = tryCountBareIdentifierProjectionSubstreams(column, source_parts, default_filled_dynamic_columns))
             streams += *recorded;
         else
             streams += countColumnStreams({column}) + countDynamicCapacityStreams(*column.type, settings);
@@ -448,19 +461,32 @@ size_t countRebuiltProjectionStreams(
 /// (countPartStreamsForColumns reads an old wide part's real .bin count), since the merged part is never
 /// narrower than any single source part.
 ///
+/// A column with dynamic structure that some source part will materialize from its DEFAULT expression
+/// (default_filled_dynamic_columns: absent from a source part after ALTER ... ADD COLUMN ... DEFAULT ...,
+/// see estimateNeededMemoryForMerge) is priced the same way as a widened column: MergeTask keeps such a
+/// column live (it is not expired while a default exists) and IMergeTreeReader fills and evaluates the
+/// default for the rows of the parts that predate the ALTER, so the merged part can write dynamic
+/// (JSON / Dynamic) substreams that come only from the default-filled rows - substreams no source part
+/// records, invisible to the per-column union and to the legacy .bin recovery alike.
+///
 /// Throughout, a source column absent from output_columns (removed by a metadata-only ALTER DROP COLUMN but
 /// still carried on an old part's disk / columns.txt) is ignored - the merge never writes it, so it must not
 /// inflate the estimate. For simple columns and modern parts of the current type all adjustments are no-ops.
-size_t countOutputStreams(const NamesAndTypesList & output_columns, const MergeTreeDataPartsVector & source_parts, const MergeTreeSettings & settings)
+size_t countOutputStreams(
+    const NamesAndTypesList & output_columns,
+    const MergeTreeDataPartsVector & source_parts,
+    const MergeTreeSettings & settings,
+    const NameSet & default_filled_dynamic_columns)
 {
-    /// Per-column union of the source parts' recorded substreams, matched by name, except for a column any
-    /// source part stores under a different type than the merged metadata - a metadata-only widening whose old
-    /// rows are reserialized under the current, wider type. Widened columns are remembered and priced after
-    /// the legacy-part recovery below, once the streams visible for them in the source parts (recorded
-    /// substreams and real .bin files alike) are known, so neither the recovery nor the floor prices them
-    /// again.
+    /// Per-column union of the source parts' recorded substreams, matched by name, except for the columns
+    /// whose real output substreams the union cannot see: a column any source part stores under a different
+    /// type than the merged metadata - a metadata-only widening whose old rows are reserialized under the
+    /// current, wider type - and a dynamic-structure column some source part default-fills. Those columns are
+    /// remembered and priced after the legacy-part recovery below, once the streams visible for them in the
+    /// source parts (recorded substreams and real .bin files alike) are known, so neither the recovery nor
+    /// the floor prices them again.
     size_t streams = 0;
-    std::unordered_set<std::string_view> type_widened_columns;
+    std::unordered_set<std::string_view> capacity_priced_columns;
     for (const auto & column : output_columns)
     {
         const bool type_widened = std::any_of(
@@ -471,8 +497,8 @@ size_t countOutputStreams(const NamesAndTypesList & output_columns, const MergeT
                 return part_column && !part_column->type->equals(*column.type);
             });
 
-        if (type_widened)
-            type_widened_columns.insert(column.name);
+        if (type_widened || default_filled_dynamic_columns.contains(column.name))
+            capacity_priced_columns.insert(column.name);
         else
             streams += tryCountColumnSubstreamsFromParts(column.name, source_parts).value_or(countColumnStreams({column}));
     }
@@ -508,7 +534,7 @@ size_t countOutputStreams(const NamesAndTypesList & output_columns, const MergeT
     /// this adds nothing.
     const ISerialization::StreamFileNameSettings stream_file_name_settings(settings);
     std::unordered_set<std::string> unrecorded_dynamic_files;
-    std::unordered_map<std::string, std::unordered_set<std::string>> widened_dynamic_files;
+    std::unordered_map<std::string, std::unordered_set<std::string>> capacity_priced_dynamic_files;
     std::unordered_set<std::string> compact_recovered_columns;
     size_t compact_dynamic_streams = 0;
     for (const auto & part : source_parts)
@@ -539,18 +565,19 @@ size_t countOutputStreams(const NamesAndTypesList & output_columns, const MergeT
             /// streams at all) would count that static skeleton twice and over-reserve upgrade-path merges.
             /// What remains after the subtraction is exactly the part's dynamic files - but only recover those
             /// of columns the merged part still writes: a column dropped by a metadata-only ALTER (absent from
-            /// output_columns) is not written and must be excluded. A widened column's dynamic files are
-            /// collected separately, per column, and folded into the max(capacity, visible streams) pricing of
-            /// widened columns below rather than into the shared union, so they are not priced twice.
+            /// output_columns) is not written and must be excluded. A capacity-priced (widened / default-filled)
+            /// column's dynamic files are collected separately, per column, and folded into the
+            /// max(capacity, visible streams) pricing of such columns below rather than into the shared union,
+            /// so they are not priced twice.
             const auto static_files = collectStaticStreamFileNames(part_columns, stream_file_name_settings);
             std::vector<std::string> recoverable_escaped_columns;
-            std::vector<std::pair<std::string, std::string>> widened_escaped_columns;
+            std::vector<std::pair<std::string, std::string>> capacity_priced_escaped_columns;
             for (const auto & column : part_columns)
             {
                 if (!output_columns.contains(column.name))
                     continue;
-                if (type_widened_columns.contains(column.name))
-                    widened_escaped_columns.emplace_back(escapeForFileName(column.name), column.name);
+                if (capacity_priced_columns.contains(column.name))
+                    capacity_priced_escaped_columns.emplace_back(escapeForFileName(column.name), column.name);
                 else
                     recoverable_escaped_columns.push_back(escapeForFileName(column.name));
             }
@@ -566,11 +593,11 @@ size_t countOutputStreams(const NamesAndTypesList & output_columns, const MergeT
                     unrecorded_dynamic_files.insert(file_name);
                     continue;
                 }
-                for (const auto & [escaped, name] : widened_escaped_columns)
+                for (const auto & [escaped, name] : capacity_priced_escaped_columns)
                 {
                     if (streamFileBelongsToColumn(file_name, escaped))
                     {
-                        widened_dynamic_files[name].insert(file_name);
+                        capacity_priced_dynamic_files[name].insert(file_name);
                         break;
                     }
                 }
@@ -585,12 +612,13 @@ size_t countOutputStreams(const NamesAndTypesList & output_columns, const MergeT
             /// Dynamic(max_types=0) or unhinted JSON part merged into a Dynamic(max_types=5) / JSON(...) column
             /// writes the output type's streams, not the smaller source type's - so pricing the source type
             /// would under-reserve. A column absent from the merged part (dropped by ALTER) is not written and
-            /// is skipped, and a widened column is priced at no less than its output-type capacity below.
+            /// is skipped, and a capacity-priced (widened / default-filled) column is priced at no less than
+            /// its output-type capacity below.
             for (const auto & column : part_columns)
             {
                 if (!column.type->hasDynamicStructure())
                     continue;
-                if (type_widened_columns.contains(column.name))
+                if (capacity_priced_columns.contains(column.name))
                     continue;
                 const auto output_column = output_columns.tryGetByName(column.name);
                 if (output_column && compact_recovered_columns.insert(column.name).second)
@@ -600,21 +628,23 @@ size_t countOutputStreams(const NamesAndTypesList & output_columns, const MergeT
     }
     streams += unrecorded_dynamic_files.size() + compact_dynamic_streams;
 
-    /// Price the widened columns now that every stream visible for them in the source parts is known: the
-    /// recorded substream union by name (tryCountColumnSubstreamsFromParts does not require type equality, so
-    /// it sees the old, narrower type's recorded substreams too) plus the real dynamic .bin files recovered
-    /// above from unrecorded legacy wide parts. The output type's write-time capacity prices a variant at a
-    /// fixed worst case (STREAMS_PER_DYNAMIC_VARIANT), which a wide composite variant a source part already
-    /// materialized can exceed - there the visible streams are the ground truth - while the capacity covers
-    /// what the sources cannot show (paths and variants the wider output type materializes beyond what the
-    /// narrower source type could record). Taking the max never prices a widened column below either bound
-    /// and stays proportional to real data, so it cannot re-introduce the saturating over-reservation.
+    /// Price the capacity-priced (widened / default-filled) columns now that every stream visible for them in
+    /// the source parts is known: the recorded substream union by name (tryCountColumnSubstreamsFromParts does
+    /// not require type equality, so it sees the old, narrower type's recorded substreams too) plus the real
+    /// dynamic .bin files recovered above from unrecorded legacy wide parts. The output type's write-time
+    /// capacity prices a variant at a fixed worst case (STREAMS_PER_DYNAMIC_VARIANT), which a wide composite
+    /// variant a source part already materialized can exceed - there the visible streams are the ground truth -
+    /// while the capacity covers what the sources cannot show (paths and variants the wider output type
+    /// materializes beyond what the narrower source type could record, and the substreams a DEFAULT expression
+    /// materializes for the rows of parts that predate an ADD COLUMN, which no source part records at all).
+    /// Taking the max never prices such a column below either bound and stays proportional to real data, so it
+    /// cannot re-introduce the saturating over-reservation.
     for (const auto & column : output_columns)
     {
-        if (!type_widened_columns.contains(column.name))
+        if (!capacity_priced_columns.contains(column.name))
             continue;
         size_t visible_streams = tryCountColumnSubstreamsFromParts(column.name, source_parts).value_or(0);
-        if (const auto it = widened_dynamic_files.find(column.name); it != widened_dynamic_files.end())
+        if (const auto it = capacity_priced_dynamic_files.find(column.name); it != capacity_priced_dynamic_files.end())
             visible_streams += it->second.size();
         streams += countColumnStreams({column}) + std::max(countDynamicCapacityStreams(*column.type, settings), visible_streams);
     }
@@ -741,8 +771,36 @@ UInt64 estimateNeededMemoryForMerge(
     /// paths that all appear in the merged part. Patch parts are included: a patched JSON / Dynamic column
     /// can carry a path that exists only in a patch, not in any base part.
     const auto output_columns = metadata_snapshot->getColumns().getAllPhysical();
+
+    /// A dynamic-structure (JSON / Dynamic) output column absent from some base part but with a default
+    /// expression in the merged metadata is materialized from that default during the merge: MergeTask keeps
+    /// such a column live (a missing column is expired only when it has no default), and IMergeTreeReader
+    /// fills and evaluates the missing defaults for the rows of the parts that predate the
+    /// ALTER ... ADD COLUMN ... DEFAULT. Those rows can carry real dynamic substreams that no source part
+    /// records, so neither the recorded per-part substream union nor the legacy .bin recovery can see them -
+    /// both countOutputStreams and the rebuilt-projection pricing must fall back to the output type's
+    /// write-time capacity for such a column instead of trusting the union as exact. Only base parts decide
+    /// missing-ness: a patch part physically stores just the columns it patches and its rows are applied as
+    /// patches, never default-filled. A column with dynamic structure but no default, or one missing from no
+    /// part, keeps the exact union pricing, so this is a no-op outside the ADD COLUMN ... DEFAULT upgrade
+    /// window.
+    NameSet default_filled_dynamic_columns;
+    {
+        const auto & columns_description = metadata_snapshot->getColumns();
+        for (const auto & column : output_columns)
+        {
+            if (!column.type->hasDynamicStructure())
+                continue;
+            const bool missing_from_some_part = std::any_of(
+                future_part.parts.begin(), future_part.parts.end(),
+                [&](const auto & part) { return !part->getColumns().contains(column.name); });
+            if (missing_from_some_part && columns_description.getDefault(column.name))
+                default_filled_dynamic_columns.insert(column.name);
+        }
+    }
+
     const size_t output_streams = future_part.part_format.part_type == MergeTreeDataPartType::Wide
-        ? countOutputStreams(output_columns, source_and_patch_parts, settings)
+        ? countOutputStreams(output_columns, source_and_patch_parts, settings, default_filled_dynamic_columns)
         : 1;
 
     /// Worst case: every stream allocates all of its buffers in full. A zero remote_write_buffer_size
@@ -912,7 +970,7 @@ UInt64 estimateNeededMemoryForMerge(
                 /// serialization, which would collapse such a column to a single stream and undersize the
                 /// reservation.
                 const size_t projection_wide_streams = countRebuiltProjectionStreams(
-                    projection.sample_block.getNamesAndTypesList(), source_and_patch_parts, settings);
+                    projection.sample_block.getNamesAndTypesList(), source_and_patch_parts, settings, default_filled_dynamic_columns);
 
                 /// A temporary projection part is written as Wide only when it is big enough:
                 /// writeTempProjectionPart passes the projected block's size to choosePartFormat, which picks
