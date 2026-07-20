@@ -298,6 +298,29 @@ public:
     std::unordered_set<String> rewritten;
 };
 
+/// A DiskLocal that cannot unlink files - both `removeFile` and `removeFileIfExists`
+/// throw - but still lets files be (re)written. It reproduces a disk on which
+/// compaction cannot delete the old, superseded log files, so it must instead
+/// neutralize them by overwriting them with an empty log (which replays as a no-op).
+class DiskFailingAllRemovals : public DiskLocal
+{
+public:
+    DiskFailingAllRemovals(const String & name_, const String & path_)
+        : DiskLocal(name_, path_)
+    {
+    }
+
+    void removeFile(const String &) override
+    {
+        throw Exception(ErrorCodes::CANNOT_UNLINK, "Injected remove failure");
+    }
+
+    void removeFileIfExists(const String &) override
+    {
+        throw Exception(ErrorCodes::CANNOT_UNLINK, "Injected remove failure");
+    }
+};
+
 /// Read the raw records of every deduplication log file under `logs_root`, in
 /// chronological (log-number) order, without any of the rollback-pairing logic -
 /// the way every server version reads them off the disk.
@@ -1294,6 +1317,96 @@ TEST(MergeTreeDeduplicationLog, RepeatedRollbacksAreCompactedAwayOnRestart)
         /// still retryable - compaction preserved the live state exactly.
         EXPECT_FALSE(log.addPart({"block1"}, part("all_9_9_0")).empty());
         EXPECT_TRUE(log.addPart({"block2"}, part("all_10_10_0")).empty());
+    }
+
+    std::filesystem::remove_all(work_dir);
+}
+
+/// Regression test: when compaction cannot remove some of the old, superseded log
+/// files, it must not leave them behind with their contents intact. Replaying a
+/// lingering pre-snapshot file preserves the SET of block ids the snapshot holds but
+/// not their FIFO order (that file may replay to a stale intermediate order, and the
+/// snapshot's ADDs on top do not refresh the position of an already-present key), and
+/// that order decides which block is evicted next - so the next insert after a restart
+/// could evict a different committed block than the live process would. Compaction must
+/// instead neutralize an un-removable old file by emptying it, so an empty log replays
+/// as a no-op wherever it sits and the snapshot alone determines the reloaded state and
+/// its order. Here the disk refuses every unlink, forcing the empty-overwrite path.
+TEST(MergeTreeDeduplicationLog, CompactionNeutralizesUnremovableOldLogs)
+{
+    const std::string work_dir = "tmp/gtest_dedup_log_compaction_unremovable/";
+    std::filesystem::remove_all(work_dir);
+    std::filesystem::create_directories(work_dir);
+
+    const std::string logs_dir = work_dir + "dedup_logs";
+    auto log_files = [&]() -> std::map<size_t, std::filesystem::path>
+    {
+        std::map<size_t, std::filesystem::path> files;
+        for (const auto & entry : std::filesystem::directory_iterator(logs_dir))
+        {
+            const std::string stem = entry.path().stem();
+            files.emplace(std::stoull(stem.substr(stem.find_last_of('_') + 1)), entry.path());
+        }
+        return files;
+    };
+
+    const MergeTreeDataFormatVersion format_version = MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING;
+    auto part = [&](const String & name) { return MergeTreePartInfo::fromPartName(name, format_version); };
+
+    {
+        /// Accumulate rollback garbage the same way RepeatedRollbacksAreCompactedAwayOnRestart
+        /// does: one committed block plus several failed inserts, each leaving an
+        /// (ADD, rollback) pair and a new log file that dropOutdatedLogs cannot reclaim.
+        auto disk = std::make_shared<DiskThrowingFromNthSync>("faulty", work_dir, /*fail_from_sync=*/ 1);
+        MergeTreeDeduplicationLog log("dedup_logs", /*deduplication_window=*/ 1, format_version, disk);
+        log.load();
+        log.addPart({"block1"}, part("all_1_1_0"));
+        for (int i = 2; i <= 8; ++i)
+        {
+            const std::string suffix = std::to_string(i) + "_" + std::to_string(i) + "_0";
+            EXPECT_ANY_THROW(log.addPart({"block" + std::to_string(i)}, part("all_" + suffix)));
+        }
+        EXPECT_GT(log_files().size(), 4u);
+        log.shutdown();
+    }
+
+    {
+        /// Restart on a disk that can rewrite files but cannot unlink them. load() replays
+        /// everything, reconstructs the single live block, and compacts - but the removal
+        /// of every old file fails, so each must be neutralized by overwriting it empty.
+        auto disk = std::make_shared<DiskFailingAllRemovals>("no-unlink", work_dir);
+        MergeTreeDeduplicationLog log("dedup_logs", /*deduplication_window=*/ 1, format_version, disk);
+        log.load();
+
+        /// The old files could not be deleted, so they linger - but every one of them
+        /// except the highest-numbered snapshot must have been emptied. A non-empty
+        /// pre-snapshot file would resurrect the reconstructed FIFO order incorrectly on
+        /// the next restart.
+        const auto files = log_files();
+        ASSERT_FALSE(files.empty());
+        const size_t snapshot_number = files.rbegin()->first;
+        for (const auto & [number, path] : files)
+        {
+            if (number == snapshot_number)
+                continue;
+            EXPECT_EQ(std::filesystem::file_size(path), 0u) << "pre-snapshot log " << path << " was not neutralized";
+        }
+
+        /// The live state is still exact: the committed block deduplicates. Probing a
+        /// deduplicated block writes no record, so it neither mutates the map (with
+        /// deduplication_window == 1 a committing insert would evict block1) nor the
+        /// emptied files asserted above.
+        EXPECT_FALSE(log.addPart({"block1"}, part("all_9_9_0")).empty());
+    }
+
+    {
+        /// A final healthy restart replays the emptied files (no-ops) and the snapshot,
+        /// so the state stays correct even though the old files were never physically
+        /// removed: the committed block still deduplicates.
+        auto disk = std::make_shared<DiskLocal>("healthy", work_dir);
+        MergeTreeDeduplicationLog log("dedup_logs", /*deduplication_window=*/ 1, format_version, disk);
+        log.load();
+        EXPECT_FALSE(log.addPart({"block1"}, part("all_11_11_0")).empty());
     }
 
     std::filesystem::remove_all(work_dir);

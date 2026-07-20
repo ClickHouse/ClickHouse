@@ -598,12 +598,20 @@ void MergeTreeDeduplicationLog::compact()
         }
         catch (...)
         {
-            /// The snapshot has a higher log number than any older file, so load replays it
-            /// after them and its ADDs are no-ops on top of whatever an un-removed older file
-            /// reconstructs - the state stays correct even if a removal fails; the file just
-            /// lingers.
-            tryLogCurrentException(__PRETTY_FUNCTION__, "Cannot remove an outdated deduplication log file during compaction");
-            ++it;
+            /// Leaving the old file behind is NOT harmless. The snapshot has a higher log
+            /// number, so load replays it after the lingering file - which reconstructs the
+            /// same SET of block ids as the snapshot but not necessarily their FIFO order,
+            /// and that order decides which block is evicted next. Replaying the old file
+            /// first and then the snapshot can therefore rebuild the right block ids in the
+            /// wrong order, so the next insert after a restart evicts a different committed
+            /// block than the live process would. Neutralize the file the same way an orphan
+            /// snapshot is handled: overwrite it with an empty log (after retrying the
+            /// removal once), which replays as a no-op wherever it sits, so the snapshot
+            /// alone determines the reloaded state and its order.
+            tryLogCurrentException(
+                __PRETTY_FUNCTION__, "Cannot remove an outdated deduplication log file during compaction; will empty it instead");
+            neutralizeOrphanLog(it->second.path);
+            it = existing_logs.erase(it);
         }
     }
 
