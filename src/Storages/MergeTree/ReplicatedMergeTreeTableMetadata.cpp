@@ -116,19 +116,19 @@ ReplicatedMergeTreeTableMetadata::ReplicatedMergeTreeTableMetadata(const MergeTr
     if (data.format_version >= MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
         partition_key = formattedASTNormalized(metadata_snapshot->getPartitionKey().expression_list_ast);
 
-    ttl_table = formattedASTNormalized(metadata_snapshot->getTableTTLs().definition_ast);
+    ttl_table = metadata_snapshot->getTableTTLs().formatBackwardCompatibleOneLine();
 
     /// We only store skip indices that are explicitly defined by user
-    skip_indices = metadata_snapshot->getSecondaryIndices().explicitToString();
+    skip_indices = metadata_snapshot->getSecondaryIndices().formatBackwardCompatibleOneLine(/* only_explicit = */ true);
 
-    projections = metadata_snapshot->getProjections().toString();
+    projections = metadata_snapshot->getProjections().formatBackwardCompatibleOneLine();
 
     if (data.canUseAdaptiveGranularity())
         index_granularity_bytes = (*data_settings)[MergeTreeSetting::index_granularity_bytes];
     else
         index_granularity_bytes = 0;
 
-    constraints = metadata_snapshot->getConstraints().toString();
+    constraints = metadata_snapshot->getConstraints().formatBackwardCompatibleOneLine();
 }
 
 void ReplicatedMergeTreeTableMetadata::write(WriteBuffer & out) const
@@ -433,8 +433,9 @@ bool ReplicatedMergeTreeTableMetadata::checkEquals(
 
     auto parsed_primary_key = KeyDescription::parse(primary_key, columns, virtuals, context, true);
     // Strict checking of suspicious TTL is not needed here
-    String parsed_zk_ttl_table = formattedAST(
-        TTLTableDescription::parse(from_zk.ttl_table, columns, context, parsed_primary_key, /* is_attach = */ true).definition_ast);
+    String parsed_zk_ttl_table
+        = TTLTableDescription::parse(from_zk.ttl_table, columns, context, parsed_primary_key, /* is_attach = */ true)
+              .formatBackwardCompatibleOneLine();
     if (ttl_table != parsed_zk_ttl_table)
     {
         handleTableMetadataMismatch(table_name_for_error_message, "TTL", from_zk.ttl_table, parsed_zk_ttl_table, ttl_table, strict_check, logger);
@@ -444,21 +445,22 @@ bool ReplicatedMergeTreeTableMetadata::checkEquals(
     /// Implicit indices are stripped from Keeper metadata during `parseAndNormalize`,
     /// so at this point `from_zk.skip_indices` only contains explicit indices.
     constexpr bool escape_index_filenames = true; /// It doesn't matter here, as we compare parsed strings
-    String parsed_zk_skip_indices = IndicesDescription::parse(from_zk.skip_indices, columns, escape_index_filenames, context).allToString();
+    String parsed_zk_skip_indices = IndicesDescription::parse(from_zk.skip_indices, columns, escape_index_filenames, context)
+                                        .formatBackwardCompatibleOneLine(/* only_explicit = */ false);
     if (skip_indices != parsed_zk_skip_indices)
     {
         handleTableMetadataMismatch(table_name_for_error_message, "skip indexes", from_zk.skip_indices, parsed_zk_skip_indices, skip_indices, strict_check, logger);
         is_equal = false;
     }
 
-    String parsed_zk_projections = ProjectionsDescription::parse(from_zk.projections, columns, nullptr, context).toString();
+    String parsed_zk_projections = ProjectionsDescription::parse(from_zk.projections, columns, nullptr, context).formatBackwardCompatibleOneLine();
     if (projections != parsed_zk_projections)
     {
         handleTableMetadataMismatch(table_name_for_error_message, "projections", from_zk.projections, parsed_zk_projections, projections, strict_check, logger);
         is_equal = false;
     }
 
-    String parsed_zk_constraints = ConstraintsDescription::parse(from_zk.constraints).toString();
+    String parsed_zk_constraints = ConstraintsDescription::parse(from_zk.constraints).formatBackwardCompatibleOneLine();
     if (constraints != parsed_zk_constraints)
     {
         handleTableMetadataMismatch(table_name_for_error_message, "constraints", from_zk.constraints, parsed_zk_constraints, constraints, strict_check, logger);

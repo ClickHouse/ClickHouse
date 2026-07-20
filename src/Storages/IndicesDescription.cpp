@@ -7,6 +7,7 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTIndexDeclaration.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTWithAlias.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
 #include <Storages/extractKeyExpressionList.h>
@@ -239,6 +240,29 @@ String IndicesDescription::allToString() const
     ASTExpressionList list;
     for (const auto & index : *this)
         list.children.push_back(index.definition_ast);
+
+    return list.formatWithSecretsOneLine();
+}
+
+String IndicesDescription::formatBackwardCompatibleOneLine(bool only_explicit) const
+{
+    if (empty())
+        return {};
+
+    ASTExpressionList list;
+    for (const auto & index : *this)
+    {
+        if (only_explicit && index.isImplicitlyCreated())
+            continue;
+
+        /// Parentheses around the whole index expression (`INDEX ix (b * c)`) are redundant; strip
+        /// them on a clone so the same index stored by a version that preserved them (#92340)
+        /// compares equal to the canonical form.
+        auto cloned = index.definition_ast->clone();
+        if (auto * index_decl = cloned->as<ASTIndexDeclaration>())
+            stripParenthesesUnlessAliased(index_decl->getExpression());
+        list.children.push_back(std::move(cloned));
+    }
 
     return list.formatWithSecretsOneLine();
 }

@@ -34,6 +34,7 @@
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTWithAlias.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSetQuery.h>
@@ -1024,6 +1025,37 @@ String ColumnsDescription::toString(bool include_comments) const
 
     for (const ColumnDescription & column : columns)
         column.writeText(buf, ast_format_state, include_comments);
+
+    return buf.str();
+}
+
+String ColumnsDescription::formatBackwardCompatibleForComparison() const
+{
+    WriteBufferFromOwnString buf;
+    IAST::FormatState ast_format_state;
+
+    writeCString("columns format version: 1\n", buf);
+    DB::writeText(columns.size(), buf);
+    writeCString(" columns:\n", buf);
+
+    for (const ColumnDescription & column : columns)
+    {
+        /// Serialize a copy whose DEFAULT/MATERIALIZED/ALIAS/EPHEMERAL and per-column TTL
+        /// expressions have their redundant top-level parentheses stripped, so a column stored by a
+        /// version that preserved them (#92340) compares equal to the canonical form.
+        ColumnDescription canonical = column;
+        if (canonical.default_desc.expression)
+        {
+            canonical.default_desc.expression = canonical.default_desc.expression->clone();
+            stripParenthesesUnlessAliased(canonical.default_desc.expression);
+        }
+        if (canonical.ttl)
+        {
+            canonical.ttl = canonical.ttl->clone();
+            stripParenthesesUnlessAliased(canonical.ttl);
+        }
+        canonical.writeText(buf, ast_format_state, /* include_comment = */ false);
+    }
 
     return buf.str();
 }

@@ -103,6 +103,13 @@ struct IndicesDescription : public std::vector<IndexDescription>, IHints<>
     /// It should only used for compatibility or debugging. Otherwise prefer explicitToString()
     String allToString() const;
 
+    /// One-line canonical form used for backward-compatible equality checks. #92340 started
+    /// preserving redundant parentheses (`INDEX ix (b * c)`), so the same index stored by different
+    /// versions formats to different strings. This strips the artificial parentheses around each
+    /// index expression so `INDEX ix b * c` and `INDEX ix (b * c)` compare equal. With
+    /// `only_explicit` it mirrors explicitToString(), otherwise allToString().
+    String formatBackwardCompatibleOneLine(bool only_explicit) const;
+
     /// Parse description from string
     static IndicesDescription
     parse(const String & str, const ColumnsDescription & columns, bool escape_index_filenames, ContextPtr context);

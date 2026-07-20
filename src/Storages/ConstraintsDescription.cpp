@@ -14,6 +14,7 @@
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSubquery.h>
+#include <Parsers/ASTWithAlias.h>
 
 #include <Core/Defines.h>
 
@@ -39,6 +40,27 @@ String ConstraintsDescription::toString() const
     ASTExpressionList list;
     for (const auto & constraint : constraints)
         list.children.push_back(constraint);
+
+    return list.formatWithSecretsOneLine();
+}
+
+String ConstraintsDescription::formatBackwardCompatibleOneLine() const
+{
+    if (constraints.empty())
+        return {};
+
+    ASTExpressionList list;
+    for (const auto & constraint : constraints)
+    {
+        /// Parentheses around the whole constraint expression (`CHECK (a > 0)`) are redundant;
+        /// strip them on a clone so the same constraint stored by a version that preserved them
+        /// (#92340) compares equal to the canonical form. The expression is the constraint
+        /// declaration's only child (see ASTConstraintDeclaration::clone).
+        auto cloned = constraint->clone();
+        for (const auto & child : cloned->children)
+            stripParenthesesUnlessAliased(child);
+        list.children.push_back(std::move(cloned));
+    }
 
     return list.formatWithSecretsOneLine();
 }

@@ -563,6 +563,13 @@ public:
 
     explicit ParserStorage(EngineKind engine_kind_) : engine_kind(engine_kind_) {}
 
+    /// Drops redundant top-level parentheses from a storage key clause expression
+    /// (`PARTITION BY (a)`, `ORDER BY (a)`, ...) and from the elements of a key list
+    /// (`ORDER BY ((a), b)`), so the clause keeps the canonical form (`PARTITION BY a`) that older
+    /// versions stored and that SHOW CREATE and metadata comparisons rely on. See
+    /// `stripParenthesesUnlessAliased`.
+    static void stripKeyClauseParentheses(const ASTPtr & clause);
+
 protected:
     const char * getName() const override { return "storage definition"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;

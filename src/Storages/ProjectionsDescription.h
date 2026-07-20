@@ -174,6 +174,14 @@ struct ProjectionsDescription : public IHints<>
 
     /// Convert description to string
     String toString() const;
+
+    /// One-line canonical form used for backward-compatible equality checks. #92340 started
+    /// preserving redundant parentheses in projection expressions (`PROJECTION p (SELECT (b) ...)`,
+    /// `PROJECTION p INDEX (b) ...`), so the same projection stored by different versions formats to
+    /// different strings. This strips the artificial parentheses around the projection's SELECT,
+    /// WHERE, GROUP BY, ORDER BY elements and INDEX key so equal projections compare equal.
+    String formatBackwardCompatibleOneLine() const;
+
     /// Parse description from string
     static ProjectionsDescription parse(
         const String & str,

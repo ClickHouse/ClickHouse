@@ -11,6 +11,7 @@
 #include <Interpreters/addTypeConversionToAST.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTTTLElement.h>
+#include <Parsers/ASTWithAlias.h>
 #include <Storages/extractKeyExpressionList.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTAssignment.h>
@@ -363,6 +364,36 @@ TTLTableDescription & TTLTableDescription::operator=(const TTLTableDescription &
     group_by_ttl = other.group_by_ttl;
 
     return *this;
+}
+
+String TTLTableDescription::formatBackwardCompatibleOneLine() const
+{
+    if (!definition_ast)
+        return "";
+
+    auto cloned = definition_ast->clone();
+    FunctionNameNormalizer::visit(cloned.get());
+
+    /// The definition is an ASTExpressionList of ASTTTLElement. Parentheses around the whole
+    /// expression of an element (`TTL (d + INTERVAL 10 YEAR)`, `... WHERE (x)`, `GROUP BY (a)`)
+    /// are redundant; strip them so the same TTL stored by a version that preserved them (#92340)
+    /// compares equal to the canonical form. Mirrors ParserTTLElement's parse-time canonicalization.
+    for (const auto & child : cloned->children)
+    {
+        auto * ttl_element = child->as<ASTTTLElement>();
+        if (!ttl_element)
+            continue;
+
+        stripParenthesesUnlessAliased(ttl_element->ttl());
+        stripParenthesesUnlessAliased(ttl_element->where());
+        for (const auto & key : ttl_element->group_by_key)
+            stripParenthesesUnlessAliased(key);
+        for (const auto & assignment : ttl_element->group_by_assignments)
+            if (const auto * assignment_ast = assignment->as<ASTAssignment>())
+                stripParenthesesUnlessAliased(assignment_ast->expression());
+    }
+
+    return cloned->formatWithSecretsOneLine();
 }
 
 TTLTableDescription TTLTableDescription::getTTLForTableFromAST(

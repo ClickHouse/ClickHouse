@@ -1789,7 +1789,12 @@ bool StorageReplicatedMergeTree::checkTableStructureAttempt(
     auto columns_from_zk = ColumnsDescription::parse(zookeeper->get(fs::path(zookeeper_prefix) / "columns", &columns_stat));
 
     const ColumnsDescription & old_columns = metadata_snapshot->getColumns();
-    if (columns_from_zk == old_columns && is_metadata_equal)
+    /// Compare by the backward-compatible canonical form so that a column stored by an older version
+    /// (canonical `DEFAULT a + 1`) stays compatible with the parenthesized form (`DEFAULT (a + 1)`)
+    /// that #92340 started to preserve.
+    bool columns_equal = columns_from_zk == old_columns
+        || columns_from_zk.formatBackwardCompatibleForComparison() == old_columns.formatBackwardCompatibleForComparison();
+    if (columns_equal && is_metadata_equal)
         return true;
 
     if (!strict_check && metadata_stat.version != 0)
