@@ -19,7 +19,9 @@ template<>
 class KnownRowsHolder<true>
 {
 public:
-    using Type = PairNoInit<const Columns *, DB::RowRef::SizeT>;
+    /// The encoded RowRef word (the INLINE_FLAG bit is always set, so equality of
+    /// words is equality of (block_no, row_no) pairs).
+    using Type = UInt64;
 
 private:
     static const size_t MAX_LINEAR = 16; // threshold to switch from Array to Set
@@ -33,7 +35,10 @@ private:
     size_t items;
 
 public:
-    KnownRowsHolder()
+    /// A holder is constructed for every probe row on the multi-disjunct path, so `array_holder`
+    /// is deliberately left uninitialized (only the first `items` entries are ever read); value-
+    /// initializing 128 bytes per row would be a pure waste.
+    KnownRowsHolder() /// NOLINT(cppcoreguidelines-pro-type-member-init, hicpp-member-init)
         : items(0)
     {
     }
@@ -83,10 +88,6 @@ public:
     }
 };
 
-template <typename Mapped, bool need_offset = false>
-using FindResultImpl = ColumnsHashing::columns_hashing_impl::FindResultImpl<Mapped, true>;
-
-
 template <typename Map, bool add_missing, bool flag_per_row, typename AddedColumns>
 void addFoundRowAll(
     const typename Map::mapped_type & mapped,
@@ -100,37 +101,40 @@ void addFoundRowAll(
 
     if constexpr (flag_per_row)
     {
-        using Pair = typename KnownRowsHolder<flag_per_row>::Type;
-        std::vector<Pair> new_known_rows_ptr;
+        std::vector<UInt64> new_known_rows;
 
-        for (auto it = mapped.begin(); it.ok(); ++it)
+        for (const UInt64 ref_word : refsOf(mapped.word))
         {
-            if (!known_rows.isKnown(makePairNoInit(&it->columns_info->columns, it->row_num)))
+            if (!known_rows.isKnown(ref_word))
             {
-                added.appendFromBlock(*it, false);
+                added.appendFromBlock(ref_word, false);
                 ++current_offset;
-                new_known_rows_ptr.emplace_back(&it->columns_info->columns, it->row_num);
+                new_known_rows.push_back(ref_word);
 
                 if (used_flags)
                 {
                     used_flags->JoinStuff::JoinUsedFlags::setUsedOnce<true, flag_per_row>(
-                        FindResultImpl<const RowRef, false>(*it, true, 0));
+                        refWordBlockNo(ref_word), refWordRowNo(ref_word), 0);
                 }
             }
         }
 
-        known_rows.add(std::cbegin(new_known_rows_ptr), std::cend(new_known_rows_ptr));
+        known_rows.add(std::cbegin(new_known_rows), std::cend(new_known_rows));
     }
     else if constexpr (AddedColumns::isLazy())
     {
-        added.appendFromBlock(&mapped, false);
-        current_offset += mapped.rows;
+        /// Load-free fast path: the cell word carries the saturating row count, so unique keys
+        /// (inline refs) and duplicate keys are both appended without dereferencing the node.
+        added.appendFromBlock(mapped.word, false);
+        current_offset += mapped.rows();
     }
     else
     {
-        for (auto it = mapped.begin(); it.ok(); ++it)
+        /// No single-row fast path needed here (unlike the pre-RowRef code): a single ref lives
+        /// inline in the cell word and the iterator decodes it without touching the arena node.
+        for (const UInt64 ref_word : refsOf(mapped.word))
         {
-            added.appendFromBlock(*it, false);
+            added.appendFromBlock(ref_word, false);
             ++current_offset;
         }
     }

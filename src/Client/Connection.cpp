@@ -76,6 +76,7 @@ namespace Setting
 namespace FailPoints
 {
     extern const char receive_timeout_on_table_status_response[];
+    extern const char unexpected_packet_in_table_status_response[];
 }
 
 namespace ErrorCodes
@@ -88,6 +89,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int EMPTY_DATA_PASSED;
     extern const int LOGICAL_ERROR;
+    extern const int TOO_LARGE_ARRAY_SIZE;
 }
 
 Connection::~Connection()
@@ -740,14 +742,38 @@ const String & Connection::getServerDisplayName(const ConnectionTimeouts & timeo
 
 void Connection::forceConnected(const ConnectionTimeouts & timeouts)
 {
+    /// Ensure the connection is established, but do not ping an already-established one.
+    /// Pinging a pooled connection before every use adds a Ping-Pong round trip that doubles the
+    /// latency of small queries.
     if (!isConnected())
     {
         connect(timeouts);
+        return;
     }
-    else if (!ping(timeouts))
+
+    /// A pooled connection must be idle: nothing must be pending to read on it. Anything readable
+    /// means the connection cannot serve the next request - the server has closed it while it was
+    /// idle in the pool (EOF), the socket is in an error state, or the connection is out of sync
+    /// with the protocol (leftovers of a previous request). This check is a single non-blocking
+    /// system call: unlike the ping it does not add a round trip, and unlike the ping it cannot
+    /// detect a server that went away without closing the connection - such a failure is detected
+    /// when the connection is first used (see ConnectionEstablisher::run, which reconnects and
+    /// retries once). The `Ping` protocol command remains available as a convenience
+    /// (see Connection::ping / checkConnected).
+    bool is_stale = true;
+    try
+    {
+        is_stale = hasReadPendingData() || in->poll(0);
+    }
+    catch (const Poco::Exception & e)
+    {
+        LOG_TRACE(log_wrapper.get(), "Cannot check the pooled connection: {}", e.displayText());
+    }
+
+    if (is_stale)
     {
         ProfileEvents::increment(ProfileEvents::DistributedConnectionReconnectCount);
-        LOG_TRACE(log_wrapper.get(), "Connection was closed, will reconnect.");
+        LOG_TRACE(log_wrapper.get(), "Connection was closed by the server or is out of sync, will reconnect.");
         connect(timeouts);
     }
 }
@@ -819,9 +845,41 @@ TablesStatusResponse Connection::getTablesStatus(const ConnectionTimeouts & time
         throw NetException(ErrorCodes::SOCKET_TIMEOUT, "Injected timeout exceeded while reading from socket ({}:{})", host, port);
     });
 
+    /// Simulate a connection that was returned to the pool out of sync by a previous query, so that
+    /// reading the table status here sees a stale packet instead of the expected response.
+    fiu_do_on(FailPoints::unexpected_packet_in_table_status_response, {
+        throw NetException(
+            ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER,
+            "Injected unexpected packet while reading table status from {}:{}", host, port);
+    });
+
     TimeoutSetter timeout_setter(*socket, timeouts.sync_request_timeout, true);
 
     writeVarUInt(Protocol::Client::TablesStatusRequest, *out);
+
+    /// Interserver secret: prove cluster-secret knowledge for this request, since
+    /// `TablesStatusRequest` is sent before any query is authenticated. Mirrors the
+    /// per-query hash; reuses the `salt`/`nonce` already exchanged during the Hello.
+    if (server_revision >= DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET_TABLES_STATUS && !cluster_secret.empty())
+    {
+#if USE_SSL
+        std::string data(salt);
+        if (nonce.has_value())
+            data += std::to_string(nonce.value());
+        data += cluster_secret;
+        data += "TablesStatusRequest";
+        /// Bind the hash to the request body so a relayed hash cannot be reused for a
+        /// different set of tables (mirrors how the per-query secret hash covers the query).
+        data += request.getAuthDigest();
+
+        std::string hash = encodeSHA256(data);
+        writeStringBinary(hash, *out);
+#else
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                        "Inter-server secret support is disabled, because ClickHouse was built without SSL library");
+#endif
+    }
+
     request.write(*out, server_revision);
     out->finishChunk();
     out->next();
@@ -1116,15 +1174,6 @@ void Connection::sendData(const Block & block, const String & name, bool scalar)
         throttler->throttle(out->count() - prev_bytes);
 }
 
-void Connection::sendIgnoredPartUUIDs(const std::vector<UUID> & uuids)
-{
-    writeVarUInt(Protocol::Client::IgnoredPartUUIDs, *out);
-    writeVectorBinary(uuids, *out);
-    out->finishChunk();
-    out->next();
-}
-
-
 void Connection::sendClusterFunctionReadTaskResponse(const ClusterFunctionReadTaskResponse & response)
 {
     writeVarUInt(Protocol::Client::ReadTaskResponse, *out);
@@ -1137,6 +1186,18 @@ void Connection::sendClusterFunctionReadTaskResponse(const ClusterFunctionReadTa
 void Connection::sendMergeTreeReadTaskResponse(const ParallelReadResponse & response)
 {
     writeVarUInt(Protocol::Client::MergeTreeReadTaskResponse, *out);
+    response.serialize(*out, server_parallel_replicas_protocol_version, server_revision);
+    out->finishChunk();
+    out->next();
+}
+
+void Connection::sendMergeTreeAllRangesAnnouncementResponse(const InitialAllRangesAnnouncementResponse & response)
+{
+    /// Skip if the remote replica doesn't speak the new protocol.
+    if (server_parallel_replicas_protocol_version < DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_ANNOUNCEMENT_RESPONSE)
+        return;
+
+    writeVarUInt(Protocol::Client::MergeTreeAllRangesAnnouncementResponse, *out);
     response.serialize(*out, server_parallel_replicas_protocol_version, server_revision);
     out->finishChunk();
     out->next();
@@ -1194,7 +1255,7 @@ void Connection::sendScalarsData(Scalars & data)
 
     if (compression == Protocol::Compression::Enable)
         LOG_DEBUG(log_wrapper.get(),
-            "Sent data for {} scalars, total {} rows in {} sec., {} rows/sec., {} ({}/sec.), compressed {} times to {} ({}/sec.)",
+            "Sent data for {} scalars, total {} rows in {:.3f} sec., {} rows/sec., {} ({}/sec.), compressed {:.3f} times to {} ({}/sec.)",
             data.size(), rows, elapsed,
             static_cast<size_t>(static_cast<double>(rows) / watch.elapsedSeconds()),
             ReadableSize(maybe_compressed_out_bytes),
@@ -1204,7 +1265,7 @@ void Connection::sendScalarsData(Scalars & data)
             ReadableSize(static_cast<double>(out_bytes) / watch.elapsedSeconds()));
     else
         LOG_DEBUG(log_wrapper.get(),
-            "Sent data for {} scalars, total {} rows in {} sec., {} rows/sec., {} ({}/sec.), no compression.",
+            "Sent data for {} scalars, total {} rows in {:.3f} sec., {} rows/sec., {} ({}/sec.), no compression.",
             data.size(), rows, elapsed,
             static_cast<size_t>(static_cast<double>(rows) / watch.elapsedSeconds()),
             ReadableSize(maybe_compressed_out_bytes),
@@ -1240,7 +1301,7 @@ protected:
         num_rows += chunk.getNumRows();
 
         auto block = getPort().getHeader().cloneWithColumns(chunk.detachColumns());
-        connection.sendData(block, table_data.table_name, false);
+        connection.sendData(block, table_data.table_name, /*scalar=*/ false);
     }
 
 private:
@@ -1305,7 +1366,7 @@ void Connection::sendExternalTablesData(ExternalTablesData & data)
 
     if (compression == Protocol::Compression::Enable)
         LOG_DEBUG(log_wrapper.get(),
-            "Sent data for {} external tables, total {} rows in {} sec., {} rows/sec., {} ({}/sec.), compressed {} times to {} ({}/sec.)",
+            "Sent data for {} external tables, total {} rows in {:.3f} sec., {} rows/sec., {} ({}/sec.), compressed {:.3f} times to {} ({}/sec.)",
             data.size(), rows, elapsed,
             static_cast<size_t>(static_cast<double>(rows) / watch.elapsedSeconds()),
             ReadableSize(maybe_compressed_out_bytes),
@@ -1315,7 +1376,7 @@ void Connection::sendExternalTablesData(ExternalTablesData & data)
             ReadableSize(static_cast<double>(out_bytes) / watch.elapsedSeconds()));
     else
         LOG_DEBUG(log_wrapper.get(),
-            "Sent data for {} external tables, total {} rows in {} sec., {} rows/sec., {} ({}/sec.), no compression.",
+            "Sent data for {} external tables, total {} rows in {:.3f} sec., {} rows/sec., {} ({}/sec.), no compression.",
             data.size(), rows, elapsed,
             static_cast<size_t>(static_cast<double>(rows) / watch.elapsedSeconds()),
             ReadableSize(maybe_compressed_out_bytes),
@@ -1433,9 +1494,17 @@ Packet Connection::receivePacket()
                 return res;
 
             case Protocol::Server::PartUUIDs:
-                readVectorBinary(res.part_uuids, *in);
+            {
+                // allow_experimental_query_deduplication is no longer supported, but an old server
+                // may still send this packet. Skip the obsolete, peer-controlled payload without
+                // materializing it (do not resize a vector to a peer-chosen size).
+                UInt64 num_part_uuids = 0;
+                readVarUInt(num_part_uuids, *in);
+                if (num_part_uuids > DEFAULT_MAX_STRING_SIZE)
+                    throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large array size (maximum: {})", DEFAULT_MAX_STRING_SIZE);
+                in->ignore(num_part_uuids * sizeof(UUID));
                 return res;
-
+            }
             case Protocol::Server::ReadTaskRequest:
                 return res;
 
@@ -1648,12 +1717,19 @@ ProfileInfo Connection::receiveProfileInfo() const
 
 ParallelReadRequest Connection::receiveParallelReadRequest() const
 {
-    return ParallelReadRequest::deserialize(*in, server_parallel_replicas_protocol_version);
+    auto request = ParallelReadRequest::deserialize(*in, server_parallel_replicas_protocol_version);
+    /// `server_*` here is the FOLLOWER as seen from the initiator (we are the client of that
+    /// connection). Stash it on the request so the coordinator can recognise old followers and
+    /// degrade gracefully (instead of throwing on an unknown stream).
+    request.replica_protocol_version = server_parallel_replicas_protocol_version;
+    return request;
 }
 
 InitialAllRangesAnnouncement Connection::receiveInitialParallelReadAnnouncement() const
 {
-    return InitialAllRangesAnnouncement::deserialize(*in, server_parallel_replicas_protocol_version);
+    auto announcement = InitialAllRangesAnnouncement::deserialize(*in, server_parallel_replicas_protocol_version);
+    announcement.replica_protocol_version = server_parallel_replicas_protocol_version;
+    return announcement;
 }
 
 
@@ -1668,7 +1744,7 @@ void Connection::throwUnexpectedPacket(UInt64 packet_type, const char * expected
 
     throw NetException(ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER,
             "Unexpected packet from server {} (expected {}, got {})",
-                       getDescription(), expected, String(Protocol::Server::toString(packet_type)));
+                       getDescription(), expected, Protocol::Server::toString(packet_type));
 }
 
 ServerConnectionPtr Connection::createConnection(const ConnectionParameters & parameters, ContextPtr)

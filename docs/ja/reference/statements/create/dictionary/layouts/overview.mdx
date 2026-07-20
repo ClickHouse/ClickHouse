@@ -1,0 +1,156 @@
+---
+description: 'Dictionary をメモリに格納するためのレイアウトタイプ'
+sidebarTitle: '概要'
+slug: /sql-reference/statements/create/dictionary/layouts
+title: 'Dictionary レイアウト'
+doc_type: 'reference'
+---
+
+import CloudDetails from '/snippets/ja/_snippet_dictionary_in_cloud.mdx';
+
+<div id="storing-dictionaries-in-memory">
+  ## Dictionary レイアウトの種類
+</div>
+
+Dictionary をメモリ内に格納する方法は複数あり、それぞれ CPU 使用量と RAM 使用量の間でトレードオフがあります。
+
+| レイアウト                                                                                                                         | 説明                                                                                      |
+| ----------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| [flat](/ja/reference/statements/create/dictionary/layouts/flat)                                                                  | キーで索引付けされたフラットな配列にデータを格納します。最も高速なレイアウトですが、キーは `UInt64` で、`max_array_size` 以内である必要があります。 |
+| [hashed](/ja/reference/statements/create/dictionary/layouts/hashed)                                                              | ハッシュテーブルにデータを格納します。キーサイズに制限はなく、任意の数の要素をサポートします。                                         |
+| [sparse&#95;hashed](/ja/reference/statements/create/dictionary/layouts/hashed#sparse_hashed)                                     | `hashed` と似ていますが、CPU 使用量と引き換えにメモリ使用量を抑えます。                                              |
+| [complex&#95;key&#95;hashed](/ja/reference/statements/create/dictionary/layouts/hashed#complex_key_hashed)                       | `hashed` と同様ですが、複合キーに対応します。                                                             |
+| [complex&#95;key&#95;sparse&#95;hashed](/ja/reference/statements/create/dictionary/layouts/hashed#complex_key_sparse_hashed)     | `sparse_hashed` と同様ですが、複合キーに対応します。                                                      |
+| [hashed&#95;array](/ja/reference/statements/create/dictionary/layouts/hashed-array)                                              | キーを配列インデックスに対応付けるハッシュテーブルを使い、属性を配列に格納します。属性数が多い場合にメモリ効率に優れます。                           |
+| [complex&#95;key&#95;hashed&#95;array](/ja/reference/statements/create/dictionary/layouts/hashed-array#complex_key_hashed_array) | `hashed_array` と同様ですが、複合キーに対応します。                                                       |
+| [range&#95;hashed](/ja/reference/statements/create/dictionary/layouts/range-hashed)                                              | 順序付けされた範囲を持つハッシュテーブルです。キー + 日付/時刻の範囲によるルックアップをサポートします。                                  |
+| [complex&#95;key&#95;range&#95;hashed](/ja/reference/statements/create/dictionary/layouts/range-hashed#complex_key_range_hashed) | `range_hashed` と同様ですが、複合キーに対応します。                                                       |
+| [cache](/ja/reference/statements/create/dictionary/layouts/cache)                                                                | 固定サイズのインメモリ cache です。頻繁にアクセスされるキーだけを格納します。                                              |
+| [complex&#95;key&#95;cache](/ja/reference/statements/create/dictionary/layouts/hashed#complex_key_hashed)                        | `cache` と同様ですが、複合キーに対応します。                                                              |
+| [ssd&#95;cache](/ja/reference/statements/create/dictionary/layouts/ssd-cache)                                                    | `cache` と同様ですが、データは SSD に格納され、索引はメモリ内に保持されます。                                           |
+| [complex&#95;key&#95;ssd&#95;cache](/ja/reference/statements/create/dictionary/layouts/ssd-cache#complex_key_ssd_cache)          | `ssd_cache` と同様ですが、複合キーに対応します。                                                          |
+| [direct](/ja/reference/statements/create/dictionary/layouts/direct)                                                              | メモリ内には格納せず、リクエストごとにソースへ直接クエリします。                                                        |
+| [complex&#95;key&#95;direct](/ja/reference/statements/create/dictionary/layouts/direct#complex_key_direct)                       | `direct` と同様ですが、複合キーに対応します。                                                             |
+| [ip&#95;trie](/ja/reference/statements/create/dictionary/layouts/ip-trie)                                                        | IP プレフィックスを高速にルックアップするための Trie 構造です (CIDR ベース) 。                                        |
+
+<Tip>
+  **推奨レイアウト**
+
+  [flat](/ja/reference/statements/create/dictionary/layouts/flat)、[hashed](/ja/reference/statements/create/dictionary/layouts/hashed)、および [complex&#95;key&#95;hashed](/ja/reference/statements/create/dictionary/layouts/hashed#complex_key_hashed) は、最良のクエリパフォーマンスを提供します。
+  キャッシュ系レイアウトは、パフォーマンスが低くなる可能性があり、パラメータ調整も難しいため推奨されません。詳細は [cache](/ja/reference/statements/create/dictionary/layouts/cache) を参照してください。
+</Tip>
+
+<div id="specify-dictionary-layout">
+  ## Dictionary のレイアウトを指定する
+</div>
+
+<CloudDetails />
+
+Dictionary のレイアウトは、`LAYOUT` 句 (DDL の場合) または設定ファイル定義の `layout` 設定で指定できます。
+
+<Tabs>
+  <Tab title="DDL">
+    ```sql
+    CREATE DICTIONARY (...)
+    ...
+    LAYOUT(LAYOUT_TYPE(param value)) -- レイアウト設定
+    ...
+    ```
+  </Tab>
+
+  <Tab title="設定ファイル">
+    ```xml
+    <clickhouse>
+        <dictionary>
+            ...
+            <layout>
+                <layout_type>
+                    <!-- レイアウト設定 -->
+                </layout_type>
+            </layout>
+            ...
+        </dictionary>
+    </clickhouse>
+    ```
+  </Tab>
+</Tabs>
+
+<br />
+
+完全な DDL 構文については、[CREATE DICTIONARY](/ja/reference/statements/create/dictionary) も参照してください。
+
+レイアウト名に `complex-key*` を含まない Dictionary は [UInt64](/ja/reference/data-types/int-uint) 型のキーを持ち、`complex-key*` Dictionary は複合キー (複雑で、任意の型を持つキー) を持ちます。
+
+**数値キーの例** (カラム `key_column` は [UInt64](/ja/reference/data-types/int-uint) 型) :
+
+<Tabs>
+  <Tab title="DDL">
+    ```sql
+    CREATE DICTIONARY dict_name (
+        key_column UInt64,
+        ...
+    )
+    PRIMARY KEY key_column
+    ```
+  </Tab>
+
+  <Tab title="設定ファイル">
+    ```xml
+    <structure>
+        <id>
+            <name>key_column</name>
+        </id>
+        ...
+    </structure>
+    ```
+  </Tab>
+</Tabs>
+
+<br />
+
+**複合キーの例** (キーは [String](/ja/reference/data-types/string) 型の要素を 1 つ持ちます) :
+
+<Tabs>
+  <Tab title="DDL">
+    ```sql
+    CREATE DICTIONARY dict_name (
+        country_code String,
+        ...
+    )
+    PRIMARY KEY country_code
+    ```
+  </Tab>
+
+  <Tab title="設定ファイル">
+    ```xml
+    <structure>
+        <key>
+            <attribute>
+                <name>country_code</name>
+                <type>String</type>
+            </attribute>
+        </key>
+        ...
+    </structure>
+    ```
+  </Tab>
+</Tabs>
+
+<div id="improve-performance">
+  ## Dictionary のパフォーマンスを向上させる
+</div>
+
+Dictionary のパフォーマンスを向上させる方法はいくつかあります。
+
+* `GROUP BY` の後で、Dictionary を使用する関数を呼び出します。
+* 取得する属性を injective としてマークします。
+  異なるキーに異なる属性値が対応する場合、その属性は injective と呼ばれます。
+  そのため、`GROUP BY` でキーから属性値を取得する関数を使用している場合、この関数は自動的に `GROUP BY` から除外されます。
+
+ClickHouse は Dictionary に関するエラーに対して例外を生成します。
+エラーの例としては、次のようなものがあります。
+
+* アクセスしている Dictionary を読み込めない。
+* `cached` Dictionary のクエリ時のエラー。
+
+Dictionary の一覧とそのステータスは、[system.dictionaries](/ja/reference/system-tables/dictionaries) テーブルで確認できます。

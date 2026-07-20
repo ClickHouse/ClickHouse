@@ -64,7 +64,7 @@ Or using [named collections](/operations/named-collections.md):
         <port>6379</port>
         <password>****</password>
         <pool_size>16</pool_size>
-        <db_index>s0</db_index>
+        <db_index>0</db_index>
     </redis_creds>
 </named_collections>
 ```

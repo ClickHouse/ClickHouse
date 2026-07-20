@@ -1,0 +1,172 @@
+---
+sidebarTitle: 'Apache Beam'
+slug: /integrations/apache-beam
+description: 'Vous pouvez ingérer des données dans ClickHouse à l’aide d’Apache Beam'
+title: 'Intégration entre Apache Beam et ClickHouse'
+doc_type: 'guide'
+integration:
+  - support_level: 'core'
+  - category: 'data_ingestion'
+keywords: ['apache beam', 'traitement de flux', 'traitement par lots', 'connecteur JDBC', 'pipeline de données']
+---
+
+import ClickHouseSupportedBadge from "/snippets/fr/components/ClickHouseSupported/ClickHouseSupported.jsx";
+
+<ClickHouseSupportedBadge />
+
+**Apache Beam**  est un modèle de programmation unifié open source qui permet aux développeurs de définir et d’exécuter des pipelines de traitement de données à la fois par lots et en flux continu. La flexibilité d’Apache Beam réside dans sa capacité à prendre en charge un large éventail de scénarios de traitement de données, allant des opérations ETL (Extract, Transform, Load) au traitement complexe d’événements et à l’analyse en temps réel.
+Cette intégration s’appuie sur le [connecteur JDBC](https://github.com/ClickHouse/clickhouse-java) officiel de ClickHouse pour la couche d’insertion sous-jacente.
+
+<div id="integration-package">
+  ## Paquet d’intégration
+</div>
+
+Le paquet d’intégration nécessaire pour intégrer Apache Beam et ClickHouse est maintenu et développé dans [Apache Beam I/O Connectors](https://beam.apache.org/documentation/io/connectors/) — un bundle d’intégrations pour de nombreux systèmes de stockage de données et bases de données populaires.
+L’implémentation `org.apache.beam.sdk.io.clickhouse.ClickHouseIO` se trouve dans le [dépôt Apache Beam](https://github.com/apache/beam/tree/0bf43078130d7a258a0f1638a921d6d5287ca01e/sdks/java/io/clickhouse/src/main/java/org/apache/beam/sdk/io/clickhouse).
+
+<div id="setup-of-the-apache-beam-clickhouse-package">
+  ## Mise en place du paquet Apache Beam ClickHouse
+</div>
+
+<div id="package-installation">
+  ### Installation du paquet
+</div>
+
+Ajoutez la dépendance suivante à votre outil de gestion de paquets :
+
+```xml
+<dependency>
+    <groupId>org.apache.beam</groupId>
+    <artifactId>beam-sdks-java-io-clickhouse</artifactId>
+    <version>${beam.version}</version>
+</dependency>
+```
+
+<Warning>
+  **Version recommandée de Beam**
+
+  Il est recommandé d’utiliser le connecteur `ClickHouseIO` à partir de la version `2.59.0` d’Apache Beam.
+  Les versions antérieures peuvent ne pas prendre entièrement en charge les fonctionnalités du connecteur.
+</Warning>
+
+Les artifacts sont disponibles dans le [dépôt Maven officiel](https://mvnrepository.com/artifact/org.apache.beam/beam-sdks-java-io-clickhouse).
+
+<div id="code-example">
+  ### Exemple de code
+</div>
+
+L&#39;exemple suivant lit un fichier CSV nommé `input.csv` sous forme de `PCollection`, le convertit en objet `Row` (à l&#39;aide du schéma défini) et l&#39;insère dans une instance ClickHouse locale à l&#39;aide de `ClickHouseIO` :
+
+```java
+
+package org.example;
+
+import org.apache.beam.sdk.Pipeline;
+import org.apache.beam.sdk.io.TextIO;
+import org.apache.beam.sdk.io.clickhouse.ClickHouseIO;
+import org.apache.beam.sdk.schemas.Schema;
+import org.apache.beam.sdk.transforms.DoFn;
+import org.apache.beam.sdk.transforms.ParDo;
+import org.apache.beam.sdk.values.PCollection;
+import org.apache.beam.sdk.values.Row;
+import org.joda.time.DateTime;
+
+public class Main {
+
+    public static void main(String[] args) {
+        // Create a Pipeline object.
+        Pipeline p = Pipeline.create();
+
+        Schema SCHEMA =
+                Schema.builder()
+                        .addField(Schema.Field.of("name", Schema.FieldType.STRING).withNullable(true))
+                        .addField(Schema.Field.of("age", Schema.FieldType.INT16).withNullable(true))
+                        .addField(Schema.Field.of("insertion_time", Schema.FieldType.DATETIME).withNullable(false))
+                        .build();
+
+        // Apply transforms to the pipeline.
+        PCollection<String> lines = p.apply("ReadLines", TextIO.read().from("src/main/resources/input.csv"));
+
+        PCollection<Row> rows = lines.apply("ConvertToRow", ParDo.of(new DoFn<String, Row>() {
+            @ProcessElement
+            public void processElement(@Element String line, OutputReceiver<Row> out) {
+
+                String[] values = line.split(",");
+                Row row = Row.withSchema(SCHEMA)
+                        .addValues(values[0], Short.parseShort(values[1]), DateTime.now())
+                        .build();
+                out.output(row);
+            }
+        })).setRowSchema(SCHEMA);
+
+        rows.apply("Write to ClickHouse",
+                        ClickHouseIO.write("jdbc:clickhouse://localhost:8123/default?user=default&password=******", "test_table"));
+
+        // Run the pipeline.
+        p.run().waitUntilFinish();
+    }
+}
+
+```
+
+<div id="supported-data-types">
+  ## Types de données pris en charge
+</div>
+
+| ClickHouse                         | Apache Beam                | Pris en charge | Remarques                                                                                                                                                 |
+| ---------------------------------- | -------------------------- | -------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `TableSchema.TypeName.FLOAT32`     | `Schema.TypeName#FLOAT`    | ✅              |                                                                                                                                                           |
+| `TableSchema.TypeName.FLOAT64`     | `Schema.TypeName#DOUBLE`   | ✅              |                                                                                                                                                           |
+| `TableSchema.TypeName.INT8`        | `Schema.TypeName#BYTE`     | ✅              |                                                                                                                                                           |
+| `TableSchema.TypeName.INT16`       | `Schema.TypeName#INT16`    | ✅              |                                                                                                                                                           |
+| `TableSchema.TypeName.INT32`       | `Schema.TypeName#INT32`    | ✅              |                                                                                                                                                           |
+| `TableSchema.TypeName.INT64`       | `Schema.TypeName#INT64`    | ✅              |                                                                                                                                                           |
+| `TableSchema.TypeName.STRING`      | `Schema.TypeName#STRING`   | ✅              |                                                                                                                                                           |
+| `TableSchema.TypeName.UINT8`       | `Schema.TypeName#INT16`    | ✅              |                                                                                                                                                           |
+| `TableSchema.TypeName.UINT16`      | `Schema.TypeName#INT32`    | ✅              |                                                                                                                                                           |
+| `TableSchema.TypeName.UINT32`      | `Schema.TypeName#INT64`    | ✅              |                                                                                                                                                           |
+| `TableSchema.TypeName.UINT64`      | `Schema.TypeName#INT64`    | ✅              |                                                                                                                                                           |
+| `TableSchema.TypeName.DATE`        | `Schema.TypeName#DATETIME` | ✅              |                                                                                                                                                           |
+| `TableSchema.TypeName.DATETIME`    | `Schema.TypeName#DATETIME` | ✅              |                                                                                                                                                           |
+| `TableSchema.TypeName.ARRAY`       | `Schema.TypeName#ARRAY`    | ✅              |                                                                                                                                                           |
+| `TableSchema.TypeName.ENUM8`       | `Schema.TypeName#STRING`   | ✅              |                                                                                                                                                           |
+| `TableSchema.TypeName.ENUM16`      | `Schema.TypeName#STRING`   | ✅              |                                                                                                                                                           |
+| `TableSchema.TypeName.BOOL`        | `Schema.TypeName#BOOLEAN`  | ✅              |                                                                                                                                                           |
+| `TableSchema.TypeName.TUPLE`       | `Schema.TypeName#ROW`      | ✅              |                                                                                                                                                           |
+| `TableSchema.TypeName.FIXEDSTRING` | `FixedBytes`               | ✅              | `FixedBytes` est un `LogicalType` qui représente un tableau d’octets <br /> de longueur fixe situé dans <br /> `org.apache.beam.sdk.schemas.logicaltypes` |
+|                                    | `Schema.TypeName#DECIMAL`  | ❌              |                                                                                                                                                           |
+|                                    | `Schema.TypeName#MAP`      | ❌              |                                                                                                                                                           |
+
+<div id="clickhouseiowrite-parameters">
+  ## Paramètres de ClickHouseIO.Write
+</div>
+
+Vous pouvez ajuster la configuration de `ClickHouseIO.Write` à l’aide des fonctions setter suivantes :
+
+| Fonction setter de paramètre | Type d’argument             | Valeur par défaut             | Description                                                                    |
+| ---------------------------- | --------------------------- | ----------------------------- | ------------------------------------------------------------------------------ |
+| `withMaxInsertBlockSize`     | `(long maxInsertBlockSize)` | `1000000`                     | Taille maximale d’un bloc de lignes à insérer.                                 |
+| `withMaxRetries`             | `(int maxRetries)`          | `5`                           | Nombre maximal de tentatives pour les insertions ayant échoué.                 |
+| `withMaxCumulativeBackoff`   | `(Duration maxBackoff)`     | `Duration.standardDays(1000)` | Durée cumulée maximale de backoff pour les tentatives.                         |
+| `withInitialBackoff`         | `(Duration initialBackoff)` | `Duration.standardSeconds(5)` | Durée du backoff initial avant la première tentative.                          |
+| `withInsertDistributedSync`  | `(Boolean sync)`            | `true`                        | Si `true`, synchronise les opérations d’insertion pour les tables distribuées. |
+| `withInsertQuorum`           | `(Long quorum)`             | `null`                        | Nombre de répliques requis pour confirmer une opération d’insertion.           |
+| `withInsertDeduplicate`      | `(Boolean deduplicate)`     | `true`                        | Si `true`, active la déduplication pour les opérations d’insertion.            |
+| `withTableSchema`            | `(TableSchema schema)`      | `null`                        | Schéma de la table ClickHouse cible.                                           |
+
+<div id="limitations">
+  ## Limites
+</div>
+
+Veuillez tenir compte des limitations suivantes lors de l&#39;utilisation du connecteur :
+
+* À ce jour, seule l&#39;opération Sink est prise en charge. Le connecteur ne prend pas en charge l&#39;opération Source.
+* ClickHouse effectue une déduplication lors de l&#39;insertion dans une table `ReplicatedMergeTree` ou dans une table `Distributed` basée sur une table `ReplicatedMergeTree`. Sans réplication, l&#39;insertion dans une table MergeTree standard peut entraîner des doublons si une insertion échoue puis aboutit lors d&#39;une nouvelle tentative. Cependant, chaque bloc est inséré de manière atomique, et la taille du bloc peut être configurée à l&#39;aide de `ClickHouseIO.Write.withMaxInsertBlockSize(long)`. La déduplication s&#39;appuie sur les sommes de contrôle des blocs insérés. Pour plus d&#39;informations sur la déduplication, veuillez consulter [Déduplication](/fr/concepts/features/operations/insert/deduplication) et [Configuration de la déduplication à l&#39;insertion](/fr/reference/settings/session-settings#insert_deduplicate).
+* Le connecteur n&#39;exécute aucune instruction DDL ; par conséquent, la table cible doit exister avant toute insertion.
+
+<div id="related-content">
+  ## Contenu associé
+</div>
+
+* [Documentation](https://beam.apache.org/releases/javadoc/current/org/apache/beam/sdk/io/clickhouse/ClickHouseIO.html) de la classe `ClickHouseIO`.
+* Dépôt `GitHub` d&#39;exemples [clickhouse-beam-connector](https://github.com/ClickHouse/clickhouse-beam-connector).

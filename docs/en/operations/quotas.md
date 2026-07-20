@@ -142,7 +142,19 @@ Quotas can use the "quota key" feature to report on resources for multiple keys 
     <keyed />
 ```
 
-When using the DDL syntax, you can also key quotas by normalized query hash, so that each distinct query pattern gets its own independent quota bucket:
+You can also key quotas by normalized query hash, so that each distinct query pattern gets its own independent quota bucket. In the XML configuration this is written as `<keyed_by_normalized_query_hash />`:
+
+```xml
+<my_quota>
+    <keyed_by_normalized_query_hash />
+    <interval>
+        <duration>3600</duration>
+        <queries>100</queries>
+    </interval>
+</my_quota>
+```
+
+The same can be expressed with the DDL syntax:
 
 ```sql
 CREATE QUOTA my_quota KEYED BY normalized_query_hash FOR INTERVAL 1 hour MAX queries = 100 TO my_user;

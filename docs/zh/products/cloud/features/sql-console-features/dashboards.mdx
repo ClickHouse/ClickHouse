@@ -1,0 +1,111 @@
+---
+sidebarTitle: '仪表盘'
+slug: /cloud/manage/dashboards
+title: '仪表盘'
+description: 'SQL 控制台的仪表盘功能可让您汇集并共享基于已保存查询生成的可视化内容。'
+doc_type: 'guide'
+keywords: ['ClickHouse Cloud', '仪表盘', '数据可视化', 'SQL 控制台仪表盘', '云分析']
+---
+
+import BetaBadge from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+SQL 控制台的仪表盘功能可让您从已保存的查询中汇集并共享可视化内容。首先保存查询并将其可视化，然后将查询可视化添加到仪表盘中，再使用查询参数让仪表盘支持交互。
+
+<div id="core-concepts">
+  ## 核心概念
+</div>
+
+<div id="query-sharing">
+  ### 查询共享
+</div>
+
+要与同事共享仪表盘，请务必同时共享其底层的已保存查询。要查看可视化内容，至少需要对底层已保存查询具有只读权限。
+
+<div id="interactivity">
+  ### 交互
+</div>
+
+使用[查询参数](/zh/reference/syntax#defining-and-using-query-parameters)让您的仪表盘支持交互。例如，您可以在 `WHERE` 子句中添加查询参数，使其作为过滤器使用。
+
+您可以在可视化设置中选择“filter”类型，从而在 **Global** 过滤器侧边栏中启用或关闭查询参数输入框。您也可以通过链接到仪表盘上的另一个对象 (例如表) 来启用或关闭查询参数输入框。请参阅下方快速入门指南中的“[配置过滤器](/zh/products/cloud/features/sql-console-features/dashboards#configure-a-filter)”部分。
+
+<div id="quick-start">
+  ## 快速入门
+</div>
+
+我们来使用 [query&#95;log](/zh/reference/system-tables/query_log) 系统表创建一个仪表盘，监控 ClickHouse 服务。
+
+<div id="quick-start">
+  ## 快速入门
+</div>
+
+<div id="create-a-saved-query">
+  ### 创建已保存的查询
+</div>
+
+如果你已经有可用于可视化的已保存查询，可以跳过这一步。
+
+打开一个新的查询标签页。我们来编写一个查询，使用 ClickHouse 系统表按天统计某个服务上的查询量：
+
+<Image img="/images/cloud/dashboards/2_dashboards.webp" size="md" alt="创建已保存的查询" border />
+
+我们可以以表格形式查看查询结果，也可以从图表视图开始创建可视化。在下一步中，我们将把该查询保存为 `queries over time`：
+
+<Image img="/images/cloud/dashboards/3_dashboards.webp" size="md" alt="保存查询" border />
+
+有关已保存查询的更多说明，请参见[保存查询部分](/zh/products/cloud/features/sql-console-features/sql-console#saving-a-query)。
+
+我们还可以创建并保存另一个查询 `query count by query kind`，用于按查询类型统计查询数量。下面是在 SQL 控制台中展示该数据的条形图可视化。
+
+<Image img="/images/cloud/dashboards/4_dashboards.webp" size="md" alt="查询结果的条形图可视化" border />
+
+现在已经有两个查询了，我们来创建一个仪表盘，用于可视化和汇总这些查询。
+
+<div id="create-a-dashboard">
+  ### 创建仪表盘
+</div>
+
+前往 Dashboards 面板，然后点击“New Dashboard”。输入名称后，你的第一个仪表盘就创建好了！
+
+<Image img="/images/cloud/dashboards/5_dashboards.webp" size="md" alt="创建新仪表盘" border />
+
+<div id="add-a-visualization">
+  ### 添加可视化
+</div>
+
+这里有两个已保存的查询：`queries over time` 和 `query count by query kind`。先将第一个可视化为折线图。为该可视化设置标题和副标题，并选择要可视化的查询。然后，选择“Line”图表类型，并指定 x 轴和 y 轴。
+
+<Image img="/images/cloud/dashboards/6_dashboards.webp" size="md" alt="添加可视化" border />
+
+在这里，还可以进一步调整样式，例如数值格式、图例布局和坐标轴标签。
+
+接下来，将第二个查询可视化为表格，并将其放在折线图下方。
+
+<Image img="/images/cloud/dashboards/7_dashboards.webp" size="md" alt="将查询结果可视化为表格" border />
+
+通过将这两个已保存的查询可视化，你已经创建了第一个仪表盘！
+
+<div id="configure-a-filter">
+  ### 配置过滤器
+</div>
+
+让我们通过为查询类型添加一个过滤器，使这个仪表盘具备交互性，这样你就可以只显示与 Insert 查询相关的趋势。我们将使用[查询参数](/zh/reference/syntax#defining-and-using-query-parameters)来完成这项任务。
+
+点击折线图旁边的三个点，再点击查询旁边的铅笔按钮，打开内联查询编辑器。在这里，你可以直接在仪表盘中编辑底层的已保存查询。
+
+<Image img="/images/cloud/dashboards/8_dashboards.webp" size="md" alt="编辑底层查询" border />
+
+现在，点击黄色的“运行查询”按钮后，你会看到和前面相同的查询，只不过已过滤为仅显示 insert 查询。点击保存按钮以更新查询。返回图表设置后，你就可以对折线图应用过滤了。
+
+现在，使用顶部功能区中的全局过滤器，你可以通过更改输入值来切换过滤器。
+
+<Image img="/images/cloud/dashboards/9_dashboards.webp" size="md" alt="调整全局过滤器" border />
+
+假设你想将折线图的过滤器关联到表。你可以返回可视化设置，将 `query_kind` 查询参数的值来源改为表，并选择 `query_kind` 列作为要关联的字段。
+
+<Image img="/images/cloud/dashboards/10_dashboards.webp" size="md" alt="更改查询参数" border />
+
+现在，你可以直接通过 queries by kind 表中的查询来控制折线图上的过滤器，从而让仪表盘具备交互性。
+
+<Image img="/images/cloud/dashboards/11_dashboards.webp" size="md" alt="控制折线图上的过滤器" border />

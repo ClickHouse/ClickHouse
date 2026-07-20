@@ -1,8 +1,7 @@
 -- Some bugs found by gtest_functions_stress_test.cpp
 
 select crc32(toFixedString(toString(number), 1)) from numbers(2);
-select trimRight('', '01234567890123456'); -- { serverError TOO_LARGE_STRING_SIZE }
-select kql_array_sort_asc([]::Array(Float32), number::UInt8) from numbers(2); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+select trimRight('', '01234567890123456');
 select randomFixedString(CAST(607668569663131286404589520 AS UInt128)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 select IPv6NumToString(IPv6StringToNumOrDefault(materialize(CAST('1:0:0:0::' AS FixedString(10))))) from numbers(2);
 select IPv6NumToString(IPv6StringToNumOrDefault(materialize(CAST('1:0:0:0::\0' AS String)))) from numbers(2);

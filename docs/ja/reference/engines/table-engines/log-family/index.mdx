@@ -1,0 +1,65 @@
+---
+description: 'Log エンジンファミリーに関するドキュメント'
+sidebarTitle: 'Log ファミリー'
+slug: /engines/table-engines/log-family/
+title: 'Log エンジンファミリー'
+doc_type: 'guide'
+---
+
+import CloudNotSupportedBadge from "/snippets/ja/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+
+<div id="log-table-engine-family">
+  # Log テーブルエンジンファミリー
+</div>
+
+<CloudNotSupportedBadge />
+
+これらのエンジンは、小さなテーブル (最大約 100 万行) を多数すばやく書き込み、あとでまとめて読み取る必要がある用途向けに開発されました。
+
+このファミリーのエンジン:
+
+| Log エンジン                                                           |
+| ------------------------------------------------------------------ |
+| [StripeLog](/ja/reference/engines/table-engines/log-family/stripelog) |
+| [Log](/ja/reference/engines/table-engines/log-family/log)             |
+| [TinyLog](/ja/reference/engines/table-engines/log-family/tinylog)     |
+
+`Log` ファミリーのテーブルエンジンは、データを [HDFS](/ja/reference/engines/table-engines/integrations/hdfs) または [S3](/ja/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-s3) の分散ファイルシステムに保存できます。
+
+<Warning>
+  **このエンジンはログデータ向けではありません。**
+
+  名前とは異なり、*Log テーブルエンジンはログデータの保存を目的としたものではありません。使用するのは、すばやい書き込みが必要な少量のデータに限ってください。
+</Warning>
+
+<div id="common-properties">
+  ## 共通のプロパティ
+</div>
+
+エンジン:
+
+* データをディスクに保存します。
+
+* 書き込み時は、ファイルの末尾にデータを追記します。
+
+* データへの同時実行アクセスに対するロックをサポートします。
+
+  `INSERT` クエリの実行中はテーブルがロックされ、データの読み取りおよび書き込みを行う他のクエリは、テーブルのロックが解除されるまで待機します。データを書き込むクエリが存在しない場合は、データ読み取りクエリを任意の数だけ同時実行できます。
+
+* [mutations](/ja/reference/statements/alter/index#mutations) をサポートしません。
+
+* 索引をサポートしません。
+
+  つまり、データの範囲に対する `SELECT` クエリは効率的ではありません。
+
+* データをアトミックに書き込みません。
+
+  たとえばサーバーの異常終了など、書き込み処理中に問題が発生すると、データが破損したテーブルが生じる可能性があります。
+
+<div id="differences">
+  ## 違い
+</div>
+
+`TinyLog` エンジンは、このファミリーの中で最もシンプルで、機能が最も限られており、効率も最も低いエンジンです。`TinyLog` エンジンは、1 つのクエリ内で複数スレッドによるデータの並列読み取りをサポートしていません。また、各カラムを別々のファイルに格納するため、`Log` エンジンとほぼ同数のファイルディスクリプタを使用します。そのうえ、1 つのクエリからの並列読み取りをサポートする同じファミリーの他のエンジンよりも、データの読み取り速度が遅くなります。使用するのは単純な用途に限ってください。
+
+`Log` エンジンと `StripeLog` エンジンは、データの並列読み取りをサポートしています。データの読み取り時には、ClickHouse は複数のスレッドを使用します。各スレッドはそれぞれ別個のデータブロックを処理します。`Log` エンジンでは、テーブルの各カラムごとに個別のファイルを使用します。`StripeLog` は、すべてのデータを 1 つのファイルに格納します。その結果、`StripeLog` エンジンのほうが使用するファイルディスクリプタは少なくなりますが、データ読み取り時の効率は `Log` エンジンのほうが高くなります。

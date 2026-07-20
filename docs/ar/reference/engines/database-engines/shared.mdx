@@ -1,0 +1,45 @@
+---
+description: 'صفحة تشرح محرك قاعدة البيانات `Shared`، المتوفر في ClickHouse Cloud'
+sidebarTitle: 'Shared'
+slug: /engines/database-engines/shared
+title: 'Shared'
+doc_type: 'reference'
+---
+
+import CloudOnlyBadge from "/snippets/ar/components/CloudOnlyBadge/CloudOnlyBadge.jsx";
+
+<CloudOnlyBadge />
+
+<div id="shared-database-engine">
+  # محرك قاعدة البيانات Shared
+</div>
+
+يعمل محرك قاعدة البيانات `Shared` بالتكامل مع Shared Catalog لإدارة قواعد البيانات التي تعتمد جداولها على محركات جداول عديمة الحالة مثل [`SharedMergeTree`](/ar/products/cloud/features/infrastructure/shared-merge-tree).
+ولا تكتب محركات الجداول هذه حالة دائمة على الأقراص، وهي متوافقة مع بيئات حوسبة ديناميكية.
+
+ويُلغي محرك قاعدة البيانات `Shared` في Cloud الحاجة إلى الأقراص المحلية.
+وهو محرك يعمل بالكامل في الذاكرة، ولا يتطلب سوى CPU والذاكرة.
+
+<div id="how-it-works">
+  ## كيف يعمل؟
+</div>
+
+يخزّن محرّك قاعدة البيانات `Shared` جميع تعريفات قواعد البيانات والجداول في Shared Catalog مركزي مدعوم من Keeper. وبدلاً من الكتابة على القرص المحلي، يحتفظ بحالة عامة عالمية واحدة مُدارة بالإصدارات ومشتركة بين جميع عُقد المعالجة.
+
+لا تتتبّع كل عقدة سوى آخر إصدار طُبّق، وعند بدء التشغيل، تجلب أحدث حالة من دون الحاجة إلى ملفات محلية أو إعداد يدوي.
+
+<div id="syntax">
+  ## البنية
+</div>
+
+بالنسبة إلى المستخدمين النهائيين، لا يتطلب استخدام Shared Catalog ومحرك قاعدة البيانات Shared أي إعدادات إضافية. وتبقى طريقة إنشاء قاعدة البيانات كما هي دائمًا:
+
+```sql
+CREATE DATABASE my_database;
+```
+
+تُسنِد ClickHouse Cloud تلقائيًا محرك قاعدة البيانات Shared إلى قواعد البيانات. وأي جداول تُنشأ داخل قاعدة بيانات من هذا النوع باستخدام محركات عديمة الحالة ستستفيد تلقائيًا من قدرات النسخ المتماثل والتنسيق التي يوفّرها Shared Catalog.
+
+<Tip>
+  لمزيد من المعلومات حول Shared Catalog وفوائده، راجع [&quot;Shared catalog and shared database engine&quot;](/ar/products/cloud/features/infrastructure/shared-catalog) في قسم Reference ضمن Cloud.
+</Tip>

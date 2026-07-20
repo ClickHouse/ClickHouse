@@ -1,0 +1,62 @@
+---
+title: 보안 및 컴플라이언스 보고서
+slug: /cloud/security/compliance-overview
+description: 'SOC 2, ISO 27001, U.S. DPF, HIPAA, PCI를 포함한 ClickHouse Cloud의 보안 및 컴플라이언스 인증 개요'
+doc_type: '참고'
+keywords: ['ClickHouse Cloud', 'SOC 2 Type II', 'ISO 27001', 'HIPAA', 'U.S. DPF', 'PCI']
+---
+
+import BetaBadge from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
+import EnterprisePlanFeatureBadge from "/snippets/ko/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
+
+ClickHouse는 고객의 보안 및 컴플라이언스 요구 사항을 검토하며, 추가 보고서 요청에 따라 프로그램을 지속적으로 확대하고 있습니다. 추가 정보 확인 또는 보고서 다운로드는 [Trust Center](https://trust.clickhouse.com)에서 하실 수 있습니다.
+
+<div id="soc-2-type-ii-since-2022">
+  ## SOC 2 Type II (2022년부터)
+</div>
+
+System and Organization Controls (SOC) 2는 조직의 시스템에 적용되는 Trust Services Criteria(TSC)에 포함된 보안, 가용성, 기밀성, 처리 무결성, 개인정보 보호 기준에 중점을 둔 보고서로, 이러한 통제에 대해 의존 당사자(고객)에게 보증을 제공하도록 설계되었습니다. ClickHouse는 독립적인 외부 감사인과 협력하여 연 1회 이상 감사를 받으며, 이 감사에서는 당사 시스템의 보안, 가용성, 처리 무결성과 당사 시스템에서 처리되는 데이터의 기밀성 및 개인정보 보호를 다룹니다. 이 보고서는 ClickHouse Cloud와 Bring Your Own Cloud (BYOC) 제공 사항을 모두 다룹니다.
+
+<div id="iso-27001-since-2023">
+  ## ISO 27001 (2023년부터)
+</div>
+
+국제표준화기구(ISO) 27001은 정보 보안을 위한 국제 표준입니다. 이 표준은 기업이 위험 관리, 정책 수립 및 전파, 보안 통제 구현, 그리고 관련 구성 요소가 지속적으로 적절성과 효과성을 유지하는지 확인하기 위한 모니터링을 포함하는 정보보안 관리체계(ISMS)를 구축하도록 요구합니다. ClickHouse는 내부 감사를 수행하고 독립적인 외부 감사인과 협력하여 인증서 발급 후 다음 2년 동안 감사와 중간 점검을 받습니다.
+
+<div id="us-dpf-since-2024">
+  ## U.S. DPF (2024년부터)
+</div>
+
+U.S. Data Privacy Framework는 유럽연합/유럽경제지역, 영국, 스위스에서 미국으로 이전되는 개인정보에 대해 EU, 영국 및 스위스 법률에 부합하는 신뢰할 수 있는 이전 메커니즘을 미국 조직에 제공하기 위해 마련되었습니다 (https://dataprivacyframework.gov/Program-Overview). ClickHouse는 이 프레임워크에 자체 인증을 완료했으며 [Data Privacy Framework List](https://dataprivacyframework.gov/list)에 등재되어 있습니다.
+
+<div id="hipaa-since-2024">
+  ## HIPAA (2024년부터)
+</div>
+
+<EnterprisePlanFeatureBadge feature="HIPAA" />
+
+1996년에 제정된 건강보험 이전 및 책임에 관한 법률(HIPAA)은 보호 대상 건강 정보(PHI)의 관리를 중점적으로 다루는 미국의 개인정보 보호법입니다. HIPAA에는 여러 요구 사항이 있으며, 그중 [Security Rule](https://www.hhs.gov/hipaa/for-professionals/security/index.html)은 전자 개인 건강 정보(ePHI) 보호에 중점을 둡니다. ClickHouse는 지정된 서비스에 저장된 ePHI의 기밀성, 무결성, 보안을 보장하기 위해 관리적, 물리적, 기술적 보호 조치를 구현했습니다. 이러한 활동은 [Trust Center](https://trust.clickhouse.com)에서 다운로드할 수 있는 당사의 SOC 2 Type II 보고서에도 포함되어 있습니다.
+
+Business Associate Agreement(BAA)를 체결하고 HIPAA 준수 서비스를 배포하는 방법은 [HIPAA 온보딩](/ko/products/cloud/guides/security/compliance/hipaa-onboarding)을 참조하십시오.
+
+<div id="pci-service-provider-since-2025">
+  ## PCI 서비스 제공업체 (2025년부터)
+</div>
+
+<EnterprisePlanFeatureBadge feature="PCI 컴플라이언스" />
+
+[결제 카드 업계 데이터 보안 표준(PCI DSS)](https://www.pcisecuritystandards.org/standards/pci-dss/)은 신용카드 결제 데이터를 보호하기 위해 PCI Security Standards Council이 제정한 일련의 규정입니다. ClickHouse는 적격 보안 평가사(QSA)가 수행한 외부 감사를 받았으며, 그 결과 신용카드 데이터 저장과 관련된 PCI 기준에 대해 적합 판정을 받은 컴플라이언스 보고서(ROC)를 획득했습니다. 컴플라이언스 증명서(AOC) 사본과 PCI 책임 개요를 다운로드하려면 [Trust Center](https://trust.clickhouse.com)를 방문하십시오.
+
+PCI 컴플라이언스 준수 서비스를 배포하는 단계는 [PCI 온보딩](/ko/products/cloud/guides/security/compliance/pci-onboarding)을 참조하십시오.
+
+<div id="privacy-compliance">
+  ## 개인정보 보호 컴플라이언스
+</div>
+
+위 항목 외에도 ClickHouse는 일반 데이터 보호 규정(GDPR), 캘리포니아 소비자 개인정보 보호법(CCPA), 그 밖의 관련 개인정보 보호 프레임워크를 포괄하는 내부 컴플라이언스 프로그램을 운영합니다.
+
+<div id="payment-compliance">
+  ## 결제 컴플라이언스
+</div>
+
+ClickHouse는 [PCI SAQ A v4.0](https://www.pcisecuritystandards.org/document_library/)를 준수하는 안전한 신용카드 결제 방식을 제공합니다.

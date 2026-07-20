@@ -1,0 +1,79 @@
+---
+sidebarTitle: 'Looker'
+slug: /integrations/looker
+keywords: ['clickhouse', 'looker', 'connect', 'integrate', 'ui']
+description: 'Looker は、BI、データアプリケーション、組み込みアナリティクスのためのエンタープライズ向けプラットフォームであり、リアルタイムでインサイトを探索・共有できます。'
+title: 'Looker'
+doc_type: 'guide'
+integration:
+  - support_level: 'partner'
+  - category: 'data_visualization'
+---
+
+import { Image } from "/snippets/ja/components/Image.jsx";
+import ConnectionDetails from '/snippets/ja/_gather_your_details_http.mdx';
+
+import PartnerBadge from "/snippets/ja/components/PartnerBadge/PartnerBadge.jsx";
+
+<PartnerBadge />
+
+Looker は、公式の ClickHouse データソースを使用して、ClickHouse Cloud またはオンプレミス環境にデプロイされた ClickHouse に接続できます。
+
+<div id="1-gather-your-connection-details">
+  ## 1. 接続情報を確認する
+</div>
+
+<ConnectionDetails />
+
+<div id="2-create-a-clickhouse-data-source">
+  ## 2. ClickHouse データソースを作成する
+</div>
+
+Admin -&gt; Database -&gt; Connections に移動し、右上の「Add Connection」ボタンをクリックします。
+
+<Image size="md" img="/images/integrations/data-visualization/looker_01.webp" alt="Looker のデータベース管理インターフェイスで新しい接続を追加する" border />
+
+<br />
+
+データソース名を入力し、dialect のドロップダウンから `ClickHouse` を選択します。フォームに認証情報を入力します。
+
+<Image size="md" img="/images/integrations/data-visualization/looker_02.webp" alt="Looker の接続フォームで ClickHouse の認証情報を指定する" border />
+
+<br />
+
+ClickHouse Cloud を使用している場合、またはデプロイメントで SSL が必要な場合は、追加設定で SSL を有効にしてください。
+
+<Image size="md" img="/images/integrations/data-visualization/looker_03.webp" alt="Looker の設定で ClickHouse 接続の SSL を有効にする" border />
+
+<br />
+
+まず接続をテストし、完了したら新しい ClickHouse データソースに接続します。
+
+<Image size="md" img="/images/integrations/data-visualization/looker_04.webp" alt="ClickHouse データソースをテストして接続する" border />
+
+<br />
+
+これで、ClickHouse データソースを Looker プロジェクトに関連付けられるようになります。
+
+<div id="3-known-limitations">
+  ## 3. 既知の制限事項
+</div>
+
+1. 次のデータ型は、デフォルトで文字列として処理されます:
+   * Array - JDBCドライバーの制限により、シリアライゼーションが想定どおりに機能しません
+   * Decimal* - モデル内で number に変更できます
+   * LowCardinality(...) - モデル内で適切な型に変更できます
+   * Enum8, Enum16
+   * UUID
+   * Tuple
+   * Map
+   * JSON
+   * Nested
+   * FixedString
+   * Geo types
+     * MultiPolygon
+     * Polygon
+     * Point
+     * Ring
+2. [Symmetric aggregate feature](https://cloud.google.com/looker/docs/reference/param-explore-symmetric-aggregates) はサポートされていません
+3. [Full outer join](https://cloud.google.com/looker/docs/reference/param-explore-join-type#full_outer) は、ドライバーではまだ実装されていません

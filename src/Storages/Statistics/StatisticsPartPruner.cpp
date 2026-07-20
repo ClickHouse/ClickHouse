@@ -50,7 +50,7 @@ std::optional<Range> createRangeFromEstimate(const Estimate & estimate, const Da
 } /// anonymous namespace
 
 StatisticsPartPruner::StatisticsPartPruner(const StorageMetadataPtr & metadata_, const ActionsDAG::Node & filter_node_, ContextPtr context_)
-    : filter_dag(&filter_node_, context_)
+    : filter_dag(&filter_node_, context_, /* boolean_context */ true)
     , context(context_)
 {
     if (!metadata_ || !filter_dag.dag)

@@ -1,0 +1,37 @@
+---
+slug: /use-cases/observability/clickstack/integration-guides
+description: 'ClickStack 的数据摄取 - ClickHouse 可观测性技术栈'
+title: '集成指南'
+doc_type: 'landing-page'
+keywords: ['ClickStack 数据摄取', '可观测性数据摄取', 'ClickStack 集成指南']
+---
+
+ClickStack 提供多种方式，可将可观测性数据摄取到您的 ClickHouse 实例中。本节包含针对各种日志、链路追踪和指标来源的快速入门指南。
+
+<Note>
+  其中一些集成指南使用 ClickStack 开源版内置的 OpenTelemetry Collector 进行快速测试和评估。
+
+  对于生产部署，我们建议将集成以 OpenTelemetry Collector agent 的形式运行，并尽量靠近您的工作负载。这些 agent 应通过 OTLP 将遥测数据转发到 ClickStack OpenTelemetry Collector，再由其将数据发送到用于 ClickStack 开源版的自管理 ClickHouse 实例，或发送到托管 ClickStack。有关生产环境配置，请参阅 [“发送 OpenTelemetry 数据”](/zh/clickstack/ingesting-data/opentelemetry)。
+</Note>
+
+| Section                                                                    | Description            |
+| -------------------------------------------------------------------------- | ---------------------- |
+| [Generic Host Logs](/zh/clickstack/integration-examples/host-logs)            | 采集主机系统日志               |
+| [EC2 Host Logs](/zh/clickstack/integration-examples/host-logs/ec2)            | 监控 EC2 实例日志            |
+| [AWS Lambda Logs using Rotel](/zh/clickstack/integration-examples/aws-lambda) | 使用 Rotel 转发 Lambda 日志  |
+| [AWS CloudWatch](/zh/clickstack/integration-examples/cloudwatch)              | 转发 CloudWatch 日志组      |
+| [JVM Metrics](/zh/clickstack/integration-examples/jvm-metrics)                | 监控 JVM 性能              |
+| [Kafka Logs](/zh/clickstack/integration-examples/kafka-logs)                  | 采集 Kafka Broker 日志     |
+| [Kafka Metrics](/zh/clickstack/integration-examples/kafka-metrics)            | 监控 Kafka 性能            |
+| [Kubernetes](/zh/clickstack/integration-examples/kubernetes)                  | 监控 K8s 集群              |
+| [MongoDB Logs](/zh/clickstack/integration-examples/mongodb-logs)              | 采集 MongoDB 服务器日志       |
+| [MySQL Logs](/zh/clickstack/integration-examples/mysql)                       | 采集 MySQL 慢查询/错误日志      |
+| [Nginx Logs](/zh/clickstack/integration-examples/nginx-logs)                  | 采集 Nginx 访问/错误日志       |
+| [Nginx Traces](/zh/clickstack/integration-examples/nginx-traces)              | 追踪 Nginx HTTP 请求       |
+| [Node.js Traces](/zh/clickstack/integration-examples/nodejs-traces)           | 追踪 Node.js HTTP 请求     |
+| [PostgreSQL Logs](/zh/clickstack/integration-examples/postgres-logs)          | 采集 Postgres 日志         |
+| [PostgreSQL Metrics](/zh/clickstack/integration-examples/postgres-metrics)    | 监控 Postgres 性能         |
+| [Redis Logs](/zh/clickstack/integration-examples/redis-logs)                  | 采集 Redis 服务器日志         |
+| [Redis Metrics](/zh/clickstack/integration-examples/redis-metrics)            | 监控 Redis 性能            |
+| [Systemd Logs](/zh/clickstack/integration-examples/systemd)                   | 采集 Systemd/Journald 日志 |
+| [Temporal Metrics](/zh/clickstack/integration-examples/temporal)              | 监控 Temporal Cloud 指标   |

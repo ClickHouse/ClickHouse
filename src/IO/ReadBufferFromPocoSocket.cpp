@@ -41,7 +41,8 @@ ssize_t ReadBufferFromPocoSocketBase::socketReceiveBytesImpl(char * ptr, size_t 
     SCOPE_EXIT({
         /// NOTE: it is quite inaccurate on high loads since the thread could be replaced by another one
         ProfileEvents::increment(ProfileEvents::NetworkReceiveElapsedMicroseconds, watch.elapsedMicroseconds());
-        ProfileEvents::increment(ProfileEvents::NetworkReceiveBytes, bytes_read);
+        if (bytes_read > 0)
+            ProfileEvents::increment(ProfileEvents::NetworkReceiveBytes, bytes_read);
     });
 
     CurrentMetrics::Increment metric_increment(CurrentMetrics::NetworkReceive);
@@ -170,6 +171,14 @@ void ReadBufferFromPocoSocketBase::clearHandshakeTimeout()
 {
     handshake_timeout_milliseconds = 0;
     handshake_stopwatch.stop();
+}
+
+void ReadBufferFromPocoSocketBase::setAsyncCallback(AsyncCallback async_callback_)
+{
+    if (async_callback_ && !socket.impl()->supportsExternalPolling())
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Cannot set an async callback on a socket that does not support external polling");
+    async_callback = std::move(async_callback_);
 }
 
 }

@@ -1,17 +1,16 @@
 #!/usr/bin/env python3
 
 import argparse
-import functools
 import itertools
 import json
 import logging
-import math
 import os
-import pprint
 import random
 import re
+import signal
 import statistics
 import string
+import subprocess
 import sys
 import time
 import traceback
@@ -101,6 +100,23 @@ parser.add_argument(
     "--secure",
     action="store_true",
     help="Use SSL/TLS connection.",
+)
+parser.add_argument(
+    "--binary",
+    nargs="*",
+    default=["clickhouse"],
+    help="Space-separated list of clickhouse binary path(s), parallel to '--host'/'--port'. "
+    'Used by shell-script queries (<query type="shell">) to build $CLICKHOUSE_BINARY, '
+    "$CLICKHOUSE_LOCAL and $CLICKHOUSE_CLIENT for the corresponding server. "
+    "A shorter list (e.g. a single value) is reused for every server.",
+)
+parser.add_argument(
+    "--http-port",
+    nargs="*",
+    default=[8123],
+    help="Space-separated list of HTTP port(s), parallel to '--host'/'--port'. "
+    'Used by shell-script queries (<query type="shell">) to build $CLICKHOUSE_URL '
+    "for the corresponding server. A shorter list is reused for every server.",
 )
 parser.add_argument(
     "--runs", type=int, default=1, help="Number of query runs per server."
@@ -319,8 +335,30 @@ def load_settings_file(xml_root, base_dir):
 # Not worth fixing properly unless we have such scenario, the whole perf test suite needs a rewrite.
 extra_create_queries = []
 extra_drop_queries = []
-test_queries = []  # list[list[str]]: each entry is a group of SQL statements to execute and time together
+# Each entry is a "query item" dict describing one timed unit of work:
+#   {"kind": "sql",   "statements": [...]}  -- run over the native protocol,
+#   {"kind": "shell", "script": "..."}      -- run as a bash script, see below.
+test_queries = []
 for e in root.findall("query"):
+    if e.get("type") == "shell":
+        # A shell-script query: a snippet of bash executed for each server and
+        # measured by its wall-clock time. This lets us benchmark things the
+        # native protocol cannot express -- HTTP end-to-end latency, response
+        # compression, tool startup time, etc. The script talks to the server
+        # using the $CLICKHOUSE_* environment variables (binary, host, ports,
+        # client, local, curl, url) prepared per-server, mirroring the stateless
+        # tests in tests/queries/shell_config.sh.
+        #
+        # Parameter substitution is intentionally NOT applied to shell scripts,
+        # because they routinely use '${var}' and '{a,b}' brace expansion that
+        # would collide with the '{name}' substitution syntax. Settings from the
+        # <settings> element are not applied either -- pass them via the URL or
+        # client arguments inside the script.
+        if not e.text or not e.text.strip():
+            raise Exception('Empty <query type="shell"> in the test file')
+        test_queries.append({"kind": "shell", "script": e.text})
+        continue
+
     if "file" in e.attrib:
         query_path = os.path.join(xml_dir, e.attrib["file"])
         with open(query_path, "r", encoding="utf-8") as f:
@@ -344,9 +382,19 @@ for e in root.findall("query"):
         #   zip(*expanded) -> ("SELECT FROM a.x", "SELECT FROM a.y"), ("SELECT FROM b.x", "SELECT FROM b.y")
         expanded = [substitute_parameters([s]) for s in select_stmts]
         for group in zip(*expanded):
-            test_queries.append(list(group))
+            test_queries.append({"kind": "sql", "statements": list(group)})
     else:
-        test_queries += [[s] for s in substitute_parameters([e.text])]
+        test_queries += [
+            {"kind": "sql", "statements": [s]} for s in substitute_parameters([e.text])
+        ]
+
+
+def query_display(item):
+    """Human-readable representation of a query item for the report."""
+    if item["kind"] == "shell":
+        return item["script"]
+    return ";\n".join(item["statements"])
+
 
 # If we're given a list of queries to run, check that it makes sense.
 for i in args.queries_to_run or []:
@@ -359,7 +407,7 @@ for i in args.queries_to_run or []:
 # If we're only asked to print the queries, do that and exit.
 if args.print_queries:
     for i in args.queries_to_run or range(0, len(test_queries)):
-        print(";\n".join(test_queries[i]))
+        print(query_display(test_queries[i]))
     exit(0)
 
 # If we're only asked to print the settings, do that and exit. These are settings
@@ -381,6 +429,27 @@ if not args.long:
         if tag.text == "long":
             print("skipped\tTest is tagged as long.")
             sys.exit(0)
+
+# Shell-script queries do not yet carry the connection options that the SQL path
+# honours. SQL queries connect through `clickhouse_driver.Client` with `--user` /
+# `--password` / `--secure`, but the per-server shell environment built by
+# `shell_env_for` always uses an unauthenticated, plaintext `$CLICKHOUSE_CLIENT`
+# and a `http://` `$CLICKHOUSE_URL`. Running shell queries under non-default
+# credentials or TLS would therefore either fail outright or, worse, measure a
+# different (default plaintext) endpoint than the SQL setup/prewarm connected to,
+# silently invalidating the comparison. Until the shell helpers carry these
+# options, fail closed: reject the test up front rather than benchmark the wrong
+# endpoint. (Done after the `--print-queries` / `--print-settings` early exits so
+# those read-only paths are unaffected.)
+if any(q["kind"] == "shell" for q in test_queries) and (
+    args.user != "default" or args.password != "" or args.secure
+):
+    raise Exception(
+        'Shell-script queries (<query type="shell">) do not support the '
+        "--user / --password / --secure connection options yet: the shell "
+        "environment always connects without authentication over plaintext HTTP. "
+        "Remove these options, or run this test without shell-script queries."
+    )
 
 # Print report threshold for the test if it is set.
 ignored_relative_change = 0.05
@@ -404,6 +473,94 @@ all_connections = [
 # etc.) in parallel so both servers see the same operation at the same wall
 # clock moment.
 purge_pool = ThreadPoolExecutor(max_workers=max(1, len(all_connections)))
+
+
+def nth_or_first(seq, index):
+    """Value parallel to server `index`, reusing the first one for a short list
+    (e.g. a single --binary shared by every server)."""
+    return seq[index] if index < len(seq) else seq[0]
+
+
+def shell_env_for(conn_index):
+    """Build the environment for a shell-script query targeting server
+    `conn_index`. The variable names mirror tests/queries/shell_config.sh so that
+    perf shell scripts look like ordinary stateless tests. Each server gets its
+    own binary, ports and derived commands, so the same script measures the LEFT
+    and the RIGHT build independently."""
+    server = servers[conn_index]
+    host = str(server["host"])
+    tcp_port = str(server["port"])
+    http_port = str(nth_or_first(args.http_port, conn_index))
+    binary = nth_or_first(args.binary, conn_index)
+    # Resolve a relative path (e.g. 'left/clickhouse') to an absolute one so the
+    # script can be run from any working directory. A bare name like 'clickhouse'
+    # is left untouched and resolved via $PATH.
+    if "/" in binary:
+        binary = os.path.abspath(binary)
+
+    env = dict(os.environ)
+    env["CLICKHOUSE_BINARY"] = binary
+    env["CLICKHOUSE_HOST"] = host
+    env["CLICKHOUSE_PORT_TCP"] = tcp_port
+    env["CLICKHOUSE_PORT_HTTP"] = http_port
+    env["CLICKHOUSE_DATABASE"] = "default"
+    env["CLICKHOUSE_CLIENT"] = f"{binary} client --host {host} --port {tcp_port}"
+    env["CLICKHOUSE_LOCAL"] = f"{binary} local"
+    # `--fail` makes curl exit non-zero on an HTTP 4xx/5xx response, and `-S`
+    # prints the error even under `-s`. Unlike tests/queries/shell_config.sh
+    # (which omits `--fail` because some stateless tests inspect error bodies),
+    # a performance benchmark must fail closed: otherwise an HTTP error response
+    # would be timed and reported as a fast successful sample, silently
+    # invalidating the comparison.
+    env["CLICKHOUSE_CURL"] = "curl -q -sS --fail --max-time 120"
+    env["CLICKHOUSE_URL"] = f"http://{host}:{http_port}/"
+    return env
+
+
+shell_envs = {}
+
+
+def run_shell_query(conn_index, script, timeout):
+    """Run a shell-script query for one server and return its wall-clock time.
+
+    The script is executed with `bash -e -o pipefail` in its own session
+    (`start_new_session=True`), so the whole process tree it spawns shares one
+    process group. On timeout the entire group is killed: `subprocess` alone
+    would only terminate the immediate `bash`, leaving children such as `curl`
+    or `$CLICKHOUSE_LOCAL` running, which could keep consuming CPU/network or
+    hold a server-side query open and pollute later measurements. Standard
+    output is discarded (the script itself decides what to read and where to
+    write it); standard error is captured for diagnostics. A non-zero exit code
+    raises an exception, which the caller treats the same way as a failed SQL
+    query."""
+    env = shell_envs.setdefault(conn_index, shell_env_for(conn_index))
+    start = time.perf_counter()
+    proc = subprocess.Popen(
+        ["bash", "-e", "-o", "pipefail", "-c", script],
+        env=env,
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.PIPE,
+        start_new_session=True,
+    )
+    try:
+        _, stderr_bytes = proc.communicate(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        # Kill the whole process group, not just `bash`, then reap it.
+        try:
+            os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        proc.communicate()
+        raise
+    elapsed = time.perf_counter() - start
+    if proc.returncode != 0:
+        stderr = stderr_bytes.decode("utf-8", errors="replace").strip()
+        raise Exception(
+            f"Shell query failed on server {conn_index} with exit code "
+            f"{proc.returncode}:\n{stderr}"
+        )
+    return elapsed
 
 
 for i, s in enumerate(servers):
@@ -525,13 +682,13 @@ if args.queries_to_run:
 # Run test queries.
 profile_total_seconds = 0
 for query_index in queries_to_run:
-    q_list = test_queries[query_index]
+    q_item = test_queries[query_index]
     query_prefix = f"{test_name}.query{query_index}"
 
     # We have some crazy long queries (about 100kB), so trim them to a sane
     # length. This means we can't use query text as an identifier and have to
     # use the test name + the test-wide query index.
-    query_display_name = ";\n".join(q_list)
+    query_display_name = query_display(q_item)
     if len(query_display_name) > 1000:
         query_display_name = f"{query_display_name[:1000]}...({query_index})"
 
@@ -551,29 +708,37 @@ for query_index in queries_to_run:
         try:
             prewarm_id = f"{query_prefix}.prewarm0"
 
-            try:
-                # During the warm-up runs, we will also:
-                # * detect queries that are exceedingly long, to fail fast,
-                # * collect profiler traces, which might be helpful for analyzing
-                #   test coverage. We disable profiler for normal runs because
-                #   it makes the results unstable.
-                prewarm_elapsed = execute_query_group(
-                    c,
-                    q_list,
-                    prewarm_id,
-                    {
-                        "max_execution_time": args.prewarm_max_query_seconds,
-                        "query_profiler_real_time_period_ns": 10000000,
-                        "query_profiler_cpu_time_period_ns": 10000000,
-                        "metrics_perf_events_enabled": 1,
-                        "memory_profiler_step": "4Mi",
-                    },
+            if q_item["kind"] == "shell":
+                # A failing shell script on the old server (e.g. it uses a tool
+                # option added in the new build) is handled the same way as a
+                # failing SQL query: the run continues on the rest of the servers.
+                prewarm_elapsed = run_shell_query(
+                    conn_index, q_item["script"], args.prewarm_max_query_seconds
                 )
-            except clickhouse_driver.errors.Error as e:
-                # Add query id to the exception to make debugging easier.
-                e.args = (prewarm_id, *e.args)
-                e.message = prewarm_id + ": " + e.message
-                raise
+            else:
+                try:
+                    # During the warm-up runs, we will also:
+                    # * detect queries that are exceedingly long, to fail fast,
+                    # * collect profiler traces, which might be helpful for analyzing
+                    #   test coverage. We disable profiler for normal runs because
+                    #   it makes the results unstable.
+                    prewarm_elapsed = execute_query_group(
+                        c,
+                        q_item["statements"],
+                        prewarm_id,
+                        {
+                            "max_execution_time": args.prewarm_max_query_seconds,
+                            "query_profiler_real_time_period_ns": 10000000,
+                            "query_profiler_cpu_time_period_ns": 10000000,
+                            "metrics_perf_events_enabled": 1,
+                            "memory_profiler_step": "4Mi",
+                        },
+                    )
+                except clickhouse_driver.errors.Error as e:
+                    # Add query id to the exception to make debugging easier.
+                    e.args = (prewarm_id, *e.args)
+                    e.message = prewarm_id + ": " + e.message
+                    raise
 
             print(
                 f"prewarm\t{query_index}\t{prewarm_id}\t{conn_index}\t{prewarm_elapsed}"
@@ -596,6 +761,33 @@ for query_index in queries_to_run:
             print(e, file=sys.stderr)
         else:
             no_errors.append(i)
+
+    # A shell-script query is a benchmark we control end to end, so -- unlike an
+    # SQL query that may legitimately use a function missing from the old server
+    # -- it is expected to run on every server. If it fails on any of them the
+    # comparison is meaningless. Previously such a failure was swallowed as a
+    # "partial" query: the run continued on whatever server survived and the
+    # query was dropped from the report and CIDB with no error anywhere (empty
+    # run-errors.tsv, green job), so a broken shell test looked like it simply
+    # produced no data. Fail loudly instead, and echo the captured error from
+    # each failing server to stdout as a `run-error` line so it survives in the
+    # archived per-test raw .tsv (the per-test stderr log is not uploaded).
+    # compare.sh parses raw .tsv by known leading tag and ignores the rest, so
+    # adding this tag is safe.
+    if q_item["kind"] == "shell" and len(no_errors) < len(all_connections):
+        failed = []
+        for i, e in enumerate(query_error_on_connection):
+            if e:
+                failed.append(i)
+                print(f"run-error\t{query_index}\t{i}\t{tsv_escape(e)}")
+        # Flush before raising so the diagnostics reach the raw .tsv even though
+        # we are about to exit through an unhandled exception.
+        sys.stdout.flush()
+        raise Exception(
+            f"Shell query {query_prefix} failed on server(s) {failed}: a shell "
+            "performance test must run on all servers to be comparable. See the "
+            "'run-error' lines in the raw output for the captured stderr."
+        )
 
     if len(no_errors) == 0:
         continue
@@ -631,15 +823,32 @@ for query_index in queries_to_run:
             conn_order = list(reversed(conn_order))
 
         for conn_index, c in conn_order:
-            try:
-                elapsed = execute_query_group(
-                    c, q_list, run_id, {"max_execution_time": args.max_query_seconds}
-                )
-            except clickhouse_driver.errors.Error as e:
-                # Add query id to the exception to make debugging easier.
-                e.args = (run_id, *e.args)
-                e.message = run_id + ": " + e.message
-                raise
+            # conn_index addresses this_query_connections (the servers that
+            # survived prewarm); map it back to the real server to pick the right
+            # binary/ports for a shell query.
+            server_index = no_errors[conn_index]
+            if q_item["kind"] == "shell":
+                try:
+                    elapsed = run_shell_query(
+                        server_index, q_item["script"], args.max_query_seconds
+                    )
+                except KeyboardInterrupt:
+                    raise
+                except Exception as e:
+                    raise Exception(f"{run_id}: {e}")
+            else:
+                try:
+                    elapsed = execute_query_group(
+                        c,
+                        q_item["statements"],
+                        run_id,
+                        {"max_execution_time": args.max_query_seconds},
+                    )
+                except clickhouse_driver.errors.Error as e:
+                    # Add query id to the exception to make debugging easier.
+                    e.args = (run_id, *e.args)
+                    e.message = run_id + ": " + e.message
+                    raise
 
             all_server_times[conn_index].append(elapsed)
 
@@ -692,6 +901,12 @@ for query_index in queries_to_run:
     if abs(relative_diff) < ignored_relative_change or pvalue > 0.05:
         continue
 
+    if q_item["kind"] == "shell":
+        # The server-side profiler runs cannot be attributed to a shell script
+        # (there is no single query to profile), so we stop after reporting the
+        # timing difference.
+        continue
+
     # Perform profile runs for fixed amount of time. Don't limit the number
     # of runs, because we also have short queries.
     profile_start_seconds = time.perf_counter()
@@ -703,12 +918,18 @@ for query_index in queries_to_run:
             try:
                 profile_elapsed = execute_query_group(
                     c,
-                    q_list,
+                    q_item["statements"],
                     run_id,
                     {
                         "query_profiler_real_time_period_ns": 10000000,
                         "query_profiler_cpu_time_period_ns": 10000000,
                         "metrics_perf_events_enabled": 1,
+                        # Dedicated profile runs are not timed, so we can afford
+                        # the overhead of allocation sampling to also collect
+                        # MemorySample and JemallocSample stacks for flamegraphs.
+                        "memory_profiler_sample_probability": 0.1,
+                        "jemalloc_enable_profiler": 1,
+                        "jemalloc_collect_profile_samples_in_trace_log": 1,
                     },
                 )
                 print(

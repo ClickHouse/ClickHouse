@@ -1,0 +1,184 @@
+---
+description: 'CoalescingMergeTree は MergeTree エンジンを継承しています。主な特徴は、
+  パーツのマージ時に各カラムの最後の非 NULL 値を自動的に保持できることです。'
+sidebarTitle: 'CoalescingMergeTree'
+slug: /engines/table-engines/mergetree-family/coalescingmergetree
+title: 'CoalescingMergeTree テーブルエンジン'
+keywords: ['CoalescingMergeTree']
+show_related_blogs: true
+doc_type: 'reference'
+---
+
+<Info>
+  **バージョン 25.6 以降で利用可能**
+
+  このテーブルエンジンは、OSS と Cloud の両方でバージョン 25.6 以降から利用できます。
+</Info>
+
+このエンジンは [MergeTree](/ja/reference/engines/table-engines/mergetree-family/mergetree) を継承しています。主な違いは、データパーツのマージ方法にあります。`CoalescingMergeTree` テーブルでは、ClickHouse は同じ主キー (より正確には同じ[ソートキー](/ja/reference/engines/table-engines/mergetree-family/mergetree)) を持つすべての行を、各カラムの最新の非 NULL 値を含む 1 行に置き換えます。
+
+これにより、カラム単位の upsert が可能になり、行全体ではなく特定のカラムだけを更新できます。
+
+`CoalescingMergeTree` は、キーカラム以外で Nullable 型を使用することを前提としています。カラムが Nullable でない場合、動作は [ReplacingMergeTree](/ja/reference/engines/table-engines/mergetree-family/replacingmergetree) と同じです。
+
+<div id="creating-a-table">
+  ## テーブルの作成
+</div>
+
+```sql
+CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
+(
+    name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
+    name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2],
+    ...
+) ENGINE = CoalescingMergeTree([columns])
+[PARTITION BY expr]
+[ORDER BY expr]
+[SAMPLE BY expr]
+[SETTINGS name=value, ...]
+```
+
+リクエストパラメータの詳細については、[リクエストの説明](/ja/reference/statements/create/table)を参照してください。
+
+<div id="parameters-of-coalescingmergetree">
+  ### CoalescingMergeTree のパラメータ
+</div>
+
+<div id="columns">
+  #### カラム
+</div>
+
+`columns` - 任意。値を結合するカラム名のタプルです。指定するカラムは、パーティションまたはソートキーに含めることはできません。`columns` が指定されていない場合、ClickHouse はソートキーに含まれないすべてのカラムの値を結合します。
+
+<div id="query-clauses">
+  ### クエリ句
+</div>
+
+`CoalescingMergeTree` テーブルを作成する場合、`MergeTree` テーブルの作成時と同じ[句](/ja/reference/engines/table-engines/mergetree-family/mergetree)が必要です。
+
+<details markdown="1">
+  <summary>テーブル作成の非推奨の方法</summary>
+
+  <Note>
+    新しいプロジェクトではこの方法を使用しないでください。可能であれば、既存のプロジェクトも上記で説明した方法に切り替えてください。
+  </Note>
+
+  ```sql
+  CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
+  (
+      name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
+      name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2],
+      ...
+  ) ENGINE [=] CoalescingMergeTree(date-column [, sampling_expression], (primary, key), index_granularity, [columns])
+  ```
+
+  `columns` を除くすべてのパラメーターは、`MergeTree` の場合と同じ意味です。
+
+  * `columns` — 値が合計されるカラム名のタプル。省略可能なパラメーターです。説明については、上記の本文を参照してください。
+</details>
+
+<div id="usage-example">
+  ## 使用例
+</div>
+
+次のテーブルについて考えます。
+
+```sql
+CREATE TABLE test_table
+(
+    key UInt64,
+    value_int Nullable(UInt32),
+    value_string Nullable(String),
+    value_date Nullable(Date)
+)
+ENGINE = CoalescingMergeTree()
+ORDER BY key
+```
+
+そのテーブルにデータを挿入します:
+
+```sql
+INSERT INTO test_table VALUES(1, NULL, NULL, '2025-01-01'), (2, 10, 'test', NULL);
+INSERT INTO test_table VALUES(1, 42, 'win', '2025-02-01');
+INSERT INTO test_table(key, value_date) VALUES(2, '2025-02-01');
+```
+
+結果は次のようになります。
+
+```sql
+SELECT * FROM test_table ORDER BY key;
+```
+
+```text
+┌─key─┬─value_int─┬─value_string─┬─value_date─┐
+│   1 │        42 │ win          │ 2025-02-01 │
+│   1 │      ᴺᵁᴸᴸ │ ᴺᵁᴸᴸ         │ 2025-01-01 │
+│   2 │      ᴺᵁᴸᴸ │ ᴺᵁᴸᴸ         │ 2025-02-01 │
+│   2 │        10 │ test         │       ᴺᵁᴸᴸ │
+└─────┴───────────┴──────────────┴────────────┘
+```
+
+正しい最終結果を得るための推奨クエリ:
+
+```sql
+SELECT * FROM test_table FINAL ORDER BY key;
+```
+
+```text
+┌─key─┬─value_int─┬─value_string─┬─value_date─┐
+│   1 │        42 │ win          │ 2025-02-01 │
+│   2 │        10 │ test         │ 2025-02-01 │
+└─────┴───────────┴──────────────┴────────────┘
+```
+
+`FINAL` 修飾子を使用すると、ClickHouse はクエリ時にマージロジックを適用し、各カラムについて正しく統合された&quot;最新&quot;の値を確実に取得できます。これは、CoalescingMergeTree テーブルにクエリを実行する際に、最も安全かつ正確な方法です。
+
+<Note>
+  `GROUP BY` を使う方法では、基盤となるパーツが完全にマージされていない場合、誤った結果が返されることがあります。
+
+  ```sql
+  SELECT key, last_value(value_int), last_value(value_string), last_value(value_date)  FROM test_table GROUP BY key; -- 推奨されません。
+  ```
+</Note>
+
+<div id="tuple-element-aggregation">
+  ## Tuple 要素の集約
+</div>
+
+`allow_tuple_element_aggregation` 設定を有効にすると、`Tuple` カラムは再帰的にフラット化され、各リーフ要素が独立して coalescing の対象になります。これにより、複数のフィールドを 1 つの `Tuple` カラムに格納しつつ、マージ時には要素単位で coalescing できます。各 `Nullable` サブカラムは、それぞれ独立して最新の非 NULL 値を保持します。
+
+フラット化されたサブカラムにも、通常のカラムと同じルールが適用されます。
+
+* ソートキーまたはパーティションキー内の `Tuple` に属するサブカラムは、coalescing の対象外です。
+* `columns` が指定されている場合、列挙された `Tuple` カラムのサブカラムのみが coalescing されます。
+
+<Note>
+  この設定は変更不可であり、テーブル作成時に指定する必要があります。
+</Note>
+
+```sql
+CREATE TABLE coalescing_tuples
+(
+    key UInt64,
+    data Tuple(
+        value_a Nullable(UInt64),
+        value_b Nullable(String),
+        nested Tuple(
+            value_c Nullable(UInt64)
+        )
+    )
+) ENGINE = CoalescingMergeTree()
+ORDER BY key
+SETTINGS allow_tuple_element_aggregation = 1;
+
+INSERT INTO coalescing_tuples VALUES (1, (100, NULL, (NULL)));
+INSERT INTO coalescing_tuples VALUES (1, (NULL, 'hello', (42)));
+
+SELECT key, data.value_a, data.value_b, data.nested.value_c FROM coalescing_tuples FINAL;
+```
+
+```text
+┌─key─┬─data.value_a─┬─data.value_b─┬─data.nested.value_c─┐
+│   1 │          100 │ hello        │                  42 │
+└─────┴──────────────┴──────────────┴─────────────────────┘
+```

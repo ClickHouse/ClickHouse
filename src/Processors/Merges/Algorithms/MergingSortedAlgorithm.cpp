@@ -175,6 +175,7 @@ void MergingSortedAlgorithm::consume(Input & input, size_t source_num)
     cursors[source_num].reset(current_inputs[source_num].chunk.getColumns(), *header, current_inputs[source_num].chunk.getNumRows());
 
 #ifndef NDEBUG
+    /// See `initialize` for why we gate on `apply_virtual_row_conversions`.
     if (is_virtual_row && !has_collation)
         rememberVirtualRowBoundary(cursors[source_num], virtual_row_boundary[source_num]);
     else

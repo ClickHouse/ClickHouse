@@ -1,3 +1,5 @@
+#include <optional>
+
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnString.h>
 #include <DataTypes/DataTypeString.h>
@@ -94,8 +96,10 @@ public:
         else if (!column_index || isColumnConst(*column_index))
         {
             const auto * col_const_index = typeid_cast<const ColumnConst *>(column_index.get());
-            ssize_t index = !col_const_index ? 1 : col_const_index->getInt(0);
-            vectorConstant(col->getChars(), col->getOffsets(), col_pattern->getValue<String>(), index, vec_res, offsets_res);
+            std::optional<ssize_t> index_arg;
+            if (col_const_index)
+                index_arg = col_const_index->getInt(0);
+            vectorConstant(col->getChars(), col->getOffsets(), col_pattern->getValue<String>(), index_arg, vec_res, offsets_res);
         }
         else
             vectorVector(col->getChars(), col->getOffsets(), col_pattern->getValue<String>(), column_index, vec_res, offsets_res);
@@ -129,12 +133,14 @@ private:
         const ColumnString::Chars & data,
         const ColumnString::Offsets & offsets,
         const std::string & pattern,
-        ssize_t index,
+        std::optional<ssize_t> index_arg,
         ColumnString::Chars & res_data,
         ColumnString::Offsets & res_offsets) const
     {
         const OptimizedRegularExpression regexp = Regexps::createRegexp<false, false, false>(pattern);
         unsigned capture = regexp.getNumberOfSubpatterns();
+        /// Default index: `1` when capture groups exist, `0` (whole match) otherwise.
+        ssize_t index = index_arg.value_or(capture == 0 ? 0 : 1);
         if (index < 0 || index >= capture + 1)
             throw Exception(
                 ErrorCodes::INDEX_OF_POSITIONAL_ARGUMENT_IS_OUT_OF_RANGE,
@@ -256,8 +262,8 @@ Extracts the first string in `haystack` that matches the regexp pattern and corr
     FunctionDocumentation::Syntax syntax = "regexpExtract(haystack, pattern[, index])";
     FunctionDocumentation::Arguments arguments = {
         {"haystack", "String, in which regexp pattern will be matched.", {"String"}},
-        {"pattern", "String, regexp expression. `pattern` may contain multiple regexp groups, `index` indicates which regex group to extract. An index of 0 means matching the entire regular expression.", {"const String"}},
-        {"index", "Optional. An integer number greater or equal 0 with default 1. It represents which regex group to extract.", {"(U)Int*"}},
+        {"pattern", "String, regexp expression. `pattern` may contain multiple regexp groups, `index` indicates which regex group to extract. An index of `0` means matching the entire regular expression.", {"const String"}},
+        {"index", "Optional. A non-negative integer indicating which regex group to extract. The default is `1` if `pattern` contains at least one capturing group, and `0` (the whole match) if `pattern` has no capturing group.", {"(U)Int*"}},
     };
     FunctionDocumentation::ReturnedValue returned_value = {
         "Returns a string match",
@@ -272,12 +278,13 @@ SELECT
     regexpExtract('100-200', '(\\d+)-(\\d+)', 1),
     regexpExtract('100-200', '(\\d+)-(\\d+)', 2),
     regexpExtract('100-200', '(\\d+)-(\\d+)', 0),
-    regexpExtract('100-200', '(\\d+)-(\\d+)');
+    regexpExtract('100-200', '(\\d+)-(\\d+)'),
+    regexpExtract('100-200', '\\d+');
         )",
         R"(
-┌─regexpExtract('100-200', '(\\d+)-(\\d+)', 1)─┬─regexpExtract('100-200', '(\\d+)-(\\d+)', 2)─┬─regexpExtract('100-200', '(\\d+)-(\\d+)', 0)─┬─regexpExtract('100-200', '(\\d+)-(\\d+)')─┐
-│ 100                                          │ 200                                          │ 100-200                                      │ 100                                       │
-└──────────────────────────────────────────────┴──────────────────────────────────────────────┴──────────────────────────────────────────────┴───────────────────────────────────────────┘
+┌─regexpExtract('100-200', '(\\d+)-(\\d+)', 1)─┬─regexpExtract('100-200', '(\\d+)-(\\d+)', 2)─┬─regexpExtract('100-200', '(\\d+)-(\\d+)', 0)─┬─regexpExtract('100-200', '(\\d+)-(\\d+)')─┬─regexpExtract('100-200', '\\d+')─┐
+│ 100                                          │ 200                                          │ 100-200                                      │ 100                                       │ 100                              │
+└──────────────────────────────────────────────┴──────────────────────────────────────────────┴──────────────────────────────────────────────┴───────────────────────────────────────────┴──────────────────────────────────┘
         )"
     }
     };

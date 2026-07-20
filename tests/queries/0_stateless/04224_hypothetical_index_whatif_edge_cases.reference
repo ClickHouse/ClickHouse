@@ -1,0 +1,11 @@
+--- projection-served query is rejected ---
+served from a projection
+--- empty table reports a clean baseline ---
+  parts:       0
+With idx_b (minmax, hypothetical):
+  status:       not_applicable
+  reason:       Table is empty, so there is no data to estimate a benefit
+--- old analyzer: empirical estimate works ---
+With idx_b (minmax, hypothetical):
+  status:       applicable
+  source:           empirical
