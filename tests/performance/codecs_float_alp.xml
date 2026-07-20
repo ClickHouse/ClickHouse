@@ -40,7 +40,8 @@
     <create_query>
         CREATE TABLE IF NOT EXISTS codec_{seq_type}_{type}_alp_{variant} (n {type} CODEC(ALP({variant})))
         ENGINE = MergeTree PARTITION BY tuple()
-        ORDER BY tuple();
+        ORDER BY tuple()
+        SETTINGS optimize_row_order_if_no_order_by = 0;
     </create_query>
 
     <fill_query>INSERT INTO codec_rtn_{type}_alp_{variant} (n) SELECT round(number/20+sin(number), 3) FROM system.numbers LIMIT {num_rows} SETTINGS max_threads=1</fill_query>

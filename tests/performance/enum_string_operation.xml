@@ -7,7 +7,7 @@
     )
     ENGINE = MergeTree
     ORDER BY tuple()
-    SETTINGS index_granularity = 8192
+    SETTINGS index_granularity = 8192, optimize_row_order_if_no_order_by = 0
     </create_query>
     <!-- The enum values are the contiguous ranges [-128, -7] and [0, 127] (the codes -6..-1 are not
          declared), so a fill over the full [-128, 127] range would try to insert undefined codes and
@@ -45,7 +45,7 @@
     )
     ENGINE = MergeTree
     ORDER BY tuple()
-    SETTINGS index_granularity = 8192
+    SETTINGS index_granularity = 8192, optimize_row_order_if_no_order_by = 0
     </create_query>
     <fill_query>INSERT INTO enum16_wide_sparse SELECT ['', 'a', 'A', 'AB', 'aBc', 'ABCD', 'xAyz', 'Foo A Bar'][(number % 8) + 1] FROM numbers(100000000)</fill_query>
     <fill_query>OPTIMIZE TABLE enum16_wide_sparse FINAL</fill_query>
