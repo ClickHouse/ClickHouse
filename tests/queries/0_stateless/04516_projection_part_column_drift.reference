@@ -10,6 +10,11 @@ read after merge	2	601
 part columns after merge	p	a
 part columns after merge	p	d
 added column via projection	1	42
+default-drift read after drift	1	51
+default-drift read after merge	1	51
+1	51
+default-drift part columns after merge	p	a
+default-drift part columns after merge	p	d
 agg read after drift	1	501
 agg read after merge	1	501
 agg read after merge	2	601

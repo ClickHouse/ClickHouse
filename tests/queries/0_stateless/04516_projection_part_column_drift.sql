@@ -77,6 +77,48 @@ SETTINGS optimize_use_projections = 1, force_optimize_projection = 1;
 
 DROP TABLE t_proj_added_column;
 
+-- late-add whose default references a non-stored column (issue #111076): a column added after
+-- the part was written is missing from both parts (a legitimate late-add), but its DEFAULT
+-- expression references `f`, which the projection part does not store. The default cannot be
+-- evaluated on the projection part, so the read must fall back to the parent and the merge must
+-- rebuild the projection instead of failing with UNKNOWN_IDENTIFIER on the missing dependency.
+DROP TABLE IF EXISTS t_proj_alias_default_drift;
+
+CREATE TABLE t_proj_alias_default_drift
+(
+    a UInt64,
+    b UInt64,
+    f UInt64,
+    c UInt64 ALIAS b + 1,
+    PROJECTION p (SELECT a, c ORDER BY a)
+)
+ENGINE = MergeTree ORDER BY a;
+
+INSERT INTO t_proj_alias_default_drift (a, b, f) VALUES (1, 100, 5);
+
+ALTER TABLE t_proj_alias_default_drift ADD COLUMN d UInt64 DEFAULT f * 10;
+ALTER TABLE t_proj_alias_default_drift MODIFY COLUMN c UInt64 ALIAS d + 1;
+
+-- the drifted part must be served from the parent (c = d + 1 = f * 10 + 1 = 51)
+SELECT 'default-drift read after drift', a, c FROM t_proj_alias_default_drift ORDER BY a;
+
+-- forcing the projection cannot use the drifted part
+SELECT a, c FROM t_proj_alias_default_drift ORDER BY a
+SETTINGS optimize_use_projections = 1, force_optimize_projection = 1; -- { serverError PROJECTION_NOT_USED }
+
+-- merging must rebuild the projection from the parent instead of throwing on the missing `f`
+OPTIMIZE TABLE t_proj_alias_default_drift FINAL;
+
+SELECT 'default-drift read after merge', a, c FROM t_proj_alias_default_drift ORDER BY a;
+
+SELECT a, c FROM t_proj_alias_default_drift ORDER BY a
+SETTINGS optimize_use_projections = 1, force_optimize_projection = 1;
+
+SELECT 'default-drift part columns after merge', name, column FROM system.projection_parts_columns
+WHERE database = currentDatabase() AND table = 't_proj_alias_default_drift' AND active ORDER BY name, column;
+
+DROP TABLE t_proj_alias_default_drift;
+
 -- aggregate projection drift: the state column name embeds the expanded alias
 -- (`sum(plus(b, 1))`), so re-pointing the alias leaves the part without the state column the
 -- metadata now expects (`sum(plus(d, 1))`); the parent never stores aggregate states, so the

@@ -21,6 +21,7 @@
 #include <Interpreters/MergeTreeTransaction.h>
 #include <Interpreters/PreparedSets.h>
 #include <Interpreters/createSubcolumnsExtractionActions.h>
+#include <Parsers/IAST.h>
 #include <Parsers/parseIdentifierOrStringLiteral.h>
 #include <Processors/Merges/AggregatingSortedTransform.h>
 #include <Processors/Merges/CoalescingSortedTransform.h>
@@ -1214,10 +1215,29 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::prepareProjectionsToMergeAndRe
         /// selected by the projection was re-pointed by ALTER; see projectionPartHasRequiredColumns).
         /// Merging it directly would bake default values into the merged part, so rebuild from the parent
         /// instead. A parent TABLE column the parent part also lacks is a legitimate late-add and does
-        /// not count.
+        /// not count, unless its default expression references a column the projection part does not
+        /// store: then the default cannot be evaluated on the projection part, so rebuild.
         const auto projection_columns = projection.metadata->getColumns().getAllPhysical();
         const auto & parent_table_columns = global_ctx->metadata_snapshot->getColumns();
         bool projection_part_misses_column = false;
+
+        /// A late-added column is only mergeable from the projection part if its DEFAULT/MATERIALIZED
+        /// expression can be evaluated there, i.e. every column it references is stored by the part.
+        auto projection_part_can_fill_default = [&](const IMergeTreeDataPart & projection_part, const String & column_name)
+        {
+            auto column_default = parent_table_columns.getDefault(column_name);
+            if (!column_default || !column_default->expression)
+                return true;
+
+            IdentifierNameSet identifiers;
+            column_default->expression->collectIdentifierNames(identifiers);
+            for (const auto & identifier : identifiers)
+            {
+                if (!projection_part.tryGetColumn(identifier) && !projection.metadata->virtuals.has(identifier))
+                    return false;
+            }
+            return true;
+        };
 
         MergeTreeData::DataPartsVector projection_parts;
         for (const auto & part : global_ctx->future_part->parts)
@@ -1227,9 +1247,19 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::prepareProjectionsToMergeAndRe
             {
                 for (const auto & column : projection_columns)
                 {
-                    if (!it->second->tryGetColumn(column.name)
-                        && (part->tryGetColumn(column.name)
-                            || !parent_table_columns.hasColumnOrSubcolumn(GetColumnsOptions::AllPhysical, column.name)))
+                    if (it->second->tryGetColumn(column.name))
+                        continue;
+
+                    /// Drift: the parent part still stores it, or it is not a parent table column.
+                    if (part->tryGetColumn(column.name)
+                        || !parent_table_columns.hasColumnOrSubcolumn(GetColumnsOptions::AllPhysical, column.name))
+                    {
+                        projection_part_misses_column = true;
+                        break;
+                    }
+
+                    /// Late-add: usable only if its default can be filled from the projection part.
+                    if (!projection_part_can_fill_default(*it->second, column.name))
                     {
                         projection_part_misses_column = true;
                         break;

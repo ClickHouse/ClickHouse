@@ -14,6 +14,8 @@
 #include <Functions/FunctionsLogical.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/Context.h>
+#include <Parsers/IAST.h>
+#include <Storages/ColumnsDescription.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 
 
@@ -313,6 +315,34 @@ size_t filterPartsByProjection(
     return filtered_parts;
 }
 
+/// A case-(4) late-added column is only usable from the projection part if its DEFAULT/MATERIALIZED
+/// expression can be evaluated there, i.e. every column the expression references is also available
+/// from the projection part. If it references a column the projection part does not store, the
+/// default cannot be computed on the projection read path (it can on the parent path), so the part
+/// is stale for it. Mirrors the default-dependency collection in MergeTreeBlockReadUtils.
+static bool projectionPartCanFillDefault(
+    const IMergeTreeDataPart & projection_part,
+    const ProjectionDescription & projection,
+    const ColumnsDescription & parent_table_columns,
+    const String & column_name)
+{
+    auto column_default = parent_table_columns.getDefault(column_name);
+    if (!column_default || !column_default->expression)
+        return true;
+
+    IdentifierNameSet identifiers;
+    column_default->expression->collectIdentifierNames(identifiers);
+
+    for (const auto & identifier : identifiers)
+    {
+        if (projection_part.tryGetColumn(identifier) || projection.metadata->virtuals.has(identifier))
+            continue;
+        return false;
+    }
+
+    return true;
+}
+
 /// The projection's column set is re-derived from its query at every table load, so it can drift
 /// from what an existing projection part stores (e.g. an ALIAS column selected by the projection
 /// was re-pointed by ALTER, changing the materialized source column or the aggregate-state column
@@ -326,8 +356,9 @@ size_t filterPartsByProjection(
 ///       parent TABLE column at all (a drifted alias-derived or aggregate-state column):
 ///       drift, read from the parent instead.
 ///   (4) the projection part lacks it, the parent part lacks it too, and it is a parent TABLE column:
-///       legitimate, the column was added after the part was written, so the default fill is correct
-///       and identical on either read path (see 04412).
+///       a late-added column. Usable only if its default fill is identical on either read path (see
+///       04412); if the default expression references a column the projection part does not store,
+///       it cannot be evaluated there, so route to the parent instead.
 static bool projectionPartHasRequiredColumns(
     const IMergeTreeDataPart & projection_part,
     const IMergeTreeDataPart & parent_part,
@@ -353,7 +384,10 @@ static bool projectionPartHasRequiredColumns(
             || !parent_table_columns.hasColumnOrSubcolumn(GetColumnsOptions::AllPhysical, name))
             return false;
 
-        /// (4) Legitimate late-added table column, missing from both parts; the default fill matches.
+        /// (4) Late-added table column, missing from both parts. Usable only if its default can be
+        /// filled from the projection part; otherwise it is drift, read from the parent.
+        if (!projectionPartCanFillDefault(projection_part, projection, parent_table_columns, name))
+            return false;
     }
 
     return true;
