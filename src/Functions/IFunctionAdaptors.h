@@ -81,6 +81,11 @@ public:
 
     bool isInjective(const ColumnsWithTypeAndName & sample_columns) const override { return function->isInjective(sample_columns); }
 
+    ComparisonOrderDomain getComparisonOrderDomain() const override
+    {
+        return function->getComparisonOrderDomain(arguments);
+    }
+
     bool isDeterministic() const override { return function->isDeterministic(); }
 
     bool isDeterministicInScopeOfQuery() const override { return function->isDeterministicInScopeOfQuery(); }

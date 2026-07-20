@@ -16,6 +16,7 @@
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeFixedString.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -23,6 +24,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/NumberTraits.h>
 #include <DataTypes/getLeastSupertype.h>
+#include <Functions/ComparisonOrderDomain.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunctionAdaptors.h>
 #include <Functions/IsOperation.h>
@@ -751,6 +753,26 @@ public:
 private:
     const ComparisonParams params;
 
+    static ComparisonOrderDomain getComparisonOrderDomainForType(const DataTypePtr & type)
+    {
+        using Kind = ComparisonOrderDomain::Kind;
+
+        const auto nested_type = removeLowCardinality(type);
+        if (nested_type->isNullable())
+            return {};
+        if (isNativeNumber(nested_type))
+            return {.kind = Kind::NativeNumber};
+        if (isString(nested_type))
+            return {.kind = Kind::String};
+        if (isDateOrDate32(nested_type))
+            return {.kind = Kind::Date};
+        if (isDateTime(nested_type))
+            return {.kind = Kind::TimePoint, .scale = 0};
+        if (const auto * datetime64_type = typeid_cast<const DataTypeDateTime64 *>(nested_type.get()))
+            return {.kind = Kind::TimePoint, .scale = datetime64_type->getScale()};
+        return {};
+    }
+
     template <typename T0, typename T1>
     ColumnPtr executeNumRightType(const ColumnVector<T0> * col_left, const IColumn * col_right_untyped) const
     {
@@ -1270,6 +1292,20 @@ public:
     }
 
     size_t getNumberOfArguments() const override { return 2; }
+
+    ComparisonOrderDomain getComparisonOrderDomain(const DataTypes & arguments) const override
+    {
+        if constexpr (is_null_safe_cmp_mode || IsOperation<Op>::not_equals)
+            return {};
+
+        if (arguments.size() != 2)
+            return {};
+
+        const auto left_domain = getComparisonOrderDomainForType(arguments[0]);
+        if (!left_domain.isValid() || left_domain != getComparisonOrderDomainForType(arguments[1]))
+            return {};
+        return left_domain;
+    }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 

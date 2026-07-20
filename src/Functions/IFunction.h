@@ -7,6 +7,7 @@
 #include <Core/ValuesWithType.h>
 #include <Common/UnorderedSetWithMemoryTracking.h>
 #include <DataTypes/IDataType_fwd.h>
+#include <Functions/ComparisonOrderDomain.h>
 #include <Interpreters/Context_fwd.h>
 
 #include "config.h"
@@ -244,6 +245,14 @@ public:
       *       function injective or not is overkill).
       */
     virtual bool isInjective(const ColumnsWithTypeAndName & /*sample_columns*/) const { return false; }
+
+    /** Return the shared ordering used by this resolved comparison.
+      * An invalid domain means that composing this comparison transitively is not proven safe.
+      */
+    virtual ComparisonOrderDomain getComparisonOrderDomain() const
+    {
+        return {};
+    }
 
     /** Function is called "deterministic", if it returns same result for same values of arguments.
       * Most of functions are deterministic. Notable counterexample is rand().
@@ -595,6 +604,10 @@ public:
     virtual bool isSuitableForConstantFolding() const { return true; }
     virtual ColumnPtr getConstantResultForNonConstArguments(const ColumnsWithTypeAndName & /*arguments*/, const DataTypePtr & /*result_type*/) const { return nullptr; }
     virtual bool isInjective(const ColumnsWithTypeAndName & /*sample_columns*/) const { return false; }
+    virtual ComparisonOrderDomain getComparisonOrderDomain(const DataTypes & /*arguments*/) const
+    {
+        return {};
+    }
     virtual bool isDeterministic() const { return true; }
     virtual bool isDeterministicInScopeOfQuery() const { return true; }
     virtual bool isServerConstant() const { return false; }

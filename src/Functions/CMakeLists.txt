@@ -57,6 +57,7 @@ set(DBMS_FUNCTIONS
 )
 extract_into_parent_list(clickhouse_functions_sources dbms_sources ${DBMS_FUNCTIONS})
 extract_into_parent_list(clickhouse_functions_headers dbms_headers
+    ComparisonOrderDomain.h
     IFunction.h
     FunctionFactory.h
     FunctionHelpers.h
