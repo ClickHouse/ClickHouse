@@ -11,6 +11,7 @@
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDate32.h>
+#include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <boost/algorithm/string/split.hpp>
 #include <boost/algorithm/string/trim.hpp>
@@ -100,7 +101,31 @@ DataTypePtr convertPostgreSQLDataType(String & type, std::function<void()> reche
     else if (type == "bigserial")
         res = std::make_shared<DataTypeUInt64>();
     else if (type.starts_with("timestamp"))
-        res = std::make_shared<DataTypeDateTime64>(6);
+    {
+        /// PostgreSQL renders an explicit fractional-second precision as `timestamp(p) ...`
+        /// (`format_type` decodes it from the type modifier). Honor it so that a `timestamp(0)`
+        /// becomes `DateTime` and a `timestamp(p)` becomes `DateTime64(p)` - in particular, a
+        /// self-connected `DateTime` / `DateTime64(p)` column round-trips with its scale intact.
+        /// A bare `timestamp` (no precision specified) keeps the historical `DateTime64(6)`
+        /// mapping, which covers PostgreSQL's default microsecond precision.
+        UInt32 precision = 6;
+        auto open_bracket_pos = type.find('(');
+        if (open_bracket_pos != std::string::npos)
+        {
+            auto close_bracket_pos = type.find(')', open_bracket_pos);
+            if (close_bracket_pos != std::string::npos)
+            {
+                std::string precision_str = type.substr(open_bracket_pos + 1, close_bracket_pos - open_bracket_pos - 1);
+                boost::trim(precision_str);
+                precision = parse<UInt32>(precision_str);
+            }
+        }
+
+        if (precision == 0)
+            res = std::make_shared<DataTypeDateTime>();
+        else
+            res = std::make_shared<DataTypeDateTime64>(precision);
+    }
     else if (type == "date")
         res = std::make_shared<DataTypeDate32>();
     else if (type == "uuid")

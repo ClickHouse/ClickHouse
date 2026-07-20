@@ -125,7 +125,10 @@ try
         {
             ReadBufferFromString in(value);
             DateTime64 time = 0;
-            readDateTime64Text(time, 6, in, assert_cast<const DataTypeDateTime64 *>(data_type.get())->getTimeZone());
+            /// Parse with the column's own scale: the inferred type is no longer always `DateTime64(6)`
+            /// (a `timestamp(p)` carries its precision), and the stored value is in units of 10^-scale.
+            const auto & datetime64_type = assert_cast<const DataTypeDateTime64 &>(*data_type);
+            readDateTime64Text(time, datetime64_type.getScale(), in, datetime64_type.getTimeZone());
             assert_cast<DataTypeDateTime64::ColumnType &>(column).insertValue(time);
             break;
         }
@@ -292,7 +295,11 @@ void preparePostgreSQLArrayInfo(
         {
             ReadBufferFromString in(field);
             DateTime64 time = 0;
-            readDateTime64Text(time, 6, in, assert_cast<const DataTypeDateTime64 *>(nested.get())->getTimeZone());
+            /// Parse with the element type's own scale: the inferred type is no longer always
+            /// `DateTime64(6)` (a `timestamp(p)` carries its precision), and the stored value is in
+            /// units of 10^-scale.
+            const auto & datetime64_type = assert_cast<const DataTypeDateTime64 &>(*nested);
+            readDateTime64Text(time, datetime64_type.getScale(), in, datetime64_type.getTimeZone());
             time = std::max<time_t>(time, 0);
             return time;
         };

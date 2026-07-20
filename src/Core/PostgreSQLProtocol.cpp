@@ -1,8 +1,10 @@
 #include <Core/PostgreSQLProtocol.h>
 #include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypesDecimal.h>
+#include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <Common/assert_cast.h>
 
 namespace DB::PostgreSQLProtocol::Messaging
 {
@@ -83,10 +85,19 @@ ColumnTypeSpec convertDataTypeToPostgresColumnTypeSpec(const DataTypePtr & data_
         /// `DateTime` and `DateTime64` map to PostgreSQL `timestamp` (without time zone), consistent with the
         /// table-name path in the `pg_attribute` emulation (see PostgreSQLHandler). The value is rendered as
         /// text - ClickHouse's `YYYY-MM-DD hh:mm:ss[.ffffff]` form is exactly PostgreSQL's timestamp text
-        /// format - so no type modifier is carried (the fractional-second precision is not encoded).
+        /// format. PostgreSQL stores the fractional-second precision (0..6) directly in the type modifier
+        /// for the time types, so carry the scale there: a `DateTime` has second precision (0), and a
+        /// `DateTime64` scale above 6 does not fit PostgreSQL's `timestamp` at all and falls back to the
+        /// text type below, preserving the full value.
         case TypeIndex::DateTime:
+            return {ColumnType::TIMESTAMP, 8, 0};
         case TypeIndex::DateTime64:
-            return {ColumnType::TIMESTAMP, 8};
+        {
+            const UInt32 scale = assert_cast<const DataTypeDateTime64 &>(*data_type).getScale();
+            if (scale <= 6)
+                return {ColumnType::TIMESTAMP, 8, static_cast<Int32>(scale)};
+            return {ColumnType::VARCHAR, -1};
+        }
 
         /// Carry the actual precision and scale so that a self-connected `Decimal(p, s)` round-trips through
         /// schema inference instead of collapsing to a bare `numeric` (which `convertPostgreSQLDataType`

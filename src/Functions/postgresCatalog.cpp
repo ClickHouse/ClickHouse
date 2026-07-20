@@ -47,6 +47,18 @@ String pgFormatNumeric(Int64 typmod)
     return fmt::format("numeric({},{})", precision, scale);
 }
 
+/// Render a `timestamp` type name, decoding the fractional-second precision carried in the type modifier.
+/// PostgreSQL stores the precision (0..6) directly in the modifier for the time types; a negative modifier
+/// (in particular the default -1) means no precision was specified, so the bare name is used. This is what
+/// lets a self-connected `DateTime` / `DateTime64(p)` round-trip through schema inference in
+/// `fetchPostgreSQLTableStructure` instead of collapsing to `DateTime64(6)`.
+String pgFormatTimestamp(Int64 typmod, const char * suffix)
+{
+    if (typmod < 0)
+        return fmt::format("timestamp {}", suffix);
+    return fmt::format("timestamp({}) {}", typmod, suffix);
+}
+
 /// PostgreSQL type OID -> human readable name, in the spelling produced by PostgreSQL's `format_type`.
 /// The set mirrors the built-in types advertised by ClickHouse's `pg_type` emulation (see PostgreSQLHandler).
 /// Unknown OIDs are rendered as `text`, matching how the counterpart mapping in
@@ -54,6 +66,7 @@ String pgFormatNumeric(Int64 typmod)
 /// The type modifier is honoured for `numeric`, where it carries the precision and scale: this is what
 /// lets a self-connected `Decimal(p, s)` (and wide integer types encoded as `numeric(p, 0)`) round-trip
 /// through schema inference in `fetchPostgreSQLTableStructure` instead of collapsing to bare `numeric`.
+/// It is likewise honoured for `timestamp`, where it carries the fractional-second precision.
 /// Array types are rendered as `<element>[]` (regardless of the number of dimensions, which PostgreSQL
 /// carries separately in `attndims`); for a `numeric` array the modifier applies to the element type, so
 /// e.g. `numeric(20, 0)[]` round-trips back to `Array(Decimal(20, 0))`.
@@ -75,8 +88,8 @@ String pgFormatType(Int64 oid, Int64 typmod)
         case 1042: return "character";
         case 1043: return "character varying";
         case 1082: return "date";
-        case 1114: return "timestamp without time zone";
-        case 1184: return "timestamp with time zone";
+        case 1114: return pgFormatTimestamp(typmod, "without time zone");
+        case 1184: return pgFormatTimestamp(typmod, "with time zone");
         case 1700: return pgFormatNumeric(typmod);
         case 2950: return "uuid";
 
@@ -88,7 +101,7 @@ String pgFormatType(Int64 oid, Int64 typmod)
         case 1016: return "bigint[]";
         case 1021: return "real[]";
         case 1022: return "double precision[]";
-        case 1115: return "timestamp without time zone[]";
+        case 1115: return pgFormatTimestamp(typmod, "without time zone") + "[]";
         case 1182: return "date[]";
         case 1231: return pgFormatNumeric(typmod) + "[]";
         case 2951: return "uuid[]";
@@ -98,8 +111,8 @@ String pgFormatType(Int64 oid, Int64 typmod)
 }
 
 /// `format_type(type_oid, typemod)` - PostgreSQL compatibility function.
-/// Returns the SQL name of a type given its OID. The type modifier is accepted for compatibility
-/// but ignored: the emulated catalog always stores a modifier of -1, so there is nothing to format.
+/// Returns the SQL name of a type given its OID, honouring the type modifier where PostgreSQL does
+/// (the `numeric` precision and scale, the `timestamp` fractional-second precision).
 /// Provided so that ClickHouse's PostgreSQL wire protocol can answer the catalog-introspection
 /// queries issued by libpq/pqxx clients - in particular by ClickHouse itself when the `postgresql`
 /// table function or engine points at another ClickHouse instance.
