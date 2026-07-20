@@ -340,12 +340,13 @@ bool optimizeVectorSearchWithVectorIndexSecondPass(QueryPlan::Node & /*root*/, S
     /// is slightly at odds with vector search optimizations. There are two optimizations in vector
     /// search -
     /// 1. Lookup the vector index and shortlist a handful of granules containing neighbours.
-    /// 2. The rescoring optimization goes even further and does not read the 'heavy' vector column at all and
-    ///    only sends the exact neighbour rows to the Sorting + Output step.
+    /// 2. Apply the candidate-row filter from the vector index before distance
+    ///    computation for rescoring queries, or use `_distance` from the index
+    ///    for non-rescoring queries.
     /// Thus, explicit or implicit PREWHERE after above two optimizations does not bring additional benefit. Also,
-    /// the PREWHERE filter implementation conflicts with rescoring optimization filter. If explicit PREWHERE is
-    /// requested, we turn the rescoring optimization off. If there is a WHERE clause and even with
-    /// optimize_move_to_prewhere = 1, we retain the rescoring optimization and disable the implicit PREWHERE
+    /// the PREWHERE filter implementation conflicts with the vector-search candidate-row filter. If explicit PREWHERE
+    /// is requested, we turn the vector-search optimization off. If there is a WHERE clause and even with
+    /// optimize_move_to_prewhere = 1, we retain vector-search optimization and disable the implicit PREWHERE
     /// optimization. (check optimizePrewhere.cpp)
     if (const auto & prewhere_info = read_from_mergetree_step->getPrewhereInfo())
         return false;
@@ -381,6 +382,10 @@ bool optimizeVectorSearchWithVectorIndexSecondPass(QueryPlan::Node & /*root*/, S
     ActionsDAG & expression = expression_step->getExpression();
 
     bool optimize_plan = !settings.vector_search_with_rescoring;
+    /// FINAL may add PK-overlapping ranges after vector index analysis. In that case,
+    /// vector row hints only describe the original candidates and must not filter
+    /// rows added for the final merge.
+    bool apply_row_filter_for_rescoring = settings.vector_search_with_rescoring && !read_from_mergetree_step->isQueryWithFinal();
     if (optimize_plan)
     {
         auto search_column = vector_search_parameters.value().column;
@@ -488,7 +493,43 @@ bool optimizeVectorSearchWithVectorIndexSecondPass(QueryPlan::Node & /*root*/, S
         sorting_step->updateInputHeader(expression_node->step->getOutputHeader());
     }
 
-    return true;
+    if (apply_row_filter_for_rescoring)
+    {
+        auto analyzed_result = read_from_mergetree_step->getAnalyzedResult();
+        analyzed_result = analyzed_result ? analyzed_result : read_from_mergetree_step->selectRangesToRead();
+
+        bool can_apply_row_filter = analyzed_result != nullptr;
+        if (can_apply_row_filter)
+        {
+            for (const auto & part_with_ranges : analyzed_result->parts_with_ranges)
+            {
+                if (!part_with_ranges.ranges.empty() && !part_with_ranges.read_hints.vector_search_results.has_value())
+                {
+                    can_apply_row_filter = false;
+                    break;
+                }
+            }
+        }
+
+        if (can_apply_row_filter)
+        {
+            for (auto & part_with_ranges : analyzed_result->parts_with_ranges)
+            {
+                if (!part_with_ranges.ranges.empty())
+                    part_with_ranges.read_hints.use_vector_search_result_filter = true;
+            }
+        }
+        else
+        {
+            apply_row_filter_for_rescoring = false;
+        }
+    }
+
+    const bool vector_optimization_applied = optimize_plan || apply_row_filter_for_rescoring;
+    if (!vector_optimization_applied && settings.optimize_prewhere && filter_step)
+        optimizePrewhere(*filter_or_prewhere_node, settings.remove_unused_columns, false);
+
+    return vector_optimization_applied;
 }
 
 }
