@@ -196,7 +196,9 @@ bool ReadFromObjectStorageStep::canUseLazyMaterialization() const
     if (!boost::iequals(configuration->format, "Parquet"))
         return false;
 
-    if (!configuration->supportsLazyMaterialization())
+    /// Data lakes can have per-file formats, deletes, and schema evolution; the configuration
+    /// proves against the concrete data snapshot that every file can take the lazy path.
+    if (!configuration->supportsLazyMaterialization(storage_snapshot->metadata, getContext()))
         return false;
 
 #if CLICKHOUSE_CLOUD

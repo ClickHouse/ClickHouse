@@ -296,7 +296,7 @@ public:
     /// It requires that the physical row numbers of the main read match a later positional
     /// re-read of the same files, which for data lakes depends on how deletes and schema
     /// evolution are applied.
-    virtual bool supportsLazyMaterialization() const
+    virtual bool supportsLazyMaterialization(StorageMetadataPtr /*storage_metadata_snapshot*/, ContextPtr /*context*/) const
     {
         return true;
     }

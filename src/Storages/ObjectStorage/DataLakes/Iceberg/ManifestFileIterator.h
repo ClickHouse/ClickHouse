@@ -56,6 +56,12 @@ public:
 
         bool areAllDataFilesSortedBySortOrderID(Int32 sort_order_id) const;
 
+        /// Whether LIMIT lazy materialization can re-read every data file of this manifest
+        /// by physical row numbers: all data files are Parquet, none of them needs schema
+        /// evolution, and there are no equality deletes (both schema evolution and equality
+        /// deletes force reading all physical columns, see IcebergMetadata::getInitialSchemaByPath).
+        bool areAllDataFilesEligibleForLazyMaterialization(Int32 table_schema_id) const;
+
         std::optional<Int64> getRowsCountInAllFilesExcludingDeleted(FileContentType content) const;
 
         std::optional<Int64> getBytesCountInAllDataFilesExcludingDeleted() const;

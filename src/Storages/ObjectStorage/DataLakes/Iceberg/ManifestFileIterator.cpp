@@ -18,6 +18,7 @@
 #include <Core/TypeId.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <Poco/JSON/Parser.h>
+#include <Poco/String.h>
 #include <Storages/ColumnsDescription.h>
 #include <Parsers/ASTFunction.h>
 #include <Common/quoteString.h>
@@ -157,6 +158,28 @@ bool ManifestFileIterator::ManifestFileEntriesHandle::areAllDataFilesSortedBySor
             return false;
     }
     /// Empty manifest (no data files) is considered sorted by definition
+    return true;
+}
+
+bool ManifestFileIterator::ManifestFileEntriesHandle::areAllDataFilesEligibleForLazyMaterialization(Int32 table_schema_id) const
+{
+    /// Equality deletes force reading all physical columns of the data files they apply to
+    /// (see IcebergMetadata::getInitialSchemaByPath), so the pruned main read is impossible.
+    if (!equality_delete_files->empty())
+        return false;
+
+    for (const auto & file : *data_files)
+    {
+        /// Only the Parquet reader provides physical row numbers (ChunkInfoRowNumbers)
+        /// for the main read and positional re-reads (FormatFilterInfo::rows_to_read)
+        /// for the lazy read.
+        if (Poco::toUpper(file->parsed_entry->file_format) != "PARQUET")
+            return false;
+
+        /// Schema evolution forces reading all physical columns as well.
+        if (file->resolved_schema_id != table_schema_id)
+            return false;
+    }
     return true;
 }
 

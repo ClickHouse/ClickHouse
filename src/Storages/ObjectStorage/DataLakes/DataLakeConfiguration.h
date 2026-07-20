@@ -404,13 +404,10 @@ public:
 #endif
     }
 
-    bool supportsLazyMaterialization() const override
+    bool supportsLazyMaterialization(StorageMetadataPtr storage_metadata_snapshot, ContextPtr context) const override
     {
-#if USE_AVRO
-        return std::is_same_v<DataLakeMetadata, IcebergMetadata>;
-#else
-        return false;
-#endif
+        assertInitialized();
+        return current_metadata->supportsLazyMaterialization(storage_metadata_snapshot, context);
     }
 
 private:

@@ -1104,6 +1104,37 @@ bool IcebergMetadata::isDataSortedBySortingKey(StorageMetadataPtr storage_metada
     return true;
 }
 
+bool IcebergMetadata::supportsLazyMaterialization(StorageMetadataPtr storage_metadata_snapshot, ContextPtr context) const
+{
+    auto table_state_snapshot = extractIcebergSnapshotIdFromMetadataObject(storage_metadata_snapshot);
+    if (table_state_snapshot == nullptr)
+    {
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Can't extract iceberg table state from storage snapshot for table location {}",
+            persistent_components.table_location);
+    }
+
+    /// An empty table trivially satisfies the requirements.
+    auto data_snapshot = getRelevantDataSnapshotFromTableStateSnapshot(*table_state_snapshot, context);
+    if (!data_snapshot)
+        return true;
+
+    /// The lazy branch re-reads the surviving rows by their physical row numbers, and the main
+    /// read must be able to prune the deferred columns. Prove that for every file of the snapshot:
+    /// all data files are Parquet, none needs schema evolution, and there are no equality deletes.
+    /// The manifest files are cached, and the read itself traverses them anyway.
+    for (const auto & manifest_list_entry : data_snapshot->manifest_list_entries)
+    {
+        auto files_handle = getManifestFileEntriesHandle(
+            object_storage, persistent_components, context, log, manifest_list_entry, table_state_snapshot->schema_id);
+
+        if (!files_handle.areAllDataFilesEligibleForLazyMaterialization(table_state_snapshot->schema_id))
+            return false;
+    }
+    return true;
+}
+
 std::optional<size_t> IcebergMetadata::totalRows(ContextPtr local_context) const
 {
     auto [actual_data_snapshot, actual_table_state_snapshot] = getRelevantState(local_context);
