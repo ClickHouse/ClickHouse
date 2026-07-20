@@ -70,3 +70,6 @@ SELECT ([1]::Array(Nullable(Int64))    <  [NULL]::Array(Nullable(Int64))) =  ([1
 
 -- incomparable element types still throw
 SELECT ['a']::Array(Nullable(String)) < [1]::Array(Nullable(Int64)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+
+-- Array with nullable Tuple element still throw
+SELECT [tuple(CAST(1, 'Nullable(UInt64)'))]::Array(Tuple(Nullable(UInt64))) = [tuple(CAST(1, 'Nullable(Int64)'))]::Array(Tuple(Nullable(Int64))); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
