@@ -90,6 +90,14 @@ void MergingSortedAlgorithm::initialize(Inputs inputs)
         cursors[source_num] = SortCursorImpl(*header, chunk.getColumns(), chunk.getNumRows(), description, source_num);
     }
 
+#ifndef NDEBUG
+    for (size_t source_num = 0; source_num < current_inputs.size(); ++source_num)
+    {
+        if (current_inputs[source_num].skip_last_row && !has_collation)
+            rememberVirtualRowBoundary(cursors[source_num], virtual_row_boundary[source_num]);
+    }
+#endif
+
     if (sorting_queue_strategy == SortingQueueStrategy::Default)
     {
         queue_variants.callOnVariant([&](auto & queue)
@@ -120,6 +128,17 @@ void MergingSortedAlgorithm::consume(Input & input, size_t source_num)
     removeConstAndSparse(input);
     current_inputs[source_num].swap(input);
     cursors[source_num].reset(current_inputs[source_num].chunk.getColumns(), *header, current_inputs[source_num].chunk.getNumRows());
+
+#ifndef NDEBUG
+    /// See `initialize` for why we gate on `apply_virtual_row_conversions`.
+    if (is_virtual_row && !has_collation)
+        rememberVirtualRowBoundary(cursors[source_num], virtual_row_boundary[source_num]);
+    else
+        checkVirtualRowBoundary(cursors[source_num], virtual_row_boundary[source_num], description, source_num);
+#else
+    UNUSED(rememberVirtualRowBoundary);
+    UNUSED(checkVirtualRowBoundary);
+#endif
 
     if (sorting_queue_strategy == SortingQueueStrategy::Default)
     {
