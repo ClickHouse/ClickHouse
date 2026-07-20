@@ -451,6 +451,14 @@ PuffinFooter readPuffinFooter(ReadBuffer & buf, bool seekable_read)
     }
     else
     {
+        /// Fail fast on format mismatch before buffering the rest of a (possibly huge) stream —
+        /// same pattern as `asArrowFileLoadIntoMemory`.
+        result.data.resize(sizeof(PUFFIN_MAGIC));
+        const size_t magic_read = buf.read(reinterpret_cast<char *>(result.data.data()), sizeof(PUFFIN_MAGIC));
+        if (magic_read < sizeof(PUFFIN_MAGIC))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Puffin file too small");
+        checkMagic(result.data.data(), "header");
+
         std::vector<UInt8> tmp(DEFAULT_BLOCK_SIZE);
         while (!buf.eof())
         {
