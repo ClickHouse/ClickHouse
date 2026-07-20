@@ -724,8 +724,6 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::processPacket(Packet packet
             break;  /// If the block is empty - we will receive other packets before EndOfStream.
 
         case Protocol::Server::Exception:
-            got_exception_from_replica.store(true, std::memory_order_release);
-
             if (shouldIgnoreShardException(packet.exception->code()))
             {
                 if (log)
@@ -736,12 +734,25 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::processPacket(Packet packet
 
                 reportShardSkipped();
 
-                /// The server terminated the query with this exception and will not send `EndOfStream`,
-                /// so mark the executor finished to signal end of data.
-                finished = true;
-                return ReadResult(Block{});
+                /// The server that sent this exception terminated its query and will not send
+                /// `EndOfStream`, and `receivePacket` has already disconnected and invalidated that
+                /// one replica. The other parallel/hedged replicas can still be active with unread
+                /// `Progress`, `ProfileInfo` and `EndOfStream` packets, so treat the ignored
+                /// exception like `EndOfStream` for that one connection: mark the executor finished
+                /// only when no active connections remain, and keep reading otherwise. Do not
+                /// publish `got_exception_from_replica` for a skipped shard either: it would make
+                /// `hasThrownException` true, so a later `finish` (e.g. after LIMIT) would return
+                /// early instead of draining the surviving replicas' trailing statistics, and
+                /// `cancel` would skip sending `Cancel` to them.
+                if (!connections->hasActiveConnections())
+                {
+                    finished = true;
+                    return ReadResult(Block{});
+                }
+                break;
             }
 
+            got_exception_from_replica.store(true, std::memory_order_release);
             packet.exception->rethrow();
             break;
 
