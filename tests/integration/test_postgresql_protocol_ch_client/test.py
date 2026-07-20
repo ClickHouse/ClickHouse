@@ -319,9 +319,9 @@ def test_copy_honours_format_and_no_op_options(started_cluster):
         assert out.getvalue() == "1\t2\n"
 
         # The format is still honoured when default-valued options accompany it, in both the legacy and the
-        # modern parenthesized spellings. A comma delimiter is the CSV default and `\N` is the default NULL
-        # marker for both text and CSV, so these stay no-ops (an empty NULL marker - PostgreSQL's CSV default -
-        # is rejected by test_copy_rejects_unsupported_options because ClickHouse still reads and writes `\N`).
+        # modern parenthesized spellings. A comma delimiter is the CSV default, and an explicit `NULL '\N'`
+        # for CSV is honoured as that marker (see test_copy_csv_null_semantics); with non-null values the
+        # output is the same either way.
         out = io.StringIO()
         cur.copy_expert(
             "COPY (SELECT 1 AS a, 2 AS b) TO STDOUT WITH DELIMITER AS ',' NULL AS '\\N' CSV", out
@@ -362,11 +362,12 @@ def test_copy_rejects_unsupported_options(started_cluster):
             cur.copy_expert("COPY (SELECT 1 AS a, 2 AS b) TO STDOUT WITH (FORMAT csv, HEADER)", io.StringIO())
         conn.rollback()
 
-        # A non-default NULL marker (PostgreSQL's CSV default is an empty field) would otherwise be silently
-        # ignored while ClickHouse still reads and writes `\N` - a protocol mismatch, so it is rejected.
+        # For the text format the only supported NULL marker is the default `\N`; an empty marker would be
+        # silently mismatched (ClickHouse's TSV reader/writer keeps `\N`), so it is rejected. (For CSV an
+        # empty marker is PostgreSQL's default and is honoured - see test_copy_csv_null_semantics.)
         with pytest.raises(py_psql.Error, match="non-default NULL marker"):
             cur = conn.cursor()
-            cur.copy_expert("COPY (SELECT 1 AS a, 2 AS b) TO STDOUT WITH (FORMAT csv, NULL '')", io.StringIO())
+            cur.copy_expert("COPY (SELECT 1 AS a, 2 AS b) TO STDOUT WITH (FORMAT text, NULL '')", io.StringIO())
         conn.rollback()
 
         # An option we do not interpret at all is rejected by name rather than dropped.
@@ -388,6 +389,84 @@ def test_copy_rejects_unsupported_options(started_cluster):
         assert cur.fetchone() == (42,)
     finally:
         conn.close()
+
+
+def test_copy_csv_null_semantics(started_cluster):
+    # PostgreSQL's CSV convention is that an empty unquoted field means NULL, while a quoted empty string
+    # (`""`) stays an empty string; its text-format convention (and ClickHouse's CSV default) is the `\N`
+    # marker. `COPY ... CSV` must follow the PostgreSQL convention by default and honour an explicit
+    # `NULL '\N'`, in both directions - otherwise nullable values are serialized or parsed incorrectly.
+    node.query("DROP TABLE IF EXISTS test_csv_nulls SYNC")
+    node.query(
+        "CREATE TABLE test_csv_nulls (id UInt32, n Nullable(Int32), s Nullable(String)) "
+        "ENGINE = MergeTree ORDER BY id"
+    )
+    node.query("INSERT INTO test_csv_nulls VALUES (1, NULL, 'x'), (2, 2, NULL), (3, 3, '')")
+
+    conn = py_psql.connect(
+        host=node.ip_address, port=PG_PORT, user="pguser", password="pgpass", database="default"
+    )
+    try:
+        cur = conn.cursor()
+
+        # COPY TO: a NULL becomes an empty unquoted field; a non-null empty string stays quoted.
+        out = io.StringIO()
+        cur.copy_expert(
+            "COPY (SELECT id, n, s FROM test_csv_nulls ORDER BY id) TO STDOUT WITH (FORMAT csv)", out
+        )
+        assert out.getvalue() == '1,,"x"\n2,2,\n3,3,""\n'
+
+        # An explicit `NULL '\N'` selects ClickHouse's/text-format marker instead.
+        out = io.StringIO()
+        cur.copy_expert(
+            "COPY (SELECT id, n, s FROM test_csv_nulls ORDER BY id) TO STDOUT WITH (FORMAT csv, NULL '\\N')",
+            out,
+        )
+        assert out.getvalue() == '1,\\N,"x"\n2,2,\\N\n3,3,""\n'
+
+        # COPY FROM: an empty unquoted field is read back as NULL, a quoted empty string as ''.
+        cur.copy_expert(
+            "COPY test_csv_nulls FROM STDIN WITH (FORMAT csv)", io.StringIO('4,,"y"\n5,5,\n6,6,""\n')
+        )
+    finally:
+        conn.close()
+
+    assert node.query(
+        "SELECT id, n, s, isNull(n), isNull(s) FROM test_csv_nulls WHERE id > 3 ORDER BY id "
+        "FORMAT TSV"
+    ) == "4\t\\N\ty\t1\t0\n5\t5\t\\N\t0\t1\n6\t6\t\t0\t0\n"
+
+
+def test_datetime_scale_roundtrip(started_cluster):
+    # `DateTime` and `DateTime64` must not collapse to `DateTime64(6)` through self-connect schema
+    # inference: the fractional-second precision is carried in the `timestamp` type modifier (as
+    # PostgreSQL does), `format_type` renders it as `timestamp(p) without time zone`, and the reader maps
+    # p = 0 back to `DateTime` and 1..6 to `DateTime64(p)`. A scale above 6 does not fit PostgreSQL's
+    # `timestamp` at all, so such a column falls back to text and is read as `String` (value preserved).
+    node.query("DROP TABLE IF EXISTS test_dt_scales SYNC")
+    node.query(
+        "CREATE TABLE test_dt_scales "
+        "(id UInt32, dt DateTime, dt3 DateTime64(3), dt6 DateTime64(6), dt9 DateTime64(9), "
+        "adt3 Array(DateTime64(3))) "
+        "ENGINE = MergeTree ORDER BY id"
+    )
+    node.query(
+        "INSERT INTO test_dt_scales VALUES "
+        "(1, '2023-01-02 03:04:05', '2023-01-02 03:04:05.123', '2023-01-02 03:04:05.123456', "
+        "'2023-01-02 03:04:05.123456789', ['2023-01-02 03:04:05.123'])"
+    )
+
+    assert node.query(
+        "SELECT toTypeName(dt), toTypeName(dt3), toTypeName(dt6), toTypeName(dt9), toTypeName(adt3) "
+        f"FROM {pg_source('default', 'test_dt_scales')} LIMIT 1"
+    ) == "DateTime\tDateTime64(3)\tDateTime64(6)\tString\tArray(DateTime64(3))\n"
+
+    assert node.query(
+        f"SELECT dt, dt3, dt6, dt9, adt3 FROM {pg_source('default', 'test_dt_scales')} ORDER BY dt"
+    ) == (
+        "2023-01-02 03:04:05\t2023-01-02 03:04:05.123\t2023-01-02 03:04:05.123456\t"
+        "2023-01-02 03:04:05.123456789\t['2023-01-02 03:04:05.123']\n"
+    )
 
 
 def test_map_and_tuple_columns_are_not_advertised_as_arrays(started_cluster):
@@ -447,11 +526,12 @@ def test_wire_types_for_datetime(started_cluster):
     # advertises them as `timestamp` in `pg_attribute` - not the `varchar` fallback (OID 1043).
     node.query("DROP TABLE IF EXISTS test_wire_datetime SYNC")
     node.query(
-        "CREATE TABLE test_wire_datetime (dt DateTime, dt64 DateTime64(3)) "
+        "CREATE TABLE test_wire_datetime (dt DateTime, dt64 DateTime64(3), dt64_wide DateTime64(9)) "
         "ENGINE = MergeTree ORDER BY dt"
     )
     node.query(
-        "INSERT INTO test_wire_datetime VALUES ('2023-01-02 03:04:05', '2023-01-02 03:04:05.123')"
+        "INSERT INTO test_wire_datetime VALUES "
+        "('2023-01-02 03:04:05', '2023-01-02 03:04:05.123', '2023-01-02 03:04:05.123456789')"
     )
 
     conn = py_psql.connect(
@@ -459,13 +539,15 @@ def test_wire_types_for_datetime(started_cluster):
     )
     try:
         cur = conn.cursor()
-        cur.execute("SELECT dt, dt64 FROM test_wire_datetime")
-        # 1114 = timestamp (without time zone).
-        assert [c.type_code for c in cur.description] == [1114, 1114]
+        cur.execute("SELECT dt, dt64, dt64_wide FROM test_wire_datetime")
+        # 1114 = timestamp (without time zone). A DateTime64 scale above 6 does not fit PostgreSQL's
+        # timestamp precision (0..6), so it falls back to varchar (1043) with the full value as text.
+        assert [c.type_code for c in cur.description] == [1114, 1114, 1043]
         # The text value is PostgreSQL's timestamp format, so psycopg2 parses it into a Python datetime.
         row = cur.fetchone()
         assert str(row[0]) == "2023-01-02 03:04:05"
         assert str(row[1]) == "2023-01-02 03:04:05.123000"
+        assert row[2] == "2023-01-02 03:04:05.123456789"
     finally:
         conn.close()
 
