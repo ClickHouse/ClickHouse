@@ -734,7 +734,7 @@ ZooKeeperRequestWithCallbacks MultiRequestGenerator::generateImpl(const Coordina
     auto request = std::make_shared<ZooKeeperMultiRequest>(ops, acls);
     bool is_read = request->isReadRequest();
 
-    auto callback = [inner_callbacks_ = std::move(inner_callbacks), is_read](const Coordination::Response * response)
+    auto callback = [callbacks = std::move(inner_callbacks), is_read](const Coordination::Response * response)
     {
         const Coordination::MultiResponse * multi = nullptr;
         if (response)
@@ -742,35 +742,42 @@ ZooKeeperRequestWithCallbacks MultiRequestGenerator::generateImpl(const Coordina
             multi = dynamic_cast<const Coordination::MultiResponse *>(response);
             chassert(multi);
         }
-        if (is_read)
-        {
-            for (size_t i = 0; i < inner_callbacks_.size(); ++i)
-            {
-                const Coordination::Response * inner_response = multi ? multi->responses.at(i).get() : nullptr;
-                if (inner_callbacks_[i])
-                    inner_callbacks_[i](inner_response);
-            }
-        }
-        else
-        {
-            bool success = false;
-            if (multi)
-            {
-                success = true;
-                for (const auto & resp : multi->responses)
-                    if (resp->error != Coordination::Error::ZOK)
-                        success = false;
-            }
 
-            for (size_t i = 0; i < inner_callbacks_.size(); ++i)
+        /// No response (or a malformed one): sub-op outcomes are unknown.
+        if (!multi || multi->responses.size() != callbacks.size())
+        {
+            for (const auto & inner_callback : callbacks)
+                if (inner_callback)
+                    inner_callback(nullptr);
+            return;
+        }
+
+        /// A write multi is a transaction: if it failed, no sub-op was applied,
+        /// even the ones whose own checks passed (they report ZOK).
+        bool txn_failed = false;
+        if (!is_read)
+        {
+            txn_failed = multi->error != Coordination::Error::ZOK;
+            for (const auto & resp : multi->responses)
+                txn_failed |= resp->error != Coordination::Error::ZOK;
+        }
+
+        for (size_t i = 0; i < callbacks.size(); ++i)
+        {
+            if (!callbacks[i])
+                continue;
+
+            const Coordination::Response * inner_response = multi->responses.at(i).get();
+            if (txn_failed && inner_response->error == Coordination::Error::ZOK)
             {
-                const Coordination::Response * inner_response = nullptr;
-                /// If any subrequest failed report all subrequests as failed (nullptr).
-                if (success)
-                    inner_response = multi->responses.at(i).get();
-                if (inner_callbacks_[i])
-                    inner_callbacks_[i](inner_response);
+                /// Report a synthetic error so the sub-op is not taken for an applied one.
+                /// Only `error` is meaningful in this response object.
+                Coordination::Response not_applied;
+                not_applied.error = Coordination::Error::ZRUNTIMEINCONSISTENCY;
+                callbacks[i](&not_applied);
             }
+            else
+                callbacks[i](inner_response);
         }
     };
 
