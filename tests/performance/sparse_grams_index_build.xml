@@ -6,7 +6,7 @@
     <create_query>CREATE TABLE sg_text_3_8 (s String, INDEX idx s TYPE text(tokenizer = sparseGrams(3, 8)) GRANULARITY 1) ENGINE = MergeTree ORDER BY tuple()</create_query>
     <create_query>SYSTEM STOP MERGES</create_query>
 
-    <fill_query>INSERT INTO sg_src SELECT randomPrintableASCII(200) FROM numbers(5_000_000)</fill_query>
+    <fill_query>INSERT INTO sg_src SELECT randomPrintableASCII(200) FROM numbers(1_000_000)</fill_query>
 
     <query>INSERT INTO sg_bloom_3_8 SELECT s FROM sg_src</query>
     <query>INSERT INTO sg_bloom_3_100 SELECT s FROM sg_src</query>
