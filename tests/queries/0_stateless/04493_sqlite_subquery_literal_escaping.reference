@@ -10,5 +10,10 @@
 2	it\'s
 3	a\tb
 5	back\\slash
+--- table function: subquery with multi-column single-row IN
+2	it\'s
+--- table function: subquery with multi-column multi-row IN
+1	plain
+2	it\'s
 --- engine: subquery with single-quote literal
 2	it\'s

@@ -51,6 +51,15 @@ ${CLICKHOUSE_CLIENT} --query="SELECT id FROM sqlite('${DB_PATH}', (SELECT id, va
 echo "--- table function: subquery with IN list of special-character strings"
 ${CLICKHOUSE_CLIENT} --query="SELECT id, val FROM sqlite('${DB_PATH}', (SELECT id, val FROM t WHERE val IN ('it''s', 'a\tb', 'back\\\\slash'))) ORDER BY id"
 
+# A single-row multi-column IN set (`(id, val) IN ((2, 'it''s'))`) must keep its outer parentheses when
+# reserialized for SQLite. Otherwise it collapses to `(id, val) IN (2, 'it''s')`, which SQLite rejects
+# with "IN(...) element has 1 term - expected 2".
+echo "--- table function: subquery with multi-column single-row IN"
+${CLICKHOUSE_CLIENT} --query="SELECT id, val FROM sqlite('${DB_PATH}', (SELECT id, val FROM t WHERE (id, val) IN ((2, 'it''s')))) ORDER BY id"
+
+echo "--- table function: subquery with multi-column multi-row IN"
+${CLICKHOUSE_CLIENT} --query="SELECT id, val FROM sqlite('${DB_PATH}', (SELECT id, val FROM t WHERE (id, val) IN ((1, 'plain'), (2, 'it''s')))) ORDER BY id"
+
 echo "--- engine: subquery with single-quote literal"
 ${CLICKHOUSE_CLIENT} --query="CREATE TABLE test_04493_engine (id Int32, val String) ENGINE = SQLite('${DB_PATH}', (SELECT id, val FROM t WHERE val = 'it''s'))"
 ${CLICKHOUSE_CLIENT} --query="SELECT id, val FROM test_04493_engine ORDER BY id"

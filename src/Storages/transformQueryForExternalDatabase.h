@@ -2,6 +2,7 @@
 
 #include <base/types.h>
 #include <Core/NamesAndTypes.h>
+#include <Parsers/IAST_fwd.h>
 #include <Parsers/IdentifierQuotingStyle.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Interpreters/Context_fwd.h>
@@ -47,5 +48,12 @@ String transformQueryForExternalDatabase(
   * nothing (the filter is applied locally, as usual).
   */
 void rejectOuterFilterForQueryBackedExternalSourceIfStrict(const SelectQueryInfo & query_info, const ContextPtr & context);
+
+/** Recursively normalize single-row multi-column `IN`/`NOT IN` sets in `node` (e.g. `(a, b) IN ((1, 'x'))`)
+  * so that they keep their outer parentheses when re-serialized for an external database, instead of
+  * collapsing to a flat scalar list (`IN (1, 'x')`). Used for user-provided `(SELECT ...)` subqueries that
+  * are formatted from the raw AST and therefore bypass the normalization done by `transformQueryForExternalDatabase`.
+  */
+void wrapSingleRowTupleSetsForIN(ASTPtr & node);
 
 }
