@@ -5975,6 +5975,7 @@ async function postSingle(posted_request_num, query, history_query_text, params_
                 params: paramValuesSnapshot,
                 params_restore_pending: params_restore_pending,   /// see saveHistory: the launch-time params are authoritative when a run raced an in-flight param restore
                 live_params_at_launch: live_params_at_launch,   /// see saveHistory: distinguishes a newer trusted param edit during the run from a stale pending-restore input state
+                posted_request_num: posted_request_num,   /// see saveHistory: it awaits tokenization for a diverged draft and must bail if superseded meanwhile
                 partial: partial,
                 database: query_database,
                 url: query_url,
@@ -6025,6 +6026,7 @@ async function postSingle(posted_request_num, query, history_query_text, params_
         params: paramValuesSnapshot,
         params_restore_pending: params_restore_pending,   /// see saveHistory: the launch-time params are authoritative when a run raced an in-flight param restore
         live_params_at_launch: live_params_at_launch,   /// see saveHistory: distinguishes a newer trusted param edit during the run from a stale pending-restore input state
+        posted_request_num: posted_request_num,   /// see saveHistory: it awaits tokenization for a diverged draft and must bail if superseded meanwhile
         partial: partial,
         database: query_database,
         url: query_url,
@@ -6230,6 +6232,7 @@ async function postMulti(posted_request_num, parsed, params_restore_pending, lau
         params: paramValuesSnapshot,
         params_restore_pending: params_restore_pending,   /// see saveHistory: the launch-time params are authoritative when a run raced an in-flight param restore
         live_params_at_launch: live_params_at_launch,   /// see saveHistory: distinguishes a newer trusted param edit during the run from a stale pending-restore input state
+        posted_request_num: posted_request_num,   /// see saveHistory: it awaits tokenization for a diverged draft and must bail if superseded meanwhile
         partial: partial || skipped_after_error,
         database: query_database,
         url: query_url,
@@ -7673,6 +7676,14 @@ function refreshCurrentHistoryEntry(tab) {
 /// and `resolveRunParams`'s return value). If either diverged, the live draft must be left alone
 /// (never reverted to the stale query/params that actually ran) and the entry must not carry
 /// `run=1` — that draft was never run, so a reload must not auto-execute it.
+///
+/// Callers thread their launch generation in `stateData.posted_request_num` and check it against
+/// `request_num` BEFORE calling, but the diverged-draft branch below awaits tokenization, so this
+/// function can itself be superseded mid-save: a tab switch (`invalidateInFlight`), Stop
+/// (`cancel`) or a newer run bumps `request_num` while the derivation is suspended. The resumed
+/// code re-checks the generation after each await and bails before touching `tab` — otherwise it
+/// would stamp `tab.result` and push a history entry for the OLD tab, rewriting the URL under
+/// whatever tab is active by then.
 async function saveHistory(stateData, titleForDoc) {
     const tab = getActiveTab();
     if (!tab) return;
@@ -7753,6 +7764,13 @@ async function saveHistory(stateData, titleForDoc) {
             draft_query = tab.query;
             params_at_derivation = { ...tab.params };
             draft_params = await paramValuesForQuery(draft_query);
+            /// The derivation may have been superseded while suspended: a tab switch, Stop, or a
+            /// newer run bumped `request_num` (see the header comment). `tab` still references the
+            /// tab that was active when this save started, so writing `tab.params`/`tab.result` or
+            /// recording an entry now would resurrect the old tab's state — push its history entry
+            /// and rewrite the URL — under the newer context. Bail without touching anything; the
+            /// superseding action has already recorded its own state.
+            if (stateData.posted_request_num !== request_num) return;
         } while (tab.query !== draft_query || !sameParams(tab.params, params_at_derivation));
         tab.params = draft_params;
     }

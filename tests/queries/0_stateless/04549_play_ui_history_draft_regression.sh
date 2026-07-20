@@ -54,6 +54,11 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 #     error partway (every statement after the failing one is skipped) — the latter must drop `run=1`
 #     just like a subset, so a shared link / reload never auto-executes a never-run (possibly
 #     destructive) trailing statement.
+#   - `saveHistory` itself awaits tokenization for a diverged draft, so it can be superseded
+#     MID-SAVE: a tab switch (or Stop / newer run) bumps `request_num` while the derivation is
+#     suspended, and the resumed save must bail before touching the old tab — otherwise it would
+#     stamp the old tab's result and push a stale history entry, rewriting the URL under the tab
+#     the user has since switched to.
 # The harness extracts the real tab/history functions from the served /play page and
 # drives them under node with stub DOM/history objects (including a minimal in-memory
 # IndexedDB), asserting on the observable state: history entries, the active tab, the
@@ -395,7 +400,7 @@ function setParam(name, value)
 async function run(q)
 {
     type(q);
-    await sandbox.saveHistory({ query: q, resultQuery: q, params: sandbox.getParamValues(), format: 'JSONCompact', ok: true, data: 'result of ' + q, elapsed_ns: 1,
+    await sandbox.saveHistory({ query: q, resultQuery: q, params: sandbox.getParamValues(), posted_request_num: sandbox.request_num, format: 'JSONCompact', ok: true, data: 'result of ' + q, elapsed_ns: 1,
         /// Stamp the live connection the run executed against, exactly as `postSingle`/`postMulti` do,
         /// so the snapshot is recognized as reproducible on the current connection (`liveDivergedFromRun`
         /// false) and the entry keeps `run=1`; an unstamped snapshot is treated as diverged (fail closed).
@@ -409,7 +414,7 @@ async function run(q)
 async function runSelected(editorText, selectedStatement)
 {
     type(editorText);
-    await sandbox.saveHistory({ query: editorText, resultQuery: selectedStatement, params: sandbox.getParamValues(), format: 'JSONCompact', ok: true, data: 'result of ' + selectedStatement, elapsed_ns: 1,
+    await sandbox.saveHistory({ query: editorText, resultQuery: selectedStatement, params: sandbox.getParamValues(), posted_request_num: sandbox.request_num, format: 'JSONCompact', ok: true, data: 'result of ' + selectedStatement, elapsed_ns: 1,
         database: sandbox.selected_database, url: sandbox.url_elem.value, user: sandbox.user_elem.value });
     await drain();
 }
@@ -421,14 +426,16 @@ async function runSelected(editorText, selectedStatement)
 function startRun(q)
 {
     type(q);
-    return { query: q, params: sandbox.getParamValues() };
+    /// The launch generation, exactly what `postOne`/`postAll` capture as `posted_request_num`:
+    /// a tab switch / Stop / newer run bumps `request_num` meanwhile and the save must bail.
+    return { query: q, params: sandbox.getParamValues(), posted_request_num: sandbox.request_num };
 }
 
 /// Complete a run started with `startRun`: `saveHistory` receives the LAUNCH-TIME snapshot,
 /// never whatever the editor/params hold by the time the response actually arrives.
 async function finishRun(started)
 {
-    await sandbox.saveHistory({ query: started.query, resultQuery: started.query, params: started.params, format: 'JSONCompact', ok: true, data: 'result of ' + started.query, elapsed_ns: 1,
+    await sandbox.saveHistory({ query: started.query, resultQuery: started.query, params: started.params, posted_request_num: started.posted_request_num, format: 'JSONCompact', ok: true, data: 'result of ' + started.query, elapsed_ns: 1,
         database: sandbox.selected_database, url: sandbox.url_elem.value, user: sandbox.user_elem.value });
     await drain();
 }
@@ -1404,6 +1411,7 @@ async function reload()
         query: 'SELECT {y:Int32}, {x:Int32}',
         resultQuery: 'SELECT {y:Int32}, {x:Int32}',
         params: { y: '2', x: '1' },   /// launched-query-text order from paramValuesForQuery: {y, x}
+        posted_request_num: sandbox.request_num,
         format: 'JSONCompact', ok: true, data: 'result', elapsed_ns: 1,
         database: sandbox.selected_database, url: sandbox.url_elem.value, user: sandbox.user_elem.value });
     await drain();
@@ -1572,6 +1580,46 @@ async function reload()
     assert_eq('param edit during draft derivation: the stale binding does not reach the URL', sandbox.history.stack[sandbox.history.idx].url.includes('param_y=2'), false);
     assert_eq('param edit during draft derivation: the entry drops run=1', sandbox.history.stack[sandbox.history.idx].url.includes('run=1'), false);
     assert_eq("param edit during draft derivation: the completed run's result is still kept", active().result && active().result.query, 'SELECT {x:Int32}');
+    sandbox.tokenize = async () => [];
+    sandbox.currentQueryParams = [];
+
+    /// A TAB SWITCH while `saveHistory`'s diverged-branch derivation is still awaiting the
+    /// draft's tokenization. The switch bumps `request_num` (`invalidateInFlight`) and records
+    /// its own entry for the NEW tab; when the old save's derivation then resolves, its `tab`
+    /// still references the tab it started on, so committing the result and calling
+    /// `writeHistoryEntry` would push a stale entry for the old tab and rewrite the URL under
+    /// the new one. The generation guard after the await must make it bail instead: no result
+    /// stamped, no entry pushed, the old tab's draft left alone. Launch `SELECT {x:Int32}`,
+    /// edit to `SELECT {y:Int32}` mid-flight, complete the run with the diverged-branch
+    /// tokenization hung, open a new tab while it is pending, then release the derivation.
+    reset();
+    const switchAwayRun = startRun('SELECT {x:Int32}');
+    type('SELECT {y:Int32}');                      /// mid-flight edit: a diverged draft
+    sandbox.param_inputs = { y: '2' };             /// the edit's `updateQueryParams` rebuild HAS landed
+    sandbox.currentQueryParams = [{ name: 'y', type: 'String' }];
+    active().params = { y: '2' };
+    const draftTabId = sandbox.activeTabId;
+    const pendingSwitchTokenize = [];
+    sandbox.tokenize = () => new Promise(resolve =>
+        pendingSwitchTokenize.push(() => resolve(draftTokens('y'))));
+    const switchAwayFinishPromise = finishRun(switchAwayRun);
+    await drain();                                 /// `saveHistory` is now awaiting the draft's tokenize
+    sandbox.tokenize = async () => [];             /// only the suspended derivation stays hung; the new tab's activation tokenizes normally
+    sandbox.addTab();                              /// the user switches away: bumps `request_num`, records the new tab's entry
+    await drain();
+    const stackLenAfterSwitch = sandbox.history.stack.length;
+    const urlAfterSwitch = sandbox.history.stack[sandbox.history.idx].url;
+    pendingSwitchTokenize.shift()();               /// the superseded save's derivation finally resolves
+    await drain();
+    await switchAwayFinishPromise;
+    await drain();
+    assert_eq('tab switch during draft derivation: the new tab stays active', sandbox.activeTabId !== draftTabId, true);
+    assert_eq('tab switch during draft derivation: the current entry still belongs to the new tab', sandbox.history.stack[sandbox.history.idx].state.tabId, sandbox.activeTabId);
+    assert_eq('tab switch during draft derivation: no stale entry is pushed for the old tab', sandbox.history.stack.length, stackLenAfterSwitch);
+    assert_eq('tab switch during draft derivation: the URL is not rewritten under the new tab', sandbox.history.stack[sandbox.history.idx].url, urlAfterSwitch);
+    const switchAwayDraftTab = sandbox.tabs.find(t => t.id === draftTabId);
+    assert_eq("tab switch during draft derivation: the superseded run does not stamp the old tab's result", !switchAwayDraftTab.result, true);
+    assert_params("tab switch during draft derivation: the old tab's draft params are left alone", switchAwayDraftTab.params, { y: '2' });
     sandbox.tokenize = async () => [];
     sandbox.currentQueryParams = [];
 

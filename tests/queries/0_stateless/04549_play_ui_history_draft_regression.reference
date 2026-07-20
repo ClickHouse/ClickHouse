@@ -113,6 +113,12 @@ param edit during draft derivation: the live input keeps the newer value
 param edit during draft derivation: the stale binding does not reach the URL
 param edit during draft derivation: the entry drops run=1
 param edit during draft derivation: the completed run's result is still kept
+tab switch during draft derivation: the new tab stays active
+tab switch during draft derivation: the current entry still belongs to the new tab
+tab switch during draft derivation: no stale entry is pushed for the old tab
+tab switch during draft derivation: the URL is not rewritten under the new tab
+tab switch during draft derivation: the superseded run does not stamp the old tab's result
+tab switch during draft derivation: the old tab's draft params are left alone
 reload after a preserved draft: the draft is restored as editor text
 reload after a preserved draft: the draft is not auto-run
 stale reload then rerun: the draft is restored unrun first
