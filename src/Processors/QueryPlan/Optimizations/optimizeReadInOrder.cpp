@@ -1511,9 +1511,6 @@ void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const
                 reader->resetVirtualRowConversions();
         }
 
-        /// FinishSorting's `MergingSortedTransform` requires every input stream of the union
-        /// to be sorted by `max_sort_descr`; the union must not concatenate (narrow) them.
-        union_step->disableNarrowing();
         sorting->convertToFinishSorting(*max_sort_descr, use_buffering, apply_virtual_row);
     }
     else if (auto order_info = buildInputOrderInfo(*sorting, apply_virtual_row, virtual_row_reader, *node.children.front(), optimization_settings))
