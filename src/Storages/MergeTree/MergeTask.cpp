@@ -716,6 +716,13 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         /// (and possibly the re-added `old`) — can only be merged with the pre-rename parts once the
         /// rename mutation has materialized in all of them. Hence either every source part still
         /// stores `old` (handled here), or none does and the rename map is empty.
+        ///
+        /// Patch parts (lightweight updates) cannot be dropped by this decision either: a patch
+        /// that updates the rename target is created after the pending rename mutation, so its
+        /// data version exceeds the rename's, and `getPatchesToApplyOnMerge` applies a patch to
+        /// a merge only when `max_patch_version <= next_mutation_version` of the source parts.
+        /// A merge over pre-rename parts therefore never consumes a post-rename patch; the patch
+        /// stays alive, is applied on read, and materializes only after the rename does.
         NameSet renamed_column_targets;
         for (const auto & part : global_ctx->future_part->parts)
         {

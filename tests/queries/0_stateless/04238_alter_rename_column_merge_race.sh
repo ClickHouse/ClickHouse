@@ -185,4 +185,42 @@ if [ "$count" != "4" ]; then
 fi
 
 ${CLICKHOUSE_CLIENT} --query="DROP TABLE IF EXISTS t_rename_merge_race_mixed"
+
+# Phase 5: a patch part (lightweight update) on the rename target. Same setup as Phase 3, plus a
+# lightweight UPDATE of b after the RENAME and the re-ADD, so a patch part carrying the new value of
+# b exists while the source parts still physically store only the pre-rename a. The merge under the
+# pending rename must not consume (and thereby not lose) that patch: patch selection is version-gated
+# in getPatchesToApplyOnMerge, so a post-rename patch is never applied to a merge over pre-rename
+# parts; it stays alive, is applied on read, and materializes only after the rename does.
+${CLICKHOUSE_CLIENT} --query="
+    DROP TABLE IF EXISTS t_rename_merge_race_patch;
+    CREATE TABLE t_rename_merge_race_patch (id UInt64, a String)
+    ENGINE = MergeTree() ORDER BY id
+    SETTINGS min_bytes_for_wide_part = 0,
+        enable_block_number_column = 1,
+        enable_block_offset_column = 1,
+        apply_patches_on_merge = 1;
+    INSERT INTO t_rename_merge_race_patch VALUES (1, 'AAA'), (2, 'BBB'), (3, 'CCC');
+"
+
+${CLICKHOUSE_CLIENT} --query="SYSTEM ENABLE FAILPOINT mt_select_parts_to_mutate_no_free_threads"
+${CLICKHOUSE_CLIENT} --query="ALTER TABLE t_rename_merge_race_patch RENAME COLUMN a TO b SETTINGS alter_sync = 0"
+${CLICKHOUSE_CLIENT} --query="ALTER TABLE t_rename_merge_race_patch ADD COLUMN a String DEFAULT 'reused_default' SETTINGS alter_sync = 0"
+${CLICKHOUSE_CLIENT} --enable_lightweight_update=1 --query="UPDATE t_rename_merge_race_patch SET b = 'patched' WHERE id = 2"
+${CLICKHOUSE_CLIENT} --query="OPTIMIZE TABLE t_rename_merge_race_patch FINAL"
+disable_failpoint
+wait_mutation t_rename_merge_race_patch
+
+# The patched row must keep the lightweight update, the other rows their original (renamed) values,
+# and the re-added a its default everywhere.
+count=$(${CLICKHOUSE_CLIENT} --query="
+    SELECT count() FROM t_rename_merge_race_patch
+    WHERE b = if(id = 2, 'patched', ['AAA', 'BBB', 'CCC'][id]) AND a = 'reused_default'")
+if [ "$count" != "3" ]; then
+    echo "FAIL (patch part on rename target): expected 3 rows with the patched b preserved, got $count"
+    ${CLICKHOUSE_CLIENT} --query="SELECT id, a, b FROM t_rename_merge_race_patch ORDER BY id"
+    exit 1
+fi
+
+${CLICKHOUSE_CLIENT} --query="DROP TABLE IF EXISTS t_rename_merge_race_patch"
 echo "OK"
