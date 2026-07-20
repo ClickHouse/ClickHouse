@@ -92,6 +92,9 @@ set -euo pipefail
 
 REPO="ClickHouse/ClickHouse"
 
+# The Python terminal renderer that draws the status bar (sits next to this script).
+STATUS_RENDERER="${BASH_SOURCE[0]%/*}/continue-all-prs-status.py"
+
 # Bright magenta for the orchestrator's own messages, to distinguish from the
 # per-PR (hash-colored) lines.
 S=$'\033[1;35m'
@@ -229,43 +232,31 @@ pr_color_seq()
     }'
 }
 
-# Terminal writes are serialized on fd 6 (the TTY lock) against the status-bar
-# redraw, so scrolling log lines never land on the reserved status line.
 emit()
 {
     # emit <color-seq> <message>
-    local line
-    if (( COLOR )); then line="${1}${2}${RESET}"; else line="$2"; fi
-    if (( ${STATUS_ENABLED:-0} )); then
-        { flock 6; printf '%s\n' "$line"; } 6>>"${TTYLOCK:-/dev/null}"
-    else
-        printf '%s\n' "$line"
-    fi
+    if (( COLOR )); then printf '%s%s%s\n' "$1" "$2" "$RESET"; else printf '%s\n' "$2"; fi
 }
 
-banner()
-{
-    if (( ${STATUS_ENABLED:-0} )); then
-        { flock 6; echo "${S}$*${R}"; } 6>>"${TTYLOCK:-/dev/null}"
-    else
-        echo "${S}$*${R}"
-    fi
-}
+banner() { echo "${S}$*${R}"; }
 
 # ----------------------------------------------------------------------------
-# Status bar: a persistent reverse-video line pinned to the bottom of the
-# terminal (via a DECSTBM scroll region) showing elapsed time, rounds,
-# ok/fail PR counts, total cost, and token totals. Counters live in $STATSFILE
-# (updated under $STATSLOCK); a background updater redraws the bar. TTY only.
+# Status bar. The terminal is owned by a single-writer Python renderer
+# (utils/continue-all-prs-status.py): the whole script's stdout is piped to it,
+# and it prints incoming log lines scrolling above a two-line status bar pinned
+# to the bottom (elapsed / rounds / ok-fail / cost / token totals, plus the list
+# of PR numbers needing attention). Driving the terminal from one process avoids
+# the cross-process cursor races a bash-only bar suffered from. The counters the
+# renderer reads are maintained here in $STATSFILE / $NAFILE.
 # ----------------------------------------------------------------------------
 STATUS_ENABLED=0
-STATUS_PID=""
 START=0
+ORIG_OUT=""
 
 stats_init() { printf '0 0 0 0 0 0 0 0\n' > "$STATSFILE"; : > "$NAFILE"; }
 
 # stats_add <d_rounds> <d_ok> <d_fail> <d_in> <d_out> <d_cachein> <d_cacheout> <d_cost>
-# Writes atomically (tmp + mv) so a concurrent reader never sees a torn/empty file.
+# Writes atomically (tmp + mv) so the renderer never reads a torn/empty file.
 stats_add()
 {
     { flock 7
@@ -288,73 +279,24 @@ na_add()
     } 7>>"$STATSLOCK"
 }
 
-humanize() { awk -v n="$1" 'BEGIN{ if(n>=1e9)printf"%.2fG",n/1e9; else if(n>=1e6)printf"%.2fM",n/1e6; else if(n>=1e3)printf"%.1fk",n/1e3; else printf"%d",n }'; }
-fmt_elapsed() { local s=$1; printf '%02d:%02d:%02d' $((s/3600)) $(((s%3600)/60)) $((s%60)); }
-
-render_status()
-{
-    local cur r s f i o ci co c now el
-    cur=$(cat "$STATSFILE" 2>/dev/null); [[ -n "$cur" ]] || cur='0 0 0 0 0 0 0 0'
-    read -r r s f i o ci co c <<< "$cur"
-    now=$(date +%s); el=$(( now - START ))
-    printf 'continue-all-prs | %s | round %d | ok %d fail %d | $%.2f | in %s out %s cache-in %s cache-out %s' \
-        "$(fmt_elapsed "$el")" "${r:-0}" "${s:-0}" "${f:-0}" "${c:-0}" \
-        "$(humanize "${i:-0}")" "$(humanize "${o:-0}")" "$(humanize "${ci:-0}")" "$(humanize "${co:-0}")"
-}
-
-render_na()
-{
-    local nums n
-    nums=$(tr '\n' ' ' < "$NAFILE" 2>/dev/null | sed 's/ *$//')
-    n=$(grep -c . "$NAFILE" 2>/dev/null || echo 0)
-    if [[ -z "$nums" ]]; then printf 'needs attention: none'; else printf 'needs attention (%s): %s' "$n" "$nums"; fi
-}
-
-# Redraw both reserved lines. Re-asserts the scroll region every tick (cheap;
-# also adapts to terminal resize), all under the TTY lock and bracketed by
-# DECSC/DECRC so it never disturbs the scrolling output's cursor.
-draw_status()
-{
-    (( STATUS_ENABLED )) || return 0
-    local rows cols stat na
-    rows=$(tput lines 2>/dev/null || echo 24)
-    cols=$(tput cols 2>/dev/null || echo 100)
-    stat=$(render_status); stat=${stat:0:cols}
-    na=$(render_na);       na=${na:0:cols}
-    { flock 6
-      printf '\0337\033[1;%dr\033[%d;1H\033[2K\033[7m%s\033[0m\033[%d;1H\033[2K\033[7m%s\033[0m\0338' \
-        "$(( rows - 2 ))" "$(( rows - 1 ))" "$na" "$rows" "$stat"
-    } 6>>"$TTYLOCK"
-}
-
-status_updater() { while :; do draw_status; sleep "${STATUS_INTERVAL:-2}"; done; }
-
+# Pipe this script's stdout (banners + all worker lines) through the renderer,
+# which owns the real terminal. No-op if disabled or the renderer is missing.
 status_start()
 {
     (( STATUS_ENABLED )) || return 0
-    local rows old; rows=$(tput lines 2>/dev/null || echo 24)
-    # kill a stale updater left by a previous run in this log dir (prevents two
-    # updaters fighting over the reserved lines).
-    if [[ -f "$LOGDIR/updater.pid" ]]; then
-        old=$(cat "$LOGDIR/updater.pid" 2>/dev/null || true)
-        [[ -n "$old" ]] && kill "$old" 2>/dev/null || true
-    fi
-    # reserve the bottom TWO rows: scroll region = 1..(rows-2); park cursor inside
-    printf '\033[1;%dr\033[%d;1H' "$(( rows - 2 ))" "$(( rows - 2 ))"
-    draw_status
-    status_updater & STATUS_PID=$!
-    echo "$STATUS_PID" > "$LOGDIR/updater.pid"
+    command -v python3 >/dev/null 2>&1 && [[ -f "$STATUS_RENDERER" ]] || { STATUS_ENABLED=0; return 0; }
+    exec {ORIG_OUT}>&1
+    exec > >(CAP_STATS="$STATSFILE" CAP_NA="$NAFILE" CAP_START="$START" \
+             exec python3 "$STATUS_RENDERER")
 }
 
 status_stop()
 {
     (( STATUS_ENABLED )) || return 0
-    [[ -n "$STATUS_PID" ]] && kill "$STATUS_PID" 2>/dev/null || true
-    rm -f "$LOGDIR/updater.pid" 2>/dev/null || true
-    local rows; rows=$(tput lines 2>/dev/null || echo 24)
-    # reset the scroll region to the full screen and clear both reserved lines
-    printf '\033[r\033[%d;1H\033[2K\033[%d;1H\033[2K' "$(( rows - 1 ))" "$rows"
     STATUS_ENABLED=0
+    [[ -n "$ORIG_OUT" ]] || return 0
+    exec >&"$ORIG_OUT"                             # close pipe -> renderer EOF -> it restores
+    printf '\033[r' >&"$ORIG_OUT" 2>/dev/null || true   # guarantee the scroll region is reset
 }
 
 # Distill a one-to-two sentence summary of what the worker did from its log.
@@ -530,7 +472,6 @@ LOCKFILE=""
 LOGDIR="${MAIN_REPO}/tmp/continue-all-prs"
 STATSFILE="$LOGDIR/stats"
 STATSLOCK="$LOGDIR/stats.lock"
-TTYLOCK="$LOGDIR/tty.lock"
 NAFILE="$LOGDIR/needs-attention"
 
 cleanup()
@@ -538,7 +479,7 @@ cleanup()
     status_stop   # reset the scroll region and kill the updater first
     [[ -n "${QUEUEFILE:-}" ]] && rm -f "$QUEUEFILE" "$QUEUEFILE.tmp" 2>/dev/null || true
     [[ -n "${LOCKFILE:-}" ]] && rm -f "$LOCKFILE" 2>/dev/null || true
-    rm -f "$STATSLOCK" "$TTYLOCK" "$STATSFILE.tmp" 2>/dev/null || true
+    rm -f "$STATSLOCK" "$STATSFILE.tmp" 2>/dev/null || true
 }
 trap cleanup EXIT
 trap 'echo; banner "Interrupted, stopping..."; exit 130' INT TERM
