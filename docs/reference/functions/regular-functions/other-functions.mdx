@@ -2916,7 +2916,7 @@ This function is non-deterministic: it can return different results for the same
 **Syntax**
 
 ```sql
-hasColumnInTable([hostname[, username[, password]],]database, table, column)
+hasColumnInTable(database, table, column)
 ```
 
 **Arguments**
@@ -2924,9 +2924,6 @@ hasColumnInTable([hostname[, username[, password]],]database, table, column)
 - `database` — Name of the database. [`const String`](/reference/data-types/string)
 - `table` — Name of the table. [`const String`](/reference/data-types/string)
 - `column` — Name of the column. [`const String`](/reference/data-types/string)
-- `hostname` — Optional. Remote server name to perform the check on. [`const String`](/reference/data-types/string)
-- `username` — Optional. Username for remote server. [`const String`](/reference/data-types/string)
-- `password` — Optional. Password for remote server. [`const String`](/reference/data-types/string)
 
 **Returned value**
 
