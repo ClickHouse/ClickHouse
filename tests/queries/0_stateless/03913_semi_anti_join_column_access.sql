@@ -280,3 +280,26 @@ SELECT t3.c
 FROM (SELECT 1 AS a) t1
 LEFT SEMI JOIN (SELECT 1 AS b) t2 ON t1.a = t2.b
 RIGHT SEMI JOIN (SELECT 1 AS c) t3 ON t2.b = t3.c; -- { serverError SEMI_ANTI_JOIN_COLUMN_ACCESS_DENIED }
+
+-- Fully qualified `database.table.column` references to the non-preserved side must be recognized
+-- with the same binding rules as normal table-expression resolution: a single-part table name and
+-- a two-part `database.table` qualifier. Otherwise a fully qualified reference inside a statically
+-- dead `if(false, ...)` branch misses the access check, falls back to UNKNOWN_IDENTIFIER, and gets
+-- folded away (returning 42) instead of raising SEMI_ANTI_JOIN_COLUMN_ACCESS_DENIED.
+-- The current database name is only available via the {CLICKHOUSE_DATABASE:Identifier} parameter.
+DROP TABLE IF EXISTS semi_anti_qual_l;
+DROP TABLE IF EXISTS semi_anti_qual_r;
+CREATE TABLE semi_anti_qual_l (a UInt64) ENGINE = Memory;
+CREATE TABLE semi_anti_qual_r (b UInt64) ENGINE = Memory;
+INSERT INTO semi_anti_qual_l VALUES (1);
+INSERT INTO semi_anti_qual_r VALUES (2);
+-- Fully qualified `db.r.b` on the non-preserved right side inside a dead branch: denied.
+SELECT if(false, {CLICKHOUSE_DATABASE:Identifier}.semi_anti_qual_r.b, 42) FROM {CLICKHOUSE_DATABASE:Identifier}.semi_anti_qual_l LEFT SEMI JOIN {CLICKHOUSE_DATABASE:Identifier}.semi_anti_qual_r ON true; -- { serverError SEMI_ANTI_JOIN_COLUMN_ACCESS_DENIED }
+-- Table-qualified `r.b` on the non-preserved side inside a dead branch: denied.
+SELECT if(false, semi_anti_qual_r.b, 42) FROM {CLICKHOUSE_DATABASE:Identifier}.semi_anti_qual_l LEFT SEMI JOIN {CLICKHOUSE_DATABASE:Identifier}.semi_anti_qual_r ON true; -- { serverError SEMI_ANTI_JOIN_COLUMN_ACCESS_DENIED }
+-- Fully qualified reference on the preserved left side is fine; the dead branch folds to 42.
+SELECT if(false, {CLICKHOUSE_DATABASE:Identifier}.semi_anti_qual_l.a, 42) FROM {CLICKHOUSE_DATABASE:Identifier}.semi_anti_qual_l LEFT SEMI JOIN {CLICKHOUSE_DATABASE:Identifier}.semi_anti_qual_r ON true;
+-- Live branch referencing the fully qualified non-preserved side: also denied.
+SELECT if(true, {CLICKHOUSE_DATABASE:Identifier}.semi_anti_qual_r.b, 42) FROM {CLICKHOUSE_DATABASE:Identifier}.semi_anti_qual_l LEFT SEMI JOIN {CLICKHOUSE_DATABASE:Identifier}.semi_anti_qual_r ON true; -- { serverError SEMI_ANTI_JOIN_COLUMN_ACCESS_DENIED }
+DROP TABLE semi_anti_qual_l;
+DROP TABLE semi_anti_qual_r;

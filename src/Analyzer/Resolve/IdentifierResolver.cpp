@@ -1177,15 +1177,25 @@ void SemiAntiJoinSideChecker::throwIfTableAccessDenied(
     }
 }
 
+/** Check whether the leading table qualifier of `identifier` binds to some table expression
+  * inside `join_tree_node`. This mirrors the qualifier binding rules used by normal
+  * table-expression resolution (see `tryBindIdentifierToTableExpression`):
+  * - a single-part qualifier matches a table alias or a table name;
+  * - a two-part qualifier matches a fully qualified `database.table` reference.
+  * Recognizing the two-part form is required so that fully qualified references such as
+  * `db.table.column` are correctly attributed to the skipped side of a SEMI/ANTI JOIN.
+  */
 static bool qualifierBindsToJoinSubtree(
     const QueryTreeNodePtr & join_tree_node,
-    const std::string & qualifier,
+    const Identifier & identifier,
     const IdentifierResolveScope & scope)
 {
-    if (!join_tree_node || qualifier.empty())
+    if (!join_tree_node || identifier.empty())
         return false;
 
-    if (join_tree_node->hasAlias() && join_tree_node->getAlias() == qualifier)
+    const auto & path_start = identifier.front();
+
+    if (join_tree_node->hasAlias() && join_tree_node->getAlias() == path_start)
         return true;
 
     switch (join_tree_node->getNodeType())
@@ -1193,21 +1203,21 @@ static bool qualifierBindsToJoinSubtree(
         case QueryTreeNodeType::JOIN:
         {
             const auto & join = join_tree_node->as<JoinNode &>();
-            return qualifierBindsToJoinSubtree(join.getLeftTableExpression(), qualifier, scope)
-                || qualifierBindsToJoinSubtree(join.getRightTableExpression(), qualifier, scope);
+            return qualifierBindsToJoinSubtree(join.getLeftTableExpression(), identifier, scope)
+                || qualifierBindsToJoinSubtree(join.getRightTableExpression(), identifier, scope);
         }
         case QueryTreeNodeType::CROSS_JOIN:
         {
             const auto & cross = join_tree_node->as<CrossJoinNode &>();
             for (const auto & expr : cross.getTableExpressions())
-                if (qualifierBindsToJoinSubtree(expr, qualifier, scope))
+                if (qualifierBindsToJoinSubtree(expr, identifier, scope))
                     return true;
             return false;
         }
         case QueryTreeNodeType::ARRAY_JOIN:
         {
             const auto & arr = join_tree_node->as<ArrayJoinNode &>();
-            return qualifierBindsToJoinSubtree(arr.getTableExpression(), qualifier, scope);
+            return qualifierBindsToJoinSubtree(arr.getTableExpression(), identifier, scope);
         }
         default:
             break;
@@ -1216,7 +1226,18 @@ static bool qualifierBindsToJoinSubtree(
     auto it = scope.table_expression_node_to_data.find(join_tree_node);
     if (it == scope.table_expression_node_to_data.end())
         return false;
-    return !it->second.table_name.empty() && it->second.table_name == qualifier;
+
+    const auto & table_name = it->second.table_name;
+    const auto & database_name = it->second.database_name;
+
+    if (!table_name.empty() && path_start == table_name)
+        return true;
+
+    if (!database_name.empty() && identifier.getPartsSize() > 1
+        && path_start == database_name && identifier[1] == table_name)
+        return true;
+
+    return false;
 }
 
 IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromJoin(const IdentifierLookup & identifier_lookup,
@@ -1259,7 +1280,8 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromJoin(const I
             /// also swallow SEMI/ANTI access violations.
             ///
             /// Two shapes count as "explicit":
-            /// - compound expression like `t2.b`: the qualifier `t2` binds to the skipped side
+            /// - compound expression like `t2.b` or `db.t2.b`: the qualifier (`t2` / `db.t2`)
+            ///   binds to the skipped side
             /// - a table lookup like `x` (used by recursive-CTE self-reference remap): the
             ///   bare table name binds to the skipped side
             const bool is_table_lookup = identifier_lookup.isTableExpressionLookup();
@@ -1267,8 +1289,7 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromJoin(const I
                                         && identifier_lookup.identifier.getPartsSize() > 1;
             if (is_table_lookup || is_qualified_expr)
             {
-                const auto & prefix = identifier_lookup.identifier.front();
-                if (qualifierBindsToJoinSubtree(join_tree_node, prefix, scope))
+                if (qualifierBindsToJoinSubtree(join_tree_node, identifier_lookup.identifier, scope))
                     denied_qualified_access = side;
             }
             return QueryTreeNodePtr{};
@@ -1310,9 +1331,8 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromJoin(const I
     bool binds_right = true;
     if (prefer_alias && identifier_lookup.isExpressionLookup() && identifier_lookup.identifier.getPartsSize() > 1)
     {
-        const auto & path_start = identifier_lookup.identifier.front();
-        binds_left = qualifierBindsToJoinSubtree(from_join_node.getLeftTableExpression(), path_start, scope);
-        binds_right = qualifierBindsToJoinSubtree(from_join_node.getRightTableExpression(), path_start, scope);
+        binds_left = qualifierBindsToJoinSubtree(from_join_node.getLeftTableExpression(), identifier_lookup.identifier, scope);
+        binds_right = qualifierBindsToJoinSubtree(from_join_node.getRightTableExpression(), identifier_lookup.identifier, scope);
     }
 
     QueryTreeNodePtr left_resolved_identifier = nullptr;
