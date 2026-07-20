@@ -1,4 +1,9 @@
--- Tags: no-fasttest
+-- Tags: no-fasttest, no-random-settings, no-random-merge-tree-settings
+-- This test asserts the exact optimizer plan shape (via `EXPLAIN`) for cardinality-driven
+-- key demotion. That decision depends on join-order/swap and on the statistics estimator
+-- (e.g. the conditional NDV of a key behind a `WHERE`), both of which the CI settings
+-- randomization perturbs - flipping which side is the build side and whether a key is
+-- demoted. Run with default settings so the plan is deterministic.
 -- Verify cardinality-driven JOIN key demotion: a high-NDV equality key is
 -- moved from the hash table into the residual `mixed_join_expression` so the
 -- hash table is built only on the low-NDV key(s) and stays compact.
