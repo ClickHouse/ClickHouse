@@ -4,8 +4,13 @@
 #include <IO/WriteHelpers.h>
 #include <Interpreters/ClientInfo.h>
 #include <Common/Exception.h>
+#include <Common/logger_useful.h>
+#include <Poco/AutoPtr.h>
 #include <Poco/Net/SocketAddress.h>
+#include <Poco/StreamChannel.h>
 #include <gtest/gtest.h>
+
+#include <sstream>
 
 using namespace DB;
 
@@ -71,6 +76,28 @@ String makeFullClientInfoWire(ClientInfo::QueryKind query_kind, const String & a
     buf.finalize();
     return buf.str();
 }
+
+class LoggerStateGuard final
+{
+public:
+    explicit LoggerStateGuard(const LoggerPtr & logger_)
+        : logger(logger_)
+        , channel(logger_->getChannel(), true)
+        , level(logger_->getLevel())
+    {
+    }
+
+    ~LoggerStateGuard()
+    {
+        logger->setChannel(channel.get());
+        logger->setLevel(level);
+    }
+
+private:
+    LoggerPtr logger;
+    Poco::AutoPtr<Poco::Channel> channel;
+    int level;
+};
 
 }
 
@@ -217,4 +244,71 @@ TEST(ClientInfoRead, ValidNumericAddressRoundTripsSecondaryQuery)
         ASSERT_NO_THROW(info.read(in, DBMS_TCP_PROTOCOL_VERSION)) << "address: " << good;
         EXPECT_EQ(info.initial_address->toString(), good);
     }
+}
+
+TEST(ClientInfoForwardedFor, ParsesNumericAddresses)
+{
+    const auto check_address = [](const String & value, const String & expected_host, UInt16 expected_port)
+    {
+        ClientInfo info;
+        info.forwarded_for = value;
+
+        const auto address = info.getLastForwardedFor();
+        ASSERT_TRUE(address) << "address: " << value;
+        EXPECT_EQ(address->host().toString(), expected_host) << "address: " << value;
+        EXPECT_EQ(address->port(), expected_port) << "address: " << value;
+    };
+
+    check_address("123.124.125.126", "123.124.125.126", 0);
+    check_address("123.124.125.126:80", "123.124.125.126", 80);
+    check_address("2001:db8::1", "2001:db8::1", 0);
+    check_address("[2001:db8::1]:443", "2001:db8::1", 443);
+    check_address("not-used.example,  203.0.113.7:65535  ", "203.0.113.7", 65535);
+}
+
+TEST(ClientInfoForwardedFor, RejectsNonNumericAndMalformedAddresses)
+{
+    for (const String & bad : {
+        "localhost",
+        "localhost:80",
+        "attacker.example:443",
+        "127.0.0.1:http",
+        "[not-an-ip]:80",
+        "[2001:db8::1]",
+        "127.0.0.1:65536",
+        "127.0.0.1:",
+        "127.0.0.1,   "})
+    {
+        ClientInfo info;
+        info.forwarded_for = bad;
+
+        std::optional<Poco::Net::SocketAddress> address;
+        EXPECT_NO_THROW(address = info.getLastForwardedFor()) << "address: " << bad;
+        EXPECT_FALSE(address) << "address: " << bad;
+    }
+
+    ClientInfo empty;
+    EXPECT_FALSE(empty.getLastForwardedFor());
+
+    ClientInfo hostname;
+    hostname.forwarded_for = "localhost";
+    EXPECT_EQ(hostname.getLastForwardedForHost(), "");
+}
+
+TEST(ClientInfoForwardedFor, LogsRejectedAddressAtWarning)
+{
+    std::ostringstream log_output; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+    auto stream_channel = Poco::AutoPtr<Poco::StreamChannel>(new Poco::StreamChannel(log_output));
+    auto log = getLogger("ClientInfo");
+    LoggerStateGuard logger_state_guard(log);
+    log->setChannel(stream_channel.get());
+    log->setLevel("warning");
+
+    ClientInfo info;
+    info.forwarded_for = "attacker.example";
+    EXPECT_FALSE(info.getLastForwardedFor());
+
+    EXPECT_NE(
+        log_output.str().find("Invalid address in `X-Forwarded-For` HTTP header: 'attacker.example'"),
+        std::string::npos);
 }

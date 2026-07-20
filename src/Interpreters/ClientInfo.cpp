@@ -5,6 +5,7 @@
 #include <Interpreters/ClientInfo.h>
 #include <base/getFQDNOrHostName.h>
 #include <Common/StringUtils.h>
+#include <Common/logger_useful.h>
 #include <Poco/Net/HTTPRequest.h>
 #include <Poco/Net/IPAddress.h>
 #include <Poco/Net/SocketAddress.h>
@@ -32,7 +33,7 @@ namespace ErrorCodes
 namespace
 {
 
-/// Parse a string read off the native protocol wire into an "ip:port" SocketAddress WITHOUT resolving.
+/// Parse an "ip:port" string into a `SocketAddress` WITHOUT resolving.
 /// ClientInfo::write always serializes the address as an IP literal plus a numeric port ("ip:port" or
 /// "[ipv6]:port", via SocketAddress::toString), but the value is attacker-controlled and may be
 /// corrupted or desynced. Poco's SocketAddress(String) constructor would resolve a non-numeric port
@@ -42,7 +43,7 @@ namespace
 /// host that parses as an IP literal, and build the address directly from the parsed IPAddress. Returns
 /// nullopt for anything else (empty, a leading-'/' UNIX-local form, a non-numeric/out-of-range port, or
 /// a non-IP host), so the caller decides whether to reject it or fall back to a default - never resolving.
-std::optional<Poco::Net::SocketAddress> tryParseIpEndpointFromWire(const String & host_and_port)
+std::optional<Poco::Net::SocketAddress> tryParseIpEndpoint(const String & host_and_port)
 {
     /// A leading '/' makes Poco build a UNIX_LOCAL address, whose host()/port() throw later.
     if (host_and_port.empty() || host_and_port.front() == '/')
@@ -153,25 +154,30 @@ std::optional<Poco::Net::SocketAddress> ClientInfo::getLastForwardedFor() const
 {
     if (forwarded_for.empty())
         return {};
+
     String last = forwarded_for.substr(forwarded_for.find_last_of(',') + 1);
     boost::trim(last);
 
-    /// IPv6 address with port
-    if (last[0] == '[')
-        return Poco::Net::SocketAddress{Poco::Net::AddressFamily::IPv6, last};
+    std::optional<Poco::Net::SocketAddress> address;
+    if (!last.empty())
+    {
+        const auto colons = std::count(last.begin(), last.end(), ':');
+        if (last.front() == '[' || colons == 1)
+        {
+            address = tryParseIpEndpoint(last);
+        }
+        else
+        {
+            Poco::Net::IPAddress ip;
+            if (Poco::Net::IPAddress::tryParse(last, ip))
+                address.emplace(ip, 0);
+        }
+    }
 
-    const auto colons = std::count(last.begin(), last.end(), ':');
+    if (!address)
+        LOG_WARNING(getLogger("ClientInfo"), "Invalid address in `X-Forwarded-For` HTTP header: '{}'", last);
 
-    /// IPv6 address without port
-    if (colons > 1)
-        return Poco::Net::SocketAddress{Poco::Net::AddressFamily::IPv6, last, 0};
-
-    /// IPv4 address with port
-    if (colons == 1)
-        return Poco::Net::SocketAddress{Poco::Net::AddressFamily::IPv4, last};
-
-    /// IPv4 address without port
-    return Poco::Net::SocketAddress{Poco::Net::AddressFamily::IPv4, last, 0};
+    return address;
 }
 
 String ClientInfo::getLastForwardedForHost() const
@@ -311,7 +317,7 @@ void ClientInfo::read(ReadBuffer & in, UInt64 client_protocol_revision, bool wit
     /// the wire value is discarded; to stay compatible with the pre-validation native protocol (which
     /// documented a generic host:port) we accept it leniently and fall back to a default endpoint when it
     /// is not a plain IP literal, instead of rejecting otherwise-valid initiating clients.
-    auto parsed_address = tryParseIpEndpointFromWire(initial_address_string);
+    auto parsed_address = tryParseIpEndpoint(initial_address_string);
     if (!parsed_address && query_kind == QueryKind::SECONDARY_QUERY)
         throw Exception(ErrorCodes::INCORRECT_DATA,
             "Malformed initial_address received over the network: expected an IP literal with a numeric port");
