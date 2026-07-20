@@ -74,6 +74,12 @@ public:
         /// because we want to be able to rethrow exceptions if they might happen.
         void releaseFinishedBuckets();
 
+        /// Refresh bucket locks which were not refreshed
+        /// for more than a quarter of the TTL, after which they are cleaned up
+        /// as abandoned (the TTL is meant to remove locks of dead servers).
+        /// Called on next and after each commit.
+        void refreshExpiringBucketLocks();
+
         bool useBucketsForProcessing() const { return use_buckets_for_processing; }
 
     private:
@@ -121,8 +127,6 @@ public:
 
         /// We store a vector of holders, because we cannot release them until processed files are committed.
         std::unordered_map<size_t, std::shared_ptr<BucketHolders>> bucket_holders TSA_GUARDED_BY(mutex);
-        /// Time since the last scan for bucket locks to refresh.
-        Stopwatch refresh_check_watch TSA_GUARDED_BY(mutex);
 
         /// Is glob_iterator finished?
         std::atomic_bool iterator_finished = false;
@@ -141,11 +145,6 @@ public:
         NextKeyFromBucket getNextKeyFromAcquiredBucket(size_t processor) TSA_REQUIRES(mutex);
         std::string bucketHoldersToString() const TSA_REQUIRES(mutex);
 
-        /// Refresh bucket locks which were not refreshed
-        /// for more than half of the TTL, after which they are cleaned up
-        /// as abandoned (the TTL is meant to remove locks of dead servers).
-        /// Throttled to run at most once per quarter of the TTL.
-        void refreshExpiringBucketLocks() TSA_REQUIRES(mutex);
         BucketHolderPtr tryAcquireBucket(
             size_t bucket,
             BucketInfo & bucket_info,

@@ -1007,6 +1007,7 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index)
                     getCurrentExceptionCode());
 
                 file_iterator->releaseFinishedBuckets();
+                file_iterator->refreshExpiringBucketLocks();
 
                 /// Halve the global batch size so that on the next iteration the bad file
                 /// ends up in a smaller batch, eventually alone (batch size 1),
@@ -1038,6 +1039,7 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index)
 
         commit(/*insert_succeeded=*/ true, rows, sources, transaction_start_time);
         file_iterator->releaseFinishedBuckets();
+        file_iterator->refreshExpiringBucketLocks();
         max_files_override = 0;
         total_rows += rows;
     }

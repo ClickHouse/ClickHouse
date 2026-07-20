@@ -497,6 +497,8 @@ ObjectInfoPtr ObjectStorageQueueSource::FileIterator::next(size_t processor)
 
         if (use_buckets_for_processing)
         {
+            refreshExpiringBucketLocks();
+
             std::lock_guard lock(mutex);
             auto result = getNextKeyFromAcquiredBucket(processor);
             object_info = result.object_info;
@@ -603,13 +605,10 @@ void ObjectStorageQueueSource::FileIterator::refreshExpiringBucketLocks()
     if (!ttl_seconds)
         return;
 
-    if (refresh_check_watch.elapsedSeconds() < static_cast<double>(ttl_seconds) / 4)
-        return;
-    refresh_check_watch.restart();
-
+    std::lock_guard lock(mutex);
     for (auto & [processor, holders] : bucket_holders)
         for (auto & holder : *holders)
-            if (holder->getAgeSeconds() >= static_cast<double>(ttl_seconds) / 2)
+            if (holder->getAgeSeconds() >= static_cast<double>(ttl_seconds) / 4)
                 holder->refresh();
 }
 
@@ -710,8 +709,6 @@ std::string ObjectStorageQueueSource::FileIterator::bucketHoldersToString() cons
 ObjectStorageQueueSource::FileIterator::NextKeyFromBucket
 ObjectStorageQueueSource::FileIterator::getNextKeyFromAcquiredBucket(size_t processor)
 {
-    refreshExpiringBucketLocks();
-
     std::shared_ptr<BucketHolders> acquired_buckets = [this, processor]() TSA_REQUIRES(mutex)
     {
         auto it = bucket_holders.find(processor);
