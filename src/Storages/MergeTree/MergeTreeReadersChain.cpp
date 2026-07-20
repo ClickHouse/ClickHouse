@@ -6,6 +6,7 @@
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnSparse.h>
 #include <Functions/IFunction.h>
 
 #include <algorithm>
@@ -609,8 +610,13 @@ void MergeTreeReadersChain::readPatches(const Block & result_header, std::vector
 
         for (const auto & name : patch.sorting_key->column_names)
         {
+            /// Both sides of a MergeOnKey key comparison must be dense: the patch side
+            /// is stripped in `readPatchRanges`, the main side may be read as Sparse.
+            auto & key_column = main_block.getByName(name);
+            key_column.column = removeSpecialRepresentations(key_column.column);
+
             if (!read_result.columns_for_patches.has(name))
-                read_result.columns_for_patches.insert(main_block.getByName(name));
+                read_result.columns_for_patches.insert(key_column);
         }
     }
 
