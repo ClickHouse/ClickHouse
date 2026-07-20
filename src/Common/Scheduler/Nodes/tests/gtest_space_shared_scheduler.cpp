@@ -920,6 +920,53 @@ TEST(SchedulerSpaceShared, SpillReSelectsWhenVictimReportsZeroReclaimable)
 }
 
 
+/// Pins the spill-gate semantics: `spill_requested` rate-limits signals to PROGRESS EVENTS, it does not
+/// track the victim. Any decrease under the limit (even by an unrelated, unreclaimable allocation) reopens
+/// the gate, and the next `checkSoftLimit` re-signals the CURRENT extremum with the CURRENT excess — which
+/// may be a different allocation than the one still working on an earlier request. Two allocations can
+/// therefore hold outstanding spill requests at once. This is deliberate: tracking the victim's identity
+/// would reintroduce the dangling-pointer hazards documented around `allocation_to_kill`, a stalled victim
+/// must never block the episode, and the query side coalesces repeated signals; the cost is bounded
+/// overshoot (each signal carries the then-current excess, not an accumulating amount).
+TEST(SchedulerSpaceShared, SpillGateReopensOnUnrelatedDecrease)
+{
+    SpaceSharedTest t;
+    SpaceSharedResourceHolder r(t);
+    AllocationLimit * limit = r.addLimit("/", 100000);
+    AllocationQueue * queue = r.addQueue("/queue");
+    r.registerResource();
+    r.setSoftLimit(limit, 10000);
+
+    SpillableAllocation a(queue, "a", 8000); // will be the first victim
+    SpillableAllocation b(queue, "b", 6000); // never reports reclaimable (unreclaimable)
+    SpillableAllocation c(queue, "c", 7000); // will outgrow `a` and become the next extremum
+
+    // Nothing reclaimable yet: over the soft limit (21000 > 10000) but fail-close, no signals.
+    r.sync();
+    EXPECT_EQ(a.spillCount() + b.spillCount() + c.spillCount(), 0u);
+
+    // First report opens the episode: `a` is the only reclaimable allocation and gets signaled.
+    a.reportReclaimable(8000);
+    a.waitSpills(1);
+    EXPECT_EQ(a.lastSpillAtLeast(), 11000); // need = allocated(21000) - soft(10000)
+
+    // While `a`'s request is outstanding, more reclaimable appears and `c` grows past `a`.
+    // Neither a report nor an increase reopens the gate: no new signals.
+    c.reportReclaimable(7000);
+    c.setSize(9000);
+    r.sync();
+    EXPECT_EQ(c.spillCount(), 0u);
+
+    // An UNRELATED decrease (unreclaimable `b` shrinks) reopens the gate; the trailing soft-limit check
+    // re-evaluates and signals the new extremum `c` (fair_key 9000 > 8000) with the updated excess, while
+    // `a` has not reacted to its own request: two allocations now hold outstanding spill requests.
+    b.setSize(3000);
+    c.waitSpills(1);
+    EXPECT_EQ(c.lastSpillAtLeast(), 10000); // need = allocated(8000+3000+9000) - soft(10000)
+    EXPECT_EQ(a.spillCount(), 1u); // `a`'s earlier request is still outstanding (not re-signaled, not revoked)
+}
+
+
 /// Concurrency stress for the reclaimable/spill machinery: many query threads churn allocation sizes and
 /// reclaimable reports across sibling queues while the workload sits around a small soft limit, so spill
 /// signals fire concurrently with increases, decreases, re-keying, clamping and removals; meanwhile the

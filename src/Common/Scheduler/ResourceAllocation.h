@@ -48,6 +48,9 @@ public:
     /// (by spilling reclaimable data to disk or discarding it). Mirrors `killAllocation`:
     /// IMPORTANT: it is called from the scheduler thread and must be fast — just record the request;
     /// the query reacts on its own threads and eventually issues a decrease to release the memory.
+    /// May be called repeatedly, with the same or a different `at_least_bytes` (each carries the
+    /// scheduler's then-current need), including while an earlier request is still being serviced.
+    /// Implementations must coalesce: keep the maximum outstanding amount, never accumulate.
     virtual void spillAllocation(ResourceCost at_least_bytes) = 0;
 
     IAllocationQueue & queue; /// Queue that manages this allocation.
