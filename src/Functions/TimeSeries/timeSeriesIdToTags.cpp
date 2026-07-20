@@ -18,7 +18,7 @@ namespace ErrorCodes
 
 /// Function timeSeriesIdToTags(id) returns Array(Tuple(String, String)) containing the names and values of tags associated with
 /// a specified identifier `id`.
-class FunctionTimeSeriesIdToTags final : public IFunction
+class FunctionTimeSeriesIdToTags : public IFunction
 {
 public:
     static constexpr auto name = "timeSeriesIdToTags";
@@ -33,12 +33,6 @@ public:
     /// Function timeSeriesIdToTags returns information stored in the query context, it's deterministic in the scope of the current query.
     bool isDeterministic() const override { return false; }
     bool isDeterministicInScopeOfQuery() const override { return true; }
-
-    /// Stateful: result depends on the per-query tags collector populated by timeSeriesStoreTags().
-    bool isStateful() const override { return true; }
-
-    /// Disable constant folding: the per-query tags collector is not populated at analysis time.
-    bool isSuitableForConstantFolding() const override { return false; }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 

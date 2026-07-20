@@ -6,6 +6,7 @@
 #include <IO/Operators.h>
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
+#include <Common/WeakHash.h>
 #include <Core/Field.h>
 
 
@@ -112,13 +113,6 @@ bool ColumnMap::isDefaultAt(size_t n) const
     return nested->isDefaultAt(n);
 }
 
-UInt64 ColumnMap::getNumberOfDefaultRows() const
-{
-    /// One vcall, served by `ColumnArray::getNumberOfDefaultRows`. The IColumnHelper
-    /// default would call `isDefaultAt` per row.
-    return nested->getNumberOfDefaultRows();
-}
-
 std::string_view ColumnMap::getDataAt(size_t) const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getDataAt is not supported for {}", getName());
@@ -188,9 +182,9 @@ void ColumnMap::updateHashWithValueRange(size_t begin, size_t end, SipHash & has
     nested->updateHashWithValueRange(begin, end, hash);
 }
 
-void ColumnMap::computeHashInto(size_t row_begin, size_t row_end, UInt32 * hash_out, bool initial) const
+WeakHash32 ColumnMap::getWeakHash32() const
 {
-    nested->computeHashInto(row_begin, row_end, hash_out, initial);
+    return nested->getWeakHash32();
 }
 
 void ColumnMap::updateHashFast(SipHash & hash) const

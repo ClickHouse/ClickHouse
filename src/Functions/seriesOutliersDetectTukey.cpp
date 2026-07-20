@@ -7,7 +7,6 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
 #include <Common/NaNUtils.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <cmath>
 
 namespace DB
@@ -20,7 +19,7 @@ extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
 /// Detects a possible anomaly in series using [Tukey Fences](https://en.wikipedia.org/wiki/Outlier#Tukey%27s_fences)
-class FunctionSeriesOutliersDetectTukey final : public IFunction
+class FunctionSeriesOutliersDetectTukey : public IFunction
 {
 public:
     static constexpr auto name = "seriesOutliersDetectTukey";
@@ -132,7 +131,7 @@ private:
         ColumnArray::ColumnOffsets::MutablePtr res_offsets = ColumnArray::ColumnOffsets::create();
         auto & res_offsets_data = res_offsets->getData();
 
-        VectorWithMemoryTracking<Float64> src_sorted;
+        std::vector<Float64> src_sorted;
 
         ColumnArray::Offset prev_src_offset = 0;
         for (auto src_offset : arr_offsets)
@@ -145,8 +144,8 @@ private:
             src_sorted.assign(src_vec.begin() + prev_src_offset, src_vec.begin() + src_offset);
             std::sort(src_sorted.begin(), src_sorted.end());
 
-            Float64 q1 = 0;
-            Float64 q2 = 0;
+            Float64 q1;
+            Float64 q2;
 
             Float64 p1 = static_cast<Float64>(len) * min_percentile;
             if (p1 == static_cast<Float64>(static_cast<Int64>(p1)))

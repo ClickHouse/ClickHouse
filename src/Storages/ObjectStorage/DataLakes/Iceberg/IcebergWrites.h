@@ -44,16 +44,12 @@ namespace DB
 
 String removeEscapedSlashes(const String & json_str);
 
-String stringifyJSON(const Poco::Dynamic::Var & json, unsigned indent = 0);
-
 void generateManifestFile(
     Poco::JSON::Object::Ptr metadata,
     const std::vector<String> & partition_columns,
     const std::vector<Field> & partition_values,
-    const DataTypes & partition_types,
+    const std::vector<DataTypePtr> & partition_types,
     const std::vector<Iceberg::IcebergPathFromMetadata> & data_file_names,
-    const std::vector<UInt64> & data_file_row_counts,
-    const std::vector<UInt64> & data_file_byte_counts,
     const std::optional<DataFileStatistics> & data_file_statistics,
     SharedHeader sample_block,
     Poco::JSON::Object::Ptr new_snapshot,
@@ -61,8 +57,7 @@ void generateManifestFile(
     Poco::JSON::Object::Ptr partition_spec,
     Int64 partition_spec_id,
     WriteBuffer & buf,
-    Iceberg::FileContentType content_type,
-    std::optional<Int64> user_defined_sequence_number = std::nullopt);
+    Iceberg::FileContentType content_type);
 
 void generateManifestList(
     const Iceberg::IcebergPathResolver & path_resolver,
@@ -74,10 +69,9 @@ void generateManifestList(
     const std::vector<Int64> & manifest_entry_sizes,
     WriteBuffer & buf,
     Iceberg::FileContentType content_type,
-    bool use_previous_snapshots = true,
-    const std::vector<Iceberg::FileContentType> & per_entry_content_types = {});
+    bool use_previous_snapshots = true);
 
-class IcebergStorageSink final : public SinkToStorage
+class IcebergStorageSink : public SinkToStorage
 {
 public:
     IcebergStorageSink(
