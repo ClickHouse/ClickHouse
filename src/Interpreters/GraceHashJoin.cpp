@@ -65,17 +65,29 @@ namespace
 
             Blocks blocks;
             size_t rows_read = 0;
-            do
+            // One AccumulatedBlockReader is shared between concurrent DelayedJoinedBlocksWorkerTransform
+            // threads. If reader->read() throws (e.g. a mid-read MEMORY_LIMIT_EXCEEDED cancels the
+            // underlying ReadBuffer), mark the reader finished before propagating so a sibling worker
+            // does not re-enter read() on the now-canceled buffer (which trips chassert(!isCanceled())).
+            try
             {
-                Block block = reader->read();
-                rows_read += block.rows();
-                if (block.empty())
+                do
                 {
-                    eof = true;
-                    return concatenateBlocks(blocks);
-                }
-                blocks.push_back(std::move(block));
-            } while (rows_read < result_block_size);
+                    Block block = reader->read();
+                    rows_read += block.rows();
+                    if (block.empty())
+                    {
+                        eof = true;
+                        return concatenateBlocks(blocks);
+                    }
+                    blocks.push_back(std::move(block));
+                } while (rows_read < result_block_size);
+            }
+            catch (...)
+            {
+                eof = true;
+                throw;
+            }
 
             return concatenateBlocks(blocks);
         }
