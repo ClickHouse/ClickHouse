@@ -195,6 +195,10 @@ public:
         VectorWithMemoryTracking<String> & out,
         const IColumn::Permutation * /*permutation*/) const override
     {
+        /// Match the base class no-op for empty batches: avoid touching the payload
+        /// (and a possible NOT_IMPLEMENTED from an unsupported nested type).
+        if (num_rows == 0)
+            return;
         String encoded;
         data->serializeAsComparable(0, encoded);
         for (size_t r = 0; r < num_rows; ++r)

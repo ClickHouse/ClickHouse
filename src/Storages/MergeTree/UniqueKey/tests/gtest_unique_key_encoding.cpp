@@ -895,6 +895,42 @@ TEST(UniqueKeyEncoding, NullableBatchMultiRowOrdering)
         }
 }
 
+/// Nullable batch + permutation. The NULL flag and the nested encoding must stay
+/// aligned to the same permuted source row. Encoded output row r must equal the
+/// single-row encoding of source row permutation[r].
+TEST(UniqueKeyEncoding, NullableBatchPermutationAlignsFlagAndNested)
+{
+    auto nested = ColumnUInt64::create();
+    nested->insert(Field(UInt64(0)));     /// 0 non-null
+    nested->insert(Field(UInt64(0)));     /// 1 null
+    nested->insert(Field(UInt64(50)));    /// 2 non-null
+    nested->insert(Field(UInt64(0)));     /// 3 null
+    nested->insert(Field(UInt64(100)));   /// 4 non-null
+
+    auto null_map = ColumnUInt8::create();
+    null_map->insert(Field(UInt64(0)));
+    null_map->insert(Field(UInt64(1)));
+    null_map->insert(Field(UInt64(0)));
+    null_map->insert(Field(UInt64(1)));
+    null_map->insert(Field(UInt64(0)));
+
+    auto col = ColumnNullable::create(std::move(nested), std::move(null_map));
+    Columns cols{std::move(col)};
+
+    IColumn::Permutation perm{4, 0, 3, 1, 2};
+    VectorWithMemoryTracking<String> encoded;
+    UniqueKeyEncoding::encodeBlock(cols, &perm, 4096, encoded);
+    ASSERT_EQ(encoded.size(), perm.size());
+
+    for (size_t r = 0; r < perm.size(); ++r)
+    {
+        String expected = testEncodeRow(cols, perm[r], 4096);
+        EXPECT_EQ(encoded[r], expected)
+            << "permuted batch row " << r << " (src=" << perm[r]
+            << ") must equal single-row encoding of source row";
+    }
+}
+
 /// ---------------------------------------------------------------------------
 /// Compound keys — concatenation preserves order when each component is
 /// prefix-free and individually order-preserving.
