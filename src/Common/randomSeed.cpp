@@ -23,7 +23,7 @@ namespace ErrorCodes
 
 UInt64 randomSeed()
 {
-    struct timespec times{};
+    struct timespec times;
     if (clock_gettime(CLOCK_MONOTONIC, &times))
         throw DB::ErrnoException(DB::ErrorCodes::CANNOT_CLOCK_GETTIME, "Cannot clock_gettime");
 
@@ -38,7 +38,7 @@ UInt64 randomSeed()
     /// But randomSeed() must be signal-safe and gethostname and similar functions are not.
     /// Let's try to get utsname.nodename using uname syscall (it's signal-safe).
 #if defined(__linux__)
-    struct utsname sysinfo{};
+    struct utsname sysinfo;
     if (uname(&sysinfo) == 0)
         hash.update<std::identity>(sysinfo);
 #endif

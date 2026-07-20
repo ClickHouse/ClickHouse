@@ -56,7 +56,7 @@ void checkProfilingEnabled()
 std::string_view flushProfile(const char * file_prefix)
 {
     checkProfilingEnabled();
-    char * prefix_buffer = nullptr;
+    char * prefix_buffer;
     size_t prefix_size = sizeof(prefix_buffer);
     int n = je_mallctl("opt.prof_prefix", &prefix_buffer, &prefix_size, nullptr, 0); // NOLINT
     if (!n && std::string_view(prefix_buffer) != "jeprof")

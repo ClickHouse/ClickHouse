@@ -2,7 +2,6 @@
 
 #include <base/getThreadId.h>
 #include <Common/CurrentThread.h>
-#include <Common/ThreadStatus.h>
 #include <Common/setThreadName.h>
 #include <Interpreters/Context.h>
 #include <Common/logger_useful.h>

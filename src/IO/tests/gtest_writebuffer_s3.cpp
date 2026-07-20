@@ -162,7 +162,7 @@ class S3MemStrore
 public:
     void CreateBucket(const std::string & bucket)
     {
-        chassert(!buckets.contains(bucket));
+        assert(!buckets.contains(bucket));
         buckets.emplace(bucket, BucketMemStore{});
     }
 
@@ -521,13 +521,13 @@ struct SimpleAsyncTasks : BaseSyncPolicy
 
 using namespace DB;
 
-static void writeAsOneBlock(WriteBuffer& buf, size_t size)
+void writeAsOneBlock(WriteBuffer& buf, size_t size)
 {
     std::vector<char> data(size, 'a');
     buf.write(data.data(), data.size());
 }
 
-static void writeAsPieces(WriteBuffer& buf, size_t size)
+void writeAsPieces(WriteBuffer& buf, size_t size)
 {
     size_t ceil = 15ull*1024*1024*1024;
     size_t piece = 1;
@@ -1186,7 +1186,7 @@ TEST_P(SyncAsync, StrictUploadPartSize) {
     }
 }
 
-[[maybe_unused]] static String fillStringWithPattern(String pattern, int n)
+String fillStringWithPattern(String pattern, int n)
 {
     String data;
     for (int i = 0; i < n; ++i)

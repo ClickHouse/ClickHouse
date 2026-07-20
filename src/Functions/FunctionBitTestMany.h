@@ -21,7 +21,7 @@ namespace ErrorCodes
 
 
 template <typename Impl, typename Name>
-struct FunctionBitTestMany final : public IFunction
+struct FunctionBitTestMany : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
@@ -88,7 +88,7 @@ private:
     {
         if (const auto value_col = checkAndGetColumn<ColumnVector<T>>(value_col_untyped))
         {
-            bool is_const = false;
+            bool is_const;
             const auto const_mask = createConstMaskIfConst<T>(arguments, is_const);
             const auto & val = value_col->getData();
 
@@ -112,7 +112,7 @@ private:
         }
         if (const auto value_col_const = checkAndGetColumnConst<ColumnVector<T>>(value_col_untyped))
         {
-            bool is_const = false;
+            bool is_const;
             const auto const_mask = createConstMaskIfConst<T>(arguments, is_const);
             const auto val = value_col_const->template getValue<T>();
 

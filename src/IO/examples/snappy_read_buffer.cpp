@@ -9,7 +9,6 @@
 #include <IO/copyData.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/WriteBufferFromString.h>
-#include <Examples/clickhouse_examples.h>
 
 
 int mainEntryExampleSnappyReadBuffer(int, char **)
@@ -31,6 +30,6 @@ int mainEntryExampleSnappyReadBuffer(int, char **)
     copyData(in2, out);
 
     output.resize(out.count());
-    chassert(input == output);
+    assert(input == output);
     return 0;
 }

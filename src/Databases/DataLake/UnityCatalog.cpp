@@ -44,7 +44,7 @@ struct UnityCatalogFullSchemaName
     std::string schema_name;
 };
 
-static UnityCatalogFullSchemaName parseFullSchemaName(const std::string & full_name)
+UnityCatalogFullSchemaName parseFullSchemaName(const std::string & full_name)
 {
     auto first_dot = full_name.find('.');
     auto catalog_name = full_name.substr(0, first_dot);
@@ -88,17 +88,6 @@ DB::Names UnityCatalog::getTables() const
     }
 
     return result;
-}
-
-DataLake::ICatalog::Namespaces UnityCatalog::getNamespaces() const
-{
-    /// Unity schemas are flat — they cannot contain nested namespaces.
-    return getSchemas("");
-}
-
-DB::Names UnityCatalog::listTablesInNamespaceDirect(const std::string & namespace_name) const
-{
-    return getTablesForSchema(namespace_name);
 }
 
 void UnityCatalog::getTableMetadata(

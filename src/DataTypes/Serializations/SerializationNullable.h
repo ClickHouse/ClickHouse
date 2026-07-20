@@ -5,7 +5,7 @@
 namespace DB
 {
 
-class SerializationNullable final : public ISerialization
+class SerializationNullable : public ISerialization
 {
 private:
     SerializationPtr nested;

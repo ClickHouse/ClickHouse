@@ -49,7 +49,7 @@ struct AggregateFunctionDistinctDynamicTypesData
 
     void deserialize(ReadBuffer & buf)
     {
-        size_t size = 0;
+        size_t size;
         readVarUInt(size, buf);
         if (size > MAX_ARRAY_SIZE)
             throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large array size (maximum: {}): {}", MAX_ARRAY_SIZE, size);
@@ -120,7 +120,7 @@ public:
         /// Default value for Dynamic is NULL, so nothing to add.
     }
 
-    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
+    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         data(place).merge(data(rhs));
     }
@@ -155,7 +155,6 @@ static AggregateFunctionPtr createAggregateFunctionDistinctDynamicTypes(
     return std::make_shared<AggregateFunctionDistinctDynamicTypes>(argument_types);
 }
 
-void registerAggregateFunctionDistinctDynamicTypes(AggregateFunctionFactory & factory);
 void registerAggregateFunctionDistinctDynamicTypes(AggregateFunctionFactory & factory)
 {
     /// distinctDynamicTypes documentation

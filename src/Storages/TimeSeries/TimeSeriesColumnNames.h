@@ -6,7 +6,7 @@ namespace DB
 
 struct TimeSeriesColumnNames
 {
-    /// The "samples" table contains time series:
+    /// The "data" table contains time series:
     static constexpr const char * ID = "id";
     static constexpr const char * Timestamp = "timestamp";
     static constexpr const char * Value = "value";
@@ -29,7 +29,7 @@ struct TimeSeriesColumnNames
     static constexpr const char * MaxTime = "max_time";
 
     /// The "metrics" table contains general information (metadata) about metrics:
-    static constexpr const char * MetricFamily = "metric_family";
+    static constexpr const char * MetricFamilyName = "metric_family_name";
     static constexpr const char * Type = "type";
     static constexpr const char * Unit = "unit";
     static constexpr const char * Help = "help";
@@ -50,9 +50,6 @@ struct TimeSeriesColumnNames
     static constexpr const char * JoinCount = "join_count";
     static constexpr const char * Values = "values";
     static constexpr const char * SamplingKeys = "sampling_keys";
-
-    /// Obsolete names
-    static constexpr const char * MetricFamilyName = "metric_family_name";
 };
 
 }
