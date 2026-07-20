@@ -106,7 +106,10 @@ void ASTLiteral::appendColumnNameImpl(WriteBuffer & ostr) const
         }
         else
         {
-            String column_name = applyVisitor(FieldVisitorToString(), value);
+            /// Resolve any NumberLiteral to its concrete value so the column name matches the
+            /// resolved type (and stays identical across server versions in distributed queries),
+            /// instead of leaking the original literal text.
+            String column_name = applyVisitor(FieldVisitorToString(), value.resolveNumberLiteral());
             writeString(column_name, ostr);
         }
     }
@@ -135,7 +138,7 @@ void ASTLiteral::appendColumnNameImplLegacy(WriteBuffer & ostr) const
     }
     else
     {
-        String column_name = applyVisitor(FieldVisitorToColumnName(), value);
+        String column_name = applyVisitor(FieldVisitorToColumnName(), value.resolveNumberLiteral());
         writeString(column_name, ostr);
     }
 }
