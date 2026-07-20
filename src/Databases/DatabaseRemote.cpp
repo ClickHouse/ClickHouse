@@ -1,5 +1,6 @@
 #include <Databases/DatabaseRemote.h>
 
+#include <Access/Common/AccessFlags.h>
 #include <Columns/ColumnString.h>
 #include <Core/Block.h>
 #include <Core/Defines.h>
@@ -39,6 +40,7 @@ namespace Setting
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int INFINITE_LOOP;
     extern const int NOT_IMPLEMENTED;
     extern const int NO_REMOTE_SHARD_AVAILABLE;
     extern const int UNKNOWN_TABLE;
@@ -73,6 +75,19 @@ DatabaseRemote::DatabaseRemote(
 }
 
 
+DatabasePtr DatabaseRemote::tryGetLocalDatabase() const
+{
+    auto local_database = DatabaseCatalog::instance().tryGetDatabase(remote_database);
+
+    /// A database that refers to itself on the same server would recurse forever when its
+    /// tables are listed, so reject it instead of hanging.
+    if (local_database.get() == this)
+        throw Exception(ErrorCodes::INFINITE_LOOP, "Database {} refers to itself", backQuoteIfNeed(getDatabaseName()));
+
+    return local_database;
+}
+
+
 Strings DatabaseRemote::fetchTablesList(ContextPtr local_context) const
 {
     auto sample_block = std::make_shared<const Block>(Block{
@@ -104,7 +119,7 @@ Strings DatabaseRemote::fetchTablesList(ContextPtr local_context) const
             /// configured remote user rather than the caller's privileges.
             if (shard_info.isLocal())
             {
-                if (auto local_database = DatabaseCatalog::instance().tryGetDatabase(remote_database))
+                if (auto local_database = tryGetLocalDatabase())
                 {
                     for (auto it = local_database->getTablesIterator(query_context); it->isValid(); it->next())
                         tables.push_back(it->name());
@@ -137,12 +152,42 @@ Strings DatabaseRemote::fetchTablesList(ContextPtr local_context) const
 }
 
 
+ColumnsDescription DatabaseRemote::fetchTableStructure(const String & table_name, ContextPtr local_context) const
+{
+    /// A shard that points to this server is handled locally, like in `fetchTablesList`. Crucially, the
+    /// local shard must not go through `DatabaseCatalog::getTable` (as the local-shard special case of
+    /// `getStructureOfRemoteTable` does): for a missing table that method builds name hints, and the
+    /// hints enumerate the tables of every database, including this one, recursing back into `fetchTable`
+    /// and hanging the server. Resolve the table with the non-throwing methods instead.
+    for (const auto & shard_info : cluster->getShardsInfo())
+    {
+        if (!shard_info.isLocal())
+            continue;
+
+        local_context->checkAccess(AccessType::SHOW_COLUMNS, remote_database, table_name);
+
+        if (auto local_database = tryGetLocalDatabase())
+        {
+            if (auto storage = local_database->tryGetTable(table_name, local_context))
+            {
+                auto metadata_snapshot = storage->getInMemoryMetadataPtr(local_context, /* bypass_metadata_cache = */ false);
+                return metadata_snapshot->getColumns();
+            }
+        }
+
+        return {};
+    }
+
+    return getStructureOfRemoteTable(*cluster, StorageID{remote_database, table_name}, local_context);
+}
+
+
 StoragePtr DatabaseRemote::fetchTable(const String & table_name, ContextPtr local_context, bool throw_on_error) const
 {
     ColumnsDescription columns;
     try
     {
-        columns = getStructureOfRemoteTable(*cluster, StorageID{remote_database, table_name}, local_context);
+        columns = fetchTableStructure(table_name, local_context);
     }
     catch (const Exception & e)
     {
@@ -234,10 +279,35 @@ DatabaseTablesIteratorPtr DatabaseRemote::getTablesIterator(
     }
     catch (...)
     {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
+        /// Log only at debug level: an error-level log entry would be reported as an error of the
+        /// query (e.g. of a `SHOW TABLES` covering this database) even though the query succeeds.
+        LOG_DEBUG(log, "Cannot list the tables of the remote database: {}", getCurrentExceptionMessage(/* with_stacktrace = */ false));
     }
 
     return std::make_unique<DatabaseTablesSnapshotIterator>(tables, getDatabaseName());
+}
+
+
+VectorWithMemoryTracking<String> DatabaseRemote::getAllTableNames(ContextPtr local_context) const
+{
+    /// Only the names are requested (e.g. by the name hints for a missing table), so skip inferring
+    /// the structure of every table, which the default implementation would do through
+    /// `getTablesIterator` at the cost of a `DESC TABLE` round trip per table.
+    VectorWithMemoryTracking<String> result;
+
+    /// Do not allow to throw here for the same reason as in `getTablesIterator`.
+    try
+    {
+        for (auto & table_name : fetchTablesList(local_context ? local_context : getContext()))
+            result.emplace_back(std::move(table_name));
+    }
+    catch (...)
+    {
+        /// Log only at debug level for the same reason as in `getTablesIterator`.
+        LOG_DEBUG(log, "Cannot list the tables of the remote database: {}", getCurrentExceptionMessage(/* with_stacktrace = */ false));
+    }
+
+    return result;
 }
 
 

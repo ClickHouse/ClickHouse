@@ -23,6 +23,10 @@ MATERIALIZED a + 3
 -- EXISTS TABLE for an existing and a missing table
 1
 0
+-- a SELECT from a missing table reports UNKNOWN_TABLE and must not recurse into the name hints
+1
+-- a database that refers to itself is rejected instead of recursing (prints 1 if the expected error is raised)
+1
 -- DDL against a Remote database is not supported (prints 1 if the expected error is raised)
 1
 1

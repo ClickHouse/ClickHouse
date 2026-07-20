@@ -8,6 +8,7 @@
 namespace DB
 {
 
+class ColumnsDescription;
 class Context;
 
 /** A database engine that provides real-time access to the tables of a database on a remote
@@ -55,6 +56,11 @@ public:
 
     DatabaseTablesIteratorPtr getTablesIterator(ContextPtr context, const FilterByNameFunction & filter_by_table_name, bool skip_not_loaded) const override;
 
+    /// The default implementation infers the structure of every table through `getTablesIterator`,
+    /// but only the names are needed, e.g. by the name hints for a missing table. Best-effort: on a
+    /// remote error, returns an empty list instead of throwing.
+    VectorWithMemoryTracking<String> getAllTableNames(ContextPtr context) const override;
+
     bool isTableExist(const String & name, ContextPtr context) const override;
     StoragePtr tryGetTable(const String & name, ContextPtr context) const override;
 
@@ -83,8 +89,18 @@ private:
     bool persistent = true;
     const UUID db_uuid;
 
+    /// Resolve `remote_database` as a database of this server when the cluster has a local shard,
+    /// rejecting a database that refers to itself.
+    DatabasePtr tryGetLocalDatabase() const;
+
     /// Fetch the names of the tables of `remote_database` from the remote server.
     Strings fetchTablesList(ContextPtr local_context) const;
+
+    /// Infer the column structure of `remote_database.table_name`, from the local catalog for a local
+    /// shard (without the name-hint machinery of `DatabaseCatalog::getTable`, which would recurse back
+    /// into this database) and via `DESC TABLE` on the remote server otherwise. Returns an empty set
+    /// when the table does not exist.
+    ColumnsDescription fetchTableStructure(const String & table_name, ContextPtr local_context) const;
 
     /// Build a `Distributed` storage that forwards to `remote_database.table_name` on the remote
     /// server, inferring the column structure from it. Returns `nullptr` if the table genuinely

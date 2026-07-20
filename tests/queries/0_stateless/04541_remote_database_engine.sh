@@ -51,6 +51,16 @@ echo '-- EXISTS TABLE for an existing and a missing table'
 ${CLICKHOUSE_CLIENT} --query "EXISTS TABLE ${REMOTE_DB}.t"
 ${CLICKHOUSE_CLIENT} --query "EXISTS TABLE ${REMOTE_DB}.does_not_exist"
 
+echo '-- a SELECT from a missing table reports UNKNOWN_TABLE and must not recurse into the name hints'
+${CLICKHOUSE_CLIENT} --query "SELECT * FROM ${REMOTE_DB}.no_such_table" 2>&1 | grep -c -m1 "UNKNOWN_TABLE"
+
+echo '-- a database that refers to itself is rejected instead of recursing (prints 1 if the expected error is raised)'
+${CLICKHOUSE_CLIENT} --query "CREATE DATABASE ${REMOTE_DB}_loop ENGINE = Remote('127.0.0.1', '${REMOTE_DB}_loop', 'default', '')"
+${CLICKHOUSE_CLIENT} --query "SHOW CREATE TABLE ${REMOTE_DB}_loop.t" 2>&1 | grep -c -m1 "INFINITE_LOOP"
+# The table listing is best-effort, so it must terminate with an empty result rather than an error.
+${CLICKHOUSE_CLIENT} --query "SHOW TABLES FROM ${REMOTE_DB}_loop"
+${CLICKHOUSE_CLIENT} --query "DROP DATABASE ${REMOTE_DB}_loop"
+
 echo '-- DDL against a Remote database is not supported (prints 1 if the expected error is raised)'
 ${CLICKHOUSE_CLIENT} --query "CREATE TABLE ${REMOTE_DB}.new_table (x UInt8) ENGINE = Memory" 2>&1 | grep -c -m1 "NOT_IMPLEMENTED"
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE ${REMOTE_DB}.t" 2>&1 | grep -c -m1 "NOT_IMPLEMENTED"
