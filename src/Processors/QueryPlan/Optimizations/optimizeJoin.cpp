@@ -374,16 +374,19 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
                 = (settings[Setting::read_overflow_mode] == OverflowMode::THROW && settings[Setting::max_rows_to_read])
                 || (settings[Setting::read_overflow_mode_leaf] == OverflowMode::THROW && settings[Setting::max_rows_to_read_leaf]);
 
-            /// `optimizeReadInOrder` runs after join optimization and may exempt the final read from
-            /// row limits. Under throwing limits, keep this analysis local and let the final read
-            /// analyze again after its input order is known.
+            /// Join-order estimation needs these ranges before `optimizeReadInOrder` runs. Both variants
+            /// perform the same partition/PK/index analysis; the normal one memoizes its result for later
+            /// consumers. Since `optimizeReadInOrder` may exempt the final read from row limits, under
+            /// throwing limits analyze locally without checking them, then let the final read analyze and
+            /// memoize the ranges after its input order is known.
             analyzed_result = has_throwing_row_limit
                 ? reading->selectRangesToReadForEstimation()
                 : reading->selectRangesToRead();
         }
 
-        /// Early index-analysis returns have no `index_stats`, but an exact empty result
-        /// must not degrade from zero rows to unknown in the fallback below.
+        /// `has_exact_ranges` is a deterministic index-analysis result, not a confidence estimate.
+        /// If it selects zero rows, the read is provably empty. Early empty returns have no
+        /// `index_stats`, so preserve zero here instead of degrading to unknown in the fallback.
         if (analyzed_result && analyzed_result->has_exact_ranges && analyzed_result->selected_rows == 0)
             return RelationStats{.estimated_rows = 0, .table_name = table_display_name};
 
