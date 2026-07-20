@@ -69,7 +69,6 @@ namespace Setting
 namespace ServerSetting
 {
     extern const ServerSettingsBool disable_insertion_and_mutation;
-    extern const ServerSettingsBool distributed_ddl_use_initial_user_and_roles;
 }
 
 namespace ErrorCodes
@@ -430,8 +429,6 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
     AccessRightsElements read_access;
     {
         auto metadata_ptr = table ? table->getInMemoryMetadataPtr(getContext(), false) : nullptr;
-        const bool alter_on_cluster = !alter.cluster.empty();
-        const bool ddl_use_initial_user = getContext()->getServerSettings()[ServerSetting::distributed_ddl_use_initial_user_and_roles];
         bool has_mutation_command = false;
         for (const auto & child : alter.command_list->children)
         {
@@ -441,12 +438,10 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
                 has_mutation_command = true;
                 /// The subquery rejection needs no metadata, so it runs even when the table is not
                 /// local (ON CLUSTER from such a node), before the fail-closed whole-table check below.
-                rejectMutationSubqueryWithUnverifiedReadAccess(
-                    command.predicate, settings[Setting::validate_mutation_query], alter_on_cluster, ddl_use_initial_user);
+                rejectMutationSubqueryWhenValidationDisabled(command.predicate, settings[Setting::validate_mutation_query]);
                 for (const ASTPtr & assignment : command.update_assignments->children)
-                    rejectMutationSubqueryWithUnverifiedReadAccess(
-                        assignment->as<const ASTAssignment &>().expression().get(),
-                        settings[Setting::validate_mutation_query], alter_on_cluster, ddl_use_initial_user);
+                    rejectMutationSubqueryWhenValidationDisabled(
+                        assignment->as<const ASTAssignment &>().expression().get(), settings[Setting::validate_mutation_query]);
                 if (metadata_ptr)
                 {
                     addExpressionColumnsSelectAccess(read_access, command.predicate, table_id.database_name, table_id.table_name, *metadata_ptr);
@@ -459,8 +454,7 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
             else if (command.type == ASTAlterCommand::DELETE)
             {
                 has_mutation_command = true;
-                rejectMutationSubqueryWithUnverifiedReadAccess(
-                    command.predicate, settings[Setting::validate_mutation_query], alter_on_cluster, ddl_use_initial_user);
+                rejectMutationSubqueryWhenValidationDisabled(command.predicate, settings[Setting::validate_mutation_query]);
                 if (metadata_ptr)
                     addExpressionColumnsSelectAccess(read_access, command.predicate, table_id.database_name, table_id.table_name, *metadata_ptr);
             }

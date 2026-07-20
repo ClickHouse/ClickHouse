@@ -28,19 +28,11 @@ void addExpressionColumnsSelectAccess(
 
 /// `RequiredSourceColumnsVisitor` (used by `addExpressionColumnsSelectAccess`) does not descend into
 /// subqueries, so columns read only inside a subquery of a mutation's `WHERE` / `SET` expression get
-/// no `SELECT` requirement from it. Such a subquery's read access is instead enforced when the mutation
-/// query is built and interpreted under the *initiating* user's context by the `validate_mutation_query`
-/// path (default on). That verification does not happen for the initiating user when:
-///   - `validate_mutation_query = 0` (the validating interpreter is skipped), or
-///   - the mutation is `ON CLUSTER` and `distributed_ddl_use_initial_user_and_roles = 0` (default), so
-///     the remote node validates as its own user, not the initiator.
-/// In those cases the subquery's read access cannot be verified here, so fail closed: reject a mutation
-/// whose `WHERE` / `SET` expression contains a subquery, rather than let it read columns without a
-/// grant. Does nothing when `expression` is null or when the read access is verifiable.
-void rejectMutationSubqueryWithUnverifiedReadAccess(
-    const IAST * expression,
-    bool validate_mutation_query,
-    bool is_on_cluster,
-    bool distributed_ddl_use_initial_user_and_roles);
+/// no `SELECT` requirement from it. Such a subquery's read access is instead enforced when
+/// `validate_mutation_query` (default on) builds and interprets the mutation query under the user's
+/// context. If that validation is disabled, the subquery's read access cannot be verified here, so
+/// fail closed: reject the mutation rather than let it read columns without a grant. Does nothing when
+/// `expression` is null or `validate_mutation_query` is true.
+void rejectMutationSubqueryWhenValidationDisabled(const IAST * expression, bool validate_mutation_query);
 
 }
