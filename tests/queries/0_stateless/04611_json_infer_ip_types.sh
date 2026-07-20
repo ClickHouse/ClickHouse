@@ -9,8 +9,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 echo '1. Default: no IP inference'
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t"
 $CLICKHOUSE_CLIENT -q "CREATE TABLE t (json JSON(max_dynamic_paths=0)) ENGINE = Memory"
-echo '{"ip": "192.168.1.1"}' | $CLICKHOUSE_CLIENT -q "INSERT INTO t FORMAT JSONEachRow" \
-    --input_format_try_infer_ipv4=0 --input_format_try_infer_ipv6=0
+echo '{"json": {"ip": "192.168.1.1"}}' | $CLICKHOUSE_CLIENT --input_format_try_infer_ipv4=0 --input_format_try_infer_ipv6=0 -q "INSERT INTO t FORMAT JSONEachRow"
 $CLICKHOUSE_CLIENT -q "SELECT dynamicType(json.ip) FROM t"
 $CLICKHOUSE_CLIENT -q "SELECT json.ip FROM t"
 $CLICKHOUSE_CLIENT -q "SELECT JSONSharedDataPaths(json) FROM t"
@@ -20,8 +19,7 @@ $CLICKHOUSE_CLIENT -q "DROP TABLE t"
 echo '2. IPv4 inference enabled'
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t"
 $CLICKHOUSE_CLIENT -q "CREATE TABLE t (json JSON(max_dynamic_paths=0)) ENGINE = Memory"
-echo '{"ip": "192.168.1.1"}' | $CLICKHOUSE_CLIENT -q "INSERT INTO t FORMAT JSONEachRow" \
-    --input_format_try_infer_ipv4=1
+echo '{"json": {"ip": "192.168.1.1"}}' | $CLICKHOUSE_CLIENT --input_format_try_infer_ipv4=1 -q "INSERT INTO t FORMAT JSONEachRow"
 $CLICKHOUSE_CLIENT -q "SELECT dynamicType(json.ip) FROM t"
 $CLICKHOUSE_CLIENT -q "SELECT json.ip FROM t"
 $CLICKHOUSE_CLIENT -q "SELECT JSONSharedDataPaths(json) FROM t"
@@ -31,8 +29,7 @@ $CLICKHOUSE_CLIENT -q "DROP TABLE t"
 echo '3. IPv6 inference enabled'
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t"
 $CLICKHOUSE_CLIENT -q "CREATE TABLE t (json JSON(max_dynamic_paths=0)) ENGINE = Memory"
-echo '{"ip": "2001:db8::1"}' | $CLICKHOUSE_CLIENT -q "INSERT INTO t FORMAT JSONEachRow" \
-    --input_format_try_infer_ipv6=1
+echo '{"json": {"ip": "2001:db8::1"}}' | $CLICKHOUSE_CLIENT --input_format_try_infer_ipv6=1 -q "INSERT INTO t FORMAT JSONEachRow"
 $CLICKHOUSE_CLIENT -q "SELECT dynamicType(json.ip) FROM t"
 $CLICKHOUSE_CLIENT -q "SELECT json.ip FROM t"
 $CLICKHOUSE_CLIENT -q "DROP TABLE t"
@@ -41,8 +38,11 @@ $CLICKHOUSE_CLIENT -q "DROP TABLE t"
 echo '4. Non-IP strings stay String'
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t"
 $CLICKHOUSE_CLIENT -q "CREATE TABLE t (json JSON(max_dynamic_paths=0)) ENGINE = Memory"
-printf '{"ip": "1.2.3"}\n{"ip": "256.0.0.1"}\n{"ip": "not-an-ip"}\n' | \
-    $CLICKHOUSE_CLIENT -q "INSERT INTO t FORMAT JSONEachRow" --input_format_try_infer_ipv4=1
+printf '{"json": {"ip": "1.2.3"}}
+{"json": {"ip": "256.0.0.1"}}
+{"json": {"ip": "not-an-ip"}}
+' | \
+    $CLICKHOUSE_CLIENT --input_format_try_infer_ipv4=1 -q "INSERT INTO t FORMAT JSONEachRow"
 $CLICKHOUSE_CLIENT -q "SELECT dynamicType(json.ip) FROM t"
 $CLICKHOUSE_CLIENT -q "DROP TABLE t"
 
@@ -50,9 +50,10 @@ $CLICKHOUSE_CLIENT -q "DROP TABLE t"
 echo '5. Both IPv4 and IPv6 inference'
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t"
 $CLICKHOUSE_CLIENT -q "CREATE TABLE t (json JSON(max_dynamic_paths=0)) ENGINE = Memory"
-printf '{"ip": "192.168.1.1"}\n{"ip": "2001:db8::1"}\n' | \
-    $CLICKHOUSE_CLIENT -q "INSERT INTO t FORMAT JSONEachRow" \
-    --input_format_try_infer_ipv4=1 --input_format_try_infer_ipv6=1
+printf '{"json": {"ip": "192.168.1.1"}}
+{"json": {"ip": "2001:db8::1"}}
+' | \
+    $CLICKHOUSE_CLIENT --input_format_try_infer_ipv4=1 --input_format_try_infer_ipv6=1 -q "INSERT INTO t FORMAT JSONEachRow"
 $CLICKHOUSE_CLIENT -q "SELECT dynamicType(json.ip), json.ip FROM t"
 $CLICKHOUSE_CLIENT -q "DROP TABLE t"
 
@@ -60,8 +61,7 @@ $CLICKHOUSE_CLIENT -q "DROP TABLE t"
 echo '6. Typed path takes precedence'
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t"
 $CLICKHOUSE_CLIENT -q "CREATE TABLE t (json JSON(ip IPv4)) ENGINE = Memory"
-echo '{"ip": "10.0.0.1"}' | $CLICKHOUSE_CLIENT -q "INSERT INTO t FORMAT JSONEachRow" \
-    --input_format_try_infer_ipv4=0
+echo '{"json": {"ip": "10.0.0.1"}}' | $CLICKHOUSE_CLIENT --input_format_try_infer_ipv4=0 -q "INSERT INTO t FORMAT JSONEachRow"
 $CLICKHOUSE_CLIENT -q "SELECT toTypeName(json.ip) FROM t"
 $CLICKHOUSE_CLIENT -q "SELECT json.ip FROM t"
 $CLICKHOUSE_CLIENT -q "DROP TABLE t"
@@ -70,8 +70,7 @@ $CLICKHOUSE_CLIENT -q "DROP TABLE t"
 echo '7. IP inference with dates/datetimes disabled'
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t"
 $CLICKHOUSE_CLIENT -q "CREATE TABLE t (json JSON(max_dynamic_paths=0)) ENGINE = Memory"
-echo '{"ip": "10.0.0.1"}' | $CLICKHOUSE_CLIENT -q "INSERT INTO t FORMAT JSONEachRow" \
-    --input_format_try_infer_dates=0 --input_format_try_infer_datetimes=0 --input_format_try_infer_ipv4=1
+echo '{"json": {"ip": "10.0.0.1"}}' | $CLICKHOUSE_CLIENT --input_format_try_infer_dates=0 --input_format_try_infer_datetimes=0 --input_format_try_infer_ipv4=1 -q "INSERT INTO t FORMAT JSONEachRow"
 $CLICKHOUSE_CLIENT -q "SELECT dynamicType(json.ip) FROM t"
 $CLICKHOUSE_CLIENT -q "DROP TABLE t"
 
@@ -79,8 +78,7 @@ $CLICKHOUSE_CLIENT -q "DROP TABLE t"
 echo '8. IPv4 literal not inferred as IPv6'
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t"
 $CLICKHOUSE_CLIENT -q "CREATE TABLE t (json JSON(max_dynamic_paths=0)) ENGINE = Memory"
-echo '{"ip": "192.168.1.1"}' | $CLICKHOUSE_CLIENT -q "INSERT INTO t FORMAT JSONEachRow" \
-    --input_format_try_infer_ipv4=0 --input_format_try_infer_ipv6=1
+echo '{"json": {"ip": "192.168.1.1"}}' | $CLICKHOUSE_CLIENT --input_format_try_infer_ipv4=0 --input_format_try_infer_ipv6=1 -q "INSERT INTO t FORMAT JSONEachRow"
 $CLICKHOUSE_CLIENT -q "SELECT dynamicType(json.ip) FROM t"
 $CLICKHOUSE_CLIENT -q "DROP TABLE t"
 
@@ -88,8 +86,7 @@ $CLICKHOUSE_CLIENT -q "DROP TABLE t"
 echo '9. Dynamic path IPv4 inference'
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t"
 $CLICKHOUSE_CLIENT -q "CREATE TABLE t (json JSON(max_dynamic_paths=1)) ENGINE = Memory"
-echo '{"ip": "192.168.1.1"}' | $CLICKHOUSE_CLIENT -q "INSERT INTO t FORMAT JSONEachRow" \
-    --input_format_try_infer_ipv4=1
+echo '{"json": {"ip": "192.168.1.1"}}' | $CLICKHOUSE_CLIENT --input_format_try_infer_ipv4=1 -q "INSERT INTO t FORMAT JSONEachRow"
 $CLICKHOUSE_CLIENT -q "SELECT dynamicType(json.ip), json.ip FROM t"
 $CLICKHOUSE_CLIENT -q "DROP TABLE t"
 
@@ -97,29 +94,31 @@ $CLICKHOUSE_CLIENT -q "DROP TABLE t"
 echo '10. Dynamic path Array(IPv4) inference'
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t"
 $CLICKHOUSE_CLIENT -q "CREATE TABLE t (json JSON(max_dynamic_paths=0)) ENGINE = Memory"
-echo '{"ips": ["192.168.1.1", "10.0.0.1"]}' | $CLICKHOUSE_CLIENT -q "INSERT INTO t FORMAT JSONEachRow" \
-    --input_format_try_infer_ipv4=1
+echo '{"json": {"ips": ["192.168.1.1", "10.0.0.1"]}}' | $CLICKHOUSE_CLIENT --input_format_try_infer_ipv4=1 -q "INSERT INTO t FORMAT JSONEachRow"
 $CLICKHOUSE_CLIENT -q "SELECT dynamicType(json.ips), json.ips FROM t"
 $CLICKHOUSE_CLIENT -q "DROP TABLE t"
 
 # 11. CSV IPv4 inference (unquoted field)
 echo '11. CSV IPv4 inference'
-$CLICKHOUSE_CLIENT -q "desc format(CSV, '192.168.1.1\n')" --input_format_try_infer_ipv4=1
+$CLICKHOUSE_CLIENT --input_format_try_infer_ipv4=1 -q "desc format(CSV, '192.168.1.1
+')"
 
 # 12. CSV IPv6 inference (unquoted field)
 echo '12. CSV IPv6 inference'
-$CLICKHOUSE_CLIENT -q "desc format(CSV, '2001:db8::1\n')" --input_format_try_infer_ipv6=1
+$CLICKHOUSE_CLIENT --input_format_try_infer_ipv6=1 -q "desc format(CSV, '2001:db8::1
+')"
 
 # 13. TSV IPv4 inference
 echo '13. TSV IPv4 inference'
-$CLICKHOUSE_CLIENT -q "desc format(TSV, '192.168.1.1\n')" --input_format_try_infer_ipv4=1
+$CLICKHOUSE_CLIENT --input_format_try_infer_ipv4=1 -q "desc format(TSV, '192.168.1.1
+')"
 
 # 14. Mixed IPv4 and String collapses to String
 echo '14. Mixed IPv4 and String collapses to String'
-$CLICKHOUSE_CLIENT -q "DESCRIBE format(JSONEachRow, '{\"ip\":\"192.168.1.1\"}\n{\"ip\":\"not-an-ip\"}')" \
-    --input_format_try_infer_ipv4=1
+$CLICKHOUSE_CLIENT --input_format_try_infer_ipv4=1 -q "DESCRIBE format(JSONEachRow, '{\"ip\":\"192.168.1.1\"}
+{\"ip\":\"not-an-ip\"}')"
 
 # 15. Mixed IPv4 and IPv6 collapses to String
 echo '15. Mixed IPv4 and IPv6 collapses to String'
-$CLICKHOUSE_CLIENT -q "DESCRIBE format(JSONEachRow, '{\"ip\":\"192.168.1.1\"}\n{\"ip\":\"2001:db8::1\"}')" \
-    --input_format_try_infer_ipv4=1 --input_format_try_infer_ipv6=1
+$CLICKHOUSE_CLIENT --input_format_try_infer_ipv4=1 --input_format_try_infer_ipv6=1 -q "DESCRIBE format(JSONEachRow, '{\"ip\":\"192.168.1.1\"}
+{\"ip\":\"2001:db8::1\"}')"
