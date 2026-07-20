@@ -8,6 +8,7 @@ import tempfile
 from typing import List, Tuple
 
 from ci.praktika.gh import GH
+from ci.praktika.git import Git
 from ci.praktika.info import Info
 from ci.praktika.result import Result
 from ci.praktika.secret import Secret
@@ -481,9 +482,18 @@ def main():
                     f"git commit -m {shlex.quote(commit_msg)}",
                     strict=True,
                 )
-                Shell.check(
-                    f"git push --force https://x-access-token:$GH_TOKEN@github.com/ClickHouse/ClickHouse.git {pr_branch}",
+                # Retry the spurious "Unable to determine if workflow can be
+                # created or updated due to timeout; `workflows` scope may be
+                # required" rejection that GitHub's push-time workflow-file check
+                # throws on a repo this size (the same transient push_release_tag
+                # retries past). GH_TOKEN is the robot PAT, which carries the
+                # workflow scope, so the scope itself is not the problem.
+                Git.push(
+                    "ClickHouse/ClickHouse",
+                    f"{pr_branch}:{pr_branch}",
+                    force=True,
                     strict=True,
+                    retries=3,
                 )
 
             with tempfile.NamedTemporaryFile(
