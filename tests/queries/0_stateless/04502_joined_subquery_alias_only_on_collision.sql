@@ -114,8 +114,36 @@ SELECT a FROM numbers(1), (SELECT 2 AS not_a) ARRAY JOIN [30] AS a;
 -- ... and the restriction can still be disabled entirely.
 SELECT a FROM numbers(1), (SELECT 2 AS a) ARRAY JOIN [30] AS a SETTINGS joined_subquery_requires_alias = 0;
 
+-- With `prefer_column_name_to_alias = 1` the shadowing goes the other way: the bare identifier binds to
+-- the join-tree column and the scope alias does not make it unreachable, so a scope-alias collision does
+-- not require the subquery alias in that mode.
+WITH 1 AS x SELECT x FROM numbers(1), (SELECT 2 AS x) SETTINGS prefer_column_name_to_alias = 1;
+
+-- An `ARRAY JOIN` expression that is neither aliased nor a plain identifier (here a `COLUMNS(...)` matcher)
+-- exposes names that are only known after resolution, so the validation cannot prove the absence of a
+-- collision and keeps the strict behavior: the unaliased subquery is rejected even without a provable
+-- collision, exactly as when the columns of a table expression cannot be determined.
+DROP TABLE IF EXISTS arr_t;
+CREATE TABLE arr_t (id UInt8, arr1 Array(UInt8), arr2 Array(UInt8)) ENGINE = Memory;
+INSERT INTO arr_t VALUES (1, [10], [20]);
+
+SELECT arr1 FROM arr_t, (SELECT 1 AS arr1) ARRAY JOIN COLUMNS('^arr'); -- { serverError ALIAS_REQUIRED }
+SELECT arr1 FROM arr_t, (SELECT 1 AS not_colliding) ARRAY JOIN COLUMNS('^arr'); -- { serverError ALIAS_REQUIRED }
+
+-- With the subquery aliased (or the restriction disabled) the query is accepted.
+SELECT arr1 FROM arr_t, (SELECT 1 AS other) AS rhs ARRAY JOIN COLUMNS('^arr');
+SELECT arr1 FROM arr_t, (SELECT 1 AS other) ARRAY JOIN COLUMNS('^arr') SETTINGS joined_subquery_requires_alias = 0;
+
+-- The widened (`ALIAS`-including) table function column set is local to the join-alias validation: the
+-- `NATURAL JOIN` synthesis keeps matching physical columns only, symmetrically for both operand orders.
+-- `z` is a forwarded ALIAS column of `merge`, so neither order synthesizes `USING (z)` and both degrade
+-- to a cross join with the same result.
+SELECT count() FROM merge(currentDatabase(), '^mt_alias$') AS m NATURAL JOIN (SELECT 2 AS z) AS rhs;
+SELECT count() FROM (SELECT 2 AS z) AS lhs NATURAL JOIN merge(currentDatabase(), '^mt_alias$') AS m;
+
 DROP TABLE item;
 DROP TABLE sales;
 DROP TABLE with_number;
 DROP TABLE mt;
 DROP TABLE mt_alias;
+DROP TABLE arr_t;
