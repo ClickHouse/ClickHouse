@@ -35,8 +35,55 @@ public:
     Promise getPromise() const override { return 3000; }
     bool isTransformation() const override { return false; }
 
+    class StrategyEnumerator;
+
 protected:
     std::vector<GroupExpressionPtr> applyImpl(GroupExpressionPtr expression, const ExpressionProperties & required_properties, Memo & memo) const override;
+};
+
+/// Emits the physical alternatives of one logical aggregation into the memo, one method
+/// per strategy.
+class AggregationImplementation::StrategyEnumerator
+{
+public:
+    StrategyEnumerator(
+        const AggregationImplementation & rule_,
+        GroupExpressionPtr expression_,
+        const ExpressionProperties & required_properties_,
+        Memo & memo_,
+        std::vector<GroupExpressionPtr> & result_);
+
+    void addPartialAggregation(size_t node_count);
+    void addLocalAggregation();
+    void addShuffleAggregation(size_t node_count);
+    void addSingleKeyShuffleAggregations(const std::vector<size_t> & candidate_node_counts);
+
+    /// See addShuffleAggregation for why each condition disables the shuffle strategy.
+    bool shuffleApplicable() const
+    {
+        return !agg_step.getParams().keys.empty()
+            && !agg_step.isGroupingSets()
+            && !agg_step.getParams().overflow_row
+            && agg_step.getParams().max_rows_to_group_by == 0;
+    }
+
+    bool hasMultipleKeys() const { return agg_step.getParams().keys.size() >= 2; }
+
+private:
+    /// Clones the aggregation step with the given description into a physical alternative
+    /// with the given strategy and distributions and offers it to the memo.
+    void addAlternative(
+        ImplementationStrategyPtr strategy,
+        const DistributionDescription & input_dist,
+        const DistributionDescription & output_dist,
+        String description = {});
+
+    const AggregationImplementation & rule;
+    GroupExpressionPtr expression;
+    const AggregatingStep & agg_step;
+    const ExpressionProperties & required_properties;
+    Memo & memo;
+    std::vector<GroupExpressionPtr> & result;
 };
 
 /// Logical transformation that splits a single-phase Agg into a two-phase plan:
@@ -68,6 +115,100 @@ bool AggregationImplementation::checkPattern(GroupExpressionPtr expression, cons
         expression->strategy == nullptr;
 }
 
+AggregationImplementation::StrategyEnumerator::StrategyEnumerator(
+    const AggregationImplementation & rule_,
+    GroupExpressionPtr expression_,
+    const ExpressionProperties & required_properties_,
+    Memo & memo_,
+    std::vector<GroupExpressionPtr> & result_)
+    : rule(rule_)
+    , expression(std::move(expression_))
+    , agg_step(*typeid_cast<const AggregatingStep *>(expression->getQueryPlanStep()))
+    , required_properties(required_properties_)
+    , memo(memo_)
+    , result(result_)
+{
+}
+
+void AggregationImplementation::StrategyEnumerator::addAlternative(
+    ImplementationStrategyPtr strategy,
+    const DistributionDescription & input_dist,
+    const DistributionDescription & output_dist,
+    String description)
+{
+    auto new_step = agg_step.clone();
+    if (description.empty())
+        new_step->setStepDescription(agg_step);
+    else
+        new_step->setStepDescription(std::move(description), 200);
+
+    GroupExpressionPtr alternative = std::make_shared<GroupExpression>(*expression);
+    alternative->plan_step = std::move(new_step);
+    alternative->strategy = std::move(strategy);
+    alternative->inputs[0].required_properties.distribution = input_dist;
+    alternative->properties.distribution = output_dist;
+
+    rule.addPhysicalToMemo(alternative, required_properties, memo, result);
+}
+
+/// Partial (non-final) aggregation at the given node count. The output distribution is
+/// `{node_count, []}` (no column guarantee).
+void AggregationImplementation::StrategyEnumerator::addPartialAggregation(size_t node_count)
+{
+    DistributionDescription dist;
+    dist.node_count = node_count;
+    addAlternative(std::make_shared<PartialAggregationStrategy>(), dist, dist);
+}
+
+/// Local - gather all input to one node, aggregate there.
+/// Always applicable; when the cluster has only 1 node it is also the only meaningful strategy.
+void AggregationImplementation::StrategyEnumerator::addLocalAggregation()
+{
+    DistributionDescription single_node;    /// node_count=1 (default)
+    addAlternative(std::make_shared<LocalAggregationStrategy>(), single_node, single_node,
+        fmt::format("Local {}", agg_step.getStepDescription()));
+}
+
+/// Shuffle - input pre-distributed by group keys, each node aggregates its
+/// own partition of keys and produces a final result independently.
+/// Not applicable for global aggregations (e.g. COUNT(*)) that have no group keys.
+/// Not applicable for GROUPING SETS: `params.keys` is the union of all sets' keys,
+/// so shuffling by the union splits the rows of one grouping-set group across nodes.
+/// Not applicable with an overflow row: each node would emit its own overflow row.
+/// Not applicable with `max_rows_to_group_by`: the limit is a global contract, but each
+/// node would enforce it independently, so the result could exceed it (or skip the
+/// expected exception). Keep such aggregations local.
+void AggregationImplementation::StrategyEnumerator::addShuffleAggregation(size_t node_count)
+{
+    DistributionDescription by_keys;
+    by_keys.node_count = node_count;
+    for (const auto & key : agg_step.getParams().keys)
+        by_keys.columns.push_back({key});
+
+    addAlternative(std::make_shared<ShuffleAggregationStrategy>(), by_keys, by_keys,
+        fmt::format("Shuffle {}", agg_step.getStepDescription()));
+}
+
+/// Single-key shuffle alternatives.
+/// For aggregations with 2+ group-by keys, generate a shuffle alternative for EACH
+/// individual key. Correctness: `GROUP BY (A, B)` with data shuffled by `A` is correct
+/// because all rows with the same `(A, B)` have the same `A`, hence the same node.
+void AggregationImplementation::StrategyEnumerator::addSingleKeyShuffleAggregations(const std::vector<size_t> & candidate_node_counts)
+{
+    for (const auto & single_key : agg_step.getParams().keys)
+    {
+        for (size_t candidate_node_count : candidate_node_counts)
+        {
+            DistributionDescription by_single_key;
+            by_single_key.node_count = candidate_node_count;
+            by_single_key.columns.push_back({single_key});
+
+            addAlternative(std::make_shared<ShuffleAggregationStrategy>(), by_single_key, by_single_key,
+                fmt::format("Shuffle (by {}) {}", single_key, agg_step.getStepDescription()));
+        }
+    }
+}
+
 std::vector<GroupExpressionPtr> AggregationImplementation::applyImpl(GroupExpressionPtr expression, const ExpressionProperties & required_properties, Memo & memo) const
 {
     const auto * agg_step = typeid_cast<const AggregatingStep *>(expression->getQueryPlanStep());
@@ -83,11 +224,13 @@ std::vector<GroupExpressionPtr> AggregationImplementation::applyImpl(GroupExpres
     const size_t cluster_node_count = memo.getEnvironment().cluster_node_count;
     const auto candidate_node_counts = getCandidateNodeCounts(cluster_node_count);
 
+    std::vector<GroupExpressionPtr> result;
+    StrategyEnumerator strategies(*this, expression, required_properties, memo, result);
+
     /// Partial (non-final) aggregation: create distributed implementations at each candidate
-    /// node count. The output distribution is `{node_count, []}` (no column guarantee).
-    /// When the parent (MergingAggregated) requires `{1 node}`, the DistributionEnforcer
-    /// bridges the gap via GatherExchange - crucially on the PARTIAL output (~25 rows) rather
-    /// than the raw input (~1M rows). This produces:
+    /// node count. When the parent (MergingAggregated) requires `{1 node}`, the
+    /// DistributionEnforcer bridges the gap via GatherExchange - crucially on the PARTIAL
+    /// output (~25 rows) rather than the raw input (~1M rows). This produces:
     ///   ParallelRead -> Expression -> PartialAgg({N nodes}) -> GatherExchange -> MergeAgg
     /// We intentionally do NOT create a `{1 node}` variant for multi-node clusters: if one
     /// existed, it would become the best for `{1 node}` immediately, preventing the enforcer
@@ -96,124 +239,34 @@ std::vector<GroupExpressionPtr> AggregationImplementation::applyImpl(GroupExpres
     /// are no multi-node candidates and no enforcer path to bridge the gap.
     if (!agg_step->getFinal())
     {
-        std::vector<GroupExpressionPtr> result;
-
-        /// For single-node clusters, create a {1 node} partial aggregation directly.
         auto partial_candidates = candidate_node_counts;
         if (partial_candidates.empty())
             partial_candidates.push_back(1);
 
         for (size_t candidate_node_count : partial_candidates)
-        {
-            auto new_step = agg_step->clone();
-            new_step->setStepDescription(*agg_step);
-
-            GroupExpressionPtr partial_impl = std::make_shared<GroupExpression>(*expression);
-            partial_impl->plan_step = std::move(new_step);
-            partial_impl->strategy = std::make_shared<PartialAggregationStrategy>();
-
-            DistributionDescription dist;
-            dist.node_count = candidate_node_count;
-            partial_impl->inputs[0].required_properties.distribution = dist;
-            partial_impl->properties.distribution = dist;
-
-            addPhysicalToMemo(partial_impl, required_properties, memo, result);
-        }
+            strategies.addPartialAggregation(candidate_node_count);
         return result;
     }
 
-    std::vector<GroupExpressionPtr> result;
-
-    /// See Strategy B below for when the shuffle strategy applies.
-    const bool shuffle_applicable = !agg_step->getParams().keys.empty()
-        && !agg_step->isGroupingSets()
-        && !agg_step->getParams().overflow_row
-        && agg_step->getParams().max_rows_to_group_by == 0;
-
     /// `distributed_plan_force_shuffle_aggregation` leaves shuffle as the only strategy
     /// on a multi-node cluster whenever it is applicable.
-    const bool only_shuffle = memo.getEnvironment().distributed_plan_force_shuffle_aggregation && shuffle_applicable && !candidate_node_counts.empty();
+    const bool only_shuffle = memo.getEnvironment().distributed_plan_force_shuffle_aggregation
+        && strategies.shuffleApplicable() && !candidate_node_counts.empty();
 
-    /// Strategy A: Local - gather all input to one node, aggregate there.
-    /// Always applicable; when the cluster has only 1 node it is also the only meaningful strategy.
     if (!only_shuffle)
-    {
-        auto new_step = agg_step->clone();
-        new_step->setStepDescription(fmt::format("Local {}", agg_step->getStepDescription()), 200);
-
-        GroupExpressionPtr local_agg = std::make_shared<GroupExpression>(*expression);
-        local_agg->plan_step = std::move(new_step);
-        local_agg->strategy = std::make_shared<LocalAggregationStrategy>();
-
-        DistributionDescription single_node;    /// node_count=1 (default)
-        local_agg->inputs[0].required_properties.distribution = single_node;
-        local_agg->properties.distribution = single_node;
-
-        addPhysicalToMemo(local_agg, required_properties, memo, result);
-    }
+        strategies.addLocalAggregation();
 
     /// For a single-node cluster distributed strategies are identical to local - skip them.
     if (candidate_node_counts.empty())
         return result;
 
-    /// Strategy B: Shuffle - input pre-distributed by group keys, each node aggregates its
-    /// own partition of keys and produces a final result independently.
-    /// Not applicable for global aggregations (e.g. COUNT(*)) that have no group keys.
-    /// Not applicable for GROUPING SETS: `params.keys` is the union of all sets' keys,
-    /// so shuffling by the union splits the rows of one grouping-set group across nodes.
-    /// Not applicable with an overflow row: each node would emit its own overflow row.
-    /// Not applicable with `max_rows_to_group_by`: the limit is a global contract, but each
-    /// node would enforce it independently, so the result could exceed it (or skip the
-    /// expected exception). Keep such aggregations local.
-    if (shuffle_applicable)
+    if (strategies.shuffleApplicable())
     {
         for (size_t candidate_node_count : candidate_node_counts)
-        {
-            auto new_step = agg_step->clone();
-            new_step->setStepDescription(fmt::format("Shuffle {}", agg_step->getStepDescription()), 200);
+            strategies.addShuffleAggregation(candidate_node_count);
 
-            DistributionDescription by_keys;
-            by_keys.node_count = candidate_node_count;
-            for (const auto & key : agg_step->getParams().keys)
-                by_keys.columns.push_back({key});
-
-            GroupExpressionPtr shuffle_agg = std::make_shared<GroupExpression>(*expression);
-            shuffle_agg->plan_step = std::move(new_step);
-            shuffle_agg->strategy = std::make_shared<ShuffleAggregationStrategy>();
-            shuffle_agg->inputs[0].required_properties.distribution = by_keys;
-            shuffle_agg->properties.distribution = by_keys;
-
-            addPhysicalToMemo(shuffle_agg, required_properties, memo, result);
-        }
-
-        /// Strategy B2: Single-key shuffle alternatives.
-        /// For aggregations with 2+ group-by keys, generate a shuffle alternative for EACH
-        /// individual key. Correctness: `GROUP BY (A, B)` with data shuffled by `A` is correct
-        /// because all rows with the same `(A, B)` have the same `A`, hence the same node.
-        if (agg_step->getParams().keys.size() >= 2)
-        {
-            for (const auto & single_key : agg_step->getParams().keys)
-            {
-                for (size_t candidate_node_count : candidate_node_counts)
-                {
-                    DistributionDescription by_single_key;
-                    by_single_key.node_count = candidate_node_count;
-                    by_single_key.columns.push_back({single_key});
-
-                    auto new_step = agg_step->clone();
-                    new_step->setStepDescription(
-                        fmt::format("Shuffle (by {}) {}", single_key, agg_step->getStepDescription()), 200);
-
-                    GroupExpressionPtr single_key_agg = std::make_shared<GroupExpression>(*expression);
-                    single_key_agg->plan_step = std::move(new_step);
-                    single_key_agg->strategy = std::make_shared<ShuffleAggregationStrategy>();
-                    single_key_agg->inputs[0].required_properties.distribution = by_single_key;
-                    single_key_agg->properties.distribution = by_single_key;
-
-                    addPhysicalToMemo(single_key_agg, required_properties, memo, result);
-                }
-            }
-        }
+        if (strategies.hasMultipleKeys())
+            strategies.addSingleKeyShuffleAggregations(candidate_node_counts);
     }
 
     return result;
