@@ -5067,7 +5067,7 @@ It is ok to have ASCII NULL bytes in strings, and they will be counted as well.
 length(x)
 ```
 
-**Aliases**: `CARDINALITY`, `OCTET_LENGTH`
+**Aliases**: `OCTET_LENGTH`, `CARDINALITY`
 
 **Arguments**
 
@@ -5208,8 +5208,18 @@ truncated -- as a Johnson-Lindenstrauss / subsampled-randomized-Hadamard (SRHT) 
 When the input length is `2^k * m` with `m` in `{12, 20}` (orders that have a Hadamard matrix, e.g.
 `768 = 64 * 12`, `1536 = 128 * 12`, `3072 = 256 * 12`, `2560 = 128 * 20`), an exact Kronecker
 transform `H_(2^k) (x) H_m` is used instead of padding, so the output keeps the input dimension
-rather than growing to the next power of two. All other lengths are zero-padded to `m`, the next
-power of two.
+rather than growing to the next power of two.
+
+Order `9` has no `+/-1` Hadamard matrix (those exist only for orders `1`, `2`, and multiples of
+`4`), so for the `2^k * 9` family (e.g. `1152 = 128 * 9`, `2304 = 256 * 9`) the small factor is a
+real orthogonal Discrete Hartley Transform matrix `C_9` applied with float multiplies -- the exact
+Kronecker transform `H_(2^k) (x) C_9`, again without padding. This exact `C_9` path is used only for
+the full transform: its rows do not have the uniform leverage of a `+/-1` Hadamard matrix, so a
+truncated prefix of them would be a position-biased projection rather than a valid SRHT one.
+Consequently, a truncating `output_dims` (smaller than the input length) on the `2^k * 9` family
+falls back to the zero-padded power-of-two transform, which does keep that property.
+
+All other lengths are zero-padded to `m`, the next power of two.
 
 The result has the same element type as the input; an empty input array returns an empty array.
 
@@ -5218,7 +5228,9 @@ The result has the same element type as the input; an empty input array returns 
 - `output_dims` (optional, default the transform length): keeps only the first `output_dims`
   coordinates. The `1/sqrt(output_dims)` scaling keeps the result norm-preserving for the full
   transform and norm-preserving in expectation when truncated. It must not exceed the transform
-  length (the next power of two, or the input length for the exact Kronecker case).
+  length (the next power of two, or the input length for the exact Kronecker case). Truncating the
+  `2^k * 9` family uses the zero-padded power-of-two transform rather than the exact `C_9` one, so
+  that the truncated projection keeps the uniform-leverage (SRHT) property.
 
 **Syntax**
 
@@ -5266,6 +5278,16 @@ SELECT length(randomHadamardTransform([1, 2, 3, 4, 5, 6, 7, 8]::Array(Float32), 
 
 ```response title=Response
 3
+```
+
+**Exact transform of a 2^k * 9 dimension keeps the input length (no padding)**
+
+```sql title=Query
+SELECT length(randomHadamardTransform(CAST(range(1152), 'Array(Float32)')))
+```
+
+```response title=Response
+1152
 ```
 
 ## range {#range}
