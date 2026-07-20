@@ -80,6 +80,11 @@ query edit under pending restore mid-flight: the run drops run=1
 query edit under pending restore mid-flight: the live draft query survives
 query edit under pending restore mid-flight: the entry carries the new query params, not the old
 query edit under pending restore mid-flight: the stale destination param does not leak into the URL
+param edit during launch param resolution: the run executes with the click-time binding
+param edit during launch param resolution: the live param edit survives
+param edit during launch param resolution: the live param input keeps the edit
+param edit during launch param resolution: the run drops run=1
+param edit during launch param resolution: the stale click-time binding does not reach the URL
 ordinary run, inputs not yet rebuilt: the clean run keeps run=1
 ordinary run, inputs not yet rebuilt: the stale source param does not leak
 ordinary run, inputs not yet rebuilt: the launched query param reaches the URL

@@ -1232,6 +1232,69 @@ async function reload()
     sandbox.params_restore_pending_query = null;
     sandbox.getQueryUnderCursor = async () => '';
 
+    /// The trusted param edit lands even EARLIER: while `resolveRunParams` is still awaiting the
+    /// edited launch query's own `paramValuesForQuery` tokenization, before any request is issued.
+    /// The pending-restore guard's launch snapshot (`live_params_at_launch`) is captured
+    /// synchronously at click time in `postOne`/`postAll` — capturing it inside `postSingle`/
+    /// `postMulti` AFTER the `resolveRunParams` await would fold this edit into the "launch" state,
+    /// so `saveHistory` could not see the divergence: it would write the click-time resolved params
+    /// back over the newer edit and keep `run=1` for a binding the user no longer sees (a reload /
+    /// shared link would replay it). Start from a tab showing `SELECT {y}` with y=1 in the inputs,
+    /// switch toward another `SELECT {y}` tab (saved y=2) whose restore is still pending, edit the
+    /// query (so `resolveRunParams` takes the tokenizing `paramValuesForQuery` path), press Run,
+    /// change y to 9 while that tokenization is pending, then let the run finish. The request
+    /// executes with the click-time `{y:'1'}`; the live `{y:'9'}` must survive and the entry must
+    /// drop `run=1`. Drives the REAL `postOne`/`postSingle`/`resolveRunParams`/`paramValuesForQuery`
+    /// with a hung `tokenize`.
+    reset();
+    sandbox.param_inputs = { y: '1' };
+    sandbox.currentQueryParams = [{ name: 'y', type: 'String' }];
+    active().query = 'SELECT {y}';
+    sandbox.query_area.value = 'SELECT {y}';
+    await run('SELECT {y}');                        /// tab A: a clean, run-backed entry with y=1
+    const dest_tab_early_edit = sandbox.makeTab();
+    dest_tab_early_edit.query = 'SELECT {y}';
+    dest_tab_early_edit.params = { y: '2' };
+    sandbox.tabs.push(dest_tab_early_edit);
+    sandbox.activeTabId = dest_tab_early_edit.id;
+    sandbox.params_restore_pending_token = sandbox.request_num;
+    sandbox.params_restore_pending_query = 'SELECT {y}';
+    /// The user edits the editor BEFORE pressing Run, so the launch query diverges from the
+    /// restore's destination and `resolveRunParams` derives the params from the query text
+    /// (`paramValuesForQuery`), awaiting the hung tokenization below. The previous tab's live
+    /// input (`{y:'1'}`) is the click-time snapshot the run executes with.
+    type('SELECT {y} -- edited');
+    sandbox.isMultiQuery = false;
+    sandbox.query_area.selectionStart = 0;
+    sandbox.query_area.selectionEnd = 0;
+    sandbox.getQueryUnderCursor = async () => 'SELECT {y} -- edited';
+    let releaseEarlyEditTokenize;
+    sandbox.tokenize = () => new Promise(resolve => { releaseEarlyEditTokenize = () => resolve([
+        { token: 'SELECT', significant: true }, { token: ' ', significant: false },
+        { token: '{', significant: true }, { token: 'y', significant: true },
+        { token: ':', significant: true }, { token: 'String', significant: true },
+        { token: '}', significant: true }, { token: ' ', significant: false },
+        { token: '-- edited', significant: false },
+    ]); });
+    const earlyEditRunPromise = sandbox.postOne();
+    await drain();
+    setParam('y', '9');                             /// a trusted edit during the resolution await
+    releaseEarlyEditTokenize();                     /// the launch's tokenization finally resolves
+    await drain();
+    resolvePendingPostImpl();
+    await earlyEditRunPromise;
+    await drain();
+    assert_params('param edit during launch param resolution: the run executes with the click-time binding', active().result && active().result.params, { y: '1' });
+    assert_params('param edit during launch param resolution: the live param edit survives', active().params, { y: '9' });
+    assert_eq('param edit during launch param resolution: the live param input keeps the edit', sandbox.param_inputs.y, '9');
+    assert_eq('param edit during launch param resolution: the run drops run=1', sandbox.history.stack[sandbox.history.idx].url.includes('run=1'), false);
+    assert_eq('param edit during launch param resolution: the stale click-time binding does not reach the URL', sandbox.history.stack[sandbox.history.idx].url.includes('param_y=1'), false);
+    sandbox.tokenize = async () => [];
+    sandbox.params_restore_pending_token = -1;
+    sandbox.params_restore_pending_query = null;
+    sandbox.getQueryUnderCursor = async () => '';
+    sandbox.currentQueryParams = [];
+
     /// The SAME stale-placeholder race, but on the ORDINARY run path -- NO tab restore in flight.
     /// Editing the query only STARTS `updateQueryParams`; it does not replace `currentQueryParams` /
     /// the `param_*` inputs until after its own `await tokenize(...)`. A `Run` pressed before that

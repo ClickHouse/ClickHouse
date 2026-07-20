@@ -5908,7 +5908,7 @@ async function postImpl(posted_request_num, query, targetResultEl, abortControll
 /// Execute a single query (legacy path, used for single-query mode).
 /// When `history_query_text` is provided, it overrides `query` for browser history/URL storage,
 /// preserving the full textarea content when running a selected query in multi-query mode.
-async function postSingle(posted_request_num, query, history_query_text, params_restore_pending, queryStart, partial, live_params)
+async function postSingle(posted_request_num, query, history_query_text, params_restore_pending, queryStart, partial, live_params, live_params_at_launch = {})
 {
     /// Compare the FULL launched editor (not the single statement) against the restore's destination
     /// query: `history_query_text` is the whole editor in multi-query mode, and in single-query mode
@@ -5920,14 +5920,11 @@ async function postSingle(posted_request_num, query, history_query_text, params_
     /// run would clobber the now-active tab's UI and send a canceled query to the server (`cancel`
     /// only bumps `request_num`; there is no controller to abort yet at this point).
     if (posted_request_num != request_num) { return; }
-    /// The live in-memory `tab.params` at launch, for `saveHistory`'s pending-restore guard. When a
-    /// run races an in-flight parameter restore, `saveHistory` trusts the launch-time snapshot only
-    /// while the live tab has NOT diverged from it. A newer trusted parameter edit during the request
-    /// updates `tab.params` (the `param-` input handler), so comparing the current `tab.params`
-    /// against this launch snapshot tells such an edit apart from a merely stale/blank pending-restore
-    /// input state (which never touches `tab.params`). Captured before the network round-trip.
-    const active_tab_at_launch = getActiveTab();
-    const live_params_at_launch = { ...((active_tab_at_launch && active_tab_at_launch.params) || {}) };
+    /// `live_params_at_launch` (a parameter) is the tab's in-memory `tab.params`, snapshotted
+    /// synchronously at click time by `postOne`/`postAll` (see the comment there) — NOT re-read here,
+    /// which would be after the `resolveRunParams` await and would fold a trusted parameter edit made
+    /// during that await into the "launch" state, hiding the divergence from `saveHistory`'s
+    /// pending-restore guard.
     /// Snapshot the selected database for this run, so the request URL, the saved result
     /// snapshot, and a later download all use the database the query actually ran against,
     /// even if the panel selection changes while the query is in flight.
@@ -6042,16 +6039,15 @@ let multiQueryControllers = [];
 
 /// Execute multiple queries with parallelization of consecutive SELECTs.
 /// `parsed` is an array of { query, is_select } objects from splitAllQueries.
-async function postMulti(posted_request_num, parsed, params_restore_pending, launch_query_text, partial, live_params)
+async function postMulti(posted_request_num, parsed, params_restore_pending, launch_query_text, partial, live_params, live_params_at_launch = {})
 {
     const paramValuesSnapshot = await resolveRunParams(params_restore_pending, launch_query_text, live_params);
     /// See `postSingle`: `resolveRunParams` is async, so a `cancel` or tab switch could have superseded
     /// this run during the await. Bail out before touching the UI or issuing any request.
     if (posted_request_num != request_num) { return; }
-    /// The live in-memory `tab.params` at launch, for `saveHistory`'s pending-restore guard (see
+    /// `live_params_at_launch` (a parameter) is the tab's in-memory `tab.params`, snapshotted
+    /// synchronously at click time by `postOne`/`postAll` — not re-read after the await (see
     /// `postSingle`): trust the launch-time snapshot only while the live tab has not diverged from it.
-    const active_tab_at_launch = getActiveTab();
-    const live_params_at_launch = { ...((active_tab_at_launch && active_tab_at_launch.params) || {}) };
     /// Snapshot the selected database for this run (see `postImpl`); all statements run against it.
     const query_database = selected_database;
     /// Snapshot the connection too, so the saved result carries the server/user that produced it
@@ -8072,6 +8068,18 @@ async function postOne()
     /// executes with. `resolveRunParams` filters this snapshot down to the launched query's own
     /// placeholders.
     const live_params = getParamValues();
+    /// Snapshot the tab's in-memory `tab.params` now too, in the click's own task, for `saveHistory`'s
+    /// pending-restore guard: when a run races an in-flight parameter restore, `saveHistory` trusts the
+    /// run's restore-sourced params only while the live `tab.params` still matches this launch snapshot.
+    /// A newer trusted parameter edit during the run updates `tab.params` (the `param-` input handler),
+    /// so comparing the then-current `tab.params` against this snapshot tells such an edit apart from a
+    /// merely stale/blank pending-restore input state (which never touches `tab.params`). Capturing it
+    /// inside `postSingle`/`postMulti` — after `resolveRunParams`' tokenization await — would fold a
+    /// trusted edit made during that await into the "launch" state: the guard could not see the
+    /// divergence, would write the restore's params back over the newer edit, and would keep `run=1`
+    /// for a binding the user no longer sees.
+    const active_tab_at_launch = getActiveTab();
+    const live_params_at_launch = { ...((active_tab_at_launch && active_tab_at_launch.params) || {}) };
     document.body.scrollTo(0, 0);
     beginFlight();
 
@@ -8104,9 +8112,9 @@ async function postOne()
         /// statements that were never launched, so such an entry must not be marked auto-runnable.
         const partial = selected.length !== parsed.length;
         if (selected.length > 1) {
-            await postMulti(my_request_num, selected, params_restore_pending, all_text, partial, live_params);
+            await postMulti(my_request_num, selected, params_restore_pending, all_text, partial, live_params, live_params_at_launch);
         } else if (selected.length === 1) {
-            await postSingle(my_request_num, selected[0].query, all_text, params_restore_pending, selected[0].queryStart, partial, live_params);
+            await postSingle(my_request_num, selected[0].query, all_text, params_restore_pending, selected[0].queryStart, partial, live_params, live_params_at_launch);
         }
     } else {
         /// Snapshot the full editor at launch time, before the tokenization await: typing during
@@ -8123,7 +8131,7 @@ async function postOne()
         /// `run=1` reload would `postAll` and run the other statements too. In single-query mode the
         /// history text is the launched statement itself (`undefined` above), so it stays runnable.
         const partial = isMultiQuery && queryUnderCursorIsPartial;
-        await postSingle(my_request_num, query, isMultiQuery ? all_text : undefined, params_restore_pending, queryUnderCursorStart, partial, live_params);
+        await postSingle(my_request_num, query, isMultiQuery ? all_text : undefined, params_restore_pending, queryUnderCursorStart, partial, live_params, live_params_at_launch);
     }
 
     /// Only reset the run/favicon/cancel state if this entrypoint still owns the in-flight
@@ -8142,6 +8150,11 @@ async function postAll()
     /// See `postOne`: snapshot the live parameter inputs synchronously at entry, so an input moved
     /// during the lexer awaits does not change what this run executes with.
     const live_params = getParamValues();
+    /// See `postOne`: snapshot the tab's in-memory `tab.params` synchronously at entry too, so a
+    /// trusted parameter edit during `resolveRunParams`' await reads as divergence in `saveHistory`'s
+    /// pending-restore guard rather than being folded into the "launch" state.
+    const active_tab_at_launch = getActiveTab();
+    const live_params_at_launch = { ...((active_tab_at_launch && active_tab_at_launch.params) || {}) };
     document.body.scrollTo(0, 0);
     beginFlight();
 
@@ -8152,7 +8165,7 @@ async function postAll()
     if (parsed.length > 1) {
         /// "Run all" runs every statement, so the entry is reproducible by re-running the full
         /// editor on reload: not partial, may carry `run=1`.
-        await postMulti(my_request_num, parsed, params_restore_pending, all_text, /*partial=*/ false, live_params);
+        await postMulti(my_request_num, parsed, params_restore_pending, all_text, /*partial=*/ false, live_params, live_params_at_launch);
     } else {
         /// A single statement (or none): run the launch-time snapshot `splitAllQueries` produced
         /// from `all_text`, never a fresh `getQueryUnderCursor` read of the live editor. `postAll`
@@ -8163,7 +8176,7 @@ async function postAll()
         /// multi-query branch above and `postOne` already use.
         const query = parsed.length ? parsed[0].query : all_text;
         const queryStart = parsed.length ? parsed[0].queryStart : 0;
-        await postSingle(my_request_num, query, undefined, params_restore_pending, queryStart, /*partial=*/ false, live_params);
+        await postSingle(my_request_num, query, undefined, params_restore_pending, queryStart, /*partial=*/ false, live_params, live_params_at_launch);
     }
 
     /// Only reset the run/favicon/cancel state if this entrypoint still owns the in-flight
