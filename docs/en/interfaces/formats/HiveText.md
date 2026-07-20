@@ -191,7 +191,10 @@ ClickHouse's own `HiveText` input:
   ESCAPED BY`), and `NULL` is always written as `\N` (there is no equivalent of
   `NULL DEFINED AS`). A `String` that itself contains an active field, row or nested
   separator is therefore written literally and will be misread when parsed back — this
-  matches how Hive itself behaves with a non-escaping serde.
+  matches how Hive itself behaves with a non-escaping serde. For the same reason a
+  `String` whose value is literally `\N` (for example
+  `SELECT '\\N'::String FORMAT HiveText`) is written as the same two bytes as a
+  real `NULL`, so the two are indistinguishable on the Hive side.
 :::
 
 ```sql title="Query"
