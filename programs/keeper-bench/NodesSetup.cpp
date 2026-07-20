@@ -225,14 +225,36 @@ PathSetPtr NodesSetup::createLiteralSet(std::vector<std::string> paths)
     return set;
 }
 
+PathSetPtr NodesSetup::createAnonymousSet(std::string display_name)
+{
+    auto set = std::make_shared<PathSet>();
+    set->name = std::move(display_name);
+    anonymous_sets.push_back(set);
+    return set;
+}
+
+void NodesSetup::registerTagChildrenOfConflict(std::string parent_path, std::string tag_name)
+{
+    tag_children_of_conflicts.emplace_back(std::move(parent_path), std::move(tag_name));
+}
+
 void NodesSetup::finalizePathSets(size_t num_threads)
 {
+    auto finalize = [&](const PathSetPtr & set)
+    {
+        /// A set some generator writes to changes while the benchmark runs.
+        set->is_dynamic = set->used_as_output;
+        set->finalize(num_threads);
+    };
+
     for (const auto & [_, set] : tag_sets)
-        set->finalize(num_threads);
+        finalize(set);
     for (const auto & [_, set] : children_of_sets)
-        set->finalize(num_threads);
+        finalize(set);
     for (const auto & set : literal_sets)
-        set->finalize(num_threads);
+        finalize(set);
+    for (const auto & set : anonymous_sets)
+        finalize(set);
 }
 
 void NodesSetup::resolveChildrenOf(const ListChildrenFn & list_children)
@@ -249,6 +271,18 @@ void NodesSetup::resolveChildrenOf(const ListChildrenFn & list_children)
 
 void NodesSetup::validatePathSets() const
 {
+    for (const auto & [parent_path, tag_name] : tag_children_of_conflicts)
+    {
+        auto it = children_of_sets.find(parent_path);
+        if (it != children_of_sets.end() && it->second->used_as_input)
+            throw DB::Exception(
+                DB::ErrorCodes::BAD_ARGUMENTS,
+                "A create generator with parent {} outputs to tag \"{}\", but another generator reads `children_of` {}: "
+                "the created nodes would be tracked in one set and read from another. Use the tag consistently "
+                "(reference `tagged: {}` instead of `children_of`)",
+                parent_path, tag_name, parent_path, tag_name);
+    }
+
     bool printed_header = false;
     auto validate = [&](const PathSetPtr & set)
     {
@@ -283,6 +317,8 @@ void NodesSetup::validatePathSets() const
     for (const auto & [_, set] : children_of_sets)
         validate(set);
     for (const auto & set : literal_sets)
+        validate(set);
+    for (const auto & set : anonymous_sets)
         validate(set);
 }
 

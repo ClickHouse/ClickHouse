@@ -224,13 +224,23 @@ void GeneratedRunner::thread(std::vector<std::shared_ptr<Coordination::ZooKeeper
             [promise,
              inner_callback,
              watch,
-             shared_generator](const Coordination::Response & response)
+             shared_generator,
+             ignore_missing_nodes = request_with_callbacks.ignore_missing_nodes,
+             stats = info](const Coordination::Response & response)
         {
             auto elapsed = watch->elapsedMicroseconds();
             if (inner_callback)
                 inner_callback(&response);
             if (response.error == Coordination::Error::ZOK)
                 promise->set_value(RequestResult{response.bytesSize(), elapsed});
+            else if (ignore_missing_nodes
+                && (response.error == Coordination::Error::ZNONODE || response.error == Coordination::Error::ZNODEEXISTS))
+            {
+                /// The request drew its path from a dynamic path set, which may lag
+                /// behind the real state; count it, but don't treat it as an error.
+                stats->ignored_errors.fetch_add(1, std::memory_order_relaxed);
+                promise->set_value(RequestResult{response.bytesSize(), elapsed});
+            }
             else
                 promise->set_exception(std::make_exception_ptr(zkutil::KeeperException(response.error)));
         };

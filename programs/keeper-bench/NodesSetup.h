@@ -49,6 +49,15 @@ public:
     PathSetPtr getOrCreateTagSet(const std::string & tag);
     PathSetPtr getOrCreateChildrenOfSet(const std::string & parent_path);
     PathSetPtr createLiteralSet(std::vector<std::string> paths);
+    /// A set not addressable by any config reference, e.g. tracking the nodes
+    /// created by one create generator for its own `remove_factor`.
+    PathSetPtr createAnonymousSet(std::string display_name);
+
+    /// Records that a create generator with fixed parent `parent_path` outputs to
+    /// an explicit tag. If some other generator reads `children_of` of the same
+    /// parent, `validatePathSets` reports an error (the two would silently track
+    /// the same nodes in different sets).
+    void registerTagChildrenOfConflict(std::string parent_path, std::string tag_name);
 
     /// Allocate PathSet shards. Must be called after all generators are parsed
     /// (so `used_as_*` and `is_dynamic` flags are final) and before `startup`.
@@ -89,6 +98,10 @@ private:
     std::unordered_map<std::string, PathSetPtr> tag_sets;
     std::unordered_map<std::string, PathSetPtr> children_of_sets;
     std::vector<PathSetPtr> literal_sets;
+    std::vector<PathSetPtr> anonymous_sets;
+
+    /// (parent path, tag name) pairs to check in validatePathSets.
+    std::vector<std::pair<std::string, std::string>> tag_children_of_conflicts;
 
     /// Root paths created by `createNodes`, removed again by `cleanup`.
     std::vector<std::string> created_root_paths;

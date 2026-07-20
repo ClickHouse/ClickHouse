@@ -51,6 +51,35 @@ std::optional<std::string> PathSet::samplePath(pcg64 & rng, size_t thread_idx) c
     return shard.paths[std::uniform_int_distribution<size_t>(0, shard.paths.size() - 1)(rng)];
 }
 
+void PathSet::add(std::string path, size_t thread_idx)
+{
+    Shard & shard = shards[shardFor(thread_idx)];
+    std::lock_guard lock(shard.mutex);
+    shard.paths.push_back(std::move(path));
+}
+
+std::optional<std::string> PathSet::takeRandom(pcg64 & rng, size_t thread_idx)
+{
+    Shard & shard = shards[shardFor(thread_idx)];
+    std::lock_guard lock(shard.mutex);
+
+    if (shard.paths.empty())
+        return std::nullopt;
+
+    size_t idx = std::uniform_int_distribution<size_t>(0, shard.paths.size() - 1)(rng);
+    std::string path = std::move(shard.paths[idx]);
+    shard.paths[idx] = std::move(shard.paths.back());
+    shard.paths.pop_back();
+    return path;
+}
+
+std::optional<std::string> PathSet::singleStagedPath() const
+{
+    if (is_literal && staged_paths.size() == 1)
+        return staged_paths[0];
+    return std::nullopt;
+}
+
 size_t PathSet::totalSize() const
 {
     size_t total = staged_paths.size();

@@ -58,9 +58,12 @@ struct PathGetter
 {
     static PathGetter fromConfig(const std::string & key, const Poco::Util::AbstractConfiguration & config, NodesSetup & nodes_setup);
 
-    std::string getPath(GenerateContext & ctx) const;
+    /// nullopt if the set (shard) is currently empty, which can happen for
+    /// dynamic sets; the request generator then declines to produce a request.
+    std::optional<std::string> getPath(GenerateContext & ctx) const;
     std::string description() const;
 
+    bool isDynamic() const { return set->is_dynamic; }
     const PathSetPtr & pathSet() const { return set; }
 
 private:
@@ -72,9 +75,16 @@ Coordination::ACLs getDefaultACLs();
 
 struct ZooKeeperRequestWithCallbacks
 {
+    /// nullptr if the generator declined to produce a request (e.g. its input
+    /// path set is currently empty).
     Coordination::ZooKeeperRequestPtr request;
     /// Response may be nullptr, meaning some error.
     std::function<void(const Coordination::Response *)> callback {};
+    /// The request draws paths from a dynamic path set, which may lag behind the
+    /// real state, so "node doesn't exist" / "node already exists" results are
+    /// expected: the runner counts them as ignored errors rather than real ones
+    /// (even with `continue_on_error` disabled).
+    bool ignore_missing_nodes = false;
 };
 
 struct RequestGenerator
@@ -116,12 +126,11 @@ private:
 
     std::optional<double> remove_factor;
 
-    std::mutex paths_mutex;
-    std::unordered_set<std::string> paths_pending;
-
-    /// O(1) random-access set using vector + index map (swap-and-pop for removal)
-    std::vector<std::string> paths_created_vec;
-    std::unordered_map<std::string, size_t> paths_created_index;
+    /// Where the created paths are recorded (and taken from for removes): the
+    /// explicit output `tag`, the `children_of` set of a fixed parent, or an
+    /// anonymous set when `remove_factor` needs one. May be nullptr, in which
+    /// case created paths are not tracked.
+    PathSetPtr output_set;
 };
 
 struct SetRequestGenerator final : public RequestGenerator
@@ -164,6 +173,11 @@ struct RequestGetter
     RequestGetter() = default;
 
     static RequestGetter fromConfig(const std::string & key, const Poco::Util::AbstractConfiguration & config, NodesSetup & nodes_setup, bool for_multi = false);
+
+    /// Picks a generator (weighted) and asks it to generate. If it declines
+    /// (empty dynamic path set), tries the other generators; returns a null
+    /// request if all of them decline.
+    ZooKeeperRequestWithCallbacks generate(GenerateContext & ctx, const Coordination::ACLs & acls) const;
 
     RequestGeneratorPtr getRequestGenerator(pcg64 & rng) const;
     std::string description() const;

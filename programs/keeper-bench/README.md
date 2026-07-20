@@ -174,8 +174,18 @@ Notes:
 - The forms cannot be mixed within one `path`: use a single `tagged`, or a single `children_of`, or a list of explicit paths. Mixing sources raises an exception.
 - Each distinct source is backed by one shared `PathSet`; generators referencing the same tag or the same `children_of` parent share the same in-memory set of paths, so each path is stored once regardless of how many generators or threads use it.
 - Paths must start with `/`.
-- `children_of` is resolved at startup by listing the parent; if it has no children, an exception is raised.
-- `tagged` references a tag name assigned to setup nodes via the `tag` field. All paths created with that tag are included. If the tag is not found, an exception is raised.
+- `children_of` is resolved at startup by listing the parent; if it has no children (and no `create` generator adds to it), an exception is raised.
+- `tagged` references a tag name assigned to setup nodes via the `tag` field. All paths created with that tag are included. If the tag is not found (and no `create` generator outputs to it), an exception is raised.
+
+### Dynamic path sets
+
+A `PathSet` that some `create` generator outputs to (see the `create` section) is *dynamic*: its contents change while the benchmark runs. Created nodes are added to the set, and `remove_factor` removes take nodes out of it. This makes workloads like "`set` random nodes produced by `create`" possible: point the `create`'s output and the `set`'s `path` at the same tag (or at `children_of` of the same parent).
+
+Behavior details:
+
+- Dynamic sets are sharded by worker thread: each thread reads and updates only its own shard, so different threads operate on disjoint subsets of paths. Initial contents (from setup or listing) are distributed across shards round-robin.
+- A dynamic set may transiently disagree with the real state of the tree (e.g. a remove reported as timed out actually succeeded). Requests drawing paths from a dynamic set therefore treat "node doesn't exist" and "node already exists" results as expected: they are counted separately as ignored errors (reported in stats and in the JSON output as `ignored_errors`) and don't stop the benchmark even without `--continue_on_errors`.
+- A dynamic set may start empty (e.g. a tag only a `create` outputs to). Generators whose input set is currently empty are skipped in favor of other generators; if all generators decline, an exception is raised.
 
 ---
 
@@ -328,14 +338,23 @@ Requests are defined in `generator.requests`.
 
 ```yaml
 create:
-    path: "/bench/creates"           # PathGetter
+    path: "/bench/creates"           # PathGetter (parent for created nodes)
     name_length: 10                    # IntegerGetter, default: 5
     data: "payload"                   # StringGetter, default: empty
     remove_factor: 0.5                 # in [0.0, 1.0], default: 0
+    tag: "created_nodes"              # optional output tag
 ```
 
-When `remove_factor` is enabled, some operations become random removes of previously created nodes.
-If unique name generation keeps colliding, the generator raises an exception after bounded retries.
+Created paths are recorded in an output `PathSet`, which other generators can read (see [Dynamic path sets](#dynamic-path-sets)):
+
+- If `tag` is set, the created paths are added to that tagged set.
+- Otherwise, if `path` is a single fixed path, they are added to the `children_of` set of that parent (so e.g. a `get` with `children_of` pointing at the same parent automatically sees the created nodes).
+- Otherwise, if `remove_factor` is set, they are tracked in an anonymous set only this generator uses.
+
+Setting `tag` while another generator reads `children_of` of the same fixed parent is an error: reference the tag consistently instead.
+The output set is only actually populated if some generator reads it (including this generator's own `remove_factor`).
+
+When `remove_factor` is enabled, some operations become random removes of nodes from the output set. Node names are random and not checked for uniqueness; with small `name_length` creates can fail with "node exists" errors.
 
 ### `set`
 
@@ -450,7 +469,7 @@ If `--setup-nodes-snapshot-path` is provided during replay, the tool can infer r
 
 Periodic stderr reports (controlled by `report_delay`) include:
 
-- Total read/write request counts (cumulative).
+- Total read/write request counts (cumulative), errors, and ignored errors (see [Dynamic path sets](#dynamic-path-sets)).
 - Read/write RPS and throughput (for the last reporting period).
 - Read/write latency percentiles (`0, 10, ..., 90, 95, 99, 99.9, 99.99`).
 - Watches fired (when `watch_probability` is configured).
@@ -472,6 +491,8 @@ output:
 JSON fields:
 
 - `timestamp` (epoch milliseconds).
+- `errors`.
+- `ignored_errors` (present only if nonzero; see [Dynamic path sets](#dynamic-path-sets)).
 - `read_results` (present only if read requests exist).
 - `write_results` (present only if write requests exist).
 - `watches_fired` (present only when watches are used).
@@ -499,5 +520,6 @@ Common configuration exceptions:
 - `remove_factor must be in [0.0, 1.0]`: keep probability in range.
 - `watch_probability must be in [0.0, 1.0]`: keep probability in range.
 - `Nested multi requests are not allowed`: only one `multi` level is supported.
-- `Tag '...' not found in setup`: a `tagged` path reference names a tag that no setup node defines. Check spelling and ensure the setup section includes nodes with matching `tag` values.
+- `... is used by a request generator, but no setup node has this tag and no create generator outputs to it`: a `tagged` path reference names an unknown tag. Check spelling and ensure the setup section includes nodes with matching `tag` values (or that a `create` generator outputs to the tag).
+- `... outputs to tag ..., but another generator reads children_of ...`: reference the created nodes via the tag everywhere instead of mixing `tag` with `children_of`.
 - `Repeating node creation ..., but name is not randomly generated`: use random `name` when `repeat` is set.

@@ -68,7 +68,7 @@ generator:
     multi:
       size: 20
       create:
-        path: "/test"
+        path: "/test2"
         data:
           random_string:
             size:

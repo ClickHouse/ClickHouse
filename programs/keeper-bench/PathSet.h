@@ -59,6 +59,17 @@ struct PathSet
     /// Uniformly random path from the calling thread's shard, or nullopt if it is empty.
     std::optional<std::string> samplePath(pcg64 & rng, size_t thread_idx) const;
 
+    /// Add a path to the calling thread's shard. Thread-safe; for dynamic sets.
+    void add(std::string path, size_t thread_idx);
+
+    /// Remove and return a uniformly random path from the calling thread's shard,
+    /// or nullopt if it is empty. Thread-safe; for dynamic sets.
+    std::optional<std::string> takeRandom(pcg64 & rng, size_t thread_idx);
+
+    /// If the set is a literal list with exactly one path, returns it.
+    /// Only meaningful before `finalize`.
+    std::optional<std::string> singleStagedPath() const;
+
     size_t totalSize() const;
 
     size_t shardFor(size_t thread_idx) const { return is_dynamic ? thread_idx % shards.size() : 0; }

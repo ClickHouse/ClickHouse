@@ -201,12 +201,9 @@ PathGetter PathGetter::fromConfig(const std::string & key, const Poco::Util::Abs
     return path_getter;
 }
 
-std::string PathGetter::getPath(GenerateContext & ctx) const
+std::optional<std::string> PathGetter::getPath(GenerateContext & ctx) const
 {
-    auto path = set->samplePath(ctx.rng, ctx.thread_idx);
-    if (!path)
-        throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Path set '{}' is empty", set->name);
-    return *std::move(path);
+    return set->samplePath(ctx.rng, ctx.thread_idx);
 }
 
 std::string PathGetter::description() const
@@ -294,6 +291,26 @@ RequestGeneratorPtr RequestGetter::getRequestGenerator(pcg64 & rng) const
     return request_generators[it - weights.begin()];
 }
 
+ZooKeeperRequestWithCallbacks RequestGetter::generate(GenerateContext & ctx, const Coordination::ACLs & acls) const
+{
+    auto random_number = std::uniform_int_distribution<size_t>(0, picker_max)(ctx.rng);
+
+    size_t picked = weights.empty()
+        ? random_number
+        : static_cast<size_t>(std::lower_bound(weights.begin(), weights.end(), random_number) - weights.begin());
+
+    /// If the picked generator declines (its dynamic path set is empty), fall
+    /// back to the remaining generators in order.
+    for (size_t attempt = 0; attempt < request_generators.size(); ++attempt)
+    {
+        auto result = request_generators[(picked + attempt) % request_generators.size()]->generate(ctx, acls);
+        if (result.request)
+            return result;
+    }
+
+    return {};
+}
+
 std::string RequestGetter::description() const
 {
     std::string guard(30, '-');
@@ -366,6 +383,35 @@ void CreateRequestGenerator::getFromConfigImpl(const std::string & key, const Po
         if (*remove_factor < 0.0 || *remove_factor > 1.0)
             throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "remove_factor must be in [0.0, 1.0], got {}", *remove_factor);
     }
+
+    /// Resolve the set that tracks the created nodes: an explicit output `tag`,
+    /// the `children_of` set of a fixed parent, or an anonymous set if
+    /// `remove_factor` needs one.
+    auto fixed_parent = parent_path.pathSet()->singleStagedPath();
+    if (config.has(key + ".tag"))
+    {
+        auto tag_name = config.getString(key + ".tag");
+        output_set = nodes_setup.getOrCreateTagSet(tag_name);
+        /// Mixing an explicit tag with `children_of` references to the same parent
+        /// would track the nodes in two sets; detected in validatePathSets.
+        if (fixed_parent)
+            nodes_setup.registerTagChildrenOfConflict(*fixed_parent, tag_name);
+    }
+    else if (fixed_parent)
+    {
+        output_set = nodes_setup.getOrCreateChildrenOfSet(*fixed_parent);
+    }
+    else if (remove_factor)
+    {
+        output_set = nodes_setup.createAnonymousSet(fmt::format("nodes created by '{}'", key));
+    }
+
+    if (output_set)
+    {
+        output_set->used_as_output = true;
+        if (remove_factor)
+            output_set->used_as_input = true;
+    }
 }
 
 std::string CreateRequestGenerator::descriptionImpl()
@@ -374,88 +420,71 @@ std::string CreateRequestGenerator::descriptionImpl()
         = data.has_value() ? fmt::format("data for created nodes: {}", data->description()) : "no data for created nodes";
     std::string remove_factor_string
         = remove_factor.has_value() ? fmt::format("- remove factor: {}", *remove_factor) : "- without removes";
+    std::string output_string
+        = output_set && output_set->used_as_input ? fmt::format("\n- created nodes tracked in: {}", output_set->name) : "";
     return fmt::format(
         "Create Request Generator\n"
         "- parent path(s) for created nodes: {}\n"
         "- name for created nodes: {}\n"
         "- {}\n"
-        "{}",
+        "{}{}",
         parent_path.description(),
         name.description(),
         data_string,
-        remove_factor_string);
+        remove_factor_string,
+        output_string);
 }
 
 ZooKeeperRequestWithCallbacks CreateRequestGenerator::generateImpl(GenerateContext & ctx, const Coordination::ACLs & acls)
 {
-    if (remove_factor.has_value() && std::uniform_real_distribution<double>(0, 1.0)(ctx.rng) < *remove_factor)
+    /// The created/removed paths are recorded in the output set only if some
+    /// generator (possibly this one) reads it.
+    bool tracked = output_set && output_set->used_as_input;
+
+    if (tracked && remove_factor.has_value() && std::uniform_real_distribution<double>(0, 1.0)(ctx.rng) < *remove_factor)
     {
-        std::lock_guard lock(paths_mutex);
-        if (!paths_created_vec.empty())
+        if (auto taken = output_set->takeRandom(ctx.rng, ctx.thread_idx))
         {
             auto request = std::make_shared<ZooKeeperRemoveRequest>();
+            request->path = *taken;
 
-            /// Pick a random element via swap-and-pop
-            std::uniform_int_distribution<size_t> pick(0, paths_created_vec.size() - 1);
-            size_t idx = pick(ctx.rng);
-
-            request->path = paths_created_vec[idx];
-
-            /// Swap with last, update index of swapped element, pop
-            size_t last = paths_created_vec.size() - 1;
-            if (idx != last)
+            auto callback = [set = output_set, path = *std::move(taken), thread_idx = ctx.thread_idx](const Coordination::Response * response) mutable
             {
-                paths_created_index[paths_created_vec[last]] = idx;
-                std::swap(paths_created_vec[idx], paths_created_vec[last]);
-            }
-            paths_created_index.erase(request->path);
-            paths_created_vec.pop_back();
+                /// ZOK: removed. ZNONODE: was already gone. Anything else (including
+                /// no response at all): the node may still exist, put it back.
+                if (response && (response->error == Coordination::Error::ZOK || response->error == Coordination::Error::ZNONODE))
+                    return;
+                set->add(std::move(path), thread_idx);
+            };
 
-            return {.request = request};
+            return {.request = request, .callback = std::move(callback), .ignore_missing_nodes = true};
         }
+        /// The shard is empty, nothing to remove: fall through to create.
     }
+
+    auto parent = parent_path.getPath(ctx);
+    if (!parent)
+        return {};
 
     auto request = std::make_shared<ZooKeeperCreateRequest>();
     request->acls = acls;
-
-    std::string node_candidate = std::filesystem::path(parent_path.getPath(ctx)) / name.getString(ctx.rng);
-
-    {
-        static constexpr size_t max_name_generation_retries = 1000;
-        std::lock_guard lock(paths_mutex);
-        size_t retries = 0;
-        while (paths_created_index.contains(node_candidate) || paths_pending.contains(node_candidate))
-        {
-            if (++retries > max_name_generation_retries)
-                throw DB::Exception(
-                    DB::ErrorCodes::BAD_ARGUMENTS,
-                    "Failed to generate unique path after {} retries for parent '{}'. "
-                    "Increase name_length or reduce create volume",
-                    max_name_generation_retries,
-                    parent_path.getPath(ctx));
-            node_candidate = std::filesystem::path(parent_path.getPath(ctx)) / name.getString(ctx.rng);
-        }
-
-        paths_pending.insert(node_candidate);
-    }
-
-    request->path = node_candidate;
+    request->path = std::filesystem::path(*parent) / name.getString(ctx.rng);
 
     if (data)
         request->data = data->getString(ctx.rng);
 
-    auto callback = [this, candidate = std::move(node_candidate)](const Coordination::Response * response) mutable
+    ZooKeeperRequestWithCallbacks result{.request = request};
+    result.ignore_missing_nodes = parent_path.isDynamic();
+    if (tracked)
     {
-        std::lock_guard lock(paths_mutex);
-        paths_pending.erase(candidate);
-        if (response && response->error == Coordination::Error::ZOK)
+        result.callback = [set = output_set, path = request->path, thread_idx = ctx.thread_idx](const Coordination::Response * response) mutable
         {
-            paths_created_index[candidate] = paths_created_vec.size();
-            paths_created_vec.push_back(std::move(candidate));
-        }
-    };
+            if (response && response->error == Coordination::Error::ZOK)
+                set->add(std::move(path), thread_idx);
+        };
+    }
 
-    return {.request = request, .callback = std::move(callback)};
+    return result;
 }
 
 void SetRequestGenerator::getFromConfigImpl(const std::string & key, const Poco::Util::AbstractConfiguration & config, NodesSetup & nodes_setup)
@@ -480,10 +509,14 @@ std::string SetRequestGenerator::descriptionImpl()
 
 ZooKeeperRequestWithCallbacks SetRequestGenerator::generateImpl(GenerateContext & ctx, const Coordination::ACLs & /*acls*/)
 {
+    auto target = path.getPath(ctx);
+    if (!target)
+        return {};
+
     auto request = std::make_shared<ZooKeeperSetRequest>();
-    request->path = path.getPath(ctx);
+    request->path = *std::move(target);
     request->data = data.getString(ctx.rng);
-    return {.request = request};
+    return {.request = request, .ignore_missing_nodes = path.isDynamic()};
 }
 
 void GetRequestGenerator::getFromConfigImpl(const std::string & key, const Poco::Util::AbstractConfiguration & config, NodesSetup & nodes_setup)
@@ -510,14 +543,18 @@ std::string GetRequestGenerator::descriptionImpl()
 
 ZooKeeperRequestWithCallbacks GetRequestGenerator::generateImpl(GenerateContext & ctx, const Coordination::ACLs & /*acls*/)
 {
+    auto target = path.getPath(ctx);
+    if (!target)
+        return {};
+
     auto request = std::make_shared<ZooKeeperGetRequest>();
-    request->path = path.getPath(ctx);
+    request->path = *std::move(target);
     if (watch_probability.has_value() && std::uniform_real_distribution<double>(0, 1.0)(ctx.rng) < *watch_probability)
     {
         request->has_watch = true;
         request->watch_callback = watch_callback_ptr;
     }
-    return {.request = request};
+    return {.request = request, .ignore_missing_nodes = path.isDynamic()};
 }
 
 void ListRequestGenerator::getFromConfigImpl(const std::string & key, const Poco::Util::AbstractConfiguration & config, NodesSetup & nodes_setup)
@@ -544,15 +581,19 @@ std::string ListRequestGenerator::descriptionImpl()
 
 ZooKeeperRequestWithCallbacks ListRequestGenerator::generateImpl(GenerateContext & ctx, const Coordination::ACLs & /*acls*/)
 {
+    auto target = path.getPath(ctx);
+    if (!target)
+        return {};
+
     auto request = std::make_shared<ZooKeeperListRequest>();
-    request->path = path.getPath(ctx);
+    request->path = *std::move(target);
     request->list_request_type = ListRequestType::ALL;
     if (watch_probability.has_value() && std::uniform_real_distribution<double>(0, 1.0)(ctx.rng) < *watch_probability)
     {
         request->has_watch = true;
         request->watch_callback = watch_callback_ptr;
     }
-    return {.request = request};
+    return {.request = request, .ignore_missing_nodes = path.isDynamic()};
 }
 
 void MultiRequestGenerator::getFromConfigImpl(const std::string & key, const Poco::Util::AbstractConfiguration & config, NodesSetup & nodes_setup)
@@ -581,27 +622,33 @@ ZooKeeperRequestWithCallbacks MultiRequestGenerator::generateImpl(GenerateContex
 {
     Coordination::Requests ops;
     std::vector<std::function<void(const Coordination::Response *)>> inner_callbacks;
+    bool ignore_missing_nodes = false;
+
+    auto add_op = [&](ZooKeeperRequestWithCallbacks request_with_callbacks)
+    {
+        /// Sub-generators may decline (empty dynamic path set); skip them.
+        if (!request_with_callbacks.request)
+            return;
+        ops.push_back(std::move(request_with_callbacks.request));
+        inner_callbacks.push_back(std::move(request_with_callbacks.callback));
+        ignore_missing_nodes |= request_with_callbacks.ignore_missing_nodes;
+    };
 
     if (size)
     {
         auto request_count = size->getNumber(ctx.rng);
 
         for (size_t i = 0; i < request_count; ++i)
-        {
-            auto request_with_callbacks = request_getter.getRequestGenerator(ctx.rng)->generate(ctx, acls);
-            ops.push_back(std::move(request_with_callbacks.request));
-            inner_callbacks.push_back(std::move(request_with_callbacks.callback));
-        }
+            add_op(request_getter.generate(ctx, acls));
     }
     else
     {
         for (const auto & request_generator : request_getter.requestGenerators())
-        {
-            auto request_with_callbacks = request_generator->generate(ctx, acls);
-            ops.push_back(std::move(request_with_callbacks.request));
-            inner_callbacks.push_back(std::move(request_with_callbacks.callback));
-        }
+            add_op(request_generator->generate(ctx, acls));
     }
+
+    if (ops.empty())
+        return {};
 
     auto request = std::make_shared<ZooKeeperMultiRequest>(ops, acls);
     bool is_read = request->isReadRequest();
@@ -656,6 +703,7 @@ ZooKeeperRequestWithCallbacks MultiRequestGenerator::generateImpl(GenerateContex
     return {
         .request = std::move(request),
         .callback = std::move(callback),
+        .ignore_missing_nodes = ignore_missing_nodes,
     };
 }
 
@@ -687,5 +735,10 @@ void Generator::setWatchCallback(Coordination::WatchCallbackPtr callback)
 
 ZooKeeperRequestWithCallbacks Generator::generate(GenerateContext & ctx)
 {
-    return request_getter.getRequestGenerator(ctx.rng)->generate(ctx, default_acls);
+    auto result = request_getter.generate(ctx, default_acls);
+    if (!result.request)
+        throw DB::Exception(
+            DB::ErrorCodes::BAD_ARGUMENTS,
+            "All request generators declined to produce a request (are all the dynamic path sets empty, with nothing creating nodes?)");
+    return result;
 }
