@@ -5,6 +5,7 @@
 #include <Core/Field.h>
 #include <Columns/IColumn.h>
 #include <DataTypes/IDataType.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <Interpreters/convertColumnToType.h>
 #include <Interpreters/convertFieldToType.h>
@@ -50,7 +51,19 @@ void checkEquivalent(const Case & c)
 
     if (expected.isNull())
     {
-        EXPECT_EQ(actual, nullptr);
+        /// `convertFieldToType` returns a Null `Field` both for a legitimate NULL result (NULL input
+        /// into a nullable-capable type) and for "not representable". The column twin distinguishes
+        /// them: a valid NULL is a size-1 column holding NULL; "not representable" is `ColumnPtr{}`.
+        if (c.from_value.isNull() && canContainNull(*to))
+        {
+            ASSERT_NE(actual, nullptr);
+            ASSERT_EQ(actual->size(), 1u);
+            EXPECT_TRUE(actual->isNullAt(0));
+        }
+        else
+        {
+            EXPECT_EQ(actual, nullptr);
+        }
     }
     else
     {
@@ -117,7 +130,9 @@ TEST(ConvertColumnToType, MatchesConvertFieldToType)
 
         /// nullable / lowcardinality wrappers
         {"Nullable(Int32)", Field(Int64(7)), "Int64"},
-        {"Nullable(Int32)", Field(Null()), "Int64"},                     // null in -> null out
+        {"Nullable(Int32)", Field(Null()), "Int64"},                     // null in, non-null to -> not representable
+        {"Nullable(Int32)", Field(Int64(7)), "Nullable(Int64)"},
+        {"Nullable(Int32)", Field(Null()), "Nullable(Int64)"},           // null in, nullable to -> valid NULL
         {"LowCardinality(String)", Field(String("x")), "String"},
 
         /// composites: element conversion + "unconvertible element -> whole null"
@@ -145,4 +160,19 @@ TEST(ConvertColumnToType, OrThrow)
     auto out_of_range = u64->createColumn();
     out_of_range->insert(Field(UInt64(256)));
     EXPECT_ANY_THROW(convertColumnToTypeOrThrow(*out_of_range, *u64, *u8));
+
+    /// NULL handling mirrors convertFieldToTypeOrThrow: NULL into a non-nullable target throws;
+    /// NULL into a nullable target is a valid NULL result (a size-1 column holding NULL).
+    const auto nullable_i32 = type_factory.get("Nullable(Int32)");
+    const auto nullable_i64 = type_factory.get("Nullable(Int64)");
+    const auto i64 = type_factory.get("Int64");
+
+    auto null_value = nullable_i32->createColumn();
+    null_value->insert(Field());
+    EXPECT_ANY_THROW(convertColumnToTypeOrThrow(*null_value, *nullable_i32, *i64));
+
+    const ColumnPtr null_ok = convertColumnToTypeOrThrow(*null_value, *nullable_i32, *nullable_i64);
+    ASSERT_NE(null_ok, nullptr);
+    ASSERT_EQ(null_ok->size(), 1u);
+    EXPECT_TRUE(null_ok->isNullAt(0));
 }
