@@ -114,10 +114,10 @@ Returns the origin hexagon index from the unidirectional edge [H3](#h3-index).
     FunctionDocumentation::Examples examples = {
         {
             "Get origin index from a unidirectional edge",
-            "SELECT h3GetOriginIndexFromUnidirectionalEdge(1248204388774707197) AS origin",
+            "SELECT h3GetOriginIndexFromUnidirectionalEdge(1248204388774707199) AS origin",
             R"(
 ┌─────────────origin─┐
-│ 599686042433355773 │
+│ 599686042433355775 │
 └────────────────────┘
             )"
         }
