@@ -1085,12 +1085,7 @@ void Connection::sendQuery(
     writeStringBinary(query, *out);
 
     if (server_revision >= DBMS_MIN_PROTOCOL_VERSION_WITH_PARAMETERS)
-    {
-        Settings params;
-        for (const auto & [name, value] : query_parameters)
-            params.set(name, value);
-        params.write(*out, SettingsWriteFormat::STRINGS_WITH_FLAGS);
-    }
+        writeQueryParameters(query_parameters, *out);
 
     maybe_compressed_in.reset();
     if (maybe_compressed_out && maybe_compressed_out != out)
