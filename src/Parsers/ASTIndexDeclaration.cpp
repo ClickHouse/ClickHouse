@@ -1,6 +1,7 @@
 #include <Parsers/ASTIndexDeclaration.h>
 
 #include <Common/quoteString.h>
+#include <Poco/String.h>
 #include <IO/Operators.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
@@ -25,8 +26,13 @@ ASTIndexDeclaration::ASTIndexDeclaration(ASTPtr expression, ASTPtr type, const S
 
     if (type)
     {
-        if (!dynamic_cast<const ASTFunction *>(type.get()))
+        auto * type_func = dynamic_cast<ASTFunction *>(type.get());
+        if (!type_func)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Index declaration type must be a function");
+        /// Index type is case-insensitive (IndexDescription lowercases it), so canonicalize the AST
+        /// name too. Otherwise TYPE SET and TYPE set format differently and structure comparison
+        /// (e.g. in REPLACE PARTITION FROM) wrongly reports "different secondary indices".
+        type_func->name = Poco::toLower(type_func->name);
         children.push_back(type);
     }
 }

@@ -27,6 +27,7 @@
 #include <Core/UUID.h>
 #include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
 #include <DataTypes/DataTypeEnum.h>
+#include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -9448,6 +9449,47 @@ void MergeTreeData::checkColumnFilenamesForCollision(const ColumnsDescription & 
     }
 }
 
+/// Canonicalize data type names spelled inside CAST(expr, 'Type') so that logically-equal
+/// definitions compare equal as text. The type name is stored as a plain string literal, so e.g.
+/// CAST(x, 'INT') and CAST(x, 'Int32') would otherwise be seen as different keys/indices in
+/// checkStructureAndGetMergeTreeData (REPLACE/ATTACH PARTITION FROM). Names that DataTypeFactory
+/// cannot parse are left untouched.
+static void canonicalizeCastTypeNames(IAST * ast)
+{
+    if (!ast)
+        return;
+
+    if (auto * func = ast->as<ASTFunction>(); func && (func->name == "CAST" || func->name == "_CAST"))
+    {
+        if (func->arguments && func->arguments->children.size() == 2)
+        {
+            if (auto * type_literal = func->arguments->children[1]->as<ASTLiteral>();
+                type_literal && type_literal->value.getType() == Field::Types::String)
+            {
+                try
+                {
+                    type_literal->value = DataTypeFactory::instance().get(type_literal->value.safeGet<String>())->getName();
+                }
+                catch (...) /// NOLINT(bugprone-empty-catch): unparseable type name, leave it as written.
+                {
+                }
+            }
+        }
+    }
+
+    for (auto & child : ast->children)
+        canonicalizeCastTypeNames(child.get());
+}
+
+static String canonicalKeyString(const ASTPtr & ast)
+{
+    if (!ast)
+        return "";
+    auto canonical = ast->clone();
+    canonicalizeCastTypeNames(canonical.get());
+    return canonical->formatWithSecretsOneLine();
+}
+
 MergeTreeData & MergeTreeData::checkStructureAndGetMergeTreeData(IStorage & source_table, const StorageMetadataPtr & src_snapshot, const StorageMetadataPtr & my_snapshot) const
 {
     MergeTreeData * src_data = dynamic_cast<MergeTreeData *>(&source_table);
@@ -9461,7 +9503,7 @@ MergeTreeData & MergeTreeData::checkStructureAndGetMergeTreeData(IStorage & sour
 
     auto query_to_string = [] (const ASTPtr & ast)
     {
-        return ast ? ast->formatWithSecretsOneLine() : "";
+        return canonicalKeyString(ast);
     };
 
     if (query_to_string(my_snapshot->getSortingKeyAST()) != query_to_string(src_snapshot->getSortingKeyAST()))
@@ -9484,10 +9526,10 @@ MergeTreeData & MergeTreeData::checkStructureAndGetMergeTreeData(IStorage & sour
 
         std::unordered_set<std::string> my_query_strings;
         for (const auto & description : my_descriptions)
-            my_query_strings.insert(description.definition_ast->formatWithSecretsOneLine());
+            my_query_strings.insert(canonicalKeyString(description.definition_ast));
 
         for (const auto & src_description : src_descriptions)
-            if (!my_query_strings.contains(src_description.definition_ast->formatWithSecretsOneLine()))
+            if (!my_query_strings.contains(canonicalKeyString(src_description.definition_ast)))
                 return false;
 
         return true;
