@@ -1,6 +1,7 @@
 #pragma once
 
 #include <optional>
+#include <Core/SettingsEnums.h>
 #include <Storages/IStorage_fwd.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/MutationCommands.h>
@@ -237,7 +238,21 @@ public:
     /// alter. If alter can be performed as pure metadata update, than result is
     /// empty. If some TTL changes happened than, depending on materialize_ttl
     /// additional mutation command (MATERIALIZE_TTL) will be returned.
-    MutationCommands getMutationCommands(StorageInMemoryMetadata metadata, bool materialize_ttl, ContextPtr context, bool with_alters=false) const;
+    /// If the commands change the body of an `ALIAS` column referenced by an
+    /// explicit skip index, additional mutation commands rebuilding (or, in DROP
+    /// mode, clearing) the affected indices are returned, because index files on
+    /// disk were built from the old alias body and would prune incorrectly.
+    MutationCommands getMutationCommands(
+        StorageInMemoryMetadata metadata,
+        bool materialize_ttl,
+        ContextPtr context,
+        bool with_alters = false,
+        AlterColumnSecondaryIndexMode index_mode = AlterColumnSecondaryIndexMode::REBUILD) const;
+
+    /// Names of explicit skip indices whose expression references (directly or
+    /// transitively through other aliases) an `ALIAS` column whose body these
+    /// commands modify or remove, paired with the name of that alias column.
+    std::vector<std::pair<String, String>> getSkipIndicesAffectedByAliasChange(const StorageInMemoryMetadata & metadata) const;
 
     /// Check if commands have a text index
     static bool hasTextIndex(const StorageInMemoryMetadata & metadata);

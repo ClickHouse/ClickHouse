@@ -4723,7 +4723,12 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
 
     if (!settings[Setting::allow_non_metadata_alters])
     {
-        auto mutation_commands = commands.getMutationCommands(new_metadata, settings[Setting::materialize_ttl_after_modify], local_context);
+        auto mutation_commands = commands.getMutationCommands(
+            new_metadata,
+            settings[Setting::materialize_ttl_after_modify],
+            local_context,
+            /*with_alters=*/ false,
+            (*settings_from_storage)[MergeTreeSetting::alter_column_secondary_index_mode]);
 
         if (!mutation_commands.empty())
             throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
@@ -5049,6 +5054,25 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
     NamesAndTypesList columns_to_check_conversion;
 
     const auto index_mode = (*settings_from_storage)[MergeTreeSetting::alter_column_secondary_index_mode];
+
+    /// Changing (or removing) the body of an ALIAS column referenced by an explicit skip
+    /// index invalidates index files built from the old alias body. In REBUILD and DROP
+    /// modes `AlterCommands::getMutationCommands` handles this with an additional mutation;
+    /// THROW and COMPATIBILITY modes forbid such alters.
+    if (index_mode == AlterColumnSecondaryIndexMode::THROW || index_mode == AlterColumnSecondaryIndexMode::COMPATIBILITY)
+    {
+        auto affected_indices = commands.getSkipIndicesAffectedByAliasChange(old_metadata);
+        if (!affected_indices.empty())
+        {
+            throw Exception(
+                ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+                "The ALTER of the ALIAS column '{}' is forbidden because it is used by the index '{}'. Check the MergeTree "
+                "setting 'alter_column_secondary_index_mode' to change this behaviour",
+                backQuoteIfNeed(affected_indices.front().second),
+                affected_indices.front().first);
+        }
+    }
+
     auto unfinished_mutations = getUnfinishedMutationCommands();
     std::optional<NameDependencies> name_deps{};
     for (const AlterCommand & command : commands)

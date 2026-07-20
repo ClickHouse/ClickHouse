@@ -1,5 +1,6 @@
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Interpreters/RequiredSourceColumnsVisitor.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/replaceAliasColumnsInQuery.h>
 #include <Storages/IndicesDescription.h>
@@ -206,6 +207,38 @@ ASTPtr IndexDescription::initExpressionInfo(ASTPtr index_expression, const Colum
     sample_block = expression->getSampleBlock();
 
     return persisted_expression_list;
+}
+
+NameSet IndexDescription::getReferencedAliasColumns(const ColumnsDescription & columns) const
+{
+    NameSet result;
+
+    if (!definition_ast)
+        return result;
+
+    const auto * index_definition = definition_ast->as<ASTIndexDeclaration>();
+    if (!index_definition || !index_definition->getExpression())
+        return result;
+
+    /// The persisted definition keeps alias references live (see `initExpressionInfo`),
+    /// and alias bodies may reference other aliases, so walk the alias graph transitively.
+    std::vector<ASTPtr> to_visit{index_definition->getExpression()->clone()};
+    while (!to_visit.empty())
+    {
+        ASTPtr node = std::move(to_visit.back());
+        to_visit.pop_back();
+
+        RequiredSourceColumnsVisitor::Data columns_context;
+        RequiredSourceColumnsVisitor(columns_context).visit(node);
+        for (const auto & column_name : columns_context.requiredColumns())
+        {
+            auto column_default = columns.getDefault(column_name);
+            if (column_default && column_default->kind == ColumnDefaultKind::Alias && result.insert(column_name).second)
+                to_visit.push_back(column_default->expression->clone());
+        }
+    }
+
+    return result;
 }
 
 Field getFieldFromIndexArgumentAST(const ASTPtr & ast)

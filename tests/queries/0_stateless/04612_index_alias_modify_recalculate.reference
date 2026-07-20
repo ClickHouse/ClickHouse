@@ -3,5 +3,10 @@ CREATE TABLE default.t_index_alias_realias\n(\n    `a` UInt64,\n    `x` UInt64 A
 a + 2
 CREATE TABLE default.t_index_alias_realias\n(\n    `a` UInt64,\n    `x` UInt64 ALIAS a + 2,\n    INDEX idx x TYPE minmax GRANULARITY 1\n)\nENGINE = MergeTree\nORDER BY a\nSETTINGS index_granularity = 8192
 1
+1
+1000
+1
+1
+1
 CREATE TABLE default.t_index_matcher_frozen\n(\n    `a1` UInt64,\n    `a2` UInt64,\n    INDEX idxm (a1, a2) TYPE minmax GRANULARITY 1\n)\nENGINE = MergeTree\nORDER BY a1\nSETTINGS index_granularity = 8192
 CREATE TABLE default.t_index_matcher_frozen\n(\n    `a1` UInt64,\n    `a2` UInt64,\n    `a3` UInt64,\n    INDEX idxm (a1, a2) TYPE minmax GRANULARITY 1\n)\nENGINE = MergeTree\nORDER BY a1\nSETTINGS index_granularity = 8192

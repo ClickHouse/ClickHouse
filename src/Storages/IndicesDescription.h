@@ -89,6 +89,12 @@ struct IndexDescription
     /// `ALIAS` bodies.
     ASTPtr initExpressionInfo(ASTPtr index_expression, const ColumnsDescription & columns, ContextPtr context);
 
+    /// Names of `ALIAS` columns referenced by the persisted index definition,
+    /// including aliases reachable transitively through other alias bodies.
+    /// Index files on disk are built from the alias bodies, so when any of these
+    /// aliases change, the existing index files become stale.
+    NameSet getReferencedAliasColumns(const ColumnsDescription & columns) const;
+
     bool isSimpleSingleColumnIndex() const;
 };
 

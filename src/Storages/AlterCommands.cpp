@@ -2194,7 +2194,81 @@ static MutationCommand createMaterializeTTLCommand()
     return command;
 }
 
-MutationCommands AlterCommands::getMutationCommands(StorageInMemoryMetadata metadata, bool materialize_ttl, ContextPtr context, bool with_alters) const
+static MutationCommand createMaterializeIndexCommand(const String & index_name)
+{
+    MutationCommand command;
+    auto ast = make_intrusive<ASTAlterCommand>();
+    ast->type = ASTAlterCommand::MATERIALIZE_INDEX;
+    ast->index = ast->children.emplace_back(make_intrusive<ASTIdentifier>(index_name)).get();
+    command.type = MutationCommand::MATERIALIZE_INDEX;
+    command.index_name = index_name;
+    command.ast_text = ast->formatWithSecretsOneLine();
+    return command;
+}
+
+static MutationCommand createClearIndexCommand(const String & index_name)
+{
+    MutationCommand command;
+    auto ast = make_intrusive<ASTAlterCommand>();
+    ast->type = ASTAlterCommand::DROP_INDEX;
+    ast->clear_index = true;
+    ast->index = ast->children.emplace_back(make_intrusive<ASTIdentifier>(index_name)).get();
+    command.type = MutationCommand::DROP_INDEX;
+    command.column_name = index_name;
+    command.clear = true;
+    command.ast_text = ast->formatWithSecretsOneLine();
+    return command;
+}
+
+std::vector<std::pair<String, String>> AlterCommands::getSkipIndicesAffectedByAliasChange(const StorageInMemoryMetadata & metadata) const
+{
+    NameSet changed_aliases;
+    for (const auto & command : *this)
+    {
+        if (command.ignore || command.type != AlterCommand::MODIFY_COLUMN)
+            continue;
+
+        auto existing_default = metadata.columns.getDefault(command.column_name);
+        if (!existing_default || existing_default->kind != ColumnDefaultKind::Alias)
+            continue;
+
+        bool alias_removed = command.to_remove == AlterCommand::RemoveProperty::ALIAS;
+        /// The alias body changed, or the column is converted to DEFAULT/MATERIALIZED.
+        bool alias_changed = command.default_expression
+            && (command.default_kind != ColumnDefaultKind::Alias
+                || command.default_expression->formatWithSecretsOneLine() != existing_default->expression->formatWithSecretsOneLine());
+
+        if (alias_removed || alias_changed)
+            changed_aliases.insert(command.column_name);
+    }
+
+    if (changed_aliases.empty())
+        return {};
+
+    std::vector<std::pair<String, String>> res;
+    for (const auto & index : metadata.secondary_indices)
+    {
+        if (index.isImplicitlyCreated())
+            continue;
+
+        for (const auto & alias : index.getReferencedAliasColumns(metadata.columns))
+        {
+            if (changed_aliases.contains(alias))
+            {
+                res.emplace_back(index.name, alias);
+                break;
+            }
+        }
+    }
+    return res;
+}
+
+MutationCommands AlterCommands::getMutationCommands(
+    StorageInMemoryMetadata metadata,
+    bool materialize_ttl,
+    ContextPtr context,
+    bool with_alters,
+    AlterColumnSecondaryIndexMode index_mode) const
 {
     /// Save a copy of the original metadata before applying commands.
     /// We need it for isTTLAlter check below, because apply() updates TTL in metadata,
@@ -2238,6 +2312,22 @@ MutationCommands AlterCommands::getMutationCommands(StorageInMemoryMetadata meta
                 result.push_back(createMaterializeTTLCommand());
                 break;
             }
+        }
+    }
+
+    /// A skip index whose expression references an `ALIAS` column becomes stale when the
+    /// alias body changes: metadata and query analysis switch to the new expression while
+    /// parts keep index files built from the old one, and stale index files can incorrectly
+    /// prune granules. Rebuild (or, in DROP mode, clear) such indices. THROW and
+    /// COMPATIBILITY modes reject these alters in `MergeTreeData::checkAlterIsPossible`.
+    if (index_mode == AlterColumnSecondaryIndexMode::REBUILD || index_mode == AlterColumnSecondaryIndexMode::DROP)
+    {
+        for (const auto & [index_name, alias_name] : getSkipIndicesAffectedByAliasChange(original_metadata))
+        {
+            if (index_mode == AlterColumnSecondaryIndexMode::REBUILD)
+                result.push_back(createMaterializeIndexCommand(index_name));
+            else
+                result.push_back(createClearIndexCommand(index_name));
         }
     }
 
