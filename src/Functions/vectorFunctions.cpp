@@ -2277,7 +2277,7 @@ Calculates the p-norm of a vector, which is the p-th root of the sum of the p-th
 Special cases:
 - When p=1, it's equivalent to L1Norm (Manhattan distance).
 - When p=2, it's equivalent to L2Norm (Euclidean distance).
-- When p=∞, it's equivalent to LinfNorm (maximum norm).
+- The value of `p` must be a finite number not less than one; for the maximum norm (the limit for p→∞), use `LinfNorm` instead.
     )";
     FunctionDocumentation::Syntax syntax_lp_norm = "LpNorm(vector, p)";
     FunctionDocumentation::Arguments arguments_lp_norm = {
