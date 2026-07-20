@@ -94,6 +94,9 @@ static MutationCommand createLightweightDeleteCommand(const MutationCommand & co
     if (src_alter->partition)
         alter_command->partition = alter_command->children.emplace_back(src_alter->partition->clone()).get();
 
+    if (src_alter->partitions)
+        alter_command->partitions = alter_command->children.emplace_back(src_alter->partitions->clone()).get();
+
     alter_command->predicate = alter_command->children.emplace_back(src_alter->predicate->clone()).get();
     auto mutation_command = MutationCommand::parse(
         *alter_command,
