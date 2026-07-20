@@ -384,9 +384,26 @@ void CreateRequestGenerator::getFromConfigImpl(const std::string & key, const Po
             throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "remove_factor must be in [0.0, 1.0], got {}", *remove_factor);
     }
 
+    if (config.has(key + ".keep_count"))
+    {
+        if (remove_factor)
+            throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "remove_factor and keep_count are mutually exclusive (key '{}')", key);
+
+        if (config.getString(key + ".keep_count") == "auto")
+            keep_count = 0;
+        else
+        {
+            keep_count = config.getUInt64(key + ".keep_count");
+            if (*keep_count == 0)
+                throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "keep_count must be a positive number or 'auto' (key '{}')", key);
+        }
+    }
+
+    bool needs_removes = remove_factor.has_value() || keep_count.has_value();
+
     /// Resolve the set that tracks the created nodes: an explicit output `tag`,
-    /// the `children_of` set of a fixed parent, or an anonymous set if
-    /// `remove_factor` needs one.
+    /// the `children_of` set of a fixed parent, or an anonymous set if the
+    /// removes need one.
     auto fixed_parent = parent_path.pathSet()->singleStagedPath();
     if (config.has(key + ".tag"))
     {
@@ -401,7 +418,7 @@ void CreateRequestGenerator::getFromConfigImpl(const std::string & key, const Po
     {
         output_set = nodes_setup.getOrCreateChildrenOfSet(*fixed_parent);
     }
-    else if (remove_factor)
+    else if (needs_removes)
     {
         output_set = nodes_setup.createAnonymousSet(fmt::format("nodes created by '{}'", key));
     }
@@ -409,8 +426,15 @@ void CreateRequestGenerator::getFromConfigImpl(const std::string & key, const Po
     if (output_set)
     {
         output_set->used_as_output = true;
-        if (remove_factor)
+        if (needs_removes)
             output_set->used_as_input = true;
+        if (keep_count)
+        {
+            if (output_set->keep_count)
+                throw DB::Exception(
+                    DB::ErrorCodes::BAD_ARGUMENTS, "Multiple create generators set keep_count for {} (key '{}')", output_set->name, key);
+            output_set->keep_count = keep_count;
+        }
     }
 }
 
@@ -418,8 +442,11 @@ std::string CreateRequestGenerator::descriptionImpl()
 {
     std::string data_string
         = data.has_value() ? fmt::format("data for created nodes: {}", data->description()) : "no data for created nodes";
-    std::string remove_factor_string
-        = remove_factor.has_value() ? fmt::format("- remove factor: {}", *remove_factor) : "- without removes";
+    std::string remove_factor_string = "- without removes";
+    if (remove_factor.has_value())
+        remove_factor_string = fmt::format("- remove factor: {}", *remove_factor);
+    else if (keep_count.has_value())
+        remove_factor_string = *keep_count == 0 ? "- keep node count: auto" : fmt::format("- keep node count: {}", *keep_count);
     std::string output_string
         = output_set && output_set->used_as_input ? fmt::format("\n- created nodes tracked in: {}", output_set->name) : "";
     return fmt::format(
@@ -441,7 +468,28 @@ ZooKeeperRequestWithCallbacks CreateRequestGenerator::generateImpl(GenerateConte
     /// generator (possibly this one) reads it.
     bool tracked = output_set && output_set->used_as_input;
 
-    if (tracked && remove_factor.has_value() && std::uniform_real_distribution<double>(0, 1.0)(ctx.rng) < *remove_factor)
+    bool do_remove = false;
+    if (tracked && remove_factor.has_value())
+    {
+        do_remove = std::uniform_real_distribution<double>(0, 1.0)(ctx.rng) < *remove_factor;
+    }
+    else if (tracked && keep_count.has_value())
+    {
+        /// Choose between Create and Remove so the shard size hovers around the
+        /// target: remove probability is 0.5 at the target and approaches 0/1 as
+        /// the size deviates. Never remove the last path (so the set can only be
+        /// empty if it started empty).
+        size_t size = output_set->shardSize(ctx.thread_idx);
+        if (size > 1)
+        {
+            double target = static_cast<double>(output_set->target_count_per_shard);
+            double scale = std::max(1.0, target * 0.05);
+            double remove_probability = 1.0 / (1.0 + std::exp((target - static_cast<double>(size)) / scale));
+            do_remove = std::uniform_real_distribution<double>(0, 1.0)(ctx.rng) < remove_probability;
+        }
+    }
+
+    if (do_remove)
     {
         if (auto taken = output_set->takeRandom(ctx.rng, ctx.thread_idx))
         {

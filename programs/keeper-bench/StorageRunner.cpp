@@ -541,6 +541,8 @@ void StorageRunner::printStats(const std::string & header, double seconds, const
     if (snapshot_mode)
         out << ", snapshot_mode: " << (*snapshot_mode ? "yes" : "no");
     out << "\n";
+    if (auto dynamic_sets = nodes_setup.describeDynamicPathSets(); !dynamic_sets.empty())
+        out << "path sets: " << dynamic_sets << "\n";
     out << "per-op avg ns per request:\n";
     for (size_t i = 1; i < NUM_OP_SLOTS; ++i)
     {

@@ -125,6 +125,10 @@ private:
     std::optional<StringGetter> data;
 
     std::optional<double> remove_factor;
+    /// Keep the output set at a roughly constant size by choosing between Create
+    /// and Remove based on the current size. 0 means "auto": use the size at the
+    /// end of setup as the target. Mutually exclusive with `remove_factor`.
+    std::optional<size_t> keep_count;
 
     /// Where the created paths are recorded (and taken from for removes): the
     /// explicit output `tag`, the `children_of` set of a fixed parent, or an

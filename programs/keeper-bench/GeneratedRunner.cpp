@@ -367,6 +367,8 @@ void GeneratedRunner::runBenchmark()
         if (delay > 0 && delay_watch.elapsedSeconds() > delay)
         {
             printNumberOfRequestsExecuted(requests_started);
+            if (auto dynamic_sets = nodes_setup.describeDynamicPathSets(); !dynamic_sets.empty())
+                std::cerr << "Path sets: " << dynamic_sets << "\n";
 
             std::lock_guard lock(mutex);
             auto period_info = mergeThreadInfos();

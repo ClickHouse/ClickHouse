@@ -68,8 +68,13 @@ public:
     void resolveChildrenOf(const ListChildrenFn & list_children);
 
     /// Check set usage consistency (an input set must be defined by something) and
-    /// that static input sets are not empty; print a summary of the populated sets.
-    void validatePathSets() const;
+    /// that static input sets are not empty; compute `keep_count` targets from the
+    /// populated sizes; print a summary of the populated sets.
+    void validatePathSets();
+
+    /// One-line summary of the dynamic sets' current sizes (and targets), for
+    /// periodic reports. Empty if there are no dynamic sets.
+    std::string describeDynamicPathSets() const;
 
     /// --- Node creation ---
 

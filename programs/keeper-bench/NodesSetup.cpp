@@ -269,7 +269,7 @@ void NodesSetup::resolveChildrenOf(const ListChildrenFn & list_children)
     }
 }
 
-void NodesSetup::validatePathSets() const
+void NodesSetup::validatePathSets()
 {
     for (const auto & [parent_path, tag_name] : tag_children_of_conflicts)
     {
@@ -301,6 +301,13 @@ void NodesSetup::validatePathSets() const
                 "{} is empty: check that the `children_of` target has children or that setup nodes carry the tag",
                 set->name);
 
+        if (set->keep_count)
+        {
+            size_t num_shards = set->shards.size();
+            size_t total_target = *set->keep_count == 0 ? set->totalSize() : *set->keep_count;
+            set->target_count_per_shard = std::max<size_t>(1, total_target / num_shards);
+        }
+
         if (set->used_as_input)
         {
             if (!printed_header)
@@ -308,7 +315,10 @@ void NodesSetup::validatePathSets() const
                 std::cerr << "Path sets:" << std::endl;
                 printed_header = true;
             }
-            std::cerr << fmt::format("  {}: {} paths{}", set->name, set->totalSize(), set->is_dynamic ? " (dynamic)" : "") << std::endl;
+            std::string target_string
+                = set->target_count_per_shard != 0 ? fmt::format(", target {} per thread", set->target_count_per_shard) : "";
+            std::cerr << fmt::format("  {}: {} paths{}{}", set->name, set->totalSize(), set->is_dynamic ? " (dynamic)" : "", target_string)
+                      << std::endl;
         }
     };
 
@@ -320,6 +330,32 @@ void NodesSetup::validatePathSets() const
         validate(set);
     for (const auto & set : anonymous_sets)
         validate(set);
+}
+
+std::string NodesSetup::describeDynamicPathSets() const
+{
+    std::string result;
+    auto append = [&](const PathSetPtr & set)
+    {
+        if (!set->is_dynamic || !set->used_as_input)
+            return;
+        if (!result.empty())
+            result += ", ";
+        result += fmt::format("{}: {}", set->name, set->totalSize());
+        if (set->target_count_per_shard != 0)
+            result += fmt::format(" (target {})", set->target_count_per_shard * set->shards.size());
+    };
+
+    for (const auto & [_, set] : tag_sets)
+        append(set);
+    for (const auto & [_, set] : children_of_sets)
+        append(set);
+    for (const auto & set : literal_sets)
+        append(set);
+    for (const auto & set : anonymous_sets)
+        append(set);
+
+    return result;
 }
 
 const std::vector<std::string> & NodesSetup::prepareRootPaths()

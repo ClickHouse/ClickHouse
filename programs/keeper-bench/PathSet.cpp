@@ -80,6 +80,15 @@ std::optional<std::string> PathSet::singleStagedPath() const
     return std::nullopt;
 }
 
+size_t PathSet::shardSize(size_t thread_idx) const
+{
+    const Shard & shard = shards[shardFor(thread_idx)];
+    std::unique_lock lock(shard.mutex, std::defer_lock);
+    if (is_dynamic)
+        lock.lock();
+    return shard.paths.size();
+}
+
 size_t PathSet::totalSize() const
 {
     size_t total = staged_paths.size();

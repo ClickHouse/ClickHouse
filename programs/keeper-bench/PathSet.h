@@ -38,6 +38,13 @@ struct PathSet
     /// so different threads operate on disjoint subsets of paths.
     bool is_dynamic = false;
 
+    /// `keep_count` from the create generator outputting to this set:
+    /// nullopt = no balancing, 0 = auto (snapshot the size at the end of setup).
+    std::optional<size_t> keep_count;
+    /// Per-shard size target (>= 1) computed from `keep_count` after setup;
+    /// 0 if there is no balancing.
+    size_t target_count_per_shard = 0;
+
     struct Shard
     {
         alignas(DB::CH_CACHE_LINE_SIZE) mutable std::mutex mutex;
@@ -69,6 +76,9 @@ struct PathSet
     /// If the set is a literal list with exactly one path, returns it.
     /// Only meaningful before `finalize`.
     std::optional<std::string> singleStagedPath() const;
+
+    /// Current size of the calling thread's shard. Thread-safe.
+    size_t shardSize(size_t thread_idx) const;
 
     size_t totalSize() const;
 
