@@ -84,9 +84,11 @@ static bool isStringOrFixedStringOrArrayOrTupleOfString(const IDataType & type)
     {
         const DataTypes types_vec = tuple_type->getElements();
         bool has_string = false;
-        for (auto & elem_type : types_vec)
+        for (const auto & elem_type : types_vec)
         {
             has_string = WhichDataType(elem_type).isStringOrFixedString();
+            if (has_string)
+                break;
         }
         return has_string;
     }
