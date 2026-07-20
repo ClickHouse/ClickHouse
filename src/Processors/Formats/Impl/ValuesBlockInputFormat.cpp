@@ -309,7 +309,25 @@ bool ValuesBlockInputFormat::tryReadValue(IColumn & column, size_t column_idx)
     const bool starts_with_aggregate_function_string = !buf->eof()
         && *buf->position() == '\''
         && WhichDataType(removeNullable(removeLowCardinality(types[column_idx]))).isAggregateFunction();
-    if (!buf->eof() && (isAlphaASCII(*buf->position()) || *buf->position() == '_' || starts_with_aggregate_function_string))
+    if (starts_with_aggregate_function_string)
+    {
+        String field;
+        bool starts_with_expression = tryReadQuotedStringWithSQLStyle(field, *buf);
+        if (starts_with_expression)
+        {
+            skipWhitespaceIfAny(*buf);
+            starts_with_expression = !buf->eof()
+                && *buf->position() != ','
+                && *buf->position() != ')'
+                && *buf->position() != ';';
+        }
+        buf->rollbackToCheckpoint();
+
+        if (starts_with_expression)
+            return parseExpression(column, column_idx);
+    }
+
+    if (!buf->eof() && (isAlphaASCII(*buf->position()) || *buf->position() == '_'))
     {
         bool is_plain_value = checkStringCaseInsensitive("DEFAULT", *buf) && checkDelimiterAfterValue(column_idx);
         buf->rollbackToCheckpoint();
@@ -317,10 +335,7 @@ bool ValuesBlockInputFormat::tryReadValue(IColumn & column, size_t column_idx)
         if (!is_plain_value)
         {
             String field;
-            is_plain_value = (starts_with_aggregate_function_string
-                    ? tryReadQuotedStringWithSQLStyle(field, *buf)
-                    : tryReadQuotedField(field, *buf))
-                && checkDelimiterAfterValue(column_idx);
+            is_plain_value = tryReadQuotedField(field, *buf) && checkDelimiterAfterValue(column_idx);
             buf->rollbackToCheckpoint();
         }
 
