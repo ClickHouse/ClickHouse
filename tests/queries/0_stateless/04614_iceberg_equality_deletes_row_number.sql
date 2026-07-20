@@ -26,6 +26,7 @@ SELECT id, _row_number FROM icebergS3(s3_conn, filename = 'deletes_db/eq_deletes
 SELECT countIf(explain LIKE '%LazilyReadFromObjectStorage%') FROM (
     EXPLAIN SELECT name FROM icebergS3(s3_conn, filename = 'deletes_db/eq_deletes_table') ORDER BY id LIMIT 3
 )
-SETTINGS query_plan_optimize_lazy_materialization = 1,
+SETTINGS enable_analyzer = 1, -- lazy materialization requires the analyzer, so make this check non-vacuous
+         query_plan_optimize_lazy_materialization = 1,
          query_plan_max_limit_for_lazy_materialization = 0,
          query_plan_optimize_lazy_materialization_for_object_storage = 1;

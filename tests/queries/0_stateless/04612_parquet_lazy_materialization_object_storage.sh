@@ -52,9 +52,12 @@ SELECT '-- lazily read columns are shown in EXPLAIN';
 SELECT trim(explain) FROM (EXPLAIN actions = 1 SELECT k, s, arr FROM ${TABLE_FN} ORDER BY k LIMIT 3) WHERE explain LIKE '%Lazily read columns%';
 "
 
+# `enable_analyzer` is pinned because lazy materialization requires the analyzer
+# (see `QueryPlanOptimizationSettings`), and some CI configurations run with the old analyzer.
 for enabled in 1 0; do
     echo "-- query_plan_optimize_lazy_materialization_for_object_storage = $enabled"
     ${CLICKHOUSE_CLIENT} \
+        --enable_analyzer=1 \
         --query_plan_optimize_lazy_materialization=1 \
         --query_plan_max_limit_for_lazy_materialization=0 \
         --query_plan_optimize_lazy_materialization_for_object_storage="$enabled" \
