@@ -55,8 +55,8 @@ class ReadFromMergeTree;
 Float64 estimateReadBytesPerRowFromStep(const ReadFromMergeTree & read_step);
 
 /// Average bytes per value of each column a read produces: real per-column storage sizes when the
-/// parts carry them; otherwise type-based estimates, scaled to match the table-level uncompressed
-/// total when only that is known (compact parts).
+/// parts carry them (scaled up to the table-level uncompressed total when compact parts hide part
+/// of the data); otherwise type-based estimates scaled to match the measured row width.
 std::unordered_map<String, Float64> estimateReadColumnWidths(const ReadFromMergeTree & read_step);
 
 OptimizerStatisticsPtr createStatisticsFromHint(const String & statistics_hint_json);

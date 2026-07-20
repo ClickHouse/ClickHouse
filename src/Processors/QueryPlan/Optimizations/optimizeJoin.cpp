@@ -6,6 +6,7 @@
 #include <Core/Settings.h>
 
 #include <DataTypes/IDataType.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/Context.h>
@@ -92,6 +93,7 @@ struct ValueHop
 {
     bool propagates = false;  /// output inherits the source NDV of children[0]
     UInt64 ndv_delta = 0;     /// extra distinct values the hop can introduce over the source
+    bool preserves_width = false;  /// output value bytes equal the source's (relabel or same-type hop)
 };
 
 /// A node propagates a source column's NDV when it just relabels (ALIAS) or applies a value-
@@ -99,7 +101,7 @@ struct ValueHop
 static ValueHop describeValueHop(const ActionsDAG::Node & node)
 {
     if (node.type == ActionsDAG::ActionType::ALIAS && node.children.size() == 1)
-        return {.propagates = true};
+        return {.propagates = true, .preserves_width = true};
 
     if (node.type != ActionsDAG::ActionType::FUNCTION || !node.function_base || node.children.empty())
         return {};
@@ -115,12 +117,23 @@ static ValueHop describeValueHop(const ActionsDAG::Node & node)
     /// result (e.g. `isNull`, or `CAST` dropping nullability) maps NULL to one extra counted value.
     const bool collapses_null = isNullableOrLowCardinalityNullable(node.children[0]->result_type)
         && !isNullableOrLowCardinalityNullable(node.result_type);
-    return {.propagates = true, .ndv_delta = collapses_null ? 1u : 0u};
+    /// NDV can survive a value-changing hop (`toString(k)` has k's NDV), but the value bytes cannot;
+    /// only a hop that keeps the underlying type keeps the width. `Nullable`/`LowCardinality`
+    /// wrapping (the analyzer's `toNullable`/`CAST` around join keys) leaves the value bytes intact.
+    const bool preserves_width = removeLowCardinalityAndNullable(node.result_type)
+        ->equals(*removeLowCardinalityAndNullable(node.children[0]->result_type));
+    return {.propagates = true, .ndv_delta = collapses_null ? 1u : 0u, .preserves_width = preserves_width};
 }
 
-/// For each output column that traces back to `input_name`, return how much to add to the source
-/// NDV to bound the output NDV.
-static std::unordered_map<String, UInt64> backTrackColumnsInDag(const String & input_name, const ActionsDAG & actions)
+/// How an output column relates to the source input column it traces back to.
+struct BackTrackedColumn
+{
+    UInt64 ndv_offset = 0;   /// add to the source NDV to bound the output NDV
+    bool keeps_width = true; /// value bytes unchanged along the whole path
+};
+
+/// For each output column that traces back to `input_name`, describe the path to it.
+static std::unordered_map<String, BackTrackedColumn> backTrackColumnsInDag(const String & input_name, const ActionsDAG & actions)
 {
     std::unordered_set<const ActionsDAG::Node *> input_nodes;
     for (const auto * node : actions.getInputs())
@@ -129,9 +142,9 @@ static std::unordered_map<String, UInt64> backTrackColumnsInDag(const String & i
             input_nodes.insert(node);
     }
 
-    /// Offset from a node down to a source input, or nullopt if it does not trace back to one.
+    /// Path from a node down to a source input, or nullopt if it does not trace back to one.
     /// Memoized so every node, including shared intermediates, is resolved once regardless of order.
-    std::unordered_map<const ActionsDAG::Node *, std::optional<UInt64>> offset_to_input;
+    std::unordered_map<const ActionsDAG::Node *, std::optional<BackTrackedColumn>> path_to_input;
 
     /// Iterative post-order DFS (explicit stack to avoid deep recursion on long expression chains).
     /// Each entry is a node paired with whether its source child has already been pushed.
@@ -143,14 +156,14 @@ static std::unordered_map<String, UInt64> backTrackColumnsInDag(const String & i
         {
             auto [node, child_pushed] = nodes_to_process.top();
 
-            if (offset_to_input.contains(node))
+            if (path_to_input.contains(node))
             {
                 nodes_to_process.pop();
                 continue;
             }
             if (input_nodes.contains(node))
             {
-                offset_to_input[node] = 0;
+                path_to_input[node] = BackTrackedColumn{};
                 nodes_to_process.pop();
                 continue;
             }
@@ -163,24 +176,26 @@ static std::unordered_map<String, UInt64> backTrackColumnsInDag(const String & i
                 continue;
             }
 
-            std::optional<UInt64> result;
+            std::optional<BackTrackedColumn> result;
             if (hop.propagates)
             {
-                if (auto source_offset = offset_to_input[node->children[0]])
-                    result = *source_offset + hop.ndv_delta;
+                if (auto source_path = path_to_input[node->children[0]])
+                    result = BackTrackedColumn{
+                        .ndv_offset = source_path->ndv_offset + hop.ndv_delta,
+                        .keeps_width = source_path->keeps_width && hop.preserves_width};
             }
-            offset_to_input[node] = result;
+            path_to_input[node] = result;
             nodes_to_process.pop();
         }
     }
 
-    std::unordered_map<String, UInt64> output_offsets;
+    std::unordered_map<String, BackTrackedColumn> output_paths;
     for (const auto * out_node : actions.getOutputs())
     {
-        if (auto offset = offset_to_input[out_node])
-            output_offsets[out_node->result_name] = *offset;
+        if (auto path = path_to_input[out_node])
+            output_paths[out_node->result_name] = *path;
     }
-    return output_offsets;
+    return output_paths;
 }
 
 /// If we have stats for column names for storage we need to find corresponding internal column names
@@ -188,14 +203,17 @@ void remapColumnStats(std::unordered_map<String, ColumnStats> & mapped, const Ac
 {
     std::unordered_map<String, ColumnStats> original = std::move(mapped);
     mapped = {};
-    for (const auto & [name, value] : original)
+    for (const auto & [name, source_stats] : original)
     {
-        for (const auto & [remapped, ndv_offset] : backTrackColumnsInDag(name, actions))
+        for (const auto & [remapped, back_tracked] : backTrackColumnsInDag(name, actions))
         {
-            ColumnStats stats = value;
+            ColumnStats stats = source_stats;
             /// Add the offset, guarding against overflow when the source NDV is near the maximum.
-            if (stats.num_distinct_values <= std::numeric_limits<UInt64>::max() - ndv_offset)
-                stats.num_distinct_values += ndv_offset;
+            if (stats.num_distinct_values <= std::numeric_limits<UInt64>::max() - back_tracked.ndv_offset)
+                stats.num_distinct_values += back_tracked.ndv_offset;
+            /// A hop that changes the type (e.g. `toString(k)`) changes the value bytes with it.
+            if (!back_tracked.keeps_width)
+                stats.avg_bytes = 0;
             mapped[remapped] = stats;
         }
     }

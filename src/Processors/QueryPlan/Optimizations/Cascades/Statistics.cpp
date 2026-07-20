@@ -56,8 +56,8 @@ Float64 estimateColumnWidthFromType(const IDataType & type)
 Float64 estimateRowWidthFromHeader(const Block & header)
 {
     Float64 total = 0;
-    for (const auto & col : header)
-        total += estimateColumnWidthFromType(*col.type);
+    for (const auto & column : header)
+        total += estimateColumnWidthFromType(*column.type);
 
     return std::max(total, MIN_ROW_WIDTH);
 }
@@ -65,13 +65,13 @@ Float64 estimateRowWidthFromHeader(const Block & header)
 Float64 estimateRowWidth(const Block & header, const std::unordered_map<String, ColumnStats> & column_statistics)
 {
     Float64 total = 0;
-    for (const auto & col : header)
+    for (const auto & column : header)
     {
-        auto it = column_statistics.find(col.name);
+        auto it = column_statistics.find(column.name);
         if (it != column_statistics.end() && it->second.avg_bytes > 0)
             total += it->second.avg_bytes;
         else
-            total += estimateColumnWidthFromType(*col.type);
+            total += estimateColumnWidthFromType(*column.type);
     }
 
     return std::max(total, MIN_ROW_WIDTH);
@@ -179,39 +179,48 @@ std::unordered_map<String, Float64> estimateReadColumnWidths(const ReadFromMerge
 {
     const auto & storage = read_step.getStorageSnapshot()->storage;
     const auto total_rows_opt = storage.totalRows(nullptr);
-    const auto column_sizes = storage.getColumnSizes();
+    /// The named overload adds sizes of the requested subcolumns (`Map`/`JSON` reads).
+    const auto column_sizes = storage.getColumnSizes(read_step.getAllColumnNames());
     const Float64 total_rows = (total_rows_opt && *total_rows_opt > 0) ? Float64(*total_rows_opt) : 0;
 
-    /// Compact parts carry no per-column sizes, but the table-level uncompressed total is still
-    /// measured; scale the type-based estimates so their sum matches the real row width.
+    /// Compact parts count in the row count and in the table-level uncompressed total, but carry no
+    /// per-column sizes. Sum only physical columns (a subcolumn's bytes are part of its parent's).
+    Float64 measured_columns_bytes = 0;
+    for (const auto & [_, size] : storage.getColumnSizes())
+        measured_columns_bytes += Float64(size.data_uncompressed);
+    const auto total_bytes_opt = storage.totalBytesUncompressed(read_step.getContext()->getSettingsRef());
+    const Float64 total_bytes = total_bytes_opt ? Float64(*total_bytes_opt) : 0;
+
+    /// With wide and compact parts mixed, dividing the wide-part-only column bytes by the full row
+    /// count would understate every width; scale the measured widths up to the table total instead.
+    Float64 measured_width_scale = 1.0;
+    if (measured_columns_bytes > 0 && total_bytes > measured_columns_bytes)
+        measured_width_scale = total_bytes / measured_columns_bytes;
+
+    /// With no wide part at all, fall back to type-based estimates scaled so their sum matches the
+    /// real row width.
     Float64 type_width_scale = 1.0;
+    if (measured_columns_bytes == 0 && total_rows > 0 && total_bytes > 0)
     {
-        Float64 measured_columns_bytes = 0;
-        for (const auto & [_, size] : column_sizes)
-            measured_columns_bytes += Float64(size.data_uncompressed);
-        auto total_bytes_opt = storage.totalBytesUncompressed(read_step.getContext()->getSettingsRef());
-        if (measured_columns_bytes == 0 && total_rows > 0 && total_bytes_opt && *total_bytes_opt > 0)
-        {
-            Float64 type_width_sum = 0;
-            for (const auto & column : read_step.getStorageSnapshot()->metadata->getColumns().getAllPhysical())
-                type_width_sum += estimateColumnWidthFromType(*column.type);
-            if (type_width_sum > 0)
-                type_width_scale = (Float64(*total_bytes_opt) / total_rows) / type_width_sum;
-        }
+        Float64 type_width_sum = 0;
+        for (const auto & column : read_step.getStorageSnapshot()->metadata->getColumns().getAllPhysical())
+            type_width_sum += estimateColumnWidthFromType(*column.type);
+        if (type_width_sum > 0)
+            type_width_scale = (total_bytes / total_rows) / type_width_sum;
     }
 
     const auto & header = *read_step.getOutputHeader();
     std::unordered_map<String, Float64> widths;
-    for (const auto & col_name : read_step.getAllColumnNames())
+    for (const auto & column_name : read_step.getAllColumnNames())
     {
-        auto size_it = column_sizes.find(col_name);
+        auto size_it = column_sizes.find(column_name);
         if (total_rows > 0 && size_it != column_sizes.end() && size_it->second.data_uncompressed > 0)
         {
-            widths[col_name] = Float64(size_it->second.data_uncompressed) / total_rows;
+            widths[column_name] = Float64(size_it->second.data_uncompressed) / total_rows * measured_width_scale;
             continue;
         }
-        if (const auto * col = header.findByName(col_name))
-            widths[col_name] = estimateColumnWidthFromType(*col->type) * type_width_scale;
+        if (const auto * header_column = header.findByName(column_name))
+            widths[column_name] = estimateColumnWidthFromType(*header_column->type) * type_width_scale;
     }
     return widths;
 }

@@ -54,8 +54,9 @@ private:
     ExpressionStatistics deriveSortingStatistics(const SortingStep & sorting_step, const ExpressionStatistics & input_statistics);
     ExpressionStatistics deriveLimitStatistics(const LimitStep & limit_step, const ExpressionStatistics & input_statistics);
 
-    /// Estimate bytes per row for a ReadFromMergeTree step using hint, storage column sizes, or output header.
-    Float64 estimateReadBytesPerRow(const ReadFromMergeTree & read_step);
+    /// Estimate bytes per row of a read: table-level hint if present, otherwise the sum of the
+    /// per-column widths already filled into `statistics`.
+    Float64 estimateReadBytesPerRow(const ReadFromMergeTree & read_step, const ExpressionStatistics & statistics);
 
     /// Fill per-column average value sizes of the read (storage-derived, hint overrides).
     void fillReadColumnWidths(ExpressionStatistics & statistics, const ReadFromMergeTree & read_step, const String & table_name);

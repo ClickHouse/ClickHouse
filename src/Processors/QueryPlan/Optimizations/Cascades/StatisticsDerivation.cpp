@@ -342,7 +342,7 @@ ExpressionStatistics StatisticsDerivation::deriveReadStatistics(const ReadFromMe
             /// The profile carries no byte sizes; leaving the default 1 byte per row would make wide
             /// tables look nearly free to move over the network.
             fillReadColumnWidths(statistics, read_step, table_name);
-            statistics.estimated_bytes_per_row = estimateReadBytesPerRow(read_step);
+            statistics.estimated_bytes_per_row = estimateReadBytesPerRow(read_step, statistics);
 
             LOG_TEST(log, "Estimate statistics for table {}: {}", table_name, statistics.dump());
             return statistics;
@@ -361,7 +361,7 @@ ExpressionStatistics StatisticsDerivation::deriveReadStatistics(const ReadFromMe
         statistics.estimated_row_count = std::min<Float64>(statistics.estimated_row_count, Float64(*cardinality_hint));
 
     fillReadColumnWidths(statistics, read_step, table_name);
-    statistics.estimated_bytes_per_row = estimateReadBytesPerRow(read_step);
+    statistics.estimated_bytes_per_row = estimateReadBytesPerRow(read_step, statistics);
 
     return statistics;
 }
@@ -476,14 +476,14 @@ ExpressionStatistics StatisticsDerivation::deriveLimitStatistics(const LimitStep
     return result_statistics;
 }
 
-Float64 StatisticsDerivation::estimateReadBytesPerRow(const ReadFromMergeTree & read_step)
+Float64 StatisticsDerivation::estimateReadBytesPerRow(const ReadFromMergeTree & read_step, const ExpressionStatistics & statistics)
 {
-    /// Priority: hint > storage column sizes > header-based estimate
+    /// Priority: table-level hint > per-column widths (hinted or storage-derived) > type-based estimate
     auto avg_row_bytes_hint = statistics_lookup.getAvgRowBytes(read_step.getStorageID().getTableName());
     if (avg_row_bytes_hint)
         return *avg_row_bytes_hint;
 
-    return estimateReadBytesPerRowFromStep(read_step);
+    return estimateRowWidth(*read_step.getOutputHeader(), statistics.column_statistics);
 }
 
 }
