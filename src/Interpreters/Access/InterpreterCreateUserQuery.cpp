@@ -1,3 +1,4 @@
+#include <Access/AuthenticationData.h>
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/Access/InterpreterCreateUserQuery.h>
 
@@ -93,7 +94,19 @@ namespace
         {
             // we only check if user exceeds the allowed quantity of authentication methods in case the create/alter query includes
             // authentication information. Otherwise, we can bypass this check to avoid blocking non-authentication related alters.
-            auto number_of_authentication_methods = user.authentication_methods.size() + authentication_methods.size();
+
+            // Count each SSH key individually toward the limit, so the same set of keys counts equally whether
+            // written as one `ssh_key` method with several keys (`ssh_key BY KEY k1 TYPE t1, KEY k2 TYPE t2`)
+            // or as several `ssh_key` methods (`ssh_key BY KEY k1 TYPE t1, ssh_key BY KEY k2 TYPE t2`).
+            auto count_methods = [](const std::vector<AuthenticationData> & methods)
+            {
+                size_t count = 0;
+                for (const auto & method : methods)
+                    count += method.getType() == AuthenticationType::SSH_KEY ? method.getSSHKeys().size() : 1;
+                return count;
+            };
+
+            auto number_of_authentication_methods = count_methods(user.authentication_methods) + count_methods(authentication_methods);
             if (number_of_authentication_methods > max_number_of_authentication_methods)
             {
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
