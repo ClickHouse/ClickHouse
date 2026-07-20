@@ -329,7 +329,10 @@ class JobConfigs:
         ),
         Job.ParamSet(
             parameter=BuildTypes.ARM_BINARY,
-            provides=[ArtifactNames.CH_ARM_BINARY],
+            provides=[
+                ArtifactNames.CH_ARM_BINARY,
+                ArtifactNames.CLICKHOUSE_EXAMPLES,
+            ],
             runs_on=RunnerLabels.ARM_LARGE,
         ),
     )
@@ -1615,7 +1618,7 @@ class JobConfigs:
         runs_on=RunnerLabels.ARM_SMALL,
         run_in_docker="clickhouse/test-base",
         command="python3 ./ci/jobs/parser_memory_check.py",
-        requires=[ArtifactNames.PARSER_MEMORY_PROFILER],
+        requires=[ArtifactNames.CLICKHOUSE_EXAMPLES],
         result_name_for_cidb="Tests",
         digest_config=Job.CacheDigestConfig(
             include_paths=[

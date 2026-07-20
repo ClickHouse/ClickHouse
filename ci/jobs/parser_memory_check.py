@@ -57,7 +57,7 @@ NOISE_FRAME_PREFIXES = (
 
 
 def get_merge_base_profiler_url() -> str:
-    """Find the S3 URL for a recent master parser_memory_profiler binary.
+    """Find the S3 URL for a recent master `clickhouse-examples` binary.
     Iterates master_track_commits_sha (like performance_tests.py) to find
     the closest available build. Returns empty string if none found."""
     try:
@@ -66,7 +66,7 @@ def get_merge_base_profiler_url() -> str:
         for sha in commits:
             if not re.fullmatch(r"[0-9a-f]{40}", sha):
                 continue
-            url = f"{MASTER_PROFILER_BASE_URL}/REFs/master/{sha}/build_arm_binary/parser_memory_profiler"
+            url = f"{MASTER_PROFILER_BASE_URL}/REFs/master/{sha}/build_arm_binary/clickhouse-examples"
             if Shell.check(f"curl -sfI '{url}' > /dev/null"):
                 print(f"Using master binary from commit {sha[:12]}")
                 return url
@@ -76,12 +76,9 @@ def get_merge_base_profiler_url() -> str:
     return ""
 
 
-def download_master_binary(dest_path: str) -> str:
-    """Download a master parser_memory_profiler binary from S3.
+def download_master_binary(url: str, dest_path: str) -> str:
+    """Download a master `clickhouse-examples` binary from S3.
     Returns error message on failure, empty string on success."""
-    url = get_merge_base_profiler_url()
-    if not url:
-        return "No master binary found in tracked commits — cannot compare"
     print(f"Downloading base binary from {url}")
     if not Shell.check(f"wget -nv -O '{dest_path}' '{url}' && chmod +x '{dest_path}'"):
         return f"Failed to download master binary from {url}"
@@ -615,10 +612,10 @@ def generate_html_report(
         pct_ch = (abs_ch / base_b * 100) if base_b > 0 else (100.0 if abs_ch > 0 else 0)
         sig = abs_ch > CHANGE_THRESHOLD_BYTES and pct_ch > CHANGE_THRESHOLD_PCT
 
-        if status == Result.StatusExtended.FAIL:
+        if status == Result.Status.FAIL:
             row_class = "regression"
             status_badge = '<span class="badge badge-fail">FAIL</span>'
-        elif status == Result.StatusExtended.ERROR:
+        elif status == Result.Status.ERROR:
             row_class = "error"
             status_badge = '<span class="badge badge-error">ERROR</span>'
         elif sig and change < 0:
@@ -876,7 +873,7 @@ def run_profiler_collect_heap(
     env["JE_MALLOC_CONF"] = malloc_conf
     env["MALLOC_CONF"] = malloc_conf
 
-    args = [binary_path, "--profile", profile_prefix]
+    args = [binary_path, "parser_memory_profiler", "--profile", profile_prefix]
 
     try:
         result = subprocess.run(
@@ -897,9 +894,16 @@ def run_profiler_collect_heap(
 
     # Parse stdout: query_length \t before \t after \t diff
     parts = result.stdout.strip().split("\t")
-    jemalloc_diff = 0
-    if len(parts) == 4:
+    if len(parts) != 4:
+        return {
+            "error": f"malformed profiler output: expected 4 TSV fields, got {len(parts)}"
+        }
+    try:
         jemalloc_diff = int(parts[3])
+    except ValueError:
+        return {
+            "error": f"malformed profiler output: invalid allocation diff {parts[3]!r}"
+        }
 
     # Parse stderr to find heap profile file paths
     heap_before = ""
@@ -933,7 +937,7 @@ def batch_symbolize(binary_path: str, heap_files: list) -> bool:
     if not heap_files:
         return True
 
-    args = [binary_path, "--symbolize-batch"] + heap_files
+    args = [binary_path, "parser_memory_profiler", "--symbolize-batch"] + heap_files
 
     try:
         result = subprocess.run(
@@ -1014,8 +1018,8 @@ def main():
     stop_watch = Utils.Stopwatch()
     results = []
 
-    pr_profiler = f"{TEMP_DIR}/parser_memory_profiler"
-    master_profiler = f"{TEMP_DIR}/parser_memory_profiler_master"
+    pr_profiler = f"{TEMP_DIR}/clickhouse-examples"
+    master_profiler = f"{TEMP_DIR}/clickhouse-examples-master"
     profiles_dir = f"{TEMP_DIR}/profiles"
 
     # Check PR binary exists (downloaded by praktika from artifact)
@@ -1023,7 +1027,7 @@ def main():
         results.append(
             Result(
                 name="Check PR binary",
-                status=Result.Status.FAILED,
+                status=Result.Status.FAIL,
                 info=f"PR binary not found at {pr_profiler}",
             )
         )
@@ -1031,19 +1035,31 @@ def main():
         return
 
     Shell.check(f"chmod +x {pr_profiler}")
-    results.append(Result(name="Check PR binary", status=Result.Status.SUCCESS))
+    results.append(Result(name="Check PR binary", status=Result.Status.OK))
+
+    # The first PR that publishes `clickhouse-examples` cannot compare itself with
+    # master yet. Skip it explicitly; later PRs run once a master build is available.
+    master_profiler_url = get_merge_base_profiler_url()
+    if not master_profiler_url:
+        Result.create_from(
+            results=results,
+            status=Result.Status.SKIPPED,
+            stopwatch=stop_watch,
+            info="No master `clickhouse-examples` artifact is published yet",
+        ).complete_job()
+        return
 
     # Download master binary
-    download_error = download_master_binary(master_profiler)
+    download_error = download_master_binary(master_profiler_url, master_profiler)
     if not download_error:
         results.append(
-            Result(name="Download master binary", status=Result.Status.SUCCESS)
+            Result(name="Download master binary", status=Result.Status.OK)
         )
     else:
         results.append(
             Result(
                 name="Download master binary",
-                status=Result.Status.FAILED,
+                status=Result.Status.FAIL,
                 info=download_error,
             )
         )
@@ -1111,10 +1127,10 @@ def main():
             sym_ok = False
 
     if sym_ok:
-        results.append(Result(name="Batch symbolization", status=Result.Status.SUCCESS))
+        results.append(Result(name="Batch symbolization", status=Result.Status.OK))
     else:
         results.append(
-            Result(name="Batch symbolization", status=Result.Status.FAILED, info="See logs")
+            Result(name="Batch symbolization", status=Result.Status.FAIL, info="See logs")
         )
 
     # =========================================================================
@@ -1148,7 +1164,7 @@ def main():
                 "master_bytes": 0,
                 "pr_bytes": 0,
                 "change": 0,
-                "status": Result.StatusExtended.ERROR,
+                "status": Result.Status.ERROR,
                 "master_stacks": [],
                 "pr_stacks": [],
                 "cross_diff": [],
@@ -1180,13 +1196,13 @@ def main():
         is_significant = abs_change > CHANGE_THRESHOLD_BYTES and pct_change > CHANGE_THRESHOLD_PCT
 
         if is_significant and change > 0:
-            status = Result.StatusExtended.FAIL
+            status = Result.Status.FAIL
             total_regressions += 1
         elif is_significant and change < 0:
-            status = Result.StatusExtended.OK
+            status = Result.Status.OK
             total_improvements += 1
         else:
-            status = Result.StatusExtended.OK
+            status = Result.Status.OK
 
         master_stacks = master_analysis.get("stack_diffs", [])
         pr_stacks = pr_analysis.get("stack_diffs", [])
@@ -1264,9 +1280,9 @@ def main():
     )
 
     # Create "Tests" sub-result for CI report
-    tests_status = Result.Status.SUCCESS
+    tests_status = Result.Status.OK
     if total_regressions > 0 or total_errors > 0:
-        tests_status = Result.Status.FAILED
+        tests_status = Result.Status.FAIL
 
     total_change = total_pr_bytes - total_master_bytes
     tests_info = (

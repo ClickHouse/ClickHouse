@@ -14,7 +14,7 @@ from ci.defs.job_configs import JobConfigs
 # from a fresh master binary.
 arm_binary_build = next(
     job for job in JobConfigs.build_jobs if ArtifactNames.CH_ARM_BINARY in job.provides
-)
+).set_provides(ArtifactNames.CH_ARM_BINARY, reset=True)
 
 # Runs directly on the runner (no container), matching the other `enable_gh_auth`
 # jobs: the generator only needs python3 and the built `clickhouse` binary, and

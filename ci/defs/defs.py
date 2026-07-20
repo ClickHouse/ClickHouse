@@ -452,6 +452,7 @@ class ArtifactNames:
 
     CH_COV_BIN = "CH_COV_BIN"
     CH_ARM_BINARY = "CH_ARM_BIN"
+    CLICKHOUSE_EXAMPLES = "CLICKHOUSE_EXAMPLES"
     CH_TIDY_BIN = "CH_TIDY_BIN"
     CH_AMD_DARWIN_BIN = "CH_AMD_DARWIN_BIN"
     CH_ARM_DARWIN_BIN = "CH_ARM_DARWIN_BIN"
@@ -688,6 +689,11 @@ class ArtifactConfigs:
         name=ArtifactNames.FUZZERS_CORPUS,
         type=Artifact.Type.S3,
         path=f"{TEMP_DIR}/build/programs/*_seed_corpus.zip",
+    )
+    clickhouse_examples = Artifact.Config(
+        name=ArtifactNames.CLICKHOUSE_EXAMPLES,
+        type=Artifact.Type.S3,
+        path=f"{TEMP_DIR}/build/src/Examples/clickhouse-examples",
     )
     toolchain_pgo_bolt_amd = Artifact.Config(
         name=ArtifactNames.TOOLCHAIN_PGO_BOLT_AMD,
