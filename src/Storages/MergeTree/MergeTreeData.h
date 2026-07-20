@@ -871,13 +871,11 @@ public:
         }
 
         UInt64 start_time_ns;
-        /// Query-level override of parts_to_delay_insert (0 if not set).
         UInt64 query_parts_to_delay_insert;
         std::atomic<UInt64> last_part_commit_time_ns{0};
         std::atomic<UInt64> committed_parts_count{0};
     };
 
-    /// RAII registration of an insert writing into the table, for shouldDeferMergesDueToActiveInserts.
     class ActiveInsertScope
     {
     public:
@@ -894,8 +892,7 @@ public:
         std::list<ActiveInsertInfo>::iterator it;
     };
 
-    /// Postpone background merge selection while a long-running insert keeps committing parts:
-    /// merging concurrently with it competes for disk bandwidth, and the results get merged again later anyway.
+    /// See the MergeTree setting min_insert_duration_to_defer_merges_ms.
     bool shouldDeferMergesDueToActiveInserts() const;
 
     /// If the table contains too many unfinished mutations, sleep for a while to give them time to execute.
@@ -1684,8 +1681,7 @@ protected:
 
     MergeTreePartsMover parts_mover;
 
-    /// std::list for stable iterators: each ActiveInsertScope erases its own element
-    /// and updates its atomic last-commit field without the mutex.
+    /// std::list for stable iterators: scopes erase their own elements and update their atomics without the mutex.
     mutable std::mutex active_inserts_mutex;
     std::list<ActiveInsertInfo> active_inserts;
 

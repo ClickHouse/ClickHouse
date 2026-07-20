@@ -732,38 +732,24 @@ Possible values:
 - Any positive integer.
 )", 0) \
     DECLARE(UInt64, min_insert_duration_to_defer_merges_ms, 10000, R"(
-Postpone selection of background merges while an `INSERT` that has been running
-at least this long keeps actively committing parts into the table. Writing the
-inserted data exactly once and merging after such a bulk insert finishes is
-cheaper than merging concurrently with it: concurrent merges re-read and
-re-write freshly inserted parts, competing with the insert for disk bandwidth.
-
-The deferral ends as soon as the insert finishes (or stops committing parts for
-`max_insert_commit_gap_to_defer_merges_ms`), and never applies once the running
-inserts have committed `max_parts_to_defer_merges` parts or the number of
-active parts in some partition reaches half of `parts_to_delay_insert`.
-
-The deferral applies to all background merges of the table, including
-TTL-driven ones, so TTL enforcement may be delayed while a bulk insert is
-running. Mutations are not deferred. Only takes effect for non-replicated
-`MergeTree` tables.
-
-Possible values:
-- Positive integer - the minimum elapsed insert time, in milliseconds.
-- 0 - merges are never deferred because of active inserts.
+Postpone selection of background merges (including TTL-driven ones, but not
+mutations) while an `INSERT` that has been running at least this long keeps
+committing parts into the table, so that bulk inserts write their data once
+instead of competing with concurrent merges for disk bandwidth. The deferral
+ends when the insert finishes, stops committing parts for
+`max_insert_commit_gap_to_defer_merges_ms`, or hits the
+`max_parts_to_defer_merges` bound, and never applies while some partition has
+at least half of `parts_to_delay_insert` active parts. Only takes effect for
+non-replicated `MergeTree` tables. 0 disables the deferral.
 )", 0) \
     DECLARE(UInt64, max_insert_commit_gap_to_defer_merges_ms, 30000, R"(
-While a long-running `INSERT` defers background merges (see
-`min_insert_duration_to_defer_merges_ms`), keep deferring only as long as the
-last part was committed at most this long ago. An insert that trickles data
-slowly does not hold merges back.
+Keep deferring merges (see `min_insert_duration_to_defer_merges_ms`) only as
+long as the last part was committed at most this long ago, so that an insert
+trickling data slowly does not hold merges back.
 )", 0) \
     DECLARE(UInt64, max_parts_to_defer_merges, 500, R"(
-While a long-running `INSERT` defers background merges (see
-`min_insert_duration_to_defer_merges_ms`), stop deferring once the currently
-running inserts have committed this many parts in total, so that the backlog of
-parts to merge after a bulk insert stays bounded no matter how many partitions
-the insert writes to.
+Stop deferring merges (see `min_insert_duration_to_defer_merges_ms`) once the
+currently running inserts have committed this many parts in total.
 )", 0) \
     DECLARE(UInt64, min_age_to_force_merge_seconds, 0, R"(
 Merge parts if every part in the range is older than the value of

@@ -6822,9 +6822,7 @@ bool MergeTreeData::shouldDeferMergesDueToActiveInserts() const
     if (!has_long_committing_insert)
         return false;
 
-    /// Bound the un-merged backlog a deferral may accumulate. Counting parts committed by the
-    /// running inserts (rather than parts per partition) keeps the bound global: an insert
-    /// spread over many partitions cannot pile up the cap in each of them.
+    /// Counting commits (not parts per partition) bounds the backlog globally, however many partitions the inserts write to.
     if (parts_committed_by_active_inserts >= (*settings)[MergeTreeSetting::max_parts_to_defer_merges])
         return false;
 
