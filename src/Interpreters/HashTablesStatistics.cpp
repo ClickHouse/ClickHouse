@@ -90,7 +90,17 @@ std::optional<AggregationEntry> getSizeHint(const DB::StatsCollectingParams & st
     {
         if (auto hint = DB::getHashTablesStatistics<AggregationEntry>().getSizeHint(stats_collecting_params))
         {
-            const auto lower_limit = hint->sum_of_sizes / tables_cnt;
+            /// The average per-table size of the run that recorded the statistics, which is why `sum_of_sizes` is
+            /// normalized by that run's table count and not by the current `tables_cnt`. Dividing by the current
+            /// count instead made the total preallocation stay at the recorded run's size no matter how many
+            /// threads the current run has, so lowering the thread count to save memory did not save any.
+            ///
+            /// This assumes the per-table size does not depend on the thread count, which holds while the threads
+            /// see overlapping key sets. When they see disjoint ones (high cardinality, each thread holding its own
+            /// slice) a run with fewer threads needs more per table than this and will have to resize. Telling the
+            /// two apart needs the total number of distinct keys, which is only known after the merge, whereas the
+            /// statistics are recorded before it.
+            const auto lower_limit = hint->sum_of_sizes / std::max<size_t>(hint->tables_cnt, 1);
             const auto upper_limit = stats_collecting_params.max_size_to_preallocate / tables_cnt;
             if (hint->median_size > upper_limit)
             {
@@ -108,7 +118,10 @@ std::optional<AggregationEntry> getSizeHint(const DB::StatsCollectingParams & st
             /// https://github.com/ClickHouse/ClickHouse/issues/44402#issuecomment-1359920703
             else if ((tables_cnt > 1 && hint->sum_of_sizes > 100'000) || hint->sum_of_sizes > 500'000)
             {
-                return AggregationEntry{hint->sum_of_sizes, std::max(lower_limit, hint->median_size)};
+                return AggregationEntry{
+                    .sum_of_sizes = hint->sum_of_sizes,
+                    .median_size = std::max(lower_limit, hint->median_size),
+                    .tables_cnt = hint->tables_cnt};
             }
         }
     }

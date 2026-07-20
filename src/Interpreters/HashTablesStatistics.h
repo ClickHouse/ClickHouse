@@ -45,10 +45,14 @@ struct AggregationEntry
             || median_size < new_entry.median_size;
     }
 
-    std::string dump() const { return fmt::format("sum_of_sizes={}, median_size={}", sum_of_sizes, median_size); }
+    std::string dump() const
+    {
+        return fmt::format("sum_of_sizes={}, median_size={}, tables_cnt={}", sum_of_sizes, median_size, tables_cnt);
+    }
 
     size_t sum_of_sizes; // used to determine if it's better to convert aggregation to two-level from the beginning
     size_t median_size; // roughly the size we're going to preallocate on each thread
+    size_t tables_cnt; // the number of tables `sum_of_sizes` was summed over; `sum_of_sizes` is meaningless without it
 };
 
 struct HashJoinEntry
