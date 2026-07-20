@@ -6,6 +6,7 @@
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnNullable.h>
 #include <Compression/CompressedReadBuffer.h>
+#include <Compression/CompressionCodecMultiple.h>
 #include <Compression/CompressionFactory.h>
 #include <Compression/getCompressionCodecForFile.h>
 #include <Core/Defines.h>
@@ -1800,54 +1801,110 @@ CompressionCodecPtr IMergeTreeDataPart::detectDefaultCompressionCodec(const Comp
     auto metadata_snapshot = storage.getInMemoryMetadataPtr(storage.getContext(), false);
 
     const auto & storage_columns = metadata_snapshot->getColumns();
-    CompressionCodecPtr result = nullptr;
-    for (const auto & part_column : columns)
+
+    /// A column with no CODEC at all, and a column whose codec pipeline contains a `Default` stage
+    /// (`CODEC(Default)`, `CODEC(Delta, Default)`, ...), are both compressed with the part's default
+    /// codec in their generic-compression stage, so their data proves the default codec family. Only
+    /// a column with an explicit non-default codec must be skipped (its data does not represent the
+    /// default codec).
+    auto is_default_coded = [&](const String & column_name)
     {
-        /// It was compressed with default codec and it's not empty. A column with no codec and a
-        /// column with an explicit `CODEC(Default)` are both compressed with the part's default
-        /// codec, so either one proves the default codec family; only a column with an explicit
-        /// non-default codec must be skipped (its data does not represent the default codec).
-        auto column_size = getColumnSize(part_column.name);
-        if (column_size.data_compressed != 0
-            && (!storage_columns.hasCompressionCodec(part_column.name)
-                || storage_columns.hasExplicitDefaultCompressionCodec(part_column.name)))
+        return !storage_columns.hasCompressionCodec(column_name)
+            || storage_columns.hasExplicitDefaultCompressionCodec(column_name);
+    };
+
+    /// In a Compact part all columns share a single data file, and `getCompressionCodecForFile`
+    /// reads that file's first frame, which belongs to whichever column was written first - not
+    /// necessarily to the column being inspected. The first frame proves the default codec only when
+    /// every stored column is default-coded; with mixed codecs the frame cannot be attributed to a
+    /// particular column, so the column proof must be skipped in favor of the fallback.
+    bool column_data_proves_default_codec = true;
+    if (getType() == MergeTreeDataPartType::Compact)
+    {
+        for (const auto & part_column : columns)
         {
-            String path_to_data_file;
-            getSerialization(part_column.name)->enumerateStreams([&](const ISerialization::SubstreamPath & substream_path)
+            if (!is_default_coded(part_column.name))
             {
+                column_data_proves_default_codec = false;
+                break;
+            }
+        }
+    }
+
+    CompressionCodecPtr result = nullptr;
+    if (column_data_proves_default_codec)
+    {
+        for (const auto & part_column : columns)
+        {
+            /// It was compressed with default codec and it's not empty.
+            auto column_size = getColumnSize(part_column.name);
+            if (column_size.data_compressed != 0 && is_default_coded(part_column.name))
+            {
+                String path_to_data_file;
+                getSerialization(part_column.name)->enumerateStreams([&](const ISerialization::SubstreamPath & substream_path)
+                {
+                    if (path_to_data_file.empty())
+                    {
+                        auto stream_name = getStreamNameForColumn(part_column, substream_path, ".bin", getDataPartStorage(), storage.getSettings());
+                        if (!stream_name)
+                            return;
+
+                        auto file_name = *stream_name + ".bin";
+                        /// We can have existing, but empty .bin files. Example: LowCardinality(Nullable(...)) columns and column_name.dict.null.bin file.
+                        if (getDataPartStorage().getFileSize(file_name) != 0)
+                            path_to_data_file = file_name;
+                    }
+                });
+
                 if (path_to_data_file.empty())
                 {
-                    auto stream_name = getStreamNameForColumn(part_column, substream_path, ".bin", getDataPartStorage(), storage.getSettings());
-                    if (!stream_name)
-                        return;
-
-                    auto file_name = *stream_name + ".bin";
-                    /// We can have existing, but empty .bin files. Example: LowCardinality(Nullable(...)) columns and column_name.dict.null.bin file.
-                    if (getDataPartStorage().getFileSize(file_name) != 0)
-                        path_to_data_file = file_name;
+                    LOG_WARNING(storage.log, "Part's {} column {} has non zero data compressed size, but all data files don't exist or empty", name, backQuoteIfNeed(part_column.name));
+                    continue;
                 }
-            });
 
-            if (path_to_data_file.empty())
-            {
-                LOG_WARNING(storage.log, "Part's {} column {} has non zero data compressed size, but all data files don't exist or empty", name, backQuoteIfNeed(part_column.name));
-                continue;
-            }
+                auto recovered = getCompressionCodecForFile(getDataPartStorage(), path_to_data_file);
 
-            result = getCompressionCodecForFile(getDataPartStorage(), path_to_data_file);
+                /// The default codec is the column's generic-compression stage. For a column coded
+                /// with the default codec alone the recovered frame codec is that stage itself; for a
+                /// pipeline (`CODEC(Delta, Default)`) the frame is a `Multiple` chain and the default
+                /// codec is its single generic-compression stage (a valid pipeline has at most one).
+                /// A structural substream (`Array` offsets, null map, ...) is written with the
+                /// generic stages only, dropping the rest of the pipeline, so search for the generic
+                /// stage instead of matching the declared pipeline by position. `NONE` counts too:
+                /// it is not a generic compression, but a default of `NONE` produces a plain `NONE`
+                /// frame that identifies the default exactly.
+                if (const auto * multiple = typeid_cast<const CompressionCodecMultiple *>(recovered.get()))
+                {
+                    for (const auto & stage : multiple->getCodecs())
+                    {
+                        if (stage->isGenericCompression())
+                        {
+                            result = stage;
+                            break;
+                        }
+                    }
+                }
+                else if (recovered->isGenericCompression() || recovered->isNone())
+                    result = recovered;
 
-            /// `getCompressionCodecForFile` reconstructs the codec from the compressed frame's
-            /// method byte only. The method byte identifies the codec *family* but not its numeric
-            /// parameters, so a column written with `ZSTD(3)` reads back as `ZSTD(1)`, `LZ4HC(N)` as
-            /// `LZ4`, and so on. When the recovered codec carries such parameters - its descriptor is
-            /// a function call (`ZSTD(1)`) rather than a bare identifier (`LZ4`) - the level is a
-            /// default guess, not the part's real default, so mark `default_codec` approximate for
-            /// the same reasons as the `!result` fallback below: consumers must treat it as "unknown"
-            /// rather than trust a level that the on-disk frame does not preserve.
-            if (!result->getCodecDesc()->as<ASTIdentifier>())
+                /// No generic-compression stage in the frame: it cannot prove the default codec
+                /// (e.g. a pipeline whose generic stage was substituted by a `NONE` default), so try
+                /// the next column.
+                if (!result)
+                    continue;
+
+                /// `getCompressionCodecForFile` reconstructs codecs from the frame's method bytes
+                /// only. A method byte identifies neither the codec's numeric parameters (a
+                /// `ZSTD(3)` default reads back as `ZSTD(1)`) nor even always the exact family
+                /// (`LZ4` and `LZ4HC` share the byte `0x82`, see `CompressionInfo.h`, so an
+                /// `LZ4HC(N)` default reads back as plain `LZ4`). The recovery is therefore never
+                /// provably exact - mark `default_codec` approximate, for the same reasons as the
+                /// `!result` fallback below: consumers must treat it as "unknown" rather than trust
+                /// a descriptor that the on-disk frame does not preserve.
                 default_codec_is_approximate = true;
 
-            break;
+                break;
+            }
         }
     }
 

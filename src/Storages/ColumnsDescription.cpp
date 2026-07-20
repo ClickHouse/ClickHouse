@@ -994,15 +994,24 @@ bool ColumnsDescription::hasExplicitDefaultCompressionCodec(const String & colum
     if (it == columns.get<1>().end() || it->codec == nullptr)
         return false;
 
-    /// The stored codec descriptor is a `CODEC(...)` function; a plain `CODEC(Default)` keeps a single
-    /// `Default` identifier argument (see `CompressionCodecFactory::validateCodecAndGetPreprocessedAST`)
-    /// and means "compressed with the part's default codec".
+    /// The stored codec descriptor is a `CODEC(...)` function whose arguments are the pipeline
+    /// stages; a `Default` stage is kept as a bare `Default` identifier (see
+    /// `CompressionCodecFactory::validateCodecAndGetPreprocessedAST`) and means "the part's default
+    /// codec". It can be the only stage (`CODEC(Default)`) or the generic-compression stage of a
+    /// longer pipeline (`CODEC(Delta, Default)`, `CODEC(NONE, Default)`), so look for it among all
+    /// stages rather than requiring the degenerate single-stage form.
     const auto * codec_func = it->codec->as<ASTFunction>();
-    if (!codec_func || !codec_func->arguments || codec_func->arguments->children.size() != 1)
+    if (!codec_func || !codec_func->arguments)
         return false;
 
-    const auto * argument = codec_func->arguments->children.front()->as<ASTIdentifier>();
-    return argument && argument->name() == DEFAULT_CODEC_NAME;
+    for (const auto & stage : codec_func->arguments->children)
+    {
+        const auto * identifier = stage->as<ASTIdentifier>();
+        if (identifier && identifier->name() == DEFAULT_CODEC_NAME)
+            return true;
+    }
+
+    return false;
 }
 
 ColumnsDescription::ColumnTTLs ColumnsDescription::getColumnTTLs() const

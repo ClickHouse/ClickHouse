@@ -415,13 +415,14 @@ public:
     /// Set when `default_codec` is not known exactly: `default_compression_codec.txt` was missing or
     /// malformed and the codec had to be recovered. This covers two cases: either no column's on-disk
     /// data proved the codec, so `default_codec` is only a best-effort guess from `checksums.txt`
-    /// (see `detectDefaultCompressionCodecFromChecksums`), or a column's data proved the codec *family*
-    /// but the compressed frame's method byte does not encode its numeric parameters, so a `ZSTD(3)`
-    /// default reads back as `ZSTD(1)` and an `LZ4HC(N)` default as `LZ4` (see
-    /// `detectDefaultCompressionCodec`). In both cases the recovered value may not match the part's
-    /// actual codec family or level. Consumers that use `default_codec` to decide whether work can be
-    /// skipped (e.g. `TTLRecompressMergeSelector`) must treat this as "unknown" rather than trust the
-    /// guess, so a wrong guess cannot suppress a merge that is still needed.
+    /// (see `detectDefaultCompressionCodecFromChecksums`), or a column's data proved the codec, but a
+    /// compressed frame's method byte encodes neither the codec's numeric parameters (a `ZSTD(3)`
+    /// default reads back as `ZSTD(1)`) nor always the exact family (`LZ4` and `LZ4HC` share a method
+    /// byte, so an `LZ4HC(N)` default reads back as `LZ4`; see `detectDefaultCompressionCodec`). In
+    /// both cases the recovered value may not match the part's actual codec family or level.
+    /// Consumers that use `default_codec` to decide whether work can be skipped (e.g.
+    /// `TTLRecompressMergeSelector`) must treat this as "unknown" rather than trust the guess, so a
+    /// wrong guess cannot suppress a merge that is still needed.
     mutable bool default_codec_is_approximate = false;
 
     /// Set by `loadChecksums` when `checksums.txt` was missing on disk and had to be regenerated

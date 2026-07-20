@@ -647,6 +647,9 @@ def test_default_codec_recovered_from_explicit_default_codec_column(start_cluste
     # so the `data` column `.bin` is an `LZ4` frame, while `checksums.txt` is always a `ZSTD(3)` frame.
     # After dropping the codec file the recovered default must be `LZ4` (read from the `CODEC(Default)`
     # column data) - `ZSTD(1)` (from the checksums fallback) is the pre-fix, wrong result.
+    #
+    # The part must be Wide: attributing a frame of the shared Compact `data.bin` to one column is
+    # not possible with mixed codecs (see `test_default_codec_not_misattributed_in_compact_part`).
     node4.query(
         """
     CREATE TABLE explicit_default_codec_column (
@@ -654,6 +657,7 @@ def test_default_codec_recovered_from_explicit_default_codec_column(start_cluste
         data String CODEC(Default)
     )
     ENGINE MergeTree ORDER BY tuple()
+    SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0
     """
     )
 
@@ -689,6 +693,182 @@ def test_default_codec_recovered_from_explicit_default_codec_column(start_cluste
     )
 
     node4.query("DROP TABLE explicit_default_codec_column SYNC")
+
+
+def test_default_codec_recovered_from_pipeline_default_codec_column(start_cluster):
+    # `Default` can also be the generic-compression stage of a codec pipeline (`CODEC(Delta,
+    # Default)`). Such a column's `.bin` is a `Multiple` chain whose generic stage is the part's
+    # default codec, so it proves the default codec family just like a bare `CODEC(Default)` column.
+    #
+    # `key` has an explicit non-default codec, `data` has `CODEC(Delta, Default)`, and no plain
+    # no-codec column exists. On `node4` the small merged part uses the size-aware default `LZ4`, so
+    # after dropping the codec file the recovery must extract `LZ4` from the `data` column's
+    # `Multiple(Delta, LZ4)` frame - `ZSTD(1)` (from the lossy `checksums.txt` fallback) is the
+    # pre-fix, wrong result.
+    node4.query(
+        """
+    CREATE TABLE pipeline_default_codec_column (
+        key UInt64 CODEC(ZSTD(1)),
+        data UInt64 CODEC(Delta, Default)
+    )
+    ENGINE MergeTree ORDER BY tuple()
+    SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0
+    """
+    )
+
+    # Two inserts and a merge, so the part whose codec file we drop is a merged part.
+    node4.query("INSERT INTO pipeline_default_codec_column VALUES (1, 1)")
+    node4.query("INSERT INTO pipeline_default_codec_column VALUES (2, 2)")
+    node4.query("OPTIMIZE TABLE pipeline_default_codec_column FINAL")
+
+    part_name = node4.query(
+        "SELECT name FROM system.parts WHERE database='default' AND table='pipeline_default_codec_column' AND active"
+    ).strip()
+
+    node4.query(f"ALTER TABLE pipeline_default_codec_column DETACH PART '{part_name}'")
+
+    data_path = node4.query(
+        "SELECT arrayElement(data_paths, 1) FROM system.tables WHERE database='default' AND name='pipeline_default_codec_column'"
+    ).strip()
+    node4.exec_in_container(
+        ["rm", f"{data_path}detached/{part_name}/default_compression_codec.txt"]
+    )
+
+    node4.query(f"ALTER TABLE pipeline_default_codec_column ATTACH PART '{part_name}'")
+
+    assert node4.query("SELECT COUNT() FROM pipeline_default_codec_column") == "2\n"
+
+    # Recovered from the generic-compression stage of the `data` column's `Multiple` frame.
+    assert (
+        node4.query(
+            "SELECT default_compression_codec FROM system.parts "
+            "WHERE database='default' AND table='pipeline_default_codec_column' AND active"
+        ).strip()
+        == "LZ4"
+    )
+
+    node4.query("DROP TABLE pipeline_default_codec_column SYNC")
+
+
+def test_default_codec_recovered_from_lz4hc_part(start_cluster):
+    # `LZ4` and `LZ4HC` share the same on-disk method byte (`0x82`, see `CompressionInfo.h`), so a
+    # part whose default codec was `LZ4HC(N)` reads back as plain `LZ4` from its column data - the
+    # frame preserves neither the `HC` variant nor the level. The recovery must degrade to the `LZ4`
+    # family guess (and internally mark `default_codec` approximate - the same unconditional marking
+    # as for the `ZSTD(3)` -> `ZSTD(1)` case above, so e.g. `TTLRecompressMergeSelector` reconsiders
+    # the part instead of trusting the weaker codec).
+    node4.query(
+        """
+    CREATE TABLE lz4hc_default_codec (
+        key UInt64,
+        data String
+    )
+    ENGINE MergeTree ORDER BY tuple()
+    SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, default_compression_codec = 'LZ4HC(5)'
+    """
+    )
+
+    # Two inserts and a merge, so the part whose codec file we drop is a merged part.
+    node4.query("INSERT INTO lz4hc_default_codec VALUES (1, 'Hello world')")
+    node4.query("INSERT INTO lz4hc_default_codec VALUES (2, 'Goodbye world')")
+    node4.query("OPTIMIZE TABLE lz4hc_default_codec FINAL")
+
+    part_name = node4.query(
+        "SELECT name FROM system.parts WHERE database='default' AND table='lz4hc_default_codec' AND active"
+    ).strip()
+
+    # While `default_compression_codec.txt` is still present, the exact write-time default is known.
+    assert (
+        node4.query(
+            "SELECT default_compression_codec FROM system.parts "
+            "WHERE database='default' AND table='lz4hc_default_codec' AND active"
+        ).strip()
+        == "LZ4HC(5)"
+    )
+
+    node4.query(f"ALTER TABLE lz4hc_default_codec DETACH PART '{part_name}'")
+
+    data_path = node4.query(
+        "SELECT arrayElement(data_paths, 1) FROM system.tables WHERE database='default' AND name='lz4hc_default_codec'"
+    ).strip()
+    node4.exec_in_container(
+        ["rm", f"{data_path}detached/{part_name}/default_compression_codec.txt"]
+    )
+
+    node4.query(f"ALTER TABLE lz4hc_default_codec ATTACH PART '{part_name}'")
+
+    assert node4.query("SELECT COUNT() FROM lz4hc_default_codec") == "2\n"
+
+    # The shared method byte only proves the `LZ4` family; the `HC` variant and level are lost.
+    assert (
+        node4.query(
+            "SELECT default_compression_codec FROM system.parts "
+            "WHERE database='default' AND table='lz4hc_default_codec' AND active"
+        ).strip()
+        == "LZ4"
+    )
+
+    node4.query("DROP TABLE lz4hc_default_codec SYNC")
+
+
+def test_default_codec_not_misattributed_in_compact_part(start_cluster):
+    # In a Compact part all columns share a single `data.bin`, and the recovery reads that file's
+    # *first* frame, which belongs to whichever column was written first - not necessarily to the
+    # column being inspected. With mixed codecs the frame cannot be attributed to a column, so the
+    # column-proven recovery must be skipped in favor of the `checksums.txt` fallback.
+    #
+    # On `node5` the default codec is pinned to `ZSTD(3)` for parts of any size, so the no-codec
+    # `data` column is a `ZSTD` frame, while the first column `key` carries an explicit `LZ4` codec
+    # and owns the first frame of the shared `data.bin`. Before the fix the recovery attributed that
+    # `LZ4` frame to `data` and confidently relabeled the part's default as `LZ4`; the correct result
+    # is the `ZSTD(1)` family guess from the `checksums.txt` fallback (`checksums.txt` is written
+    # with the built-in `ZSTD(3)` default, and the frame stores the method byte only).
+    node5.query(
+        """
+    CREATE TABLE mixed_codec_compact_part (
+        key UInt64 CODEC(LZ4),
+        data String
+    )
+    ENGINE MergeTree ORDER BY tuple()
+    """
+    )
+
+    # Two inserts and a merge, so the part whose codec file we drop is a merged part.
+    node5.query("INSERT INTO mixed_codec_compact_part VALUES (1, 'Hello world')")
+    node5.query("INSERT INTO mixed_codec_compact_part VALUES (2, 'Goodbye world')")
+    node5.query("OPTIMIZE TABLE mixed_codec_compact_part FINAL")
+
+    part_name = node5.query(
+        "SELECT name FROM system.parts WHERE database='default' AND table='mixed_codec_compact_part' AND active"
+    ).strip()
+    part_type = node5.query(
+        "SELECT part_type FROM system.parts WHERE database='default' AND table='mixed_codec_compact_part' AND active"
+    ).strip()
+    assert part_type == "Compact"
+
+    node5.query(f"ALTER TABLE mixed_codec_compact_part DETACH PART '{part_name}'")
+
+    data_path = node5.query(
+        "SELECT arrayElement(data_paths, 1) FROM system.tables WHERE database='default' AND name='mixed_codec_compact_part'"
+    ).strip()
+    node5.exec_in_container(
+        ["rm", f"{data_path}detached/{part_name}/default_compression_codec.txt"]
+    )
+
+    node5.query(f"ALTER TABLE mixed_codec_compact_part ATTACH PART '{part_name}'")
+
+    assert node5.query("SELECT COUNT() FROM mixed_codec_compact_part") == "2\n"
+
+    # The `checksums.txt` family guess, not the `key` column's `LZ4` frame.
+    assert (
+        node5.query(
+            "SELECT default_compression_codec FROM system.parts "
+            "WHERE database='default' AND table='mixed_codec_compact_part' AND active"
+        ).strip()
+        == "ZSTD(1)"
+    )
+
+    node5.query("DROP TABLE mixed_codec_compact_part SYNC")
 
 
 def test_default_codec_approximate_when_recovered_from_column_data(start_cluster):
