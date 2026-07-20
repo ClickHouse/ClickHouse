@@ -205,3 +205,29 @@ TEST(SubscriptionEnrichment, ResolvedWhenContiguousFromStart)
     ASSERT_FALSE(result.pending);
     ASSERT_EQ(sub.snapshot().at("p"), 3);
 }
+
+TEST(SubscriptionEnrichment, PartialRoundIsPending)
+{
+    MergeTreeBoundsSubscription sub(1, 0, /*bounded=*/true);
+
+    /// "b" is contiguous (readable), but "a" has a block in flight in its gap. The round advances
+    /// "b" yet stays pending, so a bounded source must not finish until "a" resolves too.
+    LocalPartsByPartition local_parts;
+    local_parts["a"].emplace_back("a", 5, 5, 0);
+    local_parts["b"].emplace_back("b", 0, 3, 0);
+
+    std::map<String, std::set<Int64>> committing{{"a", {2}}};
+    std::map<String, PartBlockNumberRanges> ranges;
+    ranges["a"].addPart(5, 5);
+    ranges["b"].addPart(0, 3);
+    auto promoters = constructPromoters(committing, ranges);
+
+    auto result = enrichSubscription(sub, local_parts, promoters);
+    ASSERT_TRUE(result.enriched);
+    ASSERT_TRUE(result.pending);
+    ASSERT_EQ(sub.snapshot().at("b"), 3);
+    ASSERT_FALSE(sub.snapshot().contains("a"));
+
+    sub.onEnrichmentRound(result.pending);
+    ASSERT_FALSE(sub.safeSegmentDetermined());
+}

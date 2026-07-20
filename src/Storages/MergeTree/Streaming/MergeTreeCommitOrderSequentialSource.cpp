@@ -369,16 +369,19 @@ IProcessor::Status MergeTreeCommitOrderSequentialSource::handleReconfiguration()
         return Status::Finished;
     }
 
+    /// A bounded stream waits until the safe segment is fully determined before reading, so a
+    /// single snapshot covers all assigned partitions instead of dropping a still-blocked one.
+    if (subscription->isBounded() && !subscription->safeSegmentDetermined())
+        return Status::Async;
+
     if (canConstructReadingPipeline(subscription->snapshot(), last_emitted_positions))
         return Status::Ready;
 
     if (!current_sub_pipeline.empty())
         return Status::UpdatePipeline;
 
-    /// Bounded stream with nothing to read: finish only once the safe segment is fully determined.
-    /// While a block is still in flight in the gap we keep waiting, so its rows are read rather
-    /// than dropped once the gap closes.
-    if (subscription->isBounded() && subscription->safeSegmentDetermined())
+    /// The safe segment is determined (gated above) but empty, so a bounded stream is done.
+    if (subscription->isBounded())
     {
         output.finish();
         return Status::Finished;
