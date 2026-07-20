@@ -104,7 +104,9 @@ void GeneratedRunner::thread(std::vector<std::shared_ptr<Coordination::ZooKeeper
         Coordination::ZooKeeperRequestPtr request;
     };
 
-    auto generator = thread_state.generator;
+    /// Copy the shared_ptr so callbacks can capture it and outlive this frame safely.
+    auto shared_generator = generator;
+    GenerateContext ctx{thread_state.rng, thread_state.thread_idx};
 
     /// Randomly choosing connection index
     pcg64 rng(randomSeed());
@@ -201,7 +203,7 @@ void GeneratedRunner::thread(std::vector<std::shared_ptr<Coordination::ZooKeeper
             in_flight.pop_front();
         }
 
-        ZooKeeperRequestWithCallbacks request_with_callbacks = generator->generate();
+        ZooKeeperRequestWithCallbacks request_with_callbacks = shared_generator->generate(ctx);
 
         const auto connection_index = distribution(rng);
         auto & zk = zookeepers[connection_index];
@@ -217,7 +219,7 @@ void GeneratedRunner::thread(std::vector<std::shared_ptr<Coordination::ZooKeeper
             [promise,
              inner_callback,
              watch,
-             generator](const Coordination::Response & response)
+             shared_generator](const Coordination::Response & response)
         {
             auto elapsed = watch->elapsedMicroseconds();
             if (inner_callback)
@@ -264,7 +266,7 @@ void GeneratedRunner::runBenchmark()
     std::cerr << "Preparing to run\n";
     nodes_setup.startup(*connections[0]);
 
-    /// Initialize all generators up front, before any worker thread starts
+    /// Initialize the generator up front, before any worker thread starts
     /// executing requests. Generator startup resolves `children_of` paths by
     /// listing them, which must not race with workers mutating the tree.
     const auto * tagged_paths = nodes_setup.getTaggedPaths().empty() ? nullptr : &nodes_setup.getTaggedPaths();
@@ -283,17 +285,19 @@ void GeneratedRunner::runBenchmark()
         return list_future.get().names;
     };
 
+    generator = std::make_shared<Generator>();
+    generator->startup(*config_ptr, list_children, tagged_paths);
+    generator->setWatchCallback(std::make_shared<Coordination::WatchCallback>(
+        [stats = info](const Coordination::WatchResponse &)
+        {
+            stats->watches_fired.fetch_add(1, std::memory_order_relaxed);
+        }));
+
     threads = std::vector<ThreadState>(concurrency);
     for (size_t i = 0; i < concurrency; ++i)
     {
         threads[i].thread_idx = i;
-        threads[i].generator = std::make_shared<Generator>();
-        threads[i].generator->startup(*config_ptr, list_children, i, tagged_paths);
-        threads[i].generator->setWatchCallback(std::make_shared<Coordination::WatchCallback>(
-            [stats = info](const Coordination::WatchResponse &)
-            {
-                stats->watches_fired.fetch_add(1, std::memory_order_relaxed);
-            }));
+        threads[i].rng.seed(generator->getSeedFor(i));
     }
     std::cerr << "Prepared\n";
 

@@ -146,7 +146,8 @@ private:
     std::unique_ptr<Storage> storage;
 
     NodesSetup nodes_setup;
-    std::vector<std::shared_ptr<Generator>> generators;
+    /// Shared by all generator threads; immutable after startup.
+    std::shared_ptr<Generator> generator;
     std::vector<int64_t> generator_session_ids;
     int64_t setup_session_id = 0;
 

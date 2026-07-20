@@ -29,7 +29,8 @@ public:
             const CreateRequestSink & sink,
             const std::string & parent_path,
             const Coordination::ACLs & acls,
-            TaggedPaths & tagged_paths_out) const;
+            TaggedPaths & tagged_paths_out,
+            pcg64 & rng_) const;
         void dumpTree(int level = 0) const;
     };
 
@@ -53,4 +54,6 @@ private:
     Coordination::ACLs default_acls;
     TaggedPaths tagged_paths;
     bool use_remove_recursive = true;
+    /// For generating random node names/data during setup.
+    pcg64 rng{randomSeed()};
 };

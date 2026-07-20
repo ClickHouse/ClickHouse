@@ -207,13 +207,14 @@ void NodesSetup::Node::createNodes(
     const CreateRequestSink & sink,
     const std::string & parent_path,
     const Coordination::ACLs & acls,
-    TaggedPaths & tagged_paths_out) const
+    TaggedPaths & tagged_paths_out,
+    pcg64 & rng_) const
 {
-    auto path = std::filesystem::path(parent_path) / name.getString();
+    auto path = std::filesystem::path(parent_path) / name.getString(rng_);
 
     auto request = std::make_shared<Coordination::ZooKeeperCreateRequest>();
     request->path = path;
-    request->data = data ? data->getString() : "";
+    request->data = data ? data->getString(rng_) : "";
     request->acls = acls;
     sink(std::move(request));
 
@@ -221,7 +222,7 @@ void NodesSetup::Node::createNodes(
         tagged_paths_out[*tag].push_back(path);
 
     for (const auto & child : children)
-        child->createNodes(sink, path, acls, tagged_paths_out);
+        child->createNodes(sink, path, acls, tagged_paths_out, rng_);
 }
 
 void NodesSetup::createNodes(const CreateRequestSink & sink)
@@ -230,10 +231,10 @@ void NodesSetup::createNodes(const CreateRequestSink & sink)
     {
         /// Pin the root name (which may be randomly generated) so later getString
         /// calls (e.g. in cleanup) return the same path.
-        auto node_name = node->name.getString();
+        auto node_name = node->name.getString(rng);
         node->name.setString(node_name);
 
-        node->createNodes(sink, "/", default_acls, tagged_paths);
+        node->createNodes(sink, "/", default_acls, tagged_paths, rng);
     }
 
     if (!tagged_paths.empty())
@@ -254,7 +255,7 @@ void NodesSetup::startup(Coordination::ZooKeeper & zookeeper)
     /// Pin root names and remove leftovers from previous runs.
     for (const auto & node : root_nodes)
     {
-        auto node_name = node->name.getString();
+        auto node_name = node->name.getString(rng);
         node->name.setString(node_name);
 
         std::string root_path = std::filesystem::path("/") / node_name;
@@ -280,7 +281,7 @@ void NodesSetup::cleanup(Coordination::ZooKeeper & zookeeper)
     std::cerr << "---- Cleaning up test data ----" << std::endl;
     for (const auto & node : root_nodes)
     {
-        auto node_name = node->name.getString();
+        auto node_name = node->name.getString(rng);
         std::string root_path = std::filesystem::path("/") / node_name;
         std::cerr << "Cleaning up " << root_path << std::endl;
         removeRecursive(zookeeper, root_path, use_remove_recursive);

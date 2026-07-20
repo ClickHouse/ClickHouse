@@ -236,14 +236,10 @@ void StorageRunner::startGenerators()
         return list.names;
     };
 
-    generators.resize(concurrency);
-    for (size_t i = 0; i < concurrency; ++i)
-    {
-        generators[i] = std::make_shared<Generator>();
-        generators[i]->startup(*config_ptr, list_children, i, tagged_paths);
-        generators[i]->setWatchCallback(std::make_shared<Coordination::WatchCallback>(
-            [](const Coordination::WatchResponse &) {}));
-    }
+    generator = std::make_shared<Generator>();
+    generator->startup(*config_ptr, list_children, tagged_paths);
+    generator->setWatchCallback(std::make_shared<Coordination::WatchCallback>(
+        [](const Coordination::WatchResponse &) {}));
 }
 
 template <typename QueueT>
@@ -259,7 +255,8 @@ void StorageRunner::pushBlocking(QueueT & queue, QueueItem & item)
 
 void StorageRunner::generatorThread(size_t idx)
 {
-    auto & generator = *generators[idx];
+    pcg64 rng(generator->getSeedFor(idx));
+    GenerateContext ctx{rng, idx};
     const int64_t session_id = generator_session_ids[idx];
 
     while (!shutdown.load(std::memory_order_relaxed))
@@ -281,7 +278,7 @@ void StorageRunner::generatorThread(size_t idx)
         ZooKeeperRequestWithCallbacks request_with_callbacks;
         try
         {
-            request_with_callbacks = generator.generate();
+            request_with_callbacks = generator->generate(ctx);
         }
         catch (...)
         {

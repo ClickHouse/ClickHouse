@@ -13,17 +13,24 @@ using TaggedPaths = std::unordered_map<std::string, std::vector<std::string>>;
 
 /// Returns child names of a znode by path. Used by PathGetter to resolve
 /// `children_of` references during generator startup. The default
-/// implementation (in Runner) queries a running Keeper; the storage-only
-/// runner supplies a callable that reads from an in-process KeeperStorage.
+/// implementation (in GeneratedRunner) queries a running Keeper; the
+/// storage-only runner supplies a callable that reads from an in-process
+/// KeeperStorage.
 using ListChildrenFn = std::function<std::vector<std::string>(const std::string &)>;
 
+/// Per-thread state passed to every `generate` call. Generators themselves are
+/// immutable after startup and shared by all worker threads.
+struct GenerateContext
+{
+    pcg64 & rng;
+    size_t thread_idx = 0;
+};
 
 struct NumberGetter
 {
     static NumberGetter fromConfig(const std::string & key, const Poco::Util::AbstractConfiguration & config, std::optional<uint64_t> default_value = std::nullopt);
-    uint64_t getNumber() const;
+    uint64_t getNumber(pcg64 & rng) const;
     std::string description() const;
-    void setSeed(uint64_t seed) { rng.seed(seed); }
 private:
     struct NumberRange
     {
@@ -32,7 +39,6 @@ private:
     };
 
     std::variant<uint64_t, NumberRange> value;
-    mutable pcg64 rng{randomSeed()};
 };
 
 struct StringGetter
@@ -45,24 +51,21 @@ struct StringGetter
 
     static StringGetter fromConfig(const std::string & key, const Poco::Util::AbstractConfiguration & config);
     void setString(std::string name);
-    std::string getString() const;
+    std::string getString(pcg64 & rng) const;
     std::string description() const;
     bool isRandom() const;
-    void setSeed(uint64_t seed);
 private:
     std::variant<std::string, NumberGetter> value;
-    mutable pcg64 rng{randomSeed()};
 };
 
 struct PathGetter
 {
     static PathGetter fromConfig(const std::string & key, const Poco::Util::AbstractConfiguration & config);
 
-    std::string getPath() const;
+    std::string getPath(GenerateContext & ctx) const;
     std::string description() const;
 
     void initialize(const ListChildrenFn & list_children, const TaggedPaths * tagged_paths = nullptr);
-    void setSeed(uint64_t seed) { rng.seed(seed); }
 private:
     std::vector<std::string> parent_paths;
     std::vector<std::string> tag_names;
@@ -70,8 +73,6 @@ private:
     bool initialized = false;
 
     std::vector<std::string> paths;
-    mutable std::uniform_int_distribution<size_t> path_picker;
-    mutable pcg64 rng{randomSeed()};
 };
 
 /// Default ACLs used throughout keeper-bench (world:anyone with all permissions)
@@ -90,21 +91,19 @@ struct RequestGenerator
 
     void getFromConfig(const std::string & key, const Poco::Util::AbstractConfiguration & config);
 
-    ZooKeeperRequestWithCallbacks generate(const Coordination::ACLs & acls);
+    ZooKeeperRequestWithCallbacks generate(GenerateContext & ctx, const Coordination::ACLs & acls);
 
     std::string description();
 
     void startup(const ListChildrenFn & list_children, const TaggedPaths * tagged_paths = nullptr);
-    void setSeed(uint64_t seed);
     void setWatchCallback(Coordination::WatchCallbackPtr callback);
 
     size_t getWeight() const;
 private:
     virtual void getFromConfigImpl(const std::string & key, const Poco::Util::AbstractConfiguration & config) = 0;
     virtual std::string descriptionImpl() = 0;
-    virtual ZooKeeperRequestWithCallbacks generateImpl(const Coordination::ACLs & acls) = 0;
+    virtual ZooKeeperRequestWithCallbacks generateImpl(GenerateContext & ctx, const Coordination::ACLs & acls) = 0;
     virtual void startupImpl(const ListChildrenFn &, const TaggedPaths *) {}
-    virtual void setSeedImpl(uint64_t) {}
     virtual void setWatchCallbackImpl(Coordination::WatchCallbackPtr) {}
 
     size_t weight = 1;
@@ -116,21 +115,17 @@ using RequestGeneratorPtr = std::shared_ptr<RequestGenerator>;
 
 struct CreateRequestGenerator final : public RequestGenerator
 {
-    CreateRequestGenerator();
 private:
     void getFromConfigImpl(const std::string & key, const Poco::Util::AbstractConfiguration & config) override;
     std::string descriptionImpl() override;
-    ZooKeeperRequestWithCallbacks generateImpl(const Coordination::ACLs & acls) override;
+    ZooKeeperRequestWithCallbacks generateImpl(GenerateContext & ctx, const Coordination::ACLs & acls) override;
     void startupImpl(const ListChildrenFn & list_children, const TaggedPaths * tagged_paths) override;
-    void setSeedImpl(uint64_t seed) override;
 
     PathGetter parent_path;
     StringGetter name;
     std::optional<StringGetter> data;
 
     std::optional<double> remove_factor;
-    pcg64 rng;
-    std::uniform_real_distribution<double> remove_picker;
 
     std::mutex paths_mutex;
     std::unordered_set<std::string> paths_pending;
@@ -145,9 +140,8 @@ struct SetRequestGenerator final : public RequestGenerator
 private:
     void getFromConfigImpl(const std::string & key, const Poco::Util::AbstractConfiguration & config) override;
     std::string descriptionImpl() override;
-    ZooKeeperRequestWithCallbacks generateImpl(const Coordination::ACLs & acls) override;
+    ZooKeeperRequestWithCallbacks generateImpl(GenerateContext & ctx, const Coordination::ACLs & acls) override;
     void startupImpl(const ListChildrenFn & list_children, const TaggedPaths * tagged_paths) override;
-    void setSeedImpl(uint64_t seed) override;
 
     PathGetter path;
     StringGetter data;
@@ -158,14 +152,11 @@ struct GetRequestGenerator final : public RequestGenerator
 private:
     void getFromConfigImpl(const std::string & key, const Poco::Util::AbstractConfiguration & config) override;
     std::string descriptionImpl() override;
-    ZooKeeperRequestWithCallbacks generateImpl(const Coordination::ACLs & acls) override;
+    ZooKeeperRequestWithCallbacks generateImpl(GenerateContext & ctx, const Coordination::ACLs & acls) override;
     void startupImpl(const ListChildrenFn & list_children, const TaggedPaths * tagged_paths) override;
-    void setSeedImpl(uint64_t seed) override;
 
     PathGetter path;
     std::optional<double> watch_probability;
-    pcg64 watch_rng{randomSeed()};
-    std::uniform_real_distribution<double> watch_picker{0, 1.0};
 };
 
 struct ListRequestGenerator final : public RequestGenerator
@@ -173,14 +164,11 @@ struct ListRequestGenerator final : public RequestGenerator
 private:
     void getFromConfigImpl(const std::string & key, const Poco::Util::AbstractConfiguration & config) override;
     std::string descriptionImpl() override;
-    ZooKeeperRequestWithCallbacks generateImpl(const Coordination::ACLs & acls) override;
+    ZooKeeperRequestWithCallbacks generateImpl(GenerateContext & ctx, const Coordination::ACLs & acls) override;
     void startupImpl(const ListChildrenFn & list_children, const TaggedPaths * tagged_paths) override;
-    void setSeedImpl(uint64_t seed) override;
 
     PathGetter path;
     std::optional<double> watch_probability;
-    pcg64 watch_rng{randomSeed()};
-    std::uniform_real_distribution<double> watch_picker{0, 1.0};
 };
 
 struct RequestGetter
@@ -191,17 +179,16 @@ struct RequestGetter
 
     static RequestGetter fromConfig(const std::string & key, const Poco::Util::AbstractConfiguration & config, bool for_multi = false);
 
-    RequestGeneratorPtr getRequestGenerator() const;
+    RequestGeneratorPtr getRequestGenerator(pcg64 & rng) const;
     std::string description() const;
     void startup(const ListChildrenFn & list_children, const TaggedPaths * tagged_paths = nullptr);
-    void setSeed(uint64_t seed);
     void setWatchCallback(Coordination::WatchCallbackPtr callback);
     const std::vector<RequestGeneratorPtr> & requestGenerators() const;
 private:
     std::vector<RequestGeneratorPtr> request_generators;
     std::vector<size_t> weights;
-    mutable std::uniform_int_distribution<size_t> request_generator_picker;
-    mutable pcg64 rng{randomSeed()};
+    /// Upper bound (inclusive) for the random pick in getRequestGenerator.
+    size_t picker_max = 0;
 };
 
 struct MultiRequestGenerator final : public RequestGenerator
@@ -209,29 +196,32 @@ struct MultiRequestGenerator final : public RequestGenerator
 private:
     void getFromConfigImpl(const std::string & key, const Poco::Util::AbstractConfiguration & config) override;
     std::string descriptionImpl() override;
-    ZooKeeperRequestWithCallbacks generateImpl(const Coordination::ACLs & acls) override;
+    ZooKeeperRequestWithCallbacks generateImpl(GenerateContext & ctx, const Coordination::ACLs & acls) override;
     void startupImpl(const ListChildrenFn & list_children, const TaggedPaths * tagged_paths) override;
-    void setSeedImpl(uint64_t seed) override;
     void setWatchCallbackImpl(Coordination::WatchCallbackPtr callback) override;
 
     std::optional<NumberGetter> size;
     RequestGetter request_getter;
 };
 
+/// Produces the benchmark workload described by the `generator` config section.
+/// Immutable after `startup`; one instance is shared by all worker threads, each
+/// thread passing its own `GenerateContext` to `generate`.
 class Generator
 {
 public:
     Generator() = default;
 
-    void startup(const Poco::Util::AbstractConfiguration & config, const ListChildrenFn & list_children, size_t thread_idx, const TaggedPaths * tagged_paths = nullptr);
+    void startup(const Poco::Util::AbstractConfiguration & config, const ListChildrenFn & list_children, const TaggedPaths * tagged_paths = nullptr);
     void setWatchCallback(Coordination::WatchCallbackPtr callback);
-    ZooKeeperRequestWithCallbacks generate();
+    ZooKeeperRequestWithCallbacks generate(GenerateContext & ctx);
 
-    uint64_t getSeed() const { return seed; }
+    /// Seed for the given worker thread's rng: `generator.seed` config (plus
+    /// thread index) if set, random otherwise.
+    uint64_t getSeedFor(size_t thread_idx) const { return base_seed + thread_idx; }
 private:
-    uint64_t seed = 0;
+    uint64_t base_seed = 0;
 
-    std::uniform_int_distribution<size_t> request_picker;
     RequestGetter request_getter;
     Coordination::ACLs default_acls;
 };

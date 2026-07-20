@@ -24,7 +24,7 @@ private:
     struct alignas(DB::CH_CACHE_LINE_SIZE) ThreadState
     {
         size_t thread_idx = 0;
-        std::shared_ptr<Generator> generator;
+        pcg64 rng;
         Stats thread_info;
     };
 
@@ -74,6 +74,9 @@ private:
 
     std::shared_ptr<Stats> info;
     BenchmarkOutput output;
+
+    /// Shared by all worker threads; immutable after startup.
+    std::shared_ptr<Generator> generator;
 
     Stopwatch total_watch;
     Stopwatch delay_watch;
