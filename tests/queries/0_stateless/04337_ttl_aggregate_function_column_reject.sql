@@ -488,11 +488,13 @@ DROP TABLE test_ttl_agg_dynamic_lenient_agnostic;
 SET dynamic_throw_on_type_mismatch = 1;
 
 -- The conversion functions above (`toDateTime`) ignore the mismatch settings, so they alone cannot tell
--- whether the probe follows the session or the background profile. Consumers that go through the
--- `Variant`/`Dynamic` function adaptors (e.g. `length`) do honor the settings: under a lenient session the
--- adaptor would silently return NULL in the probe, while background TTL merges (strict by default) would
--- throw on the first row carrying an AggregateFunction state. The probe must follow the background profile,
--- not the session, so a lenient session must still get such a TTL rejected.
+-- which settings the probe runs under. Consumers that go through the `Variant`/`Dynamic` function adaptors
+-- (e.g. `length`) do honor the settings: under a lenient session the adaptor would silently return NULL in
+-- the probe, while the strict TTL execution paths - a default-settings INSERT computing TTLs in
+-- `MergeTreeDataWriter::updateTTL`, background merges under the default `background_profile`, and table
+-- loading on restart (no query context, adaptors fall back to strict) - would throw on the first row
+-- carrying an AggregateFunction state. The probe therefore always runs strict, regardless of the session,
+-- so a lenient session must still get such a TTL rejected.
 SET dynamic_throw_on_type_mismatch = 0;
 
 CREATE TABLE test_ttl_agg_dynamic_lenient_adaptor

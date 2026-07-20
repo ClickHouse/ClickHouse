@@ -288,31 +288,31 @@ private:
     std::optional<bool> old_dynamic_throw;
 };
 
-void checkTTLExpressionForAggregateFunctions(
-    const ExpressionActionsPtr & expression, std::string_view expression_kind, const ContextPtr & context)
+void checkTTLExpressionForAggregateFunctions(const ExpressionActionsPtr & expression, std::string_view expression_kind)
 {
     /// The synthetic probe in `checkActionsDAGForAggregateFunctions` exercises consumers over `Variant`/`Dynamic`
     /// columns carrying an AggregateFunction state. For consumers wrapped in the `Variant`/`Dynamic` function
     /// adaptors, whether a type mismatch throws or is silently turned into NULL at *execution* is decided by
     /// `variant_throw_on_type_mismatch` / `dynamic_throw_on_type_mismatch`, which the adaptors read from the
-    /// query context of the current thread - i.e. from the DDL session here, but from the background context
-    /// (whose settings come from the `background_profile` server config, strict by default) during background
-    /// TTL merges. Align the probe with that merge runtime: a session that lowered these settings must not
-    /// sneak in a TTL that would throw in every background merge, and a server whose background profile
-    /// deliberately runs lenient must not get such a `CREATE` rejected.
+    /// query context of the current thread. But a stored TTL expression is later rebuilt and executed under
+    /// several unrelated contexts: the *inserting* session in `MergeTreeDataWriter::updateTTL` (strict by
+    /// default), the background context during TTL merges (settings from the `background_profile` server
+    /// config, strict by default), and table loading on ATTACH/restart (no thread query context at all, so
+    /// the adaptors fall back to strict). The DDL-time verdict must therefore not depend on any one of them:
+    /// the probe always runs strict, which is the superset - an expression that survives the strict probe
+    /// only ever gets *more* lenient at execution (a mismatch turns into NULL instead of an exception), so it
+    /// is safe under every context, while anything rejected here would throw on the first
+    /// AggregateFunction-carrying row in at least the strict paths (e.g. a default-settings INSERT).
+    /// A server that deliberately runs everything lenient still has `allow_suspicious_ttl_expressions`.
     /// (Conversion functions such as `toDateTime` handle `Variant`/`Dynamic` natively, ignore both settings
     /// and always throw on a stored type they cannot convert, so for them the probe's verdict is the same
     /// under any settings.)
-    const auto & background_settings = context->getGlobalContext()->getBackgroundContext()->getSettingsRef();
-    MismatchSettingsGuard probe_guard(
-        background_settings[Setting::variant_throw_on_type_mismatch],
-        background_settings[Setting::dynamic_throw_on_type_mismatch]);
+    MismatchSettingsGuard probe_guard(/*variant_throw=*/ true, /*dynamic_throw=*/ true);
 
     checkActionsDAGForAggregateFunctions(expression->getActionsDAG(), expression_kind);
 }
 
-void checkTTLExpression(
-    const ExpressionActionsPtr & ttl_expression, const String & result_column_name, bool allow_suspicious, const ContextPtr & context)
+void checkTTLExpression(const ExpressionActionsPtr & ttl_expression, const String & result_column_name, bool allow_suspicious)
 {
     /// Do not apply this check in ATTACH queries for compatibility reasons and if explicitly allowed.
     if (!allow_suspicious)
@@ -333,7 +333,7 @@ void checkTTLExpression(
             }
         }
 
-        checkTTLExpressionForAggregateFunctions(ttl_expression, /*expression_kind=*/ "", context);
+        checkTTLExpressionForAggregateFunctions(ttl_expression, /*expression_kind=*/ "");
     }
 
     const auto & result_column = ttl_expression->getSampleBlock().getByName(result_column_name);
@@ -471,7 +471,7 @@ static void checkTTLGroupBySetForAggregateFunctions(
     {
         auto argument_ast = argument->clone();
         auto argument_expression = buildExpressionAndSets(argument_ast, columns, context).expression;
-        checkTTLExpressionForAggregateFunctions(argument_expression, /*expression_kind=*/ "GROUP BY SET ", context);
+        checkTTLExpressionForAggregateFunctions(argument_expression, /*expression_kind=*/ "GROUP BY SET ");
     }
 }
 
@@ -612,7 +612,7 @@ TTLDescription TTLDescription::getTTLFromAST(
                 /// state itself (e.g. `any(ts)`), casting it to an incompatible target type (e.g. `DateTime`)
                 /// must be rejected here instead of failing during the TTL merge.
                 if (!is_attach && !context->getSettingsRef()[Setting::allow_suspicious_ttl_expressions])
-                    checkTTLExpressionForAggregateFunctions(set_part.expression, /*expression_kind=*/ "GROUP BY SET ", context);
+                    checkTTLExpressionForAggregateFunctions(set_part.expression, /*expression_kind=*/ "GROUP BY SET ");
 
                 result.set_parts.emplace_back(set_part);
 
@@ -634,10 +634,10 @@ TTLDescription TTLDescription::getTTLFromAST(
         }
     }
 
-    checkTTLExpression(expression, result.result_column, is_attach || context->getSettingsRef()[Setting::allow_suspicious_ttl_expressions], context);
+    checkTTLExpression(expression, result.result_column, is_attach || context->getSettingsRef()[Setting::allow_suspicious_ttl_expressions]);
 
     if (where_expression && !is_attach && !context->getSettingsRef()[Setting::allow_suspicious_ttl_expressions])
-        checkTTLExpressionForAggregateFunctions(where_expression, /*expression_kind=*/ "WHERE ", context);
+        checkTTLExpressionForAggregateFunctions(where_expression, /*expression_kind=*/ "WHERE ");
 
     return result;
 }
