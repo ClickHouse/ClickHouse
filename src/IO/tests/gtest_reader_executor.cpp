@@ -83,8 +83,7 @@ unsigned char patternByte(size_t i)
     return static_cast<unsigned char>(i % 256);
 }
 
-/// Shared state of `MockFileCacheProvider`: the stored bytes, which file ranges are resident, and a
-/// log of every range written. Shared across provider instances so a reread sees prior writes.
+/// Shared state of `MockFileCacheProvider`: stored bytes, resident ranges, and a log of writes.
 struct MockCacheState
 {
     std::vector<char> store;
@@ -93,10 +92,9 @@ struct MockCacheState
     explicit MockCacheState(size_t file_size) : store(file_size, 0) {}
 };
 
-/// A minimal in-memory FILE-LEVEL cache, like the page cache: blocks are aligned to `block_size`, a
-/// block is a hit only when fully resident, and a whole block must be covered to be written. Unlike
-/// the real page cache it RETAINS what it stores (so a reread hits) and records write ranges, so a
-/// test can assert the executor fetched and wrote a block that straddles an object boundary.
+/// A minimal in-memory FILE-LEVEL cache (like the page cache): block-aligned, whole-block writes,
+/// hit only when fully resident. Retains data and records write ranges so a test can assert the
+/// executor wrote a block straddling an object boundary.
 class MockFileCacheProvider : public ICacheProvider
 {
 public:
@@ -166,8 +164,7 @@ private:
         ChainedBuffers read(ByteRange sub) override { return Reader{r, state}.read(sub); }
         size_t write(ChainedBuffers data) override
         {
-            /// Whole-cell: only a fully-covered block is stored (a straddling block needs a fetch
-            /// across the object boundary to be covered).
+            /// Whole-cell: a straddling block is covered only by a cross-object fetch.
             if (!data.covers(r))
                 return 0;
             data.copyTo(state->store.data() + r.offset, r);
@@ -449,8 +446,7 @@ TEST_F(ReaderExecutorTest, SeekThenRead)
 
 TEST_F(ReaderExecutorTest, MultiObjectWindowSpansBoundary)
 {
-    /// A window may span object boundaries (via `OffsetMap::map`): a `window_size` larger than the
-    /// first object fetches across the boundary and returns the concatenated bytes in one window.
+    /// One window larger than the first object fetches across the boundary.
     StoredObjects objects{makeFile("a.bin", 300), makeFile("b.bin", 200)};
     ReaderExecutor ex(std::make_shared<LocalSourceReader>(), objects, ReaderExecutor::Options{.window_size = 512});
 
@@ -478,13 +474,11 @@ TEST_F(ReaderExecutorTest, MultiObjectWindowSpansBoundary)
 
 TEST_F(ReaderExecutorTest, PageCacheFillsBlockStraddlingObjectBoundary)
 {
-    /// A file-level page-cache block that straddles two objects must be populated whole. The executor
-    /// fetches across the object boundary (via `OffsetMap::map`) so the straddling block gets a
-    /// covering write -- otherwise warm rereads around every boundary keep missing the page cache.
+    /// The block [256, 512) straddles the object boundary at 300; it populates only if the fetch
+    /// spans both objects.
     StoredObjects objects{makeFile("a.bin", 300), makeFile("b.bin", 300)};  // file [0, 600)
-    const size_t block = 256;  // grid: [0,256) [256,512) [512,600); [256,512) straddles the boundary at 300
+    const size_t block = 256;
 
-    /// A file-level cache shared across both reads.
     auto state = std::make_shared<MockCacheState>(/*file_size=*/600);
     auto make_chain = [&]() -> CacheChain
     {
@@ -493,7 +487,6 @@ TEST_F(ReaderExecutorTest, PageCacheFillsBlockStraddlingObjectBoundary)
         return chain;
     };
 
-    /// Cold read: one window spans both objects and populates the cache across the boundary.
     std::vector<char> data;
     {
         TestThreadGroup cold_tg;
@@ -501,11 +494,10 @@ TEST_F(ReaderExecutorTest, PageCacheFillsBlockStraddlingObjectBoundary)
             ReaderExecutor::Options{.window_size = 4096, .cache_chain = make_chain()});
         data = drain(cold);
         ASSERT_EQ(data.size(), 600u);
-        EXPECT_EQ(cold_tg.get(ProfileEvents::ReaderExecutorBytesFromSource), 600u) << "cold: fetched once across the boundary";
+        EXPECT_EQ(cold_tg.get(ProfileEvents::ReaderExecutorBytesFromSource), 600u);
     }
 
-    /// The straddling block [256, 512) got a covering write -- only possible if the fetch spanned
-    /// both objects (the crux of the fix). Before it, each per-object window covered only its half.
+    /// A write covered the straddling block, and it is resident.
     bool wrote_straddling = false;
     for (const auto & w : state->writes)
         if (w.offset <= 256 && 512 <= w.end())
@@ -513,8 +505,7 @@ TEST_F(ReaderExecutorTest, PageCacheFillsBlockStraddlingObjectBoundary)
     EXPECT_TRUE(wrote_straddling) << "no write covered the object-straddling block [256, 512)";
     EXPECT_TRUE(state->resident.subtract(ByteRange{256, block}).empty()) << "block [256, 512) is not resident";
 
-    /// A warm read through the same cache serves entirely from it -- zero source bytes proves the
-    /// straddling block is a hit (before the cross-object fetch it would be refetched every time).
+    /// Warm: served entirely from cache (zero source bytes), so the straddling block hits.
     TestThreadGroup warm_tg;
     ReaderExecutor warm(std::make_shared<LocalSourceReader>(), objects,
         ReaderExecutor::Options{.window_size = 4096, .cache_chain = make_chain()});

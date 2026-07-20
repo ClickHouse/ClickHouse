@@ -213,31 +213,21 @@ private:
     bool tryOpenLongConnection(const StoredObject & object, size_t object_offset);
     /// One-shot bounded read (the stateless path): open, seek, read `want` into `dst`.
     size_t readOneShot(const StoredObject & object, size_t object_offset, size_t want, char * dst);
-    /// Read up to `want` bytes of ONE object at object-local `object_offset` into `block_size` chunks,
-    /// as a `ChainedBuffers` at file offsets `file_base + k`. Reuses the held long connection when it
-    /// can continue, else opens a fresh one (or a one-shot read); feeds the fetched range to
-    /// `fetch_tracker`. A short return is fine (EOF / the object's end).
+    /// Read one object's slice at object-local `object_offset` as `block_size` file-level nodes;
+    /// reuses or opens the long connection. A short return is fine (EOF / the object's end).
     ChainedBuffers readObjectSlice(const StoredObject & object, size_t object_offset, size_t want, size_t file_base);
-    /// Read `[file_offset, file_offset + want)` from the source, spanning object boundaries: each
-    /// overlapping object's slice (via `OffsetMap::map`) is read through `readObjectSlice` and
-    /// concatenated at file offsets. The single source-read entry point for the direct path and the
-    /// cache miss path. A short return is fine (EOF); a known-size short read is truncation and throws.
+    /// Read `[file_offset, file_offset + want)`, spanning object boundaries via `OffsetMap::map`. The
+    /// single source-read entry point; a known-size short read is truncation and throws.
     ChainedBuffers readSource(size_t file_offset, size_t want);
-    /// Serve the file-level window `[window_offset, window_offset + want)` through the cache chain:
-    /// return the contiguous cached prefix at `window_offset` (zero-copy, populating nothing), else
-    /// fetch the miss (expanded to the tiers' aligned cells, across objects) once and populate every
-    /// tier's cells -- the per-object filesystem cache from each object's slice, the file-level page
-    /// cache from whole blocks that may straddle objects. A short return is fine -- the next call
-    /// resolves the rest. Precondition: `!cache_chain.empty()`.
+    /// Serve the file-level window through the cache chain: the cached prefix, else fetch the miss
+    /// across objects and populate. Precondition: `!cache_chain.empty()`.
     ChainedBuffers serveThroughCaches(size_t window_offset, size_t want);
     /// Drop the held connection: drain a small tail to complete it, else account it incomplete.
     void dropLongConnection();
 
-    /// The ONLY logical<->physical coordinate converters. The offset map, object offsets, cache
-    /// coordinates and the source `file_base` are PHYSICAL (header-inclusive file coords); the
-    /// consumer API (`position`, `read_until`, `totalSize`, served windows) is LOGICAL (payload
-    /// coords). Cross exactly here -- a raw `+/- data_start_offset` anywhere else is a bug. No byte
-    /// below the header reaches a logical consumer, so a physical value below it is corrupt input.
+    /// The only logical<->physical converters: physical = header-inclusive file coords (offset map,
+    /// cache, source); logical = payload coords (`position`, `totalSize`, served windows). A raw
+    /// `+/- data_start_offset` anywhere else is a bug.
     size_t toPhys(size_t logical) const { return logical + data_start_offset; }
     size_t toLogical(size_t physical) const { chassert(physical >= data_start_offset); return physical - data_start_offset; }
 

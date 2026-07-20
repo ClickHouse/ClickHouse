@@ -23,8 +23,7 @@ public:
         size_t size = 0;
     };
 
-    /// One object's slice of a file range: `object_offset` is the start within the object,
-    /// `size` the bytes it contributes. A range spanning N objects maps to N of these, in file order.
+    /// One object's slice of a file range (object-local `object_offset`, `size` bytes).
     struct ObjectRange
     {
         StoredObject object;
@@ -38,9 +37,8 @@ public:
     /// The segment containing `file_offset`, or nullptr if it is at or past `totalSize`.
     const Segment * findObjectAt(size_t file_offset) const;
 
-    /// The objects overlapping `file_range`, each clipped to the overlap. A single range may span
-    /// several objects; concatenating the returned sizes reconstructs `file_range.size` (clamped to
-    /// `totalSize`). Used to fetch a window that crosses object boundaries.
+    /// The objects overlapping `file_range`, each clipped to the overlap, in file order. A range
+    /// may span several objects.
     VectorWithMemoryTracking<ObjectRange> map(ByteRange file_range) const;
 
     size_t totalSize() const { return total_size; }
