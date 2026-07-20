@@ -77,12 +77,28 @@ StoragePtr TableFunctionSQLite::executeImpl(const ASTPtr & /*ast_function*/,
     /// would fail with `no such table` after fabricating an empty database, so opening with `allow_create`
     /// would only leave a junk file behind. A missing path therefore fails closed for reads and writes alike.
     /// Reuses the connection already opened by `getActualTableStructure`.
+    ///
+    /// When the structure is provided (`cached_columns`), do not open the database here at all and let
+    /// `StorageSQLite` open it lazily on the first read or write instead. This path is taken when the nested
+    /// storage of a `CREATE TABLE ... AS sqlite(...)` proxy is instantiated - e.g. by a `SELECT` from
+    /// `system.tables` - and such a metadata-only access must not fail (or touch the file) just because the
+    /// database file is unavailable, mirroring how `ATTACH` of the `SQLite` engine leaves the connection
+    /// unopened. The generated-column classification of the explicit column list is then still pending and is
+    /// repaired on the first successful open (see `updateExternalDynamicMetadataIfExists`); a query-backed
+    /// source is read-only and needs no classification.
+    auto connection = sqlite_db;
+    bool generated_columns_reclassification_pending = false;
+    if (!connection && cached_columns.empty())
+        connection = openConnection(context, /* allow_create */ false);
+    else if (!connection)
+        generated_columns_reclassification_pending = !remote_table_or_query.isQuery();
+
     auto storage = std::make_shared<StorageSQLite>(StorageID(getDatabaseName(), table_name),
-                                         openConnection(context, /* allow_create */ false),
+                                         connection,
                                          database_path,
                                          remote_table_or_query,
                                          cached_columns, ConstraintsDescription{}, /* comment = */ "", context,
-                                         /* generated_columns_reclassification_pending_ = */ false);
+                                         generated_columns_reclassification_pending);
 
     storage->startup();
     return storage;
