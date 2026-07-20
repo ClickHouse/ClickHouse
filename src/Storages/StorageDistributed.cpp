@@ -1817,8 +1817,9 @@ static std::optional<UInt128> getModificationHashOfRemoteTableInShard(
     }
 
     /// Ask the shard for the modification hash and the UUID of the underlying table through system.tables.
-    /// The UUID is folded for the same reason as on the local path above.
-    const String query = "SELECT modification_hash, toString(uuid) AS uuid FROM system.tables WHERE database = "
+    /// The UUID is folded for the same reason as on the local path above. The engine is fetched to restrict
+    /// this remote probe to engines whose hash is probe-consistent (see below).
+    const String query = "SELECT modification_hash, toString(uuid) AS uuid, engine FROM system.tables WHERE database = "
         + quoteString(table_id.database_name) + " AND name = " + quoteString(table_id.table_name);
 
     auto new_context = ClusterProxy::updateSettingsForCluster(cluster, context, context->getSettingsRef(), table_id);
@@ -1832,10 +1833,33 @@ static std::optional<UInt128> getModificationHashOfRemoteTableInShard(
     new_context->increaseDistributedDepth();
 
     auto hash_type = std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt128>());
-    auto uuid_type = std::make_shared<DataTypeString>();
+    auto string_type = std::make_shared<DataTypeString>();
     auto sample_block = std::make_shared<const Block>(Block{
         {hash_type->createColumn(), hash_type, "modification_hash"},
-        {uuid_type->createColumn(), uuid_type, "uuid"}});
+        {string_type->createColumn(), string_type, "uuid"},
+        {string_type->createColumn(), string_type, "engine"}});
+
+    /// Whether the remote engine's modification hash can be validated by this probe at all. The probe is a
+    /// separate query on the shard, so it can only observe hashes derived from server-side state that any
+    /// query sees consistently: the `MergeTree` family (monotonic data/metadata versions), `Memory`, `Log`
+    /// and `StripeLog` (monotonic in-memory versions), and `URL` (a single resource with a strong `ETag`).
+    /// It must NOT accept a hash whose consistency relies on a query-local capture that only the reading
+    /// query's own context holds: for listing-based object storage (`S3`, `AzureBlobStorage`, `HDFS`, ...)
+    /// `getModificationHash` validates the read against the object set the query actually consumed
+    /// (`QueryConsumedObjectSets`), and a fresh probe would silently fall back to re-listing, reopening the
+    /// listing `A -> B -> A` membership race the capture closes (an object appears, is read, and disappears
+    /// between the two probes). Wrapper engines (`Merge`, `Distributed`) can reach such tables transitively
+    /// on the shard, where the same fallback would happen out of our sight. So accept only engines known to
+    /// be probe-consistent and fail closed for everything else (including engines this server does not
+    /// know - the shard may run a different version).
+    auto engine_hash_is_probe_consistent = [](const String & engine)
+    {
+        return engine.ends_with("MergeTree")
+            || engine == "Memory"
+            || engine == "Log"
+            || engine == "StripeLog"
+            || engine == "URL";
+    };
 
     RemoteQueryExecutor executor(shard_info.pool, query, sample_block, new_context);
     executor.setPoolMode(PoolMode::GET_ONE);
@@ -1845,6 +1869,7 @@ static std::optional<UInt128> getModificationHashOfRemoteTableInShard(
     {
         const auto & hash_column = current.getByName("modification_hash").column;
         const auto & uuid_column = current.getByName("uuid").column;
+        const auto & engine_column = current.getByName("engine").column;
         for (size_t i = 0; i < hash_column->size(); ++i)
         {
             Field value = (*hash_column)[i];
@@ -1852,6 +1877,11 @@ static std::optional<UInt128> getModificationHashOfRemoteTableInShard(
             {
                 executor.finish();
                 return {}; /// The shard cannot tell whether its table changed.
+            }
+            if (!engine_hash_is_probe_consistent((*engine_column)[i].safeGet<String>()))
+            {
+                executor.finish();
+                return {}; /// The shard's hash cannot be validated from a separate probe query.
             }
             SipHash with_identity;
             with_identity.update((*uuid_column)[i].safeGet<String>());

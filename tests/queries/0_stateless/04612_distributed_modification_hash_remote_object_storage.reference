@@ -1,0 +1,3 @@
+remote MergeTree hash not null	1
+remote S3 hash null	1
+remote Merge hash null	1
