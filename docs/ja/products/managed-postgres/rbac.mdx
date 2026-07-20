@@ -1,0 +1,57 @@
+---
+slug: /cloud/managed-postgres/rbac
+sidebarTitle: 'RBAC'
+title: 'Managed Postgres RBAC'
+description: 'ClickHouse Managed Postgres のロールベースのアクセス制御（RBAC）について説明します'
+keywords: ['managed postgres RBAC', 'アクセス制御', 'ロール', '特権', '権限']
+doc_type: 'reference'
+---
+
+import BetaBadge from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.rbac-beta" />
+
+ClickHouse Cloud は、Managed Postgres サービスに対するロールベースのアクセス制御 (RBAC) をサポートしています。特定の権限を持つカスタムロールを作成して組織メンバーに割り当てることで、Postgres サービスを表示または管理できるユーザーを制御できます。
+
+<div id="available-permissions">
+  ## 利用可能な権限
+</div>
+
+Managed Postgres は現在、2 種類の権限をサポートしています。
+
+| 権限                   | 説明                                       |
+| -------------------- | ---------------------------------------- |
+| **Postgres サービスの表示** | ユーザーが Postgres サービスとその詳細を表示できるようにします。    |
+| **Postgres サービスの管理** | ユーザーが Postgres サービスを変更、スケール、設定できるようにします。 |
+
+新しい Postgres サービスを作成するには、既存の **Organization manage** 権限が必要です。上記の権限は、既存のサービスにのみ適用されます。
+
+<Note>
+  より細かな権限は、今後のリリースで利用可能になる予定です。
+</Note>
+
+<div id="creating-a-custom-role">
+  ## カスタムロールの作成
+</div>
+
+1. 左側のサイドバーで組織名をクリックし、**Users and roles** を選択します。
+
+<Image img="/images/managed-postgres/rbac/usersandroles.webp" alt="「Users and roles」メニュー" size="md" border />
+
+2. **Roles** タブに切り替え、**Create role** をクリックします。
+3. ロール名を入力し、**+ Allow** をクリックして、エンティティ一覧から **Postgres Service** を選択します。
+
+<Image img="/images/managed-postgres/rbac/postgresentity.webp" alt="Postgres Service エンティティの選択" size="md" border />
+
+4. ロールの適用対象とする Postgres サービスを選択し、付与する権限を選びます。
+
+<Image img="/images/managed-postgres/rbac/newpostgresperms.webp" alt="ロールの Postgres 権限の設定" size="md" border />
+
+5. **Create role** をクリックして保存します。
+
+<div id="assigning-a-role">
+  ## ロールの割り当て
+</div>
+
+ロールを作成したら、同じ **Users and roles** ページの **Users** タブからユーザーに割り当てます。1人のユーザーに複数のロールを付与でき、ロールを組み合わせることで、必要なアクセスプロファイルを正確に構成できます。

@@ -1,0 +1,269 @@
+---
+slug: /best-practices/use-data-skipping-indices-where-appropriate
+sidebarTitle: '数据跳过索引'
+title: '合理使用数据跳过索引'
+description: '介绍数据跳过索引的使用方法和适用时机'
+keywords: ['data skipping index', 'skip index']
+show_related_blogs: true
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+在遵循前述最佳实践后，才应考虑使用数据跳过索引，也就是说，类型已完成优化、已选择合适的主键，并且已充分利用 materialized view。如果你刚开始接触跳过索引，[本指南](/zh/concepts/features/performance/skip-indexes/skipping-indexes)会是一个不错的起点。
+
+这类索引如果在充分理解其工作原理的前提下谨慎使用，可以用来提升查询性能。
+
+ClickHouse 提供了一种称为**数据跳过索引**的强大机制，能够在查询执行期间显著减少扫描的数据量——尤其是在主键对某个特定过滤条件不起作用时。不同于依赖基于行的二级索引 (如 B-tree) 的传统数据库，ClickHouse 是列式存储，不会以支持此类结构的方式存储行位置。相反，它使用跳过索引来避免读取那些可以确定不满足查询过滤条件的数据块。
+
+跳过索引的工作方式是为数据块存储元数据——例如最小/最大值、值集合或 Bloom filter 表示——并在查询执行期间利用这些元数据判断哪些数据块可以被完全跳过。它们仅适用于 [MergeTree 家族](/zh/reference/engines/table-engines/mergetree-family/mergetree) 的表引擎，并通过表达式、索引类型、名称以及用于定义每个索引块大小的粒度来定义。这些索引与表数据一同存储，并在查询过滤条件与索引表达式匹配时被使用。
+
+数据跳过索引有多种类型，各自适用于不同类型的查询和数据分布：
+
+* **minmax**：跟踪每个块中某个表达式的最小值和最大值。非常适合针对大致有序的数据执行范围查询。
+* **set(N)**：跟踪每个块中最多 N 个值的集合。对于每个块内基数较低的列非常有效。
+* **text**：在分词后的字符串数据上构建倒排索引，从而实现高效且确定性的全文搜索。建议用于自然语言或大型自由格式文本列，适合需要精确标记查找和可扩展多词搜索的场景，而不是采用基于 Bloom filter 的近似方法。
+* **bloom&#95;filter**：以概率方式判断某个值是否存在于块中，从而实现针对集合成员关系的快速近似过滤。对于优化“大海捞针”式查询非常有效，即需要找到正向匹配时。
+* **tokenbf&#95;v1 / ngrambf&#95;v1**：*&#x20;(已弃用)&#x20;*&#x20;专门用于在字符串中搜索标记或字符序列的 Bloom filter 变体——尤其适用于日志数据或文本搜索场景。在 ClickHouse &gt;= 26.2 版本中已弃用，现已由文本索引取代。
+
+虽然功能强大，但跳过索引必须谨慎使用。只有在它们能够排除相当数量的数据块时，才会带来收益；如果查询模式或数据结构不匹配，反而可能引入额外开销。即使一个块中只有一个匹配值，整个块仍然必须被读取。
+
+**要想有效使用跳过索引，通常需要索引列与表主键之间具有较强相关性，或者在插入数据时将相似值尽量聚集在一起。**
+
+总体来说，应在确保主键设计合理且类型已优化后，再应用数据跳过索引。它们尤其适用于：
+
+* 整体基数高、但块内基数低的列。
+* 对搜索至关重要的稀有值 (例如错误代码、特定 ID) 。
+* 过滤发生在非主键列上且数据分布具有局部性的场景。
+
+始终：
+
+1. 使用真实数据和贴近实际的查询来测试跳过索引。尝试不同的索引类型和粒度值。
+2. 使用诸如 send&#95;logs&#95;level=&#39;trace&#39; 和 `EXPLAIN indexes=1` 之类的工具评估其影响，以查看索引效果。
+3. 始终评估索引大小以及粒度对其的影响。减小粒度通常会在一定程度上提升性能，因为这样可以过滤掉更多粒度，从而减少需要扫描的数据。不过，随着粒度变小、索引体积增大，性能也可能下降。请针对不同粒度设置测量性能和索引大小。这一点对 Bloom filter 索引尤其重要。
+
+<p />
+
+**使用得当时，跳过索引可以显著提升性能；盲目使用时，则可能带来不必要的成本。**
+
+有关数据跳过索引的更详细指南，请参见[这里](/zh/reference/statements/alter/skipping-index)。
+
+<div id="example">
+  ## 示例
+</div>
+
+请参考以下优化后的表，该表包含 Stack Overflow 数据，每篇帖子对应一行。
+
+```sql
+CREATE TABLE stackoverflow.posts
+(
+  `Id` Int32 CODEC(Delta(4), ZSTD(1)),
+  `PostTypeId` Enum8('Question' = 1, 'Answer' = 2, 'Wiki' = 3, 'TagWikiExcerpt' = 4, 'TagWiki' = 5, 'ModeratorNomination' = 6, 'WikiPlaceholder' = 7, 'PrivilegeWiki' = 8),
+  `AcceptedAnswerId` UInt32,
+  `CreationDate` DateTime64(3, 'UTC'),
+  `Score` Int32,
+  `ViewCount` UInt32 CODEC(Delta(4), ZSTD(1)),
+  `Body` String,
+  `OwnerUserId` Int32,
+  `OwnerDisplayName` String,
+  `LastEditorUserId` Int32,
+  `LastEditorDisplayName` String,
+  `LastEditDate` DateTime64(3, 'UTC') CODEC(Delta(8), ZSTD(1)),
+  `LastActivityDate` DateTime64(3, 'UTC'),
+  `Title` String,
+  `Tags` String,
+  `AnswerCount` UInt16 CODEC(Delta(2), ZSTD(1)),
+  `CommentCount` UInt8,
+  `FavoriteCount` UInt8,
+  `ContentLicense` LowCardinality(String),
+  `ParentId` String,
+  `CommunityOwnedDate` DateTime64(3, 'UTC'),
+  `ClosedDate` DateTime64(3, 'UTC')
+)
+ENGINE = MergeTree
+PARTITION BY toYear(CreationDate)
+ORDER BY (PostTypeId, toDate(CreationDate))
+```
+
+该表针对按帖子类型和日期进行过滤与聚合的查询进行了优化。假设我们希望统计 2009 年之后发布的、浏览量超过 10,000,000 的帖子数量。
+
+```sql
+SELECT count()
+FROM stackoverflow.posts
+WHERE (CreationDate > '2009-01-01') AND (ViewCount > 10000000)
+
+┌─count()─┐
+│     5   │
+└─────────┘
+
+1 row in set. Elapsed: 0.720 sec. Processed 59.55 million rows, 230.23 MB (82.66 million rows/s., 319.56 MB/s.)
+```
+
+该查询能够利用主索引排除部分行 (及粒度) ，但如上述输出和以下 `EXPLAIN indexes = 1` 所示，仍需读取绝大多数行：
+
+```sql
+EXPLAIN indexes = 1
+SELECT count()
+FROM stackoverflow.posts
+WHERE (CreationDate > '2009-01-01') AND (ViewCount > 10000000)
+LIMIT 1
+```
+
+```response
+┌─explain──────────────────────────────────────────────────────────┐
+│ Expression ((Project names + Projection))                        │
+│   Limit (preliminary LIMIT (without OFFSET))                     │
+│     Aggregating                                                  │
+│       Expression (Before GROUP BY)                               │
+│         Expression                                               │
+│           ReadFromMergeTree (stackoverflow.posts)                │
+│           Indexes:                                               │
+│             MinMax                                               │
+│               Keys:                                              │
+│                 CreationDate                                     │
+│               Condition: (CreationDate in ('1230768000', +Inf))  │
+│               Parts: 123/128                                     │
+│               Granules: 8513/8545                                │
+│             Partition                                            │
+│               Keys:                                              │
+│                 toYear(CreationDate)                             │
+│               Condition: (toYear(CreationDate) in [2009, +Inf))  │
+│               Parts: 123/123                                     │
+│               Granules: 8513/8513                                │
+│             PrimaryKey                                           │
+│               Keys:                                              │
+│                 toDate(CreationDate)                             │
+│               Condition: (toDate(CreationDate) in [14245, +Inf)) │
+│               Parts: 123/123                                     │
+│               Granules: 8513/8513                                │
+└──────────────────────────────────────────────────────────────────┘
+
+25 行。耗时：0.070 秒。
+```
+
+简单分析可以发现，`ViewCount` 与 `CreationDate` (主键) 之间存在关联，这符合预期——帖子存在的时间越长，被浏览的机会也就越多。
+
+```sql
+SELECT toDate(CreationDate) AS day, avg(ViewCount) AS view_count FROM stackoverflow.posts WHERE day > '2009-01-01'  GROUP BY day
+```
+
+因此，这很自然地成为数据跳过索引的合适选择。鉴于它是数值类型，使用 minmax 索引很合理。我们通过以下 `ALTER TABLE` 命令添加索引——先添加，再将其&quot;物化&quot;。
+
+```sql
+ALTER TABLE stackoverflow.posts
+  (ADD INDEX view_count_idx ViewCount TYPE minmax GRANULARITY 1);
+
+ALTER TABLE stackoverflow.posts MATERIALIZE INDEX view_count_idx;
+```
+
+此索引也可以在初始建表时一并添加。将 minmax 索引定义为 DDL 一部分的 schema 如下：
+
+```sql
+CREATE TABLE stackoverflow.posts
+(
+  `Id` Int32 CODEC(Delta(4), ZSTD(1)),
+  `PostTypeId` Enum8('Question' = 1, 'Answer' = 2, 'Wiki' = 3, 'TagWikiExcerpt' = 4, 'TagWiki' = 5, 'ModeratorNomination' = 6, 'WikiPlaceholder' = 7, 'PrivilegeWiki' = 8),
+  `AcceptedAnswerId` UInt32,
+  `CreationDate` DateTime64(3, 'UTC'),
+  `Score` Int32,
+  `ViewCount` UInt32 CODEC(Delta(4), ZSTD(1)),
+  `Body` String,
+  `OwnerUserId` Int32,
+  `OwnerDisplayName` String,
+  `LastEditorUserId` Int32,
+  `LastEditorDisplayName` String,
+  `LastEditDate` DateTime64(3, 'UTC') CODEC(Delta(8), ZSTD(1)),
+  `LastActivityDate` DateTime64(3, 'UTC'),
+  `Title` String,
+  `Tags` String,
+  `AnswerCount` UInt16 CODEC(Delta(2), ZSTD(1)),
+  `CommentCount` UInt8,
+  `FavoriteCount` UInt8,
+  `ContentLicense` LowCardinality(String),
+  `ParentId` String,
+  `CommunityOwnedDate` DateTime64(3, 'UTC'),
+  `ClosedDate` DateTime64(3, 'UTC'),
+  INDEX view_count_idx ViewCount TYPE minmax GRANULARITY 1 --索引定义于此
+)
+ENGINE = MergeTree
+PARTITION BY toYear(CreationDate)
+ORDER BY (PostTypeId, toDate(CreationDate))
+```
+
+下面的动画演示了如何为示例表构建 minmax 跳过索引，它会记录表中每个行块 (粒度) 的最小和最大 `ViewCount` 值：
+
+<Image img="/images/bestpractices/building_skipping_indices.webp" size="lg" alt="构建跳过索引" />
+
+再次执行前面的查询，可以看到性能显著提升。请注意，扫描的行数减少了：
+
+```sql
+SELECT count()
+FROM stackoverflow.posts
+WHERE (CreationDate > '2009-01-01') AND (ViewCount > 10000000)
+```
+
+```response
+┌─count()─┐
+│     5   │
+└─────────┘
+
+1 row in set. Elapsed: 0.012 sec. Processed 39.11 thousand rows, 321.39 KB (3.40 million rows/s., 27.93 MB/s.)
+```
+
+`EXPLAIN indexes = 1` 可用于确认已使用该索引。
+
+```sql
+EXPLAIN indexes = 1
+SELECT count()
+FROM stackoverflow.posts
+WHERE (CreationDate > '2009-01-01') AND (ViewCount > 10000000)
+```
+
+```response
+┌─explain────────────────────────────────────────────────────────────┐
+│ Expression ((Project names + Projection))                          │
+│   Aggregating                                                      │
+│     Expression (Before GROUP BY)                                   │
+│       Expression                                                   │
+│         ReadFromMergeTree (stackoverflow.posts)                    │
+│         Indexes:                                                   │
+│           MinMax                                                   │
+│             Keys:                                                  │
+│               CreationDate                                         │
+│             Condition: (CreationDate in ('1230768000', +Inf))      │
+│             Parts: 123/128                                         │
+│             Granules: 8513/8545                                    │
+│           Partition                                                │
+│             Keys:                                                  │
+│               toYear(CreationDate)                                 │
+│             Condition: (toYear(CreationDate) in [2009, +Inf))      │
+│             Parts: 123/123                                         │
+│             Granules: 8513/8513                                    │
+│           PrimaryKey                                               │
+│             Keys:                                                  │
+│               toDate(CreationDate)                                 │
+│             Condition: (toDate(CreationDate) in [14245, +Inf))     │
+│             Parts: 123/123                                         │
+│             Granules: 8513/8513                                    │
+│           Skip                                                     │
+│             Name: view_count_idx                                   │
+│             Description: minmax GRANULARITY 1                      │
+│             Parts: 5/123                                           │
+│             Granules: 23/8513                                      │
+└────────────────────────────────────────────────────────────────────┘
+
+29 rows in set. Elapsed: 0.211 sec.
+```
+
+我们还展示了一个动画，演示在示例查询中，minmax 跳过索引如何裁剪掉所有不可能包含满足 `ViewCount` &gt; 10,000,000 条件的匹配行的行块：
+
+<Image img="/images/bestpractices/using_skipping_indices.webp" size="lg" alt="使用跳过索引" />
+
+<div id="related-docs">
+  ## 相关文档
+</div>
+
+* [数据跳过索引指南](/zh/concepts/features/performance/skip-indexes/skipping-indexes)
+* [数据跳过索引示例](/zh/concepts/features/performance/skip-indexes/skipping-indexes-examples)
+* [管理数据跳过索引](/zh/reference/statements/alter/skipping-index)
+* [系统表信息](/zh/reference/system-tables/data_skipping_indices)

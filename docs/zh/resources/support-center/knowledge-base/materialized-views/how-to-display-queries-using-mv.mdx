@@ -1,0 +1,85 @@
+---
+title: 如何识别 ClickHouse 中使用 Materialized Views 的查询
+description: 了解如何查询 ClickHouse 日志，以找出指定时间范围内所有涉及 Materialized Views 的查询。
+date: 2023-03-24
+tags: ['系统表']
+keywords: ['Materialized Views', 'create_table_query']
+---
+
+***
+
+<div id="question">
+  ## 问题
+</div>
+
+如何显示最近 60 分钟内所有涉及 materialized view 的查询？
+
+<div id="answer">
+  ## 答案
+</div>
+
+该查询会显示所有定向到 Materialized Views 的查询，依据如下：
+
+* 我们可以利用 `system.tables` 表中的 `create_table_query` 字段，识别哪些表是 MV 的显式 (`TO`) 目标表；
+* 我们可以通过回溯 (使用 `uuid` 和命名约定 `.inner_id.<uuid>`) 识别哪些表是 MV 的隐式目标表；
+
+我们还可以通过修改初始查询 CTE 中的值 (默认为 `60` 分钟) ，来配置要向前回溯的时间范围
+
+```sql
+WITH(60) -- 默认 60m
+AS timeRange,
+(
+    --为所有具有非 NULL uuid 的表准备可能的隐式 MV 隐藏目标表名
+    SELECT groupArray(
+            concat('default.`.inner_id.', toString(uuid), '`')
+        )
+    FROM clusterAllReplicas(default, system.tables)
+    WHERE notEmpty(uuid)
+) AS MV_implicit_possible_hidden_target_tables_names_array,
+(
+    --获取 MV 名称及目标表（如果指定了 TO）
+    --TODO 看起来 extract 只会返回第一个捕获组 :( 待 regexpExtract 可用后替换
+    SELECT arrayFilter(
+            x->x != '',
+            --移除空捕获项
+            groupArray(
+                extract(
+                    create_table_query,
+                    '^CREATE MATERIALIZED VIEW\s(\w+\.\w+)\s(?:TO\s(\S+))?'
+                )
+            )
+        )
+    FROM clusterAllReplicas(default, system.tables)
+    WHERE engine = 'MaterializedView'
+) AS MV_explicit_target_tables_names_array
+SELECT event_time,
+    query,
+    tables as "MVs tables"
+FROM clusterAllReplicas(default, system.query_log)
+WHERE (
+        -- 仅查询 60m 内的 SELECT 语句
+        event_time > now() - toIntervalMinute(timeRange)
+        AND startsWith(query, 'SELECT')
+    ) -- 检查查询是否涉及隐式 MV 目标表名
+    AND (
+        hasAny(
+            tables,
+            MV_implicit_possible_hidden_target_tables_names_array
+        )
+        OR -- 检查查询是否涉及显式 MV 目标表
+        hasAny(tables, MV_explicit_target_tables_names_array)
+    )
+ORDER BY event_time DESC;
+```
+
+预期输出：
+
+```sql
+| event_time          | query                                                                                          | MVs tables                                                            |
+| ------------------- | ---------------------------------------------------------------------------------------------- | --------------------------------------------------------------------- |
+| 2023-02-23 08:14:14 | SELECT     rand(),* FROM     default.sum_of_volumes,     default.big_changes,     system.users | ["default.big_changes_mv","default.sum_of_volumes_mv","system.users"] |
+| 2023-02-23 08:04:47 | SELECT     price,* FROM     default.sum_of_volumes,     default.big_changes                    | ["default.big_changes_mv","default.sum_of_volumes_mv"]                |
+
+```
+
+在此示例中，上述 `default.big_changes_mv` 和 `default.sum_of_volumes_mv` 均为 materialized view。

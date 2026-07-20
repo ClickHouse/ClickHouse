@@ -1,0 +1,56 @@
+---
+title: ¿Por qué no puedo ver mis datos en un diccionario de ClickHouse Cloud?
+description: Existe un problema por el que es posible que los datos de los diccionarios no sean visibles inmediatamente después de crearlos.
+date: 2024-04-12
+tags: ['Administración de Cloud', 'Modelado de datos']
+keywords: ['Diccionarios']
+---
+
+{frontMatter.description}
+
+{/* truncate */}
+
+<div id="dictionaries-in-clickhouse">
+  ## Diccionarios en ClickHouse
+</div>
+
+Los diccionarios creados en ClickHouse Cloud pueden presentar inconsistencias durante la fase inicial de creación. Esto significa que es posible que no vea ningún dato en el diccionario inmediatamente después de crearlo. Sin embargo, tras varios reintentos, la consulta de creación puede ejecutarse en distintas réplicas y los datos pasarán a ser visibles.
+
+Esto ocurre a veces porque el diccionario se creó antes de que la parte llegara al servidor. Por ejemplo:
+
+```
+2024-01-25 13:38:25.615837 - CREATE DICTIONARY received
+2024-01-25 13:38:25.626468 - CREATE DICTIONARY finished
+2024-01-25 13:38:25.733008 - Part all_0_0_0 downloaded
+```
+
+Como puede ver, la parte no llegó hasta después de que se creó el diccionario. Esto puede ser un problema aún mayor si usa `LIFETIME(MIN 0 MAX 0)`, ya que esto significa que el diccionario nunca se actualizará automáticamente. Por lo tanto, el diccionario permanecerá vacío hasta que se ejecute el comando `RELOAD DICTIONARIES`.
+
+La solución a este problema es usar una consulta `SELECT` en lugar de especificar una tabla de origen al crear el diccionario, y habilitar la configuración `select_sequential_consistency=1`.
+
+En lugar de especificar una tabla de origen:
+
+```sql
+SOURCE(CLICKHOUSE(
+    table 'test.temp_title_table_1706189903924'
+    user default password 'PASSWORD'))
+```
+
+Usa una consulta `SELECT` con `select_sequential_consistency=1`:
+
+```sql
+SOURCE(CLICKHOUSE(QUERY
+    'SELECT songTitle, mappedTitle
+    FROM test.temp_title_table_1706189903924
+    SETTINGS select_sequential_consistency=1' USER default PASSWORD ''))
+```
+
+<div id="why-does-this-issue-occur">
+  ## ¿Por qué ocurre este problema?
+</div>
+
+Cuando insertas datos y luego creas o recargas un diccionario, el DDL puede llegar a una réplica antes que los datos (o que los datos nuevos). Esto hace que los diccionarios queden inconsistentes entre réplicas. Después, según qué réplica reciba la consulta, puedes obtener resultados distintos.
+
+Ten en cuenta que lo mismo ocurre cuando insertas y, acto seguido, lees de una tabla. Si lees desde una réplica que todavía no ha replicado los datos, no verás los datos recién insertados. Cuando necesitas consistencia secuencial, a costa del rendimiento (por lo que, en general, no se recomienda), puedes habilitar `select_sequential_consistency`.
+
+El caso de los diccionarios es un poco más complejo, ya que no usan la configuración de la consulta, sino la configuración del servidor. Como resultado, al cargar datos en el diccionario, incluso si haces `SET select_sequential_consistency=1`, los datos pueden cargarse de forma inconsistente entre réplicas. Especificar `select_sequential_consistency=1` en la consulta del origen del diccionario permite que el diccionario respete esta configuración aunque no esté habilitada globalmente como una configuración del servidor.

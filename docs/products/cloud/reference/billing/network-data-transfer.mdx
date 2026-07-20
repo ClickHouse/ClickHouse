@@ -1,0 +1,60 @@
+---
+sidebarTitle: 'Data transfer'
+slug: /cloud/manage/network-data-transfer
+title: 'Data transfer'
+description: 'Understand how ClickHouse Cloud meters data transferred ingress and egress'
+doc_type: 'guide'
+keywords: ['billing', 'network transfer', 'data egress', 'costs', 'pricing']
+---
+
+import NetworkPricing from '/snippets/_network_transfer_rates.mdx';
+
+ClickHouse Cloud meters data transferred ingress and egress. 
+This includes any data in and out of ClickHouse Cloud as well as any intra-region
+and cross-region data transfer. This usage is tracked at the service level. Based
+on this usage, customers incur data transfer charges that are then added to their
+monthly bill.
+
+ClickHouse Cloud charges for:
+- Data egress from ClickHouse Cloud to the public Internet, including to other
+regions of other cloud providers.
+- Data egress to another region in the same cloud provider.
+
+There are no charges for intra-region data transfer or Private Link/Private
+Service Connect use and data transfer. However, we reserve the right to implement
+additional data transfer pricing dimensions if we see usage patterns that impact
+our ability to charge users appropriately. 
+
+Note: Cloud Service Provider (CSP) charges apply for Private Link/Private Service Connect usage. Please refer to the CSP’s pricing page for the most up-to-date information.
+
+Data transfer charges vary by Cloud Service Provider (CSP) and region. 
+Public internet egress pricing is based only on the origin region. 
+Inter-region (or cross-region) pricing depends on both the origin and destination
+regions.
+
+**Best Practices to minimize Data Transfer Costs**
+
+There are some patterns to keep in mind when ingressing and egressing data to
+minimize data transfer costs.
+
+1. When ingressing or egressing data from Clickhouse Cloud, use compression where
+possible, to minimize the amount of data transferred and the associated cost.
+
+2. Be aware that when doing an INSERT over the native protocol with non-inlined
+values (e.g. `INSERT INTO [TABLE] FROM INFILE [FILE] FORMAT NATIVE`), ClickHouse
+clients pull metadata from servers to pack the data. If the metadata is larger
+than the `INSERT` payload, you might counterintuitively see more egress than
+there is ingress from the server perspective. If this is unacceptable, consider
+inlining data with `VALUES` syntax or using the HTTP protocol.
+
+The tables below shows how data transfer charges for egress vary across public
+internet or cross-region by cloud provider and region.
+
+<Note>
+ClickHouse Cloud meters inter-region usage in terms of tiers, Tier 1 through
+Tier 4, depending on the origin and destination regions. The table below shows
+the tier for each combination of inter-region data transfer. In the Billing usage
+screen on ClickHouse Cloud you will see data transfer usage broken out by tiers.
+</Note>
+
+<NetworkPricing/>

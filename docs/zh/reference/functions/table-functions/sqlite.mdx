@@ -1,0 +1,53 @@
+---
+description: '可对存储在 SQLite 数据库中的数据进行查询。'
+sidebarTitle: 'sqlite'
+slug: /sql-reference/table-functions/sqlite
+title: 'sqlite'
+doc_type: 'reference'
+---
+
+可对存储在 [SQLite](/zh/reference/engines/database-engines/sqlite) 数据库中的数据进行查询。
+
+<div id="syntax">
+  ## 语法
+</div>
+
+```sql
+sqlite('db_path', 'table_name')
+```
+
+<div id="arguments">
+  ## 参数
+</div>
+
+* `db_path` — SQLite 数据库文件的路径。[String](/zh/reference/data-types/string)。
+* `table_name` — SQLite 数据库中的表名。[String](/zh/reference/data-types/string)。
+
+<div id="returned_value">
+  ## 返回值
+</div>
+
+* 一个表对象，其列与原始 `SQLite` 表的列相同。
+
+<div id="example">
+  ## 示例
+</div>
+
+```sql title="Query"
+SELECT * FROM sqlite('sqlite.db', 'table1') ORDER BY col2;
+```
+
+```text title="Response"
+┌─col1──┬─col2─┐
+│ line1 │    1 │
+│ line2 │    2 │
+│ line3 │    3 │
+└───────┴──────┘
+```
+
+<div id="related">
+  ## 相关
+</div>
+
+* [SQLite](/zh/reference/engines/table-engines/integrations/sqlite) 表引擎
+* [SQLite 数据库引擎](/zh/reference/engines/database-engines/sqlite) — 数据类型支持部分

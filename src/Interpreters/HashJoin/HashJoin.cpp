@@ -1788,6 +1788,11 @@ private:
             f.template operator()<true, true>();
     }
 
+    bool isBlockInRange(size_t block_no) const
+    {
+        return num_buckets <= 1 || (block_no % num_buckets) == bucket_idx;
+    }
+
     size_t fillColumnsFromData(const HashJoin::StoredBlocksList & columns, MutableColumns & columns_right)
     {
         if (!position.has_value())
@@ -1875,12 +1880,8 @@ private:
 
         if (flag_per_row)
         {
-            /// for parallel iteration with flag_per_row mode, only stream 0 processes the columns data
-            /// the data in parent.data->columns is not partitioned by hash buckets, so we can't
-            /// distribute it across streams without additional per-row bucket lookups
-            if (bucket_idx != 0)
-                return 0;
-
+            /// parent.data->columns is not partitioned by hash bucket, so distribute the stored
+            /// right blocks across streams by their globally unique block_no instead
             if (!used_position.has_value())
                 used_position = parent.data->columns.begin();
 
@@ -1889,6 +1890,8 @@ private:
             for (auto & it = *used_position; it != end && collected() < max_block_size; ++it)
             {
                 const auto & mapped_block = *it;
+                if (!isBlockInRange(mapped_block.block_no))
+                    continue;
 
                 size_t rows = mapped_block.blockRows();
 
@@ -2932,7 +2935,9 @@ void HashJoin::publishSharedRuntimeFilters()
             existing->getFilterColumnTargetType(),
             existing->getPassRatioThresholdForDisabling(),
             existing->getBlocksToSkipBeforeReenabling(),
-            probe_fn);
+            probe_fn,
+            existing->getRecordedKeyRanges(),
+            existing->getRecordedKeyValues());
         /// `replace` keeps the original registration's display name in the lookup, so stats stay legible.
         LOG_TRACE(getLogger("HashJoin"), "Published shared fixed-hash-table runtime filter under key '{}'", filter_key);
         lookup->replace(filter_key, std::move(filter));

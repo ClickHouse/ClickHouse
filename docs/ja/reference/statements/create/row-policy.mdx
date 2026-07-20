@@ -1,0 +1,103 @@
+---
+description: '行ポリシーのドキュメント'
+sidebarTitle: 'ROW POLICY'
+slug: /sql-reference/statements/create/row-policy
+title: 'CREATE ROW POLICY'
+doc_type: 'reference'
+---
+
+[行ポリシー](/ja/concepts/features/security/access-rights#row-policy-management)を作成します。これは、ユーザーがテーブルから読み取れる行を決定するためのフィルターです。
+
+<Tip>
+  行ポリシーが有効なのは、読み取り専用アクセスを持つユーザーに対してのみです。ユーザーがテーブルを変更したり、テーブル間でパーティションをコピーできたりする場合、行ポリシーによる制限は意味をなさなくなります。
+</Tip>
+
+構文:
+
+```sql
+CREATE [ROW] POLICY [IF NOT EXISTS | OR REPLACE] policy_name1 [ON CLUSTER cluster_name1] ON [db1.]table1|db1.*
+        [, policy_name2 [ON CLUSTER cluster_name2] ON [db2.]table2|db2.* ...]
+    [IN access_storage_type]
+    [FOR SELECT] USING condition
+    [AS {PERMISSIVE | RESTRICTIVE}]
+    [TO {role1 [, role2 ...] | ALL | ALL EXCEPT role1 [, role2 ...]}]
+```
+
+<div id="using-clause">
+  ## USING 句
+</div>
+
+行を絞り込むための条件を指定できます。ある行に対する条件の評価結果が非ゼロの場合、その行はユーザーに表示されます。
+
+<div id="to-clause">
+  ## TO 句
+</div>
+
+`TO` 句では、このポリシーの適用対象となるユーザーとロールの一覧を指定できます。たとえば、`CREATE ROW POLICY ... TO accountant, john@localhost` のように指定します。
+
+キーワード `ALL` は、現在のユーザーを含むすべての ClickHouse ユーザーを意味します。キーワード `ALL EXCEPT` を使うと、全ユーザーの一覧から一部のユーザーを除外できます。たとえば、`CREATE ROW POLICY ... TO ALL EXCEPT accountant, john@localhost` のように指定します。
+
+<div id="as-clause">
+  ## AS 句
+</div>
+
+同じユーザーに対して、同じテーブルに複数のポリシーを同時に有効化できます。そのため、複数のポリシーの条件を組み合わせる方法が必要です。
+
+デフォルトでは、ポリシーはブール演算子 `OR` を使って組み合わせられます。たとえば、次のポリシーです。
+
+```sql
+CREATE ROW POLICY pol1 ON mydb.table1 USING b=1 TO mira, peter
+CREATE ROW POLICY pol2 ON mydb.table1 USING c=2 TO peter, antonio
+```
+
+ユーザー `peter` が `b=1` または `c=2` のいずれかを満たす行を参照できるようにします。
+
+`AS` 句は、ポリシーを他のポリシーとどのように組み合わせるかを指定します。ポリシーには permissive と restrictive の 2 種類があります。デフォルトではポリシーは permissive であり、これはブール演算子 `OR` を使用して組み合わせられることを意味します。
+
+別の方法として、ポリシーを restrictive として定義することもできます。restrictive ポリシーは、ブール演算子 `AND` を使用して組み合わせられます。
+
+一般的な式は次のとおりです。
+
+```text
+row_is_visible = (one or more of the permissive policies' conditions are non-zero) AND
+                 (all of the restrictive policies's conditions are non-zero)
+```
+
+たとえば、次のようなポリシーがあります。
+
+```sql
+CREATE ROW POLICY pol1 ON mydb.table1 USING b=1 TO mira, peter
+CREATE ROW POLICY pol2 ON mydb.table1 USING c=2 AS RESTRICTIVE TO peter, antonio
+```
+
+ユーザー `peter` が行を参照できるのは、`b=1` かつ `c=2` の両方を満たす場合に限られます。
+
+データベースポリシーは、テーブルポリシーと組み合わせて適用されます。
+
+たとえば、次のポリシーです。
+
+```sql
+CREATE ROW POLICY pol1 ON mydb.* USING b=1 TO mira, peter
+CREATE ROW POLICY pol2 ON mydb.table1 USING c=2 AS RESTRICTIVE TO peter, antonio
+```
+
+ユーザー `peter` が `table1` の行を参照できるのは、`b=1` かつ `c=2` の場合だけです。ただし、
+mydb 内の他のテーブルには、そのユーザーに対して `b=1` のポリシーのみが適用されます。
+
+<div id="on-cluster-clause">
+  ## ON CLUSTER 句
+</div>
+
+クラスター全体に対して行ポリシーを作成できます。詳しくは[分散DDL](/ja/reference/statements/distributed-ddl)を参照してください。
+
+<div id="examples">
+  ## 例
+</div>
+
+`CREATE ROW POLICY filter1 ON mydb.mytable USING a<1000 TO accountant, john@localhost`
+
+`CREATE ROW POLICY filter2 ON mydb.mytable USING a<1000 AND b=5 TO ALL EXCEPT mira`
+
+`CREATE ROW POLICY filter3 ON mydb.mytable USING 1 TO admin`
+
+`CREATE ROW POLICY filter4 ON mydb.* USING 1 TO admin`

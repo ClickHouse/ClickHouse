@@ -1,0 +1,200 @@
+---
+noindex: true
+title: "通过私网 API 管理备份"
+sidebarTitle: "通过 API 管理备份"
+description: "使用私网 API 创建、监控、设置计划和恢复 ClickHouse 备份。"
+---
+
+使用私网 API 创建、监控、设置计划和恢复 ClickHouse 备份。
+
+如需在不使用 API 的情况下手动执行备份操作，请参阅 [备份与恢复](/zh/products/clickhouse-private/guides/back-up-and-restore-clickhouse-manual)。
+
+<div id="prerequisites">
+  ## 前置条件
+</div>
+
+* 已安装并可访问 ClickHouse 私网 API (例如，通过端口转发访问 `http://localhost:8080/`)
+* 已至少部署一个 ClickHouse 集群 (本指南使用 `default-xx-01`)
+
+<div id="create-a-full-backup">
+  ## 创建全量备份
+</div>
+
+```json
+{
+    "incremental": false
+}
+```
+
+```bash
+curl -X POST "http://localhost:8080/api/v1/backups?instance_id=default-xx-01" \
+    -H "Content-Type: application/json" \
+    -d '{"incremental": false}'
+```
+
+响应中包含用于标识该备份的 UUID。
+
+<div id="check-backup-status">
+  ## 检查备份状态
+</div>
+
+通过 UUID 查询特定备份：
+
+```bash
+curl "http://localhost:8080/api/v1/backups/{uuid}?instance_id=default-xx-01"
+```
+
+当备份成功完成时，`status.state` 字段将返回 `Ready`。
+
+<div id="list-all-backups">
+  ## 列出所有备份
+</div>
+
+```bash
+curl "http://localhost:8080/api/v1/backups?instance_id=default-xx-01"
+```
+
+该端点支持通过查询参数进行过滤和排序。例如，要查找最近一次成功的备份：
+
+```bash
+curl "http://localhost:8080/api/v1/backups?instance_id=default-xx-01&status__state__eq=Ready&sort=status__finishTime&limit=1"
+```
+
+<div id="create-incremental-backups">
+  ## 创建增量备份
+</div>
+
+增量备份只会备份自上次备份以来发生变更的数据，并与全量备份一起形成一条以全量备份为起点的事件链。
+
+```json
+{
+    "incremental": true,
+    "baseBackupUuid": "<uuid of previous backup>"
+}
+```
+
+```bash
+curl -X POST "http://localhost:8080/api/v1/backups?instance_id=default-xx-01" \
+    -H "Content-Type: application/json" \
+    --data-binary "@backup.json"
+```
+
+<div id="back-up-specific-tables-or-databases">
+  ## 备份特定表或数据库
+</div>
+
+使用 `databases` 和 `tables` 字段来控制要备份的内容。表名必须使用完全限定名 (即 `db.table`) 。
+
+```json
+{
+    "incremental": false,
+    "databases": ["mydb"],
+    "tables": ["mydb2.table"]
+}
+```
+
+```bash
+curl -X POST "http://localhost:8080/api/v1/backups?instance_id=default-xx-01" \
+    -H "Content-Type: application/json" \
+    --data-binary "@backup.json"
+```
+
+<div id="schedule-backups-with-a-cronjob">
+  ## 使用 CronJob 定期创建备份
+</div>
+
+使用 Kubernetes CronJob 自动创建备份：
+
+```yaml
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: clickhouse-daily-backup
+  namespace: clickhouse-private-api
+spec:
+  schedule: "0 2 * * *"  # Run daily at 2 AM
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          containers:
+          - name: backup
+            image: curlimages/curl:latest
+            command:
+            - /bin/sh
+            - -c
+            - |
+              curl -X POST "http://clickhouse-private-api-airgap-management:8080/api/v1/backups?instance_id=default-xx-01" \
+                -H "Content-Type: application/json" \
+                -d '{
+                  "incremental": false
+                }'
+          restartPolicy: OnFailure
+```
+
+这会将全量备份安排为每天凌晨 2 点执行。前提是可通过 `http://clickhouse-private-api-airgap-management:8080` 访问私网 API。
+
+<div id="restore-from-a-backup">
+  ## 从备份中恢复
+</div>
+
+<div id="via-the-api">
+  ### 通过 API
+</div>
+
+API 提供了一个 restore 端点，可将备份恢复到另一个目标实例：
+
+```bash
+curl -X POST "http://localhost:8080/api/v1/backups/{uuid}/restore?instance_id=default-xx-01&target_instance_id=default-xx-02"
+```
+
+为确保安全，API 不允许在同一实例上执行恢复操作。建议为恢复启动一个新的集群，以避免原有集群过载。
+
+<div id="manual-sql-alternative">
+  ### 手动 SQL 方式
+</div>
+
+如需更细致的控制，可直接通过 SQL 恢复。例如，要以新名称恢复单个数据库：
+
+```sql
+RESTORE DATABASE example
+AS example_restored
+FROM S3('https://<bucket_name>.s3.amazonaws.com/backups/<uuid>')
+```
+
+<div id="manage-backup-lifecycle">
+  ## 管理备份生命周期
+</div>
+
+<div id="s3-lifecycle-policy">
+  ### S3 生命周期策略
+</div>
+
+使用 S3 生命周期策略，自动迁移旧备份并将其过期删除：
+
+```json
+{
+  "Rules": [
+    {
+      "ID": "ClickHouseBackupLifecycle",
+      "Prefix": "backups/",
+      "Status": "Enabled",
+      "Transitions": [
+        { "Days": 7, "StorageClass": "STANDARD_IA" },
+        { "Days": 30, "StorageClass": "GLACIER_IR" }
+      ],
+      "Expiration": { "Days": 90 }
+    }
+  ]
+}
+```
+
+此示例会在 7 天后将备份转移到 Standard-IA，在 30 天后转移到 Glacier，并在 90 天后删除。
+
+<div id="backup-chain-integrity-warning">
+  ### 备份链完整性警告
+</div>
+
+S3 生命周期策略无法识别增量备份链。如果事件链底部的全量备份被删除，而增量备份仍引用它，这些增量备份将无法恢复。
+
+请确保全量备份的保留期长于两次全量备份之间的间隔。请定期测试备份能否恢复。

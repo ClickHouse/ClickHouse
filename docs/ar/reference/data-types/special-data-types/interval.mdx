@@ -1,0 +1,132 @@
+---
+description: 'توثيق نوع البيانات الخاص Interval'
+sidebarTitle: 'Interval'
+slug: /sql-reference/data-types/special-data-types/interval
+title: 'Interval'
+doc_type: 'reference'
+---
+
+مجموعة أنواع البيانات التي تمثل الفواصل الزمنية للتاريخ والوقت. وهي الأنواع الناتجة عن العامل [INTERVAL](/ar/reference/operators/index#interval).
+
+البنية:
+
+* فاصل زمني ممثل بقيمة عدد صحيح غير موقّع.
+* نوع الفاصل الزمني.
+
+أنواع الفواصل الزمنية المدعومة:
+
+* `NANOSECOND`
+* `MICROSECOND`
+* `MILLISECOND`
+* `SECOND`
+* `MINUTE`
+* `HOUR`
+* `DAY`
+* `WEEK`
+* `MONTH`
+* `QUARTER`
+* `YEAR`
+
+لكل نوع من أنواع الفواصل الزمنية نوع بيانات منفصل. على سبيل المثال، يقابل الفاصل الزمني `DAY` نوع البيانات `IntervalDay`:
+
+```sql
+SELECT toTypeName(INTERVAL 4 DAY)
+```
+
+```text
+┌─toTypeName(toIntervalDay(4))─┐
+│ IntervalDay                  │
+└──────────────────────────────┘
+```
+
+<div id="usage-remarks">
+  ## ملاحظات حول الاستخدام
+</div>
+
+يمكنك استخدام القيم من النوع `Interval` في العمليات الحسابية مع القيم من النوع [Date](/ar/reference/data-types/date) و[DateTime](/ar/reference/data-types/datetime). على سبيل المثال، يمكنك إضافة 4 أيام إلى الوقت الحالي:
+
+```sql
+SELECT now() AS current_date_time, current_date_time + INTERVAL 4 DAY
+```
+
+```text
+┌───current_date_time─┬─plus(now(), toIntervalDay(4))─┐
+│ 2019-10-23 10:58:45 │           2019-10-27 10:58:45 │
+└─────────────────────┴───────────────────────────────┘
+```
+
+كما يمكن أيضًا استخدام عدة فواصل زمنية في الوقت نفسه:
+
+```sql
+SELECT now() AS current_date_time, current_date_time + (INTERVAL 4 DAY + INTERVAL 3 HOUR)
+```
+
+```text
+┌───current_date_time─┬─plus(current_date_time, plus(toIntervalDay(4), toIntervalHour(3)))─┐
+│ 2024-08-08 18:31:39 │                                                2024-08-12 21:31:39 │
+└─────────────────────┴────────────────────────────────────────────────────────────────────┘
+```
+
+ولمقارنة القيم ذات الفواصل الزمنية المختلفة:
+
+```sql
+SELECT toIntervalMicrosecond(3600000000) = toIntervalHour(1);
+```
+
+```text
+┌─less(toIntervalMicrosecond(179999999), toIntervalMinute(3))─┐
+│                                                           1 │
+└─────────────────────────────────────────────────────────────┘
+```
+
+<div id="mixed-type-intervals">
+  ## الفواصل الزمنية المختلطة النوع
+</div>
+
+يمكن إنشاء فواصل زمنية مختلطة النوع، مثل عدة ساعات وعدة دقائق، باستخدام البنية `INTERVAL 'value' <from_kind> TO <to_kind>`.
+وتكون النتيجة قيمة من النوع `Tuple` تتكوّن من فاصلين زمنيين أو أكثر.
+
+التركيبات المدعومة:
+
+| الصياغة            | تنسيق السلسلة | مثال                                  |
+| ------------------ | ------------- | ------------------------------------- |
+| `YEAR TO MONTH`    | `Y-M`         | `INTERVAL '2-6' YEAR TO MONTH`        |
+| `DAY TO HOUR`      | `D H`         | `INTERVAL '5 12' DAY TO HOUR`         |
+| `DAY TO MINUTE`    | `D H:M`       | `INTERVAL '5 12:30' DAY TO MINUTE`    |
+| `DAY TO SECOND`    | `D H:M:S`     | `INTERVAL '5 12:30:45' DAY TO SECOND` |
+| `HOUR TO MINUTE`   | `H:M`         | `INTERVAL '1:30' HOUR TO MINUTE`      |
+| `HOUR TO SECOND`   | `H:M:S`       | `INTERVAL '1:30:45' HOUR TO SECOND`   |
+| `MINUTE TO SECOND` | `M:S`         | `INTERVAL '5:30' MINUTE TO SECOND`    |
+
+يُتحقَّق من الحقول غير الأولى وفقًا لمعيار SQL: `MONTH` من 0 إلى 11، و`HOUR` من 0 إلى 23، و`MINUTE` من 0 إلى 59، و`SECOND` من 0 إلى 59.
+
+```sql
+SELECT INTERVAL '1:30' HOUR TO MINUTE;
+```
+
+```text
+┌─(toIntervalHour(1), toIntervalMinute(30))─┐
+│ (1,30)                                     │
+└────────────────────────────────────────────┘
+```
+
+تسري علامة بادئة اختيارية `+` أو `-` على جميع المكوّنات:
+
+```sql
+SELECT INTERVAL '+1:30' HOUR TO MINUTE;
+-- this is equivalent to:
+-- SELECT INTERVAL '1:30' HOUR TO MINUTE;
+```
+
+```text
+┌─(toIntervalHour(1), toIntervalMinute(30))─┐
+│ (1,30)                                     │
+└────────────────────────────────────────────┘
+```
+
+<div id="see-also">
+  ## انظر أيضًا
+</div>
+
+* المعامل [INTERVAL](/ar/reference/operators/index#interval)
+* دوال تحويل النوع [toInterval](/ar/reference/functions/regular-functions/type-conversion-functions#toIntervalYear)

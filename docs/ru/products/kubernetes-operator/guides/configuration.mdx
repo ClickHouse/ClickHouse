@@ -1,0 +1,1156 @@
+---
+position: 2
+slug: /clickhouse-operator/guides/configuration
+title: Руководство по настройке ClickHouse Operator
+keywords: ['kubernetes']
+description: 'В этом руководстве рассказывается, как настроить кластеры ClickHouse и Keeper с помощью ClickHouse Operator.'
+doc_type: 'guide'
+---
+
+В этом руководстве рассказывается, как настроить кластеры ClickHouse и Keeper с помощью оператора.
+
+<div id="clickhousecluster-configuration">
+  ## Конфигурация ClickHouseCluster
+</div>
+
+<div id="basic-configuration">
+  ### Базовая конфигурация
+</div>
+
+```yaml
+apiVersion: clickhouse.com/v1alpha1
+kind: ClickHouseCluster
+metadata:
+  name: my-cluster
+spec:
+  replicas: 3           # Количество реплик на сегмент
+  shards: 2             # Количество сегментов
+  keeperClusterRef:
+    name: my-keeper     # Ссылка на KeeperCluster
+  dataVolumeClaimSpec:
+    resources:
+      requests:
+        storage: 10Gi
+```
+
+<div id="replicas-and-shards">
+  ### Реплики и сегменты
+</div>
+
+* **Реплики**: Количество экземпляров ClickHouse в каждом сегменте (для высокой доступности)
+* **Сегменты**: Количество горизонтальных сегментов (для масштабирования)
+
+```yaml
+spec:
+  replicas: 3  # По умолчанию: 3
+  shards: 2    # По умолчанию: 1
+```
+
+Кластер с `replicas: 3` и `shards: 2` создаст всего 6 подов ClickHouse.
+
+<div id="keeper-integration">
+  ### Интеграция с Keeper
+</div>
+
+Для координации в каждом кластере ClickHouse должен быть указан KeeperCluster:
+
+```yaml
+spec:
+  keeperClusterRef:
+    name: my-keeper
+    # namespace: keeper-system  # Необязательно, по умолчанию используется пространство имён ClickHouseCluster
+```
+
+Когда задан `keeperClusterRef.namespace`, оператор должен отслеживать оба пространства имен. Если настроена переменная `WATCH_NAMESPACE`, включите в этот список пространства имен ClickHouse и Keeper.
+
+<div id="keepercluster-configuration">
+  ## Конфигурация KeeperCluster
+</div>
+
+```yaml
+apiVersion: clickhouse.com/v1alpha1
+kind: KeeperCluster
+metadata:
+  name: my-keeper
+spec:
+  replicas: 3  # Должно быть нечётным: 1, 3, 5, 7, 9, 11, 13 или 15
+  dataVolumeClaimSpec:
+    resources:
+      requests:
+        storage: 5Gi
+```
+
+<div id="storage-configuration">
+  ## Конфигурация хранилища
+</div>
+
+Настройте постоянное хранилище с помощью `dataVolumeClaimSpec` — стандартного Kubernetes
+`PersistentVolumeClaimSpec`. Оператор преобразует его в отдельный PersistentVolumeClaim для каждой реплики,
+смонтированный по пути `/var/lib/clickhouse`:
+
+```yaml
+spec:
+  dataVolumeClaimSpec:
+    storageClassName: fast-ssd  # Optional: consider your storage class based on the installed CSI
+    resources:
+      requests:
+        storage: 100Gi
+```
+
+<Note>
+  Оператор может изменять существующий PVC, только если используемый класс хранилища поддерживает расширение томов.
+</Note>
+
+Подключение дополнительных дисков в конфигурации с несколькими дисками (JBOD), работа без постоянного
+тома, увеличение емкости, пользовательские политики хранения и правила, определяющие, что нельзя
+изменить после создания, рассматриваются в отдельном
+[руководстве по хранилищу и томам](/ru/products/kubernetes-operator/guides/storage).
+
+<div id="cluster-domain">
+  ## Домен кластера
+</div>
+
+`spec.clusterDomain` задаёт DNS-суффикс Kubernetes, который оператор использует при формировании
+полных доменных имён подов, записываемых в конфигурацию
+сервера ClickHouse. По умолчанию используется `cluster.local`; этот параметр есть как в
+`ClickHouseCluster`, так и в `KeeperCluster`.
+
+```yaml
+spec:
+  clusterDomain: cluster.local   # default; override only for a custom domain
+```
+
+Оператор обращается к каждому поду через headless Service по адресу
+`<pod>.<headless-service>.<namespace>.svc.<clusterDomain>`. Этот суффикс используется
+в двух частях сгенерированной конфигурации:
+
+* В `ClickHouseCluster` его значение используется для имен хостов реплик в
+  `remote_servers` (межрепличные запросы и запросы `Distributed`).
+* В `KeeperCluster` его значение формирует имена хостов узлов Keeper, которые
+  ClickHouse использует для координации.
+
+<Note>
+  Переопределяйте это только в том случае, если `kubelet` в вашем кластере запущен с параметром `--cluster-domain`,
+  отличным от `cluster.local`. Если значение не совпадает с фактическим доменом кластера,
+  ClickHouse не сможет разрешить имена хостов Keeper и реплик — координация и
+  запросы `Distributed` будут завершаться ошибками DNS resolution. Установите **одно и то же** значение в
+  `ClickHouseCluster` и в `KeeperCluster`, на который он ссылается.
+</Note>
+
+<div id="multi-disk-jbod-storage">
+  ### Многодисковое (JBOD) хранилище
+</div>
+
+`additionalVolumeClaimTemplates` подключает дополнительные диски к каждой реплике ClickHouse в дополнение к основному `dataVolumeClaimSpec`, который обязателен для их использования.
+Каждая запись представляет собой шаблон PVC — `metadata.name` и PVC `spec`.
+Эти диски обрабатываются точно так же, как и основной диск данных, — как `volumeClaimTemplates` в StatefulSet, — поэтому контроллер StatefulSet создает и сохраняет по одному PVC для каждой реплики с именем `<name>-<statefulset>-0`.
+
+```yaml
+spec:
+  dataVolumeClaimSpec:
+    storageClassName: fast-ssd
+    resources:
+      requests:
+        storage: 100Gi
+  additionalVolumeClaimTemplates:
+    - metadata:
+        name: disk1
+      spec:
+        storageClassName: fast-ssd
+        resources:
+          requests:
+            storage: 100Gi
+    - metadata:
+        name: disk2
+      spec:
+        storageClassName: fast-ssd
+        resources:
+          requests:
+            storage: 100Gi
+```
+
+Оператор монтирует каждый дополнительный том в `/var/lib/clickhouse/disks/<name>` и добавляет его в автоматически сгенерированную конфигурацию хранилища ClickHouse.
+Дефисы в имени заменяются на символы подчёркивания в идентификаторе диска ClickHouse; путь монтирования сохраняет исходное имя.
+
+Основной диск данных и все дополнительные диски помещаются в один том политики хранилища `default`, поэтому ClickHouse распределяет новые части данных между ними по циклу round-robin.
+Полезная ёмкость равна сумме ёмкостей всех дисков, и каждая таблица, для которой не задана собственная `storage_policy` (включая таблицы `system.*`), использует этот объединённый набор.
+
+<Note>
+  Имена PVC должны соответствовать шаблону `^[a-z]([-a-z0-9]*[a-z0-9])?$` и не должны совпадать с именем основного тома данных.
+  Как и в случае с основным диском данных, набор дополнительных дисков фиксируется при создании: добавление, удаление или переименование записей после создания не допускается.
+  Дополнительные PVC сохраняются при удалении кластера, как и основной диск данных.
+  Размер хранилища для существующей записи можно увеличить, если класс хранилища поддерживает расширение.
+</Note>
+
+<div id="cluster-domain">
+  ## Домен кластера
+</div>
+
+`spec.clusterDomain` задаёт DNS-суффикс Kubernetes, который оператор использует при формировании
+полных доменных имён подов, записываемых в конфигурацию сервера ClickHouse.
+По умолчанию используется `cluster.local`; этот параметр доступен как в
+`ClickHouseCluster`, так и в `KeeperCluster`.
+
+```yaml
+spec:
+  clusterDomain: cluster.local   # default; override only for a custom domain
+```
+
+Оператор обращается к каждому поду через headless Service по адресу
+`<pod>.<headless-service>.<namespace>.svc.<clusterDomain>`. Этот суффикс используется
+в двух частях сгенерированной конфигурации:
+
+* В `ClickHouseCluster` его значение используется для имён хостов реплик в
+  `remote_servers` (для межрепликового взаимодействия и запросов `Distributed`).
+* В `KeeperCluster` его значение используется для формирования имён хостов узлов Keeper,
+  которые ClickHouse применяет для координации.
+
+<Note>
+  Переопределяйте это значение только в том случае, если `kubelet` вашего кластера запущен с `--cluster-domain`,
+  отличным от `cluster.local`. Если значение не совпадает с фактическим доменом кластера,
+  ClickHouse не сможет разрешить имена хостов Keeper и реплик — координация и
+  запросы `Distributed` будут завершаться ошибками DNS resolution. Укажите **одно и то же** значение в
+  `ClickHouseCluster` и в связанном с ним `KeeperCluster`.
+</Note>
+
+<div id="pod-configuration">
+  ## Настройка пода
+</div>
+
+<div id="automatic-topology-spread-and-affinity">
+  ### Автоматическое топологическое распределение и аффинность
+</div>
+
+Распределите поды по зонам доступности:
+
+```yaml
+spec:
+  podTemplate:
+    topologyZoneKey: topology.kubernetes.io/zone
+    nodeHostnameKey: kubernetes.io/hostname
+```
+
+<Note>
+  Убедитесь, что в вашем кластере Kubernetes достаточно узлов в разных зонах, чтобы выполнить требования к распределению.
+</Note>
+
+<div id="manual-configuration">
+  ### Ручная конфигурация
+</div>
+
+Можно указать произвольные правила affinity/anti-affinity для подов и ограничения на распределение по топологии.
+
+```yaml
+spec:
+  podTemplate:
+    affinity:
+      <your-affinity-rules-here>
+    topologySpreadConstraints:
+      <your-topology-spread-constraints-here>
+```
+
+<div id="see-api-referenceproductskubernetes-operatorreferenceapi-referencepodtemplatespec-for-all-supported-pod-template-options">
+  ### Все поддерживаемые параметры шаблона пода см. в [справочнике по API](/ru/products/kubernetes-operator/reference/api-reference#podtemplatespec).
+</div>
+
+<div id="pod-disruption-budgets">
+  ## Бюджеты сбоев подов
+</div>
+
+Оператор создает [PodDisruptionBudget](https://kubernetes.io/docs/concepts/workloads/pods/disruptions/) (PDB) для каждого кластера, чтобы плановые нарушения работы — дренирование узлов, поэтапные обновления, вытеснение автоскейлером — не могли вывести из строя достаточно подов, чтобы потерять кворум или нарушить доступность.
+
+Для кластеров ClickHouse с более чем одним сегментом **создается один PDB на каждый сегмент**, чтобы сбой в одном сегменте не учитывался в другом.
+
+<div id="pdb-defaults">
+  ### Значения по умолчанию
+</div>
+
+Оператор выбирает безопасные значения по умолчанию с учётом размера кластера, чтобы уже после первого `apply` защитить его от случайной потери кворума.
+
+| Ресурс              | Топология                                        | PDB по умолчанию                                                                                                                   |
+| ------------------- | ------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------- |
+| `ClickHouseCluster` | `replicas: 1` (сегмент с одной репликой)         | `maxUnavailable: 1` — для кластера из одного узла прерывание допускается, чтобы не блокировать дренирование узлов                  |
+| `ClickHouseCluster` | `replicas: 2+` (сегмент с несколькими репликами) | `minAvailable: 1` — в каждом сегменте должна оставаться доступной как минимум одна реплика                                         |
+| `KeeperCluster`     | `replicas: 1`                                    | `maxUnavailable: 1` — для кластера из одного узла прерывание допускается, чтобы не блокировать дренирование узлов                  |
+| `KeeperCluster`     | `replicas: 3+`                                   | `maxUnavailable: replicas/2` — сохраняет кворум RAFT для кластера `2F+1` (3 реплики допускают отказ 1, 5 реплик допускают отказ 2) |
+
+Для ClickHouseCluster с 3 сегментами и `replicas: 3` оператор создаёт три PDB — по одному на каждый сегмент, каждый с `minAvailable: 1`.
+
+<div id="pdb-overrides">
+  ### Переопределение значений по умолчанию
+</div>
+
+Используйте `spec.podDisruptionBudget`, чтобы переопределить либо `minAvailable`, либо `maxUnavailable` (ровно одно из них):
+
+```yaml
+spec:
+  replicas: 3
+  shards: 2
+  podDisruptionBudget:
+    minAvailable: 2   # сохранять не менее 2 из 3 реплик в каждом сегменте работоспособными во время сбоя
+```
+
+Или вариант `maxUnavailable` с указанием в процентах:
+
+```yaml
+spec:
+  replicas: 5
+  podDisruptionBudget:
+    maxUnavailable: 40%
+```
+
+<Warning>
+  Одновременная установка `minAvailable` и `maxUnavailable` отклоняется валидирующим вебхуком. Выберите что-то одно — сам Kubernetes тоже не разрешает задавать оба параметра одновременно.
+</Warning>
+
+Вы также можете передать поле [`unhealthyPodEvictionPolicy`](https://kubernetes.io/docs/concepts/workloads/pods/disruptions/#unhealthy-pod-eviction-policy) в сгенерированный PDB — это полезно, если нужно разрешить вытеснение подов, которые всё ещё находятся в состоянии `NotReady`:
+
+```yaml
+spec:
+  podDisruptionBudget:
+    minAvailable: 2
+    unhealthyPodEvictionPolicy: AlwaysAllow
+```
+
+<div id="pdb-policies">
+  ### Политики
+</div>
+
+`spec.podDisruptionBudget.policy` позволяет выбрать, **насколько активно** оператор управляет PDB:
+
+| Policy                   | Behavior                                                                                                                                                                                           |
+| ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Enabled` (по умолчанию) | Оператор создает и обновляет PDB при каждой сверке. Это безопасный вариант по умолчанию для production-сред.                                                                                       |
+| `Disabled`               | Оператор **не** создает PDB и **удаляет** все существующие PDB с совпадающими метками. Полезно для кластеров разработки, где должны быть разрешены любые плановые прерывания.                      |
+| `Ignored`                | Оператор не создает и не удаляет PDB. Существующие PDB остаются без изменений. Используйте это, если управлением PDB занимается другая система (например, admission policy или инструмент GitOps). |
+
+Пример — полностью отключить управление PDB в кластере разработки:
+
+```yaml
+spec:
+  podDisruptionBudget:
+    policy: Disabled
+```
+
+Пример — оставьте созданный вручную PDB рядом с кластером и не позволяйте оператору его затрагивать:
+
+```yaml
+spec:
+  podDisruptionBudget:
+    policy: Ignored
+```
+
+<div id="pdb-cluster-wide-disable">
+  ### Отключение на уровне всего кластера
+</div>
+
+Управление PDB также можно отключить на уровне всего кластера через переменную окружения оператора `ENABLE_PDB`. При `ENABLE_PDB=false` оператор пропускает шаг сверки PDB для **всех** ClickHouseCluster и KeeperCluster независимо от их `spec.podDisruptionBudget.policy` и **вообще не отслеживает** ресурсы `PodDisruptionBudget`. Поэтому ServiceAccount оператора не нужны разрешения RBAC на `poddisruptionbudgets.policy/v1`, что полезно, если оператор запускается с ограниченным ServiceAccount, в котором эти разрешения намеренно отсутствуют.
+
+```yaml
+# в спецификации Развертывания оператора
+env:
+- name: ENABLE_PDB
+  value: "false"
+```
+
+Это предназначено для сред, где используются собственные политики disruption (например, через Gatekeeper / Kyverno) и где оператор должен быть полностью исключён из процесса.
+
+<div id="container-configuration">
+  ## Настройка контейнера
+</div>
+
+<div id="custom-image">
+  ### Собственный образ
+</div>
+
+Используйте конкретный образ ClickHouse:
+
+```yaml
+spec:
+  containerTemplate:
+    image:
+      repository: clickhouse/clickhouse-server
+      tag: "25.12"
+    imagePullPolicy: IfNotPresent
+```
+
+<div id="container-resources">
+  ### Ресурсы контейнеров
+</div>
+
+Настройте CPU и память для контейнеров ClickHouse:
+
+```yaml
+# default values
+spec:
+  containerTemplate:
+    resources:
+      requests:
+        cpu: "250m"
+        memory: "512Mi"
+      limits:
+        cpu: "1"
+        memory: "512Mi"
+```
+
+<div id="environment-variables">
+  ### Переменные окружения
+</div>
+
+Добавьте пользовательские переменные окружения:
+
+```yaml
+spec:
+  containerTemplate:
+    env:
+    - name: CUSTOM_ENV_VAR
+      value: "1"
+```
+
+<div id="volume-mounts">
+  ### Подключение томов
+</div>
+
+Добавьте дополнительные точки монтирования томов:
+
+```yaml
+spec:
+  containerTemplate:
+    volumeMounts:
+    - name: custom-config
+      mountPath: /etc/clickhouse-server/config.d/custom.xml
+      subPath: custom.xml
+```
+
+<Note>
+  Допускается указывать несколько подключений томов к одному и тому же `mountPath`.
+  Оператор создаст projected volume со всеми указанными подключениями.
+</Note>
+
+<div id="see-api-referenceproductskubernetes-operatorreferenceapi-referencecontainertemplatespec-for-all-supported-container-template-options">
+  ### Все поддерживаемые параметры шаблона контейнера см. в [справочнике по API](/ru/products/kubernetes-operator/reference/api-reference#containertemplatespec).
+</div>
+
+<div id="tls-ssl-configuration">
+  ## Конфигурация TLS/SSL
+</div>
+
+<div id="configure-secure-endpoints">
+  ### Настройка защищённых конечных точек
+</div>
+
+Укажите ссылку на Secret Kubernetes с TLS-сертификатами, чтобы включить защищённые конечные точки
+
+```yaml
+spec:
+  settings:
+    tls:
+      enabled: true
+      required: true # Незащищённые порты отключаются при установке этого параметра
+      serverCertSecret:
+        name: <certificate-secret-name>
+```
+
+<div id="ssl-certificate-secret-format">
+  ### Формат Secret с SSL-сертификатом
+</div>
+
+Предполагается, что Secret содержит серверную пару ключей:
+
+* `tls.crt` - серверный сертификат в PEM-формате
+* `tls.key` - приватный ключ в PEM-формате
+
+<Note>
+  Этот формат совместим с сертификатами, созданными cert-manager.
+</Note>
+
+<div id="clickhouse-keeper-communication-over-tls">
+  ### Взаимодействие ClickHouse-Keeper по TLS
+</div>
+
+Если в KeeperCluster включен TLS, ClickHouseCluster будет автоматически использовать защищенное соединение с узлами Keeper.
+
+ClickHouseCluster проверяет сертификаты узлов Keeper по системному хранилищу доверенных сертификатов, а также по любому настроенному вами `caBundle`.
+
+Чтобы доверять частному CA (например, самоподписанному или внутреннему CA), укажите ссылку на пользовательский набор CA:
+
+```yaml
+spec:
+    settings:
+        tls:
+          caBundle:
+            name: <ca-certificate-secret-name>
+            key: <ca-certificate-key>
+```
+
+<div id="external-secret">
+  ## External Secret
+</div>
+
+По умолчанию оператор создает Secret с внутренними учетными данными кластера и управляет им (межсерверный пароль, пароль управления, идентификатор Keeper, секрет кластера, ключ named-collections). Secret получает имя кластера и находится в его пространстве имен.
+
+Если вы хотите управлять этими учетными данными самостоятельно — например, получать их из HashiCorp Vault, AWS Secrets Manager или [External Secrets Operator](https://external-secrets.io/) — укажите оператору уже существующий Secret с помощью `spec.externalSecret`:
+
+```yaml
+apiVersion: clickhouse.com/v1alpha1
+kind: ClickHouseCluster
+metadata:
+  name: sample
+spec:
+  replicas: 2
+  keeperClusterRef:
+    name: sample
+  dataVolumeClaimSpec:
+    resources:
+      requests:
+        storage: 10Gi
+  externalSecret:
+    name: my-clickhouse-credentials
+    policy: Observe
+```
+
+<Note>
+  Указанный Secret должен находиться в **том же пространстве имен**, что и ClickHouseCluster. Оператор никогда не удаляет Secret, если не создавал его сам.
+</Note>
+
+<div id="external-secret-required-keys">
+  ### Обязательные ключи
+</div>
+
+Secret должен содержать следующие ключи:
+
+| Ключ                    | Формат                                                                      | Когда требуется                  |
+| ----------------------- | --------------------------------------------------------------------------- | -------------------------------- |
+| `interserver-password`  | пароль в открытом виде                                                      | Всегда                           |
+| `management-password`   | пароль в открытом виде                                                      | Всегда                           |
+| `keeper-identity`       | `clickhouse:<password>`                                                     | Всегда                           |
+| `cluster-secret`        | пароль в открытом виде                                                      | Всегда                           |
+| `named-collections-key` | 16-байтный ключ AES в шестнадцатеричном виде (32 шестнадцатеричных символа) | Только для ClickHouse `>= 25.12` |
+
+Полный Secret выглядит так:
+
+```yaml
+apiVersion: v1
+kind: Secret
+metadata:
+  name: my-clickhouse-credentials
+  namespace: sample
+type: Opaque
+stringData:
+  interserver-password: "a-strong-random-password"
+  management-password: "another-strong-password"
+  keeper-identity: "clickhouse:keeper-auth-password"
+  cluster-secret: "cluster-internal-secret"
+  named-collections-key: "0123456789abcdef0123456789abcdef"   # 32 hex chars = 16 bytes
+```
+
+<div id="external-secret-policy">
+  ### Политика: Observe или Manage
+</div>
+
+`spec.externalSecret.policy` определяет, как оператор обрабатывает отсутствие обязательных ключей:
+
+| Политика                 | Поведение при отсутствии ключей                                                                                                                                                                                                                                                                             |
+| ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Observe` (по умолчанию) | Реконсиляция **блокируется**, пока не появятся все обязательные ключи. Оператор сообщает о каждом отсутствующем ключе — и подсказке по его формату — через условие `ExternalSecretValid` (с причиной `ExternalSecretInvalid`) и событие `Warning`.                                                          |
+| `Manage`                 | Оператор **генерирует** все отсутствующие обязательные ключи и записывает их обратно в тот же Secret. Полезно для начальной инициализации: создайте пустой Secret, позвольте оператору заполнить его, а затем при необходимости ограничьте доступ. При этом оператор по-прежнему никогда не удаляет Secret. |
+
+<Note>
+  Даже при `policy: Manage` Secret уже должен существовать в пространстве имен — оператор никогда не создает сам Secret, а только записывает сгенерированные ключи в уже существующий. Если указанный Secret отсутствует, реконсиляция блокируется с причиной `ExternalSecretNotFound` независимо от политики.
+</Note>
+
+Выбирайте `Observe`, если внешний источник (Vault, ESO, sealed-secrets, GitOps) является источником истины и вы хотите, чтобы оператор явно сигнализировал об ошибке конфигурации. Выбирайте `Manage`, если вам нужна самодостаточная начальная инициализация, но при этом вы хотите сохранить контроль над самим объектом Secret (например, чтобы делать его резервную копию).
+
+<div id="external-secret-status">
+  ### Условие состояния и устранение неполадок
+</div>
+
+Оператор выставляет условие `ExternalSecretValid` в `ClickHouseCluster.status.conditions`. Проверьте его, если кажется, что реконсиляция зависла:
+
+```bash
+# Plain kubectl — works out of the box
+kubectl describe clickhousecluster sample | sed -n '/Conditions:/,$p'
+
+# Same data as YAML
+kubectl get clickhousecluster sample -o yaml | sed -n '/conditions:/,/^[^ ]/p'
+
+# Pretty-printed JSON (requires jq)
+kubectl get clickhousecluster sample -o jsonpath='{.status.conditions}' | jq
+```
+
+Возможные причины:
+
+| `reason`                 | Значение                                                                                                                                                       | Исправление                                                         |
+| ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
+| `ExternalSecretNotFound` | Указанный Secret не существует в пространстве имен.                                                                                                            | Создайте Secret или исправьте `spec.externalSecret.name`.           |
+| `ExternalSecretInvalid`  | Secret существует, но в нем отсутствуют обязательные ключи (только при `Observe`). В сообщении перечислены все отсутствующие ключи и ожидаемый для них формат. | Добавьте отсутствующие ключи или переключитесь на `policy: Manage`. |
+| `ExternalSecretValid`    | Все обязательные ключи присутствуют, и оператор использует этот Secret.                                                                                        | —                                                                   |
+
+Пока Secret недействителен, оператор повторно ставит реконсиляцию в очередь, поэтому после добавления отсутствующих ключей следующая реконсиляция автоматически их подхватит — перезапускать поды не нужно.
+
+<Note>
+  Набор обязательных ключей зависит от запущенной версии ClickHouse. `named-collections-key` проверяется только после того, как проверка версии оператора обнаружит ClickHouse `25.12` или новее. В более старых версиях этот ключ может отсутствовать в Secret.
+</Note>
+
+<div id="additional-ports">
+  ## Дополнительные порты
+</div>
+
+Оператор предоставляет фиксированный набор портов на каждом поде ClickHouse и в его headless Service: `8123` HTTP, `9000` native, `9009` interserver, `9001` management, `9363` метрики Prometheus, а также варианты с TLS `8443`/`9440`, если TLS включен. Чтобы ClickHouse прослушивал дополнительные протоколы — MySQL, PostgreSQL, gRPC — или любой пользовательский порт, объявите их в `spec.additionalPorts`:
+
+```yaml
+spec:
+  additionalPorts:
+    - name: mysql
+      port: 9004
+    - name: postgres
+      port: 9005
+    - name: grpc
+      port: 9100
+```
+
+Оператор добавляет эти порты в `containerPorts` пода и в headless Service. Полный пример приведён в [`examples/custom_protocols.yaml`](https://github.com/ClickHouse/clickhouse-operator/blob/main/examples/custom_protocols.yaml).
+
+<Warning>
+  `additionalPorts` открывает порты только на стороне Kubernetes. Он **не** настраивает сервер ClickHouse на прослушивание этих портов. Также нужно включить соответствующий протокол в `spec.settings.extraConfig.protocols`. Иначе порт будет открыт на Service, но внутри пода на нём ничего не будет отвечать.
+</Warning>
+
+<div id="additional-ports-mysql-example">
+  ### Полный пример: протокол MySQL
+</div>
+
+Чтобы предоставить доступ к ClickHouse по протоколу MySQL на порту `9004`:
+
+```yaml
+apiVersion: clickhouse.com/v1alpha1
+kind: ClickHouseCluster
+metadata:
+  name: sample
+spec:
+  replicas: 1
+  keeperClusterRef:
+    name: sample
+  dataVolumeClaimSpec:
+    resources:
+      requests:
+        storage: 2Gi
+
+  # 1) Open the port on the Pod and the headless Service.
+  additionalPorts:
+    - name: mysql
+      port: 9004
+
+  # 2) Tell ClickHouse server to actually listen on it.
+  settings:
+    extraConfig:
+      protocols:
+        mysql:
+          type: mysql
+          port: 9004
+          description: "MySQL wire protocol"
+```
+
+После применения проверьте, находясь внутри кластера:
+
+```bash
+kubectl exec sample-clickhouse-0-0-0 -- \
+  clickhouse-client --port 9004 --query "SELECT 1"
+```
+
+<div id="additional-ports-constraints">
+  ### Ограничения для полей
+</div>
+
+| Поле   | Правило                                                                                                                                                                                     |
+| ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `name` | Должно соответствовать шаблону регулярного выражения DNS&#95;LABEL `^[a-z]([-a-z0-9]*[a-z0-9])?$`; максимальная длина — 63 символа. Уникальность обеспечивается CRD за счёт ключа list-map. |
+| `port` | Целое число в диапазоне `[1, 65535]`. вебхук отклоняет повторяющиеся номера портов в пределах списка.                                                                                       |
+
+<div id="additional-ports-reserved">
+  ### Зарезервированные порты и имена
+</div>
+
+Валидирующий вебхук отклоняет записи `additionalPorts`, которые пересекаются с портами, используемыми самим оператором. Все порты, связанные с TLS, зарезервированы **безусловно**, чтобы последующее включение `spec.settings.tls.enabled` не нарушило работу ранее корректного кластера.
+
+| Порт   | Зарезервирован для |
+| ------ | ------------------ |
+| `8123` | HTTP               |
+| `8443` | HTTPS              |
+| `9000` | нативный TCP       |
+| `9440` | нативный TLS       |
+| `9009` | interserver        |
+| `9001` | management         |
+| `9363` | метрики Prometheus |
+
+Следующие имена также отклоняются — это внутренние идентификаторы типов протоколов оператора (а не человекочитаемые псевдонимы):
+
+| Имя           |
+| ------------- |
+| `http`        |
+| `http-secure` |
+| `tcp`         |
+| `tcp-secure`  |
+| `interserver` |
+| `management`  |
+| `prometheus`  |
+
+Отклонённый запрос приводит к ошибке вида:
+
+```
+spec.additionalPorts[0].port: 8123 is reserved for the operator-managed HTTP port
+spec.additionalPorts[0].name: "http" is reserved by the operator
+```
+
+<div id="version-probe-and-upgrade-channel">
+  ## Проверка версии и канал обновления
+</div>
+
+Оператор выполняет две независимые функции, связанные с версиями кластера:
+
+1. **Проверка версии** — для `ClickHouseCluster` Kubernetes `задача` однократно запускает контейнерный образ, чтобы определить запущенную версию ClickHouse; для `KeeperCluster` оператор считывает версию, сообщаемую сервером, с работающих реплик. Определённая версия записывается в `.status.version` и используется другими этапами реконсиляции (например, ключ named-collections для `External Secret` требуется только начиная с ClickHouse `25.12`).
+2. **Канал обновления** — периодическая проверка публичной ленты релизов ClickHouse (`https://clickhouse.com/data/version_date.tsv`). Оператор сообщает о наличии более новой версии через условие состояния `VersionUpgraded`. Самостоятельно кластер он никогда не обновляет — тег образа контролирует пользователь.
+
+<div id="upgrade-channel-choosing">
+  ### Выбор канала обновления
+</div>
+
+`spec.upgradeChannel` задаёт, с каким набором апстримных релизов сверяется оператор. Такое же поле есть и в `ClickHouseCluster`, и в `KeeperCluster`.
+
+```yaml
+spec:
+  upgradeChannel: lts   # or "stable", or "25.8", or omitted
+```
+
+Допустимые значения (проверяются CRD по шаблону `^(lts|stable|\d+\.\d+)?$`):
+
+| Значение                             | Поведение                                                                                                                                                                                 |
+| ------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| *empty* (default)                    | Оператор предлагает только **минорные** обновления в пределах текущей ветки major.minor. Кластеру на `25.8.3.1` будет предложено `25.8.4.x`, но не `25.9.x`.                              |
+| `stable`                             | Отслеживает вышестоящий канал `stable` — последний релиз, который ClickHouse Inc. помечает как стабильный в основной ветке релизов. Получает мажорные обновления раньше, чем канал `lts`. |
+| `lts`                                | Отслеживает вышестоящий канал `lts` — релизы с долгосрочной поддержкой. Получает мажорные обновления реже, а окна поддержки у них дольше.                                                 |
+| `25.8` (или любой `<major>.<minor>`) | Закрепляет канал за конкретной веткой major.minor. Мажорные обновления за её пределами не предлагаются, даже если вышестоящая версия новее.                                               |
+
+Для продакшн обычно предпочтительнее явно закрепить канал на значении `<major>.<minor>` (например, `25.8`). Это фиксирует кластер на нужной ветке мажорных релизов и позволяет оператору выдавать предупреждение `WrongReleaseChannel`, если какая-либо реплика по какой-то причине перейдёт на другой мажорный релиз, — что особенно важно, когда image указан по дайджесту (`@sha256:...`), а не по человекочитаемому тегу. Пустое значение по умолчанию подходит для Development-clusters, где переходы между мажорными версиями не критичны.
+
+<div id="version-status-conditions">
+  ### Условия
+</div>
+
+Два условия показывают результат проверки версии и проверки обновления:
+
+| Условие           | Причина                | Значение                                                                                                                                                                                                                                                                                                                                                                                    |
+| ----------------- | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `VersionInSync`   | `VersionMatch`         | Все реплики сообщают одну и ту же версию                                                                                                                                                                                                                                                                                                                                                    |
+| `VersionInSync`   | `VersionMismatch`      | Реплики работают на разных версиях. Предупреждающее событие подавляется во время запланированного поэтапного обновления. Обычно это происходит, когда закреплён изменяемый тег образа (например, `latest` или просто мажорная версия, такая как `26.3`), а содержимое в реестре между загрузками изменилось, поэтому разные реплики оказались на разных патч-версиях одного и того же тега. |
+| `VersionInSync`   | `VersionPending`       | Задача проверки версии ещё не завершилась, или версия реплики Keeper ещё не была обнаружена                                                                                                                                                                                                                                                                                                 |
+| `VersionInSync`   | `VersionProbeFailed`   | Задача probe ClickHouse завершилась с ошибкой; оператор не может определить запущенную версию                                                                                                                                                                                                                                                                                               |
+| `VersionUpgraded` | `UpToDate`             | Кластер использует последнюю версию, доступную в выбранном канале                                                                                                                                                                                                                                                                                                                           |
+| `VersionUpgraded` | `MinorUpdateAvailable` | В той же ветке `major.minor` доступен более новый патч                                                                                                                                                                                                                                                                                                                                      |
+| `VersionUpgraded` | `MajorUpdateAvailable` | В рамках выбранного канала доступна более новая версия `major.minor`                                                                                                                                                                                                                                                                                                                        |
+| `VersionUpgraded` | `VersionOutdated`      | Запущенная версия устарела и больше не будет получать исправления из выбранного канала — обычно потому, что эта мажорная ветка больше не поддерживается в upstream `lts` или `stable`                                                                                                                                                                                                       |
+| `VersionUpgraded` | `WrongReleaseChannel`  | Запущенный образ не относится к выбранному `upgradeChannel`. Пример: кластер работает на `26.5` с `upgradeChannel: lts`, поскольку `26.5` не входит в upstream-ветку `lts`.                                                                                                                                                                                                                 |
+| `VersionUpgraded` | `UpgradeCheckFailed`   | Оператор не смог получить доступ к upstream-источнику сведений о релизах                                                                                                                                                                                                                                                                                                                    |
+
+Проверьте их с помощью:
+
+```bash
+kubectl get clickhousecluster sample -o yaml | sed -n '/conditions:/,/^[^ ]/p'
+```
+
+<div id="version-probe-template">
+  ### Переопределение задачи проверки версии
+</div>
+
+Это относится только к `ClickHouseCluster`. `KeeperCluster` больше не запускает задачу проверки версии — его версия считывается напрямую с работающих реплик Keeper, — поэтому `spec.versionProbeTemplate` устарел и там не действует.
+
+Проверка реализована как обычная Kubernetes `задача`. Если в вашем кластере действуют политики допуска, требующие определённых Tolerations, селекторов узлов или контекстов безопасности, либо вы хотите ограничить время, в течение которого завершённые задачи проверки остаются в системе, переопределите шаблон через `spec.versionProbeTemplate`:
+
+```yaml
+spec:
+  versionProbeTemplate:
+    spec:
+      ttlSecondsAfterFinished: 600   # delete completed probe Jobs 10 minutes after completion
+      template:
+        spec:
+          nodeSelector:
+            kubernetes.io/arch: amd64
+          tolerations:
+            - key: dedicated
+              operator: Equal
+              value: clickhouse
+              effect: NoSchedule
+          containers:
+            - name: version-probe
+              resources:
+                requests:
+                  cpu: 50m
+                  memory: 64Mi
+```
+
+Имя контейнера `version-probe` задано в операторе по умолчанию — запись в `containers:` совпадает с ним по имени, поэтому оператор выполняет глубокое слияние пользовательских полей со значениями по умолчанию.
+
+<div id="version-operator-flags">
+  ### Глобальные настройки оператора
+</div>
+
+Два флага в менеджере оператора глобально управляют циклом проверки обновлений:
+
+| Флаг                              | По умолчанию | Эффект                                                                                                                                          |
+| --------------------------------- | ------------ | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--version-update-interval`       | `24h`        | Как часто оператор повторно получает список версий из внешнего источника                                                                        |
+| `--disable-version-update-checks` | `false`      | Полностью отключает проверку обновлений. Условие `VersionUpgraded` не устанавливается, и исходящий HTTP-трафик на `clickhouse.com` не создаётся |
+
+Установите `--disable-version-update-checks=true` в полностью изолированных средах или если исходящий трафик на `clickhouse.com` не разрешён.
+
+<div id="clickhouse-settings">
+  ## Настройки ClickHouse
+</div>
+
+<div id="default-user-password">
+  ### Пароль пользователя `default`
+</div>
+
+`spec.settings.defaultUserPassword` задаёт пароль для встроенного
+пользователя `default`. Укажите значение из ключа в Secret
+(рекомендуется) или в ConfigMap, который вы создадите, вместо того чтобы
+задавать его напрямую в CR:
+
+```yaml
+spec:
+  settings:
+    defaultUserPassword:
+      passwordType: password   # default; see "Password types" below
+      secret:                  # exactly one of secret or configMap
+        name: clickhouse-password   # name of the Secret/ConfigMap
+        key: password               # the key inside it, not the password value
+```
+
+Укажите ровно одно из `secret` или `configMap`; при этом должны быть заданы и `name` (объект),
+и `key` (запись, в которой хранится пароль).
+
+<div id="password-types">
+  #### Типы паролей
+</div>
+
+`passwordType` указывает ClickHouse, как интерпретировать значение. По умолчанию
+используется `password` (plaintext); альтернативные варианты — это
+хешированные формы, например `password_sha256_hex` и `password_double_sha1_hex`. Рекомендуется использовать
+хешированный тип, чтобы plaintext никогда не хранился. Полный список см. в разделе
+[настроек пользователей ClickHouse](https://clickhouse.com/docs/operations/settings/settings-users#user-namepassword).
+
+<div id="default-password-secret-example">
+  #### Полный пример с объектом Secret
+</div>
+
+Создайте объект Secret, затем укажите его ключ:
+
+```bash
+kubectl create secret generic clickhouse-password \
+  --from-literal=password='your-secure-password'
+```
+
+```yaml
+apiVersion: clickhouse.com/v1alpha1
+kind: ClickHouseCluster
+metadata:
+  name: my-cluster
+spec:
+  settings:
+    defaultUserPassword:
+      passwordType: password
+      secret:
+        name: clickhouse-password
+        key: password
+```
+
+<Note>
+  При `passwordType: password` `клиент ClickHouse` внутри пода настраивается с
+  этим паролем, что удобно для отладки.
+</Note>
+
+Для пароля в виде хеша сохраните хеш вместо незашифрованного текста:
+
+```bash
+echo -n 'your-secure-password' | sha256sum   # use the hex digest as the value
+kubectl create secret generic clickhouse-password \
+  --from-literal=password='<sha256-hex-digest>'
+```
+
+```yaml
+spec:
+  settings:
+    defaultUserPassword:
+      passwordType: password_sha256_hex
+      secret:
+        name: clickhouse-password
+        key: password
+```
+
+<div id="using-configmap-for-user-passwords">
+  #### Использование ConfigMap
+</div>
+
+ConfigMap работает так же, но его содержимое не защищено так, как содержимое Secret.
+Используйте его только для неконфиденциальных или уже хешированных значений, например
+дайджеста `password_sha256_hex`:
+
+```yaml
+spec:
+  settings:
+    defaultUserPassword:
+      passwordType: password_sha256_hex
+      configMap:
+        name: clickhouse-config
+        key: default_password
+```
+
+<Note>
+  Не храните пароль в открытом виде в ConfigMap. Для любого значения в открытом виде
+  (`passwordType: password`) используйте Secret.
+</Note>
+
+<div id="custom-users-in-configuration">
+  ### Дополнительные пользователи в конфигурации
+</div>
+
+Настройте дополнительных пользователей в файлах конфигурации.
+
+Создайте ConfigMap и Secret для пользователя:
+
+```yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: user-config
+data:
+  reader.yaml: |
+    users:
+      reader:
+        password:
+          - '@from_env': READER_PASSWORD
+        profile: default
+        grants:
+          - query: "GRANT SELECT ON *.*"
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: reader-password
+data:
+  password: "c2VjcmV0LXBhc3N3b3Jk"  # base64("secret-password")
+
+```
+
+Добавьте пользовательскую конфигурацию в ClickHouseCluster:
+
+```yaml
+spec:
+  podTemplate:
+    volumes:
+      - name: reader-user
+        configMap:
+          name: user-config
+  containerTemplate:
+    env:
+      - name: READER_PASSWORD
+        valueFrom:
+          secretKeyRef:
+            name: reader-password
+            key: password
+    volumeMounts:
+      - mountPath: /etc/clickhouse-server/users.d/
+        name: reader-user
+        readOnly: true
+```
+
+<div id="database-sync">
+  ### Синхронизация базы данных
+</div>
+
+Включите автоматическую синхронизацию базы данных для новых реплик:
+
+```yaml
+spec:
+  settings:
+    enableDatabaseSync: true  # По умолчанию: true
+```
+
+Когда эта настройка включена, оператор синхронизирует таблицы Replicated и интеграционные таблицы на новые реплики.
+
+<div id="server-logging">
+  ### Логирование сервера
+</div>
+
+Настройте логирование сервера ClickHouse через `spec.settings.logger`. Все поля необязательны и имеют безопасные значения по умолчанию, поэтому даже кластер, который вы ни разу не изменяли, уже пишет журналы уровня `trace` и в консоль контейнера, и в ротируемый файл на диске.
+
+```yaml
+spec:
+  settings:
+    logger:
+      logToFile: true   # Default: true. Set false to log only to the console
+      jsonLogs: false   # Default: false. Set true for structured JSON log lines
+      level: trace      # Default: trace
+      size: 1000M       # Default: 1000M. Rotate a log file once it reaches this size
+      count: 50         # Default: 50. Number of rotated files to keep
+```
+
+| Поле        | По умолчанию | Описание                                                                                                                         |
+| ----------- | ------------ | -------------------------------------------------------------------------------------------------------------------------------- |
+| `logToFile` | `true`       | Если `false`, оператор отключает вывод в файлы, и сервер пишет журнал только в консоль контейнера.                               |
+| `jsonLogs`  | `false`      | Если `true`, оператор добавляет `formatting.type: json`, так что каждая строка становится объектом JSON.                         |
+| `level`     | `trace`      | Уровень подробности журнала. Один из `test`, `trace`, `debug`, `information`, `notice`, `warning`, `error`, `critical`, `fatal`. |
+| `size`      | `1000M`      | Максимальный размер одного файла журнала до ротации.                                                                             |
+| `count`     | `50`         | Количество файлов журнала после ротации, которые сервер сохраняет.                                                               |
+
+Оператор всегда оставляет логирование в консоль включённым, чтобы работал `kubectl logs`, а при `logToFile` со значением `true` дополнительно включает файловый журнал. В кластере с настройками по умолчанию получается такой блок `logger`:
+
+```yaml
+logger:
+  console: true
+  level: trace
+  log: /var/log/clickhouse-server/clickhouse-server.log
+  errorlog: /var/log/clickhouse-server/clickhouse-server.err.log
+  size: 1000M
+  count: 50
+```
+
+Тот же блок `spec.settings.logger` применяется и к `KeeperCluster`; в этом случае оператор записывает файлы в каталог `/var/log/clickhouse-keeper/`.
+
+<Note>
+  Вывод в консоль остается включенным независимо от `logToFile`, поэтому `kubectl logs` продолжает работать, даже если вы отключите логирование в файл. Установите `jsonLogs: true`, если отправляете журналы в систему хранения структурированных журналов, которая разбирает JSON.
+</Note>
+
+<div id="custom-configuration">
+  ## Пользовательская конфигурация
+</div>
+
+<div id="embedded-extra-configuration">
+  ### Встроенная дополнительная конфигурация
+</div>
+
+Вместо подключения пользовательских файлов конфигурации можно напрямую указать дополнительные параметры конфигурации ClickHouse.
+
+Добавьте пользовательскую конфигурацию ClickHouse с помощью `extraConfig`:
+
+```yaml
+spec:
+  settings:
+    extraConfig:
+      background_pool_size: 20
+```
+
+<div id="useful-links">
+  #### Полезные ссылки:
+</div>
+
+* [Примеры YAML-конфигурации](/ru/concepts/features/configuration/server-config/configuration-files#example-1)
+* [Все настройки сервера](/ru/reference/settings/server-settings/settings)
+
+<div id="embedded-extra-users-configuration">
+  ### Встроенная конфигурация дополнительных пользователей
+</div>
+
+Вы также можете указать дополнительную конфигурацию пользователей ClickHouse с помощью `extraUsersConfig`. Это удобно, если нужно определить пользователей, профили, квоты и привилегии прямо в спецификации кластера.
+
+```yaml
+spec:
+  settings:
+    extraUsersConfig:
+      users:
+        analyst:
+          password:
+            - '@from_env': ANALYST_PASSWORD
+          profile: "readonly"
+          quota: "default"
+      profiles:
+        readonly:
+          readonly: 1
+          max_memory_usage: 10000000000
+      quotas:
+        default:
+          interval:
+            duration: 3600
+            queries: 1000
+            errors: 100
+```
+
+<Note>
+  `extraUsersConfig` хранится в объекте ConfigMap в k8s. Не храните там секретные данные в открытом виде.
+</Note>
+
+<div id="see-documentationconceptsfeaturesconfigurationsettingssettings-users-for-all-supported-clickhouse-users-configuration-options">
+  #### См. [документацию](/ru/concepts/features/configuration/settings/settings-users) с полным перечнем поддерживаемых параметров конфигурации пользователей ClickHouse.
+</div>
+
+<div id="configuration-example">
+  ### Пример конфигурации
+</div>
+
+Полный пример конфигурации:
+
+```yaml
+apiVersion: clickhouse.com/v1alpha1
+kind: KeeperCluster
+metadata:
+  name: sample
+spec:
+  replicas: 3
+  dataVolumeClaimSpec:
+    storageClassName: <storage-class-name>
+    resources:
+      requests:
+        storage: 10Gi
+  podTemplate:
+    topologyZoneKey: topology.kubernetes.io/zone
+    nodeHostnameKey: kubernetes.io/hostname
+  containerTemplate:
+    resources:
+      requests:
+        cpu: "2"
+        memory: "4Gi"
+      limits:
+        cpu: "4"
+        memory: "8Gi"
+  settings:
+    tls:
+      enabled: true
+      required: true
+      serverCertSecret:
+        name: <keeper-certificate-secret>
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: default-user-password
+data:
+  # секретный-пароль
+  password: "..." # sha256 hex пароля
+---
+apiVersion: clickhouse.com/v1alpha1
+kind: ClickHouseCluster
+metadata:
+  name: sample
+spec:
+  replicas: 2
+  dataVolumeClaimSpec:
+    storageClassName: <storage-class-name>
+    resources:
+      requests:
+        storage: 200Gi
+  keeperClusterRef:
+    name: sample
+  podTemplate:
+    topologyZoneKey: topology.kubernetes.io/zone
+    nodeHostnameKey: kubernetes.io/hostname
+  settings:
+    tls:
+      enabled: true
+      required: true
+      serverCertSecret:
+        name: clickhouse-cert
+    defaultUserPassword:
+      passwordType: password_sha256_hex
+      configMap:
+        key: password
+        name: default-password
+```

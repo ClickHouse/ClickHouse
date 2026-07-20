@@ -1,0 +1,53 @@
+---
+title: ClickHouse の SSL 証明書検証エラーの解決方法
+description: SSL Exception CERTIFICATE_VERIFY_FAILED エラーを解決する方法を説明します。
+date: 2023-05-02
+tags: ['セキュリティと認証', 'エラーと例外']
+keywords: ['エラー', 'SSL 証明書', '210']
+---
+
+<div id="resolving-code-210-ssl-certificate-verify-error-in-clickhouse">
+  ## ClickHouse におけるコード 210 の SSL 証明書検証エラーの解決
+</div>
+
+このエラーは通常、次のように報告されます。
+
+`Code: 210. DB::NetException: SSL Exception: error:1000007d:SSL routines:OPENSSL_internal:CERTIFICATE_VERIFY_FAILED`
+
+<div id="cause-of-the-error">
+  ## エラーの原因
+</div>
+
+このエラーは、`clickhouse-client` を使用して ClickHouseサーバーへの接続を試行している際に発生します。原因は、次のいずれかです。
+
+* クライアントの設定ファイル `config.xml` に、マシンのデフォルトの CA ストア内のルート証明書が含まれていない
+* 自己署名証明書または内部 CA 証明書が設定されていない
+
+<div id="solution">
+  ## 解決策
+</div>
+
+内部CAまたは自己署名CAを使用する場合は、クライアントディレクトリ (例: `/etc/clickhouse-client`) 内の `config.xml` でCAルート証明書を設定し、既定の場所にある既定のルートCA証明書を読み込まないようにします。
+
+以下は設定例です。
+
+```xml
+<openSSL>
+    <client>
+        <loadDefaultCAFile>false</loadDefaultCAFile>
+        <caConfig>/etc/clickhouse-server/certs/marsnet_ca.crt</caConfig>
+        <cacheSessions>true</cacheSessions>
+        <disableProtocols>sslv2,sslv3</disableProtocols>
+        <preferServerCiphers>true</preferServerCiphers>
+        <invalidCertificateHandler>
+            <name>RejectCertificateHandler</name>
+        </invalidCertificateHandler>
+    </client>
+</openSSL>
+```
+
+<div id="additional-resources">
+  ## 参考資料
+</div>
+
+[https://clickhouse.com/docs/interfaces/cli/#configuration&#95;files](/ja/concepts/features/interfaces/cli#configuration_files) を参照してください

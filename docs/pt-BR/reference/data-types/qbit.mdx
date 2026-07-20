@@ -1,0 +1,99 @@
+---
+description: 'Documentação do tipo de dado QBit no ClickHouse, que permite quantização de granularidade fina para busca vetorial aproximada'
+keywords: ['qbit', 'tipo de dado']
+sidebarTitle: 'QBit'
+slug: /sql-reference/data-types/qbit
+title: 'Tipo de dado QBit'
+doc_type: 'reference'
+---
+
+O tipo de dado `QBit` reorganiza o armazenamento de vetores para tornar as buscas aproximadas mais rápidas. Em vez de armazenar juntos os elementos de cada vetor, ele agrupa as mesmas posições de dígitos binários em todos os vetores.
+Isso armazena os vetores com precisão total e permite escolher o nível de quantização de granularidade fina no momento da busca: leia menos bits para reduzir a E/S e acelerar os cálculos, ou mais bits para obter maior precisão. Você aproveita os ganhos de velocidade da redução da transferência de dados e do processamento proporcionada pela quantização, mas todos os dados originais continuam disponíveis quando necessário.
+
+Para declarar uma coluna do tipo `QBit`, use a seguinte sintaxe:
+
+```sql
+column_name QBit(element_type, dimension)
+```
+
+* `element_type` – o tipo de cada elemento do vetor. Os tipos permitidos são `BFloat16`, `Float32` e `Float64`
+* `dimension` – o número de elementos de cada vetor
+
+<div id="creating-qbit">
+  ## Criando QBit
+</div>
+
+Usando o tipo `QBit` na definição de coluna da tabela:
+
+```sql
+CREATE TABLE test (id UInt32, vec QBit(Float32, 8)) ENGINE = Memory;
+INSERT INTO test VALUES (1, [1, 2, 3, 4, 5, 6, 7, 8]), (2, [9, 10, 11, 12, 13, 14, 15, 16]);
+SELECT vec FROM test ORDER BY id;
+```
+
+```text
+┌─vec──────────────────────┐
+│ [1,2,3,4,5,6,7,8]        │
+│ [9,10,11,12,13,14,15,16] │
+└──────────────────────────┘
+```
+
+<div id="converting-arrays-to-qbit">
+  ## Convertendo arrays em QBit
+</div>
+
+Arrays são convertidos em `QBit` quando o comprimento do array corresponde à dimensão do `QBit`. O tipo de elemento do array não precisa corresponder ao tipo de elemento do `QBit`. Qualquer tipo numérico de elemento é convertido automaticamente. Isso permite mover uma coluna existente de embeddings diretamente para uma coluna `QBit`:
+
+```sql
+CREATE TABLE embeddings (id UInt32, embedding Array(Float32)) ENGINE = Memory;
+INSERT INTO embeddings VALUES (1, [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8]), (2, [0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2, 0.1]);
+
+CREATE TABLE vectors (id UInt32, vec QBit(Float32, 8)) ENGINE = Memory;
+INSERT INTO vectors SELECT id, embedding FROM embeddings;
+
+SELECT * FROM vectors ORDER BY id;
+```
+
+```text
+┌─id─┬─vec───────────────────────────────┐
+│  1 │ [0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8] │
+│  2 │ [0.8,0.7,0.6,0.5,0.4,0.3,0.2,0.1] │
+└────┴───────────────────────────────────┘
+```
+
+A conversão também pode ser feita explicitamente com `CAST`, por exemplo `CAST(embedding AS QBit(Float32, 8))`.
+
+<div id="qbit-subcolumns">
+  ## Subcolunas do QBit
+</div>
+
+`QBit` implementa um padrão de acesso a subcolunas que permite acessar planos de bits individuais dos vetores armazenados. Cada posição de bit pode ser acessada usando a sintaxe `.N`, em que `N` é a posição do bit:
+
+```sql
+CREATE TABLE test (id UInt32, vec QBit(Float32, 8)) ENGINE = Memory;
+INSERT INTO test VALUES (1, [0, 0, 0, 0, 0, 0, 0, 0]);
+INSERT INTO test VALUES (1, [-0, -0, -0, -0, -0, -0, -0, -0]);
+SELECT bin(vec.1) FROM test;
+```
+
+```text
+┌─bin(tupleElement(vec, 1))─┐
+│ 00000000                  │
+│ 11111111                  │
+└───────────────────────────┘
+```
+
+O número de subcolunas acessíveis depende do tipo de elemento:
+
+* `BFloat16`: 16 subcolunas (1-16)
+* `Float32`: 32 subcolunas (1-32)
+* `Float64`: 64 subcolunas (1-64)
+
+<div id="vector-search-functions">
+  ## Funções de busca vetorial
+</div>
+
+Estas são as funções de distância para busca vetorial por similaridade que usam o tipo de dado `QBit`:
+
+* [`L2DistanceTransposed`](/pt-BR/reference/functions/regular-functions/distance-functions#L2DistanceTransposed)
+* [`cosineDistanceTransposed`](/pt-BR/reference/functions/regular-functions/distance-functions#cosineDistanceTransposed)

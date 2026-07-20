@@ -1,0 +1,92 @@
+---
+title: Como criar um Dicionário no ClickHouse com chaves e valores String
+description: Aprenda a criar um Dicionário no ClickHouse usando chaves e valores String de uma tabela MergeTree como origem, com exemplos de configuração e uso.
+date: 2023-07-10
+tags: ['Modelagem de Dados']
+keywords: ['Dicionário', 'Chaves String', 'Valores String']
+---
+
+<div id="question">
+  ## Pergunta
+</div>
+
+Como criar um Dicionário no ClickHouse usando chaves e valores do tipo string a partir de uma tabela MergeTree como origem
+
+<div id="answer">
+  ## Resposta
+</div>
+
+* Crie a tabela de origem do dicionário
+
+```
+CREATE TABLE db1.table1_dict_source
+(
+  id UInt32,
+  email String,
+  name String
+)
+ENGINE = MergeTree()
+ORDER BY id;
+```
+
+* Inserir linhas
+
+```
+INSERT INTO db1.table1_dict_source
+(id, email, name)
+VALUES
+(1, 'me@domain.com', 'me'),
+(2, 'you@domain.com', 'you');
+```
+
+* Criar dicionário com chave e valor como String
+
+```
+CREATE DICTIONARY db1.table1_dict
+(
+    email String,
+    name String
+)
+PRIMARY KEY email
+SOURCE(
+CLICKHOUSE(
+TABLE 'table1_dict_source'
+USER 'default'
+PASSWORD 'ClickHouse123!'))
+LAYOUT(COMPLEX_KEY_HASHED())
+LIFETIME(MIN 0 MAX 1000);
+```
+
+* Teste o dicionário
+
+```
+clickhouse-cloud :) SELECT * from db1.table1_dict;
+
+SELECT *
+FROM db1.table1_dict
+
+Query id: 098396ce-11dd-4c71-a0e1-40723dd67ddc
+
+┌─email──────────┬─name─┐
+│ me@domain.com  │ me   │
+│ you@domain.com │ you  │
+└────────────────┴──────┘
+
+2 rows in set. Elapsed: 0.001 sec. 
+```
+
+Você também pode usar a função dictGet para obter valores dela, como:
+
+```
+SELECT dictGet('db1.table1_dict', 'name', 'me@domain.com');
+```
+
+Resposta:
+
+```
+┌─dictGet('db1.table1_dict', 'name', 'me@domain.com')─┐
+│ me                                                  │
+└─────────────────────────────────────────────────────┘
+```
+
+Mais detalhes - [https://clickhouse.com/docs/sql-reference/functions/ext-dict-functions](https://clickhouse.com/docs/sql-reference/functions/ext-dict-functions)

@@ -1,0 +1,459 @@
+---
+slug: /guides/developer/understanding-query-execution-with-the-analyzer
+sidebarTitle: "Comprendre l'exécution des requêtes avec l'analyseur"
+title: "Comprendre l'exécution des requêtes avec l'analyseur"
+description: "Explique comment utiliser l'analyseur pour comprendre comment ClickHouse exécute vos requêtes"
+doc_type: 'guide'
+keywords: ['exécution des requêtes', 'analyseur', 'optimisation des requêtes', 'explain', 'performance']
+---
+
+import { Image } from "/snippets/fr/components/Image.jsx";
+
+ClickHouse traite les requêtes extrêmement rapidement, mais l’exécution d’une requête n’a rien de simple. Essayons de comprendre comment une requête `SELECT` est exécutée. Pour l’illustrer, ajoutons des données dans une Table dans ClickHouse :
+
+```sql
+CREATE TABLE session_events(
+   clientId UUID,
+   sessionId UUID,
+   pageId UUID,
+   timestamp DateTime,
+   type String
+) ORDER BY (timestamp);
+
+INSERT INTO session_events SELECT * FROM generateRandom('clientId UUID,
+   sessionId UUID,
+   pageId UUID,
+   timestamp DateTime,
+   type Enum(\'type1\', \'type2\')', 1, 10, 2) LIMIT 1000;
+```
+
+Maintenant que nous avons des données dans ClickHouse, nous voulons exécuter quelques requêtes et comprendre comment elles s’exécutent. L’exécution d’une requête se décompose en de nombreuses étapes. Chaque étape de l’exécution d’une requête peut être analysée et dépannée à l’aide de la requête `EXPLAIN` correspondante. Ces étapes sont résumées dans le schéma ci-dessous :
+
+<Image img="/images/guides/developer/analyzer1.webp" alt="Étapes de la requête Explain" size="md" />
+
+Voyons maintenant chaque composant à l’œuvre lors de l’exécution d’une requête. Nous allons prendre quelques requêtes, puis les examiner à l’aide de l’instruction `EXPLAIN`.
+
+<div id="parser">
+  ## Analyseur syntaxique
+</div>
+
+L’objectif d’un analyseur syntaxique est de transformer le texte de la requête en un AST (arbre syntaxique abstrait). Cette étape peut être visualisée à l’aide de `EXPLAIN AST` :
+
+```sql
+EXPLAIN AST SELECT min(timestamp), max(timestamp) FROM session_events;
+```
+
+```response
+┌─explain────────────────────────────────────────────┐
+│ SelectWithUnionQuery (children 1)                  │
+│  ExpressionList (children 1)                       │
+│   SelectQuery (children 2)                         │
+│    ExpressionList (children 2)                     │
+│     Function min (alias minimum_date) (children 1) │
+│      ExpressionList (children 1)                   │
+│       Identifier timestamp                         │
+│     Function max (alias maximum_date) (children 1) │
+│      ExpressionList (children 1)                   │
+│       Identifier timestamp                         │
+│    TablesInSelectQuery (children 1)                │
+│     TablesInSelectQueryElement (children 1)        │
+│      TableExpression (children 1)                  │
+│       TableIdentifier session_events               │
+└────────────────────────────────────────────────────┘
+```
+
+Le résultat est un arbre syntaxique abstrait qui peut être visualisé comme ci-dessous :
+
+<Image img="/images/guides/developer/analyzer2.webp" alt="Sortie AST" size="md" />
+
+Chaque nœud a des nœuds enfants, et l’ensemble de l’arbre représente la structure globale de votre requête. Il s’agit d’une structure logique qui facilite le traitement d’une requête. Du point de vue de l’utilisateur final (sauf s’il s’intéresse à l’exécution des requêtes), ce n’est pas très utile ; cet outil est principalement destiné aux développeurs.
+
+<div id="analyzer">
+  ## Analyseur
+</div>
+
+ClickHouse dispose actuellement de deux architectures pour l’analyseur. Vous pouvez utiliser l’ancienne architecture en définissant : `enable_analyzer=0`. La nouvelle architecture est activée par défaut. Nous ne décrirons ici que la nouvelle architecture, puisque l’ancienne sera dépréciée lorsque le nouvel analyseur sera officiellement disponible.
+
+<Note>
+  La nouvelle architecture devrait nous offrir un meilleur cadre pour améliorer les performances de ClickHouse. Cependant, comme il s’agit d’un composant fondamental du traitement des requêtes, elle peut aussi avoir un impact négatif sur certaines requêtes, et il existe des [incompatibilités connues](/fr/guides/clickhouse/performance-and-monitoring/analyzer#known-incompatibilities). Vous pouvez revenir à l’ancien analyseur en modifiant le paramètre `enable_analyzer` au niveau de la requête ou de l’utilisateur.
+</Note>
+
+L’analyseur est une étape importante de l’exécution des requêtes. Il prend un AST et le transforme en arbre de requête. Le principal avantage d’un arbre de requête par rapport à un AST est que de nombreux composants y sont résolus, comme le stockage, par exemple. On sait également dans quelle table lire, les alias sont aussi résolus, et l’arbre connaît les différents types de données utilisés. Grâce à tout cela, l’analyseur peut appliquer des optimisations. Ces optimisations fonctionnent au moyen de « passes ». Chaque passe recherche différents types d’optimisation. Vous pouvez voir toutes les passes [ici](https://github.com/ClickHouse/ClickHouse/blob/76578ebf92af3be917cd2e0e17fea2965716d958/src/Analyzer/QueryTreePassManager.cpp#L249) ; voyons cela en pratique avec notre requête précédente :
+
+```sql
+EXPLAIN QUERY TREE passes=0 SELECT min(timestamp) AS minimum_date, max(timestamp) AS maximum_date FROM session_events SETTINGS allow_experimental_analyzer=1;
+```
+
+```response
+┌─explain────────────────────────────────────────────────────────────────────────────────┐
+│ QUERY id: 0                                                                            │
+│   PROJECTION                                                                           │
+│     LIST id: 1, nodes: 2                                                               │
+│       FUNCTION id: 2, alias: minimum_date, function_name: min, function_type: ordinary │
+│         ARGUMENTS                                                                      │
+│           LIST id: 3, nodes: 1                                                         │
+│             IDENTIFIER id: 4, identifier: timestamp                                    │
+│       FUNCTION id: 5, alias: maximum_date, function_name: max, function_type: ordinary │
+│         ARGUMENTS                                                                      │
+│           LIST id: 6, nodes: 1                                                         │
+│             IDENTIFIER id: 7, identifier: timestamp                                    │
+│   JOIN TREE                                                                            │
+│     IDENTIFIER id: 8, identifier: session_events                                       │
+│   SETTINGS allow_experimental_analyzer=1                                               │
+└────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+```sql
+EXPLAIN QUERY TREE passes=20 SELECT min(timestamp) AS minimum_date, max(timestamp) AS maximum_date FROM session_events SETTINGS allow_experimental_analyzer=1;
+```
+
+```response
+┌─explain───────────────────────────────────────────────────────────────────────────────────┐
+│ QUERY id: 0                                                                               │
+│   PROJECTION COLUMNS                                                                      │
+│     minimum_date DateTime                                                                 │
+│     maximum_date DateTime                                                                 │
+│   PROJECTION                                                                              │
+│     LIST id: 1, nodes: 2                                                                  │
+│       FUNCTION id: 2, function_name: min, function_type: aggregate, result_type: DateTime │
+│         ARGUMENTS                                                                         │
+│           LIST id: 3, nodes: 1                                                            │
+│             COLUMN id: 4, column_name: timestamp, result_type: DateTime, source_id: 5     │
+│       FUNCTION id: 6, function_name: max, function_type: aggregate, result_type: DateTime │
+│         ARGUMENTS                                                                         │
+│           LIST id: 7, nodes: 1                                                            │
+│             COLUMN id: 4, column_name: timestamp, result_type: DateTime, source_id: 5     │
+│   JOIN TREE                                                                               │
+│     TABLE id: 5, alias: __table1, table_name: default.session_events                      │
+│   SETTINGS allow_experimental_analyzer=1                                                  │
+└───────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+Entre les deux exécutions, vous pouvez voir comment les alias et les projections sont résolus.
+
+<div id="planner">
+  ## Planificateur
+</div>
+
+Le planificateur prend un arbre de requête et en construit un plan de requête. L&#39;arbre de requête indique ce que l&#39;on veut faire avec une requête donnée, tandis que le plan de requête indique comment cela sera fait. Des optimisations supplémentaires sont également effectuées au niveau du plan de requête. Vous pouvez utiliser `EXPLAIN PLAN` ou `EXPLAIN` pour afficher le plan de requête (`EXPLAIN` exécutera `EXPLAIN PLAN`).
+
+```sql
+EXPLAIN PLAN WITH
+   (
+       SELECT count(*)
+       FROM session_events
+   ) AS total_rows
+SELECT type, min(timestamp) AS minimum_date, max(timestamp) AS maximum_date, count(*) /total_rows * 100 AS percentage FROM session_events GROUP BY type
+```
+
+```response
+┌─explain──────────────────────────────────────────┐
+│ Expression ((Projection + Before ORDER BY))      │
+│   Aggregating                                    │
+│     Expression (Before GROUP BY)                 │
+│       ReadFromMergeTree (default.session_events) │
+└──────────────────────────────────────────────────┘
+```
+
+Même si cela nous donne déjà quelques informations, nous pouvons en obtenir davantage. Par exemple, nous voulons peut-être connaître le nom de la colonne pour laquelle nous avons besoin des projections. Vous pouvez ajouter l’en-tête à la requête :
+
+```SQL
+EXPLAIN header = 1
+WITH (
+       SELECT count(*)
+       FROM session_events
+   ) AS total_rows
+SELECT
+   type,
+   min(timestamp) AS minimum_date,
+   max(timestamp) AS maximum_date,
+   (count(*) / total_rows) * 100 AS percentage
+FROM session_events
+GROUP BY type
+```
+
+```response
+┌─explain──────────────────────────────────────────┐
+│ Expression ((Projection + Before ORDER BY))      │
+│ Header: type String                              │
+│         minimum_date DateTime                    │
+│         maximum_date DateTime                    │
+│         percentage Nullable(Float64)             │
+│   Aggregating                                    │
+│   Header: type String                            │
+│           min(timestamp) DateTime                │
+│           max(timestamp) DateTime                │
+│           count() UInt64                         │
+│     Expression (Before GROUP BY)                 │
+│     Header: timestamp DateTime                   │
+│             type String                          │
+│       ReadFromMergeTree (default.session_events) │
+│       Header: timestamp DateTime                 │
+│               type String                        │
+└──────────────────────────────────────────────────┘
+```
+
+Vous connaissez maintenant les noms des colonnes à créer pour la dernière Projection (`minimum_date`, `maximum_date` et `percentage`), mais vous pouvez aussi souhaiter obtenir le détail de toutes les actions à exécuter. Pour cela, définissez `actions=1`.
+
+```sql
+EXPLAIN actions = 1
+WITH (
+       SELECT count(*)
+       FROM session_events
+   ) AS total_rows
+SELECT
+   type,
+   min(timestamp) AS minimum_date,
+   max(timestamp) AS maximum_date,
+   (count(*) / total_rows) * 100 AS percentage
+FROM session_events
+GROUP BY type
+```
+
+```response
+┌─explain────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ Expression ((Projection + Before ORDER BY))                                                                                                │
+│ Actions: INPUT :: 0 -> type String : 0                                                                                                     │
+│          INPUT : 1 -> min(timestamp) DateTime : 1                                                                                          │
+│          INPUT : 2 -> max(timestamp) DateTime : 2                                                                                          │
+│          INPUT : 3 -> count() UInt64 : 3                                                                                                   │
+│          COLUMN Const(Nullable(UInt64)) -> total_rows Nullable(UInt64) : 4                                                                 │
+│          COLUMN Const(UInt8) -> 100 UInt8 : 5                                                                                              │
+│          ALIAS min(timestamp) :: 1 -> minimum_date DateTime : 6                                                                            │
+│          ALIAS max(timestamp) :: 2 -> maximum_date DateTime : 1                                                                            │
+│          FUNCTION divide(count() :: 3, total_rows :: 4) -> divide(count(), total_rows) Nullable(Float64) : 2                               │
+│          FUNCTION multiply(divide(count(), total_rows) :: 2, 100 :: 5) -> multiply(divide(count(), total_rows), 100) Nullable(Float64) : 4 │
+│          ALIAS multiply(divide(count(), total_rows), 100) :: 4 -> percentage Nullable(Float64) : 5                                         │
+│ Positions: 0 6 1 5                                                                                                                         │
+│   Aggregating                                                                                                                              │
+│   Keys: type                                                                                                                               │
+│   Aggregates:                                                                                                                              │
+│       min(timestamp)                                                                                                                       │
+│         Function: min(DateTime) → DateTime                                                                                                 │
+│         Arguments: timestamp                                                                                                               │
+│       max(timestamp)                                                                                                                       │
+│         Function: max(DateTime) → DateTime                                                                                                 │
+│         Arguments: timestamp                                                                                                               │
+│       count()                                                                                                                              │
+│         Function: count() → UInt64                                                                                                         │
+│         Arguments: none                                                                                                                    │
+│   Skip merging: 0                                                                                                                          │
+│     Expression (Before GROUP BY)                                                                                                           │
+│     Actions: INPUT :: 0 -> timestamp DateTime : 0                                                                                          │
+│              INPUT :: 1 -> type String : 1                                                                                                 │
+│     Positions: 0 1                                                                                                                         │
+│       ReadFromMergeTree (default.session_events)                                                                                           │
+│       ReadType: Default                                                                                                                    │
+│       Parts: 1                                                                                                                             │
+│       Granules: 1                                                                                                                          │
+└────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+Vous pouvez maintenant voir toutes les entrées, fonctions, alias et types de données utilisés. Vous pouvez également voir [ici](https://github.com/ClickHouse/ClickHouse/blob/master/src/Processors/QueryPlan/Optimizations/Optimizations.h) certaines des optimisations que le planificateur va appliquer.
+
+<div id="query-pipeline">
+  ## Pipeline d’exécution de la requête
+</div>
+
+Un pipeline d’exécution de la requête est généré à partir du plan de requête. Il est très similaire à ce dernier, à la différence qu&#39;il ne s&#39;agit pas d&#39;un arbre, mais d&#39;un graphe. Il montre comment ClickHouse va exécuter une requête et quelles ressources seront utilisées. L&#39;analyse du pipeline d’exécution de la requête est très utile pour identifier le goulot d’étranglement au niveau des entrées/sorties. Reprenons notre requête précédente et examinons l’exécution du pipeline d’exécution de la requête :
+
+```sql
+EXPLAIN PIPELINE
+WITH (
+       SELECT count(*)
+       FROM session_events
+   ) AS total_rows
+SELECT
+   type,
+   min(timestamp) AS minimum_date,
+   max(timestamp) AS maximum_date,
+   (count(*) / total_rows) * 100 AS percentage
+FROM session_events
+GROUP BY type;
+```
+
+```response
+┌─explain────────────────────────────────────────────────────────────────────┐
+│ (Expression)                                                               │
+│ ExpressionTransform × 2                                                    │
+│   (Aggregating)                                                            │
+│   Resize 1 → 2                                                             │
+│     AggregatingTransform                                                   │
+│       (Expression)                                                         │
+│       ExpressionTransform                                                  │
+│         (ReadFromMergeTree)                                                │
+│         MergeTreeSelect(pool: PrefetchedReadPool, algorithm: Thread) 0 → 1 │
+└────────────────────────────────────────────────────────────────────────────┘
+```
+
+Entre parenthèses figurent l’étape du plan de requête et, à côté, le processeur. C’est une information très utile, mais puisqu’il s’agit d’un graphe, il serait utile de le visualiser comme tel. Nous disposons d’un paramètre `graph` que nous pouvons définir à 1 et indiquer le format de sortie `TSV` :
+
+```sql
+EXPLAIN PIPELINE graph=1 WITH
+   (
+       SELECT count(*)
+       FROM session_events
+   ) AS total_rows
+SELECT type, min(timestamp) AS minimum_date, max(timestamp) AS maximum_date, count(*) /total_rows * 100 AS percentage FROM session_events GROUP BY type FORMAT TSV;
+```
+
+```response
+digraph
+{
+ rankdir="LR";
+ { node [shape = rect]
+   subgraph cluster_0 {
+     label ="Expression";
+     style=filled;
+     color=lightgrey;
+     node [style=filled,color=white];
+     { rank = same;
+       n5 [label="ExpressionTransform × 2"];
+     }
+   }
+   subgraph cluster_1 {
+     label ="Aggregating";
+     style=filled;
+     color=lightgrey;
+     node [style=filled,color=white];
+     { rank = same;
+       n3 [label="AggregatingTransform"];
+       n4 [label="Resize"];
+     }
+   }
+   subgraph cluster_2 {
+     label ="Expression";
+     style=filled;
+     color=lightgrey;
+     node [style=filled,color=white];
+     { rank = same;
+       n2 [label="ExpressionTransform"];
+     }
+   }
+   subgraph cluster_3 {
+     label ="ReadFromMergeTree";
+     style=filled;
+     color=lightgrey;
+     node [style=filled,color=white];
+     { rank = same;
+       n1 [label="MergeTreeSelect(pool: PrefetchedReadPool, algorithm: Thread)"];
+     }
+   }
+ }
+ n3 -> n4 [label=""];
+ n4 -> n5 [label="× 2"];
+ n2 -> n3 [label=""];
+ n1 -> n2 [label=""];
+}
+```
+
+Vous pouvez ensuite copier cette sortie et la coller [ici](https://dreampuf.github.io/GraphvizOnline), ce qui générera le graph suivant :
+
+<Image img="/images/guides/developer/analyzer3.webp" alt="Sortie du graph" size="md" />
+
+Un rectangle blanc correspond à un nœud du pipeline, le rectangle gris aux étapes du plan de requête, et le `x` suivi d’un nombre indique le nombre d’entrées/sorties utilisées. Si vous ne souhaitez pas les afficher sous une forme compacte, vous pouvez toujours ajouter `compact=0` :
+
+```sql
+EXPLAIN PIPELINE graph = 1, compact = 0
+WITH (
+       SELECT count(*)
+       FROM session_events
+   ) AS total_rows
+SELECT
+   type,
+   min(timestamp) AS minimum_date,
+   max(timestamp) AS maximum_date,
+   (count(*) / total_rows) * 100 AS percentage
+FROM session_events
+GROUP BY type
+FORMAT TSV
+```
+
+```response
+digraph
+{
+ rankdir="LR";
+ { node [shape = rect]
+   n0[label="MergeTreeSelect(pool: PrefetchedReadPool, algorithm: Thread)"];
+   n1[label="ExpressionTransform"];
+   n2[label="AggregatingTransform"];
+   n3[label="Resize"];
+   n4[label="ExpressionTransform"];
+   n5[label="ExpressionTransform"];
+ }
+ n0 -> n1;
+ n1 -> n2;
+ n2 -> n3;
+ n3 -> n4;
+ n3 -> n5;
+}
+```
+
+<Image img="/images/guides/developer/analyzer4.webp" alt="Sortie du graphe compact" size="md" />
+
+Pourquoi ClickHouse ne lit-il pas la table avec plusieurs threads ? Essayons d&#39;ajouter davantage de données à notre table :
+
+```sql
+INSERT INTO session_events SELECT * FROM generateRandom('clientId UUID,
+   sessionId UUID,
+   pageId UUID,
+   timestamp DateTime,
+   type Enum(\'type1\', \'type2\')', 1, 10, 2) LIMIT 1000000;
+```
+
+Relançons maintenant notre requête `EXPLAIN` :
+
+```sql
+EXPLAIN PIPELINE graph = 1, compact = 0
+WITH (
+       SELECT count(*)
+       FROM session_events
+   ) AS total_rows
+SELECT
+   type,
+   min(timestamp) AS minimum_date,
+   max(timestamp) AS maximum_date,
+   (count(*) / total_rows) * 100 AS percentage
+FROM session_events
+GROUP BY type
+FORMAT TSV
+```
+
+```response
+digraph
+{
+  rankdir="LR";
+  { node [shape = rect]
+    n0[label="MergeTreeSelect(pool: PrefetchedReadPool, algorithm: Thread)"];
+    n1[label="MergeTreeSelect(pool: PrefetchedReadPool, algorithm: Thread)"];
+    n2[label="ExpressionTransform"];
+    n3[label="ExpressionTransform"];
+    n4[label="StrictResize"];
+    n5[label="AggregatingTransform"];
+    n6[label="AggregatingTransform"];
+    n7[label="Resize"];
+    n8[label="ExpressionTransform"];
+    n9[label="ExpressionTransform"];
+  }
+  n0 -> n2;
+  n1 -> n3;
+  n2 -> n4;
+  n3 -> n4;
+  n4 -> n5;
+  n4 -> n6;
+  n5 -> n7;
+  n6 -> n7;
+  n7 -> n8;
+  n7 -> n9;
+}
+```
+
+<Image img="/images/guides/developer/analyzer5.webp" alt="Résultat du graphe parallèle" size="md" />
+
+L’Executor a donc décidé de ne pas paralléliser les opérations, car le volume de données n&#39;était pas suffisant. En ajoutant davantage de lignes, l’Executor a ensuite décidé d’utiliser plusieurs threads, comme le montre le graphe.
+
+<div id="executor">
+  ## Executor
+</div>
+
+Enfin, la dernière étape de l&#39;exécution de la requête est prise en charge par l&#39;executor. Celui-ci récupère le pipeline d’exécution de la requête et l&#39;exécute. Il existe différents types d&#39;executors, selon que vous effectuez un `SELECT`, un `INSERT` ou un `INSERT SELECT`.

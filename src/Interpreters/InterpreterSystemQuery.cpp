@@ -72,6 +72,7 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/StorageMaterializedView.h>
+#include <Storages/StorageQueryRunner.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/StorageURL.h>
 #include <base/coverage.h>
@@ -95,6 +96,7 @@
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
 #include <Common/SystemAllocatedMemoryHolder.h>
+#include <Common/ZooKeeper/ZooKeeper.h>
 #include <base/sleep.h>
 
 #include "config.h"
@@ -364,7 +366,7 @@ BlockIO InterpreterSystemQuery::execute()
     system_context->setCurrentProfile(getContext()->getSystemProfileName(), check_constraints);
 
     /// Make canonical query for simpler processing
-    if (query.type == Type::RELOAD_DICTIONARY)
+    if (query.type == Type::RELOAD_DICTIONARY || query.type == Type::UNLOAD_DICTIONARY)
     {
         if (query.database)
             query.setTable(query.getDatabase() + "." + query.getTable());
@@ -467,6 +469,14 @@ BlockIO InterpreterSystemQuery::execute()
 #else
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "The server was compiled without the support for AVRO");
 #endif
+        case Type::CLEAR_PAIMON_METADATA_CACHE:
+#if USE_AVRO
+            getContext()->checkAccess(AccessType::SYSTEM_DROP_PAIMON_METADATA_CACHE);
+            system_context->clearPaimonMetadataFilesCache();
+            break;
+#else
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "The server was compiled without the support for Paimon");
+#endif
         case Type::CLEAR_AVRO_SCHEMA_CACHE:
 #if USE_AVRO
             getContext()->checkAccess(AccessType::SYSTEM_DROP_AVRO_SCHEMA_CACHE);
@@ -533,6 +543,12 @@ BlockIO InterpreterSystemQuery::execute()
         {
             getContext()->checkAccess(AccessType::SYSTEM_DROP_QUERY_CONDITION_CACHE);
             getContext()->clearQueryConditionCache();
+            break;
+        }
+        case Type::CLEAR_ENCRYPTION_HEADERS_CACHE:
+        {
+            getContext()->checkAccess(AccessType::SYSTEM_DROP_ENCRYPTION_HEADERS_CACHE);
+            getContext()->clearEncryptionHeaderCache();
             break;
         }
         case Type::CLEAR_QUERY_CACHE:
@@ -628,15 +644,15 @@ BlockIO InterpreterSystemQuery::execute()
 
             MutableColumns res_columns = sample_block.cloneEmptyColumns();
 
-            auto fill_data = [&](const std::string & cache_name, const FileCachePtr & cache, const std::vector<FileSegment::Info> & file_segments)
+            auto fill_data = [&](const std::string & cache_name, const std::vector<FileSegment::Info> & file_segments)
             {
                 for (const auto & file_segment : file_segments)
                 {
                     size_t i = 0;
-                    const auto path = cache->getFileSegmentPath(
-                        file_segment.key, file_segment.offset, file_segment.kind, file_segment.origin);
+                    /// `file_segment.path` already reflects the real on-disk name (including the
+                    /// size suffix for downloaded segments); do not recompute it from the offset.
                     res_columns[i++]->insert(cache_name);
-                    res_columns[i++]->insert(path);
+                    res_columns[i++]->insert(file_segment.path);
                     res_columns[i++]->insert(file_segment.downloaded_size);
                 }
             };
@@ -646,14 +662,14 @@ BlockIO InterpreterSystemQuery::execute()
                 for (const auto & cache_data : FileCacheFactory::instance().getUniqueInstances())
                 {
                     auto file_segments = cache_data->cache->sync();
-                    fill_data(cache_data->cache->getName(), cache_data->cache, file_segments);
+                    fill_data(cache_data->cache->getName(), file_segments);
                 }
             }
             else
             {
                 auto cache = FileCacheFactory::instance().getByName(query.filesystem_cache_name)->cache;
                 auto file_segments = cache->sync();
-                fill_data(query.filesystem_cache_name, cache, file_segments);
+                fill_data(query.filesystem_cache_name, file_segments);
             }
 
             size_t num_rows = res_columns[0]->size();
@@ -752,6 +768,23 @@ BlockIO InterpreterSystemQuery::execute()
                 [&] { system_context->getExternalDictionariesLoader().reloadAllTriedToLoadInOrder(); },
                 [&] { system_context->getEmbeddedDictionaries().reload(); }
             });
+            ExternalDictionariesLoader::resetAll();
+            break;
+        }
+        case Type::UNLOAD_DICTIONARY:
+        {
+            getContext()->checkAccess(AccessType::SYSTEM_RELOAD_DICTIONARY);
+
+            auto & external_dictionaries_loader = system_context->getExternalDictionariesLoader();
+            external_dictionaries_loader.unloadDictionary(query.getTable(), getContext());
+            ExternalDictionariesLoader::resetAll();
+            break;
+        }
+        case Type::UNLOAD_DICTIONARIES:
+        {
+            getContext()->checkAccess(AccessType::SYSTEM_RELOAD_DICTIONARY);
+            auto & external_dictionaries_loader = system_context->getExternalDictionariesLoader();
+            external_dictionaries_loader.unloadAllDictionaries();
             ExternalDictionariesLoader::resetAll();
             break;
         }
@@ -980,6 +1013,9 @@ BlockIO InterpreterSystemQuery::execute()
             break;
         case Type::WAIT_LOADING_PARTS:
             waitLoadingParts();
+            break;
+        case Type::WAIT_QUERY_RUNNER:
+            waitQueryRunner();
             break;
         case Type::SCHEDULE_MERGE:
             scheduleMerge(query);
@@ -1605,6 +1641,14 @@ void InterpreterSystemQuery::dropReplica(ASTSystemQuery & query)
         getContext()->checkAccess(AccessType::SYSTEM_DROP_REPLICA);
         String remote_replica_path = fs::path(query.replica_zk_path)  / "replicas" / query.replica;
 
+        /// query.replica_zk_path keeps the legacy one-slash normalization so the drop below targets the
+        /// same live znode that tables store (a full collapse here would regress dropping a remote replica
+        /// of a table created with a trailing slash). For the self-protection comparison, collapse both
+        /// sides so a self-drop spelled with extra trailing slashes still matches the local table.
+        const String canonical_remote_replica_path
+            = fs::path(zkutil::extractZooKeeperPathAndCollapseTrailingSlashes(query.replica_zk_path, /*check_starts_with_slash*/ false))
+            / "replicas" / query.replica;
+
         /// This check is actually redundant, but it may prevent from some user mistakes
         for (auto & elem : DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false}))
         {
@@ -1613,7 +1657,17 @@ void InterpreterSystemQuery::dropReplica(ASTSystemQuery & query)
             {
                 if (auto * storage_replicated = dynamic_cast<StorageReplicatedMergeTree *>(iterator->table().get()))
                 {
-                    if (storage_replicated->getReplicaPath() == remote_replica_path)
+                    /// getReplicaPath() is built from getZooKeeperPath(), which strips only a single trailing
+                    /// slash, so a table created from "/a///" metadata keeps "/a//replicas/..." and would slip
+                    /// past this guard against a query path canonicalized to "/a/replicas/...".
+                    const String local_replica_path
+                        = fs::path(zkutil::extractZooKeeperPathAndCollapseTrailingSlashes(
+                              storage_replicated->getZooKeeperPath(), /*check_starts_with_slash*/ false))
+                        / "replicas" / storage_replicated->getReplicaName();
+                    /// Match the keeper too: a table on a different keeper with the same path string is a
+                    /// different znode, so it must not block a drop targeting query.zk_name.
+                    if (local_replica_path == canonical_remote_replica_path
+                        && storage_replicated->getZooKeeperName() == query.zk_name)
                         throw Exception(ErrorCodes::TABLE_WAS_NOT_DROPPED,
                                         "There is a local table {}, which has the same table path in ZooKeeper. "
                                         "Please check the path in query. "
@@ -1625,7 +1679,7 @@ void InterpreterSystemQuery::dropReplica(ASTSystemQuery & query)
             }
         }
 
-        auto zookeeper = getContext()->getZooKeeper();
+        auto zookeeper = getContext()->getDefaultOrAuxiliaryZooKeeper(query.zk_name);
 
         bool looks_like_table_path = zookeeper->exists(query.replica_zk_path + "/replicas") ||
                                      zookeeper->exists(query.replica_zk_path + "/dropped");
@@ -1886,7 +1940,21 @@ std::optional<String> InterpreterSystemQuery::getDetachedDatabaseFromKeeperPath(
         info.level = 0;
         replica_name = getContext()->getMacros()->expand(replica_name, info);
 
-        if (engine_zookeeper_path != query_.replica_zk_path)
+        if (engine_zookeeper_path.empty())
+            continue;
+
+        /// The raw engine argument may carry an auxiliary keeper prefix ("aux:/path"), so extract the
+        /// keeper name and fully collapse the path, then match on BOTH. Comparing the raw argument against
+        /// the query path would both false-match a default-keeper database at the same path (blocking a
+        /// valid auxiliary-keeper drop) and never match a detached auxiliary-keeper database (silently
+        /// failing this guard). query_.replica_zk_path keeps the legacy one-slash normalization for the
+        /// actual drop, so collapse it here too to compare canonical forms.
+        String engine_zookeeper_name = zkutil::extractZooKeeperName(engine_zookeeper_path);
+        engine_zookeeper_path = zkutil::extractZooKeeperPathAndCollapseTrailingSlashes(engine_zookeeper_path, /*check_starts_with_slash*/ false);
+        const String canonical_query_zk_path
+            = zkutil::extractZooKeeperPathAndCollapseTrailingSlashes(query_.replica_zk_path, /*check_starts_with_slash*/ false);
+
+        if (engine_zookeeper_name != query_.zk_name || engine_zookeeper_path != canonical_query_zk_path)
             continue;
 
         String full_replica_name
@@ -1907,11 +1975,25 @@ void InterpreterSystemQuery::dropDatabaseReplica(ASTSystemQuery & query)
     auto component_guard = Coordination::setCurrentComponent("InterpreterSystemQuery::dropDatabaseReplica");
     const String full_replica_name
         = query.shard.empty() ? query.replica : DatabaseReplicated::getFullReplicaName(query.shard, query.replica);
-    const fs::path & query_replica_zk_path = fs::path(query.replica_zk_path);
-    auto check_not_local_replica
-        = [](const DatabaseReplicated * replicated, const String & full_replica_name_, const fs::path & query_replica_zk_path_)
+    /// query.replica_zk_path keeps the legacy one-slash normalization so DatabaseReplicated::dropReplica
+    /// below targets the same live znode a Replicated database stores. Collapse it here only for the
+    /// self-protection comparison, so a self-drop spelled with extra trailing slashes still matches.
+    const fs::path query_replica_zk_path
+        = query.replica_zk_path.empty()
+        ? fs::path{}
+        : fs::path(zkutil::extractZooKeeperPathAndCollapseTrailingSlashes(query.replica_zk_path, /*check_starts_with_slash*/ false));
+    auto check_not_local_replica = [](const DatabaseReplicated * replicated, const String & full_replica_name_,
+                                       const fs::path & query_replica_zk_path_, const String & query_zk_name_)
     {
-        if (!query_replica_zk_path_.empty() && fs::path(replicated->getZooKeeperPath()) != query_replica_zk_path_)
+        /// When a ZKPATH is given, a database on a different keeper (or path) is a different znode and must
+        /// not block a drop targeting query_zk_name_. Canonicalize the database path the same way we
+        /// canonicalize query_replica_zk_path_: getZooKeeperPath() only strips a single trailing slash, so a
+        /// database created from "/a///" metadata keeps "/a/" and would otherwise slip past this guard.
+        const String replicated_zk_path
+            = zkutil::extractZooKeeperPathAndCollapseTrailingSlashes(replicated->getZooKeeperPath(), /*check_starts_with_slash*/ false);
+        if (!query_replica_zk_path_.empty()
+            && (fs::path(replicated_zk_path) != query_replica_zk_path_
+                || replicated->getZooKeeperName() != query_zk_name_))
             return;
         if (replicated->getFullReplicaName() != full_replica_name_)
             return;
@@ -1927,7 +2009,7 @@ void InterpreterSystemQuery::dropDatabaseReplica(ASTSystemQuery & query)
         DatabasePtr database = DatabaseCatalog::instance().getDatabase(query.getDatabase());
         if (auto * replicated = dynamic_cast<DatabaseReplicated *>(database.get()))
         {
-            check_not_local_replica(replicated, full_replica_name, query_replica_zk_path);
+            check_not_local_replica(replicated, full_replica_name, query_replica_zk_path, query.zk_name);
             if (query.with_tables)
                 dropStorageReplicasFromDatabase(query.replica, database);
             DatabaseReplicated::dropReplica(
@@ -1955,7 +2037,7 @@ void InterpreterSystemQuery::dropDatabaseReplica(ASTSystemQuery & query)
                 continue;
             }
 
-            check_not_local_replica(replicated, full_replica_name, query_replica_zk_path);
+            check_not_local_replica(replicated, full_replica_name, query_replica_zk_path, query.zk_name);
             if (query.with_tables)
                 dropStorageReplicasFromDatabase(query.replica, database);
             DatabaseReplicated::dropReplica(
@@ -1974,7 +2056,7 @@ void InterpreterSystemQuery::dropDatabaseReplica(ASTSystemQuery & query)
         /// This check is actually redundant, but it may prevent from some user mistakes
         for (auto & elem : DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false}))
             if (auto * replicated = dynamic_cast<DatabaseReplicated *>(elem.second.get()))
-                check_not_local_replica(replicated, full_replica_name, query_replica_zk_path);
+                check_not_local_replica(replicated, full_replica_name, query_replica_zk_path, query.zk_name);
 
         if (query.with_tables)
         {
@@ -2087,6 +2169,18 @@ void InterpreterSystemQuery::waitLoadingParts()
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "Command WAIT LOADING PARTS is supported only for MergeTree table, but got: {}", table->getName());
     }
+}
+
+void InterpreterSystemQuery::waitQueryRunner()
+{
+    getContext()->checkAccess(AccessType::SYSTEM_WAIT_QUERY_RUNNER, table_id);
+    StoragePtr table = DatabaseCatalog::instance().getTable(table_id, getContext());
+
+    if (auto * query_runner = dynamic_cast<StorageQueryRunner *>(table.get()))
+        query_runner->waitForQueriesToFinish(getContext()->getProcessListElement());
+    else
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Command WAIT QUERY RUNNER is supported only for QueryRunner table, but got: {}", table->getName());
 }
 
 void InterpreterSystemQuery::restartDisk(const String & disk_name)
@@ -2485,12 +2579,14 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::CLEAR_CONNECTIONS_CACHE:
         case Type::CLEAR_MARK_CACHE:
         case Type::CLEAR_ICEBERG_METADATA_CACHE:
+        case Type::CLEAR_PAIMON_METADATA_CACHE:
         case Type::CLEAR_AVRO_SCHEMA_CACHE:
         case Type::CLEAR_PARQUET_METADATA_CACHE:
         case Type::CLEAR_POINT_IN_POLYGON_CACHE:
         case Type::CLEAR_PRIMARY_INDEX_CACHE:
         case Type::CLEAR_MMAP_CACHE:
         case Type::CLEAR_QUERY_CONDITION_CACHE:
+        case Type::CLEAR_ENCRYPTION_HEADERS_CACHE:
         case Type::CLEAR_QUERY_CACHE:
         case Type::CLEAR_COMPILED_EXPRESSION_CACHE:
         case Type::CLEAR_UNCOMPRESSED_CACHE:
@@ -2517,7 +2613,8 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::RELOAD_DICTIONARY:
         case Type::RELOAD_DICTIONARIES:
         case Type::RELOAD_EMBEDDED_DICTIONARIES:
-        {
+        case Type::UNLOAD_DICTIONARY:
+        case Type::UNLOAD_DICTIONARIES: {
             required_access.emplace_back(AccessType::SYSTEM_RELOAD_DICTIONARY);
             break;
         }
@@ -2726,6 +2823,11 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::WAIT_LOADING_PARTS:
         {
             required_access.emplace_back(AccessType::SYSTEM_WAIT_LOADING_PARTS, query.getDatabase(), query.getTable());
+            break;
+        }
+        case Type::WAIT_QUERY_RUNNER:
+        {
+            required_access.emplace_back(AccessType::SYSTEM_WAIT_QUERY_RUNNER, query.getDatabase(), query.getTable());
             break;
         }
         case Type::PREWARM_MARK_CACHE:

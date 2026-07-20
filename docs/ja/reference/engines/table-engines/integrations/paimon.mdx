@@ -1,0 +1,270 @@
+---
+description: 'このエンジンは、Amazon S3、Azure、HDFS、またはローカルに保存された既存の Apache Paimon
+  テーブルに対する読み取り専用インテグレーションを提供します。'
+sidebarTitle: 'Paimon'
+slug: /engines/table-engines/integrations/paimon
+title: 'Paimon テーブルエンジン'
+doc_type: 'reference'
+---
+
+このエンジンは、Amazon S3、Azure、HDFS、またはローカルに保存された既存の Apache [Paimon](https://paimon.apache.org/) テーブルに対する読み取り専用インテグレーションを提供します。
+スナップショット読み取り、インクリメンタル読み取り、およびこのエンジンが提供する基本的なパーティションプルーニングをサポートしています。
+
+<div id="create-table">
+  ## テーブルの作成
+</div>
+
+Paimon テーブルは、あらかじめストレージ内に存在している必要があることに注意してください。このコマンドでは、新しいテーブルを作成するための DDL パラメータは指定できません。
+`Paimon*` テーブルの作成は `allow_experimental_paimon_storage_engine` で制限されており (デフォルトでは無効) 、`CREATE TABLE` を実行する前にこれを有効にしてください。
+
+```sql
+SET allow_experimental_paimon_storage_engine = 1;
+
+CREATE TABLE paimon_table_s3
+    ENGINE = PaimonS3(url,  [, access_key_id, secret_access_key] [,format] [,compression])
+
+CREATE TABLE paimon_table_azure
+    ENGINE = PaimonAzure(connection_string|storage_account_url, container_name, blobpath, [,account_name], [,account_key] [,format] [,compression_method])
+
+CREATE TABLE paimon_table_hdfs
+    ENGINE = PaimonHDFS(path_to_table, [,format] [,compression_method])
+
+CREATE TABLE paimon_table_local
+    ENGINE = PaimonLocal(path_to_table, [,format] [,compression_method])
+```
+
+<div id="engine-arguments">
+  ## エンジン引数
+</div>
+
+引数の説明は、それぞれ `S3`、`AzureBlobStorage`、`HDFS`、`File` エンジンの引数の説明と同じです。
+`format` は、Paimon テーブル内のデータファイルのフォーマットを表します。
+
+エンジンパラメータは、[名前付きコレクション](/ja/concepts/features/configuration/server-config/named-collections) を使用して指定できます
+
+<div id="example">
+  ### 例
+</div>
+
+```sql
+CREATE TABLE paimon_table ENGINE=PaimonS3('http://test.s3.amazonaws.com/clickhouse-bucket/test_table', 'test', 'test')
+```
+
+名前付きコレクション を使用するには:
+
+```xml
+<clickhouse>
+    <named_collections>
+        <paimon_conf>
+            <url>http://test.s3.amazonaws.com/clickhouse-bucket/</url>
+            <access_key_id>test</access_key_id>
+            <secret_access_key>test</secret_access_key>
+        </paimon_conf>
+    </named_collections>
+</clickhouse>
+```
+
+```sql
+CREATE TABLE paimon_table ENGINE=PaimonS3(paimon_conf, filename = 'test_table')
+```
+
+<div id="capabilities">
+  ## 機能
+</div>
+
+* 最新のテーブルスナップショットからスナップショット読み取りを行います。
+* 有効化されている場合、コミット済みスナップショット ID に基づくインクリメンタル読み取りを行います。
+* `use_paimon_partition_pruning` が有効な場合、パーティションプルーニングを行います。
+* 設定されている場合、メタデータをバックグラウンドで任意に更新できます。
+* Atomic/Replicated データベースを使用している場合、テーブル UUID が安定するため、Keeper のパスで `{uuid}` マクロを使用できます。
+
+<div id="settings">
+  ## 設定
+</div>
+
+このエンジンは、対応するオブジェクトストレージエンジンと同じ設定を使用し、加えて Paimon 固有の設定もサポートします。
+
+* `allow_experimental_paimon_storage_engine` — `Paimon`、`PaimonS3`、`PaimonAzure`、`PaimonHDFS`、`PaimonLocal` テーブルエンジンの作成を有効にします。デフォルト: `0` (無効) 。
+* `paimon_incremental_read` — インクリメンタル読み取りモードを有効にします。
+* `paimon_metadata_refresh_interval_sec` — バックグラウンドでのメタデータのリフレッシュ間隔 (秒) 。0 より大きい値に設定すると、バックグラウンドタスクが定期的にオブジェクトストレージから最新のスナップショットとスキーマを取得します。デフォルト: 30。
+* `paimon_keeper_path` — インクリメンタル読み取り状態のための Keeper パス。設定は必須で、テーブルごとに一意である必要があります。`{database}`、`{table}`、`{uuid}` などのマクロをサポートします。
+* `paimon_replica_name` — インクリメンタル読み取り状態のためのレプリカ名。設定は必須で、レプリカごとに一意である必要があります。`{replica}` などのマクロをサポートします。
+
+<div id="incremental-read-examples">
+  ## インクリメンタル読み取りの例
+</div>
+
+Keeper の状態を使用したインクリメンタル読み取り:
+
+```sql
+CREATE TABLE paimon_inc
+ENGINE = PaimonS3(paimon_conf, filename = 'paimon_all_types')
+SETTINGS
+    paimon_incremental_read = 1,
+    paimon_keeper_path = '/clickhouse/{database}/{uuid}',
+    paimon_replica_name = '{replica}';
+```
+
+<div id="query-level-settings-for-incremental-read">
+  ### インクリメンタル読み取りのクエリレベル設定
+</div>
+
+以下の設定は**クエリレベル**です (`CREATE TABLE` ではなく `SELECT ... SETTINGS` で指定します) 。インクリメンタル読み取りのクエリごとの動作を制御します。
+
+* `paimon_target_snapshot_id` — 指定したスナップショットの差分のみを読み取ります。Keeper 内のコミット済みウォーターマークは**進まない**ため、同じスナップショットを何度でも再読み取りできます。デフォルト: `-1` (無効) 。
+* `max_consume_snapshots` — 1 回のインクリメンタル読み取りで取り込むスナップショットの最大数。ソースに未読のスナップショットが多数たまっている場合、クエリごとに取り込む数を制限してバッチサイズを制御します。`0` は無制限を意味します。デフォルト: `0`。
+
+**対象スナップショットの読み取り** — 現在のウォーターマークにかかわらず、常にスナップショット 1 の差分を返します:
+
+```sql
+SELECT count()
+FROM paimon_inc
+SETTINGS paimon_target_snapshot_id = 1;
+```
+
+**バッチごとのスナップショット数を制限する** — 新しいスナップショットが3つ保留中の場合、1回のクエリで処理するのは最大2つまでです:
+
+```sql
+SELECT count()
+FROM paimon_inc
+SETTINGS max_consume_snapshots = 2;
+```
+
+<div id="paimon-to-mergetree-via-refresh-mv">
+  ## リフレッシャブルmaterialized view を介した Paimon から MergeTree への同期
+</div>
+
+`APPEND` モードのリフレッシャブルMaterialized Viewを使用すると、Paimon テーブルから MergeTree テーブルへデータを継続的に同期するエンドツーエンドのパイプラインを構築できます。各リフレッシュサイクルでは、Paimon から新しいインクリメンタルデータのみを読み取り、それを宛先テーブルに追記します。
+
+**ステップ 1 — インクリメンタル読み取りとメタデータのリフレッシュを有効にした Paimon のソーステーブルを作成します。**
+
+以下の例では `PaimonLocal` を使用します。ストレージバックエンドに応じて、engine を `PaimonS3`、`PaimonAzure`、`PaimonHDFS`、または自動検出される `Paimon` engine に置き換えてください:
+
+```sql
+SET allow_experimental_paimon_storage_engine = 1;
+
+-- Local storage
+CREATE TABLE paimon_mv_source
+ENGINE = PaimonLocal('/path/to/paimon/table')
+SETTINGS
+    paimon_incremental_read = 1,
+    paimon_keeper_path = '/clickhouse/tables/{uuid}',
+    paimon_replica_name = '{replica}',
+    paimon_metadata_refresh_interval_sec = 1;
+
+-- S3 storage (the `Paimon` engine defaults to the S3 implementation when no `disk` is specified)
+CREATE TABLE paimon_mv_source
+ENGINE = Paimon('http://minio:9000/bucket/path/to/table', 'access_key', 'secret_key')
+SETTINGS
+    paimon_incremental_read = 1,
+    paimon_keeper_path = '/clickhouse/tables/{uuid}',
+    paimon_replica_name = '{replica}',
+    paimon_metadata_refresh_interval_sec = 1;
+```
+
+`paimon_metadata_refresh_interval_sec` は、バックグラウンドでのメタデータのリフレッシュ間隔を秒単位で設定します。0 より大きい場合、バックグラウンドタスクがオブジェクトストレージから最新のスナップショットとスキーマを定期的に取得するため、クエリによってメタデータ更新がトリガーされるのを待たなくても、MV のリフレッシュサイクルで新たにコミットされたデータを参照できます。デフォルトは 30 です。オブジェクトストレージや Keeper の I/O が過剰にならないよう、多数のテーブルで使用する場合は注意してください。
+
+**ステップ 2 — MergeTree の宛先テーブルを作成します (スキーマは Paimon テーブルから複製) :**
+
+```sql
+CREATE TABLE paimon_mv_dest AS paimon_mv_source
+ENGINE = MergeTree()
+ORDER BY tuple();
+```
+
+**ステップ3 — リフレッシャブルmaterialized viewを作成します:**
+
+```sql
+CREATE MATERIALIZED VIEW paimon_mv
+REFRESH EVERY 10 SECOND
+APPEND
+TO paimon_mv_dest
+AS SELECT * FROM paimon_mv_source;
+```
+
+10秒ごとに、MV が `SELECT * FROM paimon_mv_source` を実行します。これにより、前回コミットされたスナップショット以降に追加された行のみが返され、それらが `paimon_mv_dest` に追記されます。
+
+**クリーンアップ:**
+
+```sql
+SYSTEM STOP VIEW paimon_mv;
+DROP VIEW IF EXISTS paimon_mv SYNC;
+DROP TABLE IF EXISTS paimon_mv_dest SYNC;
+DROP TABLE IF EXISTS paimon_mv_source SYNC;
+```
+
+<Note>
+  バックグラウンドでの更新によってDDL操作がブロックされるのを防ぐため、削除する前にMVを停止してください。
+</Note>
+
+<div id="limitations">
+  ## 制限事項
+</div>
+
+* インクリメンタル読み取りを行うには、Keeper (ZooKeeper) が設定されている必要があります。
+* インクリメンタル読み取りを行うには、`paimon_keeper_path` を設定し、テーブルごとに一意にする必要があります。
+* `paimon_replica_name` は、同じ Keeper パス 内でレプリカごとに一意でなければなりません。
+* インクリメンタル読み取りでは at-most-once 配信が使われます。コミット済みスナップショットは、データが実際に消費される前、データファイルの収集時点で進められます。ファイル収集後にクエリが失敗した場合、スキップされたスナップショットは再試行しても再度読み取られません。
+* このテーブルエンジンは読み取り専用で、データの変更はサポートされていません。
+* インクリメンタル読み取りでは、Paimon ソースの過去データの削除は扱われません。アップストリームの Paimon データが削除または更新されても、ClickHouse の MergeTree 宛先テーブルにすでに書き込まれている対応する行は自動では削除されません。古くなったデータをクリーンアップするには、MergeTree テーブルに対して `ALTER TABLE ... DELETE` を手動で実行する必要があります。
+
+<div id="aliases">
+  ## 別名
+</div>
+
+`Paimon` テーブルエンジンは、`disk` 設定からストレージバックエンドを自動検出し、それに応じて `PaimonS3`、`PaimonAzure`、または `PaimonLocal` に振り分けます。`disk` が指定されていない場合は、デフォルトで `PaimonS3` 実装が使用されます。
+
+<div id="virtual-columns">
+  ## 仮想カラム
+</div>
+
+* `_path` — ファイルのパス。型: `LowCardinality(String)`.
+* `_file` — ファイル名。型: `LowCardinality(String)`.
+* `_size` — ファイルサイズ (バイト単位) 。型: `Nullable(UInt64)`. ファイルサイズが不明な場合、値は `NULL` です。
+* `_time` — ファイルの最終更新時刻。型: `Nullable(DateTime)`. 最終更新時刻が不明な場合、値は `NULL` です。
+* `_etag` — ファイルの etag。型: `LowCardinality(String)`. etag が不明な場合、値は `NULL` です。
+
+<div id="data-types-supported">
+  ## 対応しているデータ型
+</div>
+
+| Paimon データ型                       | ClickHouse データ型           |
+| --------------------------------- | ------------------------- |
+| BOOLEAN                           | Int8                      |
+| TINYINT                           | Int8                      |
+| SMALLINT                          | Int16                     |
+| INTEGER                           | Int32                     |
+| BIGINT                            | Int64                     |
+| FLOAT                             | Float32                   |
+| DOUBLE                            | Float64                   |
+| STRING,VARCHAR,BYTES,VARBINARY    | String                    |
+| DATE                              | Date                      |
+| TIME(p),TIME                      | Time(&#39;UTC&#39;)       |
+| TIMESTAMP(p) WITH LOCAL TIME ZONE | DateTime64                |
+| TIMESTAMP(p)                      | DateTime64(&#39;UTC&#39;) |
+| CHAR                              | FixedString(1)            |
+| BINARY(n)                         | FixedString(n)            |
+| DECIMAL(P,S)                      | Decimal(P,S)              |
+| ARRAY                             | Array                     |
+| MAP                               | Map                       |
+
+<div id="partition-supported">
+  ## サポートされるパーティションキー
+</div>
+
+Paimon のパーティションキーでサポートされるデータ型:
+
+* `CHAR`
+* `VARCHAR`
+* `BOOLEAN`
+* `DECIMAL`
+* `TINYINT`
+* `SMALLINT`
+* `INTEGER`
+* `DATE`
+* `TIME`
+* `TIMESTAMP`
+* `TIMESTAMP WITH LOCAL TIME ZONE`
+* `BIGINT`
+* `FLOAT`
+* `DOUBLE`

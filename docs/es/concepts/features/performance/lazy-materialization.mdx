@@ -1,0 +1,179 @@
+---
+slug: /optimize/lazy-materialization
+sidebarTitle: 'Materialización diferida'
+description: 'Artículo que describe qué es la materialización diferida en ClickHouse'
+title: 'Materialización diferida'
+doc_type: 'guide'
+keywords: ['optimización', 'materialización diferida']
+---
+
+Este artículo describe cómo funciona la materialización diferida y cómo encaja en el conjunto más amplio de optimizaciones de E/S de ClickHouse.
+Presenta un ejemplo real que demuestra cómo la materialización diferida mejora el rendimiento de las consultas.
+
+<Tip>
+  **Disponible a partir de la versión 25.4**
+
+  La materialización diferida se introdujo en la versión 25.4 de ClickHouse y está activada de forma predeterminada.
+</Tip>
+
+<div id="overview">
+  ## Descripción general
+</div>
+
+A lo largo de los años, ClickHouse ha incorporado una serie de optimizaciones por capas para reducir agresivamente la E/S.
+Estas técnicas constituyen la base de su velocidad y eficiencia:
+
+| Optimización                                                                                                                                                                                                                                                               | Descripción                                                                                                                                                                                                                                                                                                                                                                    |
+| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| [**Almacenamiento columnar**](/es/get-started/about/intro#row-oriented-vs-column-oriented-storage)                                                                                                                                                                            | Permite omitir columnas completas que no se necesitan para una consulta y, además, lograr una alta compresión al agrupar valores similares, lo que minimiza la E/S durante la carga de datos.                                                                                                                                                                                  |
+| [**Índices primarios dispersos**](/es/guides/clickhouse/data-modelling/sparse-primary-indexes) | [**índices secundarios de omisión de datos**](/es/concepts/features/performance/skip-indexes/skipping-indexes) | [**proyecciones**](/es/concepts/features/projections/projections) | Descartan datos irrelevantes al identificar qué [gránulos](/es/concepts/core-concepts/glossary#granule) (bloques de filas) podrían coincidir con los filtros sobre *columnas indexadas*. Estas técnicas operan a nivel de gránulo y pueden usarse por separado o en combinación.                                                                                                  |
+| [**PREWHERE**](/es/reference/statements/select/prewhere)                                                                                                                                                                                                                      | También comprueba coincidencias para filtros sobre columnas *no indexadas*, con el fin de omitir desde el principio datos que, de otro modo, se cargarían y descartarían. Puede funcionar de forma independiente o refinar los gránulos seleccionados por los índices, complementando la poda de gránulos al omitir filas que no coinciden con *todos* los filtros de columna. |
+| [**Caché de condiciones de consulta**](/es/concepts/features/performance/caches/query-condition-cache)                                                                                                                                                                        | Acelera las consultas repetidas al recordar qué gránulos coincidieron con todos los filtros la última vez. ClickHouse puede entonces omitir la lectura y el filtrado de los gránulos que no coincidieron, incluso si cambia la estructura de la consulta.                                                                                                                      |
+
+Aunque las optimizaciones de E/S mencionadas pueden reducir significativamente la cantidad de datos leídos, siguen partiendo de que todas las columnas de las filas que cumplen la cláusula `WHERE` deben cargarse antes de ejecutar operaciones como la ordenación, la aggregation o `LIMIT`. Pero ¿qué ocurre si algunas columnas no se necesitan hasta más adelante, o si ciertos datos, pese a cumplir la cláusula `WHERE`, no llegan a necesitarse en absoluto?
+Ahí es donde entra la materialización diferida. Se trata de una mejora ortogonal que completa el conjunto de optimizaciones de E/S:
+
+* La indexación, junto con `PREWHERE`, garantiza que solo se procesen las filas que coinciden con los filtros de columna de la cláusula `WHERE`.
+* La materialización diferida amplía este enfoque al aplazar la lectura de columnas hasta que el plan de ejecución de la consulta realmente las necesite.
+  Incluso después del filtrado, solo se cargan de inmediato las columnas necesarias para la siguiente operación, como la ordenación.
+  Las demás se posponen y, debido a `LIMIT`, a menudo solo se leen parcialmente, lo justo para producir el resultado final.
+  Esto hace que la materialización diferida sea especialmente potente para las consultas Top N, donde el resultado final puede requerir solo un puñado de filas de determinadas columnas, a menudo grandes.
+
+<div id="worked-example">
+  ## Un ejemplo práctico
+</div>
+
+Recomendamos encarecidamente el artículo del blog [&quot;ClickHouse gets lazier (and faster): Introducing lazy materialization&quot;](https://clickhouse.com/blog/clickhouse-gets-lazier-and-faster-introducing-lazy-materialization#speed-without-filters-lazy-materialization-in-isolation)
+para profundizar en la materialización diferida. El ejemplo siguiente se ha tomado del artículo mencionado y se reproduce aquí para mostrar cómo una consulta de ClickHouse puede pasar de 219 segundos a solo 139 milisegundos (una aceleración de 1576×) con materialización diferida.
+
+Para beneficiarse de la indexación y de `PREWHERE`, una consulta necesita filtros: en las columnas de la clave primaria para la indexación y en cualquier columna para `PREWHERE`.
+La materialización diferida se integra limpiamente con estas optimizaciones, pero, a diferencia de las otras optimizaciones mencionadas antes, también puede acelerar consultas sin ningún filtro de columna.
+
+Considere la siguiente consulta de ejemplo, que encuentra las reseñas de Amazon con el mayor número de votos útiles, independientemente de la fecha, el producto, la calificación o el estado de verificación, y devuelve las 3 primeras junto con su título, encabezado y texto completo.
+
+Primero, ejecute la consulta (con las cachés del sistema de archivos en frío) con la materialización diferida desactivada (mediante [`query_plan_optimize_lazy_materialization`](/es/reference/settings/session-settings#query_plan_optimize_lazy_materialization)):
+
+```sql title="Query"
+SELECT
+    helpful_votes,
+    product_title,
+    review_headline,
+    review_body
+FROM amazon.amazon_reviews
+ORDER BY helpful_votes DESC
+LIMIT 3
+FORMAT Vertical
+SETTINGS
+    query_plan_optimize_lazy_materialization = false;
+```
+
+```response title="Response" highlight={22-23}
+Row 1:
+──────
+helpful_votes:   47524
+product_title:   Kindle: Amazon's Original Wireless Reading Device (1st generation)
+review_headline: Why and how the Kindle changes everything
+review_body:     This is less a \"pros and cons\" review than a hopefully use...
+
+Row 2:
+──────
+helpful_votes:   41393
+product_title:   BIC Cristal For Her Ball Pen, 1.0mm, Black, 16ct (MSLP16-Blk)
+review_headline: FINALLY!
+review_body:     Someone has answered my gentle prayers and FINALLY designed ...
+
+Row 3:
+──────
+helpful_votes:   41278
+product_title:   The Mountain Kids 100% Cotton Three Wolf Moon T-Shirt
+review_headline: Dual Function Design
+review_body:     This item has wolves on it which makes it intrinsically swee...
+
+0 rows in set. Elapsed: 219.071 sec. Processed 150.96 million rows, 71.38 GB (689.08 thousand rows/s., 325.81 MB/s.)
+Peak memory usage: 1.11 GiB.
+```
+
+A continuación, se vuelve a ejecutar la consulta (de nuevo con la caché del sistema de archivos en frío), pero esta vez con la materialización diferida habilitada:
+
+```sql title="Query" highlight={11}
+SELECT
+    helpful_votes,
+    product_title,
+    review_headline,
+    review_body
+FROM amazon.amazon_reviews
+ORDER BY helpful_votes DESC
+LIMIT 3
+FORMAT Vertical
+SETTINGS
+query_plan_optimize_lazy_materialization = true;
+```
+
+<Tip>
+  Normalmente, no necesitas configurar explícitamente `query_plan_optimize_lazy_materialization = true` para beneficiarte de la materialización diferida.
+  Está habilitada de forma predeterminada.
+</Tip>
+
+```response title="Response" highlight={22-23}
+Row 1:
+──────
+helpful_votes:   47524
+product_title:   Kindle: Amazon's Original Wireless Reading Device (1st generation)
+review_headline: Why and how the Kindle changes everything
+review_body:     This is less a \"pros and cons\" review than a hopefully use...
+
+Row 2:
+──────
+helpful_votes:   41393
+product_title:   BIC Cristal For Her Ball Pen, 1.0mm, Black, 16ct (MSLP16-Blk)
+review_headline: FINALLY!
+review_body:     Someone has answered my gentle prayers and FINALLY designed ...
+
+Row 3:
+──────
+helpful_votes:   41278
+product_title:   The Mountain Kids 100% Cotton Three Wolf Moon T-Shirt
+review_headline: Dual Function Design
+review_body:     This item has wolves on it which makes it intrinsically swee...
+
+0 rows in set. Elapsed: 0.139 sec. Processed 150.96 million rows, 1.81 GB (1.09 billion rows/s., 13.06 GB/s.)
+Peak memory usage: 3.80 MiB.
+```
+
+Observe la diferencia de rendimiento con la materialización diferida desactivada y activada:
+
+| Métrica             | Materialización diferida desactivada | Materialización diferida activada | Mejora            |
+| ------------------- | ------------------------------------ | --------------------------------- | ----------------- |
+| Tiempo transcurrido | 219.071 sec                          | 0.139 sec                         | ~1576× más rápido |
+| Datos leídos        | 71.38 GB                             | 1.81 GB                           | ~40× menos        |
+| Memoria máxima      | 1.11 GiB                             | 3.80 MiB                          | ~300× menos       |
+
+<div id="confirm-lazy-materialization">
+  ## Cómo confirmar la materialización diferida en el plan de ejecución de la consulta
+</div>
+
+Puede comprobar el uso de la materialización diferida en la consulta anterior inspeccionando su plan lógico de ejecución mediante la cláusula [`EXPLAIN`](/es/reference/statements/explain):
+
+```sql
+EXPLAIN actions = 1
+SELECT
+    helpful_votes,
+    product_title,
+    review_headline,
+    review_body
+FROM amazon.amazon_reviews
+ORDER BY helpful_votes DESC
+LIMIT 3
+SETTINGS
+    query_plan_optimize_lazy_materialization = true;
+```
+
+```response highlight={2}
+...
+Lazily read columns: review_headline, review_body, product_title
+  Limit
+    Sorting
+      ReadFromMergeTree
+```
+
+Puede leer el plan de operadores de abajo hacia arriba y observar que ClickHouse aplaza la lectura de las tres columnas grandes de tipo String hasta después de ordenar y limitar.

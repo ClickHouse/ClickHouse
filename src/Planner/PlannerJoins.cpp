@@ -1234,7 +1234,8 @@ static std::shared_ptr<IJoin> tryCreateJoin(
                         params.grace_hash_join_initial_buckets,
                         params.grace_hash_join_max_buckets,
                         params.max_threads,
-                        stats_collecting_params);
+                        stats_collecting_params,
+                        params.join_any_take_last_row);
                 }
             }
 
@@ -1245,7 +1246,8 @@ static std::shared_ptr<IJoin> tryCreateJoin(
                 table_join->getTempDataOnDisk(),
                 params.grace_hash_join_initial_buckets,
                 params.grace_hash_join_max_buckets,
-                stats_collecting_params);
+                stats_collecting_params,
+                params.join_any_take_last_row);
         }
 
         if (table_join->allowParallelHashJoin())
@@ -1255,7 +1257,11 @@ static std::shared_ptr<IJoin> tryCreateJoin(
             if (use_parallel_hash)
             {
                 return std::make_shared<ConcurrentHashJoin>(
-                    table_join, params.max_threads, right_table_expression_header, stats_collecting_params);
+                    table_join,
+                    params.max_threads,
+                    right_table_expression_header,
+                    stats_collecting_params,
+                    params.join_any_take_last_row);
             }
         }
 
@@ -1285,7 +1291,8 @@ static std::shared_ptr<IJoin> tryCreateJoin(
                 table_join,
                 left_table_expression_header,
                 right_table_expression_header,
-                table_join->getTempDataOnDisk());
+                table_join->getTempDataOnDisk(),
+                params.join_any_take_last_row);
         }
     }
 
@@ -1303,7 +1310,8 @@ static std::shared_ptr<IJoin> tryCreateJoin(
                     params.grace_hash_join_initial_buckets,
                     params.grace_hash_join_max_buckets,
                     params.max_threads,
-                    stats_collecting_params);
+                    stats_collecting_params,
+                    params.join_any_take_last_row);
             }
 
             return std::make_shared<SpillingHashJoin>(
@@ -1313,13 +1321,15 @@ static std::shared_ptr<IJoin> tryCreateJoin(
                 table_join->getTempDataOnDisk(),
                 params.grace_hash_join_initial_buckets,
                 params.grace_hash_join_max_buckets,
-                stats_collecting_params);
+                stats_collecting_params,
+                params.join_any_take_last_row);
         }
 
         if (MergeJoin::isSupported(table_join))
-            return std::make_shared<JoinSwitcher>(table_join, right_table_expression_header, stats_collecting_params);
+            return std::make_shared<JoinSwitcher>(
+                table_join, right_table_expression_header, params.join_any_take_last_row, stats_collecting_params);
         return std::make_shared<HashJoin>(
-            table_join, right_table_expression_header, /*any_take_last_row_=*/false, /*reserve_num_=*/0, /*instance_id_=*/"",
+            table_join, right_table_expression_header, params.join_any_take_last_row, /*reserve_num_=*/0, /*instance_id_=*/"",
             /*is_concurrent_hash_join_=*/false, stats_collecting_params);
     }
 
@@ -1430,7 +1440,7 @@ std::shared_ptr<IJoin> chooseJoinAlgorithm(
         if (!table_join->isEnabledAlgorithm(JoinAlgorithm::HASH))
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "JOIN ON constant supported only with join algorithm 'hash'");
 
-        return std::make_shared<HashJoin>(table_join, right_table_expression_header);
+        return std::make_shared<HashJoin>(table_join, right_table_expression_header, params.join_any_take_last_row);
     }
 
     /** We have only one way to execute a CROSS JOIN - with a hash join.
@@ -1439,7 +1449,7 @@ std::shared_ptr<IJoin> chooseJoinAlgorithm(
       * then the setting `cross_to_inner_join_rewrite` may be used, and unsupported cases will fail earlier.
       */
     if (table_join->kind() == JoinKind::Cross)
-        return std::make_shared<HashJoin>(table_join, right_table_expression_header);
+        return std::make_shared<HashJoin>(table_join, right_table_expression_header, params.join_any_take_last_row);
 
     if (!table_join->oneDisjunct() && !table_join->isEnabledAlgorithm(JoinAlgorithm::HASH) && !table_join->isEnabledAlgorithm(JoinAlgorithm::AUTO))
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Only `hash` join supports multiple ORs for keys in JOIN ON section");

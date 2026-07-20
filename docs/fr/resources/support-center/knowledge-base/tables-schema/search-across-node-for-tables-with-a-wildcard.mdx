@@ -1,0 +1,102 @@
+---
+date: 2024-04-17
+description: Découvrez comment rechercher des tables sur l’ensemble des nœuds à l’aide d’un caractère générique.
+title: Rechercher des tables sur l’ensemble des nœuds à l’aide d’un caractère générique
+tags: ['Déploiements et mise à l’échelle']
+keywords: [recherche sur les nœuds, query_log, caractère générique, préfixe de table]
+---
+
+{frontMatter.description}
+
+{/* truncate */}
+
+<div id="when-to-use-it">
+  ## Quand l’utiliser
+</div>
+
+Ceci est utile lorsqu’il existe des tables dont les conventions de nommage et les colonnes sont similaires, mais qui ne sont pas répliquées. C’est par exemple le cas lorsqu’on recherche dans la base de données système des entrées dans les tables du journal des requêtes.
+
+La table `query_log` n’est pas répliquée, et seules les requêtes exécutées sur un nœud spécifique y sont journalisées. Les données peuvent également être basculées vers une autre table. Par exemple, elles peuvent être insérées dans `query_log_0`, `query_log_1`, etc. Comme un nœud peut effectuer cette bascule à un moment différent des autres, il est utile d’essayer de trouver les données recherchées dans des tables qui ne portent pas exactement le même nom.
+
+En pratique, nous devons faire quelque chose comme ceci, mais avec la syntaxe ClickHouse :
+
+`SELECT column1, column2 FROM my_db.my_table_*`
+
+Pour cela, nous pouvons utiliser `clusterAllReplicas()` pour rechercher sur tous les nœuds, ainsi que la table function `merge()` afin d’utiliser un motif regex pour rechercher dans plusieurs tables.
+
+L’exemple suivant montre comment interroger toutes les tables ayant le préfixe `query_log` :
+
+```
+clickhouse-cloud :) SELECT 
+  `event_time`, 
+  `query_id`,
+  `query`, 
+  `type` 
+FROM
+  clusterAllReplicas(default,merge('system', '^query_log*'))
+WHERE
+  query ilike '%db1.table1%' and event_time > now() - toIntervalMinute(5);
+
+SELECT
+    event_time,
+    query_id,
+    query,
+    type
+FROM clusterAllReplicas(default, merge('system', '^query_log*'))
+WHERE (query ILIKE '%db1.table1%') AND (event_time > (now() - toIntervalMinute(5)))
+
+Query id: de95c13e-5759-436e-90d9-a12c1327889e
+
+┌──────────event_time─┬─query_id─────────────────────────────┬─query──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┬─type────────┐
+│ 2024-02-08 00:15:20 │ d1dd0d6a-4337-4e58-bdd1-c2c827b6dfe2 │ /* ddl_entry=query-0000000428 */ CREATE TABLE db1.table1 UUID '781f25db-3cd1-47c6-a76e-701945a67485' (`id` Int32, `string_column` String) ENGINE = ReplicatedMergeTree ORDER BY id │ QueryStart  │
+│ 2024-02-08 00:15:20 │ d1dd0d6a-4337-4e58-bdd1-c2c827b6dfe2 │ /* ddl_entry=query-0000000428 */ CREATE TABLE db1.table1 UUID '781f25db-3cd1-47c6-a76e-701945a67485' (`id` Int32, `string_column` String) ENGINE = ReplicatedMergeTree ORDER BY id │ QueryFinish │
+└─────────────────────┴──────────────────────────────────────┴────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┴─────────────┘
+┌──────────event_time─┬─query_id─────────────────────────────┬─query──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┬─type────────┐
+│ 2024-02-08 00:15:20 │ f0ca43b2-544e-4b94-a21d-0f05e777fa96 │ /* ddl_entry=query-0000000428 */ CREATE TABLE db1.table1 UUID '781f25db-3cd1-47c6-a76e-701945a67485' (`id` Int32, `string_column` String) ENGINE = ReplicatedMergeTree ORDER BY id │ QueryStart  │
+│ 2024-02-08 00:15:20 │ f0ca43b2-544e-4b94-a21d-0f05e777fa96 │ /* ddl_entry=query-0000000428 */ CREATE TABLE db1.table1 UUID '781f25db-3cd1-47c6-a76e-701945a67485' (`id` Int32, `string_column` String) ENGINE = ReplicatedMergeTree ORDER BY id │ QueryFinish │
+└─────────────────────┴──────────────────────────────────────┴────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┴─────────────┘
+┌──────────event_time─┬─query_id─────────────────────────────┬─query──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┬─type────────┐
+│ 2024-02-08 00:15:20 │ 5cc0a508-7f64-460b-a5be-949ef1d1f2ca │ /* ddl_entry=query-0000000428 */ CREATE TABLE db1.table1 UUID '781f25db-3cd1-47c6-a76e-701945a67485' (`id` Int32, `string_column` String) ENGINE = ReplicatedMergeTree ORDER BY id │ QueryStart  │
+│ 2024-02-08 00:15:20 │ 5cc0a508-7f64-460b-a5be-949ef1d1f2ca │ /* ddl_entry=query-0000000428 */ CREATE TABLE db1.table1 UUID '781f25db-3cd1-47c6-a76e-701945a67485' (`id` Int32, `string_column` String) ENGINE = ReplicatedMergeTree ORDER BY id │ QueryFinish │
+│ 2024-02-08 00:15:20 │ d1e01cb0-a27c-44b2-829c-90fb2596c9c0 │ create table db1.table1
+(
+  id Int32,
+  string_column String
+)
+engine = MergeTree
+order by id                                                                                            │ QueryStart  │
+│ 2024-02-08 00:15:20 │ d1e01cb0-a27c-44b2-829c-90fb2596c9c0 │ create table db1.table1
+(
+  id Int32,
+  string_column String
+)
+engine = MergeTree
+order by id                                                                                            │ QueryFinish │
+│ 2024-02-08 00:15:27 │ 6c2c6c3f-173e-464f-bfa0-643089ca085e │ insert into db1.table1
+values
+                                                                                                                                                       │ QueryStart  │
+│ 2024-02-08 00:15:27 │ 6c2c6c3f-173e-464f-bfa0-643089ca085e │ insert into db1.table1
+values
+                                                                                                                                                       │ QueryFinish │
+└─────────────────────┴──────────────────────────────────────┴────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┴─────────────┘
+
+10 rows in set. Elapsed: 0.046 sec. Processed 317.27 thousand rows, 33.57 MB (6.89 million rows/s., 729.43 MB/s.)
+Peak memory usage: 67.04 MiB.
+```
+
+Notez que les colonnes que vous sélectionnez doivent exister dans chacune des tables interrogées, faute de quoi vous risquez d’obtenir une erreur du type :
+
+```
+Received exception from server (version 24.0.2):
+Code: 47. DB::Exception: Received from abc123.us-west-2.aws.clickhouse.cloud:9440. DB::Exception: Missing columns: 'hostname' while processing query: 'WITH 'query_log_0' AS _table
+```
+
+Vous pouvez également utiliser la clause `EXCEPT` pour exclure les colonnes qui peuvent être absentes de certaines tables.
+
+Exemple :
+
+```
+SELECT * EXCEPT (used_privileges, missing_privileges)
+FROM clusterAllReplicas(default, merge('system', 'query_log[\\_]*'))
+WHERE (query_id = '31a93b8e-1149-4edd-a33d-f03f47a676cc') AND (event_time = '2024-10-21 12:49:04')
+```

@@ -1,0 +1,53 @@
+---
+title: 자주 사용하는 RBAC 쿼리
+description: "사용자에게 특정 권한을 부여할 때 유용한 쿼리입니다."
+date: 2023-09-28
+tags: ['보안 및 인증', 'Cloud 관리']
+keywords: ['RBAC', '쿼리']
+---
+
+{frontMatter.description}
+
+{/* truncate */}
+
+<div id="introduction">
+  ## 소개
+</div>
+
+다음은 사용자에게 특정 권한을 부여할 때 자주 사용하는 쿼리입니다.
+
+<div id="how-do-i-grant-the-same-permissions-as-the-current-user-to-another-user">
+  ## 현재 사용자와 동일한 권한을 다른 사용자에게 부여하려면 어떻게 해야 하나요?
+</div>
+
+```sql
+GRANT CURRENT GRANTS ON *.* TO another_user;
+```
+
+<div id="how-do-i-grant-a-specific-permission-to-a-user-based-on-the-grants-of-the-current-user">
+  ## 현재 사용자의 권한 부여를 기준으로 사용자에게 특정 권한을 부여하려면 어떻게 해야 하나요?
+</div>
+
+아래 예시에서 `another_user`는 현재 사용자의 모든 데이터베이스와 테이블에 대해 `SELECT` 명령을 수행할 수 있습니다.
+
+```sql
+GRANT CURRENT GRANTS(SELECT ON *.*) TO another_user;
+```
+
+<div id="how-do-i-grant-a-specific-permission-to-a-user-for-a-specific-database-based-on-the-grants-of-the-current-user">
+  ## 현재 사용자가 가진 권한 부여를 기준으로, 특정 데이터베이스에 대한 특정 권한을 사용자에게 어떻게 부여하나요?
+</div>
+
+아래 예시에서 `another_user`는 `my_database`의 모든 테이블에 `INSERT` 명령을 수행할 수 있습니다.
+
+```sql
+GRANT INSERT ON my_database.* TO another_user;
+```
+
+<div id="how-do-i-give-access-to-all-grants-for-a-specific-user-based-on-the-default-user">
+  ## 기본 사용자를 기준으로 특정 사용자에게 모든 권한 부여에 접근할 수 있도록 하려면 어떻게 해야 합니까?
+</div>
+
+```sql
+GRANT default_role TO another_user;
+```
