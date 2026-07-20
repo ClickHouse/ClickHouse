@@ -798,10 +798,13 @@ QueryPipeline InterpreterInsertQuery::buildInsertPipeline(ASTInsertQuery & query
     // global.
     //
     // The same collision arises without strict limits when the destination storage forwards the data
-    // through a nested `INSERT` (`Alias`, `Distributed`, `Buffer`): each parallel branch gets its own
-    // sink, whose nested `INSERT` stamps the deduplication info from scratch, so the source block
-    // numbering restarts per branch even though this query stamped it globally in the single-stream
-    // head of the pipeline.
+    // through a nested `INSERT` that stamps the deduplication info from scratch (`Distributed`,
+    // `Buffer`): each parallel branch gets its own sink, whose nested `INSERT` restarts the source
+    // block numbering per branch even though this query stamped it globally in the single-stream head
+    // of the pipeline. An `Alias` is different: its `AliasSink` runs the nested `INSERT` in this
+    // query's context with the chunk's deduplication info intact, and an already-stamped chunk is not
+    // restamped, so the globally stamped numbering survives the hop and the fan-out stays safe
+    // without strict limits - an `Alias` behaves like the table it forwards to.
     //
     // This only matters when the destination sink actually deduplicates: the colliding id is consulted
     // only by a MergeTree-family table with its deduplication window enabled, and only when deduplication
@@ -821,22 +824,24 @@ QueryPipeline InterpreterInsertQuery::buildInsertPipeline(ASTInsertQuery & query
     const bool per_branch_dedup_ids = settings[Setting::use_strict_insert_block_limits]
         || rebuilds_dedup_ids;
 
-    // A forwarding storage (`Alias`, `Distributed`, `Buffer`) runs a nested `INSERT` per sink branch, which
-    // restarts the source block numbering from zero on every branch. That nested `INSERT` can reach a
-    // deduplicating dependent materialized view even when the forwarded-to table itself never deduplicates
-    // (e.g. an `Alias` over a `MergeTree` with `non_replicated_deduplication_window = 0` whose materialized
-    // view targets a deduplicating table). Two identical source blocks landing on different branches then
-    // produce identical view-level deduplication ids and the later branch is skipped, silently dropping rows.
-    // The dependent-MV chain of the forwarded-to table lives behind the nested `INSERT` and is not visible to
-    // this pipeline (`InsertDependenciesBuilder` only expands the dependencies of the immediate target), so
-    // fail closed for such forwarding storages when dependent-MV deduplication is enabled and the forwarded-to
-    // target has a dependent view. (`Distributed` / `Buffer`, and an `Alias` of a deduplicating table, are
-    // already kept single-stream by `source_deduplicates` above; this additionally covers an `Alias` of a
-    // non-deduplicating table that has a deduplicating dependent materialized view.)
-    const bool forwarded_dependent_mv_dedup_hazard = rebuilds_dedup_ids
-        && dedup_enabled_for_insert
+    // A forwarding storage (`Alias`, `Distributed`, `Buffer`) runs a nested `INSERT` per sink branch.
+    // That nested `INSERT` can reach a deduplicating dependent materialized view even when the
+    // forwarded-to table itself never deduplicates (e.g. an `Alias` over a `MergeTree` with
+    // `non_replicated_deduplication_window = 0` whose materialized view targets a deduplicating table).
+    // The dependent-MV chain of the forwarded-to table lives behind the nested `INSERT` and is not
+    // visible to this pipeline (`InsertDependenciesBuilder` only expands the dependencies of the
+    // immediate target), so it must be guarded here. The view-level deduplication ids fold in the
+    // source block number, so they stay distinct across branches as long as the source numbering is
+    // global. Fail closed when the numbering is per-branch and the nested `INSERT` can reach a
+    // dependent view: either the forwarding chain restarts the numbering on its own (`Distributed` /
+    // `Buffer` - also kept single-stream by `forwards_to_separate_context` below), or
+    // `use_strict_insert_block_limits` stamps it per branch after the fan-out and the per-branch
+    // numbers survive the hop into the dependent-view graph hidden behind an `Alias`.
+    const bool forwarded_dependent_mv_dedup_hazard = dedup_enabled_for_insert
         && settings[Setting::deduplicate_blocks_in_dependent_materialized_views]
-        && InsertDependenciesBuilder::forwardedInsertReachesDependentView(table);
+        && ((rebuilds_dedup_ids && InsertDependenciesBuilder::forwardedInsertReachesDependentView(table))
+            || (settings[Setting::use_strict_insert_block_limits]
+                && InsertDependenciesBuilder::forwardedInsertHidesDependentView(table)));
 
     // A `Buffer` flushes its accumulated data to the destination through a nested `INSERT` built from the
     // buffer's *own* context (`StorageBuffer::writeBlockToDestination` copies `getContext()`, not this

@@ -130,11 +130,16 @@ public:
     /// drops rows when some sink actually deduplicates.
     static bool storageDeduplicatesBlocksOnInsert(const StoragePtr & storage, size_t depth = 0);
 
-    /// Whether writing into `storage` forwards the data through a nested `INSERT` (`Alias`,
-    /// `Distributed`, `Buffer`) that stamps the deduplication info from scratch. Such nested inserts
-    /// restart the source block numbering per sink branch even when this query stamps the numbers
-    /// globally before the fan-out, so the fan-out may produce colliding deduplication ids for
-    /// identical blocks regardless of `use_strict_insert_block_limits`.
+    /// Whether writing into `storage` forwards the data through a nested `INSERT` that stamps the
+    /// deduplication info from scratch (`Distributed`, `Buffer`, or a forwarding chain ending in one).
+    /// Such nested inserts restart the source block numbering per sink branch even when this query
+    /// stamps the numbers globally before the fan-out, so the fan-out may produce colliding
+    /// deduplication ids for identical blocks regardless of `use_strict_insert_block_limits`. An
+    /// `Alias` is looked through instead: its nested `INSERT` (`AliasSink`) runs in this query's
+    /// context, receives the chunk's deduplication info intact, and does not restamp a chunk that has
+    /// already visited a view, so a globally stamped numbering survives the hop - only a per-branch
+    /// numbering (`use_strict_insert_block_limits`), which the callers guard separately, is hazardous
+    /// there.
     static bool storageRebuildsDeduplicationIdsOnInsert(const StoragePtr & storage, size_t depth = 0);
 
     /// Whether inserting into a forwarding `storage` (one for which `storageRebuildsDeduplicationIdsOnInsert`

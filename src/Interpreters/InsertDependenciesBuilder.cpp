@@ -827,15 +827,29 @@ bool InsertDependenciesBuilder::storageRebuildsDeduplicationIdsOnInsert(const St
     if (depth > max_insert_forwarding_depth)
         return true;
 
-    /// `Alias` executes a full nested `INSERT` query per sink (`AliasSink`), and `Distributed` /
-    /// `Buffer` forward the data through a separate remote (or local / background) `INSERT`. The
-    /// nested `INSERT` stamps the deduplication info from scratch, so its source block numbering
-    /// restarts per sink branch even when this query stamps the numbers globally in the single-stream
-    /// head of the pipeline, before the fan-out.
-    if (dynamic_cast<const StorageAlias *>(storage.get())
-        || dynamic_cast<const StorageDistributed *>(storage.get())
+    /// `Distributed` / `Buffer` forward the data through a separate remote (or local / background)
+    /// `INSERT`. That nested `INSERT` stamps the deduplication info from scratch, so its source block
+    /// numbering restarts per sink branch even when this query stamps the numbers globally in the
+    /// single-stream head of the pipeline, before the fan-out.
+    if (dynamic_cast<const StorageDistributed *>(storage.get())
         || dynamic_cast<const StorageBuffer *>(storage.get()))
         return true;
+
+    /// `Alias` also executes a full nested `INSERT` query per sink (`AliasSink`), but that nested
+    /// `INSERT` runs in this query's context and receives the chunk's `DeduplicationInfo` intact
+    /// (`AliasSink` clones the chunk infos), and its `AddDeduplicationInfoTransform` restamps the
+    /// source block number only when the info has not visited any view yet
+    /// (`DeduplicationTokenTransforms.cpp`). A chunk stamped by this query's single-stream head
+    /// already carries the root entry pushed by `setRootViewID`, so the global numbering survives the
+    /// `Alias` hop and identical blocks on different branches keep distinct ids. A per-branch
+    /// numbering arises only under `use_strict_insert_block_limits`, which both call sites of this
+    /// probe guard separately. Look through to the target like for `MaterializedView` (failing closed
+    /// when it cannot be resolved).
+    if (const auto * alias = dynamic_cast<const StorageAlias *>(storage.get()))
+    {
+        auto target = alias->tryGetTargetTable();
+        return !target || storageRebuildsDeduplicationIdsOnInsert(target, depth + 1);
+    }
 
     /// `MaterializedView` and proxies pass the write through to the target table's sink within the
     /// same pipeline, preserving the deduplication info: look through them (failing closed when the
@@ -1005,9 +1019,12 @@ InsertDependenciesBuilder::InsertDependenciesBuilder(
     /// view-level ids and one of them is skipped as a duplicate - silently dropping rows of a single
     /// parallel `INSERT`. Keep the dependent-MV deduplication path single-stream in that case.
     ///
-    /// A dependent-MV target that forwards the write through a nested `INSERT` (`Alias`,
-    /// `Distributed`, `Buffer`) restarts the numbering per branch on its own, so for such a target the
-    /// fan-out is hazardous even without strict limits.
+    /// A dependent-MV target that forwards the write through a nested `INSERT` that stamps the
+    /// deduplication info from scratch (`Distributed`, `Buffer`) restarts the numbering per branch on
+    /// its own, so for such a target the fan-out is hazardous even without strict limits. An `Alias`
+    /// target preserves an already-stamped chunk across its nested `INSERT` (the nested
+    /// `AddDeduplicationInfoTransform` does not restamp a chunk that has already visited a view), so
+    /// it is hazardous only under strict limits, like a concrete local target.
     ///
     /// The collision only drops rows when some dependent-MV target sink actually deduplicates. If every
     /// dependent target has its deduplication window disabled (e.g. a plain `MergeTree` target with
