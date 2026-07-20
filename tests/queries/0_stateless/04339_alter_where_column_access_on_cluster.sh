@@ -38,6 +38,8 @@ function check_access()
     local rc=$?
     if [ $rc -eq 0 ]; then
         echo "OK"
+    elif echo "$output" | grep -q "validate_mutation_query=1"; then
+        echo "REJECTED_NO_VALIDATION"
     elif echo "$output" | grep -q "ACCESS_DENIED"; then
         echo "ACCESS_DENIED"
     else
@@ -56,6 +58,13 @@ check_access "DELETE FROM tab ON CLUSTER $cluster WHERE id = 42 $settings"
 
 echo "-- ON CLUSTER reading only the readable column (name) is allowed"
 check_access "ALTER TABLE tab ON CLUSTER $cluster DELETE WHERE name = 'x' $settings"
+
+# Even with the default validate_mutation_query=1, an ON CLUSTER mutation subquery is rejected fail-closed:
+# the remote node validates as its own user (distributed_ddl_use_initial_user_and_roles defaults to 0),
+# so the initiating user's read access to the subquery is not verified anywhere.
+echo "-- ON CLUSTER subquery in WHERE/SET is rejected fail-closed (default validate_mutation_query=1)"
+check_access "ALTER TABLE tab ON CLUSTER $cluster DELETE WHERE 1 IN (SELECT id FROM tab) $settings"
+check_access "UPDATE tab ON CLUSTER $cluster SET name = (SELECT toString(id) FROM tab LIMIT 1) WHERE 1 $settings"
 
 $CLICKHOUSE_CLIENT -q "GRANT SELECT(id) ON $CLICKHOUSE_DATABASE.tab TO $user_name;"
 

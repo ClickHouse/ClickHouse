@@ -6,6 +6,9 @@ ACCESS_DENIED
 ACCESS_DENIED
 -- ON CLUSTER reading only the readable column (name) is allowed
 OK
+-- ON CLUSTER subquery in WHERE/SET is rejected fail-closed (default validate_mutation_query=1)
+REJECTED_NO_VALIDATION
+REJECTED_NO_VALIDATION
 -- ON CLUSTER with SELECT(id): reading id is allowed
 OK
 OK

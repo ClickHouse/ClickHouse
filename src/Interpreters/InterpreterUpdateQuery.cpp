@@ -45,6 +45,7 @@ namespace Setting
 namespace ServerSetting
 {
     extern const ServerSettingsBool disable_insertion_and_mutation;
+    extern const ServerSettingsBool distributed_ddl_use_initial_user_and_roles;
 }
 
 InterpreterUpdateQuery::InterpreterUpdateQuery(ASTPtr query_ptr_, ContextPtr context_)
@@ -99,10 +100,14 @@ BlockIO InterpreterUpdateQuery::execute()
     /// Reject subqueries in the predicate / assignment right-hand sides when validation is disabled,
     /// on every path (including ON CLUSTER where the table is not resolvable locally), before the
     /// access check and any dispatch. This needs no metadata, only the parsed expressions.
-    rejectMutationSubqueryWhenValidationDisabled(update_query.predicate.get(), settings[Setting::validate_mutation_query]);
+    const bool update_on_cluster = !update_query.cluster.empty();
+    const bool ddl_use_initial_user = getContext()->getServerSettings()[ServerSetting::distributed_ddl_use_initial_user_and_roles];
+    rejectMutationSubqueryWithUnverifiedReadAccess(
+        update_query.predicate.get(), settings[Setting::validate_mutation_query], update_on_cluster, ddl_use_initial_user);
     for (const ASTPtr & assignment : update_query.assignments->children)
-        rejectMutationSubqueryWhenValidationDisabled(
-            assignment->as<const ASTAssignment &>().expression().get(), settings[Setting::validate_mutation_query]);
+        rejectMutationSubqueryWithUnverifiedReadAccess(
+            assignment->as<const ASTAssignment &>().expression().get(),
+            settings[Setting::validate_mutation_query], update_on_cluster, ddl_use_initial_user);
     StoragePtr resolved_table;
     auto resolved_id = getContext()->tryResolveStorageID(update_query, Context::ResolveOrdinary);
     if (resolved_id)

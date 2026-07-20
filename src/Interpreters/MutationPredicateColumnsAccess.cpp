@@ -80,16 +80,29 @@ void addExpressionColumnsSelectAccess(
         required_access.emplace_back(AccessType::SELECT, database, table, columns);
 }
 
-void rejectMutationSubqueryWhenValidationDisabled(const IAST * expression, bool validate_mutation_query)
+void rejectMutationSubqueryWithUnverifiedReadAccess(
+    const IAST * expression,
+    bool validate_mutation_query,
+    bool is_on_cluster,
+    bool distributed_ddl_use_initial_user_and_roles)
 {
-    if (validate_mutation_query || !expression)
+    if (!expression)
+        return;
+
+    /// The subquery's read access is verified for the initiating user only when the mutation query is
+    /// validated under that user's context: `validate_mutation_query` must be on, and for `ON CLUSTER`
+    /// the remote validation must run as the initiator (`distributed_ddl_use_initial_user_and_roles`).
+    const bool read_access_verified
+        = validate_mutation_query && (!is_on_cluster || distributed_ddl_use_initial_user_and_roles);
+    if (read_access_verified)
         return;
 
     if (expressionContainsSubquery(expression))
         throw Exception(
             ErrorCodes::SUPPORT_IS_DISABLED,
-            "A subquery in a mutation WHERE/SET expression requires validate_mutation_query=1, so that "
-            "read access to the columns it reads can be verified");
+            "Refusing to execute a mutation with a subquery in its WHERE/SET expression whose read "
+            "access cannot be verified for the current user: it requires validate_mutation_query=1 "
+            "(and, for ON CLUSTER mutations, distributed_ddl_use_initial_user_and_roles=1)");
 }
 
 }

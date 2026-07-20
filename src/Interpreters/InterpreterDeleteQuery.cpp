@@ -48,6 +48,7 @@ namespace MergeTreeSetting
 namespace ServerSetting
 {
     extern const ServerSettingsBool disable_insertion_and_mutation;
+    extern const ServerSettingsBool distributed_ddl_use_initial_user_and_roles;
 }
 
 namespace ErrorCodes
@@ -85,8 +86,10 @@ BlockIO InterpreterDeleteQuery::execute()
     {
         AccessRightsElements read_access;
         const auto metadata_snapshot = table->getInMemoryMetadataPtr(getContext(), false);
-        rejectMutationSubqueryWhenValidationDisabled(
-            delete_query.predicate.get(), settings[Setting::validate_mutation_query]);
+        rejectMutationSubqueryWithUnverifiedReadAccess(
+            delete_query.predicate.get(), settings[Setting::validate_mutation_query],
+            !delete_query.cluster.empty(),
+            getContext()->getServerSettings()[ServerSetting::distributed_ddl_use_initial_user_and_roles]);
         addExpressionColumnsSelectAccess(
             read_access, delete_query.predicate.get(), table_id.database_name, table_id.table_name,
             *metadata_snapshot);
