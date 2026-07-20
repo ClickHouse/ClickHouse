@@ -1571,13 +1571,17 @@ Chain InsertDependenciesBuilder::createPostSink(StorageIDMaybeEmpty view_id) con
 
 static String getCleanQueryAst(const ASTPtr q, ContextPtr context)
 {
-    String res = q->formatWithSecretsOneLine();
-    if (auto masker = SensitiveDataMasker::getInstance())
-        masker->wipeSensitiveData(res);
+    if (!q)
+        return {};
 
-    res = res.substr(0, context->getSettingsRef()[Setting::log_queries_cut_to_length]);
+    const auto max_length = context->getSettingsRef()[Setting::log_queries_cut_to_length];
 
-    return res;
+    if (q->hasSecretParts())
+    {
+        return q->formatForLogging(max_length);
+    }
+
+    return wipeSensitiveDataAndCutToLength(q->formatWithSecretsOneLine(), max_length, true);
 }
 
 
