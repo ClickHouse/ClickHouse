@@ -1564,9 +1564,18 @@ void ClientBase::processOrdinaryQuery(String query, ASTPtr parsed_query)
 
             receiveResult(parsed_query, signals_before_stop, settings[Setting::partial_result_on_first_cancel]);
 
+            /// The teardown flushes in resetOutput() honor a late Ctrl+C (discarding the rest of
+            /// the pending output) and promote it into `cancelled`; the interrupt handler is
+            /// still armed at this point, so re-check for a signal racing in after that promotion.
+            if (!cancelled && query_interrupt_handler.isRunning() && query_interrupt_handler.cancelled())
+                cancelled = true;
+
             if (!out_file_if_truncated.empty())
             {
-                if (have_error)
+                /// Replace the target file only on success. On an error the result is incomplete,
+                /// and on a cancellation the write hooks may have discarded a part of the output,
+                /// so the temporary file can be torn - do not publish it over the existing target.
+                if (have_error || cancelled)
                     cleanupTempFile(parsed_query, out_file);
                 else
                     performAtomicRename(parsed_query, out_file_if_truncated);
@@ -2055,6 +2064,17 @@ void ClientBase::resetOutput()
     logs_out_terminal_buf = nullptr;
 
     out_logs_buf.reset();
+
+    /// A Ctrl+C that arrived during the teardown flushes above (or during the format finalize
+    /// preceding them) was honored by the write hooks - the rest of the pending output was
+    /// discarded - but it never became query state: the receive loop that promotes an interrupt
+    /// into `cancelled` via cancelQuery() has already finished by the time these flushes run.
+    /// Promote it here, before the later logic consults `cancelled`. Otherwise the pager wait
+    /// below would block as if nothing was cancelled, processOrdinaryQuery() would publish a
+    /// partially flushed `INTO OUTFILE ... TRUNCATE` target as a success, and the
+    /// "Query was cancelled." message would not be printed.
+    if (!cancelled && query_interrupt_handler.isRunning() && query_interrupt_handler.cancelled())
+        cancelled = true;
 
     if (pager_cmd)
     {
