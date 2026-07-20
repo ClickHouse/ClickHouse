@@ -689,6 +689,16 @@ public:
     /// not retry forever against keys the first node already deleted.
     virtual bool dropSkipsDataDirectoryCleanup() const { return false; }
 
+    /// Returns true if, after `drop()`, the ownership of the table's data directory could not
+    /// be determined — for example, a lazily loaded table (`StorageTableProxy`) whose real
+    /// storage failed to materialize during `DROP`, so we cannot know whether its data lives
+    /// on shared object storage owned by another node (`leader_election`) or on ordinary local
+    /// disks. The database/catalog cleanup then falls back to its narrower conservative logic:
+    /// clean up node-local disks (so an ordinary table does not leak `store/<uuid>`), but skip
+    /// disks whose metadata is shared across nodes. Unlike `dropSkipsDataDirectoryCleanup`,
+    /// this does not skip cleanup entirely.
+    virtual bool dropDataOwnershipUnknown() const { return false; }
+
     /// Returns data paths if storage supports it, empty vector otherwise.
     virtual Strings getDataPaths() const { return {}; }
 

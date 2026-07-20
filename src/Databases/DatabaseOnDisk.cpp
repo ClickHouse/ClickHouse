@@ -404,10 +404,32 @@ void DatabaseOnDisk::dropTable(ContextPtr local_context, const String & table_na
     }
     else
     {
+        /// If the ownership of the data could not be determined (a lazy-load proxy whose real
+        /// storage failed to materialize during `drop()`), mirror `DatabaseCatalog::dropTableFinally`:
+        /// still clean up node-local disks (so an ordinary table does not leak its data directory
+        /// on a transient load failure), but skip disks whose metadata is shared across nodes
+        /// (`plain_rewritable` / `keeper` — the backends `leader_election` requires), where
+        /// `removeRecursive` could destroy data a live leader still owns.
+        const bool data_ownership_unknown = table && table->dropDataOwnershipUnknown();
+
         for (const auto & [disk_name, disk] : getContext()->getDisksMap())
         {
             if (disk->isReadOnly() || !disk->existsDirectory(table_data_path_relative))
                 continue;
+
+            if (data_ownership_unknown)
+            {
+                auto metadata_type = disk->getDataSourceDescription().metadata_type;
+                if (metadata_type == MetadataStorageType::PlainRewritable || metadata_type == MetadataStorageType::Keeper)
+                {
+                    LOG_WARNING(log,
+                        "Not removing data directory {} of dropped table {} from disk {}: the table could not be "
+                        "loaded and the disk uses shared metadata, so its data may belong to another node. Skipping "
+                        "to avoid destroying shared data; the directory may need manual cleanup.",
+                        table_data_path_relative, table_name, disk_name);
+                    continue;
+                }
+            }
 
             LOG_INFO(log, "Removing data directory from disk {} with path {} for dropped table {} ", disk_name, table_data_path_relative, table_name);
             disk->removeRecursive(table_data_path_relative);

@@ -1778,15 +1778,17 @@ void DatabaseCatalog::dropTableFinally(const TableMarkedAsDropped & table)
     else
     {
         /// If the storage object could not be materialized (`table.table` is null after a failed
-        /// dropped-metadata recovery, e.g. the metadata file is unparsable), we cannot read its
-        /// settings to learn whether its data lives on shared object storage owned by another
-        /// node. Be conservative without broadening behavior for the common local case: still
-        /// clean up node-local disks (so an ordinary corrupted-metadata drop does not leak
-        /// `/store/<uuid>`), but skip disks whose metadata is shared across nodes
-        /// (`plain_rewritable` / `keeper` — the backends `leader_election` requires), where
-        /// `removeRecursive` could destroy data a live leader still owns. Leaking on a shared
-        /// disk is preferable to deleting shared data on a transient/permanent load failure.
-        const bool data_ownership_unknown = !table.table;
+        /// dropped-metadata recovery, e.g. the metadata file is unparsable; or the storage is a
+        /// lazy-load proxy whose real storage failed to load during `drop()` and reports
+        /// `dropDataOwnershipUnknown`), we cannot read its settings to learn whether its data
+        /// lives on shared object storage owned by another node. Be conservative without
+        /// broadening behavior for the common local case: still clean up node-local disks (so an
+        /// ordinary corrupted-metadata drop does not leak `/store/<uuid>`), but skip disks whose
+        /// metadata is shared across nodes (`plain_rewritable` / `keeper` — the backends
+        /// `leader_election` requires), where `removeRecursive` could destroy data a live leader
+        /// still owns. Leaking on a shared disk is preferable to deleting shared data on a
+        /// transient/permanent load failure.
+        const bool data_ownership_unknown = !table.table || table.table->dropDataOwnershipUnknown();
 
         /// Even if table is not loaded, try remove its data from disks.
         for (const auto & [disk_name, disk] : getContext()->getDisksMap())

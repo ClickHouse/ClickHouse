@@ -111,7 +111,7 @@ public:
 
             if (!get_nested)
             {
-                LOG_WARNING(log, "Cannot load table for drop, data cleanup will be handled by the database engine");
+                LOG_WARNING(log, "Cannot load table for drop, data ownership is unknown");
                 drop_load_failed = true;
                 return;
             }
@@ -121,15 +121,16 @@ public:
         catch (...)
         {
             LOG_WARNING(log, "Failed to load table for drop: {}. "
-                             "Per-disk cleanup will be skipped to avoid destructive fallback "
-                             "on shared object storage.",
+                             "Cleanup of disks with shared metadata will be skipped to avoid "
+                             "destructive fallback on shared object storage.",
                         getCurrentExceptionMessage(false));
-            /// We could not determine the underlying storage. Fail closed:
-            /// the catalog must not run per-disk recursive cleanup, since the
-            /// nested storage may be a `MergeTree` with `leader_election = 1`
-            /// whose data lives on shared object storage and is owned by
-            /// another node. Leaking local data on the unreachable engine is
-            /// the lesser harm.
+            /// We could not determine the underlying storage. Report the ownership as unknown
+            /// (see `dropDataOwnershipUnknown`) instead of skipping cleanup entirely: the
+            /// nested storage may be a `MergeTree` with `leader_election = 1` whose data lives
+            /// on shared object storage and is owned by another node — but it may equally be an
+            /// ordinary local table, and a blanket skip would leak its `store/<uuid>` directory
+            /// permanently on a transient load failure. The catalog cleans node-local disks and
+            /// skips only disks with shared metadata in this case.
             drop_load_failed = true;
             return;
         }
@@ -214,11 +215,21 @@ public:
         std::lock_guard lock{nested_mutex};
         if (nested)
             return nested->dropSkipsDataDirectoryCleanup();
-        /// `drop()` set this when it could not materialize the nested storage.
-        /// Skip per-disk cleanup so we never run a destructive `removeRecursive`
-        /// against a path that may be on shared object storage owned by a
-        /// `leader_election = 1` peer (see `drop()` for details).
-        return drop_load_failed;
+        /// When the nested storage could not be materialized during `drop()`, the ownership of
+        /// the data is *unknown* (see `dropDataOwnershipUnknown` below), which is weaker than a
+        /// full cleanup skip: skipping everything here would permanently leak `store/<uuid>` of
+        /// an ordinary local table on a transient load failure.
+        return false;
+    }
+
+    bool dropDataOwnershipUnknown() const override
+    {
+        std::lock_guard lock{nested_mutex};
+        /// Set by `drop()` when it could not materialize the nested storage. The catalog then
+        /// cleans node-local disks but skips disks with shared metadata, so a destructive
+        /// `removeRecursive` never runs against a path that may be on shared object storage
+        /// owned by a `leader_election = 1` peer (see `drop()` for details).
+        return !nested && drop_load_failed;
     }
 
     std::optional<UInt64> totalRows(ContextPtr query_context) const override
