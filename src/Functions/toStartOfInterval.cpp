@@ -312,9 +312,11 @@ private:
         else // Overload: Default
         {
             /// The default overload is the one used for primary-key pruning (getMonotonicityForRange reports
-            /// always-monotonic), so its narrowing standard-precision results (Date/DateTime) must saturate
-            /// rather than wrap for out-of-range DateTime64 arguments. Only DateTime64 arguments reach those
-            /// out-of-range values; Date/Date32/DateTime rounding is defined in DateLUTImpl and is left intact.
+            /// always-monotonic), so its narrowing standard-precision result (DateTime, UInt32 seconds) must
+            /// saturate rather than wrap for out-of-range DateTime64 arguments at this cast. Only DateTime64
+            /// arguments reach an out-of-range value here; Date32/DateTime rounding is defined in DateLUTImpl
+            /// and left intact. The Date carrier's own high-side wrap (a Date beyond 2106-02-07 with INTERVAL
+            /// DAY) happens earlier, inside ToStartOfInterval<Day>::execute(UInt16), and is saturated there.
             constexpr bool saturate = std::is_same_v<TimeDataType, DataTypeDateTime64>;
             for (size_t i = 0; i != size; ++i)
                 result_data[i] = saturatingResultCast<saturate, typename ResultDataType::FieldType>(

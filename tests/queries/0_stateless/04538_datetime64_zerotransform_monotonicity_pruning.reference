@@ -51,3 +51,12 @@
 4
 -- toStartOfDay trivial count with projection
 4
+-- Date toStartOfDay
+4
+4
+-- Date toRelativeSecondNum
+4
+4
+-- Date toStartOfInterval 1 DAY
+4
+4

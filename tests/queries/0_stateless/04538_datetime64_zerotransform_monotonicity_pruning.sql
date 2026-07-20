@@ -98,3 +98,27 @@ SELECT count() FROM t_dt64_mono WHERE toStartOfDay(d) >= toDateTime('2000-01-01 
     SETTINGS force_primary_key = 1, optimize_use_implicit_projections = 1, optimize_trivial_count_query = 1;
 
 DROP TABLE t_dt64_mono;
+
+-- Date carrier (UInt16 days): the standard-precision toStartOfDay / toRelativeSecondNum results are
+-- seconds-since-epoch (UInt32), which overflows for a Date beyond 2106-02-07 (Date max is 2149-06-06) and
+-- used to wrap the same way as the DateTime64 carrier above, mis-pruning a Date primary key. The default
+-- toStartOfInterval on a Date argument with INTERVAL DAY yields the same UInt32 DateTime result and had the
+-- same high-side wrap. Date is unsigned / epoch-based, so saturating to the type maximum keeps it monotonic.
+DROP TABLE IF EXISTS t_date_mono;
+CREATE TABLE t_date_mono (d Date) ENGINE = MergeTree ORDER BY d
+    SETTINGS index_granularity = 1, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
+INSERT INTO t_date_mono VALUES ('1970-01-02'),('2000-01-01'),('2106-02-06'),('2106-02-08'),('2149-06-06');
+
+SELECT '-- Date toStartOfDay';
+SELECT count() FROM t_date_mono WHERE toStartOfDay(d) >= toDateTime('2000-01-01 00:00:00', 'UTC') SETTINGS force_primary_key = 1;
+SELECT countIf(toStartOfDay(d) >= toDateTime('2000-01-01 00:00:00', 'UTC')) FROM t_date_mono;
+
+SELECT '-- Date toRelativeSecondNum';
+SELECT count() FROM t_date_mono WHERE toRelativeSecondNum(d) >= 946684800 SETTINGS force_primary_key = 1;
+SELECT countIf(toRelativeSecondNum(d) >= 946684800) FROM t_date_mono;
+
+SELECT '-- Date toStartOfInterval 1 DAY';
+SELECT count() FROM t_date_mono WHERE toStartOfInterval(d, INTERVAL 1 DAY) >= toDateTime('2000-01-01 00:00:00', 'UTC') SETTINGS force_primary_key = 1;
+SELECT countIf(toStartOfInterval(d, INTERVAL 1 DAY) >= toDateTime('2000-01-01 00:00:00', 'UTC')) FROM t_date_mono;
+
+DROP TABLE t_date_mono;

@@ -233,7 +233,9 @@ struct ToStartOfDayImpl
     }
     static UInt32 execute(UInt16 d, const DateLUTImpl & time_zone)
     {
-        return static_cast<UInt32>(time_zone.toDate(DayNum(d)));
+        /// Saturate: a Date beyond 2106-02-07 maps to a start-of-day in seconds that exceeds the UInt32
+        /// result and would wrap, breaking toStartOfDay's always-monotonic claim used for primary-key pruning.
+        return static_cast<UInt32>(std::clamp<Int64>(time_zone.toDate(DayNum(d)), 0, std::numeric_limits<UInt32>::max()));
     }
     static DecimalUtils::DecimalComponents<DateTime64> executeExtendedResult(const DecimalUtils::DecimalComponents<DateTime64> & t, const DateLUTImpl & time_zone)
     {
@@ -757,7 +759,9 @@ struct ToStartOfInterval<IntervalKind::Kind::Day>
 {
     static UInt32 execute(UInt16 d, Int64 days, const DateLUTImpl & time_zone, Int64)
     {
-        return static_cast<UInt32>(time_zone.toStartOfDayInterval(ExtendedDayNum(d), days));
+        /// A Date beyond 2106-02-07 floors to a start-of-day in seconds that exceeds the UInt32 result and
+        /// would wrap; toStartOfInterval reports always-monotonic for pruning, so saturate (matches toStartOfDay).
+        return static_cast<UInt32>(std::clamp<Int64>(time_zone.toStartOfDayInterval(ExtendedDayNum(d), days), 0, std::numeric_limits<UInt32>::max()));
     }
     static Int64 execute(Int32 d, Int64 days, const DateLUTImpl & time_zone, Int64)
     {
@@ -2438,7 +2442,9 @@ struct ToRelativeSecondNumImpl
     }
     static UInt32 execute(UInt16 d, const DateLUTImpl & time_zone)
     {
-        return static_cast<UInt32>(time_zone.fromDayNum(DayNum(d)));
+        /// Saturate: a Date beyond 2106-02-07 maps to a seconds-since-epoch value that exceeds the UInt32
+        /// result and would wrap, breaking toRelativeSecondNum's always-monotonic claim used for pruning.
+        return static_cast<UInt32>(std::clamp<Int64>(time_zone.fromDayNum(DayNum(d)), 0, std::numeric_limits<UInt32>::max()));
     }
     static constexpr bool hasPreimage() { return false; }
 
