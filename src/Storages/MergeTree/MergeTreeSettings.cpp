@@ -6,6 +6,7 @@
 #include <Core/BaseSettingsFwdMacrosImpl.h>
 #include <Core/BaseSettingsProgramOptions.h>
 #include <Core/MergeSelectorAlgorithm.h>
+#include <Core/MergeTreeSerializationEnums.h>
 #include <Core/SettingsChangesHistory.h>
 #include <Disks/DiskFromAST.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -924,6 +925,35 @@ error, but at the same time `SELECT` performance might degrade. Also in case
 of a merge issue (for example, due to insufficient disk space) you will
 notice it later than you would with the original 300.
 
+)", 0) \
+    DECLARE(UInt64, dead_blobs_to_throw_insert, 1000000, R"(
+If the number of blobs pending removal in the dead blobs queues of the table's disks is more than the
+`dead_blobs_to_throw_insert` value, `INSERT` is interrupted with the following error:
+
+> "Too many dead blobs in queue (N) on disks of table. Blobs cleanup is processing significantly
+  slower than inserts"
+
+The dead blobs queue belongs to the disk and is shared by all tables on it (including blobs of already
+dropped tables), so size the threshold for the whole disk rather than a single table.
+
+Possible values:
+- Any positive integer.
+- 0 — disabled.
+)", 0) \
+    DECLARE(UInt64, dead_blobs_to_delay_insert, 100000, R"(
+If the number of blobs pending removal in the dead blobs queues of the table's disks exceeds the
+`dead_blobs_to_delay_insert` value, an `INSERT` is artificially slowed down (up to `max_delay_to_insert`).
+
+The dead blobs queue belongs to the disk and is shared by all tables on it (including blobs of already
+dropped tables), so size the threshold for the whole disk rather than a single table.
+
+:::tip
+It is useful when a server fails to clean up blobs quickly enough.
+:::
+
+Possible values:
+- Any positive integer.
+- 0 — disabled.
 )", 0) \
     DECLARE(UInt64, inactive_parts_to_throw_insert, 0, R"(
 If the number of inactive parts in a single partition more than the
@@ -1919,9 +1949,10 @@ When enabled, an implicit min-max (skipping) index is added for the persistent v
 Requires `enable_block_offset_column = 1` to take effect. The index is built only during merges,
 not during inserts.
 )", 0) \
-    DECLARE(String, auto_statistics_types, "minmax, uniq", R"(
+    DECLARE(String, auto_statistics_types, "basic, uniq_v2", R"(
 Comma-separated list of statistics types to calculate automatically on all suitable columns.
-Supported statistics types: basic, tdigest, countmin, minmax, uniq, uniq_v2.
+Supported statistics types: basic, tdigest, countmin, uniq, uniq_v2.
+The `minmax` statistics type is deprecated: it is a subset of `basic`, which should be used instead.
 )", 0) \
     DECLARE(UInt64, packed_skip_index_max_bytes, 0, R"(
 Threshold (serialized on-disk bytes, i.e. after the substream's compression and hashing
@@ -2085,7 +2116,10 @@ Notify newest block number to SharedJoin or SharedSet. Only in ClickHouse Cloud.
 )", EXPERIMENTAL) \
     DECLARE(UInt64, shared_merge_tree_virtual_parts_discovery_batch, 1, R"(
 How many partition discoveries should be packed into batch
-)", EXPERIMENTAL) \
+)", 0) \
+    DECLARE(Bool, shared_merge_tree_virtual_parts_partition_atomic_discovery, true, R"(
+Will SMT discover virtual parts partition atomically with extra data fetch and watches setup.
+)", 0) \
     DECLARE(Bool, shared_merge_tree_enable_automatic_empty_partitions_cleanup, true, R"(
 Enabled cleanup of Keeper entries of empty partition.
 )", 0) \
@@ -2571,22 +2605,24 @@ void MergeTreeSettingsImpl::sanityCheck(size_t background_pool_tasks, bool allow
             (*this)[MergeTreeSetting::map_buckets_coefficient].value);
     }
 
-    if ((*this)[MergeTreeSetting::object_shared_data_buckets_for_compact_part] > max_allowed_buckets)
+    /// The reader validates the on-wire bucket count against the same bound
+    /// (`MAX_OBJECT_SHARED_DATA_BUCKETS`), so keep this cap and that guard in sync via the constant.
+    if ((*this)[MergeTreeSetting::object_shared_data_buckets_for_compact_part] > MAX_OBJECT_SHARED_DATA_BUCKETS)
     {
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "The value of object_shared_data_buckets_for_compact_part setting ({}) exceeds the maximum allowed value of {}",
             (*this)[MergeTreeSetting::object_shared_data_buckets_for_compact_part].value,
-            max_allowed_buckets);
+            MAX_OBJECT_SHARED_DATA_BUCKETS);
     }
 
-    if ((*this)[MergeTreeSetting::object_shared_data_buckets_for_wide_part] > max_allowed_buckets)
+    if ((*this)[MergeTreeSetting::object_shared_data_buckets_for_wide_part] > MAX_OBJECT_SHARED_DATA_BUCKETS)
     {
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "The value of object_shared_data_buckets_for_wide_part setting ({}) exceeds the maximum allowed value of {}",
             (*this)[MergeTreeSetting::object_shared_data_buckets_for_wide_part].value,
-            max_allowed_buckets);
+            MAX_OBJECT_SHARED_DATA_BUCKETS);
     }
 
     if ((*this)[MergeTreeSetting::zero_copy_merge_mutation_min_parts_size_sleep_before_lock] != 0
