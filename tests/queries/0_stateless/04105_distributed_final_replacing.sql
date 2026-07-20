@@ -13,6 +13,8 @@ SYSTEM STOP MERGES t_replacing_final_correctness;
 INSERT INTO t_replacing_final_correctness SELECT number, 1, 'old' FROM numbers(100000);
 INSERT INTO t_replacing_final_correctness SELECT number, 2, 'new' FROM numbers(100000);
 
+SET distributed_plan_default_shuffle_join_bucket_count = 3, distributed_plan_default_reader_bucket_count = 3;
+
 SELECT '-- Local';
 SELECT count(), sum(version), uniqExact(pk) FROM t_replacing_final_correctness FINAL;
 

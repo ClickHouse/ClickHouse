@@ -1,0 +1,91 @@
+---
+slug: /cloud/get-started/cloud/use-cases/data_lake_and_warehouse
+title: '数据仓库'
+description: '结合数据湖的灵活性与 ClickHouse Cloud 的高性能，构建现代数据仓库架构'
+keywords: ['数据仓库', '数据湖', '湖仓', 'Iceberg', 'Delta Lake', 'Hudi', 'Parquet', '开放表格式', '混合架构', '用例']
+sidebarTitle: '数据仓库'
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+export const ExclusiveGroup = ({ name, children }) => {
+  useEffect(() => {
+    document.querySelectorAll(`[data-eg="${name}"] details`).forEach(d =>
+      d.setAttribute('name', name)
+    );
+  });
+  return <div data-eg={name}>{children}</div>;
+};
+
+现代数据仓库不再将存储与计算紧密耦合。相反，存储、治理和查询处理被划分为彼此独立但相互连接的层，让你能够灵活地为各类工作流选择合适的工具。
+
+通过将开放表格式和 ClickHouse 这类高性能查询引擎引入云对象存储，你就能获得数据库级能力——ACID 事务、schema 约束以及快速分析查询——同时又不牺牲数据湖的开放性。这种组合兼顾高性能与可互操作、成本效益高的存储，可支持传统分析以及现代 AI/ML 工作负载。
+
+<div id="benefits">
+  ## 这种架构提供了什么
+</div>
+
+通过将开放的对象存储和表格式与 ClickHouse 查询引擎结合使用，你将获得：
+
+| Benefit       | Description                                                                                |
+| ------------- | ------------------------------------------------------------------------------------------ |
+| **一致的表更新**    | 对表状态进行原子提交，这意味着并发写入不会产生损坏或不完整的数据。这解决了原始数据湖中最棘手的问题之一。                                       |
+| **schema 管理** | 强制验证和对 schema 演进的跟踪，可防止出现“数据沼泽”问题，即数据因 schema 不一致而变得无法使用。                                  |
+| **查询性能**      | 索引、统计信息，以及数据跳过、聚簇等数据布局优化，让 SQL 查询能够达到与专用数据仓库相当的速度。再结合 ClickHouse 的列式引擎，即使数据存储在对象存储中，也同样如此。 |
+| **治理**        | 目录和表格式可在行级和列级提供细粒度的访问控制和审计能力，从而弥补基础数据湖在安全控制方面的不足。                                          |
+| **存储与计算分离**   | 存储和计算可在通用对象存储上独立扩展，而其成本显著低于专有仓库存储。虽然这种分离在现代云仓库中已是标准做法，但开放格式让你可以选择由 *哪种* 计算引擎随数据一起扩展。       |
+
+<div id="architecture">
+  ## ClickHouse 如何为您的数据仓库赋能
+</div>
+
+数据从流式平台和现有数据仓库，经由对象存储流入 ClickHouse，并在其中完成转换、优化，再提供给您的 BI/AI 工具。
+
+<Columns cols={2}>
+  <div>
+    <Image img="/images/cloud/onboard/discover/use_cases/data-warehousing.webp" alt="ClickHouse 数据仓库架构" />
+  </div>
+
+  <ExclusiveGroup name="dw-arch">
+    <AccordionGroup>
+      <Accordion title="数据摄取" defaultOpen>
+        对于批量数据加载，通常会使用 S3 或 GCS 这类对象存储作为中间层。ClickHouse 的 [Parquet](/zh/guides/clickhouse/data-formats/parquet) 读取性能，使您能够通过 [S3 table engine](/zh/reference/engines/table-engines/integrations/s3) 以每秒数亿行的速度加载数据。对于实时流式数据，[ClickPipes](/zh/integrations/clickpipes/home) 可直接连接 Kafka、Confluent 等平台。
+
+        您还可以从 Snowflake、BigQuery 和 Databricks 等现有数据仓库迁移，方法是先导出到对象存储，再通过 [table engines](/zh/reference/engines/table-engines) 加载到 ClickHouse。
+      </Accordion>
+
+      <Accordion title="查询">
+        您可以直接查询 S3 和 GCS 等对象存储中的数据，也可以查询采用开放表格式的数据湖中的数据，例如 [Iceberg](/zh/reference/engines/table-engines/integrations/iceberg)、[Delta Lake](/zh/reference/engines/table-engines/integrations/deltalake) 和 [Hudi](/zh/reference/engines/table-engines/integrations/hudi)——既可直接查询，也可通过数据目录 (如 [AWS Glue Catalog](/zh/guides/use-cases/data-warehousing/glue-catalog)、[Unity Catalog](/zh/guides/use-cases/data-warehousing/unity-catalog) 和 [Iceberg REST](/zh/guides/use-cases/data-warehousing/rest-catalog)) 进行查询。
+
+        ClickHouse Cloud 开箱即用地提供 [查询缓存](/zh/concepts/features/performance/caches/query-cache)、[稀疏索引](/zh/concepts/features/performance/skip-indexes/skipping-indexes) 和 [投影](/zh/concepts/features/projections/projections)，此外还支持 70 多种文件格式，以及适用于日期、数组、JSON、地理空间数据和大规模近似聚合的 SQL 函数。
+      </Accordion>
+
+      <Accordion title="数据转换">
+        ClickHouse 中的 [Materialized views](/zh/concepts/features/materialized-views) 可自动执行转换——当新数据插入源表时触发，因此您可以在数据到达时完成提取、聚合和修改，而无需构建定制管道。
+
+        对于更复杂的建模，ClickHouse 的 [dbt integration](/zh/integrations/connectors/data-ingestion/etl-tools/dbt) 允许您将转换定义为受版本控制的 SQL 模型。
+      </Accordion>
+
+      <Accordion title="集成">
+        ClickHouse 为 [Tableau](/zh/integrations/connectors/data-visualization/tableau/tableau-and-clickhouse) 和 [Looker](/zh/integrations/connectors/data-visualization/looker-and-clickhouse) 等 BI 工具提供原生连接器。没有原生连接器的工具可通过 [MySQL wire 协议](/zh/concepts/features/interfaces/mysql) 连接。[MCP server](/zh/guides/use-cases/ai-ml/MCP) 可将 ClickHouse 连接到 LLM，用于对话式分析；灵活的 [RBAC](/zh/concepts/features/security/access-rights) 控制还可让您安全地提供只读表访问。
+      </Accordion>
+    </AccordionGroup>
+  </ExclusiveGroup>
+</Columns>
+
+<div id="hybrid-architecture-the-best-of-both-worlds">
+  ## 混合架构：两全其美
+</div>
+
+除了查询数据湖之外，你还可以将对性能要求较高的数据摄取到 ClickHouse 原生的 [MergeTree](/zh/reference/engines/table-engines/mergetree-family/mergetree) 存储中，以支持需要超低延迟的用例——例如实时仪表盘、运营分析或交互式应用。
+
+这为你提供了一种分层数据策略。高热度、频繁访问的数据存放在 ClickHouse 的优化存储中，以实现亚秒级查询响应；而完整的历史数据则保留在数据湖中，并且仍可查询。你还可以使用 ClickHouse materialized views 持续转换和聚合数据湖中的数据，并将结果写入优化后的表，从而自动打通这两个层级。
+
+你可以根据性能需求而非技术限制来决定数据存放的位置。
+
+<Tip>
+  **ClickHouse Academy**
+
+  参加免费的 [Data Warehousing with ClickHouse](https://clickhouse.com/learn/data-warehousing) 课程，了解更多内容。
+</Tip>

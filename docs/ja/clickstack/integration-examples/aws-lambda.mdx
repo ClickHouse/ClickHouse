@@ -1,0 +1,372 @@
+---
+slug: /use-cases/observability/clickstack/integrations/aws-lambda
+title: 'Rotel を使用した ClickStack による AWS Lambda ログの監視'
+sidebarTitle: 'AWS Lambda ログ'
+description: 'Rotel を使用した ClickStack による AWS Lambda ログの監視'
+doc_type: 'guide'
+keywords: ['AWS', 'Lambda', 'OTel', 'ClickStack', 'ログ', 'CloudWatch']
+---
+
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+import CommunityMaintainedBadge from "/snippets/ja/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
+
+<CommunityMaintainedBadge />
+
+<Info>
+  **要点**
+
+  このガイドでは、Rotel Lambda Extension を使用して関数ログ、拡張機能のログ、OpenTelemetry データを収集し、直接 ClickHouse に転送することで、ClickStack で AWS Lambda 関数を監視する方法を説明します。ここでは、次の内容を学べます。
+
+  * Lambda 関数に Rotel Lambda Extension レイヤーをデプロイする
+  * 拡張機能を設定して、ログとトレースを ClickStack にエクスポートする
+  * 必要に応じて CloudWatch Logs を無効にしてコストを削減する
+
+  この方法では CloudWatch Logs を完全にバイパスできるため、Lambda のオブザーバビリティコストを大幅に削減できます。
+
+  所要時間: 5～10 分
+</Info>
+
+<div id="existing-lambda">
+  ## 既存のLambda関数とのインテグレーション
+</div>
+
+このセクションでは、Rotel Lambda Extensionを使用して、既存のAWS Lambda関数からログとトレースをClickStackに送信できるように設定する方法を説明します。
+
+<div id="prerequisites">
+  ### 前提条件
+</div>
+
+* 稼働中の ClickStack インスタンス
+* 監視対象の AWS Lambda 関数
+* 適切な権限で設定済みの AWS CLI
+* レイヤーを追加する権限を持つ Lambda 実行ロール
+
+<Steps>
+  <Step>
+    #### 適切な Rotel Lambda Extension レイヤーを選択する
+
+    Lambda のランタイムアーキテクチャに合った Lambda レイヤーを選択します。`{version}` フィールド
+    は、デプロイ先の AWS リージョンによって異なります。お使いのリージョンに対応する最新のバージョン番号については、[releases](https://github.com/streamfold/rotel-lambda-extension/releases)
+    ページを確認してください。
+
+    | アーキテクチャ      | ARN                                                                          |
+    | ------------ | ---------------------------------------------------------------------------- |
+    | x86-64/amd64 | `arn:aws:lambda:{region}:418653438961:layer:rotel-extension-amd64:{version}` |
+    | arm64        | `arn:aws:lambda:{region}:418653438961:layer:rotel-extension-arm64:{version}` |
+
+    **利用可能なリージョン:**
+
+    * us-east-{1, 2}, us-west-{1, 2}
+    * eu-central-1, eu-north-1, eu-west-{1, 2, 3}
+    * ca-central-1
+    * ap-southeast-{1, 2}, ap-northeast-{1, 2}
+    * ap-south-1
+    * sa-east-1
+  </Step>
+
+  <Step>
+    #### Rotel レイヤーを Lambda 関数に追加する
+
+    *これらの例では、`{arch}`、`{region}`、`{version}` を上記の該当する値に置き換えてください。*
+
+    ##### Option 1: AWS コンソール
+
+    1. AWS Lambda コンソールを開きます
+    2. 対象の Lambda 関数に移動します
+    3. **Layers** セクションまでスクロールし、**Add a layer** をクリックします
+    4. **Specify an ARN** を選択します
+    5. Rotel レイヤーの ARN を入力します。
+       ```text
+       arn:aws:lambda:{region}:418653438961:layer:rotel-extension-{arch}:{version}
+       ```
+    6. **Add** をクリックします
+
+    ##### Option 2: AWS CLI
+
+    ```bash
+    aws lambda update-function-configuration \
+      --function-name my-function \
+      --layers arn:aws:lambda:{region}:418653438961:layer:rotel-extension-{arch}:{version}
+    ```
+
+    ##### オプション 3: AWS SAM
+
+    ```yaml
+    Resources:
+      MyFunction:
+        Type: AWS::Serverless::Function
+        Properties:
+          # ... その他の設定 ...
+          Layers:
+            - arn:aws:lambda:{region}:418653438961:layer:rotel-extension-{arch}:{version}
+    ```
+  </Step>
+
+  <Step>
+    #### 拡張機能を ClickStack にエクスポートするよう設定する
+
+    Rotel Lambda Extension は環境変数を使って設定します。OTLP エクスポーターのエンドポイントがご利用の ClickStack インスタンスを指すように設定する必要があります。これらの例では、AWS Lambda 関数から ClickStack インスタンスにアクセスできることを前提としています。
+
+    ##### 基本設定 (環境変数)
+
+    以下の環境変数を Lambda 関数に追加します。
+
+    ```bash
+    # 必須: ClickStack OTLPエンドポイント
+    ROTEL_OTLP_EXPORTER_ENDPOINT=https://clickstack.example.com:4317
+
+    # オプション: 認証ヘッダー
+    ROTEL_OTLP_EXPORTER_CUSTOM_HEADERS="Authorization=<YOUR_INGESTION_API_KEY>"
+
+    # オプション: サービス名（デフォルトはラムダ関数名）
+    ROTEL_OTEL_RESOURCE_ATTRIBUTES="service.name=my-lambda-api,service.version=1.0.0"
+    ```
+
+    ##### 高度な設定 (`.env` ファイルを使用)
+
+    より複雑な設定が必要な場合は、Lambda関数のバンドル内に `rotel.env` ファイルを作成します。
+
+    **rotel.env:**
+
+    ```bash
+    ROTEL_OTLP_EXPORTER_ENDPOINT=https://clickstack.example.com:4317
+    ROTEL_OTLP_EXPORTER_CUSTOM_HEADERS="Authorization=<YOUR_INGESTION_API_KEY>"
+    ROTEL_OTEL_RESOURCE_ATTRIBUTES="service.name=my-lambda-api,deployment.environment=production"
+    ```
+
+    次に、このファイルを指すように環境変数を設定します。
+
+    ```bash
+    ROTEL_ENV_FILE=/var/task/rotel.env
+    ```
+
+    ##### AWS Secrets Manager または Parameter Store を使用する
+
+    本番環境へのデプロイでは、API キーなどの機密情報は AWS Secrets Manager または Parameter Store に保存します。
+
+    **AWS Secrets Manager の例:**
+
+    ```bash
+    ROTEL_OTLP_EXPORTER_ENDPOINT=https://clickstack.example.com:4317
+    ROTEL_OTLP_EXPORTER_CUSTOM_HEADERS="Authorization=${arn:aws:secretsmanager:us-east-1:123456789012:secret:clickstack-api-key-abc123}"
+    ```
+
+    **AWS Parameter Store の使用例:**
+
+    ```bash
+    ROTEL_OTLP_EXPORTER_ENDPOINT=https://clickstack.example.com:4317
+    ROTEL_OTLP_EXPORTER_CUSTOM_HEADERS="Authorization=${arn:aws:ssm:us-east-1:123456789012:parameter/clickstack-api-key}"
+    ```
+
+    **必要な IAM 権限:**
+
+    以下の権限を Lambda 実行ロールに追加します。
+
+    Secrets Manager について:
+
+    ```json
+    {
+      "Version": "2012-10-17",
+      "Statement": [
+        {
+          "Effect": "Allow",
+          "Action": [
+            "secretsmanager:GetSecretValue",
+            "secretsmanager:BatchGetSecretValue"
+          ],
+          "Resource": "arn:aws:secretsmanager:us-east-1:123456789012:secret:clickstack-api-key-*"
+        }
+      ]
+    }
+    ```
+
+    Parameter Store を使用する場合:
+
+    ```json
+    {
+      "Version": "2012-10-17",
+      "Statement": [
+        {
+          "Effect": "Allow",
+          "Action": [
+            "ssm:GetParameters"
+          ],
+          "Resource": "arn:aws:ssm:us-east-1:123456789012:parameter/clickstack-api-key"
+        }
+      ]
+    }
+    ```
+
+    <Note>
+      シークレットを取得するための AWS API 呼び出しにより、コールドスタートの遅延が 100～150ms 増加します。シークレットはバッチ (最大 10 件) で取得され、取得は初期化時のみのため、その後の呼び出しには影響しません。
+    </Note>
+  </Step>
+
+  <Step>
+    #### インテグレーションをテストする
+
+    ログが ClickStack に送信されていることを確認するため、Lambda 関数を呼び出します。
+
+    ```bash
+    aws lambda invoke \
+      --function-name my-function \
+      --payload '{"test": "data"}' \
+      response.json
+    ```
+
+    Lambda のログにエラーがないか確認してください:
+
+    ```bash
+    aws logs tail /aws/lambda/my-function --follow
+    ```
+  </Step>
+
+  <Step>
+    #### HyperDX でログを確認する
+
+    設定が完了したら、HyperDX (ClickStack の UI) にログインし、ログが取り込まれていることを確認します。
+
+    <Image img="/images/clickstack/lambda/lambda-log-view.webp" alt="Lambda ログビュー" />
+
+    <Image img="/images/clickstack/lambda/lambda-log.webp" alt="Lambda ログの詳細" />
+
+    ログで次の主要な属性を確認します。
+
+    * `service.name`: Lambda 関数名
+    * `faas.name`: AWS Lambda 関数名
+    * `faas.invocation_id`: 一意の呼び出し ID
+    * `cloud.provider`: &quot;aws&quot;
+    * `cloud.platform`: &quot;aws&#95;lambda&quot;
+  </Step>
+</Steps>
+
+<div id="disable-cloudwatch">
+  ## CloudWatch Logs を無効にする (コスト最適化)
+</div>
+
+デフォルトでは、AWS Lambda はすべてのログを CloudWatch Logs に送信します。これは大規模運用ではコストがかさむ可能性があります。ログが ClickStack に流れていることを確認したら、コスト削減のために CloudWatch Logs へのログ出力を無効にできます。
+
+<Steps>
+  <Step>
+    #### 実行ロールから CloudWatch 関連の権限を削除する
+
+    1. AWS Console を開き、**AWS Lambda** に移動します
+    2. 対象の Lambda 関数に移動します
+    3. **Configuration** → **Permissions** を選択します
+    4. 実行ロール名をクリックして IAM コンソールを開きます
+    5. ロールを編集し、`logs:*` アクションを削除します
+       * カスタムポリシーを使用している場合は、`logs:CreateLogGroup`、`logs:CreateLogStream`、`logs:PutLogEvents` を削除するように編集します
+       * AWS マネージドポリシー `AWSLambdaBasicExecutionRole` を使用している場合は、そのポリシーをロールから削除します
+    6. ロールを保存します
+  </Step>
+
+  <Step>
+    #### CloudWatch のログ出力が無効になっていることを確認する
+
+    関数を再度呼び出し、次のことを確認します。
+
+    1. CloudWatch に新しいログストリームが作成されない
+    2. ログが引き続き ClickStack/HyperDX に表示される
+
+    ```bash
+    # ポリシー変更後は、新しいログストリームが表示されないはずです
+    aws logs describe-log-streams \
+      --log-group-name /aws/lambda/my-function \
+      --order-by LastEventTime \
+      --descending \
+      --max-items 5
+    ```
+  </Step>
+</Steps>
+
+<div id="auto-instrumentation">
+  ## OpenTelemetryの自動インストルメンテーションを追加する
+</div>
+
+Rotel Lambda Extension は OpenTelemetry の自動インストルメンテーションレイヤーとシームレスに連携し、ログに加えて分散トレースとメトリクスを収集します。
+
+<Steps>
+  <Step>
+    #### 使用する言語のインストルメンテーションレイヤーを選択する
+
+    AWS では、複数の言語向けに OpenTelemetry の自動インストルメンテーションレイヤーが提供されています。
+
+    | Language | Layer ARN Pattern                                                                     |
+    | -------- | ------------------------------------------------------------------------------------- |
+    | Node.js  | `arn:aws:lambda:{region}:901920570463:layer:aws-otel-nodejs-{arch}-ver-{version}`     |
+    | Python   | `arn:aws:lambda:{region}:901920570463:layer:aws-otel-python-{arch}-ver-{version}`     |
+    | Java     | `arn:aws:lambda:{region}:901920570463:layer:aws-otel-java-agent-{arch}-ver-{version}` |
+
+    最新バージョンは [AWS OpenTelemetry Lambdaリポジトリ](https://github.com/aws-observability/aws-otel-lambda) で確認できます。
+  </Step>
+
+  <Step>
+    #### 両方のレイヤーを関数に追加する
+
+    Rotel 拡張レイヤーとインストルメンテーションレイヤーの **両方** を追加します。
+
+    ```bash
+    aws lambda update-function-configuration \
+      --function-name my-function \
+      --layers \
+        arn:aws:lambda:{region}:418653438961:layer:rotel-extension-{arch}:{version} \
+        arn:aws:lambda:{region}:901920570463:layer:aws-otel-nodejs-{arch}-ver-1-30-2:1
+    ```
+  </Step>
+
+  <Step>
+    #### 自動インストルメンテーションを設定する
+
+    自動インストルメンテーションを有効にするには、環境変数 `AWS_LAMBDA_EXEC_WRAPPER` を設定します。
+
+    **For Node.js:**
+
+    ```bash
+    AWS_LAMBDA_EXEC_WRAPPER=/opt/otel-handler
+    ```
+
+    **For Python:**
+
+    ```bash
+    AWS_LAMBDA_EXEC_WRAPPER=/opt/otel-instrument
+    ```
+
+    **For Java:**
+
+    ```bash
+    AWS_LAMBDA_EXEC_WRAPPER=/opt/otel-handler
+    ```
+  </Step>
+
+  <Step>
+    #### HyperDX でトレースを確認する
+
+    関数を実行した後:
+
+    1. HyperDX の **Traces** ビューを開きます
+    2. Lambda 関数からの span を含むトレースが表示されるはずです
+    3. トレースは `trace_id` と `span_id` attribute を介してログと相関付けられます
+  </Step>
+</Steps>
+
+<div id="examples">
+  ## サンプルアプリケーション
+</div>
+
+Rotel Lambda Extension を紹介するサンプルの Python アプリを確認してください。
+
+* **[Python + ClickHouse](https://github.com/streamfold/python-aws-lambda-clickhouse-example)**: 手動で OpenTelemetry をインストルメントした Python アプリケーション。トレースとログを ClickHouse に直接送信します
+
+<div id="join-rotel-community">
+  ## Rotel コミュニティに参加する
+</div>
+
+Rotel について質問がある場合は、[Rotel Discord サーバー](https://rotel.dev) に参加して、フィードバックや質問をお寄せください。改善に貢献したい場合は、[Rotel Lambda Extension](https://github.com/streamfold/rotel-lambda-extension) もご覧ください。
+
+<div id="resources">
+  ## 参考資料
+</div>
+
+* **[Rotel Lambda Extension](https://github.com/streamfold/rotel-lambda-extension)**: ソースコードと詳細なドキュメント
+* **[Rotel Core](https://github.com/streamfold/rotel)**: この拡張機能を支える軽量な OTEL データプレーン

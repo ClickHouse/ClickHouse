@@ -1,0 +1,116 @@
+---
+slug: /use-cases/AI/MCP/ai-agent-libraries/slackbot
+sidebarTitle: 'SlackBot を統合する'
+title: 'ClickHouse MCP server を使って SlackBot エージェントを構築する方法'
+description: 'ClickHouse MCP server と連携できる SlackBot エージェントの構築方法を学びます。'
+keywords: ['ClickHouse', 'MCP', 'Slack', 'SlackBot', 'PydanticAI']
+show_related_blogs: true
+doc_type: 'guide'
+---
+
+このガイドでは、[SlackBot](https://slack.com/intl/en-gb/help/articles/202026038-An-introduction-to-Slackbot) エージェントの構築方法を学びます。
+このボットを使うと、自然言語で Slack から ClickHouse のデータについて直接質問できます。これには
+[ClickHouse MCP server](https://github.com/ClickHouse/mcp-clickhouse) と [PydanticAI](https://ai.pydantic.dev/mcp/client/#__tabbed_1_1) を使用します。
+
+<Info>
+  **例のプロジェクト**
+
+  この例のコードは、[examples リポジトリ](https://github.com/ClickHouse/examples/blob/main/ai/mcp/slackbot/README.md) で確認できます。
+</Info>
+
+<div id="prerequisites">
+  ## 前提条件
+</div>
+
+* [`uv`](https://docs.astral.sh/uv/getting-started/installation/) がインストールされている必要があります
+* Slack ワークスペースにアクセスできる必要があります
+* Anthropic の API key、または別の LLM プロバイダーの API key が必要です
+
+<Steps>
+  <Step>
+    ## Slack App を作成する
+
+    1. [slack.com/apps](https://slack.com/apps) にアクセスし、`Create New App` をクリックします。
+    2. `From scratch` を選択し、アプリに名前を付けます。
+    3. 使用する Slack ワークスペースを選択します。
+  </Step>
+
+  <Step>
+    ## アプリをワークスペースにインストールする
+
+    次に、前のステップで作成したアプリをワークスペースに追加します。
+    Slack のドキュメントにある [&quot;Add apps to your Slack workspace&quot;](https://slack.com/intl/en-gb/help/articles/202035138-Add-apps-to-your-Slack-workspace)
+    の手順に従ってください。
+  </Step>
+
+  <Step>
+    ## Slack アプリを設定する
+
+    * `App Home` に移動します
+      * `Show Tabs` → `Messages Tab` で、`Allow users to send Slash commands and messages from the messages tab` を有効にします
+      * `Socket Mode` に移動します
+        * `Socket Mode` を有効にします
+        * 環境変数 `SLACK_APP_TOKEN` に設定する `Socket Mode Handler` を控えておきます
+      * `OAuth & Permissions` に移動します
+        * 次の `Bot Token Scopes` を追加します:
+          * `app_mentions:read`
+          * `assistant:write`
+          * `chat:write`
+          * `im:history`
+          * `im:read`
+          * `im:write`
+          * `channels:history`
+        * アプリをワークスペースにインストールし、環境変数 `SLACK_BOT_TOKEN` に設定する `Bot User OAuth Token` を控えておきます。
+      * `Event Subscriptions` に移動します
+        * `Events` を有効にします
+        * `Subscribe to bot events` で、次を追加します:
+          * `app_mention`
+          * `assistant_thread_started`
+          * `message:im`
+        * Save Changes
+  </Step>
+
+  <Step>
+    ## 環境変数 (`.env`) を追加する
+
+    プロジェクトのルートに `.env` ファイルを作成し、以下の環境変数を設定します。
+    これにより、アプリが [ClickHouse の SQL playground](https://sql.clickhouse.com/) に接続できるようになります。
+
+    ```env
+    SLACK_BOT_TOKEN=your-slack-bot-token
+    SLACK_APP_TOKEN=your-slack-app-level-token
+    ANTHROPIC_API_KEY=your-anthropic-api-key
+    CLICKHOUSE_HOST=sql-clickhouse.clickhouse.com
+    CLICKHOUSE_PORT=8443
+    CLICKHOUSE_USER=demo
+    CLICKHOUSE_PASSWORD=
+    CLICKHOUSE_SECURE=true
+    ```
+
+    必要に応じて、ClickHouse 関連の変数は独自の ClickHouse server
+    または Cloud インスタンスを使うように変更できます。
+  </Step>
+
+  <Step>
+    ## ボットを使う
+
+    1. **ボットを起動します:**
+
+       ```sh
+       uv run main.py
+       ```
+    2. **Slack で:**
+       * チャンネルでボットにメンションします: `@yourbot Who are the top contributors to the ClickHouse git repo?`
+       * スレッドでメンション付きで返信します: `@yourbot how many contributions did these users make last week?`
+       * ボットに DM を送ります: `Show me all tables in the demo database.`
+
+    ボットはスレッド内で返信し、必要に応じて
+    それまでのスレッドメッセージをすべてコンテキストとして使用します。
+
+    **スレッドコンテキスト:**
+    スレッド内で返信する際、ボットはそれ以前のすべてのメッセージ (現在のメッセージを除く) を読み込み、AI のコンテキストに含めます。
+
+    **ツールの使用:**
+    ボットは MCP 経由で利用可能なツール (例: スキーマの検出、SQL の実行) のみを使用し、使用した SQL と、どのように回答を導いたかの要約を常に表示します。
+  </Step>
+</Steps>

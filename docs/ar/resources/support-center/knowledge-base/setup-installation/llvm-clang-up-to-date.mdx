@@ -1,0 +1,28 @@
+---
+date: 2024-04-22
+title: كيفية بناء LLVM و clang على لينكس
+description: أوامر لبناء LLVM و clang على لينكس.
+tags: ['المجتمع', 'الأدوات والبرامج المساعدة']
+keywords: [المساهمة, llvm, clang]
+---
+
+{frontMatter.description}
+
+{/* truncate */}
+
+<div id="build-llvm-and-clang-on-linux">
+  ## بناء LLVM وClang على لينكس
+</div>
+
+لبناء ClickHouse والمساهمة فيه، يجب استخدام [LLVM](https://llvm.org/) و[Clang](https://clang.llvm.org/).
+
+فيما يلي أوامر بناء أحدث إصدار من LLVM وClang على لينكس:
+
+```bash
+git clone git@github.com:llvm/llvm-project.git
+mkdir llvm-build
+cd llvm-build
+cmake -GNinja -DCMAKE_BUILD_TYPE:STRING=Release -DLLVM_ENABLE_PROJECTS=all -DLLVM_TARGETS_TO_BUILD=all ../llvm-project/llvm
+time ninja
+sudo ninja install
+```

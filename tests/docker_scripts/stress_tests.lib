@@ -144,6 +144,9 @@ EOL
 
             <table_function_remote_max_addresses>200</table_function_remote_max_addresses>
 
+            <ast_fuzzer_runs>5</ast_fuzzer_runs>
+            <ast_fuzzer_any_query>true</ast_fuzzer_any_query>
+
             <constraints>
                 <max_execution_time>
                     <max>60</max>
@@ -183,19 +186,6 @@ EOL
     </profiles>
 </clickhouse>
 EOL
-
-    if [[ -n "${ENABLE_SERVER_FUZZER:-}" ]]; then
-        cat > /etc/clickhouse-server/users.d/stress_test_serverfuzz.xml <<EOL
-<clickhouse>
-    <profiles>
-        <default>
-            <ast_fuzzer_runs>5</ast_fuzzer_runs>
-            <ast_fuzzer_any_query>true</ast_fuzzer_any_query>
-        </default>
-    </profiles>
-</clickhouse>
-EOL
-    fi
 
     cat > /etc/clickhouse-server/config.d/core.xml <<EOL
 <clickhouse>
@@ -344,7 +334,9 @@ function check_logs_for_critical_errors()
     #  - "ReadBuffer is canceled by the exception" -- this is a normal situation when the buffer is canceled, the message neded for debug purposes
     #  - "ReadBufferFromDistributedCache", "AsynchronousBoundedReadBuffer", "ReadBufferFromS3", "ReadBufferFromAzureBlobStorage"
     #    exceptions printed internally by a buffer, exception will be rethrown and handled correctly
-    rg --text "Code: 499.*The specified key does not exist" /var/log/clickhouse-server/clickhouse-server*.log | grep -v -e "a.myext" -e "ReadBuffer is canceled by the exception" -e "DistributedCacheTCPHandler" -e "ReadBufferFromDistributedCache" -e "ReadBufferFromS3" -e "ReadBufferFromAzureBlobStorage" -e "AsynchronousBoundedReadBuffer" -e "caller id: None:DistribCache" > /test_output/no_such_key_errors.txt \
+    #  - "Error during background download" printed by the filesystem cache background download worker (CacheMetadata):
+    #    the prefetched object may be concurrently removed (DROP/mutation/part removal), the download is just marked failed and the data is re-read directly
+    rg --text "Code: 499.*The specified key does not exist" /var/log/clickhouse-server/clickhouse-server*.log | grep -v -e "a.myext" -e "ReadBuffer is canceled by the exception" -e "DistributedCacheTCPHandler" -e "ReadBufferFromDistributedCache" -e "ReadBufferFromS3" -e "ReadBufferFromAzureBlobStorage" -e "AsynchronousBoundedReadBuffer" -e "Error during background download" -e "caller id: None:DistribCache" > /test_output/no_such_key_errors.txt \
         && echo -e "S3_ERROR No such key thrown (see clickhouse-server.log or no_such_key_errors.txt)$FAIL$(trim_server_logs no_such_key_errors.txt)" >> /test_output/test_results.tsv \
         || echo -e "No lost s3 keys$OK" >> /test_output/test_results.tsv
 

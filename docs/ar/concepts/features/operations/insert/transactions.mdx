@@ -1,0 +1,355 @@
+---
+description: 'صفحة تشرح دعم المعاملات (ACID) في ClickHouse'
+slug: /guides/developer/transactional
+title: 'دعم المعاملات (ACID)'
+doc_type: 'guide'
+---
+
+import ExperimentalBadge from "/snippets/ar/components/ExperimentalBadge/ExperimentalBadge.jsx";
+import CloudNotSupportedBadge from "/snippets/ar/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+
+<div id="case-1-insert-into-one-partition-of-one-table-of-the-mergetree-family">
+  ## الحالة 1: INSERT إلى قسم واحد، في جدول واحد، من عائلة MergeTree*
+</div>
+
+يكون ذلك معامليًا (ACID) إذا كانت الصفوف المُدرجة مُجمَّعة ومُدرجة ككتلة واحدة (راجع الملاحظات):
+
+* Atomic: تنجح عملية INSERT بالكامل أو تُرفَض بالكامل: فإذا أُرسل تأكيد إلى العميل، فهذا يعني أن جميع الصفوف قد أُدرجت؛ وإذا أُرسل خطأ إلى العميل، فهذا يعني أنه لم يُدرج أي صف.
+* Consistent: إذا لم تُنتهك أي قيود على الجدول، فستُدرج جميع الصفوف في عملية INSERT وتنجح العملية؛ وإذا انتُهكت القيود، فلن يُدرج أي صف.
+* Isolated: يرى العملاء المتزامنون لقطة متسقة من الجدول — أي حالة الجدول كما كانت قبل محاولة INSERT أو بعد نجاحها؛ ولا تظهر أي حالة جزئية. العملاء داخل معاملة أخرى لديهم [snapshot isolation](https://en.wikipedia.org/wiki/Snapshot_isolation)، بينما العملاء خارج المعاملة لديهم مستوى العزل [read uncommitted](https://en.wikipedia.org/wiki/Isolation_\(database_systems\)#Read_uncommitted).
+* Durable: تُكتَب عملية INSERT الناجحة إلى نظام الملفات قبل الرد على العميل، سواء على replica واحدة أو عدة replicas (ويتحكم في ذلك الإعداد `insert_quorum`)، ويمكن لـ ClickHouse أن يطلب من نظام التشغيل مزامنة بيانات نظام الملفات مع وسيط التخزين (ويتحكم في ذلك الإعداد `fsync_after_insert`).
+* يمكن تنفيذ INSERT إلى عدة جداول بتعليمة واحدة إذا كانت العروض المادية متضمَّنة (أي تكون عملية INSERT من العميل إلى جدول لديه عروض مادية مرتبطة).
+
+<div id="case-2-insert-into-multiple-partitions-of-one-table-of-the-mergetree-family">
+  ## الحالة 2: INSERT في عدة أقسام ضمن جدول واحد من عائلة MergeTree*
+</div>
+
+كما في الحالة 1 أعلاه، مع هذا التفصيل:
+
+* إذا كان الجدول يحتوي على عدد كبير من الأقسام وكان INSERT يشمل عدة أقسام، فإن الإدراج في كل قسم يكون معاملة مستقلة بحد ذاته
+
+<div id="case-3-insert-into-one-distributed-table-of-the-mergetree-family">
+  ## الحالة 3: INSERT إلى جدول Distributed واحد من عائلة MergeTree*
+</div>
+
+مثل الحالة 1 أعلاه، مع هذا التفصيل:
+
+* إن عملية INSERT إلى جدول Distributed ليست تعاملية ككل، بينما يكون الإدراج في كل shard تعامليًا
+
+<div id="case-4-using-a-buffer-table">
+  ## الحالة 4: استخدام جدول Buffer
+</div>
+
+* عمليات الإدراج في جداول Buffer ليست ذرية ولا معزولة ولا متسقة ولا دائمة
+
+<div id="case-5-using-async_insert">
+  ## الحالة 5: استخدام async_insert
+</div>
+
+مثل الحالة 1 أعلاه، مع هذا التفصيل:
+
+* تكون خاصية الذرّية مضمونة حتى إذا كان `async_insert` مفعّلًا وكان `wait_for_async_insert` مضبوطًا على 1 (القيمة الافتراضية)، ولكن إذا كان `wait_for_async_insert` مضبوطًا على 0، فلن تكون خاصية الذرّية مضمونة.
+
+<div id="notes">
+  ## ملاحظات
+</div>
+
+* تُجمَّع الصفوف التي يُدرجها العميل بأي تنسيق بيانات في كتلة واحدة عندما:
+  * يكون تنسيق الإدراج قائمًا على الصفوف (مثل CSV وTSV وValues وJSONEachRow وغيرها)، وتحتوي البيانات على أقل من `max_insert_block_size` صف (~1 000 000 افتراضيًا) أو أقل من `min_chunk_bytes_for_parallel_parsing` بايت (10 MB افتراضيًا) عند استخدام التحليل المتوازي (وهو مُمكَّن افتراضيًا)
+  * يكون تنسيق الإدراج قائمًا على الأعمدة (مثل Native وParquet وORC وغيرها)، وتحتوي البيانات على كتلة بيانات واحدة فقط
+* قد يعتمد حجم الكتلة المُدرَجة عمومًا على العديد من الإعدادات (على سبيل المثال: `max_block_size` و`max_insert_block_size` و`min_insert_block_size_rows` و`min_insert_block_size_bytes` و`preferred_block_size_bytes` وغيرها)
+* إذا لم يتلقَّ العميل ردًا من الخادم، فلن يعرف ما إذا كانت المعاملة قد نجحت، وقد يعيد المعاملة باستخدام خصائص الإدراج exactly-once
+* يستخدم ClickHouse داخليًا [MVCC](https://en.wikipedia.org/wiki/Multiversion_concurrency_control) مع [snapshot isolation](https://en.wikipedia.org/wiki/Snapshot_isolation) للمعاملات المتزامنة
+* تظل جميع خصائص ACID متحققة حتى في حالة إيقاف الخادم قسرًا أو تعطّله
+* يجب تمكين insert&#95;quorum عبر مناطق AZ مختلفة أو تمكين fsync لضمان متانة عمليات الإدراج في الإعدادات المعتادة
+* لا يغطي &quot;الاتساق&quot; في مصطلحات ACID دلالات الأنظمة الموزعة؛ راجع https://jepsen.io/consistency، إذ تتحكم في ذلك إعدادات مختلفة (select&#95;sequential&#95;consistency)
+* لا يشمل هذا الشرح ميزة المعاملات الجديدة التي تتيح معاملات كاملة الميزات عبر جداول متعددة وعروض مادية ولعدة عمليات SELECT وغير ذلك. (راجع القسم التالي حول Transactions وCommit وRollback)
+
+<div id="transactions-commit-and-rollback">
+  ## المعاملات، وCommit، والتراجع
+</div>
+
+<ExperimentalBadge />
+
+<CloudNotSupportedBadge />
+
+بالإضافة إلى الوظائف الموضحة في بداية هذا المستند، يوفّر ClickHouse دعمًا تجريبيًا للمعاملات وعمليات Commit ووظيفة التراجع.
+
+<div id="requirements">
+  ### المتطلبات
+</div>
+
+* انشر ClickHouse Keeper أو ZooKeeper لتتبّع المعاملات
+* قاعدة بيانات atomic فقط (الافتراضي)
+* محرك جدول MergeTree غير المُكرَّر فقط
+* فعِّل دعم المعاملات Experimental بإضافة هذا الإعداد في `config.d/transactions.xml`:
+  ```xml
+  <clickhouse>
+    <allow_experimental_transactions>1</allow_experimental_transactions>
+  </clickhouse>
+  ```
+
+<div id="notes-1">
+  ### ملاحظات
+</div>
+
+* هذه ميزة تجريبية، ومن المتوقع أن تطرأ عليها تغييرات.
+* إذا حدث استثناء أثناء معاملة، فلا يمكنك تنفيذ `commit` للمعاملة. ويشمل ذلك جميع الاستثناءات، بما فيها استثناءات `UNKNOWN_FUNCTION` الناتجة عن الأخطاء الإملائية.
+* المعاملات المتداخلة غير مدعومة؛ أنهِ المعاملة الحالية وابدأ معاملة جديدة بدلًا من ذلك
+
+<div id="configuration">
+  ### الإعدادات
+</div>
+
+تعتمد هذه الأمثلة على خادم ClickHouse أحادي العقدة مع تفعيل ClickHouse Keeper.
+
+<div id="enable-experimental-transaction-support">
+  #### فعّل دعم المعاملات التجريبية
+</div>
+
+```xml title=/etc/clickhouse-server/config.d/transactions.xml
+<clickhouse>
+    <allow_experimental_transactions>1</allow_experimental_transactions>
+</clickhouse>
+```
+
+<div id="basic-configuration-for-a-single-clickhouse-server-node-with-clickhouse-keeper-enabled">
+  #### التهيئة الأساسية لعقدة واحدة من خادم ClickHouse مع تفعيل ClickHouse Keeper
+</div>
+
+<Note>
+  راجع وثائق [النشر](/ar/guides/oss/deployment-and-scaling/terminology) للاطلاع على تفاصيل نشر خادم ClickHouse وتوفير النصاب المناسب من عقد ClickHouse Keeper. التهيئة المعروضة هنا مخصّصة لأغراض تجريبية.
+</Note>
+
+```xml title=/etc/clickhouse-server/config.d/config.xml
+<clickhouse replace="true">
+    <logger>
+        <level>debug</level>
+        <log>/var/log/clickhouse-server/clickhouse-server.log</log>
+        <errorlog>/var/log/clickhouse-server/clickhouse-server.err.log</errorlog>
+        <size>1000M</size>
+        <count>3</count>
+    </logger>
+    <display_name>node 1</display_name>
+    <listen_host>0.0.0.0</listen_host>
+    <http_port>8123</http_port>
+    <tcp_port>9000</tcp_port>
+    <zookeeper>
+        <node>
+            <host>clickhouse-01</host>
+            <port>9181</port>
+        </node>
+    </zookeeper>
+    <keeper_server>
+        <tcp_port>9181</tcp_port>
+        <server_id>1</server_id>
+        <log_storage_path>/var/lib/clickhouse/coordination/log</log_storage_path>
+        <snapshot_storage_path>/var/lib/clickhouse/coordination/snapshots</snapshot_storage_path>
+        <coordination_settings>
+            <operation_timeout_ms>10000</operation_timeout_ms>
+            <session_timeout_ms>30000</session_timeout_ms>
+            <raft_logs_level>information</raft_logs_level>
+        </coordination_settings>
+        <raft_configuration>
+            <server>
+                <id>1</id>
+                <hostname>clickhouse-keeper-01</hostname>
+                <port>9234</port>
+            </server>
+        </raft_configuration>
+    </keeper_server>
+</clickhouse>
+```
+
+<div id="example">
+  ### مثال
+</div>
+
+<div id="verify-that-experimental-transactions-are-enabled">
+  #### تحقّق من تفعيل المعاملات التجريبية
+</div>
+
+نفّذ `BEGIN TRANSACTION` أو `START TRANSACTION` ثم `ROLLBACK` للتأكّد من تفعيل المعاملات التجريبية، ومن تفعيل ClickHouse Keeper أيضًا، إذ يُستخدم لتتبّع المعاملات.
+
+```sql
+BEGIN TRANSACTION
+```
+
+```response
+Ok.
+```
+
+<Tip>
+  إذا ظهر لك الخطأ التالي، فتحقق من ملف الإعدادات للتأكد من أن `allow_experimental_transactions` معيَّن إلى `1` (أو إلى أي قيمة أخرى غير `0` أو `false`).
+
+  ```response
+  Code: 48. DB::Exception: Received from localhost:9000.
+  DB::Exception: Transactions are not supported.
+  (NOT_IMPLEMENTED)
+  ```
+
+  يمكنك أيضًا التحقق من ClickHouse Keeper بإصدار الأمر التالي:
+
+  ```bash
+  echo ruok | nc localhost 9181
+  ```
+
+  من المفترض أن يستجيب ClickHouse Keeper بالقيمة `imok`.
+</Tip>
+
+```sql
+ROLLBACK
+```
+
+```response
+Ok.
+```
+
+<div id="create-a-table-for-testing">
+  #### أنشئ جدولًا للاختبار
+</div>
+
+<Tip>
+  إنشاء الجداول لا يخضع للمعاملات. نفّذ استعلام DDL هذا خارج أي معاملة.
+</Tip>
+
+```sql
+CREATE TABLE mergetree_table
+(
+    `n` Int64
+)
+ENGINE = MergeTree
+ORDER BY n
+```
+
+```response
+Ok.
+```
+
+<div id="begin-a-transaction-and-insert-a-row">
+  #### ابدأ معاملة ثم أدرِج صفًا
+</div>
+
+```sql
+BEGIN TRANSACTION
+```
+
+```response
+Ok.
+```
+
+```sql
+INSERT INTO mergetree_table FORMAT Values (10)
+```
+
+```response
+Ok.
+```
+
+```sql
+SELECT *
+FROM mergetree_table
+```
+
+```response
+┌──n─┐
+│ 10 │
+└────┘
+```
+
+<Note>
+  يمكنك تنفيذ استعلام على الجدول من داخل معاملة، وسترى أن الصف قد أُدرج رغم أنه لم يُنفَّذ له commit بعد.
+</Note>
+
+<div id="rollback-the-transaction-and-query-the-table-again">
+  #### التراجع عن المعاملة، ثم الاستعلام من الجدول مرة أخرى
+</div>
+
+تحقّق من التراجع عن المعاملة:
+
+```sql
+ROLLBACK
+```
+
+```response
+Ok.
+```
+
+```sql
+SELECT *
+FROM mergetree_table
+```
+
+```response
+Ok.
+
+0 rows in set. Elapsed: 0.002 sec.
+```
+
+<div id="complete-a-transaction-and-query-the-table-again">
+  #### أتمّ المعاملة ثم استعلم من الجدول مرة أخرى
+</div>
+
+```sql
+BEGIN TRANSACTION
+```
+
+```response
+Ok.
+```
+
+```sql
+INSERT INTO mergetree_table FORMAT Values (42)
+```
+
+```response
+Ok.
+```
+
+```sql
+COMMIT
+```
+
+```response
+Ok. Elapsed: 0.002 sec.
+```
+
+```sql
+SELECT *
+FROM mergetree_table
+```
+
+```response
+┌──n─┐
+│ 42 │
+└────┘
+```
+
+<div id="transactions-introspection">
+  ### استقصاء المعاملات
+</div>
+
+يمكنك فحص المعاملات عبر الاستعلام عن جدول `system.transactions`، لكن انتبه إلى أنه لا يمكنك الاستعلام عن هذا
+الجدول من جلسة ضمن معاملة. افتح جلسة `clickhouse client` ثانية للاستعلام عن هذا الجدول.
+
+```sql
+SELECT *
+FROM system.transactions
+FORMAT Vertical
+```
+
+```response
+Row 1:
+──────
+tid:         (33,61,'51e60bce-6b82-4732-9e1d-b40705ae9ab8')
+tid_hash:    11240433987908122467
+elapsed:     210.017820947
+is_readonly: 1
+state:       RUNNING
+```
+
+<div id="more-details">
+  ## مزيد من التفاصيل
+</div>
+
+راجع [هذه التذكرة المرجعية](https://github.com/ClickHouse/ClickHouse/issues/48794) للاطلاع على اختبارات أكثر شمولًا بكثير ومتابعة آخر المستجدات.

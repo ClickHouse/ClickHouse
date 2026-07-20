@@ -9,4 +9,9 @@ namespace DB
  */
 bool waitForPid(pid_t pid, size_t timeout_in_seconds);
 
+#if defined(OS_LINUX)
+int syscall_pidfd_open(pid_t pid);
+int syscall_pidfd_send_signal(int pidfd, int sig);
+#endif
+
 }

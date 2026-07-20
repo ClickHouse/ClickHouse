@@ -1,0 +1,61 @@
+---
+sidebarTitle: 'SAML SSO removal'
+slug: /cloud/security/saml-removal
+title: 'SAML SSO removal'
+description: 'How to remove SAML SSO with ClickHouse Cloud'
+doc_type: 'guide'
+keywords: ['ClickHouse Cloud', 'SAML', 'SSO', 'single sign-on', 'IdP']
+---
+
+Customers may need to remove a SAML integration from an organization for reasons such as changing an identity provider. SAML users are separate identities from other user types. Follow the instructions below to switch to another authentication method.
+
+<Warning>
+This action can't be undone. Removing a SAML integration will invalidate SAML users such that they can't be recovered. Follow the instructions below carefully to ensure you retain access to the organization.
+</Warning>
+
+## Before you begin {#before-you-begin}
+
+Organizations must have one administrative user with an alternate authentication method to invite users back to the organization after SAML is removed. A ClickHouse Cloud user with Admin privileges is required to perform these steps.
+
+<Steps>
+<Step title="Enable invitations" id="enable-invitations">
+
+Log in to [ClickHouse Cloud](https://console.clickhouse.cloud) and submit a support ticket with the subject `Enable invitations for SAML organization`. This is to request the ability to add users using a method other than SAML.
+</Step>
+<Step title="Note users to be re-invited" id="note-users-to-be-reinvited">
+
+Click the organization name on the bottom left, then select `Users and Roles`. Review the `Provider` column for each user; any users showing `Signed in with SSO` will need to be re-invited back to the organization after SAML is removed.
+
+Ensure users are aware they need to accept the new invitations before accessing the account once SAML is removed.
+</Step>
+</Steps>
+
+## Add non-SAML users to the organization {#add-non-saml-users}
+
+<Steps>
+<Step title="Invite users" id="invite-users">
+
+Click the organization name on the bottom left, then select `Users and Roles`. Follow the instructions to [Invite users](/products/cloud/guides/security/cloud-access-management/manage-cloud-users#invite-users). 
+</Step>
+<Step title="Users accept the invitation" id="accept-invitation">
+
+Users should be fully logged out from any SAML connections before accepting the invitation. When accepting the invitation with Google or Microsoft social login, users should click the `Continue with Google` or `Continue with Microsoft` buttons. Users using email and password should go to https://console.clickhouse.cloud/?with=email to log in and accept the invitation.
+
+<Note>
+The best route to ensure users aren't automatically redirected based on SAML configurations is to copy the link to accept the invitation and paste into a separate browser or private browsing/incognito session to accept the invitation.
+</Note>
+</Step>
+<Step title="Save queries and dashboards" id="save-queries-and-dashboards">
+
+Once users have signed in with their new identities, they should log out and log back in with their SAML accounts to share any saved queries or dashboards with their new identity. They should save a copy under their new identity to complete the process.
+</Step>
+</Steps>
+
+## Remove SAML {#remove-saml}
+
+Carefully review to ensure the following items have been completed:
+- There is at least one user with a non-SAML login assigned the Admin role in the organization
+- All required users have been invited back using another authentication method
+- All saved queries and dashboards have been migrated to non-SAML users
+
+If these items are complete, go to the Organization settings tab and toggle the `Enable SAML single sign-on` setting. This will display a warning. Click `Disable`. Go to the Users and roles tab to remove SAML users.

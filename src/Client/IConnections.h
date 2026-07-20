@@ -31,6 +31,7 @@ public:
 
     virtual void sendClusterFunctionReadTaskResponse(const ClusterFunctionReadTaskResponse &) = 0;
     virtual void sendMergeTreeReadTaskResponse(const ParallelReadResponse & response) = 0;
+    virtual void sendMergeTreeAllRangesAnnouncementResponse(const InitialAllRangesAnnouncementResponse & response) = 0;
 
     /// Get packet from any replica.
     virtual Packet receivePacket() = 0;
@@ -45,9 +46,6 @@ public:
 
     /// Send a request to replicas to cancel the request
     virtual void sendCancel() = 0;
-
-    /// Send parts' uuids to replicas to exclude them from query processing
-    virtual void sendIgnoredPartUUIDs(const std::vector<UUID> & uuids) = 0;
 
     /** On each replica, read and skip all packets to EndOfStream or Exception.
       * Returns EndOfStream if no exception has been received. Otherwise

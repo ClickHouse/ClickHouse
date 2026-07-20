@@ -1,0 +1,95 @@
+---
+title: 如何使用 SSH 密钥连接到 ClickHouse
+description: "如何使用 SSH 密钥连接到 ClickHouse 和 ClickHouse Cloud"
+date: 2024-07-25
+tags: ['Cloud 管理', '安全与身份验证']
+keywords: ['Cloud', 'SSH']
+---
+
+{frontMatter.description}
+
+{/* truncate */}
+
+<div id="question">
+  ## 问题
+</div>
+
+如何使用 SSH 密钥身份验证连接到 ClickHouse？
+
+<Note>
+  这里以 ClickHouse Cloud 为例，但此示例同样适用于开源版 ClickHouse。
+</Note>
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/Rhe-kUyrFUE?si=JgcAusW1TcEyRqPr" title="YouTube 视频播放器" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+<div id="answer">
+  ## 答案
+</div>
+
+1. 使用 ssh-keygen 生成密钥对。示例：
+
+```
+➜  new ssh-keygen \
+-t ed25519 \
+> -f /Users/testuser/.ssh/ch_key
+Generating public/private ed25519 key pair.
+Enter passphrase (empty for no passphrase):
+Enter same passphrase again:
+Your identification has been saved in /Users/testuser/.ssh/ch_key
+Your public key has been saved in /Users/testuser/.ssh/ch_key.pub
+.....
+```
+
+2. 使用公钥 (如上例中的 ch&#95;key.pub) 创建 USER。
+
+```sql
+clickhouse-cloud :) CREATE USER abcuser IDENTIFIED WITH ssh_key BY KEY 'AAAABBBcdE1lZDI1NTE5AAAAIISdl4CrGM8mckXBUXLjL3ef9XwnycDWEvBPu3toB40m' TYPE 'ssh-ed25519';
+
+CREATE USER abcuser IDENTIFIED WITH ssh_key BY KEY AAAABBBcdE1lZDI1NTE5AAAAIISdl4CrGM8mckXBUXLjL3ef9XwnycDWEvBPu3toB40m TYPE `ssh-ed25519`
+
+Query id: 34c6aad6-5f88-4c80-af7a-7d37c91ba7d5
+
+Ok.
+```
+
+3. 运行 `SHOW users`，确认用户已成功创建。
+
+4. 为该用户授予 default&#95;role (可选) 。
+
+```sql
+clickhouse-cloud :) grant default_role to abcuser;
+
+GRANT default_role TO abcuser
+
+Query id: 4a054003-220a-4dea-8e8d-eb1f08ee7b10
+
+Ok.
+
+0 rows in set. Elapsed: 0.137 sec.
+```
+
+5. 现在使用私钥向该服务进行身份验证。
+
+```sql
+➜  new ./clickhouse client --host myhost.us-central1.gcp.clickhouse.cloud --secure --user abcuser --ssh-key-file '/Users/testuser/.ssh/ch_key'
+ClickHouse client version 23.12.1.863 (official build).
+Enter your private key passphrase (leave empty for no passphrase):
+正在以用户 abcuser 连接到 myhost.us-central1.gcp.clickhouse.cloud:9440。
+已连接到 ClickHouse server 版本 23.9.2。
+
+clickhouse-cloud :) select currentUser();
+
+SELECT currentUser()
+
+Query id: d4b6bb60-ef45-47d3-8740-db9f2941dcd2
+
+┌─currentUser()─┐
+│ abcuser       │
+└───────────────┘
+
+1 row in set. Elapsed: 0.001 sec.
+
+clickhouse-cloud :)
+```

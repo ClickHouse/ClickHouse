@@ -6,6 +6,9 @@ SET max_rows_to_group_by = 0;
 
 CREATE TABLE test(id UInt64, data String) ENGINE=MergeTree() ORDER BY id SETTINGS index_granularity=10000;
 
+-- Temporary fix: keep the part set stable, a merge could replace the parts pinned in the distributed plan.
+SYSTEM STOP MERGES test;
+
 INSERT INTO test SELECT number, '' FROM numbers(10000000);
 
 -- Joining on a.id%1 so that only one bucket is not empty
@@ -13,5 +16,5 @@ INSERT INTO test SELECT number, '' FROM numbers(10000000);
 SELECT count()
 FROM test AS b JOIN test AS a ON a.id%1 = b.id%2
 WHERE a.id < 10 AND b.id < 10000000 AND NOT sleepEachRow(0.000001)
-SETTINGS make_distributed_plan=1, enable_parallel_replicas=0, distributed_plan_default_shuffle_join_bucket_count=4, distributed_plan_default_reader_bucket_count=5, distributed_plan_max_rows_to_broadcast=0;
+SETTINGS make_distributed_plan=1, enable_parallel_replicas=0, distributed_plan_default_shuffle_join_bucket_count=3, distributed_plan_default_reader_bucket_count=3, distributed_plan_max_rows_to_broadcast=0;
 

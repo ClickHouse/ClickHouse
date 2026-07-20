@@ -1,0 +1,92 @@
+---
+slug: /use-cases/AI/MCP/janai
+sidebarTitle: 'Jan.ai 연동'
+title: Jan.ai와 함께 ClickHouse MCP 서버 사용하기
+description: '이 가이드에서는 ClickHouse MCP 서버와 함께 Jan.ai를 설정하는 방법을 설명합니다.'
+keywords: ['AI', 'Jan.ai', 'MCP']
+show_related_blogs: true
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+> 이 가이드에서는 [Jan.ai](https://jan.ai/docs)에서 ClickHouse MCP 서버를 사용하는 방법을 설명합니다.
+
+<Steps>
+  <Step>
+    ## Jan.ai 설치
+
+    Jan.ai는 100% 오프라인으로 실행되는 오픈 소스 ChatGPT 대안입니다.
+    [Mac](https://jan.ai/docs/desktop/mac), [Windows](https://jan.ai/docs/desktop/windows), [Linux](https://jan.ai/docs/desktop/linux)용 Jan.ai를 다운로드할 수 있습니다.
+
+    네이티브 앱이므로 다운로드한 후 바로 실행할 수 있습니다.
+  </Step>
+
+  <Step>
+    ## Jan.ai에 LLM 추가
+
+    설정 메뉴에서 모델을 활성화할 수 있습니다.
+
+    OpenAI를 활성화하려면 아래와 같이 API Key를 입력해야 합니다:
+
+    <Image img="/images/use-cases/AI_ML/MCP/0_janai_openai.webp" alt="OpenAI 모델 활성화" size="md" />
+  </Step>
+
+  <Step>
+    ## MCP 서버 활성화
+
+    이 문서를 작성하는 시점 기준으로 Jan.ai에서 MCP 서버는 실험적 기능입니다.
+    실험적 기능 토글을 켜서 활성화할 수 있습니다:
+
+    <Image img="/images/use-cases/AI_ML/MCP/1_janai_mcp_servers.webp" alt="MCP 서버 활성화" size="md" />
+
+    이 토글을 켜면 왼쪽 메뉴에 `MCP 서버`가 표시됩니다.
+  </Step>
+
+  <Step>
+    ## ClickHouse MCP 서버 구성
+
+    `MCP 서버` 메뉴를 클릭하면 연결할 수 있는 MCP 서버 목록이 표시됩니다:
+
+    <Image img="/images/use-cases/AI_ML/MCP/2_janai_mcp_servers_list.webp" alt="MCP 서버 목록" size="md" />
+
+    이 서버들은 기본적으로 모두 비활성화되어 있지만, 토글을 클릭해 활성화할 수 있습니다.
+
+    ClickHouse MCP 서버를 설치하려면 `+` 아이콘을 클릭한 다음 아래와 같이 양식을 입력합니다:
+
+    <Image img="/images/use-cases/AI_ML/MCP/3_janai_add_mcp_server.webp" alt="MCP 서버 추가" size="md" />
+
+    입력을 마친 후 아직 켜져 있지 않다면 ClickHouse Server 토글을 켭니다:
+
+    <Image img="/images/use-cases/AI_ML/MCP/4_janai_toggle.webp" alt="MCP 서버 활성화" size="md" />
+
+    이제 채팅 창에서 ClickHouse MCP 서버의 도구를 확인할 수 있습니다:
+
+    <Image img="/images/use-cases/AI_ML/MCP/5_jani_tools.webp" alt="ClickHouse MCP 서버 도구" size="md" />
+  </Step>
+
+  <Step>
+    ## Jan.ai로 ClickHouse MCP 서버와 대화하기
+
+    이제 ClickHouse에 저장된 데이터에 관해 대화해 보겠습니다.
+    질문을 입력합니다:
+
+    <Image img="/images/use-cases/AI_ML/MCP/6_janai_question.webp" alt="질문" size="md" />
+
+    Jan.ai는 도구를 호출하기 전에 확인을 요청합니다:
+
+    <Image img="/images/use-cases/AI_ML/MCP/7_janai_tool_confirmation.webp" alt="도구 확인" size="md" />
+
+    그런 다음 수행된 도구 호출 목록이 표시됩니다:
+
+    <Image img="/images/use-cases/AI_ML/MCP/8_janai_tools_called.webp" alt="호출된 도구" size="md" />
+
+    도구 호출을 클릭하면 호출 세부 정보를 확인할 수 있습니다:
+
+    <Image img="/images/use-cases/AI_ML/MCP/9_janai_tools_called_expanded.webp" alt="확장된 도구 호출" size="md" />
+
+    그 아래에는 결과가 표시됩니다:
+
+    <Image img="/images/use-cases/AI_ML/MCP/10_janai_result.webp" alt="결과" size="md" />
+  </Step>
+</Steps>

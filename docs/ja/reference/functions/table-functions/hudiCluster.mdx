@@ -1,0 +1,57 @@
+---
+description: 'hudi テーブル関数の拡張です。指定したクラスター内の多数のノードで、
+  Amazon S3 上の Apache Hudi テーブルのファイルを並列処理できます。'
+sidebarTitle: 'hudiCluster'
+slug: /sql-reference/table-functions/hudiCluster
+title: 'hudiCluster テーブル関数'
+doc_type: 'reference'
+---
+
+これは [hudi](/ja/reference/functions/table-functions/hudi) テーブル関数の拡張です。
+
+指定したクラスター内の多数のノードで、Amazon S3 上の Apache [Hudi](https://hudi.apache.org/) テーブルのファイルを並列処理できます。イニシエーターでは、クラスター内のすべてのノードへの接続を確立し、各ファイルを動的に振り分けます。ワーカーノードでは、次に処理するタスクをイニシエーターに問い合わせて処理します。これを、すべてのタスクが完了するまで繰り返します。
+
+<div id="syntax">
+  ## 構文
+</div>
+
+```sql
+hudiCluster(cluster_name, url [,aws_access_key_id, aws_secret_access_key] [,format] [,structure] [,compression] [,extra_credentials])
+```
+
+<div id="arguments">
+  ## 引数
+</div>
+
+| Argument                                     | Description                                                                                                                                                                                                                                                              |
+| -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `cluster_name`                               | リモートおよびローカルのサーバーへのアドレスのセットと接続パラメーターの構築に使用されるクラスター名。                                                                                                                                                                                                                      |
+| `url`                                        | S3 内の既存の Hudi テーブルへのパスを含むバケット URL。                                                                                                                                                                                                                                       |
+| `aws_access_key_id`, `aws_secret_access_key` | [AWS](https://aws.amazon.com/) アカウントユーザーの長期的な認証情報です。これらを使用してリクエストを認証できます。これらのパラメーターは省略可能です。認証情報が指定されていない場合は、ClickHouse の設定にあるものが使用されます。詳細は [Using S3 for Data Storage](/ja/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-s3) を参照してください。 |
+| `format`                                     | ファイルの [フォーマット](/ja/reference/formats/index)。                                                                                                                                                                                                                                |
+| `structure`                                  | テーブルの構造です。フォーマットは `'column1_name column1_type, column2_name column2_type, ...'` です。                                                                                                                                                                                      |
+| `compression`                                | このパラメーターは省略可能です。サポートされている値: `none`, `gzip/gz`, `brotli/br`, `xz/LZMA`, `zstd/zst`。デフォルトでは、圧縮はファイル拡張子から自動検出されます。                                                                                                                                                          |
+| `extra_credentials`                          | このパラメーターは省略可能です。ClickHouse Cloud でロールベースアクセス用の `role_arn` を渡すために使用されます。設定手順については [Secure S3](/ja/products/cloud/guides/data-sources/accessing-s3-data-securely) を参照してください。                                                                                                  |
+
+<div id="returned_value">
+  ## 戻り値
+</div>
+
+S3 上の指定した Hudi テーブル内のクラスターからデータを読み取るための、指定した構造を持つテーブルです。
+
+<div id="virtual-columns">
+  ## 仮想カラム
+</div>
+
+* `_path` — ファイルへのパス。型: `LowCardinality(String)`。
+* `_file` — ファイル名。型: `LowCardinality(String)`。
+* `_size` — ファイルサイズ (バイト単位) 。型: `Nullable(UInt64)`。ファイルサイズが不明な場合、値は `NULL` です。
+* `_time` — ファイルの最終更新時刻。型: `Nullable(DateTime)`。時刻が不明な場合、値は `NULL` です。
+* `_etag` — ファイルの etag。型: `LowCardinality(String)`。etag が不明な場合、値は `NULL` です。
+
+<div id="related">
+  ## 関連
+</div>
+
+* [Hudi エンジン](/ja/reference/engines/table-engines/integrations/hudi)
+* [Hudi テーブル関数](/ja/reference/functions/table-functions/hudi)

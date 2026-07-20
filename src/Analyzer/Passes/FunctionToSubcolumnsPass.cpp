@@ -9,6 +9,7 @@
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeQBit.h>
 #include <DataTypes/DataTypeObject.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/NestedUtils.h>
 
 #include <Storages/IStorage.h>
@@ -100,6 +101,16 @@ bool canOptimizeToSubcolumn(QueryTreeNodePtr column_source, const String & subco
     else
         get_options = get_options.withSubcolumns();
     return storage_snapshot->tryGetColumn(get_options, subcolumn_name).has_value();
+}
+
+/// For Nullable(T) where T has its own "null" subcolumn (e.g. Nullable(JSON)),
+/// col.null refers to the nested type's subcolumn rather than the Nullable null-map,
+/// so optimizations that rewrite isNull/isNotNull/count to use .null do not apply.
+bool nestedTypeHasNullSubcolumn(const DataTypePtr & type)
+{
+    if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(type.get()))
+        return nullable_type->getNestedType()->hasSubcolumn("null");
+    return false;
 }
 
 void optimizeFunctionStringLength(QueryTreeNodePtr & node, FunctionNode &, ColumnContext & ctx)
@@ -281,10 +292,11 @@ std::optional<NameAndTypePair> getSubcolumnForElement(const Field & value, const
     else
         return {};
 
-    if (index == 0 || index > data_type_qbit.getElementSize())
+    if (index == 0 || index > data_type_qbit.getElementSize() * data_type_qbit.getNumStrides())
         return {};
 
-    return NameAndTypePair{toString(index), std::make_shared<const DataTypeFixedString>((data_type_qbit.getDimension() + 7) / 8)};
+    /// Each subcolumn is one stride group's bit plane: a FixedString of ceil(stride / 8) bytes.
+    return NameAndTypePair{toString(index), std::make_shared<const DataTypeFixedString>((data_type_qbit.getStride() + 7) / 8)};
 }
 
 template <typename DataType>
@@ -418,6 +430,9 @@ std::map<std::pair<TypeIndex, String>, NodeToSubcolumnTransformer> node_transfor
             if (sourceHasColumn(ctx.column_source, column.name) || !canOptimizeToSubcolumn(ctx.column_source, column.name))
                 return;
 
+            if (nestedTypeHasNullSubcolumn(ctx.column.type))
+                return;
+
             /// When the column is inside a Nullable(Tuple(...)), the .null subcolumn/nullmap
             /// in storage is Nullable(UInt8), not UInt8, because the type system wraps all
             /// subcolumns of a Nullable(Tuple(...)) with the outer nullability. Using it with
@@ -452,6 +467,9 @@ std::map<std::pair<TypeIndex, String>, NodeToSubcolumnTransformer> node_transfor
             if (sourceHasColumn(ctx.column_source, column.name) || !canOptimizeToSubcolumn(ctx.column_source, column.name))
                 return;
 
+            if (nestedTypeHasNullSubcolumn(ctx.column.type))
+                return;
+
             /// For nested Nullable types (e.g. Nullable(Tuple(... Nullable(T) ...))),
             /// the .null subcolumn in storage is Nullable(UInt8), not UInt8.
             /// Using it with a hardcoded UInt8 type causes a type mismatch at runtime.
@@ -473,6 +491,9 @@ std::map<std::pair<TypeIndex, String>, NodeToSubcolumnTransformer> node_transfor
             /// Replace `isNotNull(nullable_argument)` with `not(nullable_argument.null)`
             NameAndTypePair column{ctx.column.name + ".null", std::make_shared<DataTypeUInt8>()};
             if (sourceHasColumn(ctx.column_source, column.name) || !canOptimizeToSubcolumn(ctx.column_source, column.name))
+                return;
+
+            if (nestedTypeHasNullSubcolumn(ctx.column.type))
                 return;
 
             /// Same guard as isNull above: nested Nullable .null subcolumn may itself be Nullable.
@@ -520,15 +541,20 @@ std::set<std::pair<TypeIndex, String>> transformers_safe_with_indexes =
 /// elsewhere in the query (e.g., in SELECT alongside WHERE m['key'] = val).
 /// Normally the optimizer skips a column if it's used both in a transformable
 /// function and as a plain column reference, because introducing a new
-/// subcolumn identifier complicates analysis. But for Map key lookups the
-/// transformation is beneficial when the occurrence is in WHERE/PREWHERE: only
-/// the relevant bucket is read for the filter, while the full map is still read
-/// for matching rows in SELECT. The reads are independent and semantically correct.
+/// subcolumn identifier complicates analysis. But for Map key lookups, Tuple
+/// element access, Variant element access and QBit element access the transformation is beneficial when the occurrence is in
+/// WHERE/PREWHERE: only the relevant subcolumn is read for the filter (letting a
+/// skip index on that subcolumn prune granules), while the full column is still
+/// read for matching rows in SELECT. The reads are independent and semantically
+/// correct.
 /// Note: this exception does NOT apply to HAVING or other clauses where the
 /// subcolumn would need to appear in GROUP BY.
 std::set<std::pair<TypeIndex, String>> transformers_optimize_in_filter_with_full_column =
 {
     {TypeIndex::Map, "arrayElement"},
+    {TypeIndex::Tuple, "tupleElement"},
+    {TypeIndex::Variant, "variantElement"},
+    {TypeIndex::QBit, "tupleElement"},
 };
 
 /// Optimizes:

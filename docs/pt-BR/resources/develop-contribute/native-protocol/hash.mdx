@@ -1,0 +1,46 @@
+---
+slug: /native-protocol/hash
+title: 'CityHash'
+description: 'Hash do protocolo nativo'
+doc_type: 'reference'
+keywords: ['CityHash', 'hash do protocolo nativo', 'função hash', 'Google CityHash', 'hash de protocolo']
+---
+
+O ClickHouse usa **uma das versões anteriores** do [CityHash do Google](https://github.com/google/cityhash).
+
+<Info>
+  O algoritmo do CityHash foi alterado depois que o incorporamos ao ClickHouse.
+
+  A documentação do CityHash afirma explicitamente que o usuário não deve confiar em
+  valores hash específicos e não deve armazená-los em nenhum lugar nem usá-los como chave de sharding.
+
+  Mas, como disponibilizamos essa função ao usuário, tivemos que fixar a versão do CityHash (na 1.0.2). E agora garantimos que o comportamento das funções CityHash disponíveis em SQL não mudará.
+
+  — Alexey Milovidov
+</Info>
+
+<Info>
+  **Nota**
+
+  A versão atual do CityHash do Google [difere](https://github.com/ClickHouse/ClickHouse/issues/8354) da variante `cityHash64` do ClickHouse.
+
+  Não use `farmHash64` para obter o valor do CityHash do Google! O [FarmHash](https://opensource.googleblog.com/2014/03/introducing-farmhash.html) é o sucessor do CityHash, mas eles não são totalmente compatíveis.
+
+  | String                                                     | ClickHouse64         | CityHash64          | FarmHash64           |
+  | ---------------------------------------------------------- | -------------------- | ------------------- | -------------------- |
+  | `Moscow`                                                   | 12507901496292878638 | 5992710078453357409 | 5992710078453357409  |
+  | `How can you write a big system without C++?  -Paul Glick` | 6237945311650045625  | 749291162957442504  | 11716470977470720228 |
+</Info>
+
+Veja também [Introducing CityHash](https://opensource.googleblog.com/2011/04/introducing-cityhash.html) para uma descrição e
+a motivação por trás da sua criação. Em resumo: um hash **não criptográfico** mais rápido que [MurmurHash](http://en.wikipedia.org/wiki/MurmurHash), mas mais complexo.
+
+<div id="implementations">
+  ## Implementações
+</div>
+
+<div id="go">
+  ### Go
+</div>
+
+Você pode usar o pacote Go [go-faster/city](https://github.com/go-faster/city), que implementa as duas variantes.

@@ -113,21 +113,7 @@ HTTPServerRequest::HTTPServerRequest(HTTPContextPtr context, HTTPServerResponse 
 
 bool HTTPServerRequest::checkPeerConnected() const
 {
-    try
-    {
-        char b = 0;
-        if (!socket->receiveBytes(&b, 1, MSG_DONTWAIT | MSG_PEEK))
-            return false;
-    }
-    catch (Poco::TimeoutException &) // NOLINT(bugprone-empty-catch)
-    {
-    }
-    catch (const std::exception &)
-    {
-        return false;
-    }
-
-    return true;
+    return socket->connectionOpen();
 }
 
 #if USE_SSL

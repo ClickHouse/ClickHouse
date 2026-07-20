@@ -5,7 +5,6 @@ from ci.defs.defs import (
     DOCKERS,
     SECRETS,
     ArtifactConfigs,
-    ArtifactNames,
     JobNames,
 )
 from ci.defs.job_configs import JobConfigs
@@ -14,7 +13,7 @@ from ci.jobs.scripts.workflow_hooks.trusted import can_be_tested
 
 ALL_FUNCTIONAL_TESTS = [job.name for job in JobConfigs.functional_tests_jobs]
 
-FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES = [
+CORE_BLOCKING_JOB_NAMES = [
     job.name
     for job in JobConfigs.functional_tests_jobs
     if any(
@@ -22,17 +21,30 @@ FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES = [
         for substr in (
             "_debug, parallel",
             "_binary, parallel",
+            "_binary, sequential",
             "_asan_ubsan, distributed plan, parallel",
+            "_asan_ubsan, db disk, distributed plan, sequential",
             "_tsan, parallel",
         )
     )
+] + [
+    job.name
+    for job in JobConfigs.integration_test_jobs_required
+    if "_asan_ubsan, db disk, old analyzer" in job.name
+] + [
+    job.name
+    for job in JobConfigs.unittest_jobs
 ]
 
 STYLE_AND_FAST_TESTS = [
     JobNames.STYLE_CHECK,
     JobNames.FAST_TEST,
-    JobNames.CI_TESTS,
     *[j.name for j in JobConfigs.tidy_build_arm_jobs],
+]
+
+CODE_REVIEW_BLOCKING_JOBS = [
+    JobNames.STYLE_CHECK,
+    JobNames.FAST_TEST,
 ]
 
 REGULAR_BUILD_NAMES = [job.name for job in JobConfigs.build_jobs]
@@ -47,11 +59,11 @@ workflow = Workflow.Config(
     base_branches=[BASE_BRANCH],
     jobs=[
         JobConfigs.style_check,
-        JobConfigs.code_review,
+        JobConfigs.code_review.set_run_after(CODE_REVIEW_BLOCKING_JOBS),
         JobConfigs.docs_job,
         JobConfigs.docs_job_mintlify,
         JobConfigs.fast_test,
-        JobConfigs.ci_tests,
+        JobConfigs.ci_tests.set_run_after(CORE_BLOCKING_JOB_NAMES),
         *JobConfigs.darwin_fast_test_jobs,
         *JobConfigs.tidy_build_arm_jobs,
         *[job.set_run_after(STYLE_AND_FAST_TESTS) for job in JobConfigs.build_jobs],
@@ -60,19 +72,14 @@ workflow = Workflow.Config(
             for job in JobConfigs.extra_validation_build_jobs
         ],
         *[
-            job.set_run_after(FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES)
+            job.set_run_after(REGULAR_BUILD_NAMES)
             for job in JobConfigs.release_build_jobs
         ],
         *[
-            (
-                job.set_provides([ArtifactNames.ARM_FUZZERS, ArtifactNames.FUZZERS_CORPUS])
-                if "fuzzers" in job.name
-                else job
-            ).set_run_after(FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES)
+            job.set_run_after(CORE_BLOCKING_JOB_NAMES)
             for job in JobConfigs.special_build_jobs
         ],
         *[job.set_run_after(STYLE_AND_FAST_TESTS) for job in JobConfigs.build_llvm_coverage_job],
-        JobConfigs.smoke_tests_macos,
         # TODO: stabilize new jobs and remove set_allow_failure
         JobConfigs.lightweight_functional_tests_job,
         *[j.set_allow_failure() for j in JobConfigs.stateless_tests_targeted_pr_jobs],
@@ -81,71 +88,108 @@ workflow = Workflow.Config(
         JobConfigs.ast_fuzzer_targeted_pr_jobs[1].set_allow_failure(),
         *JobConfigs.stateless_tests_flaky_pr_jobs,
         *JobConfigs.integration_test_asan_flaky_pr_jobs,
-        JobConfigs.bugfix_validation_ft_pr_job,
-        JobConfigs.bugfix_validation_it_job,
+        # Per-arch Bugfix Validation Checks (functional + integration tests on
+        # both amd64 and aarch64). Each per-arch variant has
+        # `allow_failure=True` so an individual FAIL doesn't block PR merge -
+        # the aggregate decision (validate iff at least one arch passed) lives
+        # in the `new_tests_check.py` workflow post-hook below.
+        *[
+            job.set_run_after(CORE_BLOCKING_JOB_NAMES)
+            for job in JobConfigs.bugfix_validation_ft_pr_jobs
+        ],
+        *[
+            job.set_run_after(CORE_BLOCKING_JOB_NAMES)
+            for job in JobConfigs.bugfix_validation_it_jobs
+        ],
         *[
             j.set_run_after(
-                FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES
-                if j.name not in FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES
+                CORE_BLOCKING_JOB_NAMES
+                if j.name not in CORE_BLOCKING_JOB_NAMES
                 else []
             )
             for j in JobConfigs.functional_tests_jobs
         ],
         *[
-            job.set_run_after(FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES)
+            job.set_run_after(CORE_BLOCKING_JOB_NAMES)
             for job in JobConfigs.functional_tests_jobs_azure
         ],
-        *JobConfigs.functional_test_llvm_coverage_jobs,
-        *JobConfigs.functional_test_excluded_from_llvm_job,
         *[
-            job.set_run_after(FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES)
+            job.set_run_after(CORE_BLOCKING_JOB_NAMES)
+            for job in JobConfigs.functional_test_llvm_coverage_jobs
+        ],
+        *[
+            job.set_run_after(CORE_BLOCKING_JOB_NAMES)
+            for job in JobConfigs.functional_test_excluded_from_llvm_job
+        ],
+        *[
+            job.set_run_after(
+                CORE_BLOCKING_JOB_NAMES if job.name not in CORE_BLOCKING_JOB_NAMES else []
+            )
             for job in JobConfigs.integration_test_jobs_required[:]
         ],
         *[
-            job.set_run_after(FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES)
+            job.set_run_after(CORE_BLOCKING_JOB_NAMES)
             for job in JobConfigs.integration_test_jobs_non_required
         ],
-        *JobConfigs.integration_test_llvm_coverage_jobs,
-        *JobConfigs.integration_test_excluded_from_llvm_job,
+        *[
+            job.set_run_after(CORE_BLOCKING_JOB_NAMES)
+            for job in JobConfigs.integration_test_llvm_coverage_jobs
+        ],
+        *[
+            job.set_run_after(CORE_BLOCKING_JOB_NAMES)
+            for job in JobConfigs.integration_test_excluded_from_llvm_job
+        ],
         *JobConfigs.unittest_jobs,
-        *JobConfigs.unittest_llvm_coverage_job,
+        *[
+            job.set_run_after(CORE_BLOCKING_JOB_NAMES)
+            for job in JobConfigs.unittest_llvm_coverage_job
+        ],
         JobConfigs.docker_server.set_run_after(
-            FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES
+            CORE_BLOCKING_JOB_NAMES
         ),
         JobConfigs.docker_keeper.set_run_after(
-            FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES
+            CORE_BLOCKING_JOB_NAMES
         ),
         *[
-            job.set_run_after(FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES)
+            job.set_run_after(CORE_BLOCKING_JOB_NAMES)
             for job in JobConfigs.install_check_jobs
         ],
         *[
-            job.set_run_after(FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES)
+            job.set_run_after(CORE_BLOCKING_JOB_NAMES)
             for job in JobConfigs.compatibility_test_jobs
         ],
         *[
-            job.set_run_after(FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES)
+            job.set_run_after(CORE_BLOCKING_JOB_NAMES)
             for job in JobConfigs.stress_test_jobs
         ],
         *[
-            job.set_run_after(FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES)
+            job.set_run_after(CORE_BLOCKING_JOB_NAMES)
             for job in JobConfigs.upgrade_test_jobs
         ],
         *[
-            job.set_run_after(FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES)
+            job.set_run_after(CORE_BLOCKING_JOB_NAMES)
             for job in JobConfigs.ast_fuzzer_jobs
         ],
         *[
-            job.set_run_after(FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES)
+            job.set_run_after(CORE_BLOCKING_JOB_NAMES)
             for job in JobConfigs.buzz_fuzzer_jobs
         ],
         *[
-            job.set_run_after(FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES)
+            job.set_run_after(CORE_BLOCKING_JOB_NAMES)
             for job in JobConfigs.performance_comparison_with_master_head_jobs
+        ],
+        # ClickBench runs on PRs only when files in its digest change
+        # (see `clickbench_jobs.digest_config`), so the cost is bounded.
+        *[
+            job.set_run_after(CORE_BLOCKING_JOB_NAMES)
+            for job in JobConfigs.clickbench_jobs
         ],
         JobConfigs.llvm_coverage_job,
         JobConfigs.sqllogic_test_master_job.set_run_after(
-            FUNCTIONAL_TESTS_PARALLEL_BLOCKING_JOB_NAMES
+            CORE_BLOCKING_JOB_NAMES
+        ),
+        JobConfigs.sqlstorm_test_job.set_run_after(
+            CORE_BLOCKING_JOB_NAMES
         ),
         # Keeper stress (PR): 3 no-fault scenarios (prod-mix, read-multi, write-multi),
         # default backend only, 15 min each. Runs when src/Coordination or stress test files change.

@@ -1,0 +1,52 @@
+---
+position: 1
+slug: /clickhouse-operator/overview
+title: 'ClickHouse Operator'
+keywords: ['kubernetes']
+description: 'ClickHouse Operator의 개요 페이지입니다. ClickHouse Operator는 Kubernetes에서 ClickHouse 클러스터와 ClickHouse Keeper 클러스터의 배포, 구성 및 관리를 자동화하는 Kubernetes 오퍼레이터입니다.'
+doc_type: 'guide'
+sidebarTitle: '개요'
+---
+
+ClickHouse Operator는 Kubernetes에서 ClickHouse 클러스터와 ClickHouse Keeper 클러스터의 배포, 구성 및 관리를 자동화하는 Kubernetes 오퍼레이터입니다.
+사용자 지정 리소스를 통해 선언적 클러스터 관리를 제공하므로, 고가용성 ClickHouse 배포를 손쉽게 생성할 수 있습니다.
+
+이 Operator는 스케일링, 업그레이드, 구성 관리를 포함해 ClickHouse 클러스터의 전체 수명 주기를 관리합니다.
+
+<div id="features">
+  ## 기능
+</div>
+
+* **ClickHouse 클러스터 관리**: ClickHouse 클러스터 생성 및 관리
+* **ClickHouse Keeper 통합**: 분산 조정을 위한 ClickHouse Keeper 클러스터 기본 지원
+* **스토리지 프로비저닝**: 스토리지 클래스를 선택할 수 있는 사용자 지정 영구 볼륨 클레임
+* **고가용성**: ClickHouse 및 Keeper 클러스터를 위한 내결함성 구성
+* **보안**: 안전한 클러스터 통신을 위한 기본 제공 보안 기능 및 TLS/SSL 지원
+* **모니터링**: 관측성을 위한 Prometheus 메트릭 통합
+
+<div id="installation">
+  ## 설치
+</div>
+
+원하는 설치 방법을 선택하십시오:
+
+* [매니페스트 설치](/ko/products/kubernetes-operator/install/kubectl) - kubectl/kustomize를 사용하여 설치
+* [Helm 설치](/ko/products/kubernetes-operator/install/helm) - Helm 차트를 사용하여 설치
+* [Operator Lifecycle Manager (OLM) 설치](/ko/products/kubernetes-operator/install/olm) - OLM을 사용하여 설치
+
+<div id="guides">
+  ## 가이드
+</div>
+
+* **[소개](/ko/products/kubernetes-operator/guides/introduction)** - ClickHouse Operator 개념 전반을 소개합니다
+* **[구성 가이드](/ko/products/kubernetes-operator/guides/configuration)** - ClickHouse 및 Keeper 클러스터를 구성합니다
+* **[모니터링](/ko/products/kubernetes-operator/guides/monitoring)** - 연산자를 위한 Prometheus 메트릭과 상태 프로브를 설명합니다
+* **[스케일링](/ko/products/kubernetes-operator/guides/scaling)** - 레플리카, 세그먼트, Keeper 쿼럼을 스케일링합니다
+* **[TLS로 보호](/ko/products/kubernetes-operator/guides/tls)** - cert-manager를 사용해 클러스터를 종단 간 암호화합니다
+* **[네트워크 정책](/ko/products/kubernetes-operator/guides/network-policies)** - 연산자의 메트릭 및 웹훅 엔드포인트로 들어오는 트래픽을 제한합니다
+
+<div id="reference">
+  ## 참고
+</div>
+
+* **[API 참조](/ko/products/kubernetes-operator/reference/api-reference)** - 사용자 지정 리소스용 전체 API 문서

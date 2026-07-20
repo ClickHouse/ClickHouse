@@ -1,0 +1,817 @@
+---
+description: 'ウィンドウ関数の概要ページ'
+sidebarTitle: 'ウィンドウ関数'
+slug: /sql-reference/window-functions/
+title: 'ウィンドウ関数'
+doc_type: 'reference'
+---
+
+ウィンドウ関数を使用すると、現在の行に関連する行の集合に対して計算を実行できます。
+集約関数で行う計算と似た計算にも使用できますが、ウィンドウ関数では行が単一の出力にグループ化されることはなく、個々の行はそのまま返されます。
+
+<div id="standard-window-functions">
+  ## 標準ウィンドウ関数
+</div>
+
+ClickHouse は、ウィンドウおよびウィンドウ関数に対する標準 SQL 構文をサポートしています。
+以下の表は、現在サポートされている機能を示しています。
+
+| Feature                                                                | Supported? | Comment                                                                                                                                                                                                                                                                                                                  |
+| ---------------------------------------------------------------------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| アドホックなウィンドウ指定 (`count(*) OVER (PARTITION BY id ORDER BY time DESC)`)   | ✅          |                                                                                                                                                                                                                                                                                                                          |
+| ウィンドウ関数を含む式 (例: `(count(*) OVER ()) / 2`)                              | ✅          |                                                                                                                                                                                                                                                                                                                          |
+| `WINDOW` 句 (`SELECT ... FROM table WINDOW w AS (PARTITION BY id)`)     | ✅          |                                                                                                                                                                                                                                                                                                                          |
+| `ROWS` フレーム                                                           | ✅          |                                                                                                                                                                                                                                                                                                                          |
+| `RANGE` フレーム                                                          | ✅          | フレーム が明示的に指定されていない場合は、デフォルトで使用されます (`RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW`) 。                                                                                                                                                                                                                              |
+| `DateTime` `RANGE OFFSET` フレーム 用の `INTERVAL` 構文                       | ❌          | 代わりに秒数を指定してください (`RANGE` は任意の数値型で使用できます) 。                                                                                                                                                                                                                                                                               |
+| `GROUPS` フレーム                                                         | ❌          |                                                                                                                                                                                                                                                                                                                          |
+| フレーム に対する 集約関数 の計算 (`sum(value) OVER (ORDER BY time)`) | ✅          | すべての 集約関数 がサポートされています。                                                                                                                                                                                                                                                                                    |
+| `rank()`, `dense_rank()`/`denseRank()`, `row_number()`                 | ✅          |                                                                                                                                                                                                                                                                                                                          |
+| `percent_rank()`/`percentRank()`                                       | ✅          | パーティション内での値の相対順位を効率的に計算します。これは、`ifNull((rank() OVER (PARTITION BY x ORDER BY y) - 1) / nullif(count(1) OVER (PARTITION BY x) - 1, 0), 0)` で表される、より冗長でコンピュート負荷の高い手動の SQL 計算を置き換えます。                                                                                                                                       |
+| `cume_dist()`                                                          | ✅          | 値のグループ内における値の累積分布を計算します。現在の行の値以下の値を持つ行の割合を返します。                                                                                                                                                                                                                                                                          |
+| `lag/lead(value, offset)`                                              | ✅          | 次のいずれかの回避策も使用できます:<br /> 1) `any(value) OVER (... ROWS BETWEEN <offset> PRECEDING AND <offset> PRECEDING)`、または `lead` の場合は `PRECEDING` の代わりに `FOLLOWING` <br /> 2) `lagInFrame/leadInFrame`。これらは同様の関数ですが、ウィンドウ フレーム を考慮します。`lag/lead` と同一の動作を得るには、`ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING` を使用してください。 |
+| `ntile(buckets)`                                                       | ✅          | たとえば、ウィンドウは `(PARTITION BY x ORDER BY y ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING)` のように指定してください。                                                                                                                                                                                                         |
+
+<div id="syntax">
+  ## 構文
+</div>
+
+```text
+aggregate_function (column_name)
+  OVER ([[PARTITION BY grouping_column] [ORDER BY sorting_column] 
+        [ROWS or RANGE expression_to_bound_rows_within_the_group]] | [window_name])
+FROM table_name
+WINDOW window_name as ([
+  [PARTITION BY grouping_column]
+  [ORDER BY sorting_column]
+  [ROWS or RANGE expression_to_bound_rows_within_the_group]
+])
+```
+
+* `PARTITION BY` - 結果セットをどのようにグループに分けるかを定義します。
+* `ORDER BY` - aggregate&#95;function の計算時に、グループ内の行をどのような順序で並べるかを定義します。
+* `ROWS or RANGE` - フレームの境界を定義し、aggregate&#95;function はそのフレーム内で計算されます。
+* `WINDOW` - 複数の式で同じウィンドウ定義を使えるようにします。
+
+```text
+      PARTITION
+┌─────────────────┐  <-- UNBOUNDED PRECEDING (BEGINNING of the PARTITION)
+│                 │
+│                 │
+│=================│  <-- N PRECEDING  <─┐
+│      N ROWS     │                     │  F
+│  Before CURRENT │                     │  R
+│~~~~~~~~~~~~~~~~~│  <-- CURRENT ROW    │  A
+│     M ROWS      │                     │  M
+│   After CURRENT │                     │  E
+│=================│  <-- M FOLLOWING  <─┘
+│                 │
+│                 │
+└─────────────────┘  <--- UNBOUNDED FOLLOWING (END of the PARTITION)
+```
+
+<div id="functions">
+  ## ウィンドウ関数としてのみ使用できる関数
+</div>
+
+以下の関数は、ウィンドウ関数としてのみ使用できます。ほとんどは標準 SQL 関数ですが、`lagInFrame`、`leadInFrame`、`nonNegativeDerivative` は ClickHouse の拡張機能です。
+
+| Function                                                                                                                                    | Description                                                            |
+| ------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| [`row_number()`](/ja/reference/functions/window-functions/row_number)                                                                          | 現在の行に、パーティション内で 1 から始まる番号を付けます。                                        |
+| [`first_value(x)`](/ja/reference/functions/window-functions/first_value)                                                                       | 順序付けされたフレーム内で評価された最初の値を返します。                                           |
+| [`last_value(x)`](/ja/reference/functions/window-functions/last_value)                                                                         | 順序付けされたフレーム内で評価された最後の値を返します。                                           |
+| [`nth_value(x, offset)`](/ja/reference/functions/window-functions/nth_value)                                                                   | 順序付けされたフレーム内の n 番目の行 (offset) で評価された、最初の非 NULL 値を返します。                 |
+| [`rank()`](/ja/reference/functions/window-functions/rank)                                                                                      | 現在の行に、パーティション内でギャップありの順位を付けます。                                         |
+| [`dense_rank()`](/ja/reference/functions/window-functions/dense_rank)                                                                          | 現在の行に、パーティション内でギャップなしの順位を付けます。                                         |
+| [`lagInFrame(x)`](/ja/reference/functions/window-functions/lagInFrame)                                                                         | 順序付けされたフレーム内で、現在の行より指定した物理オフセット分だけ前にある行で評価された値を返します。                   |
+| [`leadInFrame(x)`](/ja/reference/functions/window-functions/leadInFrame)                                                                       | 順序付けされたフレーム内で、現在の行より offset 行後にある行で評価された値を返します。                        |
+| [`nonNegativeDerivative(metric_column, timestamp_column[, INTERVAL X UNITS])`](/ja/reference/functions/window-functions/nonNegativeDerivative) | `timestamp_column` に対する `metric_column` の非負の導関数を計算します。ClickHouse 固有です。 |
+
+<div id="examples">
+  ## 例
+</div>
+
+ウィンドウ関数の使用例をいくつか見てみましょう。
+
+<div id="numbering-rows">
+  ### 行番号の付与
+</div>
+
+```sql
+CREATE TABLE salaries
+(
+    `team` String,
+    `player` String,
+    `salary` UInt32,
+    `position` String
+)
+Engine = Memory;
+
+INSERT INTO salaries FORMAT Values
+    ('Port Elizabeth Barbarians', 'Gary Chen', 195000, 'F'),
+    ('New Coreystad Archdukes', 'Charles Juarez', 190000, 'F'),
+    ('Port Elizabeth Barbarians', 'Michael Stanley', 150000, 'D'),
+    ('New Coreystad Archdukes', 'Scott Harrison', 150000, 'D'),
+    ('Port Elizabeth Barbarians', 'Robert George', 195000, 'M');
+```
+
+```sql
+SELECT
+    player,
+    salary,
+    row_number() OVER (ORDER BY salary ASC) AS row
+FROM salaries;
+```
+
+```text
+┌─player──────────┬─salary─┬─row─┐
+│ Michael Stanley │ 150000 │   1 │
+│ Scott Harrison  │ 150000 │   2 │
+│ Charles Juarez  │ 190000 │   3 │
+│ Gary Chen       │ 195000 │   4 │
+│ Robert George   │ 195000 │   5 │
+└─────────────────┴────────┴─────┘
+```
+
+```sql
+SELECT
+    player,
+    salary,
+    row_number() OVER (ORDER BY salary ASC) AS row,
+    rank() OVER (ORDER BY salary ASC) AS rank,
+    dense_rank() OVER (ORDER BY salary ASC) AS denseRank
+FROM salaries;
+```
+
+```text
+┌─player──────────┬─salary─┬─row─┬─rank─┬─denseRank─┐
+│ Michael Stanley │ 150000 │   1 │    1 │         1 │
+│ Scott Harrison  │ 150000 │   2 │    1 │         1 │
+│ Charles Juarez  │ 190000 │   3 │    3 │         2 │
+│ Gary Chen       │ 195000 │   4 │    4 │         3 │
+│ Robert George   │ 195000 │   5 │    4 │         3 │
+└─────────────────┴────────┴─────┴──────┴───────────┘
+```
+
+<div id="aggregation-functions">
+  ### 集計関数
+</div>
+
+各選手の給与を所属チームの平均給与と比較します。
+
+```sql
+SELECT
+    player,
+    salary,
+    team,
+    avg(salary) OVER (PARTITION BY team) AS teamAvg,
+    salary - teamAvg AS diff
+FROM salaries;
+```
+
+```text
+┌─player──────────┬─salary─┬─team──────────────────────┬─teamAvg─┬───diff─┐
+│ Charles Juarez  │ 190000 │ New Coreystad Archdukes   │  170000 │  20000 │
+│ Scott Harrison  │ 150000 │ New Coreystad Archdukes   │  170000 │ -20000 │
+│ Gary Chen       │ 195000 │ Port Elizabeth Barbarians │  180000 │  15000 │
+│ Michael Stanley │ 150000 │ Port Elizabeth Barbarians │  180000 │ -30000 │
+│ Robert George   │ 195000 │ Port Elizabeth Barbarians │  180000 │  15000 │
+└─────────────────┴────────┴───────────────────────────┴─────────┴────────┘
+```
+
+各選手の給与をチーム内の最高額と比較します。
+
+```sql
+SELECT
+    player,
+    salary,
+    team,
+    max(salary) OVER (PARTITION BY team) AS teamMax,
+    salary - teamMax AS diff
+FROM salaries;
+```
+
+```text
+┌─player──────────┬─salary─┬─team──────────────────────┬─teamMax─┬───diff─┐
+│ Charles Juarez  │ 190000 │ New Coreystad Archdukes   │  190000 │      0 │
+│ Scott Harrison  │ 150000 │ New Coreystad Archdukes   │  190000 │ -40000 │
+│ Gary Chen       │ 195000 │ Port Elizabeth Barbarians │  195000 │      0 │
+│ Michael Stanley │ 150000 │ Port Elizabeth Barbarians │  195000 │ -45000 │
+│ Robert George   │ 195000 │ Port Elizabeth Barbarians │  195000 │      0 │
+└─────────────────┴────────┴───────────────────────────┴─────────┴────────┘
+```
+
+<div id="partitioning-by-column">
+  ### カラムによるパーティション化
+</div>
+
+```sql
+CREATE TABLE wf_partition
+(
+    `part_key` UInt64,
+    `value` UInt64,
+    `order` UInt64    
+)
+ENGINE = Memory;
+
+INSERT INTO wf_partition FORMAT Values
+   (1,1,1), (1,2,2), (1,3,3), (2,0,0), (3,0,0);
+
+SELECT
+    part_key,
+    value,
+    order,
+    groupArray(value) OVER (PARTITION BY part_key) AS frame_values
+FROM wf_partition
+ORDER BY
+    part_key ASC,
+    value ASC;
+
+┌─part_key─┬─value─┬─order─┬─frame_values─┐
+│        1 │     1 │     1 │ [1,2,3]      │   <┐   
+│        1 │     2 │     2 │ [1,2,3]      │    │  1-st group
+│        1 │     3 │     3 │ [1,2,3]      │   <┘ 
+│        2 │     0 │     0 │ [0]          │   <- 2-nd group
+│        3 │     0 │     0 │ [0]          │   <- 3-d group
+└──────────┴───────┴───────┴──────────────┘
+```
+
+<div id="frame-bounding">
+  ### フレームの境界
+</div>
+
+```sql
+CREATE TABLE wf_frame
+(
+    `part_key` UInt64,
+    `value` UInt64,
+    `order` UInt64
+)
+ENGINE = Memory;
+
+INSERT INTO wf_frame FORMAT Values
+   (1,1,1), (1,2,2), (1,3,3), (1,4,4), (1,5,5);
+```
+
+```sql
+-- Frame is bounded by bounds of a partition (BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING)
+SELECT
+    part_key,
+    value,
+    order,
+    groupArray(value) OVER (
+        PARTITION BY part_key 
+        ORDER BY order ASC
+        ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING
+    ) AS frame_values
+FROM wf_frame
+ORDER BY
+    part_key ASC,
+    value ASC;
+    
+┌─part_key─┬─value─┬─order─┬─frame_values─┐
+│        1 │     1 │     1 │ [1,2,3,4,5]  │
+│        1 │     2 │     2 │ [1,2,3,4,5]  │
+│        1 │     3 │     3 │ [1,2,3,4,5]  │
+│        1 │     4 │     4 │ [1,2,3,4,5]  │
+│        1 │     5 │     5 │ [1,2,3,4,5]  │
+└──────────┴───────┴───────┴──────────────┘
+```
+
+```sql
+-- short form - no bound expression, no order by,
+-- an equalent of `ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING`
+SELECT
+    part_key,
+    value,
+    order,
+    groupArray(value) OVER (PARTITION BY part_key) AS frame_values_short,
+    groupArray(value) OVER (PARTITION BY part_key
+         ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING
+    ) AS frame_values
+FROM wf_frame
+ORDER BY
+    part_key ASC,
+    value ASC;
+┌─part_key─┬─value─┬─order─┬─frame_values_short─┬─frame_values─┐
+│        1 │     1 │     1 │ [1,2,3,4,5]        │ [1,2,3,4,5]  │
+│        1 │     2 │     2 │ [1,2,3,4,5]        │ [1,2,3,4,5]  │
+│        1 │     3 │     3 │ [1,2,3,4,5]        │ [1,2,3,4,5]  │
+│        1 │     4 │     4 │ [1,2,3,4,5]        │ [1,2,3,4,5]  │
+│        1 │     5 │     5 │ [1,2,3,4,5]        │ [1,2,3,4,5]  │
+└──────────┴───────┴───────┴────────────────────┴──────────────┘
+```
+
+```sql
+-- frame is bounded by the beginning of a partition and the current row
+SELECT
+    part_key,
+    value,
+    order,
+    groupArray(value) OVER (
+        PARTITION BY part_key 
+        ORDER BY order ASC
+        ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+    ) AS frame_values
+FROM wf_frame
+ORDER BY
+    part_key ASC,
+    value ASC;
+
+┌─part_key─┬─value─┬─order─┬─frame_values─┐
+│        1 │     1 │     1 │ [1]          │
+│        1 │     2 │     2 │ [1,2]        │
+│        1 │     3 │     3 │ [1,2,3]      │
+│        1 │     4 │     4 │ [1,2,3,4]    │
+│        1 │     5 │     5 │ [1,2,3,4,5]  │
+└──────────┴───────┴───────┴──────────────┘
+```
+
+```sql
+-- short form (frame is bounded by the beginning of a partition and the current row)
+-- an equalent of `ORDER BY order ASC ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW`
+SELECT
+    part_key,
+    value,
+    order,
+    groupArray(value) OVER (PARTITION BY part_key ORDER BY order ASC) AS frame_values_short,
+    groupArray(value) OVER (PARTITION BY part_key ORDER BY order ASC
+       ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+    ) AS frame_values
+FROM wf_frame
+ORDER BY
+    part_key ASC,
+    value ASC;
+
+┌─part_key─┬─value─┬─order─┬─frame_values_short─┬─frame_values─┐
+│        1 │     1 │     1 │ [1]                │ [1]          │
+│        1 │     2 │     2 │ [1,2]              │ [1,2]        │
+│        1 │     3 │     3 │ [1,2,3]            │ [1,2,3]      │
+│        1 │     4 │     4 │ [1,2,3,4]          │ [1,2,3,4]    │
+│        1 │     5 │     5 │ [1,2,3,4,5]        │ [1,2,3,4,5]  │
+└──────────┴───────┴───────┴────────────────────┴──────────────┘
+```
+
+```sql
+-- frame is bounded by the beginning of a partition and the current row, but order is backward
+SELECT
+    part_key,
+    value,
+    order,
+    groupArray(value) OVER (PARTITION BY part_key ORDER BY order DESC) AS frame_values
+FROM wf_frame
+ORDER BY
+    part_key ASC,
+    value ASC;
+
+┌─part_key─┬─value─┬─order─┬─frame_values─┐
+│        1 │     1 │     1 │ [5,4,3,2,1]  │
+│        1 │     2 │     2 │ [5,4,3,2]    │
+│        1 │     3 │     3 │ [5,4,3]      │
+│        1 │     4 │     4 │ [5,4]        │
+│        1 │     5 │     5 │ [5]          │
+└──────────┴───────┴───────┴──────────────┘
+```
+
+```sql
+-- sliding frame - 1 PRECEDING ROW AND CURRENT ROW
+SELECT
+    part_key,
+    value,
+    order,
+    groupArray(value) OVER (
+        PARTITION BY part_key 
+        ORDER BY order ASC
+        ROWS BETWEEN 1 PRECEDING AND CURRENT ROW
+    ) AS frame_values
+FROM wf_frame
+ORDER BY
+    part_key ASC,
+    value ASC;
+
+┌─part_key─┬─value─┬─order─┬─frame_values─┐
+│        1 │     1 │     1 │ [1]          │
+│        1 │     2 │     2 │ [1,2]        │
+│        1 │     3 │     3 │ [2,3]        │
+│        1 │     4 │     4 │ [3,4]        │
+│        1 │     5 │     5 │ [4,5]        │
+└──────────┴───────┴───────┴──────────────┘
+```
+
+```sql
+-- sliding frame - ROWS BETWEEN 1 PRECEDING AND UNBOUNDED FOLLOWING 
+SELECT
+    part_key,
+    value,
+    order,
+    groupArray(value) OVER (
+        PARTITION BY part_key 
+        ORDER BY order ASC
+        ROWS BETWEEN 1 PRECEDING AND UNBOUNDED FOLLOWING
+    ) AS frame_values
+FROM wf_frame
+ORDER BY
+    part_key ASC,
+    value ASC;
+
+┌─part_key─┬─value─┬─order─┬─frame_values─┐
+│        1 │     1 │     1 │ [1,2,3,4,5]  │
+│        1 │     2 │     2 │ [1,2,3,4,5]  │
+│        1 │     3 │     3 │ [2,3,4,5]    │
+│        1 │     4 │     4 │ [3,4,5]      │
+│        1 │     5 │     5 │ [4,5]        │
+└──────────┴───────┴───────┴──────────────┘
+```
+
+```sql
+-- row_number does not respect the frame, so rn_1 = rn_2 = rn_3 != rn_4
+SELECT
+    part_key,
+    value,
+    order,
+    groupArray(value) OVER w1 AS frame_values,
+    row_number() OVER w1 AS rn_1,
+    sum(1) OVER w1 AS rn_2,
+    row_number() OVER w2 AS rn_3,
+    sum(1) OVER w2 AS rn_4
+FROM wf_frame
+WINDOW
+    w1 AS (PARTITION BY part_key ORDER BY order DESC),
+    w2 AS (
+        PARTITION BY part_key 
+        ORDER BY order DESC 
+        ROWS BETWEEN 1 PRECEDING AND CURRENT ROW
+    )
+ORDER BY
+    part_key ASC,
+    value ASC;
+
+┌─part_key─┬─value─┬─order─┬─frame_values─┬─rn_1─┬─rn_2─┬─rn_3─┬─rn_4─┐
+│        1 │     1 │     1 │ [5,4,3,2,1]  │    5 │    5 │    5 │    2 │
+│        1 │     2 │     2 │ [5,4,3,2]    │    4 │    4 │    4 │    2 │
+│        1 │     3 │     3 │ [5,4,3]      │    3 │    3 │    3 │    2 │
+│        1 │     4 │     4 │ [5,4]        │    2 │    2 │    2 │    2 │
+│        1 │     5 │     5 │ [5]          │    1 │    1 │    1 │    1 │
+└──────────┴───────┴───────┴──────────────┴──────┴──────┴──────┴──────┘
+```
+
+```sql
+-- first_value and last_value respect the frame
+SELECT
+    groupArray(value) OVER w1 AS frame_values_1,
+    first_value(value) OVER w1 AS first_value_1,
+    last_value(value) OVER w1 AS last_value_1,
+    groupArray(value) OVER w2 AS frame_values_2,
+    first_value(value) OVER w2 AS first_value_2,
+    last_value(value) OVER w2 AS last_value_2
+FROM wf_frame
+WINDOW
+    w1 AS (PARTITION BY part_key ORDER BY order ASC),
+    w2 AS (PARTITION BY part_key ORDER BY order ASC ROWS BETWEEN 1 PRECEDING AND CURRENT ROW)
+ORDER BY
+    part_key ASC,
+    value ASC;
+
+┌─frame_values_1─┬─first_value_1─┬─last_value_1─┬─frame_values_2─┬─first_value_2─┬─last_value_2─┐
+│ [1]            │             1 │            1 │ [1]            │             1 │            1 │
+│ [1,2]          │             1 │            2 │ [1,2]          │             1 │            2 │
+│ [1,2,3]        │             1 │            3 │ [2,3]          │             2 │            3 │
+│ [1,2,3,4]      │             1 │            4 │ [3,4]          │             3 │            4 │
+│ [1,2,3,4,5]    │             1 │            5 │ [4,5]          │             4 │            5 │
+└────────────────┴───────────────┴──────────────┴────────────────┴───────────────┴──────────────┘
+```
+
+```sql
+-- second value within the frame
+SELECT
+    groupArray(value) OVER w1 AS frame_values_1,
+    nth_value(value, 2) OVER w1 AS second_value
+FROM wf_frame
+WINDOW w1 AS (PARTITION BY part_key ORDER BY order ASC ROWS BETWEEN 3 PRECEDING AND CURRENT ROW)
+ORDER BY
+    part_key ASC,
+    value ASC;
+
+┌─frame_values_1─┬─second_value─┐
+│ [1]            │            0 │
+│ [1,2]          │            2 │
+│ [1,2,3]        │            2 │
+│ [1,2,3,4]      │            2 │
+│ [2,3,4,5]      │            3 │
+└────────────────┴──────────────┘
+```
+
+```sql
+-- second value within the frame + Null for missing values
+SELECT
+    groupArray(value) OVER w1 AS frame_values_1,
+    nth_value(toNullable(value), 2) OVER w1 AS second_value
+FROM wf_frame
+WINDOW w1 AS (PARTITION BY part_key ORDER BY order ASC ROWS BETWEEN 3 PRECEDING AND CURRENT ROW)
+ORDER BY
+    part_key ASC,
+    value ASC;
+
+┌─frame_values_1─┬─second_value─┐
+│ [1]            │         ᴺᵁᴸᴸ │
+│ [1,2]          │            2 │
+│ [1,2,3]        │            2 │
+│ [1,2,3,4]      │            2 │
+│ [2,3,4,5]      │            3 │
+└────────────────┴──────────────┘
+```
+
+<div id="real-world-examples">
+  ## 実践的な例
+</div>
+
+以下の例では、現実によくある問題を解決する方法を示します。
+
+<div id="maximumtotal-salary-per-department">
+  ### 部門ごとの最高給与／給与総額
+</div>
+
+```sql
+CREATE TABLE employees
+(
+    `department` String,
+    `employee_name` String,
+    `salary` Float
+)
+ENGINE = Memory;
+
+INSERT INTO employees FORMAT Values
+   ('Finance', 'Jonh', 200),
+   ('Finance', 'Joan', 210),
+   ('Finance', 'Jean', 505),
+   ('IT', 'Tim', 200),
+   ('IT', 'Anna', 300),
+   ('IT', 'Elen', 500);
+```
+
+```sql
+SELECT
+    department,
+    employee_name AS emp,
+    salary,
+    max_salary_per_dep,
+    total_salary_per_dep,
+    round((salary / total_salary_per_dep) * 100, 2) AS `share_per_dep(%)`
+FROM
+(
+    SELECT
+        department,
+        employee_name,
+        salary,
+        max(salary) OVER wndw AS max_salary_per_dep,
+        sum(salary) OVER wndw AS total_salary_per_dep
+    FROM employees
+    WINDOW wndw AS (
+        PARTITION BY department
+        ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING
+    )
+    ORDER BY
+        department ASC,
+        employee_name ASC
+);
+
+┌─department─┬─emp──┬─salary─┬─max_salary_per_dep─┬─total_salary_per_dep─┬─share_per_dep(%)─┐
+│ Finance    │ Jean │    505 │                505 │                  915 │            55.19 │
+│ Finance    │ Joan │    210 │                505 │                  915 │            22.95 │
+│ Finance    │ Jonh │    200 │                505 │                  915 │            21.86 │
+│ IT         │ Anna │    300 │                500 │                 1000 │               30 │
+│ IT         │ Elen │    500 │                500 │                 1000 │               50 │
+│ IT         │ Tim  │    200 │                500 │                 1000 │               20 │
+└────────────┴──────┴────────┴────────────────────┴──────────────────────┴──────────────────┘
+```
+
+<div id="cumulative-sum">
+  ### 累積和
+</div>
+
+```sql
+CREATE TABLE warehouse
+(
+    `item` String,
+    `ts` DateTime,
+    `value` Float
+)
+ENGINE = Memory
+
+INSERT INTO warehouse VALUES
+    ('sku38', '2020-01-01', 9),
+    ('sku38', '2020-02-01', 1),
+    ('sku38', '2020-03-01', -4),
+    ('sku1', '2020-01-01', 1),
+    ('sku1', '2020-02-01', 1),
+    ('sku1', '2020-03-01', 1);
+```
+
+```sql
+SELECT
+    item,
+    ts,
+    value,
+    sum(value) OVER (PARTITION BY item ORDER BY ts ASC) AS stock_balance
+FROM warehouse
+ORDER BY
+    item ASC,
+    ts ASC;
+
+┌─item──┬──────────────────ts─┬─value─┬─stock_balance─┐
+│ sku1  │ 2020-01-01 00:00:00 │     1 │             1 │
+│ sku1  │ 2020-02-01 00:00:00 │     1 │             2 │
+│ sku1  │ 2020-03-01 00:00:00 │     1 │             3 │
+│ sku38 │ 2020-01-01 00:00:00 │     9 │             9 │
+│ sku38 │ 2020-02-01 00:00:00 │     1 │            10 │
+│ sku38 │ 2020-03-01 00:00:00 │    -4 │             6 │
+└───────┴─────────────────────┴───────┴───────────────┘
+```
+
+<div id="moving--sliding-average-per-3-rows">
+  ### 移動平均／スライディング平均 (3行ごと)
+</div>
+
+```sql
+CREATE TABLE sensors
+(
+    `metric` String,
+    `ts` DateTime,
+    `value` Float
+)
+ENGINE = Memory;
+
+insert into sensors values('cpu_temp', '2020-01-01 00:00:00', 87),
+                          ('cpu_temp', '2020-01-01 00:00:01', 77),
+                          ('cpu_temp', '2020-01-01 00:00:02', 93),
+                          ('cpu_temp', '2020-01-01 00:00:03', 87),
+                          ('cpu_temp', '2020-01-01 00:00:04', 87),
+                          ('cpu_temp', '2020-01-01 00:00:05', 87),
+                          ('cpu_temp', '2020-01-01 00:00:06', 87),
+                          ('cpu_temp', '2020-01-01 00:00:07', 87);
+```
+
+```sql
+SELECT
+    metric,
+    ts,
+    value,
+    avg(value) OVER (
+        PARTITION BY metric 
+        ORDER BY ts ASC 
+        ROWS BETWEEN 2 PRECEDING AND CURRENT ROW
+    ) AS moving_avg_temp
+FROM sensors
+ORDER BY
+    metric ASC,
+    ts ASC;
+
+┌─metric───┬──────────────────ts─┬─value─┬───moving_avg_temp─┐
+│ cpu_temp │ 2020-01-01 00:00:00 │    87 │                87 │
+│ cpu_temp │ 2020-01-01 00:00:01 │    77 │                82 │
+│ cpu_temp │ 2020-01-01 00:00:02 │    93 │ 85.66666666666667 │
+│ cpu_temp │ 2020-01-01 00:00:03 │    87 │ 85.66666666666667 │
+│ cpu_temp │ 2020-01-01 00:00:04 │    87 │                89 │
+│ cpu_temp │ 2020-01-01 00:00:05 │    87 │                87 │
+│ cpu_temp │ 2020-01-01 00:00:06 │    87 │                87 │
+│ cpu_temp │ 2020-01-01 00:00:07 │    87 │                87 │
+└──────────┴─────────────────────┴───────┴───────────────────┘
+```
+
+<div id="moving--sliding-average-per-10-seconds">
+  ### 移動平均／スライディング平均 (10秒ごと)
+</div>
+
+```sql
+SELECT
+    metric,
+    ts,
+    value,
+    avg(value) OVER (PARTITION BY metric ORDER BY ts
+      RANGE BETWEEN 10 PRECEDING AND CURRENT ROW) AS moving_avg_10_seconds_temp
+FROM sensors
+ORDER BY
+    metric ASC,
+    ts ASC;
+    
+┌─metric───┬──────────────────ts─┬─value─┬─moving_avg_10_seconds_temp─┐
+│ cpu_temp │ 2020-01-01 00:00:00 │    87 │                         87 │
+│ cpu_temp │ 2020-01-01 00:01:10 │    77 │                         77 │
+│ cpu_temp │ 2020-01-01 00:02:20 │    93 │                         93 │
+│ cpu_temp │ 2020-01-01 00:03:30 │    87 │                         87 │
+│ cpu_temp │ 2020-01-01 00:04:40 │    87 │                         87 │
+│ cpu_temp │ 2020-01-01 00:05:50 │    87 │                         87 │
+│ cpu_temp │ 2020-01-01 00:06:00 │    87 │                         87 │
+│ cpu_temp │ 2020-01-01 00:07:10 │    87 │                         87 │
+└──────────┴─────────────────────┴───────┴────────────────────────────┘
+```
+
+<div id="moving--sliding-average-per-10-days">
+  ### 移動平均 / スライディング平均 (10日ごと)
+</div>
+
+温度は秒精度で保存されていますが、`Range` と `ORDER BY toDate(ts)` を使用すると、サイズ 10 単位のフレームが形成され、`toDate(ts)` によってその単位は日になります。
+
+```sql
+CREATE TABLE sensors
+(
+    `metric` String,
+    `ts` DateTime,
+    `value` Float
+)
+ENGINE = Memory;
+
+insert into sensors values('ambient_temp', '2020-01-01 00:00:00', 16),
+                          ('ambient_temp', '2020-01-01 12:00:00', 16),
+                          ('ambient_temp', '2020-01-02 11:00:00', 9),
+                          ('ambient_temp', '2020-01-02 12:00:00', 9),                          
+                          ('ambient_temp', '2020-02-01 10:00:00', 10),
+                          ('ambient_temp', '2020-02-01 12:00:00', 10),
+                          ('ambient_temp', '2020-02-10 12:00:00', 12),                          
+                          ('ambient_temp', '2020-02-10 13:00:00', 12),
+                          ('ambient_temp', '2020-02-20 12:00:01', 16),
+                          ('ambient_temp', '2020-03-01 12:00:00', 16),
+                          ('ambient_temp', '2020-03-01 12:00:00', 16),
+                          ('ambient_temp', '2020-03-01 12:00:00', 16);
+```
+
+```sql
+SELECT
+    metric,
+    ts,
+    value,
+    round(avg(value) OVER (PARTITION BY metric ORDER BY toDate(ts) 
+       RANGE BETWEEN 10 PRECEDING AND CURRENT ROW),2) AS moving_avg_10_days_temp
+FROM sensors
+ORDER BY
+    metric ASC,
+    ts ASC;
+
+┌─metric───────┬──────────────────ts─┬─value─┬─moving_avg_10_days_temp─┐
+│ ambient_temp │ 2020-01-01 00:00:00 │    16 │                      16 │
+│ ambient_temp │ 2020-01-01 12:00:00 │    16 │                      16 │
+│ ambient_temp │ 2020-01-02 11:00:00 │     9 │                    12.5 │
+│ ambient_temp │ 2020-01-02 12:00:00 │     9 │                    12.5 │
+│ ambient_temp │ 2020-02-01 10:00:00 │    10 │                      10 │
+│ ambient_temp │ 2020-02-01 12:00:00 │    10 │                      10 │
+│ ambient_temp │ 2020-02-10 12:00:00 │    12 │                      11 │
+│ ambient_temp │ 2020-02-10 13:00:00 │    12 │                      11 │
+│ ambient_temp │ 2020-02-20 12:00:01 │    16 │                   13.33 │
+│ ambient_temp │ 2020-03-01 12:00:00 │    16 │                      16 │
+│ ambient_temp │ 2020-03-01 12:00:00 │    16 │                      16 │
+│ ambient_temp │ 2020-03-01 12:00:00 │    16 │                      16 │
+└──────────────┴─────────────────────┴───────┴─────────────────────────┘
+```
+
+<div id="references">
+  ## 参考資料
+</div>
+
+<div id="github-issues">
+  ### GitHub Issues
+</div>
+
+ウィンドウ関数 の初期サポートに向けたロードマップは、[この issue](https://github.com/ClickHouse/ClickHouse/issues/18097) にあります。
+
+ウィンドウ関数 に関連するすべての GitHub issue には、[comp-window-functions](https://github.com/ClickHouse/ClickHouse/labels/comp-window-functions) タグが付けられています。
+
+<div id="tests">
+  ### テスト
+</div>
+
+これらのテストには、現在サポートされている構文の例が含まれています。
+
+https://github.com/ClickHouse/ClickHouse/blob/master/tests/performance/window&#95;functions.xml
+
+https://github.com/ClickHouse/ClickHouse/blob/master/tests/queries/0&#95;stateless/01591&#95;window&#95;functions.sql
+
+<div id="postgres-docs">
+  ### Postgres Docs
+</div>
+
+https://www.postgresql.org/docs/current/sql-select.html#SQL-WINDOW
+
+https://www.postgresql.org/docs/devel/sql-expressions.html#SYNTAX-WINDOW-FUNCTIONS
+
+https://www.postgresql.org/docs/devel/functions-window.html
+
+https://www.postgresql.org/docs/devel/tutorial-window.html
+
+<div id="mysql-docs">
+  ### MySQL Docs
+</div>
+
+https://dev.mysql.com/doc/refman/8.0/en/window-function-descriptions.html
+
+https://dev.mysql.com/doc/refman/8.0/en/window-functions-usage.html
+
+https://dev.mysql.com/doc/refman/8.0/en/window-functions-frames.html
+
+<div id="related-content">
+  ## 関連コンテンツ
+</div>
+
+* ブログ: [ClickHouseで時系列データを扱う](https://clickhouse.com/blog/working-with-time-series-data-and-functions-ClickHouse)
+* ブログ: [Gitコミットのシーケンスに対するウィンドウ関数と配列関数](https://clickhouse.com/blog/clickhouse-window-array-functions-git-commits)
+* ブログ: [ClickHouseにデータを取り込む - Part 3 - S3を使う](https://clickhouse.com/blog/getting-data-into-clickhouse-part-3-s3)

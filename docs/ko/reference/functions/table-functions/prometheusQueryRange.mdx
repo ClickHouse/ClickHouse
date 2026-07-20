@@ -1,0 +1,93 @@
+---
+description: 'TimeSeries 테이블의 데이터를 사용해 Prometheus 쿼리를 평가합니다.'
+sidebarTitle: 'prometheusQueryRange'
+slug: /sql-reference/table-functions/prometheusQueryRange
+title: 'prometheusQueryRange'
+doc_type: 'reference'
+---
+
+평가 시간 범위 전반에 걸쳐 TimeSeries 테이블의 데이터를 사용해 Prometheus 쿼리를 평가합니다.
+
+<div id="syntax">
+  ## 구문
+</div>
+
+```sql
+prometheusQueryRange('db_name', 'time_series_table', 'promql_query', start_time, end_time, step)
+prometheusQueryRange(db_name.time_series_table, 'promql_query', start_time, end_time, step)
+prometheusQueryRange('time_series_table', 'promql_query', start_time, end_time, step)
+```
+
+<div id="arguments">
+  ## 인수
+</div>
+
+* `db_name` - TimeSeries 테이블이 있는 데이터베이스 이름입니다.
+* `time_series_table` - TimeSeries 테이블 이름입니다.
+* `promql_query` - [PromQL 구문](https://prometheus.io/docs/prometheus/latest/querying/basics/)으로 작성한 쿼리입니다.
+* `start_time` - 평가 범위의 시작 시간입니다.
+* `end_time` - 평가 범위의 종료 시간입니다.
+* `step` - `start_time`부터 `end_time`까지(양 끝 포함) 평가 시간을 순회할 때 사용하는 간격입니다.
+
+<div id="returned_value">
+  ## 반환 값
+</div>
+
+이 함수는 매개변수 `promql_query`에 전달된 쿼리의 결과 유형에 따라 서로 다른 컬럼을 반환할 수 있습니다.
+
+| 결과 유형  | 결과 컬럼                                                                                     | 예시                                                  |
+| ------ | ----------------------------------------------------------------------------------------- | --------------------------------------------------- |
+| vector | tags Array(Tuple(String, String)), timestamp TimestampType, value ValueType               | prometheusQuery(mytable, &#39;up&#39;)              |
+| matrix | tags Array(Tuple(String, String)), time&#95;series Array(Tuple(TimestampType, ValueType)) | prometheusQuery(mytable, &#39;up[1m]&#39;)          |
+| scalar | scalar ValueType                                                                          | prometheusQuery(mytable, &#39;1h30m&#39;)           |
+| string | string String                                                                             | prometheusQuery(mytable, &#39;&quot;abc&quot;&#39;) |
+
+<div id="supported-promql-features">
+  ## 지원되는 PromQL 기능
+</div>
+
+<div id="selectors">
+  ### 셀렉터
+</div>
+
+인스턴트 셀렉터, 범위 셀렉터, 레이블 매처(`=`, `!=`, `=~`, `!~`), offset 수정자, `@` 타임스탬프 수정자, 그리고 서브쿼리.
+
+<div id="functions">
+  ### 함수
+</div>
+
+| 범주       | 함수                                                                                               |
+| -------- | ------------------------------------------------------------------------------------------------ |
+| 범위       | `rate`, `irate`, `delta`, `idelta`, `last_over_time`                                             |
+| 수학       | `abs`, `sgn`, `floor`, `ceil`, `sqrt`, `exp`, `ln`, `log2`, `log10`, `rad`, `deg`                |
+| 삼각함수     | `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `sinh`, `cosh`, `tanh`, `asinh`, `acosh`, `atanh`   |
+| DateTime | `day_of_week`, `day_of_month`, `days_in_month`, `day_of_year`, `minute`, `hour`, `month`, `year` |
+| 유형       | `scalar`, `vector`                                                                               |
+| 히스토그램    | `histogram_quantile`                                                                             |
+| 기타       | `time`, `pi`                                                                                     |
+
+**참고**: `histogram_quantile`은 기존 히스토그램 버킷(`le` 레이블로 식별됨)에 선형 보간을 사용합니다. 네이티브 히스토그램은 아직 지원되지 않으며, `phi`(분위수 수준) 인수는 현재 상수 스칼라여야 합니다. 따라서 `histogram_quantile(time() / 1000, ...)`처럼 간격마다 값이 달라지는 표현식은 `NOT_IMPLEMENTED` 오류와 함께 거부됩니다.
+
+<div id="operators">
+  ### 연산자
+</div>
+
+`on()`/`ignoring()` 및 `group_left()`/`group_right()` 수정자와 함께 사용하는 모든 산술(`+`, `-`, `*`, `/`, `%`, `^`), 비교(`==`, `!=`, `<`, `>`, `<=`, `>=`, 선택적 `bool` 포함), 논리(`and`, `or`, `unless`) 이항 연산자
+
+단항 연산자 `+` 및 `-`.
+
+<div id="aggregation-operators">
+  ### 집계 연산자
+</div>
+
+`sum`, `avg`, `min`, `max`, `count`, `stddev`, `stdvar`, `group`, `quantile`, `topk`, `bottomk`, `limitk` — 선택적으로 `by()` 또는 `without()` 수정자와 함께 사용할 수 있습니다.
+
+아직 지원되지 않습니다: `count_values`.
+
+<div id="example">
+  ## 예시
+</div>
+
+```sql
+SELECT * FROM prometheusQueryRange(mytable, 'rate(http_requests{job="prometheus"}[10m])[1h:10m]', now() - INTERVAL 10 MINUTES, now(), INTERVAL 1 MINUTE)
+```

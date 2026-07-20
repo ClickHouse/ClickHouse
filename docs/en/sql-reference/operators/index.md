@@ -186,6 +186,52 @@ SELECT number AS a FROM numbers(10) WHERE a > ANY (SELECT number FROM numbers(3,
 └───┘
 ```
 
+### `SOME` / `ALL` on arrays {#some-all-on-arrays}
+
+In addition to the subquery form described above, the right-hand side of `SOME` / `ALL` can be an array expression (an array literal, an array-typed column, or any expression returning an array). This is the PostgreSQL-style array quantifier syntax. It is recognised at parse time and rewritten to array functions, so no manual rewrite is required:
+
+| Syntax | Rewritten to |
+|--------|--------------|
+| `expr = SOME(arr)` | `has(arr, expr)` |
+| `expr <> ALL(arr)` | `NOT has(arr, expr)` |
+| `expr OP SOME(arr)` (any other supported operator) | `arrayExists(x -> expr OP x, arr)` |
+| `expr OP ALL(arr)` (any other supported operator) | `arrayAll(x -> expr OP x, arr)` |
+
+`SOME` is the existential quantifier (the SQL synonym for `ANY`). `=` and `<>` are special-cased to `has` / `NOT has` because they have an optimized implementation; the general form falls back to the higher-order `arrayExists` / `arrayAll` functions.
+
+The array form is recognised for the comparison operators `=`, `==`, `!=`, `<>`, `<=>`, `<`, `<=`, `>`, `>=`, the keyword comparison predicates `IS DISTINCT FROM` and `IS NOT DISTINCT FROM`, and the string-search predicates `LIKE`, `ILIKE`, `NOT LIKE`, `NOT ILIKE`, and `REGEXP`. The keyword comparison predicates and the string-search predicates are recognised only for the array form, not for the subquery form (which is lowered to `IN`/`NOT IN`). Operators that have no array-quantifier meaning — for example `IN` itself — are **not** rewritten and keep their ordinary meaning.
+
+The string-search predicates work because `MatchImpl` (the implementation behind `LIKE` / `ILIKE` / `REGEXP`) supports a constant haystack with a non-constant needle. For example, `'abc' LIKE SOME(['a%', 'b%'])` is rewritten to `arrayExists(x -> 'abc' LIKE x, ['a%', 'b%'])`, and `'abc' NOT LIKE ALL(['x%', 'y%'])` to `arrayAll(x -> 'abc' NOT LIKE x, ['x%', 'y%'])`. This matches one string against several patterns; for matching with a single combined pass you can still use a multi-pattern search function such as `multiMatchAny` (regular expressions) or `multiSearchAny` (substrings).
+
+:::note `ANY` is not supported for the array form
+Only `SOME` and `ALL` accept an array right-hand side. `ANY` is excluded because `any` is also an aggregate function, so an expression of the shape `expr = any(x)` keeps its function-call meaning. Use `SOME` for the array quantifier.
+:::
+
+```sql title="Query"
+SELECT
+    3 = SOME([1, 2, 3, 4])         AS in_array,
+    5 < SOME([1, 2, 6])            AS less_than_some,
+    5 > ALL([1, 2, 3])             AS greater_than_all,
+    'abc' LIKE SOME(['a%', 'z%'])  AS like_some;
+```
+
+```text title="Response"
+┌─in_array─┬─less_than_some─┬─greater_than_all─┬─like_some─┐
+│        1 │              1 │                1 │         1 │
+└──────────┴────────────────┴──────────────────┴───────────┘
+```
+
+:::note `NULL` handling differs from the subquery form
+Because the array form is rewritten in the parser (where query settings such as `transform_null_in` are not available, and a per-row array column cannot use the analyzer's null-safe `IN` path), it uses the two-valued semantics of `has` (for `=` / `<>`) and `arrayExists` / `arrayAll` (which fold an unknown `NULL` comparison result to `0`). This can differ from the subquery form, whose `NULL` handling is lowered through `IN` / `NOT IN` and depends on `transform_null_in`:
+
+```sql
+SELECT NULL = SOME([NULL]);   -- has([NULL], NULL)                  -> 1
+SELECT NULL <> ALL([NULL]);   -- NOT has([NULL], NULL)              -> 0
+SELECT NULL < SOME([1]);      -- arrayExists(x -> NULL < x, [1])    -> 0
+SELECT NULL > ALL([1]);       -- arrayAll(x -> NULL > x, [1])       -> 0
+```
+:::
+
 ## Operators for Working with Dates and Times {#operators-for-working-with-dates-and-times}
 
 ### EXTRACT {#extract}
@@ -396,6 +442,61 @@ SELECT toTime64('23:59:59.999', 3) + toDate32('2024-07-15') AS dt, toTypeName(dt
 │ 2024-07-15 23:59:59.999 │ DateTime64(3)  │
 └─────────────────────────┴────────────────┘
 ```
+
+### AT TIME ZONE and AT LOCAL {#at-time-zone}
+
+The postfix operators `AT TIME ZONE` and `AT LOCAL` convert a `DateTime` or `DateTime64` value to a different timezone. They are syntactic sugar for the existing [`toTimeZone`](/sql-reference/functions/date-time-functions#totimezone) function:
+
+| Syntax | Equivalent |
+|---|---|
+| `expr AT TIME ZONE zone` | `toTimeZone(expr, zone)` |
+| `expr AT LOCAL` | `toTimeZone(expr, timeZone())` |
+
+`zone` can be any constant string expression that evaluates to a valid timezone name (e.g. `'America/Denver'`, `'UTC'`, or `concat('America', '/', 'Denver')`). Because `AT TIME ZONE` desugars to `toTimeZone`, the same timezone-argument rules apply: non-constant expressions such as a column reference require [`allow_nonconst_timezone_arguments = 1`](../../operations/settings/settings.md#allow_nonconst_timezone_arguments).
+
+`AT LOCAL` uses the current [session timezone](../../operations/settings/settings.md#session_timezone) (or the server default if no session timezone is set). On `Distributed` tables, `session_timezone` must be explicitly set; when it is empty, `timeZone()` is shard-local and cannot be used as a constant `toTimeZone` argument, causing an `ILLEGAL_COLUMN` exception.
+
+:::note
+Unlike PostgreSQL, where `timestamp without time zone AT TIME ZONE zone` re-interprets the wall-clock value as being in the given zone before converting, ClickHouse always keeps the same absolute point in time and only changes the timezone label used for display. Both forms are equivalent to `toTimeZone` and do not alter the underlying timestamp.
+:::
+
+`AT TIME ZONE` has operator precedence 13 (above `*`/`/`/`%` at 12, and above `+`/`-` at 11), matching PostgreSQL. This means `a * ts AT TIME ZONE 'tz'` binds as `a * (ts AT TIME ZONE 'tz')`, and `ts + interval AT TIME ZONE 'tz'` binds as `ts + (interval AT TIME ZONE 'tz')`. To apply timezone conversion after arithmetic, use explicit parentheses:
+
+```sql
+-- Explicit parens required to add first, then convert timezone
+SELECT (TIMESTAMP '2001-02-16 20:38:40' + INTERVAL 1 HOUR) AT TIME ZONE 'America/Denver';
+-- Equivalent to:
+SELECT toTimeZone(TIMESTAMP '2001-02-16 20:38:40' + INTERVAL 1 HOUR, 'America/Denver');
+```
+
+Examples:
+
+```sql
+SET session_timezone = 'UTC';
+
+SELECT TIMESTAMP '2001-02-16 20:38:40' AT TIME ZONE 'America/Denver';
+```
+
+```text
+┌─toTimeZone(toDateTime('2001-02-16 20:38:40'), 'America/Denver')─┐
+│ 2001-02-16 13:38:40                                              │
+└──────────────────────────────────────────────────────────────────┘
+```
+
+```sql
+SELECT TIMESTAMP '2001-02-16 20:38:40' AT LOCAL;
+```
+
+```text
+┌─toTimeZone(toDateTime('2001-02-16 20:38:40'), timeZone())─┐
+│ 2001-02-16 20:38:40                                        │
+└────────────────────────────────────────────────────────────┘
+```
+
+**See Also**
+
+- [`toTimeZone`](/sql-reference/functions/date-time-functions#totimezone)
+- [`timeZone`](/sql-reference/functions/date-time-functions#timezone)
 
 ## Logical AND Operator {#logical-and-operator}
 

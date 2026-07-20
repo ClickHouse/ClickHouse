@@ -1,0 +1,41 @@
+---
+sidebarTitle: 'LibreChat'
+title: 'LibreChat'
+description: 'LibreChat가 에이전트형 데이터 스택의 채팅 및 에이전트 프런트엔드 역할을 하는 방식'
+doc_type: 'guide'
+keywords: ['에이전트형 데이터 스택', 'LibreChat', '채팅', '프런트엔드', 'MCP']
+---
+
+LibreChat는 [Agentic Data Stack](/ko/products/agentic-data-stack/overview)의 **채팅 및 에이전트 프런트엔드**입니다. SQL을 직접 작성하는 대신, 사용자가 자연어로 질문하면 에이전트가 답변합니다.
+
+에이전트는 ClickHouse MCP 서버를 통해 데이터베이스와 테이블을 확인하고, 읽기 전용 쿼리를 실행하며, 그 결과를 바탕으로 답변을 구성합니다. 스택이 이 연결을 미리 구성해 두므로 LibreChat는 처음 로그인한 직후부터 데이터를 쿼리할 수 있습니다. 전체 스택은 [Docker 설정 가이드](/ko/products/agentic-data-stack/docker-setup)를 따라 배포하십시오.
+
+<div id="capabilities">
+  ## LibreChat 기능
+</div>
+
+| 기능                                                                            | 설명                                                                                                                                                                                                  |
+| ----------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [데이터 기반 에이전트 구축](https://www.librechat.ai/docs/features/agents)               | 반복적으로 발생하는 질문에 사용할 재사용 가능한 에이전트를 구축합니다. ClickHouse를 인식하도록 설정하는 방법은 2가지입니다. 스키마와 주로 사용할 테이블을 설명하는 **Instructions**를 제공하고, **ClickHouse-Local** MCP 서버를 추가해 데이터베이스와 테이블을 나열하고 읽기 전용 쿼리를 실행할 수 있게 합니다. |
+| [더 많은 MCP 서버 연결](https://www.librechat.ai/docs/features/mcp)                  | 에이전트는 ClickHouse에만 국한되지 않습니다. LibreChat의 MCP 설정에서 원하는 MCP 서버를 추가하면 하나의 채팅에서 다른 데이터베이스, 내부 API 또는 SaaS 도구에도 연결할 수 있습니다.                                                                              |
+| [차트 및 시각화 생성](https://www.librechat.ai/docs/features/artifacts)               | 예를 들어 &quot;매출 기준 상위 10개 제품을 차트로 보여주세요&quot;와 같이 결과를 시각화하도록 에이전트에 요청하면, 탐색하고 공유할 수 있는 대화형 차트를 반환합니다. 시각화에는 에이전트별로 활성화되는 LibreChat Artifacts가 사용됩니다.                                                 |
+| [코드 인터프리터로 코드 실행](https://www.librechat.ai/docs/features/code_interpreter)    | SQL 외에도 에이전트는 안전한 sandbox에서 코드를 실행해 결과를 변환하거나 분석할 수 있습니다. 예를 들어 쿼리 결과를 파일이나 계산된 메트릭으로 바꿀 수 있습니다.                                                                                                    |
+| [백그라운드에서 긴 쿼리 실행](https://www.librechat.ai/docs/features/resumable_streams)   | 쿼리 실행에 시간이 걸릴 수 있지만 계속 기다릴 필요는 없습니다. 재개 가능한 스트림을 사용하면 생성을 시작한 뒤 다른 대화로 전환했다가 완료된 응답으로 다시 돌아올 수 있습니다.                                                                                                |
+| [분석 결과를 읽기 전용 링크로 공유](https://www.librechat.ai/docs/features/shareable_links) | 대화를 읽기 전용 링크로 공유하면 다른 사용자가 분석을 다시 실행하지 않고도 검토할 수 있습니다. 공유된 보기에는 도구 호출과 각 답변의 근거가 된 SQL이 포함되므로, 결과가 어떻게 생성되었는지 명확하게 추적할 수 있습니다.                                                                      |
+| [MCP 서버에 대한 접근 제어](https://www.librechat.ai/docs/features/access_control)     | 팀 배포에서는 역할 기반 접근 제어가 누가 MCP 서버와 에이전트를 사용, 생성, 공유할 수 있는지와 어떤 수준(Viewer, Editor 또는 Owner)으로 수행할 수 있는지를 관리합니다.                                                                                         |
+
+<div id="in-the-stack">
+  ## 스택 내에서
+</div>
+
+LibreChat은 `librechat.yaml`을 통해 사전 구성되므로, 별도 설정 없이 바로 사용할 수 있습니다.
+
+* [ClickHouse MCP 서버](/ko/products/agentic-data-stack/components/mcp-server)가 도구 소스로 등록되어 있어, 에이전트가 추가 설정 없이 ClickHouse를 탐색하고 쿼리할 수 있습니다.
+* 모든 대화는 관측성을 위해 [Langfuse](/ko/products/agentic-data-stack/components/langfuse)로 추적되며, 프롬프트, 도구 호출, 응답, 비용, 지연 시간을 기록합니다.
+* [Admin Panel](https://github.com/ClickHouse/librechat-admin-panel)(포트 3081)은 브라우저 기반 UI로, `librechat.yaml`을 직접 편집하지 않고도 이 구성(엔드포인트, MCP 서버, 에이전트 설정)을 변경할 수 있습니다.
+
+ClickHouse MCP 서버를 독립 실행형 LibreChat 인스턴스에 연결하려면 공식 가이드인 [Using ClickHouse MCP server with LibreChat](/ko/guides/use-cases/ai-ml/MCP/librechat)을 참조하십시오. LibreChat의 전체 기능 문서는 [LibreChat documentation](https://www.librechat.ai/docs)에서 확인할 수 있습니다.
+
+<Info>
+  **관리형 환경을 선호한다면** ClickHouse Cloud는 [ClickHouse Agents](/ko/products/cloud/features/ai-ml/agents)(베타)를 제공합니다. 동일한 기반 위에 구축된 호스팅형 에이전트 환경으로, 별도 설정 없이 사용할 수 있으며 에이전트 구축 기능은 Cloud Console에서 제공합니다.
+</Info>

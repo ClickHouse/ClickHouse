@@ -1,0 +1,566 @@
+---
+slug: /use-cases/observability/clickstack/integrations/aws-cloudwatch-logs
+title: '借助 ClickStack 监控 AWS CloudWatch 日志'
+sidebarTitle: 'AWS CloudWatch 日志'
+description: '借助 ClickStack 监控 AWS CloudWatch 日志'
+doc_type: 'guide'
+keywords: ['AWS', 'CloudWatch', 'OTEL', 'ClickStack', '日志']
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
+
+<Info>
+  **简而言之**
+
+  使用 OpenTelemetry Collector 的 CloudWatch 接收器 将 AWS CloudWatch 日志转发到 ClickStack。支持指定名称的日志组和自动发现。包含演示数据集和预置仪表板。
+</Info>
+
+<div id="overview">
+  ## 概述
+</div>
+
+AWS CloudWatch 是一项用于监控 AWS 资源和应用程序的服务。虽然 CloudWatch 提供日志聚合功能，但将日志转发到 ClickStack 可以让您：
+
+* 在统一平台中结合指标和链路追踪分析日志
+* 通过 ClickHouse 的 SQL 接口查询日志
+* 通过归档日志或缩短 CloudWatch 保留期来降低成本
+
+本指南将向您说明如何使用 OpenTelemetry Collector 将 CloudWatch 日志转发到 ClickStack。
+
+<div id="existing-cloudwatch">
+  ## 与现有 CloudWatch 日志组集成
+</div>
+
+本节介绍如何配置 OpenTelemetry Collector，从现有的 CloudWatch 日志组中拉取日志并将其转发到 ClickStack。
+
+如果您想在配置生产环境之前先测试此集成，可以在[演示数据集部分](#demo-dataset)中使用我们的演示数据集进行测试。
+
+<div id="prerequisites">
+  ### 前置条件
+</div>
+
+* 正在运行的 ClickStack 实例
+* 拥有 CloudWatch 日志组的 AWS 账户
+* 具有相应 IAM 权限的 AWS 凭据
+
+<Note>
+  与基于文件的日志集成 (nginx、Redis) 不同，CloudWatch 需要运行一个独立的 OpenTelemetry 采集器 来轮询 CloudWatch API。由于该 采集器 需要 AWS 凭据和 API 访问权限，因此无法在 ClickStack 的一体化 image 中运行。
+</Note>
+
+<Steps>
+  <Step>
+    #### 获取 ClickStack API key
+
+    OpenTelemetry Collector 会将数据发送到 ClickStack 的 OTLP 端点，而该端点需要进行身份验证。
+
+    1. 在你的 ClickStack URL 中打开 HyperDX (例如 `http://localhost:8080`)
+    2. 如有需要，请创建账户或登录
+    3. 前往 **Team Settings → API Keys**
+    4. 复制你的 **摄取 API key**
+
+    <Image img="/images/clickstack/api-key.webp" alt="ClickStack API Key" />
+
+    将其保存为环境变量：
+
+    ```bash
+    export CLICKSTACK_API_KEY="your-api-key-here"
+    ```
+  </Step>
+
+  <Step>
+    #### 配置 AWS 凭证
+
+    将 AWS 凭证导出为环境变量。具体方法取决于所使用的身份验证类型：
+
+    **对于 AWS SSO 用户 (建议大多数组织使用) ：**
+
+    ```bash
+    # 登录 SSO
+    aws sso login --profile YOUR_PROFILE_NAME
+
+    # 将凭证导出为环境变量
+    eval $(aws configure export-credentials --profile YOUR_PROFILE_NAME --format env)
+
+    # 验证凭证是否有效
+    aws sts get-caller-identity
+    ```
+
+    将 `YOUR_PROFILE_NAME` 替换为你的 AWS SSO profile 名称 (例如：`AccountAdministrators-123456789`) 。
+
+    **对于使用长期凭证的 IAM 用户：**
+
+    ```bash
+    export AWS_ACCESS_KEY_ID="your-access-key-id"
+    export AWS_SECRET_ACCESS_KEY="your-secret-access-key"
+    export AWS_REGION="us-east-1"
+
+    # 验证凭证是否有效
+    aws sts get-caller-identity
+    ```
+
+    **所需的 IAM 权限：**
+
+    与这些凭证对应的 AWS 账户需要具备以下 IAM 策略才能读取 CloudWatch 日志：
+
+    ```json
+    {
+      "Version": "2012-10-17",
+      "Statement": [
+        {
+          "Sid": "CloudWatchLogsRead",
+          "Effect": "Allow",
+          "Action": [
+            "logs:DescribeLogGroups",
+            "logs:FilterLogEvents"
+          ],
+          "Resource": "arn:aws:logs:*:YOUR_ACCOUNT_ID:log-group:*"
+        }
+      ]
+    }
+    ```
+
+    将 `YOUR_ACCOUNT_ID` 替换为你的 AWS 账户 ID。
+  </Step>
+
+  <Step>
+    #### 配置 CloudWatch receiver
+
+    创建一个 `otel-collector-config.yaml` 文件，并添加 CloudWatch receiver 配置。
+
+    <Accordion title="查看账户中可用的日志组">
+      在编辑配置之前，先列出你所在区域中已有的日志组，这样你就可以选择实际存在的名称 (并确认区域是否正确) ：
+
+      ```bash
+      aws logs describe-log-groups --region us-east-1 \
+        --query 'logGroups[].logGroupName' --output table
+      ```
+
+      示例输出：
+
+      ```text
+      -------------------------------
+      |      DescribeLogGroups      |
+      +-----------------------------+
+      |  /aws-glue/jobs/error       |
+      |  /aws-glue/jobs/logs-v2     |
+      |  /aws-glue/jobs/output      |
+      |  /aws-glue/sessions/error   |
+      |  /aws-glue/sessions/output  |
+      +-----------------------------+
+      ```
+
+      直接在下面示例 1 的 `groups.named` 块中使用此列表中的名称。对于上述账户，named-groups 部分将变为：
+
+      ```yaml
+      groups:
+        named:
+          /aws-glue/jobs/error:
+          /aws-glue/jobs/logs-v2:
+          /aws-glue/jobs/output:
+          /aws-glue/sessions/error:
+          /aws-glue/sessions/output:
+      ```
+
+      或者，如果你要使用的组共享同一个前缀 (这里是 `/aws-glue/`) ，请使用示例 2，并设置 `prefix: /aws-glue/`，而不是逐个列出。
+    </Accordion>
+
+    **示例 1：命名日志组 (推荐)&#x20;**
+
+    此配置会从指定的命名日志组中收集日志：
+
+    ```yaml
+    receivers:
+      awscloudwatch:
+        region: us-east-1
+        logs:
+          poll_interval: 1m
+          max_events_per_request: 100
+          groups:
+            named:
+              /aws/lambda/my-function:
+              /aws/ecs/my-service:
+              /aws/eks/my-cluster/cluster:
+
+    processors:
+      batch:
+        timeout: 10s
+
+    exporters:
+      otlphttp:
+        endpoint: http://localhost:4318
+        headers:
+          authorization: ${CLICKSTACK_API_KEY}
+
+    service:
+      pipelines:
+        logs:
+          receivers: [awscloudwatch]
+          processors: [batch]
+          exporters: [otlphttp]
+    ```
+
+    **示例 2：按前缀自动发现日志组**
+
+    此配置会自动发现并收集最多 100 个以 `/aws/lambda` 为前缀的日志组：
+
+    ```yaml
+    receivers:
+      awscloudwatch:
+        region: us-east-1
+        logs:
+          poll_interval: 1m
+          max_events_per_request: 100
+          groups:
+            autodiscover:
+              limit: 100
+              prefix: /aws/lambda
+
+    processors:
+      batch:
+        timeout: 10s
+
+    exporters:
+      otlphttp:
+        endpoint: http://localhost:4318
+        headers:
+          authorization: ${CLICKSTACK_API_KEY}
+
+    service:
+      pipelines:
+        logs:
+          receivers: [awscloudwatch]
+          processors: [batch]
+          exporters: [otlphttp]
+    ```
+
+    **配置参数：**
+
+    * `region`：日志组所在的 AWS 区域
+    * `poll_interval`：检查新日志的频率 (例如 `1m`、`5m`)
+    * `max_events_per_request`：每次请求拉取的最大日志事件数
+    * `groups.autodiscover.limit`：可发现的最大日志组数量
+    * `groups.autodiscover.prefix`：按前缀过滤日志组
+    * `groups.named`：显式列出要采集的日志组名称
+
+    如需了解更多配置选项，请参阅 [CloudWatch receiver documentation](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/receiver/awscloudwatchreceiver)。
+
+    **请替换以下内容：**
+
+    * `${CLICKSTACK_API_KEY}` → 使用您之前设置的环境变量
+    * `http://localhost:4318` → 您的 ClickStack 端点 (如果是远程运行，请改用您的 ClickStack 主机)
+    * `us-east-1` → 您的 AWS 区域
+    * Log group names/prefixes → 您实际使用的 CloudWatch 日志组
+
+    <Note>
+      CloudWatch receiver 只会从最近的时间窗口中拉取日志 (具体取决于 `poll_interval`) 。首次启动时，它会从当前时间开始。默认情况下不会拉取历史日志。
+    </Note>
+  </Step>
+
+  <Step>
+    #### 启动 collector
+
+    创建 `docker-compose.yaml` 文件：
+
+    ```yaml
+    services:
+      otel-collector:
+        image: otel/opentelemetry-collector-contrib:latest
+        command: ["--config=/etc/otel-config.yaml"]
+        volumes:
+          - ./otel-collector-config.yaml:/etc/otel-config.yaml
+        environment:
+          - AWS_ACCESS_KEY_ID
+          - AWS_SECRET_ACCESS_KEY
+          - AWS_SESSION_TOKEN
+          - AWS_REGION
+          - CLICKSTACK_API_KEY
+        restart: unless-stopped
+        extra_hosts:
+          - "host.docker.internal:host-gateway"
+    ```
+
+    然后启动 collector：
+
+    ```bash
+    docker compose up -d
+    ```
+
+    查看 collector 的日志：
+
+    ```bash
+    docker compose logs -f otel-collector
+    ```
+  </Step>
+
+  <Step>
+    #### 在 HyperDX 中验证日志
+
+    collector 运行后：
+
+    1. 打开 http://localhost:8080 中的 HyperDX (或你的 ClickStack URL)
+    2. 导航到 **日志** 视图
+    3. 等待 1–2 分钟，日志会显示出来 (具体取决于你的轮询间隔)
+    4. 搜索来自你的 CloudWatch 日志组的日志
+
+    <Image img="/images/clickstack/cloudwatch/log-search-view.webp" alt="日志搜索视图" />
+
+    在日志中查找以下关键属性：
+
+    * `ResourceAttributes['aws.region']`：你的 AWS 区域 (例如 &quot;us-east-1&quot;)
+    * `ResourceAttributes['cloudwatch.log.group.name']`：CloudWatch 日志组名称
+    * `ResourceAttributes['cloudwatch.log.stream']`：日志 stream 名称
+    * `Body`：实际的日志消息内容
+
+    <Image img="/images/clickstack/cloudwatch/error-log-column-values.webp" alt="错误日志列值" />
+  </Step>
+</Steps>
+
+<div id="demo-dataset">
+  ## 演示数据集
+</div>
+
+对于希望在配置生产 AWS 环境之前先测试 CloudWatch 日志集成的用户，我们提供了一个示例数据集，其中包含预先生成的日志，展示了来自多个 AWS 服务的真实模式。
+
+<Steps>
+  <Step>
+    #### 下载示例数据集
+
+    ```bash
+    curl -O https://datasets-documentation.s3.eu-west-3.amazonaws.com/clickstack-integrations/aws/cloudwatch/cloudwatch-logs.jsonl
+    ```
+
+    该数据集包含来自多个服务的 24 小时 CloudWatch 日志：
+
+    * **Lambda functions**：支付处理、订单管理、身份验证
+    * **ECS services**：带有速率限制和超时控制的 API gateway
+    * **Background jobs**：带有重试模式的批次处理
+  </Step>
+
+  <Step>
+    #### 启动 ClickStack
+
+    如果你还没有运行 ClickStack：
+
+    ```bash
+    docker run -d --name clickstack \
+      -p 8080:8080 -p 4317:4317 -p 4318:4318 \
+      clickhouse/clickstack-all-in-one:latest
+    ```
+
+    等待片刻，直到 ClickStack 完全启动。
+  </Step>
+
+  <Step>
+    #### 导入演示数据集
+
+    ```bash
+    docker exec -i clickstack clickhouse-client --query="
+      INSERT INTO default.otel_logs FORMAT JSONEachRow
+    " < cloudwatch-logs.jsonl
+    ```
+
+    这会将日志直接导入 ClickStack 的日志表。
+  </Step>
+
+  <Step>
+    #### 验证演示数据
+
+    导入完成后：
+
+    1. 在 http://localhost:8080 打开 HyperDX 并登录 (如有需要请创建账户)
+    2. 进入 **Logs** 视图
+    3. 将时间范围设置为 **2025-12-07 00:00:00 - 2025-12-08 00:00:00 (UTC)**
+    4. 搜索 `cloudwatch-demo`，或按 `LogAttributes['source'] = 'cloudwatch-demo'` 进行过滤
+
+    你应该会看到来自多个 CloudWatch 日志组的日志。
+
+    <Image img="/images/clickstack/cloudwatch/demo-search-view.webp" alt="演示搜索视图" />
+
+    <Info>
+      **时区显示**
+
+      HyperDX 会按浏览器的本地时区显示时间戳。演示数据覆盖 **2025-12-07 00:00:00 - 2025-12-08 00:00:00 (UTC)**。请将时间范围设置为 **2025-12-06 00:00:00 - 2025-12-09 00:00:00**，以确保无论你身处何地都能看到演示日志。看到日志后，你可以将范围缩小到 24 小时，以获得更清晰的可视化效果。
+    </Info>
+  </Step>
+</Steps>
+
+<div id="dashboards">
+  ## 仪表盘与可视化
+</div>
+
+为帮助你使用 ClickStack 监控 CloudWatch 日志，我们提供了一个预构建的仪表盘，其中包含关键可视化内容。
+
+<Steps>
+  <Step>
+    #### <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/cloudwatch-logs-dashboard.json'} download="cloudwatch-logs-dashboard.json" eventName="docs.cloudwatch_logs_monitoring.dashboard_download">下载</TrackedLink>仪表盘配置
+  </Step>
+
+  <Step>
+    #### 导入仪表盘
+
+    1. 打开 HyperDX，进入 Dashboards 部分
+    2. 点击右上角省略号菜单中的 **Import Dashboard**
+
+    <Image img="/images/clickstack/import-dashboard.webp" alt="导入仪表盘按钮" />
+
+    3. 上传 `cloudwatch-logs-dashboard.json` 文件，然后点击 **Finish Import**
+
+    <Image img="/images/clickstack/cloudwatch/finish-import.webp" alt="完成导入对话框" />
+  </Step>
+
+  <Step>
+    #### 查看仪表盘
+
+    仪表盘创建后，所有可视化内容都将预先配置好：
+
+    <Image img="/images/clickstack/cloudwatch/logs-dashboard.webp" alt="CloudWatch 日志仪表盘" />
+
+    <Note>
+      对于演示数据集，请将时间范围设置为 **2025-12-07 00:00:00 - 2025-12-08 00:00:00 (UTC)** (请根据你的本地时区调整) 。导入后的仪表盘默认不会指定时间范围。
+    </Note>
+  </Step>
+</Steps>
+
+<div id="troubleshooting">
+  ## 故障排查
+</div>
+
+<div id="no-logs">
+  ### HyperDX 中没有显示日志
+</div>
+
+**确认 AWS 凭证已配置：**
+
+```bash
+aws sts get-caller-identity
+```
+
+如果此步骤失败，说明你的凭证无效或已过期。
+
+**检查 IAM 权限：**
+确保你的 AWS 凭证具备所需的 `logs:DescribeLogGroups` 和 `logs:FilterLogEvents` 权限。
+
+**检查采集器日志中是否有错误：**
+
+```bash
+# 如果直接使用 Docker，日志将输出到 stdout
+# 如果使用 Docker Compose：
+docker compose logs otel-collector
+```
+
+常见错误：
+
+* `The security token included in the request is invalid`：凭证无效或已过期。对于临时凭证 (SSO) ，请确保已设置 `AWS_SESSION_TOKEN`。
+* `operation error CloudWatch Logs: FilterLogEvents, AccessDeniedException`：IAM 权限不足
+* `failed to refresh cached credentials, no EC2 IMDS role found`：未设置 AWS 凭证环境变量
+* `connection refused`：无法连接到 ClickStack 端点
+
+**确认 CloudWatch 日志组 存在且包含最近的日志：**
+
+```bash
+# 列出您的日志组
+aws logs describe-log-groups --region us-east-1
+
+# 检查特定日志组是否有最近的日志（最近一小时）
+aws logs filter-log-events \
+  --log-group-name /aws/lambda/my-function \
+  --region us-east-1 \
+  --start-time $(date -u -v-1H +%s)000 \
+  --max-items 5
+```
+
+<div id="missing-recent">
+  ### 只能看到旧日志，或看不到最近的日志
+</div>
+
+**CloudWatch receiver 默认从“当前时间”开始：**
+
+采集器 首次启动时，会以当前时间创建一个检查点，并且只会拉取该时间点之后的日志。不会拉取历史日志。
+
+**要收集最近一段时间的历史日志：**
+
+停止并删除 采集器 的检查点，然后重新启动：
+
+```bash
+# 停止采集器
+docker stop <container-id>
+
+# 全新重启（检查点存储在容器中，删除容器即可重置）
+docker run --rm ...
+```
+
+接收器将创建一个新的检查点，并从当前时间起拉取后续日志。
+
+<div id="expired-credentials">
+  ### 无效的安全令牌 / 凭证已过期
+</div>
+
+如果使用临时凭证 (AWS SSO、AssumeRole) ，它们会在一段时间后失效。
+
+**重新导出有效的新凭证：**
+
+```bash
+# 对于 SSO 用户：
+aws sso login --profile YOUR_PROFILE_NAME
+eval $(aws configure export-credentials --profile YOUR_PROFILE_NAME --format env)
+
+# 对于 IAM 用户：
+export AWS_ACCESS_KEY_ID="your-key"
+export AWS_SECRET_ACCESS_KEY="your-secret"
+
+# 重启采集器
+docker restart <container-id>
+```
+
+<div id="latency">
+  ### 延迟过高或最近的日志缺失
+</div>
+
+**缩短轮询间隔：**
+默认 `poll_interval` 为 1 分钟。如需近实时日志，请将其调小：
+
+```yaml
+logs:
+  poll_interval: 30s  # 每 30 秒轮询一次
+```
+
+**注意：**轮询间隔越短，AWS API 调用次数就越多，并且可能会产生更高的 CloudWatch API 费用。
+
+<div id="memory">
+  ### Collector 占用内存过多
+</div>
+
+**减小批次大小或增加超时时间：**
+
+```yaml
+processors:
+  batch:
+    timeout: 5s
+    send_batch_size: 100
+```
+
+**限制自动发现：**
+
+```yaml
+groups:
+  autodiscover:
+    limit: 50  # 将上限从 100 减少到 50
+```
+
+<div id="next-steps">
+  ## 后续步骤
+</div>
+
+* 为关键事件 (连接失败、错误激增) 设置[告警](/zh/clickstack/features/alerts)
+* 既然日志现已接入 ClickStack，可通过调整保留期限或归档到 S3 来降低 CloudWatch 成本
+* 从采集器配置中移除噪声较多的日志组，以减少摄取量
+
+<div id="going-to-production">
+  ## 投入生产环境
+</div>
+
+本指南演示了如何使用 Docker Compose 在本地运行 OpenTelemetry Collector 进行测试。对于生产部署，请在具有 AWS 访问权限的基础设施上运行采集器 (例如带 IAM 角色的 EC2、带 IRSA 的 EKS，或带任务角色的 ECS) ，以免管理访问密钥。将采集器部署在与您的 CloudWatch 日志组相同的 AWS 区域中，以降低延迟和成本。
+
+有关生产部署模式和采集器配置示例，请参阅 [使用 OpenTelemetry 摄取数据](/zh/clickstack/ingesting-data/opentelemetry)。

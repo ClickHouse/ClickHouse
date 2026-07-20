@@ -1,0 +1,862 @@
+---
+slug: /optimize/query-optimization
+sidebarTitle: 'Optimización de consultas'
+title: 'Una guía sencilla sobre la optimización de consultas'
+description: 'Una guía sencilla sobre la optimización de consultas que describe formas habituales de mejorar el rendimiento de las consultas'
+doc_type: 'guide'
+keywords: ['optimización de consultas', 'rendimiento', 'buenas prácticas', 'ajuste de consultas', 'eficiencia']
+---
+
+import { Image } from "/snippets/es/components/Image.jsx";
+
+Esta sección tiene como objetivo mostrar, a través de escenarios habituales, cómo utilizar distintas técnicas de rendimiento y optimización, como [analizador de consultas](/es/guides/clickhouse/performance-and-monitoring/analyzer), [perfilado de consultas](/es/concepts/features/performance/troubleshoot/sampling-query-profiler) o [evitar las columnas Nullable](/es/concepts/best-practices/avoidnullablecolumns), para mejorar el rendimiento de las consultas en ClickHouse.
+
+<div id="understand-query-performance">
+  ## Entender el rendimiento de las consultas
+</div>
+
+El mejor momento para pensar en la optimización del rendimiento es cuando estás configurando tu [esquema de datos](/es/guides/clickhouse/data-modelling/schema-design) antes de ingestar datos en ClickHouse por primera vez. 
+
+Pero, seamos sinceros: es difícil predecir cuánto crecerán tus datos o qué tipos de consultas se ejecutarán. 
+
+Si tienes un despliegue existente con algunas consultas que quieres mejorar, el primer paso es entender cómo funcionan esas consultas y por qué algunas se ejecutan en unos pocos milisegundos mientras que otras tardan más.
+
+ClickHouse dispone de un completo conjunto de herramientas para ayudarte a entender cómo se ejecuta tu consulta y qué recursos consume. 
+
+En esta sección, veremos esas herramientas y cómo utilizarlas. 
+
+<div id="general-considerations">
+  ## Consideraciones generales
+</div>
+
+Para entender el rendimiento de las consultas, veamos qué ocurre en ClickHouse cuando se ejecuta una consulta. 
+
+La siguiente parte está deliberadamente simplificada y omite algunos detalles; la idea no es abrumarte con ellos, sino ponerte al día con los conceptos básicos. Para obtener más información, puedes leer sobre el [analizador de consultas](/es/guides/clickhouse/performance-and-monitoring/analyzer). 
+
+A muy alto nivel, cuando ClickHouse ejecuta una consulta, ocurre lo siguiente: 
+
+* **Análisis sintáctico y análisis de consultas**
+
+La consulta se analiza sintácticamente, se analiza y se crea un plan genérico de ejecución de consultas. 
+
+* **Optimización de consultas**
+
+Se optimiza el plan de ejecución de la consulta, se descartan los datos innecesarios y se construye un pipeline de consultas a partir del plan de consulta. 
+
+* **Ejecución del pipeline de consultas**
+
+Los datos se leen y se procesan en paralelo. Esta es la etapa en la que ClickHouse ejecuta realmente las operaciones de la consulta, como el filtrado, las agregaciones y la ordenación. 
+
+* **Procesamiento final**
+
+Los resultados se combinan, se ordenan y se formatean en un resultado final antes de enviarse al cliente.
+
+En realidad, se aplican muchas [optimizaciones](/es/get-started/about/why-clickhouse-is-so-fast), y en esta guía hablaremos un poco más sobre ellas, pero por ahora estos conceptos principales nos dan una buena idea de lo que ocurre entre bastidores cuando ClickHouse ejecuta una consulta. 
+
+Con esta visión general, examinemos las herramientas que proporciona ClickHouse y cómo podemos usarlas para hacer seguimiento de las métricas que afectan al rendimiento de las consultas. 
+
+<div id="dataset">
+  ## Conjunto de datos
+</div>
+
+Usaremos un ejemplo real para ilustrar cómo abordamos el rendimiento de las consultas. 
+
+Tomemos el conjunto de datos de NYC Taxi, que contiene datos de trayectos en taxi en NYC. Primero, ingestaremos el conjunto de datos de taxis de NYC sin ninguna optimización.
+
+A continuación se muestra el comando para crear la tabla e insertar datos desde un bucket de S3. Ten en cuenta que inferimos deliberadamente el esquema a partir de los datos, lo que no está optimizado.
+
+```sql
+-- Crear tabla con esquema inferido
+CREATE TABLE trips_small_inferred
+ORDER BY () EMPTY
+AS SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/clickhouse-academy/nyc_taxi_2009-2010.parquet');
+
+-- Insertar datos en la tabla con esquema inferido
+INSERT INTO trips_small_inferred
+SELECT *
+FROM s3Cluster
+('default','https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/clickhouse-academy/nyc_taxi_2009-2010.parquet');
+```
+
+Veamos el esquema de la tabla inferido automáticamente a partir de los datos.
+
+```sql
+--- Mostrar el esquema de tabla inferido
+SHOW CREATE TABLE trips_small_inferred
+```
+
+```response
+Query id: d97361fd-c050-478e-b831-369469f0784d
+
+CREATE TABLE nyc_taxi.trips_small_inferred
+(
+    `vendor_id` Nullable(String),
+    `pickup_datetime` Nullable(DateTime64(6, 'UTC')),
+    `dropoff_datetime` Nullable(DateTime64(6, 'UTC')),
+    `passenger_count` Nullable(Int64),
+    `trip_distance` Nullable(Float64),
+    `ratecode_id` Nullable(String),
+    `pickup_location_id` Nullable(String),
+    `dropoff_location_id` Nullable(String),
+    `payment_type` Nullable(Int64),
+    `fare_amount` Nullable(Float64),
+    `extra` Nullable(Float64),
+    `mta_tax` Nullable(Float64),
+    `tip_amount` Nullable(Float64),
+    `tolls_amount` Nullable(Float64),
+    `total_amount` Nullable(Float64)
+)
+ORDER BY tuple()
+```
+
+<div id="spot-the-slow-queries">
+  ## Identifica las consultas lentas
+</div>
+
+<div id="query-logs">
+  ### Registros de consultas
+</div>
+
+De forma predeterminada, ClickHouse recopila y registra información sobre cada consulta ejecutada en los [registros de consultas](/es/reference/system-tables/query_log). Estos datos se almacenan en la tabla `system.query_log`. 
+
+Para cada consulta ejecutada, ClickHouse registra estadísticas como el tiempo de ejecución, el número de filas leídas y el uso de recursos, como la CPU, el uso de memoria o los aciertos de la caché del sistema de archivos. 
+
+Por lo tanto, el registro de consultas es un buen punto de partida para investigar consultas lentas. Puedes identificar fácilmente las consultas que tardan mucho en ejecutarse y ver la información de uso de recursos de cada una. 
+
+Veamos las cinco consultas de mayor duración en nuestro conjunto de datos de taxis de NYC.
+
+```sql
+-- Encontrar las 5 consultas de mayor duración en la base de datos nyc_taxi en la última hora
+SELECT
+    type,
+    event_time,
+    query_duration_ms,
+    query,
+    read_rows,
+    tables
+FROM clusterAllReplicas(default, system.query_log)
+WHERE has(databases, 'nyc_taxi') AND (event_time >= (now() - toIntervalMinute(60))) AND type='QueryFinish'
+ORDER BY query_duration_ms DESC
+LIMIT 5
+FORMAT VERTICAL
+```
+
+```response
+Query id: e3d48c9f-32bb-49a4-8303-080f59ed1835
+
+Row 1:
+──────
+type:              QueryFinish
+event_time:        2024-11-27 11:12:36
+query_duration_ms: 2967
+query:             WITH
+  dateDiff('s', pickup_datetime, dropoff_datetime) as trip_time,
+  trip_distance / trip_time * 3600 AS speed_mph
+SELECT
+  quantiles(0.5, 0.75, 0.9, 0.99)(trip_distance)
+FROM
+  nyc_taxi.trips_small_inferred
+WHERE
+  speed_mph > 30
+FORMAT JSON
+read_rows:         329044175
+tables:            ['nyc_taxi.trips_small_inferred']
+
+Row 2:
+──────
+type:              QueryFinish
+event_time:        2024-11-27 11:11:33
+query_duration_ms: 2026
+query:             SELECT
+    payment_type,
+    COUNT() AS trip_count,
+    formatReadableQuantity(SUM(trip_distance)) AS total_distance,
+    AVG(total_amount) AS total_amount_avg,
+    AVG(tip_amount) AS tip_amount_avg
+FROM
+    nyc_taxi.trips_small_inferred
+WHERE
+    pickup_datetime >= '2009-01-01' AND pickup_datetime < '2009-04-01'
+GROUP BY
+    payment_type
+ORDER BY
+    trip_count DESC;
+
+read_rows:         329044175
+tables:            ['nyc_taxi.trips_small_inferred']
+
+Row 3:
+──────
+type:              QueryFinish
+event_time:        2024-11-27 11:12:17
+query_duration_ms: 1860
+query:             SELECT
+  avg(dateDiff('s', pickup_datetime, dropoff_datetime))
+FROM nyc_taxi.trips_small_inferred
+WHERE passenger_count = 1 or passenger_count = 2
+FORMAT JSON
+read_rows:         329044175
+tables:            ['nyc_taxi.trips_small_inferred']
+
+Row 4:
+──────
+type:              QueryFinish
+event_time:        2024-11-27 11:12:31
+query_duration_ms: 690
+query:             SELECT avg(total_amount) FROM nyc_taxi.trips_small_inferred WHERE trip_distance > 5
+FORMAT JSON
+read_rows:         329044175
+tables:            ['nyc_taxi.trips_small_inferred']
+
+Row 5:
+──────
+type:              QueryFinish
+event_time:        2024-11-27 11:12:44
+query_duration_ms: 634
+query:             SELECT
+vendor_id,
+avg(total_amount),
+avg(trip_distance),
+FROM
+nyc_taxi.trips_small_inferred
+GROUP BY vendor_id
+ORDER BY 1 DESC
+FORMAT JSON
+read_rows:         329044175
+tables:            ['nyc_taxi.trips_small_inferred']
+```
+
+El campo `query_duration_ms` indica cuánto tardó en ejecutarse esa consulta en particular. Al observar los resultados de los registros de consultas, vemos que la primera consulta tarda 2967ms en ejecutarse, lo que podría mejorarse. 
+
+También puede que quieras saber qué consultas están poniendo bajo presión al sistema; para ello, examina la consulta que consume más memoria o CPU. 
+
+```sql
+-- Consultas principales por uso de memoria
+SELECT
+    type,
+    event_time,
+    query_id,
+    formatReadableSize(memory_usage) AS memory,
+    ProfileEvents.Values[indexOf(ProfileEvents.Names, 'UserTimeMicroseconds')] AS userCPU,
+    ProfileEvents.Values[indexOf(ProfileEvents.Names, 'SystemTimeMicroseconds')] AS systemCPU,
+    (ProfileEvents['CachedReadBufferReadFromCacheMicroseconds']) / 1000000 AS FromCacheSeconds,
+    (ProfileEvents['CachedReadBufferReadFromSourceMicroseconds']) / 1000000 AS FromSourceSeconds,
+    normalized_query_hash
+FROM clusterAllReplicas(default, system.query_log)
+WHERE has(databases, 'nyc_taxi') AND (type='QueryFinish') AND ((event_time >= (now() - toIntervalDay(2))) AND (event_time <= now())) AND (user NOT ILIKE '%internal%')
+ORDER BY memory_usage DESC
+LIMIT 30
+```
+
+Aislemos las consultas de larga duración que encontramos y volvamos a ejecutarlas varias veces para entender el tiempo de respuesta. 
+
+En este punto, es fundamental desactivar la caché del sistema de archivos estableciendo la configuración `enable_filesystem_cache` en 0 para mejorar la reproducibilidad.
+
+```sql
+-- Deshabilitar la caché del sistema de archivos
+set enable_filesystem_cache = 0;
+
+-- Ejecutar consulta 1
+WITH
+  dateDiff('s', pickup_datetime, dropoff_datetime) as trip_time,
+  trip_distance / trip_time * 3600 AS speed_mph
+SELECT
+  quantiles(0.5, 0.75, 0.9, 0.99)(trip_distance)
+FROM
+  nyc_taxi.trips_small_inferred
+WHERE
+  speed_mph > 30
+FORMAT JSON
+
+----
+```
+
+```response
+1 row in set. Elapsed: 1.699 sec. Processed 329.04 million rows, 8.88 GB (193.72 million rows/s., 5.23 GB/s.)
+Peak memory usage: 440.24 MiB.
+```
+
+```sql
+-- Ejecutar consulta 2
+SELECT
+    payment_type,
+    COUNT() AS trip_count,
+    formatReadableQuantity(SUM(trip_distance)) AS total_distance,
+    AVG(total_amount) AS total_amount_avg,
+    AVG(tip_amount) AS tip_amount_avg
+FROM
+    nyc_taxi.trips_small_inferred
+WHERE
+    pickup_datetime >= '2009-01-01' AND pickup_datetime < '2009-04-01'
+GROUP BY
+    payment_type
+ORDER BY
+    trip_count DESC;
+
+---
+```
+
+```response
+4 rows in set. Elapsed: 1.419 sec. Processed 329.04 million rows, 5.72 GB (231.86 million rows/s., 4.03 GB/s.)
+Peak memory usage: 546.75 MiB.
+```
+
+```sql
+-- Ejecutar consulta 3
+SELECT
+  avg(dateDiff('s', pickup_datetime, dropoff_datetime))
+FROM nyc_taxi.trips_small_inferred
+WHERE passenger_count = 1 or passenger_count = 2
+FORMAT JSON
+
+---
+```
+
+```response
+1 row in set. Elapsed: 1.414 sec. Processed 329.04 million rows, 8.88 GB (232.63 million rows/s., 6.28 GB/s.)
+Peak memory usage: 451.53 MiB.
+```
+
+Resumámoslo en la tabla para facilitar la lectura.
+
+| Nombre     | Tiempo transcurrido | Filas procesadas | Memoria máxima |
+| ---------- | ------------------- | ---------------- | -------------- |
+| Consulta 1 | 1.699 sec           | 329.04 millones  | 440.24 MiB     |
+| Consulta 2 | 1.419 sec           | 329.04 millones  | 546.75 MiB     |
+| Consulta 3 | 1.414 sec           | 329.04 millones  | 451.53 MiB     |
+
+Veamos un poco mejor qué hacen estas consultas. 
+
+* La consulta 1 calcula la distribución de distancias de los trayectos con una velocidad media superior a 30 millas por hora.
+* La consulta 2 calcula el número y el coste medio de los trayectos por semana. 
+* La consulta 3 calcula la duración media de cada trayecto en el conjunto de datos.
+
+Ninguna de estas consultas realiza un procesamiento especialmente complejo, salvo la primera, que calcula la duración del trayecto sobre la marcha cada vez que se ejecuta. Sin embargo, cada una tarda más de un segundo en ejecutarse, lo que, en el mundo de ClickHouse, es muchísimo tiempo. También podemos fijarnos en el uso de memoria de estas consultas: unos 400 MB por consulta es bastante. Además, todas parecen leer la misma cantidad de filas (es decir, 329.04 millones). Confirmemos rápidamente cuántas filas hay en esta tabla.
+
+```sql
+-- Contar el número de filas en la tabla
+SELECT count()
+FROM nyc_taxi.trips_small_inferred
+```
+
+```response
+Query id: 733372c5-deaf-4719-94e3-261540933b23
+
+   ┌───count()─┐
+1. │ 329044175 │ -- 329.04 millones
+   └───────────┘
+```
+
+La tabla contiene 329,04 millones de filas, por lo que cada consulta realiza un escaneo completo de la tabla.
+
+<div id="explain-statement">
+  ### Sentencia EXPLAIN
+</div>
+
+Ahora que tenemos algunas consultas de larga duración, entendamos cómo se ejecutan. Para ello, ClickHouse admite el [comando EXPLAIN](/es/reference/statements/explain). Es una herramienta muy útil que proporciona una vista detallada de todas las etapas de ejecución de una consulta sin necesidad de ejecutarla realmente. Aunque puede resultar abrumadora para quienes no son expertos en ClickHouse, sigue siendo una herramienta esencial para comprender cómo se ejecuta una consulta.
+
+La documentación ofrece una [guía](/es/guides/clickhouse/performance-and-monitoring/understanding-query-execution-with-the-analyzer) detallada sobre qué es la sentencia EXPLAIN y cómo utilizarla para analizar la ejecución de consultas. En lugar de repetir lo que ya se explica en esa guía, centrémonos en algunos comandos que nos ayudarán a identificar cuellos de botella en el rendimiento de ejecución de consultas.
+
+**Explain indexes = 1**
+
+Comencemos con EXPLAIN indexes = 1 para inspeccionar el plan de consulta. El plan de consulta es un árbol que muestra cómo se ejecutará la consulta. En él se puede ver en qué orden se ejecutarán las cláusulas de la consulta. El plan de consulta que devuelve la sentencia EXPLAIN se lee de abajo hacia arriba.
+
+Probemos con la primera de nuestras consultas de larga ejecución.
+
+```sql
+EXPLAIN indexes = 1
+WITH
+    dateDiff('s', pickup_datetime, dropoff_datetime) AS trip_time,
+    (trip_distance / trip_time) * 3600 AS speed_mph
+SELECT quantiles(0.5, 0.75, 0.9, 0.99)(trip_distance)
+FROM nyc_taxi.trips_small_inferred
+WHERE speed_mph > 30
+```
+
+```response
+Query id: f35c412a-edda-4089-914b-fa1622d69868
+
+   ┌─explain─────────────────────────────────────────────┐
+1. │ Expression ((Projection + Before ORDER BY))         │
+2. │   Aggregating                                       │
+3. │     Expression (Before GROUP BY)                    │
+4. │       Filter (WHERE)                                │
+5. │         ReadFromMergeTree (nyc_taxi.trips_small_inferred) │
+   └─────────────────────────────────────────────────────┘
+```
+
+El resultado es sencillo. La consulta comienza leyendo datos de la tabla `nyc_taxi.trips_small_inferred`. A continuación, se aplica la cláusula WHERE para filtrar las filas según los valores calculados. Los datos filtrados se preparan para la agregación y se calculan los cuantiles. Por último, el resultado se ordena y se genera la salida.
+
+Aquí podemos observar que no se utilizan claves primarias, lo cual tiene sentido ya que no definimos ninguna al crear la tabla. En consecuencia, ClickHouse realiza un escaneo completo de la tabla para la consulta.
+
+**Explain Pipeline**
+
+EXPLAIN Pipeline muestra la estrategia de ejecución concreta para la consulta. Allí se puede ver cómo ClickHouse ejecutó realmente el plan de consulta genérico que vimos anteriormente.
+
+```sql
+EXPLAIN PIPELINE
+WITH
+    dateDiff('s', pickup_datetime, dropoff_datetime) AS trip_time,
+    (trip_distance / trip_time) * 3600 AS speed_mph
+SELECT quantiles(0.5, 0.75, 0.9, 0.99)(trip_distance)
+FROM nyc_taxi.trips_small_inferred
+WHERE speed_mph > 30
+```
+
+```response
+Query id: c7e11e7b-d970-4e35-936c-ecfc24e3b879
+
+    ┌─explain─────────────────────────────────────────────────────────────────────────────┐
+ 1. │ (Expression)                                                                        │
+ 2. │ ExpressionTransform × 59                                                            │
+ 3. │   (Aggregating)                                                                     │
+ 4. │   Resize 59 → 59                                                                    │
+ 5. │     AggregatingTransform × 59                                                       │
+ 6. │       StrictResize 59 → 59                                                          │
+ 7. │         (Expression)                                                                │
+ 8. │         ExpressionTransform × 59                                                    │
+ 9. │           (Filter)                                                                  │
+10. │           FilterTransform × 59                                                      │
+11. │             (ReadFromMergeTree)                                                     │
+12. │             MergeTreeSelect(pool: PrefetchedReadPool, algorithm: Thread) × 59 0 → 1 │
+```
+
+Aquí podemos observar el número de hilos utilizados para ejecutar la consulta: 59 hilos, lo que indica un alto grado de paralelización. Esto acelera la consulta, que tardaría más en ejecutarse en una máquina con menos recursos. El número de hilos que se ejecutan en paralelo puede explicar el elevado consumo de memoria que requiere la consulta.
+
+Lo ideal sería investigar todas las consultas lentas de la misma forma para identificar planes de consulta innecesariamente complejos y comprender el número de filas leídas por cada consulta y los recursos consumidos.
+
+<div id="methodology">
+  ## Metodología
+</div>
+
+Puede ser difícil identificar consultas problemáticas en una implementación de producción, ya que probablemente se esté ejecutando un gran número de consultas en un momento dado en su implementación de ClickHouse. 
+
+Si sabe qué usuario, base de datos o tablas están teniendo problemas, puede usar los campos `user`, `tables` o `databases` de `system.query_logs` para acotar la búsqueda. 
+
+Una vez que identifique las consultas que desea optimizar, puede empezar a trabajar en ellas. Un error común que cometen los desarrolladores en esta etapa es cambiar varias cosas a la vez, ejecutar experimentos ad hoc y, por lo general, acabar con resultados dispares y, lo que es más importante, sin entender bien qué hizo que la consulta fuera más rápida. 
+
+La optimización de consultas requiere un enfoque estructurado. No me refiero a benchmarks avanzados, sino a contar con un proceso sencillo para entender cómo afectan sus cambios al rendimiento de las consultas. 
+
+Empiece por identificar las consultas lentas en los registros de consultas y, a continuación, investigue posibles mejoras de forma aislada. Al probar la consulta, asegúrese de desactivar la caché del sistema de archivos. 
+
+> ClickHouse aprovecha el [almacenamiento en caché](/es/concepts/features/performance/caches/caches) para acelerar el rendimiento de las consultas en distintas etapas. Esto es bueno para el rendimiento de las consultas, pero durante la resolución de problemas podría ocultar posibles cuellos de botella de E/S o un esquema de tabla deficiente. Por esta razón, sugiero desactivar la caché del sistema de archivos durante las pruebas. Asegúrese de tenerla habilitada en la configuración de producción.
+
+Una vez que haya identificado posibles optimizaciones, se recomienda implementarlas una por una para seguir mejor cómo afectan al rendimiento. A continuación se muestra un diagrama que describe el enfoque general.
+
+<Image img="/images/guides/best-practices/query_optimization_diagram_1.webp" size="lg" alt="Flujo de trabajo de optimización" />
+
+*Por último, tenga cuidado con los valores atípicos; es bastante habitual que una consulta se ejecute lentamente, ya sea porque un usuario probó una consulta ad hoc costosa o porque el sistema estaba sometido a carga por alguna otra razón. Puede agrupar por el campo normalized&#95;query&#95;hash para identificar consultas costosas que se ejecutan con regularidad. Esas son probablemente las que querrá investigar.*
+
+<div id="basic-optimization">
+  ## Optimización básica
+</div>
+
+Ahora que ya tenemos un marco para hacer pruebas, podemos empezar a optimizar.
+
+El mejor punto de partida es analizar cómo se almacenan los datos. Como en cualquier base de datos, cuanto menos datos leamos, más rápido se ejecutará la consulta. 
+
+Según cómo hayas ingerido tus datos, es posible que hayas aprovechado las [capacidades](/es/concepts/features/interfaces/schema-inference) de ClickHouse para inferir el esquema de la tabla a partir de los datos ingeridos. Aunque esto resulta muy práctico para empezar, si quieres optimizar el rendimiento de las consultas, tendrás que revisar el esquema de los datos para que se ajuste lo mejor posible a tu caso de uso.
+
+<div id="nullable">
+  ### Nullable
+</div>
+
+Como se describe en la [documentación de buenas prácticas](/es/concepts/best-practices/select-data-type#avoid-nullable-columns), evita las columnas Nullable siempre que sea posible. Es tentador usarlas con frecuencia, ya que hacen más flexible el mecanismo de ingestión de datos, pero afectan negativamente al rendimiento porque cada vez hay que procesar una columna adicional.
+
+Ejecutar una consulta SQL que cuente las filas con un valor NULL puede revelar fácilmente qué columnas de tus tablas realmente necesitan ser Nullable.
+
+```sql
+-- Buscar columnas con valores nulos
+SELECT
+    countIf(vendor_id IS NULL) AS vendor_id_nulls,
+    countIf(pickup_datetime IS NULL) AS pickup_datetime_nulls,
+    countIf(dropoff_datetime IS NULL) AS dropoff_datetime_nulls,
+    countIf(passenger_count IS NULL) AS passenger_count_nulls,
+    countIf(trip_distance IS NULL) AS trip_distance_nulls,
+    countIf(fare_amount IS NULL) AS fare_amount_nulls,
+    countIf(mta_tax IS NULL) AS mta_tax_nulls,
+    countIf(tip_amount IS NULL) AS tip_amount_nulls,
+    countIf(tolls_amount IS NULL) AS tolls_amount_nulls,
+    countIf(total_amount IS NULL) AS total_amount_nulls,
+    countIf(payment_type IS NULL) AS payment_type_nulls,
+    countIf(pickup_location_id IS NULL) AS pickup_location_id_nulls,
+    countIf(dropoff_location_id IS NULL) AS dropoff_location_id_nulls
+FROM trips_small_inferred
+FORMAT VERTICAL
+```
+
+```response
+Query id: 4a70fc5b-2501-41c8-813c-45ce241d85ae
+
+Row 1:
+──────
+vendor_id_nulls:           0
+pickup_datetime_nulls:     0
+dropoff_datetime_nulls:    0
+passenger_count_nulls:     0
+trip_distance_nulls:       0
+fare_amount_nulls:         0
+mta_tax_nulls:             137946731
+tip_amount_nulls:          0
+tolls_amount_nulls:        0
+total_amount_nulls:        0
+payment_type_nulls:        69305
+pickup_location_id_nulls:  0
+dropoff_location_id_nulls: 0
+```
+
+Solo tenemos dos columnas con valores NULL: `mta_tax` y `payment_type`. El resto de los campos no debería usar una columna `Nullable`.
+
+<div id="low-cardinality">
+  ### Baja cardinalidad
+</div>
+
+Una optimización fácil de aplicar a los valores String es aprovechar al máximo el tipo de dato LowCardinality. Como se describe en la [documentación](/es/reference/data-types/lowcardinality) sobre baja cardinalidad, ClickHouse aplica codificación por diccionario a las columnas LowCardinality, lo que aumenta significativamente el rendimiento de las consultas. 
+
+Una regla práctica sencilla para determinar qué columnas son buenas candidatas para LowCardinality es que cualquier columna con menos de 10.000 valores únicos es una candidata ideal.
+
+Puede usar la siguiente consulta SQL para encontrar columnas con pocos valores únicos.
+
+```sql
+-- Identificar columnas de baja cardinalidad
+SELECT
+    uniq(ratecode_id),
+    uniq(pickup_location_id),
+    uniq(dropoff_location_id),
+    uniq(vendor_id)
+FROM trips_small_inferred
+FORMAT VERTICAL
+```
+
+```response
+Query id: d502c6a1-c9bc-4415-9d86-5de74dd6d932
+
+Row 1:
+──────
+uniq(ratecode_id):         6
+uniq(pickup_location_id):  260
+uniq(dropoff_location_id): 260
+uniq(vendor_id):           3
+```
+
+Dado que tienen baja cardinalidad, esas cuatro columnas, `ratecode_id`, `pickup_location_id`, `dropoff_location_id` y `vendor_id`, son buenas candidatas para el tipo de campo LowCardinality.
+
+<div id="optimize-data-type">
+  ### Optimizar el tipo de dato
+</div>
+
+ClickHouse admite una gran cantidad de tipos de datos. Asegúrate de elegir el tipo de dato más pequeño posible que se ajuste a tu caso de uso para optimizar el rendimiento y reducir el espacio de almacenamiento de tus datos en disco. 
+
+Para los números, puedes consultar el valor mínimo y máximo de tu conjunto de datos para verificar si la precisión actual se ajusta a los valores reales de tu conjunto de datos. 
+
+```sql
+-- Encontrar los valores mínimo/máximo para el campo payment_type
+SELECT
+    min(payment_type),max(payment_type),
+    min(passenger_count), max(passenger_count)
+FROM trips_small_inferred
+```
+
+```response
+Query id: 4306a8e1-2a9c-4b06-97b4-4d902d2233eb
+
+   ┌─min(payment_type)─┬─max(payment_type)─┐
+1. │                 1 │                 4 │
+   └───────────────────┴───────────────────┘
+```
+
+Para las fechas, debes elegir una precisión acorde con tu conjunto de datos y que se adapte mejor a las consultas que piensas ejecutar.
+
+<div id="apply-the-optimizations">
+  ### Aplicar las optimizaciones
+</div>
+
+Vamos a crear una nueva tabla para usar el esquema optimizado y reingestar los datos.
+
+```sql
+-- Crear tabla con datos optimizados
+CREATE TABLE trips_small_no_pk
+(
+    `vendor_id` LowCardinality(String),
+    `pickup_datetime` DateTime,
+    `dropoff_datetime` DateTime,
+    `passenger_count` UInt8,
+    `trip_distance` Float32,
+    `ratecode_id` LowCardinality(String),
+    `pickup_location_id` LowCardinality(String),
+    `dropoff_location_id` LowCardinality(String),
+    `payment_type` Nullable(UInt8),
+    `fare_amount` Decimal32(2),
+    `extra` Decimal32(2),
+    `mta_tax` Nullable(Decimal32(2)),
+    `tip_amount` Decimal32(2),
+    `tolls_amount` Decimal32(2),
+    `total_amount` Decimal32(2)
+)
+ORDER BY tuple();
+
+-- Insertar los datos
+INSERT INTO trips_small_no_pk SELECT * FROM trips_small_inferred
+```
+
+Volvemos a ejecutar las consultas con la nueva tabla para comprobar la mejora. 
+
+| Nombre     | Ejecución 1 - Transcurrido | Transcurrido | Filas procesadas | Memoria máxima |
+| ---------- | -------------------------- | ------------ | ---------------- | -------------- |
+| Consulta 1 | 1.699 sec                  | 1.353 sec    | 329.04 million   | 337.12 MiB     |
+| Consulta 2 | 1.419 sec                  | 1.171 sec    | 329.04 million   | 531.09 MiB     |
+| Consulta 3 | 1.414 sec                  | 1.188 sec    | 329.04 million   | 265.05 MiB     |
+
+Observamos algunas mejoras tanto en el tiempo de consulta como en el uso de memoria. Gracias a la optimización del esquema de datos, reducimos el volumen total de datos, lo que se traduce en un menor consumo de memoria y en menos tiempo de procesamiento. 
+
+Comprobemos el tamaño de las tablas para ver la diferencia. 
+
+```sql
+SELECT
+    `table`,
+    formatReadableSize(sum(data_compressed_bytes) AS size) AS compressed,
+    formatReadableSize(sum(data_uncompressed_bytes) AS usize) AS uncompressed,
+    sum(rows) AS rows
+FROM system.parts
+WHERE (active = 1) AND ((`table` = 'trips_small_no_pk') OR (`table` = 'trips_small_inferred'))
+GROUP BY
+    database,
+    `table`
+ORDER BY size DESC
+```
+
+```response
+Query id: 72b5eb1c-ff33-4fdb-9d29-dd076ac6f532
+
+   ┌─table────────────────┬─compressed─┬─uncompressed─┬──────rows─┐
+1. │ trips_small_inferred │ 7.38 GiB   │ 37.41 GiB    │ 329044175 │
+2. │ trips_small_no_pk    │ 4.89 GiB   │ 15.31 GiB    │ 329044175 │
+   └──────────────────────┴────────────┴──────────────┴───────────┘
+```
+
+La nueva tabla es considerablemente más pequeña que la anterior. Observamos una reducción de alrededor del 34 % en el espacio en disco de la tabla (7.38 GiB frente a 4.89 GiB).
+
+<div id="the-importance-of-primary-keys">
+  ## La importancia de las claves primarias
+</div>
+
+Las claves primarias en ClickHouse funcionan de forma distinta a como lo hacen en la mayoría de los sistemas de bases de datos tradicionales. En esos sistemas, las claves primarias garantizan la unicidad y la integridad de los datos. Cualquier intento de insertar valores duplicados de clave primaria se rechaza, y normalmente se crea un índice basado en B-tree o hash para realizar búsquedas rápidas. 
+
+En ClickHouse, el [objetivo](/es/guides/clickhouse/data-modelling/sparse-primary-indexes#a-table-with-a-primary-key) de la clave primaria es distinto; no garantiza la unicidad ni contribuye a la integridad de los datos. En cambio, está diseñada para optimizar el rendimiento de las consultas. La clave primaria define el orden en que los datos se almacenan en disco y se implementa como un índice disperso que almacena punteros a la primera fila de cada gránulo.
+
+> Los gránulos en ClickHouse son las unidades de datos más pequeñas que se leen durante la ejecución de consultas. Contienen hasta un número fijo de filas, determinado por index&#95;granularity, con un valor predeterminado de 8192 filas. Los gránulos se almacenan de forma contigua y se ordenan según la clave primaria. 
+
+Elegir un buen conjunto de claves primarias es importante para el rendimiento y, de hecho, es habitual almacenar los mismos datos en distintas tablas y usar diferentes conjuntos de claves primarias para acelerar un conjunto específico de consultas. 
+
+Otras opciones compatibles con ClickHouse, como Projection o una vista materializada, permiten usar un conjunto diferente de claves primarias sobre los mismos datos. La segunda parte de esta serie de blogs tratará este tema con más detalle. 
+
+<div id="choose-primary-keys">
+  ### Elegir claves primarias
+</div>
+
+Elegir el conjunto adecuado de claves primarias es un tema complejo, y puede requerir concesiones y experimentos para encontrar la mejor combinación. 
+
+Por ahora, seguiremos estas prácticas sencillas: 
+
+* Usa campos que se utilicen para filtrar en la mayoría de las consultas
+* Elige primero las columnas con menor cardinalidad 
+* Considera incluir un componente temporal en tu clave primaria, ya que filtrar por tiempo en un conjunto de datos con `timestamp` es bastante común. 
+
+En nuestro caso, vamos a experimentar con las siguientes claves primarias: `passenger_count`, `pickup_datetime` y `dropoff_datetime`. 
+
+La cardinalidad de `passenger_count` es baja (24 valores únicos) y se usa en nuestras consultas lentas. También añadimos campos de `timestamp` (`pickup_datetime` y `dropoff_datetime`), ya que suelen usarse para filtrar.
+
+Crea una nueva tabla con las claves primarias y vuelve a reingestar los datos.
+
+```sql
+CREATE TABLE trips_small_pk
+(
+    `vendor_id` UInt8,
+    `pickup_datetime` DateTime,
+    `dropoff_datetime` DateTime,
+    `passenger_count` UInt8,
+    `trip_distance` Float32,
+    `ratecode_id` LowCardinality(String),
+    `pickup_location_id` UInt16,
+    `dropoff_location_id` UInt16,
+    `payment_type` Nullable(UInt8),
+    `fare_amount` Decimal32(2),
+    `extra` Decimal32(2),
+    `mta_tax` Nullable(Decimal32(2)),
+    `tip_amount` Decimal32(2),
+    `tolls_amount` Decimal32(2),
+    `total_amount` Decimal32(2)
+)
+PRIMARY KEY (passenger_count, pickup_datetime, dropoff_datetime);
+
+-- Insertar los datos
+INSERT INTO trips_small_pk SELECT * FROM trips_small_inferred
+```
+
+Luego volvemos a ejecutar nuestras consultas. Recopilamos los resultados de los tres experimentos para ver las mejoras en el tiempo transcurrido, las filas procesadas y el consumo de memoria. 
+
+<table>
+  <thead>
+    <tr>
+      <th colspan="4">Consulta 1</th>
+    </tr>
+
+    <tr>
+      <th />
+
+      <th>Ejecución 1</th>
+      <th>Ejecución 2</th>
+      <th>Ejecución 3</th>
+    </tr>
+  </thead>
+
+  <tbody>
+    <tr>
+      <td>Tiempo transcurrido</td>
+      <td>1.699 sec</td>
+      <td>1.353 sec</td>
+      <td>0.765 sec</td>
+    </tr>
+
+    <tr>
+      <td>Filas procesadas</td>
+      <td>329.04 millones</td>
+      <td>329.04 millones</td>
+      <td>329.04 millones</td>
+    </tr>
+
+    <tr>
+      <td>Memoria máxima</td>
+      <td>440.24 MiB</td>
+      <td>337.12 MiB</td>
+      <td>444.19 MiB</td>
+    </tr>
+  </tbody>
+</table>
+
+<table>
+  <thead>
+    <tr>
+      <th colspan="4">Consulta 2</th>
+    </tr>
+
+    <tr>
+      <th />
+
+      <th>Ejecución 1</th>
+      <th>Ejecución 2</th>
+      <th>Ejecución 3</th>
+    </tr>
+  </thead>
+
+  <tbody>
+    <tr>
+      <td>Tiempo transcurrido</td>
+      <td>1.419 sec</td>
+      <td>1.171 sec</td>
+      <td>0.248 sec</td>
+    </tr>
+
+    <tr>
+      <td>Filas procesadas</td>
+      <td>329.04 millones</td>
+      <td>329.04 millones</td>
+      <td>41.46 millones</td>
+    </tr>
+
+    <tr>
+      <td>Memoria máxima</td>
+      <td>546.75 MiB</td>
+      <td>531.09 MiB</td>
+      <td>173.50 MiB</td>
+    </tr>
+  </tbody>
+</table>
+
+<table>
+  <thead>
+    <tr>
+      <th colspan="4">Consulta 3</th>
+    </tr>
+
+    <tr>
+      <th />
+
+      <th>Ejecución 1</th>
+      <th>Ejecución 2</th>
+      <th>Ejecución 3</th>
+    </tr>
+  </thead>
+
+  <tbody>
+    <tr>
+      <td>Transcurrido</td>
+      <td>1.414 sec</td>
+      <td>1.188 sec</td>
+      <td>0.431 sec</td>
+    </tr>
+
+    <tr>
+      <td>Filas procesadas</td>
+      <td>329.04 millones</td>
+      <td>329.04 millones</td>
+      <td>276.99 millones</td>
+    </tr>
+
+    <tr>
+      <td>Memoria máxima</td>
+      <td>451.53 MiB</td>
+      <td>265.05 MiB</td>
+      <td>197.38 MiB</td>
+    </tr>
+  </tbody>
+</table>
+
+Podemos ver una mejora significativa tanto en el tiempo de ejecución como en el uso de memoria. 
+
+La consulta 2 es la que más se beneficia de la clave primaria. Veamos en qué se diferencia el plan de consulta generado con respecto al anterior.
+
+```sql
+EXPLAIN indexes = 1
+SELECT
+    payment_type,
+    COUNT() AS trip_count,
+    formatReadableQuantity(SUM(trip_distance)) AS total_distance,
+    AVG(total_amount) AS total_amount_avg,
+    AVG(tip_amount) AS tip_amount_avg
+FROM nyc_taxi.trips_small_pk
+WHERE (pickup_datetime >= '2009-01-01') AND (pickup_datetime < '2009-04-01')
+GROUP BY payment_type
+ORDER BY trip_count DESC
+```
+
+```response
+Query id: 30116a77-ba86-4e9f-a9a2-a01670ad2e15
+
+    ┌─explain──────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+ 1. │ Expression ((Projection + Before ORDER BY [lifted up part]))                                                     │
+ 2. │   Sorting (Sorting for ORDER BY)                                                                                 │
+ 3. │     Expression (Before ORDER BY)                                                                                 │
+ 4. │       Aggregating                                                                                                │
+ 5. │         Expression (Before GROUP BY)                                                                             │
+ 6. │           Expression                                                                                             │
+ 7. │             ReadFromMergeTree (nyc_taxi.trips_small_pk)                                                          │
+ 8. │             Indexes:                                                                                             │
+ 9. │               PrimaryKey                                                                                         │
+10. │                 Keys:                                                                                            │
+11. │                   pickup_datetime                                                                                │
+12. │                 Condition: and((pickup_datetime in (-Inf, 1238543999]), (pickup_datetime in [1230768000, +Inf))) │
+13. │                 Parts: 9/9                                                                                       │
+14. │                 Granules: 5061/40167                                                                             │
+    └──────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+Gracias a la clave primaria, solo se ha seleccionado un subconjunto de los gránulos de la tabla. Solo con eso ya mejora enormemente el rendimiento de la consulta, porque ClickHouse tiene que procesar muchos menos datos.
+
+<div id="next-steps">
+  ## Siguientes pasos
+</div>
+
+Esperamos que esta guía te haya dado una buena idea de cómo investigar consultas lentas con ClickHouse y cómo hacerlas más rápidas. Si quieres profundizar en este tema, puedes leer sobre el [analizador de consultas](/es/guides/clickhouse/performance-and-monitoring/analyzer) y el [perfilado](/es/concepts/features/performance/troubleshoot/sampling-query-profiler) para entender mejor cómo ejecuta ClickHouse tu consulta.
+
+A medida que te familiarices más con las particularidades de ClickHouse, te recomendamos leer sobre las [claves de partición](/es/concepts/best-practices/partitioning-keys) y los [índices de omisión de datos](/es/concepts/features/performance/skip-indexes/skipping-indexes) para conocer técnicas más avanzadas que puedes utilizar para acelerar tus consultas.

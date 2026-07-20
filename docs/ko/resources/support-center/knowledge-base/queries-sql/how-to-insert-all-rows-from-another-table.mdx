@@ -1,0 +1,134 @@
+---
+title: 한 테이블의 모든 행을 다른 테이블에 삽입하려면 어떻게 해야 합니까?
+description: "한 테이블의 모든 행을 다른 테이블에 삽입하는 방법을 설명하는 기술 자료 문서입니다."
+date: 2024-12-17
+tags: ['데이터 수집']
+keywords: ['테이블에서 삽입하기']
+---
+
+{frontMatter.description}
+
+{/* 생략 */}
+
+<div id="introduction">
+  ## 소개
+</div>
+
+때로는 한 테이블(table)의 모든 데이터를 다른 테이블로 다시 적재해야 할 때가 있습니다.
+
+예를 들어, 스테이징 테이블(staging table)의 데이터를 프로덕션 테이블(production table)로 다시 적재해야 할 수 있습니다. 이 문서에서는 `INSERT INTO` 문(statement)을 사용해 이를 수행하는 방법을 설명합니다.
+
+<div id="example">
+  ## 예시
+</div>
+
+아래는 작동 방식과 테스트 방법을 보여주는 간단한 예시입니다:
+
+* 예시용 데이터베이스를 생성합니다
+
+```sql
+CREATE DATABASE db1;
+```
+
+* 샘플 테이블 생성
+
+```sql
+CREATE TABLE db1.source_table
+(
+    city VARCHAR,
+    country VARCHAR,
+    continent VARCHAR
+)
+engine = MergeTree()
+ORDER BY continent;
+```
+
+* 원본 테이블에 데이터를 몇 개 삽입합니다
+
+```sql
+INSERT INTO db1.source_table (city, country, continent)
+VALUES
+    ('New York', 'USA', 'North America'),
+    ('Tokyo', 'Japan', 'Asia'),
+    ('Berlin', 'Germany', 'Europe'),
+    ('Paris', 'France', 'Europe'),
+    ('Cairo', 'Egypt', 'Africa'),
+    ('Sydney', 'Australia', 'Australia');
+```
+
+* 원본 테이블의 행 수를 확인합니다
+
+```sql
+SELECT COUNT(*) FROM db1.source_table;
+```
+
+```text
+┌─count()─┐
+│      6  │
+└─────────┘
+```
+
+* 원본 테이블과 동일한 구조로 새 테이블(table)을 생성합니다.
+
+```sql
+CREATE TABLE db1.target_table AS db1.source_table;
+```
+
+* 원본 테이블의 모든 행을 대상 테이블로 삽입합니다.
+
+```sql
+INSERT INTO db1.target_table SELECT * FROM db1.source_table;
+```
+
+* 대상 테이블의 행 수를 확인하세요
+
+```sql
+SELECT COUNT(*) FROM db1.target_table;
+```
+
+```text
+┌─count()─┐
+│      6  │
+└─────────┘
+```
+
+새 테이블의 구조를 수정하려면 먼저 원본 테이블의 구조를 확인할 수 있습니다.
+
+```sql
+SHOW CREATE TABLE db1.source_table;
+```
+
+그런 다음 변경된 구조로 새 테이블을 생성합니다. 이 예시에서는 대상 테이블에 새 컬럼 `population`을 추가합니다.
+
+```sql
+CREATE TABLE db1.target_table_population
+(
+    `city` String,
+    `country` String,
+    `continent` String,
+    `population` UInt16,
+)
+ENGINE = MergeTree
+ORDER BY continent;
+```
+
+* 원본 테이블의 모든 행을 새 컬럼을 포함한 대상 테이블에 삽입합니다. 모든 행의 `population` 필드는 0으로 설정됩니다.
+
+```sql
+INSERT INTO db1.target_table_population (city, country, continent, population)
+SELECT city, country, continent, 0 FROM db1.source_table;
+```
+
+* 대상 테이블에서 데이터를 확인하세요
+
+```sql
+SELECT * FROM db1.target_table_population LIMIT 3;
+```
+
+```text
+┌─city──────┬─country───┬─continent──────┬─population─┐
+│ New York  │ USA       │ North America  │          0 │
+│ Tokyo     │ Japan     │ Asia           │          0 │
+│ Berlin    │ Germany   │ Europe         │          0 │
+└───────────┴───────────┴────────────────┴────────────┘
+```
