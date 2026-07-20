@@ -96,6 +96,13 @@ BlockIO InterpreterUpdateQuery::execute()
     /// the initiating user's read access is enforced on every path, including ON CLUSTER, where the
     /// remote DDL worker may not run as the initiating user.
     AccessRightsElements read_access;
+    /// Reject subqueries in the predicate / assignment right-hand sides when validation is disabled,
+    /// on every path (including ON CLUSTER where the table is not resolvable locally), before the
+    /// access check and any dispatch. This needs no metadata, only the parsed expressions.
+    rejectMutationSubqueryWhenValidationDisabled(update_query.predicate.get(), settings[Setting::validate_mutation_query]);
+    for (const ASTPtr & assignment : update_query.assignments->children)
+        rejectMutationSubqueryWhenValidationDisabled(
+            assignment->as<const ASTAssignment &>().expression().get(), settings[Setting::validate_mutation_query]);
     StoragePtr resolved_table;
     auto resolved_id = getContext()->tryResolveStorageID(update_query, Context::ResolveOrdinary);
     if (resolved_id)
@@ -107,16 +114,11 @@ BlockIO InterpreterUpdateQuery::execute()
         {
             const auto metadata_snapshot = resolved_table->getInMemoryMetadataPtr(getContext(), false);
             const auto & metadata = *metadata_snapshot;
-            rejectMutationSubqueryWhenValidationDisabled(update_query.predicate.get(), settings[Setting::validate_mutation_query]);
             addExpressionColumnsSelectAccess(read_access, update_query.predicate.get(), resolved_id.database_name, resolved_id.table_name, metadata);
             for (const ASTPtr & assignment : update_query.assignments->children)
-            {
-                const auto * assignment_expression = assignment->as<const ASTAssignment &>().expression().get();
-                rejectMutationSubqueryWhenValidationDisabled(assignment_expression, settings[Setting::validate_mutation_query]);
                 addExpressionColumnsSelectAccess(
-                    read_access, assignment_expression,
+                    read_access, assignment->as<const ASTAssignment &>().expression().get(),
                     resolved_id.database_name, resolved_id.table_name, metadata);
-            }
         }
         else if (!update_query.cluster.empty())
         {
