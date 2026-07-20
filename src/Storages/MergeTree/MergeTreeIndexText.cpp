@@ -73,7 +73,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool text_index_dictionary_block_frontcoding_compression;
     extern const MergeTreeSettingsNonZeroUInt64 text_index_posting_list_block_size;
     extern const MergeTreeSettingsTextIndexPostingListCodec text_index_posting_list_codec;
-    extern const MergeTreeSettingsBool allow_experimental_text_index_positions;
+    extern const MergeTreeSettingsBool allow_experimental_text_index_phrase_search;
 }
 
 namespace Setting
@@ -816,7 +816,7 @@ size_t MergeTreeIndexGranuleText::memoryUsageBytes() const
 
 bool MergeTreeIndexGranuleText::hasAnyQueryTokens(const TextSearchQuery & query) const
 {
-    if (query.tokens.empty())
+    if (query.getTokens().empty())
         return false;
 
     return hasAnyTokensImpl(query);
@@ -824,7 +824,7 @@ bool MergeTreeIndexGranuleText::hasAnyQueryTokens(const TextSearchQuery & query)
 
 bool MergeTreeIndexGranuleText::hasAnyQueryPatterns(const TextSearchQuery & query) const
 {
-    if (query.patterns.empty())
+    if (query.getPatterns().empty())
         return false;
 
     return hasAnyTokensImpl(query);
@@ -839,7 +839,7 @@ bool MergeTreeIndexGranuleText::hasAnyTokensImpl(const TextSearchQuery & query) 
         return false;
 
     /// Pattern bypass means analysis is incomplete, so conservatively return true.
-    if (query_builder.is_bypassed && !query.patterns.empty())
+    if (query_builder.is_bypassed && !query.getPatterns().empty())
         return true;
 
     if (!current_range.has_value())
@@ -866,7 +866,7 @@ bool MergeTreeIndexGranuleText::hasAnyTokensImpl(const TextSearchQuery & query) 
 
 bool MergeTreeIndexGranuleText::hasAllQueryTokens(const TextSearchQuery & query) const
 {
-    if (query.tokens.empty())
+    if (query.getTokens().empty())
         return false;
 
     return hasAllQueryTokensOrEmpty(query);
@@ -874,7 +874,7 @@ bool MergeTreeIndexGranuleText::hasAllQueryTokens(const TextSearchQuery & query)
 
 bool MergeTreeIndexGranuleText::hasAllQueryTokensOrEmpty(const TextSearchQuery & query) const
 {
-    if (query.tokens.empty())
+    if (query.getTokens().empty())
         return true;
 
     const auto & query_builder = analyzer->getQueryBuilder(query);
@@ -884,7 +884,7 @@ bool MergeTreeIndexGranuleText::hasAllQueryTokensOrEmpty(const TextSearchQuery &
         return false;
 
     /// Pattern bypass means analysis is incomplete, so conservatively return true.
-    if (query_builder.is_bypassed && !query.patterns.empty())
+    if (query_builder.is_bypassed && !query.getPatterns().empty())
         return true;
 
     if (!current_range.has_value())
@@ -1912,7 +1912,7 @@ static const String ARGUMENT_DICTIONARY_BLOCK_SIZE = "dictionary_block_size";
 static const String ARGUMENT_DICTIONARY_BLOCK_FRONTCODING_COMPRESSION = "dictionary_block_frontcoding_compression";
 static const String ARGUMENT_POSTING_LIST_BLOCK_SIZE = "posting_list_block_size";
 static const String ARGUMENT_POSTING_LIST_CODEC = "posting_list_codec";
-static const String ARGUMENT_POSITIONS = "positions";
+static const String ARGUMENT_POSITIONS = "support_phrase_search";
 
 namespace
 {
@@ -2068,10 +2068,10 @@ void textIndexValidator(const IndexDescription & index, bool /*attach*/, const M
     if (positions > 1)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Text index argument '{}' must be 0 or 1, but got {}", ARGUMENT_POSITIONS, positions);
 
-    if (positions && !settings[MergeTreeSetting::allow_experimental_text_index_positions])
+    if (positions && !settings[MergeTreeSetting::allow_experimental_text_index_phrase_search])
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
             "Text index argument '{}' is experimental. Enable it with the MergeTree setting "
-            "`allow_experimental_text_index_positions = 1`.", ARGUMENT_POSITIONS);
+            "`allow_experimental_text_index_phrase_search = 1`.", ARGUMENT_POSITIONS);
 
     String posting_list_codec_name = extractFieldOption<String>(options, ARGUMENT_POSTING_LIST_CODEC)
         .value_or(settings[MergeTreeSetting::text_index_posting_list_codec].toString());
