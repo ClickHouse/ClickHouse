@@ -4949,11 +4949,29 @@ static BoolMask forAnySparseHyperrectangle(
 /// in key order, left not after right. A key column that is not loaded in the in-memory index has
 /// both boundaries unknown, passed as the pair bounding the whole universe in key order; comparison
 /// stops there, as nothing after an unknown column is ordered.
+/// The check compares only values whose Field-level order provably matches the physical sort order
+/// of the column: NaN is unordered under accurate comparison but placed like NULL by the physical
+/// sort, and composite values may contain NaN inside; give up on such a tuple (report it ordered)
+/// instead of replicating the physical placement rules here.
 [[maybe_unused]] static int compareBoundaryTuples(
     const FieldRef * left_keys, const FieldRef * right_keys, size_t key_size, const std::vector<bool> * reverse_flags)
 {
+    auto is_unorderable = [](const FieldRef & f)
+    {
+        return f.isNaN()
+            || f.getType() == Field::Types::Array
+            || f.getType() == Field::Types::Tuple
+            || f.getType() == Field::Types::Map
+            || f.getType() == Field::Types::Object
+            || f.getType() == Field::Types::CustomType
+            || f.getType() == Field::Types::AggregateFunctionState;
+    };
+
     for (size_t i = 0; i < key_size; ++i)
     {
+        if (is_unorderable(left_keys[i]) || is_unorderable(right_keys[i]))
+            return 0;
+
         if (Range::equals(left_keys[i], right_keys[i]))
             continue;
 

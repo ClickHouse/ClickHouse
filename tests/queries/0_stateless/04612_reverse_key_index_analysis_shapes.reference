@@ -64,3 +64,8 @@ explicit PRIMARY KEY clause inherits ORDER BY directions
 2
 ascending control
 2
+NaN in a Float key column
+1
+1
+1
+1

@@ -144,3 +144,20 @@ CREATE TABLE t_asc (g String, r Int8) ENGINE = MergeTree ORDER BY (g, r);
 INSERT INTO t_asc VALUES ('manual', 2), ('manual', 1), ('novel', 3), ('novel', 3);
 SELECT count() FROM t_asc WHERE g = 'novel' AND r = 3;
 DROP TABLE t_asc;
+
+-- NaN is unordered under Field comparison but the physical sort places it like NULL; the analysis
+-- (and its debug boundary-order check) must tolerate NaN boundary values on both ascending and
+-- reverse float key columns.
+SELECT 'NaN in a Float key column';
+DROP TABLE IF EXISTS t_nan;
+CREATE TABLE t_nan (x Float64) ENGINE = MergeTree ORDER BY x SETTINGS index_granularity = 1;
+INSERT INTO t_nan VALUES (1), (2), (0/0);
+SELECT count() FROM t_nan WHERE x > 1.5 SETTINGS use_lightweight_primary_key_index_analysis = 1;
+SELECT count() FROM t_nan WHERE x > 1.5 SETTINGS use_lightweight_primary_key_index_analysis = 0;
+DROP TABLE t_nan;
+DROP TABLE IF EXISTS t_nan_rev;
+CREATE TABLE t_nan_rev (g UInt8, x Float64) ENGINE = MergeTree ORDER BY (g, x DESC) SETTINGS index_granularity = 1;
+INSERT INTO t_nan_rev VALUES (1, 1), (1, 2), (1, 0/0), (2, 5);
+SELECT count() FROM t_nan_rev WHERE g = 1 AND x > 1.5 SETTINGS use_lightweight_primary_key_index_analysis = 1;
+SELECT count() FROM t_nan_rev WHERE g = 1 AND x > 1.5 SETTINGS use_lightweight_primary_key_index_analysis = 0;
+DROP TABLE t_nan_rev;
