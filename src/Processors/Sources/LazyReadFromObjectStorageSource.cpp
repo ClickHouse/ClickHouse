@@ -3,6 +3,7 @@
 #include <Formats/FormatFactory.h>
 #include <Formats/FormatParserSharedResources.h>
 #include <Interpreters/Context.h>
+#include <Core/Settings.h>
 
 namespace DB
 {
@@ -10,6 +11,12 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int S3_OBJECT_CHANGED_DURING_READ;
+}
+
+namespace Setting
+{
+    extern const SettingsBool s3_validate_etag_on_read;
 }
 
 namespace
@@ -20,8 +27,13 @@ namespace
 class LazyRowsObjectIterator : public IObjectIterator
 {
 public:
-    explicit LazyRowsObjectIterator(std::vector<ObjectStorageLazyMaterializingRows::FileRows> files_)
+    LazyRowsObjectIterator(
+        std::vector<ObjectStorageLazyMaterializingRows::FileRows> files_,
+        ObjectStoragePtr object_storage_,
+        bool etag_validated_on_read_)
         : files(std::move(files_))
+        , object_storage(std::move(object_storage_))
+        , etag_validated_on_read(etag_validated_on_read_)
     {
     }
 
@@ -32,6 +44,7 @@ public:
             return nullptr;
 
         const auto & file = files[i];
+        validateObjectGeneration(*file.object);
         file.object->rows_to_read = file.rows;
         return file.object;
     }
@@ -39,7 +52,64 @@ public:
     size_t estimatedKeysCount() override { return files.size(); }
 
 private:
+    /// The row numbers to read were produced by the main pass of the query from a concrete
+    /// generation of the object. Reading the deferred columns from a different generation
+    /// (the object was overwritten in place between the two passes) would silently combine
+    /// rows of two versions of the file, so fail close instead.
+    void validateObjectGeneration(const ObjectInfo & object) const
+    {
+        /// The main pass fetches the metadata before reading (see `createReadBuffer`) and the
+        /// registry keeps the same `ObjectInfo`, so the captured generation is always here.
+        const auto captured = object.getObjectMetadata();
+        if (!captured)
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Lazy materialization: no object metadata was captured for {} in the main reading pass",
+                object.getPath());
+
+        /// For S3 with `s3_validate_etag_on_read`, the GET itself is pinned to the captured ETag
+        /// (see `ReadBufferFromS3`), which is race-free; an extra HEAD here would buy nothing.
+        if (etag_validated_on_read && !captured->etag.empty())
+            return;
+
+        const auto & seen = *captured;
+        const auto current = object_storage->tryGetObjectMetadata(object.getPath(), /*with_tags=*/ false);
+
+        bool changed = false;
+        bool comparable = false;
+
+        if (current)
+        {
+            if (!seen.etag.empty() && !current->etag.empty())
+            {
+                comparable = true;
+                changed = seen.etag != current->etag;
+            }
+            else
+            {
+                if (seen.is_size_known && current->is_size_known)
+                {
+                    comparable = true;
+                    changed = seen.size_bytes != current->size_bytes;
+                }
+                if (!changed && seen.is_last_modified_known && current->is_last_modified_known)
+                {
+                    comparable = true;
+                    changed = seen.last_modified != current->last_modified;
+                }
+            }
+        }
+
+        if (changed || !comparable)
+            throw Exception(ErrorCodes::S3_OBJECT_CHANGED_DURING_READ,
+                "Lazy materialization: file {} {} between the main reading pass and the lazy reading pass. "
+                "Rerun the query, or disable the query_plan_optimize_lazy_materialization_for_object_storage setting",
+                object.getPath(),
+                changed ? "was modified" : "cannot be proven unchanged");
+    }
+
     const std::vector<ObjectStorageLazyMaterializingRows::FileRows> files;
+    const ObjectStoragePtr object_storage;
+    const bool etag_validated_on_read;
     std::atomic<size_t> index = 0;
 };
 
@@ -118,7 +188,10 @@ IProcessor::PipelineUpdate LazyReadFromObjectStorageSource::updatePipeline()
     if (rows->rows_in_files.empty())
         return {};
 
-    auto iterator = std::make_shared<LazyRowsObjectIterator>(std::move(rows->rows_in_files));
+    const bool etag_validated_on_read = object_storage->getType() == ObjectStorageType::S3
+        && context->getSettingsRef()[Setting::s3_validate_etag_on_read];
+    auto iterator = std::make_shared<LazyRowsObjectIterator>(
+        std::move(rows->rows_in_files), object_storage, etag_validated_on_read);
 
     /// The rows of a file must be returned in ascending order, otherwise LazyMaterializingTransform
     /// would restore the original row order incorrectly.
