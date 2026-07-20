@@ -74,7 +74,7 @@ public:
     /// @p converted_columns_storage keeps cast results alive while the returned Patch references them.
     IColumn::Patch createPatchForColumn(
         const String & column_name, const ColumnWithTypeAndName & result_column,
-        IColumn::Versions & dst_versions, Columns & converted_columns_storage);
+        IColumn::Versions & dst_versions, std::vector<ColumnPtr> & converted_columns_storage);
 
 private:
     void build();
@@ -96,7 +96,7 @@ private:
 
     PatchesToApply patches;
     /// Flattened blocks from all patches.
-    Blocks all_patch_blocks;
+    std::vector<Block> all_patch_blocks;
     /// Index of block in the flattened patch blocks.
     IColumn::Offsets src_block_indices;
     /// Index of row in the patch block.
@@ -232,7 +232,7 @@ void CombinedPatchBuilder::build()
 
 IColumn::Patch CombinedPatchBuilder::createPatchForColumn(
     const String & column_name, const ColumnWithTypeAndName & result_column,
-    IColumn::Versions & dst_versions, Columns & converted_columns_storage)
+    IColumn::Versions & dst_versions, std::vector<ColumnPtr> & converted_columns_storage)
 {
     VectorWithMemoryTracking<IColumn::Patch::Source> sources;
 
@@ -273,7 +273,7 @@ IColumn::Patch CombinedPatchBuilder::createPatchForColumn(
 
 Block getUpdatedHeader(const PatchesToApply & patches, const NameSet & updated_columns)
 {
-    Blocks headers;
+    std::vector<Block> headers;
 
     for (const auto & patch : patches)
     {
@@ -391,13 +391,7 @@ void applyPatchesToBlockRaw(
             };
 
             if (canApplyPatchInplace(*result_column.column))
-            {
-                /// COW-safe in-place update: clone when the column is shared instead of mutating
-                /// a column still referenced by another owner via `assumeMutableRef`.
-                auto mutable_column = IColumn::mutate(std::move(result_column.column));
-                mutable_column->updateInplaceFrom(patch);
-                result_column.column = std::move(mutable_column);
-            }
+                result_column.column->assumeMutableRef().updateInplaceFrom(patch);
             else
                 result_column.column = result_column.column->updateFrom(patch);
         }
@@ -425,17 +419,11 @@ void applyPatchesToBlockCombined(
         result_column.column = removeSpecialRepresentations(result_column.column);
 
         /// Local storage so cast results are released after each column update.
-        Columns converted_columns;
+        std::vector<ColumnPtr> converted_columns;
         auto multi_patch = builder.createPatchForColumn(result_column.name, result_column, result_versions, converted_columns);
 
         if (canApplyPatchInplace(*result_column.column))
-        {
-            /// COW-safe in-place update: clone when the column is shared instead of mutating
-            /// a column still referenced by another owner via `assumeMutableRef`.
-            auto mutable_column = IColumn::mutate(std::move(result_column.column));
-            mutable_column->updateInplaceFrom(multi_patch);
-            result_column.column = std::move(mutable_column);
-        }
+            result_column.column->assumeMutableRef().updateInplaceFrom(multi_patch);
         else
             result_column.column = result_column.column->updateFrom(multi_patch);
     }

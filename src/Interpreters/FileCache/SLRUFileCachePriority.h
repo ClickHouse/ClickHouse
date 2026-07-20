@@ -83,7 +83,7 @@ public:
         EvictionCandidates & res,
         InvalidatedEntriesInfos & invalidated_entries,
         IFileCachePriority::IteratorPtr reservee,
-        EvictionCursor eviction_cursor,
+        bool continue_from_last_eviction_pos,
         size_t max_candidates_size,
         bool is_total_space_cleanup,
         const OriginInfo & origin_info,
@@ -103,7 +103,7 @@ public:
 
     void shuffle(const CachePriorityGuard::WriteLock &) override;
 
-    void resetEvictionPos(EvictionCursor cursor) override;
+    void resetEvictionPos() override;
 
     PriorityDumpPtr dump(const CachePriorityGuard::ReadLock &) override;
 
@@ -122,20 +122,6 @@ public:
     FileCachePriorityPtr copy() const;
 
 protected:
-    void setInvalidateNotifier(size_t threshold, std::function<void()> on_invalidate) override
-    {
-        protected_queue.setInvalidateNotifier(threshold, on_invalidate);
-        probationary_queue.setInvalidateNotifier(threshold, on_invalidate);
-    }
-
-    size_t removeInvalidatedEntries(size_t max_batch, CachePriorityGuard & cache_guard) override
-    {
-        size_t removed = protected_queue.removeInvalidatedEntries(max_batch, cache_guard);
-        if (removed < max_batch)
-            removed += probationary_queue.removeInvalidatedEntries(max_batch - removed, cache_guard);
-        return removed;
-    }
-
     size_t getHoldSize() override { return protected_queue.getHoldSize() + probationary_queue.getHoldSize(); }
 
     size_t getHoldElements() override { return protected_queue.getHoldElements() + probationary_queue.getHoldElements(); }
@@ -164,7 +150,7 @@ private:
         EvictionCandidates & res,
         InvalidatedEntriesInfos & invalidated_entries,
         IFileCachePriority::IteratorPtr reservee,
-        EvictionCursor eviction_cursor,
+        bool continue_from_last_eviction_pos,
         size_t max_candidates_size,
         bool is_total_space_cleanup,
         const OriginInfo & origin_info,
@@ -195,9 +181,7 @@ public:
 
     void remove(const CachePriorityGuard::WriteLock &) override;
 
-    void invalidate() noexcept override;
-
-    void invalidateBeforeRemove(const CachePriorityGuard::WriteLock &) noexcept override;
+    void invalidate() override;
 
     void incrementSize(size_t size, const CacheStateGuard::Lock &) override;
 

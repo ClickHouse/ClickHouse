@@ -33,6 +33,14 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
+#define THROW_ARROW_NOT_OK(status)                                     \
+    do                                                                 \
+    {                                                                  \
+        if (const ::arrow::Status & _s = (status); !_s.ok())                   \
+            throw Exception::createDeprecated(_s.ToString(), ErrorCodes::BAD_ARGUMENTS); \
+    } while (false)
+
+
 template <class FieldType, class StatisticsType>
 Range createRangeFromOrcStatistics(const StatisticsType * stats)
 {
@@ -63,7 +71,7 @@ Range createRangeFromParquetStatistics(std::shared_ptr<StatisticsType> stats)
     return Range(FieldType(stats->min()), true, FieldType(stats->max()), true);
 }
 
-static Range createRangeFromParquetStatistics(std::shared_ptr<parquet::ByteArrayStatistics> stats)
+Range createRangeFromParquetStatistics(std::shared_ptr<parquet::ByteArrayStatistics> stats)
 {
     if (!stats->HasMinMax())
         return Range::createWholeUniverseWithoutNull();
@@ -159,8 +167,7 @@ void HiveORCFile::prepareReader()
     auto format_settings = getFormatSettings(getContext());
     std::atomic<int> is_stopped{0};
     auto result = arrow::adapters::orc::ORCFileReader::Open(asArrowFile(*in, format_settings, is_stopped, "ORC", ORC_MAGIC_BYTES), ArrowMemoryPool::instance());
-    if (!result.ok())
-        throwFromArrowStatus(result.status(), ErrorCodes::BAD_ARGUMENTS, "Failed to open ORC file");
+    THROW_ARROW_NOT_OK(result.status());
     reader = std::move(result).ValueOrDie();
 }
 
@@ -279,8 +286,7 @@ void HiveParquetFile::prepareReader()
     auto format_settings = getFormatSettings(getContext());
     std::atomic<int> is_stopped{0};
     auto open_file_res = parquet::arrow::OpenFile(asArrowFile(*in, format_settings, is_stopped, "Parquet", PARQUET_MAGIC_BYTES), ArrowMemoryPool::instance());
-    if (!open_file_res.ok())
-        throwFromArrowStatus(open_file_res.status(), ErrorCodes::BAD_ARGUMENTS, "Failed to open Parquet file");
+    THROW_ARROW_NOT_OK(open_file_res.status());
     reader = *std::move(open_file_res);
 }
 

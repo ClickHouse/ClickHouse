@@ -340,11 +340,8 @@ void ColumnDynamic::doInsertFrom(const IColumn & src_, size_t n)
 {
     const auto & dynamic_src = assert_cast<const ColumnDynamic &>(src_);
 
-    /// Same variants: copy the Variant column directly. Skip this fast path when the source has values in
-    /// its shared variant and we still have room, so those types get promoted to regular variants below
-    /// instead of ending up in both storages.
-    if (variant_info.variant_name == dynamic_src.variant_info.variant_name
-        && (dynamic_src.getSharedVariant().empty() || !canAddNewVariant()))
+    /// Check if we have the same variants in both columns.
+    if (variant_info.variant_name == dynamic_src.variant_info.variant_name)
     {
         variant_column_ptr->insertFrom(*dynamic_src.variant_column, n);
         return;
@@ -367,9 +364,6 @@ void ColumnDynamic::doInsertFrom(const IColumn & src_, size_t n)
         /// Check if we have this variant and deserialize value into variant from shared variant data.
         if (auto it = variant_info.variant_name_to_discriminator.find(type_name); it != variant_info.variant_name_to_discriminator.end())
             variant_col.deserializeBinaryIntoVariant(it->second, getVariantSerialization(type, type_name), buf, getFormatSettings());
-        /// Try to add a new variant if there are available slots.
-        else if (addNewVariant(type, type_name))
-            variant_col.deserializeBinaryIntoVariant(variant_info.variant_name_to_discriminator[type_name], getVariantSerialization(type, type_name), buf, getFormatSettings());
         /// Otherwise just insert it into our shared variant.
         else
             variant_col.insertIntoVariantFrom(getSharedVariantDiscriminator(), src_shared_variant, src_offset);
@@ -424,11 +418,8 @@ void ColumnDynamic::doInsertRangeFrom(const IColumn & src_, size_t start, size_t
     const auto & dynamic_src = assert_cast<const ColumnDynamic &>(src_);
     auto & variant_col = getVariantColumn();
 
-    /// Same variants: copy the Variant range directly. Skip this fast path when the source has values in
-    /// its shared variant and we still have room, so those types get promoted to regular variants in the
-    /// combine path below instead of ending up in both storages.
-    if (variant_info.variant_names == dynamic_src.variant_info.variant_names
-        && (dynamic_src.getSharedVariant().empty() || !canAddNewVariant()))
+    /// Check if we have the same variants in both columns.
+    if (variant_info.variant_names == dynamic_src.variant_info.variant_names)
     {
         variant_col.insertRangeFrom(*dynamic_src.variant_column, start, length);
         return;
@@ -479,16 +470,6 @@ void ColumnDynamic::doInsertRangeFrom(const IColumn & src_, size_t start, size_t
                     getVariantSerialization(type, type_name)->deserializeBinary(variant, buf, getFormatSettings());
                     /// Local discriminators were already filled in ColumnVariant::insertRangeFrom and this row should contain
                     /// shared_variant_local_discr. Change it to local discriminator of the found variant and update offsets.
-                    local_discriminators[prev_size + i] = local_discr;
-                    offsets[prev_size + i] = variant.size() - 1;
-                }
-                /// Try to add a new variant if there are available slots. addNewVariant only reassigns global
-                /// discriminators, so shared_variant_local_discr and the cached references stay valid.
-                else if (addNewVariant(type, type_name))
-                {
-                    auto local_discr = variant_col.localDiscriminatorByGlobal(variant_info.variant_name_to_discriminator[type_name]);
-                    auto & variant = variant_col.getVariantByLocalDiscriminator(local_discr);
-                    getVariantSerialization(type, type_name)->deserializeBinary(variant, buf, getFormatSettings());
                     local_discriminators[prev_size + i] = local_discr;
                     offsets[prev_size + i] = variant.size() - 1;
                 }
@@ -652,11 +633,8 @@ void ColumnDynamic::doInsertManyFrom(const IColumn & src_, size_t position, size
     const auto & dynamic_src = assert_cast<const ColumnDynamic &>(src_);
     auto & variant_col = getVariantColumn();
 
-    /// Same variants: copy the Variant value directly. Skip this fast path when the source has values in
-    /// its shared variant and we still have room, so a type living in the source shared variant gets
-    /// promoted to a regular variant below instead of ending up in both storages.
-    if (variant_info.variant_names == dynamic_src.variant_info.variant_names
-        && (dynamic_src.getSharedVariant().empty() || !canAddNewVariant()))
+    /// Check if we have the same variants in both columns.
+    if (variant_info.variant_names == dynamic_src.variant_info.variant_names)
     {
         variant_col.insertManyFrom(*dynamic_src.variant_column, position, length);
         return;
@@ -683,14 +661,6 @@ void ColumnDynamic::doInsertManyFrom(const IColumn & src_, size_t position, size
             tmp_column->reserve(1);
             getVariantSerialization(type, type_name)->deserializeBinary(*tmp_column, buf, getFormatSettings());
             variant_col.insertManyIntoVariantFrom(it->second, *tmp_column, 0, length);
-        }
-        /// Try to add a new variant if there are available slots.
-        else if (addNewVariant(type, type_name))
-        {
-            auto tmp_column = type->createColumn();
-            tmp_column->reserve(1);
-            getVariantSerialization(type, type_name)->deserializeBinary(*tmp_column, buf, getFormatSettings());
-            variant_col.insertManyIntoVariantFrom(variant_info.variant_name_to_discriminator[type_name], *tmp_column, 0, length);
         }
         /// Otherwise just insert it into our shared variant.
         else
@@ -806,7 +776,7 @@ std::string_view ColumnDynamic::serializeValueIntoArena(size_t n, Arena & arena,
 void ColumnDynamic::deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings *)
 {
     auto & variant_col = getVariantColumn();
-    UInt8 null_bit = 0;
+    UInt8 null_bit;
     readBinaryLittleEndian<UInt8>(null_bit, in);
     if (null_bit)
     {
@@ -815,7 +785,7 @@ void ColumnDynamic::deserializeAndInsertFromArena(ReadBuffer & in, const IColumn
     }
 
     /// Read variant type and value in binary format.
-    size_t type_and_value_size = 0;
+    size_t type_and_value_size;
     readBinaryLittleEndian<size_t>(type_and_value_size, in);
     if (in.available() < type_and_value_size)
         throw Exception(ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF, "Attempt to read after eof when deserializing ColumnDynamic");
@@ -850,12 +820,12 @@ void ColumnDynamic::deserializeAndInsertFromArena(ReadBuffer & in, const IColumn
 
 void ColumnDynamic::skipSerializedInArena(ReadBuffer & in) const
 {
-    UInt8 null_bit = 0;
+    UInt8 null_bit;
     readBinaryLittleEndian<UInt8>(null_bit, in);
     if (null_bit)
         return;
 
-    size_t type_and_value_size = 0;
+    size_t type_and_value_size;
     readBinaryLittleEndian<size_t>(type_and_value_size, in);
     in.ignore(type_and_value_size);
 }
@@ -1563,15 +1533,9 @@ void ColumnDynamic::applyNullMap(const ColumnVector<UInt8>::Container & null_map
     variant_column_ptr->applyNullMap(null_map);
 }
 
-void ColumnDynamic::applyNegatedNullMap(const ColumnVector<UInt8>::Container & null_map, size_t offset)
+void ColumnDynamic::applyNegatedNullMap(const ColumnVector<UInt8>::Container & null_map)
 {
-    if (offset + null_map.size() != size())
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "Null map of size {} at offset {} does not match {} of size {}",
-            null_map.size(), offset, getName(), size());
-
-    variant_column_ptr->applyNegatedNullMap(null_map, offset);
+    variant_column_ptr->applyNegatedNullMap(null_map);
 }
 
 }

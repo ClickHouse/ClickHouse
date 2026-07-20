@@ -209,8 +209,7 @@ StoragePtr StorageView::getUnderlyingMergeTreeStorageForParallelReplicas(const C
     if (context->hasInsertionTable())
         return nullptr;
 
-    auto metadata_snapshot = getInMemoryMetadataPtr(context, false);
-    auto inner_query_ast = metadata_snapshot->getSelectQuery().inner_query;
+    auto inner_query_ast = getInMemoryMetadataPtr(context, false)->getSelectQuery().inner_query;
 
     QueryTreeNodePtr inner_query_tree;
     try
@@ -351,16 +350,16 @@ void StorageView::readImpl(
         InterpreterSelectWithUnionQuery interpreter(current_inner_query, view_context, options, column_names);
         interpreter.addStorageLimits(*query_info.storage_limits);
         interpreter.buildQueryPlan(query_plan);
-
-        /// It's expected that the columns read from storage are not constant.
-        /// Because method 'getSampleBlockForColumns' is used to obtain a structure of result in InterpreterSelectQuery.
-        ActionsDAG materializing_actions(query_plan.getCurrentHeader()->getColumnsWithTypeAndName());
-        materializing_actions.addMaterializingOutputActions(/*materialize_sparse=*/ true);
-
-        auto materializing = std::make_unique<ExpressionStep>(query_plan.getCurrentHeader(), std::move(materializing_actions));
-        materializing->setStepDescription("Materialize constants after VIEW subquery");
-        query_plan.addStep(std::move(materializing));
     }
+
+    /// It's expected that the columns read from storage are not constant.
+    /// Because method 'getSampleBlockForColumns' is used to obtain a structure of result in InterpreterSelectQuery.
+    ActionsDAG materializing_actions(query_plan.getCurrentHeader()->getColumnsWithTypeAndName());
+    materializing_actions.addMaterializingOutputActions(/*materialize_sparse=*/ true);
+
+    auto materializing = std::make_unique<ExpressionStep>(query_plan.getCurrentHeader(), std::move(materializing_actions));
+    materializing->setStepDescription("Materialize constants after VIEW subquery");
+    query_plan.addStep(std::move(materializing));
 
     /// And also convert to expected structure.
     const auto & expected_header = storage_snapshot->getSampleBlockForColumns(column_names);
@@ -380,7 +379,7 @@ void StorageView::readImpl(
             header->getColumnsWithTypeAndName(),
             expected_header.getColumnsWithTypeAndName(),
             ActionsDAG::MatchColumnsMode::Name,
-            context, false, false, nullptr, nullptr, false);
+            context);
 
     auto converting = std::make_unique<ExpressionStep>(query_plan.getCurrentHeader(), std::move(convert_actions_dag));
     converting->setStepDescription("Convert VIEW subquery result to VIEW table structure");
@@ -391,8 +390,7 @@ void StorageView::drop()
 {
     auto table_id = getStorageID();
 
-    auto metadata_snapshot = getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false);
-    if (metadata_snapshot->sql_security_type == SQLSecurityType::DEFINER)
+    if (getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false)->sql_security_type == SQLSecurityType::DEFINER)
         ViewDefinerDependencies::instance().removeViewDependencies(table_id);
 }
 
@@ -402,9 +400,8 @@ void StorageView::alter(
     AlterLockHolder &)
 {
     auto table_id = getStorageID();
-    auto metadata_snapshot = getInMemoryMetadataPtr(context, false);
-    StorageInMemoryMetadata new_metadata = *metadata_snapshot;
-    const StorageInMemoryMetadata & old_metadata = *metadata_snapshot;
+    StorageInMemoryMetadata new_metadata = *getInMemoryMetadataPtr(context, false);
+    StorageInMemoryMetadata old_metadata = *getInMemoryMetadataPtr(context, false);
     params.apply(new_metadata, context);
 
     DatabaseCatalog::instance()
@@ -508,7 +505,6 @@ void StorageView::checkAlterIsPossible(const AlterCommands & commands, ContextPt
     }
 }
 
-void registerStorageView(StorageFactory & factory);
 void registerStorageView(StorageFactory & factory)
 {
     factory.registerStorage("View", [](const StorageFactory::Arguments & args)
@@ -536,14 +532,7 @@ void registerStorageView(StorageFactory & factory)
         }
 
         return std::make_shared<StorageView>(args.table_id, args.query, args.columns, args.comment);
-    },
-    {},
-    Documentation{
-        .description = R"DOCS_MD(
-Used for implementing views (for more information, see the `CREATE VIEW query`). It does not store data, but only stores the specified `SELECT` query. When reading from a table, it runs this query (and deletes all unnecessary columns from the query).
-)DOCS_MD",
-        .syntax = "CREATE VIEW name AS SELECT ...",
-        .related = {"MaterializedView"}});
+    });
 }
 
 ContextPtr StorageView::getViewSubqueryContext(ContextPtr context, const StorageSnapshotPtr &storage_snapshot)

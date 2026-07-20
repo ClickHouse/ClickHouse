@@ -38,7 +38,7 @@ static MutableColumnPtr createColumn(size_t n)
     return column;
 }
 
-static bool checkFilter(const PaddedPODArray<UInt8> &flit, const IColumn & src, const IColumn & dst)
+bool checkFilter(const PaddedPODArray<UInt8> &flit, const IColumn & src, const IColumn & dst)
 {
     size_t n = flit.size();
     size_t dst_size = dst.size();

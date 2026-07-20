@@ -1,3 +1,4 @@
+import psycopg2
 import pytest
 import socket
 import uuid
@@ -299,7 +300,6 @@ and query = 'COPY (SELECT "counter" FROM "infinite_counter") TO STDOUT';
 
 def test_cancel_infinite_query(setup_infinite_query):
     _, postgres_host_with__port = setup_infinite_query
-    query_id = str(uuid.uuid4())
 
     def execute_query():
         query = f"""SELECT * FROM postgresql(
@@ -312,27 +312,19 @@ def test_cancel_infinite_query(setup_infinite_query):
             [
                 "bash",
                 "-c",
-                f"""/usr/bin/clickhouse client --query_id "{query_id}" --query "{query}" """,
+                f"""/usr/bin/clickhouse client --query "{query}" """,
             ]
         )
 
     query_thread = threading.Thread(target=execute_query)
     query_thread.start()
-    # Wait for the query to start by polling system.processes for its unique query_id.
-    # Robust against log timing: a one-shot log line can be written before a
-    # look_behind_lines=0 tail is installed, turning the stale-log flake into a
-    # missed-line timeout.
-    assert_eq_with_retry(
-        node1,
-        f"SELECT count() FROM system.processes WHERE query_id='{query_id}'",
-        "1",
-        retry_count=60,
-        sleep_time=0.5,
+    node1.wait_for_log_line(
+        'ReadFromPostgreSQL: Query: SELECT "counter" FROM "infinite_counter"'
     )
     time.sleep(2)
 
     node1.stop_clickhouse_client()
-    node1.wait_for_log_line("Received 'Cancel' packet from the client")
+    node1.wait_for_log_line("DB::Exception: Received 'Cancel' packet from the client")
     time.sleep(1)
 
     query_thread.join()
@@ -362,13 +354,11 @@ SETTINGS max_block_size = 10000"""
 
     query_thread = threading.Thread(target=execute_query)
     query_thread.start()
-    # Use look_behind_lines=0 to only match new log lines, avoiding stale matches
-    # from preceding tests in this file (test_kill_query also produces this line).
-    node1.wait_for_log_line("Generate a chunk from stream", look_behind_lines=0)
+    node1.wait_for_log_line("Generate a chunk from stream")
     time.sleep(2)
 
     node1.stop_clickhouse_client()
-    node1.wait_for_log_line("Received 'Cancel' packet from the client")
+    node1.wait_for_log_line("DB::Exception: Received 'Cancel' packet from the client")
     time.sleep(1)
 
     query_thread.join()
