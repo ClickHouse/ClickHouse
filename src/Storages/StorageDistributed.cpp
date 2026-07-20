@@ -1841,8 +1841,9 @@ static std::optional<UInt128> getModificationHashOfRemoteTableInShard(
 
     /// Whether the remote engine's modification hash can be validated by this probe at all. The probe is a
     /// separate query on the shard, so it can only observe hashes derived from server-side state that any
-    /// query sees consistently: the `MergeTree` family (monotonic data/metadata versions), `Memory`, `Log`
-    /// and `StripeLog` (monotonic in-memory versions), and `URL` (a single resource with a strong `ETag`).
+    /// query sees consistently: the `MergeTree` family (monotonic data/metadata versions), `Memory`,
+    /// `Log`, `TinyLog` and `StripeLog` (monotonic in-memory versions), and `URL` (a single resource with
+    /// a strong `ETag`).
     /// It must NOT accept a hash whose consistency relies on a query-local capture that only the reading
     /// query's own context holds: for listing-based object storage (`S3`, `AzureBlobStorage`, `HDFS`, ...)
     /// `getModificationHash` validates the read against the object set the query actually consumed
@@ -1857,6 +1858,7 @@ static std::optional<UInt128> getModificationHashOfRemoteTableInShard(
         return engine.ends_with("MergeTree")
             || engine == "Memory"
             || engine == "Log"
+            || engine == "TinyLog"
             || engine == "StripeLog"
             || engine == "URL";
     };

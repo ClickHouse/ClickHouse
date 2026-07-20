@@ -6,6 +6,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InDepthNodeVisitor.h>
+#include <Interpreters/misc.h>
 #include <Access/ContextAccess.h>
 #include <Access/Common/AccessType.h>
 #include <Storages/IStorage.h>
@@ -236,6 +237,31 @@ struct CollectReferencedTablesMatcher
         else if (const auto * table_identifier = node->as<ASTTableIdentifier>())
         {
             data.table_ids.push_back(table_identifier->getTableId());
+        }
+        else if (const auto * function = node->as<ASTFunction>())
+        {
+            /// Some functions read mutable external state named by an argument rather than by a table
+            /// expression, so the object they depend on never shows up as a table identifier here:
+            /// `dictGet('db.dict', ...)` and friends read a dictionary (which has no modification hash at
+            /// all), `joinGet('db.j', ...)` reads a `Join` table, and `eval` runs an opaque query text.
+            /// This visitor runs on the unrewritten AST - before `MarkTableIdentifiersVisitor` could turn
+            /// any identifier-spelled argument into an `ASTTableIdentifier` - and the documented quoted
+            /// spellings stay literals in any case, so fail closed.
+            if (functionIsDictGet(function->name) || functionIsJoinGet(function->name) || function->name == "eval")
+            {
+                data.cannot_verify = true;
+            }
+            /// `x IN table_name` reads a table (or a `Set`) spelled as a bare identifier, which is
+            /// likewise not an `ASTTableIdentifier` in the unrewritten AST. The identifier can also be a
+            /// column, and the two cannot be told apart without resolving names, so fail closed on any
+            /// identifier on the right-hand side. Subqueries and literal tuples are unaffected.
+            else if (functionIsInOrGlobalInOperator(function->name))
+            {
+                if (function->arguments && function->arguments->children.size() == 2
+                    && function->arguments->children[1]->as<ASTIdentifier>()
+                    && !function->arguments->children[1]->as<ASTTableIdentifier>())
+                    data.cannot_verify = true;
+            }
         }
     }
 };
