@@ -272,6 +272,8 @@ You can also mix approaches—use standard columns for predictable top-level fie
 | `int (date)` \**\*                          | [Date](/reference/data-types/date), [Date32](/reference/data-types/date32)                       | `int (date)` \**\*              |
 | `long (timestamp-millis)` \**\*             | [DateTime64(3)](/reference/data-types/datetime)                                                                | `long (timestamp-millis)` \**\* |
 | `long (timestamp-micros)` \**\*             | [DateTime64(6)](/reference/data-types/datetime)                                                                | `long (timestamp-micros)` \**\* |
+| `int (time-millis)` \**\*                   | [Time64(3)](/reference/data-types/time64)                                                                      |                                 |
+| `long (time-micros)` \**\*                  | [Time64(6)](/reference/data-types/time64)                                                                      |                                 |
 | `bytes (decimal)`  \**\*                    | [DateTime64(N)](/reference/data-types/datetime)                                                                | `bytes (decimal)`  \**\*        |
 | `int`                                       | [IPv4](/reference/data-types/ipv4)                                                                             | `int`                           |
 | `fixed(16)`                                 | [IPv6](/reference/data-types/ipv6)                                                                             | `fixed(16)`                     |
@@ -289,8 +291,6 @@ As a result, when producing Avro from ClickHouse, we have to always include the 
 \**\* [Avro logical types](https://avro.apache.org/docs/1.12.0/specification/#logical-types)
 
 Unsupported Avro logical data types:
-- `time-millis`
-- `time-micros`
 - `duration`)DOCS_MD"},
 
 };
