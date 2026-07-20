@@ -206,6 +206,10 @@ private:
                 const UInt8 * x_null = arg == 1 ? first_null : a_null;
                 for (size_t i = 0; i < input_rows_count; ++i)
                 {
+                    /// NULL loses against any value, so a NULL side is passed over and the other side is taken
+                    /// verbatim; only when both sides are non-NULL does the least / greatest comparison decide.
+                    /// When both sides are NULL the value taken is arbitrary - `a_null[i]` marks the row NULL
+                    /// and the nested value is never read.
                     a[i] = x_null[i] ? b[i] : (b_null[i] ? x[i] : (takesPrecedence(x[i], b[i]) ? b[i] : x[i]));
                     a_null[i] = x_null[i] && b_null[i];
                 }
