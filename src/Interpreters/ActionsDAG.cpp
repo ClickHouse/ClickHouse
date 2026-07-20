@@ -148,10 +148,11 @@ void tryFoldFunctionToConstant(
         /// FunctionNode::wrap_with_nullable, while the un-wrapped base function used for constant
         /// folding still returns the non-Nullable type. Reconcile the folded constant to the
         /// declared type in exactly this case instead of failing the check.
-        /// Require the folded column to actually match the base type before casting, so this stays
-        /// scoped to the wrapped/non-wrapped mismatch and any other wrong type still hits the check.
+        /// Require the folded column to actually match the base type (including decimal/DateTime64
+        /// scale) before casting, so this stays scoped to the wrapped/non-wrapped mismatch and any
+        /// other wrong type, including a divergent-scale one, still hits the check below.
         auto base_result_type = node.function_base->getResultType();
-        if (columnMatchesType(*column, *base_result_type)
+        if (columnMatchesType(*column, *base_result_type, /*strict_decimal_scale=*/ true)
             && node.result_type->equals(*makeNullableOrLowCardinalityNullableSafe(base_result_type)))
             column = castColumn({column, base_result_type, {}}, node.result_type);
     }
