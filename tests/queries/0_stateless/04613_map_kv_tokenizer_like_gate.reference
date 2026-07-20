@@ -1,9 +1,16 @@
-1
-1
-valueLike on	1
-valueLike off	0
-valueLike short	0
-keyLike on	1
-keyLike off	0
+prefix	1
+prefix	1
+literal	1
+literal	1
+keyprefix	1
+keyprefix	2
+keyprefix	1
+keyprefix	2
+valueLike prefix on	1
+valueLike literal on	1
+valueLike substring on	1
+keyLike prefix on	1
 elementLike on	1
-elementLike off	0
+valueLike prefix off	0
+keyLike prefix off	0
+valueLike short	0
