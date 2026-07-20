@@ -76,6 +76,21 @@ TEST(MergeTreeBoundsSubscription, FdReadableAfterAdvance)
     ASSERT_EQ(::poll(&p, 1, /*timeout_ms=*/0), 0);
 }
 
+TEST(MergeTreeBoundsSubscription, BoundedAdvanceDoesNotWakeFd)
+{
+    MergeTreeBoundsSubscription sub(1, 0, /*bounded=*/true);
+
+    /// A bounded subscription must not wake on a per-partition advance; it is woken only by
+    /// onEnrichmentRound once the round's state is published, avoiding a partial mid-round read.
+    sub.advance("p1", 1);
+
+    pollfd p{.fd = sub.fd(), .events = POLLIN, .revents = 0};
+    ASSERT_EQ(::poll(&p, 1, /*timeout_ms=*/0), 0);
+
+    /// The advance still updated the safe block number.
+    ASSERT_EQ(sub.snapshot().at("p1"), 1);
+}
+
 TEST(MergeTreeBoundsSubscription, FdReadableAfterDisable)
 {
     MergeTreeBoundsSubscription sub(1, 0);

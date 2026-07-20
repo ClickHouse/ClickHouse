@@ -25,7 +25,10 @@ void MergeTreeBoundsSubscription::advance(const String & partition_id, Int64 new
         }
     }
 
-    wake.notify();
+    /// Bounded streams are woken only by onEnrichmentRound, after the round's `pending` state is
+    /// published; a per-advance wakeup could let the source read a partial mid-round snapshot.
+    if (!bounded)
+        wake.notify();
 }
 
 std::map<String, Int64> MergeTreeBoundsSubscription::snapshot() const
