@@ -22,10 +22,12 @@ import CommunityMaintainedBadge from "/snippets/components/CommunityMaintainedBa
 
 DataGrip is available at https://www.jetbrains.com/datagrip/
 
-## 1. Gather your connection details {#1-gather-your-connection-details}
+<Steps>
+<Step title="Gather your connection details" id="1-gather-your-connection-details">
 <ConnectionDetails />
 
-## 2. Load the ClickHouse driver {#2-load-the-clickhouse-driver}
+</Step>
+<Step title="Load the ClickHouse driver" id="2-load-the-clickhouse-driver">
 
 1. Launch DataGrip, and on the **Data Sources** tab in the **Data Sources and Drivers** dialog, click the **+** icon
 
@@ -46,7 +48,8 @@ DataGrip is available at https://www.jetbrains.com/datagrip/
 
 <Image img="/images/integrations/sql-clients/datagrip-1.webp" size="lg" border alt="DataGrip Drivers tab showing ClickHouse driver installation" />
 
-## 3. Connect to ClickHouse {#3-connect-to-clickhouse}
+</Step>
+<Step title="Connect to ClickHouse" id="3-connect-to-clickhouse">
 
 - Specify your database connection details, and click **Test Connection**. 
 In step one you gathered your connection details - fill in the host URL, port, username, password, and database name, then test the connection.
@@ -64,6 +67,9 @@ For more details on JDBC URL settings, please refer to the [ClickHouse JDBC driv
 </Tip>
 
 <Image img="/images/integrations/sql-clients/datagrip-7.webp" border alt="DataGrip connection details form with ClickHouse settings" />
+
+</Step>
+</Steps>
 
 ## Learn more {#learn-more}
 

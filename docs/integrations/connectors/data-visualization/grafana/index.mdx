@@ -34,10 +34,12 @@ Grafana requires a plugin to connect to ClickHouse, which is easily installed wi
 </Frame>
 </div>
 
-## 1. Gather your connection details {#1-gather-your-connection-details}
+<Steps>
+<Step title="Gather your connection details" id="1-gather-your-connection-details">
 <ConnectionDetails />
 
-## 2. Making a read-only user {#2-making-a-read-only-user}
+</Step>
+<Step title="Making a read-only user" id="2-making-a-read-only-user">
 
 When connecting ClickHouse to a data visualization tool like Grafana, it is recommended to make a read-only user to protect your data from unwanted modifications.
 
@@ -48,7 +50,8 @@ To configure a read-only user, follow these steps:
 2. Ensure the `readonly` user has enough permission to modify the `max_execution_time` setting required by the underlying [clickhouse-go client](https://github.com/ClickHouse/clickhouse-go).
 3. If you're using a public ClickHouse instance, it isn't recommended to set `readonly=2` in the `readonly` profile. Instead, leave `readonly=1` and set the constraint type of `max_execution_time` to [changeable_in_readonly](/concepts/features/configuration/settings/constraints-on-settings) to allow modification of this setting.
 
-## 3.  Install the ClickHouse plugin for Grafana {#3--install-the-clickhouse-plugin-for-grafana}
+</Step>
+<Step title="Install the ClickHouse plugin for Grafana" id="3--install-the-clickhouse-plugin-for-grafana">
 
 Before Grafana can connect to ClickHouse, you need to install the appropriate Grafana plugin. Assuming you're logged in to Grafana, follow these steps:
 
@@ -62,7 +65,8 @@ Before Grafana can connect to ClickHouse, you need to install the appropriate Gr
 
     <Image size="md" img="/images/integrations/data-visualization/grafana/install.webp" alt="Install the ClickHouse plugin" border />
 
-## 4. Define a ClickHouse data source {#4-define-a-clickhouse-data-source}
+</Step>
+<Step title="Define a ClickHouse data source" id="4-define-a-clickhouse-data-source">
 
 1. Once the installation is complete, click the **Add new data source** button. (You can also add a data source from the **Data sources** tab on the **Connections** page.)
 
@@ -86,13 +90,17 @@ For more settings, check the [plugin configuration](/integrations/connectors/dat
 
     <Image size="md" img="/images/integrations/data-visualization/grafana/valid_ds.webp" alt="Select Save & test" border />
 
-## 5. Next steps {#5-next-steps}
+</Step>
+<Step title="Next steps" id="5-next-steps">
 
 Your data source is now ready to use! Learn more about how to build queries with the [query builder](/integrations/connectors/data-visualization/grafana/query-builder).
 
 For more details on configuration, check the [plugin configuration](/integrations/connectors/data-visualization/grafana/config) documentation.
 
 If you're looking for more information that isn't included in these docs, check the [plugin repository on GitHub](https://github.com/grafana/clickhouse-datasource).
+
+</Step>
+</Steps>
 
 ## Upgrading plugin versions {#upgrading-plugin-versions}
 
