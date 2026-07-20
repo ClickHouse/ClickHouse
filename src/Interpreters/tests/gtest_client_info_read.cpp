@@ -263,7 +263,7 @@ TEST(ClientInfoForwardedFor, ParsesNumericAddresses)
     check_address("123.124.125.126:80", "123.124.125.126", 80);
     check_address("2001:db8::1", "2001:db8::1", 0);
     check_address("[2001:db8::1]:443", "2001:db8::1", 443);
-    check_address("not-used.example,  203.0.113.7:65535  ", "203.0.113.7", 65535);
+    check_address("not-used.example," + String(2, ' ') + "203.0.113.7:65535" + String(2, ' '), "203.0.113.7", 65535);
 }
 
 TEST(ClientInfoForwardedFor, RejectsNonNumericAndMalformedAddresses)
@@ -276,8 +276,7 @@ TEST(ClientInfoForwardedFor, RejectsNonNumericAndMalformedAddresses)
         "[not-an-ip]:80",
         "[2001:db8::1]",
         "127.0.0.1:65536",
-        "127.0.0.1:",
-        "127.0.0.1,   "})
+        "127.0.0.1:"})
     {
         ClientInfo info;
         info.forwarded_for = bad;
@@ -286,6 +285,10 @@ TEST(ClientInfoForwardedFor, RejectsNonNumericAndMalformedAddresses)
         EXPECT_NO_THROW(address = info.getLastForwardedFor()) << "address: " << bad;
         EXPECT_FALSE(address) << "address: " << bad;
     }
+
+    ClientInfo trailing_whitespace;
+    trailing_whitespace.forwarded_for = "127.0.0.1," + String(3, ' ');
+    EXPECT_FALSE(trailing_whitespace.getLastForwardedFor());
 
     ClientInfo empty;
     EXPECT_FALSE(empty.getLastForwardedFor());
