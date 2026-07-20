@@ -9168,17 +9168,32 @@ void Settings::dumpToMapColumn(IColumn * column, bool changed_only) const
     impl->dumpToMapColumn(column, changed_only);
 }
 
-NameToNameMap Settings::toNameToNameMap() const
+void writeQueryParameters(const NameToNameMap & parameters, WriteBuffer & out)
 {
-    NameToNameMap query_parameters;
-    for (const auto & param : *impl)
+    for (const auto & [name, value] : parameters)
     {
-        std::string value;
-        ReadBufferFromOwnString buf(param.getValueString());
-        readQuoted(value, buf);
-        query_parameters.emplace(param.getName(), value);
+        BaseSettingsHelpers::writeString(name, out);
+        BaseSettingsHelpers::writeFlags(BaseSettingsHelpers::Flags::CUSTOM, out);
+        BaseSettingsHelpers::writeString(SettingFieldCustom(Field(value)).toString(), out);
     }
-    return query_parameters;
+    BaseSettingsHelpers::writeString(std::string_view{}, out);
+}
+
+NameToNameMap readQueryParameters(ReadBuffer & in)
+{
+    NameToNameMap parameters;
+    while (true)
+    {
+        String name = BaseSettingsHelpers::readString(in);
+        if (name.empty())
+            break;
+        std::ignore = BaseSettingsHelpers::readFlags(in);
+        String value;
+        ReadBufferFromOwnString buf(BaseSettingsHelpers::readString(in));
+        readQuoted(value, buf);
+        parameters.insert_or_assign(std::move(name), std::move(value));
+    }
+    return parameters;
 }
 
 void Settings::write(WriteBuffer & out, SettingsWriteFormat format) const
