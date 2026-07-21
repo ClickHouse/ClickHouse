@@ -79,9 +79,11 @@ check "rule_dropuser_${DB}" "DROP ROLE ua_${DB}" "drop role (different entity ty
 $CLICKHOUSE_CLIENT --query "DROP RULE rule_dropuser_${DB}"
 
 # --- CREATE MASKING POLICY: differ only in the `UPDATE` assignments / `WHERE` / priority. ---
-# (Masking-policy DDL is cloud-only, so the non-matching statements fail during execution with
-# `SUPPORT_IS_DISABLED` — but the rewrite-rule rejection fires before execution, which is exactly
-# what is asserted here.)
+# The rewrite-rule rejection fires before execution, which is exactly what is asserted here. In
+# open-source builds masking-policy DDL is disabled, so a non-matching statement then fails with
+# `SUPPORT_IS_DISABLED` and creates nothing. In cloud builds masking-policy DDL is enabled, so a
+# non-matching statement actually creates the policy; it is dropped below so it does not leak into
+# the global `system.masking_policies` and disturb other tests.
 $CLICKHOUSE_CLIENT --query "CREATE RULE rule_masking_${DB} AS (CREATE MASKING POLICY mp_${DB} ON tbl_${DB} UPDATE x = 1 TO ALL) REJECT WITH 'blocked'"
 check "rule_masking_${DB}" "CREATE MASKING POLICY mp_${DB} ON tbl_${DB} UPDATE x = 1 TO ALL" "masking policy exact"
 check "rule_masking_${DB}" "CREATE MASKING POLICY mp_${DB} ON tbl_${DB} UPDATE x = 2 TO ALL" "masking policy different update"
@@ -89,6 +91,10 @@ check "rule_masking_${DB}" "CREATE MASKING POLICY mp_${DB} ON tbl_${DB} UPDATE x
 check "rule_masking_${DB}" "CREATE MASKING POLICY mp_${DB} ON tbl_${DB} UPDATE x = 1 TO ALL PRIORITY 2" "masking policy different priority"
 check "rule_masking_${DB}" "CREATE MASKING POLICY mp2_${DB} ON tbl_${DB} UPDATE x = 1 TO ALL" "masking policy different name"
 $CLICKHOUSE_CLIENT --query "DROP RULE rule_masking_${DB}"
+# Drop the policies that the non-matching statements above create in cloud builds (a no-op error
+# in open-source builds where the DDL is disabled).
+$CLICKHOUSE_CLIENT --query "DROP MASKING POLICY IF EXISTS mp_${DB} ON tbl_${DB}" 2>/dev/null || true
+$CLICKHOUSE_CLIENT --query "DROP MASKING POLICY IF EXISTS mp2_${DB} ON tbl_${DB}" 2>/dev/null || true
 
 # A placeholder inside a masking policy's `UPDATE` / `WHERE` lives outside `children`, so the
 # matcher can neither bind nor substitute it; such a rule is rejected at CREATE RULE time
