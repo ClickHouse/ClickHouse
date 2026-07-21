@@ -7303,9 +7303,10 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
                 create_user->add_identified_with = false;
             }
         }
-        if (create_user->global_valid_until)
-            fuzz(create_user->global_valid_until);
-        /// The authentication methods are registered as children.
+        /// The authentication methods and the user-level `VALID UNTIL`/`VALID FOR` deadline are
+        /// registered as children, so fuzzing `children` covers them. `global_valid_until` must not
+        /// be fuzzed separately here: it is already in `children`, and visiting the same node twice
+        /// trips the fuzzer's loop detector.
         fuzz(create_user->children);
     }
     else if (auto * create_role = typeid_cast<ASTCreateRoleQuery *>(ast.get()))
