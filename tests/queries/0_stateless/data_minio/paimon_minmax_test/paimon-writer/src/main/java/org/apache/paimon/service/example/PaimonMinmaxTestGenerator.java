@@ -75,11 +75,14 @@ public class PaimonMinmaxTestGenerator {
         } catch (Catalog.DatabaseAlreadyExistException ignored) {}
 
         Identifier tableId = Identifier.create(DB_NAME, TABLE_NAME);
+        // Drop any pre-existing table so regeneration is deterministic: reusing an
+        // existing table would append three more batches/snapshots on every rerun
+        // (diverging from the committed 3-file fixture) and could carry a stale
+        // schema from an older version of this generator. Recreate from scratch.
         try {
-            catalog.createTable(tableId, schema, /*ignoreIfExists=*/ false);
-        } catch (Catalog.TableAlreadyExistException ignored) {
-            System.out.println("Table already exists, reusing: " + tableId);
-        }
+            catalog.dropTable(tableId, /*ignoreIfNotExists=*/ true);
+        } catch (Catalog.TableNotExistException ignored) {}
+        catalog.createTable(tableId, schema, /*ignoreIfExists=*/ false);
 
         Table table = catalog.getTable(tableId);
 
