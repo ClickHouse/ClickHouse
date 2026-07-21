@@ -345,6 +345,12 @@ inline CartesianMultiPolygon deserializeGeoMultiPolygon(ReadBuffer & buf, const 
     UInt64 poly_count = 0;
     readVarUInt(poly_count, buf);
 
+    if (poly_count == 0)
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA,
+            "Corrupted state of aggregate function {}: empty multipolygon chunk",
+            function_name);
+
     /// The per-multipolygon polygon count is not capped on its own: a union of many disjoint
     /// polygons can legitimately produce far more than a few thousand components, and such a state
     /// must round-trip. Bound the allocation with the cumulative ring budget instead (each polygon
