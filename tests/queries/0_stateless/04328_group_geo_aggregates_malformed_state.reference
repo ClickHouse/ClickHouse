@@ -8,3 +8,4 @@ union_oversized_points
 convex_hull_oversized_points
 union_nan_coordinate
 convex_hull_inf_coordinate
+convex_hull_invalid_watermark
