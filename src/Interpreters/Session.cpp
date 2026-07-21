@@ -11,7 +11,6 @@
 #include <Common/ThreadPool.h>
 #include <Common/setThreadName.h>
 #include <Common/SipHash.h>
-#include <Common/Crypto/X509Certificate.h>
 #include <IO/WriteHelpers.h>
 #include <Core/Settings.h>
 #include <Core/UUID.h>
@@ -43,7 +42,6 @@ namespace ErrorCodes
     extern const int SESSION_NOT_FOUND;
     extern const int SESSION_IS_LOCKED;
     extern const int USER_EXPIRED;
-    extern const int ACCESS_DENIED;
 }
 
 
@@ -325,7 +323,7 @@ Session::~Session()
         LOG_DEBUG(log, "{} Logout, user_id: {}", toString(auth_id), toString(user_id.value_or(UUID{})));
         if (auto session_log = getSessionLog())
         {
-            session_log->addLogOut(auth_id, user, user_authenticated_with, getClientInfo(), certificate_info);
+            session_log->addLogOut(auth_id, user, user_authenticated_with, getClientInfo());
         }
     }
 }
@@ -354,7 +352,7 @@ std::unordered_set<AuthenticationType> Session::getAuthenticationTypesOrLogInFai
     {
         LOG_ERROR(log, "{} Authentication failed with error: {}", toString(auth_id), e.what());
         if (auto session_log = getSessionLog())
-            session_log->addLoginFailure(auth_id, getClientInfo(), user_name, e, certificate_info);
+            session_log->addLoginFailure(auth_id, getClientInfo(), user_name, e);
 
         throw;
     }
@@ -430,29 +428,8 @@ void Session::onAuthenticationFailure(const std::optional<String> & user_name, c
         /// Add source address to the log
         auto info_for_log = *prepared_client_info;
         info_for_log.current_address = std::make_shared<Poco::Net::SocketAddress>(address_);
-        session_log->addLoginFailure(auth_id, info_for_log, user_name, e, certificate_info);
+        session_log->addLoginFailure(auth_id, info_for_log, user_name, e);
     }
-}
-
-void Session::setClientCertificate(const X509Certificate & certificate)
-{
-#if USE_SSL
-    ClientCertificateInfo info;
-
-    auto subjects = certificate.extractAllSubjects();
-    for (auto type : {X509Certificate::Subjects::Type::CN, X509Certificate::Subjects::Type::SAN})
-        for (const auto & subject : subjects.at(type))
-            info.subjects.push_back(subjects.toString(type) + ":" + subject);
-
-    info.serial = certificate.serialNumber();
-    info.issuer = certificate.issuerName();
-    info.not_before = certificate.notBefore();
-    info.not_after = certificate.notAfter();
-
-    certificate_info = std::move(info);
-#else
-    (void)certificate;
-#endif
 }
 
 const ClientInfo & Session::getClientInfo() const
@@ -728,28 +705,9 @@ ContextMutablePtr Session::makeQueryContextImpl(const ClientInfo * client_info_t
         query_context->setInitialAddress(*query_context->getClientInfo().current_address);
     }
 
-    /// On a secret interserver query, enable the initiator's current roles (external, bypassing the grant check)
-    /// and drop defaults so row policies match. Gate on the session interface, not the client-controlled per-query one.
-    std::vector<UUID> effective_external_roles = external_roles;
-    const bool apply_initiator_roles = getClientInfo().interface == ClientInfo::Interface::TCP_INTERSERVER
-        && query_context->getClientInfo().current_roles.has_value()
-        && global_context->getSettingsRef()[Setting::push_external_roles_in_interserver_queries];
-    if (apply_initiator_roles)
-    {
-        const auto & role_names = *query_context->getClientInfo().current_roles;
-        effective_external_roles = global_context->getAccessControl().find<Role>(role_names);
-        /// Fail closed: a role unknown here cannot be honored; dropping it could drop a restrictive policy.
-        if (effective_external_roles.size() != role_names.size())
-            throw Exception(ErrorCodes::ACCESS_DENIED,
-                "Not all of the initiator's current roles are known on this node: [{}]", fmt::join(role_names, ", "));
-    }
-
     /// Set user information for the new context: current profiles, roles, access rights.
     if (user_id && !query_context->getAccess()->tryGetUser())
-        query_context->setUser(*user_id, effective_external_roles);
-
-    if (apply_initiator_roles && user_id)
-        query_context->setCurrentRoles(std::vector<UUID>{}, /* check_grants= */ false);
+        query_context->setUser(*user_id, external_roles);
 
     /// Query context is ready.
     query_context_created = true;
@@ -782,8 +740,7 @@ void Session::recordLoginSuccess(ContextPtr login_context) const
                                      access->getAccess(),
                                      getClientInfo(),
                                      user,
-                                     user_authenticated_with,
-                                     certificate_info);
+                                     user_authenticated_with);
     }
 
     notified_session_log_about_login = true;

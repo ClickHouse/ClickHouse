@@ -41,15 +41,14 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
     [nats_password = 'password',]
     [nats_token = 'clickhouse',]
     [nats_credential_file = '/var/nats_credentials',]
-    [nats_startup_connect_tries = 5,]
+    [nats_startup_connect_tries = '5']
     [nats_max_rows_per_message = 1,]
-    [nats_commit_on_select = false,]
     [nats_handle_error_mode = 'default']
 ```
 
 Required parameters:
 
-- `nats_url` – host:port (for example, `localhost:4222`)..
+- `nats_url` – host:port (for example, `localhost:5672`)..
 - `nats_subjects` – List of subject for NATS table to subscribe/publish to. Supports wildcard subjects like `foo.*.bar` or `baz.>`
 - `nats_format` – Message format. Uses the same notation as the SQL `FORMAT` function, such as `JSONEachRow`. For more information, see the [Formats](../../../interfaces/formats.md) section.
 
@@ -57,23 +56,21 @@ Optional parameters:
 
 - `nats_schema` – Parameter that must be used if the format requires a schema definition. For example, [Cap'n Proto](https://capnproto.org/) requires the path to the schema file and the name of the root `schema.capnp:Message` object.
 - `nats_stream` – The name of an existing stream in NATS JetStream.
-- `nats_consumer_name` – The name of an existing durable pull consumer in NATS JetStream.
+- `nats_consumer` – The name of an existing durable  pull consumer in NATS JetStream.
 - `nats_num_consumers` – The number of consumers per table. Default: `1`. Specify more consumers if the throughput of one consumer is insufficient for NATS core only.
 - `nats_queue_group` – Name for queue group of NATS subscribers. Default is the table name.
 - `nats_max_reconnect` – Deprecated and has no effect, reconnect is performed permanently with nats_reconnect_wait timeout.
-- `nats_reconnect_wait` – Amount of time in milliseconds to sleep between each reconnect attempt. Default: `2000`.
+- `nats_reconnect_wait` – Amount of time in milliseconds to sleep between each reconnect attempt. Default: `5000`.
 - `nats_server_list` - Server list for connection. Can be specified to connect to NATS cluster.
 - `nats_skip_broken_messages` - NATS message parser tolerance to schema-incompatible messages per block. Default: `0`. If `nats_skip_broken_messages = N` then the engine skips *N* NATS messages that cannot be parsed (a message equals a row of data).
 - `nats_max_block_size` - Number of row collected by poll(s) for flushing data from NATS. Default: [max_insert_block_size](../../../operations/settings/settings.md#max_insert_block_size).
 - `nats_flush_interval_ms` - Timeout for flushing data read from NATS. Default: [stream_flush_interval_ms](/operations/settings/settings#stream_flush_interval_ms).
-- `nats_wait_for_flush_interval` - If `true`, a background streaming cycle stays open for the whole flush interval (`nats_flush_interval_ms`, or `stream_flush_interval_ms` otherwise) instead of finishing as soon as the consumer queue drains, letting more messages accumulate into a single block at the cost of up to one flush interval of extra ingestion latency. Default: `false` (low-latency drain-and-go behaviour).
 - `nats_username` - NATS username.
 - `nats_password` - NATS password.
 - `nats_token` - NATS auth token.
 - `nats_credential_file` - Path to a NATS credentials file.
 - `nats_startup_connect_tries` - Number of connect tries at startup. Default: `5`.
 - `nats_max_rows_per_message` — The maximum number of rows written in one NATS message for row-based formats. (default : `1`).
-- `nats_commit_on_select` - Commit messages when query is made. Applies to JetStream only; core NATS has no acknowledgements. Default: `0`.
 - `nats_handle_error_mode` — How to handle errors for NATS engine. Possible values: default (the exception will be thrown if we fail to parse a message), stream (the exception message and raw message will be saved in virtual columns `_error` and `_raw_message`).
 
 SSL connection:
@@ -305,5 +302,3 @@ CREATE TABLE nats_jet_stream (
               nats_subjects = 'stream_subject',
               nats_format = 'JSONEachRow';
 ```
-
-JetStream tables give at-least-once delivery: a message is acknowledged only after it has been inserted into the dependent materialized views, so a message whose insert fails or is interrupted stays unacknowledged and is redelivered. Core NATS (without JetStream) has no acknowledgement or replay, so it is at-most-once and an interrupted message is lost.

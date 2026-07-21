@@ -6,21 +6,20 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <base/types.h>
-#include <Examples/clickhouse_examples.h>
 
-static int readAndPrint(DB::ReadBuffer & in)
+int readAndPrint(DB::ReadBuffer & in)
 {
     try
     {
-        Int64 a = {};
-        Float64 b = {};
+        Int64 a;
+        Float64 b;
         String c;
         String d;
 
         DB::readIntText(a, in);
         in.ignore();
 
-        DB::readFloatTextPrecise(b, in);
+        DB::readFloatText(b, in);
         in.ignore();
 
         DB::readEscapedString(c, in);

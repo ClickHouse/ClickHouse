@@ -23,17 +23,10 @@ Check out our [Managed Postgres](/docs/cloud/managed-postgres) service. Backed b
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 (
-    name1 type1 [DEFAULT|MATERIALIZED|ALIAS expr1],
-    name2 type2 [DEFAULT|MATERIALIZED|ALIAS expr2],
+    name1 type1 [DEFAULT|MATERIALIZED|ALIAS expr1] [TTL expr1],
+    name2 type2 [DEFAULT|MATERIALIZED|ALIAS expr2] [TTL expr2],
     ...
 ) ENGINE = PostgreSQL({host:port, database, table, user, password[, schema, [, on_conflict]] | named_collection[, option=value [,..]]})
-SETTINGS
-    [ postgresql_connection_pool_size=16, ]
-    [ postgresql_connection_pool_wait_timeout=5000, ]
-    [ postgresql_connection_pool_retries=2, ]
-    [ postgresql_connection_pool_auto_close_connection=false, ]
-    [ postgresql_connection_attempt_timeout=2 ]
-;
 ```
 
 See a detailed description of the [CREATE TABLE](/sql-reference/statements/create/table) query.
@@ -48,7 +41,7 @@ The table structure can differ from the original PostgreSQL table structure:
 
 - `host:port` — PostgreSQL server address.
 - `database` — Remote database name.
-- `table` — Remote table name, or a query passed to PostgreSQL as is (see [Passing a query instead of a table name](#passing-a-query)).
+- `table` — Remote table name.
 - `user` — PostgreSQL user.
 - `password` — User password.
 - `schema` — Non-default table schema. Optional.
@@ -73,53 +66,6 @@ Some parameters can be overridden by key value arguments:
 SELECT * FROM postgresql(postgres_creds, table='table1');
 ```
 
-## Settings {#settings}
-
-The connection pool used by the `PostgreSQL` table engine (and the [`postgresql`](/sql-reference/table-functions/postgresql) table function) can be configured per table with a `SETTINGS` clause. When a setting is not specified, it defaults to the value of the corresponding query-level `postgresql_*` setting.
-
-### `postgresql_connection_pool_size` {#postgresql-connection-pool-size}
-
-Connection pool size (if all connections are in use, the query waits until some connection is freed). Must be non-zero.
-
-Default value: `16`.
-
-### `postgresql_connection_pool_wait_timeout` {#postgresql-connection-pool-wait-timeout}
-
-Connection pool push/pop timeout in milliseconds on an empty pool. `0` means it blocks on an empty pool.
-
-Default value: `5000`.
-
-### `postgresql_connection_pool_retries` {#postgresql-connection-pool-retries}
-
-Connection pool push/pop retries number.
-
-Default value: `2`.
-
-### `postgresql_connection_pool_auto_close_connection` {#postgresql-connection-pool-auto-close-connection}
-
-Close the connection before returning it to the pool.
-
-Default value: `false`.
-
-### `postgresql_connection_attempt_timeout` {#postgresql-connection-attempt-timeout}
-
-Connection timeout in seconds of a single attempt to connect to the PostgreSQL end-point. The value is passed as a `connect_timeout` parameter of the connection URL.
-
-Default value: `2`.
-
-Example:
-
-```sql
-CREATE TABLE pg_table
-(
-    `float_nullable` Nullable(Float32),
-    `str` String,
-    `int_id` Int32
-)
-ENGINE = PostgreSQL('localhost:5432', 'public', 'test', 'postgres_user', 'postgres_password')
-SETTINGS postgresql_connection_pool_size = 32, postgresql_connection_pool_auto_close_connection = 1;
-```
-
 ## Implementation details {#implementation-details}
 
 `SELECT` queries on PostgreSQL side run as `COPY (SELECT ...) TO STDOUT` inside read-only PostgreSQL transaction with commit after each `SELECT` query.
@@ -127,23 +73,6 @@ SETTINGS postgresql_connection_pool_size = 32, postgresql_connection_pool_auto_c
 Simple `WHERE` clauses such as `=`, `!=`, `>`, `>=`, `<`, `<=`, and `IN` are executed on the PostgreSQL server.
 
 All joins, aggregations, sorting, `IN [ array ]` conditions and the `LIMIT` sampling constraint are executed in ClickHouse only after the query to PostgreSQL finishes.
-
-## Passing a query instead of a table name {#passing-a-query}
-
-Instead of a table name, the `table` argument can be a `SELECT` query that is passed to PostgreSQL as is. The structure of the table is inferred from the query result. The query can be written either as a subquery, or wrapped into the `query` function:
-
-```sql
-CREATE TABLE pg_table ENGINE = PostgreSQL('localhost:5432', 'test', (SELECT a, b FROM t1 JOIN t2 USING (id) WHERE a > 0), 'user', 'password');
-CREATE TABLE pg_table ENGINE = PostgreSQL('localhost:5432', 'test', query('SELECT a, b FROM t1 JOIN t2 USING (id) WHERE a > 0'), 'user', 'password');
-```
-
-This is useful to push down joins, aggregations or any other processing to PostgreSQL. Such a table is read-only: `INSERT` into it is not allowed. The same syntax is supported by the [`postgresql`](/sql-reference/table-functions/postgresql) table function.
-
-:::note
-The subquery form `(SELECT ...)` is parsed by ClickHouse and re-serialized in the PostgreSQL dialect (PostgreSQL identifier quoting and string-literal escaping) before being sent to the server. It must therefore be valid ClickHouse SQL. To pass PostgreSQL-specific syntax that ClickHouse does not parse, use the `query('...')` form, whose text is sent to PostgreSQL verbatim.
-
-Any outer `WHERE`, `LIMIT`, aggregation, etc. of the surrounding ClickHouse query is **not** pushed down into the passed query — it is applied in ClickHouse after the full query result is fetched. To restrict the data read from PostgreSQL, put the filter inside the passed query. With [`external_table_strict_query = 1`](/operations/settings/settings#external_table_strict_query) an outer filter that cannot be pushed down is rejected with an exception instead of being applied locally.
-:::
 
 `INSERT` queries on PostgreSQL side run as `COPY "table_name" (field1, field2, ... fieldN) FROM STDIN` inside PostgreSQL transaction with auto-commit after each `INSERT` statement.
 
@@ -257,8 +186,8 @@ Then inserting values from PostgreSQL table greater than the max
 
 ```sql
 INSERT INTO default.postgresql_copy
-SELECT * FROM postgresql('localhost:5432', 'public', 'test', 'postgres_user', 'postgres_password')
-WHERE int_id > (SELECT max(int_id) FROM default.postgresql_copy);
+SELECT * FROM postgresql('localhost:5432', 'public', 'test', 'postges_user', 'postgres_password');
+WHERE int_id > maxIntID;
 ```
 
 ### Selecting data from the resulting ClickHouse table {#selecting-data-from-the-resulting-clickhouse-table}

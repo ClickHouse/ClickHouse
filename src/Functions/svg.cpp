@@ -19,7 +19,7 @@ namespace ErrorCodes
 namespace
 {
 
-class FunctionSvg final : public IFunction
+class FunctionSvg : public IFunction
 {
 public:
     static inline const char * name = "svg";

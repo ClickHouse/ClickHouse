@@ -180,7 +180,7 @@ IProcessor::Status NegativeOffsetTransform::tryPushWholeFrontChunk()
     /// Need to keep at least 'offset' rows queued.
     while (queued_row_count > offset)
     {
-        chassert(!queue.empty() && "Queue is empty in tryPushWholeFrontChunk");
+        assert(!queue.empty() && "Queue is empty in tryPushWholeFrontChunk");
 
         auto & front = queue.front();
 

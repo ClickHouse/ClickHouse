@@ -1,5 +1,6 @@
 import pytest
 import logging
+import pyspark
 
 
 from helpers.cluster import ClickHouseCluster
