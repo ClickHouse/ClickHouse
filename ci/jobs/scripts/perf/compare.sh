@@ -1398,6 +1398,13 @@ create table all_query_metrics_tsv engine File(TSV, 'report/all-query-metrics.ts
         on query_display_names.test = report_thresholds.test
             and query_display_names.query_index = report_thresholds.query_index
             and query_display_names.query_display_name = report_thresholds.query_display_name
+    -- Queries demoted by the confirmation rerun are retracted entirely (all
+    -- their metrics): this file feeds the CIDB upload, so the database keeps
+    -- only comparisons that reproduced after a server restart. The demoted
+    -- ones remain in the report's 'Unconfirmed Changes' table (and the raw
+    -- per-run measurements are uploaded unconditionally elsewhere).
+    where (query_metric_stats.test, query_metric_stats.query_index) not in
+        (select test, query_index from unconfirmed_queries)
     order by test, query_index;
 " $CHPC_REPORT_LOCAL_QUERY_SETTINGS -- $CHPC_REPORT_LOCAL_SERVER_SETTINGS 2> >(tee -a report/errors.log 1>&2)
 
