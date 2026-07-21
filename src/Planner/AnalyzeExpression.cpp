@@ -27,6 +27,7 @@
 #include <Storages/StorageDummy.h>
 
 #include <algorithm>
+#include <unordered_map>
 
 
 namespace DB
@@ -269,7 +270,8 @@ static CoreAnalysisResult buildExpressionCoreDAG(
 /// names against WHERE clause names), override top-level output names from
 /// `ast_column_names`, and append source columns to outputs (matching the old
 /// `ExpressionAnalyzer::getActions(false, false)` behavior).
-static void applyAstNamingAndAppendSourceColumns(ActionsDAG & actions, const std::vector<String> & ast_column_names)
+static void applyAstNamingAndAppendSourceColumns(
+    ActionsDAG & actions, const std::vector<String> & ast_column_names, const NamesAndTypesList & available_columns)
 {
     auto & outputs = actions.getOutputs();
 
@@ -317,6 +319,14 @@ static void applyAstNamingAndAppendSourceColumns(ActionsDAG & actions, const std
     /// Add source columns to outputs to match ExpressionAnalyzer::getActions(false) behavior.
     /// The old code included all source columns in the output; buildActionsDAGFromExpressionNode
     /// only outputs the expression results.
+    ///
+    /// The legacy DAG listed the source columns in `available_columns` (table/header)
+    /// order, while `PlannerActionsVisitor` registers inputs in first-use order.  The
+    /// relative order of these appended columns is observable: `ActionsDAG::updateHeader`
+    /// (and thus `FilterStep`/`ExpressionStep` headers) materializes outputs in output
+    /// order, so e.g. a row-policy filter `b > a` over header `[a, b, c]` would otherwise
+    /// produce header `[b, a, c]` after the filter column is removed.  Sort the appended
+    /// inputs by their position in `available_columns` to preserve the legacy order.
     std::vector<const ActionsDAG::Node *> inputs_to_add;
     for (const auto * input : actions.getInputs())
     {
@@ -332,6 +342,23 @@ static void applyAstNamingAndAppendSourceColumns(ActionsDAG & actions, const std
         if (!already_in_outputs)
             inputs_to_add.push_back(input);
     }
+
+    std::unordered_map<std::string_view, size_t> available_positions;
+    available_positions.reserve(available_columns.size());
+    size_t position = 0;
+    for (const auto & column : available_columns)
+        available_positions.emplace(column.name, position++);
+
+    std::stable_sort(inputs_to_add.begin(), inputs_to_add.end(),
+        [&](const ActionsDAG::Node * lhs, const ActionsDAG::Node * rhs)
+        {
+            const auto lhs_it = available_positions.find(lhs->result_name);
+            const auto rhs_it = available_positions.find(rhs->result_name);
+            const size_t lhs_pos = lhs_it == available_positions.end() ? available_positions.size() : lhs_it->second;
+            const size_t rhs_pos = rhs_it == available_positions.end() ? available_positions.size() : rhs_it->second;
+            return lhs_pos < rhs_pos;
+        });
+
     for (const auto * input : inputs_to_add)
         outputs.push_back(input);
 }
@@ -432,7 +459,7 @@ ActionsDAG analyzeExpressionToActionsDAG(
     }
     else
     {
-        applyAstNamingAndAppendSourceColumns(actions, ast_column_names);
+        applyAstNamingAndAppendSourceColumns(actions, ast_column_names, available_columns);
     }
 
     return std::move(actions);
@@ -509,7 +536,7 @@ AnalyzedExpressionWithSampleBlock analyzeExpressionToActionsAndSampleBlock(
     /// Apply AST-style intermediate renaming and append source columns to outputs
     /// so the resulting `ExpressionActions` matches the legacy
     /// `ExpressionAnalyzer::getActions(false, false)` shape.
-    applyAstNamingAndAppendSourceColumns(actions, names_no_aliases);
+    applyAstNamingAndAppendSourceColumns(actions, names_no_aliases, available_columns);
 
     AnalyzedExpressionWithSampleBlock result;
     result.expression = std::make_shared<ExpressionActions>(std::move(actions), ExpressionActionsSettings(context, compile_expressions));
