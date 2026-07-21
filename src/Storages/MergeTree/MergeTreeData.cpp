@@ -3125,11 +3125,13 @@ void MergeTreeData::refreshDataPartsOnce(UInt64 interval_milliseconds)
     bool have_lightweight_in_parts = false;
     bool have_parts_with_version_metadata = false;
 
-    /// Iterate by index because a rolled-back top-level part appends its committed children to
-    /// the work list below. Hold a copy of the node pointer (not a reference into the vector):
-    /// a `push_back` may reallocate `parts_to_add` while `my_part` is still in use.
+    /// Iterate by index and copy the `shared_ptr`: `seed` appends committed children to
+    /// `parts_to_add` below via `emplace_back`, so a range-based loop or a reference into the
+    /// vector would be a use-after-reallocation bug when it grows.
+    /// NOLINTNEXTLINE(modernize-loop-convert)
     for (size_t i = 0; i < parts_to_add.size(); ++i)
     {
+        /// NOLINTNEXTLINE(performance-unnecessary-copy-initialization)
         auto my_part = parts_to_add[i];
         auto res = loadDataPartWithRetries(
             my_part->info, my_part->name, my_part->disk,
