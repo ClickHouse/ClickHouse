@@ -61,3 +61,11 @@ SELECT generatePrefixedID('user', -1); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT
 SELECT generatePrefixedID(42); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT prefixedIDPrefix(42); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT isValidPrefixedID('user_x', 'user', 'extra'); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+
+-- FixedString inputs
+SELECT prefixedIDPrefix(toFixedString('user_NffrFeUfNV2Hib', 19)), prefixedIDBody(toFixedString('user_NffrFeUfNV2Hib', 19)), splitPrefixedID(toFixedString('user_NffrFeUfNV2Hib', 19));
+SELECT prefixedIDPrefix(materialize(toFixedString('user_NffrFeUfNV2Hib', 19)));
+SELECT isValidPrefixedID(toFixedString('user_NffrFeUfNV2Hib', 19));
+SELECT isValidPrefixedID(toFixedString('user_NffrFeUfNV2Hib', 19), 'user');
+SELECT isValidPrefixedID(toFixedString('user_x', 8)); -- the zero-byte padding is not base62
+SELECT prefixedIDBody(toFixedString('user_x', 8)) == 'x\0\0';

@@ -1,3 +1,4 @@
+#include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
@@ -47,6 +48,19 @@ const ColumnString & getStringColumn(const ColumnPtr & column, const char * func
     return *col_string;
 }
 
+/// TypeIDs are often stored with an exact width (e.g. FixedString(26) for the prefixless
+/// form), so the textual inputs accept both String and FixedString. Both column types
+/// return the row value from getDataAt, so the callers can read rows generically.
+const IColumn & getStringOrFixedStringColumn(const ColumnPtr & column, const char * function_name, const char * argument_name)
+{
+    if (!checkAndGetColumn<ColumnString>(column.get()) && !checkAndGetColumn<ColumnFixedString>(column.get()))
+        throw Exception(
+            ErrorCodes::ILLEGAL_COLUMN,
+            "Illegal column {} of {} argument of function {}, must be String or FixedString",
+            column->getName(), argument_name, function_name);
+    return *column;
+}
+
 enum class TypeIDErrorHandling : uint8_t
 {
     ThrowException,
@@ -69,7 +83,7 @@ public:
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         FunctionArgumentDescriptors args{
-            {"type_id", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"}};
+            {"type_id", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), nullptr, "String or FixedString"}};
         validateFunctionArguments(*this, arguments, args);
 
         if constexpr (error_handling == TypeIDErrorHandling::ReturnNull)
@@ -80,7 +94,7 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        const ColumnString & col_string = getStringColumn(arguments[0].column, name, "first");
+        const IColumn & col_string = getStringOrFixedStringColumn(arguments[0].column, name, "first");
 
         auto col_res = ColumnUUID::create();
         typename ColumnUUID::Container & vec_res = col_res->getData();
@@ -149,7 +163,7 @@ public:
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         FunctionArgumentDescriptors args{
-            {"type_id", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"}};
+            {"type_id", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), nullptr, "String or FixedString"}};
         validateFunctionArguments(*this, arguments, args);
 
         return std::make_shared<DataTypeString>();
@@ -157,7 +171,7 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        const ColumnString & col_string = getStringColumn(arguments[0].column, name, "first");
+        const IColumn & col_string = getStringOrFixedStringColumn(arguments[0].column, name, "first");
 
         auto col_res = ColumnString::create();
         col_res->reserve(input_rows_count);
@@ -368,7 +382,7 @@ If the string is not a valid TypeID, an exception is thrown.
 )";
     FunctionDocumentation::Syntax syntax = "typeIDToUUID(type_id)";
     FunctionDocumentation::Arguments arguments = {
-        {"type_id", "TypeID string to convert.", {"String"}}
+        {"type_id", "TypeID string to convert.", {"String", "FixedString"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns the UUID encoded in the TypeID suffix.", {"UUID"}};
     FunctionDocumentation::Examples examples = {
@@ -396,7 +410,7 @@ Like [`typeIDToUUID`](#typeIDToUUID), but returns `NULL` instead of throwing an 
 )";
     FunctionDocumentation::Syntax syntax = "tryTypeIDToUUID(type_id)";
     FunctionDocumentation::Arguments arguments = {
-        {"type_id", "TypeID string to convert.", {"String"}}
+        {"type_id", "TypeID string to convert.", {"String", "FixedString"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns the UUID encoded in the TypeID suffix, or NULL if the input is not a valid TypeID.", {"Nullable(UUID)"}};
     FunctionDocumentation::Examples examples = {
@@ -426,7 +440,7 @@ If the string is not a valid TypeID, an exception is thrown.
 )";
     FunctionDocumentation::Syntax syntax = "typeIDPrefix(type_id)";
     FunctionDocumentation::Arguments arguments = {
-        {"type_id", "TypeID string.", {"String"}}
+        {"type_id", "TypeID string.", {"String", "FixedString"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns the type prefix of the TypeID.", {"String"}};
     FunctionDocumentation::Examples examples = {

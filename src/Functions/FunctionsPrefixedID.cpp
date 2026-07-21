@@ -1,3 +1,4 @@
+#include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsNumber.h>
@@ -118,6 +119,20 @@ const ColumnString & getStringColumn(const ColumnPtr & column, const char * func
     return *col_string;
 }
 
+/// Prefixed identifiers often have a fixed width (e.g. generatePrefixedID('user') always
+/// returns 27 characters), so the identifier inputs accept both String and FixedString.
+/// Both column types return the row value from getDataAt, so the callers can read rows
+/// generically.
+const IColumn & getStringOrFixedStringColumn(const ColumnPtr & column, const char * function_name, const char * argument_name)
+{
+    if (!checkAndGetColumn<ColumnString>(column.get()) && !checkAndGetColumn<ColumnFixedString>(column.get()))
+        throw Exception(
+            ErrorCodes::ILLEGAL_COLUMN,
+            "Illegal column {} of {} argument of function {}, must be String or FixedString",
+            column->getName(), argument_name, function_name);
+    return *column;
+}
+
 class FunctionGeneratePrefixedID : public IFunction
 {
 public:
@@ -234,7 +249,7 @@ public:
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         FunctionArgumentDescriptors args{
-            {"id", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"}};
+            {"id", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), nullptr, "String or FixedString"}};
         validateFunctionArguments(*this, arguments, args);
 
         return std::make_shared<DataTypeString>();
@@ -242,7 +257,7 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        const ColumnString & col_string = getStringColumn(arguments[0].column, name, "first");
+        const IColumn & col_string = getStringOrFixedStringColumn(arguments[0].column, name, "first");
 
         auto col_res = ColumnString::create();
         col_res->reserve(input_rows_count);
@@ -289,7 +304,7 @@ public:
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         FunctionArgumentDescriptors args{
-            {"id", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"}};
+            {"id", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), nullptr, "String or FixedString"}};
         validateFunctionArguments(*this, arguments, args);
 
         return std::make_shared<DataTypeTuple>(
@@ -299,7 +314,7 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        const ColumnString & col_string = getStringColumn(arguments[0].column, name, "first");
+        const IColumn & col_string = getStringOrFixedStringColumn(arguments[0].column, name, "first");
 
         auto col_prefix = ColumnString::create();
         auto col_body = ColumnString::create();
@@ -339,7 +354,7 @@ public:
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         FunctionArgumentDescriptors mandatory_args{
-            {"id", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"}};
+            {"id", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), nullptr, "String or FixedString"}};
         FunctionArgumentDescriptors optional_args{
             {"prefix", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"}};
         validateFunctionArguments(*this, arguments, mandatory_args, optional_args);
@@ -349,7 +364,7 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        const ColumnString & col_string = getStringColumn(arguments[0].column, name, "first");
+        const IColumn & col_string = getStringOrFixedStringColumn(arguments[0].column, name, "first");
 
         const ColumnString * col_expected_prefix = nullptr;
         ColumnPtr full_prefix_column;
@@ -434,7 +449,7 @@ The split is purely positional and never fails; use [`isValidPrefixedID`](#isVal
 )";
     FunctionDocumentation::Syntax syntax = "prefixedIDPrefix(id)";
     FunctionDocumentation::Arguments arguments = {
-        {"id", "Prefixed identifier.", {"String"}}
+        {"id", "Prefixed identifier.", {"String", "FixedString"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns the prefix of the identifier.", {"String"}};
     FunctionDocumentation::Examples examples = {
@@ -464,7 +479,7 @@ The split is purely positional and never fails; use [`isValidPrefixedID`](#isVal
 )";
     FunctionDocumentation::Syntax syntax = "prefixedIDBody(id)";
     FunctionDocumentation::Arguments arguments = {
-        {"id", "Prefixed identifier.", {"String"}}
+        {"id", "Prefixed identifier.", {"String", "FixedString"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns the body of the identifier.", {"String"}};
     FunctionDocumentation::Examples examples = {
@@ -494,7 +509,7 @@ The split is purely positional and never fails; use [`isValidPrefixedID`](#isVal
 )";
     FunctionDocumentation::Syntax syntax = "splitPrefixedID(id)";
     FunctionDocumentation::Arguments arguments = {
-        {"id", "Prefixed identifier.", {"String"}}
+        {"id", "Prefixed identifier.", {"String", "FixedString"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns a tuple of the prefix and the body of the identifier.", {"Tuple(prefix String, body String)"}};
     FunctionDocumentation::Examples examples = {
@@ -525,7 +540,7 @@ An empty `prefix` argument is ambiguous and throws an exception.
 )";
     FunctionDocumentation::Syntax syntax = "isValidPrefixedID(id[, prefix])";
     FunctionDocumentation::Arguments arguments = {
-        {"id", "Identifier to check.", {"String"}},
+        {"id", "Identifier to check.", {"String", "FixedString"}},
         {"prefix", "Optional. Expected prefix; must be non-empty.", {"String"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns 1 if the string is a valid prefixed identifier (with the expected prefix, if given), 0 otherwise.", {"UInt8"}};
