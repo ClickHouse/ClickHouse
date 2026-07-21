@@ -53,34 +53,53 @@ def _log_tail(path: Path, max_lines: int = 50, max_bytes: int = 65536) -> str:
 # "Received from <host>." A client-side 241 raised under
 # --max_memory_usage_in_client prints "Code: 241. DB::Exception: ..." with no
 # such prefix, so this signature keeps only genuine server-survived limits.
-SERVER_MLE_SIGNATURE = r"Received from.*MEMORY_LIMIT_EXCEEDED"
+# The server error text can appear as the enum "(MEMORY_LIMIT_EXCEEDED)" or the
+# prose "... memory limit exceeded" (the two are printed on separate lines: the
+# "Received from" line carries the prose message, the enum trails on its own
+# line), so match either form -- both are server-origin because of the prefix.
+SERVER_MLE_SIGNATURE = r"Received from.*(?:MEMORY_LIMIT_EXCEEDED|memory limit exceeded)"
 
-# The client prints "Dump of fuzzed AST:\n<query>" before executing each fuzz
+# A client-origin 241 line: "Code: 241" with NO "Received from" on the same line.
+# clickhouse-client raises 241 for its own --max_memory_usage_in_client cap (see
+# tests/queries/0_stateless/02003_memory_limit_in_client.sh) and prints it as
+# "Code: 241. DB::Exception: ..." with no transmission prefix, whereas a server-
+# transmitted 241 always carries "Received from <host>" on that line. Used only
+# in the no-marker fallback below to reject a client/harness 241 that a server
+# limit recovered from earlier in the same read tail must not mask.
+CLIENT_241_SIGNATURE = re.compile(r"^(?!.*Received from).*Code: 241\b", re.MULTILINE)
+
+# The client prints "Fuzzing step <n> out of <m>" to stderr before each fuzz
 # step (programs/client/FuzzLoop.cpp), so the text after the LAST such marker is
 # the terminal query block -- the only step whose outcome sets the exit code.
+# This anchors on stderr, not the "Dump of fuzzed AST:" line: that dump is
+# printed to stdout, which is block-buffered when redirected to a file, so
+# run-fuzzer.sh's "> fuzzer.log 2>&1" flushes the terminal step's dump at process
+# exit -- AFTER its own (unbuffered stderr) exception -- and a dump-based anchor
+# would land on that trailing re-dump, past the evidence.
 # The AST fuzzer swallows query-side server MEMORY_LIMIT_EXCEEDED and keeps going
-# (Client::processASTFuzzerStep), so a 30-minute fuzzer.log accumulates many
-# recovered "Received from ... (MEMORY_LIMIT_EXCEEDED)" lines that did NOT
-# terminate the run; each sits in its own (non-terminal) step block. A fixed
-# line/byte tail can still hold such a swallowed limit together with a later
-# client-side 241 when only a few stack frames separate the two steps, so anchor
-# on the terminal block instead of a fixed-size window.
-DUMP_MARKER = "Dump of fuzzed AST:"
+# (Client::processASTFuzzerStep returns success), so a 30-minute fuzzer.log
+# accumulates many recovered "Received from ... memory limit exceeded" lines that
+# did NOT terminate the run; each sits in its own (non-terminal) step block. A
+# fixed line/byte tail can still hold such a swallowed limit together with a
+# later client-side 241 when only a few stack frames separate the two steps, so
+# anchor on the terminal step block instead of a fixed-size window.
+STEP_MARKER = re.compile(r"^Fuzzing step \d+ out of \d+$", re.MULTILINE)
 
-# Bounded read for the terminal block. A single fuzzed query's dump plus its
+# Bounded read for the terminal block. A single fuzz step's dump plus its
 # transmitted exception is small; 256 KiB comfortably covers the last marker and
 # everything after it without loading a 30-minute log. Everything within a
 # tail-of-file window is by construction after the last marker, so even when the
-# terminal query's dump is larger than this bound the window stays inside the
+# terminal step's output is larger than this bound the window stays inside the
 # terminal block and never leaks an earlier step's swallowed limit.
 TERMINAL_BLOCK_MAX_BYTES = 262144
 
 
 def _terminal_query_block(fuzzer_log: Path) -> str:
-    """Text of fuzzer.log after the last 'Dump of fuzzed AST:' marker.
+    """Text of fuzzer.log after the last 'Fuzzing step <n> out of <m>' marker.
 
     Returns the read tail as-is when no marker is present (the run exited before
-    any fuzz step printed a dump, e.g. a startup/handshake error)."""
+    any AST fuzz step, e.g. a startup/handshake error, or BuzzHouse which does
+    not print step markers)."""
     try:
         size = fuzzer_log.stat().st_size
         if size == 0:
@@ -91,13 +110,30 @@ def _terminal_query_block(fuzzer_log: Path) -> str:
             text = fh.read().decode("utf-8", errors="replace")
     except OSError:
         return ""
-    idx = text.rfind(DUMP_MARKER)
-    return text if idx == -1 else text[idx:]
+    matches = list(STEP_MARKER.finditer(text))
+    return text if not matches else text[matches[-1].start():]
 
 
 def _fuzzer_log_terminal_block_has_server_mle(fuzzer_log: Path) -> bool:
-    """True when a server-origin MEMORY_LIMIT_EXCEEDED is in the terminal block."""
-    return re.search(SERVER_MLE_SIGNATURE, _terminal_query_block(fuzzer_log)) is not None
+    """True when a server-origin MEMORY_LIMIT_EXCEEDED explains the terminal 241.
+
+    The terminal block is anchored on the last 'Fuzzing step' marker (or the
+    whole read tail for a startup/handshake 241 or a BuzzHouse run, which print
+    no marker). It can still hold a server limit the run recovered from earlier
+    followed by a later client/harness 241 -- a recovered query limit then a
+    client-side reconnect/handshake 241 within a step, or the same across a
+    markerless tail. Treat it as benign only when no client-origin 241 line (a
+    "Code: 241" line with no "Received from" prefix) appears AFTER the last
+    server-origin MLE: that later 241 is the real exit cause and must surface,
+    while an earlier recovered client 241 does not veto a genuinely terminal
+    server limit."""
+    block = _terminal_query_block(fuzzer_log)
+    server_mles = [m.start() for m in re.finditer(SERVER_MLE_SIGNATURE, block)]
+    if not server_mles:
+        return False
+    return not any(
+        m.start() > server_mles[-1] for m in CLIENT_241_SIGNATURE.finditer(block)
+    )
 
 
 def _is_benign_memory_limit(
@@ -114,7 +150,7 @@ def _is_benign_memory_limit(
     loop already treats a 241 as "alive, busy".
 
     The evidence must be server-origin (SERVER_MLE_SIGNATURE) AND come from the
-    TERMINAL query block (after the last 'Dump of fuzzed AST:'). clickhouse-client
+    TERMINAL query block (after the last 'Fuzzing step' marker). clickhouse-client
     itself can raise 241 under --max_memory_usage_in_client (a client-side cap;
     see tests/queries/0_stateless/02003_memory_limit_in_client.sh) and
     mainEntryClickHouseClient returns that code verbatim -- such a client/harness
