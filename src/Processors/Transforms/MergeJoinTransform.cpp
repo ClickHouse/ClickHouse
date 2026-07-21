@@ -211,13 +211,24 @@ size_t ALWAYS_INLINE nextNotLess(FullMergeJoinCursor & cursor, const FullMergeJo
     /// The run of lesser rows forms a prefix of the (sorted) rest of the block. NULL rows never
     /// satisfy the predicate: they sort to the block edge and the values of the nested column
     /// at NULL positions are unspecified.
-    /// Every probe is a virtual compareAt call, which is expensive, so keep the linear probe short.
-    static constexpr size_t linear_probe = 8;
-    size_t run_end = findEqualRangeEndAssumeSorted(start_pos, cursor.rows, linear_probe, [&](size_t row)
+    auto is_less = [&](size_t row)
     {
         return (!null_map || !(*null_map)[row])
             && first_column.compareAt(row, other_pos, other_first_column, null_direction_hint) < 0;
-    });
+    };
+
+    /// Resolve a run of length one with a single comparison. This is the common case for
+    /// interleaved distinct keys, where the run-search setup costs as much as the whole run.
+    const size_t next_pos = start_pos + 1;
+    if (next_pos >= cursor.rows || !is_less(next_pos))
+    {
+        cursor.pos = next_pos;
+        return 1;
+    }
+
+    /// Every probe is a virtual compareAt call, which is expensive, so keep the linear probe short.
+    static constexpr size_t linear_probe = 8;
+    size_t run_end = findEqualRangeEndAssumeSorted(next_pos, cursor.rows, linear_probe, is_less);
 
     cursor.pos = run_end;
     return run_end - start_pos;
