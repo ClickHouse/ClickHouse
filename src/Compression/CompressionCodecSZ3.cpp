@@ -425,9 +425,11 @@ void registerCodecSZ3(CompressionCodecFactory & factory)
             auto error_bound_mode = getSZ3ErrorBoundMode(error_bound_mode_string);
 
             literal = children[2]->as<ASTLiteral>();
-            if (!literal || literal->value.getType() != Field::Types::Which::Float64)
+            /// A finite decimal literal like 0.01 is parsed as a deferred NumberLiteral; resolve it to Float64.
+            auto error_bound_value = literal ? literal->value.resolveNumberLiteral() : Field();
+            if (!literal || error_bound_value.getType() != Field::Types::Which::Float64)
                 throw Exception(ErrorCodes::ILLEGAL_CODEC_PARAMETER, "3rd argument of codec 'SZ3' be a Float64");
-            auto error_value = static_cast<double>(literal->value.safeGet<Float64>());
+            auto error_value = static_cast<double>(error_bound_value.safeGet<Float64>());
             /// The error bound feeds SZ3's quantizer as a divisor; a non-finite or non-positive value
             /// produces NaN/Inf quantization indices that are then cast to integers, which is undefined
             /// behavior (and a non-positive bound is meaningless for a lossy error-bounded codec anyway).
