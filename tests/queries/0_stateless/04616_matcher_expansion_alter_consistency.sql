@@ -1,3 +1,9 @@
+-- Tags: no-parallel-replicas, no-random-settings, no-random-merge-tree-settings
+-- The `force_data_skipping_indices` assertions below check that granules are (or are not)
+-- pruned after an index is rebuilt, so they depend on deterministic skip-index granule
+-- filtering. Under the parallel-replicas coordinator and randomized (merge-tree) settings the
+-- number of pruned granules is not stable, so those settings are disabled for this test.
+
 -- An unrelated ALTER (e.g. ADD COLUMN) can change the expansion of a column matcher inside a
 -- stored expression. Existing parts must not silently keep data built from the old expansion:
 -- skip indices whose effective expression changes are rebuilt (or the ALTER is rejected,
