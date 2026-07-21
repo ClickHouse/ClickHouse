@@ -35,21 +35,14 @@ void FunctionSecretArgumentsFinder::markSecretArgument(size_t index, bool argume
 {
     if (index >= function->arguments->size())
         return;
-    if (!result.count)
-    {
-        result.start = index;
-        result.are_named = argument_is_named;
-    }
     chassert(result.replacement.empty()); /// We shouldn't use replacement with masking other arguments
-    /// Widen the masked range to cover `index`. Arguments are normally marked consecutively in
-    /// increasing order, but a malformed query can mix the named secret form (`key = ...`) with the
-    /// positional form and ask to mask an earlier index after a later one. Masking is best-effort
-    /// over arbitrary user input, so it must widen the range rather than assert on the order.
-    size_t end = std::max(result.start + result.count, index + 1);
-    result.start = std::min(result.start, index);
-    result.count = end - result.start;
-    if (!argument_is_named)
-        result.are_named = false;
+    /// Each argument is masked individually: valid S3 syntax can interleave secrets with non-secret
+    /// arguments, which a contiguous span cannot represent without hiding the arguments in between.
+    /// A malformed query can mark the same index as both named and positional; the positional form
+    /// wins, hiding the argument whole (fail closed).
+    auto [it, inserted] = result.masked_arguments.emplace(index, argument_is_named);
+    if (!inserted)
+        it->second &= argument_is_named;
 }
 
 void FunctionSecretArgumentsFinder::maskNestedSecretMaps()
@@ -130,15 +123,22 @@ std::vector<size_t> FunctionSecretArgumentsFinder::classifyS3Arguments(size_t st
 
 void FunctionSecretArgumentsFinder::maskS3PositionalSecrets(const std::vector<size_t> & positional, size_t url_slot)
 {
+    /// NOSIGN forms carry no positional credentials at any length, e.g. the five-positional
+    /// s3(source, NOSIGN, format, structure, compression_method), which is longer than the callers'
+    /// early-out windows.
+    String second_arg;
+    const bool second_is_string
+        = url_slot + 1 < positional.size() && tryGetStringFromArgument(positional[url_slot + 1], &second_arg);
+    if (second_is_string && boost::iequals(second_arg, "NOSIGN"))
+        return;
+
     if (url_slot + 2 >= positional.size())
         return;
     markSecretArgument(positional[url_slot + 2]);
 
     if (url_slot + 3 >= positional.size())
         return;
-    String second_arg;
-    if (tryGetStringFromArgument(positional[url_slot + 1], &second_arg)
-        && (boost::iequals(second_arg, "NOSIGN") || second_arg == "auto" || KnownFormatNames::instance().exists(second_arg)))
+    if (second_is_string && (second_arg == "auto" || KnownFormatNames::instance().exists(second_arg)))
         return;
     String token_arg;
     if (tryGetStringFromArgument(positional[url_slot + 3], &token_arg)

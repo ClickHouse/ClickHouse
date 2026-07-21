@@ -66,10 +66,16 @@ public:
         /// keeps its host and path while the credential query parameters are hidden. Unlike
         /// `replacement`, this composes with the other masking (span, nested maps).
         std::map<size_t, std::string> replaced_arguments;
+        /// Individually masked arguments by raw argument index; the value tells whether the argument
+        /// is a named `key = value` (the key stays visible and only the value is hidden). Valid S3
+        /// syntax can interleave secrets with non-secret arguments (e.g. a named `session_token`
+        /// after `format`), which a single contiguous span cannot represent without hiding the
+        /// non-secret arguments in between.
+        std::map<size_t, bool> masked_arguments;
 
         bool hasSecrets() const
         {
-            return count != 0 || !nested_maps.empty() || !replaced_arguments.empty();
+            return count != 0 || !nested_maps.empty() || !replaced_arguments.empty() || !masked_arguments.empty();
         }
     };
 

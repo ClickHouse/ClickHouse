@@ -866,6 +866,21 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
                     continue;
                 }
 
+                /// An individually masked argument: for the named `key = value` form the key stays
+                /// visible; anything else (a positional secret, or a malformed argument swept in by
+                /// a fail-closed rule) is hidden whole.
+                if (auto masked = secret_arguments.masked_arguments.find(i); masked != secret_arguments.masked_arguments.end())
+                {
+                    const auto * func_ast = typeid_cast<const ASTFunction *>(argument.get());
+                    if (masked->second && func_ast && func_ast->name == "equals" && func_ast->arguments && func_ast->arguments->children.size() == 2)
+                    {
+                        func_ast->arguments->children[0]->format(ostr, settings, state, nested_dont_need_parens);
+                        ostr << " = ";
+                    }
+                    ostr << "'[HIDDEN]'";
+                    continue;
+                }
+
                 if (secret_arguments.start <= i && i < secret_arguments.start + secret_arguments.count)
                 {
                     if (secret_arguments.are_named)

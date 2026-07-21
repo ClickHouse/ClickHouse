@@ -68,6 +68,14 @@ SELECT * FROM s3('url_interleaved', secret_access_key = 'SEKRIT_SAK',
 SELECT * FROM s3('url_postoken', 'ak', 'SEKRIT_SAK', 'SEKRIT_POSTOK',
                  'TSV', 'x UInt8'); -- { serverError BAD_ARGUMENTS }
 
+-- Secrets can be non-contiguous in valid syntax; the non-secret arguments in between (format,
+-- structure) must stay visible.
+SELECT * FROM s3('url_noncontig', 'ak', 'SEKRIT_SAK', 'TSV', 'x UInt8',
+                 session_token = 'SEKRIT_TAILTOK'); -- { serverError BAD_ARGUMENTS }
+
+-- The five-positional NOSIGN form carries no credentials; nothing must be masked.
+SELECT * FROM s3('url_nosign5', NOSIGN, 'TSV', 'x UInt8', 'none'); -- { serverError BAD_ARGUMENTS }
+
 -- A nested map before the positional session_token must not shift it out of the masked slot.
 SELECT * FROM s3('url_midtok', 'ak', 'SEKRIT_SAK',
                  extra_credentials(external_id = 'SEKRIT_EID'),
