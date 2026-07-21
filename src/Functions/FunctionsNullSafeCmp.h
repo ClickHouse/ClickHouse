@@ -141,8 +141,8 @@ public:
         // To address:
         //   1. Map vs null or
         //   2. Array vs null
-        // `isNotDistinctFrom` (`<=>`): value and NULL are never the same → 0.
-        // `isDistinctFrom`: value and NULL are always distinct → 1.
+        // `isNotDistinctFrom` (`<=>`): value and NULL are never the same -> 0.
+        // `isDistinctFrom`: value and NULL are always distinct -> 1.
         if (((isMap(type_and_name_left_col.type) || isArray(type_and_name_left_col.type))
                 && type_and_name_right_col.type->onlyNull())
             || ((isMap(type_and_name_right_col.type) || isArray(type_and_name_right_col.type))
