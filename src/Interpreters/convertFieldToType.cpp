@@ -104,7 +104,7 @@ Field convertNumberLiteralToType(const Field & from)
     else
     {
         ReadBufferFromString buf(num.value);
-        To result;
+        To result{};
         if (!tryReadIntText(result, buf) || !buf.eof())
             return {};
         return result;
