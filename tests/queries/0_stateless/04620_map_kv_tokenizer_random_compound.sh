@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # Tags: long, no-flaky-check, no-debug, no-asan, no-tsan, no-msan, no-ubsan, no-sanitize-coverage
-# Heavy randomized consistency check (many small queries via many clickhouse-client invocations,
-# ~40s in a regular build, dominated by process startup); it far exceeds the per-test timeout under the
-# slow instrumented builds and the flaky check (which re-runs a new test many times). The keyValuePairs
-# index code paths are covered under sanitizers by the deterministic tests (04614/04616/04618/04619),
-# so this fuzz test runs only in the regular builds.
+# Randomized compound-predicate consistency check. Its queries are batched into 10 generate|execute
+# pipelines (per table, variant) launched in parallel, so a regular build takes ~8s. It stays off the
+# flaky check and the slow instrumented builds anyway: the flaky check re-runs a new test many times,
+# and under a sanitizer the per-query cost multiplies. The keyValuePairs index code paths are covered
+# under sanitizers by the deterministic tests (04614/04616/04618/04619).
 # Randomized consistency check for the keyValuePairs text index under COMPOUND predicates: AND / OR / NOT
 # chains that cross-mix predicate families (mapContainsKey, mapContainsValue, mapContainsKeyValue, their
 # LIKE forms and the m['key'] accessor) over two or three different (key, value) needles per query. The
@@ -53,9 +53,19 @@ cvl() { printf "%s" "'mapContainsValueLike(m, unhex(''' || hex(concat(substring(
 eq()  { printf "%s" "'m[unhex(''' || hex(${1}.1) || ''')] = unhex(''' || hex(${1}.2) || ''')'"; }
 esw() { printf "%s" "'startsWith(m[unhex(''' || hex(${1}.1) || ''')], unhex(''' || hex(substring(${1}.2,1,2)) || '''))'"; }
 
-# emit <family> <where-expr-sql>  — generates one INSERT per source row (25 needle triples) and runs them.
+# All families for one (table, variant) are batched into a single generator query ($Q) and executed by
+# one client; each variant loop flushes $Q as one generate|execute pipeline, launched in parallel with a
+# small concurrency cap. res is a Memory table and the verdict aggregates by (tbl,q,variant), so
+# concurrent inserts in any order are fine.
+PAR=4
+run_pipeline() {
+    $CLICKHOUSE_CLIENT -mn -q "$1" | $CLICKHOUSE_CLIENT -mn &
+    while [ "$(jobs -rp | wc -l)" -ge "$PAR" ]; do wait -n; done
+}
+# emit <family> <where-expr-sql> — appends one family's generator SELECT (25 needle triples) to $Q.
+Q=""
 emit() {
-    $CLICKHOUSE_CLIENT -q "SELECT 'INSERT INTO res SELECT ''${TBL}'',''${1}'',''${vn}'',cityHash64(id) FROM ${TBL} WHERE ' || (${2}) || ' SETTINGS ${vs};' FROM ${SRC} FORMAT TSVRaw" | $CLICKHOUSE_CLIENT -mn
+    Q="$Q SELECT 'INSERT INTO res SELECT ''${TBL}'',''${1}'',''${vn}'',cityHash64(id) FROM ${TBL} WHERE ' || (${2}) || ' SETTINGS ${vs};' FROM ${SRC} FORMAT TSVRaw;"
 }
 
 for TBL in t_def t_buckets; do
@@ -67,7 +77,7 @@ for TBL in t_def t_buckets; do
              "idx_sub0:${SIDX}, optimize_functions_to_subcolumns=0" \
              "noidx_sub1:${SNO}, optimize_functions_to_subcolumns=1" \
              "noidx_sub0:${SNO}, optimize_functions_to_subcolumns=0"; do
-    vn="${VAR%%:*}"; vs="${VAR#*:}"
+    vn="${VAR%%:*}"; vs="${VAR#*:}"; Q=""
     emit "and_ka"   "$(ck a) || ' AND ' || $(cv a)"
     emit "and_kb"   "$(ck a) || ' AND ' || $(cv b)"
     emit "or2"      "$(ck a) || ' OR ' || $(cv b)"
@@ -78,17 +88,19 @@ for TBL in t_def t_buckets; do
     emit "not_pair" "$(ck a) || ' AND NOT ' || $(ckv a)"
     emit "not_or"   "'NOT ' || $(ck a) || ' OR ' || $(cv b) || ' OR ' || $(ckv c)"
     emit "like_mix" "$(ckl a) || ' OR ' || $(cvl b) || ' OR ' || $(ckv c)"
+    run_pipeline "$Q"
   done
 
   # Group B: accessor-involving — compared only at optimize_functions_to_subcolumns=0 (see header).
   for VAR in "idx_sub0:${SIDX}, optimize_functions_to_subcolumns=0" \
              "noidx_sub0:${SNO}, optimize_functions_to_subcolumns=0"; do
-    vn="${VAR%%:*}"; vs="${VAR#*:}"
+    vn="${VAR%%:*}"; vs="${VAR#*:}"; Q=""
     emit "eq_and_k"   "$(eq a) || ' AND ' || $(ck b)"
     emit "esw_or_v"   "$(esw a) || ' OR ' || $(cv b)"
     # m['key'] IN (...) mixed into AND / OR chains with other families.
     emit "in_and_k"   "'m[unhex(''' || hex(a.1) || ''')] IN (unhex(''' || hex(a.2) || '''), unhex(''' || hex(b.2) || '''))' || ' AND ' || $(ck b)"
     emit "in_or_ckv"  "'m[unhex(''' || hex(a.1) || ''')] IN (unhex(''' || hex(a.2) || '''), unhex(''' || hex(b.2) || '''))' || ' OR ' || $(ckv c)"
+    run_pipeline "$Q"
   done
 
   # eqset: OR-of-equals chain vs its IN(...) form, both index on and off (four variants, all at sub0).
@@ -96,15 +108,18 @@ for TBL in t_def t_buckets; do
   # the OR-vs-IN rewrite does not change the answer.
   for VAR in "or_idx:${SIDX}, optimize_functions_to_subcolumns=0" \
              "or_noidx:${SNO}, optimize_functions_to_subcolumns=0"; do
-    vn="${VAR%%:*}"; vs="${VAR#*:}"
+    vn="${VAR%%:*}"; vs="${VAR#*:}"; Q=""
     emit "eqset" "$(eq a) || ' OR ' || '(' || 'm[unhex(''' || hex(a.1) || ''')] = unhex(''' || hex(b.2) || ''')' || ' OR ' || 'm[unhex(''' || hex(a.1) || ''')] = unhex(''' || hex(c.2) || ''')' || ')'"
+    run_pipeline "$Q"
   done
   for VAR in "in_idx:${SIDX}, optimize_functions_to_subcolumns=0" \
              "in_noidx:${SNO}, optimize_functions_to_subcolumns=0"; do
-    vn="${VAR%%:*}"; vs="${VAR#*:}"
+    vn="${VAR%%:*}"; vs="${VAR#*:}"; Q=""
     emit "eqset" "'m[unhex(''' || hex(a.1) || ''')] IN (unhex(''' || hex(a.2) || '''), unhex(''' || hex(b.2) || '''), unhex(''' || hex(c.2) || '''))'"
+    run_pipeline "$Q"
   done
 done
+wait
 
 RESULT=$($CLICKHOUSE_CLIENT -q "SELECT tbl, q, groupArray(vh) FROM (SELECT tbl,q,variant,sum(h) AS vh FROM res GROUP BY tbl,q,variant) GROUP BY tbl,q HAVING uniqExact(vh) > 1 ORDER BY tbl,q")
 if [ -z "$RESULT" ]; then echo "Consistent"; else echo "MISMATCH (seed=$SEED):"; echo "$RESULT"; fi
