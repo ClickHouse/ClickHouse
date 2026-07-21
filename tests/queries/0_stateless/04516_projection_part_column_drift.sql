@@ -119,6 +119,38 @@ WHERE database = currentDatabase() AND table = 't_proj_alias_default_drift' AND 
 
 DROP TABLE t_proj_alias_default_drift;
 
+-- same as above but with a MATERIALIZED (not DEFAULT) expression over the non-stored `f`; the fixed
+-- path is shared (ColumnDefault::expression), so the guard must route to the parent here too
+DROP TABLE IF EXISTS t_proj_mat_default_drift;
+
+CREATE TABLE t_proj_mat_default_drift
+(
+    a UInt64,
+    b UInt64,
+    f UInt64,
+    c UInt64 ALIAS b + 1,
+    PROJECTION p (SELECT a, c ORDER BY a)
+)
+ENGINE = MergeTree ORDER BY a;
+
+INSERT INTO t_proj_mat_default_drift (a, b, f) VALUES (1, 100, 7);
+
+ALTER TABLE t_proj_mat_default_drift ADD COLUMN d UInt64 MATERIALIZED f * 10;
+ALTER TABLE t_proj_mat_default_drift MODIFY COLUMN c UInt64 ALIAS d + 1;
+
+-- read falls back to the parent (c = d + 1 = f * 10 + 1 = 71); forcing the projection cannot use it
+SELECT 'mat-drift read after drift', a, c FROM t_proj_mat_default_drift ORDER BY a;
+
+SELECT a, c FROM t_proj_mat_default_drift ORDER BY a
+SETTINGS optimize_use_projections = 1, force_optimize_projection = 1; -- { serverError PROJECTION_NOT_USED }
+
+-- merging must rebuild the projection from the parent instead of throwing on the missing `f`
+OPTIMIZE TABLE t_proj_mat_default_drift FINAL;
+
+SELECT 'mat-drift read after merge', a, c FROM t_proj_mat_default_drift ORDER BY a;
+
+DROP TABLE t_proj_mat_default_drift;
+
 -- aggregate projection drift: the state column name embeds the expanded alias
 -- (`sum(plus(b, 1))`), so re-pointing the alias leaves the part without the state column the
 -- metadata now expects (`sum(plus(d, 1))`); the parent never stores aggregate states, so the

@@ -319,7 +319,9 @@ size_t filterPartsByProjection(
 /// expression can be evaluated there, i.e. every column the expression references is also available
 /// from the projection part. If it references a column the projection part does not store, the
 /// default cannot be computed on the projection read path (it can on the parent path), so the part
-/// is stale for it. Mirrors the default-dependency collection in MergeTreeBlockReadUtils.
+/// is stale for it. Checks the default's immediate dependencies only (not transitively, unlike
+/// MergeTreeBlockReadUtils): a chained default over another non-stored column conservatively routes
+/// to the parent.
 static bool projectionPartCanFillDefault(
     const IMergeTreeDataPart & projection_part,
     const ProjectionDescription & projection,
