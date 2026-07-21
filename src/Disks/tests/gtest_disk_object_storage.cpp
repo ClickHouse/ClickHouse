@@ -19,6 +19,8 @@
 #include <Common/FailPoint.h>
 #include <Common/thread_local_rng.h>
 
+#include <base/scope_guard.h>
+
 #include <Core/Defines.h>
 #include <Core/ServerUUID.h>
 
@@ -146,6 +148,7 @@ namespace FailPoints
 {
     extern const char disk_object_storage_fail_commit_metadata_transaction[];
     extern const char write_file_operation_fail_on_read[];
+    extern const char plain_rewritable_create_directories_pause_before_commit[];
 }
 
 }
@@ -752,6 +755,94 @@ TEST_F(DiskObjectStorageTest, CopyEmptyFileToPlainRewritable)
     EXPECT_TRUE(to_disk->existsFile(file_name));
     EXPECT_EQ(to_disk->getFileSize(file_name), 0);
     EXPECT_EQ(readAll(*to_disk->readFile(file_name, {})), "");
+}
+
+TEST_F(DiskObjectStorageTest, CreateDirectoriesIsIdempotentOnPlainRewritable)
+{
+    /// createDirectories has mkdir-p semantics: creating an already-existing directory succeeds.
+    auto disk = getDiskObjectStorage("local_plain_rewritable_disk");
+
+    std::string dir = getTestName() + "_dir/sub";
+
+    disk->createDirectories(dir);
+    EXPECT_TRUE(disk->existsDirectory(dir));
+
+    /// Second call on the same path must not throw.
+    disk->createDirectories(dir);
+    EXPECT_TRUE(disk->existsDirectory(dir));
+}
+
+TEST_F(DiskObjectStorageTest, CreateDirectoriesRejectsFileOnPathOnPlainRewritable)
+{
+    /// A file occupying the target path is a genuine conflict, not a concurrent-create race:
+    /// createDirectories must still fail with CANNOT_CREATE_DIRECTORY rather than silently succeed.
+    auto disk = getDiskObjectStorage("local_plain_rewritable_disk");
+
+    std::string dir = getTestName() + "_dir";
+    disk->createDirectories(dir);
+
+    std::string file_name = dir + "/file";
+    {
+        auto wb = disk->writeFile(file_name);
+        DB::writeText(std::string("content"), *wb);
+        wb->finalize();
+    }
+    EXPECT_TRUE(disk->existsFile(file_name));
+
+    /// Requesting a directory where a file already lives must throw.
+    EXPECT_THROW(disk->createDirectories(file_name), DB::Exception);
+}
+
+TEST_F(DiskObjectStorageTest, ConcurrentCreateDirectoriesIsIdempotentOnPlainRewritable)
+{
+    /// Regression test for https://github.com/ClickHouse/ClickHouse/issues/111289: a directory
+    /// created concurrently in the commit window must be treated as success (mkdir-p), not as an error.
+    auto disk = getDiskObjectStorage("local_plain_rewritable_disk");
+
+    std::string dir = getTestName() + "_dir/sub";
+
+    /// Thread A builds a createDirectories transaction and pauses just before commit, so we can
+    /// deterministically slip a concurrent creation of the same directory into the commit window.
+    DB::FailPointInjection::enableFailPoint(DB::FailPoints::plain_rewritable_create_directories_pause_before_commit);
+
+    std::exception_ptr thread_a_error;
+    std::thread thread_a([&]
+    {
+        try
+        {
+            disk->createDirectories(dir);
+        }
+        catch (...)
+        {
+            thread_a_error = std::current_exception();
+        }
+    });
+
+    /// Always resume and join Thread A, even if an assertion or exception aborts the body below:
+    /// leaving a paused, joinable thread would trigger std::terminate on scope exit. disableFailPoint
+    /// resumes threads blocked on the failpoint, so it doubles as the release for Thread A.
+    SCOPE_EXIT({
+        DB::FailPointInjection::disableFailPoint(DB::FailPoints::plain_rewritable_create_directories_pause_before_commit);
+        if (thread_a.joinable())
+            thread_a.join();
+    });
+
+    /// Wait until Thread A has built its transaction and paused before committing.
+    DB::FailPointInjection::waitForPause(DB::FailPoints::plain_rewritable_create_directories_pause_before_commit);
+
+    /// The concurrent winner creates the same directory and commits.
+    disk->createDirectories(dir);
+    EXPECT_TRUE(disk->existsDirectory(dir));
+
+    /// Resume Thread A: its commit now hits the concurrent-creation conflict and must retry to success.
+    DB::FailPointInjection::notifyFailPoint(DB::FailPoints::plain_rewritable_create_directories_pause_before_commit);
+    thread_a.join();
+
+    /// With the fix Thread A swallows the lost race and returns normally; without it, it rethrows.
+    if (thread_a_error)
+        std::rethrow_exception(thread_a_error);
+
+    EXPECT_TRUE(disk->existsDirectory(dir));
 }
 
 TEST_F(DiskObjectStorageTest, TruncateFileToZero)

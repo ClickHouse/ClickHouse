@@ -177,6 +177,7 @@ static struct InitFiu
     ONCE(smt_commit_exception_before_op) \
     ONCE(disk_object_storage_fail_commit_metadata_transaction) \
     ONCE(disk_object_storage_fail_precommit_metadata_transaction) \
+    PAUSEABLE_ONCE(plain_rewritable_create_directories_pause_before_commit) \
     ONCE(write_file_operation_fail_on_read) \
     REGULAR(slowdown_parallel_replicas_local_plan_read) \
     ONCE(iceberg_writes_cleanup) \
