@@ -10,7 +10,7 @@ namespace DB::QueryPlanOptimizations
 
 static bool isSortKeyPassThrough(const ActionsDAG & dag, const std::string & name)
 {
-    const auto & node = dag.tryFindInOutputs(name);
+    const auto * node = dag.tryFindInOutputs(name);
     if (!node)
         return false;
 
