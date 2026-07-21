@@ -20,6 +20,6 @@ EOF
 chmod 777 "${tmp_dir}"
 chmod 777 "${tmp_dir}/tmp.csv"
 
-${CLICKHOUSE_CLIENT} -q "SELECT COUNT(*) FROM file('${unique_name}/tmp.csv') SETTINGS optimize_count_from_files = 1, optimize_trivial_count_query = 1"
+${CLICKHOUSE_CLIENT} -q "SELECT COUNT(*) FROM file('${unique_name}/tmp.csv') SETTINGS optimize_count_from_files = 1, optimize_trivial_count_query = 1, schema_inference_make_columns_nullable = 1"
 
 rm -rf "${tmp_dir:?}"
