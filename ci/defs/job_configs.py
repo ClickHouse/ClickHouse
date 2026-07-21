@@ -45,6 +45,8 @@ build_digest_config = Job.CacheDigestConfig(
         "./rust",
         "./ci/jobs/build_clickhouse.py",
         "./ci/jobs/scripts/job_hooks/build_profile_hook.py",
+        "./ci/jobs/scripts/log_cluster.py",
+        "./utils/prepare-time-trace/prepare-time-trace.sh",
         "./utils/list-licenses",
         "./utils/self-extracting-executable",
     ],
@@ -1699,7 +1701,10 @@ class JobConfigs:
     build_profile_diff_job = Job.Config(
         name=JobNames.BUILD_PROFILE_DIFF,
         runs_on=RunnerLabels.ARM_SMALL,
-        run_in_docker="clickhouse/test-base",
+        # stateless-test rather than test-base: the job reads the CI logs
+        # cluster credentials from AWS SSM, and stateless-test is the test
+        # image that ships the aws CLI.
+        run_in_docker="clickhouse/stateless-test",
         requires=["Build (arm_release)"],
         command="python3 ./ci/jobs/build_profile_diff_job.py",
         digest_config=Job.CacheDigestConfig(

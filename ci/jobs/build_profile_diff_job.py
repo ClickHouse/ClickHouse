@@ -137,6 +137,32 @@ def in_list(values) -> str:
     return ", ".join(quote(v) for v in values)
 
 
+def side_conditions(days: int, pr_number: int, sha: str, extra_where: str = "") -> str:
+    """The WHERE conditions selecting one side's rows (before run scoping)."""
+    where = f"\n            AND {extra_where}" if extra_where else ""
+    return f"""date >= today() - {days}
+            AND pull_request_number = {pr_number}
+            AND commit_sha = {quote(sha)}
+            AND check_name = {quote(CHECK_NAME)}{where}"""
+
+
+def latest_run(table: str, conditions: str) -> str:
+    """A predicate restricting matching rows to the newest uploaded build run.
+
+    A rerun of the build re-inserts the whole dataset under the same
+    pull_request_number/commit_sha/check_name with a new check_start_time and
+    instance_id. Mixing runs corrupts every aggregation (sums double, max picks
+    the slowest run), so each side must be scoped to one concrete run.
+    """
+    return f"""(check_start_time, instance_id) IN (
+                SELECT check_start_time, instance_id
+                FROM {table}
+                WHERE {conditions}
+                ORDER BY check_start_time DESC
+                LIMIT 1
+            )"""
+
+
 def both_sides(
     table: str,
     columns: str,
@@ -146,22 +172,22 @@ def both_sides(
     extra_where: str = "",
     base_days: int = BASE_DAYS,
 ) -> str:
-    """A UNION ALL subquery with PR rows marked side='pr' and master rows side='base'."""
-    where = f"AND {extra_where}" if extra_where else ""
+    """A UNION ALL subquery with PR rows marked side='pr' and master rows side='base'.
+
+    Each side is restricted to its newest uploaded build run (see latest_run).
+    """
+    pr_cond = side_conditions(PR_DAYS, pr_number, pr_sha, extra_where)
+    base_cond = side_conditions(base_days, 0, base_sha, extra_where)
     return f"""(
         SELECT 'pr' AS side, {columns}
         FROM {table}
-        WHERE date >= today() - {PR_DAYS}
-            AND pull_request_number = {pr_number}
-            AND commit_sha = {quote(pr_sha)}
-            AND check_name = {quote(CHECK_NAME)} {where}
+        WHERE {pr_cond}
+            AND {latest_run(table, pr_cond)}
         UNION ALL
         SELECT 'base' AS side, {columns}
         FROM {table}
-        WHERE date >= today() - {base_days}
-            AND pull_request_number = 0
-            AND commit_sha = {quote(base_sha)}
-            AND check_name = {quote(CHECK_NAME)} {where}
+        WHERE {base_cond}
+            AND {latest_run(table, base_cond)}
     )"""
 
 
@@ -489,14 +515,12 @@ def compare_compile_times(db: Db, pr_number, pr_sha, base_sha, master_shas) -> S
     is compared against the most recent master build that also recompiled it.
     """
     section = Section(title="Compile time of recompiled translation units")
+    pr_cond = side_conditions(PR_DAYS, pr_number, pr_sha, "name = 'ExecuteCompiler'")
     pr_rows = db.query(
         f"""SELECT file, max(dur) AS dur
         FROM build_time_trace
-        WHERE date >= today() - {PR_DAYS}
-            AND pull_request_number = {pr_number}
-            AND commit_sha = {quote(pr_sha)}
-            AND check_name = {quote(CHECK_NAME)}
-            AND name = 'ExecuteCompiler'
+        WHERE {pr_cond}
+            AND {latest_run("build_time_trace", pr_cond)}
         GROUP BY file"""
     )
     if not pr_rows:
@@ -516,11 +540,8 @@ def compare_compile_times(db: Db, pr_number, pr_sha, base_sha, master_shas) -> S
             AND file IN (
                 SELECT DISTINCT file
                 FROM build_time_trace
-                WHERE date >= today() - {PR_DAYS}
-                    AND pull_request_number = {pr_number}
-                    AND commit_sha = {quote(pr_sha)}
-                    AND check_name = {quote(CHECK_NAME)}
-                    AND name = 'ExecuteCompiler'
+                WHERE {pr_cond}
+                    AND {latest_run("build_time_trace", pr_cond)}
             )
             AND commit_sha IN ({in_list(master_shas)})
         GROUP BY file"""
@@ -635,35 +656,55 @@ def drill_down_tu(db: Db, pr_number, pr_sha, base_tu_sha, file, skew=1.0) -> Lis
 
 
 def compare_symbols(db: Db, pr_number, pr_sha, base_sha) -> Section:
+    """Per-symbol size diff of the final linked binaries.
+
+    Covers both `clickhouse` and `clickhouse-keeper` (the producer uploads the
+    symbols of both), so a keeper-only size regression gets the same per-symbol
+    attribution as the main binary. Each binary is compared only when both
+    sides have its symbol data.
+    """
     section = Section(title="Symbol sizes")
     sides = db.query(
-        f"""SELECT countIf(side = 'pr') AS pr_count, countIf(side = 'base') AS base_count
-        FROM {both_sides("binary_symbols", "size", pr_number, pr_sha, base_sha, f"file = {quote(MAIN_BINARY)}")}"""
-    )[0]
-    if not int(sides["pr_count"]):
+        f"""SELECT file,
+            countIf(side = 'pr') AS pr_count,
+            countIf(side = 'base') AS base_count
+        FROM {both_sides("binary_symbols", "file", pr_number, pr_sha, base_sha, f"file IN ({in_list(LINK_BINARIES)})")}
+        GROUP BY file"""
+    )
+    comparable = [row["file"] for row in sides if int(row["pr_count"]) and int(row["base_count"])]
+    if not any(int(row["pr_count"]) for row in sides):
         return section
-    if not int(sides["base_count"]):
+    if not comparable:
         section.body = "No symbol data for the master baseline yet (it is collected for release builds only since this check was introduced); the comparison will activate once master catches up."
         return section
+    missing_base = [row["file"] for row in sides if int(row["pr_count"]) and not int(row["base_count"])]
     # size >= 1 KiB cuts the aggregation to a fraction of the ~1.5M symbols of
     # the binary; a symbol can only reach the report threshold if one side
     # exceeds it anyway.
     rows = db.query(
-        f"""SELECT symbol,
+        f"""SELECT file, symbol,
             sumIf(size, side = 'pr') AS pr_size,
             sumIf(size, side = 'base') AS base_size,
             toInt64(pr_size) - toInt64(base_size) AS delta
-        FROM {both_sides("binary_symbols", "symbol, size", pr_number, pr_sha, base_sha, f"file = {quote(MAIN_BINARY)} AND size >= 1024")}
-        GROUP BY symbol
+        FROM {both_sides("binary_symbols", "file, symbol, size", pr_number, pr_sha, base_sha, f"file IN ({in_list(comparable)}) AND size >= 1024")}
+        GROUP BY file, symbol
         HAVING abs(delta) >= {SYMBOL_REPORT_BYTES}
         ORDER BY abs(delta) DESC
         LIMIT {MAX_TABLE_ROWS}"""
     )
+    lines = []
+    if missing_base:
+        names = ", ".join(md_code(strip_build_dir(f)) for f in missing_base)
+        lines.append(f"No master baseline symbol data yet for {names}.")
+        lines.append("")
     if not rows:
+        if not lines:
+            return section
+        section.body = "\n".join(lines).rstrip()
         return section
-    lines = [
-        "| Symbol | Master | PR | Δ |",
-        "|---|---:|---:|---:|",
+    lines += [
+        "| Binary | Symbol | Master | PR | Δ |",
+        "|---|---|---:|---:|---:|",
     ]
     for row in rows:
         pr_size, base_size = int(row["pr_size"]), int(row["base_size"])
@@ -672,7 +713,7 @@ def compare_symbols(db: Db, pr_number, pr_sha, base_sha) -> Section:
             section.significant = True
         base_text = format_bytes(base_size) if base_size else "new"
         pr_text = format_bytes(pr_size) if pr_size else "removed"
-        lines.append(f"| {md_code(row['symbol'])} | {base_text} | {pr_text} | {format_bytes_delta(delta, base_size)} |")
+        lines.append(f"| {md_code(strip_build_dir(row['file']))} | {md_code(row['symbol'])} | {base_text} | {pr_text} | {format_bytes_delta(delta, base_size)} |")
     section.body = "\n".join(lines)
     return section
 
