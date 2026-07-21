@@ -145,6 +145,17 @@ for _ in {1..60}; do
 done
 echo "$res"
 
+echo "=== query_log records the HTTP method for a HEAD request served by a GET handler ==="
+# A HEAD request is answered by the GET-declared handler and is logged as http_method 6 (not 0/UNKNOWN).
+QIDH="qh_${DB}_$RANDOM"
+${CLICKHOUSE_CURL} -sS --head -H "X-ClickHouse-Database: ${DB}" "${BASE}${P}/exact?query_id=${QIDH}" > /dev/null
+for _ in {1..60}; do
+    res=$($CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log; SELECT http_method FROM system.query_log WHERE query_id = '${QIDH}' AND type = 'QueryFinish' AND current_database = currentDatabase() ORDER BY event_time DESC LIMIT 1")
+    [ "$res" = "6" ] && break
+    sleep 0.5
+done
+echo "$res"
+
 echo "=== authentication: credentials provided in the request ==="
 $CLICKHOUSE_CLIENT -q "CREATE USER \`$RUSER\` IDENTIFIED WITH plaintext_password BY 'pw'; CREATE HANDLER \`$HWHO\` URL '${P}/whoami' AS SELECT currentUser() = '${RUSER}' AS ok FORMAT TSV"
 ${CLICKHOUSE_CURL} -sS "${BASE}${P}/whoami?user=${RUSER}&password=pw"

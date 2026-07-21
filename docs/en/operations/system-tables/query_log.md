@@ -96,7 +96,7 @@ You can use the [log_formatted_queries](/operations/settings/settings#log_format
 - `client_version_patch` ([UInt32](/sql-reference/data-types/int-uint)) — Patch component of the clickhouse-client or another TCP client version.
 - `script_query_number` ([UInt32](/sql-reference/data-types/int-uint)) — The query number in a script with multiple queries for clickhouse-client.
 - `script_line_number` ([UInt32](/sql-reference/data-types/int-uint)) — The line number of the query start in a script with multiple queries for clickhouse-client.
-- `http_method` ([UInt8](/sql-reference/data-types/int-uint)) — HTTP method that initiated the query. Possible values: 0 — The query was launched from the TCP interface, 1 — GET method was used, 2 — POST method was used, 4 — PUT method was used, 5 — DELETE method was used.
+- `http_method` ([UInt8](/sql-reference/data-types/int-uint)) — HTTP method that initiated the query. Possible values: 0 — The query was launched from the TCP interface, 1 — GET method was used, 2 — POST method was used, 4 — PUT method was used, 5 — DELETE method was used, 6 — HEAD method was used.
 - `http_user_agent` ([LowCardinality(String)](/sql-reference/data-types/lowcardinality)) — HTTP header UserAgent passed in the HTTP query.
 - `http_referer` ([String](/sql-reference/data-types/string)) — HTTP header Referer passed in the HTTP query (contains an absolute or partial address of the page making the query).
 - `forwarded_for` ([String](/sql-reference/data-types/string)) — HTTP header X-Forwarded-For passed in the HTTP query.

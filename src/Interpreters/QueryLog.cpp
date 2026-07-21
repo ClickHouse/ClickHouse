@@ -121,7 +121,7 @@ ColumnsDescription QueryLogElement::getColumnsDescription()
         {"client_version_patch", std::make_shared<DataTypeUInt32>(), "Patch component of the clickhouse-client or another TCP client version."},
         {"script_query_number", std::make_shared<DataTypeUInt32>(), "The query number in a script with multiple queries for clickhouse-client."},
         {"script_line_number", std::make_shared<DataTypeUInt32>(), "The line number of the query start in a script with multiple queries for clickhouse-client."},
-        {"http_method", std::make_shared<DataTypeUInt8>(), "HTTP method that initiated the query. Possible values: 0 - The query was launched from the TCP interface, 1 - GET method was used, 2 - POST method was used, 4 - PUT method was used, 5 - DELETE method was used."},
+        {"http_method", std::make_shared<DataTypeUInt8>(), "HTTP method that initiated the query. Possible values: 0 - The query was launched from the TCP interface, 1 - GET method was used, 2 - POST method was used, 4 - PUT method was used, 5 - DELETE method was used, 6 - HEAD method was used."},
         {"http_user_agent", low_cardinality_string, "HTTP header UserAgent passed in the HTTP query."},
         {"http_referer", std::make_shared<DataTypeString>(), "HTTP header Referer passed in the HTTP query (contains an absolute or partial address of the page making the query)."},
         {"forwarded_for", std::make_shared<DataTypeString>(), "HTTP header X-Forwarded-For passed in the HTTP query."},

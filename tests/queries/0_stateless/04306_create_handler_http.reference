@@ -38,6 +38,8 @@ A
 1	1
 === query_log records the HTTP method for PUT and DELETE handlers ===
 4	5
+=== query_log records the HTTP method for a HEAD request served by a GET handler ===
+6
 === authentication: credentials provided in the request ===
 1
 === invoking a handler needs no special grant; SELECT of a constant works for any user ===
