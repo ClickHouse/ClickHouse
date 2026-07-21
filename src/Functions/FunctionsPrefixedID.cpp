@@ -8,16 +8,11 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
+#include <Common/HashTable/Hash.h>
 #include <Common/StringUtils.h>
+#include <Common/randomSeed.h>
 
 #include <pcg_random.hpp>
-
-#include "config.h"
-
-#if USE_SSL
-#    include <openssl/rand.h>
-#    include <Common/OpenSSLHelpers.h>
-#endif
 
 /// Functions for prefixed identifiers in the style popularized by Stripe: `<prefix>_<body>`,
 /// e.g. `user_NffrFeUfNV2Hib` or `ch_test_51TpZvW`. The prefix may contain underscores
@@ -31,11 +26,6 @@ namespace ErrorCodes
 {
 extern const int BAD_ARGUMENTS;
 extern const int ILLEGAL_COLUMN;
-#if USE_SSL
-extern const int OPENSSL_ERROR;
-#else
-extern const int SUPPORT_IS_DISABLED;
-#endif
 }
 
 namespace
@@ -150,9 +140,9 @@ public:
     static constexpr auto name = "generatePrefixedID";
 
     /// 22 base62 characters span a space of 62^22 ≈ 2^131 values, comparable to the
-    /// 2^128 UUID space. The bodies are pseudo-random (a PRNG stream seeded from the OS
-    /// entropy source per block), so this is a size of the value space, not a guarantee
-    /// of 131 bits of entropy; the identifiers are not suitable as security tokens.
+    /// 2^128 UUID space. The bodies are pseudo-random, so this is a size of the value
+    /// space, not a guarantee of 131 bits of entropy; the identifiers are not suitable
+    /// as security tokens.
     static constexpr size_t DEFAULT_BODY_LENGTH = 22;
     static constexpr size_t MAX_BODY_LENGTH = 255;
 
@@ -200,8 +190,8 @@ public:
         ColumnString::Offsets & offsets_to = col_res->getOffsets();
         offsets_to.resize(input_rows_count);
 
-        /// Validate the semantic arguments before touching the entropy source, so that invalid
-        /// arguments always fail with BAD_ARGUMENTS regardless of the entropy availability.
+        /// Validate the semantic arguments before generation, so that invalid arguments always
+        /// fail with BAD_ARGUMENTS before any work is done.
         for (size_t row = 0; row < input_rows_count; ++row)
         {
             std::string_view prefix = col_prefix.getDataAt(row);
@@ -211,9 +201,10 @@ public:
                     "Invalid prefix ({}) in function {}: the prefix must be non-empty and consist of underscore-separated segments matching [A-Za-z][A-Za-z0-9]*",
                     prefix, name);
 
+            size_t body_length = DEFAULT_BODY_LENGTH;
             if (full_length_column)
             {
-                size_t body_length = full_length_column->getUInt(row);
+                body_length = full_length_column->getUInt(row);
                 if (body_length < 1 || body_length > MAX_BODY_LENGTH)
                     throw Exception(
                         ErrorCodes::BAD_ARGUMENTS,
@@ -222,19 +213,13 @@ public:
             }
         }
 
-        /// Seed from the OpenSSL CSPRNG rather than randomSeed(): the latter is derived
-        /// from the time and the thread id, which is too predictable for identifiers whose
-        /// point is to be unique and opaque. OpenSSL is used instead of getentropy, which
-        /// is not available on all supported platforms (old glibc sysroots, musl).
-#if USE_SSL
-        UInt64 entropy[2];
-        if (RAND_bytes(reinterpret_cast<unsigned char *>(entropy), sizeof(entropy)) != 1)
-            throw Exception(ErrorCodes::OPENSSL_ERROR, "Cannot get random bytes from OpenSSL in function {}: {}", name, getOpenSSLErrors());
-        using UInt128Raw = unsigned __int128;
-        pcg64_fast rng((static_cast<UInt128Raw>(entropy[0]) << 64) | entropy[1]);
-#else
-        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Function {} requires ClickHouse to be built with SSL support", name);
-#endif
+        /// Seed as in the other generator functions (randomSeed), but mix in a process-wide
+        /// counter: randomSeed() is derived from the clock and the thread id and can repeat when
+        /// two calls execute within one clock tick, which would make e.g.
+        /// generatePrefixedID('a', 5, 1) = generatePrefixedID('a', 5, 2). The counter makes every
+        /// call's stream distinct. The identifiers are pseudo-random, not cryptographic tokens.
+        static std::atomic<UInt64> call_counter{0};
+        pcg64_fast rng(intHash64(randomSeed() ^ intHash64(call_counter.fetch_add(1, std::memory_order_relaxed))));
 
         IColumn::Offset offset = 0;
         for (size_t row = 0; row < input_rows_count; ++row)
@@ -453,7 +438,7 @@ REGISTER_FUNCTION(GeneratePrefixedID)
 {
     FunctionDocumentation::Description description = R"(
 Generates a prefixed identifier `<prefix>_<body>` in the style popularized by Stripe, e.g. `user_NffrFeUfNV2Hib`.
-The body consists of pseudo-random base62 characters (`[0-9A-Za-z]`) drawn from a generator seeded from the OS entropy source.
+The body consists of pseudo-random base62 characters (`[0-9A-Za-z]`).
 The identifiers are meant to be unique and opaque, but they are not cryptographic tokens.
 The prefix must be non-empty and consist of underscore-separated segments matching `[A-Za-z][A-Za-z0-9]*` (e.g. `user` or `ch_test`); an exception is thrown otherwise.
 )";
