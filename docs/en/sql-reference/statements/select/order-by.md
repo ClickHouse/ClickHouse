@@ -6,6 +6,8 @@ title: 'ORDER BY Clause'
 doc_type: 'reference'
 ---
 
+# ORDER BY Clause
+
 The `ORDER BY` clause contains
 
 - a list of expressions, e.g. `ORDER BY visits, search_phrase`,
@@ -92,11 +94,15 @@ Input table:
 └───┴──────┘
 ```
 
-```sql title="Query"
+Query:
+
+```sql
 SELECT * FROM collate_test ORDER BY s ASC COLLATE 'en';
 ```
 
-```text title="Response"
+Result:
+
+```text
 ┌─x─┬─s────┐
 │ 3 │ 123a │
 │ 4 │ abc  │
@@ -122,11 +128,15 @@ Input table:
 └───┴──────┘
 ```
 
-```sql title="Query"
+Query:
+
+```sql
 SELECT * FROM collate_test ORDER BY s ASC COLLATE 'en';
 ```
 
-```text title="Response"
+Result:
+
+```text
 ┌─x─┬─s────┐
 │ 4 │ 123a │
 │ 5 │ abc  │
@@ -154,11 +164,15 @@ Input table:
 └───┴───────────────┘
 ```
 
-```sql title="Query"
+Query:
+
+```sql
 SELECT * FROM collate_test ORDER BY s ASC COLLATE 'en';
 ```
 
-```text title="Response"
+Result:
+
+```text
 ┌─x─┬─s─────────────┐
 │ 7 │ ['']          │
 │ 3 │ ['a']         │
@@ -186,11 +200,15 @@ Input table:
 └───┴─────┘
 ```
 
-```sql title="Query"
+Query:
+
+```sql
 SELECT * FROM collate_test ORDER BY s ASC COLLATE 'en';
 ```
 
-```response title="Response"
+Result:
+
+```response
 ┌─x─┬─s───┐
 │ 7 │     │
 │ 3 │ a   │
@@ -204,7 +222,7 @@ SELECT * FROM collate_test ORDER BY s ASC COLLATE 'en';
 
 Example with [Tuple](../../../sql-reference/data-types/tuple.md):
 
-```response title="Response"
+```response
 ┌─x─┬─s───────┐
 │ 1 │ (1,'Z') │
 │ 2 │ (1,'z') │
@@ -216,11 +234,15 @@ Example with [Tuple](../../../sql-reference/data-types/tuple.md):
 └───┴─────────┘
 ```
 
-```sql title="Query"
+Query:
+
+```sql
 SELECT * FROM collate_test ORDER BY s ASC COLLATE 'en';
 ```
 
-```response title="Response"
+Result:
+
+```response
 ┌─x─┬─s───────┐
 │ 3 │ (1,'a') │
 │ 5 │ (1,'A') │
@@ -271,7 +293,7 @@ All missed values of `expr` column will be filled sequentially and other columns
 
 To fill multiple columns, add `WITH FILL` modifier with optional parameters after each field name in `ORDER BY` section.
 
-```sql title="Query"
+```sql
 ORDER BY expr [WITH FILL] [FROM const_expr] [TO const_expr] [STEP const_numeric_expr] [STALENESS const_numeric_expr], ... exprN [WITH FILL] [FROM expr] [TO expr] [STEP numeric_expr] [STALENESS numeric_expr]
 [INTERPOLATE [(col [AS expr], ... colN [AS exprN])]]
 ```
@@ -286,14 +308,16 @@ When `STALENESS const_numeric_expr` is defined, the query will generate rows unt
 
 Example of a query without `WITH FILL`:
 
-```sql title="Query"
+```sql
 SELECT n, source FROM (
    SELECT toFloat32(number % 10) AS n, 'original' AS source
    FROM numbers(10) WHERE number % 3 = 1
 ) ORDER BY n;
 ```
 
-```text title="Response"
+Result:
+
+```text
 ┌─n─┬─source───┐
 │ 1 │ original │
 │ 4 │ original │
@@ -303,14 +327,16 @@ SELECT n, source FROM (
 
 Same query after applying `WITH FILL` modifier:
 
-```sql title="Query"
+```sql
 SELECT n, source FROM (
    SELECT toFloat32(number % 10) AS n, 'original' AS source
    FROM numbers(10) WHERE number % 3 = 1
 ) ORDER BY n WITH FILL FROM 0 TO 5.51 STEP 0.5;
 ```
 
-```text title="Response"
+Result:
+
+```text
 ┌───n─┬─source───┐
 │   0 │          │
 │ 0.5 │          │
@@ -332,7 +358,7 @@ For the case with multiple fields `ORDER BY field2 WITH FILL, field1 WITH FILL` 
 
 Example:
 
-```sql title="Query"
+```sql
 SELECT
     toDate((number * 10) * 86400) AS d1,
     toDate(number * 86400) AS d2,
@@ -344,7 +370,9 @@ ORDER BY
     d1 WITH FILL STEP 5;
 ```
 
-```text title="Response"
+Result:
+
+```text
 ┌───d1───────┬───d2───────┬─source───┐
 │ 1970-01-11 │ 1970-01-02 │ original │
 │ 1970-01-01 │ 1970-01-03 │          │
@@ -360,7 +388,7 @@ Field `d1` does not fill in and use the default value cause we do not have repea
 
 The following query with the changed field in `ORDER BY`:
 
-```sql title="Query"
+```sql
 SELECT
     toDate((number * 10) * 86400) AS d1,
     toDate(number * 86400) AS d2,
@@ -372,7 +400,9 @@ ORDER BY
     d2 WITH FILL;
 ```
 
-```text title="Response"
+Result:
+
+```text
 ┌───d1───────┬───d2───────┬─source───┐
 │ 1970-01-11 │ 1970-01-02 │ original │
 │ 1970-01-16 │ 1970-01-01 │          │
@@ -392,7 +422,7 @@ ORDER BY
 
 The following query uses the `INTERVAL` data type of 1 day for each data filled on column `d1`:
 
-```sql title="Query"
+```sql
 SELECT
     toDate((number * 10) * 86400) AS d1,
     toDate(number * 86400) AS d2,
@@ -404,7 +434,8 @@ ORDER BY
     d2 WITH FILL;
 ```
 
-```response title="Response"
+Result:
+```response
 ┌─────────d1─┬─────────d2─┬─source───┐
 │ 1970-01-11 │ 1970-01-02 │ original │
 │ 1970-01-12 │ 1970-01-01 │          │
@@ -472,13 +503,15 @@ ORDER BY
 
 Example of a query without `STALENESS`:
 
-```sql title="Query"
+```sql
 SELECT number AS key, 5 * number value, 'original' AS source
 FROM numbers(16) WHERE key % 5 == 0
 ORDER BY key WITH FILL;
 ```
 
-```text title="Response"
+Result:
+
+```text
     ┌─key─┬─value─┬─source───┐
  1. │   0 │     0 │ original │
  2. │   1 │     0 │          │
@@ -501,13 +534,15 @@ ORDER BY key WITH FILL;
 
 Same query after applying `STALENESS 3`:
 
-```sql title="Query"
+```sql
 SELECT number AS key, 5 * number value, 'original' AS source
 FROM numbers(16) WHERE key % 5 == 0
 ORDER BY key WITH FILL STALENESS 3;
 ```
 
-```text title="Response"
+Result:
+
+```text
     ┌─key─┬─value─┬─source───┐
  1. │   0 │     0 │ original │
  2. │   1 │     0 │          │
@@ -526,14 +561,16 @@ ORDER BY key WITH FILL STALENESS 3;
 
 Example of a query without `INTERPOLATE`:
 
-```sql title="Query"
+```sql
 SELECT n, source, inter FROM (
    SELECT toFloat32(number % 10) AS n, 'original' AS source, number AS inter
    FROM numbers(10) WHERE number % 3 = 1
 ) ORDER BY n WITH FILL FROM 0 TO 5.51 STEP 0.5;
 ```
 
-```text title="Response"
+Result:
+
+```text
 ┌───n─┬─source───┬─inter─┐
 │   0 │          │     0 │
 │ 0.5 │          │     0 │
@@ -553,14 +590,16 @@ SELECT n, source, inter FROM (
 
 Same query after applying `INTERPOLATE`:
 
-```sql title="Query"
+```sql
 SELECT n, source, inter FROM (
    SELECT toFloat32(number % 10) AS n, 'original' AS source, number AS inter
    FROM numbers(10) WHERE number % 3 = 1
 ) ORDER BY n WITH FILL FROM 0 TO 5.51 STEP 0.5 INTERPOLATE (inter AS inter + 1);
 ```
 
-```text title="Response"
+Result:
+
+```text
 ┌───n─┬─source───┬─inter─┐
 │   0 │          │     0 │
 │ 0.5 │          │     0 │

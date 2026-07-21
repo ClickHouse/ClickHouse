@@ -11,7 +11,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int INCORRECT_DATA;
+    extern const int LOGICAL_ERROR;
 }
 
 /**
@@ -61,10 +61,7 @@ Strings HudiMetadata::getDataFilesImpl() const
         const String stem = key_file.stem();
         splitInto<'_'>(file_parts, stem);
         if (file_parts.size() != 3)
-            throw Exception(
-                ErrorCodes::INCORRECT_DATA,
-                "Unexpected format for file: {}. Hudi data files must follow the naming convention "
-                "[FileId]_[FileWriteToken]_[Timestamp].[extension]", key);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected format for file: {}", key);
 
         const auto partition = key_file.parent_path().stem();
         const auto & file_id = file_parts[0];

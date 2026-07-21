@@ -7,7 +7,8 @@
 #include <Core/Block_fwd.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/MaterializedCTE.h>
-#include <Storages/StorageWithCommonVirtualColumns.h>
+#include <Core/NamesAndTypes.h>
+#include <Storages/IStorage.h>
 
 #include <Common/MultiVersion.h>
 
@@ -22,7 +23,7 @@ struct MemorySettings;
   * It does not support keys.
   * Data is stored as a set of blocks and is not stored anywhere else.
   */
-class StorageMemory final : public StorageWithCommonVirtualColumns
+class StorageMemory final : public IStorage
 {
 friend class MemorySink;
 
@@ -52,7 +53,7 @@ public:
 
     const MemorySettings & getMemorySettingsRef() const { return *memory_settings; }
 
-    void readImpl(
+    void read(
         QueryPlan & query_plan,
         const Names & column_names,
         const StorageSnapshotPtr & storage_snapshot,
@@ -134,8 +135,6 @@ public:
     MaterializedCTEPtr getMaterializedCTE() const { return materialized_cte.lock(); }
 
 private:
-    static VirtualColumnsDescription createVirtuals();
-
     /// Restores the data of this table from backup.
     void restoreDataImpl(const BackupPtr & backup, const String & data_path_in_backup);
 
