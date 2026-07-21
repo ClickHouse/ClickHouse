@@ -204,8 +204,9 @@ four stages:
   `TwoStageAggregation`, `TwoStageTopN`) to generate logically equivalent expressions.
 - **Stage 2 — Implement**: Fire implementation rules (`HashJoinImplementation`,
   `AggregationImplementation`, `LocalReadImplementation`, `ParallelReadImplementation`,
-  `ReplicatedReadImplementation`, `TopNImplementation`, `DefaultImplementation`,
-  `DistributionPassthrough`) to generate physical expressions with concrete properties.
+  `ReplicatedReadImplementation`, `ReplicatedSubplanImplementation`, `TopNImplementation`,
+  `DefaultImplementation`, `DistributionPassthrough`) to generate physical expressions
+  with concrete properties.
 - **Stage 3 — Enforce**: Apply enforcer rules (`DistributionEnforcer`, `SortingEnforcer`)
   to bridge property gaps. Uses a fixed-point loop for enforcer composition (e.g.,
   `SortingEnforcer` creates `Sort({N, sorted})`, then `DistributionEnforcer` creates
@@ -379,7 +380,7 @@ The lists below use class names; `getName` log names may omit the `Implementatio
 - `JoinCommutativity` — swaps join sides (left ↔ right) for joins where the swap is
   semantics-preserving: `INNER ALL`, `CROSS`, and `SEMI`/`ANY`/`ANTI` strictness;
   never `ASOF` or `INNER ANY`
-- `TwoStageAggregation` — splits aggregation into partial + merge
+- `TwoStageAggregationTransformation` — splits aggregation into partial + merge
 - `TwoStageTopN` — splits a top-N sort into a per-node bounded sort, a sorted-merge
   gather, and a coordinator limit
 
@@ -398,6 +399,9 @@ The lists below use class names; `getName` log names may omit the `Implementatio
 - `LocalReadImplementation` — single-node read
 - `ParallelReadImplementation` — parallel N-way read across nodes
 - `ReplicatedReadImplementation` — full table read on each node (shared storage)
+- `ReplicatedSubplanImplementation` — when the parent requires a replicated result,
+  re-runs a replication-safe step identically on every node over replicated inputs,
+  extending replicated reads to whole subtrees without a `BroadcastExchange`
 - `TopNImplementation` — bounded sort at one node, or per node for the top-N partial
 - `DefaultImplementation` — wraps otherwise-unhandled steps at `{1 node}`; operators
   with dedicated rules above are excluded
@@ -479,8 +483,9 @@ optimizer is the k = 1 case, kept deliberately because larger k multiplies the s
 **Structural property hashing**: `isOptimizedFor`, `isEnforcedFor`, and physical
 expression deduplication use `ExpressionPropertiesHash` for O(1) lookup.  Expression
 fingerprints (used to deduplicate physical expressions within a group) are computed
-as `size_t` hashes combining step description, strategy, properties, and input group
-IDs via `boost::hash_combine`.
+as `size_t` hashes combining properties, input group IDs with their required properties,
+step name, step description, and strategy name via `boost::hash_combine` — the same
+components, in the same order, that `structurallyEqualTo` compares.
 
 **Statistics dependency**: `estimateReadRowsCount` calls back into pre-Cascades code,
 creating a dependency cycle.
