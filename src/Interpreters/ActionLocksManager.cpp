@@ -23,8 +23,9 @@ namespace ActionLocks
     extern const StorageActionBlockType VirtualPartsUpdate = 11;
     extern const StorageActionBlockType ReduceBlockingParts = 12;
     extern const StorageActionBlockType ViewRefreshPause = 13;
-    extern const StorageActionBlockType ReloadExternalDictionaries = 14;
-    extern const StorageActionBlockType ReloadEmbeddedDictionaries = 15;
+    extern const StorageActionBlockType StreamConsume = 14;
+    extern const StorageActionBlockType ReloadExternalDictionaries = 15;
+    extern const StorageActionBlockType ReloadEmbeddedDictionaries = 16;
 }
 
 
