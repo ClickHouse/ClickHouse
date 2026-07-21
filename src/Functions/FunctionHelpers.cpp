@@ -527,7 +527,11 @@ void checkFunctionArgumentSizes(const ColumnsWithTypeAndName & arguments, size_t
     }
 }
 
-bool containsDynamicOrVariant(const IDataType & type)
+/// Returns true if the type is or contains Dynamic or Variant anywhere inside
+/// (e.g. Tuple(Dynamic), Array(Variant(...)), Map(String, Dynamic)).
+/// Comparing such values resolves the common type of the stored values per row, so comparison
+/// functions can throw depending on the processed rows.
+static bool containsDynamicOrVariant(const IDataType & type)
 {
     if (isDynamic(type) || isVariant(type))
         return true;
@@ -536,19 +540,6 @@ bool containsDynamicOrVariant(const IDataType & type)
     type.forEachChild([&](const IDataType & child)
     {
         contains = contains || isDynamic(child) || isVariant(child);
-    });
-    return contains;
-}
-
-bool containsEnum(const IDataType & type)
-{
-    if (isEnum(type))
-        return true;
-
-    bool contains = false;
-    type.forEachChild([&](const IDataType & child)
-    {
-        contains = contains || isEnum(child);
     });
     return contains;
 }

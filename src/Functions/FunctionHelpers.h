@@ -212,13 +212,6 @@ NullPresence getNullPresense(const ColumnsWithTypeAndName & args);
 
 bool isDecimalOrNullableDecimal(const DataTypePtr & type);
 bool isLowCardinalityType(const IDataType & type);
-/// Returns true if the type is or contains Dynamic or Variant anywhere inside
-/// (e.g. Tuple(Dynamic), Array(Variant(...)), Map(String, Dynamic)).
-/// Comparing such values resolves the common type of the stored values per row, so comparison
-/// functions (and wrappers executing them) can throw depending on the processed rows.
-bool containsDynamicOrVariant(const IDataType & type);
-/// Returns true if the type is or contains Enum anywhere inside (e.g. Array(Enum8(...))).
-bool containsEnum(const IDataType & type);
 /// Whether a comparison function over these argument types can throw depending on the processed rows.
 /// False only for the proven-safe cases: identical types (no conversion, equal decimal scales),
 /// two string types (compared without casts) and two non-decimal numeric types. Everything else is

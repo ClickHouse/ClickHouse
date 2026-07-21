@@ -4,8 +4,11 @@
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnsNumber.h>
 #include <Core/UUID.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionFactory.h>
+#include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context_fwd.h>
@@ -227,7 +230,11 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    bool canThrow(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    /// An aggregate function state is serialized to a string per row, which can throw depending on the state's content.
+    bool canThrow(const DataTypesWithConstInfo & arguments) const override
+    {
+        return WhichDataType(removeNullable(removeLowCardinality(arguments[0].type))).isAggregateFunction();
+    }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {

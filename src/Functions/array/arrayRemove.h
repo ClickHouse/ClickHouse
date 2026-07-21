@@ -1,5 +1,9 @@
 #pragma once
 
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/Context_fwd.h>
 
@@ -27,7 +31,15 @@ public:
     bool useDefaultImplementationForNulls() const override { return false; }
     bool useDefaultImplementationForConstants() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
-    bool canThrow(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+
+    bool canThrow(const DataTypesWithConstInfo & arguments) const override
+    {
+        /// Builds and executes notEquals(element, value), which can throw for mixed-type comparisons.
+        const auto * array_type = checkAndGetDataType<DataTypeArray>(removeNullable(removeLowCardinality(arguments[0].type)).get());
+        if (!array_type)
+            return true;
+        return comparisonCanThrow(array_type->getNestedType(), arguments[1].type);
+    }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type, size_t input_rows_count) const override;
