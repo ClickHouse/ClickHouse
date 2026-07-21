@@ -420,14 +420,8 @@ private:
 
         const Int64 v = static_cast<Int64>(value);
         const Int64 d = static_cast<Int64>(divisor);
-        const Int64 remainder = v % d; /// In (-d, 0] for negative v.
-        if (remainder == 0)
-            return static_cast<DateOrTime>(v);
-
-        const Int64 rounded_towards_zero = v - remainder; /// A multiple of d in [v, 0], never overflows.
-        if (unlikely(rounded_towards_zero < std::numeric_limits<Int64>::min() + d))
-            return static_cast<DateOrTime>(rounded_towards_zero);
-        return static_cast<DateOrTime>(rounded_towards_zero - d);
+        const Int64 rounded_towards_zero = v - v % d; /// A multiple of d in [v, 0], never overflows.
+        return static_cast<DateOrTime>(roundDownNegativeToMultiple(v, rounded_towards_zero, d));
     }
 
     /// Add `offset` to `base`, saturating at the boundaries of `Time` instead of overflowing (which is
@@ -483,6 +477,20 @@ public:
     // Methods only for unit-testing, it makes very little sense to use it from user code.
     auto getOffsetAtStartOfEpoch() const { return offset_at_start_of_epoch; }
     auto getTimeOffsetAtStartOfLUT() const { return offset_at_start_of_lut; }
+
+    /// Round a negative `value` down to a multiple of `divisor` (towards negative infinity), given the
+    /// already computed `rounded_towards_zero` == `value / divisor * divisor` (truncating division).
+    /// Near the minimum of Int64 the next multiple down is not representable, so we saturate there.
+    static Int64 roundDownNegativeToMultiple(Int64 value, Int64 rounded_towards_zero, Int64 divisor)
+    {
+        if (rounded_towards_zero == value)
+            return value;
+        if (unlikely(rounded_towards_zero < std::numeric_limits<Int64>::min() + divisor))
+            return rounded_towards_zero;
+        return rounded_towards_zero - divisor;
+    }
+
+    static bool isTimeInLUTRange(Time t) { return !isOutOfLUTRange(t); }
 
     /// Whether the UTC offset never changes within the range of the LUT (UTC and other fixed-offset
     /// time zones). When true, every calendar day is exactly 86400 seconds, so adding days or weeks
@@ -1641,19 +1649,53 @@ public:
             return res;
     }
 
-    template <typename DateOrTime>
-    DateOrTime toStartOfMinuteInterval(DateOrTime t, UInt64 minutes) const
+    /// The rounding divisor of a `minutes`-long interval, in seconds. An extreme interval count (e.g.
+    /// `INTERVAL 4611686018427387904 MINUTE`) wraps `60 * minutes` to exactly zero, which would then divide
+    /// by zero; saturate instead - the result for such meaningless interval counts is discarded anyway.
+    static Int64 minuteIntervalDivisor(UInt64 minutes)
     {
-        /// `minutes` is only validated to be positive by the caller, so an extreme interval count can make
-        /// `60 * minutes` wrap, exactly as in `toStartOfHourInterval`. `INTERVAL 4611686018427387904 MINUTE`
-        /// wraps the product to exactly zero, which would then divide by zero in `roundDownToMultiple` (or in
-        /// the reconstruction below) before producing a result. Saturate the divisor to the maximum instead;
-        /// the rounding result for such meaningless interval counts is discarded anyway.
         UInt64 product = 0;
         if (unlikely(__builtin_mul_overflow(minutes, static_cast<UInt64>(60), &product)
                      || product > static_cast<UInt64>(std::numeric_limits<Int64>::max())))
             product = static_cast<UInt64>(std::numeric_limits<Int64>::max());
-        Int64 divisor = static_cast<Int64>(product);
+        return static_cast<Int64>(product);
+    }
+
+    /// The divisor in seconds if the corresponding `toStartOf*Interval` method equals
+    /// `roundDownToMultiple(t, divisor)` for every `t` within the LUT range in this time zone, nothing if it
+    /// needs the LUT. Must mirror the dispatch of the corresponding methods. The `offset_is_whole_number_of_*`
+    /// properties only hold during the epoch, so callers must keep out-of-range `t` on the generic path.
+    std::optional<Int64> minuteIntervalModularDivisor(UInt64 minutes) const
+    {
+        if (!offset_is_whole_number_of_minutes_during_epoch)
+            return std::nullopt;
+        return minuteIntervalDivisor(minutes);
+    }
+
+    std::optional<Int64> secondIntervalModularDivisor(UInt64 seconds) const
+    {
+        if (seconds == 1)
+            return Int64(1);
+        if (seconds % 60 == 0)
+            return minuteIntervalModularDivisor(seconds / 60);
+        if (offset_is_whole_number_of_hours_during_epoch)
+            return static_cast<Int64>(seconds);
+        return std::nullopt;
+    }
+
+    std::optional<Int64> hourIntervalModularDivisor(UInt64 hours) const
+    {
+        /// Multi-hour intervals are aligned to the start of the day, not to the epoch, so in general they
+        /// cannot be computed by modular arithmetic (the alignment differs on days with an offset change).
+        if (hours == 1 && offset_is_whole_number_of_hours_during_epoch)
+            return Int64(3600);
+        return std::nullopt;
+    }
+
+    template <typename DateOrTime>
+    DateOrTime toStartOfMinuteInterval(DateOrTime t, UInt64 minutes) const
+    {
+        Int64 divisor = minuteIntervalDivisor(minutes);
 
         /// Checked before the fast path below: historical (pre-1900) offsets can have a sub-minute component,
         /// so for out-of-range values the fast path would round to a UTC boundary instead of the local one.
