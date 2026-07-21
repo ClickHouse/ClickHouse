@@ -5473,40 +5473,52 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
               */
             if (result_left_table_expression && nested_alias_matched)
             {
-                const IdentifierResolveScope * root_scope = &scope;
-                while (root_scope->parent_scope)
-                    root_scope = root_scope->parent_scope;
-
-                ContextMutablePtr root_mutable_context;
-                if (auto * root_query_node = root_scope->scope_node->as<QueryNode>())
-                    root_mutable_context = root_query_node->getMutableContext();
-                else if (auto * root_union_node = root_scope->scope_node->as<UnionNode>())
-                    root_mutable_context = root_union_node->getMutableContext();
-
-                /// Never touch a secondary (replica-side) query: disabling the setting there could corrupt
-                /// task-based reading. Unreachable by construction (the shipped SQL never contains a nested
-                /// alias), but guard by intent; NO_QUERY contexts are fine to handle.
-                /// The `canUseTaskBasedParallelReplicas` gate mirrors the FINAL precedent in the planner: only
-                /// act when parallel replicas would actually run (read-tasks mode, `max_parallel_replicas > 1`,
-                /// etc.). This also leaves custom-key parallel-replicas modes untouched - they ship full SQL
-                /// and fail loudly on the nested alias, consistent with the accepted `Distributed` limitation.
-                if (root_mutable_context
-                    && root_mutable_context->getClientInfo().query_kind != ClientInfo::QueryKind::SECONDARY_QUERY
-                    && root_mutable_context->canUseTaskBasedParallelReplicas())
+                /// Every query node that CONTAINS this JOIN lies on the scope chain from the current scope
+                /// up to the root. Independently-planned subqueries (an `IN`, `FROM`, or `JOIN`-right-side
+                /// subquery) are planned from their own pre-analysis context copies, so mutating only the
+                /// root leaves those copies free to ship the unshippable JOIN to replicas. Walk the whole
+                /// chain and disable parallel replicas on each `QueryNode`/`UnionNode` on it. Sibling
+                /// subqueries not on the chain do not hold this JOIN and keep parallel replicas.
+                bool disabled_any = false;
+                for (const IdentifierResolveScope * chain_scope = &scope; chain_scope; chain_scope = chain_scope->parent_scope)
                 {
-                    const auto & root_settings = root_mutable_context->getSettingsRef();
-                    if (root_settings[Setting::allow_experimental_parallel_reading_from_replicas] >= 2)
+                    ContextMutablePtr chain_context;
+                    if (!chain_scope->scope_node)
+                        continue;
+                    if (auto * chain_query_node = chain_scope->scope_node->as<QueryNode>())
+                        chain_context = chain_query_node->getMutableContext();
+                    else if (auto * chain_union_node = chain_scope->scope_node->as<UnionNode>())
+                        chain_context = chain_union_node->getMutableContext();
+                    else
+                        continue; /// expression/lambda scope - skip, keep walking
+
+                    /// Never touch a secondary (replica-side) query: disabling the setting there could corrupt
+                    /// task-based reading. Unreachable by construction (the shipped SQL never contains a nested
+                    /// alias), but guard by intent; NO_QUERY contexts are fine to handle.
+                    /// The `canUseTaskBasedParallelReplicas` gate mirrors the FINAL precedent in the planner: only
+                    /// act when parallel replicas would actually run (read-tasks mode, `max_parallel_replicas > 1`,
+                    /// etc.). This also leaves custom-key parallel-replicas modes untouched - they ship full SQL
+                    /// and fail loudly on the nested alias, consistent with the accepted `Distributed` limitation.
+                    /// It is checked per node because subquery-level `SETTINGS` clauses produce distinct contexts.
+                    if (chain_context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY
+                        || !chain_context->canUseTaskBasedParallelReplicas())
+                        continue;
+
+                    if (chain_context->getSettingsRef()[Setting::allow_experimental_parallel_reading_from_replicas] >= 2)
                         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                             "JOIN USING identifier '{}' is resolved from an alias nested in the SELECT list, "
                             "which is not supported with parallel replicas",
                             identifier_full_name);
 
-                    root_mutable_context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
+                    chain_context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
+                    disabled_any = true;
+                }
+
+                if (disabled_any)
                     LOG_DEBUG(getLogger("QueryAnalyzer"),
                         "JOIN USING identifier '{}' is resolved from an alias nested in the SELECT list; "
                         "parallel replicas are disabled because the query sent to a remote server would not contain the alias",
                         identifier_full_name);
-                }
             }
 
             if (!result_left_table_expression)
