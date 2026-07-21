@@ -1,6 +1,10 @@
 -- Equi-key `WHERE` predicates must reach the left `MergeTree` input of a `RIGHT JOIN` as an index
 -- condition, including when the two `USING` keys differ in type.
 --
+-- Analyzer only. Under `enable_analyzer = 0` a `USING` key is renamed to `<table>.<key>` in the right
+-- input header while the `JOIN` output keeps the bare name, so the equivalence maps are keyed by a name
+-- the filter never references and nothing is pushed. That path is left as is.
+--
 -- Nothing may be pushed through a `FULL JOIN`: a dropped row only becomes a defaulted unmatched row, so
 -- a predicate on that default both admits and discards rows wrongly. Those cases assert results only.
 
