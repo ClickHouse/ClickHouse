@@ -41,8 +41,8 @@ public:
         , statistics_lookup(statistics_lookup_)
     {}
 
-    /// Derive statistics for a group based on one of its logical expressions.
-    /// This should be called when a group is explored and all its input groups have statistics.
+    /// Derive statistics for a group based on one of its logical expressions, recursively
+    /// deriving the input groups' statistics first.
     void deriveStatistics(GroupId group_id);
 
 private:

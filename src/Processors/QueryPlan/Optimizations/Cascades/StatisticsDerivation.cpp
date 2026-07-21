@@ -36,7 +36,6 @@ void StatisticsDerivation::deriveStatistics(GroupId group_id)
 {
     auto group = memo.getGroup(group_id);
 
-    /// Statistics already derived for this group
     if (group->statistics.has_value())
         return;
 
@@ -66,7 +65,6 @@ void StatisticsDerivation::deriveStatistics(GroupId group_id)
         return *memo.getGroup(expression->inputs[index].group_id)->statistics;
     };
 
-    /// Derive statistics based on the step type
     if (const auto * join_step = typeid_cast<const JoinStepLogical *>(plan_step))
     {
         group->statistics = deriveJoinStatistics(*join_step, input_statistics(0), input_statistics(1));
@@ -137,8 +135,7 @@ Float64 clampJoinRowCount(JoinKind kind, JoinStrictness strictness, Float64 base
         /// Inner asof keeps one nearest match per left row, so it is bounded by the left side.
         if (strictness == JoinStrictness::Asof)
             return std::min(base, left);
-        /// Inner any dedups to matching keys (measured: 1000 rows of one key ANY-join 1 row -> 1), so
-        /// it cannot exceed either side.
+        /// Inner any emits at most one row per matching key, so it cannot exceed either side.
         return std::min({base, left, right});
     }
 
@@ -416,7 +413,7 @@ ExpressionStatistics StatisticsDerivation::deriveAggregatingStatistics(const Agg
     ExpressionStatistics aggregation_statistics;
     for (const auto & key : aggregator_params.keys)
     {
-        /// If stats are present set NDV to 10% of number of rows
+        /// Without stats for the key, assume its NDV is 10% of the input rows.
         Float64 key_number_of_distinct_values = 0.1 * input_statistics.estimated_row_count;
 
         auto key_stats = input_statistics.column_statistics.find(key);

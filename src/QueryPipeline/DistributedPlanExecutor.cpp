@@ -1001,9 +1001,8 @@ TaskToHostMap::TaskToHostMap(const DistributedQueryPlan & distributed_query_plan
     assignHostsForTasks(distributed_query_plan_);
 }
 
-/// Reads worker hostnames from `stateless_worker_client.cluster` config.
-/// Throws if cluster name is set but the cluster is not found or has no shards.
-/// Returns empty vector if the worker client is not enabled or no host is configured.
+/// Worker hostnames from the `stateless_worker_client` config: the `cluster` replicas, or the
+/// single `host`; empty when the worker client is disabled.
 static Strings getDistributedWorkerHostnames(ContextPtr context)
 {
     if (!context->getConfigRef().getBool("stateless_worker_client.enabled", false))

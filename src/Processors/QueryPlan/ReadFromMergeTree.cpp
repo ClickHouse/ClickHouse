@@ -3556,7 +3556,7 @@ QueryPlanStepPtr ReadFromMergeTree::clone() const
     cloned_step->enable_remove_parts_from_snapshot_optimization = enable_remove_parts_from_snapshot_optimization;
     cloned_step->distributed_read_bucket_count = distributed_read_bucket_count;
     /// The coordinator-computed mark buckets and their per-task grouping; without them the
-    /// fan-out has nothing to ship in the `read_bucket` task parameters, and a FINAL read
+    /// fan-out has nothing to ship in the per-read bucket task parameters, and a FINAL read
     /// with several lanes per task would serialize misaligned lanes and lose rows.
     cloned_step->distributed_read_buckets = distributed_read_buckets;
     cloned_step->distributed_read_lanes_per_task = distributed_read_lanes_per_task;
@@ -3850,7 +3850,7 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
 
     logPredicateStatistics(result);
 
-    /// A distributed worker reads exactly the bucket described by its `read_bucket` task parameter: its
+    /// A distributed worker reads exactly the bucket described by its per-read bucket task parameter: its
     /// marks, whether it needs a FINAL merge, and (for a merge layer) the borders + index. Match the marks
     /// to local parts by name; a missing part is a retryable error (the replica diverged by merge or lag).
     if (distributed_read_bucket_count > 0 && settings.parameter_lookup)

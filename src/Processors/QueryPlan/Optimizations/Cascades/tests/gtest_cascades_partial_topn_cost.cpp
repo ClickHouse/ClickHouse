@@ -16,7 +16,8 @@ using namespace DB;
 /// A sorted gather over a partial top-N must be priced on the rows the partial physically
 /// emits - min(input_rows, L * node_count) - not on the group statistics trimmed to the
 /// final L. The partial records `physical_output_rows` when costed; the exchange reads it
-/// from its selected child.
+/// from its selected child. Also covers the cost estimator marking an expression whose input
+/// has no satisfying implementation as unbuildable.
 
 namespace
 {

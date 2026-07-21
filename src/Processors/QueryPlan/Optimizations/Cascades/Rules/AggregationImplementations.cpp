@@ -22,7 +22,8 @@ namespace ErrorCodes
 /// Produces all applicable single-phase aggregation implementations:
 ///   - Local: gather all data to one node, aggregate there (always applicable)
 ///   - Shuffle: input pre-distributed by group keys, each node aggregates its own key partition
-///     (only applicable when node_count > 1 and there are GROUP BY keys)
+///     (only applicable when node_count > 1 and there are `GROUP BY` keys)
+///   - Partial: a non-final aggregation stays where its input is (any node count)
 ///
 /// Two-phase (partial + shuffle + merge) aggregation is handled separately by
 /// TwoPhaseAggregationTransformation, which splits a logical Agg into

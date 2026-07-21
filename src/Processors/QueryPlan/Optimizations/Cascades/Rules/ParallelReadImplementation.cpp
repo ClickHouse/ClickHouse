@@ -88,7 +88,7 @@ std::vector<GroupExpressionPtr> ParallelReadImplementation::applyImpl(GroupExpre
 
     /// Produce a distributed read that splits work uniformly across all nodes: the coordinator
     /// computes each bucket's authoritative marks and the fan-out ships them to the workers in
-    /// the `read_bucket` task parameters. DefaultImplementation handles the single-node read.
+    /// the per-read bucket task parameters. `LocalReadImplementation` handles the single-node read.
     size_t actual_buckets = 0;
     auto parallel_read_expression = makeBucketedReadVariant(
         expression, node_count, /*target_buckets=*/node_count,

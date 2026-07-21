@@ -230,9 +230,6 @@ std::unordered_map<String, Float64> estimateReadColumnWidths(const ReadFromMerge
     return widths;
 }
 
-/// Column widths for a read whose table-level row width is hinted: the parts are tiny stand-ins
-/// for a big relation, so distribute the hinted row width over the columns by type instead of
-/// trusting the parts' sizes.
 std::unordered_map<String, Float64> estimateReadColumnWidthsScaledToRow(const ReadFromMergeTree & read_step, Float64 row_bytes)
 {
     Float64 type_width_sum = 0;

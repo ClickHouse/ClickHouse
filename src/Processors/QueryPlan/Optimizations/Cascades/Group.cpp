@@ -133,8 +133,8 @@ ExpressionWithCost Group::selectInputImplementation(
     const std::unordered_set<GroupExpression *> & active_path,
     bool input_is_self_referential) const
 {
-    /// Eligibility for `selectInputImplementation` (see there). The wildcard-axis rejections below
-    /// are what stop a self-referential enforcer from picking itself.
+    /// The wildcard-axis rejections below are what stop a self-referential enforcer from picking
+    /// itself; the full contract is on the declaration in Group.h.
     auto is_eligible = [&](const GroupExpressionPtr & candidate)
     {
         if (!candidate->cost.has_value())
