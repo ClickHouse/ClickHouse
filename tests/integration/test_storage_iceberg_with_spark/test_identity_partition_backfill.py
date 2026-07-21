@@ -24,7 +24,9 @@ def _strip_column_from_data_files(cluster, storage_type, table_name, column):
     data_files = glob.glob(f"{root}data/**/*.parquet", recursive=True)
     assert data_files, f"no data files under {root}data/"
     for pq_file in data_files:
-        table = pq.read_table(pq_file)
+        # Read the file by its own footer. pq.read_table(path) uses the dataset API, which infers a
+        # Hive partition from the region=<v>/ path and fails to merge it with the physical column.
+        table = pq.ParquetFile(pq_file).read()
         if column in table.column_names:
             table = table.drop([column])
             pq.write_table(table, pq_file)
