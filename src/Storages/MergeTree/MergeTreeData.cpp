@@ -3103,12 +3103,27 @@ void MergeTreeData::refreshDataPartsOnce(UInt64 interval_milliseconds)
     {
         auto part_lock = lockParts();
 
-        /// Collect only "the most covering" parts from the top level of the tree.
-        loading_tree.traverse(/*recursive=*/ false, [&, this](const auto & node)
+        /// Seed the not-yet-indexed "most covering" parts. `refreshDataPartsOnce` runs
+        /// repeatedly against a persistent index, and on a read-only table the old-part
+        /// cleanup never runs (`StorageMergeTree::startup` returns early), so a rolled-back
+        /// ancestor demoted to `Outdated`/`Deleting` in an earlier refresh stays indexed.
+        /// Skipping such a node whole would hide committed descendants that only appear on
+        /// disk in a later refresh, so descend past an already-indexed *non-active* node to
+        /// seed them; an already-indexed *active* node legitimately shadows its subtree.
+        std::function<void(const PartLoadingTree::NodePtr &)> seed = [&](const auto & node)
         {
-            if (auto it = data_parts_by_info.find(node->info); it == data_parts_by_info.end())
+            auto it = data_parts_by_info.find(node->info);
+            if (it == data_parts_by_info.end())
+            {
                 parts_to_add.emplace_back(node);
-        });
+                return;
+            }
+            if ((*it)->getState() != DataPartState::Active)
+                for (const auto & [_, child] : node->children)
+                    seed(child);
+        };
+
+        loading_tree.traverse(/*recursive=*/ false, [&](const auto & node) { seed(node); });
     }
 
     bool have_non_adaptive_parts = false;

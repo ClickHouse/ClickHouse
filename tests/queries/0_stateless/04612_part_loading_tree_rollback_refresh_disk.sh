@@ -13,37 +13,49 @@
 # descendants of a rolled-back top-level part. The read-only refresh path
 # (`refreshDataPartsOnce`, used by the background refresh task and `SYSTEM RESTART DISK`)
 # had no such promotion and unconditionally committed every top-level node. On the 04241
-# containment topology that meant a readonly refresh:
-#   - buried the committed children under the Outdated rolled-back ancestor, and
-#   - re-activated the rolled-back ancestor itself.
+# containment topology that meant a readonly refresh buried the committed children under
+# the Outdated rolled-back ancestor and re-activated the rolled-back ancestor itself.
 #
 # Topology (== 04241_part_loading_tree_rollback_contains), but the parts appear AFTER the
 # readonly reader is loaded, so they are surfaced by refreshDataPartsOnce, not by startup:
 #   all_1_4_2_1  rolled-back ancestor  (blocks 1-4, level 2)
 #   all_1_2_1_0  committed child       (blocks 1-2, contained, disjoint from 3-4)
 #   all_3_4_1_0  committed child       (blocks 3-4, contained, disjoint from 1-2)
+#
+# Two phases, one per code path:
+#   Phase 1 (same pass): all three parts appear before one refresh. The in-loop promotion
+#     skips committing the rolled-back top-level node and re-enqueues its children.
+#   Phase 2 (cross refresh): the rolled-back ancestor appears first and is indexed Outdated
+#     by refresh N. On a read-only table the old-part cleanup never runs, so it stays
+#     indexed; the committed children appear only before refresh N+1. The top-level seed
+#     must descend past the already-indexed non-active ancestor to surface them, otherwise
+#     they stay invisible until a full restart/reattach.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
 WRITER="writer_${CLICKHOUSE_DATABASE}"
-READER="reader_${CLICKHOUSE_DATABASE}"
+READER1="reader1_${CLICKHOUSE_DATABASE}"
+READER2="reader2_${CLICKHOUSE_DATABASE}"
 
 cleanup()
 {
     $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS ${WRITER} SYNC" 2>/dev/null
-    $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS ${READER} SYNC" 2>/dev/null
+    $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS ${READER1} SYNC" 2>/dev/null
+    $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS ${READER2} SYNC" 2>/dev/null
 }
 trap cleanup EXIT
 cleanup
 
-# A writer on a read-write plain_rewritable disk and a reader on a read-only disk over the
-# SAME backing path (plain_rewritable stores files at a local path; the two disks may share
-# it). The reader has all-read-only disks, so SYSTEM RESTART DISK re-scans it via
-# refreshDataPartsOnce. `no-object-storage` is deliberately NOT set: this test REQUIRES a
-# local backing path (object_storage_type = local) so we can fabricate the rolled-back part.
-DISK_PATH="disks/04612/${CLICKHOUSE_DATABASE}/"
+# A writer on a read-write plain_rewritable disk creates the source part and the disk layout
+# (format_version.txt + the __meta mapping). Each phase gets its own copy of that layout so
+# the two readers do not share a __meta namespace. The readers have all-read-only disks, so
+# SYSTEM RESTART DISK re-scans them via refreshDataPartsOnce. `no-object-storage` is
+# deliberately NOT set: the test REQUIRES a local backing path (object_storage_type = local)
+# so it can fabricate the rolled-back part on disk.
+BASE_PATH="disks/04612/${CLICKHOUSE_DATABASE}"
+DISK_PATH="${BASE_PATH}/w/"
 
 $CLICKHOUSE_CLIENT -q "
     CREATE TABLE ${WRITER} (x UInt32) ORDER BY x
@@ -86,73 +98,109 @@ if [ -z "${SRC_RND}" ]; then
     exit 1
 fi
 
-# Stage clones of the source part under fresh random names mapped to the fabricated logical
-# names. Staged into a holding area so we can inject them only AFTER the reader has loaded.
+# Keep a copy of the source part, then detach the writer. Each phase's reader is created on
+# a fresh empty path (the CREATE initializes the plain_rewritable format itself), and the
+# fabricated parts are injected only afterwards.
+CLONE_SRC=$(mktemp -d); cp -r "${STORE}${SRC_RND}/." "${CLONE_SRC}/"
+$CLICKHOUSE_CLIENT -q "DETACH TABLE ${WRITER}"
+
 STAGE=$(mktemp -d)
-declare -a RND_NAMES
+
+# Fabricate part <logical> under a fresh random dir in ${STAGE}, mapped via prefix.path.
+# rolled_back=1 writes a raw txn_version.txt with creation_csn = Tx::RolledBackCSN and a
+# creation_tid whose local_tid > Tx::MaxReservedLocalTID (32) so wasInvolvedInTransaction()
+# is true. Prints the random dir name.
 stage_part()
 {
-    local logical=$1 rolled_back=$2
-    local rnd; rnd=$(tr -dc 'a-z' < /dev/urandom | head -c 32)
-    cp -r "${STORE}${SRC_RND}" "${STAGE}/${rnd}"
+    local logical=$1 rolled_back=$2 rnd
+    rnd=$(tr -dc 'a-z' < /dev/urandom | head -c 32)
+    cp -r "${CLONE_SRC}" "${STAGE}/${rnd}"
     mkdir -p "${STAGE}/meta_${rnd}"
     printf '%s/' "${logical}" > "${STAGE}/meta_${rnd}/prefix.path"
     if [ "${rolled_back}" = "1" ]; then
-        # `creation_csn = Tx::RolledBackCSN` marks the part rolled back on disk. `creation_tid`
-        # uses a local_tid > Tx::MaxReservedLocalTID (32) so wasInvolvedInTransaction() is true.
         printf 'version: 1\nstoring_version: 0\ncreation_tid: (2, 33, 00000000-0000-0000-0000-000000000000)\ncreation_csn: 18446744073709551615\nremoval_tid: (0, 0, 00000000-0000-0000-0000-000000000000)\nremoval_csn: 0' \
             > "${STAGE}/${rnd}/txn_version.txt"
     fi
-    RND_NAMES+=("${rnd}")
+    echo "${rnd}"
 }
 
-stage_part all_1_4_2_1 1
-stage_part all_1_2_1_0 0
-stage_part all_3_4_1_0 0
+# Move a staged part (its random dir + prefix.path) into a reader's store.
+inject_part()
+{
+    local store=$1 rnd=$2
+    mv "${STAGE}/${rnd}" "${store}${rnd}"
+    mkdir -p "${store}__meta/${rnd}"
+    mv "${STAGE}/meta_${rnd}/prefix.path" "${store}__meta/${rnd}/prefix.path"
+}
 
-# Detach the writer and drop the source part so the readonly reader loads an EMPTY part set.
-$CLICKHOUSE_CLIENT -q "DETACH TABLE ${WRITER}"
-rm -rf "${STORE}${SRC_RND}" "${STORE}__meta/${SRC_RND}"
-
-$CLICKHOUSE_CLIENT -q "
-    CREATE TABLE ${READER} (x UInt32) ORDER BY x
-    SETTINGS table_disk = true,
-      disk = disk(
-          readonly = true,
-          name = 04612_reader_${CLICKHOUSE_DATABASE},
-          type = object_storage, object_storage_type = local,
-          metadata_type = plain_rewritable, path = '${DISK_PATH}')
-"
-
-# Inject the fabricated topology into the shared store (reader already loaded empty).
-for rnd in "${RND_NAMES[@]}"; do
-    mv "${STAGE}/${rnd}" "${STORE}${rnd}"
-    mkdir -p "${STORE}__meta/${rnd}"
-    mv "${STAGE}/meta_${rnd}/prefix.path" "${STORE}__meta/${rnd}/prefix.path"
-done
-rm -rf "${STAGE}"
-
-# Trigger refreshDataPartsOnce for the readonly reader.
-$CLICKHOUSE_CLIENT -q "SYSTEM RESTART DISK 04612_reader_${CLICKHOUSE_DATABASE}"
+# Create a readonly reader over a fresh, empty plain_rewritable layout at ${BASE_PATH}/<sub>.
+# Prints the reader's store directory.
+make_reader()
+{
+    # Separate `local` statements: a single `local a=$2 b="${a}"` evaluates every RHS
+    # before assigning, so `${a}` would still be empty when building `b`.
+    local table=$1
+    local sub=$2
+    local disk="04612_${sub}_${CLICKHOUSE_DATABASE}"
+    local store
+    store="$(dirname "${STORE%/}")/${sub}/"
+    mkdir -p "${store}__meta"
+    $CLICKHOUSE_CLIENT -q "
+        CREATE TABLE ${table} (x UInt32) ORDER BY x
+        SETTINGS table_disk = true,
+          disk = disk(
+              readonly = true, name = ${disk},
+              type = object_storage, object_storage_type = local,
+              metadata_type = plain_rewritable, path = '${BASE_PATH}/${sub}/')
+    "
+    echo "${store}"
+}
 
 check_active_count()
 {
-    local part_name=$1 expected=$2 actual
+    local table=$1 part_name=$2 expected=$3 actual
     actual=$($CLICKHOUSE_CLIENT -q "
         SELECT count() FROM system.parts
-        WHERE database = currentDatabase() AND table = '${READER}'
+        WHERE database = currentDatabase() AND table = '${table}'
           AND name = '${part_name}' AND active
     ")
     if [ "${actual}" -ne "${expected}" ]; then
-        echo "FAIL: part ${part_name} active count is ${actual}, expected ${expected}"
+        echo "FAIL: [${table}] part ${part_name} active count is ${actual}, expected ${expected}"
         exit 1
     fi
 }
 
-# Both committed children must be promoted to root level and active after the refresh.
-check_active_count all_1_2_1_0 1
-check_active_count all_3_4_1_0 1
-# The rolled-back ancestor must not be re-activated.
-check_active_count all_1_4_2_1 0
+# ---- Phase 1: same-pass containment (in-loop orphan promotion) ----
+P1_ANCESTOR=$(stage_part all_1_4_2_1 1)
+P1_CHILD_A=$(stage_part all_1_2_1_0 0)
+P1_CHILD_B=$(stage_part all_3_4_1_0 0)
+STORE1=$(make_reader "${READER1}" r1)
+inject_part "${STORE1}" "${P1_ANCESTOR}"
+inject_part "${STORE1}" "${P1_CHILD_A}"
+inject_part "${STORE1}" "${P1_CHILD_B}"
+$CLICKHOUSE_CLIENT -q "SYSTEM RESTART DISK 04612_r1_${CLICKHOUSE_DATABASE}"
+# Both committed children promoted and active; rolled-back ancestor not re-activated.
+check_active_count "${READER1}" all_1_2_1_0 1
+check_active_count "${READER1}" all_3_4_1_0 1
+check_active_count "${READER1}" all_1_4_2_1 0
 
+# ---- Phase 2: cross-refresh containment (seed descends past a stale ancestor) ----
+P2_ANCESTOR=$(stage_part all_1_4_2_1 1)
+P2_CHILD_A=$(stage_part all_1_2_1_0 0)
+P2_CHILD_B=$(stage_part all_3_4_1_0 0)
+STORE2=$(make_reader "${READER2}" r2)
+# Refresh N: only the rolled-back ancestor is on disk. It gets indexed but must not be active.
+inject_part "${STORE2}" "${P2_ANCESTOR}"
+$CLICKHOUSE_CLIENT -q "SYSTEM RESTART DISK 04612_r2_${CLICKHOUSE_DATABASE}"
+check_active_count "${READER2}" all_1_4_2_1 0
+# Refresh N+1: the committed children appear only now and must be surfaced despite the
+# already-indexed ancestor.
+inject_part "${STORE2}" "${P2_CHILD_A}"
+inject_part "${STORE2}" "${P2_CHILD_B}"
+$CLICKHOUSE_CLIENT -q "SYSTEM RESTART DISK 04612_r2_${CLICKHOUSE_DATABASE}"
+check_active_count "${READER2}" all_1_2_1_0 1
+check_active_count "${READER2}" all_3_4_1_0 1
+check_active_count "${READER2}" all_1_4_2_1 0
+
+rm -rf "${STAGE}" "${CLONE_SRC}"
 echo OK
