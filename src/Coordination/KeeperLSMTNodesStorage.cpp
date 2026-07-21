@@ -227,6 +227,7 @@ struct KeeperLSMTNodesStorage::NodeStreamForSnapshot final : public KeeperNodeSt
 
 std::unique_ptr<KeeperNodeStreamForSnapshot> KeeperLSMTNodesStorage::beginWritingSnapshot()
 {
+    std::shared_lock lock(*storage_mutex);
     return std::make_unique<NodeStreamForSnapshot>(state);
 }
 
