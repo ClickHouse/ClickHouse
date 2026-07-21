@@ -16,6 +16,10 @@ AI functions are experimental. Set [`allow_experimental_ai_functions`](/operatio
 AI functions can return unpredictable outputs. The result will highly depend on the quality of the prompt and the model used.
 :::
 
+:::warning Prompt injection
+The input text is sent to the model and can steer its output (prompt injection). Text from external, unverified, or unsanitized sources may contain instructions that make the model return attacker-controlled content, ignore the requested format, or emit malicious payloads. Treat AI function output as untrusted: validate or sanitize it before using it in downstream steps such as building SQL, shell commands, further queries, or access-control decisions. The output format constraints used by `aiClassify` and `aiExtract` reduce, but do not eliminate, this risk.
+:::
+
 All functions are sharing a common infrastructure that provides:
 
 - **Quota enforcement**: Per-query limits on tokens ([`ai_function_max_input_tokens_per_query`](/operations/settings/settings#ai_function_max_input_tokens_per_query), [`ai_function_max_output_tokens_per_query`](/operations/settings/settings#ai_function_max_output_tokens_per_query)) and API calls ([`ai_function_max_api_calls_per_query`](/operations/settings/settings#ai_function_max_api_calls_per_query)).
