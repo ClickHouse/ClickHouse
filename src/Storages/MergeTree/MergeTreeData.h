@@ -1049,6 +1049,14 @@ public:
         AlterLockHolder & table_lock_holder,
         bool run_sanity_checks = true);
 
+    /// After changeSettings has committed the setting-derived index-filename escape fields
+    /// (escape_index_filenames and each secondary index's escape_filenames), copy them into a metadata
+    /// object that is about to be republished. commands.apply never touches these derived fields, so an
+    /// ALTER that clones its metadata before changeSettings and republishes it (setInMemoryMetadata /
+    /// setProperties / alterTable) would otherwise revert the index-filename policy, silently killing the
+    /// skip index of parts written after the ALTER. Call this after changeSettings, before the republish.
+    void carryOverCommittedEscapeIndexFilenames(StorageInMemoryMetadata & metadata, ContextPtr local_context) const;
+
     std::pair<String, bool> getNewImplicitStatisticsTypes(const StorageInMemoryMetadata & new_metadata, const MergeTreeSettings & old_settings) const;
     static void verifySortingKey(const KeyDescription & sorting_key);
 

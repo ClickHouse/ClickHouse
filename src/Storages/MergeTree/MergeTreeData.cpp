@@ -5727,6 +5727,14 @@ void MergeTreeData::changeSettings(
     }
 }
 
+void MergeTreeData::carryOverCommittedEscapeIndexFilenames(StorageInMemoryMetadata & metadata, ContextPtr local_context) const
+{
+    auto committed_metadata = getInMemoryMetadataPtr(local_context, /*bypass_metadata_cache=*/true);
+    metadata.escape_index_filenames = committed_metadata->escape_index_filenames;
+    for (auto & index : metadata.secondary_indices)
+        index.escape_filenames = committed_metadata->escape_index_filenames;
+}
+
 std::pair<String, bool> MergeTreeData::getNewImplicitStatisticsTypes(const StorageInMemoryMetadata & new_metadata, const MergeTreeSettings & old_settings) const
 {
     if (getStorageID().database_name == DatabaseCatalog::SYSTEM_DATABASE)
