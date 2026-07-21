@@ -1019,23 +1019,14 @@ bool MergeTreeIndexConditionText::traverseMapContainsKeyValue(const RPNBuilderFu
 
     if (function.getFunctionName() == "mapContainsKeyValue")
     {
-        /// Existence of a (key, value) pair at any position. A pair is stored as either the
-        /// first-occurrence (is_rest = 0) or a later-occurrence (is_rest = 1) token, so existence is
-        /// the union (OR) of the two variants. Tag the query FUNCTION_HAS_ANY_TOKENS (Any mode),
-        /// NOT FUNCTION_EQUALS.
-        ///
-        /// The distinction matters for granule pruning. FUNCTION_EQUALS forces the All-mode check
-        /// (hasAllTokensOrEmptyInRange), which treats the query's folded posting list as complete and
-        /// intersects it with the mark range. But a two-token Any query folds its postings by union,
-        /// and that union is complete only once every token's postings have been read; if one variant's
-        /// postings are still unread (e.g. the is_rest = 1 token's posting list spans several posting
-        /// blocks while is_rest = 0 is embedded), the partial union would be taken as exact and a mark
-        /// holding only the unread variant would be wrongly pruned — a false negative for exactly the
-        /// later-duplicate rows this function exists to find. FUNCTION_HAS_ANY_TOKENS instead routes to
-        /// the Any-mode check (which stays conservative until all postings are read) and makes
-        /// requiresReadingAllTokens true, so the reader folds both postings before answering; direct
-        /// read likewise unions the two exact postings. Kept as one query (not two) so the single-query
-        /// direct-read replacement still applies. (`m['key'] = v` instead pins only the is_rest = 0 token.)
+        /// Existence of a pair at any position: the union (OR) of the is_rest = 0 and is_rest = 1 tokens.
+        /// Tag it FUNCTION_HAS_ANY_TOKENS, not FUNCTION_EQUALS. FUNCTION_EQUALS forces the All-mode granule
+        /// check, which treats the folded union as complete — but the union is complete only once every
+        /// token's postings are read, so a mark holding only a still-unread variant (e.g. is_rest = 1
+        /// spilled to several posting blocks while is_rest = 0 is embedded) would be wrongly pruned.
+        /// HAS_ANY_TOKENS routes to the Any-mode check (conservative until all postings are read) and sets
+        /// requiresReadingAllTokens, so both postings are folded first. One query (not two) keeps the
+        /// single-query direct read. (`m['key'] = v` pins only is_rest = 0.)
         const String key_str = key_field.safeGet<String>();
         const String value_str = value_field.safeGet<String>();
         VectorWithMemoryTracking<String> tokens;
@@ -1086,13 +1077,10 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
 
     if (typeid_cast<const KeyValuePairsTokenizer *>(tokenizer) && WhichDataType(value_type).isStringOrFixedString())
     {
-        /// LIKE rewrites over the keyValuePairs dictionary follow the same opt-in as the non-map LIKE
-        /// path: scanning the dictionary for pattern matches is only done when
-        /// use_text_index_like_evaluation_by_dictionary_scan is set, and only for patterns whose longest
-        /// literal run is at least text_index_like_min_pattern_length (a shorter needle matches too many
-        /// decoded tokens to be worth scanning). Any pattern shape (prefix, suffix, substring, literal,
-        /// or complex) is supported via the decoded-value regex match; these gates apply only to the
-        /// LIKE-pattern branches, while exact key/value lookups below are precise and always eligible.
+        /// LIKE rewrites over the dictionary follow the same opt-in as the non-map LIKE path: only when
+        /// use_text_index_like_evaluation_by_dictionary_scan is set and the pattern's longest literal run
+        /// is at least text_index_like_min_pattern_length (a shorter needle matches too many tokens). Any
+        /// pattern shape works via the decoded-value regex; the exact lookups below are always eligible.
         const auto & like_settings = getContext()->getSettingsRef();
         const bool like_dict_scan_enabled = like_settings[Setting::use_text_index_like_evaluation_by_dictionary_scan];
         const size_t like_min_pattern_length = like_settings[Setting::text_index_like_min_pattern_length];
@@ -1925,12 +1913,10 @@ std::optional<String> MergeTreeIndexConditionText::tryGetMapElementKeyForKeyValu
         auto & [map_column_name, serialized_key] = *parsed;
         if (header.has(map_column_name))
         {
-            /// `serialized_key` is the text form `FunctionToSubcolumnsPass` placed in the subcolumn name
-            /// via `serializeText` on the map key type, not necessarily the raw key bytes. Deserialize it
-            /// back through the key type so the index is probed with the original key, mirroring
-            /// `MergeTreeIndexBloomFilter::tryParseMapSubcolumn`. For the `String` / `LowCardinality(String)`
-            /// keys this index allows `serializeText` is the identity, so this is a round-trip today; doing
-            /// it explicitly keeps the lookup correct for any key type and consistent with the bloom filter.
+            /// `serialized_key` is the subcolumn-name text `FunctionToSubcolumnsPass` produced via
+            /// `serializeText`, not necessarily the raw key. Deserialize it back through the key type
+            /// (identity for the String / LowCardinality(String) keys allowed here, but correct for any
+            /// type), mirroring `MergeTreeIndexBloomFilter::tryParseMapSubcolumn`.
             const auto * map_type = typeid_cast<const DataTypeMap *>(header.getByName(map_column_name).type.get());
             if (!map_type)
                 return std::nullopt;
@@ -2127,11 +2113,9 @@ bool MergeTreeIndexConditionText::tryPrepareSetForTextSearch(
 bool MergeTreeIndexConditionText::tryPrepareMapElementKeyValueSet(
     const RPNBuilderTreeNode & lhs, const RPNBuilderTreeNode & rhs, RPNElement & out) const
 {
-    /// `m['key'] IN (v1, ..., vn)` is the union of the exact first-value lookups `m['key'] = vi`.
-    /// The generic tryPrepareSetForTextSearch path cannot answer it: it resolves the map element against
-    /// a `mapValues(m)` index and tokenizes each set element on its own, whereas the keyValuePairs index
-    /// stores whole `(key, value)` pairs as single tokens. Handle it here, mirroring the `m['key'] = v`
-    /// rewrite: encode one exact pair token per set element and OR them.
+    /// `m['key'] IN (v1, ..., vn)` = OR of the exact `m['key'] = vi` lookups. The generic
+    /// tryPrepareSetForTextSearch can't answer it (it targets a `mapValues(m)` index and tokenizes each
+    /// element alone, not whole pairs), so handle it here like the `m['key'] = v` rewrite.
     if (!typeid_cast<const KeyValuePairsTokenizer *>(tokenizer))
         return false;
 
@@ -2159,17 +2143,13 @@ bool MergeTreeIndexConditionText::tryPrepareMapElementKeyValueSet(
     if (!WhichDataType(set_column.getDataType()).isStringOrFixedString())
         return false;
 
-    /// Each `m['key'] = vi` matches the key's first occurrence (is_rest = 0), so build one exact pair
-    /// token per set element and OR them with FUNCTION_HAS_ANY_TOKENS (a single multi-token query, like
-    /// the mapContainsKeyValue rewrite, so requiresReadingAllTokens forces reading every posting).
+    /// One exact token per set element (is_rest = 0, first value), OR'd via FUNCTION_HAS_ANY_TOKENS (one
+    /// multi-token query, so requiresReadingAllTokens folds every posting).
     ///
-    /// The direct read mode is `None`, NOT `Exact` — matching the generic set path
-    /// (`tryPrepareSetForTextSearch`). An exact direct read would replace the predicate with a virtual
-    /// column and, for parts where the index is not materialized, recompute it from
-    /// `convertNodeToAST(in(...))`; but the `IN` right-hand side is a `ColumnSet`, which does not survive
-    /// that round-trip (it degrades to a NULL literal), so the recomputed predicate would drop the
-    /// non-materialized part's matching rows. With `None` the original `IN` predicate is kept and the
-    /// index is used only to prune granules (which the FUNCTION_HAS_ANY_TOKENS RPN still drives).
+    /// Direct read mode is None, not Exact — like the generic set path. Exact would replace the predicate
+    /// with a virtual column recomputed from `convertNodeToAST(in(...))` on non-materialized parts, but
+    /// the IN right-hand side is a `ColumnSet` that degrades to NULL through that round-trip, dropping
+    /// those parts' matching rows. None keeps the predicate and uses the index only to prune granules.
     VectorWithMemoryTracking<String> tokens;
     size_t total_row_count = prepared_set->getTotalRowCount();
     for (size_t row = 0; row < total_row_count; ++row)

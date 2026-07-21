@@ -1683,21 +1683,17 @@ void MergeTreeIndexAggregatorText::update(const Block & block, size_t * pos, siz
         const auto & keys = tuple.getColumn(0);
         const auto & values = tuple.getColumn(1);
 
-        /// Encode each (key, value) pair into a ColumnString before indexing. The token bytes must
-        /// live in padded memory: StringHashTable::dispatch reads a full 8-byte machine word around
-        /// each key, and its backward-read branch reads the word *ending* at the key end, which
-        /// under-reads before the allocation for a token shorter than 8 bytes. Arena pads only on
-        /// the right, so a bare Arena/String buffer is not enough; ColumnString's PaddedPODArray
-        /// pads both sides, exactly like the plain-String and Array index paths.
+        /// Index tokens from a ColumnString: StringHashTable::dispatch reads an 8-byte word around each
+        /// key (including a backward read ending at the key end, which under-reads for tokens < 8 bytes).
+        /// Arena pads only on the right; ColumnString's PaddedPODArray pads both sides, like the
+        /// plain-String and Array paths.
         auto tokens_column = ColumnString::create();
-        /// Reused across the whole block so encoding a pair does not allocate a String per token; the
-        /// encoded bytes are then copied into the padded ColumnString (see above), which the wide
-        /// StringHashTable::dispatch reads require.
+        /// Reused per pair so encoding does not allocate a String per token (bytes are then copied into
+        /// the padded ColumnString above).
         String token_buf;
-        /// Keys already emitted for the current row, to flag the first occurrence of a key with
-        /// is_rest = 0 and later duplicates with is_rest = 1 (see MapKeyValueToken.h). A linear
-        /// back-scan over this small per-row vector beats a hash set here: maps have few entries, and
-        /// the scan is allocation-free and short-circuits, whereas a node-based set allocates per key.
+        /// Keys seen so far in the current row: first occurrence gets is_rest = 0, later duplicates
+        /// is_rest = 1 (see MapKeyValueToken.h). A linear back-scan beats a hash set for small maps —
+        /// allocation-free and short-circuits.
         std::vector<std::string_view> row_keys;
         for (size_t i = offset; i < offset + rows_read; ++i)
         {
@@ -1962,10 +1958,9 @@ void validateTextIndexColumnType(const ITokenizer & tokenizer, const DataTypePtr
 {
     if (tokenizer.getType() == ITokenizer::Type::KeyValuePairs)
     {
-        /// Only `String` (optionally `LowCardinality`) keys and values are supported. `FixedString`
-        /// is rejected: the query-side fast path receives the unpadded key (e.g. `"a"`) from
-        /// `FunctionToSubcolumnsPass` / `tryGetMapElementKeyForKeyValueIndex`, while the index stores
-        /// the padded `ColumnFixedString` bytes (e.g. `"a\0\0"`), so lookups would silently miss rows.
+        /// Only `String` / `LowCardinality(String)` keys and values. `FixedString` is rejected: the
+        /// query-side key arrives unpadded (`"a"`) while the index would store padded bytes (`"a\0\0"`),
+        /// so lookups would silently miss rows.
         const auto * map_type = typeid_cast<const DataTypeMap *>(index_data_type.get());
         if (!map_type
             || !WhichDataType(recursiveRemoveLowCardinality(map_type->getKeyType())).isString()
@@ -2077,11 +2072,9 @@ void textIndexValidator(const IndexDescription & index, bool /*attach*/, const M
 
     validateTextIndexColumnType(*tokenizer, index.data_types[0]);
 
-    /// The `keyValuePairs` tokenizer synthesizes its tokens from the decoded `(key, value)` pairs of a
-    /// `Map` column, so it has no String tokenization step for `preprocessor` / `postprocessor` to hook
-    /// into: a `preprocessor` would have to transform the `Map` pairwise (and mirror that on the query
-    /// side), and a `postprocessor` would corrupt the encoded key-value tokens. Reject both until such
-    /// pairwise transformation semantics are designed end-to-end.
+    /// The `keyValuePairs` tokenizer builds tokens from `(key, value)` pairs, with no String
+    /// tokenization step for `preprocessor` / `postprocessor` to hook into (a postprocessor would also
+    /// corrupt the encoded tokens). Reject both until pairwise-transform semantics are designed.
     if (tokenizer->getType() == ITokenizer::Type::KeyValuePairs)
     {
         if (preprocessor_ast)
