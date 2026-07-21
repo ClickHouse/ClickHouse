@@ -84,7 +84,7 @@ ClickHouseClusterSpec defines the desired state of ClickHouseCluster.
 | `labels` | object (keys:string, values:string) | Additional labels that are added to resources. | false |  |
 | `annotations` | object (keys:string, values:string) | Additional annotations that are added to resources. | false |  |
 | `podDisruptionBudget` | [PodDisruptionBudgetSpec](#poddisruptionbudgetspec) | PodDisruptionBudget configures the PDB created for each shard.<br />When unset, the operator defaults to maxUnavailable=1 for single-replica<br />shards and minAvailable=1 for multi-replica shards. | false |  |
-| `settings` | [ClickHouseSettings](#clickhousesettings) | Configuration parameters for ClickHouse server. | false |  |
+| `settings` | [ClickHouseSettings](#clickhousesettings) | Configuration parameters for ClickHouse server. | false | \{  \} |
 | `clusterDomain` | string | ClusterDomain is the Kubernetes cluster domain suffix used for DNS resolution. | false | cluster.local |
 | `upgradeChannel` | string | UpgradeChannel specifies the release channel for major version upgrade checks.<br />When empty, only minor updates will be proposed. Allowed values are: stable, lts or specific major.minor version (e.g. 25.8). | false |  |
 | `versionProbeTemplate` | [VersionProbeTemplate](#versionprobetemplate) | VersionProbeTemplate overrides for the version detection Job. | false |  |
@@ -122,6 +122,7 @@ ClickHouseSettings defines ClickHouse server settings options.
 | `defaultUserPassword` | [DefaultPasswordSelector](#defaultpasswordselector) | Specifies source and type of the password for `default` ClickHouse user. | false |  |
 | `logger` | [LoggerConfig](#loggerconfig) | Configuration of ClickHouse server logging. | false |  |
 | `tls` | [ClusterTLSSpec](#clustertlsspec) | TLS settings, allows to configure secure endpoints and certificate verification for ClickHouse server. | false |  |
+| `encryption` | [EncryptionSettings](#encryptionsettings) | Encryption, when set, enables at-rest encryption of table data through a dedicated storage policy.<br />Opt in per table with `SETTINGS storage_policy = '<policyName>'`. | false |  |
 | `enableDatabaseSync` | boolean | Enables synchronization of ClickHouse databases to the newly created replicas and cleanup of stale replicas<br />after scale down.<br />Supports only Replicated and integration databases. | false | true |
 | `extraConfig` | [RawExtension](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#rawextension-runtime-pkg) | Additional ClickHouse configuration that will be merged with the default one. | false |  |
 | `extraUsersConfig` | [RawExtension](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#rawextension-runtime-pkg) | Additional ClickHouse users configuration that will be merged with the default one. | false |  |
@@ -197,6 +198,19 @@ DefaultPasswordSelector selects the source for the default user's password.
 | `passwordType` | string | Type of the provided password. Consider documentation for possible values https://clickhouse.com/docs/operations/settings/settings-users#user-namepassword | true | password |
 | `secret` | [SecretKeySelector](#secretkeyselector) | Select password value from a Secret key | false |  |
 | `configMap` | [ConfigMapKeySelector](#configmapkeyselector) | Select password value from a ConfigMap key | false |  |
+
+Appears in:
+- [ClickHouseSettings](#clickhousesettings)
+
+## EncryptionSettings {#encryptionsettings}
+
+EncryptionSettings enables at-rest encryption of table data. When present, the operator generates an
+encrypted ClickHouse storage policy wrapping every data disk; tables opt in via `SETTINGS storage_policy`.
+Encryption cannot be disabled once enabled.
+
+| Field | Type | Description | Required | Default |
+|-------|------|-------------|----------|---------|
+| `policyName` | string | PolicyName is the name of the generated encrypted storage policy. | false | encrypted |
 
 Appears in:
 - [ClickHouseSettings](#clickhousesettings)
