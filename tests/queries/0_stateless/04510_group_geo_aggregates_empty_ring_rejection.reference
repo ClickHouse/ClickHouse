@@ -7,3 +7,5 @@ union_empty_multipolygon_chunk
 intersect_empty_multipolygon_chunk
 union_polygon_with_hole_roundtrip
 2
+union_short_repairable_ring
+intersect_short_repairable_ring

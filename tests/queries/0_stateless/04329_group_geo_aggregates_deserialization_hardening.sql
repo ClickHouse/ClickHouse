@@ -4,19 +4,21 @@
 -- 1. Cumulative point budget: two polygons in one multipolygon where
 --    each polygon's ring passes the per-ring cap (10M) but the total
 --    exceeds MAX_POINTS_IN_POLYGONAL_STATE (10M).
---    Polygon 1: 1 real point.  Polygon 2 claims 10,000,000 points.
---    Per-ring: 10,000,000 <= 10,000,000.  Cumulative: 10,000,001 > 10,000,000.
+--    Polygon 1: a valid 4-point ring. Polygon 2 claims 9,999,997 points.
+--    Per-ring: 9,999,997 <= 10,000,000. Cumulative: 10,000,001 > 10,000,000.
 SELECT 'union_cumulative_budget';
 SELECT groupPolygonUnionMerge(state) FROM (
     SELECT CAST(unhex(concat(
         '01',                  -- version
         '01',                  -- 1 chunk
         '02',                  -- 2 polygons
-        '01',                  -- polygon 1: 1-point outer ring
-        '000000000000F03F',    -- x = 1.0
-        '0000000000000040',    -- y = 2.0
+        '04',                  -- polygon 1: 4-point closed outer ring
+        '0000000000000000', '0000000000000000', -- (0, 0)
+        '000000000000F03F', '0000000000000000', -- (1, 0)
+        '0000000000000000', '000000000000F03F', -- (0, 1)
+        '0000000000000000', '0000000000000000', -- (0, 0)
         '00',                  -- 0 inner rings
-        '80ADE204'             -- polygon 2: 10,000,000-point outer ring (budget exceeded)
+        'FDACE204'             -- polygon 2: 9,999,997-point outer ring (budget exceeded)
     )) AS AggregateFunction(groupPolygonUnion, Polygon)) AS state
 ); -- { serverError INCORRECT_DATA }
 
@@ -28,11 +30,13 @@ SELECT groupPolygonIntersectionMerge(state) FROM (
         '01',                  -- mode = NonEmpty
         '01',                  -- 1 chunk
         '02',                  -- 2 polygons
-        '01',                  -- polygon 1: 1-point outer ring
-        '000000000000F03F',    -- x = 1.0
-        '0000000000000040',    -- y = 2.0
+        '04',                  -- polygon 1: 4-point closed outer ring
+        '0000000000000000', '0000000000000000', -- (0, 0)
+        '000000000000F03F', '0000000000000000', -- (1, 0)
+        '0000000000000000', '000000000000F03F', -- (0, 1)
+        '0000000000000000', '0000000000000000', -- (0, 0)
         '00',                  -- 0 inner rings
-        '80ADE204'             -- polygon 2: 10,000,000-point outer ring (budget exceeded)
+        'FDACE204'             -- polygon 2: 9,999,997-point outer ring (budget exceeded)
     )) AS AggregateFunction(groupPolygonIntersection, Polygon)) AS state
 ); -- { serverError INCORRECT_DATA }
 
@@ -84,7 +88,7 @@ SELECT groupConvexHullMerge(state) FROM (
     SELECT CAST(unhex(concat(
         '02',          -- version
         '80C2D72F',    -- 100,000,000 declared points (== limit)
-        '00'           -- compression watermark; no coordinate payload follows
+        '80C2D72F'     -- watermark = point count; no coordinate payload follows
     )) AS AggregateFunction(groupConvexHull, Point)) AS state
 ); -- { serverError CANNOT_READ_ALL_DATA }
 

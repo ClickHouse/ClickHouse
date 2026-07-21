@@ -31,6 +31,7 @@ extern const int INCORRECT_DATA;
 static constexpr UInt8 GEO_SERDE_VERSION = 1;
 
 /// Deserialization guards.
+static constexpr size_t MIN_POINTS_PER_POLYGONAL_RING = 4;
 static constexpr size_t MAX_POINTS_PER_RING = 10'000'000;
 static constexpr size_t MAX_POINTS_IN_CONVEX_HULL_STATE = 100'000'000;
 static constexpr size_t MAX_POINTS_IN_POLYGONAL_STATE = 10'000'000;
@@ -41,13 +42,10 @@ static constexpr size_t MAX_POINTS_IN_POLYGONAL_STATE = 10'000'000;
 /// disjoint polygons can legitimately hold far more than a few thousand components. This
 /// cumulative cap is a cheap early guard: it is charged before every container is read, and the
 /// containers are filled incrementally. It is not the primary bound, though — on its own it would
-/// still let a metadata-only payload (every ring of size `0`) push up to this many empty rings
-/// while the point budget stays at zero. The primary bound is that `deserializeGeoRing` rejects a
-/// zero-point ring on sight: a valid state never serializes one, so every allocated ring must
-/// carry at least one point and is therefore charged against the point budget. That ties the
-/// number of allocatable rings back to `MAX_POINTS_IN_POLYGONAL_STATE`, so ring metadata cannot be
-/// amplified from a relatively small payload.
-static constexpr size_t MAX_RINGS_IN_POLYGONAL_STATE = 10'000'000;
+/// still let a metadata-heavy payload allocate more rings than the writer can produce. A valid
+/// writer-emitted polygonal ring has at least `MIN_POINTS_PER_POLYGONAL_RING` points, so derive the
+/// ring budget from the point budget and reject shorter rings before materializing them.
+static constexpr size_t MAX_RINGS_IN_POLYGONAL_STATE = MAX_POINTS_IN_POLYGONAL_STATE / MIN_POINTS_PER_POLYGONAL_RING;
 
 /// Cumulative allocation budget threaded through polygonal-state deserialization.
 struct PolygonalStateBudget
@@ -60,8 +58,8 @@ struct PolygonalStateBudget
 /// Maps global variant discriminator index -> GeometryColumnType.
 using VariantTypeMap = std::vector<GeometryColumnType>; // STYLE_CHECK_ALLOW_STD_CONTAINERS
 
-inline std::optional<GeometryColumnType> getUnambiguousGeometryColumnTypeFromDataType(
-    const DataTypePtr & type, const String & function_name)
+inline std::optional<GeometryColumnType>
+getUnambiguousGeometryColumnTypeFromDataType(const DataTypePtr & type, const String & function_name)
 {
     auto geo_type = getGeometryColumnTypeFromDataType(type);
     if (!geo_type)
@@ -140,8 +138,10 @@ inline GeometryColumnType resolveGeometryVariantType(const IColumn * column, siz
 }
 
 
-/// In Geometry (Variant), Ring/LineString and Polygon/MultiLineString share discriminators
-/// (structurally identical). Normalize to polygonal equivalents. Not for typed columns.
+/// `Geometry` preserves distinct active types even when their underlying arrays have the same
+/// shape. Polygonal aggregates deliberately accept an active `LineString` as a `Ring` and an
+/// active `MultiLineString` as a `Polygon`; this normalization is only for `Geometry`, not for
+/// typed columns.
 inline GeometryColumnType normalizePolygonalVariantType(GeometryColumnType t)
 {
     if (t == GeometryColumnType::Linestring)
@@ -180,6 +180,43 @@ inline void validateValidPolygonalGeometry(const CartesianMultiPolygon & geometr
     if (!boost::geometry::is_valid(geometry, reason))
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS, "Argument of aggregate function {} must be a valid polygonal geometry: {}", function_name, reason);
+}
+
+inline void normalizeAndValidatePolygonalResult(CartesianMultiPolygon & geometry, const char * function_name)
+{
+    auto validate_result_point = [function_name](const CartesianPoint & point)
+    {
+        if (!std::isfinite(point.get<0>()) || !std::isfinite(point.get<1>()))
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Aggregate function {} produced a non-finite coordinate ({}, {}) during reduction",
+                function_name,
+                point.get<0>(),
+                point.get<1>());
+    };
+
+    for (auto & polygon : geometry)
+    {
+        if (polygon.outer().empty())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Aggregate function {} produced a polygon with an empty outer ring during reduction",
+                function_name);
+        for (const auto & point : polygon.outer())
+            validate_result_point(point);
+        for (const auto & inner : polygon.inners())
+            for (const auto & point : inner)
+                validate_result_point(point);
+        boost::geometry::correct(polygon);
+    }
+
+    String reason;
+    if (!boost::geometry::is_valid(geometry, reason))
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Aggregate function {} produced invalid polygonal geometry during reduction: {}",
+            function_name,
+            reason);
 }
 
 
@@ -247,21 +284,17 @@ inline CartesianRing deserializeGeoRing(ReadBuffer & buf, const char * function_
     UInt64 size = 0;
     readVarUInt(size, buf);
 
-    /// A valid polygonal state never serializes an empty ring: the add path skips empty polygons
-    /// and rejects a polygon with an empty outer ring but non-empty inner rings, and the output of
-    /// `boost::geometry::union_` / `intersection` is OGC-valid, so every serialized ring has at
-    /// least four points. An empty ring can therefore only come from a crafted state, where it is
-    /// pure metadata carrying no points. Reject it eagerly, before it is materialized: otherwise a
-    /// payload advertising a large polygon or inner-ring count with every ring of size `0` would
-    /// push millions of empty `CartesianRing` objects — bounded only by the ring budget, which the
-    /// point budget never charges — before `validateDeserializedMultiPolygon` runs. Requiring every
-    /// ring to carry at least one point ties the number of allocatable rings back to the point
-    /// budget, so ring metadata can no longer be amplified from a relatively small payload.
-    if (size == 0)
+    /// The writer only serializes corrected, valid polygonal rings, which have at least four
+    /// points. Reject shorter rings before materializing them. Besides keeping reader and writer
+    /// representations aligned, this makes every allocated ring consume the same minimum share of
+    /// the cumulative point budget used to derive `MAX_RINGS_IN_POLYGONAL_STATE`.
+    if (size < MIN_POINTS_PER_POLYGONAL_RING)
         throw Exception(
             ErrorCodes::INCORRECT_DATA,
-            "Corrupted state of aggregate function {}: ring has zero points",
-            function_name);
+            "Corrupted state of aggregate function {}: ring has {} points (minimum {})",
+            function_name,
+            size,
+            MIN_POINTS_PER_POLYGONAL_RING);
 
     if (size > MAX_POINTS_PER_RING)
         throw Exception(
@@ -345,10 +378,7 @@ inline CartesianMultiPolygon deserializeGeoMultiPolygon(ReadBuffer & buf, const 
     readVarUInt(poly_count, buf);
 
     if (poly_count == 0)
-        throw Exception(
-            ErrorCodes::INCORRECT_DATA,
-            "Corrupted state of aggregate function {}: empty multipolygon chunk",
-            function_name);
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Corrupted state of aggregate function {}: empty multipolygon chunk", function_name);
 
     /// The per-multipolygon polygon count is not capped on its own: a union of many disjoint
     /// polygons can legitimately produce far more than a few thousand components, and such a state
@@ -482,8 +512,7 @@ inline CartesianMultiPolygon fieldToMultiPolygon(const Field & field, GeometryCo
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "{} does not accept LineString arguments", function_name);
         case GeometryColumnType::MultiLinestring:
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "{} does not accept MultiLineString arguments", function_name);
-        case GeometryColumnType::Null:
-            break;
+        case GeometryColumnType::Null: break;
     }
 
     if (!result.empty())

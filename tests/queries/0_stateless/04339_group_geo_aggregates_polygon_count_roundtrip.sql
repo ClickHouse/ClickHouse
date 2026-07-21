@@ -13,7 +13,7 @@
 --    unchanged, so the State/Merge round-trip must return all 10,001 polygons.
 SELECT 'union_many_polygons_roundtrip';
 SELECT length(groupPolygonUnionMerge(state)) FROM (
-    SELECT groupPolygonUnionState(mp) AS state FROM (
+    SELECT CAST(unhex(hex(groupPolygonUnionState(mp))) AS AggregateFunction(groupPolygonUnion, MultiPolygon)) AS state FROM (
         SELECT arrayMap(i -> [[
             (toFloat64(i) * 3, 0.), (toFloat64(i) * 3, 1.),
             (toFloat64(i) * 3 + 1, 1.), (toFloat64(i) * 3 + 1, 0.),
@@ -26,7 +26,7 @@ SELECT length(groupPolygonUnionMerge(state)) FROM (
 --    the input itself, so the round-tripped state also keeps all 10,001 polygons.
 SELECT 'intersect_many_polygons_roundtrip';
 SELECT length(groupPolygonIntersectionMerge(state)) FROM (
-    SELECT groupPolygonIntersectionState(mp) AS state FROM (
+    SELECT CAST(unhex(hex(groupPolygonIntersectionState(mp))) AS AggregateFunction(groupPolygonIntersection, MultiPolygon)) AS state FROM (
         SELECT arrayMap(i -> [[
             (toFloat64(i) * 3, 0.), (toFloat64(i) * 3, 1.),
             (toFloat64(i) * 3 + 1, 1.), (toFloat64(i) * 3 + 1, 0.),
@@ -41,7 +41,7 @@ SELECT length(groupPolygonIntersectionMerge(state)) FROM (
 --    (1 + 10,001 = 10,002 rings).
 SELECT 'union_many_rings_roundtrip';
 SELECT length(arrayElement(groupPolygonUnionMerge(state), 1)) FROM (
-    SELECT groupPolygonUnionState(poly) AS state FROM (
+    SELECT CAST(unhex(hex(groupPolygonUnionState(poly))) AS AggregateFunction(groupPolygonUnion, Polygon)) AS state FROM (
         SELECT arrayConcat(
             [[(0., 0.), (0., 110000.), (110000., 110000.), (110000., 0.), (0., 0.)]],
             arrayMap(i -> [

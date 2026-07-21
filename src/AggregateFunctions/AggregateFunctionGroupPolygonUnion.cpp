@@ -29,7 +29,9 @@ constexpr size_t UNION_REDUCTION_THRESHOLD = 16;
 
 
 /// Pairwise reduction to keep intermediate complexity lower than a linear left-fold.
-void reduceChunksPairwiseUnion(std::vector<CartesianMultiPolygon> & chunks) // STYLE_CHECK_ALLOW_STD_CONTAINERS
+void reduceChunksPairwiseUnion(
+    std::vector<CartesianMultiPolygon> & chunks, // STYLE_CHECK_ALLOW_STD_CONTAINERS
+    const char * function_name)
 {
     while (chunks.size() > 1)
     {
@@ -39,6 +41,10 @@ void reduceChunksPairwiseUnion(std::vector<CartesianMultiPolygon> & chunks) // S
         {
             CartesianMultiPolygon tmp;
             boost::geometry::union_(chunks[i], chunks[i + 1], tmp);
+            if (tmp.empty())
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS, "Aggregate function {} produced an empty union from non-empty inputs", function_name);
+            normalizeAndValidatePolygonalResult(tmp, function_name);
             chunks[out++] = std::move(tmp);
         }
         if (n % 2 == 1)
@@ -66,7 +72,7 @@ struct GroupPolygonUnionData
         /// valid result is not rejected based on the row/chunk shape of the input.
         if (total_points > MAX_POINTS_IN_POLYGONAL_STATE)
         {
-            reduceChunksPairwiseUnion(chunks);
+            reduceChunksPairwiseUnion(chunks, function_name);
             recountPoints(function_name);
         }
         else
@@ -84,7 +90,7 @@ struct GroupPolygonUnionData
         /// valid result is not rejected merely because of the merge-tree shape.
         if (total_points > MAX_POINTS_IN_POLYGONAL_STATE)
         {
-            reduceChunksPairwiseUnion(chunks);
+            reduceChunksPairwiseUnion(chunks, function_name);
             recountPoints(function_name);
         }
         else
@@ -95,7 +101,7 @@ struct GroupPolygonUnionData
     {
         if (chunks.size() > UNION_REDUCTION_THRESHOLD)
         {
-            reduceChunksPairwiseUnion(chunks);
+            reduceChunksPairwiseUnion(chunks, function_name);
             recountPoints(function_name);
         }
     }
@@ -121,7 +127,7 @@ struct GroupPolygonUnionData
     {
         if (chunks.empty())
             return {};
-        reduceChunksPairwiseUnion(chunks);
+        reduceChunksPairwiseUnion(chunks, function_name);
         /// `insertResultInto` may be followed by further `add`/`merge`/`insertResultInto`
         /// calls (for example in `runningAccumulate` or window execution), so keep
         /// `total_points` consistent with the reduced `chunks` instead of leaving a stale count.
@@ -176,8 +182,7 @@ public:
 
     void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
-        AggregateFunctionGroupPolygonUnion::data(place).merge(
-            AggregateFunctionGroupPolygonUnion::data(rhs), getName().c_str());
+        AggregateFunctionGroupPolygonUnion::data(place).merge(AggregateFunctionGroupPolygonUnion::data(rhs), getName().c_str());
     }
 
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
@@ -263,16 +268,14 @@ AggregateFunctionPtr createAggregateFunctionGroupPolygonUnion(
     {
         case GeometryColumnType::Ring:
         case GeometryColumnType::Polygon:
-        case GeometryColumnType::MultiPolygon:
-            break;
+        case GeometryColumnType::MultiPolygon: break;
         case GeometryColumnType::Point:
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Argument of function {} must not be Point", name);
         case GeometryColumnType::Linestring:
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Argument of function {} must not be LineString", name);
         case GeometryColumnType::MultiLinestring:
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Argument of function {} must not be MultiLineString", name);
-        case GeometryColumnType::Null:
-            break;
+        case GeometryColumnType::Null: break;
     }
 
     return std::make_shared<AggregateFunctionGroupPolygonUnion>(arg_type, parameters, *geo_type, false);
@@ -290,11 +293,13 @@ Coordinates are interpreted as Cartesian (planar), not spherical, regardless of 
 
 For typed columns, accepts `Ring`, `Polygon`, and `MultiPolygon`. Rejects `Point`, `LineString`, and `MultiLineString`.
 
-For `Geometry` (Variant) columns, accepts any active value that is structurally polygonal. Because `Ring` and `LineString` are structurally identical in `ColumnVariant` (both are `Array(Tuple(Float64, Float64))`), and similarly `Polygon` and `MultiLineString`, a `LineString` or `MultiLineString` stored in a `Geometry` column will be interpreted as `Ring` or `Polygon` respectively.
+For `Geometry` (Variant) columns, an active `LineString` is interpreted as a `Ring`, and an active `MultiLineString` as a `Polygon`, because their underlying array shapes match. Other non-polygonal active types are rejected.
 
 Empty geometry inputs are silently skipped (neutral element for union).
 
 The result is a `MultiPolygon`. Returns an empty `MultiPolygon` for empty groups. Invalid polygonal input raises an exception.
+
+The geometric union is order-independent, but floating-point overlay operations are not exactly associative and the returned `MultiPolygon` is not canonicalized. Its raw array layout and floating-point coordinates can therefore depend on input and merge order.
 
 `NULL` values inside a `Geometry` (Variant) column are skipped. The polygonal argument types are `Array`-based and cannot be wrapped in `Nullable`; a literal `NULL` argument follows the standard aggregate convention and yields `NULL` (like `sum` and unlike `count`).
     )";
@@ -318,7 +323,7 @@ SELECT wkt(groupPolygonUnion(p)) FROM (
             R"(
 MULTIPOLYGON(((1 2,1 3,3 3,3 1,2 1,2 0,0 0,0 2,1 2)))
         )"}};
-    FunctionDocumentation::IntroducedIn introduced_in = {26, 6};
+    FunctionDocumentation::IntroducedIn introduced_in = {26, 7};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::GeoPolygon;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
