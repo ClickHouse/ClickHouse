@@ -1,10 +1,8 @@
 -- Equi-key `WHERE` predicates must reach the left `MergeTree` input of a `RIGHT JOIN` as an index
--- condition. Previously this only happened for `Semi` strictness.
+-- condition, including when the two `USING` keys differ in type.
 --
--- Nothing may be pushed through a `FULL JOIN`: dropping a row from either input only turns its
--- counterpart into a defaulted unmatched row, so a predicate on that default both admits rows
--- belonging to neither input and discards rows that should survive. The `FULL JOIN` cases assert
--- results only, guarding against reintroducing such a push.
+-- Nothing may be pushed through a `FULL JOIN`: a dropped row only becomes a defaulted unmatched row, so
+-- a predicate on that default both admits and discards rows wrongly. Those cases assert results only.
 
 SET enable_analyzer = 1;
 SET query_plan_filter_push_down = 1;
@@ -74,8 +72,7 @@ CREATE TABLE u2 (id UInt64, value String) ENGINE = MergeTree ORDER BY id;
 INSERT INTO u1 VALUES (1, 'Value_1'), (2, 'Value_2');
 INSERT INTO u2 VALUES (2, 'Value_2'), (3, 'Value_3');
 
--- Opposite direction: pushing these to both inputs and dropping them from the post-join filter would
--- let the two defaulted unmatched rows escape.
+-- Opposite direction: pushing these would let the two defaulted unmatched rows escape.
 SELECT 'FULL JOIN, side-qualified equi-key predicates on both sides: only the matched row survives';
 SELECT * FROM u1 AS lhs FULL JOIN u2 AS rhs ON lhs.id = rhs.id WHERE lhs.id != 0 AND rhs.id != 0 ORDER BY 1, 3;
 

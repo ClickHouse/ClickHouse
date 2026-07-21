@@ -485,7 +485,6 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
       * equivalent sets to both sides of JOIN.
       * 2. For LEFT/RIGHT JOIN we can push conditions that use columns from LEFT/RIGHT stream to LEFT/RIGHT JOIN side. We can also push conditions
       * that use columns from LEFT/RIGHT equivalent sets to RIGHT/LEFT JOIN side.
-      * 3. For FULL JOIN nothing can be pushed to either side: dropping a row only converts its counterpart into a defaulted unmatched row.
       *
       * Additional filter push down optimizations:
       * 1. TODO: Support building equivalent sets for more than 2 JOINS. It is possible, but will require more complex analysis step.
@@ -690,22 +689,32 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
             equivalent_right_stream_column_to_left_stream_column[rhs_original_name] = lhs_column;
     }
 
-    /// `buildEquialentSetsForJoinStepLogical` skips equi-key pairs whose sides have different types,
-    /// because those pairs feed a Union-Find equivalence class. Plain name substitution needs no such
-    /// type equality - `KeyCondition` handles cross-type comparisons against the key - and registering
-    /// the skipped pairs here is what lets e.g. a `UInt8`-vs-`UInt64` `USING` filter reach the opposite
-    /// `MergeTree`. Gated on a restricted side so `INNER JOIN` is unaffected.
+    /// Re-register the cross-type equi-key pairs that `buildEquialentSetsForJoinStepLogical` skips: its
+    /// Union-Find needs the two input types to be equal, plain name substitution does not.
+    ///
+    /// What substitution does need is that the replacement column has the type the replaced name carries
+    /// in the JOIN output, since that is what the filter's nodes were typed against. This is weaker than
+    /// input-type equality, which is what admits a cross-type `USING` (the output holds the cast type),
+    /// and stronger where it matters: under `join_use_nulls` the output is widened and the unwidened
+    /// input column would contradict the predicate's own result type.
     if (logical_join
         && (!left_stream_filter_push_down_input_columns_available
             || !right_stream_filter_push_down_input_columns_available))
     {
+        const auto & join_output_header = *child->getOutputHeader();
+        auto substitutable = [&](const String & replaced_name, const ColumnWithTypeAndName & replacement)
+        {
+            const auto * replaced = join_output_header.findByName(replaced_name);
+            return replaced && replaced->type->equals(*replacement.type);
+        };
+
         forEachEquiJoinKey(logical_join->getJoinOperator(), [&](const JoinActionRef & lhs, const JoinActionRef & rhs)
         {
             const auto & lhs_name = lhs.getColumnName();
             const auto & rhs_name = rhs.getColumnName();
-            if (!equivalent_left_stream_column_to_right_stream_column.contains(lhs_name))
+            if (!equivalent_left_stream_column_to_right_stream_column.contains(lhs_name) && substitutable(lhs_name, rhs.getColumn()))
                 equivalent_left_stream_column_to_right_stream_column[lhs_name] = rhs.getColumn();
-            if (!equivalent_right_stream_column_to_left_stream_column.contains(rhs_name))
+            if (!equivalent_right_stream_column_to_left_stream_column.contains(rhs_name) && substitutable(rhs_name, lhs.getColumn()))
                 equivalent_right_stream_column_to_left_stream_column[rhs_name] = lhs.getColumn();
         });
     }
@@ -718,17 +727,12 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
         for (const auto & [name, _] : equivalent_left_stream_column_to_right_stream_column)
             equivalent_columns_to_push_down.push_back(name);
     }
-    else if (logical_join
-        && logical_join->getJoinOperator().kind == JoinKind::Right
-        && logical_join->getJoinOperator().strictness != JoinStrictness::Asof)
+    else if (logical_join && logical_join->getJoinOperator().kind == JoinKind::Right && logical_join->getJoinOperator().strictness == JoinStrictness::Semi)
     {
         if (!logical_join->typeChangingSides().contains(JoinTableSide::Left))
         {
-            /// These names are also pushed to the right input natively, which makes the equivalent copy on
-            /// the left input a pure narrowing: a surviving right row keeps exactly the left partners it
-            /// had, and a dropped one is rejected by the post-join filter either way. Holds for every
-            /// strictness, hence not restricted to Semi.
-            for (const auto & [name, _] : equivalent_right_stream_column_to_left_stream_column)
+            /// In this case we can also push down to left side of JOIN using equivalent sets.
+            for (const auto & [name, _] : equivalent_left_stream_column_to_right_stream_column)
                 equivalent_columns_to_push_down.push_back(name);
         }
     }
@@ -738,14 +742,12 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
         for (const auto & [name, _] : equivalent_right_stream_column_to_left_stream_column)
             equivalent_columns_to_push_down.push_back(name);
     }
-    else if (logical_join
-        && logical_join->getJoinOperator().kind == JoinKind::Left
-        && logical_join->getJoinOperator().strictness != JoinStrictness::Asof)
+    else if (logical_join && logical_join->getJoinOperator().kind == JoinKind::Left && logical_join->getJoinOperator().strictness == JoinStrictness::Semi)
     {
         if (!logical_join->typeChangingSides().contains(JoinTableSide::Right))
         {
-            /// Symmetric to the RIGHT case above.
-            for (const auto & [name, _] : equivalent_left_stream_column_to_right_stream_column)
+            /// In this case we can also push down to right side of JOIN using equivalent sets.
+            for (const auto & [name, _] : equivalent_right_stream_column_to_left_stream_column)
                 equivalent_columns_to_push_down.push_back(name);
         }
     }
