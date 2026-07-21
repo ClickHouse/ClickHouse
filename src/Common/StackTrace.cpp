@@ -679,10 +679,15 @@ toStringEveryLineImpl([[maybe_unused]] bool fatal, const StackTraceRefTriple & s
         else
             out << "?";
 
-        if (shouldShowAddress(frame.physical_addr))
+        /// Print the absolute virtual address, matching what `findSymbol`, `addressToSymbol`,
+        /// `addressToLine`, `system.stack_trace.trace`, and `system.trace_log.trace` all consume
+        /// now that this PR unified every surface on virtual addresses. Printing the file-relative
+        /// `physical_addr` here would mean an address copied from a text stack trace no longer
+        /// round-trips through those tools on PIE and shared-library frames.
+        if (shouldShowAddress(frame.virtual_addr))
         {
             out << " @ ";
-            DB::writePointerHex(frame.physical_addr, out);
+            DB::writePointerHex(frame.virtual_addr, out);
         }
 
         callback(out.str());
