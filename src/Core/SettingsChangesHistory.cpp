@@ -71,6 +71,9 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"iceberg_expire_default_min_snapshots_to_keep", 1, 1, "New setting."},
             {"iceberg_expire_default_max_snapshot_age_ms", 432000000, 432000000, "New setting."},
             {"iceberg_expire_default_max_ref_age_ms", 9223372036854775807, 9223372036854775807, "New setting."},
+            {"dynamic_disk_allow_from_env", false, false, "New setting to allow `from_env` substitutions in dynamic disk configuration (the `disk()` function). Disabled by default for security."},
+            {"dynamic_disk_allow_include", false, false, "New setting to allow `include` in dynamic disk configuration (the `disk()` function). Disabled by default."},
+            {"dynamic_disk_allow_from_zk", false, false, "New setting to allow `from_zk` substitutions in dynamic disk configuration (the `disk()` function). Disabled by default."},
             {"max_skip_unavailable_shards_num", 0, 0, "New setting to limit the number of shards that can be silently skipped when skip_unavailable_shards is enabled."},
             {"max_skip_unavailable_shards_ratio", 0, 0, "New setting to limit the ratio of shards that can be silently skipped when skip_unavailable_shards is enabled."},
         });
