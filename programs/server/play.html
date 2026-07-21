@@ -7238,6 +7238,10 @@ async function readEventStream(response, targetResultEl, abortController, tab, p
     let reply = '';
     let stop = false;
     let saw_exception = false;
+    /// The raw `event: exception` block, kept separately from the capped `reply`: for a long
+    /// stream the cap stops `reply` growing before the terminal exception arrives, and the
+    /// failure snapshot needs the carrier to replay the error (see `compactFailureSnapshot`).
+    let exception_block = null;
     /// In base64 mode (binary output format) the decoded payload bytes are collected and rendered
     /// (as an image or raw text) once the whole stream has been read.
     const binary_chunks = base64 ? [] : null;
@@ -7278,13 +7282,15 @@ async function readEventStream(response, targetResultEl, abortController, tab, p
             const block = buffer.slice(0, sep);
             buffer = buffer.slice(sep + 2);
 
+            const had_exception = saw_exception;
             dispatchEventStreamBlock(block, handleEvent);
+            if (saw_exception && !had_exception) exception_block = block;
 
             if (stop)
             {
                 abortController.abort();
                 targetResultEl.finalizeMetrics();
-                return { reply, exception: saw_exception };
+                return { reply, exception: saw_exception, exception_block };
             }
         }
 
@@ -7297,7 +7303,7 @@ async function readEventStream(response, targetResultEl, abortController, tab, p
     /// The stream is complete: switch the metrics table to totals / query-average rates.
     targetResultEl.finalizeMetrics();
 
-    return { reply, is_image, exception: saw_exception };
+    return { reply, is_image, exception: saw_exception, exception_block };
 }
 
 /// Execute a single query, rendering results into the given targetResultEl.
@@ -7413,6 +7419,13 @@ async function postImpl(tab, posted_request_num, query, targetResultEl, abortCon
     ///   ''               - an ordinary result (table / chart / raw text / plain-HTTP error).
     let framing_kind = '';
 
+    /// The raw exception carrier of a failed run - the `event: exception` block of an `EventStream`,
+    /// the `{"packet":"exception",...}` (or plain `{"exception":...}`) line of an NDJSON stream, or
+    /// the `{"exception":...}` line of a plain default-format stream - captured separately from
+    /// `reply`, which is capped for the snapshot and may have stopped growing before the terminal
+    /// exception arrived. `compactFailureSnapshot` keeps it when an oversized failure is persisted.
+    let exception_carrier = null;
+
     let response, reply, format;
     reply = '';
     try {
@@ -7422,7 +7435,7 @@ async function postImpl(tab, posted_request_num, query, targetResultEl, abortCon
         }
         if (user_disables_framing)
         {
-            throw new Error("This page requires framing to render results; it cannot run a query that sets framing_output_format = 'None'.");
+            throw new Error("This page requires framing to render results; it cannot run a query that sets framing_output_format = 'None' - or to a value it cannot know upfront (DEFAULT, or a query-parameter placeholder like {fmt:String}).");
         }
 
         const fetch_options = { method: "POST", body: query, signal: abortController.signal, headers: { 'Authorization': 'never' } };
@@ -7504,18 +7517,30 @@ async function postImpl(tab, posted_request_num, query, targetResultEl, abortCon
             const reader = response.body.getReader();
             const decoder = new TextDecoder();
             let saw_exception = false;
+            /// The exception packet line, collected separately from the capped `reply` (which may
+            /// have stopped growing before the terminal exception arrived) and bounded by the same
+            /// snapshot budget. The failure snapshot keeps it so a saved oversized failure still
+            /// replays with its error (see `compactFailureSnapshot`).
+            let exception_line = null;
+            let exception_done = false;
             /// The first characters of the current line, capped at the marker length: a line either
             /// begins with the exception marker or not, so only the head is needed (this keeps the
             /// scan bounded regardless of how large a single line is).
             let line_head = '';
             const scanForException = (chunk) => {
-                if (exception_prefix === null || saw_exception) return;
+                if (exception_prefix === null || exception_done) return;
                 for (let i = 0; i < chunk.length; ++i) {
                     const c = chunk[i];
+                    if (saw_exception) {
+                        /// Collect the rest of the exception line, within the snapshot budget.
+                        if (c === '\n') { exception_done = true; return; }
+                        if (exception_line.length <= 100000) exception_line += c;
+                        continue;
+                    }
                     if (c === '\n') { line_head = ''; continue; }
                     if (line_head.length < exception_prefix.length) {
                         line_head += c;
-                        if (line_head === exception_prefix) { saw_exception = true; return; }
+                        if (line_head === exception_prefix) { saw_exception = true; exception_line = line_head; }
                     }
                 }
             };
@@ -7528,7 +7553,7 @@ async function postImpl(tab, posted_request_num, query, targetResultEl, abortCon
                 targetResultEl.updateRaw(new_content);
                 scanForException(new_content);
             }
-            return { saw_exception };
+            return { saw_exception, exception_line };
         };
 
         if (!response.ok && content_type.startsWith('text/event-stream')) {
@@ -7541,8 +7566,10 @@ async function postImpl(tab, posted_request_num, query, targetResultEl, abortCon
             const base64 = content_type.includes('payload=base64');
             is_base64 = base64;
             renderEventStreamText(framed_error_stream, targetResultEl, !base64 && !isDefaultFormat(format), base64, image_mime);
+            /// `framed_error_stream` was read in full (uncapped), so the carrier is scanned from it
+            /// at compaction time; no separate capture is needed here.
             reply = framed_error_stream;
-            return { format, reply, response_ok: false, is_table, is_raw, is_chart, is_image, is_error, is_base64, framing_kind };
+            return { format, reply, response_ok: false, is_table, is_raw, is_chart, is_image, is_error, is_base64, framing_kind, exception_carrier };
         } else if (!response.ok && content_type.startsWith('application/x-ndjson')) {
             /// A query carrying its own `JSONEachPacket*` framing can also fail before the response
             /// reaches `200 OK` - e.g. `SELECT 1 FORMAT JSONEachRowWithProgress SETTINGS
@@ -7559,7 +7586,8 @@ async function postImpl(tab, posted_request_num, query, targetResultEl, abortCon
             if (ndjson_exception_prefix !== null) framing_kind = 'ndjson_packets';
             const res = await readNdjsonPacketStream(ndjson_exception_prefix);
             if (res.cancelled) { return { cancelled: true }; }
-            return { format, reply, response_ok: false, is_table, is_raw, is_chart, is_image, is_error, is_base64, framing_kind };
+            exception_carrier = res.exception_line;
+            return { format, reply, response_ok: false, is_table, is_raw, is_chart, is_image, is_error, is_base64, framing_kind, exception_carrier };
         } else if (!response.ok) {
             is_error = true;
             reply = await response.text();
@@ -7587,7 +7615,7 @@ async function postImpl(tab, posted_request_num, query, targetResultEl, abortCon
                 highlightQueryError(reply, query, queryStart, tab);
             }
 
-            return { format, reply, response_ok: false, is_table, is_raw, is_chart, is_image, is_error, is_base64, framing_kind };
+            return { format, reply, response_ok: false, is_table, is_raw, is_chart, is_image, is_error, is_base64, framing_kind, exception_carrier };
         } else if ((content_type.startsWith('image/') || image_mime) && !content_type.startsWith('text/event-stream')) {
             /// A non-framed image response: the whole body is the image. (A framed image response is
             /// an event stream and is handled below, where the base64 payload is decoded to bytes.)
@@ -7614,6 +7642,7 @@ async function postImpl(tab, posted_request_num, query, targetResultEl, abortCon
             if (base64) { if (res.is_image) is_image = true; else is_raw = true; }
             else if (raw_text) is_raw = true; else is_table = true;
             reply = res.reply;
+            exception_carrier = res.exception_block;
             /// An `exception` packet can arrive after the HTTP status was already sent as 200 OK
             /// (the headers go out once streaming begins). Report the failure to the caller, so the
             /// single-query path shows the error state and `Run all` does not execute the following
@@ -7621,7 +7650,7 @@ async function postImpl(tab, posted_request_num, query, targetResultEl, abortCon
             /// the logs, and the exception are all shown.
             if (res.exception) {
                 is_error = true;
-                return { format, reply, response_ok: false, is_table, is_raw, is_chart, is_image, is_error, is_base64, framing_kind };
+                return { format, reply, response_ok: false, is_table, is_raw, is_chart, is_image, is_error, is_base64, framing_kind, exception_carrier };
             }
         } else if (format == default_format) {
             is_table = true;
@@ -7652,7 +7681,7 @@ async function postImpl(tab, posted_request_num, query, targetResultEl, abortCon
                     /// streams progress/rows and then hits `max_execution_time`). The response was
                     /// `ok`, so without this it would be classified as a successful result. Stop the
                     /// stream and remember the message; it is handled after the loop.
-                    if (data.exception) { stream_exception = data.exception; cont = false; break; }
+                    if (data.exception) { stream_exception = data.exception; exception_carrier = line; cont = false; break; }
                     cont = targetResultEl.update(data, fragment);
                     if (!cont) { break; }
                 }
@@ -7689,7 +7718,7 @@ async function postImpl(tab, posted_request_num, query, targetResultEl, abortCon
                     targetResultEl.clear();
                 }
                 targetResultEl.renderError(stream_exception);
-                return { format, reply, response_ok: false, is_table: false, is_raw: false, is_chart: false, is_image: false, is_error: true };
+                return { format, reply, response_ok: false, is_table: false, is_raw: false, is_chart: false, is_image: false, is_error: true, exception_carrier };
             }
         } else if (format == 'JSONCompactColumns') {
             is_chart = true;
@@ -7717,7 +7746,8 @@ async function postImpl(tab, posted_request_num, query, targetResultEl, abortCon
             if (res.cancelled) { return { cancelled: true }; }
             if (res.saw_exception) {
                 is_error = true;
-                return { format, reply, response_ok: false, is_table, is_raw, is_chart, is_image, is_error, is_base64, framing_kind };
+                exception_carrier = res.exception_line;
+                return { format, reply, response_ok: false, is_table, is_raw, is_chart, is_image, is_error, is_base64, framing_kind, exception_carrier };
             }
         }
 
@@ -7765,19 +7795,84 @@ async function postImpl(tab, posted_request_num, query, targetResultEl, abortCon
 /// Build a compact stand-in for a failed reply too large to persist in full. The success path
 /// drops an oversized result to `null` (it stays reproducible via `run=1`), but doing that for a
 /// failure would lose the error entirely and make the tab reopen blank. Keep the essential error
-/// text within the same size budget: the `{"exception":...}` line if the stream carried one — the
-/// rows that streamed before it are what made the reply large and cannot be kept — otherwise a
-/// bounded prefix of the error body. `restoreErrorSnapshot` renders either form on restore.
-function compactFailureSnapshot(reply)
+/// within the same size budget - the exception carrier in the form the stream's `framing_kind`
+/// replays (`restoreErrorSnapshot` / `renderEventStreamText` / `updateRaw` render it on restore) -
+/// the rows and logs that streamed before it are what made the reply large and cannot be kept.
+/// `exception_carrier` is the carrier captured at stream-read time: for a long stream the capped
+/// `reply` stops growing before the terminal exception arrives, so the carrier usually is NOT in
+/// `reply` (a fully buffered non-200 stream is the exception, and is scanned here as the fallback).
+function compactFailureSnapshot(reply, framing_kind, exception_carrier)
 {
-    /// Locate the `{"exception":...}` line without splitting the whole (potentially huge) reply.
-    let start = reply.startsWith(`{"exception":`) ? 0 : reply.indexOf(`\n{"exception":`);
-    if (start !== -1)
+    if (framing_kind === 'event_stream')
     {
-        if (start > 0) ++start;   /// skip the leading newline
-        let end = reply.indexOf('\n', start);
-        if (end === -1) end = reply.length;
-        const line = reply.slice(start, end);
+        /// The terminal `event: exception` block, replayed on restore by `renderEventStreamText`.
+        let block = exception_carrier;
+        if (block == null)
+        {
+            let start = reply.startsWith('event: exception') ? 0 : reply.lastIndexOf('\nevent: exception');
+            if (start !== -1)
+            {
+                if (start > 0) ++start;   /// skip the leading newline
+                const end = reply.indexOf('\n\n', start);
+                block = end === -1 ? reply.slice(start) : reply.slice(start, end);
+            }
+        }
+        if (block != null)
+        {
+            if (block.length <= 100000) return block;
+            /// An exception block over the budget on its own: rebuild a minimal block with the
+            /// truncated message, so the replay still renders the failure as the exception.
+            let message = block;
+            try
+            {
+                const dataLines = [];
+                for (const raw of block.split('\n'))
+                    if (raw.startsWith('data:')) dataLines.push(raw.slice(5).replace(/^ /, ''));
+                message = JSON.parse(dataLines[0]).exception;
+            }
+            catch (e) {}
+            return 'event: exception\ndata: ' + JSON.stringify({ exception: message.slice(0, 100000) });
+        }
+        /// No exception carrier (the stream failed without one): keep a bounded prefix; the replay
+        /// shows the partial result and the tab stays marked failed.
+        return reply.slice(0, 100000);
+    }
+    if (framing_kind === 'ndjson_packets')
+    {
+        /// The terminal exception packet line, shown verbatim by `updateRaw` on restore (the same
+        /// way the live run showed it). The captured carrier is already bounded by the budget.
+        let line = exception_carrier;
+        if (line == null)
+        {
+            for (const marker of ['{"packet":"exception"', '{"exception":'])
+            {
+                let start = reply.startsWith(marker) ? 0 : reply.lastIndexOf('\n' + marker);
+                if (start === -1) continue;
+                if (start > 0) ++start;
+                const end = reply.indexOf('\n', start);
+                line = end === -1 ? reply.slice(start) : reply.slice(start, end);
+                break;
+            }
+        }
+        if (line != null) return line.slice(0, 100000);
+        return reply.slice(0, 100000);
+    }
+    /// A plain stream: keep the `{"exception":...}` line - the captured carrier, or the line
+    /// located in the reply itself (a non-200 plain error body is read in full, uncapped).
+    let line = exception_carrier;
+    if (line == null)
+    {
+        let start = reply.startsWith(`{"exception":`) ? 0 : reply.indexOf(`\n{"exception":`);
+        if (start !== -1)
+        {
+            if (start > 0) ++start;   /// skip the leading newline
+            let end = reply.indexOf('\n', start);
+            if (end === -1) end = reply.length;
+            line = reply.slice(start, end);
+        }
+    }
+    if (line != null)
+    {
         /// Keep the whole exception line when it fits, so the restore replays it as the exception.
         if (line.length <= 100000) return line;
         /// A single exception line over the budget: store just its message text (which the restore
@@ -7866,7 +7961,7 @@ async function postSingle(tab, posted_request_num, query, history_query_text, pa
                 error: !!result.is_error,
                 /// Unlike the success path, never drop a failure to `null`: keep at least a compact
                 /// summary so a reload restores the error instead of reopening the tab blank.
-                data: result.reply.length > 100000 ? compactFailureSnapshot(result.reply) : result.reply,
+                data: result.reply.length > 100000 ? compactFailureSnapshot(result.reply, result.framing_kind ?? '', result.exception_carrier) : result.reply,
                 base64: result.is_base64,
                 framing_kind: result.framing_kind,
                 elapsed_ns: 1e6 * (performance.now() - query_start),
@@ -10954,7 +11049,11 @@ async function tokenize(query) {
 
 /// Decide whether the query carries its own `framing_output_format` setting and, if so, whether that
 /// setting is a query-level choice (an inline `SETTINGS` clause), disables framing (`= 'None'`), or is
-/// a standalone `SET` statement that changes the setting for the whole session. Used by `postImpl` to
+/// a standalone `SET` statement that changes the setting for the whole session. Values the page cannot
+/// know upfront - `= DEFAULT` (a reset to the session/server default, which is `None` out of the box)
+/// and a query-parameter placeholder (`= {fmt:String}`, which may resolve to `None`) - are classified
+/// conservatively as disabling, so such a query is refused with a clear error instead of being sent
+/// with a request shape the response might not match. Used by `postImpl` to
 /// leave a query that chose its own framing untouched (its framing applies alone), to refuse a query
 /// that turns framing off (this page renders only the framed path), and to refuse a standalone
 /// `SET framing_output_format = ...` (this page appends its own `framing_output_format` to every
@@ -10990,10 +11089,14 @@ async function detectFramingSetting(query)
         /// session default, which this page cannot honor; detect it by the leading keyword.
         const sets_session = /^\s*set\b[\s\S]*\bframing_output_format\s*=/i.test(query);
         /// The server applies duplicate `SETTINGS` entries in order, so classify by the last
-        /// assignment's value rather than by any `= 'None'` occurrence.
-        const assignments = [...query.matchAll(/\bframing_output_format\s*=\s*'?(\w+)'?/gi)];
-        const last_value = assignments.length ? assignments[assignments.length - 1][1] : '';
-        const disables = has_setting && !sets_session && last_value.toLowerCase() === 'none';
+        /// assignment's value rather than by any `= 'None'` occurrence. `None` disables framing;
+        /// `DEFAULT` and a query-parameter placeholder (`{fmt:String}`) may resolve to `None`,
+        /// so they are classified conservatively as disabling too.
+        const assignments = [...query.matchAll(/\bframing_output_format\s*=\s*('?\w+'?|\{[^}]*\})/gi)];
+        const raw_value = assignments.length ? assignments[assignments.length - 1][1] : '';
+        const last_value = raw_value.replace(/'/g, '').toLowerCase();
+        const disables = has_setting && !sets_session
+            && (last_value === 'none' || last_value === 'default' || raw_value.startsWith('{'));
         return {
             user_framing: has_setting && !disables && !sets_session,
             user_disables_framing: disables,
@@ -11056,13 +11159,32 @@ async function detectFramingSetting(query)
                         if (is_set) {
                             return { user_framing: false, user_disables_framing: false, user_sets_session_framing: true };
                         }
-                        /// A string-literal value carries its surrounding quotes.
-                        let value = value_token.token;
-                        if (value_token.type === TT.StringLiteral) {
-                            value = value.slice(1, -1);
-                        }
                         saw_query_setting = true;
-                        query_setting_disables = value.toLowerCase() === 'none';
+                        if (value_token.type === TT.OpeningCurlyBrace) {
+                            /// A query-parameter placeholder (`= {fmt:String}`): the page cannot know
+                            /// what it resolves to (it may well be `None`), so classify it
+                            /// conservatively as disabling and refuse the query rather than send a
+                            /// request shape the response might not match.
+                            query_setting_disables = true;
+                        } else {
+                            /// A string-literal value carries its surrounding quotes.
+                            let value = value_token.token;
+                            if (value_token.type === TT.StringLiteral) {
+                                value = value.slice(1, -1);
+                            }
+                            value = value.toLowerCase();
+                            /// `ParserSetQuery` also accepts `= DEFAULT` - a reset to the session/server
+                            /// default, which the page cannot know (and which is `None` out of the box) -
+                            /// so it is classified as disabling too.
+                            query_setting_disables = value === 'none' || value === 'default';
+                        }
+                    }
+                    /// A query-parameter placeholder value (`{name:Type}`) spans several tokens
+                    /// (for any setting, not just the framing one); consume it so the walk continues
+                    /// at the list grammar after it.
+                    if (tokens[j].type === TT.OpeningCurlyBrace) {
+                        while (tokens[j] && tokens[j].type !== TT.ClosingCurlyBrace) ++j;
+                        if (!tokens[j]) break;
                     }
                     ++j;
                     if (tokens[j] && tokens[j].type === TT.Comma) ++j;

@@ -157,12 +157,37 @@ FramingSetting detectFramingSetting(const std::string & query)
                         /// rather than silently overridden.
                         if (is_set)
                             return {false, false, true};
-                        /// A string-literal value carries its surrounding quotes.
-                        std::string value = tokens[j].text;
-                        if (tokens[j].type == DB::TokenType::StringLiteral && value.size() >= 2)
-                            value = value.substr(1, value.size() - 2);
                         saw_query_setting = true;
-                        query_setting_disables = toLower(value) == "none";
+                        if (tokens[j].type == DB::TokenType::OpeningCurlyBrace)
+                        {
+                            /// A query-parameter placeholder (`= {fmt:String}`): the page cannot know
+                            /// what it resolves to (it may well be `None`), so classify it
+                            /// conservatively as disabling and refuse the query rather than send a
+                            /// request shape the response might not match.
+                            query_setting_disables = true;
+                        }
+                        else
+                        {
+                            /// A string-literal value carries its surrounding quotes.
+                            std::string value = tokens[j].text;
+                            if (tokens[j].type == DB::TokenType::StringLiteral && value.size() >= 2)
+                                value = value.substr(1, value.size() - 2);
+                            const std::string lower_value = toLower(value);
+                            /// `ParserSetQuery` also accepts `= DEFAULT` - a reset to the session/server
+                            /// default, which the page cannot know (and which is `None` out of the box) -
+                            /// so it is classified as disabling too.
+                            query_setting_disables = lower_value == "none" || lower_value == "default";
+                        }
+                    }
+                    /// A query-parameter placeholder value (`{name:Type}`) spans several tokens
+                    /// (for any setting, not just the framing one); consume it so the walk continues
+                    /// at the list grammar after it.
+                    if (tokens[j].type == DB::TokenType::OpeningCurlyBrace)
+                    {
+                        while (j < tokens.size() && tokens[j].type != DB::TokenType::ClosingCurlyBrace)
+                            ++j;
+                        if (j >= tokens.size())
+                            break;
                     }
                     ++j;
                     if (j < tokens.size() && tokens[j].type == DB::TokenType::Comma)
@@ -316,4 +341,36 @@ TEST(PlayDetectFramingSetting, RealSettingWinsOverStringMention)
     /// A real setting alongside a string-literal mention is still detected.
     expectFraming("SELECT 'framing_output_format' SETTINGS framing_output_format = 'None'", false, true);
     expectFraming("SELECT 'framing_output_format = None' SETTINGS framing_output_format = 'EventStream'", true, false);
+}
+
+TEST(PlayDetectFramingSetting, NonLiteralValuesAreConservativelyDisabling)
+{
+    /// The reported bug: `ParserSetQuery` accepts non-literal setting values - `= DEFAULT` (a reset
+    /// to the session/server default, which is `None` out of the box) and a query-parameter
+    /// placeholder (`= {fmt:String}`, which may resolve to `None`). The page cannot know what
+    /// either resolves to, so both must be refused like an explicit `None` instead of being
+    /// treated as a user framing choice and sent with a request shape (the compact
+    /// `default_format`) that an unframed response would not match.
+    expectFraming("SELECT 1 SETTINGS framing_output_format = DEFAULT", false, true);
+    expectFraming("select 1 settings framing_output_format = default", false, true);
+    expectFraming("SELECT 1 SETTINGS framing_output_format = {fmt:String}", false, true);
+    expectFraming("SELECT 1 SETTINGS max_threads = 1, framing_output_format = {fmt:String}", false, true);
+    /// The placeholder is consumed by the walk as a whole (`{name:Type}` spans several tokens), so
+    /// the list grammar continues after it: a later duplicate assignment still wins...
+    expectFraming(
+        "SELECT 1 SETTINGS framing_output_format = {fmt:String}, framing_output_format = 'EventStream'",
+        true, false);
+    expectFraming(
+        "SELECT 1 SETTINGS framing_output_format = 'EventStream', framing_output_format = DEFAULT",
+        false, true);
+    /// ...and a placeholder value of an UNRELATED setting does not end the walk before a later
+    /// `framing_output_format` entry in the same list.
+    expectFraming(
+        "SELECT 1 SETTINGS max_threads = {t:UInt8}, framing_output_format = 'JSONEachPacketString'",
+        true, false);
+    /// A placeholder in the query body (not in a settings context) is not a setting.
+    expectFraming("SELECT {fmt:String}", false, false);
+    /// A standalone `SET` is still refused as a session-level change, whatever the value form.
+    expectFraming("SET framing_output_format = DEFAULT", false, false, true);
+    expectFraming("SET framing_output_format = {fmt:String}", false, false, true);
 }
