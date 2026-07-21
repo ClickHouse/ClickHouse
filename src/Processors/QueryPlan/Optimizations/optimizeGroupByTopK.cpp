@@ -167,7 +167,7 @@ size_t tryOptimizeGroupByTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & 
         node_above_aggregation->children.front() = &sort_node;
     }
 
-    aggregating_step->applyLimitPushdown(Aggregator::Params::TopKParams{
+    aggregating_step->applyTopKOptimization(Aggregator::Params::TopKParams{
         .keys = limit,
         .directions = std::move(directions),
         .nulls_directions = std::move(nulls_directions),
