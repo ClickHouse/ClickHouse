@@ -40,11 +40,17 @@
 #include <limits>
 #include <unordered_set>
 
+#if USE_AVRO
+#include <Generic.hh>
+#include <GenericDatum.hh>
+#endif
+
 namespace DB::ErrorCodes
 {
 extern const int BAD_ARGUMENTS;
 extern const int LOGICAL_ERROR;
 extern const int LIMIT_EXCEEDED;
+extern const int ICEBERG_SPECIFICATION_VIOLATION;
 extern const int NOT_IMPLEMENTED;
 }
 
@@ -67,6 +73,109 @@ namespace DB::Iceberg
 static constexpr const char * block_datafile_path = "_iceberg_metadata_file_path";
 static constexpr const char * block_row_number = "_row_number";
 static constexpr auto MAX_TRANSACTION_RETRIES = 100;
+
+/// Parse a partition-spec JSON object's fields into the (source-id, transform, name) layout, the same
+/// triple ManifestFileIterator reads. PartitionSpecsEntry has only a file-local operator<=>, so compare
+/// explicitly (mirrors Compaction.cpp::partitionSpecsEqual).
+static Iceberg::PartitionSpecification parsePartitionSpecLayout(Poco::JSON::Object::Ptr spec_object)
+{
+    Iceberg::PartitionSpecification layout;
+    if (!spec_object || !spec_object->has(Iceberg::f_fields))
+        return layout;
+    auto fields = spec_object->getArray(Iceberg::f_fields);
+    for (UInt32 i = 0; fields && i < fields->size(); ++i)
+    {
+        auto field = fields->getObject(i);
+        layout.emplace_back(
+            field->getValue<Int32>(Iceberg::f_source_id),
+            field->getValue<String>(Iceberg::f_partition_transform),
+            field->getValue<String>(Iceberg::f_partition_name));
+    }
+    return layout;
+}
+
+static bool partitionSpecLayoutsEqual(const Iceberg::PartitionSpecification & lhs, const Iceberg::PartitionSpecification & rhs)
+{
+    if (lhs.size() != rhs.size())
+        return false;
+    for (size_t i = 0; i < lhs.size(); ++i)
+    {
+        if (lhs[i].source_id != rhs[i].source_id || lhs[i].transform_name != rhs[i].transform_name
+            || lhs[i].partition_name != rhs[i].partition_name)
+            return false;
+    }
+    return true;
+}
+
+/// True if any manifest of the current snapshot was written under a partition spec whose *layout*
+/// differs from the current default. A different spec-id alone is not unsafe: another engine may
+/// republish the identical layout under a new id. Position deletes are partitioned by the current
+/// default spec, so only a genuine layout change misplaces deletes (silent row duplication). This
+/// mirrors Compaction.cpp, which also compares the layout field-by-field rather than the id.
+static bool existingDataUsesDifferentPartitionSpec(
+    Poco::JSON::Object::Ptr metadata,
+    Int64 default_spec_id,
+    ObjectStoragePtr object_storage,
+    const Iceberg::IcebergPathResolver & path_resolver,
+    ContextPtr context)
+{
+    if (!metadata->has(Iceberg::f_current_snapshot_id))
+        return false;
+    Int64 current_snapshot_id = metadata->getValue<Int64>(Iceberg::f_current_snapshot_id);
+    if (current_snapshot_id < 0 || !metadata->has(Iceberg::f_snapshots))
+        return false;
+
+    /// Index every spec by id and precompute the default layout so each manifest entry compares against it.
+    auto partition_specs = metadata->getArray(Iceberg::f_partition_specs);
+    std::unordered_map<Int32, Poco::JSON::Object::Ptr> spec_by_id;
+    for (size_t i = 0; partition_specs && i < partition_specs->size(); ++i)
+    {
+        auto spec = partition_specs->getObject(static_cast<UInt32>(i));
+        spec_by_id[spec->getValue<Int32>(Iceberg::f_spec_id)] = spec;
+    }
+    Iceberg::PartitionSpecification default_layout;
+    if (auto it = spec_by_id.find(static_cast<Int32>(default_spec_id)); it != spec_by_id.end())
+        default_layout = parsePartitionSpecLayout(it->second);
+
+    /// A different id whose layout we cannot resolve is treated as a real mismatch (conservative).
+    std::unordered_map<Int32, bool> layout_differs_by_id;
+    auto layoutDiffersFromDefault = [&](Int32 spec_id) -> bool
+    {
+        if (spec_id == default_spec_id)
+            return false;
+        if (auto it = layout_differs_by_id.find(spec_id); it != layout_differs_by_id.end())
+            return it->second;
+        auto spec_it = spec_by_id.find(spec_id);
+        bool differs = spec_it == spec_by_id.end()
+            || !partitionSpecLayoutsEqual(parsePartitionSpecLayout(spec_it->second), default_layout);
+        layout_differs_by_id[spec_id] = differs;
+        return differs;
+    };
+
+    auto snapshots = metadata->getArray(Iceberg::f_snapshots);
+    for (size_t i = 0; i < snapshots->size(); ++i)
+    {
+        auto snapshot = snapshots->getObject(static_cast<UInt32>(i));
+        if (snapshot->getValue<Int64>(Iceberg::f_metadata_snapshot_id) != current_snapshot_id)
+            continue;
+
+        auto manifest_list = Iceberg::IcebergPathFromMetadata::deserialize(
+            snapshot->getValue<String>(Iceberg::f_manifest_list));
+        bool mismatch = false;
+        forEachAvroEntry(
+            path_resolver.resolve(manifest_list), object_storage, context, "IcebergMutations",
+            [&](const avro::GenericDatum & datum)
+            {
+                // Clang analyzer wrongly thinks GenericDatum::value can return an uninitialized reference (same as IcebergWrites.cpp).
+                // NOLINTNEXTLINE(clang-analyzer-core.uninitialized.UndefReturn)
+                const avro::GenericRecord & entry = datum.value<avro::GenericRecord>();
+                if (layoutDiffersFromDefault(entry.field(Iceberg::f_partition_spec_id).value<Int32>()))
+                    mismatch = true;
+            });
+        return mismatch;
+    }
+    return false;
+}
 
 struct DeleteFileWriteResult
 {
@@ -301,6 +410,10 @@ static std::optional<WriteDataFilesResult> writeDataFiles(
 
             for (const auto & [partition_key, partition_chunk] : partition_result)
             {
+                /// Drive the write and stats from this partition's rows only; the full `chunk`
+                /// spans every partition and would duplicate rows into each per-partition file.
+                auto partition_block = data_block.cloneWithColumns(partition_chunk.getColumns());
+
                 if (!update_data_statistics.contains(partition_key))
                     update_data_statistics.emplace(partition_key, DataFileStatistics(data_schema->getArray(Iceberg::f_fields)));
 
@@ -319,15 +432,15 @@ static std::optional<WriteDataFilesResult> writeDataFiles(
                     ColumnMapperPtr data_column_mapper = createColumnMapper(data_schema);
                     FormatFilterInfoPtr data_format_filter_info = std::make_shared<FormatFilterInfo>(nullptr, context, data_column_mapper, nullptr, nullptr);
                     auto data_output_format = FormatFactory::instance().getOutputFormat(
-                        write_format, *data_write_buffer, data_block, context, format_settings, data_format_filter_info);
+                        write_format, *data_write_buffer, partition_block, context, format_settings, data_format_filter_info);
 
                     update_data_write_buffers[partition_key] = std::move(data_write_buffer);
                     it = update_data_writers.emplace(partition_key, std::move(data_output_format)).first;
                 }
 
-                update_data_result[partition_key].total_rows += data_block.rows();
-                it->second->write(data_block);
-                update_data_statistics.at(partition_key).update(chunk);
+                update_data_result[partition_key].total_rows += partition_block.rows();
+                it->second->write(partition_block);
+                update_data_statistics.at(partition_key).update(partition_chunk);
             }
         }
 
@@ -708,6 +821,30 @@ void mutate(
             }
         }
 
+        /// Reject a malformed table for every mutation kind before dereferencing current_schema.
+        if (!current_schema)
+            throw Exception(
+                ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+                "Iceberg table metadata has no schema matching current-schema-id {}",
+                current_schema_id);
+
+        /// partititon_spec is dereferenced below for every mutation kind (UPDATE and DELETE).
+        if (!partititon_spec)
+            throw Exception(
+                ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+                "Iceberg table metadata has no partition spec matching default-spec-id {}",
+                partition_spec_id);
+
+        /// Position deletes are partitioned by the current default spec, so data written under a
+        /// different spec cannot be superseded (silent row duplication).
+        if (existingDataUsesDifferentPartitionSpec(
+                metadata, partition_spec_id, object_storage, persistent_table_components.path_resolver, context))
+            throw Exception(
+                ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+                "Cannot mutate an Iceberg table whose data was written under a partition spec other "
+                "than the current default-spec-id {}: partition-spec evolution is not supported for mutations",
+                partition_spec_id);
+
         /// Validate against the freshly-fetched snapshot. Bound to this exact
         /// metadata version, so a concurrent writer that commits non-Parquet
         /// data files between iterations is caught by the next retry.
@@ -728,6 +865,16 @@ void mutate(
         fresh_storage_metadata->setDataLakeTableState(DataLakeTableStateSnapshot{current_iceberg_snapshot});
 
         const auto sample_block = std::make_shared<const Block>(fresh_storage_metadata->getSampleBlock());
+
+        /// UPDATE writes data files through the positional INSERT-sink mapping, and both UPDATE and
+        /// DELETE build ChunkPartitioner from the current schema against this (possibly stale) header,
+        /// so guard every mutation against stale-schema drift.
+        validateInputSchemaMatchesCurrentIcebergSchema(
+            persistent_table_components.schema_processor,
+            current_schema,
+            static_cast<Int32>(current_schema_id),
+            sample_block->getNamesAndTypesList());
+
         std::optional<ChunkPartitioner> chunk_partitioner;
         if (partititon_spec->has(Iceberg::f_fields) && partititon_spec->getArray(Iceberg::f_fields)->size() > 0)
             chunk_partitioner = ChunkPartitioner(partititon_spec->getArray(Iceberg::f_fields), current_schema->getArray(Iceberg::f_fields), context, sample_block);

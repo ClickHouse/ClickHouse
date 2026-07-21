@@ -63,6 +63,20 @@ static constexpr size_t MAX_COMPACTION_RETRIES = 100;
 
 using namespace DB;
 
+/// PartitionSpecsEntry has only a file-local operator<=> elsewhere; compare fields explicitly here.
+static bool partitionSpecsEqual(const PartitionSpecification & lhs, const PartitionSpecification & rhs)
+{
+    if (lhs.size() != rhs.size())
+        return false;
+    for (size_t i = 0; i < lhs.size(); ++i)
+    {
+        if (lhs[i].source_id != rhs[i].source_id || lhs[i].transform_name != rhs[i].transform_name
+            || lhs[i].partition_name != rhs[i].partition_name)
+            return false;
+    }
+    return true;
+}
+
 struct ManifestFilePlan
 {
     explicit ManifestFilePlan(Poco::JSON::Array::Ptr schema_)
@@ -97,7 +111,18 @@ struct Plan
     std::unordered_map<Iceberg::IcebergPathFromMetadata, Int64> manifest_file_to_first_snapshot;
     std::unordered_map<Iceberg::IcebergPathFromMetadata, std::vector<Iceberg::IcebergPathFromMetadata>> manifest_list_to_manifest_files;
     std::unordered_map<Int64, std::vector<std::shared_ptr<DataFilePlan>>> snapshot_id_to_data_files;
+    /// Keyed per data file (file_path_key). One manifest can hold several DATA entries (MultipleFileWriter
+    /// splits a partition into several files), so keying per manifest would collapse them into one plan.
     std::unordered_map<Iceberg::IcebergPathFromMetadata, std::shared_ptr<DataFilePlan>> path_to_data_file;
+    /// Per DATA entry validation info: read schema id and originating partition spec. Used to reject
+    /// files written under a different schema id or partition spec than the current default before rewriting.
+    struct DataFileValidationInfo
+    {
+        String path;
+        Int32 read_schema_id;
+        std::shared_ptr<const PartitionSpecification> partition_spec;
+    };
+    std::vector<DataFileValidationInfo> data_file_validation_infos;
     FileNamesGenerator generator;
     Poco::JSON::Object::Ptr initial_metadata_object;
 
@@ -213,6 +238,13 @@ static Plan getPlan(
             break;
         }
     }
+    /// DataFileStatistics (built below via ManifestFilePlan) dereferences the schema, and the sink's
+    /// validate helper runs only after getPlan; reject a malformed table here.
+    if (!current_schema)
+        throw Exception(
+            ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+            "Iceberg table metadata has no schema matching current-schema-id {}",
+            current_schema_id);
     plan.initial_metadata_object = initial_metadata_object;
 
     std::vector<ProcessedManifestFileEntryPtr> all_positional_delete_files;
@@ -245,18 +277,26 @@ static Plan getPlan(
 
                 IcebergDataObjectInfoPtr data_object_info = std::make_shared<IcebergDataObjectInfo>(
                     data_file, persistent_table_components.path_resolver.resolve(data_file->parsed_entry->file_path_key), 0);
+                plan.data_file_validation_infos.push_back(
+                    {data_object_info->getPath(),
+                     data_object_info->info.underlying_format_read_schema_id,
+                     data_file->common_partition_specification});
+                /// Key per data file, not per manifest: one manifest can carry several DATA entries
+                /// (MultipleFileWriter splits a partition into several files). Keying per manifest kept only
+                /// the first entry, so the others were never rewritten and their rows were dropped.
+                const auto & data_file_key = data_file->parsed_entry->file_path_key;
                 std::shared_ptr<DataFilePlan> data_file_ptr;
-                if (!plan.path_to_data_file.contains(manifest_file.manifest_file_path))
+                if (!plan.path_to_data_file.contains(data_file_key))
                 {
                     data_file_ptr = std::make_shared<DataFilePlan>(DataFilePlan{
                         .data_object_info = data_object_info,
                         .manifest_list = manifest_files[manifest_file.manifest_file_path],
                         .patched_path = plan.generator.generateDataFileName()});
-                    plan.path_to_data_file[manifest_file.manifest_file_path] = data_file_ptr;
+                    plan.path_to_data_file[data_file_key] = data_file_ptr;
                 }
                 else
                 {
-                    data_file_ptr = plan.path_to_data_file[manifest_file.manifest_file_path];
+                    data_file_ptr = plan.path_to_data_file[data_file_key];
                 }
                 plan.partitions[partition_index].push_back(data_file_ptr);
                 plan.snapshot_id_to_data_files[snapshot.snapshot_id].push_back(plan.partitions[partition_index].back());
@@ -1055,6 +1095,12 @@ static void writeMetadataFiles(
             }
         }
 
+        if (!partititon_spec)
+            throw Exception(
+                ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+                "Iceberg table metadata has no partition spec matching default-spec-id {}",
+                partition_spec_id);
+
         std::vector<String> partition_columns;
         auto fields_from_partition_spec = partititon_spec->getArray(f_fields);
         for (UInt32 i = 0; i < fields_from_partition_spec->size(); ++i)
@@ -1321,6 +1367,90 @@ void compactIcebergTable(
         persistent_table_components.metadata_compression_method);
     if (plan.need_optimize)
     {
+        /// Compaction rewrites files through the same positional mapping as the sink/UPDATE while
+        /// the file is shaped by the possibly-stale `sample_block_`; guard against schema drift.
+        auto current_schema_id = plan.initial_metadata_object->getValue<Int64>(Iceberg::f_current_schema_id);
+        Poco::JSON::Object::Ptr current_schema;
+        auto schemas = plan.initial_metadata_object->getArray(Iceberg::f_schemas);
+        for (size_t i = 0; i < schemas->size(); ++i)
+        {
+            if (schemas->getObject(static_cast<UInt32>(i))->getValue<Int32>(Iceberg::f_schema_id) == current_schema_id)
+            {
+                current_schema = schemas->getObject(static_cast<UInt32>(i));
+                break;
+            }
+        }
+        /// The helper rejects a null current_schema, so no explicit check is needed here.
+        validateInputSchemaMatchesCurrentIcebergSchema(
+            persistent_table_components.schema_processor,
+            current_schema,
+            static_cast<Int32>(current_schema_id),
+            sample_block_->getNamesAndTypesList());
+
+        /// Reject files written under a schema id or partition spec that differs from the current default,
+        /// per DATA entry (path_to_data_file/partitions collapse same-file entries). writeMetadataFiles
+        /// serializes every rewritten file under the current schema and current default partition spec only,
+        /// so a mismatched file would be re-tagged under the wrong field ids or wrong partition columns
+        /// (silent corruption / out-of-bounds partition values). Validate before writeDataFiles: it writes
+        /// patched files with no cleanup, so rejecting later would leak orphaned files.
+
+        /// Current default partition spec, parsed like the manifest reader (source id, transform, name) so
+        /// the comparison against each file's own spec is apples-to-apples.
+        auto default_spec_id = plan.initial_metadata_object->getValue<Int32>(f_default_spec_id);
+        auto partitions_specs = plan.initial_metadata_object->getArray(f_partition_specs);
+        Poco::JSON::Object::Ptr default_spec_object;
+        for (size_t i = 0; i < partitions_specs->size(); ++i)
+        {
+            if (partitions_specs->getObject(static_cast<UInt32>(i))->getValue<Int64>(Iceberg::f_spec_id) == default_spec_id)
+            {
+                default_spec_object = partitions_specs->getObject(static_cast<UInt32>(i));
+                break;
+            }
+        }
+        if (!default_spec_object)
+            throw Exception(
+                ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+                "Iceberg table metadata has no partition spec matching default-spec-id {}",
+                default_spec_id);
+
+        PartitionSpecification default_partition_spec;
+        {
+            auto default_spec_fields = default_spec_object->getArray(f_fields);
+            for (UInt32 i = 0; default_spec_fields && i < default_spec_fields->size(); ++i)
+            {
+                auto field = default_spec_fields->getObject(i);
+                default_partition_spec.emplace_back(
+                    field->getValue<Int32>(f_source_id),
+                    field->getValue<String>(f_partition_transform),
+                    field->getValue<String>(f_partition_name));
+            }
+        }
+
+        for (const auto & info : plan.data_file_validation_infos)
+        {
+            if (info.read_schema_id != static_cast<Int32>(current_schema_id))
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Cannot compact Iceberg table: data file '{}' was written under schema-id {} but the current "
+                    "schema-id is {}. Compaction rewrites files under the current schema without applying per-file "
+                    "schema evolution, so this would commit the file's values under the wrong field ids. Rewrite or "
+                    "re-insert the affected data before compacting across a schema evolution.",
+                    info.path,
+                    info.read_schema_id,
+                    current_schema_id);
+
+            if (info.partition_spec && !partitionSpecsEqual(*info.partition_spec, default_partition_spec))
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Cannot compact Iceberg table: data file '{}' was written under a partition spec that differs "
+                    "from the current default-spec-id {}. Compaction re-serializes every rewritten file under the "
+                    "current default partition spec only, so the file's partition values would be reinterpreted "
+                    "under the wrong partition columns/transforms. Rewrite or re-insert the affected data before "
+                    "compacting across a partition-spec evolution.",
+                    info.path,
+                    default_spec_id);
+        }
+
         auto old_files = getOldFiles(object_storage_, persistent_table_components.table_path);
         writeDataFiles(
             plan,

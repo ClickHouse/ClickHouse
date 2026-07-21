@@ -46,9 +46,11 @@ PY
 
 # A synchronous INSERT shaped by the stale schema (column c0) while the sink force-reads the latest
 # schema {c9, c1}. Before the fix this aborted the server with a std::out_of_range logical error in
-# Parquet::prepareColumnRecursive (unordered_map::at). After the fix it must be a clean query error.
+# Parquet::prepareColumnRecursive (unordered_map::at). The sink now compares the full current schema
+# (names + types) against the input header, so this same-width rename is rejected up front with a
+# clean BAD_ARGUMENTS before any data file is written.
 ${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --iceberg_metadata_staleness_ms=600000 --async_insert=0 \
-    --query "INSERT INTO ${TABLE} (c0, c1) SELECT 2, 'b'" 2>&1 | grep -oF "INCORRECT_DATA" | head -1
+    --query "INSERT INTO ${TABLE} (c0, c1) SELECT 2, 'b'" 2>&1 | grep -oF "BAD_ARGUMENTS" | head -1
 
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS ${TABLE}"
 rm -rf "${TABLE_PATH}" 2>/dev/null
@@ -87,7 +89,7 @@ os.rename(tmp, os.path.join(md, 'v3.metadata.json'))
 PY
 
 ${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --iceberg_metadata_staleness_ms=600000 --async_insert=0 \
-    --query "INSERT INTO ${NTABLE} (c0, t) SELECT 2, tuple(20)" 2>&1 | grep -oF "INCORRECT_DATA" | head -1
+    --query "INSERT INTO ${NTABLE} (c0, t) SELECT 2, tuple(20)" 2>&1 | grep -oF "BAD_ARGUMENTS" | head -1
 
 # The server must still be alive after both scenarios (no abort).
 ${CLICKHOUSE_CLIENT} --query "SELECT 1"
