@@ -11,6 +11,16 @@ node_bad = cluster_bad.add_instance(
 )
 caught_exception = ""
 
+# Negative case: a config with several unknown top-level keys must report ALL of
+# them in a single exception, not just the first one, so the user can fix the whole
+# config in one iteration instead of one key per restart.
+cluster_multi_bad = ClickHouseCluster(__file__, name="multi_bad")
+node_multi_bad = cluster_multi_bad.add_instance(
+    "node_multi_bad",
+    main_configs=["configs/config.d/multiple_unknown_options.xml"],
+)
+caught_multi_exception = ""
+
 # Negative case: a typo of a real `users_*` key (e.g. `<users_cnfig>` instead of
 # `<users_config>`) must NOT pass through a blanket `users_*` prefix allowlist.
 cluster_users_typo = ClickHouseCluster(__file__, name="users_typo")
@@ -432,6 +442,21 @@ def start_bad_cluster():
 
 
 @pytest.fixture(scope="module")
+def start_multi_bad_cluster():
+    global caught_multi_exception
+    try:
+        cluster_multi_bad.start()
+    except Exception as e:
+        caught_multi_exception = str(e)
+        err_log = os.path.join(node_multi_bad.logs_dir, "clickhouse-server.err.log")
+        if os.path.exists(err_log):
+            with open(err_log, "r") as f:
+                caught_multi_exception += "\n" + f.read()
+    yield
+    cluster_multi_bad.shutdown()
+
+
+@pytest.fixture(scope="module")
 def start_users_typo_cluster():
     global caught_users_typo_exception
     try:
@@ -828,6 +853,13 @@ def start_dead_handler_group_cluster():
 def test_unknown_config_option_rejected(start_bad_cluster):
     assert "UNKNOWN_ELEMENT_IN_CONFIG" in caught_exception
     assert "some_completely_unknown_option" in caught_exception
+
+
+def test_multiple_unknown_config_options_all_reported(start_multi_bad_cluster):
+    # Both unknown keys must appear in the same exception message.
+    assert "UNKNOWN_ELEMENT_IN_CONFIG" in caught_multi_exception
+    assert "first_completely_unknown_option" in caught_multi_exception
+    assert "second_completely_unknown_option" in caught_multi_exception
 
 
 def test_users_prefix_typo_rejected(start_users_typo_cluster):
