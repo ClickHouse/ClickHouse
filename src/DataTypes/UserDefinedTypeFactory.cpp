@@ -30,13 +30,15 @@
 
 #include <fmt/format.h>
 
+#include <algorithm>
+
 namespace DB
 {
 
 namespace ErrorCodes
 {
     extern const int UNKNOWN_TYPE;
-    extern const int LOGICAL_ERROR;
+    extern const int TYPE_ALREADY_EXISTS;
 }
 
 UserDefinedTypeFactory & UserDefinedTypeFactory::instance()
@@ -80,8 +82,11 @@ void UserDefinedTypeFactory::registerType(
     {
         std::unique_lock lock(mutex);
 
+        /// A concurrent `CREATE TYPE` may have registered the same name between the interpreter's
+        /// existence check and this point; `registerType` is the atomic authority, so surface a
+        /// regular user error rather than a logical error.
         if (types.contains(name))
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Type with name {} already registered", name);
+            throw Exception(ErrorCodes::TYPE_ALREADY_EXISTS, "Type '{}' already exists", name);
 
         types[name] = info;
         should_store_in_system_table = (context && types_loaded_from_db);
@@ -183,6 +188,9 @@ std::vector<String> UserDefinedTypeFactory::getAllTypeNames(ContextPtr context) 
 
     for (const auto & [typeName, _] : types)
         result.push_back(typeName);
+
+    /// `types` is an unordered map, so sort for a deterministic `SHOW TYPES` order.
+    std::sort(result.begin(), result.end());
 
     return result;
 }

@@ -1,3 +1,4 @@
+-- Tags: no-parallel
 DROP TYPE IF EXISTS ProductId;
 DROP TYPE IF EXISTS ProductName;
 DROP TYPE IF EXISTS ProductList;

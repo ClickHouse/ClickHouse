@@ -1,3 +1,4 @@
+-- Tags: no-parallel
 DROP TYPE IF EXISTS SystemTestType1;
 DROP TYPE IF EXISTS SystemTestType2;
 

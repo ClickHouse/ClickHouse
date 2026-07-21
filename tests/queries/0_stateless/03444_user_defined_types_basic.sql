@@ -1,3 +1,4 @@
+-- Tags: no-parallel
 DROP TYPE IF EXISTS TestInt;
 DROP TYPE IF EXISTS TestString;
 

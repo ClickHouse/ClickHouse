@@ -1,3 +1,4 @@
+-- Tags: no-parallel
 DROP TYPE IF EXISTS UserId;
 DROP TYPE IF EXISTS Email;
 DROP TYPE IF EXISTS Phone;

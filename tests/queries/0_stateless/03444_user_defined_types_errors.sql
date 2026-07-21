@@ -1,3 +1,4 @@
+-- Tags: no-parallel
 DROP TYPE IF EXISTS TestType;
 
 CREATE TYPE TestType AS InvalidType; -- { serverError UNKNOWN_TYPE }
