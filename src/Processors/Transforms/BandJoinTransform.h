@@ -191,6 +191,10 @@ private:
     bool lowerAdmitsEncoded(UInt64 encoded_lo, size_t point_row) const;
     bool upperAdmitsEncoded(UInt64 encoded_hi, size_t point_row) const;
 
+    /// Precompute every point row's walk start on the encoded path (fills `walk_start_block`
+    /// / `walk_start_row`): the level-2 binary searches run batched across rows, so their
+    /// dependent cache misses overlap instead of serializing row by row.
+    void computeWalkStarts();
     /// Position the walk at the last position admissible under the lower bound;
     /// false when the point row has no admissible position at all.
     bool findWalkStart(size_t point_row);
@@ -248,6 +252,11 @@ private:
     /// Byte mask of the point rows valid as keys (rows with NULL/NaN keys match nothing);
     /// empty = every row is valid.
     IColumn::Filter point_valid;
+    /// Walk start per point row, precomputed by computeWalkStarts on the encoded path
+    /// (reusable scratch); the sentinel block marks rows with no admissible position.
+    static constexpr UInt32 no_walk_start = std::numeric_limits<UInt32>::max();
+    PaddedPODArray<UInt32> walk_start_block;
+    PaddedPODArray<UInt32> walk_start_row;
 
     /// Walk state, resumable mid-row: `walk_row` < 0 means the current block is exhausted and
     /// the walk descends the directory from `walk_block - 1`.
@@ -257,12 +266,15 @@ private:
     size_t walk_block = 0;
     ssize_t walk_row = -1;
 
-    /// Output accumulator: point rows to replicate, and interval (block, row) references
-    /// grouped into per-block segments in emission order; a segment with the sentinel block
-    /// index emits column-type defaults instead (unmatched rows of LEFT/ANTI).
+    /// Output accumulator in emission order: the point row to replicate and the interval
+    /// (block, row) reference per output row; the sentinel block index emits column-type
+    /// defaults instead (unmatched rows of LEFT/ANTI). Flat arrays, not per-block segments:
+    /// consecutive point rows rarely match in the same block, so segments would fragment
+    /// into per-row column allocations; buildOutputChunk regroups by block instead.
     static constexpr size_t padded_segment = std::numeric_limits<size_t>::max();
     PaddedPODArray<UInt64> out_point_rows;
-    std::vector<std::pair<size_t, ColumnUInt64::MutablePtr>> out_segments;
+    PaddedPODArray<UInt64> out_blocks;
+    PaddedPODArray<UInt64> out_rows;
     size_t out_bytes_estimate = 0;
 
     /// Pending residual candidates of the current point row, as per-block segments in walk

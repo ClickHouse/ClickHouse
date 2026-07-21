@@ -333,6 +333,9 @@ void BandJoinProbeTransform::consumeProbeChunk(Chunk chunk)
             chassert(ok);
         }
     }
+
+    if (index->lower_encoded)
+        computeWalkStarts();
 }
 
 void BandJoinProbeTransform::resetChunkState()
@@ -371,28 +374,143 @@ bool BandJoinProbeTransform::upperAdmitsEncoded(UInt64 encoded_hi, size_t point_
     return upper_strict ? encoded_hi > encoded_point : encoded_hi >= encoded_point;
 }
 
+/// Branchless lower bound (first element >= key): successive probe keys are effectively
+/// random, so every classic binary-search step is a dependent cache miss; prefetching both
+/// possible next midpoints overlaps them, and the conditional move keeps the mispredicted
+/// branch from discarding the prefetched line.
+static size_t lowerBoundPrefetched(const PaddedPODArray<UInt64> & arr, UInt64 key)
+{
+    const UInt64 * base = arr.data();
+    size_t len = arr.size();
+    while (len > 1)
+    {
+        const size_t half = len / 2;
+        __builtin_prefetch(base + half / 2);
+        __builtin_prefetch(base + half + (len - half) / 2);
+        base += (base[half - 1] < key) ? half : 0;
+        len -= half;
+    }
+    return (base - arr.data()) + (len == 1 && *base < key);
+}
+
+/// First position whose `lo` no longer admits the encoded point under the lower bound's
+/// strictness: first `lo >= point` when strict, first `lo > point` when loose.
+static size_t firstNonAdmittingLo(const PaddedPODArray<UInt64> & encoded_lo, UInt64 encoded_point, bool strict)
+{
+    if (!strict)
+    {
+        if (encoded_point == std::numeric_limits<UInt64>::max())
+            return encoded_lo.size();
+        ++encoded_point;
+    }
+    return lowerBoundPrefetched(encoded_lo, encoded_point);
+}
+
+void BandJoinProbeTransform::computeWalkStarts()
+{
+    walk_start_block.resize(num_point_rows);
+    walk_start_row.resize(num_point_rows);
+
+    const auto & keys = encoded_point_keys[0];
+    constexpr UInt64 max_key = std::numeric_limits<UInt64>::max();
+    constexpr size_t batch_size = 16;
+    /// Per in-flight search: the point row, the effective lower-bound key, and the shrinking
+    /// window [base, base + len) within the block's `encoded_lo`.
+    size_t batch_rows[batch_size];
+    UInt64 batch_keys[batch_size];
+    const UInt64 * batch_base[batch_size];
+    size_t batch_len[batch_size];
+
+    /// Run the enqueued level-2 searches in lockstep: each round advances every search one
+    /// step, so their dependent cache misses overlap instead of serializing row by row.
+    auto flush_batch = [&](size_t count)
+    {
+        bool in_progress = true;
+        while (in_progress)
+        {
+            in_progress = false;
+            for (size_t i = 0; i < count; ++i)
+            {
+                const size_t len = batch_len[i];
+                if (len <= 1)
+                    continue;
+                in_progress = true;
+                const size_t half = len / 2;
+                const UInt64 * base = batch_base[i];
+                base += (base[half - 1] < batch_keys[i]) ? half : 0;
+                batch_base[i] = base;
+                batch_len[i] = len - half;
+                __builtin_prefetch(base + (len - half) / 2);
+            }
+        }
+        for (size_t i = 0; i < count; ++i)
+        {
+            const size_t row = batch_rows[i];
+            const auto & encoded_lo = index->blocks[walk_start_block[row]].encoded_lo;
+            const size_t first_non_admitting = (batch_base[i] - encoded_lo.data())
+                + (batch_len[i] == 1 && *batch_base[i] < batch_keys[i]);
+            chassert(first_non_admitting != 0);
+            walk_start_row[row] = static_cast<UInt32>(first_non_admitting - 1);
+        }
+    };
+
+    size_t enqueued = 0;
+    for (size_t row = 0; row < num_point_rows; ++row)
+    {
+        walk_start_block[row] = no_walk_start;
+        if (!point_valid.empty() && !point_valid[row])
+            continue;
+
+        const size_t first_non_admitting = firstNonAdmittingLo(index->dir_first_lo, keys[row], lower_strict);
+        if (first_non_admitting == 0)
+            continue;
+        const size_t block_index = first_non_admitting - 1;
+        const auto & block = index->blocks[block_index];
+        walk_start_block[row] = static_cast<UInt32>(block_index);
+
+        UInt64 key = keys[row];
+        if (!lower_strict)
+        {
+            /// A loose bound on the greatest encoded key admits the whole block.
+            if (key == max_key)
+            {
+                walk_start_row[row] = static_cast<UInt32>(block.num_rows - 1);
+                continue;
+            }
+            ++key;
+        }
+        batch_rows[enqueued] = row;
+        batch_keys[enqueued] = key;
+        batch_base[enqueued] = block.encoded_lo.data();
+        batch_len[enqueued] = block.encoded_lo.size();
+        if (++enqueued == batch_size)
+        {
+            flush_batch(enqueued);
+            enqueued = 0;
+        }
+    }
+    flush_batch(enqueued);
+}
+
 bool BandJoinProbeTransform::findWalkStart(size_t point_row)
 {
     const auto & blocks = index->blocks;
     produce_work += 2;
 
-    /// Level 1: the last block whose first `lo` admits the point; the pre-sort makes every
-    /// row of the earlier blocks admissible under the lower bound, and no row of the later
-    /// blocks can be.
     size_t block_index;
+    size_t position;
     if (index->lower_encoded)
     {
-        const auto & dir = index->dir_first_lo;
-        const UInt64 encoded_point = encoded_point_keys[0][point_row];
-        const auto * first_non_admitting = lower_strict
-            ? std::lower_bound(dir.begin(), dir.end(), encoded_point)
-            : std::upper_bound(dir.begin(), dir.end(), encoded_point);
-        if (first_non_admitting == dir.begin())
+        if (walk_start_block[point_row] == no_walk_start)
             return false;
-        block_index = (first_non_admitting - dir.begin()) - 1;
+        block_index = walk_start_block[point_row];
+        position = walk_start_row[point_row];
     }
     else
     {
+        /// Level 1: the last block whose first `lo` admits the point; the pre-sort makes
+        /// every row of the earlier blocks admissible under the lower bound, and no row of
+        /// the later blocks can be.
         size_t low = 0;
         size_t high = blocks.size();
         while (low < high)
@@ -406,26 +524,12 @@ bool BandJoinProbeTransform::findWalkStart(size_t point_row)
         if (low == 0)
             return false;
         block_index = low - 1;
-    }
 
-    /// Level 2: the last admissible position within the block; row 0 admits by the choice of
-    /// the block, so there is one.
-    const auto & block = blocks[block_index];
-    size_t position;
-    if (index->lower_encoded)
-    {
-        const auto & encoded_lo = block.encoded_lo;
-        const UInt64 encoded_point = encoded_point_keys[0][point_row];
-        const auto * first_non_admitting = lower_strict
-            ? std::lower_bound(encoded_lo.begin(), encoded_lo.end(), encoded_point)
-            : std::upper_bound(encoded_lo.begin(), encoded_lo.end(), encoded_point);
-        chassert(first_non_admitting != encoded_lo.begin());
-        position = (first_non_admitting - encoded_lo.begin()) - 1;
-    }
-    else
-    {
-        size_t low = 0;
-        size_t high = block.num_rows;
+        /// Level 2: the last admissible position within the block; row 0 admits by the
+        /// choice of the block, so there is one.
+        const auto & block = blocks[block_index];
+        low = 0;
+        high = block.num_rows;
         while (low < high)
         {
             size_t mid = low + (high - low) / 2;
@@ -436,6 +540,15 @@ bool BandJoinProbeTransform::findWalkStart(size_t point_row)
         }
         chassert(low > 0);
         position = low - 1;
+    }
+
+    const auto & block = blocks[block_index];
+
+    /// The walk's first touches, issued while the caller is still bookkeeping.
+    if (index->upper_encoded)
+    {
+        __builtin_prefetch(block.prefix_max_hi.data() + position);
+        __builtin_prefetch(block.encoded_hi.data() + position);
     }
 
     walk_block = block_index;
@@ -652,19 +765,17 @@ void BandJoinProbeTransform::emitMatch(size_t point_row, size_t block_index, siz
     chassert(checkEmittedPair(point_row, index->blocks[block_index], row));
 
     out_point_rows.push_back(point_row);
-    if (out_segments.empty() || out_segments.back().first != block_index)
-        out_segments.emplace_back(block_index, ColumnUInt64::create());
-    out_segments.back().second->getData().push_back(row);
+    out_blocks.push_back(block_index);
+    out_rows.push_back(row);
     out_bytes_estimate += point_avg_row_bytes + index->blocks[block_index].avg_row_bytes;
 }
 
 void BandJoinProbeTransform::emitUnmatched(size_t point_row)
 {
     out_point_rows.push_back(point_row);
-    if (out_segments.empty() || out_segments.back().first != padded_segment)
-        out_segments.emplace_back(padded_segment, ColumnUInt64::create());
-    /// Only the padded segment's row count matters; the row values are never read.
-    out_segments.back().second->getData().push_back(0);
+    out_blocks.push_back(padded_segment);
+    /// Only the padded rows' count matters; the row values are never read.
+    out_rows.push_back(0);
     out_bytes_estimate += point_avg_row_bytes;
 }
 
@@ -682,6 +793,7 @@ bool BandJoinProbeTransform::outputFull() const
 Chunk BandJoinProbeTransform::buildOutputChunk()
 {
     const size_t num_rows = out_point_rows.size();
+    chassert(out_blocks.size() == num_rows && out_rows.size() == num_rows);
 
     Chunk chunk;
     auto point_indexes = ColumnUInt64::create();
@@ -689,43 +801,108 @@ Chunk BandJoinProbeTransform::buildOutputChunk()
     for (const auto & column : point_columns)
         chunk.addColumn(column->index(*point_indexes, 0));
 
+    /// Group the rows by index block so each block is gathered in one batched call: a stable
+    /// order by block (the sentinel sorts last), one rows column per run; when the emission
+    /// order interleaves blocks, a final gather by the inverse positions restores it.
+    struct Run
+    {
+        size_t block = 0;
+        ColumnUInt64::MutablePtr rows;
+    };
+    std::vector<Run> runs;
+    ColumnUInt64::MutablePtr inverse_positions;
+    const bool emission_ordered = std::is_sorted(out_blocks.begin(), out_blocks.end());
+    if (emission_ordered)
+    {
+        size_t run_start = 0;
+        for (size_t i = 1; i <= num_rows; ++i)
+        {
+            if (i == num_rows || out_blocks[i] != out_blocks[run_start])
+            {
+                auto rows = ColumnUInt64::create();
+                rows->getData().insert(out_rows.begin() + run_start, out_rows.begin() + i);
+                runs.push_back({out_blocks[run_start], std::move(rows)});
+                run_start = i;
+            }
+        }
+    }
+    else
+    {
+        /// Counting sort by block (stable, so each block's rows stay in emission order): the
+        /// block count is small next to the row count, where a comparison sort would cost.
+        const size_t num_buckets = index->blocks.size() + 1;    /// + the padded sentinel, last
+        auto bucket_of = [&](UInt64 block) { return block == padded_segment ? num_buckets - 1 : block; };
+
+        PaddedPODArray<UInt64> bucket_begin;
+        bucket_begin.resize_fill(num_buckets + 1, 0);
+        for (size_t i = 0; i < num_rows; ++i)
+            ++bucket_begin[bucket_of(out_blocks[i]) + 1];
+        for (size_t bucket = 1; bucket <= num_buckets; ++bucket)
+            bucket_begin[bucket] += bucket_begin[bucket - 1];
+
+        PaddedPODArray<UInt64> grouped_rows(num_rows);
+        PaddedPODArray<UInt64> cursor;
+        cursor.assign(bucket_begin.begin(), bucket_begin.end());
+        inverse_positions = ColumnUInt64::create(num_rows);
+        auto & inverse = inverse_positions->getData();
+        for (size_t i = 0; i < num_rows; ++i)
+        {
+            const size_t grouped = cursor[bucket_of(out_blocks[i])]++;
+            grouped_rows[grouped] = out_rows[i];
+            inverse[i] = grouped;
+        }
+
+        for (size_t bucket = 0; bucket < num_buckets; ++bucket)
+        {
+            const size_t begin = bucket_begin[bucket];
+            const size_t end = bucket_begin[bucket + 1];
+            if (begin == end)
+                continue;
+            auto rows = ColumnUInt64::create();
+            rows->getData().insert(grouped_rows.begin() + begin, grouped_rows.begin() + end);
+            runs.push_back({bucket == num_buckets - 1 ? padded_segment : bucket, std::move(rows)});
+        }
+    }
+
     const auto & output_header = getOutputs().front().getHeader();
     const size_t num_point_columns = point_columns.size();
     for (size_t i = num_point_columns; i < output_header.columns(); ++i)
     {
         const size_t interval_position = i - num_point_columns;
-        /// The padded segment gets the column-type defaults: NULL when the type is Nullable
+        /// The padded run gets the column-type defaults: NULL when the type is Nullable
         /// (with `join_use_nulls` the planner made the interval-side columns Nullable in the
         /// pre-join actions).
-        auto gather_segment = [&](size_t block_index, const ColumnUInt64 & rows) -> ColumnPtr
+        auto gather_run = [&](const Run & run) -> ColumnPtr
         {
-            if (block_index == padded_segment)
+            if (run.block == padded_segment)
             {
                 auto padded = output_header.getByPosition(i).type->createColumn();
-                padded->insertManyDefaults(rows.size());
+                padded->insertManyDefaults(run.rows->size());
                 return padded;
             }
-            return index->blocks[block_index].columns[interval_position]->index(rows, 0);
+            return index->blocks[run.block].columns[interval_position]->index(*run.rows, 0);
         };
-        if (out_segments.size() == 1)
+        ColumnPtr grouped;
+        if (runs.size() == 1)
         {
-            const auto & [block_index, rows] = out_segments.front();
-            chunk.addColumn(gather_segment(block_index, *rows));
+            grouped = gather_run(runs.front());
         }
         else
         {
-            auto result = output_header.getByPosition(i).type->createColumn();
-            result->reserve(num_rows);
-            for (const auto & [block_index, rows] : out_segments)
+            auto concatenated = output_header.getByPosition(i).type->createColumn();
+            concatenated->reserve(num_rows);
+            for (const auto & run : runs)
             {
-                auto gathered = gather_segment(block_index, *rows);
-                result->insertRangeFrom(*gathered, 0, gathered->size());
+                auto gathered = gather_run(run);
+                concatenated->insertRangeFrom(*gathered, 0, gathered->size());
             }
-            chunk.addColumn(std::move(result));
+            grouped = std::move(concatenated);
         }
+        chunk.addColumn(emission_ordered ? std::move(grouped) : grouped->index(*inverse_positions, 0));
     }
 
-    out_segments.clear();
+    out_blocks.clear();
+    out_rows.clear();
     out_bytes_estimate = 0;
     return chunk;
 }
