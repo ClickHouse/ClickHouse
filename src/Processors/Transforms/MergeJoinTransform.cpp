@@ -68,11 +68,11 @@ ConstNullMapPtr getNullMapData(const ColumnPtr & column)
 template <typename TCursor>
 int ALWAYS_INLINE compareCursors(const TCursor & lhs, size_t lpos,
                                  const TCursor & rhs, size_t rpos,
-                                 int null_direction_hint)
+                                 int null_direction_hint, size_t from_key = 0)
 {
     chassert(lhs.sort_columns.size() == rhs.sort_columns.size());
     size_t key_length = lhs.sort_columns.size();
-    for (size_t i = 0; i < key_length; ++i)
+    for (size_t i = from_key; i < key_length; ++i)
     {
         const auto & left_column = *lhs.sort_columns[i];
         const auto & right_column = *rhs.sort_columns[i];
@@ -93,6 +93,20 @@ template <typename TCursor>
 int ALWAYS_INLINE compareCursors(const TCursor & lhs, const TCursor & rhs, int null_direction_hint)
 {
     return compareCursors(lhs, lhs.getRow(), rhs, rhs.getRow(), null_direction_hint);
+}
+
+/// Compares only the first key column of the current rows. A nonzero result decides the whole
+/// tuple comparison and allows to skip the run of lesser rows at once (see nextNotLess).
+template <typename TCursor>
+int ALWAYS_INLINE compareCursorsFirstKey(const TCursor & lhs, const TCursor & rhs, int null_direction_hint)
+{
+    if constexpr (TCursor::has_null_maps)
+        return nullableCompareAt(
+            *lhs.sort_columns.front(), getNullMapData(lhs.null_maps.front()),
+            *rhs.sort_columns.front(), getNullMapData(rhs.null_maps.front()),
+            lhs.getRow(), rhs.getRow(), null_direction_hint);
+    else
+        return lhs.sort_columns.front()->compareAt(lhs.getRow(), rhs.getRow(), *rhs.sort_columns.front(), null_direction_hint);
 }
 
 int compareAsofCursors(const FullMergeJoinCursor & lhs, const FullMergeJoinCursor & rhs, int null_direction_hint)
@@ -173,7 +187,9 @@ size_t ALWAYS_INLINE nextDistinct(FullMergeJoinCursor & impl)
 
 /// Advances the cursor to the first row that is not less than the current row of `other`
 /// (or to the end of the block) and returns the number of rows skipped.
-/// Precondition: the current row of the cursor is less than the current row of `other`.
+/// Precondition: the first key columns of the current rows compare less (see compareCursorsFirstKey),
+/// so the run of rows whose first key column is strictly less than the other row's one is less
+/// than the other row regardless of the remaining key columns.
 size_t ALWAYS_INLINE nextNotLess(FullMergeJoinCursor & cursor, const FullMergeJoinCursor & other, int null_direction_hint)
 {
     chassert(cursor.isValid() && other.isValid());
@@ -192,19 +208,9 @@ size_t ALWAYS_INLINE nextNotLess(FullMergeJoinCursor & cursor, const FullMergeJo
     const IColumn & other_first_column = *other.sort_columns.front();
     const size_t other_pos = other.getRow();
 
-    int cmp = first_column.compareAt(start_pos, other_pos, other_first_column, null_direction_hint);
-    chassert(cmp <= 0);
-    if (cmp == 0)
-    {
-        /// The first key columns are equal - a later key column decided the order:
-        /// skip the run of rows with all key columns equal.
-        return nextDistinct(cursor);
-    }
-
-    /// Rows whose first key column is strictly less than the other row's one are less regardless
-    /// of the remaining key columns, and they form a prefix of the (sorted) rest of the block.
-    /// NULL rows never satisfy the predicate: they sort to the block edge and the values of the
-    /// nested column at NULL positions are unspecified.
+    /// The run of lesser rows forms a prefix of the (sorted) rest of the block. NULL rows never
+    /// satisfy the predicate: they sort to the block edge and the values of the nested column
+    /// at NULL positions are unspecified.
     /// Every probe is a virtual compareAt call, which is expensive, so keep the linear probe short.
     static constexpr size_t linear_probe = 8;
     size_t run_end = findEqualRangeEndAssumeSorted(start_pos, cursor.rows, linear_probe, [&](size_t row)
@@ -585,7 +591,10 @@ struct AllJoinImpl
             lpos = left_cursor.getRow();
             rpos = right_cursor.getRow();
 
-            cmp = compareCursors(left_cursor, right_cursor, null_direction_hint);
+            /// Compare the first key column once: a nonzero result decides the whole tuple
+            /// comparison and lets nextNotLess skip the run of lesser rows without re-comparing.
+            int cmp_first = compareCursorsFirstKey(left_cursor, right_cursor, null_direction_hint);
+            cmp = cmp_first != 0 ? cmp_first : compareCursors(left_cursor, lpos, right_cursor, rpos, null_direction_hint, /*from_key=*/ 1);
 
             if (cmp == 0)
             {
@@ -613,7 +622,9 @@ struct AllJoinImpl
             }
             else if (cmp < 0)
             {
-                size_t num = nextNotLess(left_cursor, right_cursor, null_direction_hint);
+                /// When a later key column decided the order, only the run of equal keys can be skipped.
+                size_t num = cmp_first < 0 ? nextNotLess(left_cursor, right_cursor, null_direction_hint)
+                                           : nextDistinct(left_cursor);
                 if constexpr (isLeftOrFull(kind))
                 {
                     right_map.resize_fill(right_map.size() + num, right_cursor.rows);
@@ -623,7 +634,8 @@ struct AllJoinImpl
             }
             else
             {
-                size_t num = nextNotLess(right_cursor, left_cursor, null_direction_hint);
+                size_t num = cmp_first > 0 ? nextNotLess(right_cursor, left_cursor, null_direction_hint)
+                                           : nextDistinct(right_cursor);
                 if constexpr (isRightOrFull(kind))
                 {
                     left_map.resize_fill(left_map.size() + num, left_cursor.rows);
@@ -872,7 +884,11 @@ struct AnyJoinImpl
             lpos = left_cursor.getRow();
             rpos = right_cursor.getRow();
 
-            cmp = compareCursors(left_cursor, right_cursor, null_direction_hint);
+            /// Compare the first key column once: a nonzero result decides the whole tuple
+            /// comparison and lets nextNotLess skip the run of lesser rows without re-comparing.
+            int cmp_first = compareCursorsFirstKey(left_cursor, right_cursor, null_direction_hint);
+            cmp = cmp_first != 0 ? cmp_first : compareCursors(left_cursor, lpos, right_cursor, rpos, null_direction_hint, /*from_key=*/ 1);
+
             if (cmp == 0)
             {
                 if constexpr (isLeftOrFull(kind))
@@ -897,13 +913,16 @@ struct AnyJoinImpl
             }
             else if (cmp < 0)
             {
-                size_t num = nextNotLess(left_cursor, right_cursor, null_direction_hint);
+                /// When a later key column decided the order, only the run of equal keys can be skipped.
+                size_t num = cmp_first < 0 ? nextNotLess(left_cursor, right_cursor, null_direction_hint)
+                                           : nextDistinct(left_cursor);
                 if constexpr (isLeftOrFull(kind))
                     right_map.resize_fill(right_map.size() + num, right_cursor.rows);
             }
             else
             {
-                size_t num = nextNotLess(right_cursor, left_cursor, null_direction_hint);
+                size_t num = cmp_first > 0 ? nextNotLess(right_cursor, left_cursor, null_direction_hint)
+                                           : nextDistinct(right_cursor);
                 if constexpr (isRightOrFull(kind))
                     left_map.resize_fill(left_map.size() + num, left_cursor.rows);
             }
