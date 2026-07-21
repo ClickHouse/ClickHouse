@@ -822,85 +822,19 @@ void ConcurrentHashJoin::onBuildPhaseFinish()
         }
         getData(hash_joins[0])->sorted = false;
 
-        /// rebuild per-slot right-side nullmaps into slot 0 so that
-        /// non-joined rows saved due to NULL keys or ON-filtered rows are emitted only once
-        if (std::any_of(hash_joins.begin(), hash_joins.end(),
-                        [&](const auto &hj){ return !getData(hj)->nullmaps.empty(); }))
+        /// Move per-slot right-side nullmaps into slot 0, which emits all non-joined rows saved
+        /// due to NULL keys or ON-filtered rows. The holders can be moved as-is: emission iterates
+        /// only the rows of each holder's selector so every row is emitted exactly once.
+        for (size_t i = 1; i < slots; ++i)
         {
-            /// Keep the pointers in NullMapHolder to original StoredBlocks, which remain valid
-            /// in their respective slots
-            HashJoin::NullmapList combined;
-            size_t combined_allocated = 0;
-
-            auto filter_holder_by_selector = [&](const HashJoin::NullMapHolder & holder)
-            {
-                const auto * sc = holder.columns;
-                if (!sc)
-                    return;
-                // matches the original right block rows referenced by this slot's StoredBlocks
-                ColumnUInt8::MutablePtr filtered = ColumnUInt8::create(sc->columns.at(0)->size(), static_cast<UInt8>(0));
-                // apply a contiguous [start, end) range from the source mask into the destination mask
-                // fill with 1s if NULLs only
-                auto apply_range = [&](size_t start, size_t end)
-                {
-                    if (holder.column)
-                    {
-                        const auto & src_mask = assert_cast<const ColumnUInt8 &>(*holder.column).getData();
-                        for (size_t r = start; r < end; ++r)
-                            filtered->getData()[r] = src_mask[r];
-                    }
-                    else
-                    {
-                        for (size_t r = start; r < end; ++r)
-                            filtered->getData()[r] = 1;
-                    }
-                };
-
-                if (sc->selector.isContinuousRange())
-                {
-                    // Fast path: the slot's StoredBlocks cover a single continuous range in the original right block
-                    const auto range = sc->selector.getRange();
-                    apply_range(range.first, range.second);
-                }
-                else
-                {
-                    // General path: the slot holds arbitrary indexes into the original right block
-                    const auto & idxs = sc->selector.getIndexes().getData();
-                    if (holder.column)
-                    {
-                        const auto & src_mask = assert_cast<const ColumnUInt8 &>(*holder.column).getData();
-                        for (size_t idx : idxs)
-                        {
-                            if (idx < src_mask.size())
-                                filtered->getData()[idx] = src_mask[idx];
-                        }
-                    }
-                    else
-                    {
-                        for (size_t idx : idxs)
-                            filtered->getData()[idx] = 1;
-                    }
-                }
-                combined.emplace_back(sc, std::move(filtered));
-                combined.back().selector_rows = sc->selector.size();
-                combined_allocated += combined.back().allocatedBytes();
-            };
-
-            for (size_t i = 0; i < slots; ++i)
-            {
-                auto src = getData(hash_joins[i]);
-                for (const auto & holder : src->nullmaps)
-                    filter_holder_by_selector(holder);
-                // Clear per-slot nullmaps after consolidation to prevent duplicates and free memory held by masks
-                // we do not free StoredBlocks here; they are owned by the join and needed during probing/emission
-                src->nullmaps.clear();
-                src->nullmaps_allocated_size = 0;
-            }
-
+            auto src = getData(hash_joins[i]);
+            if (src->nullmaps.empty())
+                continue;
             auto dst = getData(hash_joins[0]);
-            // install the list into slot 0, it will be used later to emit non-joined rows
-            dst->nullmaps = std::move(combined);
-            dst->nullmaps_allocated_size = combined_allocated;
+            std::move(src->nullmaps.begin(), src->nullmaps.end(), std::back_inserter(dst->nullmaps));
+            dst->nullmaps_allocated_size += src->nullmaps_allocated_size;
+            src->nullmaps.clear();
+            src->nullmaps_allocated_size = 0;
         }
     }
 
