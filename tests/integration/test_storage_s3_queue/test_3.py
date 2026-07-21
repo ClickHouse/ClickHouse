@@ -8,6 +8,7 @@ from helpers.cluster import ClickHouseCluster
 from helpers.s3_queue_common import (
     generate_random_files,
     put_s3_file_content,
+    put_azure_file_content,
     create_table,
     create_mv,
     generate_random_string,
@@ -403,7 +404,11 @@ def test_commit_on_limit(started_cluster, processing_threads):
     )
 
 
-def test_system_queue_metadata(started_cluster):
+# `S3Queue` and `AzureQueue` register separate system tables
+# (`system.s3_queue_metadata` and `system.azure_queue_metadata`), so exercise
+# both engines to cover both registrations.
+@pytest.mark.parametrize("engine_name", ["S3Queue", "AzureQueue"])
+def test_system_queue_metadata(started_cluster, engine_name):
     node = started_cluster.instances["instance"]
     table_name = f"test_system_queue_metadata_{generate_random_string()}"
     dst_table_name = f"{table_name}_dst"
@@ -411,6 +416,12 @@ def test_system_queue_metadata(started_cluster):
     keeper_path = f"/clickhouse/test_{table_name}_{generate_random_string()}"
     files_path = f"{table_name}_data"
     files_to_generate = 10
+    if engine_name == "S3Queue":
+        storage = "s3"
+        system_table = "system.s3_queue_metadata"
+    else:
+        storage = "azure"
+        system_table = "system.azure_queue_metadata"
 
     create_table(
         started_cluster,
@@ -425,15 +436,23 @@ def test_system_queue_metadata(started_cluster):
             # processing finishes - otherwise the counts would be racy.
             "use_persistent_processing_nodes": False,
         },
+        engine_name=engine_name,
     )
     create_mv(node, table_name, dst_table_name)
 
-    generate_random_files(started_cluster, files_path, files_to_generate, row_num=1)
+    generate_random_files(
+        started_cluster, files_path, files_to_generate, storage=storage, row_num=1
+    )
     # A malformed file which must end up in the `failed` folder.
     incorrect_values_csv = b"not_a_number,1,1\n"
-    put_s3_file_content(
-        started_cluster, f"{files_path}/bad.csv", incorrect_values_csv
-    )
+    if storage == "s3":
+        put_s3_file_content(
+            started_cluster, f"{files_path}/bad.csv", incorrect_values_csv
+        )
+    else:
+        put_azure_file_content(
+            started_cluster, f"{files_path}/bad.csv", incorrect_values_csv
+        )
 
     for _ in range(60):
         if files_to_generate == int(
@@ -450,7 +469,7 @@ def test_system_queue_metadata(started_cluster):
                 node.query(
                     f"""
                     SELECT processed_nodes, processing_nodes, failed_nodes
-                    FROM system.s3_queue_metadata
+                    FROM {system_table}
                     WHERE zookeeper_path ilike '%{keeper_path}%'
                     """
                 )
@@ -476,7 +495,7 @@ def test_system_queue_metadata(started_cluster):
             node.query(
                 f"""
                 SELECT length(processed), length(processing), length(failed)
-                FROM system.s3_queue_metadata
+                FROM {system_table}
                 WHERE zookeeper_path ilike '%{keeper_path}%'
                 """
             )
@@ -493,7 +512,7 @@ def test_system_queue_metadata(started_cluster):
     failed_value = node.query(
         f"""
         SELECT arrayJoin(mapValues(failed))
-        FROM system.s3_queue_metadata
+        FROM {system_table}
         WHERE zookeeper_path ilike '%{keeper_path}%'
         """
     )
