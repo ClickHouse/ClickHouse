@@ -232,7 +232,7 @@ export const QuickStartsGrid = ({ quickStartsData = [], featured = [] }) => {
           {featuredQuickStarts.length > 0 && (
             <div className="mb-12">
               <h2 className="text-2xl font-semibold text-gray-900 dark:text-zinc-50 mb-6">精选快速入门</h2>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
                 {featuredQuickStarts.map(quickStart => (
                   <a
                     key={quickStart.id}
@@ -242,7 +242,7 @@ export const QuickStartsGrid = ({ quickStartsData = [], featured = [] }) => {
                   >
                     {/* Banner art is drawn in code from the title so it
                         translates automatically — no per-locale PNG needed. */}
-                    <div className="relative w-full aspect-[16/9] overflow-hidden bg-[#FAFF69] flex flex-col justify-center px-6 transition-transform duration-200 group-hover:scale-[1.02]">
+                    <div className="relative w-full aspect-[3/1] lg:aspect-[16/9] overflow-hidden bg-[#FAFF69] flex flex-col justify-center px-6 transition-transform duration-200 group-hover:scale-[1.02]">
                       {/* Decorative bar-chart motif, purely visual. */}
                       <div className="pointer-events-none absolute inset-y-0 right-6 flex items-center gap-2.5" aria-hidden="true">
                         <span className="w-3 rounded-sm bg-[#C4CB54]" style={{ height: '42%', transform: 'translateY(-12%)' }} />
@@ -250,11 +250,10 @@ export const QuickStartsGrid = ({ quickStartsData = [], featured = [] }) => {
                         <span className="w-3 rounded-sm bg-[#C4CB54]" style={{ height: '64%', transform: 'translateY(-14%)' }} />
                         <span className="w-3 rounded-sm bg-[#C4CB54]" style={{ height: '46%', transform: 'translateY(20%)' }} />
                       </div>
-                      <span className="relative z-10 pr-24 text-base md:text-lg font-bold leading-snug text-black line-clamp-4">
+                      <span className="relative z-10 pr-24 text-[15px] lg:text-lg font-bold leading-snug text-black line-clamp-4">
                         {quickStart.title}
                       </span>
-                      {/* ClickHouse wordmark, inlined so it inherits currentColor. */}
-                      <svg viewBox="0 0 161 34" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" className="absolute bottom-5 left-6 h-5 w-auto text-black">
+                      <svg viewBox="0 0 161 34" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" className="hidden">
                         <rect width="3.77758" height="33.9982" rx="0.918881" fill="currentColor" />
                         <rect x="7.55554" width="3.77758" height="33.9982" rx="0.918881" fill="currentColor" />
                         <rect x="15.1112" width="3.77758" height="33.9982" rx="0.918881" fill="currentColor" />
