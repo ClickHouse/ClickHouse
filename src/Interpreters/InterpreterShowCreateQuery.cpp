@@ -91,9 +91,11 @@ QueryPipeline InterpreterShowCreateQuery::executeImpl()
         /// Through a read-only `Overlay` facade the returned definition is that of the underlying
         /// source table, so the same privilege is required on the source too: the facade must not
         /// widen access (see the `Overlay` access-control contract). The source id is resolved
-        /// from metadata only, without loading the source table: the check must run *before* any
-        /// lookup that could throw the source table's own load error, otherwise a user without
-        /// the source-side grant could observe that error and use the facade as an oracle for
+        /// from metadata only, without loading the source table, and fail-closed: the check must
+        /// run *before* any lookup that could throw the source table's own load error — and a
+        /// failing existence probe on a source backed by a remote catalog is remasked as the same
+        /// `ACCESS_DENIED` a denied healthy source would produce — otherwise a user without the
+        /// source-side grant could observe the source's error and use the facade as an oracle for
         /// hidden broken sources.
         auto check_overlay_source_grant = [&]
         {
@@ -101,8 +103,8 @@ QueryPipeline InterpreterShowCreateQuery::executeImpl()
                 return;
             if (const auto * facade
                 = DatabaseOverlay::asReadonlyFacade(DatabaseCatalog::instance().tryGetDatabase(table_id.database_name).get()))
-                if (auto source_id = facade->resolveSourceTableIdNoLoad(table_id.table_name, getContext()))
-                    getContext()->checkAccess(is_dictionary ? AccessType::SHOW_DICTIONARIES : AccessType::SHOW_COLUMNS, *source_id);
+                facade->checkSourceTableAccess(
+                    table_id.table_name, getContext(), is_dictionary ? AccessType::SHOW_DICTIONARIES : AccessType::SHOW_COLUMNS);
         };
         check_overlay_source_grant();
 

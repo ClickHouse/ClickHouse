@@ -185,15 +185,16 @@ void InterpreterDescribeQuery::fillColumnsFromTable(const ASTTableExpression & t
     /// Through a read-only `Overlay` facade the described columns are those of the underlying
     /// source table, so `SHOW_COLUMNS` is required on the source too: the facade must not widen
     /// access (see the `Overlay` access-control contract). The source id is resolved from
-    /// metadata only, without loading the source table: the check must run *before* the lookup
-    /// below, which loads the source table and could throw its own load error — otherwise a user
-    /// without the source-side grant could observe that error and use the facade as an oracle for
-    /// hidden broken sources.
+    /// metadata only, without loading the source table, and fail-closed: the check must run
+    /// *before* the lookup below, which loads the source table and could throw its own load
+    /// error — and a failing existence probe on a source backed by a remote catalog is remasked
+    /// as the same `ACCESS_DENIED` a denied healthy source would produce — otherwise a user
+    /// without the source-side grant could observe the source's error and use the facade as an
+    /// oracle for hidden broken sources.
     if (table_id.hasDatabase())
         if (const auto * facade
             = DatabaseOverlay::asReadonlyFacade(DatabaseCatalog::instance().tryGetDatabase(table_id.database_name).get()))
-            if (auto source_id = facade->resolveSourceTableIdNoLoad(table_id.table_name, query_context))
-                query_context->checkAccess(AccessType::SHOW_COLUMNS, *source_id);
+            facade->checkSourceTableAccess(table_id.table_name, query_context, AccessType::SHOW_COLUMNS);
 
     auto table = DatabaseCatalog::instance().getTable(table_id, query_context);
 

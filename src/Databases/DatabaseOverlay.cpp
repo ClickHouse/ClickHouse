@@ -75,14 +75,59 @@ const DatabaseOverlay * DatabaseOverlay::asReadonlyFacade(const IDatabase * data
     return (overlay && overlay->readonly) ? overlay : nullptr;
 }
 
-std::optional<StorageID> DatabaseOverlay::resolveSourceTableIdNoLoad(const String & table_name, ContextPtr context_) const
+bool DatabaseOverlay::isSourceTableVisibleNoLoad(const String & table_name, ContextPtr context_, AccessType access_to_check) const
 {
     for (const auto & db : resolveDatabases())
     {
-        if (db->isTableExist(table_name, context_))
-            return StorageID{db->getDatabaseName(), table_name};
+        bool exists = false;
+        try
+        {
+            exists = db->isTableExist(table_name, context_);
+        }
+        catch (...)
+        {
+            /// The existence probe itself can reach a remote catalog (`MySQL`, `PostgreSQL`,
+            /// data-lake catalogs) and throw that source's own error. The caller has not yet
+            /// proven the source-side grant, so surfacing the error would turn the facade into
+            /// an oracle for hidden broken sources. If the caller is granted on the name in this
+            /// source, the error is theirs to see — direct access to the source would surface
+            /// the same; otherwise fail closed and answer as for a hidden or missing name.
+            if (context_->getAccess()->isGranted(access_to_check, db->getDatabaseName(), table_name))
+                throw;
+            return false;
+        }
+        if (exists)
+            return context_->getAccess()->isGranted(access_to_check, db->getDatabaseName(), table_name);
     }
-    return {};
+    return false;
+}
+
+void DatabaseOverlay::checkSourceTableAccess(const String & table_name, ContextPtr context_, AccessType access_to_check) const
+{
+    for (const auto & db : resolveDatabases())
+    {
+        bool exists = false;
+        try
+        {
+            exists = db->isTableExist(table_name, context_);
+        }
+        catch (...)
+        {
+            /// Same fencing as in `isSourceTableVisibleNoLoad`: the probe can throw a remote
+            /// source's own error before the source-side grant is proven. Deny exactly as if the
+            /// name had resolved to this source and the grant check failed — `checkAccess` throws
+            /// `ACCESS_DENIED` for a non-granted caller, keeping a broken hidden source and a
+            /// denied healthy one indistinguishable; for a granted caller it returns, and the
+            /// source's own error is rethrown as theirs to see.
+            context_->checkAccess(access_to_check, db->getDatabaseName(), table_name);
+            throw;
+        }
+        if (exists)
+        {
+            context_->checkAccess(access_to_check, db->getDatabaseName(), table_name);
+            return;
+        }
+    }
 }
 
 std::optional<StorageID> DatabaseOverlay::getSourceTableIdForReadonlyFacade(const StorageID & written_id, const StoragePtr & storage)
