@@ -1,0 +1,138 @@
+2
+-- JOIN: both sides keep their own index stats (no flat aggregation under the join header).
+-- { echo }
+explain indexes=1, compact=1 select * from test_compact_a a inner join test_compact_b b on a.key = b.key where a.key > 15000 and b.key > 5000;
+Output: key, value, key, value
+
+Join (JOIN FillRightFirst)
+│  a ⋈ b
+│  Type: inner | Strictness: all | Algorithm: SpillingHashJoin(HashJoin)
+│  Join conditions: key = key
+│  Output:
+│    Left:  key, value
+│    Right: key, value
+├──ReadFromMergeTree (default.test_compact_a)
+│     Read type: Default
+│     Parts: 1 | Granules: 5
+│     Output: key, value
+│     Prewhere filter
+│     Prewhere filter column:  key > 5000 AND key > 15000
+│     Indexes:
+│       PrimaryKey
+│         Keys:
+│           key
+│         Condition: and((key in [5001, +Inf)), (key in [15001, +Inf)))
+│         Parts: 1/2
+│         Granules: 5/20
+│         Search Algorithm: binary search
+│       Ranges: 1
+└──ReadFromMergeTree (default.test_compact_b)
+      Read type: Default
+      Parts: 0 | Granules: 0
+      Output: key, value
+      Prewhere filter
+      Prewhere filter column:  key > 15000 AND key > 5000
+      Indexes:
+        PrimaryKey
+          Keys:
+            key
+          Condition: and((key in [15001, +Inf)), (key in [5001, +Inf)))
+          Parts: 0/1
+          Granules: 0/10
+          Search Algorithm: binary search
+        Ranges: 0
+-- { echo }
+explain indexes=1, compact=1 select * from test_compact_a where value > 1500000;
+Output: key, value
+
+ReadFromMergeTree (default.test_compact_a)
+   Read type: Default
+   Parts: 1 | Granules: 5
+   Output: value, key
+   Prewhere filter
+   Prewhere filter column:  value > 1500000
+   Indexes:
+     PrimaryKey
+       Condition: true
+       Parts: 2/2
+       Granules: 20/20
+     Skip
+       Name: value_idx
+       Description: minmax GRANULARITY 1 PART 0/2
+       Condition: (value in [1500001, +Inf))
+       Parts: 0/2
+       Granules: 0/20
+     Skip
+       Name: value_idx
+       Description: minmax GRANULARITY 1 PART 1/2
+       Condition: (value in [1500001, +Inf))
+       Parts: 1/0
+       Granules: 5/0
+     Ranges: 1
+explain indexes=1, compact=1 select key from test_compact_a where value > 1500000 union all select key from test_compact_a where value <= 500000;
+Output: key
+
+Union
+├──ReadFromMergeTree (default.test_compact_a)
+│     Read type: Default
+│     Parts: 1 | Granules: 5
+│     Output: key
+│     Prewhere filter
+│     Prewhere filter column:  value > 1500000
+│     Indexes:
+│       PrimaryKey
+│         Condition: true
+│         Parts: 2/2
+│         Granules: 20/20
+│       Skip
+│         Name: value_idx
+│         Description: minmax GRANULARITY 1 PART 0/2
+│         Condition: (value in [1500001, +Inf))
+│         Parts: 0/2
+│         Granules: 0/20
+│       Skip
+│         Name: value_idx
+│         Description: minmax GRANULARITY 1 PART 1/2
+│         Condition: (value in [1500001, +Inf))
+│         Parts: 1/0
+│         Granules: 5/0
+│       Ranges: 1
+└──ReadFromMergeTree (default.test_compact_a)
+      Read type: Default
+      Parts: 0 | Granules: 0
+      Output: key
+      Prewhere filter
+      Prewhere filter column:  value <= 500000
+      Indexes:
+        PrimaryKey
+          Condition: true
+          Parts: 2/2
+          Granules: 20/20
+        Skip
+          Name: value_idx
+          Description: minmax GRANULARITY 1 PART 0/2
+          Condition: (value in (-Inf, 500000])
+          Parts: 1/2
+          Granules: 6/20
+        Skip
+          Name: value_idx
+          Description: minmax GRANULARITY 1 PART 1/2
+          Condition: (value in (-Inf, 500000])
+          Parts: 0/1
+          Granules: 0/6
+        Ranges: 1
+-- Sanity check: without per-part stats the UNION fast path still aggregates.
+-- { echo }
+explain indexes=1, compact=1 select key from test_compact_a where value > 1500000 union all select key from test_compact_a where value <= 500000;
+Output: key
+
+Union
+Indexes:
+  PrimaryKey
+    Parts: 4/4
+    Granules: 40/40
+  Skip
+    Parts: 2/4
+    Granules: 11/40
+  Tables: 2
+  Ranges: 2

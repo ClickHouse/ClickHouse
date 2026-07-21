@@ -478,7 +478,13 @@ static void formatIndexes(const IndexesDescription & desc, JSONBuilder::JSONMap 
         map.add("Tables", desc.tables_count);
 }
 
-static void collectIndexesFromPlan(const QueryPlan & plan, std::vector<IndexesDescription> & result)
+/// Collect index descriptions from the whole plan tree (including child plans
+/// like `Merge` table sub-plans). Returns false when the plan contains a
+/// multi-input step other than `Union` (e.g. `Join` or `CreatingSets`):
+/// collapsing index stats from different inputs of such a step into one flat
+/// summary would lose which input each filter came from, so the caller must
+/// fall back to the regular compact traversal.
+static bool collectIndexesFromPlan(const QueryPlan & plan, std::vector<IndexesDescription> & result)
 {
     struct Frame
     {
@@ -487,7 +493,7 @@ static void collectIndexesFromPlan(const QueryPlan & plan, std::vector<IndexesDe
     };
 
     if (!plan.isInitialized())
-        return;
+        return true;
 
     std::stack<Frame> stack;
     stack.push(Frame{.node = plan.getRootNode()});
@@ -495,6 +501,9 @@ static void collectIndexesFromPlan(const QueryPlan & plan, std::vector<IndexesDe
     while (!stack.empty())
     {
         auto & frame = stack.top();
+
+        if (frame.next_child == 0 && frame.node->children.size() > 1 && frame.node->step->getName() != "Union")
+            return false;
 
         if (frame.next_child < frame.node->children.size())
         {
@@ -508,11 +517,30 @@ static void collectIndexesFromPlan(const QueryPlan & plan, std::vector<IndexesDe
 
             auto child_plans = frame.node->step->getChildPlans();
             for (auto * child_plan : child_plans)
-                collectIndexesFromPlan(*child_plan, result);
+                if (!collectIndexesFromPlan(*child_plan, result))
+                    return false;
 
             stack.pop();
         }
     }
+
+    return true;
+}
+
+/// Whether any collected stat was produced with `per_part_index_stats=1`
+/// (such stats carry the part name). In that mode the same index appears once
+/// per part, and each entry describes a single part rather than a step of a
+/// sequential filtering chain, so the "keep the last entry per type" collapse
+/// in `aggregateIndexes` would undercount. The caller must fall back to the
+/// regular compact traversal, which preserves the per-part detail the user
+/// asked for.
+static bool hasPerPartStats(const std::vector<IndexesDescription> & descriptions)
+{
+    for (const auto & desc : descriptions)
+        for (const auto & stat : desc.index_stats)
+            if (!stat.part_name.empty())
+                return true;
+    return false;
 }
 
 /// Whether the collected descriptions contain any index that `formatIndexes`
@@ -665,12 +693,13 @@ JSONBuilder::ItemPtr QueryPlan::explainPlan(const ExplainPlanOptions & options) 
     if (options.compact && options.indexes)
     {
         std::vector<IndexesDescription> descriptions;
-        collectIndexesFromPlan(*this, descriptions);
+        bool supported_shape = collectIndexesFromPlan(*this, descriptions);
 
-        /// Only take the aggregated fast path when there is actual index
-        /// output to show; otherwise fall back to the regular compact
-        /// traversal so the plan shape is preserved.
-        if (hasIndexOutput(descriptions))
+        /// Only take the aggregated fast path when the plan shape allows a
+        /// single rolled-up summary and there is actual index output to show;
+        /// otherwise fall back to the regular compact traversal so the plan
+        /// shape (and per-part detail) is preserved.
+        if (supported_shape && !hasPerPartStats(descriptions) && hasIndexOutput(descriptions))
         {
             auto * node = skipExpressions(root);
             auto node_map = std::make_unique<JSONBuilder::JSONMap>();
@@ -1016,12 +1045,13 @@ void QueryPlan::explainPlan(
     if (options.compact && options.indexes)
     {
         std::vector<IndexesDescription> descriptions;
-        collectIndexesFromPlan(*this, descriptions);
+        bool supported_shape = collectIndexesFromPlan(*this, descriptions);
 
-        /// Only take the aggregated fast path when there is actual index
-        /// output to show; otherwise fall back to the regular compact
-        /// traversal so the plan shape is preserved.
-        if (hasIndexOutput(descriptions))
+        /// Only take the aggregated fast path when the plan shape allows a
+        /// single rolled-up summary and there is actual index output to show;
+        /// otherwise fall back to the regular compact traversal so the plan
+        /// shape (and per-part detail) is preserved.
+        if (supported_shape && !hasPerPartStats(descriptions) && hasIndexOutput(descriptions))
         {
             auto * reading_node = skipExpressions(root);
             auto header_options = options;
