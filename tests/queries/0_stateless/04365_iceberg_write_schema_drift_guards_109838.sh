@@ -82,10 +82,11 @@ rm -rf "${RENAME_DIR}"
 # ============================================================================================
 # UPDATE mutation (Mutations.cpp)
 # ============================================================================================
+# Mutation tables use Parquet: Iceberg UPDATE/DELETE are only supported for Parquet data files.
 
 # --- UPDATE same-width rename drift: rejected -------------------------------------------------
 reset
-${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --query "CREATE TABLE ${TABLE} (c0 Int32, c1 String) ENGINE = IcebergLocal('${TABLE_PATH}', 'Avro') SETTINGS iceberg_format_version=2"
+${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --query "CREATE TABLE ${TABLE} (c0 Int32, c1 String) ENGINE = IcebergLocal('${TABLE_PATH}', 'Parquet') SETTINGS iceberg_format_version=2"
 ${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --async_insert=0 --query "INSERT INTO ${TABLE} SELECT number, 'x' FROM numbers(3)"
 ${CLICKHOUSE_CLIENT} --iceberg_metadata_staleness_ms=600000 --query "SELECT count() FROM ${TABLE}" > /dev/null
 publish_next_metadata rename_c0_to_c9_new_schema <<'PY'
@@ -108,7 +109,7 @@ ${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --iceberg_metadata_staleness_
 # --- DELETE same-width rename drift: rejected ------------------------------------------------
 # A partitioned DELETE builds ChunkPartitioner from the current schema against the stale header.
 reset
-${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --query "CREATE TABLE ${TABLE} (c0 Int32, c1 String) ENGINE = IcebergLocal('${TABLE_PATH}', 'Avro') PARTITION BY (c0) SETTINGS iceberg_format_version=2"
+${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --query "CREATE TABLE ${TABLE} (c0 Int32, c1 String) ENGINE = IcebergLocal('${TABLE_PATH}', 'Parquet') PARTITION BY (c0) SETTINGS iceberg_format_version=2"
 ${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --async_insert=0 --query "INSERT INTO ${TABLE} SELECT number, 'x' FROM numbers(3)"
 ${CLICKHOUSE_CLIENT} --iceberg_metadata_staleness_ms=600000 --query "SELECT count() FROM ${TABLE}" > /dev/null
 publish_next_metadata rename_c1_to_c9_new_schema <<'PY'
@@ -130,7 +131,7 @@ ${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --iceberg_metadata_staleness_
 
 # --- UPDATE on a malformed table (current-schema-id resolves to no schema): rejected ----------
 reset
-${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --query "CREATE TABLE ${TABLE} (c0 Int32, c1 String) ENGINE = IcebergLocal('${TABLE_PATH}', 'Avro') SETTINGS iceberg_format_version=2"
+${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --query "CREATE TABLE ${TABLE} (c0 Int32, c1 String) ENGINE = IcebergLocal('${TABLE_PATH}', 'Parquet') SETTINGS iceberg_format_version=2"
 ${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --async_insert=0 --query "INSERT INTO ${TABLE} SELECT number, 'x' FROM numbers(3)"
 ${CLICKHOUSE_CLIENT} --iceberg_metadata_staleness_ms=600000 --query "SELECT count() FROM ${TABLE}" > /dev/null
 publish_next_metadata current_schema_id_absent <<'PY'
