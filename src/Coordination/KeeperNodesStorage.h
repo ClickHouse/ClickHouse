@@ -71,6 +71,10 @@ struct KeeperNodesStorage
     using Delta = KeeperDelta;
 
     KeeperContextPtr keeper_context;
+
+    /// Callers of all methods that operate on committed state must hold storage_mutex (in exclusive
+    /// mode for writes, shared or exclusive for reads), even if called from only one thread.
+    /// Because KeeperLSMTNodesStorage uses this same mutex for synchronizing with background threads.
     SharedMutex * storage_mutex = nullptr;
 
     KeeperNodesStorage(KeeperContextPtr keeper_context_, SharedMutex * storage_mutex_) : keeper_context(std::move(keeper_context_)), storage_mutex(storage_mutex_) {}

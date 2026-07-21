@@ -365,7 +365,10 @@ NodeRef BlockData::appendNodeNoResize(BlockPtr block, FullNode & node)
     memcpy(p, path_suffix_str, path_suffix_size);
     p += path_suffix_size;
     if (data_size != 0)
+    {
         memcpy(p, node.data_ptr, data_size);
+        node.data_ptr = p;
+    }
     p += data_size;
     memcpy(p, &digest, 8);
     p += 8;

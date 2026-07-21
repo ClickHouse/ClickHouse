@@ -144,6 +144,8 @@ struct StorageState
     /// uncommitted state.
     NodeRef getUncommittedNode(const NodePathWithHash & path);
 
+    /// Updates `node.data_ptr` to point into the block, so it stays valid as long as the returned
+    /// NodeRef is alive. (But `node.path` is left unchanged.)
     NodeRef appendUncommittedNode(FullNode & node, int64_t zxid);
 
     /// Call periodically to remove obsolete UncommittedMemtable-s.

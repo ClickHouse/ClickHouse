@@ -117,6 +117,7 @@ struct BlockData
 
     /// The caller must ensure that there's enough space (nodeSerializedSizeUpperBound) and that
     /// writeHeader was called.
+    /// Assigns node.path_hash (if missing), and updates node.data_ptr to point into the block.
     static NodeRef appendNodeNoResize(BlockPtr block, FullNode & node);
 
     /// If the node fits in this block's capacity, append it here, and return false.

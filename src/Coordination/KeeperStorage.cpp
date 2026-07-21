@@ -294,6 +294,8 @@ void KeeperStorage::initializeSystemNodes()
     if (initialized)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "KeeperStorage system nodes initialized twice");
 
+    std::lock_guard lock(storage_mutex);
+
     // insert root system path if it isn't already inserted
     nodes_storage->addCommittedNodeIfNotExists(
         "/", /*stats=*/{}, /*data=*/ "", /*update_parent_num_children=*/ false, &nodes_digest);
@@ -322,7 +324,10 @@ void KeeperStorage::loadFromSnapshot(KeeperSnapshotReader & reader)
     bool recalculate_digest = reader.nodes_digest == 0 && keeper_context->digestEnabled();
     nodes_digest = reader.nodes_digest;
 
-    nodes_storage->loadNodesFromSnapshot(reader, this, recalculate_digest ? &nodes_digest : nullptr);
+    {
+        std::lock_guard lock(storage_mutex);
+        nodes_storage->loadNodesFromSnapshot(reader, this, recalculate_digest ? &nodes_digest : nullptr);
+    }
 
     acl_map = std::move(reader.acl_map);
     zxid = reader.commit_zxid;
