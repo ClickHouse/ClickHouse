@@ -133,7 +133,7 @@ void DistributionEnforcer::EnforcerEnumerator::addGather()
     input_required.distribution.node_count = expression->properties.distribution.node_count;
     input_required.distribution.is_replicated = expression->properties.distribution.is_replicated;
 
-        addEnforcer(
+    addEnforcer(
         std::make_unique<GatherExchangeStep>(input_header, expression->properties.distribution.node_count),
         std::move(input_required));
 }

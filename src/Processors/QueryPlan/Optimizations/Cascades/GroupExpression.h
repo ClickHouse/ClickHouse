@@ -58,9 +58,9 @@ public:
     String dump(const CostConfig & cost_config) const;
     size_t fingerprint() const;
 
-    /// Structural identity used to deduplicate physical expressions. Equality and the
-    /// fingerprint hash both derive from one `GroupExpressionIdentity`, so a fingerprint hash collision does
-    /// not silently drop a distinct alternative.
+    /// Structural identity used to deduplicate physical expressions. Compares the same
+    /// components the fingerprint hashes, so a fingerprint hash collision does not
+    /// silently drop a distinct alternative.
     bool structurallyEqualTo(const GroupExpression & other) const;
 
     GroupId group_id = INVALID_GROUP_ID;
