@@ -23,6 +23,14 @@ SET distributed_product_mode = 'global';
 SET distributed_query_retries = 3;
 SET distributed_query_retry_interval_ms = 100;
 
+-- Both "shards" of `test_cluster_two_shards_localhost` point to the same local table, so every row
+-- exists on both shards. Any optimization that pushes `DISTINCT`/`GROUP BY` down to the shards
+-- (they are randomized in CI) would skip the deduplication on the initiator and duplicate the result.
+SET optimize_skip_unused_shards = 0;
+SET optimize_distributed_group_by_sharding_key = 0;
+SET distributed_group_by_no_merge = 0;
+SET enable_parallel_replicas = 0;
+
 -- Simulate data loss on a replica by detaching a partition: the query must succeed
 -- (no retries are triggered — a missing partition is not a network error).
 ALTER TABLE t1_shard DETACH PARTITION 1;
