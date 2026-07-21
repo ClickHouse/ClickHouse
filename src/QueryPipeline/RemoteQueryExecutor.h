@@ -386,4 +386,5 @@ private:
     size_t network_error_retries_count = 0;
 };
 
+ThrottlerPtr getThrottler(const ContextPtr & context);
 }
