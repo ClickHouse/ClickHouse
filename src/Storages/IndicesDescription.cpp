@@ -209,7 +209,7 @@ ASTPtr IndexDescription::initExpressionInfo(ASTPtr index_expression, const Colum
     return persisted_expression_list;
 }
 
-NameSet IndexDescription::getReferencedAliasColumns(const ColumnsDescription & columns) const
+NameSet IndexDescription::getReferencedAliasColumns(const ColumnsDescription & columns, ContextPtr context) const
 {
     NameSet result;
 
@@ -222,6 +222,9 @@ NameSet IndexDescription::getReferencedAliasColumns(const ColumnsDescription & c
 
     /// The persisted definition keeps alias references live (see `initExpressionInfo`),
     /// and alias bodies may reference other aliases, so walk the alias graph transitively.
+    /// Alias bodies are stored with column matchers unexpanded, so expand matchers in each
+    /// visited body first (leaving alias identifiers un-replaced), otherwise aliases hidden
+    /// inside `COLUMNS(...)` would not be seen as dependencies.
     std::vector<ASTPtr> to_visit{index_definition->getExpression()->clone()};
     while (!to_visit.empty())
     {
@@ -234,7 +237,7 @@ NameSet IndexDescription::getReferencedAliasColumns(const ColumnsDescription & c
         {
             auto column_default = columns.getDefault(column_name);
             if (column_default && column_default->kind == ColumnDefaultKind::Alias && result.insert(column_name).second)
-                to_visit.push_back(column_default->expression->clone());
+                to_visit.push_back(cloneAndExpandColumnDefaultExpression(*column_default, columns, context));
         }
     }
 

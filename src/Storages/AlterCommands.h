@@ -252,7 +252,7 @@ public:
     /// Names of explicit skip indices whose expression references (directly or
     /// transitively through other aliases) an `ALIAS` column whose body these
     /// commands modify or remove, paired with the name of that alias column.
-    std::vector<std::pair<String, String>> getSkipIndicesAffectedByAliasChange(const StorageInMemoryMetadata & metadata) const;
+    std::vector<std::pair<String, String>> getSkipIndicesAffectedByAliasChange(const StorageInMemoryMetadata & metadata, ContextPtr context) const;
 
     /// Check if commands have a text index
     static bool hasTextIndex(const StorageInMemoryMetadata & metadata);

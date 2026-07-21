@@ -2220,12 +2220,24 @@ static MutationCommand createClearIndexCommand(const String & index_name)
     return command;
 }
 
-std::vector<std::pair<String, String>> AlterCommands::getSkipIndicesAffectedByAliasChange(const StorageInMemoryMetadata & metadata) const
+std::vector<std::pair<String, String>> AlterCommands::getSkipIndicesAffectedByAliasChange(const StorageInMemoryMetadata & metadata, ContextPtr context) const
 {
     NameSet changed_aliases;
+    /// Indices dropped or cleared by this same ALTER do not leave stale index files behind,
+    /// so they are not affected and need no rebuild (and must not be rejected in THROW mode).
+    NameSet dropped_indices;
     for (const auto & command : *this)
     {
-        if (command.ignore || command.type != AlterCommand::MODIFY_COLUMN)
+        if (command.ignore)
+            continue;
+
+        if (command.type == AlterCommand::DROP_INDEX)
+        {
+            dropped_indices.insert(command.index_name);
+            continue;
+        }
+
+        if (command.type != AlterCommand::MODIFY_COLUMN)
             continue;
 
         auto existing_default = metadata.columns.getDefault(command.column_name);
@@ -2248,10 +2260,10 @@ std::vector<std::pair<String, String>> AlterCommands::getSkipIndicesAffectedByAl
     std::vector<std::pair<String, String>> res;
     for (const auto & index : metadata.secondary_indices)
     {
-        if (index.isImplicitlyCreated())
+        if (index.isImplicitlyCreated() || dropped_indices.contains(index.name))
             continue;
 
-        for (const auto & alias : index.getReferencedAliasColumns(metadata.columns))
+        for (const auto & alias : index.getReferencedAliasColumns(metadata.columns, context))
         {
             if (changed_aliases.contains(alias))
             {
@@ -2322,7 +2334,7 @@ MutationCommands AlterCommands::getMutationCommands(
     /// COMPATIBILITY modes reject these alters in `MergeTreeData::checkAlterIsPossible`.
     if (index_mode == AlterColumnSecondaryIndexMode::REBUILD || index_mode == AlterColumnSecondaryIndexMode::DROP)
     {
-        for (const auto & [index_name, alias_name] : getSkipIndicesAffectedByAliasChange(original_metadata))
+        for (const auto & [index_name, alias_name] : getSkipIndicesAffectedByAliasChange(original_metadata, context))
         {
             if (index_mode == AlterColumnSecondaryIndexMode::REBUILD)
                 result.push_back(createMaterializeIndexCommand(index_name));

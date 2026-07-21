@@ -5061,7 +5061,7 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
     /// THROW and COMPATIBILITY modes forbid such alters.
     if (index_mode == AlterColumnSecondaryIndexMode::THROW || index_mode == AlterColumnSecondaryIndexMode::COMPATIBILITY)
     {
-        auto affected_indices = commands.getSkipIndicesAffectedByAliasChange(old_metadata);
+        auto affected_indices = commands.getSkipIndicesAffectedByAliasChange(old_metadata, local_context);
         if (!affected_indices.empty())
         {
             throw Exception(
