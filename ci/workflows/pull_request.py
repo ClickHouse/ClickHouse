@@ -257,6 +257,49 @@ workflow = Workflow.Config(
     runs_on_label_prefix="pr-",
 )
 
+# =============================================================================
+# TODO REVERT: TEMP, DO NOT MERGE — perf run-policy validation on this PR only.
+# Run every Performance Comparison job 5x and skip all jobs this PR does not
+# need. Kept jobs: Style check, Fast test, Build (amd_release) and
+# Build (arm_release) (providers of CH_AMD_RELEASE / CH_ARM_RELEASE — the only
+# artifacts the perf jobs require), and 5 copies of each Performance Comparison
+# job. Repeat copies differ only by a " (repeat N)" name suffix: the job name
+# keys praktika result paths, cache records and the perf-DB check name
+# (CLICKHOUSE_PERFORMANCE_COMPARISON_CHECK_NAME), so distinct names are
+# required; the test batch itself comes from the job parameter (already baked
+# into the command by parametrize()), so every repeat measures the same batch.
+# Remove this whole block and regenerate the YAML (`python3 -m praktika yaml`)
+# before merging.
+# =============================================================================
+_TEMP_PERF_REPEATS = 5
+
+
+def _temp_perf_filter_hook(job_name):
+    # `should_skip_job` skips AMD perf jobs unless the PR is labeled
+    # pr-performance/ci-performance — force-run all perf jobs on this PR.
+    if JobNames.PERFORMANCE in job_name:
+        return False, ""
+    return should_skip_job(job_name)
+
+
+workflow.jobs = [
+    JobConfigs.style_check,
+    JobConfigs.fast_test,
+    # The release builds normally run after the regular builds (sccache
+    # ordering), which are skipped here — gate them on the cheap checks only.
+    *[
+        job.set_run_after([JobNames.STYLE_CHECK, JobNames.FAST_TEST])
+        for job in JobConfigs.release_build_jobs
+    ],
+    *[
+        job if repeat == 1 else job.set_name(f"{job.name} (repeat {repeat})")
+        for job in JobConfigs.performance_comparison_with_master_head_jobs
+        for repeat in range(1, _TEMP_PERF_REPEATS + 1)
+    ],
+]
+workflow.workflow_filter_hooks = [_temp_perf_filter_hook]
+# ========================== END TODO REVERT ==================================
+
 WORKFLOWS = [
     workflow,
 ]
