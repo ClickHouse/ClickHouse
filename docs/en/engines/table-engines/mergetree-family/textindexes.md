@@ -318,7 +318,7 @@ Typical use cases for the postprocessor argument include:
    For lower-and upper casing, we recommend a preprocessor instead of a postprocessor.
 5. **Excluding overly long tokens**. Free-text fields sometimes contain tokens with no search value but significant size, such as hashes, UUIDs, or base64-encoded blobs. Indexing them wastes space without ever being useful search terms.
    You can use the postprocessor to discard tokens above a length threshold by converting them to empty tokens.
-   Example: `if(length(str) > 50, '', str)`
+   Example: `if(length(str) > 1024, '', str)`
 
 The postprocessor expression transforms tokens of type [String](/sql-reference/data-types/string.md) to tokens of the same type.
 Also, the postprocessor expression must only reference the column or expression on top of which the text index is defined.
@@ -440,7 +440,7 @@ CREATE TABLE table
     str String,
     INDEX idx(str) TYPE text(
         tokenizer = 'splitByNonAlpha',
-        postprocessor = if(length(str) > 50, '', str)
+        postprocessor = if(length(str) > 1024, '', str)
     )
 )
 ENGINE = MergeTree
