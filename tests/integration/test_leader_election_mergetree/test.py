@@ -966,21 +966,21 @@ def test_partition_ddl_rejected_on_stale_leadership_epoch(started_cluster):
         wait_for_leader([node1], table_name=table)
 
         node1.query(f"INSERT INTO {table} VALUES (1), (2), (3), (4)")
-        assert int(node1.query(f"SELECT count() FROM {table}").strip()) == 4
+        assert int(node1.query(f"SELECT count() FROM {table} WHERE x > 0").strip()) == 4
 
         node1.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
         try:
             # TRUNCATE: the covering empty parts must not be published under a stale epoch.
             with pytest.raises(Exception, match="Leadership epoch"):
                 node1.query(f"TRUNCATE TABLE {table}")
-            assert int(node1.query(f"SELECT count() FROM {table}").strip()) == 4, (
+            assert int(node1.query(f"SELECT count() FROM {table} WHERE x > 0").strip()) == 4, (
                 "TRUNCATE was rejected but the covering empty parts were still published"
             )
 
             # DROP PARTITION: same fence, same invariant.
             with pytest.raises(Exception, match="Leadership epoch"):
                 node1.query(f"ALTER TABLE {table} DROP PARTITION 1")
-            assert int(node1.query(f"SELECT count() FROM {table}").strip()) == 4, (
+            assert int(node1.query(f"SELECT count() FROM {table} WHERE x > 0").strip()) == 4, (
                 "DROP PARTITION was rejected but the covering empty parts were still published"
             )
         finally:
@@ -988,13 +988,13 @@ def test_partition_ddl_rejected_on_stale_leadership_epoch(started_cluster):
 
         # ATTACH PARTITION: detach with the failpoint cleared, then attach under a stale epoch.
         node1.query(f"ALTER TABLE {table} DETACH PARTITION 1")
-        assert int(node1.query(f"SELECT count() FROM {table}").strip()) == 2
+        assert int(node1.query(f"SELECT count() FROM {table} WHERE x > 0").strip()) == 2
 
         node1.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
         try:
             with pytest.raises(Exception, match="Leadership epoch"):
                 node1.query(f"ALTER TABLE {table} ATTACH PARTITION 1")
-            assert int(node1.query(f"SELECT count() FROM {table}").strip()) == 2, (
+            assert int(node1.query(f"SELECT count() FROM {table} WHERE x > 0").strip()) == 2, (
                 "ATTACH PARTITION was rejected but the part was still published"
             )
         finally:
@@ -1002,9 +1002,9 @@ def test_partition_ddl_rejected_on_stale_leadership_epoch(started_cluster):
 
         # With the failpoint cleared the same DDLs succeed.
         node1.query(f"ALTER TABLE {table} ATTACH PARTITION 1")
-        assert int(node1.query(f"SELECT count() FROM {table}").strip()) == 4
+        assert int(node1.query(f"SELECT count() FROM {table} WHERE x > 0").strip()) == 4
         node1.query(f"TRUNCATE TABLE {table}")
-        assert int(node1.query(f"SELECT count() FROM {table}").strip()) == 0
+        assert int(node1.query(f"SELECT count() FROM {table} WHERE x > 0").strip()) == 0
     finally:
         try:
             node1.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
@@ -1042,13 +1042,13 @@ def test_cleanup_skipped_on_stale_lease_after_partition_ddl(started_cluster):
         wait_for_leader([node1], table_name=table)
 
         node1.query(f"INSERT INTO {table} VALUES (1), (2), (3)")
-        assert int(node1.query(f"SELECT count() FROM {table}").strip()) == 3
+        assert int(node1.query(f"SELECT count() FROM {table} WHERE x > 0").strip()) == 3
 
         node1.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
         try:
             # The DDL itself succeeds (the empty parts commit before the lease goes stale) ...
             node1.query(f"TRUNCATE TABLE {table}")
-            assert int(node1.query(f"SELECT count() FROM {table}").strip()) == 0
+            assert int(node1.query(f"SELECT count() FROM {table} WHERE x > 0").strip()) == 0
 
             # ... but the destructive cleanup is skipped: the covered old parts must still be on
             # disk (Outdated), not removed by a node whose lease is stale.
@@ -1065,7 +1065,7 @@ def test_cleanup_skipped_on_stale_lease_after_partition_ddl(started_cluster):
             node1.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
 
         # The table stays truncated after the lease is fresh again.
-        assert int(node1.query(f"SELECT count() FROM {table}").strip()) == 0
+        assert int(node1.query(f"SELECT count() FROM {table} WHERE x > 0").strip()) == 0
     finally:
         try:
             node1.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
