@@ -8,15 +8,16 @@
 -- data in a single block must observe the time limit from inside the conversion, not only at the
 -- block boundary. (A build without the in-scan check throws the same error after the whole block is
 -- processed, so the discriminating signal is the query duration; the hung-check in stress tests and
--- the test-runner timeout catch gross regressions.)
+-- the test-runner timeout catch gross regressions.) The block size is limited so that the peak memory
+-- stays within the query memory limit of constrained CI environments.
 
 -- Quadratic path: many in-limit values in a single block must respect the time limit.
 SELECT base62Encode(randomString(10000)) FROM numbers(1000) FORMAT Null SETTINGS max_execution_time = 1; -- { serverError TIMEOUT_EXCEEDED }
 
 -- Zero-prefix path of the encoder: only zero bytes, no inner-loop work at all.
-SELECT base62Encode(s) FROM (SELECT materialize(repeat(repeat('\0', 1000), 1000)) AS s FROM numbers(3000)) FORMAT Null SETTINGS function_base62_max_input_size = 0, max_execution_time = 1; -- { serverError TIMEOUT_EXCEEDED }
+SELECT base62Encode(s) FROM (SELECT materialize(repeat(repeat('\0', 1000), 1000)) AS s FROM numbers(6000)) FORMAT Null SETTINGS function_base62_max_input_size = 0, max_execution_time = 1, max_block_size = 500; -- { serverError TIMEOUT_EXCEEDED }
 
 -- Zero-prefix path of the decoder: only "0" characters, no inner-loop work at all.
-SELECT base62Decode(s) FROM (SELECT materialize(repeat(repeat('0', 1000), 1000)) AS s FROM numbers(3000)) FORMAT Null SETTINGS function_base62_max_input_size = 0, max_execution_time = 1; -- { serverError TIMEOUT_EXCEEDED }
+SELECT base62Decode(s) FROM (SELECT materialize(repeat(repeat('0', 1000), 1000)) AS s FROM numbers(6000)) FORMAT Null SETTINGS function_base62_max_input_size = 0, max_execution_time = 1, max_block_size = 500; -- { serverError TIMEOUT_EXCEEDED }
 
 SELECT 'ok';
