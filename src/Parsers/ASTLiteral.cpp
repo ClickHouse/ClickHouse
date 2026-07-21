@@ -188,12 +188,20 @@ static void writeQuotedStringStandardSQL(std::string_view ref, WriteBuffer & buf
     writeChar('\'', buf);
 }
 
-/// Escape string literals as standard SQL: only the quote is doubled, everything else stays literal
+/// Escape string literals as standard SQL: only the quote is doubled, everything else stays literal.
+/// Composite literals (Tuple/Array/Map) must recurse through this same visitor: a scalar `IN (...)` set is a
+/// Tuple, so if composites fell back to the regular backslash-escaping `FieldVisitorToString` their nested
+/// strings would be emitted with `\n`/`\t`/`\\` sequences. A pushed-down predicate such as
+/// `s IN ('a\nb', 'plain')` would then compare against the wrong bytes and silently miss the matching row.
 class FieldVisitorToStringStandardSQL : public StaticVisitor<String>
 {
 public:
     template<typename T>
     String operator() (const T & x) const { return visitor(x); }
+
+    String operator() (const Array & x) const;
+    String operator() (const Tuple & x) const;
+    String operator() (const Map & x) const;
 
 private:
     FieldVisitorToString visitor;
@@ -204,6 +212,63 @@ String FieldVisitorToStringStandardSQL::operator() (const String & x) const
 {
     WriteBufferFromOwnString wb;
     writeQuotedStringStandardSQL(x, wb);
+    return wb.str();
+}
+
+String FieldVisitorToStringStandardSQL::operator() (const Array & x) const
+{
+    checkStackSize();
+    WriteBufferFromOwnString wb;
+
+    wb << '[';
+    for (auto it = x.begin(); it != x.end(); ++it)
+    {
+        if (it != x.begin())
+            wb << ", ";
+        wb << applyVisitor(*this, *it);
+    }
+    wb << ']';
+
+    return wb.str();
+}
+
+String FieldVisitorToStringStandardSQL::operator() (const Tuple & x) const
+{
+    checkStackSize();
+    WriteBufferFromOwnString wb;
+
+    /// For single-element tuples we must use the explicit tuple() function,
+    /// or they will be parsed back as plain literals.
+    if (x.size() > 1)
+        wb << '(';
+    else
+        wb << "tuple(";
+
+    for (auto it = x.begin(); it != x.end(); ++it)
+    {
+        if (it != x.begin())
+            wb << ", ";
+        wb << applyVisitor(*this, *it);
+    }
+    wb << ')';
+
+    return wb.str();
+}
+
+String FieldVisitorToStringStandardSQL::operator() (const Map & x) const
+{
+    checkStackSize();
+    WriteBufferFromOwnString wb;
+
+    wb << '[';
+    for (auto it = x.begin(); it != x.end(); ++it)
+    {
+        if (it != x.begin())
+            wb << ", ";
+        wb << applyVisitor(*this, *it);
+    }
+    wb << ']';
+
     return wb.str();
 }
 
