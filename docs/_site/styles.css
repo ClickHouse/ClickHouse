@@ -47,6 +47,35 @@ html:not(.dark) .ch-usecase-arrow {
 .ch-overlay-shadow {
     box-shadow: 0 8px 32px rgba(0,0,0,0.28), 0 2px 8px rgba(0,0,0,0.18);
 }
+
+/* Preserve the sm/md/lg image hierarchy from the previous docs site.
+   Mintlify's content column is narrower, so 480px keeps md visibly distinct
+   from a full-width lg image. */
+.ch-image-sm,
+.ch-image-md,
+.ch-image-lg {
+    width: 100%;
+    margin-inline: auto;
+}
+
+.ch-image-sm {
+    max-width: 300px;
+}
+
+.ch-image-md {
+    max-width: 480px;
+}
+
+.ch-image-lg {
+    max-width: 100%;
+}
+
+.ch-image-sm img,
+.ch-image-md img,
+.ch-image-lg img {
+    width: 100%;
+    height: auto;
+}
 /* MCP icon — mask-size/repeat extracted from inline style; URL stays inline */
 .ch-mcp-icon {
     -webkit-mask-size: contain;
@@ -599,6 +628,13 @@ html:not(.dark) .pagination-prev:hover {
     border-color: #535353;
 }
 
+/* Mintlify gives the pagination card's inner flex wrapper its own page-level
+   background. Keep it transparent so the complete button uses the parent
+   card color in both its resting and hover states. */
+#pagination > a > div {
+    background: transparent !important;
+}
+
 /* Previous card: keep chevron + label together on the left (maple's
    justify-between would otherwise spread them across the card) */
 #pagination > a:has(svg.lucide-chevron-left) {
@@ -816,35 +852,106 @@ html:not(.dark) .pagination-prev:hover {
    Sticky sidebar header (search + Ask AI)
    ============================================
 
-   `#sidebar-content` is the sidebar's scroll container (Mintlify gives it
-   `overflow-y-auto`). Its three direct children are, in order:
+   Mintlify's scroll viewport lives directly inside `#sidebar-content`. The
+   viewport's inner wrapper has three children, in order:
      [0] the logo + dark-mode-toggle row  (div.flex.justify-between.items-center)
      [1] the search + Ask AI row          (div.flex.flex-col.gap-4.mt-6)
      [2] the page navigation              (#navigation-items)
-   Because all three live inside the one scrolling box, the logo and search
-   rows scroll away with the nav. To pin them, move the scroll boundary off
-   `#sidebar-content` and onto `#navigation-items` only: lay `#sidebar-content`
-   out as a flex column that clips instead of scrolls, and let the nav list
-   flex-grow into the remaining height and scroll on its own. The two header
-   rows then stay put at the top while the nav scrolls beneath them.
+   Keep Mintlify's viewport as the scroll container so its visible Base UI
+   scrollbar continues to work. Pin the logo and search rows within that
+   viewport while the navigation scrolls beneath them.
    `#sidebar` is `hidden lg:flex`, so this only affects the desktop sidebar. */
-#sidebar-content {
-    display: flex !important;
-    flex-direction: column;
-    overflow-y: hidden !important;
-    min-height: 0;
+#sidebar-content > div[role="presentation"] > div[role="presentation"] > div:first-child,
+#sidebar-content > div[role="presentation"] > div[role="presentation"] > div:nth-child(2) {
+    position: sticky;
+    z-index: 20;
+    background: #ffffff;
 }
-#sidebar-content > #navigation-items {
-    flex: 1 1 auto;
-    min-height: 0;
-    overflow-y: auto;
-    /* Gap below the pinned search + Ask AI row. Use margin, not padding: the
-       scroll container's scrollbar track spans its whole padding box, so
-       padding-top would leave the scrollbar flush against — visually touching —
-       the search/Ask AI buttons. A margin pushes the scroll box itself (and
-       therefore the top of its scrollbar) down below that row, so the scrollbar
-       no longer exceeds the first nav item. */
-    margin-top: 0.5rem;
+
+#sidebar-content > div[role="presentation"] > div[role="presentation"] > div:first-child {
+    top: 0;
+    z-index: 21;
+}
+
+#sidebar-content > div[role="presentation"] > div[role="presentation"] > div:nth-child(2) {
+    top: 3.5rem;
+}
+
+/* Cover the complete sticky header, including the space above, between, and
+   below its two rows, so menu items cannot show through while scrolling. */
+#sidebar-content > div[role="presentation"] > div[role="presentation"] > div:nth-child(2)::before {
+    position: absolute;
+    z-index: -1;
+    top: -5rem;
+    right: -1rem;
+    bottom: -2rem;
+    left: -1.75rem;
+    background: #ffffff;
+    content: "";
+    pointer-events: none;
+}
+
+.dark #sidebar-content > div[role="presentation"] > div[role="presentation"] > div:first-child,
+.dark #sidebar-content > div[role="presentation"] > div[role="presentation"] > div:nth-child(2),
+:is(.dark) #sidebar-content > div[role="presentation"] > div[role="presentation"] > div:first-child,
+:is(.dark) #sidebar-content > div[role="presentation"] > div[role="presentation"] > div:nth-child(2) {
+    background: #151515;
+}
+
+.dark #sidebar-content > div[role="presentation"] > div[role="presentation"] > div:nth-child(2)::before,
+:is(.dark) #sidebar-content > div[role="presentation"] > div[role="presentation"] > div:nth-child(2)::before {
+    background: #151515;
+}
+
+#sidebar-content #navigation-items {
+    /* Mintlify inserts an empty `mt-8` list before the first real menu item.
+       Preserve an explicit gap between the sticky controls and the first menu
+       item rather than relying on that empty element's collapsed margin. */
+    margin-top: 2rem;
+    scrollbar-width: thin;
+    scrollbar-color: #d1d5db transparent;
+}
+
+#navigation-items > ul.list-none.mt-8:first-child:empty {
+    margin-top: 0 !important;
+}
+
+/* Start Mintlify's scrollbar track at the first navigation item rather than at
+   the top of the sticky logo/search header. */
+#sidebar-content > [data-component-part="scroll-area-scrollbar"][data-orientation="vertical"] {
+    margin-top: 9.25rem;
+}
+
+#navigation-items::-webkit-scrollbar {
+    width: 5px;
+}
+
+#navigation-items::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+#navigation-items::-webkit-scrollbar-thumb {
+    border-radius: 9999px;
+    background: #d1d5db;
+}
+
+#navigation-items::-webkit-scrollbar-thumb:hover {
+    background: #9ca3af;
+}
+
+.dark #navigation-items,
+:is(.dark) #navigation-items {
+    scrollbar-color: #52525b transparent;
+}
+
+.dark #navigation-items::-webkit-scrollbar-thumb,
+:is(.dark) #navigation-items::-webkit-scrollbar-thumb {
+    background: #52525b;
+}
+
+.dark #navigation-items::-webkit-scrollbar-thumb:hover,
+:is(.dark) #navigation-items::-webkit-scrollbar-thumb:hover {
+    background: #71717a;
 }
 
 /* Hide the chat assistant textarea and its floating-input wrapper */
@@ -2447,8 +2554,8 @@ html:not(.dark) mark b {
    ============================================ */
 
 /* Light mode - remove gray-800 text color from nav tabs (let it inherit naturally) */
-html:not(.dark) .nav-tabs button[class*="text-gray-800"]>div,
-html:not(.dark) button.nav-tabs-item[class*="text-gray-800"]>div {
+html:not(.dark) .nav-tabs button.text-gray-800>div,
+html:not(.dark) button.nav-tabs-item.text-gray-800>div {
     color: inherit;
 }
 
@@ -2734,17 +2841,18 @@ html:not(.dark) [data-callout-type] [data-component-part="callout-content"] code
     color: lch(82.069 27.695 22.026 / 0.75);
 }
 
-/* Keep icons dark on hover in light mode */
-html:not(.dark) .nav-dropdown-item:hover svg:not(.lucide-arrow-up-right),
-html:not(.dark) a.nav-dropdown-item:hover svg:not(.lucide-arrow-up-right) {
+/* Keep leading brand/mask icons dark on hover in light mode. The trailing SVG
+   on external links is an unboxed arrow and must not receive this background. */
+html:not(.dark) .nav-dropdown-item:hover svg:not(.lucide-arrow-up-right):not(:last-child),
+html:not(.dark) a.nav-dropdown-item:hover svg:not(.lucide-arrow-up-right):not(:last-child) {
     background-color: #1a1a1a !important;
 }
 
-/* Make icons yellow on hover in dark mode */
-.dark .nav-dropdown-item:hover svg:not(.lucide-arrow-up-right),
-.dark a.nav-dropdown-item:hover svg:not(.lucide-arrow-up-right),
-:is(.dark) .nav-dropdown-item:hover svg:not(.lucide-arrow-up-right),
-:is(.dark) a.nav-dropdown-item:hover svg:not(.lucide-arrow-up-right) {
+/* Make leading brand/mask icons yellow on hover in dark mode */
+.dark .nav-dropdown-item:hover svg:not(.lucide-arrow-up-right):not(:last-child),
+.dark a.nav-dropdown-item:hover svg:not(.lucide-arrow-up-right):not(:last-child),
+:is(.dark) .nav-dropdown-item:hover svg:not(.lucide-arrow-up-right):not(:last-child),
+:is(.dark) a.nav-dropdown-item:hover svg:not(.lucide-arrow-up-right):not(:last-child) {
     background-color: #FAFF69 !important;
 }
 
@@ -2945,6 +3053,50 @@ html:not(.dark) .card a {
     transform: rotate(-45deg);
 }
 
+/* Langfuse opens outside the docs site. Replace Mintlify's high-emphasis tile
+   with one small, unboxed external-link glyph. */
+a.nav-dropdown-item[href^="https://langfuse.com/docs"],
+a.nav-dropdown-item[href^="https://langfuse.com/docs"]:hover,
+a.nav-dropdown-item[href^="https://langfuse.com/docs"]:focus,
+a.nav-dropdown-item[href^="https://langfuse.com/docs"]:focus-visible {
+    background: transparent !important;
+    box-shadow: none !important;
+}
+
+a.nav-dropdown-item[href^="https://langfuse.com/docs"] > svg:last-child {
+    width: 0.75rem !important;
+    height: 0.75rem !important;
+    padding: 0 !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    outline: 0 !important;
+    background: none !important;
+    box-shadow: none !important;
+    fill: none !important;
+    color: #9ca3af !important;
+    opacity: 0.6 !important;
+    transition: color 150ms ease, opacity 150ms ease, transform 150ms ease;
+}
+
+a.nav-dropdown-item[href^="https://langfuse.com/docs"]:hover > svg:last-child,
+a.nav-dropdown-item[href^="https://langfuse.com/docs"]:focus-visible > svg:last-child {
+    color: #2563eb !important;
+    opacity: 1 !important;
+    transform: translate(1px, -1px);
+}
+
+.dark a.nav-dropdown-item[href^="https://langfuse.com/docs"] > svg:last-child,
+:is(.dark) a.nav-dropdown-item[href^="https://langfuse.com/docs"] > svg:last-child {
+    color: #71717a !important;
+}
+
+.dark a.nav-dropdown-item[href^="https://langfuse.com/docs"]:hover > svg:last-child,
+.dark a.nav-dropdown-item[href^="https://langfuse.com/docs"]:focus-visible > svg:last-child,
+:is(.dark) a.nav-dropdown-item[href^="https://langfuse.com/docs"]:hover > svg:last-child,
+:is(.dark) a.nav-dropdown-item[href^="https://langfuse.com/docs"]:focus-visible > svg:last-child {
+    color: #fdff75 !important;
+}
+
 /* ============================================
    Sidebar Section Spacing
    ============================================ */
@@ -2985,7 +3137,7 @@ html:not(.dark) .card a {
 }
 
 /* Preserve active-page styling (border + text color) when Home is selected */
-#navigation-items > ul.sidebar-group > li:only-child > a[class*="text-primary"] {
+#navigation-items > ul.sidebar-group > li:only-child > a.text-primary {
     border-left-color: currentColor !important;
 }
 
@@ -3179,7 +3331,7 @@ a.mobile-nav-tabs-item[href$="/products/clickhouse-private/index"] {
    hook is Mintlify's hard-coded pill background utility (light `bg-[#FDEAD8]`,
    always present in the class list even in dark mode). The title is the
    .break-words span; the METHOD pill spans carry no .break-words. */
-#sidebar a:has(div[class*="bg-[#FDEAD8]"]) span.break-words {
+#sidebar a:has(div.bg-\[\#FDEAD8\]) span.break-words {
     text-decoration: line-through;
 }
 
