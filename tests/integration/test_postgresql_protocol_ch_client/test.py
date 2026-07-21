@@ -469,6 +469,33 @@ def test_datetime_scale_roundtrip(started_cluster):
     )
 
 
+def test_datetime64_scale0_stays_text(started_cluster):
+    # A `DateTime64(0)` must not be advertised as a native `timestamp(0)`: on the wire that is
+    # indistinguishable from a 32-bit `DateTime`, which the reader would recover, narrowing the 64-bit
+    # range and corrupting values outside `DateTime`'s 1970..2106 window. Such a column stays on the text
+    # fallback and is read back as `String` with the full value preserved.
+    node.query("DROP TABLE IF EXISTS test_dt64_scale0 SYNC")
+    node.query(
+        "CREATE TABLE test_dt64_scale0 (id UInt32, dt0 DateTime64(0), adt0 Array(DateTime64(0))) "
+        "ENGINE = MergeTree ORDER BY id"
+    )
+    # '2200-01-01 00:00:00' is beyond the 32-bit `DateTime` range, so a lossy timestamp(0) mapping would
+    # corrupt it.
+    node.query(
+        "INSERT INTO test_dt64_scale0 VALUES "
+        "(1, '2200-01-01 00:00:00', ['2200-01-01 00:00:00', '1900-01-01 00:00:00'])"
+    )
+
+    assert node.query(
+        "SELECT toTypeName(dt0), toTypeName(adt0) "
+        f"FROM {pg_source('default', 'test_dt64_scale0')} LIMIT 1"
+    ) == "String\tString\n"
+
+    assert node.query(
+        f"SELECT dt0, adt0 FROM {pg_source('default', 'test_dt64_scale0')} ORDER BY dt0"
+    ) == "2200-01-01 00:00:00\t['2200-01-01 00:00:00','1900-01-01 00:00:00']\n"
+
+
 def test_map_and_tuple_columns_are_not_advertised_as_arrays(started_cluster):
     # An `Array(...)` nested inside a `Map`/`Tuple` type argument must not make the emulated `pg_attribute`
     # advertise the column as a PostgreSQL array: only the leading `Array(` wrappers count towards
@@ -526,12 +553,14 @@ def test_wire_types_for_datetime(started_cluster):
     # advertises them as `timestamp` in `pg_attribute` - not the `varchar` fallback (OID 1043).
     node.query("DROP TABLE IF EXISTS test_wire_datetime SYNC")
     node.query(
-        "CREATE TABLE test_wire_datetime (dt DateTime, dt64 DateTime64(3), dt64_wide DateTime64(9)) "
+        "CREATE TABLE test_wire_datetime "
+        "(dt DateTime, dt64 DateTime64(3), dt64_zero DateTime64(0), dt64_wide DateTime64(9)) "
         "ENGINE = MergeTree ORDER BY dt"
     )
     node.query(
         "INSERT INTO test_wire_datetime VALUES "
-        "('2023-01-02 03:04:05', '2023-01-02 03:04:05.123', '2023-01-02 03:04:05.123456789')"
+        "('2023-01-02 03:04:05', '2023-01-02 03:04:05.123', '2023-01-02 03:04:05', "
+        "'2023-01-02 03:04:05.123456789')"
     )
 
     conn = py_psql.connect(
@@ -539,15 +568,18 @@ def test_wire_types_for_datetime(started_cluster):
     )
     try:
         cur = conn.cursor()
-        cur.execute("SELECT dt, dt64, dt64_wide FROM test_wire_datetime")
+        cur.execute("SELECT dt, dt64, dt64_zero, dt64_wide FROM test_wire_datetime")
         # 1114 = timestamp (without time zone). A DateTime64 scale above 6 does not fit PostgreSQL's
-        # timestamp precision (0..6), so it falls back to varchar (1043) with the full value as text.
-        assert [c.type_code for c in cur.description] == [1114, 1114, 1043]
+        # timestamp precision (0..6), so it falls back to varchar (1043) with the full value as text. A
+        # DateTime64(0) is also on the varchar fallback: a native timestamp(0) is indistinguishable from a
+        # 32-bit DateTime, whose narrower range the reader would recover.
+        assert [c.type_code for c in cur.description] == [1114, 1114, 1043, 1043]
         # The text value is PostgreSQL's timestamp format, so psycopg2 parses it into a Python datetime.
         row = cur.fetchone()
         assert str(row[0]) == "2023-01-02 03:04:05"
         assert str(row[1]) == "2023-01-02 03:04:05.123000"
-        assert row[2] == "2023-01-02 03:04:05.123456789"
+        assert row[2] == "2023-01-02 03:04:05"
+        assert row[3] == "2023-01-02 03:04:05.123456789"
     finally:
         conn.close()
 

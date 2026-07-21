@@ -1570,7 +1570,7 @@ SELECT
                         cols.base = 'Float64', 1022,
                         cols.base = 'UUID', 2951,
                         cols.base IN ('Date', 'Date32'), 1182,
-                        cols.base IN ('DateTime', 'DateTime64') AND cols.dt_precision <= 6 AND NOT cols.dt_has_timezone, 1115,
+                        cols.is_native_timestamp, 1115,
                         cols.base IN ('String', 'FixedString'), 1009,
                         1009),
             cols.base IN ('Bool', 'Boolean'), 16,
@@ -1583,7 +1583,7 @@ SELECT
             cols.base = 'Float64', 701,
             cols.base = 'UUID', 2950,
             cols.base IN ('Date', 'Date32'), 1082,
-            cols.base IN ('DateTime', 'DateTime64') AND cols.dt_precision <= 6 AND NOT cols.dt_has_timezone, 1114,
+            cols.is_native_timestamp, 1114,
             cols.base IN ('String', 'FixedString'), 25,
             25) AS atttypid,
     oids.oid AS attrelid,
@@ -1601,10 +1601,13 @@ SELECT
     ///
     /// For `timestamp`, PostgreSQL stores the fractional-second precision (0..6) directly in the modifier;
     /// carry the `DateTime`/`DateTime64` scale there so `format_type` renders `timestamp(p) without time
-    /// zone` and schema inference recovers `DateTime` (p = 0) or `DateTime64(p)` instead of collapsing every
-    /// timestamp to `DateTime64(6)`. A `DateTime64` scale above 6 does not fit PostgreSQL's `timestamp` at
-    /// all, so such a column is advertised as text (see `atttypid` above) and read back as `String` with the
-    /// full value preserved. The same text fallback applies to a `DateTime`/`DateTime64` with an explicit
+    /// zone` and schema inference recovers `DateTime` (a 32-bit `DateTime`, p = 0) or `DateTime64(p)`
+    /// (p = 1..6) instead of collapsing every timestamp to `DateTime64(6)`. A `DateTime64(0)` is not
+    /// advertised as `timestamp` (see `is_native_timestamp`): scale 0 is indistinguishable on the wire from
+    /// a 32-bit `DateTime`, which the reader would recover, narrowing its 64-bit range. A `DateTime64` scale
+    /// above 6 does not fit PostgreSQL's `timestamp` at all. Both stay on the text fallback (see `atttypid`
+    /// above) and read back as `String` with the full value preserved. The same text fallback applies to a
+    /// `DateTime`/`DateTime64` with an explicit
     /// time zone (e.g. `DateTime('UTC')`): PostgreSQL's `timestamp without time zone` cannot carry the zone,
     /// and the reader would reconstruct a plain `DateTime`/`DateTime64(p)` whose values are then interpreted
     /// in the server default time zone - silently shifting the stored epochs whenever the zones differ.
@@ -1615,7 +1618,7 @@ SELECT
             cols.base = 'UInt64', toInt32(20 * 65536 + 4),
             cols.base IN ('Int128', 'UInt128'), toInt32(39 * 65536 + 4),
             cols.base IN ('Int256', 'UInt256'), toInt32(78 * 65536 + 4),
-            cols.base IN ('DateTime', 'DateTime64') AND cols.dt_precision <= 6 AND NOT cols.dt_has_timezone,
+            cols.is_native_timestamp,
                 toInt32(assumeNotNull(cols.dt_precision)),
             -1) AS atttypmod,
     /// A column is advertised as nullable (`attnotnull = 'f'`) when the value that a self-connected client
@@ -1658,7 +1661,15 @@ FROM (
         /// skipping the same leading wrappers as `base`. Such a column stays on the text fallback:
         /// `timestamp without time zone` cannot represent the zone, and advertising it would make the
         /// reading side reinterpret the values in the server default time zone.
-        match(type, '^(?:Nullable\(|LowCardinality\(|Array\()*DateTime(64)?\([^)]*\'') AS dt_has_timezone
+        match(type, '^(?:Nullable\(|LowCardinality\(|Array\()*DateTime(64)?\([^)]*\'') AS dt_has_timezone,
+        /// Whether the column may be advertised as a native PostgreSQL `timestamp` (rather than the text
+        /// fallback). Only a 32-bit `DateTime` (scale 0) and a `DateTime64` with a scale of 1..6 without a
+        /// time zone qualify. A `DateTime64(0)` is deliberately excluded: it would be advertised with the
+        /// same `timestamp` + scale-0 modifier as a 32-bit `DateTime`, and the reader recovers a scale-0
+        /// timestamp as `DateTime`, which would narrow the 64-bit range and corrupt out-of-range values.
+        /// It stays on the text fallback and round-trips losslessly as `String`.
+        ((base = 'DateTime' AND dt_precision = 0) OR (base = 'DateTime64' AND dt_precision BETWEEN 1 AND 6))
+            AND NOT dt_has_timezone AS is_native_timestamp
     FROM system.columns
     /// The data path streams a table with `SELECT * FROM <table>` (see `processCopyQuery`), which omits
     /// `MATERIALIZED` / `ALIAS` / `EPHEMERAL` columns by default. Advertise exactly that column set here, so
