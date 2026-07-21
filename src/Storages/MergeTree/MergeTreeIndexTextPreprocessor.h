@@ -28,10 +28,30 @@ public:
 
     bool isLowerOrUpper() const { return is_lower_or_upper; }
 
+    /// True when the preprocessor can turn a non-NULL source value into NULL (e.g. nullIf(str, '')).
+    /// Detected from the constant-input actions, which run on a plain non-nullable String, so a
+    /// Nullable output there means the expression itself introduces NULLs rather than just
+    /// propagating a Nullable source. The direct-read optimization keys its null map on the source
+    /// column, so such a preprocessor is invisible to it and direct read must be disabled.
+    bool canIntroduceNull() const { return introduces_null; }
+
+    /// True when the preprocessor strips the source column's nullability, i.e. a Nullable source
+    /// yields a non-Nullable effective haystack (e.g. ifNull(str, ''), coalesce(str, ''),
+    /// assumeNotNull(str)). Detected from the original actions, which run on the real (possibly
+    /// Nullable) source column. When this is true, the rewritten fallback predicate evaluates a
+    /// source-NULL row to 0 rather than NULL, so the direct-read null-map wrapper (keyed on the
+    /// source null map) must NOT reintroduce NULL for those rows.
+    bool removesNull() const { return removes_null; }
+
 private:
     /// True only when the preprocessor is exactly lower/lowerUTF8/upper/upperUTF8 applied
     /// directly to the index column (no nested transformations).
     bool is_lower_or_upper = false;
+    /// True when applying the preprocessor to a non-nullable input yields a Nullable output.
+    bool introduces_null = false;
+    /// True when the source column is Nullable but the preprocessor's effective output is not,
+    /// i.e. the preprocessor removes the source nullability.
+    bool removes_null = false;
     /// The name of the column on which the index is defined.
     String index_column_name;
     /// The type of the column on which the index is defined.

@@ -2,8 +2,10 @@
 #include <Columns/ColumnConst.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/assert_cast.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/IDataType.h>
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
 #include <DataTypes/DataTypeArray.h>
@@ -519,13 +521,72 @@ private:
             return lhs.virtual_column_name < rhs.virtual_column_name;
         });
 
+        /// Source haystack (non-const Nullable arg) captured before preprocessing; the UInt8 vc drops its NULL.
+        const ActionsDAG::Node * original_haystack = nullptr;
+        for (const auto * child : function_node.children)
+        {
+            if ((!child->column || !isColumnConst(*child->column)) && isNullableOrLowCardinalityNullable(child->result_type))
+            {
+                original_haystack = child;
+                break;
+            }
+        }
+        DataTypePtr original_result_type = function_node.result_type;
+
         if (need_transform_function)
             processTextIndexFunction(replacement, selected_conditions, context);
 
-        if (direct_read_from_text_index)
-            replaceFunctionsToVirtualColumns(replacement, selected_conditions, virtual_column_to_node, context);
+        /// A preprocessor that can turn a non-NULL source row into NULL (e.g. nullIf(str, '')) is invisible
+        /// to the source-keyed null map, so materialized vs unmaterialized parts diverge; disable direct read.
+        if (direct_read_from_text_index && !preprocessorCanIntroduceNullOnNullableHaystack(function_name, selected_conditions, original_haystack))
+            replaceFunctionsToVirtualColumns(replacement, selected_conditions, function_name, original_haystack, original_result_type, virtual_column_to_node, context);
 
         return replacement;
+    }
+
+    /// Nullable haystack whose preprocessor can synthesize NULL from a non-NULL source value. Scoped to
+    /// preprocessor-rewritten functions; raw-string siblings read the source value and keep direct read.
+    bool preprocessorCanIntroduceNullOnNullableHaystack(
+        const String & function_name,
+        const std::vector<SelectedCondition> & selected_conditions,
+        const ActionsDAG::Node * original_haystack) const
+    {
+        if (!original_haystack || !needApplyPreprocessor(function_name))
+            return false;
+
+        for (const auto & condition : selected_conditions)
+        {
+            if (condition.search_query->getDirectReadMode() == TextIndexDirectReadMode::None)
+                continue;
+
+            const auto & condition_text = typeid_cast<MergeTreeIndexConditionText &>(*condition.info->index->condition_template->generateUnsubstituted());
+            auto preprocessor = condition_text.getPreprocessor();
+            if (preprocessor && preprocessor->hasActions() && preprocessor->canIntroduceNull())
+                return true;
+        }
+        return false;
+    }
+
+    /// Preprocessor that strips the source nullability (ifNull/coalesce/assumeNotNull), so a source-NULL
+    /// row is 0 (not NULL) on the fallback path. The null-map wrapper below must not reintroduce NULL then.
+    bool preprocessorRemovesNull(
+        const String & function_name,
+        const std::vector<SelectedCondition> & selected_conditions) const
+    {
+        if (!needApplyPreprocessor(function_name))
+            return false;
+
+        for (const auto & condition : selected_conditions)
+        {
+            if (condition.search_query->getDirectReadMode() == TextIndexDirectReadMode::None)
+                continue;
+
+            const auto & condition_text = typeid_cast<MergeTreeIndexConditionText &>(*condition.info->index->condition_template->generateUnsubstituted());
+            auto preprocessor = condition_text.getPreprocessor();
+            if (preprocessor && preprocessor->hasActions() && preprocessor->removesNull())
+                return true;
+        }
+        return false;
     }
 
     /// Applies preprocessor, tokenizer and postprocessor for text-search functions.
@@ -724,6 +785,9 @@ private:
     void replaceFunctionsToVirtualColumns(
         NodeReplacement & replacement,
         const std::vector<SelectedCondition> & all_conditions,
+        const String & original_function_name,
+        const ActionsDAG::Node * original_haystack,
+        const DataTypePtr & original_result_type,
         std::unordered_map<String, const ActionsDAG::Node *> & virtual_column_to_node,
         const ContextPtr & context)
     {
@@ -751,6 +815,12 @@ private:
         if (!has_materialized_index)
             return;
 
+        /// Restore the haystack's NULL below only when the predicate is Nullable and the preprocessor
+        /// does not itself remove NULL (otherwise a source-NULL row is a consistent 0, not NULL).
+        const bool preserve_haystack_null = original_haystack
+            && original_result_type && isNullableOrLowCardinalityNullable(original_result_type)
+            && !preprocessorRemovesNull(original_function_name, all_conditions);
+
         auto add_condition_to_input = [&](const SelectedCondition & condition)
         {
             auto [it, inserted] = virtual_column_to_node.try_emplace(condition.virtual_column_name);
@@ -762,7 +832,12 @@ private:
                 ASTPtr default_expression;
 
                 if (condition.search_query->getDirectReadMode() == TextIndexDirectReadMode::Exact)
+                {
                     default_expression = convertNodeToAST(function_node);
+                    /// UInt8 virtual column cannot hold NULL; coalesce to 0, the outer wrap restores NULL.
+                    if (preserve_haystack_null && default_expression)
+                        default_expression = makeASTFunction("ifNull", default_expression, make_intrusive<ASTLiteral>(Field(0)));
+                }
                 /// Do not execute the default expression for hint mode, because it will be executed anyway in the original predicate.
                 else if (condition.search_query->getDirectReadMode() == TextIndexDirectReadMode::Hint)
                     default_expression = make_intrusive<ASTLiteral>(Field(1));
@@ -796,6 +871,26 @@ private:
                 children.push_back(&function_node);
 
             replacement.node = &actions_dag.addFunction(function_builder, children, "");
+        }
+
+        /// Build if(isNull(haystack), NULL, virtual_column) instead of a plain CAST (all-false null map
+        /// reads NULL rows as genuine 0). Matches f(NULL, ...) = NULL, keeping direct read enabled.
+        if (preserve_haystack_null)
+        {
+            auto is_null_builder = FunctionFactory::instance().get("isNull", context);
+            const auto & is_null_node = actions_dag.addFunction(is_null_builder, {original_haystack}, "");
+
+            auto nullable_uint8 = makeNullable(std::make_shared<DataTypeUInt8>());
+            auto null_column = nullable_uint8->createColumnConstWithDefaultValue(0);
+            const auto & null_node = actions_dag.addColumn(std::move(null_column), nullable_uint8, "NULL");
+
+            /// if() needs both branches to share a type; promote the virtual column to Nullable(UInt8).
+            const auto * value_node = replacement.node;
+            if (!value_node->result_type->equals(*nullable_uint8))
+                value_node = &actions_dag.addCast(*value_node, nullable_uint8, "", context);
+
+            auto if_builder = FunctionFactory::instance().get("if", context);
+            replacement.node = &actions_dag.addFunction(if_builder, {&is_null_node, &null_node, value_node}, "");
         }
 
         /// If the type of original function does not match the type of replacement,

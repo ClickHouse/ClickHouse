@@ -11,6 +11,8 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/IDataType.h>
 #include <Functions/FunctionFactory.h>
+#include <Functions/IFunction.h>
+#include <Functions/IFunctionAdaptors.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Parsers/ASTFunction.h>
@@ -122,6 +124,108 @@ ActionsDAG createActionsDAGForPreprocessor(
     return actions_dag;
 }
 
+/// Peel pure type-widening wrappers (ALIAS, CAST/_CAST/toNullable) off an ActionsDAG output node.
+/// These functions widen a value to Nullable but can never synthesize NULL from a non-NULL argument
+/// (CAST throws on failure rather than producing NULL), so the effective nullability of the
+/// expression is the nullability of the value underneath them, not the declared outer type. Only
+/// null-synthesizing functions (nullIf, if(..., NULL, ...), *OrNull, accurateCastOrNull, ...) are
+/// left in place. Used both to detect null-INTRODUCING preprocessors (on a non-nullable input) and
+/// null-REMOVING preprocessors (on the real source), so a widened form like
+/// CAST(ifNull(str, ''), 'Nullable(String)') is classified by its inner ifNull rather than the CAST.
+const ActionsDAG::Node * peelWideningWrappers(const ActionsDAG::Node * node)
+{
+    while (node)
+    {
+        if (node->type == ActionsDAG::ActionType::ALIAS && node->children.size() == 1)
+        {
+            node = node->children.front();
+            continue;
+        }
+        if (node->type == ActionsDAG::ActionType::FUNCTION && node->function_base && !node->children.empty()
+            && (node->function_base->getName() == "CAST" || node->function_base->getName() == "_CAST"
+                || node->function_base->getName() == "toNullable"))
+        {
+            node = node->children.front();
+            continue;
+        }
+        break;
+    }
+    return node;
+}
+
+/// A function is null-propagating when it relies on the default Nullable handling
+/// (useDefaultImplementationForNulls() == true): the engine peels the null map off the arguments,
+/// runs the function on the non-NULL values, and re-assembles a result that is NULL exactly where an
+/// argument was NULL. Such a function (lower, upper, concat, substring, ...) can therefore never turn
+/// a non-NULL row into NULL -- it only propagates the nullability of its arguments. Functions that
+/// override this to false (nullIf, if, coalesce, ifNull, *OrNull, accurateCastOrNull, ...) manage
+/// NULLs themselves and may synthesize NULL from non-NULL values. The property lives on IFunction and
+/// is reachable through the FunctionToFunctionBaseAdaptor (same access pattern as KeyCondition.cpp).
+bool functionIsNullPropagating(const ActionsDAG::Node * node)
+{
+    if (!node->function_base)
+        return false;
+    if (const auto * adaptor = typeid_cast<const FunctionToFunctionBaseAdaptor *>(node->function_base.get()))
+        return adaptor->getFunction()->useDefaultImplementationForNulls();
+    return false;
+}
+
+/// True when the expression rooted at `node` can synthesize a NULL from arguments that are all
+/// non-NULL -- the only shape that matters for the direct-read guard, which keys its null map on the
+/// source column and is blind to NULLs the preprocessor invents. Pure type-widening wrappers
+/// (CAST/_CAST/toNullable, ALIAS) widen to Nullable but never synthesize NULL, so they are peeled and
+/// we recurse into their argument. Null-propagating functions (useDefaultImplementationForNulls) can
+/// only pass through the nullability of their arguments, so we recurse into every argument and the
+/// node itself synthesizes nothing. Any remaining node whose result is Nullable manages NULLs itself
+/// (nullIf, if(..., NULL, ...), *OrNull, ...) and is treated as null-synthesizing. Constant/input
+/// nodes synthesize nothing. This distinguishes e.g. lower(toNullable(str)) (propagating -> no
+/// synthesis) from nullIf(str, '') (synthesizes).
+bool expressionCanSynthesizeNull(const ActionsDAG::Node * node)
+{
+    node = peelWideningWrappers(node);
+    if (!node)
+        return false;
+
+    if (node->type == ActionsDAG::ActionType::FUNCTION && functionIsNullPropagating(node))
+    {
+        for (const auto * child : node->children)
+            if (expressionCanSynthesizeNull(child))
+                return true;
+        return false;
+    }
+
+    return isNullableOrLowCardinalityNullable(node->result_type);
+}
+
+/// True when the expression rooted at `node`, applied to the real (possibly Nullable) source column,
+/// maps every source-NULL row to a NON-NULL value -- i.e. it strips the source nullability, so the
+/// rewritten fallback predicate evaluates a source-NULL row to 0 rather than NULL and the direct-read
+/// null-map wrapper must NOT reintroduce NULL for those rows. Pure type-widening wrappers
+/// (CAST/_CAST/toNullable, ALIAS) do not change the actual value, so they are peeled and we recurse
+/// into their argument: CAST(ifNull(str, ''), 'Nullable(String)') removes null iff its inner ifNull
+/// does. A null-propagating function (useDefaultImplementationForNulls) is NULL exactly where an
+/// argument is NULL, so it removes source null iff EVERY argument does -- lower(ifNull(str, ''))
+/// removes null, whereas lower(toNullable(str)) does not. Any other node removes source null iff its
+/// declared result is non-Nullable: ifNull / coalesce / assumeNotNull are non-Nullable (remove), while
+/// a plain Nullable source or a null-synthesizing nullIf stays Nullable (does not). Mirror of
+/// expressionCanSynthesizeNull() with the aggregation inverted (all arguments vs any).
+bool expressionRemovesSourceNull(const ActionsDAG::Node * node)
+{
+    node = peelWideningWrappers(node);
+    if (!node)
+        return false;
+
+    if (node->type == ActionsDAG::ActionType::FUNCTION && functionIsNullPropagating(node) && !node->children.empty())
+    {
+        for (const auto * child : node->children)
+            if (!expressionRemovesSourceNull(child))
+                return false;
+        return true;
+    }
+
+    return !isNullableOrLowCardinalityNullable(node->result_type);
+}
+
 }
 
 MergeTreeIndexTextPreprocessor::MergeTreeIndexTextPreprocessor(ASTPtr expression_ast, const IndexDescription & index_description)
@@ -161,6 +265,44 @@ MergeTreeIndexTextPreprocessor::MergeTreeIndexTextPreprocessor(ASTPtr expression
                 const auto & arg = func->arguments->children.front();
                 is_lower_or_upper = arg->getColumnName() == index_description.column_names.front();
             }
+        }
+
+        /// actions_for_constant runs the preprocessor on a plain non-nullable String, so a Nullable
+        /// output there can only come from the expression itself, not from a Nullable source.
+        ///
+        /// But a Nullable declared type is not enough. Two classes of expression declare Nullable yet
+        /// never turn a non-NULL input into NULL: pure type-widening casts (CAST(str, 'Nullable(...)'),
+        /// toNullable(str)) and null-propagating functions (lower, upper, concat, ... -- anything using
+        /// the default Nullable handling), which only pass through the nullability of their arguments.
+        /// Only functions that synthesize NULL from a non-NULL value (nullIf, if(..., NULL, ...),
+        /// *OrNull, accurateCastOrNull, ...) matter for the direct-read guard, which is blind to NULLs
+        /// the preprocessor invents. So classify the effective expression, not just the declared type:
+        /// e.g. lower(toNullable(str)) is Nullable but only propagates, whereas nullIf(str, '') can
+        /// synthesize (see expressionCanSynthesizeNull).
+        const auto & constant_outputs = actions_for_constant.getActionsDAG().getOutputs();
+        if (!constant_outputs.empty())
+            introduces_null = expressionCanSynthesizeNull(constant_outputs.front());
+
+        /// original_actions runs the preprocessor on the real (possibly Nullable) source column, so its
+        /// output type is the effective post-preprocessor haystack type. When the source is Nullable but
+        /// this output is not (e.g. ifNull(str, ''), coalesce(str, ''), assumeNotNull(str)), the
+        /// preprocessor strips the source nullability: the rewritten fallback predicate evaluates a
+        /// source-NULL row to 0 rather than NULL. The direct-read null-map wrapper keys on the source
+        /// null map, so it must not reintroduce NULL for those rows (see removesNull()).
+        ///
+        /// As with introduces_null, the declared output type alone is not enough: a null-removing
+        /// expression can be wrapped so its outer node stays Nullable yet every source-NULL row still
+        /// maps to a non-NULL value. Two such shapes: a widening cast, e.g.
+        /// CAST(ifNull(str, ''), 'Nullable(String)'), and a null-propagating outer function, e.g.
+        /// lower(CAST(ifNull(str, ''), 'Nullable(String)')) -- lower propagates the (already non-NULL)
+        /// value of its argument, so it removes source null iff the argument does. Classify the
+        /// effective expression the same way introduces_null does (peel widening wrappers, recurse
+        /// through null-propagating functions) rather than inspecting only the outer declared type.
+        if (isNullableOrLowCardinalityNullable(index_column_type) && !original_actions.getActions().empty())
+        {
+            const auto & original_outputs = original_actions.getActionsDAG().getOutputs();
+            if (!original_outputs.empty())
+                removes_null = expressionRemovesSourceNull(original_outputs.front());
         }
     }
 }
