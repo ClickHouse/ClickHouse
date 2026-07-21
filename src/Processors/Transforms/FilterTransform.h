@@ -34,6 +34,8 @@ public:
 
     void transform(Chunk & chunk) override;
 
+    void onCancel() noexcept override;
+
     static bool canUseType(const DataTypePtr & type);
 
 private:

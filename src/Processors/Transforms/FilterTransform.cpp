@@ -144,7 +144,7 @@ IProcessor::Status FilterTransform::prepare()
 
     auto status = ISimpleTransform::prepare();
 
-    if (status == IProcessor::Status::Finished)
+    if (status == IProcessor::Status::Finished && !isCancelled())
         writeIntoQueryConditionCache({});
 
     return status;
@@ -155,6 +155,20 @@ void FilterTransform::removeFilterIfNeed(Columns & columns) const
 {
     if (remove_filter_column)
         columns.erase(columns.begin() + filter_column_position);
+}
+
+void FilterTransform::onCancel() noexcept
+{
+    ISimpleTransform::onCancel();
+    if (expression)
+    {
+        const auto & nodes = expression->getNodes();
+        for (const auto & node : nodes)
+        {
+            if (node.type == ActionsDAG::ActionType::FUNCTION && node.function)
+                node.function->cancelExecution();
+        }
+    }
 }
 
 void FilterTransform::transform(Chunk & chunk)
@@ -177,6 +191,12 @@ void FilterTransform::doTransform(Chunk & chunk)
 
         if (expression)
             expression->execute(block, num_rows_before_filtration, false, false, [this]() { return isCancelled(); });
+
+        if (isCancelled())
+        {
+            stopReading();
+            return;
+        }
 
         columns = block.getColumns();
         types = block.getDataTypes();
