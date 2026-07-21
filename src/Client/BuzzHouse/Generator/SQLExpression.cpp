@@ -782,7 +782,7 @@ void StatementGenerator::generateFuncCall(RandomGenerator & rg, const bool allow
         const bool prev_inside_aggregate = this->levels[this->current_level].inside_aggregate;
         const bool prev_allow_window_funcs = this->levels[this->current_level].allow_window_funcs;
         std::uniform_int_distribution<uint32_t> comb_range(
-            1, static_cast<uint32_t>(this->allow_not_deterministic ? SQLFuncCall::AggregateCombinator_MAX : SQLFuncCall::ArgMax));
+            1, static_cast<uint32_t>(this->allow_not_deterministic ? SQLFuncCall::AggregateCombinator_MAX : SQLFuncCall::Tuple));
         uint32_t min_params = 0;
         uint32_t max_params = 0;
 
@@ -854,6 +854,13 @@ void StatementGenerator::generateFuncCall(RandomGenerator & rg, const bool allow
             }
         }
 
+        /// -Tuple must be applied before any combinator that appends a scalar argument: only
+        /// <base>TupleIf is supported (not <base>IfTuple), and -Tuple wraps every existing
+        /// argument in tuple(...), which would corrupt an already-appended condition/key.
+        constexpr uint32_t scalar_tail_combinators
+            = (1u << static_cast<uint32_t>(SQLFuncCall_AggregateCombinator::SQLFuncCall_AggregateCombinator_If))
+            | (1u << static_cast<uint32_t>(SQLFuncCall_AggregateCombinator::SQLFuncCall_AggregateCombinator_ArgMin))
+            | (1u << static_cast<uint32_t>(SQLFuncCall_AggregateCombinator::SQLFuncCall_AggregateCombinator_ArgMax));
         uint32_t used_comb_mask = 0;
         for (uint32_t i = 0; i < ncombinators; i++)
         {
@@ -895,6 +902,35 @@ void StatementGenerator::generateFuncCall(RandomGenerator & rg, const bool allow
                     this->generateExpression(rg, func_call->add_args()->mutable_expr());
                     this->width++;
                     generated_params += 4;
+                    break;
+                case SQLFuncCall_AggregateCombinator::SQLFuncCall_AggregateCombinator_Tuple:
+                    /// -Tuple needs at least one argument (each must be a Tuple of the same size).
+                    /// A zero-arg base aggregate like count would emit an invalid countTuple(), so skip it.
+                    /// It must also come before If/ArgMin/ArgMax: only <base>TupleIf is supported, not
+                    /// <base>IfTuple, and wrapping their scalar tail would emit e.g. sumIfTuple(tuple(x), tuple(cond)).
+                    if (func_call->args_size() == 0 || (used_comb_mask & scalar_tail_combinators))
+                    {
+                        continue;
+                    }
+                    /// The combinator requires every argument to be a Tuple of the same size, so most
+                    /// of the times wrap each argument in a 1-element tuple to make the call valid.
+                    if (rg.nextSmallNumber() < 9)
+                    {
+                        for (int j = 0; j < func_call->args_size(); j++)
+                        {
+                            SQLFuncArg & arg = *func_call->mutable_args(j);
+
+                            if (arg.has_expr())
+                            {
+                                Expr prev;
+
+                                prev.Swap(arg.mutable_expr());
+                                SQLFuncCall * tup = arg.mutable_expr()->mutable_comp_expr()->mutable_func_call();
+                                tup->mutable_func()->set_catalog_func("tuple");
+                                tup->add_args()->mutable_expr()->Swap(&prev);
+                            }
+                        }
+                    }
                     break;
                 default: break;
             }
