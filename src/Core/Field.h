@@ -644,7 +644,9 @@ private:
 
     ALWAYS_INLINE void destroy()
     {
-        switch (which)
+        auto old_which = which;
+        which = Types::Null;    /// for exception safety in subsequent calls to destroy and create, when create fails.
+        switch (old_which)
         {
             case Types::String:
                 destroy<String>();
@@ -664,8 +666,6 @@ private:
             default:
                  break;
         }
-
-        which = Types::Null;    /// for exception safety in subsequent calls to destroy and create, when create fails.
     }
 
     template <typename T>
