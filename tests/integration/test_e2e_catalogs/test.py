@@ -1163,8 +1163,6 @@ def test_insert_into_table(node, catalog_manager, request):
     backend = request.node.callspec.params.get("catalog_manager")
     if backend == "biglake":
         pytest.xfail("INSERT into BigLake DataLakeCatalog does not commit to the catalog")
-    if backend == "onelake":
-        pytest.xfail("INSERT into OneLake raises StorageException during blob upload")
     data = pa.table(
         {
             "id": pa.array([1, 2], type=pa.int64()),
@@ -1188,10 +1186,31 @@ def test_insert_into_table(node, catalog_manager, request):
             f"INSERT INTO {db}.`{full}` VALUES (3, 'three')",
             settings={"allow_insert_into_iceberg": 1},
         )
-        count = node.query(
-            f"SELECT count() FROM {db}.`{full}` FORMAT TSV"
-        ).strip()
+        if backend == "onelake":
+            # OneLake's catalog is eventually consistent, so poll (cache off) for
+            # the new snapshot. Other backends must see it immediately (one-shot).
+            read_settings = {"use_iceberg_metadata_files_cache": 0}
+            deadline = time.monotonic() + 180
+            while True:
+                count = node.query(
+                    f"SELECT count() FROM {db}.`{full}` FORMAT TSV",
+                    settings=read_settings,
+                ).strip()
+                if count == "3" or time.monotonic() >= deadline:
+                    break
+                time.sleep(5)
+        else:
+            read_settings = {}
+            count = node.query(
+                f"SELECT count() FROM {db}.`{full}` FORMAT TSV"
+            ).strip()
         assert int(count) == 3
+        # count() can come from metadata alone, so read a real value too.
+        value = node.query(
+            f"SELECT value FROM {db}.`{full}` WHERE id = 3 FORMAT TSV",
+            settings=read_settings,
+        ).strip()
+        assert value == "three", value
     finally:
         catalog_manager.cleanup_table(table_name)
 
