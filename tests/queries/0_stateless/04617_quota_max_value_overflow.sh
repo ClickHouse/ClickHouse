@@ -5,6 +5,8 @@
 # an out-of-range value used to be undefined behavior (found by the AST fuzzer with UBSan).
 # Quota types without an output denominator (e.g. `queries`) must reject invalid literals too:
 # a negative integer used to wrap around to 18446744073709551615 instead of throwing.
+# Quoted (string-literal) limits go through a size-suffix parse that used to skip overflow checking,
+# so an out-of-range quoted value silently wrapped around before the range checks; it must throw now.
 # Note: a `--` comment attached to a hinted query would shadow its test hint, so the queries below carry no leading SQL comments.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -30,6 +32,10 @@ CREATE QUOTA $QUOTA FOR INTERVAL 1 hour MAX queries = -1e-400; -- { clientError 
 CREATE QUOTA $QUOTA FOR INTERVAL 1 hour MAX queries = -1.5; -- { clientError BAD_ARGUMENTS }
 CREATE QUOTA $QUOTA FOR INTERVAL 1 hour MAX queries = 1e20; -- { clientError CANNOT_CONVERT_TYPE }
 CREATE QUOTA $QUOTA FOR INTERVAL 1 hour MAX queries = inf; -- { clientError CANNOT_CONVERT_TYPE }
+
+CREATE QUOTA $QUOTA FOR INTERVAL 1 hour MAX execution_time = '18446744073709551616'; -- { clientError CANNOT_PARSE_NUMBER }
+CREATE QUOTA $QUOTA FOR INTERVAL 1 hour MAX queries = '18446744073709551616'; -- { clientError CANNOT_PARSE_NUMBER }
+CREATE QUOTA $QUOTA FOR INTERVAL 1 hour MAX queries = '18446744073709551T'; -- { clientError CANNOT_PARSE_NUMBER }
 
 -- A reasonable value still works and round-trips.
 CREATE QUOTA $QUOTA FOR INTERVAL 1 hour MAX execution_time = 1.5, MAX queries = 100;

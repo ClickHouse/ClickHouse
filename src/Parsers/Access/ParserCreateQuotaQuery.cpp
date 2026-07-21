@@ -150,7 +150,9 @@ namespace
     T fieldToNumber(const Field & f)
     {
         if (f.getType() == Field::Types::String)
-            return static_cast<T>(parseWithSizeSuffix<QuotaValue>(boost::algorithm::trim_copy(f.safeGet<std::string>())));
+            /// Parse with overflow checking so that a quoted out-of-range value (e.g. MAX queries = '1e20' or
+            /// '18446744073709551616') throws instead of silently wrapping around before the range checks below.
+            return static_cast<T>(parseWithSizeSuffix<QuotaValue, ReadIntTextCheckOverflow::CHECK_OVERFLOW>(boost::algorithm::trim_copy(f.safeGet<std::string>())));
         return applyVisitor(FieldVisitorConvertToNumber<T>(), f);
     }
 

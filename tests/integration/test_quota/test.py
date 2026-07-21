@@ -1819,6 +1819,18 @@ def test_quota_with_ip_prefix_bits_from_users_xml():
     copy_quota_xml("no_quotas.xml")
 
 
+def test_quota_out_of_range_value_from_users_xml():
+    # An out-of-range quota limit in the configuration (a value above the UInt64 range for a
+    # quota type without an output denominator) must be rejected on config load instead of
+    # silently wrapping around to 0, mirroring the SQL CREATE QUOTA path.
+    copy_quota_xml("queries_out_of_range.xml", reload_immediately=False)
+    error = instance.query_and_get_error("SYSTEM RELOAD CONFIG", user="user_with_no_quota")
+    assert "Overflow while parsing a number" in error
+
+    # Restore a clean config so later periodic reloads do not fail.
+    copy_quota_xml("no_quotas.xml")
+
+
 def test_quota_keyed_by_normalized_query_hash_from_users_xml():
     # A quota keyed by normalized_query_hash must load from static config and
     # expose the key type via system.quotas, mirroring the SQL path which

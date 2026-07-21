@@ -53,6 +53,7 @@ namespace ErrorCodes
     extern const int CANNOT_PARSE_UUID;
     extern const int CANNOT_PARSE_IPV4;
     extern const int CANNOT_PARSE_IPV6;
+    extern const int CANNOT_PARSE_NUMBER;
     extern const int CANNOT_READ_ARRAY_FROM_TEXT;
     extern const int TOO_LARGE_STRING_SIZE;
     extern const int TOO_LARGE_ARRAY_SIZE;
@@ -1997,27 +1998,39 @@ inline bool tryParse(T & res, const char * data, size_t size)
     return buf.eof();
 }
 
-template <typename T>
+template <ReadIntTextCheckOverflow check_overflow = ReadIntTextCheckOverflow::DO_NOT_CHECK_OVERFLOW, typename T>
 inline void readTextWithSizeSuffix(T & x, ReadBuffer & buf) { readText(x, buf); }
 
-template <is_integer T>
+template <ReadIntTextCheckOverflow check_overflow = ReadIntTextCheckOverflow::DO_NOT_CHECK_OVERFLOW, is_integer T>
 inline void readTextWithSizeSuffix(T & x, ReadBuffer & buf)
 {
-    readIntText(x, buf);
+    readIntText<check_overflow>(x, buf);
     if (buf.eof())
         return;
 
+    /// Multiplies x by the suffix multiplier, checking for overflow when requested.
+    auto multiply = [&x] (UInt64 multiplier)
+    {
+        if constexpr (check_overflow == ReadIntTextCheckOverflow::CHECK_OVERFLOW && !is_big_int_v<T>)
+        {
+            if (common::mulOverflow(x, static_cast<T>(multiplier), x))
+                throw Exception(ErrorCodes::CANNOT_PARSE_NUMBER, "Overflow while parsing a number with a size suffix");
+        }
+        else
+            x *= static_cast<T>(multiplier);
+    };
+
     /// Updates x depending on the suffix
-    auto finish = [&buf, &x] (UInt64 base, int power_of_two) mutable
+    auto finish = [&buf, multiply] (UInt64 base, int power_of_two) mutable
     {
         ++buf.position();
         if (buf.eof())
         {
-            x *= base; /// For decimal suffixes, such as k, M, G etc.
+            multiply(base); /// For decimal suffixes, such as k, M, G etc.
         }
         else if (*buf.position() == 'i')
         {
-            x = (x << power_of_two); // NOLINT /// For binary suffixes, such as ki, Mi, Gi, etc.
+            multiply(UInt64(1) << power_of_two); /// For binary suffixes, such as ki, Mi, Gi, etc.
             ++buf.position();
         }
         return;
@@ -2046,26 +2059,26 @@ inline void readTextWithSizeSuffix(T & x, ReadBuffer & buf)
 /// Read something from text format and trying to parse the suffix.
 /// If the suffix is not valid gives an error
 /// For example: 723145 -- ok, 213MB -- not ok, but 213Mi -- ok
-template <typename T>
+template <typename T, ReadIntTextCheckOverflow check_overflow = ReadIntTextCheckOverflow::DO_NOT_CHECK_OVERFLOW>
 inline T parseWithSizeSuffix(const char * data, size_t size)
 {
     T res;
     ReadBufferFromMemory buf(data, size);
-    readTextWithSizeSuffix(res, buf);
+    readTextWithSizeSuffix<check_overflow>(res, buf);
     assertEOF(buf);
     return res;
 }
 
-template <typename T>
+template <typename T, ReadIntTextCheckOverflow check_overflow = ReadIntTextCheckOverflow::DO_NOT_CHECK_OVERFLOW>
 inline T parseWithSizeSuffix(std::string_view s)
 {
-    return parseWithSizeSuffix<T>(s.data(), s.size());
+    return parseWithSizeSuffix<T, check_overflow>(s.data(), s.size());
 }
 
-template <typename T>
+template <typename T, ReadIntTextCheckOverflow check_overflow = ReadIntTextCheckOverflow::DO_NOT_CHECK_OVERFLOW>
 inline T parseWithSizeSuffix(const char * data)
 {
-    return parseWithSizeSuffix<T>(data, strlen(data));
+    return parseWithSizeSuffix<T, check_overflow>(data, strlen(data));
 }
 
 template <typename T>

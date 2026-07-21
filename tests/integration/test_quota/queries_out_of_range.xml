@@ -1,0 +1,12 @@
+<clickhouse>
+    <quotas>
+        <myQuota>
+            <interval>
+                <duration>31556952</duration>
+                <!-- Out of the UInt64 range: must be rejected on config load instead of
+                     silently wrapping around to 0. -->
+                <queries>18446744073709551616</queries>
+            </interval>
+        </myQuota>
+    </quotas>
+</clickhouse>

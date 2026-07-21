@@ -37,7 +37,9 @@ String QuotaTypeInfo::valueToString(QuotaValue value) const
 QuotaValue QuotaTypeInfo::stringToValue(const String & str) const
 {
     if (output_denominator == 1)
-        return static_cast<QuotaValue>(parse<UInt64>(str));
+        /// Parse with overflow checking so that an out-of-range value from the configuration
+        /// (e.g. <queries>18446744073709551616</queries>) throws instead of silently wrapping around.
+        return static_cast<QuotaValue>(parseInt<UInt64>(str));
 
     /// Reject a negative value by the sign bit rather than a `< 0` comparison: a tiny negative
     /// value (e.g. -1e-400) underflows to -0.0, which compares equal to zero.
