@@ -25,39 +25,26 @@ SettingFieldOptionalBool::SettingFieldOptionalBool(const Field & field)
         return;
     }
 
-    if (field.getType() == Field::Types::Bool)
+    /// An empty string is treated as "unset", matching how `toString` serializes an unset value.
+    if (field.getType() == Field::Types::String && field.safeGet<String>().empty())
     {
-        value = field.safeGet<bool>();
+        value = std::nullopt;
         return;
     }
 
-    if (field.getType() == Field::Types::UInt64)
+    /// Delegate parsing to `SettingFieldBool` so that non-null values behave exactly like regular
+    /// boolean settings: only `0`/`1`/`true`/`false` (as numbers or strings) are accepted, and
+    /// out-of-range numerics such as `2` or `-1` are rejected (fail-closed) instead of silently
+    /// being coerced to `true`. This matters because these flags control whether table data or
+    /// ACL/UDF definitions are restored.
+    try
     {
-        value = field.safeGet<UInt64>() != 0;
-        return;
+        value = static_cast<bool>(SettingFieldBool{field});
     }
-
-    if (field.getType() == Field::Types::Int64)
+    catch (const Exception & e)
     {
-        value = field.safeGet<Int64>() != 0;
-        return;
+        throw Exception(ErrorCodes::CANNOT_PARSE_BACKUP_SETTINGS, "Cannot get bool from {}: {}", field, e.message());
     }
-
-    /// Accept string forms ('true'/'false'/'1'/'0', case-insensitive) for consistency with
-    /// regular boolean settings (`SettingFieldBool`). An empty string is treated as "unset".
-    if (field.getType() == Field::Types::String)
-    {
-        const auto & str = field.safeGet<String>();
-        if (str.empty())
-        {
-            value = std::nullopt;
-            return;
-        }
-        value = stringToBool(str);
-        return;
-    }
-
-    throw Exception(ErrorCodes::CANNOT_PARSE_BACKUP_SETTINGS, "Cannot get bool from {}", field);
 }
 
 String SettingFieldOptionalBool::toString() const
