@@ -110,7 +110,8 @@ public:
     SharedPartColumns(
         NamesAndTypesList columns_,
         std::shared_ptr<const ColumnsDescription> columns_description_,
-        std::shared_ptr<const ColumnsDescription> columns_description_with_collected_nested_);
+        std::shared_ptr<const ColumnsDescription> columns_description_with_collected_nested_,
+        bool collect_nested_);
 
     const NamesAndTypesList columns;
     const NameToNumber column_name_to_position;
@@ -118,6 +119,11 @@ public:
     /// Aliases `columns_description` when `Nested::collect` produces no distinct list
     /// (or when the `share_nested_offsets` setting is disabled).
     const std::shared_ptr<const ColumnsDescription> columns_description_with_collected_nested;
+    /// The value of the `share_nested_offsets` setting the bundle was built with. It shapes
+    /// `columns_description_with_collected_nested`, and it can change on a live table (it is
+    /// alterable on `SharedMergeTree`), so it is part of the interning key and of the release
+    /// lookup (see `MergeTreeData::getSharedPartColumnsForColumns`).
+    const bool collect_nested;
 
     /// Returns the serializations for the given serialization infos. The whole object is shared
     /// across parts whose infos produce the same serializations (same kinds and settings,
@@ -160,7 +166,9 @@ private:
         /// entry at all, so old parts written without `serialization.json` share the groups of
         /// newer parts whose columns are simply not sparse.
         String kinds;
-        /// The entry settings, or the map settings when there is no entry.
+        /// The entry settings, or the map settings when there is no entry, with the write-time-only
+        /// fields cleared (see `normalizeSettingsForKey`): only the fields that affect the built
+        /// serializations participate in the key.
         SerializationInfoSettings settings;
 
         bool operator==(const SerializationGroupKey & other) const = default;
@@ -197,6 +205,7 @@ private:
     /// the key carries no column names.
     struct SerializationsCacheKey
     {
+        /// Normalized as in `SerializationGroupKey`.
         SerializationInfoSettings settings;
         /// The effective kind encodings of every column, in bundle order, length-suffix framed
         /// into a single string.

@@ -1542,13 +1542,28 @@ protected:
 private:
     struct NamesAndTypesListHash
     {
-        using is_transparent = void;
         size_t operator()(const NamesAndTypesList & list) const noexcept;
     };
-    struct NamesAndTypesListEqual
+    /// The stored column list plus the value of the `share_nested_offsets` setting the bundle was
+    /// built with. The setting shapes `columns_description_with_collected_nested` inside the
+    /// bundle and can change on a live table (it is alterable on `SharedMergeTree`), so bundles
+    /// built under different values must not be shared: readers compare the bundle's descriptions
+    /// against structures rebuilt from the current setting.
+    struct SharedPartColumnsCacheKey
     {
-        using is_transparent = void;
-        bool operator()(const NamesAndTypesList & lhs, const NamesAndTypesList & rhs) const { return lhs == rhs; }
+        std::reference_wrapper<const NamesAndTypesList> columns;
+        bool collect_nested;
+    };
+    struct SharedPartColumnsCacheKeyHash
+    {
+        size_t operator()(const SharedPartColumnsCacheKey & key) const noexcept;
+    };
+    struct SharedPartColumnsCacheKeyEqual
+    {
+        bool operator()(const SharedPartColumnsCacheKey & lhs, const SharedPartColumnsCacheKey & rhs) const
+        {
+            return lhs.collect_nested == rhs.collect_nested && lhs.columns.get() == rhs.columns.get();
+        }
     };
     mutable AggregatedMetrics::GlobalSum shared_part_columns_metric_handle;
     mutable SharedMutex shared_part_columns_cache_mutex;
@@ -1556,7 +1571,7 @@ private:
     /// The key references the `columns` member of the bundle it maps to, so the column list is stored
     /// only once per entry; the bundle is always alive while its entry exists because the cache holds
     /// a strong reference.
-    mutable std::unordered_map<std::reference_wrapper<const NamesAndTypesList>, SharedPartColumnsPtr, NamesAndTypesListHash, NamesAndTypesListEqual>
+    mutable std::unordered_map<SharedPartColumnsCacheKey, SharedPartColumnsPtr, SharedPartColumnsCacheKeyHash, SharedPartColumnsCacheKeyEqual>
         shared_part_columns_cache TSA_GUARDED_BY(shared_part_columns_cache_mutex);
 
     /// Returns the interned reference to the cache entry to be evicted when no part uses it anymore.

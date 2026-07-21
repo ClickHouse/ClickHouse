@@ -58,6 +58,20 @@ std::vector<String> buildDefaultKindEncodings(const NamesAndTypesList & columns)
     return encodings;
 }
 
+/// `ratio_of_defaults_for_sparse`, `choose_kind` and `compute_exact_num_defaults` only steer how
+/// serialization kinds are chosen and how statistics are collected at write time; with the kind
+/// stacks fixed by the key they do not affect the serializations that are built (only the version
+/// fields do, see `IDataType::getSerialization`). Normalize them in the cache keys to the values
+/// `SerializationInfoByName::readJSON` reconstructs, so that parts loaded from disk (which lose
+/// the write-time values) share with freshly written parts that carry the live table settings.
+SerializationInfoSettings normalizeSettingsForKey(SerializationInfoSettings settings)
+{
+    settings.ratio_of_defaults_for_sparse = 1.0;
+    settings.choose_kind = false;
+    settings.compute_exact_num_defaults = false;
+    return settings;
+}
+
 template <typename Cache>
 size_t eraseExpiredEntries(Cache & cache, AggregatedMetrics::GlobalSum & metric)
 {
@@ -84,11 +98,13 @@ void sweepExpiredEntries(Cache & cache, size_t & size_after_sweep, AggregatedMet
 SharedPartColumns::SharedPartColumns(
     NamesAndTypesList columns_,
     std::shared_ptr<const ColumnsDescription> columns_description_,
-    std::shared_ptr<const ColumnsDescription> columns_description_with_collected_nested_)
+    std::shared_ptr<const ColumnsDescription> columns_description_with_collected_nested_,
+    bool collect_nested_)
     : columns(std::move(columns_))
     , column_name_to_position(buildColumnPositions(columns))
     , columns_description(std::move(columns_description_))
     , columns_description_with_collected_nested(std::move(columns_description_with_collected_nested_))
+    , collect_nested(collect_nested_)
     , serializations_cache_metric_handle(CurrentMetrics::SharedPartSerializationsCacheSize)
     , serialization_groups_metric_handle(CurrentMetrics::SharedPartSerializationGroupsCacheSize)
     , substreams_cache_metric_handle(CurrentMetrics::SharedPartColumnsSubstreamsCacheSize)
@@ -127,11 +143,11 @@ std::vector<SharedPartColumns::SerializationGroupKey> SharedPartColumns::buildSe
         if (it == infos.end())
         {
             key.kinds = default_kind_encodings[position];
-            key.settings = infos.getSettings();
+            key.settings = normalizeSettingsForKey(infos.getSettings());
         }
         else
         {
-            key.settings = it->second->getSettings();
+            key.settings = normalizeSettingsForKey(it->second->getSettings());
             WriteBufferFromOwnString kinds;
             it->second->serialializeKindStackBinary(kinds);
             key.kinds = std::move(kinds.str());
@@ -174,7 +190,7 @@ PartSerializations::ColumnGroupPtr SharedPartColumns::buildSerializationGroup(co
 
 SharedPartColumns::SerializationsCacheKey SharedPartColumns::buildSerializationsCacheKey(const SerializationInfoByName & infos) const
 {
-    SerializationsCacheKey key{infos.getSettings(), {}, {}};
+    SerializationsCacheKey key{normalizeSettingsForKey(infos.getSettings()), {}, {}};
 
     /// The kind encodings are one byte per column in the common case; the estimate avoids most of
     /// the buffer growth reallocations without over-reserving much.
@@ -193,8 +209,9 @@ SharedPartColumns::SerializationsCacheKey SharedPartColumns::buildSerializations
             if (auto it = infos.find(column.name); it != infos.end())
             {
                 it->second->serialializeKindStackBinary(out);
-                if (!(it->second->getSettings() == key.settings))
-                    key.settings_overrides.emplace_back(position, it->second->getSettings());
+                auto entry_settings = normalizeSettingsForKey(it->second->getSettings());
+                if (!(entry_settings == key.settings))
+                    key.settings_overrides.emplace_back(position, std::move(entry_settings));
             }
             else
             {
@@ -510,7 +527,7 @@ const SharedPartColumnsPtr & SharedPartColumns::getEmpty()
     static const SharedPartColumnsPtr empty = []
     {
         auto description = std::make_shared<const ColumnsDescription>();
-        return std::make_shared<const SharedPartColumns>(NamesAndTypesList{}, description, description);
+        return std::make_shared<const SharedPartColumns>(NamesAndTypesList{}, description, description, false);
     }();
     return empty;
 }

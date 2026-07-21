@@ -11771,22 +11771,34 @@ size_t MergeTreeData::NamesAndTypesListHash::operator()(const NamesAndTypesList 
     return hash;
 }
 
+size_t MergeTreeData::SharedPartColumnsCacheKeyHash::operator()(const SharedPartColumnsCacheKey & key) const noexcept
+{
+    size_t hash = NamesAndTypesListHash{}(key.columns.get());
+    boost::hash_combine(hash, key.collect_nested);
+    return hash;
+}
+
 SharedPartColumnsHolder MergeTreeData::getSharedPartColumnsForColumns(const NamesAndTypesList & columns) const
 {
+    /// The current value of `share_nested_offsets` is part of the key: a bundle built under the
+    /// old value must not be reused after the setting is altered on a live table (stale entries
+    /// die out as their last parts are released or unloaded).
+    const SharedPartColumnsCacheKey key{std::cref(columns), (*getSettings())[MergeTreeSetting::share_nested_offsets]};
+
     /// After the first part of each schema every lookup is a hit that does not modify the map,
     /// so a shared lock keeps concurrent part loads parallel (copying the shared_ptr only
     /// increments the refcount, which never races with the eviction check in
     /// `releaseSharedPartColumns`: that check runs under the exclusive lock).
     {
         SharedLockGuard lock(shared_part_columns_cache_mutex);
-        if (auto it = shared_part_columns_cache.find(columns); it != shared_part_columns_cache.end())
+        if (auto it = shared_part_columns_cache.find(key); it != shared_part_columns_cache.end())
             return SharedPartColumnsHolder(*this, it->second);
     }
 
     std::lock_guard lock(shared_part_columns_cache_mutex);
 
     /// Another load may have interned the same columns while the lock was upgraded.
-    if (auto it = shared_part_columns_cache.find(columns); it != shared_part_columns_cache.end())
+    if (auto it = shared_part_columns_cache.find(key); it != shared_part_columns_cache.end())
         return SharedPartColumnsHolder(*this, it->second);
 
     /// The bundle lives as long as some part of the table stores these columns: route it to the
@@ -11798,7 +11810,7 @@ SharedPartColumnsHolder MergeTreeData::getSharedPartColumnsForColumns(const Name
     /// inputs and the cache is per-table, so only same-table loads can wait here.
     auto original = std::make_shared<const ColumnsDescription>(columns);
     std::shared_ptr<const ColumnsDescription> with_collected_nested;
-    if ((*getSettings())[MergeTreeSetting::share_nested_offsets])
+    if (key.collect_nested)
     {
         auto collected = std::make_shared<const ColumnsDescription>(Nested::collect(columns));
         /// Keep a distinct object only when `Nested::collect` produced a distinct list.
@@ -11807,9 +11819,10 @@ SharedPartColumnsHolder MergeTreeData::getSharedPartColumnsForColumns(const Name
     }
 
     auto shared_part_columns = std::make_shared<const SharedPartColumns>(
-        columns, original, with_collected_nested ? std::move(with_collected_nested) : original);
+        columns, original, with_collected_nested ? std::move(with_collected_nested) : original, key.collect_nested);
 
-    shared_part_columns_cache.emplace(std::cref(shared_part_columns->columns), shared_part_columns);
+    shared_part_columns_cache.emplace(
+        SharedPartColumnsCacheKey{std::cref(shared_part_columns->columns), key.collect_nested}, shared_part_columns);
     shared_part_columns_metric_handle.add(1);
     return SharedPartColumnsHolder(*this, shared_part_columns);
 }
@@ -11826,7 +11839,8 @@ void MergeTreeData::releaseSharedPartColumns(SharedPartColumnsPtr shared_part_co
 
     {
         std::lock_guard lock(shared_part_columns_cache_mutex);
-        auto it = shared_part_columns_cache.find(shared_part_columns->columns);
+        auto it = shared_part_columns_cache.find(
+            SharedPartColumnsCacheKey{std::cref(shared_part_columns->columns), shared_part_columns->collect_nested});
         chassert(it != shared_part_columns_cache.end() && it->second == shared_part_columns);
 
         /// Drop the caller's reference under the exclusive lock: every reference drop happens here,
