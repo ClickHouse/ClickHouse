@@ -15,6 +15,18 @@
 #include <Storages/MergeTree/MergeTreePartInfo.h>
 #include <Common/Exception.h>
 
+/// The "Bugfix validation (unit tests)" CI job compiles this file against the
+/// merge-base sources - without the fix - and expects the regression tests to fail at
+/// runtime there, which requires the file to compile against both trees. Most tests
+/// here need only the public API, which is identical on both sides, but a few
+/// additionally exercise machinery the fix introduces (the on-disk record structs it
+/// moved into a header, the split publication primitives, the simulated non-append
+/// disk regime). Those are compiled only when the fix is present, detected by the
+/// header it adds.
+#if __has_include(<Storages/MergeTree/MergeTreeDeduplicationLogRecord.h>)
+#define MERGE_TREE_DEDUPLICATION_LOG_FIX_IS_PRESENT 1
+#endif
+
 using namespace DB;
 
 namespace DB
@@ -393,6 +405,7 @@ public:
     std::unordered_set<String> rewritten;
 };
 
+#ifdef MERGE_TREE_DEDUPLICATION_LOG_FIX_IS_PRESENT
 /// Read the raw records of every deduplication log file under `logs_root`, in
 /// chronological (log-number) order, without any of the rollback-pairing logic -
 /// the way every server version reads them off the disk.
@@ -425,6 +438,7 @@ std::vector<MergeTreeDeduplicationLogRecord> readAllRecordsRaw(const std::string
     }
     return records;
 }
+#endif
 
 }
 
@@ -1195,6 +1209,7 @@ TEST(MergeTreeDeduplicationLog, DropPartWriteFailureIsAllOrNothingAfterRestart)
     std::filesystem::remove_all(work_dir);
 }
 
+#ifdef MERGE_TREE_DEDUPLICATION_LOG_FIX_IS_PRESENT
 /// The rollback records the failure paths above leave on disk must stay safe to
 /// replay for servers from BEFORE these records existed - a downgrade and restart
 /// with such records already in the logs. An old server replays every record as
@@ -1337,6 +1352,7 @@ TEST(MergeTreeDeduplicationLog, LimitedOrderedHashMapInsertWithoutEvictionThenTr
     EXPECT_TRUE(map.contains("block5"));
     EXPECT_EQ(map.get("block5"), part("all_5_5_0"));
 }
+#endif
 
 /// Regression test for the success path of the exception-safe publication: after the
 /// durable writes succeed, addPart must still enforce the deduplication window by
@@ -1543,6 +1559,7 @@ TEST(MergeTreeDeduplicationLog, CompactionNeutralizesUnremovableOldLogs)
     std::filesystem::remove_all(work_dir);
 }
 
+#ifdef MERGE_TREE_DEDUPLICATION_LOG_FIX_IS_PRESENT
 /// The same repeated-rollback growth must also be bounded on a disk without append
 /// support (e.g. `s3_plain_rewritable`), the very regime the original bug reproduced
 /// on. There every operation rotates into a fresh file, so the accumulated rollback
@@ -1738,6 +1755,7 @@ TEST(MergeTreeDeduplicationLog, RestartsDoNotLeakEmptyLogsWithoutAppendSupport)
 
     std::filesystem::remove_all(work_dir);
 }
+#endif
 
 /// Regression test: when a compaction's snapshot is written and made durable but the
 /// compaction then fails to switch over to it (reopening the snapshot throws), the
