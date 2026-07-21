@@ -616,7 +616,16 @@ void registerDataTypePostingList(DataTypeFactory & factory);
 
 void registerDataTypePostingList(DataTypeFactory & factory)
 {
-    factory.registerDataType("PostingList", createPostingListTypeFromPartMetadata);
+    factory.registerDataType("PostingList", createPostingListTypeFromPartMetadata, DataTypeFactory::Case::Sensitive,
+        Documentation{
+            .description = R"DOCS_MD(
+An internal data type used by text indexes stored as projections. It holds a compressed posting list — the set of row numbers (and, optionally, in-row token positions) where a token occurs — as an aggregate function state.
+
+This type is used only in the implicit columns of projection parts created for text indexes. It cannot be used as a column type in `CREATE TABLE`.
+)DOCS_MD",
+            .syntax = "PostingList(...)",
+            .related = {"AggregateFunction"},
+        });
 }
 
 }
