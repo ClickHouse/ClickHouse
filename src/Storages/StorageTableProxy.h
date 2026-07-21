@@ -13,10 +13,19 @@ namespace DB
 
 /// Lazily creates underlying storage for tables in databases with `lazy_load_tables` setting.
 /// Similar to `StorageTableFunctionProxy`, but for real on-disk tables.
-class StorageTableProxy final : public StorageProxy
+///
+/// Not `final`: the deferred `URL(named_collection)` path (see `registerStorageURL`) subclasses this
+/// to preserve the `URL` engine's metadata-only rename / unsupported-truncate DDL semantics while the
+/// collection is still missing, without materializing the nested storage.
+class StorageTableProxy : public StorageProxy
 {
 public:
-    StorageTableProxy(const StorageID & table_id_, std::function<StoragePtr()> get_nested_, ColumnsDescription cached_columns)
+    /// `get_nested_` receives the proxy's current `StorageID` so the factory can rebuild the nested
+    /// storage from the table's current identity/metadata rather than a value frozen at attach time.
+    /// This matters for the deferred `URL(named_collection)` path: metadata-only DDL (RENAME, ALTER
+    /// MODIFY COMMENT) applied while the collection is missing must be reflected once the table
+    /// materializes, including re-registering the named-collection dependency under the current name.
+    StorageTableProxy(const StorageID & table_id_, std::function<StoragePtr(const StorageID &)> get_nested_, ColumnsDescription cached_columns)
         : StorageProxy(table_id_)
         , get_nested(std::move(get_nested_))
         , log(getLogger("StorageTableProxy (" + table_id_.getFullTableName() + ")"))
@@ -60,7 +69,7 @@ public:
 
         LOG_TRACE(log, "Loading lazy table on first access");
 
-        auto nested_storage = get_nested();
+        auto nested_storage = get_nested(getStorageID());
         nested_storage->startup();
         nested_storage->renameInMemory(getStorageID());
         nested = nested_storage;
@@ -109,7 +118,7 @@ public:
                 return;
             }
 
-            auto nested_storage = get_nested();
+            auto nested_storage = get_nested(getStorageID());
             nested_storage->drop();
             get_nested = {};
         }
@@ -199,9 +208,20 @@ public:
         return std::nullopt;
     }
 
+protected:
+    /// Returns the nested storage only if it has already been materialized, without triggering
+    /// materialization. Subclasses use this to answer queries with the nested storage when present
+    /// and fall back to engine-specific defaults while it is not (e.g. the deferred `URL(nc)` path
+    /// must not materialize on metadata-only DDL while the collection is missing).
+    StoragePtr tryGetNestedIfMaterialized() const
+    {
+        std::lock_guard lock{nested_mutex};
+        return nested;
+    }
+
 private:
     mutable std::recursive_mutex nested_mutex; /// Guards both `get_nested` and `nested`.
-    mutable std::function<StoragePtr()> get_nested; /// Factory that creates the real storage. Cleared after first use.
+    mutable std::function<StoragePtr(const StorageID &)> get_nested; /// Factory that creates the real storage from the proxy's current id. Cleared after first use.
     mutable StoragePtr nested; /// The materialized real storage, set on first access.
     LoggerPtr log;
 };

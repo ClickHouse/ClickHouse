@@ -464,7 +464,7 @@ void DatabaseOrdinary::loadTableLazy(
                         db_name = name.database,
                         table_data_path,
                         global_context = local_context->getGlobalContext(),
-                        mode]() -> StoragePtr
+                        mode](const StorageID &) -> StoragePtr
     {
         auto load_context = Context::createCopy(global_context);
         ParserCreateQuery parser;

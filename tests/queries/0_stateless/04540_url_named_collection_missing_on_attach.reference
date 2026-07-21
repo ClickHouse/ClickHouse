@@ -1,0 +1,46 @@
+--- http named collection: attach with the collection missing, error only at query time ---
+attached
+1
+NAMED_COLLECTION_DOESNT_EXIST
+http resolved
+--- DROP while the named collection is still missing: metadata-only, like plain URL ---
+0
+drop resolved
+--- file:// named collection: storage-class dispatch rebuilt on first use ---
+file attached
+1,10
+2,20
+--- hive partitioning: virtual columns rebuilt on first use ---
+hive attached
+2021
+--- implicit format: format inferred on first use, not left as auto ---
+fmt attached
+5,50
+6,60
+--- DDL while the named collection is still missing: URL semantics preserved ---
+1
+deferred url comment
+NOT_IMPLEMENTED
+NOT_IMPLEMENTED
+ddl ok
+--- metadata-only DDL applied while missing survives materialization ---
+deferred url comment
+comment survived
+--- rename while missing re-registers the dependency under the current name (Ordinary DB) ---
+NAMED_COLLECTION_IS_USED
+dependency tracked before first read
+NAMED_COLLECTION_IS_USED
+dep_t2
+dependency tracked under new name
+--- table-level constraints and comment seeded on a deferred (unresolved) table ---
+deferred url with constraint
+VIOLATED_CONSTRAINT
+constraint and comment seeded
+--- drop of a deferred URL(nc) does not resurrect the named-collection dependency (Ordinary DB) ---
+drop did not resurrect dependency
+--- URL virtual columns visible on a deferred (unresolved) table ---
+_file _headers _path _size _time
+virtuals visible
+--- named-collection dependency stays tracked across first-read materialization ---
+NAMED_COLLECTION_IS_USED
+dependency tracked after materialization
