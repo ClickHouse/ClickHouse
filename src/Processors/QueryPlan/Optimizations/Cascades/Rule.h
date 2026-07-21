@@ -22,6 +22,16 @@ class Memo;
 /// input; FinishSorting/MergingSorted need ordered input, which no rule provides.
 bool isTopNSort(const IQueryPlanStep & step);
 
+/// Node counts the rules create speculative multi-node variants at. Returns {max_node_count} -
+/// the full cluster. Intermediate counts are not candidates: they multiply the search space
+/// without winning on the workloads measured so far.
+inline std::vector<size_t> getCandidateNodeCounts(size_t max_node_count)
+{
+    if (max_node_count <= 1)
+        return {};
+    return {max_node_count};
+}
+
 /// Stateless per-row steps that can run on any data partition independently. Implemented by
 /// `DistributionPassthrough` and therefore excluded from `DefaultImplementation` - both go
 /// through this one predicate so a new passthrough step type cannot end up with two

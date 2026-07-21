@@ -69,7 +69,6 @@ std::vector<GroupExpressionPtr> SortingEnforcer::applyImpl(GroupExpressionPtr ex
         std::move(output_properties),
         EnforcerAxis::Sorting);
 
-    /// Skip scheduling a structural duplicate so it does not consume optimizer task budget.
     std::vector<GroupExpressionPtr> result;
     addPhysicalToMemo(sort_expr, required_properties, memo, result);
     return result;

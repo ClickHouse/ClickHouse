@@ -130,7 +130,8 @@ private:
         chassert(implementation_expression->inputs.size() == 1);
         auto & input_props = implementation_expression->inputs[0].required_properties;
 
-        /// Construction-time sorting conflicts with multi-node distribution.
+        /// Construction-time sorting conflicts with multi-node distribution: each node would
+        /// sort its own partition and the combined stream would interleave.
         if (!input_props.sorting.empty() && distribution.node_count > 1)
             return nullptr;
 

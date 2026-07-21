@@ -41,8 +41,8 @@ bool ParallelReadImplementation::checkPattern(GroupExpressionPtr expression, con
         || required_properties.distribution.is_replicated)
         return false;
 
-    /// FINAL reads are bucketed by primary-key-range layers (a dedup group never spans buckets);
-    /// `setupDistributedReadBuckets` in `applyImpl` refuses the reads it cannot split safely.
+    /// FINAL reads can also be split: buckets follow primary-key-range layers, so a dedup group
+    /// never spans buckets; reads that cannot be split safely are refused at apply time.
     return true;
 }
 

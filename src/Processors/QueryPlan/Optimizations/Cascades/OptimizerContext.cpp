@@ -73,8 +73,8 @@ void OptimizerContext::addEnforcerRule(OptimizationRulePtr rule)
 
 std::pair<GroupId, ExpressionProperties> OptimizerContext::addGroup(QueryPlan::Node & node)
 {
-    /// TODO: Currently CommonSubplanReferenceStep is expected to be resolved before Cascades optimizer.
-    /// But it seem that we can resolve it here by just mapping the target Node to a corresponding Group.
+    /// `CommonSubplanReferenceStep` must be resolved before the Cascades optimizer runs.
+    /// TODO: it could instead be resolved here by mapping the target node to its group.
     const auto * subplan_reference = typeid_cast<const CommonSubplanReferenceStep *>(node.step.get());
     if (subplan_reference)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected CommonSubplanReferenceStep, it should be already resolved");

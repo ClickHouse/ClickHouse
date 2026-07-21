@@ -11,15 +11,6 @@
 namespace DB
 {
 
-/// Returns {max_node_count} - the full cluster. Intermediate counts are not candidates:
-/// they multiply the search space without winning on the workloads measured so far.
-inline std::vector<size_t> getCandidateNodeCounts(size_t max_node_count)
-{
-    if (max_node_count <= 1)
-        return {};
-    return {max_node_count};
-}
-
 /// A set of columns, but each column can also have multiple equivalent names derived from equality predicates
 using DistributionColumns = std::vector<NameSet>;
 
