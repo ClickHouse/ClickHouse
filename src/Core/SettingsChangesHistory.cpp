@@ -1315,7 +1315,6 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     {
         addSettingsChanges(merge_tree_settings_changes_history, "26.7",
         {
-            {"allow_experimental_text_index_positions", false, false, "New setting"},
             {"merge_sorting_queue_strategy", "default", "default", "New setting to choose the sorting queue strategy for ordinary `MergeTree` merges."},
             {"allow_experimental_text_index_phrase_search", false, false, "New setting"},
             {"merge_selector_enable_heuristic_to_lower_max_parts_to_merge_at_once", false, true, "Enable by default"},
