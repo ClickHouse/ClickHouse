@@ -35,10 +35,7 @@
 
 #include <algorithm>
 #include <cstring>
-#include <mutex>
 #include <filesystem>
-#include <fstream>
-#include <random>
 #include <string>
 #include <vector>
 
@@ -77,16 +74,6 @@ namespace
             disk = std::make_shared<DiskLocal>("test_disk", tmp_path.string());
             volume = std::make_shared<SingleDiskVolume>("test_volume", disk);
             storage = std::make_shared<DataPartStorageOnDiskFull>(volume, "", "part");
-
-            /// `Context::setTemporaryStoragePath` throws if called twice, so set
-            /// it only if no other fixture in this binary already configured the
-            /// shared temporary storage (e.g. the UNIQUE KEY probe suite).
-            if (!getContext().context->getSharedTempDataOnDisk())
-            {
-                auto shared_tmp = std::filesystem::temp_directory_path() / "ck_uk_gtest_tmp";
-                std::filesystem::create_directories(shared_tmp);
-                getMutableContext().context->setTemporaryStoragePath(shared_tmp.string() + "/", 0);
-            }
         }
 
         void TearDown() override
@@ -167,8 +154,8 @@ namespace
 /// Smoke: write 10K sorted UInt64 keys, read back via `SstFileReader`,
 /// every key resolves to its expected row_number. One smoke test gates
 /// the wrapper layer end-to-end; the rest of this file pins our own
-/// SST-write contracts (atomic rename, empty short-circuit, value
-/// encoding, unsorted-path sort, memory-limit, corruption rebuild).
+/// SST-write contracts (empty short-circuit, value encoding,
+/// unsorted-path sort, corruption rebuild).
 TEST_F(SSTFixture, RoundTrip10K)
 {
     constexpr size_t N = 10'000;
@@ -252,8 +239,9 @@ TEST_F(SSTFixture, CorruptionRebuild)
     EXPECT_TRUE(sstIteratorContains(reader, encoded[0]));
 }
 
-/// Empty-input short-circuit: zero keys → no `.sst` produced, no `.tmp`
-/// residue. Pins `finalizeToStorage`'s empty-input contract.
+/// Empty-input short-circuit: zero keys → the output stream is never
+/// opened, so no `.sst` is produced. Pins `finalizeToStorage`'s
+/// empty-input contract.
 TEST_F(SSTFixture, EmptyInputProducesNoFile)
 {
     auto block = makeUInt64Block({});
@@ -581,6 +569,26 @@ TEST_F(SSTFixture, WriteDenseIndexDescPrefixFallsBackToUnsorted)
     auto sorted = values;
     std::sort(sorted.begin(), sorted.end());
     EXPECT_EQ(observed_keys, sorted);
+}
+
+/// Mid-stream failure: out-of-order keys make the second `SstFileWriter::Put`
+/// return an error. The exception must propagate cleanly, and the writer
+/// destructor — run during stack unwinding with a partially-written
+/// `WriteBuffer` — must not abort.
+TEST_F(SSTFixture, MidStreamFailurePropagatesCleanly)
+{
+    /// Descending keys: second Put violates the strictly-increasing invariant.
+    auto cols = makeUInt64Columns({10, 5});
+    std::vector<String> encoded;
+    UniqueKeyEncoding::encodeBlock(cols, /*permutation=*/nullptr, 256, encoded);
+    ASSERT_EQ(encoded.size(), 2u);
+
+    EXPECT_THROW(
+    {
+        SSTIndexWriter writer(*storage, getContext().context);
+        writer.addEncoded(encoded[0], 0);
+        writer.addEncoded(encoded[1], 1); /// out-of-order → throws
+    }, DB::Exception);
 }
 
 #endif  // USE_ROCKSDB
