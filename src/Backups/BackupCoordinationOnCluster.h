@@ -8,7 +8,6 @@
 #include <Backups/BackupCoordinationReplicatedTables.h>
 #include <Backups/BackupCoordinationKeeperMapTables.h>
 #include <Backups/BackupCoordinationStageSync.h>
-#include <Backups/BackupSettings.h>
 #include <Backups/WithRetries.h>
 
 
@@ -23,7 +22,8 @@ public:
     static const constexpr std::string_view kInitiator = BackupCoordinationStageSync::kInitiator;
 
     BackupCoordinationOnCluster(
-        const BackupSettings & backup_settings_,
+        const UUID & backup_uuid_,
+        bool is_plain_backup_,
         const String & root_zookeeper_path_,
         zkutil::GetZooKeeper get_zookeeper_,
         const BackupKeeperSettings & keeper_settings_,
@@ -79,7 +79,7 @@ public:
 
     void addFileInfos(BackupFileInfos && file_infos) override;
     BackupFileInfos getFileInfos() const override;
-    void forEachFileInfoForAllHosts(const std::function<void(const BackupFileInfo &)> & callback) const override;
+    BackupFileInfos getFileInfosForAllHosts() const override;
     bool startWritingFile(size_t data_file_index) override;
 
     ZooKeeperRetriesInfo getOnClusterInitializationKeeperRetriesInfo() const override;
@@ -103,17 +103,15 @@ private:
     void prepareKeeperMapTables() const TSA_REQUIRES(keeper_map_tables_mutex);
     void prepareFileInfos() const TSA_REQUIRES(file_infos_mutex);
 
-    const UUID backup_uuid;
     const String root_zookeeper_path;
     const String zookeeper_path;
     const BackupKeeperSettings keeper_settings;
+    const UUID backup_uuid;
     const Strings all_hosts;
     const Strings all_hosts_without_initiator;
     const String current_host;
     const size_t current_host_index;
     const bool plain_backup;
-    const BackupDataFileNameGeneratorType data_file_name_gen;
-    const size_t data_file_name_prefix_length;
     const QueryStatusPtr process_list_element;
     const LoggerPtr log;
 

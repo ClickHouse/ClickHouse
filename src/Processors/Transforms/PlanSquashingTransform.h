@@ -1,26 +1,24 @@
 #pragma once
 
 #include <Interpreters/Squashing.h>
-#include <Processors/Transforms/ExceptionKeepingTransform.h>
+#include <Processors/IInflatingTransform.h>
 
 namespace DB
 {
 
-class PlanSquashingTransform final : public ExceptionKeepingTransform
+class PlanSquashingTransform : public IInflatingTransform
 {
 public:
     PlanSquashingTransform(
-        SharedHeader header_, size_t min_block_size_rows, size_t min_block_size_bytes,
-        size_t max_block_size_rows, size_t max_block_size_bytes, bool squash_with_strict_limits);
+        SharedHeader header_, size_t min_block_size_rows, size_t min_block_size_bytes);
 
     String getName() const override { return "PlanSquashingTransform"; }
 
 protected:
-    void onConsume(Chunk chunk) override;
-    GenerateResult onGenerate() override;
-
+    void consume(Chunk chunk) override;
     bool canGenerate() override;
-    GenerateResult getRemaining() override;
+    Chunk generate() override;
+    Chunk getRemaining() override;
 
 private:
     Squashing squashing;

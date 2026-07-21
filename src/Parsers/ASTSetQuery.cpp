@@ -6,8 +6,6 @@
 #include <Parsers/formatSettingName.h>
 #include <Storages/Kafka/Kafka_fwd.h>
 #include <Storages/NATS/NATS_fwd.h>
-#include <Storages/ObjectStorageQueue/AzureQueue_fwd.h>
-#include <Storages/ObjectStorageQueue/S3Queue_fwd.h>
 #include <Storages/RabbitMQ/RabbitMQ_fwd.h>
 #include <Poco/Exception.h>
 #include <Poco/URI.h>
@@ -131,13 +129,13 @@ void ASTSetQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & format, 
                 return true;
             }
 
-            /// Intrinsically secret regardless of engine: DataLakeStorageSettings is shared by the
-            /// DataLakeCatalog database engine and the Iceberg*/Paimon*/DeltaLake* table engines.
-            /// Matches the ungated check in hasSecretParts().
-            if (DataLake::SETTINGS_TO_HIDE.contains(change.name))
+            if (DataLake::DATABASE_ENGINE_NAME == state.create_engine_name)
             {
-                ostr << " = " << DataLake::SETTINGS_TO_HIDE.at(change.name)(change.value);
-                return true;
+                if (DataLake::SETTINGS_TO_HIDE.contains(change.name))
+                {
+                    ostr << " = " << DataLake::SETTINGS_TO_HIDE.at(change.name)(change.value);
+                    return true;
+                }
             }
             if (RabbitMQ::TABLE_ENGINE_NAME == state.create_engine_name)
             {
@@ -160,22 +158,6 @@ void ASTSetQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & format, 
                 if (Kafka::SETTINGS_TO_HIDE.contains(change.name))
                 {
                     ostr << " = " << Kafka::SETTINGS_TO_HIDE.at(change.name)(change.value);
-                    return true;
-                }
-            }
-            if (AzureQueue::TABLE_ENGINE_NAME == state.create_engine_name)
-            {
-                if (AzureQueue::SETTINGS_TO_HIDE.contains(change.name))
-                {
-                    ostr << " = " << AzureQueue::SETTINGS_TO_HIDE.at(change.name)(change.value);
-                    return true;
-                }
-            }
-            if (S3Queue::TABLE_ENGINE_NAME == state.create_engine_name)
-            {
-                if (S3Queue::SETTINGS_TO_HIDE.contains(change.name))
-                {
-                    ostr << " = " << S3Queue::SETTINGS_TO_HIDE.at(change.name)(change.value);
                     return true;
                 }
             }
@@ -234,10 +216,6 @@ bool ASTSetQuery::hasSecretParts() const
         if (NATS::SETTINGS_TO_HIDE.contains(change.name))
             return true;
         if (Kafka::SETTINGS_TO_HIDE.contains(change.name))
-            return true;
-        if (AzureQueue::SETTINGS_TO_HIDE.contains(change.name))
-            return true;
-        if (S3Queue::SETTINGS_TO_HIDE.contains(change.name))
             return true;
 
         if (change.name == format_avro_schema_registry_url)

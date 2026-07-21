@@ -162,13 +162,13 @@ namespace std
 }
 
 template <typename Key, typename TMapped, typename Hash, typename TState = HashTableNoState>
-struct HashMapCellWithSavedHash : public HashMapCell<Key, TMapped, Hash, TState> // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - `saved_hash` is set by `setHash` immediately after placement construction on insert; on the hot aggregation/join path we must avoid the redundant store
+struct HashMapCellWithSavedHash : public HashMapCell<Key, TMapped, Hash, TState>
 {
     using Base = HashMapCell<Key, TMapped, Hash, TState>;
 
     size_t saved_hash;
 
-    using Base::Base; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - see the note on the cell type above
+    using Base::Base;
 
     bool keyEquals(const Key & key_) const { return bitEquals(this->value.first, key_); }
     bool keyEquals(const Key & key_, size_t hash_) const { return saved_hash == hash_ && bitEquals(this->value.first, key_); }
@@ -228,7 +228,7 @@ public:
             }
 
             typename Self::LookupResult res_it;
-            bool inserted = false;
+            bool inserted;
             that.emplace(Cell::getKey(it->getValue()), res_it, inserted, it.getHash());
             func(res_it->getMapped(), it->getMapped(), inserted);
         }
@@ -256,19 +256,8 @@ public:
     template <typename Func>
     void forEachValue(Func && func)
     {
-        // to small table we can iterate without prefetching
-        if (CouldPrefetchKey<Cell> && this->size() > DB::PrefetchingHelper::iterationsToMeasure() * 2)
-        {
-            auto it = this->template begin<true>();
-            auto end = this->template end<true>();
-            for (; it != end; ++it)
-                func(it->getKey(), it->getMapped());
-        }
-        else
-        {
-            for (auto & it : *this)
-                func(it.getKey(), it.getMapped());
-        }
+        for (auto & v : *this)
+            func(v.getKey(), v.getMapped());
     }
 
     /// Call func(Mapped &) for each hash map element.
@@ -276,23 +265,13 @@ public:
     void forEachMapped(Func && func)
     {
         for (auto & v : *this)
-        {
-            if constexpr (std::is_same_v<decltype(func(v.getMapped())), bool>)
-            {
-                if (!func(v.getMapped()))
-                    break;
-            }
-            else
-            {
-                func(v.getMapped());
-            }
-        }
+            func(v.getMapped());
     }
 
     typename Cell::Mapped & ALWAYS_INLINE operator[](const Key & x)
     {
         LookupResult it;
-        bool inserted = false;
+        bool inserted;
         this->emplace(x, it, inserted);
 
         /** It may seem that initialization is not necessary for POD-types (or __has_trivial_constructor),
@@ -319,20 +298,8 @@ public:
     void ALWAYS_INLINE insertIfNotPresent(const Key & x, const typename Cell::Mapped & value)
     {
         LookupResult it;
-        bool inserted = false;
+        bool inserted;
         this->emplace(x, it, inserted);
-        if (inserted)
-        {
-            new (&it->getMapped()) typename Cell::Mapped();
-            it->getMapped() = value;
-        }
-    }
-
-    void ALWAYS_INLINE insertIfNotPresent(const Key & x, size_t hash, const typename Cell::Mapped & value)
-    {
-        LookupResult it;
-        bool inserted = false;
-        this->emplace(x, it, inserted, hash);
         if (inserted)
         {
             new (&it->getMapped()) typename Cell::Mapped();

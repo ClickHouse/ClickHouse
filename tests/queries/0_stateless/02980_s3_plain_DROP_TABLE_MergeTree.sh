@@ -21,7 +21,7 @@ CLICKHOUSE_DATABASE="$new_database"
 
 $CLICKHOUSE_CLIENT -m -q "
     drop table if exists data;
-    create table data (key Int) engine=MergeTree() order by key settings write_marks_for_substreams_in_compact_parts=1, auto_statistics_types = '';
+    create table data (key Int) engine=MergeTree() order by key settings write_marks_for_substreams_in_compact_parts=1;
     insert into data values (1);
     select 'data after INSERT', count() from data;
 "
@@ -41,8 +41,8 @@ $CLICKHOUSE_CLIENT -m -q "
             secret_access_key='testtest');
     select 'data after ATTACH', count() from data;
 
-    insert into data values (1); -- { serverError TABLE_IS_PERMANENTLY_READ_ONLY }
-    optimize table data final; -- { serverError TABLE_IS_PERMANENTLY_READ_ONLY }
+    insert into data values (1); -- { serverError TABLE_IS_READ_ONLY }
+    optimize table data final; -- { serverError TABLE_IS_READ_ONLY }
 "
 
 path=$($CLICKHOUSE_CLIENT -q "SELECT replace(data_paths[1], 's3_plain', '') FROM system.tables WHERE database = '$CLICKHOUSE_DATABASE' AND table = 'data'")

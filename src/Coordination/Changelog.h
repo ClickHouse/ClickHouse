@@ -5,9 +5,7 @@
 #include <Common/ConcurrentBoundedQueue.h>
 #include <Common/SharedMutex.h>
 
-#include <atomic>
 #include <map>
-#include <optional>
 #include <variant>
 #include <unordered_map>
 #include <unordered_set>
@@ -78,8 +76,8 @@ using ChangelogFileOperationPtr = std::shared_ptr<ChangelogFileOperation>;
 struct ChangelogFileDescription
 {
     std::string prefix;
-    uint64_t from_log_index{};
-    uint64_t to_log_index{};
+    uint64_t from_log_index;
+    uint64_t to_log_index;
     std::string extension;
 
     DiskPtr disk;
@@ -113,18 +111,6 @@ struct ChangelogFileDescription
 };
 
 using ChangelogFileDescriptionPtr = std::shared_ptr<ChangelogFileDescription>;
-
-struct KeeperChangelogStatus
-{
-    uint64_t from_log_index;
-    uint64_t to_log_index;
-    std::optional<uint64_t> last_entry_index;
-    String path;
-    DiskPtr disk;
-    bool is_compressed;
-    bool active;
-    bool is_broken;
-};
 
 class ChangelogWriter;
 
@@ -223,7 +209,7 @@ struct LogEntryStorage
 
     void refreshCache();
 
-    LogEntriesPtr getLogEntriesBetween(uint64_t start, uint64_t end, int64_t max_size_bytes = 0) const;
+    LogEntriesPtr getLogEntriesBetween(uint64_t start, uint64_t end) const;
 
     void getKeeperLogInfo(KeeperLogInfo & log_info) const;
 
@@ -287,14 +273,6 @@ private:
     mutable SharedMutex commit_logs_cache_mutex;
     mutable InMemoryCache commit_logs_cache TSA_GUARDED_BY(commit_logs_cache_mutex);
 
-    /// Cache optimization: stores max(lastCommittedIndex from getEntry, cleanUpTo parameter).
-    /// Invariant: cache is cleaned to at least this index. Used by getEntry to skip
-    /// the exclusive lock on commit_logs_cache_mutex when the committed index has not advanced.
-    /// Both getEntry and cleanUpTo write to this; writes are conditional (only advance, never regress)
-    /// so that an external cleanUpTo with a lower compaction index does not invalidate the optimization.
-    /// Reset to 0 in clear().
-    mutable std::atomic<uint64_t> last_cleaned_committed_index{0};
-
     LogEntryPtr latest_config;
     uint64_t latest_config_index = 0;
 
@@ -306,8 +284,8 @@ private:
     struct FileReadInfo
     {
         ChangelogFileDescriptionPtr file_description;
-        size_t position{};
-        size_t count{};
+        size_t position;
+        size_t count;
     };
 
     struct PrefetchInfo
@@ -383,8 +361,8 @@ public:
     /// Get entry with latest config in logstore
     LogEntryPtr getLatestConfigChange() const;
 
-    /// Return log entries between [start, end) with optional byte size limit
-    LogEntriesPtr getLogEntriesBetween(uint64_t start_index, uint64_t end_index, int64_t max_size_bytes = 0);
+    /// Return log entries between [start, end)
+    LogEntriesPtr getLogEntriesBetween(uint64_t start_index, uint64_t end_index);
 
     /// Return entry at position index
     LogEntryPtr entryAt(uint64_t index) const;
@@ -419,8 +397,6 @@ public:
 
     void getKeeperLogInfo(KeeperLogInfo & log_info) const;
 
-    std::vector<KeeperChangelogStatus> getChangelogsStatus() const;
-
     static ChangelogFileDescriptionPtr getChangelogFileDescription(const std::filesystem::path & path);
 
     static void readChangelog(ChangelogFileDescriptionPtr changelog_description, LogEntryStorage & entry_storage);
@@ -444,10 +420,8 @@ private:
 
     void removeExistingLogs(ChangelogIter begin, ChangelogIter end);
 
-    /// Remove all changelogs from disk with start_index bigger than remove_after_log_start_index
+    /// Remove all changelogs from disk with start_index bigger than start_to_remove_from_id
     void removeAllLogsAfter(uint64_t remove_after_log_start_index);
-    /// Remove all changelogs from disk with start index smaller than remove_before_log_start_index
-    void removeAllLogFilesBefore(uint64_t remove_before_log_start_index);
     /// Remove all logs from disk
     void removeAllLogs();
     /// Init writer for existing log with some entries already written
@@ -465,20 +439,20 @@ private:
     const bool compress_logs;
     LoggerPtr log;
 
-    mutable std::mutex writer_mutex;
+    std::mutex writer_mutex;
     /// Current writer for changelog file
     std::unique_ptr<ChangelogWriter> current_writer;
 
     LogEntryStorage entry_storage;
 
-    std::atomic<uint64_t> max_log_id{0};
+    uint64_t max_log_id = 0;
 
     ConcurrentBoundedQueue<ChangelogFileOperationPtr> changelog_operation_queue{std::numeric_limits<size_t>::max()};
     std::unique_ptr<ThreadFromGlobalPool> background_changelog_operations_thread;
 
     struct AppendLog
     {
-        uint64_t index{};
+        uint64_t index;
         nuraft::ptr<nuraft::log_entry> log_entry;
     };
 

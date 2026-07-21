@@ -2,7 +2,6 @@
 
 #include <base/defines.h>
 #include <base/types.h>
-#include <memory>
 #include <mutex>
 #include <unordered_map>
 
@@ -12,7 +11,7 @@ namespace DB
 class BackupInMemory;
 
 /// Holds all backups stored in memory during the current user's session.
-class BackupsInMemoryHolder : public std::enable_shared_from_this<BackupsInMemoryHolder>
+class BackupsInMemoryHolder
 {
 public:
     BackupsInMemoryHolder();

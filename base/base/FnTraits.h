@@ -1,11 +1,5 @@
 #pragma once
 
-// On illumos, <sys/regset.h> defines FS as a macro (x86 segment register).
-// Undef it to allow use of FS as a template parameter below.
-#ifdef FS
-#  undef FS
-#endif
-
 #include "TypeList.h"
 
 namespace detail

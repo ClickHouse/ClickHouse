@@ -1,6 +1,5 @@
 #include <Common/atomicRename.h>
 #include <Common/Exception.h>
-#include <Common/ErrnoException.h>
 #include <Common/VersionNumber.h>
 #include <Poco/Environment.h>
 #include <filesystem>
@@ -49,8 +48,6 @@ namespace ErrorCodes
         #define __NR_renameat2 276
     #elif defined(__loongarch64)
         #define __NR_renameat2 276
-    #elif defined(__e2k__)
-        #define __NR_renameat2 384
     #else
         #error "Unsupported architecture"
     #endif

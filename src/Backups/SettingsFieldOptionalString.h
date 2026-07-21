@@ -14,9 +14,7 @@ struct SettingFieldOptionalString
 
     explicit SettingFieldOptionalString(const Field & field);
 
-    explicit operator Field() const;
-
-    String toString() const;
+    explicit operator Field() const { return Field(value ? toString(*value) : ""); }
 };
 
 }

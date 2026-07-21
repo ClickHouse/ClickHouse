@@ -209,24 +209,20 @@ def test_cannot_trick_row_policy_with_keyword_with():
 
 def test_policy_from_users_xml_affects_only_user_assigned():
     assert node.query("SELECT * FROM mydb.filtered_table1") == TSV([[1, 0], [1, 1]])
-
-    expected_error = "another: Table mydb.filtered_table1 has row policies, but none of them are for the current user"
-    assert expected_error in node.query_and_get_error(
-        "SELECT * FROM mydb.filtered_table1", user="another"
+    assert node.query("SELECT * FROM mydb.filtered_table1", user="another") == TSV(
+        [[0, 0], [0, 1], [1, 0], [1, 1]]
     )
 
     assert node.query("SELECT * FROM mydb.filtered_table2") == TSV(
         [[0, 0, 0, 0], [0, 0, 6, 0]]
     )
-
-    expected_error = "another: Table mydb.filtered_table2 has row policies, but none of them are for the current user"
-    assert expected_error in node.query_and_get_error(
-        "SELECT * FROM mydb.filtered_table2", user="another"
+    assert node.query("SELECT * FROM mydb.filtered_table2", user="another") == TSV(
+        [[0, 0, 0, 0], [0, 0, 6, 0], [1, 2, 3, 4], [4, 3, 2, 1]]
     )
 
-    expected_error = "default: Table mydb.local has row policies, but none of them are for the current user"
-    assert expected_error in node.query_and_get_error("SELECT * FROM mydb.local")
-
+    assert node.query("SELECT * FROM mydb.local") == TSV(
+        [[1, 0], [1, 1], [2, 0], [2, 1]]
+    )
     assert node.query("SELECT * FROM mydb.local", user="another") == TSV(
         [[1, 0], [1, 1]]
     )
@@ -611,12 +607,9 @@ def test_dcl_management():
     assert node.query("SHOW POLICIES") == ""
 
     node.query("CREATE POLICY pA ON mydb.filtered_table1 FOR SELECT USING a<b")
-
-    expected_error = "default: Table mydb.filtered_table1 has row policies, but none of them are for the current user"
-    assert expected_error in node.query_and_get_error(
-        "SELECT * FROM mydb.filtered_table1"
+    assert node.query("SELECT * FROM mydb.filtered_table1") == TSV(
+        [[0, 0], [0, 1], [1, 0], [1, 1]]
     )
-
     assert node.query("SHOW POLICIES ON mydb.filtered_table1") == "pA\n"
 
     node.query("ALTER POLICY pA ON mydb.filtered_table1 TO default")
@@ -744,14 +737,9 @@ def test_dcl_users_with_policies_from_users_xml():
 
     assert node.query("SELECT * FROM mydb.filtered_table1") == TSV([[1, 0], [1, 1]])
 
-    expected_error = "X: Table mydb.filtered_table1 has row policies, but none of them are for the current user"
-    assert expected_error in node.query_and_get_error(
-        "SELECT * FROM mydb.filtered_table1", user="X"
+    assert node.query("SELECT * FROM mydb.filtered_table1", user="X") == TSV(
+        [[0, 0], [0, 1], [1, 0], [1, 1]]
     )
-
-    node.query("CREATE POLICY pA ON mydb.filtered_table1 FOR SELECT USING a>b TO X")
-
-    assert node.query("SELECT * FROM mydb.filtered_table1", user="X") == TSV([[1, 0]])
 
     node.query("DROP USER X")
 
@@ -769,10 +757,8 @@ def test_some_users_without_policies():
     assert node.query("SELECT * FROM mydb.filtered_table1", user="X") == TSV(
         [[0, 0], [1, 0], [1, 1]]
     )
-
-    expected_error = "Y: Table mydb.filtered_table1 has row policies, but none of them are for the current user"
-    assert expected_error in node.query_and_get_error(
-        "SELECT * FROM mydb.filtered_table1", user="Y"
+    assert node.query("SELECT * FROM mydb.filtered_table1", user="Y") == TSV(
+        [[0, 0], [0, 1], [1, 0], [1, 1]]
     )
 
     # restrictive a >=b for X, none for Y
@@ -780,8 +766,8 @@ def test_some_users_without_policies():
     assert node.query("SELECT * FROM mydb.filtered_table1", user="X") == TSV(
         [[0, 0], [1, 0], [1, 1]]
     )
-    assert expected_error in node.query_and_get_error(
-        "SELECT * FROM mydb.filtered_table1", user="Y"
+    assert node.query("SELECT * FROM mydb.filtered_table1", user="Y") == TSV(
+        [[0, 0], [0, 1], [1, 0], [1, 1]]
     )
 
     # permissive a >= b for X, restrictive a <= b for X, none for Y
@@ -792,8 +778,8 @@ def test_some_users_without_policies():
     assert node.query("SELECT * FROM mydb.filtered_table1", user="X") == TSV(
         [[0, 0], [1, 1]]
     )
-    assert expected_error in node.query_and_get_error(
-        "SELECT * FROM mydb.filtered_table1", user="Y"
+    assert node.query("SELECT * FROM mydb.filtered_table1", user="Y") == TSV(
+        [[0, 0], [0, 1], [1, 0], [1, 1]]
     )
 
     # permissive a >= b for X, restrictive a <= b for Y
@@ -872,7 +858,6 @@ def test_miscellaneous_engines():
     ) == TSV([[2, 0], [2, 1]])
 
     node.query("DROP TABLE IF EXISTS mydb.other_table SYNC")
-
 
 def test_policy_on_distributed_table_via_role():
     node.restart_clickhouse()
