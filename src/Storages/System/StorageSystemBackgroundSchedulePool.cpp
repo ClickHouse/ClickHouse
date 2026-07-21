@@ -51,9 +51,9 @@ void StorageSystemBackgroundSchedulePool::fillData(MutableColumns & res_columns,
         }
     };
 
-    /// Report only pools that already exist. Reading this table must not create a pool as a
-    /// side effect: the schedule pools are created lazily, and under thread exhaustion the
-    /// pool constructor aborts the server, so a read-only SELECT could otherwise kill it.
+    /// Report only pools that already exist. The schedule pools are created lazily, and reading
+    /// this table must not create one as a side effect (a read-only SELECT should have no effect
+    /// on server state).
     auto fill_if_exists = [&](BackgroundSchedulePool * pool, const String & pool_name)
     {
         if (pool)

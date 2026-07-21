@@ -1,10 +1,18 @@
 #include <Core/BackgroundSchedulePool.h>
 #include <Core/BackgroundSchedulePoolTaskHolder.h>
+#include <Common/Exception.h>
+#include <Common/ThreadPool.h>
+#include <base/scope_guard.h>
 #include <gtest/gtest.h>
 #include <condition_variable>
 #include <mutex>
 
 using namespace DB;
+
+namespace DB::ErrorCodes
+{
+    extern const int CANNOT_SCHEDULE_TASK;
+}
 
 TEST(BackgroundSchedulePool, Schedule)
 {
@@ -280,4 +288,24 @@ TEST(BackgroundSchedulePool, ScheduleAfterTerminitePool)
 
     ASSERT_EQ(task->schedule(), false);
     ASSERT_EQ(delayed_task->scheduleAfter(1), false);
+}
+
+/// Failing to spawn a schedule pool's initial threads must throw a recoverable exception, not
+/// abort the server. The fault injector forces the spawn to throw deterministically.
+TEST(BackgroundSchedulePool, CtorThrowsInsteadOfAbortOnSpawnFailure)
+{
+    CannotAllocateThreadFaultInjector::setFaultProbability(1.0);
+    SCOPE_EXIT({ CannotAllocateThreadFaultInjector::setFaultProbability(0.0); });
+
+    bool threw_cannot_schedule = false;
+    try
+    {
+        auto pool = BackgroundSchedulePool::create(4, 4, 0, CurrentMetrics::end(), CurrentMetrics::end(), ThreadName::TEST_SCHEDULER);
+    }
+    catch (const Exception & e)
+    {
+        threw_cannot_schedule = (e.code() == ErrorCodes::CANNOT_SCHEDULE_TASK);
+    }
+
+    EXPECT_TRUE(threw_cannot_schedule) << "constructor must throw CANNOT_SCHEDULE_TASK, not abort, when it cannot spawn initial threads";
 }

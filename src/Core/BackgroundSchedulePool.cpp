@@ -310,7 +310,14 @@ BackgroundSchedulePool::BackgroundSchedulePool(size_t size_, size_t initial_size
     }
     catch (...)
     {
-        LOG_FATAL(
+        /// Failing to spawn a schedule pool's initial threads (e.g. a transient CANNOT_SCHEDULE_TASK
+        /// when the global thread pool is momentarily saturated) is recoverable, so propagate it
+        /// instead of aborting the server. Tear down first: any already-spawned, still-joinable
+        /// ThreadFromGlobalPool aborts from its destructor during unwinding (see
+        /// ThreadFromGlobalPoolImpl::~ThreadFromGlobalPoolImpl), so join() must run before the throw.
+        /// join() is null-safe for the delayed thread and leaves the object cleanly destructible
+        /// (threads empty, delayed_thread null).
+        LOG_ERROR(
             logger,
             "Couldn't get {} threads from global thread pool: {}",
             initial_size,
@@ -318,7 +325,8 @@ BackgroundSchedulePool::BackgroundSchedulePool(size_t size_, size_t initial_size
                 ? "Not enough threads. Please make sure max_thread_pool_size is considerably "
                   "bigger than background_schedule_pool_size."
                 : getCurrentExceptionMessage(/* with_stacktrace */ true));
-        abort();
+        join();
+        throw;
     }
 }
 
@@ -422,8 +430,13 @@ void BackgroundSchedulePool::join()
         {
             Stopwatch watch;
             LOG_TRACE(logger, "Waiting for threads to finish.");
-            delayed_thread->join();
-            delayed_thread.reset();
+            /// delayed_thread may be null when join() is called from the constructor's failure
+            /// path before the delayed thread was constructed (a worker spawn threw first).
+            if (delayed_thread)
+            {
+                delayed_thread->join();
+                delayed_thread.reset();
+            }
             for (auto & thread : threads_to_join)
                 thread.join();
             LOG_TRACE(logger, "Threads finished in {}ms.", watch.elapsedMilliseconds());
