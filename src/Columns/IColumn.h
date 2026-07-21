@@ -475,7 +475,9 @@ public:
       * Returns N if current N right values are less then the left comparing value.
       * Returns 0 if current left and right values are equal.
       *
-      * The main reason for the function is compareAt() devirtualization.
+      * The main reason for the function is compareAt() devirtualization: IColumnHelper
+      * overrides this with a loop over the concrete column's compareAt; this base
+      * implementation with a virtual compareAt per row is only a fallback.
       */
     [[nodiscard]] virtual Int64 compareTrackAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const;
 
@@ -1015,6 +1017,9 @@ private:
 
     /// Devirtualize compareAt.
     bool hasEqualValues() const override;
+
+    /// Devirtualize compareAt.
+    [[nodiscard]] Int64 compareTrackAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const override;
 
     /// Devirtualize isDefaultAt.
     double getRatioOfDefaultRows(double sample_ratio) const override;

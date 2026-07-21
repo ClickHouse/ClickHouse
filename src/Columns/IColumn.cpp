@@ -508,6 +508,36 @@ bool IColumnHelper<Derived, Parent>::hasEqualValues() const
 }
 
 template <typename Derived, typename Parent>
+Int64 IColumnHelper<Derived, Parent>::compareTrackAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const
+{
+    const auto & self = static_cast<const Derived &>(*this);
+
+    Int64 res = self.compareAt(n, m, rhs, nan_direction_hint);
+
+    if (res < 0)
+    {
+        const size_t lhs_size = self.size();
+        ++n;
+        while (n < lhs_size && self.compareAt(n, m, rhs, nan_direction_hint) < 0)
+        {
+            --res;
+            ++n;
+        }
+    }
+    else if (res > 0)
+    {
+        const size_t rhs_size = rhs.size();
+        ++m;
+        while (m < rhs_size && self.compareAt(n, m, rhs, nan_direction_hint) > 0)
+        {
+            ++res;
+            ++m;
+        }
+    }
+    return res;
+}
+
+template <typename Derived, typename Parent>
 double IColumnHelper<Derived, Parent>::getRatioOfDefaultRows(double sample_ratio) const
 {
     if (sample_ratio <= 0.0 || sample_ratio > 1.0)

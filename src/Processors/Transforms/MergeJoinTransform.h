@@ -202,7 +202,8 @@ public:
     ColumnPtr asof_column = nullptr;
     size_t pos = 0;
     size_t rows = 0;
-    /// Whether the first sort column has a devirtualized compareTrackAt (fixed-and-contiguous columns only).
+    /// Whether the first sort column is cheap to compare row by row, so that skipping
+    /// a run of non-matching rows with compareTrackAt beats galloping over equal keys.
     bool first_key_fast_track = false;
 
     bool empty() const { return rows == 0; }
