@@ -311,13 +311,15 @@ MergeTreeReadersChain::ReadResult MergeTreeReadersChain::read(
     if (read_result.num_rows != 0)
     {
         first_reader.getReader()->fillVirtualColumns(read_result.columns, read_result.num_rows);
-        readPatches(first_reader.getReadSampleBlock(), patch_ranges, read_result);
 
+        /// Record the statistics before `readPatches`, which fills the columns missing on disk.
         if (dataflow_cache_update_cb)
             dataflow_cache_update_cb(
                 toColumnsWithTypeAndName(read_result.columns, first_reader.getReader()->getColumnsToRead()),
                 read_result.num_bytes_read,
                 should_continue_sampling);
+
+        readPatches(first_reader.getReadSampleBlock(), patch_ranges, read_result);
 
         executeActionsBeforePrewhere(read_result, read_result.columns, first_reader, {}, read_result.num_rows);
 
@@ -579,6 +581,10 @@ void MergeTreeReadersChain::readPatches(const Block & result_header, std::vector
     if (patch_readers.empty())
         return;
 
+    /// Sort-key columns of MergeOnKey patches are required for key comparisons below but may be missing on disk.
+    bool should_evaluate_missing_defaults = false;
+    range_readers.front().getReader()->fillMissingColumns(read_result.columns, should_evaluate_missing_defaults, read_result.num_rows);
+
     auto main_block = result_header.cloneWithColumns(read_result.columns);
 
     /// Materialize the sort-key result columns of MergeOnKey patches on `main_block` once per main block.
@@ -588,7 +594,6 @@ void MergeTreeReadersChain::readPatches(const Block & result_header, std::vector
         if (patch.mode != PatchMode::MergeOnKey || !patch.sorting_key)
             continue;
 
-        /// A column that is present in the header but not filled yet counts as missing.
         auto is_missing = [&](const String & name)
         {
             const auto * column = main_block.findByName(name);
@@ -613,6 +618,7 @@ void MergeTreeReadersChain::readPatches(const Block & result_header, std::vector
         {
             /// Key comparisons require the same column class on all sides.
             auto & key_column = main_block.getByName(name);
+            chassert(key_column.column);
             key_column.column = recursiveRemoveLowCardinality(removeSpecialRepresentations(key_column.column->convertToFullColumnIfConst()));
             key_column.type = recursiveRemoveLowCardinality(key_column.type);
 
