@@ -128,13 +128,7 @@ void OptimizeGroupTask::execute(OptimizerContext & optimizer_context)
                 std::make_shared<OptimizeGroupTask>(group_id, required_properties));
 
             for (const auto & new_expression : enforcer_expressions)
-            {
-                /// Fast path: if all inputs already have best implementations,
-                /// compute cost directly - avoids the entire OptimizeInputsTask chain.
-                if (!optimizer_context.tryUpdateBestPlanDirectly(new_expression))
-                    optimizer_context.pushTask(
-                        std::make_shared<OptimizeInputsTask>(new_expression, 0));
-            }
+                optimizer_context.scheduleCosting(new_expression);
         }
     }
     else
@@ -225,13 +219,7 @@ void ApplyRuleTask::execute(OptimizerContext & optimizer_context)
         }
         else
         {
-            /// Fast path: if all inputs already have best implementations,
-            /// compute cost directly - avoids the entire OptimizeInputsTask chain.
-            if (optimizer_context.tryUpdateBestPlanDirectly(new_expression))
-                continue;
-
-            /// Start optimizing the inputs from index 0.
-            optimizer_context.pushTask(std::make_shared<OptimizeInputsTask>(new_expression, 0));
+            optimizer_context.scheduleCosting(new_expression);
         }
     }
 }

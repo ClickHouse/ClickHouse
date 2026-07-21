@@ -198,4 +198,10 @@ bool OptimizerContext::tryUpdateBestPlanDirectly(GroupExpressionPtr expression)
     return true;
 }
 
+void OptimizerContext::scheduleCosting(GroupExpressionPtr expression)
+{
+    if (!tryUpdateBestPlanDirectly(expression))
+        pushTask(std::make_shared<OptimizeInputsTask>(expression, 0));
+}
+
 }

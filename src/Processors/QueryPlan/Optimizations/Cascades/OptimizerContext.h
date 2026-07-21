@@ -42,6 +42,10 @@ public:
     /// Returns true if the expression was handled (all inputs ready), false otherwise.
     bool tryUpdateBestPlanDirectly(GroupExpressionPtr expression);
 
+    /// Cost the expression now when every input already has a best implementation (avoids the
+    /// whole `OptimizeInputsTask` chain), otherwise schedule input optimization.
+    void scheduleCosting(GroupExpressionPtr expression);
+
     LoggerPtr log = getLogger("CascadesOptimizer");
 
     const std::vector<OptimizationRulePtr> & getTransformationRules() const { return transformation_rules; }
