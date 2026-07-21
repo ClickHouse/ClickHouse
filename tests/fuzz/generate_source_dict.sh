@@ -48,6 +48,17 @@ trap 'rm -f "$TMP_FILE"' EXIT
         "$SOURCE_ROOT/src/TableFunctions" \
         | tr '\0' '\n' | grep -aoE '"[^"]+"' | tr -d '"'
 
+    # Names returned by a getName() accessor that yields a string literal, e.g.
+    #     static const char * getName() { return "contingency"; }
+    # Such names reach the factory as factory.registerFunction(Data::getName(),
+    # ...), so the registration call itself carries no string literal for the
+    # pass below to find (contingency, cramersV, cramersVBiasCorrected, theilsU).
+    grep -rhozE 'getName\(\)[[:space:]]*\{[[:space:]]*return[[:space:]]+"[^"]+"' \
+        "$SOURCE_ROOT/src/Functions" \
+        "$SOURCE_ROOT/src/AggregateFunctions" \
+        "$SOURCE_ROOT/src/TableFunctions" \
+        | tr '\0' '\n' | grep -aoE '"[^"]+"' | tr -d '"'
+
     # Functions, aliases and data type families registered with a string
     # literal, e.g. factory.registerAlias("SUBSTRING", ...), including calls
     # with a line break before the name, e.g. factory.registerSimpleDataType(
