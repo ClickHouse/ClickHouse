@@ -448,7 +448,9 @@ std::vector<PuffinBlob> readPuffinFooterFromSeekable(SeekableReadBuffer & seekab
 
     const size_t footer_length = static_cast<size_t>(footer_length_signed);
     const size_t payload_start = file_size - PUFFIN_FOOTER_TRAILER_SIZE - footer_length;
-    if (payload_start < sizeof(PUFFIN_MAGIC))
+    /// Footer layout is Magic | FooterPayload | …; require a distinct footer-open Magic after the
+    /// file header Magic (payload_start == 4 would reuse the header Magic when blobs is empty).
+    if (payload_start < 2 * sizeof(PUFFIN_MAGIC))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid Puffin footer length: {}", footer_length_signed);
 
     seekable.seek(static_cast<off_t>(payload_start - sizeof(PUFFIN_MAGIC)), SEEK_SET);

@@ -96,6 +96,9 @@ done
 launch "$id" "$DATA/invalid_file_property_number.puffin" "Puffin footer property"
 id=$((id + 1))
 
+launch "$id" "$DATA/missing_footer_leading_magic.puffin" 'Invalid Puffin footer length'
+id=$((id + 1))
+
 while [[ ${#pids[@]} -gt 0 ]]; do
     wait_one
 done

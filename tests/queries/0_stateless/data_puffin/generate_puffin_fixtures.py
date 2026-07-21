@@ -632,6 +632,20 @@ def generate_invalid_footer_root() -> None:
     write_raw_footer_fixture("footer_root_array.puffin", b"[1, 2, 3]")
 
 
+def generate_missing_footer_leading_magic() -> None:
+    """Footer must start with its own Magic; header Magic must not double as footer-open Magic.
+
+    Layout Magic | FooterPayload | Size | Flags | Magic is invalid even when blobs is empty.
+    """
+    footer_payload = b'{"blobs": []}'
+    flags = b"\x00\x00\x00\x00"
+    footer_length = struct.pack("<i", len(footer_payload))
+    write_fixture(
+        "missing_footer_leading_magic.puffin",
+        PUFFIN_MAGIC + footer_payload + footer_length + flags + PUFFIN_MAGIC,
+    )
+
+
 def generate_invalid_file_metadata_properties() -> None:
     """Optional FileMetadata.properties must be a JSON object with string values."""
     bitmap = pyroaring.BitMap([2, 5])
@@ -700,6 +714,7 @@ def main() -> None:
     generate_invalid_integer_fields()
     generate_invalid_string_fields()
     generate_invalid_footer_root()
+    generate_missing_footer_leading_magic()
     generate_invalid_file_metadata_properties()
     generate_unparseable_footer_json()
     generate_mixed_blob_types()

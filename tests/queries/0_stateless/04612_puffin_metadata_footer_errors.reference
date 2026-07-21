@@ -44,3 +44,5 @@ Puffin footer field 'properties' must be an object
 Puffin footer field 'properties' must be an object
 --- invalid_file_property_number.puffin ---
 Puffin footer property
+--- missing_footer_leading_magic.puffin ---
+Invalid Puffin footer length
