@@ -1,11 +1,9 @@
--- Related: https://github.com/ClickHouse/clickhouse-private/issues/55715 (Cluster C, distributed)
--- CI failure: nested-alias USING keys were lost in queries shipped to shards.
+-- Related: https://github.com/ClickHouse/clickhouse-private/issues/55715 (Cluster C, distributed/parallel replicas)
+-- A nested-alias `USING` key cannot be re-resolved by a remote server (the rendered query loses the nested
+-- alias), so parallel replicas are downgraded at analysis time and `Distributed`/`remote` shipping fails loudly.
 
 SET enable_analyzer = 1;
 SET analyzer_compatibility_join_using_top_level_identifier = 1;
--- R3/R5 rely on the `sum` rewrite that drops the aliased body from the projection;
--- this setting is randomized in CI, so pin it to keep those cases deterministic.
-SET optimize_arithmetic_operations_in_aggregate_functions = 1;
 
 CREATE TABLE events
 (
@@ -13,35 +11,60 @@ CREATE TABLE events
     event_name String, event_revenue_usd String
 ) ENGINE = MergeTree ORDER BY event_date;
 INSERT INTO events VALUES ('2024-01-01', 'android', 'aid1', '', 'install', '0'), ('2024-01-01', 'android', 'aid1', '', 'af_purchase', '5.0'), ('2024-01-02', 'ios', '', 'idfv1', 'install', '0'), ('2024-01-02', 'ios', '', 'idfv1', 'af_purchase', '3.0');
-CREATE TABLE t_shadow (x UInt64, id UInt64) ENGINE = MergeTree ORDER BY x;
-INSERT INTO t_shadow VALUES (1, 5);
 
--- R1: CI failure shape, left table via remote over two shards.
+-- P1: parallel replicas silently downgraded (hook fires before any cluster lookup), so the query still returns.
+SELECT uniqExact(lower(if(platform = 'android', advertising_id, idfv)) AS id) AS users_pay
+FROM events AS iap
+INNER JOIN (
+    SELECT lower(if(platform = 'ios', idfv, advertising_id)) AS id, min(event_date) AS InstallDate
+    FROM events WHERE event_name = 'install' GROUP BY id
+) AS sub USING (id)
+WHERE event_name LIKE 'af_%' AND toFloat64OrZero(event_revenue_usd) > 0
+SETTINGS enable_parallel_replicas = 1, max_parallel_replicas = 3, cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost';
+
+-- P2: force mode throws instead of downgrading.
+SELECT uniqExact(lower(if(platform = 'android', advertising_id, idfv)) AS id) AS users_pay
+FROM events AS iap
+INNER JOIN (
+    SELECT lower(if(platform = 'ios', idfv, advertising_id)) AS id, min(event_date) AS InstallDate
+    FROM events WHERE event_name = 'install' GROUP BY id
+) AS sub USING (id)
+WHERE event_name LIKE 'af_%' AND toFloat64OrZero(event_revenue_usd) > 0
+SETTINGS enable_parallel_replicas = 2, max_parallel_replicas = 3, cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost'; -- { serverError SUPPORT_IS_DISABLED }
+
+-- R1: nested alias over `remote` stays a loud error (documented limitation).
 SELECT uniqExact(lower(if(platform = 'android', advertising_id, idfv)) AS id) AS users_pay
 FROM remote('127.0.0.{1,2}', currentDatabase(), events) AS iap
 INNER JOIN (
     SELECT lower(if(platform = 'ios', idfv, advertising_id)) AS id, min(event_date) AS InstallDate
     FROM events WHERE event_name = 'install' GROUP BY id
 ) AS sub USING (id)
-WHERE event_name LIKE 'af_%' AND toFloat64OrZero(event_revenue_usd) > 0;
+WHERE event_name LIKE 'af_%' AND toFloat64OrZero(event_revenue_usd) > 0; -- { serverError UNKNOWN_IDENTIFIER }
 
--- R2: nested alias shadowing a real column, body survives optimization (uniqExact is not rewritten).
-SELECT uniqExact(x + 10 AS id) FROM remote('127.0.0.{1,2}', currentDatabase(), t_shadow) AS tsh JOIN (SELECT 11 AS id) t2 USING (id);
-
--- R3: fail-close: shadowing where an optimization rewrites the body out of the projection
--- (sum(x + 10) becomes sum(x) + 10 * count()), so the alias cannot be restored; throws on the initiator
--- instead of silently joining by the shadowed column.
-SELECT sum(x + 10 AS id) FROM remote('127.0.0.{1,2}', currentDatabase(), t_shadow) AS tsh JOIN (SELECT 11 AS id) t2 USING (id); -- { serverError UNSUPPORTED_METHOD }
-
--- R4: join_use_nulls.
+-- R2: the `join_use_nulls` LEFT variant over `remote`, same expectation.
 SELECT uniqExact(lower(if(platform = 'android', advertising_id, idfv)) AS id) AS users_pay
 FROM remote('127.0.0.{1,2}', currentDatabase(), events) AS iap
 LEFT JOIN (SELECT lower(if(platform = 'ios', idfv, advertising_id)) AS id FROM events WHERE event_name = 'install' GROUP BY id) AS sub USING (id)
 WHERE event_name LIKE 'af_%'
+SETTINGS join_use_nulls = 1; -- { serverError UNKNOWN_IDENTIFIER }
+
+-- T1: top-level aliases keep working over `remote` (control; no downgrade, no error).
+-- Each left row is read once per shard, so the single-shard result is duplicated; ORDER BY makes it deterministic.
+CREATE TABLE t1 (id String, val String) ENGINE = MergeTree() ORDER BY id;
+CREATE TABLE t2 (id String, code String) ENGINE = MergeTree() ORDER BY id;
+CREATE TABLE t3 (id String, code String) ENGINE = MergeTree() ORDER BY id;
+INSERT INTO t1 VALUES ('a', 'v'), ('b', 'w');
+INSERT INTO t2 VALUES ('b', 'c');
+INSERT INTO t3 VALUES ('a_1', 'c'), ('b_1', 'd');
+
+SELECT t2.id || '_1' AS id, t1.val
+FROM remote('127.0.0.{1,2}', currentDatabase(), t1) AS t1
+LEFT JOIN t2 ON t1.id = t2.id
+LEFT JOIN t3 USING (id)
+ORDER BY t1.val, id
 SETTINGS join_use_nulls = 1;
 
--- R5: non-shadowing key whose body was rewritten out of the projection stays a loud shard-side error.
-SELECT sum(x + 10 AS newid) FROM remote('127.0.0.{1,2}', currentDatabase(), t_shadow) AS tsh JOIN (SELECT 11 AS newid) t2 USING (newid); -- { serverError UNKNOWN_IDENTIFIER }
-
 DROP TABLE events;
-DROP TABLE t_shadow;
+DROP TABLE t1;
+DROP TABLE t2;
+DROP TABLE t3;
