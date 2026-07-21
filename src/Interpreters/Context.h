@@ -1599,6 +1599,16 @@ public:
     BackgroundSchedulePool & getIcebergSchedulePool() const;
     BackgroundSchedulePool & getStreamingSchedulePool() const;
 
+    /// Non-creating accessors: return the pool only if it has already been created,
+    /// nullptr otherwise. For callers that must observe the pools without instantiating
+    /// them (the read-only system.background_schedule_pool table must be side-effect-free).
+    BackgroundSchedulePool * getBufferFlushSchedulePoolIfExists() const;
+    BackgroundSchedulePool * getSchedulePoolIfExists() const;
+    BackgroundSchedulePool * getMessageBrokerSchedulePoolIfExists() const;
+    BackgroundSchedulePool * getDistributedSchedulePoolIfExists() const;
+    BackgroundSchedulePool * getIcebergSchedulePoolIfExists() const;
+    BackgroundSchedulePool * getStreamingSchedulePoolIfExists() const;
+
     /// Has distributed_ddl configuration or not.
     bool hasDistributedDDL() const;
     void setDDLWorker(std::unique_ptr<DDLWorker> ddl_worker, const LoadTaskPtrs & startup_after);

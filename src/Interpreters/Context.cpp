@@ -622,18 +622,27 @@ struct ContextSharedPart : boost::noncopyable
     ConfigurationPtr users_config TSA_GUARDED_BY(mutex);                              /// Config with the users, profiles and quotas sections.
     InterserverIOHandler interserver_io_handler;                /// Handler for interserver communication.
 
+    /// Each background schedule pool is created lazily. The *_created flag is stored (release)
+    /// inside the callOnce lambda after the pool is assigned, so a non-creating accessor can
+    /// peek it (acquire) and return the pool only if it already exists (see peekSchedulePool).
     OnceFlag buffer_flush_schedule_pool_initialized;
     mutable BackgroundSchedulePoolPtr buffer_flush_schedule_pool; /// A thread pool that can do background flush for Buffer tables.
+    std::atomic<bool> buffer_flush_schedule_pool_created{false};
     OnceFlag schedule_pool_initialized;
     mutable BackgroundSchedulePoolPtr schedule_pool;    /// A thread pool that can run different jobs in background (used in replicated tables)
+    std::atomic<bool> schedule_pool_created{false};
     OnceFlag distributed_schedule_pool_initialized;
     mutable BackgroundSchedulePoolPtr distributed_schedule_pool; /// A thread pool that can run different jobs in background (used for distributed sends)
+    std::atomic<bool> distributed_schedule_pool_created{false};
     OnceFlag message_broker_schedule_pool_initialized;
     mutable BackgroundSchedulePoolPtr message_broker_schedule_pool; /// A thread pool that can run different jobs in background (used for message brokers, like RabbitMQ and Kafka)
+    std::atomic<bool> message_broker_schedule_pool_created{false};
     OnceFlag iceberg_schedule_pool_initialized;
     mutable BackgroundSchedulePoolPtr iceberg_schedule_pool; /// A thread pool that runs background metadata refresh for all active Iceberg tables
+    std::atomic<bool> iceberg_schedule_pool_created{false};
     OnceFlag streaming_schedule_pool_initialized;
     mutable BackgroundSchedulePoolPtr streaming_schedule_pool; /// A thread pool that runs streaming background jobs
+    std::atomic<bool> streaming_schedule_pool_created{false};
 
     mutable OnceFlag readers_initialized;
     mutable std::unique_ptr<IAsynchronousReader> asynchronous_remote_fs_reader;
@@ -5228,6 +5237,7 @@ BackgroundSchedulePool & Context::getBufferFlushSchedulePool() const
             CurrentMetrics::BackgroundBufferFlushSchedulePoolTask,
             CurrentMetrics::BackgroundBufferFlushSchedulePoolSize,
             ThreadName::BACKGROUND_BUFFER_FLUSH_SCHEDULE_POOL);
+        shared->buffer_flush_schedule_pool_created.store(true, std::memory_order_release);
     });
 
     return *shared->buffer_flush_schedule_pool;
@@ -5296,6 +5306,7 @@ BackgroundSchedulePool & Context::getSchedulePool() const
                 CurrentMetrics::BackgroundSchedulePoolTask,
                 CurrentMetrics::BackgroundSchedulePoolSize,
                 DB::ThreadName::BACKGROUND_SCHEDULE_POOL);
+            shared->schedule_pool_created.store(true, std::memory_order_release);
         });
 
     return *shared->schedule_pool;
@@ -5311,6 +5322,7 @@ BackgroundSchedulePool & Context::getDistributedSchedulePool() const
             CurrentMetrics::BackgroundDistributedSchedulePoolTask,
             CurrentMetrics::BackgroundDistributedSchedulePoolSize,
             DB::ThreadName::DISTRIBUTED_SCHEDULE_POOL);
+        shared->distributed_schedule_pool_created.store(true, std::memory_order_release);
     });
 
     return *shared->distributed_schedule_pool;
@@ -5326,6 +5338,7 @@ BackgroundSchedulePool & Context::getMessageBrokerSchedulePool() const
             CurrentMetrics::BackgroundMessageBrokerSchedulePoolTask,
             CurrentMetrics::BackgroundMessageBrokerSchedulePoolSize,
             DB::ThreadName::MSG_BROKER_SCHEDULE_POOL);
+        shared->message_broker_schedule_pool_created.store(true, std::memory_order_release);
     });
 
     return *shared->message_broker_schedule_pool;
@@ -5341,6 +5354,7 @@ BackgroundSchedulePool & Context::getIcebergSchedulePool() const
             CurrentMetrics::IcebergSchedulePoolTask,
             CurrentMetrics::IcebergSchedulePoolSize,
             DB::ThreadName::ICEBERG_SCHEDULE_POOL);
+        shared->iceberg_schedule_pool_created.store(true, std::memory_order_release);
     });
 
     return *shared->iceberg_schedule_pool;
@@ -5356,9 +5370,53 @@ BackgroundSchedulePool & Context::getStreamingSchedulePool() const
             CurrentMetrics::BackgroundStreamingSchedulePoolTask,
             CurrentMetrics::BackgroundStreamingSchedulePoolSize,
             DB::ThreadName::BACKGROUND_STREAMING_SCHEDULE_POOL);
+        shared->streaming_schedule_pool_created.store(true, std::memory_order_release);
     });
 
     return *shared->streaming_schedule_pool;
+}
+
+namespace
+{
+    /// Return the pool only if it has already been created; nullptr otherwise. Used by
+    /// callers that must observe the pools without creating them (e.g. the read-only
+    /// system.background_schedule_pool table). The acquire load pairs with the release
+    /// store in the getters' callOnce lambda, so a non-null result is a fully constructed
+    /// pool. A false flag is a benign "not created yet".
+    BackgroundSchedulePool * peekSchedulePool(const std::atomic<bool> & created, const BackgroundSchedulePoolPtr & pool)
+    {
+        return created.load(std::memory_order_acquire) ? pool.get() : nullptr;
+    }
+}
+
+BackgroundSchedulePool * Context::getBufferFlushSchedulePoolIfExists() const
+{
+    return peekSchedulePool(shared->buffer_flush_schedule_pool_created, shared->buffer_flush_schedule_pool);
+}
+
+BackgroundSchedulePool * Context::getSchedulePoolIfExists() const
+{
+    return peekSchedulePool(shared->schedule_pool_created, shared->schedule_pool);
+}
+
+BackgroundSchedulePool * Context::getDistributedSchedulePoolIfExists() const
+{
+    return peekSchedulePool(shared->distributed_schedule_pool_created, shared->distributed_schedule_pool);
+}
+
+BackgroundSchedulePool * Context::getMessageBrokerSchedulePoolIfExists() const
+{
+    return peekSchedulePool(shared->message_broker_schedule_pool_created, shared->message_broker_schedule_pool);
+}
+
+BackgroundSchedulePool * Context::getIcebergSchedulePoolIfExists() const
+{
+    return peekSchedulePool(shared->iceberg_schedule_pool_created, shared->iceberg_schedule_pool);
+}
+
+BackgroundSchedulePool * Context::getStreamingSchedulePoolIfExists() const
+{
+    return peekSchedulePool(shared->streaming_schedule_pool_created, shared->streaming_schedule_pool);
 }
 
 void Context::configureServerWideThrottling()
