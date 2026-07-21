@@ -4861,6 +4861,7 @@ static ASTPtr lightweightToAlterMutation(
     ASTAlterCommand::Type type,
     const ASTPtr & predicate,
     const ASTPtr & partition,
+    const ASTPtr & partitions,
     const ASTPtr & assignments)
 {
     auto command = make_intrusive<ASTAlterCommand>();
@@ -4869,6 +4870,8 @@ static ASTPtr lightweightToAlterMutation(
         command->predicate = command->children.emplace_back(predicate->clone()).get();
     if (partition)
         command->partition = command->children.emplace_back(partition->clone()).get();
+    if (partitions)
+        command->partitions = command->children.emplace_back(partitions->clone()).get();
     if (assignments)
         command->update_assignments = command->children.emplace_back(assignments->clone()).get();
 
@@ -4926,6 +4929,7 @@ static ASTPtr alterMutationToLightweight(const ASTAlterQuery & alter)
     {
         auto query = make_intrusive<ASTDeleteQuery>();
         fill_member(query, command->partition, query->partition);
+        fill_member(query, command->partitions, query->partitions);
         fill_member(query, command->predicate, query->predicate);
         fill_table(query);
         fill_member(query, alter.settings_ast.get(), query->settings_ast);
@@ -4936,6 +4940,7 @@ static ASTPtr alterMutationToLightweight(const ASTAlterQuery & alter)
     {
         auto query = make_intrusive<ASTUpdateQuery>();
         fill_member(query, command->partition, query->partition);
+        fill_member(query, command->partitions, query->partitions);
         fill_member(query, command->predicate, query->predicate);
         fill_member(query, command->update_assignments, query->assignments);
         fill_table(query);
@@ -6111,12 +6116,14 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
     else if (auto * delete_query = typeid_cast<ASTDeleteQuery *>(ast.get()))
     {
         fuzzMandatoryPredicate(delete_query->predicate, delete_query->children);
-        /// Drop IN PARTITION, widening the mutation to the whole table
-        if (delete_query->partition && fuzz_rand() % 20 == 0)
+        /// Drop IN PARTITION (both the single- and multi-partition carriers), widening the mutation to the whole table
+        if ((delete_query->partition || delete_query->partitions) && fuzz_rand() % 20 == 0)
         {
             auto & ch = delete_query->children;
             ch.erase(std::remove(ch.begin(), ch.end(), delete_query->partition), ch.end());
+            ch.erase(std::remove(ch.begin(), ch.end(), delete_query->partitions), ch.end());
             delete_query->partition = {};
+            delete_query->partitions = {};
         }
         fuzz(delete_query->children);
         /// Occasionally rewrite into the equivalent `ALTER TABLE ... DELETE` mutation
@@ -6124,7 +6131,13 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
         {
             debug_visited_nodes.erase(ast.get());
             ast = lightweightToAlterMutation(
-                *delete_query, delete_query->cluster, ASTAlterCommand::DELETE, delete_query->predicate, delete_query->partition, nullptr);
+                *delete_query,
+                delete_query->cluster,
+                ASTAlterCommand::DELETE,
+                delete_query->predicate,
+                delete_query->partition,
+                delete_query->partitions,
+                nullptr);
         }
     }
     else if (auto * update_query = typeid_cast<ASTUpdateQuery *>(ast.get()))
@@ -6136,12 +6149,14 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
             update_query->assignments->children.erase(
                 update_query->assignments->children.begin() + fuzz_rand() % update_query->assignments->children.size());
         }
-        /// Drop IN PARTITION, widening the mutation to the whole table
-        if (update_query->partition && fuzz_rand() % 20 == 0)
+        /// Drop IN PARTITION (both the single- and multi-partition carriers), widening the mutation to the whole table
+        if ((update_query->partition || update_query->partitions) && fuzz_rand() % 20 == 0)
         {
             auto & ch = update_query->children;
             ch.erase(std::remove(ch.begin(), ch.end(), update_query->partition), ch.end());
+            ch.erase(std::remove(ch.begin(), ch.end(), update_query->partitions), ch.end());
             update_query->partition = {};
+            update_query->partitions = {};
         }
         fuzz(update_query->children);
         /// Occasionally rewrite into the equivalent `ALTER TABLE ... UPDATE` mutation
@@ -6154,6 +6169,7 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
                 ASTAlterCommand::UPDATE,
                 update_query->predicate,
                 update_query->partition,
+                update_query->partitions,
                 update_query->assignments);
         }
     }
