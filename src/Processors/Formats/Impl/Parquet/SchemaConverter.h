@@ -126,6 +126,7 @@ private:
     /// Return true if the schema element was recognized as the corresponding kind,
     /// even if no output column needs to be produced.
     bool processSubtreePrimitive(TraversalNode & node);
+    bool processSubtreeVariant(TraversalNode & node);
     bool processSubtreeMap(TraversalNode & node);
     bool processSubtreeArrayOuter(TraversalNode & node);
     bool processSubtreeArrayInner(TraversalNode & node);

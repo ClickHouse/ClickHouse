@@ -202,6 +202,10 @@ struct Reader
         bool is_missing_column = false;
         bool needs_cast = false; // if output_type is different from input_type
 
+        bool is_variant = false;
+        size_t variant_metadata_column = UINT64_MAX;
+        size_t variant_value_column = UINT64_MAX;
+
         /// If type is Array, this is the repetition level of that array.
         /// `rep - 1` is index in ColumnChunk::arrays_offsets.
         UInt8 rep = 0;
@@ -518,6 +522,8 @@ struct Reader
     /// The caller is responsible for caching the result (in RowSubGroup::output) to make sure this
     /// is not called again for the moved-out columns.
     MutableColumnPtr formOutputColumn(RowSubgroup & row_subgroup, size_t output_column_idx, size_t num_rows);
+    MutableColumnPtr formVariantColumn(
+        const OutputColumnInfo & info, MutableColumnPtr metadata_column, MutableColumnPtr value_column, size_t num_rows);
     ColumnPtr & getOrFormOutputColumn(RowSubgroup & row_subgroup, size_t idx_in_output_block);
 
     void applyPrewhere(RowSubgroup & row_subgroup, const RowGroup & row_group, size_t step_idx);

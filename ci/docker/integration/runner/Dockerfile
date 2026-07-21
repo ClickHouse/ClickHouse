@@ -69,23 +69,23 @@ COPY requirements.txt /
 RUN python3.13 -m pip install --no-cache-dir -r requirements.txt
 
 
-RUN curl -fsSL -O https://archive.apache.org/dist/spark/spark-3.5.5/spark-3.5.5-bin-hadoop3.tgz \
-    && tar xzvf spark-3.5.5-bin-hadoop3.tgz -C / \
-    && rm spark-3.5.5-bin-hadoop3.tgz
+RUN curl -fsSL -O https://archive.apache.org/dist/spark/spark-4.0.0/spark-4.0.0-bin-hadoop3.tgz \
+    && tar xzvf spark-4.0.0-bin-hadoop3.tgz -C / \
+    && rm spark-4.0.0-bin-hadoop3.tgz
 
 # download spark and packages
 # if you change packages, don't forget to update them in tests/integration/helpers/cluster.py
-RUN packages="io.delta:delta-spark_2.12:3.1.0,\
-org.apache.hudi:hudi-spark3.5-bundle_2.12:1.0.1,\
-org.apache.iceberg:iceberg-spark-runtime-3.5_2.12:1.8.1,\
-org.apache.hadoop:hadoop-aws:3.3.4,\
+RUN packages="io.delta:delta-spark_2.13:4.0.0,\
+org.apache.hudi:hudi-spark4.0-bundle_2.13:1.0.2,\
+org.apache.iceberg:iceberg-spark-runtime-4.0_2.13:1.10.0,\
+org.apache.hadoop:hadoop-aws:3.4.1,\
 com.amazonaws:aws-java-sdk-bundle:1.12.262,\
-org.apache.hadoop:hadoop-azure:3.3.4,\
+org.apache.hadoop:hadoop-azure:3.4.1,\
 com.microsoft.azure:azure-storage:8.6.6,\
-org.apache.spark:spark-avro_2.12:3.5.1,\
-org.apache.sedona:sedona-spark-3.5_2.12:1.6.1"\
-    && /spark-3.5.5-bin-hadoop3/bin/spark-shell --packages "$packages" \
-    && find /root/.ivy2/ -name '*.jar' -exec ln -sf {} /spark-3.5.5-bin-hadoop3/jars/ \;
+org.apache.spark:spark-avro_2.13:4.0.0,\
+org.apache.sedona:sedona-spark-shaded-4.0_2.13:1.7.2"\
+    && /spark-4.0.0-bin-hadoop3/bin/spark-shell --packages "$packages" \
+    && find /root/.ivy2/ -name '*.jar' -exec ln -sf {} /spark-4.0.0-bin-hadoop3/jars/ \;
 
 RUN set -x \
   && addgroup --system dockremap \
@@ -109,6 +109,6 @@ COPY --from=clickhouse/cctools:859fb360308eb8ac47ad \
 
 EXPOSE 2375
 
-ENV SPARK_HOME="/spark-3.5.5-bin-hadoop3" \
+ENV SPARK_HOME="/spark-4.0.0-bin-hadoop3" \
     PATH="${SPARK_HOME}/bin:${PATH}" \
     JAVA_TOOL_OPTIONS="-Djdk.attach.allowAttachSelf=true"

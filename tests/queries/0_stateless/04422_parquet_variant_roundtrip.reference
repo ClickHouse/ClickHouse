@@ -1,0 +1,9 @@
+v	Variant(Array(String), Bool, Date32, DateTime64(6, \'UTC\'), DateTime64(9, \'UTC\'), Float64, Int64, Map(String, String), String, UUID)					
+42	Int64
+abc	String
+3.5	Float64
+['1','2','3']	Array(String)
+{'k':'v'}	Map(String, String)
+2020-01-02	Date32
+2020-01-02 03:04:05.678901	DateTime64(6, \'UTC\')
+00112233-4455-6677-8899-aabbccddeeff	UUID

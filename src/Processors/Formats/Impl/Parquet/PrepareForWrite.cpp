@@ -24,6 +24,9 @@
 #include <DataTypes/DataTypeCustom.h>
 #include <Columns/ColumnVariant.h>
 #include <DataTypes/DataTypeVariant.h>
+#include <Formats/FormatSettings.h>
+#include <IO/WriteBufferFromString.h>
+#include <Processors/Formats/Impl/Parquet/VariantEncoding.h>
 
 /// This file deals with schema conversion and with repetition and definition levels.
 
@@ -583,6 +586,63 @@ void prepareColumnTuple(
     }
 }
 
+void prepareColumnVariant(
+    ColumnPtr column, DataTypePtr type, const std::string & name, const WriteOptions & options,
+    ColumnChunkWriteStates & states, SchemaElements & schemas, const std::optional<std::unordered_map<String, Int64>> & column_field_ids)
+{
+    auto & variant_schema = schemas.emplace_back();
+    variant_schema.__set_repetition_type(parq::FieldRepetitionType::REQUIRED);
+    variant_schema.__set_name(name);
+    variant_schema.__set_num_children(2);
+    variant_schema.__isset.logicalType = true;
+    variant_schema.logicalType.__set_VARIANT({});
+    if (column_field_ids)
+    {
+        auto it = column_field_ids->find(name);
+        if (it != column_field_ids->end())
+            variant_schema.__set_field_id(static_cast<Int32>(it->second));
+    }
+
+    const auto & variant_type = assert_cast<const DataTypeVariant &>(*type);
+    const auto & col_variant = assert_cast<const ColumnVariant &>(*column);
+    size_t num_rows = col_variant.size();
+    auto metadata_col = ColumnString::create();
+    auto value_col = ColumnString::create();
+    metadata_col->reserve(num_rows);
+    value_col->reserve(num_rows);
+
+    for (size_t i = 0; i < num_rows; ++i)
+    {
+        auto global_discr = col_variant.globalDiscriminatorAt(i);
+        Parquet::VariantBinary bin;
+        if (global_discr == ColumnVariant::NULL_DISCRIMINATOR)
+        {
+            bin = Parquet::encodeVariant(Field(), *variant_type.getVariants().front());
+        }
+        else
+        {
+            Field f;
+            col_variant.get(i, f);
+            bin = Parquet::encodeVariant(f, *variant_type.getVariants()[global_discr]);
+        }
+        metadata_col->insertData(bin.metadata.data(), bin.metadata.size());
+        value_col->insertData(bin.value.data(), bin.value.size());
+    }
+
+    WriteOptions child_options = options;
+    child_options.output_string_as_string = false;
+
+    size_t child_states_begin = states.size();
+    preparePrimitiveColumn(std::move(metadata_col), std::make_shared<DataTypeString>(), "metadata", child_options, states, schemas, std::nullopt);
+    preparePrimitiveColumn(std::move(value_col), std::make_shared<DataTypeString>(), "value", child_options, states, schemas, std::nullopt);
+
+    for (size_t i = child_states_begin; i < states.size(); ++i)
+    {
+        Strings & path = states[i].column_chunk.meta_data.path_in_schema;
+        path.insert(path.begin(), name);
+    }
+}
+
 void prepareColumnArray(
     ColumnPtr column, DataTypePtr type, const std::string & name, const WriteOptions & options,
     ColumnChunkWriteStates & states, SchemaElements & schemas, const std::optional<std::unordered_map<String, Int64>> & column_field_ids = std::nullopt)
@@ -774,6 +834,13 @@ void prepareColumnRecursive(
         case TypeIndex::Array: prepareColumnArray(column, type, name, options, states, schemas, column_field_ids); break;
         case TypeIndex::Tuple: prepareColumnTuple(column, type, name, options, states, schemas, column_field_ids); break;
         case TypeIndex::Map: prepareColumnMap(column, type, name, options, states, schemas, column_field_ids); break;
+        case TypeIndex::Variant:
+            /// Geometry type branch
+            if (type->getCustomName())
+                preparePrimitiveColumn(column, type, name, options, states, schemas, lookupLeafFieldId(column_field_ids, name));
+            else
+                prepareColumnVariant(column, type, name, options, states, schemas, column_field_ids);
+            break;
         case TypeIndex::LowCardinality:
         {
             auto nested_type = assert_cast<const DataTypeLowCardinality &>(*type).getDictionaryType();

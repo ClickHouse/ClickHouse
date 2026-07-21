@@ -4,13 +4,18 @@
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
+#include <Columns/ColumnVariant.h>
+#include <DataTypes/DataTypeVariant.h>
 #include <Columns/FilterDescription.h>
 #include <Common/checkStackSize.h>
 #include <Common/FieldAccurateComparison.h>
 #include <Formats/FormatFilterInfo.h>
 #include <Interpreters/castColumn.h>
 #include <IO/CompressionMethod.h>
+#include <IO/WriteBufferFromString.h>
+#include <DataTypes/DataTypeString.h>
 #include <Processors/Formats/Impl/Parquet/Decoding.h>
+#include <Processors/Formats/Impl/Parquet/VariantEncoding.h>
 #include <Processors/Formats/Impl/Parquet/parquetBloomFilterHash.h>
 #include <Processors/Formats/Impl/Parquet/Reader.h>
 #include <Processors/Formats/Impl/Parquet/SchemaConverter.h>
@@ -2146,6 +2151,13 @@ MutableColumnPtr Reader::formOutputColumn(RowSubgroup & row_subgroup, size_t out
         return res;
     }
 
+    if (output_info.is_variant)
+    {
+        MutableColumnPtr metadata_column = formOutputColumn(row_subgroup, output_info.variant_metadata_column, num_rows);
+        MutableColumnPtr value_column = formOutputColumn(row_subgroup, output_info.variant_value_column, num_rows);
+        return formVariantColumn(output_info, std::move(metadata_column), std::move(value_column), num_rows);
+    }
+
     TypeIndex kind = output_info.input_type->getColumnType();
 
     if (output_info.is_primitive)
@@ -2217,6 +2229,172 @@ MutableColumnPtr Reader::formOutputColumn(RowSubgroup & row_subgroup, size_t out
     }
 
     return res;
+}
+
+MutableColumnPtr Reader::formVariantColumn(
+    const OutputColumnInfo & info, MutableColumnPtr metadata_column, MutableColumnPtr value_column, size_t num_rows)
+{
+    auto unwrap = [](const IColumn & col, const ColumnString *& str, const NullMap *& null_map)
+    {
+        if (const auto * nullable = typeid_cast<const ColumnNullable *>(&col))
+        {
+            str = &assert_cast<const ColumnString &>(nullable->getNestedColumn());
+            null_map = &nullable->getNullMapData();
+        }
+        else
+        {
+            str = &assert_cast<const ColumnString &>(col);
+            null_map = nullptr;
+        }
+    };
+
+    const ColumnString * metadata_str = nullptr;
+    const ColumnString * value_str = nullptr;
+    const NullMap * metadata_null = nullptr;
+    const NullMap * value_null = nullptr;
+    unwrap(*metadata_column, metadata_str, metadata_null);
+    unwrap(*value_column, value_str, value_null);
+
+    auto is_null_row = [&](size_t i)
+    {
+        return (metadata_null && (*metadata_null)[i]) || (value_null && (*value_null)[i]);
+    };
+
+    if (typeid_cast<const DataTypeString *>(info.output_type.get()))
+    {
+        auto out = ColumnString::create();
+        out->reserve(num_rows);
+        String buffer;
+        for (size_t i = 0; i < num_rows; ++i)
+        {
+            if (is_null_row(i))
+            {
+                out->insertData("null", 4);
+                continue;
+            }
+            buffer.clear();
+            WriteBufferFromString buf(buffer);
+            Parquet::decodeVariantToJSON(metadata_str->getDataAt(i), value_str->getDataAt(i), buf);
+            buf.finalize();
+            out->insertData(buffer.data(), buffer.size());
+        }
+        return out;
+    }
+
+    const auto & variant_type = assert_cast<const DataTypeVariant &>(*info.output_type);
+    const auto & variants = variant_type.getVariants();
+    MutableColumns members;
+    members.reserve(variants.size());
+    std::unordered_map<String, size_t> discr_by_name;
+    for (size_t i = 0; i < variants.size(); ++i)
+    {
+        members.push_back(variants[i]->createColumn());
+        discr_by_name[variants[i]->getName()] = i;
+    }
+    auto discr_for = [&](const String & type_name) -> size_t
+    {
+        auto it = discr_by_name.find(type_name);
+        if (it == discr_by_name.end())
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "Variant column {} target type has no member {}", info.name, type_name);
+        return it->second;
+    };
+    const size_t d_bool = discr_for("Bool");
+    const size_t d_int = discr_for("Int64");
+    const size_t d_float = discr_for("Float64");
+    const size_t d_date = discr_for("Date32");
+    const size_t d_datetime_microseconds = discr_for("DateTime64(6, 'UTC')");
+    const size_t d_datetime_nanoseconds = discr_for("DateTime64(9, 'UTC')");
+    const size_t d_uuid = discr_for("UUID");
+    const size_t d_str = discr_for("String");
+    const size_t d_arr = discr_for("Array(String)");
+    const size_t d_map = discr_for("Map(String, String)");
+
+    auto local_discriminators = ColumnVariant::ColumnDiscriminators::create();
+    auto offsets = ColumnVariant::ColumnOffsets::create();
+    auto & disc_data = local_discriminators->getData();
+    auto & off_data = offsets->getData();
+    disc_data.reserve(num_rows);
+    off_data.reserve(num_rows);
+
+    for (size_t i = 0; i < num_rows; ++i)
+    {
+        Parquet::VariantField vf = is_null_row(i)
+            ? Parquet::VariantField{}
+            : Parquet::decodeVariantToField(metadata_str->getDataAt(i), value_str->getDataAt(i));
+
+        size_t d = 0;
+        switch (vf.kind)
+        {
+            case Parquet::VariantFieldKind::Null:
+            {
+                disc_data.push_back(ColumnVariant::NULL_DISCRIMINATOR);
+                off_data.push_back(0);
+                continue;
+            }
+            case Parquet::VariantFieldKind::Bool:
+            {
+                d = d_bool;
+                break;
+            }
+            case Parquet::VariantFieldKind::Int64:
+            {
+                d = d_int;
+                break;
+            }
+            case Parquet::VariantFieldKind::Float64:
+            {
+                d = d_float;
+                break;
+            }
+            case Parquet::VariantFieldKind::Date:
+            {
+                d = d_date;
+                break;
+            }
+            case Parquet::VariantFieldKind::DateTimeMicros:
+            {
+                d = d_datetime_microseconds;
+                break;
+            }
+            case Parquet::VariantFieldKind::DateTimeNanos:
+            {
+                d = d_datetime_nanoseconds; 
+                break;
+            }
+            case Parquet::VariantFieldKind::Uuid:
+            {
+                d = d_uuid;
+                break;
+            }
+            case Parquet::VariantFieldKind::String:
+            {
+                d = d_str;
+                break;
+            }
+            case Parquet::VariantFieldKind::Array:
+            {
+                d = d_arr;
+                break;
+            }
+            case Parquet::VariantFieldKind::Map:
+            {
+                d = d_map;
+                break;
+            }
+        }
+        members[d]->insert(vf.value);
+        disc_data.push_back(static_cast<ColumnVariant::Discriminator>(d));
+        off_data.push_back(members[d]->size() - 1);
+    }
+
+    Columns member_columns;
+    member_columns.reserve(members.size());
+    for (auto & m : members)
+        member_columns.push_back(std::move(m));
+
+    return IColumn::mutate(
+        ColumnVariant::create(std::move(local_discriminators), std::move(offsets), member_columns));
 }
 
 ColumnPtr & Reader::getOrFormOutputColumn(RowSubgroup & row_subgroup, size_t idx_in_output_block)

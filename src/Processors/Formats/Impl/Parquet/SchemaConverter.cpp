@@ -260,6 +260,7 @@ void SchemaConverter::processSubtree(TraversalNode & node)
     /// https://github.com/apache/parquet-format/blob/master/LogicalTypes.md
 
     if (!processSubtreePrimitive(node) &&
+        !processSubtreeVariant(node) &&
         !processSubtreeMap(node) &&
         !processSubtreeArrayOuter(node) &&
         !processSubtreeArrayInner(node))
@@ -321,6 +322,17 @@ static bool isPrimitiveNode(const parq::SchemaElement & elem)
     /// for primitive columns. E.g.
     /// tests/queries/0_stateless/data_hive/partitioning/non_existing_column=Elizabeth/sample.parquet
     return !elem.__isset.num_children || (elem.num_children == 0 && elem.__isset.type);
+}
+
+static size_t schemaSubtreeSize(const parq::FileMetaData & file_metadata, size_t idx)
+{
+    const parq::SchemaElement & elem = file_metadata.schema.at(idx);
+    if (isPrimitiveNode(elem))
+        return 1;
+    size_t total = 1;
+    for (Int32 i = 0; i < elem.num_children; ++i)
+        total += schemaSubtreeSize(file_metadata, idx + total);
+    return total;
 }
 
 bool SchemaConverter::processSubtreePrimitive(TraversalNode & node)
@@ -437,6 +449,102 @@ bool SchemaConverter::processSubtreePrimitive(TraversalNode & node)
     output.output_type = node.type_hint ? node.type_hint : inferred_type;
     output.needs_cast = !output.output_type->equals(*output.input_type);
 
+    return true;
+}
+
+bool SchemaConverter::processSubtreeVariant(TraversalNode & node)
+{
+    if (isPrimitiveNode(*node.element))
+        return false;
+
+    bool has_metadata = false;
+    bool has_value = false;
+    bool has_typed_value = false;
+    size_t child_idx = schema_idx;
+    for (Int32 i = 0; i < node.element->num_children; ++i)
+    {
+        const String & child_name = file_metadata.schema.at(child_idx).name;
+        if (child_name == "metadata")
+            has_metadata = true;
+        else if (child_name == "value")
+            has_value = true;
+        else if (child_name == "typed_value")
+            has_typed_value = true;
+        else
+            return false;
+        child_idx += schemaSubtreeSize(file_metadata, child_idx);
+    }
+    if (!has_metadata || !(has_value || has_typed_value))
+        return false;
+
+    DataTypePtr output_type;
+    if (node.type_hint)
+    {
+        if (isString(node.type_hint) || typeid_cast<const DataTypeVariant *>(node.type_hint.get()))
+            output_type = node.type_hint;
+        else
+            throw Exception(ErrorCodes::TYPE_MISMATCH,
+                "Requested type of variant column {} is {}, but only Variant or String are supported",
+                node.getNameForLogging(), node.type_hint->getName());
+    }
+    else
+    {
+        DataTypes variant_members{
+            DataTypeFactory::instance().get("Bool"),
+            std::make_shared<DataTypeInt64>(),
+            std::make_shared<DataTypeFloat64>(),
+            std::make_shared<DataTypeDate32>(),
+            std::make_shared<DataTypeDateTime64>(6, "UTC"),
+            std::make_shared<DataTypeDateTime64>(9, "UTC"),
+            DataTypeFactory::instance().get("UUID"),
+            std::make_shared<DataTypeString>(),
+            std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()),
+            std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeString>()),
+        };
+        output_type = std::make_shared<DataTypeVariant>(variant_members);
+    }
+
+    size_t primitive_start = primitive_columns.size();
+    std::optional<size_t> metadata_out;
+    std::optional<size_t> value_out;
+
+    for (size_t i = 0; i < size_t(node.element->num_children); ++i)
+    {
+        const String child_name = file_metadata.schema.at(schema_idx).name;
+        if (child_name == "typed_value")
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "Shredded variant (column {}) is not supported yet", node.getNameForLogging());
+
+        TraversalNode subnode = node.prepareToRecurse(SchemaContext::None, nullptr);
+        subnode.requested = node.requested;
+        processSubtree(subnode);
+
+        if (child_name == "value")
+            value_out = subnode.output_idx;
+        else if (child_name == "metadata")
+            metadata_out = subnode.output_idx;
+    }
+
+    if (!node.requested)
+        return true;
+
+    if (!metadata_out.has_value() || !value_out.has_value())
+        throw Exception(ErrorCodes::INCORRECT_DATA,
+            "Variant column {} is missing its metadata or value field", node.getNameForLogging());
+
+    node.output_idx = output_columns.size();
+    OutputColumnInfo & output = output_columns.emplace_back();
+    output.name = node.name;
+    output.primitive_start = primitive_start;
+    output.primitive_end = primitive_columns.size();
+    output.input_type = std::make_shared<DataTypeTuple>(
+        DataTypes{std::make_shared<DataTypeString>(), std::make_shared<DataTypeString>()},
+        Strings{"metadata", "value"});
+    output.output_type = output_type;
+    output.is_variant = true;
+    output.variant_metadata_column = *metadata_out;
+    output.variant_value_column = *value_out;
+    output.nested_columns = {*metadata_out, *value_out};
     return true;
 }
 
