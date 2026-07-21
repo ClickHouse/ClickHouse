@@ -206,13 +206,16 @@ public:
         auto & chunks = data.chunks;
         UInt64 chunk_count = 0;
         readVarUInt(chunk_count, buf);
-        if (chunk_count > MAX_CHUNKS_PER_STATE)
+        /// `add` and `merge` reduce immediately after crossing this threshold, so the writer can
+        /// never emit a larger chunk vector. Keep the reader on the same invariant instead of
+        /// admitting crafted states with a much more expensive reduction shape.
+        if (chunk_count > UNION_REDUCTION_THRESHOLD)
             throw Exception(
                 ErrorCodes::INCORRECT_DATA,
                 "Corrupted state of aggregate function {}: {} chunks (limit {})",
                 getName(),
                 chunk_count,
-                MAX_CHUNKS_PER_STATE);
+                UNION_REDUCTION_THRESHOLD);
 
         chunks.resize(chunk_count);
         PolygonalStateBudget budget;

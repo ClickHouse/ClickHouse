@@ -281,13 +281,16 @@ public:
                     ErrorCodes::INCORRECT_DATA,
                     "Corrupted state of aggregate function {}: mode is NonEmpty but chunk count is 0",
                     getName());
-            if (chunk_count > MAX_CHUNKS_PER_STATE)
+            /// `add` and `merge` reduce immediately after crossing this threshold, so the writer
+            /// can never emit a larger chunk vector. Reject unreachable serialized shapes before
+            /// they enter the more expensive intersection reduction path.
+            if (chunk_count > INTERSECT_REDUCTION_THRESHOLD)
                 throw Exception(
                     ErrorCodes::INCORRECT_DATA,
                     "Corrupted state of aggregate function {}: {} chunks (limit {})",
                     getName(),
                     chunk_count,
-                    MAX_CHUNKS_PER_STATE);
+                    INTERSECT_REDUCTION_THRESHOLD);
 
             data.chunks.resize(chunk_count);
             PolygonalStateBudget budget;
