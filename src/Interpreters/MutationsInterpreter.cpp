@@ -1107,6 +1107,15 @@ void MutationsInterpreter::prepare(bool dry_run)
                     });
             if (it == std::cend(indices_desc))
             {
+                /// Lookup indices are in-memory structures rebuilt on demand; they have no
+                /// materialization path. Reject the command instead of accepting it as a silent
+                /// no-op (the generic unknown-name skip below would report success).
+                if (metadata_snapshot->getLookupIndices().has(command.index_name))
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "Index {} is a lookup index. Lookup indices do not support MATERIALIZE INDEX",
+                        backQuote(command.index_name));
+
                 LOG_WARNING(logger, "Index {} does not exist, skipping materialization", command.index_name);
                 continue;
             }
