@@ -1334,6 +1334,12 @@ The discriminator width is the smallest unsigned integer that can index `num_typ
 
 The state prefix (version + type list) is read at the start of every block with rows > 0; header and empty blocks emit nothing.
 
+:::note Malformed counts
+`num_types` is read from the stream before any type names. A decoder must treat it as untrusted and must not use it to size an allocation directly — neither a count close to `SIZE_MAX` (which can overflow intermediate arithmetic or throw a non-`DB::Exception`) nor a large-but-representable count such as `100000000` (which is far below a vector's `max_size()` yet would allocate gigabytes before a single type name is read). ClickHouse reads the type list one entry at a time with only a capped pre-allocation hint, so a corrupted `num_types` is rejected either as `INCORRECT_DATA` ("`Dynamic` column has too many types", when the count exceeds what the container can hold) or as an ordinary read error once the stream runs out of type entries — never as an out-of-memory failure.
+
+Do **not**, however, bound the **flattened** `num_types` by `ColumnDynamic::MAX_DYNAMIC_TYPES_LIMIT` (`254` in ClickHouse): the flattened type list carries *every* distinct runtime type, including those that had overflowed into the shared variant, so a valid flattened block can legitimately list far more than that. The `MAX_DYNAMIC_TYPES_LIMIT` bound applies only to the `num_dynamic_types` count in the non-flat `V1`/`V2`/`V3` prefixes, which counts regular-variant slots and is capped by the limit (ClickHouse validates it there before the `+ 1` for the shared variant).
+:::
+
 :::note
 Runtime types whose serialization is stateful (`LowCardinality`, `Variant`, `Dynamic`, `JSON`) carry nested state prefixes after the type-name list.
 :::
@@ -1377,6 +1383,12 @@ In FLATTENED mode there is **no shared-data column** (that overflow store belong
 ```
 
 Note the two-phase shape: **all** path state prefixes come first, then **all** path data. A dynamic path's `Dynamic` prefix (in the prefix phase) is therefore separated from its data (in the data phase). The state prefix is read at the start of every block with rows > 0, and every path column (typed or dynamic) holds exactly `num_rows` values. Row `r`'s object is assembled by reading each path's value at index `r`; a dynamic path whose `Dynamic` discriminator is NULL for that row contributes no key.
+
+:::note Malformed counts
+`num_dynamic_paths` in the FLATTENED layout documented here — and the dynamic-paths count in the non-flat `V1`/`V2`/`V3` encodings — is read from the stream before the path names. (There is no separate flattened-paths field in the non-flat prefixes: `V1`/`V2`/`V3` carry only the dynamic-paths count, plus a `max_dynamic_paths` value in `V1` that is read and discarded, and the `V3` shared-data metadata below.) As with [`Dynamic`](#dynamic), a decoder must treat these counts as untrusted and must not size an allocation on them directly — neither a `SIZE_MAX`-family count nor a large-but-representable one. ClickHouse reads the path names one entry at a time with only a capped pre-allocation hint, so a corrupted count is rejected either as `INCORRECT_DATA` ("JSON/Object column has too many paths", when it exceeds what the container can hold) or as an ordinary read error once the stream runs out of path names.
+
+The non-flat `V3` prefix additionally carries a `shared_data_buckets` count (present when the shared-data serialization version is `MAP_WITH_BUCKETS` or `ADVANCED`). It sizes the per-bucket reader state and column vectors directly (not via a grow-on-demand loop), so a decoder must reject an implausible bucket count up front. Unlike the path and type counts, this count has a tight writer-side invariant: the number of buckets is chosen from small MergeTree settings (`object_shared_data_buckets_for_compact_part` / `object_shared_data_buckets_for_wide_part`) that are non-zero and capped at `256`, so the only valid on-wire range is `1 … 256`. ClickHouse rejects any value outside that range — including a large-but-representable count such as `100000`, which is far below the container's `max_size()` — with `INCORRECT_DATA` ("JSON/Object column has an invalid number of shared data buckets").
+:::
 
 `JSON` value `{"a": 42, "b": "hi"}` (one row, both paths dynamic). A JSON integer is inferred as `Int64`:
 
