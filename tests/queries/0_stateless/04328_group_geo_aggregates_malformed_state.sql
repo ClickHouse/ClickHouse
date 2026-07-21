@@ -10,12 +10,13 @@ SELECT groupConvexHullMerge(state) FROM (
     FROM (SELECT readWKTPoint('POINT (1 2)') AS pt)
 ); -- { serverError INCORRECT_DATA }
 
--- 2. groupPolygonUnion: reject oversized chunk count (varint 100000)
+-- 2. `groupPolygonUnion`: reject a grossly oversized chunk count (varint 100000).
+--    The writer reduces immediately above 16 chunks, so 16 is also the reader limit.
 SELECT 'union_oversized_chunks';
 SELECT groupPolygonUnionMerge(state) FROM (
     SELECT CAST(unhex(concat(
         '01',      -- version
-        'A08D06',  -- 100000 chunks (limit 10000)
+        'A08D06',  -- 100000 chunks (limit 16)
         '00'
     )) AS AggregateFunction(groupPolygonUnion, Polygon)) AS state
 ); -- { serverError INCORRECT_DATA }
