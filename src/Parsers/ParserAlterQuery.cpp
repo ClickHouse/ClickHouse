@@ -881,12 +881,19 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                 if (!parser_exp_elem.parse(pos, command_order_by, expected))
                     return false;
 
+                /// The same canonical form as for the storage-level `ORDER BY` clause, so an ALTER
+                /// does not persist a noncanonically parenthesized key in the table metadata.
+                ParserStorage::stripKeyClauseParentheses(command_order_by);
+
                 command->type = ASTAlterCommand::MODIFY_ORDER_BY;
             }
             else if (s_modify_sample_by.ignore(pos, expected))
             {
                 if (!parser_exp_elem.parse(pos, command_sample_by, expected))
                     return false;
+
+                /// The same canonical form as for the storage-level `SAMPLE BY` clause.
+                ParserStorage::stripKeyClauseParentheses(command_sample_by);
 
                 command->type = ASTAlterCommand::MODIFY_SAMPLE_BY;
             }
