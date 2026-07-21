@@ -2634,6 +2634,12 @@ void StorageMergeTree::truncate(const ASTPtr &, const StorageMetadataPtr &, Cont
 
             auto parts = getVisibleDataPartsVector(query_context);
 
+            /// Do not remove parts whose creating transaction has not committed yet:
+            /// removing such a part would discard a write that may still commit.
+            /// Only needed when transactions are in use; otherwise every part is already committed.
+            if (transactions_enabled.load(std::memory_order_relaxed))
+                std::erase_if(parts, [](const auto & part) { return !part->version->isVisible(Tx::MaxCommittedCSN, Tx::EmptyTID); });
+
             auto future_parts = initCoverageWithNewEmptyParts(parts);
 
             LOG_TEST(log, "Made {} empty parts in order to cover {} parts. Empty parts: {}, covered parts: {}. With txn {}",
@@ -3236,7 +3242,7 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
     for (const DataPartPtr & src_part : src_parts)
     {
         if (!dest_table_storage->canReplacePartition(src_part))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
                             "Cannot move partition '{}' because part '{}' has inconsistent granularity with table",
                             partition_id, src_part->name);
 
