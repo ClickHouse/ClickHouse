@@ -291,7 +291,8 @@ public:
     {
         FunctionArgumentDescriptors mandatory_args;
         FunctionArgumentDescriptors optional_args{
-            {"prefix", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"}};
+            {"prefix", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"},
+            {"expr", nullptr, nullptr, "Arbitrary expression"}};
         validateFunctionArguments(*this, arguments, mandatory_args, optional_args);
 
         return std::make_shared<DataTypeString>();
@@ -498,9 +499,10 @@ REGISTER_FUNCTION(GenerateTypeID)
 Generates a [TypeID](https://github.com/jetify-com/typeid) with the given type prefix: the equivalent of `UUIDToTypeID(generateUUIDv7(), prefix)`.
 The prefix must contain at most 63 characters from `[a-z_]` and must start and end with `[a-z]`; it may also be empty or omitted, in which case the TypeID consists of the suffix only.
 )";
-    FunctionDocumentation::Syntax syntax = "generateTypeID([prefix])";
+    FunctionDocumentation::Syntax syntax = "generateTypeID([prefix[, expr]])";
     FunctionDocumentation::Arguments arguments = {
-        {"prefix", "Optional. Type prefix of the TypeID. Empty by default.", {"String"}}
+        {"prefix", "Optional. Type prefix of the TypeID. Empty by default.", {"String"}},
+        {"expr", "Optional. An arbitrary expression used to bypass [common subexpression elimination](/sql-reference/functions/overview#common-subexpression-elimination) if the function is called multiple times in a query. The value of the expression has no effect on the returned TypeID.", {"Any"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns a TypeID whose suffix encodes a freshly generated UUIDv7.", {"String"}};
     FunctionDocumentation::Examples examples = {

@@ -157,7 +157,8 @@ public:
         FunctionArgumentDescriptors mandatory_args{
             {"prefix", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"}};
         FunctionArgumentDescriptors optional_args{
-            {"length", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNativeUInt), nullptr, "Native unsigned integer"}};
+            {"length", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNativeUInt), nullptr, "Native unsigned integer"},
+            {"expr", nullptr, nullptr, "Arbitrary expression"}};
         validateFunctionArguments(*this, arguments, mandatory_args, optional_args);
 
         return std::make_shared<DataTypeString>();
@@ -416,10 +417,11 @@ Generates a prefixed identifier `<prefix>_<body>` in the style popularized by St
 The body consists of random base62 characters (`[0-9A-Za-z]`).
 The prefix must be non-empty and consist of underscore-separated segments matching `[A-Za-z][A-Za-z0-9]*` (e.g. `user` or `ch_test`); an exception is thrown otherwise.
 )";
-    FunctionDocumentation::Syntax syntax = "generatePrefixedID(prefix[, length])";
+    FunctionDocumentation::Syntax syntax = "generatePrefixedID(prefix[, length[, expr]])";
     FunctionDocumentation::Arguments arguments = {
         {"prefix", "Prefix of the identifier.", {"String"}},
-        {"length", "Optional. Length of the body, in [1, 255]. Default: 22, which carries about 131 bits of entropy.", {"UInt8, UInt16, UInt32, or UInt64"}}
+        {"length", "Optional. Length of the body, in [1, 255]. Default: 22, which carries about 131 bits of entropy.", {"UInt8, UInt16, UInt32, or UInt64"}},
+        {"expr", "Optional. An arbitrary expression used to bypass [common subexpression elimination](/sql-reference/functions/overview#common-subexpression-elimination) if the function is called multiple times in a query. The value of the expression has no effect on the returned identifier.", {"Any"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns a prefixed identifier with a random base62 body.", {"String"}};
     FunctionDocumentation::Examples examples = {

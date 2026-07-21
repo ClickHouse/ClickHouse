@@ -87,3 +87,9 @@ SELECT typeIDToUUID(materialize(toFixedString('01h455vb4pex5vsknk084sn02q', 26))
 SELECT typeIDToUUID(toFixedString('prefix_01h455vb4pex5vsknk084sn02q', 33));
 SELECT typeIDPrefix(toFixedString('prefix_01h455vb4pex5vsknk084sn02q', 33));
 SELECT tryTypeIDToUUID(toFixedString('00000000000000000000000000', 27)); -- the zero-byte padding makes it invalid
+
+-- Common subexpression elimination: identical calls are folded into one evaluation;
+-- a different ignored expression forces an independent value
+SELECT generateTypeID('user', 1) = generateTypeID('user', 1);
+SELECT generateTypeID('user', 1) != generateTypeID('user', 2);
+SELECT generateTypeID('', 1) != generateTypeID('', 2);

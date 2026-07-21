@@ -69,3 +69,8 @@ SELECT isValidPrefixedID(toFixedString('user_NffrFeUfNV2Hib', 19));
 SELECT isValidPrefixedID(toFixedString('user_NffrFeUfNV2Hib', 19), 'user');
 SELECT isValidPrefixedID(toFixedString('user_x', 8)); -- the zero-byte padding is not base62
 SELECT prefixedIDBody(toFixedString('user_x', 8)) == 'x\0\0';
+
+-- Common subexpression elimination: identical calls are folded into one evaluation;
+-- a different ignored expression forces an independent value
+SELECT generatePrefixedID('user', 22, 1) = generatePrefixedID('user', 22, 1);
+SELECT generatePrefixedID('user', 22, 1) != generatePrefixedID('user', 22, 2);
