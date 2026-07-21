@@ -557,7 +557,7 @@ private:
         else
         {
             String padded_value(value);
-            padded_value.resize(fixed_length, ' ');
+            padded_value.resize(fixed_length, '\0');
             assert_cast<ColumnLowCardinality &>(column).insertData(padded_value.data(), padded_value.size());
         }
         return true;
