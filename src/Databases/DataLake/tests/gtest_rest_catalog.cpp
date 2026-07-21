@@ -423,4 +423,31 @@ TEST(RestCatalog, OneLakeApplySettingsChangesBearerMode)
     expectThrowsCode([&] { catalog.applySettingsChanges(empty_value); }, DB::ErrorCodes::BAD_ARGUMENTS);
 }
 
+TEST(RestCatalog, OneLakeRejectsMalformedBearerToken)
+{
+    auto context = DB::Context::createCopy(getContext().context);
+    context->makeQueryContext();
+
+    /// A pre-obtained bearer token becomes the `Authorization: Bearer <token>` header, so it must
+    /// pass the same validation as a user-supplied `auth_header`: a token with an embedded newline
+    /// would smuggle a second header into the request. The constructor validates the synthetic
+    /// header up front and must reject such a token before any request is issued.
+    expectThrowsCode(
+        [&]
+        {
+            OneLakeCatalog catalog(
+                "warehouse",
+                "http://127.0.0.1:1",
+                /* onelake_tenant_id */ "tenant",
+                /* onelake_client_id */ "",
+                /* onelake_client_secret */ "",
+                /* bearer_token */ "token\r\nX-Injected: evil",
+                /* auth_scope */ "",
+                /* oauth_server_uri */ "",
+                /* oauth_server_use_request_body */ false,
+                context);
+        },
+        DB::ErrorCodes::BAD_ARGUMENTS);
+}
+
 #endif
