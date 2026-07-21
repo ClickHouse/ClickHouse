@@ -944,7 +944,10 @@ def test_function_name_header(started_cluster):
         ),
         ("aiExtract", "SELECT aiExtract('hi', 'the price', map('credentials', 'ai_mock'))"),
         ("aiTranslate", "SELECT aiTranslate('hi', 'French', map('credentials', 'ai_mock'))"),
-        ("aiEmbed", "SELECT aiEmbed('hi', map('credentials', 'ai_embed'))"),
+        (
+            "aiEmbed",
+            "SELECT aiEmbed('hi', 'test-embed-model', map('credentials', 'ai_embed'))",
+        ),
     ]
     for name, query in cases:
         instance.query(query, settings=AI_SETTINGS)
