@@ -53,6 +53,7 @@ namespace ErrorCodes
     extern const int TABLE_IS_PERMANENTLY_READ_ONLY;
     extern const int SUPPORT_IS_DISABLED;
     extern const int BAD_ARGUMENTS;
+    extern const int NOT_IMPLEMENTED;
     extern const int QUERY_IS_PROHIBITED;
 }
 
@@ -99,6 +100,14 @@ BlockIO InterpreterDeleteQuery::execute()
 
     if (table->supportsDelete())
     {
+        /// This pipeline serializes only the predicate into the mutation command, and the storages
+        /// that take it (`KeeperMap`, `EmbeddedRocksDB`, Iceberg, `system.wasm_modules`, ...) have
+        /// no notion of MergeTree-style partitions anyway. Reject the clause instead of silently
+        /// mutating a wider scope than the query requested.
+        if (delete_query.partition || delete_query.partitions)
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "DELETE ... IN PARTITION is not supported for table {}", table->getStorageID().getFullTableName());
+
         /// Convert to MutationCommand
         MutationCommands mutation_commands;
         MutationCommand mut_command;
