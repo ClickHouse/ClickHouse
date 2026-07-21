@@ -13,10 +13,16 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/QueryPlanVisitor.h>
 #include <Processors/QueryPlan/ReadFromLocalReplica.h>
+#include <Processors/QueryPlan/JoinStep.h>
+#include <Processors/QueryPlan/JoinStepLogical.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/ReadFromParallelReplicas.h>
 #include <Processors/QueryPlan/ReadFromRemote.h>
 #include <Processors/QueryPlan/UnionStep.h>
+#include <Interpreters/IJoin.h>
+#include <Interpreters/StorageID.h>
+#include <Interpreters/TableJoin.h>
+#include <Storages/MergeTree/MergeTreeData.h>
 
 #include <unordered_set>
 
@@ -216,6 +222,52 @@ private:
 };
 
 
+/// Plan-wide collector of the MergeTree reads to distribute. Unlike findReadingSteps (the
+/// view-expansion helper), this descends into every UnionStep -- including one at the plan root (a
+/// top-level UNION ALL) -- so all of its branches ship as a single fragment. For a JOIN it follows the
+/// single parallelized side. A union whose branches read the same table more than once is rejected (its
+/// reads are left local): the parallel-replicas coordinator drives every read of a shipped fragment and
+/// cannot distinguish duplicate announcements for one table, so such a union must not become a single
+/// distributed fragment (mirrors StorageView::getUnderlyingMergeTreeStorageForParallelReplicas).
+static std::vector<QueryPlan::Node *> collectReadsToDistribute(QueryPlan::Node * node)
+{
+    if (!node)
+        return {};
+
+    if (typeid_cast<ReadFromMergeTree *>(node->step.get()))
+        return {node};
+
+    if (typeid_cast<UnionStep *>(node->step.get()))
+    {
+        std::vector<QueryPlan::Node *> reads;
+        for (auto * child : node->children)
+        {
+            auto child_reads = collectReadsToDistribute(child);
+            reads.insert(reads.end(), child_reads.begin(), child_reads.end());
+        }
+
+        std::unordered_set<StorageID, StorageID::DatabaseAndTableNameHash, StorageID::DatabaseAndTableNameEqual> seen;
+        for (auto * read_node : reads)
+        {
+            const auto & storage_id = typeid_cast<ReadFromMergeTree &>(*read_node->step).getMergeTreeData().getStorageID();
+            if (!seen.insert(storage_id).second)
+                return {};
+        }
+        return reads;
+    }
+
+    if (node->children.empty())
+        return {};
+
+    /// Follow the single side parallelized for a JOIN; otherwise the only input.
+    const auto * join = typeid_cast<const JoinStep *>(node->step.get());
+    const auto * join_logical = typeid_cast<const JoinStepLogical *>(node->step.get());
+    if ((join && join->getJoin()->getTableJoin().kind() == JoinKind::Right)
+        || (join_logical && join_logical->getJoinOperator().kind == JoinKind::Right))
+        return collectReadsToDistribute(node->children.at(1));
+    return collectReadsToDistribute(node->children.at(0));
+}
+
 /// Insertion phase: put a ParallelReplicasSplitStep directly above every eligible MergeTree read.
 /// Raising the markers up the plan (through expressions, aggregation and unions) and rewriting them
 /// into a distributed read is done by the phases below. The planner now builds only a plain local plan.
@@ -225,13 +277,9 @@ static void insertParallelReplicasSplit(QueryPlan & query_plan, QueryPlan::Nodes
     if (!root)
         return;
 
-    /// Eligible reads: the MergeTree reads that carry the query load (one JOIN side, or every branch of
-    /// a view that expands to UNION ALL). A view is already expanded at plan level, so this needs no
-    /// query-tree-level flag (that flag matters only when analyzing the query tree).
     std::unordered_set<const QueryPlan::Node *> eligible;
-    for (auto * node : findReadingSteps(root, /*allow_view_over_mergetree=*/true))
-        if (typeid_cast<ReadFromMergeTree *>(node->step.get()))
-            eligible.insert(node);
+    for (auto * node : collectReadsToDistribute(root))
+        eligible.insert(node);
     if (eligible.empty())
         return;
 
