@@ -2792,7 +2792,7 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
 
         for (const auto & include_from_path : include_from_paths)
         {
-            if (!fs::exists(include_from_path) || !fs::is_regular_file(include_from_path))
+            if (!fs::exists(include_from_path))
                 continue;
 
             /// A source's own top-level tags become top-level keys of the merged config only when
@@ -2813,6 +2813,26 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
             const bool source_is_server = server_include_from_paths.contains(include_from_path);
             if (!source_is_merged && !(source_is_server && !top_level_include_refs.empty()))
                 continue;
+
+            /// `ConfigProcessor::parseConfig` accepts a non-regular `include_from` source (e.g. a
+            /// pipe such as `/dev/fd/X`), but such a source cannot be reliably re-read here: the
+            /// processor may already have consumed it (a drained pipe re-parses as empty and
+            /// diverges from what the processor saw), and opening a FIFO for reading blocks until a
+            /// writer appears. The keys it legitimately contributes therefore cannot be determined
+            /// at config-validation time, and rejecting an unrecognized top-level key would be a
+            /// false positive for a valid config. Fail open like the unresolvable `from_zk` case:
+            /// skip the whole check and log, so a valid config is never refused.
+            if (!fs::is_regular_file(include_from_path))
+            {
+                LOG_WARNING(
+                    getLogger("ServerSettings"),
+                    "Not checking for unknown config options in '{}': its <include_from> source '{}' "
+                    "is not a regular file, so the top-level keys it contributes cannot be determined "
+                    "at config-validation time.",
+                    config_path,
+                    include_from_path);
+                return;
+            }
             try
             {
                 Poco::AutoPtr<Poco::XML::Document> include_from_doc = ConfigProcessor::parseConfig(include_from_path, dom_parser);
@@ -3048,6 +3068,10 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
     Poco::Util::AbstractConfiguration::Keys top_level_keys;
     config.keys("", top_level_keys);
 
+    /// Collect every unknown key instead of failing on the first one, so a user fixing a
+    /// misconfigured server sees the whole list at once rather than one key per restart.
+    std::vector<String> unknown_keys;
+
     for (auto key : top_level_keys)
     {
         /// Strip array indices like "listen_host[1]"
@@ -3074,12 +3098,21 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
         if (looks_like_graphite_rollup(key))
             continue;
 
+        /// Repeated elements (`listen_host`, `listen_host[1]`, ...) reduce to the same key after
+        /// the index is stripped — report each unknown key once.
+        if (std::find(unknown_keys.begin(), unknown_keys.end(), key) == unknown_keys.end())
+            unknown_keys.push_back(std::move(key));
+    }
+
+    if (!unknown_keys.empty())
+    {
         throw Exception(
             ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG,
-            "Unknown element '{}' found in config {}."
+            "Unknown element{} '{}' found in config {}."
             " If it is a new option, it should be added to ServerSettings or to the known config sections."
             " You can also disable this check with <skip_check_for_incorrect_settings>1</skip_check_for_incorrect_settings>.",
-            key,
+            unknown_keys.size() == 1 ? "" : "s",
+            fmt::join(unknown_keys, "', '"),
             config_path);
     }
 }
