@@ -230,6 +230,8 @@ The position of `ie_join` in the list sets its priority. Listed after other algo
 
 IEJoin accumulates both inputs in memory before joining: [`max_rows_in_join`](/operations/settings/settings#max_rows_in_join) and [`max_bytes_in_join`](/operations/settings/settings#max_bytes_in_join) limit the accumulated input of both sides together, with the action on overflow set by [`join_overflow_mode`](/operations/settings/settings#join_overflow_mode). The join operator itself runs in a single thread; only the pre-join sorts of the inputs are parallelized.
 
+An input carrying totals (`GROUP BY ... WITH TOTALS`) is not supported: once IEJoin claims the join, such a query fails instead of falling through to a later algorithm of the list.
+
 **Example**
 
 ```sql
@@ -245,7 +247,7 @@ Supported kinds are the ones that keep unmatched rows of the point side only: `A
 
 The position of `band_join` in the list sets its priority the same way as for `ie_join`, and the remaining conditions of the `ON` section are handled the same way: applied as a filter over the join result for `ALL INNER JOIN`, evaluated inside the operator as a residual condition for the other kinds.
 
-Unlike IEJoin, only the interval side is accumulated in memory (sorted by the lower bound); the point side streams block-by-block, needs no sort or pipeline barrier, and is probed by binary search in parallel. [`max_rows_in_join`](/operations/settings/settings#max_rows_in_join) and [`max_bytes_in_join`](/operations/settings/settings#max_bytes_in_join) therefore limit the accumulated interval side only, with the action on overflow set by [`join_overflow_mode`](/operations/settings/settings#join_overflow_mode).
+Unlike IEJoin, only the interval side is accumulated in memory (sorted by the lower bound); the point side streams block-by-block, needs no sort or pipeline barrier, and is probed by binary search in parallel. [`max_rows_in_join`](/operations/settings/settings#max_rows_in_join) and [`max_bytes_in_join`](/operations/settings/settings#max_bytes_in_join) therefore limit the accumulated interval side only, with the action on overflow set by [`join_overflow_mode`](/operations/settings/settings#join_overflow_mode). As with IEJoin, an input carrying totals (`GROUP BY ... WITH TOTALS`) is not supported: once the band join claims the join, such a query fails instead of falling through to a later algorithm of the list.
 
 **Example**
 

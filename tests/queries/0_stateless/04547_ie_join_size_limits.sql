@@ -3,8 +3,9 @@
 -- The IEJoin operator materializes both inputs entirely, so `max_rows_in_join` /
 -- `max_bytes_in_join` apply to the total accumulated input. With the default
 -- `join_overflow_mode = 'throw'` an exceeded limit fails the query; with 'break' the operator
--- keeps what fits and drops the rest of the input (every chunk here exceeds the limit, so the
--- join sees empty inputs).
+-- keeps the accumulated prefix including the chunk that reaches the limit and drops the rest
+-- (here one side's single chunk alone reaches the limit, so the other side stays empty and
+-- the inner join produces nothing).
 
 SET join_algorithm = 'direct,parallel_hash,hash,ie_join';
 

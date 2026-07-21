@@ -1,12 +1,12 @@
-Int16	1	1
-UInt64	1	1
-Date	1	1
-DateTime	1
-Float64	1	1
-Decimal64	1
+Int16	1	1	9074
+UInt64	1	1	7030
+Date	1	1	5934
+DateTime	1	9074
+Float64	1	1	9074
+Decimal64	1	9074
 String plan	1
-String	1	1
-LowCardinality(String)	1
-Int128	1
-mixed Int64/Int128	1	1
-Int32 vs Int64	1
+String	1	1	9074
+LowCardinality(String)	1	9074
+Int128	1	4320
+mixed Int64/Int128	1	1	9074
+Int32 vs Int64	1	9074

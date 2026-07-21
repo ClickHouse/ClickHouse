@@ -13,4 +13,5 @@ hash first, no equality	1
 hash first, equality	0
 band first, equality	1
 band first, equality parity	1
+totals routed	1
 not listed	0

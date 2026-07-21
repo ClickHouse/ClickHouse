@@ -72,7 +72,28 @@ SELECT 'nullable float',
      JOIN (SELECT id, if(id % 5 = 0, NULL, lo) AS lo, hi FROM nn_fi) i ON p.t >= i.lo AND p.t <= i.hi)
         = (SELECT arraySort(groupArray((p.id, i.id)))
            FROM (SELECT id, if(id % 4 = 0, NULL, t) AS t FROM nn_fp) p, (SELECT id, if(id % 5 = 0, NULL, lo) AS lo, hi FROM nn_fi) i
-           WHERE p.t >= i.lo AND p.t <= i.hi) AS oracle_ok;
+           WHERE p.t >= i.lo AND p.t <= i.hi) AS oracle_ok,
+    (SELECT count()
+     FROM (SELECT id, if(id % 4 = 0, NULL, t) AS t FROM nn_fp) p
+     JOIN (SELECT id, if(id % 5 = 0, NULL, lo) AS lo, hi FROM nn_fi) i ON p.t >= i.lo AND p.t <= i.hi) AS cnt;
 
 DROP TABLE nn_fp;
 DROP TABLE nn_fi;
+
+-- A whole run of NULL `hi` in the middle of the lo-sorted interval stream: with a small
+-- `max_block_size` at least one index block is dropped entirely, and the block directory
+-- must stay aligned with the surviving blocks (intervals before and after it still match).
+SELECT 'dropped middle block',
+    (SELECT arraySort(groupArray((p.id, i.id)))
+     FROM (SELECT number AS id, toInt64(number % 60) AS t FROM numbers(120)) p
+     JOIN (SELECT number AS id, toInt64(number) AS lo, if(number BETWEEN 15 AND 44, NULL, toInt64(number + 2)) AS hi FROM numbers(60)) i
+     ON p.t >= i.lo AND p.t <= i.hi)
+        = (SELECT arraySort(groupArray((p.id, i.id)))
+           FROM (SELECT number AS id, toInt64(number % 60) AS t FROM numbers(120)) p,
+                (SELECT number AS id, toInt64(number) AS lo, if(number BETWEEN 15 AND 44, NULL, toInt64(number + 2)) AS hi FROM numbers(60)) i
+           WHERE p.t >= i.lo AND p.t <= i.hi) AS oracle_ok,
+    (SELECT count()
+     FROM (SELECT number AS id, toInt64(number % 60) AS t FROM numbers(120)) p
+     JOIN (SELECT number AS id, toInt64(number) AS lo, if(number BETWEEN 15 AND 44, NULL, toInt64(number + 2)) AS hi FROM numbers(60)) i
+     ON p.t >= i.lo AND p.t <= i.hi) AS cnt
+SETTINGS max_block_size = 10;

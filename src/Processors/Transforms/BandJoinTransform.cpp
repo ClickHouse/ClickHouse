@@ -122,18 +122,16 @@ bool BandJoinBuildTransform::consumeBuildChunk(Chunk chunk)
     /// the columns as delivered and gathers rows by position, which needs plain full columns.
     removeSpecialColumnRepresentations(chunk);
 
-    /// The size limits apply to the accumulated interval side. With `join_overflow_mode =
-    /// 'break'` keep what is already accumulated and drop the rest of the input.
-    if (!size_limits.check(
-            total_rows + chunk.getNumRows(), total_bytes + chunk.allocatedBytes(), "JOIN", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED))
-        return false;
-
     total_rows += chunk.getNumRows();
     total_bytes += chunk.allocatedBytes();
 
     if (chunk.getNumRows() > 0)
         appendBlock(chunk.detachColumns());
-    return true;
+
+    /// The size limits apply to the accumulated interval side. Append-then-check, like
+    /// `HashJoin`: the soft check fails at >=, so with `join_overflow_mode = 'break'` the
+    /// chunk that reaches the limit is kept and the rest of the input is dropped.
+    return size_limits.check(total_rows, total_bytes, "JOIN", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED);
 }
 
 void BandJoinBuildTransform::appendBlock(Columns columns)
@@ -374,6 +372,13 @@ bool BandJoinProbeTransform::upperAdmitsEncoded(UInt64 encoded_hi, size_t point_
     return upper_strict ? encoded_hi > encoded_point : encoded_hi >= encoded_point;
 }
 
+/// Final step shared by the scalar and the lockstep searches: the window has shrunk to at
+/// most one element; convert it into the first-not-less position.
+static size_t lowerBoundFinish(const UInt64 * data, const UInt64 * base, size_t len, UInt64 key)
+{
+    return static_cast<size_t>(base - data) + (len == 1 && *base < key);
+}
+
 /// Branchless lower bound (first element >= key): successive probe keys are effectively
 /// random, so every classic binary-search step is a dependent cache miss; prefetching both
 /// possible next midpoints overlaps them, and the conditional move keeps the mispredicted
@@ -390,20 +395,29 @@ static size_t lowerBoundPrefetched(const PaddedPODArray<UInt64> & arr, UInt64 ke
         base += (base[half - 1] < key) ? half : 0;
         len -= half;
     }
-    return (base - arr.data()) + (len == 1 && *base < key);
+    return lowerBoundFinish(arr.data(), base, len, key);
+}
+
+/// The lower bound's admission folded into a lower-bound search key: the first non-admitting
+/// `lo` is the first `lo >= point` when strict and the first `lo >= point + 1` when loose,
+/// where nullopt stands for "past the greatest encoded value" (every `lo` admits).
+static std::optional<UInt64> lowerSearchKey(UInt64 encoded_point, bool strict)
+{
+    if (strict)
+        return encoded_point;
+    if (encoded_point == std::numeric_limits<UInt64>::max())
+        return std::nullopt;
+    return encoded_point + 1;
 }
 
 /// First position whose `lo` no longer admits the encoded point under the lower bound's
-/// strictness: first `lo >= point` when strict, first `lo > point` when loose.
+/// strictness.
 static size_t firstNonAdmittingLo(const PaddedPODArray<UInt64> & encoded_lo, UInt64 encoded_point, bool strict)
 {
-    if (!strict)
-    {
-        if (encoded_point == std::numeric_limits<UInt64>::max())
-            return encoded_lo.size();
-        ++encoded_point;
-    }
-    return lowerBoundPrefetched(encoded_lo, encoded_point);
+    const auto key = lowerSearchKey(encoded_point, strict);
+    if (!key)
+        return encoded_lo.size();
+    return lowerBoundPrefetched(encoded_lo, *key);
 }
 
 void BandJoinProbeTransform::computeWalkStarts()
@@ -412,7 +426,6 @@ void BandJoinProbeTransform::computeWalkStarts()
     walk_start_row.resize(num_point_rows);
 
     const auto & keys = encoded_point_keys[0];
-    constexpr UInt64 max_key = std::numeric_limits<UInt64>::max();
     constexpr size_t batch_size = 16;
     /// Per in-flight search: the point row, the effective lower-bound key, and the shrinking
     /// window [base, base + len) within the block's `encoded_lo`.
@@ -447,8 +460,7 @@ void BandJoinProbeTransform::computeWalkStarts()
         {
             const size_t row = batch_rows[i];
             const auto & encoded_lo = index->blocks[walk_start_block[row]].encoded_lo;
-            const size_t first_non_admitting = (batch_base[i] - encoded_lo.data())
-                + (batch_len[i] == 1 && *batch_base[i] < batch_keys[i]);
+            const size_t first_non_admitting = lowerBoundFinish(encoded_lo.data(), batch_base[i], batch_len[i], batch_keys[i]);
             chassert(first_non_admitting != 0);
             walk_start_row[row] = static_cast<UInt32>(first_non_admitting - 1);
         }
@@ -468,19 +480,15 @@ void BandJoinProbeTransform::computeWalkStarts()
         const auto & block = index->blocks[block_index];
         walk_start_block[row] = static_cast<UInt32>(block_index);
 
-        UInt64 key = keys[row];
-        if (!lower_strict)
+        const auto key = lowerSearchKey(keys[row], lower_strict);
+        if (!key)
         {
             /// A loose bound on the greatest encoded key admits the whole block.
-            if (key == max_key)
-            {
-                walk_start_row[row] = static_cast<UInt32>(block.num_rows - 1);
-                continue;
-            }
-            ++key;
+            walk_start_row[row] = static_cast<UInt32>(block.num_rows - 1);
+            continue;
         }
         batch_rows[enqueued] = row;
-        batch_keys[enqueued] = key;
+        batch_keys[enqueued] = *key;
         batch_base[enqueued] = block.encoded_lo.data();
         batch_len[enqueued] = block.encoded_lo.size();
         if (++enqueued == batch_size)

@@ -46,7 +46,11 @@ SELECT 'generic path',
      ON p.t >= i.lo AND p.t <= i.hi)
         = (SELECT arraySort(groupArray((p.id, i.id)))
            FROM (SELECT id, leftPad(toString(t), 5, '0') AS t FROM bb_p) p, (SELECT id, leftPad(toString(lo), 5, '0') AS lo, leftPad(toString(hi), 5, '0') AS hi FROM bb_i) i
-           WHERE p.t >= i.lo AND p.t <= i.hi) AS oracle_ok;
+           WHERE p.t >= i.lo AND p.t <= i.hi) AS oracle_ok,
+    (SELECT count()
+     FROM (SELECT id, leftPad(toString(t), 5, '0') AS t FROM bb_p) p
+     JOIN (SELECT id, leftPad(toString(lo), 5, '0') AS lo, leftPad(toString(hi), 5, '0') AS hi FROM bb_i) i
+     ON p.t >= i.lo AND p.t <= i.hi) AS cnt;
 
 -- A wide interval in the very first block covers everything: the across-blocks running max
 -- keeps every walk alive down to block 0

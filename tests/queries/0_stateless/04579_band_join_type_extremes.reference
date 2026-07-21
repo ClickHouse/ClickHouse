@@ -1,0 +1,15 @@
+plan	1
+Int64 loose/loose	1	11
+Int64 strict/loose	1	7
+Int64 loose/strict	1	7
+Int64 strict/strict	1	5
+UInt64 loose/loose	1	11
+UInt64 strict/loose	1	6
+UInt64 loose/strict	1	7
+UInt64 strict/strict	1	4
+Float64 loose/loose	1	10
+Float64 strict/loose	1	7
+Float64 loose/strict	1	7
+Float64 strict/strict	1	6
+swapped Int64 loose/loose	1	11
+swapped UInt64 strict/loose	1	6

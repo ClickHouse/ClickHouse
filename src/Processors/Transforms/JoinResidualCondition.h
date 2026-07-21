@@ -48,7 +48,6 @@ public:
         JoinResidualCondition condition_, const Block & left_header, const Block & right_header);
 
     const std::vector<JoinResidualCondition::Source> & sources() const { return condition.inputs; }
-    const ExpressionActionsPtr & actions() const { return condition.actions; }
 
     /// `columns` are the gathered inputs, all of `num_rows` rows; 1 = the pair passes.
     IColumn::Filter evaluateMask(Columns columns, size_t num_rows) const;

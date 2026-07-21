@@ -233,6 +233,9 @@ private:
 
     /// Limits on the accumulated input (both sides), from `max_rows_in_join` / `max_bytes_in_join`.
     SizeLimits size_limits;
+    /// The soft limit check failed: with `join_overflow_mode = 'break'` the rest of both
+    /// inputs is dropped.
+    bool size_limit_reached = false;
 
     /// Input chunks per side in arrival order (with `inputs_sorted_by_first_key` that order is
     /// ascending by the first condition's key); concatenated by `materializeSide`.

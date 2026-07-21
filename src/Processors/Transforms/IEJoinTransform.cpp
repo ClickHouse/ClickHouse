@@ -116,11 +116,10 @@ void IEJoinAlgorithm::consume(Input & input, size_t source_num)
     removeConstAndSparse(input);
 
     /// Both inputs are materialized entirely, so the join size limits apply to their total.
-    /// With `join_overflow_mode = 'break'` keep what is already accumulated and drop the rest.
-    if (!size_limits.check(
-            stat.num_rows[0] + stat.num_rows[1] + input.chunk.getNumRows(),
-            stat.num_bytes[0] + stat.num_bytes[1] + input.chunk.allocatedBytes(),
-            "JOIN", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED))
+    /// Append-then-check, like `HashJoin`: the soft check fails at >=, so with
+    /// `join_overflow_mode = 'break'` the chunk that reaches the limit is kept and the rest
+    /// of both inputs is dropped.
+    if (size_limit_reached)
         return;
 
     stat.num_blocks[source_num] += 1;
@@ -135,6 +134,11 @@ void IEJoinAlgorithm::consume(Input & input, size_t source_num)
 #endif
         accumulated_chunks[source_num].push_back(std::move(input.chunk));
     }
+
+    if (!size_limits.check(
+            stat.num_rows[0] + stat.num_rows[1], stat.num_bytes[0] + stat.num_bytes[1],
+            "JOIN", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED))
+        size_limit_reached = true;
 }
 
 #ifndef NDEBUG

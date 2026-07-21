@@ -68,6 +68,13 @@ SELECT 'band first, equality parity', (
     SETTINGS join_algorithm = 'hash'
 );
 
+-- An input with totals is routed to the band join (the shape is eligible) but the operator's
+-- pipeline does not support totals: pin the clean error (the `ie_join` analog is in 04544)
+SELECT 'totals routed', count() > 0 FROM (EXPLAIN SELECT count() FROM (SELECT max(t) AS mt FROM det_p GROUP BY t % 7 WITH TOTALS) p JOIN det_i i ON p.mt >= i.lo AND p.mt <= i.hi) WHERE explain LIKE '%BandJoin%';
+SELECT count()
+FROM (SELECT max(t) AS mt FROM det_p GROUP BY t % 7 WITH TOTALS) p
+JOIN det_i i ON p.mt >= i.lo AND p.mt <= i.hi; -- { serverError NOT_IMPLEMENTED }
+
 -- Without `band_join` in the list the step never appears
 SET join_algorithm = 'ie_join,hash';
 SELECT 'not listed', count() FROM (EXPLAIN SELECT count() FROM det_p p JOIN det_i i ON p.t >= i.lo AND p.t <= i.hi) WHERE explain LIKE '%BandJoin%';

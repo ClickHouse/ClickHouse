@@ -27,8 +27,29 @@ SELECT 'under limit', count() FROM lim_p p JOIN lim_i i ON p.t >= i.lo AND p.t <
 SET max_rows_in_join = 50;
 SELECT count() FROM lim_p p JOIN lim_i i ON p.t >= i.lo AND p.t <= i.hi; -- { serverError SET_SIZE_LIMIT_EXCEEDED }
 
+-- 'break' keeps the accumulated interval prefix including the chunk that reaches the limit
+-- and drops the rest: the result must be a non-empty subset of the unlimited join and every
+-- kept pair must still satisfy the band.
 SET join_overflow_mode = 'break';
-SELECT 'break', count() >= 0 FROM lim_p p JOIN lim_i i ON p.t >= i.lo AND p.t <= i.hi;
+SELECT 'break',
+    count() > 0 AS nonempty,
+    countIf(NOT (t >= lo AND t <= hi)) = 0 AS all_valid,
+    count() <= (SELECT count() FROM lim_p p JOIN lim_i i ON p.t >= i.lo AND p.t <= i.hi SETTINGS max_rows_in_join = 0) AS subset
+FROM (SELECT p.t AS t, i.lo AS lo, i.hi AS hi FROM lim_p p JOIN lim_i i ON p.t >= i.lo AND p.t <= i.hi);
+
+-- The same with the interval stream arriving in many blocks: a strict prefix of the input
+-- survives; every point key is below the kept `lo` prefix's ceiling, so no match is lost.
+DROP TABLE IF EXISTS lim_i2;
+CREATE TABLE lim_i2 (id Int32, lo Int64, hi Int64) ENGINE = MergeTree ORDER BY id;
+INSERT INTO lim_i2 SELECT number, number, number + 5 FROM numbers(10000);
+SET max_rows_in_join = 5000;
+SELECT 'break multi',
+    count() > 0 AS nonempty,
+    countIf(NOT (t >= lo AND t <= hi)) = 0 AS all_valid,
+    count() = (SELECT count() FROM lim_p p JOIN lim_i2 i ON p.t >= i.lo AND p.t <= i.hi SETTINGS max_rows_in_join = 0) AS prefix_covers_all_points
+FROM (SELECT p.t AS t, i.lo AS lo, i.hi AS hi FROM lim_p p JOIN lim_i2 i ON p.t >= i.lo AND p.t <= i.hi)
+SETTINGS max_block_size = 100;
+DROP TABLE lim_i2;
 
 SET max_rows_in_join = 0;
 SET join_overflow_mode = 'throw';

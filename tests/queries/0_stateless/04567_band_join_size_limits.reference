@@ -1,3 +1,4 @@
 plan	1
 under limit	12000
-break	1
+break	1	1	1
+break multi	1	1	1
