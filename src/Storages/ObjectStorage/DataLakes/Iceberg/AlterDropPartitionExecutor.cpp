@@ -1,4 +1,5 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/AlterDropPartitionExecutor.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/SnapshotSummary.h>
 
 #if USE_AVRO
 /// NOLINTBEGIN(clang-analyzer-core.uninitialized.UndefReturn)
@@ -261,16 +262,6 @@ std::optional<AlterDropPartitionExecutor::SnapshotState> AlterDropPartitionExecu
     state.partition_spec_id = metadata_object->getValue<Int64>(f_default_spec_id);
 
     /// TODO: support different specs
-    /// Conservative guard against Iceberg partition-spec evolution. When a
-    /// table has carried more than one partition spec over its lifetime, the
-    /// snapshot may reference manifests written under older specs whose
-    /// partition tuples have a different arity / transform set than the
-    /// current default. Properly handling that requires per-manifest spec
-    /// resolution during both discovery (so partition predicates can be
-    /// applied under the right spec) and writeback (so each replacement
-    /// manifest is stamped with its original spec_id). Until that work
-    /// lands, refuse rather than silently produce manifests that
-    /// double-encode entries against the wrong schema.
     if (specs->size() > 1)
         throw Exception(
             ErrorCodes::NOT_IMPLEMENTED,
@@ -510,55 +501,24 @@ AlterDropPartitionExecutor::ManifestListWriteResult AlterDropPartitionExecutor::
         auto snapshot = snapshots->getObject(static_cast<UInt32>(i));
         if (snapshot && snapshot->getValue<Int64>(f_metadata_snapshot_id) == parent_snapshot_id)
         {
-            parent_snapshot = std::move(snapshot);
+            parent_snapshot = snapshot;
             break;
         }
     }
+
     if (!parent_snapshot || !parent_snapshot->has(f_summary))
         throw Exception(ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION, "Parent snapshot {} has no summary", parent_snapshot_id);
 
-    const auto parent_summary_object = parent_snapshot->getObject(f_summary);
-    for (const auto * field : {f_total_records, f_total_files_size, f_total_data_files})
-        if (!parent_summary_object->has(field))
-            throw Exception(
-                ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
-                "Parent snapshot {} summary has no '{}' counter required by DROP PARTITION",
-                parent_snapshot_id,
-                field);
+    std::optional<SnapshotSummaryTotals> parent_totals;
 
-    const auto & update = plan.snapshot_summary_update;
-    if ((update.removed_position_delete_files || update.removed_equality_delete_files) && !parent_summary_object->has(f_total_delete_files))
-        throw Exception(
-            ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
-            "Parent snapshot {} summary has no '{}' counter required by DROP PARTITION",
-            parent_snapshot_id,
-            f_total_delete_files);
-    if (update.removed_position_deletes && !parent_summary_object->has(f_total_position_deletes))
-        throw Exception(
-            ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
-            "Parent snapshot {} summary has no '{}' counter required by DROP PARTITION",
-            parent_snapshot_id,
-            f_total_position_deletes);
+    if (auto parent_summary = parent_snapshot->getObject(f_summary); parent_summary)
+        if (auto summary = SnapshotSummary::fromJSON(*parent_summary))
+            parent_totals = summary->getTotals();
 
-    auto parent_summary = SnapshotSummary::fromJSON(*parent_summary_object);
-    if (!parent_summary)
-        throw Exception(
-            ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
-            "Cannot parse parent snapshot {} summary: {}",
-            parent_snapshot_id,
-            parent_summary.error());
+    if (!parent_totals)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Parent snapshot {} has no totals in summary", parent_snapshot_id);
 
-    const auto totals = parent_summary->getTotals();
-    if (totals.records < update.removed_records || totals.files_size < update.removed_files_size
-        || totals.data_files < update.deleted_data_files
-        || totals.delete_files < update.removed_position_delete_files + update.removed_equality_delete_files
-        || totals.position_deletes < update.removed_position_deletes || totals.equality_deletes < update.removed_equality_deletes)
-        throw Exception(
-            ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
-            "DROP PARTITION would make snapshot summary totals negative for parent snapshot {}",
-            parent_snapshot_id);
-
-    new_snapshot->set(f_summary, SnapshotSummary{update, totals}.toJSON());
+    new_snapshot->set(f_summary, SnapshotSummary{plan.snapshot_summary_update, parent_totals}.toJSON());
 
     const String storage_manifest_list_path = components.path_resolver.resolve(manifest_list_path);
     files_for_cleanup.push_back(storage_manifest_list_path);
