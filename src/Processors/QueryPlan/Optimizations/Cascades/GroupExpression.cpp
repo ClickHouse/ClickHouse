@@ -62,63 +62,45 @@ String GroupExpression::dump(const CostConfig & cost_config) const
     return out.str();
 }
 
-/// The one list of components that define an expression's structural identity; equality and
-/// the fingerprint hash must not diverge from it.
-struct GroupExpressionIdentity
-{
-    String name;
-    String description;
-    String strategy_name;
-    const ExpressionProperties & properties;
-    const std::vector<GroupExpression::Input> & inputs;
-};
-
-static GroupExpressionIdentity identityOf(const GroupExpression & expression)
-{
-    return {
-        expression.getName(),
-        expression.getDescription(),
-        expression.strategy ? expression.strategy->getName() : String{},
-        expression.properties,
-        expression.inputs};
-}
-
+/// Equality and the fingerprint hash must cover the same identity components, in this order:
+/// properties, inputs (group and required properties), step name, step description, strategy
+/// name. `getName` and `getDescription` build their strings, so equality compares the cheap
+/// components first and materializes the strings one at a time.
 bool GroupExpression::structurallyEqualTo(const GroupExpression & other) const
 {
-    const auto left = identityOf(*this);
-    const auto right = identityOf(other);
-
-    if (left.name != right.name || left.description != right.description || left.strategy_name != right.strategy_name)
+    if (!(properties == other.properties))
         return false;
 
-    if (!(left.properties == right.properties))
+    if (inputs.size() != other.inputs.size())
         return false;
-
-    if (left.inputs.size() != right.inputs.size())
-        return false;
-    for (size_t i = 0; i < left.inputs.size(); ++i)
+    for (size_t i = 0; i < inputs.size(); ++i)
     {
-        if (left.inputs[i].group_id != right.inputs[i].group_id)
+        if (inputs[i].group_id != other.inputs[i].group_id)
             return false;
-        if (!(left.inputs[i].required_properties == right.inputs[i].required_properties))
+        if (!(inputs[i].required_properties == other.inputs[i].required_properties))
             return false;
     }
-    return true;
+
+    if (getName() != other.getName() || getDescription() != other.getDescription())
+        return false;
+
+    const String strategy_name = strategy ? strategy->getName() : String{};
+    const String other_strategy_name = other.strategy ? other.strategy->getName() : String{};
+    return strategy_name == other_strategy_name;
 }
 
 size_t GroupExpression::fingerprint() const
 {
-    const auto view = identityOf(*this);
-
-    size_t hash_value = std::hash<String>()(view.name);
-    boost::hash_combine(hash_value, std::hash<String>()(view.description));
-    boost::hash_combine(hash_value, std::hash<String>()(view.strategy_name));
-    boost::hash_combine(hash_value, ExpressionPropertiesHash()(view.properties));
-    for (const auto & input : view.inputs)
+    size_t hash_value = ExpressionPropertiesHash()(properties);
+    for (const auto & input : inputs)
     {
         boost::hash_combine(hash_value, input.group_id);
         boost::hash_combine(hash_value, ExpressionPropertiesHash()(input.required_properties));
     }
+    boost::hash_combine(hash_value, std::hash<String>()(getName()));
+    boost::hash_combine(hash_value, std::hash<String>()(getDescription()));
+    if (strategy)
+        boost::hash_combine(hash_value, std::hash<String>()(strategy->getName()));
     return hash_value;
 }
 
