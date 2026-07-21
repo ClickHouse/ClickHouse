@@ -234,7 +234,7 @@ bool ReaderExecutor::shouldOpenLongConnection() const
     if (long_conn || !long_connection_limit)
         return false;
     /// Open a long connection when the predicted run end runs past this window (physical coords).
-    const size_t phys = toPhys(position);
+    const size_t phys = toPhysical(position);
     return clampReach(fetch_tracker.predictedEnd(), phys) > phys + window_size;
 }
 
@@ -249,7 +249,7 @@ bool ReaderExecutor::tryOpenLongConnection(const StoredObject & object, size_t o
 
     /// Bound the held GET to the predicted run end, clamped to the object: a growing run reads
     /// further ahead, sparse access stays small, so it never over-reads a whole object for a slice.
-    const size_t phys = toPhys(position);
+    const size_t phys = toPhysical(position);
     const size_t forward = clampReach(fetch_tracker.predictedEnd(), phys) - phys;
     size_t read_until_obj = object_offset + forward;
     if (!offset_map.hasUnknownSize())
@@ -582,7 +582,7 @@ ChainedBuffers ReaderExecutor::readNextWindow()
     if (atEnd())
         return {};
 
-    const size_t position_physical = toPhys(position);
+    const size_t position_physical = toPhysical(position);
 
     /// Cap the window at the file end and the `read_until` bound.
     size_t want = window_size;
@@ -645,7 +645,7 @@ void ReaderExecutor::seek(size_t new_position)
     LOG_TRACE(log, "seek: {} -> {}", position, new_position);
     /// Feed the estimator; a held connection that can't continue to `new_position` is dropped
     /// lazily by the next `readNextWindow` (its `canServeAt` check).
-    fetch_tracker.recordSeek(toPhys(new_position));
+    fetch_tracker.recordSeek(toPhysical(new_position));
     position = new_position;
     reached_eof = false;
 }
