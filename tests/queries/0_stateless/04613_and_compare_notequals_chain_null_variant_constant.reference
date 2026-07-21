@@ -1,0 +1,14 @@
+lessOrEquals_rhs_null_variant
+1
+greaterOrEquals_lhs_null_variant
+1
+notEquals_null_variant
+1
+equals_null_variant
+1
+less_greater_null_variant
+1
+and_compare_chain_null_variant
+1
+mixed_null_and_real_notequals
+1

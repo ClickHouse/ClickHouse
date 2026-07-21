@@ -1899,16 +1899,21 @@ private:
             QueryTreeNodePtr expression;
             bool constant_on_left = false;
 
-            if (const auto * lhs_literal = lhs->as<ConstantNode>())
+            /// A NULL-valued constant is not a usable bound here: it never converts to the column
+            /// type (`tryConvertToColumnType` returns nullopt) and cannot participate in pruning,
+            /// folding or NOT IN. Its type can be non-Nullable (e.g. a NULL-valued `Variant`), so
+            /// the `isNullable` early-return above does not necessarily exclude it. Treat it as a
+            /// non-constant side and keep the operand as-is, matching `tryOptimizeOrEqualsChain`.
+            if (const auto * lhs_literal = lhs->as<ConstantNode>();
+                lhs_literal && !lhs_literal->getValue().isNull())
             {
-                chassert(!lhs_literal->getValue().isNull());
                 constant = lhs_literal;
                 expression = rhs;
                 constant_on_left = true;
             }
-            else if (const auto * rhs_literal = rhs->as<ConstantNode>())
+            else if (const auto * rhs_literal = rhs->as<ConstantNode>();
+                     rhs_literal && !rhs_literal->getValue().isNull())
             {
-                chassert(!rhs_literal->getValue().isNull());
                 constant = rhs_literal;
                 expression = lhs;
             }
