@@ -26,7 +26,7 @@ String
 9. Dynamic path IPv4 inference
 IPv4	192.168.1.1
 10. Dynamic path Array(IPv4) inference
-Array(IPv4)	['192.168.1.1','10.0.0.1']
+Array(Nullable(IPv4))	['192.168.1.1','10.0.0.1']
 11. CSV IPv4 inference
 c1	Nullable(IPv4)					
 12. CSV IPv6 inference
