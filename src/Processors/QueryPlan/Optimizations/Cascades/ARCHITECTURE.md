@@ -204,7 +204,7 @@ four stages:
   `TwoStageAggregation`, `TwoStageTopN`) to generate logically equivalent expressions.
 - **Stage 2 — Implement**: Fire implementation rules (`HashJoinImplementation`,
   `AggregationImplementation`, `LocalReadImplementation`, `ParallelReadImplementation`,
-  `ReplicatedReadImplementation`, `SortImplementation`, `DefaultImplementation`,
+  `ReplicatedReadImplementation`, `TopNImplementation`, `DefaultImplementation`,
   `DistributionPassthrough`) to generate physical expressions with concrete properties.
 - **Stage 3 — Enforce**: Apply enforcer rules (`DistributionEnforcer`, `SortingEnforcer`)
   to bridge property gaps. Uses a fixed-point loop for enforcer composition (e.g.,
@@ -234,7 +234,7 @@ equal-cost alternatives (the first-found best is kept and a later equal-cost can
 pruned). Enforcer rules are scheduled by the Stage-3 fixed-point loop, so their promise
 is not consulted.
 
-**Key files**: `Task.h/cpp`, `OptimizerContext.h/cpp`, `Optimizer.cpp`
+**Key files**: `Task.h/cpp`, `OptimizerContext.h/cpp`, `Optimizer.cpp`, `CascadesParams.h/cpp`, `OptimizationEnvironment.h`
 
 ### Enforcer Scheduling
 
@@ -398,7 +398,7 @@ The lists below use class names; `getName` log names may omit the `Implementatio
 - `LocalReadImplementation` — single-node read
 - `ParallelReadImplementation` — parallel N-way read across nodes
 - `ReplicatedReadImplementation` — full table read on each node (shared storage)
-- `SortImplementation` — bounded sort at one node, or per node for the top-N partial
+- `TopNImplementation` — bounded sort at one node, or per node for the top-N partial
 - `DefaultImplementation` — wraps otherwise-unhandled steps at `{1 node}`; operators
   with dedicated rules above are excluded
 - `DistributionPassthrough` — propagates distribution through stateless per-row steps
@@ -413,7 +413,7 @@ The lists below use class names; `getName` log names may omit the `Implementatio
   and sorted-merge gather variants.
 - `SortingEnforcer` — adds `SortingStep` with required sort description.
 
-**Key files**: `Rules/*.cpp`
+**Key files**: `Rules/*.cpp`, `DagNameTranslation.h/cpp`
 
 ### Statistics
 
@@ -423,8 +423,20 @@ byte width) used for cost estimation. Read groups — including an initial filte
 over a read — are prepopulated from index analysis, column statistics, or test hints;
 join and aggregation statistics are derived by `StatisticsDerivation.cpp`. Join estimates
 are clamped to the semantics of the join kind and strictness (an outer join keeps its
-preserved side, semi/anti/any joins cannot exceed it, a paste join is position-wise),
-and the join row width comes from the actual output header.
+preserved side, semi/anti/any joins cannot exceed it, a paste join is position-wise).
+
+Row widths drive the exchange costs, so they come from measured data, not type sizes.
+A read's per-column average widths come from the parts' column-data sizes (compact parts
+carry only a total, so type-based estimates are scaled to match it; the total deliberately
+excludes non-column files such as statistics sketches, which can dwarf a small table's
+data). A test hint overrides them: per-column `column_bytes` first, else a table-level
+`avg_row_bytes` distributed over the columns by type (a hinted table's physical parts are
+stand-ins and are not trusted). Widths follow columns through renames only while the value
+bytes are unchanged (`Nullable`/`LowCardinality` wrapping is ignored; a value-changing hop
+such as `toString` drops the width to unknown, falling back to the type default — 64 bytes
+for `String`). Joins and aggregations recompute their width from their actual output
+header using the known column widths. The only floor is 1 byte per row, guarding against
+a zero-width row (a bare `count()`) making exchanges look free.
 
 **Key files**: `Statistics.h/cpp`, `StatisticsDerivation.cpp`
 
@@ -515,6 +527,14 @@ branch-and-bound pruning as the primary bound.
    map to existing groups instead of cloning.
 10. **Dependent group-by key elimination**: Remove redundant GROUP BY columns using
    functional dependencies from MergeTree keys.
+11. **Width through same-type value-changing functions**: a deterministic `String` ->
+   `String` function (`substring`, `hex`) keeps the source column's average width even
+   though the bytes change; width preservation needs a value-pass-through rule separate
+   from the NDV rule.
+12. **Reads from remote shards**: a read from a `Distributed` table (or the `remote`/
+   `cluster` table functions) with genuinely remote shards is rejected up front
+   (`checkStepSupportedByCascades`); localhost shards are inlined and planned normally.
+   Supporting it as a coordinator-pinned single-task source is future work.
 
 ---
 
