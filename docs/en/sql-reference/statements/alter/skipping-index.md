@@ -22,6 +22,8 @@ The following operations are available:
 
 `ALTER TABLE [db.]table_name [ON CLUSTER cluster] MATERIALIZE INDEX [IF EXISTS] name [IN PARTITION partition_name]` - Rebuilds the secondary index `name` for the specified `partition_name`. Implemented as a [mutation](/sql-reference/statements/alter/index.md#mutations). If `IN PARTITION` part is omitted then it rebuilds the index for the whole table data.
 
+[`MATERIALIZE COLUMN`](/sql-reference/statements/alter/column#materialize-column) is not a substitute: refreshing or materializing column values does not rebuild skipping-index (or text-index) files. Use `MATERIALIZE INDEX` after column rewrites or when the index was added to a table that already has data.
+
 ## CLEAR INDEX {#clear-index}
 
 `ALTER TABLE [db.]table_name [ON CLUSTER cluster] CLEAR INDEX [IF EXISTS] name [IN PARTITION partition_name]` - Deletes the secondary index files from disk without removing description. Implemented as a [mutation](/sql-reference/statements/alter/index.md#mutations).

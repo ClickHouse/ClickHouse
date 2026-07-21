@@ -354,9 +354,16 @@ SELECT groupArray(x), groupArray(s) FROM tmp;
 └───────────────────────┴───────────────────────────────────────────────────────┘
 ```
 
+:::note
+`MATERIALIZE COLUMN` rewrites **column values** only. It does **not** rebuild [data skipping indexes](/sql-reference/statements/alter/skipping-index) (including text indexes) defined on that column, on a column derived from it, or on a `MATERIALIZED` expression that references it.
+
+After you change underlying column data—or after `ADD INDEX` on existing parts—rebuild index files with [`ALTER TABLE ... MATERIALIZE INDEX`](/sql-reference/statements/alter/skipping-index#materialize-index). Adding an index updates metadata; it does not by itself populate index data for historical parts.
+:::
+
 **See Also**
 
 - [MATERIALIZED](/sql-reference/statements/create/view#materialized-view).
+- [MATERIALIZE INDEX](/sql-reference/statements/alter/skipping-index#materialize-index).
 
 ## Limitations {#limitations}
 
