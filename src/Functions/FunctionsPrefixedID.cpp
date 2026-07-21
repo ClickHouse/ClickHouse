@@ -13,7 +13,7 @@
 #include <pcg_random.hpp>
 
 /// Functions for prefixed identifiers in the style popularized by Stripe: `<prefix>_<body>`,
-/// e.g. `cus_NffrFeUfNV2Hib` or `pk_test_51TpZvW`. The prefix may contain underscores
+/// e.g. `user_NffrFeUfNV2Hib` or `ch_test_51TpZvW`. The prefix may contain underscores
 /// (multi-segment); the body is base62 ([0-9A-Za-z]), which never contains an underscore,
 /// so all readers split the identifier at the last underscore.
 
@@ -31,8 +31,8 @@ namespace
 
 /// Split at the last underscore: everything before it is the prefix, everything after is
 /// the body. Without an underscore, the prefix is empty and the whole string is the body.
-/// Purely positional, never fails: `cus_` gives ("cus", "") and `_abc` gives ("", "abc").
-void splitPrefixedId(std::string_view id, std::string_view & prefix, std::string_view & body)
+/// Purely positional, never fails: `user_` gives ("user", "") and `_abc` gives ("", "abc").
+void splitPrefixedID(std::string_view id, std::string_view & prefix, std::string_view & body)
 {
     size_t separator_pos = id.rfind('_');
     if (separator_pos == std::string_view::npos)
@@ -51,7 +51,7 @@ void splitPrefixedId(std::string_view id, std::string_view & prefix, std::string
 /// Equivalently: all underscore-separated segments are non-empty and alphanumeric, and when
 /// at least one underscore is present (i.e. a prefix exists), the first character is a letter.
 /// A bare body without a prefix is valid and may start with a digit.
-bool isValidPrefixedIdImpl(std::string_view id)
+bool isValidPrefixedIDImpl(std::string_view id)
 {
     if (id.empty())
         return false;
@@ -78,8 +78,8 @@ bool isValidPrefixedIdImpl(std::string_view id)
     return !has_underscore || isAlphaASCII(id.front());
 }
 
-/// Validity of a prefix passed to generatePrefixedId: non-empty, and every underscore-separated
-/// segment matches [A-Za-z][A-Za-z0-9]* (stricter than isValidPrefixedId, which only requires
+/// Validity of a prefix passed to generatePrefixedID: non-empty, and every underscore-separated
+/// segment matches [A-Za-z][A-Za-z0-9]* (stricter than isValidPrefixedID, which only requires
 /// the first segment to start with a letter).
 bool isValidGeneratorPrefix(std::string_view prefix)
 {
@@ -118,17 +118,17 @@ const ColumnString & getStringColumn(const ColumnPtr & column, const char * func
     return *col_string;
 }
 
-class FunctionGeneratePrefixedId : public IFunction
+class FunctionGeneratePrefixedID : public IFunction
 {
 public:
-    static constexpr auto name = "generatePrefixedId";
+    static constexpr auto name = "generatePrefixedID";
 
     /// 22 base62 characters carry log2(62^22) ≈ 131 bits, at least the 128 bits
     /// conventionally considered collision-resistant.
     static constexpr size_t DEFAULT_BODY_LENGTH = 22;
     static constexpr size_t MAX_BODY_LENGTH = 255;
 
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionGeneratePrefixedId>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionGeneratePrefixedID>(); }
 
     String getName() const override { return name; }
     bool isVariadic() const override { return true; }
@@ -219,12 +219,12 @@ public:
 };
 
 template <typename Name, bool extract_prefix>
-class FunctionPrefixedIdPart : public IFunction
+class FunctionPrefixedIDPart : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
 
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionPrefixedIdPart>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionPrefixedIDPart>(); }
 
     String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return 1; }
@@ -251,7 +251,7 @@ public:
         {
             std::string_view prefix;
             std::string_view body;
-            splitPrefixedId(col_string.getDataAt(row), prefix, body);
+            splitPrefixedID(col_string.getDataAt(row), prefix, body);
 
             std::string_view part = extract_prefix ? prefix : body;
             col_res->insertData(part.data(), part.size());
@@ -261,25 +261,25 @@ public:
     }
 };
 
-struct NamePrefixedIdPrefix
+struct NamePrefixedIDPrefix
 {
-    static constexpr auto name = "prefixedIdPrefix";
+    static constexpr auto name = "prefixedIDPrefix";
 };
 
-struct NamePrefixedIdBody
+struct NamePrefixedIDBody
 {
-    static constexpr auto name = "prefixedIdBody";
+    static constexpr auto name = "prefixedIDBody";
 };
 
-using FunctionPrefixedIdPrefix = FunctionPrefixedIdPart<NamePrefixedIdPrefix, true>;
-using FunctionPrefixedIdBody = FunctionPrefixedIdPart<NamePrefixedIdBody, false>;
+using FunctionPrefixedIDPrefix = FunctionPrefixedIDPart<NamePrefixedIDPrefix, true>;
+using FunctionPrefixedIDBody = FunctionPrefixedIDPart<NamePrefixedIDBody, false>;
 
-class FunctionSplitPrefixedId : public IFunction
+class FunctionSplitPrefixedID : public IFunction
 {
 public:
-    static constexpr auto name = "splitPrefixedId";
+    static constexpr auto name = "splitPrefixedID";
 
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionSplitPrefixedId>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionSplitPrefixedID>(); }
 
     String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return 1; }
@@ -310,7 +310,7 @@ public:
         {
             std::string_view prefix;
             std::string_view body;
-            splitPrefixedId(col_string.getDataAt(row), prefix, body);
+            splitPrefixedID(col_string.getDataAt(row), prefix, body);
 
             col_prefix->insertData(prefix.data(), prefix.size());
             col_body->insertData(body.data(), body.size());
@@ -323,12 +323,12 @@ public:
     }
 };
 
-class FunctionIsValidPrefixedId : public IFunction
+class FunctionIsValidPrefixedID : public IFunction
 {
 public:
-    static constexpr auto name = "isValidPrefixedId";
+    static constexpr auto name = "isValidPrefixedID";
 
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionIsValidPrefixedId>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionIsValidPrefixedID>(); }
 
     String getName() const override { return name; }
     bool isVariadic() const override { return true; }
@@ -366,7 +366,7 @@ public:
         for (size_t row = 0; row < input_rows_count; ++row)
         {
             std::string_view id = col_string.getDataAt(row);
-            bool valid = isValidPrefixedIdImpl(id);
+            bool valid = isValidPrefixedIDImpl(id);
 
             if (col_expected_prefix)
             {
@@ -381,7 +381,7 @@ public:
 
                 std::string_view prefix;
                 std::string_view body;
-                splitPrefixedId(id, prefix, body);
+                splitPrefixedID(id, prefix, body);
                 valid = valid && prefix == expected_prefix;
             }
 
@@ -394,14 +394,14 @@ public:
 
 }
 
-REGISTER_FUNCTION(GeneratePrefixedId)
+REGISTER_FUNCTION(GeneratePrefixedID)
 {
     FunctionDocumentation::Description description = R"(
-Generates a prefixed identifier `<prefix>_<body>` in the style popularized by Stripe, e.g. `cus_NffrFeUfNV2Hib`.
+Generates a prefixed identifier `<prefix>_<body>` in the style popularized by Stripe, e.g. `user_NffrFeUfNV2Hib`.
 The body consists of random base62 characters (`[0-9A-Za-z]`).
-The prefix must be non-empty and consist of underscore-separated segments matching `[A-Za-z][A-Za-z0-9]*` (e.g. `cus` or `pk_test`); an exception is thrown otherwise.
+The prefix must be non-empty and consist of underscore-separated segments matching `[A-Za-z][A-Za-z0-9]*` (e.g. `user` or `ch_test`); an exception is thrown otherwise.
 )";
-    FunctionDocumentation::Syntax syntax = "generatePrefixedId(prefix[, length])";
+    FunctionDocumentation::Syntax syntax = "generatePrefixedID(prefix[, length])";
     FunctionDocumentation::Arguments arguments = {
         {"prefix", "Prefix of the identifier.", {"String"}},
         {"length", "Optional. Length of the body, in [1, 255]. Default: 22, which carries about 131 bits of entropy.", {"UInt8, UInt16, UInt32, or UInt64"}}
@@ -410,11 +410,11 @@ The prefix must be non-empty and consist of underscore-separated segments matchi
     FunctionDocumentation::Examples examples = {
     {
         "Usage example",
-        "SELECT generatePrefixedId('cus'), generatePrefixedId('pk_test', 10);",
+        "SELECT generatePrefixedID('user'), generatePrefixedID('ch_test', 10);",
         R"(
-┌─generatePrefixedId('cus')───┬─generatePrefixedId('pk_test', 10)─┐
-│ cus_h1zHkD3XlqvCpVZjBg9Ttw  │ pk_test_YZk20a9Fq3                │
-└─────────────────────────────┴───────────────────────────────────┘
+┌─generatePrefixedID('user')──┬─generatePref⋯_test', 10)─┐
+│ user_DvJvYzpK9RiWDO8Yw5fRpI │ ch_test_ga43BKOCwR       │
+└─────────────────────────────┴──────────────────────────┘
         )"
     }
     };
@@ -422,17 +422,17 @@ The prefix must be non-empty and consist of underscore-separated segments matchi
     FunctionDocumentation::Category category = FunctionDocumentation::Category::String;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction<FunctionGeneratePrefixedId>(documentation);
+    factory.registerFunction<FunctionGeneratePrefixedID>(documentation);
 }
 
-REGISTER_FUNCTION(PrefixedIdPrefix)
+REGISTER_FUNCTION(PrefixedIDPrefix)
 {
     FunctionDocumentation::Description description = R"(
-Returns the prefix of a prefixed identifier such as `cus_NffrFeUfNV2Hib`: the substring before the last underscore, e.g. `cus`.
+Returns the prefix of a prefixed identifier such as `user_NffrFeUfNV2Hib`: the substring before the last underscore, e.g. `user`.
 Returns an empty string if the identifier contains no underscore.
-The split is purely positional and never fails; use [`isValidPrefixedId`](#isValidPrefixedId) to validate the identifier.
+The split is purely positional and never fails; use [`isValidPrefixedID`](#isValidPrefixedID) to validate the identifier.
 )";
-    FunctionDocumentation::Syntax syntax = "prefixedIdPrefix(id)";
+    FunctionDocumentation::Syntax syntax = "prefixedIDPrefix(id)";
     FunctionDocumentation::Arguments arguments = {
         {"id", "Prefixed identifier.", {"String"}}
     };
@@ -440,10 +440,10 @@ The split is purely positional and never fails; use [`isValidPrefixedId`](#isVal
     FunctionDocumentation::Examples examples = {
     {
         "Usage example",
-        "SELECT prefixedIdPrefix('pk_test_51TpZvW');",
+        "SELECT prefixedIDPrefix('ch_test_51TpZvW');",
         R"(
-┌─prefixedIdP⋯_51TpZvW')─┐
-│ pk_test                │
+┌─prefixedIDP⋯_51TpZvW')─┐
+│ ch_test                │
 └────────────────────────┘
         )"
     }
@@ -452,17 +452,17 @@ The split is purely positional and never fails; use [`isValidPrefixedId`](#isVal
     FunctionDocumentation::Category category = FunctionDocumentation::Category::String;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction<FunctionPrefixedIdPrefix>(documentation);
+    factory.registerFunction<FunctionPrefixedIDPrefix>(documentation);
 }
 
-REGISTER_FUNCTION(PrefixedIdBody)
+REGISTER_FUNCTION(PrefixedIDBody)
 {
     FunctionDocumentation::Description description = R"(
-Returns the body of a prefixed identifier such as `cus_NffrFeUfNV2Hib`: the substring after the last underscore, e.g. `NffrFeUfNV2Hib`.
+Returns the body of a prefixed identifier such as `user_NffrFeUfNV2Hib`: the substring after the last underscore, e.g. `NffrFeUfNV2Hib`.
 Returns the whole string if the identifier contains no underscore.
-The split is purely positional and never fails; use [`isValidPrefixedId`](#isValidPrefixedId) to validate the identifier.
+The split is purely positional and never fails; use [`isValidPrefixedID`](#isValidPrefixedID) to validate the identifier.
 )";
-    FunctionDocumentation::Syntax syntax = "prefixedIdBody(id)";
+    FunctionDocumentation::Syntax syntax = "prefixedIDBody(id)";
     FunctionDocumentation::Arguments arguments = {
         {"id", "Prefixed identifier.", {"String"}}
     };
@@ -470,9 +470,9 @@ The split is purely positional and never fails; use [`isValidPrefixedId`](#isVal
     FunctionDocumentation::Examples examples = {
     {
         "Usage example",
-        "SELECT prefixedIdBody('cus_NffrFeUfNV2Hib');",
+        "SELECT prefixedIDBody('user_NffrFeUfNV2Hib');",
         R"(
-┌─prefixedIdB⋯fNV2Hib')─┐
+┌─prefixedIDB⋯fNV2Hib')─┐
 │ NffrFeUfNV2Hib        │
 └───────────────────────┘
         )"
@@ -482,17 +482,17 @@ The split is purely positional and never fails; use [`isValidPrefixedId`](#isVal
     FunctionDocumentation::Category category = FunctionDocumentation::Category::String;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction<FunctionPrefixedIdBody>(documentation);
+    factory.registerFunction<FunctionPrefixedIDBody>(documentation);
 }
 
-REGISTER_FUNCTION(SplitPrefixedId)
+REGISTER_FUNCTION(SplitPrefixedID)
 {
     FunctionDocumentation::Description description = R"(
-Splits a prefixed identifier such as `cus_NffrFeUfNV2Hib` at the last underscore into a tuple of prefix and body, consistent with [`prefixedIdPrefix`](#prefixedIdPrefix) and [`prefixedIdBody`](#prefixedIdBody).
+Splits a prefixed identifier such as `user_NffrFeUfNV2Hib` at the last underscore into a tuple of prefix and body, consistent with [`prefixedIDPrefix`](#prefixedIDPrefix) and [`prefixedIDBody`](#prefixedIDBody).
 For an identifier without an underscore, the prefix is empty and the body is the whole string.
-The split is purely positional and never fails; use [`isValidPrefixedId`](#isValidPrefixedId) to validate the identifier.
+The split is purely positional and never fails; use [`isValidPrefixedID`](#isValidPrefixedID) to validate the identifier.
 )";
-    FunctionDocumentation::Syntax syntax = "splitPrefixedId(id)";
+    FunctionDocumentation::Syntax syntax = "splitPrefixedID(id)";
     FunctionDocumentation::Arguments arguments = {
         {"id", "Prefixed identifier.", {"String"}}
     };
@@ -500,10 +500,10 @@ The split is purely positional and never fails; use [`isValidPrefixedId`](#isVal
     FunctionDocumentation::Examples examples = {
     {
         "Usage example",
-        "SELECT splitPrefixedId('pk_test_51TpZvW');",
+        "SELECT splitPrefixedID('ch_test_51TpZvW');",
         R"(
 ┌─splitPrefix⋯_51TpZvW')─┐
-│ ('pk_test','51TpZvW')  │
+│ ('ch_test','51TpZvW')  │
 └────────────────────────┘
         )"
     }
@@ -512,18 +512,18 @@ The split is purely positional and never fails; use [`isValidPrefixedId`](#isVal
     FunctionDocumentation::Category category = FunctionDocumentation::Category::String;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction<FunctionSplitPrefixedId>(documentation);
+    factory.registerFunction<FunctionSplitPrefixedID>(documentation);
 }
 
-REGISTER_FUNCTION(IsValidPrefixedId)
+REGISTER_FUNCTION(IsValidPrefixedID)
 {
     FunctionDocumentation::Description description = R"(
 Checks whether a string is a valid prefixed identifier: an optional underscore-separated prefix followed by a non-empty base62 body, i.e. it matches `^([A-Za-z][A-Za-z0-9]*(_[A-Za-z0-9]+)*_)?[0-9A-Za-z]+$`.
-A bare body without a prefix (e.g. `abc123`) is valid; an empty body (e.g. `cus_`) or an empty prefix segment (e.g. `_abc`) is not.
+A bare body without a prefix (e.g. `abc123`) is valid; an empty body (e.g. `user_`) or an empty prefix segment (e.g. `_abc`) is not.
 With the optional second argument, additionally requires the prefix of the identifier (the part before the last underscore) to equal `prefix` exactly.
 An empty `prefix` argument is ambiguous and throws an exception.
 )";
-    FunctionDocumentation::Syntax syntax = "isValidPrefixedId(id[, prefix])";
+    FunctionDocumentation::Syntax syntax = "isValidPrefixedID(id[, prefix])";
     FunctionDocumentation::Arguments arguments = {
         {"id", "Identifier to check.", {"String"}},
         {"prefix", "Optional. Expected prefix; must be non-empty.", {"String"}}
@@ -532,7 +532,7 @@ An empty `prefix` argument is ambiguous and throws an exception.
     FunctionDocumentation::Examples examples = {
     {
         "Usage example",
-        "SELECT isValidPrefixedId('cus_NffrFeUfNV2Hib') AS valid, isValidPrefixedId('cus_NffrFeUfNV2Hib', 'pk') AS wrong_prefix, isValidPrefixedId('cus_') AS empty_body;",
+        "SELECT isValidPrefixedID('user_NffrFeUfNV2Hib') AS valid, isValidPrefixedID('user_NffrFeUfNV2Hib', 'ch') AS wrong_prefix, isValidPrefixedID('user_') AS empty_body;",
         R"(
 ┌─valid─┬─wrong_prefix─┬─empty_body─┐
 │     1 │            0 │          0 │
@@ -544,7 +544,7 @@ An empty `prefix` argument is ambiguous and throws an exception.
     FunctionDocumentation::Category category = FunctionDocumentation::Category::String;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction<FunctionIsValidPrefixedId>(documentation);
+    factory.registerFunction<FunctionIsValidPrefixedID>(documentation);
 }
 
 }
