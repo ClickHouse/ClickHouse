@@ -187,3 +187,162 @@ def test_retries_should_not_wait_for_global_connection(
         pm.heal_all()
         cluster.start_zookeeper_nodes(["zoo1", "zoo2", "zoo3"])
         node1.query("DROP TABLE IF EXISTS zk_down_retries SYNC")
+
+
+def test_ambiguous_zk_commit_query_timeout_preserves_data(started_cluster):
+    query_id = str(uuid.uuid4())
+    pool = Pool(1)
+    job = None
+
+    try:
+        node1.query(
+            "CREATE TABLE amb_timeout (a UInt64, b String) ENGINE=ReplicatedMergeTree('/test/amb_timeout', '0') ORDER BY tuple()"
+        )
+        node1.query(
+            "SYSTEM ENABLE FAILPOINT replicated_merge_tree_commit_zk_fail_after_op"
+        )
+        node1.query(
+            "SYSTEM ENABLE FAILPOINT replicated_merge_tree_commit_zk_fail_when_recovering_from_hw_fault"
+        )
+        node1.query(
+            "SYSTEM ENABLE FAILPOINT replicated_merge_tree_insert_retry_pause"
+        )
+
+        job = pool.apply_async(
+            node1.query_and_get_error,
+            (
+                "INSERT INTO amb_timeout SELECT number, toString(number) FROM numbers(10) "
+                "SETTINGS insert_keeper_max_retries=10000, insert_keeper_retry_initial_backoff_ms=50, "
+                "insert_keeper_retry_max_backoff_ms=100, max_execution_time=2",
+            ),
+            {"query_id": query_id},
+        )
+
+        # Ensure that the Keeper `multi` was committed and its response was lost before
+        # allowing `max_execution_time` to expire, so a slow CI host cannot time out the
+        # query before it enters ambiguous-commit recovery.
+        node1.query(
+            "SYSTEM WAIT FAILPOINT replicated_merge_tree_insert_retry_pause PAUSE",
+            timeout=60,
+        )
+        time.sleep(2.1)
+        node1.query(
+            "SYSTEM DISABLE FAILPOINT replicated_merge_tree_insert_retry_pause"
+        )
+
+        error = job.get(timeout=60)
+        assert "UNKNOWN_STATUS_OF_INSERT" in error
+
+        node1.query(
+            "SYSTEM DISABLE FAILPOINT replicated_merge_tree_commit_zk_fail_when_recovering_from_hw_fault"
+        )
+        node1.query(
+            "SYSTEM DISABLE FAILPOINT replicated_merge_tree_commit_zk_fail_after_op"
+        )
+
+        # The `multi` was committed in Keeper before its response was lost. The local
+        # part must remain readable and retrying the insert must be deduplicated.
+        assert node1.query("SELECT count() FROM amb_timeout") == "10\n"
+        node1.query(
+            "INSERT INTO amb_timeout SELECT number, toString(number) FROM numbers(10)"
+        )
+        assert node1.query("SELECT count() FROM amb_timeout") == "10\n"
+        assert (
+            node1.query(
+                "SELECT lost_part_count FROM system.replicas WHERE table = 'amb_timeout'"
+            )
+            == "0\n"
+        )
+    finally:
+        if job is not None and not job.ready():
+            node1.query(f"KILL QUERY WHERE query_id = '{query_id}' ASYNC")
+        node1.query(
+            "SYSTEM DISABLE FAILPOINT replicated_merge_tree_insert_retry_pause"
+        )
+        node1.query(
+            "SYSTEM DISABLE FAILPOINT replicated_merge_tree_commit_zk_fail_when_recovering_from_hw_fault"
+        )
+        node1.query(
+            "SYSTEM DISABLE FAILPOINT replicated_merge_tree_commit_zk_fail_after_op"
+        )
+        pool.close()
+        pool.join()
+        node1.query("DROP TABLE IF EXISTS amb_timeout SYNC")
+
+
+def test_ambiguous_zk_commit_kill_preserves_data(started_cluster):
+    query_id = str(uuid.uuid4())
+    pool = Pool(1)
+    job = None
+
+    try:
+        node1.query(
+            "CREATE TABLE amb_kill (a UInt64, b String) ENGINE=ReplicatedMergeTree('/test/amb_kill', '0') ORDER BY tuple()"
+        )
+        node1.query(
+            "SYSTEM ENABLE FAILPOINT replicated_merge_tree_commit_zk_fail_after_op"
+        )
+        node1.query(
+            "SYSTEM ENABLE FAILPOINT replicated_merge_tree_commit_zk_fail_when_recovering_from_hw_fault"
+        )
+        node1.query(
+            "SYSTEM ENABLE FAILPOINT replicated_merge_tree_insert_retry_pause"
+        )
+
+        job = pool.apply_async(
+            node1.query_and_get_error,
+            (
+                "INSERT INTO amb_kill SELECT number, toString(number) FROM numbers(10) "
+                "SETTINGS insert_keeper_max_retries=10000, insert_keeper_retry_initial_backoff_ms=100, "
+                "insert_keeper_retry_max_backoff_ms=200",
+            ),
+            {"query_id": query_id},
+        )
+
+        # Pause inside the recovery iteration, after the Keeper commit response was
+        # lost, so `KILL QUERY` cannot race with the initial `multi`.
+        node1.query(
+            "SYSTEM WAIT FAILPOINT replicated_merge_tree_insert_retry_pause PAUSE",
+            timeout=60,
+        )
+        node1.query(f"KILL QUERY WHERE query_id = '{query_id}' ASYNC")
+        node1.query(
+            "SYSTEM DISABLE FAILPOINT replicated_merge_tree_insert_retry_pause"
+        )
+
+        error = job.get(timeout=60)
+        assert "UNKNOWN_STATUS_OF_INSERT" in error
+
+        node1.query(
+            "SYSTEM DISABLE FAILPOINT replicated_merge_tree_commit_zk_fail_when_recovering_from_hw_fault"
+        )
+        node1.query(
+            "SYSTEM DISABLE FAILPOINT replicated_merge_tree_commit_zk_fail_after_op"
+        )
+
+        assert node1.query("SELECT count() FROM amb_kill") == "10\n"
+        node1.query(
+            "INSERT INTO amb_kill SELECT number, toString(number) FROM numbers(10)"
+        )
+        assert node1.query("SELECT count() FROM amb_kill") == "10\n"
+        assert (
+            node1.query(
+                "SELECT lost_part_count FROM system.replicas WHERE table = 'amb_kill'"
+            )
+            == "0\n"
+        )
+    finally:
+        if job is not None and not job.ready():
+            node1.query(f"KILL QUERY WHERE query_id = '{query_id}' ASYNC")
+        node1.query(
+            "SYSTEM DISABLE FAILPOINT replicated_merge_tree_insert_retry_pause"
+        )
+        node1.query(
+            "SYSTEM DISABLE FAILPOINT replicated_merge_tree_commit_zk_fail_when_recovering_from_hw_fault"
+        )
+        node1.query(
+            "SYSTEM DISABLE FAILPOINT replicated_merge_tree_commit_zk_fail_after_op"
+        )
+        pool.close()
+        pool.join()
+        node1.query("DROP TABLE IF EXISTS amb_kill SYNC")

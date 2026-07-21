@@ -992,7 +992,14 @@ std::vector<DeduplicationHash> ReplicatedMergeTreeSink::commitPart(
             /// If we fail to do so (keeper unavailable) then we don't know if the changes were applied or not so
             /// we can't delete the local part, as if the changes were applied then inserted block appeared in
             /// `/blocks/`, and it can not be inserted again.
-            new_retry_controller.actionAfterLastFailedRetry([&]
+            ///
+            /// `actionAfterLastFailedRetry` is deliberately not used here: it only runs when the retry
+            /// controller itself terminates the loop (the retry limit is reached or `stopRetries` is called),
+            /// while this site must keep control on every unsuccessful exit (query timeout, `KILL QUERY`,
+            /// non-retryable errors). Instead, any exception leaving the recovery loop is treated as
+            /// "the commit status is unknown", and the local part is preserved - rolling it back could
+            /// lose data that Keeper has committed.
+            auto preserve_part_and_throw_unknown_status = [&](const String & recovery_failure)
             {
                 {
                     /// While we could not verify in keeper whether the part was committed, the failed-quorum
@@ -1014,24 +1021,37 @@ std::vector<DeduplicationHash> ReplicatedMergeTreeSink::commitPart(
                     }
                 }
                 storage.enqueuePartForCheck(part->name, MAX_AGE_OF_LOCAL_PART_THAT_WASNT_ADDED_TO_ZOOKEEPER);
-                throw Exception(ErrorCodes::UNKNOWN_STATUS_OF_INSERT,
-                        "Unknown status of part {} (Reason: {}). Data was written locally but we don't know the status in keeper. "
-                        "The status will be verified automatically in ~{} seconds (the part will be kept if present in keeper or dropped if not)",
-                        part->name, multi_code, MAX_AGE_OF_LOCAL_PART_THAT_WASNT_ADDED_TO_ZOOKEEPER);
-            });
+                throw Exception(
+                    ErrorCodes::UNKNOWN_STATUS_OF_INSERT,
+                    "Unknown status of part {} (Initial Keeper error: {}, recovery failed with: {}). "
+                    "Data was written locally but we don't know the status in keeper. "
+                    "The status will be verified automatically in ~{} seconds (the part will be kept if present in keeper or dropped if not)",
+                    part->name,
+                    multi_code,
+                    recovery_failure,
+                    MAX_AGE_OF_LOCAL_PART_THAT_WASNT_ADDED_TO_ZOOKEEPER);
+            };
 
             bool node_exists = false;
             bool quorum_fail_exists = false;
             /// The loop will be executed at least once
-            new_retry_controller.retryLoop([&]
+            try
             {
-                fiu_do_on(FailPoints::replicated_merge_tree_commit_zk_fail_when_recovering_from_hw_fault, { zookeeper->forceFailureBeforeOperation(); });
-                FailPointInjection::pauseFailPoint(FailPoints::replicated_merge_tree_insert_retry_pause);
-                zookeeper->setKeeper(storage.getZooKeeper());
-                node_exists = zookeeper->exists(fs::path(storage.replica_path) / "parts" / part->name);
-                if (isQuorumEnabled())
-                    quorum_fail_exists = zookeeper->exists(fs::path(storage.zookeeper_path) / "quorum" / "failed_parts" / part->name);
-            });
+                new_retry_controller.retryLoop([&]
+                {
+                    fiu_do_on(FailPoints::replicated_merge_tree_commit_zk_fail_when_recovering_from_hw_fault, { zookeeper->forceFailureBeforeOperation(); });
+                    FailPointInjection::pauseFailPoint(FailPoints::replicated_merge_tree_insert_retry_pause);
+                    zookeeper->setKeeper(storage.getZooKeeper());
+                    node_exists = zookeeper->exists(fs::path(storage.replica_path) / "parts" / part->name);
+                    quorum_fail_exists
+                        = isQuorumEnabled()
+                        && zookeeper->exists(fs::path(storage.zookeeper_path) / "quorum" / "failed_parts" / part->name);
+                });
+            }
+            catch (...)
+            {
+                preserve_part_and_throw_unknown_status(getCurrentExceptionMessage(/* with_stacktrace */ false));
+            }
 
             /// if it has quorum fail node, the restarting thread will clean the garbage.
             if (quorum_fail_exists)
