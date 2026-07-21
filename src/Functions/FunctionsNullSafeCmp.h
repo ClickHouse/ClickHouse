@@ -102,14 +102,14 @@ public:
 
         if (!tryGetLeastSupertype(arguments))
         {
-            /// A top-level `String`/`FixedString` on one side with no least common supertype can
-            /// never be compared null-safely (unlike the regular `=` / `!=` operators.
+            /// A `String`/`FixedString` on one side aligned with a non-string type on the other (at
+            /// any nesting depth) can never be compared null-safely (unlike the regular `=` / `!=`
+            /// operators). Aligned String-vs-String positions are fine and fall through to the probe.
             auto left_nested_type = removeLowCardinalityAndNullable(left_ele_type);
             auto right_nested_type = removeLowCardinalityAndNullable(right_ele_type);
-            const bool has_string_type
-                = isStringOrFixedStringOrArrayOrTupleOfString(left_nested_type)
-                || isStringOrFixedStringOrArrayOrTupleOfString(right_nested_type);
-            if (has_string_type)
+            const bool has_string_vs_non_string
+                = hasAlignedStringVsNonStringElement(left_nested_type, right_nested_type);
+            if (has_string_vs_non_string)
                 throw Exception(
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                     "Illegal types of arguments ({}, {}) of function {}",
@@ -264,13 +264,12 @@ public:
                     : type_and_name_right_col);
         }
 
-        // get common type for null-safe comparison;
+        // get common type for null-safe comparison
         DataTypePtr common_type = tryGetLeastSupertype(DataTypes{arguments[0].type, arguments[1].type});
         auto left_nested_type = removeLowCardinalityAndNullable(arguments[0].type);
         auto right_nested_type = removeLowCardinalityAndNullable(arguments[1].type);
-        // handle string types compared with null
-        bool has_string_type = isStringOrFixedStringOrArrayOrTupleOfString(left_nested_type)
-                        || isStringOrFixedStringOrArrayOrTupleOfString(right_nested_type);
+        // an aligned string-vs-non-string element cannot take the no-supertype nested path below
+        bool has_string_vs_non_string = hasAlignedStringVsNonStringElement(left_nested_type, right_nested_type);
         if (common_type)
         {
             ColumnPtr c0_converted = castColumn(arguments[0], common_type);
@@ -291,7 +290,7 @@ public:
                 return c_res;
             }
         }
-        else if ((type_and_name_left_col.type->isNullable() || type_and_name_right_col.type->isNullable()) && !has_string_type)
+        else if ((type_and_name_left_col.type->isNullable() || type_and_name_right_col.type->isNullable()) && !has_string_vs_non_string)
         {
             // No common supertype and at least one side is Nullable (e.g. `Nullable(UInt64)` vs
             // `Nullable(Int64)`).

@@ -57,36 +57,36 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-/// Function to check for strings on first members or recursively on arrays and/or tuple types.
-static bool isStringOrFixedStringOrArrayOrTupleOfString(const DataTypePtr type)
+/// For the array/tuple element-comparison path, when there is a scalar position pair a `String`/`FixedString` on one side
+/// with a non-string type on the other return true to not allow comparison
+static bool hasAlignedStringVsNonStringElement(const DataTypePtr & left_type, const DataTypePtr & right_type)
 {
+    /// Unwrap optional top-level LowCardinality/Nullable on both sides before aligning.
+    const auto left = removeLowCardinalityAndNullable(left_type);
+    const auto right = removeLowCardinalityAndNullable(right_type);
 
-    /// Unwrap an optional top-level Nullable.
-    const auto nested_type = removeLowCardinalityAndNullable(type);
+    if (const auto * left_array = checkAndGetDataType<DataTypeArray>(left.get()))
+        if (const auto * right_array = checkAndGetDataType<DataTypeArray>(right.get()))
+            return hasAlignedStringVsNonStringElement(left_array->getNestedType(), right_array->getNestedType());
 
-    if (WhichDataType(nested_type.get()).isStringOrFixedString())
-        return true;
-
-    if (const auto * array_type = checkAndGetDataType<DataTypeArray>(nested_type.get()))
-    {
-        const auto element_type = removeLowCardinalityAndNullable(array_type->getNestedType());
-
-        return isStringOrFixedStringOrArrayOrTupleOfString(element_type);
-    }
-
-    if (const auto * tuple_type = checkAndGetDataType<DataTypeTuple>(nested_type.get()))
-    {
-        const DataTypes types_vec = tuple_type->getElements();
-        bool has_string = false;
-        for (const auto & elem_type : types_vec)
+    if (const auto * left_tuple = checkAndGetDataType<DataTypeTuple>(left.get()))
+        if (const auto * right_tuple = checkAndGetDataType<DataTypeTuple>(right.get()))
         {
-            has_string = isStringOrFixedStringOrArrayOrTupleOfString(elem_type);
-            if (has_string)
-                return true;
+            const DataTypes & left_elems = left_tuple->getElements();
+            const DataTypes & right_elems = right_tuple->getElements();
+            if (left_elems.size() != right_elems.size())
+                return false; /// structural mismatch -- defer to the build probe
+            for (size_t i = 0; i < left_elems.size(); ++i)
+                if (hasAlignedStringVsNonStringElement(left_elems[i], right_elems[i]))
+                    return true;
+            return false;
         }
-    }
 
-    return false;
+    /// Scalar (or structurally divergent) level: the legacy coercion applies exactly when one side
+    /// is string-like and the aligned other side is not.
+    const bool left_is_string = WhichDataType(left).isStringOrFixedString();
+    const bool right_is_string = WhichDataType(right).isStringOrFixedString();
+    return left_is_string != right_is_string;
 }
 
 template <bool _int, bool _float, bool _decimal, bool _datetime, typename F>
@@ -1572,11 +1572,12 @@ public:
                     DataTypePtr element_result_type = element_comparison->build(element_args)->getResultType();
 
                     /// Supported only when the element comparison produces a non-Nullable result
-                    /// (covers the mixed signed/unsigned integer case). The same apply for String/FixedString types
-                    bool has_string_type = isStringOrFixedStringOrArrayOrTupleOfString(left_nested_type)
-                        || isStringOrFixedStringOrArrayOrTupleOfString(right_nested_type);
+                    /// (covers the mixed signed/unsigned integer case). Reject only aligned
+                    /// string-vs-non-string positions (the legacy String<->value coercion we do not
+                    /// support element-wise); aligned String-vs-String positions are fine.
+                    bool has_string_vs_non_string = hasAlignedStringVsNonStringElement(left_nested_type, right_nested_type);
                     if (!element_result_type->isNullable() && !element_result_type->onlyNull() && !isNothing(element_result_type)
-                        && !has_string_type)
+                        && !has_string_vs_non_string)
                         return std::make_shared<DataTypeUInt8>();
                 }
 

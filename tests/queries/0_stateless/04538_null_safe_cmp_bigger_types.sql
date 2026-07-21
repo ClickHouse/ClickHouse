@@ -75,5 +75,19 @@ SELECT toTypeName(materialize('a') IS DISTINCT FROM materialize(1::Int64)); -- {
 SELECT (CAST('1', 'UInt64') IS DISTINCT FROM CAST('-1', 'Int64')) = (CAST('1', 'UInt64') != CAST('-1', 'Int64'));
 SELECT (CAST('1', 'UInt64') IS NOT DISTINCT FROM CAST('-1', 'Int64')) = (CAST('1', 'UInt64') = CAST('-1', 'Int64'));
 
+-- Aligned String-vs-String subfield with a signed/unsigned mismatch in another subfield is
+-- comparable null-safely and must match the regular != / = operators for these non-NULL values.
+SELECT ([tuple('a', 1::UInt64)]::Array(Tuple(String, UInt64)) IS DISTINCT FROM     [tuple('a', -1::Int64)]::Array(Tuple(String, Int64))) = ([tuple('a', 1::UInt64)]::Array(Tuple(String, UInt64)) != [tuple('a', -1::Int64)]::Array(Tuple(String, Int64)));
+SELECT ([tuple('a', 1::UInt64)]::Array(Tuple(String, UInt64)) IS NOT DISTINCT FROM [tuple('a', -1::Int64)]::Array(Tuple(String, Int64))) = ([tuple('a', 1::UInt64)]::Array(Tuple(String, UInt64)) =  [tuple('a', -1::Int64)]::Array(Tuple(String, Int64)));
+
+-- A crossed String-vs-number subfield is still rejected null-safely
+SELECT [tuple('a', 1::UInt64)]::Array(Tuple(String, UInt64)) IS DISTINCT FROM [tuple(1::Int64, 'a')]::Array(Tuple(Int64, String)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+
+-- Top-level Nullable(Tuple(...)) with an aligned String subfield exercises the no-supertype
+-- Nullable path (executeNullableWithoutSupertype) and matches the non-Nullable value comparison.
+SET enable_nullable_tuple_type = 1;
+SELECT (CAST(tuple('a', 1::UInt64), 'Nullable(Tuple(String, UInt64))') IS NOT DISTINCT FROM CAST(tuple('a', -1::Int64), 'Nullable(Tuple(String, Int64))')) = (tuple('a', 1::UInt64) = tuple('a', -1::Int64));
+SELECT (CAST(tuple('a', 1::UInt64), 'Nullable(Tuple(String, UInt64))') IS DISTINCT FROM     CAST(tuple('a', -1::Int64), 'Nullable(Tuple(String, Int64))')) = (tuple('a', 1::UInt64) != tuple('a', -1::Int64));
+
 -- Incomparable element types still throw
 SELECT ['a']::Array(String) IS DISTINCT FROM [1]::Array(Int64); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }

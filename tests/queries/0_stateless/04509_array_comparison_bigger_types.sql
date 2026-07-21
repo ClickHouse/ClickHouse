@@ -55,5 +55,18 @@ DROP TABLE t_arr_cmp;
 -- Consistency with tuple comparison
 SELECT (tuple(-1::Int64) < tuple(1::UInt64)) = ([-1]::Array(Int64) < [1]::Array(UInt64));
 
+-- Aligned String-vs-String subfield with a signed/unsigned mismatch in another subfield is
+-- comparable (String field via the normal string path, the integer field via accurate comparison)
+-- and must match the equivalent bare-tuple comparison.
+SELECT ([tuple('a', -1::Int64)]::Array(Tuple(String, Int64)) <  [tuple('a', 1::UInt64)]::Array(Tuple(String, UInt64))) = (tuple('a', -1::Int64) <  tuple('a', 1::UInt64));
+SELECT ([tuple('a', -1::Int64)]::Array(Tuple(String, Int64)) =  [tuple('a', 1::UInt64)]::Array(Tuple(String, UInt64))) = (tuple('a', -1::Int64) =  tuple('a', 1::UInt64));
+SELECT ([tuple('a', -1::Int64)]::Array(Tuple(String, Int64)) != [tuple('a', 1::UInt64)]::Array(Tuple(String, UInt64))) = (tuple('a', -1::Int64) != tuple('a', 1::UInt64));
+SELECT ([tuple('b',  5::Int64)]::Array(Tuple(String, Int64)) >  [tuple('a', 1::UInt64)]::Array(Tuple(String, UInt64))) = (tuple('b',  5::Int64) >  tuple('a', 1::UInt64));
+-- non-constant (exercises the offset-gathering path)
+SELECT (materialize([tuple('a', -1::Int64)]::Array(Tuple(String, Int64))) < materialize([tuple('a', 1::UInt64)]::Array(Tuple(String, UInt64)))) = (tuple('a', -1::Int64) < tuple('a', 1::UInt64));
+
 -- Incomparable element types still throw
 SELECT ['a']::Array(String) < [1]::Array(Int64); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT}
+-- A String subfield aligned with a number (at any position) is still rejected: here both positions
+-- are crossed String-vs-number, so there is no genuine element comparison.
+SELECT [tuple('a', 1::UInt64)]::Array(Tuple(String, UInt64)) < [tuple(1::Int64, 'a')]::Array(Tuple(Int64, String)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT}
