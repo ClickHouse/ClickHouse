@@ -19,6 +19,8 @@ namespace
 
 constexpr size_t WRITE_BATCH_SIZE = 10000;
 constexpr size_t READ_BATCH_SIZE = 10000;
+/// How often RequestBatcher prints a progress line, in batches.
+constexpr size_t REPORT_EVERY_BATCHES = 10;
 
 Coordination::MultiResponse executeMulti(Coordination::ZooKeeper & zookeeper, const Coordination::Requests & batch)
 {
@@ -43,17 +45,67 @@ void flushMulti(Coordination::ZooKeeper & zookeeper, Coordination::Requests & ba
     batch.clear();
 }
 
-void addToBatchAndMaybeFlush(Coordination::ZooKeeper & zookeeper, Coordination::Requests & batch, Coordination::RequestPtr request)
+/// Accumulates requests and executes them in Multi requests of WRITE_BATCH_SIZE,
+/// printing a progress line every REPORT_EVERY_BATCHES executed batches.
+class RequestBatcher
 {
-    batch.push_back(std::move(request));
-    if (batch.size() >= WRITE_BATCH_SIZE)
+public:
+    /// `action` is a past-tense verb for progress messages: "<action> <count>[/<total>] nodes".
+    /// Pass `total` of 0 if the total is not known in advance.
+    RequestBatcher(Coordination::ZooKeeper & zookeeper_, std::string action_, size_t total_)
+        : zookeeper(zookeeper_), action(std::move(action_)), total(total_)
     {
-        flushMulti(zookeeper, batch);
-        batch.clear();
     }
-}
 
-void removeRecursiveManual(Coordination::ZooKeeper & zookeeper, const std::string & path, Coordination::Requests & batch)
+    void add(Coordination::RequestPtr request)
+    {
+        batch.push_back(std::move(request));
+        if (batch.size() >= WRITE_BATCH_SIZE)
+            flush();
+    }
+
+    /// Execute the last incomplete batch and print the final count.
+    void finish()
+    {
+        flush();
+        if (executed != last_reported)
+            report();
+    }
+
+private:
+    void flush()
+    {
+        if (batch.empty())
+            return;
+
+        size_t batch_size = batch.size();
+        flushMulti(zookeeper, batch);
+        executed += batch_size;
+        ++batches;
+        if (batches % REPORT_EVERY_BATCHES == 0)
+            report();
+    }
+
+    void report()
+    {
+        if (total != 0)
+            std::cerr << action << " " << executed << "/" << total << " nodes" << std::endl;
+        else
+            std::cerr << action << " " << executed << " nodes" << std::endl;
+        last_reported = executed;
+    }
+
+    Coordination::ZooKeeper & zookeeper;
+    std::string action;
+    size_t total = 0;
+
+    Coordination::Requests batch;
+    size_t executed = 0;
+    size_t batches = 0;
+    size_t last_reported = 0;
+};
+
+void removeRecursiveManual(Coordination::ZooKeeper & zookeeper, const std::string & path, RequestBatcher & remove_batcher)
 {
     namespace fs = std::filesystem;
 
@@ -74,28 +126,18 @@ void removeRecursiveManual(Coordination::ZooKeeper & zookeeper, const std::strin
         throw zkutil::KeeperException(error, "Failed to list children of {}", path);
 
     for (const auto & child : children)
-        removeRecursiveManual(zookeeper, fs::path(path) / child, batch);
+        removeRecursiveManual(zookeeper, fs::path(path) / child, remove_batcher);
 
-    addToBatchAndMaybeFlush(zookeeper, batch, zkutil::makeRemoveRequest(path, -1));
+    remove_batcher.add(zkutil::makeRemoveRequest(path, -1));
 }
 
 /// Like removeRecursiveManual, but suitable for huge subtrees (~100M nodes):
 ///  * List requests are batched into MultiRead requests instead of one round trip per node,
 ///  * nodes that their parent's listing showed to be childless are removed without listing.
 /// Requires the MULTI_READ, FILTERED_LIST, and LIST_WITH_STAT_AND_DATA feature flags.
-void removeRecursiveManualFast(Coordination::ZooKeeper & zookeeper, const std::string & root_path)
+void removeRecursiveManualFast(Coordination::ZooKeeper & zookeeper, const std::string & root_path, RequestBatcher & remove_batcher)
 {
     namespace fs = std::filesystem;
-
-    Coordination::Requests remove_batch;
-    size_t removes_scheduled = 0;
-    auto schedule_remove = [&](const std::string & path)
-    {
-        addToBatchAndMaybeFlush(zookeeper, remove_batch, zkutil::makeRemoveRequest(path, -1));
-        ++removes_scheduled;
-        if (removes_scheduled % 1000000 == 0)
-            std::cerr << "Removed " << removes_scheduled << " nodes so far" << std::endl;
-    };
 
     /// Nodes that had children when their parent was listed (plus the root).
     /// The walk below appends parents before their children (BFS pre-order), so
@@ -157,7 +199,7 @@ void removeRecursiveManualFast(Coordination::ZooKeeper & zookeeper, const std::s
             {
                 std::string child_path = fs::path(batch_paths[i]) / list_response.names[j];
                 if (list_response.stats[j].numChildren == 0)
-                    schedule_remove(child_path);
+                    remove_batcher.add(zkutil::makeRemoveRequest(child_path, -1));
                 else
                     queue.emplace_back(std::move(child_path), list_response.stats[j].numChildren);
             }
@@ -167,8 +209,7 @@ void removeRecursiveManualFast(Coordination::ZooKeeper & zookeeper, const std::s
     }
 
     for (auto it = listed.rbegin(); it != listed.rend(); ++it)
-        schedule_remove(*it);
-    flushMulti(zookeeper, remove_batch);
+        remove_batcher.add(zkutil::makeRemoveRequest(*it, -1));
 }
 
 void removeRecursive(Coordination::ZooKeeper & zookeeper, const std::string & path, bool allow_native)
@@ -194,17 +235,16 @@ void removeRecursive(Coordination::ZooKeeper & zookeeper, const std::string & pa
         std::cerr << "Subtree at " << path << " is too large for one native RemoveRecursive request, removing manually" << std::endl;
     }
 
+    RequestBatcher remove_batcher(zookeeper, "Removed", /*total=*/ 0);
+
     if (zookeeper.isFeatureEnabled(DB::KeeperFeatureFlag::MULTI_READ)
         && zookeeper.isFeatureEnabled(DB::KeeperFeatureFlag::FILTERED_LIST)
         && zookeeper.isFeatureEnabled(DB::KeeperFeatureFlag::LIST_WITH_STAT_AND_DATA))
-    {
-        removeRecursiveManualFast(zookeeper, path);
-        return;
-    }
+        removeRecursiveManualFast(zookeeper, path, remove_batcher);
+    else
+        removeRecursiveManual(zookeeper, path, remove_batcher);
 
-    Coordination::Requests batch;
-    removeRecursiveManual(zookeeper, path, batch);
-    flushMulti(zookeeper, batch);
+    remove_batcher.finish();
 }
 
 }
@@ -270,6 +310,14 @@ std::shared_ptr<NodesSetup::Node> NodesSetup::parseNode(const std::string & key,
     }
 
     return node;
+}
+
+size_t NodesSetup::Node::countNodes() const
+{
+    size_t count = 1;
+    for (const auto & child : children)
+        count += child->repeat_count * child->countNodes();
+    return count;
 }
 
 void NodesSetup::Node::dumpTree(int level) const
@@ -492,6 +540,14 @@ void NodesSetup::createNodes(const CreateRequestSink & sink)
             node->createAt(root_paths.at(path_idx++), sink, default_acls, rng);
 }
 
+size_t NodesSetup::countTotalNodes() const
+{
+    size_t total = 0;
+    for (const auto & node : root_nodes)
+        total += node->repeat_count * node->countNodes();
+    return total;
+}
+
 void NodesSetup::startup(Coordination::ZooKeeper & zookeeper)
 {
     if (root_nodes.empty())
@@ -506,12 +562,15 @@ void NodesSetup::startup(Coordination::ZooKeeper & zookeeper)
         removeRecursive(zookeeper, root_path, use_remove_recursive);
     }
 
-    Coordination::Requests batch;
+    size_t total_nodes = countTotalNodes();
+    std::cerr << "Creating " << total_nodes << " nodes" << std::endl;
+
+    RequestBatcher create_batcher(zookeeper, "Created", total_nodes);
     createNodes([&](std::shared_ptr<Coordination::ZooKeeperCreateRequest> request)
     {
-        addToBatchAndMaybeFlush(zookeeper, batch, std::move(request));
+        create_batcher.add(std::move(request));
     });
-    flushMulti(zookeeper, batch);
+    create_batcher.finish();
 
     std::cerr << "---- Created test data ----\n" << std::endl;
 }
