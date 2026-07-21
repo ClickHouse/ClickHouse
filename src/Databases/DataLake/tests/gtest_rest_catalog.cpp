@@ -7,6 +7,7 @@
 #include <Common/Exception.h>
 #include <Common/tests/gtest_global_context.h>
 #include <Databases/DataLake/RestCatalog.h>
+#include <IO/HTTPCommon.h>
 #include <Interpreters/Context.h>
 
 #include <Poco/AutoPtr.h>
@@ -50,9 +51,9 @@ enum class CatalogShape
     ParentIgnoringEcho,
 };
 
-void writeJSON(Poco::Net::HTTPServerResponse & response, const std::string & body)
+void writeJSON(Poco::Net::HTTPServerResponse & response, const std::string & body, Poco::Net::HTTPResponse::HTTPStatus status = Poco::Net::HTTPResponse::HTTP_OK)
 {
-    response.setStatus(Poco::Net::HTTPResponse::HTTP_OK);
+    response.setStatus(status);
     response.setContentType("application/json");
     response.setContentLength(body.size());
     response.send() << body;
@@ -136,6 +137,34 @@ public:
         if (path == "/v1/namespaces/parent%1Fleaf_with_table/tables")
         {
             writeJSON(response, R"({"identifiers":[{"name":"table_a"}]})");
+            return;
+        }
+
+        if (path == "/v1/namespaces/namespace/tables/table_a")
+        {
+            writeJSON(
+                response,
+                R"({"metadata-location":"s3://bucket/table_a/metadata/v1.metadata.json",)"
+                R"("metadata":{"table-uuid":"11111111-2222-3333-4444-555555555555","location":"s3://bucket/table_a"}})");
+            return;
+        }
+
+        if (path == "/v1/namespaces/namespace/tables/missing_table")
+        {
+            writeJSON(
+                response,
+                R"({"error":{"message":"Table does not exist: namespace.missing_table","type":"NoSuchTableException","code":404}})",
+                Poco::Net::HTTPResponse::HTTP_NOT_FOUND);
+            return;
+        }
+
+        /// Fabric-style response once the bearer token has expired.
+        if (path == "/v1/namespaces/namespace/tables/expired_token_table")
+        {
+            writeJSON(
+                response,
+                R"({"error":{"code":"Unauthorized","message":"Lifetime validation failed, the token is expired."}})",
+                Poco::Net::HTTPResponse::HTTP_UNAUTHORIZED);
             return;
         }
 
@@ -277,6 +306,67 @@ TEST(RestCatalog, EmptyKeepsFoundTableStateSticky)
 TEST(RestCatalog, EmptyReturnsTrueWhenNoTablesExist)
 {
     EXPECT_TRUE(restCatalogEmpty(CatalogShape::Empty));
+}
+
+TEST(RestCatalog, TryGetTableMetadataMissingTableReturnsFalse)
+{
+    RestCatalogTestServer server(CatalogShape::TopLevelTable);
+    auto context = DB::Context::createCopy(getContext().context);
+    context->makeQueryContext();
+
+    RestCatalog catalog(
+        "warehouse",
+        server.getUrl(),
+        /* catalog_credential */"",
+        /* auth_scope */"",
+        /* auth_header */"",
+        /* oauth_server_uri */"",
+        /* oauth_server_use_request_body */false,
+        context);
+
+    auto metadata = TableMetadata().withLocation();
+    EXPECT_TRUE(catalog.tryGetTableMetadata("namespace", "table_a", metadata));
+    EXPECT_EQ(metadata.getLocation(), "s3://bucket/table_a");
+
+    TableMetadata missing_metadata;
+    EXPECT_FALSE(catalog.tryGetTableMetadata("namespace", "missing_table", missing_metadata));
+    EXPECT_FALSE(catalog.existsTable("namespace", "missing_table"));
+}
+
+TEST(RestCatalog, TryGetTableMetadataAuthErrorPropagates)
+{
+    /// An expired or revoked token must not read as "table does not exist" (which surfaces
+    /// as `UNKNOWN_TABLE` on SELECT and `EXISTS TABLE` returning 0): the HTTP 401 from the
+    /// catalog propagates to the user instead.
+    RestCatalogTestServer server(CatalogShape::TopLevelTable);
+    auto context = DB::Context::createCopy(getContext().context);
+    context->makeQueryContext();
+
+    OneLakeCatalog catalog(
+        "warehouse",
+        server.getUrl(),
+        /* onelake_tenant_id */"tenant-1",
+        /* onelake_client_id */"",
+        /* onelake_client_secret */"",
+        /* bearer_token */"expired-token",
+        /* auth_scope */"",
+        /* oauth_server_uri */"",
+        /* oauth_server_use_request_body */false,
+        context);
+
+    TableMetadata metadata;
+    try
+    {
+        catalog.tryGetTableMetadata("namespace", "expired_token_table", metadata);
+        FAIL() << "expected the HTTP 401 from the catalog to propagate";
+    }
+    catch (const DB::HTTPException & e)
+    {
+        EXPECT_EQ(e.getHTTPStatus(), Poco::Net::HTTPResponse::HTTP_UNAUTHORIZED);
+        EXPECT_NE(e.displayText().find("the token is expired"), std::string::npos);
+    }
+
+    EXPECT_THROW(catalog.existsTable("namespace", "expired_token_table"), DB::HTTPException);
 }
 
 TEST(RestCatalog, ApplySettingsChangesWithoutAuthenticationRejected)
