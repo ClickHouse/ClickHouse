@@ -6,7 +6,6 @@
 #include <base/types.h>
 #include <Common/likePatternToRegexp.h>
 #include <Common/Volnitsky.h>
-#include <Common/likePatternToRegexp.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Common/isValidUTF8.h>
 #include <Columns/ColumnString.h>
