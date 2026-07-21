@@ -488,6 +488,7 @@ void StorageMergeTree::alter(
     if (commands.isSettingsAlter())
     {
         changeSettings(new_metadata.settings_changes, table_lock_holder);
+        carryOverCommittedEscapeIndexFilenames(new_metadata, local_context);
 
         if (statistics_changed)
             setInMemoryMetadata(new_metadata);
@@ -549,6 +550,8 @@ void StorageMergeTree::alter(
             try
             {
                 changeSettings(new_metadata.settings_changes, table_lock_holder);
+                carryOverCommittedEscapeIndexFilenames(new_metadata, local_context);
+
                 checkTTLExpressions(new_metadata, old_metadata);
 
                 /// Validate setting-dependent metadata against the just-applied settings
