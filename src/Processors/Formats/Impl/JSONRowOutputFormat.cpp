@@ -162,6 +162,16 @@ void registerOutputFormatJSON(FormatFactory & factory)
     factory.markFormatHasNoAppendSupport("JSON");
     factory.setContentType("JSON", "application/json; charset=UTF-8");
 
+    /// The `meta.type` strings are written from the header type names and are only UTF-8 validated
+    /// when the output adaptor installs the validating buffer, so a non-UTF-8 type name can leak.
+    /// It is knowable from the header, so text framings reject or base64-encode the output.
+    factory.registerOutputFormatMayProduceRawBytesChecker(
+        "JSON",
+        [](const FormatSettings & settings, const Block & header)
+        {
+            return JSONUtils::metadataTypeNamesMayProduceRawBytesInJSON(header, settings);
+        });
+
     factory.registerOutputFormat("JSONStrings", [](
         WriteBuffer & buf,
         const Block & sample,
@@ -174,6 +184,13 @@ void registerOutputFormatJSON(FormatFactory & factory)
     factory.markOutputFormatSupportsParallelFormatting("JSONStrings");
     factory.markFormatHasNoAppendSupport("JSONStrings");
     factory.setContentType("JSONStrings", "application/json; charset=UTF-8");
+
+    factory.registerOutputFormatMayProduceRawBytesChecker(
+        "JSONStrings",
+        [](const FormatSettings & settings, const Block & header)
+        {
+            return JSONUtils::metadataTypeNamesMayProduceRawBytesInJSON(header, settings);
+        });
 
     factory.setDocumentation("JSONStrings", Documentation{
         .description = R"DOCS_MD(
