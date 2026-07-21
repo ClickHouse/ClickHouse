@@ -1,4 +1,5 @@
 #include <Processors/QueryPlan/Optimizations/Cascades/Rule.h>
+#include <Processors/QueryPlan/Optimizations/Cascades/DagNameTranslation.h>
 #include <Common/logger_useful.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Group.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/GroupExpression.h>
@@ -15,82 +16,6 @@
 
 namespace DB
 {
-
-/// `materialize(x)` preserves values and thus the hash, so it is transparent to hash-based
-/// distribution and can be traced through. VIEW reads insert such nodes.
-static bool isMaterializeNode(const ActionsDAG::Node & node)
-{
-    return node.type == ActionsDAG::ActionType::FUNCTION
-        && node.children.size() == 1
-        && node.function_base
-        && node.function_base->getName() == "materialize";
-}
-
-/// Trace a column name back to the original INPUT name through ALIAS chains and `materialize`
-/// wrappers. Returns empty for genuinely computed columns (other FUNCTION nodes).
-static String traceColumnToInput(const ActionsDAG & dag, const String & output_name)
-{
-    const ActionsDAG::Node * node = dag.tryFindInOutputs(output_name);
-    if (!node)
-        return {};
-    while (node->type == ActionsDAG::ActionType::ALIAS || isMaterializeNode(*node))
-        node = node->children.front();
-    if (node->type == ActionsDAG::ActionType::INPUT)
-        return node->result_name;
-    return {};
-}
-
-/// Translate distribution column names through an ActionsDAG to input names.
-/// Returns false if any column set becomes empty (all computed - reject passthrough).
-static bool translateDistributionColumns(const ActionsDAG & dag, std::vector<NameSet> & columns)
-{
-    for (auto & column_set : columns)
-    {
-        NameSet translated;
-        for (const auto & name : column_set)
-        {
-            String input_name = traceColumnToInput(dag, name);
-            if (!input_name.empty())
-            {
-                translated.insert(input_name);
-            }
-            else if (!dag.tryFindInOutputs(name))
-            {
-                /// Not in DAG outputs - may be a passthrough input column. Keep it.
-                translated.insert(name);
-            }
-            /// else: computed by this step (FUNCTION) - not present in input. Drop it.
-        }
-        if (translated.empty())
-            return false;
-        column_set = std::move(translated);
-    }
-    return true;
-}
-
-/// Translate sort column names through an ActionsDAG to input names.
-/// Returns false if any column is computed (FUNCTION node).
-static bool translateSortDescription(const ActionsDAG & dag, SortDescription & sort_desc)
-{
-    for (auto & col_desc : sort_desc)
-    {
-        String input_name = traceColumnToInput(dag, col_desc.column_name);
-        if (!input_name.empty())
-        {
-            col_desc.column_name = input_name;
-        }
-        else if (!dag.tryFindInOutputs(col_desc.column_name))
-        {
-            /// Not in DAG outputs - may be a passthrough input column. Keep it.
-        }
-        else
-        {
-            /// Computed by this step (FUNCTION) - can't translate to input.
-            return false;
-        }
-    }
-    return true;
-}
 
 /// Get the `ActionsDAG` from an `ExpressionStep` or `FilterStep`, or nullptr.
 static const ActionsDAG * tryGetActionsDAG(const IQueryPlanStep * step)
