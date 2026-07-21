@@ -21,6 +21,7 @@
 #include <Storages/ObjectStorageQueue/StorageObjectStorageQueue.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueUnorderedFileMetadata.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueOrderedFileMetadata.h>
+#include <Storages/IStreamingStorage.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Storages/HivePartitioningUtils.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/ObjectStorageIterator.h>
@@ -950,8 +951,10 @@ ObjectStorageQueueSource::ObjectStorageQueueSource(
     const StorageID & storage_id_,
     LoggerPtr log_,
     bool commit_once_processed_,
+    bool is_direct_select_,
     bool add_deduplication_info_,
-    bool is_deduplication_v2_)
+    bool is_deduplication_v2_,
+    IStreamingStorage & streaming_storage_)
     : ISource(std::make_shared<const Block>(read_from_format_info_.source_header))
     , WithContext(context_)
     , name(std::move(name_))
@@ -973,6 +976,9 @@ ObjectStorageQueueSource::ObjectStorageQueueSource(
     , system_queue_log(system_queue_log_)
     , storage_id(storage_id_)
     , commit_once_processed(commit_once_processed_)
+    , is_direct_select(is_direct_select_)
+    , streaming_storage(streaming_storage_)
+    , cancel_epoch(streaming_storage_.currentCancelEpoch())
     , add_deduplication_info(add_deduplication_info_)
     , is_deduplication_v2(is_deduplication_v2_)
     , log(log_)
@@ -1024,6 +1030,9 @@ Chunk ObjectStorageQueueSource::generateImpl()
 {
     while (true)
     {
+        if (is_direct_select && streaming_storage.isConsumeCancelRequested(cancel_epoch))
+            throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Consumption aborted by SYSTEM STOP or SYSTEM CANCEL");
+
         if (isCancelled())
         {
             if (reader)
