@@ -1,6 +1,6 @@
 import pytest
 
-from helpers.cluster import ClickHouseCluster, ClickHouseInstance
+from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import assert_eq_with_retry
 
 from .concurrency_helper import (
@@ -181,7 +181,7 @@ def test_concurrent_backups_on_same_node():
     # This restore part is added to confirm creating an internal backup & restore work
     # even when a concurrent backup is stopped
     nodes[0].query(
-        f"DROP TABLE tbl ON CLUSTER 'cluster' SYNC",
+        "DROP TABLE tbl ON CLUSTER 'cluster' SYNC",
         settings={
             "distributed_ddl_task_timeout": 360,
         },
@@ -220,7 +220,7 @@ def test_concurrent_backups_on_different_nodes():
     # This restore part is added to confirm creating an internal backup & restore work
     # even when a concurrent backup is stopped
     nodes[0].query(
-        f"DROP TABLE tbl ON CLUSTER 'cluster' SYNC",
+        "DROP TABLE tbl ON CLUSTER 'cluster' SYNC",
         settings={
             "distributed_ddl_task_timeout": 360,
         },
@@ -236,7 +236,7 @@ def test_concurrent_restores_on_same_node():
     nodes[0].query(f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name}")
 
     nodes[0].query(
-        f"DROP TABLE tbl ON CLUSTER 'cluster' SYNC",
+        "DROP TABLE tbl ON CLUSTER 'cluster' SYNC",
         settings={
             "distributed_ddl_task_timeout": 360,
         },
@@ -274,7 +274,7 @@ def test_concurrent_restores_on_different_node():
     nodes[0].query(f"BACKUP TABLE tbl ON CLUSTER 'cluster' TO {backup_name}")
 
     nodes[0].query(
-        f"DROP TABLE tbl ON CLUSTER 'cluster' SYNC",
+        "DROP TABLE tbl ON CLUSTER 'cluster' SYNC",
         settings={
             "distributed_ddl_task_timeout": 360,
         },

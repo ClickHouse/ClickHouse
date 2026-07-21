@@ -319,7 +319,7 @@ int parseIPv4SSE(const char * ipv4_string, const size_t ipv4_string_length, uint
         return 0;
 
     // locate dots
-    uint16_t dotmask;
+    uint16_t dotmask = 0;
     {
         const __m128i dot = _mm_set1_epi8('.');
         const __m128i t0 = _mm_cmpeq_epi8(input, dot);
@@ -344,7 +344,7 @@ int parseIPv4SSE(const char * ipv4_string, const size_t ipv4_string_length, uint
     // and that `pat` is the correct pattern for that mask.
     // The original implementation didn't have this check and could succeed for invalid inputs
     // (e.g. "1111111.1111111" was parsed as "11.11.1.1").
-    uint16_t expected_dotmask;
+    uint16_t expected_dotmask = 0;
     memcpy(&expected_dotmask, pat + 16, 2);
     if (dotmask != expected_dotmask)
         return 0;

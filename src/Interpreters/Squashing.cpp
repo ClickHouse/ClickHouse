@@ -313,7 +313,7 @@ Chunk Squashing::squash(ChunksWithOffsetsAndLengths && input_data)
     if (input_data.empty())
         return {};
 
-    std::vector<IColumn::MutablePtr> mutable_columns;
+    MutableColumns mutable_columns;
     size_t rows = 0;
     for (const auto & data : input_data)
         rows += data.length;
@@ -593,7 +593,7 @@ Squashing::PendingQueue::ConsumeResult Squashing::PendingQueue::consumeUpTo(size
     size_t rows_to_take = std::min(rows_budget, available_rows);
     bool exhaust_chunk = (rows_to_take == available_rows);
 
-    size_t bytes_to_take;
+    size_t bytes_to_take = 0;
     if (exhaust_chunk && offset_first == 0)
         bytes_to_take = front.bytes();
     else

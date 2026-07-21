@@ -6,8 +6,6 @@ title: 'last_value'
 doc_type: 'reference'
 ---
 
-# last_value
-
 Selects the last encountered value, similar to `anyLast`, but could accept NULL.
 Mostly it should be used with [Window Functions](../../window-functions/index.md).
 Without Window Functions the result will be random if the source stream is not ordered.

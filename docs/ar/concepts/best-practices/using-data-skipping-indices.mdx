@@ -1,0 +1,269 @@
+---
+slug: /best-practices/use-data-skipping-indices-where-appropriate
+sidebarTitle: 'فهارس تخطي البيانات'
+title: 'استخدم فهارس تخطي البيانات عند الحاجة'
+description: 'صفحة توضّح كيفية استخدام فهارس تخطي البيانات ومتى ينبغي استخدامها'
+keywords: ['فهرس تخطي البيانات', 'فهرس التخطي']
+show_related_blogs: true
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ar/components/Image.jsx";
+
+يجب التفكير في استخدام فهارس تخطي البيانات بعد اتباع أفضل الممارسات السابقة، أي بعد تحسين الأنواع، واختيار مفتاح أساسي جيد، والاستفادة من العروض المادية. وإذا كنت جديدًا على فهارس التخطي، فإن [هذا الدليل](/ar/concepts/features/performance/skip-indexes/skipping-indexes) نقطة بداية جيدة.
+
+يمكن استخدام هذه الأنواع من الفهارس لتسريع أداء الاستعلامات إذا استُخدمت بعناية ومع فهم لكيفية عملها.
+
+يوفر ClickHouse آلية قوية تُسمى **فهارس تخطي البيانات** يمكنها أن تقلل بدرجة كبيرة كمية البيانات التي تُفحص أثناء تنفيذ الاستعلام، خصوصًا عندما لا يكون المفتاح الأساسي مفيدًا لشرط تصفية معيّن. وعلى خلاف قواعد البيانات التقليدية التي تعتمد على الفهارس الثانوية المستندة إلى الصفوف (مثل B-trees)، فإن ClickHouse قاعدة بيانات عمودية ولا يخزّن مواقع الصفوف بطريقة تدعم مثل هذه البُنى. وبدلًا من ذلك، يستخدم فهارس التخطي، التي تساعده على تجنب قراءة كتل البيانات المضمون أنها لا تطابق شروط تصفية الاستعلام.
+
+تعمل فهارس التخطي من خلال تخزين البيانات الوصفية حول كتل البيانات — مثل القيم الدنيا/العظمى، أو مجموعات القيم، أو تمثيلات Bloom filter — واستخدام هذه البيانات الوصفية أثناء تنفيذ الاستعلام لتحديد كتل البيانات التي يمكن تخطيها بالكامل. وهي تنطبق فقط على [MergeTree family](/ar/reference/engines/table-engines/mergetree-family/mergetree) من محركات الجداول، وتُعرَّف باستخدام تعبير، ونوع فهرس، واسم، ودرجة تحبّب تحدد حجم كل كتلة مفهرسة. وتُخزَّن هذه الفهارس إلى جانب بيانات الجدول، ويُرجع إليها عندما يطابق مرشح الاستعلام تعبير الفهرس.
+
+توجد عدة أنواع من فهارس تخطي البيانات، وكل نوع منها مناسب لأنواع مختلفة من الاستعلامات وتوزيعات البيانات:
+
+* **minmax**: يتتبع الحدين الأدنى والأقصى لقيمة تعبير ما في كل كتلة. وهو مثالي لاستعلامات النطاق على البيانات المرتبة ترتيبًا غير صارم.
+* **set(N)**: يتتبع مجموعة من القيم حتى الحجم المحدد N لكل كتلة. وهو فعّال مع الأعمدة ذات عدد القيم المميزة المنخفض داخل الكتل.
+* **text**: ينشئ فهرسًا معكوسًا على بيانات string المُقسّمة إلى tokens، مما يتيح بحثًا نصيًا كاملًا فعّالًا وحتميًا. ويُنصح به للأعمدة التي تحتوي على لغة طبيعية أو نصوص حرة كبيرة عندما تكون هناك حاجة إلى بحث دقيق عن tokens وبحث متعدد المصطلحات قابل للتوسع، بدلًا من الأساليب التقريبية المعتمدة على Bloom filter.
+* **bloom&#95;filter**: يحدد احتماليًا ما إذا كانت قيمة ما موجودة في كتلة، مما يتيح تصفية تقريبية سريعة لعضوية المجموعة. وهو فعّال لتحسين الاستعلامات التي تبحث عن «إبرة في كومة قش»، حيث يلزم العثور على تطابق إيجابي.
+* **tokenbf&#95;v1 / ngrambf&#95;v1**: *(Deprecated)* متغيرات متخصصة من Bloom filter صُممت للبحث في tokens أو تسلسلات المحارف داخل strings — وهي مفيدة خصوصًا لبيانات السجلات أو حالات استخدام البحث النصي. وقد أُوقفت في إصدارات ClickHouse ‏&gt;= 26.2 لصالح text indexes.
+
+على الرغم من قوتها، يجب استخدام فهارس التخطي بحذر. فهي لا تقدم فائدة إلا عندما تستبعد عددًا مؤثرًا من كتل البيانات، وقد تضيف حملًا زائدًا فعليًا إذا لم يكن الاستعلام أو بنية البيانات ملائمين لها. وإذا وُجدت حتى قيمة واحدة مطابقة داخل كتلة، فلا بد من قراءة تلك الكتلة بالكامل.
+
+**غالبًا ما يعتمد الاستخدام الفعّال لفهارس التخطي على وجود ارتباط قوي بين العمود المفهرس والمفتاح الأساسي للجدول، أو على إدخال البيانات بطريقة تجمع القيم المتشابهة معًا.**
+
+بوجه عام، من الأفضل تطبيق فهارس تخطي البيانات بعد التأكد من صحة تصميم المفتاح الأساسي وتحسين الأنواع. وهي مفيدة بشكل خاص في الحالات التالية:
+
+* الأعمدة ذات عدد القيم المميزة الإجمالي المرتفع، لكن بعدد قيم مميزة منخفض داخل الكتلة.
+* القيم النادرة ذات الأهمية الكبيرة للبحث (مثل رموز الأخطاء أو المعرّفات المحددة).
+* الحالات التي تجري فيها التصفية على أعمدة ليست جزءًا من المفتاح الأساسي مع توزيع موضعي للبيانات.
+
+دائمًا:
+
+1. اختبر فهارس التخطي على بيانات حقيقية باستخدام استعلامات واقعية. وجرّب أنواع فهارس مختلفة وقيمًا مختلفة لدرجة التحبّب.
+2. قيّم أثرها باستخدام أدوات مثل send&#95;logs&#95;level=&#39;trace&#39; و `EXPLAIN indexes=1` لعرض فعالية الفهرس.
+3. قيّم دائمًا حجم الفهرس وكيف يتأثر بدرجة التحبّب. فغالبًا ما يؤدي تقليل درجة التحبّب إلى تحسين الأداء إلى حدّ ما، لأنه يسمح بتصفية المزيد من الحبيبات وتقليل ما يلزم فحصه. ومع ذلك، ومع زيادة حجم الفهرس عند خفض درجة التحبّب، قد يتراجع الأداء أيضًا. قِس الأداء وحجم الفهرس عبر قيم مختلفة لدرجة التحبّب. وهذا مهم بشكل خاص في Bloom filter indexes.
+
+<p />
+
+**عند استخدامها على النحو المناسب، يمكن أن توفر فهارس التخطي تحسنًا كبيرًا في الأداء، أما عند استخدامها دون فهم فقد تضيف تكلفة غير ضرورية.**
+
+للحصول على دليل أكثر تفصيلًا حول فهارس تخطي البيانات، راجع [هنا](/ar/reference/statements/alter/skipping-index).
+
+<div id="example">
+  ## مثال
+</div>
+
+لنأخذ الجدول المُحسَّن التالي مثالاً. يحتوي على بيانات Stack Overflow بصف واحد لكل منشور.
+
+```sql
+CREATE TABLE stackoverflow.posts
+(
+  `Id` Int32 CODEC(Delta(4), ZSTD(1)),
+  `PostTypeId` Enum8('Question' = 1, 'Answer' = 2, 'Wiki' = 3, 'TagWikiExcerpt' = 4, 'TagWiki' = 5, 'ModeratorNomination' = 6, 'WikiPlaceholder' = 7, 'PrivilegeWiki' = 8),
+  `AcceptedAnswerId` UInt32,
+  `CreationDate` DateTime64(3, 'UTC'),
+  `Score` Int32,
+  `ViewCount` UInt32 CODEC(Delta(4), ZSTD(1)),
+  `Body` String,
+  `OwnerUserId` Int32,
+  `OwnerDisplayName` String,
+  `LastEditorUserId` Int32,
+  `LastEditorDisplayName` String,
+  `LastEditDate` DateTime64(3, 'UTC') CODEC(Delta(8), ZSTD(1)),
+  `LastActivityDate` DateTime64(3, 'UTC'),
+  `Title` String,
+  `Tags` String,
+  `AnswerCount` UInt16 CODEC(Delta(2), ZSTD(1)),
+  `CommentCount` UInt8,
+  `FavoriteCount` UInt8,
+  `ContentLicense` LowCardinality(String),
+  `ParentId` String,
+  `CommunityOwnedDate` DateTime64(3, 'UTC'),
+  `ClosedDate` DateTime64(3, 'UTC')
+)
+ENGINE = MergeTree
+PARTITION BY toYear(CreationDate)
+ORDER BY (PostTypeId, toDate(CreationDate))
+```
+
+هذا الجدول مُحسَّن للاستعلامات التي تُصفِّي البيانات وتجمعها حسب نوع المنشور والتاريخ. لنفترض أننا أردنا حساب عدد المنشورات التي تجاوزت مشاهداتها 10,000,000 والمنشورة بعد عام 2009.
+
+```sql
+SELECT count()
+FROM stackoverflow.posts
+WHERE (CreationDate > '2009-01-01') AND (ViewCount > 10000000)
+
+┌─count()─┐
+│     5   │
+└─────────┘
+
+1 row in set. Elapsed: 0.720 sec. Processed 59.55 million rows, 230.23 MB (82.66 million rows/s., 319.56 MB/s.)
+```
+
+يستطيع هذا الاستعلام استبعاد بعض الصفوف (والحبيبات) باستخدام الفهرس الأساسي. غير أن الغالبية العظمى من الصفوف لا تزال بحاجة إلى القراءة، كما يتضح من الاستجابة أعلاه والأمر التالي `EXPLAIN indexes = 1`:
+
+```sql
+EXPLAIN indexes = 1
+SELECT count()
+FROM stackoverflow.posts
+WHERE (CreationDate > '2009-01-01') AND (ViewCount > 10000000)
+LIMIT 1
+```
+
+```response
+┌─explain──────────────────────────────────────────────────────────┐
+│ Expression ((Project names + Projection))                        │
+│   Limit (preliminary LIMIT (without OFFSET))                     │
+│     Aggregating                                                  │
+│       Expression (Before GROUP BY)                               │
+│         Expression                                               │
+│           ReadFromMergeTree (stackoverflow.posts)                │
+│           Indexes:                                               │
+│             MinMax                                               │
+│               Keys:                                              │
+│                 CreationDate                                     │
+│               Condition: (CreationDate in ('1230768000', +Inf))  │
+│               Parts: 123/128                                     │
+│               Granules: 8513/8545                                │
+│             Partition                                            │
+│               Keys:                                              │
+│                 toYear(CreationDate)                             │
+│               Condition: (toYear(CreationDate) in [2009, +Inf))  │
+│               Parts: 123/123                                     │
+│               Granules: 8513/8513                                │
+│             PrimaryKey                                           │
+│               Keys:                                              │
+│                 toDate(CreationDate)                             │
+│               Condition: (toDate(CreationDate) in [14245, +Inf)) │
+│               Parts: 123/123                                     │
+│               Granules: 8513/8513                                │
+└──────────────────────────────────────────────────────────────────┘
+
+25 rows in set. Elapsed: 0.070 sec.
+```
+
+يُظهر تحليل بسيط أن `ViewCount` مرتبط بـ `CreationDate` (وهو مفتاح أساسي) كما هو متوقع — فكلما طالت مدة وجود المنشور، زادت الفرصة المتاحة لمشاهدته.
+
+```sql
+SELECT toDate(CreationDate) AS day, avg(ViewCount) AS view_count FROM stackoverflow.posts WHERE day > '2009-01-01'  GROUP BY day
+```
+
+وهذا يجعله بالتالي خيارًا منطقيًا لفهرس تخطّي البيانات. ونظرًا إلى أن النوع رقمي، فإن فهرس MinMax مناسب هنا. نضيف فهرسًا باستخدام أوامر `ALTER TABLE` التالية — نضيفه أولًا، ثم &quot;نُجسِّده&quot;.
+
+```sql
+ALTER TABLE stackoverflow.posts
+  (ADD INDEX view_count_idx ViewCount TYPE minmax GRANULARITY 1);
+
+ALTER TABLE stackoverflow.posts MATERIALIZE INDEX view_count_idx;
+```
+
+كان من الممكن أيضًا إضافة هذا الفهرس عند الإنشاء الأولي للجدول. فيما يلي المخطط مع تعريف فهرس MinMax كجزء من DDL:
+
+```sql
+CREATE TABLE stackoverflow.posts
+(
+  `Id` Int32 CODEC(Delta(4), ZSTD(1)),
+  `PostTypeId` Enum8('Question' = 1, 'Answer' = 2, 'Wiki' = 3, 'TagWikiExcerpt' = 4, 'TagWiki' = 5, 'ModeratorNomination' = 6, 'WikiPlaceholder' = 7, 'PrivilegeWiki' = 8),
+  `AcceptedAnswerId` UInt32,
+  `CreationDate` DateTime64(3, 'UTC'),
+  `Score` Int32,
+  `ViewCount` UInt32 CODEC(Delta(4), ZSTD(1)),
+  `Body` String,
+  `OwnerUserId` Int32,
+  `OwnerDisplayName` String,
+  `LastEditorUserId` Int32,
+  `LastEditorDisplayName` String,
+  `LastEditDate` DateTime64(3, 'UTC') CODEC(Delta(8), ZSTD(1)),
+  `LastActivityDate` DateTime64(3, 'UTC'),
+  `Title` String,
+  `Tags` String,
+  `AnswerCount` UInt16 CODEC(Delta(2), ZSTD(1)),
+  `CommentCount` UInt8,
+  `FavoriteCount` UInt8,
+  `ContentLicense` LowCardinality(String),
+  `ParentId` String,
+  `CommunityOwnedDate` DateTime64(3, 'UTC'),
+  `ClosedDate` DateTime64(3, 'UTC'),
+  INDEX view_count_idx ViewCount TYPE minmax GRANULARITY 1 --index here
+)
+ENGINE = MergeTree
+PARTITION BY toYear(CreationDate)
+ORDER BY (PostTypeId, toDate(CreationDate))
+```
+
+يوضّح الرسم المتحرك التالي كيفية إنشاء فهرس minmax لتخطي البيانات للجدول الوارد في المثال، مع تتبّع الحد الأدنى والحد الأقصى لقيم `ViewCount` لكل كتلة من الصفوف (granule) في الجدول:
+
+<Image img="/images/bestpractices/building_skipping_indices.webp" size="lg" alt="إنشاء فهارس تخطي البيانات" />
+
+تُظهر إعادة تنفيذ الاستعلام السابق تحسينات كبيرة في الأداء. لاحظ انخفاض عدد الصفوف التي جرى فحصها:
+
+```sql
+SELECT count()
+FROM stackoverflow.posts
+WHERE (CreationDate > '2009-01-01') AND (ViewCount > 10000000)
+```
+
+```response
+┌─count()─┐
+│     5   │
+└─────────┘
+
+1 row in set. Elapsed: 0.012 sec. Processed 39.11 thousand rows, 321.39 KB (3.40 million rows/s., 27.93 MB/s.)
+```
+
+يؤكد الأمر `EXPLAIN indexes = 1` استخدام الفهرس.
+
+```sql
+EXPLAIN indexes = 1
+SELECT count()
+FROM stackoverflow.posts
+WHERE (CreationDate > '2009-01-01') AND (ViewCount > 10000000)
+```
+
+```response
+┌─explain────────────────────────────────────────────────────────────┐
+│ Expression ((Project names + Projection))                          │
+│   Aggregating                                                      │
+│     Expression (Before GROUP BY)                                   │
+│       Expression                                                   │
+│         ReadFromMergeTree (stackoverflow.posts)                    │
+│         Indexes:                                                   │
+│           MinMax                                                   │
+│             Keys:                                                  │
+│               CreationDate                                         │
+│             Condition: (CreationDate in ('1230768000', +Inf))      │
+│             Parts: 123/128                                         │
+│             Granules: 8513/8545                                    │
+│           Partition                                                │
+│             Keys:                                                  │
+│               toYear(CreationDate)                                 │
+│             Condition: (toYear(CreationDate) in [2009, +Inf))      │
+│             Parts: 123/123                                         │
+│             Granules: 8513/8513                                    │
+│           PrimaryKey                                               │
+│             Keys:                                                  │
+│               toDate(CreationDate)                                 │
+│             Condition: (toDate(CreationDate) in [14245, +Inf))     │
+│             Parts: 123/123                                         │
+│             Granules: 8513/8513                                    │
+│           Skip                                                     │
+│             Name: view_count_idx                                   │
+│             Description: minmax GRANULARITY 1                      │
+│             Parts: 5/123                                           │
+│             Granules: 23/8513                                      │
+└────────────────────────────────────────────────────────────────────┘
+
+29 rows in set. Elapsed: 0.211 sec.
+```
+
+نعرض أيضًا رسمًا متحركًا يوضّح كيف يستبعد فهرس تخطي البيانات minmax جميع كتل الصفوف التي لا يمكن أن تتضمن أي نتائج مطابقة للشرط `ViewCount` &gt; 10,000,000 في استعلامنا المثال:
+
+<Image img="/images/bestpractices/using_skipping_indices.webp" size="lg" alt="استخدام فهارس تخطي البيانات" />
+
+<div id="related-docs">
+  ## مستندات ذات صلة
+</div>
+
+* [دليل فهارس تخطي البيانات](/ar/concepts/features/performance/skip-indexes/skipping-indexes)
+* [أمثلة على فهارس تخطي البيانات](/ar/concepts/features/performance/skip-indexes/skipping-indexes-examples)
+* [إدارة فهارس تخطي البيانات](/ar/reference/statements/alter/skipping-index)
+* [معلومات حول جدول النظام](/ar/reference/system-tables/data_skipping_indices)

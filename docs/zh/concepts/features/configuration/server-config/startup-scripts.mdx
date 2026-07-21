@@ -1,0 +1,37 @@
+---
+description: '在 ClickHouse 中配置和使用 SQL 启动脚本以自动创建 schema 和执行迁移的指南'
+sidebarTitle: '启动脚本'
+slug: /operations/startup-scripts
+title: '启动脚本'
+doc_type: 'guide'
+---
+
+ClickHouse 可以在启动时根据服务器配置运行任意 SQL 查询。这对于执行迁移或自动创建 schema 很有帮助。
+
+```xml
+<clickhouse>
+    <startup_scripts>
+        <throw_on_error>false</throw_on_error>
+        <scripts>
+            <query>CREATE ROLE OR REPLACE test_role</query>
+        </scripts>
+        <scripts>
+            <query>CREATE TABLE TestTable (id UInt64) ENGINE=TinyLog</query>
+            <condition>SELECT 1;</condition>
+        </scripts>
+        <scripts>
+            <query>CREATE DICTIONARY test_dict (...) SOURCE(CLICKHOUSE(...))</query>
+            <user>default</user>
+        </scripts>
+    </startup_scripts>
+</clickhouse>
+```
+
+ClickHouse 会按指定顺序依次执行 `startup_scripts` 中的所有查询。即使其中某个查询失败，也不会中断后续查询的执行。不过，如果将 `throw_on_error` 设置为 true，
+那么只要脚本执行期间发生错误，服务器就不会启动。
+
+你可以在配置中指定条件查询。在这种情况下，只有当条件查询返回值 `1` 或 `true` 时，对应的查询才会执行。
+
+<Note>
+  如果条件查询返回的值既不是 `1` 也不是 `true`，则结果会被视为 `false`，对应的查询也不会执行。
+</Note>

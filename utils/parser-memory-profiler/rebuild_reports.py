@@ -31,11 +31,11 @@ def get_paths(output_dir):
     script_dir = os.path.dirname(os.path.abspath(__file__))
     clickhouse_root = os.path.join(script_dir, "../..")
     
-    # The profiler binary is built from src/Parsers/examples/parser_memory_profiler.cpp
+    # The profiler binary is part of the clickhouse-examples multi-call binary (src/Examples/)
     return {
         'script_dir': script_dir,
         'build_dir': os.path.join(clickhouse_root, "build"),
-        'profiler': os.path.join(clickhouse_root, "build/src/Parsers/examples/parser_memory_profiler"),
+        'profiler': os.path.join(clickhouse_root, "build/src/Examples/clickhouse-examples"),
         'jeprof': os.path.expanduser("~/github/jemalloc/bin/jeprof"),
         'flamegraph': os.path.expanduser("~/FlameGraph/flamegraph.pl"),
         'output_dir': output_dir,
@@ -76,7 +76,7 @@ Examples:
         """
     )
     parser.add_argument('output_dir', help='Output directory containing profiles/ and results.json')
-    parser.add_argument('--profiler', help='Path to parser_memory_profiler binary')
+    parser.add_argument('--profiler', help='Path to clickhouse-examples binary')
     parser.add_argument('--jeprof', help='Path to jeprof binary')
     parser.add_argument('--flamegraph', help='Path to flamegraph.pl')
     parser.add_argument('--timeout', type=int, default=TIMEOUT, help=f'Timeout for jeprof commands (default: {TIMEOUT}s)')
@@ -101,8 +101,8 @@ Examples:
         sys.exit(1)
     
     if not os.path.exists(paths['profiler']):
-        print(f"Error: profiler not found at {paths['profiler']}")
-        print("Build it with: cd build && ninja parser_memory_profiler")
+        print(f"Error: clickhouse-examples not found at {paths['profiler']}")
+        print("Build it with: cd build && ninja clickhouse-examples")
         sys.exit(1)
     
     if not os.path.exists(paths['jeprof']):
@@ -124,7 +124,7 @@ Examples:
         after_files = sorted(glob.glob(os.path.join(paths['profiles_dir'], f"query_{idx}_after.*.heap")))
         
         if not before_files or not after_files:
-            print(f"  No profile files found")
+            print("  No profile files found")
             continue
         
         before_file = before_files[-1]
@@ -132,7 +132,7 @@ Examples:
         
         # Text report (bytes)
         if not query.get('jeprof_text') or query['jeprof_text'].strip() == '':
-            print(f"  Generating text report...")
+            print("  Generating text report...")
             query['jeprof_text'] = run_jeprof(paths['jeprof'], [
                 "--text", "--show_bytes",
                 f"--base={before_file}",
@@ -141,7 +141,7 @@ Examples:
         
         # Objects report
         if not query.get('jeprof_objects') or query['jeprof_objects'].strip() == '':
-            print(f"  Generating objects report...")
+            print("  Generating objects report...")
             query['jeprof_objects'] = run_jeprof(paths['jeprof'], [
                 "--text", "--inuse_objects",
                 f"--base={before_file}",
@@ -150,7 +150,7 @@ Examples:
         
         # Call graph SVG
         if not query.get('graph_svg') or query['graph_svg'].strip() == '' or '<svg' not in query.get('graph_svg', ''):
-            print(f"  Generating call graph SVG...")
+            print("  Generating call graph SVG...")
             svg = run_jeprof(paths['jeprof'], [
                 "--svg", "--show_bytes",
                 "--nodefraction=0", "--edgefraction=0",
@@ -175,7 +175,7 @@ Examples:
         
         # Collapsed stacks for flame graph
         if not query.get('collapsed_stacks') or query['collapsed_stacks'].strip() == '':
-            print(f"  Generating collapsed stacks...")
+            print("  Generating collapsed stacks...")
             query['collapsed_stacks'] = run_jeprof(paths['jeprof'], [
                 "--collapsed", "--show_bytes",
                 f"--base={before_file}",
@@ -186,7 +186,7 @@ Examples:
         if not query.get('flame_svg') or query['flame_svg'].strip() == '':
             if query.get('collapsed_stacks') and query['collapsed_stacks'].strip():
                 if os.path.exists(paths['flamegraph']):
-                    print(f"  Generating flame graph...")
+                    print("  Generating flame graph...")
                     try:
                         result = subprocess.run(
                             [paths['flamegraph'], "--title", f"Query {idx} Memory", "--countname", "bytes", "--colors", "mem"],
@@ -205,7 +205,7 @@ Examples:
     
     print("\nDone!")
     print(f"Results saved to: {paths['results_file']}")
-    print(f"\nTo generate HTML report:")
+    print("\nTo generate HTML report:")
     print(f"  python3 generate_report.py -i {paths['results_file']} -o {paths['output_dir']}/report.html")
 
 

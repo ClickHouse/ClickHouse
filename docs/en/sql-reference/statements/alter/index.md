@@ -7,8 +7,6 @@ title: 'ALTER'
 doc_type: 'reference'
 ---
 
-# ALTER
-
 Most `ALTER TABLE` queries modify table settings or data:
 
 | Modifier                                                                            |

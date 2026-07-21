@@ -130,6 +130,12 @@ SQLQueryPiece applyAggregationOperatorQuantile(
         if (operator_node->by || operator_node->without)
             builder.group_by.push_back(make_intrusive<ASTIdentifier>(ColumnNames::NewGroup));
 
+        /// Drop empty-values rows.
+        /// If the input has no rows then quantileExactInclusiveForEach(...)([]) returns [], but the number of values
+        /// in array must always match the number of steps in SQLQueryPiece (see StoreMethod::VECTOR_GRID),
+        /// so we just drop such rows.
+        builder.having = makeASTFunction("notEmpty", make_intrusive<ASTIdentifier>(ColumnNames::Values));
+
         aggregation_query = builder.getSelectQuery();
     }
 

@@ -56,7 +56,10 @@ struct ExtractNumericType
         if (!in.eof())
         {
             if constexpr (is_floating_point<NumericType>)
-                tryReadFloatText(x, in);
+                /// This generic extractor has no access to precise_float_parsing, so it stays on the
+                /// imprecise parser: that matches the pre-26.7 behavior of visitParamExtractFloat /
+                /// simpleJSONExtractFloat and keeps them reproducible without the setting.
+                tryReadFloatImpreciseForCompatibility(x, in);
             else
                 tryReadIntText(x, in);
         }
@@ -95,7 +98,7 @@ struct ExtractParamImpl
         size_t /*input_rows_count*/)
     {
         /// `res_null` serves as an output parameter for implementing an XYZOrNull variant.
-        assert(!res_null);
+        chassert(!res_null);
 
         if (start_pos != nullptr)
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Function '{}' doesn't support start_pos argument", name);

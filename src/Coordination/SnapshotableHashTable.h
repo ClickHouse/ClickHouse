@@ -169,7 +169,7 @@ private:
             ListElem elem{list_key, std::move(value)};
             elem.setVersion(current_version);
             auto itr = list.insert(list.end(), std::move(elem));
-            bool inserted;
+            bool inserted = false;
             map.emplace(itr->key, it, inserted, hash_value);
             itr->setActiveInMap();
             chassert(inserted);
@@ -223,7 +223,7 @@ public:
             ListElem elem{copyStringInArena(arena, key), std::move(value)};
             elem.setVersion(current_version);
             auto itr = list.insert(list.end(), std::move(elem));
-            bool inserted;
+            bool inserted = false;
             map.emplace(itr->key, it, inserted, hash_value);
             itr->setActiveInMap();
             chassert(inserted);
@@ -268,7 +268,7 @@ public:
         insertOrReplace(key, std::move(value), /*owns_key*/ true);
     }
 
-    bool erase(const std::string & key)
+    bool erase(std::string_view key)
     {
         auto it = map.find(key);
         if (it == map.end())
@@ -443,8 +443,6 @@ public:
             approximate_data_size += node.value.sizeInBytes();
         }
     }
-
-    uint64_t keyArenaSize() const { return 0; }
 
     iterator begin() { return list.begin(); }
     const_iterator begin() const { return list.cbegin(); }

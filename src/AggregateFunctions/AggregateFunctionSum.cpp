@@ -70,6 +70,7 @@ AggregateFunctionPtr createAggregateFunctionSum(const std::string & name, const 
 
 }
 
+void registerAggregateFunctionSum(AggregateFunctionFactory & factory);
 void registerAggregateFunctionSum(AggregateFunctionFactory & factory)
 {
     FunctionDocumentation::Description description = R"(

@@ -1,3 +1,4 @@
+#include <Storages/ColumnsDescription.h>
 #include <Storages/StorageInMemoryMetadata.h>
 
 #include <Access/AccessControl.h>
@@ -19,6 +20,8 @@
 #include <Storages/IndicesDescription.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/VirtualColumnsDescription.h>
 
 
 namespace DB
@@ -43,6 +46,8 @@ StorageInMemoryMetadata::StorageInMemoryMetadata(const StorageInMemoryMetadata &
     , add_minmax_index_for_numeric_columns(other.add_minmax_index_for_numeric_columns)
     , add_minmax_index_for_string_columns(other.add_minmax_index_for_string_columns)
     , add_minmax_index_for_temporal_columns(other.add_minmax_index_for_temporal_columns)
+    , add_minmax_index_for_block_number_column(other.add_minmax_index_for_block_number_column)
+    , add_minmax_index_for_block_offset_column(other.add_minmax_index_for_block_offset_column)
     , escape_index_filenames(other.escape_index_filenames)
     , secondary_indices(other.secondary_indices)
     , constraints(other.constraints)
@@ -53,6 +58,7 @@ StorageInMemoryMetadata::StorageInMemoryMetadata(const StorageInMemoryMetadata &
     , primary_key(other.primary_key)
     , sorting_key(other.sorting_key)
     , sampling_key(other.sampling_key)
+    , unique_key(other.unique_key)
     , column_ttls_by_name(other.column_ttls_by_name)
     , table_ttl(other.table_ttl)
     , settings_changes(other.settings_changes ? other.settings_changes->clone() : nullptr)
@@ -76,6 +82,8 @@ StorageInMemoryMetadata & StorageInMemoryMetadata::operator=(const StorageInMemo
     add_minmax_index_for_numeric_columns = other.add_minmax_index_for_numeric_columns;
     add_minmax_index_for_string_columns = other.add_minmax_index_for_string_columns;
     add_minmax_index_for_temporal_columns = other.add_minmax_index_for_temporal_columns;
+    add_minmax_index_for_block_number_column = other.add_minmax_index_for_block_number_column;
+    add_minmax_index_for_block_offset_column = other.add_minmax_index_for_block_offset_column;
     escape_index_filenames = other.escape_index_filenames;
     secondary_indices = other.secondary_indices;
     constraints = other.constraints;
@@ -88,6 +96,7 @@ StorageInMemoryMetadata & StorageInMemoryMetadata::operator=(const StorageInMemo
     primary_key = other.primary_key;
     sorting_key = other.sorting_key;
     sampling_key = other.sampling_key;
+    unique_key = other.unique_key;
     column_ttls_by_name = other.column_ttls_by_name;
     table_ttl = other.table_ttl;
     if (other.settings_changes)
@@ -153,9 +162,13 @@ ContextMutablePtr StorageInMemoryMetadata::getSQLSecurityOverriddenContext(Conte
     if (!database.empty() && database != new_context->getCurrentDatabase())
         new_context->setCurrentDatabase(database);
 
-    new_context->setInsertionTable(context->getInsertionTable(), context->getInsertionTableColumnNames());
+    new_context->setInsertionTable(context->getInsertionTable(), context->getInsertionTableColumnNames(), context->getInsertionTableColumnsDescription());
     new_context->setProgressCallback(context->getProgressCallback());
     new_context->setProcessListElement(context->getProcessListElement());
+    /// Carry the outer query's normalized hash so that `NORMALIZED_QUERY_HASH` quotas keep bucketing
+    /// per query pattern when the pipeline runs under a fresh SQL-security-overridden context (the
+    /// `DEFINER`/`NONE` branch starts from the global context, where the hash would otherwise be 0).
+    new_context->setNormalizedQueryHash(context->getNormalizedQueryHash());
 
     if (context->getCurrentTransaction())
         new_context->setCurrentTransaction(context->getCurrentTransaction());
@@ -502,6 +515,15 @@ Block StorageInMemoryMetadata::getSampleBlockWithVirtuals(VirtualsKind kind, Vir
     return res;
 }
 
+ColumnsDescription StorageInMemoryMetadata::getColumnsWithVirtuals() const
+{
+    ColumnsDescription res = columns;
+    for (const auto & virtual_column : virtuals.toColumnsDescription(VirtualsKind::All, VirtualsMaterializationPlace::All))
+        if (!res.has(virtual_column.name))
+            res.add(virtual_column);
+    return res;
+}
+
 Block StorageInMemoryMetadata::getSampleBlock() const
 {
     Block res;
@@ -630,6 +652,26 @@ Names StorageInMemoryMetadata::getPrimaryKeyColumns() const
     if (!primary_key.column_names.empty())
         return primary_key.column_names;
     return {};
+}
+
+const KeyDescription & StorageInMemoryMetadata::getUniqueKey() const
+{
+    return unique_key;
+}
+
+bool StorageInMemoryMetadata::isUniqueKeyDefined() const
+{
+    return unique_key.definition_ast != nullptr;
+}
+
+bool StorageInMemoryMetadata::hasUniqueKey() const
+{
+    return !unique_key.column_names.empty();
+}
+
+Names StorageInMemoryMetadata::getUniqueKeyColumns() const
+{
+    return unique_key.column_names;
 }
 
 ASTPtr StorageInMemoryMetadata::getSettingsChanges() const
@@ -900,7 +942,8 @@ void StorageInMemoryMetadata::addImplicitIndicesForColumn(const ColumnDescriptio
             bool valid_index = true;
             try
             {
-                MergeTreeIndexFactory::instance().validate(index, false);
+                static const MergeTreeSettings default_settings;
+                MergeTreeIndexFactory::instance().validate(index, false, default_settings);
             }
             catch (const Exception & e)
             {
@@ -930,4 +973,83 @@ void StorageInMemoryMetadata::dropImplicitIndicesForColumn(const String & column
             ++index_it;
     }
 }
+
+void StorageInMemoryMetadata::addImplicitIndicesForVirtualColumns(ContextPtr context)
+{
+    auto add_for = [&](const String & column_name, bool enabled)
+    {
+        if (!enabled)
+            return;
+
+        for (const auto & index : secondary_indices)
+            if (!index.column_names.empty() && index.column_names.front() == column_name && index.type == "minmax")
+                return;
+
+        const auto columns_to_analyze = virtuals.toColumnsDescription(VirtualsKind::All, VirtualsMaterializationPlace::All);
+        auto index = createImplicitMinMaxIndexDescription(column_name, columns_to_analyze, escape_index_filenames, context);
+        static const MergeTreeSettings default_settings;
+        MergeTreeIndexFactory::instance().validate(index, false, default_settings);
+
+        secondary_indices.push_back(std::move(index));
+    };
+
+    add_for(BlockNumberColumn::name, add_minmax_index_for_block_number_column);
+    add_for(BlockOffsetColumn::name, add_minmax_index_for_block_offset_column);
+}
+
+void StorageInMemoryMetadata::dropImplicitIndicesForVirtualColumns()
+{
+    for (auto index_it = secondary_indices.begin(); index_it != secondary_indices.end();)
+    {
+        if (!index_it->isImplicitlyCreated() || index_it->type != "minmax" || index_it->column_names.size() != 1)
+            ++index_it;
+        else if (isVirtualColumn(index_it->column_names.front()))
+            index_it = secondary_indices.erase(index_it);
+        else
+            ++index_it;
+    }
+}
+
+std::shared_ptr<StorageInMemoryMetadata> StorageInMemoryMetadata::clone(std::shared_ptr<const StorageInMemoryMetadata> from)
+{
+    auto copy = std::make_shared<StorageInMemoryMetadata>(*from);
+    copy->cloned_from = from;
+    return copy;
+}
+
+StorageMetadataHandle::StorageMetadataHandle(std::shared_ptr<StorageInMemoryMetadata> metadata_)
+    : metadata(std::move(metadata_))
+{
+}
+
+StorageMetadataHandle::StorageMetadataHandle(std::shared_ptr<const StorageInMemoryMetadata> metadata_)
+    : metadata(std::move(metadata_))
+{
+}
+
+const StorageInMemoryMetadata * StorageMetadataHandle::operator->() const &
+{
+    return metadata.get();
+}
+
+const StorageInMemoryMetadata & StorageMetadataHandle::operator*() const &
+{
+    return *metadata;
+}
+
+StorageMetadataHandle::operator StorageMetadataPtr() const &
+{
+    return metadata;
+}
+
+StorageMetadataHandle::operator bool() const
+{
+    return metadata != nullptr;
+}
+
+bool StorageMetadataHandle::operator==(std::nullptr_t) const
+{
+    return metadata == nullptr;
+}
+
 }

@@ -101,7 +101,7 @@ MutableColumnPtr IDataType::createColumn(const ISerialization & serialization) c
     return column;
 }
 
-ColumnPtr IDataType::createColumnConst(size_t size, const Field & field) const
+MutableColumnConstPtr IDataType::createColumnConst(size_t size, const Field & field) const
 {
     auto column = createColumn();
     column->insert(field);
@@ -109,7 +109,7 @@ ColumnPtr IDataType::createColumnConst(size_t size, const Field & field) const
 }
 
 
-ColumnPtr IDataType::createColumnConstWithDefaultValue(size_t size) const
+MutableColumnConstPtr IDataType::createColumnConstWithDefaultValue(size_t size) const
 {
     return createColumnConst(size, getDefault());
 }

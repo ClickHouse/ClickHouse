@@ -1,0 +1,355 @@
+---
+description: 'Página que descreve o suporte a transações (ACID) no ClickHouse'
+slug: /guides/developer/transactional
+title: 'Suporte a transações (ACID)'
+doc_type: 'guide'
+---
+
+import ExperimentalBadge from "/snippets/pt-BR/components/ExperimentalBadge/ExperimentalBadge.jsx";
+import CloudNotSupportedBadge from "/snippets/pt-BR/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+
+<div id="case-1-insert-into-one-partition-of-one-table-of-the-mergetree-family">
+  ## Caso 1: INSERT em uma partição, de uma tabela, da família MergeTree*
+</div>
+
+Isso é transacional (ACID) se as linhas inseridas estiverem agrupadas e forem inseridas como um único bloco (consulte as Notas):
+
+* Atomicidade: um INSERT é concluído com êxito ou rejeitado por completo: se uma confirmação for enviada ao cliente, então todas as linhas foram inseridas; se um erro for enviado ao cliente, então nenhuma linha foi inserida.
+* Consistência: se nenhuma restrição da tabela for violada, então todas as linhas de um INSERT serão inseridas e o INSERT será concluído com êxito; se as restrições forem violadas, então nenhuma linha será inserida.
+* Isolamento: clientes concorrentes observam um snapshot consistente da tabela — o estado da tabela como era antes da tentativa de INSERT ou após o INSERT bem-sucedido; nenhum estado parcial é visto. Clientes dentro de outra transação têm [isolamento por snapshot](https://en.wikipedia.org/wiki/Snapshot_isolation), enquanto clientes fora de uma transação têm nível de isolamento [read uncommitted](https://en.wikipedia.org/wiki/Isolation_\(database_systems\)#Read_uncommitted).
+* Durabilidade: um INSERT bem-sucedido é gravado no sistema de arquivos antes de responder ao cliente, em uma única réplica ou em várias réplicas (controlado pela configuração `insert_quorum`), e o ClickHouse pode solicitar ao SO que sincronize os dados do sistema de arquivos na mídia de armazenamento (controlado pela configuração `fsync_after_insert`).
+* INSERT em várias tabelas com uma única instrução é possível se houver visões materializadas envolvidas (o INSERT do cliente é feito em uma tabela que tem visões materializadas associadas).
+
+<div id="case-2-insert-into-multiple-partitions-of-one-table-of-the-mergetree-family">
+  ## Caso 2: INSERT em múltiplas partições de uma tabela da família MergeTree*
+</div>
+
+O mesmo que o Caso 1 acima, com este detalhe:
+
+* Se a tabela tiver muitas partições e o INSERT abranger muitas delas, então a inserção em cada partição será transacional por si só
+
+<div id="case-3-insert-into-one-distributed-table-of-the-mergetree-family">
+  ## Caso 3: INSERT em uma tabela distribuída da família MergeTree*
+</div>
+
+O mesmo que o Caso 1 acima, com este detalhe:
+
+* O INSERT em uma tabela distribuída não é transacional como um todo, enquanto a inserção em cada shard é transacional
+
+<div id="case-4-using-a-buffer-table">
+  ## Caso 4: Usando uma tabela Buffer
+</div>
+
+* inserções em tabelas Buffer não são atômicas, isoladas, consistentes nem duráveis
+
+<div id="case-5-using-async_insert">
+  ## Caso 5: Usando async_insert
+</div>
+
+O mesmo que o Caso 1 acima, com este detalhe:
+
+* a atomicidade é garantida mesmo que `async_insert` esteja habilitado e `wait_for_async_insert` esteja definido como 1 (o padrão), mas, se `wait_for_async_insert` estiver definido como 0, a atomicidade não é garantida.
+
+<div id="notes">
+  ## Notas
+</div>
+
+* as linhas inseridas pelo cliente em algum formato de dados são empacotadas em um único bloco quando:
+  * o formato de inserção é baseado em linhas (como CSV, TSV, Values, JSONEachRow etc.) e os dados contêm menos de `max_insert_block_size` linhas (~1 000 000 por padrão) ou menos de `min_chunk_bytes_for_parallel_parsing` bytes (10 MB por padrão), caso o parsing paralelo esteja em uso (habilitado por padrão)
+  * o formato de inserção é baseado em colunas (como Native, Parquet, ORC etc.) e os dados contêm apenas um bloco de dados
+* o tamanho do bloco inserido, em geral, pode depender de muitas configurações (por exemplo: `max_block_size`, `max_insert_block_size`, `min_insert_block_size_rows`, `min_insert_block_size_bytes`, `preferred_block_size_bytes` etc.)
+* se o cliente não recebeu uma resposta do servidor, ele não sabe se a transação foi bem-sucedida e pode repeti-la usando as propriedades de inserção exactly-once
+* o ClickHouse usa [MVCC](https://en.wikipedia.org/wiki/Multiversion_concurrency_control) com [isolamento por snapshot](https://en.wikipedia.org/wiki/Snapshot_isolation) internamente para transações concorrentes
+* todas as propriedades ACID continuam válidas mesmo em caso de encerramento/falha do servidor
+* `insert_quorum` em diferentes AZs ou `fsync` deve estar habilitado para garantir inserts duráveis em uma configuração típica
+* a &quot;consistência&quot; nos termos ACID não cobre a semântica de sistemas distribuídos; veja https://jepsen.io/consistency, que é controlada por diferentes configurações (`select_sequential_consistency`)
+* esta explicação não cobre um novo recurso de transações que permite ter transações completas em várias tabelas, visões materializadas, para múltiplos SELECTs etc. (veja a próxima seção sobre Transactions, Commit, and Rollback)
+
+<div id="transactions-commit-and-rollback">
+  ## Transações, Commit e Rollback
+</div>
+
+<ExperimentalBadge />
+
+<CloudNotSupportedBadge />
+
+Além da funcionalidade descrita no início deste documento, o ClickHouse oferece suporte experimental a transações, commit e rollback.
+
+<div id="requirements">
+  ### Requisitos
+</div>
+
+* Implante o ClickHouse Keeper ou o ZooKeeper para rastrear transações
+* Somente DB atomic (padrão)
+* Somente o mecanismo de tabela MergeTree não replicado
+* Ative o suporte experimental a transações adicionando esta configuração em `config.d/transactions.xml`:
+  ```xml
+  <clickhouse>
+    <allow_experimental_transactions>1</allow_experimental_transactions>
+  </clickhouse>
+  ```
+
+<div id="notes-1">
+  ### Observações
+</div>
+
+* Este é um recurso experimental, e é esperado que haja mudanças.
+* Se ocorrer uma exceção durante uma transação, você não poderá confirmar a transação. Isso inclui todas as exceções, inclusive exceções `UNKNOWN_FUNCTION` causadas por erros de digitação.
+* Transações aninhadas não são compatíveis; finalize a transação atual e inicie uma nova
+
+<div id="configuration">
+  ### Configuração
+</div>
+
+Estes exemplos consideram um servidor ClickHouse de nó único com o ClickHouse Keeper habilitado.
+
+<div id="enable-experimental-transaction-support">
+  #### Ative o suporte experimental a transações
+</div>
+
+```xml title=/etc/clickhouse-server/config.d/transactions.xml
+<clickhouse>
+    <allow_experimental_transactions>1</allow_experimental_transactions>
+</clickhouse>
+```
+
+<div id="basic-configuration-for-a-single-clickhouse-server-node-with-clickhouse-keeper-enabled">
+  #### Configuração básica para um único nó do servidor ClickHouse com o ClickHouse Keeper habilitado
+</div>
+
+<Note>
+  Consulte a documentação de [implantação](/pt-BR/guides/oss/deployment-and-scaling/terminology) para saber mais sobre como implantar o servidor ClickHouse e um quórum adequado de nós do ClickHouse Keeper. A configuração mostrada aqui é apenas para fins experimentais.
+</Note>
+
+```xml title=/etc/clickhouse-server/config.d/config.xml
+<clickhouse replace="true">
+    <logger>
+        <level>debug</level>
+        <log>/var/log/clickhouse-server/clickhouse-server.log</log>
+        <errorlog>/var/log/clickhouse-server/clickhouse-server.err.log</errorlog>
+        <size>1000M</size>
+        <count>3</count>
+    </logger>
+    <display_name>node 1</display_name>
+    <listen_host>0.0.0.0</listen_host>
+    <http_port>8123</http_port>
+    <tcp_port>9000</tcp_port>
+    <zookeeper>
+        <node>
+            <host>clickhouse-01</host>
+            <port>9181</port>
+        </node>
+    </zookeeper>
+    <keeper_server>
+        <tcp_port>9181</tcp_port>
+        <server_id>1</server_id>
+        <log_storage_path>/var/lib/clickhouse/coordination/log</log_storage_path>
+        <snapshot_storage_path>/var/lib/clickhouse/coordination/snapshots</snapshot_storage_path>
+        <coordination_settings>
+            <operation_timeout_ms>10000</operation_timeout_ms>
+            <session_timeout_ms>30000</session_timeout_ms>
+            <raft_logs_level>information</raft_logs_level>
+        </coordination_settings>
+        <raft_configuration>
+            <server>
+                <id>1</id>
+                <hostname>clickhouse-keeper-01</hostname>
+                <port>9234</port>
+            </server>
+        </raft_configuration>
+    </keeper_server>
+</clickhouse>
+```
+
+<div id="example">
+  ### Exemplo
+</div>
+
+<div id="verify-that-experimental-transactions-are-enabled">
+  #### Verifique se as transações experimentais estão habilitadas
+</div>
+
+Execute um `BEGIN TRANSACTION` ou `START TRANSACTION`, seguido de um `ROLLBACK`, para verificar se as transações experimentais estão habilitadas e se o ClickHouse Keeper também está habilitado, já que ele é usado para rastrear transações.
+
+```sql
+BEGIN TRANSACTION
+```
+
+```response
+Ok.
+```
+
+<Tip>
+  Se você vir o erro abaixo, verifique o arquivo de configuração para garantir que `allow_experimental_transactions` esteja definido como `1` (ou qualquer valor diferente de `0` ou `false`).
+
+  ```response
+  Code: 48. DB::Exception: Received from localhost:9000.
+  DB::Exception: Transactions are not supported.
+  (NOT_IMPLEMENTED)
+  ```
+
+  Você também pode verificar o ClickHouse Keeper executando:
+
+  ```bash
+  echo ruok | nc localhost 9181
+  ```
+
+  O ClickHouse Keeper deve responder com `imok`.
+</Tip>
+
+```sql
+ROLLBACK
+```
+
+```response
+Ok.
+```
+
+<div id="create-a-table-for-testing">
+  #### Crie uma tabela para teste
+</div>
+
+<Tip>
+  A criação de tabelas não é transacional. Execute esta consulta DDL fora de uma transação.
+</Tip>
+
+```sql
+CREATE TABLE mergetree_table
+(
+    `n` Int64
+)
+ENGINE = MergeTree
+ORDER BY n
+```
+
+```response
+Ok.
+```
+
+<div id="begin-a-transaction-and-insert-a-row">
+  #### Inicie uma transação e insira uma linha
+</div>
+
+```sql
+BEGIN TRANSACTION
+```
+
+```response
+Ok.
+```
+
+```sql
+INSERT INTO mergetree_table FORMAT Values (10)
+```
+
+```response
+Ok.
+```
+
+```sql
+SELECT *
+FROM mergetree_table
+```
+
+```response
+┌──n─┐
+│ 10 │
+└────┘
+```
+
+<Note>
+  Você pode consultar a tabela dentro de uma transação e ver que a linha foi inserida, embora a transação ainda não tenha sido confirmada.
+</Note>
+
+<div id="rollback-the-transaction-and-query-the-table-again">
+  #### Desfaça a transação e consulte a tabela novamente
+</div>
+
+Verifique se a transação foi desfeita:
+
+```sql
+ROLLBACK
+```
+
+```response
+Ok.
+```
+
+```sql
+SELECT *
+FROM mergetree_table
+```
+
+```response
+Ok.
+
+0 rows in set. Elapsed: 0.002 sec.
+```
+
+<div id="complete-a-transaction-and-query-the-table-again">
+  #### Conclua uma transação e consulte a tabela novamente
+</div>
+
+```sql
+BEGIN TRANSACTION
+```
+
+```response
+Ok.
+```
+
+```sql
+INSERT INTO mergetree_table FORMAT Values (42)
+```
+
+```response
+Ok.
+```
+
+```sql
+COMMIT
+```
+
+```response
+Ok. Elapsed: 0.002 sec.
+```
+
+```sql
+SELECT *
+FROM mergetree_table
+```
+
+```response
+┌──n─┐
+│ 42 │
+└────┘
+```
+
+<div id="transactions-introspection">
+  ### Introspecção de transações
+</div>
+
+Você pode inspecionar as transações consultando a tabela `system.transactions`, mas observe que não é possível consultar essa
+tabela em uma sessão que esteja em uma transação. Abra uma segunda sessão do `clickhouse client` para consultar essa tabela.
+
+```sql
+SELECT *
+FROM system.transactions
+FORMAT Vertical
+```
+
+```response
+Row 1:
+──────
+tid:         (33,61,'51e60bce-6b82-4732-9e1d-b40705ae9ab8')
+tid_hash:    11240433987908122467
+elapsed:     210.017820947
+is_readonly: 1
+state:       RUNNING
+```
+
+<div id="more-details">
+  ## Mais detalhes
+</div>
+
+Consulte esta [meta issue](https://github.com/ClickHouse/ClickHouse/issues/48794) para ver testes muito mais abrangentes e acompanhar o andamento.

@@ -5,10 +5,16 @@
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Interpreters/Context.h>
+#include <Core/Settings.h>
 
 
 namespace DB
 {
+
+namespace Setting
+{
+    extern const SettingsBool use_streaming_marks_compression;
+}
 
 namespace ErrorCodes
 {
@@ -45,6 +51,20 @@ MergeTreeReaderPtr createMergeTreeReaderCompact(
     DeserializationPrefixesCache * deserialization_prefixes_cache,
     const MergeTreeReaderSettings & reader_settings,
     const ValueSizeMap & avg_value_size_hints,
+    const ReadBufferFromFileBase::ProfileCallback & profile_callback);
+
+MergeTreeReaderPtr createMergeTreeReaderCompact(
+    const MergeTreeDataPartInfoForReaderPtr & read_info,
+    const NamesAndTypesList & columns_to_read,
+    const StorageSnapshotPtr & storage_snapshot,
+    const MergeTreeSettingsPtr & storage_settings,
+    const MarkRanges & mark_ranges,
+    const VirtualFields & virtual_fields,
+    UncompressedCache * uncompressed_cache,
+    MarkCache * mark_cache,
+    DeserializationPrefixesCache * deserialization_prefixes_cache,
+    const MergeTreeReaderSettings & reader_settings,
+    const ValueSizeMap & avg_value_size_hints,
     const ReadBufferFromFileBase::ProfileCallback & profile_callback)
 {
     return std::make_unique<MergeTreeReaderCompactSingleBuffer>(
@@ -53,6 +73,22 @@ MergeTreeReaderPtr createMergeTreeReaderCompact(
         mark_cache, deserialization_prefixes_cache, mark_ranges, reader_settings,
         avg_value_size_hints, profile_callback, CLOCK_MONOTONIC_COARSE);
 }
+
+MergeTreeDataPartWriterPtr createMergeTreeDataPartCompactWriter(
+    const String & data_part_name_,
+    const String & logger_name_,
+    const SerializationByName & serializations_,
+    MutableDataPartStoragePtr data_part_storage_,
+    const MergeTreeIndexGranularityInfo & index_granularity_info_,
+    const MergeTreeSettingsPtr & storage_settings_,
+    const NamesAndTypesList & columns_list,
+    const ColumnPositions & column_positions,
+    const StorageMetadataPtr & metadata_snapshot,
+    const std::vector<MergeTreeIndexPtr> & indices_to_recalc,
+    const String & marks_file_extension_,
+    const CompressionCodecPtr & default_codec_,
+    const MergeTreeWriterSettings & writer_settings,
+    MergeTreeIndexGranularityPtr computed_index_granularity);
 
 MergeTreeDataPartWriterPtr createMergeTreeDataPartCompactWriter(
     const String & data_part_name_,
@@ -129,7 +165,7 @@ void MergeTreeDataPartCompact::loadIndexGranularityImpl(
     while (!marks_reader->eof())
     {
         marks_reader->ignore(marks_per_granule * sizeof(MarkInCompressedFile));
-        size_t granularity;
+        size_t granularity = 0;
         readBinaryLittleEndian(granularity, *marks_reader);
         index_granularity_ptr->appendMark(granularity);
     }
@@ -173,7 +209,8 @@ void MergeTreeDataPartCompact::loadMarksToCache(const Names & column_names, Mark
         /*save_marks_in_cache=*/ true,
         context->getReadSettings(),
         /*load_marks_threadpool_=*/ nullptr,
-        index_granularity_info.mark_type.with_substreams ? columns_substreams.getTotalSubstreams() : columns.size());
+        index_granularity_info.mark_type.with_substreams ? columns_substreams.getTotalSubstreams() : columns.size(),
+        context->getSettingsRef()[Setting::use_streaming_marks_compression]);
 
     loader.loadMarks();
 }

@@ -5,6 +5,7 @@
 namespace DB
 {
 
+void addConvertingActions(QueryPlan & plan, const Block & header, const ContextPtr & context);
 void addConvertingActions(QueryPlan & plan, const Block & header, const ContextPtr & context)
 {
     if (blocksHaveEqualStructure(*plan.getCurrentHeader(), header))

@@ -10,9 +10,10 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-ReadFromLocalParallelReplicaStep::ReadFromLocalParallelReplicaStep(QueryPlanPtr query_plan_)
+ReadFromLocalParallelReplicaStep::ReadFromLocalParallelReplicaStep(QueryPlanPtr query_plan_, ContextPtr subquery_context_)
     : ISourceStep(query_plan_->getCurrentHeader())
     , query_plan(std::move(query_plan_))
+    , context(std::move(subquery_context_))
 {
 }
 

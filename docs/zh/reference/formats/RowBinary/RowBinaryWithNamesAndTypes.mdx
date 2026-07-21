@@ -1,0 +1,44 @@
+---
+alias: []
+description: '关于 RowBinaryWithNamesAndTypes 格式的文档'
+input_format: true
+keywords: ['RowBinaryWithNamesAndTypes']
+output_format: true
+slug: /interfaces/formats/RowBinaryWithNamesAndTypes
+title: 'RowBinaryWithNamesAndTypes'
+doc_type: 'reference'
+---
+
+import RowBinaryFormatSettings from '/snippets/zh/common-row-binary-format-settings.mdx';
+
+| 输入 | 输出 | 别名 |
+| -- | -- | -- |
+| ✔  | ✔  |    |
+
+<div id="description">
+  ## 描述
+</div>
+
+与 [RowBinary](/zh/reference/formats/RowBinary/RowBinary) 格式类似，但增加了以下头部信息：
+
+* 使用 [`LEB128`](https://en.wikipedia.org/wiki/LEB128) 编码的列数 (N) 。
+* N 个用于指定列名的 `String`。
+* N 个用于指定列类型的 `String`。
+
+<div id="example-usage">
+  ## 使用示例
+</div>
+
+<div id="format-settings">
+  ## 格式设置
+</div>
+
+<RowBinaryFormatSettings />
+
+<Note>
+  如果将设置 [`input_format_with_names_use_header`](/zh/reference/settings/formats#input_format_with_names_use_header) 设为 1，
+  则会根据名称将输入数据中的列映射到表中的列；如果将设置 [input&#95;format&#95;skip&#95;unknown&#95;fields](/zh/reference/settings/formats#input_format_skip_unknown_fields) 设为 1，则会跳过名称未知的列。
+  否则，将跳过第一行。
+  如果将设置 [`input_format_with_types_use_header`](/zh/reference/settings/formats#input_format_with_types_use_header) 设为 `1`，
+  则会将输入数据中的类型与表中对应列的类型进行比较。否则，将跳过第二行。
+</Note>

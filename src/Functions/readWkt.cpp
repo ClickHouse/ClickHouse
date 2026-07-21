@@ -6,6 +6,7 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/geometryConverters.h>
 #include <boost/algorithm/string/case_conv.hpp>
+#include <boost/algorithm/string/trim.hpp>
 
 #include <string>
 #include <memory>
@@ -38,7 +39,7 @@ void readWKT(const String & str, T & out)
 }
 
 template <class DataTypeName, class Geometry, class Serializer, class NameHolder>
-class FunctionReadWKT : public IFunction
+class FunctionReadWKT final : public IFunction
 {
 public:
     explicit FunctionReadWKT() = default;
@@ -95,7 +96,7 @@ public:
     }
 };
 
-class FunctionReadWKTCommon : public IFunction
+class FunctionReadWKTCommon final : public IFunction
 {
 public:
     enum class WKTTypes
@@ -143,7 +144,10 @@ public:
 
         auto try_deserialize_type = [&] (const std::function<void()> & deserialize_func, const String & data, const String & target_prefix, WKTTypes type) -> bool
         {
+            /// The type prefix may be preceded by whitespace, which the WKT grammar (and the typed
+            /// readWKT* readers) accept; strip it before matching so readWKT stays consistent.
             auto lower_data = boost::to_lower_copy(data);
+            boost::trim_left(lower_data);
             if (lower_data.starts_with(target_prefix))
             {
                 deserialize_func();
@@ -338,11 +342,11 @@ Parses a Well-Known Text (WKT) representation of a MultiLineString geometry and 
     },
     {
         "MultiLineString example",
-        "SELECT toTypeName(readWKTLineString('MULTILINESTRING ((1 1, 2 2, 3 3, 1 1))'));",
+        "SELECT toTypeName(readWKTMultiLineString('MULTILINESTRING ((1 1, 2 2, 3 3, 1 1))'));",
         R"(
-┌─toTypeName(readWKTLineString('MULTILINESTRING ((1 1, 2 2, 3 3, 1 1))'))─┐
-│ MultiLineString                                                         │
-└─────────────────────────────────────────────────────────────────────────┘
+┌─toTypeName(readWKTMultiLineString('MULTILINESTRING ((1 1, 2 2, 3 3, 1 1))'))─┐
+│ MultiLineString                                                              │
+└──────────────────────────────────────────────────────────────────────────────┘
         )"
     }
     };
@@ -435,7 +439,7 @@ Parses a Well-Known Text (WKT) representation of Geometry and returns it in the 
         )"
     }
     };
-    FunctionDocumentation::IntroducedIn introduced_in_common = {25, 7};
+    FunctionDocumentation::IntroducedIn introduced_in_common = {25, 12};
     FunctionDocumentation::Category category_common = FunctionDocumentation::Category::Geo;
     FunctionDocumentation function_documentation_common = {description_common, syntax_common, arguments_common, {}, returned_value_common, examples_common, introduced_in_common, category_common};
 

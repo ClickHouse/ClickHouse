@@ -63,7 +63,7 @@ If this assumption is violated, no exception is thrown and the result is undefin
         )"
     }
     };
-    FunctionDocumentation::IntroducedIn introduced_in = {25, 9};
+    FunctionDocumentation::IntroducedIn introduced_in = {25, 10};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::String;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 

@@ -1,4 +1,4 @@
--- Tags: no-asan, no-tsan, no-msan, no-ubsan, no-sanitize-coverage
+-- Tags: no-asan, no-tsan, no-msan, no-ubsan, no-sanitize-coverage, no-llvm-coverage
 
 SET log_queries = 1;
 SET log_query_threads = 1;

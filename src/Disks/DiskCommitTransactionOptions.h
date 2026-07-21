@@ -40,7 +40,7 @@ inline String getFirstFailedPath(Coordination::Error code, const Coordination::R
 
 struct MetaInKeeperCommitOutcome
 {
-    Coordination::Error code;
+    Coordination::Error code{};
 
     /// Responses for the keeper multi-op performed by this transaction.
     /// The order is: disk's internal ops, then `additional_requests`.

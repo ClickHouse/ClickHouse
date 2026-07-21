@@ -1,0 +1,37 @@
+---
+sidebarTitle: 'Vision'
+slug: /cloud/features/ai-ml/agents/builder/vision
+title: 'Vision'
+description: 'Entrada de imagens e compreensão visual no ClickHouse Agents'
+keywords: ['IA', 'ClickHouse Cloud', 'agents', 'Vision', 'entrada de imagem', 'multimodal']
+doc_type: 'reference'
+---
+
+import BetaBadge from "/snippets/pt-BR/components/BetaBadge/BetaBadge.jsx";
+import { Image } from "/snippets/pt-BR/components/Image.jsx";
+
+<BetaBadge />
+
+O Vision permite que os usuários façam upload de imagens para um agente analisar. O agente passa a imagem para um modelo compatível com Vision, que descreve, resume ou responde a perguntas sobre o que há nela.
+
+<div id="enable-it">
+  ## Ative os recursos do Vision
+</div>
+
+O Vision só funciona com modelos compatíveis com entrada de imagens. Se o modelo selecionado não conseguir processar entrada de imagens, o controle de upload na área de composição da mensagem ficará desabilitado. Mude para um modelo compatível com Vision para reativá-lo.
+
+<div id="use-it">
+  ## Use os recursos de Vision
+</div>
+
+Clique no ícone de clipe de papel no canto inferior esquerdo da área de composição da mensagem e escolha **Upload to Provider** para anexar uma imagem — uma captura de tela, uma foto, um gráfico ou um diagrama. Em seguida, faça qualquer pergunta que exija a leitura da imagem: *&quot;O que há de errado com este plano de execução da consulta?&quot;*, *&quot;Transcreva o texto desta captura de tela&quot;* ou *&quot;Compare este dashboard com o da semana passada.&quot;*
+
+<Image img="/images/cloud/agent-builder/vision/vision.webp" alt="Área de composição da mensagem com o menu do clipe de papel aberto, mostrando as opções Upload to Provider, Upload as Text e Upload to Code Environment" size="lg" />
+
+O agente trata a imagem como parte do contexto da mensagem, então perguntas de acompanhamento na mesma interação podem fazer referência ao que ele viu sem precisar reenviá-la.
+
+<div id="combine-with-other-tools">
+  ## Combine o Vision com outras ferramentas
+</div>
+
+O Vision combina bem com o [code interpreter](/pt-BR/products/cloud/features/ai-ml/agents/builder/code-interpreter) para análises baseadas em imagens — por exemplo, o agente extrai números de uma captura de tela e depois executa Python para calcular totais — e com a [web search](/pt-BR/products/cloud/features/ai-ml/agents/builder/web-search) quando uma imagem faz referência a algo que o modelo precisa pesquisar.

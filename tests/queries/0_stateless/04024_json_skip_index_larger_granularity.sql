@@ -8,6 +8,7 @@
 --   Part 2 (6 rows, 2 granules):
 --     Granule 3: rows 7-9  (paths: p.q, r, p.s, t, u)
 --     Granule 4: rows 10-12 (paths: v.k, g, v.l, h, j)
+SET explain_query_plan_default = 'legacy';
 
 -- =============================================================================
 -- Section 1: bloom_filter with index_granularity = 3

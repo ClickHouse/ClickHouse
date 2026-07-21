@@ -103,6 +103,14 @@ struct ArrayFillImpl
 
             for (auto in_offset : in_offsets)
             {
+                /// Skip empty sub-arrays: there is nothing to fill, and computing
+                /// `array_end = in_offset - 1` would underflow to SIZE_MAX,
+                /// which can cause out-of-bounds reads in `insertManyFrom` for
+                /// column types that eagerly access the source offsets/chars
+                /// (e.g. `ColumnString`). See issue #12263 for the original report.
+                if (in_offset == array_begin)
+                    continue;
+
                 array_end = in_offset - 1;
 
                 if constexpr (reverse)
