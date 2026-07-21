@@ -3,10 +3,10 @@ set enable_analyzer=1;
 -- Baseline: for Nullable(String), .null is still the UInt8 null-map.
 SELECT toTypeName(str.null) FROM (SELECT CAST(NULL AS Nullable(String)) AS str);
 
--- For Nullable(JSON), .null is the Dynamic JSON path, not the UInt8 null-map.
+-- For Nullable(JSON), .null is the outer UInt8 null-map.
 SELECT toTypeName(json.null) FROM (SELECT CAST(NULL AS Nullable(JSON)) AS json);
 
--- For Nullable(JSON('null' String)) with a typed hint, .null is Nullable(String).
+-- For Nullable(JSON('null' String)) with a typed hint, .null is still the outer UInt8 null-map.
 SELECT toTypeName(json.null) FROM (SELECT CAST(NULL AS Nullable(JSON(null String))) AS json);
 
 SELECT '--- Memory engine ---';
@@ -16,7 +16,7 @@ CREATE TABLE t_nullable_json_null (id UInt32, json Nullable(JSON)) ENGINE = Memo
 
 INSERT INTO t_nullable_json_null VALUES (1, NULL), (2, '{"null": "hello"}'), (3, '{"other": 1}');
 
--- col.null returns the JSON "null" path value (Dynamic), not the null-map.
+-- col.null returns the outer Nullable null-map.
 SELECT id, json.null, toTypeName(json.null) FROM t_nullable_json_null ORDER BY id;
 
 -- isNull/isNotNull must reflect the outer Nullable null-map, not the JSON "null" path.

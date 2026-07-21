@@ -388,6 +388,8 @@ ColumnPtr IExecutableFunction::defaultImplementationForNulls(
             if (hasNullableArrayArgument(args))
             {
                 auto result_null_map = buildResultNullMapForDefaultNulls(args, input_rows_count);
+                if (result_type->isNullable() && isArray(removeNullable(result_type)))
+                    temporary_result_type = result_type;
                 emptyArrayArgumentsOnNullRows(
                     temporary_columns,
                     assert_cast<const ColumnUInt8 &>(*result_null_map),
@@ -427,10 +429,14 @@ ColumnPtr IExecutableFunction::defaultImplementationForNulls(
         {
             /// Each row should be evaluated if there are no nulls or short circuiting is disabled.
             if (hasNullableArrayArgument(args))
+            {
+                if (result_type->isNullable() && isArray(removeNullable(result_type)))
+                    temporary_result_type = result_type;
                 emptyArrayArgumentsOnNullRows(
                     temporary_columns,
                     assert_cast<const ColumnUInt8 &>(*result_null_map),
                     input_rows_count);
+            }
 
             auto res = executeWithoutLowCardinalityColumns(temporary_columns, temporary_result_type, input_rows_count, dry_run);
             auto new_res = wrapInNullable(res, std::move(result_null_map));

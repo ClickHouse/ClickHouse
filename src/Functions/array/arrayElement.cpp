@@ -2302,7 +2302,7 @@ ColumnPtr FunctionArrayElement<mode>::executeImpl(
                 : nullable_array->getNestedColumnPtr();
             nested_arguments[0].type = removeNullable(arguments[0].type);
 
-            auto nested_result_type = removeNullable(result_type);
+            auto nested_result_type = result_type->isNullable() ? result_type : removeNullable(result_type);
             auto nested_result = executeImpl(nested_arguments, nested_result_type, input_rows_count);
 
             auto null_map = ColumnUInt8::create();
@@ -2331,7 +2331,7 @@ ColumnPtr FunctionArrayElement<mode>::executeImpl(
         ColumnsWithTypeAndName nested_arguments = arguments;
         nested_arguments[0].type = removeNullable(arguments[0].type);
 
-        auto nested_result_type = removeNullable(result_type);
+        auto nested_result_type = result_type->isNullable() ? result_type : removeNullable(result_type);
         auto nested_result = executeImpl(nested_arguments, nested_result_type, input_rows_count);
 
         if (!result_type->isNullable())

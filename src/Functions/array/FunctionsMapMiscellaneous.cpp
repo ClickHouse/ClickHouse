@@ -2,6 +2,7 @@
 #include <Columns/ColumnFunction.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnMap.h>
+#include <Columns/ColumnNullable.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnConst.h>
@@ -86,7 +87,12 @@ public:
 
     bool isVariadic() const override { return impl.isVariadic(); }
     size_t getNumberOfArguments() const override { return impl.getNumberOfArguments(); }
-    bool useDefaultImplementationForNulls() const override { return impl.useDefaultImplementationForNulls(); }
+    bool useDefaultImplementationForNulls() const override
+    {
+        if constexpr (requires { Adapter::use_default_implementation_for_nulls; })
+            return Adapter::use_default_implementation_for_nulls;
+        return impl.useDefaultImplementationForNulls();
+    }
     bool useDefaultImplementationForLowCardinalityColumns() const override
     {
         if constexpr (preserve_nested_low_cardinality)
@@ -413,6 +419,32 @@ struct MapLikeAdapter
     /// Their LowCardinality handling is left to the generic machinery (nested LowCardinality is not
     /// preserved), except for the specialized path in executeWithLowCardinalityColumns.
     static constexpr bool preserve_low_cardinality = false;
+    static constexpr bool use_default_implementation_for_nulls = true;
+
+    static DataTypePtr getPatternTypeForLike(const DataTypePtr & type)
+    {
+        return removeNullable(recursiveRemoveLowCardinality(removeNullable(type)));
+    }
+
+    static ColumnWithTypeAndName getPatternArgumentForLike(const ColumnWithTypeAndName & argument)
+    {
+        ColumnWithTypeAndName result = argument;
+        result.type = getPatternTypeForLike(argument.type);
+
+        if (!result.column)
+            return result;
+
+        result.column = recursiveRemoveLowCardinality(result.column);
+        if (const auto * nullable_column = checkAndGetColumn<ColumnNullable>(result.column.get()))
+            result.column = nullable_column->getNestedColumnPtr();
+        else if (const auto * const_nullable_column = checkAndGetColumnConst<ColumnNullable>(result.column.get()))
+        {
+            const auto & nullable_data = assert_cast<const ColumnNullable &>(const_nullable_column->getDataColumn());
+            result.column = ColumnConst::create(nullable_data.getNestedColumnPtr(), const_nullable_column->size());
+        }
+
+        return result;
+    }
 
     static void checkTypes(const DataTypes & types)
     {
@@ -425,7 +457,8 @@ struct MapLikeAdapter
         if (!map_type)
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "First argument for function {} must be a Map", Name::name);
 
-        if (!isStringOrFixedString(removeLowCardinality(types[1])))
+        auto pattern_type = getPatternTypeForLike(types[1]);
+        if (!isStringOrFixedString(pattern_type))
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Second argument for function {} must be String or FixedString", Name::name);
 
         auto subcolumn_type = removeLowCardinality(position == 0 ? map_type->getKeyType() : map_type->getValueType());
@@ -438,7 +471,7 @@ struct MapLikeAdapter
     {
         checkTypes(types);
         const auto & map_type = assert_cast<const DataTypeMap &>(*types[0]);
-        auto pattern_type = removeLowCardinality(types[1]);
+        auto pattern_type = getPatternTypeForLike(types[1]);
         auto key_type = recursiveRemoveLowCardinality(map_type.getKeyType());
         auto value_type = recursiveRemoveLowCardinality(map_type.getValueType());
 
@@ -464,7 +497,7 @@ struct MapLikeAdapter
         convertLowCardinalityColumnsToFull(arguments);
 
         const auto & map_type = assert_cast<const DataTypeMap &>(*arguments[0].type);
-        const auto & pattern_arg = arguments[1];
+        auto pattern_arg = getPatternArgumentForLike(arguments[1]);
 
         ColumnPtr function_column;
 
