@@ -938,6 +938,58 @@ def test_optimize_manifest_files_with_deletes(started_cluster_iceberg_with_spark
     assert spark_ids == list(range(20, 100))
 
 
+@pytest.mark.parametrize("format_version", ["2"])
+@pytest.mark.parametrize("storage_type", ["s3"])
+def test_optimize_manifest_files_all_deleted(started_cluster_iceberg_with_spark, storage_type, format_version):
+    instance = started_cluster_iceberg_with_spark.instances["node1"]
+    spark = started_cluster_iceberg_with_spark.spark_session
+    TABLE_NAME = "test_optimize_manifest_all_deleted_v" + format_version + "_" + storage_type + "_" + get_uuid_str()
+
+    # Copy-on-write delete rewrites/removes data files; deleting every row leaves the current
+    # snapshot's data manifest with only DELETED entries and no live data files.
+    spark.sql(
+        f"""
+        CREATE TABLE {TABLE_NAME} (id long, data string) USING iceberg TBLPROPERTIES (
+            'format-version' = '{format_version}',
+            'write.delete.mode' = 'copy-on-write'
+        )
+        """
+    )
+
+    # Several inserts so the pre-delete state has more than one data manifest.
+    for lo in range(0, 40, 10):
+        spark.sql(
+            f"INSERT INTO {TABLE_NAME} select id, char(id + ascii('a')) from range({lo}, {lo + 10})"
+        )
+
+    spark.sql(f"DELETE FROM {TABLE_NAME}")
+
+    default_upload_directory(
+        started_cluster_iceberg_with_spark,
+        storage_type,
+        f"/iceberg_data/default/{TABLE_NAME}/",
+        f"/iceberg_data/default/{TABLE_NAME}/",
+    )
+
+    create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster_iceberg_with_spark)
+
+    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 0
+
+    # With min_count_to_compact = 0 the cheap pre-check always passes, so compaction reaches the
+    # (previously crashing) rewrite path. It must complete without touching the empty table.
+    instance.query(
+        f"OPTIMIZE TABLE {TABLE_NAME} MANIFEST",
+        settings={
+            "allow_experimental_iceberg_compaction": 1,
+            "iceberg_manifest_min_count_to_compact": 0,
+        },
+    )
+
+    # The server must still be alive and the table still empty and readable.
+    assert int(instance.query("SELECT 1")) == 1
+    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 0
+
+
 @pytest.mark.parametrize("storage_type", ["s3"])
 def test_optimize_manifest_files_v3_rejected(started_cluster_iceberg_with_spark, storage_type):
     """
