@@ -41,3 +41,13 @@ SYSTEM SYNC MERGES t_04327_sync_merges;
 SET max_execution_time = DEFAULT;
 SELECT 1;
 DROP TABLE t_04327_sync_merges;
+
+-- Writing to the query result cache builds the entry expiry as now() + seconds(query_cache_ttl); even the
+-- largest ttl must not overflow that time_point addition, and the entry must stay non-stale (a wrapped
+-- deadline would land in the past). The top-level write goes through executeQuery; the inner subquery
+-- write goes through the Planner path (query_cache_for_subqueries). Both must be cached and non-stale.
+SELECT 'qc_04327_top' SETTINGS use_query_cache = 1, query_cache_ttl = 9223372036854;
+SELECT stale FROM system.query_cache WHERE query LIKE '%qc\_04327\_top%' AND query NOT LIKE '%system.query_cache%';
+
+SELECT sum(number) FROM (SELECT number FROM numbers(5) WHERE number > 41000000) SETTINGS use_query_cache = 1, query_cache_for_subqueries = 1, query_cache_ttl = 9223372036854;
+SELECT stale FROM system.query_cache WHERE query LIKE '%41000000%' AND query NOT LIKE '%system.query_cache%' ORDER BY query;
