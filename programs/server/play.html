@@ -2087,6 +2087,21 @@ class QueryResultElement extends HTMLElement
                     overflow: hidden;
                 }
 
+                /* A single-value result (one row, one column, e.g. SHOW CREATE TABLE) is shown
+                   with its full height, so the whole value is visible without selecting the cell.
+                   The rule is scoped to unselected cells: once the cell is selected it falls back
+                   to the .td-selected behavior below, which keeps it bounded to 50vh and scrolling
+                   internally instead of expanding into an unbounded absolutely-positioned overlay.
+                   Only the vertical clamp is dropped (max-height: none): the base "overflow: hidden"
+                   is kept so that with "white-space: pre" a long single line (e.g. SELECT repeat('x', 100000))
+                   is still clipped horizontally at the 40vw cell cap instead of painting across the page.
+                   With no max-height the box grows to the full content height, so nothing is clipped vertically.
+                   No backticks in this comment: this style block lives inside a JS template literal. */
+                #data-table.single-value td:not(.td-selected) .cell-content
+                {
+                    max-height: none;
+                }
+
                 td u
                 {
                     text-decoration-color: var(--misc-text-color);
@@ -2617,6 +2632,7 @@ class QueryResultElement extends HTMLElement
         this._clearImage();
 
         this._dataTable.classList.remove('fixed');
+        this._dataTable.classList.remove('single-value');
         this._dataDiv.classList.remove('fixed');
         /// Drop the stale single-row marker: it is recomputed in `applyColumnColors` once the new
         /// result finishes rendering. Clearing it here means that while rows are still streaming in,
@@ -3750,6 +3766,18 @@ class QueryResultElement extends HTMLElement
         table.appendChild(new_tbody);
     }
 
+    /// A result that is exactly one row and one column (for example, `SHOW CREATE TABLE`) is shown
+    /// with its full height instead of the default 3-line clamp, so the whole value is visible
+    /// without having to select the cell.
+    expandSingleValueIfNeeded()
+    {
+        const table = this._dataTable;
+        const is_single_value = !this._totals
+            && Array.isArray(this._header) && this._header.length == 1
+            && table.rows.length == 1;
+        table.classList.toggle('single-value', is_single_value);
+    }
+
     /// Run the measurement-based layout passes that were deferred because this element's tab was
     /// hidden when its query finished (see `_pendingTranspose`/`_pendingChangeLayout`). Called on
     /// activation, once the panel is visible so `offsetWidth`/`offsetHeight` are meaningful.
@@ -3778,12 +3806,23 @@ class QueryResultElement extends HTMLElement
         });
 
         /* Freeze row heights so that absolutely-positioned cell content
-           does not cause reflow. Read all heights first, then write,
-           to avoid layout thrashing. */
+           does not cause reflow of the following rows. Read all heights first,
+           then write, to avoid layout thrashing.
+           A single-value result is deliberately shown unclamped at its full height
+           (see `expandSingleValueIfNeeded`) and has a single row with nothing below it
+           to reflow. Freezing that full height would keep the row full-height even after
+           the cell is selected and its content collapses to a bounded 50vh overlay,
+           leaving a large blank row; so skip the freeze for single-value tables and let
+           the row follow its content (it then shrinks to the row-number cell's height
+           when the value cell is selected). */
+        const freeze_row_heights = !table.classList.contains('single-value');
         let rowHeights = [];
-        for (let row of table.rows)
+        if (freeze_row_heights)
         {
-            rowHeights.push(row.offsetHeight);
+            for (let row of table.rows)
+            {
+                rowHeights.push(row.offsetHeight);
+            }
         }
 
         table.classList.add('fixed');
@@ -3793,10 +3832,13 @@ class QueryResultElement extends HTMLElement
             header.style.width = `${columnWidths[index]}px`;
         });
 
-        let i = 0;
-        for (let row of table.rows)
+        if (freeze_row_heights)
         {
-            row.style.height = `${rowHeights[i++]}px`;
+            let i = 0;
+            for (let row of table.rows)
+            {
+                row.style.height = `${rowHeights[i++]}px`;
+            }
         }
 
         /// Recompute the pinned-column offsets against the now-frozen column widths, so they match
@@ -5842,8 +5884,241 @@ let elapsed_ns = 0;
 
 const default_format = 'JSONStringsEachRowWithProgress';
 
+/// Low-level marker for an exception raised after the HTTP response body has already started.
+/// Exceptions are normally reported by the output format itself — `JSONEachRowWithProgress` writes
+/// a `{"exception":...}` line when it finalizes, and that still happens. But there is also a newer,
+/// format-agnostic transport-level mechanism: when the HTTP write buffer
+/// (`WriteBufferFromHTTPServerResponse::cancelWithException`) is cancelled with an error after the
+/// body has already been sent, it appends this marker block and breaks the HTTP framing. The Web UI
+/// has to handle it in addition to the `{"exception":...}` line. The block looks like:
+///
+///     \r\n
+///     __exception__\r\n
+///     <TAG>\r\n
+///     <error message, may span several lines>\n
+///     <message_length> <TAG>\r\n
+///     __exception__\r\n
+///
+/// where <TAG> is a random 16-character string repeated to delimit the message unambiguously even
+/// if the message itself contains the marker text.
+const EXCEPTION_MARKER = '__exception__';
+
+/// Extract a `__exception__` marker block embedded anywhere in `text` (typically at the very end of a
+/// streamed response). Returns `{ message, offset }` — the error message and the character offset in
+/// `text` of the opening `__exception__` line of the matched block — or null if no complete block is
+/// present. A complete block is a tag line, the message, a `<length> <TAG>` trailer line, and a closing
+/// `__exception__` line; the message is everything between the tag and the trailer, so it is recovered
+/// verbatim regardless of its own content. The `offset` lets a caller keep the raw output that arrived
+/// *before* the block while hiding the block itself: an earlier line may merely look like the marker (a
+/// raw format can emit `__exception__`, or the whole block shape, as data and then fail later), so the
+/// split point must be the validated block, not the first candidate line. A candidate line that does not
+/// lead to a complete block is skipped and scanning continues, so such lookalikes never abort the search.
+///
+/// `expected_tag`, when supplied, is the value of the `X-ClickHouse-Exception-Tag` response header. The
+/// server picks a fresh random tag per response and repeats it inside the marker block (see
+/// `WriteBufferFromHTTPServerResponse::cancelWithException`), so a genuine transport marker always
+/// carries exactly that tag. Requiring the match rejects a *successful* query whose own output merely
+/// mimics the marker shape — the client cannot know the random per-response tag. For example
+/// `SELECT arrayJoin(['__exception__','0123456789abcdef','hello','5 0123456789abcdef','__exception__']) FORMAT TSV`
+/// is a fully-framed lookalike, but its tag will not match the header, so it is not treated as a failure.
+/// Callers that already know the query failed and have no header at hand (history/snapshot restore) omit
+/// the argument to extract the message without verifying; a `null` value — the header was absent, e.g. a
+/// proxy or an older server sent the block but did not expose `X-ClickHouse-Exception-Tag`, so
+/// `Headers.get` returned `null` — is treated the same as omitting it.
+function parseExceptionMarker(text, expected_tag)
+{
+    const lines = text.split('\n');
+    for (let i = 0; i < lines.length; ++i)
+    {
+        if (lines[i].replace(/\r$/, '') !== EXCEPTION_MARKER) continue;
+
+        const tag = (lines[i + 1] ?? '').replace(/\r$/, '');
+        if (!tag) continue;
+        /// A genuine marker reuses the per-response header tag; a mismatch means this is ordinary output
+        /// that merely looks like a marker, so keep scanning rather than reporting a false failure. Both
+        /// `undefined` (restore callers omit the argument) and `null` (`Headers.get` when the header is
+        /// absent — a proxy or older server that wrote the block without exposing the tag) mean "no tag to
+        /// match": accept the block on its framing alone, otherwise a valid marker would be rejected here.
+        if (expected_tag !== undefined && expected_tag !== null && tag !== expected_tag) continue;
+
+        /// The message ends at the trailer line `<length> <TAG>`; the length lets the server bound
+        /// the message, but here the tag alone is enough to locate the boundary unambiguously.
+        const trailer = ' ' + tag;
+        const message_lines = [];
+        for (let j = i + 2; j < lines.length; ++j)
+        {
+            const stripped = lines[j].replace(/\r$/, '');
+            /// Commit to a failure only for a fully-framed block: the `<length> <TAG>` trailer must be
+            /// immediately followed by the closing `__exception__` line (see the server's
+            /// `WriteBufferFromHTTPServerResponse::cancelWithException`). A lone `<digits> <TAG>` line is
+            /// not proof of a marker — successful output can legitimately contain one, e.g.
+            /// `SELECT arrayJoin(['__exception__', 'x', 'hello', '6 x'])` (tag `x`, trailer `6 x`), which
+            /// without the closing check would be misread as the error "hello".
+            if (/^\d+$/.test(stripped.slice(0, stripped.length - trailer.length)) && stripped.endsWith(trailer)
+                && (lines[j + 1] ?? '').replace(/\r$/, '') === EXCEPTION_MARKER)
+            {
+                /// Char offset of the opening `__exception__` line (`lines[i]`) within `text`, so callers
+                /// can split the raw output on the *validated* block rather than the first candidate line.
+                const offset = i === 0 ? 0 : lines.slice(0, i).join('\n').length + 1;
+                return { message: message_lines.join('\n'), offset };
+            }
+            message_lines.push(lines[j]);
+        }
+        /// This candidate's block never completed (a lookalike `__exception__` line, or a genuine block
+        /// truncated by an incomplete stream): keep scanning for a later, complete block rather than
+        /// giving up, otherwise a raw prefix that contains a lookalike line would mask the real marker.
+    }
+    return null;
+}
+
+/// Char offset within `text` of the first line where a transport marker for THIS response *starts* —
+/// a `__exception__` line whose immediately following line equals `expected_tag` (the server repeats
+/// the per-response `X-ClickHouse-Exception-Tag` right after the opening marker line, see
+/// `WriteBufferFromHTTPServerResponse::cancelWithException`) — or -1 if there is none. The live raw
+/// branch uses this to tell a genuine marker whose block the server truncated by breaking HTTP
+/// framing — the trailing `reader.read()` `TypeError` is then *expected* — apart from ordinary raw
+/// output that merely contains a `__exception__` lookalike line and then hit a real transport failure
+/// (that `TypeError` is a genuine error and must surface, not be reported as an unparsable marker).
+/// The offset (not just a boolean) matters for the truncated-marker case: echoing stopped at the
+/// first *candidate* line, which may be an earlier lookalike in ordinary output, so the withheld
+/// output before the tag-compatible start streamed before the failure and must still be shown — this
+/// is the split point for it, in both the live path and `renderFailedSnapshot`. With no tag to check
+/// against (`expected_tag` null/undefined) a start cannot be ruled out, so the first candidate line
+/// counts (best effort, same permissive stance `parseExceptionMarker` takes when it has no tag).
+function exceptionMarkerStart(text, expected_tag)
+{
+    const match_any_tag = expected_tag === undefined || expected_tag === null;
+    const lines = text.split('\n');
+    let offset = 0;
+    for (let i = 0; i < lines.length; ++i)
+    {
+        if (lines[i].replace(/\r$/, '') === EXCEPTION_MARKER
+            && (match_any_tag || (lines[i + 1] ?? '').replace(/\r$/, '') === expected_tag))
+            return offset;
+        offset += lines[i].length + 1;   /// + 1 for the '\n' that `split` removed
+    }
+    return -1;
+}
+
+/// Reverse the escaping `writeXMLStringForTextElement` applies to an `XML`-format text node: it only
+/// ever produces `&lt;` (for `<`) and `&amp;` (for `&`). Unescape `&amp;` last so a literal `&lt;`
+/// in the message (written as `&amp;lt;`) is not turned into `<`.
+function unescapeXMLText(s)
+{
+    return s.replace(/&lt;/g, '<').replace(/&amp;/g, '&');
+}
+
+/// Formats whose entire response body is a single JSON document, so an in-band failure surfaces as a
+/// top-level `"exception"` string (or, for `GeoJSON`, a trailing `{"exception":...}` element of the
+/// `features` array) that can be read out unambiguously — a successful document of these formats
+/// never carries one. Each-row formats are intentionally absent (see `parseInbandException`).
+const SINGLE_DOCUMENT_JSON_FORMATS = new Set([
+    'JSON', 'JSONStrings', 'JSONCompact', 'JSONCompactStrings',
+    'JSONColumns', 'JSONColumnsWithMetadata', 'JSONObjectEachRow', 'GeoJSON']);
+
+/// Detect a format-level exception that an output format wrote in-band after the response body had
+/// already started (`http_write_exception_in_output_format`, on by default), so the raw branch can
+/// flag the query as failed instead of finishing green. Returns the error message, or null.
+///
+/// ClickHouse writes this exception differently per format, and only some encodings can be told apart
+/// from successful output. This probes exactly the unambiguous ones:
+///   - single-document JSON (`JSON`, `JSONCompact`, `JSONColumns`, `JSONObjectEachRow`, `GeoJSON`, ...):
+///     a top-level `"exception"` string, or a trailing `{"exception":...}` feature for `GeoJSON`;
+///   - `*WithProgress` row streams: a terminal top-level `{"exception":...}` line (every row is
+///     wrapped as `{"row":...}` / `{"progress":...}`, so a bare `{"exception":...}` line is the failure);
+///   - `XML`: the top-level `<exception>` trailer (a one-tab direct child of `<result>`; a row field
+///     named `exception` is far more deeply indented, so it cannot be mistaken for the trailer).
+///
+/// It deliberately does NOT probe the each-row JSON family, because their in-band failure line is
+/// byte-for-byte a valid row, so flagging it could mark a successful query as failed:
+///   - the bare formats `JSONEachRow` / `JSONStringsEachRow` / `JSONLines` write the failure as a
+///     `{"exception":...}` object line, identical to a successful row with an `exception` column;
+///   - `JSONCompactEachRow` / `JSONCompactStringsEachRow` write it as `["..."]`, identical to a
+///     single-column row;
+///   - the pretty-printed aliases `PrettyJSONEachRow` / `PrettyJSONLines` / `PrettyNDJSON` are backed by
+///     the same `JSONEachRowRowOutputFormat` (its `writeSuffix` appends the very same in-band
+///     `{"exception":...}` object, only indented), so they are equally ambiguous.
+/// Non-JSON row formats (`TSV`, `CSV`, `Pretty`, ...) do not write exceptions in-band at all — they
+/// signal a mid-stream failure with the transport-level `__exception__` marker instead. So the one case
+/// the raw branch cannot flag is a mid-stream failure of an each-row JSON format with
+/// `http_write_exception_in_output_format=1` (the default): the server writes an in-band line that is
+/// indistinguishable from a valid row and no marker, so such a query can still finish in the success
+/// state. This is UNSUPPORTED by design — the "all streamed formats" recovery does not cover the
+/// ambiguous each-row JSON encodings — not an oversight; do not widen it to guess on those.
+function parseInbandException(text, format)
+{
+    /// The format may be missing: an error snapshot saved when `fetch` failed before the response
+    /// headers arrived (`Network error`, an early `AbortError`, the direct-browser
+    /// `ERR_INCOMPLETE_CHUNKED_ENCODING`) carries no `X-ClickHouse-Format`, so the restore paths
+    /// call this with `format === undefined`. Bail out before touching string methods on it —
+    /// otherwise the restore would throw a `TypeError` instead of showing the saved error text.
+    if (typeof format !== 'string') return null;
+
+    if (format == 'XML')
+    {
+        /// `XMLRowOutputFormat` writes the in-band failure as a top-level `<exception>` element, indented
+        /// with a single tab as a direct child of `<result>` (see `writeException`). A row field that
+        /// happens to be named `exception` is written far more deeply (`\t\t\t<exception>` inside a
+        /// `\t\t<row>`), so anchor to the one-tab top-level element — otherwise a successful
+        /// `SELECT 'ok' AS exception FORMAT XML` would be misread as a failure. The message text is
+        /// XML-escaped (`<` → `&lt;`), so it can never contain a literal `<exception>` / `</exception>`.
+        const m = text.match(/^\t<exception>([\s\S]*?)<\/exception>/m);
+        return m ? unescapeXMLText(m[1]) : null;
+    }
+
+    /// Only the two unambiguous JSON encodings are probed: a `*WithProgress` row stream (a terminal
+    /// top-level `{"exception":...}` line) or a single-document body (`SINGLE_DOCUMENT_JSON_FORMATS`).
+    /// Everything else — the whole ambiguous each-row JSON family, both the bare formats and the
+    /// pretty-printed `Pretty*` aliases noted above — is deliberately unsupported, so bail out. This is
+    /// an explicit whitelist rather than a `startsWith('JSON')` test, which would falsely imply the
+    /// each-row family is handled (and would not even match the `Pretty*` aliases).
+    if (!format.includes('WithProgress') && !SINGLE_DOCUMENT_JSON_FORMATS.has(format)) return null;
+    if (!text.includes('"exception"')) return null;   /// cheap guard before parsing/scanning the body
+
+    /// `*WithProgress` formats wrap every row, so a standalone top-level `{"exception":...}` line —
+    /// always the terminal content line — is unambiguously the failure.
+    if (format.includes('WithProgress'))
+    {
+        const trimmed = text.replace(/\s+$/, '');
+        const last_line = trimmed.slice(trimmed.lastIndexOf('\n') + 1);
+        if (last_line.startsWith('{"exception"'))
+        {
+            try {
+                const data = JSON.parse(last_line);
+                if (typeof data.exception === 'string') return data.exception;
+            } catch (e) { /* not a standalone exception line */ }
+        }
+        return null;
+    }
+
+    /// Single-document formats: parse the whole body and read the failure out of the one object.
+    if (SINGLE_DOCUMENT_JSON_FORMATS.has(format))
+    {
+        try {
+            const data = JSON.parse(text);
+            if (data && typeof data === 'object')
+            {
+                if (typeof data.exception === 'string') return data.exception;
+                /// `GeoJSON`: `{"type":"FeatureCollection","features":[..., {"exception":...}]}`. The
+                /// appended element has no `type`, so it cannot be mistaken for a real `Feature`.
+                if (Array.isArray(data.features) && data.features.length)
+                {
+                    const last = data.features[data.features.length - 1];
+                    if (last && typeof last.exception === 'string' && last.type === undefined)
+                        return last.exception;
+                }
+            }
+        } catch (e) { /* not a single JSON document */ }
+    }
+
+    return null;
+}
+
 /// Execute a single query, rendering results into the given targetResultEl.
-/// Returns { format, reply, response_ok, is_table, is_raw, is_chart, is_image, is_error }.
+/// Returns { format, reply, response_ok, is_table, is_raw, is_chart, is_image, is_error };
+/// failed runs also carry `exception_tag` and `display_error` — the rendered error text, persisted
+/// with the snapshot so the failure still restores when the body is dropped by the history size cap
+/// (see `renderFailedSnapshot`).
 /// The caller is responsible for top-level UI (download buttons, history, favicon).
 /// `tab` owns the run; `posted_request_num` is a snapshot of `tab.reqNum` taken at launch, so a
 /// late response bails once the tab is re-run/cancelled/closed. `abortController` cancels the fetch.
@@ -5894,7 +6169,12 @@ async function postImpl(tab, posted_request_num, query, targetResultEl, abortCon
     let is_image = false;
     let is_error = false;
 
-    let response, reply, format;
+    /// The rendered error text of a failed run. EVERY failure path sets it (the HTTP-error branch,
+    /// the mid-stream marker / in-band failure returns, and the outer transport catch), so the
+    /// history snapshot always carries the message even when the body itself is dropped by the
+    /// 100 KB size cap — otherwise a large failed result would restore as a blank tab (see
+    /// `renderFailedSnapshot`).
+    let response, reply, format, exception_tag, display_error;
     reply = '';
     try {
         response = await fetch(url, { method: "POST", body: query, signal: abortController.signal,
@@ -5904,6 +6184,10 @@ async function postImpl(tab, posted_request_num, query, targetResultEl, abortCon
         /// Detect image results (e.g. `FORMAT PNG`) by the response `Content-Type` rather than by
         /// parsing the query, so any format that emits an image is rendered inline as a picture.
         const content_type = response.headers.get('Content-Type') ?? '';
+        /// The random per-response tag the server repeats inside a transport `__exception__` marker
+        /// block; passing it to `parseExceptionMarker` tells a genuine marker apart from successful
+        /// output that merely mimics the marker shape (the client cannot know this random tag).
+        exception_tag = response.headers.get('X-ClickHouse-Exception-Tag');
 
         if (!response.ok) {
             is_error = true;
@@ -5913,13 +6197,19 @@ async function postImpl(tab, posted_request_num, query, targetResultEl, abortCon
             let has_exception = false;
             for (const line of reply.split('\n')) {
                 if (line.startsWith(`{"exception":`)) {
-                    targetResultEl.update(JSON.parse(line));
+                    const parsed = JSON.parse(line);
+                    targetResultEl.update(parsed);
+                    display_error = typeof parsed.exception === 'string' ? parsed.exception : line;
                     has_exception = true;
                     break;
                 }
             }
             if (!has_exception) {
                 targetResultEl.renderError(reply);
+                /// Equal to the saved `data` on purpose: when the body IS persisted, restore renders
+                /// it from `data` alone and `renderFailedSnapshot` steps aside on the equality, so the
+                /// error text is not echoed as output first.
+                display_error = reply;
             }
 
             /// If the error message points at a position in the query (e.g. a syntax error),
@@ -5932,7 +6222,7 @@ async function postImpl(tab, posted_request_num, query, targetResultEl, abortCon
                 highlightQueryError(reply, query, queryStart, tab);
             }
 
-            return { format, reply, response_ok: false, is_table, is_raw, is_chart, is_image, is_error };
+            return { format, exception_tag, reply, display_error, response_ok: false, is_table, is_raw, is_chart, is_image, is_error };
         } else if (content_type.startsWith('image/')) {
             is_image = true;
             const blob = await response.blob();
@@ -5944,29 +6234,58 @@ async function postImpl(tab, posted_request_num, query, targetResultEl, abortCon
             const decoder = new TextDecoder();
 
             let buffer = '';
-            let stream_exception = null;   /// set if a `{"exception"}` arrives mid-stream
+            let marker_seen = false;      /// once the `__exception__` block starts, stop parsing rows
+            let stream_exception = null;  /// the error message, from either signalling method
             while (true) {
-                const { done, value } = await reader.read();
+                let done, value;
+                try {
+                    ({ done, value } = await reader.read());
+                } catch (e) {
+                    /// After writing the `__exception__` block the server intentionally breaks the
+                    /// HTTP framing (it omits the terminating chunk to signal the error), so the
+                    /// reader may reject with a network `TypeError`. If the marker was already seen
+                    /// that is expected — parse the buffered block below. Otherwise it is a genuine
+                    /// transport failure, so let the outer handler report it.
+                    if (marker_seen && e instanceof TypeError) break;
+                    throw e;
+                }
                 if (posted_request_num != tab.reqNum) { return { cancelled: true }; }
                 if (done) break;
 
                 let new_content = decoder.decode(value, { stream: true });
-                buffer += new_content;
                 reply += new_content;
+
+                /// Once the marker block has started, the remainder of the stream is that block
+                /// (message + trailer), not JSON rows: keep accumulating `reply` for the parser
+                /// (invoked after the loop) and stop feeding lines to `JSON.parse`.
+                if (marker_seen) continue;
+
+                buffer += new_content;
 
                 let lines = buffer.split('\n');
                 let fragment = document.createDocumentFragment();
 
                 let cont = true;
-                for (const line of lines.slice(0, -1)) {
-                    /// Skip blank lines: a trailing/blank line would make `JSON.parse('')` throw
-                    /// ("Unexpected end of JSON input"), masking the real result with a client error.
-                    if (line.length == 0) continue;
+                for (let idx = 0; idx < lines.length; ++idx) {
+                    const line = lines[idx];
+                    /// The `__exception__` marker signals an exception raised after the body already
+                    /// started (see `EXCEPTION_MARKER`). It always occupies whole lines, so match the
+                    /// line exactly (ignoring the trailing `\r`) — this is robust to chunk-boundary
+                    /// splits, and a row value that merely contains the text is `{"row":...}` and
+                    /// never equals the marker. Everything from here on is the block, not rows: stop
+                    /// parsing and leave it in `reply` for `parseExceptionMarker` after the loop.
+                    if (line.replace(/\r$/, '') === EXCEPTION_MARKER) { marker_seen = true; break; }
+                    /// The last line is a partial row (or a partial marker); keep it in `buffer`.
+                    if (idx == lines.length - 1) break;
+                    /// Skip blank/whitespace-only lines: `JSON.parse` on them throws
+                    /// ("Unexpected end of JSON input"). The marker block is framed by `\r\n`, so
+                    /// its leading bare-`\r` line is skipped here too.
+                    if (line.trim().length == 0) continue;
                     const data = JSON.parse(line);
-                    /// A `{"exception":...}` can arrive mid-stream after a 200 (e.g. a query that
-                    /// streams progress/rows and then hits `max_execution_time`). The response was
-                    /// `ok`, so without this it would be classified as a successful result. Stop the
-                    /// stream and remember the message; it is handled after the loop.
+                    /// The other way an exception is signalled: with `http_write_exception_in_output_format`
+                    /// the format writes a `{"exception":...}` line (this is the pre-marker mechanism, and
+                    /// it can still arrive mid-stream after a 200). Treat it as a failure — like the marker
+                    /// — rather than letting the query fall through to the success path below.
                     if (data.exception) { stream_exception = data.exception; cont = false; break; }
                     cont = targetResultEl.update(data, fragment);
                     if (!cont) { break; }
@@ -5982,6 +6301,11 @@ async function postImpl(tab, posted_request_num, query, targetResultEl, abortCon
                 /// toggles become usable mid-stream rather than only at EOF.
                 targetResultEl._pinStreamedRows(streamed_rows);
 
+                /// The marker block keeps arriving after this: do not abort (that could truncate it)
+                /// and do not carry the marker text as an unfinished row — just keep draining into
+                /// `reply`. The marker line and the rest stay in `buffer` (unused once `marker_seen`).
+                if (marker_seen) continue;
+
                 if (!cont)
                 {
                     abortController.abort();
@@ -5990,10 +6314,20 @@ async function postImpl(tab, posted_request_num, query, targetResultEl, abortCon
                 buffer = lines[lines.length - 1];
             }
 
-            /// A mid-stream exception fails the query. Keep any partial rows that already streamed
-            /// in and render the error beneath them (a partial result is still worth showing), but
-            /// if nothing but a header arrived, hide the empty table so only the error shows. The
-            /// partial table still needs its layout pass (deferred while the tab is hidden).
+            /// The `__exception__` marker (the newer, format-agnostic mechanism) is parsed out of the
+            /// full reply after the stream ended; the format-level `{"exception":...}` line is already
+            /// captured in `stream_exception` above.
+            if (marker_seen && stream_exception === null) {
+                const marker = parseExceptionMarker(reply, exception_tag);
+                stream_exception = (marker !== null ? marker.message : null)
+                    ?? "The query failed after the response body had already started, but the error message could not be parsed.";
+            }
+
+            /// Either way, the query failed after its response body had already started streaming. Keep
+            /// any partial rows that arrived (they are already flushed into the table): finish their
+            /// totals/coloring so they look consistent, then render the error beneath them. If nothing
+            /// but a header arrived, hide the empty table so only the error shows. The partial table
+            /// still needs its layout pass (deferred while the tab is hidden).
             if (stream_exception !== null) {
                 if (targetResultEl.rowCount > 0) {
                     targetResultEl.renderTotals();
@@ -6004,7 +6338,8 @@ async function postImpl(tab, posted_request_num, query, targetResultEl, abortCon
                     targetResultEl.clear();
                 }
                 targetResultEl.renderError(stream_exception);
-                return { format, reply, response_ok: false, is_table: false, is_raw: false, is_chart: false, is_image: false, is_error: true };
+                display_error = stream_exception;
+                return { format, exception_tag, reply, display_error, response_ok: false, is_table: false, is_raw: false, is_chart: false, is_image: false, is_error: true };
             }
         } else if (format == 'JSONCompactColumns') {
             is_chart = true;
@@ -6018,16 +6353,121 @@ async function postImpl(tab, posted_request_num, query, targetResultEl, abortCon
             const reader = response.body.getReader();
             const decoder = new TextDecoder();
 
+            /// A query can fail after its HTTP response body has already started streaming (the status
+            /// is already committed to 200). This branch renders an explicitly-requested streamed
+            /// format (e.g. `FORMAT JSONEachRowWithProgress`, `TSV`, ...) verbatim, so — like the table
+            /// branch above — it must recognize the same two mid-stream failure signals, otherwise a
+            /// failed query would finish in the success state:
+            ///   1. the format-agnostic transport-level `__exception__` marker (see `EXCEPTION_MARKER`),
+            ///      used by formats that do not write exceptions in-band (`TSV`, `CSV`, `Pretty`, ...);
+            ///   2. the in-band `{"exception":...}` a JSON output format writes when
+            ///      `http_write_exception_in_output_format` is set (the default) — see `parseInbandException`.
+            /// The raw output that arrived before the failure is still shown; the error is rendered beneath.
             let buffer = '';
+            let marker_seen = false;      /// a candidate `__exception__` line was seen; stop echoing from it
+            let marker_framing_broken = false;   /// the server broke HTTP framing after the marker (see below)
+            let held_back = '';           /// output withheld from the candidate marker line onward (see below)
+            let stream_exception = null;
             while (true) {
-                const { done, value } = await reader.read();
+                let done, value;
+                try {
+                    ({ done, value } = await reader.read());
+                } catch (e) {
+                    /// After a genuine `__exception__` block the server intentionally breaks the HTTP
+                    /// framing, so the reader may reject with a `TypeError`; that is expected and the block
+                    /// is parsed below. But `marker_seen` only means echoing stopped on a line that *looked*
+                    /// like the marker — ordinary raw output can contain such a line (`ok1\n__exception__\n
+                    /// ok2\n`) and then hit a real transport failure. Treat the error as the expected framing
+                    /// break only when the withheld tail actually began a marker for this response (its
+                    /// opening line carried the response tag); otherwise it is a genuine transport error, so
+                    /// flush the withheld output and let the outer handler report it, exactly as a mid-stream
+                    /// network drop with no marker candidate at all would be handled.
+                    if (marker_seen && e instanceof TypeError && exceptionMarkerStart(held_back, exception_tag) >= 0)
+                    {
+                        marker_framing_broken = true;
+                        break;
+                    }
+                    if (marker_seen && held_back.length) targetResultEl.updateRaw(held_back);
+                    throw e;
+                }
                 if (done) break;
 
                 let new_content = decoder.decode(value, { stream: true });
                 reply += new_content;
 
                 if (posted_request_num != tab.reqNum) { return { cancelled: true }; }
-                targetResultEl.updateRaw(new_content);
+
+                /// After a candidate marker line, withhold the rest of the stream instead of echoing it:
+                /// it is either the marker block (kept hidden) or — if the framing turns out incomplete —
+                /// ordinary output that is re-echoed after the loop. Keep accumulating `reply` regardless.
+                if (marker_seen) { held_back += new_content; continue; }
+
+                /// The marker occupies whole lines, so echo only complete lines and hold the last
+                /// (possibly partial) line in `buffer` — this matches the marker robustly across
+                /// chunk-boundary splits and never echoes the marker block itself into the raw view.
+                buffer += new_content;
+                let lines = buffer.split('\n');
+                let output = '';
+                for (let idx = 0; idx < lines.length; ++idx) {
+                    /// A complete line equal to the marker is only a *candidate*: a successful query can
+                    /// legitimately emit one (e.g. `SELECT '__exception__' FORMAT TSV`). Stop echoing from
+                    /// here and decide after the loop, once the full marker framing is known.
+                    if (lines[idx].replace(/\r$/, '') === EXCEPTION_MARKER) {
+                        marker_seen = true;
+                        held_back = lines.slice(idx).join('\n');
+                        break;
+                    }
+                    /// The last line may be a partial row or a partial marker; keep it in `buffer`.
+                    if (idx == lines.length - 1) break;
+                    output += lines[idx] + '\n';
+                }
+                if (output) targetResultEl.updateRaw(output);
+                if (!marker_seen) buffer = lines[lines.length - 1];
+            }
+
+            if (marker_seen) {
+                /// A genuine transport marker is a fully-framed `__exception__ <TAG> ... <len> <TAG>
+                /// __exception__` block that `parseExceptionMarker` can extract from the withheld tail;
+                /// echoing stopped at the *first* candidate line, but that line may merely look like the
+                /// marker — a raw format can emit `__exception__` (or the whole block shape) as data and
+                /// only then fail. So split on the validated block: flush the output that precedes it
+                /// (withheld from the live view until now) and hide only the block itself. If nothing
+                /// validates: `marker_framing_broken` is set only when the tail actually began a marker for
+                /// this response (the catch verified the tag before swallowing the framing-break
+                /// `TypeError`), so it means a genuine but unparsable/truncated block — flush the withheld
+                /// output up to where that marker starts (an earlier lookalike line withheld with it is
+                /// ordinary output that streamed before the failure), hide the truncated block, and report
+                /// a generic failure; otherwise every candidate was ordinary output that finished cleanly,
+                /// so re-echo the whole withheld tail — and still probe for an in-band failure, exactly
+                /// like the no-marker branch below.
+                const marker = parseExceptionMarker(held_back, exception_tag);
+                if (marker !== null) {
+                    if (marker.offset > 0) targetResultEl.updateRaw(held_back.slice(0, marker.offset));
+                    stream_exception = marker.message;
+                } else if (marker_framing_broken) {
+                    const start = exceptionMarkerStart(held_back, exception_tag);
+                    if (start > 0) targetResultEl.updateRaw(held_back.slice(0, start));
+                    stream_exception = "The query failed after the response body had already started, but the error message could not be parsed.";
+                } else {
+                    /// `marker_seen` may have been tripped by a bare `__exception__` DATA line — `XML`
+                    /// writes field text verbatim, so a row value can put the marker text on a line of
+                    /// its own — while the real failure is the format's top-level in-band trailer
+                    /// further down the withheld tail. Without this probe such a failed `FORMAT XML`
+                    /// query would finish in the success state.
+                    if (held_back.length) targetResultEl.updateRaw(held_back);
+                    stream_exception = parseInbandException(reply, format);
+                }
+            } else {
+                /// Flush the final line (a stream need not end with a newline).
+                if (buffer.length) targetResultEl.updateRaw(buffer);
+                /// No transport marker: a JSON output format may still have reported the failure in-band.
+                stream_exception = parseInbandException(reply, format);
+            }
+
+            if (stream_exception !== null) {
+                targetResultEl.renderError(stream_exception);
+                display_error = stream_exception;
+                return { format, exception_tag, reply, display_error, response_ok: false, is_table: false, is_raw: false, is_chart: false, is_image: false, is_error: true };
             }
         }
 
@@ -6046,6 +6486,9 @@ async function postImpl(tab, posted_request_num, query, targetResultEl, abortCon
             if (is_table) {
                 if (tab.id === activeTabId) targetResultEl.transposeIfNeeded();
                 else targetResultEl._pendingTranspose = true;
+                /// Content-only (toggles a class based on row/column counts, no measurement),
+                /// so it runs even for a hidden tab, like the totals/coloring passes above.
+                targetResultEl.expandSingleValueIfNeeded();
             }
         }
 
@@ -6059,15 +6502,22 @@ async function postImpl(tab, posted_request_num, query, targetResultEl, abortCon
         if (posted_request_num != tab.reqNum) { return { cancelled: true }; }
 
         console.log(e);
+        /// A transport failure (`Network error` / `Query was cancelled` / any other thrown error) can
+        /// strike mid-stream, after the table/raw branch already flushed partial output into
+        /// `targetResultEl` — and into `reply`, which still holds the streamed body so far. Keep that
+        /// body as the snapshot payload and carry the synthetic display message in a SEPARATE
+        /// `display_error` field, so a reload / tab switch replays `partial result + error` exactly as
+        /// shown live instead of collapsing to `error only` (see `renderFailedSnapshot`). Overwriting
+        /// `reply` here (as before) dropped the already-rendered prefix from the persisted snapshot.
         if (e instanceof TypeError) {
-            reply = "Network error";
+            display_error = "Network error";
         } else if (e.name === 'AbortError') {
-            reply = "Query was cancelled";
+            display_error = "Query was cancelled";
         } else {
-            reply = e.toString();
+            display_error = e.toString();
         }
-        targetResultEl.renderError(reply);
-        return { format, reply, response_ok: false, is_table: false, is_raw: false, is_chart: false, is_image: false, is_error: true };
+        targetResultEl.renderError(display_error);
+        return { format, exception_tag, reply, display_error, response_ok: false, is_table: false, is_raw: false, is_chart: false, is_image: false, is_error: true };
     }
 }
 
@@ -6076,7 +6526,8 @@ async function postImpl(tab, posted_request_num, query, targetResultEl, abortCon
 /// failure would lose the error entirely and make the tab reopen blank. Keep the essential error
 /// text within the same size budget: the `{"exception":...}` line if the stream carried one — the
 /// rows that streamed before it are what made the reply large and cannot be kept — otherwise a
-/// bounded prefix of the error body. `restoreErrorSnapshot` renders either form on restore.
+/// bounded prefix of the error body. `renderFailedSnapshot` renders either form on restore (the
+/// bounded-prefix form replays as the streamed prefix with the persisted `display_error` beneath).
 function compactFailureSnapshot(reply)
 {
     /// Locate the `{"exception":...}` line without splitting the whole (potentially huge) reply.
@@ -6168,6 +6619,16 @@ async function postSingle(tab, posted_request_num, query, history_query_text, pa
                 query: history_query_text || query,
                 resultQuery: query,
                 format: result.format,
+                /// The per-response `X-ClickHouse-Exception-Tag`: `renderFailedSnapshot` needs it to split
+                /// a transport `__exception__` marker on the same validated block the live path did (see
+                /// `renderFailedSnapshot`), so restore matches live instead of re-parsing the body tag-blind.
+                exception_tag: result.exception_tag,
+                /// The rendered error text — every failure path in `postImpl` sets it (HTTP error,
+                /// mid-stream marker / in-band failure, transport catch) — so the failure still
+                /// restores as this error even when `data` is dropped by the size cap below. For a
+                /// transport failure it is the synthetic message (`Network error` / `Query was
+                /// cancelled` / ...) rendered beneath the replayed prefix. See `renderFailedSnapshot`.
+                display_error: result.display_error,
                 ok: result.response_ok,
                 /// Unlike the success path, never drop a failure to `null`: keep at least a compact
                 /// summary so a reload restores the error instead of reopening the tab blank.
@@ -6448,19 +6909,26 @@ async function postMulti(tab, posted_request_num, parsed, paramValuesSnapshot, e
 
     /// Snapshot the per-statement results so switching tabs / reloading restores the whole
     /// "Run all" output (not just the queries), the same way a single query's result is kept.
-    /// Mirror the single-query 100 KB cap, but on the TOTAL size across all statements: above
-    /// it we store no data (`multi: null`) and the run is query-only (re-running reproduces it).
+    /// Mirror the single-query 100 KB cap, but on the TOTAL size across all statements: above it,
+    /// drop each statement's raw body but KEEP the per-statement metadata (`display_error`
+    /// included), so a failed statement still restores as its error (see `renderFailedSnapshot`)
+    /// instead of the whole run degrading to query-only and blanking on the first tab switch.
     /// Images stream as a blob (their `reply` stays empty) and cannot be re-rendered from text,
     /// so they are stored with `data: null` and restore as empty, exactly like a single image.
     let multi = collected.map((r, i) => ({
         query: parsed[i].query,
         format: r ? r.format : null,
+        /// See the single-query save: the tag lets restore reproduce the live marker split per statement.
+        exception_tag: r ? r.exception_tag : undefined,
+        /// See the single-query save: the rendered error text of a failed statement, so restore can
+        /// show it even when the statement's body is dropped by the size cap below.
+        display_error: r ? r.display_error : undefined,
         ok: r ? !!r.response_ok : false,
         data: (r && !r.is_image) ? r.reply : null,
     }));
     let multi_size = 0;
     for (const s of multi) multi_size += s.data ? s.data.length : 0;
-    if (multi_size > 100000) multi = null;
+    if (multi_size > 100000) for (const s of multi) s.data = null;
 
     /// Save all queries to browser history, using the full editor content captured at launch.
     saveHistory({
@@ -6478,48 +6946,166 @@ async function postMulti(tab, posted_request_num, parsed, paramValuesSnapshot, e
     }, parsed[0].query, tab);
 }
 
-/// Restore an `ok: false` result snapshot into `el`, mirroring how the live streaming path leaves
-/// a failed query (see the mid-stream exception handling in `postImpl`): the rows that streamed
-/// before a `{"exception":...}` line are replayed first and the exception is rendered beneath
-/// them, so reopening or reloading a failed tab keeps its partial result. Falls back to a bare
-/// error when the snapshot produced no rows, or when its payload is not row JSON at all (e.g. a
-/// non-200 error body). Returns true when partial rows were replayed as a table, so the caller
-/// can run its usual table layout passes.
-function restoreErrorSnapshot(el, data)
-{
-    let exception_line = null;
-    const row_lines = [];
-    for (const line of data.split('\n')) {
-        if (line.length === 0) continue;
-        if (line.startsWith(`{"exception":`)) { exception_line = line; break; }
-        row_lines.push(line);
+/// Render a saved failed-query snapshot (`ok: false`) into `el`, mirroring the live mid-stream
+/// failure rendering in `postImpl`. The saved `data` is the full raw reply that arrived before the
+/// query failed: the partial output (table rows or raw bytes) followed by the failure signal —
+/// either a transport-level `__exception__` marker block, or an in-band `{"exception":...}` line
+/// (for a `*WithProgress` stream) / `exception` field (for a single-document JSON/XML format).
+/// The live path deliberately KEEPS that partial output and renders the error beneath it (see the
+/// table branch's `rowCount > 0` handling and the raw branch's line echoing in `postImpl`), so the
+/// restore must replay the same prefix instead of collapsing to `error only` — otherwise a
+/// mid-stream failure that showed `partial result + error` live degrades to `error only` on the
+/// first tab switch or reload. `data` with no parseable failure signal and no distinct persisted
+/// `display_error` is a plain error string (an HTTP-error body, or a legacy entry saved by
+/// `postImpl`'s catch before `display_error` existed — then `format` may even be missing); render
+/// it as the error alone, with no raw echo.
+///
+/// `tag` is the `X-ClickHouse-Exception-Tag` the producing response carried (persisted in the snapshot —
+/// see `saveHistory`). The live path uses it as the discriminator that tells a genuine transport
+/// `__exception__` block from successful output that merely mimics the marker shape, and it drives the
+/// generic "could not be parsed" message when a marker started but no complete block arrived. Restore
+/// MUST use the same discriminator rather than re-parsing the body tag-blind, otherwise a reload / tab
+/// switch diverges from what the live UI showed: a marker-shaped lookalike in the output would be
+/// misread as the failure (wrong split + wrong message), and an unparsable-marker failure would render
+/// its raw bytes as the error text instead of the generic message. `tag` is `undefined` for legacy
+/// snapshots and for failures with no transport marker (the header is only set when the marker is
+/// written); then matching is skipped, exactly as `parseExceptionMarker` does live.
+function renderFailedSnapshot(el, data, format, tag, display_error) {
+    /// The message the live path shows when a transport marker began but no complete, tag-validated
+    /// block could be recovered (broken framing / a truncated stream). Kept byte-identical to `postImpl`
+    /// so restore reproduces it instead of dumping the raw reply (which holds the truncated marker bytes).
+    const MARKER_UNPARSED = "The query failed after the response body had already started, but the error message could not be parsed.";
+
+    /// The body was dropped by the history size cap (`data: null`), or the failure produced no body at
+    /// all: there is no prefix to replay, but every failure path persists its rendered error text in
+    /// `display_error` (see `postImpl`), so the snapshot still restores as that error instead of a
+    /// blank tab. The `MARKER_UNPARSED` fallback is defensive only, for legacy entries saved before
+    /// `display_error` existed (the restore guards skip those without calling here).
+    if (!data) {
+        el.renderError(typeof display_error === 'string' ? display_error : MARKER_UNPARSED);
+        return;
     }
-    if (exception_line === null) {
-        el.renderError(data);
-        return false;
-    }
-    if (row_lines.length > 0) {
-        try {
-            const fragment = document.createDocumentFragment();
-            for (const line of row_lines) {
-                if (!el.update(JSON.parse(line), fragment)) break;
+
+    /// When `data` IS present, the inner branches below recover the message FROM it — validating the
+    /// transport marker against the persisted tag, splitting the raw prefix on the validated block, and
+    /// finalizing the table exactly as the live path did — so the plain `display_error` replay must not
+    /// pre-empt them. This branch handles the failures whose `data` carries no signal:
+    ///   - a transport failure caught in `postImpl`'s outer catch (`Network error` / cancellation / a
+    ///     thrown error) after partial output had already streamed: `data` is that already-rendered
+    ///     prefix (table rows or raw bytes) and the error text lives only in `display_error`. Replay
+    ///     the prefix exactly as the live path left it and render the error beneath it. Unlike the
+    ///     inner branches, the live outer catch does NOT finalize the table (no `renderTotals` /
+    ///     `applyColumnColors` / `transposeIfNeeded`, and no `clear` of an empty table): it simply
+    ///     throws after the streamed rows were flushed — match that exactly;
+    ///   - an HTTP-error response (`!response.ok`) whose body IS the error text: there `postImpl` sets
+    ///     `display_error` equal to the saved `data`, so this branch steps aside on the equality and
+    ///     the fallthrough below renders `data` as the error alone, without first echoing it as output.
+    const has_failure_signal_in_data =
+        exceptionMarkerStart(data, tag) >= 0 || parseInbandException(data, format) !== null;
+    if (typeof display_error === 'string' && !has_failure_signal_in_data && display_error !== data) {
+        if (format === default_format) {
+            let fragment = document.createDocumentFragment();
+            for (const line of data.split('\n')) {
+                if (line.trim().length === 0) continue;
+                let parsed;
+                /// A truncated/garbled tail must not throw out of the whole restore: stop replaying.
+                try { parsed = JSON.parse(line); } catch (e) { break; }
+                /// A non-terminal in-band failure line the signal probe above cannot see (the live run
+                /// aborted with trailing content after it): leave it to `renderError` below — its
+                /// message is `display_error` — rather than replaying it as a row.
+                if (parsed.exception) break;
+                if (!el.update(parsed, fragment)) break;
             }
             el.flushFragment(fragment);
-        } catch (e) {
-            /// The pre-exception lines are not row JSON (a plain-text error body that merely
-            /// contains an exception line): drop the half-replayed content and show the error alone.
+        } else {
+            el.updateRaw(data);
+        }
+        el.renderError(display_error);
+        return;
+    }
+
+    if (format === default_format) {
+        /// Table branch — mirror `postImpl` (rows are `{"row":...}` / `{"meta":...}` / `{"totals":...}`
+        /// / `{"progress":...}` lines): replay them until the failure signal, keep the partial rows,
+        /// then render the error underneath.
+        let fragment = document.createDocumentFragment();
+        let inband_exception = null;
+        let marker_seen = false;
+        const lines = data.split('\n');
+        for (let idx = 0; idx < lines.length; ++idx) {
+            const line = lines[idx];
+            /// The transport marker occupies a whole line and everything from it on is the marker
+            /// block, not rows (see `EXCEPTION_MARKER`); stop replaying and recover the message below.
+            if (line.replace(/\r$/, '') === EXCEPTION_MARKER) { marker_seen = true; break; }
+            if (line.trim().length === 0) continue;
+            let parsed;
+            /// A truncated/garbled tail (e.g. the reply was cut off) should not throw out of the whole
+            /// restore: stop replaying rows and fall back to the recovered message below.
+            try { parsed = JSON.parse(line); } catch (e) { break; }
+            /// The in-band failure line (`http_write_exception_in_output_format`); like the live path,
+            /// treat it as the terminal failure rather than an ordinary row.
+            if (parsed.exception) { inband_exception = parsed.exception; break; }
+            if (!el.update(parsed, fragment)) break;
+        }
+        el.flushFragment(fragment);
+        if (el.rowCount > 0) {
+            el.renderTotals();
+            el.applyColumnColors();
+            el.transposeIfNeeded();
+        } else {
             el.clear();
         }
+        /// Validate the marker against the persisted tag, exactly as the live table branch did. When a
+        /// marker line was present but no complete block validates, live showed the generic message —
+        /// reproduce it here rather than rendering the raw reply (with the truncated marker bytes).
+        const marker = marker_seen ? parseExceptionMarker(data, tag) : null;
+        const message = inband_exception
+            ?? (marker !== null ? marker.message : null)
+            ?? parseInbandException(data, format)
+            ?? (marker_seen ? MARKER_UNPARSED : data);
+        el.renderError(message);
+        return;
     }
-    if (el.rowCount > 0) {
-        el.renderTotals();
-        el.applyColumnColors();
-        el.renderError(JSON.parse(exception_line).exception);
-        return true;
+
+    /// Raw branch. Mirror the live raw path (`postImpl`): echoing stops at the FIRST line equal to the
+    /// marker, but that line may merely look like the marker, so the real split is the first tag-validated
+    /// block at or after it. A failed raw snapshot that carries a marker line either validated a block
+    /// (show its message) or never completed one (broken framing / truncation ⇒ generic message live);
+    /// it can never fall through to the in-band / plain-string cases, which have no marker line.
+    const first_marker_line = exceptionMarkerStart(data, null);   /// tag-blind: any candidate line
+    if (first_marker_line >= 0) {
+        const marker = parseExceptionMarker(data, tag);
+        if (marker !== null) {
+            /// A complete, tag-validated block: echo the raw output preceding it (any lookalike lines
+            /// included, as the live path did), keep the block hidden, then show its message.
+            if (marker.offset > 0) el.updateRaw(data.slice(0, marker.offset));
+            el.renderError(marker.message);
+        } else {
+            /// A marker began but never validated (broken framing / truncation): live echoed the output up
+            /// to the first *tag-compatible* marker start — an earlier lookalike line is ordinary output
+            /// that streamed before the failure — and showed the generic message. Split the same way; only
+            /// when no tag-compatible start exists (the tag line itself was truncated away, or a foreign /
+            /// pre-tag snapshot) fall back conservatively to the first candidate line.
+            const start = exceptionMarkerStart(data, tag);
+            const split = start >= 0 ? start : first_marker_line;
+            if (split > 0) el.updateRaw(data.slice(0, split));
+            el.renderError(MARKER_UNPARSED);
+        }
+        return;
     }
-    el.clear();
-    el.renderError(JSON.parse(exception_line).exception);
-    return false;
+
+    /// In-band `{"exception":...}` line / `exception` field: the live raw branch echoes the whole
+    /// reply (the exception line included) and renders the parsed error beneath it.
+    const inband_message = parseInbandException(data, format);
+    if (inband_message !== null) {
+        el.updateRaw(data);
+        el.renderError(inband_message);
+        return;
+    }
+
+    /// No mid-stream failure signal — the body IS the error text (an HTTP-error response, whose
+    /// `display_error` equals `data`, or a legacy snapshot with none). Render it alone.
+    el.renderError(data);
 }
 
 /// Render one saved multi-query statement snapshot into `el`, mirroring the live per-statement
@@ -6537,14 +7123,16 @@ async function renderSnapshotIntoElement(el, snap, tab, matToken) {
     /// kept as `data: null`) or a statement that never ran - so restore it as blank. A successful
     /// statement with a legitimately empty body (`data === ''`, e.g. a raw-format `SELECT ... WHERE
     /// 0`) is not that case and must still render, so test null here, not falsiness (mirrors the
-    /// single-query guard in `materializeResult`).
-    if (snap.data == null) return true;
+    /// single-query guard in `materializeResult`). A failed statement whose body was dropped by the
+    /// multi-run size cap still renders: every failure persists its rendered error text in
+    /// `display_error` (see `renderFailedSnapshot`), so only failures with neither survive as blank.
+    if (snap.data == null && typeof snap.display_error !== 'string') return true;
     const format = snap.format;
 
     if (!snap.ok) {
-        /// Replay any rows that streamed before a mid-stream exception, as the live path
-        /// leaves them; the replayed table gets the same transpose pass as the success path.
-        if (restoreErrorSnapshot(el, snap.data)) el.transposeIfNeeded();
+        /// Replay any output that streamed before the mid-stream failure, exactly as the live path
+        /// left it, with the error rendered beneath (see `renderFailedSnapshot`).
+        renderFailedSnapshot(el, snap.data, format, snap.exception_tag, snap.display_error);
         return true;
     }
 
@@ -6588,6 +7176,7 @@ async function renderSnapshotIntoElement(el, snap, tab, matToken) {
         if (is_table) el.renderTotals();
         el.applyColumnColors();
         if (is_table) el.transposeIfNeeded();
+        if (is_table) el.expandSingleValueIfNeeded();
     }
     return true;
 }
@@ -6838,13 +7427,12 @@ async function materializeResult(tab) {
         tab.logoVisible = false;
         tab.progressPhase = 'error';
         tab.failed = true;
-        if (result.data) {
-            /// Replay any rows that streamed before a mid-stream exception, as the live path leaves
-            /// them; the replayed table needs the same layout passes as the success restore below.
-            if (restoreErrorSnapshot(el, result.data)) {
-                el.transposeIfNeeded();
-                el._changeTableLayout();
-            }
+        if (result.data || typeof result.display_error === 'string') {
+            /// Replay any output that streamed before the mid-stream failure, exactly as the live
+            /// path left it, with the error rendered beneath (see `renderFailedSnapshot`); replayed
+            /// table rows need the same layout pass as the success restore below.
+            renderFailedSnapshot(el, result.data, format, result.exception_tag, result.display_error);
+            if (el.rowCount > 0) el._changeTableLayout();
         } else {
             /// The failure body was not stored (too large with no exception line to keep, or a
             /// legacy snapshot): show a notice so the tab restores as failed rather than blank.
@@ -6905,6 +7493,7 @@ async function materializeResult(tab) {
         if (is_table) el.renderTotals();
         el.applyColumnColors();
         if (is_table) el.transposeIfNeeded();
+        if (is_table) el.expandSingleValueIfNeeded();
         if (is_table) el._changeTableLayout();
     }
 
@@ -8141,6 +8730,16 @@ function saveHistory(stateData, titleForDoc, tab) {
         url: stateData.url,
         user: stateData.user,
         format: stateData.format,
+        /// The `X-ClickHouse-Exception-Tag` of a failed run, so restoring the snapshot (tab switch,
+        /// reload, Back/Forward) can split a transport `__exception__` marker on the validated block —
+        /// see `renderFailedSnapshot`. Undefined for successful runs and legacy entries; then matching
+        /// is skipped, as before.
+        exception_tag: stateData.exception_tag,
+        /// The rendered error text of a failed run — every failure path in `postImpl` sets it: shown
+        /// by `renderFailedSnapshot` beneath the replayed prefix for a transport failure, and alone
+        /// when the body was dropped by the size cap. Round-trips through browser history /
+        /// `IndexedDB` with the snapshot. Undefined for successful runs and legacy entries.
+        display_error: stateData.display_error,
         ok: stateData.ok,
         data: stateData.data,
         /// Per-statement snapshots for a multi-query ("Run all") result; null for single-query
