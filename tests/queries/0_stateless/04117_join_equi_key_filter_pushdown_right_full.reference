@@ -14,3 +14,8 @@ FULL JOIN USING, equi-key WHERE: result (right-only contributing row preserved)
 1000000000
 FULL JOIN USING, equi-key WHERE: left-only rows still reachable via filter
 1
+FULL JOIN, side-qualified equi-key predicate: unmatched rows preserved
+0	3
+5	0
+FULL JOIN, side-qualified equi-key predicates on both sides: only the matched row survives
+2	Value_2	2	Value_2

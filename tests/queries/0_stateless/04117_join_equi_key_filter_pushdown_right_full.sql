@@ -1,12 +1,10 @@
--- Regression test: equi-key `WHERE` predicates must be pushed as an index
--- condition on the left `MergeTree` input for `RIGHT JOIN`. Previously,
--- `RIGHT`/`FULL JOIN` with a predicate on the `USING` column read every
--- granule of the left side. `INNER`/`LEFT` already optimised correctly.
+-- Equi-key `WHERE` predicates must reach the left `MergeTree` input of a `RIGHT JOIN` as an index
+-- condition. Previously this only happened for `Semi` strictness.
 --
--- For `FULL JOIN` the filter is also pushed, but the post-join output column
--- is wrapped in `firstNonDefault(l.k, r.k)`, which `KeyCondition` cannot
--- currently reduce to `k = c`, so granule pruning does not kick in. The test
--- asserts correctness for `FULL JOIN` and the granule count only for `RIGHT`.
+-- Nothing may be pushed through a `FULL JOIN`: dropping a row from either input only turns its
+-- counterpart into a defaulted unmatched row, so a predicate on that default both admits rows
+-- belonging to neither input and discards rows that should survive. The `FULL JOIN` cases assert
+-- results only, guarding against reintroducing such a push.
 
 SET enable_analyzer = 1;
 SET query_plan_filter_push_down = 1;
@@ -54,3 +52,32 @@ SELECT count() FROM (
 );
 
 DROP TABLE mt;
+
+DROP TABLE IF EXISTS s1;
+DROP TABLE IF EXISTS s2;
+CREATE TABLE s1 (id UInt64) ENGINE = MergeTree ORDER BY id;
+CREATE TABLE s2 (id UInt64) ENGINE = MergeTree ORDER BY id;
+INSERT INTO s1 VALUES (5);
+INSERT INTO s2 VALUES (3);
+
+-- Pushing this would drop the only left row and lose the `(5, 0)` unmatched row it produces.
+SELECT 'FULL JOIN, side-qualified equi-key predicate: unmatched rows preserved';
+SELECT lhs.id, rhs.id FROM s1 AS lhs FULL JOIN s2 AS rhs ON lhs.id = rhs.id WHERE rhs.id != 5 ORDER BY 1, 2;
+
+DROP TABLE s1;
+DROP TABLE s2;
+
+DROP TABLE IF EXISTS u1;
+DROP TABLE IF EXISTS u2;
+CREATE TABLE u1 (id UInt64, value String) ENGINE = MergeTree ORDER BY id;
+CREATE TABLE u2 (id UInt64, value String) ENGINE = MergeTree ORDER BY id;
+INSERT INTO u1 VALUES (1, 'Value_1'), (2, 'Value_2');
+INSERT INTO u2 VALUES (2, 'Value_2'), (3, 'Value_3');
+
+-- Opposite direction: pushing these to both inputs and dropping them from the post-join filter would
+-- let the two defaulted unmatched rows escape.
+SELECT 'FULL JOIN, side-qualified equi-key predicates on both sides: only the matched row survives';
+SELECT * FROM u1 AS lhs FULL JOIN u2 AS rhs ON lhs.id = rhs.id WHERE lhs.id != 0 AND rhs.id != 0 ORDER BY 1, 3;
+
+DROP TABLE u1;
+DROP TABLE u2;

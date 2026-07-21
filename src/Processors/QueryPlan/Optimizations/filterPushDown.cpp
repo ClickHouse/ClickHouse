@@ -371,8 +371,7 @@ struct JoinActionRefPairHash
     }
 };
 
-/// Walk the equi-join predicates of a JoinOperator, invoking `callback(lhs, rhs)` for each
-/// Equals / NullSafeEquals predicate with `lhs` normalised to the left side and `rhs` to the right.
+/// Invokes `callback(lhs, rhs)` per Equals / NullSafeEquals predicate, `lhs` normalised to the left side.
 template <typename Callback>
 static void forEachEquiJoinKey(const JoinOperator & join_operator, Callback && callback)
 {
@@ -486,8 +485,7 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
       * equivalent sets to both sides of JOIN.
       * 2. For LEFT/RIGHT JOIN we can push conditions that use columns from LEFT/RIGHT stream to LEFT/RIGHT JOIN side. We can also push conditions
       * that use columns from LEFT/RIGHT equivalent sets to RIGHT/LEFT JOIN side.
-      * 3. For FULL JOIN we cannot push arbitrary conditions to either side, but conditions that only use columns from equivalent sets can still
-      * be duplicated to both sides; the top-level filter above the JOIN is preserved and cleans up any rows that slip through.
+      * 3. For FULL JOIN nothing can be pushed to either side: dropping a row only converts its counterpart into a defaulted unmatched row.
       *
       * Additional filter push down optimizations:
       * 1. TODO: Support building equivalent sets for more than 2 JOINS. It is possible, but will require more complex analysis step.
@@ -506,16 +504,15 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
     const auto & left_stream_input_header = child->getInputHeaders().front();
     const auto & right_stream_input_header = child->getInputHeaders().back();
 
+    if (table_join_ptr && table_join_ptr->kind() == JoinKind::Full)
+        return 0;
+    if (logical_join && logical_join->getJoinOperator().kind == JoinKind::Full)
+        return 0;
+
     /// PASTE JOIN aligns rows from both sides by position, and pushing filters
     /// to either side may change relative alignment
     if ((table_join_ptr && table_join_ptr->kind() == JoinKind::Paste)
         || (logical_join && logical_join->getJoinOperator().kind == JoinKind::Paste))
-        return 0;
-
-    /// For the legacy JoinStep path we do not yet have equi-key machinery for
-    /// FULL JOIN, so we keep the conservative behaviour of not pushing anything.
-    /// For JoinStepLogical, see the equi-key handling further below.
-    if (table_join_ptr && table_join_ptr->kind() == JoinKind::Full)
         return 0;
 
     std::unordered_map<std::string, ColumnWithTypeAndName> equivalent_left_stream_column_to_right_stream_column;
@@ -617,15 +614,6 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
         right_stream_filter_push_down_input_columns_available = false;
     else if (logical_join && logical_join->getJoinOperator().kind == JoinKind::Right)
         left_stream_filter_push_down_input_columns_available = false;
-    else if (logical_join && logical_join->getJoinOperator().kind == JoinKind::Full)
-    {
-        /// For FULL JOIN both sides may carry unmatched rows that must be preserved,
-        /// so arbitrary filters cannot be pushed to either input. Equi-key conjunctions
-        /// however are safe to duplicate to both inputs (see the equivalent_columns_to_push_down
-        /// branches below) because the top-level WHERE stays in place.
-        left_stream_filter_push_down_input_columns_available = false;
-        right_stream_filter_push_down_input_columns_available = false;
-    }
 
     /** We disable push down to right table in cases:
       * 1. Right side is already filled. Example: JOIN with Dictionary.
@@ -702,13 +690,11 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
             equivalent_right_stream_column_to_left_stream_column[rhs_original_name] = lhs_column;
     }
 
-    /// `buildEquialentSetsForJoinStepLogical` only returns equi-key pairs whose two sides share
-    /// the same type, because those pairs feed a Union-Find equivalence class. For outer joins
-    /// where one side's generic pushdown is forbidden, a pure column-name substitution is
-    /// sufficient even when types differ — `KeyCondition` handles cross-type comparisons against
-    /// the key. Registering all equi-key pairs without the type check here is what enables e.g.
-    /// `UInt8`-vs-`UInt64` `USING` filters to reach the opposite-side `MergeTree` as index
-    /// conditions. Gated on at least one side being restricted so `INNER JOIN` is unaffected.
+    /// `buildEquialentSetsForJoinStepLogical` skips equi-key pairs whose sides have different types,
+    /// because those pairs feed a Union-Find equivalence class. Plain name substitution needs no such
+    /// type equality - `KeyCondition` handles cross-type comparisons against the key - and registering
+    /// the skipped pairs here is what lets e.g. a `UInt8`-vs-`UInt64` `USING` filter reach the opposite
+    /// `MergeTree`. Gated on a restricted side so `INNER JOIN` is unaffected.
     if (logical_join
         && (!left_stream_filter_push_down_input_columns_available
             || !right_stream_filter_push_down_input_columns_available))
@@ -733,16 +719,15 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
             equivalent_columns_to_push_down.push_back(name);
     }
     else if (logical_join
-        && (logical_join->getJoinOperator().kind == JoinKind::Right
-            || logical_join->getJoinOperator().kind == JoinKind::Full)
+        && logical_join->getJoinOperator().kind == JoinKind::Right
         && logical_join->getJoinOperator().strictness != JoinStrictness::Asof)
     {
         if (!logical_join->typeChangingSides().contains(JoinTableSide::Left))
         {
-            /// For RIGHT / FULL JOIN the `USING` output resolves to the right-side internal name,
-            /// so the filter references right-stream equi-key names. Add them to the push-down
-            /// set; `replace_equivalent_columns_in_filter` rewrites them to the left-stream
-            /// column when materialising the left-input filter.
+            /// These names are also pushed to the right input natively, which makes the equivalent copy on
+            /// the left input a pure narrowing: a surviving right row keeps exactly the left partners it
+            /// had, and a dropped one is rejected by the post-join filter either way. Holds for every
+            /// strictness, hence not restricted to Semi.
             for (const auto & [name, _] : equivalent_right_stream_column_to_left_stream_column)
                 equivalent_columns_to_push_down.push_back(name);
         }
@@ -754,13 +739,12 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
             equivalent_columns_to_push_down.push_back(name);
     }
     else if (logical_join
-        && (logical_join->getJoinOperator().kind == JoinKind::Left
-            || logical_join->getJoinOperator().kind == JoinKind::Full)
+        && logical_join->getJoinOperator().kind == JoinKind::Left
         && logical_join->getJoinOperator().strictness != JoinStrictness::Asof)
     {
         if (!logical_join->typeChangingSides().contains(JoinTableSide::Right))
         {
-            /// Symmetric to the RIGHT / FULL case above.
+            /// Symmetric to the RIGHT case above.
             for (const auto & [name, _] : equivalent_left_stream_column_to_right_stream_column)
                 equivalent_columns_to_push_down.push_back(name);
         }
