@@ -41,3 +41,33 @@ FROM (EXPLAIN indexes = 1 SELECT count() FROM t_escape_revert WHERE s = 'nonexis
 SELECT count() FROM t_escape_revert;
 
 DROP TABLE t_escape_revert;
+
+-- Same defect existed in the plain MergeTree path (StorageMergeTree::alter): the structural branch
+-- clones new_metadata before changeSettings and republishes it, reverting the escape fields the same
+-- way. Cover it too.
+DROP TABLE IF EXISTS t_escape_revert_mt;
+
+CREATE TABLE t_escape_revert_mt
+(
+    k UInt64,
+    s String,
+    INDEX `i.dx` s TYPE bloom_filter GRANULARITY 1
+)
+ENGINE = MergeTree
+ORDER BY k
+SETTINGS escape_index_filenames = 0, min_bytes_for_wide_part = 0, add_minmax_index_for_numeric_columns = 0;
+
+ALTER TABLE t_escape_revert_mt
+    ADD COLUMN x UInt8 DEFAULT 0, MODIFY COMMENT 'c', MODIFY SETTING escape_index_filenames = 1;
+
+INSERT INTO t_escape_revert_mt SELECT number, toString(number), 0 FROM numbers(1000);
+
+DETACH TABLE t_escape_revert_mt;
+ATTACH TABLE t_escape_revert_mt;
+
+SELECT countIf(explain LIKE '%Parts: 0/1%')
+FROM (EXPLAIN indexes = 1 SELECT count() FROM t_escape_revert_mt WHERE s = 'nonexistent');
+
+SELECT count() FROM t_escape_revert_mt;
+
+DROP TABLE t_escape_revert_mt;

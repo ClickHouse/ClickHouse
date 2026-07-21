@@ -489,6 +489,17 @@ void StorageMergeTree::alter(
     {
         changeSettings(new_metadata.settings_changes, table_lock_holder);
 
+        /// changeSettings is the sole writer of the setting-derived escape fields and has already
+        /// committed them; carry them into new_metadata (commands.apply never sets them) so the
+        /// republish below does not revert the index filename policy. Mirrors
+        /// StorageReplicatedMergeTree::alter.
+        {
+            auto committed_metadata = getInMemoryMetadataPtr(local_context, /*bypass_metadata_cache=*/true);
+            new_metadata.escape_index_filenames = committed_metadata->escape_index_filenames;
+            for (auto & index : new_metadata.secondary_indices)
+                index.escape_filenames = committed_metadata->escape_index_filenames;
+        }
+
         if (statistics_changed)
             setInMemoryMetadata(new_metadata);
 
@@ -549,6 +560,18 @@ void StorageMergeTree::alter(
             try
             {
                 changeSettings(new_metadata.settings_changes, table_lock_holder);
+
+                /// changeSettings is the sole writer of the setting-derived escape fields and has
+                /// already committed them; carry them into new_metadata (commands.apply never sets
+                /// them) so the setProperties/alterTable republish below does not revert the index
+                /// filename policy. Mirrors StorageReplicatedMergeTree::alter.
+                {
+                    auto committed_metadata = getInMemoryMetadataPtr(local_context, /*bypass_metadata_cache=*/true);
+                    new_metadata.escape_index_filenames = committed_metadata->escape_index_filenames;
+                    for (auto & index : new_metadata.secondary_indices)
+                        index.escape_filenames = committed_metadata->escape_index_filenames;
+                }
+
                 checkTTLExpressions(new_metadata, old_metadata);
 
                 /// Validate setting-dependent metadata against the just-applied settings
