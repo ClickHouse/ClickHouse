@@ -96,12 +96,22 @@ void ReplicatedMergeTreeGeoReplicationController::stop()
 
 void ReplicatedMergeTreeGeoReplicationController::start()
 {
-    /// Clear `shutdown` before scheduling: otherwise a task scheduled below can run before we reset the flag
-    /// and observe a stale `shutdown == true`, returning early without ever creating the region node or
-    /// entering leader election.
+    if (!task)
+        return;
+
+    /// Clear `shutdown` before running: otherwise the controller pass can observe a stale `shutdown == true`,
+    /// returning early without ever creating the region node or entering leader election.
     shutdown = false;
-    if (task)
-        task->activateAndSchedule();
+    task->activate();
+
+    /// Run the first controller pass synchronously, before the caller activates the replication queue. Peers
+    /// classify same-region fetch sources from `/replicas/<name>/region`; if that node were published only
+    /// asynchronously after the queue starts, a replica recovering from a backlog could be misclassified as
+    /// out-of-region, exhaust `geo_replication_control_leader_wait_timeout`, and fall back to a cross-region
+    /// fetch purely because region publication lagged behind queue startup. Running the pass here publishes the
+    /// region node before the queue workers begin. Subsequent passes (leader re-election, retry after a transient
+    /// ZooKeeper error) run on the schedule pool via `task`.
+    threadFunction();
 }
 
 void ReplicatedMergeTreeGeoReplicationController::threadFunction()

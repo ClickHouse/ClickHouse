@@ -170,6 +170,12 @@ bool ReplicatedMergeTreeRestartingThread::runImpl()
     setNotReadonly();
 
 
+    /// Publish this replica's region membership (and enter leader election) before starting queue processing.
+    /// Queue workers classify same-region fetch sources from `/replicas/<name>/region`, so the region node must
+    /// exist before they can execute fetches, otherwise a recovering replica could fetch cross-region purely
+    /// because region publication lagged behind queue startup.
+    storage.geo_replication_controller.start();
+
     /// Start queue processing
     storage.background_operations_assignee.start();
     storage.background_streaming_assignee.start();
@@ -179,7 +185,6 @@ bool ReplicatedMergeTreeRestartingThread::runImpl()
     storage.merge_selecting_task->activateAndSchedule();
     storage.cleanup_thread.start();
     storage.part_check_thread.start();
-    storage.geo_replication_controller.start();
 
     storage.deduplication_hashes_cache.start();
 

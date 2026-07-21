@@ -3038,6 +3038,11 @@ bool MergeTreeSettings::isReadonlySetting(const String & name)
         || name == "table_disk"
         || name == "allow_tuple_element_aggregation"
         || name == "share_nested_offsets"
+        /// The geo replication controller snapshots the region once in its constructor and creates its background
+        /// task there. Applying `MODIFY SETTING geo_replication_control_region` live would leave the controller in
+        /// its old state (or, when enabling from empty, with no task at all) until the next restart, so the region
+        /// is only allowed to be chosen at table creation time.
+        || name == "geo_replication_control_region"
     ;
 }
 

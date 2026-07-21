@@ -247,6 +247,68 @@ def test_merged_cannot_fetch_across_regions(start_cluster):
             node.query("DROP TABLE IF EXISTS us_table SYNC")
 
 
+def test_region_setting_is_readonly_after_creation(start_cluster):
+    try:
+        apac1.query(
+            "CREATE TABLE us_table(key UInt64, data String) ENGINE = ReplicatedMergeTree('/clickhouse/tables/us_table', '0') ORDER BY tuple() PARTITION BY key"
+        )
+
+        # The geo controller snapshots the region once in its constructor and creates its background task there,
+        # so changing the region on a live table is rejected instead of silently leaving the controller in its
+        # old state until the next restart.
+        assert "READONLY_SETTING" in apac1.query_and_get_error(
+            "ALTER TABLE us_table MODIFY SETTING geo_replication_control_region = 'US'"
+        )
+
+        # The other geo settings are read live at each fetch / election, so they remain alterable.
+        apac1.query(
+            "ALTER TABLE us_table MODIFY SETTING geo_replication_control_leader_wait = 7"
+        )
+        assert (
+            "7"
+            in apac1.query(
+                "SELECT value FROM system.merge_tree_settings WHERE name = 'geo_replication_control_leader_wait'"
+            )
+        )
+
+    finally:
+        apac1.query("DROP TABLE IF EXISTS us_table SYNC")
+
+
+def test_region_published_on_restart(start_cluster):
+    try:
+        for i, node in enumerate([apac1, apac2, us3]):  # apac1 will become leader of APAC
+            node.query(
+                f"CREATE TABLE us_table(key UInt64, data String) ENGINE = ReplicatedMergeTree('/clickhouse/tables/us_table', '{i}') ORDER BY tuple() PARTITION BY key"
+                + " SETTINGS geo_replication_control_leader_wait = 1, geo_replication_control_leader_wait_timeout = 60"
+            )
+            time.sleep(1)
+
+        # Restart a follower. Its region membership node `/replicas/<name>/region` is published synchronously as
+        # part of startup, before the replication queue is activated, so peers never misclassify a recovering
+        # replica as out-of-region and it never falls back to a cross-region fetch during recovery.
+        cluster.restart_instance(apac2)
+
+        timeout = 60.0
+        now = time.time()
+        while 1:
+            region = apac2.query(
+                "SELECT value FROM system.zookeeper WHERE path = '/clickhouse/tables/us_table/replicas/1' AND name = 'region'"
+            ).strip()
+            if region == "APAC":
+                break
+            assert (
+                time.time() - now < timeout
+            ), "apac2 did not publish its region node after restart, got '{}'".format(
+                region
+            )
+            time.sleep(0.5)
+
+    finally:
+        for node in [apac1, apac2, us3]:
+            node.query("DROP TABLE IF EXISTS us_table SYNC")
+
+
 def test_only_fetch_covered_part_from_same_region(start_cluster):
     try:
         for i, node in enumerate(
