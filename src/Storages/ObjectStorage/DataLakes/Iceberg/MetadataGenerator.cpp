@@ -48,59 +48,6 @@ Poco::JSON::Object::Ptr deepCopy(Poco::JSON::Object::Ptr obj)
     return result.extract<Poco::JSON::Object::Ptr>();
 }
 
-/// Read a numeric `total-*` field from the parent snapshot's summary, returning std::nullopt when absent or null.
-std::optional<Int64> readParentTotal(Poco::JSON::Object::Ptr parent_snapshot, const char * field_name)
-{
-    if (!parent_snapshot || !parent_snapshot->has(Iceberg::f_summary))
-        return std::nullopt;
-    auto parent_summary = parent_snapshot->getObject(Iceberg::f_summary);
-    if (!parent_summary || !parent_summary->has(field_name) || parent_summary->isNull(field_name))
-        return std::nullopt;
-    return parse<Int64>(parent_summary->getValue<String>(field_name));
-}
-
-/// Write the standard `total-*` counters into `summary` by adding each per-field delta to the corresponding parent value.
-void setSnapshotTotals(
-    Poco::JSON::Object::Ptr summary,
-    Poco::JSON::Object::Ptr parent_snapshot,
-    Int64 added_records,
-    Int64 added_files_size,
-    Int64 added_data_files,
-    Int64 added_delete_files,
-    Int64 added_position_deletes,
-    Int64 added_equality_deletes)
-{
-    /// Data totals (records, files size, data files) describe the whole table state.
-    auto set_data_total = [&](const char * field_name, Int64 added)
-    {
-        /// No parent snapshot: this is the base snapshot, so its total is exactly what it adds.
-        if (!parent_snapshot)
-        {
-            summary->set(field_name, std::to_string(added));
-            return;
-        }
-        /// The parent omits this data total, so the new table-wide total cannot be derived: fail the rewrite instead of corrupting the summary.
-        auto parent_value = readParentTotal(parent_snapshot, field_name);
-        if (!parent_value.has_value())
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "Cannot derive Iceberg snapshot total '{}': the parent snapshot's summary omits it",
-                field_name);
-        summary->set(field_name, std::to_string(*parent_value + added));
-    };
-    /// Delete-family totals: a missing parent counter means "none", so treating it as 0 is safe.
-    auto set_delete_total = [&](const char * field_name, Int64 added)
-    {
-        summary->set(field_name, std::to_string(readParentTotal(parent_snapshot, field_name).value_or(0) + added));
-    };
-    set_data_total(Iceberg::f_total_records, added_records);
-    set_data_total(Iceberg::f_total_files_size, added_files_size);
-    set_data_total(Iceberg::f_total_data_files, added_data_files);
-    set_delete_total(Iceberg::f_total_delete_files, added_delete_files);
-    set_delete_total(Iceberg::f_total_position_deletes, added_position_deletes);
-    set_delete_total(Iceberg::f_total_equality_deletes, added_equality_deletes);
-}
-
 bool checkValidSchemaEvolution(Poco::Dynamic::Var old_type, Poco::Dynamic::Var new_type)
 {
     if (old_type.isString() && new_type.isString() && old_type.extract<String>() == new_type.extract<String>())
@@ -348,26 +295,14 @@ MetadataGenerator::NextMetadataResult MetadataGenerator::generateManifestOnlySna
     new_snapshot->set(Iceberg::f_timestamp_ms, timestamp);
     metadata_object->set(Iceberg::f_last_updated_ms, timestamp);
 
-    auto parent_snapshot = getParentSnapshot(parent_snapshot_id);
+    const auto snapshot_summary = generateNextSnaphotSummary(
+        Iceberg::SnapshotSummaryUpdateReplace{},
+        parent_snapshot_id,
+        metadata_file_path.serialize(),
+        format_version
+    );
 
-    /// Manifest-only rewrite: all added-* deltas are zero so `total-*` counters are inherited unchanged from the parent.
-    Poco::JSON::Object::Ptr summary = new Poco::JSON::Object;
-    summary->set(Iceberg::f_operation, Iceberg::f_replace);
-    summary->set(Iceberg::f_added_data_files, "0");
-    summary->set(Iceberg::f_added_records, "0");
-    summary->set(Iceberg::f_added_files_size, "0");
-    summary->set(Iceberg::f_changed_partition_count, "0");
-
-    setSnapshotTotals(
-        summary,
-        parent_snapshot,
-        /*added_records=*/0,
-        /*added_files_size=*/0,
-        /*added_data_files=*/0,
-        /*added_delete_files=*/0,
-        /*added_position_deletes=*/0,
-        /*added_equality_deletes=*/0);
-    new_snapshot->set(Iceberg::f_summary, summary);
+    new_snapshot->set(Iceberg::f_summary, snapshot_summary.toJSON());
 
     new_snapshot->set(Iceberg::f_schema_id, metadata_object->getValue<Int32>(Iceberg::f_current_schema_id));
     new_snapshot->set(Iceberg::f_manifest_list, manifest_list_path.serialize());
