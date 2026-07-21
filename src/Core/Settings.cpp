@@ -3733,7 +3733,7 @@ Maximum number of elements in pre DISTINCT that are stored as is in a set, when 
 Size in bytes of a bloom filter used as DISTINCT filter.
 )", 0) \
     DECLARE(Double, distinct_pass_ratio_threshold_for_disabling_bloom_filter, 0.7, R"(
-If ratio of passed rows to checked rows is greater than this threshold the DISTINCT is considered as poorly performing and is disabled to reduce the overhead.
+If the ratio of passed rows to checked rows in pre DISTINCT falls below this threshold, the data is considered duplicate-heavy: most rows end up in the hash set anyway, so the bloom filter is pure overhead and is disabled.
 )", 0) \
     DECLARE(Double, distinct_bloom_filter_max_ratio_of_set_bits, 0.7, R"(
 If the number of set bits in a DISTINCT bloom filter exceeds this ratio the filter is completely disabled to reduce the overhead.

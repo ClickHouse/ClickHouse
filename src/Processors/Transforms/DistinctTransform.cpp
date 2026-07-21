@@ -93,7 +93,9 @@ DistinctTransform::DistinctTransform(
     if (is_pre_distinct_)
     {
         pool = nullptr;
-        try_init_bf = !((limit_hint_ && limit_hint_ < 1000000) || set_limit_for_enabling_bloom_filter_ == 0);
+        /// With a LIMIT below the activation threshold reading stops before the set can ever
+        /// grow large enough for the bloom filter to be initialized, so don't even try.
+        try_init_bf = !((limit_hint_ && limit_hint_ < set_limit_for_enabling_bloom_filter_) || set_limit_for_enabling_bloom_filter_ == 0);
     }
     else
     {
@@ -496,7 +498,6 @@ void DistinctTransform::transform(Chunk & chunk)
     auto check_only = (old_set_size > set_limit_for_enabling_bloom_filter * 2) && set_limit_for_enabling_bloom_filter > 0;
     auto * lc_mask_ptr = lc_mask ? &*lc_mask : nullptr;
     constexpr size_t parallel_threshold = 1000000;
-    auto passthrough = false;
 
     IColumn::Filter filter(num_rows);
 
@@ -524,10 +525,7 @@ void DistinctTransform::transform(Chunk & chunk)
             else if (!is_pre_distinct) \
                 build(); \
             else if (check_only) \
-                if (pool) \
-                    checkSetFilter(set, column_ptrs, filter, num_rows, data, total_passed_bf); \
-                else \
-                    passthrough = true; \
+                checkSetFilter(set, column_ptrs, filter, num_rows, data, total_passed_bf); \
             else if (use_bf) \
                 buildCombinedFilter(set, column_ptrs, filter, num_rows, data, total_passed_bf); \
             else \
@@ -545,9 +543,6 @@ void DistinctTransform::transform(Chunk & chunk)
 
     size_t rows_passed = ((new_set_size - old_set_size) + (new_bf_size - old_bf_size));
 
-    if (passthrough)
-        rows_passed = num_rows;
-
     /// Just go to the next chunk if there isn't any new record in the current one.
     if (!rows_passed)
         return;
@@ -563,6 +558,10 @@ void DistinctTransform::transform(Chunk & chunk)
         for (auto & column : columns)
             column = column->filter(filter, rows_passed);
 
+    /// The bloom filter pays off only on high-cardinality data, where most rows are new and can be
+    /// absorbed by the filter instead of the hash set. When the pass ratio drops below the threshold
+    /// the data is duplicate-heavy: most rows end up in the hash set anyway, so the extra bloom
+    /// filter lookup is pure overhead - disable it (permanently) and fall back to the plain set.
     use_bf = use_bf && (static_cast<Float64>(rows_passed) > (pass_ratio_threshold_for_disabling_bloom_filter * static_cast<Float64>(num_rows)));
 
     chunk.setColumns(std::move(columns), rows_passed);
