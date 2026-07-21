@@ -351,67 +351,74 @@ In total the index has 1083 entries for our table with 8.87 million rows and 108
 </Note>
 
 <Accordion title="Inspecting the content of the primary index">
-    <p>
 
-On a self-managed ClickHouse cluster we can use the <a href="/reference/functions/table-functions/file" target="_blank">file table function</a> for inspecting the content of the primary index of our example table.
+On a self-managed ClickHouse cluster we can use the [file table function](/reference/functions/table-functions/file) for inspecting the content of the primary index of our example table.
 
-For that we first need to copy the primary index file into the <a href="/reference/settings/server-settings/settings#user_files_path" target="_blank">user_files_path</a> of a node from the running cluster:
-<ul>
-<li>Step 1: Get part-path that contains the primary index file</li>
-`
+For that we first need to copy the primary index file into the [user_files_path](/reference/settings/server-settings/settings#user_files_path) of a node from the running cluster:
+
+**Step 1: Get part-path that contains the primary index file**
+
+```sql
 SELECT path FROM system.parts WHERE table = 'hits_UserID_URL' AND active = 1
-`
+```
 
 returns `/Users/tomschreiber/Clickhouse/store/85f/85f4ee68-6e28-4f08-98b1-7d8affa1d88c/all_1_9_4` on the test machine.
 
-<li>Step 2: Get user_files_path</li>
-The <a href="https://github.com/ClickHouse/ClickHouse/blob/22.12/programs/server/config.xml#L505" target="_blank">default user_files_path</a> on Linux is
-`/var/lib/clickhouse/user_files/`
+**Step 2: Get user_files_path**
+
+The [default user_files_path](https://github.com/ClickHouse/ClickHouse/blob/22.12/programs/server/config.xml#L505) on Linux is `/var/lib/clickhouse/user_files/`
 
 and on Linux you can check if it got changed: `$ grep user_files_path /etc/clickhouse-server/config.xml`
 
 On the test machine the path is `/Users/tomschreiber/Clickhouse/user_files/`
 
-<li>Step 3: Copy the primary index file into the user_files_path</li>
+**Step 3: Copy the primary index file into the user_files_path**
 
-`cp /Users/tomschreiber/Clickhouse/store/85f/85f4ee68-6e28-4f08-98b1-7d8affa1d88c/all_1_9_4/primary.idx /Users/tomschreiber/Clickhouse/user_files/primary-hits_UserID_URL.idx`
+```bash
+cp /Users/tomschreiber/Clickhouse/store/85f/85f4ee68-6e28-4f08-98b1-7d8affa1d88c/all_1_9_4/primary.idx /Users/tomschreiber/Clickhouse/user_files/primary-hits_UserID_URL.idx
+```
 
-</ul>
-
-<br/>
 Now we can inspect the content of the primary index via SQL:
-<ul>
-<li>Get amount of entries</li>
-`
-SELECT count( )<br/>FROM file('primary-hits_UserID_URL.idx', 'RowBinary', 'UserID UInt32, URL String');
-`
+
+**Get amount of entries**
+
+```sql
+SELECT count()
+FROM file('primary-hits_UserID_URL.idx', 'RowBinary', 'UserID UInt32, URL String');
+```
+
 returns `1083`
 
-<li>Get first two index marks</li>
-`
-SELECT UserID, URL<br/>FROM file('primary-hits_UserID_URL.idx', 'RowBinary', 'UserID UInt32, URL String')<br/>LIMIT 0, 2;
-`
+**Get first two index marks**
+
+```sql
+SELECT UserID, URL
+FROM file('primary-hits_UserID_URL.idx', 'RowBinary', 'UserID UInt32, URL String')
+LIMIT 0, 2;
+```
 
 returns
 
-`
-240923, http://showtopics.html%3...<br/>
+```response
+240923, http://showtopics.html%3...
 4073710, http://mk.ru&pos=3_0
-`
+```
 
-<li>Get last index mark</li>
-`
-SELECT UserID, URL FROM file('primary-hits_UserID_URL.idx', 'RowBinary', 'UserID UInt32, URL String')<br/>LIMIT 1082, 1;
-`
+**Get last index mark**
+
+```sql
+SELECT UserID, URL FROM file('primary-hits_UserID_URL.idx', 'RowBinary', 'UserID UInt32, URL String')
+LIMIT 1082, 1;
+```
+
 returns
-`
+
+```response
 4292714039 │ http://sosyal-mansetleri...
-`
-</ul>
-<br/>
+```
+
 This matches exactly our diagram of the primary index content for our example table:
 
-</p>
 </Accordion>
 
 The primary key entries are called index marks because each index entry is marking the start of a specific data range. Specifically for the example table:
