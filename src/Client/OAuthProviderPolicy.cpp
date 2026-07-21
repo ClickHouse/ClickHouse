@@ -3,6 +3,7 @@
 
 #if USE_JWT_CPP && USE_SSL
 
+#include <Client/OAuthFlowRunner.h>
 #include <Common/Exception.h>
 
 #include <Poco/JSON/Object.h>
@@ -12,7 +13,6 @@
 #include <Poco/Net/HTTPResponse.h>
 #include <Poco/Net/HTTPSClientSession.h>
 #include <Poco/Net/SSLManager.h>
-#include <Poco/StreamCopier.h>
 #include <Poco/Timespan.h>
 #include <Poco/URI.h>
 
@@ -27,8 +27,6 @@ extern const int AUTHENTICATION_FAILED;
 namespace
 {
 
-constexpr int HTTP_TIMEOUT_SECONDS = 30;
-
 std::string fetchDeviceEndpointFromIssuer(const std::string & issuer)
 {
     const std::string discovery_url = issuer + "/.well-known/openid-configuration";
@@ -38,24 +36,25 @@ std::string fetchDeviceEndpointFromIssuer(const std::string & issuer)
     Poco::Net::HTTPResponse response;
     std::string body;
 
+    std::unique_ptr<Poco::Net::HTTPClientSession> session;
     if (disc_uri.getScheme() == "https")
     {
         Poco::Net::Context::Ptr ctx = Poco::Net::SSLManager::instance().defaultClientContext();
-        Poco::Net::HTTPSClientSession session(disc_uri.getHost(), disc_uri.getPort(), ctx);
-        session.setTimeout(Poco::Timespan(HTTP_TIMEOUT_SECONDS, 0));
-        session.sendRequest(request);
-        auto & stream = session.receiveResponse(response);
-        Poco::StreamCopier::copyToString(stream, body);
+        session = std::make_unique<Poco::Net::HTTPSClientSession>(disc_uri.getHost(), disc_uri.getPort(), ctx);
     }
     else
     {
-        Poco::Net::HTTPClientSession session(disc_uri.getHost(), disc_uri.getPort());
-        session.setTimeout(Poco::Timespan(HTTP_TIMEOUT_SECONDS, 0));
-        session.sendRequest(request);
-        auto & stream = session.receiveResponse(response);
-        Poco::StreamCopier::copyToString(stream, body);
+        session = std::make_unique<Poco::Net::HTTPClientSession>(disc_uri.getHost(), disc_uri.getPort());
     }
 
+    session->setTimeout(Poco::Timespan(OAUTH_HTTP_TIMEOUT_SECONDS, 0));
+    session->sendRequest(request);
+    auto & stream = session->receiveResponse(response);
+
+    /// Check the HTTP status (available from the response headers) before
+    /// reading the body, so a non-2xx response yields the actionable
+    /// status-based diagnostic rather than the generic size-limit error when
+    /// the error body happens to exceed OAUTH_MAX_RESPONSE_BYTES.
     if (response.getStatus() != Poco::Net::HTTPResponse::HTTP_OK)
         throw Exception(
             ErrorCodes::AUTHENTICATION_FAILED,
@@ -64,9 +63,24 @@ std::string fetchDeviceEndpointFromIssuer(const std::string & issuer)
             static_cast<int>(response.getStatus()),
             response.getReason());
 
-    Poco::JSON::Parser parser;
-    auto result = parser.parse(body);
-    const auto & obj = result.extract<Poco::JSON::Object::Ptr>();
+    copyStreamWithLimit(stream, body, OAUTH_MAX_RESPONSE_BYTES);
+
+    Poco::JSON::Object::Ptr obj;
+    try
+    {
+        Poco::JSON::Parser parser;
+        obj = parser.parse(body).extract<Poco::JSON::Object::Ptr>();
+    }
+    catch (const Poco::Exception &)
+    {
+        obj = nullptr;
+    }
+
+    if (!obj)
+        throw Exception(
+            ErrorCodes::AUTHENTICATION_FAILED,
+            "OIDC discovery document at '{}' is not a valid JSON object",
+            discovery_url);
 
     if (!obj->has("device_authorization_endpoint"))
         throw Exception(
@@ -74,7 +88,20 @@ std::string fetchDeviceEndpointFromIssuer(const std::string & issuer)
             "OIDC discovery document at '{}' does not contain device_authorization_endpoint",
             discovery_url);
 
-    return obj->getValue<std::string>("device_authorization_endpoint");
+    /// The key can be present but not a string (e.g. null or a number), in
+    /// which case getValue throws a raw Poco exception; convert it to the same
+    /// AUTHENTICATION_FAILED diagnostic used for every other malformed case.
+    try
+    {
+        return obj->getValue<std::string>("device_authorization_endpoint");
+    }
+    catch (const Poco::Exception &)
+    {
+        throw Exception(
+            ErrorCodes::AUTHENTICATION_FAILED,
+            "OIDC discovery document at '{}' has a non-string device_authorization_endpoint",
+            discovery_url);
+    }
 }
 
 std::string inferIssuerFromTokenUri(const std::string & token_uri)

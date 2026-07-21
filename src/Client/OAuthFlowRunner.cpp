@@ -3,6 +3,7 @@
 
 #if USE_JWT_CPP && USE_SSL
 
+#include <Client/OAuthLoopbackServer.h>
 #include <Client/OAuthProviderPolicy.h>
 
 #include <Common/Base64.h>
@@ -31,9 +32,11 @@
 #include <openssl/rand.h>
 
 #include <algorithm>
+#include <cerrno>
 #include <chrono>
 #include <condition_variable>
 #include <iostream>
+#include <memory>
 #include <mutex>
 #include <sstream>
 #include <thread>
@@ -41,6 +44,7 @@
 #if defined(__APPLE__) || defined(__linux__)
 #    include <spawn.h>
 #    include <sys/wait.h>
+#    include <unistd.h>
 #endif
 
 namespace DB
@@ -53,15 +57,6 @@ extern const int AUTHENTICATION_FAILED;
 
 namespace
 {
-
-constexpr int HTTP_TIMEOUT_SECONDS = 30;
-
-/// Hard cap on the size of an OAuth2 token / device-authorization response
-/// body. Real responses are a few hundred bytes; we accept up to 1 MiB so a
-/// hostile or compromised endpoint cannot stream gigabytes into a std::string
-/// (memory-exhaustion DoS of clickhouse-client). Anything larger is treated
-/// as a protocol error.
-constexpr size_t OAUTH_MAX_RESPONSE_BYTES = 1 * 1024 * 1024;
 
 /// Bounds for RFC 8628 device-flow timing values. The client treats the device
 /// authorization endpoint as untrusted: a hostile or misconfigured server must
@@ -112,29 +107,6 @@ int extractDeviceFlowInt(const Poco::JSON::Object::Ptr & resp, const std::string
     }
 }
 
-/// Read up to max_bytes from `in` into `out`. Throws AUTHENTICATION_FAILED if
-/// the stream contains more than max_bytes. Used to bound response sizes from
-/// untrusted OAuth endpoints.
-void copyStreamWithLimit(std::istream & in, std::string & out, size_t max_bytes)
-{
-    constexpr size_t buf_size = 8192;
-    char buffer[buf_size];
-    out.clear();
-    while (in)
-    {
-        in.read(buffer, static_cast<std::streamsize>(buf_size));
-        const auto got = static_cast<size_t>(in.gcount());
-        if (got == 0)
-            break;
-        if (out.size() + got > max_bytes)
-            throw Exception(
-                ErrorCodes::AUTHENTICATION_FAILED,
-                "OAuth2 endpoint response exceeds size limit of {} bytes",
-                max_bytes);
-        out.append(buffer, got);
-    }
-}
-
 std::string htmlEscape(const std::string & s)
 {
     std::string out;
@@ -178,8 +150,24 @@ PKCEPair generatePKCE()
 
 void openBrowser(const std::string & url)
 {
-    std::cerr << "Opening browser for authentication.\n"
-              << "If the browser does not open, visit:\n  " << url << "\n";
+    std::cerr << "Opening browser for authentication.\n";
+
+    /// The authorization URL carries the CSRF `state` and PKCE `code_challenge`.
+    /// It is written to stderr as a manual fallback in two cases: whenever a
+    /// browser could not be launched (the user has no other way to continue),
+    /// and, on the success path, only when stderr is an interactive terminal —
+    /// the user's own screen, where they may still need the URL if the browser
+    /// opened somewhere they cannot see. When stderr is redirected or piped (a
+    /// CI job, a captured log) the URL is kept off the success path so those
+    /// secrets do not land in shared output. On every launch the URL also
+    /// reaches the browser via argv; that exposure is documented in
+    /// `runOAuthAuthCodeFlow`.
+    auto print_manual_fallback = [&]
+    {
+        std::cerr << "If a browser did not open, visit this URL to continue:\n  " << url << "\n";
+    };
+
+    bool launched = false;
 
 #if defined(__APPLE__) || defined(__linux__)
     const char * cmd =
@@ -195,44 +183,44 @@ void openBrowser(const std::string & url)
     /// xdg-open is not installed on a headless host). A zero return followed
     /// by a nonzero waitpid exit status means the helper ran but failed to
     /// launch a browser (xdg-open exits 3 when no handler is registered).
-    /// Without the diagnostic below, the caller would silently block in the
-    /// 120s callback wait, which is the L2 hazard.
+    /// Either way the caller would otherwise silently block in the 120s
+    /// callback wait, which is the L2 hazard.
     if (posix_spawnp(&pid, cmd, nullptr, nullptr, const_cast<char * const *>(argv), nullptr) != 0)
     {
-        std::cerr << "Unable to launch '" << cmd << "'; please copy the URL above into a browser manually.\n";
-        return;
+        std::cerr << "Unable to launch '" << cmd << "'.\n";
     }
-    int status = 0;
-    if (waitpid(pid, &status, 0) < 0 || !WIFEXITED(status) || WEXITSTATUS(status) != 0)
-        std::cerr << "Unable to launch a browser via '" << cmd
-                  << "'; please copy the URL above into a browser manually.\n";
+    else
+    {
+        int status = 0;
+        pid_t waited;
+        /// Retry across EINTR so a stray signal (e.g. SIGWINCH without
+        /// SA_RESTART) is not misread as a launch failure — which would both
+        /// print the secret URL and leave the child unreaped as a zombie.
+        do
+        {
+            waited = waitpid(pid, &status, 0);
+        } while (waited < 0 && errno == EINTR);
+
+        if (waited < 0 || !WIFEXITED(status) || WEXITSTATUS(status) != 0)
+            std::cerr << "Unable to launch a browser via '" << cmd << "'.\n";
+        else
+            launched = true;
+    }
+
+    const bool stderr_is_tty = isatty(STDERR_FILENO) != 0;
 #else
-    std::cerr << "Automatic browser launch is not supported on this platform; "
-                 "please copy the URL above into a browser manually.\n";
+    std::cerr << "Automatic browser launch is not supported on this platform.\n";
+    const bool stderr_is_tty = false;
 #endif
+
+    if (!launched || stderr_is_tty)
+        print_manual_fallback();
 }
-
-struct AuthCodeState
-{
-    std::mutex mtx;
-    std::condition_variable cv;
-    std::string code;
-    std::string error;
-    std::string received_state;
-    bool done = false;
-
-    /// Pre-loaded before the server starts so that the loopback server can
-    /// serve the auth URL via a 302 redirect on /start. The browser helper is
-    /// then launched with only the loopback URL on its argv, keeping the CSRF
-    /// state and PKCE challenge out of /proc/<pid>/cmdline of the helper.
-    /// Read-only after server.start(); never mutated by the handler.
-    std::string auth_url;
-};
 
 class AuthCodeHandler : public Poco::Net::HTTPRequestHandler
 {
 public:
-    explicit AuthCodeHandler(AuthCodeState & state_) : state(state_) { }
+    explicit AuthCodeHandler(OAuthCallbackState & state_) : state(state_) { }
 
     void handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response) override
     {
@@ -242,11 +230,9 @@ public:
         /// at the registered redirect URI, and the OAuth2 redirect is always a
         /// GET. Any other method or path is either a stray request from the
         /// browser (e.g. /favicon.ico) or a local attacker probing the
-        /// ephemeral port; in both cases we must respond with an error and
-        /// must not unblock the main thread, otherwise the legitimate IdP
-        /// redirect can be pre-empted (causing either a DoS of the flow or,
-        /// if the attacker has obtained the CSRF state via /proc/<pid>/cmdline
-        /// of the spawned browser helper, a code-injection race).
+        /// ephemeral port. The loopback server exposes no endpoint other than
+        /// /callback: in particular it never serves the authorization URL
+        /// (which carries the CSRF state and PKCE challenge) back to a caller.
         if (request.getMethod() != Poco::Net::HTTPRequest::HTTP_GET)
         {
             response.setStatus(Poco::Net::HTTPResponse::HTTP_METHOD_NOT_ALLOWED);
@@ -256,29 +242,6 @@ public:
         }
 
         const std::string & path = uri.getPath();
-
-        /// The browser helper is launched against /start instead of the full
-        /// auth URL so the CSRF state and PKCE challenge do not appear in any
-        /// process argv. We hand the URL to the browser via a same-origin 302
-        /// served by this loopback server. /start does not mutate auth state,
-        /// so it is safe to serve it more than once.
-        if (path == "/start")
-        {
-            std::string target;
-            {
-                std::lock_guard<std::mutex> lock(state.mtx);
-                target = state.auth_url;
-            }
-            if (target.empty())
-            {
-                response.setStatus(Poco::Net::HTTPResponse::HTTP_NOT_FOUND);
-                response.setContentType("text/plain");
-                response.send() << "Not Found";
-                return;
-            }
-            response.redirect(target, Poco::Net::HTTPResponse::HTTP_FOUND);
-            return;
-        }
 
         if (path != "/callback")
         {
@@ -303,6 +266,29 @@ public:
                 received_state = v;
         }
 
+        /// The loopback socket is reachable by any local process, not just this
+        /// UID, so a /callback can arrive from an attacker as well as from the
+        /// legitimate IdP redirect. This handler is the sole CSRF-state gate:
+        /// it unblocks the waiting flow only for a callback whose `state`
+        /// matches the one we generated. A spec-compliant IdP always echoes
+        /// `state` (RFC 6749 §4.1.2 / §4.1.2.1, on both success and error), so a
+        /// mismatch means the delivery is stray or forged, and dropping it here
+        /// keeps a blind local attacker from aborting a genuine login by racing
+        /// in a bogus callback. The trade-off: an IdP that violates the spec by
+        /// omitting `state` on an error redirect no longer fast-fails with the
+        /// error — the callback is ignored and the flow waits out its timeout.
+        if (received_state != state.expected_state)
+        {
+            {
+                std::lock_guard<std::mutex> lock(state.mtx);
+                state.saw_state_mismatch = true;
+            }
+            response.setStatus(Poco::Net::HTTPResponse::HTTP_BAD_REQUEST);
+            response.setContentType("text/plain");
+            response.send() << "Invalid or missing state";
+            return;
+        }
+
         response.setStatus(Poco::Net::HTTPResponse::HTTP_OK);
         response.setContentType("text/html");
         auto & out = response.send();
@@ -313,27 +299,26 @@ public:
         out.flush();
 
         std::lock_guard<std::mutex> lock(state.mtx);
-        /// Only the first valid /callback delivery wins; subsequent requests
-        /// (e.g. an attacker racing the IdP after the legitimate redirect has
-        /// already been recorded) are ignored so they cannot overwrite a
-        /// previously-validated code/state pair.
+        /// Only the first state-matching /callback delivery wins; subsequent
+        /// requests (e.g. an attacker racing the IdP after the legitimate
+        /// redirect has already been recorded) are ignored so they cannot
+        /// overwrite a previously-validated code/error result.
         if (state.done)
             return;
         state.code = code;
         state.error = error;
-        state.received_state = received_state;
         state.done = true;
         state.cv.notify_one();
     }
 
 private:
-    AuthCodeState & state;
+    OAuthCallbackState & state;
 };
 
 class AuthCodeHandlerFactory : public Poco::Net::HTTPRequestHandlerFactory
 {
 public:
-    explicit AuthCodeHandlerFactory(AuthCodeState & state_) : state(state_) { }
+    explicit AuthCodeHandlerFactory(OAuthCallbackState & state_) : state(state_) { }
 
     Poco::Net::HTTPRequestHandler * createRequestHandler(const Poco::Net::HTTPServerRequest &) override
     {
@@ -341,9 +326,34 @@ public:
     }
 
 private:
-    AuthCodeState & state;
+    OAuthCallbackState & state;
 };
 
+}
+
+Poco::Net::HTTPRequestHandlerFactory * createOAuthCallbackHandlerFactory(OAuthCallbackState & state)
+{
+    return new AuthCodeHandlerFactory(state);
+}
+
+void copyStreamWithLimit(std::istream & in, std::string & out, std::size_t max_bytes)
+{
+    constexpr size_t buf_size = 8192;
+    char buffer[buf_size];
+    out.clear();
+    while (in)
+    {
+        in.read(buffer, static_cast<std::streamsize>(buf_size));
+        const auto got = static_cast<size_t>(in.gcount());
+        if (got == 0)
+            break;
+        if (out.size() + got > max_bytes)
+            throw Exception(
+                ErrorCodes::AUTHENTICATION_FAILED,
+                "OAuth2 endpoint response exceeds size limit of {} bytes",
+                max_bytes);
+        out.append(buffer, got);
+    }
 }
 
 std::string urlEncodeOAuth(const std::string & value)
@@ -363,25 +373,22 @@ Poco::JSON::Object::Ptr postOAuthForm(const std::string & url, const std::string
     Poco::Net::HTTPResponse response;
     std::string response_body;
 
+    std::unique_ptr<Poco::Net::HTTPClientSession> session;
     if (uri.getScheme() == "https")
     {
         Poco::Net::Context::Ptr ctx = Poco::Net::SSLManager::instance().defaultClientContext();
-        Poco::Net::HTTPSClientSession session(uri.getHost(), uri.getPort(), ctx);
-        session.setTimeout(Poco::Timespan(HTTP_TIMEOUT_SECONDS, 0));
-        auto & req_stream = session.sendRequest(request);
-        req_stream << body;
-        auto & resp_stream = session.receiveResponse(response);
-        copyStreamWithLimit(resp_stream, response_body, OAUTH_MAX_RESPONSE_BYTES);
+        session = std::make_unique<Poco::Net::HTTPSClientSession>(uri.getHost(), uri.getPort(), ctx);
     }
     else
     {
-        Poco::Net::HTTPClientSession session(uri.getHost(), uri.getPort());
-        session.setTimeout(Poco::Timespan(HTTP_TIMEOUT_SECONDS, 0));
-        auto & req_stream = session.sendRequest(request);
-        req_stream << body;
-        auto & resp_stream = session.receiveResponse(response);
-        copyStreamWithLimit(resp_stream, response_body, OAUTH_MAX_RESPONSE_BYTES);
+        session = std::make_unique<Poco::Net::HTTPClientSession>(uri.getHost(), uri.getPort());
     }
+
+    session->setTimeout(Poco::Timespan(OAUTH_HTTP_TIMEOUT_SECONDS, 0));
+    auto & req_stream = session->sendRequest(request);
+    req_stream << body;
+    auto & resp_stream = session->receiveResponse(response);
+    copyStreamWithLimit(resp_stream, response_body, OAUTH_MAX_RESPONSE_BYTES);
 
     Poco::Dynamic::Var parsed;
     try
@@ -399,7 +406,20 @@ Poco::JSON::Object::Ptr postOAuthForm(const std::string & url, const std::string
             response_body.substr(0, 512));
     }
 
-    auto obj = parsed.extract<Poco::JSON::Object::Ptr>();
+    Poco::JSON::Object::Ptr obj;
+    /// `extract` throws (not returns null) when the parsed value is not an
+    /// object — e.g. a bare array, scalar, or JSON `null` — so it must be
+    /// guarded too, otherwise a valid-JSON-but-non-object body escapes as a raw
+    /// Poco exception instead of the diagnostic below.
+    try
+    {
+        obj = parsed.extract<Poco::JSON::Object::Ptr>();
+    }
+    catch (const Poco::Exception &)
+    {
+        obj = nullptr;
+    }
+
     if (!obj)
         throw Exception(
             ErrorCodes::AUTHENTICATION_FAILED,
@@ -441,8 +461,7 @@ std::string runOAuthAuthCodeFlow(const OAuthCredentials & creds)
     /// is listening, the auth code is silently dropped, and the main thread
     /// hits the 120s wait_for() timeout even though the user successfully
     /// completed the login. Using the IP literal keeps the redirect target
-    /// aligned with the bound socket regardless of resolver behaviour, and
-    /// matches the host already used for the /start browser entry URL below.
+    /// aligned with the bound socket regardless of resolver behaviour.
     const std::string redirect_uri = "http://127.0.0.1:" + std::to_string(port) + "/callback";
 
     std::string auth_url
@@ -457,50 +476,64 @@ std::string runOAuthAuthCodeFlow(const OAuthCredentials & creds)
     if (provider_policy->useAccessTypeOfflineForAuthCode())
         auth_url += "&access_type=offline";
 
-    AuthCodeState state;
-    /// Publish the auth URL to the loopback server before it starts so /start
-    /// can immediately redirect to it. This is set under the mutex for
-    /// happens-before with the handler thread; in practice it is only ever
-    /// read after server.start() but we keep the synchronization explicit.
-    {
-        std::lock_guard<std::mutex> lock(state.mtx);
-        state.auth_url = auth_url;
-    }
+    OAuthCallbackState state;
+    /// Publish the expected CSRF state before the server thread starts, so the
+    /// callback handler only unblocks this flow for a redirect echoing exactly
+    /// this value (read-only for the handler thereafter).
+    state.expected_state = csrf_state;
     auto params = Poco::AutoPtr<Poco::Net::HTTPServerParams>(new Poco::Net::HTTPServerParams());
     params->setMaxQueued(1);
     params->setMaxThreads(1);
-    Poco::Net::HTTPServer server(new AuthCodeHandlerFactory(state), server_socket, params);
+    Poco::Net::HTTPServer server(createOAuthCallbackHandlerFactory(state), server_socket, params);
     server.start();
 
-    /// Launch the browser against the loopback /start endpoint instead of the
-    /// real auth URL. The full auth URL (including CSRF state and PKCE
-    /// challenge) therefore never appears in any process's argv, closing the
-    /// /proc/<pid>/cmdline disclosure path that local same-UID attackers
-    /// previously had against the spawned xdg-open / open helper.
-    const std::string browser_entry_url = "http://127.0.0.1:" + std::to_string(port) + "/start";
-    openBrowser(browser_entry_url);
+    /// Launch the browser with the authorization URL. Handing the URL to a
+    /// local browser is the standard native-app pattern (as in `gcloud` /
+    /// `aws sso`), but it is not free of local exposure: the URL carries the
+    /// CSRF `state` and PKCE `code_challenge`, and it reaches the browser via
+    /// the helper's argv, which on a default Linux /proc is world-readable
+    /// (`/proc/<pid>/cmdline`, no `hidepid`) — so a different-UID local process
+    /// can read it while the helper/browser runs. This is the same disclosure
+    /// class the removed `/start` redirect had (there via the loopback socket);
+    /// PKCE and `state` do not fully close it, because both values travel in
+    /// this one URL. It is an inherent limitation of auto-launching a browser
+    /// on a shared host; the state-matching gate in the callback handler is the
+    /// partial mitigation (a blind local attacker who has not read the URL
+    /// cannot forge a matching callback). `openBrowser` keeps the URL off
+    /// redirected/piped stderr on the successful-launch path (see its comment),
+    /// so it is not additionally disclosed into captured logs.
+    openBrowser(auth_url);
 
     bool timed_out = false;
+    bool saw_state_mismatch = false;
     std::string received_code;
     std::string received_error;
-    std::string received_state;
     {
         std::unique_lock<std::mutex> lock(state.mtx);
         timed_out = !state.cv.wait_for(lock, std::chrono::seconds(120), [&] { return state.done; });
         received_code = state.code;
         received_error = state.error;
-        received_state = state.received_state;
+        saw_state_mismatch = state.saw_state_mismatch;
     }
     server.stop();
 
+    /// The CSRF check (received_state == csrf_state) is enforced by the callback
+    /// handler, which only unblocks this wait for a state-matching delivery, so
+    /// any callback that reaches this point already passed it. If instead we
+    /// timed out after seeing a state-mismatching callback, surface that as the
+    /// likely cause (forged/stray callback, or a proxy that rewrote `state`)
+    /// rather than a bare timeout.
+    if (timed_out && saw_state_mismatch)
+        throw Exception(
+            ErrorCodes::AUTHENTICATION_FAILED,
+            "OAuth2 login timed out; a browser callback arrived with a non-matching state "
+            "(CSRF check failed) and no valid callback followed");
     if (timed_out)
         throw Exception(ErrorCodes::AUTHENTICATION_FAILED, "OAuth2 login timed out waiting for browser callback");
     if (!received_error.empty())
         throw Exception(ErrorCodes::AUTHENTICATION_FAILED, "OAuth2 authorization error: {}", received_error);
     if (received_code.empty())
         throw Exception(ErrorCodes::AUTHENTICATION_FAILED, "OAuth2 callback did not contain an authorization code");
-    if (received_state != csrf_state)
-        throw Exception(ErrorCodes::AUTHENTICATION_FAILED, "OAuth2 CSRF check failed: unexpected state in callback");
 
     std::string body
         = "grant_type=authorization_code"
@@ -532,16 +565,27 @@ std::string runOAuthAuthCodeFlow(const OAuthCredentials & creds)
     return resp->getValue<std::string>("id_token");
 }
 
+std::string buildDeviceAuthorizationRequestBody(const OAuthCredentials & creds, const std::string & scope)
+{
+    std::string body
+        = "client_id=" + urlEncodeOAuth(creds.client_id)
+        + "&scope=" + urlEncodeOAuth(scope);
+    /// Per RFC 8628 §3.1 a confidential client must authenticate on the
+    /// device authorization request the same way as on the token endpoint.
+    /// See runOAuthAuthCodeFlow() above: omit the parameter for public
+    /// clients, do not send an empty value.
+    if (!creds.client_secret.empty())
+        body += "&client_secret=" + urlEncodeOAuth(creds.client_secret);
+    return body;
+}
+
 std::string runOAuthDeviceFlow(OAuthCredentials creds)
 {
     auto provider_policy = IOAuthProviderPolicy::create(creds);
     if (creds.device_auth_uri.empty())
         creds.device_auth_uri = provider_policy->resolveDeviceAuthorizationEndpoint(creds);
 
-    const std::string device_scope = provider_policy->getDeviceScope();
-    const std::string device_body
-        = "client_id=" + urlEncodeOAuth(creds.client_id)
-        + "&scope=" + urlEncodeOAuth(device_scope);
+    const std::string device_body = buildDeviceAuthorizationRequestBody(creds, provider_policy->getDeviceScope());
 
     auto device_resp = postOAuthForm(creds.device_auth_uri, device_body);
 

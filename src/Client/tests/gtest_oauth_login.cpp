@@ -3,15 +3,29 @@
 #if USE_JWT_CPP && USE_SSL
 
 #include <Client/OAuthLogin.h>
+#include <Client/OAuthFlowRunner.h>
+#include <Client/OAuthLoopbackServer.h>
 #include <Common/Base64.h>
 #include <Common/Exception.h>
 #include <Common/OpenSSLHelpers.h>
 #include <Common/scope_guard_safe.h>
 #include <gtest/gtest.h>
 
+#include <Poco/AutoPtr.h>
+#include <Poco/StreamCopier.h>
+#include <Poco/Net/HTTPClientSession.h>
+#include <Poco/Net/HTTPRequest.h>
+#include <Poco/Net/HTTPResponse.h>
+#include <Poco/Net/HTTPServer.h>
+#include <Poco/Net/HTTPServerParams.h>
+#include <Poco/Net/ServerSocket.h>
+#include <Poco/Net/SocketAddress.h>
+#include <Poco/Timespan.h>
+
 #include <algorithm>
 #include <filesystem>
 #include <fstream>
+#include <sstream>
 
 using namespace DB;
 
@@ -326,6 +340,238 @@ TEST(OAuthLogin, PKCEChallengeDerivation)
     // Different verifiers must produce different challenges.
     const std::string verifier2 = base64Encode(std::string(32, '\x02'), true, true);
     EXPECT_NE(base64Encode(encodeSHA256(verifier2), true, true), challenge);
+}
+
+// ---------------------------------------------------------------------------
+// buildDeviceAuthorizationRequestBody — RFC 8628 §3.1 client authentication.
+// Regression guard for the confidential-client device flow: the device
+// authorization request must carry `client_secret` when one is configured
+// (otherwise a confidential IdP client rejects the very first request with
+// `invalid_client`), and must omit the parameter entirely for public clients.
+// ---------------------------------------------------------------------------
+
+TEST(OAuthLogin, DeviceAuthorizationBodyIncludesClientSecret)
+{
+    OAuthCredentials creds;
+    creds.client_id = "demo-confidential";
+    creds.client_secret = "t0p-s3cret";
+
+    const std::string body = buildDeviceAuthorizationRequestBody(creds, "openid");
+    EXPECT_EQ(body, "client_id=demo-confidential&scope=openid&client_secret=t0p-s3cret");
+}
+
+TEST(OAuthLogin, DeviceAuthorizationBodyOmitsSecretForPublicClient)
+{
+    OAuthCredentials creds;
+    creds.client_id = "demo-public";
+
+    const std::string body = buildDeviceAuthorizationRequestBody(creds, "openid");
+    EXPECT_EQ(body, "client_id=demo-public&scope=openid");
+    // An empty value is not equivalent to omission and is rejected by several
+    // IdPs as invalid_client — the parameter must be absent altogether.
+    EXPECT_EQ(body.find("client_secret"), std::string::npos);
+}
+
+// ---------------------------------------------------------------------------
+// copyStreamWithLimit — bounded read of untrusted OAuth/OIDC responses.
+// Regression guard for the unbounded OIDC discovery read (memory-exhaustion
+// DoS): the browser/device login HTTP reads must cap the body size.
+// ---------------------------------------------------------------------------
+
+TEST(OAuthLogin, CopyStreamWithLimitAcceptsWithinLimit)
+{
+    std::istringstream in(std::string("hello world"));
+    std::string out;
+    copyStreamWithLimit(in, out, 1024);
+    EXPECT_EQ(out, "hello world");
+}
+
+TEST(OAuthLogin, CopyStreamWithLimitAcceptsExactBoundary)
+{
+    // A body of exactly max_bytes is accepted; only strictly larger fails.
+    std::istringstream in(std::string(1024, 'x'));
+    std::string out;
+    copyStreamWithLimit(in, out, 1024);
+    EXPECT_EQ(out.size(), 1024u);
+}
+
+TEST(OAuthLogin, CopyStreamWithLimitRejectsOversized)
+{
+    // A body larger than the limit must fail fast instead of buffering the
+    // whole (potentially unbounded) response into memory.
+    std::istringstream in(std::string(2048, 'x'));
+    std::string out;
+    EXPECT_THROW(copyStreamWithLimit(in, out, 1024), DB::Exception);
+}
+
+// ---------------------------------------------------------------------------
+// Loopback callback server — must not leak the auth URL / CSRF state.
+// Regression guard for the `/start` redirect that disclosed the full
+// authorization URL (including `state`) to any local process.
+// ---------------------------------------------------------------------------
+
+namespace
+{
+
+struct RunningCallbackServer
+{
+    OAuthCallbackState state;
+    Poco::Net::ServerSocket server_socket;
+    Poco::Net::HTTPServer server;
+    uint16_t port;
+
+    explicit RunningCallbackServer(const std::string & expected_state = "")
+        : server_socket(makeSocket())
+        , server(createOAuthCallbackHandlerFactory(state), server_socket, makeParams())
+        , port(server_socket.address().port())
+    {
+        /// Set before `start`, so the handler thread reads it race-free.
+        state.expected_state = expected_state;
+        server.start();
+    }
+
+    ~RunningCallbackServer() { server.stop(); }
+
+    static Poco::Net::ServerSocket makeSocket()
+    {
+        Poco::Net::ServerSocket socket;
+        socket.bind(Poco::Net::SocketAddress("127.0.0.1", 0), /*reuse_address=*/true);
+        socket.listen(4);
+        return socket;
+    }
+
+    static Poco::Net::HTTPServerParams * makeParams()
+    {
+        auto * params = new Poco::Net::HTTPServerParams();
+        params->setMaxQueued(4);
+        params->setMaxThreads(1);
+        return params;
+    }
+};
+
+struct HttpGetResult
+{
+    Poco::Net::HTTPResponse::HTTPStatus status;
+    bool has_location;
+    std::string location;
+    std::string body;
+};
+
+HttpGetResult httpGet(uint16_t port, const std::string & path_and_query)
+{
+    Poco::Net::HTTPClientSession session("127.0.0.1", port);
+    session.setTimeout(Poco::Timespan(10, 0));
+    Poco::Net::HTTPRequest request(Poco::Net::HTTPRequest::HTTP_GET, path_and_query);
+    session.sendRequest(request);
+
+    Poco::Net::HTTPResponse response;
+    std::istream & rs = session.receiveResponse(response);
+
+    HttpGetResult result;
+    result.status = response.getStatus();
+    result.has_location = response.has("Location");
+    result.location = response.get("Location", "");
+    Poco::StreamCopier::copyToString(rs, result.body);
+    return result;
+}
+
+} // anonymous namespace
+
+TEST(OAuthLogin, LoopbackStartEndpointDoesNotLeakState)
+{
+    RunningCallbackServer srv;
+
+    // `/start` (the removed leak vector) redirected to the auth URL, so a
+    // reintroduced leak would surface as a 3xx whose Location header carries
+    // `state` / `code_challenge`. Assert there is no redirect and — checking
+    // the Location value itself, which is where such a leak would live — that
+    // it discloses no secret.
+    const HttpGetResult r = httpGet(srv.port, "/start");
+    EXPECT_EQ(r.status, Poco::Net::HTTPResponse::HTTP_NOT_FOUND);
+    EXPECT_FALSE(r.has_location);
+    EXPECT_EQ(r.location.find("state="), std::string::npos);
+    EXPECT_EQ(r.location.find("code_challenge="), std::string::npos);
+
+    // Probing `/start` must never unblock the waiting flow.
+    std::lock_guard<std::mutex> lock(srv.state.mtx);
+    EXPECT_FALSE(srv.state.done);
+}
+
+TEST(OAuthLogin, LoopbackUnknownPathDoesNotCompleteFlow)
+{
+    RunningCallbackServer srv;
+
+    const HttpGetResult r = httpGet(srv.port, "/favicon.ico");
+    EXPECT_EQ(r.status, Poco::Net::HTTPResponse::HTTP_NOT_FOUND);
+
+    std::lock_guard<std::mutex> lock(srv.state.mtx);
+    EXPECT_FALSE(srv.state.done);
+}
+
+TEST(OAuthLogin, LoopbackCallbackCompletesFlow)
+{
+    RunningCallbackServer srv("deadbeef");
+
+    // The only endpoint that drives completion is `/callback`, and only when
+    // the delivered `state` matches the one the flow generated.
+    const HttpGetResult r = httpGet(srv.port, "/callback?code=abc123&state=deadbeef");
+    EXPECT_EQ(r.status, Poco::Net::HTTPResponse::HTTP_OK);
+
+    std::lock_guard<std::mutex> lock(srv.state.mtx);
+    EXPECT_TRUE(srv.state.done);
+    EXPECT_EQ(srv.state.code, "abc123");
+    EXPECT_TRUE(srv.state.error.empty());
+}
+
+TEST(OAuthLogin, LoopbackErrorCallbackWithMatchingStateCompletesFlow)
+{
+    RunningCallbackServer srv("deadbeef");
+
+    // A spec-compliant IdP echoes `state` on error redirects too; such a
+    // denial must complete the flow so the caller can surface the real error
+    // (rather than time out). The state-matching gate accepts it, records the
+    // error, and unblocks.
+    const HttpGetResult r = httpGet(srv.port, "/callback?error=access_denied&state=deadbeef");
+    EXPECT_EQ(r.status, Poco::Net::HTTPResponse::HTTP_OK);
+
+    std::lock_guard<std::mutex> lock(srv.state.mtx);
+    EXPECT_TRUE(srv.state.done);
+    EXPECT_TRUE(srv.state.code.empty());
+    EXPECT_EQ(srv.state.error, "access_denied");
+}
+
+TEST(OAuthLogin, LoopbackCallbackWithMismatchedStateIsRejected)
+{
+    RunningCallbackServer srv("expected-state");
+
+    // A callback whose `state` does not match must be rejected and must NOT
+    // unblock the flow — otherwise any local process could abort a genuine
+    // login (DoS) by racing in a bogus callback before the real IdP redirect.
+    const HttpGetResult r = httpGet(srv.port, "/callback?code=attacker&state=wrong-state");
+    EXPECT_EQ(r.status, Poco::Net::HTTPResponse::HTTP_BAD_REQUEST);
+
+    std::lock_guard<std::mutex> lock(srv.state.mtx);
+    EXPECT_FALSE(srv.state.done);
+    EXPECT_TRUE(srv.state.code.empty());
+    // The mismatch is recorded so a subsequent timeout can report a likely CSRF
+    // failure rather than a bare timeout.
+    EXPECT_TRUE(srv.state.saw_state_mismatch);
+}
+
+TEST(OAuthLogin, LoopbackFirstMatchingCallbackWins)
+{
+    RunningCallbackServer srv("s");
+
+    // Once a valid callback is recorded, a later one (e.g. an attacker racing
+    // the IdP after the real redirect already landed) must not overwrite it.
+    const HttpGetResult first = httpGet(srv.port, "/callback?code=first&state=s");
+    EXPECT_EQ(first.status, Poco::Net::HTTPResponse::HTTP_OK);
+    const HttpGetResult second = httpGet(srv.port, "/callback?code=second&state=s");
+    EXPECT_EQ(second.status, Poco::Net::HTTPResponse::HTTP_OK);
+
+    std::lock_guard<std::mutex> lock(srv.state.mtx);
+    EXPECT_TRUE(srv.state.done);
+    EXPECT_EQ(srv.state.code, "first");
 }
 
 #endif // USE_JWT_CPP && USE_SSL
