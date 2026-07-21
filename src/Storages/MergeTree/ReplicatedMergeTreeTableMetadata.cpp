@@ -489,40 +489,59 @@ ReplicatedMergeTreeTableMetadata::checkAndFindDiff(
 
     Diff diff;
 
-    if (sorting_key != from_zk.sorting_key)
+    /// The local fields are stored in the backward-compatible canonical form (see the constructor),
+    /// while the Keeper metadata may have been written by a version affected by #92340 that kept the
+    /// redundant parentheses (`sorting key: (a)`, `ttl: (d + ...)`, ...). Compare — and record the
+    /// new value — in the same canonical form the equality check (`checkEquals`) uses, so a replica
+    /// that joined such Keeper metadata does not report the field as changed on an unrelated
+    /// replicated `ALTER` and does not re-import the noncanonical AST into the local metadata.
+    String canonical_zk_sorting_key
+        = formattedAST(extractKeyExpressionList(KeyDescription::parse(from_zk.sorting_key, columns, virtuals, context, true).definition_ast));
+    if (sorting_key != canonical_zk_sorting_key)
     {
         diff.sorting_key_changed = true;
-        diff.new_sorting_key = from_zk.sorting_key;
+        diff.new_sorting_key = canonical_zk_sorting_key;
     }
 
-    if (sampling_expression != from_zk.sampling_expression)
+    String canonical_zk_sampling_expression
+        = formattedAST(KeyDescription::parse(from_zk.sampling_expression, columns, virtuals, context, false).definition_ast);
+    if (sampling_expression != canonical_zk_sampling_expression)
     {
         diff.sampling_expression_changed = true;
-        diff.new_sampling_expression = from_zk.sampling_expression;
+        diff.new_sampling_expression = canonical_zk_sampling_expression;
     }
 
-    if (ttl_table != from_zk.ttl_table)
+    auto parsed_primary_key = KeyDescription::parse(primary_key, columns, virtuals, context, true);
+    String canonical_zk_ttl_table
+        = TTLTableDescription::parse(from_zk.ttl_table, columns, context, parsed_primary_key, /* is_attach = */ true)
+              .formatBackwardCompatibleOneLine();
+    if (ttl_table != canonical_zk_ttl_table)
     {
         diff.ttl_table_changed = true;
-        diff.new_ttl_table = from_zk.ttl_table;
+        diff.new_ttl_table = canonical_zk_ttl_table;
     }
 
-    if (skip_indices != from_zk.skip_indices)
+    constexpr bool escape_index_filenames = true; /// It doesn't matter here, as we compare parsed strings
+    String canonical_zk_skip_indices = IndicesDescription::parse(from_zk.skip_indices, columns, escape_index_filenames, context)
+                                           .formatBackwardCompatibleOneLine(/* only_explicit = */ false);
+    if (skip_indices != canonical_zk_skip_indices)
     {
         diff.skip_indices_changed = true;
-        diff.new_skip_indices = from_zk.skip_indices;
+        diff.new_skip_indices = canonical_zk_skip_indices;
     }
 
-    if (projections != from_zk.projections)
+    String canonical_zk_projections = ProjectionsDescription::parse(from_zk.projections, columns, nullptr, context).formatBackwardCompatibleOneLine();
+    if (projections != canonical_zk_projections)
     {
         diff.projections_changed = true;
-        diff.new_projections = from_zk.projections;
+        diff.new_projections = canonical_zk_projections;
     }
 
-    if (constraints != from_zk.constraints)
+    String canonical_zk_constraints = ConstraintsDescription::parse(from_zk.constraints).formatBackwardCompatibleOneLine();
+    if (constraints != canonical_zk_constraints)
     {
         diff.constraints_changed = true;
-        diff.new_constraints = from_zk.constraints;
+        diff.new_constraints = canonical_zk_constraints;
     }
 
     return diff;
