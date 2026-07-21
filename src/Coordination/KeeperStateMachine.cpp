@@ -1934,7 +1934,6 @@ KeeperMemNodesStorage::ReadViewHolder KeeperStateMachine::getStorageReadView() c
     return dynamic_cast<KeeperMemNodesStorage &>(*storage->nodes_storage).issueReadView(storage);
 }
 
-
 void KeeperStateMachine::dumpWatches(WriteBufferFromOwnString & buf) const
 {
     KEEPER_STORAGE_LOCK_EXCLUSIVE(lock);
