@@ -180,7 +180,7 @@ parser.add_argument(
 parser.add_argument(
     "--tau",
     type=float,
-    default=0.1,
+    default=0.08,
     help="Precision target: stop the measured runs of a query as soon as its "
     "noise threshold (stat_threshold of the report, the q99 relative "
     "median gap under balanced relabelings) is at most this value.",
