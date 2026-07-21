@@ -108,7 +108,7 @@ Config can be YAML or XML.
 | `pipeline_depth` | integer | `1` | In-flight async requests per worker (`>= 1`) |
 | `warmup_seconds` | float | `0` | Measurement warmup window |
 | `enable_tracing` | bool | `false` | Attach OpenTelemetry trace context |
-| `use_remove_recursive` | bool | `true` | Use the native `RemoveRecursive` Keeper request for cleanup; falls back to a manual recursive traversal if the server does not advertise the `REMOVE_RECURSIVE` feature flag or if this is set to `false` (needed for ZooKeeper or older Keeper versions) |
+| `use_remove_recursive` | bool | `true` | Use the native `RemoveRecursive` Keeper request for cleanup (limited to 1M nodes per request to avoid blocking raft for too long); falls back to a manual recursive traversal if the subtree is larger, if the server does not advertise the `REMOVE_RECURSIVE` feature flag, or if this is set to `false` (needed for ZooKeeper or older Keeper versions) |
 | `connections` | object | required if `--hosts` absent | Keeper endpoints and connection settings |
 | `setup` | object | optional | Data tree created before run |
 | `generator` | object | optional | Request generator (enables generated mode) |

@@ -1,6 +1,7 @@
 #include <NodesSetup.h>
 
 #include <fmt/ranges.h>
+#include <deque>
 #include <filesystem>
 #include <iostream>
 #include <ranges>
@@ -16,18 +17,26 @@ namespace DB::ErrorCodes
 namespace
 {
 
-void flushMulti(Coordination::ZooKeeper & zookeeper, Coordination::Requests & batch)
-{
-    if (batch.empty())
-        return;
+constexpr size_t WRITE_BATCH_SIZE = 10000;
+constexpr size_t READ_BATCH_SIZE = 10000;
 
+Coordination::MultiResponse executeMulti(Coordination::ZooKeeper & zookeeper, const Coordination::Requests & batch)
+{
     auto promise = std::make_shared<std::promise<Coordination::MultiResponse>>();
     auto future = promise->get_future();
     zookeeper.multi(batch, [promise](const Coordination::MultiResponse & response)
     {
         promise->set_value(response);
     });
-    auto response = future.get();
+    return future.get();
+}
+
+void flushMulti(Coordination::ZooKeeper & zookeeper, Coordination::Requests & batch)
+{
+    if (batch.empty())
+        return;
+
+    auto response = executeMulti(zookeeper, batch);
     if (response.error != Coordination::Error::ZOK)
         throw zkutil::KeeperException(response.error, "Multi request failed");
 
@@ -37,7 +46,7 @@ void flushMulti(Coordination::ZooKeeper & zookeeper, Coordination::Requests & ba
 void addToBatchAndMaybeFlush(Coordination::ZooKeeper & zookeeper, Coordination::Requests & batch, Coordination::RequestPtr request)
 {
     batch.push_back(std::move(request));
-    if (batch.size() >= 10000)
+    if (batch.size() >= WRITE_BATCH_SIZE)
     {
         flushMulti(zookeeper, batch);
         batch.clear();
@@ -70,22 +79,126 @@ void removeRecursiveManual(Coordination::ZooKeeper & zookeeper, const std::strin
     addToBatchAndMaybeFlush(zookeeper, batch, zkutil::makeRemoveRequest(path, -1));
 }
 
+/// Like removeRecursiveManual, but suitable for huge subtrees (~100M nodes):
+///  * List requests are batched into MultiRead requests instead of one round trip per node,
+///  * nodes that their parent's listing showed to be childless are removed without listing.
+/// Requires the MULTI_READ, FILTERED_LIST, and LIST_WITH_STAT_AND_DATA feature flags.
+void removeRecursiveManualFast(Coordination::ZooKeeper & zookeeper, const std::string & root_path)
+{
+    namespace fs = std::filesystem;
+
+    Coordination::Requests remove_batch;
+    size_t removes_scheduled = 0;
+    auto schedule_remove = [&](const std::string & path)
+    {
+        addToBatchAndMaybeFlush(zookeeper, remove_batch, zkutil::makeRemoveRequest(path, -1));
+        ++removes_scheduled;
+        if (removes_scheduled % 1000000 == 0)
+            std::cerr << "Removed " << removes_scheduled << " nodes so far" << std::endl;
+    };
+
+    /// Nodes that had children when their parent was listed (plus the root).
+    /// The walk below appends parents before their children (BFS pre-order), so
+    /// removing in reverse order removes children before parents. Nodes without
+    /// children are removed right away instead.
+    std::vector<std::string> listed;
+
+    /// Nodes to list: path and the number of children reported by the parent's listing.
+    std::deque<std::pair<std::string, size_t>> queue;
+    queue.emplace_back(root_path, 1);
+
+    while (!queue.empty())
+    {
+        /// Group List requests into one MultiRead, capping the expected total
+        /// number of listed children to bound the response size.
+        std::vector<std::string> batch_paths;
+        size_t expected_children = 0;
+        while (!queue.empty() && (batch_paths.empty() || expected_children + queue.front().second <= READ_BATCH_SIZE))
+        {
+            expected_children += queue.front().second;
+            batch_paths.push_back(std::move(queue.front().first));
+            queue.pop_front();
+        }
+
+        Coordination::Requests list_batch;
+        list_batch.reserve(batch_paths.size());
+        for (const auto & path : batch_paths)
+            list_batch.push_back(zkutil::makeListRequest(path, Coordination::ListRequestType::ALL, /*with_stat=*/ true, /*with_data=*/ false));
+
+        auto multi_response = executeMulti(zookeeper, list_batch);
+
+        /// An error of a subrequest (e.g. ZNONODE, which we tolerate) is propagated to the
+        /// error of the whole MultiRead. So check the subresponse errors first, and treat the
+        /// multi-level error as fatal only if no subresponse explains it (e.g. a connection
+        /// loss, where the subresponses are left blank and must not be trusted).
+        chassert(multi_response.responses.size() == batch_paths.size());
+        bool sub_error_found = false;
+        for (size_t i = 0; i < batch_paths.size(); ++i)
+        {
+            auto sub_error = multi_response.responses.at(i)->error;
+            if (sub_error == Coordination::Error::ZNONODE)
+                sub_error_found = true;
+            else if (sub_error != Coordination::Error::ZOK)
+                throw zkutil::KeeperException(sub_error, "Failed to list children of {}", batch_paths[i]);
+        }
+        if (multi_response.error != Coordination::Error::ZOK && !sub_error_found)
+            throw zkutil::KeeperException(multi_response.error, "MultiRead of {} List requests failed", list_batch.size());
+
+        for (size_t i = 0; i < batch_paths.size(); ++i)
+        {
+            const auto & response = *multi_response.responses.at(i);
+            /// The node was removed concurrently (e.g. an expired ephemeral); nothing to do.
+            if (response.error == Coordination::Error::ZNONODE)
+                continue;
+
+            const auto & list_response = dynamic_cast<const Coordination::ListResponse &>(response);
+            chassert(list_response.stats.size() == list_response.names.size());
+            for (size_t j = 0; j < list_response.names.size(); ++j)
+            {
+                std::string child_path = fs::path(batch_paths[i]) / list_response.names[j];
+                if (list_response.stats[j].numChildren == 0)
+                    schedule_remove(child_path);
+                else
+                    queue.emplace_back(std::move(child_path), list_response.stats[j].numChildren);
+            }
+
+            listed.push_back(std::move(batch_paths[i]));
+        }
+    }
+
+    for (auto it = listed.rbegin(); it != listed.rend(); ++it)
+        schedule_remove(*it);
+    flushMulti(zookeeper, remove_batch);
+}
+
 void removeRecursive(Coordination::ZooKeeper & zookeeper, const std::string & path, bool allow_native)
 {
     if (allow_native && zookeeper.isFeatureEnabled(DB::KeeperFeatureFlag::REMOVE_RECURSIVE))
     {
         auto promise = std::make_shared<std::promise<Coordination::Error>>();
         auto future = promise->get_future();
-        zookeeper.removeRecursive(path, /*remove_nodes_limit=*/ 100000000,
+        /// A native RemoveRecursive request is indivisible: the whole subtree is removed
+        /// in one raft entry, blocking all other writes for its duration. Limit its size
+        /// and fall back to manual removal (batched into many multis) for bigger subtrees.
+        zookeeper.removeRecursive(path, /*remove_nodes_limit=*/ 1000000,
             [promise](const Coordination::RemoveRecursiveResponse & response)
             {
                 promise->set_value(response.error);
             });
         auto error = future.get();
-        if (error == Coordination::Error::ZNONODE)
+        if (error == Coordination::Error::ZNONODE || error == Coordination::Error::ZOK)
             return;
-        if (error != Coordination::Error::ZOK)
+        /// ZNOTEMPTY means the subtree exceeded remove_nodes_limit (nothing was removed).
+        if (error != Coordination::Error::ZNOTEMPTY)
             throw zkutil::KeeperException(error, "Failed to recursively remove {}", path);
+        std::cerr << "Subtree at " << path << " is too large for one native RemoveRecursive request, removing manually" << std::endl;
+    }
+
+    if (zookeeper.isFeatureEnabled(DB::KeeperFeatureFlag::MULTI_READ)
+        && zookeeper.isFeatureEnabled(DB::KeeperFeatureFlag::FILTERED_LIST)
+        && zookeeper.isFeatureEnabled(DB::KeeperFeatureFlag::LIST_WITH_STAT_AND_DATA))
+    {
+        removeRecursiveManualFast(zookeeper, path);
         return;
     }
 
