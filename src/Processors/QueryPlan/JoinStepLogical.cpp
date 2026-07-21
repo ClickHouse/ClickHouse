@@ -963,8 +963,8 @@ static bool isLowerBoundOperator(JoinConditionOperator op)
 /// point-side keys are the same expression, bracketing it in opposite directions
 /// (`t {>,>=} lo AND t {<,<=} hi`). The shared expression may come from either table.
 /// Consumption of the conditions and the handling of the extra conjuncts follow
-/// tryExtractIEJoinDescription; only ALL INNER is in scope, so the extra conjuncts always
-/// become a filter over the join result.
+/// tryExtractIEJoinDescription; extra conjuncts become a filter over the join result, which
+/// is equivalent only for ALL INNER — the other in-scope kinds decline when any remain.
 static std::optional<BandJoinPlanDescription> tryExtractBandJoinDescription(
     std::vector<JoinActionRef> & join_expression,
     const JoinOperator & join_operator,
@@ -978,6 +978,13 @@ static std::optional<BandJoinPlanDescription> tryExtractBandJoinDescription(
         return {};
 
     if (planning_context.is_storage_join)
+        return {};
+
+    /// Extra ON conjuncts are equivalent to a post-join filter only for ALL INNER; for the
+    /// other kinds they affect matching (unmatched rows are emitted padded, not dropped) and
+    /// residual evaluation inside the operator is not implemented, so decline.
+    if (join_expression.size() > 2
+        && !(join_operator.kind == JoinKind::Inner && join_operator.strictness == JoinStrictness::All))
         return {};
 
     std::vector<size_t> candidate_positions;
@@ -1790,7 +1797,8 @@ static QueryPlanNode buildPhysicalJoinImpl(
     ExpressionActionsPtr ie_join_residual_condition;
     if (on_clause_condition && (is_disjunctive_condition || !canPushDownFromOn(join_operator)))
     {
-        /// Band join is in scope only for ALL INNER, whose ON conditions always push down.
+        /// Band join can leave extra ON conjuncts only for ALL INNER, whose ON conditions
+        /// always push down; the non-pushdown kinds decline in detection when any remain.
         chassert(!band_join_description);
         auto on_clause_dag = JoinExpressionActions::getSubDAG(std::views::single(on_clause_condition));
         auto on_clause_expression = std::make_shared<ExpressionActions>(std::move(on_clause_dag), optimization_settings.actions_settings);

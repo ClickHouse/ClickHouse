@@ -25,6 +25,9 @@ const char * toString(BandJoinKind kind)
     switch (kind)
     {
         case BandJoinKind::Inner: return "INNER";
+        case BandJoinKind::Left: return "LEFT";
+        case BandJoinKind::LeftSemi: return "LEFT SEMI";
+        case BandJoinKind::LeftAnti: return "LEFT ANTI";
     }
 }
 
@@ -251,8 +254,6 @@ BandJoinProbeTransform::BandJoinProbeTransform(
     , max_joined_block_bytes(max_joined_block_bytes_)
 {
     validateBandJoinConditions(conditions);
-    if (kind != BandJoinKind::Inner)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Band join does not support the {} kind", toString(kind));
     const auto & input_header = getInputs().front().getHeader();
     const auto & output_header = getOutputs().front().getHeader();
     for (const auto & condition : conditions)
@@ -285,8 +286,9 @@ void BandJoinProbeTransform::consumeProbeChunk(Chunk chunk)
     current_row = 0;
     in_walk = false;
 
-    /// An empty index cannot match anything: skip the chunk outright.
-    if (num_point_rows == 0 || index->blocks.empty())
+    /// An empty index cannot match anything: unless the kind emits unmatched rows, skip the
+    /// chunk outright.
+    if (num_point_rows == 0 || (index->blocks.empty() && !emitsUnmatchedRows()))
     {
         resetChunkState();
         return;
@@ -476,9 +478,9 @@ bool BandJoinProbeTransform::continueWalk(size_t point_row)
 
         const auto & block = index->blocks[walk_block];
         /// Scan the block backwards while the within-block prefix-max still admits the point
-        /// (rows below the stop can no longer hold a match in this block), emitting the rows
-        /// whose own `hi` admits it; all rows at or below the walk start satisfy the lower
-        /// bound by the sorted order.
+        /// (rows below the stop can no longer hold a match in this block), registering the
+        /// rows whose own `hi` admits it; all rows at or below the walk start satisfy the
+        /// lower bound by the sorted order.
         while (walk_row >= 0)
         {
             if (outputFull() || produce_work >= produce_work_budget)
@@ -486,29 +488,47 @@ bool BandJoinProbeTransform::continueWalk(size_t point_row)
             ++produce_work;
 
             const size_t row = static_cast<size_t>(walk_row);
-            if (index->upper_encoded)
+            bool prefix_admits = index->upper_encoded
+                ? upperAdmitsEncoded(block.prefix_max_hi[row], point_row)
+                : upperAdmits(block, block.prefix_max_hi_row[row], point_row);
+            if (!prefix_admits)
             {
-                if (!upperAdmitsEncoded(block.prefix_max_hi[row], point_row))
-                {
-                    walk_row = -1;
-                    break;
-                }
-                if (upperAdmitsEncoded(block.encoded_hi[row], point_row))
-                    emitMatch(point_row, walk_block, row);
+                walk_row = -1;
+                break;
             }
-            else
-            {
-                if (!upperAdmits(block, block.prefix_max_hi_row[row], point_row))
-                {
-                    walk_row = -1;
-                    break;
-                }
-                if (upperAdmits(block, row, point_row))
-                    emitMatch(point_row, walk_block, row);
-            }
+            bool row_admits = index->upper_encoded
+                ? upperAdmitsEncoded(block.encoded_hi[row], point_row)
+                : upperAdmits(block, row, point_row);
             --walk_row;
+            if (row_admits && !onMatch(point_row, walk_block, row))
+                return true;
         }
     }
+}
+
+bool BandJoinProbeTransform::onMatch(size_t point_row, size_t block_index, size_t row)
+{
+    current_row_matched = true;
+    switch (kind)
+    {
+        case BandJoinKind::Inner:
+        case BandJoinKind::Left:
+            emitMatch(point_row, block_index, row);
+            return true;
+        case BandJoinKind::LeftSemi:
+            emitMatch(point_row, block_index, row);
+            return false;
+        case BandJoinKind::LeftAnti:
+            /// The match decides the row (not emitted); re-verify it like an emitted pair.
+            chassert(checkEmittedPair(point_row, index->blocks[block_index], row));
+            return false;
+    }
+}
+
+void BandJoinProbeTransform::finishRow(size_t point_row)
+{
+    if (!current_row_matched && emitsUnmatchedRows())
+        emitUnmatched(point_row);
 }
 
 bool BandJoinProbeTransform::checkEmittedPair(size_t point_row, const BandJoinIndex::Block & block, size_t row) const
@@ -530,6 +550,16 @@ void BandJoinProbeTransform::emitMatch(size_t point_row, size_t block_index, siz
         out_segments.emplace_back(block_index, ColumnUInt64::create());
     out_segments.back().second->getData().push_back(row);
     out_bytes_estimate += point_avg_row_bytes + index->blocks[block_index].avg_row_bytes;
+}
+
+void BandJoinProbeTransform::emitUnmatched(size_t point_row)
+{
+    out_point_rows.push_back(point_row);
+    if (out_segments.empty() || out_segments.back().first != padded_segment)
+        out_segments.emplace_back(padded_segment, ColumnUInt64::create());
+    /// Only the padded segment's row count matters; the row values are never read.
+    out_segments.back().second->getData().push_back(0);
+    out_bytes_estimate += point_avg_row_bytes;
 }
 
 bool BandJoinProbeTransform::outputFull() const
@@ -558,10 +588,23 @@ Chunk BandJoinProbeTransform::buildOutputChunk()
     for (size_t i = num_point_columns; i < output_header.columns(); ++i)
     {
         const size_t interval_position = i - num_point_columns;
+        /// The padded segment gets the column-type defaults: NULL when the type is Nullable
+        /// (with `join_use_nulls` the planner made the interval-side columns Nullable in the
+        /// pre-join actions).
+        auto gather_segment = [&](size_t block_index, const ColumnUInt64 & rows) -> ColumnPtr
+        {
+            if (block_index == padded_segment)
+            {
+                auto padded = output_header.getByPosition(i).type->createColumn();
+                padded->insertManyDefaults(rows.size());
+                return padded;
+            }
+            return index->blocks[block_index].columns[interval_position]->index(rows, 0);
+        };
         if (out_segments.size() == 1)
         {
             const auto & [block_index, rows] = out_segments.front();
-            chunk.addColumn(index->blocks[block_index].columns[interval_position]->index(*rows, 0));
+            chunk.addColumn(gather_segment(block_index, *rows));
         }
         else
         {
@@ -569,7 +612,7 @@ Chunk BandJoinProbeTransform::buildOutputChunk()
             result->reserve(num_rows);
             for (const auto & [block_index, rows] : out_segments)
             {
-                auto gathered = index->blocks[block_index].columns[interval_position]->index(*rows, 0);
+                auto gathered = gather_segment(block_index, *rows);
                 result->insertRangeFrom(*gathered, 0, gathered->size());
             }
             chunk.addColumn(std::move(result));
@@ -599,13 +642,13 @@ std::optional<Chunk> BandJoinProbeTransform::produceChunk()
         if (!in_walk)
         {
             ++produce_work;
-            if (!point_valid.empty() && !point_valid[current_row])
+            current_row_matched = false;
+            /// Rows with NULL/NaN keys and rows with no admissible walk start match nothing:
+            /// finishRow decides whether that means "skip" or "emit padded".
+            bool valid = point_valid.empty() || point_valid[current_row];
+            if (!valid || !findWalkStart(current_row))
             {
-                ++current_row;
-                continue;
-            }
-            if (!findWalkStart(current_row))
-            {
+                finishRow(current_row);
                 ++current_row;
                 continue;
             }
@@ -615,6 +658,7 @@ std::optional<Chunk> BandJoinProbeTransform::produceChunk()
         if (continueWalk(current_row))
         {
             in_walk = false;
+            finishRow(current_row);
             ++current_row;
         }
     }

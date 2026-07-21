@@ -21,11 +21,30 @@ namespace ErrorCodes
 
 /// The executed kind and whether the inputs must be swapped so the point side probes, or
 /// std::nullopt for a combination the band join does not execute. The single source of truth
-/// for the supported join type matrix.
+/// for the supported join type matrix. Kinds that keep unmatched rows of the interval side
+/// (RIGHT/FULL relative to the point side, and SEMI/ANTI keeping the interval side) are out
+/// of scope and decline.
 static std::optional<std::pair<BandJoinKind, bool>> toBandJoinKind(JoinKind kind, JoinStrictness strictness, bool point_side_is_right)
 {
-    if (kind == JoinKind::Inner && strictness == JoinStrictness::All)
-        return {{BandJoinKind::Inner, point_side_is_right}};
+    const JoinKind point_side_kind = point_side_is_right ? JoinKind::Right : JoinKind::Left;
+
+    if (strictness == JoinStrictness::All)
+    {
+        if (kind == JoinKind::Inner)
+            return {{BandJoinKind::Inner, point_side_is_right}};
+        if (kind == point_side_kind)
+            return {{BandJoinKind::Left, point_side_is_right}};
+        return {};
+    }
+
+    if (strictness == JoinStrictness::Semi || strictness == JoinStrictness::Anti)
+    {
+        if (kind != point_side_kind)
+            return {};
+        BandJoinKind band_kind = strictness == JoinStrictness::Semi ? BandJoinKind::LeftSemi : BandJoinKind::LeftAnti;
+        return {{band_kind, point_side_is_right}};
+    }
+
     return {};
 }
 

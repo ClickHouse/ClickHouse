@@ -1,6 +1,7 @@
 #pragma once
 
 #include <deque>
+#include <limits>
 #include <memory>
 #include <optional>
 
@@ -30,10 +31,16 @@ struct BandJoinCondition
 /// expression to different common types; each bound compares within its own type.
 using BandJoinConditions = std::array<BandJoinCondition, 2>;
 
-/// The join types the band join operator executes.
+/// The join types the band join operator executes, relative to the point side (the executed
+/// "left" is always the point side; the step's swap mirror maps the query kinds onto these).
+/// Kinds that emit unmatched interval-side rows are out of scope: the probe never revisits
+/// the index, so it cannot know which interval rows stayed unmatched.
 enum class BandJoinKind : uint8_t
 {
     Inner,
+    Left,
+    LeftSemi,
+    LeftAnti,
 };
 
 const char * toString(BandJoinKind kind);
@@ -149,6 +156,10 @@ private:
 /// the lower bound, then a backward walk pruned by the `hi` maxima emits the matches. The
 /// resume state (point row, block, walk position) and the reusable scratch are members, so a
 /// single high-fanout point row splits across as many output chunks as the caps demand.
+/// LEFT pads the interval side with column-type defaults inline on a no-match row (with
+/// `join_use_nulls` the planner made those columns Nullable in the pre-join actions); SEMI
+/// emits the first match and skips the rest of the walk; ANTI emits padded on no-match only.
+/// NULL/NaN point keys match nothing, so LEFT/ANTI emit them padded.
 class BandJoinProbeTransform final : public JoinProbeSideTransform
 {
 public:
@@ -187,7 +198,15 @@ private:
     /// false when the walk is complete or the work budget stopped it (out_of_budget set).
     bool descendDirectory(size_t point_row, bool & out_of_budget);
 
+    /// Register a match of the walk; returns whether the walk keeps looking for more
+    /// (SEMI/ANTI are decided by their first match and skip the rest).
+    bool onMatch(size_t point_row, size_t block_index, size_t row);
+    /// The point row's walk is complete: LEFT/ANTI emit the row padded when nothing matched.
+    void finishRow(size_t point_row);
+    bool emitsUnmatchedRows() const { return kind == BandJoinKind::Left || kind == BandJoinKind::LeftAnti; }
+
     void emitMatch(size_t point_row, size_t block_index, size_t row);
+    void emitUnmatched(size_t point_row);
     bool outputFull() const;
     Chunk buildOutputChunk();
     void resetChunkState();
@@ -223,11 +242,14 @@ private:
     /// the walk descends the directory from `walk_block - 1`.
     size_t current_row = 0;
     bool in_walk = false;
+    bool current_row_matched = false;
     size_t walk_block = 0;
     ssize_t walk_row = -1;
 
     /// Output accumulator: point rows to replicate, and interval (block, row) references
-    /// grouped into per-block segments in emission order.
+    /// grouped into per-block segments in emission order; a segment with the sentinel block
+    /// index emits column-type defaults instead (unmatched rows of LEFT/ANTI).
+    static constexpr size_t padded_segment = std::numeric_limits<size_t>::max();
     PaddedPODArray<UInt64> out_point_rows;
     std::vector<std::pair<size_t, ColumnUInt64::MutablePtr>> out_segments;
     size_t out_bytes_estimate = 0;

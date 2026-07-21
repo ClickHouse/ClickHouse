@@ -1,0 +1,17 @@
+right of point-left	1	0
+left of point-right	1	0
+full point-left	1	0
+full point-right	1	0
+semi of interval side	1	0
+anti of interval side	1	0
+inner extra conjunct	1
+left extra conjunct	1	0
+semi extra conjunct	1	0
+anti extra conjunct	1	0
+left use_nulls plan	1
+left use_nulls padded	1
+left use_nulls parity	1
+anti use_nulls parity	1
+semi use_nulls parity	1
+right use_nulls parity	1
+use_nulls row parity	1

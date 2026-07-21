@@ -43,9 +43,10 @@ FROM (EXPLAIN SELECT count() FROM det_p p JOIN det_i i ON p.t >= i.lo AND p.t >=
 SELECT 'right orientation', countIf(explain LIKE '%BandJoin%') > 0
 FROM (EXPLAIN SELECT count() FROM det_i i JOIN det_p p ON p.t >= i.lo AND p.t <= i.hi);
 
--- Non-INNER kinds are out of scope for now and fall through to IEJoin
-SELECT 'left kind', countIf(explain LIKE '%IEJoin%') > 0, countIf(explain LIKE '%BandJoin%')
-FROM (EXPLAIN SELECT count() FROM det_p p LEFT JOIN det_i i ON p.t >= i.lo AND p.t <= i.hi);
+-- Kinds that keep unmatched interval-side rows are out of scope and fall through to IEJoin
+-- (the in-scope point-side LEFT/SEMI/ANTI kinds are covered in 04570-04572)
+SELECT 'full kind', countIf(explain LIKE '%IEJoin%') > 0, countIf(explain LIKE '%BandJoin%')
+FROM (EXPLAIN SELECT count() FROM det_p p FULL JOIN det_i i ON p.t >= i.lo AND p.t <= i.hi);
 
 -- `ie_join` listed first claims the join even for the band shape
 SET join_algorithm = 'ie_join,band_join,hash';
