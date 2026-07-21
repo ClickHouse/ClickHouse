@@ -69,7 +69,7 @@ public:
         ClusterPtr owned_cluster_ = {},
         ASTPtr remote_table_function_ptr_ = {},
         bool is_remote_function_ = false,
-        bool check_local_shard_access_ = false);
+        bool is_remote_database_proxy_ = false);
 
     ~StorageDistributed() override;
 
@@ -279,13 +279,16 @@ private:
 
     bool is_remote_function;
 
-    /// Enforce the caller's own rights on `remote_database.remote_table` in `read`/`write` when a
-    /// shard points to this server, where the query runs directly under the caller and the stored
-    /// engine credentials do not apply. Set by the tables of a `Remote` database, whose ordinary
-    /// resolution path validates only `SHOW_COLUMNS`; the `remote` table function performs the same
-    /// check at storage construction time instead (`TableFunctionRemote::executeImpl`), because
-    /// there the query kind is known by then.
-    bool check_local_shard_access;
+    /// The storage is a table of a `Remote` database: a transient proxy over the remote table with
+    /// no data of its own. Such a proxy enforces the caller's own rights on
+    /// `remote_database.remote_table` in `read`/`write` when a shard points to this server, where
+    /// the query runs directly under the caller and the stored engine credentials do not apply
+    /// (the ordinary resolution path of the database validates only `SHOW_COLUMNS`; the `remote`
+    /// table function performs the same check at storage construction time instead, in
+    /// `TableFunctionRemote::executeImpl`, because there the query kind is known by then). It also
+    /// rejects `TRUNCATE`, which for a `Distributed` storage only clears the on-disk async-insert
+    /// spool: the proxy has none, so it would be a silent no-op reported as success.
+    bool is_remote_database_proxy;
 
     void checkLocalShardAccess(const AccessFlags & access, const ContextPtr & local_context) const;
 };

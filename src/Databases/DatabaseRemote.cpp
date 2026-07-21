@@ -220,8 +220,6 @@ ColumnsDescription DatabaseRemote::fetchTableStructure(const String & table_name
         if (!shard_info.isLocal())
             continue;
 
-        local_context->checkAccess(AccessType::SHOW_COLUMNS, remote_database, table_name);
-
         if (auto local_database = tryGetLocalDatabase())
         {
             /// The local database may be another `Remote` database that (indirectly) refers back to
@@ -229,6 +227,13 @@ ColumnsDescription DatabaseRemote::fetchTableStructure(const String & table_name
             LocalTraversalGuard guard(this);
             if (auto storage = local_database->tryGetTable(table_name, local_context))
             {
+                /// Resolution reads the structure of the underlying local table, so it requires the
+                /// same right as `DESCRIBE TABLE` on it (like the local-shard special case of
+                /// `getStructureOfRemoteTable`). The check applies only when the local replica
+                /// actually serves the table: on the remote-replica fallback below no local object
+                /// is touched, so a caller without any grants on the local objects must not be
+                /// rejected there.
+                local_context->checkAccess(AccessType::SHOW_COLUMNS, remote_database, table_name);
                 auto metadata_snapshot = storage->getInMemoryMetadataPtr(local_context, /* bypass_metadata_cache = */ false);
                 return metadata_snapshot->getColumns();
             }
@@ -306,11 +311,12 @@ StoragePtr DatabaseRemote::fetchTable(const String & table_name, ContextPtr loca
     /// Each table is a `Distributed` storage over the ad-hoc cluster built from the database's addresses.
     /// The empty `relative_data_path` makes every `INSERT` synchronous (see `StorageDistributed::write`),
     /// so no on-disk spool or background sender is needed and the storage requires no `startup`.
-    /// `check_local_shard_access` additionally enforces the caller's own `SELECT`/`INSERT` rights on
+    /// `is_remote_database_proxy` additionally enforces the caller's own `SELECT`/`INSERT` rights on
     /// the underlying local table when a shard points to this server: by the time the storage is
     /// resolved, only `SHOW_COLUMNS` has been validated (see `fetchTableStructure`), which is not
-    /// enough for a proxy that can read and write local data; the `remote` table function performs
-    /// the same check in `TableFunctionRemote::executeImpl`.
+    /// enough for a proxy that can read and write local data (the `remote` table function performs
+    /// the same check in `TableFunctionRemote::executeImpl`); it also rejects `TRUNCATE`, which
+    /// would otherwise be a silent no-op of `StorageDistributed`.
     return std::make_shared<StorageDistributed>(
         StorageID(getDatabaseName(), table_name),
         columns,
@@ -328,7 +334,7 @@ StoragePtr DatabaseRemote::fetchTable(const String & table_name, ContextPtr loca
         table_cluster,
         /* remote_table_function_ptr_ = */ nullptr,
         /* is_remote_function_ = */ true,
-        /* check_local_shard_access_ = */ true);
+        /* is_remote_database_proxy_ = */ true);
 }
 
 
@@ -585,27 +591,38 @@ static DatabaseRemoteClusters buildClusters(const String & cluster_description, 
     auto all_replicas_cluster = std::make_shared<Cluster>(context->getSettingsRef(), names, params);
 
     /// A replica that points to this server is resolved through the local catalog. When it does not
-    /// have the database or the table, the metadata lookup falls back to the remaining replicas
-    /// (see `fetchTablesList` / `fetchTableStructure`), which must reach only the genuinely remote
-    /// ones, so precompute a cluster without the local replicas.
+    /// have the database or the table, the metadata lookup falls back to the remaining replicas of
+    /// the same shard (see `fetchTablesList` / `fetchTableStructure`), which must reach only the
+    /// genuinely remote ones, so precompute a cluster with the local replicas stripped from their
+    /// shards while every other shard stays intact. If some shard consists of local replicas only,
+    /// there is nothing to fall back to for that shard, and a fallback cluster without it would
+    /// silently read and write only a subset of the configured shards, so no fallback cluster is
+    /// built at all: a database or table missing on such a local replica is reported as missing.
     HostsByShard remote_only_names;
     bool has_local_replicas = false;
+    bool fallback_possible = true;
     for (const auto & shard_addresses : all_replicas_cluster->getShardsAddresses())
     {
         Strings replicas;
+        bool shard_has_local_replicas = false;
         for (const auto & address : shard_addresses)
         {
             if (address.is_local)
-                has_local_replicas = true;
+                shard_has_local_replicas = true;
             else
                 replicas.push_back(address.readableString());
         }
-        if (!replicas.empty())
-            remote_only_names.push_back(std::move(replicas));
+        has_local_replicas |= shard_has_local_replicas;
+        if (shard_has_local_replicas && replicas.empty())
+        {
+            fallback_possible = false;
+            break;
+        }
+        remote_only_names.push_back(std::move(replicas));
     }
 
     ClusterPtr remote_only_cluster;
-    if (has_local_replicas && !remote_only_names.empty())
+    if (has_local_replicas && fallback_possible)
         remote_only_cluster = std::make_shared<Cluster>(context->getSettingsRef(), remote_only_names, params);
 
     return {std::move(all_replicas_cluster), std::move(remote_only_cluster)};

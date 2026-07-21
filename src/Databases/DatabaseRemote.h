@@ -88,10 +88,12 @@ private:
     const ASTPtr database_engine_define;
     const String remote_database;
     const ClusterPtr cluster;
-    /// The subset of `cluster` without the replicas that point to this server; used as the
-    /// metadata-lookup fallback when the local replica does not have the database or the table
-    /// (see `fetchTablesList` / `fetchTableStructure`). Null when `cluster` has no local replicas
-    /// (the fallback is never needed) or no remote replicas (there is nothing to fall back to).
+    /// `cluster` with the replicas that point to this server stripped from their shards, while every
+    /// other shard stays intact; used as the metadata-lookup fallback when the local replica does not
+    /// have the database or the table (see `fetchTablesList` / `fetchTableStructure`). Null when
+    /// `cluster` has no local replicas (the fallback is never needed) or when some shard consists of
+    /// local replicas only (there is nothing to fall back to for that shard, and dropping it would
+    /// silently serve only a subset of the configured shards).
     const ClusterPtr remote_only_cluster;
     const bool secure;
     LoggerPtr log;

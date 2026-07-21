@@ -82,6 +82,11 @@ ${CLICKHOUSE_CLIENT} --query "DROP DATABASE ${REMOTE_DB}_unreachable"
 echo '-- DDL against a Remote database is not supported (prints 1 if the expected error is raised)'
 ${CLICKHOUSE_CLIENT} --query "CREATE TABLE ${REMOTE_DB}.new_table (x UInt8) ENGINE = Memory" 2>&1 | grep -c -m1 "NOT_IMPLEMENTED"
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE ${REMOTE_DB}.t" 2>&1 | grep -c -m1 "NOT_IMPLEMENTED"
+# TRUNCATE reaches the proxy storage directly (`InterpreterDropQuery` calls `IStorage::truncate`,
+# bypassing the database), where it would be a silent no-op of `StorageDistributed`; it must be
+# rejected as well, and the remote data must stay intact.
+${CLICKHOUSE_CLIENT} --query "TRUNCATE TABLE ${REMOTE_DB}.t" 2>&1 | grep -c -m1 "NOT_IMPLEMENTED"
+${CLICKHOUSE_CLIENT} --query "SELECT count() FROM ${CLICKHOUSE_DATABASE}.t"
 
 echo '-- the password is masked in SHOW CREATE DATABASE (0 = not leaked, 1 = [HIDDEN] shown)'
 ${CLICKHOUSE_CLIENT} --query "CREATE DATABASE ${REMOTE_DB}_secret ENGINE = Remote('127.0.0.1', '${CLICKHOUSE_DATABASE}', 'default', 'sekret')"

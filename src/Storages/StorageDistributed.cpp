@@ -437,7 +437,7 @@ StorageDistributed::StorageDistributed(
     ClusterPtr owned_cluster_,
     ASTPtr remote_table_function_ptr_,
     bool is_remote_function_,
-    bool check_local_shard_access_)
+    bool is_remote_database_proxy_)
     : IStorage(id_)
     , WithContext(context_->getGlobalContext())
     , remote_database(remote_database_)
@@ -453,7 +453,7 @@ StorageDistributed::StorageDistributed(
     , distributed_settings(std::make_unique<DistributedSettings>(distributed_settings_))
     , rng(randomSeed())
     , is_remote_function(is_remote_function_)
-    , check_local_shard_access(check_local_shard_access_)
+    , is_remote_database_proxy(is_remote_database_proxy_)
 {
     if (!(*distributed_settings)[DistributedSetting::flush_on_detach] && (*distributed_settings)[DistributedSetting::background_insert_batch])
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Settings flush_on_detach=0 and background_insert_batch=1 are incompatible");
@@ -1013,7 +1013,7 @@ QueryTreeNodePtr buildQueryTreeDistributed(SelectQueryInfo & query_info,
 
 void StorageDistributed::checkLocalShardAccess(const AccessFlags & access, const ContextPtr & local_context) const
 {
-    if (!check_local_shard_access)
+    if (!is_remote_database_proxy)
         return;
 
     for (const auto & shard_info : getCluster()->getShardsInfo())
@@ -1648,6 +1648,16 @@ Strings StorageDistributed::getDataPaths() const
 
 void StorageDistributed::truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr, TableExclusiveLockHolder &)
 {
+    /// For a `Distributed` storage, `TRUNCATE` only clears the on-disk async-insert spool. A table of
+    /// a `Remote` database has none, so the statement would be a silent no-op reported as success,
+    /// while the user expects the remote table to be truncated; reject it like the rest of the DDL
+    /// against such a database.
+    if (is_remote_database_proxy)
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "Table {} is a read-through proxy of a `Remote` database and does not support TRUNCATE TABLE",
+            getStorageID().getNameForLogs());
+
     std::lock_guard lock(cluster_nodes_mutex);
 
     LOG_DEBUG(log, "Removing pending blocks for async INSERT from filesystem on TRUNCATE TABLE");

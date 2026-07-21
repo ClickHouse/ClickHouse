@@ -7,3 +7,5 @@ id	UInt64
 -- both work once the rights on the underlying table are granted
 1
 2
+-- resolution is rejected without SHOW COLUMNS on the underlying local table (prints 1 if rejected)
+1

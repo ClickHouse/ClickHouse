@@ -35,6 +35,8 @@ MATERIALIZED a + 3
 -- DDL against a Remote database is not supported (prints 1 if the expected error is raised)
 1
 1
+1
+4
 -- the password is masked in SHOW CREATE DATABASE (0 = not leaked, 1 = [HIDDEN] shown)
 0
 1
