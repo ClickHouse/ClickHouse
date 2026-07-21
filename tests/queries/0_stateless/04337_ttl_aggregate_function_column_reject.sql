@@ -619,3 +619,59 @@ TTL d + INTERVAL 1 DAY DELETE WHERE d1 = d2;
 DROP TABLE test_ttl_agg_two_dynamic_suspicious;
 
 SET allow_suspicious_ttl_expressions = 0;
+
+-- A state-aware consumer over a mixed Variant is rejected even when it can consume the
+-- AggregateFunction alternative, because it still throws on a sibling alternative a later row may store:
+-- `finalizeAggregation` accepts the AggregateFunction branch but throws ILLEGAL_TYPE_OF_ARGUMENT on the UInt32 branch.
+CREATE TABLE test_ttl_agg_mixed_variant_finalize
+(
+    key UInt64,
+    v Variant(AggregateFunction(max, UInt32), UInt32),
+    d DateTime
+)
+ENGINE = MergeTree()
+ORDER BY key
+TTL d + INTERVAL 1 DAY DELETE WHERE isNotNull(finalizeAggregation(v)); -- { serverError BAD_TTL_EXPRESSION }
+
+-- A Variant every alternative of which the consumer can handle is still accepted.
+CREATE TABLE test_ttl_agg_all_state_alternatives
+(
+    key UInt64,
+    v Variant(AggregateFunction(max, UInt32), AggregateFunction(min, UInt32)),
+    d DateTime
+)
+ENGINE = MergeTree()
+ORDER BY key
+TTL d + INTERVAL 1 DAY DELETE WHERE isNotNull(finalizeAggregation(v));
+
+DROP TABLE test_ttl_agg_all_state_alternatives;
+
+-- A type-agnostic consumer over the same mixed Variant is still accepted.
+CREATE TABLE test_ttl_agg_mixed_variant_agnostic
+(
+    key UInt64,
+    v Variant(AggregateFunction(max, UInt32), UInt32),
+    d DateTime
+)
+ENGINE = MergeTree()
+ORDER BY key
+TTL d + INTERVAL 1 DAY DELETE WHERE isNotNull(v);
+
+DROP TABLE test_ttl_agg_mixed_variant_agnostic;
+
+-- The escape hatch also covers the mixed-Variant case.
+SET allow_suspicious_ttl_expressions = 1;
+
+CREATE TABLE test_ttl_agg_mixed_variant_suspicious
+(
+    key UInt64,
+    v Variant(AggregateFunction(max, UInt32), UInt32),
+    d DateTime
+)
+ENGINE = MergeTree()
+ORDER BY key
+TTL d + INTERVAL 1 DAY DELETE WHERE isNotNull(finalizeAggregation(v));
+
+DROP TABLE test_ttl_agg_mixed_variant_suspicious;
+
+SET allow_suspicious_ttl_expressions = 0;

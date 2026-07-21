@@ -207,12 +207,31 @@ void checkActionsDAGForAggregateFunctions(const ActionsDAG & actions_dag, std::s
             {
                 const auto & variant_type = assert_cast<const DataTypeVariant &>(*arguments[i].type);
                 const auto & variant_types = variant_type.getVariants();
+
+                /// Only a `Variant` that can actually carry an AggregateFunction state is in scope of this
+                /// check. But once such a `Variant` is a consumer's argument, *every* alternative must be
+                /// probed, not only the aggregate-carrying ones: a state-aware consumer can accept the
+                /// AggregateFunction branch and still throw `ILLEGAL_TYPE_OF_ARGUMENT` on a sibling
+                /// alternative that a later row happens to store. For example `finalizeAggregation(v)` with
+                /// `v Variant(AggregateFunction(max, UInt32), UInt32)` succeeds on the state branch but
+                /// throws on a row storing the `UInt32` alternative during TTL execution. Probing only the
+                /// aggregate alternative would wrongly accept it.
+                bool has_aggregate_alternative = false;
+                for (const auto & alternative_type : variant_types)
+                {
+                    if (hasAggregateFunctionType(alternative_type))
+                    {
+                        has_aggregate_alternative = true;
+                        break;
+                    }
+                }
+
+                if (!has_aggregate_alternative)
+                    continue;
+
                 std::vector<ColumnPtr> alternatives;
                 for (size_t discr = 0; discr < variant_types.size(); ++discr)
                 {
-                    if (!hasAggregateFunctionType(variant_types[discr]))
-                        continue;
-
                     auto variant_column = variant_type.createColumn();
                     ColumnPtr alternative = variant_types[discr]->createColumnConstWithDefaultValue(1)->convertToFullColumnIfConst();
                     assert_cast<ColumnVariant &>(*variant_column).insertIntoVariantFrom(
@@ -220,11 +239,8 @@ void checkActionsDAGForAggregateFunctions(const ActionsDAG & actions_dag, std::s
                     alternatives.push_back(std::move(variant_column));
                 }
 
-                if (!alternatives.empty())
-                {
-                    suspect_indexes.push_back(i);
-                    suspect_columns.push_back(std::move(alternatives));
-                }
+                suspect_indexes.push_back(i);
+                suspect_columns.push_back(std::move(alternatives));
             }
             else if (WhichDataType(arguments[i].type).isDynamic())
             {
