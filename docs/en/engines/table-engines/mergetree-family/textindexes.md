@@ -455,6 +455,8 @@ Search tokens that the postprocessor maps to an empty string are ignored, i.e. t
 | [mapContainsValue](/sql-reference/functions/tuple-map-functions#mapContainsValue)           | yes | all | yes |
 | [mapContainsKeyLike](/sql-reference/functions/tuple-map-functions#mapContainsKeyLike)       | yes | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK` | yes |
 | [mapContainsValueLike](/sql-reference/functions/tuple-map-functions#mapContainsValueLike)   | yes | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK` | yes |
+| [mapContainsKeyValue](/sql-reference/functions/tuple-map-functions#mapContainsKeyValue)     | no | `keyValuePairs` | no |
+| [mapContainsKeyValueLike](/sql-reference/functions/tuple-map-functions#mapContainsKeyValueLike) | no | `keyValuePairs` | no |
 | [has](/sql-reference/functions/array-functions.md/#has)                                     | yes | `array` | yes |
 | [hasAny](/sql-reference/functions/array-functions.md/#hasAny)                               | yes | `array` | yes |
 | [hasAll](/sql-reference/functions/array-functions.md/#hasAll)                               | yes | `array` | yes |
@@ -466,7 +468,7 @@ Search tokens that the postprocessor maps to an empty string are ignored, i.e. t
 There is no fallback to using the index as a hint: if the setting is disabled or the tokenizer is not in the supported set, the index is not used for `ILIKE`.
 The preprocessor, if present, must be `lower` or `upper`; postprocessors are not supported.
 
-The `keyValuePairs` tokenizer (for `Map(String, String)` or `Map(LowCardinality(String), LowCardinality(String))` columns) does **not** accept a `preprocessor` or `postprocessor` (both are rejected at table creation), so the *Supports a preprocessor* and *Supports a postprocessor* columns above do not apply to it. It is built directly on the `Map` column — not on `mapKeys` / `mapValues` — and answers `=` (`map['key'] = 'value'`), `map['key']` prefix/suffix (`LIKE`, `startsWith`, `endsWith`), and `mapContainsKey` / `mapContainsValue` / `mapContainsKeyLike` / `mapContainsValueLike` from the index. See [the `keyValuePairs` tokenizer](#tokenizer-key-value-pairs).
+The `keyValuePairs` tokenizer (for `Map(String, String)` or `Map(LowCardinality(String), LowCardinality(String))` columns) does **not** accept a `preprocessor` or `postprocessor` (both are rejected at table creation), so the *Supports a preprocessor* and *Supports a postprocessor* columns above do not apply to it. It is built directly on the `Map` column — not on `mapKeys` / `mapValues` — and answers `=` (`map['key'] = 'value'`), `map['key'] IN (...)`, `map['key']` prefix/suffix (`LIKE`, `startsWith`, `endsWith`), key/value existence (`mapContainsKey` / `mapContainsValue` / `mapContainsKeyLike` / `mapContainsValueLike`), and pair existence (`mapContainsKeyValue` / `mapContainsKeyValueLike`) from the index. See [the `keyValuePairs` tokenizer](#tokenizer-key-value-pairs).
 
 **Experimental: Support phrase search argument (optional)**.
 
@@ -804,14 +806,26 @@ SELECT count() FROM table WHERE mapContainsKeyLike(map, '% clickhouse %');
 SELECT count() FROM table WHERE mapContainsValueLike(map, '% clickhouse %');
 ```
 
+#### `mapContainsKeyValue` and `mapContainsKeyValueLike` {#functions-example-mapcontainskeyvalue}
+
+The functions [mapContainsKeyValue](/sql-reference/functions/tuple-map-functions#mapContainsKeyValue) and [mapContainsKeyValueLike](/sql-reference/functions/tuple-map-functions#mapContainsKeyValueLike) test whether a map contains an entry matching *both* a key and a value (exactly, or by `LIKE` pattern). They are answered only by the [`keyValuePairs`](#tokenizer-key-value-pairs) tokenizer, which stores each `(key, value)` pair as one token. Unlike `map['key'] = 'value'` (which tests the key's first value), they match *any* occurrence, so they are well defined for maps with duplicate keys.
+
+Example:
+
+```sql
+SELECT count() FROM table WHERE mapContainsKeyValue(map, 'level', 'error');
+SELECT count() FROM table WHERE mapContainsKeyValueLike(map, 'lev%', '%rror%');
+```
+
 #### `operator[]` {#functions-example-access-operator}
 
-Access [operator[]](/sql-reference/operators#access-operators) can be used with the text index to filter out keys and values. The text index is used if it is created on `mapKeys(map)` or `mapValues(map)` expressions, or both, or on the `Map` column directly with the [`keyValuePairs`](#tokenizer-key-value-pairs) tokenizer (which answers exact `map['key'] = 'value'` lookups from the index).
+Access [operator[]](/sql-reference/operators#access-operators) can be used with the text index to filter out keys and values. The text index is used if it is created on `mapKeys(map)` or `mapValues(map)` expressions, or both, or on the `Map` column directly with the [`keyValuePairs`](#tokenizer-key-value-pairs) tokenizer (which answers exact `map['key'] = 'value'` lookups, and `map['key'] IN (...)`, from the index).
 
 Example:
 
 ```sql
 SELECT count() FROM table WHERE map['engine'] = 'clickhouse';
+SELECT count() FROM table WHERE map['engine'] IN ('clickhouse', 'postgres');
 ```
 
 See the following examples for using columns of type `Array(T)` and `Map(K, V)` with the text index.
@@ -931,6 +945,8 @@ a trailer, which also keeps the dictionary sorted by key and then by value.
 It accelerates:
 
 - Exact equality on a map element (`attributes['level'] = 'error'`) — an exact token lookup with direct read.
+- Set membership on a map element (`attributes['level'] IN ('error', 'warn')`) — the union of the exact `attributes['level'] = vᵢ` lookups.
+- Pair existence (`mapContainsKeyValue(attributes, 'level', 'error')`, `mapContainsKeyValueLike(attributes, 'lev%', '%rror%')`) — matches an entry on both key and value at any position, so it is well defined for duplicate keys (unlike `attributes['level'] = 'error'`, which tests the first value).
 - Value prefix/suffix on a map element (`attributes['level'] LIKE 'err%'`, `startsWith`, `endsWith`).
 - Value-only search across all keys (`mapContainsValue(attributes, 'error')`, `mapContainsValueLike(attributes, '%rror%')`) — a scan of the dictionary of distinct pairs rather than the map column.
 - Key existence and key pattern search (`mapContainsKey(attributes, 'level')`, `mapContainsKeyLike(attributes, 'lev%')`) — also answered by the dictionary scan.
@@ -1237,7 +1253,7 @@ Direct read is controlled by two settings:
 
 The direct read optimization supports functions `hasToken`, `hasAllTokens`, and `hasAnyTokens`.
 If the text index is defined with an `array` tokenizer, direct read is also supported for functions `equals`, `has`, `hasAny`, `hasAll`, `mapContainsKey`, and `mapContainsValue`.
-If the text index is defined with a `keyValuePairs` tokenizer (on a `Map` column), the map searches listed in [the `keyValuePairs` tokenizer](#tokenizer-key-value-pairs) — exact `map['key'] = 'value'`, `mapContainsValue` / `mapContainsValueLike`, and `mapContainsKey` / `mapContainsKeyLike` — are answered directly from the index dictionary.
+If the text index is defined with a `keyValuePairs` tokenizer (on a `Map` column), the map searches listed in [the `keyValuePairs` tokenizer](#tokenizer-key-value-pairs) — exact `map['key'] = 'value'`, `map['key'] IN (...)`, `mapContainsKeyValue` / `mapContainsKeyValueLike`, `mapContainsValue` / `mapContainsValueLike`, and `mapContainsKey` / `mapContainsKeyLike` — are answered directly from the index dictionary.
 These functions can also be combined by `AND`, `OR`, and `NOT` operators.
 The `WHERE` or `PREWHERE` clauses can also contain additional non-text-search-functions filters (for text columns or other columns) - in that case, the direct read optimization will still be used but less effective (it only applies to the supported text search functions).
 
