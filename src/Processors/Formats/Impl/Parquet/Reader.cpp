@@ -1187,11 +1187,13 @@ static std::optional<HashSet<UInt64>> hashDictionaryValues(
     /// hashable type is stored inline in `Field`. When
     /// the dictionary is not already an `IColumn` (FixedSize / StringPlain modes) the values are first
     /// materialized into a fresh column of `count` values plus an identity `indexes` vector: a
-    /// `ColumnString` there reserves only its UInt64 offsets and grows its `chars` buffer geometrically
-    /// (up to ~2x the final size) as `insertData` appends, so count twice the average value size for the
-    /// payload plus a UInt64 per-value offset - the raw `getAverageValueSize` alone understates that
-    /// materialized footprint. The `Mode::Column` path hashes the already-decoded (and already-charged)
-    /// column in place, so it needs none of the materialization terms.
+    /// `ColumnString` there reserves only its UInt64 offsets (exactly, via `reserve_exact`) and grows
+    /// its `chars` buffer geometrically (up to ~2x the final size) as `insertData` appends, so count
+    /// twice the *exact total* value bytes for the payload plus a UInt64 per-value offset. The total
+    /// must not be derived from `getAverageValueSize`: flooring its fractional mean and multiplying
+    /// back by `count` understates a mixed-length string dictionary by up to `count` bytes. The
+    /// `Mode::Column` path hashes the already-decoded (and already-charged) column in place, so it
+    /// needs none of the materialization terms.
     ///
     /// The `HashSet` term cannot be approximated per value: `HashSet::reserve` picks a power-of-two
     /// buffer with a maximum fill factor of 0.5 (`HashTableGrowerWithPrecalculation::set`), so the
@@ -1208,12 +1210,20 @@ static std::optional<HashSet<UInt64>> hashDictionaryValues(
     size_t value_set_buffer_bytes =
         (value_set_grower.bufSize() + ValueHashSet::grower_type::initial_count) * sizeof(ValueHashSet::cell_type);
     size_t per_value_bytes = sizeof(UInt64);    /// `hashes` vector
+    size_t materialized_payload_bytes = 0;
     if (column.dictionary.mode != Dictionary::Mode::Column)
+    {
+        /// Exact total value bytes of the dictionary: `StringPlain` stores each value with a 4-byte
+        /// length prefix in `data`, fixed-size modes store `value_size` bytes per value.
+        size_t total_value_bytes = column.dictionary.mode == Dictionary::Mode::StringPlain
+            ? column.dictionary.data.size() - 4 * count
+            : count * column.dictionary.value_size;
+        materialized_payload_bytes = 2 * total_value_bytes;    /// materialized column payload, incl. geometric chars growth
         per_value_bytes +=
-            2 * size_t(column.dictionary.getAverageValueSize())  /// materialized column payload, incl. geometric chars growth
-            + sizeof(UInt64)    /// materialized `ColumnString` offsets (0 for fixed types; counted conservatively)
+            sizeof(UInt64)      /// materialized `ColumnString` offsets (0 for fixed types; counted conservatively)
             + sizeof(UInt32);   /// identity `indexes`
-    size_t estimated_value_set_bytes = count * per_value_bytes + value_set_buffer_bytes;
+    }
+    size_t estimated_value_set_bytes = count * per_value_bytes + materialized_payload_bytes + value_set_buffer_bytes;
     /// Reserve the peak footprint before allocating anything. If it does not fit, skip pruning.
     if (!reservation.tryReserve(estimated_value_set_bytes))
         return std::nullopt;
