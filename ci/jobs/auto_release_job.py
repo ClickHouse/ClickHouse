@@ -154,7 +154,10 @@ def _find_release_candidate(branch: str) -> Tuple[str, str]:
         return "", f"no new commits since {tag}"
 
     print(f"[{branch}]: {len(commits)} commit(s) since {tag}")
-    # Exclude the last commit (the version-bump commit that follows a release).
+    # `git rev-list` lists newest first, so the oldest commit in the
+    # `tag..branch` range — commits[-1] — is the version-bump commit pushed
+    # right after `tag` was cut. Drop it (never a release candidate), then keep
+    # the newest MAX_COMMITS_TO_CONSIDER of what remains.
     commits_to_check = commits[:-1][:MAX_COMMITS_TO_CONSIDER]
     last_failure = ""
     for idx, commit in enumerate(commits_to_check):
