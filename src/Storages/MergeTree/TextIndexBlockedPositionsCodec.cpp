@@ -1,0 +1,338 @@
+#include <Storages/MergeTree/TextIndexBlockedPositionsCodec.h>
+
+#include <Compression/PFor.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
+
+#include <bit>
+
+namespace DB
+{
+
+namespace ErrorCodes
+{
+    extern const int CORRUPTED_DATA;
+}
+
+namespace
+{
+
+/// Varint into a staged buffer — payloads are assembled before the directory that sizes them.
+size_t writeVarUIntTo(uint8_t * out, UInt64 v)
+{
+    size_t n = 0;
+    while (v >= 0x80)
+    {
+        out[n++] = static_cast<uint8_t>(v) | 0x80;
+        v >>= 7;
+    }
+    out[n++] = static_cast<uint8_t>(v);
+    return n;
+}
+
+UInt64 readVarUIntFrom(const uint8_t *& pos, const uint8_t * end)
+{
+    UInt64 value = 0;
+    int shift = 0;
+    while (true)
+    {
+        if (pos >= end)
+            throw Exception(ErrorCodes::CORRUPTED_DATA, "Corrupt text index positions (blocked): truncated varint in block payload");
+        const uint8_t byte = *pos++;
+        value |= static_cast<UInt64>(byte & 0x7f) << shift;
+        if (!(byte & 0x80))
+            return value;
+        shift += 7;
+        if (shift >= 64)
+            throw Exception(ErrorCodes::CORRUPTED_DATA, "Corrupt text index positions (blocked): overlong varint in block payload");
+    }
+}
+
+/// Parse a block payload into per-rank freqs and the within-document delta value lane.
+void parseBlock(
+    const uint8_t * payload,
+    size_t payload_bytes,
+    size_t docs_in_block,
+    PaddedPODArray<UInt32> & freqs,
+    PaddedPODArray<UInt32> & values)
+{
+    const uint8_t * pos = payload;
+    const uint8_t * end = payload + payload_bytes;
+
+    freqs.resize(docs_in_block);
+    for (size_t i = 0; i < docs_in_block; ++i)
+        freqs[i] = 1;
+
+    const UInt64 num_exceptions = readVarUIntFrom(pos, end);
+    if (num_exceptions > docs_in_block)
+        throw Exception(ErrorCodes::CORRUPTED_DATA,
+            "Corrupt text index positions (blocked): {} frequency exceptions for {} documents", num_exceptions, docs_in_block);
+
+    /// PFor emits >= 1 byte per block, so payload size bounds the value count (reject before alloc).
+    const UInt64 max_total = docs_in_block + payload_bytes * PFor::BLOCK;
+
+    UInt64 total = docs_in_block;
+    UInt64 prev_rank = 0;
+    for (UInt64 e = 0; e < num_exceptions; ++e)
+    {
+        const UInt64 local_rank = readVarUIntFrom(pos, end);
+        const UInt64 freq = readVarUIntFrom(pos, end);
+        if (local_rank >= docs_in_block || (e > 0 && local_rank <= prev_rank))
+            throw Exception(ErrorCodes::CORRUPTED_DATA,
+                "Corrupt text index positions (blocked): exception rank {} out of order or out of range {}", local_rank, docs_in_block);
+        if (freq < 2 || total + (freq - 1) > max_total)
+            throw Exception(ErrorCodes::CORRUPTED_DATA,
+                "Corrupt text index positions (blocked): invalid frequency {} (total would exceed {})", freq, max_total);
+        freqs[local_rank] = static_cast<UInt32>(freq);
+        total += freq - 1;
+        prev_rank = local_rank;
+    }
+
+    values.resize(total);
+    const size_t consumed = PFor::decodeBlocks<UInt32>(pos, total, PFor::Delta::none, values.data(), end);
+    if (consumed == 0 || pos + consumed != end)
+        throw Exception(ErrorCodes::CORRUPTED_DATA,
+            "Corrupt text index positions (blocked): malformed position lane ({} of {} payload bytes consumed)",
+            static_cast<size_t>(pos - payload) + consumed, payload_bytes);
+}
+
+void emitRanks(
+    const PaddedPODArray<UInt32> & freqs,
+    const PaddedPODArray<UInt32> & values,
+    std::span<const UInt32> local_ranks,
+    PaddedPODArray<UInt32> & offsets,
+    PaddedPODArray<UInt32> & positions)
+{
+    /// local_ranks is ascending, so the start offset advances monotonically over the freqs.
+    UInt32 start = 0;
+    UInt32 next_rank = 0;
+    for (UInt32 rank : local_ranks)
+    {
+        for (UInt32 r = next_rank; r < rank; ++r)
+            start += freqs[r];
+
+        UInt32 position = 0;
+        for (UInt32 k = 0; k < freqs[rank]; ++k)
+        {
+            position = (k == 0) ? values[start + k] : position + values[start + k];
+            positions.push_back(position);
+        }
+        offsets.push_back(static_cast<UInt32>(positions.size()));
+
+        start += freqs[rank];
+        next_rank = rank + 1;
+    }
+}
+
+}
+
+UInt64 TextIndexBlockedPositionsCodec::countDocuments(std::span<const RoaringishEntry> entries)
+{
+    UInt64 num_docs = 0;
+    UInt32 current_doc = 0;
+    bool has_doc = false;
+    for (const auto & entry : entries)
+    {
+        if (!has_doc || entry.doc_id != current_doc)
+        {
+            current_doc = entry.doc_id;
+            has_doc = true;
+            ++num_docs;
+        }
+    }
+    return num_docs;
+}
+
+void TextIndexBlockedPositionsCodec::encode(std::span<const RoaringishEntry> entries, WriteBuffer & out)
+{
+    /// Flatten the sorted roaringish buckets into per-document freqs + within-document delta positions.
+    PaddedPODArray<UInt32> freqs;
+    PaddedPODArray<UInt32> values;
+    UInt32 current_doc = 0;
+    UInt32 prev_position = 0;
+    bool has_doc = false;
+    for (const auto & entry : entries)
+    {
+        if (entry.bitmap == 0)
+            throw Exception(ErrorCodes::CORRUPTED_DATA, "Text index positions (blocked): empty bitmap in roaringish entry");
+
+        if (!has_doc || entry.doc_id != current_doc)
+        {
+            current_doc = entry.doc_id;
+            has_doc = true;
+            freqs.push_back(0);
+        }
+        const UInt32 base = entry.group * RoaringishEntry::BITMAP_BITS;
+        UInt32 bitmap = entry.bitmap;
+        while (bitmap)
+        {
+            const UInt32 position = base + static_cast<UInt32>(std::countr_zero(bitmap));
+            values.push_back(freqs.back() == 0 ? position : position - prev_position);
+            prev_position = position;
+            ++freqs.back();
+            bitmap &= bitmap - 1;
+        }
+    }
+
+    const UInt64 num_docs = freqs.size();
+    const UInt64 num_blocks = (num_docs + BLOCK_DOCS - 1) / BLOCK_DOCS;
+    writeVarUInt(num_docs, out);
+    writeVarUInt(num_blocks, out);
+    if (num_docs == 0)
+        return;
+
+    /// Stage the block payloads to learn their sizes; the directory precedes them.
+    std::vector<size_t> block_totals(num_blocks);
+    std::vector<size_t> block_bytes(num_blocks);
+    std::vector<uint8_t> staged;
+    {
+        size_t reserve_bytes = 0;
+        size_t doc_index = 0;
+        for (UInt64 b = 0; b < num_blocks; ++b)
+        {
+            const size_t docs_in_block = std::min<size_t>(BLOCK_DOCS, num_docs - b * BLOCK_DOCS);
+            size_t total = 0;
+            for (size_t i = 0; i < docs_in_block; ++i)
+                total += freqs[doc_index++];
+            block_totals[b] = total;
+            reserve_bytes += 10 + docs_in_block * 10 + PFor::maxCompressedBytes<UInt32>(total);
+        }
+        staged.resize(reserve_bytes);
+    }
+
+    size_t staged_offset = 0;
+    size_t value_offset = 0;
+    for (UInt64 b = 0; b < num_blocks; ++b)
+    {
+        const size_t doc_begin = b * BLOCK_DOCS;
+        const size_t docs_in_block = std::min<size_t>(BLOCK_DOCS, num_docs - doc_begin);
+        uint8_t * block_begin = staged.data() + staged_offset;
+        size_t offset = 0;
+
+        const size_t total = block_totals[b];
+        size_t num_exceptions = 0;
+        for (size_t i = 0; i < docs_in_block; ++i)
+            if (freqs[doc_begin + i] > 1)
+                ++num_exceptions;
+        offset += writeVarUIntTo(block_begin + offset, num_exceptions);
+        for (size_t i = 0; i < docs_in_block; ++i)
+        {
+            if (freqs[doc_begin + i] > 1)
+            {
+                offset += writeVarUIntTo(block_begin + offset, i);
+                offset += writeVarUIntTo(block_begin + offset, freqs[doc_begin + i]);
+            }
+        }
+
+        offset += PFor::encodeBlocks<UInt32>(std::span<const UInt32>(values.data() + value_offset, total), PFor::Delta::none, block_begin + offset);
+        value_offset += total;
+
+        block_bytes[b] = offset;
+        staged_offset += offset;
+    }
+    chassert(value_offset == values.size());
+
+    for (UInt64 b = 0; b < num_blocks; ++b)
+        writeVarUInt(block_bytes[b], out);
+    out.write(reinterpret_cast<const char *>(staged.data()), staged_offset);
+}
+
+TextIndexBlockedPositionsCodec::Directory TextIndexBlockedPositionsCodec::readDirectory(
+    ReadBuffer & in, UInt64 blob_offset, UInt64 expected_num_docs, size_t available_bytes)
+{
+    const size_t count_before = in.count();
+
+    Directory dir;
+    readVarUInt(dir.num_docs, in);
+    if (dir.num_docs != expected_num_docs)
+        throw Exception(ErrorCodes::CORRUPTED_DATA,
+            "Corrupt text index positions (blocked): stored document count {} does not match index header {}",
+            dir.num_docs, expected_num_docs);
+
+    UInt64 num_blocks = 0;
+    readVarUInt(num_blocks, in);
+    if (num_blocks != (dir.num_docs + BLOCK_DOCS - 1) / BLOCK_DOCS)
+        throw Exception(ErrorCodes::CORRUPTED_DATA,
+            "Corrupt text index positions (blocked): {} blocks for {} documents", num_blocks, dir.num_docs);
+    if (dir.num_docs == 0)
+        return dir;
+
+    /// Every block holds >= 1 document: 1 byte exception count + >= 1 byte PFor lane.
+    if (num_blocks * 2 > available_bytes)
+        throw Exception(ErrorCodes::CORRUPTED_DATA,
+            "Corrupt text index positions (blocked): {} blocks cannot fit into {} available bytes", num_blocks, available_bytes);
+
+    dir.block_offsets.resize(num_blocks + 1);
+    UInt64 payload_total = 0;
+    for (UInt64 b = 0; b < num_blocks; ++b)
+    {
+        UInt64 bytes = 0;
+        readVarUInt(bytes, in);
+        if (bytes < 2 || bytes > available_bytes)
+            throw Exception(ErrorCodes::CORRUPTED_DATA,
+                "Corrupt text index positions (blocked): block payload of {} bytes outside the valid range", bytes);
+        dir.block_offsets[b] = payload_total; /// relative for now
+        payload_total += bytes;
+    }
+    dir.block_offsets[num_blocks] = payload_total;
+
+    const size_t directory_bytes = in.count() - count_before;
+    if (directory_bytes + payload_total > available_bytes)
+        throw Exception(ErrorCodes::CORRUPTED_DATA,
+            "Corrupt text index positions (blocked): declared size {} exceeds {} bytes available for this token",
+            directory_bytes + payload_total, available_bytes);
+
+    const UInt64 payload_start = blob_offset + directory_bytes;
+    for (auto & offset : dir.block_offsets)
+        offset += payload_start;
+
+    return dir;
+}
+
+void TextIndexBlockedPositionsCodec::decodeBlock(
+    ReadBuffer & in,
+    const Directory & dir,
+    size_t block_idx,
+    std::span<const UInt32> local_ranks,
+    PaddedPODArray<UInt32> & offsets,
+    PaddedPODArray<UInt32> & positions,
+    DecodeScratch & scratch)
+{
+    const size_t payload_bytes = dir.block_offsets[block_idx + 1] - dir.block_offsets[block_idx];
+    scratch.payload.resize(payload_bytes);
+    in.readStrict(scratch.payload.data(), payload_bytes);
+
+    parseBlock(reinterpret_cast<const uint8_t *>(scratch.payload.data()), payload_bytes,
+               dir.docsInBlock(block_idx), scratch.freqs, scratch.values);
+    emitRanks(scratch.freqs, scratch.values, local_ranks, offsets, positions);
+}
+
+void TextIndexBlockedPositionsCodec::decodeAll(
+    ReadBuffer & in,
+    UInt64 expected_num_docs,
+    size_t available_bytes,
+    PaddedPODArray<UInt32> & doc_offsets,
+    PaddedPODArray<UInt32> & positions,
+    DecodeScratch & scratch)
+{
+    /// Sequential read: directory + every block (offsets stay token-relative, unused here).
+    const auto dir = readDirectory(in, /*blob_offset=*/ 0, expected_num_docs, available_bytes);
+
+    doc_offsets.clear();
+    positions.clear();
+    doc_offsets.push_back(0);
+
+    std::vector<UInt32> all_ranks(BLOCK_DOCS);
+    for (size_t b = 0; b < dir.numBlocks(); ++b)
+    {
+        const size_t docs_in_block = dir.docsInBlock(b);
+        all_ranks.resize(docs_in_block);
+        for (size_t i = 0; i < docs_in_block; ++i)
+            all_ranks[i] = static_cast<UInt32>(i);
+        decodeBlock(in, dir, b, all_ranks, doc_offsets, positions, scratch);
+    }
+
+    chassert(doc_offsets.size() == expected_num_docs + 1);
+}
+
+}
