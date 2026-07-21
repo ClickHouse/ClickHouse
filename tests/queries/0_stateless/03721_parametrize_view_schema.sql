@@ -133,6 +133,20 @@ SHOW COLUMNS IN 03271_parametrized_v_toggle;
 SELECT *
 FROM system.columns
 WHERE table = '03271_parametrized_v_toggle' AND database = currentDatabase();
+-- Validation is latched together with exposure: a view that advertises a declared schema also
+-- enforces it, regardless of the current setting value. A matching schema still executes...
+SELECT *
+FROM 03271_parametrized_v_toggle(upper_bound = 3);
+SET use_declared_schema_for_parameterized_views = 1;
+CREATE OR REPLACE VIEW 03271_parametrized_v_toggle_mismatch (n UInt64, s String) AS
+SELECT number AS n
+FROM numbers({upper_bound:UInt64});
+SET use_declared_schema_for_parameterized_views = 0;
+-- ...and a latched mismatching schema is still both exposed and enforced with the setting off,
+-- so SHOW COLUMNS and execution stay consistent instead of advertising one schema and running another.
+SHOW COLUMNS IN 03271_parametrized_v_toggle_mismatch;
+SELECT *
+FROM 03271_parametrized_v_toggle_mismatch(upper_bound = 3); -- { serverError TYPE_MISMATCH }
 CREATE OR REPLACE VIEW 03271_parametrized_v_off (n UInt64) AS
 SELECT number AS n
 FROM numbers({upper_bound:UInt64});
@@ -156,5 +170,6 @@ DROP VIEW 03271_parametrized_v;
 DROP VIEW 03271_parametrized_v_expl;
 DROP VIEW 03271_parametrized_v_expl_mismatch;
 DROP VIEW 03271_parametrized_v_toggle;
+DROP VIEW 03271_parametrized_v_toggle_mismatch;
 DROP VIEW 03271_parametrized_v_off;
 DROP VIEW 03271_parametrized_v_reload;

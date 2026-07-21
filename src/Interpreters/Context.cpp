@@ -368,7 +368,6 @@ namespace Setting
     extern const SettingsBool parallel_replicas_only_with_analyzer;
     extern const SettingsBool enable_hdfs_pread;
     extern const SettingsUInt64 max_reverse_dictionary_lookup_cache_size_bytes;
-    extern const SettingsBool use_declared_schema_for_parameterized_views;
 }
 
 namespace MergeTreeSetting
@@ -2995,8 +2994,13 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
             auto view_context = original_view_metadata->getSQLSecurityOverriddenContext(shared_from_this());
             auto sample_block = InterpreterSelectWithUnionQuery::getSampleBlock(query, view_context);
 
-            if (getSettingsRef()[Setting::use_declared_schema_for_parameterized_views])
-                validateParameterizedViewSchema(table_name, sample_block->getNamesAndTypesList(), original_view_metadata->getColumns());
+            /// Validate against the declared schema whenever the view has one latched in its metadata
+            /// (the schema is fixed at CREATE/ATTACH time), regardless of the caller's current
+            /// `use_declared_schema_for_parameterized_views` value. This keeps exposure via
+            /// `SHOW COLUMNS`/`system.columns` consistent with actual execution: a view that advertises
+            /// a declared schema also enforces it. `validateParameterizedViewSchema` is a no-op when the
+            /// view has no declared schema, so views without one are unaffected.
+            validateParameterizedViewSchema(table_name, sample_block->getNamesAndTypesList(), original_view_metadata->getColumns());
 
             auto res = std::make_shared<StorageView>(StorageID(database_name, table_name),
                                                      create,
@@ -3263,8 +3267,13 @@ StoragePtr Context::buildParameterizedViewStorage(const String & database_name, 
     auto view_context = original_view_metadata->getSQLSecurityOverriddenContext(shared_from_this());
     auto sample_block = InterpreterSelectQueryAnalyzer::getSampleBlock(query, view_context);
 
-    if (getSettingsRef()[Setting::use_declared_schema_for_parameterized_views])
-        validateParameterizedViewSchema(table_name, sample_block->getNamesAndTypesList(), original_view_metadata->getColumns());
+    /// Validate against the declared schema whenever the view has one latched in its metadata
+    /// (the schema is fixed at CREATE/ATTACH time), regardless of the caller's current
+    /// `use_declared_schema_for_parameterized_views` value. This keeps exposure via
+    /// `SHOW COLUMNS`/`system.columns` consistent with actual execution: a view that advertises
+    /// a declared schema also enforces it. `validateParameterizedViewSchema` is a no-op when the
+    /// view has no declared schema, so views without one are unaffected.
+    validateParameterizedViewSchema(table_name, sample_block->getNamesAndTypesList(), original_view_metadata->getColumns());
 
     auto res = std::make_shared<StorageView>(StorageID(database_name, table_name),
                                                 create,
