@@ -27,6 +27,7 @@ inline constexpr UInt64 QUERY_PLAN_CACHE_FORMAT_VERSION = 3;
 /// Identifies a cached query plan. Two queries with the same key can safely share a cached plan.
 /// The key includes:
 ///   - AST hash: captures the query shape independent of whitespace and case differences
+///   - Current database: affects resolution of unqualified identifiers in settings
 ///   - Semantic settings hash: only settings that affect the query plan (not resource limits)
 ///   - Per-table metadata versions: invalidates cache on schema changes (ALTER TABLE)
 ///   - User identity: user_id + role IDs, prevents cross-user cache sharing (row policy isolation)
@@ -34,6 +35,10 @@ struct QueryPlanCacheKey
 {
     /// 128-bit CityHash of the query AST (same type used by QueryResultCache)
     IASTHash ast_hash;
+
+    /// Session current database used to resolve unqualified identifiers, including table names
+    /// in `additional_table_filters`.
+    String current_database;
 
     /// SipHash of plan-affecting settings only (see SemanticSettings)
     UInt64 semantic_settings_hash = 0;

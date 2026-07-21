@@ -59,6 +59,7 @@ bool isSettingIgnoredInQueryPlanCache(std::string_view setting_name)
 bool QueryPlanCacheKey::operator==(const QueryPlanCacheKey & other) const
 {
     return ast_hash == other.ast_hash
+        && current_database == other.current_database
         && semantic_settings_hash == other.semantic_settings_hash
         && table_metadata_versions == other.table_metadata_versions
         && storage_id.uuid == other.storage_id.uuid
@@ -84,6 +85,7 @@ size_t QueryPlanCacheKeyHasher::operator()(const QueryPlanCacheKey & key) const
     /// Hash the 128-bit AST hash as two 64-bit words.
     hash.update(key.ast_hash.low64);
     hash.update(key.ast_hash.high64);
+    hash.update(key.current_database);
 
     hash.update(key.semantic_settings_hash);
 

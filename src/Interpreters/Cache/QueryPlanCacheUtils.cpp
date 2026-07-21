@@ -237,6 +237,7 @@ std::optional<QueryPlanCacheLookupContext> tryBuildPreAnalysisQueryPlanCacheLook
 
     QueryPlanCacheKey key;
     key.ast_hash = normalized_ast->getTreeHash(/*ignore_aliases=*/false);
+    key.current_database = context->getCurrentDatabase();
     key.semantic_settings_hash = semantic_settings_hash;
     key.table_metadata_versions = getTableMetadataVersionsForQueryPlanCache(storage_id, storage, context);
     key.storage_id = storage_id;
