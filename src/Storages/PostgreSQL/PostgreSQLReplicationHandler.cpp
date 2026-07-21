@@ -4,6 +4,7 @@
 #include <Core/Settings.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Core/UUID.h>
+#include <Core/ServerUUID.h>
 #include <Common/SipHash.h>
 #include <Common/Macros.h>
 #include <Common/escapeForFileName.h>
@@ -285,6 +286,20 @@ namespace
             schema_list,
             schema_as_a_part_of_table_name);
     }
+
+    /// The identity stored in this replica's <keeper_path>/replicas/<name> registration node. The registration
+    /// is ownership-checked: `materialized_postgresql_replica_name` is documented to resolve to a distinct value
+    /// on every replica, and without enforcement two replicas that resolve it to the same value would collapse
+    /// onto one /replicas node - then one replica's unregistration (a failed join rollback, or a DROP) removes
+    /// the other live replica's registration, and a later last-replica teardown removes the shared
+    /// slot/publication/snapshot_completed marker around a replica that still holds data. The database (or
+    /// single-table) UUID alone is not distinct enough - inside a Replicated database every replica of a
+    /// single-table engine carries the same table UUID - and the server UUID alone would conflate two databases
+    /// on one server, so use both. Both parts are stable across server restarts and DETACH/ATTACH.
+    String coordinationReplicaOwnerId(const String & clickhouse_uuid)
+    {
+        return toString(ServerUUID::get()) + "|" + clickhouse_uuid;
+    }
 }
 
 void validateMaterializedPostgreSQLCoordinationSettings(
@@ -361,6 +376,7 @@ void validateMaterializedPostgreSQLCoordinationSettings(
     /// rejection.
     const String raw_keeper_path = settings[MaterializedPostgreSQLSetting::materialized_postgresql_keeper_path];
     String expanded_keeper_path;
+    String expanded_replica_name;
     if (coordination_enabled)
     {
         const auto macros = context->getMacros();
@@ -381,7 +397,7 @@ void validateMaterializedPostgreSQLCoordinationSettings(
             Macros::MacroExpansionInfo info;
             info.table_id.database_name = clickhouse_database_name;
             info.table_id.uuid = clickhouse_uuid;
-            macros->expand(raw_replica_name, info);
+            expanded_replica_name = macros->expand(raw_replica_name, info);
         }
 
         auto expand_probe = [&](const String & per_replica_value) -> String
@@ -473,6 +489,24 @@ void validateMaterializedPostgreSQLCoordinationSettings(
                 "query:\n{}\n(If the existing setup was dropped incompletely, remove the leftover Keeper "
                 "path manually.)",
                 expanded_keeper_path, published_fingerprint, local_fingerprint);
+
+        /// Likewise reject a replica name that is already registered by another replica synchronously at
+        /// CREATE time. The authoritative, ownership-checked enforcement lives in `registerReplicaInKeeper`
+        /// (the registration node stores the owning replica's identity), but that runs in the background
+        /// startup task, which would leave a mounted database stuck retrying; failing the CREATE up front is
+        /// the better place for a misconfiguration that the user must fix anyway.
+        String registered_owner;
+        if (context->getZooKeeper()->tryGet(expanded_keeper_path + "/replicas/" + expanded_replica_name, registered_owner)
+            && registered_owner != coordinationReplicaOwnerId(toString(clickhouse_uuid)))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "A replica named '{}' is already registered in the coordinated MaterializedPostgreSQL setup at "
+                "Keeper path '{}'. materialized_postgresql_replica_name must resolve to a distinct value on "
+                "every replica: replicas are tracked under <keeper_path>/replicas/<name>, so two replicas "
+                "sharing one name would corrupt the shared bookkeeping that decides when the last replica "
+                "removes the shared replication slot and publication. Use a distinct value (for example the "
+                "{{replica}} macro). If this registration is a leftover of an incompletely dropped setup, "
+                "remove the Keeper node manually",
+                expanded_replica_name, expanded_keeper_path);
     }
 }
 
@@ -553,6 +587,7 @@ PostgreSQLReplicationHandler::PostgreSQLReplicationHandler(
         }
 
         coordination_naming_fingerprint = coordinatedNamingFingerprint(replication_settings);
+        coordination_replica_owner = coordinationReplicaOwnerId(clickhouse_uuid_);
 
         LOG_INFO(log, "Replica coordination enabled: keeper path '{}', replica name '{}', nested table engine '{}'",
                  coordination_keeper_path, coordination_replica_name, nested_engine_name);
@@ -1531,10 +1566,31 @@ void PostgreSQLReplicationHandler::registerReplicaInKeeper()
 {
     auto component_guard = Coordination::setCurrentComponent("PostgreSQLReplicationHandler::registerReplicaInKeeper");
 
+    /// The registration node stores this replica's identity, and an existing node owned by another replica
+    /// rejects the registration: `materialized_postgresql_replica_name` must resolve to a distinct value on
+    /// every replica, because the /replicas children are the shared bookkeeping behind the last-replica
+    /// decision. With a blind createIfNotExists two same-named replicas would collapse onto one node - then a
+    /// failed join rollback (or a DROP) on one of them removes the other live replica's registration, and a
+    /// later last-replica teardown removes the shared slot/publication/snapshot_completed marker around a
+    /// replica that still holds data. Re-registering an own node (server restart, ATTACH, teardown re-register)
+    /// stays idempotent because the owner identity is stable.
     auto zookeeper = getContext()->getZooKeeper();
     const String replica_path = coordination_keeper_path + "/replicas/" + coordination_replica_name;
     zookeeper->createAncestors(replica_path);
-    zookeeper->createIfNotExists(replica_path, "");
+    const auto code = zookeeper->tryCreate(replica_path, coordination_replica_owner, zkutil::CreateMode::Persistent);
+    if (code == Coordination::Error::ZNODEEXISTS)
+    {
+        const String registered_owner = zookeeper->get(replica_path);
+        if (registered_owner != coordination_replica_owner)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "A replica named '{}' is already registered in the coordinated MaterializedPostgreSQL setup at "
+                "Keeper path '{}'. materialized_postgresql_replica_name must resolve to a distinct value on "
+                "every replica; use a distinct value (for example the {{replica}} macro). If this registration "
+                "is a leftover of an incompletely dropped setup, remove the Keeper node manually",
+                coordination_replica_name, coordination_keeper_path);
+    }
+    else if (code != Coordination::Error::ZOK)
+        throw zkutil::KeeperException::fromPath(code, replica_path);
     LOG_DEBUG(log, "Registered replica '{}' at {}", coordination_replica_name, replica_path);
 }
 
@@ -1546,8 +1602,38 @@ void PostgreSQLReplicationHandler::unregisterReplica()
     /// never removes any shared state, so it is safe to call from an error path.
     auto component_guard = Coordination::setCurrentComponent("PostgreSQLReplicationHandler::unregisterReplica");
 
-    auto zookeeper = getContext()->getZooKeeper();
-    zookeeper->tryRemove(coordination_keeper_path + "/replicas/" + coordination_replica_name);
+    tryRemoveOwnReplicaRegistration(getContext()->getZooKeeper());
+}
+
+
+bool PostgreSQLReplicationHandler::tryRemoveOwnReplicaRegistration(const zkutil::ZooKeeperPtr & zookeeper)
+{
+    /// Removes this replica's <keeper_path>/replicas/<name> node only if this replica owns it. When the name is
+    /// held by another replica (this replica's own registration was rejected for the duplicate name, but its
+    /// database still exists and is now being dropped or rolled back), removing the node would delete that live
+    /// peer's registration and let a later drop tear down the shared slot/publication around it. Returns false
+    /// in exactly that case; an already-absent node counts as removed. Keeper errors propagate (the callers on
+    /// the drop path are fail-close, and the rollback caller catches).
+    const String replica_path = coordination_keeper_path + "/replicas/" + coordination_replica_name;
+
+    String registered_owner;
+    if (!zookeeper->tryGet(replica_path, registered_owner))
+        return true;
+
+    if (registered_owner != coordination_replica_owner)
+    {
+        LOG_WARNING(log,
+            "Not removing the replica registration node {}: it belongs to another replica that resolved "
+            "materialized_postgresql_replica_name to the same value '{}'",
+            replica_path, coordination_replica_name);
+        return false;
+    }
+
+    if (auto code = zookeeper->tryRemove(replica_path);
+        code != Coordination::Error::ZOK && code != Coordination::Error::ZNONODE)
+        throw zkutil::KeeperException::fromPath(code, replica_path);
+
+    return true;
 }
 
 
@@ -1601,7 +1687,7 @@ void PostgreSQLReplicationHandler::coordinatedTeardownBeforeDataDrop()
         /// parent's absence as "another replica was last" and correctly skips the shared cleanup.
         auto zookeeper = getContext()->getZooKeeper();
         const String replica_path = coordination_keeper_path + "/replicas/" + coordination_replica_name;
-        const auto code = zookeeper->tryCreate(replica_path, "", zkutil::CreateMode::Persistent);
+        const auto code = zookeeper->tryCreate(replica_path, coordination_replica_owner, zkutil::CreateMode::Persistent);
         if (code == Coordination::Error::ZNONODE)
             LOG_INFO(log,
                 "Not re-registering replica '{}': the shared /replicas node was removed by a concurrent last-replica teardown",
@@ -1652,7 +1738,6 @@ bool PostgreSQLReplicationHandler::unregisterReplicaAndCheckLast()
 
     auto zookeeper = getContext()->getZooKeeper();
     const String replicas_path = coordination_keeper_path + "/replicas";
-    const String replica_path = replicas_path + "/" + coordination_replica_name;
 
     /// The last-replica decision must be race-free across replicas dropping concurrently. A plain "remove my
     /// node, then list the parent" lets two droppers both delete their node before either lists it, so both
@@ -1668,9 +1753,12 @@ bool PostgreSQLReplicationHandler::unregisterReplicaAndCheckLast()
     /// nested tables, so any Keeper error other than the expected ZNONODE/ZNOTEMPTY codes propagates rather than
     /// defaulting to "this was the last replica". Otherwise a Keeper blip during the drop could delete the last
     /// copy of the data while leaving the shared slot/publication/marker behind.
-    if (auto code = zookeeper->tryRemove(replica_path);
-        code != Coordination::Error::ZOK && code != Coordination::Error::ZNONODE)
-        throw zkutil::KeeperException::fromPath(code, replica_path);
+    ///
+    /// The removal is ownership-checked: when this replica's name is held by another replica (this replica's
+    /// own registration was rejected for the duplicate materialized_postgresql_replica_name), it is not
+    /// registered at all - it must not remove the peer's node and cannot be the last replica.
+    if (!tryRemoveOwnReplicaRegistration(zookeeper))
+        return false;
 
     /// Removing the parent succeeds only when this replica's node was its last child, which atomically
     /// designates this caller - and only this caller - as the last replica.

@@ -58,7 +58,8 @@ namespace ErrorCodes
         "a replica that disagrees with the settings published under this path is rejected.", 0) \
     DECLARE(String, materialized_postgresql_replica_name, "{replica}", \
         "Replica identity used for the Keeper coordination node and for the nested replicated table engine. " \
-        "Supports the {uuid}, {shard} and {replica} macros. It must resolve to a distinct value on every replica.", 0) \
+        "Supports the {uuid}, {shard} and {replica} macros. It must resolve to a distinct value on every replica: " \
+        "the registration is ownership-checked, so a name already registered by another replica is rejected.", 0) \
 
 DECLARE_SETTINGS_TRAITS(MaterializedPostgreSQLSettingsTraits, LIST_OF_MATERIALIZED_POSTGRESQL_SETTINGS, MATERIALIZED_POSTGRESQL_SETTINGS_SUPPORTED_TYPES)
 IMPLEMENT_SETTINGS_TRAITS(MaterializedPostgreSQLSettingsTraits, LIST_OF_MATERIALIZED_POSTGRESQL_SETTINGS, MaterializedPostgreSQLSettings, MaterializedPostgreSQLSetting)

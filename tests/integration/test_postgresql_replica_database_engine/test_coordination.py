@@ -1350,3 +1350,76 @@ def test_bad_macro_in_coordination_settings_is_rejected_at_create(started_cluste
     assert "no_such_macro" in error
 
     assert "test_bad_macro" not in instance.query("SHOW DATABASES").split()
+
+
+def test_duplicate_replica_name_is_rejected(started_cluster):
+    # materialized_postgresql_replica_name must resolve to a distinct value on every replica: the
+    # <keeper_path>/replicas/<name> children are the shared bookkeeping behind the last-replica
+    # decision. The registration node stores the owning replica's identity, so a second replica that
+    # resolves the setting to an already-registered name is rejected - synchronously at CREATE time,
+    # since the peer's registration is already visible in Keeper - instead of silently collapsing both
+    # replicas onto one node (where one replica's unregistration would delete the other live replica's
+    # registration, and a later drop could tear down the shared slot/publication around it).
+    keeper_path_resolved = "/clickhouse/mat_pg/1/dup_name_test"
+    dup_settings = [
+        "materialized_postgresql_table_engine = 'ReplicatedReplacingMergeTree'",
+        "materialized_postgresql_keeper_path = '/clickhouse/mat_pg/{shard}/dup_name_test'",
+        "materialized_postgresql_replica_name = 'duplicate_name'",
+        "materialized_postgresql_tables_list = 'test_table'",
+    ]
+
+    pg_manager.create_postgres_table("test_table")
+    instance.query(
+        "INSERT INTO postgres_database.test_table SELECT number, number FROM numbers(100)"
+    )
+    try:
+        pg_manager.create_materialized_db(
+            ip=cluster.postgres_ip, port=cluster.postgres_port, settings=dup_settings
+        )
+        check_tables_are_synchronized(instance, "test_table")
+
+        # The joining replica reuses the first replica's name and must be rejected.
+        error = instance2.query_and_get_error(
+            f"CREATE DATABASE test_database "
+            f"ENGINE = MaterializedPostgreSQL("
+            f"'{cluster.postgres_ip}:{cluster.postgres_port}', 'postgres_database', 'postgres', '{pg_pass}') "
+            f"SETTINGS {', '.join(dup_settings)}"
+        )
+        assert "already registered" in error
+        assert "test_database" not in instance2.query("SHOW DATABASES").split()
+
+        # The rejected CREATE did not disturb the first replica: its registration node survives and
+        # replication keeps working.
+        assert (
+            int(
+                instance.query(
+                    f"SELECT count() FROM system.zookeeper "
+                    f"WHERE path = '{keeper_path_resolved}/replicas' AND name = 'duplicate_name'"
+                )
+            )
+            == 1
+        )
+        instance.query(
+            "INSERT INTO postgres_database.test_table SELECT number, number FROM numbers(100, 100)"
+        )
+        check_tables_are_synchronized(instance, "test_table")
+
+        # A distinct replica name joins the very same setup fine.
+        pg_manager2.create_materialized_db(
+            ip=cluster.postgres_ip,
+            port=cluster.postgres_port,
+            settings=[
+                s
+                for s in dup_settings
+                if not s.startswith("materialized_postgresql_replica_name")
+            ]
+            + ["materialized_postgresql_replica_name = 'distinct_name'"],
+        )
+        check_tables_are_synchronized(instance2, "test_table")
+    finally:
+        pg_manager2.drop_materialized_db()
+        pg_manager.drop_materialized_db()
+
+    # Both replicas dropped: the last one removed the shared slot and publication.
+    assert len(pg_query("SELECT slot_name FROM pg_replication_slots")) == 0
+    assert not publication_exists()

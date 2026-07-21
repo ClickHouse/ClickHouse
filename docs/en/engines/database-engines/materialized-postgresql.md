@@ -247,7 +247,7 @@ Coordinated mode also does not support a column-filtered `materialized_postgresq
 
 ### `materialized_postgresql_replica_name` {#materialized-postgresql-replica-name}
 
-Replica identity used for the coordination node and for the nested replicated table engine. Default: `{replica}`. Supports the `{uuid}`, `{shard}` and `{replica}` macros. It **must resolve to a distinct value on every replica**.
+Replica identity used for the coordination node and for the nested replicated table engine. Default: `{replica}`. Supports the `{uuid}`, `{shard}` and `{replica}` macros. It **must resolve to a distinct value on every replica**, and this is enforced: each replica's registration node stores its identity, so a `CREATE` whose replica name is already registered by another replica is rejected (synchronously when the registration is already visible in Keeper) instead of silently collapsing two replicas onto one registration, which would corrupt the bookkeeping that decides when the last replica removes the shared replication slot and publication.
 
 ## Notes {#notes}
 

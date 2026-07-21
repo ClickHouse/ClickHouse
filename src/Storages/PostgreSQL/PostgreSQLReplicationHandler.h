@@ -212,6 +212,12 @@ private:
     /// and without touching any shared state. Used to undo `registerReplicaInKeeper` on a startup error path.
     void unregisterReplica();
 
+    /// Remove this replica's <keeper_path>/replicas/<name> node only if this replica owns it (the node stores
+    /// the owning replica's identity). Returns false when the name is held by another replica - the sign of a
+    /// duplicate materialized_postgresql_replica_name - whose registration must not be removed. An
+    /// already-absent node counts as removed. Throws on Keeper errors.
+    bool tryRemoveOwnReplicaRegistration(const zkutil::ZooKeeperPtr & zookeeper);
+
     /// True if any of this replica's nested tables has already been created (owns a copy of the shared
     /// replicated data). Used on the register-first error path to decide whether the registration may be undone.
     bool hasAnyNestedTable() const;
@@ -334,6 +340,10 @@ private:
     /// (computed once in the constructor; see `ensureCoordinatedNamingCompatible`).
     String coordination_naming_fingerprint;
     String coordination_replica_name;
+    /// This replica's identity, stored in its <keeper_path>/replicas/<name> registration node so that a
+    /// same-named registration attempt by another replica is rejected instead of silently collapsing two
+    /// replicas onto one node (computed once in the constructor; stable across restarts and DETACH/ATTACH).
+    String coordination_replica_owner;
     /// Set by coordinatedTeardownBeforeDataDrop (the race-free pre-data last-replica decision) so that the
     /// post-data shutdownFinal does not re-decide when this replica already claimed the last-replica role and
     /// removed the shared /replicas node itself (its absence would otherwise read as "another replica was last").
