@@ -22,7 +22,7 @@ Provides a table-like interface to select/insert files in [Azure Blob Storage](h
 Credentials are embedded in the connection string, so no separate `account_name`/`account_key` is needed:
 
 ```sql
-azureBlobStorage(connection_string, container_name, blobpath [, format, compression, structure])
+azureBlobStorage(connection_string, container_name, blobpath [, format, compression, partition_strategy, structure])
 ```
 
 </Tab>
@@ -31,7 +31,7 @@ azureBlobStorage(connection_string, container_name, blobpath [, format, compress
 Requires `account_name` and `account_key` as separate arguments:
 
 ```sql
-azureBlobStorage(storage_account_url, container_name, blobpath, account_name, account_key [, format, compression, structure])
+azureBlobStorage(storage_account_url, container_name, blobpath, account_name, account_key [, format, compression, partition_strategy, structure])
 ```
 
 </Tab>
@@ -59,7 +59,7 @@ azureBlobStorage(named_collection[, option=value [,..]])
 | `format`                         | The [format](/reference/formats/index) of the file.                                                                                                                                                                                                                                                                                                         |
 | `compression`                    | Supported values: `none`, `gzip/gz`, `brotli/br`, `xz/LZMA`, `zstd/zst`. By default, it will autodetect compression by file extension (same as setting to `auto`).                                                                                                                                                                                       |
 | `structure`                      | Structure of the table. Format `'column1_name column1_type, column2_name column2_type, ...'`.                                                                                                                                                                                                                                                             |
-| `partition_strategy`             | Optional. Supported values: `WILDCARD` or `HIVE`. `WILDCARD` requires a `{_partition_id}` in the path, which is replaced with the partition key. `HIVE` does not allow wildcards, assumes the path is the table root, and generates Hive-style partitioned directories with Snowflake IDs as filenames and the file format as the extension. Defaults to the `file_like_engine_default_partition_strategy` setting (`WILDCARD` under `compatibility` settings older than `26.6`, `HIVE` otherwise). |
+| `partition_strategy`             | Optional. Supported values: `WILDCARD` or `HIVE`. `WILDCARD` requires a `{_partition_id}` in the path, which is replaced with the partition key. `HIVE` does not allow wildcards, assumes the path is the table root, and generates Hive-style partitioned directories with Snowflake IDs as filenames and the file format as the extension. Defaults to the `file_like_engine_default_partition_strategy` setting (`WILDCARD` when `compatibility` is older than `26.6`; `HIVE` otherwise, including when current defaults apply). |
 | `partition_columns_in_data_file` | Optional. Only used with `HIVE` partition strategy. Tells ClickHouse whether to expect partition columns to be written in the data file. Defaults `false`.                                                                                                                                                                                                 |
 | `extra_credentials`              | Use `client_id` and `tenant_id` for authentication. If extra_credentials are provided, they are given priority over `account_name` and `account_key`.                                                                                                                                                                                                     |
 
@@ -145,6 +145,8 @@ LIMIT 5;
 
 ### Writing with partitions {#writing-with-partitions}
 
+When `compatibility` is set to `26.6` or later, or when current defaults apply, `HIVE` is the default partition strategy. Paths containing `{_partition_id}` therefore require an explicit `WILDCARD` strategy.
+
 ```sql
 INSERT INTO TABLE FUNCTION azureBlobStorage(
     'DefaultEndpointsProtocol=https;AccountName=myaccount;AccountKey=mykey...==;EndPointSuffix=core.windows.net',
@@ -152,6 +154,7 @@ INSERT INTO TABLE FUNCTION azureBlobStorage(
     'test_{_partition_id}.csv',
     'CSV',
     'auto',
+    'wildcard',
     'column1 UInt32, column2 UInt32, column3 UInt32'
 ) PARTITION BY column3
 VALUES (1, 2, 3), (3, 2, 1), (78, 43, 3);
@@ -190,7 +193,7 @@ FROM azureBlobStorage(
 
 Supported for INSERT queries only.
 
-`WILDCARD`: Replaces the `{_partition_id}` wildcard in the file path with the actual partition key. Selected by default only under `compatibility` settings older than `26.6`; otherwise the default is `HIVE` (see the `file_like_engine_default_partition_strategy` setting).
+`WILDCARD`: Replaces the `{_partition_id}` wildcard in the file path with the actual partition key. It is selected by default only when the `compatibility` setting is older than `26.6`. When `compatibility` is set to `26.6` or later, or when current defaults apply, the default is `HIVE`, so paths containing `{_partition_id}` must explicitly select `WILDCARD` (see the `file_like_engine_default_partition_strategy` setting).
 
 `HIVE` implements hive style partitioning for reads & writes. It generates files using the following format: `<prefix>/<key1=val1/key2=val2...>/<snowflakeid>.<toLower(file_format)>`.
 
