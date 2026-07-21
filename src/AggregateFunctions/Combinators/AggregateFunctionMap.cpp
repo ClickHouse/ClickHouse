@@ -182,7 +182,7 @@ public:
             key = assert_cast<const ColumnVector<KeyType> &>(key_column).getData()[position];
         }
 
-        AggregateDataPtr nested_place;
+        AggregateDataPtr nested_place = nullptr;
         auto it = this->data(place).merged_maps.find(key);
         if (it == this->data(place).merged_maps.end())
         {
@@ -190,7 +190,8 @@ public:
             nested_place = arena->alignedAlloc(nested_func->sizeOfData(), nested_func->alignOfData());
             nested_func->create(nested_place);
             this->data(place).merged_maps.emplace(key, nested_place);
-        } else
+        }
+        else
             nested_place = it->second;
 
         nested_func->add(nested_place, value_column, position, arena);
