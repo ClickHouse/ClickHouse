@@ -22,7 +22,7 @@
 #   all_1_2_1_0  committed child       (blocks 1-2, contained, disjoint from 3-4)
 #   all_3_4_1_0  committed child       (blocks 3-4, contained, disjoint from 1-2)
 #
-# Two phases, one per code path:
+# Three phases, one per code path:
 #   Phase 1 (same pass): all three parts appear before one refresh. The in-loop promotion
 #     skips committing the rolled-back top-level node and re-enqueues its children.
 #   Phase 2 (cross refresh): the rolled-back ancestor appears first and is indexed Outdated
@@ -30,6 +30,11 @@
 #     indexed; the committed children appear only before refresh N+1. The top-level seed
 #     must descend past the already-indexed non-active ancestor to surface them, otherwise
 #     they stay invisible until a full restart/reattach.
+#   Phase 3 (cross refresh, broken covering part): a broken covering part is never inserted
+#     into the parts index at all, so on a later refresh the top-level seed re-visits it and
+#     must descend into its subtree past an already-indexed non-active middle part to reach a
+#     committed grandchild that only appeared afterwards. Topology all_1_8_3_1 (broken) >
+#     all_1_4_2_1 (rolled back) > all_1_2_1_0 (committed grandchild).
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -38,12 +43,14 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 WRITER="writer_${CLICKHOUSE_DATABASE}"
 READER1="reader1_${CLICKHOUSE_DATABASE}"
 READER2="reader2_${CLICKHOUSE_DATABASE}"
+READER3="reader3_${CLICKHOUSE_DATABASE}"
 
 cleanup()
 {
     $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS ${WRITER} SYNC" 2>/dev/null
     $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS ${READER1} SYNC" 2>/dev/null
     $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS ${READER2} SYNC" 2>/dev/null
+    $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS ${READER3} SYNC" 2>/dev/null
     rm -rf "${DISK_ROOT:-}" "${STAGE:-}" "${CLONE_SRC:-}"
 }
 trap cleanup EXIT
@@ -112,10 +119,17 @@ STAGE=$(mktemp -d)
 # Fabricate part <logical> under a fresh random dir in ${STAGE}, mapped via prefix.path.
 # rolled_back=1 writes a raw txn_version.txt with creation_csn = Tx::RolledBackCSN and a
 # creation_tid whose local_tid > Tx::MaxReservedLocalTID (32) so wasInvolvedInTransaction()
-# is true. Prints the random dir name.
+# is true. broken=1 corrupts columns.txt so loadDataPart fails to parse it and marks the part
+# broken (a broken part is never inserted into the parts index, unlike a rolled-back one).
+# Prints the random dir name.
 stage_part()
 {
-    local logical=$1 rolled_back=$2 rnd
+    # Separate `local` statements: a single `local a=$2 b=$3` line is fine, but keep the
+    # optional third arg defaulting cleanly when a caller omits it.
+    local logical=$1
+    local rolled_back=$2
+    local broken=${3:-0}
+    local rnd
     rnd=$(tr -dc 'a-z' < /dev/urandom | head -c 32)
     cp -r "${CLONE_SRC}" "${STAGE}/${rnd}"
     mkdir -p "${STAGE}/meta_${rnd}"
@@ -123,6 +137,9 @@ stage_part()
     if [ "${rolled_back}" = "1" ]; then
         printf 'version: 1\nstoring_version: 0\ncreation_tid: (2, 33, 00000000-0000-0000-0000-000000000000)\ncreation_csn: 18446744073709551615\nremoval_tid: (0, 0, 00000000-0000-0000-0000-000000000000)\nremoval_csn: 0' \
             > "${STAGE}/${rnd}/txn_version.txt"
+    fi
+    if [ "${broken}" = "1" ]; then
+        echo 'corrupted columns metadata' > "${STAGE}/${rnd}/columns.txt"
     fi
     echo "${rnd}"
 }
@@ -207,6 +224,33 @@ $CLICKHOUSE_CLIENT -q "SYSTEM RESTART DISK 04612_r2_${CLICKHOUSE_DATABASE}"
 check_active_count "${READER2}" all_1_2_1_0 1
 check_active_count "${READER2}" all_3_4_1_0 1
 check_active_count "${READER2}" all_1_4_2_1 0
+
+# ---- Phase 3: cross-refresh with a broken covering part (seed descends past an off-index
+#      broken node and an already-indexed non-active middle part) ----
+# Topology: all_1_8_3_1 (broken covering) > all_1_4_2_1 (rolled back) > all_1_2_1_0 (committed).
+# A broken part is never inserted into the parts index, so on refresh N+1 the top-level seed
+# re-visits it and must descend into its subtree; the middle part is already indexed
+# non-active from refresh N, so the walk must descend past it too to reach the grandchild.
+P3_BROKEN=$(stage_part all_1_8_3_1 0 1)
+P3_MIDDLE=$(stage_part all_1_4_2_1 1 0)
+P3_GRANDCHILD=$(stage_part all_1_2_1_0 0 0)
+STORE3=$(make_reader "${READER3}" r3)
+# Refresh N: the broken covering part and the rolled-back middle part. Neither becomes active;
+# the middle part is indexed non-active and stays indexed (no cleanup on a read-only table).
+# --send_logs_level=fatal: loading the intentionally broken part logs an expected "appears
+# broken" <Error> that the runner would otherwise forward to stderr and flag as a failure.
+inject_part "${STORE3}" "${P3_BROKEN}"
+inject_part "${STORE3}" "${P3_MIDDLE}"
+$CLICKHOUSE_CLIENT --send_logs_level=fatal -q "SYSTEM RESTART DISK 04612_r3_${CLICKHOUSE_DATABASE}"
+check_active_count "${READER3}" all_1_8_3_1 0
+check_active_count "${READER3}" all_1_4_2_1 0
+# Refresh N+1: the committed grandchild appears only now and must be surfaced despite the
+# off-index broken ancestor and the already-indexed rolled-back middle part.
+inject_part "${STORE3}" "${P3_GRANDCHILD}"
+$CLICKHOUSE_CLIENT --send_logs_level=fatal -q "SYSTEM RESTART DISK 04612_r3_${CLICKHOUSE_DATABASE}"
+check_active_count "${READER3}" all_1_2_1_0 1
+check_active_count "${READER3}" all_1_4_2_1 0
+check_active_count "${READER3}" all_1_8_3_1 0
 
 rm -rf "${STAGE}" "${CLONE_SRC}" "${DISK_ROOT}"
 echo OK

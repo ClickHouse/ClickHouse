@@ -3100,29 +3100,24 @@ void MergeTreeData::refreshDataPartsOnce(UInt64 interval_milliseconds)
 
     PartLoadingTreeNodes parts_to_add;
 
+    /// Collect the nodes still to load. Only an already-indexed *active* part shadows its subtree;
+    /// a not-yet-indexed node is a load candidate and an already-indexed *non-active* node is
+    /// descended through to reach descendants it no longer shadows. Caller must hold `lockParts()`.
+    std::function<void(const PartLoadingTree::NodePtr &)> seed = [&](const auto & node)
+    {
+        auto it = data_parts_by_info.find(node->info);
+        if (it == data_parts_by_info.end())
+        {
+            parts_to_add.emplace_back(node);
+            return;
+        }
+        if ((*it)->getState() != DataPartState::Active)
+            for (const auto & [_, child] : node->children)
+                seed(child);
+    };
+
     {
         auto part_lock = lockParts();
-
-        /// Seed the not-yet-indexed "most covering" parts. `refreshDataPartsOnce` runs
-        /// repeatedly against a persistent index, and on a read-only table the old-part
-        /// cleanup never runs (`StorageMergeTree::startup` returns early), so a rolled-back
-        /// ancestor demoted to `Outdated`/`Deleting` in an earlier refresh stays indexed.
-        /// Skipping such a node whole would hide committed descendants that only appear on
-        /// disk in a later refresh, so descend past an already-indexed *non-active* node to
-        /// seed them; an already-indexed *active* node legitimately shadows its subtree.
-        std::function<void(const PartLoadingTree::NodePtr &)> seed = [&](const auto & node)
-        {
-            auto it = data_parts_by_info.find(node->info);
-            if (it == data_parts_by_info.end())
-            {
-                parts_to_add.emplace_back(node);
-                return;
-            }
-            if ((*it)->getState() != DataPartState::Active)
-                for (const auto & [_, child] : node->children)
-                    seed(child);
-        };
-
         loading_tree.traverse(/*recursive=*/ false, [&](const auto & node) { seed(node); });
     }
 
@@ -3142,8 +3137,8 @@ void MergeTreeData::refreshDataPartsOnce(UInt64 interval_milliseconds)
             loading_parts_max_backoff_ms, loading_parts_max_tries);
 
         /// Committing a broken or rolled-back (`Outdated`) part would reset it to `PreActive` and
-        /// re-activate it. Skip it and reconsider its children instead: they are covered by it in
-        /// the loading tree, so the top-level traversal above never reaches them. Mirrors the
+        /// re-activate it. Skip it and re-seed its children instead so a descendant already indexed
+        /// non-active by an earlier refresh is descended through rather than dropped. Mirrors the
         /// `!is_active_part` orphan promotion in `loadDataPartsFromDisk`.
         if (res.is_broken || res.part->getState() == DataPartState::Outdated)
         {
@@ -3154,8 +3149,7 @@ void MergeTreeData::refreshDataPartsOnce(UInt64 interval_milliseconds)
             {
                 auto part_lock = lockParts();
                 for (const auto & [_, child] : my_part->children)
-                    if (data_parts_by_info.find(child->info) == data_parts_by_info.end())
-                        parts_to_add.push_back(child);
+                    seed(child);
             }
             continue;
         }
