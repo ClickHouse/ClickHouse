@@ -1,0 +1,16 @@
+-- m[key] = value over special-byte keys: index == plain scan (subcolumn path) --
+1
+1
+2
+2
+3
+3
+4
+4
+5
+5
+-- startsWith over a special-byte key (subcolumn path) --
+1
+1
+-- an absent special-byte key matches nothing --
+0

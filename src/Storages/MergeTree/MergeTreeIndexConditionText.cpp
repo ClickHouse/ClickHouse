@@ -27,8 +27,10 @@
 #include <Storages/MergeTree/TextIndexAnalyzer.h>
 #include <Storages/MergeTree/TextIndexCache.h>
 #include <absl/container/inlined_vector.h>
+#include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeMapHelpers.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <IO/ReadBufferFromString.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnSet.h>
 #include <Functions/FunctionHelpers.h>
@@ -1916,7 +1918,24 @@ std::optional<String> MergeTreeIndexConditionText::tryGetMapElementKeyForKeyValu
     {
         auto & [map_column_name, serialized_key] = *parsed;
         if (header.has(map_column_name))
-            return serialized_key;
+        {
+            /// `serialized_key` is the text form `FunctionToSubcolumnsPass` placed in the subcolumn name
+            /// via `serializeText` on the map key type, not necessarily the raw key bytes. Deserialize it
+            /// back through the key type so the index is probed with the original key, mirroring
+            /// `MergeTreeIndexBloomFilter::tryParseMapSubcolumn`. For the `String` / `LowCardinality(String)`
+            /// keys this index allows `serializeText` is the identity, so this is a round-trip today; doing
+            /// it explicitly keeps the lookup correct for any key type and consistent with the bloom filter.
+            const auto & map_type = assert_cast<const DataTypeMap &>(*header.getByName(map_column_name).type);
+            const auto & key_type = map_type.getKeyType();
+            auto key_column = key_type->createColumn();
+            ReadBufferFromString buf(serialized_key);
+            key_type->getDefaultSerialization()->deserializeWholeText(*key_column, buf, {});
+
+            Field key_field;
+            key_column->get(0, key_field);
+            if (key_field.getType() == Field::Types::String)
+                return key_field.safeGet<String>();
+        }
     }
 
     return std::nullopt;
