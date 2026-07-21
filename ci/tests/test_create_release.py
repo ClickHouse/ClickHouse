@@ -498,6 +498,13 @@ def test_prepare_recovers_already_released_commit(tmp_path):
     tag. With no *newer* release tag on the branch this is not out-of-order:
     the tag at this commit is this run's own tag, so ``prepare`` must recover
     (``create_new_release=false``) rather than re-enter the creation/merge path.
+
+    ``prepare`` stays pure (no GitHub lookups) and still reports recovery via
+    ``create_new_release=false``. The recovery *continuation* — recreating the
+    changelog PR that a crashed/older run never opened — is decided downstream
+    in ``release_job.should_create_changelog_pr`` (see
+    ``test_should_create_changelog_pr_continues_recovery``), so recovery no
+    longer strands a release out of ``version_date.tsv``.
     """
     pytest.importorskip("boto3")  # create_release.py imports s3_helper -> boto3
 
@@ -585,6 +592,39 @@ def test_prepare_recovers_already_released_commit(tmp_path):
         info = json.load(f)
     assert info["release_tag"] == "v26.6.2.1-stable"
     assert info["create_new_release"] is False
+
+
+def test_should_create_changelog_pr_continues_recovery():
+    """release_job continues a stranded release by (re)creating the changelog PR.
+
+    The gate is the PR's own absence, not the blanket ``create_new_release``
+    flag: a recovery run (existing tag, so ``create_new_release`` is False)
+    dispatched with neither only-repo nor only-docker still creates the
+    changelog PR when it is missing, which is what prevents the future
+    stranding that produced the manual #111175/#111176 remediation. It is a
+    no-op once the PR is open or merged (idempotent), and only-repo/only-docker
+    — which re-publish artifacts — never touch it.
+    """
+    import importlib
+
+    release_job = importlib.import_module("ci.jobs.release_job")
+    gate = release_job.should_create_changelog_pr
+
+    # Fresh release or plain recovery with no PR yet -> create it.
+    assert gate("patch", only_repo=False, only_docker=False, changelog_pr_exists=False)
+    # PR already open or merged -> idempotent no-op.
+    assert not gate(
+        "patch", only_repo=False, only_docker=False, changelog_pr_exists=True
+    )
+    # Artifact-only recovery modes never create the changelog PR.
+    assert not gate(
+        "patch", only_repo=True, only_docker=False, changelog_pr_exists=False
+    )
+    assert not gate(
+        "patch", only_repo=False, only_docker=True, changelog_pr_exists=False
+    )
+    # A new release branch handles its version bump PR elsewhere.
+    assert not gate("new", only_repo=False, only_docker=False, changelog_pr_exists=False)
 
 
 def test_prepare_refuses_out_of_order_commit(tmp_path):

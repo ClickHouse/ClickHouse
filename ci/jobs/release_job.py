@@ -127,6 +127,30 @@ def parse_args() -> argparse.Namespace:
 RELEASE_INFO_FILE = "/tmp/release_info.json"
 
 
+def should_create_changelog_pr(
+    release_type: str,
+    only_repo: bool,
+    only_docker: bool,
+    changelog_pr_exists: bool,
+) -> bool:
+    """Whether this run should (re)create the version_date.tsv/changelog PR.
+
+    True for a fresh patch release and for a recovery run (the release tag
+    already exists, so prepare set create_new_release=False) dispatched with
+    neither only-repo nor only-docker — the tail-continuation case that finishes
+    a release whose changelog PR a crashed or older run never opened. Gated on
+    the auto/<tag> PR not already being open or merged, so a rerun once the PR
+    exists is a no-op (idempotent). only-repo/only-docker re-publish artifacts
+    only and never touch the changelog PR.
+    """
+    return (
+        release_type == "patch"
+        and not only_repo
+        and not only_docker
+        and not changelog_pr_exists
+    )
+
+
 def main():
     stopwatch = Utils.Stopwatch()
     args = parse_args()
@@ -343,6 +367,26 @@ def main():
         with open(RELEASE_INFO_FILE) as f:
             create_new_release = json.load(f)["create_new_release"]
 
+    # (Re)create the changelog PR on a fresh release and on a recovery run whose
+    # PR was never opened, but not when the auto/<tag> PR is already open or
+    # merged (idempotent). This replaces the previous blanket create_new_release
+    # gate, which treated an existing tag as "finished" and stranded a release
+    # whose changelog tail never ran (root cause of #111175/#111176). The
+    # artifact re-publish steps stay gated as before, so a rerun after a crash
+    # still finishes any unpublished artifacts.
+    changelog_pr_exists = False
+    if ok and args.release_type == "patch":
+        with open(RELEASE_INFO_FILE) as f:
+            _release_tag = json.load(f)["release_tag"]
+        changelog_pr_exists = bool(
+            GH.get_pr_url_by_branch(
+                branch=f"auto/{_release_tag}", repo="ClickHouse/ClickHouse"
+            )
+        )
+    do_changelog = should_create_changelog_pr(
+        args.release_type, args.only_repo, args.only_docker, changelog_pr_exists
+    )
+
     # only-repo / only-docker only re-publish artifacts for an already-created
     # release (repo/Docker recovery). If the ref resolves to a new release, they
     # would otherwise fall through to the creation steps below (push tag, bump
@@ -408,7 +452,7 @@ def main():
             workdir=REPO_PATH,
         )
 
-    if ok and args.release_type == "patch" and create_new_release:
+    if ok and do_changelog:
         with open(RELEASE_INFO_FILE) as f:
             release_tag = json.load(f)["release_tag"]
         uid = os.getuid()
@@ -444,7 +488,7 @@ def main():
             workdir=REPO_PATH,
         )
 
-    if ok and args.release_type == "patch" and not args.dry_run and create_new_release:
+    if ok and do_changelog and not args.dry_run:
         with open(RELEASE_INFO_FILE) as f:
             release_tag = json.load(f)["release_tag"]
 
@@ -543,9 +587,10 @@ def main():
         and not args.only_docker
     ):
         # Restore the working tree after the changelog/version-bump steps, which
-        # dirty it. A no-op on recovery / out-of-order runs (they skip the
-        # changelog steps); the always-run "Checkout Back" below is the safety net
-        # if anything between here and there leaves the tree dirty.
+        # dirty it. A no-op on recovery / out-of-order runs that skip the
+        # changelog steps; runs on a tail continuation to clean up after them.
+        # The always-run "Checkout Back" below is the safety net if anything
+        # between here and there leaves the tree dirty.
         step(
             name="Restore Git State",
             command=[
@@ -771,10 +816,11 @@ def main():
     # False — so if anything failed, the Slack post below reports the failing
     # step instead of merging.
     #
-    # Only a release that created the changelog/version-bump PRs has anything to
-    # merge; a recovery / out-of-order run did not create them, so skip
-    # --merge-prs there (it would fail looking up a non-existent changelog PR).
-    if create_new_release:
+    # Merge the created PRs only when this run has one to merge: a fresh release,
+    # or a tail continuation that just (re)created the changelog PR (do_changelog).
+    # A recovery / out-of-order run that created nothing skips --merge-prs (it
+    # would fail looking up a non-existent changelog PR).
+    if create_new_release or do_changelog:
         step(
             name="Update Release Info and Merge Created PRs",
             command=[
