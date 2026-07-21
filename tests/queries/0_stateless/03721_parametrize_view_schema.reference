@@ -156,6 +156,25 @@ SELECT *
 FROM system.columns
 WHERE table = '03271_parametrized_v_toggle' AND database = currentDatabase();
 default	03271_parametrized_v_toggle	n	UInt64	1			0	0	0		0	0	0	0		\N	64	2	0	\N	\N	
+-- Validation is latched together with exposure: a view that advertises a declared schema also
+-- enforces it, regardless of the current setting value. A matching schema still executes...
+SELECT *
+FROM 03271_parametrized_v_toggle(upper_bound = 3);
+0
+1
+2
+SET use_declared_schema_for_parameterized_views = 1;
+CREATE OR REPLACE VIEW 03271_parametrized_v_toggle_mismatch (n UInt64, s String) AS
+SELECT number AS n
+FROM numbers({upper_bound:UInt64});
+SET use_declared_schema_for_parameterized_views = 0;
+-- ...and a latched mismatching schema is still both exposed and enforced with the setting off,
+-- so SHOW COLUMNS and execution stay consistent instead of advertising one schema and running another.
+SHOW COLUMNS IN 03271_parametrized_v_toggle_mismatch;
+n	UInt64	NO		\N	
+s	String	NO		\N	
+SELECT *
+FROM 03271_parametrized_v_toggle_mismatch(upper_bound = 3); -- { serverError TYPE_MISMATCH }
 CREATE OR REPLACE VIEW 03271_parametrized_v_off (n UInt64) AS
 SELECT number AS n
 FROM numbers({upper_bound:UInt64});
