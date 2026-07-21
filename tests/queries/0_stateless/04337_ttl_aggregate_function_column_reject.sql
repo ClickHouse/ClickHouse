@@ -561,3 +561,61 @@ DROP TABLE test_ttl_agg_variant_lenient_build_suspicious;
 
 SET allow_suspicious_ttl_expressions = 0;
 SET variant_throw_on_type_mismatch = 1;
+
+-- A consumer over *several* Variant/Dynamic carriers must be probed with all of them materialized
+-- simultaneously: substituting one at a time leaves the other side at its all-NULL default, the adaptor
+-- short-circuits to NULL, and the bad joint combination (e.g. state + state) is never built or executed -
+-- so the CREATE passed while a row with states on both sides still threw during TTL execution.
+CREATE TABLE test_ttl_agg_two_dynamic
+(
+    key UInt64,
+    d1 Dynamic,
+    d2 Dynamic,
+    d DateTime
+)
+ENGINE = MergeTree()
+ORDER BY key
+TTL d + INTERVAL 1 DAY DELETE WHERE d1 = d2; -- { serverError BAD_TTL_EXPRESSION }
+
+CREATE TABLE test_ttl_agg_two_variant
+(
+    key UInt64,
+    v1 Variant(AggregateFunction(max, UInt64), UInt64),
+    v2 Variant(AggregateFunction(max, UInt64), UInt64),
+    d DateTime
+)
+ENGINE = MergeTree()
+ORDER BY key
+TTL d + INTERVAL 1 DAY DELETE WHERE v1 = v2; -- { serverError BAD_TTL_EXPRESSION }
+
+-- A joint consumer that handles every alternative combination is still accepted.
+CREATE TABLE test_ttl_agg_two_carriers_agnostic
+(
+    key UInt64,
+    d1 Dynamic,
+    v1 Variant(AggregateFunction(max, UInt64), UInt64),
+    d DateTime
+)
+ENGINE = MergeTree()
+ORDER BY key
+TTL d + INTERVAL 1 DAY DELETE WHERE concat(toString(isNotNull(d1)), toString(isNotNull(v1))) = '11';
+
+DROP TABLE test_ttl_agg_two_carriers_agnostic;
+
+-- The escape hatch also covers the joint case.
+SET allow_suspicious_ttl_expressions = 1;
+
+CREATE TABLE test_ttl_agg_two_dynamic_suspicious
+(
+    key UInt64,
+    d1 Dynamic,
+    d2 Dynamic,
+    d DateTime
+)
+ENGINE = MergeTree()
+ORDER BY key
+TTL d + INTERVAL 1 DAY DELETE WHERE d1 = d2;
+
+DROP TABLE test_ttl_agg_two_dynamic_suspicious;
+
+SET allow_suspicious_ttl_expressions = 0;
