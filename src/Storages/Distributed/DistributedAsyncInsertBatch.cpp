@@ -54,7 +54,7 @@ namespace ErrorCodes
 }
 
 /// Can the batch be split and send files from batch one-by-one instead?
-bool isSplittableErrorCode(int code, bool remote)
+static bool isSplittableErrorCode(int code, bool remote)
 {
     return code == ErrorCodes::MEMORY_LIMIT_EXCEEDED
         /// FunctionRange::max_elements and similar
@@ -195,7 +195,7 @@ bool DistributedAsyncInsertBatch::recoverBatch()
         ReadBufferFromFile in{parent.current_batch_file_path};
         while (!in.eof())
         {
-            UInt64 idx;
+            UInt64 idx = 0;
             in >> idx >> "\n";
             files.push_back(std::filesystem::absolute(fmt::format("{}/{}.bin", parent.path, idx)).string());
         }
@@ -219,7 +219,7 @@ bool DistributedAsyncInsertBatch::recoverBatch()
 
         try
         {
-            ReadBufferFromFile header_buffer(files.back());
+            ReadBufferFromFile header_buffer(file);
             const DistributedAsyncInsertHeader & header = DistributedAsyncInsertHeader::read(header_buffer, parent.log);
             if (header.rows)
             {

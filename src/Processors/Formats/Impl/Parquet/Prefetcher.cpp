@@ -5,6 +5,8 @@
 #include <IO/SeekableReadBuffer.h>
 #include <IO/WithFileSize.h>
 #include <IO/WriteBufferFromVector.h>
+#include <Common/Exception.h>
+#include <Common/ProfileEvents.h>
 
 #include <shared_mutex>
 
@@ -12,7 +14,6 @@ namespace DB::ErrorCodes
 {
     extern const int INCORRECT_DATA;
     extern const int LOGICAL_ERROR;
-    extern const int CANNOT_READ_ALL_DATA;
 }
 
 namespace ProfileEvents
@@ -549,14 +550,8 @@ Prefetcher::Task::State Prefetcher::runTask(Task * task)
 void Prefetcher::rethrowException(Task * task)
 {
     std::lock_guard lock(exception_mutex);
-    if (task->exception)
-        std::rethrow_exception(task->exception);
-    else
-        /// exception_ptr is not copyable, so we rethrow the correct exception only the first time,
-        /// then throw uninformative exceptions if called again (e.g. for multiple requests covered
-        /// by the same task). Hopefully the first thrown exception will usually be propagated to
-        /// the user.
-        throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Read failed");
+    /// Each waiter gets a private copy so callers can safely mutate it (addMessage())
+    std::rethrow_exception(copyMutableException(task->exception));
 }
 
 PrefetchHandle::PrefetchHandle(RequestState * request_) : request(request_) {}

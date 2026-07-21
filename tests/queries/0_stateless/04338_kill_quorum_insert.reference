@@ -1,0 +1,2 @@
+insert is waiting for quorum: 1
+killed insert error: QUERY_WAS_CANCELLED

@@ -73,7 +73,7 @@ std::vector<HighlightedRange> expandHighlights(const std::set<HighlightedRange> 
 
         for (const char * pos = range.begin; pos < range.end; ++pos)
         {
-            Highlight char_type;
+            Highlight char_type = Highlight::string;
             if (*pos == '\\')
             {
                 ++escaped;

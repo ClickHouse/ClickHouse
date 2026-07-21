@@ -147,7 +147,7 @@ LIMIT 10;
 
 Now suppose we have a table named `holdings` that contains a list of cryptocurrencies that we own, along with the number of coins:
 
-```sql
+```sql title="Query"
 CREATE TABLE holdings
 (
     crypto_name String,

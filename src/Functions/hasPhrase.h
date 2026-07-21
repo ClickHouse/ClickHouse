@@ -2,19 +2,20 @@
 
 #include <Functions/IFunction.h>
 #include <Interpreters/Context_fwd.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
 {
 
 struct ITokenizer;
 
-class ExecutableFunctionHasPhrase : public IExecutableFunction
+class ExecutableFunctionHasPhrase final : public IExecutableFunction
 {
 public:
     static constexpr auto name = "hasPhrase";
 
     ExecutableFunctionHasPhrase(
-        std::shared_ptr<const ITokenizer> tokenizer_, std::vector<String> phrase_tokens_, std::vector<size_t> failure_table_)
+        std::shared_ptr<const ITokenizer> tokenizer_, VectorWithMemoryTracking<String> phrase_tokens_, VectorWithMemoryTracking<size_t> failure_table_)
         : tokenizer(std::move(tokenizer_))
         , phrase_tokens(std::move(phrase_tokens_))
         , failure_table(std::move(failure_table_))
@@ -27,18 +28,18 @@ public:
 
 private:
     std::shared_ptr<const ITokenizer> tokenizer;
-    std::vector<String> phrase_tokens;
-    std::vector<size_t> failure_table;
+    VectorWithMemoryTracking<String> phrase_tokens;
+    VectorWithMemoryTracking<size_t> failure_table;
 };
 
-class FunctionBaseHasPhrase : public IFunctionBase
+class FunctionBaseHasPhrase final : public IFunctionBase
 {
 public:
     static constexpr auto name = "hasPhrase";
 
     FunctionBaseHasPhrase(
         std::shared_ptr<const ITokenizer> tokenizer_,
-        std::vector<String> phrase_tokens_,
+        VectorWithMemoryTracking<String> phrase_tokens_,
         DataTypes argument_types_,
         DataTypePtr result_type_)
         : tokenizer(std::move(tokenizer_))
@@ -57,12 +58,12 @@ public:
 
 private:
     std::shared_ptr<const ITokenizer> tokenizer;
-    std::vector<String> phrase_tokens;
+    VectorWithMemoryTracking<String> phrase_tokens;
     DataTypes argument_types;
     DataTypePtr result_type;
 };
 
-class FunctionHasPhraseOverloadResolver : public IFunctionOverloadResolver
+class FunctionHasPhraseOverloadResolver final : public IFunctionOverloadResolver
 {
 public:
     static constexpr auto name = "hasPhrase";

@@ -1,0 +1,320 @@
+---
+sidebarTitle: '使用 HTTP 接口'
+slug: /integrations/azure-data-factory/http-interface
+description: '使用 ClickHouse 的 HTTP 接口将数据从 Azure Data Factory 导入 ClickHouse'
+keywords: ['azure data factory', 'azure', 'microsoft', '数据', 'HTTP 接口']
+title: '在 Azure Data Factory 中使用 ClickHouse HTTP 接口'
+doc_type: 'guide'
+integration:
+   - support_level: 'core'
+   - category: 'data_ingestion'
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+[`azureBlobStorage` 表函数](/zh/reference/functions/table-functions/azureBlobStorage)
+是将 Azure Blob 存储中的数据摄取到
+ClickHouse 的一种快速便捷的方法。不过，出于以下原因，它并不总是适用：
+
+* 你的数据可能并不存储在 Azure Blob 存储中——例如，可能位于 Azure SQL Database、Microsoft SQL Server 或 Cosmos DB 中。
+* 安全策略可能会完全禁止对 Blob 存储的外部访问——例如，如果存储账户被锁定且没有公共端点。
+
+在这种情况下，你可以将 Azure Data Factory 与
+[ClickHouse HTTP 接口](/zh/concepts/features/interfaces/http)
+结合使用，将 Azure 服务中的数据发送到 ClickHouse。
+
+这种方法颠倒了数据流向：不再由 ClickHouse 从
+Azure 拉取数据，而是由 Azure Data Factory 将数据推送到 ClickHouse。该方法
+通常要求你的 ClickHouse 实例可通过公共
+互联网访问。
+
+<Info>
+  你可以通过
+  使用 Azure Data Factory 的自托管集成运行时，避免将 ClickHouse 实例暴露到互联网。
+  这种设置允许
+  通过私有网络发送数据。不过，这超出了本文的讨论范围。
+  你可以在官方指南中了解更多信息：
+  [创建并配置自托管集成
+  运行时](https://learn.microsoft.com/en-us/azure/data-factory/create-self-hosted-integration-runtime?tabs=data-factory)
+</Info>
+
+<div id="turning-clickhouse-to-a-rest-service">
+  ## 将 ClickHouse 变成 REST 服务
+</div>
+
+Azure Data Factory 支持通过 HTTP 以 JSON
+格式将数据发送到外部系统。我们可以利用这一能力，通过 [ClickHouse HTTP 接口](/zh/concepts/features/interfaces/http)
+直接将数据插入 ClickHouse。
+你可以在 [ClickHouse HTTP Interface
+documentation](/zh/concepts/features/interfaces/http) 中了解更多信息。
+
+对于本示例，我们只需指定目标表，将
+输入数据格式定义为 JSON，并添加支持更灵活时间戳解析的选项。
+
+```sql
+INSERT INTO my_table
+SETTINGS 
+    date_time_input_format='best_effort',
+    input_format_json_read_objects_as_strings=1
+FORMAT JSONEachRow
+```
+
+要将此查询作为 HTTP 请求的一部分发送，只需将其作为
+URL 编码的字符串传给 ClickHouse 端点中的查询参数：
+
+```text
+https://your-clickhouse-url.com?query=INSERT%20INTO%20my_table%20SETTINGS%20date_time_input_format%3D%27best_effort%27%2C%20input_format_json_read_objects_as_strings%3D1%20FORMAT%20JSONEachRow%0A
+```
+
+<Info>
+  Azure Data Factory 可使用其内置的
+  `encodeUriComponent` 函数自动处理这种编码，因此无需手动编码。
+</Info>
+
+现在，你可以将 JSON 格式的数据发送到此 URL。数据应与目标表的
+结构一致。下面是一个使用 curl 的简单示例，假设该表包含三列：`col_1`、`col_2` 和 `col_3`。
+
+```text
+curl \
+    -XPOST "https://your-clickhouse-url.com?query=<our_URL_encded_query>" \
+    --data '{"col_1":9119,"col_2":50.994,"col_3":"2019-06-01 00:00:00"}'
+```
+
+你也可以发送由对象组成的 JSON 数组，或 JSON Lines (以换行符分隔的
+JSON 对象) 。Azure Data Factory 使用 JSON 数组格式，这与
+ClickHouse 的 `JSONEachRow` 输入完全兼容。
+
+如你所见，在这一步中，你无需在 ClickHouse
+端做任何特殊处理。HTTP 接口 已经提供了充当
+类 REST 端点所需的一切——无需额外配置。
+
+现在我们已经让 ClickHouse 像 REST 端点一样工作，接下来就该
+配置 Azure Data Factory 来使用它了。
+
+在接下来的步骤中，我们将创建一个 Azure Data Factory 实例，设置一个指向你的 ClickHouse 实例的 链接服务，为
+[REST sink](https://learn.microsoft.com/en-us/azure/data-factory/connector-rest)
+定义一个 数据集，并创建一个 Copy Data activity，将数据从 Azure 发送到 ClickHouse。
+
+<div id="create-an-azure-data-factory-instance">
+  ## 创建 Azure Data Factory 实例
+</div>
+
+本指南假设你可以访问 Microsoft Azure 账户，并且
+已配置好订阅和资源组。如果你已经
+配置了 Azure Data Factory，则可直接跳过此步骤，
+使用现有实例继续下一步。
+
+1. 登录 [Microsoft Azure 门户](https://portal.azure.com/)，然后点击
+   **Create a resource**。
+   <Image img="/images/integrations/data-ingestion/azure-data-factory/azure-home-page.webp" size="lg" alt="Azure 门户主页" border />
+
+2. 在左侧的 Categories 窗格中，选择 **Analytics**，然后点击
+   热门服务列表中的 **Data Factory**。
+   <Image img="/images/integrations/data-ingestion/azure-data-factory/azure-new-resource-analytics.webp" size="lg" alt="Azure 门户新建资源" border />
+
+3. 选择你的订阅和资源组，为新的 Data
+   Factory 实例输入名称，选择区域，并将版本保留为 V2。
+   <Image img="/images/integrations/data-ingestion/azure-data-factory/azure-new-data-factory.webp" size="lg" alt="Azure 门户新建 Data Factory" border />
+
+4. 点击 **Review + Create**，然后点击 **Create** 以开始部署。
+
+   <Image img="/images/integrations/data-ingestion/azure-data-factory/azure-new-data-factory-confirm.webp" size="lg" alt="Azure 门户新建 Data Factory 确认" border />
+
+   <Image img="/images/integrations/data-ingestion/azure-data-factory/azure-new-data-factory-success.webp" size="lg" alt="Azure 门户新建 Data Factory 成功" border />
+
+部署成功完成后，你就可以开始使用新的 Azure
+Data Factory 实例了。
+
+<div id="-creating-new-rest-based-linked-service">
+  ## 创建新的基于 REST 的链接服务
+</div>
+
+1. 登录 Microsoft Azure 门户并打开你的 Data Factory 实例。
+   <Image img="/images/integrations/data-ingestion/azure-data-factory/azure-home-with-data-factory.webp" size="lg" alt="包含 Data Factory 的 Azure 门户主页" border />
+
+2. 在 Data Factory 概述页面中，点击 **Launch Studio**。
+   <Image img="/images/integrations/data-ingestion/azure-data-factory/azure-data-factory-page.webp" size="lg" alt="Azure 门户中的 Data Factory 页面" border />
+
+3. 在左侧菜单中，选择 **Manage**，然后进入 **Linked services**，
+   再点击 **+ New** 创建新的链接服务。
+   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-create-linked-service-button.webp" size="lg" alt="Azure Data Factory 的新建链接服务按钮" border />
+
+4. 在 **New linked service search bar** 中，输入 **REST**，选择 **REST**，然后点击 **Continue**，
+   创建一个 [REST connector](https://learn.microsoft.com/en-us/azure/data-factory/connector-rest)
+   实例。
+   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-new-linked-service-search.webp" size="lg" alt="Azure Data Factory 的新建链接服务搜索" border />
+
+5. 在链接服务配置面板中，为新服务输入名称，
+   点击 **Base URL** 字段，然后点击 **Add dynamic content** (该链接仅在
+   选中此字段时显示) 。
+   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-new-lined-service-pane.webp" size="lg" alt="新建链接服务面板" border />
+
+6. 在动态内容面板中，你可以创建参数化 URL，
+   这样便可在稍后为不同
+   表创建数据集时再定义查询——从而让该链接服务可重复使用。
+   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-new-linked-service-base-url-empty.webp" size="lg" alt="新建链接服务的 Base URL 为空" border />
+
+7. 点击过滤器输入框旁边的 **&quot;+&quot;**，添加一个新参数，并将其命名为
+   `pQuery`，将类型设置为 String，将默认值设置为 `SELECT 1`。
+   点击 **Save**。
+   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-new-linked-service-params.webp" size="lg" alt="新建链接服务参数" border />
+
+8. 在表达式字段中，输入以下内容并点击 **OK**。将
+   `your-clickhouse-url.com` 替换为你的 ClickHouse
+   实例的实际地址。
+   ```text
+   @{concat('https://your-clickhouse-url.com:8443/?query=', encodeUriComponent(linkedService().pQuery))}
+   ```
+   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-new-linked-service-expression-field-filled.webp" size="lg" alt="已填写表达式字段的新建链接服务" border />
+
+9. 返回主表单后，选择基本身份验证，输入用于连接 ClickHouse HTTP 接口的用户名和
+   密码，然后点击 **Test
+   connection**。如果配置无误，你将看到成功
+   消息。
+   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-new-linked-service-check-connection.webp" size="lg" alt="新建链接服务检查连接" border />
+
+10. 点击 **Create** 完成设置。
+    <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-linked-services-list.webp" size="lg" alt="链接服务列表" border />
+
+现在，你应该能在列表中看到新创建的基于 REST 的链接服务。
+
+<div id="creating-a-new-dataset-for-the-clickhouse-http-interface">
+  ## 为 ClickHouse HTTP 接口创建新数据集
+</div>
+
+现在，我们已经为 ClickHouse HTTP 接口配置好了链接服务，
+接下来可以创建一个供 Azure Data Factory 用于向
+ClickHouse 发送数据的数据集。
+
+在本示例中，我们将插入一小部分 [Environmental Sensors
+Data](/zh/get-started/sample-datasets/environmental-sensors)。
+
+1. 打开你常用的 ClickHouse 查询控制台——可以是
+   ClickHouse Cloud Web UI、CLI 客户端，或你用于
+   运行查询的任何其他接口——然后创建目标表：
+   ```sql
+   CREATE TABLE sensors
+   (
+       sensor_id UInt16,
+       lat Float32,
+       lon Float32,
+       timestamp DateTime,
+       temperature Float32
+   )
+   ENGINE = MergeTree
+   ORDER BY (timestamp, sensor_id);
+   ```
+
+2. 在 Azure Data Factory Studio 中，在左侧窗格选择 Author。将鼠标悬停
+   在 Dataset 项上，点击三点图标，然后选择 New dataset。
+   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-new-dataset-item.webp" size="lg" alt="新建数据集项" border />
+
+3. 在搜索栏中输入 **REST**，选择 **REST**，然后点击 **Continue**。
+   为数据集输入名称，并选择你在上一步中创建的 **链接服务**。
+   点击 **OK** 以创建数据集。
+   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-new-dataset-page.webp" size="lg" alt="新建数据集页面" border />
+
+4. 现在，你应该能在左侧 Factory Resources 窗格中的 Datasets
+   部分看到新创建的数据集。选择该数据集以
+   打开其属性。你会看到在
+   链接服务中定义的 `pQuery` 参数。点击 **Value** 文本字段，然后点击 **Add dynamic**
+   content。
+   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-new-dataset-properties.webp" size="lg" alt="新建数据集属性" border />
+
+5. 在打开的窗格中，粘贴以下查询：
+   ```sql
+   INSERT INTO sensors
+   SETTINGS 
+       date_time_input_format=''best_effort'', 
+       input_format_json_read_objects_as_strings=1 
+   FORMAT JSONEachRow
+   ```
+
+<Danger>
+  查询中的所有单引号 `'` 都必须替换为两个单引号
+  `''`。这是 Azure Data Factory 表达式解析器的要求。如果你
+  没有对它们进行转义，可能不会立即看到报错——但稍后在尝试使用或保存该数据集时，
+  就会失败。例如，`'best_effort'`
+  必须写成 `''best_effort''`。
+</Danger>
+
+<Image img="/images/integrations/data-ingestion/azure-data-factory/adf-new-dataset-query.webp" size="xl" alt="新建数据集查询" border />
+
+6. 点击 OK 保存表达式。点击 Test connection。如果一切都已
+   配置正确，你会看到 Connection successful 消息。点击页面顶部的 Publish
+   all 以保存更改。
+   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-new-dataset-connection-successful.webp" size="xl" alt="新建数据集连接成功" border />
+
+<div id="setting-up-an-example-dataset">
+  ### 设置示例数据集
+</div>
+
+在本示例中，我们不会使用完整的 Environmental Sensors Dataset，
+而只使用其中一个较小的子集，你可以从
+[Sensors Dataset Sample](https://datasets-documentation.s3.eu-west-3.amazonaws.com/environmental/sensors.csv) 获取。
+
+<Info>
+  为使本指南重点更明确，我们不会详细介绍如何在 Azure Data Factory 中创建
+  源数据集的具体步骤。你可以将样本数据上传到你选择的任何
+  存储服务，例如 Azure Blob 存储、Microsoft SQL
+  Server，甚至 Azure Data Factory 支持的其他文件格式。
+</Info>
+
+将数据集上传到 Azure Blob 存储 (或其他首选存储
+服务) 后，在 Azure Data Factory Studio 中转到 Factory Resources 窗格。
+创建一个指向已上传数据的新数据集。点击 Publish all
+以保存更改。
+
+<div id="creating-the-copy-activity-to-transfer-data-to-clickhouse">
+  ## 创建用于将数据传输到 ClickHouse 的复制活动
+</div>
+
+现在我们已经配置好了输入和输出数据集，可以设置一个
+**Copy Data** 活动，将示例数据集中的数据传输到 ClickHouse 的
+`sensors` 表中。
+
+1. 打开 **Azure Data Factory Studio**，进入 **Author** 选项卡。在
+   **Factory Resources** 窗格中，将鼠标悬停在 **Pipeline** 上，点击三点
+   图标，然后选择 **New pipeline**。
+   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-new-pipeline-item.webp" size="lg" alt="ADF 新建管道项" border />
+
+2. 在 **Activities** 窗格中，展开 **Move and transform** 部分，然后将
+   **Copy data** 活动拖到画布上。
+   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-new-copy-data-item.webp" size="lg" alt="新建复制数据项" border />
+
+3. 选择 **Source** 选项卡，然后选择你之前创建的源数据集。
+   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-copy-data-source.webp" size="lg" alt="复制数据源" border />
+
+4. 转到 **Sink** 选项卡，选择为
+   `sensors` 表创建的 ClickHouse 数据集。将 **Request method** 设置为 POST。确保 **HTTP compression
+   type** 设置为 **None**。
+
+<Warning>
+  HTTP 压缩在 Azure Data Factory 的 Copy Data
+  活动中无法正常工作。启用后，Azure 发送的载荷将只包含零字节
+  —— 这很可能是该服务的一个 bug。请务必保持禁用压缩。
+</Warning>
+
+<Info>
+  我们建议保留默认的批次大小 10,000，甚至进一步调大。
+  更多详情，请参阅
+  [选择插入策略 / 同步时的批次插入](/zh/concepts/best-practices/selecting-an-insert-strategy#batch-inserts-if-synchronous)。
+</Info>
+
+<Image img="/images/integrations/data-ingestion/azure-data-factory/adf-copy-data-sink-select-post.webp" size="lg" alt="复制数据接收端选择 POST" border />
+
+5. 点击画布顶部的 **Debug** 以运行该管道。稍等片刻后，
+   该活动将进入队列并开始执行。如果所有配置都正确，
+   任务应以 **Success** 状态完成。
+   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-copy-data-debug-success.webp" size="lg" alt="复制数据调试成功" border />
+
+6. 完成后，点击 **Publish all** 以保存管道和数据集的更改。
+
+<div id="additional-resources-1">
+  ## 其他资源
+</div>
+
+* [HTTP 接口](/zh/concepts/features/interfaces/http)
+* [使用 Azure Data Factory 从 REST 端点复制和转换数据，以及将数据复制和转换到 REST 端点](https://learn.microsoft.com/en-us/azure/data-factory/connector-rest?tabs=data-factory)
+* [选择插入策略](/zh/concepts/best-practices/selecting-an-insert-strategy)
+* [创建并配置自托管集成运行时](https://learn.microsoft.com/en-us/azure/data-factory/create-self-hosted-integration-runtime?tabs=data-factory)

@@ -27,15 +27,18 @@ public:
     struct NotProcessed
     {
         Block block;
-        size_t left_position;
-        size_t left_key_tail;
-        size_t right_position;
-        size_t right_block;
+        size_t left_position{};
+        size_t left_key_tail{};
+        size_t right_position{};
+        size_t right_block{};
 
         bool empty() const { return block.empty(); }
     };
 
     std::string getName() const override { return "PartialMergeJoin"; }
+    /// PartialMergeJoin re-sorts left blocks by the join key (once per right block), so it does not
+    /// preserve the left stream's original order. See issues #109216 and #110662.
+    bool preservesLeftBlockOrder() const override { return false; }
     const TableJoin & getTableJoin() const override { return *table_join; }
     bool addBlockToJoin(const Block & block, bool check_limits) override;
     void checkTypesOfKeys(const Block & block) const override;

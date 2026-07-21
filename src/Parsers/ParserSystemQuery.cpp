@@ -13,13 +13,21 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/InstrumentationManager.h>
+#include <Common/Exception.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 
 #include <base/EnumReflection.h>
 
+#include <limits>
+
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
 
 [[nodiscard]] static bool parseQueryWithOnClusterAndMaybeTable(boost::intrusive_ptr<ASTSystemQuery> & res, IParser::Pos & pos,
                                                  Expected & expected, bool require_table, bool allow_string_literal)
@@ -209,14 +217,31 @@ enum class SystemQueryTargetType : uint8_t
             if (!ParserStringLiteral{}.parse(pos, path_ast, expected))
                 return false;
             String zk_path = path_ast->as<ASTLiteral &>().value.safeGet<String>();
-            if (!zk_path.empty() && zk_path[zk_path.size() - 1] == '/')
-                zk_path.pop_back();
-            if (!zk_path.empty())
-            {
-                res->full_replica_zk_path = std::move(zk_path);
-                res->zk_name = zkutil::extractZooKeeperName(res->full_replica_zk_path);
-                res->replica_zk_path = zkutil::extractZooKeeperPath(res->full_replica_zk_path, /*check_starts_with_slash*/false);
-            }
+
+            /// Reject empty/root-only keeper paths at parse time (see #109217). For "", "/", "//",
+            /// "aux:/", "aux://" the fully collapsed keeper path is empty/root, so the malformed query
+            /// is caught here instead of building a lossy AST that fails the debug round-trip self-check.
+            /// (Short-circuit: for an empty literal the helper would throw a less specific message.)
+            if (zk_path.empty()
+                || zkutil::extractZooKeeperPathAndCollapseTrailingSlashes(zk_path, /*check_starts_with_slash*/ false)
+                       .find_first_not_of('/') == String::npos)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "ZooKeeper path in DROP REPLICA is empty or refers to the root");
+
+            res->zk_name = zkutil::extractZooKeeperName(zk_path);
+
+            /// Store the drop path with the legacy one-slash normalization (strip one trailing slash
+            /// here, extractZooKeeperPath strips one more) so it matches how tables and Replicated
+            /// databases store their keeper path (TableZnodeInfo::resolve / DatabaseReplicated). Fully
+            /// collapsing here would make a remote-replica drop of an object created with a trailing
+            /// slash probe the wrong znode. The self-protection guards collapse both sides instead.
+            String legacy_path = zk_path;
+            if (legacy_path.back() == '/')
+                legacy_path.pop_back();
+            res->replica_zk_path = zkutil::extractZooKeeperPath(legacy_path, /*check_starts_with_slash*/ false);
+
+            /// Keep the raw literal for formatting so the AST round-trips losslessly (formatImpl prints
+            /// full_replica_zk_path; the interpreter uses the normalized replica_zk_path for the drop).
+            res->full_replica_zk_path = std::move(zk_path);
         }
         else
             return false;
@@ -279,10 +304,13 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             {"DROP TEXT INDEX CACHES", Type::CLEAR_TEXT_INDEX_CACHES},
             {"DROP MMAP CACHE", Type::CLEAR_MMAP_CACHE},
             {"DROP QUERY CONDITION CACHE", Type::CLEAR_QUERY_CONDITION_CACHE},
+            {"DROP ENCRYPTION HEADERS CACHE", Type::CLEAR_ENCRYPTION_HEADERS_CACHE},
             {"DROP QUERY CACHE", Type::CLEAR_QUERY_CACHE},
             {"DROP COMPILED EXPRESSION CACHE", Type::CLEAR_COMPILED_EXPRESSION_CACHE},
             {"DROP ICEBERG METADATA CACHE", Type::CLEAR_ICEBERG_METADATA_CACHE},
+            {"DROP PAIMON METADATA CACHE", Type::CLEAR_PAIMON_METADATA_CACHE},
             {"DROP PARQUET METADATA CACHE", Type::CLEAR_PARQUET_METADATA_CACHE},
+            {"DROP POINT IN POLYGON CACHE", Type::CLEAR_POINT_IN_POLYGON_CACHE},
             {"DROP FILESYSTEM CACHE", Type::CLEAR_FILESYSTEM_CACHE},
             {"DROP DISTRIBUTED CACHE", Type::CLEAR_DISTRIBUTED_CACHE},
             {"DROP DISK METADATA CACHE", Type::CLEAR_DISK_METADATA_CACHE},
@@ -311,7 +339,7 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
     switch (res->type)
     {
         case Type::RELOAD_DICTIONARY:
-        {
+        case Type::UNLOAD_DICTIONARY: {
             if (!parseQueryWithOnClusterAndMaybeTable(res, pos, expected, /* require table = */ true, /* allow_string_literal = */ true))
                 return false;
             break;
@@ -403,6 +431,7 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
         case Type::RESTART_REPLICA:
         case Type::SYNC_REPLICA:
         case Type::WAIT_LOADING_PARTS:
+        case Type::WAIT_QUERY_RUNNER:
         case Type::PREWARM_MARK_CACHE:
         case Type::PREWARM_PRIMARY_INDEX_CACHE:
         {
@@ -635,7 +664,7 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
                 return false;
             String time_str = ast->as<ASTLiteral &>().value.safeGet<String>();
             ReadBufferFromString buf(time_str);
-            time_t time;
+            time_t time = 0;
             readDateTimeText(time, buf);
             res->fake_time_for_view = Int64(time);
 
@@ -698,6 +727,9 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             {
                 res->distributed_cache_server_id = ast->as<ASTLiteral>()->value.safeGet<String>();
             }
+
+            if (!parseQueryWithOnCluster(res, pos, expected))
+                return false;
 
             break;
         }
@@ -813,7 +845,7 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
                 return true;
             };
 
-            ServerType::Type base_type;
+            ServerType::Type base_type = {};
             std::string base_custom_name;
 
             ServerType::Types exclude_type;
@@ -829,7 +861,7 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
                     base_type != ServerType::Type::QUERIES_CUSTOM)
                     return false;
 
-                ServerType::Type current_type;
+                ServerType::Type current_type = {};
                 std::string current_custom_name;
 
                 while (true)
@@ -961,7 +993,7 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
                 res->instrumentation_handler_name = temporary_identifier->as<ASTIdentifier &>().name();
             else
             {
-                expected.add(pos, "handler name (LOG or PROFILE)");
+                expected.add(pos, "handler name (LOG, SLEEP, or PROFILE)");
                 return false;
             }
 
@@ -991,23 +1023,36 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             }
 
 
-            ASTPtr params_ast;
-            while (ParserLiteral{}.parse(pos, params_ast, expected))
+            ASTPtr arg_ast;
+            while (ParserLiteral{}.parse(pos, arg_ast, expected))
             {
-                const auto & value = params_ast->as<ASTLiteral &>().value;
+                const auto & value = arg_ast->as<ASTLiteral &>().value;
                 if (value.getType() == Field::Types::String)
-                    res->instrumentation_parameters.emplace_back(value.safeGet<String>());
+                    res->instrumentation_arguments.emplace_back(value.safeGet<String>());
                 else if (value.getType() == Field::Types::Int64)
-                    res->instrumentation_parameters.emplace_back(value.safeGet<Int64>());
+                    res->instrumentation_arguments.emplace_back(value.safeGet<Int64>());
                 else if (value.getType() == Field::Types::UInt64)
-                    res->instrumentation_parameters.emplace_back(static_cast<Int64>(value.safeGet<UInt64>()));
+                {
+                    UInt64 uint_value = value.safeGet<UInt64>();
+                    if (uint_value > static_cast<UInt64>(std::numeric_limits<Int64>::max()))
+                    {
+                        expected.add(pos, "integer literal not exceeding Int64 maximum");
+                        return false;
+                    }
+                    res->instrumentation_arguments.emplace_back(static_cast<Int64>(uint_value));
+                }
                 else if (value.getType() == Field::Types::Float64)
-                    res->instrumentation_parameters.emplace_back(value.safeGet<Float64>());
+                    res->instrumentation_arguments.emplace_back(value.safeGet<Float64>());
+                else
+                {
+                    expected.add(pos, "string, integer, or float literal argument");
+                    return false;
+                }
             }
 
-            if (res->instrumentation_parameters.empty())
+            if (res->instrumentation_arguments.empty())
             {
-                expected.add(pos, "at least one parameter (string literal)");
+                expected.add(pos, "at least one argument (string, integer, or float literal)");
                 return false;
             }
 

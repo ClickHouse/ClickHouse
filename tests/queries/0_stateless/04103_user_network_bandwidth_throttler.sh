@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, long
+# Tags: no-fasttest, long, no-random-settings
 # no-fasttest: needs S3, and the test is slow (exercises throttling)
+# no-random-settings: S3 prefetch settings affect read throughput; disabling prefetch can make
+# the natural read rate drop close to the throttle limit, causing the throttler to never sleep
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -17,22 +19,27 @@ $CLICKHOUSE_CLIENT -m -q "
     DROP TABLE IF EXISTS data_04103;
     CREATE TABLE data_04103 (key UInt64 CODEC(NONE)) ENGINE=MergeTree() ORDER BY key
         SETTINGS min_bytes_for_wide_part=1e9, disk='s3_disk';
-    INSERT INTO data_04103 SELECT * FROM numbers(1e6);
+    INSERT INTO data_04103 SELECT * FROM numbers(2e5);
     GRANT SELECT, INSERT ON ${CLICKHOUSE_DATABASE}.data_04103 TO $READ_USER, $WRITE_USER;
 "
 
 write_query_id="04103_w_$CLICKHOUSE_DATABASE"
 read_query_id="04103_r_$CLICKHOUSE_DATABASE"
 
-# Writing/reading ~1e6*8 bytes with a 1M/s cap should each take ~7 seconds.
-# They run in parallel (~7s wall-clock) because each user has its own throttler.
+# Writing/reading ~2e5*8 bytes with a 200 KB/s cap should each take ~8 seconds.
+# They run in parallel (~8s wall-clock) because each user has its own throttler.
+# The throttle limit is intentionally well below the natural S3 read rate observed on
+# loaded TSAN parallel runners (~0.9 MB/s) so the throttler reliably enters its sleep
+# path. With a 1 MB/s limit (the previous value), heavy contention occasionally let
+# the natural rate drop near the limit, the throttler did not need to sleep, and the
+# `UserThrottlerSleepMicroseconds` assertion flapped (issue #103422).
 $CLICKHOUSE_CLIENT --user "$WRITE_USER" --query_id "$write_query_id" -q "
-    INSERT INTO ${CLICKHOUSE_DATABASE}.data_04103 SELECT number+1e6 FROM numbers(1e6)
-    SETTINGS max_network_bandwidth_for_user = 1000000
+    INSERT INTO ${CLICKHOUSE_DATABASE}.data_04103 SELECT number+2e5 FROM numbers(2e5)
+    SETTINGS max_network_bandwidth_for_user = 200000
 " &
 $CLICKHOUSE_CLIENT --user "$READ_USER" --query_id "$read_query_id" -q "
-    SELECT * FROM ${CLICKHOUSE_DATABASE}.data_04103 WHERE key < 1e6 FORMAT Null
-    SETTINGS max_network_bandwidth_for_user = 1000000
+    SELECT * FROM ${CLICKHOUSE_DATABASE}.data_04103 WHERE key < 2e5 FORMAT Null
+    SETTINGS max_network_bandwidth_for_user = 200000
 " &
 wait
 
@@ -42,7 +49,7 @@ $CLICKHOUSE_CLIENT --serialize_query_plan=0 -m -q "
     SELECT
         if(query_id = '$write_query_id', 'write', 'read') AS q,
         query_duration_ms >= 7e3,
-        ProfileEvents['UserThrottlerBytes'] > 8e6,
+        ProfileEvents['UserThrottlerBytes'] > 1.6e6,
         ProfileEvents['UserThrottlerSleepMicroseconds'] > 7e6 * 0.5
     FROM system.query_log
     WHERE event_date >= yesterday() AND event_time >= now() - 600

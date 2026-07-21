@@ -1,6 +1,6 @@
 import pytest
 
-from helpers.cluster import ClickHouseCluster
+from helpers.cluster import CLICKHOUSE_CI_MIN_TESTED_VERSION, ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
 node0 = cluster.add_instance(
@@ -8,7 +8,7 @@ node0 = cluster.add_instance(
     main_configs=["configs/clusters.xml"],
     with_zookeeper=True,
     image="clickhouse/clickhouse-server",
-    tag="24.3",  # earlier versions lead to "Not found column XXX in block." exception 🤷
+    tag=CLICKHOUSE_CI_MIN_TESTED_VERSION,
     with_installed_binary=True,
     use_old_analyzer=False,
     macros={"replica": "node0", "shard": "shard"}

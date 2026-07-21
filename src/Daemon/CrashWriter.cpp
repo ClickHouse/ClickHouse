@@ -11,6 +11,7 @@
 #include <Common/StackTrace.h>
 #include <Common/getNumberOfCPUCoresToUse.h>
 #include <Core/ServerUUID.h>
+#include <Core/UUID.h>
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromHTTP.h>
 

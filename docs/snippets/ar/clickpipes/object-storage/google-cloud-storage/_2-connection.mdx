@@ -1,0 +1,13 @@
+---
+title: 2 الاتصال
+---
+
+<Image img="/images/integrations/data-ingestion/clickpipes/object-storage/azure-blob-storage/cp_step2.webp" alt="أدخل تفاصيل الاتصال" size="lg" border />
+
+* **مسار ملف GCS**: يستخدم ClickPipe الخاص بـ GCS [واجهة XML](https://docs.cloud.google.com/storage/docs/interoperability) في Cloud Storage لتحقيق التوافق البيني، ما يتطلب endpoint ‏`storage.googleapis.com`:
+
+  ```bash
+  https://storage.googleapis.com/bucket-name/key-name
+  ```
+
+  يمكنك استخدام wildcards الخاصة بـ POSIX لمطابقة عدة ملفات أو بادئات. راجع [الوثائق المرجعية](/ar/integrations/clickpipes/object-storage/google-cloud-storage/overview#file-pattern-matching) للاطلاع على إرشادات بشأن الأنماط المدعومة.

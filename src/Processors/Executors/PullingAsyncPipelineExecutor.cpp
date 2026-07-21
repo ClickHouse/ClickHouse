@@ -7,6 +7,8 @@
 #include <QueryPipeline/ReadProgressCallback.h>
 #include <Common/CurrentThread.h>
 #include <Common/setThreadName.h>
+#include <Common/ThreadGroupSwitcher.h>
+#include <Common/ThreadPool.h>
 
 namespace DB
 {

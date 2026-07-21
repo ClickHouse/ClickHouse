@@ -9,7 +9,7 @@ using namespace DB;
 constexpr static size_t PAGE_SIZE = 1024;
 
 // Helper to generate monotonically increasing values
-std::vector<UInt64> generateMonotonicValues(size_t count, UInt64 start = 0, UInt64 max_step = 10)
+static std::vector<UInt64> generateMonotonicValues(size_t count, UInt64 start = 0, UInt64 max_step = 10)
 {
     std::vector<UInt64> result;
     result.reserve(count);

@@ -1,0 +1,110 @@
+---
+description: '该引擎支持通过 Apache Arrow Flight 查询并插入远程数据集。'
+sidebarTitle: 'ArrowFlight'
+slug: /engines/table-engines/integrations/arrowflight
+title: 'ArrowFlight 表引擎'
+doc_type: 'reference'
+---
+
+ArrowFlight 表引擎使 ClickHouse 能够通过 [Apache Arrow Flight](https://arrow.apache.org/docs/format/Flight.html) 协议读取和写入远程数据集。
+该集成使 ClickHouse 能够以高性能通过列式 Arrow 格式与外部支持 Flight 的服务器交互。
+
+<div id="creating-a-table">
+  ## 创建表
+</div>
+
+```sql
+CREATE TABLE [IF NOT EXISTS] [db.]table_name (name1 [type1], name2 [type2], ...)
+    ENGINE = ArrowFlight('host:port', 'dataset_name' [, 'username', 'password']);
+```
+
+**引擎参数**
+
+* `host:port` — 远程 Arrow Flight 服务器的地址。如果省略端口，则使用默认端口 `8815`。[String](/zh/reference/data-types/string)。
+* `dataset_name` — Flight 服务器上的数据集标识符 (具体用作 PATH 描述符还是用于 `SELECT *` 查询，取决于 `arrow_flight_request_descriptor_type` 设置) 。[String](/zh/reference/data-types/string)。
+* `username` — 用于基本 HTTP 身份验证的用户名。[String](/zh/reference/data-types/string)。
+* `password` — 用于基本 HTTP 身份验证的密码。[String](/zh/reference/data-types/string)。
+
+如果省略 `username` 和 `password`，则不使用身份验证 (仅当 Arrow Flight 服务器允许未身份验证访问时才可行) 。
+
+列列表是可选的——如果省略，则会通过 `GetSchema` 从远程 Arrow Flight 服务器推断 schema。
+
+<div id="named-collections">
+  ## 命名集合
+</div>
+
+该引擎支持通过[命名集合](/zh/concepts/features/configuration/server-config/named-collections)存储连接参数：
+
+```sql
+CREATE TABLE remote_flight_data
+    ENGINE = ArrowFlight(named_collection_name);
+```
+
+命名集合参数：
+
+| 参数                         | 必填      | 默认值     | 说明                    |
+| -------------------------- | ------- | ------- | --------------------- |
+| `host` or `hostname`       | 否       | `""`    | 服务器主机名。               |
+| `port`                     | 是       | —       | 服务器端口。                |
+| `dataset`                  | 是       | —       | 数据集名称或描述符。            |
+| `use_basic_authentication` | 否       | `true`  | 启用基本身份验证。             |
+| `user` or `username`       | 启用身份验证时 | —       | 用于身份验证的用户名。           |
+| `password`                 | 否       | `""`    | 用于身份验证的密码。            |
+| `enable_ssl`               | 否       | `false` | 启用 TLS 加密。            |
+| `ssl_ca`                   | 否       | `""`    | 用于 TLS 验证的 CA 证书文件路径。 |
+| `ssl_override_hostname`    | 否       | `""`    | 覆盖 TLS 验证时检查的主机名。     |
+
+<div id="settings">
+  ## 设置
+</div>
+
+* `arrow_flight_request_descriptor_type` — 控制向 Flight 服务器发送数据集名称的方式。可能的值：`path` (默认值，以 PATH 描述符形式发送) 或 `command` (以 CMD 描述符形式发送，内容为 `SELECT * FROM <dataset>`) 。对于需要 SQL 命令的 Flight 服务器 (例如 Dremio) ，请使用 `command`。
+
+<div id="usage-example">
+  ## 使用示例
+</div>
+
+从远程 Arrow Flight 服务器读取数据：
+
+```sql
+CREATE TABLE remote_flight_data
+(
+    id UInt32,
+    name String,
+    value Float64
+) ENGINE = ArrowFlight('127.0.0.1:9005', 'sample_dataset');
+
+SELECT * FROM remote_flight_data ORDER BY id;
+```
+
+```text
+┌─id─┬─name────┬─value─┐
+│  1 │ foo     │ 42.1  │
+│  2 │ bar     │ 13.3  │
+│  3 │ baz     │ 77.0  │
+└────┴─────────┴───────┘
+```
+
+向远程 Arrow Flight 服务器插入数据：
+
+```sql
+INSERT INTO remote_flight_data VALUES (4, 'qux', 99.9);
+```
+
+<div id="notes">
+  ## 注意事项
+</div>
+
+* 如果在 `CREATE TABLE` 语句中指定了列，则这些列必须与 Flight 服务器 返回的 schema 一致。
+* 如果省略列，则会自动根据远程 server 推断 schema。
+* 支持读取 (`SELECT`) 和写入 (`INSERT`) 。
+* `arrow_flight_request_descriptor_type` 设置用于控制将数据集名称作为 PATH 描述符发送，还是作为封装 `SELECT *` 查询的 CMD 描述符发送。
+
+<div id="see-also">
+  ## 另请参见
+</div>
+
+* [arrowFlight 表函数](/zh/reference/functions/table-functions/arrowflight)
+* [Arrow Flight 接口](/zh/concepts/features/interfaces/arrowflight)
+* [Apache Arrow Flight SQL 规范](https://arrow.apache.org/docs/format/FlightSql.html)
+* [ClickHouse 中的 Arrow 格式](/zh/reference/formats/Arrow/Arrow)

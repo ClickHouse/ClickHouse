@@ -1,0 +1,57 @@
+---
+slug: /cloud/managed-postgres/rbac
+sidebarTitle: 'RBAC'
+title: 'Managed Postgres RBAC'
+description: 'ClickHouse Managed Postgres의 역할 기반 접근 제어(RBAC)에 대해 알아봅니다'
+keywords: ['managed postgres RBAC', '접근 제어', '역할', '권한', '권한']
+doc_type: 'reference'
+---
+
+import BetaBadge from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.rbac-beta" />
+
+ClickHouse Cloud는 Managed Postgres 서비스에 대한 역할 기반 접근 제어(RBAC)를 지원합니다. 특정 권한을 가진 사용자 지정 역할을 생성하고 이를 조직 구성원에게 할당하여, 누가 Postgres 서비스를 조회하거나 관리할 수 있는지 제어할 수 있습니다.
+
+<div id="available-permissions">
+  ## 사용 가능한 권한
+</div>
+
+현재 Managed Postgres는 2가지 권한을 지원합니다.
+
+| 권한                  | 설명                                     |
+| ------------------- | -------------------------------------- |
+| **Postgres 서비스 보기** | 사용자가 Postgres 서비스와 해당 세부 정보를 볼 수 있습니다. |
+| **Postgres 서비스 관리** | 사용자가 Postgres 서비스를 수정, 확장, 구성할 수 있습니다. |
+
+새 Postgres 서비스를 생성하려면 기존의 **Organization manage** 권한이 필요합니다. 위 권한은 기존 서비스에만 적용됩니다.
+
+<Note>
+  더 세분화된 권한은 향후 릴리스에서 제공될 예정입니다.
+</Note>
+
+<div id="creating-a-custom-role">
+  ## 사용자 지정 역할 만들기
+</div>
+
+1. 왼쪽 사이드바에서 조직 이름을 클릭한 다음 **Users and roles**를 선택합니다.
+
+<Image img="/images/managed-postgres/rbac/usersandroles.webp" alt="Users and roles 메뉴" size="md" border />
+
+2. **Roles** 탭으로 전환한 다음 **Create role**을 클릭합니다.
+3. 역할 이름을 입력한 다음 **+ Allow**를 클릭하고 엔터티 목록에서 **Postgres 서비스**를 선택합니다.
+
+<Image img="/images/managed-postgres/rbac/postgresentity.webp" alt="Postgres 서비스 엔터티 선택" size="md" border />
+
+4. 역할의 범위를 지정할 Postgres 서비스를 선택한 다음, 부여할 권한을 선택합니다.
+
+<Image img="/images/managed-postgres/rbac/newpostgresperms.webp" alt="역할의 Postgres 권한 구성" size="md" border />
+
+5. 저장하려면 **Create role**을 클릭합니다.
+
+<div id="assigning-a-role">
+  ## 역할 할당
+</div>
+
+역할을 생성한 후에는 같은 **Users and roles** 페이지의 **Users** 탭에서 사용자에게 할당합니다. 사용자는 여러 개의 역할을 가질 수 있으며, 역할을 조합해 필요에 정확히 맞는 액세스 프로필을 구성할 수 있습니다.

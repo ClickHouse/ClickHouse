@@ -56,11 +56,11 @@ Engines from the `*Log` family do not provide automatic data recovery on failure
 
 By default `CHECK TABLE` query shows the general table check status:
 
-```sql
+```sql title="Query"
 CHECK TABLE test_table;
 ```
 
-```text
+```text title="Response"
 ┌─result─┐
 │      1 │
 └────────┘
@@ -70,15 +70,13 @@ If you want to see the check status for every individual data part you may use `
 
 Also, to check a specific partition of the table, you can use the `PARTITION` keyword.
 
-```sql
+```sql title="Query"
 CHECK TABLE t0 PARTITION ID '201003'
 FORMAT PrettyCompactMonoBlock
 SETTINGS check_query_single_value_result = 0
 ```
 
-Output:
-
-```text
+```text title="Response"
 ┌─part_path────┬─is_passed─┬─message─┐
 │ 201003_7_7_0 │         1 │         │
 │ 201003_3_3_0 │         1 │         │
@@ -87,15 +85,13 @@ Output:
 
 Similarly, you can check a specific part of the table by using the `PART` keyword.
 
-```sql
+```sql title="Query"
 CHECK TABLE t0 PART '201003_7_7_0'
 FORMAT PrettyCompactMonoBlock
 SETTINGS check_query_single_value_result = 0
 ```
 
-Output:
-
-```text
+```text title="Response"
 ┌─part_path────┬─is_passed─┬─message─┐
 │ 201003_7_7_0 │         1 │         │
 └──────────────┴───────────┴─────────┘
@@ -103,11 +99,11 @@ Output:
 
 Note that when part does not exist, the query returns an error:
 
-```sql
+```sql title="Query"
 CHECK TABLE t0 PART '201003_111_222_0'
 ```
 
-```text
+```text title="Response"
 DB::Exception: No such data part '201003_111_222_0' to check in table 'default.t0'. (NO_SUCH_DATA_PART)
 ```
 
@@ -123,15 +119,13 @@ Remove the existing checksum file:
 rm /var/lib/clickhouse-server/data/default/t0/201003_3_3_0/checksums.txt
 ```
 
-```sql
+```sql title="Query"
 CHECK TABLE t0 PARTITION ID '201003'
 FORMAT PrettyCompactMonoBlock
 SETTINGS check_query_single_value_result = 0
 ```
 
-Output:
-
-```text
+```text title="Response"
 ┌─part_path────┬─is_passed─┬─message──────────────────────────────────┐
 │ 201003_7_7_0 │         1 │                                          │
 │ 201003_3_3_0 │         1 │ Checksums recounted and written to disk. │
@@ -162,6 +156,8 @@ SETTINGS check_query_single_value_result = 0
 │ default  │ t1       │ all_7_38_2  │         1 │         │
 └──────────┴──────────┴─────────────┴───────────┴─────────┘
 ```
+
+To check the health of a whole database rather than the integrity of individual tables, use the [`CHECK DATABASE`](/sql-reference/statements/check-database) query. It is primarily intended for databases with the [`DataLakeCatalog`](/engines/database-engines/datalakecatalog) engine, where it verifies that the external catalog is reachable.
 
 ## If the Data Is Corrupted {#if-the-data-is-corrupted}
 

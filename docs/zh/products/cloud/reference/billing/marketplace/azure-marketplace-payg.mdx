@@ -1,0 +1,132 @@
+---
+slug: /cloud/billing/marketplace/azure-marketplace-payg
+title: 'Azure Marketplace 按使用量付费'
+description: '通过 Azure Marketplace 按使用量付费 (PAYG) 订阅 ClickHouse Cloud。'
+keywords: ['azure', 'marketplace', '计费', 'PAYG']
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+通过 [Azure Marketplace](https://azuremarketplace.microsoft.com/en-us/marketplace/apps) 中的按使用量付费 (PAYG) 公开报价，开始使用 ClickHouse Cloud。
+
+<div id="prerequisites">
+  ## 前置条件
+</div>
+
+* 一个已由您的计费管理员启用购买权限的 Azure 项目。
+* 要在 Azure Marketplace 上订阅 ClickHouse Cloud，您必须使用具有购买权限的账户登录，并选择相应的项目。
+
+1. 前往 [Azure Marketplace](https://azuremarketplace.microsoft.com/en-us/marketplace/apps) 并搜索 ClickHouse Cloud。请确保您已登录，以便能够在市场中购买产品。
+
+<br />
+
+<Image img="/images/cloud/manage/billing/marketplace/azure-marketplace-payg-1.webp" size="md" alt="ClickHouse Cloud 注册信息表单" border />
+
+<br />
+
+2. 在产品详情页面上，点击 **Get It Now**。
+
+<br />
+
+<Image img="/images/cloud/manage/billing/marketplace/azure-marketplace-payg-2.webp" size="md" alt="ClickHouse Cloud 注册信息表单" border />
+
+<br />
+
+3. 在下一页中，您需要填写名称、电子邮件和位置信息。
+
+<br />
+
+<Image img="/images/cloud/manage/billing/marketplace/azure-marketplace-payg-3.webp" size="md" alt="ClickHouse Cloud 注册信息表单" border />
+
+<br />
+
+4. 在下一页中，点击 **Subscribe**。
+
+<br />
+
+<Image img="/images/cloud/manage/billing/marketplace/azure-marketplace-payg-4.webp" size="md" alt="ClickHouse Cloud 注册信息表单" border />
+
+<br />
+
+5. 在下一页中，选择订阅、资源组和资源组位置。资源组位置不必与您计划在 ClickHouse Cloud 上启动服务的位置相同。
+
+<br />
+
+<Image img="/images/cloud/manage/billing/marketplace/azure-marketplace-payg-5.webp" size="md" alt="ClickHouse Cloud 注册信息表单" border />
+
+<br />
+
+6. 您还需要为该订阅指定一个名称，并从可用选项中选择计费周期。您可以选择将 **Recurring billing** 设置为开启或关闭。如果将其设置为 &quot;off&quot;，您的合同将在计费周期结束后终止，您的资源也将被停用。
+
+<br />
+
+<Image img="/images/cloud/manage/billing/marketplace/azure-marketplace-payg-6.webp" size="md" alt="ClickHouse Cloud 注册信息表单" border />
+
+<br />
+
+7. 点击 **&quot;Review + subscribe&quot;**。
+
+8. 在下一页中，确认所有内容均正确无误，然后点击 **Subscribe**。
+
+<br />
+
+<Image img="/images/cloud/manage/billing/marketplace/azure-marketplace-payg-7.webp" size="md" alt="ClickHouse Cloud 注册信息表单" border />
+
+<br />
+
+9. 请注意，此时您已经订阅了 ClickHouse Cloud 的 Azure 订阅，但尚未在 ClickHouse Cloud 中设置您的账户。接下来的步骤必不可少且至关重要，这样 ClickHouse Cloud 才能绑定到您的 Azure 订阅，从而确保通过 Azure Marketplace 正确计费。
+
+<br />
+
+<Image img="/images/cloud/manage/billing/marketplace/azure-marketplace-payg-8.webp" size="md" alt="ClickHouse Cloud 注册信息表单" border />
+
+<br />
+
+10. Azure 设置完成后，**Configure account now** 按钮应会变为可用。
+
+<br />
+
+<Image img="/images/cloud/manage/billing/marketplace/azure-marketplace-payg-9.webp" size="md" alt="ClickHouse Cloud 注册信息表单" border />
+
+<br />
+
+11. 点击 **Configure account now**。
+
+<br />
+
+您将收到一封类似下面的电子邮件，其中包含配置账户的详细信息：
+
+<br />
+
+<Image img="/images/cloud/manage/billing/marketplace/azure-marketplace-payg-10.webp" size="md" alt="ClickHouse Cloud 注册信息表单" border />
+
+<br />
+
+12. 您将被重定向到 ClickHouse Cloud 注册或登录页面。跳转到 ClickHouse Cloud 后，您可以使用现有账户登录，或注册一个新账户。这一步非常重要，这样我们才能将您的 ClickHouse Cloud 组织绑定到 Azure Marketplace 计费。
+
+13. 请注意，如果您是新用户，还需要提供一些企业基本信息。请参见下方截图。
+
+<br />
+
+<Image img="/images/cloud/manage/billing/marketplace/aws-marketplace-payg-8.webp" size="md" alt="ClickHouse Cloud 注册信息表单" border />
+
+<br />
+
+点击 **Complete sign up** 后，您将进入 ClickHouse Cloud 中的组织页面，在那里您可以查看计费页面，确认当前是通过 Azure Marketplace 计费，并创建服务。
+
+<br />
+
+<br />
+
+<Image img="/images/cloud/manage/billing/marketplace/azure-marketplace-payg-11.webp" size="md" alt="ClickHouse Cloud 注册信息表单" border />
+
+<br />
+
+<br />
+
+<Image img="/images/cloud/manage/billing/marketplace/azure-marketplace-payg-12.webp" size="md" alt="ClickHouse Cloud 注册信息表单" border />
+
+<br />
+
+14. 如果您遇到任何问题，请随时联系[支持团队](https://clickhouse.com/support/program)。

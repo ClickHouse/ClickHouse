@@ -1,0 +1,182 @@
+---
+sidebarTitle: '모범 사례'
+description: 'Kafka ClickPipes 사용 시 따라야 할 모범 사례를 설명합니다.'
+slug: /integrations/clickpipes/kafka/best-practices
+title: '모범 사례'
+doc_type: 'guide'
+keywords: ['kafka 모범 사례', 'ClickPipes', '압축', '인증', '스케일링']
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+<div id="compression">
+  ## 메시지 압축
+</div>
+
+Kafka topic에는 압축을 사용하는 것을 강력히 권장합니다. 압축을 사용하면 성능 저하를 거의 없이 데이터 전송 비용을 크게 절감할 수 있습니다.
+Kafka의 메시지 압축에 관해 자세히 알아보려면 먼저 이 [가이드](https://www.confluent.io/blog/apache-kafka-message-compression/)를 참고하십시오.
+
+<div id="limitations">
+  ## 제한 사항
+</div>
+
+* [`DEFAULT`](/ko/reference/statements/create/table#default)는 지원되지 않습니다.
+* 가장 작은 (XS) 레플리카 크기로 실행할 경우, 개별 메시지의 기본 제한 크기는 16MB(비압축)이며 더 큰 레플리카에서는 32MB(비압축)입니다. 이 한도를 초과하는 메시지는 오류와 함께 거부됩니다. 더 큰 메시지가 필요하면 지원팀에 문의하십시오.
+
+<div id="delivery-semantics">
+  ## 전달 보장
+</div>
+
+ClickPipes for Kafka는 `at-least-once` 전달 보장(가장 널리 사용되는 방식 중 하나)을 제공합니다. 전달 보장에 관한 피드백은 [문의 양식](https://clickhouse.com/company/contact?loc=clickpipes)을 통해 보내주시면 감사하겠습니다. 정확히 한 번 처리 의미 체계가 필요하다면 공식 [`clickhouse-kafka-connect`](https://clickhouse.com/blog/real-time-event-streaming-with-kafka-connect-confluent-cloud-clickhouse) 싱크를 사용하는 것을 권장합니다.
+
+<div id="authentication">
+  ## 인증
+</div>
+
+Apache Kafka 프로토콜 데이터 소스의 경우 ClickPipes는 TLS 암호화와 함께 [SASL/PLAIN](https://docs.confluent.io/platform/current/kafka/authentication_sasl/authentication_sasl_plain.html) 인증을 지원하며, `SASL/SCRAM-SHA-256` 및 `SASL/SCRAM-SHA-512`도 지원합니다. 스트리밍 소스(Redpanda, MSK 등)에 따라 호환성에 기반해 이러한 인증 메커니즘 전체 또는 일부만 사용할 수 있습니다. 필요한 인증 방식이 이와 다르다면 [피드백을 보내주십시오](https://clickhouse.com/company/contact?loc=clickpipes).
+
+<div id="warpstream-settings">
+  ## Warpstream Fetch 크기
+</div>
+
+ClickPipes는 한 시점에 단일 ClickPipes 노드에서 처리되는 데이터 크기를 제한하기 위해 Kafka 설정 `max.fetch_bytes`를 사용합니다. 일부 경우에는
+Warpstream이 이 설정을 준수하지 않아 예기치 않은 파이프 장애가 발생할 수 있습니다. ClickPipes 장애를 방지하려면 WarpStream 에이전트를 구성할 때 Warpstream 전용 설정 `kafkaMaxFetchPartitionBytesUncompressedOverride`를
+8MB(또는 그 이하)로 설정하는 것을 강력히 권장합니다.
+
+<div id="iam">
+  ### IAM
+</div>
+
+ClickPipes는 다음과 같은 AWS MSK 인증 방식을 지원합니다.
+
+* [SASL/SCRAM-SHA-512](https://docs.aws.amazon.com/msk/latest/developerguide/msk-password.html) 인증
+* [IAM 자격 증명 또는 역할 기반 접근](https://docs.aws.amazon.com/msk/latest/developerguide/how-to-use-iam-access-control.html) 인증
+
+IAM 인증을 사용하여 MSK 브로커에 연결하는 경우, IAM 역할에 필요한 권한이 있어야 합니다.
+아래는 MSK의 Apache Kafka API에 필요한 IAM 정책 예시입니다.
+
+```json
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Effect": "Allow",
+            "Action": [
+                "kafka-cluster:Connect"
+            ],
+            "Resource": [
+                "arn:aws:kafka:us-west-2:12345678912:cluster/clickpipes-testing-brokers/b194d5ae-5013-4b5b-ad27-3ca9f56299c9-10"
+            ]
+        },
+        {
+            "Effect": "Allow",
+            "Action": [
+                "kafka-cluster:DescribeTopic",
+                "kafka-cluster:ReadData"
+            ],
+            "Resource": [
+                "arn:aws:kafka:us-west-2:12345678912:topic/clickpipes-testing-brokers/*"
+            ]
+        },
+        {
+            "Effect": "Allow",
+            "Action": [
+                "kafka-cluster:AlterGroup",
+                "kafka-cluster:DescribeGroup"
+            ],
+            "Resource": [
+                "arn:aws:kafka:us-east-1:12345678912:group/clickpipes-testing-brokers/*"
+            ]
+        }
+    ]
+}
+```
+
+<div id="configuring-a-trusted-relationship">
+  #### 신뢰 관계 설정
+</div>
+
+IAM role ARN을 사용해 MSK에 인증하는 경우, 역할을 수임할 수 있도록 ClickHouse Cloud 인스턴스에 대한 신뢰 관계를 추가해야 합니다.
+
+<Note>
+  역할 기반 접근은 AWS에 배포된 ClickHouse Cloud 인스턴스에서만 작동합니다.
+</Note>
+
+```json
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        ...
+        {
+            "Effect": "Allow",
+            "Principal": {
+                "AWS": "arn:aws:iam::12345678912:role/CH-S3-your-clickhouse-cloud-role"
+            },
+            "Action": "sts:AssumeRole"
+        }
+    ]
+}
+```
+
+<div id="custom-certificates">
+  ### 사용자 지정 인증서
+</div>
+
+ClickPipes for Kafka는 공개적으로 신뢰되는 인증서가 아닌 서버 인증서를 사용하는 Kafka 브로커에 대한 사용자 지정 인증서 업로드를 지원합니다.
+상호 TLS(mTLS) 기반 인증을 위한 클라이언트 인증서와 개인 키 업로드도 지원합니다.
+
+<div id="performance">
+  ## 성능
+</div>
+
+<div id="batching">
+  ### 배칭
+</div>
+
+ClickPipes는 데이터를 배치로 묶어 ClickHouse에 삽입합니다. 이는 데이터베이스(database)에 너무 많은 파트가 생성되는 것을 방지하기 위한 것으로, 파트가 과도하게 생성되면 클러스터 성능 문제가 발생할 수 있습니다.
+
+다음 기준 중 하나를 충족하면 배치가 삽입됩니다:
+
+* 배치 크기가 최대 크기에 도달한 경우(100,000행 또는 파드 메모리 1GB당 28MB)
+* 배치가 열린 상태로 유지된 시간이 최대 허용 시간에 도달한 경우(5초)
+
+<div id="latency">
+  ### 지연 시간
+</div>
+
+지연 시간(Kafka 메시지가 생성된 시점부터 해당 메시지를 ClickHouse에서 사용할 수 있게 될 때까지의 시간으로 정의)은 여러 요인(예: 브로커 지연 시간, 네트워크 지연 시간, 메시지 크기/포맷)에 따라 달라집니다. 또한 위 섹션에서 설명한 [배칭](#batching)도 지연 시간에 영향을 미칩니다. 예상 지연 시간을 파악하려면 일반적인 부하 조건에서 해당 사용 사례를 직접 테스트해 볼 것을 항상 권장합니다.
+
+ClickPipes는 지연 시간에 관해 어떠한 보장도 제공하지 않습니다. 낮은 지연 시간에 대한 구체적인 요구 사항이 있다면 [문의해 주십시오](https://clickhouse.com/company/contact?loc=clickpipes).
+
+<div id="scaling">
+  ### 스케일링
+</div>
+
+ClickPipes for Kafka는 수평 및 수직 스케일링이 가능하도록 설계되었습니다. 기본적으로는 consumer 1개를 포함하는 consumer group이 생성됩니다. 이 설정은 ClickPipe를 생성할 때 구성할 수 있으며, 이후에도 **설정** -&gt; **고급 설정** -&gt; **스케일링**에서 언제든지 변경할 수 있습니다.
+
+ClickPipes는 가용 영역에 분산된 아키텍처를 통해 고가용성을 제공합니다.
+이를 위해서는 최소 2개의 consumer로 스케일링해야 합니다.
+
+실행 중인 consumer 수와 관계없이 장애 허용은 기본적으로 제공됩니다.
+consumer 또는 이를 뒷받침하는 인프라에 장애가 발생하면,
+ClickPipe가 자동으로 consumer를 다시 시작하고 메시지 처리를 계속합니다.
+
+<div id="benchmarks">
+  ### 벤치마크
+</div>
+
+아래는 기준 성능을 대략적으로 파악하는 데 참고할 수 있는 ClickPipes for Kafka의 비공식 벤치마크입니다. 성능에는 메시지 크기, 데이터 타입, 데이터 포맷 등 다양한 요소가 영향을 미칠 수 있다는 점을 알아두는 것이 중요합니다. 실제 환경에 따라 결과는 달라질 수 있으며, 여기 제시된 수치가 실제 성능을 보장하는 것은 아닙니다.
+
+벤치마크 세부 정보:
+
+* 처리량이 ClickHouse 측 삽입 처리에 의해 병목되지 않도록, 충분한 리소스를 갖춘 프로덕션용 ClickHouse Cloud 서비스를 사용했습니다.
+* ClickHouse Cloud 서비스, Kafka 클러스터(Confluent Cloud), ClickPipe는 모두 동일한 리전(`us-east-2`)에서 실행되었습니다.
+* ClickPipe는 L 크기의 단일 레플리카(4 GiB RAM, 1 vCPU)로 구성했습니다.
+* 샘플 데이터에는 `UUID`, `String`, `Int` 데이터 타입이 혼합된 중첩 데이터가 포함되어 있었습니다. `Float`, `Decimal`, `DateTime`과 같은 다른 데이터 타입은 성능이 더 낮을 수 있습니다.
+* 압축 데이터와 비압축 데이터를 사용했을 때 성능 차이는 거의 없었습니다.
+
+| 레플리카 크기   | 메시지 크기 | 데이터 포맷 | 처리량    |
+| --------- | ------ | ------ | ------ |
+| Large (L) | 1.6kb  | JSON   | 63mb/s |
+| Large (L) | 1.6kb  | Avro   | 99mb/s |

@@ -1,11 +1,10 @@
 import logging
-import time
 
 import pytest
 from kafka import KafkaAdminClient
-from kafka.admin import NewTopic
 
 from helpers.cluster import ClickHouseCluster
+import helpers.kafka.common as k
 from helpers.test_tools import TSV
 
 cluster = ClickHouseCluster(__file__)
@@ -44,61 +43,6 @@ def kafka_setup_teardown():
     instance.query("DROP DATABASE IF EXISTS test; CREATE DATABASE test;")
     # logging.debug("kafka is available - running test")
     yield  # run test
-
-
-def kafka_create_topic(
-    admin_client,
-    topic_name,
-    num_partitions=1,
-    replication_factor=1,
-    max_retries=50,
-    config=None,
-):
-    logging.debug(
-        f"Kafka create topic={topic_name}, num_partitions={num_partitions}, replication_factor={replication_factor}"
-    )
-    topics_list = [
-        NewTopic(
-            name=topic_name,
-            num_partitions=num_partitions,
-            replication_factor=replication_factor,
-            topic_configs=config,
-        )
-    ]
-    retries = 0
-    while True:
-        try:
-            admin_client.create_topics(new_topics=topics_list, validate_only=False)
-            logging.debug("Admin client succeed")
-            return
-        except Exception as e:
-            retries += 1
-            time.sleep(0.5)
-            if retries < max_retries:
-                logging.warning(f"Failed to create topic {e}")
-            else:
-                raise
-
-
-def kafka_delete_topic(admin_client, topic, max_retries=50):
-    result = admin_client.delete_topics([topic])
-    for topic, e in result.topic_error_codes:
-        if e == 0:
-            logging.debug(f"Topic {topic} deleted")
-        else:
-            logging.error(f"Failed to delete topic {topic}: {e}")
-
-    retries = 0
-    while True:
-        topics_listed = admin_client.list_topics()
-        logging.debug(f"TOPICS LISTED: {topics_listed}")
-        if topic not in topics_listed:
-            return
-        else:
-            retries += 1
-            time.sleep(0.5)
-            if retries > max_retries:
-                raise Exception(f"Failed to delete topics {topic}, {result}")
 
 
 def test_kafka_produce_http_interface_row_based_format(kafka_cluster):
@@ -180,7 +124,7 @@ def test_kafka_produce_http_interface_row_based_format(kafka_cluster):
     for format in formats_to_test:
         logging.debug(f"Creating tables and writing messages to {format}")
         topic = topic_prefix + format
-        kafka_create_topic(admin_client, topic)
+        k.kafka_create_topic(admin_client, topic)
 
         extra_setting = extra_settings.get(format, "")
 
@@ -230,7 +174,7 @@ def test_kafka_produce_http_interface_row_based_format(kafka_cluster):
 
         assert TSV(result) == TSV(expected)
 
-        kafka_delete_topic(admin_client, topic)
+        k.kafka_delete_topic(admin_client, topic)
 
 
 def test_kafka_produce_http_interface_single_column_format(kafka_cluster):
@@ -266,7 +210,7 @@ def test_kafka_produce_http_interface_single_column_format(kafka_cluster):
     for format, config in formats_to_test.items():
         logging.debug(f"Creating tables and writing messages to {format}")
         topic = topic_prefix + format
-        kafka_create_topic(admin_client, topic)
+        k.kafka_create_topic(admin_client, topic)
 
         instance.query(
             f"""
@@ -309,7 +253,7 @@ def test_kafka_produce_http_interface_single_column_format(kafka_cluster):
 
         assert TSV(result) == TSV(config["expected"]), f"Format {format}: expected {config['expected']!r}, got {result!r}"
 
-        kafka_delete_topic(admin_client, topic)
+        k.kafka_delete_topic(admin_client, topic)
 
 
 if __name__ == "__main__":

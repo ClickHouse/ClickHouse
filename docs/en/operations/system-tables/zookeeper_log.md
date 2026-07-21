@@ -53,15 +53,11 @@ For requests, only columns with request parameters are filled in, and the remain
 
 ## Example {#example}
 
-Query:
-
-```sql
+```sql title="Query"
 SELECT * FROM system.zookeeper_log WHERE (session_id = '106662742089334927') AND (xid = '10858') FORMAT Vertical;
 ```
 
-Result:
-
-```text
+```text title="Response"
 Row 1:
 ──────
 hostname:         clickhouse.eu-central1.internal

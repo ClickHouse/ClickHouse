@@ -112,7 +112,7 @@ bool RuntimeFilterGranulePruner::shouldSkipTask(const MergeTreeReadTask & task) 
 
     /// Pre-build a base key range template with whole-universe for all PK columns.
     /// Only the filter's column gets overwritten per mark range.
-    std::vector<Range> key_ranges(pk_size, Range::createWholeUniverse());
+    Ranges key_ranges(pk_size, Range::createWholeUniverse());
 
     /// For each initialized filter, check if ANY mark range could contain matching values.
     /// If any single filter proves "no marks match", we can skip the entire task

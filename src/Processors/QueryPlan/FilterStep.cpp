@@ -1,24 +1,28 @@
 #include <Processors/QueryPlan/FilterStep.h>
 
-#include <Processors/QueryPlan/QueryPlanFormat.h>
-#include <Processors/QueryPlan/QueryPlanStepRegistry.h>
-#include <Processors/QueryPlan/Serialization.h>
-#include <Processors/Transforms/FilterTransform.h>
-#include <QueryPipeline/QueryPipelineBuilder.h>
-#include <Processors/Transforms/ExpressionTransform.h>
-#include <Interpreters/ExpressionActions.h>
-#include <IO/Operators.h>
-#include <Common/JSONBuilder.h>
-#include <Interpreters/ActionsDAG.h>
+#include <algorithm>
+#include <limits>
+#include <ranges>
+#include <set>
+#include <stack>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/IFunction.h>
-#include <stack>
-#include <ranges>
+#include <IO/Operators.h>
+#include <Interpreters/ActionsDAG.h>
+#include <Interpreters/ExpressionActions.h>
+#include <Processors/QueryPlan/QueryPlanFormat.h>
+#include <Processors/QueryPlan/QueryPlanStepRegistry.h>
+#include <Processors/QueryPlan/Serialization.h>
+#include <Processors/Transforms/ExpressionTransform.h>
+#include <Processors/Transforms/FilterTransform.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
+#include <Common/JSONBuilder.h>
 
 #include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
+#include <fmt/ranges.h>
 
 namespace DB
 {
@@ -42,6 +46,138 @@ static ITransformingStep::Traits getTraits()
             .preserves_number_of_rows = false,
         }
     };
+}
+
+FilterDAGOutputPruningResult pruneFilterDAGOutputsByPosition(
+    ActionsDAG & dag,
+    const String & filter_column_name,
+    bool & remove_filter_column,
+    const Block & input_header,
+    const std::vector<size_t> & required_output_positions,
+    bool remove_inputs)
+{
+    FilterDAGOutputPruningResult result;
+
+    const bool was_remove_filter_column = remove_filter_column;
+    const auto & old_outputs = dag.getOutputs();
+    const size_t old_dag_outputs_size = old_outputs.size();
+    const auto actions_dag_input_count_before = dag.getInputs().size();
+
+    /// The pre-erase output header (from ActionsDAG::updateHeader) is:
+    /// [DAG output 0, ..., DAG output N-1, pass-through input 0, ...]
+    /// When remove_filter_column is true, then the first column named filter_column_name is
+    /// erased from the block, shifting subsequent positions by -1.
+    /// Map the caller's positions (into the final output header) back to the pre-erase layout.
+
+    /// Find the filter column's position in the pre-erase header.
+    size_t filter_col_pre_erase_pos = std::numeric_limits<size_t>::max();
+    for (size_t i = 0; i < old_dag_outputs_size; ++i)
+    {
+        if (old_outputs[i]->result_name == filter_column_name)
+        {
+            filter_col_pre_erase_pos = i;
+            break;
+        }
+    }
+    if (filter_col_pre_erase_pos == std::numeric_limits<size_t>::max())
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Filter column {} not found in DAG outputs: [{}]",
+            filter_column_name,
+            fmt::join(dag.getNames(), ", "));
+
+    /// Map positions from the final (post-erase) header to the pre-erase header.
+    /// remove_filter_column is captured by value because the mapping depends on the original value of the flag, not on
+    /// whether the filter column is still present at the time of mapping.
+    auto map_to_pre_erase_pos = [filter_col_pre_erase_pos, was_remove_filter_column](size_t pos) -> size_t
+    {
+        if (!was_remove_filter_column)
+            return pos;
+        return pos >= filter_col_pre_erase_pos ? pos + 1 : pos;
+    };
+
+    /// Map positions from post-erase to pre-erase layout, then split into DAG vs pass-through.
+    std::vector<size_t> pre_erase_positions;
+    pre_erase_positions.reserve(required_output_positions.size());
+    for (size_t pos : required_output_positions)
+        pre_erase_positions.push_back(map_to_pre_erase_pos(pos));
+
+    auto [required_dag_indices, required_passthrough_indices] = dag.splitOutputPositions(pre_erase_positions);
+
+    /// Build the list of pass-through input columns.
+    const auto passthrough_input_header_positions = dag.matchInputPositionsToHeader(input_header).passthrough;
+
+    std::set<size_t> required_passthrough_input_header_positions;
+    for (size_t passthrough_index : required_passthrough_indices)
+    {
+        if (passthrough_index >= passthrough_input_header_positions.size())
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR, "Required output position {} is out of range for pass-through inputs", passthrough_index);
+        required_passthrough_input_header_positions.insert(passthrough_input_header_positions[passthrough_index]);
+    }
+
+    const auto has_to_remove_any_pass_through
+        = passthrough_input_header_positions.size() > required_passthrough_input_header_positions.size();
+
+    std::set<size_t> required_dag_index_set(required_dag_indices.begin(), required_dag_indices.end());
+
+    /// Check if the filter column is required by the caller. If not, we can remove it.
+    if (!remove_filter_column && !required_dag_index_set.contains(filter_col_pre_erase_pos))
+        remove_filter_column = true;
+
+    required_dag_index_set.insert(filter_col_pre_erase_pos);
+
+    /// Keep only the required DAG output nodes, plus always keep the filter column.
+    ActionsDAG::NodeRawConstPtrs new_dag_outputs;
+    new_dag_outputs.reserve(required_dag_index_set.size());
+
+    for (size_t i = 0; i < old_dag_outputs_size; ++i)
+    {
+        if (required_dag_index_set.contains(i))
+            new_dag_outputs.push_back(old_outputs[i]);
+    }
+
+    auto & dag_outputs = dag.getOutputs();
+    if (new_dag_outputs.size() != dag_outputs.size())
+        result.changed = true;
+    dag_outputs = std::move(new_dag_outputs);
+
+    if (was_remove_filter_column != remove_filter_column)
+        result.changed = true;
+
+    if (dag.removeUnusedActions(remove_inputs))
+        result.changed = true;
+
+    if (!remove_inputs && has_to_remove_any_pass_through)
+    {
+        for (size_t passthrough_input_header_position : passthrough_input_header_positions)
+        {
+            if (!required_passthrough_input_header_positions.contains(passthrough_input_header_position))
+            {
+                const auto & column = input_header.getByPosition(passthrough_input_header_position);
+                dag.addInput(column);
+            }
+        }
+        result.changed = true;
+    }
+
+    if (remove_inputs)
+    {
+        auto required_input_positions = dag.matchInputPositionsToHeader(input_header).matched;
+        required_input_positions.insert(
+            required_input_positions.end(),
+            required_passthrough_input_header_positions.begin(),
+            required_passthrough_input_header_positions.end());
+
+        std::sort(required_input_positions.begin(), required_input_positions.end());
+        result.required_input_positions = std::move(required_input_positions);
+        result.input_positions_changed = dag.getInputs().size() != actions_dag_input_count_before || has_to_remove_any_pass_through;
+
+        if (result.input_positions_changed)
+            result.changed = true;
+    }
+
+    return result;
 }
 
 static bool isTrivialSubtree(const ActionsDAG::Node * node)
@@ -110,7 +246,7 @@ static std::optional<ActionsAndName> trySplitSingleAndFilter(ActionsDAG & dag, c
     return {};
 }
 
-std::vector<ActionsAndName> splitAndChainIntoMultipleFilters(ActionsDAG & dag, const std::string & filter_name)
+static std::vector<ActionsAndName> splitAndChainIntoMultipleFilters(ActionsDAG & dag, const std::string & filter_name)
 {
     std::vector<ActionsAndName> res;
 
@@ -214,7 +350,7 @@ void FilterStep::describeActions(FormatSettings & settings) const
     }
 
     settings.out << prefix << "Filter column: "
-        << (settings.pretty ? QueryPlanFormat::formatColumnPretty(filter_column_name, settings.pretty_names) : filter_column_name);
+                 << (settings.pretty ? QueryPlanFormat::formatColumnPretty(filter_column_name, settings.pretty_names) : filter_column_name);
 
     if (!settings.pretty && remove_filter_column)
         settings.out << " (removed)";
@@ -283,7 +419,7 @@ QueryPlanStepPtr FilterStep::deserialize(Deserialization & ctx)
     if (ctx.input_headers.size() != 1)
         throw Exception(ErrorCodes::INCORRECT_DATA, "FilterStep must have one input stream");
 
-    UInt8 flags;
+    UInt8 flags = 0;
     readIntBinary(flags, ctx.in);
 
     bool remove_filter_column = bool(flags & 1);
@@ -291,18 +427,17 @@ QueryPlanStepPtr FilterStep::deserialize(Deserialization & ctx)
     String filter_column_name;
     readStringBinary(filter_column_name, ctx.in);
 
-    ActionsDAG actions_dag = ActionsDAG::deserialize(ctx.in, ctx.registry, ctx.context);
+    ActionsDAG actions_dag = ActionsDAG::deserialize(ctx.in, ctx.registry, ctx.context, ctx.max_type_complexity);
 
     return std::make_unique<FilterStep>(ctx.input_headers.front(), std::move(actions_dag), std::move(filter_column_name), remove_filter_column);
 }
 
 bool FilterStep::canRemoveUnusedColumns() const
 {
-    // At the time of writing ActionsDAG doesn't handle removal of unused actions well in case of duplicated names in input or outputs
-    return !hasDuplicatedNamesInInputOrOutputs(actions_dag);
+    return true;
 }
 
-IQueryPlanStep::RemovedUnusedColumns FilterStep::removeUnusedColumns(NameMultiSet required_outputs, bool remove_inputs)
+FilterStep::RemoveUnusedColumnsResult FilterStep::removeUnusedColumns(const std::vector<size_t> & required_output_positions, bool remove_inputs)
 {
     if (output_header == nullptr)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Output header is not set in FilterStep");
@@ -312,81 +447,34 @@ IQueryPlanStep::RemovedUnusedColumns FilterStep::removeUnusedColumns(NameMultiSe
     if (prevent_input_removal)
         remove_inputs = false;
 
-    if (actions_dag.getInputs().size() > getInputHeaders().at(0)->columns())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "In {} cannot be more inputs in the DAG than columns in the input header", getName());
-
-    const auto required_output_count = required_outputs.size();
-    auto split_results = actions_dag.splitPossibleOutputNames(std::move(required_outputs));
-    const auto actions_dag_input_count_before = actions_dag.getInputs().size();
-
-    if (!split_results.output_names.contains(filter_column_name))
-    {
-        remove_filter_column = true;
-        split_results.output_names.insert(filter_column_name);
-    }
-    const auto actions_dag_required_outputs = getRequiredOutputNamesInOrder(std::move(split_results.output_names), actions_dag);
-
-    auto updated_actions = actions_dag.removeUnusedActions(actions_dag_required_outputs, remove_inputs);
+    chassert(
+        actions_dag.getInputs().size() <= getInputHeaders().at(0)->columns()
+        && "There cannot be more DAG inputs than columns in the input header");
 
     const auto & input_header = input_headers.front();
-    // Number of input columns that are not removed by actions
-    const auto pass_through_inputs = input_header->columns() - actions_dag_input_count_before;
-    const auto has_to_remove_any_pass_through_input = pass_through_inputs > split_results.not_output_names.size();
-    const auto has_to_add_input_to_actions = !remove_inputs && has_to_remove_any_pass_through_input;
-    const auto build_required_inputs_set = [this, &not_output_names = split_results.not_output_names]()
-    {
-        std::unordered_set<String> required_inputs_set;
+    auto pruning_result = pruneFilterDAGOutputsByPosition(
+        actions_dag, filter_column_name, remove_filter_column, *input_header, required_output_positions, remove_inputs);
 
-        for (const auto * input_node : actions_dag.getInputs())
-            required_inputs_set.insert(input_node->result_name);
-
-        for (const auto & pass_through_input : not_output_names)
-            required_inputs_set.insert(pass_through_input);
-
-        return required_inputs_set;
-    };
-
-    if (has_to_add_input_to_actions)
-    {
-        const auto required_inputs_set = build_required_inputs_set();
-
-        for (const auto & name_and_type : *input_header)
-            if (!required_inputs_set.contains(name_and_type.name))
-                actions_dag.addInput(name_and_type);
-
-        updated_actions = true;
-    }
-
-    // If the actions are not updated and no outputs has to be removed, then there is nothing to update
-    // Note: required_outputs must be a subset of already existing outputs
-    if (!updated_actions && output_header->columns() == required_output_count)
-        return RemovedUnusedColumns::None;
+    if (!pruning_result.changed && output_header->columns() == required_output_positions.size())
+        return {};
 
     if (actions_dag.getInputs().size() > getInputHeaders().at(0)->columns())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "There cannot be more inputs in the DAG than columns in the input header");
 
-    const auto actions_dag_has_less_inputs = actions_dag.getInputs().size() < actions_dag_input_count_before;
-    const auto update_inputs = remove_inputs && (actions_dag_has_less_inputs || has_to_remove_any_pass_through_input);
-
-    if (update_inputs)
+    if (pruning_result.input_positions_changed)
     {
-        const auto required_inputs_set = build_required_inputs_set();
         Block new_input_header{};
-
-        for (const auto & col_type_and_name : *input_header)
-        {
-            if (required_inputs_set.contains(col_type_and_name.name))
-                new_input_header.insert(col_type_and_name);
-        }
+        for (size_t pos : pruning_result.required_input_positions)
+            new_input_header.insert(input_header->getByPosition(pos));
 
         SharedHeader new_shared_input_header = std::make_shared<const Block>(std::move(new_input_header));
         updateInputHeader(std::move(new_shared_input_header), 0);
-        return RemovedUnusedColumns::OutputAndInput;
+        return {true, {std::move(pruning_result.required_input_positions)}, required_output_positions};
     }
 
     updateOutputHeader();
 
-    return RemovedUnusedColumns::OutputOnly;
+    return {true, {}, required_output_positions};
 }
 
 bool FilterStep::canRemoveColumnsFromOutput() const
@@ -405,6 +493,7 @@ QueryPlanStepPtr FilterStep::clone() const
     return std::make_unique<FilterStep>(*this);
 }
 
+void registerFilterStep(QueryPlanStepRegistry & registry);
 void registerFilterStep(QueryPlanStepRegistry & registry)
 {
     registry.registerStep("Filter", FilterStep::deserialize);

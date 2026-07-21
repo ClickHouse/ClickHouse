@@ -154,10 +154,11 @@ public:
 
     ReservationPtr reserve(UInt64 bytes, const ReservationConstraints & constraints) override;
 
-    std::unique_ptr<ReadBufferFromFileBase> readFile(
+    void prepareRead(
         const String & path,
         const ReadSettings & settings,
-        std::optional<size_t> read_hint) const override;
+        std::optional<size_t> read_hint,
+        ReadPipeline & pipeline) const override;
 
     std::unique_ptr<ReadBufferFromFileBase> readFileIfExists(
         const String & path,
@@ -184,6 +185,8 @@ public:
         ) override;
 
     void waitBlobsCleanup();
+    int64_t getDeadBlobsQueueEstimate() const;
+    int64_t getMissingBlobsQueueEstimate() const;
 
     void applyNewSettings(const Poco::Util::AbstractConfiguration & config, ContextPtr context, const String & config_prefix, const DisksMap & map) override;
 
@@ -223,6 +226,7 @@ public:
 
     /// Get names of all cache layers. Name is how cache is defined in configuration file.
     NameSet getCacheLayersNames() const override;
+    DiskObjectStorageConstPtr getWrappedDisk() const;
 
     bool supportsStat() const override { return metadata_storage->supportsStat(); }
     struct stat stat(const String & path) const override;
@@ -258,6 +262,9 @@ private:
 
     BlobKillerThreadPtr blob_killer;
     BlobCopierThreadPtr blob_copier;
+
+    /// Thread pool used to parallelize `copyObjectToAnotherObjectStorage` calls.
+    std::shared_ptr<ThreadPool> copy_object_pool;
 
     UInt64 reserved_bytes = 0;
     UInt64 reservation_count = 0;
@@ -307,7 +314,7 @@ public:
 private:
     DiskObjectStoragePtr disk;
     UInt64 size;
-    UInt64 unreserved_space;
+    UInt64 unreserved_space{};
     CurrentMetrics::Increment metric_increment;
 };
 

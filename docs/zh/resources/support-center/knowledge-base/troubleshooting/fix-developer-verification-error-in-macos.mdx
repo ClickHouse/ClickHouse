@@ -1,0 +1,109 @@
+---
+title: 修复 MacOS 中的开发者验证错误
+description: 了解如何在运行 ClickHouse 命令时，通过“系统设置”或终端解决 MacOS 开发者验证错误。
+date: 2024-01-09
+tags: ['错误与异常']
+keywords: ['开发者验证', 'MacOS']
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+{frontMatter.description}
+
+{/* truncate */}
+
+***
+
+<div id="fix-the-developer-verification-error-in-macos">
+  ## 修复 MacOS 中的开发者验证错误
+</div>
+
+如果你使用 `brew` 安装 ClickHouse，可能会遇到 MacOS 报出的错误。
+默认情况下，MacOS 不会运行由无法验证身份的开发者创建的应用或工具。
+
+尝试运行任何 `clickhouse` 命令时，你可能会看到以下错误：
+
+<Image img="/images/knowledgebase/fix-the-developer-verification-error-in-macos/dev-verification-error.webp" size="md" alt="MacOS 开发者验证错误对话框" border />
+
+要解决此验证错误，你需要将该应用从 MacOS 的隔离区中移除；你可以在系统设置窗口中找到相应选项，也可以使用终端，或者重新安装 ClickHouse。
+
+<div id="system-settings-process">
+  ## 系统设置流程
+</div>
+
+将 `clickhouse` 可执行文件从隔离区中移除，最简单的方法是：
+
+1. 打开**系统设置**。
+
+2. 前往**隐私与安全**：
+
+   <Image img="/images/knowledgebase/fix-the-developer-verification-error-in-macos/privacy-and-security-default-view.webp" size="md" alt="MacOS 隐私与安全设置默认视图" border />
+
+3. 滚动到窗口底部，找到一条消息：*&quot;clickhouse-macos-aarch64&quot; 因并非来自已识别的开发者而被阻止使用*。
+
+4. 点击**仍要允许**。
+
+   <Image img="/images/knowledgebase/fix-the-developer-verification-error-in-macos/privacy-and-security-screen-allow-anyway.webp" size="md" alt="MacOS 隐私与安全设置中显示“仍要允许”按钮" border />
+
+5. 输入你的 MacOS 用户密码。
+
+现在，你应该可以在终端中运行 `clickhouse` 命令了。
+
+<div id="terminal-process">
+  ## 终端操作
+</div>
+
+有时点击 `仍要允许` 按钮还是无法解决这个问题，这种情况下，你也可以通过命令行执行这一过程。
+或者你只是更喜欢使用命令行！
+
+首先找出 Homebrew 将 `clickhouse` 可执行文件安装到了哪里：
+
+```shell
+which clickhouse
+```
+
+应会输出类似如下内容：
+
+```shell
+/opt/homebrew/bin/clickhouse
+```
+
+运行 `xattr -d com.apple.quarantine`，再加上上一条命令返回的路径，即可将 `clickhouse` 从隔离区中移除：
+
+```shell
+xattr -d com.apple.quarantine /opt/homebrew/bin/clickhouse
+```
+
+你现在应该已经可以运行 `clickhouse` 可执行文件：
+
+```shell
+clickhouse
+```
+
+这应该会输出如下类似内容：
+
+```shell
+Use one of the following commands:
+clickhouse local [args]
+clickhouse client [args]
+clickhouse benchmark [args]
+...
+```
+
+<div id="fix-the-issue-by-reinstalling-clickhouse">
+  ## 通过重新安装 ClickHouse 解决此问题
+</div>
+
+Brew 提供了一个命令行选项，可从一开始就避免对已安装的二进制文件进行隔离。
+
+首先，卸载 ClickHouse：
+
+```shell
+brew uninstall clickhouse
+```
+
+现在使用 `--no-quarantine` 重新安装 ClickHouse：
+
+```shell
+brew install --no-quarantine clickhouse
+```

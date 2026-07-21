@@ -1,0 +1,80 @@
+---
+title: Cómo validar si dos consultas devuelven el mismo conjunto de resultados
+description: Aprende a validar que dos consultas de ClickHouse produzcan el mismo conjunto de resultados mediante funciones hash y técnicas de comparación.
+date: 2023-05-04
+tags: ['Funciones']
+keywords: ['Validar', 'Conjuntos de resultados', 'Funciones hash']
+---
+
+<div id="question">
+  ## Pregunta
+</div>
+
+¿Cómo puedo verificar que dos consultas devuelvan los mismos conjuntos de resultados?
+
+<div id="answer">
+  ## Respuesta
+</div>
+
+Puede utilizar el siguiente enfoque:
+
+```sql
+WITH
+    (
+        SELECT sum(cityHash64(*))
+        FROM
+        (
+            -- tu consulta 1 aquí
+            -- SELECT ...
+        )
+    ) AS q1_resultset_hash,
+    (
+        SELECT sum(cityHash64(*))
+        FROM
+        (
+            -- tu consulta 2 aquí
+            -- SELECT ...
+        )
+    ) AS q2_resultset_hash
+SELECT equals(q1_resultset_hash,q2_resultset_hash) as Q1_equals_Q2
+```
+
+El ejemplo usa una [CTE](/es/reference/statements/select/with) para calcular la suma del valor [cityHash](/es/reference/functions/regular-functions/hash-functions#cityhash64) de cada fila en estas dos consultas, y devolverá `1` si los dos conjuntos de resultados son idénticos.
+
+Usando algunos datos de una secuencia de enteros y formato Pretty:
+
+```sql
+WITH
+    (
+        SELECT sum(cityHash64(*))
+        FROM
+        (
+            SELECT *
+            FROM numbers(10)
+            ORDER BY number DESC
+        )
+    ) AS q1_resultset_hash,
+    (
+        SELECT sum(cityHash64(*))
+        FROM
+        (
+            SELECT *
+            FROM numbers(10)
+            ORDER BY number ASC
+        )
+    ) AS q2_resultset_hash
+SELECT q1_resultset_hash = q2_resultset_hash AS Q1_equals_Q2
+FORMAT Pretty
+```
+
+devolverá:
+
+```
+┏━━━━━━━━━━━━━━┓
+┃ Q1_equals_Q2 ┃
+┡━━━━━━━━━━━━━━┩
+│            1 │
+└──────────────┘
+```
+
+Aunque esto puede ser útil en muchos casos, no puede considerarse una solución infalible para validar la igualdad de los conjuntos de resultados para todo tipo de datos, y su uso tiene algunas limitaciones; por ejemplo, si alguna fila contiene valores `NULL`, el enfoque anterior fallará.

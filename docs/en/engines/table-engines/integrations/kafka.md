@@ -54,6 +54,7 @@ SETTINGS
     [kafka_thread_per_consumer = 0,]
     [kafka_handle_error_mode = 'default',]
     [kafka_commit_on_select = false,]
+    [kafka_consumer_acquire_timeout_ms = 30000,]
     [kafka_max_rows_per_message = 1,]
     [kafka_compression_codec = '',]
     [kafka_compression_level = -1];
@@ -69,7 +70,8 @@ Required parameters:
 Optional parameters:
 
 - `kafka_security_protocol` - Protocol used to communicate with brokers. Possible values: `plaintext`, `ssl`, `sasl_plaintext`, `sasl_ssl`.
-- `kafka_sasl_mechanism` - SASL mechanism to use for authentication. Possible values: `GSSAPI`, `PLAIN`, `SCRAM-SHA-256`, `SCRAM-SHA-512`, `OAUTHBEARER`.
+- `kafka_sasl_mechanism` - SASL mechanism to use for authentication. Possible values: `GSSAPI`, `PLAIN`, `SCRAM-SHA-256`, `SCRAM-SHA-512`, `OAUTHBEARER`, `AWS_MSK_IAM`.
+- `kafka_aws_region` - AWS region for MSK IAM authentication. Auto-detected from broker address if not specified. Explicitly specify when using PrivateLink aliases or custom DNS hostnames that don't contain region information. Default: empty (auto-detect).
 - `kafka_sasl_username` - SASL username for use with the `PLAIN` and `SASL-SCRAM-..` mechanisms.
 - `kafka_sasl_password` - SASL password for use with the `PLAIN` and `SASL-SCRAM-..` mechanisms.
 - `kafka_schema` — Parameter that must be used if the format requires a schema definition. For example, [Cap'n Proto](https://capnproto.org/) requires the path to the schema file and the name of the root `schema.capnp:Message` object.
@@ -86,6 +88,7 @@ Optional parameters:
 - `kafka_thread_per_consumer` — Provide independent thread for each consumer. When enabled, every consumer flush the data independently, in parallel (otherwise — rows from several consumers squashed to form one block). Default: `0`.
 - `kafka_handle_error_mode` — How to handle errors for Kafka engine. Possible values: default (the exception will be thrown if we fail to parse a message), stream (the exception message and raw message will be saved in virtual columns `_error` and `_raw_message`), dead_letter_queue (error related data will be saved in system.dead_letter_queue).
 - `kafka_commit_on_select` —  Commit messages when select query is made. Default: `false`.
+- `kafka_consumer_acquire_timeout_ms` — Timeout in milliseconds for acquiring a Kafka consumer during direct `SELECT` queries on a `Kafka2` table (with Keeper-based offset storage). When multiple concurrent direct `SELECT` queries run on the same table, each must wait for consumers to become available. The timeout prevents deadlocks when queries hold different subsets of consumers. Default: `30000`.
 - `kafka_max_rows_per_message` — The maximum number of rows written in one kafka message for row-based formats. Default : `1`.
 - `kafka_autodetect_client_rack` — Automatically sets the `client.rack` parameter for `librdkafka` to prefer the nearest Kafka replicas.
   Supported sources:
@@ -167,20 +170,28 @@ It is recommended that each Kafka topic have its own dedicated consumer group, e
 When the `MATERIALIZED VIEW` joins the engine, it starts collecting data in the background. This allows you to continually receive messages from Kafka and convert them to the required format using `SELECT`.
 One kafka table can have as many materialized views as you like, they do not read data from the kafka table directly, but receive new records (in blocks), this way you can write to several tables with different detail level (with grouping - aggregation and without).
 
-Example:
+Example, using [named collections](/operations/named-collections.md) to store the connection parameters:
 
 ```sql
+  CREATE NAMED COLLECTION kafka_creds AS
+    kafka_broker_list = 'localhost:9092',
+    kafka_topic_list = 'topic',
+    kafka_group_name = 'group1',
+    kafka_format = 'JSONEachRow';
+
   CREATE TABLE queue (
     timestamp UInt64,
     level String,
     message String
-  ) ENGINE = Kafka('localhost:9092', 'topic', 'group1', 'JSONEachRow');
+  ) ENGINE = Kafka(kafka_creds);
 
   CREATE TABLE daily (
     day Date,
     level String,
     total UInt64
-  ) ENGINE = SummingMergeTree(day, (day, level), 8192);
+  ) ENGINE = SummingMergeTree
+  PARTITION BY toYYYYMM(day)
+  ORDER BY (day, level);
 
   CREATE MATERIALIZED VIEW consumer TO daily
     AS SELECT toDate(toDateTime(timestamp)) AS day, level, count() AS total
@@ -244,6 +255,113 @@ Similar to GraphiteMergeTree, the Kafka engine supports extended configuration u
 ```
 
 For a list of possible configuration options, see the [librdkafka configuration reference](https://github.com/edenhill/librdkafka/blob/master/CONFIGURATION.md). Use the underscore (`_`) instead of a dot in the ClickHouse configuration. For example, `check.crcs=true` will be `<check_crcs>true</check_crcs>`.
+
+### AWS MSK IAM Authentication {#kafka-aws-msk-iam}
+
+:::note
+AWS MSK IAM authentication requires ClickHouse to be built with AWS S3 support enabled.
+:::
+
+AWS MSK supports IAM-based authentication, allowing connection to Kafka clusters using AWS credentials instead of managing separate usernames and passwords.
+
+**Basic Setup:**
+
+Set `kafka_sasl_mechanism = 'AWS_MSK_IAM'` in your table settings:
+
+```sql
+CREATE TABLE msk_queue (
+    timestamp UInt64,
+    level String,
+    message String
+) ENGINE = Kafka()
+SETTINGS
+    kafka_broker_list = 'b-1.mycluster.kafka.us-east-1.amazonaws.com:9098',
+    kafka_topic_list = 'my-topic',
+    kafka_group_name = 'my-group',
+    kafka_format = 'JSONEachRow',
+    kafka_sasl_mechanism = 'AWS_MSK_IAM';
+```
+
+The AWS region is automatically extracted from the broker endpoint using pattern matching:
+- Provisioned MSK: `b-X.cluster.kafka.<region>.amazonaws.com:9098`
+- Serverless MSK: `boot-X.kafka-serverless.<region>.amazonaws.com:9098`
+- VPC Endpoint: `vpce-X.kafka.<region>.vpce.amazonaws.com:9098`
+
+**AWS Credentials:**
+
+Credentials are always loaded from `~/.aws/credentials` and `~/.aws/config` (AWS profile files) when present. To also enable EC2 instance profiles, environment variables (`AWS_ACCESS_KEY_ID`, etc.), ECS task roles, and other automatic credential sources, add to your server configuration:
+
+```xml
+<kafka>
+  <use_environment_credentials>true</use_environment_credentials>
+</kafka>
+```
+
+This setting can only be configured by server administrators. Default: `false`.
+
+**PrivateLink and Custom DNS:**
+
+When using PrivateLink aliases or custom DNS hostnames that do not contain region information, explicitly specify the AWS region:
+
+```sql
+CREATE TABLE msk_privatelink_queue (
+    timestamp UInt64,
+    level String,
+    message String
+) ENGINE = Kafka()
+SETTINGS
+    kafka_broker_list = 'my-privatelink-alias.internal.example.com:9098',
+    kafka_topic_list = 'my-topic',
+    kafka_group_name = 'my-group',
+    kafka_format = 'JSONEachRow',
+    kafka_sasl_mechanism = 'AWS_MSK_IAM',
+    kafka_aws_region = 'us-east-1';
+```
+
+**IAM Permissions:**
+
+Consumer permissions (for reading messages):
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [{
+    "Effect": "Allow",
+    "Action": [
+      "kafka-cluster:Connect",
+      "kafka-cluster:DescribeTopic",
+      "kafka-cluster:ReadData",
+      "kafka-cluster:AlterGroup",
+      "kafka-cluster:DescribeGroup"
+    ],
+    "Resource": [
+      "arn:aws:kafka:REGION:ACCOUNT:cluster/CLUSTER_NAME/*",
+      "arn:aws:kafka:REGION:ACCOUNT:topic/CLUSTER_NAME/TOPIC_NAME/*",
+      "arn:aws:kafka:REGION:ACCOUNT:group/CLUSTER_NAME/CONSUMER_GROUP/*"
+    ]
+  }]
+}
+```
+
+Producer permissions (for writing messages):
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [{
+    "Effect": "Allow",
+    "Action": [
+      "kafka-cluster:Connect",
+      "kafka-cluster:DescribeTopic",
+      "kafka-cluster:WriteData"
+    ],
+    "Resource": [
+      "arn:aws:kafka:REGION:ACCOUNT:cluster/CLUSTER_NAME/*",
+      "arn:aws:kafka:REGION:ACCOUNT:topic/CLUSTER_NAME/TOPIC_NAME/*"
+    ]
+  }]
+}
+```
 
 ### Kerberos support {#kafka-kerberos-support}
 
@@ -348,10 +466,8 @@ SETTINGS allow_experimental_kafka_offsets_storage_in_keeper=1;
 ### Known limitations {#known-limitations}
 
 As the new engine is experimental, it is not production ready yet. There are few known limitations of the implementation:
-- The biggest limitation is the engine doesn't support direct reading. Reading from the engine using materialized views and writing to the engine work, but direct reading doesn't. As a result, all direct `SELECT` queries will fail.
 - Rapidly dropping and recreating the table or specifying the same ClickHouse Keeper path to different engines might cause issues. As best practice you can use the `{uuid}` in `kafka_keeper_path` to avoid clashing paths.
 - To make repeatable reads, messages cannot be consumed from multiple partitions on a single thread. On the other hand, the Kafka consumers have to be polled regularly to keep them alive. As a result of these two objectives, we decided to only allow creating multiple consumers if `kafka_thread_per_consumer` is enabled, otherwise it is too complicated to avoid issues regarding polling consumers regularly.
-- Consumers created by the new storage engine do not show up in [`system.kafka_consumers`](../../../operations/system-tables/kafka_consumers.md) table.
 
 **See Also**
 

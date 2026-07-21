@@ -1,0 +1,48 @@
+---
+title: Ошибка «ODBC authentication failed» при использовании коннектора ClickHouse для Power BI
+description: "Ошибка «ODBC authentication failed» при использовании коннектора ClickHouse для Power BI"
+date: 2024-07-10
+tags: ['Нативные клиенты и интерфейсы', 'Ошибки и исключения']
+keywords: ['ODBC', 'коннектор Power BI', 'ошибка аутентификации']
+---
+
+import { Image } from "/snippets/ru/components/Image.jsx";
+
+{frontMatter.description}
+
+{/* truncate */}
+
+<div id="question">
+  ## Вопрос
+</div>
+
+При попытке подключиться к ClickHouse из Power BI с помощью коннектора вы получаете ошибку аутентификации.
+
+Обычно эта ошибка выглядит так:
+
+```
+We encountered an error while trying to connect.
+Details: "ODBC: ERROR [HY000] HTTP status code: 403
+Received error:
+Code: 516. DB::Exception: default: Authentication failed: password is incorrect, or there is no user with such name.
+If you have installed ClickHouse and forgot password you can reset it in the configuration file.
+The password for default user is typically located at /etc/clickhouse-server/users.d/default-password.xml and deleting this file will reset the password.
+See also /etc/clickhouse-server/users.ml on the server where
+ClickHouse is installed.
+```
+
+<Image img="/images/knowledgebase/powerbi_odbc_authentication_error.webp" size="md" alt="Диалоговое окно ошибки аутентификации ODBC в Power BI" border />
+
+<div id="answer">
+  ## Ответ
+</div>
+
+Обновите ClickHouse ODBC Driver до версии [1.4.1](https://github.com/ClickHouse/clickhouse-odbc/releases/tag/1.4.1.20250523).
+
+Если обновить драйвер невозможно, проверьте, содержит ли пароль символ тильды (~), так как в версиях до [1.4.1](https://github.com/ClickHouse/clickhouse-odbc/releases/tag/1.4.1.20250523) это может вызывать проблемы.
+
+Мы рекомендуем использовать для подключения отдельного пользователя и задавать пароль вручную.  Если вы используете ClickHouse Cloud и вам нужен доступ уровня администратора, эквивалентный пользователю `default`, создайте нового пользователя и назначьте ему `default_role`.
+
+Дополнительная информация:
+https://clickhouse.com/docs/operations/access-rights#user-account-management
+https://clickhouse.com/docs/cloud/security/cloud-access-management#database-roles

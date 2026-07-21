@@ -1,0 +1,36 @@
+---
+title: 'サポートされているデータ型'
+slug: /integrations/clickpipes/mysql/datatypes
+description: 'MySQL ClickPipe における MySQL から ClickHouse へのデータ型マッピングを説明するページ'
+doc_type: 'reference'
+keywords: ['MySQL ClickPipe データ型', 'MySQL から ClickHouse へのデータ型', 'ClickPipe データ型マッピング', 'MySQL ClickHouse 型変換', 'データベース型の互換性']
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+以下は、MySQL ClickPipe でサポートされているデータ型のマッピングです。
+
+| MySQL Type                           | ClickHouse type        | Notes                                                        |
+| ------------------------------------ | ---------------------- | ------------------------------------------------------------ |
+| Enum                                 | LowCardinality(String) |                                                              |
+| Set                                  | String                 |                                                              |
+| Decimal                              | Decimal                |                                                              |
+| TinyInt                              | Int8                   | 符号なしをサポートします。                                                |
+| SmallInt                             | Int16                  | 符号なしをサポートします。                                                |
+| MediumInt, Int                       | Int32                  | 符号なしをサポートします。                                                |
+| BigInt                               | Int64                  | 符号なしをサポートします。                                                |
+| Year                                 | Int16                  |                                                              |
+| TinyText, Text, MediumText, LongText | String                 |                                                              |
+| TinyBlob, Blob, MediumBlob, LongBlob | String                 |                                                              |
+| Char, Varchar                        | String                 |                                                              |
+| Binary, VarBinary                    | String                 |                                                              |
+| TinyInt(1)                           | Bool                   |                                                              |
+| JSON                                 | String                 | MySQL のみ。MariaDB の `json` は、制約付きの `text` のエイリアスにすぎません。       |
+| Geometry &amp; Geometry Types        | String                 | WKT (Well-Known Text) 。WKT ではわずかな精度低下が生じる場合があります。            |
+| Vector                               | Array(Float32)         | MySQL のみ。MariaDB でもまもなくサポートされる予定です。                          |
+| Float                                | Float32                | テキストプロトコルを使用するため、初期ロード中は ClickHouse での精度が MySQL と異なる場合があります。 |
+| Double                               | Float64                | テキストプロトコルを使用するため、初期ロード中は ClickHouse での精度が MySQL と異なる場合があります。 |
+| Date                                 | Date32                 | 日または月が 00 の場合は 01 にマッピングされます。                                |
+| Time                                 | DateTime64(6)          | Unixエポックからの時間オフセット。                                          |
+| Datetime, Timestamp                  | DateTime64(6)          | 日または月が 00 の場合は 01 にマッピングされます。                                |

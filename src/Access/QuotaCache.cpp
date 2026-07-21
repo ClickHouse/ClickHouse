@@ -4,6 +4,10 @@
 #include <Access/QuotaUsage.h>
 #include <Access/AccessControl.h>
 #include <Common/Exception.h>
+#include <Common/Logger.h>
+#include <Common/ProfileEvents.h>
+#include <Common/Stopwatch.h>
+#include <Common/logger_useful.h>
 #include <base/range.h>
 #include <boost/range/adaptor/map.hpp>
 #include <boost/range/algorithm/copy.hpp>
@@ -11,6 +15,12 @@
 #include <boost/range/algorithm/stable_sort.hpp>
 #include <boost/smart_ptr/make_shared.hpp>
 
+
+namespace ProfileEvents
+{
+    extern const Event QuotaCacheRecalculations;
+    extern const Event QuotaCacheRecalculationMicroseconds;
+}
 
 namespace DB
 {
@@ -33,6 +43,50 @@ void QuotaCache::QuotaInfo::setQuota(const QuotaPtr & quota_, const UUID & quota
 String QuotaCache::QuotaInfo::calculateKey(const EnabledQuota & enabled, bool throw_if_client_key_empty) const
 {
     const auto & params = enabled.params;
+    auto mask_address = [this](const Poco::Net::IPAddress & addr) -> String
+    {
+        using Family = Poco::Net::IPAddress::Family;
+        /// An IPv4-mapped IPv6 address (such as `::ffff:192.0.2.10`) represents an IPv4 client,
+        /// so it is governed by `IPV4_PREFIX_BITS` and never by `IPV6_PREFIX_BITS`.
+        if (addr.family() == Family::IPv6 && addr.isIPv4Mapped())
+        {
+            /// A /0 prefix is also valid: it puts every IP into a single shared bucket.
+            if (quota->ipv4_prefix_bits)
+            {
+                /// Normalize to a native IPv4 address so that masked mapped clients share quota
+                /// buckets with plain IPv4 clients.
+                Poco::Net::IPAddress native(reinterpret_cast<const char *>(addr.addr()) + 12, 4);
+                Poco::Net::IPAddress mask(static_cast<unsigned>(*quota->ipv4_prefix_bits), Family::IPv4);
+                return (native & mask).toString();
+            }
+            /// No IPv4 prefix configured: keep the original representation to preserve the
+            /// pre-prefix-bits quota key. In particular, do not let `IPV6_PREFIX_BITS` mask an
+            /// IPv4 client.
+            return addr.toString();
+        }
+
+        const auto fam = addr.family();
+        /// A /0 prefix is also valid: it puts every IP into a single shared bucket.
+        if (fam == Family::IPv4)
+        {
+            if (quota->ipv4_prefix_bits)
+            {
+                Poco::Net::IPAddress mask(static_cast<unsigned>(*quota->ipv4_prefix_bits), Family::IPv4);
+                Poco::Net::IPAddress masked = addr & mask;
+                return masked.toString();
+            }
+        }
+        else
+        {
+            if (quota->ipv6_prefix_bits)
+            {
+                Poco::Net::IPAddress mask(static_cast<unsigned>(*quota->ipv6_prefix_bits), Family::IPv6);
+                Poco::Net::IPAddress masked = addr & mask;
+                return masked.toString();
+            }
+        }
+        return addr.toString();
+    };
     switch (quota->key_type)
     {
         case QuotaKeyType::NONE:
@@ -45,10 +99,29 @@ String QuotaCache::QuotaInfo::calculateKey(const EnabledQuota & enabled, bool th
         }
         case QuotaKeyType::IP_ADDRESS:
         {
-            return params.client_address.toString();
+            return mask_address(params.client_address);
         }
         case QuotaKeyType::FORWARDED_IP_ADDRESS:
         {
+            /// Fast path: when no prefix masking is configured, return the raw address
+            /// without parsing into `Poco::Net::IPAddress`. This matches pre-prefix-bits
+            /// behavior and avoids extra work on the per-query hot path for users who
+            /// did not opt into prefix masking.
+            if (!quota->ipv4_prefix_bits && !quota->ipv6_prefix_bits)
+                return params.forwarded_address;
+
+            if (!params.forwarded_address.empty())
+            {
+                try
+                {
+                    Poco::Net::IPAddress forwarded_ip(params.forwarded_address);
+                    return mask_address(forwarded_ip);
+                }
+                catch (...) /// Ok: a malformed X-Forwarded-For value should not fail the query; fall back to using the raw string as the quota key, matching pre-prefix-bits behavior.
+                {
+                    return params.forwarded_address;
+                }
+            }
             return params.forwarded_address;
         }
         case QuotaKeyType::CLIENT_KEY:
@@ -74,7 +147,7 @@ String QuotaCache::QuotaInfo::calculateKey(const EnabledQuota & enabled, bool th
         {
             if (!params.client_key.empty())
                 return params.client_key;
-            return params.client_address.toString();
+            return mask_address(params.client_address);
         }
         case QuotaKeyType::NORMALIZED_QUERY_HASH:
         {
@@ -216,29 +289,38 @@ void QuotaCache::ensureAllQuotasRead()
     /// `mutex` is already locked.
     if (all_quotas_read)
         return;
-    all_quotas_read = true;
 
     subscription = access_control.subscribeForChanges<Quota>(
-        [&](const UUID & id, const AccessEntityPtr & entity)
+        [this](const std::vector<AccessChangesNotifier::Change> & changes)
         {
-            if (entity)
-                quotaAddedOrChanged(id, typeid_cast<QuotaPtr>(entity));
-            else
-                quotaRemoved(id);
+            std::lock_guard lock{mutex};
+            for (const auto & change : changes)
+            {
+                if (change.entity)
+                    quotaAddedOrChanged(change.id, typeid_cast<QuotaPtr>(change.entity));
+                else
+                    quotaRemoved(change.id);
+            }
+            chooseQuotaToConsumeIfNeeded();
         });
 
+    /// Start clean: a previous attempt may have thrown mid-scan.
+    all_quotas.clear();
     for (const UUID & quota_id : access_control.findAll<Quota>())
     {
         auto quota = access_control.tryRead<Quota>(quota_id);
         if (quota)
             all_quotas.emplace(quota_id, QuotaInfo(quota, quota_id));
     }
+
+    /// Set only after the subscription and the initial read succeed.
+    all_quotas_read = true;
 }
 
 
 void QuotaCache::quotaAddedOrChanged(const UUID & quota_id, const std::shared_ptr<const Quota> & new_quota)
 {
-    std::lock_guard lock{mutex};
+    /// `mutex` is already locked.
     auto it = all_quotas.find(quota_id);
     if (it == all_quotas.end())
     {
@@ -252,15 +334,26 @@ void QuotaCache::quotaAddedOrChanged(const UUID & quota_id, const std::shared_pt
 
     auto & info = it->second;
     info.setQuota(new_quota, quota_id);
-    chooseQuotaToConsume();
+    need_choose_quota = true;
 }
 
 
 void QuotaCache::quotaRemoved(const UUID & quota_id)
 {
-    std::lock_guard lock{mutex};
+    /// `mutex` is already locked.
     all_quotas.erase(quota_id);
+    need_choose_quota = true;
+}
+
+
+void QuotaCache::chooseQuotaToConsumeIfNeeded()
+{
+    /// `mutex` is already locked.
+    if (!need_choose_quota)
+        return;
+    /// Clear the flag only after a successful rebuild, so a throwing recompute is retried next batch.
     chooseQuotaToConsume();
+    need_choose_quota = false;
 }
 
 
@@ -268,6 +361,8 @@ void QuotaCache::chooseQuotaToConsume()
 {
     /// `mutex` is already locked.
 
+    ProfileEvents::increment(ProfileEvents::QuotaCacheRecalculations);
+    Stopwatch watch;
     for (auto i = enabled_quotas.begin(), e = enabled_quotas.end(); i != e;)
     {
         auto elem = i->second.lock();
@@ -279,62 +374,55 @@ void QuotaCache::chooseQuotaToConsume()
             ++i;
         }
     }
+
+    const auto elapsed_ms = watch.elapsedMilliseconds();
+    ProfileEvents::increment(ProfileEvents::QuotaCacheRecalculationMicroseconds, watch.elapsedMicroseconds());
+    /// O(enabled sets * quotas), under `mutex` that the ContextAccess build path also takes.
+    if (elapsed_ms >= 1000)
+        LOG_DEBUG(getLogger("QuotaCache"), "Re-chose quotas for {} enabled set(s) over {} quotas in {} ms", enabled_quotas.size(), all_quotas.size(), elapsed_ms);
+    else
+        LOG_TRACE(getLogger("QuotaCache"), "Re-chose quotas for {} enabled set(s) over {} quotas in {} ms", enabled_quotas.size(), all_quotas.size(), elapsed_ms);
 }
 
 void QuotaCache::chooseQuotaToConsumeFor(EnabledQuota & enabled, bool throw_if_client_key_empty)
 {
     /// `mutex` is already locked.
-    boost::shared_ptr<const Intervals> intervals;
+
+    /// A user/context may be governed by several quotas at once. Collect every quota whose
+    /// `APPLY TO` matches; all of them are enforced together by `EnabledQuota`.
+    auto new_quotas = boost::make_shared<Quotas>();
     for (auto & info : all_quotas | boost::adaptors::map_values)
     {
-        if (info.roles->match(enabled.params.user_id, enabled.params.enabled_roles))
-        {
-            String key = info.calculateKey(enabled, throw_if_client_key_empty);
-            intervals = info.getOrBuildIntervals(key);
+        if (!info.roles->match(enabled.params.user_id, enabled.params.enabled_roles))
+            continue;
 
-            /// For NORMALIZED_QUERY_HASH keyed quotas, set up a resolver callback
-            /// so that EnabledQuota can lazily resolve intervals per query hash.
-            /// Both interval_resolver and resolved_intervals_cache are protected
-            /// by resolved_intervals_mutex to avoid data races with concurrent readers.
+        String key = info.calculateKey(enabled, throw_if_client_key_empty);
+        auto single = std::make_unique<SingleQuota>();
+        single->intervals = info.getOrBuildIntervals(key);
+
+        /// For NORMALIZED_QUERY_HASH keyed quotas, set up a resolver callback
+        /// so that EnabledQuota can lazily resolve intervals per query hash.
+        if (info.quota->key_type == QuotaKeyType::NORMALIZED_QUERY_HASH)
+        {
+            UUID found_quota_id = info.quota_id;
+            single->interval_resolver = [this, found_quota_id](const String & hash_key) -> boost::shared_ptr<const Intervals>
             {
-                std::lock_guard resolved_lock(enabled.resolved_intervals_mutex);
-                if (info.quota->key_type == QuotaKeyType::NORMALIZED_QUERY_HASH)
-                {
-                    UUID found_quota_id = info.quota_id;
-                    enabled.interval_resolver = [this, found_quota_id](const String & hash_key) -> boost::shared_ptr<const Intervals>
-                    {
-                        std::lock_guard lock(mutex);
-                        auto it = all_quotas.find(found_quota_id);
-                        if (it == all_quotas.end())
-                            return nullptr;
-                        return it->second.getOrBuildIntervals(hash_key);
-                    };
-                }
-                else
-                {
-                    enabled.interval_resolver = nullptr;
-                }
-                enabled.resolved_intervals_cache.clear();
-            }
-
-            break;
+                std::lock_guard lock(mutex);
+                auto it = all_quotas.find(found_quota_id);
+                if (it == all_quotas.end())
+                    return nullptr;
+                return it->second.getOrBuildIntervals(hash_key);
+            };
         }
+
+        new_quotas->push_back(std::move(single));
     }
 
-    if (!intervals)
-    {
-        enabled.empty = true;
-        enabled.intervals = boost::make_shared<Intervals>(); /// No quota == no limits.
-        {
-            std::lock_guard resolved_lock(enabled.resolved_intervals_mutex);
-            enabled.interval_resolver = nullptr;
-        }
-    }
-    else
-    {
-        enabled.intervals.store(intervals);
-        enabled.empty = false;
-    }
+    /// Publish the new set: store `quotas` (always non-null, possibly empty) before updating the
+    /// `empty` flag, so a concurrent reader never observes `empty == false` with a stale set.
+    bool is_empty = new_quotas->empty();
+    enabled.quotas.store(new_quotas);
+    enabled.empty = is_empty;
 }
 
 

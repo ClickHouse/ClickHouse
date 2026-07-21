@@ -2,6 +2,7 @@
 
 #include <functional>
 #include <Common/QueryScope.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Interpreters/QueryMetadataCache.h>
 #include <QueryPipeline/QueryPipeline.h>
 #include <IO/Progress.h>
@@ -16,12 +17,8 @@ class ProcessListEntry;
 struct QueryPipelineFinalizedInfo
 {
     std::optional<ResultProgress> result_progress;
-    std::vector<IProcessor::ProcessorsProfileLogInfo> processors_profile_infos;
+    VectorWithMemoryTracking<IProcessor::ProcessorsProfileLogInfo> processors_profile_infos;
     String pipeline_dump;
-
-    /// Set to true when finalization of a buffered query result cache write threw.
-    /// Used to downgrade `query_result_cache_usage` in `query_log` from `Write` to `None`.
-    bool query_result_cache_write_failed = false;
 };
 
 struct BlockIO
@@ -29,7 +26,9 @@ struct BlockIO
     BlockIO() = default;
     BlockIO(BlockIO &&) = default;
 
-    BlockIO & operator= (BlockIO && rhs) noexcept;
+    /// Not noexcept: moves the QueryPipeline, whose move-assignment appends resources and can
+    /// throw MEMORY_LIMIT_EXCEEDED.
+    BlockIO & operator= (BlockIO && rhs); /// NOLINT(hicpp-noexcept-move,performance-noexcept-move-constructor)
     ~BlockIO();
 
     BlockIO(const BlockIO &) = delete;
@@ -37,7 +36,7 @@ struct BlockIO
 
     /// Needed for internal queries.
     /// Each level calls executeQuery and adds its process list entry.
-    std::vector<std::shared_ptr<ProcessListEntry>> process_list_entries;
+    VectorWithMemoryTracking<std::shared_ptr<ProcessListEntry>> process_list_entries;
 
     /// Query-scoped cache for storage metadata and snapshots.
     ///
@@ -56,9 +55,9 @@ struct BlockIO
     /// The finalize_query_pipeline function is called once to flush the pipeline progress and reset it.
     /// Then all finish callbacks are called with the resulting QueryPipelineFinalizedInfo.
     std::function<QueryPipelineFinalizedInfo(QueryPipeline &&)> finalize_query_pipeline;
-    std::vector<std::function<void(const QueryPipelineFinalizedInfo &, std::chrono::system_clock::time_point)>> finish_callbacks;
+    VectorWithMemoryTracking<std::function<void(const QueryPipelineFinalizedInfo &, std::chrono::system_clock::time_point)>> finish_callbacks;
 
-    std::vector<std::function<void(bool)>> exception_callbacks;
+    VectorWithMemoryTracking<std::function<void(bool)>> exception_callbacks;
 
     /// When it is true, don't bother sending any non-empty blocks to the out stream
     bool null_format = false;
@@ -89,8 +88,17 @@ struct BlockIO
     /// Set is_all_data_sent in system.processes for this query.
     void setAllDataSent() const;
 
-    /// Release query slot early to allow client to reuse it for his next query.
+    /// Release all acquired workload resources (query slot and memory reservation).
+    /// Only safe once the pipeline has been stopped (see `releaseMemoryReservation`).
+    void releaseWorkloadResources() const;
+
+    /// Release the query slot early to allow the client to reuse it for its next query.
+    /// Safe while the pipeline is still running: pipeline threads do not access the query slot.
     void releaseQuerySlot() const;
+
+    /// Release the memory reservation. MUST be called only after the pipeline has been finalized,
+    /// because pipeline threads hold raw pointers to `MemoryReservation`.
+    void releaseMemoryReservation() const;
 
     void resetPipeline(bool cancel);
 

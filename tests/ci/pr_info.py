@@ -3,7 +3,7 @@ import json
 import logging
 import os
 import re
-from typing import Dict, List, Set, Union
+from typing import Dict, Union
 from urllib.parse import quote
 
 from unidiff import PatchSet  # type: ignore
@@ -69,7 +69,7 @@ DIFF_IN_DOCUMENTATION_EXT = [
     ".sh",
     ".json",
 ]
-DOCS_ONLY_FILES = ["docker/docs", "aspell-dict.txt"]
+DOCS_ONLY_FILES = ["docker/docs"]
 
 DOCS_FILES = DOCS_ONLY_FILES + [
     "Settings.cpp",

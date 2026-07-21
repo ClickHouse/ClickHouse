@@ -19,6 +19,15 @@ class AggregatingProjectionStep;
 class AggregatingStep : public ITransformingStep
 {
 public:
+
+    enum class AggregatingStage : size_t
+    {
+        PartialAggregation = 0,
+        FinalAggregation = 1,
+        Scatter = 2,
+        AggregatingSharded = 3,
+    };
+
     AggregatingStep(
         const SharedHeader & input_header_,
         Aggregator::Params params_,
@@ -34,13 +43,17 @@ public:
         SortDescription group_by_sort_description_,
         bool should_produce_results_in_order_of_bucket_number_,
         bool memory_bound_merging_of_aggregation_results_enabled_,
-        bool explicit_sorting_required_for_aggregation_in_order_);
+        bool explicit_sorting_required_for_aggregation_in_order_,
+        bool enable_sharding_aggregator_);
 
     static Block appendGroupingColumn(const Block & block, const Names & keys, bool has_grouping, bool use_nulls);
 
     String getName() const override { return "Aggregating"; }
 
     void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
+
+    std::vector<size_t> getStepGroups() const override;
+    String getStepGroupName(size_t group) const override;
 
     void describeActions(JSONBuilder::JSONMap & map) const override;
 
@@ -58,10 +71,14 @@ public:
     void applyOrder(SortDescription sort_description_for_merging_, SortDescription group_by_sort_description_);
     bool memoryBoundMergingWillBeUsed() const;
     void skipMerging() { skip_merging = true; }
+    void setLimitHint(size_t limit) { limit_hint = limit; }
+    size_t getLimitHint() const { return limit_hint; }
+    const SortDescription & getGroupBySortDescription() const { return group_by_sort_description; }
 
     const SortDescription & getSortDescription() const override;
 
     bool canUseProjection() const;
+    bool canUseShardedAggregation(const QueryPipelineBuilder & pipeline) const;
     /// When we apply aggregate projection (which is full), this step will only merge data.
     /// Argument input_stream replaces current single input.
     /// Probably we should replace this step to MergingAggregated later? (now, aggregation-in-order will not work)
@@ -95,6 +112,9 @@ public:
     bool hasCorrelatedExpressions() const override { return false; }
 
     Aggregator::Params getAggregatorParameters() const { return params; }
+    /// Set during query-plan optimization (see setAggregationHashTableCacheKeys). A non-zero key
+    /// enables hash-table-size preallocation; StatsCollectingParams treats key == 0 as disabled.
+    void setStatsCacheKey(UInt64 stats_cache_key) { params.stats_collecting_params.setKey(stats_cache_key); }
     bool getFinal() const noexcept { return final; }
     void setFinal(bool new_value);
     size_t getMaxBlockSize() const noexcept { return max_block_size; }
@@ -135,11 +155,15 @@ private:
     const bool should_produce_results_in_order_of_bucket_number;
     bool memory_bound_merging_of_aggregation_results_enabled;
     bool explicit_sorting_required_for_aggregation_in_order;
+    bool enable_sharding_aggregator;
+
+    size_t limit_hint = 0;
 
     Processors aggregating_in_order;
     Processors aggregating_sorted;
     Processors finalizing;
 
+    Processors scatter;
     Processors aggregating;
 };
 
@@ -156,6 +180,11 @@ public:
 
     String getName() const override { return "AggregatingProjection"; }
     QueryPipelineBuilderPtr updatePipeline(QueryPipelineBuilders pipelines, const BuildQueryPipelineSettings & settings) override;
+
+    std::vector<size_t> getStepGroups() const override;
+    String getStepGroupName(size_t group) const override;
+
+    const Aggregator::Params & getParams() const { return params; }
 
 private:
     void updateOutputHeader() override;

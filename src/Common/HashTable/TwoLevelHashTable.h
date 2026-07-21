@@ -272,6 +272,8 @@ public:
         const auto & key = keyHolderGetKey(key_holder);
         const auto key_hash = hash(key);
         prefetchByHash(key_hash);
+        /// Release any temporary key memory held by the holder (e.g. `SerializedKeyHolder` rolls back the Arena allocation).
+        keyHolderDiscardKey(key_holder);
     }
 
     void ALWAYS_INLINE prefetchByHash(size_t key_hash) const

@@ -1,7 +1,10 @@
 import logging
 
-from helpers.kafka.common_direct import *
-from helpers.kafka.common_direct import _VarintBytes
+
+import pytest
+
+from helpers.cluster import ClickHouseCluster
+from helpers.test_tools import TSV
 import helpers.kafka.common as k
 
 
@@ -49,29 +52,7 @@ def kafka_cluster():
 
 @pytest.fixture(autouse=True)
 def kafka_setup_teardown():
-    instance.query("DROP DATABASE IF EXISTS test SYNC; CREATE DATABASE test;")
-    admin_client = k.get_admin_client(cluster)
-
-    def get_topics_to_delete():
-        return [t for t in admin_client.list_topics() if not t.startswith("_")]
-
-    topics = get_topics_to_delete()
-    logging.debug(f"Deleting topics: {topics}")
-    result = admin_client.delete_topics(topics)
-    for topic, error in result.topic_error_codes:
-        if error != 0:
-            logging.warning(f"Received error {error} while deleting topic {topic}")
-        else:
-            logging.info(f"Deleted topic {topic}")
-
-    retries = 0
-    topics = get_topics_to_delete()
-    while len(topics) != 0:
-        logging.info(f"Existing topics: {topics}")
-        if retries >= 5:
-            raise Exception(f"Failed to delete topics {topics}")
-        retries += 1
-        time.sleep(0.5)
+    k.clean_test_database_and_topics(instance, cluster)
     yield  # run test
 
 
@@ -140,7 +121,7 @@ def test_good_intent_size(kafka_cluster):
         k.kafka_produce(
             kafka_cluster,
             topic_name,
-            [f"message_4", "message_5"]
+            ["message_4", "message_5"]
         )
 
         consumed_messages = instance.query_with_retry("SELECT * FROM test.dst", retry_count = 30, sleep_time = 1, check_callback=lambda x: len(TSV(x)) == 3)
