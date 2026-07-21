@@ -75,7 +75,9 @@ void segmentBinaryPartition(UInt64 start, UInt64 finish, UInt8 current_bits, F &
 
     if (start_chunk == finish_chunk)
     {
-        if ((finish - start + 1) == (1 << next_bits)) // it means that [begin, end] is a range
+        /// Use a 64-bit literal: `next_bits` can be up to 62, and shifting
+        /// a 32-bit `int` by more than 31 bits is undefined behaviour.
+        if ((finish - start + 1) == (UInt64{1} << next_bits)) // it means that [begin, end] is a range
         {
             callback(HilbertDetails::Segment{.begin = start, .end = finish});
             return;

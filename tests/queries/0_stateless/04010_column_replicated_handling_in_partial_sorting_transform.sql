@@ -1,5 +1,4 @@
 SET join_use_nulls = true;
-SET query_plan_use_new_logical_join_step = false;
 SET limit = 8192;
 
 SELECT ALL 4768537185765142272::Int16 AS a0

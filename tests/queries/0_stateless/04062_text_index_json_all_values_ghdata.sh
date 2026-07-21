@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-parallel-replicas, no-fasttest, no-object-storage, long
+# Tags: no-parallel-replicas, no-fasttest, no-object-storage, long, no-flaky-check
 
 # Tests that text indexes built on JSONAllValues work correctly on a real-world
 # GitHub Events dataset (ghdata_sample.json) with various query patterns.
@@ -8,9 +8,13 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
+CLICKHOUSE_CLIENT="$CLICKHOUSE_CLIENT --explain_query_plan_default=legacy"
 set -e
 
-MY_CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --enable_analyzer 1"
+# Pin date_time_input_format to 'basic' so JSON path inference matches the
+# pre-existing reference (best_effort would infer DateTime64 from ISO date strings,
+# which changes JSONAllValues output and the cityHash64 result).
+MY_CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --enable_analyzer 1 --date_time_input_format=basic"
 
 function run_query()
 {
@@ -43,7 +47,11 @@ $MY_CLICKHOUSE_CLIENT --query "
     )
     ENGINE = MergeTree
     ORDER BY tuple()
-    SETTINGS index_granularity = 100, index_granularity_bytes = '10M';
+    SETTINGS index_granularity = 100, index_granularity_bytes = '10M',
+        text_index_posting_list_codec = 'none',
+        text_index_posting_list_block_size = 1048576,
+        text_index_dictionary_block_size = 512,
+        text_index_dictionary_block_frontcoding_compression = 1;
 "
 
 cat "$CUR_DIR"/data_json/ghdata_sample.json | $MY_CLICKHOUSE_CLIENT \

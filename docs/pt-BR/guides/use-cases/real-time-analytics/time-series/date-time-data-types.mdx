@@ -1,0 +1,266 @@
+---
+title: 'Tipos de dados de data e hora - séries temporais'
+sidebarTitle: 'Tipos de dados de data e hora'
+description: 'Tipos de dados de séries temporais no ClickHouse.'
+slug: /use-cases/time-series/date-time-data-types
+keywords: ['séries temporais', 'DateTime', 'DateTime64', 'Date', 'Time', 'Time64', 'tipos de dados', 'dados temporais', 'timestamp']
+show_related_blogs: true
+doc_type: 'reference'
+---
+
+Dispor de um conjunto abrangente de tipos de data e hora é essencial para gerenciar com eficiência dados de séries temporais, e o ClickHouse oferece exatamente isso.
+De representações compactas de data a timestamps de alta precisão com exatidão de nanossegundos, esses tipos foram projetados para equilibrar a eficiência de armazenamento com os requisitos práticos de diferentes aplicações de séries temporais.
+
+Seja trabalhando com dados financeiros históricos, leituras de sensores de IoT ou eventos agendados para o futuro, os tipos de data e hora do ClickHouse oferecem a flexibilidade necessária para lidar com diversos cenários de dados temporais.
+A variedade de tipos suportados permite otimizar tanto o espaço de armazenamento quanto o desempenho da consulta, mantendo a precisão exigida pelo seu caso de uso.
+
+* O tipo [`Date`](/pt-BR/reference/data-types/date) deve ser suficiente na maioria dos casos. Esse tipo requer 2 bytes para armazenar uma data e limita o intervalo a `[1970-01-01, 2149-06-06]`.
+
+* [`Date32`](/pt-BR/reference/data-types/date32) cobre um intervalo maior de datas. Ele requer 4 bytes para armazenar uma data e limita o intervalo a `[1900-01-01, 2299-12-31]`
+
+* [`DateTime`](/pt-BR/reference/data-types/datetime) armazena valores de data e hora com precisão de segundos e um intervalo de `[1970-01-01 00:00:00, 2106-02-07 06:28:15]` Ele requer 4 bytes por valor.
+
+* Para os casos em que é necessária mais precisão, [`DateTime64`](/pt-BR/reference/data-types/datetime64) pode ser usado. Isso permite armazenar data e hora com precisão de até nanossegundos, com um intervalo de `[1900-01-01 00:00:00, 2299-12-31 23:59:59.99999999]`. Ele requer 8 bytes por valor.
+
+Vamos criar uma tabela que armazena vários tipos de data:
+
+```sql
+CREATE TABLE dates
+(
+    `date` Date,
+    `wider_date` Date32,
+    `datetime` DateTime,
+    `precise_datetime` DateTime64(3),
+    `very_precise_datetime` DateTime64(9)
+)
+ENGINE = MergeTree
+ORDER BY tuple();
+```
+
+Podemos usar a função [`now()`](/pt-BR/reference/functions/regular-functions/date-time-functions#now) para retornar a hora atual e [`now64()`](/pt-BR/reference/functions/regular-functions/date-time-functions#now64) para obtê-la com a precisão especificada pelo primeiro argumento.
+
+```sql
+INSERT INTO dates 
+SELECT now(), 
+       now()::Date32 + toIntervalYear(100),
+       now(), 
+       now64(3), 
+       now64(9) + toIntervalYear(200);
+```
+
+Isso preencherá nossas colunas com valores de tempo de acordo com o tipo da coluna:
+
+```sql
+SELECT * FROM dates
+FORMAT Vertical;
+```
+
+```text
+Linha 1:
+──────
+date:                  2025-03-12
+wider_date:            2125-03-12
+datetime:              2025-03-12 11:39:07
+precise_datetime:      2025-03-12 11:39:07.196
+very_precise_datetime: 2025-03-12 11:39:07.196724000
+```
+
+<div id="time-series-time-types">
+  ## Tipos Time e Time64
+</div>
+
+Para cenários em que você precisa armazenar valores de horário sem componentes de data, o ClickHouse fornece os tipos [`Time`](/pt-BR/reference/data-types/time) e [`Time64`](/pt-BR/reference/data-types/time64), introduzidos na versão 25.6. Eles são úteis para representar agendas recorrentes, padrões diários ou situações em que faz sentido separar os componentes de data e hora.
+
+<Note>
+  Para usar `Time` e `Time64`, é necessário ativar a configuração: `SET enable_time_time64_type = 1;`
+
+  Esses tipos foram introduzidos na versão 25.6
+</Note>
+
+O tipo `Time` armazena horas, minutos e segundos com precisão de segundos. Internamente, ele é armazenado como um inteiro com sinal de 32 bits e oferece suporte a um intervalo de `[-999:59:59, 999:59:59]`, permitindo valores que excedem 24 horas. Isso pode ser útil ao acompanhar o tempo decorrido ou realizar operações aritméticas que resultem em valores fora de um único dia.
+
+Para precisão de subsegundos, `Time64` armazena o horário com segundos fracionários configuráveis como um valor Decimal64 com sinal. Ele aceita um parâmetro de precisão (0-9) para definir o número de dígitos fracionários. Valores de precisão comuns são 3 (milissegundos), 6 (microssegundos) e 9 (nanossegundos).
+
+Nem `Time` nem `Time64` oferecem suporte a fusos horários — eles representam valores puros de horário, sem contexto regional.
+
+Vamos criar uma tabela com colunas de horário:
+
+```sql
+SET enable_time_time64_type = 1;
+
+CREATE TABLE time_examples
+(
+    `event_id` UInt8,
+    `basic_time` Time,
+    `precise_time` Time64(3)
+)
+ENGINE = MergeTree
+ORDER BY event_id;
+```
+
+Podemos inserir valores de tempo usando literais de string ou valores numéricos. Para `Time`, os valores numéricos são interpretados como segundos desde 00:00:00. Para `Time64`, os valores numéricos são interpretados como segundos desde 00:00:00, com a parte fracionária interpretada de acordo com a precisão da coluna:
+
+```sql
+INSERT INTO time_examples VALUES 
+    (1, '14:30:25', '14:30:25.123'),
+    (2, 52225, 52225.456),
+    (3, '26:11:10', '26:11:10.789');  -- Valores normalizados além de 24 horas
+
+SELECT * FROM time_examples ORDER BY event_id;
+```
+
+```text
+┌─event_id─┬─basic_time─┬─precise_time─┐
+│        1 │ 14:30:25   │ 14:30:25.123 │
+│        2 │ 14:30:25   │ 14:30:25.456 │
+│        3 │ 26:11:10   │ 26:11:10.789 │
+└──────────┴────────────┴──────────────┘
+```
+
+Os valores de tempo podem ser filtrados de forma natural:
+
+```sql
+SELECT * FROM time_examples WHERE basic_time = '14:30:25';
+```
+
+<div id="time-series-timezones">
+  ## Fusos horários
+</div>
+
+Muitos casos de uso também exigem o armazenamento de fusos horários. Podemos definir o fuso horário como o último argumento dos tipos `DateTime` ou `DateTime64`:
+
+```sql
+CREATE TABLE dtz
+(
+    `id` Int8,
+    `dt_1` DateTime('Europe/Berlin'),
+    `dt_2` DateTime,
+    `dt64_1` DateTime64(9, 'Europe/Berlin'),
+    `dt64_2` DateTime64(9)
+)
+ENGINE = MergeTree
+ORDER BY id;
+```
+
+Após definir um fuso horário em nosso DDL, agora podemos inserir horários usando diferentes fusos horários:
+
+```sql
+INSERT INTO dtz 
+SELECT 1, 
+       toDateTime('2022-12-12 12:13:14', 'America/New_York'),
+       toDateTime('2022-12-12 12:13:14', 'America/New_York'),
+       toDateTime64('2022-12-12 12:13:14.123456789', 9, 'America/New_York'),
+       toDateTime64('2022-12-12 12:13:14.123456789', 9, 'America/New_York')
+UNION ALL
+SELECT 2, 
+       toDateTime('2022-12-12 12:13:15'),
+       toDateTime('2022-12-12 12:13:15'),
+       toDateTime64('2022-12-12 12:13:15.123456789', 9),
+       toDateTime64('2022-12-12 12:13:15.123456789', 9);
+```
+
+E agora vamos dar uma olhada no que há na nossa tabela:
+
+```sql
+SELECT dt_1, dt64_1, dt_2, dt64_2
+FROM dtz
+FORMAT Vertical;
+```
+
+```text
+Linha 1:
+──────
+dt_1:   2022-12-12 18:13:14
+dt64_1: 2022-12-12 18:13:14.123456789
+dt_2:   2022-12-12 17:13:14
+dt64_2: 2022-12-12 17:13:14.123456789
+
+Linha 2:
+──────
+dt_1:   2022-12-12 13:13:15
+dt64_1: 2022-12-12 13:13:15.123456789
+dt_2:   2022-12-12 12:13:15
+dt64_2: 2022-12-12 12:13:15.123456789
+```
+
+Na primeira linha, inserimos todos os valores usando o fuso horário `America/New_York`.
+
+* `dt_1` e `dt64_1` são convertidos automaticamente para `Europe/Berlin` no momento da consulta.
+* `dt_2` e `dt64_2` não tinham um fuso horário especificado, então usam o fuso horário local do servidor, que, neste caso, é `Europe/London`.
+
+Na segunda linha, inserimos todos os valores sem especificar um fuso horário, então o fuso horário local do servidor foi usado.
+Assim como na primeira linha, `dt_1` e `dt64_1` são convertidos para `Europe/Berlin`, enquanto `dt_2` e `dt64_2` usam o fuso horário local do servidor.
+
+<div id="time-series-date-time-functions">
+  ## Funções de data e hora
+</div>
+
+O ClickHouse também conta com um conjunto de funções que nos permite converter entre diferentes tipos de dados.
+
+Por exemplo, podemos usar [`toDate`](/pt-BR/reference/functions/regular-functions/type-conversion-functions#toDate) para converter um valor `DateTime` no tipo `Date`:
+
+```sql
+SELECT
+    now() AS current_time,
+    toTypeName(current_time),
+    toDate(current_time) AS date_only,
+    toTypeName(date_only)
+FORMAT Vertical;    
+```
+
+```text
+Linha 1:
+──────
+current_time:             2025-03-12 12:32:54
+toTypeName(current_time): DateTime
+date_only:                2025-03-12
+toTypeName(date_only):    Date
+```
+
+Podemos usar [`toDateTime64`](/pt-BR/reference/functions/regular-functions/type-conversion-functions#toDateTime64) para converter `DateTime` para `DateTime64`:
+
+```sql
+SELECT
+    now() AS current_time,
+    toTypeName(current_time),
+    toDateTime64(current_time, 3) AS date_only,
+    toTypeName(date_only)
+FORMAT Vertical;
+```
+
+```text
+Linha 1:
+──────
+current_time:             2025-03-12 12:35:01
+toTypeName(current_time): DateTime
+date_only:                2025-03-12 12:35:01.000
+toTypeName(date_only):    DateTime64(3)
+```
+
+E podemos usar [`toDateTime`](/pt-BR/reference/functions/regular-functions/type-conversion-functions#toDateTime) para converter `Date` ou `DateTime64` novamente em `DateTime`:
+
+```sql
+SELECT
+    now64() AS current_time,
+    toTypeName(current_time),
+    toDateTime(current_time) AS date_time1,
+    toTypeName(date_time1),
+    today() AS current_date,
+    toTypeName(current_date),
+    toDateTime(current_date) AS date_time2,
+    toTypeName(date_time2)
+FORMAT Vertical;
+```
+
+```text
+Linha 1:
+──────
+current_time:             2025-03-12 12:41:00.598
+toTypeName(current_time): DateTime64(3)
+date_time1:               2025-03-12 12:41:00
+toTypeName(date_time1):   DateTime
+current_date:             2025-03-12
+toTypeName(current_date): Date
+date_time2:               2025-03-12 00:00:00
+toTypeName(date_time2):   DateTime
+```

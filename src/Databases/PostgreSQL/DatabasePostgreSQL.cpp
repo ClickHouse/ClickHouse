@@ -6,6 +6,7 @@
 
 #include <Storages/NamedCollectionsHelpers.h>
 #include <Storages/StoragePostgreSQL.h>
+#include <Storages/PostgreSQL/PostgreSQLSettings.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/evaluateConstantExpression.h>
@@ -32,11 +33,15 @@ namespace DB
 namespace Setting
 {
     extern const SettingsUInt64 glob_expansion_max_elements;
-    extern const SettingsUInt64 postgresql_connection_pool_size;
-    extern const SettingsUInt64 postgresql_connection_pool_wait_timeout;
-    extern const SettingsUInt64 postgresql_connection_pool_retries;
-    extern const SettingsBool postgresql_connection_pool_auto_close_connection;
-    extern const SettingsUInt64 postgresql_connection_attempt_timeout;
+}
+
+namespace PostgreSQLSetting
+{
+    extern const PostgreSQLSettingsUInt64 postgresql_connection_pool_size;
+    extern const PostgreSQLSettingsUInt64 postgresql_connection_pool_wait_timeout;
+    extern const PostgreSQLSettingsUInt64 postgresql_connection_pool_retries;
+    extern const PostgreSQLSettingsBool postgresql_connection_pool_auto_close_connection;
+    extern const PostgreSQLSettingsUInt64 postgresql_connection_attempt_timeout;
 }
 
 namespace ErrorCodes
@@ -213,7 +218,7 @@ StoragePtr DatabasePostgreSQL::fetchTable(const String & table_name, ContextPtr 
             return StoragePtr{};
 
         auto storage = std::make_shared<StoragePostgreSQL>(
-                StorageID(database_name, table_name), pool, table_name,
+                StorageID(database_name, table_name), pool, TableNameOrQuery(TableNameOrQuery::Type::TABLE, table_name),
                 ColumnsDescription{columns_info->columns}, ConstraintsDescription{}, String{},
                 context_, configuration.schema, configuration.on_conflict);
 
@@ -499,6 +504,7 @@ ASTPtr DatabasePostgreSQL::getCreateTableQueryImpl(const String & table_name, Co
 }
 
 
+void registerDatabasePostgreSQL(DatabaseFactory & factory);
 void registerDatabasePostgreSQL(DatabaseFactory & factory)
 {
     auto create_fn = [](const DatabaseFactory::Arguments & args)
@@ -515,9 +521,14 @@ void registerDatabasePostgreSQL(DatabaseFactory & factory)
         auto use_table_cache = false;
         StoragePostgreSQL::Configuration configuration;
 
+        /// The connection-pool parameters are seeded from the query-level `postgresql_*` settings
+        /// (preserving the historical behaviour); a named collection may override them.
+        PostgreSQLSettings postgresql_settings;
+        postgresql_settings.loadFromQueryContext(*args.context);
+
         if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, args.context))
         {
-            configuration = StoragePostgreSQL::processNamedCollectionResult(*named_collection, args.context, false);
+            configuration = StoragePostgreSQL::processNamedCollectionResult(*named_collection, &postgresql_settings, args.context, false);
             use_table_cache = named_collection->getOrDefault<UInt64>("use_table_cache", 0);
         }
         else
@@ -558,14 +569,16 @@ void registerDatabasePostgreSQL(DatabaseFactory & factory)
                 use_table_cache = safeGetLiteralValue<UInt8>(engine_args[5], engine_name);
         }
 
-        const auto & settings = args.context->getSettingsRef();
+        if (!postgresql_settings[PostgreSQLSetting::postgresql_connection_pool_size])
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "postgresql_connection_pool_size cannot be zero.");
+
         auto pool = std::make_shared<postgres::PoolWithFailover>(
             configuration,
-            settings[Setting::postgresql_connection_pool_size],
-            settings[Setting::postgresql_connection_pool_wait_timeout],
-            settings[Setting::postgresql_connection_pool_retries],
-            settings[Setting::postgresql_connection_pool_auto_close_connection],
-            settings[Setting::postgresql_connection_attempt_timeout]);
+            postgresql_settings[PostgreSQLSetting::postgresql_connection_pool_size],
+            postgresql_settings[PostgreSQLSetting::postgresql_connection_pool_wait_timeout],
+            postgresql_settings[PostgreSQLSetting::postgresql_connection_pool_retries],
+            postgresql_settings[PostgreSQLSetting::postgresql_connection_pool_auto_close_connection],
+            postgresql_settings[PostgreSQLSetting::postgresql_connection_attempt_timeout]);
 
         return std::make_shared<DatabasePostgreSQL>(
             args.context,
@@ -577,7 +590,153 @@ void registerDatabasePostgreSQL(DatabaseFactory & factory)
             use_table_cache,
             args.uuid);
     };
-    factory.registerDatabase("PostgreSQL", create_fn, {.supports_arguments = true, .is_external = true});
+    factory.registerDatabase("PostgreSQL", create_fn, {
+        .supports_arguments = true,
+        .is_external = true,
+        .source_access_type = AccessTypeObjects::Source::POSTGRES,
+    }, Documentation{
+        .description = R"DOCS_MD(
+Allows to connect to databases on a remote [PostgreSQL](https://www.postgresql.org) server. Supports read and write operations (`SELECT` and `INSERT` queries) to exchange data between ClickHouse and PostgreSQL.
+
+Gives the real-time access to table list and table structure from remote PostgreSQL with the help of `SHOW TABLES` and `DESCRIBE TABLE` queries.
+
+Supports table structure modifications (`ALTER TABLE ... ADD|DROP COLUMN`). If `use_table_cache` parameter (see the Engine Parameters below) is set to `1`, the table structure is cached and not checked for being modified, but can be updated with `DETACH` and `ATTACH` queries.
+
+## Creating a database {#creating-a-database}
+
+```sql
+CREATE DATABASE test_database
+ENGINE = PostgreSQL('host:port', 'database', 'user', 'password'[, `schema`, `use_table_cache`]);
+```
+
+**Engine Parameters**
+
+- `host:port` — PostgreSQL server address.
+- `database` — Remote database name.
+- `user` — PostgreSQL user.
+- `password` — User password.
+- `schema` — PostgreSQL schema.
+- `use_table_cache` —  Defines if the database table structure is cached or not. Optional. Default value: `0`.
+
+## Data types support {#data_types-support}
+
+| PostgreSQL       | ClickHouse                                                   |
+|------------------|--------------------------------------------------------------|
+| DATE             | [Date](../../sql-reference/data-types/date.md)               |
+| TIMESTAMP        | [DateTime](../../sql-reference/data-types/datetime.md)       |
+| REAL             | [Float32](../../sql-reference/data-types/float.md)           |
+| DOUBLE           | [Float64](../../sql-reference/data-types/float.md)           |
+| DECIMAL, NUMERIC | [Decimal](../../sql-reference/data-types/decimal.md) (see note below) |
+| SMALLINT         | [Int16](../../sql-reference/data-types/int-uint.md)          |
+| INTEGER          | [Int32](../../sql-reference/data-types/int-uint.md)          |
+| BIGINT           | [Int64](../../sql-reference/data-types/int-uint.md)          |
+| SERIAL           | [UInt32](../../sql-reference/data-types/int-uint.md)         |
+| BIGSERIAL        | [UInt64](../../sql-reference/data-types/int-uint.md)         |
+| TEXT, CHAR       | [String](../../sql-reference/data-types/string.md)           |
+| INTEGER          | Nullable([Int32](../../sql-reference/data-types/int-uint.md))|
+| ARRAY            | [Array](../../sql-reference/data-types/array.md)             |
+
+:::note
+PostgreSQL `numeric(p, 0)` with a precision `p` greater than 76 (the maximum supported by `Decimal256`) — for example `numeric(78, 0)`, commonly used to store 256-bit integers — is mapped to [`Int256`](../../sql-reference/data-types/int-uint.md) instead of `Decimal`. Values that do not fit into the `Int256` range are rejected with an error.
+:::
+
+## Examples of use {#examples-of-use}
+
+Database in ClickHouse, exchanging data with the PostgreSQL server:
+
+```sql
+CREATE DATABASE test_database
+ENGINE = PostgreSQL('postgres1:5432', 'test_database', 'postgres', 'mysecretpassword', 'schema_name',1);
+```
+
+```sql
+SHOW DATABASES;
+```
+
+```text
+┌─name──────────┐
+│ default       │
+│ test_database │
+│ system        │
+└───────────────┘
+```
+
+```sql
+SHOW TABLES FROM test_database;
+```
+
+```text
+┌─name───────┐
+│ test_table │
+└────────────┘
+```
+
+Reading data from the PostgreSQL table:
+
+```sql
+SELECT * FROM test_database.test_table;
+```
+
+```text
+┌─id─┬─value─┐
+│  1 │     2 │
+└────┴───────┘
+```
+
+Writing data to the PostgreSQL table:
+
+```sql
+INSERT INTO test_database.test_table VALUES (3,4);
+SELECT * FROM test_database.test_table;
+```
+
+```text
+┌─int_id─┬─value─┐
+│      1 │     2 │
+│      3 │     4 │
+└────────┴───────┘
+```
+
+Consider the table structure was modified in PostgreSQL:
+
+```sql
+postgre> ALTER TABLE test_table ADD COLUMN data Text
+```
+
+As the `use_table_cache` parameter was set to `1` when the database was created, the table structure in ClickHouse was cached and therefore not modified:
+
+```sql
+DESCRIBE TABLE test_database.test_table;
+```
+```text
+┌─name───┬─type──────────────┐
+│ id     │ Nullable(Integer) │
+│ value  │ Nullable(Integer) │
+└────────┴───────────────────┘
+```
+
+After detaching the table and attaching it again, the structure was updated:
+
+```sql
+DETACH TABLE test_database.test_table;
+ATTACH TABLE test_database.test_table;
+DESCRIBE TABLE test_database.test_table;
+```
+```text
+┌─name───┬─type──────────────┐
+│ id     │ Nullable(Integer) │
+│ value  │ Nullable(Integer) │
+│ data   │ Nullable(String)  │
+└────────┴───────────────────┘
+```
+
+## Related content {#related-content}
+
+- Blog: [ClickHouse and PostgreSQL - a match made in data heaven - part 1](https://clickhouse.com/blog/migrating-data-between-clickhouse-postgres)
+- Blog: [ClickHouse and PostgreSQL - a Match Made in Data Heaven - part 2](https://clickhouse.com/blog/migrating-data-between-clickhouse-postgres-part-2)
+)DOCS_MD",
+        .syntax = "ENGINE = PostgreSQL('host:port', 'database', 'user', 'password'[, schema, use_table_cache])",
+        .related = {"MaterializedPostgreSQL", "MySQL"}});
 }
 }
 

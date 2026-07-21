@@ -1,0 +1,62 @@
+---
+description: 'ClickHouse Playground では、サーバーやクラスターをセットアップしなくても、
+  クエリをすぐに実行して ClickHouse を試せます。'
+keywords: ['clickhouse', 'playground', 'getting', 'started', 'docs']
+sidebarTitle: 'ClickHouse playground'
+slug: /getting-started/playground
+title: 'ClickHouse playground'
+doc_type: 'guide'
+---
+
+[ClickHouse Playground](https://sql.clickhouse.com) では、サーバーやクラスターをセットアップしなくても、クエリをすぐに実行して ClickHouse を試せます。
+Playground では、いくつかのサンプルデータセットを利用できます。
+
+Playground に対しては、[curl](https://curl.haxx.se) や [wget](https://www.gnu.org/software/wget/) などの任意の HTTP クライアントを使ってクエリを送信できます。また、[JDBC](/ja/concepts/features/interfaces/jdbc) または [ODBC](/ja/concepts/features/interfaces/odbc) ドライバーを使用して接続を設定することもできます。ClickHouse をサポートするソフトウェア製品の詳細は、[こちら](/ja/integrations/home) を参照してください。
+
+<div id="credentials">
+  ## 認証情報
+</div>
+
+| パラメータ             | 値                                  |
+| :---------------- | :--------------------------------- |
+| HTTPS エンドポイント     | `https://play.clickhouse.com:443/` |
+| ネイティブ TCP エンドポイント | `play.clickhouse.com:9440`         |
+| ユーザー              | `explorer` または `play`              |
+| パスワード             |  (空欄)                              |
+
+<div id="limitations">
+  ## 制限事項
+</div>
+
+クエリは読み取り専用ユーザーとして実行されるため、いくつかの制限があります。
+
+* DDLクエリは実行できません
+* INSERTクエリは実行できません
+
+このサービスには、使用量に関するクォータも設定されています。
+
+<div id="examples">
+  ## 例
+</div>
+
+`curl` を使った HTTPS エンドポイントの例：
+
+```bash
+curl "https://play.clickhouse.com/?user=explorer" --data-binary "SELECT 'Play ClickHouse'"
+```
+
+[CLI](/ja/concepts/features/interfaces/cli) を使用した TCP エンドポイントの例:
+
+```bash
+clickhouse client --secure --host play.clickhouse.com --user explorer
+```
+
+<div id="specifications">
+  ## Playground の仕様
+</div>
+
+ClickHouse Playground は、以下の仕様で稼働しています。
+
+* 米国中部リージョン (US-Central-1) の Google Cloud (GCE) 上でホスト
+* 3 レプリカ構成
+* ストレージは 256 GiB、各レプリカに 59 基の仮想 CPU

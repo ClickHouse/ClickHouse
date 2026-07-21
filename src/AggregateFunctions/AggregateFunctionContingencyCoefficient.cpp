@@ -63,6 +63,7 @@ struct ContingencyWindowData : CrossTabPhiSquaredWindowData
 
 }
 
+void registerAggregateFunctionContingency(AggregateFunctionFactory & factory);
 void registerAggregateFunctionContingency(AggregateFunctionFactory & factory)
 {
     FunctionDocumentation::Description description = R"(

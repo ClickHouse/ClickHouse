@@ -1,4 +1,5 @@
 #include <Storages/System/StorageSystemDroppedTables.h>
+#include <Storages/System/SystemTableSourceRegistry.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -7,6 +8,9 @@
 #include <Columns/ColumnsNumber.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <base/types.h>
+#if CLICKHOUSE_CLOUD
+#include <Interpreters/SharedDatabaseCatalog.h>
+#endif
 
 
 namespace DB
@@ -61,3 +65,6 @@ void StorageSystemDroppedTables::fillData(MutableColumns & res_columns, ContextP
 }
 
 }
+
+/// Register the source file of this system table for `system.documentation`.
+namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemDroppedTables) }

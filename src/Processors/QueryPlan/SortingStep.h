@@ -8,10 +8,21 @@
 namespace DB
 {
 
+class QueryPipelineProcessorsCollector;
+
 /// Sort data stream
 class SortingStep : public ITransformingStep
 {
 public:
+
+    enum class SortingStage : uint8_t
+    {
+        Scatter = 0,
+        Sort = 1,
+        MergeStreams = 2,
+        FinishSort = 3,
+    };
+
     enum class Type : uint8_t
     {
         /// Performs a complete sorting operation and returns a single fully ordered data stream
@@ -83,10 +94,9 @@ public:
     SortingStep(
         const SharedHeader & input_header,
         SortDescription sort_description_,
-        size_t max_block_size_,
+        const Settings & settings_,
         UInt64 limit_ = 0,
-        bool always_read_till_end_ = false
-    );
+        bool always_read_till_end_ = false);
 
     String getName() const override { return "Sorting"; }
 
@@ -107,6 +117,9 @@ public:
 
     void convertToFinishSorting(SortDescription prefix_description, bool use_buffering_, bool apply_virtual_row_conversions_);
 
+    void enableBuffering() { use_buffering = true; }
+    bool getUseBuffering() const { return use_buffering; }
+
     Type getType() const { return type; }
     const Settings & getSettings() const { return sort_settings; }
 
@@ -126,12 +139,26 @@ public:
 
     static QueryPlanStepPtr deserialize(Deserialization & ctx);
 
+    QueryPlanStepPtr clone() const override;
+
     bool supportsDataflowStatisticsCollection() const override { return true; }
     void setTopKThresholdTracker(TopKThresholdTrackerPtr threshold_tracker_) { threshold_tracker = threshold_tracker_; }
+
+    void updateLimitByHint(Names limit_by_columns_, UInt64 limit_by_group_length_);
+
+    std::vector<size_t> getStepGroups() const override;
+    String getStepGroupName(size_t group) const override;
+
+    void describePipeline(FormatSettings & settings) const override;
 
 private:
     void scatterByPartitionIfNeeded(QueryPipelineBuilder& pipeline);
     void updateOutputHeader() override;
+
+    /// Adds a per-stream `LimitByTransform` before sorted streams are merged into one.
+    /// This reduces rows processed by the final merge and later pipeline steps.
+    /// It is applied only when `LIMIT BY` keys are a prefix of `stream_sort_desc`.
+    void addPerStreamLimitByIfNeeded(QueryPipelineBuilder & pipeline, const SortDescription & stream_sort_desc);
 
     static void mergeSorting(
         QueryPipelineBuilder & pipeline,
@@ -152,6 +179,7 @@ private:
         QueryPipelineBuilder & pipeline,
         const SortDescription & result_sort_desc,
         UInt64 limit_,
+        QueryPipelineProcessorsCollector & collector,
         bool skip_partial_sort = false);
 
     Type type;
@@ -172,6 +200,16 @@ private:
     TopKThresholdTrackerPtr threshold_tracker;
 
     Settings sort_settings;
+
+    /// See `pushLimitByIntoSort`. Empty means no hint.
+    Names limit_by_columns;
+    UInt64 limit_by_group_length = 0;
+
+    Processors scatter_stage;
+    Processors sorting_stage;
+    Processors merge_streams;
+    Processors finalizing;
+
 };
 
 }

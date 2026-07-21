@@ -61,6 +61,10 @@ public:
       */
     const ColumnIdentifier & createColumnIdentifier(const NameAndTypePair & column, const QueryTreeNodePtr & column_source_node);
 
+    /** Create column identifier for column and column source, or return existing one if already registered.
+      */
+    const ColumnIdentifier & createColumnIdentifierOrGet(const NameAndTypePair & column, const QueryTreeNodePtr & column_source_node);
+
     /// Check if context has column identifier
     bool hasColumnIdentifier(const ColumnIdentifier & column_identifier);
 
@@ -83,8 +87,12 @@ public:
 
     const FiltersForTableExpressionMap filters_for_table_expressions;
 
+    /// Generate a unique integer id, used to disambiguate temporary table expressions
+    size_t nextUniqueId() { return next_unique_id++; }
+
 private:
     std::unordered_set<ColumnIdentifier> column_identifiers;
+    size_t next_unique_id = 0;
 
     /// Table expression node to data map for correlated columns sources
     RawTableExpressionDataMap shared_table_expression_data;

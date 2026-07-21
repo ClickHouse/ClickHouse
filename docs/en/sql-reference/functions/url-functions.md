@@ -6,8 +6,6 @@ title: 'Functions for working with URLs'
 doc_type: 'reference'
 ---
 
-# Functions for working with URLs
-
 ## Overview {#overview}
 
 :::note

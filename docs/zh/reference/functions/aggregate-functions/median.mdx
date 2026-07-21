@@ -1,0 +1,44 @@
+---
+description: '`median*` 函数是对应 `quantile*` 函数的别名。它们用于计算数值样本的中位数。'
+slug: /sql-reference/aggregate-functions/reference/median
+title: 'median'
+doc_type: 'reference'
+---
+
+`median*` 函数是对应 `quantile*` 函数的别名。它们用于计算数值样本的中位数。
+
+函数：
+
+* `median` — [quantile](/zh/reference/functions/aggregate-functions/quantile) 的别名。
+* `medianDeterministic` — [quantileDeterministic](/zh/reference/functions/aggregate-functions/quantileDeterministic) 的别名。
+* `medianExact` — [quantileExact](/zh/reference/functions/aggregate-functions/quantileExact) 的别名。
+* `medianExactWeighted` — [quantileExactWeighted](/zh/reference/functions/aggregate-functions/quantileExactWeighted) 的别名。
+* `medianTiming` — [quantileTiming](/zh/reference/functions/aggregate-functions/quantileTiming) 的别名。
+* `medianTimingWeighted` — [quantileTimingWeighted](/zh/reference/functions/aggregate-functions/quantileTimingWeighted) 的别名。
+* `medianTDigest` — [quantileTDigest](/zh/reference/functions/aggregate-functions/quantileTDigest) 的别名。
+* `medianTDigestWeighted` — [quantileTDigestWeighted](/zh/reference/functions/aggregate-functions/quantileTDigestWeighted) 的别名。
+* `medianBFloat16` — [quantileBFloat16](/zh/reference/functions/aggregate-functions/quantileBFloat16) 的别名。
+* `medianDD` — [quantileDD](/zh/reference/functions/aggregate-functions/quantileddsketch) 的别名。
+
+**示例**
+
+输入表：
+
+```text
+┌─val─┐
+│   1 │
+│   1 │
+│   2 │
+│   3 │
+└─────┘
+```
+
+```sql title="Query"
+SELECT medianDeterministic(val, 1) FROM t;
+```
+
+```text title="Response"
+┌─medianDeterministic(val, 1)─┐
+│                         1.5 │
+└─────────────────────────────┘
+```

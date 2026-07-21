@@ -1,0 +1,103 @@
+---
+slug: /use-cases/observability/clickstack/search
+title: 'Pesquisa no ClickStack'
+sidebarTitle: 'Pesquisa'
+description: 'Pesquisa no ClickStack'
+doc_type: 'guide'
+keywords: ['clickstack', 'pesquisa', 'logs', 'observabilidade', 'pesquisa de texto completo']
+---
+
+import { Image } from "/snippets/pt-BR/components/Image.jsx";
+
+import Tagging from '/snippets/pt-BR/_clickstack_tagging.mdx';
+
+O ClickStack permite fazer pesquisa de texto completo nos seus eventos (logs e traces). Você pode começar a pesquisar apenas digitando palavras-chave que correspondam aos seus eventos. Por exemplo, se o seu log contiver &quot;Error&quot;, você poderá encontrá-lo apenas digitando &quot;Error&quot; na barra de pesquisa.
+
+Essa mesma sintaxe de busca também é usada para filtrar eventos em dashboards e gráficos.
+
+<div id="search-features">
+  ## Funcionalidades de busca
+</div>
+
+<div id="natural-language-syntax">
+  ### Sintaxe de busca em linguagem natural
+</div>
+
+* As buscas não diferenciam maiúsculas de minúsculas
+* Por padrão, as buscas correspondem a palavras inteiras (ex.: `Error` corresponderá a `Error here`
+  mas não a `Errors here`). Você pode cercar uma palavra com curingas para corresponder a
+  palavras parciais (ex.: `*Error*` corresponderá a `AnyError` e `AnyErrors`)
+* Os termos de busca são pesquisados em qualquer ordem (ex.: `Hello World` corresponderá a logs que
+  contenham `Hello World` e `World Hello`)
+* Você pode excluir palavras-chave usando `NOT` ou `-` (ex.: `Error NOT Exception` ou
+  `Error -Exception`)
+* Você pode usar `AND` e `OR` para combinar várias palavras-chave (ex.:
+  `Error OR Exception`)
+* Correspondências exatas podem ser feitas com aspas duplas (ex.: `"Error tests not found"`)
+
+<Image img="/images/use-cases/observability/hyperdx-27.webp" alt="Pesquisa" size="md" />
+
+<div id="column-search">
+  #### Pesquisa por coluna/propriedade
+</div>
+
+* Você pode pesquisar colunas e propriedades em JSON/map usando `column:value` (ex. `level:Error`,
+  `service:app`)
+* Você pode pesquisar uma faixa de valores usando operadores de comparação (`>`, `<`,
+  `>=`, `<=`) (ex. `Duration:>1000`)
+* Você pode pesquisar a existência de uma propriedade usando `property:*` (ex.
+  `duration:*`)
+
+<div id="time-input">
+  ### Campo de tempo
+</div>
+
+* O campo de tempo aceita entradas em linguagem natural (ex.: `1 hour ago`, `yesterday`,
+  `last week`)
+* Especificar um único ponto no tempo fará com que a pesquisa seja realizada desse momento
+  até agora.
+* Ao pesquisar, o intervalo de tempo sempre será convertido para o intervalo interpretado para
+  facilitar a depuração de consultas de tempo.
+* Você também pode selecionar uma barra do histograma para ampliar um intervalo de tempo específico.
+
+<div id="sql-syntax">
+  ### Sintaxe de busca SQL
+</div>
+
+Opcionalmente, você pode alternar os campos de busca para o modo SQL. Nesse modo, eles aceitam qualquer
+cláusula WHERE SQL válida para pesquisa. Isso é útil para consultas complexas que não podem ser
+expressas na sintaxe do Lucene.
+
+<div id="select-statement">
+  ### Instrução SELECT
+</div>
+
+Para especificar as colunas a serem exibidas nos resultados da pesquisa, você pode usar o campo `SELECT`.
+Trata-se de uma expressão SQL SELECT para definir as colunas a serem selecionadas na página de pesquisa.
+Aliases ainda não são compatíveis no momento (ex.: você não pode usar `column as "alias"`).
+
+<div id="saved-searches">
+  ## Pesquisas salvas
+</div>
+
+Você pode salvar suas pesquisas para acessá-las rapidamente depois. Depois de salvas, elas aparecerão na página `Saved Searches`, facilitando revisitar pesquisas usadas com frequência sem precisar recriá-las.
+
+<Image img="/images/use-cases/observability/clickstack-saved-search-listing.webp" alt="Página de listagem de pesquisas salvas" size="lg" />
+
+Para salvar uma pesquisa, basta configurar sua pesquisa e clicar no botão de salvar. Você pode dar à pesquisa salva um nome descritivo para ajudar a identificá-la depois.
+
+<Image img="/images/use-cases/observability/clickstack-saved-search.webp" alt="Salvando uma pesquisa" size="md" />
+
+<div id="alerts-on-saved-searches">
+  ### Adicionando alertas a pesquisas salvas
+</div>
+
+Pesquisas salvas podem ser monitoradas com alertas para notificar você quando determinadas condições forem atendidas. Você pode configurar alertas para serem disparados quando o número de eventos que correspondem à sua pesquisa salva exceder ou ficar abaixo de um limite especificado.
+
+Para mais informações sobre como criar e configurar alertas, consulte a [documentação de alertas](/pt-BR/clickstack/features/alerts).
+
+<div id="tagging">
+  ### Marcação com tags
+</div>
+
+<Tagging />

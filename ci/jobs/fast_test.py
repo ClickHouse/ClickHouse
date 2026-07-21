@@ -1,7 +1,6 @@
 import argparse
 import os
 import platform
-import time
 import sys
 from pathlib import Path
 
@@ -15,7 +14,7 @@ from ci.jobs.scripts.functional_tests_results import FTResultsProcessor
 from ci.praktika.info import Info
 from ci.praktika.result import Result
 from ci.praktika.settings import Settings
-from ci.praktika.utils import ContextManager, MetaClasses, Shell, Utils
+from ci.praktika.utils import MetaClasses, Shell, Utils
 
 current_directory = Utils.cwd()
 build_dir = f"{current_directory}/ci/tmp/fast_build"
@@ -32,16 +31,13 @@ def clone_submodules():
         "contrib/zlib-ng",
         "contrib/libxml2",
         "contrib/fmtlib",
-        "contrib/base64",
         "contrib/cctz",
-        "contrib/libcpuid",
         "contrib/libdivide",
         "contrib/double-conversion",
         "contrib/llvm-project",
         "contrib/lz4",
         "contrib/zstd",
-        "contrib/fastops",
-        "contrib/rapidjson",
+        "contrib/zxc",
         "contrib/re2",
         "contrib/sparsehash-c11",
         "contrib/croaring",
@@ -57,7 +53,6 @@ def clone_submodules():
         "contrib/morton-nd",
         "contrib/xxHash",
         "contrib/simdjson",
-        "contrib/simdcomp",
         "contrib/liburing",
         "contrib/libfiu",
         "contrib/yaml-cpp",
@@ -135,7 +130,10 @@ class JobStages(metaclass=MetaClasses.WithIter):
 
 def _load_darwin_skip_tests():
     skip_file = Path(__file__).resolve().parent.parent / "defs" / "darwin.skip"
-    return tuple(line for line in skip_file.read_text().splitlines() if line.strip())
+    return tuple(
+        line
+        for line in skip_file.read_text().splitlines()
+        if line.strip() and not line.lstrip().startswith("#"))
 
 
 def parse_args():
@@ -153,7 +151,6 @@ def parse_args():
         nargs="+",
         action="extend")
     parser.add_argument("--param", help="Optional custom job start stage", default=None)
-    parser.add_argument("--set-status-success", help="Forcefully set a green status", action="store_true")
     return parser.parse_args()
 
 def main():
@@ -172,6 +169,7 @@ def main():
         stages.insert(0, stage)
 
     clickhouse_bin_path = Path(f"{build_dir}/programs/clickhouse")
+    clickhouse_se_path = Path(f"{build_dir}/programs/self-extracting/clickhouse")
 
     for path in [
         Path(temp_dir) / "clickhouse",
@@ -184,9 +182,19 @@ def main():
 
             stages = [JobStages.CONFIG, JobStages.TEST]
             resolved_clickhouse_bin_path = clickhouse_bin_path.resolve()
-            Utils.link(resolved_clickhouse_bin_path, resolved_clickhouse_bin_path.parent / "clickhouse-server")
-            Utils.link(resolved_clickhouse_bin_path, resolved_clickhouse_bin_path.parent / "clickhouse-client")
-            Utils.link(resolved_clickhouse_bin_path, resolved_clickhouse_bin_path.parent / "clickhouse-local")
+            for tool in (
+                "clickhouse-server",
+                "clickhouse-client",
+                "clickhouse-local",
+                "clickhouse-benchmark",
+                "clickhouse-compressor",
+                "clickhouse-disks",
+                "clickhouse-extract-from-config",
+                "clickhouse-format",
+                "clickhouse-obfuscator",
+                "clickhouse-su",
+            ):
+                Utils.link(resolved_clickhouse_bin_path, resolved_clickhouse_bin_path.parent / tool)
             Shell.check(f"chmod +x {resolved_clickhouse_bin_path}", strict=True)
 
             break
@@ -204,6 +212,10 @@ def main():
     os.environ["SCCACHE_ERROR_LOG"] = f"{build_dir}/sccache.log"
     os.environ["SCCACHE_LOG"] = "info"
     info = Info()
+    # PR builds must not pollute the shared sccache bucket; only master/release
+    # builds (pr_number == 0) are allowed to write entries.
+    if info.pr_number > 0:
+        os.environ["SCCACHE_S3_READ_ONLY"] = "true"
     if info.is_local_run:
         print("NOTE: It's a local run")
         if os.environ.get("SCCACHE_ENDPOINT"):
@@ -258,8 +270,8 @@ def main():
                 -DENABLE_TESTS=0 -DENABLE_UTILS=0 -DENABLE_THINLTO=0 -DENABLE_NURAFT=1 -DENABLE_SIMDJSON=1 \
                 -DENABLE_LEXER_TEST=1 \
                 -DBUILD_STRIPPED_BINARY=1 \
+                -DENABLE_CLICKHOUSE_SELF_EXTRACTING=1 \
                 -DENABLE_JEMALLOC=1 -DENABLE_LIBURING=1 -DENABLE_YAML_CPP=1 -DENABLE_RUST=1 \
-                -DUSE_SYSTEM_COMPILER_RT=1 \
                 -B {build_dir_normalized}",
                 workdir=repo_path_normalized,
             )
@@ -280,13 +292,20 @@ def main():
         res = results[-1].is_ok()
 
     if res and JobStages.BUILD in stages:
+        se_check_path = Path(build_dir) / "clickhouse_se_check"
         commands = [
             "sccache --show-stats",
             "clickhouse-client --version",
+            # Verify the self-extracting bundle works: copy it so the first-run
+            # in-place decompression does not corrupt the artifact we will upload,
+            # then run --version to trigger extraction and confirm it produces output.
+            f"cp {clickhouse_se_path} {se_check_path}",
+            f"chmod +x {se_check_path}",
+            f"{se_check_path} --version",
         ]
         results.append(
             Result.from_commands_run(
-                name="Check and Compress binary",
+                name="Check binary",
                 command=commands,
                 workdir=build_dir_normalized,
             )
@@ -346,17 +365,12 @@ def main():
             test_pattern = "|".join(args.test)
             fast_test_command += f" -- '{test_pattern}'"
 
-        res = CH.run_test(fast_test_command)
+        test_exit_code = CH.run_test(fast_test_command)
 
-        test_results = FTResultsProcessor(wd=Settings.OUTPUT_DIR).run()
-        if not res:
-            test_results.results.append(
-                Result.create_from(
-                    name="clickhouse-test",
-                    status=Result.Status.FAIL,
-                    info="clickhouse-test error",
-                )
-            )
+        test_results = FTResultsProcessor(wd=Settings.OUTPUT_DIR).run(
+            runner_exit_code=test_exit_code,
+        )
+        if test_exit_code != 0:
             attach_debug = True
 
         results.append(test_results)
@@ -365,17 +379,16 @@ def main():
             attach_debug = True
         job_info = results[-1].info
 
+    if clickhouse_se_path.is_file():
+        # do not reupload clickhouse binary for non-building jobs (e.g. darwin tests)
+        attach_files.append(clickhouse_se_path)
     if attach_debug:
-        attach_files += [
-            clickhouse_bin_path,
-            *CH.prepare_logs(info=info, all=True),
-        ]
+        attach_files.extend(CH.prepare_logs(info=info, all=True))
 
     CH.terminate(force=True)
 
-    status = Result.Status.OK if args.set_status_success else ""
     Result.create_from(
-        results=results, status=status, stopwatch=stop_watch, files=attach_files, info=job_info
+        results=results, stopwatch=stop_watch, files=attach_files, info=job_info
     ).complete_job()
 
 

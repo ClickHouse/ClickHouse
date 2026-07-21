@@ -1,0 +1,78 @@
+---
+title: 'Manejo de columnas TOAST'
+description: 'Aprende a manejar las columnas TOAST al replicar datos de PostgreSQL a ClickHouse.'
+slug: /integrations/clickpipes/postgres/toast
+doc_type: 'guide'
+keywords: ['clickpipes', 'postgresql', 'cdc', 'ingestión de datos', 'sincronización en tiempo real']
+integration:
+   - support_level: 'core'
+   - category: 'clickpipes'
+---
+
+Al replicar datos de PostgreSQL a ClickHouse, es importante conocer las limitaciones y consideraciones especiales de las columnas TOAST (The Oversized-Attribute Storage Technique). Esta guía te ayudará a identificar y manejar correctamente las columnas TOAST en tu proceso de replicación.
+
+<div id="what-are-toast-columns-in-postgresql">
+  ## ¿Qué son las columnas TOAST en PostgreSQL?
+</div>
+
+TOAST (The Oversized-Attribute Storage Technique) es el mecanismo de PostgreSQL para gestionar valores de campo de gran tamaño. Cuando una fila supera el tamaño máximo de fila (normalmente 2 KB, aunque esto puede variar según la versión de PostgreSQL y la configuración exacta), PostgreSQL mueve automáticamente los valores de campo grandes a una tabla TOAST independiente y almacena solo un puntero en la tabla principal.
+
+Es importante tener en cuenta que, durante la captura de cambios de datos (CDC), las columnas TOAST que no cambian no se incluyen en el flujo de replicación. Esto puede dar lugar a una replicación de datos incompleta si no se gestiona correctamente.
+
+Durante la carga inicial (snapshot), todos los valores de las columnas, incluidas las columnas TOAST, se replican correctamente independientemente de su tamaño. Las limitaciones descritas en esta guía afectan principalmente al proceso continuo de CDC después de la carga inicial.
+
+Puede obtener más información sobre TOAST y su implementación en PostgreSQL aquí: https://www.postgresql.org/docs/current/storage-toast.html
+
+<div id="identifying-toast-columns-in-a-table">
+  ## Identificar las columnas TOAST de una tabla
+</div>
+
+Para identificar si una tabla tiene columnas TOAST, puede usar la siguiente consulta SQL:
+
+```sql
+SELECT a.attname, pg_catalog.format_type(a.atttypid, a.atttypmod) AS data_type
+FROM pg_attribute a
+JOIN pg_class c ON a.attrelid = c.oid
+WHERE c.relname = 'your_table_name'
+  AND a.attlen = -1
+  AND a.attstorage != 'p'
+  AND a.attnum > 0;
+```
+
+Esta consulta devolverá los nombres y los tipos de datos de las columnas que podrían almacenarse mediante TOAST. Sin embargo, es importante tener en cuenta que esta consulta solo identifica las columnas aptas para el almacenamiento TOAST en función de su tipo de datos y de sus atributos de almacenamiento. Para determinar si estas columnas realmente contienen datos almacenados mediante TOAST, deberá considerar si los valores de estas columnas superan el tamaño permitido. El uso real de TOAST para los datos depende del contenido específico almacenado en estas columnas.
+
+<div id="ensuring-proper-handling-of-toast-columns">
+  ## Garantizar el manejo adecuado de las columnas TOAST
+</div>
+
+Para garantizar que las columnas TOAST se gestionen correctamente durante la replicación, debes establecer la `REPLICA IDENTITY` de la tabla en `FULL`. Esto le indica a PostgreSQL que incluya la fila anterior completa en el WAL para las operaciones UPDATE y DELETE, lo que garantiza que todos los valores de las columnas (incluidas las columnas TOAST) estén disponibles para la replicación.
+
+Puedes establecer la `REPLICA IDENTITY` en `FULL` con el siguiente comando SQL:
+
+```sql
+ALTER TABLE your_table_name REPLICA IDENTITY FULL;
+```
+
+Consulta [esta entrada del blog](https://xata.io/blog/replica-identity-full-performance) para conocer las consideraciones de rendimiento al establecer `REPLICA IDENTITY FULL`.
+
+<div id="replication-behavior-when-replica-identity-full-is-not-set">
+  ## Comportamiento de la replicación cuando no se establece `REPLICA IDENTITY FULL`
+</div>
+
+Si no se establece `REPLICA IDENTITY FULL` para una tabla con columnas TOAST, puede encontrarse con los siguientes problemas al replicar hacia ClickHouse:
+
+1. En las operaciones INSERT, todas las columnas (incluidas las columnas TOAST) se replicarán correctamente.
+
+2. En las operaciones UPDATE:
+   * Si una columna TOAST no se modifica, su valor aparecerá como NULL o vacío en ClickHouse.
+   * Si una columna TOAST se modifica, se replicará correctamente.
+
+3. En las operaciones DELETE, los valores de las columnas TOAST aparecerán como NULL o vacíos en ClickHouse.
+
+Estos comportamientos pueden provocar inconsistencias de datos entre el origen de PostgreSQL y el destino de ClickHouse. Por lo tanto, es fundamental establecer `REPLICA IDENTITY FULL` en las tablas con columnas TOAST para garantizar una replicación de datos precisa y completa.
+
+<div id="conclusion">
+  ## Conclusión
+</div>
+
+Gestionar correctamente las columnas TOAST es esencial para mantener la integridad de los datos al replicarlos de PostgreSQL a ClickHouse. Al identificar las columnas TOAST y establecer la `REPLICA IDENTITY` adecuada, puede asegurarse de que los datos se repliquen de forma precisa y completa.

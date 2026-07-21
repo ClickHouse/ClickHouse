@@ -1,0 +1,128 @@
+---
+title: SQL로 pi를 계산해 봅시다
+description: 파이 데이를 맞아 ClickHouse SQL로 pi를 계산해 봅시다
+date: 2023-03-14
+tags: ['사용 사례']
+keywords: ['pi 계산', 'SQL']
+---
+
+{frontMatter.description}
+
+{/* truncate */}
+
+<div id="its-pi-day-lets-calculate-pi-using-sql">
+  ## 파이 데이(Pi Day)입니다! SQL로 파이를 계산해 봅시다
+</div>
+
+파이 데이(Pi Day)를 축하합니다! ClickHouse에서 SQL 쿼리로 파이(π)를 계산해 보면 재미있겠다는 생각에 직접 시도해 보았습니다. 지금까지 도출한 결과를 소개합니다...
+
+1. 이 예제에서는 ClickHouse `numbers_mt` 테이블 함수를 사용해 10억 개의 행을 반환하며, 계산에는 40ms밖에 걸리지 않습니다:
+
+```sql
+SELECT 4 * sum(if(number % 2, -1, 1) / ((number * 2) + 1)) AS pi
+FROM numbers_mt(1000000000.)
+
+┌────────────────pi─┐
+│ 3.141592652589797 │
+└───────────────────┘
+
+1 row in set. Elapsed: 0.432 sec. Processed 1.00 billion rows, 8.00 GB (2.32 billion rows/s., 18.53 GB/s.)
+```
+
+2. 다음 예시도 10억 개의 숫자를 처리하지만, 그렇게 빠르지는 않습니다:
+
+```sql
+SELECT 3 + (4 * sum(if((number % 2) = 0, if((number % 4) = 0, -1 / ((number * (number + 1)) * (number + 2)), 1 / ((number * (number + 1)) * (number + 2))), 0))) AS pi
+FROM numbers_mt(2, 10000000000)
+
+┌─────────────────pi─┐
+│ 3.1415926525808087 │
+└────────────────────┘
+
+1 row in set. Elapsed: 9.825 sec. Processed 10.00 billion rows, 80.00 GB (1.02 billion rows/s., 8.14 GB/s.)
+```
+
+3. 이 방법은 ClickHouse에서 당연히 저희가 가장 선호하는 방식이며(가장 정확하기도 합니다!):
+
+```sql
+SELECT pi()
+
+┌──────────────pi()─┐
+│ 3.141592653589793 │
+└───────────────────┘
+
+1 row in set. Elapsed: 0.008 sec.
+```
+
+4. 이 문제를 만든 사람은 삼각법을 제대로 알고 있었네요:
+
+```sql
+SELECT 2 * asin(1) AS pi
+
+┌────────────────pi─┐
+│ 3.141592653589793 │
+└───────────────────┘
+
+1 row in set. Elapsed: 0.005 sec.
+```
+
+5. 원하는 자릿수를 지정할 수 있는 편리한 API는 다음과 같습니다:
+
+```sql
+SELECT *
+FROM url('https://api.pi.delivery/v1/pi?start=0&numberOfDigits=100', 'JSONEachRow')
+
+┌───────────────content─┐
+│ 3.1415926535897933e99 │
+└───────────────────────┘
+
+1 row in set. Elapsed: 0.556 sec.
+```
+
+6. 이 방식은 기발합니다  - ClickHouse 거리 함수를 사용합니다:
+
+```sql
+WITH random_points AS
+    (
+        SELECT (rand64(1) / pow(2, 64), rand64(2) / pow(2, 64)) AS point
+        FROM numbers(1000000000)
+    )
+SELECT (4 * countIf(L2Norm(point) < 1)) / count() AS pi
+FROM random_points
+
+┌──────────pi─┐
+│ 3.141627208 │
+└─────────────┘
+
+1 row in set. Elapsed: 4.742 sec. Processed 1.00 billion rows, 8.00 GB (210.88 million rows/s., 1.69 GB/s.)
+```
+
+7. 물리학자라면 이 정도면 만족하실 것입니다:
+
+```sql
+SELECT 22 / 7
+
+┌─────divide(22, 7)─┐
+│ 3.142857142857143 │
+└───────────────────┘
+```
+
+8. 또 다른 간접적인 방법(Alexey Milovidov가 제안한 방법입니다)도 있는데, 소수점 이하 7자리까지 정확하고 빠릅니다:
+
+```sql
+WITH
+    10 AS length,
+    (number / 1000000000.) * length AS x
+SELECT pow((2 * length) * avg(exp(-(x * x))), 2) AS pi
+FROM numbers_mt(1000000000.)
+
+┌─────────────────pi─┐
+│ 3.1415926890388595 │
+└────────────────────┘
+
+1 row in set. Elapsed: 1.245 sec. Processed 1.00 billion rows, 8.00 GB (803.25 million rows/s., 6.43 GB/s.)
+```
+
+<Note>
+  추가로 있다면 기여해 주시면 감사하겠습니다. 감사합니다!
+</Note>

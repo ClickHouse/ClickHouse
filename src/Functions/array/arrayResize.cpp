@@ -4,6 +4,7 @@
 #include <Functions/GatherUtils/GatherUtils.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
@@ -19,6 +20,19 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+}
+
+namespace
+{
+ColumnPtr convertToStructure(const ColumnPtr & column, const IColumn & structure)
+{
+    if (column->structureEquals(structure))
+        return column;
+
+    auto result = structure.cloneEmpty();
+    result->insertRangeFrom(*column, 0, column->size());
+    return result;
+}
 }
 
 DataTypePtr FunctionArrayResize::getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const
@@ -58,26 +72,20 @@ ColumnPtr FunctionArrayResize::executeImpl(const ColumnsWithTypeAndName & argume
     if (return_type->onlyNull())
         return return_type->createColumnConstWithDefaultValue(input_rows_count);
 
-    auto result_column = return_type->createColumn();
-
     auto array_column = arguments[0].column;
     auto size_column = arguments[1].column;
+
+    /// `getInt` on a Decimal column returns the raw unscaled value, so without this conversion
+    /// `arrayResize([1, 2, 3], 1.5::Decimal(2, 1))` would resize to 15 elements. Convert the size to a
+    /// plain integer to use its real value (rounded towards zero), consistent with Float and integer sizes.
+    if (isDecimal(arguments[1].type))
+        size_column = castColumn(arguments[1], std::make_shared<DataTypeInt64>());
 
     if (!arguments[0].type->equals(*return_type))
         array_column = castColumn(arguments[0], return_type);
 
     const DataTypePtr & return_nested_type = typeid_cast<const DataTypeArray &>(*return_type).getNestedType();
     size_t size = array_column->size();
-
-    ColumnPtr appended_column;
-    if (arguments.size() == 3)
-    {
-        appended_column = arguments[2].column;
-        if (!arguments[2].type->equals(*return_nested_type))
-            appended_column = castColumn(arguments[2], return_nested_type);
-    }
-    else
-        appended_column = return_nested_type->createColumnConstWithDefaultValue(size);
 
     std::unique_ptr<GatherUtils::IArraySource> array_source;
     std::unique_ptr<GatherUtils::IValueSource> value_source;
@@ -95,6 +103,22 @@ ColumnPtr FunctionArrayResize::executeImpl(const ColumnsWithTypeAndName & argume
     else
         throw Exception(ErrorCodes::LOGICAL_ERROR, "First arguments for function {} must be array.", getName());
 
+    auto result_column = array_column->cloneEmpty();
+    auto & result_array = typeid_cast<ColumnArray &>(*result_column);
+
+    ColumnPtr appended_column;
+    if (arguments.size() == 3)
+    {
+        appended_column = arguments[2].column;
+        if (!arguments[2].type->equals(*return_nested_type))
+            appended_column = castColumn(arguments[2], return_nested_type);
+    }
+    else
+    {
+        auto default_column = result_array.getData().cloneEmpty();
+        default_column->insertDefault();
+        appended_column = ColumnConst::create(std::move(default_column), size);
+    }
 
     bool is_appended_const = false;
     if (const auto * const_appended_column = typeid_cast<const ColumnConst *>(appended_column.get()))
@@ -103,9 +127,10 @@ ColumnPtr FunctionArrayResize::executeImpl(const ColumnsWithTypeAndName & argume
         appended_column = const_appended_column->getDataColumnPtr();
     }
 
+    appended_column = convertToStructure(appended_column, result_array.getData());
     value_source = GatherUtils::createValueSource(*appended_column, is_appended_const, size);
 
-    auto sink = GatherUtils::createArraySink(typeid_cast<ColumnArray &>(*result_column), size);
+    auto sink = GatherUtils::createArraySink(result_array, size);
 
     if (isColumnConst(*size_column))
         GatherUtils::resizeConstantSize(*array_source, *value_source, *sink, size_column->getInt(0));

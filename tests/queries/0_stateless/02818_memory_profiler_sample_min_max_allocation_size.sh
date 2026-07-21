@@ -1,5 +1,10 @@
 #!/usr/bin/env bash
-# Tags: no-tsan, no-asan, no-ubsan, no-msan, no-random-settings
+# Tags: no-tsan, no-asan, no-ubsan, no-msan, no-random-settings, no-llvm-coverage
+# no-llvm-coverage: LLVM source-based coverage instrumentation makes the server ~3-5x slower,
+# which causes `SystemLogQueue<TraceLogElement>` flushes to exceed the 180s server-side deadline
+# when the test emits `MemorySample` trace rows with `memory_profiler_sample_probability = 1`.
+# The resulting stderr `Code: 159 TIMEOUT_EXCEEDED` contaminates the reference output.
+# Same pattern as sibling coverage fixes (#103287, #103288, #103293, #103298, #103226, #103219).
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

@@ -1,0 +1,94 @@
+---
+description: 'TinyLog テーブルエンジンに関するドキュメント'
+slug: /engines/table-engines/log-family/tinylog
+toc_priority: 34
+toc_title: 'TinyLog'
+title: 'TinyLog テーブルエンジン'
+doc_type: 'reference'
+---
+
+import CloudNotSupportedBadge from "/snippets/ja/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+
+<CloudNotSupportedBadge />
+
+このエンジンは、ログエンジンファミリーに属します。ログエンジンに共通する特性とそれぞれの違いについては、[ログエンジンファミリー](/ja/reference/engines/table-engines/log-family/index)を参照してください。
+
+このテーブルエンジンは通常、1 回だけ書き込む方式で使用されます。つまり、データを 1 度書き込み、その後は必要に応じて何度でも読み取ります。たとえば、`TinyLog` 型のテーブルは、小さなバッチで処理される中間データに使用できます。なお、多数の小さなテーブルにデータを保存するのは非効率です。
+
+クエリは単一ストリームで実行されます。言い換えると、このエンジンは比較的小さなテーブル (最大で約 1,000,000 行) 向けです。多数の小さなテーブルがある場合は、このテーブルエンジンを使用するのが適しています。[Log](/ja/reference/engines/table-engines/log-family/log) エンジンよりもシンプルで、開く必要のあるファイル数が少ないためです。
+
+<div id="characteristics">
+  ## 特徴
+</div>
+
+* **よりシンプルな構造**: Logエンジンとは異なり、TinyLogはマークファイルを使用しません。これにより構造はシンプルになりますが、大規模なデータセットに対するパフォーマンス最適化は制限されます。
+* **単一ストリームクエリ**: TinyLogテーブルに対するクエリは単一ストリームで実行されるため、比較的小さなテーブル、通常は最大1,000,000行程度のテーブルに適しています。
+* **小規模テーブルで効率的**: TinyLogエンジンはシンプルなため、多数の小さなテーブルを管理する場合に有利です。Logエンジンと比べて必要なファイル操作が少なくて済みます。
+
+Logエンジンとは異なり、TinyLogはマークファイルを使用しません。これにより構造はシンプルになりますが、より大規模なデータセットに対するパフォーマンス最適化は制限されます。
+
+<div id="table_engines-tinylog-creating-a-table">
+  ## テーブルの作成
+</div>
+
+```sql
+CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
+(
+    column1_name [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
+    column2_name [type2] [DEFAULT|MATERIALIZED|ALIAS expr2],
+    ...
+) ENGINE = TinyLog
+```
+
+[CREATE TABLE](/ja/reference/statements/create/table) クエリの詳しい説明を参照してください。
+
+<div id="table_engines-tinylog-writing-the-data">
+  ## データの書き込み
+</div>
+
+`TinyLog` エンジンは、すべてのカラムを 1 つのファイルに保存します。`INSERT` クエリが実行されるたびに、ClickHouse はデータブロックをテーブルファイルの末尾に追記し、カラムを 1 つずつ書き込みます。
+
+ClickHouse は、テーブルごとに次のファイルを書き込みます。
+
+* `<column>.bin`: 各カラムのデータファイル。シリアライズおよび圧縮されたデータが格納されます。
+
+`TinyLog` エンジンは、`ALTER UPDATE` および `ALTER DELETE` 操作をサポートしていません。
+
+<div id="table_engines-tinylog-example-of-use">
+  ## 使用例
+</div>
+
+テーブルを作成します:
+
+```sql
+CREATE TABLE tiny_log_table
+(
+    timestamp DateTime,
+    message_type String,
+    message String
+)
+ENGINE = TinyLog
+```
+
+データの挿入:
+
+```sql
+INSERT INTO tiny_log_table VALUES (now(),'REGULAR','The first regular message')
+INSERT INTO tiny_log_table VALUES (now(),'REGULAR','The second regular message'),(now(),'WARNING','The first warning message')
+```
+
+`INSERT` クエリを 2 つ使用して、`<column>.bin` ファイル内に 2 つのデータブロックを作成しました。
+
+ClickHouse は、データの選択に単一ストリームを使用します。そのため、出力における行ブロックの順序は、入力における対応するブロックの順序と一致します。例:
+
+```sql
+SELECT * FROM tiny_log_table
+```
+
+```text
+┌───────────timestamp─┬─message_type─┬─message────────────────────┐
+│ 2024-12-10 13:11:58 │ REGULAR      │ The first regular message  │
+│ 2024-12-10 13:12:12 │ REGULAR      │ The second regular message │
+│ 2024-12-10 13:12:12 │ WARNING      │ The first warning message  │
+└─────────────────────┴──────────────┴────────────────────────────┘
+```

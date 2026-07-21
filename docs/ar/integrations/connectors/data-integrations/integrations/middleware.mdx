@@ -1,0 +1,59 @@
+---
+sidebarTitle: 'برمجية وسيطة'
+slug: /integrations/middleware
+keywords: ['clickhouse', 'برمجية وسيطة', 'observability', 'تكامل', 'المراقبة']
+description: 'اربط برمجية وسيطة مع ClickHouse لمراقبة مقاييس ClickHouse وسجلاته وتحليلها.'
+title: 'ربط برمجية وسيطة بـ ClickHouse'
+doc_type: 'guide'
+integration:
+  - support_level: 'partner'
+  - category: 'data_integration'
+---
+
+import PartnerBadge from "/snippets/ar/components/PartnerBadge/PartnerBadge.jsx";
+
+<PartnerBadge />
+
+[Middleware](https://middleware.io/) هي منصة سحابية للرصد الشامل لمراقبة البنية التحتية والسجلات وأداء التطبيقات.
+
+يمكنك ربط ClickHouse مع Middleware لجمع بيانات القياس عن بُعد الخاصة بقاعدة البيانات وعرضها بصريًا كجزء من سير عمل المراقبة الأوسع نطاقًا لديك.
+
+<div id="prerequisites">
+  ## المتطلبات الأساسية
+</div>
+
+* خدمة ClickHouse قيد التشغيل (Cloud أو ذاتية الإدارة)
+* إمكانية الوصول إلى مضيف ClickHouse والمنفذ واسم المستخدم وكلمة المرور
+* حساب في برمجية وسيطة
+
+<div id="connect-clickhouse-in-middleware">
+  ## ربط ClickHouse في برمجية وسيطة
+</div>
+
+1. سجّل الدخول إلى حسابك في برمجية وسيطة.
+2. انتقل إلى **Integrations** وابحث عن **ClickHouse**.
+3. اختر تكامل ClickHouse وأدخل تفاصيل الاتصال:
+   * المضيف
+   * المنفذ
+   * قاعدة البيانات
+   * اسم المستخدم
+   * كلمة المرور
+4. احفظ التكامل ثم شغّل اختبار الاتصال.
+
+<div id="verify-data-collection">
+  ## تحقّق من جمع البيانات
+</div>
+
+بعد الإعداد، تأكّد من ظهور مقاييس ClickHouse و/أو السجلات في لوحات المعلومات الخاصة بـ برمجية وسيطة.
+
+إذا فشل التحقّق من الاتصال، فتحقّق مما يلي:
+
+* أن ClickHouse يقبل الاتصالات الواردة من برمجية وسيطة
+* أن إعدادات SSL/TLS تتطابق مع نقطة نهاية ClickHouse
+* أن بيانات الاعتماد وأذونات قاعدة البيانات صحيحة
+
+<div id="additional-resources">
+  ## موارد إضافية
+</div>
+
+* [الموقع الإلكتروني لـ برمجية وسيطة](https://middleware.io/)

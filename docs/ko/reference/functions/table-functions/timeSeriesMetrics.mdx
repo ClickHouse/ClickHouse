@@ -1,0 +1,28 @@
+---
+description: '`timeSeriesMetrics`는 테이블 엔진이 TimeSeries 엔진인 테이블 `db_name.time_series_table`에서 사용되는 Metrics 테이블을 반환합니다.'
+sidebarTitle: 'timeSeriesMetrics'
+slug: /sql-reference/table-functions/timeSeriesMetrics
+title: 'timeSeriesMetrics'
+doc_type: 'reference'
+---
+
+`timeSeriesMetrics(db_name.time_series_table)` - 테이블 엔진이 [TimeSeries](/ko/reference/engines/table-engines/integrations/time-series) 엔진인 테이블 `db_name.time_series_table`에서
+사용되는 [Metrics 테이블](/ko/reference/engines/table-engines/integrations/time-series#metrics-table)을 반환합니다:
+
+```sql
+CREATE TABLE db_name.time_series_table ENGINE=TimeSeries METRICS metrics_table
+```
+
+함수는 *메트릭* 테이블이 내부 테이블이어도 작동합니다:
+
+```sql
+CREATE TABLE db_name.time_series_table ENGINE=TimeSeries METRICS INNER UUID '01234567-89ab-cdef-0123-456789abcdef'
+```
+
+다음 쿼리는 동일합니다:
+
+```sql
+SELECT * FROM timeSeriesMetrics(db_name.time_series_table);
+SELECT * FROM timeSeriesMetrics('db_name.time_series_table');
+SELECT * FROM timeSeriesMetrics('db_name', 'time_series_table');
+```

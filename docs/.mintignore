@@ -1,0 +1,28 @@
+# Mintlify automatically ignores these files and directories:
+# .git, .github, .claude, .agents, .idea, node_modules,
+# README.md, LICENSE.md, CHANGELOG.md, CONTRIBUTING.md
+
+# Draft content
+drafts/
+*.draft.mdx
+
+# Skill scaffolds (internal docs for Claude Code, not user-facing pages).
+# Ignore everything under .mintlify/ EXCEPT each skill's SKILL.md definition.
+.mintlify/*
+!.mintlify/skills/
+.mintlify/skills/*/*
+!.mintlify/skills/*/SKILL.md
+
+# Lint tooling (Node-only markdownlint/Vale rules). Mintlify injects every
+# .js file in the repo as a browser custom script; these throw
+# ("require is not defined", "Identifier 'filterTokens' has already been
+# declared" on re-injection) and can abort injection of the real scripts.
+_site/styles/
+
+# Legacy content in the docs folder. Anchored to the top level so that
+# resources/changelogs/ (and its locale copies) stays published.
+/_description_templates/
+/_includes/
+/changelogs/
+/en/
+/get-started/quickstarts/_TEMPLATE.mdx

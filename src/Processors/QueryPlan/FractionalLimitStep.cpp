@@ -90,13 +90,13 @@ void FractionalLimitStep::serialize(Serialization & ctx) const
 
 QueryPlanStepPtr FractionalLimitStep::deserialize(Deserialization & ctx)
 {
-    UInt8 flags;
+    UInt8 flags = 0;
     readIntBinary(flags, ctx.in);
     bool with_ties = bool(flags & 1);
 
-    Float64 limit_fraction;
-    Float64 offset_fraction;
-    UInt64 offset;
+    Float64 limit_fraction = 0;
+    Float64 offset_fraction = 0;
+    UInt64 offset = 0;
 
     readFloatBinary(limit_fraction, ctx.in);
     readFloatBinary(offset_fraction, ctx.in);
@@ -110,6 +110,7 @@ QueryPlanStepPtr FractionalLimitStep::deserialize(Deserialization & ctx)
         ctx.input_headers.front(), limit_fraction, offset_fraction, offset, with_ties, std::move(description));
 }
 
+void registerFractionalLimitStep(QueryPlanStepRegistry & registry);
 void registerFractionalLimitStep(QueryPlanStepRegistry & registry)
 {
     registry.registerStep("FractionalLimit", FractionalLimitStep::deserialize);

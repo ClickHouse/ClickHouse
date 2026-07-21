@@ -1,0 +1,60 @@
+---
+slug: /data-compression/compression-modes
+title: '압축 모드'
+description: 'ClickHouse 컬럼 압축 모드'
+keywords: ['압축', '코덱', '인코딩', '모드']
+doc_type: 'reference'
+---
+
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+ClickHouse 프로토콜은 체크섬과 함께 **데이터 블록** 압축을 지원합니다.
+어떤 모드를 선택할지 확실하지 않다면 `LZ4`를 사용하세요.
+&#96;&#96;
+
+<Tip>
+  사용할 수 있는 [컬럼 압축 코덱](/ko/reference/statements/create/table#column_compression_codec)을 자세히 알아보고, 테이블을 생성할 때 또는 생성한 후에 지정하세요.
+</Tip>
+
+<div id="modes">
+  ## 모드
+</div>
+
+| value  | name             | description                   |
+| ------ | ---------------- | ----------------------------- |
+| `0x02` | [None](#none-mode) | 압축 없음, 체크섬만 사용                |
+| `0x82` | LZ4              | 매우 빠르고 압축률도 우수함               |
+| `0x90` | ZSTD             | Zstandard, 상당히 빠르며 압축률이 가장 높음 |
+
+LZ4와 ZSTD는 모두 같은 작성자가 만들었지만, 설계상 절충점은 서로 다릅니다.
+[Facebook 벤치마크](https://facebook.github.io/zstd/#benchmarks)에 따르면:
+
+| name              | ratio | encoding | decoding  |
+| ----------------- | ----- | -------- | --------- |
+| **zstd** 1.4.5 -1 | 2.8   | 500 MB/s | 1660 MB/s |
+| **lz4** 1.9.2     | 2.1   | 740 MB/s | 4530 MB/s |
+
+<div id="block">
+  ## 블록
+</div>
+
+| 필드                  | 유형      | 설명                                                                      |
+| ------------------- | ------- | ----------------------------------------------------------------------- |
+| checksum            | uint128 | (헤더 + 압축 데이터)의 [해시](/ko/resources/develop-contribute/native-protocol/hash) |
+| raw&#95;size        | uint32  | 헤더를 제외한 원본 크기                                                           |
+| data&#95;size       | uint32  | 비압축 데이터 크기                                                              |
+| mode                | byte    | 압축 모드                                                                   |
+| compressed&#95;data | binary  | 압축된 데이터 블록                                                              |
+
+<Image img="/images/data-compression/ch_compression_block.webp" size="md" alt="ClickHouse 압축 블록 구조를 보여주는 다이어그램" />
+
+헤더는 (raw&#95;size + data&#95;size + mode)로 구성되며, raw size는 len(header + compressed&#95;data)입니다.
+
+체크섬은 [ClickHouse CityHash](/ko/resources/develop-contribute/native-protocol/hash)를 사용해 계산한 `hash(header + compressed_data)`입니다.
+
+<div id="none-mode">
+  ## None 모드
+</div>
+
+*None* 모드를 사용하면 `compressed_data`는 원본 데이터와 동일합니다.
+압축하지 않는 모드는 체크섬을 통해 추가적인 데이터 무결성을 보장하는 데 유용합니다. hash 계산 오버헤드는 무시할 수 있을 만큼 작기 때문입니다.

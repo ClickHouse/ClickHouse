@@ -1,0 +1,76 @@
+---
+description: '允许在指定集群中的多个节点上并行处理来自 URL 的文件。'
+sidebarTitle: 'urlCluster'
+slug: /sql-reference/table-functions/urlCluster
+title: 'urlCluster'
+doc_type: 'reference'
+---
+
+允许在指定集群中的多个节点上并行处理来自 URL 的文件。在发起节点上，它会与集群中的所有节点建立连接，展开 URL 文件路径中的星号，并动态分发各个文件。在工作节点上，它会向发起节点请求下一个要处理的任务并进行处理。如此反复，直到所有任务完成。
+
+<div id="syntax">
+  ## 语法
+</div>
+
+```sql
+urlCluster(cluster_name, URL, format, structure)
+```
+
+<div id="arguments">
+  ## 参数
+</div>
+
+| 参数             | 描述                                                                                         |
+| -------------- | ------------------------------------------------------------------------------------------ |
+| `cluster_name` | 集群名称，用于构建远程和本地服务器的地址集合及其连接参数。                                                              |
+| `URL`          | 可接受 `GET` 请求的 HTTP 或 HTTPS 服务器地址。类型：[String](/zh/reference/data-types/string)。                |
+| `format`       | 数据的[格式](/zh/reference/formats/index)。类型：[String](/zh/reference/data-types/string)。               |
+| `structure`    | `'UserID UInt64, Name String'` 格式的表结构，用于确定列名和类型。类型：[String](/zh/reference/data-types/string)。 |
+
+<div id="returned_value">
+  ## 返回值
+</div>
+
+一个采用指定格式和结构、包含已定义 `URL` 中数据的表。
+
+<div id="examples">
+  ## 示例
+</div>
+
+获取一个包含 `String` 和 [UInt32](/zh/reference/data-types/int-uint) 类型列的表的前 3 行数据，该表来自一个以 [CSV](/zh/reference/formats/CSV/CSV) 格式响应的 HTTP 服务器。
+
+1. 使用 Python 3 标准工具创建一个简单的 HTTP 服务器并启动它：
+
+```python
+from http.server import BaseHTTPRequestHandler, HTTPServer
+
+class CSVHTTPServer(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.send_header('Content-type', 'text/csv')
+        self.end_headers()
+
+        self.wfile.write(bytes('Hello,1\nWorld,2\n', "utf-8"))
+
+if __name__ == "__main__":
+    server_address = ('127.0.0.1', 12345)
+    HTTPServer(server_address, CSVHTTPServer).serve_forever()
+```
+
+```sql
+SELECT * FROM urlCluster('cluster_simple','http://127.0.0.1:12345', CSV, 'column1 String, column2 UInt32')
+```
+
+<div id="globs-in-url">
+  ## URL 中的通配符
+</div>
+
+`{ }` 中的模式用于生成一组分片，或指定故障转移地址。支持的模式类型及示例，请参见 [remote](/zh/reference/functions/table-functions/remote#globs-in-addresses) 函数的说明。
+模式中的字符 `|` 用于指定故障转移地址。系统会按照这些地址在模式中列出的顺序依次尝试。生成的地址数量受 [glob&#95;expansion&#95;max&#95;elements](/zh/reference/settings/session-settings#glob_expansion_max_elements) 设置限制。
+
+<div id="related">
+  ## 相关内容
+</div>
+
+* [HDFS 引擎](/zh/reference/engines/table-engines/integrations/hdfs)
+* [URL 表函数](/zh/reference/engines/table-engines/special/url)

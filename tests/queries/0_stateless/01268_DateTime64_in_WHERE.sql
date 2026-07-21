@@ -1,3 +1,5 @@
+SET date_time_input_format = 'basic', cast_string_to_date_time_mode = 'basic';
+
 -- Error cases:
 -- non-const string column
 WITH '2020-02-05 14:34:12.333' as S, toDateTime64(S, 3) as DT64 SELECT DT64 = materialize(S); -- {serverError ILLEGAL_TYPE_OF_ARGUMENT}

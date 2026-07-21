@@ -1,0 +1,203 @@
+---
+description: '잉글랜드와 웨일스의 부동산 거래 가격 데이터가 포함된 UK 부동산 데이터셋을 사용해, 자주 실행하는 쿼리의 성능을 프로젝션으로 개선하는 방법을 알아봅니다'
+sidebarTitle: '영국 부동산 가격'
+slug: /getting-started/example-datasets/uk-price-paid
+title: '영국 부동산 가격 데이터셋'
+doc_type: 'guide'
+keywords: ['예시 데이터셋', 'uk property', '샘플 데이터', '부동산', '시작하기']
+---
+
+import { RunnableCode } from "/snippets/ko/components/RunnableCode/RunnableCode.jsx";
+
+이 데이터에는 잉글랜드와 웨일스의 부동산 거래 가격 정보가 포함되어 있습니다. 데이터는 1995년부터 제공되며, 비압축 형식의 데이터셋 크기는 약 4 GiB입니다(ClickHouse에서는 약 278 MiB만 차지합니다).
+
+* 출처: https://www.gov.uk/government/statistical-data-sets/price-paid-data-downloads
+* 필드 설명: https://www.gov.uk/guidance/about-the-price-paid-data
+* HM Land Registry 데이터 © Crown copyright and database right 2021이 포함되어 있습니다. 이 데이터는 Open Government Licence v3.0에 따라 라이선스가 부여됩니다.
+
+<div id="create-table">
+  ## 테이블 생성
+</div>
+
+```sql
+CREATE DATABASE uk;
+
+CREATE TABLE uk.uk_price_paid
+(
+    price UInt32,
+    date Date,
+    postcode1 LowCardinality(String),
+    postcode2 LowCardinality(String),
+    type Enum8('terraced' = 1, 'semi-detached' = 2, 'detached' = 3, 'flat' = 4, 'other' = 0),
+    is_new UInt8,
+    duration Enum8('freehold' = 1, 'leasehold' = 2, 'unknown' = 0),
+    addr1 String,
+    addr2 String,
+    street LowCardinality(String),
+    locality LowCardinality(String),
+    town LowCardinality(String),
+    district LowCardinality(String),
+    county LowCardinality(String)
+)
+ENGINE = MergeTree
+ORDER BY (postcode1, postcode2, addr1, addr2);
+```
+
+<div id="preprocess-import-data">
+  ## 데이터를 전처리하고 삽입합니다
+</div>
+
+데이터를 ClickHouse로 스트리밍하기 위해 `url` 함수를 사용합니다. 먼저 유입되는 데이터 일부를 전처리해야 하며, 여기에는 다음이 포함됩니다.
+
+* 저장과 쿼리에 더 유리하도록 `postcode`를 `postcode1`과 `postcode2`라는 두 개의 컬럼으로 분할
+* `time` 필드는 시간이 항상 00:00이므로 날짜로 변환
+* 분석에 필요하지 않으므로 [UUid](/ko/reference/data-types/uuid) 필드는 무시
+* [transform](/ko/reference/functions/regular-functions/other-functions#transform) 함수를 사용해 `type`과 `duration`을 더 읽기 쉬운 `Enum` 필드로 변환
+* `is_new` 필드를 한 글자 문자열(`Y`/`N`)에서 0 또는 1 값을 갖는 [UInt8](/ko/reference/data-types/int-uint) 필드로 변환
+* 마지막 두 컬럼은 모두 같은 값(0)이므로 삭제
+
+`url` 함수는 웹 서버의 데이터를 ClickHouse 테이블로 스트리밍합니다. 다음 명령은 `uk_price_paid` 테이블에 500만 행을 삽입합니다:
+
+```sql
+INSERT INTO uk.uk_price_paid
+SELECT
+    toUInt32(price_string) AS price,
+    parseDateTimeBestEffortUS(time) AS date,
+    splitByChar(' ', postcode)[1] AS postcode1,
+    splitByChar(' ', postcode)[2] AS postcode2,
+    transform(a, ['T', 'S', 'D', 'F', 'O'], ['terraced', 'semi-detached', 'detached', 'flat', 'other']) AS type,
+    b = 'Y' AS is_new,
+    transform(c, ['F', 'L', 'U'], ['freehold', 'leasehold', 'unknown']) AS duration,
+    addr1,
+    addr2,
+    street,
+    locality,
+    town,
+    district,
+    county
+FROM url(
+    'http://prod1.publicdata.landregistry.gov.uk.s3-website-eu-west-1.amazonaws.com/pp-complete.csv',
+    'CSV',
+    'uuid_string String,
+    price_string String,
+    time String,
+    postcode String,
+    a String,
+    b String,
+    c String,
+    addr1 String,
+    addr2 String,
+    street String,
+    locality String,
+    town String,
+    district String,
+    county String,
+    d String,
+    e String'
+) SETTINGS max_http_get_redirects=10;
+```
+
+데이터가 삽입될 때까지 기다리십시오. 네트워크 속도에 따라 1~2분 정도 소요됩니다.
+
+<div id="validate-data">
+  ## 데이터 검증
+</div>
+
+삽입된 행 수를 확인해 제대로 작동했는지 검증해 보겠습니다.
+
+<RunnableCode>
+  ```sql
+  SELECT count()
+  FROM uk.uk_price_paid
+  ```
+</RunnableCode>
+
+이 쿼리를 실행했을 당시 데이터셋에는 27,450,499개의 행이 있었습니다. 이제 ClickHouse에서 이 테이블의 저장 크기를 확인해 보겠습니다.
+
+<RunnableCode>
+  ```sql
+  SELECT formatReadableSize(total_bytes)
+  FROM system.tables
+  WHERE name = 'uk_price_paid'
+  ```
+</RunnableCode>
+
+테이블 크기가 겨우 221.43 MiB에 불과하다는 점에 주목하십시오!
+
+<div id="run-queries">
+  ## 몇 가지 쿼리 실행하기
+</div>
+
+데이터를 분석하기 위해 몇 가지 쿼리를 실행해 보겠습니다.
+
+<div id="average-price">
+  ### 쿼리 1. 연도별 평균 가격
+</div>
+
+<RunnableCode>
+  ```sql
+  SELECT
+     toYear(date) AS year,
+     round(avg(price)) AS price,
+     bar(price, 0, 1000000, 80
+  )
+  FROM uk.uk_price_paid
+  GROUP BY year
+  ORDER BY year
+  ```
+</RunnableCode>
+
+<div id="average-price-london">
+  ### 쿼리 2. 런던의 연도별 평균 가격
+</div>
+
+<RunnableCode>
+  ```sql
+  SELECT
+     toYear(date) AS year,
+     round(avg(price)) AS price,
+     bar(price, 0, 2000000, 100
+  )
+  FROM uk.uk_price_paid
+  WHERE town = 'LONDON'
+  GROUP BY year
+  ORDER BY year
+  ```
+</RunnableCode>
+
+2020년에 주택 가격에 변화가 있었습니다! 하지만 아마 놀랄 일은 아닐 것입니다...
+
+<div id="most-expensive-neighborhoods">
+  ### 쿼리 3. 가장 비싼 동네
+</div>
+
+<RunnableCode>
+  ```sql
+  SELECT
+      town,
+      district,
+      count() AS c,
+      round(avg(price)) AS price,
+      bar(price, 0, 5000000, 100)
+  FROM uk.uk_price_paid
+  WHERE date >= '2020-01-01'
+  GROUP BY
+      town,
+      district
+  HAVING c >= 100
+  ORDER BY price DESC
+  LIMIT 100
+  ```
+</RunnableCode>
+
+<div id="speeding-up-queries-with-projections">
+  ## 프로젝션으로 쿼리 속도 높이기
+</div>
+
+프로젝션을 사용하면 이러한 쿼리의 속도를 높일 수 있습니다. 이 데이터셋에 대한 예시는 [&quot;프로젝션&quot;](/ko/concepts/features/projections/projections)을 참조하십시오.
+
+<div id="playground">
+  ### Playground에서 실행해 보기
+</div>
+
+이 데이터셋은 [Online Playground](https://sql.clickhouse.com?query_id=TRCWH5ZETY4SEEK8ISCCAX)에서도 사용할 수 있습니다.

@@ -1,0 +1,51 @@
+---
+title: 'Configuration personnalisée pour GCP'
+slug: /cloud/reference/byoc/onboarding/customization-gcp
+sidebarTitle: 'Configuration personnalisée pour GCP'
+keywords: ['BYOC', 'cloud', 'bring your own cloud', 'onboarding', 'GCP', 'VPC']
+description: 'Déployer ClickHouse BYOC dans votre VPC GCP existant'
+doc_type: 'reference'
+---
+
+import { Image } from "/snippets/fr/components/Image.jsx";
+
+<div id="customer-managed-vpc-gcp">
+  ## VPC géré par le client (BYO-VPC) pour GCP
+</div>
+
+Si vous préférez utiliser un VPC existant pour déployer ClickHouse BYOC au lieu de laisser ClickHouse Cloud provisionner un nouveau VPC, suivez les étapes ci-dessous. Cette approche offre davantage de contrôle sur votre configuration réseau et vous permet d’intégrer ClickHouse BYOC à votre infrastructure réseau existante.
+
+<Steps>
+  <Step>
+    ### Configurez votre VPC existant
+
+    1. Allouez au moins 1 sous-réseau privé dans une [région prise en charge par ClickHouse BYOC](/fr/products/cloud/reference/supported-regions) pour le cluster Kubernetes (GKE) de ClickHouse. Assurez-vous que le sous-réseau dispose d’une plage CIDR minimale de `/24` (par exemple, 10.0.0.0/24) afin de fournir suffisamment d’adresses IP aux nœuds du cluster GKE.
+    2. Dans le sous-réseau privé, allouez au moins 1 plage IPv4 secondaire qui sera utilisée pour les pods du cluster GKE. Cette plage secondaire doit être d’au moins `/23` afin de fournir suffisamment d’adresses IP aux pods du cluster GKE.
+    3. Activez **Private Google Access** sur le sous-réseau. Cela permet aux nœuds GKE d’accéder aux API et services Google sans nécessiter d’adresses IP externes.
+
+    <Image img="/images/cloud/reference/byoc-gcp-subnet.webp" size="lg" alt="Détails du sous-réseau GCP BYOC montrant les plages IPv4 primaires et secondaires avec Private Google Access activé" />
+  </Step>
+
+  <Step>
+    ### Assurez la connectivité réseau
+
+    **Cloud NAT Gateway**
+    Assurez-vous qu’une [passerelle Cloud NAT](https://cloud.google.com/nat/docs/overview) est déployée pour le VPC. Les composants ClickHouse BYOC nécessitent un accès Internet sortant pour communiquer avec le plan de contrôle Tailscale. Tailscale est utilisé pour fournir un réseau sécurisé de type zero-trust pour les opérations de gestion privées. La passerelle Cloud NAT fournit cette connectivité sortante aux instances sans adresses IP externes.
+
+    **Résolution DNS**
+    Assurez-vous que votre VPC dispose d’une résolution DNS fonctionnelle et ne bloque pas, ne perturbe pas ou ne remplace pas les noms DNS standard. ClickHouse BYOC s’appuie sur le DNS pour résoudre les serveurs de contrôle Tailscale et les points de terminaison de service ClickHouse. Si le DNS n’est pas disponible ou est mal configuré, les services BYOC risquent de ne pas pouvoir se connecter ou fonctionner correctement.
+  </Step>
+
+  <Step>
+    ### Configurez l’infrastructure BYOC
+
+    Dans la console ClickHouse Cloud, configurez les éléments suivants lors de la mise en place d’une nouvelle infrastructure :
+
+    1. Sous **Configuration du VPC**, sélectionnez **Use existing VPC**.
+    2. Saisissez le **nom de votre réseau VPC**.
+    3. Saisissez le **nom du sous-réseau** que vous avez alloué à ClickHouse.
+    4. Cliquez sur **Set up Infrastructure** pour lancer le provisionnement.
+
+    <Image img="/images/cloud/reference/byoc-gcp-existing-vpc-ui.webp" size="lg" alt="Interface de configuration BYOC de ClickHouse Cloud avec Use existing VPC sélectionné pour GCP" />
+  </Step>
+</Steps>

@@ -2,11 +2,16 @@
 
 #include <Functions/array/has.h>
 
+#include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/LambdaNode.h>
 
 #include <Core/Settings.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/getLeastSupertype.h>
 
 namespace DB
 {
@@ -84,6 +89,37 @@ public:
         {
             return;
         }
+
+        /// Check that the types are compatible for the `has` function.
+        /// The `has` function requires that the array element type and the search element type
+        /// have a common supertype. The `equals` function in the lambda is more permissive
+        /// (e.g. it can compare Date with String via implicit conversions), so we must verify
+        /// compatibility before rewriting.
+        const auto * array_type = typeid_cast<const DataTypeArray *>(array_exists_function_arguments_nodes[1]->getResultType().get());
+        if (!array_type)
+            return;
+
+        auto nested_type = removeNullable(removeLowCardinality(array_type->getNestedType()));
+        auto constant_type = removeNullable(removeLowCardinality(has_constant_element_argument->getResultType()));
+
+        /// Skip rewrite when the constant is NULL (either untyped or typed).
+        /// arrayExists(x -> x = NULL, [NULL]) returns 0 because equals(NULL, NULL) is NULL,
+        /// and arrayExists treats non-true values as false.
+        /// But has([NULL], NULL) returns 1, so the rewrite would change semantics.
+        /// This also applies to typed NULLs like CAST(NULL AS Nullable(Int8)).
+        if (isNothing(constant_type))
+            return;
+
+        const auto * constant_node = has_constant_element_argument->as<ConstantNode>();
+        if (constant_node && constant_node->getValue().isNull())
+            return;
+
+        bool types_compatible = (isNativeNumber(nested_type) || isEnum(nested_type)) && isNativeNumber(constant_type);
+        if (!types_compatible)
+            types_compatible = tryGetLeastSupertype(DataTypes{nested_type, constant_type}) != nullptr;
+
+        if (!types_compatible)
+            return;
 
         auto has_function = createInternalFunctionHasOverloadResolver();
 

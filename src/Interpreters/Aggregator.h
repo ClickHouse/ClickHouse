@@ -3,7 +3,6 @@
 #include <memory>
 #include <mutex>
 #include <type_traits>
-#include <variant>
 
 #include <AggregateFunctions/IAggregateFunction_fwd.h>
 
@@ -12,7 +11,9 @@
 #include <Core/Block_fwd.h>
 #include <Core/ColumnNumbers.h>
 #include <Common/Logger.h>
-#include <Common/ThreadPool.h>
+#include <Common/MemoryTracker.h>
+#include <Common/VectorWithMemoryTracking.h>
+#include <Common/ThreadPool_fwd.h>
 
 #include <QueryPipeline/SizeLimits.h>
 
@@ -134,6 +135,18 @@ public:
 
         bool serialize_string_with_zero_byte = false;
 
+        /// Set for aggregation in order (`AggregatingInOrderTransform`). In that mode a fresh
+        /// aggregation-method state is constructed for every contiguous run of equal order-key
+        /// values (via `executeOnBlockSmall` / `mergeOnBlockSmall`), so a method whose state
+        /// construction does work proportional to the whole block turns a single block into
+        /// O(number_of_runs * block_size) work. This is the case for the `prealloc_serialized`
+        /// method, which serializes all of the block's keys up front on construction. In that mode
+        /// the per-run path falls back to the plain `serialized` method (lazy, per-row key
+        /// serialization) to keep it linear; see `Aggregator::method_chosen_for_in_order`. The
+        /// whole-block merge stage (`mergeBlocks` in `MergingAggregatedBucketTransform`) keeps
+        /// `prealloc_serialized`, where it is a win.
+        bool aggregation_in_order = false;
+
         static size_t getMaxBytesBeforeExternalGroupBy(size_t max_bytes_before_external_group_by, double max_bytes_ratio_before_external_group_by);
 
         Params(
@@ -170,7 +183,7 @@ public:
             float min_hit_rate_to_use_consecutive_keys_optimization_,
             bool serialize_string_with_zero_byte_);
 
-        Params cloneWithKeys(const Names & keys_, bool only_merge_ = false)
+        Params cloneWithKeys(const Names & keys_, bool only_merge_ = false) const
         {
             Params new_params = *this;
             new_params.keys = keys_;
@@ -190,6 +203,7 @@ public:
     };
 
     explicit Aggregator(const Block & header_, const Params & params_);
+    ~Aggregator();
 
     const Params & getParams() const { return params; }
 
@@ -273,7 +287,11 @@ public:
     /// Merge several partially aggregated chunks into one.
     /// Precondition: for all chunks the is_overflows flag must be the same.
     /// (either all chunks are from overflow data or none are).
-    AggregatedChunk mergeBlocks(AggregatedChunks & chunks, bool final, std::atomic<bool> & is_cancelled);
+    AggregatedChunk mergeBlocks(
+        AggregatedChunks & chunks,
+        bool final,
+        std::atomic<bool> & is_cancelled,
+        const RuntimeDataflowStatisticsCacheUpdaterPtr & dataflow_cache_updater);
 
     /** Split block with partially-aggregated data to many blocks, as if two-level method of aggregation was used.
       * This is needed to simplify merging of that data with other results, that are already two-level.
@@ -305,7 +323,7 @@ private:
     /// Positions of aggregation key columns in the header.
     const ColumnNumbers keys_positions;
     /// Positions of aggregate function argument columns in the header.
-    const std::vector<ColumnNumbers> aggregates_positions;
+    const ColumnNumbersList aggregates_positions;
     /// Types of key columns from the input header.
     const DataTypes key_types;
     /// Types of aggregate function states (DataTypeAggregateFunction), one per aggregate.
@@ -313,6 +331,19 @@ private:
     Params params;
 
     AggregatedDataVariants::Type method_chosen;
+
+    /// The aggregation method used by the per-run in-order path (`executeOnBlockSmall` /
+    /// `mergeOnBlockSmall`, called only from `AggregatingInOrderTransform`). It equals
+    /// `method_chosen`, except that when `Params::aggregation_in_order` is set the `prealloc_serialized`
+    /// variants are replaced by their plain `serialized` counterparts. That path builds a fresh state
+    /// for every run of equal order-key values, so the up-front whole-block serialization done by
+    /// `prealloc_serialized` on construction would make it quadratic. All whole-block paths (including
+    /// `mergeBlocks` used by `MergingAggregatedBucketTransform`) keep `method_chosen`, where
+    /// `prealloc_serialized` is a win. The `serialized` and `prealloc_serialized` methods produce
+    /// byte-identical keys and share the same hash-method context, so mixing them across pipeline
+    /// stages is safe.
+    AggregatedDataVariants::Type method_chosen_for_in_order;
+
     Sizes key_sizes;
 
     HashMethodContextPtr aggregation_state_cache;
@@ -320,7 +351,7 @@ private:
     AggregateFunctionsPlainPtrs aggregate_functions;
 
     using AggregateFunctionInstructions = std::vector<AggregateFunctionInstruction>;
-    using NestedColumnsHolder = std::vector<std::vector<const IColumn *>>;
+    using NestedColumnsHolder = VectorWithMemoryTracking<VectorWithMemoryTracking<const IColumn *>>;
 
     Sizes offsets_of_aggregate_states;    /// The offset to the n-th aggregate function in a row of aggregate functions.
     size_t total_size_of_aggregate_states = 0;    /// The total size of the row from the aggregate functions.
@@ -331,8 +362,10 @@ private:
 
     bool all_aggregates_has_trivial_destructor = false;
 
-    /// How many RAM were used to process the query before processing the first block.
+    /// How many RAM were used to process the query before processing the first block. Use for merge_only mode.
     Int64 memory_usage_before_aggregation = 0;
+    /// Track memory held by the aggreagation state during execution.
+    std::unique_ptr<MemoryTracker> memory_tracker;
 
     /// Indicates whether the aggregation is a simple `count()` / `count(*)` / `count(non-nullable_column)`
     ///
@@ -356,14 +389,11 @@ private:
 
     std::vector<bool> is_aggregate_function_compiled;
 
-    mutable ThreadPool thread_pool;
+    mutable std::unique_ptr<ThreadPool> thread_pool;
 
     /** Try to compile aggregate functions.
       */
     void compileAggregateFunctionsIfNeeded();
-
-    /** Select the aggregation method based on the number and types of keys. */
-    AggregatedDataVariants::Type chooseAggregationMethod(const Block & header);
 
     /** Create states of aggregate functions for one key.
       */

@@ -9,6 +9,7 @@
 #include <iomanip>
 #include <iostream>
 #include <vector>
+#include <Examples/clickhouse_examples.h>
 
 /** This program tests merge-selecting algorithm.
   * Usage:
@@ -16,16 +17,18 @@
   * clickhouse-client --query="SELECT 100 + round(10 * rand() / 0xFFFFFFFF) FROM system.numbers LIMIT 105" | tr "\n" ' ' | ./merge_selector
   */
 
-int main(int, char **)
+int mainEntryExampleMergeSelector(int, char **)
 {
     using namespace DB;
 
     PartsRanges ranges(1);
     PartsRange & parts = ranges.back();
 
+    // PartitionsStatistics statistics; /// Must be refreshed from `parts` before each select call - see merge_selector2.cpp.
     // SimpleMergeSelector::Settings settings;
     // settings.base = 2;
     // settings.max_parts_to_merge_at_once = 10;
+    // settings.partitions_stats = &statistics;
     // SimpleMergeSelector selector(settings);
 
     TrivialMergeSelector selector;

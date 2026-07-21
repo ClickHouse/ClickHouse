@@ -1,0 +1,198 @@
+---
+title: "تنميط ClickHouse باستخدام XRay من LLVM"
+date: 2024-11-13
+description: "تعرّف على كيفية تنميط ClickHouse باستخدام مُنَمِّط ‏XRay المعتمد على التضمين البرمجي من LLVM، وتصور التتبعات، وتحليل الأداء."
+tags: ['الأداء والتحسينات', 'الأدوات والبرامج المساعدة']
+---
+
+import { Image } from "/snippets/ar/components/Image.jsx";
+
+{frontMatter.description}
+
+{/* truncate */}
+
+<div id="types-of-profilers">
+  ## أنواع أدوات التنميط
+</div>
+
+يتضمن LLVM بالفعل أداة تُدرج تعليمات تتبّع داخل الشيفرة، ما يتيح لنا إجراء [التنميط عبر تضمين الشيفرة
+](https://en.wikipedia.org/wiki/Profiling_\(computer_programming\)#Instrumentation). وعلى
+خلاف [التنميط بالعينات أو التنميط الإحصائي](https://en.wikipedia.org/wiki/Profiling_\(computer_programming\)#Statistical_profilers)،
+فهو بالغ الدقة من دون فقدان أي استدعاءات، لكنه يتطلب تضمين الشيفرة ويستهلك
+موارد أكثر.
+
+وباختصار، يضيف مُنَمِّط تضمين الشيفرة تعليمات جديدة لتتبّع استدعاءات جميع الدوال.
+أما أدوات التنميط الإحصائي فتتيح لنا تشغيل الشيفرة من دون الحاجة إلى أي تغييرات، مع أخذ لقطات
+دوريًا لمعاينة حالة التطبيق. لذلك، لا تُؤخذ في الاعتبار إلا الدوال التي تكون قيد التنفيذ
+عند التقاط اللقطة. ويُعد [perf](https://en.wikipedia.org/wiki/Perf_%28Linux%29) من أشهر
+أدوات التنميط الإحصائي.
+
+<div id="profiling-clickhouse-using-xray-integration">
+  ## تنميط ClickHouse باستخدام تكامل XRay
+</div>
+
+في ClickHouse 25.12، دُمج XRay لإضافة نقاط تتبّع جديدة إلى الدوال بسلاسة.
+لذلك، فإن أي إصدار رسمي يأتي مزودًا أصلًا بهذه الميزة التي يمكن تشغيلها عند الطلب، من دون
+التأثير في الأداء العام عندما لا تكون مفعّلة. والفكرة هي تفعيل الحد الأدنى من
+نقاط التتبّع للحصول على معلومات قيّمة.
+
+يمكننا إضافة نقطة قياس جديدة لتحليل الأداء باستخدام عبارة [SYSTEM INSTRUMENT ADD
+PROFILE](/ar/reference/statements/system#instrument-add-profile).
+ويمكن جمع الدوال المطلوب قياسها من
+جدول النظام [system.symbols](/ar/reference/system-tables/symbols). لنفترض أننا
+نريد تحليل أداء الدالة `sleepForNanoseconds`، وهي دالة مناسبة للتحقق من المدة التي
+يستغرقها تنفيذها.
+
+```sql
+SYSTEM INSTRUMENT ADD 'sleepForNanoseconds' PROFILE
+```
+
+ثم نتركه يعمل طوال الفترة الزمنية التي نريد تحليلها، ثم نوقفه.
+
+```sql
+SYSTEM INSTRUMENT REMOVE ALL
+```
+
+نحوّل البيانات المُجمَّعة في system.trace&#95;log [إلى تنسيق
+Chrome](/ar/reference/system-tables/trace_log#chrome-event-trace-format) لتصوّرها في
+[Perfetto](https://ui.perfetto.dev). لاحظ query&#95;id و cpu&#95;id و stacktrace في
+كل إدخال.
+
+<Image img="/images/knowledgebase/profiling-clickhouse-with-llvm-xray/profile.webp" size="md" alt="الترتيب الزمني" />
+
+<div id="profiling-a-native-application-using-xray">
+  ## تنميط تطبيق أصلي باستخدام XRay
+</div>
+
+يُترك القسم التالي كمرجع لفهم كيفية عمل XRay خلف الكواليس، وكيف يمكن
+استخدامه مباشرةً ومن دون إعدادات إضافية لتحليل أداء تطبيق أصلي.
+
+<div id="instrument-the-code">
+  ### أضف التتبّع إلى الشيفرة
+</div>
+
+لنفترض وجود الشيفرة المصدرية التالية:
+
+```cpp
+#include <chrono>
+#include <cstdio>
+#include <thread>
+
+void one()
+{
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+}
+
+void two()
+{
+    std::this_thread::sleep_for(std::chrono::milliseconds(5));
+}
+
+int main()
+{
+    printf("Start\n");
+
+    for (int i = 0; i < 10; ++i)
+    {
+        one();
+        two();
+    }
+
+    printf("Finish\n");
+}
+```
+
+لكي نُمكّن الرصد باستخدام XRay، نحتاج إلى إضافة بعض الخيارات كما يلي:
+
+```bash
+clang++ -o test test.cpp -fxray-instrument -fxray-instruction-threshold=1
+```
+
+* يلزم استخدام `-fxray-instrument` لإضافة التتبّع إلى الشيفرة.
+* يُستخدم `-fxray-instruction-threshold=1` لكي يضيف التتبّع إلى جميع الدوال، حتى إن كانت
+  صغيرة جدًا كما في مثالنا. بشكل افتراضي، يُضاف التتبّع إلى الدوال التي تحتوي على [200 تعليمة
+  على الأقل](https://llvm.org/docs/XRay.html#instrumenting-your-c-c-objective-c-application).
+
+يمكننا التأكد من أن الشيفرة جرى تجهيزها بالتتبّع على نحو صحيح من خلال التحقق من وجود قسم جديد في
+الملف التنفيذي:
+
+```bash
+objdump -h -j xray_instr_map test
+
+test:     file format elf64-x86-64
+
+Sections:
+Idx Name          Size      VMA               LMA               File off  Algn
+ 17 xray_instr_map 000005c0  000000000002f91c  000000000002f91c  0002f91c  2**0
+                  CONTENTS, ALLOC, LOAD, READONLY, DATA
+```
+
+<div id="run-the-process-with-proper-env-var-values-to-collect-the-trace">
+  ### شغّل العملية باستخدام قيم متغيّرات البيئة المناسبة لجمع التتبّع
+</div>
+
+بشكلٍ افتراضي، لا تُجمع بيانات مُنَمِّط إلا إذا طُلب ذلك صراحةً. وبعبارة أخرى، ما لم
+نكن نجري profiling، فإن الكلفة الإضافية تكون شبه معدومة. يمكننا تعيين قيم مختلفة لـ `XRAY_OPTIONS` من أجل
+تحديد وقت بدء مُنَمِّط في جمع البيانات وكيفية تنفيذ ذلك.
+
+```bash
+XRAY_OPTIONS="patch_premain=true xray_mode=xray-basic verbosity=1" ./test
+==74394==XRay: Log file in 'xray-log.test.14imlN'
+Start
+Finish
+==74394==Cleaned up log for TID: 74394
+```
+
+<div id="convert-the-trace">
+  ### تحويل التتبّع
+</div>
+
+يمكن تحويل عمليات التتبّع في XRay إلى عدة تنسيقات. ويُعد تنسيق `trace_event` مفيدًا جدًا لأنه
+سهل التحليل، وتدعمه بالفعل مجموعة من الأدوات، لذا سنستخدمه:
+
+```bash
+llvm-xray convert --symbolize --instr_map=./test --output-format=trace_event xray-log.test.14imlN | gzip > test-trace.txt.gz
+```
+
+<div id="visualize-the-trace">
+  ### تصوّر التتبّع
+</div>
+
+يمكننا استخدام واجهات مستخدم مستندة إلى الويب مثل [speedscope.app](https://www.speedscope.app/) أو
+[Perfetto](https://ui.perfetto.dev).
+
+في حين أن Perfetto يسهّل تصوّر عدة سلاسل تنفيذ والاستعلام عن البيانات، فإن speedscope أفضل
+لإنشاء flamegraph وعرض sandwich لبياناتك.
+
+<div id="time-order">
+  #### الترتيب حسب الزمن
+</div>
+
+<Image img="/images/knowledgebase/profiling-clickhouse-with-llvm-xray/time-order.webp" size="md" alt="الترتيب حسب الزمن" />
+
+<div id="left-heavy">
+  #### مرجّح إلى اليسار
+</div>
+
+<Image img="/images/knowledgebase/profiling-clickhouse-with-llvm-xray/left-heavy.webp" size="md" alt="مرجّح-إلى-اليسار" />
+
+<div id="sandwitch">
+  #### ساندويتش
+</div>
+
+<Image img="/images/knowledgebase/profiling-clickhouse-with-llvm-xray/sandwich.webp" size="md" alt="ساندويتش" />
+
+<div id="check-out-the-docs">
+  ## اطّلع على الوثائق
+</div>
+
+* [SYSTEM INSTRUMENT](/ar/reference/statements/system#instrument) — أضف
+  نقاط التتبّع أو أزلها.
+* [system.instrumentation](/ar/reference/system-tables/instrumentation)
+  — افحص نقاط التتبّع المُفعّلة.
+* [system.symbols](/ar/reference/system-tables/symbols) — افحص
+  الرموز لإضافة نقاط التتبّع.
+* [system.trace&#95;log](/ar/reference/system-tables/trace_log) — افحص البيانات
+  التي جُمعت باستخدام نقاط التتبّع.
+* [XRay Instrumentation](https://llvm.org/docs/XRay.html)
+* وثائق [Debugging with XRay](https://llvm.org/docs/XRayExample.html) للتعرّف على مزيد من التفاصيل.

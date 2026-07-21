@@ -50,7 +50,7 @@ namespace
         {
             ReadBufferFromString in{str};
             ReplicatedPartNames res;
-            size_t num;
+            size_t num = 0;
             readBinary(num, in);
             res.part_names_and_checksums.resize(num);
             for (size_t i = 0; i != num; ++i)
@@ -85,7 +85,7 @@ namespace
         {
             ReadBufferFromString in{str};
             ReplicatedMutations res;
-            size_t num;
+            size_t num = 0;
             readBinary(num, in);
             res.mutations.resize(num);
             for (size_t i = 0; i != num; ++i)
@@ -125,7 +125,7 @@ namespace
         {
             ReadBufferFromString in{str};
             FileInfos res;
-            size_t num;
+            size_t num = 0;
             readBinary(num, in);
             res.file_infos.resize(num);
             for (size_t i = 0; i != num; ++i)
@@ -776,12 +776,12 @@ BackupFileInfos BackupCoordinationOnCluster::getFileInfos() const
     return file_infos->getFileInfos(current_host);
 }
 
-BackupFileInfos BackupCoordinationOnCluster::getFileInfosForAllHosts() const
+void BackupCoordinationOnCluster::forEachFileInfoForAllHosts(const std::function<void(const BackupFileInfo &)> & callback) const
 {
-    auto component_guard = Coordination::setCurrentComponent("BackupCoordinationOnCluster::getFileInfosForAllHosts");
+    auto component_guard = Coordination::setCurrentComponent("BackupCoordinationOnCluster::forEachFileInfoForAllHosts");
     std::lock_guard lock{file_infos_mutex};
     prepareFileInfos();
-    return file_infos->getFileInfosForAllHosts();
+    file_infos->forEachFileInfoForAllHosts(callback);
 }
 
 void BackupCoordinationOnCluster::prepareFileInfos() const

@@ -1,0 +1,110 @@
+---
+sidebarTitle: 'نظرة عامة'
+description: 'كيفية تصدير البيانات من BigQuery إلى ClickHouse Cloud باستخدام ClickPipes.'
+slug: /integrations/clickpipes/bigquery/overview
+title: 'تكامل BigQuery مع ClickHouse Cloud'
+doc_type: 'guide'
+---
+
+import IntroClickPipe from '/snippets/ar/_intro.mdx';
+
+import { Image } from "/snippets/ar/components/Image.jsx";
+
+<IntroClickPipe />
+
+<div id="features">
+  ## الميزات
+</div>
+
+<div id="initial-load">
+  ### التحميل الأولي
+</div>
+
+سيحمّل ClickPipe الخاص بـ BigQuery الجداول المحددة في [مجموعة بيانات](https://docs.cloud.google.com/bigquery/docs/datasets-intro) BigQuery إلى جداول الوجهة في ClickHouse ضمن عملية دفعية واحدة. وبمجرد اكتمال مهمة الإدخال، يتوقف ClickPipe تلقائيًا. وتتطلب عملية إدخال التحميل الأولي حاوية Google Cloud Storage ‏(GCS) يوفّرها المستخدم لاستخدامها كمنطقة مرحلية. في المستقبل، ستوفّر ClickPipes الحاوية الوسيطة وتتولى إدارتها.
+
+<Note>
+  تعتمد ClickPipes على مهام الاستخراج الدفعية لجلب البيانات من BigQuery إلى حاوية GCS المرحلية. ولا تترتب على هذه العملية **أي رسوم معالجة** في BigQuery.
+</Note>
+
+<div id="cdc">
+  ### CDC (التقاط بيانات التغيير)
+</div>
+
+CDC **غير متاح** في المعاينة الخاصة حاليًا، لكنه سيكون مدعومًا في المستقبل. وحتى ذلك الحين، نوصي باستخدام [Google Cloud Storage ClickPipe](/ar/integrations/clickpipes/object-storage/google-cloud-storage/overview) لمزامنة بيانات BigQuery المُصدَّرة إلى ClickHouse Cloud بشكل مستمر بعد اكتمال التحميل الأولي.
+
+<div id="data-type-mapping">
+  ## تعيين أنواع البيانات
+</div>
+
+[أنواع بيانات BigQuery](https://docs.cloud.google.com/bigquery/docs/reference/standard-sql/data-types).
+
+| نوع بيانات BigQuery | نوع بيانات ClickHouse | التفاصيل                                                        |
+| ------------------- | --------------------- | --------------------------------------------------------------- |
+| `BOOL`              | `Bool`                |                                                                 |
+| `INT64`             | `Int64`               |                                                                 |
+| `FLOAT64`           | `Float64`             |                                                                 |
+| `NUMERIC`           | `Decimal(P, S)`       | دقة تصل إلى 38، ومقياس يصل إلى 9، مع الحفاظ على الدقة/المقياس.  |
+| `BIGNUMERIC`        | `Decimal(P, S)`       | دقة تصل إلى 76، ومقياس يصل إلى 38، مع الحفاظ على الدقة/المقياس. |
+| `STRING`            | `String`              |                                                                 |
+| `BYTES`             | `String`              |                                                                 |
+| `JSON`              | `String` (JSON)       |                                                                 |
+| `DATE`              | `Date`                |                                                                 |
+| `TIME`              | `String`              | بدقة ميكروثانية.                                                |
+| `DATETIME`          | `DateTime`            | بدقة ميكروثانية.                                                |
+| `TIMESTAMP`         | `DateTime64(6)`       | بدقة ميكروثانية.                                                |
+| `GEOGRAPHY`         | `String`              |                                                                 |
+| `GEOMETRY`          | `String`              |                                                                 |
+| `UUID`              | `String`              |                                                                 |
+| `ARRAY<T>`          | `Array(T)`            |                                                                 |
+| `ARRAY<DATE>`       | `Array(Date)`         |                                                                 |
+| `STRUCT` (RECORD)   | `String`              |                                                                 |
+
+<div id="access-control">
+  ## التحكم في الوصول
+</div>
+
+<div id="authentication">
+  ### المصادقة
+</div>
+
+<div id="service-account-credentials">
+  #### بيانات اعتماد حساب الخدمة
+</div>
+
+يُجري ClickPipes المصادقة على مشروعك في Google Cloud باستخدام [مفتاح حساب خدمة](https://docs.cloud.google.com/iam/docs/keys-create-delete). نوصي بإنشاء حساب خدمة مخصّص بأقل مجموعة مطلوبة من [الأذونات](#permissions) للسماح لـ ClickPipes بتصدير البيانات من BigQuery، وتحميلها إلى حاوية GCS مرحلية، ثم قراءتها إلى ClickHouse.
+
+<Image img="/images/integrations/data-ingestion/clickpipes/bigquery/cp_iam.webp" alt="إنشاء مفتاح حساب خدمة بأذونات BigQuery وCloud Storage" size="lg" border />
+
+<div id="permissions">
+  ### الأذونات
+</div>
+
+<div id="bigquery">
+  #### BigQuery
+</div>
+
+يجب أن يتضمن حساب الخدمة أدوار BigQuery التالية:
+
+* [`roles/bigquery.dataViewer`](https://docs.cloud.google.com/bigquery/docs/access-control#bigquery.dataViewer)
+* [`roles/bigquery.jobUser`](https://docs.cloud.google.com/bigquery/docs/access-control#bigquery.jobUser)
+
+ولزيادة تقييد نطاق الوصول، نوصي باستخدام [شروط IAM](https://docs.cloud.google.com/bigquery/docs/conditions) لتقييد الموارد التي يمكن للدور الوصول إليها. على سبيل المثال، يمكنك قصر دور `dataViewer` على مجموعة البيانات المحددة التي تحتوي على الجداول التي تريد مزامنتها:
+
+```bash
+resource.name.startsWith("projects/<PROJECT_ID>/datasets/<DATASET_NAME>")
+```
+
+<div id="cloud-storage">
+  #### Cloud Storage
+</div>
+
+يجب أن يكون لدى حساب الخدمة أدوار Cloud Storage التالية:
+
+* [`roles/storage.objectAdmin`](https://docs.cloud.google.com/storage/docs/access-control/iam-roles#storage.objectAdmin)
+* [`roles/storage.bucketViewer`](https://docs.cloud.google.com/storage/docs/access-control/iam-roles#storage.bucketViewer)
+
+لتضييق نطاق الوصول بشكل أكبر، نوصي باستخدام [شروط IAM](https://docs.cloud.google.com/bigquery/docs/conditions) لتقييد الموارد التي يمكن للدور الوصول إليها. على سبيل المثال، يمكنك تقييد الدورين `objectAdmin` و`bucketViewer` ليقتصرا على الحاوية المخصصة التي أُنشئت لمزامنات ClickPipes.
+
+```bash
+resource.name.startsWith("projects/_/buckets/<BUCKET_NAME>")
+```

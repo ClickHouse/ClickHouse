@@ -1,0 +1,88 @@
+---
+noindex: true
+title: "为分布式查询配置 remote_servers"
+sidebarTitle: "配置 remote_servers"
+description: "使用 Kubernetes Secrets 和 @from_env 指令，安全地配置 ClickHouse remote_servers，以便在多个 ClickHouse 私网集群之间分片数据。"
+---
+
+使用 Kubernetes Secrets 和 `@from_env` 指令，安全地配置 ClickHouse `remote_servers`，以便在多个 ClickHouse 私网集群之间分片数据。
+
+<div id="when-to-use-remote_servers">
+  ## 何时使用 remote_servers
+</div>
+
+[`remote_servers`](https://clickhouse.com/docs/operations/server-configuration-parameters/settings#remote_servers) 定义了一个具名集群拓扑，ClickHouse 在通过 [分布式表](https://clickhouse.com/docs/engines/table-engines/special/distributed) 或 [`cluster()`](https://clickhouse.com/docs/sql-reference/table-functions/cluster) 表函数执行分布式查询时会使用它。
+
+在单个 ClickHouse 私网集群内，各个副本已通过 ClickHouse Keeper 和 [SharedMergeTree](https://clickhouse.com/docs/cloud/reference/shared-merge-tree) 完成协调——这也是 ClickHouse Cloud 采用的同一种架构——因此，`remote_servers` 并不用于复制。这种架构已经覆盖了绝大多数用例。
+
+将数据分片到多个 ClickHouse 私网集群会显著增加运维复杂性，因此应将其作为最后手段。如果您认为自己的工作负载确实需要这样做，我们强烈建议先与我们沟通，以便我们评估这是否真的是合适的方案。
+
+<div id="prerequisites">
+  ## 前置条件
+</div>
+
+* `onprem-clickhouse-cluster` Helm 图表版本 **1.1.151 或更高版本**
+* 已部署两个 ClickHouse 私网集群 (本指南使用 `default-xx-01` 和 `default-xx-02`) 
+* 名为 `default-xx-01-password` 和 `default-xx-02-password` 的 Kubernetes [Secrets](https://kubernetes.io/docs/concepts/configuration/secret/)，其中存储了集群密码
+
+<div id="the-pattern">
+  ## 这种模式
+</div>
+
+1. Kubernetes Secrets 用于保存敏感值 (集群密码) 。
+2. `secretKeyRef` 将这些值作为环境变量注入 ClickHouse 容器。
+3. ClickHouse 配置会在运行时使用 [`@from_env`](https://clickhouse.com/docs/operations/configuration-files#from_env_zk) 指令读取这些值。
+
+这样可以避免敏感数据出现在已渲染的清单中。
+
+> 如果你要集成外部 Secret 存储 (例如 HashiCorp Vault、AWS Secrets Manager) ，请使用 [Kubernetes Secrets Store CSI Driver](https://github.com/kubernetes-sigs/secrets-store-csi-driver) 挂载 secrets，并[将其加载为环境变量](https://secrets-store-csi-driver.sigs.k8s.io/topics/set-as-env-var)。无论环境变量是通过何种方式填充的，`@from_env` 模式的工作方式都是一样的。
+
+<div id="helm-values-example">
+  ## Helm 配置值示例
+</div>
+
+每个分片都通过其所属集群的 `-any` service 进行访问——这是一个 Kubernetes service，会将流量路由到该集群中任意一个可用副本。与使用单个 pod (容器组) 的 DNS name 相比，这种方式更稳妥，因为后者可能会随着时间而变化。
+
+```yaml
+server:
+  additionalEnvVars:
+    - name: DEFAULT_XX_01_PASSWORD
+      valueFrom:
+        secretKeyRef:
+          name: default-xx-01-password
+          key: password
+    - name: DEFAULT_XX_02_PASSWORD
+      valueFrom:
+        secretKeyRef:
+          name: default-xx-02-password
+          key: password
+  config:
+    remote_servers:
+      my-distributed-cluster:
+        - shard:
+            replica:
+              user: default
+              password:
+                "@from_env": DEFAULT_XX_01_PASSWORD
+              host: c-default-xx-01-any.ns-default-xx-01.svc.cluster.local
+              port: 9000
+        - shard:
+            replica:
+              user: default
+              password:
+                "@from_env": DEFAULT_XX_02_PASSWORD
+              host: c-default-xx-02-any.ns-default-xx-02.svc.cluster.local
+              port: 9000
+```
+
+<div id="service-hostname-format">
+  ## 服务主机名格式
+</div>
+
+`-any` 服务主机名遵循以下格式：
+
+```text
+c-<cluster-name>-any.<namespace>.svc.cluster.local
+```
+
+这种模式可确保敏感数据不会直接以模板形式写入清单中。`additionalEnvVars` 字段使用 `secretKeyRef` 从 Kubernetes secrets 中设置环境变量，而 ClickHouse 配置中的 `@from_env` 指令会在运行时加载这些值。
