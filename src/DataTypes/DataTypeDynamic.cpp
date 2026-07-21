@@ -916,9 +916,13 @@ std::unique_ptr<IDataType::SubstreamData> DataTypeDynamic::getDynamicSubcolumnDa
         const auto & shared_variant = dynamic_column.getSharedVariant();
         /// Check if provided Dynamic column has the exact subcolumn type. In this case MergeTree
         /// can read the specific variant substream without opening unrelated dynamic substreams.
+        /// This fast path is valid only for types whose compatibility is plain equality. For types
+        /// with dynamic subcolumns (`JSON`, `Dynamic` and containers of them), other variants can be
+        /// compatible without being equal (e.g. plain `JSON` and `JSON(max_dynamic_paths=0)`), and
+        /// compatible values can also live in the shared variant, so all of them must be read.
         String subcolumn_type_name = subcolumn_type->getName();
         auto it = variant_info.variant_name_to_discriminator.find(subcolumn_type_name);
-        if (it != variant_info.variant_name_to_discriminator.end())
+        if (it != variant_info.variant_name_to_discriminator.end() && !subcolumn_type->hasDynamicSubcolumns())
         {
             discriminator = it->second;
             res->column = variant_column.getVariantPtrByGlobalDiscriminator(*discriminator);

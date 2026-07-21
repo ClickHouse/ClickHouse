@@ -313,8 +313,12 @@ void SerializationDynamicElement::deserializeBinaryBulkStatePrefix(
         settings.path.pop_back();
     };
 
+    /// The exact-variant fast path is valid only for types whose compatibility is plain equality.
+    /// For types with dynamic subcolumns (`JSON`, `Dynamic` and containers of them), other variants
+    /// can be compatible without being equal (e.g. plain `JSON` and `JSON(max_dynamic_paths=0)`),
+    /// and compatible values can also live in the shared variant, so all of them must be read.
     if (auto exact_variant_discr = variant_type.tryGetVariantDiscriminator(dynamic_element_name);
-        exact_variant_discr && exact_variant_discr != shared_variant_global_discr)
+        exact_variant_discr && exact_variant_discr != shared_variant_global_discr && !requested_type->hasDynamicSubcolumns())
     {
         add_variant_reader(*exact_variant_discr);
     }
