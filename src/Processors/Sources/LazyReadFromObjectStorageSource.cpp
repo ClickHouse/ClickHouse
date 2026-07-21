@@ -72,7 +72,17 @@ private:
             return;
 
         const auto & seen = *captured;
-        const auto current = object_storage->tryGetObjectMetadata(object.getPath(), /*with_tags=*/ false);
+
+        /// Probe the same physical object that the reading pass identifies (mirroring `createReader`):
+        /// for an entry of an archive, the object read (and whose metadata was captured by the main pass)
+        /// is the archive itself, not the synthetic `archive::inner` path; and the probe must go through
+        /// the `RelativePathWithMetadata` overload so that `read_source_index` is preserved — for web URL
+        /// shards the same path can be served from different URL options, and the plain string overload
+        /// would drop the shard identity and could validate one shard using another's metadata.
+        const auto & path = object.isArchive() ? object.getPathToArchive() : object.getPath();
+        auto metadata_object = object.relative_path_with_metadata;
+        metadata_object.relative_path = path;
+        const auto current = object_storage->tryGetObjectMetadata(metadata_object, /*with_tags=*/ false);
 
         bool changed = false;
         bool comparable = false;
@@ -103,7 +113,7 @@ private:
             throw Exception(ErrorCodes::S3_OBJECT_CHANGED_DURING_READ,
                 "Lazy materialization: file {} {} between the main reading pass and the lazy reading pass. "
                 "Rerun the query, or disable the query_plan_optimize_lazy_materialization_for_object_storage setting",
-                object.getPath(),
+                path,
                 changed ? "was modified" : "cannot be proven unchanged");
     }
 
