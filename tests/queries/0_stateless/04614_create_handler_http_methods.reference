@@ -1,0 +1,14 @@
+=== a default (GET) handler answers HEAD with the same 200 status and no body ===
+1
+=== an OPTIONS request to a handler endpoint gets the generic preflight response (204) ===
+1
+=== a lengthless non-chunked PUT to a mutating handler is rejected with 411 ===
+1
+=== a lengthless non-chunked DELETE to a mutating handler is rejected with 411 ===
+1
+=== CREATE TEMPORARY TABLE is allowed over a read-only (GET) handler method ===
+temp table handler created
+=== CREATE TEMPORARY VIEW is allowed over a read-only (GET) handler method ===
+temp view handler created
+=== a non-temporary CREATE TABLE still requires a mutating handler method ===
+BAD_ARGUMENTS
