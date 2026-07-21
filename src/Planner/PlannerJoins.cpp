@@ -1143,7 +1143,12 @@ PreparedJoinStorage tryGetLookupJoinStorage(
     /// fast path never reads or caches a column outside the user's grants. The check lives there,
     /// not here, to avoid a window where a concurrent `ALTER ... ADD COLUMN` widens the column set
     /// between a planner-side check and the actual read.
-    result.storage_key_value = storage->tryGetLookupJoin(storage_key_names, planner_context->getQueryContext());
+    ///
+    /// Pass the snapshot the analyzer froze on the `TableNode` - the one `result.column_mapping`
+    /// and the direct-join header above were derived from - so the lookup entity is built from the
+    /// same snapshot and cannot diverge from the header under a concurrent `ALTER`.
+    result.storage_key_value = storage->tryGetLookupJoin(
+        storage_key_names, table_node->getStorageSnapshot(), planner_context->getQueryContext());
     if (!result.storage_key_value)
         return {};
 

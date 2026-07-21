@@ -306,11 +306,9 @@ void appendBlock(Block & result_block, const Block & block)
 LookupReadResult readLookupIndexColumns(
     const MergeTreeData & storage,
     const Names & columns_to_read,
+    const StorageSnapshotPtr & storage_snapshot,
     const ContextPtr & query_context)
 {
-    auto metadata_snapshot = storage.getInMemoryMetadataPtr(query_context, false);
-    auto storage_snapshot = storage.getStorageSnapshot(metadata_snapshot, query_context);
-
     LookupReadResult result;
     result.block = storage_snapshot->getSampleBlockForColumns(columns_to_read).cloneEmpty();
     auto lookup_table_state = getLookupTableState(storage_snapshot, query_context, columns_to_read);
@@ -12095,7 +12093,7 @@ SetPtr MergeTreeData::tryGetLookupSet(const Names & key_names, const ContextPtr 
         }
     }
 
-    auto lookup_result = readLookupIndexColumns(*this, key_names, query_context);
+    auto lookup_result = readLookupIndexColumns(*this, key_names, storage_snapshot, query_context);
     auto set = buildLookupSet(lookup_result.block, transform_null_in);
     if (!lookup_result.cacheable)
         return set;
@@ -12119,17 +12117,23 @@ SetPtr MergeTreeData::tryGetLookupSet(const Names & key_names, const ContextPtr 
     return set;
 }
 
-std::shared_ptr<const IKeyValueEntity> MergeTreeData::tryGetLookupJoin(const Names & key_names, const ContextPtr & query_context) const
+std::shared_ptr<const IKeyValueEntity> MergeTreeData::tryGetLookupJoin(
+    const Names & key_names, const StorageSnapshotPtr & storage_snapshot, const ContextPtr & query_context) const
 {
     if (!query_context->getSettingsRef()[Setting::allow_experimental_lookup_index])
         return {};
 
-    const auto & metadata_snapshot = getInMemoryMetadataPtr(query_context, false);
-    if (!findLookupIndex(metadata_snapshot->getLookupIndices(), TABLE_JOIN_INDEX_TYPE, key_names))
+    /// Build the lookup entity from the storage snapshot the analyzer froze on the `TableNode`
+    /// (passed by the caller), not from a freshly resolved one. The planner has already derived
+    /// the direct-join header and column mapping from that snapshot; with
+    /// `enable_shared_storage_snapshot_in_query = 0` a fresh snapshot could observe a concurrent
+    /// `ALTER DROP/MODIFY COLUMN` and diverge from the header, making `DirectKeyValueJoin` either
+    /// fail with `Cannot find column ... in table lookup cache` or cast payload data from the
+    /// wrong type. The regular right-side plan would use the frozen snapshot consistently.
+    if (!findLookupIndex(storage_snapshot->metadata->getLookupIndices(), TABLE_JOIN_INDEX_TYPE, key_names))
         return {};
 
     const auto cache_key = serializeLookupKey("table_join", key_names);
-    auto storage_snapshot = getStorageSnapshot(metadata_snapshot, query_context);
     auto lookup_columns = getAllPhysicalColumnsForLookupJoin(storage_snapshot);
 
     /// The lookup join reads and caches *every* physical column of the table (`lookup_columns`),
@@ -12160,7 +12164,7 @@ std::shared_ptr<const IKeyValueEntity> MergeTreeData::tryGetLookupJoin(const Nam
         }
     }
 
-    auto lookup_result = readLookupIndexColumns(*this, lookup_columns, query_context);
+    auto lookup_result = readLookupIndexColumns(*this, lookup_columns, storage_snapshot, query_context);
     auto entity = std::make_shared<MergeTreeTableJoinEntity>(key_names, std::move(lookup_result.block));
     if (!lookup_result.cacheable)
         return entity;
