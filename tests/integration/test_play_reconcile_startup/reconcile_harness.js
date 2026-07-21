@@ -194,6 +194,7 @@ function makeElement(tag) {
         renderGraph() {},
         renderTotals() {},
         applyColumnColors() {},
+        applyPinnedColumns() {},
         refreshColumnColor() {},
         transposeIfNeeded() {},
         _changeTableLayout() {},
@@ -410,6 +411,7 @@ function makeContext({ href, historyState, seedTabs, seedMeta, openDelayMs }) {
         cancelIdleCallback: (t) => clearTimeout(t),
         console,
         performance: { now: () => Date.now() },
+        crypto: require('node:crypto').webcrypto,
         atob: (b64) => Buffer.from(b64, 'base64').toString('binary'),
         btoa: (bin) => Buffer.from(bin, 'binary').toString('base64'),
         TextEncoder, TextDecoder,
@@ -686,11 +688,11 @@ async function main() {
 
     /// Guard (dirty-startup run leak): opening a `?run=1#<query>` auto-run link and typing into the
     /// bootstrap workspace before IndexedDB resolves makes reconciliation keep the LIVE tabs
-    /// (`bootstrap_dirty`) and abandon the startup auto-run. The directive must be marked spent
-    /// (`run_directive_spent`) when that path wins: otherwise the next `syncHistory`
+    /// (`bootstrap_dirty`) and abandon the startup auto-run. The run directive must be dropped
+    /// (`run_immediately = false`) when that path wins: otherwise the next `syncHistory`
     /// (e.g. switching into a clean, run-backed `Report` tab, whose `tabReflectsRun` is true) would
-    /// recompute `run=1` on the rewrite and re-stamp `?run=1` onto `Report`'s URL — so a later
-    /// reload auto-executes a query the user never asked to auto-run.
+    /// recompute `run=1` as `run_immediately && tabReflectsRun(tab)` and re-stamp `?run=1` onto
+    /// `Report`'s URL — so a later reload auto-executes a query the user never asked to auto-run.
     {
         const r = await runScenario(js, {
             href: base + '?run=1#' + encodeURIComponent('SELECT 111'),

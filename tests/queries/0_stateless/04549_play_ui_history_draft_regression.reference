@@ -1,10 +1,11 @@
+keystroke: no new history entry is pushed
+keystroke: the current entry still holds the run query
+keystroke: the URL is not rewritten
+keystroke: only the in-memory tab moves
 close: the closed tab entry carries the latest draft
 close: the draft entry does not carry run=1
 close+back: the recreated tab restores the draft
 close+back: the run result snapshot is kept
-legacy close: the legacy entry captures the latest draft
-legacy close: the folded entry is upgraded to a tabId entry
-legacy close+back: the recreated tab restores the draft
 back: a newer unrun draft is preserved
 back: the editor shows the draft
 back: the entry result snapshot is adopted
@@ -30,111 +31,11 @@ delayed completion: the entry does not carry run=1
 delayed completion (params changed): the query is kept
 delayed completion (params changed): the live param edit survives
 delayed completion (params changed): the entry does not carry run=1
-delayed completion (multi-query): the live draft survives
-delayed completion (multi-query): the completed run's result is still kept
-delayed completion (multi-query): the entry does not carry run=1
-in-flight single run: the never-run draft is not stamped run=1
-in-flight single run: the result snapshot is the statement that actually ran
-in-flight single run: the live draft survives in the editor
-run-selected in-flight: the launched selection runs, not the moved caret
-in-flight run-all single: the launched statement runs, not the draft
-in-flight run-all single: the never-run draft is not stamped run=1
-in-flight run-all single: the live draft survives in the editor
-run-one in-flight: the launch-time caret statement runs, not the moved caret
-run-selected subset: the entry is not stamped run=1
-run-selected subset: the result snapshot is the statement that ran
-run-selected subset: a reload does not auto-run the full editor
-run-selected subset: a reload restores the full editor as text
-run-selected multi subset: the entry is not stamped run=1
-run-selected multi subset: a later tab switch does not re-stamp run=1
-run-selected multi subset: a reload does not auto-run the full editor
-run-one partial: the entry is not stamped run=1
-run-one partial: the result snapshot is the statement that ran
-run-one partial: a reload does not auto-run the DROP
-run-all full: the entry keeps run=1
-run-all full: a reload re-runs the whole editor
-run-all error: a run that skipped a statement drops run=1
-run-all error: a reload does not auto-run the skipped DROP
-run-one single-statement: the full run keeps run=1
-placeholder dropped: the completed run keeps run=1
-placeholder dropped: the removed placeholder does not leak into the URL
-placeholder dropped: the stale binding is cleared from the tab
-run under pending param restore: the clean run keeps run=1
-run under pending param restore: the entry keeps the destination tab params
-run under pending param restore: the destination param reaches the URL
-run under pending param restore: the stale source param does not leak
-run under pending param restore: a later capture keeps the destination params
-debounced capture during pending-restore run: the mid-flight capture clobbers the tab (precondition)
-debounced capture during pending-restore run: the clean run keeps run=1
-debounced capture during pending-restore run: the restore-sourced params are committed back
-debounced capture during pending-restore run: the destination param reaches the URL
-debounced capture during pending-restore run: the stale previous-tab binding does not leak
-edited query under pending restore: the clean run keeps run=1
-edited query under pending restore: the stale destination param does not leak
-edited query under pending restore: the source param does not leak either
-edited query under pending restore: the entry carries no stale params
-edited query under pending restore, inputs not yet rebuilt: the clean run keeps run=1
-edited query under pending restore, inputs not yet rebuilt: the stale source param does not leak
-edited query under pending restore, inputs not yet rebuilt: no destination param leaks either
-edited query under pending restore, inputs not yet rebuilt: the entry carries no stale params
-param edit under pending restore mid-flight: the run drops run=1
-param edit under pending restore mid-flight: the live param edit survives
-param edit under pending restore mid-flight: the live param input keeps the edit
-param edit under pending restore mid-flight: the stale launch binding does not reach the URL
-query edit under pending restore mid-flight: the run drops run=1
-query edit under pending restore mid-flight: the live draft query survives
-query edit under pending restore mid-flight: the entry carries the new query params, not the old
-query edit under pending restore mid-flight: the stale destination param does not leak into the URL
-param edit during launch param resolution: the run executes with the click-time binding
-param edit during launch param resolution: the live param edit survives
-param edit during launch param resolution: the live param input keeps the edit
-param edit during launch param resolution: the run drops run=1
-param edit during launch param resolution: the stale click-time binding does not reach the URL
-ordinary run, inputs not yet rebuilt: the clean run keeps run=1
-ordinary run, inputs not yet rebuilt: the stale source param does not leak
-ordinary run, inputs not yet rebuilt: the launched query param reaches the URL
-ordinary run, inputs not yet rebuilt: the run snapshot carries the launched query params
-diverged query mid-flight, inputs not yet rebuilt: the live draft survives
-diverged query mid-flight, inputs not yet rebuilt: the entry drops run=1
-diverged query mid-flight, inputs not yet rebuilt: the stale source param does not leak
-diverged query mid-flight, inputs not yet rebuilt: the entry carries the draft's own params, not the stale ones
-diverged query mid-flight, inputs not yet rebuilt: the completed run's result is still kept
-reordered params: the clean run keeps run=1 despite differing key order
-reordered params: a later tab switch keeps run=1
-cancel during param resolution: the superseded run issues no request
-cancel during param resolution: no history entry is written for the canceled run
-cancel during param resolution: the previous run's result snapshot is untouched
-param moved during launch resolution: the run executes with the click-time binding
-param moved during launch resolution: the live input keeps the newer value
-param moved during launch resolution: the tab records the live binding
-param moved during launch resolution: the entry drops run=1 (shown binding was never run)
-second edit during delayed completion: the latest draft survives in the editor
-second edit during delayed completion: the entry carries the latest draft's own params
-second edit during delayed completion: the first draft param does not leak into the URL
-second edit during delayed completion: the entry drops run=1
-second edit during delayed completion: the completed run's result is still kept
-param edit during draft derivation: the newer binding survives in the tab
-param edit during draft derivation: the live input keeps the newer value
-param edit during draft derivation: the stale binding does not reach the URL
-param edit during draft derivation: the entry drops run=1
-param edit during draft derivation: the completed run's result is still kept
-tab switch during draft derivation: the new tab stays active
-tab switch during draft derivation: the current entry still belongs to the new tab
-tab switch during draft derivation: no stale entry is pushed for the old tab
-tab switch during draft derivation: the URL is not rewritten under the new tab
-tab switch during draft derivation: the superseded run does not stamp the old tab's result
-tab switch during draft derivation: the old tab's draft params are left alone
 reload after a preserved draft: the draft is restored as editor text
 reload after a preserved draft: the draft is not auto-run
-stale reload then rerun: the draft is restored unrun first
-stale reload then rerun: the draft is not auto-run
-stale reload then rerun: the explicit rerun entry carries run=1 again
-stale reload then rerun: reloading the rerun re-runs it
-draft in another tab: the draft is restored unrun
-draft in another tab: the draft is not auto-run
-draft in another tab: the clean tab is restored on switch
-draft in another tab: the clean tab rewrite keeps run=1
-draft in another tab: the draft tab entry stays unstamped
+stale reload: the draft is restored unrun
+stale reload: the draft is not auto-run
+stale reload: the preserved draft entry is not stamped run=1
 reload after a color toggle over a draft: the draft is restored as editor text
 reload after a color toggle over a draft: the draft is not auto-run
 reload of a clean run: the run query is restored
