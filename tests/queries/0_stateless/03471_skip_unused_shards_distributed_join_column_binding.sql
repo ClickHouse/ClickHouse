@@ -75,6 +75,70 @@ SETTINGS distributed_product_mode = 'global', optimize_skip_unused_shards = 1;
 
 SELECT '---';
 
+-- A CROSS / comma join never null-extends either side, so grouping by this table's own sharding key
+-- (`l.k`) alongside another side's column keeps every group on one shard: the aggregation must push to
+-- the shard (no MergingAggregated on the initiator). The join-tree keeps CROSS joins under a
+-- CrossJoinNode; treating it as null-extending would wrongly disable the optimization here.
+SELECT count() = 0 FROM (
+    EXPLAIN distributed = 1
+    SELECT l.k, r.c FROM nb_dl AS l CROSS JOIN nb_dr AS r
+    GROUP BY l.k, r.c
+    SETTINGS distributed_product_mode = 'global', optimize_skip_unused_shards = 1, optimize_distributed_group_by_sharding_key = 1
+) WHERE explain ILIKE '%MergingAggregated%';
+
+SELECT '---';
+
+-- The shard-local CROSS-join result must match the non-optimized one.
+SELECT groupArray((lk, rc, cnt)) = (
+    SELECT groupArray((lk, rc, cnt)) FROM (
+        SELECT l.k AS lk, r.c AS rc, count() AS cnt FROM nb_dl AS l CROSS JOIN nb_dr AS r
+        GROUP BY l.k, r.c ORDER BY l.k, r.c SETTINGS optimize_skip_unused_shards = 0))
+FROM (
+    SELECT l.k AS lk, r.c AS rc, count() AS cnt FROM nb_dl AS l CROSS JOIN nb_dr AS r
+    GROUP BY l.k, r.c ORDER BY l.k, r.c SETTINGS optimize_skip_unused_shards = 1, optimize_distributed_group_by_sharding_key = 1)
+SETTINGS distributed_product_mode = 'global';
+
+SELECT '---';
+
+-- ARRAY JOIN (kept under an ArrayJoinNode in the join tree) only replicates the input rows; the base
+-- table's sharding key (`k`) keeps its value on every produced row, so grouping by it stays shard-local.
+-- LEFT ARRAY JOIN additionally emits a default row for an empty array but still preserves `k`. Both must
+-- take the shard-local path (no MergingAggregated) and return the same rows as with the optimization off.
+CREATE TABLE shard_0.aj (k UInt32, arr Array(UInt32)) ENGINE = MergeTree ORDER BY k;
+CREATE TABLE shard_1.aj (k UInt32, arr Array(UInt32)) ENGINE = MergeTree ORDER BY k;
+CREATE TABLE daj (k UInt32, arr Array(UInt32)) ENGINE = Distributed(test_cluster_two_shards_different_databases, '', aj, k);
+INSERT INTO daj SELECT number, if(number % 2 = 0, [number, number + 100], []) FROM numbers(20) SETTINGS distributed_foreground_insert = 1;
+
+SELECT count() = 0 FROM (
+    EXPLAIN distributed = 1
+    SELECT k, x FROM daj ARRAY JOIN arr AS x
+    GROUP BY k, x
+    SETTINGS optimize_skip_unused_shards = 1, optimize_distributed_group_by_sharding_key = 1
+) WHERE explain ILIKE '%MergingAggregated%';
+
+SELECT '---';
+
+SELECT count() = 0 FROM (
+    EXPLAIN distributed = 1
+    SELECT k, x FROM daj LEFT ARRAY JOIN arr AS x
+    GROUP BY k, x
+    SETTINGS optimize_skip_unused_shards = 1, optimize_distributed_group_by_sharding_key = 1
+) WHERE explain ILIKE '%MergingAggregated%';
+
+SELECT '---';
+
+SELECT groupArray((kk, xx, cnt)) = (
+    SELECT groupArray((kk, xx, cnt)) FROM (
+        SELECT k AS kk, x AS xx, count() AS cnt FROM daj LEFT ARRAY JOIN arr AS x
+        GROUP BY k, x ORDER BY k, x SETTINGS optimize_skip_unused_shards = 0))
+FROM (
+    SELECT k AS kk, x AS xx, count() AS cnt FROM daj LEFT ARRAY JOIN arr AS x
+    GROUP BY k, x ORDER BY k, x SETTINGS optimize_skip_unused_shards = 1, optimize_distributed_group_by_sharding_key = 1);
+
+DROP TABLE daj;
+
+SELECT '---';
+
 -- Grouping by a right-side column whose name equals the left sharding key (`k`) must not be treated as
 -- sharding-key aggregation: a group can span shards, so the per-shard partials must be merged on the
 -- initiator. Here every right row has k = 7 and joins with left rows on both shards, so the correct

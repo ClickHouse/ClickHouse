@@ -56,6 +56,7 @@
 #include <Analyzer/TableFunctionNode.h>
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/JoinNode.h>
+#include <Analyzer/ArrayJoinNode.h>
 #include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/Passes/QueryAnalysisPass.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
@@ -644,26 +645,39 @@ public:
     std::unordered_map<String, std::unordered_set<const IQueryTreeNode *>> name_to_sources;
 };
 
-/// Whether `source` is reachable in `join_tree` on a path where no join null-extends it, i.e. its
-/// rows always carry their own column values. A RIGHT/FULL join null-extends its left side and a
-/// LEFT/FULL join its right side (unmatched rows get NULLs); INNER, CROSS and comma joins never
-/// null-extend. Conservative: returns false when `source` is not found or is only reachable through a
-/// null-extending join. Null-extended rows of the sharded table carry no sharding-key value and are
-/// produced on every shard, so a group keyed by them would span shards.
+/// Whether `source` is reachable in `join_tree` on a path where no join null-extends it, so its rows
+/// always carry their own column values. A RIGHT/FULL join null-extends its left side and a LEFT/FULL
+/// join its right side; INNER/CROSS/comma joins and ARRAY JOIN (incl. LEFT ARRAY JOIN) never null-extend
+/// the source's own columns. Conservative: false when `source` is not found or is only reachable through
+/// a null-extending join (its null-extended rows carry no sharding-key value and are produced on every
+/// shard, so a group keyed by them would span shards). Recurses through JoinNode, CrossJoinNode and
+/// ArrayJoinNode (a CROSS join nested under an outer JoinNode is reached this way).
 bool sourceIsAlwaysPreserved(const QueryTreeNodePtr & join_tree, const QueryTreeNodePtr & source)
 {
     if (join_tree.get() == source.get())
         return true;
 
-    const auto * join_node = join_tree->as<JoinNode>();
-    if (!join_node)
+    if (const auto * join_node = join_tree->as<JoinNode>())
+    {
+        const JoinKind kind = join_node->getKind();
+        if (!isRightOrFull(kind) && sourceIsAlwaysPreserved(join_node->getLeftTableExpression(), source))
+            return true;
+        if (!isLeftOrFull(kind) && sourceIsAlwaysPreserved(join_node->getRightTableExpression(), source))
+            return true;
         return false;
+    }
 
-    const JoinKind kind = join_node->getKind();
-    if (!isRightOrFull(kind) && sourceIsAlwaysPreserved(join_node->getLeftTableExpression(), source))
-        return true;
-    if (!isLeftOrFull(kind) && sourceIsAlwaysPreserved(join_node->getRightTableExpression(), source))
-        return true;
+    if (const auto * cross_join_node = join_tree->as<CrossJoinNode>())
+    {
+        for (const auto & table_expression : cross_join_node->getTableExpressions())
+            if (sourceIsAlwaysPreserved(table_expression, source))
+                return true;
+        return false;
+    }
+
+    if (const auto * array_join_node = join_tree->as<ArrayJoinNode>())
+        return sourceIsAlwaysPreserved(array_join_node->getTableExpression(), source);
+
     return false;
 }
 
