@@ -898,12 +898,13 @@ void copyS3File(
     BlobStorageLogWriterPtr blob_storage_log,
     ThreadPoolCallbackRunnerUnsafe<void> schedule,
     const CreateReadBuffer& fallback_file_reader,
-    const std::optional<ObjectAttributes> & object_metadata)
+    const std::optional<ObjectAttributes> & object_metadata,
+    bool copy_range)
 {
-    /// A copy that starts past the object's beginning is inherently partial: only [src_offset, src_offset +
-    /// src_size) is wanted, and a whole-object CopyObject would copy the entire source. Deriving the flag
-    /// from the offset here keeps a caller from silently falling into that whole-object path.
-    const bool is_ranged_copy = src_offset != 0;
+    /// Whether this copy is only a byte range of the source (so a whole-object CopyObject would wrongly copy
+    /// the entire source). The caller signals it explicitly: inferring from src_offset != 0 misclassifies a
+    /// prefix range [0, n) with n < full size as a whole-object copy.
+    const bool is_ranged_copy = copy_range;
 
     if (!dest_s3_client)
         dest_s3_client = src_s3_client;

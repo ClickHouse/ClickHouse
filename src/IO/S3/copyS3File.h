@@ -38,11 +38,11 @@ std::unique_ptr<StdStreamFromReadBuffer> createS3UploadBody(
 /// because it is a known issue, it is fallbacks to read-write copy
 /// (copyDataToS3File()).
 ///
-/// A non-zero `src_offset` means only `[src_offset, src_offset + src_size)` of the source is copied (the
-/// source key holds more bytes). A whole-object `CopyObject` carries no byte range and would copy the entire
-/// source object, so such a ranged copy is forced onto the multipart `UploadPartCopy` path (per-part
-/// `CopySourceRange`), or, if multipart copy is unavailable, onto the buffered ranged read. This is inferred
-/// from `src_offset` here, so no caller can accidentally omit the signal and copy the whole object.
+/// `copy_range` marks a copy of only `[src_offset, src_offset + src_size)` of a larger source (the source key
+/// holds more bytes). A whole-object `CopyObject` carries no byte range and would copy the entire source, so a
+/// ranged copy is forced onto the multipart `UploadPartCopy` path (per-part `CopySourceRange`), or, if
+/// multipart copy is unavailable, onto the buffered ranged read. The caller signals it explicitly: inferring
+/// from `src_offset != 0` misclassifies a prefix range `[0, n)` (n < full size) as a whole-object copy.
 ///
 /// read_settings - is used for throttling in case of native copy is not possible
 void copyS3File(
@@ -59,7 +59,8 @@ void copyS3File(
     BlobStorageLogWriterPtr blob_storage_log,
     ThreadPoolCallbackRunnerUnsafe<void> schedule,
     const CreateReadBuffer& fallback_file_reader,
-    const std::optional<ObjectAttributes> & object_metadata = std::nullopt);
+    const std::optional<ObjectAttributes> & object_metadata = std::nullopt,
+    bool copy_range = false);
 
 /// Copies data from any seekable source to S3.
 /// The same functionality can be done by using the function copyData() and the class WriteBufferFromS3

@@ -1030,7 +1030,7 @@ protected:
         return request_settings;
     }
 
-    void runCopy(const String & src_key, size_t offset, size_t size, const String & dst_key)
+    void runCopy(const String & src_key, size_t offset, size_t size, const String & dst_key, bool copy_range)
     {
         auto request_settings = makeRequestSettings();
         client->resetCounters();
@@ -1043,31 +1043,44 @@ protected:
             /* dest_s3_client= */ client, bucket, dst_key,
             request_settings, ReadSettings{},
             /* blob_storage_log= */ nullptr, /* schedule= */ {},
-            whole_source_reader, /* object_metadata= */ std::nullopt);
+            whole_source_reader, /* object_metadata= */ std::nullopt, copy_range);
     }
 };
 
 TEST_F(CopyS3FileRoutingTest, WholeObjectUsesCopyObject)
 {
     const String source = putSource("src");
-    runCopy("src", /* offset= */ 0, /* size= */ source.size(), "dst");
+    runCopy("src", /* offset= */ 0, /* size= */ source.size(), "dst", /* copy_range= */ false);
 
     EXPECT_EQ(client->counters.copyObject, 1u);
     EXPECT_EQ(client->counters.uploadPartCopy, 0u);
     EXPECT_EQ(client->store->GetBucketStore(bucket).objects["dst"], source);
 }
 
-/// A non-zero offset is inferred as a ranged copy, forcing UploadPartCopy. The size here is small enough
-/// that a whole-object CopyObject would otherwise be chosen; the sub-range content check discriminates --
-/// a wrong CopyObject would copy all 100 bytes instead of the 20 requested.
+/// An explicit ranged copy forces UploadPartCopy. The size here is small enough that a whole-object
+/// CopyObject would otherwise be chosen; the sub-range content check discriminates -- a wrong CopyObject
+/// would copy all 100 bytes instead of the 20 requested.
 TEST_F(CopyS3FileRoutingTest, RangedCopyForcesUploadPartCopy)
 {
     const String source = putSource("src");
-    runCopy("src", /* offset= */ 10, /* size= */ 20, "dst");
+    runCopy("src", /* offset= */ 10, /* size= */ 20, "dst", /* copy_range= */ true);
 
     EXPECT_EQ(client->counters.copyObject, 0u);
     EXPECT_GT(client->counters.uploadPartCopy, 0u);
     EXPECT_EQ(client->store->GetBucketStore(bucket).objects["dst"], source.substr(10, 20));
+}
+
+/// A prefix range [0, n) with n < full size is still a ranged copy: offset 0 must NOT be treated as a
+/// whole-object copy. Regression for the old offset-based inference, which would have taken CopyObject and
+/// copied all 100 bytes instead of the first 20.
+TEST_F(CopyS3FileRoutingTest, PrefixRangeForcesUploadPartCopy)
+{
+    const String source = putSource("src");
+    runCopy("src", /* offset= */ 0, /* size= */ 20, "dst", /* copy_range= */ true);
+
+    EXPECT_EQ(client->counters.copyObject, 0u);
+    EXPECT_GT(client->counters.uploadPartCopy, 0u);
+    EXPECT_EQ(client->store->GetBucketStore(bucket).objects["dst"], source.substr(0, 20));
 }
 
 TEST_P(SyncAsync, ExceptionOnUploadPart) {

@@ -1086,8 +1086,21 @@ void BackupImpl::loadPackIndexes()
     for (size_t pack_id = 0; pack_id < num_packs; ++pack_id)
     {
         const String pack_object = getBackupPackObjectName(pack_id);
+
+        /// A declared pack object that doesn't exist is deterministic corruption -- fail closed with a clean
+        /// BACKUP_DAMAGED. A truncated/garbage index still fails closed via readIndex (with its real error).
+        /// Do NOT catch-all around readFile/readIndex: a transient transport/auth error must propagate with its
+        /// real type so a retry can succeed, not be relabeled as corruption and condemn a valid backup.
+        if (!reader->fileExists(pack_object))
+            throw Exception(
+                ErrorCodes::BACKUP_DAMAGED,
+                "Backup {}: pack object {} is missing",
+                backup_name_for_logging,
+                quoteString(pack_object));
+
         auto in = reader->readFile(pack_object);
         const auto index = PackedFilesReader::readIndex(*in);
+
         for (const auto & [member_name, file_offset] : index)
         {
             if (!packed_members.emplace(member_name, MemberLocation{pack_object, file_offset.offset, file_offset.size}).second)
