@@ -1,13 +1,13 @@
 -- Correctness test: broadcast join must not be used when the replicated (right)
 -- side can produce output rows.  Broadcasting it causes duplicate rows across
--- nodes — each node independently marks right-side rows as "unmatched" based
+-- nodes - each node independently marks right-side rows as "unmatched" based
 -- on its local left slice.
 --
 -- The SEMI and ANY cases; the ANTI, RIGHT ALL, and FULL cases are in
 -- 04041_cascades_anti_outer_join_broadcast_correctness. Split so each part fits
 -- the debug-build time budget of the flaky check.
 -- The filter table (test_lineitem) is small so the optimizer prefers broadcast
--- when it is safe — these tests verify that broadcast is blocked when unsafe.
+-- when it is safe - these tests verify that broadcast is blocked when unsafe.
 
 SET explain_query_plan_default = 'legacy';
 SET enable_analyzer = 1;

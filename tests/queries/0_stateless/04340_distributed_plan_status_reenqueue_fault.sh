@@ -5,8 +5,8 @@
 
 # Regression test: a worker status-check re-enqueue that throws (e.g. CANNOT_SCHEDULE_TASK on
 # shutdown, or MEMORY_LIMIT_EXCEEDED under fuzzing) must fail the query, not the server. Before
-# the fix the throw escaped the TaskTracker worker lambda, was stored in the pool, and rethrown by
-# thread_pool.wait() in ~TaskTracker, which std::terminated the server (Received signal 6).
+# Without the catch, the throw escapes the `TaskTracker` worker lambda, is stored in the pool, and
+# rethrown by `thread_pool.wait()` in `~TaskTracker`, terminating the server (`Received signal 6`).
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -17,7 +17,7 @@ $CLICKHOUSE_CLIENT -q "INSERT INTO t_dp_reenqueue SELECT number FROM numbers(100
 
 # Instant captured (server-side, same clock as text_log.event_time_microseconds) before the
 # failpoint is enabled. The flaky check reruns this test on the same server, so the assertion below
-# must count only THIS run's recordFailure lines and ignore any left by an earlier run. Microseconds
+# must count only this run's `recordFailure` lines and ignore any left by an earlier run. Microseconds
 # since epoch is timezone-independent (the flaky check randomizes session_timezone).
 RUN_START=$($CLICKHOUSE_CLIENT -q "SELECT toUnixTimestamp64Micro(now64(6))")
 
@@ -25,12 +25,12 @@ $CLICKHOUSE_CLIENT -q "SYSTEM ENABLE FAILPOINT distributed_plan_status_check_ree
 
 # Distributed reads go through the remote executor, whose TaskTracker polls worker task status on a
 # background pool. The failpoint throws while re-enqueueing the next status check; the worker lambda
-# must catch it (recordFailure: log + store as the query's first_exception) so the query fails with
+# must catch it (`recordFailure`: log + store as the query's first exception) so the query fails with
 # a clean CANNOT_SCHEDULE_TASK instead of letting the throw escape and terminate the server.
 #
 # Whether the client sees the error is racy (the query can finish before the stored exception is
 # observed), so the result is discarded. The deterministic proof that the fault path ran is the
-# recordFailure() log line: it is emitted on the pool thread on every re-enqueue, independent of the
+# `recordFailure` log line: it is emitted on the pool thread on every re-enqueue, independent of the
 # client-side completion race. A few queries are issued so at least one re-enqueue cycle happens.
 for _ in {1..3}; do
     $CLICKHOUSE_CLIENT -q "
@@ -43,7 +43,7 @@ done
 
 $CLICKHOUSE_CLIENT -q "SYSTEM DISABLE FAILPOINT distributed_plan_status_check_reenqueue_fault"
 
-# The injected fault was handled by TaskTracker::recordFailure (SOURCE fix): the worker lambda's
+# The injected fault was handled by `TaskTracker::recordFailure` (the fix at the throw site): the worker lambda's
 # re-enqueue throw was caught and stored instead of escaping the thread. >= 1 log line proves it ran.
 # Filtered on event_time_microseconds > RUN_START so only THIS run's lines count (the flaky check
 # reruns the test on the same server). event_date >= yesterday() only prunes the partition scan; the
@@ -61,7 +61,7 @@ $CLICKHOUSE_CLIENT -q "
     SETTINGS enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 0
 "
 
-# The point of the test: the server is still alive (DEFENSE fix: ~TaskTracker swallows any rethrow
+# The point of the test: the server is still alive (the safety net: `~TaskTracker` swallows any rethrow
 # from thread_pool.wait() instead of std::terminate-ing the server).
 $CLICKHOUSE_CLIENT -q "SELECT 'server alive'"
 

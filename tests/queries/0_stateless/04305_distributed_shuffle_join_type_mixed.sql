@@ -6,10 +6,10 @@
 -- hashing because of different physical types, so matching rows are routed to different
 -- buckets and the join silently drops them.
 
--- Reset the global max_rows_to_group_by; distributed aggregation rejects a nonzero limit.
 SET enable_parallel_replicas = 0;
 SET automatic_parallel_replicas_mode = 0;
 SET explain_query_plan_default = 'legacy';
+-- Distributed aggregation cannot enforce a global `max_rows_to_group_by`, so pin it to 0.
 SET max_rows_to_group_by = 0;
 
 SET distributed_plan_default_shuffle_join_bucket_count = 3, distributed_plan_default_reader_bucket_count = 3;

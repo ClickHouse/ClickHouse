@@ -11,8 +11,9 @@ CREATE TABLE t2_04341 (key UInt64, val Nullable(String)) ENGINE = MergeTree ORDE
 INSERT INTO t1_04341 SELECT number, toString(number) FROM numbers(100);
 INSERT INTO t2_04341 SELECT number, toString(number) FROM numbers(100);
 
--- Function-wrapped key (Int8) with no common supertype with the other key (UInt64). Used to abort
--- with a LOGICAL_ERROR; now the distributed plan rejects the shuffle and reports NO_COMMON_TYPE.
+-- Function-wrapped key (Int8) with no common supertype with the other key (UInt64). Without the
+-- common-supertype check this threw `LOGICAL_ERROR`; the distributed plan rejects the shuffle
+-- and reports `NO_COMMON_TYPE`.
 SELECT DISTINCT t2_04341.val
 FROM t1_04341 INNER JOIN t2_04341 ON intDiv(-1, t1_04341.key) = t2_04341.key
 SETTINGS make_distributed_plan = 1, distributed_plan_execute_locally = 1, serialize_query_plan = 1,

@@ -14,7 +14,7 @@ DROP TABLE IF EXISTS orders;
 DROP TABLE IF EXISTS lineitem;
 
 -- SETTINGS pin `auto_statistics_types=''` and `min_bytes_for_wide_part` to
--- prevent real statistics interfere with hints
+-- so real statistics do not interfere with the hints
 CREATE TABLE region (
     r_regionkey Int32, r_name String, r_comment String
 ) ENGINE = MergeTree() ORDER BY r_regionkey

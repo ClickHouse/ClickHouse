@@ -2,10 +2,11 @@
 -- no-darwin: distributed execution uses the streaming exchange, which is implemented only on Linux.
 -- no-old-analyzer: distributed Cascades planning requires the analyzer, like the other make_distributed_plan tests.
 
--- distributed_plan_workers_num sets the node count Cascades plans for under
--- distributed_plan_execute_locally: one worker stays single-node, four distribute (force_shuffle_aggregation
--- pins the shape so the check does not depend on a cost tie). Without it the count came from the configured
--- worker cluster, so one worker would still build a multi-node plan.
+-- `distributed_plan_workers_num` sets the node count Cascades plans for under
+-- `distributed_plan_execute_locally`: one worker stays single-node, four distribute
+-- (`distributed_plan_force_shuffle_aggregation` pins the shape so the check does not depend on a
+-- cost tie). Without it the count comes from the configured worker cluster, so one worker would
+-- still build a multi-node plan.
 
 SET explain_query_plan_default = 'legacy';
 SET enable_analyzer = 1;

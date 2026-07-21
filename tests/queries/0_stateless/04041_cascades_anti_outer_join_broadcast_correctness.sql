@@ -1,6 +1,6 @@
 -- Correctness test: broadcast join must not be used when the replicated (right)
 -- side can produce output rows.  Broadcasting it causes duplicate rows across
--- nodes — each node independently marks right-side rows as "unmatched" based
+-- nodes - each node independently marks right-side rows as "unmatched" based
 -- on its local left slice.
 --
 -- The ANTI, RIGHT ALL, and FULL cases; the SEMI and ANY cases are in

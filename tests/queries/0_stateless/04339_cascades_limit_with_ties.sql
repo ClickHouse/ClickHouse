@@ -5,7 +5,7 @@
 -- Regression test: in a distributed Cascades plan, `SortedRead` claims the ORDER BY
 -- ordering without a merge, so a multi-part table is read as several already-sorted
 -- streams. A `LIMIT ... WITH TIES` on top must merge them into one stream first, or
--- `LimitTransform` aborts with "Cannot use LimitTransform with multiple ports and ties".
+-- `LimitTransform` throws "Cannot use LimitTransform with multiple ports and ties".
 
 SET enable_analyzer = 1;
 SET enable_cascades_optimizer = 1;

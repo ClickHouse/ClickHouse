@@ -4,7 +4,7 @@
 -- A distributed FINAL read splits into primary-key-range layers; with more layers than tasks,
 -- each task carries several lanes in its `read_bucket` parameter. The optimizer clones the read
 -- step when it extracts the best plan, and the clone must keep both the coordinator-computed
--- buckets and the per-task lane grouping — losing either drops rows silently.
+-- buckets and the per-task lane grouping - losing either drops rows silently.
 
 DROP TABLE IF EXISTS t_final_lanes;
 CREATE TABLE t_final_lanes (k UInt64, v UInt64, ver UInt64) ENGINE = ReplacingMergeTree(ver) ORDER BY k

@@ -5,10 +5,11 @@ DROP TABLE IF EXISTS t_04327;
 CREATE TABLE t_04327 (id UInt64, a UInt64) ENGINE = MergeTree ORDER BY id;
 INSERT INTO t_04327 SELECT number, number FROM numbers(1000);
 
--- Distributed aggregation cannot enforce a global max_rows_to_group_by, so pin it to 0 (randomized
--- settings set it nonzero, which would make make_distributed_plan reject the count below).
 SET enable_parallel_replicas = 0;
 SET automatic_parallel_replicas_mode = 0;
+-- Distributed aggregation cannot enforce a global `max_rows_to_group_by`, so pin it to 0
+-- (randomized settings set it nonzero, which would make `make_distributed_plan` reject the
+-- count below).
 SET max_rows_to_group_by = 0;
 
 -- The self-join forces shuffle exchange stages, i.e. local worker tasks that reach logQueryStart.
