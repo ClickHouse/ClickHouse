@@ -18,6 +18,8 @@
 #include <boost/algorithm/string/trim.hpp>
 #include <Common/FieldVisitorConvertToNumber.h>
 
+#include <cmath>
+
 
 namespace DB
 {
@@ -164,20 +166,28 @@ namespace
         {
             /// Reject negative literals explicitly: FieldVisitorConvertToNumber wraps a negative signed
             /// integer around instead of throwing (e.g. MAX queries = -1 would become 18446744073709551615).
+            /// A negative float is checked by the sign bit rather than a `< 0` comparison: a tiny negative
+            /// literal (e.g. MAX queries = -1e-400) underflows to -0.0, which compares equal to zero.
             bool is_negative = (max_field.getType() == Field::Types::Int64 && max_field.safeGet<Int64>() < 0)
                 || (max_field.getType() == Field::Types::Int128 && max_field.safeGet<Int128>() < 0)
-                || (max_field.getType() == Field::Types::Int256 && max_field.safeGet<Int256>() < 0);
+                || (max_field.getType() == Field::Types::Int256 && max_field.safeGet<Int256>() < 0)
+                || (max_field.getType() == Field::Types::Float64 && std::signbit(max_field.safeGet<Float64>()));
             if (is_negative)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Quota max value is out of range");
             max_value = fieldToNumber<QuotaValue>(max_field);
         }
         else
         {
+            /// Reject a negative value by the sign bit before scaling: a tiny negative literal
+            /// (e.g. MAX execution_time = -1e-400) underflows to -0.0, which compares equal to zero.
+            double value = fieldToNumber<double>(max_field);
+            if (std::signbit(value))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Quota max value is out of range");
             /// Bound the scaled value to the QuotaValue (UInt64) range before the cast: an out-of-range or
             /// non-finite product (e.g. MAX execution_time = 1e19) makes static_cast<QuotaValue> undefined behavior.
-            double scaled_value = fieldToNumber<double>(max_field) * static_cast<double>(type_info.output_denominator);
+            double scaled_value = value * static_cast<double>(type_info.output_denominator);
             static constexpr double uint64_max_plus_one_as_double = 18446744073709551616.0; /// 2^64, first double above UInt64 max
-            if (!std::isfinite(scaled_value) || scaled_value >= uint64_max_plus_one_as_double || scaled_value < 0)
+            if (!std::isfinite(scaled_value) || scaled_value >= uint64_max_plus_one_as_double)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Quota max value is out of range");
             max_value = static_cast<QuotaValue>(scaled_value);
         }

@@ -39,11 +39,16 @@ QuotaValue QuotaTypeInfo::stringToValue(const String & str) const
     if (output_denominator == 1)
         return static_cast<QuotaValue>(parse<UInt64>(str));
 
+    /// Reject a negative value by the sign bit rather than a `< 0` comparison: a tiny negative
+    /// value (e.g. -1e-400) underflows to -0.0, which compares equal to zero.
+    Float64 value = parse<Float64>(str);
+    if (std::signbit(value))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Quota value {} is out of range", str);
     /// Bound the scaled value to the QuotaValue (UInt64) range before the cast: an out-of-range or
     /// non-finite product makes static_cast<QuotaValue> undefined behavior.
-    Float64 scaled_value = parse<Float64>(str) * static_cast<Float64>(output_denominator);
+    Float64 scaled_value = value * static_cast<Float64>(output_denominator);
     static constexpr Float64 uint64_max_plus_one_as_double = 18446744073709551616.0; /// 2^64, first double above UInt64 max
-    if (!std::isfinite(scaled_value) || scaled_value >= uint64_max_plus_one_as_double || scaled_value < 0)
+    if (!std::isfinite(scaled_value) || scaled_value >= uint64_max_plus_one_as_double)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Quota value {} is out of range", str);
     return static_cast<QuotaValue>(scaled_value);
 }
