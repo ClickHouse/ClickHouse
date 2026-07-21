@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 # Tags: long, no-flaky-check, no-debug, no-asan, no-tsan, no-msan, no-ubsan, no-sanitize-coverage
-# Heavy randomized consistency check (many small queries via many clickhouse-client invocations); it
-# exceeds the per-test timeout under the slow instrumented builds and the flaky check (which re-runs a
-# new test many times). The keyValuePairs index code paths are covered under sanitizers by the
-# deterministic tests (04614/04616/04618/04619), so this fuzz test runs only in the regular builds.
+# Heavy randomized consistency check (many small queries via many clickhouse-client invocations,
+# ~40s in a regular build, dominated by process startup); it far exceeds the per-test timeout under the
+# slow instrumented builds and the flaky check (which re-runs a new test many times). The keyValuePairs
+# index code paths are covered under sanitizers by the deterministic tests (04614/04616/04618/04619),
+# so this fuzz test runs only in the regular builds.
 # Randomized consistency check for the keyValuePairs text index under COMPOUND predicates: AND / OR / NOT
 # chains that cross-mix predicate families (mapContainsKey, mapContainsValue, mapContainsKeyValue, their
 # LIKE forms and the m['key'] accessor) over two or three different (key, value) needles per query. The
