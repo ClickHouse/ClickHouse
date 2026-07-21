@@ -1,7 +1,10 @@
 #!/usr/bin/env bash
-# Tags: no-parallel
+# Tags: no-parallel, no-flaky-check
 # no-parallel: CHECK ALL TABLES walks every database on the server, so tables created and
 # dropped by concurrently running tests could make the scan fail or produce unstable output.
+# no-flaky-check: CHECK ALL TABLES reads the data of every table left behind by the whole
+# test run; under the flaky check the test is repeated many times on a server full of other
+# tests' tables and exceeds the 180 second limit on sanitizer builds.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
