@@ -240,6 +240,11 @@ private:
     bool receiveEndOfQueryForInsert();
     void cancelQuery();
 
+    /// Print an interactive message (a line to output_stream) through the bounded best-effort
+    /// path of std_out, so a terminal that stopped draining cannot hang the client on an
+    /// out-of-band print - see the definition.
+    void printMessageBestEffort(std::string_view message);
+
     /// Print an interactive cancellation diagnostic (e.g. "Query was cancelled.") without risking
     /// a hang when the sink of output_stream is itself the stuck terminal the cancellation is
     /// fighting with - see the definition.
