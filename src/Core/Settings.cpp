@@ -482,6 +482,8 @@ The maximum number of times a distributed query (e.g. a query to a `Distributed`
 
 The query is retried on another available replica (or on the same replica if there is no other) and only if no result data has been received from the remote server yet, so the result never contains duplicated rows. Queries executed with parallel replicas and queries of cluster table functions that distribute work between replicas dynamically are not retried.
 
+While a retry is still possible, the progress reported by the remote server is deferred until the first block of result data (or the completion of the query), so that the work replayed by a retry is not double-counted in the read limits (e.g. `max_rows_to_read`) and quotas on the initiator.
+
 Possible values:
 
 - 0 — Retries are disabled.

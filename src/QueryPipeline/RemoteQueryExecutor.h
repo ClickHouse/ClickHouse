@@ -7,6 +7,7 @@
 #include <Core/SettingsEnums.h>
 #include <Core/UUID.h>
 #include <Interpreters/ClientInfo.h>
+#include <IO/Progress.h>
 #include <Storages/IStorage_fwd.h>
 #include <Interpreters/StorageID.h>
 #include <sys/types.h>
@@ -378,12 +379,27 @@ private:
     /// according to the `distributed_query_retries` setting.
     bool canRetryAfterNetworkError(const Exception & e) const;
 
+    /// The state-based part of `canRetryAfterNetworkError`: whether a retry may still happen
+    /// if a network error occurs now (regardless of any particular exception).
+    bool mayRetryAfterNetworkError() const;
+
     /// Drop the failed connections and reset the executor state so that the next read attempt
     /// re-sends the query (possibly to another replica), then wait for the retry interval.
     void prepareRetryAfterNetworkError(const Exception & e);
 
+    /// Report the progress accumulated in `deferred_progress` and reset it.
+    void flushDeferredProgress();
+
     /// How many retries after a network error were done so far, see `distributed_query_retries`.
     size_t network_error_retries_count = 0;
+
+    /** Progress received from the remote server while a retry after a network error is still
+      * possible. It is deferred until a retry becomes impossible (the first data block, an
+      * exception, or the end of the stream) and dropped if the query is retried: a retry replays
+      * the same work, so reporting the progress of the failed attempt would double-count rows
+      * and bytes in the read limits and quotas on the initiator.
+      */
+    Progress deferred_progress;
 };
 
 ThrottlerPtr getThrottler(const ContextPtr & context);

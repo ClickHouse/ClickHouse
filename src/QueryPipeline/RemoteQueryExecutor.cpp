@@ -753,6 +753,11 @@ bool RemoteQueryExecutor::canRetryAfterNetworkError(const Exception & e) const
         && e.code() != ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF)
         return false;
 
+    return mayRetryAfterNetworkError();
+}
+
+bool RemoteQueryExecutor::mayRetryAfterNetworkError() const
+{
     /// An exception received from a remote server in a packet means that the query failed there,
     /// not that the connection is broken.
     if (hasThrownException())
@@ -770,9 +775,23 @@ bool RemoteQueryExecutor::canRetryAfterNetworkError(const Exception & e) const
     return network_error_retries_count < context->getSettingsRef()[Setting::distributed_query_retries];
 }
 
+void RemoteQueryExecutor::flushDeferredProgress()
+{
+    if (deferred_progress.empty())
+        return;
+
+    if (progress_callback)
+        progress_callback(deferred_progress);
+    deferred_progress.reset();
+}
+
 void RemoteQueryExecutor::prepareRetryAfterNetworkError(const Exception & e)
 {
     ++network_error_retries_count;
+
+    /// The retry replays the work of the failed attempt from scratch,
+    /// so the progress of the failed attempt must not be reported.
+    deferred_progress.reset();
 
     LOG_WARNING(
         log,
@@ -832,12 +851,17 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::processPacket(Packet packet
             if (!packet.block.empty() && (packet.block.rows() > 0))
             {
                 got_data_from_replica = true;
+                /// A retry is no longer possible: the deferred progress can be reported.
+                flushDeferredProgress();
                 return ReadResult(adaptBlockStructure(packet.block, *header));
             }
             break;  /// If the block is empty - we will receive other packets before EndOfStream.
 
         case Protocol::Server::Exception:
             got_exception_from_replica = true;
+            /// A retry is no longer possible, and the work reported by the deferred progress
+            /// was really done by the remote server.
+            flushDeferredProgress();
 
             if (shouldIgnoreShardException(packet.exception->code()))
             {
@@ -859,6 +883,9 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::processPacket(Packet packet
             break;
 
         case Protocol::Server::EndOfStream:
+            /// The query has completed on the remote server, so its progress must be reported
+            /// even if it has not returned any data (a retry is no longer possible).
+            flushDeferredProgress();
             if (!connections->hasActiveConnections())
             {
                 finished = true;
@@ -874,7 +901,14 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::processPacket(Packet packet
               * constraints (for example, the minimum speed of query execution)
               * and quotas (for example, the number of lines to read).
               */
-            if (progress_callback)
+            if (mayRetryAfterNetworkError())
+            {
+                /// While a retry after a network error is still possible, defer the progress:
+                /// a retry would replay the same work, and reporting it twice would double-count
+                /// rows and bytes in the read limits and quotas.
+                deferred_progress.incrementPiecewiseAtomically(packet.progress);
+            }
+            else if (progress_callback)
                 progress_callback(packet.progress);
             break;
 
@@ -1094,6 +1128,8 @@ void RemoteQueryExecutor::finish()
                 break;
 
             case Protocol::Server::Progress:
+                /// The query is being finished, no retry can happen anymore.
+                flushDeferredProgress();
                 if (progress_callback)
                     progress_callback(packet.progress);
                 break;
