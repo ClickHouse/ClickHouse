@@ -1,14 +1,17 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-sanitizers-lsan, long
+# Tags: no-fasttest, no-parallel, no-sanitizers-lsan, long
 # Test that KILL QUERY works for FilterTransform with failpoint, covering the stopReading/early-return/cache-guard code path.
 # Uses the filter_transform_pause failpoint to stop the query after expression execution,
 # then KILL QUERY and verify the cancellation is detected.
+# no-parallel: filter_transform_pause is a global PAUSEABLE_ONCE failpoint, unrelated queries could consume it.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-query_id="kill_query_filter_failpoint_${CLICKHOUSE_DATABASE}_$RANDOM"
+query_id="kill_query_filter_pause_${CLICKHOUSE_DATABASE}_$RANDOM"
+
+trap '${CLICKHOUSE_CLIENT} -q "SYSTEM DISABLE FAILPOINT filter_transform_pause" 2>/dev/null' EXIT
 
 # Enable failpoint before starting the query
 ${CLICKHOUSE_CLIENT} -q "SYSTEM ENABLE FAILPOINT filter_transform_pause"

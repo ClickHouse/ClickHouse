@@ -198,13 +198,13 @@ void FilterTransform::doTransform(Chunk & chunk)
         if (expression)
             expression->execute(block, num_rows_before_filtration, false, false, [this]() { return isCancelled(); });
 
+        FailPointInjection::pauseFailPoint(FailPoints::filter_transform_pause);
+
         if (isCancelled())
         {
             stopReading();
             return;
         }
-
-        FailPointInjection::pauseFailPoint(FailPoints::filter_transform_pause);
 
         columns = block.getColumns();
         types = block.getDataTypes();
