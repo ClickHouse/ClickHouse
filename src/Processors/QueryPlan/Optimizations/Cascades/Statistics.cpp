@@ -183,13 +183,17 @@ std::unordered_map<String, Float64> estimateReadColumnWidths(const ReadFromMerge
     const auto column_sizes = storage.getColumnSizes(read_step.getAllColumnNames());
     const Float64 total_rows = (total_rows_opt && *total_rows_opt > 0) ? Float64(*total_rows_opt) : 0;
 
-    /// Compact parts count in the row count and in the table-level uncompressed total, but carry no
+    /// Compact parts count in the row count and in the parts' column-data totals, but carry no
     /// per-column sizes. Sum only physical columns (a subcolumn's bytes are part of its parent's).
     Float64 measured_columns_bytes = 0;
     for (const auto & [_, size] : storage.getColumnSizes())
         measured_columns_bytes += Float64(size.data_uncompressed);
-    const auto total_bytes_opt = storage.totalBytesUncompressed(read_step.getContext()->getSettingsRef());
-    const Float64 total_bytes = total_bytes_opt ? Float64(*total_bytes_opt) : 0;
+    /// Sum the parts' column-data sizes, which compact parts track as a total even though they
+    /// carry no per-column split. `totalBytesUncompressed` would also count non-column files
+    /// (e.g. statistics sketches), which can dwarf a small table's data and inflate its widths.
+    Float64 total_bytes = 0;
+    for (const auto & part : read_step.getMergeTreeData().getDataPartsVectorForInternalUsage())
+        total_bytes += Float64(part->getTotalColumnsSize().data_uncompressed);
 
     /// With wide and compact parts mixed, dividing the wide-part-only column bytes by the full row
     /// count would understate every width; scale the measured widths up to the table total instead.
