@@ -19,7 +19,8 @@ INSERT INTO t22 VALUES (2, 1, 'AAA', 'AAA'),(2, 3, 'AAA', 'a'),(3, 100, 'BBB', '
 
 SET join_use_nulls = {{ join_use_nulls }};
 
-SET join_algorithm = 'partial_merge';
+-- prefer_partial_merge, not partial_merge: MergeJoin does not support INNER ANY, so INNER ANY falls back while INNER ALL/FULL stay on merge.
+SET join_algorithm = 'prefer_partial_merge';
 
 SELECT '-- partial_merge --';
 
