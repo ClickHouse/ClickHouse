@@ -18,11 +18,20 @@ CREATE TABLE t_lc (id UInt64, m Map(LowCardinality(String), LowCardinality(Strin
 
 INSERT INTO t_s
 SELECT number,
-  arrayMap(j -> ( repeat(substring('abc', 1 + (cityHash64(number, j) % 3), 1),
-                         [1, 50, 63, 64, 65, 127, 200][1 + (cityHash64(number, j, 7) % 7)]),
-                  substring(hex(cityHash64(number, j, 9)), 1, 1 + (cityHash64(number, j, 11) % 16)) ),
+  arrayMap(j -> ( -- ~1/6 of keys and values are the empty string (and repeat within a row -> duplicate '' keys)
+                  if(cityHash64(number, j, 13) % 6 = 0, '',
+                     repeat(substring('abc', 1 + (cityHash64(number, j) % 3), 1),
+                            [1, 50, 63, 64, 65, 127, 200][1 + (cityHash64(number, j, 7) % 7)])),
+                  if(cityHash64(number, j, 17) % 6 = 0, '',
+                     substring(hex(cityHash64(number, j, 9)), 1, 1 + (cityHash64(number, j, 11) % 16))) ),
     range(1 + (cityHash64(number) % 5)))::Map(String, String)
 FROM numbers(200);
+-- Crafted edge rows: guarantee empty-key/empty-value coverage, including duplicates of both.
+INSERT INTO t_s VALUES
+    (100000, map('', 'a', '', 'b')),   -- duplicate empty key, distinct values
+    (100001, map('k', '', 'k', 'v')),  -- duplicate key, first value empty
+    (100002, map('', '', '', '')),     -- all empty, duplicated
+    (100003, map('x', '', '', 'y'));   -- empty value and empty key mixed
 INSERT INTO t_lc SELECT id, CAST(m, 'Map(LowCardinality(String), LowCardinality(String))') FROM t_s;
 
 CREATE TABLE r (q String, use_index UInt8, h UInt64) ENGINE = Memory;
