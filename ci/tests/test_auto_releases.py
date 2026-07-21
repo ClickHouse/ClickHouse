@@ -123,6 +123,19 @@ def test_job_does_not_import_ci_defs():
     ), f"job must not import {sorted(offending)} (breaks the PYTHONPATH=. run)"
 
 
+def test_version_bump_guard_is_scoped_to_title():
+    """The version-bump-PR guard must scope its search with ``in:title``.
+
+    An unscoped full-text search matches any PR that merely mentions
+    ``Update version_date.tsv`` in its body (the migration PR itself did), which
+    would trip the guard and halt every release.
+    """
+    text = _read(JOB)
+    assert (
+        "Update version_date.tsv in:title" in text
+    ), "guard search must be scoped with in:title to avoid body-only false positives"
+
+
 def test_legacy_sources_are_gone():
     assert not os.path.exists(LEGACY_JOB), (
         "tests/ci/auto_release.py should be removed; its logic moved to "

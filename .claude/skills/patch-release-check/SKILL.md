@@ -253,12 +253,15 @@ generated `auto/v<tag>` changelog PR. Track status in `#core-ci-info`.
 
 ## Known issue / hardening
 
-The guard query in `ci/jobs/auto_release_job.py` (`_assert_no_open_version_bump_prs`,
-`gh pr list --search "Update version_date.tsv"`) is a **loose full-text search**, so a
-single forgotten or unrelated PR can halt all releases. Worth a separate PR: scope it
-to genuine robot bump PRs, e.g. `--search "Update version_date.tsv in:title author:robot-clickhouse"`
-or match the `auto/v*` head branch. This skill documents the behavior; it does not
-change the code.
+The guard query in `ci/jobs/auto_release_job.py` (`_assert_no_open_version_bump_prs`)
+now scopes the search with `in:title`
+(`gh pr list --search "Update version_date.tsv in:title"`), so only PRs whose *title*
+matches — the genuine robot bump PRs `Update version_date.tsv and changelog after
+<tag>` — trip it. The legacy query (`gh pr list --search "Update version_date.tsv"`)
+was a loose full-text search that also matched any PR merely mentioning the phrase in
+its body, so a single unrelated PR could halt all releases (the praktika-migration PR
+itself hit this). If you still see a false positive, tighten further with
+`author:robot-clickhouse` or by matching the `auto/v*` head branch.
 
 ## Notes
 
