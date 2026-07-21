@@ -16,6 +16,7 @@
 #include <Common/logger_useful.h>
 #include <Processors/Executors/PipelineExecutor.h>
 #include <Processors/Executors/ExecutingGraph.h>
+#include <Processors/Sources/RemoteSource.h>
 #include <QueryPipeline/printPipeline.h>
 #include <QueryPipeline/ReadProgressCallback.h>
 #include <Processors/ISource.h>
@@ -335,16 +336,19 @@ void PipelineExecutor::finalizeExecution()
 
     /// Ensure remote source processors' onCancel() handlers have run before collecting progress.
     /// For cancelled pipelines, `graph->cancel` was already called in `cancel`.
-    /// For normal completion (e.g. `LIMIT` satisfied with parallel replicas), we cancel
-    /// with `PartialResult`. `IProcessor::cancel` (non-sources) returns early for
-    /// `PartialResult`. `ISource::cancel` sets `is_cancelled` but skips `onCancel` for
-    /// `PartialResult` (`onCancel` is intended for hard cancellation and has side effects
-    /// like `SQLiteSource::onCancel` calling `sqlite3_interrupt`). Only `RemoteSource`
-    /// overrides `cancel` to react to `PartialResult`: `RemoteSource::onCancel` calls
-    /// `query_executor->finish` which drains remaining packets (including `Progress`)
-    /// from replica connections. This is safe because all worker threads have been joined.
+    /// For normal completion (e.g. `LIMIT` satisfied with parallel replicas), the replicas may
+    /// still have trailing `Progress` packets that are only drained once the source is cancelled.
+    /// `RemoteSource::cancel(PartialResult)` -> `RemoteSource::onCancel` -> `query_executor->finish`
+    /// drains those packets. Poke only the remote sources rather than broadcasting a `PartialResult`
+    /// cancel to the whole graph, so ordinary sources do not run their `onCancel` side effects on
+    /// every successful query (e.g. `SQLiteSource` calling `sqlite3_interrupt`). This is safe because
+    /// all worker threads have been joined.
     if (!is_cancelled)
-        graph->cancel(IProcessor::CancelReason::PartialResult);
+    {
+        for (auto & node : graph->nodes)
+            if (auto * remote_source = dynamic_cast<RemoteSource *>(node.processor()))
+                remote_source->cancel(IProcessor::CancelReason::PartialResult);
+    }
 
     /// Second pass: collect remaining progress from all processors.
     for (auto & node : graph->nodes)

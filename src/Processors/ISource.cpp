@@ -19,30 +19,25 @@ ISource::ISource(SharedHeader header, bool enable_auto_progress)
 {
 }
 
-void ISource::cancel(CancelReason reason) noexcept
+void ISource::cancel(CancelReason) noexcept
 {
-    /// Always publish `is_cancelled` so `prepare` returns `Finished` and the source
-    /// stops generating new data. This is required for `partial_result_on_first_cancel`,
-    /// where SIGINT triggers `graph->cancel(PartialResult)` and ordinary sources (no
-    /// `cancel` override) must respond by stopping.
-    is_cancelled.store(true, std::memory_order_release);
-
-    /// Skip `onCancel` for `PartialResult`: most sources' `onCancel` is intended for
-    /// hard cancellation (user cancel, timeout, exception) and has unintended side
-    /// effects on the success path — e.g. `SQLiteSource::onCancel` calls
-    /// `sqlite3_interrupt`. Sources that need to react to `PartialResult` (notably
-    /// `RemoteSource`, which drains remaining packets to collect final progress)
-    /// override `cancel` directly.
-    if (reason == CancelReason::PartialResult)
-        return;
-
-    /// Gate `onCancel` on a separate latch so escalation from a prior `PartialResult`
-    /// cancel still invokes `onCancel` exactly once. `ExecutingGraph::cancel` upgrades
-    /// `cancel_reason` from `PartialResult` to a hard reason and re-calls every
-    /// processor's `cancel`; without this latch, the second call would no-op and
-    /// hard-cancel hooks (e.g. `sqlite3_interrupt`) would never run.
-    bool already_called = on_cancel_called.exchange(true, std::memory_order_acq_rel);
-    if (already_called)
+    /// Run `onCancel` on the first cancellation, regardless of reason. `onCancel` is where a
+    /// source's real interruption/cleanup lives (e.g. `ReadFromDistributedPlanSource::onCancel`
+    /// sets the `cancellation_flag` that stops its blocking `tryGenerate`, `MergeTreeSource`
+    /// forwards the cancel to its read processor), so it must fire on the `PartialResult`
+    /// short stop that `PipelineExecutor::cancelReading` issues once a `LIMIT` /
+    /// `partial_result_on_first_cancel` consumer already has enough rows — otherwise those
+    /// sources would keep running after the consumer is done.
+    ///
+    /// The success-path drain that `PipelineExecutor::finalizeExecution` performs on normal
+    /// completion is not routed through here: it targets only the sources that need it
+    /// (`RemoteSource`, see `IProcessor::drainsProgressOnFinalize`), so ordinary sources do
+    /// not get spurious `onCancel` calls (e.g. `SQLiteSource::onCancel` calling
+    /// `sqlite3_interrupt`) on every successful query.
+    ///
+    /// `is_cancelled` is published unconditionally first so `prepare` returns `Finished` even
+    /// for sources whose `onCancel` is a no-op (e.g. `NumbersSource`).
+    if (is_cancelled.exchange(true, std::memory_order_acq_rel))
         return;
 
     onCancel();
