@@ -26,6 +26,7 @@ namespace Setting
     extern const SettingsBool distributed_plan_optimize_exchanges;
     extern const SettingsBool enable_full_text_index;
     extern const SettingsBool enable_join_runtime_filters;
+    extern const SettingsBool enable_join_runtime_filters_index_analysis;
     extern const SettingsBool force_optimize_projection;
     extern const SettingsBool make_distributed_plan;
     extern const SettingsBool distributed_plan_execute_locally;
@@ -292,6 +293,7 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     actions_settings = std::move(actions_settings_);
 
     enable_join_runtime_filters = from[Setting::query_plan_enable_optimizations] && from[Setting::enable_join_runtime_filters];
+    enable_join_runtime_filters_index_analysis = enable_join_runtime_filters && from[Setting::enable_join_runtime_filters_index_analysis];
     join_runtime_filter_exact_values_limit = from[Setting::join_runtime_filter_exact_values_limit];
     join_runtime_bloom_filter_bytes = from[Setting::join_runtime_bloom_filter_bytes];
     join_runtime_bloom_filter_hash_functions = from[Setting::join_runtime_bloom_filter_hash_functions];
