@@ -390,7 +390,7 @@ AggregateFunctionPtr createAggregateFunctionGroupConvexHull(
         return std::make_shared<AggregateFunctionGroupConvexHull>(
             arg_type, parameters, GeometryColumnType::Point /* unused for variant */, true);
 
-    auto geo_type = getGeometryColumnTypeFromDataType(arg_type);
+    auto geo_type = getUnambiguousGeometryColumnTypeFromDataType(arg_type, name);
     if (!geo_type)
         throw Exception(
             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,

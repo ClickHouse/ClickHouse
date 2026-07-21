@@ -61,6 +61,33 @@ struct PolygonalStateBudget
 /// Maps global variant discriminator index -> GeometryColumnType.
 using VariantTypeMap = std::vector<GeometryColumnType>; // STYLE_CHECK_ALLOW_STD_CONTAINERS
 
+inline std::optional<GeometryColumnType> getUnambiguousGeometryColumnTypeFromDataType(
+    const DataTypePtr & type, const String & function_name)
+{
+    auto geo_type = getGeometryColumnTypeFromDataType(type);
+    if (!geo_type)
+        return std::nullopt;
+
+    const auto & type_name = type->getName();
+    if (*geo_type == GeometryColumnType::Ring && type_name != "Ring")
+        throw Exception(
+            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+            "Argument of function {} has type {} which is ambiguous between Ring and LineString. "
+            "Cast it to an explicit geometry type.",
+            function_name,
+            type_name);
+
+    if (*geo_type == GeometryColumnType::Polygon && type_name != "Polygon")
+        throw Exception(
+            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+            "Argument of function {} has type {} which is ambiguous between Polygon and MultiLineString. "
+            "Cast it to an explicit geometry type.",
+            function_name,
+            type_name);
+
+    return geo_type;
+}
+
 inline VariantTypeMap buildVariantTypeMap(const DataTypePtr & argument_type)
 {
     const auto * variant_type = typeid_cast<const DataTypeVariant *>(argument_type.get());
