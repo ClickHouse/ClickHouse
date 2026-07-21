@@ -17,20 +17,31 @@ CREATE TABLE t_lc (id UInt64, m Map(LowCardinality(String), LowCardinality(Strin
     ENGINE = MergeTree ORDER BY id SETTINGS min_bytes_for_wide_part = 0, index_granularity = 8;
 
 -- Keys and values are arbitrary byte strings (any of 0..255, including NUL, 0x80+, and bytes that
--- look like trailer values) to stress the length-delimited encode/decode. Keys are drawn from a small
--- pool (so they repeat within a row -> duplicates) with lengths spanning the 63/64-byte trailer
--- boundary; values are per-entry. ~1/6 of keys and values are the empty string.
+-- look like trailer values) to stress the length-delimited encode/decode. Duplicate keys are built
+-- explicitly at the array level: per row we generate a set of base keys, then append a duplicated
+-- slice of them and attach fresh values, so every row has a repeated key. Key lengths span the
+-- 63/64-byte trailer boundary; ~1/6 of keys and values are the empty string.
 INSERT INTO t_s
 SELECT number,
-  arrayMap(j -> (
-    if(cityHash64(number, j, 13) % 6 = 0, '',
-       arrayStringConcat(arrayMap(i -> char(cityHash64(cityHash64(number, j) % 8, i) % 256),
-                                  range([1, 50, 63, 64, 65, 127, 200][1 + (cityHash64(number, j, 7) % 7)])))),
-    if(cityHash64(number, j, 17) % 6 = 0, '',
-       arrayStringConcat(arrayMap(i -> char(cityHash64(number, j, i, 3) % 256),
-                                  range(1 + (cityHash64(number, j, 11) % 20))))) ),
-    range(1 + (cityHash64(number) % 5)))::Map(String, String)
-FROM numbers(200);
+  arrayZip(
+    all_keys,
+    arrayMap(j -> if(cityHash64(number, j, 17) % 6 = 0, '',
+                     arrayStringConcat(arrayMap(i -> char(cityHash64(number, j, i, 3) % 256),
+                                                range(1 + (cityHash64(number, j, 11) % 20))))),
+             range(length(all_keys)))
+  )::Map(String, String) AS m
+FROM (
+  SELECT number, base_keys,
+    arrayConcat(base_keys, arraySlice(base_keys, 1, 1 + (cityHash64(number, 5) % length(base_keys)))) AS all_keys
+  FROM (
+    SELECT number,
+      arrayMap(k -> if(cityHash64(number, k, 13) % 6 = 0, '',
+                       arrayStringConcat(arrayMap(i -> char(cityHash64(number, k, i) % 256),
+                                                  range([1, 50, 63, 64, 65, 127, 200][1 + (cityHash64(number, k, 7) % 7)])))),
+               range(1 + (cityHash64(number) % 4))) AS base_keys
+    FROM numbers(200)
+  )
+);
 -- Crafted edge rows: guarantee empty-key/empty-value coverage and explicit weird bytes, with dups.
 INSERT INTO t_s VALUES
     (100000, map('', 'a', '', 'b')),                                              -- duplicate empty key
