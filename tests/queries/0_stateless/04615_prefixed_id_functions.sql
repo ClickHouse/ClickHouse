@@ -74,3 +74,10 @@ SELECT prefixedIDBody(toFixedString('user_x', 8)) == 'x\0\0';
 -- a different ignored expression forces an independent value
 SELECT generatePrefixedID('user', 22, 1) = generatePrefixedID('user', 22, 1);
 SELECT generatePrefixedID('user', 22, 1) != generatePrefixedID('user', 22, 2);
+
+-- A NULL ignored expression must not affect the result (same as generateUUIDv7 and generateSnowflakeID);
+-- a Nullable semantic argument is rejected instead of silently returning NULL.
+SELECT match(generatePrefixedID('user', 22, CAST(NULL AS Nullable(UInt8))), '^user_[0-9A-Za-z]{22}$');
+SELECT toTypeName(generatePrefixedID('user', 22, CAST(NULL AS Nullable(UInt8))));
+SELECT generatePrefixedID(CAST('user' AS Nullable(String))); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT generatePrefixedID('user', CAST(22 AS Nullable(UInt8))); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }

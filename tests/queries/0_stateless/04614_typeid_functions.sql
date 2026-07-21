@@ -93,3 +93,9 @@ SELECT tryTypeIDToUUID(toFixedString('00000000000000000000000000', 27)); -- the 
 SELECT generateTypeID('user', 1) = generateTypeID('user', 1);
 SELECT generateTypeID('user', 1) != generateTypeID('user', 2);
 SELECT generateTypeID('', 1) != generateTypeID('', 2);
+
+-- A NULL ignored expression must not affect the result (same as generateUUIDv7 and generateSnowflakeID);
+-- a Nullable semantic argument is rejected instead of silently returning NULL.
+SELECT match(generateTypeID('user', CAST(NULL AS Nullable(UInt8))), '^user_[0-7][0123456789abcdefghjkmnpqrstvwxyz]{25}$');
+SELECT toTypeName(generateTypeID('user', CAST(NULL AS Nullable(UInt8))));
+SELECT generateTypeID(CAST('user' AS Nullable(String))); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }

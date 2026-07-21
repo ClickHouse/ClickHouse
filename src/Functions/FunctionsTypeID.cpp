@@ -285,6 +285,10 @@ public:
     size_t getNumberOfArguments() const override { return 0; }
     bool isDeterministic() const override { return false; }
     bool isDeterministicInScopeOfQuery() const override { return false; }
+    /// The ignored `expr` argument must not affect the result, so a NULL expr must not turn the
+    /// result into NULL (same as generateUUIDv7 and generateSnowflakeID). The semantic arguments
+    /// then reject Nullable types through their validators instead of silently returning NULL.
+    bool useDefaultImplementationForNulls() const override { return false; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
