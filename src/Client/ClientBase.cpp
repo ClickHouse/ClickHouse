@@ -1798,6 +1798,9 @@ void ClientBase::onProfileEvents(Block & block)
 
         if (profile_events.print)
         {
+            /// Read at the use site: the client config file is loaded after the command line
+            /// options are processed, so an early read would miss the value from the file.
+            profile_events.delay_ms = getClientConfiguration().getUInt64("profile-events-delay-ms", 0);
             if (profile_events.watch.elapsedMilliseconds() >= profile_events.delay_ms)
             {
                 /// We need to restart the watch each time we flushed these events
@@ -3972,7 +3975,7 @@ void ClientBase::addOptionsToTheClientConfiguration(const CommandLineOptions & o
         getClientConfiguration().setBool("stacktrace", true);
     if (options.contains("print-profile-events"))
         getClientConfiguration().setBool("print-profile-events", true);
-    if (options.contains("profile-events-delay-ms"))
+    if (options.contains("profile-events-delay-ms") && !options["profile-events-delay-ms"].defaulted())
         getClientConfiguration().setUInt64("profile-events-delay-ms", options["profile-events-delay-ms"].as<UInt64>());
     if (options.contains("chime") && !options["chime"].defaulted())
         getClientConfiguration().setUInt64("chime-threshold-seconds", options["chime"].as<UInt64>());

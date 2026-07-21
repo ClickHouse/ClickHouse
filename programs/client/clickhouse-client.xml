@@ -97,6 +97,11 @@
          least this many seconds (same as &#45;&#45;chime). Set to 0 to disable. -->
     <!-- <chime-threshold-seconds>0</chime-threshold-seconds> -->
 
+    <!-- Delay in milliseconds between printing ProfileEvents packets
+         (same as &#45;&#45;profile-events-delay-ms). 18446744073709551615 prints only totals,
+         0 prints every single packet. Takes effect together with print-profile-events. -->
+    <!-- <profile-events-delay-ms>18446744073709551615</profile-events-delay-ms> -->
+
     <!-- Fall back CLI client to Ctrl+R for regular search like before, while Ctrl+T does fuzzy search. -->
     <!-- <interactive_history_legacy_keymap>true</interactive_history_legacy_keymap> -->
 
