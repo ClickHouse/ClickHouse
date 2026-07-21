@@ -94,6 +94,70 @@ SELECT
     (SELECT count() FROM (SELECT l.k FROM bug_dl AS l CROSS JOIN system.one AS s
         GROUP BY l.k SETTINGS optimize_distributed_group_by_sharding_key = 0));
 
+-- RIGHT/FULL pad the left side only when unmatched rows are emitted. SEMI keeps only matched rows, so
+-- RIGHT SEMI JOIN emits no default-padded l.k and GROUP BY the sharding key is still shard-local: the
+-- shortcut must keep firing (shard-local result has more rows than the merged one). Checked for both
+-- the analyzer (allow_experimental_analyzer = 1) and the old AST path (allow_experimental_analyzer = 0).
+SELECT 'optimization still fires for RIGHT SEMI JOIN GROUP BY l.k (analyzer)';
+SELECT
+    (SELECT count() FROM (SELECT l.k FROM bug_dl AS l RIGHT SEMI JOIN bug_dr AS r ON l.k = r.k
+        GROUP BY l.k SETTINGS optimize_distributed_group_by_sharding_key = 1))
+    >
+    (SELECT count() FROM (SELECT l.k FROM bug_dl AS l RIGHT SEMI JOIN bug_dr AS r ON l.k = r.k
+        GROUP BY l.k SETTINGS optimize_distributed_group_by_sharding_key = 0))
+SETTINGS allow_experimental_analyzer = 1;
+
+SELECT 'optimization still fires for RIGHT SEMI JOIN GROUP BY l.k (old analyzer)';
+SELECT
+    (SELECT count() FROM (SELECT l.k FROM bug_dl AS l RIGHT SEMI JOIN bug_dr AS r ON l.k = r.k
+        GROUP BY l.k SETTINGS optimize_distributed_group_by_sharding_key = 1))
+    >
+    (SELECT count() FROM (SELECT l.k FROM bug_dl AS l RIGHT SEMI JOIN bug_dr AS r ON l.k = r.k
+        GROUP BY l.k SETTINGS optimize_distributed_group_by_sharding_key = 0))
+SETTINGS allow_experimental_analyzer = 0;
+
+-- LEFT SEMI keeps only matched left rows, no padding either, so the shortcut also still fires.
+SELECT 'optimization still fires for LEFT SEMI JOIN GROUP BY l.k (analyzer)';
+SELECT
+    (SELECT count() FROM (SELECT l.k FROM bug_dl AS l LEFT SEMI JOIN bug_dr AS r ON l.k = r.k
+        GROUP BY l.k SETTINGS optimize_distributed_group_by_sharding_key = 1))
+    >
+    (SELECT count() FROM (SELECT l.k FROM bug_dl AS l LEFT SEMI JOIN bug_dr AS r ON l.k = r.k
+        GROUP BY l.k SETTINGS optimize_distributed_group_by_sharding_key = 0))
+SETTINGS allow_experimental_analyzer = 1;
+
+SELECT 'optimization still fires for LEFT SEMI JOIN GROUP BY l.k (old analyzer)';
+SELECT
+    (SELECT count() FROM (SELECT l.k FROM bug_dl AS l LEFT SEMI JOIN bug_dr AS r ON l.k = r.k
+        GROUP BY l.k SETTINGS optimize_distributed_group_by_sharding_key = 1))
+    >
+    (SELECT count() FROM (SELECT l.k FROM bug_dl AS l LEFT SEMI JOIN bug_dr AS r ON l.k = r.k
+        GROUP BY l.k SETTINGS optimize_distributed_group_by_sharding_key = 0))
+SETTINGS allow_experimental_analyzer = 0;
+
+-- ANTI is the opposite of SEMI: RIGHT ANTI keeps the right rows with no left match, so l.k is defaulted
+-- to 0 on every shard exactly like a plain RIGHT JOIN. The shortcut must stay disabled (only Semi is
+-- excluded from the padded-side guard, not Anti). Checked for both analyzer paths.
+SELECT 'RIGHT ANTI JOIN GROUP BY l.k (bug_dl padded), optimize=1 equals optimize=0 (analyzer)';
+SELECT groupArray((k, c)) = (
+        SELECT groupArray((k, c)) FROM (
+            SELECT l.k AS k, count() AS c FROM bug_dl AS l RIGHT ANTI JOIN bug_dr AS r ON l.k = r.k AND l.k > 1000
+            GROUP BY l.k ORDER BY ALL SETTINGS optimize_distributed_group_by_sharding_key = 0))
+FROM (
+    SELECT l.k AS k, count() AS c FROM bug_dl AS l RIGHT ANTI JOIN bug_dr AS r ON l.k = r.k AND l.k > 1000
+    GROUP BY l.k ORDER BY ALL SETTINGS optimize_distributed_group_by_sharding_key = 1)
+SETTINGS allow_experimental_analyzer = 1;
+
+SELECT 'RIGHT ANTI JOIN GROUP BY l.k (bug_dl padded), optimize=1 equals optimize=0 (old analyzer)';
+SELECT groupArray((k, c)) = (
+        SELECT groupArray((k, c)) FROM (
+            SELECT l.k AS k, count() AS c FROM bug_dl AS l RIGHT ANTI JOIN bug_dr AS r ON l.k = r.k AND l.k > 1000
+            GROUP BY l.k ORDER BY ALL SETTINGS optimize_distributed_group_by_sharding_key = 0))
+FROM (
+    SELECT l.k AS k, count() AS c FROM bug_dl AS l RIGHT ANTI JOIN bug_dr AS r ON l.k = r.k AND l.k > 1000
+    GROUP BY l.k ORDER BY ALL SETTINGS optimize_distributed_group_by_sharding_key = 1)
+SETTINGS allow_experimental_analyzer = 0;
+
 DROP TABLE bug_dl;
 DROP TABLE bug_dr;
 DROP TABLE bug_l;

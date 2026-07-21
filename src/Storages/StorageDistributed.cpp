@@ -418,9 +418,14 @@ bool isTableExpressionOnOuterJoinNullSide(const QueryTreeNodePtr & node, const Q
     if (const auto * join_node = node->as<JoinNode>())
     {
         const auto kind = join_node->getKind();
+        /// SEMI JOIN keeps only rows that have a match, so it never emits default-padded rows on the
+        /// kept side and does not break the shard-local invariant. Every other strictness that keeps
+        /// unmatched rows (including ANTI, which keeps the non-matching rows of the kept side and thus
+        /// defaults the other side's columns) is treated as padding per the join kind.
+        const bool pads = join_node->getStrictness() != JoinStrictness::Semi;
         /// RIGHT/FULL join pads the left side; LEFT/FULL join pads the right side.
-        const bool left_padded = padded_by_ancestor || isRightOrFull(kind);
-        const bool right_padded = padded_by_ancestor || isLeftOrFull(kind);
+        const bool left_padded = padded_by_ancestor || (pads && isRightOrFull(kind));
+        const bool right_padded = padded_by_ancestor || (pads && isLeftOrFull(kind));
         return isTableExpressionOnOuterJoinNullSide(join_node->getLeftTableExpression(), target, left_padded)
             || isTableExpressionOnOuterJoinNullSide(join_node->getRightTableExpression(), target, right_padded);
     }
@@ -447,7 +452,9 @@ bool isTableExpressionOnOuterJoinNullSide(const QueryTreeNodePtr & node, const Q
 /// always the main/leftmost operand and every join is applied to the accumulated left side. So this
 /// table is on an outer-join padded side iff any join in the list is RIGHT or FULL (both pad their
 /// left operand). LEFT pads only the right operand and INNER/CROSS never pad, so those keep the
-/// shortcut for GROUP BY over this table's own sharding key.
+/// shortcut for GROUP BY over this table's own sharding key. A SEMI join keeps only matched rows and
+/// emits no default-padded rows, so RIGHT/FULL SEMI does not pad the main table and keeps the shortcut
+/// (ANTI keeps unmatched rows and does default the other side's columns, so it is treated as padding).
 bool selectHasOuterJoinPaddingMainTable(const ASTSelectQuery & select)
 {
     const ASTPtr tables = select.tables();
@@ -460,7 +467,7 @@ bool selectHasOuterJoinPaddingMainTable(const ASTSelectQuery & select)
         if (!element || !element->table_join)
             continue;
         if (const auto * table_join = element->table_join->as<ASTTableJoin>())
-            if (isRightOrFull(table_join->kind))
+            if (isRightOrFull(table_join->kind) && table_join->strictness != JoinStrictness::Semi)
                 return true;
     }
     return false;

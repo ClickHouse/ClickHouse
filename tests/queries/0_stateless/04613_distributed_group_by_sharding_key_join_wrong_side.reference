@@ -15,3 +15,15 @@ CROSS JOIN under RIGHT JOIN GROUP BY l.k (bug_dl padded), optimize=1 equals opti
 1
 optimization still fires for plain CROSS JOIN GROUP BY l.k (sharding key)
 1
+optimization still fires for RIGHT SEMI JOIN GROUP BY l.k (analyzer)
+1
+optimization still fires for RIGHT SEMI JOIN GROUP BY l.k (old analyzer)
+1
+optimization still fires for LEFT SEMI JOIN GROUP BY l.k (analyzer)
+1
+optimization still fires for LEFT SEMI JOIN GROUP BY l.k (old analyzer)
+1
+RIGHT ANTI JOIN GROUP BY l.k (bug_dl padded), optimize=1 equals optimize=0 (analyzer)
+1
+RIGHT ANTI JOIN GROUP BY l.k (bug_dl padded), optimize=1 equals optimize=0 (old analyzer)
+1
