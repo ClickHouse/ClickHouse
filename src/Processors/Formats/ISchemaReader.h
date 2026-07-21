@@ -87,6 +87,17 @@ public:
     /// mismatch.
     virtual bool readsAnyValueIntoStringColumn() const { return true; }
 
+    /// True when the parser maps the input's fields to destination columns by name rather than by
+    /// position. Besides the inherently name-based formats (`JSONEachRow`, `TSKV`, `BSONEachRow`, ...,
+    /// which also return `hasStrictOrderOfColumns() == false`), a `*WithNames*` format carries a names
+    /// header and the parser maps its columns by name when configured to use that header
+    /// (`input_format_with_names_use_header`) — even for a format that does not advertise
+    /// `FormatFactory::checkIfFormatSupportsSubsetOfColumns` (e.g. `RowBinaryWithNamesAndTypes` and
+    /// `RowBinaryWithNamesAndTypesAndDefaults`). A caller comparing an inferred schema against an
+    /// expected one uses this to match columns by name (tolerating a reordered header) instead of
+    /// positionally.
+    virtual bool mapsColumnsByName() const { return false; }
+
     virtual bool needContext() const { return false; }
     virtual void setContext(const ContextPtr &) {}
 

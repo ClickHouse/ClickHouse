@@ -197,6 +197,17 @@ public:
         return !(names_detected_from_data && format_settings.with_names_use_header);
     }
 
+    /// A `*WithNames*` format (`with_names`) carries a names header, and so does a plain format whose
+    /// header was auto-detected in the data (`names_detected_from_data`); in both cases the parser maps
+    /// the columns by name when configured to use that header (`input_format_with_names_use_header`),
+    /// see `RowInputFormatWithNamesAndTypes::readPrefix`. This covers the `*WithNames*` formats that do
+    /// not advertise `FormatFactory::checkIfFormatSupportsSubsetOfColumns` (e.g.
+    /// `RowBinaryWithNamesAndTypes`), which `hasStrictOrderOfColumns` alone does not capture.
+    bool mapsColumnsByName() const override
+    {
+        return (with_names || names_detected_from_data) && format_settings.with_names_use_header;
+    }
+
 protected:
     std::optional<DataTypes> readRowAndGetDataTypes() override;
 

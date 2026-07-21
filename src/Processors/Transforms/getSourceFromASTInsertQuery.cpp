@@ -74,6 +74,7 @@ String getInsertDataSchemaMismatchDescription(
     bool format_reads_typed_json_value_tokens = false;
     bool format_reads_string_values_as_whole_text = false;
     bool format_reads_any_value_into_string_column = true;
+    bool format_maps_columns_by_name = false;
     try
     {
         auto probe_buffer = std::make_unique<ReadBufferFromMemory>(data.data(), data.size());
@@ -101,6 +102,7 @@ String getInsertDataSchemaMismatchDescription(
         format_reads_typed_json_value_tokens = schema_reader->readsTypedJSONValueTokens();
         format_reads_string_values_as_whole_text = schema_reader->readsStringValuesAsWholeText();
         format_reads_any_value_into_string_column = schema_reader->readsAnyValueIntoStringColumn();
+        format_maps_columns_by_name = schema_reader->mapsColumnsByName();
     }
     catch (...) // NOLINT(bugprone-empty-catch)
     {
@@ -333,12 +335,15 @@ String getInsertDataSchemaMismatchDescription(
     /// that do not line up with the destination column names, so compare those positionally.
 
     /// Whether the format identifies fields by name is decided by the format itself, mirroring the real
-    /// parser. Two cases map fields to columns by name: formats that can read a subset of the destination
-    /// columns (`JSONEachRow`, `TSKV`, the `*WithNames*` family when `input_format_with_names_use_header`
-    /// is enabled, ...), and formats whose schema reader does not impose a strict column order
-    /// (`JSONEachRow`, `TSKV`, `BSONEachRow`, ...). Everything else is compared by position — in
-    /// particular a `*WithNames*` format read with the header disabled, where the parser ignores the
-    /// file's names and maps columns positionally even though schema inference still reports those names.
+    /// parser. Three cases map fields to columns by name: formats that can read a subset of the
+    /// destination columns (`JSONEachRow`, `TSKV`, the `*WithNames*` family when
+    /// `input_format_with_names_use_header` is enabled, ...); formats whose schema reader does not impose
+    /// a strict column order (`JSONEachRow`, `TSKV`, `BSONEachRow`, ...); and formats whose schema reader
+    /// reports that the parser maps columns by name from a names header (the `*WithNames*` family that
+    /// does not advertise the subset-of-columns capability, e.g. `RowBinaryWithNamesAndTypes`). Everything
+    /// else is compared by position — in particular a `*WithNames*` format read with the header disabled,
+    /// where the parser ignores the file's names and maps columns positionally even though schema
+    /// inference still reports those names.
     const bool format_reads_by_name = FormatFactory::instance().checkIfFormatSupportsSubsetOfColumns(format_name, context, format_settings);
 
     /// A destination with duplicate column names cannot be matched by name unambiguously (a degenerate
@@ -348,7 +353,7 @@ String getInsertDataSchemaMismatchDescription(
         expected_names.insert(column.name);
 
     const bool match_by_name = expected_names.size() == expected.size()
-        && (format_reads_by_name || !format_has_strict_order_of_columns);
+        && (format_reads_by_name || format_maps_columns_by_name || !format_has_strict_order_of_columns);
 
     /// With `input_format_import_nested_json` enabled, the row-based JSON parsers map a top-level
     /// object field (`{"n": {...}}`) onto the dotted columns of a `Nested` carrier (`n.i`, ...).
