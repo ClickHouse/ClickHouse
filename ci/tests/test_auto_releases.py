@@ -111,10 +111,16 @@ def test_job_does_not_import_ci_defs():
     ``ModuleNotFoundError: No module named 'praktika'``. Mirrors release_job.py,
     which keeps its runtime imports to ``ci.praktika.*`` for the same reason.
     """
-    text = _read(JOB)
+    imported = set()
+    for node in ast.walk(ast.parse(_read(JOB))):
+        if isinstance(node, ast.ImportFrom) and node.module:
+            imported.add(node.module)
+        elif isinstance(node, ast.Import):
+            imported.update(a.name for a in node.names)
+    offending = {m for m in imported if m == "ci.defs" or m.startswith("ci.defs.")}
     assert (
-        "ci.defs" not in text
-    ), "job must not import ci.defs (breaks PYTHONPATH=. run)"
+        not offending
+    ), f"job must not import {sorted(offending)} (breaks the PYTHONPATH=. run)"
 
 
 def test_legacy_sources_are_gone():
