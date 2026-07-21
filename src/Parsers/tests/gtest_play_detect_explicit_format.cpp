@@ -20,9 +20,11 @@
   *
   * The detection tokenizes the query with the ClickHouse `Lexer` (compiled to WebAssembly from
   * `src/Parsers/Lexer.cpp` - the very same source exercised here) and counts `FORMAT` only as a real
-  * trailing clause: a `BareWord` `format` at bracket depth 0, immediately followed by the format name
-  * (another `BareWord`), after which the query has nothing more except an optional `;` or a trailing
-  * `SETTINGS` clause (the `FORMAT` and `SETTINGS` clauses may appear in either order). A plain text
+  * trailing clause: a `BareWord` `format` at bracket depth 0, preceded by a token that ends an
+  * expression (a literal, an identifier, `*`, or a closing bracket - the clause is tried exactly
+  * where an alias could appear, mirroring the server parser), immediately followed by the format
+  * name (another `BareWord`), after which the query has nothing more except an optional `;` or a
+  * trailing `SETTINGS` clause (the `FORMAT` and `SETTINGS` clauses may appear in either order). A plain text
   * match is fooled by a `FORMAT` mention inside a string literal or a comment, e.g.
   * `SELECT 'FORMAT JSONCompactColumns'`, and - crucially - by a column named `format` in the query
   * body, e.g. `SELECT format JSONCompactColumns FROM values('format UInt8', (1))` (a column aliased
@@ -98,6 +100,37 @@ bool isClosingBracket(DB::TokenType type)
         || type == DB::TokenType::ClosingCurlyBrace;
 }
 
+/// Mirror of `OPERAND_EXPECTING_KEYWORDS` in play.html: bare words after which an operand (an
+/// expression, or a table/column name) is expected, so a following `format` word is that operand,
+/// not the `FORMAT` clause keyword.
+bool isOperandExpectingKeyword(const std::string & lower)
+{
+    static const std::vector<std::string> keywords = {
+        "select", "from", "where", "prewhere", "having", "by", "and", "or", "not", "as", "on",
+        "using", "in", "when", "then", "else", "case", "distinct", "all", "any", "some", "join",
+        "union", "intersect", "except", "with", "settings", "limit", "offset", "top", "interval",
+        "like", "ilike", "between", "is", "over", "global", "array", "to", "if", "mod", "div",
+        "cross", "inner", "outer", "left", "right", "full", "asof", "semi", "anti", "paste",
+        "apply", "lateral", "sample", "into", "values",
+    };
+    return std::find(keywords.begin(), keywords.end(), lower) != keywords.end();
+}
+
+/// Mirror of `endsExpression` in play.html: whether the token ENDS an expression, so the `FORMAT`
+/// clause may begin right after it - a literal, an identifier, `*`, or a closing bracket. The
+/// server tries the `FORMAT` clause exactly where an alias could appear (only after a complete
+/// expression), so a `format` word elsewhere is an identifier in the query body.
+bool endsExpression(const Tok * tok)
+{
+    if (!tok)
+        return false;
+    if (tok->type == DB::TokenType::Number || tok->type == DB::TokenType::StringLiteral
+        || tok->type == DB::TokenType::QuotedIdentifier || tok->type == DB::TokenType::Asterisk
+        || isClosingBracket(tok->type))
+        return true;
+    return tok->type == DB::TokenType::BareWord && !isOperandExpectingKeyword(toLower(tok->text));
+}
+
 /// Faithful port of `detectExplicitFormatClause` from play.html. Returns the format name and the
 /// span of the whole `FORMAT <name>` clause, or `nullopt` when the query has no real `FORMAT` clause.
 std::optional<FormatClause> detectExplicitFormatClause(const std::string & query)
@@ -119,7 +152,8 @@ std::optional<FormatClause> detectExplicitFormatClause(const std::string & query
         else if (depth == 0
             && t.type == DB::TokenType::BareWord
             && toLower(t.text) == "format"
-            && tokens[i + 1].type == DB::TokenType::BareWord)
+            && tokens[i + 1].type == DB::TokenType::BareWord
+            && endsExpression(i > 0 ? &tokens[i - 1] : nullptr))
         {
             /// A real `FORMAT` clause is the last clause of the statement: only `;` or a trailing
             /// `SETTINGS` list may follow the format name.
@@ -206,6 +240,28 @@ TEST(PlayDetectExplicitFormat, IdentifierInBodyIsNotAFormatClause)
     /// is not an output `FORMAT` clause - more of the query follows the candidate name.
     expectFormat("SELECT format JSONCompactColumns FROM values('format UInt8', (1))", std::nullopt);
     expectFormat("SELECT format AS x FROM t", std::nullopt);
+}
+
+TEST(PlayDetectExplicitFormat, AliasedIdentifierBeforeSettingsIsNotAFormatClause)
+{
+    /// The reported bug: with a leading `WITH` alias, `format JSONCompactColumns` sits in trailing
+    /// position (only a `SETTINGS` clause follows), yet `format` is still just an identifier - it
+    /// follows `SELECT`, where an expression is expected, so the server parses `JSONCompactColumns`
+    /// as its alias, not as an output format.
+    expectFormat("WITH 1 AS format SELECT format JSONCompactColumns SETTINGS max_threads = 1", std::nullopt);
+    expectStrip("WITH 1 AS format SELECT format JSONCompactColumns SETTINGS max_threads = 1",
+        "WITH 1 AS format SELECT format JSONCompactColumns SETTINGS max_threads = 1");
+    /// The same shape with a real trailing clause (after a complete expression) is still detected.
+    expectFormat("WITH 1 AS x SELECT x FORMAT JSONCompactColumns SETTINGS max_threads = 1", "JSONCompactColumns");
+}
+
+TEST(PlayDetectExplicitFormat, ClauseAfterTrailingKeywordsIsStillDetected)
+{
+    /// Keywords that END a clause (unlike `SELECT`/`AS`/`BY`, after which an operand is expected)
+    /// may legitimately precede the `FORMAT` clause.
+    expectFormat("SELECT count() FROM t GROUP BY x WITH TOTALS FORMAT JSON", "JSON");
+    expectFormat("SELECT 1 ORDER BY 1 DESC FORMAT JSON", "JSON");
+    expectFormat("SELECT number FROM numbers(10) LIMIT 3 WITH TIES FORMAT JSON", "JSON");
 }
 
 TEST(PlayDetectExplicitFormat, CommentIsNotAFormatClause)

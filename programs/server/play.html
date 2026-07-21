@@ -10964,8 +10964,13 @@ async function tokenize(query) {
 /// The detection walks the lexer tokens rather than matching the raw text, and it counts
 /// `framing_output_format = value` only when it appears in a real settings context: a top-level
 /// `SETTINGS` clause (at bracket depth 0) or a standalone `SET` statement (the setting is the leading
-/// keyword). An occurrence inside a string literal, a comment, a subquery's own `SETTINGS`, or the
-/// query body as an ordinary comparison is ignored. A plain regex is fooled by e.g.
+/// keyword). A settings context is recognized by its list grammar, not by the keyword alone: the
+/// keyword must be followed by `name = value` pairs separated by commas, and the context ends where
+/// that list grammar ends. An occurrence inside a string literal, a comment, a subquery's own
+/// `SETTINGS`, or the query body as an ordinary comparison is ignored - including next to a column
+/// that is merely NAMED `settings`, e.g. `SELECT settings, framing_output_format = 'None' FROM
+/// values('settings UInt8, framing_output_format String', (1, 'None'))`, where a keyword-only match
+/// would wrongly refuse the query as disabling framing. A plain regex is fooled by e.g.
 /// `SELECT 'framing_output_format = None'` (refused as if it disabled framing),
 /// `SELECT 'framing_output_format'` (framing silently dropped, so the compact default renders as raw
 /// text instead of a table), or `SELECT framing_output_format = 'None' FROM values(...)` (a boolean
@@ -10998,9 +11003,6 @@ async function detectFramingSetting(query)
 
     const tokens = (await tokenize(query)).filter(t => t.significant);
     let depth = 0;
-    /// The settings context the walk is currently inside: `'settings'` for a query-level `SETTINGS`
-    /// clause, `'set'` for a standalone `SET` statement, or `''` for neither.
-    let settings_context = '';
     /// True at the start of the query and right after a top-level `;`, so a leading `SET` is
     /// recognized per statement.
     let at_statement_start = true;
@@ -11017,31 +11019,58 @@ async function detectFramingSetting(query)
             ++depth;
         } else if (CLOSING_BRACKETS.has(t.type)) {
             if (depth > 0) --depth;
-        } else if (is_top_level_semicolon) {
-            settings_context = '';
         } else if (t.type === TT.BareWord && depth === 0) {
             const lower = t.token.toLowerCase();
-            if (lower === 'settings') {
-                settings_context = 'settings';
-            } else if (lower === 'set' && at_statement_start) {
-                settings_context = 'set';
-            } else if (settings_context
-                && lower === 'framing_output_format'
-                && tokens[i + 1] && tokens[i + 1].type === TT.Equals) {
-                /// A standalone `SET framing_output_format = ...` changes the setting for the whole
-                /// session; this page overrides `framing_output_format` on every request, so it cannot
-                /// honor a session-level change and refuses it rather than silently overriding it.
-                if (settings_context === 'set') {
-                    return { user_framing: false, user_disables_framing: false, user_sets_session_framing: true };
+            const is_settings = lower === 'settings';
+            const is_set = lower === 'set' && at_statement_start;
+            /// A real settings context is not just the keyword: the keyword must be followed by an
+            /// actual settings list, which always begins `name = value`. A column merely named
+            /// `settings` in the query body (e.g. `SELECT settings, framing_output_format = 'None'
+            /// FROM values('settings UInt8, framing_output_format String', (1, 'None'))`) is
+            /// followed by a `,`/`FROM`/operator instead, so it does not open a settings context
+            /// and the comparison next to it is not mistaken for a setting.
+            if ((is_settings || is_set)
+                && tokens[i + 1] && tokens[i + 1].type === TT.BareWord
+                && tokens[i + 2] && tokens[i + 2].type === TT.Equals) {
+                /// Walk the settings list itself - `name = value` pairs separated by commas - and
+                /// leave the settings context where the list grammar ends, so nothing after the
+                /// list (e.g. a trailing `FORMAT` clause) is scanned as if it were a setting.
+                let j = i + 1;
+                while (tokens[j] && tokens[j].type === TT.BareWord
+                    && tokens[j + 1] && tokens[j + 1].type === TT.Equals) {
+                    const name = tokens[j].token.toLowerCase();
+                    j += 2;
+                    /// A numeric value may carry a sign (`SETTINGS priority = -1`), which the lexer
+                    /// reports as a separate token.
+                    if (tokens[j] && (tokens[j].type === TT.Minus || tokens[j].type === TT.Plus)
+                        && tokens[j + 1] && tokens[j + 1].type === TT.Number) {
+                        ++j;
+                    }
+                    const value_token = tokens[j];
+                    if (!value_token) break;
+                    if (name === 'framing_output_format') {
+                        /// A standalone `SET framing_output_format = ...` changes the setting for the
+                        /// whole session; this page overrides `framing_output_format` on every request,
+                        /// so it cannot honor a session-level change and refuses it rather than
+                        /// silently overriding it.
+                        if (is_set) {
+                            return { user_framing: false, user_disables_framing: false, user_sets_session_framing: true };
+                        }
+                        /// A string-literal value carries its surrounding quotes.
+                        let value = value_token.token;
+                        if (value_token.type === TT.StringLiteral) {
+                            value = value.slice(1, -1);
+                        }
+                        saw_query_setting = true;
+                        query_setting_disables = value.toLowerCase() === 'none';
+                    }
+                    ++j;
+                    if (tokens[j] && tokens[j].type === TT.Comma) ++j;
+                    else break;
                 }
-                /// The value is the next significant token; a string literal carries its surrounding quotes.
-                const value_token = tokens[i + 2];
-                let value = value_token ? value_token.token : '';
-                if (value_token && value_token.type === TT.StringLiteral) {
-                    value = value.slice(1, -1);
-                }
-                saw_query_setting = true;
-                query_setting_disables = value.toLowerCase() === 'none';
+                /// Resume the main walk right after the settings list (the loop's `++i` steps past
+                /// the last consumed token).
+                i = j - 1;
             }
         }
         /// The next token starts a new statement only right after a top-level `;`.
@@ -11064,7 +11093,9 @@ async function detectFramingSetting(query)
 ///
 /// Like `detectFramingSetting`, the detection walks the lexer tokens rather than matching the raw
 /// text, and it counts `FORMAT` only as a real trailing clause: a `BareWord` `format` at bracket
-/// depth 0, immediately followed by the format name (another `BareWord`), after which the query has
+/// depth 0, PRECEDED by a token that ends an expression (a literal, an identifier, `*`, or a
+/// closing bracket - the clause is tried exactly where an alias could appear, mirroring the server
+/// parser), immediately followed by the format name (another `BareWord`), after which the query has
 /// nothing more except an optional statement-terminating `;` or a trailing `SETTINGS` clause (the
 /// `FORMAT` and `SETTINGS` clauses may appear in either order). This ignores a `FORMAT` mention
 /// inside a string literal or a comment and, crucially, a column named `format` in the query body:
@@ -11092,6 +11123,34 @@ async function detectExplicitFormatClause(query)
         if (t.significant) tokens.push({ type: t.type, token: t.token, start: offset, end: offset + t.token.length });
         offset += t.token.length;
     }
+    /// Bare words after which an operand (an expression, or a table/column name) is expected, so a
+    /// following `format` word is that operand, not the `FORMAT` clause keyword. The server tries
+    /// the `FORMAT` clause exactly where an alias could appear - only after a COMPLETE expression -
+    /// so e.g. in `WITH 1 AS format SELECT format JSONCompactColumns SETTINGS max_threads = 1` both
+    /// `format` words are identifiers (the second aliased by the next word), not a clause, even
+    /// though the second one is in trailing position.
+    const OPERAND_EXPECTING_KEYWORDS = new Set([
+        'select', 'from', 'where', 'prewhere', 'having', 'by', 'and', 'or', 'not', 'as', 'on',
+        'using', 'in', 'when', 'then', 'else', 'case', 'distinct', 'all', 'any', 'some', 'join',
+        'union', 'intersect', 'except', 'with', 'settings', 'limit', 'offset', 'top', 'interval',
+        'like', 'ilike', 'between', 'is', 'over', 'global', 'array', 'to', 'if', 'mod', 'div',
+        'cross', 'inner', 'outer', 'left', 'right', 'full', 'asof', 'semi', 'anti', 'paste',
+        'apply', 'lateral', 'sample', 'into', 'values',
+    ]);
+    /// Whether the token ENDS an expression, so the `FORMAT` clause may begin right after it:
+    /// a literal, an identifier, `*`, or a closing bracket. Operators, commas, opening brackets
+    /// and operand-expecting keywords all mean an expression is still being read, so a `format`
+    /// word there is an identifier in the query body.
+    const endsExpression = (tok) => {
+        if (!tok) return false;
+        if (tok.type === TT.Number || tok.type === TT.StringLiteral || tok.type === TT.QuotedIdentifier
+            || tok.type === TT.Asterisk
+            || tok.type === TT.ClosingRoundBracket || tok.type === TT.ClosingSquareBracket
+            || tok.type === TT.ClosingCurlyBrace) {
+            return true;
+        }
+        return tok.type === TT.BareWord && !OPERAND_EXPECTING_KEYWORDS.has(tok.token.toLowerCase());
+    };
     let depth = 0;
     for (let i = 0; i + 1 < tokens.length; ++i) {
         const t = tokens[i];
@@ -11102,7 +11161,8 @@ async function detectExplicitFormatClause(query)
         } else if (depth === 0
             && t.type === TT.BareWord
             && t.token.toLowerCase() === 'format'
-            && tokens[i + 1].type === TT.BareWord) {
+            && tokens[i + 1].type === TT.BareWord
+            && endsExpression(i > 0 ? tokens[i - 1] : null)) {
             /// A real `FORMAT` clause is the last clause of the statement: only `;` or a trailing
             /// `SETTINGS` list may follow the format name.
             const after = tokens[i + 2];
@@ -11482,7 +11542,7 @@ const TT = {
     OpeningRoundBracket: 6, ClosingRoundBracket: 7,
     OpeningSquareBracket: 8, ClosingSquareBracket: 9,
     OpeningCurlyBrace: 10, ClosingCurlyBrace: 11,
-    Semicolon: 13, Asterisk: 16, HereDoc: 17, DollarSign: 18,
+    Comma: 12, Semicolon: 13, Asterisk: 16, HereDoc: 17, DollarSign: 18,
     Plus: 19, Minus: 20, Slash: 21, Percent: 22, Arrow: 23,
     QuestionMark: 24, Colon: 25, Caret: 26, DoubleColon: 27,
     Equals: 28, NotEquals: 29, Less: 30, Greater: 31,

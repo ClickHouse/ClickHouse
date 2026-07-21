@@ -17,7 +17,9 @@
   * `src/Parsers/Lexer.cpp` - the very same source exercised here) and counts
   * `framing_output_format = value` only when it appears in a real settings context: a top-level
   * `SETTINGS` clause (at bracket depth 0) or a standalone `SET` statement (the setting is the leading
-  * keyword). This ignores a `framing_output_format` mention inside a string literal or a comment, e.g.
+  * keyword). A settings context is recognized by its list grammar, not by the keyword alone: the
+  * keyword must be followed by `name = value` pairs separated by commas, and the context ends where
+  * that list grammar ends, so a column merely named `settings` does not open one. This ignores a `framing_output_format` mention inside a string literal or a comment, e.g.
   * `SELECT 'framing_output_format = None'` (wrongly refused) or `SELECT 'framing_output_format'`
   * (framing wrongly dropped), and - crucially - an ordinary comparison in the query body, e.g.
   * `SELECT framing_output_format = 'None' FROM values('framing_output_format String', ('None'))`,
@@ -93,9 +95,6 @@ FramingSetting detectFramingSetting(const std::string & query)
 {
     const std::vector<Tok> tokens = tokenizeSignificant(query);
     int depth = 0;
-    /// The settings context the walk is currently inside: "settings" for a query-level `SETTINGS`
-    /// clause, "set" for a standalone `SET` statement, or "" for neither.
-    std::string settings_context;
     /// True at the start of the query and right after a top-level `;`, so a leading `SET` is
     /// recognized per statement.
     bool at_statement_start = true;
@@ -118,36 +117,62 @@ FramingSetting detectFramingSetting(const std::string & query)
             if (depth > 0)
                 --depth;
         }
-        else if (is_top_level_semicolon)
-        {
-            settings_context.clear();
-        }
         else if (t.type == DB::TokenType::BareWord && depth == 0)
         {
             const std::string lower = toLower(t.text);
-            if (lower == "settings")
+            const bool is_settings = lower == "settings";
+            const bool is_set = lower == "set" && at_statement_start;
+            /// A real settings context is not just the keyword: the keyword must be followed by an
+            /// actual settings list, which always begins `name = value`. A column merely named
+            /// `settings` in the query body is followed by a `,`/`FROM`/operator instead, so it
+            /// does not open a settings context and a comparison next to it is not mistaken for a
+            /// setting.
+            if ((is_settings || is_set)
+                && i + 2 < tokens.size()
+                && tokens[i + 1].type == DB::TokenType::BareWord
+                && tokens[i + 2].type == DB::TokenType::Equals)
             {
-                settings_context = "settings";
-            }
-            else if (lower == "set" && at_statement_start)
-            {
-                settings_context = "set";
-            }
-            else if (!settings_context.empty()
-                && lower == "framing_output_format"
-                && i + 1 < tokens.size() && tokens[i + 1].type == DB::TokenType::Equals)
-            {
-                /// A standalone `SET framing_output_format = ...` changes the setting for the whole
-                /// session; the page overrides it on every request, so it is refused rather than
-                /// silently overridden.
-                if (settings_context == "set")
-                    return {false, false, true};
-                /// The value is the next significant token; a string literal carries its surrounding quotes.
-                std::string value = (i + 2 < tokens.size()) ? tokens[i + 2].text : "";
-                if (i + 2 < tokens.size() && tokens[i + 2].type == DB::TokenType::StringLiteral && value.size() >= 2)
-                    value = value.substr(1, value.size() - 2);
-                saw_query_setting = true;
-                query_setting_disables = toLower(value) == "none";
+                /// Walk the settings list itself - `name = value` pairs separated by commas - and
+                /// leave the settings context where the list grammar ends, so nothing after the
+                /// list (e.g. a trailing `FORMAT` clause) is scanned as if it were a setting.
+                size_t j = i + 1;
+                while (j + 1 < tokens.size()
+                    && tokens[j].type == DB::TokenType::BareWord
+                    && tokens[j + 1].type == DB::TokenType::Equals)
+                {
+                    const std::string name = toLower(tokens[j].text);
+                    j += 2;
+                    /// A numeric value may carry a sign (`SETTINGS priority = -1`), which the lexer
+                    /// reports as a separate token.
+                    if (j + 1 < tokens.size()
+                        && (tokens[j].type == DB::TokenType::Minus || tokens[j].type == DB::TokenType::Plus)
+                        && tokens[j + 1].type == DB::TokenType::Number)
+                        ++j;
+                    if (j >= tokens.size())
+                        break;
+                    if (name == "framing_output_format")
+                    {
+                        /// A standalone `SET framing_output_format = ...` changes the setting for the
+                        /// whole session; the page overrides it on every request, so it is refused
+                        /// rather than silently overridden.
+                        if (is_set)
+                            return {false, false, true};
+                        /// A string-literal value carries its surrounding quotes.
+                        std::string value = tokens[j].text;
+                        if (tokens[j].type == DB::TokenType::StringLiteral && value.size() >= 2)
+                            value = value.substr(1, value.size() - 2);
+                        saw_query_setting = true;
+                        query_setting_disables = toLower(value) == "none";
+                    }
+                    ++j;
+                    if (j < tokens.size() && tokens[j].type == DB::TokenType::Comma)
+                        ++j;
+                    else
+                        break;
+                }
+                /// Resume the main walk right after the settings list (the loop's `++i` steps past
+                /// the last consumed token).
+                i = j - 1;
             }
         }
         /// The next token starts a new statement only right after a top-level `;`.
@@ -237,6 +262,24 @@ TEST(PlayDetectFramingSetting, ComparisonInBodyIsNotASetting)
     expectFraming("SELECT framing_output_format = 'EventStream'", false, false);
     /// A comparison before a real `SETTINGS` clause is still ignored; the real setting wins.
     expectFraming("SELECT framing_output_format = 1 SETTINGS framing_output_format = 'EventStream'", true, false);
+}
+
+TEST(PlayDetectFramingSetting, ColumnNamedSettingsDoesNotOpenAContext)
+{
+    /// The reported bug: a depth-0 bare word `settings` that is just a column reference (followed
+    /// by a comma, not by a `name = value` list) must not open a settings context, so the ordinary
+    /// comparison after it is not mistaken for a real `framing_output_format` setting.
+    expectFraming(
+        "SELECT settings, framing_output_format = 'None' FROM values('settings UInt8, framing_output_format String', (1, 'None'))",
+        false, false);
+    /// An aliased column named `settings` does not open a context either (`settings x` is not
+    /// `name = value`).
+    expectFraming("SELECT settings x, framing_output_format = 'None' FROM t", false, false);
+    /// A real `SETTINGS` clause after such a column reference still wins.
+    expectFraming("SELECT settings FROM t SETTINGS framing_output_format = 'EventStream'", true, false);
+    /// The settings context ends with the list grammar: a signed numeric value does not break the
+    /// walk before a later `framing_output_format` entry in the same list.
+    expectFraming("SELECT 1 SETTINGS priority = -1, framing_output_format = 'None'", false, true);
 }
 
 TEST(PlayDetectFramingSetting, CommentIsNotASetting)
