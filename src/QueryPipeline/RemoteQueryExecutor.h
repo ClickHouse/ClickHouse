@@ -1,6 +1,7 @@
 #pragma once
 
 #include <atomic>
+#include <optional>
 #include <Client/ConnectionPool.h>
 #include <Client/IConnections.h>
 #include <Client/ConnectionPoolWithFailover.h>
@@ -194,11 +195,10 @@ public:
     /// This method may be called from separate thread.
     void cancel();
 
-    /// Signal a concurrent `finish` drain loop to abort early. Used by
-    /// `RemoteSource::cancel` to upgrade a soft `PartialResult` cancellation to
-    /// a hard cancellation: we cannot acquire `was_cancelled_mutex` to call
-    /// `cancel` without first letting the drain loop in `finish` exit, because
-    /// `finish` holds the mutex across the entire blocking receive loop.
+    /// Signal a concurrent drain loop (see `drainConnections`) to abort early. Used by
+    /// `RemoteSource::cancel` to upgrade a soft `PartialResult` cancellation to a hard
+    /// cancellation: the drain loop blocks in `receivePacket` between checks, so without
+    /// this signal the hard cancel would have to wait until the drain naturally completes.
     /// This method is lock-free and safe to call from any thread.
     void abortDrain() noexcept;
 
@@ -324,6 +324,21 @@ private:
       */
     bool draining = false;
 
+    /** Set by the synchronous `read` path (under `was_cancelled_mutex`) while it is blocked in
+      * `connections->receivePacket` with the mutex released (`async_socket_for_remote = 0`).
+      * A concurrent `finish` (e.g. a `PartialResult` cancellation delivered from another thread)
+      * must not enter its own drain loop in that state — two threads would consume packets from
+      * the same connections and desynchronize the protocol. `finish` sets `drain_requested`
+      * instead, delegating the drain to the reading thread.
+      */
+    bool sync_read_in_progress TSA_GUARDED_BY(was_cancelled_mutex) = false;
+
+    /** Set by `finish` when it observes `sync_read_in_progress`: the drain is delegated to the
+      * thread inside `read`, which performs it right after its pending `receivePacket` returns.
+      * Cleared by that thread (under `was_cancelled_mutex`) when it takes ownership of the drain.
+      */
+    bool drain_requested TSA_GUARDED_BY(was_cancelled_mutex) = false;
+
     /** Set by `abortDrain` to make `finish`'s drain loop exit early when a
       * concurrent hard cancellation arrives. The drain loop checks this atomic
       * after each packet so the hard cancel does not have to wait for the full
@@ -405,6 +420,19 @@ private:
 
     /// Process packet for read and return data block if possible.
     ReadResult processPacket(Packet packet);
+
+    /** Drain the connections until every replica completes, processing trailing service packets
+      * so final statistics are preserved. The caller must have set `draining = true` under
+      * `was_cancelled_mutex` and released the mutex; the `SCOPE_EXIT` inside publishes `finished`
+      * once no active connections remain. `first_packet`, if set, is a packet the caller already
+      * received before taking ownership of the drain, and is handled first.
+      */
+    void drainConnections(std::optional<Packet> first_packet);
+
+    /** Handle one packet the way the drain loop does: accumulate trailing statistics and service
+      * packets, swallow expected cancellation exceptions, rethrow genuine replica exceptions.
+      */
+    void handleDrainPacket(Packet packet);
 };
 
 ThrottlerPtr getThrottler(const ContextPtr & context);

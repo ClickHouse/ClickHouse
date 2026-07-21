@@ -620,19 +620,54 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::read()
             LockAndBlocker lock(was_cancelled_mutex);
             if (was_cancelled)
                 return ReadResult(Block());
+
+            /// Publish that this thread is about to block in `receivePacket` with the mutex
+            /// released. A concurrent `finish` (e.g. a `PartialResult` cancellation delivered
+            /// from another thread when `async_socket_for_remote = 0`) must not enter its own
+            /// drain loop in that state — two threads would consume packets from the same
+            /// connections. It sets `drain_requested` and delegates the drain to this thread
+            /// instead (see `finish`).
+            sync_read_in_progress = true;
         }
 
+        Packet packet;
+        try
+        {
+            packet = connections->receivePacket();
+        }
+        catch (...)
+        {
+            LockAndBlocker lock(was_cancelled_mutex);
+            sync_read_in_progress = false;
+            throw;
+        }
 
-        auto packet = connections->receivePacket();
+        {
+            LockAndBlocker lock(was_cancelled_mutex);
+            sync_read_in_progress = false;
 
-        LockAndBlocker lock(was_cancelled_mutex);
-        if (was_cancelled)
-            return ReadResult(Block());
+            if (!drain_requested)
+            {
+                if (was_cancelled)
+                    return ReadResult(Block());
 
-        auto anything = processPacket(std::move(packet));
+                auto anything = processPacket(std::move(packet));
 
-        if (anything.getType() == ReadResult::Type::Data || anything.getType() == ReadResult::Type::ParallelReplicasToken)
-            return anything;
+                if (anything.getType() == ReadResult::Type::Data || anything.getType() == ReadResult::Type::ParallelReplicasToken)
+                    return anything;
+
+                continue;
+            }
+
+            /// A concurrent `finish` delegated the drain to this thread while we were blocked
+            /// in `receivePacket` (see `finish`). Take ownership of the drain loop and handle
+            /// the packet we already hold the way the drain loop would.
+            drain_requested = false;
+            draining = true;
+        }
+
+        drainConnections(std::move(packet));
+        return ReadResult(Block());
     }
 }
 
@@ -931,7 +966,7 @@ void RemoteQueryExecutor::finish()
             {
                 finished = true;
             }
-            else if (was_cancelled && !finished && connections && !draining)
+            else if (was_cancelled && !finished && connections && !draining && !drain_requested)
             {
                 /// The query was already cancelled (e.g. concurrently from the pipeline) but its
                 /// connections may still hold undelivered packets - the server keeps sending the data,
@@ -950,7 +985,9 @@ void RemoteQueryExecutor::finish()
                 /// releasing `was_cancelled_mutex` and is now blocked in `receivePacket` with the mutex
                 /// released. Disconnecting here would tear the connections down under that active read,
                 /// making it throw `No more packets are available`. The draining call finishes the
-                /// drain (or the destructor disconnects) instead.
+                /// drain (or the destructor disconnects) instead. The `!drain_requested` guard covers
+                /// the same hazard for a drain delegated to a synchronous `read` that has not taken
+                /// ownership yet: that thread is still blocked in `receivePacket` on these connections.
                 connections->disconnect();
                 finished = true;
             }
@@ -968,12 +1005,33 @@ void RemoteQueryExecutor::finish()
         if (!connections || !sent_query || finished)
             return;
 
+        /// The synchronous read path (`async_socket_for_remote = 0`) may be blocked in
+        /// `connections->receivePacket` on another thread right now, with `was_cancelled_mutex`
+        /// released (see `read`). Entering the drain loop from this thread would make two threads
+        /// consume packets from the same connections and desynchronize the protocol. Delegate the
+        /// drain to the reading thread instead: `tryCancel` above has already asked the replicas
+        /// to wind down, and once the pending `receivePacket` returns, `read` observes
+        /// `drain_requested` and drains the connections itself.
+        if (sync_read_in_progress)
+        {
+            drain_requested = true;
+            return;
+        }
+
         /// Take ownership of the drain loop before releasing the mutex. A concurrent `finish` that
         /// observes the `was_cancelled` we just set (via `tryCancel` above) will now skip its eager
         /// `disconnect` branch instead of tearing down the connections while we read from them.
         draining = true;
     }
 
+    drainConnections(std::nullopt);
+}
+
+void RemoteQueryExecutor::drainConnections(std::optional<Packet> first_packet)
+{
+    /// Precondition: the caller set `draining = true` under `was_cancelled_mutex` and released
+    /// the mutex, so this thread owns the drain loop exclusively.
+    ///
     /// Mark `finished` only when the drain loop has actually drained every replica:
     /// `SCOPE_EXIT` runs regardless of how we leave the loop, so gate it strictly on
     /// `!connections->hasActiveConnections()`. There are three ways out of the loop:
@@ -1001,6 +1059,11 @@ void RemoteQueryExecutor::finish()
             finished = true;
     });
 
+    /// A packet the caller received before it took ownership of the drain (the synchronous
+    /// `read` handoff, see `finish`) is handled first, the same way the loop below would.
+    if (first_packet)
+        handleDrainPacket(std::move(*first_packet));
+
     /// Get the remaining packets so that there is no out of sync in the connections to the replicas.
     /// We do this manually instead of calling `drain` because we want to process `Log`, `ProfileEvents`
     /// and `Progress` packets that had been sent before the connection is fully finished, in order to have
@@ -1024,110 +1087,115 @@ void RemoteQueryExecutor::finish()
             break;
 
         Packet packet = connections->receivePacket();
+        handleDrainPacket(std::move(packet));
+    }
+}
 
-        switch (packet.type)
-        {
-            case Protocol::Server::EndOfStream:
-                /// One replica finished; let `hasActiveConnections` drive loop termination so the remaining
-                /// replicas' trailing `Progress` packets are still processed.
+void RemoteQueryExecutor::handleDrainPacket(Packet packet)
+{
+    switch (packet.type)
+    {
+        case Protocol::Server::EndOfStream:
+            /// One replica finished; let `hasActiveConnections` drive loop termination so the remaining
+            /// replicas' trailing `Progress` packets are still processed.
+            break;
+
+        case Protocol::Server::Exception:
+            /// The drain owner called `tryCancel` before entering the drain (see `finish`), which
+            /// sends `Cancel` to the replicas. A replica that was actively processing responds with
+            /// `QUERY_WAS_CANCELLED_BY_CLIENT` (or `QUERY_WAS_CANCELLED` when the cancel is
+            /// observed via the process list). Rethrowing such an expected cancellation would
+            /// kill the initiator's pipeline, prevent `PipelineExecutor::finalizeExecution`
+            /// from running, and lose the `Progress` packets that the replica already sent
+            /// before the cancellation — producing `rows_read = 0` in JSON/XML statistics.
+            /// Swallow these expected exceptions, log them, and let the loop continue so the
+            /// remaining replicas' trailing packets can still be drained.
+            ///
+            /// Do not set `got_exception_from_replica` for filtered cancellations: it would
+            /// make `hasThrownException` true, causing the `SCOPE_EXIT` in `drainConnections` to mark
+            /// `finished = true` even on the abort path (`drain_should_stop`) with replicas
+            /// still active, and would cause subsequent `finish` / `cancelUnlocked` calls to
+            /// return early as if a real replica error had occurred.
+            if (packet.exception->code() == ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT
+                || packet.exception->code() == ErrorCodes::QUERY_WAS_CANCELLED)
+            {
+                if (log)
+                    LOG_TRACE(log, "Replica reported expected cancellation during drain: {}", packet.exception->displayText());
                 break;
+            }
+            if (shouldIgnoreShardException(packet.exception->code()))
+            {
+                if (log)
+                    LOG_ERROR(log,
+                        "Ignoring exception from connection(s) {} due to `skip_unavailable_shards_mode` setting: {}",
+                        connections->dumpAddresses(),
+                        packet.exception->displayText());
 
-            case Protocol::Server::Exception:
-                /// We just called `tryCancel` above before entering this drain loop, which sends
-                /// `Cancel` to the replicas. A replica that was actively processing responds with
-                /// `QUERY_WAS_CANCELLED_BY_CLIENT` (or `QUERY_WAS_CANCELLED` when the cancel is
-                /// observed via the process list). Rethrowing such an expected cancellation would
-                /// kill the initiator's pipeline, prevent `PipelineExecutor::finalizeExecution`
-                /// from running, and lose the `Progress` packets that the replica already sent
-                /// before the cancellation — producing `rows_read = 0` in JSON/XML statistics.
-                /// Swallow these expected exceptions, log them, and let the loop continue so the
-                /// remaining replicas' trailing packets can still be drained.
-                ///
-                /// Do not set `got_exception_from_replica` for filtered cancellations: it would
-                /// make `hasThrownException` true, causing the `SCOPE_EXIT` above to mark
-                /// `finished = true` even on the abort path (`drain_should_stop`) with replicas
-                /// still active, and would cause subsequent `finish` / `cancelUnlocked` calls to
-                /// return early as if a real replica error had occurred.
-                if (packet.exception->code() == ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT
-                    || packet.exception->code() == ErrorCodes::QUERY_WAS_CANCELLED)
-                {
-                    if (log)
-                        LOG_TRACE(log, "Replica reported expected cancellation during drain: {}", packet.exception->displayText());
-                    break;
-                }
-                if (shouldIgnoreShardException(packet.exception->code()))
-                {
-                    if (log)
-                        LOG_ERROR(log,
-                            "Ignoring exception from connection(s) {} due to `skip_unavailable_shards_mode` setting: {}",
-                            connections->dumpAddresses(),
-                            packet.exception->displayText());
+                reportShardSkipped();
 
-                    reportShardSkipped();
-
-                    /// Treat an ignored shard exception like `EndOfStream` for that one connection.
-                    /// `receivePacket` has already disconnected and invalidated the replica that sent
-                    /// the `Exception` packet, while the other parallel/hedged replicas can still be
-                    /// active with unread trailing packets. Keep draining until `hasActiveConnections`
-                    /// says otherwise, and do not publish `got_exception_from_replica` or `finished`
-                    /// here: that would make `isQueryPending` false with connections still active, so
-                    /// cleanup would skip `disconnect` and could return out-of-sync connections to the
-                    /// pool, and it would discard the remaining replicas' trailing `Progress` packets
-                    /// (under-counting `rows_read` — the bug this drain exists to fix). The `finished`
-                    /// flag is published by the `SCOPE_EXIT` above once every replica is drained.
-                    break;
-                }
-
-                got_exception_from_replica.store(true, std::memory_order_release);
-                packet.exception->rethrow();
+                /// Treat an ignored shard exception like `EndOfStream` for that one connection.
+                /// `receivePacket` has already disconnected and invalidated the replica that sent
+                /// the `Exception` packet, while the other parallel/hedged replicas can still be
+                /// active with unread trailing packets. Keep draining until `hasActiveConnections`
+                /// says otherwise, and do not publish `got_exception_from_replica` or `finished`
+                /// here: that would make `isQueryPending` false with connections still active, so
+                /// cleanup would skip `disconnect` and could return out-of-sync connections to the
+                /// pool, and it would discard the remaining replicas' trailing `Progress` packets
+                /// (under-counting `rows_read` — the bug this drain exists to fix). The `finished`
+                /// flag is published by the `SCOPE_EXIT` in `drainConnections` once every replica
+                /// is drained.
                 break;
+            }
 
-            case Protocol::Server::Log:
-                /// Pass logs from remote server to client
-                if (auto log_queue = CurrentThread::getInternalTextLogsQueue())
-                    log_queue->pushBlock(std::move(packet.block));
-                break;
+            got_exception_from_replica.store(true, std::memory_order_release);
+            packet.exception->rethrow();
+            break;
 
-            case Protocol::Server::ProfileEvents:
-                /// Pass profile events from remote server to client
-                if (auto profile_queue = CurrentThread::getInternalProfileEventsQueue())
-                    if (!profile_queue->emplace(std::move(packet.block)))
-                        throw Exception(ErrorCodes::SYSTEM_ERROR, "Could not push into profile queue");
-                break;
+        case Protocol::Server::Log:
+            /// Pass logs from remote server to client
+            if (auto log_queue = CurrentThread::getInternalTextLogsQueue())
+                log_queue->pushBlock(std::move(packet.block));
+            break;
 
-            case Protocol::Server::ProfileInfo:
-                /// Use own (client-side) info about read bytes, it is more correct info than server-side one.
-                if (profile_info_callback)
-                    profile_info_callback(packet.profile_info);
-                break;
+        case Protocol::Server::ProfileEvents:
+            /// Pass profile events from remote server to client
+            if (auto profile_queue = CurrentThread::getInternalProfileEventsQueue())
+                if (!profile_queue->emplace(std::move(packet.block)))
+                    throw Exception(ErrorCodes::SYSTEM_ERROR, "Could not push into profile queue");
+            break;
 
-            case Protocol::Server::Progress:
-                if (progress_callback)
-                    progress_callback(packet.progress);
-                break;
+        case Protocol::Server::ProfileInfo:
+            /// Use own (client-side) info about read bytes, it is more correct info than server-side one.
+            if (profile_info_callback)
+                profile_info_callback(packet.profile_info);
+            break;
 
-            case Protocol::Server::Totals:
-                /// A replica may deliver its `Totals` block among the trailing packets drained here
-                /// rather than during the normal read (the same window the
-                /// `tcp_handler_sleep_before_secondary_query_trailing_packets` failpoint forces).
-                /// Store it exactly as `processPacket` does; otherwise `RemoteTotalsSource` would later
-                /// read an empty block and a `WITH TOTALS` query would silently lose its totals section.
-                totals = packet.block;
-                if (!totals.empty())
-                    totals = adaptBlockStructure(totals, *header);
-                break;
+        case Protocol::Server::Progress:
+            if (progress_callback)
+                progress_callback(packet.progress);
+            break;
 
-            case Protocol::Server::Extremes:
-                /// Likewise for `Extremes` (`extremes = 1`), which would otherwise be dropped here and
-                /// leave `RemoteExtremesSource` with an empty block.
-                extremes = packet.block;
-                if (!extremes.empty())
-                    extremes = adaptBlockStructure(packet.block, *header);
-                break;
+        case Protocol::Server::Totals:
+            /// A replica may deliver its `Totals` block among the trailing packets drained here
+            /// rather than during the normal read (the same window the
+            /// `tcp_handler_sleep_before_secondary_query_trailing_packets` failpoint forces).
+            /// Store it exactly as `processPacket` does; otherwise `RemoteTotalsSource` would later
+            /// read an empty block and a `WITH TOTALS` query would silently lose its totals section.
+            totals = packet.block;
+            if (!totals.empty())
+                totals = adaptBlockStructure(totals, *header);
+            break;
 
-            default:
-                break;
-        }
+        case Protocol::Server::Extremes:
+            /// Likewise for `Extremes` (`extremes = 1`), which would otherwise be dropped here and
+            /// leave `RemoteExtremesSource` with an empty block.
+            extremes = packet.block;
+            if (!extremes.empty())
+                extremes = adaptBlockStructure(packet.block, *header);
+            break;
+
+        default:
+            break;
     }
 }
 

@@ -272,11 +272,9 @@ void RemoteSource::cancel(CancelReason reason) noexcept
 
     try
     {
-        /// First, signal the drain loop in `finish` to abort early. `cancel` would
-        /// otherwise block on `was_cancelled_mutex` until the drain naturally completes,
-        /// since `finish` holds the mutex across the entire blocking receive loop.
-        /// `abortDrain` is lock-free, so the drain can observe the abort signal and
-        /// release the mutex; only then does our subsequent `cancel` make progress.
+        /// First, signal the drain loop to abort early. The drain blocks in `receivePacket`
+        /// between checks of the abort flag, so without this signal the hard cancel would
+        /// have to wait until the drain naturally completes. `abortDrain` is lock-free.
         query_executor->abortDrain();
         query_executor->cancel();
     }

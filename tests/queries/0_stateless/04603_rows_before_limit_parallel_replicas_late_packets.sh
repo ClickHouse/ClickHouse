@@ -196,4 +196,20 @@ OUTPUT=$(${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" -d "SELECT number FROM ${REM
 check_template_field "remote Template HTTP" "rows_before_limit" "$EXPECTED_ROWS_BEFORE_LIMIT" "$OUTPUT"
 check_template_field "remote Template HTTP" "rows_read" "$EXPECTED_ROWS_READ" "$OUTPUT"
 
+# --- async_socket_for_remote=0: the synchronous read path. Here the reading thread may be
+# blocked in `receivePacket` without holding the cancellation mutex when the post-`LIMIT`
+# cancellation arrives, so `RemoteQueryExecutor::finish` must not drain the connections from
+# the cancelling thread; it hands the drain off to the reading thread instead. The trailing
+# statistics must be exactly as correct as on the default asynchronous path.
+OUTPUT=$(${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" -d "SELECT number FROM ${REMOTE_TABLE} LIMIT 10 FORMAT JSON SETTINGS async_socket_for_remote=0")
+check_field "remote JSON HTTP sync-read" "rows_read" "$EXPECTED_ROWS_READ" "$OUTPUT"
+check_field "remote JSON HTTP sync-read" "rows_before_limit_at_least" "$EXPECTED_ROWS_BEFORE_LIMIT" "$OUTPUT"
+
+OUTPUT=$($CLICKHOUSE_CLIENT --query="SELECT number FROM ${REMOTE_TABLE} LIMIT 10 FORMAT JSON SETTINGS async_socket_for_remote=0")
+check_field "remote JSON TCP sync-read" "rows_read" "$EXPECTED_ROWS_READ" "$OUTPUT"
+check_field "remote JSON TCP sync-read" "rows_before_limit_at_least" "$EXPECTED_ROWS_BEFORE_LIMIT" "$OUTPUT"
+
+OUTPUT=$($CLICKHOUSE_CLIENT --query="SELECT number FROM ${TABLE_NAME} LIMIT 10 FORMAT JSON SETTINGS ${PR_SETTINGS}, async_socket_for_remote=0")
+check_field "parallel replicas JSON TCP sync-read" "rows_read" "$EXPECTED_ROWS_READ" "$OUTPUT"
+
 $CLICKHOUSE_CLIENT --query="DROP TABLE IF EXISTS ${TABLE_NAME}"

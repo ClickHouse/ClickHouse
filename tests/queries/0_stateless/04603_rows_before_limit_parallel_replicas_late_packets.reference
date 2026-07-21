@@ -18,3 +18,8 @@ remote JSONEachRowWithProgress HTTP last progress read_rows OK
 remote JSONCompactEachRowWithProgress HTTP rows_before_limit_at_least OK
 remote Template HTTP rows_before_limit OK
 remote Template HTTP rows_read OK
+remote JSON HTTP sync-read rows_read OK
+remote JSON HTTP sync-read rows_before_limit_at_least OK
+remote JSON TCP sync-read rows_read OK
+remote JSON TCP sync-read rows_before_limit_at_least OK
+parallel replicas JSON TCP sync-read rows_read OK
