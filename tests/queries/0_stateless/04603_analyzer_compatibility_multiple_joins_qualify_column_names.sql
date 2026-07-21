@@ -134,3 +134,29 @@ DESCRIBE (SELECT * FROM (SELECT 1 AS k, [1, 2] AS arr, 'D' AS Date) AS ll LEFT J
 
 SELECT '=== distributed: remote() two-shard, family2 shape, setting ON ===';
 SELECT ll.Date FROM remote('127.0.0.{1,2}', view(SELECT * FROM (SELECT 1 AS k, 'D' AS Date) AS ll LEFT JOIN (SELECT 1 AS k) AS t1 ON ll.k = t1.k LEFT JOIN (SELECT 1 AS k) AS t2 ON ll.k = t2.k)) ORDER BY ll.Date SETTINGS analyzer_compatibility_multiple_joins_qualify_column_names = 1;
+
+-- ============================================================
+-- `COLUMNS` matcher: the identifier-list form `COLUMNS(col1, col2)` is not a
+-- matcher expansion (it is resolved as a plain list of column references), so it
+-- keeps column names exactly as written, unqualified, even with the setting ON.
+-- The old analyzer never qualified this form either, only the regexp form
+-- `COLUMNS('<regexp>')` (which goes through the same expansion as `*`).
+-- ============================================================
+
+SET analyzer_compatibility_multiple_joins_qualify_column_names = 1;
+
+SELECT '=== describe: COLUMNS(col) identifier-list form stays bare, setting ON ===';
+DESCRIBE (SELECT COLUMNS(Date) FROM (SELECT 1 AS k, 'D' AS Date) AS ll LEFT JOIN (SELECT 1 AS k) AS t1 ON ll.k = t1.k LEFT JOIN (SELECT 1 AS k) AS t2 ON ll.k = t2.k);
+
+SELECT '=== describe: COLUMNS(regexp) form is qualified like * (old parity), setting ON ===';
+DESCRIBE (SELECT COLUMNS('^Date$') FROM (SELECT 1 AS k, 'D' AS Date) AS ll LEFT JOIN (SELECT 1 AS k) AS t1 ON ll.k = t1.k LEFT JOIN (SELECT 1 AS k) AS t2 ON ll.k = t2.k);
+
+SELECT '=== describe: *, COLUMNS(col) -- order-independent, setting ON ===';
+DESCRIBE (SELECT *, COLUMNS(Date) FROM (SELECT 1 AS k, 'D' AS Date) AS ll LEFT JOIN (SELECT 1 AS k) AS t1 ON ll.k = t1.k LEFT JOIN (SELECT 1 AS k) AS t2 ON ll.k = t2.k);
+
+SELECT '=== describe: COLUMNS(col), * -- order-independent, setting ON ===';
+DESCRIBE (SELECT COLUMNS(Date), * FROM (SELECT 1 AS k, 'D' AS Date) AS ll LEFT JOIN (SELECT 1 AS k) AS t1 ON ll.k = t1.k LEFT JOIN (SELECT 1 AS k) AS t2 ON ll.k = t2.k);
+
+SELECT '=== outer scope cannot see the bare COLUMNS(col) name, setting ON ===';
+-- fails on the old analyzer as well, since the identifier-list form never qualifies its columns
+SELECT ll.Date FROM (SELECT COLUMNS(Date) FROM (SELECT 1 AS k, 'D' AS Date) AS ll LEFT JOIN (SELECT 1 AS k) AS t1 ON ll.k = t1.k LEFT JOIN (SELECT 1 AS k) AS t2 ON ll.k = t2.k); -- { serverError UNKNOWN_IDENTIFIER }

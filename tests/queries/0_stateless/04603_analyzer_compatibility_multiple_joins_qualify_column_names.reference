@@ -73,3 +73,20 @@ t2.k	UInt8
 === distributed: remote() two-shard, family2 shape, setting ON ===
 D
 D
+=== describe: COLUMNS(col) identifier-list form stays bare, setting ON ===
+Date	String					
+=== describe: COLUMNS(regexp) form is qualified like * (old parity), setting ON ===
+ll.Date	String					
+=== describe: *, COLUMNS(col) -- order-independent, setting ON ===
+ll.k	UInt8					
+ll.Date	String					
+t1.k	UInt8					
+t2.k	UInt8					
+Date	String					
+=== describe: COLUMNS(col), * -- order-independent, setting ON ===
+Date	String					
+ll.k	UInt8					
+ll.Date	String					
+t1.k	UInt8					
+t2.k	UInt8					
+=== outer scope cannot see the bare COLUMNS(col) name, setting ON ===

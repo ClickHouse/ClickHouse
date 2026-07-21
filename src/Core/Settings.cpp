@@ -7845,7 +7845,7 @@ When a multi-part identifier like `b.id` could refer to either the column `id` o
 )", 0) \
     DECLARE(Bool, analyzer_compatibility_multiple_joins_qualify_column_names, false, R"(
 When enabled and the `FROM` clause of a query contains two or more `JOIN`s (comma-separated tables count; `ARRAY JOIN` does not), the analyzer names result columns the way the old analyzer's multiple-joins rewrite did:
-- columns produced by expanding `*`, `<table>.*` or `COLUMNS(...)` get names of the form `<alias-or-table>.<column>` for every column (the qualifier is the table expression's alias if it has one, otherwise the table name without the database; columns of a joined subquery without an alias are left unqualified);
+- columns produced by expanding `*`, `<table>.*` or `COLUMNS('<regexp>')` get names of the form `<alias-or-table>.<column>` for every column (the qualifier is the table expression's alias if it has one, otherwise the table name without the database; columns of a joined subquery without an alias are left unqualified); the identifier-list form `COLUMNS(col1, col2)` is not affected and keeps the column names exactly as written, since the old analyzer never qualified that form either;
 - an unaliased column reference in the `SELECT` list keeps its name exactly as written (e.g. `SELECT a.x` produces a column named `a.x` even when `x` is unambiguous).
 
 This makes outer queries that reference such columns by their qualified names work, for example:
