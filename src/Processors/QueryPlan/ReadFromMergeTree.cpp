@@ -3914,7 +3914,10 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
             stripped_snapshot_data->mutations_snapshot = snapshot_data->mutations_snapshot;
         }
 
-        storage_snapshot->data = std::move(stripped_snapshot_data);
+        /// The snapshot object may be shared with other parts of the query
+        /// (see `enable_shared_storage_snapshot_in_query`), which may read its data concurrently.
+        /// So replace our own pointer with a stripped clone instead of mutating the shared object in place.
+        storage_snapshot = storage_snapshot->clone(std::move(stripped_snapshot_data));
     }
 
     /// Check if we should apply row policy and prewhere after FINAL instead of during reading
