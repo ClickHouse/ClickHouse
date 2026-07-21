@@ -46,36 +46,59 @@ bool ParallelReadImplementation::checkPattern(GroupExpressionPtr expression, con
     return true;
 }
 
+/// Clones the read with its marks pinned into `target_buckets` coordinator-computed buckets and
+/// wraps it into a physical expression with the given strategy and output distribution. Returns
+/// nullptr when the read does not split into exactly the requested count (an unsupported
+/// feature, nothing to read, an unsplittable FINAL); `actual_buckets` reports the count for the
+/// caller's log line.
+static GroupExpressionPtr makeBucketedReadVariant(
+    const GroupExpressionPtr & expression,
+    size_t node_count,
+    size_t target_buckets,
+    ImplementationStrategyPtr strategy,
+    const char * description_prefix,
+    bool is_replicated,
+    size_t & actual_buckets)
+{
+    const auto * read_step = typeid_cast<const ReadFromMergeTree *>(expression->getQueryPlanStep());
+
+    auto bucketed_read_step_ptr = cloneStepAs(*read_step);
+    auto * bucketed_read_step = bucketed_read_step_ptr.get();
+
+    actual_buckets = bucketed_read_step->setupDistributedReadBuckets(target_buckets, ReadFromMergeTree::max_distributed_read_buckets);
+    if (actual_buckets != target_buckets)
+        return nullptr;
+    bucketed_read_step->setStepDescription(fmt::format("{} {}", description_prefix, read_step->getStepDescription()), 200);
+
+    GroupExpressionPtr bucketed_read_expression = std::make_shared<GroupExpression>(*expression);
+    bucketed_read_expression->plan_step = std::move(bucketed_read_step_ptr);
+    bucketed_read_expression->strategy = std::move(strategy);
+
+    ExpressionProperties output_properties;
+    output_properties.distribution.node_count = node_count;
+    output_properties.distribution.is_replicated = is_replicated;
+    bucketed_read_expression->properties = output_properties;
+    return bucketed_read_expression;
+}
+
 std::vector<GroupExpressionPtr> ParallelReadImplementation::applyImpl(GroupExpressionPtr expression, const ExpressionProperties & required_properties, Memo & memo) const
 {
     const auto * read_step = typeid_cast<const ReadFromMergeTree *>(expression->getQueryPlanStep());
     const size_t node_count = required_properties.distribution.node_count;
 
-    /// Produce a distributed read that splits work uniformly across all nodes.
-    /// DefaultImplementation handles the single-node (local) read.
-    auto parallel_read_step_ptr = cloneStepAs(*read_step);
-    auto * parallel_read_step = parallel_read_step_ptr.get();
-
-    /// The coordinator computes each bucket's authoritative marks; the fan-out ships them to
-    /// the workers in the `read_bucket` task parameters. A read that cannot be bucketed
-    /// (an unsupported feature, nothing to read, an unsplittable FINAL) or that does not split
-    /// into one bucket per node gets no parallel implementation and stays local.
-    const size_t actual_buckets = parallel_read_step->setupDistributedReadBuckets(node_count, ReadFromMergeTree::max_distributed_read_buckets);
-    if (actual_buckets != node_count)
+    /// Produce a distributed read that splits work uniformly across all nodes: the coordinator
+    /// computes each bucket's authoritative marks and the fan-out ships them to the workers in
+    /// the `read_bucket` task parameters. DefaultImplementation handles the single-node read.
+    size_t actual_buckets = 0;
+    auto parallel_read_expression = makeBucketedReadVariant(
+        expression, node_count, /*target_buckets=*/node_count,
+        std::make_shared<ParallelReadStrategy>(), "ParallelRead", /*is_replicated=*/false, actual_buckets);
+    if (!parallel_read_expression)
     {
         LOG_TEST(getLogger("ParallelRead"), "No parallel read for '{}': the read splits into {} buckets instead of {}",
             read_step->getStepDescription(), actual_buckets, node_count);
         return {};
     }
-    parallel_read_step->setStepDescription(fmt::format("ParallelRead {}", read_step->getStepDescription()), 200);
-
-    GroupExpressionPtr parallel_read_expression = std::make_shared<GroupExpression>(*expression);
-    parallel_read_expression->plan_step = std::move(parallel_read_step_ptr);
-    parallel_read_expression->strategy = std::make_shared<ParallelReadStrategy>();
-
-    ExpressionProperties parallel_properties;
-    parallel_properties.distribution.node_count = node_count;
-    parallel_read_expression->properties = parallel_properties;
 
     std::vector<GroupExpressionPtr> result;
     addPhysicalToMemo(parallel_read_expression, required_properties, memo, result);
@@ -118,33 +141,19 @@ std::vector<GroupExpressionPtr> ReplicatedReadImplementation::applyImpl(GroupExp
     LOG_TEST(getLogger("ReplicatedRead"), "Creating replicated read for '{}' at {} nodes",
         read_step->getStepDescription(), node_count);
 
-    auto replicated_read_step_ptr = read_step->clone();
-    auto * replicated_read_step = typeid_cast<ReadFromMergeTree *>(replicated_read_step_ptr.get());
-    if (!replicated_read_step)
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
-            "ReplicatedReadImplementation: clone() of ReadFromMergeTree returned unexpected step type for expression '{}'",
-            expression->getDescription());
-
     /// Pin the coordinator's full mark set as a single bucket so every node reads the same snapshot.
     /// A read that cannot be pinned (an unsupported feature, or FINAL, which the single-bucket path
     /// refuses) gets no replicated implementation and the requirement falls back to a BroadcastExchange.
-    if (replicated_read_step->setupDistributedReadBuckets(/*target_buckets=*/1, ReadFromMergeTree::max_distributed_read_buckets) != 1)
+    size_t actual_buckets = 0;
+    auto replicated_read_expression = makeBucketedReadVariant(
+        expression, node_count, /*target_buckets=*/1,
+        std::make_shared<ReplicatedReadStrategy>(), "ReplicatedRead", /*is_replicated=*/true, actual_buckets);
+    if (!replicated_read_expression)
     {
         LOG_TEST(getLogger("ReplicatedRead"), "No replicated read for '{}': its marks cannot be pinned into one bucket",
             read_step->getStepDescription());
         return {};
     }
-
-    replicated_read_step->setStepDescription(fmt::format("ReplicatedRead {}", read_step->getStepDescription()), 200);
-
-    GroupExpressionPtr replicated_read_expression = std::make_shared<GroupExpression>(*expression);
-    replicated_read_expression->plan_step = std::move(replicated_read_step_ptr);
-    replicated_read_expression->strategy = std::make_shared<ReplicatedReadStrategy>();
-
-    ExpressionProperties replicated_properties;
-    replicated_properties.distribution.node_count = node_count;
-    replicated_properties.distribution.is_replicated = true;
-    replicated_read_expression->properties = replicated_properties;
 
     std::vector<GroupExpressionPtr> result;
     addPhysicalToMemo(replicated_read_expression, required_properties, memo, result);
