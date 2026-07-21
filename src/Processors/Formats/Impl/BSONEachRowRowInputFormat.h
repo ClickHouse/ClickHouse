@@ -109,6 +109,9 @@ public:
     /// every field verbatim into a `String` column.
     bool readsAnyValueIntoStringColumn() const override { return false; }
 
+    /// A BSON `Int32` element is read straight into an `IPv4` column (see `readAndInsertIPv4`).
+    bool readsNumericValueIntoIPv4Column() const override { return true; }
+
 private:
     NamesAndTypesList readRowAndGetNamesAndDataTypes(bool & eof) override;
     void transformTypesIfNeeded(DataTypePtr & type, DataTypePtr & new_type) override;

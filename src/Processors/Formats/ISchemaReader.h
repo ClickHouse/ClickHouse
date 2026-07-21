@@ -98,6 +98,16 @@ public:
     /// positionally.
     virtual bool mapsColumnsByName() const { return false; }
 
+    /// True when the parser accepts a bare numeric value into an `IPv4` destination column. Most formats
+    /// require a (quoted) string for `IPv4` — the text / JSON deserializers reject a number — but the
+    /// binary formats that store typed values read an integer straight into the `UInt32`-backed `IPv4`
+    /// column (`BSONEachRow` via a BSON `Int32`, `MsgPack` via its `TypeIndex::IPv4` integer arm). A
+    /// caller comparing an inferred schema against an expected one uses this to avoid flagging an
+    /// inferred numeric type going into an `IPv4` column as a structure mismatch for these formats.
+    /// (`UUID` and `IPv6` still require binary data of the exact size in every format, so they stay a
+    /// mismatch regardless of this capability.)
+    virtual bool readsNumericValueIntoIPv4Column() const { return false; }
+
     virtual bool needContext() const { return false; }
     virtual void setContext(const ContextPtr &) {}
 

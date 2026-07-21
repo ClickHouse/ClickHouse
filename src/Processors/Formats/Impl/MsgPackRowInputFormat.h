@@ -97,6 +97,10 @@ public:
     /// read every field verbatim into a `String` column.
     bool readsAnyValueIntoStringColumn() const override { return false; }
 
+    /// A MessagePack integer is read straight into an `IPv4` column (see `insertInteger`'s
+    /// `TypeIndex::IPv4` arm).
+    bool readsNumericValueIntoIPv4Column() const override { return true; }
+
 private:
     msgpack::object_handle readObject();
     DataTypePtr getDataType(const msgpack::object & object, size_t depth);

@@ -75,6 +75,7 @@ String getInsertDataSchemaMismatchDescription(
     bool format_reads_string_values_as_whole_text = false;
     bool format_reads_any_value_into_string_column = true;
     bool format_maps_columns_by_name = false;
+    bool format_reads_numeric_into_ipv4 = false;
     try
     {
         auto probe_buffer = std::make_unique<ReadBufferFromMemory>(data.data(), data.size());
@@ -103,6 +104,7 @@ String getInsertDataSchemaMismatchDescription(
         format_reads_string_values_as_whole_text = schema_reader->readsStringValuesAsWholeText();
         format_reads_any_value_into_string_column = schema_reader->readsAnyValueIntoStringColumn();
         format_maps_columns_by_name = schema_reader->mapsColumnsByName();
+        format_reads_numeric_into_ipv4 = schema_reader->readsNumericValueIntoIPv4Column();
     }
     catch (...) // NOLINT(bugprone-empty-catch)
     {
@@ -215,6 +217,7 @@ String getInsertDataSchemaMismatchDescription(
                                  format_reads_typed_json_value_tokens,
                                  format_reads_string_values_as_whole_text,
                                  format_reads_any_value_into_string_column,
+                                 format_reads_numeric_into_ipv4,
                                  &format_settings](
                                     const DataTypePtr & inferred_type, const DataTypePtr & expected_type, bool inferred_is_text)
     {
@@ -240,14 +243,19 @@ String getInsertDataSchemaMismatchDescription(
         /// JSON deserializers require a (quoted) string and reject a number in every format — `UUID`, `IPv4`
         /// and `IPv6` (e.g. `{"u": 1}` into `(u UUID)`). This is checked before the supertype rule below
         /// because `IPv4` is backed by a `UInt32` and does share a least supertype with a widened numeric
-        /// type, so the supertype rule would otherwise wrongly treat it as compatible. `FixedString` also
-        /// rejects a bare number, but only in the typed-token JSON formats
-        /// (`SerializationFixedString::deserializeTextJSON` requires a quoted string, regardless of the
-        /// `input_format_json_read_numbers_as_strings` setting, which covers only the plain `String`
-        /// destination); `TSV` / `CSV` read the raw field verbatim into a `FixedString` column, so a number
-        /// is accepted there and flagging it would be a false positive.
+        /// type, so the supertype rule would otherwise wrongly treat it as compatible. The binary formats
+        /// that store typed values are an exception for `IPv4`: `BSONEachRow` reads a BSON `Int32` and
+        /// `MsgPack` reads an integer straight into the `UInt32`-backed `IPv4` column
+        /// (`format_reads_numeric_into_ipv4`), so a numeric value is valid there and flagging it would be a
+        /// false positive (`UUID` and `IPv6` still require binary data of the exact size in those formats,
+        /// so they stay a mismatch). `FixedString` also rejects a bare number, but only in the typed-token
+        /// JSON formats (`SerializationFixedString::deserializeTextJSON` requires a quoted string,
+        /// regardless of the `input_format_json_read_numbers_as_strings` setting, which covers only the
+        /// plain `String` destination); `TSV` / `CSV` read the raw field verbatim into a `FixedString`
+        /// column, so a number is accepted there and flagging it would be a false positive.
         if (inferred_is_numeric
-            && (which_expected.isUUID() || which_expected.isIPv4() || which_expected.isIPv6()
+            && (which_expected.isUUID() || which_expected.isIPv6()
+                || (which_expected.isIPv4() && !format_reads_numeric_into_ipv4)
                 || (format_reads_typed_json_value_tokens && which_expected.isFixedString())))
             return false;
 
