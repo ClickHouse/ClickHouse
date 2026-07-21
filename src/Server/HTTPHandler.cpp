@@ -802,11 +802,19 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
 
         /// FIXME: maybe this check is already unnecessary.
         /// Workaround. Poco does not detect 411 Length Required case.
-        if (request.getMethod() == HTTPRequest::HTTP_POST && !request.getChunkedTransferEncoding() && !request.hasContentLength())
+        /// SQL-defined handlers (CREATE HANDLER) may run mutating queries over PUT and DELETE, in which case those
+        /// methods carry a request body just like POST. Without Content-Length a non-chunked PUT body is read until
+        /// EOF - so a dropped connection would be accepted as a partial INSERT - and a non-chunked DELETE is treated
+        /// as an empty body. Require the length up front for these methods too, matching the POST contract.
+        const auto & method = request.getMethod();
+        const bool method_requires_content_length = method == HTTPRequest::HTTP_POST
+            || (!introspection_handler_name.empty()
+                && (method == HTTPRequest::HTTP_PUT || method == HTTPRequest::HTTP_DELETE));
+        if (method_requires_content_length && !request.getChunkedTransferEncoding() && !request.hasContentLength())
         {
             throw Exception(ErrorCodes::HTTP_LENGTH_REQUIRED,
                             "The Transfer-Encoding is not chunked and there "
-                            "is no Content-Length header for POST request");
+                            "is no Content-Length header for a {} request", method);
         }
 
         processQuery(request, params, response, used_output, query_scope, write_event);
