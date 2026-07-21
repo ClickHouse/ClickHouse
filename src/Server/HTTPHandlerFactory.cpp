@@ -82,10 +82,21 @@ public:
 
         const String & method = request.getMethod();
 
+        /// Mirror the method semantics of config-defined HTTP handlers (see `allowGetAndHeadRequest` /
+        /// `allowRESTMethods` in HTTPHandlerFactory.h): `HEAD` reuses the handler declared for `GET`, and every
+        /// path/protocol match answers `OPTIONS` so the generic preflight/CORS branch in `HTTPHandler::handleRequest`
+        /// can respond. `ParserCreateHandlerQuery` never stores `HEAD`/`OPTIONS`, so these cannot be matched directly.
+        const bool is_head = method == Poco::Net::HTTPRequest::HTTP_HEAD;
+        const bool is_options = method == Poco::Net::HTTPRequest::HTTP_OPTIONS;
+
         for (const auto & [name, handler] : *handlers)
         {
+            const bool method_matches = handler->matchesMethod(method)
+                || (is_head && handler->matchesMethod(Poco::Net::HTTPRequest::HTTP_GET))
+                || is_options;
+
             if (handler->matchesProtocol(protocol_name)
-                && handler->matchesMethod(method)
+                && method_matches
                 && handler->matchesURL(path))
             {
                 return std::make_unique<SQLDefinedQueryHandler>(server, HTTPHandlerConnectionConfig{}, *handler);
