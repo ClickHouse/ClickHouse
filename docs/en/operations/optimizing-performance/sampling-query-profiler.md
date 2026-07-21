@@ -18,7 +18,9 @@ Using the profiler, you can find the source code routines that are used the most
 You can trace CPU time and wall-clock time spent including idle time.
 
 The query profiler is automatically enabled in ClickHouse Cloud.
-The following example query finds the most frequent stack traces for a profiled query, with resolved function names and source locations:
+The following example query finds the most frequent stack traces for a profiled query, with resolved function names and source locations.
+
+By default, the profiler symbolizes stack traces at collection time and stores the results in the `symbols` and `lines` columns of [`system.trace_log`](/operations/system-tables/trace_log), so the examples below read those columns directly and do not require introspection functions. Symbolization is controlled by the `symbolize` setting in the `trace_log` server configuration section (enabled by default). If it is disabled, use the `addressToSymbol`, `demangle` and `addressToLine` [introspection functions](../../sql-reference/functions/introspection.md) to resolve the raw addresses in the `trace` column instead.
 
 :::tip
 Replace the `query_id` value with the ID of the query you want to profile.
@@ -34,13 +36,12 @@ Use `clusterAllReplicas(default, system.trace_log)` to select from all nodes of 
 ```sql
 SELECT
     count(),
-    arrayStringConcat(arrayMap(x -> concat(demangle(addressToSymbol(x)), '\n    ', addressToLine(x)), trace), '\n') AS sym
+    arrayStringConcat(arrayMap((symbol, line) -> concat(symbol, '\n    ', line), symbols, lines), '\n') AS sym
 FROM clusterAllReplicas(default, system.trace_log)
 WHERE query_id = '<query_id>' AND trace_type = 'CPU' AND event_date = today()
-GROUP BY trace
+GROUP BY sym
 ORDER BY count() DESC
 LIMIT 10
-SETTINGS allow_introspection_functions = 1
 ```
 
 </TabItem>
@@ -49,13 +50,12 @@ SETTINGS allow_introspection_functions = 1
 ```sql
 SELECT
     count(),
-    arrayStringConcat(arrayMap(x -> concat(demangle(addressToSymbol(x)), '\n    ', addressToLine(x)), trace), '\n') AS sym
+    arrayStringConcat(arrayMap((symbol, line) -> concat(symbol, '\n    ', line), symbols, lines), '\n') AS sym
 FROM system.trace_log
 WHERE query_id = '<query_id>' AND trace_type = 'CPU' AND event_date = today()
-GROUP BY trace
+GROUP BY sym
 ORDER BY count() DESC
 LIMIT 10
-SETTINGS allow_introspection_functions = 1
 ```
 
 </TabItem>
@@ -98,8 +98,10 @@ Ensure that the [`trace_log`](../../operations/server-configuration-parameters/s
 ```
 
 This section configures the [trace_log](/operations/system-tables/trace_log) system table containing the results of the profiler functioning.
-Remember that data in this table is valid only for a running server.
-After the server restart, ClickHouse does not clean up the table and all the stored virtual memory address may become invalid.
+The `symbolize` option (enabled by default) makes ClickHouse resolve each stack frame at collection time and store the demangled function names and source locations in the `symbols` and `lines` columns.
+
+Remember that the raw addresses in the `trace` column are valid only for a running server: after a server restart, ClickHouse does not clean up the table and all the stored virtual memory addresses may become invalid.
+The pre-symbolized `symbols` and `lines` columns, on the other hand, remain valid across restarts, so prefer them when analyzing historical data.
 
 ### Configure profile timers {#configure-profile-timers}
 
@@ -115,7 +117,12 @@ If you need to profile each individual query, use a higher sampling frequency.
 
 ### Analyze the `trace_log` system table {#analyze-trace-log-system-table}
 
-To analyze the `trace_log` system table allow introspection functions with the [`allow_introspection_functions`](../../operations/settings/settings.md#allow_introspection_functions) setting:
+To get a profile for some query, you need to aggregate data from the `trace_log` table.
+You can aggregate data by individual functions or by the whole stack traces.
+
+When symbolization is enabled (the default), the demangled function names and source locations are already available in the `symbols` and `lines` columns, so no additional setup is required.
+
+If symbolization is disabled, or you want to resolve the raw addresses in the `trace` column on the fly (for example, to expand inline frames), allow introspection functions with the [`allow_introspection_functions`](../../operations/settings/settings.md#allow_introspection_functions) setting:
 
 ```sql
 SET allow_introspection_functions=1
@@ -126,8 +133,6 @@ For security reasons, introspection functions are disabled by default
 :::
 
 Use the `addressToLine`, `addressToLineWithInlines`, `addressToSymbol` and `demangle` [introspection functions](../../sql-reference/functions/introspection.md) to get function names and their positions in ClickHouse code.
-To get a profile for some query, you need to aggregate data from the `trace_log` table.
-You can aggregate data by individual functions or by the whole stack traces.
 
 :::tip
 If you need to visualize `trace_log` info, try [flamegraph](/interfaces/third-party/gui#clickhouse-flamegraph) and [speedscope](https://www.speedscope.app).
@@ -297,18 +302,18 @@ clickhouse client --allow_introspection_functions=1 \
 
 The code snippet below:
 - Filters `trace_log` data by a query identifier and the current date.
-- Aggregates by stack trace.
-- Uses introspection functions to get a report of:
+- Reads the pre-symbolized `symbols` and `lines` columns to build a report of:
   - The names of symbols and corresponding source code functions.
   - The source code locations of these functions.
+- Aggregates by the resulting symbolized stack trace.
 
 ```sql
 SELECT
     count(),
-    arrayStringConcat(arrayMap(x -> concat(demangle(addressToSymbol(x)), '\n    ', addressToLine(x)), trace), '\n') AS sym
+    arrayStringConcat(arrayMap((symbol, line) -> concat(symbol, '\n    ', line), symbols, lines), '\n') AS sym
 FROM system.trace_log
 WHERE (query_id = '<query_id>') AND (event_date = today())
-GROUP BY trace
+GROUP BY sym
 ORDER BY count() DESC
 LIMIT 10
 ```
