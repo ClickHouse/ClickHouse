@@ -316,9 +316,10 @@ Typical use cases for the postprocessor argument include:
    Example: `stem(str, 'en')`
 4. **Case normalization**. Lower- or upper-casing tokens to enable case-insensitive matching, e.g. [lower](/sql-reference/functions/string-functions.md/#lower), [lowerUTF8](/sql-reference/functions/string-functions.md/#lowerUTF8).
    For lower-and upper casing, we recommend a preprocessor instead of a postprocessor.
-5. **Excluding overly long tokens**. Free-text fields sometimes contain tokens with no search value but significant size, such as hashes, UUIDs, or base64-encoded blobs. Indexing them wastes space without ever being useful search terms.
-   You can use the postprocessor to discard tokens above a length threshold by converting them to empty tokens.
-   Example: `if(length(str) > 1024, '', str)`
+5. **Excluding overly long tokens**. Free-text fields sometimes contain tokens with no search value but significant size, such as UUIDs, SHA-256 hashes, or base64-encoded blobs. Indexing them wastes space without ever being useful search terms.
+   As with timestamp removal above, use the `splitByString` tokenizer (whitespace split) so punctuation inside the value (e.g. the hyphens in a UUID) doesn't fragment it first — `splitByNonAlpha` would split it into short sub-tokens before the postprocessor ever sees the whole value.
+   You can then use the postprocessor to discard tokens above a length threshold by converting them to empty tokens.
+   Example: `if(length(str) > 32, '', str)`
 
 The postprocessor expression transforms tokens of type [String](/sql-reference/data-types/string.md) to tokens of the same type.
 Also, the postprocessor expression must only reference the column or expression on top of which the text index is defined.
@@ -433,14 +434,16 @@ SELECT count() FROM table WHERE hasAllTokens(str, ['running']);
 - Exclude overly long tokens using a postprocessor expression:
 
 ```sql
--- Long tokens such as hashes, UUIDs, or base64 blobs carry no search value
--- but still consume index space. Blank them out above a length threshold.
+-- Long tokens such as UUIDs, SHA-256 hashes, or base64 blobs carry no search
+-- value but still consume index space. splitByString keeps the value whole
+-- (splitByNonAlpha would fragment it on the hyphens/punctuation first), then
+-- the postprocessor blanks it out above a length threshold.
 CREATE TABLE table
 (
     str String,
     INDEX idx(str) TYPE text(
-        tokenizer = 'splitByNonAlpha',
-        postprocessor = if(length(str) > 1024, '', str)
+        tokenizer = 'splitByString',
+        postprocessor = if(length(str) > 32, '', str)
     )
 )
 ENGINE = MergeTree
