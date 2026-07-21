@@ -9,6 +9,7 @@
 #include <Processors/QueryPlan/UnionStep.h>
 #include <Processors/QueryPlan/WindowStep.h>
 #include <Processors/QueryPlan/DistinctStep.h>
+#include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <Common/typeid_cast.h>
 
 namespace DB::QueryPlanOptimizations
@@ -54,6 +55,17 @@ static bool subtreeHasStatefulFunctions(const QueryPlan::Node * node)
     else if (const auto * filter_step = typeid_cast<const FilterStep *>(node->step.get()))
     {
         if (filter_step->getExpression().hasStatefulFunctions())
+            return true;
+    }
+    else if (const auto * source_step_with_filter = dynamic_cast<const SourceStepWithFilterBase *>(node->step.get()))
+    {
+        /// Reader-side filters (explicit `PREWHERE`, row-level security policy) also evaluate their
+        /// expressions per block during the scan, so a stateful function hidden there is subject to the
+        /// same early-stop truncation as one in a visible `ExpressionStep` / `FilterStep`.
+        const auto & prewhere_info = source_step_with_filter->getPrewhereInfo();
+        const auto & row_level_filter = source_step_with_filter->getRowLevelFilter();
+        if ((prewhere_info && prewhere_info->prewhere_actions.hasStatefulFunctions())
+            || (row_level_filter && row_level_filter->actions.hasStatefulFunctions()))
             return true;
     }
 
