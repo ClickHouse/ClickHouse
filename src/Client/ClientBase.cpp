@@ -115,6 +115,7 @@
 #include <Common/config_version.h>
 #include <Common/XDGBaseDirectories.h>
 #include <base/find_symbols.h>
+#include <base/sleep.h>
 
 
 namespace fs = std::filesystem;
@@ -2081,15 +2082,24 @@ void ClientBase::resetOutput()
     {
         pager_cmd->in.close();
 
-        /// Re-check the live interrupt state immediately before the potentially blocking wait:
-        /// a Ctrl+C that arrived after the promotion above would leave `cancelled` stale, and
-        /// the wait below would block on a stuck pager as if nothing was cancelled.
-        if (!cancelled && query_interrupt_handler.isRunning() && query_interrupt_handler.cancelled())
-            cancelled = true;
+        /// Wait for the pager to finish by polling, not with the blocking ShellCommand::wait():
+        /// that call sits in waitpid() and retries on EINTR (see ShellCommand::tryWaitImpl), so a
+        /// first Ctrl+C arriving once the wait has started would not be observed until a second
+        /// signal or an external kill. Between the non-blocking checks, sample the live interrupt
+        /// state and latch it into `cancelled`, which also stops the wait - the pager process
+        /// itself is then terminated by the ShellCommand destructor (see
+        /// terminate_in_destructor_strategy). A Ctrl+C that raced in before this loop is caught by
+        /// its first iteration, so no separate pre-wait re-check is needed.
+        while (!cancelled && !pager_cmd->waitIfProccesTerminated())
+        {
+            if (query_interrupt_handler.isRunning() && query_interrupt_handler.cancelled())
+            {
+                cancelled = true;
+                break;
+            }
 
-        /// The process will terminated in destructor anyway (due to terminate_in_destructor_strategy.terminate_in_destructor=true)
-        if (!cancelled)
-            pager_cmd->wait();
+            sleepForMilliseconds(50);
+        }
 
         if (SIG_ERR == signal(SIGPIPE, SIG_DFL))
             throw ErrnoException(ErrorCodes::CANNOT_SET_SIGNAL_HANDLER, "Cannot set signal handler for SIGPIPE");
