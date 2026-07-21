@@ -3624,9 +3624,9 @@ Possible values:
 
 - band_join
 
- A specialization for the band shape of the inequality join: the `ON` section brackets one expression of one table (the point side) between two expressions of the other table (the interval side) — `t >= lo AND t <= hi` with any mix of strict and loose bounds (`BETWEEN` desugars to it). Only the interval side is accumulated in memory (sorted by the lower bound); the point side streams block-by-block and is probed by binary search, in parallel. Supports `ALL INNER JOIN` with the point side as the left table; other shapes and kinds fall through to the algorithms listed after it (e.g. `ie_join`).
+ A specialization for the band shape of the inequality join: the `ON` section brackets one expression of one table (the point side) between two expressions of the other table (the interval side) — `t >= lo AND t <= hi` with any mix of strict and loose bounds (`BETWEEN` desugars to it). Only the interval side is accumulated in memory (sorted by the lower bound); the point side streams block-by-block and is probed by binary search, in parallel. Supports `ALL INNER JOIN` with the point side as either table, and `ALL`/`SEMI`/`ANTI` `LEFT JOIN` (`RIGHT JOIN`) when the point side is the left (right) table; other shapes and kinds fall through to the algorithms listed after it (e.g. `ie_join`).
 
- The position in the list sets the priority the same way as for `ie_join`. The remaining `ON` conditions (including equalities) are applied as a filter over the join result. [`max_rows_in_join`](/operations/settings/settings#max_rows_in_join) and [`max_bytes_in_join`](/operations/settings/settings#max_bytes_in_join) limit the accumulated interval side only.
+ The position in the list sets the priority the same way as for `ie_join`, and the remaining `ON` conditions (including equalities) are handled the same way: applied as a filter over the join result for `ALL INNER JOIN`, evaluated inside the operator as a residual condition for the other kinds. [`max_rows_in_join`](/operations/settings/settings#max_rows_in_join) and [`max_bytes_in_join`](/operations/settings/settings#max_bytes_in_join) limit the accumulated interval side only.
 
 - prefer_partial_merge
 

@@ -237,6 +237,23 @@ SET join_algorithm = 'direct,parallel_hash,hash,ie_join';
 SELECT t1.*, t2.* FROM t1 JOIN t2 ON t1.a < t2.a AND t1.b > t2.b;
 ```
 
+## Band JOIN {#band-join}
+
+A special case of the inequality join is the band shape: the two inequality conditions bracket one expression of one table (the point side) between two expressions of the other table (the interval side) — `p.t >= i.lo AND p.t <= i.hi` with any mix of strict and loose bounds (`BETWEEN` desugars to this shape). Such a join can be executed with the dedicated band join algorithm when `band_join` is added to the [`join_algorithm`](/operations/settings/settings#join_algorithm) setting; the join appears as a `BandJoin` step in `EXPLAIN`.
+
+Supported kinds are the ones that keep unmatched rows of the point side only: `ALL INNER JOIN` with the point side as either table, and `ALL`/`SEMI`/`ANTI` `LEFT JOIN` (`RIGHT JOIN`) when the point side is the left (right) table. Other shapes and kinds fall through to the algorithms listed after `band_join` — for example, with `join_algorithm = 'band_join,ie_join'` a `FULL JOIN` with two inequality conditions is executed by IEJoin.
+
+The position of `band_join` in the list sets its priority the same way as for `ie_join`, and the remaining conditions of the `ON` section are handled the same way: applied as a filter over the join result for `ALL INNER JOIN`, evaluated inside the operator as a residual condition for the other kinds.
+
+Unlike IEJoin, only the interval side is accumulated in memory (sorted by the lower bound); the point side streams block-by-block, needs no sort or pipeline barrier, and is probed by binary search in parallel. [`max_rows_in_join`](/operations/settings/settings#max_rows_in_join) and [`max_bytes_in_join`](/operations/settings/settings#max_bytes_in_join) therefore limit the accumulated interval side only, with the action on overflow set by [`join_overflow_mode`](/operations/settings/settings#join_overflow_mode).
+
+**Example**
+
+```sql
+SET join_algorithm = 'direct,parallel_hash,hash,band_join,ie_join';
+SELECT p.*, i.* FROM points AS p JOIN intervals AS i ON p.t >= i.lo AND p.t < i.hi;
+```
+
 ## NULL values in JOIN keys {#null-values-in-join-keys}
 
 `NULL` is not equal to any value, including itself. This means that if a `JOIN` key has a `NULL` value in one table, it won't match a `NULL` value in the other table.
