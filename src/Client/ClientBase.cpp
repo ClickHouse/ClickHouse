@@ -1489,6 +1489,16 @@ void ClientBase::pinOutboundDialectForJSONDialect(const String & outbound_query)
     }
 }
 
+std::optional<Settings> ClientBase::settingsWithoutCompatibilityDerived() const
+{
+    const Settings & settings = client_context->getSettingsRef();
+    if (!settings.hasSettingsChangedByCompatibility())
+        return {};
+    Settings result = settings;
+    result.resetSettingsChangedByCompatibility();
+    return result;
+}
+
 void ClientBase::processOrdinaryQuery(String query, ASTPtr parsed_query)
 {
     /// Rewrite query only when we have query parameters.
@@ -1627,6 +1637,15 @@ void ClientBase::processOrdinaryQuery(String query, ASTPtr parsed_query)
     const auto & settings = client_context->getSettingsRef();
     const Int32 signals_before_stop = settings[Setting::partial_result_on_first_cancel] ? 2 : 1;
 
+    /// `query` may have been rewritten from JSON to SQL above; pin the transport dialect to match
+    /// before sending so the server parses it the same way the client did. Must run before
+    /// `settingsWithoutCompatibilityDerived` snapshots the settings, so the pinned `dialect` is
+    /// included in the settings sent to the server.
+    pinOutboundDialectForJSONDialect(query);
+
+    const auto settings_without_compat = settingsWithoutCompatibilityDerived();
+    const Settings * settings_to_send = settings_without_compat ? &*settings_without_compat : &settings;
+
     int retries_left = 10;
     while (retries_left)
     {
@@ -1642,16 +1661,13 @@ void ClientBase::processOrdinaryQuery(String query, ASTPtr parsed_query)
 
             try
             {
-                /// `query` may have been rewritten from JSON to SQL above; pin the transport dialect to
-                /// match before sending so the server parses it the same way the client did.
-                pinOutboundDialectForJSONDialect(query);
                 connection->sendQuery(
                     connection_parameters.timeouts,
                     query,
                     query_parameters,
                     client_context->getCurrentQueryId(),
                     query_processing_stage,
-                    &client_context->getSettingsRef(),
+                    settings_to_send,
                     &client_context->getClientInfo(),
                     true,
                     {},
@@ -2217,14 +2233,21 @@ void ClientBase::processInsertQuery(String query, ASTPtr parsed_query)
 
     /// `query` may have been rewritten from JSON to SQL above; pin the transport dialect to match
     /// before sending so the server parses it the same way the client did.
+    /// Must run before `settingsWithoutCompatibilityDerived` snapshots the settings, so the pinned
+    /// `dialect` is included in the settings sent to the server.
     pinOutboundDialectForJSONDialect(query);
+
+    const auto settings_without_compat = settingsWithoutCompatibilityDerived();
+    const Settings * settings_to_send
+        = settings_without_compat ? &*settings_without_compat : &client_context->getSettingsRef();
+
     connection->sendQuery(
         connection_parameters.timeouts,
         query,
         query_parameters,
         client_context->getCurrentQueryId(),
         query_processing_stage,
-        &client_context->getSettingsRef(),
+        settings_to_send,
         &client_context->getClientInfo(),
         true,
         {},
