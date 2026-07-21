@@ -170,27 +170,41 @@ void CancellationChecker::workerFunction()
         /// proper timeout for waking up the thread
         if (query_set.empty())
         {
+            armed_deadline = 0;
             cond_var.wait(lock, [&] { return stop_thread || !query_set.empty(); });
         }
         else
         {
             chassert(!query_set.empty());
+            /// `appendTask` may insert a deadline earlier than the one this wait is armed for;
+            /// the wait must be re-armed then, or the notification is swallowed and the new
+            /// deadline fires only when the stale (later) one expires.
+            armed_deadline = query_set.begin()->endtime;
             cond_var.wait_for(
                 lock,
-                std::chrono::milliseconds(query_set.begin()->endtime - now_ms),
+                std::chrono::milliseconds(armed_deadline - now_ms),
                 [&] {
                     /// Use fresh time to avoid spinning when the predicate is re-evaluated after spurious wakeups.
                     UInt64 fresh_now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
-                    return stop_thread || (!query_set.empty() && query_set.begin()->endtime <= fresh_now_ms);
+                    return stop_thread
+                        || (!query_set.empty()
+                            && (query_set.begin()->endtime <= fresh_now_ms || query_set.begin()->endtime < armed_deadline));
                 });
         }
     }
+    armed_deadline = 0;
 
     /// `terminateThread` flips `stop_thread` to true to signal exit; clear it here while still
     /// holding the lock so the singleton is left in a re-runnable state. This is mainly relevant
     /// to tests that own the worker thread and may want to spin it up again later; the server
     /// starts the worker exactly once during boot, so for the production code path this is a no-op.
     stop_thread = false;
+}
+
+UInt64 CancellationChecker::getArmedDeadline()
+{
+    std::unique_lock<std::mutex> lock(m);
+    return armed_deadline;
 }
 
 }
