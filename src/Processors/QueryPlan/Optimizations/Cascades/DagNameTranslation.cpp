@@ -7,7 +7,7 @@ namespace DB
 {
 
 /// `materialize(x)` preserves values and thus the hash, so it is transparent to hash-based
-/// distribution and can be traced through. VIEW reads insert such nodes.
+/// distribution and can be traced through. `VIEW` reads insert such nodes.
 static bool isMaterializeNode(const ActionsDAG::Node & node)
 {
     return node.type == ActionsDAG::ActionType::FUNCTION

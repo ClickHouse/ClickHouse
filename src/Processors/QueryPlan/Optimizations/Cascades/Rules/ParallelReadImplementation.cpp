@@ -41,7 +41,7 @@ bool ParallelReadImplementation::checkPattern(GroupExpressionPtr expression, con
         || required_properties.distribution.is_replicated)
         return false;
 
-    /// FINAL reads can also be split: buckets follow primary-key-range layers, so a dedup group
+    /// `FINAL` reads can also be split: buckets follow primary-key-range layers, so a dedup group
     /// never spans buckets; reads that cannot be split safely are refused at apply time.
     return true;
 }
@@ -142,7 +142,7 @@ std::vector<GroupExpressionPtr> ReplicatedReadImplementation::applyImpl(GroupExp
         read_step->getStepDescription(), node_count);
 
     /// Pin the coordinator's full mark set as a single bucket so every node reads the same snapshot.
-    /// A read that cannot be pinned (an unsupported feature, or FINAL, which the single-bucket path
+    /// A read that cannot be pinned (an unsupported feature, or `FINAL`, which the single-bucket path
     /// refuses) gets no replicated implementation and the requirement falls back to a BroadcastExchange.
     size_t actual_buckets = 0;
     auto replicated_read_expression = makeBucketedReadVariant(

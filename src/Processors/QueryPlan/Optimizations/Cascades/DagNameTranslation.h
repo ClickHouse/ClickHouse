@@ -11,12 +11,12 @@ class ActionsDAG;
 /// How one output-column name of a stateless step maps to that step's input.
 enum class TranslatedName : uint8_t
 {
-    Traced,       /// resolves to an INPUT column (through ALIAS and `materialize` chains)
+    Traced,       /// resolves to an `INPUT` column (through `ALIAS` and `materialize` chains)
     Passthrough,  /// not among the DAG outputs; may be an input column carried around the step
-    Computed,     /// produced by a FUNCTION node; absent from the input
+    Computed,     /// produced by a `FUNCTION` node; absent from the input
 };
 
-/// Traces `output_name` back to the original INPUT name through ALIAS chains and `materialize`
+/// Traces `output_name` back to the original `INPUT` name through `ALIAS` chains and `materialize`
 /// wrappers (which preserve values and thus hash-based distribution). Sets `input_name` for
 /// `Traced` results only.
 TranslatedName classifyOutputName(const ActionsDAG & dag, const String & output_name, String & input_name);
