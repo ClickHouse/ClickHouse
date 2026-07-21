@@ -37,6 +37,9 @@ static AggregatingStep * validateAggregatingStep(QueryPlan::Node * node)
 
     const auto & params = aggregating_step->getParams();
 
+    if (params.top_k)
+        return nullptr;
+
     if (params.overflow_row)
         return nullptr;
 
