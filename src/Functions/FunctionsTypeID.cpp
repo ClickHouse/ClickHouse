@@ -317,7 +317,9 @@ public:
 
         if (input_rows_count)
         {
-            PODArray<UUID> uuids(input_rows_count);
+            /// PaddedPODArray is required: the vectorized RandImpl writes past the requested
+            /// size with SIMD stores and relies on the right padding, like in ColumnVector.
+            PaddedPODArray<UUID> uuids(input_rows_count);
 
             /// Generate UUIDv7 values exactly like generateUUIDv7 does: fill with random
             /// bytes, then set the timestamp, version, variant and monotonic counter.
