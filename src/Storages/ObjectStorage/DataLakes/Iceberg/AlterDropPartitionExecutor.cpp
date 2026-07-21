@@ -337,7 +337,8 @@ std::optional<AlterDropPartitionExecutor::SnapshotState> AlterDropPartitionExecu
 AlterDropPartitionExecutor::TargetFilePaths
 AlterDropPartitionExecutor::discoverTargetFilePaths(const SnapshotState & state, const Row & target_partition) const
 {
-    auto collect = [&](const std::vector<ProcessedManifestFileEntryPtr> & entries, std::unordered_set<String> & sink)
+    TargetFilePaths targets;
+    auto collect = [&](const std::vector<ProcessedManifestFileEntryPtr> & entries)
     {
         for (const auto & entry : entries)
         {
@@ -347,17 +348,16 @@ AlterDropPartitionExecutor::discoverTargetFilePaths(const SnapshotState & state,
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Manifest file entry is not parsed");
 
             if (partitionEquals(parsed->partition_key_value, target_partition))
-                sink.emplace(components.path_resolver.resolve(parsed->file_path_key));
+                targets.emplace(components.path_resolver.resolve(parsed->file_path_key));
         }
     };
 
-    TargetFilePaths targets;
     for (const auto & manifest_key : state.snapshot->manifest_list_entries)
     {
         auto handle = getManifestFileEntriesHandle(object_storage, components, context, log, manifest_key, state.schema_id);
 
-        collect(handle.getFilesWithoutDeleted(FileContentType::DATA), targets.data);
-        collect(handle.getFilesWithoutDeleted(FileContentType::POSITION_DELETE), targets.position_delete);
+        collect(handle.getFilesWithoutDeleted(FileContentType::DATA));
+        collect(handle.getFilesWithoutDeleted(FileContentType::POSITION_DELETE));
 
         for (const auto & entry : handle.getFilesWithoutDeleted(FileContentType::EQUALITY_DELETE))
         {
@@ -374,12 +374,11 @@ AlterDropPartitionExecutor::discoverTargetFilePaths(const SnapshotState & state,
 }
 
 AlterDropPartitionExecutor::DropPlan
-AlterDropPartitionExecutor::buildDropPlan(const SnapshotState & state, const TargetFilePaths & targets, bool require_all_targets) const
+AlterDropPartitionExecutor::buildDropPlan(const SnapshotState & state, const TargetFilePaths & targets) const
 {
     DropPlan result;
     std::set<Row> changed_partitions;
-    std::unordered_set<String> unmatched_data = targets.data;
-    std::unordered_set<String> unmatched_position_delete = targets.position_delete;
+    auto unprocessed_target_file_paths = targets;
 
     UInt64 removed_data_files = 0;
     UInt64 removed_records = 0;
@@ -388,8 +387,6 @@ AlterDropPartitionExecutor::buildDropPlan(const SnapshotState & state, const Tar
     UInt64 removed_position_delete_files = 0;
 
     auto process_entries = [&](const std::vector<ProcessedManifestFileEntryPtr> & entries,
-                               const std::unordered_set<String> & target_paths,
-                               std::unordered_set<String> & unmatched_paths,
                                size_t & entries_to_keep,
                                size_t & entries_to_remove)
     {
@@ -400,14 +397,14 @@ AlterDropPartitionExecutor::buildDropPlan(const SnapshotState & state, const Tar
 
             const auto & parsed_entry = *entry->parsed_entry;
             const String storage_path = components.path_resolver.resolve(parsed_entry.file_path_key);
-            if (!target_paths.contains(storage_path))
+            if (!targets.contains(storage_path))
             {
                 ++entries_to_keep;
                 continue;
             }
 
             ++entries_to_remove;
-            unmatched_paths.erase(storage_path);
+            unprocessed_target_file_paths.erase(storage_path);
             switch (parsed_entry.content_type)
             {
                 case FileContentType::DATA:
@@ -435,12 +432,9 @@ AlterDropPartitionExecutor::buildDropPlan(const SnapshotState & state, const Tar
         size_t entries_to_keep = 0;
         size_t entries_to_remove = 0;
 
-        process_entries(
-            handle.getFilesWithoutDeleted(FileContentType::DATA), targets.data, unmatched_data, entries_to_keep, entries_to_remove);
+        process_entries(handle.getFilesWithoutDeleted(FileContentType::DATA), entries_to_keep, entries_to_remove);
         process_entries(
             handle.getFilesWithoutDeleted(FileContentType::POSITION_DELETE),
-            targets.position_delete,
-            unmatched_position_delete,
             entries_to_keep,
             entries_to_remove);
 
@@ -461,7 +455,7 @@ AlterDropPartitionExecutor::buildDropPlan(const SnapshotState & state, const Tar
             result.target_manifests.partially_matched.emplace_back(std::move(target_manifest));
     }
 
-    if (require_all_targets && (!unmatched_data.empty() || !unmatched_position_delete.empty()))
+    if (!unprocessed_target_file_paths.empty())
         throw Exception(
             ErrorCodes::CONCURRENT_ACCESS_NOT_SUPPORTED,
             "DROP PARTITION lost a race with a concurrent operation that replaced files in the "
@@ -662,7 +656,7 @@ void AlterDropPartitionExecutor::run()
             FailPointInjection::pauseFailPoint(FailPoints::iceberg_drop_partition_pause_after_discovery);
         }
 
-        auto plan = buildDropPlan(state, targets, /*require_all_targets=*/attempt > 0);
+        auto plan = buildDropPlan(state, targets);
         if (!plan.target_manifests.partially_matched.empty())
             throw Exception(
                 ErrorCodes::NOT_IMPLEMENTED,

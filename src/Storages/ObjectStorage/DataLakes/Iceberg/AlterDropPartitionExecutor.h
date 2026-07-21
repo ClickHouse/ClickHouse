@@ -81,18 +81,12 @@ private:
         Iceberg::SnapshotSummaryUpdateDelete snapshot_summary_update;
     };
 
-    struct TargetFilePaths
-    {
-        std::unordered_set<String> data;
-        std::unordered_set<String> position_delete;
-
-        bool empty() const { return data.empty() && position_delete.empty(); }
-    };
+    using TargetFilePaths = std::unordered_set<String>;
 
     std::optional<SnapshotState> fetchSnapshotState();
 
     TargetFilePaths discoverTargetFilePaths(const SnapshotState & state, const Row & target_partition) const;
-    DropPlan buildDropPlan(const SnapshotState & state, const TargetFilePaths & targets, bool require_all_targets) const;
+    DropPlan buildDropPlan(const SnapshotState & state, const TargetFilePaths & targets) const;
     bool tryCommit(SnapshotState & state, const DropPlan & plan);
 
     struct ManifestListWriteResult
