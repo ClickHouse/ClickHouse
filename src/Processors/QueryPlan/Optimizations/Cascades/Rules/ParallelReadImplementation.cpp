@@ -6,18 +6,12 @@
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/StorageInMemoryMetadata.h>
-#include <Common/Exception.h>
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
 #include <memory>
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
 
 /// Splits a table read across N nodes - each node reads 1/N of the data.
 /// Satisfies `{node_count=N, is_replicated=false}`.
