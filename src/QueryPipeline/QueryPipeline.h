@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Core/Block_fwd.h>
+#include <Processors/Executors/ExecutionThreadContext.h>
 #include <Processors/StepWallClock.h>
 #include <QueryPipeline/QueryPlanResourceHolder.h>
 #include <QueryPipeline/SizeLimits.h>
@@ -168,7 +169,7 @@ public:
 
 private:
     QueryPlanResourceHolder resources;
-
+     
     ProgressCallback progress_callback;
     std::shared_ptr<const EnabledQuota> quota;
     UInt64 normalized_query_hash = 0;
@@ -189,6 +190,9 @@ private:
 
     size_t num_threads = 0;
     bool concurrency_control = false;
+    bool collect_work_intervals = false;
+
+    WorkIntervals work_intervals;
 
     friend class PushingPipelineExecutor;
     friend class PullingPipelineExecutor;

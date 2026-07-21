@@ -83,6 +83,10 @@ public:
     /// It would be called every time when processor reports read progress.
     void setReadProgressCallback(ReadProgressCallbackPtr callback);
 
+    void setCollectWorkIntervals(bool collect_work_intervals_);
+
+    WorkIntervals takeWorkIntervals();
+
 private:
     ExecutingGraphPtr graph;
 
@@ -93,6 +97,7 @@ private:
     AcquiredSlotPtr single_thread_cpu_slot; // cpu slot for single-thread mode to work using executeStep()
     std::unique_ptr<ThreadPool> pool;
     std::mutex spawn_mutex;
+    UInt64 query_start_ns = 0;
 
     /// Pipeline's max thread count (captured from execute(num_threads)).
     size_t max_pipeline_threads = 1;
@@ -116,6 +121,7 @@ private:
     /// system.opentelemetry_span_log
     bool trace_processors = false;
     bool trace_cpu_scheduling = false;
+    bool collect_work_intervals = false;
     /// EXPLAIN ANALYZE
     const StepWallClockRegistry * step_wall_clock_registry = nullptr;
 
