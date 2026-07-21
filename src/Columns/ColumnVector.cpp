@@ -1172,6 +1172,23 @@ void ColumnVector<T>::getExtremes(Field & min, Field & max, size_t start, size_t
         * NOTE: There exist many different NaNs.
         * Different NaN could be returned: not bit-exact value as one of NaNs from column.
         */
+    if constexpr (has_find_extreme_implementation<T> && is_floating_point<T>)
+    {
+        auto cur_min = findExtremeMin(data.data(), start, end);
+        auto cur_max = findExtremeMax(data.data(), start, end);
+
+        if (!cur_min || !cur_max)
+        {
+            min = NaNOrZero<T>();
+            max = NaNOrZero<T>();
+            return;
+        }
+
+        min = NearestFieldType<T>(*cur_min);
+        max = NearestFieldType<T>(*cur_max);
+        return;
+    }
+
     size_t i = start;
     if constexpr (is_floating_point<T>)
     {
