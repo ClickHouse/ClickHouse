@@ -1,0 +1,351 @@
+---
+slug: /partitions
+title: '테이블 파티션'
+description: 'ClickHouse 테이블 파티션이란 무엇인가'
+keywords: ['파티션', 'partition by']
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ko/components/Image.jsx";
+import { RunnableCode } from "/snippets/ko/components/RunnableCode/RunnableCode.jsx";
+
+<div id="what-are-table-partitions-in-clickhouse">
+  ## ClickHouse의 테이블 파티션이란 무엇인가요?
+</div>
+
+<br />
+
+파티션은 [MergeTree 엔진 계열](/ko/reference/engines/table-engines/mergetree-family/index)에서 테이블의 [데이터 파트](/ko/concepts/core-concepts/parts)를 체계적이고 논리적인 단위로 묶습니다. 이는 시간 범위, 범주, 기타 주요 속성 등 특정 기준에 따라 데이터를 개념적으로 의미 있게 구성하는 방식입니다. 이러한 논리적 단위는 데이터를 더 쉽게 관리하고, 쿼리하고, 최적화할 수 있게 해줍니다.
+
+<div id="partition-by">
+  ### PARTITION BY
+</div>
+
+파티셔닝은 테이블을 처음 정의할 때 [PARTITION BY 절](/ko/reference/engines/table-engines/mergetree-family/custom-partitioning-key)을 통해 활성화할 수 있습니다. 이 절에는 임의의 컬럼에 대한 SQL 표현식을 포함할 수 있으며, 그 결과에 따라 각 행이 어떤 파티션에 속하는지가 결정됩니다.
+
+이를 보여주기 위해 [What are table parts](/ko/concepts/core-concepts/parts) 예시 테이블에 `PARTITION BY toStartOfMonth(date)` 절을 추가해 [확장](https://sql.clickhouse.com/?query=U0hPVyBDUkVBVEUgVEFCTEUgdWsudWtfcHJpY2VfcGFpZF9zaW1wbGVfcGFydGl0aW9uZWQ\&run_query=true\&tab=results)합니다. 이렇게 하면 부동산 거래가 발생한 월을 기준으로 테이블의 데이터 파트가 구성됩니다:
+
+```sql
+CREATE TABLE uk.uk_price_paid_simple_partitioned
+(
+    date Date,
+    town LowCardinality(String),
+    street LowCardinality(String),
+    price UInt32
+)
+ENGINE = MergeTree
+ORDER BY (town, street)
+PARTITION BY toStartOfMonth(date);
+```
+
+ClickHouse SQL Playground에서 [이 테이블을 쿼리할 수 있습니다](https://sql.clickhouse.com/?query=U0VMRUNUICogRlJPTSB1ay51a19wcmljZV9wYWlkX3NpbXBsZV9wYXJ0aXRpb25lZA\&run_query=true\&tab=results).
+
+<div id="structure-on-disk">
+  ### 디스크상의 구조
+</div>
+
+테이블에 행 집합이 삽입될 때마다, 삽입된 모든 행을 담은 단일 데이터 파트 하나를 (적어도 [하나](/ko/reference/settings/session-settings#max_insert_block_size)) 생성하는 대신([여기](/ko/concepts/core-concepts/parts)에서 설명한 대로), ClickHouse는 삽입된 행들에서 고유한 각 파티션 키 값마다 새로운 데이터 파트 하나를 생성합니다:
+
+<Image img="/images/managing-data/core-concepts/partitions.webp" size="lg" alt="삽입 처리" />
+
+<br />
+
+먼저 ClickHouse 서버는 위 다이어그램에 표시된 4개의 행으로 이루어진 예시 삽입의 행들을 파티션 키 값 `toStartOfMonth(date)`를 기준으로 분할합니다.
+그런 다음 식별된 각 파티션에 대해 여러 순차적 단계(① 정렬, ② 컬럼으로 분할, ③ 압축, ④ 디스크에 쓰기)를 수행하여 행들을 [일반적인 방식](/ko/concepts/core-concepts/parts)으로 처리합니다.
+
+파티셔닝이 활성화되면 ClickHouse가 각 데이터 파트에 대해 [MinMax 인덱스](https://github.com/ClickHouse/ClickHouse/blob/dacc8ebb0dac5bbfce5a7541e7fc70f26f7d5065/src/Storages/MergeTree/IMergeTreeDataPart.h#L341)를 자동으로 생성한다는 점에 유의하십시오. 이는 파티션 키 표현식에 사용된 각 테이블 컬럼별 파일로, 해당 데이터 파트 내 그 컬럼의 최솟값과 최댓값을 담고 있습니다.
+
+<div id="per-partition-merges">
+  ### 파티션별 머지
+</div>
+
+파티셔닝이 활성화되면 ClickHouse는 파티션 간에는 머지하지 않고, 각 파티션 내부에서만 데이터 파트를 [머지](/ko/concepts/core-concepts/merges)합니다. 위의 예시 테이블을 기준으로 이를 도식화하면 다음과 같습니다:
+
+<Image img="/images/managing-data/core-concepts/merges_with_partitions.webp" size="lg" alt="파트 병합" />
+
+<br />
+
+위 도식에서 보듯이, 서로 다른 파티션에 속한 파트는 절대 머지되지 않습니다. 카디널리티(cardinality)가 높은 파티션 키를 선택하면 파트가 수천 개의 파티션에 분산되어 머지 대상이 되지 못하고, 결국 미리 설정된 한도를 초과해 악명 높은 `Too many parts` 오류가 발생합니다. 이 문제를 해결하는 방법은 간단합니다. [카디널리티가 1000..10000 미만인](https://github.com/ClickHouse/ClickHouse/blob/ffc5b2c56160b53cf9e5b16cfb73ba1d956f7ce4/src/Storages/MergeTree/MergeTreeDataWriter.cpp#L121) 적절한 파티션 키를 선택하십시오.
+
+<div id="monitoring-partitions">
+  ## 파티션 모니터링
+</div>
+
+[가상 컬럼](/ko/reference/engines/table-engines/index#table_engines-virtual_columns) `_partition_value`를 사용하면 예시 테이블에 존재하는 모든 고유 파티션 목록을 [쿼리](https://sql.clickhouse.com/?query=U0VMRUNUIERJU1RJTkNUIF9wYXJ0aXRpb25fdmFsdWUgQVMgcGFydGl0aW9uCkZST00gdWsudWtfcHJpY2VfcGFpZF9zaW1wbGVfcGFydGl0aW9uZWQKT1JERVIgQlkgcGFydGl0aW9uIEFTQw\&run_query=true\&tab=results)할 수 있습니다:
+
+<RunnableCode>
+  ```sql
+  SELECT DISTINCT _partition_value AS partition
+  FROM uk.uk_price_paid_simple_partitioned
+  ORDER BY partition ASC;
+  ```
+</RunnableCode>
+
+또는 ClickHouse는 [system.parts](/ko/reference/system-tables/parts) 시스템 테이블에서 모든 테이블의 모든 파트와 파티션을 추적하며, 다음 쿼리는 앞서 나온 예시 테이블에 대해 모든 파티션 목록과 함께 각 파티션별 현재 활성 파트 수와 해당 파트에 포함된 행 수의 합계를 [반환](https://sql.clickhouse.com/?query=U0VMRUNUCiAgICBwYXJ0aXRpb24sCiAgICBjb3VudCgpIEFTIHBhcnRzLAogICAgc3VtKHJvd3MpIEFTIHJvd3MKRlJPTSBzeXN0ZW0ucGFydHMKV0hFUkUgKGRhdGFiYXNlID0gJ3VrJykgQU5EIChgdGFibGVgID0gJ3VrX3ByaWNlX3BhaWRfc2ltcGxlX3BhcnRpdGlvbmVkJykgQU5EIGFjdGl2ZQpHUk9VUCBCWSBwYXJ0aXRpb24KT1JERVIgQlkgcGFydGl0aW9uIEFTQzs\&run_query=true\&tab=results)합니다:
+
+<RunnableCode>
+  ```sql
+  SELECT
+      partition,
+      count() AS parts,
+      sum(rows) AS rows
+  FROM system.parts
+  WHERE (database = 'uk') AND (`table` = 'uk_price_paid_simple_partitioned') AND active
+  GROUP BY partition
+  ORDER BY partition ASC;
+  ```
+</RunnableCode>
+
+<div id="what-are-table-partitions-used-for">
+  ## 테이블 파티션은 어디에 사용되나요?
+</div>
+
+<div id="data-management">
+  ### 데이터 관리
+</div>
+
+ClickHouse에서 파티셔닝은 주로 데이터 관리 기능으로 사용됩니다. 파티션 표현식을 기준으로 데이터를 논리적으로 구성하면 각 파티션을 독립적으로 관리할 수 있습니다. 예를 들어, 위 예시 테이블의 파티셔닝 방식에서는 [TTL 규칙](/ko/concepts/features/operations/delete/ttl)을 사용해 오래된 데이터를 자동으로 제거함으로써 메인 테이블에는 최근 12개월의 데이터만 유지할 수 있습니다(DDL 문에 추가된 마지막 행 참조):
+
+```sql
+CREATE TABLE uk.uk_price_paid_simple_partitioned
+(
+    date Date,
+    town LowCardinality(String),
+    street LowCardinality(String),
+    price UInt32
+)
+ENGINE = MergeTree
+PARTITION BY toStartOfMonth(date)
+ORDER BY (town, street)
+TTL date + INTERVAL 12 MONTH DELETE;
+```
+
+테이블이 `toStartOfMonth(date)`로 파티션되므로, TTL 조건을 충족하는 전체 파티션([테이블 파트](/ko/concepts/core-concepts/parts)의 집합)이 삭제되어 [파트를 재작성](/ko/reference/statements/alter/index#mutations)하지 않고도 정리 작업을 더 효율적으로 수행할 수 있습니다.
+
+마찬가지로, 오래된 데이터를 삭제하는 대신 자동으로 더 비용 효율적인 [스토리지 티어](/ko/integrations/connectors/data-ingestion/AWS/integrating-s3-with-clickhouse#storage-tiers)로 효율적으로 이동할 수 있습니다:
+
+```sql
+CREATE TABLE uk.uk_price_paid_simple_partitioned
+(
+    date Date,
+    town LowCardinality(String),
+    street LowCardinality(String),
+    price UInt32
+)
+ENGINE = MergeTree
+PARTITION BY toStartOfMonth(date)
+ORDER BY (town, street)
+TTL date + INTERVAL 12 MONTH TO VOLUME 'slow_but_cheap';
+```
+
+<div id="query-optimization">
+  ### 쿼리 최적화
+</div>
+
+파티션은 쿼리 성능 향상에 도움이 될 수 있지만, 이는 액세스 패턴에 크게 좌우됩니다. 쿼리가 소수의 파티션만(이상적으로는 1개) 대상으로 하는 경우 성능이 향상될 수 있습니다. 일반적으로 이는 아래 예시 쿼리처럼 파티셔닝 키가 프라이머리 키에 포함되어 있지 않고, 해당 키를 기준으로 필터링할 때에만 유용합니다.
+
+<RunnableCode>
+  ```sql
+  SELECT MAX(price) AS highest_price
+  FROM uk.uk_price_paid_simple_partitioned
+  WHERE date >= '2020-12-01'
+    AND date <= '2020-12-31'
+    AND town = 'LONDON';
+  ```
+</RunnableCode>
+
+이 쿼리는 앞서 사용한 예시 테이블을 대상으로 하며, 테이블의 파티션 키에 사용된 컬럼(`date`)과 테이블의 프라이머리 키에 사용된 컬럼(`town`)을 모두 기준으로 필터링해 2020년 12월 런던에서 판매된 모든 부동산의 최고가를 [계산합니다](https://sql.clickhouse.com/?query=U0VMRUNUIE1BWChwcmljZSkgQVMgaGlnaGVzdF9wcmljZQpGUk9NIHVrLnVrX3ByaWNlX3BhaWRfc2ltcGxlX3BhcnRpdGlvbmVkCldIRVJFIGRhdGUgPj0gJzIwMjAtMTItMDEnCiAgQU5EIGRhdGUgPD0gJzIwMjAtMTItMzEnCiAgQU5EIHRvd24gPSAnTE9ORE9OJzs\&run_query=true\&tab=results) (`date`는 프라이머리 키의 일부가 아닙니다).
+
+ClickHouse는 관련 없는 데이터를 처리하지 않기 위해 일련의 프루닝 기법을 적용하여 이 쿼리를 수행합니다:
+
+<Image img="/images/managing-data/core-concepts/partition-pruning.webp" size="lg" alt="파트 병합 2" />
+
+<br />
+
+① **파티션 프루닝**: [MinMax 인덱스](/ko/concepts/core-concepts/partitions#what-are-table-partitions-in-clickhouse)를 사용해 테이블의 파티션 키에 사용된 컬럼에 대한 쿼리 필터와 논리적으로 일치할 수 없는 전체 파티션(파트 집합)을 제외합니다.
+
+② **그래뉼 프루닝**: ①단계 후 남아 있는 데이터 파트에 대해서는 [프라이머리 인덱스](/ko/guides/clickhouse/data-modelling/sparse-primary-indexes)를 사용해 테이블의 프라이머리 키에 사용된 컬럼에 대한 쿼리 필터와 논리적으로 일치할 수 없는 모든 [그래뉼](/ko/guides/clickhouse/data-modelling/sparse-primary-indexes#data-is-organized-into-granules-for-parallel-data-processing)(행 블록)을 제외합니다.
+
+이러한 데이터 프루닝 단계는 앞서 살펴본 예시 쿼리의 물리적 쿼리 실행 계획을 [EXPLAIN](/ko/reference/statements/explain) 절로 [확인하면](https://sql.clickhouse.com/?query=RVhQTEFJTiBpbmRleGVzID0gMQpTRUxFQ1QgTUFYKHByaWNlKSBBUyBoaWdoZXN0X3ByaWNlCkZST00gdWsudWtfcHJpY2VfcGFpZF9zaW1wbGVfcGFydGl0aW9uZWQKV0hFUkUgZGF0ZSA-PSAnMjAyMC0xMi0wMScKICBBTkQgZGF0ZSA8PSAnMjAyMC0xMi0zMScKICBBTkQgdG93biA9ICdMT05ET04nOw\&run_query=true\&tab=results) 관찰할 수 있습니다:
+
+```sql style="fontSize:13px"
+EXPLAIN indexes = 1
+SELECT MAX(price) AS highest_price
+FROM uk.uk_price_paid_simple_partitioned
+WHERE date >= '2020-12-01'
+  AND date <= '2020-12-31'
+  AND town = 'LONDON';
+```
+
+```response
+    ┌─explain──────────────────────────────────────────────────────────────────────────────────────────────────────┐
+ 1. │ Expression ((Project names + Projection))                                                                    │
+ 2. │   Aggregating                                                                                                │
+ 3. │     Expression (Before GROUP BY)                                                                             │
+ 4. │       Expression                                                                                             │
+ 5. │         ReadFromMergeTree (uk.uk_price_paid_simple_partitioned)                                              │
+ 6. │         Indexes:                                                                                             │
+ 7. │           MinMax                                                                                             │
+ 8. │             Keys:                                                                                            │
+ 9. │               date                                                                                           │
+10. │             Condition: and((date in (-Inf, 18627]), (date in [18597, +Inf)))                                 │
+11. │             Parts: 1/436                                                                                     │
+12. │             Granules: 11/3257                                                                                │
+13. │           Partition                                                                                          │
+14. │             Keys:                                                                                            │
+15. │               toStartOfMonth(date)                                                                           │
+16. │             Condition: and((toStartOfMonth(date) in (-Inf, 18597]), (toStartOfMonth(date) in [18597, +Inf))) │
+17. │             Parts: 1/1                                                                                       │
+18. │             Granules: 11/11                                                                                  │
+19. │           PrimaryKey                                                                                         │
+20. │             Keys:                                                                                            │
+21. │               town                                                                                           │
+22. │             Condition: (town in ['LONDON', 'LONDON'])                                                        │
+23. │             Parts: 1/1                                                                                       │
+24. │             Granules: 1/11                                                                                   │
+    └──────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+위 출력은 다음을 보여줍니다.
+
+① 파티션 프루닝: 위 EXPLAIN 출력의 7행부터 18행까지를 보면 ClickHouse가 먼저 `date` 필드의 [MinMax index](/ko/concepts/core-concepts/partitions#what-are-table-partitions-in-clickhouse)를 사용해, 기존 활성 데이터 파트 436개 중 1개에 저장된 기존 [그래뉼](/ko/guides/clickhouse/data-modelling/sparse-primary-indexes#data-is-organized-into-granules-for-parallel-data-processing) 3257개(행 블록) 중 11개를 식별하고, 이 그래뉼들에 쿼리의 `date` 필터와 일치하는 행이 포함되어 있음을 보여줍니다.
+
+② 그래뉼 프루닝: 위 EXPLAIN 출력의 19행부터 24행까지를 보면 ClickHouse가 이어서 ① 단계에서 식별된 데이터 파트의 [프라이머리 인덱스](/ko/guides/clickhouse/data-modelling/sparse-primary-indexes)(`town` 필드에 생성됨)를 사용해, 쿼리의 `town` 필터와도 일치할 가능성이 있는 행을 포함한 그래뉼 수를 11개에서 1개로 더 줄인다는 것을 알 수 있습니다. 이는 위에서 출력한 쿼리 실행 시의 ClickHouse-client 출력에도 반영되어 있습니다.
+
+```response
+... Elapsed: 0.006 sec. Processed 8.19 thousand rows, 57.34 KB (1.36 million rows/s., 9.49 MB/s.)
+Peak memory usage: 2.73 MiB.
+```
+
+이는 ClickHouse가 쿼리 결과를 계산하기 위해 6밀리초 동안 1개의 granule([8192](/ko/reference/settings/merge-tree-settings#index_granularity)행으로 이루어진 블록)을 스캔하고 처리했다는 의미입니다.
+
+<div id="partitioning-is-primarily-a-data-management-feature">
+  ### 파티셔닝은 주로 데이터 관리 기능입니다
+</div>
+
+모든 파티션에 걸쳐 쿼리하면, 일반적으로 동일한 쿼리를 파티셔닝되지 않은 테이블에서 실행할 때보다 더 느립니다.
+
+파티셔닝을 사용하면 데이터가 보통 더 많은 데이터 파트에 분산되고, 그 결과 ClickHouse가 더 많은 양의 데이터를 스캔하고 처리하는 경우가 많습니다.
+
+이는 [What are table parts](/ko/concepts/core-concepts/parts) 예시 테이블(파티셔닝 비활성화)과 위의 현재 예시 테이블(파티셔닝 활성화)에서 동일한 쿼리를 실행해 보면 확인할 수 있습니다. 두 테이블 모두 동일한 데이터와 동일한 [행](https://sql.clickhouse.com/?query=U0VMRUNUCiAgICB0YWJsZSwKICAgIHN1bShyb3dzKSBBUyByb3dzCkZST00gc3lzdGVtLnBhcnRzCldIRVJFIChkYXRhYmFzZSA9ICd1aycpIEFORCAoYHRhYmxlYCBJTiBbJ3VrX3ByaWNlX3BhaWRfc2ltcGxlJywgJ3VrX3ByaWNlX3BhaWRfc2ltcGxlX3BhcnRpdGlvbmVkJ10pIEFORCBhY3RpdmUKR1JPVVAgQlkgdGFibGU7\&run_query=true\&tab=results) 수를 포함합니다.
+
+<RunnableCode>
+  ```sql
+  SELECT
+      table,
+      sum(rows) AS rows
+  FROM system.parts
+  WHERE (database = 'uk') AND (table IN ['uk_price_paid_simple', 'uk_price_paid_simple_partitioned']) AND active
+  GROUP BY table;
+  ```
+</RunnableCode>
+
+하지만 파티션이 활성화된 테이블은, 앞서 설명했듯 ClickHouse가 데이터 파트를 파티션 간에는 머지하지 않고 각 파티션 내부에서만 [머지](/ko/concepts/core-concepts/parts)하므로, 활성 [데이터 파트](/ko/concepts/core-concepts/parts)가 더 많이 [있습니다](https://sql.clickhouse.com/?query=U0VMRUNUCiAgICB0YWJsZSwKICAgIGNvdW50KCkgQVMgcGFydHMKRlJPTSBzeXN0ZW0ucGFydHMKV0hFUkUgKGRhdGFiYXNlID0gJ3VrJykgQU5EIChgdGFibGVgIElOIFsndWtfcHJpY2VfcGFpZF9zaW1wbGUnLCAndWtfcHJpY2VfcGFpZF9zaW1wbGVfcGFydGl0aW9uZWQnXSkgQU5EIGFjdGl2ZQpHUk9VUCBCWSB0YWJsZTs\&run_query=true\&tab=results).
+
+<RunnableCode>
+  ```sql
+  SELECT
+      table,
+      count() AS parts
+  FROM system.parts
+  WHERE (database = 'uk') AND (table IN ['uk_price_paid_simple', 'uk_price_paid_simple_partitioned']) AND active
+  GROUP BY table;
+
+  ```
+</RunnableCode>
+
+위에서 살펴본 것처럼, 파티셔닝된 테이블 `uk_price_paid_simple_partitioned`에는 600개가 넘는 파티션이 있으므로 활성 데이터 파트도 600 306개에 달합니다. 반면 파티셔닝되지 않은 테이블 `uk_price_paid_simple`에서는 모든 [초기](/ko/concepts/core-concepts/parts) 데이터 파트가 백그라운드 머지를 통해 하나의 활성 파트로 머지될 수 있었습니다.
+
+위의 예시 쿼리를 파티션 필터 없이 파티셔닝된 테이블에 대해 실행할 때의 물리적 쿼리 실행 계획을 [EXPLAIN](/ko/reference/statements/explain) [절](https://sql.clickhouse.com/?query=RVhQTEFJTiBpbmRleGVzID0gMQpTRUxFQ1QgTUFYKHByaWNlKSBBUyBoaWdoZXN0X3ByaWNlCkZST00gdWsudWtfcHJpY2VfcGFpZF9zaW1wbGVfcGFydGl0aW9uZWQKV0hFUkUgdG93biA9ICdMT05ET04nOw\&run_query=true\&tab=results)로 확인해 보면, 아래 출력의 19행과 20행에서 ClickHouse가 기존 [그래뉼](/ko/guides/clickhouse/data-modelling/sparse-primary-indexes#data-is-organized-into-granules-for-parallel-data-processing) 3257개 중 671개(행 블록)를 식별했음을 알 수 있습니다. 이 그래뉼들은 쿼리 필터와 일치하는 행을 잠재적으로 포함하며, 기존 활성 데이터 파트 436개 중 431개에 걸쳐 분포해 있습니다. 따라서 이들은 쿼리 엔진에 의해 스캔되고 처리됩니다.
+
+```sql
+EXPLAIN indexes = 1
+SELECT MAX(price) AS highest_price
+FROM uk.uk_price_paid_simple_partitioned
+WHERE town = 'LONDON';
+```
+
+```response
+    ┌─explain─────────────────────────────────────────────────────────┐
+ 1. │ Expression ((Project names + Projection))                       │
+ 2. │   Aggregating                                                   │
+ 3. │     Expression (Before GROUP BY)                                │
+ 4. │       Expression                                                │
+ 5. │         ReadFromMergeTree (uk.uk_price_paid_simple_partitioned) │
+ 6. │         Indexes:                                                │
+ 7. │           MinMax                                                │
+ 8. │             Condition: true                                     │
+ 9. │             Parts: 436/436                                      │
+10. │             Granules: 3257/3257                                 │
+11. │           Partition                                             │
+12. │             Condition: true                                     │
+13. │             Parts: 436/436                                      │
+14. │             Granules: 3257/3257                                 │
+15. │           PrimaryKey                                            │
+16. │             Keys:                                               │
+17. │               town                                              │
+18. │             Condition: (town in ['LONDON', 'LONDON'])           │
+19. │             Parts: 431/436                                      │
+20. │             Granules: 671/3257                                  │
+    └─────────────────────────────────────────────────────────────────┘
+```
+
+파티션이 없는 테이블에서 동일한 예시 쿼리를 실행한 물리적 쿼리 실행 계획은 아래 출력의 11행과 12행 [에서 확인할 수 있듯이](https://sql.clickhouse.com/?query=RVhQTEFJTiBpbmRleGVzID0gMQpTRUxFQ1QgTUFYKHByaWNlKSBBUyBoaWdoZXN0X3ByaWNlCkZST00gdWsudWtfcHJpY2VfcGFpZF9zaW1wbGUKV0hFUkUgdG93biA9ICdMT05ET04nOw\&run_query=true\&tab=results), ClickHouse가 테이블의 단일 활성 데이터 파트(data part) 내 기존 3083개의 행 블록 중 241개에 쿼리의 필터와 일치하는 행이 포함되어 있을 가능성이 있다고 식별했음을 보여줍니다:
+
+```sql
+EXPLAIN indexes = 1
+SELECT MAX(price) AS highest_price
+FROM uk.uk_price_paid_simple
+WHERE town = 'LONDON';
+```
+
+```response
+    ┌─explain───────────────────────────────────────────────┐
+ 1. │ Expression ((Project names + Projection))             │
+ 2. │   Aggregating                                         │
+ 3. │     Expression (Before GROUP BY)                      │
+ 4. │       Expression                                      │
+ 5. │         ReadFromMergeTree (uk.uk_price_paid_simple)   │
+ 6. │         Indexes:                                      │
+ 7. │           PrimaryKey                                  │
+ 8. │             Keys:                                     │
+ 9. │               town                                    │
+10. │             Condition: (town in ['LONDON', 'LONDON']) │
+11. │             Parts: 1/1                                │
+12. │             Granules: 241/3083                        │
+    └───────────────────────────────────────────────────────┘
+```
+
+테이블의 파티션된 버전에서 쿼리를 [실행하면](https://sql.clickhouse.com/?query=U0VMRUNUIE1BWChwcmljZSkgQVMgaGlnaGVzdF9wcmljZQpGUk9NIHVrLnVrX3ByaWNlX3BhaWRfc2ltcGxlX3BhcnRpdGlvbmVkCldIRVJFIHRvd24gPSAnTE9ORE9OJzs\&run_query=true\&tab=results), ClickHouse는 90밀리초 만에 671개의 행 블록(약 550만 행)을 스캔하고 처리합니다:
+
+```sql
+SELECT MAX(price) AS highest_price
+FROM uk.uk_price_paid_simple_partitioned
+WHERE town = 'LONDON';
+```
+
+```response
+┌─highest_price─┐
+│     594300000 │ -- 5억 9,430만
+└───────────────┘
+
+1개 행이 설정되었습니다. 경과 시간: 0.090초. 548만 개의 행, 27.95 MB 처리됨 (초당 6,066만 개의 행, 309.51 MB/s.)
+최대 메모리 사용량: 163.44 MiB.
+```
+
+반면, 파티션되지 않은 테이블에서 [실행](https://sql.clickhouse.com/?query=U0VMRUNUIE1BWChwcmljZSkgQVMgaGlnaGVzdF9wcmljZQpGUk9NIHVrLnVrX3ByaWNlX3BhaWRfc2ltcGxlCldIRVJFIHRvd24gPSAnTE9ORE9OJzs\&run_query=true\&tab=results)한 쿼리에서는 ClickHouse가 241개의 블록(약 200만 행)을 스캔하고 처리하는 데 12밀리초가 걸립니다:
+
+```sql
+SELECT MAX(price) AS highest_price
+FROM uk.uk_price_paid_simple
+WHERE town = 'LONDON';
+```
+
+```response
+┌─highest_price─┐
+│     594300000 │ -- 5억 9430만
+└───────────────┘
+
+1 row in set. Elapsed: 0.012 sec. Processed 1.97 million rows, 9.87 MB (162.23 million rows/s., 811.17 MB/s.)
+Peak memory usage: 62.02 MiB.
+```

@@ -1,0 +1,234 @@
+---
+sidebarTitle: 'تحميل JSON'
+title: 'العمل مع JSON'
+slug: /integrations/data-formats/json/loading
+description: 'تحميل JSON'
+keywords: ['json', 'clickhouse', 'إدراج', 'تحميل', 'إدراج']
+score: 15
+doc_type: 'guide'
+---
+
+توضّح الأمثلة التالية بصورة مبسطة جدًا كيفية تحميل بيانات JSON المنظَّمة وشبه المنظَّمة. أما إذا كنت تتعامل مع JSON أكثر تعقيدًا، بما في ذلك البُنى المتداخلة، فراجع دليل [**Designing JSON schema**](/ar/guides/clickhouse/data-formats/json/schema).
+
+<div id="loading-structured-json">
+  ## تحميل JSON المنظَّم
+</div>
+
+في هذا القسم، نفترض أن بيانات JSON بتنسيق [`NDJSON`](https://github.com/ndjson/ndjson-spec) (JSON المحدَّد بسطر جديد)، المعروف بـ [`JSONEachRow`](/ar/reference/formats/JSON/JSONEachRow) في ClickHouse، وأنها ذات بنية منتظمة، أي أن أسماء الأعمدة وأنواعها ثابتة. يُعدّ `NDJSON` التنسيق المفضَّل لتحميل JSON نظرًا لإيجازه واستخدامه الفعّال للمساحة، غير أن تنسيقات أخرى مدعومة أيضًا لكلٍّ من [الإدخال والإخراج](/ar/reference/formats/JSON/JSON).
+
+خذ بعين الاعتبار نموذج JSON التالي، الذي يمثّل سجلاً من [مجموعة بيانات بايثون PyPI](https://clickpy.clickhouse.com/):
+
+```json
+{
+  "date": "2022-11-15",
+  "country_code": "ES",
+  "project": "clickhouse-connect",
+  "type": "bdist_wheel",
+  "installer": "pip",
+  "python_minor": "3.9",
+  "system": "Linux",
+  "version": "0.3.0"
+}
+```
+
+لتحميل كائن JSON هذا في ClickHouse، يجب تعريف مخطط الجدول.
+
+في هذه الحالة البسيطة، البنية ثابتة، وأسماء الأعمدة معروفة، وأنواعها محددة بدقة.
+
+على الرغم من أن ClickHouse يدعم البيانات شبه المنظمة عبر نوع JSON، إذ يمكن أن تكون أسماء المفاتيح وأنواعها ديناميكية، فإن ذلك غير ضروري في هذه الحالة.
+
+<Info>
+  **فضّل المخططات الثابتة كلما أمكن**
+
+  في الحالات التي تكون فيها الأعمدة ذات أسماء وأنواع ثابتة، ولا يُتوقع إضافة أعمدة جديدة، فاحرص دائمًا في بيئة الإنتاج على استخدام مخطط مُعرّف مسبقًا وثابتًا.
+
+  ويُفضَّل نوع JSON للبيانات عالية الديناميكية، حيث تكون أسماء الأعمدة وأنواعها عرضة للتغيير. كما يكون هذا النوع مفيدًا أيضًا في إعداد النماذج الأولية واستكشاف البيانات.
+</Info>
+
+يظهر أدناه مخطط بسيط لهذا الغرض، حيث **تُعيَّن مفاتيح JSON إلى أسماء الأعمدة**:
+
+```sql
+CREATE TABLE pypi (
+  `date` Date,
+  `country_code` String,
+  `project` String,
+  `type` String,
+  `installer` String,
+  `python_minor` String,
+  `system` String,
+  `version` String
+)
+ENGINE = MergeTree
+ORDER BY (project, date)
+```
+
+<Info>
+  **مفاتيح الترتيب**
+
+  اخترنا هنا مفتاح ترتيب باستخدام عبارة `ORDER BY`. لمزيد من التفاصيل حول مفاتيح الترتيب وكيفية اختيارها، راجع [هذا القسم](/ar/guides/clickhouse/data-modelling/schema-design#choosing-an-ordering-key).
+</Info>
+
+يمكن لـ ClickHouse تحميل بيانات JSON بعدة صيغ، مع استنتاج النوع تلقائيًا من الامتداد والمحتويات. يمكننا قراءة ملفات JSON للجدول أعلاه باستخدام [دالة S3](/ar/reference/functions/table-functions/s3):
+
+```sql
+SELECT *
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/json/*.json.gz')
+LIMIT 1
+```
+
+```response
+┌───────date─┬─country_code─┬─project────────────┬─type────────┬─installer────┬─python_minor─┬─system─┬─version─┐
+│ 2022-11-15 │ CN           │ clickhouse-connect │ bdist_wheel │ bandersnatch │              │        │ 0.2.8 │
+└────────────┴──────────────┴────────────────────┴─────────────┴──────────────┴──────────────┴────────┴─────────┘
+
+1 row in set. Elapsed: 1.232 sec.
+```
+
+لاحظ أننا لسنا مضطرين إلى تحديد صيغة الملف. بدلاً من ذلك، نستخدم glob pattern لقراءة جميع ملفات `*.json.gz` في الـ bucket. يستنتج ClickHouse تلقائياً أن الصيغة هي `JSONEachRow` (ndjson) انطلاقاً من امتداد الملف ومحتوياته. يمكن تحديد الصيغة يدوياً عبر دوال المعاملات إذا تعذّر على ClickHouse اكتشافها.
+
+```sql
+SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/json/*.json.gz', JSONEachRow)
+```
+
+<Info>
+  **الملفات المضغوطة**
+
+  الملفات المذكورة أعلاه مضغوطة أيضًا. ويتعرّف ClickHouse على ذلك ويتعامل معه تلقائيًا.
+</Info>
+
+لإدراج الصفوف الموجودة في هذه الملفات، يمكننا استخدام [`INSERT INTO SELECT`](/ar/reference/statements/insert-into#inserting-the-results-of-select):
+
+```sql
+INSERT INTO pypi SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/json/*.json.gz')
+```
+
+```response
+Ok.
+
+0 rows in set. Elapsed: 10.445 sec. Processed 19.49 million rows, 35.71 MB (1.87 million rows/s., 3.42 MB/s.)
+```
+
+```sql
+SELECT * FROM pypi LIMIT 2
+```
+
+```response
+┌───────date─┬─country_code─┬─project────────────┬─type──┬─installer────┬─python_minor─┬─system─┬─version─┐
+│ 2022-05-26 │ CN           │ clickhouse-connect │ sdist │ bandersnatch │              │        │ 0.0.7 │
+│ 2022-05-26 │ CN           │ clickhouse-connect │ sdist │ bandersnatch │              │        │ 0.0.7 │
+└────────────┴──────────────┴────────────────────┴───────┴──────────────┴──────────────┴────────┴─────────┘
+
+2 rows in set. Elapsed: 0.005 sec. Processed 8.19 thousand rows, 908.03 KB (1.63 million rows/s., 180.38 MB/s.)
+```
+
+يمكن أيضًا تحميل الصفوف مباشرةً باستخدام [بند `FORMAT`](/ar/reference/statements/select/format)، مثلًا.
+
+```sql
+INSERT INTO pypi
+FORMAT JSONEachRow
+{"date":"2022-11-15","country_code":"CN","project":"clickhouse-connect","type":"bdist_wheel","installer":"bandersnatch","python_minor":"","system":"","version":"0.2.8"}
+```
+
+تفترض هذه الأمثلة استخدام التنسيق `JSONEachRow`. كما أن تنسيقات JSON الشائعة الأخرى مدعومة أيضًا، وتتوفر [هنا](/ar/guides/clickhouse/data-formats/json/formats) أمثلة على كيفية تحميلها.
+
+<div id="loading-semi-structured-json">
+  ## تحميل JSON شبه المهيكل
+</div>
+
+في مثالنا السابق، حمّلنا بيانات JSON كانت ثابتة وبأسماء مفاتيح وأنواع معروفة جيدًا. لكن هذا لا ينطبق غالبًا، إذ يمكن إضافة مفاتيح أو قد تتغير أنواعها. وهذا شائع في حالات استخدام مثل بيانات observability.
+
+يتعامل ClickHouse مع ذلك من خلال نوع [`JSON`](/ar/reference/data-types/newjson) مخصص.
+
+تأمل المثال التالي من نسخة موسعة من مجموعة بيانات [Python PyPI dataset](https://clickpy.clickhouse.com/) أعلاه. هنا أضفنا عمود `tags` عشوائيًا يحتوي على أزواج مفتاح-قيمة عشوائية.
+
+```json
+{
+  "date": "2022-09-22",
+  "country_code": "IN",
+  "project": "clickhouse-connect",
+  "type": "bdist_wheel",
+  "installer": "bandersnatch",
+  "python_minor": "",
+  "system": "",
+  "version": "0.2.8",
+  "tags": {
+    "5gTux": "f3to*PMvaTYZsz!*rtzX1",
+    "nD8CV": "value"
+  }
+}
+
+```
+
+عمود `tags` هنا غير متوقَّع، لذا يستحيل علينا نمذجته. لتحميل هذه البيانات، يمكننا استخدام المخطط السابق، مع إضافة عمود `tags` من النوع [`JSON`](/ar/reference/data-types/newjson):
+
+```sql
+SET enable_json_type = 1;
+
+CREATE TABLE pypi_with_tags
+(
+    `date` Date,
+    `country_code` String,
+    `project` String,
+    `type` String,
+    `installer` String,
+    `python_minor` String,
+    `system` String,
+    `version` String,
+    `tags` JSON
+)
+ENGINE = MergeTree
+ORDER BY (project, date);
+```
+
+نملأ الجدول بالطريقة نفسها المستخدمة مع مجموعة البيانات الأصلية:
+
+```sql
+INSERT INTO pypi_with_tags SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/pypi_with_tags/sample.json.gz')
+```
+
+```sql
+INSERT INTO pypi_with_tags SELECT *
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/pypi_with_tags/sample.json.gz')
+```
+
+```response
+Ok.
+
+0 rows in set. Elapsed: 255.679 sec. Processed 1.00 million rows, 29.00 MB (3.91 thousand rows/s., 113.43 KB/s.)
+Peak memory usage: 2.00 GiB.
+```
+
+```sql
+SELECT *
+FROM pypi_with_tags
+LIMIT 2
+```
+
+```response
+┌───────date─┬─country_code─┬─project────────────┬─type──┬─installer────┬─python_minor─┬─system─┬─version─┬─tags─────────────────────────────────────────────────────┐
+│ 2022-05-26 │ CN           │ clickhouse-connect │ sdist │ bandersnatch │              │        │ 0.0.7 │ {"nsBM":"5194603446944555691"}                           │
+│ 2022-05-26 │ CN           │ clickhouse-connect │ sdist │ bandersnatch │              │        │ 0.0.7 │ {"4zD5MYQz4JkP1QqsJIS":"0","name":"8881321089124243208"} │
+└────────────┴──────────────┴────────────────────┴───────┴──────────────┴──────────────┴────────┴─────────┴──────────────────────────────────────────────────────────┘
+
+2 rows in set. Elapsed: 0.149 sec.
+```
+
+لاحظ هنا فرق الأداء عند تحميل البيانات. يتطلب عمود JSON استنتاج النوع وقت الإدراج، بالإضافة إلى مساحة تخزين إضافية إذا وُجدت أعمدة لها أكثر من نوع واحد. ومع أنه يمكن تهيئة نوع JSON (راجع [Designing JSON schema](/ar/guides/clickhouse/data-formats/json/schema)) لتحقيق أداء مماثل لتعريف الأعمدة صراحةً، فإنه مصمم عمدًا ليكون مرنًا بشكل افتراضي. لكن هذه المرونة تأتي على حسابٍ ما.
+
+<div id="when-to-use-the-json-type">
+  ### متى تستخدم نوع JSON
+</div>
+
+استخدم نوع JSON إذا كانت بياناتك:
+
+* تحتوي على **مفاتيح غير متوقعة** يمكن أن تتغير بمرور الوقت.
+* تتضمن **قيماً ذات أنواع متفاوتة** (على سبيل المثال، قد يحتوي المسار أحياناً على سلسلة نصية وأحياناً أخرى على رقم).
+* تتطلب مرونة في المخطط عندما لا يكون التحديد الصارم للأنواع عملياً.
+
+إذا كانت بنية بياناتك معروفة ومتسقة، فنادراً ما تكون هناك حاجة إلى نوع JSON، حتى لو كانت بياناتك بتنسيق JSON. وعلى وجه التحديد، إذا كانت بياناتك تتضمن:
+
+* **بنية مسطحة ذات مفاتيح معروفة**: استخدم أنواع الأعمدة القياسية مثل String.
+* **تداخلاً متوقعاً**: استخدم أنواع Tuple أو Array أو Nested لهذه البنى.
+* **بنية متوقعة مع أنواع متفاوتة**: فكّر في استخدام النوعين Dynamic أو Variant بدلاً من ذلك.
+
+يمكنك أيضاً الجمع بين هذه الأساليب، كما فعلنا في المثال أعلاه، باستخدام أعمدة ثابتة للمفاتيح المتوقعة في المستوى الأعلى وعمود JSON واحد لقسم ديناميكي من الحمولة.

@@ -59,7 +59,8 @@ def stop_clickhouse(cluster, node, cleanup_disks):
     node.exec_in_container(["rm", "-rf", "/var/lib/clickhouse/coordination/logs"])
     node.exec_in_container(["rm", "-rf", "/var/lib/clickhouse/coordination/snapshots"])
 
-    s3_objects = list_s3_objects(cluster, prefix="")
+    # Wipe everything, including any leftover "tmp_" markers, so the bucket is clean.
+    s3_objects = list_s3_objects(cluster, prefix="", exclude_tmp=False)
     if len(s3_objects) == 0:
         return
 
@@ -106,7 +107,15 @@ def setup_local_storage(cluster, node):
     )
 
 
-def list_s3_objects(cluster, prefix=""):
+# Keeper writes an empty "tmp_<name>" marker on the target disk while moving a snapshot/log
+# file between disks and removes it once the copy completes (moveFileBetweenDisks in
+# KeeperCommon.cpp). Such markers are never real snapshots/logs: the server skips
+# "tmp_"-prefixed entries when scanning disks. A listing taken while a move is in flight can
+# transiently observe a marker, so exclude it instead of counting it as a snapshot/log file.
+tmp_keeper_file_prefix = "tmp_"
+
+
+def list_s3_objects(cluster, prefix="", exclude_tmp=True):
     minio = cluster.minio_client
     prefix_len = len(prefix)
     return [
@@ -114,11 +123,16 @@ def list_s3_objects(cluster, prefix=""):
         for obj in minio.list_objects(
             cluster.minio_bucket, prefix=prefix, recursive=True
         )
+        if not (
+            exclude_tmp
+            and os.path.basename(obj.object_name).startswith(tmp_keeper_file_prefix)
+        )
     ]
 
 
 def get_local_files(path, node):
     files = node.exec_in_container(["ls", path]).strip().split("\n")
+    files = [f for f in files if not f.startswith(tmp_keeper_file_prefix)]
     files.sort()
     return files
 
@@ -231,11 +245,25 @@ def test_snapshots_with_disks(started_cluster):
             cleanup_disks=False,
         )
 
-        ## all but the latest log should be on S3
+        # Relocating non-latest snapshots to the configured disk runs after the
+        # "Created persistent snapshot" log line, so poll for the count to settle
+        # instead of checking once (mirrors assert_single_local_log above).
+        def assert_single_local_snapshot():
+            local_snapshot_files = get_local_snapshots(node_snapshot)
+            start_time = time.time()
+            while len(local_snapshot_files) != 1:
+                logging.debug(f"Local snapshot files: {local_snapshot_files}")
+                assert (
+                    time.time() - start_time < 60
+                ), "local_snapshot_files size is not equal to 1 after 60s"
+                time.sleep(1)
+                local_snapshot_files = get_local_snapshots(node_snapshot)
+
+        ## all but the latest snapshot should be on S3
+        assert_single_local_snapshot()
+        local_snapshot_files = get_local_snapshots(node_snapshot)
         s3_snapshot_files = list_s3_objects(started_cluster, "snapshots/")
         assert set(s3_snapshot_files) == set(previous_snapshot_files[:-1])
-        local_snapshot_files = get_local_snapshots(node_snapshot)
-        assert len(local_snapshot_files) == 1
         assert local_snapshot_files[0] == previous_snapshot_files[-1]
 
         previous_snapshot_files = s3_snapshot_files + local_snapshot_files
@@ -250,9 +278,9 @@ def test_snapshots_with_disks(started_cluster):
         snapshot_idx = keeper_utils.send_4lw_cmd(cluster, node_snapshot, "csnp")
         node_snapshot.wait_for_log_line(f"Created persistent snapshot {snapshot_idx}")
 
-        snapshot_files = list_s3_objects(started_cluster, "snapshots/")
+        assert_single_local_snapshot()
         local_snapshot_files = get_local_snapshots(node_snapshot)
-        assert len(local_snapshot_files) == 1
+        snapshot_files = list_s3_objects(started_cluster, "snapshots/")
 
         snapshot_files.extend(local_snapshot_files)
 

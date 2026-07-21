@@ -1,0 +1,57 @@
+---
+slug: /cloud/managed-postgres/monitoring/dashboard
+sidebarTitle: 'لوحة المعلومات'
+title: 'لوحة معلومات مراقبة Managed Postgres'
+description: 'لوحة معلومات مدمجة في Cloud Console لخدمات Managed Postgres'
+keywords: ['Managed Postgres', 'المراقبة', 'لوحة المعلومات', 'Cloud Console', 'CPU', 'الذاكرة', 'iops']
+doc_type: 'guide'
+---
+
+import BetaBadge from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
+import { Image } from "/snippets/ar/components/Image.jsx";
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.monitoring-dashboard-beta" />
+
+يعرض تبويب **المراقبة** في الشريط الجانبي الأيسر للمثيل
+مخططات آنية لاستخدام الموارد ونشاط قاعدة البيانات خلال
+الفترة الزمنية المحددة.
+
+<Image img="/images/managed-postgres/monitoring/dashboard.webp" alt="لوحة معلومات المراقبة تعرض IOPS، واستخدام CPU، والذاكرة، والقرص، وحركة مرور الشبكة، وحجم قاعدة البيانات، والاتصالات، ومعدل النقل، والمعاملات، ونسبة نجاح ذاكرة التخزين المؤقت، وحالات التوقف المتبادل" size="lg" border />
+
+<div id="panels">
+  ## اللوحات
+</div>
+
+تجمع لوحة المعلومات المقاييس ضمن اللوحات التالية:
+
+* **IOPS** — عمليات القراءة والكتابة على القرص في الثانية
+* **CPU usage** — موزّعة حسب `user` و`system` و`iowait` و`softirq`،
+  و`steal`
+* **Memory usage** — الذاكرة المستخدمة وذاكرة cache وbuffers كنسبة
+  مئوية من الإجمالي
+* **Disk usage** — المساحة المستخدمة في نظام الملفات كنسبة مئوية من
+  سعة التخزين المخصّصة للخدمة
+* **Network traffic** — البايتات المستلَمة والمرسَلة
+* **Database size** — عدد البايتات لكل قاعدة بيانات (بما في ذلك قاعدة
+  البيانات الافتراضية `postgres` وأي قواعد بيانات ينشئها المستخدم)
+* **Connection count** — الاتصالات النشطة والخاملة
+* **Operation throughput** — عمليات الجلب والإدراج والتحديث والحذف في
+  الثانية
+* **Transactions** — عمليات commit وrollback في الثانية
+* **Cache hit ratio** — النسبة المئوية لعمليات قراءة block التي
+  تُخدَّم من buffer cache بدلًا من القرص
+* **Deadlocks** — حالات deadlock التي يكتشفها الخادم
+
+<div id="time-period">
+  ## الفترة الزمنية
+</div>
+
+استخدم محدد **الفترة الزمنية** للتبديل بين آخر ساعة أو يوم أو
+أسبوع أو نطاق مخصص.
+
+<div id="related">
+  ## صفحات ذات صلة
+</div>
+
+* [نقطة نهاية Prometheus](/ar/products/managed-postgres/monitoring/prometheus) — اجمع المقاييس نفسها في حزمة observability الخاصة بك
+* [مرجع المقاييس](/ar/products/managed-postgres/monitoring/metrics) — القائمة الكاملة للمقاييس مع أنواعها وتسمياتها

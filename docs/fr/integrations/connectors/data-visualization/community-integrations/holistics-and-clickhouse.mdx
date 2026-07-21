@@ -1,0 +1,114 @@
+---
+sidebarTitle: 'Holistics'
+slug: /integrations/holistics
+keywords: ['clickhouse', 'Holistics', 'IA', 'intégrer', 'BI', 'visualisation de données']
+description: "Holistics est une plateforme de self-service BI et d'embedded analytics alimentée par l'IA, qui aide chacun à prendre de meilleures décisions grâce à des métriques gouvernées et facilement accessibles."
+title: 'Connecter ClickHouse à Holistics'
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/fr/components/Image.jsx";
+import CommunityMaintainedBadge from "/snippets/fr/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
+
+<CommunityMaintainedBadge />
+
+[Holistics](https://www.holistics.io/) est une plateforme de self-service BI conçue nativement pour l&#39;IA, avec une couche sémantique programmable garantissant des métriques cohérentes et fiables.
+
+En connectant ClickHouse à Holistics, vos équipes bénéficient d&#39;une expérience de self-service rapide, fiable et alimentée par l&#39;IA, fondée sur une couche sémantique définie sous forme de code. Les utilisateurs métier peuvent explorer les données en toute confiance grâce au glisser-déposer et à l&#39;IA, tandis que vous conservez des définitions de métriques réutilisables, composables et versionnées dans Git.
+
+<div id="prerequisites">
+  ## Prérequis
+</div>
+
+Avant de vous connecter, assurez-vous de disposer des éléments suivants :
+
+* **Permissions :** Vous devez être Admin dans Holistics pour ajouter de nouvelles sources de données.
+* **Accès réseau :** Votre serveur ClickHouse doit être accessible depuis les [adresses IP de Holistics](https://docs.holistics.io/docs/connect/ip-whitelisting).
+* **Utilisateur de base de données :** Créez pour Holistics un utilisateur dédié en lecture seule, plutôt que d&#39;utiliser un compte administrateur.
+
+<div id="recommended-privileges">
+  ### Privilèges recommandés
+</div>
+
+L’utilisateur dédié nécessite les privilèges `SELECT` sur les tables que vous souhaitez interroger, ainsi que sur les tables `system` (pour la détection du schéma).
+
+```sql
+-- Example: Grant read access to a specific database
+GRANT SELECT ON my_database.* TO holistics_user;
+
+-- Grant access to system metadata
+GRANT SELECT ON system.* TO holistics_user;
+```
+
+<Steps>
+  <Step>
+    ## Rassembler les détails de connexion
+
+    Pour vous connecter à ClickHouse via HTTP(S), vous aurez besoin des informations suivantes :
+
+    | **Paramètre**     | **Description**                                                                                                         |
+    | ----------------- | ----------------------------------------------------------------------------------------------------------------------- |
+    | **Host**          | Le hostname de votre serveur ClickHouse (par ex. `mz322.eu-central-1.aws.clickhouse.cloud`).                            |
+    | **Port**          | **8443** pour ClickHouse Cloud (SSL/TLS). **8123** pour les instances self-managed sans SSL.                            |
+    | **Database Name** | Le nom de la base de données à laquelle vous souhaitez vous connecter. La valeur par défaut est généralement `default`. |
+    | **Username**      | Le nom d’utilisateur de la base de données. La valeur par défaut est `default`.                                         |
+    | **Password**      | Le mot de passe du nom d’utilisateur de la base de données.                                                             |
+
+    Vous pouvez trouver ces informations en cliquant sur le bouton **Connect** dans votre console ClickHouse Cloud, puis en sélectionnant **HTTPS**.
+
+    <Image size="md" img="/images/integrations/data-visualization/holistics_01.webp" alt="Emplacement du bouton Connect dans la console ClickHouse Cloud" border />
+  </Step>
+
+  <Step>
+    ## Configurer l’accès réseau
+
+    Comme Holistics est une application cloud, ses serveurs doivent pouvoir accéder à votre base de données. Vous avez deux options :
+
+    1. **Connexion directe (recommandée) :** autorisez les adresses IP de Holistics dans votre firewall ou dans l’IP Access List de ClickHouse Cloud. Vous trouverez la liste des IP dans le [guide IP Whitelisting](https://docs.holistics.io/docs/connect/ip-whitelisting).
+
+       <Image size="md" img="/images/integrations/data-visualization/holistics_02.webp" alt="Exemple d’autorisation d’IP dans ClickHouse Cloud" border />
+
+    2. **Tunnel SSH inversé :** si votre base de données se trouve dans un private network (VPC) et ne peut pas être exposée publiquement, utilisez un [Reverse SSH Tunnel](https://docs.holistics.io/docs/connect/connect-tunnel).
+  </Step>
+
+  <Step>
+    ## Ajouter une source de données dans Holistics
+
+    1. Dans Holistics, accédez à **Settings → sources de données**.
+
+       <Image size="md" img="/images/integrations/data-visualization/holistics_03.webp" alt="Accès à sources de données dans les paramètres de Holistics" border />
+
+    2. Cliquez sur **New Data Source** et sélectionnez **ClickHouse**.
+
+       <Image size="md" img="/images/integrations/data-visualization/holistics_04.webp" alt="Sélection de ClickHouse dans la liste des nouvelles sources de données" border />
+
+    3. Remplissez le formulaire avec les informations recueillies à l’étape 1.
+
+       | **Field**         | **Setting**                                                                       |
+       | ----------------- | --------------------------------------------------------------------------------- |
+       | **Host**          | Votre hostname ClickHouse                                                         |
+       | **Port**          | `8443` (ou `8123`)                                                                |
+       | **Require SSL**   | Activez **ON** si vous utilisez le port 8443 (obligatoire pour ClickHouse Cloud). |
+       | **Database Name** | `default` (ou votre DB spécifique)                                                |
+
+       <Image size="md" img="/images/integrations/data-visualization/holistics_05.webp" alt="Saisie des détails de connexion ClickHouse dans Holistics" border />
+
+    4. Cliquez sur **Test Connection**.
+
+       <Image size="md" img="/images/integrations/data-visualization/holistics_06.webp" alt="Test de connexion ClickHouse réussi dans Holistics" border />
+
+       * **Succès :** cliquez sur **Save**.
+       * **Échec :** vérifiez votre nom d’utilisateur/mot de passe et assurez-vous que les [IP de Holistics sont autorisées](https://docs.holistics.io/docs/connect/ip-whitelisting).
+  </Step>
+</Steps>
+
+<div id="known-limitations">
+  ## Limites connues
+</div>
+
+Holistics prend en charge la plupart des fonctionnalités SQL standard de ClickHouse, à l’exception des points suivants :
+
+* **Total cumulé :** cette fonction analytique n’est actuellement prise en charge que de façon limitée par ClickHouse.
+* **Types de données imbriqués :** les structures JSON ou Array très imbriquées peuvent nécessiter une mise à plat via des modèles SQL avant la visualisation.
+
+Pour obtenir la liste complète des fonctionnalités prises en charge, veuillez consulter la [page des limitations spécifiques à la base de données](https://docs.holistics.io/docs/connect/faqs/clickhouse-limitations).

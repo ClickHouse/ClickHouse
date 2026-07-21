@@ -4,8 +4,10 @@ FROM ubuntu:22.04
 # It could be removed after we move on a version 23:04+
 ARG DEBIAN_FRONTEND=noninteractive
 
-# ARG for quick switch to a given ubuntu mirror
+# ARG for quick switch to a given ubuntu mirror.
+# amd64 base images use archive.ubuntu.com, arm64 uses ports.ubuntu.com.
 ARG apt_archive="http://archive.ubuntu.com"
+ARG apt_ports_archive="http://ports.ubuntu.com"
 
 # We shouldn't use `apt upgrade` to not change the upstream image. It's updated biweekly
 
@@ -15,7 +17,7 @@ ARG apt_archive="http://archive.ubuntu.com"
 # We do that in advance at the begining of Dockerfile before any packages will be
 # installed to prevent picking those uid / gid by some unrelated software.
 # The same uid / gid (101) is used both for alpine and ubuntu.
-RUN sed -i "s|http://archive.ubuntu.com|${apt_archive}|g" /etc/apt/sources.list \
+RUN sed -i -e "s|http://archive.ubuntu.com|${apt_archive}|g" -e "s|http://ports.ubuntu.com|${apt_ports_archive}|g" /etc/apt/sources.list \
     && groupadd -r clickhouse --gid=101 \
     && useradd -r -g clickhouse --uid=101 --home-dir=/var/lib/clickhouse --shell=/bin/bash clickhouse \
     && apt-get update \
@@ -30,7 +32,7 @@ RUN sed -i "s|http://archive.ubuntu.com|${apt_archive}|g" /etc/apt/sources.list 
 
 ARG REPO_CHANNEL="stable"
 ARG REPOSITORY="deb [signed-by=/usr/share/keyrings/clickhouse-keyring.gpg] https://packages.clickhouse.com/deb ${REPO_CHANNEL} main"
-ARG VERSION="26.5.3.52"
+ARG VERSION="26.6.1.1193"
 ARG PACKAGES="clickhouse-client clickhouse-server clickhouse-common-static"
 
 #docker-official-library:off

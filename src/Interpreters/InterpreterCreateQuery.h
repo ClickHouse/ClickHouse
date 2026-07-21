@@ -116,7 +116,7 @@ private:
     void convertTableEngineForCloud(ASTStorage & table_engine, TableProperties & properties) const;
 #endif
     /// Inserts data in created table if it's CREATE ... SELECT
-    BlockIO fillTableIfNeeded(const ASTCreateQuery & create);
+    BlockIO fillTableIfNeeded(const ASTCreateQuery & create, bool skip_target_insert_access_check = false);
 
     void assertOrSetUUID(ASTCreateQuery & create, const DatabasePtr & database) const;
 
@@ -128,7 +128,7 @@ private:
 
     void convertMergeTreeTableIfPossible(ASTCreateQuery & create, DatabasePtr database, bool to_replicated);
 
-    /// Remove transaction metadata files (txn_version.txt) from all parts for a table.
+    /// Remove transaction metadata files (txn_version.txt and txn_version.txt.tmp) from all parts for a table.
     static void clearTransactionMetadata(const String & table_data_path, ContextPtr local_context);
 
     void throwIfTooManyEntities(ASTCreateQuery & create) const;

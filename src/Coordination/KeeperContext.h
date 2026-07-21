@@ -14,11 +14,6 @@
 #include <memory>
 #include <variant>
 
-namespace rocksdb
-{
-struct Options;
-}
-
 namespace DB
 {
 
@@ -49,8 +44,6 @@ public:
     Phase getServerState() const;
     void setServerState(Phase server_state_);
 
-    bool ignoreSystemPathOnStartup() const;
-
     bool digestEnabled() const;
     void setDigestEnabled(bool digest_enabled_);
     bool digestEnabledOnCommit() const;
@@ -78,12 +71,6 @@ public:
     void dumpConfiguration(WriteBufferFromOwnString & buf) const;
 
     constexpr KeeperDispatcher * getDispatcher() const { return dispatcher; }
-
-    void setRocksDBDisk(DiskPtr disk);
-    DiskPtr getTemporaryRocksDBDisk() const;
-
-    void setRocksDBOptions(std::shared_ptr<rocksdb::Options> rocksdb_options_ = nullptr);
-    std::shared_ptr<rocksdb::Options> getRocksDBOptions() const { return rocksdb_options; }
 
     UInt64 getKeeperMemorySoftLimit() const { return memory_soft_limit; }
     void updateKeeperMemorySoftLimit(const Poco::Util::AbstractConfiguration & config);
@@ -135,7 +122,6 @@ private:
     void initializeFeatureFlags(const Poco::Util::AbstractConfiguration & config);
     void initializeDisks(const Poco::Util::AbstractConfiguration & config);
 
-    Storage getRocksDBPathFromConfig(const Poco::Util::AbstractConfiguration & config) const;
     Storage getLogsPathFromConfig(const Poco::Util::AbstractConfiguration & config) const;
     Storage getSnapshotsPathFromConfig(const Poco::Util::AbstractConfiguration & config) const;
     Storage getStatePathFromConfig(const Poco::Util::AbstractConfiguration & config) const;
@@ -152,20 +138,16 @@ private:
 
     std::atomic<Phase> server_state{Phase::INIT};
 
-    bool ignore_system_path_on_startup{false};
     bool digest_enabled{true};
     bool digest_enabled_on_commit{false};
 
     std::shared_ptr<DiskSelector> disk_selector;
 
-    Storage rocksdb_storage;
     Storage log_storage;
     Storage latest_log_storage;
     Storage snapshot_storage;
     Storage latest_snapshot_storage;
     Storage state_file_storage;
-
-    std::shared_ptr<rocksdb::Options> rocksdb_options;
 
     std::vector<std::string> old_log_disk_names;
     std::vector<std::string> old_snapshot_disk_names;

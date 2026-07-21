@@ -1,0 +1,294 @@
+---
+slug: /whats-new/security-changelog
+sidebarTitle: '보안 변경 내역'
+title: '보안 변경 내역'
+description: '보안 관련 업데이트와 변경 사항을 자세히 정리한 보안 변경 내역'
+doc_type: 'changelog'
+keywords: ['보안', 'CVE', '취약점', '보안 수정', '패치']
+---
+
+<div id="fixed-in-clickhouse-release-2025-01-05">
+  ## ClickHouse v25.1.5.5, 2025-01-05에서 수정
+</div>
+
+<div id="CVE-2025-1385">
+  ### [CVE-2025-1385](https://github.com/ClickHouse/ClickHouse/security/advisories/GHSA-5phv-x8x4-83x5)
+</div>
+
+library bridge 기능이 활성화되면 clickhouse-library-bridge가 localhost에 HTTP API를 노출합니다. 이를 통해 clickhouse-server는 지정된 경로의 라이브러리를 동적으로 로드하고 격리된 프로세스에서 실행할 수 있습니다. 특정 디렉터리로 파일을 업로드할 수 있게 하는 ClickHouse 테이블 엔진 기능과 결합되면, 서버 구성이 잘못된 경우 해당 두 테이블 엔진 모두에 접근할 권한이 있는 공격자가 이를 악용해 ClickHouse 서버에서 임의 코드를 실행할 수 있습니다.
+
+수정 사항은 다음 오픈소스 버전에 반영되었습니다: v24.3.18.6, v24.8.14.27, v24.11.5.34, v24.12.5.65, v25.1.5.5
+
+ClickHouse Cloud는 이 취약점의 영향을 받지 않습니다.
+
+제보: [Arseniy Dugin](https://github.com/ZerLes)
+
+<div id="fixed-in-clickhouse-release-2024-08-01">
+  ## ClickHouse v24.5에서 수정됨, 2024-08-01
+</div>
+
+<div id="CVE-2024-6873">
+  ### [CVE-2024-6873](https://github.com/ClickHouse/ClickHouse/security/advisories/GHSA-432f-r822-j66f)
+</div>
+
+특수하게 조작된 요청을 ClickHouse 서버 네이티브 인터페이스로 전송하면, 인증되지 않은 경로를 통해 ClickHouse 서버 프로세스의 실행 흐름을 변경할 수 있습니다. 이 변경은 실행 시점에 메모리의 256바이트 범위 내에서 사용 가능한 대상으로만 제한됩니다. 이 취약점은 당사의 Bugbounty 프로그램을 통해 확인되었으며, 현재까지 알려진 Proof of Concept 원격 코드 실행(Remote Code Execution, RCE) 코드는 작성되거나 악용된 바가 없습니다.
+
+수정 사항은 다음 오픈소스 버전에 반영되었습니다: v23.8.15.35-lts, v24.3.4.147-lts, v24.4.2.141-stable, v24.5.1.1763, v24.6.1.4423-stable
+
+ClickHouse Cloud는 다른 버전 체계를 사용하며, 이 취약점에 대한 수정 사항은 v24.2 이상을 실행하는 모든 인스턴스에 적용되었습니다.
+
+제보:  malacupa (독립 연구자)
+
+<div id="fixed-in-clickhouse-release-24-01-30">
+  ## ClickHouse v24.1(2024-01-30)에서 수정
+</div>
+
+<div id="CVE-2024-22412">
+  ### [CVE-2024-22412](https://github.com/ClickHouse/ClickHouse/security/advisories/GHSA-45h5-f7g3-gr8r)
+</div>
+
+ClickHouse에서 쿼리 캐시가 활성화된 상태로 사용자 역할을 전환하면 부정확한 데이터를 반환할 위험이 있습니다. ClickHouse는 영향받는 버전의 ClickHouse를 사용하는 경우, 애플리케이션에서 여러 역할을 동적으로 전환한다면 쿼리 캐시를 사용하지 않을 것을 권고합니다.
+
+수정 사항은 다음 오픈소스 버전에 반영되었습니다: v24.1.1.2048, v24.1.8.22-stable, v23.12.6.19-stable, v23.8.12.13-lts, v23.3.22.3-lts
+
+ClickHouse Cloud는 다른 버전 체계를 사용하며, 이 취약점에 대한 수정은 v24.0.2.54535에 적용되었습니다.
+
+제보: Runreveal 팀의 Evan Johnson과 Alan Braithwaite - 자세한 내용은 [블로그 게시물](https://blog.runreveal.com/cve-2024-22412-behind-the-bug-a-classic-caching-problem-in-the-clickhouse-query-cache/)에서 확인할 수 있습니다.
+
+<div id="fixed-in-clickhouse-release-23-10-5-20-2023-11-26">
+  ## ClickHouse v23.10.5.20, 2023-11-26에 수정됨
+</div>
+
+<div id="CVE-2023-47118">
+  ### [CVE-2023-47118](https://github.com/ClickHouse/ClickHouse/security/advisories/GHSA-g22g-p6q2-x39v)
+</div>
+
+기본적으로 9000/tcp 포트에서 실행되는 네이티브 인터페이스에 영향을 미치는 힙 버퍼 오버플로 취약점입니다. 공격자는 T64 압축 코덱의 버그를 악용해 ClickHouse 서버 프로세스를 비정상 종료시킬 수 있습니다. 이 취약점은 인증 없이도 악용될 수 있습니다.
+
+수정 사항은 다음 오픈소스 버전에 반영되었습니다: v23.10.2.13, v23.9.4.11, v23.8.6.16, v23.3.16.7
+
+ClickHouse Cloud는 다른 버전 체계를 사용하며, 이 취약점에 대한 수정은 v23.9.2.47475에 적용되었습니다.
+
+제보: malacupa (독립 연구원)
+
+<div id="CVE-2023-48298">
+  ### [CVE-2023-48298](https://github.com/ClickHouse/ClickHouse/security/advisories/GHSA-qw9f-qv29-8938)
+</div>
+
+FPC 압축 코덱에서 정수 언더플로우 취약점이 발견되었습니다. 공격자는 이를 악용해 ClickHouse 서버 프로세스를 충돌시킬 수 있습니다. 이 취약점은 인증 없이도 악용될 수 있습니다.
+
+수정 사항은 다음 오픈소스 버전에 반영되었습니다: v23.10.4.25, v23.9.5.29, v23.8.7.24, v23.3.17.13.
+
+ClickHouse Cloud는 다른 버전 체계를 사용하며, 이 취약점에 대한 수정 사항은 v23.9.2.47475에 적용되었습니다.
+
+제보: malacupa (독립 연구원)
+
+<div id="CVE-2023-48704">
+  ### [CVE-2023-48704](https://github.com/ClickHouse/ClickHouse/security/advisories/GHSA-5rmf-5g48-xv63)
+</div>
+
+기본적으로 9000/tcp 포트에서 실행되는 네이티브 인터페이스에 영향을 미치는 힙 버퍼 오버플로 취약점입니다. 공격자는 Gorilla 코덱의 버그를 트리거하여 ClickHouse 서버 프로세스를 충돌시킬 수 있습니다. 이 취약점은 인증 없이도 악용할 수 있습니다.
+
+수정 사항은 다음 오픈소스 버전에 적용되었습니다: v23.10.5.20, v23.9.6.20, v23.8.8.20, v23.3.18.15.
+
+ClickHouse Cloud는 다른 버전 체계를 사용하며, 이 취약점에 대한 수정 사항은 v23.9.2.47551에 적용되었습니다.
+
+제보:  malacupa (독립 연구원)
+
+<div id="fixed-in-clickhouse-release-22-9-1-2603-2022-9-22">
+  ## ClickHouse 22.9.1.2603, 2022-09-22에서 수정
+</div>
+
+<div id="CVE-2022-44011">
+  ### CVE-2022-44011
+</div>
+
+ClickHouse 서버에서 힙 버퍼 오버플로 문제가 발견되었습니다. ClickHouse 서버에 데이터를 적재할 수 있는 악의적인 사용자는 형식이 잘못된 CapnProto 객체를 삽입해 ClickHouse 서버를 충돌시킬 수 있었습니다.
+
+수정 사항은 버전 22.9.1.2603, 22.8.2.11, 22.7.4.16, 22.6.6.16, 22.3.12.19에 반영되었습니다.
+
+제보: Kiojj (독립 연구자)
+
+<div id="CVE-2022-44010">
+  ### CVE-2022-44010
+</div>
+
+ClickHouse 서버에서 힙 버퍼 오버플로 문제가 발견되었습니다. 공격자는 특수하게 조작된 HTTP 요청을 HTTP 엔드포인트(기본적으로 포트 8123에서 수신)에 전송해 힙 버퍼 오버플로를 유발하고, 그 결과 ClickHouse 서버 프로세스를 충돌시킬 수 있습니다. 이 공격에는 인증이 필요하지 않습니다.
+
+수정 사항은 버전 22.9.1.2603, 22.8.2.11, 22.7.4.16, 22.6.6.16, 22.3.12.19에 반영되었습니다.
+
+제보: Kiojj (독립 연구원)
+
+<div id="fixed-in-clickhouse-release-21-10-2-215-2021-10-18">
+  ## ClickHouse 21.10.2.15, 2021-10-18에서 수정
+</div>
+
+<div id="cve-2021-43304">
+  ### CVE-2021-43304
+</div>
+
+악성 쿼리를 파싱하는 과정에서 ClickHouse의 LZ4 압축 코덱에 힙 버퍼 오버플로가 발생합니다. LZ4::decompressImpl 루프의 복사 연산, 특히 임의 복사 연산인 `wildCopy<copy_amount>(op, ip, copy_end)`이 대상 버퍼의 범위를 초과하지 않는지 확인하는 검증이 없습니다.
+
+제보: JFrog Security Research Team
+
+<div id="cve-2021-43305">
+  ### CVE-2021-43305
+</div>
+
+악의적으로 조작된 쿼리를 파싱하는 과정에서 ClickHouse의 LZ4 압축 코덱에 힙 버퍼 오버플로가 발생합니다. LZ4::decompressImpl 루프의 복사 작업, 특히 임의 복사 작업인 `wildCopy<copy_amount>(op, ip, copy_end)`이 대상 버퍼의 경계를 초과하지 않는지 확인하는 검증이 없습니다. 이 문제는 CVE-2021-43304와 매우 유사하지만, 취약한 복사 작업은 다른 wildCopy 호출에 있습니다.
+
+제보: JFrog Security Research Team
+
+<div id="cve-2021-42387">
+  ### CVE-2021-42387
+</div>
+
+악의적으로 조작된 쿼리를 parsing하는 과정에서 ClickHouse의 LZ4 압축 코덱에서 힙 경계 밖 읽기가 발생합니다. LZ4::decompressImpl() 루프의 일부로, 사용자가 제공한 16비트 부호 없는 값(&#39;offset&#39;)을 압축 데이터에서 읽습니다. 이후 이 offset은 복사 작업의 길이를 계산하는 데 사용되지만, 복사 작업 원본의 상한 경계는 검사하지 않습니다.
+
+제보: JFrog Security Research Team
+
+<div id="cve-2021-42388">
+  ### CVE-2021-42388
+</div>
+
+악의적으로 조작된 쿼리를 parsing하는 과정에서 ClickHouse의 LZ4 압축 코덱에서 힙 경계 밖 읽기가 발생합니다. LZ4::decompressImpl() 루프의 일부로, 사용자 제공 16비트 부호 없는 값(`offset`)을 압축된 데이터에서 읽습니다. 이후 이 `offset`은 복사 작업의 길이를 계산하는 데 사용되지만, 복사 작업 원본의 하한 경계는 확인하지 않습니다.
+
+제보: JFrog Security Research Team
+
+<div id="cve-2021-42389">
+  ### CVE-2021-42389
+</div>
+
+악의적으로 조작된 쿼리를 parsing하는 과정에서 ClickHouse의 Delta 압축 코덱에 0으로 나누기 문제가 발생합니다. 압축된 buffer의 첫 번째 바이트가 0인지 확인되지 않은 상태로 modulo 연산에 사용됩니다.
+
+제보: JFrog Security Research Team
+
+<div id="cve-2021-42390">
+  ### CVE-2021-42390
+</div>
+
+악의적인 쿼리를 파싱하는 과정에서 ClickHouse의 DeltaDouble 압축 코덱에서 0으로 나누기 취약점이 발생합니다. 압축된 버퍼의 첫 번째 바이트를 0인지 확인하지 않고 모듈로 연산에 사용합니다.
+
+제보: JFrog Security Research Team
+
+<div id="cve-2021-42391">
+  ### CVE-2021-42391
+</div>
+
+악의적으로 조작된 쿼리를 파싱하는 과정에서 ClickHouse의 Gorilla 압축 코덱에 0으로 나누기 오류가 발생합니다. 압축된 버퍼의 첫 번째 바이트가 0인지 확인하지 않은 채 모듈로 연산에 사용됩니다.
+
+제보: JFrog Security Research Team
+
+<div id="fixed-in-clickhouse-release-21-4-3-21-2021-04-12">
+  ## ClickHouse 21.4.3.21, 2021-04-12에서 수정
+</div>
+
+<div id="cve-2021-25263">
+  ### CVE-2021-25263
+</div>
+
+CREATE DICTIONARY 권한이 있는 공격자는 허용된 디렉터리 외부의 임의의 파일을 읽을 수 있습니다.
+
+수정 사항은 20.8.18.32-lts, 21.1.9.41-stable, 21.2.9.41-stable, 21.3.6.55-lts, 21.4.3.21-stable 및 이후 버전에 적용되었습니다.
+
+제보: [Vyacheslav Egoshin](https://twitter.com/vegoshin)
+
+<div id="fixed-in-clickhouse-release-19-14-3-3-2019-09-10">
+  ## ClickHouse 릴리스 19.14.3.3(2019-09-10)에서 수정됨
+</div>
+
+<div id="cve-2019-15024">
+  ### CVE-2019-15024
+</div>
+
+ZooKeeper에 대한 쓰기 권한이 있고 ClickHouse가 실행 중인 네트워크에서 접근 가능한 커스텀 서버를 실행할 수 있는 공격자는, ClickHouse 레플리카로 동작하는 악성 서버를 직접 만들어 ZooKeeper에 등록할 수 있습니다. 이후 다른 레플리카가 해당 악성 레플리카에서 데이터 파트를 fetch할 때, clickhouse-server가 파일 시스템의 임의 경로에 데이터를 쓰도록 강제할 수 있습니다.
+
+제보: Yandex Information Security Team의 Eldar Zaitov
+
+<div id="cve-2019-16535">
+  ### CVE-2019-16535
+</div>
+
+압축 해제 알고리즘의 OOB read, OOB write 및 정수 언더플로를 악용해 네이티브 프로토콜을 통해 RCE 또는 DoS를 일으킬 수 있습니다.
+
+제보: Yandex Information Security Team의 Eldar Zaitov
+
+<div id="cve-2019-16536">
+  ### CVE-2019-16536
+</div>
+
+악의적인 인증 클라이언트가 DoS를 유발하는 스택 오버플로우를 일으킬 수 있습니다.
+
+제보: Yandex Information Security Team의 Eldar Zaitov
+
+<div id="fixed-in-clickhouse-release-19-13-6-1-2019-09-20">
+  ## ClickHouse 릴리스 19.13.6.1(2019-09-20)에서 수정됨
+</div>
+
+<div id="cve-2019-18657">
+  ### CVE-2019-18657
+</div>
+
+`url` 테이블 함수에는 공격자가 요청에 임의의 HTTP headers를 주입할 수 있게 하는 취약점이 있었습니다.
+
+제보: [Nikita Tikhomirov](https://github.com/NSTikhomirov)
+
+<div id="fixed-in-clickhouse-release-18-12-13-2018-09-10">
+  ## ClickHouse 릴리스 18.12.13(2018-09-10)에서 수정됨
+</div>
+
+<div id="cve-2018-14672">
+  ### CVE-2018-14672
+</div>
+
+CatBoost 모델을 로드하는 함수에 경로 순회 취약점이 있어, 오류 메시지를 통해 임의 파일을 읽을 수 있었습니다.
+
+제보: Yandex Information Security Team의 Andrey Krasichkov
+
+<div id="fixed-in-clickhouse-release-18-10-3-2018-08-13">
+  ## ClickHouse 릴리스 18.10.3, 2018-08-13에서 수정
+</div>
+
+<div id="cve-2018-14671">
+  ### CVE-2018-14671
+</div>
+
+unixODBC에서는 파일 시스템에서 임의의 공유 객체를 로드할 수 있어 원격 코드 실행 취약점이 발생했습니다.
+
+제보: Yandex Information Security Team의 Andrey Krasichkov 및 Evgeny Sidorov
+
+<div id="fixed-in-clickhouse-release-1-1-54388-2018-06-28">
+  ## ClickHouse 릴리스 1.1.54388, 2018-06-28에서 수정
+</div>
+
+<div id="cve-2018-14668">
+  ### CVE-2018-14668
+</div>
+
+&quot;remote&quot; 테이블 함수에서 &quot;user&quot;, &quot;password&quot;, &quot;default&#95;database&quot; 필드에 임의의 기호를 허용하여 교차 프로토콜 요청 위조(Cross-Protocol Request Forgery) 공격으로 이어질 수 있었습니다.
+
+제보: Yandex Information Security Team의 Andrey Krasichkov
+
+<div id="fixed-in-clickhouse-release-1-1-54390-2018-07-06">
+  ## ClickHouse 릴리스 1.1.54390, 2018-07-06에서 수정
+</div>
+
+<div id="cve-2018-14669">
+  ### CVE-2018-14669
+</div>
+
+ClickHouse MySQL 클라이언트에서 &quot;LOAD DATA LOCAL INFILE&quot; 기능이 활성화되어 있어, 악의적인 MySQL 데이터베이스가 연결된 ClickHouse 서버의 임의 파일을 읽을 수 있었습니다.
+
+제보: Yandex Information Security Team의 Andrey Krasichkov와 Evgeny Sidorov
+
+<div id="fixed-in-clickhouse-release-1-1-54131-2017-01-10">
+  ## ClickHouse 릴리스 1.1.54131(2017-01-10)에서 수정됨
+</div>
+
+<div id="cve-2018-14670">
+  ### CVE-2018-14670
+</div>
+
+deb 패키지의 잘못된 구성으로 인해 데이터베이스가 무단 사용될 수 있습니다.
+
+제보: 영국 국가 사이버 보안 센터(NCSC)

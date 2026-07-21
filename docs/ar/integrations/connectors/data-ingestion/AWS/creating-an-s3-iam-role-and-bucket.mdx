@@ -1,0 +1,155 @@
+---
+title: 'كيفية إنشاء مستخدم AWS IAM وحاوية S3'
+description: 'كيفية إنشاء مستخدم AWS IAM وحاوية S3.'
+keywords: ['AWS', 'IAM', 'حاوية S3']
+slug: /integrations/s3/creating-iam-user-and-s3-bucket
+sidebarTitle: 'كيفية إنشاء مستخدم AWS IAM وحاوية S3'
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ar/components/Image.jsx";
+
+> يوضح لك هذا الدليل كيفية إعداد مستخدم AWS IAM وحاوية S3 في AWS،
+> وهي خطوة أساسية مطلوبة لأخذ النسخ الاحتياطية إلى S3 أو تهيئة ClickHouse
+> لتخزين البيانات على S3
+
+<div id="create-an-aws-iam-user">
+  ## إنشاء مستخدم AWS IAM ‏
+</div>
+
+في هذا الإجراء، سننشئ مستخدم حساب خدمة، وليس مستخدمًا لتسجيل الدخول.
+
+1. سجّل الدخول إلى AWS IAM Management Console.
+
+2. في علامة التبويب `Users`، حدِّد `Create user`
+
+<Image size="lg" img="/images/_snippets/s3/2025/s3-1.webp" alt="AWS IAM Management Console - إضافة مستخدم جديد" />
+
+3. أدخل اسم المستخدم
+
+<Image size="lg" img="/images/_snippets/s3/2025/s3-2.webp" alt="AWS IAM Management Console - إضافة مستخدم جديد" />
+
+4. حدِّد `Next`
+
+<Image size="lg" img="/images/_snippets/s3/2025/s3-3.webp" alt="AWS IAM Management Console - إضافة مستخدم جديد" />
+
+5. حدِّد `Next`
+
+<Image size="lg" img="/images/_snippets/s3/2025/s3-4.webp" alt="AWS IAM Management Console - إضافة مستخدم جديد" />
+
+6. حدِّد `Create user`
+
+تم الآن إنشاء المستخدم.
+انقر على المستخدم الذي أُنشئ للتو
+
+<Image size="lg" img="/images/_snippets/s3/2025/s3-5.webp" alt="AWS IAM Management Console - إضافة مستخدم جديد" />
+
+7. حدِّد `Create access key`
+
+<Image size="lg" img="/images/_snippets/s3/2025/s3-6.webp" alt="AWS IAM Management Console - إضافة مستخدم جديد" />
+
+8. حدِّد `Application running outside AWS`
+
+<Image size="lg" img="/images/_snippets/s3/2025/s3-7.webp" alt="AWS IAM Management Console - إضافة مستخدم جديد" />
+
+9. حدِّد `Create access key`
+
+<Image size="lg" img="/images/_snippets/s3/2025/s3-8.webp" alt="AWS IAM Management Console - إضافة مستخدم جديد" />
+
+10. نزّل مفتاح الوصول والمفتاح السري بصيغة ‎.csv‎ لاستخدامهما لاحقًا
+
+<Image size="lg" img="/images/_snippets/s3/2025/s3-9.webp" alt="AWS IAM Management Console - إضافة مستخدم جديد" />
+
+<div id="create-an-s3-bucket">
+  ## إنشاء حاوية S3
+</div>
+
+1. في قسم حاوية S3، حدّد **Create bucket**
+
+<Image size="lg" img="/images/_snippets/s3/2025/s3-10.webp" alt="AWS IAM Management Console - إضافة مستخدم جديد" />
+
+2. أدخل اسم الحاوية، واترك الخيارات الأخرى على القيم الافتراضية
+
+<Image size="lg" img="/images/_snippets/s3/2025/s3-11.webp" alt="AWS IAM Management Console - إضافة مستخدم جديد" />
+
+<Note>
+  يجب أن يكون اسم الحاوية فريدًا على مستوى AWS بالكامل، وليس على مستوى المؤسسة فقط، وإلا فسيظهر خطأ.
+</Note>
+
+3. اترك `Block all Public Access` مفعّلًا؛ إذ لا حاجة إلى الوصول العام.
+
+<Image size="lg" img="/images/_snippets/s3/2025/s3-12.webp" alt="AWS IAM Management Console - إضافة مستخدم جديد" />
+
+4. حدّد **Create Bucket** في أسفل الصفحة
+
+<Image size="lg" img="/images/_snippets/s3/2025/s3-13.webp" alt="AWS IAM Management Console - إضافة مستخدم جديد" />
+
+5. حدّد الرابط، وانسخ ARN، واحفظه لاستخدامه عند تهيئة سياسة الوصول الخاصة بالحاوية
+
+<Image size="lg" img="/images/_snippets/s3/2025/s3-14.webp" alt="AWS IAM Management Console - إضافة مستخدم جديد" />
+
+6. بعد إنشاء الحاوية، اعثر على حاوية S3 الجديدة في قائمة حاويات S3 وحدّد اسم الحاوية، ما سينقلك إلى الصفحة الموضحة أدناه:
+
+<Image size="lg" img="/images/_snippets/s3/2025/s3-15.webp" alt="AWS IAM Management Console - إضافة مستخدم جديد" />
+
+7. حدّد `Create folder`
+
+8. أدخل اسم مجلد ليكون الوجهة لقرص S3 في ClickHouse أو للنسخة الاحتياطية، ثم حدّد `Create folder` في أسفل الصفحة
+
+<Image size="lg" img="/images/_snippets/s3/2025/s3-16.webp" alt="AWS IAM Management Console - إضافة مستخدم جديد" />
+
+9. ينبغي أن يكون المجلد الآن ظاهرًا في قائمة الحاوية
+
+<Image size="lg" img="/images/_snippets/s3/2025/s3-17.webp" alt="AWS IAM Management Console - إضافة مستخدم جديد" />
+
+10. حدّد مربع الاختيار للمجلد الجديد وانقر على `Copy URL`. احفظ الـ URL لاستخدامه في إعدادات التخزين الخاصة بـ ClickHouse في القسم التالي.
+
+<Image size="lg" img="/images/_snippets/s3/2025/s3-18.webp" alt="AWS IAM Management Console - إضافة مستخدم جديد" />
+
+11. حدّد علامة التبويب **Permissions** وانقر على الزر **Edit** في قسم **Bucket Policy**
+
+<Image size="lg" img="/images/_snippets/s3/2025/s3-19.webp" alt="AWS IAM Management Console - إضافة مستخدم جديد" />
+
+12. أضف سياسة للحاوية، كما في المثال أدناه
+
+```json
+{
+    "Version": "2012-10-17",
+    "Id": "Policy123456",
+    "Statement": [
+        {
+            "Sid": "abc123",
+            "Effect": "Allow",
+            "Principal": {
+                "AWS": "arn:aws:iam::782985192762:user/docs-s3-user"
+            },
+            "Action": "s3:*",
+            "Resource": [
+                "arn:aws:s3:::ch-docs-s3-bucket",
+                "arn:aws:s3:::ch-docs-s3-bucket/*"
+            ]
+        }
+    ]
+}
+```
+
+<Note>
+  تتيح السياسة أعلاه تنفيذ جميع الإجراءات على الحاوية
+</Note>
+
+| المعلمة   | الوصف                                                    | قيمة مثال                                                                                |
+| --------- | -------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| Version   | إصدار مفسّر السياسة، اتركه كما هو                        | 2012-10-17                                                                               |
+| Sid       | معرّف السياسة الذي يحدده المستخدم                        | abc123                                                                                   |
+| Effect    | ما إذا كان سيتم السماح بطلبات المستخدم أو رفضها          | Allow                                                                                    |
+| Principal | الحسابات أو المستخدم الذي سيُسمح له                      | arn:aws:iam::782985192762:user/docs-s3-user                                              |
+| Action    | العمليات المسموح بها على الحاوية                         | s3:*                                                                                     |
+| Resource  | الموارد داخل الحاوية التي يُسمح بتنفيذ العمليات عليها    | &quot;arn:aws:s3:::ch-docs-s3-bucket&quot;, &quot;arn:aws:s3:::ch-docs-s3-bucket/*&quot; |
+
+<Note>
+  ينبغي لك العمل مع فريق الأمان لديك لتحديد الأذونات التي ينبغي استخدامها؛ واعتبر هذه نقطة بداية.
+  لمزيد من المعلومات حول السياسات والإعدادات، راجع وثائق AWS:
+  https://docs.aws.amazon.com/AmazonS3/latest/userguide/access-policy-language-overview.html
+</Note>
+
+13. احفظ تهيئة السياسة

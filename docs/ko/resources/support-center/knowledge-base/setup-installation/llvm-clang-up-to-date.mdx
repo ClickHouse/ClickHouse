@@ -1,0 +1,28 @@
+---
+date: 2024-04-22
+title: Linux에서 LLVM 및 clang 빌드하기
+description: Linux에서 LLVM 및 clang을 빌드하는 명령어입니다.
+tags: ['커뮤니티', '도구 및 유틸리티']
+keywords: [contributing, llvm, clang]
+---
+
+{frontMatter.description}
+
+{/* truncate */}
+
+<div id="build-llvm-and-clang-on-linux">
+  ## Linux에서 LLVM 및 Clang 빌드
+</div>
+
+ClickHouse를 빌드하고 기여하려면 [LLVM](https://llvm.org/)과 [Clang](https://clang.llvm.org/)을 사용해야 합니다.
+
+다음은 Linux에서 최신 버전의 LLVM과 Clang을 빌드하는 명령어입니다.
+
+```bash
+git clone git@github.com:llvm/llvm-project.git
+mkdir llvm-build
+cd llvm-build
+cmake -GNinja -DCMAKE_BUILD_TYPE:STRING=Release -DLLVM_ENABLE_PROJECTS=all -DLLVM_TARGETS_TO_BUILD=all ../llvm-project/llvm
+time ninja
+sudo ninja install
+```
