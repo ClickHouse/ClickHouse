@@ -80,6 +80,8 @@ extern const Event FilteringMarksWithSecondaryKeysMicroseconds;
 extern const Event IndexBinarySearchAlgorithm;
 extern const Event IndexGenericExclusionSearchAlgorithm;
 extern const Event IndexGenericExclusionSearchStepLimitReached;
+extern const Event TextIndexGenericExclusionSearchAlgorithm;
+extern const Event TextIndexGenericExclusionSearchStepLimitReached;
 extern const Event FilterPartsByVirtualColumnsMicroseconds;
 extern const Event QueryConditionCacheHits;
 extern const Event QueryConditionCacheMisses;
@@ -2588,27 +2590,70 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
         reader.read(0, condition.get(), granule, all_match ? nullptr : &ranges);
         auto & granule_text = assert_cast<MergeTreeIndexGranuleText &>(*granule);
 
-        for (const auto & range : ranges)
+        auto may_be_true_on_range = [&](size_t mark_begin, size_t mark_end, auto && disjunction_result_fn) -> bool
         {
-            for (size_t mark = range.begin; mark < range.end; ++mark)
+            size_t row_begin = part->index_granularity->getMarkStartingRow(mark_begin);
+            size_t row_end = part->index_granularity->getMarkStartingRow(mark_end);
+
+            if (row_begin == row_end)
+                return false;
+
+            granule_text.setCurrentRange(RowsRange(row_begin, row_end - 1));
+            return condition->mayBeTrueOnGranule(granule, disjunction_result_fn);
+        };
+
+        if (use_skip_indexes_for_disjunctions && key_condition_rpn_template)
+        {
+            /// The disjunction analysis needs partial results for every mark, so check all marks one by one.
+            for (const auto & range : ranges)
             {
-                size_t row_begin = part->index_granularity->getMarkStartingRow(mark);
-                size_t row_end = part->index_granularity->getMarkStartingRow(mark + 1);
-
-                if (row_begin == row_end)
-                    continue;
-
-                granule_text.setCurrentRange(RowsRange(row_begin, row_end - 1));
-                bool may_be_true = condition->mayBeTrueOnGranule(granule, create_update_partial_disjunction_result_fn(mark));
-
-                if (may_be_true)
+                for (size_t mark = range.begin; mark < range.end; ++mark)
                 {
-                    if (res.empty() || mark - res.back().end > min_marks_for_seek)
-                        res.push_back(MarkRange(mark, mark + 1));
-                    else
-                        res.back().end = mark + 1;
+                    if (may_be_true_on_range(mark, mark + 1, create_update_partial_disjunction_result_fn(mark)))
+                    {
+                        if (res.empty() || mark - res.back().end > min_marks_for_seek)
+                            res.push_back(MarkRange(mark, mark + 1));
+                        else
+                            res.back().end = mark + 1;
+                    }
                 }
             }
+        }
+        else
+        {
+            /// The per-query checks in mayBeTrueOnGranule are monotone with respect to the row range:
+            /// if the condition cannot be true on a range, it cannot be true on any of its subranges.
+            /// So run an exclusion search like for the primary key: it drops a whole range as soon
+            /// as the check proves that the range has no matches and descends into subranges otherwise.
+
+            if (reader_settings.merge_tree_coarse_index_granularity <= 1)
+                throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Setting merge_tree_coarse_index_granularity should be greater than 1");
+
+            GenericExclusionSearchSettings search_settings
+            {
+                .coarse_index_granularity = reader_settings.merge_tree_coarse_index_granularity,
+                .max_steps = reader_settings.merge_tree_generic_exclusion_search_max_steps,
+                .min_marks_for_seek = min_marks_for_seek,
+            };
+
+            auto check_in_range = [&may_be_true_on_range](const MarkRange & mark_range)
+            {
+                return BoolMask(may_be_true_on_range(mark_range.begin, mark_range.end, nullptr), true);
+            };
+
+            auto search_result = genericExclusionSearch(ranges, check_in_range, search_settings, /*collect_exact_ranges=*/ false);
+            res = std::move(search_result.ranges);
+
+            ProfileEvents::increment(ProfileEvents::TextIndexGenericExclusionSearchAlgorithm);
+            if (search_result.reached_step_limit)
+                ProfileEvents::increment(ProfileEvents::TextIndexGenericExclusionSearchStepLimitReached);
+
+            LOG_TRACE(
+                log,
+                "Used generic exclusion search over text index for part {} with {} steps{}",
+                part->name,
+                search_result.num_steps,
+                search_result.reached_step_limit ? " (step limit reached, remaining ranges were accepted without further splitting)" : "");
         }
 
         read_hints.index_granules[index_helper->index.name] = std::move(granule);
