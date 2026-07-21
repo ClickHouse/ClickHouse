@@ -5055,21 +5055,23 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
 
     const auto index_mode = (*settings_from_storage)[MergeTreeSetting::alter_column_secondary_index_mode];
 
-    /// Changing (or removing) the body of an ALIAS column referenced by an explicit skip
-    /// index invalidates index files built from the old alias body. In REBUILD and DROP
-    /// modes `AlterCommands::getMutationCommands` handles this with an additional mutation;
-    /// THROW and COMPATIBILITY modes forbid such alters.
+    /// Changing the effective expression of an explicit skip index — by editing the body of a
+    /// referenced ALIAS column, or implicitly through matcher re-expansion inside such a body on
+    /// an unrelated schema change — invalidates index files built from the old expression. In
+    /// REBUILD and DROP modes `AlterCommands::getMutationCommands` handles this with an
+    /// additional mutation; THROW and COMPATIBILITY modes forbid such alters.
+    /// `new_metadata` already has the commands applied (see above).
     if (index_mode == AlterColumnSecondaryIndexMode::THROW || index_mode == AlterColumnSecondaryIndexMode::COMPATIBILITY)
     {
-        auto affected_indices = commands.getSkipIndicesAffectedByAliasChange(old_metadata, local_context);
+        auto affected_indices = commands.getSkipIndicesWithChangedExpression(old_metadata, new_metadata, local_context);
         if (!affected_indices.empty())
         {
             throw Exception(
                 ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
-                "The ALTER of the ALIAS column '{}' is forbidden because it is used by the index '{}'. Check the MergeTree "
-                "setting 'alter_column_secondary_index_mode' to change this behaviour",
-                backQuoteIfNeed(affected_indices.front().second),
-                affected_indices.front().first);
+                "The ALTER changes the expression of the skip index '{}' ({}) and would leave stale index files on existing "
+                "parts. Check the MergeTree setting 'alter_column_secondary_index_mode' to change this behaviour",
+                affected_indices.front().first,
+                affected_indices.front().second);
         }
     }
 

@@ -48,6 +48,8 @@
 #include <Common/quoteString.h>
 #include <Common/randomSeed.h>
 
+#include <fmt/format.h>
+
 #include <ranges>
 
 #if CLICKHOUSE_CLOUD
@@ -1490,8 +1492,16 @@ void AlterCommands::apply(StorageInMemoryMetadata & metadata, ContextPtr context
     {
         try
         {
+            /// Implicitly created indices may reference virtual columns (e.g. `_block_number`),
+            /// but explicit indices cannot: CREATE and ADD INDEX resolve them against ordinary
+            /// columns only, and virtual columns must not leak into the re-expansion of column
+            /// matchers inside referenced `ALIAS` column bodies.
             index = IndexDescription::getIndexFromAST(
-                index.definition_ast, columns_with_virtuals, index.isImplicitlyCreated(), index.escape_filenames, context);
+                index.definition_ast,
+                index.isImplicitlyCreated() ? columns_with_virtuals : metadata_copy.columns,
+                index.isImplicitlyCreated(),
+                index.escape_filenames,
+                context);
         }
         catch (const Exception & exception)
         {
@@ -2206,6 +2216,18 @@ static MutationCommand createMaterializeIndexCommand(const String & index_name)
     return command;
 }
 
+static MutationCommand createMaterializeColumnCommand(const String & column_name)
+{
+    MutationCommand command;
+    auto ast = make_intrusive<ASTAlterCommand>();
+    ast->type = ASTAlterCommand::MATERIALIZE_COLUMN;
+    ast->column = ast->children.emplace_back(make_intrusive<ASTIdentifier>(column_name)).get();
+    command.type = MutationCommand::MATERIALIZE_COLUMN;
+    command.column_name = column_name;
+    command.ast_text = ast->formatWithSecretsOneLine();
+    return command;
+}
+
 static MutationCommand createClearIndexCommand(const String & index_name)
 {
     MutationCommand command;
@@ -2220,57 +2242,126 @@ static MutationCommand createClearIndexCommand(const String & index_name)
     return command;
 }
 
-std::vector<std::pair<String, String>> AlterCommands::getSkipIndicesAffectedByAliasChange(const StorageInMemoryMetadata & metadata, ContextPtr context) const
+std::vector<std::pair<String, String>> AlterCommands::getSkipIndicesWithChangedExpression(
+    const StorageInMemoryMetadata & old_metadata, const StorageInMemoryMetadata & new_metadata, ContextPtr context) const
 {
-    NameSet changed_aliases;
+    if (old_metadata.secondary_indices.empty() || areNonReplicatedAlterCommands())
+        return {};
+
     /// Indices dropped or cleared by this same ALTER do not leave stale index files behind,
     /// so they are not affected and need no rebuild (and must not be rejected in THROW mode).
     NameSet dropped_indices;
+    std::vector<std::pair<String, String>> renames;
     for (const auto & command : *this)
     {
         if (command.ignore)
             continue;
 
         if (command.type == AlterCommand::DROP_INDEX)
-        {
             dropped_indices.insert(command.index_name);
-            continue;
-        }
-
-        if (command.type != AlterCommand::MODIFY_COLUMN)
-            continue;
-
-        auto existing_default = metadata.columns.getDefault(command.column_name);
-        if (!existing_default || existing_default->kind != ColumnDefaultKind::Alias)
-            continue;
-
-        bool alias_removed = command.to_remove == AlterCommand::RemoveProperty::ALIAS;
-        /// The alias body changed, or the column is converted to DEFAULT/MATERIALIZED.
-        bool alias_changed = command.default_expression
-            && (command.default_kind != ColumnDefaultKind::Alias
-                || command.default_expression->formatWithSecretsOneLine() != existing_default->expression->formatWithSecretsOneLine());
-
-        if (alias_removed || alias_changed)
-            changed_aliases.insert(command.column_name);
+        else if (command.type == AlterCommand::RENAME_COLUMN)
+            renames.emplace_back(command.column_name, command.rename_to);
     }
 
-    if (changed_aliases.empty())
-        return {};
-
     std::vector<std::pair<String, String>> res;
-    for (const auto & index : metadata.secondary_indices)
+    for (const auto & index : old_metadata.secondary_indices)
     {
         if (index.isImplicitlyCreated() || dropped_indices.contains(index.name))
             continue;
 
-        for (const auto & alias : index.getReferencedAliasColumns(metadata.columns, context))
+        /// Renaming a column does not invalidate index files but does change identifiers in
+        /// the re-parsed expression, so apply the renames to the old definition and expression
+        /// too: a pure rename must not register as an expression change.
+        ASTPtr old_definition = index.definition_ast->clone();
+        ASTPtr old_expression_list = index.expression_list_ast->clone();
+        for (const auto & [from, to] : renames)
         {
-            if (changed_aliases.contains(alias))
-            {
-                res.emplace_back(index.name, alias);
-                break;
-            }
+            RenameColumnData rename_data{from, to};
+            RenameColumnVisitor rename_visitor(rename_data);
+            rename_visitor.visit(old_definition);
+            rename_visitor.visit(old_expression_list);
         }
+
+        /// The effective index expression under the post-ALTER schema. `ALIAS` columns referenced
+        /// by the persisted definition are re-resolved against the new alias bodies and matchers
+        /// inside those bodies are re-expanded, so this catches changes no command mentions
+        /// explicitly, e.g. `ADD COLUMN` extending a matcher inside a referenced alias body.
+        /// Explicit indices are resolved against ordinary columns, without virtuals (see `apply`).
+        IndexDescription new_index;
+        try
+        {
+            new_index = IndexDescription::getIndexFromAST(
+                old_definition, new_metadata.columns, /*is_implicitly_created=*/ false, index.escape_filenames, context);
+        }
+        catch (const Exception & exception)
+        {
+            throw Exception(exception.code(), "Cannot apply ALTER because it breaks skip index {}: {}", index.name, exception.message());
+        }
+
+        String old_formatted = old_expression_list->formatWithSecretsOneLine();
+        String new_formatted = new_index.expression_list_ast->formatWithSecretsOneLine();
+        if (old_formatted != new_formatted)
+            res.emplace_back(index.name, fmt::format("from '{}' to '{}'", old_formatted, new_formatted));
+    }
+    return res;
+}
+
+Names AlterCommands::getMaterializedColumnsWithChangedExpansion(
+    const StorageInMemoryMetadata & old_metadata, const StorageInMemoryMetadata & new_metadata, ContextPtr context) const
+{
+    if (areNonReplicatedAlterCommands())
+        return {};
+
+    std::vector<std::pair<String, String>> renames;
+    NameSet modified_or_dropped;
+    for (const auto & command : *this)
+    {
+        if (command.ignore)
+            continue;
+
+        if (command.type == AlterCommand::RENAME_COLUMN)
+            renames.emplace_back(command.column_name, command.rename_to);
+        else if (command.type == AlterCommand::MODIFY_COLUMN || command.type == AlterCommand::DROP_COLUMN)
+            modified_or_dropped.insert(command.column_name);
+    }
+
+    Names res;
+    for (const auto & old_column : old_metadata.columns)
+    {
+        /// Explicit changes of the column itself keep the ordinary `MATERIALIZED` semantics:
+        /// the ALTER is metadata-only and existing parts keep the previously computed values.
+        if (old_column.default_desc.kind != ColumnDefaultKind::Materialized || !old_column.default_desc.expression
+            || modified_or_dropped.contains(old_column.name))
+            continue;
+
+        String new_name = old_column.name;
+        for (const auto & [from, to] : renames)
+        {
+            if (new_name == from)
+                new_name = to;
+        }
+
+        if (!new_metadata.columns.has(new_name))
+            continue;
+
+        const auto & new_column = new_metadata.columns.get(new_name);
+        if (new_column.default_desc.kind != ColumnDefaultKind::Materialized || !new_column.default_desc.expression)
+            continue;
+
+        /// Compare the matcher expansions of the stored expression under the old and the new
+        /// schema. Renames were already applied to the stored expressions of the new metadata,
+        /// so apply them to the old expansion too: a pure rename does not change the values.
+        ASTPtr old_expanded = cloneAndExpandColumnDefaultExpression(old_column.default_desc, old_metadata.columns, context);
+        for (const auto & [from, to] : renames)
+        {
+            RenameColumnData rename_data{from, to};
+            RenameColumnVisitor rename_visitor(rename_data);
+            rename_visitor.visit(old_expanded);
+        }
+
+        ASTPtr new_expanded = cloneAndExpandColumnDefaultExpression(new_column.default_desc, new_metadata.columns, context);
+        if (old_expanded->formatWithSecretsOneLine() != new_expanded->formatWithSecretsOneLine())
+            res.push_back(new_name);
     }
     return res;
 }
@@ -2327,14 +2418,17 @@ MutationCommands AlterCommands::getMutationCommands(
         }
     }
 
-    /// A skip index whose expression references an `ALIAS` column becomes stale when the
-    /// alias body changes: metadata and query analysis switch to the new expression while
-    /// parts keep index files built from the old one, and stale index files can incorrectly
-    /// prune granules. Rebuild (or, in DROP mode, clear) such indices. THROW and
+    /// A skip index becomes stale when its effective expression changes — through an edit of a
+    /// referenced `ALIAS` column's body, or through matcher re-expansion inside such a body on
+    /// an unrelated schema change: metadata and query analysis switch to the new expression
+    /// while parts keep index files built from the old one, and stale index files can
+    /// incorrectly prune granules. Rebuild (or, in DROP mode, clear) such indices. THROW and
     /// COMPATIBILITY modes reject these alters in `MergeTreeData::checkAlterIsPossible`.
+    /// After the loop above, `metadata` has all commands applied, so it describes the
+    /// post-ALTER schema, while `original_metadata` describes the pre-ALTER one.
     if (index_mode == AlterColumnSecondaryIndexMode::REBUILD || index_mode == AlterColumnSecondaryIndexMode::DROP)
     {
-        for (const auto & [index_name, alias_name] : getSkipIndicesAffectedByAliasChange(original_metadata, context))
+        for (const auto & [index_name, change_description] : getSkipIndicesWithChangedExpression(original_metadata, metadata, context))
         {
             if (index_mode == AlterColumnSecondaryIndexMode::REBUILD)
                 result.push_back(createMaterializeIndexCommand(index_name));
@@ -2342,6 +2436,15 @@ MutationCommands AlterCommands::getMutationCommands(
                 result.push_back(createClearIndexCommand(index_name));
         }
     }
+
+    /// An existing `MATERIALIZED` column whose expression contains a column matcher can change
+    /// its expansion when an unrelated command changes the schema (e.g. `ADD COLUMN` extends `*`).
+    /// New inserts would compute the column from the new expansion while existing parts keep
+    /// values computed from the old one, so the same column would silently return two different
+    /// definitions depending on row age. Rematerialize such columns so existing parts follow
+    /// the new expansion.
+    for (const auto & column_name : getMaterializedColumnsWithChangedExpansion(original_metadata, metadata, context))
+        result.push_back(createMaterializeColumnCommand(column_name));
 
     return result;
 }
