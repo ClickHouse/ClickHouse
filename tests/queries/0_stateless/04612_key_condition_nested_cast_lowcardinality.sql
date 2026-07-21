@@ -51,3 +51,32 @@ FROM (
 
 DROP TABLE t_04612;
 DROP TABLE t_04612_prune;
+
+-- Same regression through a typed LowCardinality ALIAS over a numeric key (plus a skip index),
+-- distinct from the String CAST variants above.
+DROP TABLE IF EXISTS t_04612_alias;
+CREATE TABLE t_04612_alias
+    (a UInt64, x LowCardinality(UInt64) ALIAS a + 1, y UInt64 ALIAS x * 2,
+     INDEX idx y TYPE bloom_filter GRANULARITY 1)
+    ENGINE = MergeTree ORDER BY a
+    SETTINGS index_granularity = 8, allow_suspicious_low_cardinality_types = 1;
+INSERT INTO t_04612_alias SELECT number FROM numbers(1000);
+
+-- Previously aborted in KeyCondition; PK-pruned count checked against a brute-force scan.
+SELECT count() = (SELECT countIf(y = 1048576) FROM t_04612_alias) FROM t_04612_alias WHERE y = 1048576;
+SELECT count() = (SELECT countIf(y = 1000) FROM t_04612_alias) FROM t_04612_alias WHERE y = 1000;
+SELECT count() FROM t_04612_alias WHERE y = 1000;
+
+-- Pruning must still fire over the typed-ALIAS chain (not a silent index-disabling fallback).
+SELECT
+    toUInt32(extract(g, '^(\d+)')) < toUInt32(extract(g, '/(\d+)$')) AS pruning_fired
+FROM (
+    SELECT extract(trimLeft(explain), 'Granules: (\d+/\d+)') AS g
+    FROM (
+        EXPLAIN indexes = 1
+        SELECT count() FROM t_04612_alias WHERE y = 1000
+    )
+    WHERE explain ILIKE '%Granules: %/%'
+);
+
+DROP TABLE t_04612_alias;
