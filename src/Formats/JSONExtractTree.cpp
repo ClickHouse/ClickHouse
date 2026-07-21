@@ -557,7 +557,7 @@ private:
         else
         {
             String padded_value(value);
-            padded_value.resize(fixed_length, '\0');
+            padded_value.resize(fixed_length, ' ');
             assert_cast<ColumnLowCardinality &>(column).insertData(padded_value.data(), padded_value.size());
         }
         return true;
@@ -2390,7 +2390,7 @@ private:
                     if (IPv4Node<JSONParser>::tryParse(ipv4_value, data))
                     {
                         encodeDataType(getDataTypesCache().getType("IPv4"), buf);
-                        writeBinaryLittleEndian(static_cast<UInt32>(ipv4_value), buf);
+                        writeBinary(ipv4_value, buf);
                         return true;
                     }
                 }
