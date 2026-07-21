@@ -2665,13 +2665,16 @@ bool ClientBase::sendCancel(std::exception_ptr exception_ptr)
 {
     if (!connection->isConnected())
     {
-        error_stream << "Cannot send Cancel due to connection is lost";
+        /// Route this connection-lost diagnostic through the same bounded best-effort terminal path
+        /// as the cancellation messages instead of a raw `error_stream` write: `sendCancel` runs at
+        /// the very start of `cancelQuery` (the first Ctrl+C), and on the default interactive client
+        /// `error_stream` (`stderr`) is the same PTY as the stuck output sink, so a plain blocking
+        /// write here could park that first Ctrl+C before cancellation is latched or
+        /// `printCancellationMessage` runs (see printMessageBestEffort).
+        String message = "Cannot send Cancel due to connection is lost";
         if (exception_ptr)
-        {
-            error_stream << ": ";
-            error_stream << getExceptionMessage(exception_ptr, /*with_stacktrace=*/ true);
-        }
-        error_stream << '\n';
+            message += ": " + getExceptionMessage(exception_ptr, /*with_stacktrace=*/ true);
+        printMessageBestEffort(message);
         return false;
     }
     else
