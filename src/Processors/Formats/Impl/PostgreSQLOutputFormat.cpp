@@ -111,9 +111,11 @@ Values use their text representation, `NULL` values use the protocol's null-fiel
 `t` or `f`.
 
 This is an output-only binary format intended for clients connected through ClickHouse's
-[PostgreSQL interface](/concepts/features/interfaces/postgresql). The interface selects `PostgreSQLWire` automatically
-and writes the surrounding protocol messages, such as authentication, command completion, and ready-for-query messages.
-It's not intended for displaying or storing query results as a standalone file.
+[PostgreSQL interface](/concepts/features/interfaces/postgresql). The interface sets `PostgreSQLWire` as the session
+default and uses it when the query doesn't include an explicit `FORMAT` clause. An explicit clause overrides the default;
+other output formats don't produce a valid PostgreSQL result set. The interface writes the surrounding protocol messages,
+such as authentication, command completion, and ready-for-query messages. `PostgreSQLWire` isn't intended for displaying
+or storing query results as a standalone file.
 
 ## Example usage {#example-usage}
 
@@ -124,7 +126,7 @@ psql -p 9005 -h 127.0.0.1 -U alice -d default \
     -c "SELECT number, number % 2 = 0 AS even FROM numbers(3)"
 ```
 
-The interface sends the result using `PostgreSQLWire` automatically.
+Because the query doesn't specify a `FORMAT` clause, the interface sends the result using `PostgreSQLWire`.
 
 ## Format settings {#format-settings}
 
