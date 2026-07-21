@@ -1,0 +1,36 @@
+hash
+1	1
+2	2
+full_sorting_merge
+1	1
+2	2
+grace_hash
+1	1
+2	2
+prefer_partial_merge
+1	1
+2	2
+partial_merge,hash
+1	1
+2	2
+amplified counts (must all be 11)
+11
+11
+11
+left any (keep all left)
+1	1
+1	1
+2	2
+left semi
+1
+1
+2
+all inner
+1	1
+1	1
+2	2
+2	2
+legacy inner any (all left rows)
+1
+1
+2

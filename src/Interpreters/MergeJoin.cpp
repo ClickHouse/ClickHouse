@@ -1272,9 +1272,16 @@ bool MergeJoin::isSupported(JoinKind kind, JoinStrictness strictness)
     bool is_semi = (strictness == JoinStrictness::Semi);
 
     bool all_join = is_all && (isInner(kind) || isLeft(kind) || isRight(kind) || isFull(kind));
-    bool special_left = isInnerOrLeft(kind) && (is_any || is_semi);
 
-    return all_join || special_left;
+    /// INNER ANY must return one row per matching key (any_join_distinct_right_table_keys = 0;
+    /// legacy INNER ANY is rewritten to SEMI LEFT before reaching here). MergeJoin sorts the left
+    /// side only per block, so it cannot deduplicate left keys across blocks and would keep every
+    /// left row like SEMI LEFT. Do not advertise it, so the planner can pick another configured
+    /// algorithm that returns the correct result.
+    bool semi_or_any_left = isLeft(kind) && (is_any || is_semi);
+    bool semi_inner = isInner(kind) && is_semi;
+
+    return all_join || semi_or_any_left || semi_inner;
 }
 
 MergeJoin::RightBlockInfo::RightBlockInfo(std::shared_ptr<Block> block_, size_t block_number_, size_t & skip_, RowBitmaps * bitmaps_)
