@@ -10,7 +10,6 @@
 #include <base/types.h>
 
 #include <Columns/ColumnNullable.h>
-#include <Columns/ColumnString.h>
 #include <Columns/IColumn.h>
 #include <Columns/findEqualRangeEndAssumeSorted.h>
 #include <Core/SortCursor.h>
@@ -181,9 +180,8 @@ size_t ALWAYS_INLINE nextNotLess(FullMergeJoinCursor & cursor, const FullMergeJo
 
     /// A row whose first key column is strictly less than the other row's one is less regardless
     /// of the remaining key columns, so the whole run of such rows can be skipped with a single
-    /// compareTrackAt call. The track compares the skipped rows one by one, while nextDistinct
-    /// gallops over a run of equal keys, so the fast path is restricted to column types with
-    /// cheap comparisons (see first_key_fast_track).
+    /// compareTrackAt call. The fast path requires a devirtualized compareTrackAt (for other
+    /// columns it degrades to a row-by-row virtual compareAt loop, worse than nextDistinct).
     /// Rows with NULL in the first key column are ordered by the null map, not by the values
     /// of the nested column, so the track is not applicable when either current row is NULL.
     if (!cursor.first_key_fast_track)
@@ -427,8 +425,7 @@ void FullMergeJoinCursor::setChunk(Chunk && chunk)
         sort_columns.pop_back();
     }
 
-    first_key_fast_track = !sort_columns.empty()
-        && (sort_columns.front()->isFixedAndContiguous() || checkAndGetColumn<ColumnString>(sort_columns.front().get()));
+    first_key_fast_track = !sort_columns.empty() && sort_columns.front()->isFixedAndContiguous();
 }
 
 bool FullMergeJoinCursor::fullyCompleted() const
