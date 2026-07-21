@@ -31,6 +31,7 @@ sys.path.insert(0, REPO_ROOT)
 JOB = os.path.join(REPO_ROOT, "ci/jobs/auto_release_job.py")
 WORKFLOW_DEF = os.path.join(REPO_ROOT, "ci/workflows/auto_releases.py")
 WORKFLOW_YML = os.path.join(REPO_ROOT, ".github/workflows/auto_releases.yml")
+CREATE_RELEASE_YML = os.path.join(REPO_ROOT, ".github/workflows/create_release.yml")
 LEGACY_JOB = os.path.join(REPO_ROOT, "tests/ci/auto_release.py")
 LEGACY_YML_MARKER = "python3 auto_release.py"
 
@@ -95,9 +96,22 @@ def test_workflow_declares_every_input_the_job_reads():
 
 def test_job_dispatches_create_release_as_patch():
     text = _read(JOB)
-    assert "CreateRelease.yml" in text, "job must dispatch the CreateRelease workflow"
     assert "gh workflow run" in text
     assert "type=patch" in text, "autorelease only ever creates patch releases"
+
+
+def test_job_references_real_create_release_workflow_file():
+    """The dispatched workflow must be named by its actual YAML file.
+
+    `gh workflow run` / `gh run list --workflow` resolve a `.yml` argument as a
+    file name, so the workflow *name* "CreateRelease" is rejected with a 404 —
+    the file is `create_release.yml`. This must exist so the dispatch does not
+    fail at runtime (it did in an early dry-run).
+    """
+    assert os.path.exists(CREATE_RELEASE_YML), "create_release.yml must exist"
+    assert 'CREATE_RELEASE_WORKFLOW = "create_release.yml"' in _read(
+        JOB
+    ), "job must reference the create_release.yml file name (not CreateRelease.yml)"
 
 
 def test_workflow_points_at_the_job():
