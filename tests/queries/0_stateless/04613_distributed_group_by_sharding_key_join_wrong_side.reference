@@ -1,0 +1,17 @@
+correct result (GROUP BY r.k, optimize=1)
+0	60	29
+30	4	30
+31	4	31
+32	4	32
+optimize=1 equals optimize=0 for GROUP BY r.k
+1
+optimization still fires for GROUP BY l.k (sharding key)
+1
+RIGHT JOIN GROUP BY l.k (bug_dl padded), optimize=1 equals optimize=0
+1
+FULL JOIN GROUP BY l.k (bug_dl padded), optimize=1 equals optimize=0
+1
+CROSS JOIN under RIGHT JOIN GROUP BY l.k (bug_dl padded), optimize=1 equals optimize=0
+1
+optimization still fires for plain CROSS JOIN GROUP BY l.k (sharding key)
+1

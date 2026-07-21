@@ -48,10 +48,12 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/IAST.h>
 #include <Parsers/IdentifierQuotingStyle.h>
 #include <Parsers/parseQuery.h>
 
+#include <Analyzer/ArrayJoinNode.h>
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/TableNode.h>
@@ -59,10 +61,10 @@
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/JoinNode.h>
 #include <Analyzer/QueryTreeBuilder.h>
+#include <Analyzer/Utils.h>
 #include <Analyzer/Passes/QueryAnalysisPass.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/WindowFunctionsUtils.h>
-#include <Analyzer/Utils.h>
 
 #include <Planner/Planner.h>
 #include <Planner/Utils.h>
@@ -402,6 +404,68 @@ size_t getClusterQueriedNodes(const Settings & settings, const ClusterPtr & clus
     return (num_remote_shards + num_local_shards) * max_parallel_replicas;
 }
 
+/// Returns true if `target` (this distributed table's join-tree node) sits on a side of some outer
+/// join in `node` that is filled with default/null values for unmatched rows. On such a side the
+/// grouping column can take a padded value (e.g. the sharding key becomes 0) on every shard, so a
+/// group keyed by it spans shards and the per-shard partials must be merged on the initiator; the
+/// shard-local shortcut would return them unmerged. `padded_by_ancestor` propagates the padded state
+/// from enclosing joins down to `target`.
+bool isTableExpressionOnOuterJoinNullSide(const QueryTreeNodePtr & node, const QueryTreeNodePtr & target, bool padded_by_ancestor)
+{
+    if (node == target)
+        return padded_by_ancestor;
+
+    if (const auto * join_node = node->as<JoinNode>())
+    {
+        const auto kind = join_node->getKind();
+        /// RIGHT/FULL join pads the left side; LEFT/FULL join pads the right side.
+        const bool left_padded = padded_by_ancestor || isRightOrFull(kind);
+        const bool right_padded = padded_by_ancestor || isLeftOrFull(kind);
+        return isTableExpressionOnOuterJoinNullSide(join_node->getLeftTableExpression(), target, left_padded)
+            || isTableExpressionOnOuterJoinNullSide(join_node->getRightTableExpression(), target, right_padded);
+    }
+
+    if (const auto * array_join_node = node->as<ArrayJoinNode>())
+        return isTableExpressionOnOuterJoinNullSide(array_join_node->getTableExpression(), target, padded_by_ancestor);
+
+    /// A cross/comma join never pads its own operands, but it does not shield them from padding by an
+    /// enclosing outer join: `t CROSS JOIN u RIGHT JOIN v` builds JoinNode(RIGHT){CrossJoinNode[t, u], v},
+    /// so `t` and `u` are on the padded left side. Propagate the ancestor's padded state to every child.
+    if (const auto * cross_join_node = node->as<CrossJoinNode>())
+    {
+        for (const auto & table_expression : cross_join_node->getTableExpressions())
+            if (isTableExpressionOnOuterJoinNullSide(table_expression, target, padded_by_ancestor))
+                return true;
+        return false;
+    }
+
+    return false;
+}
+
+/// Old-analyzer (AST) counterpart of isTableExpressionOnOuterJoinNullSide. The old analyzer works on
+/// a flat, left-associative table list (ASTSelectQuery::tables()), where this distributed table is
+/// always the main/leftmost operand and every join is applied to the accumulated left side. So this
+/// table is on an outer-join padded side iff any join in the list is RIGHT or FULL (both pad their
+/// left operand). LEFT pads only the right operand and INNER/CROSS never pad, so those keep the
+/// shortcut for GROUP BY over this table's own sharding key.
+bool selectHasOuterJoinPaddingMainTable(const ASTSelectQuery & select)
+{
+    const ASTPtr tables = select.tables();
+    if (!tables)
+        return false;
+
+    for (const auto & child : tables->children)
+    {
+        const auto * element = child->as<ASTTablesInSelectQueryElement>();
+        if (!element || !element->table_join)
+            continue;
+        if (const auto * table_join = element->table_join->as<ASTTableJoin>())
+            if (isRightOrFull(table_join->kind))
+                return true;
+    }
+    return false;
+}
+
 }
 
 /// For destruction of std::unique_ptr of type that is incomplete in class definition.
@@ -619,6 +683,26 @@ QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(
 bool StorageDistributed::isShardingKeySuitsQueryTreeNodeExpression(
     const QueryTreeNodePtr & expr, const SelectQueryInfo & query_info) const
 {
+    /// The shard-local shortcut is only sound when every group's rows live on a single shard, which
+    /// holds only if the expression is over this distributed table's own columns. In a JOIN a column
+    /// from another table (e.g. the right side of a LEFT JOIN) may share the sharding-key name but
+    /// span shards, so exclude expressions that reference columns outside this table_expression.
+    if (query_info.table_expression && hasUnknownColumn(expr, query_info.table_expression))
+        return false;
+
+    /// Even when the expression is over this table's own columns, the shortcut is unsound if this table
+    /// is on an outer-join padded side: unmatched rows default the sharding-key column to the same value
+    /// (e.g. 0) on every shard, so that group spans shards and the per-shard partials must be merged on
+    /// the initiator. Fall back to merging in that case.
+    if (query_info.query_tree && query_info.table_expression)
+    {
+        if (const auto * query_node = query_info.query_tree->as<QueryNode>())
+        {
+            if (isTableExpressionOnOuterJoinNullSide(query_node->getJoinTree(), query_info.table_expression, /*padded_by_ancestor=*/ false))
+                return false;
+        }
+    }
+
     ColumnsWithTypeAndName empty_input_columns;
     ColumnNodePtrWithHashSet empty_correlated_columns_set;
     // When comparing sharding key expressions, we need to ignore table qualifiers in column names
@@ -735,6 +819,13 @@ std::optional<QueryProcessingStage::Enum> StorageDistributed::getOptimizedQueryP
         default_stage = QueryProcessingStage::WithMergeableStateAfterAggregationAndLimit;
 
     const auto & select = query_info.query->as<ASTSelectQuery &>();
+
+    /// Mirror the analyzer padded-side guard for the AST path: if this distributed table is on an
+    /// outer-join padded side, unmatched rows default its sharding-key column to the same value (e.g. 0)
+    /// on every shard, so that group spans shards and the per-shard partials must be merged on the
+    /// initiator. Disable the shard-local shortcut for DISTINCT/GROUP BY/LIMIT BY in that case.
+    if (optimize_sharding_key_aggregation && selectHasOuterJoinPaddingMainTable(select))
+        optimize_sharding_key_aggregation = false;
 
     auto expr_contains_sharding_key = [&](const auto & exprs) -> bool
     {
