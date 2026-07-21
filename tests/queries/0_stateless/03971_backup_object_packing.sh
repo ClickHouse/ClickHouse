@@ -7,9 +7,12 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CUR_DIR"/../shell_config.sh
 
 # experimental_backup_pack_format bundles many small backup blobs into a few pack objects (the
-# PackedFilesIO ".packed" format). Every case below must restore byte-identical data.
+# PackedFilesIO ".packed" format). Every case below must restore byte-identical data. Row counts are kept
+# tiny on purpose: the number of data files (hence packs) is set by the schema, not the row count, so a few
+# dozen rows exercises every path while keeping the backup-object and system-log-table footprint small.
 
 name="${CLICKHOUSE_TEST_UNIQUE_NAME}"
+backups_disk_path="$(${CLICKHOUSE_CLIENT} --query "SELECT path FROM system.disks WHERE name='backups'")"
 
 checksum() { ${CLICKHOUSE_CLIENT} --query "SELECT sum(cityHash64(*)) FROM $1"; }
 
@@ -27,7 +30,7 @@ roundtrip() {
 }
 
 small_create="CREATE TABLE t (a UInt64, s String) ENGINE=MergeTree ORDER BY a SETTINGS min_bytes_for_wide_part=0"
-small_insert="INSERT INTO t SELECT number, toString(number) FROM numbers(2000)"
+small_insert="INSERT INTO t SELECT number, toString(number) FROM numbers(50)"
 
 # Case 1: small files only -> packed.
 roundtrip "small-only" "Disk('backups', '${name}_1')" "$small_create" "$small_insert" \
@@ -36,18 +39,21 @@ roundtrip "small-only" "Disk('backups', '${name}_1')" "$small_create" "$small_in
 # Case 2: mixed small + big; big blobs stay their own object, small ones packed.
 roundtrip "mixed" "Disk('backups', '${name}_2')" \
     "CREATE TABLE t (a UInt64, s String) ENGINE=MergeTree ORDER BY a SETTINGS min_bytes_for_wide_part=0" \
-    "INSERT INTO t SELECT number, repeat('x', 200) FROM numbers(5000)" \
+    "INSERT INTO t SELECT number, repeat('x', 200) FROM numbers(50)" \
     "SETTINGS experimental_backup_pack_format=1, backup_pack_min_size=200"
 
-# Case 3: many small files spilling across several packs.
+# Case 3: small files spilling across a few packs. pack_size is chosen just under the packable total so it
+# spills into 2-3 packs (kept tiny on purpose) -- then assert >1 pack actually formed.
 roundtrip "multi-pack" "Disk('backups', '${name}_3')" "$small_create" \
-    "INSERT INTO t SELECT number, toString(number) FROM numbers(3000)" \
-    "SETTINGS experimental_backup_pack_format=1, backup_pack_size=256"
+    "$small_insert" \
+    "SETTINGS experimental_backup_pack_format=1, backup_pack_size=800"
+npacks=$(ls "${backups_disk_path}${name}_3"/packs_* 2>/dev/null | wc -l)
+if [ "$npacks" -gt 1 ]; then echo "multi-pack spilled"; else echo "multi-pack ONLY $npacks pack(s)"; fi
 
 # Case 4: duplicated data (two identical columns) -> members collapse via dedup.
 roundtrip "dedup" "Disk('backups', '${name}_4')" \
     "CREATE TABLE t (a UInt64, b UInt64) ENGINE=MergeTree ORDER BY tuple() SETTINGS min_bytes_for_wide_part=0" \
-    "INSERT INTO t SELECT number, number FROM numbers(4000)" \
+    "INSERT INTO t SELECT number, number FROM numbers(50)" \
     "SETTINGS experimental_backup_pack_format=1"
 
 # Case 6: setting off (default) still works -> regression guard.
@@ -57,7 +63,7 @@ roundtrip "setting-off" "Disk('backups', '${name}_6')" "$small_create" "$small_i
 ${CLICKHOUSE_CLIENT} -m --query "DROP TABLE IF EXISTS t; $small_create"
 ${CLICKHOUSE_CLIENT} --query "$small_insert"
 ${CLICKHOUSE_CLIENT} --query "BACKUP TABLE t TO Disk('backups', '${name}_base') SETTINGS experimental_backup_pack_format=1" | grep -o BACKUP_CREATED
-${CLICKHOUSE_CLIENT} --query "INSERT INTO t SELECT number, toString(number) FROM numbers(2000, 2000)"
+${CLICKHOUSE_CLIENT} --query "INSERT INTO t SELECT number, toString(number) FROM numbers(50, 50)"
 incr_before=$(checksum t)
 ${CLICKHOUSE_CLIENT} --query "BACKUP TABLE t TO Disk('backups', '${name}_incr') SETTINGS experimental_backup_pack_format=1, base_backup=Disk('backups', '${name}_base')" | grep -o BACKUP_CREATED
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE t"
@@ -100,8 +106,7 @@ SELECT
 ${CLICKHOUSE_CLIENT} -m --query "DROP TABLE IF EXISTS t; $small_create"
 ${CLICKHOUSE_CLIENT} --query "$small_insert"
 ${CLICKHOUSE_CLIENT} --query "BACKUP TABLE t TO Disk('backups', '${name}_9.zip')" | grep -o BACKUP_CREATED
-archive_path="$(${CLICKHOUSE_CLIENT} --query "SELECT path FROM system.disks WHERE name='backups'")/${name}_9.zip"
-python3 - "$archive_path" <<'PY'
+python3 - "${backups_disk_path}${name}_9.zip" <<'PY'
 import sys, zipfile, os
 path = sys.argv[1]
 tmp = path + ".tmp"
