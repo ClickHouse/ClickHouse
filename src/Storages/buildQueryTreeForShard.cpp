@@ -68,7 +68,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int INCOMPATIBLE_TYPE_OF_JOIN;
     extern const int DISTRIBUTED_IN_JOIN_SUBQUERY_DENIED;
-    extern const int UNSUPPORTED_METHOD;
 }
 
 namespace
@@ -682,33 +681,15 @@ private:
             if (using_elements.empty())
                 continue;
 
-            /// Marker: the left element carries the resolved alias body `E`, in one of two shapes depending on
-            /// what ran before this pass — a `ColumnNode` wrapping the body as its expression (as `resolveJoin`
-            /// builds it), or the body itself carrying the key name as its alias (after alias-column inlining).
-            /// A plain-column USING key matches neither shape. This also (harmlessly) fires for table `ALIAS`
-            /// columns used in USING — attaching `AS N` to an equal projection subexpression keeps replica
-            /// semantics identical either way.
-            const auto & left_node = using_elements.front();
-            QueryTreeNodePtr expression;
-            String wrapper_name;
-            if (const auto * left_column = left_node->as<ColumnNode>())
-            {
-                if (left_column->hasExpression())
-                {
-                    expression = left_column->getExpression();
-                    wrapper_name = left_column->getColumnName();
-                }
-            }
-            else if (left_node->hasAlias())
-            {
-                expression = left_node;
-                wrapper_name = left_node->getAlias();
-            }
-
-            if (!expression)
+            /// Marker: `left_element` carries the resolved alias body `E`. A plain-column USING key has no such
+            /// expression, and this also (harmlessly) fires for table `ALIAS` columns used in USING — attaching
+            /// `AS N` to an equal projection subexpression keeps replica semantics identical either way.
+            const auto * left_element = using_elements.front()->as<ColumnNode>();
+            if (!left_element || !left_element->hasExpression())
                 continue;
 
             const auto & name = using_column->getColumnName();
+            const auto & expression = left_element->getExpression();
 
             bool alias_present = false;
             QueryTreeNodePtr match;
@@ -716,30 +697,13 @@ private:
                 scanProjection(projection_node, name, *expression, alias_present, match);
 
             /// Bail out if the name already exists in the projection (it re-resolves, or a second `N` would only
-            /// make things worse). Never overwrite an existing alias.
-            if (alias_present || (match && match->hasAlias()))
+            /// make things worse); if nothing matches, leave the tree as is (today's behavior). Never overwrite an
+            /// existing alias.
+            if (alias_present || !match || match->hasAlias())
                 continue;
 
-            if (match)
-            {
-                /// Use the USING column's name `N`, not the wrapper's (possibly `_`-prefixed) name.
-                match->setAlias(name);
-                continue;
-            }
-
-            /// No equal subexpression is left in the projection — an optimization pass rewrote the alias body
-            /// (e.g. `sum(x + 1 AS id)` into `sum(x) + count()`). If the key shadows a real left-table column,
-            /// the wrapper was renamed to avoid the clash (`resolveJoin`'s `_`-prefix loop), and the shipped
-            /// query would silently join by that column instead of the alias expression — fail close. Otherwise
-            /// the shard fails loudly on re-analysis, same as before this pass.
-            if (wrapper_name != name)
-                throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
-                    "JOIN {} using identifier '{}' is resolved from a SELECT-list alias that shadows a column of "
-                    "the left table expression, and the aliased expression is no longer present in the SELECT list, "
-                    "so the query cannot be sent to a remote server. Move the alias to the top level of the SELECT "
-                    "list or rename it to avoid the clash with the column",
-                    join_node.formatASTForErrorMessage(),
-                    name);
+            /// Use the USING column's name `N`, not `left_element`'s own (possibly `_`-prefixed) name.
+            match->setAlias(name);
         }
     }
 
