@@ -13,6 +13,7 @@
 #include <boost/algorithm/string/trim.hpp>
 
 #include <Common/Exception.h>
+#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -77,6 +78,14 @@ size_t getLogNumber(const std::string & path_str)
     return parse<size_t>(filename_parts[2]);
 }
 
+/// The unfinished-compaction marker lives in the log directory as the log file with
+/// number 0, which no real log can have (rotation and compaction only ever create
+/// `current_log_number + 1`, starting from 1). See markUnfinishedCompaction.
+std::string getCompactionMarkerPath(const std::string & prefix)
+{
+    return getLogPath(prefix, 0);
+}
+
 }
 
 MergeTreeDeduplicationLog::MergeTreeDeduplicationLog(
@@ -109,8 +118,22 @@ void MergeTreeDeduplicationLog::load()
     {
         const auto & path = it->path();
         auto log_number = getLogNumber(path);
+        /// Log number 0 is the unfinished-compaction marker, not a log: no real log
+        /// ever gets that number (see markUnfinishedCompaction). It must never be
+        /// replayed or counted as history; discardHistoryAfterUnfinishedCompaction
+        /// below acts on it instead.
+        if (log_number == 0)
+            continue;
         existing_logs[log_number] = {path, 0};
     }
+
+    /// If the previous run died between starting a compaction and restoring a provably
+    /// consistent on-disk state, the files just collected may replay to a wrong
+    /// deduplication state; discard them instead of replaying them. Skipped when
+    /// deduplication is disabled: nothing is replayed or written then, and the marker
+    /// stays for the next load with deduplication enabled to act on.
+    if (deduplication_window != 0)
+        discardHistoryAfterUnfinishedCompaction();
 
     /// We should know which logs are exist even in case
     /// of deduplication_window = 0
@@ -557,6 +580,18 @@ void MergeTreeDeduplicationLog::compact()
     const auto snapshot_path = getLogPath(logs_dir, snapshot_log_number);
     const size_t snapshot_size = deduplication_map.size();
 
+    /// Persist the fact that a compaction is in flight before creating or removing
+    /// anything, so the failure barrier survives a restart. The process-local
+    /// `orphan_logs_pending_neutralization` dies with the process: without the marker,
+    /// a restart while any file this compaction touched is still stale would replay
+    /// that file as ordinary history and could silently deduplicate wrongly. With the
+    /// marker still active, the next load discards the history instead (see
+    /// markUnfinishedCompaction). If the marker cannot be made durable, do not
+    /// compact - a half-done compaction without the marker is exactly the unprotected
+    /// state it exists to prevent - and lose nothing but the space optimization.
+    if (!markUnfinishedCompaction())
+        return;
+
     /// The writer the next operation appends to. On an append-capable disk that is the
     /// finalized snapshot file itself, reopened for appending. On a disk without append
     /// support the snapshot file cannot be reopened that way, so it stays a finalized,
@@ -624,6 +659,13 @@ void MergeTreeDeduplicationLog::compact()
         /// fresh writer file needs its own cleanup.
         if (!reopen_snapshot && !neutralizeOrphanLog(writer_path))
             orphan_logs_pending_neutralization.insert(writer_path);
+        /// The failed compaction is fully rolled back once nothing is pending, so the
+        /// history is consistent again and the marker can go. While something IS
+        /// pending the marker must stay active: it is what makes a restart discard the
+        /// suspect history instead of replaying it. Clearing it is then tied to
+        /// draining the pending set in prepareToWrite.
+        if (orphan_logs_pending_neutralization.empty())
+            clearCompactionMarker();
         return;
     }
 
@@ -671,6 +713,14 @@ void MergeTreeDeduplicationLog::compact()
 
     current_log_number = writer_log_number;
     current_writer = std::move(new_writer);
+
+    /// The compaction is complete. Unless some old file could not be neutralized - in
+    /// which case the marker must survive so a restart discards the suspect history,
+    /// and prepareToWrite clears it once the pending set drains - deactivate the
+    /// marker; if even that fails, prepareToWrite retries and fails operations closed,
+    /// because a restart with an active marker discards everything written after it.
+    if (orphan_logs_pending_neutralization.empty())
+        clearCompactionMarker();
 }
 
 bool MergeTreeDeduplicationLog::neutralizeOrphanLog(const std::string & path)
@@ -714,6 +764,108 @@ bool MergeTreeDeduplicationLog::neutralizeOrphanLog(const std::string & path)
     }
 }
 
+bool MergeTreeDeduplicationLog::markUnfinishedCompaction()
+{
+    try
+    {
+        auto out = disk->writeFile(getCompactionMarkerPath(logs_dir), DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite);
+        /// The marker's one record is a no-op on every server version, so a server
+        /// from before the marker existed replays this file as an ordinary, harmless
+        /// log: a DROP (carrying the rollback part-name marker, which such a server
+        /// never parses) of a block id that can never exist erases nothing.
+        MergeTreeDeduplicationLogRecord record;
+        record.operation = MergeTreeDeduplicationOp::DROP;
+        record.part_name = DEDUPLICATION_LOG_CANCELLED_ADD_PART_NAME;
+        record.block_id = "unfinished_compaction";
+        writeRecord(record, *out);
+        out->finalize();
+        out->sync();
+        return true;
+    }
+    catch (...)
+    {
+        tryLogCurrentException(
+            __PRETTY_FUNCTION__, "Cannot persist the unfinished-compaction marker of the deduplication log; skipping the compaction");
+        /// The failed write may still have left a non-empty file behind, and a
+        /// non-empty marker reads as active - a restart would discard the history.
+        /// Clear it (or, if that fails too, keep failing operations closed until a
+        /// retry clears it in prepareToWrite).
+        clearCompactionMarker();
+        return false;
+    }
+}
+
+bool MergeTreeDeduplicationLog::clearCompactionMarker()
+{
+    /// Removing the file - or, failing that, truncating it to an empty one - both
+    /// deactivate the marker: only an existing, non-empty marker is active.
+    if (neutralizeOrphanLog(getCompactionMarkerPath(logs_dir)))
+    {
+        compaction_marker_pending_clear = false;
+        return true;
+    }
+
+    compaction_marker_pending_clear = true;
+    return false;
+}
+
+void MergeTreeDeduplicationLog::discardHistoryAfterUnfinishedCompaction()
+{
+    const auto marker_path = getCompactionMarkerPath(logs_dir);
+    if (!disk->existsFile(marker_path))
+        return;
+
+    if (disk->getFileSize(marker_path) == 0)
+    {
+        /// The marker was already deactivated by overwriting it with an empty file
+        /// (its removal had failed); try to reclaim the leftover, but an empty marker
+        /// is inactive either way.
+        try
+        {
+            disk->removeFileIfExists(marker_path);
+        }
+        catch (...) /// NOLINT(bugprone-empty-catch): Ok, see above - an empty marker is already inactive.
+        {
+        }
+        return;
+    }
+
+    LOG_WARNING(
+        getLogger("MergeTreeDeduplicationLog"),
+        "The previous run left an active unfinished-compaction marker ({}), so the deduplication log files may replay to an "
+        "inconsistent state. Discarding the deduplication history: recent duplicate inserts may be accepted again, but no insert "
+        "will be deduplicated wrongly against stale history.",
+        marker_path);
+
+    for (auto it = existing_logs.begin(); it != existing_logs.end();)
+    {
+        if (!neutralizeOrphanLog(it->second.path))
+            throw Exception(
+                ErrorCodes::CORRUPTED_DATA,
+                "An unfinished deduplication log compaction left the history inconsistent, and the log file {} can neither be "
+                "removed nor emptied; refusing to load the deduplication log because replaying it could deduplicate wrongly",
+                it->second.path);
+
+        /// The file is no longer a hazard: gone, or emptied in place. An emptied file
+        /// stays registered and replays as a no-op.
+        if (disk->existsFile(it->second.path))
+        {
+            it->second.entries_count = 0;
+            it->second.effective_entries_count = 0;
+            ++it;
+        }
+        else
+            it = existing_logs.erase(it);
+    }
+
+    if (!clearCompactionMarker())
+        throw Exception(
+            ErrorCodes::CORRUPTED_DATA,
+            "The unfinished-compaction marker of the deduplication log ({}) can neither be removed nor emptied; refusing to load "
+            "the deduplication log because every record written now would be discarded by the next restart",
+            marker_path);
+}
+
 void MergeTreeDeduplicationLog::prepareToWrite()
 {
     /// Retry neutralizing the files a failed compaction left behind (see the header).
@@ -723,6 +875,7 @@ void MergeTreeDeduplicationLog::prepareToWrite()
     /// recovers far enough to neutralize them all: failing the operation loudly here is
     /// recoverable (the caller retries), silently deduplicating wrongly after a restart
     /// is not.
+    bool marker_still_active = compaction_marker_pending_clear;
     for (auto it = orphan_logs_pending_neutralization.begin(); it != orphan_logs_pending_neutralization.end();)
     {
         if (!neutralizeOrphanLog(*it))
@@ -732,7 +885,19 @@ void MergeTreeDeduplicationLog::prepareToWrite()
                 "refusing to write new records because a restart would replay inconsistent deduplication history",
                 *it);
         it = orphan_logs_pending_neutralization.erase(it);
+        /// While files were pending, the failed compaction's on-disk marker was kept
+        /// active on purpose - a restart had to discard the suspect history. Now that
+        /// they are all neutralized the history is consistent again, so the marker
+        /// must be cleared below, or a restart would still throw the history away.
+        marker_still_active = true;
     }
+
+    if (marker_still_active && !clearCompactionMarker())
+        throw Exception(
+            ErrorCodes::CORRUPTED_DATA,
+            "The unfinished-compaction marker of the deduplication log ({}) can neither be removed nor emptied; refusing to write "
+            "new records because a restart would discard them together with the rest of the history",
+            getCompactionMarkerPath(logs_dir));
 
     /// Heal a canceled writer. A failed write cancels the buffer; the rollback of that
     /// failed operation rotates to a fresh writer, but the rotation can itself fail and

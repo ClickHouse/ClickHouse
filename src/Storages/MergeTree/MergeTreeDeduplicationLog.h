@@ -248,6 +248,12 @@ private:
     /// fail closed until a retry (in prepareToWrite) neutralizes them all.
     std::set<std::string> orphan_logs_pending_neutralization;
 
+    /// The on-disk unfinished-compaction marker (see markUnfinishedCompaction) is still
+    /// active but the attempt to clear it failed. While it is set, prepareToWrite keeps
+    /// retrying and fails operations closed: any record written now would be discarded
+    /// by the restart the still-active marker triggers.
+    bool compaction_marker_pending_clear = false;
+
     bool stopped{false};
 
     /// Start new log
@@ -292,6 +298,51 @@ private:
     /// subsequent operation retries the neutralization - refusing to write new records
     /// until it succeeds - in prepareToWrite.
     bool neutralizeOrphanLog(const std::string & path);
+
+    /// Durably persist, before compact touches anything, the fact that a compaction is
+    /// in flight, so its failure barrier survives a restart. neutralizeOrphanLog and
+    /// `orphan_logs_pending_neutralization` protect only the current process: if the
+    /// server restarts (or shuts down cleanly) while a file a failed compaction left
+    /// behind is still stale, a new process knows nothing about it and `load` would
+    /// replay the stale records as ordinary history - resurrecting evicted block ids or
+    /// reordering the eviction order, either of which can silently deduplicate wrongly
+    /// and drop the data of a later insert. The marker makes `load` discard the whole
+    /// on-disk history instead (see discardHistoryAfterUnfinishedCompaction): losing at
+    /// most one deduplication window of best-effort insert deduplication (a client
+    /// retry may be accepted again, producing a visible duplicate) is strictly safer
+    /// than replaying history that is known to be possibly inconsistent.
+    ///
+    /// The marker is the log file with number 0 - a number no real log can have, since
+    /// rotation and compaction only ever create `current_log_number + 1` and numbers
+    /// start at 1 - holding a single no-op rollback record. That encoding needs no
+    /// format version: a server from before the marker existed replays it as an
+    /// ordinary log whose one record does nothing (and may eventually remove it with
+    /// the outdated logs), which is exactly the old, pre-marker behavior, while
+    /// servers with this code never replay it (load skips log number 0) and treat a
+    /// non-empty marker as "the last compaction did not finish cleanly". The marker is
+    /// cleared by removing the file or - if the removal fails - overwriting it with an
+    /// empty file, so a marker that merely exists but is empty is inactive.
+    /// Returns whether the marker is durably on disk; on failure the compaction must
+    /// not start (a half-done compaction without the marker is the unprotected state
+    /// this exists to prevent).
+    bool markUnfinishedCompaction();
+
+    /// Clear the unfinished-compaction marker (remove the file, or overwrite it with an
+    /// empty one if the removal fails). Called once the on-disk history is consistent
+    /// again: the compaction finished cleanly, its failure was fully rolled back, or
+    /// every stale file it left behind has been neutralized. On failure sets
+    /// `compaction_marker_pending_clear` so prepareToWrite retries and fails operations
+    /// closed until then. Returns whether the marker is no longer active.
+    bool clearCompactionMarker();
+
+    /// Called from load, right after the directory scan: if the unfinished-compaction
+    /// marker is active, the previous process died - or shut down - between starting a
+    /// compaction and bringing the on-disk history back to a provably consistent state,
+    /// so the files on disk may replay to a wrong deduplication state. Discard them all
+    /// (remove, or overwrite with an empty file), clear the marker, and start with an
+    /// empty history; throws if a file or the marker can neither be removed nor
+    /// emptied, failing the load closed rather than replaying suspect history.
+    void discardHistoryAfterUnfinishedCompaction();
 
     /// Bring the log back to a writable, consistent state before an operation writes
     /// new records; called at the start of addPart and dropPart, before anything is

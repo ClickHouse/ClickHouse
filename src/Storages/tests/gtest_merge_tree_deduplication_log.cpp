@@ -333,6 +333,45 @@ public:
     }
 };
 
+/// While `broken`, files can be created but not destroyed or truncated: removals
+/// throw, and rewriting a path that already exists on disk throws. A compaction can
+/// thus write its marker and snapshot and reopen the snapshot for appending (all new
+/// paths, or an append), and switch over to it - but it can neither remove nor empty
+/// the stale old log files it wants to drop afterwards. Setting `broken = false`
+/// simulates the disk recovering.
+class DiskFailingExistingFileCleanup : public DiskLocal
+{
+public:
+    DiskFailingExistingFileCleanup(const String & name_, const String & path_)
+        : DiskLocal(name_, path_)
+    {
+    }
+
+    std::unique_ptr<WriteBufferFromFileBase>
+    writeFile(const String & path, size_t buf_size, WriteMode mode, const WriteSettings & settings) override
+    {
+        if (broken && mode == WriteMode::Rewrite && existsFile(path))
+            throw Exception(ErrorCodes::CANNOT_WRITE_TO_FILE_DESCRIPTOR, "Injected write failure");
+        return DiskLocal::writeFile(path, buf_size, mode, settings);
+    }
+
+    void removeFile(const String & path) override
+    {
+        if (broken)
+            throw Exception(ErrorCodes::CANNOT_UNLINK, "Injected remove failure");
+        DiskLocal::removeFile(path);
+    }
+
+    void removeFileIfExists(const String & path) override
+    {
+        if (broken)
+            throw Exception(ErrorCodes::CANNOT_UNLINK, "Injected remove failure");
+        DiskLocal::removeFileIfExists(path);
+    }
+
+    bool broken = true;
+};
+
 /// A DiskLocal whose writer fails once on a chosen flush (like DiskThrowingOnNthFlush)
 /// and that additionally fails once on a chosen `writeFile` call. It reproduces a
 /// double fault: a record write fails - canceling the writer - and the rotation the
@@ -1980,6 +2019,150 @@ TEST(MergeTreeDeduplicationLog, OrphanNeutralizationFailureFailsClosedUntilHeale
         EXPECT_FALSE(log.addPart({"block9"}, part("all_13_13_0")).empty());
         EXPECT_FALSE(log.addPart({"block10"}, part("all_14_14_0")).empty());
         EXPECT_TRUE(log.addPart({"block2"}, part("all_15_15_0")).empty());
+    }
+
+    std::filesystem::remove_all(work_dir);
+}
+
+/// Regression test: the fail-closed barrier for the stale files a failed compaction
+/// leaves behind must survive a restart. The pending-neutralization set protects only
+/// the current process; if the server restarts (or shuts down) while a stale orphan
+/// is still on disk, a new process would otherwise replay it as ordinary history and
+/// could silently deduplicate wrongly. The unfinished-compaction marker, written
+/// durably before the compaction starts and cleared only once the on-disk history is
+/// provably consistent again, makes the next load discard the whole history instead:
+/// recent duplicate retries may then be accepted again (a visible duplicate, the safe
+/// direction), but no insert is ever deduplicated against stale records.
+TEST(MergeTreeDeduplicationLog, UnfinishedCompactionDiscardsHistoryOnRestart)
+{
+    const std::string work_dir = "tmp/gtest_dedup_log_marker_orphan_restart/";
+    std::filesystem::remove_all(work_dir);
+    std::filesystem::create_directories(work_dir);
+
+    const MergeTreeDataFormatVersion format_version = MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING;
+    auto part = [&](const String & name) { return MergeTreePartInfo::fromPartName(name, format_version); };
+
+    {
+        /// Accumulate the unreclaimable rollback garbage that makes the next restart
+        /// want to compact, exactly as in the compaction tests above.
+        auto disk = std::make_shared<DiskThrowingFromNthSync>("faulty", work_dir, /*fail_from_sync=*/ 1);
+        MergeTreeDeduplicationLog log("dedup_logs", /*deduplication_window=*/ 1, format_version, disk);
+        log.load();
+
+        log.addPart({"block1"}, part("all_1_1_0"));
+        for (int i = 2; i <= 8; ++i)
+        {
+            const std::string suffix = std::to_string(i) + "_" + std::to_string(i) + "_0";
+            EXPECT_ANY_THROW(log.addPart({"block" + std::to_string(i)}, part("all_" + suffix)));
+        }
+
+        log.shutdown();
+    }
+
+    {
+        /// Restart on a disk that lets the compaction write and fsync its snapshot, then
+        /// fails the reopen for appending AND the whole failure cleanup: the stale orphan
+        /// snapshot can neither be removed nor emptied. The process fails new writes
+        /// closed - and then RESTARTS with the orphan still on disk, before any retry
+        /// could neutralize it.
+        auto disk = std::make_shared<DiskFailingCompactionCleanupCompletely>("faulty-cleanup", work_dir);
+        MergeTreeDeduplicationLog log("dedup_logs", /*deduplication_window=*/ 1, format_version, disk);
+        log.load();
+        EXPECT_ANY_THROW(log.addPart({"block9"}, part("all_9_9_0")));
+        log.shutdown();
+    }
+
+    {
+        /// The new process finds the still-active unfinished-compaction marker and must
+        /// not replay the suspect files as history: it discards them all and starts
+        /// afresh. The committed "block1" is forgotten - its retry is accepted again, a
+        /// visible duplicate - which is the deliberate trade-off: without the marker the
+        /// stale files would be replayed as ordinary history even though the previous
+        /// process already knew they were unsafe.
+        auto disk = std::make_shared<DiskLocal>("healthy", work_dir);
+        MergeTreeDeduplicationLog log("dedup_logs", /*deduplication_window=*/ 1, format_version, disk);
+        log.load();
+
+        EXPECT_TRUE(log.addPart({"block1"}, part("all_10_10_0")).empty());
+
+        /// Deduplication works normally from the fresh history on.
+        EXPECT_FALSE(log.addPart({"block1"}, part("all_11_11_0")).empty());
+
+        log.shutdown();
+    }
+
+    {
+        /// The reset state - not any resurrected stale record - is what a further
+        /// healthy restart replays.
+        auto disk = std::make_shared<DiskLocal>("healthy2", work_dir);
+        MergeTreeDeduplicationLog log("dedup_logs", /*deduplication_window=*/ 1, format_version, disk);
+        log.load();
+
+        EXPECT_FALSE(log.addPart({"block1"}, part("all_12_12_0")).empty());
+    }
+
+    std::filesystem::remove_all(work_dir);
+}
+
+/// The restart barrier must also cover the post-switch-over failure: the compaction
+/// has switched to its snapshot, but one (or more) stale pre-snapshot files can
+/// neither be removed nor emptied. Restarting in that state must not replay those
+/// files as ordinary history either - they were about to be deleted, and replaying
+/// them alongside the snapshot can rebuild a diverged eviction order or resurrect
+/// block ids evicted before the snapshot, silently deduplicating wrongly later. The
+/// still-active marker makes the next load discard the history instead.
+TEST(MergeTreeDeduplicationLog, StaleFilesAfterSwitchedCompactionDiscardHistoryOnRestart)
+{
+    const std::string work_dir = "tmp/gtest_dedup_log_marker_switched_restart/";
+    std::filesystem::remove_all(work_dir);
+    std::filesystem::create_directories(work_dir);
+
+    const MergeTreeDataFormatVersion format_version = MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING;
+    auto part = [&](const String & name) { return MergeTreePartInfo::fromPartName(name, format_version); };
+
+    {
+        /// Accumulate the unreclaimable rollback garbage that makes the next restart
+        /// want to compact, exactly as in the compaction tests above.
+        auto disk = std::make_shared<DiskThrowingFromNthSync>("faulty", work_dir, /*fail_from_sync=*/ 1);
+        MergeTreeDeduplicationLog log("dedup_logs", /*deduplication_window=*/ 1, format_version, disk);
+        log.load();
+
+        log.addPart({"block1"}, part("all_1_1_0"));
+        for (int i = 2; i <= 8; ++i)
+        {
+            const std::string suffix = std::to_string(i) + "_" + std::to_string(i) + "_0";
+            EXPECT_ANY_THROW(log.addPart({"block" + std::to_string(i)}, part("all_" + suffix)));
+        }
+
+        log.shutdown();
+    }
+
+    {
+        /// Restart on a disk where files can be created but not destroyed: the
+        /// compaction writes its marker and snapshot, reopens the snapshot and switches
+        /// over to it, and then fails to remove - and to empty - every stale
+        /// pre-snapshot file. The process then restarts with those stale files (and the
+        /// active marker) still on disk.
+        auto disk = std::make_shared<DiskFailingExistingFileCleanup>("no-cleanup", work_dir);
+        MergeTreeDeduplicationLog log("dedup_logs", /*deduplication_window=*/ 1, format_version, disk);
+        log.load();
+        EXPECT_ANY_THROW(log.addPart({"block9"}, part("all_9_9_0")));
+        log.shutdown();
+    }
+
+    {
+        /// The new process must not silently replay the stale pre-snapshot files as
+        /// normal history: the marker is still active, so the whole history is
+        /// discarded. The committed "block1" is forgotten (its retry is accepted
+        /// again - visible and safe), and deduplication restarts cleanly.
+        auto disk = std::make_shared<DiskLocal>("healthy", work_dir);
+        MergeTreeDeduplicationLog log("dedup_logs", /*deduplication_window=*/ 1, format_version, disk);
+        log.load();
+
+        EXPECT_TRUE(log.addPart({"block1"}, part("all_10_10_0")).empty());
+        EXPECT_FALSE(log.addPart({"block1"}, part("all_11_11_0")).empty());
+
+        log.shutdown();
     }
 
     std::filesystem::remove_all(work_dir);
