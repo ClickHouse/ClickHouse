@@ -161,7 +161,7 @@ void SerializationObjectCombinedPath::deserializeBinaryBulkWithMultipleStreams(
         literal_column, rows_offset, limit, nested_settings, combined_state->literal_state, cache);
 
     /// Deserialize sub-object into a temporary column.
-    ColumnPtr sub_object_column = sub_object_type->createColumn();
+    ColumnPtr sub_object_column = sub_object_type->createColumn(*sub_object_serialization);
     sub_object_serialization->deserializeBinaryBulkWithMultipleStreams(
         sub_object_column, rows_offset, limit, nested_settings, combined_state->sub_object_state, cache);
 

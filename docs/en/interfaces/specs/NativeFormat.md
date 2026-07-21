@@ -1367,6 +1367,8 @@ There are two kinds of path:
 - **Typed paths** are declared in the type string, for example `JSON(a UInt32, b String)`, and decoded in their declared type. A path name containing dots is backtick-quoted in the type string.
 - **Dynamic paths** are discovered at runtime and each decoded as a [Dynamic](#dynamic) column.
 
+Typed paths are always materialized to their regular dense columns before `JSON` is written in the `Native` format. MergeTree parts may store an individual declared path with sparse serialization, but that per-path choice is not added to the outer column's `Native` kind stack and does not change the wire layout below.
+
 In FLATTENED mode there is **no shared-data column** (that overflow store belongs to the non-flat V2/V3 Object encodings). Every path is a full column of `num_rows` values.
 
 ```text

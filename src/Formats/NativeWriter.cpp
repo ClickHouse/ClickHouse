@@ -11,6 +11,7 @@
 #include <Formats/NativeWriter.h>
 
 #include <Common/typeid_cast.h>
+#include <Columns/ColumnObject.h>
 #include <Columns/ColumnSparse.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnReplicated.h>
@@ -25,6 +26,37 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+}
+
+namespace
+{
+
+ColumnPtr removeSparseFromObjectTypedPaths(const ColumnPtr & column)
+{
+    if (const auto * replicated = typeid_cast<const ColumnReplicated *>(column.get()))
+    {
+        return ColumnReplicated::create(
+            removeSparseFromObjectTypedPaths(replicated->getNestedColumn()),
+            replicated->getIndexesColumn());
+    }
+
+    if (const auto * tuple = typeid_cast<const ColumnTuple *>(column.get()))
+    {
+        if (tuple->tupleSize() == 0)
+            return column;
+
+        auto columns = tuple->getColumnsCopy();
+        for (auto & element : columns)
+            element = removeSparseFromObjectTypedPaths(element);
+        return ColumnTuple::create(columns);
+    }
+
+    if (typeid_cast<const ColumnObject *>(column.get()))
+        return recursiveRemoveSparse(column);
+
+    return column;
+}
+
 }
 
 
@@ -110,6 +142,9 @@ std::tuple<SerializationPtr, SerializationInfoPtr, ColumnPtr> NativeWriter::getS
             if (column.type->isNullable())
                 result_column = recursiveRemoveSparse(result_column);
         }
+
+        /// Typed paths in `JSON` have no recursive kind-stack representation in `Native`.
+        result_column = removeSparseFromObjectTypedPaths(result_column);
 
         auto info = column.type->getSerializationInfo(*result_column);
         return {column.type->getSerialization(*info), info, result_column};

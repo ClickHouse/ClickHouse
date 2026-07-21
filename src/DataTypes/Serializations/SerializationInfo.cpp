@@ -381,7 +381,9 @@ SerializationInfoByName::SerializationInfoByName(const NamesAndTypesList & colum
 
     for (const auto & column : columns)
     {
-        if (settings.canUseSparseSerialization(*column.type))
+        if (settings.canUseSparseSerialization(*column.type)
+            || (settings.version >= MergeTreeSerializationInfoVersion::WITH_SUBCOLUMNS
+                && column.type->hasSparseSerializationSubcolumns()))
             emplace(column.name, column.type->createSerializationInfo(settings));
     }
 }

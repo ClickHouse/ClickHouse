@@ -4,6 +4,8 @@
 #include <Core/NamesAndTypes.h>
 #include <DataTypes/Serializations/ISerialization.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
+#include <DataTypes/Serializations/SerializationInfoObject.h>
+#include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <IO/WriteBufferFromString.h>
@@ -235,6 +237,33 @@ TEST(SerializationInfoByNameJSON, WriteJSONCanBeReadBack)
     EXPECT_TRUE(restored.getSettings().propagate_types_serialization_versions_to_nested_types);
     EXPECT_NE(restored.tryGet("string\"with\\escapes"), nullptr);
     EXPECT_NE(restored.tryGet("tuple"), nullptr);
+}
+
+TEST(SerializationInfoObject, EnabledOnlyForSubcolumnsVersion)
+{
+    auto json_type = DataTypeFactory::instance().get("JSON(x Nullable(String), y String, max_dynamic_paths=0)");
+    NamesAndTypesList columns{{"j", json_type}};
+
+    SerializationInfoSettings settings;
+    settings.ratio_of_defaults_for_sparse = 0.5;
+    settings.choose_kind = true;
+    settings.version = MergeTreeSerializationInfoVersion::WITH_TYPES;
+
+    SerializationInfoByName old_infos(columns, settings);
+    EXPECT_EQ(old_infos.tryGet("j"), nullptr);
+
+    settings.version = MergeTreeSerializationInfoVersion::WITH_SUBCOLUMNS;
+    SerializationInfoByName infos(columns, settings);
+    const auto * object_info = typeid_cast<const SerializationInfoObject *>(infos.tryGet("j").get());
+    ASSERT_NE(object_info, nullptr);
+    EXPECT_FALSE(object_info->getSettings().choose_kind);
+    EXPECT_TRUE(object_info->getTypedPathInfo("x")->getSettings().choose_kind);
+
+    WriteBufferFromOwnString out;
+    infos.writeJSON(out);
+    auto restored = SerializationInfoByName::readJSONFromString(columns, out.str());
+    EXPECT_EQ(restored.getVersion(), MergeTreeSerializationInfoVersion::WITH_SUBCOLUMNS);
+    EXPECT_NE(typeid_cast<const SerializationInfoObject *>(restored.tryGet("j").get()), nullptr);
 }
 
 /// Malformed kind tests.

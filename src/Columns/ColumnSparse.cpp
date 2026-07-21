@@ -2,6 +2,7 @@
 
 #include <Columns/ColumnCompressed.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnObject.h>
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnReplicated.h>
@@ -984,6 +985,36 @@ ColumnPtr recursiveRemoveSparse(const ColumnPtr & column)
         return ColumnTuple::create(columns);
     }
 
+    if (const auto * column_object = typeid_cast<const ColumnObject *>(column.get()))
+    {
+        UnorderedMapWithMemoryTracking<String, ColumnPtr> typed_paths;
+        typed_paths.reserve(column_object->getTypedPaths().size());
+        bool changed = false;
+        for (const auto & [path, path_column] : column_object->getTypedPaths())
+        {
+            auto full_path_column = recursiveRemoveSparse(path_column);
+            changed |= full_path_column.get() != path_column.get();
+            typed_paths[path] = std::move(full_path_column);
+        }
+
+        if (!changed)
+            return column;
+
+        UnorderedMapWithMemoryTracking<String, ColumnPtr> dynamic_paths;
+        dynamic_paths.reserve(column_object->getDynamicPaths().size());
+        for (const auto & [path, path_column] : column_object->getDynamicPaths())
+            dynamic_paths[path] = path_column;
+
+        return ColumnObject::create(
+            typed_paths,
+            dynamic_paths,
+            column_object->getSharedDataPtr(),
+            column_object->getMaxDynamicPaths(),
+            column_object->getGlobalMaxDynamicPaths(),
+            column_object->getMaxDynamicTypes(),
+            column_object->getStatistics());
+    }
+
     return column->convertToFullColumnIfSparse();
 }
 
@@ -999,6 +1030,15 @@ bool recursiveHasSparse(const ColumnPtr & column)
     {
         for (const auto & element : column_tuple->getColumns())
             if (recursiveHasSparse(element))
+                return true;
+
+        return false;
+    }
+
+    if (const auto * column_object = typeid_cast<const ColumnObject *>(column.get()))
+    {
+        for (const auto & [_, path_column] : column_object->getTypedPaths())
+            if (recursiveHasSparse(path_column))
                 return true;
 
         return false;

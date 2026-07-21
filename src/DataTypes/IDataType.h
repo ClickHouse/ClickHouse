@@ -128,6 +128,10 @@ public:
     /// TODO: support more types.
     virtual bool supportsSparseSerialization() const { return !haveSubtypes(); }
 
+    /// Whether serialization info should be collected for sparsifiable subcolumns
+    /// even though this type itself cannot use sparse serialization.
+    virtual bool hasSparseSerializationSubcolumns() const { return false; }
+
     virtual bool canBeInsideSparseColumns() const { return supportsSparseSerialization(); }
 
     SerializationPtr getDefaultSerialization() const;

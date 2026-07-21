@@ -404,7 +404,7 @@ MutableSerializationInfoPtr DataTypeTuple::createSerializationInfo(const Seriali
     for (const auto & elem : elems)
         infos.push_back(elem->createSerializationInfo(settings));
 
-    return std::make_shared<SerializationInfoTuple>(std::move(infos), names);
+    return std::make_shared<SerializationInfoTuple>(std::move(infos), names, settings);
 }
 
 SerializationInfoPtr DataTypeTuple::getSerializationInfo(const IColumn & column) const

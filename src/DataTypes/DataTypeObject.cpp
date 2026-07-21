@@ -4,14 +4,19 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/Serializations/SerializationJSON.h>
+#include <DataTypes/Serializations/SerializationInfoObject.h>
 #include <DataTypes/Serializations/SerializationObjectTypedPath.h>
 #include <DataTypes/Serializations/SerializationObjectDynamicPath.h>
 #include <DataTypes/Serializations/SerializationSubObject.h>
 #include <DataTypes/Serializations/SerializationObjectDistinctPaths.h>
 #include <DataTypes/Serializations/SerializationObjectCombinedPath.h>
 #include <DataTypes/Serializations/SerializationNamed.h>
+#include <DataTypes/Serializations/SerializationDetached.h>
+#include <DataTypes/Serializations/SerializationReplicated.h>
+#include <DataTypes/Serializations/SerializationWrapper.h>
 #include <Columns/ColumnObject.h>
 #include <Columns/ColumnDynamic.h>
+#include <Columns/ColumnReplicated.h>
 #include <Interpreters/castColumn.h>
 #include <Common/CurrentThread.h>
 #include <Common/SipHash.h>
@@ -138,10 +143,34 @@ bool DataTypeObject::equals(const IDataType & rhs) const
 
 SerializationPtr DataTypeObject::doGetSerialization(const SerializationInfoSettings & settings) const
 {
+    return getSerializationImpl(settings, nullptr);
+}
+
+SerializationPtr DataTypeObject::getSerialization(const SerializationInfo & info) const
+{
+    const auto * object_info = typeid_cast<const SerializationInfoObject *>(&info);
+    auto kinds = info.getKindStack();
+    std::erase(kinds, ISerialization::Kind::SPARSE);
+    return wrapSerializationBasedOnKindStack(getSerializationImpl(info.getSettings(), object_info), kinds, info.getSettings());
+}
+
+SerializationPtr DataTypeObject::getSerializationImpl(
+    const SerializationInfoSettings & settings,
+    const SerializationInfoObject * serialization_info) const
+{
     std::unordered_map<String, SerializationPtr> typed_paths_serializations;
     typed_paths_serializations.reserve(typed_paths.size());
     for (const auto & [path, type] : typed_paths)
-        typed_paths_serializations[path] = settings.propagate_types_serialization_versions_to_nested_types ? type->getSerialization(settings) : type->getDefaultSerialization();
+    {
+        if (serialization_info)
+            typed_paths_serializations[path] = type->getSerialization(*serialization_info->getTypedPathInfo(path));
+        else
+        {
+            typed_paths_serializations[path] = settings.propagate_types_serialization_versions_to_nested_types
+                ? type->getSerialization(settings)
+                : type->getDefaultSerialization();
+        }
+    }
 
     SerializationPtr dynamic_serialization = settings.propagate_types_serialization_versions_to_nested_types
         ? getDynamicType()->getSerialization(settings)
@@ -185,6 +214,25 @@ SerializationPtr DataTypeObject::doGetSerialization(const SerializationInfoSetti
                 buildJSONExtractTree<DummyJSONParser>(getPtr(), "JSON serialization"));
 #endif
     }
+}
+
+MutableSerializationInfoPtr DataTypeObject::createSerializationInfo(const SerializationInfoSettings & settings) const
+{
+    if (settings.version < MergeTreeSerializationInfoVersion::WITH_SUBCOLUMNS)
+        return IDataType::createSerializationInfo(settings);
+
+    Names paths;
+    paths.reserve(typed_paths.size());
+    for (const auto & [path, _] : typed_paths)
+        paths.push_back(path);
+    std::sort(paths.begin(), paths.end());
+
+    MutableSerializationInfos infos;
+    infos.reserve(paths.size());
+    for (const auto & path : paths)
+        infos.push_back(typed_paths.at(path)->createSerializationInfo(settings));
+
+    return std::make_shared<SerializationInfoObject>(std::move(infos), std::move(paths), settings);
 }
 
 String DataTypeObject::getSchemaFormatString() const
@@ -266,6 +314,38 @@ MutableColumnPtr DataTypeObject::createColumn() const
     typed_path_columns.reserve(typed_paths.size());
     for (const auto & [path, type] : typed_paths)
         typed_path_columns[path] = type->createColumn();
+
+    return ColumnObject::create(std::move(typed_path_columns), max_dynamic_paths, max_dynamic_types);
+}
+
+MutableColumnPtr DataTypeObject::createColumn(const ISerialization & serialization) const
+{
+    const auto * current_serialization = &serialization;
+    while (const auto * wrapper = dynamic_cast<const SerializationWrapper *>(current_serialization))
+        current_serialization = wrapper->getNested().get();
+
+    if (const auto * replicated = typeid_cast<const SerializationReplicated *>(current_serialization))
+        return ColumnReplicated::create(createColumn(*replicated->getNested()), ColumnUInt8::create());
+
+    if (const auto * detached = typeid_cast<const SerializationDetached *>(current_serialization))
+        return createColumn(*detached->getNested());
+
+    const std::unordered_map<String, SerializationPtr> * typed_path_serializations;
+    String paths_prefix;
+    if (const auto * sub_object = typeid_cast<const SerializationSubObject *>(current_serialization))
+    {
+        typed_path_serializations = &sub_object->getTypedPathsSerializations();
+        paths_prefix = sub_object->getPathsPrefix();
+    }
+    else
+    {
+        typed_path_serializations = &assert_cast<const SerializationObject &>(*current_serialization).getTypedPathsSerializations();
+    }
+
+    UnorderedMapWithMemoryTracking<String, MutableColumnPtr> typed_path_columns;
+    typed_path_columns.reserve(typed_paths.size());
+    for (const auto & [path, type] : typed_paths)
+        typed_path_columns[path] = type->createColumn(*typed_path_serializations->at(paths_prefix + path));
 
     return ColumnObject::create(std::move(typed_path_columns), max_dynamic_paths, max_dynamic_types);
 }

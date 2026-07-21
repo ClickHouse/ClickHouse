@@ -26,7 +26,7 @@ SerializationInfoSettings::SerializationInfoSettings(
     , map_serialization_version(map_serialization_version_)
     , propagate_types_serialization_versions_to_nested_types(propagate_types_serialization_versions_to_nested_types_)
 {
-    /// New type specialized serialization version is valid only when using MergeTreeSerializationInfoVersion::WITH_TYPES.
+    /// New type specialized serialization versions require at least `MergeTreeSerializationInfoVersion::WITH_TYPES`.
     /// For older versions, it is automatically defaulted to preserve compatibility.
     if (version < MergeTreeSerializationInfoVersion::WITH_TYPES)
     {
@@ -38,7 +38,7 @@ SerializationInfoSettings::SerializationInfoSettings(
 
 void SerializationInfoSettings::tryDowngradeToBasic()
 {
-    if (version == MergeTreeSerializationInfoVersion::BASIC)
+    if (version != MergeTreeSerializationInfoVersion::WITH_TYPES)
         return;
 
     bool no_specialization = string_serialization_version == MergeTreeStringSerializationVersion::SINGLE_STREAM

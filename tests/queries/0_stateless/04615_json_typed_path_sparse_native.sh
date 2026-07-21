@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+
+CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# shellcheck source=../shell_config.sh
+. "$CUR_DIR"/../shell_config.sh
+
+table="${CLICKHOUSE_TEST_UNIQUE_NAME}"
+
+${CLICKHOUSE_CLIENT} --multiquery --query "
+    DROP TABLE IF EXISTS ${table};
+    CREATE TABLE ${table}
+    (
+        j JSON(x Nullable(String), y String, max_dynamic_paths = 0)
+    )
+    ENGINE = MergeTree
+    ORDER BY tuple()
+    SETTINGS
+        ratio_of_defaults_for_sparse_serialization = 0.5,
+        serialization_info_version = 'with_subcolumns',
+        nullable_serialization_version = 'allow_sparse';
+    INSERT INTO ${table}
+    SELECT CAST(
+        if(number = 0, '{\"x\":\"value\",\"y\":\"dense\"}', '{\"x\":null,\"y\":\"dense\"}'),
+        'JSON(x Nullable(String), y String, max_dynamic_paths = 0)')
+    FROM numbers(100);
+"
+
+${CLICKHOUSE_CLIENT} --query "SELECT j FROM ${table} FORMAT Native" \
+    | ${CLICKHOUSE_LOCAL} --input-format Native --query \
+        "SELECT count(), countIf(j.x = 'value'), countIf(j.y = 'dense') FROM table"
+
+${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&query=SELECT+j+FROM+${table}+FORMAT+Native" \
+    | ${CLICKHOUSE_LOCAL} --input-format Native --query \
+        "SELECT count(), countIf(j.x = 'value'), countIf(j.y = 'dense') FROM table"
+
+${CLICKHOUSE_CLIENT} --query "DROP TABLE ${table}"

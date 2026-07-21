@@ -1421,7 +1421,7 @@ void QueryFuzzer::fuzzTableStorage(ASTStorage & storage)
     if (fuzz_rand() % 20 == 0)
         fuzz_setting("remove_empty_parts", UInt64(0));
     if (fuzz_rand() % 20 == 0)
-        fuzz_setting("serialization_info_version", String(fuzz_rand() % 2 == 0 ? "basic" : "with_types"));
+        fuzz_setting("serialization_info_version", String(pickRandomly(fuzz_rand, Strings{"basic", "with_types", "with_subcolumns"})));
     if (fuzz_rand() % 20 == 0)
         fuzz_setting("string_serialization_version", String(fuzz_rand() % 2 == 0 ? "single_stream" : "with_size_stream"));
     if (fuzz_rand() % 20 == 0)
