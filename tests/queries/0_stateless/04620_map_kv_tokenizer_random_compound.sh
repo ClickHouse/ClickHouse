@@ -13,9 +13,9 @@
 #
 # The m['key'] accessor families are compared only at optimize_functions_to_subcolumns=0 (arrayElement,
 # first-occurrence — the occurrence the index pins), same as 04617. The `eqset` family additionally
-# compares the OR-of-equals chain against its IN(...) form: the two are semantically equal but take
-# different index paths (an OR chain engages exact direct read; m['key'] IN (...) folds to the set path
-# and falls back to a scan), so folding must not change the result.
+# compares the OR-of-equals chain against its IN(...) form: the two are semantically equal and both
+# engage the index (each is an OR of exact m['key'] = vi lookups), so the OR-vs-IN rewrite must not
+# change the result.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -72,13 +72,16 @@ for TBL in t_def t_buckets; do
   for VAR in "idx_sub0:${SIDX}, optimize_functions_to_subcolumns=0" \
              "noidx_sub0:${SNO}, optimize_functions_to_subcolumns=0"; do
     vn="${VAR%%:*}"; vs="${VAR#*:}"
-    emit "eq_and_k" "$(eq a) || ' AND ' || $(ck b)"
-    emit "esw_or_v" "$(esw a) || ' OR ' || $(cv b)"
+    emit "eq_and_k"   "$(eq a) || ' AND ' || $(ck b)"
+    emit "esw_or_v"   "$(esw a) || ' OR ' || $(cv b)"
+    # m['key'] IN (...) mixed into AND / OR chains with other families.
+    emit "in_and_k"   "'m[unhex(''' || hex(a.1) || ''')] IN (unhex(''' || hex(a.2) || '''), unhex(''' || hex(b.2) || '''))' || ' AND ' || $(ck b)"
+    emit "in_or_ckv"  "'m[unhex(''' || hex(a.1) || ''')] IN (unhex(''' || hex(a.2) || '''), unhex(''' || hex(b.2) || '''))' || ' OR ' || $(ckv c)"
   done
 
   # eqset: OR-of-equals chain vs its IN(...) form, both index on and off (four variants, all at sub0).
-  # Same rows either way, but the OR chain engages exact direct read while IN falls back to a scan, so
-  # this checks the fold does not change the answer.
+  # Same rows either way; both engage the index (an OR of exact m['key'] = vi lookups), so this checks
+  # the OR-vs-IN rewrite does not change the answer.
   for VAR in "or_idx:${SIDX}, optimize_functions_to_subcolumns=0" \
              "or_noidx:${SNO}, optimize_functions_to_subcolumns=0"; do
     vn="${VAR%%:*}"; vs="${VAR#*:}"
