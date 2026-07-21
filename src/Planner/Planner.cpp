@@ -774,7 +774,7 @@ void applyTopKPushdownToPartialAggregation(
         nulls_directions.push_back(sort_description[i].nulls_direction);
     }
 
-    aggregating_step.applyLimitPushdown(Aggregator::Params::TopKParams{
+    aggregating_step.applyTopKOptimization(Aggregator::Params::TopKParams{
         .keys = limit,
         .directions = std::move(directions),
         .nulls_directions = std::move(nulls_directions),

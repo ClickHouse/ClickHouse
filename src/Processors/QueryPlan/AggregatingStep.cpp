@@ -181,7 +181,7 @@ void AggregatingStep::applyOrder(SortDescription sort_description_for_merging_, 
     params.top_k.reset();
 }
 
-void AggregatingStep::applyLimitPushdown(Aggregator::Params::TopKParams top_k)
+void AggregatingStep::applyTopKOptimization(Aggregator::Params::TopKParams top_k)
 {
     params.top_k = std::move(top_k);
 }
