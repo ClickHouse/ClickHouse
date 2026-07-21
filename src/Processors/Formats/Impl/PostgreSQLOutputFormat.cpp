@@ -99,11 +99,36 @@ void registerOutputFormatPostgreSQLWire(FormatFactory & factory)
 
     factory.setDocumentation("PostgreSQLWire", Documentation{
         .description = R"DOCS_MD(
+| Input | Output | Alias |
+|-------|--------|-------|
+| ✗     | ✔      |       |
+
 ## Description {#description}
+
+The `PostgreSQLWire` format serializes the result-set portion of the PostgreSQL wire protocol. It writes a
+`RowDescription` message containing column names and types, followed by one `DataRow` message for each result row.
+Values use their text representation, `NULL` values use the protocol's null-field encoding, and booleans are written as
+`t` or `f`.
+
+This is an output-only binary format intended for clients connected through ClickHouse's
+[PostgreSQL interface](/concepts/features/interfaces/postgresql). The interface selects `PostgreSQLWire` automatically
+and writes the surrounding protocol messages, such as authentication, command completion, and ready-for-query messages.
+It's not intended for displaying or storing query results as a standalone file.
 
 ## Example usage {#example-usage}
 
+After enabling the PostgreSQL interface, use a compatible client to execute a query:
+
+```shell
+psql -p 9005 -h 127.0.0.1 -U alice -d default \
+    -c "SELECT number, number % 2 = 0 AS even FROM numbers(3)"
+```
+
+The interface sends the result using `PostgreSQLWire` automatically.
+
 ## Format settings {#format-settings}
+
+There are no user-configurable format settings.
 )DOCS_MD"});
 }
 
