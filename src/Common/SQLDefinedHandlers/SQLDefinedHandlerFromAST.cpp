@@ -1,6 +1,7 @@
 #include <Common/SQLDefinedHandlers/SQLDefinedHandlerFromAST.h>
 
 #include <Parsers/ASTCreateHandlerQuery.h>
+#include <Parsers/ASTCreateQuery.h>
 #include <Parsers/QueryParameterVisitor.h>
 
 #include <algorithm>
@@ -81,6 +82,18 @@ bool queryKindRequiresMutatingMethod(IAST::QueryKind kind)
     }
 }
 
+/// Whether the concrete query requires the handler to accept a mutating HTTP method. This refines
+/// `queryKindRequiresMutatingMethod` for the `Create` kind: `CREATE TEMPORARY TABLE` / `CREATE TEMPORARY VIEW`
+/// need only the `CREATE_TEMPORARY_TABLE` access flag, which `ContextAccess` still allows under `readonly = 2`
+/// (the mode a safe HTTP method such as `GET` sets); they are rejected only under `readonly = 1`. So a temporary
+/// -object create is runnable over `GET` and must not require a mutating method here.
+bool queryRequiresMutatingMethod(const IAST & query)
+{
+    if (const auto * create = query.as<ASTCreateQuery>(); create && create->isTemporary())
+        return false;
+    return queryKindRequiresMutatingMethod(query.getQueryKind());
+}
+
 /// The HTTP methods that are allowed to run modifying queries (see `setReadOnlyIfHTTPMethodIdempotent`).
 bool isMutatingHTTPMethod(const String & method)
 {
@@ -129,7 +142,7 @@ SQLDefinedHandlerPtr makeSQLDefinedHandler(const ASTCreateHandlerQuery & create)
     /// A handler whose query modifies data must accept at least one mutating HTTP method. Otherwise, the HTTP
     /// execution path enables `readonly` for every allowed (safe) method, and the handler could never run its
     /// query - so reject it here with a clear error instead of silently creating a broken handler.
-    if (queryKindRequiresMutatingMethod(create.query->getQueryKind())
+    if (queryRequiresMutatingMethod(*create.query)
         && std::none_of(handler->methods.begin(), handler->methods.end(), isMutatingHTTPMethod))
     {
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
