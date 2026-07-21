@@ -61,8 +61,8 @@ def test_postgresql_database_engine_respects_remote_host_filter(started_cluster)
     )
     assert "UNACCEPTABLE_URL" in error
 
-    # The standalone MaterializedPostgreSQL table engine (a separate registration path,
-    # already covered via `StoragePostgreSQL::getConfiguration` -- kept as a regression check).
+    # The standalone MaterializedPostgreSQL table engine (a separate registration path;
+    # the host filter is enforced by `StoragePostgreSQL::getConfiguration`).
     node.query("DROP TABLE IF EXISTS mpg_tbl_blocked SYNC")
     error = node.query_and_get_error(
         f"""
@@ -130,3 +130,49 @@ def test_materialized_postgresql_named_collection_addresses_expr(started_cluster
     )
     assert_eq_with_retry(node, "SELECT count() FROM mpg_nc_allowed_db.test_table", "10", retry_count=120)
     node.query("DROP DATABASE mpg_nc_allowed_db SYNC")
+
+
+def test_materialized_postgresql_table_engine_named_collection_addresses_expr(started_cluster):
+    # The standalone MaterializedPostgreSQL table engine builds its replication connection
+    # string from `host` / `port` the same way the database engine does, so it needs the same
+    # `addresses_expr` canonicalization and multi-address rejection (otherwise a named collection
+    # with `addresses_expr` reaches `formatConnectionString` with `:0`). See `named_collections.xml`.
+
+    # A blocked host inside `addresses_expr` is rejected by the host filter.
+    node.query("DROP TABLE IF EXISTS mpg_nc_blocked_tbl SYNC")
+    error = node.query_and_get_error(
+        """
+        CREATE TABLE mpg_nc_blocked_tbl (id Int32, value Int32)
+        ENGINE = MaterializedPostgreSQL(mpg_nc_blocked, table='test_table')
+        ORDER BY id
+        """,
+        settings={"allow_experimental_materialized_postgresql_table": 1},
+    )
+    assert "UNACCEPTABLE_URL" in error
+
+    # `addresses_expr` expanding to several addresses cannot feed the single replication
+    # connection this engine keeps, so it is rejected up front instead of connecting to `:0`.
+    node.query("DROP TABLE IF EXISTS mpg_nc_multiple_tbl SYNC")
+    error = node.query_and_get_error(
+        """
+        CREATE TABLE mpg_nc_multiple_tbl (id Int32, value Int32)
+        ENGINE = MaterializedPostgreSQL(mpg_nc_multiple, table='test_table')
+        ORDER BY id
+        """,
+        settings={"allow_experimental_materialized_postgresql_table": 1},
+    )
+    assert "BAD_ARGUMENTS" in error
+
+    # The whitelisted host works end-to-end: the single `addresses_expr` address is
+    # canonicalized into `host` / `port` and the table is materialized.
+    node.query("DROP TABLE IF EXISTS mpg_nc_allowed_tbl SYNC")
+    node.query(
+        """
+        CREATE TABLE mpg_nc_allowed_tbl (id Int32, value Int32)
+        ENGINE = MaterializedPostgreSQL(mpg_nc_allowed, table='test_table')
+        ORDER BY id
+        """,
+        settings={"allow_experimental_materialized_postgresql_table": 1},
+    )
+    assert_eq_with_retry(node, "SELECT count() FROM mpg_nc_allowed_tbl", "10", retry_count=120)
+    node.query("DROP TABLE mpg_nc_allowed_tbl SYNC")

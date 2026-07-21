@@ -639,6 +639,22 @@ void registerStorageMaterializedPostgreSQL(StorageFactory & factory)
         /// The `PostgreSQLSettings` are not passed: this engine does not use a connection pool,
         /// so the `postgresql_*` pool settings are rejected instead of being silently ignored.
         auto configuration = StoragePostgreSQL::getConfiguration(args.engine_args, args.getContext(), /*storage_settings=*/ nullptr);
+
+        /// A named collection may specify the endpoint as `addresses_expr`, which fills only
+        /// `configuration.addresses` and leaves `host` / `port` empty, while the connection string
+        /// below is built from `host` / `port`. This engine keeps a single replication connection,
+        /// so exactly one address is accepted; canonicalize it back into `host` / `port`. This mirrors
+        /// `registerDatabaseMaterializedPostgreSQL`.
+        if (configuration.host.empty())
+        {
+            if (configuration.addresses.size() != 1)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                "Engine `MaterializedPostgreSQL` requires a single `host:port` address, but `addresses_expr` defines {} addresses",
+                                configuration.addresses.size());
+            configuration.host = configuration.addresses.front().first;
+            configuration.port = configuration.addresses.front().second;
+        }
+
         auto connection_info = postgres::formatConnectionString(
             configuration.database,
             configuration.host,
