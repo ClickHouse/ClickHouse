@@ -31,6 +31,7 @@
 #include <Storages/StorageDummy.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTColumnDeclaration.h>
+#include <Parsers/ASTWithAlias.h>
 #include <Parsers/ASTConstraintDeclaration.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTIdentifier.h>
@@ -1287,17 +1288,31 @@ bool AlterCommand::isTTLAlter(const StorageInMemoryMetadata & metadata) const
     {
         if (!metadata.table_ttl.definition_ast)
             return true;
-        /// If TTL had not been changed, do not require mutations
-        return metadata.table_ttl.definition_ast->formatWithSecretsOneLine() != ttl->formatWithSecretsOneLine();
+        /// If TTL had not been changed, do not require mutations. Compare in the backward-compatible
+        /// canonical form so a parentheses-only rewrite of a TTL stored by a version affected by
+        /// #92340 (`TTL (d + ...)` vs `TTL d + ...`) is not treated as a real change that would
+        /// schedule an unnecessary `MATERIALIZE TTL` mutation.
+        return TTLTableDescription::formatDefinitionBackwardCompatibleOneLine(metadata.table_ttl.definition_ast)
+            != TTLTableDescription::formatDefinitionBackwardCompatibleOneLine(ttl);
     }
 
     if (!ttl || type != MODIFY_COLUMN)
         return false;
 
+    /// Column TTL expressions are compared with the same redundant top-level parentheses stripped
+    /// (`TTL (d + ...)` vs `TTL d + ...`), for the same #92340 backward-compatibility reason.
+    auto column_ttl_canonical = [] (const ASTPtr & ttl_ast)
+    {
+        auto cloned = ttl_ast->clone();
+        stripParenthesesUnlessAliased(cloned);
+        return cloned->formatWithSecretsOneLine();
+    };
+
     bool column_ttl_changed = true;
+    const auto new_column_ttl = column_ttl_canonical(ttl);
     for (const auto & [name, ttl_ast] : metadata.columns.getColumnTTLs())
     {
-        if (name == column_name && ttl->formatWithSecretsOneLine() == ttl_ast->formatWithSecretsOneLine())
+        if (name == column_name && new_column_ttl == column_ttl_canonical(ttl_ast))
         {
             column_ttl_changed = false;
             break;

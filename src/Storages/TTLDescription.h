@@ -147,6 +147,11 @@ struct TTLTableDescription
     /// artificial parentheses from each TTL element's expression so `TTL d + ...` and
     /// `TTL (d + ...)` compare equal, while genuinely different TTLs still differ.
     String formatBackwardCompatibleOneLine() const;
+
+    /// Same canonicalization as `formatBackwardCompatibleOneLine`, but for an arbitrary TTL
+    /// definition AST (an `ASTExpressionList` of `ASTTTLElement`). Reused where the comparison
+    /// happens on a raw AST rather than a `TTLTableDescription` (e.g. `AlterCommand::isTTLAlter`).
+    static String formatDefinitionBackwardCompatibleOneLine(const ASTPtr & definition_ast);
 };
 
 }

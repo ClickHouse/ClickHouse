@@ -368,6 +368,11 @@ TTLTableDescription & TTLTableDescription::operator=(const TTLTableDescription &
 
 String TTLTableDescription::formatBackwardCompatibleOneLine() const
 {
+    return formatDefinitionBackwardCompatibleOneLine(definition_ast);
+}
+
+String TTLTableDescription::formatDefinitionBackwardCompatibleOneLine(const ASTPtr & definition_ast)
+{
     if (!definition_ast)
         return "";
 
