@@ -53,6 +53,8 @@ public:
 
     StoragePtr getTable() const { return table; }
 
+    const String & getKeyColumnName() const { return key_column; }
+
 protected:
     DBType type;
     StoragePtr table;
@@ -87,7 +89,7 @@ public:
 /// Description of a Redis database mapping from the server configuration.
 struct MapDescription
 {
-    DBType db_type;
+    DBType db_type = DBType::STRING;
     String clickhouse_db;
     String clickhouse_table;
     String key_column;
