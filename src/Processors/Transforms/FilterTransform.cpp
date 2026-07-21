@@ -16,6 +16,7 @@
 #include <Processors/Merges/Algorithms/MergeTreeReadInfo.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Functions/IFunction.h>
+#include <Common/FailPoint.h>
 
 namespace ProfileEvents
 {
@@ -25,6 +26,11 @@ namespace ProfileEvents
 
 namespace DB
 {
+
+namespace FailPoints
+{
+    extern const char filter_transform_pause[];
+}
 
 namespace ErrorCodes
 {
@@ -197,6 +203,8 @@ void FilterTransform::doTransform(Chunk & chunk)
             stopReading();
             return;
         }
+
+        FailPointInjection::pauseFailPoint(FailPoints::filter_transform_pause);
 
         columns = block.getColumns();
         types = block.getDataTypes();
