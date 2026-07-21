@@ -42,6 +42,28 @@ $CLICKHOUSE_CLIENT -q "SELECT (SELECT count() FROM drift_src), (SELECT count() F
 for _ in $(seq 1 4); do seq 1 100; done | $CLICKHOUSE_CLIENT $SETTINGS -q "INSERT INTO drift_src FORMAT TSV"
 $CLICKHOUSE_CLIENT -q "SELECT (SELECT count() FROM drift_src), (SELECT count() FROM drift_inner), (SELECT count() FROM drift_dst)"
 
+$CLICKHOUSE_CLIENT -q "TRUNCATE TABLE drift_src"
+$CLICKHOUSE_CLIENT -q "TRUNCATE TABLE drift_inner"
+$CLICKHOUSE_CLIENT -q "TRUNCATE TABLE drift_dst"
+
+# The same scenario, but the view emits its output in multiple chunks: with a small max_block_size
+# the GROUP BY produces 10-row blocks, and a small min_insert_block_size_rows makes the view-level
+# squashing pass each of them through. Each chunk carries a clone of the same source-level
+# deduplication info, distinguished only by consecutive view-block numbers. The nested INSERT
+# behind the alias hop squashes with the target-side threshold - raised back to the default by
+# min_insert_block_size_rows_for_materialized_views - so it merges the stamped chunks, extending
+# the view-block range of the token. The cached data hashes must survive that merge, or the hash
+# is recomputed from the re-anchored (drifted) block: without the fix in
+# DeduplicationInfo::TokenDefinition::doExtend the second insert is not deduplicated at dst.
+# max_threads=1 keeps the chunk order, and thus the merged token identity, deterministic.
+MULTICHUNK_SETTINGS="$SETTINGS --async_insert=0 --max_block_size=10 --max_threads=1 --min_insert_block_size_rows=10 --min_insert_block_size_rows_for_materialized_views=1000000"
+
+for _ in $(seq 1 4); do seq 1 100; done | $CLICKHOUSE_CLIENT $MULTICHUNK_SETTINGS -q "INSERT INTO drift_src FORMAT TSV"
+$CLICKHOUSE_CLIENT -q "SELECT (SELECT count() FROM drift_src), (SELECT count() FROM drift_inner), (SELECT count() FROM drift_dst)"
+
+for _ in $(seq 1 4); do seq 1 100; done | $CLICKHOUSE_CLIENT $MULTICHUNK_SETTINGS -q "INSERT INTO drift_src FORMAT TSV"
+$CLICKHOUSE_CLIENT -q "SELECT (SELECT count() FROM drift_src), (SELECT count() FROM drift_inner), (SELECT count() FROM drift_dst)"
+
 $CLICKHOUSE_CLIENT -q "DROP TABLE drift_mv2"
 $CLICKHOUSE_CLIENT -q "DROP TABLE drift_mv1"
 $CLICKHOUSE_CLIENT -q "DROP TABLE drift_alias"

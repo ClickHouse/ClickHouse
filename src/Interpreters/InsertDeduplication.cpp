@@ -1089,7 +1089,19 @@ void DeduplicationInfo::TokenDefinition::doExtend(const TokenDefinition & right)
     if (left_last_extra == right_last_extra)
         return;
 
-    data_hash_batch.reset(); // invalidate cached data hash as the token's data has changed
+    /// A VIEW_NUMBER range extension merges chunks a view produced from the same source block:
+    /// `canBeExtended` required all preceding extras (including SOURCE_NUMBER) to be equal, and the
+    /// cached hash is computed over the source block's token range, not over the view-output chunks.
+    /// So when both sides carry the same cached hash, it is still valid for the merged token — and it
+    /// must be kept: after the merge the info may be re-anchored to a block whose rows no longer
+    /// match the offsets (e.g. the nested INSERT behind an Alias hop), and recomputing would read
+    /// out of the block's bounds. For any other extension the token covers new data — invalidate.
+    const bool keep_cached_hash = left_last_extra.type == Extra::Type::VIEW_NUMBER
+        && data_hash_batch.has_value()
+        && right.data_hash_batch == data_hash_batch;
+
+    if (!keep_cached_hash)
+        data_hash_batch.reset(); // invalidate cached data hash as the token's data has changed
 
     // type is equal but values are different
     switch (left_last_extra.type)
