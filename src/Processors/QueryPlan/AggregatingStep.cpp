@@ -178,6 +178,9 @@ void AggregatingStep::applyOrder(SortDescription sort_description_for_merging_, 
     group_by_sort_description = std::move(group_by_sort_description_);
     explicit_sorting_required_for_aggregation_in_order = false;
 
+    /// In-order aggregation ignores the top-K heap and has a more efficient
+    /// optimization for this query shape: groups close in key order, so the
+    /// LIMIT cuts the read short (see optimizeLimitForAggregationInOrder).
     params.top_k.reset();
 }
 
