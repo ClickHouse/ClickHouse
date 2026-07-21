@@ -44,6 +44,17 @@ alice	250	0
 alice	100	0
 bob	75	0
 bob	50	1
+-- WITH: query-scoped aliases and CTEs stay visible in the following operators
+3
+alice	1
+alice	1
+bob	0
+bob	0
+charlie	1
+alice
+charlie
+2
+6
 -- AS and JOIN: table aliases are visible inside the same operator, following operators see the combined columns
 charlie	300
 -- ARRAY JOIN
@@ -68,4 +79,6 @@ charlie	300
 -- The resulting AST is the same as with nested subqueries
 SELECT * FROM (SELECT * FROM (SELECT customer, sum(amount) AS total FROM (SELECT * FROM (SELECT * FROM orders) WHERE equals(cancelled, 0)) GROUP BY customer) ORDER BY total DESC) LIMIT 3
 SELECT * FROM (SELECT * EXCEPT cancelled FROM (SELECT * REPLACE (plus(amount, 1) AS amount) FROM (SELECT * FROM orders))) AS t ALL LEFT JOIN big_orders AS b USING (customer)
+SELECT * FROM (SELECT * FROM (SELECT * FROM orders) ORDER BY amount DESC) LIMIT 1, 2
+WITH 100 AS threshold SELECT count() AS c FROM (WITH 100 AS threshold SELECT * FROM (WITH 100 AS threshold SELECT * FROM orders) WHERE greaterOrEquals(amount, threshold))
 -- Errors

@@ -91,10 +91,35 @@ std::optional<SelectUnionMode> parseSetOperationMode(IParser::Pos & pos, Expecte
     return std::nullopt;
 }
 
+/// The first SELECT of a query, possibly nested in unions: its WITH clause defines
+/// the query-scoped aliases and CTEs that must stay visible across pipe operators.
+const ASTSelectQuery * getFirstSelect(const IAST & query)
+{
+    if (const auto * select = query.as<ASTSelectQuery>())
+        return select;
+    if (const auto * union_query = query.as<ASTSelectWithUnionQuery>())
+        if (union_query->list_of_selects && !union_query->list_of_selects->children.empty())
+            return getFirstSelect(*union_query->list_of_selects->children.front());
+    return nullptr;
+}
+
 /// Create `SELECT <select_list> FROM (query) [AS alias]` - the input query becomes a subquery in the FROM clause.
 /// If `select_list` is nullptr, `SELECT *` is used. The alias is consumed and cleared.
+/// The WITH clause of the query is cloned onto the wrapping SELECT, so that query-scoped aliases and CTEs
+/// remain visible in the following pipe operators: WITH 10 AS threshold FROM t |> WHERE x < threshold.
 boost::intrusive_ptr<ASTSelectQuery> wrapQueryIntoSelect(ASTPtr query, String & pending_alias, ASTPtr select_list = nullptr)
 {
+    ASTPtr with_clause;
+    bool recursive_with = false;
+    if (const auto * inner_select = getFirstSelect(*query))
+    {
+        if (auto inner_with = inner_select->with())
+        {
+            with_clause = inner_with->clone();
+            recursive_with = inner_select->recursive_with;
+        }
+    }
+
     auto subquery = make_intrusive<ASTSubquery>(std::move(query));
     if (!pending_alias.empty())
     {
@@ -114,6 +139,13 @@ boost::intrusive_ptr<ASTSelectQuery> wrapQueryIntoSelect(ASTPtr query, String & 
     tables->children.push_back(std::move(element));
 
     auto select = make_intrusive<ASTSelectQuery>();
+    /// The children are added in the same order as in ParserSelectQuery,
+    /// because it is checked when the formatted AST is parsed back.
+    if (with_clause)
+    {
+        select->setExpression(ASTSelectQuery::Expression::WITH, std::move(with_clause));
+        select->recursive_with = recursive_with;
+    }
     select->setExpression(ASTSelectQuery::Expression::SELECT, select_list ? std::move(select_list) : makeAsteriskList());
     select->setExpression(ASTSelectQuery::Expression::TABLES, std::move(tables));
     return select;
@@ -361,9 +393,11 @@ bool parsePipeOperators(IParser::Pos & pos, ASTPtr & query, Expected & expected)
             }
 
             auto select = wrapQueryIntoSelect(std::move(query), pending_alias);
-            select->setExpression(ASTSelectQuery::Expression::LIMIT_LENGTH, std::move(length));
+            /// The offset is set first, matching the order of children in ParserSelectQuery,
+            /// because it is checked when the formatted AST is parsed back.
             if (offset)
                 select->setExpression(ASTSelectQuery::Expression::LIMIT_OFFSET, std::move(offset));
+            select->setExpression(ASTSelectQuery::Expression::LIMIT_LENGTH, std::move(length));
             query = wrapIntoUnion(std::move(select));
         }
         else if (s_offset.ignore(pos, expected))

@@ -45,6 +45,13 @@ FROM orders |> ORDER BY amount DESC |> LIMIT 2;
 FROM orders |> ORDER BY amount DESC |> LIMIT 2 OFFSET 1;
 FROM orders |> ORDER BY amount DESC |> LIMIT 100 |> OFFSET 3;
 
+SELECT '-- WITH: query-scoped aliases and CTEs stay visible in the following operators';
+WITH 100 AS threshold FROM orders |> WHERE amount >= threshold |> AGGREGATE count() AS c;
+WITH 100 AS threshold FROM orders |> SELECT customer, amount >= threshold AS is_big |> ORDER BY customer, is_big;
+WITH big AS (FROM orders |> WHERE amount >= 250) FROM big |> SELECT customer |> ORDER BY customer;
+WITH src AS (SELECT 'alice' AS customer) FROM orders |> AS o |> JOIN src AS s USING (customer) |> AGGREGATE count() AS c;
+WITH RECURSIVE r AS (SELECT 1 AS n UNION ALL SELECT n + 1 FROM r WHERE n < 3) FROM r |> AGGREGATE sum(n) AS s;
+
 SELECT '-- AS and JOIN: table aliases are visible inside the same operator, following operators see the combined columns';
 FROM orders |> AGGREGATE sum(amount) AS total GROUP BY customer |> AS agg |> JOIN (FROM orders |> WHERE amount = 300 |> SELECT customer AS c) AS big ON agg.customer = big.c |> SELECT customer, total;
 
@@ -72,6 +79,8 @@ FROM big_orders ORDER BY customer;
 SELECT '-- The resulting AST is the same as with nested subqueries';
 EXPLAIN SYNTAX oneline = 1 FROM orders |> WHERE cancelled = 0 |> AGGREGATE sum(amount) AS total GROUP BY customer |> ORDER BY total DESC |> LIMIT 3;
 EXPLAIN SYNTAX oneline = 1 FROM orders |> SET amount = amount + 1 |> DROP cancelled |> AS t |> LEFT JOIN big_orders AS b USING (customer);
+EXPLAIN SYNTAX oneline = 1 FROM orders |> ORDER BY amount DESC |> LIMIT 2 OFFSET 1;
+EXPLAIN SYNTAX oneline = 1 WITH 100 AS threshold FROM orders |> WHERE amount >= threshold |> AGGREGATE count() AS c;
 
 SELECT '-- Errors';
 FROM orders |> FOO; -- { clientError SYNTAX_ERROR }
