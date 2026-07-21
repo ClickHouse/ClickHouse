@@ -1,24 +1,24 @@
-cus_NffrFeUfNV2Hib	cus	NffrFeUfNV2Hib	('cus','NffrFeUfNV2Hib')
-pk_test_51TpZvW	pk_test	51TpZvW	('pk_test','51TpZvW')
+user_NffrFeUfNV2Hib	user	NffrFeUfNV2Hib	('user','NffrFeUfNV2Hib')
+ch_test_51TpZvW	ch_test	51TpZvW	('ch_test','51TpZvW')
 abc123		abc123	('','abc123')
 			('','')
-cus_	cus		('cus','')
+user_	user		('user','')
 _abc		abc	('','abc')
 0
-cus_NffrFeUfNV2Hib	1
-pk_test_51TpZvW	1
+user_NffrFeUfNV2Hib	1
+ch_test_51TpZvW	1
 abc123	1
 123abc	1
-cus_9x	1
+user_9x	1
 a_1_b	1
 	0
-cus_	0
+user_	0
 _abc	0
-cus__x	0
-1cus_x	0
-cus-x	0
-cus x	0
-cus_x!	0
+user__x	0
+1user_x	0
+user-x	0
+user x	0
+user_x!	0
 1
 0
 1
