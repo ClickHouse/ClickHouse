@@ -13,15 +13,22 @@ bool canPushStepThroughUnion(const UnionStep & union_step)
     const auto & union_output = *union_step.getOutputHeader();
     for (const auto & input_header : union_step.getInputHeaders())
     {
-        if (input_header->columns() != union_output.columns())
+        /// Reject a branch whose physical structure diverges from the union output, e.g. a
+        /// branch that constant-folds a column to Const (or diverges in Sparse/Replicated
+        /// representation). The union normalizes such a branch at runtime; pushing a step down
+        /// would give it a full input header and move the mismatch into the optimizer's own
+        /// header validation. blocksHaveEqualStructure compares column count, names, types and
+        /// physical column structure.
+        if (!blocksHaveEqualStructure(*input_header, union_output))
             return false;
+
+        /// blocksHaveEqualStructure compares types via IDataType::equals, which is tolerant of
+        /// two AggregateFunction types sharing a state representation but carrying different type
+        /// names (quantileExactTuple vs quantilesExactTuple(0.9)). The union coerces such a branch
+        /// at runtime, so also reject any column whose type name differs from the union output.
         for (size_t col = 0; col < input_header->columns(); ++col)
-        {
-            const auto & in_col = input_header->getByPosition(col);
-            const auto & out_col = union_output.getByPosition(col);
-            if (in_col.name != out_col.name || in_col.type->getName() != out_col.type->getName())
+            if (input_header->getByPosition(col).type->getName() != union_output.getByPosition(col).type->getName())
                 return false;
-        }
     }
     return true;
 }
@@ -40,8 +47,9 @@ size_t tryLiftUpUnion(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, c
         return 0;
 
     /// The rewrites below push the parent into every branch, assuming the union forwards each
-    /// branch unchanged. Bail out when a branch type only matches the union output loosely
-    /// (same state representation, different type name) -- see canPushStepThroughUnion.
+    /// branch unchanged. Bail out when a branch diverges from the union output either physically
+    /// (e.g. it drops a Const that diverged across branches) or only loosely by type name (same
+    /// state representation, different type name) -- see canPushStepThroughUnion.
     if (!canPushStepThroughUnion(*union_step))
         return 0;
 

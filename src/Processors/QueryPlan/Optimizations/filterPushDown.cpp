@@ -1,5 +1,6 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/IColumn.h>
+#include <Core/Block.h>
 #include <Common/assert_cast.h>
 
 #include <Common/logger_useful.h>
@@ -1181,8 +1182,10 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
     if (auto * union_step = typeid_cast<UnionStep *>(child.get()))
     {
         /// Cloning the filter into each branch assumes the union forwards every branch
-        /// unchanged. Bail out when a branch type matches the union output only loosely
-        /// (same state representation, different type name) -- see canPushStepThroughUnion.
+        /// unchanged. Bail out when a branch diverges from the union output either physically
+        /// (e.g. it drops a Const that diverged across branches, which would otherwise get a
+        /// full input header here and move the mismatch into the optimizer) or only loosely by
+        /// type name (same state representation, different type name) -- see canPushStepThroughUnion.
         if (!canPushStepThroughUnion(*union_step))
             return 0;
 

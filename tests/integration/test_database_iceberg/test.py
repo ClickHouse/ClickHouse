@@ -29,7 +29,7 @@ from pyiceberg.types import (
 from helpers.cluster import ClickHouseCluster
 from helpers.config_cluster import minio_secret_key, minio_access_key
 from helpers.client import QueryRuntimeException
-from helpers.s3_tools import get_file_contents
+from helpers.s3_tools import get_file_contents, list_s3_objects
 
 BASE_URL = "http://rest:8181/v1"
 
@@ -528,10 +528,23 @@ def test_select(started_cluster):
     )
 
     assert num_rows == int(
-        node.query(f"SELECT count() FROM {CATALOG_NAME}.`{namespace}.{table_name}`")
+        node.query(
+            # Regression test: a session temp table used to be pinned by the query context
+            # captured in the S3 client refresher and cached with the manifest file in the
+            # global IcebergMetadataFilesCache, crashing the graceful restart below with a
+            # use-after-free. The SELECT * is required: it reads a manifest file (count()
+            # alone is served from the snapshot summary). All statements must stay in one
+            # node.query call = one session.
+            f"CREATE TEMPORARY TABLE pin_me (x UInt8) ENGINE = Memory;"
+            f"SELECT * FROM {CATALOG_NAME}.`{namespace}.{table_name}` FORMAT Null;"
+            f"SELECT count() FROM {CATALOG_NAME}.`{namespace}.{table_name}`"
+        )
     )
 
     assert int(node.query(f"SELECT count() FROM system.iceberg_history WHERE table = '{namespace}.{table_name}' and database = '{CATALOG_NAME}'").strip()) == 1
+
+    # Replays the graceful shutdown; the teardown sanitizer check catches the UAF if it regresses.
+    node.restart_clickhouse()
 
 
 def test_hide_sensitive_info(started_cluster):
@@ -973,6 +986,52 @@ def test_create(started_cluster):
     create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
     create_clickhouse_iceberg_table(started_cluster, node, root_namespace, table_name, "(x String)")
     node.query(f"INSERT INTO {CATALOG_NAME}.`{root_namespace}.{table_name}` VALUES ('AAPL');", settings={"allow_insert_into_iceberg": 1, 'write_full_path_in_iceberg_metadata': 1})
+    assert node.query(f"SELECT * FROM {CATALOG_NAME}.`{root_namespace}.{table_name}`") == "AAPL\n"
+
+
+def test_create_gzip_metadata(started_cluster):
+    # Catalog-backed CREATE TABLE from ClickHouse with gzip metadata
+    # compression exercises IcebergMetadata::createInitial and the
+    # catalog->createTable registration. The first revision of the issue
+    # #109801 fix registered a hardcoded `v1.metadata.json` location while
+    # writing `v1.gz.metadata.json`, so a reopen through the catalog failed.
+    # This test creates the table from ClickHouse, reopens it through the
+    # catalog, and verifies insert/read succeeds.
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_create_gzip_metadata_{uuid.uuid4()}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+    create_clickhouse_iceberg_table(
+        started_cluster,
+        node,
+        root_namespace,
+        table_name,
+        "(x String)",
+        additional_settings={"iceberg_metadata_compression_method": "gzip"},
+    )
+    node.query(
+        f"INSERT INTO {CATALOG_NAME}.`{root_namespace}.{table_name}` VALUES ('AAPL');",
+        settings={
+            "allow_insert_into_iceberg": 1,
+            "write_full_path_in_iceberg_metadata": 1,
+            "iceberg_metadata_compression_method": "gzip",
+        },
+    )
+    assert node.query(f"SELECT * FROM {CATALOG_NAME}.`{root_namespace}.{table_name}`") == "AAPL\n"
+
+    # The initial metadata ClickHouse registered with the catalog must use the
+    # spec `gz` extension, and the catalog must point at the file that exists.
+    metadata_objects = list_s3_objects(
+        started_cluster.minio_client, "warehouse-rest", f"{table_name}/metadata/"
+    )
+    assert any(obj.endswith(".gz.metadata.json") for obj in metadata_objects), metadata_objects
+    assert not any(obj.endswith(".gzip.metadata.json") for obj in metadata_objects), metadata_objects
+
+    # Reopen through the catalog (fresh database) and confirm read still works.
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
     assert node.query(f"SELECT * FROM {CATALOG_NAME}.`{root_namespace}.{table_name}`") == "AAPL\n"
 
 
