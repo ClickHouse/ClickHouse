@@ -1,0 +1,8 @@
+-- 1. omitted columns over loop(secret), no access on the local target: rejected
+1
+-- 1. omitted columns over loop(secret), with access: inferred from the local target
+x	UInt64
+-- 2. explicit columns over loop(secret), no access on the local target: still rejected at create
+1
+-- 2. explicit columns over loop(secret), with access: allowed
+1

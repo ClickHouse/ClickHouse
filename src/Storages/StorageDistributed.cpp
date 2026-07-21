@@ -2498,6 +2498,10 @@ void registerStorageDistributed(StorageFactory & factory)
         ASTPtr sharding_key_ast;
         String storage_policy = "default";
 
+        /// A local copy of the column list. For a table-function target on a cluster with a local shard it
+        /// may be inferred (or its access re-validated) under the user's context below, before construction.
+        ColumnsDescription columns = args.columns;
+
         /// A function node whose name is a registered table function is treated as a table function
         /// (Distributed(cluster, table_function()[, sharding_key])). Any other expression
         /// is a database name, so it is evaluated as a constant string (e.g. an identifier or `currentDatabase()`).
@@ -2575,6 +2579,73 @@ void registerStorageDistributed(StorageFactory & factory)
 
             if (engine_args.size() >= 3)
                 sharding_key_ast = engine_args[2];
+
+            /// A `Distributed` table over a table function on a cluster with a local shard can route a query
+            /// back to this server (e.g. with `prefer_localhost_replica = 0`). `StorageDistributed` stores only
+            /// the global context and, for an omitted column list, infers the target's structure under it in its
+            /// constructor - bypassing the `SHOW COLUMNS` access check that `getStructureOfRemoteTableInShard`
+            /// performs for a local shard. Even with an explicit column list the definition is otherwise never
+            /// validated against the creator's access to the function's underlying tables, so a user without
+            /// `SHOW COLUMNS` could `CREATE TABLE d ENGINE = Distributed(test_shard_localhost, loop(secret))` and
+            /// learn `secret`'s schema, or persist `Distributed(..., view(SELECT * FROM secret))` never checked
+            /// at create time. Mirror the `Remote` / `RemoteSecure` branch below: when the definition is freshly
+            /// introduced and the named cluster has a local shard, analyze the target under the user's context -
+            /// using the result for an omitted column list, and at least as an access check when columns are
+            /// explicit. For a local shard `getStructureOfRemoteTableInShard` runs the function through
+            /// `getActualTableStructureWithAccess`, which performs exactly that check.
+            ///
+            /// Loading from already-validated stored metadata (server startup, a short `ATTACH TABLE t`, tables
+            /// loaded by `ATTACH DATABASE`) skips this: the definition was validated when first created on this
+            /// server, and the named cluster may be unavailable then, so it must not be forced to resolve. A
+            /// backup `RESTORE` (`SECONDARY_CREATE`, `is_restore_from_backup`) introduces the definition under a
+            /// possibly different user, so it is validated like a `CREATE`.
+            const bool loading_from_existing_metadata
+                = isLoadingFromExistingMetadata(args.mode) || args.query.attach_short_syntax;
+
+            if (!loading_from_existing_metadata)
+            {
+                ClusterPtr cluster = context->getCluster(context->getMacros()->expand(cluster_name));
+
+                bool has_local_shard = false;
+                for (const auto & shard_info : cluster->getShardsInfo())
+                {
+                    if (shard_info.isLocal())
+                    {
+                        has_local_shard = true;
+                        break;
+                    }
+                }
+
+                /// Infer under the user's context when the column list was omitted (the only source of columns),
+                /// and re-analyze for its access side effect when a local shard is present even if columns were
+                /// given explicitly. A purely remote cluster with explicit columns needs neither.
+                if (columns.empty() || has_local_shard)
+                {
+                    try
+                    {
+                        /// The `StorageID` is unused for a table-function target (the function is resolved
+                        /// instead), so pass an empty one, mirroring the constructor's inference path.
+                        ColumnsDescription inferred = getStructureOfRemoteTable(
+                            *cluster, StorageID::createEmpty(), local_context, remote_table_function_ptr);
+                        if (columns.empty())
+                            columns = std::move(inferred);
+                    }
+                    catch (const Exception & e)
+                    {
+                        /// When the column list was omitted, this analysis is the only source of columns, so any
+                        /// failure is fatal. When it was given explicitly, the analysis runs purely to enforce the
+                        /// creator's access to a resolvable local target: an `ACCESS_DENIED` is always fatal (it is
+                        /// the schema-disclosure hole this guards against), but any other failure means the target
+                        /// is simply not resolvable at create time. That is deferred by design for this form - a
+                        /// self-referential `merge(currentDatabase(), '^self$')` matches nothing until the table
+                        /// exists, and a `timeSeries*` target over a temporary table has no inner tables to resolve
+                        /// on a shard - so proceed with the explicit columns; the target is validated again when a
+                        /// query actually reaches the shard.
+                        if (columns.empty() || e.code() == ErrorCodes::ACCESS_DENIED)
+                            throw;
+                    }
+                }
+            }
         }
         else
         {
@@ -2611,7 +2682,7 @@ void registerStorageDistributed(StorageFactory & factory)
 
         return std::make_shared<StorageDistributed>(
             args.table_id,
-            args.columns,
+            columns,
             args.constraints,
             args.comment,
             remote_database,
