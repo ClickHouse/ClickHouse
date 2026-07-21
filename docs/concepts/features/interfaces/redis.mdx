@@ -1,0 +1,97 @@
+---
+description: 'Documentation for the Redis wire protocol interface in ClickHouse, allowing Redis clients to read data from ClickHouse tables'
+sidebarTitle: 'Redis interface'
+slug: /interfaces/redis
+title: 'Redis interface'
+doc_type: 'reference'
+---
+
+## Overview {#overview}
+
+ClickHouse supports a subset of the Redis wire protocol ([RESP](https://redis.io/docs/latest/develop/reference/protocol-spec/)). This allows Redis clients and client libraries to perform key-value lookups against ClickHouse tables, without a native ClickHouse connector.
+
+Each Redis database number is mapped in the server configuration to an existing ClickHouse table. A table can be exposed either as a *string* database (the value of a single column is returned by key) or as a *hash* database (multiple columns can be requested by key, as hash fields). Only tables that support direct key-value requests can be used; currently this is the [`Join`](/engines/table-engines/special/join) table engine (lookups are performed the same way as with the `joinGet` function).
+
+Supported commands:
+
+- `GET`, `MGET` — for databases of type `string`.
+- `HGET`, `HMGET` — for databases of type `hash` (the field names are ClickHouse column names).
+- `SELECT` — switch to another configured database number.
+- `PING`, `ECHO`, `QUIT`, `COMMAND`, `CLIENT`.
+- `AUTH` — authenticate as a ClickHouse user: `AUTH password` authenticates the `default` user, `AUTH username password` authenticates the given user.
+
+Data commands require an authenticated session, and the user needs the `SELECT` privilege on the columns of the mapped table. If a client does not send `AUTH`, the first data command implicitly tries to authenticate as the `default` user with an empty password, matching the behavior of an unprotected Redis server; if the `default` user has a password, the command fails with an authentication error until the client sends `AUTH`.
+
+Keys that are not present in the table are returned as RESP `nil`, matching Redis semantics (values are looked up the same way as with the `joinGetOrNull` function, so a missing key is distinguishable from a stored empty string). Non-string values are returned in their text representation. Write commands are not supported.
+
+## Enabling the Redis server {#enabling-server}
+
+To enable the Redis protocol server, add the `redis` section with a `port` and a database mapping to the ClickHouse server configuration:
+
+```xml
+<clickhouse>
+    <redis>
+        <port>9006</port>
+        <db>
+            <_0>
+                <db_type>string</db_type>
+                <clickhouse_db>default</clickhouse_db>
+                <clickhouse_table>name_surname_map</clickhouse_table>
+                <key_column>name</key_column>
+                <value_column>surname</value_column>
+            </_0>
+            <_1>
+                <db_type>hash</db_type>
+                <clickhouse_db>default</clickhouse_db>
+                <clickhouse_table>name_surname_map</clickhouse_table>
+                <key_column>name</key_column>
+            </_1>
+        </db>
+    </redis>
+</clickhouse>
+```
+
+The element name inside `db` sets the Redis database number: `<_0>` is database `0`, `<_1>` is database `1`, and so on (up to 256 databases). Each database mapping accepts:
+
+| Parameter          | Description                                                                              |
+|--------------------|------------------------------------------------------------------------------------------|
+| `db_type`          | `string` or `hash`.                                                                      |
+| `clickhouse_db`    | ClickHouse database of the mapped table.                                                 |
+| `clickhouse_table` | Mapped table. Must use the `Join` table engine.                                          |
+| `key_column`       | Column looked up by the Redis key. Must be the key column of the `Join` table.           |
+| `value_column`     | Column returned for `GET`/`MGET`. Required for `string` databases, unused for `hash`.    |
+
+Upon startup, a log message confirms the interface is active:
+
+```text
+{} <Information> Application: Listening for Redis compatibility protocol: 0.0.0.0:9006
+```
+
+## Example {#example}
+
+Create the mapped table and query it with `redis-cli`:
+
+```sql
+CREATE TABLE default.name_surname_map (name String, surname String)
+ENGINE = Join(ANY, LEFT, name);
+
+INSERT INTO default.name_surname_map VALUES ('Alice', 'Smith'), ('Bob', 'Jones');
+```
+
+A database has to be selected with `SELECT` before the first lookup:
+
+```text
+$ redis-cli -p 9006
+127.0.0.1:9006> SELECT 0
+OK
+127.0.0.1:9006> GET Alice
+"Smith"
+127.0.0.1:9006> MGET Alice Bob Carol
+1) "Smith"
+2) "Jones"
+3) (nil)
+127.0.0.1:9006> SELECT 1
+OK
+127.0.0.1:9006[1]> HGET Alice surname
+"Smith"
+```
