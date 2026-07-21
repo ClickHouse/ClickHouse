@@ -355,8 +355,6 @@ bool KeeperLSMTNodesStorage::visitUncommittedRecursive(std::string_view root_pat
 
 void KeeperLSMTNodesStorage::prepareImpl(std::string_view path, UncommittedNodeRef && node, KeeperStagingTransaction & staging, ACLId old_acl_id, int64_t ephemeral_owner, bool has_ttl, bool is_container)
 {
-    state.throttleWrite();
-
     chassert((!node.ref) == (node.node.action == NodeAction::Create));
     chassert((!node.ref) == (node.node.digest == 0));
     /// Digest must've been calculated by getUncommittedNode, then left unchanged by our caller.

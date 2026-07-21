@@ -121,6 +121,10 @@ struct KeeperNodesStorage
     /// Call to calculate digest after preparing all uncommitted changes for a given zxid.
     virtual void updateNodesDigest(uint64_t & /*current_digest*/, uint64_t /*zxid*/) const {}
 
+    /// May sleep for a short time if the storage's background work fell behind, to backpressure
+    /// writes. Call once per write transaction, without holding storage_mutex.
+    virtual void throttleWrite() const {}
+
     virtual void recalculateStats() {}
 
     /// In addition to the above, the KeeperStorageImpl template argument must have the following

@@ -66,6 +66,8 @@ struct KeeperLSMTNodesStorage final : public KeeperNodesStorage
     void prepareRemoveNodeWithoutUpdatingParent(
         std::string_view path, UncommittedNodeRef && node, KeeperStagingTransaction & staging);
 
+    void throttleWrite() const override { state.throttleWrite(); }
+
     /// ========== Implementations ==========
 
     struct NodeHolder

@@ -7,6 +7,7 @@
 #include <Common/logger_useful.h>
 
 #include <filesystem>
+#include <mutex>
 
 namespace DB
 {
@@ -297,6 +298,10 @@ void KeeperMemNodesStorage::removeCommittedNode(std::string_view path)
 
 void KeeperMemNodesStorage::loadNodesFromSnapshot(KeeperSnapshotReader & reader, KeeperStorage * storage, uint64_t * out_digest)
 {
+    /// The caller doesn't hold storage_mutex; there's no throttling here, so just hold it for the
+    /// whole load.
+    std::lock_guard lock(*storage_mutex);
+
     container.reserve(reader.node_count);
     auto streams = reader.createStreams(1);
     chassert(streams.size() == 1);

@@ -1729,6 +1729,11 @@ KeeperDigest KeeperStorageImpl<NS>::preprocessRequest(
         transaction = &uncommitted_transactions.emplace_back(TransactionInfo{.zxid = new_last_zxid, .nodes_digest = current_digest, .log_idx = log_idx});
     }
 
+    /// Backpressure: sleep if the nodes storage's background work fell behind. Done here rather
+    /// than inside the storage's prepare methods to make sure no locks are held: sleeping under
+    /// storage_mutex would stall the background work that the throttling is waiting for.
+    nodes.throttleWrite();
+
     bool request_finalized = false;
     const auto finalize = [&](bool rolled_back)
     {

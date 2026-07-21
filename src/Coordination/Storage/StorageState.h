@@ -154,7 +154,8 @@ struct StorageState
     void listUncommittedChildrenNames(const NodePathWithHash & path, ChildrenSet2 & out, DB::Arena & arena) const;
 
     /// Sleeps for a short time if background work fell behind.
-    /// Call before each write, with storage_mutex unlocked.
+    /// Call before each write transaction (and periodically during snapshot load), with
+    /// storage_mutex unlocked.
     void throttleWrite() const;
 
     /// TODO: listRecursive of some kind. It can be faster than normal tree traversal because
