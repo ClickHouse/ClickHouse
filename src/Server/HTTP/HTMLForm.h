@@ -73,19 +73,24 @@ public:
     /// Note that read() does not clear the form before reading the new values.
     void read(ReadBuffer & in);
 
-    /// Set the limit on the size of the content of a multipart/form-data part.
-    /// The parser reads part content line by line to detect boundary lines, so content with no
-    /// CRLF would otherwise be accumulated in memory in full, regardless of any limit imposed on
-    /// the part size by the reader of the part (in particular, while such a reader only probes
-    /// whether more data follows after its limit was reached). The multipart parser therefore
-    /// bounds a buffered content line by this limit. Boundary and header lines, which are part of
-    /// the request syntax rather than of the uploaded content, are bounded by the (larger)
-    /// `http_max_request_header_size` instead, so that a small content limit does not reject a
-    /// valid request whose boundary or `Content-Disposition` line is longer than the limit.
-    /// The constructor initializes the limit from the settings it is given (typically the server
-    /// defaults); this method allows to override it once the authenticated user's settings are
-    /// known. Zero disables the limit.
-    void setMaxMultipartFormDataSize(size_t limit);
+    /// Set the limits used while reading the form data: the limit on the size of the content of
+    /// a multipart/form-data part (`http_max_multipart_form_data_size`) and the limits on the
+    /// number of form fields and on a field name/value size (`http_max_fields`,
+    /// `http_max_field_name_size`, `http_max_field_value_size`).
+    /// The multipart parser reads part content line by line to detect boundary lines, so content
+    /// with no CRLF would otherwise be accumulated in memory in full, regardless of any limit
+    /// imposed on the part size by the reader of the part (in particular, while such a reader
+    /// only probes whether more data follows after its limit was reached). The multipart parser
+    /// therefore bounds a buffered content line by the content size limit. Boundary and header
+    /// lines, which are part of the request syntax rather than of the uploaded content, are
+    /// bounded by the (larger) `http_max_request_header_size` instead, so that a small content
+    /// limit does not reject a valid request whose boundary or `Content-Disposition` line is
+    /// longer than the limit.
+    /// The constructor initializes the limits from the settings it is given (typically the server
+    /// defaults); this method reapplies all of them once the authenticated user's settings are
+    /// known, since the request body is parsed after authentication. A zero limit disables the
+    /// corresponding check.
+    void applyBodyLimits(const Settings & settings);
 
     static const std::string ENCODING_URL; /// "application/x-www-form-urlencoded"
     static const std::string ENCODING_MULTIPART; /// "multipart/form-data"
@@ -107,9 +112,13 @@ private:
 
     using PartVec = std::vector<Part>;
 
-    const size_t max_fields_number, max_field_name_size, max_field_value_size, max_request_header_size;
+    const size_t max_request_header_size;
 
-    /// See setMaxMultipartFormDataSize. The configured limit on a part's content; 0 disables it.
+    /// See applyBodyLimits. These limits are initialized from the constructor's settings and
+    /// reapplied from the authenticated user's settings before the request body is parsed.
+    size_t max_fields_number = 0;
+    size_t max_field_name_size = 0;
+    size_t max_field_value_size = 0;
     size_t max_multipart_form_data_size = 0;
 
     std::string encoding;
@@ -142,7 +151,12 @@ public:
 private:
     PeekableReadBuffer in;
     const std::string boundary;
-    /// Maximum size of a buffered content line, 0 means no limit (see HTMLForm::setMaxMultipartFormDataSize).
+    /// The boundary line as it appears while a part's content is being read: the boundary
+    /// preceded by the CRLF that, per RFC 2046, belongs to the boundary line.
+    const std::string boundary_line;
+    /// Maximum size of a buffered content line, 0 means no limit (see HTMLForm::applyBodyLimits).
+    /// The boundary line that terminates the part may outgrow this limit; readLine allows that
+    /// only while the line keeps matching |boundary_line|.
     const size_t max_content_line_size;
     /// Maximum size of a buffered boundary or header line, 0 means no limit.
     const size_t max_syntax_line_size;

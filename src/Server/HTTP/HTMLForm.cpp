@@ -51,19 +51,19 @@ const int HTMLForm::UNKNOWN_CONTENT_LENGTH = -1;
 
 
 HTMLForm::HTMLForm(const Settings & settings)
-    : max_fields_number(settings[Setting::http_max_fields])
-    , max_field_name_size(settings[Setting::http_max_field_name_size])
-    , max_field_value_size(settings[Setting::http_max_field_value_size])
-    , max_request_header_size(settings[Setting::http_max_request_header_size])
+    : max_request_header_size(settings[Setting::http_max_request_header_size])
     , encoding(ENCODING_URL)
 {
-    setMaxMultipartFormDataSize(settings[Setting::http_max_multipart_form_data_size]);
+    applyBodyLimits(settings);
 }
 
 
-void HTMLForm::setMaxMultipartFormDataSize(size_t limit)
+void HTMLForm::applyBodyLimits(const Settings & settings)
 {
-    max_multipart_form_data_size = limit;
+    max_fields_number = settings[Setting::http_max_fields];
+    max_field_name_size = settings[Setting::http_max_field_name_size];
+    max_field_value_size = settings[Setting::http_max_field_value_size];
+    max_multipart_form_data_size = settings[Setting::http_max_multipart_form_data_size];
 }
 
 
@@ -271,12 +271,14 @@ HTMLForm::MultipartReadBuffer::MultipartReadBuffer(
     : ReadBuffer(nullptr, 0)
     , in(in_)
     , boundary("--" + boundary_)
-    /// A buffered content line carries the configured content limit plus some structural slack:
-    /// the leading CRLF that terminates the previous content line of the same part, and the
-    /// boundary terminator that ends the part's content (which is read while the content is still
-    /// being consumed). Adding the boundary length here ensures that a content limit smaller than
-    /// the boundary does not reject that terminator. 0 disables the limit.
-    , max_content_line_size(max_content_size ? max_content_size + boundary.size() + 4 : 0)
+    , boundary_line("\r\n--" + boundary_)
+    /// A buffered content line carries the configured content limit plus the leading CRLF that
+    /// terminates the previous content line of the same part (it belongs to the next line and
+    /// turns out to be content when that line is not a boundary line). The boundary line that
+    /// ends the part's content may outgrow this limit; readLine allows that only while the line
+    /// keeps matching |boundary_line|, so an attacker-chosen long boundary does not weaken the
+    /// limit for arbitrary content. 0 disables the limit.
+    , max_content_line_size(max_content_size ? max_content_size + 2 : 0)
     , max_syntax_line_size(max_syntax_line_size_)
 {
     /// For consistency with |nextImpl()|
@@ -315,19 +317,50 @@ std::string HTMLForm::MultipartReadBuffer::readLine(bool append_crlf)
 
     /// A line is buffered in memory in full, so its size must be bounded; over-limit input is
     /// rejected as soon as the line outgrows the limit instead of being accumulated until the next
-    /// CRLF (which an attacker can omit). Part content is bounded by the content size limit, while
-    /// boundary lines and part headers are bounded by the (typically larger) structural HTTP
-    /// limit, so that a small content limit does not reject a valid request whose boundary or
-    /// header line is longer than the limit.
+    /// CRLF (which an attacker can omit). Part content is bounded by the content size limit
+    /// (except for the boundary line that terminates the part, which is read while the content is
+    /// still being consumed and may match the boundary beyond the limit), while boundary lines and
+    /// part headers are bounded by the (typically larger) structural HTTP limit, so that a small
+    /// content limit does not reject a valid request whose boundary or header line is longer than
+    /// the limit.
     auto check_line_size = [this, &line]
     {
         if (reading_content)
         {
-            if (max_content_line_size && line.size() > max_content_line_size)
+            if (!max_content_line_size || line.size() <= max_content_line_size)
+                return;
+
+            /// The only line allowed to outgrow the content limit is the boundary line
+            /// "\r\n--<boundary>" that terminates the part: it is read while the part's content
+            /// is still being consumed and may be longer than a small content limit. Bytes past
+            /// the limit are allowed only while the line keeps matching that prefix, so the slack
+            /// past the limit is bounded by the actually matched prefix, and an attacker cannot
+            /// weaken the limit for arbitrary content by choosing a long boundary.
+            bool is_boundary_line_prefix = false;
+            if (line.size() == max_content_line_size + 1)
+                /// The first byte past the limit: validate the whole line accumulated so far.
+                is_boundary_line_prefix = line.size() <= boundary_line.size()
+                    ? boundary_line.starts_with(line)
+                    : line.starts_with(boundary_line);
+            else
+                /// Subsequent bytes: the preceding bytes were validated by the previous calls
+                /// (this function is called after every appended byte), so it's enough to check
+                /// the byte just appended.
+                is_boundary_line_prefix = line.size() > boundary_line.size()
+                    || line.back() == boundary_line[line.size() - 1];
+
+            if (!is_boundary_line_prefix)
                 throw Exception(ErrorCodes::LIMIT_EXCEEDED,
                                 "Too long line in a multipart/form-data part: it exceeds the maximum size "
                                 "of multipart/form-data content. This limit can be tuned by the "
                                 "'http_max_multipart_form_data_size' setting");
+
+            /// A boundary line is request syntax rather than content; its trailer (the "--" of
+            /// the last boundary, transport padding) is bounded by the structural limit.
+            if (max_syntax_line_size && line.size() > max_syntax_line_size)
+                throw Exception(ErrorCodes::LIMIT_EXCEEDED,
+                                "Too long boundary or header line in a multipart/form-data message. "
+                                "This limit can be tuned by the 'http_max_request_header_size' setting");
         }
         else
         {
