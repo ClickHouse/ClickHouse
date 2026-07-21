@@ -3,6 +3,7 @@
 
 import os
 import random
+import re
 import sys
 import threading
 import time
@@ -54,6 +55,9 @@ LIMIT_N = "limit"
 TRUTH_SET_FILES = "truth_set_files"
 TRUTH_SET_QUERY_SOURCE = "truth_set_query_source"
 QUANTIZATION = "quantization"
+# When set to a method name (e.g. 'rabitq'), the vector column is created with a
+# CODEC(Quantized(...)) companion stream instead of an HNSW vector_similarity index.
+QUANTIZED_CODEC = "quantized_codec"
 HNSW_M = "hnsw_M"
 HNSW_EF_CONSTRUCTION = "hnsw_ef_construction"
 HNSW_EF_SEARCH = "hnsw_ef_search"
@@ -253,6 +257,55 @@ test_params_cohere_wiki_20m = {
     USE_RAW_BYTES_FOR_QUERY_VECTOR: True, # only set if query vector is numpy.Array(Float32)
 }
 
+# Quantized codec ('rabitq') variants: no HNSW index is built. The vector column
+# carries a CODEC(Quantized('rabitq', <dimension>)) companion stream and searches
+# run with vector_search_use_quantized_codes = 1. The rescoring (fetch) multiplier
+# is 1, i.e. the shortlist size equals the query LIMIT with no oversampling.
+test_params_hackernews_10m_rabitq = {
+    LIMIT_N: None,
+    TRUTH_SET_FILES: [
+        "https://clickhouse-datasets.s3.amazonaws.com/hackernews-openai/hackernews_openai_10m_1k.tar"
+    ],
+    QUANTIZATION: None,  # not an HNSW index
+    QUANTIZED_CODEC: "rabitq",
+    HNSW_M: None,
+    HNSW_EF_CONSTRUCTION: None,
+    HNSW_EF_SEARCH: None,
+    VECTOR_SEARCH_INDEX_FETCH_MULTIPLIER: 1,  # rescoring multiplier
+    TRUTH_SET_QUERY_SOURCE: TRUTH_SET_QUERY_SOURCE_ID,
+    GENERATE_TRUTH_SET: False,
+    NEW_TRUTH_SET_FILE: None,
+    TRUTH_SET_COUNT: 1000,
+    RECALL_K: 100,
+    MERGE_TREE_SETTINGS: None,
+    OTHER_SETTINGS: None,
+    CONCURRENCY_TEST: False,  # concurrency test not needed for quantized codec runs
+    USE_RAW_BYTES_FOR_QUERY_VECTOR: False,
+}
+
+test_params_cohere_wiki_20m_rabitq = {
+    LIMIT_N: None,
+    TRUTH_SET_FILES: [
+        "https://clickhouse-datasets.s3.amazonaws.com/cohere-20M/cohere_wiki_20m_25k.tar"
+    ],
+    QUANTIZATION: None,  # not an HNSW index
+    QUANTIZED_CODEC: "rabitq",
+    HNSW_M: None,
+    HNSW_EF_CONSTRUCTION: None,
+    HNSW_EF_SEARCH: None,
+    VECTOR_SEARCH_INDEX_FETCH_MULTIPLIER: 1,  # rescoring multiplier
+    TRUTH_SET_QUERY_SOURCE: TRUTH_SET_QUERY_SOURCE_VECTOR,
+    GENERATE_TRUTH_SET: False,
+    NEW_TRUTH_SET_FILE: None,
+    TRUTH_SET_COUNT: 25000,
+    RECALL_K: 10,
+    # Let's have more than 1 part for this dataset (7 - 9 parts)
+    MERGE_TREE_SETTINGS: "max_bytes_to_merge_at_max_space_in_pool=11811160064",
+    OTHER_SETTINGS: "min_insert_block_size_rows = 3000000, min_insert_block_size_bytes=11737418240",
+    CONCURRENCY_TEST: False,  # concurrency test not needed for quantized codec runs
+    USE_RAW_BYTES_FOR_QUERY_VECTOR: True,  # only set if query vector is numpy.Array(Float32)
+}
+
 
 def get_new_connection():
     chclient = clickhouse_connect.get_client(send_receive_timeout=1800)
@@ -283,6 +336,7 @@ class RunTest:
         self._vector_column = dataset[VECTOR_COLUMN]
         self._distance_metric = dataset[DISTANCE_METRIC]
         self._dimension = dataset[DIMENSION]
+        self._quantized_codec = test_params.get(QUANTIZED_CODEC)
 
         self._query_count = int(test_params[TRUTH_SET_COUNT])
         self._k = int(test_params[RECALL_K])
@@ -292,10 +346,33 @@ class RunTest:
         self._query_source_warning_logged = False
         self._vector_serialization_warning_logged = False
 
+    # Attach a CODEC(Quantized('<method>', <dimension>)) clause to the vector column.
+    # The codec is experimental and, unlike an HNSW index, must be declared at table
+    # creation time - it cannot be added or changed with ALTER TABLE.
+    def _schema_with_quantized_codec(self):
+        schema = self._dataset[SCHEMA]
+        if self._quantized_codec is None:
+            return schema
+
+        codec_clause = f" CODEC(Quantized('{self._quantized_codec}', {self._dimension}))"
+        pattern = rf"\b{re.escape(self._vector_column)}\s+Array\(Float32\)"
+        schema, count = re.subn(
+            pattern, lambda m: m.group(0) + codec_clause, schema
+        )
+        if count != 1:
+            raise ValueError(
+                f"Expected exactly one '{self._vector_column} Array(Float32)' column "
+                f"to attach the quantized codec, found {count}"
+            )
+        return schema
+
     def load_data(self):
         logger(f"Begin loading data into {self._table}")
 
-        create_table = f"CREATE TABLE {self._table} ( {self._dataset[SCHEMA]} ) ENGINE = MergeTree ORDER BY {self._id_column}"
+        if self._quantized_codec is not None:
+            self._chclient.query("SET allow_experimental_codecs = 1")
+
+        create_table = f"CREATE TABLE {self._table} ( {self._schema_with_quantized_codec()} ) ENGINE = MergeTree ORDER BY {self._id_column}"
         if self._test_params[MERGE_TREE_SETTINGS] is not None:
             create_table += f" SETTINGS {self._test_params[MERGE_TREE_SETTINGS]}"
         self._chclient.query(create_table)
@@ -666,7 +743,18 @@ class RunTest:
         else:
             chclient = self._chclient
 
-        chclient.query("SET use_skip_indexes = 1, max_parallel_replicas = 1")
+        if self._quantized_codec is not None:
+            fetch_multiplier = self._test_params.get(
+                VECTOR_SEARCH_INDEX_FETCH_MULTIPLIER
+            )
+            if fetch_multiplier is None:
+                fetch_multiplier = 1
+            chclient.query(
+                "SET allow_experimental_codecs = 1, vector_search_use_quantized_codes = 1, "
+                f"vector_search_index_fetch_multiplier = {fetch_multiplier}, max_parallel_replicas = 1"
+            )
+        else:
+            chclient.query("SET use_skip_indexes = 1, max_parallel_replicas = 1")
 
         # First execute a query to load the vector index, could take few minutes
         # We loop because API could timeout and raise exception.(even with higher receive_timeout)
@@ -790,7 +878,9 @@ def run_single_test(test_name, dataset, test_params):
             test_runner.generate_truth_set()
             test_runner.save_truth_set(test_runner._test_params[NEW_TRUTH_SET_FILE])
 
-        test_runner.build_index()
+        # Quantized codec runs scan the codes companion stream, no HNSW index needed.
+        if test_runner._quantized_codec is None:
+            test_runner.build_index()
 
         if test_runner._test_params[GENERATE_TRUTH_SET]:
             result_set = test_runner.run_search_for_truth_set()
@@ -850,15 +940,25 @@ TESTS_TO_RUN = [
         dataset_laion_5b_mini_for_quick_test,
         test_params_laion_5b_1m,
     ),
+    # (
+    #     "Test using the hackernews dataset",
+    #     dataset_hackernews_openai,
+    #     test_params_hackernews_10m,
+    # ),
+    # (
+    #     "Test using the cohere wiki dataset",
+    #     dataset_cohere_wiki_20m,
+    #     test_params_cohere_wiki_20m,
+    # ),
     (
-        "Test using the hackernews dataset",
+        "Test using the hackernews dataset with rabitq quantized codec",
         dataset_hackernews_openai,
-        test_params_hackernews_10m,
+        test_params_hackernews_10m_rabitq,
     ),
     (
-        "Test using the cohere wiki dataset",
+        "Test using the cohere wiki dataset with rabitq quantized codec",
         dataset_cohere_wiki_20m,
-        test_params_cohere_wiki_20m,
+        test_params_cohere_wiki_20m_rabitq,
     ),
 ]
 
