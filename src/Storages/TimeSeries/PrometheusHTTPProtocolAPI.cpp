@@ -770,6 +770,10 @@ void PrometheusHTTPProtocolAPI::getSeries(
         }
 
         writeMetadataResponseFooter(response, truncated);
+
+        /// Store the buffered result in the query result cache now (no-op if no cache writers exist in the pipeline):
+        /// the executor's destructor cancels the pipeline processors, after which the pending write would be discarded.
+        io.pipeline.finalizeWriteInQueryResultCache();
     }
     catch (...)
     {
@@ -896,6 +900,10 @@ void PrometheusHTTPProtocolAPI::getLabels(
         }
 
         writeMetadataResponseFooter(response, truncated);
+
+        /// Store the buffered result in the query result cache now (no-op if no cache writers exist in the pipeline):
+        /// the executor's destructor cancels the pipeline processors, after which the pending write would be discarded.
+        io.pipeline.finalizeWriteInQueryResultCache();
     }
     catch (...)
     {
@@ -1052,6 +1060,10 @@ void PrometheusHTTPProtocolAPI::getLabelValues(
         }
 
         writeMetadataResponseFooter(response, truncated);
+
+        /// Store the buffered result in the query result cache now (no-op if no cache writers exist in the pipeline):
+        /// the executor's destructor cancels the pipeline processors, after which the pending write would be discarded.
+        io.pipeline.finalizeWriteInQueryResultCache();
     }
     catch (...)
     {
