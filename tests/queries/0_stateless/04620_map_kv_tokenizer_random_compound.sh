@@ -26,15 +26,22 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CUR_DIR"/../shell_config.sh
 
 SEED=$($CLICKHOUSE_CLIENT -q "SELECT toUnixTimestamp(now())")
-GENDATA="SELECT number, arrayZip(all_keys, arrayMap(j -> if(cityHash64(number,j,17,${SEED})%6=0,'', arrayStringConcat(arrayMap(i -> char(cityHash64(number,j,i,3,${SEED})%256), range(1+(cityHash64(number,j,11,${SEED})%20))))), range(length(all_keys))))::Map(String,String) FROM (SELECT number, arrayConcat(base_keys, arraySlice(base_keys,1,1+(cityHash64(number,5,${SEED})%length(base_keys)))) AS all_keys FROM (SELECT number, arrayMap(k -> if(cityHash64(number,k,13,${SEED})%6=0,'', arrayStringConcat(arrayMap(i -> char(cityHash64(number,k,i,${SEED})%256), range([1,50,63,64,65,127,200][1+(cityHash64(number,k,7,${SEED})%7)])))), range(1+(cityHash64(number,${SEED})%4))) AS base_keys FROM numbers(200)))"
+# Character bytes are ASCII (1..127), not 0..255, to avoid https://github.com/ClickHouse/ClickHouse/issues/111232:
+# vectorized position/LIKE misses a needle byte >= 0x80 over a multi-row String column, so the LIKE-family
+# index-vs-scan comparisons here would spuriously diverge (the index answers byte-exactly, the scan does not).
+# Revert `1 + ...%127` back to `...%256` once that is fixed. High bytes and NUL for the exact-match path are
+# covered by the deterministic tests 04615 and 04619.
+GENDATA="SELECT number, arrayZip(all_keys, arrayMap(j -> if(cityHash64(number,j,17,${SEED})%6=0,'', arrayStringConcat(arrayMap(i -> char(1 + cityHash64(number,j,i,3,${SEED})%127), range(1+(cityHash64(number,j,11,${SEED})%20))))), range(length(all_keys))))::Map(String,String) FROM (SELECT number, arrayConcat(base_keys, arraySlice(base_keys,1,1+(cityHash64(number,5,${SEED})%length(base_keys)))) AS all_keys FROM (SELECT number, arrayMap(k -> if(cityHash64(number,k,13,${SEED})%6=0,'', arrayStringConcat(arrayMap(i -> char(1 + cityHash64(number,k,i,${SEED})%127), range([1,50,63,64,65,127,200][1+(cityHash64(number,k,7,${SEED})%7)])))), range(1+(cityHash64(number,${SEED})%4))) AS base_keys FROM numbers(200)))"
 
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_def; DROP TABLE IF EXISTS t_buckets; DROP TABLE IF EXISTS res;"
 $CLICKHOUSE_CLIENT -q "CREATE TABLE t_def (id UInt64, m Map(String,String), INDEX idx m TYPE text(tokenizer='keyValuePairs') GRANULARITY 1) ENGINE=MergeTree ORDER BY id SETTINGS min_bytes_for_wide_part=0, index_granularity=8; INSERT INTO t_def $GENDATA;"
 $CLICKHOUSE_CLIENT -q "CREATE TABLE t_buckets (id UInt64, m Map(String,String), INDEX idx m TYPE text(tokenizer='keyValuePairs') GRANULARITY 1) ENGINE=MergeTree ORDER BY id SETTINGS min_bytes_for_wide_part=0, index_granularity=8, map_serialization_version='with_buckets', max_buckets_in_map=4, map_buckets_strategy='constant'; INSERT INTO t_buckets $GENDATA;"
 $CLICKHOUSE_CLIENT -q "CREATE TABLE res (tbl String, q String, variant String, h UInt64) ENGINE=Memory;"
 
-SIDX="use_skip_indexes=1, query_plan_direct_read_from_text_index=1, use_text_index_like_evaluation_by_dictionary_scan=1, text_index_like_min_pattern_length=1"
-SNO="use_skip_indexes=0, query_plan_direct_read_from_text_index=0"
+# use_query_condition_cache=0: the cache is an orthogonal accelerator that must not change results, and
+# pinning it keeps this cross-variant consistency check deterministic (it is compared index-on vs -off).
+SIDX="use_skip_indexes=1, query_plan_direct_read_from_text_index=1, use_text_index_like_evaluation_by_dictionary_scan=1, text_index_like_min_pattern_length=1, use_query_condition_cache=0"
+SNO="use_skip_indexes=0, query_plan_direct_read_from_text_index=0, use_query_condition_cache=0"
 
 # Atom fragments — each echoes a SQL string-concat expression that builds one predicate over pair $1 (a|b|c).
 ck()  { printf "%s" "'mapContainsKey(m, unhex(''' || hex(${1}.1) || '''))'"; }
@@ -52,7 +59,7 @@ emit() {
 
 for TBL in t_def t_buckets; do
   # Three distinct (key, value) pairs per source row: a, and its two rotations b, c (cross-mixing).
-  SRC="(WITH (SELECT groupArray(p) FROM (SELECT DISTINCT arrayJoin(arrayZip(mapKeys(m),mapValues(m))) p FROM ${TBL} ORDER BY p LIMIT 25)) AS arr SELECT arr[number+1] AS a, arr[((number+1)%length(arr))+1] AS b, arr[((number+2)%length(arr))+1] AS c FROM numbers(length(arr)))"
+  SRC="(WITH (SELECT groupArray(p) FROM (SELECT DISTINCT arrayJoin(arrayZip(mapKeys(m),mapValues(m))) p FROM ${TBL} ORDER BY cityHash64(p.1, p.2) LIMIT 25)) AS arr SELECT arr[number+1] AS a, arr[((number+1)%length(arr))+1] AS b, arr[((number+2)%length(arr))+1] AS c FROM numbers(length(arr)))"
 
   # Group A: mapContains* only (order-independent) — compared across all four variants.
   for VAR in "idx_sub1:${SIDX}, optimize_functions_to_subcolumns=1" \
