@@ -3,6 +3,11 @@
 #include <Functions/AI/AnthropicProvider.h>
 #include <Common/Exception.h>
 
+#include <Poco/JSON/Parser.h>
+#include <Poco/JSON/Object.h>
+
+#include <algorithm>
+
 namespace DB
 {
 
@@ -11,6 +16,51 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int NOT_IMPLEMENTED;
     extern const int RECEIVED_ERROR_FROM_REMOTE_IO_SERVER;
+}
+
+namespace
+{
+
+/// Replace control characters (including `\t \n \r`) with spaces so a provider's response cannot
+/// forge log lines or corrupt a terminal when embedded in a logged exception. Stricter than
+/// `sanitizeTextForAI`, which keeps whitespace controls because it feeds the model, not the log.
+String sanitizeForLog(std::string_view input)
+{
+    String output;
+    output.reserve(input.size());
+    for (unsigned char ch : input)
+        output.push_back((ch < 0x20 || ch == 0x7F) ? ' ' : static_cast<char>(ch));
+    return output;
+}
+
+}
+
+String formatProviderError(int status_code, const String & response_body)
+{
+    try
+    {
+        Poco::JSON::Parser err_parser;
+        auto err_json = err_parser.parse(response_body);
+        auto err_obj = err_json.extract<Poco::JSON::Object::Ptr>();
+        if (err_obj && err_obj->has("error"))
+        {
+            auto err = err_obj->getObject("error");
+            if (err)
+            {
+                String msg = err->optValue<String>("message", "");
+                String type = err->optValue<String>("type", "");
+                if (!msg.empty())
+                    return fmt::format("HTTP {} [{}]: {}", status_code, sanitizeForLog(type), sanitizeForLog(msg));
+            }
+        }
+    }
+    catch (...) // NOLINT(bugprone-empty-catch) Ok: fall through to the raw-body branch below.
+    {
+    }
+
+    const size_t max_len = 256;
+    const std::string_view snippet(std::string_view(response_body).substr(0, std::min(response_body.size(), max_len)));
+    return fmt::format("HTTP {} (response truncated to {} chars): {}", status_code, max_len, sanitizeForLog(snippet));
 }
 
 AIProviderHTTPException::AIProviderHTTPException(Poco::Net::HTTPResponse::HTTPStatus http_status_, PreformattedMessage msg)

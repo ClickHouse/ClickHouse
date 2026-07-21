@@ -140,4 +140,10 @@ using AIProviderPtr = std::unique_ptr<IAIProvider>;
 
 AIProviderPtr createAIProvider(const String & provider_name, const String & endpoint, const String & api_key, const String & api_version);
 
+/// Build an error message from a provider's non-200 HTTP response, for use in an exception that is
+/// logged. Prefers the structured `error.message`/`error.type` fields, falling back to the first 256
+/// bytes of the body. Every part is drawn from the (external) response, so control characters are
+/// replaced with spaces to stop the endpoint from forging log lines or corrupting a terminal.
+String formatProviderError(int status_code, const String & response_body);
+
 }
