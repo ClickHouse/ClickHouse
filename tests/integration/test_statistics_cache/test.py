@@ -528,6 +528,176 @@ def test_join_statistics_corruption_falls_back_without_partial_estimates():
         FORMAT TabSeparated
     """).strip() == "500"
 
+def test_failed_refresh_clears_stale_cache_without_partial_publication():
+    """A failed background refresh must expose neither the old nor a partial estimator."""
+    fact = "refresh_fail_closed_111016"
+    dim = "refresh_fail_closed_dim_111016"
+    _query_retry(ch1, f"DROP TABLE IF EXISTS {fact} SYNC")
+    _query_retry(ch1, f"DROP TABLE IF EXISTS {dim} SYNC")
+    _query_retry(ch1, f"""
+        CREATE TABLE {fact} (k UInt32, v UInt32)
+        ENGINE = MergeTree PARTITION BY intDiv(k, 1000) ORDER BY k
+        SETTINGS min_bytes_for_wide_part = 0,
+                 min_bytes_for_full_part_storage = 0,
+                 refresh_statistics_interval = 1,
+                 auto_statistics_types = ''
+    """)
+    _query(ch1, f"INSERT INTO {fact} SELECT number, number FROM numbers(1000)")
+    _query_retry(ch1, f"ALTER TABLE {fact} ADD STATISTICS v TYPE Basic")
+    _query_retry(ch1, f"ALTER TABLE {fact} MATERIALIZE STATISTICS v")
+
+    _query_retry(ch1, f"""
+        CREATE TABLE {dim} (k UInt32)
+        ENGINE = MergeTree ORDER BY k
+        SETTINGS auto_statistics_types = ''
+    """)
+    _query(ch1, f"INSERT INTO {dim} SELECT number FROM numbers(2000)")
+
+    join_sql = f"""
+        SELECT count()
+        FROM {fact} AS s INNER JOIN {dim} AS d ON s.k = d.k
+        WHERE s.v >= 1500
+    """
+
+    def _plan_sql(use_statistics, tag):
+        return f"""
+            EXPLAIN PLAN keep_logical_steps=1, actions=1
+            {join_sql}
+            SETTINGS use_statistics={use_statistics}, use_statistics_cache=1,
+                     use_statistics_for_part_pruning=0,
+                     optimize_use_projections=0, optimize_use_implicit_projections=0,
+                     query_plan_optimize_join_order_limit=10,
+                     log_comment='{tag}'
+        """
+
+    def _result_rows(plan):
+        return tuple(line.strip() for line in plan.splitlines() if "ResultRows:" in line)
+
+    initial_no_stats_rows = _result_rows(_query(ch1, _plan_sql(0, "refresh-fail-initial-no-stats")))
+    warm_tag = "refresh-fail-warm"
+    warm_plan = _wait_hit(ch1, warm_tag, _plan_sql(1, warm_tag))
+    warm_rows = _result_rows(warm_plan)
+    assert warm_rows and initial_no_stats_rows and warm_rows != initial_no_stats_rows, {
+        "warm_rows": warm_rows,
+        "initial_no_stats_rows": initial_no_stats_rows,
+        "reason": "the warmed estimator did not affect the visible join estimate",
+    }
+
+    # Deactivate the task while retaining the warmed estimator, so the new part
+    # can be corrupted before any refresh sees the stale cache scope.
+    _query_retry(ch1, f"ALTER TABLE {fact} MODIFY SETTING refresh_statistics_interval = 0")
+    retained_tag = "refresh-fail-retained"
+    retained_rows = _result_rows(_query(ch1, _plan_sql(1, retained_tag)))
+    _assert_hit(ch1, retained_tag)
+    assert retained_rows == warm_rows
+
+    _query(ch1, f"INSERT INTO {fact} SELECT number + 1000, number + 1000 FROM numbers(1000)")
+    part_names = _query(ch1, f"""
+        SELECT name
+        FROM system.parts
+        WHERE database = currentDatabase() AND table = '{fact}' AND active
+        ORDER BY name DESC
+        FORMAT TabSeparated
+    """).strip().splitlines()
+    assert len(part_names) == 2, part_names
+    affected_part = part_names[0]
+    part_path = _query(ch1, f"""
+        SELECT path
+        FROM system.parts
+        WHERE database = currentDatabase() AND table = '{fact}'
+          AND name = '{affected_part}' AND active
+        FORMAT TabSeparated
+    """).strip()
+    stats_files = ch1.exec_in_container(
+        ["bash", "-c", f"find {shlex.quote(part_path.rstrip('/'))} -maxdepth 1 -type f -name 'statistics*' -printf '%f\\n' | sort"],
+        user="root",
+    ).strip().splitlines()
+    assert len(stats_files) == 1 and stats_files[0] in {"statistics.packed", "statistics_v.stats"}, {
+        "part_path": part_path,
+        "stats_files": stats_files,
+    }
+    stats_path = f"{part_path.rstrip('/')}/{stats_files[0]}"
+    quoted_stats_path = shlex.quote(stats_path)
+    backup_path = f"{stats_path}.refresh_fail_closed_backup"
+    quoted_backup_path = shlex.quote(backup_path)
+    ch1.exec_in_container(
+        ["bash", "-c", f"rm -f {quoted_backup_path}; cp -a {quoted_stats_path} {quoted_backup_path}"],
+        user="root",
+    )
+    original_hash = ch1.exec_in_container(
+        ["bash", "-c", f"sha256sum {quoted_stats_path}"],
+        user="root",
+    ).split()[0]
+
+    try:
+        if stats_files[0] == "statistics.packed":
+            member_name = "statistics_v.stats"
+            ch1.exec_in_container(
+                [
+                    "bash",
+                    "-c",
+                    "set -euo pipefail; export LC_ALL=C; "
+                    f"member=$(grep -abo -F {shlex.quote(member_name)} {quoted_stats_path} | cut -d: -f1); "
+                    f"test -n \"$member\"; "
+                    f"test $(grep -abo -F {shlex.quote(member_name)} {quoted_stats_path} | wc -l) -eq 1; "
+                    f"offset_pos=$((member + {len(member_name)})); "
+                    f"offset=$(od -An -tu8 -j $offset_pos -N 8 {quoted_stats_path} | tr -d ' '); "
+                    f"size=$(od -An -tu8 -j $((offset_pos + 8)) -N 8 {quoted_stats_path} | tr -d ' '); "
+                    f"test \"$offset\" -gt 0; test \"$size\" -gt 0; "
+                    f"dd if=/dev/zero of={quoted_stats_path} bs=1 seek=$offset count=$size conv=notrunc status=none",
+                ],
+                user="root",
+            )
+        else:
+            ch1.exec_in_container(
+                [
+                    "bash",
+                    "-c",
+                    "set -euo pipefail; "
+                    f"size=$(stat -c %s {quoted_stats_path}); "
+                    f"test \"$size\" -gt 0; "
+                    f"dd if=/dev/zero of={quoted_stats_path} bs=1 count=$size conv=notrunc status=none",
+                ],
+                user="root",
+            )
+
+        corrupted_hash = ch1.exec_in_container(
+            ["bash", "-c", f"sha256sum {quoted_stats_path}"],
+            user="root",
+        ).split()[0]
+        assert corrupted_hash != original_hash
+
+        no_stats_rows = _result_rows(_query(ch1, _plan_sql(0, "refresh-fail-no-stats")))
+        assert no_stats_rows
+
+        # Changing 0 -> 60 starts a refresh immediately. A failed refresh schedules
+        # its next attempt 60 seconds later, leaving a deterministic observation window.
+        _query_retry(ch1, f"ALTER TABLE {fact} MODIFY SETTING refresh_statistics_interval = 60")
+        miss_tag = "refresh-fail-cache-miss"
+        refreshed_plan = ch1.query_with_retry(
+            SET_PREFIX + "\n" + _plan_sql(1, miss_tag),
+            retry_count=100,
+            sleep_time=0.1,
+            check_callback=lambda plan: (
+                _result_rows(plan) == no_stats_rows
+                and _loaded_stats_us(ch1, miss_tag) > 0
+            ),
+        )
+        refreshed_rows = _result_rows(refreshed_plan)
+        assert refreshed_rows == no_stats_rows, {
+            "warm_rows": warm_rows,
+            "no_stats_rows": no_stats_rows,
+            "refreshed_rows": refreshed_rows,
+            "reason": "failed refresh retained the stale estimator or published a partial one",
+        }
+        _assert_load(ch1, miss_tag)
+    finally:
+        _query_retry(ch1, f"ALTER TABLE {fact} MODIFY SETTING refresh_statistics_interval = 0")
+        ch1.exec_in_container(
+            ["bash", "-c", f"rm -f {quoted_stats_path}; mv -f {quoted_backup_path} {quoted_stats_path}"],
+            user="root",
+        )
+
 def test_join_statistics_unreadable_unrelated_column_preserves_complete_stats():
     """An unreadable non-filter statistic must not discard complete filter statistics."""
     partial = "unrelated_stats_111016"
