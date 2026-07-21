@@ -107,8 +107,8 @@ public:
             auto left_nested_type = removeLowCardinalityAndNullable(left_ele_type);
             auto right_nested_type = removeLowCardinalityAndNullable(right_ele_type);
             const bool has_string_type
-                = isStringOrFixedStringOrArrayOrTupleOfString(*left_nested_type)
-                || isStringOrFixedStringOrArrayOrTupleOfString(*right_nested_type);
+                = isStringOrFixedStringOrArrayOrTupleOfString(left_nested_type)
+                || isStringOrFixedStringOrArrayOrTupleOfString(right_nested_type);
             if (has_string_type)
                 throw Exception(
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
@@ -269,8 +269,8 @@ public:
         auto left_nested_type = removeLowCardinalityAndNullable(arguments[0].type);
         auto right_nested_type = removeLowCardinalityAndNullable(arguments[1].type);
         // handle string types compared with null
-        bool has_string_type = isStringOrFixedStringOrArrayOrTupleOfString(*left_nested_type)
-                        || isStringOrFixedStringOrArrayOrTupleOfString(*right_nested_type);
+        bool has_string_type = isStringOrFixedStringOrArrayOrTupleOfString(left_nested_type)
+                        || isStringOrFixedStringOrArrayOrTupleOfString(right_nested_type);
         if (common_type)
         {
             ColumnPtr c0_converted = castColumn(arguments[0], common_type);

@@ -57,40 +57,33 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-/// Function input accepts string, fixed string, array of string/fixed string, tuple of string/fixed string
-static bool isStringOrFixedStringOrArrayOrTupleOfString(const IDataType & type)
+/// Function to check for strings on first members or recursively on arrays and/or tuple types.
+static bool isStringOrFixedStringOrArrayOrTupleOfString(const DataTypePtr type)
 {
-    const IDataType * nested_type = &type;
 
     /// Unwrap an optional top-level Nullable.
-    if (const auto * nullable = typeid_cast<const DataTypeNullable *>(nested_type))
-        nested_type = nullable->getNestedType().get();
+    const auto nested_type = removeLowCardinalityAndNullable(type);
 
-    if (WhichDataType(nested_type).isStringOrFixedString())
+    if (WhichDataType(nested_type.get()).isStringOrFixedString())
         return true;
 
-    if (const auto * array_type = checkAndGetDataType<DataTypeArray>(nested_type))
+    if (const auto * array_type = checkAndGetDataType<DataTypeArray>(nested_type.get()))
     {
-        const IDataType * element_type = array_type->getNestedType().get();
+        const auto element_type = removeLowCardinalityAndNullable(array_type->getNestedType());
 
-        /// Array elements may also be Nullable(String) or Nullable(FixedString).
-        if (const auto * nullable_elem = typeid_cast<const DataTypeNullable *>(element_type))
-            element_type = nullable_elem->getNestedType().get();
-
-        return WhichDataType(element_type).isStringOrFixedString();
+        return isStringOrFixedStringOrArrayOrTupleOfString(element_type);
     }
 
-    if (const auto * tuple_type = checkAndGetDataType<DataTypeTuple>(nested_type))
+    if (const auto * tuple_type = checkAndGetDataType<DataTypeTuple>(nested_type.get()))
     {
         const DataTypes types_vec = tuple_type->getElements();
         bool has_string = false;
         for (const auto & elem_type : types_vec)
         {
-            has_string = WhichDataType(elem_type).isStringOrFixedString();
+            has_string = isStringOrFixedStringOrArrayOrTupleOfString(elem_type);
             if (has_string)
-                break;
+                return true;
         }
-        return has_string;
     }
 
     return false;
@@ -1580,8 +1573,8 @@ public:
 
                     /// Supported only when the element comparison produces a non-Nullable result
                     /// (covers the mixed signed/unsigned integer case). The same apply for String/FixedString types
-                    bool has_string_type = isStringOrFixedStringOrArrayOrTupleOfString(*left_nested_type)
-                        || isStringOrFixedStringOrArrayOrTupleOfString(*right_nested_type);
+                    bool has_string_type = isStringOrFixedStringOrArrayOrTupleOfString(left_nested_type)
+                        || isStringOrFixedStringOrArrayOrTupleOfString(right_nested_type);
                     if (!element_result_type->isNullable() && !element_result_type->onlyNull() && !isNothing(element_result_type)
                         && !has_string_type)
                         return std::make_shared<DataTypeUInt8>();

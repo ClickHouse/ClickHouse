@@ -76,3 +76,4 @@ SELECT [tuple(CAST(1, 'Nullable(UInt64)'))]::Array(Tuple(Nullable(UInt64))) = [t
 
 -- a string vs non-string mismatch nested inside a composite element type is rejected during analysis, not at execution
 SELECT [tuple('1')]::Array(Tuple(String)) = [tuple(1)]::Array(Tuple(Int64)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT [tuple(tuple('1'))]::Array(Tuple(Tuple(String))) = [tuple(tuple(1))]::Array(Tuple(Tuple(Int64))); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
