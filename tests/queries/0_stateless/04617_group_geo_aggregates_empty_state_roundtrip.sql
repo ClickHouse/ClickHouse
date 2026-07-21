@@ -3,8 +3,8 @@
 
 SELECT 'union_empty_state';
 SELECT
-    serialized = '0100' AS writer_bytes,
-    hex(CAST(unhex(serialized) AS AggregateFunction(groupPolygonUnion, Polygon))) = serialized AS bytes_equal,
+    any(serialized) = '0100' AS writer_bytes,
+    hex(CAST(unhex(any(serialized)) AS AggregateFunction(groupPolygonUnion, Polygon))) = any(serialized) AS bytes_equal,
     empty(groupPolygonUnionMerge(CAST(unhex(serialized) AS AggregateFunction(groupPolygonUnion, Polygon)))) AS result_empty
 FROM
 (
@@ -14,8 +14,8 @@ FROM
 
 SELECT 'intersect_uninitialized_state';
 SELECT
-    serialized = '0100' AS writer_bytes,
-    hex(CAST(unhex(serialized) AS AggregateFunction(groupPolygonIntersection, Polygon))) = serialized AS bytes_equal,
+    any(serialized) = '0100' AS writer_bytes,
+    hex(CAST(unhex(any(serialized)) AS AggregateFunction(groupPolygonIntersection, Polygon))) = any(serialized) AS bytes_equal,
     empty(groupPolygonIntersectionMerge(CAST(unhex(serialized) AS AggregateFunction(groupPolygonIntersection, Polygon)))) AS result_empty
 FROM
 (
@@ -25,8 +25,8 @@ FROM
 
 SELECT 'intersect_empty_state';
 SELECT
-    serialized = '0102' AS writer_bytes,
-    hex(CAST(unhex(serialized) AS AggregateFunction(groupPolygonIntersection, Polygon))) = serialized AS bytes_equal,
+    any(serialized) = '0102' AS writer_bytes,
+    hex(CAST(unhex(any(serialized)) AS AggregateFunction(groupPolygonIntersection, Polygon))) = any(serialized) AS bytes_equal,
     empty(groupPolygonIntersectionMerge(CAST(unhex(serialized) AS AggregateFunction(groupPolygonIntersection, Polygon)))) AS result_empty
 FROM
 (
@@ -35,8 +35,8 @@ FROM
 
 SELECT 'convex_hull_empty_state';
 SELECT
-    serialized = '020000' AS writer_bytes,
-    hex(CAST(unhex(serialized) AS AggregateFunction(groupConvexHull, Point))) = serialized AS bytes_equal,
+    any(serialized) = '020000' AS writer_bytes,
+    hex(CAST(unhex(any(serialized)) AS AggregateFunction(groupConvexHull, Point))) = any(serialized) AS bytes_equal,
     empty(groupConvexHullMerge(CAST(unhex(serialized) AS AggregateFunction(groupConvexHull, Point)))) AS result_empty
 FROM
 (
