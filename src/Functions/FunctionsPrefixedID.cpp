@@ -13,7 +13,16 @@
 
 #include <pcg_random.hpp>
 
-#include <sys/random.h>
+#if defined(OS_DARWIN) || defined(OS_FREEBSD)
+#    include <sys/random.h>
+#else
+#    include <unistd.h>
+#    if defined(__GLIBC__) && !__GLIBC_PREREQ(2, 25)
+/// Old glibc sysroots (e.g. powerpc64le) have neither <sys/random.h> nor a declaration of
+/// getentropy in <unistd.h>; the symbol itself is provided by base/glibc-compatibility.
+extern "C" int getentropy(void * buffer, size_t length);
+#    endif
+#endif
 
 /// Functions for prefixed identifiers in the style popularized by Stripe: `<prefix>_<body>`,
 /// e.g. `user_NffrFeUfNV2Hib` or `ch_test_51TpZvW`. The prefix may contain underscores
