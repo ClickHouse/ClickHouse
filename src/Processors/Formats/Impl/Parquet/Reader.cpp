@@ -970,7 +970,7 @@ bool Reader::decodeDictionaryPage(
             return false; /// Malformed header sizes; the data-read path (unbounded) surfaces the error.
         size_t page_bytes = size_t(std::max(header.uncompressed_page_size, header.compressed_page_size));
         reserved_bytes = Dictionary::decodedFootprintUpperBound(
-            header.dictionary_page_header.encoding, column_info.decoder,
+            column.meta->meta_data.codec, header.dictionary_page_header.encoding, column_info.decoder,
             size_t(header.dictionary_page_header.num_values), page_bytes, *column_info.decoded_type);
         if (!reservation.tryReserve(reserved_bytes))
             return false;

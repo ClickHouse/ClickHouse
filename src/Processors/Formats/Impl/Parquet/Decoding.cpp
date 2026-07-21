@@ -1228,13 +1228,13 @@ void Dictionary::decode(parq::Encoding::type encoding, const PageDecoderInfo & i
 }
 
 size_t Dictionary::decodedFootprintUpperBound(
-    parq::Encoding::type encoding, const PageDecoderInfo & info, size_t num_values,
-    size_t uncompressed_page_size, const IDataType & raw_decoded_type)
+    parq::CompressionCodec::type codec, parq::Encoding::type encoding, const PageDecoderInfo & info,
+    size_t num_values, size_t uncompressed_page_size, const IDataType & raw_decoded_type)
 {
     /// Mirror the mode selection in decode(). The decompressed page payload (`decompressed_buf`) is
-    /// always held; on top of it the trivial fast paths add either nothing (FixedSize: `data` points
-    /// into the buffer) or a UInt32 offset per value (StringPlain), while the generic path materializes
-    /// a whole column (`col`). Keep this in sync with decode().
+    /// held for a compressed column chunk; on top of it the trivial fast paths add either nothing
+    /// (FixedSize: `data` points into the buffer) or a UInt32 offset per value (StringPlain), while the
+    /// generic path materializes a whole column (`col`). Keep this in sync with decode().
     if (encoding == parq::Encoding::PLAIN_DICTIONARY)
         encoding = parq::Encoding::PLAIN;
 
@@ -1253,7 +1253,14 @@ size_t Dictionary::decodedFootprintUpperBound(
 
     /// Sum of the *logical* payload sizes of the buffers decode() holds. This is turned into a true
     /// upper bound on allocatedBytes() below.
-    size_t logical = uncompressed_page_size;
+    ///
+    /// The page payload counts only when the column chunk is compressed: only then does
+    /// `Reader::decodeDictionaryPageImpl` decompress it into `decompressed_buf`, which decode() keeps
+    /// alive. For an `UNCOMPRESSED` chunk `decompressed_buf` stays empty and `data` points straight into
+    /// the prefetched page buffer (`dictionary_page_prefetch`), whose bytes are already charged to the
+    /// pruning stage by `Prefetcher::startPrefetch`; counting them here again would double-count the
+    /// page against the memory budget and reject dictionaries whose real incremental footprint fits it.
+    size_t logical = codec == parq::CompressionCodec::UNCOMPRESSED ? 0 : uncompressed_page_size;
 
     if (encoding == parq::Encoding::PLAIN && info.fixed_size_converter && info.fixed_size_converter->isTrivial())
     {
