@@ -29,7 +29,7 @@ private:
     bool secure_required = false;
 
     std::atomic<Int32> last_connection_id = 0;
-    VectorWithMemoryTracking<std::shared_ptr<PostgreSQLProtocol::PGAuthentication::AuthenticationMethod>> auth_methods;
+    std::vector<std::shared_ptr<PostgreSQLProtocol::PGAuthentication::AuthenticationMethod>> auth_methods;
 
 public:
     explicit PostgreSQLHandlerFactory(

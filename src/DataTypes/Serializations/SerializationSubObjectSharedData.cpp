@@ -279,7 +279,7 @@ void SerializationSubObjectSharedData::deserializeBinaryBulkWithMultipleStreams(
     }
     else if (serialization_version.value == SerializationObjectSharedData::SerializationVersion::MAP_WITH_BUCKETS)
     {
-        Columns bucket_map_columns(buckets);
+        std::vector<ColumnPtr> bucket_map_columns(buckets);
         /// Read shared data map column from each bucket.
         for (size_t bucket = 0; bucket != buckets; ++bucket)
         {

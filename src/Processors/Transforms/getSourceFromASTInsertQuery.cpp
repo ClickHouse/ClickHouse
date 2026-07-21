@@ -24,7 +24,6 @@ namespace Setting
     extern const SettingsUInt64 max_insert_block_size_bytes;
     extern const SettingsUInt64 min_insert_block_size_rows;
     extern const SettingsUInt64 min_insert_block_size_bytes;
-    extern const SettingsSnappyMode snappy_mode;
 }
 
 namespace ErrorCodes
@@ -58,7 +57,7 @@ InputFormatPtr getInputFormatFromASTInsertQuery(
     }
 
     std::unique_ptr<ReadBuffer> input_buffer = with_buffers
-        ? getReadBufferFromASTInsertQuery(ast, context->getSettingsRef()[Setting::snappy_mode])
+        ? getReadBufferFromASTInsertQuery(ast)
         : std::make_unique<EmptyReadBuffer>();
 
     const Settings & settings = context->getSettingsRef();
@@ -123,7 +122,7 @@ Pipe getSourceFromASTInsertQuery(
     return getSourceFromInputFormat(ast, std::move(format), std::move(context), input_function);
 }
 
-std::unique_ptr<ReadBuffer> getReadBufferFromASTInsertQuery(const ASTPtr & ast, SnappyMode snappy_mode)
+std::unique_ptr<ReadBuffer> getReadBufferFromASTInsertQuery(const ASTPtr & ast)
 {
     const auto * insert_query = ast->as<ASTInsertQuery>();
     if (!insert_query)
@@ -145,9 +144,7 @@ std::unique_ptr<ReadBuffer> getReadBufferFromASTInsertQuery(const ASTPtr & ast, 
 
         /// Otherwise, it will be detected from file name automatically (by chooseCompressionMethod)
         /// Buffer for reading from file is created and wrapped with appropriate compression method
-        return wrapReadBufferWithCompressionMethod(
-            std::make_unique<ReadBufferFromFile>(in_file), chooseCompressionMethod(in_file, compression_method),
-            /*zstd_window_log_max=*/ 0, snappy_mode);
+        return wrapReadBufferWithCompressionMethod(std::make_unique<ReadBufferFromFile>(in_file), chooseCompressionMethod(in_file, compression_method));
     }
 
     ConcatReadBuffer::Buffers buffers;

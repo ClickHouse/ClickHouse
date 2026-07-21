@@ -64,7 +64,6 @@ IMPLEMENT_SETTING_MULTI_ENUM(JoinAlgorithm, ErrorCodes::UNKNOWN_JOIN,
 IMPLEMENT_SETTING_MULTI_ENUM(JoinOrderAlgorithm, ErrorCodes::BAD_ARGUMENTS,
     {{"greedy",             JoinOrderAlgorithm::GREEDY},
      {"dpsize",             JoinOrderAlgorithm::DPSIZE},
-     {"dpsub",              JoinOrderAlgorithm::DPSUB},
      {"dphyp",              JoinOrderAlgorithm::DPHYP}})
 
 
@@ -153,8 +152,7 @@ IMPLEMENT_SETTING_MULTI_ENUM(MySQLDataTypesSupport, ErrorCodes::UNKNOWN_MYSQL_DA
     {{"decimal",    MySQLDataTypesSupport::DECIMAL},
      {"datetime64", MySQLDataTypesSupport::DATETIME64},
      {"date2Date32", MySQLDataTypesSupport::DATE2DATE32},
-     {"date2String", MySQLDataTypesSupport::DATE2STRING},
-     {"geometry",    MySQLDataTypesSupport::GEOMETRY}})
+     {"date2String", MySQLDataTypesSupport::DATE2STRING}})
 
 IMPLEMENT_SETTING_ENUM(SetOperationMode, ErrorCodes::UNKNOWN_UNION,
     {{"",         SetOperationMode::Unspecified},
@@ -179,10 +177,6 @@ IMPLEMENT_SETTING_ENUM(ShortCircuitFunctionEvaluation, ErrorCodes::BAD_ARGUMENTS
     {{"enable",          ShortCircuitFunctionEvaluation::ENABLE},
      {"force_enable",    ShortCircuitFunctionEvaluation::FORCE_ENABLE},
      {"disable",         ShortCircuitFunctionEvaluation::DISABLE}})
-
-IMPLEMENT_SETTING_ENUM(SnappyMode, ErrorCodes::BAD_ARGUMENTS,
-    {{"basic",  SnappyMode::Basic},
-     {"framed", SnappyMode::Framed}})
 
 IMPLEMENT_SETTING_ENUM(TransactionsWaitCSNMode, ErrorCodes::BAD_ARGUMENTS,
     {{"async",          TransactionsWaitCSNMode::ASYNC},
@@ -303,10 +297,6 @@ IMPLEMENT_SETTING_ENUM(ObjectStorageQueueBucketingMode, ErrorCodes::BAD_ARGUMENT
      {"partition", ObjectStorageQueueBucketingMode::PARTITION},
      {"PARTITION", ObjectStorageQueueBucketingMode::PARTITION}})
 
-IMPLEMENT_SETTING_ENUM(QueryRunnerMode, ErrorCodes::BAD_ARGUMENTS,
-    {{"synchronous", QueryRunnerMode::SYNCHRONOUS},
-     {"asynchronous", QueryRunnerMode::ASYNCHRONOUS}})
-
 IMPLEMENT_SETTING_ENUM(ExternalCommandStderrReaction, ErrorCodes::BAD_ARGUMENTS,
     {{"none", ExternalCommandStderrReaction::NONE},
      {"log", ExternalCommandStderrReaction::LOG},
@@ -369,8 +359,7 @@ IMPLEMENT_SETTING_ENUM(
      {"hive", DatabaseDataLakeCatalogType::ICEBERG_HIVE},
      {"onelake", DatabaseDataLakeCatalogType::ICEBERG_ONELAKE},
      {"biglake", DatabaseDataLakeCatalogType::ICEBERG_BIGLAKE},
-     {"paimon_rest", DatabaseDataLakeCatalogType::PAIMON_REST},
-     {"delta_sharing", DatabaseDataLakeCatalogType::ICEBERG_DELTA_SHARING}})
+     {"paimon_rest", DatabaseDataLakeCatalogType::PAIMON_REST}})
 
 IMPLEMENT_SETTING_ENUM(
     FileCachePolicy,
@@ -396,13 +385,6 @@ IMPLEMENT_SETTING_ENUM(
     ErrorCodes::BAD_ARGUMENTS,
     {{"lat_lon", GeoToH3ArgumentOrder::LAT_LON},
      {"lon_lat", GeoToH3ArgumentOrder::LON_LAT}})
-
-IMPLEMENT_SETTING_ENUM(
-    SkipUnavailableShardsMode,
-    ErrorCodes::BAD_ARGUMENTS,
-    {{"unavailable", SkipUnavailableShardsMode::UNAVAILABLE},
-     {"unavailable_or_table_missing", SkipUnavailableShardsMode::UNAVAILABLE_OR_TABLE_MISSING},
-     {"unavailable_or_exception_before_processing", SkipUnavailableShardsMode::UNAVAILABLE_OR_EXCEPTION_BEFORE_PROCESSING}})
 
 IMPLEMENT_SETTING_ENUM(
     MergeTreeSerializationInfoVersion,
@@ -512,6 +494,11 @@ IMPLEMENT_SETTING_ENUM(DeduplicateInsertMode, ErrorCodes::BAD_ARGUMENTS,
      {"enable", DeduplicateInsertMode::ENABLE},
      {"disable", DeduplicateInsertMode::DISABLE}})
 
+IMPLEMENT_SETTING_ENUM(InsertDeduplicationVersions, ErrorCodes::BAD_ARGUMENTS,
+    {{"old_separate_hashes", InsertDeduplicationVersions::OLD_SEPARATE_HASHES},
+     {"compatible_double_hashes", InsertDeduplicationVersions::COMPATIBLE_DOUBLE_HASHES},
+     {"new_unified_hash", InsertDeduplicationVersions::NEW_UNIFIED_HASHES}})
+
 IMPLEMENT_SETTING_ENUM(JemallocProfileFormat, ErrorCodes::BAD_ARGUMENTS,
     {{"raw", JemallocProfileFormat::Raw},
      {"symbolized", JemallocProfileFormat::Symbolized},
@@ -521,10 +508,6 @@ IMPLEMENT_SETTING_ENUM(S3UriStyle, ErrorCodes::BAD_ARGUMENTS,
     {{"auto", S3UriStyle::AUTO},
      {"path", S3UriStyle::PATH},
      {"virtual_hosted", S3UriStyle::VIRTUAL_HOSTED}})
-
-IMPLEMENT_SETTING_ENUM(ExplainQueryPlanDefault, ErrorCodes::BAD_ARGUMENTS,
-    {{"legacy", ExplainQueryPlanDefault::LEGACY},
-     {"pretty", ExplainQueryPlanDefault::PRETTY}})
 
 IMPLEMENT_SETTING_ENUM(
     FileLikeEngineDefaultPartitionStrategy,

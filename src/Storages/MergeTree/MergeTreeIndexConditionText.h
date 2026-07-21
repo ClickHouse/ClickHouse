@@ -43,36 +43,17 @@ enum class TextIndexDirectReadMode : uint8_t
 /// Represents a single text-search function
 struct TextSearchQuery
 {
-    TextSearchQuery(
-        String function_name_,
-        TextSearchMode search_mode_,
-        TextIndexDirectReadMode direct_read_mode_,
-        VectorWithMemoryTracking<String> tokens_,
-        std::vector<OptimizedRegularExpression> patterns_ = {},
-        VectorWithMemoryTracking<String> phrase_tokens_ = {});
+    TextSearchQuery(String function_name_, TextSearchMode search_mode_, TextIndexDirectReadMode direct_read_mode_, VectorWithMemoryTracking<String> tokens_, std::vector<OptimizedRegularExpression> patterns_ = {});
 
-    const String & getFunctionName() const { return function_name; }
-    TextSearchMode getSearchMode() const { return search_mode; }
-    TextIndexDirectReadMode getDirectReadMode() const { return direct_read_mode; }
-    const VectorWithMemoryTracking<String> & getTokens() const { return tokens; }
-    const std::vector<OptimizedRegularExpression> & getPatterns() const { return patterns; }
-    const VectorWithMemoryTracking<String> & getPhraseTokens() const { return phrase_tokens; }
-    UInt128 getHash() const { return hash; }
-
-private:
-    void initializeHash();
-
-    /// Fields are immutable after construction, otherwise the precomputed hash becomes stale.
     String function_name;
     TextSearchMode search_mode;
     TextIndexDirectReadMode direct_read_mode;
-    /// Sorted in the constructor.
     VectorWithMemoryTracking<String> tokens;
     std::vector<OptimizedRegularExpression> patterns;
-    /// Not sorted, not deduplicated.
+    /// not sorted, not deduplicated
     VectorWithMemoryTracking<String> phrase_tokens;
-    /// Precomputed in the constructor because getHash is called on hot paths.
-    UInt128 hash{};
+
+    SipHash getHash() const;
 };
 
 using TextSearchQueryPtr = std::shared_ptr<TextSearchQuery>;
@@ -122,7 +103,6 @@ public:
     TextIndexHeaderCachePtr headerCache() const { return header_cache; }
     TextIndexPostingsCachePtr postingsCache() const { return postings_cache; }
     TokensCardinalitiesCachePtr cardinalitiesCache() const { return cardinalities_cache; }
-    bool useGlobalHeaderCache() const { return use_global_header_cache; }
 
     TokenizerPtr getTokenizer() const { return tokenizer; }
     MergeTreeIndexTextPreprocessorPtr getPreprocessor() const { return preprocessor; }
@@ -218,8 +198,6 @@ private:
     TextIndexTokensCachePtr tokens_cache;
     /// Cache for headers of the text index
     TextIndexHeaderCachePtr header_cache;
-    /// Whether the global header cache is used or a local per-query one.
-    bool use_global_header_cache = false;
     /// Cache for posting lists of tokens (and phrase-search results, keyed with the Phrase discriminator).
     TextIndexPostingsCachePtr postings_cache;
     /// Cache for tokens cardinalities
