@@ -168,11 +168,10 @@ void SortedRunWriter::appendNode(FullNode & node)
         NodePath parent_path = node.path.parentPath();
         chassert(parent_path.len != 0);
         chassert(parent_path.str() == node.path.str().substr(0, parent_path.len));
-        std::string_view prev_parent_path = block_max_path.str().substr(0, last_added_parent_path_len);
-        if (parent_path.str() != prev_parent_path)
+        if (parent_path.str() != last_added_parent_path)
         {
             parent_paths.push_back(parent_path.calculateHash());
-            last_added_parent_path_len = parent_path.len;
+            last_added_parent_path = std::string(parent_path.str());
         }
     }
 
@@ -287,7 +286,7 @@ void SortedRunWriter::finishFile()
 
     buildParentPathsFilter();
     parent_paths.clear();
-    last_added_parent_path_len = 0;
+    last_added_parent_path.clear();
 
     if (!storage->memory_only)
     {

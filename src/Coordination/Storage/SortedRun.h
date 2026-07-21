@@ -136,8 +136,8 @@ private:
     NodePath block_max_path;
     std::string block_max_path_buf;
 
-    /// If nonzero, `block_max_path.str()[0:last_added_parent_path_len]` was added to `parent_paths`.
-    size_t last_added_parent_path_len = 0;
+    /// If nonempty, this path was added to `parent_paths`.
+    std::string last_added_parent_path;
 
     /// Current group of blocks. New `compressed_writer` is created for each group.
     /// Its blocks were added to `file` and were written to `compressed_writer`, but
