@@ -93,7 +93,7 @@ const std::set<String> methods = {
 };
 
 #if USE_SCANN
-void checkScannCpuSupport()
+void checkScannCPUSupport()
 {
 #if defined(__x86_64__)
     if (!CPU::haveSSE41() || !CPU::haveAVX())
@@ -670,7 +670,7 @@ MergeTreeIndexPtr vectorSimilarityIndexCreator(StorageMetadataPtr metadata_snaps
 #if USE_SCANN
     if (method == "scann")
     {
-        checkScannCpuSupport();
+        checkScannCPUSupport();
 
         ScannIndexParams p;
         p.distance_name = args[1].safeGet<String>();
@@ -785,7 +785,7 @@ void vectorSimilarityIndexValidator(const IndexDescription & index, bool /* atta
             throw Exception(ErrorCodes::ILLEGAL_COLUMN,
                 "Vector similarity index with method 'scann' can only be created on columns of type Array(Float32) or Array(Float64)");
 
-        checkScannCpuSupport();
+        checkScannCPUSupport();
         return;
     }
 #endif
