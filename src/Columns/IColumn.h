@@ -470,12 +470,18 @@ public:
     }
 #endif
 
-    /** Compares and returns inequal track. It extends compareAt() to return how many values are not equal.
-      * Returns -N if current N left values are less then the right comparing value.
-      * Returns N if current N right values are less then the left comparing value.
-      * Returns 0 if current left and right values are equal.
+    /** Compares (*this)[n] and rhs[m] like compareAt, additionally reporting how far the run of
+      * lesser values on the lesser side extends. Returns 0 if the values are equal; -N if rows
+      * [n, n + N) of *this are all less than rhs[m]; +N if rows [m, m + N) of rhs are all less
+      * than (*this)[n]. N >= 1 and the runs are maximal.
       *
-      * The main reason for the function is compareAt() devirtualization.
+      * PRECONDITION: the tail of the lesser column (starting at n, respectively m) is sorted
+      * ascending consistently with compareAt under the same nan_direction_hint; the run end is
+      * found by galloping (findEqualRangeEndAssumeSorted), which relies on it.
+      *
+      * The main reason for the function is to fuse the comparison and the run search into one
+      * virtual call: IColumnHelper overrides it using the concrete column's compareAt; this
+      * base implementation with a virtual compareAt per probe is only a fallback.
       */
     [[nodiscard]] virtual Int64 compareTrackAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const;
 
@@ -1015,6 +1021,9 @@ private:
 
     /// Devirtualize compareAt.
     bool hasEqualValues() const override;
+
+    /// Devirtualize compareAt.
+    [[nodiscard]] Int64 compareTrackAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const override;
 
     /// Devirtualize isDefaultAt.
     double getRatioOfDefaultRows(double sample_ratio) const override;
