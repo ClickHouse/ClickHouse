@@ -1,6 +1,6 @@
--- Robustness tests for merge trees and serialize/deserialize round-trips.
+-- Robustness tests for merge-tree shapes.
 -- Each case compares direct aggregation, flat merge, and tree merge.
--- State/Merge combinators exercise serialize/deserialize on every boundary.
+-- Dedicated state-invariant tests force explicit binary serialization/deserialization.
 
 -- 1. groupConvexHull: 12 points in 4 groups, direct vs flat-merge vs tree-merge
 SELECT 'convex_hull_merge_tree';

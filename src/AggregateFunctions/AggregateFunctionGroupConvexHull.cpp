@@ -117,9 +117,7 @@ struct GroupConvexHullData
         /// so the closing duplicate is redundant. Dropping it keeps the stored point count
         /// from exceeding the state budget by one, which would otherwise let a self-produced
         /// state at the limit serialize but fail to deserialize (INCORRECT_DATA).
-        if (points.size() >= 2
-            && points.front().get<0>() == points.back().get<0>()
-            && points.front().get<1>() == points.back().get<1>())
+        if (points.size() >= 2 && points.front().get<0>() == points.back().get<0>() && points.front().get<1>() == points.back().get<1>())
             points.pop_back();
 
         size_after_compression = points.size();
@@ -242,8 +240,7 @@ void extractPointsFromField(
             }
             break;
         }
-        case GeometryColumnType::Null:
-            break;
+        case GeometryColumnType::Null: break;
     }
 }
 
@@ -290,8 +287,7 @@ public:
 
     void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
-        AggregateFunctionGroupConvexHull::data(place).merge(
-            AggregateFunctionGroupConvexHull::data(rhs), getName().c_str());
+        AggregateFunctionGroupConvexHull::data(place).merge(AggregateFunctionGroupConvexHull::data(rhs), getName().c_str());
     }
 
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
@@ -352,6 +348,11 @@ public:
                 getName(),
                 size - size_after_compression,
                 CONVEX_HULL_COMPRESSION_THRESHOLD);
+
+        /// The prefix before the watermark is not recomputed to prove that it is already a convex
+        /// hull. Such a check would add an O(n log n) operation to every state read, while accepting
+        /// extra finite points does not change the final result or bypass either resource bound:
+        /// `getResult` and the next `compress` compute the hull from all stored points.
 
         /// Do not pre-size the accumulator to the declared count. A corrupted state can advertise
         /// an in-range count (up to `MAX_POINTS_IN_CONVEX_HULL_STATE`) yet carry a truncated
@@ -443,9 +444,9 @@ For `Polygon`, only the outer ring points are used.
 For `MultiPolygon`, only the outer ring points of each polygon are used.
 `Geometry` arguments are also supported according to the active value type.
 
-Polygonal inputs are still validated in full: every coordinate, including those of inner rings (holes), must be finite, and a polygon with an empty outer ring but non-empty inner rings is rejected. Inner-ring points are validated even though only outer-ring points contribute to the hull.
+For polygonal inputs, every coordinate, including those of inner rings (holes), must be finite, and a polygon with an empty outer ring but non-empty inner rings is rejected. Inner-ring points are checked even though only outer-ring points contribute to the hull; other polygon topology constraints are not validated by this function.
 
-The result is a `Ring` representing the convex hull.
+Empty geometries contribute no points. The result is a `Ring` representing the convex hull, or an empty `Ring` when the group is empty or all inputs are empty.
 
 `NULL` values inside a `Geometry` (Variant) column are skipped. For a `Nullable` argument (e.g. `Nullable(Point)`), `NULL` rows are skipped as well; because a `Ring` cannot be wrapped in `Nullable`, the result type stays `Ring` and a group with only `NULL` values yields an empty `Ring`, consistent with the empty-group result. A literal `NULL` argument yields `NULL`.
     )";
@@ -471,7 +472,7 @@ SELECT wkt(groupConvexHull(pt)) FROM (
             R"(
 POLYGON((0 0,0 1,1 1,1 0,0 0))
         )"}};
-    FunctionDocumentation::IntroducedIn introduced_in = {26, 6};
+    FunctionDocumentation::IntroducedIn introduced_in = {26, 7};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::GeoPolygon;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 

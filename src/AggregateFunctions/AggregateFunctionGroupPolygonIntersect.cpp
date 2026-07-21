@@ -138,6 +138,7 @@ struct GroupPolygonIntersectData
                     total_points = 0;
                     return;
                 }
+                normalizeAndValidatePolygonalResult(tmp, function_name);
                 chunks[out++] = std::move(tmp);
             }
             if (n % 2 == 1)
@@ -232,8 +233,7 @@ public:
 
     void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
-        AggregateFunctionGroupPolygonIntersect::data(place).merge(
-            AggregateFunctionGroupPolygonIntersect::data(rhs), getName().c_str());
+        AggregateFunctionGroupPolygonIntersect::data(place).merge(AggregateFunctionGroupPolygonIntersect::data(rhs), getName().c_str());
     }
 
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
@@ -338,16 +338,14 @@ AggregateFunctionPtr createAggregateFunctionGroupPolygonIntersect(
     {
         case GeometryColumnType::Ring:
         case GeometryColumnType::Polygon:
-        case GeometryColumnType::MultiPolygon:
-            break;
+        case GeometryColumnType::MultiPolygon: break;
         case GeometryColumnType::Point:
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Argument of function {} must not be Point", name);
         case GeometryColumnType::Linestring:
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Argument of function {} must not be LineString", name);
         case GeometryColumnType::MultiLinestring:
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Argument of function {} must not be MultiLineString", name);
-        case GeometryColumnType::Null:
-            break;
+        case GeometryColumnType::Null: break;
     }
 
     return std::make_shared<AggregateFunctionGroupPolygonIntersect>(arg_type, parameters, *geo_type, false);
@@ -365,13 +363,15 @@ Coordinates are interpreted as Cartesian (planar), not spherical, regardless of 
 
 For typed columns, accepts `Ring`, `Polygon`, and `MultiPolygon`. Rejects `Point`, `LineString`, and `MultiLineString`.
 
-For `Geometry` (Variant) columns, accepts any active value that is structurally polygonal. Because `Ring` and `LineString` are structurally identical in `ColumnVariant` (both are `Array(Tuple(Float64, Float64))`), and similarly `Polygon` and `MultiLineString`, a `LineString` or `MultiLineString` stored in a `Geometry` column will be interpreted as `Ring` or `Polygon` respectively.
+For `Geometry` (Variant) columns, an active `LineString` is interpreted as a `Ring`, and an active `MultiLineString` as a `Polygon`, because their underlying array shapes match. Other non-polygonal active types are rejected.
 
 Empty geometry inputs are absorbing: once encountered, the result is immediately empty.
 
 The result is a `MultiPolygon`. Returns an empty `MultiPolygon` for empty groups or when the intersection is empty. Invalid polygonal input raises an exception.
 
 The function short-circuits: once the accumulated intersection becomes empty, further inputs are ignored.
+
+The geometric intersection is order-independent, but floating-point overlay operations are not exactly associative and the returned `MultiPolygon` is not canonicalized. Its raw array layout and floating-point coordinates can therefore depend on input and merge order.
 
 `NULL` values inside a `Geometry` (Variant) column are skipped. The polygonal argument types are `Array`-based and cannot be wrapped in `Nullable`; a literal `NULL` argument follows the standard aggregate convention and yields `NULL` (like `sum` and unlike `count`).
     )";
@@ -395,7 +395,7 @@ SELECT wkt(groupPolygonIntersection(p)) FROM (
             R"(
 MULTIPOLYGON(((1 3,3 3,3 1,1 1,1 3)))
         )"}};
-    FunctionDocumentation::IntroducedIn introduced_in = {26, 6};
+    FunctionDocumentation::IntroducedIn introduced_in = {26, 7};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::GeoPolygon;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 

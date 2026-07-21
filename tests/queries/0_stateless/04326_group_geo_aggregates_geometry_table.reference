@@ -13,5 +13,5 @@ convex_hull_geometry_table_mixed
 union_geometry_table_state_merge
 7
 intersect_rejects_point_geometry_table
-union_linestring_conflation_geometry_table
+union_linestring_normalization_geometry_table
 17

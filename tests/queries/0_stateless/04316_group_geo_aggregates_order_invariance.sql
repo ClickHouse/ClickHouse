@@ -1,8 +1,10 @@
--- Test order invariance for geo aggregate functions
+-- Test exact order invariance for `groupConvexHull` and geometric equivalence across orders for
+-- the floating-point polygon overlay aggregates.
 
 -- 1. groupConvexHull: forward vs reverse order
 SELECT 'convex_hull_forward_vs_reverse';
 SELECT
+    h1 = h2 AS exact_eq,
     abs(polygonAreaCartesian(h1) - polygonAreaCartesian(h2)) < 0.001 AS area_eq,
     abs(polygonPerimeterCartesian(h1) - polygonPerimeterCartesian(h2)) < 0.001 AS perim_eq
 FROM (

@@ -40,34 +40,36 @@ SELECT groupPolygonIntersectionMerge(state) FROM (
     )) AS AggregateFunction(groupPolygonIntersection, Polygon)) AS state
 ); -- { serverError INCORRECT_DATA }
 
--- 5. groupPolygonUnion: reject a polygon count that exceeds the cumulative ring budget.
+-- 5. `groupPolygonUnion`: reject a polygon count that exceeds the cumulative ring budget.
 --    Per-multipolygon polygon counts are no longer capped on their own (any count the aggregate
 --    can produce within the point budget must round-trip); the cumulative ring budget bounds the
---    total instead. 10,000,001 polygons > MAX_RINGS_IN_POLYGONAL_STATE (10,000,000).
+--    total instead. 2,500,001 polygons > MAX_RINGS_IN_POLYGONAL_STATE (2,500,000).
 SELECT 'union_oversized_polygons';
 SELECT groupPolygonUnionMerge(state) FROM (
     SELECT CAST(unhex(concat(
         '01',          -- version
         '01',          -- 1 chunk
-        '81ADE204'     -- 10000001 polygons (cumulative ring budget 10000000)
+        'A1CB9801'     -- 2500001 polygons (cumulative ring budget 2500000)
     )) AS AggregateFunction(groupPolygonUnion, Polygon)) AS state
 ); -- { serverError INCORRECT_DATA }
 
--- 6. groupPolygonUnion: reject an inner-ring count that exceeds the cumulative ring budget.
+-- 6. `groupPolygonUnion`: reject an inner-ring count that exceeds the cumulative ring budget.
 --    Inner-ring counts are no longer capped on their own; the cumulative ring budget bounds the
---    total. The single polygon already charges one (outer) ring, so 10,000,001 inner rings
---    exceeds MAX_RINGS_IN_POLYGONAL_STATE (10,000,000). The outer ring carries a single point so
---    deserialization reaches the inner-ring count instead of tripping the zero-point-ring guard.
+--    total. The single polygon already charges one (outer) ring, so 2,500,000 inner rings exceed
+--    MAX_RINGS_IN_POLYGONAL_STATE (2,500,000). The valid outer ring lets deserialization reach the
+--    inner-ring count.
 SELECT 'union_oversized_rings';
 SELECT groupPolygonUnionMerge(state) FROM (
     SELECT CAST(unhex(concat(
         '01',                  -- version
         '01',                  -- 1 chunk
         '01',                  -- 1 polygon
-        '01',                  -- 1-point outer ring
-        '0000000000000000',    -- x = 0.0
-        '0000000000000000',    -- y = 0.0
-        '81ADE204'             -- 10000001 inner rings (cumulative ring budget 10000000)
+        '04',                  -- 4-point closed outer ring
+        '0000000000000000', '0000000000000000', -- (0, 0)
+        '000000000000F03F', '0000000000000000', -- (1, 0)
+        '0000000000000000', '000000000000F03F', -- (0, 1)
+        '0000000000000000', '0000000000000000', -- (0, 0)
+        'A0CB9801'             -- 2500000 inner rings; outer + inners exceeds budget
     )) AS AggregateFunction(groupPolygonUnion, Polygon)) AS state
 ); -- { serverError INCORRECT_DATA }
 
@@ -89,7 +91,7 @@ SELECT groupConvexHullMerge(state) FROM (
     SELECT CAST(unhex(concat(
         '02',          -- version
         '81C2D72F',    -- 100000001 points (limit 100000000)
-        '00'
+        '81C2D72F'     -- watermark = point count; the size guard must fire first
     )) AS AggregateFunction(groupConvexHull, Point)) AS state
 ); -- { serverError INCORRECT_DATA }
 
@@ -100,9 +102,12 @@ SELECT groupPolygonUnionMerge(state) FROM (
         '01',                  -- version
         '01',                  -- 1 chunk
         '01',                  -- 1 polygon
-        '01',                  -- 1-point outer ring
+        '04',                  -- 4-point outer ring
         '000000000000F87F',    -- x = NaN (little-endian IEEE 754)
         '0000000000000000',    -- y = 0.0
+        '000000000000F03F', '0000000000000000', -- (1, 0)
+        '0000000000000000', '000000000000F03F', -- (0, 1)
+        '0000000000000000', '0000000000000000', -- (0, 0)
         '00'                   -- 0 inner rings
     )) AS AggregateFunction(groupPolygonUnion, Polygon)) AS state
 ); -- { serverError INCORRECT_DATA }

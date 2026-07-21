@@ -28,7 +28,7 @@ SELECT round(polygonAreaCartesian(groupPolygonIntersection(g)), 2) FROM (
     FROM numbers(5)
 );
 
--- 5. Const Geometry with State/Merge round-trip
+-- 5. Const `Geometry` with an explicit binary State/Merge round-trip
 SELECT 'const_convex_hull_state_merge';
 SELECT
     abs(polygonAreaCartesian(direct) - polygonAreaCartesian(merged)) < 0.001 AS area_eq
@@ -39,11 +39,11 @@ FROM (
             FROM numbers(3)
         )) AS direct,
         (SELECT groupConvexHullMerge(state) FROM (
-            SELECT groupConvexHullState(g) AS state FROM (
+            SELECT CAST(unhex(hex(groupConvexHullState(g))) AS AggregateFunction(groupConvexHull, Geometry)) AS state FROM (
                 SELECT readWKT('POLYGON ((0 0, 0 5, 5 5, 5 0, 0 0))') AS g
             )
             UNION ALL
-            SELECT groupConvexHullState(g) AS state FROM (
+            SELECT CAST(unhex(hex(groupConvexHullState(g))) AS AggregateFunction(groupConvexHull, Geometry)) AS state FROM (
                 SELECT readWKT('POLYGON ((0 0, 0 5, 5 5, 5 0, 0 0))') AS g
                 FROM numbers(2)
             )
