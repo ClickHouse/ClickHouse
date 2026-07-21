@@ -1566,6 +1566,11 @@ bool StorageFileSource::tryGetCountFromCache(const struct stat & file_stat)
     if (!getContext()->getSettingsRef()[Setting::use_cache_for_count_from_files])
         return false;
 
+    /// Cached row counts are keyed only by path/format/settings and are valid only for unfiltered
+    /// scans. A filtered read must not reuse a cached unfiltered count (mirrors the write-side guard).
+    if (format_filter_info && format_filter_info->hasFilter())
+        return false;
+
     auto num_rows_from_cache = tryGetNumRowsFromCache(current_path, file_stat.st_mtime);
     if (!num_rows_from_cache)
         return false;
@@ -2181,7 +2186,11 @@ void StorageFile::read(
     if (query_info.prewhere_info || query_info.row_level_filter)
         read_from_format_info = updateFormatPrewhereInfo(read_from_format_info, query_info.row_level_filter, query_info.prewhere_info);
 
-    bool need_only_count = (query_info.optimize_trivial_count || (read_from_format_info.requested_columns.empty() && !read_from_format_info.prewhere_info && !read_from_format_info.row_level_filter))
+    /// A row-level filter or storage `PREWHERE` must disable the count-only shortcut even when
+    /// `optimize_trivial_count` is set: the format's count-only path returns the metadata row count
+    /// without applying the filters.
+    bool need_only_count = (query_info.optimize_trivial_count || read_from_format_info.requested_columns.empty())
+        && !read_from_format_info.prewhere_info && !read_from_format_info.row_level_filter
         && context->getSettingsRef()[Setting::optimize_count_from_files]
         && !VirtualColumnUtils::hasRowDependentVirtualColumns(read_from_format_info.requested_virtual_columns);
 

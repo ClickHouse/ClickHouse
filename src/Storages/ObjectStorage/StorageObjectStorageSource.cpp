@@ -976,8 +976,12 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
     /// response. Skip the shortcut when `_headers` is requested so the real `GET` headers are used.
     const bool headers_requested = read_from_format_info.requested_virtual_columns.contains("_headers");
 
+    /// Cached row counts are keyed only by path/format/settings and are valid only for unfiltered
+    /// scans. A filtered read must not reuse a cached unfiltered count (mirrors the write-side guard).
+    const bool count_cache_usable = !format_filter_info || !format_filter_info->hasFilter();
     std::optional<size_t> num_rows_from_cache
-        = effective_need_only_count && !headers_requested && context_->getSettingsRef()[Setting::use_cache_for_count_from_files]
+        = effective_need_only_count && count_cache_usable && !headers_requested
+            && context_->getSettingsRef()[Setting::use_cache_for_count_from_files]
         ? try_get_num_rows_from_cache() : std::nullopt;
 
     if (num_rows_from_cache)

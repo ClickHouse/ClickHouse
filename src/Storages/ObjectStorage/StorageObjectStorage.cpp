@@ -636,10 +636,13 @@ void StorageObjectStorage::read(
     if (query_info.prewhere_info || query_info.row_level_filter)
         read_from_format_info = updateFormatPrewhereInfo(read_from_format_info, query_info.row_level_filter, query_info.prewhere_info);
 
+    /// A row-level filter or storage `PREWHERE` must disable the count-only shortcut even when
+    /// `optimize_trivial_count` is set: the format's count-only path returns the metadata row count
+    /// without applying the filters.
     const bool need_only_count = (query_info.optimize_trivial_count
-                                  || (read_from_format_info.requested_columns.empty()
-                                      && !read_from_format_info.prewhere_info
-                                      && !read_from_format_info.row_level_filter))
+                                  || read_from_format_info.requested_columns.empty())
+        && !read_from_format_info.prewhere_info
+        && !read_from_format_info.row_level_filter
         && settings[Setting::optimize_count_from_files]
         && !VirtualColumnUtils::hasRowDependentVirtualColumns(read_from_format_info.requested_virtual_columns);
 
