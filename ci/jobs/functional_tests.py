@@ -858,22 +858,6 @@ def main():
                 if not CH.start_log_exports(stop_watch.start_time):
                     info.add_workflow_warning("Failed to start log export")
                     print("Failed to start log export")
-            # MinIO log tables are non-fatal (tests still run without the
-            # webhook log tables), so keep going - but record the concrete
-            # failure reason (the real clickminio restart status, carried out of
-            # create_minio_log_tables via CH.minio_setup_error) so broken minio
-            # restarts are visible in test_context_raw rather than silently
-            # collapsing into the umbrella.
-            if not CH.create_minio_log_tables():
-                info.add_workflow_warning("Failed to create minio log tables")
-                note = "SETUP WARNING: " + (
-                    CH.minio_setup_error or "failed to create minio log tables"
-                )
-                print(note)
-                # Keep it for the persisted Result too: on the success path
-                # from_commands_run does not capture this closure's stdout, so
-                # without this the minio failure would not reach CIDB.
-                setup_notes.append(note)
 
             res = True
             if has_stateful_tests:
@@ -1092,23 +1076,22 @@ def main():
                         break
 
                     # `start` wipes the server data directory (`run_path0`), so
-                    # the environment built once in the START stage is gone:
-                    # re-create the MinIO log tables and, for stateful suites,
-                    # reload the stateful data and the `system.zookeeper`
-                    # config. Auxiliary services (Kafka/Redpanda, MinIO) keep
-                    # running across `stop_server`, so only the server-side
-                    # state has to be rebuilt. Without this a stateful changed
-                    # test fails only because `test.hits`/`datasets`/the
-                    # auxiliary ZooKeeper row disappeared, and the bugfix
-                    # inverter reports that false failure as a successful bug
-                    # reproduction.
-                    reprepared = CH.create_minio_log_tables()
-                    reprepare_error = CH.minio_setup_error
-                    if reprepared and has_stateful_tests:
-                        # Split the two sub-steps like the START stage does so the
-                        # persisted Environment setup row names the operation that
-                        # actually failed instead of collapsing both into the
-                        # generic "failed to re-prepare stateful data" bucket.
+                    # the environment built once in the START stage is gone: for
+                    # stateful suites, reload the stateful data and the
+                    # `system.zookeeper` config. Auxiliary services
+                    # (Kafka/Redpanda, MinIO) keep running across `stop_server`,
+                    # so only the server-side state has to be rebuilt. Without
+                    # this a stateful changed test fails only because
+                    # `test.hits`/`datasets`/the auxiliary ZooKeeper row
+                    # disappeared, and the bugfix inverter reports that false
+                    # failure as a successful bug reproduction.
+                    reprepared = True
+                    reprepare_error = None
+                    if has_stateful_tests:
+                        # Split the two sub-steps so the persisted Environment
+                        # setup row names the operation that actually failed
+                        # instead of collapsing both into the generic "failed to
+                        # re-prepare stateful data" bucket.
                         if not CH.prepare_stateful_data(
                             with_s3_storage=is_s3_storage,
                             is_db_replicated=is_database_replicated,

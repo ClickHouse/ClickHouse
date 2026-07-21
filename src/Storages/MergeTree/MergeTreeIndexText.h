@@ -362,15 +362,10 @@ public:
     bool empty() const override { return is_empty; }
     size_t memoryUsageBytes() const override;
 
-    bool hasAnyQueryTokens(const TextSearchQuery & query) const;
-    bool hasAnyQueryPatterns(const TextSearchQuery & query) const;
-
-    bool hasAllQueryTokens(const TextSearchQuery & query) const;
-    bool hasAllQueryTokensOrEmpty(const TextSearchQuery & query) const;
-
     const TextIndexAnalyzer & getAnalyzer() const { return *analyzer; }
 
     void setCurrentRange(RowsRange range) { current_range = std::move(range); }
+    const std::optional<RowsRange> & getCurrentRange() const { return current_range; }
     const String & getIndexIdForCaches() const { return index_id_for_caches; }
     IPostingListCodec::Type getPostingsCodecType() const { return postings_codec_type; }
     MergeTreeIndexVersion getSerializationVersion() const { return serialization_version; }
@@ -384,8 +379,6 @@ public:
         const String & index_id_for_caches);
 
 private:
-    bool hasAnyTokensImpl(const TextSearchQuery & query) const;
-
     /// Reads dictionary blocks and analyzes them for tokens.
     void analyzeDictionaryForTokens(const DictionarySparseIndex & sparse_index, PostingsSerialization & postings_serialization, MergeTreeIndexReaderStream & dictionary_stream, MergeTreeIndexDeserializationState & state);
     /// Reads dictionary blocks and analyzes them for patterns.
