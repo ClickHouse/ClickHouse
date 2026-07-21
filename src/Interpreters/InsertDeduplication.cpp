@@ -226,10 +226,15 @@ DeduplicationInfo::FilterResult DeduplicationInfo::filterImpl(const std::set<siz
     if (collision_offsets.empty())
         return {};
 
-    if (!is_async_insert && getCount() == 1)
+    /// All tokens collided: the whole block is a duplicate, drop it without row-level slicing.
+    /// This path must not touch the rows: for a single sync token the block may already be
+    /// released by getDeduplicationHashes, and behind an `Alias` hop over a row-count-changing
+    /// view the block is re-anchored to the view-output chunks and no longer matches the rows
+    /// the offsets describe (see cacheDataHashes).
+    if (collision_offsets.size() == getCount())
     {
-        chassert(collision_offsets.size() == 1 && collision_offsets.contains(0));
-        LOG_TEST(logger, "The only token is filtered, collision offsets: {}, debug: {}", fmt::join(collision_offsets, ", "), debug());
+        chassert(original_block);
+        LOG_TEST(logger, "All tokens are filtered, collision offsets: {}, debug: {}", fmt::join(collision_offsets, ", "), debug());
 
         Ptr new_tokens = cloneSelfFilterImpl();
         new_tokens->original_block = std::make_shared<Block>(original_block->cloneEmpty());
@@ -237,14 +242,32 @@ DeduplicationInfo::FilterResult DeduplicationInfo::filterImpl(const std::set<siz
         return {
             .filtered_block = new_tokens->original_block,
             .deduplication_info = new_tokens,
-            .removed_rows = getTokenRows(0),
-            .removed_tokens = 1,
+            .removed_rows = original_block->rows() > 0 ? original_block->rows() : getRows(),
+            .removed_tokens = getCount(),
         };
     }
 
     chassert(original_block && !original_block->empty() && original_block->rows() > 0);
 
     auto & block = *original_block;
+
+    /// A partial collision requires slicing the collided tokens' rows out of the block, which is
+    /// only possible while the offsets still describe the block. Behind an `Alias` hop over a
+    /// row-count-changing view the block is re-anchored to the view-output chunks and there is no
+    /// mapping from the tokens' source rows to the block's rows anymore. Refuse loudly instead of
+    /// reading out of the block's bounds; full-block deduplication is handled above.
+    if (block.rows() != getRows())
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "Cannot filter {} of {} deduplicated blocks out of the insert: the deduplication info describes {} rows, "
+            "but the block has {} rows because a materialized view with a row-count-changing inner query "
+            "was processed before a table with the `Alias` engine. Only the whole insert can be deduplicated on this path. "
+            "Debug: {}",
+            collision_offsets.size(),
+            getCount(),
+            getRows(),
+            block.rows(),
+            debug());
 
     Ptr new_tokens = cloneSelfFilterImpl();
 
