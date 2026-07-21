@@ -2665,16 +2665,22 @@ bool ClientBase::sendCancel(std::exception_ptr exception_ptr)
 {
     if (!connection->isConnected())
     {
-        /// Route this connection-lost diagnostic through the same bounded best-effort terminal path
-        /// as the cancellation messages instead of a raw `error_stream` write: `sendCancel` runs at
-        /// the very start of `cancelQuery` (the first Ctrl+C), and on the default interactive client
-        /// `error_stream` (`stderr`) is the same PTY as the stuck output sink, so a plain blocking
-        /// write here could park that first Ctrl+C before cancellation is latched or
-        /// `printCancellationMessage` runs (see printMessageBestEffort).
+        /// This is a `stderr` diagnostic and must stay on `stderr`: routing it to `std_out` would
+        /// mix it into the result data stream of a batch client or an `INTO OUTFILE ... AND STDOUT`
+        /// query. But it still must not be a raw blocking `error_stream <<` write: `sendCancel` runs
+        /// at the very start of `cancelQuery` (the first Ctrl+C), and on the default interactive
+        /// client `stderr` is the same PTY as the stuck output sink, so a plain blocking write here
+        /// could park that first Ctrl+C before cancellation is latched. Use a bounded best-effort
+        /// write to `stderr` instead: on a live sink it appears immediately, on a stuck one it is
+        /// dropped after a short wait (nothing is reading that sink anyway).
         String message = "Cannot send Cancel due to connection is lost";
         if (exception_ptr)
             message += ": " + getExceptionMessage(exception_ptr, /*with_stacktrace=*/ true);
-        printMessageBestEffort(message);
+        message += '\n';
+
+        WriteBufferFromFileDescriptor stderr_buf(stderr_fd);
+        stderr_buf.writeBestEffort(message, /*timeout_ms*/ 1000);
+        stderr_buf.finalize();
         return false;
     }
     else
