@@ -3,5 +3,7 @@ union_empty_inner_ring
 union_empty_outer_second_polygon
 intersect_empty_outer_ring
 intersect_empty_inner_ring
+union_empty_multipolygon_chunk
+intersect_empty_multipolygon_chunk
 union_polygon_with_hole_roundtrip
 2
