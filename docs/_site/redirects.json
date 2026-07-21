@@ -1598,7 +1598,7 @@
   },
   {
     "source": "/cloud/manage/hyperdx",
-    "destination": "/products/cloud/features/sql-console-features/hyperdx"
+    "destination": "/products/cloud/features/sql-console-features/clickstack"
   },
   {
     "source": "/cloud/manage/jan-2025-faq",
@@ -40457,6 +40457,10 @@
     "destination": "/reference/functions/table-functions/dictionary"
   },
   {
+    "source": "/sql-reference/table-functions/eval",
+    "destination": "/reference/functions/table-functions/eval"
+  },
+  {
     "source": "/sql-reference/table-functions/file",
     "destination": "/reference/functions/table-functions/file"
   },
@@ -52503,5 +52507,17 @@
   {
     "source": "/use-cases/observability/clickstack/demo-days/2026/2026-06-12",
     "destination": "/clickstack/demo-days/2026/2026-06-12"
+  },
+  {
+    "source": "/interfaces/web-ui-pinned-columns",
+    "destination": "/concepts/features/interfaces/web-ui-pinned-columns"
+  },
+  {
+    "source": "/sql-reference/statements/check-database",
+    "destination": "/reference/statements/check-database"
+  },
+  {
+    "source": "/sql-reference/statements/create/dictionary/layouts/naive-bayes",
+    "destination": "/reference/statements/create/dictionary/layouts/naive-bayes"
   }
 ]
