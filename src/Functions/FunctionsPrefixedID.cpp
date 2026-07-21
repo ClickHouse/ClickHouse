@@ -8,20 +8,15 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
-#include <Common/ErrnoException.h>
 #include <Common/StringUtils.h>
 
 #include <pcg_random.hpp>
 
-#if defined(OS_DARWIN) || defined(OS_FREEBSD)
-#    include <sys/random.h>
-#else
-#    include <unistd.h>
-#    if defined(__GLIBC__) && !__GLIBC_PREREQ(2, 25)
-/// Old glibc sysroots (e.g. powerpc64le) have neither <sys/random.h> nor a declaration of
-/// getentropy in <unistd.h>; the symbol itself is provided by base/glibc-compatibility.
-extern "C" int getentropy(void * buffer, size_t length);
-#    endif
+#include "config.h"
+
+#if USE_SSL
+#    include <openssl/rand.h>
+#    include <Common/OpenSSLHelpers.h>
 #endif
 
 /// Functions for prefixed identifiers in the style popularized by Stripe: `<prefix>_<body>`,
@@ -36,7 +31,11 @@ namespace ErrorCodes
 {
 extern const int BAD_ARGUMENTS;
 extern const int ILLEGAL_COLUMN;
-extern const int SYSTEM_ERROR;
+#if USE_SSL
+extern const int OPENSSL_ERROR;
+#else
+extern const int SUPPORT_IS_DISABLED;
+#endif
 }
 
 namespace
@@ -223,14 +222,19 @@ public:
             }
         }
 
-        /// Seed from the OS entropy source rather than randomSeed(): the latter is derived
+        /// Seed from the OpenSSL CSPRNG rather than randomSeed(): the latter is derived
         /// from the time and the thread id, which is too predictable for identifiers whose
-        /// point is to be unique and opaque.
+        /// point is to be unique and opaque. OpenSSL is used instead of getentropy, which
+        /// is not available on all supported platforms (old glibc sysroots, musl).
+#if USE_SSL
         UInt64 entropy[2];
-        if (getentropy(entropy, sizeof(entropy)) != 0)
-            throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Cannot get entropy from the operating system in function {}", name);
+        if (RAND_bytes(reinterpret_cast<unsigned char *>(entropy), sizeof(entropy)) != 1)
+            throw Exception(ErrorCodes::OPENSSL_ERROR, "Cannot get random bytes from OpenSSL in function {}: {}", name, getOpenSSLErrors());
         using UInt128Raw = unsigned __int128;
         pcg64_fast rng((static_cast<UInt128Raw>(entropy[0]) << 64) | entropy[1]);
+#else
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Function {} requires ClickHouse to be built with SSL support", name);
+#endif
 
         IColumn::Offset offset = 0;
         for (size_t row = 0; row < input_rows_count; ++row)
