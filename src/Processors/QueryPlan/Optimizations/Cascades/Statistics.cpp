@@ -37,7 +37,8 @@ String ExpressionStatistics::dump() const
     return out.str();
 }
 
-static constexpr Float64 MIN_ROW_WIDTH = 8.0;
+/// Without a floor a zero-width row (e.g. a bare `count()`) would make exchanges look free.
+static constexpr Float64 MIN_ROW_WIDTH = 1.0;
 
 Float64 estimateColumnWidthFromType(const IDataType & type)
 {
