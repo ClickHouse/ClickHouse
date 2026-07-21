@@ -220,3 +220,78 @@ SELECT count(), countDistinct(_part) FROM t_nested_alias_subcol;
 SELECT id, `n.a` FROM t_nested_alias_subcol ORDER BY id;
 
 DROP TABLE t_nested_alias_subcol;
+
+-- A DEFAULT dependency reached through a subcolumn of an ALIAS column whose *name contains a dot*
+-- must still be discovered. `m` is an expired physical `Map` column, `` `x.y` `` is `ALIAS m` (a legal
+-- quoted column name that itself contains a dot), and the Nested subcolumn `n.b` depends on the
+-- expired `m` only via the alias subcolumn `` `x.y`.keys ``. Resolving the identifier to its storage
+-- column must find the longest existing column-name prefix (`` `x.y` ``), not merely peel the first
+-- dotted segment (`x`); otherwise the alias is never expanded, `n.b` is not expired, and vertical
+-- merge corrupts the shared Nested offsets of the present sibling `n.a`.
+DROP TABLE IF EXISTS t_nested_alias_dotted;
+
+CREATE TABLE t_nested_alias_dotted (
+    id UInt32,
+    `n.a` Array(UInt32)
+) ENGINE = MergeTree() ORDER BY id
+SETTINGS
+    min_bytes_for_wide_part = 1,
+    vertical_merge_algorithm_min_rows_to_activate = 1,
+    vertical_merge_algorithm_min_bytes_to_activate = 1,
+    vertical_merge_algorithm_min_columns_to_activate = 1;
+
+SYSTEM STOP MERGES t_nested_alias_dotted;
+
+INSERT INTO t_nested_alias_dotted VALUES (1, [10,20]);
+INSERT INTO t_nested_alias_dotted VALUES (2, [30,40]);
+
+ALTER TABLE t_nested_alias_dotted ADD COLUMN m Map(String, String);
+ALTER TABLE t_nested_alias_dotted ADD COLUMN `x.y` Map(String, String) ALIAS m;
+ALTER TABLE t_nested_alias_dotted ADD COLUMN `n.b` Array(String) DEFAULT `x.y`.keys;
+
+SYSTEM START MERGES t_nested_alias_dotted;
+OPTIMIZE TABLE t_nested_alias_dotted FINAL;
+
+-- The merge must complete without corrupting the shared Nested offsets, so the sibling survives.
+SELECT count(), countDistinct(_part) FROM t_nested_alias_dotted;
+SELECT id, `n.a` FROM t_nested_alias_dotted ORDER BY id;
+
+DROP TABLE t_nested_alias_dotted;
+
+-- A transitive dependency reached through a missing ordinary `DEFAULT` intermediate must still be
+-- discovered. `m` is an expired physical column (absent from every source part, no default), `tmp`
+-- is an ordinary, non-`ALIAS`, non-`Nested` column whose `DEFAULT` reads the expired `m`, and the
+-- Nested subcolumn `n.b` is `` DEFAULT tmp ``. During the merge `tmp` is itself recomputed from its
+-- expression, so `n.b` transitively depends on the expired `m`. The dependency closure must follow
+-- the missing default-bearing intermediate `tmp` and expire `n.b`; otherwise vertical merge
+-- materializes `n.b` from the recomputed (empty) `tmp`, writing Nested offsets inconsistent with the
+-- present sibling `n.a` and corrupting the shared offsets.
+DROP TABLE IF EXISTS t_nested_default_chain;
+
+CREATE TABLE t_nested_default_chain (
+    id UInt32,
+    `n.a` Array(UInt32)
+) ENGINE = MergeTree() ORDER BY id
+SETTINGS
+    min_bytes_for_wide_part = 1,
+    vertical_merge_algorithm_min_rows_to_activate = 1,
+    vertical_merge_algorithm_min_bytes_to_activate = 1,
+    vertical_merge_algorithm_min_columns_to_activate = 1;
+
+SYSTEM STOP MERGES t_nested_default_chain;
+
+INSERT INTO t_nested_default_chain VALUES (1, [10,20]);
+INSERT INTO t_nested_default_chain VALUES (2, [30,40]);
+
+ALTER TABLE t_nested_default_chain ADD COLUMN m Array(UInt32);
+ALTER TABLE t_nested_default_chain ADD COLUMN tmp Array(String) DEFAULT arrayMap(v -> toString(v), m);
+ALTER TABLE t_nested_default_chain ADD COLUMN `n.b` Array(String) DEFAULT tmp;
+
+SYSTEM START MERGES t_nested_default_chain;
+OPTIMIZE TABLE t_nested_default_chain FINAL;
+
+-- The merge must complete without corrupting the shared Nested offsets, so the sibling survives.
+SELECT count(), countDistinct(_part) FROM t_nested_default_chain;
+SELECT id, `n.a` FROM t_nested_default_chain ORDER BY id;
+
+DROP TABLE t_nested_default_chain;
