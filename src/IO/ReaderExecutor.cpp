@@ -122,8 +122,8 @@ ReaderExecutor::ReaderExecutor(
     const StoredObjects & objects,
     Options options)
     : source(std::move(source_))
-    , window_size(options.window_size ? options.window_size : DEFAULT_WINDOW_SIZE)
-    , block_size(options.block_size ? options.block_size : DEFAULT_BLOCK_SIZE)
+    , window_size(options.window_size)
+    , block_size(options.block_size)
     , fetch_tracker(ReadContinuityTracker::Options{.bridgeable_gap = options.min_bytes_for_seek})
     , long_connection_limit(std::move(options.long_connection_limit))
     , encryption_header_cache(std::move(options.encryption_header_cache))
