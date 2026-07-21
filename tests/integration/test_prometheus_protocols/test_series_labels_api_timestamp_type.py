@@ -93,7 +93,7 @@ def test_table_uses_non_default_timestamp_type():
 def test_series_with_start_end_in_range():
     """GET /api/v1/series with a [start, end] overlapping the data must return the series on a
     `DateTime64(6)` table (the comparison literal is built with scale 6)."""
-    data = get_json_from_api("/api/v1/series?start=500&end=2000")
+    data = get_json_from_api("/api/v1/series?match[]=cpu_usage&match[]=memory_usage&start=500&end=2000")
     metric_names = {entry["__name__"] for entry in data if "__name__" in entry}
     assert "cpu_usage" in metric_names
     assert "memory_usage" in metric_names
@@ -101,7 +101,7 @@ def test_series_with_start_end_in_range():
 
 def test_series_with_start_end_out_of_range():
     """GET /api/v1/series with a [start, end] not overlapping any series must return nothing."""
-    data = get_json_from_api("/api/v1/series?start=100000&end=200000")
+    data = get_json_from_api("/api/v1/series?match[]=cpu_usage&start=100000&end=200000")
     assert data == []
 
 
@@ -114,12 +114,16 @@ def test_series_start_bound_respects_microsecond_scale():
     `start` 400 microseconds *before* it must keep the series. A `DateTime64(3)` literal would round both
     bounds to 1030.000 s and return the same series in both cases, so this test fails if the implementation
     ever falls back to millisecond literals for a higher-scale table."""
-    just_after = get_json_from_api("/api/v1/series?start=1030.0004&end=2000")
+    just_after = get_json_from_api(
+        "/api/v1/series?match[]=cpu_usage&match[]=memory_usage&start=1030.0004&end=2000"
+    )
     assert (
         just_after == []
     ), f"Expected no series for a start 400us after the last sample, got {just_after}"
 
-    just_before = get_json_from_api("/api/v1/series?start=1029.9996&end=2000")
+    just_before = get_json_from_api(
+        "/api/v1/series?match[]=cpu_usage&match[]=memory_usage&start=1029.9996&end=2000"
+    )
     metric_names = {entry["__name__"] for entry in just_before if "__name__" in entry}
     assert "cpu_usage" in metric_names and "memory_usage" in metric_names, (
         f"Expected both series for a start 400us before the last sample, got {just_before}"
@@ -135,7 +139,7 @@ def test_labels_with_start_end_in_range():
 
 def test_start_after_end_is_rejected():
     """start > end must be rejected on a non-`DateTime64(3)` table as well."""
-    url = f"http://{node.ip_address}:9093/api/v1/series?start=2000&end=1000"
+    url = f"http://{node.ip_address}:9093/api/v1/series?match[]=cpu_usage&start=2000&end=1000"
     response = requests.get(url)
     assert response.status_code == 400, f"Expected 400, got {response.status_code}: {response.text}"
     data = response.json()

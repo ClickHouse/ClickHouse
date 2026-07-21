@@ -119,11 +119,14 @@ def test_labels_limit_zero_means_no_limit():
 
 
 def test_series_limit():
-    result = get_success_json("/api/v1/series?limit=2")
+    # /api/v1/series requires at least one non-empty match[]; select all four written metric names so
+    # the limit alone decides truncation.
+    match = "match[]=cpu_usage&match[]=memory_usage&match[]=http_requests_total"
+    result = get_success_json(f"/api/v1/series?{match}&limit=2")
     assert len(result["data"]) == 2
     assert TRUNCATION_WARNING in result.get("warnings", [])
 
-    result = get_success_json("/api/v1/series?limit=100")
+    result = get_success_json(f"/api/v1/series?{match}&limit=100")
     assert len(result["data"]) == 4
     assert "warnings" not in result
 

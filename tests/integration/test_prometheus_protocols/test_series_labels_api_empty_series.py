@@ -87,7 +87,7 @@ def setup(request):
 
 def test_empty_series_present_without_time_range():
     """Without start/end, the empty series and its labels are returned - it is only hidden by a time range."""
-    series = get_json_from_api("/api/v1/series")
+    series = get_json_from_api("/api/v1/series?match[]=cpu_usage&match[]=empty_series")
     metric_names = {entry["__name__"] for entry in series if "__name__" in entry}
     assert "cpu_usage" in metric_names
     assert "empty_series" in metric_names
@@ -105,7 +105,7 @@ def test_empty_series_present_without_time_range():
 
 def test_series_excludes_empty_series_in_range():
     """/api/v1/series with a range overlapping the real series must not surface the NULL-bound empty series."""
-    series = get_json_from_api("/api/v1/series?start=500&end=2000")
+    series = get_json_from_api("/api/v1/series?match[]=cpu_usage&match[]=empty_series&start=500&end=2000")
     metric_names = {entry["__name__"] for entry in series if "__name__" in entry}
     assert metric_names == {"cpu_usage"}, f"empty_series must be excluded from a ranged request, got: {series}"
 

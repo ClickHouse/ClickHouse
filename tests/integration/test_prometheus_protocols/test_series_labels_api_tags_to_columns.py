@@ -117,7 +117,7 @@ def test_tags_to_columns_series_includes_column_tags():
 def test_start_end_rejected_without_min_max_time():
     """When the table does not store min_time/max_time, a request specifying start/end must fail
     explicitly instead of silently ignoring the time range and returning incomplete data."""
-    url = f"http://{node.ip_address}:9093/api/v1/series?start=1000&end=1030"
+    url = f"http://{node.ip_address}:9093/api/v1/series?match[]=cpu_usage&start=1000&end=1030"
     response = requests.get(url)
     assert response.status_code == 400, f"Expected 400, got {response.status_code}: {response.text}"
     data = response.json()

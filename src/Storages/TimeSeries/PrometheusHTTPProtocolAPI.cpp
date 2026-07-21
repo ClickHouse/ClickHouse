@@ -638,6 +638,18 @@ void PrometheusHTTPProtocolAPI::getSeries(
     UInt64 limit,
     QueryFinishCallback query_finish_callback)
 {
+    /// Prometheus requires at least one non-empty `match[]` series selector on `/api/v1/series`
+    /// (unlike `/labels` and `/label/<name>/values`, where it is optional). Without it the endpoint
+    /// would run an unbounded `SELECT DISTINCT ... FROM <tags>` over the whole table and return a
+    /// potentially huge response for a malformed or incomplete client call, so reject it (fail closed).
+    bool has_match = false;
+    for (const auto & match_param : match_params)
+        has_match |= !match_param.empty();
+    if (!has_match)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "The Prometheus /api/v1/series endpoint requires at least one non-empty 'match[]' series selector");
+
     auto tags_table = time_series_storage->getTargetTable(ViewTarget::Tags, getContext());
     auto tags_table_id = tags_table->getStorageID();
 

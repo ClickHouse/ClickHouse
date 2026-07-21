@@ -110,7 +110,7 @@ def test_label_values_for_datacenter():
 
 def test_series_returns_metric_labels():
     """GET /api/v1/series should return series with their full label sets."""
-    data = get_json_from_api("/api/v1/series")
+    data = get_json_from_api("/api/v1/series?match[]=cpu_usage&match[]=memory_usage")
     assert isinstance(data, list)
     assert len(data) > 0
 
@@ -133,7 +133,7 @@ def test_series_includes_real_labels():
     The tags column is a Map, so each returned series should contain the real labels
     (e.g. host, datacenter) that were written, deduplicated by series identity.
     """
-    data = get_json_from_api("/api/v1/series")
+    data = get_json_from_api("/api/v1/series?match[]=cpu_usage")
     cpu_series = [entry for entry in data if entry.get("__name__") == "cpu_usage"]
     assert len(cpu_series) == 2, f"Expected 2 cpu_usage series, got: {cpu_series}"
 
@@ -206,7 +206,7 @@ def test_series_deduplicated():
 
 def test_series_with_start_end_in_range():
     """GET /api/v1/series with a [start, end] overlapping the data must return the series."""
-    data = get_json_from_api("/api/v1/series?start=500&end=2000")
+    data = get_json_from_api("/api/v1/series?match[]=cpu_usage&match[]=memory_usage&start=500&end=2000")
     metric_names = {entry["__name__"] for entry in data if "__name__" in entry}
     assert "cpu_usage" in metric_names
     assert "memory_usage" in metric_names
@@ -214,7 +214,7 @@ def test_series_with_start_end_in_range():
 
 def test_series_with_start_end_out_of_range():
     """GET /api/v1/series with a [start, end] not overlapping any series must return nothing."""
-    data = get_json_from_api("/api/v1/series?start=100000&end=200000")
+    data = get_json_from_api("/api/v1/series?match[]=cpu_usage&start=100000&end=200000")
     assert data == []
 
 
@@ -230,10 +230,28 @@ def test_label_values_with_start_end_out_of_range():
     assert data == []
 
 
+def test_series_without_match_is_rejected():
+    """Prometheus requires at least one non-empty `match[]` series selector on /api/v1/series
+    (unlike /api/v1/labels and /api/v1/label/<name>/values, where it is optional). Without it the
+    endpoint would run an unbounded `SELECT DISTINCT ... FROM <tags>` over the whole table and return a
+    potentially huge response for a malformed client call, so it must be rejected."""
+    for path in [
+        "/api/v1/series",
+        "/api/v1/series?match[]=",
+        "/api/v1/series?start=500&end=2000",
+    ]:
+        url = f"http://{node.ip_address}:9093{path}"
+        response = requests.get(url)
+        assert response.status_code == 400, f"{path}: expected 400, got {response.status_code}: {response.text}"
+        data = response.json()
+        assert data["status"] == "error", f"{path}: expected error status, got: {data}"
+        assert "match[]" in data["error"], f"{path}: unexpected error message: {data}"
+
+
 @pytest.mark.parametrize(
     "path",
     [
-        "/api/v1/series",
+        "/api/v1/series?match[]=cpu_usage",
         "/api/v1/labels",
         "/api/v1/label/host/values",
     ],
@@ -241,7 +259,8 @@ def test_label_values_with_start_end_out_of_range():
 def test_start_after_end_is_rejected(path):
     """A request with start > end must be rejected instead of matching long-lived series for an empty
     interval (mirrors the PromQL query path which rejects start_time > end_time)."""
-    url = f"http://{node.ip_address}:9093{path}?start=2000&end=1000"
+    sep = "&" if "?" in path else "?"
+    url = f"http://{node.ip_address}:9093{path}{sep}start=2000&end=1000"
     response = requests.get(url)
     assert response.status_code == 400, f"Expected 400, got {response.status_code}: {response.text}"
     data = response.json()
@@ -308,7 +327,7 @@ def test_metadata_endpoint_records_query_finish():
 @pytest.mark.parametrize(
     "path",
     [
-        "/api/v1/series",
+        "/api/v1/series?match[]=cpu_usage",
         "/api/v1/labels",
         "/api/v1/label/host/values",
     ],
@@ -325,7 +344,8 @@ def test_metadata_endpoint_execution_error_is_a_well_formed_error(path):
     success body. `max_rows_to_read=1` (with the default `throw` overflow mode) is forwarded as a
     setting and forces such a failure during execution because the tags table holds more than one row.
     """
-    url = f"http://{node.ip_address}:9093{path}?max_rows_to_read=1&read_overflow_mode=throw"
+    sep = "&" if "?" in path else "?"
+    url = f"http://{node.ip_address}:9093{path}{sep}max_rows_to_read=1&read_overflow_mode=throw"
     response = requests.get(url)
     assert response.status_code == 400, f"Expected 400, got {response.status_code}: {response.text}"
     # response.json() must succeed: a truncated {"status":"success","data":[ body would fail to parse.

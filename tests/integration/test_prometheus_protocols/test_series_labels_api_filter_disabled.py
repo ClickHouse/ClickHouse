@@ -93,7 +93,7 @@ def test_metadata_endpoints_work_without_time_range():
 @pytest.mark.parametrize(
     "path",
     [
-        "/api/v1/series",
+        "/api/v1/series?match[]=cpu_usage",
         "/api/v1/labels",
         "/api/v1/label/host/values",
     ],
@@ -103,7 +103,8 @@ def test_start_end_rejected_when_filtering_disabled(path):
     rejected explicitly instead of silently applying a `min_time`/`max_time` filter that the real query
     path (`/api/v1/query`, `/api/v1/query_range`) would not use, which could return a different set of
     series, label names, or label values."""
-    url = f"http://{node.ip_address}:9093{path}?start=1000&end=1030"
+    sep = "&" if "?" in path else "?"
+    url = f"http://{node.ip_address}:9093{path}{sep}start=1000&end=1030"
     response = requests.get(url)
     assert response.status_code == 400, f"Expected 400, got {response.status_code}: {response.text}"
     data = response.json()

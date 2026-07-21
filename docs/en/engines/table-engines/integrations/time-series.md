@@ -412,13 +412,13 @@ A `TimeSeries` table can be exposed through a Prometheus-compatible HTTP API con
 
 | Endpoint | Description |
 |---|---|
-| `/api/v1/series` | Returns the matching series together with their full label set (the metric name as `__name__` plus all tags). |
+| `/api/v1/series` | Returns the matching series together with their full label set (the metric name as `__name__` plus all tags). At least one non-empty `match[]` selector is required, as in Prometheus. |
 | `/api/v1/labels` | Returns all distinct label names, always including the virtual `__name__` label. |
 | `/api/v1/label/<name>/values` | Returns the distinct values of the label `<name>` (the `metric_name` column for `__name__`, a dedicated column for a tag moved there via `tags_to_columns`, otherwise values from the `tags` map). |
 
 These endpoints read from the [tags](#tags-table) target table and deduplicate by series identity.
 
-The optional `match[]` parameter restricts the result by metric name, for example `/api/v1/series?match[]=cpu_usage`. The parameter can be repeated, in which case the result is the union over all the given metric names, for example `/api/v1/series?match[]=cpu_usage&match[]=memory_usage`.
+The `match[]` parameter restricts the result by metric name, for example `/api/v1/series?match[]=cpu_usage`. The parameter can be repeated, in which case the result is the union over all the given metric names, for example `/api/v1/series?match[]=cpu_usage&match[]=memory_usage`. It is required on `/api/v1/series` (a request without at least one non-empty `match[]` is rejected, matching Prometheus, so the endpoint never runs an unbounded scan over the whole `tags` table), and optional on `/api/v1/labels` and `/api/v1/label/<name>/values`.
 
 The optional `limit` parameter caps the number of returned items, for example `/api/v1/labels?limit=10` (`0` means no limit, which is also the default). On the query endpoints (`/api/v1/query` and `/api/v1/query_range`), `limit` caps the number of returned series of a vector or matrix result; scalar and string results are not series and are never truncated. When a result is truncated, the response carries the standard Prometheus warning `results truncated due to limit`.
 
