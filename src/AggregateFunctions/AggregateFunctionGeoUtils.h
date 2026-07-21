@@ -32,7 +32,6 @@ static constexpr UInt8 GEO_SERDE_VERSION = 1;
 
 /// Deserialization guards.
 static constexpr size_t MAX_POINTS_PER_RING = 10'000'000;
-static constexpr size_t MAX_CHUNKS_PER_STATE = 10'000;
 static constexpr size_t MAX_POINTS_IN_CONVEX_HULL_STATE = 100'000'000;
 static constexpr size_t MAX_POINTS_IN_POLYGONAL_STATE = 10'000'000;
 /// Cumulative cap on the number of polygons and rings allocated while deserializing a single
