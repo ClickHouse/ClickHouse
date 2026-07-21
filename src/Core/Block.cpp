@@ -1,8 +1,12 @@
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Columns/ColumnAggregateFunction.h>
+#include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnMap.h>
+#include <Columns/ColumnNullable.h>
 #include <Columns/ColumnSparse.h>
 #include <Columns/ColumnReplicated.h>
+#include <Columns/ColumnTuple.h>
 #include <Core/Block.h>
 #include <Core/UUID.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -62,6 +66,48 @@ static const IColumn * getActualColumn(const IColumn * column)
     return actual_column;
 }
 
+/// Compares the structure of two columns. Aggregate-state columns whose functions have the same
+/// state representation (e.g. `quantileState` and `quantilesState(0.9)`) are compatible even
+/// though their names differ, and this relaxation must apply at any nesting depth: an expression
+/// over a `UNION` of such states can wrap them into another column (e.g. into a `Tuple`), and the
+/// per-branch headers then differ only by the aggregate function nested inside. For all other
+/// columns the comparison is as strict as comparing full column names.
+static bool haveCompatibleColumnStructure(const IColumn & actual, const IColumn & expected)
+{
+    const auto * actual_agg = typeid_cast<const ColumnAggregateFunction *>(&actual);
+    const auto * expected_agg = typeid_cast<const ColumnAggregateFunction *>(&expected);
+    if (actual_agg && expected_agg)
+        return actual_agg->getAggregateFunction()->haveSameStateRepresentation(*expected_agg->getAggregateFunction());
+
+    if (typeid(actual) != typeid(expected))
+        return false;
+
+    /// Descend only into the plain container columns whose name is a pure composition of the
+    /// nested column names, so that for everything else the comparison stays exactly as strict
+    /// as comparing full column names.
+    const bool is_compositional = typeid_cast<const ColumnTuple *>(&actual) || typeid_cast<const ColumnArray *>(&actual)
+        || typeid_cast<const ColumnMap *>(&actual) || typeid_cast<const ColumnNullable *>(&actual)
+        || typeid_cast<const ColumnConst *>(&actual) || typeid_cast<const ColumnSparse *>(&actual)
+        || typeid_cast<const ColumnReplicated *>(&actual);
+
+    if (!is_compositional)
+        return actual.getName() == expected.getName();
+
+    std::vector<const IColumn *> actual_children;
+    std::vector<const IColumn *> expected_children;
+    actual.forEachSubcolumn([&](const auto & subcolumn) { actual_children.push_back(subcolumn.get()); });
+    expected.forEachSubcolumn([&](const auto & subcolumn) { expected_children.push_back(subcolumn.get()); });
+
+    if (actual_children.size() != expected_children.size())
+        return false;
+
+    for (size_t i = 0; i < actual_children.size(); ++i)
+        if (!haveCompatibleColumnStructure(*actual_children[i], *expected_children[i]))
+            return false;
+
+    return true;
+}
+
 template <typename ReturnType>
 static ReturnType checkColumnStructure(const ColumnWithTypeAndName & actual, const ColumnWithTypeAndName & expected,
     std::string_view context_description, bool allow_materialize, int code)
@@ -97,19 +143,7 @@ static ReturnType checkColumnStructure(const ColumnWithTypeAndName & actual, con
         expected_column = getActualColumn(expected_column);
     }
 
-    const auto * actual_column_maybe_agg = typeid_cast<const ColumnAggregateFunction *>(actual_column);
-    const auto * expected_column_maybe_agg = typeid_cast<const ColumnAggregateFunction *>(expected_column);
-
-    if (actual_column_maybe_agg && expected_column_maybe_agg)
-    {
-        if (!actual_column_maybe_agg->getAggregateFunction()->haveSameStateRepresentation(*expected_column_maybe_agg->getAggregateFunction()))
-            return onError<ReturnType>(code,
-                    "Block structure mismatch in {} stream: different columns:\n{}\n{}",
-                    context_description,
-                    actual.dumpStructure(),
-                    expected.dumpStructure());
-    }
-    else if (actual_column->getName() != expected_column->getName())
+    if (!haveCompatibleColumnStructure(*actual_column, *expected_column))
     {
         return onError<ReturnType>(code,
                 "Block structure mismatch in {} stream: different columns:\n{}\n{}",
