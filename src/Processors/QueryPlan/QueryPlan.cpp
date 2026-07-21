@@ -1002,14 +1002,6 @@ void QueryPlan::explainPlan(
         .runtime_filter_names = plan_pretty_names ? plan_pretty_names->runtime_filter_names : empty_pretty_names.runtime_filter_names
     };
 
-    if (options.pretty)
-    {
-        std::unordered_map<FutureSet::Hash, String, PreparedSets::Hashing> subquery_set_names;
-        QueryPlanFormat::buildPrettyNamesMap(*this, settings.pretty_names, settings.runtime_filter_names, subquery_set_names);
-        for (const auto & [hash, name] : subquery_set_names)
-            settings.pretty_names[PreparedSets::toString(hash, {})] = PrettyColumnName(name);
-    }
-
     std::deque<ExplainPlan::Frame> stack;
 
     if (settings.pretty && parent_tree_prefix.empty())
