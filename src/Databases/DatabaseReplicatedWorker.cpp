@@ -479,7 +479,7 @@ String DatabaseReplicatedDDLWorker::tryEnqueueAndExecuteEntry(DDLLogEntry & entr
 
     {
         std::unique_lock lock{mutex};
-        bool processed = wait_current_task_change.wait_for(lock, std::chrono::seconds(timeout), [&]()
+        bool processed = wait_current_task_change.wait_for(lock, saturatedSeconds(timeout), [&]()
         {
             chassert(zookeeper->expired() || current_task <= entry_name);
 

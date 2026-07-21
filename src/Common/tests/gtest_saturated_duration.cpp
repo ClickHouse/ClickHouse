@@ -46,3 +46,33 @@ GTEST_TEST(SaturatedMilliseconds, PassesThroughInRangeValues)
     ASSERT_GT(ns.count(), 0);
     ASSERT_LT(ns.count(), std::numeric_limits<Int64>::max());
 }
+
+/// saturatedSeconds is the seconds-typed sibling for timeouts kept in seconds (a UInt64 seconds
+/// setting must be capped before it becomes a std::chrono::seconds, because wait_for still turns
+/// seconds into nanoseconds; values above the cap would overflow that x 1'000'000'000 conversion).
+GTEST_TEST(SaturatedSeconds, ClampsHugePositiveToOneYear)
+{
+    const auto max = std::chrono::seconds(MAX_WAIT_TIMEOUT_SECONDS);
+
+    ASSERT_EQ(saturatedSeconds(std::numeric_limits<Int64>::max()), max);
+    ASSERT_EQ(saturatedSeconds(std::numeric_limits<UInt64>::max()), max);
+    ASSERT_EQ(saturatedSeconds(MAX_WAIT_TIMEOUT_SECONDS + 1), max);
+}
+
+GTEST_TEST(SaturatedSeconds, ClampsNegativeToZero)
+{
+    ASSERT_EQ(saturatedSeconds(Int64(-1)), std::chrono::seconds(0));
+    ASSERT_EQ(saturatedSeconds(std::numeric_limits<Int64>::min()), std::chrono::seconds(0));
+}
+
+GTEST_TEST(SaturatedSeconds, PassesThroughInRangeValues)
+{
+    ASSERT_EQ(saturatedSeconds(Int64(0)), std::chrono::seconds(0));
+    ASSERT_EQ(saturatedSeconds(Int64(300)), std::chrono::seconds(300));
+    ASSERT_EQ(saturatedSeconds(MAX_WAIT_TIMEOUT_SECONDS), std::chrono::seconds(MAX_WAIT_TIMEOUT_SECONDS));
+
+    // The clamped seconds value, converted to nanoseconds as a steady_clock wait would, fits in Int64.
+    const auto ns = std::chrono::duration_cast<std::chrono::nanoseconds>(saturatedSeconds(std::numeric_limits<UInt64>::max()));
+    ASSERT_GT(ns.count(), 0);
+    ASSERT_LT(ns.count(), std::numeric_limits<Int64>::max());
+}

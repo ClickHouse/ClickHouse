@@ -12,6 +12,7 @@
 #include <Common/UTF8Helpers.h>
 #include <Common/PODArray.h>
 #include <Common/formatReadable.h>
+#include <Common/saturatedDuration.h>
 #include <Common/setThreadName.h>
 #include <Common/TerminalSize.h>
 #include <Common/ThreadPool.h>
@@ -222,7 +223,7 @@ void PrettyBlockOutputFormat::writingThread()
     Stopwatch watch(CLOCK_MONOTONIC_COARSE);
     while (!finish)
     {
-        if (std::cv_status::timeout == mono_chunk_condvar.wait_for(lock, std::chrono::milliseconds(format_settings.pretty.squash_consecutive_ms))
+        if (std::cv_status::timeout == mono_chunk_condvar.wait_for(lock, saturatedMilliseconds(format_settings.pretty.squash_consecutive_ms))
             || watch.elapsedMilliseconds() > format_settings.pretty.squash_max_wait_ms)
         {
             writeMonoChunkIfNeeded();
