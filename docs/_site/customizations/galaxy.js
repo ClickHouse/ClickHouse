@@ -148,12 +148,12 @@
     });
   }
 
-  function post(url, requestBody) {
+  function post(url, requestBody, useBeacon) {
     var json = JSON.stringify(requestBody);
     var blob = new Blob([json], { type: 'application/json;charset=UTF-8' });
     var tooLarge = blob.size > KEEPALIVE_LIMIT_BYTES;
 
-    if (!tooLarge && typeof window.navigator.sendBeacon === 'function') {
+    if (useBeacon && !tooLarge && typeof window.navigator.sendBeacon === 'function') {
       try {
         if (window.navigator.sendBeacon(url, blob)) return Promise.resolve();
       } catch (e) {}
@@ -164,10 +164,14 @@
       headers: { 'Content-Type': 'application/json;charset=UTF-8' },
       body: json,
       keepalive: !tooLarge,
+    }).then(function (response) {
+      if (!response.ok) {
+        throw new Error('Galaxy request failed with status ' + response.status);
+      }
     });
   }
 
-  function flushEvents() {
+  function flushEvents(useBeacon) {
     if (flushInFlight || eventsQueue.length === 0) {
       return flushInFlight || Promise.resolve();
     }
@@ -184,7 +188,7 @@
       data: eventsQueue.slice(0, eventCount),
     };
 
-    flushInFlight = post(API_HOST + API_PATH, request)
+    flushInFlight = post(API_HOST + API_PATH, request, useBeacon === true)
       .then(function () {
         eventsQueue.splice(0, eventCount);
       })
@@ -209,7 +213,7 @@
 
   function stopGalaxy() {
     window.clearInterval(flushInterval);
-    void flushEvents();
+    void flushEvents(true);
   }
 
   window.addEventListener('beforeunload', stopGalaxy);
@@ -220,14 +224,8 @@
     if (!event.persisted) stopGalaxy();
   });
 
-  function pageEventPrefix(path) {
-    return path.indexOf('/resources/support-center/knowledge-base/') !== -1
-      ? 'knowledgebase.page.' + path
-      : 'docs.page.' + path;
-  }
-
   function trackPageEvent(action) {
-    track(pageEventPrefix(window.location.pathname) + '.window.' + action, {
+    track('docs.window.' + action, {
       interaction: 'trigger',
     });
   }
@@ -238,6 +236,46 @@
   trackPageEvent('load');
   window.addEventListener('focus', function () { trackPageEvent('focus'); });
   window.addEventListener('blur', function () { trackPageEvent('blur'); });
+
+  // Track clicks declaratively from MDX, including clicks on descendants of
+  // wrappers around Mintlify components:
+  // <div data-galaxy-event="docs.install.download"
+  //      data-galaxy-prop-os="linux">...</div>
+  function getTrackedHref(anchor) {
+    var href = anchor.getAttribute('href');
+    // Homepage click handlers add the canonical /docs base before navigating.
+    // Record that final destination rather than the unprefixed DOM attribute.
+    if (isCanonicalDocs && href && href.charAt(0) === '/' &&
+        href.indexOf('//') !== 0 && !/^\/docs(?:\/|$)/.test(href)) {
+      return '/docs' + href;
+    }
+    return href;
+  }
+
+  document.addEventListener('click', function (event) {
+    var target = event.target;
+    if (!target || typeof target.closest !== 'function') return;
+
+    var element = target.closest('[data-galaxy-event]');
+    if (!element) return;
+
+    var eventName = element.getAttribute('data-galaxy-event');
+    if (!eventName) return;
+
+    var properties = { interaction: 'click' };
+    var anchor = target.closest('a[href]') ||
+      (element.tagName === 'A' ? element : element.querySelector('a[href]'));
+    if (anchor) properties.href = getTrackedHref(anchor);
+
+    for (var i = 0; i < element.attributes.length; i++) {
+      var attribute = element.attributes[i];
+      if (attribute.name.indexOf('data-galaxy-prop-') === 0) {
+        properties[attribute.name.slice('data-galaxy-prop-'.length)] = attribute.value;
+      }
+    }
+
+    track(eventName, properties);
+  }, true);
 
   function watchPath() {
     var path = window.location.pathname;

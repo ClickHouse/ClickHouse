@@ -33,10 +33,11 @@ CREATE NAMED COLLECTION ai_text_credentials AS
     model = 'gpt-4o-mini',
     api_key = 'sk-...';
 
+-- `aiEmbed` does not read `model` from the named collection; pass it as a positional argument instead.
+-- Defining `model` in an `aiEmbed` collection is an error, not silently ignored.
 CREATE NAMED COLLECTION ai_embedding_credentials AS
     provider = 'openai',
     endpoint = 'https://api.openai.com/v1/embeddings',
-    model = 'text-embedding-3-small',
     api_key = 'sk-...';
 ```
 
@@ -46,7 +47,7 @@ CREATE NAMED COLLECTION ai_embedding_credentials AS
 |-----------|------|---------|-------------|
 | `provider` | String | — | Model provider. Supported: `'openai'`, `'anthropic'`. See note below. |
 | `endpoint` | String | — | API endpoint URL. |
-| `model` | String | — | Model name (e.g. `'gpt-4o-mini'`, `'text-embedding-3-small'`). |
+| `model` | String | — | Model name (e.g. `'gpt-4o-mini'`). Used by the text functions; `aiEmbed` requires `model` as a positional argument and errors if `model` is specified in the named collection. |
 | `api_key` | String | — | Authentication key for the provider. Optional: when omitted, the auth header is not sent, which allows targeting OpenAI-compatible servers that do not require authentication. |
 | `max_tokens` | UInt64 | `1024` | Maximum number of output tokens per API call. |
 | `api_version` | String | — | API version string. Used by Anthropic (`'2023-06-01'`). |
@@ -64,7 +65,7 @@ A function resolves the named collection to use from, in order:
    - [`ai_function_text_default_credentials`](/reference/settings/session-settings#ai_function_text_default_credentials) for the text functions (`aiGenerate`, `aiClassify`, `aiExtract`, `aiTranslate`);
    - [`ai_function_embedding_default_credentials`](/reference/settings/session-settings#ai_function_embedding_default_credentials) for `aiEmbed`.
 
-If neither is set, the call fails. The text and embedding functions use separate default settings because a chat-completions endpoint and model differ from an embeddings one.
+If neither is set, the call fails. The text and embedding functions use separate default settings because a chat-completions endpoint differs from an embeddings one.
 
 ```sql
 SET ai_function_text_default_credentials = 'ai_text_credentials';
@@ -78,14 +79,14 @@ SELECT aiGenerate('Bonjour', map('credentials', 'other_credentials'));
 
 ### Parameter map {#parameter-map}
 
-Each function accepts an optional trailing `Map(String, String)` of parameters. All values are strings (quote numbers, e.g. `'0.2'`). Unknown keys are rejected. A key that is present overrides the corresponding named-collection value; a key that is absent falls back to the named collection (for `model`/`max_tokens`) or the built-in default.
+Each function accepts an optional trailing `Map(String, String)` of parameters. All values are strings (quote numbers, e.g. `'0.2'`). Unknown keys are rejected. A key that is present overrides the corresponding named-collection value; a key that is absent falls back to the named collection (for `model`/`max_tokens`) or the built-in default. The exception is `aiEmbed`, which takes `model` as a required positional argument (`aiEmbed(text, model[, params])`) and errors if it is instead set in the parameter map or named collection.
 
 The following parameters are common to all the AI functions:
 
 | Key | Description |
 |-----|-------------|
 | `credentials` | Named collection to use (see above). |
-| `model` | Overrides the collection's `model`. |
+| `model` | Overrides the collection's `model` (text functions only; `aiEmbed` takes `model` as a required positional argument, not a map key). |
 
 Individual functions accept additional, function-specific parameters (such as `max_tokens`, `temperature`, `system_prompt`, `instructions`, and `dimensions`). See each function's reference below for the parameters it accepts and their defaults.
 
@@ -109,6 +110,17 @@ The `endpoint` URL in an AI named collection is an outbound destination the serv
 ```
 
 Note that this setting is server-wide and applies to all HTTP-using features.
+
+### Transport security (HTTP vs HTTPS) {#transport-security}
+
+The transport is determined solely by the scheme of the `endpoint` URL. There is no application-level encryption of the request payload; the protection of data in transit depends entirely on the scheme:
+
+- `https://` — the connection uses TLS. The request body (input text, prompts) and the `api_key` in the request headers are encrypted in transit, and the provider's certificate is validated. Use this for any remote provider.
+- `http://` — the connection is **not encrypted**. The request body and the `api_key` are sent in cleartext. Only use this for a trusted provider on a private network (e.g. a local `vLLM` or `Ollama` instance).
+
+AI functions do not force HTTPS: an `http://` endpoint is accepted and sends data unencrypted. There is currently no server-side setting that rejects cleartext AI endpoints — [`remote_url_allow_hosts`](/reference/settings/server-settings/settings#remote_url_allow_hosts) restricts the destination host only and does not inspect the URL scheme, so an `http://` endpoint to an allowed host still passes. To ensure encrypted transport, configure named collections with `https://` endpoints.
+
+Note that in either case the provider receives the input data in cleartext after TLS termination; TLS protects the data only on the network path between the server and the provider.
 
 ## Supported providers {#supported-providers}
 
@@ -159,22 +171,23 @@ The function sends the text together with a fixed classification prompt and a JS
 constraining the model to return exactly one of the supplied labels. When the response is returned as a JSON
 object of the form `{"category": "..."}`, the label is unwrapped and the label string is returned.
 
-The first argument is a named collection that specifies the provider, model, endpoint, and optionally an API key.
+Credentials (a named collection specifying the provider, model, endpoint, and optionally an API key)
+are taken from the `credentials` key of the optional parameter map, or from the
+`ai_function_text_default_credentials` setting when the map omits it.
 
 **Syntax**
 
 ```sql
-aiClassify(collection, text, categories[, temperature])
+aiClassify(text, categories[, params])
 ```
 
 **Aliases**: `AIClassify`
 
 **Arguments**
 
-- `collection` — Name of a named collection containing provider credentials and configuration. [`String`](/reference/data-types/string)
 - `text` — Text to classify. [`String`](/reference/data-types/string)
 - `categories` — Constant list of candidate category labels. [`Array(String)`](/reference/data-types/array)
-- `temperature` — Sampling temperature controlling randomness. Default: `0.0`. [`Float64`](/reference/data-types/float)
+- `params` — Optional constant `Map(String, String)` of parameters. Function-specific keys: `temperature` (sampling temperature controlling randomness; default `0.0`), `max_tokens` (maximum output tokens per call; default `1024`). The common parameters `credentials` and `model` also apply (see [AI Functions](/reference/functions/regular-functions/ai-functions)). [`Map(String, String)`](/reference/data-types/map)
 
 **Returned value**
 
@@ -185,17 +198,17 @@ One of the provided category labels, or the default value for the column type (e
 **Classify sentiment**
 
 ```sql title=Query
-SELECT aiClassify('ai_credentials', 'I love this product!', ['positive', 'negative', 'neutral'])
+SELECT aiClassify('I love this product!', ['positive', 'negative', 'neutral'])
 ```
 
 ```response title=Response
 positive
 ```
 
-**Classify a column**
+**Classify a column with explicit credentials**
 
 ```sql title=Query
-SELECT body, aiClassify('ai_credentials', body, ['bug', 'question', 'feature']) AS kind FROM issues LIMIT 5
+SELECT body, aiClassify(body, ['bug', 'question', 'feature'], map('credentials', 'ai_text_credentials')) AS kind FROM issues LIMIT 5
 ```
 
 ## aiEmbed {#aiEmbed}
@@ -209,21 +222,30 @@ Within a single block of rows, inputs are grouped into batches of up to
 [`ai_function_embedding_max_batch_size`](/reference/settings/session-settings#ai_function_embedding_max_batch_size)
 entries per HTTP request to reduce per-call overhead.
 
-The first argument is a named collection that specifies the provider, model, endpoint, and optionally an API key.
-The optional `dimensions` argument, when supported by the model (e.g. OpenAI's `text-embedding-3-*`),
+Credentials (a named collection specifying the provider, endpoint, and optionally an API key)
+are taken from the `credentials` key of the parameter map, or from the
+`ai_function_embedding_default_credentials` setting when the map omits it. Note that `aiEmbed` uses a
+separate default-credentials setting from the text functions, since an embeddings endpoint differs
+from a chat one.
+
+The `model` is a required positional argument (a constant `String`). Unlike the text functions,
+`aiEmbed` does not read `model` from the named collection or the parameter map. A named collection
+that defines `model` is rejected rather than silently ignored.
+
+The optional `dimensions` parameter, when supported by the model (e.g. OpenAI's `text-embedding-3-*`),
 requests a vector of the given size; otherwise the model's native size is returned.
 
 **Syntax**
 
 ```sql
-aiEmbed(collection, text[, dimensions])
+aiEmbed(text, model[, params])
 ```
 
 **Arguments**
 
-- `collection` — Name of a named collection containing provider credentials and configuration. [`String`](/reference/data-types/string)
 - `text` — Text to embed. [`String`](/reference/data-types/string)
-- `dimensions` — Optional target dimensionality for the output vector. `0` or omitted means the model's native size. [`UInt64`](/reference/data-types/int-uint)
+- `model` — Embedding model name. [`const String`](/reference/data-types/string)
+- `params` — Optional constant `Map(String, String)` of parameters. Function-specific key: `dimensions` (target dimensionality of the output vector; `0` or omitted means the model's native size). The common parameter `credentials` also applies (see [AI Functions](/reference/functions/regular-functions/ai-functions)). [`Map(String, String)`](/reference/data-types/map)
 
 **Returned value**
 
@@ -231,22 +253,22 @@ The embedding vector, or an empty array if the input is NULL or empty, the reque
 
 **Examples**
 
-**Embed a single string**
+**Embed a single string (`credentials` can be omitted if the `ai_function_embedding_default_credentials` setting is set)**
 
 ```sql title=Query
-SELECT aiEmbed('ai_credentials', 'Hello world')
+SELECT aiEmbed('Hello world', 'text-embedding-3-small', map('credentials', 'ai_embedding_credentials'))
 ```
 
 **With explicit dimensions**
 
 ```sql title=Query
-SELECT aiEmbed('ai_credentials', 'Hello world', 256)
+SELECT aiEmbed('Hello world', 'text-embedding-3-small', map('credentials', 'ai_embedding_credentials', 'dimensions', '256'))
 ```
 
 **Embed a column of texts**
 
 ```sql title=Query
-SELECT aiEmbed('ai_credentials', title, 256) FROM articles LIMIT 10
+SELECT aiEmbed(title, 'text-embedding-3-small', map('credentials', 'ai_embedding_credentials', 'dimensions', '256')) FROM articles LIMIT 10
 ```
 
 ## aiExtract {#aiExtract}
@@ -261,22 +283,23 @@ JSON-encoded schema of the form `'{"field_a": "description of field a", "field_b
 In instruction mode, the function returns the extracted value as a plain string, or an empty string if nothing was found.
 In schema mode, the function returns a JSON object string whose keys match the requested schema; missing fields are `null`.
 
-The first argument is a named collection that specifies the provider, model, endpoint, and optionally an API key.
+Credentials (a named collection specifying the provider, model, endpoint, and optionally an API key)
+are taken from the `credentials` key of the optional parameter map, or from the
+`ai_function_text_default_credentials` setting when the map omits it.
 
 **Syntax**
 
 ```sql
-aiExtract(collection, text, instruction_or_schema[, temperature])
+aiExtract(text, instruction_or_schema[, params])
 ```
 
 **Aliases**: `AIExtract`
 
 **Arguments**
 
-- `collection` — Name of a named collection containing provider credentials and configuration. [`String`](/reference/data-types/string)
 - `text` — Text to extract information from. [`String`](/reference/data-types/string)
 - `instruction_or_schema` — Free-form extraction instruction, or a constant JSON object describing the fields to extract. [`const String`](/reference/data-types/string)
-- `temperature` — Sampling temperature controlling randomness. Default: `0.0`. [`const Float64`](/reference/data-types/float)
+- `params` — Optional constant `Map(String, String)` of parameters. Function-specific keys: `temperature` (sampling temperature controlling randomness; default `0.0`), `max_tokens` (maximum output tokens per call; default `1024`). The common parameters `credentials` and `model` also apply (see [AI Functions](/reference/functions/regular-functions/ai-functions)). [`Map(String, String)`](/reference/data-types/map)
 
 **Returned value**
 
@@ -287,7 +310,7 @@ A single extracted value (instruction mode) or a JSON object string (schema mode
 **Free-form instruction**
 
 ```sql title=Query
-SELECT aiExtract('ai_credentials', 'The package arrived late and was damaged.', 'the main complaint')
+SELECT aiExtract('The package arrived late and was damaged.', 'the main complaint')
 ```
 
 ```response title=Response
@@ -297,7 +320,7 @@ late and damaged package
 **Schema extraction**
 
 ```sql title=Query
-SELECT aiExtract('ai_credentials', review, '{"sentiment": "positive, negative or neutral", "topic": "main topic of the review"}') FROM reviews LIMIT 5
+SELECT aiExtract(review, '{"sentiment": "positive, negative or neutral", "topic": "main topic of the review"}') FROM reviews LIMIT 5
 ```
 
 ## aiGenerate {#aiGenerate}
@@ -307,25 +330,27 @@ Introduced in: v26.4.0
 Generates free-form text content from a prompt using an LLM provider.
 
 The function sends the prompt to the configured AI provider and returns the generated text.
-An optional system prompt can be provided to guide the model's behavior (e.g. tone, format, role).
-If no system prompt is given, the default system prompt is: `You are a helpful assistant. Provide a clear and concise response.`
 
-The first argument is a named collection that specifies the provider, model, endpoint, and optionally an API key.
+Credentials (a named collection specifying the provider, model, endpoint, and optionally an API key)
+are taken from the `credentials` key of the optional parameter map, or from the
+`ai_function_text_default_credentials` setting when the map omits it.
+
+The optional parameter map may also set `system_prompt` (an instruction that guides the model's
+behavior, e.g. tone, format, role), `temperature`, `max_tokens`, and `model`. If `system_prompt` is
+not set, the default is: `You are a helpful assistant. Provide a clear and concise response.`
 
 **Syntax**
 
 ```sql
-aiGenerate(collection, prompt[, system_prompt[, temperature]])
+aiGenerate(prompt[, params])
 ```
 
 **Aliases**: `AIGenerate`
 
 **Arguments**
 
-- `collection` — Name of a named collection containing provider credentials and configuration. [`String`](/reference/data-types/string)
 - `prompt` — The user prompt or question to send to the model. [`String`](/reference/data-types/string)
-- `system_prompt` — Optional constant system-level instruction that guides the model's behavior (e.g. persona, output format), sent along with each prompt. [`String`](/reference/data-types/string)
-- `temperature` — Sampling temperature controlling randomness. Default: `0.7`. [`Float64`](/reference/data-types/float)
+- `params` — Optional constant `Map(String, String)` of parameters. Function-specific keys: `temperature` (sampling temperature controlling randomness; default `0.7`), `max_tokens` (maximum output tokens per call; default `1024`), `system_prompt` (constant system-level instruction guiding the model's behavior; default a generic assistant prompt). The common parameters `credentials` and `model` also apply (see [AI Functions](/reference/functions/regular-functions/ai-functions)). [`Map(String, String)`](/reference/data-types/map)
 
 **Returned value**
 
@@ -336,23 +361,23 @@ The generated text response, or the default value for the column type (empty str
 **Simple question**
 
 ```sql title=Query
-SELECT aiGenerate('ai_credentials', 'What is 2 + 2? Reply with just the number.')
+SELECT aiGenerate('What is 2 + 2? Reply with just the number.')
 ```
 
 ```response title=Response
 4
 ```
 
-**With system prompt**
+**With explicit credentials and system prompt**
 
 ```sql title=Query
-SELECT aiGenerate('ai_credentials', 'Explain ClickHouse', 'You are a database expert. Be concise.')
+SELECT aiGenerate('Explain ClickHouse', map('credentials', 'ai_text_credentials', 'system_prompt', 'You are a database expert. Be concise.'))
 ```
 
 **Summarize column values**
 
 ```sql title=Query
-SELECT article_title, aiGenerate('ai_credentials', concat('Summarize in one sentence: ', article_body)) AS summary FROM articles LIMIT 5
+SELECT article_title, aiGenerate(concat('Summarize in one sentence: ', article_body)) AS summary FROM articles LIMIT 5
 ```
 
 ## aiTranslate {#aiTranslate}
@@ -361,25 +386,25 @@ Introduced in: v26.4.0
 
 Translates the given text into the specified target language using an LLM provider.
 
-Additional style or dialect instructions may be passed as a fourth argument (e.g. `'keep technical terms untranslated'`).
+Additional style or dialect instructions may be passed via the `instructions` key of the parameter map (e.g. `'keep technical terms untranslated'`).
 
-The first argument is a named collection that specifies the provider, model, endpoint, and optionally an API key.
+Credentials (a named collection specifying the provider, model, endpoint, and optionally an API key)
+are taken from the `credentials` key of the optional parameter map, or from the
+`ai_function_text_default_credentials` setting when the map omits it.
 
 **Syntax**
 
 ```sql
-aiTranslate(collection, text, target_language[, instructions[, temperature]])
+aiTranslate(text, target_language[, params])
 ```
 
 **Aliases**: `AITranslate`
 
 **Arguments**
 
-- `collection` — Name of a named collection containing provider credentials and configuration. [`String`](/reference/data-types/string)
 - `text` — Text to translate. [`String`](/reference/data-types/string)
 - `target_language` — Target language name or BCP-47 code (e.g. `'French'`, `'es-MX'`). [`String`](/reference/data-types/string)
-- `instructions` — Optional constant additional instructions for the translator. [`String`](/reference/data-types/string)
-- `temperature` — Sampling temperature controlling randomness. Default: `0.3`. [`Float64`](/reference/data-types/float)
+- `params` — Optional constant `Map(String, String)` of parameters. Function-specific keys: `temperature` (sampling temperature controlling randomness; default `0.3`), `max_tokens` (maximum output tokens per call; default `1024`), `instructions` (additional style or dialect instructions for the translator). The common parameters `credentials` and `model` also apply (see [AI Functions](/reference/functions/regular-functions/ai-functions)). [`Map(String, String)`](/reference/data-types/map)
 
 **Returned value**
 
@@ -390,7 +415,7 @@ The translated text, or the default value for the column type (empty string) if 
 **Translate to French**
 
 ```sql title=Query
-SELECT aiTranslate('ai_credentials', 'Hello, world!', 'French')
+SELECT aiTranslate('Hello, world!', 'French')
 ```
 
 ```response title=Response
@@ -400,6 +425,6 @@ Bonjour le monde!
 **Translate to Japanese with style instructions**
 
 ```sql title=Query
-SELECT aiTranslate('ai_credentials', body, 'Japanese', 'Use polite form (desu/masu)') FROM articles LIMIT 5
+SELECT aiTranslate(body, 'Japanese', map('instructions', 'Use polite form (desu/masu)')) FROM articles LIMIT 5
 ```
 {/*AUTOGENERATED_END*/}

@@ -484,9 +484,6 @@ void StorageMergeTree::alter(
     auto [auto_statistics_types, statistics_changed] = getNewImplicitStatisticsTypes(new_metadata, *old_storage_settings);
     addImplicitStatistics(new_metadata.columns, auto_statistics_types);
 
-    if (!query_settings[Setting::allow_suspicious_primary_key])
-        MergeTreeData::verifySortingKey(new_metadata.sorting_key);
-
     /// This alter can be performed at new_metadata level only
     if (commands.isSettingsAlter())
     {
@@ -506,6 +503,11 @@ void StorageMergeTree::alter(
     }
     else
     {
+        /// Re-verify the key only when the ALTER actually changed it (see #104463).
+        if (!query_settings[Setting::allow_suspicious_primary_key]
+            && MergeTreeData::sortingKeyChanged(old_metadata.sorting_key, new_metadata.sorting_key))
+            MergeTreeData::verifySortingKey(new_metadata.sorting_key);
+
         /// Validate the new CREATE query before taking the lock below. Validation
         /// runs through `QueryAnalyzer`, which acquires `storage_snapshot_cache_mutex`.
         /// Query resolution paths acquire `currently_processing_in_background_mutex`
@@ -2631,6 +2633,12 @@ void StorageMergeTree::truncate(const ASTPtr &, const StorageMetadataPtr &, Cont
             auto operation_data_parts_lock = lockOperationsWithParts();
 
             auto parts = getVisibleDataPartsVector(query_context);
+
+            /// Do not remove parts whose creating transaction has not committed yet:
+            /// removing such a part would discard a write that may still commit.
+            /// Only needed when transactions are in use; otherwise every part is already committed.
+            if (transactions_enabled.load(std::memory_order_relaxed))
+                std::erase_if(parts, [](const auto & part) { return !part->version->isVisible(Tx::MaxCommittedCSN, Tx::EmptyTID); });
 
             auto future_parts = initCoverageWithNewEmptyParts(parts);
 
