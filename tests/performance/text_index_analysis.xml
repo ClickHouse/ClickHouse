@@ -13,7 +13,7 @@
     )
     ENGINE = MergeTree
     ORDER BY tuple()
-    SETTINGS index_granularity = 1
+    SETTINGS index_granularity = 1, optimize_row_order_if_no_order_by = 0
   </create_query>
 
   <fill_query>INSERT INTO t_text_index_analysis SELECT concat('common ', 'medium' || intDiv(number, 1000), ' rare' || number) FROM numbers(1000000)</fill_query>
