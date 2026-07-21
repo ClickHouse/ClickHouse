@@ -1931,8 +1931,10 @@ std::optional<String> MergeTreeIndexConditionText::tryGetMapElementKeyForKeyValu
             /// `MergeTreeIndexBloomFilter::tryParseMapSubcolumn`. For the `String` / `LowCardinality(String)`
             /// keys this index allows `serializeText` is the identity, so this is a round-trip today; doing
             /// it explicitly keeps the lookup correct for any key type and consistent with the bloom filter.
-            const auto & map_type = assert_cast<const DataTypeMap &>(*header.getByName(map_column_name).type);
-            const auto & key_type = map_type.getKeyType();
+            const auto * map_type = typeid_cast<const DataTypeMap *>(header.getByName(map_column_name).type.get());
+            if (!map_type)
+                return std::nullopt;
+            const auto & key_type = map_type->getKeyType();
             auto key_column = key_type->createColumn();
             ReadBufferFromString buf(serialized_key);
             key_type->getDefaultSerialization()->deserializeWholeText(*key_column, buf, {});
