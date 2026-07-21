@@ -20,7 +20,7 @@ INNER JOIN (
     FROM events WHERE event_name = 'install' GROUP BY id
 ) AS sub USING (id)
 WHERE event_name LIKE 'af_%' AND toFloat64OrZero(event_revenue_usd) > 0
-SETTINGS enable_parallel_replicas = 1, max_parallel_replicas = 3, cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost';
+SETTINGS enable_parallel_replicas = 1, max_parallel_replicas = 3, cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost', parallel_replicas_for_non_replicated_merge_tree = 1, automatic_parallel_replicas_mode = 0;
 
 -- P2: force mode throws instead of downgrading.
 SELECT uniqExact(lower(if(platform = 'android', advertising_id, idfv)) AS id) AS users_pay
@@ -30,7 +30,7 @@ INNER JOIN (
     FROM events WHERE event_name = 'install' GROUP BY id
 ) AS sub USING (id)
 WHERE event_name LIKE 'af_%' AND toFloat64OrZero(event_revenue_usd) > 0
-SETTINGS enable_parallel_replicas = 2, max_parallel_replicas = 3, cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost'; -- { serverError SUPPORT_IS_DISABLED }
+SETTINGS enable_parallel_replicas = 2, max_parallel_replicas = 3, cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost', automatic_parallel_replicas_mode = 0; -- { serverError SUPPORT_IS_DISABLED }
 
 -- R1: nested alias over `remote` stays a loud error (documented limitation).
 SELECT uniqExact(lower(if(platform = 'android', advertising_id, idfv)) AS id) AS users_pay

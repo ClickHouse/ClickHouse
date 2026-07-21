@@ -5483,11 +5483,16 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
                 else if (auto * root_union_node = root_scope->scope_node->as<UnionNode>())
                     root_mutable_context = root_union_node->getMutableContext();
 
-                /// The guard on INITIAL_QUERY makes it structurally impossible to disable the setting on a
-                /// secondary (replica-side) query, which could corrupt task-based reading. Unreachable by
-                /// construction: the shipped SQL never contains a nested alias.
+                /// Never touch a secondary (replica-side) query: disabling the setting there could corrupt
+                /// task-based reading. Unreachable by construction (the shipped SQL never contains a nested
+                /// alias), but guard by intent; NO_QUERY contexts are fine to handle.
+                /// The `canUseTaskBasedParallelReplicas` gate mirrors the FINAL precedent in the planner: only
+                /// act when parallel replicas would actually run (read-tasks mode, `max_parallel_replicas > 1`,
+                /// etc.). This also leaves custom-key parallel-replicas modes untouched - they ship full SQL
+                /// and fail loudly on the nested alias, consistent with the accepted `Distributed` limitation.
                 if (root_mutable_context
-                    && root_mutable_context->getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
+                    && root_mutable_context->getClientInfo().query_kind != ClientInfo::QueryKind::SECONDARY_QUERY
+                    && root_mutable_context->canUseTaskBasedParallelReplicas())
                 {
                     const auto & root_settings = root_mutable_context->getSettingsRef();
                     if (root_settings[Setting::allow_experimental_parallel_reading_from_replicas] >= 2)
@@ -5496,14 +5501,11 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
                             "which is not supported with parallel replicas",
                             identifier_full_name);
 
-                    if (root_settings[Setting::allow_experimental_parallel_reading_from_replicas] == 1)
-                    {
-                        root_mutable_context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
-                        LOG_DEBUG(getLogger("QueryAnalyzer"),
-                            "JOIN USING identifier '{}' is resolved from an alias nested in the SELECT list; "
-                            "parallel replicas are disabled because the query sent to a remote server would not contain the alias",
-                            identifier_full_name);
-                    }
+                    root_mutable_context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
+                    LOG_DEBUG(getLogger("QueryAnalyzer"),
+                        "JOIN USING identifier '{}' is resolved from an alias nested in the SELECT list; "
+                        "parallel replicas are disabled because the query sent to a remote server would not contain the alias",
+                        identifier_full_name);
                 }
             }
 
