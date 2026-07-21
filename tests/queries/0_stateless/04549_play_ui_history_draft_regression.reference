@@ -64,6 +64,11 @@ run under pending param restore: the entry keeps the destination tab params
 run under pending param restore: the destination param reaches the URL
 run under pending param restore: the stale source param does not leak
 run under pending param restore: a later capture keeps the destination params
+debounced capture during pending-restore run: the mid-flight capture clobbers the tab (precondition)
+debounced capture during pending-restore run: the clean run keeps run=1
+debounced capture during pending-restore run: the restore-sourced params are committed back
+debounced capture during pending-restore run: the destination param reaches the URL
+debounced capture during pending-restore run: the stale previous-tab binding does not leak
 edited query under pending restore: the clean run keeps run=1
 edited query under pending restore: the stale destination param does not leak
 edited query under pending restore: the source param does not leak either

@@ -54,6 +54,13 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 #     error partway (every statement after the failing one is skipped) — the latter must drop `run=1`
 #     just like a subset, so a shared link / reload never auto-executes a never-run (possibly
 #     destructive) trailing statement.
+#   - a run raced by an in-flight tab-activation parameter restore trusts the restore-sourced
+#     params, and a debounced `persist` firing mid-flight (its `captureActiveTab` snapshots the
+#     still-uncommitted, stale restore DOM into `tab.params` once the run's own `request_num` bump
+#     lifts the capture suppression) must not be mistaken for a trusted parameter edit: the witness
+#     is the trusted-edit generation, not a `tab.params` comparison, so the clean run keeps `run=1`
+#     and commits the destination tab's own params back over the clobber — while a genuine trusted
+#     edit during the run still diverges and drops `run=1`;
 #   - `saveHistory` itself awaits tokenization for a diverged draft, so it can be superseded
 #     MID-SAVE: a tab switch (or Stop / newer run) bumps `request_num` while the derivation is
 #     suspended, and the resumed save must bail before touching the old tab — otherwise it would
@@ -168,6 +175,9 @@ const sandbox = {
     /// Globals the extracted functions expect (normally declared elsewhere in the page).
     tabs: [], activeTabId: null, tabSeq: 0, tabTitleSeq: 0,
     request_num: 0, params_restore_pending_token: -1, params_restore_pending_query: null,
+    /// Bumped only by a genuine (trusted) `param-` input edit — the harness's `setParam` mirrors
+    /// the real handler. `saveHistory`'s pending-restore guard keys off it (see play.html).
+    trusted_param_edit_gen: 0,
     controller: null, multiQueryControllers: [], multiQueryContainer: null,
     save_timer: null, column_color_modes: {}, elapsed_ns: 0, last_query_start: 0,
     /// The shared display-state globals for pinned columns / per-column color modes and their
@@ -386,11 +396,13 @@ function type(q)
     if (tab) tab.query = q;
 }
 
-/// A trusted edit of a parameter input: the real `param-` input handler persists the
-/// values into the active tab and stamps the current history entry via `syncHistory`.
+/// A trusted edit of a parameter input: the real `param-` input handler bumps the
+/// trusted-edit generation, persists the values into the active tab and stamps the
+/// current history entry via `syncHistory`.
 function setParam(name, value)
 {
     sandbox.param_inputs[name] = value;
+    ++sandbox.trusted_param_edit_gen;
     const tab = active();
     if (tab) { tab.params = sandbox.getParamValues(); sandbox.syncHistory(); }
 }
@@ -1042,6 +1054,60 @@ async function reload()
     sandbox.params_restore_pending_query = null;
     sandbox.getQueryUnderCursor = async () => '';
 
+    /// The SAME clean pending-restore run, but a debounced `persist` fires WHILE it is in flight.
+    /// The run's own `++request_num` lifts `captureActiveTab`'s pending-restore suppression
+    /// (`params_restore_pending_token !== request_num`), yet the destination inputs were never
+    /// committed — so the capture copies the previous tab's stale DOM (`{x:'1'}`) into the
+    /// destination `tab.params`. `saveHistory`'s guard must not mistake that clobber for a trusted
+    /// mid-flight parameter edit: no genuine edit happened (the trusted-edit generation is
+    /// unchanged), so the run stays clean — `run=1` kept, the restore-sourced `{y:'2'}` committed
+    /// back over the clobber, and the previous tab's binding never reaches the entry or the URL.
+    /// A guard comparing `tab.params` against a launch snapshot instead falls through here: it
+    /// would drop `run=1` and record `/play?param_x=1#SELECT {y}` on a run the user never touched.
+    /// Drives the REAL `postOne`/`postSingle`/`resolveRunParams` with a mid-flight
+    /// `captureActiveTab()` — exactly what the debounced `persist` does.
+    reset();
+    sandbox.param_inputs = { x: '1' };
+    active().query = 'SELECT {x}';
+    sandbox.query_area.value = 'SELECT {x}';
+    await run('SELECT {x}');                        /// tab A: a clean, run-backed entry with x=1
+    const dest_tab_capture = sandbox.makeTab();
+    dest_tab_capture.query = 'SELECT {y}';
+    dest_tab_capture.params = { y: '2' };
+    sandbox.tabs.push(dest_tab_capture);
+    sandbox.activeTabId = dest_tab_capture.id;
+    sandbox.query_area.value = 'SELECT {y}';
+    sandbox.param_inputs = { x: '1' };              /// the restore has not committed; the DOM still shows tab A
+    sandbox.params_restore_pending_token = sandbox.request_num;
+    sandbox.params_restore_pending_query = 'SELECT {y}';   /// the query the restore was for; unchanged here
+    sandbox.isMultiQuery = false;
+    sandbox.query_area.selectionStart = 0;
+    sandbox.query_area.selectionEnd = 0;
+    let releaseCursorCapture;
+    sandbox.getQueryUnderCursor = () => new Promise(resolve => { releaseCursorCapture = () => resolve('SELECT {y}'); });
+    const captureRacePromise = sandbox.postOne();
+    await drain();
+    releaseCursorCapture();
+    await drain();
+    /// The debounced `persist` fires mid-flight and snapshots the stale inputs into the tab:
+    /// `resolveRunParams` has already synced the destination `param-y` into the inputs, but the
+    /// previous tab's `param-x` was never cleared (the aborted restore's rebuild never ran), so the
+    /// capture folds the stale `x` binding into the destination tab. The precondition assert pins
+    /// that the clobber really happens (the suppression HAS lifted); without it a change to
+    /// `captureActiveTab`'s guard could silently drain this case's point.
+    sandbox.captureActiveTab();
+    assert_params('debounced capture during pending-restore run: the mid-flight capture clobbers the tab (precondition)', active().params, { x: '1', y: '2' });
+    resolvePendingPostImpl();
+    await captureRacePromise;
+    await drain();
+    assert_eq('debounced capture during pending-restore run: the clean run keeps run=1', sandbox.history.stack[sandbox.history.idx].url.includes('run=1'), true);
+    assert_params('debounced capture during pending-restore run: the restore-sourced params are committed back', active().params, { y: '2' });
+    assert_eq('debounced capture during pending-restore run: the destination param reaches the URL', sandbox.history.stack[sandbox.history.idx].url.includes('param_y=2'), true);
+    assert_eq('debounced capture during pending-restore run: the stale previous-tab binding does not leak', sandbox.history.stack[sandbox.history.idx].url.includes('param_x'), false);
+    sandbox.params_restore_pending_token = -1;
+    sandbox.params_restore_pending_query = null;
+    sandbox.getQueryUnderCursor = async () => '';
+
     /// A run launched under a pending param restore, but AFTER the user edited the destination
     /// query, must NOT stamp the destination tab's saved params back: they belong to the OLD query.
     /// Switch toward `SELECT {y}` (saved y=2), then edit the editor to a placeholder-free `SELECT 1`
@@ -1241,12 +1307,12 @@ async function reload()
 
     /// The trusted param edit lands even EARLIER: while `resolveRunParams` is still awaiting the
     /// edited launch query's own `paramValuesForQuery` tokenization, before any request is issued.
-    /// The pending-restore guard's launch snapshot (`live_params_at_launch`) is captured
+    /// The pending-restore guard's launch generation (`param_edit_gen_at_launch`) is captured
     /// synchronously at click time in `postOne`/`postAll` — capturing it inside `postSingle`/
-    /// `postMulti` AFTER the `resolveRunParams` await would fold this edit into the "launch" state,
-    /// so `saveHistory` could not see the divergence: it would write the click-time resolved params
-    /// back over the newer edit and keep `run=1` for a binding the user no longer sees (a reload /
-    /// shared link would replay it). Start from a tab showing `SELECT {y}` with y=1 in the inputs,
+    /// `postMulti` AFTER the `resolveRunParams` await would fold this edit's generation bump into
+    /// the "launch" state, so `saveHistory` could not see the divergence: it would write the
+    /// click-time resolved params back over the newer edit and keep `run=1` for a binding the user
+    /// no longer sees (a reload / shared link would replay it). Start from a tab showing `SELECT {y}` with y=1 in the inputs,
     /// switch toward another `SELECT {y}` tab (saved y=2) whose restore is still pending, edit the
     /// query (so `resolveRunParams` takes the tokenizing `paramValuesForQuery` path), press Run,
     /// change y to 9 while that tokenization is pending, then let the run finish. The request

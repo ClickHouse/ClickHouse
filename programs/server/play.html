@@ -4140,6 +4140,14 @@ let params_restore_pending_token = null;
 /// the saved params belong to the OLD query and must not be stamped back, so `resolveRunParams`
 /// falls back to the live inputs (which the edit's `updateQueryParams` rebuilt for the new query).
 let params_restore_pending_query = null;
+/// Bumped on every genuine (trusted) edit of a `param_*` input, and never by anything else.
+/// `saveHistory`'s pending-restore guard keys off this — not off comparing `tab.params` against a
+/// launch snapshot — to decide whether the user edited a parameter while the run was in flight.
+/// `tab.params` is not a reliable witness for that: once the run bumps `request_num`, a debounced
+/// `persist` (its `captureActiveTab`) may copy the still-uncommitted, stale pending-restore DOM
+/// inputs into `tab.params`, which a state comparison cannot tell apart from a trusted edit — it
+/// would wrongly drop `run=1` and record the stale bindings on a clean run the user never touched.
+let trusted_param_edit_gen = 0;
 
 /// Tabs let the user keep several independent queries side by side. Each tab owns its
 /// query text, title, query parameters and the last result snapshot. The connection
@@ -5908,7 +5916,7 @@ async function postImpl(posted_request_num, query, targetResultEl, abortControll
 /// Execute a single query (legacy path, used for single-query mode).
 /// When `history_query_text` is provided, it overrides `query` for browser history/URL storage,
 /// preserving the full textarea content when running a selected query in multi-query mode.
-async function postSingle(posted_request_num, query, history_query_text, params_restore_pending, queryStart, partial, live_params, live_params_at_launch = {})
+async function postSingle(posted_request_num, query, history_query_text, params_restore_pending, queryStart, partial, live_params, param_edit_gen_at_launch = -1)
 {
     /// Compare the FULL launched editor (not the single statement) against the restore's destination
     /// query: `history_query_text` is the whole editor in multi-query mode, and in single-query mode
@@ -5920,11 +5928,12 @@ async function postSingle(posted_request_num, query, history_query_text, params_
     /// run would clobber the now-active tab's UI and send a canceled query to the server (`cancel`
     /// only bumps `request_num`; there is no controller to abort yet at this point).
     if (posted_request_num != request_num) { return; }
-    /// `live_params_at_launch` (a parameter) is the tab's in-memory `tab.params`, snapshotted
+    /// `param_edit_gen_at_launch` (a parameter) is the trusted-parameter-edit generation, snapshotted
     /// synchronously at click time by `postOne`/`postAll` (see the comment there) — NOT re-read here,
     /// which would be after the `resolveRunParams` await and would fold a trusted parameter edit made
     /// during that await into the "launch" state, hiding the divergence from `saveHistory`'s
-    /// pending-restore guard.
+    /// pending-restore guard. The default `-1` (used only by direct test callers that thread no
+    /// generation) never matches the live generation, so the guard conservatively falls through.
     /// Snapshot the selected database for this run, so the request URL, the saved result
     /// snapshot, and a later download all use the database the query actually ran against,
     /// even if the panel selection changes while the query is in flight.
@@ -5974,7 +5983,7 @@ async function postSingle(posted_request_num, query, history_query_text, params_
                 elapsed_ns: 1e6 * (performance.now() - last_query_start),
                 params: paramValuesSnapshot,
                 params_restore_pending: params_restore_pending,   /// see saveHistory: the launch-time params are authoritative when a run raced an in-flight param restore
-                live_params_at_launch: live_params_at_launch,   /// see saveHistory: distinguishes a newer trusted param edit during the run from a stale pending-restore input state
+                param_edit_gen_at_launch: param_edit_gen_at_launch,   /// see saveHistory: distinguishes a newer trusted param edit during the run from a stale pending-restore input state
                 posted_request_num: posted_request_num,   /// see saveHistory: it awaits tokenization for a diverged draft and must bail if superseded meanwhile
                 partial: partial,
                 database: query_database,
@@ -6025,7 +6034,7 @@ async function postSingle(posted_request_num, query, history_query_text, params_
         elapsed_ns: elapsed_ns,
         params: paramValuesSnapshot,
         params_restore_pending: params_restore_pending,   /// see saveHistory: the launch-time params are authoritative when a run raced an in-flight param restore
-        live_params_at_launch: live_params_at_launch,   /// see saveHistory: distinguishes a newer trusted param edit during the run from a stale pending-restore input state
+        param_edit_gen_at_launch: param_edit_gen_at_launch,   /// see saveHistory: distinguishes a newer trusted param edit during the run from a stale pending-restore input state
         posted_request_num: posted_request_num,   /// see saveHistory: it awaits tokenization for a diverged draft and must bail if superseded meanwhile
         partial: partial,
         database: query_database,
@@ -6041,15 +6050,15 @@ let multiQueryControllers = [];
 
 /// Execute multiple queries with parallelization of consecutive SELECTs.
 /// `parsed` is an array of { query, is_select } objects from splitAllQueries.
-async function postMulti(posted_request_num, parsed, params_restore_pending, launch_query_text, partial, live_params, live_params_at_launch = {})
+async function postMulti(posted_request_num, parsed, params_restore_pending, launch_query_text, partial, live_params, param_edit_gen_at_launch = -1)
 {
     const paramValuesSnapshot = await resolveRunParams(params_restore_pending, launch_query_text, live_params);
     /// See `postSingle`: `resolveRunParams` is async, so a `cancel` or tab switch could have superseded
     /// this run during the await. Bail out before touching the UI or issuing any request.
     if (posted_request_num != request_num) { return; }
-    /// `live_params_at_launch` (a parameter) is the tab's in-memory `tab.params`, snapshotted
+    /// `param_edit_gen_at_launch` (a parameter) is the trusted-parameter-edit generation, snapshotted
     /// synchronously at click time by `postOne`/`postAll` — not re-read after the await (see
-    /// `postSingle`): trust the launch-time snapshot only while the live tab has not diverged from it.
+    /// `postSingle`): the restore-sourced params stay trusted only while no trusted edit intervened.
     /// Snapshot the selected database for this run (see `postImpl`); all statements run against it.
     const query_database = selected_database;
     /// Snapshot the connection too, so the saved result carries the server/user that produced it
@@ -6231,7 +6240,7 @@ async function postMulti(posted_request_num, parsed, params_restore_pending, lau
         elapsed_ns: elapsed_ns,
         params: paramValuesSnapshot,
         params_restore_pending: params_restore_pending,   /// see saveHistory: the launch-time params are authoritative when a run raced an in-flight param restore
-        live_params_at_launch: live_params_at_launch,   /// see saveHistory: distinguishes a newer trusted param edit during the run from a stale pending-restore input state
+        param_edit_gen_at_launch: param_edit_gen_at_launch,   /// see saveHistory: distinguishes a newer trusted param edit during the run from a stale pending-restore input state
         posted_request_num: posted_request_num,   /// see saveHistory: it awaits tokenization for a diverged draft and must bail if superseded meanwhile
         partial: partial || skipped_after_error,
         database: query_database,
@@ -7725,16 +7734,28 @@ async function saveHistory(stateData, titleForDoc) {
     /// BUT the launch-time snapshot is authoritative only while the live tab still matches what ran.
     /// A run outlives newer trusted edits — typing / editing a parameter does not cancel a request —
     /// so if the user edited the query (`tab.query` diverges from the launched `stateData.query`) or a
-    /// parameter (`tab.params`, which only trusted edits change, diverges from its launch-time value
-    /// `stateData.live_params_at_launch`) WHILE this run was in flight, the live draft — not the
-    /// stale snapshot — must be recorded, with `run=1` dropped, exactly as the non-pending path does.
-    /// Restoring the snapshot in that case would clobber the newer edit (in `tab.params` and, via
-    /// `setParamValues`, in the live input) and, comparing the snapshot against itself, wrongly keep
-    /// `run=1`, so a reload / shared link would replay the stale binding rather than what the user now
-    /// sees (or, for a query edit, an incoherent entry — the old params under the new query).
+    /// parameter WHILE this run was in flight, the live draft — not the stale snapshot — must be
+    /// recorded, with `run=1` dropped, exactly as the non-pending path does. Restoring the snapshot in
+    /// that case would clobber the newer edit (in `tab.params` and, via `setParamValues`, in the live
+    /// input) and wrongly keep `run=1`, so a reload / shared link would replay the stale binding rather
+    /// than what the user now sees (or, for a query edit, an incoherent entry — the old params under
+    /// the new query).
+    ///
+    /// The witness for "a parameter was edited during the run" is the trusted-parameter-edit
+    /// generation (`trusted_param_edit_gen` vs its click-time snapshot
+    /// `stateData.param_edit_gen_at_launch`), bumped only by the `param-` input handler on a genuine
+    /// user edit — NOT a comparison of `tab.params` against a launch snapshot. `tab.params` is not
+    /// only written by trusted edits here: the run's own `++request_num` lifts `captureActiveTab`'s
+    /// pending-restore suppression, so a debounced `persist` firing while this run is in flight
+    /// copies the still-uncommitted, stale restore DOM (the previous tab's values, or blanks from an
+    /// aborted rebuild) into `tab.params`. A state comparison cannot tell that clobber from a trusted
+    /// edit: it would fall through on a clean run the user never touched, drop `run=1`, and persist
+    /// the stale bindings. The generation check sees no edit, keeps the guard, and the commit below
+    /// writes the restore-sourced params back over the clobber — the live tab ends up exactly as if
+    /// the debounced save had never fired.
     if (stateData.params_restore_pending
         && tab.query === stateData.query
-        && sameParams(tab.params, stateData.live_params_at_launch))
+        && trusted_param_edit_gen === stateData.param_edit_gen_at_launch)
     {
         tab.params = { ...(stateData.params || {}) };
         setParamValues(tab.params);
@@ -8092,18 +8113,20 @@ async function postOne()
     /// executes with. `resolveRunParams` filters this snapshot down to the launched query's own
     /// placeholders.
     const live_params = getParamValues();
-    /// Snapshot the tab's in-memory `tab.params` now too, in the click's own task, for `saveHistory`'s
-    /// pending-restore guard: when a run races an in-flight parameter restore, `saveHistory` trusts the
-    /// run's restore-sourced params only while the live `tab.params` still matches this launch snapshot.
-    /// A newer trusted parameter edit during the run updates `tab.params` (the `param-` input handler),
-    /// so comparing the then-current `tab.params` against this snapshot tells such an edit apart from a
-    /// merely stale/blank pending-restore input state (which never touches `tab.params`). Capturing it
+    /// Snapshot the trusted-parameter-edit generation now too, in the click's own task, for
+    /// `saveHistory`'s pending-restore guard: when a run races an in-flight parameter restore,
+    /// `saveHistory` trusts the run's restore-sourced params only while no trusted parameter edit
+    /// happened since this launch (`trusted_param_edit_gen` unchanged). The generation — bumped
+    /// only by the `param-` input handler on a genuine user edit — is the witness, NOT a snapshot
+    /// of `tab.params`: once this run bumps `request_num`, `captureActiveTab`'s pending-restore
+    /// suppression lifts, so a debounced `persist` firing mid-flight copies the still-uncommitted,
+    /// stale restore DOM into `tab.params`; comparing states would mistake that clobber for a user
+    /// edit, drop `run=1` and record the stale bindings on a clean run. Capturing the generation
     /// inside `postSingle`/`postMulti` — after `resolveRunParams`' tokenization await — would fold a
     /// trusted edit made during that await into the "launch" state: the guard could not see the
     /// divergence, would write the restore's params back over the newer edit, and would keep `run=1`
     /// for a binding the user no longer sees.
-    const active_tab_at_launch = getActiveTab();
-    const live_params_at_launch = { ...((active_tab_at_launch && active_tab_at_launch.params) || {}) };
+    const param_edit_gen_at_launch = trusted_param_edit_gen;
     document.body.scrollTo(0, 0);
     beginFlight();
 
@@ -8136,9 +8159,9 @@ async function postOne()
         /// statements that were never launched, so such an entry must not be marked auto-runnable.
         const partial = selected.length !== parsed.length;
         if (selected.length > 1) {
-            await postMulti(my_request_num, selected, params_restore_pending, all_text, partial, live_params, live_params_at_launch);
+            await postMulti(my_request_num, selected, params_restore_pending, all_text, partial, live_params, param_edit_gen_at_launch);
         } else if (selected.length === 1) {
-            await postSingle(my_request_num, selected[0].query, all_text, params_restore_pending, selected[0].queryStart, partial, live_params, live_params_at_launch);
+            await postSingle(my_request_num, selected[0].query, all_text, params_restore_pending, selected[0].queryStart, partial, live_params, param_edit_gen_at_launch);
         }
     } else {
         /// Snapshot the full editor at launch time, before the tokenization await: typing during
@@ -8155,7 +8178,7 @@ async function postOne()
         /// `run=1` reload would `postAll` and run the other statements too. In single-query mode the
         /// history text is the launched statement itself (`undefined` above), so it stays runnable.
         const partial = isMultiQuery && queryUnderCursorIsPartial;
-        await postSingle(my_request_num, query, isMultiQuery ? all_text : undefined, params_restore_pending, queryUnderCursorStart, partial, live_params, live_params_at_launch);
+        await postSingle(my_request_num, query, isMultiQuery ? all_text : undefined, params_restore_pending, queryUnderCursorStart, partial, live_params, param_edit_gen_at_launch);
     }
 
     /// Only reset the run/favicon/cancel state if this entrypoint still owns the in-flight
@@ -8174,11 +8197,10 @@ async function postAll()
     /// See `postOne`: snapshot the live parameter inputs synchronously at entry, so an input moved
     /// during the lexer awaits does not change what this run executes with.
     const live_params = getParamValues();
-    /// See `postOne`: snapshot the tab's in-memory `tab.params` synchronously at entry too, so a
-    /// trusted parameter edit during `resolveRunParams`' await reads as divergence in `saveHistory`'s
-    /// pending-restore guard rather than being folded into the "launch" state.
-    const active_tab_at_launch = getActiveTab();
-    const live_params_at_launch = { ...((active_tab_at_launch && active_tab_at_launch.params) || {}) };
+    /// See `postOne`: snapshot the trusted-parameter-edit generation synchronously at entry too, so
+    /// a trusted parameter edit during `resolveRunParams`' await reads as divergence in `saveHistory`'s
+    /// pending-restore guard, while a mid-flight `captureActiveTab` of stale restore DOM does not.
+    const param_edit_gen_at_launch = trusted_param_edit_gen;
     document.body.scrollTo(0, 0);
     beginFlight();
 
@@ -8189,7 +8211,7 @@ async function postAll()
     if (parsed.length > 1) {
         /// "Run all" runs every statement, so the entry is reproducible by re-running the full
         /// editor on reload: not partial, may carry `run=1`.
-        await postMulti(my_request_num, parsed, params_restore_pending, all_text, /*partial=*/ false, live_params, live_params_at_launch);
+        await postMulti(my_request_num, parsed, params_restore_pending, all_text, /*partial=*/ false, live_params, param_edit_gen_at_launch);
     } else {
         /// A single statement (or none): run the launch-time snapshot `splitAllQueries` produced
         /// from `all_text`, never a fresh `getQueryUnderCursor` read of the live editor. `postAll`
@@ -8200,7 +8222,7 @@ async function postAll()
         /// multi-query branch above and `postOne` already use.
         const query = parsed.length ? parsed[0].query : all_text;
         const queryStart = parsed.length ? parsed[0].queryStart : 0;
-        await postSingle(my_request_num, query, undefined, params_restore_pending, queryStart, /*partial=*/ false, live_params, live_params_at_launch);
+        await postSingle(my_request_num, query, undefined, params_restore_pending, queryStart, /*partial=*/ false, live_params, param_edit_gen_at_launch);
     }
 
     /// Only reset the run/favicon/cancel state if this entrypoint still owns the in-flight
@@ -10397,6 +10419,7 @@ async function updateQueryParams()
             /// restored draft is only shown, never auto-executed. Writing the params onto a stale
             /// query, or skipping the sync, would either produce an incoherent param/query entry or
             /// leave the URL params out of sync with the tab — both worse than restoring the draft.
+            ++trusted_param_edit_gen;   /// see `saveHistory`'s pending-restore guard
             const tab = getActiveTab();
             if (tab) { tab.params = getParamValues(); syncHistory(); }
         });
