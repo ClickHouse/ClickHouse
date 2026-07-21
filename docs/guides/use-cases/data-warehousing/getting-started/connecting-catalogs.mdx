@@ -30,11 +30,10 @@ For example purposes, we'll use the Unity catalog.
 
 [Databricks Unity Catalog](https://www.databricks.com/product/unity-catalog) provides centralized governance for Databricks lakehouse data.
 
-Databricks supports multiple data formats for their lakehouse. With ClickHouse, you can query Unity Catalog tables as both Delta and Iceberg.
+Databricks supports multiple data formats for their lakehouse. With ClickHouse, you can query Unity Catalog Delta and Iceberg tables that use external storage locations.
 
 <Note>
-Integration with the Unity Catalog works for managed and external tables.
-This integration is currently only supported on AWS.
+This integration is currently only supported on AWS. Tables on Databricks managed storage are not supported because Unity Catalog does not provide credential vending for those locations. See the [Unity Catalog reference](/guides/use-cases/data-warehousing/unity-catalog) for details.
 </Note>
 
 ### Configuring Unity in Databricks {#configuring-unity-in-databricks}
