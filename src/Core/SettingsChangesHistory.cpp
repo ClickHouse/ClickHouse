@@ -68,6 +68,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"ai_function_text_default_credentials", "", "", "New setting"},
             {"ai_function_embedding_default_credentials", "", "", "New setting"},
             {"ai_function_allow_insecure_endpoint", false, false, "New setting"},
+            {"ai_function_max_api_calls_per_query", 0, 1000, "Bound outbound AI function HTTP calls per query by default (previously 0 - unlimited)."},
             {"dead_blobs_to_delay_insert", 0, 0, "New setting to override the `MergeTree` setting with the same name per query."},
             {"dead_blobs_to_throw_insert", 0, 0, "New setting to override the `MergeTree` setting with the same name per query."},
             {"input_format_csv_missing_nullable_as_empty_string", false, false, "New setting to read a missing value of `Nullable(String)` from CSV as an empty string instead of NULL."},
