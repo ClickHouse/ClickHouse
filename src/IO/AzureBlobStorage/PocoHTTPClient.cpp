@@ -15,6 +15,7 @@
 #include <Poco/Net/HTTPRequest.h>
 #include <Poco/Net/HTTPResponse.h>
 #include <Poco/Net/HTTPClientSession.h>
+#include <Poco/String.h>
 #include <Poco/URI.h>
 #include <azure/core/http/policies/policy.hpp>
 
@@ -307,6 +308,21 @@ std::unique_ptr<Azure::Core::Http::RawResponse> PocoAzureHTTPClient::makeRequest
     const auto & headers = request.GetHeaders();
     const auto & method = request.GetMethod().ToString();
     const auto url = request.GetUrl();
+
+    /// Enforce remote_url_allow_hosts on the host actually used: only redirects
+    /// were re-checked before, but the request host can differ from the endpoint
+    /// validated at CREATE time (OneLake writes go to the `.dfs` host, reads to
+    /// `.blob`). Normalize scheme and host as Poco::URI does at CREATE time (the
+    /// scheme resolves the default port; the host is lower-cased) so both agree.
+    {
+        Poco::URI request_uri;
+        request_uri.setScheme(url.GetScheme());
+        std::string request_host = url.GetHost();
+        Poco::toLowerInPlace(request_host);
+        request_uri.setHost(request_host);
+        request_uri.setPort(url.GetPort());
+        remote_host_filter.checkURL(request_uri);
+    }
 
     try
     {
