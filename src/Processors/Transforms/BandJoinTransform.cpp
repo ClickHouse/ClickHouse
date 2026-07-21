@@ -118,7 +118,9 @@ BandJoinBuildTransform::BandJoinBuildTransform(
 bool BandJoinBuildTransform::consumeBuildChunk(Chunk chunk)
 {
     convertToFullIfConst(chunk);
-    convertToFullIfSparse(chunk);
+    /// Expands lazily replicated wrappers besides removing sparse columns: the index stores
+    /// the columns as delivered and gathers rows by position, which needs plain full columns.
+    removeSpecialColumnRepresentations(chunk);
 
     /// The size limits apply to the accumulated interval side. With `join_overflow_mode =
     /// 'break'` keep what is already accumulated and drop the rest of the input.
@@ -290,7 +292,9 @@ void BandJoinProbeTransform::onBarrierReleased()
 void BandJoinProbeTransform::consumeProbeChunk(Chunk chunk)
 {
     convertToFullIfConst(chunk);
-    convertToFullIfSparse(chunk);
+    /// Expands lazily replicated wrappers besides removing sparse columns: the point rows are
+    /// replicated per match and their keys encoded by position, which needs plain full columns.
+    removeSpecialColumnRepresentations(chunk);
 
     num_point_rows = chunk.getNumRows();
     point_columns = chunk.detachColumns();
