@@ -79,9 +79,7 @@ public:
     size_t getNumberOfArguments() const override { return 0; }
     bool useDefaultImplementationForConstants() const override { return false; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return false; }
-
-    /// With 'output_dims' present, execution throws for rows whose transform length is smaller than it.
-    bool canThrow(const DataTypesWithConstInfo & arguments) const override { return arguments.size() >= 3; }
+    bool canThrow(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {

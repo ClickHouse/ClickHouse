@@ -5,6 +5,8 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/CastOverloadResolver.h>
 #include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 
 
@@ -37,7 +39,12 @@ namespace
         bool useDefaultImplementationForConstants() const override { return true; }
         bool useDefaultImplementationForNulls() const override { return false; }
         bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
-        bool canThrow(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+
+        bool canThrow(const DataTypesWithConstInfo & arguments) const override
+        {
+            /// Numbers are compared against zero.
+            return !isNumber(removeNullable(removeLowCardinality(arguments[0].type)));
+        }
 
         DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
         {
