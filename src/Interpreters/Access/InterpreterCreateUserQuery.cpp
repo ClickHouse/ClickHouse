@@ -1,3 +1,5 @@
+#include "config.h"
+
 #include <Access/AuthenticationData.h>
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/Access/InterpreterCreateUserQuery.h>
@@ -100,10 +102,14 @@ namespace
             // or as several `ssh_key` methods (`ssh_key BY KEY k1 TYPE t1, ssh_key BY KEY k2 TYPE t2`).
             auto count_methods = [](const std::vector<AuthenticationData> & methods)
             {
+#if USE_SSH
                 size_t count = 0;
                 for (const auto & method : methods)
                     count += method.getType() == AuthenticationType::SSH_KEY ? method.getSSHKeys().size() : 1;
                 return count;
+#else
+                return methods.size();
+#endif
             };
 
             auto number_of_authentication_methods = count_methods(user.authentication_methods) + count_methods(authentication_methods);
