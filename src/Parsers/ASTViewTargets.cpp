@@ -453,9 +453,15 @@ void ASTViewTargets::writeJSON(WriteBuffer & out) const
                 writeJSONString(target.table_id.table_name, out, w.getFormatSettings());
                 if (target.table_id.uuid != UUIDHelpers::Nil)
                 {
-                    out << R"(,"table_uuid":")";
-                    writeUUIDText(target.table_id.uuid, out);
-                    out << '"';
+                    /// `formatTarget` prints only `db.table` for a `table_id` target, so a `table_uuid` would be dropped
+                    /// by `formatQueryFromJSON` while the JSON AST still resolves the target by UUID. `readJSON` rejects
+                    /// a `table_uuid` for exactly this reason (see the paired guard there), so emitting it here would
+                    /// produce JSON that cannot be read back. Fail closed at serialization instead, honouring the
+                    /// contract that `parseQueryToJSON` rejects unsupported shapes rather than emitting unreadable JSON.
+                    /// (Unlike `inner_uuid`, which is emitted as `INNER UUID '...'` and does round-trip.)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "A `TO` target with a UUID cannot be represented as AST JSON: it cannot be formatted back to SQL "
+                        "faithfully during AST JSON serialization");
                 }
             }
             if (target.inner_uuid != UUIDHelpers::Nil)

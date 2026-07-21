@@ -321,9 +321,15 @@ void ASTTableIdentifier::writeJSON(WriteBuffer & out) const
     }
     if (uuid != UUIDHelpers::Nil)
     {
-        WriteBufferFromOwnString uuid_buf;
-        writeUUIDText(uuid, uuid_buf);
-        w.writeString("uuid", uuid_buf.str());
+        /// A nested `ASTTableIdentifier` can carry a `UUID` from the parser (e.g. a `REFRESH DEPENDS ON src UUID '...'`
+        /// dependency), but a table reference is formatted through `ASTIdentifier::formatImplWithoutAlias`, which never
+        /// emits a `UUID` clause. `readJSON` therefore rejects a `UUID`-bearing reference (see the paired guard there),
+        /// so emitting `"uuid"` here would produce JSON that `formatQueryFromJSON` / `clickhouse_json` cannot read back.
+        /// Fail closed at serialization instead, honouring the contract that `parseQueryToJSON` rejects unsupported
+        /// shapes rather than emitting unreadable JSON.
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "A nested table reference with a UUID cannot be represented as AST JSON: it cannot be formatted back to SQL "
+            "faithfully during AST JSON serialization");
     }
     w.writeChildren(children);
     w.writeAlias(*this);
