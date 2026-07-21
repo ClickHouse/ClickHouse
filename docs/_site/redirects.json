@@ -1,5 +1,29 @@
 [
   {
+    "source": "/engines/table-engines/special/materializedview",
+    "destination": "/concepts/features/materialized-views"
+  },
+  {
+    "source": "/getting-started/example-datasets/opensky",
+    "destination": "/get-started/sample-datasets"
+  },
+  {
+    "source": "/integrations/language-clients/nodejs",
+    "destination": "/integrations/language-clients/js"
+  },
+  {
+    "source": "/manage/security/compliance-and-certification",
+    "destination": "/products/cloud/reference/security/compliance-overview"
+  },
+  {
+    "source": "/observability/clickstack",
+    "destination": "/clickstack/overview"
+  },
+  {
+    "source": "/sql-reference/statements/alter/statistic",
+    "destination": "/reference/statements/alter/statistics"
+  },
+  {
     "source": "/category/changelog",
     "destination": "/resources/changelogs/oss/2026"
   },
@@ -1574,7 +1598,7 @@
   },
   {
     "source": "/cloud/manage/hyperdx",
-    "destination": "/products/cloud/features/sql-console-features/hyperdx"
+    "destination": "/products/cloud/features/sql-console-features/clickstack"
   },
   {
     "source": "/cloud/manage/jan-2025-faq",
@@ -5030,7 +5054,7 @@
   },
   {
     "source": "/integrations/zingdata",
-    "destination": "/integrations/connectors/data-visualization/community-integrations/zingdata-and-clickhouse"
+    "destination": "/integrations/connectors/data-visualization"
   },
   {
     "source": "/interfaces",
@@ -40433,6 +40457,10 @@
     "destination": "/reference/functions/table-functions/dictionary"
   },
   {
+    "source": "/sql-reference/table-functions/eval",
+    "destination": "/reference/functions/table-functions/eval"
+  },
+  {
     "source": "/sql-reference/table-functions/file",
     "destination": "/reference/functions/table-functions/file"
   },
@@ -52479,5 +52507,17 @@
   {
     "source": "/use-cases/observability/clickstack/demo-days/2026/2026-06-12",
     "destination": "/clickstack/demo-days/2026/2026-06-12"
+  },
+  {
+    "source": "/interfaces/web-ui-pinned-columns",
+    "destination": "/concepts/features/interfaces/web-ui-pinned-columns"
+  },
+  {
+    "source": "/sql-reference/statements/check-database",
+    "destination": "/reference/statements/check-database"
+  },
+  {
+    "source": "/sql-reference/statements/create/dictionary/layouts/naive-bayes",
+    "destination": "/reference/statements/create/dictionary/layouts/naive-bayes"
   }
 ]

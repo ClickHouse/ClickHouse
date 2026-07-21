@@ -17,10 +17,19 @@
 #include <IO/Bzip2ReadBuffer.h>
 #include <IO/Bzip2WriteBuffer.h>
 #include <IO/HadoopSnappyReadBuffer.h>
+#include <IO/HadoopSnappyWriteBuffer.h>
+#include <IO/SnappyFramedReadBuffer.h>
+#include <IO/SnappyFramedWriteBuffer.h>
 
 #include "config.h"
 
 #include <boost/algorithm/string/case_conv.hpp>
+
+#include <charconv>
+#include <Poco/String.h>
+#include <string_view>
+
+#include <Common/StringUtils.h>
 
 
 namespace DB
@@ -58,24 +67,103 @@ std::string toContentEncodingName(CompressionMethod method)
 
 CompressionMethod chooseHTTPCompressionMethod(const std::string & list)
 {
-    /// The compression methods are ordered from most to least preferred.
+    struct Entry
+    {
+        std::string_view coding;
+        double q_value = 1.0;
+    };
+    std::vector<Entry> entries; // STYLE_CHECK_ALLOW_STD_CONTAINERS
 
-    if (list.contains("zstd"))
-        return CompressionMethod::Zstd;
-    if (list.contains("br"))
-        return CompressionMethod::Brotli;
-    if (list.contains("lz4"))
-        return CompressionMethod::Lz4;
-    if (list.contains("snappy"))
-        return CompressionMethod::Snappy;
-    if (list.contains("gzip"))
-        return CompressionMethod::Gzip;
-    if (list.contains("deflate"))
-        return CompressionMethod::Zlib;
-    if (list.contains("xz"))
-        return CompressionMethod::Xz;
-    if (list.contains("bz2"))
-        return CompressionMethod::Bzip2;
+    size_t pos = 0;
+    while (pos < list.size())
+    {
+        while (pos < list.size() && isWhitespaceASCII(list[pos]))
+            ++pos;
+        if (pos >= list.size())
+            break;
+
+        size_t comma = list.find(',', pos);
+        if (comma == std::string::npos)
+            comma = list.size();
+
+        std::string_view token(list.data() + pos, comma - pos);
+        while (!token.empty() && isWhitespaceASCII(token.back()))
+            token.remove_suffix(1);
+
+        pos = comma + 1;
+
+        auto semicolon = token.find(';');
+        if (semicolon == std::string_view::npos)
+        {
+            entries.push_back({token, 1.0});
+            continue;
+        }
+
+        std::string_view coding = token.substr(0, semicolon);
+        while (!coding.empty() && isWhitespaceASCII(coding.back()))
+            coding.remove_suffix(1);
+
+        double q = 1.0;
+        std::string_view params = token.substr(semicolon + 1);
+        auto qpos = params.find("q=");
+        if (qpos == std::string_view::npos)
+            qpos = params.find("Q=");
+        if (qpos != std::string_view::npos)
+        {
+            auto qval = params.substr(qpos + 2);
+            while (!qval.empty() && isWhitespaceASCII(qval.front()))
+                qval.remove_prefix(1);
+            auto [_, ec] = std::from_chars(qval.data(), qval.data() + qval.size(), q);
+            if (ec != std::errc{})
+                q = 1.0;
+        }
+
+        entries.push_back({coding, q});
+    }
+
+    static constexpr std::pair<std::string_view, CompressionMethod> preferred[] = {
+        {"zstd", CompressionMethod::Zstd},
+#if USE_BROTLI
+        {"br", CompressionMethod::Brotli},
+#endif
+        {"lz4", CompressionMethod::Lz4},
+#if USE_SNAPPY
+        {"snappy", CompressionMethod::Snappy},
+#endif
+        {"gzip", CompressionMethod::Gzip},
+        {"deflate", CompressionMethod::Zlib},
+        {"xz", CompressionMethod::Xz},
+#if USE_BZIP2
+        {"bz2", CompressionMethod::Bzip2},
+#endif
+    };
+
+    /// `*` is the wildcard: matches every content-coding not explicitly listed (RFC 9110 §12.5.3).
+    double star_q = -1.0;
+    for (const auto & entry : entries)
+    {
+        if (Poco::icompare(entry.coding, std::string_view("*")) == 0)
+            star_q = entry.q_value;
+    }
+
+    for (const auto & [name, method] : preferred)
+    {
+        bool listed = false;
+        for (const auto & entry : entries)
+        {
+            if (Poco::icompare(entry.coding, name) == 0)
+            {
+                listed = true;
+                if (entry.q_value > 0.0)
+                    return method;
+                break;
+            }
+        }
+        /// `*;q=N` (N > 0) covers every coding the client did not explicitly list.
+        if (!listed && star_q > 0.0)
+            return method;
+    }
+
     return CompressionMethod::None;
 }
 
@@ -143,7 +231,7 @@ std::pair<uint64_t, uint64_t> getCompressionLevelRange(const CompressionMethod &
 }
 
 static std::unique_ptr<CompressedReadBufferWrapper> createCompressedWrapper(
-    std::unique_ptr<ReadBuffer> nested, CompressionMethod method, size_t buf_size, char * existing_memory, size_t alignment, int zstd_window_log_max)
+    std::unique_ptr<ReadBuffer> nested, CompressionMethod method, size_t buf_size, char * existing_memory, size_t alignment, int zstd_window_log_max, [[maybe_unused]] SnappyMode snappy_mode)
 {
     if (method == CompressionMethod::Gzip || method == CompressionMethod::Zlib)
     {
@@ -170,24 +258,28 @@ static std::unique_ptr<CompressedReadBufferWrapper> createCompressedWrapper(
 #endif
 #if USE_SNAPPY
     if (method == CompressionMethod::Snappy)
+    {
+        if (snappy_mode == SnappyMode::Framed)
+            return std::make_unique<SnappyFramedReadBuffer>(std::move(nested), buf_size, existing_memory, alignment);
         return std::make_unique<HadoopSnappyReadBuffer>(std::move(nested), buf_size, existing_memory, alignment);
+    }
 #endif
 
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported compression method");
 }
 
 std::unique_ptr<ReadBuffer> wrapReadBufferWithCompressionMethod(
-    std::unique_ptr<ReadBuffer> nested, CompressionMethod method, int zstd_window_log_max, size_t buf_size, char * existing_memory, size_t alignment)
+    std::unique_ptr<ReadBuffer> nested, CompressionMethod method, int zstd_window_log_max, SnappyMode snappy_mode, size_t buf_size, char * existing_memory, size_t alignment)
 {
     if (method == CompressionMethod::None)
         return nested;
-    return createCompressedWrapper(std::move(nested), method, buf_size, existing_memory, alignment, zstd_window_log_max);
+    return createCompressedWrapper(std::move(nested), method, buf_size, existing_memory, alignment, zstd_window_log_max, snappy_mode);
 }
 
 
 template<typename WriteBufferT>
 std::unique_ptr<WriteBuffer> createWriteCompressedWrapper(
-    WriteBufferT && nested, CompressionMethod method, int level, int zstd_window_log, size_t buf_size, char * existing_memory, size_t alignment, bool compress_empty)
+    WriteBufferT && nested, CompressionMethod method, int level, int zstd_window_log, [[maybe_unused]] SnappyMode snappy_mode, size_t buf_size, char * existing_memory, size_t alignment, bool compress_empty)
 {
     if (method == DB::CompressionMethod::Gzip || method == CompressionMethod::Zlib)
     {
@@ -220,7 +312,11 @@ std::unique_ptr<WriteBuffer> createWriteCompressedWrapper(
 #endif
 #if USE_SNAPPY
     if (method == CompressionMethod::Snappy)
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported compression method");
+    {
+        if (snappy_mode == SnappyMode::Framed)
+            return std::make_unique<SnappyFramedWriteBuffer>(std::forward<WriteBufferT>(nested), buf_size, existing_memory, alignment, compress_empty);
+        return std::make_unique<HadoopSnappyWriteBuffer>(std::forward<WriteBufferT>(nested), buf_size, existing_memory, alignment, compress_empty);
+    }
 #endif
 
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported compression method");
@@ -232,6 +328,7 @@ std::unique_ptr<WriteBuffer> wrapWriteBufferWithCompressionMethod(
     CompressionMethod method,
     int level,
     int zstd_window_log,
+    SnappyMode snappy_mode,
     size_t buf_size,
     char * existing_memory,
     size_t alignment,
@@ -239,7 +336,7 @@ std::unique_ptr<WriteBuffer> wrapWriteBufferWithCompressionMethod(
 {
     if (method == CompressionMethod::None)
         return nested;
-    return createWriteCompressedWrapper(nested, method, level, zstd_window_log, buf_size, existing_memory, alignment, compress_empty);
+    return createWriteCompressedWrapper(nested, method, level, zstd_window_log, snappy_mode, buf_size, existing_memory, alignment, compress_empty);
 }
 
 
@@ -248,13 +345,14 @@ std::unique_ptr<WriteBuffer> wrapWriteBufferWithCompressionMethod(
     CompressionMethod method,
     int level,
     int zstd_window_log,
+    SnappyMode snappy_mode,
     size_t buf_size,
     char * existing_memory,
     size_t alignment,
     bool compress_empty)
 {
     chassert(method != CompressionMethod::None);
-    return createWriteCompressedWrapper(nested, method, level, zstd_window_log, buf_size, existing_memory, alignment, compress_empty);
+    return createWriteCompressedWrapper(nested, method, level, zstd_window_log, snappy_mode, buf_size, existing_memory, alignment, compress_empty);
 }
 
 }

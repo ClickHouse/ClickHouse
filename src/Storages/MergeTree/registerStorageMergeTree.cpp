@@ -908,6 +908,11 @@ static StoragePtr create(const StorageFactory::Arguments & args)
 
         if (!statistics_types_str.empty() && args.table_id.database_name != DatabaseCatalog::SYSTEM_DATABASE)
         {
+            /// Reject deprecated statistics types (currently `minmax`) only when a table is freshly created
+            /// with them in `auto_statistics_types`. Skipped for ATTACH and replicated propagation so that
+            /// existing tables which still carry `minmax` in the setting keep loading.
+            if (args.mode <= LoadingStrictnessLevel::CREATE)
+                validateAutoStatisticsTypes(statistics_types_str);
             addImplicitStatistics(metadata.columns, statistics_types_str);
         }
 
@@ -1169,7 +1174,7 @@ For a detailed description of the parameters, see the [CREATE TABLE](/sql-refere
 
 A tuple of column names or arbitrary expressions. Example: `ORDER BY (CounterID + 1, EventDate)`.
 
-If no primary key is defined (i.e. `PRIMARY KEY` was not specified), ClickHouse uses the the sorting key as primary key.
+If no primary key is defined (i.e. `PRIMARY KEY` was not specified), ClickHouse uses the sorting key as primary key.
 
 If no sorting is required, you can use syntax `ORDER BY tuple()`.
 Alternatively, if setting `create_table_empty_primary_key_by_default` is enabled, `ORDER BY ()` is implicitly added to `CREATE TABLE` statements. See [Selecting a Primary Key](#selecting-a-primary-key).
@@ -1670,7 +1675,9 @@ Indexes of type `set` can be utilized by all functions. The other index types ar
 | [match](/sql-reference/functions/string-search-functions.md/#match)                                                            | ✗           | ✗      | ✔          | ✔          | ✗            | ✔            | ✔    |
 | [startsWith](/sql-reference/functions/string-functions.md/#startsWith)                                                         | ✔           | ✔      | ✔          | ✔          | ✗            | ✔            | ✔    |
 | [endsWith](/sql-reference/functions/string-functions.md/#endsWith)                                                             | ✗           | ✗      | ✔          | ✔          | ✗            | ✔            | ✔    |
-| [multiSearchAny](/sql-reference/functions/string-search-functions.md/#multiSearchAny)                                          | ✗           | ✗      | ✔          | ✗          | ✗            | ✗            | ✗    |
+| [multiSearchAny](/sql-reference/functions/string-search-functions.md/#multiSearchAny)                                          | ✗           | ✗      | ✔          | ✗          | ✗            | ✗            | ✔    |
+| [multiSearchAnyUTF8](/sql-reference/functions/string-search-functions.md/#multiSearchAnyUTF8)                                  | ✗           | ✗      | ✗          | ✗          | ✗            | ✗            | ✔    |
+| [multiMatchAny](/sql-reference/functions/string-search-functions.md/#multiMatchAny)                                            | ✗           | ✗      | ✗          | ✗          | ✗            | ✗            | ✔    |
 | [in](/sql-reference/functions/in-functions)                                                                                    | ✔           | ✔      | ✔          | ✔          | ✔            | ✔            | ✔    |
 | [notIn](/sql-reference/functions/in-functions)                                                                                 | ✔           | ✔      | ✔          | ✔          | ✔            | ✔            | ✗    |
 | [less (`<`)](/sql-reference/functions/comparison-functions.md/#less)                                                           | ✔           | ✔      | ✗          | ✗          | ✗            | ✗            | ✗    |
@@ -1972,7 +1979,7 @@ If you perform the `SELECT` query between merges, you may get expired data. To a
 
 In addition to local block devices, ClickHouse supports these storage types:
 - [`s3` for S3 and MinIO](#table_engine-mergetree-s3)
-- [`gcs` for GCS](/integrations/data-ingestion/gcs/index.md/#creating-a-disk)
+- [`gcs` for GCS](/integrations/gcs#creating-a-disk)
 - [`blob_storage_disk` for Azure Blob Storage](/operations/storing-data#azure-blob-storage)
 - [`hdfs` for HDFS](/engines/table-engines/integrations/hdfs)
 - [`web` for read-only from web](/operations/storing-data#web-storage)
@@ -2354,17 +2361,17 @@ They can be used for prewhere optimization only if we enable `set use_statistics
 #### Part Pruning with Statistics {#part-pruning-with-statistics}
 
 When `use_statistics_for_part_pruning` is enabled, statistics can be used for part pruning.
-Currently, only `MinMax` and `Basic` statistics support part pruning. When such statistics are defined on a column, ClickHouse tracks the minimum and maximum values for that column in each part.
+Currently, only `basic` statistics (and the deprecated `minmax` statistics) support part pruning. When such statistics are defined on a column, ClickHouse tracks the minimum and maximum values for that column in each part.
 Part pruning allows to skip reading entire data parts when the query filter condition cannot match any rows in that part.
 
 **Example:**
 
 ```sql
--- Create a table with MinMax statistics on the 'value' column
+-- Create a table with basic statistics on the 'value' column
 CREATE TABLE test_stats
 (
     id UInt64,
-    value Int64 STATISTICS(minmax)
+    value Int64 STATISTICS(basic)
 )
 ENGINE = MergeTree
 ORDER BY id;
@@ -2396,9 +2403,11 @@ EXPLAIN indexes = 1 SELECT count() FROM test_stats WHERE value > 5000;
 
     A single `basic` statistic can populate several of these at once — for example on a `Nullable(UInt32)` column it tracks both numeric min/max and the null count. Compared to `minmax`, `basic` additionally works on `String` / `FixedString` columns and can be declared on `Nullable` wrappers of types like `UUID` or `IPv6` purely to track the null count.
 
-- `minmax`
+- `minmax` (deprecated)
 
-    The minimum and maximum column value which allows to estimate the selectivity of range filters on numeric columns.
+    :::note
+    `minmax` statistics are deprecated and can no longer be created (`CREATE TABLE ... STATISTICS(minmax)` and `ALTER TABLE ... ADD/MODIFY STATISTICS ... TYPE minmax` return an error). Existing tables and parts with `minmax` statistics keep working. Use `basic` statistics instead.
+    :::
 
 - `tdigest`
 
