@@ -79,6 +79,64 @@ namespace ErrorCodes
 namespace
 {
 
+/// Presents the payload of a `COPY ... FROM STDIN` as one continuous stream. PostgreSQL `CopyData`
+/// frame boundaries are transport-only: a client may split one logical row (or even one multi-byte
+/// character) across several frames and may pack many rows into one, so the input format must parse
+/// the concatenation of all frames, not each frame in isolation. Each refill pulls the next
+/// `CopyData` frame from the connection; `CopyDone` ends the stream.
+class CopyInDataReadBuffer : public ReadBuffer
+{
+public:
+    explicit CopyInDataReadBuffer(PostgreSQLProtocol::Messaging::MessageTransport & transport_)
+        : ReadBuffer(nullptr, 0), transport(transport_)
+    {
+    }
+
+private:
+    bool nextImpl() override
+    {
+        /// End-of-stream must be sticky: `ReadBuffer::eof` may probe `next` again after the stream has
+        /// ended (e.g. the parallel-parsing segmentator does), and by then the client is already waiting
+        /// for `CommandComplete` and sends nothing more - reading the socket again would deadlock.
+        if (received_copy_done)
+            return false;
+
+        while (true)
+        {
+            /// Push out anything buffered on the write side before blocking on the client.
+            transport.flush();
+            PostgreSQLProtocol::Messaging::FrontMessageType message_type = transport.receiveMessageType();
+            if (message_type == PostgreSQLProtocol::Messaging::FrontMessageType::COPY_DATA)
+            {
+                current_frame = std::move(transport.receive<PostgreSQLProtocol::Messaging::CopyInData>()->query);
+
+                /// An empty frame is legal and does not mean end-of-stream; wait for the next message.
+                if (current_frame.empty())
+                    continue;
+
+                working_buffer = Buffer(current_frame.data(), current_frame.data() + current_frame.size());
+                return true;
+            }
+            if (message_type == PostgreSQLProtocol::Messaging::FrontMessageType::COPY_COMPLETION)
+            {
+                transport.receive<PostgreSQLProtocol::Messaging::CopyDone>();
+                received_copy_done = true;
+                return false;
+            }
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Received incorrect message type - expected {} or {}, got {}",
+                PostgreSQLProtocol::Messaging::FrontMessageType::COPY_DATA,
+                PostgreSQLProtocol::Messaging::FrontMessageType::COPY_COMPLETION,
+                message_type);
+        }
+    }
+
+    PostgreSQLProtocol::Messaging::MessageTransport & transport;
+    String current_frame;
+    bool received_copy_done = false;
+};
+
 /// Some PostgreSQL drivers issue session-management commands during connection
 /// setup or teardown that have no ClickHouse equivalent, for example `RESET ALL`
 /// and `UNLISTEN *` sent by the Skunk driver. Instead of failing such a command
@@ -684,52 +742,47 @@ bool PostgreSQLHandler::processCopyQuery(const String & query)
         const Settings & settings = query_context->getSettingsRef();
 
         message_transport->send(PostgreSQLProtocol::Messaging::CopyInResponse(), true);
+
+        /// `CopyData` frame boundaries carry no meaning: a single logical row may arrive split across
+        /// several frames (a client is free to chunk the payload however it likes), and one frame may
+        /// hold many rows. So the whole `COPY` payload is parsed by a single input format reading from
+        /// `CopyInDataReadBuffer`, which concatenates the frames into one stream and turns `CopyDone`
+        /// into end-of-stream - never one parser per frame, which would drop a partial trailing row of
+        /// every frame.
+        CopyInDataReadBuffer copy_in_stream(*message_transport);
+        auto format_ptr = FormatFactory::instance().getInput(
+            format,
+            copy_in_stream,
+            io.pipeline.getHeader(),
+            query_context,
+            settings[Setting::max_insert_block_size],
+            std::nullopt,
+            nullptr,
+            nullptr,
+            false,
+            CompressionMethod::None,
+            false,
+            settings[Setting::max_insert_block_size_bytes],
+            settings[Setting::min_insert_block_size_rows],
+            settings[Setting::min_insert_block_size_bytes]);
+
         executor->start();
-        while (true)
+        try
         {
-            message_transport->flush();
-            PostgreSQLProtocol::Messaging::FrontMessageType message_type = message_transport->receiveMessageType();
-            if (message_type == PostgreSQLProtocol::Messaging::FrontMessageType::COPY_DATA)
+            while (true)
             {
-                std::unique_ptr<PostgreSQLProtocol::Messaging::CopyInData> data_query =
-                    message_transport->receive<PostgreSQLProtocol::Messaging::CopyInData>();
+                auto chunk = format_ptr->generate();
+                if (chunk.empty())
+                    break;
 
-                ReadBufferFromString buf(data_query->query);
-                auto format_ptr = FormatFactory::instance().getInput(
-                    format,
-                    buf,
-                    io.pipeline.getHeader(),
-                    query_context,
-                    settings[Setting::max_insert_block_size],
-                    std::nullopt,
-                    nullptr,
-                    nullptr,
-                    false,
-                    CompressionMethod::None,
-                    false,
-                    settings[Setting::max_insert_block_size_bytes],
-                    settings[Setting::min_insert_block_size_rows],
-                    settings[Setting::min_insert_block_size_bytes]);
-                while (true)
-                {
-                    auto chunk = format_ptr->generate();
-                    if (chunk.empty())
-                        break;
-
-                    executor->push(std::move(chunk));
-                }
+                executor->push(std::move(chunk));
             }
-            else if (message_type == PostgreSQLProtocol::Messaging::FrontMessageType::COPY_COMPLETION)
-            {
-                message_transport->receive<PostgreSQLProtocol::Messaging::CopyDone>();
-                executor->finish();
-                break;
-            }
-            else
-            {
-                executor->cancel();
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Received incorrect message type - expected {} or {}, got {}", PostgreSQLProtocol::Messaging::FrontMessageType::COPY_DATA, PostgreSQLProtocol::Messaging::FrontMessageType::COPY_COMPLETION, message_type);
-            }
+            executor->finish();
+        }
+        catch (...)
+        {
+            executor->cancel();
+            throw;
         }
 
         auto command = PostgreSQLProtocol::Messaging::CommandComplete::Command::COPY;
