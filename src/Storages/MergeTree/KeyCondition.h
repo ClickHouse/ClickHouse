@@ -133,12 +133,15 @@ public:
     /// data_types - the types of the key columns.
     /// Argument initial_mask is used for early exiting the implementation when we do not care about
     /// one of the resulting mask components (see BoolMask::consider_only_can_be_XXX).
+    /// key_bounds - optional per-column bounds the key values are known to lie within (e.g. the part's
+    /// partition minmax). A key without a bound defaults to (-inf, +inf).
     BoolMask checkInRange(
         size_t key_size,
         const FieldRef * left_keys,
         const FieldRef * right_keys,
         const DataTypes & data_types,
-        BoolMask initial_mask = BoolMask(false, false)) const;
+        BoolMask initial_mask = BoolMask(false, false),
+        const Hyperrectangle * key_bounds = nullptr) const;
 
     /// Optimized overload. Instead of all/prefix of key columns, any subsequence of key column information (in order) can be given.
     /// However, `equal_boundaries_mask` must have the information about all/prefix keys. `equal_boundaries_mask` specifies whether ith key's
@@ -146,17 +149,24 @@ public:
     /// For example, suppose, a table has 6 columns in primary key : (0, 1, 2, 3, 4, 5)
     /// The caller wants to use only columns (1, 3, 4) for range check.
     /// Then, `sparse_key_indices` = {1, 3, 4}
-    /// `equal_boundaries_mask` = {false, true, false, true, true, false} (size must be max(sparse_key_indices) + 1)
-    ///      Information about entire prefix until `max(sparse_key_indices) column` must be specified.
+    /// `equal_boundaries_mask` = {false, true, false, true, true, false}
+    ///      Information about the entire prefix covered by `equal_boundaries_mask` must be specified.
     /// `sparse_left_keys` and `sparse_right_keys` contain only 3 fields each, corresponding to columns (1, 3, 4).
     /// `sparse_data_types` contain only 3 data types each, corresponding to columns (1, 3, 4).
+    /// key_bounds - optional per-column bounds the key values are known to lie within (e.g. the part's
+    /// partition minmax), indexed by full key column position. A key without a bound defaults to (-inf, +inf).
+    /// `sparse_key_indices` may also contain indices >= `equal_boundaries_mask.size()` (e.g. key columns not
+    /// present in the in-memory index but bounded by the part's partition minmax). Such columns are constant
+    /// coordinates: their range is `(*key_bounds)[key_index]` for the whole call, they do not participate in
+    /// the hyperrectangle enumeration, and their entries in `sparse_left_keys`/`sparse_right_keys` are ignored.
     BoolMask checkInRange(
         const std::vector<size_t> & sparse_key_indices,
         const FieldRef * sparse_left_keys,
         const FieldRef * sparse_right_keys,
         const DataTypes & sparse_data_types,
         const std::vector<UInt8> & equal_boundaries_mask,
-        BoolMask initial_mask) const;
+        BoolMask initial_mask,
+        const Hyperrectangle * key_bounds = nullptr) const;
 
     /// Same as checkInRange, but calculate only may_be_true component of a result.
     /// This is more efficient than checkInRange(...).can_be_true.
@@ -372,7 +382,58 @@ public:
     const RPN & getRPN() const { return rpn; }
     const ColumnIndices & getKeyColumns() const { return key_columns; }
 
-    bool isRelaxed() const { return relaxed; }
+    /// Whether this key condition is relaxed (computed from the RPN atoms). When a key
+    /// condition is relaxed, it is considered weakened. This is because keys may not
+    /// always align perfectly with the condition specified in the query, and the aim is
+    /// to enhance the usefulness of different types of key expressions across various
+    /// scenarios.
+    ///
+    /// For instance, in a scenario with one granule of key column toDate(a), where
+    /// the hyperrectangle is toDate(a) ∊ [x, y], the result of a ∊ [u, v] can be
+    /// deduced as toDate(a) ∊ [toDate(u), toDate(v)] due to the monotonic
+    /// non-decreasing nature of the toDate function. Similarly, for a ∊ (u, v), the
+    /// transformed outcome remains toDate(a) ∊ [toDate(u), toDate(v)] as toDate
+    /// does not strictly follow a monotonically increasing transformation. This is
+    /// one of the main use case about key condition relaxation.
+    ///
+    /// During the KeyCondition::checkInRange process, relaxing the key condition
+    /// can lead to a loosened result. For example, when transitioning from (u, v)
+    /// to [u, v], if a key is within the range [u, u], BoolMask::can_be_true will
+    /// be true instead of false, causing us to not skip this granule. This behavior
+    /// is acceptable as we can still filter it later on. Conversely, if the key is
+    /// within the range [u, v], BoolMask::can_be_false will be false instead of
+    /// true, indicating a stricter condition where all elements of the granule
+    /// satisfy the key condition. Hence, when the key condition is relaxed, we
+    /// cannot rely on BoolMask::can_be_false. One significant use case of
+    /// BoolMask::can_be_false is in trivial count optimization.
+    ///
+    /// Now let's review all the cases of key condition relaxation across different
+    /// atom types.
+    ///
+    /// 1. Not applicable: ALWAYS_FALSE, ALWAYS_TRUE, FUNCTION_NOT,
+    /// FUNCTION_AND, FUNCTION_OR.
+    ///
+    /// These atoms are either never relaxed or are relaxed by their children.
+    ///
+    /// 2. Constant transformed: FUNCTION_IN_RANGE, FUNCTION_NOT_IN_RANGE,
+    /// FUNCTION_IS_NULL. FUNCTION_IS_NOT_NULL, FUNCTION_IN_SET (1 element),
+    /// FUNCTION_NOT_IN_SET (1 element)
+    ///
+    /// These atoms are relaxed only when the associated constants undergo
+    /// transformation by monotonic functions, as illustrated in the example
+    /// mentioned earlier.
+    ///
+    /// 3. Always relaxed: FUNCTION_UNKNOWN, FUNCTION_IN_SET (>1 elements),
+    /// FUNCTION_NOT_IN_SET (>1 elements), FUNCTION_ARGS_IN_HYPERRECTANGLE
+    ///
+    /// These atoms are always considered relaxed for the sake of implementation
+    /// simplicity, as there may be "gaps" within the atom's hyperrectangle that the
+    /// granule's hyperrectangle may or may not intersect.
+    ///
+    /// NOTE: we also need to examine special functions that generate atoms. For
+    /// example, the `match` function can produce a FUNCTION_IN_RANGE atom based
+    /// on a given regular expression, which is relaxed for simplicity.
+    bool isRelaxed() const;
 
     bool isSinglePoint() const { return single_point; }
 
@@ -403,8 +464,7 @@ public:
         ColumnIndices key_columns_,
         size_t num_key_columns_,
         bool single_point_,
-        bool date_time_overflow_behavior_ignore_,
-        bool relaxed_);
+        bool date_time_overflow_behavior_ignore_);
 
 private:
     /// Information used when building a KeyCondition out of ActionsDAG.
@@ -593,57 +653,5 @@ private:
     /// Holds the result of (setting.date_time_overflow_behavior == DateTimeOverflowBehavior::Ignore)
     /// Used to check toDateTime monotonicity.
     bool date_time_overflow_behavior_ignore;
-
-    /// If true, this key condition is relaxed. When a key condition is relaxed, it
-    /// is considered weakened. This is because keys may not always align perfectly
-    /// with the condition specified in the query, and the aim is to enhance the
-    /// usefulness of different types of key expressions across various scenarios.
-    ///
-    /// For instance, in a scenario with one granule of key column toDate(a), where
-    /// the hyperrectangle is toDate(a) ∊ [x, y], the result of a ∊ [u, v] can be
-    /// deduced as toDate(a) ∊ [toDate(u), toDate(v)] due to the monotonic
-    /// non-decreasing nature of the toDate function. Similarly, for a ∊ (u, v), the
-    /// transformed outcome remains toDate(a) ∊ [toDate(u), toDate(v)] as toDate
-    /// does not strictly follow a monotonically increasing transformation. This is
-    /// one of the main use case about key condition relaxation.
-    ///
-    /// During the KeyCondition::checkInRange process, relaxing the key condition
-    /// can lead to a loosened result. For example, when transitioning from (u, v)
-    /// to [u, v], if a key is within the range [u, u], BoolMask::can_be_true will
-    /// be true instead of false, causing us to not skip this granule. This behavior
-    /// is acceptable as we can still filter it later on. Conversely, if the key is
-    /// within the range [u, v], BoolMask::can_be_false will be false instead of
-    /// true, indicating a stricter condition where all elements of the granule
-    /// satisfy the key condition. Hence, when the key condition is relaxed, we
-    /// cannot rely on BoolMask::can_be_false. One significant use case of
-    /// BoolMask::can_be_false is in trivial count optimization.
-    ///
-    /// Now let's review all the cases of key condition relaxation across different
-    /// atom types.
-    ///
-    /// 1. Not applicable: ALWAYS_FALSE, ALWAYS_TRUE, FUNCTION_NOT,
-    /// FUNCTION_AND, FUNCTION_OR.
-    ///
-    /// These atoms are either never relaxed or are relaxed by their children.
-    ///
-    /// 2. Constant transformed: FUNCTION_IN_RANGE, FUNCTION_NOT_IN_RANGE,
-    /// FUNCTION_IS_NULL. FUNCTION_IS_NOT_NULL, FUNCTION_IN_SET (1 element),
-    /// FUNCTION_NOT_IN_SET (1 element)
-    ///
-    /// These atoms are relaxed only when the associated constants undergo
-    /// transformation by monotonic functions, as illustrated in the example
-    /// mentioned earlier.
-    ///
-    /// 3. Always relaxed: FUNCTION_UNKNOWN, FUNCTION_IN_SET (>1 elements),
-    /// FUNCTION_NOT_IN_SET (>1 elements), FUNCTION_ARGS_IN_HYPERRECTANGLE
-    ///
-    /// These atoms are always considered relaxed for the sake of implementation
-    /// simplicity, as there may be "gaps" within the atom's hyperrectangle that the
-    /// granule's hyperrectangle may or may not intersect.
-    ///
-    /// NOTE: we also need to examine special functions that generate atoms. For
-    /// example, the `match` function can produce a FUNCTION_IN_RANGE atom based
-    /// on a given regular expression, which is relaxed for simplicity.
-    bool relaxed = false;
 };
 }

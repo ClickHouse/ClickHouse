@@ -1,0 +1,125 @@
+---
+sidebarTitle: 'IP フィルタの設定'
+slug: /cloud/security/setting-ip-filters
+title: 'IP フィルタの設定'
+description: 'このページでは、ClickHouse Cloud で IP フィルタを設定し、ClickHouse サービスへのアクセスを制御する方法を説明します。'
+doc_type: 'guide'
+keywords: ['IP フィルタ', 'IP Access List']
+---
+
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+<div id="setting-ip-filters">
+  ## IP フィルタの設定
+</div>
+
+IP Access List は、接続を許可する送信元アドレスを指定して、ClickHouse サービスまたは API キーへのトラフィックをフィルタリングします。これらのリストは、サービスごと、および API キーごとに設定できます。リストは、サービスまたは API キーの作成時にも、作成後にも設定できます。
+
+<Warning>
+  **サービスの IP Access List を設定してください**
+
+  ClickHouse Cloud サービスを作成すると、IP allow list のデフォルト設定は &#39;Allow from anywhere&#39; です。できるだけ早く、アクセスを特定の IP アドレスまたは範囲に制限することを強く推奨します。`Allow from anywhere` に設定されたサービスは、公開 IP を探すインターネットクローラーやスキャナーによって定期的にアイドル状態からアクティブ状態に移される可能性があり、その結果、想定外のコストが発生することがあります。
+</Warning>
+
+<div id="prepare">
+  ## 準備
+</div>
+
+始める前に、アクセスリストに追加する必要がある IP アドレスまたは IP 範囲を洗い出してください。リモートワーカー、オンコール対応を行う拠点、VPN なども考慮に入れます。IP Access List のユーザーインターフェイスでは、個別のアドレスと CIDR 表記を指定できます。
+
+Classless Inter-domain Routing (CIDR) 表記を使用すると、従来のクラス A、B、C (8、6、または 24) のサブネットマスクサイズよりも小さい IP アドレス範囲を指定できます。[ARIN](https://account.arin.net/public/cidrCalculator) などの組織では、必要に応じて使える CIDR 計算ツールを提供しています。CIDR 表記の詳細については、[Classless Inter-domain Routing (CIDR)](https://www.rfc-editor.org/rfc/rfc4632.html) RFC を参照してください。
+
+<div id="create-or-modify-an-ip-access-list">
+  ## IP アクセスリスト を作成または変更する
+</div>
+
+<Info>
+  **PrivateLink 外からの接続にのみ適用されます**
+
+  IP アクセスリスト は、[PrivateLink](/ja/products/cloud/guides/security/connectivity/private-networking/index) の外側にあるパブリックインターネットからの接続にのみ適用されます。
+  PrivateLink からのトラフィックのみを許可する場合は、IP Allow list で `DenyAll` を設定してください。
+</Info>
+
+<Accordion title="ClickHouse サービス の IP アクセスリスト">
+  ClickHouse サービス を作成すると、IP allow list のデフォルト設定は「Allow from anywhere」です。
+
+  ClickHouse Cloud services の一覧から サービス を選択し、**Settings** を選択します。**Security** セクションに IP アクセスリスト があります。Add IPs ボタンをクリックします。
+
+  設定オプションを選べるサイドバーが表示されます。
+
+  * すべての場所から サービス への受信トラフィックを許可する
+  * 特定の場所から サービス へのアクセスを許可する
+  * サービス へのすべてのアクセスを拒否する
+</Accordion>
+
+<Accordion title="API キー の IP アクセスリスト">
+  API キー を作成すると、IP allow list のデフォルト設定は「Allow from anywhere」です。
+
+  API キー の一覧で、**Actions** カラムの API キー の横にある 3 点メニューをクリックし、**Edit** を選択します。画面下部に IP アクセスリスト と、その設定オプションがあります。
+
+  * すべての場所から サービス への受信トラフィックを許可する
+  * 特定の場所から サービス へのアクセスを許可する
+  * サービス へのすべてのアクセスを拒否する
+</Accordion>
+
+このスクリーンショットは、「NY Office range」と記載された IP アドレス範囲からのトラフィックを許可する アクセスリスト を示しています。
+
+<Image img="/images/cloud/security/ip-filtering-after-provisioning.webp" size="md" alt="ClickHouse Cloud の既存の アクセスリスト" border />
+
+<div id="possible-actions">
+  ### 実行できる操作
+</div>
+
+1. エントリを追加するには、**+ Add new IP** を使用します
+
+この例では、`London server` という説明を付けて 1 つの IP アドレスを追加しています。
+
+<Image img="/images/cloud/security/ip-filter-add-single-ip.webp" size="md" alt="ClickHouse Cloud のアクセスリストに 1 つの IP を追加する" border />
+
+2. 既存のエントリを削除する
+
+× (x) をクリックすると、エントリを削除できます
+
+3. 既存のエントリを編集する
+
+エントリを直接修正します
+
+4. **Anywhere** からのアクセスを許可する設定に切り替える
+
+これは推奨されませんが、設定は可能です。ClickHouse 上に構築したアプリケーションを公開し、バックエンドの ClickHouse Cloud サービスへのアクセスは制限することをお勧めします。
+
+変更を反映するには、**Save** をクリックする必要があります。
+
+<div id="verification">
+  ## 検証
+</div>
+
+フィルタを作成したら、その範囲内からサービスに接続できること、および許可された範囲外からの接続が拒否されることを確認してください。確認には、簡単な `curl` コマンドを使用できます。
+
+```bash title="Attempt rejected from outside the allow list"
+curl https://<HOSTNAME>.clickhouse.cloud:8443
+```
+
+```response
+curl: (35) error:02FFF036:system library:func(4095):Connection reset by peer
+```
+
+または
+
+```response
+curl: (35) LibreSSL SSL_connect: SSL_ERROR_SYSCALL in connection to HOSTNAME.clickhouse.cloud:8443
+```
+
+```bash title="Attempt permitted from inside the allow list"
+curl https://<HOSTNAME>.clickhouse.cloud:8443
+```
+
+```response
+Ok.
+```
+
+<div id="limitations">
+  ## 制限事項
+</div>
+
+* 現在、IP Access List は IPv4 のみをサポートしています

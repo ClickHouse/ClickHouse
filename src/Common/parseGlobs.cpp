@@ -154,10 +154,38 @@ std::string makeRegexpPatternFromGlobs(const std::string & initial_str_with_glob
 
     oss_for_replacing << escaped_with_globs.substr(current_index);
     std::string almost_res = oss_for_replacing.str();
+
     WriteBufferFromOwnString buf_final_processing;
     char previous = ' ';
-    for (const auto & letter : almost_res)
+    for (size_t i = 0; i < almost_res.size();)
     {
+        /// `**/` matches zero or more directory components, but only when `**` forms a whole
+        /// path segment: it must be bounded by `/` (or the start of the string) on the left and
+        /// by `/` on the right. This matches conventional glob semantics (e.g. Bash `globstar`,
+        /// where `**` is special only as a complete path component) and keeps this helper
+        /// consistent with the segment-by-segment local listing in `StorageFile`, which gives
+        /// zero-level semantics only to a path segment that is exactly `**`. A `**` adjacent to
+        /// other characters in a segment (e.g. `a**`, `?**`, or a run of 3+ stars like `***/`)
+        /// is not a globstar and keeps the legacy character-by-character expansion below.
+        /// Use `[^/]` so directory names containing `{` or `}` are still matched. We look at
+        /// `almost_res[i - 1]` directly rather than tracking the previous character, because the
+        /// `?` branch below uses `continue` and does not update `previous` — checking the source
+        /// string is robust against that.
+        if (i + 2 < almost_res.size()
+            && almost_res[i] == '*'
+            && almost_res[i + 1] == '*'
+            && almost_res[i + 2] == '/'
+            && (i == 0 || almost_res[i - 1] == '/'))
+        {
+            buf_final_processing << "([^/]*/)*";
+            i += 3;
+            previous = '/';
+            continue;
+        }
+
+        /// For every other case (including `**` not followed by `/`, and runs of 3+ stars),
+        /// keep the original character-by-character logic so the legacy regex is preserved.
+        const char letter = almost_res[i];
         if (previous == '*' && letter == '*')
         {
             buf_final_processing << "[^{}]";
@@ -166,12 +194,16 @@ std::string makeRegexpPatternFromGlobs(const std::string & initial_str_with_glob
         {
             buf_final_processing << "[^/]"; /// '?' is any symbol except '/'
             if (letter == '?')
+            {
+                ++i;
                 continue;
+            }
         }
         else if ((letter == '.') || (letter == '{') || (letter == '}'))
             buf_final_processing << '\\';
         buf_final_processing << letter;
         previous = letter;
+        ++i;
     }
     return buf_final_processing.str();
 }

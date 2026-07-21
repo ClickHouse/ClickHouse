@@ -1,0 +1,32 @@
+---
+description: 'timeSeriesSamples는 테이블 엔진이 TimeSeries인 `db_name.time_series_table` 테이블에서
+  사용되는 samples 테이블을 반환합니다.'
+sidebarTitle: 'timeSeriesSamples'
+slug: /sql-reference/table-functions/timeSeriesSamples
+title: 'timeSeriesSamples'
+doc_type: 'reference'
+---
+
+`timeSeriesSamples(db_name.time_series_table)` - 테이블 엔진이 [TimeSeries](/ko/reference/engines/table-engines/integrations/time-series)인 `db_name.time_series_table` 테이블에서 사용되는 [samples](/ko/reference/engines/table-engines/integrations/time-series#samples-table) 테이블을 반환합니다:
+
+```sql
+CREATE TABLE db_name.time_series_table ENGINE=TimeSeries SAMPLES samples_table
+```
+
+이 함수는 *samples* 테이블이 안쪽 테이블인 경우에도 작동합니다:
+
+```sql
+CREATE TABLE db_name.time_series_table ENGINE=TimeSeries SAMPLES INNER UUID '01234567-89ab-cdef-0123-456789abcdef'
+```
+
+다음 쿼리는 서로 같습니다:
+
+```sql
+SELECT * FROM timeSeriesSamples(db_name.time_series_table);
+SELECT * FROM timeSeriesSamples('db_name.time_series_table');
+SELECT * FROM timeSeriesSamples('db_name', 'time_series_table');
+```
+
+<Note>
+  함수 `timeSeriesSamples`에는 이전 버전과의 호환성을 위해 유지되는 별칭 `timeSeriesData`가 있습니다.
+</Note>

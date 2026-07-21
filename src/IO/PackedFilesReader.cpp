@@ -30,7 +30,7 @@ PackedFilesIO::Index PackedFilesReader::readIndex(ReadBuffer & in)
     UInt8 version = 0;
     readIntBinary(version, in);
 
-    if (version > PackedFilesIO::VERSION)
+    if (version > PackedFilesIO::MAX_VERSION)
         throw Exception(ErrorCodes::UNKNOWN_FORMAT_VERSION,
             "Unknown format ({}) of packed data", std::to_string(version));
 
@@ -46,6 +46,8 @@ PackedFilesIO::Index PackedFilesReader::readIndex(ReadBuffer & in)
         readStringBinary(file_name, in);
         readIntBinary(offset.offset, in);
         readIntBinary(offset.size, in);
+        if (version >= PackedFilesIO::VERSION_WITH_UNCOMPRESSED_SIZE)
+            readIntBinary(offset.uncompressed_size, in);
 
         if (!index.emplace(file_name, offset).second)
             throw Exception(ErrorCodes::CORRUPTED_DATA, "Duplicated file: {}", file_name);
@@ -64,6 +66,18 @@ size_t PackedFilesReader::getFileSize(const String & file_name) const
         return it->second.size;
 
     throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File {} does not exist", file_name);
+}
+
+std::optional<UInt64> PackedFilesReader::getFileUncompressedSize(const String & file_name) const
+{
+    auto it = index.find(file_name);
+    if (it == index.end())
+        throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File {} does not exist", file_name);
+
+    /// 0 means not recorded (v0).
+    if (it->second.uncompressed_size == 0)
+        return {};
+    return it->second.uncompressed_size;
 }
 
 Names PackedFilesReader::getFileNames() const
@@ -93,7 +107,8 @@ std::unique_ptr<ReadBufferFromFileBase> PackedFilesReader::readFile(
     if (it == index.end())
         throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File {} does not exist", file_name);
 
-    const auto & [offset, size] = it->second;
+    const auto offset = it->second.offset;
+    const auto size = it->second.size;
 
     /// ReadBufferFromFileView doesn't support reading with mmap and direct io methods, because
     /// they require special alignment which cannot be achieved while reading archive file.

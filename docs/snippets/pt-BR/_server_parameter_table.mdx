@@ -1,0 +1,10 @@
+---
+title: Tabela de parâmetros do servidor
+---
+
+Para cada servidor, os seguintes parâmetros são especificados:
+
+| Parâmetro | Descrição                                                                                                                                                                                                                                                                                                                                                  | Valor padrão |
+| --------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------ |
+| `host`    | O endereço do servidor remoto. Você pode usar o nome de domínio ou o endereço IPv4 ou IPv6. Se especificar o domínio, o servidor faz uma consulta DNS ao iniciar, e o resultado é mantido enquanto o servidor estiver em execução. Se a consulta DNS falhar, o servidor não será iniciado. Se você alterar o registro DNS, precisará reiniciar o servidor. | -            |
+| `port`    | A porta TCP para a comunicação do messenger (`tcp_port` na configuração, normalmente definida como 9000). Não confundir com `http_port`.                                                                                                                                                                                                                   | -            |

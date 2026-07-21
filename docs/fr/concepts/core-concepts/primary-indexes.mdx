@@ -1,0 +1,206 @@
+---
+slug: /primary-indexes
+title: 'Index primaires'
+description: 'Comment fonctionne l’index primaire clairsemé dans ClickHouse'
+keywords: ['index primaire clairsemé', 'index primaire', 'index']
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/fr/components/Image.jsx";
+
+<Tip>
+  **Vous cherchez des informations avancées sur l’indexation ?**
+
+  Cette page présente l’index primaire clairsemé de ClickHouse, sa construction, son fonctionnement et la manière dont il accélère les requêtes.
+
+  Pour des stratégies d’indexation avancées et des explications techniques plus approfondies, consultez le [guide détaillé sur les index primaires](/fr/guides/clickhouse/data-modelling/sparse-primary-indexes).
+</Tip>
+
+<div id="how-does-the-sparse-primary-index-work-in-clickHouse">
+  ## Comment fonctionne l’index primaire clairsemé dans ClickHouse ?
+</div>
+
+<br />
+
+Dans ClickHouse, l’index primaire clairsemé permet d’identifier efficacement les [granules](/fr/guides/clickhouse/data-modelling/sparse-primary-indexes#data-is-organized-into-granules-for-parallel-data-processing) — des blocs de lignes — susceptibles de contenir des données correspondant à la condition d’une requête sur les colonnes de clé primaire de la table. Dans la section suivante, nous expliquons comment cet index est construit à partir des valeurs de ces colonnes.
+
+<div id="sparse-primary-index-creation">
+  ### Création de l’index primaire clairsemé
+</div>
+
+Pour illustrer la façon dont l’index primaire clairsemé est construit, nous utilisons la table [uk&#95;price&#95;paid&#95;simple](/fr/concepts/core-concepts/parts) ainsi que quelques animations.
+
+Pour [rappel](/fr/concepts/core-concepts/parts), dans notre table d’exemple ① avec la clé primaire (town, street), les données ② insérées sont ③ stockées sur disque, triées selon les valeurs des colonnes de la clé primaire et compressées, dans des fichiers distincts pour chaque colonne :
+
+<Image img="/images/managing-data/core-concepts/primary-index-light_01.webp" size="lg" />
+
+<br />
+
+<br />
+
+Lors du traitement, les données de chaque colonne sont ④ logiquement divisées en granules — chacune couvrant 8 192 lignes — qui constituent les plus petites unités de travail des mécanismes de traitement des données de ClickHouse.
+
+Cette structure en granules est aussi ce qui rend l’index primaire **sparse** : au lieu d’indexer chaque ligne, ClickHouse stocke ⑤ les valeurs de la clé primaire d’une seule ligne par granule — plus précisément, la première ligne. On obtient ainsi une entrée d’index par granule :
+
+<Image img="/images/managing-data/core-concepts/primary-index-light_02.webp" size="lg" />
+
+<br />
+
+<br />
+
+Grâce à sa nature sparse, l’index primaire est suffisamment compact pour tenir entièrement en mémoire, ce qui permet un filtrage rapide des requêtes comportant des prédicats sur les colonnes de la clé primaire. Dans la section suivante, nous montrons comment il contribue à accélérer ces requêtes.
+
+<div id="primary-index-usage">
+  ### Utilisation de l’index primaire
+</div>
+
+Nous montrons brièvement comment l’index primaire clairsemé est utilisé pour accélérer les requêtes à l’aide d’une autre animation :
+
+<Image img="/images/managing-data/core-concepts/primary-index-light_03.webp" size="lg" />
+
+<br />
+
+<br />
+
+① La requête d’exemple inclut un prédicat sur les deux colonnes de la clé primaire : `town = 'LONDON' AND street = 'OXFORD STREET'`.
+
+② Pour accélérer la requête, ClickHouse charge en mémoire l’index primaire de la table.
+
+③ Il parcourt ensuite les entrées de l’index pour identifier les granules susceptibles de contenir des lignes correspondant au prédicat — autrement dit, les granules qui ne peuvent pas être ignorées.
+
+④ Ces granules potentiellement pertinentes sont ensuite chargées et [traitées](/fr/concepts/core-concepts/query-parallelism) en mémoire, avec les granules correspondantes de toute autre colonne requise pour la requête.
+
+<div id="monitoring-primary-indexes">
+  ## Suivi des index primaires
+</div>
+
+Chaque [partie de données](/fr/concepts/core-concepts/parts) de la table possède son propre index primaire. Nous pouvons inspecter le contenu de ces index à l’aide de la fonction de table [mergeTreeIndex](/fr/reference/functions/table-functions/mergeTreeIndex).
+
+La requête suivante indique le nombre d’entrées dans l’index primaire pour chaque partie de données de notre table d’exemple :
+
+```sql
+SELECT
+    part_name,
+    max(mark_number) AS entries
+FROM mergeTreeIndex('uk', 'uk_price_paid_simple')
+GROUP BY part_name;
+```
+
+```txt
+   ┌─part_name─┬─entries─┐
+1. │ all_2_2_0 │     914 │
+2. │ all_1_1_0 │    1343 │
+3. │ all_0_0_0 │    1349 │
+   └───────────┴─────────┘
+```
+
+Cette requête affiche les 10 premières entrées de l’index primaire de l’une des parties de données actuelles. Notez que ces parties sont continuellement [fusionnées](/fr/concepts/core-concepts/merges) en arrière-plan pour former des parties plus volumineuses :
+
+```sql
+SELECT 
+    mark_number + 1 AS entry,
+    town,
+    street
+FROM mergeTreeIndex('uk', 'uk_price_paid_simple')
+WHERE part_name = (SELECT any(part_name) FROM mergeTreeIndex('uk', 'uk_price_paid_simple')) 
+ORDER BY mark_number ASC
+LIMIT 10;
+```
+
+```txt
+    ┌─entry─┬─town───────────┬─street───────────┐
+ 1. │     1 │ ABBOTS LANGLEY │ ABBEY DRIVE      │
+ 2. │     2 │ ABERDARE       │ RICHARDS TERRACE │
+ 3. │     3 │ ABERGELE       │ PEN Y CAE        │
+ 4. │     4 │ ABINGDON       │ CHAMBRAI CLOSE   │
+ 5. │     5 │ ABINGDON       │ THORNLEY CLOSE   │
+ 6. │     6 │ ACCRINGTON     │ MAY HILL CLOSE   │
+ 7. │     7 │ ADDLESTONE     │ HARE HILL        │
+ 8. │     8 │ ALDEBURGH      │ LINDEN ROAD      │
+ 9. │     9 │ ALDERSHOT      │ HIGH STREET      │
+10. │    10 │ ALFRETON       │ ALMA STREET      │
+    └───────┴────────────────┴──────────────────┘
+```
+
+Enfin, nous utilisons la clause [EXPLAIN](/fr/reference/statements/explain) pour voir comment les index primaires de toutes les parties de données sont utilisés pour écarter les granules qui ne peuvent pas contenir de lignes correspondant aux prédicats de la requête d’exemple. Ces granules sont exclus du chargement et du traitement :
+
+```sql
+EXPLAIN indexes = 1
+SELECT
+    max(price)
+FROM
+    uk.uk_price_paid_simple
+WHERE
+    town = 'LONDON' AND street = 'OXFORD STREET';
+```
+
+```txt
+    ┌─explain────────────────────────────────────────────────────────────────────────────────────────────────────┐
+ 1. │ Expression ((Project names + Projection))                                                                  │
+ 2. │   Aggregating                                                                                              │
+ 3. │     Expression (Before GROUP BY)                                                                           │
+ 4. │       Expression                                                                                           │
+ 5. │         ReadFromMergeTree (uk.uk_price_paid_simple)                                                        │
+ 6. │         Indexes:                                                                                           │
+ 7. │           PrimaryKey                                                                                       │
+ 8. │             Keys:                                                                                          │
+ 9. │               town                                                                                         │
+10. │               street                                                                                       │
+11. │             Condition: and((street in ['OXFORD STREET', 'OXFORD STREET']), (town in ['LONDON', 'LONDON'])) │
+12. │             Parts: 3/3                                                                                     │
+13. │             Granules: 3/3609                                                                               │
+    └────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+Notez que la ligne 13 de la sortie EXPLAIN ci-dessus indique que seules 3 des 3 609 granules de l’ensemble des parties de données ont été retenues par l’analyse de l’index primaire pour traitement. Les autres granules ont été entièrement ignorées.
+
+On peut également constater qu’une grande partie des données a été ignorée en exécutant simplement la requête :
+
+```sql
+SELECT max(price)
+FROM uk.uk_price_paid_simple
+WHERE (town = 'LONDON') AND (street = 'OXFORD STREET');
+```
+
+```txt
+   ┌─max(price)─┐
+1. │  263100000 │ -- 263.10 million
+   └────────────┘
+
+1 row in set. Elapsed: 0.010 sec. Processed 24.58 thousand rows, 159.04 KB (2.53 million rows/s., 16.35 MB/s.)
+Peak memory usage: 13.00 MiB.
+```
+
+Comme indiqué ci-dessus, seules environ 25 000 lignes ont été traitées sur les quelque 30 millions de lignes de la table d’exemple :
+
+```sql
+SELECT count() FROM uk.uk_price_paid_simple;
+```
+
+```txt
+   ┌──count()─┐
+1. │ 29556244 │ -- 29.56 million
+   └──────────┘
+```
+
+<div id="key-takeaways">
+  ## Points clés à retenir
+</div>
+
+* Les **index primaires clairsemés** aident ClickHouse à ignorer les données inutiles en identifiant les granules susceptibles de contenir des lignes correspondant aux conditions de requête sur les colonnes de clé primaire.
+
+* Chaque index stocke uniquement les valeurs de clé primaire de la **première ligne de chaque granule** (une granule contient 8 192 lignes par défaut), ce qui le rend suffisamment compact pour tenir en mémoire.
+
+* **Chaque partie de données** d&#39;une table MergeTree possède son **propre index primaire**, utilisé indépendamment lors de l&#39;exécution des requêtes.
+
+* Lors des requêtes, l&#39;index permet à ClickHouse **d&#39;ignorer des granules**, ce qui réduit les E/S et l&#39;utilisation de la mémoire tout en améliorant les performances.
+
+* Vous pouvez **inspecter le contenu de l&#39;index** à l&#39;aide de la fonction de table `mergeTreeIndex` et surveiller l&#39;utilisation de l&#39;index avec la clause `EXPLAIN`.
+
+<div id="where-to-find-more-information">
+  ## Où trouver plus d’informations
+</div>
+
+Pour mieux comprendre le fonctionnement des index primaires clairsemés dans ClickHouse, notamment ce qui les distingue des index de base de données traditionnels et les bonnes pratiques à suivre pour les utiliser, consultez notre [analyse approfondie](/fr/guides/clickhouse/data-modelling/sparse-primary-indexes) sur l’indexation.
+
+Si vous souhaitez comprendre comment ClickHouse traite de façon hautement parallèle les données sélectionnées par le balayage de l’index primaire, consultez le guide sur le parallélisme des requêtes [ici](/fr/concepts/core-concepts/query-parallelism).

@@ -1,0 +1,248 @@
+---
+title: 'データレイクはじめに'
+sidebarTitle: 'はじめに'
+slug: /use-cases/data-lake/getting-started
+description: 'ClickHouse でオープンテーブルフォーマットのデータをクエリし、高速化し、書き戻すための実践的な入門ガイドです。'
+keywords: ['データレイク', 'レイクハウス', 'はじめに', 'Iceberg', 'Delta Lake', 'hudi', 'paimon']
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+<Info>
+  **要点**
+
+  データレイクのテーブルをクエリし、MergeTree で高速化して、その結果を Iceberg に書き戻すまでを実践的に紹介します。すべての手順で公開データセットを使用し、Cloud と OSS の両方で動作します。
+</Info>
+
+このガイドのスクリーンショットは [ClickHouse Cloud](https://console.clickhouse.cloud) の SQL コンソールで取得したものです。すべてのクエリは Cloud とセルフマネージド環境の両方で動作します。
+
+<Steps>
+  <Step>
+    ## Iceberg データを直接クエリする
+
+    最も手早く始めるには、[`icebergS3()`](/ja/reference/functions/table-functions/iceberg) テーブル関数を使います。S3 上の Icebergテーブルを指定すれば、セットアップ不要ですぐにクエリできます。
+
+    スキーマを確認します:
+
+    ```sql
+    DESCRIBE icebergS3('https://datasets-documentation.s3.amazonaws.com/lake_formats/iceberg/')
+    ```
+
+    クエリを実行する:
+
+    ```sql
+    SELECT
+        url,
+        count() AS cnt
+    FROM icebergS3('https://datasets-documentation.s3.amazonaws.com/lake_formats/iceberg/')
+    GROUP BY url
+    ORDER BY cnt DESC
+    LIMIT 5
+    ```
+
+    <Image img="/images/datalake/iceberg-query-direct.webp" alt="Iceberg クエリ" />
+
+    ClickHouse は S3 から Iceberg のメタデータを直接読み取り、スキーマを自動的に推論します。同じアプローチは [`deltaLake()`](/ja/reference/functions/table-functions/deltalake)、[`hudi()`](/ja/reference/functions/table-functions/hudi)、[`paimon()`](/ja/reference/functions/table-functions/paimon) でも使用できます。
+
+    **詳細はこちら:** [オープンテーブルフォーマットの直接クエリ](/ja/guides/use-cases/data-warehousing/getting-started/querying-directly) では、4 つのフォーマットすべてに加え、分散読み取り向けのクラスター バリアントやストレージバックエンドのオプション (S3、Azure、HDFS、local) について説明しています。
+  </Step>
+
+  <Step>
+    ## 永続的なテーブルエンジンを作成する
+
+    繰り返しアクセスする場合は、Iceberg テーブルエンジンを使ってテーブルを作成すると、毎回 path を指定する必要がありません。データは S3 に保持されたままで、複製されません:
+
+    ```sql
+    CREATE TABLE hits_iceberg
+        ENGINE = IcebergS3('https://datasets-documentation.s3.amazonaws.com/lake_formats/iceberg/')
+    ```
+
+    では、通常のClickHouseテーブルと同じようにクエリできます:
+
+    ```sql
+    SELECT
+        url,
+        count() AS cnt
+    FROM hits_iceberg
+    GROUP BY url
+    ORDER BY cnt DESC
+    LIMIT 5
+    ```
+
+    <Image img="/images/datalake/iceberg-query-engine.webp" alt="Iceberg クエリ" />
+
+    このテーブルエンジンでは、データキャッシュ、メタデータキャッシュ、スキーマ進化、タイムトラベルをサポートしています。テーブルエンジンの機能の詳細については[直接クエリ](/ja/guides/use-cases/data-warehousing/getting-started/querying-directly)ガイドを、機能の完全な比較については[サポートマトリクス](/ja/guides/use-cases/data-warehousing/support-matrix)を参照してください。
+  </Step>
+
+  <Step>
+    ## カタログに接続する
+
+    ほとんどの organizations では、テーブルメタデータとデータの検出を一元化するために、データカタログを介して Iceberg テーブルを管理します。ClickHouse は、[`DataLakeCatalog`](/ja/reference/engines/database-engines/datalake) データベースエンジンを使用してカタログに接続し、カタログ内のすべてのテーブルを ClickHouse のデータベースとして公開できます。こちらのほうがスケーラブルな方法であり、新しい Iceberg テーブルが作成されても、追加作業なしで常に ClickHouse からアクセスできます。
+
+    以下は、[AWS Glue](/ja/guides/use-cases/data-warehousing/glue-catalog) に接続する例です。
+
+    ```sql
+    CREATE DATABASE my_lake
+    ENGINE = DataLakeCatalog
+    SETTINGS
+        catalog_type = 'glue',
+        region = '<your-region>',
+        aws_access_key_id = '<your-access-key>',
+        aws_secret_access_key = '<your-secret-key>'
+    ```
+
+    カタログの種類ごとに、それぞれ専用の接続設定が必要です。サポートされているカタログの一覧と各カタログの設定オプションについては、[カタログ ガイド](/ja/guides/use-cases/data-warehousing/reference/index)を参照してください。
+
+    テーブルを参照してクエリを実行する:
+
+    ```sql
+    SHOW TABLES FROM my_lake;
+    ```
+
+    ```sql
+    SELECT count(*) FROM my_lake.`<database>.<table>`
+    ```
+
+    <Note>
+      ClickHouse はネイティブで複数のネームスペースをサポートしていないため、`<database>.<table>` はバッククォートで囲む必要があります。
+    </Note>
+
+    **詳細:** [データカタログへの接続](/ja/guides/use-cases/data-warehousing/getting-started/connecting-catalogs) では、Delta と Iceberg の例を交えながら、Unity Catalog のセットアップ全体を順を追って説明しています。
+  </Step>
+
+  <Step>
+    ## クエリを実行する
+
+    上記で使用した方法が table function、table engine、カタログのいずれであっても、同じ ClickHouse SQL をそのまま使用できます。
+
+    ```sql
+    -- Table function
+    SELECT url, count() AS cnt
+    FROM icebergS3('https://datasets-documentation.s3.amazonaws.com/lake_formats/iceberg/')
+    GROUP BY url ORDER BY cnt DESC LIMIT 5
+
+    -- Table engine
+    SELECT url, count() AS cnt
+    FROM hits_iceberg
+    GROUP BY url ORDER BY cnt DESC LIMIT 5
+
+    -- Catalog
+    SELECT url, count() AS cnt
+    FROM my_lake.`<database>.<table>`
+    GROUP BY url ORDER BY cnt DESC LIMIT 5
+    ```
+
+    クエリの構文はまったく同じで、変わるのは `FROM` 句だけです。データソースが変わっても、ClickHouse SQL のすべての関数、JOIN、集計は同じように使用できます。
+  </Step>
+
+  <Step>
+    ## ClickHouse にデータの一部を読み込む
+
+    Iceberg を直接クエリするのは便利ですが、パフォーマンスはネットワークスループットとファイルレイアウトに左右されます。分析用途では、データをネイティブな MergeTree テーブルに読み込んでください。
+
+    まず、Iceberg テーブルに対してフィルタしたクエリを実行し、ベースラインを確認します。
+
+    ```sql
+    SELECT
+        url,
+        count() AS cnt
+    FROM hits_iceberg
+    WHERE counterid = 38
+    GROUP BY url
+    ORDER BY cnt DESC
+    LIMIT 5
+    ```
+
+    このクエリでは、Iceberg は `counterid` フィルターを認識しないため、S3 内のデータセット全体がスキャンされます。数秒かかることがあります。
+
+    <Image img="/images/datalake/iceberg-query.webp" alt="Iceberg クエリ" />
+
+    次に、MergeTree テーブルを作成してデータを読み込みます。
+
+    ```sql
+    CREATE TABLE hits_clickhouse
+    (
+        url String,
+        eventtime DateTime,
+        counterid UInt32
+    )
+    ENGINE = MergeTree()
+    ORDER BY (counterid, eventtime);
+    ```
+
+    ```sql
+    INSERT INTO hits_clickhouse
+    SELECT url, eventtime, counterid
+    FROM hits_iceberg
+    ```
+
+    同じクエリをMergeTreeテーブルに対してもう一度実行します。
+
+    ```sql
+    SELECT
+        url,
+        count() AS cnt
+    FROM hits_clickhouse
+    WHERE counterid = 38
+    GROUP BY url
+    ORDER BY cnt DESC
+    LIMIT 5
+    ```
+
+    <Image img="/images/datalake/clickhouse-query.webp" alt="ClickHouse クエリ" />
+
+    `counterid` は `ORDER BY` キーの先頭カラムであるため、ClickHouse のスパースプライマリインデックスは該当するグラニュールまで直接絞り込み、1 億行すべてをスキャンする代わりに `counterid = 38` の行だけを読み取ります。その結果、処理速度が大幅に向上します。
+
+    [分析の高速化](/ja/guides/use-cases/data-warehousing/getting-started/accelerating-analytics) ガイドでは、`LowCardinality` 型、全文索引、最適化された順序キーをさらに活用し、2 億 8300 万行のデータセットで **約 40 倍の高速化** を実証しています。
+
+    **詳細はこちら:** [MergeTree による分析の高速化](/ja/guides/use-cases/data-warehousing/getting-started/accelerating-analytics) では、スキーマ最適化、全文索引、そしてパフォーマンスの比較を導入前後で包括的に解説しています。
+  </Step>
+
+  <Step>
+    ## Iceberg への書き戻し
+
+    ClickHouse は Iceberg テーブルにデータを書き戻すこともできるため、リバース ETL ワークフローを実現できます。これにより、集計結果やデータの一部を公開し、他のツール (Spark、Trino、DuckDB など) で利用できるようになります。
+
+    出力先となる Iceberg テーブルを作成します。
+
+    ```sql
+    CREATE TABLE output_iceberg
+    (
+        url String,
+        cnt UInt64
+    )
+    ENGINE = IcebergS3('https://your-bucket.s3.amazonaws.com/output/', 'access_key', 'secret_key')
+    ```
+
+    集計結果を書き込む:
+
+    ```sql
+    SET allow_experimental_insert_into_iceberg = 1;
+
+    INSERT INTO output_iceberg
+    SELECT
+        url,
+        count() AS cnt
+    FROM hits_clickhouse
+    GROUP BY url
+    ORDER BY cnt DESC
+    ```
+
+    生成されたIcebergテーブルは、Iceberg互換の任意のエンジンで読み取ることができます。
+
+    **詳細はこちら:** [オープンテーブルフォーマットへのデータの書き込み](/ja/guides/use-cases/data-warehousing/getting-started/writing-data) では、UK Price Paidデータセットを使用して生データと集計結果を書き込む方法を説明しており、ClickHouseの型をIcebergにマッピングする際のスキーマに関する考慮事項も取り上げています。
+  </Step>
+</Steps>
+
+<div id="next-steps">
+  ## 次のステップ
+</div>
+
+ここまででワークフロー全体を確認できたので、次は各領域をさらに掘り下げて見ていきましょう。
+
+* [直接クエリを実行する](/ja/guides/use-cases/data-warehousing/getting-started/querying-directly) — 4 つのフォーマットすべて、クラスターのバリエーション、テーブルエンジン、キャッシュ
+* [カタログに接続する](/ja/guides/use-cases/data-warehousing/getting-started/connecting-catalogs) — Delta と Iceberg を使った Unity Catalog の完全なチュートリアル
+* [分析を高速化する](/ja/guides/use-cases/data-warehousing/getting-started/accelerating-analytics) — スキーマの最適化、インデックス化、約 40 倍の高速化デモ
+* [データレイクに書き込む](/ja/guides/use-cases/data-warehousing/getting-started/writing-data) — 生データの書き込み、集計データの書き込み、型マッピング
+* [サポートマトリクス](/ja/guides/use-cases/data-warehousing/support-matrix) — フォーマットとストレージバックエンドごとの機能比較

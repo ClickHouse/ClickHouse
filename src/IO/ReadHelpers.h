@@ -373,13 +373,10 @@ inline ReturnType readBoolTextWord(bool & x, ReadBuffer & buf, bool support_uppe
 
 
 /// Look at readFloatText.h
-template <typename T> void readFloatText(T & x, ReadBuffer & in);
-template <typename T> bool tryReadFloatText(T & x, ReadBuffer & in);
-
 template <typename T> void readFloatTextPrecise(T & x, ReadBuffer & in);
 template <typename T> bool tryReadFloatTextPrecise(T & x, ReadBuffer & in);
-template <typename T> void readFloatTextFast(T & x, ReadBuffer & in);
-template <typename T> bool tryReadFloatTextFast(T & x, ReadBuffer & in);
+template <typename T> void readFloatImpreciseForCompatibility(T & x, ReadBuffer & in);
+template <typename T> bool tryReadFloatImpreciseForCompatibility(T & x, ReadBuffer & in);
 
 
 /// simple: all until '\n' or '\t'
@@ -1219,6 +1216,7 @@ inline ReturnType readDateTimeTextImpl(DateTime64 & datetime64, UInt32 scale, Re
     bool is_negative_timestamp = (!buf.eof() && *buf.position() == '-');
     bool is_empty = buf.eof();
     DateTimeFractionPrefix fraction_prefix;
+    bool recovered_at_dot = false;
 
     if (!is_empty)
     {
@@ -1232,6 +1230,13 @@ inline ReturnType readDateTimeTextImpl(DateTime64 & datetime64, UInt32 scale, Re
             {
                 if (buf.eof() || *buf.position() != '.')
                     throw;
+                /// The whole part failed to parse and the failure position is a dot, so the value can only be
+                /// a fraction with no integer digits, like ".5". Recover only when at least one fractional digit
+                /// follows the dot: a bare "." (e.g. from a zero-padded FixedString) must not become the epoch.
+                ++buf.position();
+                if (buf.eof() || !isNumericASCII(*buf.position()))
+                    throw;
+                recovered_at_dot = true;
             }
         }
         else
@@ -1245,9 +1250,11 @@ inline ReturnType readDateTimeTextImpl(DateTime64 & datetime64, UInt32 scale, Re
 
     DB::DecimalUtils::DecimalComponents<DateTime64> components{static_cast<DateTime64::NativeType>(whole), 0};
 
-    if (fraction_prefix.has_fraction || (!buf.eof() && *buf.position() == '.'))
+    if (fraction_prefix.has_fraction || recovered_at_dot || (!buf.eof() && *buf.position() == '.'))
     {
-        if (!fraction_prefix.has_fraction)
+        /// The dot has already been consumed when the fallback pre-read the fraction prefix
+        /// or when the throwing path recovered at the dot.
+        if (!fraction_prefix.has_fraction && !recovered_at_dot)
             ++buf.position();
 
         /// Read digits, up to 'scale' positions, starting with the digits that were already consumed
@@ -1298,11 +1305,12 @@ inline ReturnType readDateTimeTextImpl(DateTime64 & datetime64, UInt32 scale, Re
         if (is_negative_timestamp && components.whole == 0 && components.fractional != 0)
             negative_fraction_multiplier = -1;
     }
-    /// 10413792000 is time_t value for 2300-01-01 UTC (a bit over the last year supported by DateTime64)
-    else if (whole >= 10413792000LL)
+    /// 253402300800 is the time_t value for 10000-01-01 UTC (a bit over the last year supported by DateTime64).
+    /// A whole-seconds value at or above it cannot be a date (DateTime64 goes up to 9999), so it is interpreted
+    /// as a Unix timestamp with subsecond precision already scaled to an integer.
+    else if (whole >= 253402300800LL)
     {
         /// Unix timestamp with subsecond precision, already scaled to integer.
-        /// For disambiguation we support only time since 2001-09-09 01:46:40 UTC and less than 30 000 years in future.
         components.fractional =  components.whole % common::exp10_i32(scale);
         components.whole = components.whole / common::exp10_i32(scale);
     }
@@ -1702,7 +1710,7 @@ inline bool tryReadText(is_integer auto & x, ReadBuffer & buf)
 
 inline bool tryReadText(is_floating_point auto & x, ReadBuffer & buf)
 {
-    return tryReadFloatText(x, buf);
+    return tryReadFloatTextPrecise(x, buf);
 }
 
 inline bool tryReadText(UUID & x, ReadBuffer & buf) { return tryReadUUIDText(x, buf); }
@@ -1711,7 +1719,7 @@ inline bool tryReadText(IPv6 & x, ReadBuffer & buf) { return tryReadIPv6Text(x, 
 
 template <typename T>
 requires is_floating_point<T>
-inline void readText(T & x, ReadBuffer & buf) { readFloatText(x, buf); }
+inline void readText(T & x, ReadBuffer & buf) { readFloatTextPrecise(x, buf); }
 
 inline void readText(String & x, ReadBuffer & buf) { readEscapedString(x, buf); }
 

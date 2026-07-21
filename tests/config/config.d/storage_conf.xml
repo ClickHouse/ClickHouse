@@ -37,6 +37,7 @@
                 <cache_on_write_operations>1</cache_on_write_operations>
                 <cache_policy>LRU</cache_policy>
                 <slru_size_ratio>0.3</slru_size_ratio>
+                <reserve_granularity>4Mi</reserve_granularity>
                 <allow_dynamic_cache_resize>1</allow_dynamic_cache_resize>
                 <keep_free_space_size_ratio>0.15</keep_free_space_size_ratio>
                 <keep_free_space_elements_ratio>0.15</keep_free_space_elements_ratio>
@@ -81,6 +82,10 @@
                 <boundary_alignment>100</boundary_alignment>
                 <cache_on_write_operations>1</cache_on_write_operations>
                 <cache_policy>LRU</cache_policy>
+                <!-- This cache is intentionally tiny (used to test dynamic resize). Disable
+                     reserve-ahead so the default reserve_granularity does not hold a whole
+                     segment of space and lower the steady-state occupancy below the test's threshold. -->
+                <reserve_granularity>0</reserve_granularity>
                 <allow_dynamic_cache_resize>1</allow_dynamic_cache_resize>
             </dynamically_resize_filesystem_cache>
             <!-- multi layer cache -->
@@ -119,6 +124,20 @@
                 <disk>s3_cache</disk>
                 <key>1234567812345678</key>
             </s3_cache_encrypted>
+            <!-- Encryption over raw object storage with NO filesystem cache: lets the ReaderExecutor
+                 engage on an encrypted disk (a cache would force the legacy fallback). -->
+            <s3_no_cache_encrypted>
+                <type>encrypted</type>
+                <disk>s3_no_cache</disk>
+                <key>1234567812345678</key>
+            </s3_no_cache_encrypted>
+            <!-- Two stacked encryption layers over raw object storage: exercises the executor's
+                 multi-layer decryption on a real DiskEncrypted-over-DiskEncrypted config. -->
+            <s3_no_cache_encrypted_double>
+                <type>encrypted</type>
+                <disk>s3_no_cache_encrypted</disk>
+                <key>0987654321zyxwvu</key>
+            </s3_no_cache_encrypted_double>
         </disks>
         <policies>
             <local_remote>
@@ -162,6 +181,20 @@
                     </main>
                 </volumes>
             </s3_cache_encrypted>
+            <s3_no_cache_encrypted>
+                <volumes>
+                    <main>
+                        <disk>s3_no_cache_encrypted</disk>
+                    </main>
+                </volumes>
+            </s3_no_cache_encrypted>
+            <s3_no_cache_encrypted_double>
+                <volumes>
+                    <main>
+                        <disk>s3_no_cache_encrypted_double</disk>
+                    </main>
+                </volumes>
+            </s3_no_cache_encrypted_double>
         </policies>
     </storage_configuration>
     <!-- Allow data-lake table engines (Iceberg, Delta, Hudi) to use these disks via

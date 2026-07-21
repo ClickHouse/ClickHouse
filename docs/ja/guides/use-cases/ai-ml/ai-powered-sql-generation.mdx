@@ -1,0 +1,202 @@
+---
+slug: /use-cases/AI/ai-powered-sql-generation
+sidebarTitle: 'AI による SQL 生成'
+title: 'AI による SQL 生成'
+description: 'このガイドでは、ClickHouse Client または clickhouse-local で AI を使って SQL クエリを生成する方法を説明します。'
+keywords: ['AI', 'SQL generation']
+show_related_blogs: true
+doc_type: 'guide'
+---
+
+ClickHouse 25.7 以降、[ClickHouse Client](/ja/concepts/features/interfaces/cli) と [clickhouse-local](/ja/concepts/features/tools-and-utilities/clickhouse-local) には、自然言語による説明を SQL クエリに変換する [AI 搭載機能](/ja/concepts/features/interfaces/cli#ai-sql-generation) が含まれています。この機能を使うと、必要なデータを平易なテキストで記述でき、システムがそれを対応する SQL ステートメントに変換します。
+
+この機能は、複雑な SQL 構文に不慣れな場合や、探索的データ分析のためのクエリをすばやく生成したい場合に特に便利です。標準的な ClickHouse テーブルで動作し、フィルタリング、集約、JOIN など、一般的なクエリパターンをサポートします。
+
+この機能は、次の組み込みツール/関数を利用して実現されています。
+
+* `list_databases` - ClickHouse インスタンスで利用可能なすべてのデータベースを一覧表示します
+* `list_tables_in_database` - 特定のデータベース内のすべてのテーブルを一覧表示します
+* `get_schema_for_table` - 特定のテーブルの `CREATE TABLE` ステートメント (スキーマ) を取得します
+
+<div id="prerequisites">
+  ## 前提条件
+</div>
+
+Anthropic または OpenAI のキーを環境変数として追加する必要があります。
+
+```bash
+export ANTHROPIC_API_KEY=your_api_key
+export OPENAI_API_KEY=your_api_key
+```
+
+また、[設定ファイルを指定する](/ja/concepts/features/interfaces/cli#ai-sql-generation-configuration)こともできます。
+
+<div id="connecting-to-the-clickhouse-sql-playground">
+  ## ClickHouse SQL playground への接続
+</div>
+
+ここでは、[ClickHouse SQL playground](https://sql.clickhouse.com/) を使ってこの機能を見ていきます。
+
+次のコマンドで ClickHouse SQL playground に接続できます。
+
+```bash
+clickhouse client -mn \
+--host sql-clickhouse.clickhouse.com \
+--secure \
+--user demo --password ''
+```
+
+<Note>
+  ClickHouse はインストール済みであることを前提とします。まだの場合は、[インストールガイド](/ja/get-started/setup/install)を参照してください
+</Note>
+
+<div id="asking-clickhouse-questions-in-natural-language">
+  ## 自然言語でClickHouseに質問する
+</div>
+
+では、実際に質問してみましょう。
+
+text to SQL 機能は、実質的に一問一答のクエリ生成ツールです。会話履歴は保持されないため、質問にはできるだけ多くの有用なコンテキストを含めてください。特に、次の点を具体的にしましょう。
+
+期間または日付範囲
+必要な分析の種類 (平均、totals、ランキングなど)
+フィルタ条件
+
+<div id="finding-expensive-housing-markets">
+  ### 住宅価格が高い市場を見つける
+</div>
+
+まずは住宅価格について質問してみましょう。SQL playground には英国の住宅価格データセットが含まれており、AI がそれを自動的に見つけます。
+
+```sql
+?? Can you tell me the most expensive place to buy a house in 2021?;
+```
+
+Enterキーを押すと、AIが質問に答えようとする際の思考プロセスが表示されます。
+
+```text
+• AIによるSQLクエリ生成をスキーマ検出とともに開始しています...
+─────────────────────────────────────────────────
+🧠 thinking...[INFO] Text generation successful - model: claude-3-5-sonnet-latest, response_id: msg_01QpQd35ZD8HM9QSYFZuQ8Wh
+🔧 Calling: list_databases [toolu_01...]
+🧠 thinking✓ list_databases completed
+  └─ Found 37 databases: - amazon - bluesky - country - covid - default - dns - en...
+🔧 Calling: list_databases [toolu_01...]
+✓ list_databases completed
+  └─ Found 37 databases: - amazon - bluesky - country - covid - default - dns - en...
+🧠 thinking[INFO] Text generation successful - model: claude-3-5-sonnet-latest, response_id: msg_016DxK8SMVKGrUPfFwi43AzE
+🔧 Calling: list_tables_in_database [toolu_01...]
+  └─ Args: {"database":"uk"}
+🧠 thinking.✓ list_tables_in_database completed
+  └─ Found 9 tables in database 'uk': - uk_codes - uk_postcode_to_iso - uk_price_p...
+🔧 Calling: list_tables_in_database [toolu_01...]
+  └─ Args: {"database":"uk"}
+✓ list_tables_in_database completed
+  └─ Found 9 tables in database 'uk': - uk_codes - uk_postcode_to_iso - uk_price_p...
+🧠 thinking.[INFO] Text generation successful - model: claude-3-5-sonnet-latest, response_id: msg_015giF12wm619beNGC5aTrmw
+🔧 Calling: get_schema_for_table [toolu_01...]
+  └─ Args: {"database":"uk","table":"uk_price_paid"}
+✓ get_schema_for_table completed
+  └─ Schema for uk.uk_price_paid: CREATE TABLE uk.uk_price_paid (     `price` UInt...
+🔧 Calling: get_schema_for_table [toolu_01...]
+  └─ Args: {"database":"uk","table":"uk_price_paid"}
+🧠 thinking..✓ get_schema_for_table completed
+  └─ Schema for uk.uk_price_paid: CREATE TABLE uk.uk_price_paid (     `price` UInt...
+🧠 thinking[INFO] Text generation successful - model: claude-3-5-sonnet-latest, response_id: msg_01HxT1HKbaTT3165Wx5bDtY9
+─────────────────────────────────────────────────
+• ✨ SQLクエリが正常に生成されました！
+:) SELECT     town,     district,     county,     round(avg(price), 2) as avg_price,     count() as total_sales FROM uk.uk_price_paid WHERE date >= '2021-01-01' AND date <= '2021-12-31' GROUP BY     town,     district,     county HAVING total_sales >= 10 ORDER BY avg_price DESC LIMIT 10
+```
+
+AI は次の手順で処理します。
+
+1. スキーマ検出 - 利用可能なデータベースとテーブルを調べます
+2. テーブル分析 - 関連するテーブルの構造を確認します
+3. クエリ生成 - 質問内容と検出したスキーマに基づいて SQL を生成します
+
+`uk_price_paid` テーブルが見つかり、実行用のクエリが生成されていることがわかります。
+そのクエリを実行すると、次の出力が表示されます。
+
+```text
+┌─town───────────┬─district───────────────┬─county──────────┬──avg_price─┬─total_sales─┐
+│ ILKLEY         │ HARROGATE              │ NORTH YORKSHIRE │    4310200 │          10 │
+│ LONDON         │ CITY OF LONDON         │ GREATER LONDON  │ 4008117.32 │         311 │
+│ LONDON         │ CITY OF WESTMINSTER    │ GREATER LONDON  │ 2847409.81 │        3984 │
+│ LONDON         │ KENSINGTON AND CHELSEA │ GREATER LONDON  │  2331433.1 │        2594 │
+│ EAST MOLESEY   │ RICHMOND UPON THAMES   │ GREATER LONDON  │ 2244845.83 │          12 │
+│ LEATHERHEAD    │ ELMBRIDGE              │ SURREY          │ 2051836.42 │         102 │
+│ VIRGINIA WATER │ RUNNYMEDE              │ SURREY          │ 1914137.53 │         169 │
+│ REIGATE        │ MOLE VALLEY            │ SURREY          │ 1715780.89 │          18 │
+│ BROADWAY       │ TEWKESBURY             │ GLOUCESTERSHIRE │ 1633421.05 │          19 │
+│ OXFORD         │ SOUTH OXFORDSHIRE      │ OXFORDSHIRE     │ 1628319.07 │         405 │
+└────────────────┴────────────────────────┴─────────────────┴────────────┴─────────────┘
+```
+
+続けて質問したい場合でも、毎回最初から質問する必要があります。
+
+<div id="finding-expensive-properties-in-greater-london">
+  ### Greater London の高額物件を探す
+</div>
+
+この機能では会話履歴が保持されないため、各クエリはそれだけで完結している必要があります。追加で質問する場合は、前のクエリを参照するのではなく、必要な前提情報をすべて含める必要があります。
+たとえば、前の結果を見て、Greater London の物件に絞って調べたくなるかもしれません。その場合も、「Greater London はどうですか？」と尋ねるのではなく、必要な前提情報をすべて含める必要があります。
+
+```sql
+?? Can you tell me the most expensive place to buy a house in Greater London across the years?;
+```
+
+AI はこのデータをたった今調べたばかりなのに、同じ発見のプロセスをたどることに注目してください。
+
+```text
+• AIによるSQLスキーマ検出を開始しています...
+─────────────────────────────────────────────────
+🧠 thinking[INFO] Text generation successful - model: claude-3-5-sonnet-latest, response_id: msg_012m4ayaSHTYtX98gxrDy1rz
+🔧 Calling: list_databases [toolu_01...]
+✓ list_databases completed
+  └─ Found 37 databases: - amazon - bluesky - country - covid - default - dns - en...
+🔧 Calling: list_databases [toolu_01...]
+🧠 thinking.✓ list_databases completed
+  └─ Found 37 databases: - amazon - bluesky - country - covid - default - dns - en...
+🧠 thinking.[INFO] Text generation successful - model: claude-3-5-sonnet-latest, response_id: msg_01KU4SZRrJckutXUzfJ4NQtA
+🔧 Calling: list_tables_in_database [toolu_01...]
+  └─ Args: {"database":"uk"}
+🧠 thinking..✓ list_tables_in_database completed
+  └─ Found 9 tables in database 'uk': - uk_codes - uk_postcode_to_iso - uk_price_p...
+🔧 Calling: list_tables_in_database [toolu_01...]
+  └─ Args: {"database":"uk"}
+✓ list_tables_in_database completed
+  └─ Found 9 tables in database 'uk': - uk_codes - uk_postcode_to_iso - uk_price_p...
+🧠 thinking[INFO] Text generation successful - model: claude-3-5-sonnet-latest, response_id: msg_01X9CnxoBpbD2xj2UzuRy2is
+🔧 Calling: get_schema_for_table [toolu_01...]
+  └─ Args: {"database":"uk","table":"uk_price_paid"}
+🧠 thinking.✓ get_schema_for_table completed
+  └─ Schema for uk.uk_price_paid: CREATE TABLE uk.uk_price_paid (     `price` UInt...
+🔧 Calling: get_schema_for_table [toolu_01...]
+  └─ Args: {"database":"uk","table":"uk_price_paid"}
+✓ get_schema_for_table completed
+  └─ Schema for uk.uk_price_paid: CREATE TABLE uk.uk_price_paid (     `price` UInt...
+🧠 thinking...[INFO] Text generation successful - model: claude-3-5-sonnet-latest, response_id: msg_01QTMypS1XuhjgVpDir7N9wD
+─────────────────────────────────────────────────
+• ✨ SQLクエリが正常に生成されました！
+:) SELECT     district,     toYear(date) AS year,     round(avg(price), 2) AS avg_price,     count() AS total_sales FROM uk.uk_price_paid WHERE county = 'GREATER LONDON' GROUP BY district, year HAVING total_sales >= 10 ORDER BY avg_price DESC LIMIT 10;
+```
+
+これにより、Greater London に対象を絞ってフィルタリングし、結果を年ごとに分類する、より的を絞ったクエリが生成されます。
+クエリの出力を以下に示します。
+
+```text
+┌─district────────────┬─year─┬───avg_price─┬─total_sales─┐
+│ CITY OF LONDON      │ 2019 │ 14504772.73 │         299 │
+│ CITY OF LONDON      │ 2017 │  6351366.11 │         367 │
+│ CITY OF LONDON      │ 2016 │  5596348.25 │         243 │
+│ CITY OF LONDON      │ 2023 │  5576333.72 │         252 │
+│ CITY OF LONDON      │ 2018 │  4905094.54 │         523 │
+│ CITY OF LONDON      │ 2021 │  4008117.32 │         311 │
+│ CITY OF LONDON      │ 2025 │  3954212.39 │          56 │
+│ CITY OF LONDON      │ 2014 │  3914057.39 │         416 │
+│ CITY OF LONDON      │ 2022 │  3700867.19 │         290 │
+│ CITY OF WESTMINSTER │ 2018 │  3562457.76 │        3346 │
+└─────────────────────┴──────┴─────────────┴─────────────┘
+```
+
+City of London は、一貫して最も高額な地区として表示されています！AI は妥当なクエリを作成していますが、結果は時系列ではなく平均価格順に並んでいることがわかります。前年比で分析するには、結果のグループ化が変わるよう、質問を「各年で最も高額な地区」とより具体的にするとよいでしょう。

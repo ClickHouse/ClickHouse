@@ -3,3 +3,9 @@ split parsing matches
 1	1
 1
 1	1	1	1	1
+rejected: '.'
+rejected: '+.'
+rejected: '-.'
+rejected: toFixedString('.', 20)
+rejected: toFixedString('+.', 20)
+rejected: toFixedString('-.', 20)

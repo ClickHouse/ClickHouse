@@ -209,11 +209,19 @@ void DistinctSortedStreamTransform::transform(Chunk & chunk)
 
     saveLatestKey(chunk_rows - 1);
 
-    /// apply the built filter
-    for (auto & input_column : input_columns)
-        input_column = input_column->filter(filter, output_rows);
+    if (output_rows == chunk_rows)
+    {
+        /// Every row is a new distinct value: keep the chunk unchanged, without copying it.
+        chunk.setColumns(std::move(input_columns), chunk_rows);
+    }
+    else
+    {
+        /// apply the built filter
+        for (auto & input_column : input_columns)
+            input_column = input_column->filter(filter, output_rows);
 
-    chunk.setColumns(std::move(input_columns), output_rows);
+        chunk.setColumns(std::move(input_columns), output_rows);
+    }
 
     /// Update total output rows and check limits
     total_output_rows += output_rows;

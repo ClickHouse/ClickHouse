@@ -1,0 +1,248 @@
+---
+description: 'Permite escribir rápidamente estados de objetos que cambian continuamente,
+  y eliminar en segundo plano los estados antiguos de los objetos.'
+sidebarTitle: 'VersionedCollapsingMergeTree'
+slug: /engines/table-engines/mergetree-family/versionedcollapsingmergetree
+title: 'motor de tabla VersionedCollapsingMergeTree'
+doc_type: 'reference'
+---
+
+Este motor:
+
+* Permite escribir rápidamente estados de objetos que cambian continuamente.
+* Elimina en segundo plano estados antiguos de los objetos. Esto reduce significativamente el volumen de almacenamiento.
+
+Consulte la sección [Collapsing](#table_engines_versionedcollapsingmergetree) para obtener más información.
+
+El motor hereda de [MergeTree](/es/reference/engines/table-engines/mergetree-family/mergetree) y añade la lógica de colapso de filas al algoritmo de fusión de partes de datos. `VersionedCollapsingMergeTree` cumple la misma función que [CollapsingMergeTree](/es/reference/engines/table-engines/mergetree-family/collapsingmergetree), pero utiliza un algoritmo de colapso diferente que permite insertar los datos en cualquier orden con varios hilos. En particular, la columna `Version` ayuda a colapsar correctamente las filas incluso si se insertan en un orden incorrecto. En cambio, `CollapsingMergeTree` solo permite una inserción estrictamente consecutiva.
+
+<div id="creating-a-table">
+  ## Crear una tabla
+</div>
+
+```sql
+CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
+(
+    name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
+    name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2],
+    ...
+) ENGINE = VersionedCollapsingMergeTree(sign, version)
+[PARTITION BY expr]
+[ORDER BY expr]
+[SAMPLE BY expr]
+[SETTINGS name=value, ...]
+```
+
+Para ver una descripción de los parámetros de consulta, consulte la [descripción de la consulta](/es/reference/statements/create/table).
+
+<div id="engine-parameters">
+  ### Parámetros del motor
+</div>
+
+```sql
+VersionedCollapsingMergeTree(sign, version)
+```
+
+| Parámetro | Descripción                                                                                                                          | Tipo                                                                                                                                                                                                                                                                 |
+| --------- | ------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `sign`    | Nombre de la columna que indica el tipo de fila: `1` es una fila de &quot;estado&quot;, `-1` es una fila de &quot;cancelación&quot;. | [`Int8`](/es/reference/data-types/int-uint)                                                                                                                                                                                                                             |
+| `version` | Nombre de la columna con la versión del estado del objeto.                                                                           | [`Int*`](/es/reference/data-types/int-uint), [`UInt*`](/es/reference/data-types/int-uint), [`Date`](/es/reference/data-types/date), [`Date32`](/es/reference/data-types/date32), [`DateTime`](/es/reference/data-types/datetime) o [`DateTime64`](/es/reference/data-types/datetime64) |
+
+<div id="query-clauses">
+  ### Cláusulas de la consulta
+</div>
+
+Al crear una tabla `VersionedCollapsingMergeTree`, se requieren las mismas [cláusulas](/es/reference/engines/table-engines/mergetree-family/mergetree) que al crear una tabla `MergeTree`.
+
+<details markdown="1">
+  <summary>Método obsoleto para crear una tabla</summary>
+
+  <Note>
+    No utilice este método en proyectos nuevos. Si es posible, cambie los proyectos antiguos al método descrito anteriormente.
+  </Note>
+
+  ```sql
+  CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
+  (
+      name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
+      name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2],
+      ...
+  ) ENGINE [=] VersionedCollapsingMergeTree(date-column [, sampling_expression], (primary, key), index_granularity, sign, version)
+  ```
+
+  Todos los parámetros, excepto `sign` y `version`, tienen el mismo significado que en `MergeTree`.
+
+  * `sign` — Nombre de la columna con el tipo de fila: `1` es una fila &quot;estado&quot; y `-1` es una fila &quot;cancelación&quot;.
+
+    Tipo de datos de la columna: `Int8`.
+
+  * `version` — Nombre de la columna con la versión del estado del objeto.
+
+    El tipo de datos de la columna debe ser `UInt*`.
+</details>
+
+<div id="table_engines_versionedcollapsingmergetree">
+  ## Collapsing
+</div>
+
+<div id="data">
+  ### Datos
+</div>
+
+Considere una situación en la que necesita guardar datos que cambian continuamente de un objeto. Es razonable tener una fila por objeto y actualizarla cada vez que haya cambios. Sin embargo, la operación de actualización es costosa y lenta para un SGBD porque requiere reescribir los datos en el almacenamiento. La actualización no es aceptable si necesita escribir datos rápidamente, pero puede escribir los cambios de un objeto de forma secuencial, como se muestra a continuación.
+
+Use la columna `Sign` al escribir la fila. Si `Sign = 1`, significa que la fila representa un estado de un objeto (llamémosla la fila de &quot;estado&quot;). Si `Sign = -1`, indica la anulación del estado de un objeto con los mismos atributos (llamémosla la fila de &quot;cancelación&quot;). Use también la columna `Version`, que debe identificar cada estado de un objeto con un número distinto.
+
+Por ejemplo, queremos calcular cuántas páginas visitaron los usuarios en un sitio y cuánto tiempo permanecieron allí. En algún momento escribimos la siguiente fila con el estado de la actividad del usuario:
+
+```text
+┌──────────────UserID─┬─PageViews─┬─Duration─┬─Sign─┬─Version─┐
+│ 4324182021466249494 │         5 │      146 │    1 │       1 |
+└─────────────────────┴───────────┴──────────┴──────┴─────────┘
+```
+
+Más adelante, registramos el cambio en la actividad del usuario y lo escribimos en las dos filas siguientes.
+
+```text
+┌──────────────UserID─┬─PageViews─┬─Duration─┬─Sign─┬─Version─┐
+│ 4324182021466249494 │         5 │      146 │   -1 │       1 |
+│ 4324182021466249494 │         6 │      185 │    1 │       2 |
+└─────────────────────┴───────────┴──────────┴──────┴─────────┘
+```
+
+La primera fila cancela el estado anterior del objeto (usuario). Debe copiar todos los campos del estado cancelado excepto `Sign`.
+
+La segunda fila contiene el estado actual.
+
+Como solo necesitamos el último estado de la actividad del usuario, las filas
+
+```text
+┌──────────────UserID─┬─PageViews─┬─Duration─┬─Sign─┬─Version─┐
+│ 4324182021466249494 │         5 │      146 │    1 │       1 |
+│ 4324182021466249494 │         5 │      146 │   -1 │       1 |
+└─────────────────────┴───────────┴──────────┴──────┴─────────┘
+```
+
+puede eliminarse, colapsando el estado no válido (antiguo) del objeto. `VersionedCollapsingMergeTree` lo hace durante la fusión de las partes de datos.
+
+Para averiguar por qué necesitamos dos filas para cada cambio, consulta [Algorithm](#table_engines-versionedcollapsingmergetree-algorithm).
+
+**Notas sobre el uso**
+
+1. El programa que escribe los datos debe recordar el estado de un objeto para poder cancelarlo. La cadena &quot;Cancel&quot; debe contener copias de los campos de la clave primaria, la versión de la cadena &quot;estado&quot; y el `Sign` opuesto. Esto aumenta el tamaño inicial del almacenamiento, pero permite escribir los datos con rapidez.
+2. Los arrays largos y en crecimiento en las columnas reducen la eficiencia del motor debido a la carga de escritura. Cuanto más sencillos sean los datos, mayor será la eficiencia.
+3. Los resultados de `SELECT` dependen en gran medida de la coherencia del historial de cambios de los objetos. Sé preciso al preparar los datos para insertarlos. Los datos incoherentes pueden producir resultados impredecibles, como valores negativos para métricas no negativas, como la profundidad de la sesión.
+
+<div id="table_engines-versionedcollapsingmergetree-algorithm">
+  ### Algoritmo
+</div>
+
+Cuando ClickHouse fusiona partes de datos, elimina cada par de filas que tienen la misma clave primaria y la misma versión, pero distinto `Sign`. El orden de las filas no importa.
+
+Cuando ClickHouse inserta datos, ordena las filas por la clave primaria. Si la columna `Version` no forma parte de la clave primaria, ClickHouse la añade implícitamente al final de esta y la usa para la ordenación.
+
+<div id="selecting-data">
+  ## Selección de datos
+</div>
+
+ClickHouse no garantiza que todas las filas con la misma clave primaria estén en la misma parte de datos resultante ni siquiera en el mismo servidor físico. Esto es así tanto al escribir los datos como durante la posterior fusión de las partes de datos. Además, ClickHouse procesa las consultas `SELECT` con varios hilos y no puede predecir el orden de las filas en el resultado. Esto significa que se requiere agregación si se necesita obtener datos completamente &quot;colapsados&quot; de una tabla `VersionedCollapsingMergeTree`.
+
+Para finalizar el colapso, escriba una consulta con una cláusula `GROUP BY` y funciones de agregado que tengan en cuenta el signo. Por ejemplo, para calcular la cantidad, use `sum(Sign)` en lugar de `count()`. Para calcular la suma de algo, use `sum(Sign * x)` en lugar de `sum(x)`, y añada `HAVING sum(Sign) > 0`.
+
+Los agregados `count`, `sum` y `avg` pueden calcularse de esta manera. El agregado `uniq` puede calcularse si un objeto tiene al menos un estado no colapsado. Los agregados `min` y `max` no pueden calcularse porque `VersionedCollapsingMergeTree` no guarda el historial de valores de los estados colapsados.
+
+Si necesita extraer los datos con &quot;colapso&quot; pero sin agregación (por ejemplo, para comprobar si hay filas cuyos valores más recientes coinciden con ciertas condiciones), puede usar el modificador `FINAL` para la cláusula `FROM`. Este enfoque es ineficiente y no debe usarse con tablas grandes.
+
+<div id="example-of-use">
+  ## Ejemplo de uso
+</div>
+
+Datos de ejemplo:
+
+```text
+┌──────────────UserID─┬─PageViews─┬─Duration─┬─Sign─┬─Version─┐
+│ 4324182021466249494 │         5 │      146 │    1 │       1 |
+│ 4324182021466249494 │         5 │      146 │   -1 │       1 |
+│ 4324182021466249494 │         6 │      185 │    1 │       2 |
+└─────────────────────┴───────────┴──────────┴──────┴─────────┘
+```
+
+Crear la tabla:
+
+```sql
+CREATE TABLE UAct
+(
+    UserID UInt64,
+    PageViews UInt8,
+    Duration UInt8,
+    Sign Int8,
+    Version UInt8
+)
+ENGINE = VersionedCollapsingMergeTree(Sign, Version)
+ORDER BY UserID
+```
+
+Inserción de datos:
+
+```sql
+INSERT INTO UAct VALUES (4324182021466249494, 5, 146, 1, 1)
+```
+
+```sql
+INSERT INTO UAct VALUES (4324182021466249494, 5, 146, -1, 1),(4324182021466249494, 6, 185, 1, 2)
+```
+
+Usamos dos consultas `INSERT` para crear dos partes de datos distintas. Si insertamos los datos con una sola consulta, ClickHouse crea una sola parte de datos y nunca realizará ningún merge.
+
+Obtención de los datos:
+
+```sql
+SELECT * FROM UAct
+```
+
+```text
+┌──────────────UserID─┬─PageViews─┬─Duration─┬─Sign─┬─Version─┐
+│ 4324182021466249494 │         5 │      146 │    1 │       1 │
+└─────────────────────┴───────────┴──────────┴──────┴─────────┘
+┌──────────────UserID─┬─PageViews─┬─Duration─┬─Sign─┬─Version─┐
+│ 4324182021466249494 │         5 │      146 │   -1 │       1 │
+│ 4324182021466249494 │         6 │      185 │    1 │       2 │
+└─────────────────────┴───────────┴──────────┴──────┴─────────┘
+```
+
+¿Qué vemos aquí y dónde están las partes colapsadas?
+Creamos dos partes de datos mediante dos consultas `INSERT`. La consulta `SELECT` se ejecutó en dos hilos y el resultado muestra las filas en un orden aleatorio.
+El colapso no ocurrió porque las partes de datos aún no se han fusionado. ClickHouse fusiona las partes de datos en algún momento desconocido que no podemos predecir.
+
+Por eso necesitamos agregación:
+
+```sql
+SELECT
+    UserID,
+    sum(PageViews * Sign) AS PageViews,
+    sum(Duration * Sign) AS Duration,
+    Version
+FROM UAct
+GROUP BY UserID, Version
+HAVING sum(Sign) > 0
+```
+
+```text
+┌──────────────UserID─┬─PageViews─┬─Duration─┬─Version─┐
+│ 4324182021466249494 │         6 │      185 │       2 │
+└─────────────────────┴───────────┴──────────┴─────────┘
+```
+
+Si no necesitamos agregación y queremos forzar el colapso, podemos usar el modificador `FINAL` en la cláusula `FROM`.
+
+```sql
+SELECT * FROM UAct FINAL
+```
+
+```text
+┌──────────────UserID─┬─PageViews─┬─Duration─┬─Sign─┬─Version─┐
+│ 4324182021466249494 │         6 │      185 │    1 │       2 │
+└─────────────────────┴───────────┴──────────┴──────┴─────────┘
+```
+
+Esta es una forma muy ineficiente de seleccionar datos. No la utilice para tablas grandes.

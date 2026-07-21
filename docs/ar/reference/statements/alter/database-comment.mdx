@@ -1,0 +1,79 @@
+---
+description: 'توثيق لعبارات ALTER DATABASE ... MODIFY COMMENT
+التي تتيح إضافة تعليق قاعدة البيانات أو تعديله أو إزالته.'
+slug: /sql-reference/statements/alter/database-comment
+sidebarTitle: 'ALTER DATABASE ... MODIFY COMMENT'
+title: 'عبارات ALTER DATABASE ... MODIFY COMMENT'
+keywords: ['ALTER DATABASE', 'MODIFY COMMENT']
+doc_type: 'reference'
+---
+
+تُضيف هذه العبارة تعليق قاعدة البيانات أو تُعدّله أو تُزيله، سواء أكان مُعيّنًا مسبقًا أم لا. وينعكس هذا التغيير في كلٍّ من [`system.databases`](/ar/reference/system-tables/databases)
+واستعلام `SHOW CREATE DATABASE`.
+
+<div id="syntax">
+  ## الصيغة
+</div>
+
+```sql
+ALTER DATABASE [db].name [ON CLUSTER cluster] MODIFY COMMENT 'Comment'
+```
+
+<div id="examples">
+  ## أمثلة
+</div>
+
+لإنشاء `DATABASE` مع إضافة تعليق:
+
+```sql title="Query"
+CREATE DATABASE database_with_comment ENGINE = Memory COMMENT 'The temporary database';
+```
+
+لتعديل التعليق:
+
+```sql title="Query"
+ALTER DATABASE database_with_comment 
+MODIFY COMMENT 'new comment on a database';
+```
+
+لعرض التعليق المُعدَّل:
+
+```sql title="Query"
+SELECT comment 
+FROM system.databases 
+WHERE name = 'database_with_comment';
+```
+
+```text title="Response"
+┌─comment─────────────────┐
+│ new comment on database │
+└─────────────────────────┘
+```
+
+لحذف تعليق قاعدة البيانات:
+
+```sql title="Query"
+ALTER DATABASE database_with_comment 
+MODIFY COMMENT '';
+```
+
+للتحقق من إزالة التعليق:
+
+```sql title="Query"
+SELECT comment 
+FROM system.databases 
+WHERE  name = 'database_with_comment';
+```
+
+```text title="Response"
+┌─comment─┐
+│         │
+└─────────┘
+```
+
+<div id="related-content">
+  ## محتوى ذو صلة
+</div>
+
+* عبارة [`COMMENT`](/ar/reference/statements/create/table#comment-clause)
+* [`ALTER TABLE ... MODIFY COMMENT`](/ar/reference/statements/alter/comment)
