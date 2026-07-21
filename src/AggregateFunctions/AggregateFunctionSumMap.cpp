@@ -320,7 +320,11 @@ public:
                 break;
             }
             default:
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown version {}, of -Map aggregate function serialization state", *version);
+                /// The version comes from the AggregateFunction data type parameter, which is
+                /// user/data-controlled and not validated at type creation. Throw a catchable
+                /// exception instead of LOGICAL_ERROR (which aborts debug/sanitizer builds).
+                /// Symmetric with deserialize() below.
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected version {} of -Map aggregate function serialization state", *version);
         }
 
         for (const auto & elem : merged_maps)
@@ -341,6 +345,10 @@ public:
         readVarUInt(size, buf);
 
         FormatSettings format_settings;
+        /// Bool keys/values must be read as 0/1 int Fields, matching what add() stores from the
+        /// UInt8 column. Otherwise a bool-tagged Field reaches FieldVisitorSum on merge and throws
+        /// "Cannot sum Bools" (and breaks key dedup / zero-compaction). Same as MergeTreePartition::load.
+        format_settings.binary.read_bool_field_as_int = true;
         std::function<void(size_t, Array &)> deserialize;
         switch (*version)
         {
