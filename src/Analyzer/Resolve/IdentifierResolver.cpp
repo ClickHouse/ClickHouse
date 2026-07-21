@@ -930,7 +930,18 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromTableExpress
     {
         auto * table_node = table_expression_node->as<TableNode>();
         if (table_node->isMaterializedCTE() && path_start == table_node->getMaterializedCTE()->cte_name)
-            return tryResolveIdentifierFromStorage(identifier_lookup, table_expression_node, table_expression_data, scope, 1 /*identifier_column_qualifier_parts*/);
+        {
+            auto lookup_result = tryResolveIdentifierFromStorage(
+                identifier_lookup,
+                table_expression_node,
+                table_expression_data,
+                scope,
+                1 /*identifier_column_qualifier_parts*/,
+                identifier_first_part_is_database_name_in_scope /*can_be_not_found*/);
+
+            if (lookup_result.resolved_identifier || !identifier_first_part_is_database_name_in_scope)
+                return lookup_result;
+        }
     }
 
     if (identifier.getPartsSize() == 2)

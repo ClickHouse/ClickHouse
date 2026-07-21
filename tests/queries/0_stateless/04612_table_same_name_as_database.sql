@@ -35,6 +35,15 @@ FROM {CLICKHOUSE_DATABASE:Identifier}.{CLICKHOUSE_DATABASE:Identifier}
 JOIN {CLICKHOUSE_DATABASE:Identifier}.other USING (id)
 SETTINGS analyzer_compatibility_prefer_alias_over_subcolumn = 1;
 
+-- A materialized CTE can have the same name as a database. A failed lookup behind the CTE qualifier
+-- must fall through, so that the database-qualified interpretation of the same first identifier part
+-- (`db.table.column` referring to a real table in that database) is still attempted.
+WITH {CLICKHOUSE_DATABASE:Identifier} AS MATERIALIZED (SELECT 42 AS id)
+SELECT {CLICKHOUSE_DATABASE:Identifier}.other.value
+FROM {CLICKHOUSE_DATABASE:Identifier}
+JOIN {CLICKHOUSE_DATABASE:Identifier}.other USING (id)
+SETTINGS enable_materialized_cte = 1;
+
 -- The first part of a qualified column name can match the name of one table expression while being
 -- the database name of a different table expression in the same scope (a table named like another
 -- database). A failed lookup behind the table name must fall through, so that the database-qualified
