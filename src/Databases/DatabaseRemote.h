@@ -57,6 +57,14 @@ public:
 
     DatabaseTablesIteratorPtr getTablesIterator(ContextPtr context, const FilterByNameFunction & filter_by_table_name, bool skip_not_loaded) const override;
 
+    /// Drives `SHOW TABLES` directly from `fetchTablesList`. The default implementation goes through
+    /// `getTablesIterator`, which drops every table whose structure could not be fetched (e.g. a remote
+    /// user with `SHOW TABLES` but no `SHOW COLUMNS` on one table, or a transient `DESC TABLE` failure),
+    /// even though the remote `system.tables` query has already returned the name. Best-effort: on a
+    /// remote error, returns an empty list instead of throwing.
+    std::vector<LightWeightTableDetails>
+    getLightweightTablesIterator(ContextPtr context, const FilterByNameFunction & filter_by_table_name, bool skip_not_loaded) const override;
+
     /// The default implementation infers the structure of every table through `getTablesIterator`,
     /// but only the names are needed, e.g. by the name hints for a missing table. Best-effort: on a
     /// remote error, returns an empty list instead of throwing.

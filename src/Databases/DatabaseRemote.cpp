@@ -373,6 +373,35 @@ DatabaseTablesIteratorPtr DatabaseRemote::getTablesIterator(
 }
 
 
+std::vector<LightWeightTableDetails> DatabaseRemote::getLightweightTablesIterator(
+    ContextPtr local_context, const FilterByNameFunction & filter_by_table_name, bool /* skip_not_loaded */) const
+{
+    /// `SHOW TABLES` only needs the names, so drive it straight from `fetchTablesList` instead of the
+    /// structure-resolving `getTablesIterator`: the latter drops any table whose `DESC TABLE` fails,
+    /// which would make `SHOW TABLES` hide a table that the remote `system.tables` query just returned.
+    std::vector<LightWeightTableDetails> result;
+
+    /// Do not allow to throw here for the same reason as in `getTablesIterator`.
+    try
+    {
+        for (const auto & table_name : fetchTablesList(local_context))
+        {
+            if (filter_by_table_name && !filter_by_table_name(table_name))
+                continue;
+
+            result.emplace_back(LightWeightTableDetails{table_name});
+        }
+    }
+    catch (...)
+    {
+        /// Log only at debug level for the same reason as in `getTablesIterator`.
+        LOG_DEBUG(log, "Cannot list the tables of the remote database: {}", getCurrentExceptionMessage(/* with_stacktrace = */ false));
+    }
+
+    return result;
+}
+
+
 VectorWithMemoryTracking<String> DatabaseRemote::getAllTableNames(ContextPtr local_context) const
 {
     /// Only the names are requested (e.g. by the name hints for a missing table), so skip inferring

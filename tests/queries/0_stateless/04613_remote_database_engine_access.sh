@@ -44,6 +44,9 @@ ${CLICKHOUSE_CLIENT} --query "
 "
 ${CLICKHOUSE_CLIENT} --user "${TEST_USER}" --query "DESCRIBE TABLE ${REMOTE_DB}.t" 2>&1 | grep -c -m1 "ACCESS_DENIED"
 
+echo '-- SHOW TABLES still lists the table even without SHOW COLUMNS on the underlying table'
+${CLICKHOUSE_CLIENT} --user "${TEST_USER}" --query "SHOW TABLES FROM ${REMOTE_DB}"
+
 ${CLICKHOUSE_CLIENT} --query "
     DROP USER ${TEST_USER};
     DROP DATABASE ${REMOTE_DB};
