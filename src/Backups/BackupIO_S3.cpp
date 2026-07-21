@@ -428,8 +428,15 @@ UInt64 BackupReaderS3::getFileSize(const String & file_name)
 
 std::unique_ptr<ReadBufferFromFileBase> BackupReaderS3::readFile(const String & file_name)
 {
+    /// Thread the known object size into the reader so that a premature S3 stream close is
+    /// detected as `CANNOT_READ_ALL_DATA` (or `S3_OBJECT_CHANGED_DURING_READ`) instead of a silent
+    /// truncated EOF. Backup metadata (`.backup`) is consumed with `readStringUntilEOF`, which never
+    /// queries the size itself, so without an explicit `file_size` the full-object premature-EOF
+    /// guard in `ReadBufferFromS3::nextImpl` would not fire and a truncated backup could be read.
+    const size_t file_size = getFileSize(file_name);
     return std::make_unique<ReadBufferFromS3>(
-        client, s3_uri.bucket, fs::path(s3_uri.key) / file_name, s3_uri.version_id, s3_settings.request_settings, read_settings);
+        client, s3_uri.bucket, fs::path(s3_uri.key) / file_name, s3_uri.version_id, s3_settings.request_settings, read_settings,
+        /* use_external_buffer= */false, /* offset= */0, /* read_until_position= */0, /* restricted_seek= */false, file_size);
 }
 
 void BackupReaderS3::copyFileToDisk(const String & path_in_backup, size_t file_size, bool encrypted_in_backup,
