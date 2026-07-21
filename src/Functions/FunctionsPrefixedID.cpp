@@ -9,9 +9,10 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
 #include <Common/StringUtils.h>
-#include <Common/randomSeed.h>
 
 #include <pcg_random.hpp>
+
+#include <random>
 
 /// Functions for prefixed identifiers in the style popularized by Stripe: `<prefix>_<body>`,
 /// e.g. `user_NffrFeUfNV2Hib` or `ch_test_51TpZvW`. The prefix may contain underscores
@@ -138,8 +139,10 @@ class FunctionGeneratePrefixedID : public IFunction
 public:
     static constexpr auto name = "generatePrefixedID";
 
-    /// 22 base62 characters carry log2(62^22) ≈ 131 bits, at least the 128 bits
-    /// conventionally considered collision-resistant.
+    /// 22 base62 characters span a space of 62^22 ≈ 2^131 values, comparable to the
+    /// 2^128 UUID space. The bodies are pseudo-random (a PRNG stream seeded from the OS
+    /// entropy source per block), so this is a size of the value space, not a guarantee
+    /// of 131 bits of entropy; the identifiers are not suitable as security tokens.
     static constexpr size_t DEFAULT_BODY_LENGTH = 22;
     static constexpr size_t MAX_BODY_LENGTH = 255;
 
@@ -180,7 +183,13 @@ public:
         ColumnString::Offsets & offsets_to = col_res->getOffsets();
         offsets_to.resize(input_rows_count);
 
-        pcg64_fast rng(randomSeed());
+        /// Seed from the OS entropy source rather than randomSeed(): the latter is derived
+        /// from the time and the thread id, which is too predictable for identifiers whose
+        /// point is to be unique and opaque.
+        std::random_device entropy;
+        auto entropy64 = [&entropy] { return (static_cast<UInt64>(entropy()) << 32) | entropy(); };
+        using UInt128Raw = unsigned __int128;
+        pcg64_fast rng((static_cast<UInt128Raw>(entropy64()) << 64) | entropy64());
 
         IColumn::Offset offset = 0;
         for (size_t row = 0; row < input_rows_count; ++row)
@@ -414,13 +423,14 @@ REGISTER_FUNCTION(GeneratePrefixedID)
 {
     FunctionDocumentation::Description description = R"(
 Generates a prefixed identifier `<prefix>_<body>` in the style popularized by Stripe, e.g. `user_NffrFeUfNV2Hib`.
-The body consists of random base62 characters (`[0-9A-Za-z]`).
+The body consists of pseudo-random base62 characters (`[0-9A-Za-z]`) drawn from a generator seeded from the OS entropy source.
+The identifiers are meant to be unique and opaque, but they are not cryptographic tokens.
 The prefix must be non-empty and consist of underscore-separated segments matching `[A-Za-z][A-Za-z0-9]*` (e.g. `user` or `ch_test`); an exception is thrown otherwise.
 )";
     FunctionDocumentation::Syntax syntax = "generatePrefixedID(prefix[, length[, expr]])";
     FunctionDocumentation::Arguments arguments = {
         {"prefix", "Prefix of the identifier.", {"String"}},
-        {"length", "Optional. Length of the body, in [1, 255]. Default: 22, which carries about 131 bits of entropy.", {"UInt8, UInt16, UInt32, or UInt64"}},
+        {"length", "Optional. Length of the body, in [1, 255]. Default: 22, which gives a body space of 62^22 ≈ 2^131 values, comparable to a UUID.", {"UInt8, UInt16, UInt32, or UInt64"}},
         {"expr", "Optional. An arbitrary expression used to bypass [common subexpression elimination](/sql-reference/functions/overview#common-subexpression-elimination) if the function is called multiple times in a query. The value of the expression has no effect on the returned identifier.", {"Any"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns a prefixed identifier with a random base62 body.", {"String"}};

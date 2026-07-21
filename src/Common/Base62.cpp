@@ -13,22 +13,30 @@ size_t encodeBase62(const UInt8 * src, size_t src_length, UInt8 * dst, const std
     size_t idx = 0;
     size_t zeros = 0;
 
+    /// The main loop below does `idx` inner iterations per input byte and `idx` grows with the input,
+    /// so the total work is quadratic. Trigger the cancellation check based on the accumulated work
+    /// rather than the number of outer iterations, so the time limit and `KILL QUERY` are honored
+    /// promptly even when the size limit is disabled and `idx` becomes very large. The check is kept
+    /// out of the hot inner loop, so the worst-case latency between checks is one inner-loop pass.
+    /// The leading-zero scan must check as well: an input of only zero bytes never accumulates any
+    /// inner-loop work, so it would otherwise run to completion without a single check.
+    size_t work_since_check = 0;
+    static constexpr size_t work_per_check = 1ULL << 20;
+
     while (processed < src_length && *src == 0)
     {
+        if (check_cancellation && ++work_since_check >= work_per_check)
+        {
+            check_cancellation();
+            work_since_check = 0;
+        }
+
         ++processed;
         ++zeros;
         *dst = '0';
         ++dst;
         ++src;
     }
-
-    /// The inner loop below runs `idx` iterations and `idx` grows with the input, so the total work is
-    /// quadratic. Trigger the cancellation check based on the accumulated inner-loop work rather than the
-    /// number of outer iterations, so the time limit and `KILL QUERY` are honored promptly even when the
-    /// size limit is disabled and `idx` becomes very large. The check is kept at the top of the outer loop
-    /// (not inside the hot inner loop), so the worst-case latency between checks is one inner-loop pass.
-    size_t work_since_check = 0;
-    static constexpr size_t work_per_check = 1ULL << 20;
 
     while (processed < src_length)
     {
@@ -107,22 +115,26 @@ std::optional<size_t> decodeBase62(const UInt8 * src, size_t src_length, UInt8 *
     size_t idx = 0;
     size_t zeros = 0;
 
+    /// See the comment in encodeBase62: the cancellation check is driven by accumulated work, and the
+    /// leading-"0" scan must participate, because an input of only "0" characters never accumulates
+    /// any inner-loop work.
+    size_t work_since_check = 0;
+    static constexpr size_t work_per_check = 1ULL << 20;
+
     while (processed < src_length && *src == '0')
     {
+        if (check_cancellation && ++work_since_check >= work_per_check)
+        {
+            check_cancellation();
+            work_since_check = 0;
+        }
+
         ++processed;
         ++zeros;
         *dst = '\0';
         ++dst;
         ++src;
     }
-
-    /// The inner loop below runs `idx` iterations and `idx` grows with the input, so the total work is
-    /// quadratic. Trigger the cancellation check based on the accumulated inner-loop work rather than the
-    /// number of outer iterations, so the time limit and `KILL QUERY` are honored promptly even when the
-    /// size limit is disabled and `idx` becomes very large. The check is kept at the top of the outer loop
-    /// (not inside the hot inner loop), so the worst-case latency between checks is one inner-loop pass.
-    size_t work_since_check = 0;
-    static constexpr size_t work_per_check = 1ULL << 20;
 
     while (processed < src_length)
     {
