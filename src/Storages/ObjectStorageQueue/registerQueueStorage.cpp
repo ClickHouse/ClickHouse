@@ -497,7 +497,7 @@ By default S3Queue table has always used ephemeral processing nodes, which could
 
 In case of non-graceful server termination, it is possible that if `use_persistent_processing_nodes` is enabled, we can have not removed processing nodes. This setting defines a period of time when these processing nodes can safely be cleaned up. The same TTL is also used for the bucket lock in `Ordered` mode, which can be held for a longer time than a single processing node, so the value should account for that as well.
 
-Default value: `86400` (24 hours).
+Default value: `21600` (6 hours).
 
 ## S3-related settings {#s3-settings}
 
