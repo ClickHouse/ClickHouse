@@ -252,9 +252,11 @@ def _build_rerun_workflow(check_obj, payload, event_ts):
         "title": "",
         "draft": False,
         "labels": [],
-        # check_suite / check_run payloads don't carry the PR head repo's
-        # full name, so a rerun is treated as an internal PR (external_pr is
-        # False and head_repo is the base repo). Keep both consistent.
+        # check_suite / check_run payloads don't carry the PR head repo's full
+        # name, labels, title, or draft flag. This reconstruction is only safe
+        # for internal PRs (external_pr False, head_repo is the base repo); the
+        # external path in _handle_external_rerun reuses the authoritative
+        # metadata stored in the approval state before enqueuing.
         "external_pr": False,
         "head_repo": repo,
     }
@@ -482,8 +484,24 @@ def _can_maintain_repo(repo: str, login: str, token: str) -> bool:
 
 
 def _compare_changed_files(repo: str, base_sha: str, head_sha: str, token: str):
+    """Return (changed_paths, complete) for the diff ``base_sha...head_sha``.
+
+    ``changed_paths`` includes both sides of a rename (``filename`` and
+    ``previous_filename``) so a move out of a disallowed tree cannot hide the
+    original path. GitHub caps the compare ``files`` array at 300 entries and
+    does not paginate it, so ``complete`` is False once that cap is reached;
+    callers must then fail closed rather than trust a truncated list.
+    """
     data = _gh_api("GET", f"/repos/{repo}/compare/{base_sha}...{head_sha}", token)
-    return [f.get("filename", "") for f in data.get("files", []) if f.get("filename")]
+    files = data.get("files", []) or []
+    changed_paths = set()
+    for f in files:
+        for key in ("filename", "previous_filename"):
+            value = f.get(key)
+            if value:
+                changed_paths.add(value)
+    complete = len(files) < 300
+    return changed_paths, complete
 
 
 def _path_is_allowed(path: str) -> bool:
@@ -502,13 +520,19 @@ def _changes_are_autoapprovable(repo: str, base_sha: str, head_sha: str, token: 
     if not EXTERNAL_PR_AUTOAPPROVE_PATHS:
         return False
     try:
-        changed_files = _compare_changed_files(repo, base_sha, head_sha, token)
+        changed_paths, complete = _compare_changed_files(repo, base_sha, head_sha, token)
     except Exception as e:
         print(f"  [warn] compare for autoapprove failed: {e}")
         return False
-    if not changed_files:
+    if not complete:
+        # The changed-file list hit GitHub's 300-file cap and may be truncated;
+        # we cannot prove every changed path is autoapprovable, so fall back to
+        # manual maintainer approval instead of autoapproving a partial view.
+        print("  [warn] changed-file list may be truncated (>=300 files); requiring manual approval")
+        return False
+    if not changed_paths:
         return True
-    return all(_path_is_allowed(path) for path in changed_files)
+    return all(_path_is_allowed(path) for path in changed_paths)
 
 
 def _cancel_run(run_id):
@@ -762,6 +786,22 @@ def _handle_external_rerun(workflow: dict, delivery_id: str, sender: str):
         print(f"SKIP: external PR rerun by non-maintainer {sender}")
         return
     state = _load_approval_state(workflow["repo"], workflow["pr_number"])
+    # `workflow` was reconstructed from the check_run/check_suite payload, which
+    # doesn't carry the fork repo, labels, title, or draft flag. Reuse the
+    # authentic PR metadata captured at pull_request time and stored in the
+    # approval state so the enqueued/persisted workflow stays classified as
+    # external, instead of an internal PR (head_repo == base repo) with no
+    # labels. Only the fields describing this rerun event are refreshed.
+    saved = dict((state or {}).get("workflow") or {})
+    if not saved:
+        print(
+            f"SKIP: no stored workflow for external rerun of PR#{workflow['pr_number']}"
+        )
+        return
+    saved["action"] = workflow["action"]
+    saved["event_ts"] = workflow["event_ts"]
+    saved["sender"] = sender
+    workflow = saved
     if state and state.get("head_sha") == workflow["head_sha"] and state.get(
         "approval_check_id"
     ):
