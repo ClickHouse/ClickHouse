@@ -1222,7 +1222,11 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::prepareProjectionsToMergeAndRe
         bool projection_part_misses_column = false;
 
         /// A late-added column is only mergeable from the projection part if its DEFAULT/MATERIALIZED
-        /// expression can be evaluated there, i.e. every column it references is stored by the part.
+        /// expression can be evaluated there, i.e. every column it references is a current projection
+        /// column the part stores. A dependency the part physically stores but that the metadata no
+        /// longer lists (e.g. its alias source after the alias was re-pointed off it) is unresolvable
+        /// when rebuilding from the projection part, so it must count as drift like a never-stored one.
+        const auto & projection_metadata_columns = projection.metadata->getColumns();
         auto projection_part_can_fill_default = [&](const IMergeTreeDataPart & projection_part, const String & column_name)
         {
             auto column_default = parent_table_columns.getDefault(column_name);
@@ -1233,7 +1237,8 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::prepareProjectionsToMergeAndRe
             column_default->expression->collectIdentifierNames(identifiers);
             for (const auto & identifier : identifiers)
             {
-                if (!projection_part.tryGetColumn(identifier) && !projection.metadata->virtuals.has(identifier))
+                if ((!projection_part.tryGetColumn(identifier) || !projection_metadata_columns.has(identifier))
+                    && !projection.metadata->virtuals.has(identifier))
                     return false;
             }
             return true;

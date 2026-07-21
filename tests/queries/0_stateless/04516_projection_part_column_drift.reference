@@ -17,6 +17,9 @@ default-drift part columns after merge	p	a
 default-drift part columns after merge	p	d
 mat-drift read after drift	1	71
 mat-drift read after merge	1	71
+orphaned-dep read after drift	1	1001
+orphaned-dep read after merge	1	1001
+1	1001
 agg read after drift	1	501
 agg read after merge	1	501
 agg read after merge	2	601

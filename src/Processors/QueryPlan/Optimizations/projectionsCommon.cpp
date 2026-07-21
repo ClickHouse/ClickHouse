@@ -316,12 +316,14 @@ size_t filterPartsByProjection(
 }
 
 /// A case-(4) late-added column is only usable from the projection part if its DEFAULT/MATERIALIZED
-/// expression can be evaluated there, i.e. every column the expression references is also available
-/// from the projection part. If it references a column the projection part does not store, the
-/// default cannot be computed on the projection read path (it can on the parent path), so the part
-/// is stale for it. Checks the default's immediate dependencies only (not transitively, unlike
-/// MergeTreeBlockReadUtils): a chained default over another non-stored column conservatively routes
-/// to the parent.
+/// expression can be evaluated there, i.e. every column the expression references is a current
+/// projection column the part stores. A dependency must be both physically present in the part and
+/// still a current projection column: a projection read resolves identifiers against the current
+/// projection columns, so a dependency that the part physically stores but that the metadata no
+/// longer lists (e.g. its alias source after the alias was re-pointed off it) is unresolvable on the
+/// read path and must route to the parent, exactly like a dependency the part never stored. Checks
+/// the default's immediate dependencies only (not transitively, unlike MergeTreeBlockReadUtils): a
+/// chained default over another non-stored column conservatively routes to the parent.
 static bool projectionPartCanFillDefault(
     const IMergeTreeDataPart & projection_part,
     const ProjectionDescription & projection,
@@ -332,12 +334,15 @@ static bool projectionPartCanFillDefault(
     if (!column_default || !column_default->expression)
         return true;
 
+    const auto & projection_columns = projection.metadata->getColumns();
+
     IdentifierNameSet identifiers;
     column_default->expression->collectIdentifierNames(identifiers);
 
     for (const auto & identifier : identifiers)
     {
-        if (projection_part.tryGetColumn(identifier) || projection.metadata->virtuals.has(identifier))
+        if ((projection_part.tryGetColumn(identifier) && projection_columns.has(identifier))
+            || projection.metadata->virtuals.has(identifier))
             continue;
         return false;
     }

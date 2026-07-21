@@ -151,6 +151,47 @@ SELECT 'mat-drift read after merge', a, c FROM t_proj_mat_default_drift ORDER BY
 
 DROP TABLE t_proj_mat_default_drift;
 
+-- orphaned-but-stored dependency (sibling of #111076): the late-added `d DEFAULT b * 10` references
+-- `b`, which the projection part still physically stores but which is no longer a current projection
+-- column after the alias `c` is re-pointed off it (the projection now materializes {a, d}). The read
+-- path resolves the default against the current projection columns, so `b` is unresolvable there even
+-- though it is physically present; the read must fall back to the parent and the merge must rebuild.
+DROP TABLE IF EXISTS t_proj_orphaned_stored_dep;
+
+CREATE TABLE t_proj_orphaned_stored_dep
+(
+    a UInt64,
+    b UInt64,
+    c UInt64 ALIAS b + 1,
+    PROJECTION p (SELECT a, c ORDER BY a)
+)
+ENGINE = MergeTree ORDER BY a;
+
+-- the projection part materializes {a, b} (b is the alias source)
+INSERT INTO t_proj_orphaned_stored_dep (a, b) VALUES (1, 100);
+
+-- add d (its default references the still-stored b) then re-point c off b onto d: the projection now
+-- needs {a, d}, so b stays physically in the part but is no longer a current projection column
+ALTER TABLE t_proj_orphaned_stored_dep ADD COLUMN d UInt64 DEFAULT b * 10;
+ALTER TABLE t_proj_orphaned_stored_dep MODIFY COLUMN c UInt64 ALIAS d + 1;
+
+-- the drifted part must be served from the parent (c = d + 1 = b * 10 + 1 = 1001)
+SELECT 'orphaned-dep read after drift', a, c FROM t_proj_orphaned_stored_dep ORDER BY a;
+
+-- forcing the projection cannot use the drifted part
+SELECT a, c FROM t_proj_orphaned_stored_dep ORDER BY a
+SETTINGS optimize_use_projections = 1, force_optimize_projection = 1; -- { serverError PROJECTION_NOT_USED }
+
+-- merging must rebuild the projection from the parent instead of throwing on the orphaned `b`
+OPTIMIZE TABLE t_proj_orphaned_stored_dep FINAL;
+
+SELECT 'orphaned-dep read after merge', a, c FROM t_proj_orphaned_stored_dep ORDER BY a;
+
+SELECT a, c FROM t_proj_orphaned_stored_dep ORDER BY a
+SETTINGS optimize_use_projections = 1, force_optimize_projection = 1;
+
+DROP TABLE t_proj_orphaned_stored_dep;
+
 -- aggregate projection drift: the state column name embeds the expanded alias
 -- (`sum(plus(b, 1))`), so re-pointing the alias leaves the part without the state column the
 -- metadata now expects (`sum(plus(d, 1))`); the parent never stores aggregate states, so the
