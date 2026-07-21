@@ -186,7 +186,7 @@ std::optional<Poco::Net::SocketAddress> ClientInfo::getLastForwardedFor() const
     last_forwarded_for_cache = std::make_shared<const ForwardedForCache>(ForwardedForCache{forwarded_for, address});
 
     if (!address)
-        LOG_WARNING(getLogger("ClientInfo"), "Invalid address in `X-Forwarded-For` HTTP header: '{}'", last);
+        LOG_DEBUG(getLogger("ClientInfo"), "Invalid address in `X-Forwarded-For` HTTP header: '{}'", last);
 
     return address;
 }
