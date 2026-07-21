@@ -26,6 +26,19 @@ temp_dir = f"{Utils.cwd()}/ci/tmp"
 SANITIZERS = ("asan", "tsan", "msan", "ubsan")
 
 
+def stateless_memory_limit(source):
+    """Per-test cgroup memory limit (`clickhouse-test --memory-limit`) for a run
+    identified by `source` (a build type, job-parameter string, or job name).
+
+    Sanitizer clients are memory-heavy (~500 MiB RSS each), so a test running
+    ~10 concurrent clients needs 10 GiB or the per-test cgroup OOM-kills them
+    mid-test. Every sanitizer build gets 10 GiB, others 5 GiB. Match via
+    `SANITIZERS`, not the literal `asan_ubsan` substring: the `tsan`/`msan` lanes
+    (and the private `amd_ubsan` lane, an ASan+UBSan binary) lack that substring.
+    """
+    return 10 * 2**30 if any(san in source for san in SANITIZERS) else 5 * 2**30
+
+
 class JobStages(metaclass=MetaClasses.WithIter):
     INSTALL_CLICKHOUSE = "install"
     START = "start"
@@ -103,12 +116,11 @@ def run_tests(
     if "--no-zookeeper" not in extra_args:
         extra_args += " --zookeeper"
     # Remove --report-logs-stats, it hides sanitizer errors in def reportLogStats(args): clickhouse_execute(args, "SYSTEM FLUSH LOGS")
-    # During bugfix validation the same job runs several build types, so the
-    # memory limit must follow the binary under test (`build_type`) rather than
-    # the job name. Otherwise an `amd_asan_ubsan` run gets the 5 GiB default and
-    # a master-side memory-limit failure would be inverted as a reproduced bug.
+    # Bugfix validation runs several builds per job, so size the limit from the
+    # tested `build_type` over the job name (else a master-side memory-limit
+    # failure would be inverted as a reproduced bug).
     limit_source = build_type if build_type is not None else Info().job_name
-    memory_limit = 10 * 2**30 if "asan_ubsan" in limit_source else 5 * 2**30
+    memory_limit = stateless_memory_limit(limit_source)
     # Hand the time budget to `clickhouse-test` itself via `--global_time_limit`
     # so it stops *gracefully* between tests and exits with
     # `GLOBAL_TIME_LIMIT_EXIT_CODE` - reported as a benign "time limit reached"
@@ -846,22 +858,6 @@ def main():
                 if not CH.start_log_exports(stop_watch.start_time):
                     info.add_workflow_warning("Failed to start log export")
                     print("Failed to start log export")
-            # MinIO log tables are non-fatal (tests still run without the
-            # webhook log tables), so keep going - but record the concrete
-            # failure reason (the real clickminio restart status, carried out of
-            # create_minio_log_tables via CH.minio_setup_error) so broken minio
-            # restarts are visible in test_context_raw rather than silently
-            # collapsing into the umbrella.
-            if not CH.create_minio_log_tables():
-                info.add_workflow_warning("Failed to create minio log tables")
-                note = "SETUP WARNING: " + (
-                    CH.minio_setup_error or "failed to create minio log tables"
-                )
-                print(note)
-                # Keep it for the persisted Result too: on the success path
-                # from_commands_run does not capture this closure's stdout, so
-                # without this the minio failure would not reach CIDB.
-                setup_notes.append(note)
 
             res = True
             if has_stateful_tests:
@@ -1080,23 +1076,22 @@ def main():
                         break
 
                     # `start` wipes the server data directory (`run_path0`), so
-                    # the environment built once in the START stage is gone:
-                    # re-create the MinIO log tables and, for stateful suites,
-                    # reload the stateful data and the `system.zookeeper`
-                    # config. Auxiliary services (Kafka/Redpanda, MinIO) keep
-                    # running across `stop_server`, so only the server-side
-                    # state has to be rebuilt. Without this a stateful changed
-                    # test fails only because `test.hits`/`datasets`/the
-                    # auxiliary ZooKeeper row disappeared, and the bugfix
-                    # inverter reports that false failure as a successful bug
-                    # reproduction.
-                    reprepared = CH.create_minio_log_tables()
-                    reprepare_error = CH.minio_setup_error
-                    if reprepared and has_stateful_tests:
-                        # Split the two sub-steps like the START stage does so the
-                        # persisted Environment setup row names the operation that
-                        # actually failed instead of collapsing both into the
-                        # generic "failed to re-prepare stateful data" bucket.
+                    # the environment built once in the START stage is gone: for
+                    # stateful suites, reload the stateful data and the
+                    # `system.zookeeper` config. Auxiliary services
+                    # (Kafka/Redpanda, MinIO) keep running across `stop_server`,
+                    # so only the server-side state has to be rebuilt. Without
+                    # this a stateful changed test fails only because
+                    # `test.hits`/`datasets`/the auxiliary ZooKeeper row
+                    # disappeared, and the bugfix inverter reports that false
+                    # failure as a successful bug reproduction.
+                    reprepared = True
+                    reprepare_error = None
+                    if has_stateful_tests:
+                        # Split the two sub-steps so the persisted Environment
+                        # setup row names the operation that actually failed
+                        # instead of collapsing both into the generic "failed to
+                        # re-prepare stateful data" bucket.
                         if not CH.prepare_stateful_data(
                             with_s3_storage=is_s3_storage,
                             is_db_replicated=is_database_replicated,
@@ -1208,9 +1203,7 @@ def main():
                 ).set_timing(stopwatch=diag_stopwatch)
             )
         elif failed_tests:
-            memory_limit = (
-                10 * 2**30 if "asan_ubsan" in Info().job_name else 5 * 2**30
-            )
+            memory_limit = stateless_memory_limit(Info().job_name)
             diag_command = (
                 f"clickhouse-test --testname --check-zookeeper-session --hung-check"
                 f" --memory-limit {memory_limit} --trace --capture-client-stacktrace"
