@@ -20,6 +20,10 @@ wait_end_of_query exception packet: OK
 --- a query-level send_logs_level does not capture analysis-phase logs when the query fails early
 query-level send_logs_level early-failure exception packet: OK
 query-level send_logs_level early-failure has no query-text log packet: OK
+--- a URL-level send_logs_source_regexp filters the whole query lifecycle
+URL-level send_logs_source_regexp drops all log packets: OK
+--- a query-level send_logs_source_regexp does not filter the parse-phase log packets
+query-level send_logs_source_regexp still delivers parse-phase log packets: OK
 --- profile events packets when framing is enabled by the query SETTINGS clause
 query SETTINGS profile_events packets: OK
 --- log packets when framing and logs are enabled by the query SETTINGS clause

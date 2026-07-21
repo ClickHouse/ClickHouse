@@ -112,6 +112,24 @@ ${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=JSONEachPacketString" \
 [ "$(grep '"packet":"log"' "$result_file" | grep -c 'table_that_does_not_exist_04513')" -eq 0 ] && echo 'query-level send_logs_level early-failure has no query-text log packet: OK'
 rm "$result_file"
 
+# `send_logs_source_regexp` has the same late-discovery caveat as a query-level `send_logs_level`: the
+# log queue filters entries by source when they are enqueued, so a regexp set only in the query's own
+# SETTINGS clause takes effect from query execution onwards. The parse/plan-phase entries (for example
+# the query text that `executeQuery` logs during parsing) are filtered by the session / URL value of the
+# setting - they are unfiltered when it is not set there - so they are still delivered even when the
+# query-level regexp matches no source at all. A regexp set on the URL filters the whole query lifecycle.
+echo '--- a URL-level send_logs_source_regexp filters the whole query lifecycle'
+${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=JSONEachPacketString&send_logs_level=trace&send_logs_source_regexp=no_source_matches_this_04513" \
+    -d "SELECT sum(number) FROM numbers_mt(1000000) GROUP BY number % 10 FORMAT Null" > "$result_file"
+[ "$(grep -c '"packet":"log"' "$result_file")" -eq 0 ] && echo 'URL-level send_logs_source_regexp drops all log packets: OK'
+rm "$result_file"
+
+echo '--- a query-level send_logs_source_regexp does not filter the parse-phase log packets'
+${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=JSONEachPacketString&send_logs_level=trace" \
+    -d "SELECT sum(number) FROM numbers_mt(1000000) GROUP BY number % 10 SETTINGS send_logs_source_regexp='no_source_matches_this_04513' FORMAT Null" > "$result_file"
+[ "$(grep '"packet":"log"' "$result_file" | grep -c '"source":"executeQuery"')" -ge 1 ] && echo 'query-level send_logs_source_regexp still delivers parse-phase log packets: OK'
+rm "$result_file"
+
 # The framing / logs / profile-events settings can be set by the query's own SETTINGS clause, which is
 # applied only after parsing. The queues are reconciled with the effective settings after the query is
 # interpreted, so a query that enables framing (and logs) from its SETTINGS clause - while the URL keeps
