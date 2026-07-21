@@ -2685,6 +2685,32 @@ The table function is bound to the current database at `CREATE` time: unqualifie
 A `Distributed` table over a table function can only be queried, not written to. There is no concrete remote table to route the rows to, so every `INSERT` into this form fails with `NOT_IMPLEMENTED`. The `sharding_key` and the `INSERT`-related settings and behaviour described below therefore do not apply to it, and the `policy_name` parameter is not accepted for this form (it would only be used to store temporary files for background `INSERT`s).
 :::
 
+### Remote and RemoteSecure engines {#distributed-remote-engines}
+
+`Remote` and `RemoteSecure` are persistent table engines that accept the same address expressions and credentials as the [`remote` and `remoteSecure`](/reference/functions/table-functions/remote) table functions:
+
+```sql
+CREATE TABLE [IF NOT EXISTS] [db.]table_name
+(
+    name1 [type1],
+    name2 [type2],
+    ...
+) ENGINE = Remote(addresses_expr, [db, table, [user [, password], sharding_key]])
+```
+
+`RemoteSecure` accepts the same arguments and connects over a secure connection (the secure TCP port is used by default). The arguments are interpreted exactly as for the `remote` and `remoteSecure` table functions, see their description for the supported signatures. The table structure may be omitted, in which case it is inferred from the remote table.
+
+For example:
+
+```sql
+CREATE TABLE remote_one ENGINE = Remote('127.0.0.1', system, one);
+SELECT * FROM remote_one;
+```
+
+This is the persistent equivalent of `CREATE TABLE ... AS remote(...)`. Like the `remote` table function, these engines are convenient but do not let you set up shards and replicas declaratively the way [`Distributed`](#distributed-creating-a-table) over a configured cluster does, so for a permanent, frequently used set of servers prefer defining a cluster and using the `Distributed` engine.
+
+The target may also be a table function, for example `Remote('127.0.0.1', numbers(10))` or `Remote('127.0.0.1', merge(db, '^table_'))`. Such a table is read-only: there is no remote table to insert into, so `INSERT` is rejected with a `NOT_IMPLEMENTED` exception. This read-only limitation applies equally to the `remote` and `remoteSecure` table functions: `SELECT` and `INSERT` are both supported for an ordinary `db`/`table` target, but a table-function target (`remote('127.0.0.1', numbers(10))`) is read-only for the same reason.
+
 ### Distributed parameters {#distributed-parameters}
 
 | Parameter                 | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
