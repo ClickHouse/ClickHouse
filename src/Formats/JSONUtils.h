@@ -56,6 +56,18 @@ namespace JSONUtils
     /// output accordingly.
     bool namesMayProduceRawBytesInJSON(const Strings & names, const FormatSettings & settings, bool validate_utf8);
 
+    /// Returns true if the `meta.type` strings that the full-document JSON formats (`JSON`,
+    /// `JSONStrings`, `JSONCompact`, `JSONCompactStrings`, `JSONColumnsWithMetadata`) serialize via
+    /// `writeMetadata` may contain bytes that are not valid UTF-8. These formats always request
+    /// UTF-8 validation for the column names, but the type-name strings are only routed through
+    /// `WriteBufferValidUTF8` when the output adaptor installs the validating buffer, which it does
+    /// only if at least one column's value type may itself emit invalid UTF-8 (see
+    /// `OutputFormatWithUTF8ValidationAdaptorBase`). When every value type is guaranteed valid
+    /// UTF-8, that buffer is skipped, so a non-UTF-8 type name (for example a named `Tuple` element
+    /// or an `Enum` value with arbitrary bytes) leaks into `meta.type` verbatim. The type names come
+    /// from the header, so text framings can reject or base64-encode the output accordingly.
+    bool metadataTypeNamesMayProduceRawBytesInJSON(const Block & header, const FormatSettings & settings);
+
     /// Functions helpers for writing JSON data to WriteBuffer.
 
     void writeFieldDelimiter(WriteBuffer & out, size_t new_lines = 1);

@@ -12,6 +12,7 @@
 #include <Common/assert_cast.h>
 #include <Common/isValidUTF8.h>
 #include <Columns/IColumn.h>
+#include <Core/Block.h>
 
 #include <base/find_symbols.h>
 #include <base/scope_guard.h>
@@ -586,6 +587,20 @@ namespace JSONUtils
                 return true;
 
         return false;
+    }
+
+    bool metadataTypeNamesMayProduceRawBytesInJSON(const Block & header, const FormatSettings & settings)
+    {
+        /// When any value type may itself emit invalid UTF-8, the adaptor installs a
+        /// `WriteBufferValidUTF8` around the whole output, which also validates the `meta.type`
+        /// strings, so the type names cannot leak raw bytes.
+        for (const auto & type : header.getDataTypes())
+            if (!type->textCanContainOnlyValidUTF8())
+                return false;
+
+        /// Otherwise the validating buffer is skipped and the type names are written verbatim,
+        /// mirroring `namesMayProduceRawBytesInJSON` with validation off.
+        return namesMayProduceRawBytesInJSON(header.getDataTypeNames(), settings, /*validate_utf8=*/false);
     }
 
     void skipColon(ReadBuffer & in)

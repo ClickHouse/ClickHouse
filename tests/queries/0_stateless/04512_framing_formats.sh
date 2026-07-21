@@ -605,3 +605,61 @@ echo '--- JSONEachPacketString is rejected for JSONObjectEachRow with a non-UTF-
 ${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=JSONEachPacketString&format_json_object_each_row_column_for_object_name=name_col" \
     -d 'SELECT '\''k'\'' AS name_col, 1 AS `a\xFFb` FORMAT JSONObjectEachRow' \
     | grep -o -m1 'is not compatible with the output format JSONObjectEachRow'
+
+# The full-document JSON formats (`JSON`, `JSONStrings`, `JSONCompact`, `JSONCompactStrings`,
+# `JSONColumnsWithMetadata`) serialize the column type names into the `meta.type` fields. These
+# formats always request UTF-8 validation for the column names, but the `meta.type` strings are only
+# routed through the validating buffer when at least one column's value type may itself emit invalid
+# UTF-8. When every value type is guaranteed UTF-8 (here two `UInt8` tuple elements), the validating
+# buffer is skipped, so a non-UTF-8 named `Tuple` element leaks into `meta.type` verbatim. It is
+# knowable from the header, so the text framings reject or base64-encode the output.
+echo '--- JSONEachPacketString is rejected for JSON with a non-UTF-8 type name'
+${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=JSONEachPacketString" \
+    -d 'SELECT CAST((1, 2) AS Tuple(`a\xFFb` UInt8, c UInt8)) AS t FORMAT JSON' \
+    | grep -o -m1 'is not compatible with the output format JSON,'
+
+echo '--- EventStream base64-encodes JSON with a non-UTF-8 type name'
+${CLICKHOUSE_CURL} -sS -o /dev/null -w '%{content_type}\n' "${URL}&framing_output_format=EventStream" \
+    -d 'SELECT CAST((1, 2) AS Tuple(`a\xFFb` UInt8, c UInt8)) AS t FORMAT JSON'
+# `FORMAT JSON` embeds a non-deterministic `statistics.elapsed` timing field, so disable statistics to
+# keep the byte-exact round-trip comparison stable.
+${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=EventStream&output_format_write_statistics=0${SINGLE_BLOCK}" \
+    -d 'SELECT CAST((1, 2) AS Tuple(`a\xFFb` UInt8, c UInt8)) AS t FORMAT JSON' \
+    | awk '/^event: data$/ { getline; sub(/^data: /, ""); print }' | while IFS= read -r payload; do printf '%s' "$payload" | base64 -d; done \
+    | cmp -s - <(${CLICKHOUSE_CURL} -sS "${URL}&output_format_write_statistics=0" -d 'SELECT CAST((1, 2) AS Tuple(`a\xFFb` UInt8, c UInt8)) AS t FORMAT JSON') \
+    && echo 'JSON payload with a non-UTF-8 type name round-trips' || echo 'MISMATCH'
+
+echo '--- JSONEachPacketString is rejected for JSONStrings with a non-UTF-8 type name'
+${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=JSONEachPacketString" \
+    -d 'SELECT CAST((1, 2) AS Tuple(`a\xFFb` UInt8, c UInt8)) AS t FORMAT JSONStrings' \
+    | grep -o -m1 'is not compatible with the output format JSONStrings,'
+
+echo '--- JSONEachPacketString is rejected for JSONCompact with a non-UTF-8 type name'
+${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=JSONEachPacketString" \
+    -d 'SELECT CAST((1, 2) AS Tuple(`a\xFFb` UInt8, c UInt8)) AS t FORMAT JSONCompact' \
+    | grep -o -m1 'is not compatible with the output format JSONCompact,'
+
+echo '--- JSONEachPacketString is rejected for JSONCompactStrings with a non-UTF-8 type name'
+${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=JSONEachPacketString" \
+    -d 'SELECT CAST((1, 2) AS Tuple(`a\xFFb` UInt8, c UInt8)) AS t FORMAT JSONCompactStrings' \
+    | grep -o -m1 'is not compatible with the output format JSONCompactStrings,'
+
+echo '--- JSONEachPacketString is rejected for JSONColumnsWithMetadata with a non-UTF-8 type name'
+${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=JSONEachPacketString" \
+    -d 'SELECT CAST((1, 2) AS Tuple(`a\xFFb` UInt8, c UInt8)) AS t FORMAT JSONColumnsWithMetadata' \
+    | grep -o -m1 'is not compatible with the output format JSONColumnsWithMetadata,'
+
+# A valid multi-byte UTF-8 type name (a tuple element named `col` followed by U+2713 CHECK MARK) must
+# not be misdetected as raw bytes.
+echo '--- JSONEachPacketString accepts JSON with a valid UTF-8 (multi-byte) type name'
+data_packets=$(${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=JSONEachPacketString" \
+    -d 'SELECT CAST((1, 2) AS Tuple(`col\xE2\x9C\x93` UInt8, c UInt8)) AS t FORMAT JSON' | grep -c '"packet":"data"')
+[ "$data_packets" -ge 1 ] && echo 'JSON (valid UTF-8 type name) accepted: OK'
+
+# When a value type may itself emit invalid UTF-8 (here a `String` tuple element), the validating
+# buffer is installed and also validates the `meta.type` strings, so a non-UTF-8 type name is replaced
+# and the output is textual and accepted.
+echo '--- JSONEachPacketString accepts JSON with a non-UTF-8 type name when a value type is validated'
+data_packets=$(${CLICKHOUSE_CURL} -sS "${URL}&framing_output_format=JSONEachPacketString" \
+    -d "SELECT CAST((1, 'x') AS Tuple(\`a\xFFb\` UInt8, c String)) AS t FORMAT JSON" | grep -c '"packet":"data"')
+[ "$data_packets" -ge 1 ] && echo 'JSON (value type validated, meta.type replaced) accepted: OK'

@@ -228,3 +228,20 @@ JSONObjectEachRow payload with a non-UTF-8 column name round-trips
 JSONObjectEachRow (non-UTF-8 object-name column, name not emitted) accepted: OK
 --- JSONEachPacketString is rejected for JSONObjectEachRow with a non-UTF-8 emitted field name and an object-name column
 is not compatible with the output format JSONObjectEachRow
+--- JSONEachPacketString is rejected for JSON with a non-UTF-8 type name
+is not compatible with the output format JSON,
+--- EventStream base64-encodes JSON with a non-UTF-8 type name
+text/event-stream; charset=UTF-8; payload=base64
+JSON payload with a non-UTF-8 type name round-trips
+--- JSONEachPacketString is rejected for JSONStrings with a non-UTF-8 type name
+is not compatible with the output format JSONStrings,
+--- JSONEachPacketString is rejected for JSONCompact with a non-UTF-8 type name
+is not compatible with the output format JSONCompact,
+--- JSONEachPacketString is rejected for JSONCompactStrings with a non-UTF-8 type name
+is not compatible with the output format JSONCompactStrings,
+--- JSONEachPacketString is rejected for JSONColumnsWithMetadata with a non-UTF-8 type name
+is not compatible with the output format JSONColumnsWithMetadata,
+--- JSONEachPacketString accepts JSON with a valid UTF-8 (multi-byte) type name
+JSON (valid UTF-8 type name) accepted: OK
+--- JSONEachPacketString accepts JSON with a non-UTF-8 type name when a value type is validated
+JSON (value type validated, meta.type replaced) accepted: OK
