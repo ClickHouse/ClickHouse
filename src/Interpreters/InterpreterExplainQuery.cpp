@@ -50,7 +50,7 @@
 #include <Common/CurrentThread.h>
 #include <Common/JSONBuilder.h>
 #include <Common/ThreadStatus.h>
-#include <Common/ThreadGroupSwitcher.h>
+#include <Common/ScopedThreadAttributes.h>
 #include <Common/ProfileEvents.h>
 #include <Common/formatReadable.h>
 #include <Core/Settings.h>
@@ -1253,7 +1253,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
 
             watch.restart();
             {
-                ThreadGroupSwitcher switcher(analyze_thread_group, ThreadName::COMPLETED_PIPELINE_EXECUTOR, /*allow_existing_group=*/true);
+                ScopedThreadAttributes switcher(analyze_thread_group, ThreadName::COMPLETED_PIPELINE_EXECUTOR, /*allow_existing_group=*/true);
                 executor.execute();
             }
             UInt64 execute_ns = watch.elapsed();
