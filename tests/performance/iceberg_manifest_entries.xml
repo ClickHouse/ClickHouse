@@ -6,10 +6,11 @@
     </settings>
 
     <!-- Local data lake paths must be inside user_files_path, whose location depends on
-         the environment, so resolve it dynamically. -->
+         the environment, so resolve it dynamically. The path also gets a per-run unique
+         suffix to prevent interactions with aborted runs -->
     <create_query>
         CREATE TABLE iceberg_manifest_entries (c0 Int64)
-        ENGINE = IcebergLocal((SELECT value FROM system.server_settings WHERE name = 'user_files_path') || '/iceberg_manifest_entries/')
+        ENGINE = IcebergLocal((SELECT value FROM system.server_settings WHERE name = 'user_files_path') || '/iceberg_manifest_entries_' || toString(toUnixTimestamp64Micro(now64(6))) || '/')
     </create_query>
 
     <!-- One row per data file, so a single insert produces one snapshot whose manifest
