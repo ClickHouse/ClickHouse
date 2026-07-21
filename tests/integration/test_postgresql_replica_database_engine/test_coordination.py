@@ -1258,6 +1258,19 @@ def test_join_with_different_naming_settings_is_rejected(started_cluster):
 
     pg_manager.create_postgres_schema("naming_schema")
     try:
+        # check_tables_are_synchronized reads the expected rows through a `PostgreSQL` database engine that
+        # is scoped to the default (public) schema, but this table lives in `naming_schema` - so give each
+        # instance a comparison database scoped to that schema.
+        pg_manager.create_clickhouse_postgres_db(
+            database_name="postgres_database_naming",
+            schema_name="naming_schema",
+            postgres_database="postgres_database",
+        )
+        pg_manager2.create_clickhouse_postgres_db(
+            database_name="postgres_database_naming",
+            schema_name="naming_schema",
+            postgres_database="postgres_database",
+        )
         pg_query(
             'CREATE TABLE "naming_schema"."naming_table" '
             "(key Integer NOT NULL, value Integer, PRIMARY KEY(key))"
@@ -1273,7 +1286,10 @@ def test_join_with_different_naming_settings_is_rejected(started_cluster):
             settings=naming_settings,
         )
         check_tables_are_synchronized(
-            instance, "naming_table", schema_name="naming_schema"
+            instance,
+            "naming_table",
+            schema_name="naming_schema",
+            postgres_database="postgres_database_naming",
         )
 
         # The joining replica omits materialized_postgresql_tables_list_with_schema, so from the very
@@ -1295,11 +1311,16 @@ def test_join_with_different_naming_settings_is_rejected(started_cluster):
             settings=naming_settings,
         )
         check_tables_are_synchronized(
-            instance2, "naming_table", schema_name="naming_schema"
+            instance2,
+            "naming_table",
+            schema_name="naming_schema",
+            postgres_database="postgres_database_naming",
         )
     finally:
         pg_manager.drop_materialized_db()
         pg_manager2.drop_materialized_db()
+        pg_manager.drop_clickhouse_postgres_db("postgres_database_naming")
+        pg_manager2.drop_clickhouse_postgres_db("postgres_database_naming")
         pg_query("DROP SCHEMA IF EXISTS naming_schema CASCADE")
 
 
