@@ -69,6 +69,10 @@ public:
     DiskPtr getDataDisk() const;
     void setDataDisk(DiskPtr disk);
 
+    /// Used by keeper-bench when it needs data disk but not the rest of `initialize`.
+    void initializeDiskSelector(const Poco::Util::AbstractConfiguration & config);
+    void initializeDataDisk(const String & config_elem, const Poco::Util::AbstractConfiguration & config);
+
     const std::unordered_map<std::string, std::string> & getSystemNodesWithData() const;
     const KeeperFeatureFlags & getFeatureFlags() const;
     SnapshotVersion getWriteSnapshotVersion() const;
@@ -130,7 +134,7 @@ private:
     Storage getLogsPathFromConfig(const Poco::Util::AbstractConfiguration & config) const;
     Storage getSnapshotsPathFromConfig(const Poco::Util::AbstractConfiguration & config) const;
     Storage getStatePathFromConfig(const Poco::Util::AbstractConfiguration & config) const;
-    Storage getDataPathFromConfig(const Poco::Util::AbstractConfiguration & config) const;
+    Storage getDataPathFromConfig(const String & config_elem, const Poco::Util::AbstractConfiguration & config) const;
 
     DiskPtr getDisk(const Storage & storage) const;
 

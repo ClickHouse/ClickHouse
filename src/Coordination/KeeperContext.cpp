@@ -150,10 +150,14 @@ bool diskValidator(const Poco::Util::AbstractConfiguration & config, const std::
 
 }
 
-void KeeperContext::initializeDisks(const Poco::Util::AbstractConfiguration & config)
+void KeeperContext::initializeDiskSelector(const Poco::Util::AbstractConfiguration & config)
 {
     disk_selector->initialize(config, "storage_configuration.disks", Context::getGlobalContextInstance(), diskValidator);
+}
 
+void KeeperContext::initializeDisks(const Poco::Util::AbstractConfiguration & config)
+{
+    initializeDiskSelector(config);
     log_storage = getLogsPathFromConfig(config);
 
     if (config.has("keeper_server.latest_log_storage_disk"))
@@ -184,11 +188,16 @@ void KeeperContext::initializeDisks(const Poco::Util::AbstractConfiguration & co
 
     state_file_storage = getStatePathFromConfig(config);
 
+    initializeDataDisk("keeper_server", config);
+}
+
+void KeeperContext::initializeDataDisk(const String & config_elem, const Poco::Util::AbstractConfiguration & config)
+{
     const auto & coordination_settings = getCoordinationSettings();
     if (coordination_settings[CoordinationSetting::use_new_storage]
         && !coordination_settings[CoordinationSetting::storage_memory_only])
     {
-        data_storage = getDataPathFromConfig(config);
+        data_storage = getDataPathFromConfig(config_elem, config);
 
         /// The on-disk node storage is not persistent across restarts: on startup the state is
         /// recovered from snapshots and logs, and leftover files from a previous run must not
@@ -421,7 +430,7 @@ KeeperContext::Storage KeeperContext::getSnapshotsPathFromConfig(const Poco::Uti
     return create_local_disk(std::filesystem::path{config.getString("path", DBMS_DEFAULT_PATH)} / "coordination/snapshots");
 }
 
-KeeperContext::Storage KeeperContext::getDataPathFromConfig(const Poco::Util::AbstractConfiguration & config) const
+KeeperContext::Storage KeeperContext::getDataPathFromConfig(const String & config_elem, const Poco::Util::AbstractConfiguration & config) const
 {
     const auto create_local_disk = [](const auto & path)
     {
@@ -434,14 +443,14 @@ KeeperContext::Storage KeeperContext::getDataPathFromConfig(const Poco::Util::Ab
     };
 
     /// the most specialized path
-    if (config.has("keeper_server.data_storage_path"))
-        return create_local_disk(config.getString("keeper_server.data_storage_path"));
+    if (config.has(config_elem + ".data_storage_path"))
+        return create_local_disk(config.getString(config_elem + ".data_storage_path"));
 
-    if (config.has("keeper_server.data_storage_disk"))
-        return config.getString("keeper_server.data_storage_disk");
+    if (config.has(config_elem + ".data_storage_disk"))
+        return config.getString(config_elem + ".data_storage_disk");
 
-    if (config.has("keeper_server.storage_path"))
-        return create_local_disk(std::filesystem::path{config.getString("keeper_server.storage_path")} / "data");
+    if (config.has(config_elem + ".storage_path"))
+        return create_local_disk(std::filesystem::path{config.getString(config_elem + ".storage_path")} / "data");
 
     if (standalone_keeper)
         return create_local_disk(std::filesystem::path{config.getString("path", KEEPER_DEFAULT_PATH)} / "data");
