@@ -1,6 +1,7 @@
 -- Custom table engines (Memory, Set) for materialized CTEs:
 --   WITH t AS MATERIALIZED ENGINE = <Engine> (subquery)
 
+SET enable_analyzer = 1; -- materialized CTEs require the analyzer
 SET enable_materialized_cte = 1;
 
 -- Explicit ENGINE = Memory behaves as the default; referenced twice so it materializes.
