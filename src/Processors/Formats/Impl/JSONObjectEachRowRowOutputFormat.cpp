@@ -1,4 +1,5 @@
 #include <Columns/IColumn.h>
+#include <Core/Block.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/JSONUtils.h>
 #include <IO/WriteHelpers.h>
@@ -92,6 +93,24 @@ void registerOutputFormatJSONObjectEachRow(FormatFactory & factory)
     factory.markOutputFormatSupportsParallelFormatting("JSONObjectEachRow");
     factory.markFormatHasNoAppendSupport("JSONObjectEachRow");
     factory.setContentType("JSONObjectEachRow", "application/json; charset=UTF-8");
+    /// The field names are emitted as the inner JSON object keys every row via `makeNamesValidJSONStrings`
+    /// with `output_format_json_validate_utf8` (the path inherited from `JSONEachRow`). When validation
+    /// is off, a name that is not valid UTF-8 (a quoted alias with arbitrary bytes) makes the keys, and
+    /// hence the output, non-textual. This is knowable from the header, so the text framings reject or
+    /// base64-encode accordingly. The column selected by `format_json_object_each_row_column_for_object_name`
+    /// is not emitted as an inner object key (its values become the outer object names instead), so its
+    /// name does not participate in the check.
+    factory.registerOutputFormatMayProduceRawBytesChecker(
+        "JSONObjectEachRow",
+        [](const FormatSettings & settings, const Block & header)
+        {
+            Strings names;
+            const String & column_for_object_name = settings.json_object_each_row.column_for_object_name;
+            for (const auto & name : header.getNames())
+                if (column_for_object_name.empty() || name != column_for_object_name)
+                    names.push_back(name);
+            return JSONUtils::namesMayProduceRawBytesInJSON(names, settings, settings.json.validate_utf8);
+        });
 }
 
 }
