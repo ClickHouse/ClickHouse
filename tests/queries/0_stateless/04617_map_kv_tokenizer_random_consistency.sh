@@ -1,5 +1,10 @@
 #!/usr/bin/env bash
-# Tags: long
+# Tags: long, no-flaky-check, no-debug, no-asan, no-tsan, no-msan, no-ubsan, no-sanitize-coverage
+# This is a heavy randomized consistency check: it generates and runs a large number of small queries
+# via many clickhouse-client invocations. Under the slow instrumented builds — and especially the flaky
+# check, which re-runs a new test many times — it exceeds the per-test timeout. The keyValuePairs index
+# code paths it covers are also exercised under sanitizers by the deterministic tests (04614/04616/04618/04619),
+# so this fuzz test runs only in the regular (fast) builds.
 # Randomized consistency check for the keyValuePairs text index: the index must never change the
 # result of a mapContains* predicate versus a brute-force scan. Each predicate is run in four variants
 # — {index on, index off} x {optimize_functions_to_subcolumns on, off} — over both a default-serialized
