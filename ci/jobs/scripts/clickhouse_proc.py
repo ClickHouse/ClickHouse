@@ -713,11 +713,10 @@ set -o pipefail
 MAX_EXECUTION_TIME=1800
 
 if [[ "${STOP_MERGES_FOR_BOOTSTRAP:-0}" -eq 1 ]]; then
-    echo "Stopping merges/mutations for msan stateful preload"
+    echo "Stopping merges for msan stateful preload"
     clickhouse-client --query "SYSTEM STOP MERGES"
-    clickhouse-client --query "SYSTEM STOP MUTATIONS"
     # Ensure merges are re-enabled even if a later bootstrap step fails.
-    trap 'clickhouse-client --query "SYSTEM START MERGES" || true; clickhouse-client --query "SYSTEM START MUTATIONS" || true' EXIT
+    trap 'clickhouse-client --query "SYSTEM START MERGES" || true' EXIT
 fi
 
 clickhouse-client --query "SHOW DATABASES"
@@ -759,9 +758,8 @@ clickhouse-client --query "SELECT count() FROM test.hits"
 clickhouse-client --query "SELECT count() FROM test.visits"
 
 if [[ "${STOP_MERGES_FOR_BOOTSTRAP:-0}" -eq 1 ]]; then
-    echo "Re-enabling merges/mutations after msan stateful preload"
+    echo "Re-enabling merges after msan stateful preload"
     clickhouse-client --query "SYSTEM START MERGES"
-    clickhouse-client --query "SYSTEM START MUTATIONS"
     trap - EXIT
 fi
 """
