@@ -220,13 +220,14 @@ Chunk MergeTreePointReadSource::generate()
 
     /// Assemble the output in `header` order: the vector column from the point read, the rest from `other_result`
     /// (which is in `other_columns` order == header order minus the vector column).
+    ColumnPtr vector_col_ptr = std::move(vector_col);
     Columns result;
     result.reserve(header->columns());
     size_t other_idx = 0;
     for (const auto & header_column : *header)
     {
         if (header_column.name == vector_column.name)
-            result.push_back(std::move(vector_col));
+            result.push_back(vector_col_ptr);
         else
             result.push_back(other_result[other_idx++]);
     }
