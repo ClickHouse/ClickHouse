@@ -1,0 +1,12 @@
+-- JSONStringsEachRow, bool word into Bool plus an unrelated bad numeric column (no false positive)
+insert failed as expected
+explanation missing
+-- JSONCompactStringsEachRow, bool word into Bool plus an unrelated bad numeric column (no false positive)
+insert failed as expected
+explanation missing
+-- JSONStringsEachRow, genuinely non-numeric text into a numeric column (explanation still fires)
+insert failed as expected
+explanation present
+-- JSONEachRow, bool word as a string token into Bool (genuine mismatch, still flagged)
+insert failed as expected
+explanation present

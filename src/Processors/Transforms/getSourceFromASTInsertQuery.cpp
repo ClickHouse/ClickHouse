@@ -307,10 +307,13 @@ String getInsertDataSchemaMismatchDescription(
             /// for a `Bool` column, and the `CSV` `Bool` deserializer reads the raw field without
             /// unquoting it. The exception are the formats that re-parse the content of every string
             /// value with the whole-text deserializer of the destination type (`JSONStringsEachRow`,
-            /// ...), where a quoted `"1"` does parse into `Bool`; those follow the generic numeric
-            /// rule below.
-            if (isBool(expected_unwrapped) && !format_reads_string_values_as_whole_text)
-                return false;
+            /// ...): `SerializationBool::deserializeWholeText` accepts both the quoted numerics
+            /// (`"1"` / `"0"`) and the word forms (`"true"` / `"false"`, ...), and the word forms stay
+            /// `String` in the numbers-only second inference above, so the generic numeric rule below
+            /// would wrongly flag a valid `"true"`. The content of the string is unknown at the type
+            /// level, so for the whole-text formats a `String` into `Bool` is treated as compatible.
+            if (isBool(expected_unwrapped))
+                return format_reads_string_values_as_whole_text;
 
             const bool expected_is_numeric = which_expected.isInt() || which_expected.isUInt() || which_expected.isFloat();
             return !(expected_is_numeric && inferred_is_text) && !expected_is_nested;
