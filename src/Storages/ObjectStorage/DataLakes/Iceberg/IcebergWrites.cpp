@@ -145,6 +145,24 @@ avro::GenericDatum convertToAvro(const Field & field, const DataTypePtr & type)
                 result = static_cast<To>(unsigned_value);
                 break;
             }
+            case Field::Types::Decimal32: {
+                const auto decimal_value = value.safeGet<Decimal32>().getValue().value;
+
+                if (decimal_value < std::numeric_limits<To>::min() || decimal_value > std::numeric_limits<To>::max())
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Partition value {} does not fit into an Avro field", value);
+
+                result = static_cast<To>(decimal_value);
+                break;
+            }
+            case Field::Types::Decimal64: {
+                const auto decimal_value = value.safeGet<Decimal64>().getValue().value;
+
+                if (decimal_value < std::numeric_limits<To>::min() || decimal_value > std::numeric_limits<To>::max())
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Partition value {} does not fit into an Avro field", value);
+
+                result = static_cast<To>(decimal_value);
+                break;
+            }
             default:
                 throw Exception(
                     ErrorCodes::BAD_ARGUMENTS, "Field {} cannot be casted to int/long avro's type", value.getType());
