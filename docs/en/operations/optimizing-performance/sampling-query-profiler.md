@@ -100,8 +100,11 @@ Ensure that the [`trace_log`](../../operations/server-configuration-parameters/s
 This section configures the [trace_log](/operations/system-tables/trace_log) system table containing the results of the profiler functioning.
 The `symbolize` option (enabled by default) makes ClickHouse resolve each stack frame at collection time and store the demangled function names and source locations in the `symbols` and `lines` columns.
 
-Remember that the raw addresses in the `trace` column are valid only for a running server: after a server restart, ClickHouse does not clean up the table and all the stored virtual memory addresses may become invalid.
-The pre-symbolized `symbols` and `lines` columns, on the other hand, remain valid across restarts, so prefer them when analyzing historical data.
+Note that the raw addresses in the `trace` column are less stable across restarts and upgrades than the pre-symbolized columns.
+Frames in the main ClickHouse binary are stored as physical file offsets, so they stay resolvable across restarts as long as the binary is unchanged.
+Frames outside the main binary (for example, in shared libraries) are stored as runtime virtual addresses that may become invalid after a restart, and any raw address becomes unresolvable after a binary upgrade because the code layout changes.
+ClickHouse does not clean up the table on restart, so stale raw addresses can remain.
+The pre-symbolized `symbols` and `lines` columns, on the other hand, remain valid across restarts and upgrades, so prefer them when analyzing historical data.
 
 ### Configure profile timers {#configure-profile-timers}
 
