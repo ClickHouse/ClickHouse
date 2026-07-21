@@ -24,6 +24,19 @@ SET enable_analyzer = 1;
 -- note). The data is tiny and the assertions are thread-count-independent.
 SET max_threads = 4;
 
+-- Disable JOIN runtime filters for the whole test. This optimization is
+-- semantics-preserving but, with `enable_join_runtime_filters_index_analysis`,
+-- it can prune a probe-side `MergeTree` scan through the primary-key index using
+-- a filter built from the (small) working table's join keys. That is a *second*,
+-- independent way to shrink `read_rows` besides this PR's `IN (...)` injection,
+-- so it confounds every `read_rows` proof below: in particular the "optimization
+-- disabled -> full scan -> high `read_rows`" fallback proofs would see the scan
+-- pruned by the runtime filter instead and read far fewer rows. Pinning it off
+-- isolates the measurement to the recursive-CTE `IN`-injection optimization that
+-- is actually under test; the walk results are unaffected either way.
+SET enable_join_runtime_filters = 0;
+SET enable_join_runtime_filters_index_analysis = 0;
+
 -- A small `index_granularity` plus `OPTIMIZE ... FINAL` gives a single part with
 -- many marks, so the `read_rows` proof below is deterministic: it relies on
 -- primary-key mark pruning within one part rather than on the two inserts happening
