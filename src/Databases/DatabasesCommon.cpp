@@ -1,4 +1,5 @@
 #include <Databases/DatabasesCommon.h>
+#include <Databases/DatabaseOnDisk.h>
 
 #include <Backups/BackupEntriesCollector.h>
 #include <Backups/RestorerFromBackup.h>
@@ -42,6 +43,7 @@ namespace Setting
 extern const SettingsBool fsync_metadata;
 extern const SettingsUInt64 max_parser_backtracks;
 extern const SettingsUInt64 max_parser_depth;
+extern const SettingsUInt64 max_query_size;
 }
 namespace ErrorCodes
 {
@@ -52,6 +54,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int CANNOT_GET_CREATE_TABLE_QUERY;
     extern const int BAD_ARGUMENTS;
+    extern const int QUERY_IS_TOO_LARGE;
     extern const int THERE_IS_NO_QUERY;
     extern const int EMPTY_LIST_OF_COLUMNS_PASSED;
     extern const int FAULT_INJECTED;
@@ -144,6 +147,30 @@ void validateCreateQuery(const ASTCreateQuery & query, const VirtualColumnsDescr
     if (storage.ttl_table && primary_key.has_value())
         TTLTableDescription::getTTLForTableFromAST(storage.ttl_table->ptr(), columns_desc, context, *primary_key, true);
 }
+}
+
+void checkMetadataDoesNotExceedMaxQuerySize(const StorageID & table_id, const StorageInMemoryMetadata & metadata, ContextPtr context)
+{
+    /// Temporary tables have no on-disk metadata, so the max_query_size check does not apply.
+    if (table_id.database_name == DatabaseCatalog::TEMPORARY_DATABASE)
+        return;
+
+    size_t max_query_size = context->getSettingsRef()[Setting::max_query_size];
+    if (!max_query_size)
+        return;
+
+    auto ast = DatabaseCatalog::instance().getDatabase(table_id.database_name)->getCreateTableQuery(table_id.table_name, context);
+    applyMetadataChangesToCreateQuery(ast, metadata, context);
+    auto statement = getObjectDefinitionFromCreateQuery(ast);
+
+    if (statement.size() > max_query_size)
+        throw Exception(
+            ErrorCodes::QUERY_IS_TOO_LARGE,
+            "The resulting metadata of table {} ({} bytes) would exceed max_query_size ({}), "
+            "which would make the table unloadable. Reduce the number of columns or increase max_query_size.",
+            table_id.getNameForLogs(),
+            statement.size(),
+            max_query_size);
 }
 
 void applyMetadataChangesToCreateQuery(const ASTPtr & query, const StorageInMemoryMetadata & metadata, ContextPtr context, const bool validate_new_create_query)

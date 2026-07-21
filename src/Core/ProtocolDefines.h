@@ -171,6 +171,9 @@ static constexpr auto DBMS_MIN_PROTOCOL_VERSION_WITH_INTERNAL_QUERY_FLAG = 54486
 /// (sent right after the request, validated before the response).
 static constexpr auto DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET_TABLES_STATUS = 54487;
 
+/// Push the initiator's current roles to other nodes for consistent role-scoped access.
+static constexpr auto DBMS_MIN_PROTOCOL_VERSION_WITH_INTERSERVER_CURRENT_ROLES = 54488;
+
 
 /// Version of ClickHouse TCP protocol.
 ///
@@ -179,5 +182,5 @@ static constexpr auto DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET_TABLES_STATUS = 
 /// NOTE: DBMS_TCP_PROTOCOL_VERSION has nothing common with VERSION_REVISION,
 /// later is just a number for server version (one number instead of commit SHA)
 /// for simplicity (sometimes it may be more convenient in some use cases).
-static constexpr auto DBMS_TCP_PROTOCOL_VERSION = 54487;
+static constexpr auto DBMS_TCP_PROTOCOL_VERSION = 54488;
 }
