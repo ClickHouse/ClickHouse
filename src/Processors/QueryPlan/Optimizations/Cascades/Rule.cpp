@@ -37,6 +37,20 @@ GroupExpressionPtr makeEnforcerExpression(
     return enforcer_expression;
 }
 
+GroupExpressionPtr IOptimizationRule::addTwoStageSplit(Memo & memo, const GroupExpressionPtr & source_expression,
+    GroupExpressionPtr partial_expression, QueryPlanStepPtr final_step,
+    ExpressionProperties final_input_required) const
+{
+    partial_expression->inputs = source_expression->inputs;
+    GroupId partial_group_id = memo.addGroup(partial_expression);
+
+    auto final_expression = std::make_shared<GroupExpression>(std::move(final_step));
+    final_expression->inputs = {{partial_group_id, std::move(final_input_required)}};
+    final_expression->setApplied(*this, {});
+    memo.getGroup(source_expression->group_id)->addLogicalExpression(final_expression);
+    return final_expression;
+}
+
 void IOptimizationRule::addPhysicalToMemo(GroupExpressionPtr expression, const ExpressionProperties & required_properties,
     Memo & memo, std::vector<GroupExpressionPtr> & result) const
 {

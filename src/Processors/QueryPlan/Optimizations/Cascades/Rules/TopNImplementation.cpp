@@ -124,22 +124,17 @@ std::vector<GroupExpressionPtr> TwoStageTopN::applyImpl(GroupExpressionPtr expre
     /// Phase 1: per-shard bounded sort. Same step, marked so it is implemented per shard
     /// (SortImplementation) and not split again.
     GroupExpressionPtr partial_expr = std::make_shared<GroupExpression>(sorting_step->clone());
-    partial_expr->inputs = expression->inputs;
     partial_expr->strategy = std::make_shared<PartialTopNStrategy>();
-    GroupId partial_group_id = memo.addGroup(partial_expr);
 
     /// Phase 2: coordinator limit over the sorted-merged partial runs. Its input requires the
     /// same sorting at a single node, so DistributionEnforcer inserts a sorted-merge gather.
     auto limit_step = std::make_unique<LimitStep>(sorting_step->getOutputHeader(), limit, /*offset_=*/0);
     limit_step->setStepDescription(fmt::format("TopN merge {}", sorting_step->getStepDescription()), 200);
 
-    GroupExpressionPtr final_expr = std::make_shared<GroupExpression>(std::move(limit_step));
     ExpressionProperties merge_input_required;
     merge_input_required.sorting = sort_desc;
     merge_input_required.distribution.node_count = 1;
-    final_expr->inputs = {{partial_group_id, merge_input_required}};
-    final_expr->setApplied(*this, {});
-    memo.getGroup(expression->group_id)->addLogicalExpression(final_expr);
+    auto final_expr = addTwoStageSplit(memo, expression, std::move(partial_expr), std::move(limit_step), std::move(merge_input_required));
 
     return {final_expr};
 }

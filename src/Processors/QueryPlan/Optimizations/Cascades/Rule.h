@@ -59,6 +59,14 @@ protected:
     /// this rule so it is not re-applied to its own product.
     void addPhysicalToMemo(GroupExpressionPtr expression, const ExpressionProperties & required_properties,
         Memo & memo, std::vector<GroupExpressionPtr> & result) const;
+
+    /// Registers a two-stage split of `source_expression`: the partial expression becomes its own
+    /// group (inheriting the source's inputs) and `final_step` becomes a logical alternative in
+    /// the source group, consuming the partial group with the given input requirements. Returns
+    /// the final expression, marked with this rule so the split is not re-applied to it.
+    GroupExpressionPtr addTwoStageSplit(Memo & memo, const GroupExpressionPtr & source_expression,
+        GroupExpressionPtr partial_expression, QueryPlanStepPtr final_step,
+        ExpressionProperties final_input_required) const;
 };
 
 /// Clones a plan step and returns it as its concrete type; throws if the clone has another type.

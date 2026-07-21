@@ -336,18 +336,12 @@ std::vector<GroupExpressionPtr> TwoPhaseAggregationTransformation::applyImpl(Gro
         agg_step->usingMemoryBoundMerging());
     merge_step_ptr->setStepDescription(fmt::format("Merge: {}", agg_step->getStepDescription()), 200);
 
-    /// Create a new group for the partial aggregation, referencing the original inputs.
+    /// The partial aggregation becomes its own group over the original inputs; the merge becomes
+    /// a logical alternative in the original group. The merge's implementation rules will set the
+    /// distribution requirements (Local or Shuffle), causing the DistributionEnforcer to insert
+    /// the appropriate exchange before the partial step.
     GroupExpressionPtr partial_expr = std::make_shared<GroupExpression>(std::move(partial_step_ptr));
-    partial_expr->inputs = expression->inputs;
-    GroupId partial_group_id = memo.addGroup(partial_expr);
-
-    /// Add the merge aggregation as a logical alternative in the original group.
-    /// Its implementation rules will set the distribution requirements (Local or Shuffle),
-    /// causing the DistributionEnforcer to insert the appropriate exchange before the partial step.
-    GroupExpressionPtr merge_expr = std::make_shared<GroupExpression>(std::move(merge_step_ptr));
-    merge_expr->inputs = {{partial_group_id, {}}};
-    merge_expr->setApplied(*this, {});
-    memo.getGroup(expression->group_id)->addLogicalExpression(merge_expr);
+    auto merge_expr = addTwoStageSplit(memo, expression, std::move(partial_expr), std::move(merge_step_ptr), {});
 
     return {merge_expr};
 }
