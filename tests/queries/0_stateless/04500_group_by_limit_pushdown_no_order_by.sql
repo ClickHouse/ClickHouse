@@ -1,4 +1,9 @@
 -- Tags: no-parallel-replicas, long
+-- no-parallel-replicas: the no-ORDER-BY promotion needs `LimitStep` directly
+-- above `AggregatingStep` in a single-stage plan, so under parallel replicas it
+-- never engages and the `EXPLAIN` / `AggregationTopKRowsSkipped` assertions
+-- that it fired would fail (results would still be correct).
+
 -- Correctness of enable_group_by_top_k_optimization for `GROUP BY ... LIMIT`
 -- without ORDER BY.  The optimizer promotes this shape into the sorted one by
 -- synthesizing a SortingStep over all GROUP BY keys (any N groups are a valid
