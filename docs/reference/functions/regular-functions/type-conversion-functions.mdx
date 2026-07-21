@@ -3047,7 +3047,6 @@ Introduced in: v1.1.0
 
 Converts an input value to a value of type `Date` but returns `NULL` if an invalid argument is received.
 The same as [`toDate`](#toDate) but returns `NULL` if an invalid argument is received.
-An integer argument is interpreted the same way as by `toDate` (a number of days since 1970-01-01 if it does not exceed 65535, a Unix timestamp otherwise), and produces `NULL` if it is out of range of the `Date` type.
     
 
 **Syntax**
@@ -3058,7 +3057,7 @@ toDateOrNull(x)
 
 **Arguments**
 
-- `x` — A string representation of a date, or an integer number of days or a Unix timestamp. [`String`](/reference/data-types/string) or [`(U)Int8/16/32/64`](/reference/data-types/int-uint)
+- `x` — A string representation of a date. [`String`](/reference/data-types/string)
 
 **Returned value**
 
@@ -3347,20 +3346,17 @@ Introduced in: v20.1.0
 
 Converts an input value to a value of type `DateTime64` but returns `NULL` if an invalid argument is received.
 The same as `toDateTime64` but returns `NULL` if an invalid argument is received.
-An integer argument is interpreted as a Unix timestamp in whole seconds and produces `NULL` if it is out of range of the `DateTime64` type.
     
 
 **Syntax**
 
 ```sql
-toDateTime64OrNull(x[, precision[, timezone]])
+toDateTime64OrNull(x)
 ```
 
 **Arguments**
 
-- `x` — A string representation of a date with time and subsecond precision, or an integer Unix timestamp. [`String`](/reference/data-types/string) or [`(U)Int8/16/32/64`](/reference/data-types/int-uint)
-- `precision` — Optional. The subsecond precision of the returned value. [`UInt8`](/reference/data-types/int-uint)
-- `timezone` — Optional. Time zone of the returned value. [`String`](/reference/data-types/string)
+- `x` — A string representation of a date with time and subsecond precision. [`String`](/reference/data-types/string)
 
 **Returned value**
 
@@ -3472,19 +3468,17 @@ Introduced in: v1.1.0
 
 Converts an input value to a value of type `DateTime` but returns `NULL` if an invalid argument is received.
 The same as [`toDateTime`](#toDateTime) but returns `NULL` if an invalid argument is received.
-An integer argument is interpreted as a Unix timestamp and produces `NULL` if it is out of range of the `DateTime` type.
     
 
 **Syntax**
 
 ```sql
-toDateTimeOrNull(x[, timezone])
+toDateTimeOrNull(x)
 ```
 
 **Arguments**
 
-- `x` — A string representation of a date with time, or an integer Unix timestamp. [`String`](/reference/data-types/string) or [`(U)Int8/16/32/64`](/reference/data-types/int-uint)
-- `timezone` — Optional. Time zone of the returned value. [`String`](/reference/data-types/string)
+- `x` — A string representation of a date with time. [`String`](/reference/data-types/string)
 
 **Returned value**
 
@@ -3502,18 +3496,6 @@ SELECT toDateTimeOrNull('2025-12-30 13:44:17'), toDateTimeOrNull('invalid')
 ┌─toDateTimeOrNull('2025-12-30 13:44:17')─┬─toDateTimeOrNull('invalid')─┐
 │                     2025-12-30 13:44:17 │                        ᴺᵁᴸᴸ │
 └─────────────────────────────────────────┴─────────────────────────────┘
-```
-
-**Integer argument with a time zone**
-
-```sql title=Query
-SELECT toDateTimeOrNull(1583851242, 'Asia/Shanghai'), toDateTimeOrNull(4294967296)
-```
-
-```response title=Response
-┌─toDateTimeOrNull(1583851242, 'Asia/Shanghai')─┬─toDateTimeOrNull(4294967296)─┐
-│                           2020-03-10 22:40:42 │                         ᴺᵁᴸᴸ │
-└───────────────────────────────────────────────┴──────────────────────────────┘
 ```
 
 ## toDateTimeOrZero {#toDateTimeOrZero}
