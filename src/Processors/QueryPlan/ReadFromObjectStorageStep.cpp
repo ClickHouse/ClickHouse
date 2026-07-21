@@ -201,6 +201,14 @@ bool ReadFromObjectStorageStep::canUseLazyMaterialization() const
     if (!configuration->supportsLazyMaterialization(storage_snapshot->metadata, getContext()))
         return false;
 
+    /// The lazy pass rereads the surviving files and must prove it sees the same generation of
+    /// each object (see `LazyRowsObjectIterator::validateObjectGeneration`). A backend whose
+    /// metadata may carry no comparable token at all (no `ETag`, unknown size and modification
+    /// time — e.g. a web origin) would fail close on that reread even without any concurrent
+    /// overwrite, so keep it on the single-pass plan.
+    if (!object_storage->supportsObjectGenerationComparison())
+        return false;
+
 #if CLICKHOUSE_CLOUD
     /// The transformed plan is not serializable.
     if (distributed_read_bucket_count)
