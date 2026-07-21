@@ -441,8 +441,9 @@ void BackupReaderS3::copyFileToDisk(const String & path_in_backup, size_t offset
     if (destination_data_source_description.sameKind(data_source_description)
         && (destination_data_source_description.is_encrypted == encrypted_in_backup))
     {
-        /// A packed member is a byte range inside a larger pack object; signal a ranged copy so copyS3File
-        /// forces UploadPartCopy instead of whole-object CopyObject (which would copy the entire pack).
+        /// A packed member is a byte range inside a larger pack object (offset > 0, since bodies follow the
+        /// pack front index); a whole object is at offset 0. Signal a ranged copy only for a sub-range so a
+        /// whole-object restore keeps the CopyObject fast path and a packed member uses UploadPartCopy.
         LOG_TRACE(log, "Copying {} from S3 to disk {}", path_in_backup, destination_disk->getName());
         auto write_blob_function = [&](const Strings & blob_path, WriteMode mode, const std::optional<ObjectAttributes> & object_attributes) -> size_t
         {
@@ -467,7 +468,7 @@ void BackupReaderS3::copyFileToDisk(const String & path_in_backup, size_t offset
                 threadPoolCallbackRunnerUnsafe<void>(getBackupsIOThreadPool().get(), ThreadName::S3_BACKUP_READER),
                 [&, this] { return readFile(path_in_backup); },
                 object_attributes,
-                /* copy_range= */ true);
+                /* copy_range= */ offset != 0);
 
             return size;
         };
