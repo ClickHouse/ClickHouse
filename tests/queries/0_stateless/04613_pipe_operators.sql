@@ -50,7 +50,6 @@ WITH 100 AS threshold FROM orders |> WHERE amount >= threshold |> AGGREGATE coun
 WITH 100 AS threshold FROM orders |> SELECT customer, amount >= threshold AS is_big |> ORDER BY customer, is_big;
 WITH big AS (FROM orders |> WHERE amount >= 250) FROM big |> SELECT customer |> ORDER BY customer;
 WITH src AS (SELECT 'alice' AS customer) FROM orders |> AS o |> JOIN src AS s USING (customer) |> AGGREGATE count() AS c;
-WITH RECURSIVE r AS (SELECT 1 AS n UNION ALL SELECT n + 1 FROM r WHERE n < 3) FROM r |> AGGREGATE sum(n) AS s;
 
 SELECT '-- AS and JOIN: table aliases are visible inside the same operator, following operators see the combined columns';
 FROM orders |> AGGREGATE sum(amount) AS total GROUP BY customer |> AS agg |> JOIN (FROM orders |> WHERE amount = 300 |> SELECT customer AS c) AS big ON agg.customer = big.c |> SELECT customer, total;
@@ -76,11 +75,27 @@ CREATE TABLE big_orders (customer String, amount UInt64) ENGINE = MergeTree ORDE
 INSERT INTO big_orders FROM orders |> WHERE amount >= 250 |> SELECT customer, amount;
 FROM big_orders ORDER BY customer;
 
+SELECT '-- An INSERT-scoped WITH stays visible in every pipe stage, even with enable_global_with_statement = 0';
+DROP TABLE IF EXISTS filtered_orders;
+CREATE TABLE filtered_orders (customer String, amount UInt64) ENGINE = MergeTree ORDER BY customer;
+SET enable_global_with_statement = 0;
+WITH 100 AS lo, 300 AS hi INSERT INTO filtered_orders FROM orders |> WHERE amount >= lo |> WHERE amount < hi |> SELECT customer, amount;
+SET enable_global_with_statement = 1;
+FROM filtered_orders ORDER BY customer, amount;
+
+SELECT '-- A column alias list can follow the tables in the FROM-first form, before the SELECT clause';
+FROM (SELECT customer, amount FROM orders) AS o (name, total) SELECT name, total |> WHERE total >= 250 |> ORDER BY name, total;
+FROM (SELECT customer, amount FROM orders) AS o (name, total) |> WHERE total >= 250 |> SELECT name |> ORDER BY name;
+
 SELECT '-- The resulting AST is the same as with nested subqueries';
 EXPLAIN SYNTAX oneline = 1 FROM orders |> WHERE cancelled = 0 |> AGGREGATE sum(amount) AS total GROUP BY customer |> ORDER BY total DESC |> LIMIT 3;
 EXPLAIN SYNTAX oneline = 1 FROM orders |> SET amount = amount + 1 |> DROP cancelled |> AS t |> LEFT JOIN big_orders AS b USING (customer);
 EXPLAIN SYNTAX oneline = 1 FROM orders |> ORDER BY amount DESC |> LIMIT 2 OFFSET 1;
 EXPLAIN SYNTAX oneline = 1 WITH 100 AS threshold FROM orders |> WHERE amount >= threshold |> AGGREGATE count() AS c;
+
+SELECT '-- WITH RECURSIVE stays visible across pipe operators (requires the analyzer)';
+SET enable_analyzer = 1;
+WITH RECURSIVE r AS (SELECT 1 AS n UNION ALL SELECT n + 1 FROM r WHERE n < 3) FROM r |> AGGREGATE sum(n) AS s;
 
 SELECT '-- Errors';
 FROM orders |> FOO; -- { clientError SYNTAX_ERROR }
