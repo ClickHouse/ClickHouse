@@ -194,9 +194,34 @@ public:
             full_length_column = arguments[1].column->convertToFullColumnIfConst();
 
         auto col_res = ColumnString::create();
+        if (input_rows_count == 0)
+            return col_res;
+
         ColumnString::Chars & data_to = col_res->getChars();
         ColumnString::Offsets & offsets_to = col_res->getOffsets();
         offsets_to.resize(input_rows_count);
+
+        /// Validate the semantic arguments before touching the entropy source, so that invalid
+        /// arguments always fail with BAD_ARGUMENTS regardless of the entropy availability.
+        for (size_t row = 0; row < input_rows_count; ++row)
+        {
+            std::string_view prefix = col_prefix.getDataAt(row);
+            if (!isValidGeneratorPrefix(prefix))
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Invalid prefix ({}) in function {}: the prefix must be non-empty and consist of underscore-separated segments matching [A-Za-z][A-Za-z0-9]*",
+                    prefix, name);
+
+            if (full_length_column)
+            {
+                size_t body_length = full_length_column->getUInt(row);
+                if (body_length < 1 || body_length > MAX_BODY_LENGTH)
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "Invalid body length ({}) in function {}: must be in [1, {}]",
+                        body_length, name, MAX_BODY_LENGTH);
+            }
+        }
 
         /// Seed from the OS entropy source rather than randomSeed(): the latter is derived
         /// from the time and the thread id, which is too predictable for identifiers whose
@@ -211,22 +236,7 @@ public:
         for (size_t row = 0; row < input_rows_count; ++row)
         {
             std::string_view prefix = col_prefix.getDataAt(row);
-            if (!isValidGeneratorPrefix(prefix))
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "Invalid prefix ({}) in function {}: the prefix must be non-empty and consist of underscore-separated segments matching [A-Za-z][A-Za-z0-9]*",
-                    prefix, name);
-
-            size_t body_length = DEFAULT_BODY_LENGTH;
-            if (full_length_column)
-            {
-                body_length = full_length_column->getUInt(row);
-                if (body_length < 1 || body_length > MAX_BODY_LENGTH)
-                    throw Exception(
-                        ErrorCodes::BAD_ARGUMENTS,
-                        "Invalid body length ({}) in function {}: must be in [1, {}]",
-                        body_length, name, MAX_BODY_LENGTH);
-            }
+            size_t body_length = full_length_column ? full_length_column->getUInt(row) : DEFAULT_BODY_LENGTH;
 
             IColumn::Offset next_offset = offset + prefix.size() + 1 + body_length;
             data_to.resize(next_offset);
