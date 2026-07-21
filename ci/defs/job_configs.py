@@ -1688,6 +1688,29 @@ class JobConfigs:
         command="python3 ./ci/jobs/vector_search_stress_tests.py",
         timeout=6 * 3600,
     )
+    # Compares the PR's arm_release build profile (binary and per-object sizes,
+    # per-symbol sizes, compile and link time down to individual functions and
+    # template instantiations) against the latest master build, and posts a PR
+    # comment when the change is significant. The data comes from the CI logs
+    # cluster: the PR side is uploaded by the arm_release build post-hook
+    # (build_profile_hook.py), the master side by master workflow builds.
+    # requires (not run_after) so that the job inherits the build's digest:
+    # it re-runs when the build re-runs and is skipped for doc-only changes.
+    build_profile_diff_job = Job.Config(
+        name=JobNames.BUILD_PROFILE_DIFF,
+        runs_on=RunnerLabels.ARM_SMALL,
+        run_in_docker="clickhouse/test-base",
+        requires=["Build (arm_release)"],
+        command="python3 ./ci/jobs/build_profile_diff_job.py",
+        digest_config=Job.CacheDigestConfig(
+            include_paths=[
+                "./ci/jobs/build_profile_diff_job.py",
+                "./ci/jobs/scripts/log_cluster.py",
+            ],
+        ),
+        timeout=1800,
+        enable_gh_auth=True,
+    )
     llvm_coverage_job = Job.Config(
         name=JobNames.LLVM_COVERAGE,
         runs_on=RunnerLabels.AMD_SMALL,

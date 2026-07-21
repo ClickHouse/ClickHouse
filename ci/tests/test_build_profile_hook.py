@@ -21,6 +21,7 @@ Layers covered:
 """
 
 import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -34,7 +35,7 @@ from ci.jobs.scripts.job_hooks.build_profile_hook import (
     _should_profile,
     _upload_profile_artifacts,
 )
-from ci.jobs.scripts.log_cluster import LogCluster
+from ci.jobs.scripts.log_cluster import LogCluster, LogClusterBuildProfileQueries
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 _PRODUCER = _REPO_ROOT / "utils" / "prepare-time-trace" / "prepare-time-trace.sh"
@@ -73,6 +74,46 @@ def test_producer_no_objects_leaves_binary_sizes_empty(tmp_path):
     assert binary_sizes.read_bytes() == b""
 
 
+@pytest.mark.skipif(not shutil.which("cc"), reason="no C compiler available")
+def test_producer_collects_final_binary_symbols_for_lto(tmp_path):
+    """LTO build: nm on .o is skipped, but the final binaries still get symbols.
+
+    (Thin)LTO release builds have no per-object symbol data (nm does not work
+    on LTO objects), which used to leave binary_symbols.txt absent entirely.
+    The producer must still collect the symbol table of the final linked
+    binaries - that is what the "Build profile diff" check uses for per-symbol
+    size attribution.
+    """
+    build_dir = tmp_path / "build"
+    (build_dir / "programs").mkdir(parents=True)
+    (build_dir / "compile_commands.json").write_text('[{"command": "cc -flto x.c"}]')
+    src = tmp_path / "main.c"
+    src.write_text(
+        "int please_find_me(int x) { return x + 1; }\n"
+        "int main(void) { return please_find_me(0); }\n"
+    )
+    subprocess.run(
+        ["cc", "-o", str(build_dir / "programs" / "clickhouse"), str(src)],
+        check=True,
+        capture_output=True,
+    )
+    out_dir = tmp_path / "out"
+    out_dir.mkdir()
+
+    subprocess.run(
+        ["bash", str(_PRODUCER), str(build_dir), str(out_dir)],
+        check=True,
+        capture_output=True,
+    )
+
+    symbols_file = out_dir / "binary_symbols.txt"
+    assert symbols_file.exists()
+    symbols = symbols_file.read_text()
+    assert "please_find_me" in symbols
+    # Rows are attributed to the binary they come from.
+    assert f"{build_dir}/programs/clickhouse " in symbols
+
+
 # --- build subset gate ----------------------------------------------------
 
 
@@ -84,6 +125,48 @@ def test_should_profile_only_release_builds():
     assert not _should_profile("amd_asan_ubsan")
     assert not _should_profile("arm_tsan")
     assert not _should_profile("amd_darwin")
+
+
+def test_should_profile_pr_only_arm_release():
+    """PR builds are far more frequent than master pushes, so on PRs only the
+    aarch64 release build is profiled - the one the "Build profile diff" check
+    compares against master."""
+    assert _should_profile("arm_release", is_pr=True)
+    assert not _should_profile("amd_release", is_pr=True)
+    assert not _should_profile("amd_debug", is_pr=True)
+
+
+def _profile_queries():
+    """LogClusterBuildProfileQueries without touching Info() / the environment."""
+    queries = LogClusterBuildProfileQueries.__new__(LogClusterBuildProfileQueries)
+
+    class _FakeInfo:
+        pr_number = 12345
+        sha = "deadbeef"
+        instance_type = "t"
+        instance_id = "i"
+
+    queries._info = _FakeInfo()
+    return queries
+
+
+def test_profile_query_reduced_filters_events():
+    """PR uploads carry only the event kinds the diff check consumes."""
+    queries = _profile_queries()
+    query = queries._profile_query("arm_release", "2026-06-11 00:00:00", reduced=True)
+    assert "WHERE name IN (" in query
+    assert "'ExecuteCompiler'" in query
+    assert "'OptFunction'" in query
+    assert "OR name LIKE 'Total %'" in query
+    # The filter must precede the input format clause to apply to input rows.
+    assert query.index("WHERE name IN") < query.index("FORMAT JSONCompactEachRow")
+
+
+def test_profile_query_full_by_default():
+    """Master uploads keep the full trace: no event filter."""
+    queries = _profile_queries()
+    query = queries._profile_query("arm_release", "2026-06-11 00:00:00")
+    assert "WHERE name IN" not in query
 
 
 # --- hook artifact selection ----------------------------------------------

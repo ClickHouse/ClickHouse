@@ -36,9 +36,19 @@ _PROFILED_BUILDS = (
     # "arm_darwin",
 )
 
+# On PRs only the aarch64 release build is profiled: it feeds the
+# "Build profile diff" check (ci/jobs/build_profile_diff_job.py), which compares
+# the PR's build profile against master. PR builds are far more frequent than
+# master pushes, so the subset is kept minimal, and the time trace is uploaded
+# reduced (see LogClusterBuildProfileQueries.insert_profile_data) to keep the
+# per-build row count in check.
+_PROFILED_BUILDS_PR = ("arm_release",)
 
-def _should_profile(build_type):
+
+def _should_profile(build_type, is_pr=False):
     """Whether build profile telemetry is collected for this build variant."""
+    if is_pr:
+        return build_type in _PROFILED_BUILDS_PR
     return build_type in _PROFILED_BUILDS
 
 
@@ -71,9 +81,10 @@ def _upload_profile_artifacts(build_type, start_time, artifacts):
 
 
 def check():
+    is_pr = Info().pr_number > 0
     build_type = Info().job_name.split("(")[1].rstrip(")")
     assert build_type
-    if not _should_profile(build_type):
+    if not _should_profile(build_type, is_pr=is_pr):
         print(f"Build profile telemetry not collected for [{build_type}]")
         return
     print("Prepare build profile data")
@@ -101,11 +112,24 @@ def check():
             Result.from_fs(Info().job_name).start_time
         )
         queries = LogClusterBuildProfileQueries()
+
+        def insert_profile_data(build_name, start_time, file):
+            # On PRs the time trace is uploaded reduced: only the event kinds
+            # the "Build profile diff" check consumes. The bulk of a full trace
+            # is per-pass LLVM events from the ThinLTO link, useless for the
+            # diff and too voluminous for the shared cluster at PR rates.
+            queries.insert_profile_data(
+                build_name=build_name,
+                start_time=start_time,
+                file=file,
+                reduced=is_pr,
+            )
+
         _upload_profile_artifacts(
             build_type,
             check_start_time,
             [
-                (queries.insert_profile_data, profile_data_file),
+                (insert_profile_data, profile_data_file),
                 (queries.insert_build_size_data, build_size_file),
                 (queries.insert_binary_symbol_data, binary_symbol_file),
             ],
@@ -119,7 +143,4 @@ def check():
 
 
 if __name__ == "__main__":
-    if Info().pr_number == 0:
-        check()
-    else:
-        print("Not applicable for PRs")
+    check()

@@ -111,20 +111,40 @@ ENGINE = MergeTree
 ORDER BY (date, file, symbol, pull_request_number, commit_sha, check_name);
 ///
 
+# Find the best alternative of nm
+for name in llvm-nm-{30..18} llvm-nm nm
+do
+    NM=$(command -v ${name})
+    [[ -n "${NM}" ]] && break
+done
+
 # nm does not work with LTO
 if ! grep -q -- '-flto' "$INPUT_DIR/compile_commands.json"
 then
-    # Find the best alternative of nm
-    for name in llvm-nm-{30..18} llvm-nm nm
-    do
-        NM=$(command -v ${name})
-        [[ -n "${NM}" ]] && break
-    done
-
     find "$INPUT_DIR" -type f -name '*.o' | grep -v cargo | xargs -P $(nproc) -I {} bash -c "
       ${NM} --demangle --defined-only --print-size '{}' | grep -v -P '[0-9a-zA-Z] r ' | sed 's@^@{} @' > '{}.symbols'
     "
 
     # xargs -r: with no '*.o.symbols' files emit nothing rather than running cat once.
     find "$INPUT_DIR" -type f -name '*.o.symbols' | xargs -r cat > "${OUTPUT_DIR}/binary_symbols.txt"
+fi
+
+# Also collect the symbols of the final linked binaries. Unlike the per-object
+# pass above this works for (Thin)LTO builds too - the symbol table of the
+# linked binary is what the compiled code actually looks like after LTO - and
+# it attributes the size of the shipped binary to individual functions and
+# template instantiations.
+if [[ -n "${NM}" ]]
+then
+    for binary in programs/clickhouse programs/clickhouse-keeper
+    do
+        # Skip symlinks: clickhouse-keeper may be a symlink to clickhouse when
+        # it is not built standalone, and its symbols would be duplicates.
+        if [[ -f "$INPUT_DIR/$binary" && ! -L "$INPUT_DIR/$binary" ]]
+        then
+            ${NM} --demangle --defined-only --print-size "$INPUT_DIR/$binary" \
+                | grep -v -P '[0-9a-zA-Z] r ' \
+                | sed "s@^@$INPUT_DIR/$binary @" >> "${OUTPUT_DIR}/binary_symbols.txt"
+        fi
+    done
 fi

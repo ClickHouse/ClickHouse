@@ -192,6 +192,8 @@ workflow = Workflow.Config(
             for job in JobConfigs.clickbench_jobs
         ],
         JobConfigs.llvm_coverage_job,
+        # TODO: stabilize and remove set_allow_failure
+        JobConfigs.build_profile_diff_job.set_allow_failure(),
         JobConfigs.sqllogic_test_master_job.set_run_after(
             CORE_BLOCKING_JOB_NAMES
         ),
