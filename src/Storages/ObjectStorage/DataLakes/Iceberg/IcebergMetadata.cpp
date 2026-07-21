@@ -31,6 +31,7 @@
 #include <Poco/JSON/Array.h>
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Stringifier.h>
+#include <Poco/String.h>
 #include <Common/Exception.h>
 
 #include <Interpreters/PreparedSets.h>
@@ -613,7 +614,93 @@ IcebergMetadata::getState(const ContextPtr & local_context, const String & metad
     table_state_snapshot.snapshot_id = data_snapshot ? std::optional{data_snapshot->snapshot_id} : std::nullopt;
     table_state_snapshot.metadata_version = metadata_version;
     table_state_snapshot.metadata_file_path = metadata_path;
+
+    /// Parse identity-partition source columns from the already-loaded metadata object and retain them
+    /// in the class, so getIdentityPartitionColumns is an in-memory lookup, not a metadata re-fetch.
+    cacheIdentityPartitionColumns(metadata_version, table_state_snapshot.schema_id, metadata_object);
+
     return {data_snapshot, table_state_snapshot};
+}
+
+void IcebergMetadata::cacheIdentityPartitionColumns(
+    Int32 metadata_version, Int32 schema_id, const Poco::JSON::Object::Ptr & metadata_object) const
+{
+    {
+        std::lock_guard lock(identity_partition_columns_mutex);
+        if (identity_partition_columns_by_version.contains(metadata_version))
+            return;
+    }
+
+    /// Collect identity source columns across ALL partition specs, not only the current default_spec_id:
+    /// after spec evolution, old data files written under a previous spec can still omit the source
+    /// column, so excluding only the current spec's identity columns would regress those files.
+    NamesAndTypesList result;
+    if (metadata_object->has(f_partition_specs))
+    {
+        if (auto partition_specs = metadata_object->getArray(f_partition_specs))
+        {
+            NameSet seen;
+            for (UInt32 i = 0; i < partition_specs->size(); ++i)
+            {
+                auto spec = partition_specs->getObject(i);
+                if (!spec)
+                    continue;
+                auto fields = spec->getArray(f_fields);
+                if (!fields)
+                    continue;
+                for (UInt32 j = 0; j < fields->size(); ++j)
+                {
+                    auto field = fields->getObject(j);
+                    if (!field || Poco::toLower(field->getValue<String>(f_partition_transform)) != "identity")
+                        continue;
+                    const Int32 source_id = field->getValue<Int32>(f_source_id);
+                    if (auto name_and_type = persistent_components.schema_processor->tryGetFieldCharacteristics(schema_id, source_id))
+                        if (seen.emplace(name_and_type->name).second)
+                            result.push_back(*name_and_type);
+                }
+            }
+        }
+    }
+
+    std::lock_guard lock(identity_partition_columns_mutex);
+    identity_partition_columns_by_version.emplace(metadata_version, std::move(result));
+}
+
+NamesAndTypesList IcebergMetadata::getIdentityPartitionColumns(
+    ContextPtr local_context, const std::optional<DataLakeTableStateSnapshot> & pinned_state) const
+{
+    /// Identity-partition columns can be absent from the data files (backfilled from the manifest at
+    /// read time) so they must be excluded from PREWHERE; the exclusion is derived from the snapshot
+    /// pinned for this query, not a fresh re-fetch, so a concurrent commit cannot reopen the pushdown
+    /// race. See issue #110216.
+    try
+    {
+        std::optional<Int32> metadata_version;
+        if (pinned_state && std::holds_alternative<Iceberg::TableStateSnapshot>(*pinned_state))
+            metadata_version = std::get<Iceberg::TableStateSnapshot>(*pinned_state).metadata_version;
+
+        if (metadata_version)
+        {
+            std::lock_guard lock(identity_partition_columns_mutex);
+            if (auto it = identity_partition_columns_by_version.find(*metadata_version); it != identity_partition_columns_by_version.end())
+                return it->second;
+        }
+
+        /// Not pinned, or this version has not been parsed yet: resolve state (getState populates the
+        /// cache for that version), then look it up. Best-effort fallback only.
+        const auto version = getRelevantState(local_context).second.metadata_version;
+        std::lock_guard lock(identity_partition_columns_mutex);
+        if (auto it = identity_partition_columns_by_version.find(version); it != identity_partition_columns_by_version.end())
+            return it->second;
+        return {};
+    }
+    catch (...)
+    {
+        /// Fail closed: returning {} would mark every column PREWHERE-safe again and let WHERE / a row
+        /// policy on an identity-partition column be pushed below the backfill and drop rows.
+        tryLogCurrentException(log, "Failed to resolve Iceberg identity-partition columns for PREWHERE exclusion");
+        throw;
+    }
 }
 
 std::shared_ptr<NamesAndTypesList> IcebergMetadata::getInitialSchemaByPath(ContextPtr, ObjectInfoPtr object_info) const

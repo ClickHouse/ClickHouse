@@ -1708,8 +1708,34 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                 if (row_policy_filter_info)
                 {
                     table_expression_data.setRowLevelFilterActions(row_policy_filter_info->actions.clone());
+
+                    /// Push the row-level security filter into the in-source (PREWHERE) path only when
+                    /// the storage supports PREWHERE AND every column the policy references is actually
+                    /// readable from the data files. Some storages (Iceberg with identity-partition
+                    /// columns absent from the data files) backfill certain columns from metadata AFTER
+                    /// the in-source filter runs; a policy referencing such a column would evaluate
+                    /// against the reader's synthetic NULLs and enforce the wrong visibility. Those
+                    /// columns are reported as unsupported by supportedPrewhereColumns(), so we keep the
+                    /// policy in WHERE (above the source) where the backfilled values are present.
+                    /// See issue #110216.
+                    bool push_to_source = storage->supportsPrewhere();
+                    if (push_to_source)
+                    {
+                        if (auto supported_prewhere_columns = storage->supportedPrewhereColumns(storage_snapshot))
+                        {
+                            for (const auto & column : row_policy_filter_info->actions.getRequiredColumnsNames())
+                            {
+                                if (!supported_prewhere_columns->contains(column))
+                                {
+                                    push_to_source = false;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+
                     /// TODO: Never put row-level security filter in WHERE clause for storages that do not support PREWHERE to avoid merging of filters.
-                    if (storage->supportsPrewhere())
+                    if (push_to_source)
                         row_level_filter = std::make_shared<FilterDAGInfo>(std::move(*row_policy_filter_info));
                     else
                         where_filters.emplace_back(std::move(*row_policy_filter_info), makeDescription("Row-level security filter"));

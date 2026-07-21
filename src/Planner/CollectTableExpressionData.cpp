@@ -309,8 +309,13 @@ public:
                     storage->getName(),
                     storage->getStorageID().getNameForLogs());
 
+            /// Pass the query's own pinned snapshot so identity-partition exclusion is derived
+            /// from the metadata fixed at analysis time, not a fresh re-fetch (see #110216).
+            const auto & query_storage_snapshot = table_column_source
+                ? table_column_source->getStorageSnapshot()
+                : table_function_column_source->getStorageSnapshot();
             table_expression = std::move(column_source);
-            table_supported_prewhere_columns = storage->supportedPrewhereColumns();
+            table_supported_prewhere_columns = storage->supportedPrewhereColumns(query_storage_snapshot);
         }
 
         if (table_supported_prewhere_columns && !table_supported_prewhere_columns->contains(column_node->getColumnName()))

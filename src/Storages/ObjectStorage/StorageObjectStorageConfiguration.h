@@ -162,6 +162,17 @@ public:
 
     virtual IDataLakeMetadata * getExternalMetadata() { return nullptr; }
 
+    /// Whether the data-lake metadata object is resolved. Const and never forces initialization, so it
+    /// is safe from query-analysis paths. Non-data-lake configs are trivially resolved (true). Callers
+    /// fail closed for PREWHERE when the identity-partition exclusion cannot yet be determined (#110216).
+    virtual bool hasInitializedMetadata() const { return true; }
+
+    /// Identity-partition columns backfilled from data-lake metadata that may be absent from the data
+    /// files and must be excluded from PREWHERE. Derived from `pinned_state` when set; empty if metadata
+    /// is not initialized (best-effort). See #110216.
+    virtual NamesAndTypesList getIdentityPartitionColumns(
+        ContextPtr, const std::optional<DataLakeTableStateSnapshot> & /*pinned_state*/) const { return {}; }
+
     virtual std::shared_ptr<NamesAndTypesList> getInitialSchemaByPath(ContextPtr, ObjectInfoPtr) const { return {}; }
 
     virtual std::shared_ptr<const ActionsDAG> getSchemaTransformer(ContextPtr, ObjectInfoPtr) const { return {}; }

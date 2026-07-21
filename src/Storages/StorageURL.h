@@ -139,7 +139,7 @@ protected:
     /// Things required for PREWHERE.
     bool supportsPrewhere() const override;
     bool canMoveConditionsToPrewhere() const override;
-    std::optional<NameSet> supportedPrewhereColumns() const override;
+    std::optional<NameSet> supportedPrewhereColumns(const StorageSnapshotPtr & query_snapshot) const override;
     ColumnSizeByName getColumnSizes() const override;
 
     bool prefersLargeBlocks() const override;

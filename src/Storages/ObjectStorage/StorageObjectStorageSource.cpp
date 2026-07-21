@@ -68,7 +68,9 @@
 #include <Core/Field.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypesDecimal.h>
 
 #include <Storages/MergeTree/MarkRange.h>
 #include <Interpreters/Cache/QueryConditionCache.h>
@@ -100,6 +102,42 @@ namespace ErrorCodes
     extern const int CANNOT_UNPACK_ARCHIVE;
     extern const int LOGICAL_ERROR;
     extern const int FILE_DOESNT_EXIST;
+}
+
+ColumnPtr backfillIdentityPartitionColumn(const DataTypePtr & column_type, const Field & value, size_t num_rows)
+{
+    /// The manifest stores the partition value in Iceberg physical encoding, which for scale-backed
+    /// target types (Decimal, DateTime64, Time64) is the raw unscaled integer tick (e.g. int64
+    /// microseconds for a timestamp). Feeding that integer to convertFieldToType applies value
+    /// semantics and overflows (issue #110216 follow-up: DateTime64). For those types the tick is
+    /// already the column's internal value, so build the column by inserting the tick directly;
+    /// other types go through the normal value conversion.
+    const auto inner_type = removeNullable(column_type);
+    if (auto scale = tryGetDecimalScale(*inner_type);
+        scale.has_value()
+        && (value.getType() == Field::Types::Int64 || value.getType() == Field::Types::UInt64))
+    {
+        const Int64 ticks = value.getType() == Field::Types::Int64
+            ? value.safeGet<Int64>()
+            : static_cast<Int64>(value.safeGet<UInt64>());
+        auto single_value = column_type->createColumn();
+        /// The DecimalField must carry the target column's own decimal width: ColumnDecimal<T>::insert
+        /// does Field::safeGet<T>(), which checks the Field type tag. Decimal64/DateTime64/Time64 all
+        /// share tag Decimal64, but Decimal32/Decimal128/Decimal256 have distinct tags, so hard-coding
+        /// DecimalField<Decimal64> throws BAD_GET for those widths.
+        const WhichDataType which(inner_type);
+        if (which.isDecimal32())
+            single_value->insert(DecimalField<Decimal32>(static_cast<Int32>(ticks), *scale));
+        else if (which.isDecimal128())
+            single_value->insert(DecimalField<Decimal128>(Int128(ticks), *scale));
+        else if (which.isDecimal256())
+            single_value->insert(DecimalField<Decimal256>(Int256(ticks), *scale));
+        else
+            single_value->insert(DecimalField<Decimal64>(ticks, *scale));
+        return ColumnConst::create(std::move(single_value), num_rows)->convertToFullColumnIfConst();
+    }
+
+    return column_type->createColumnConst(num_rows, convertFieldToType(value, *column_type))->convertToFullColumnIfConst();
 }
 
 namespace
@@ -550,6 +588,41 @@ Chunk StorageObjectStorageSource::generate()
             chassert(object_metadata);
 
             const auto path = getUniqueStoragePathIdentifier(*configuration, *object_info, false);
+
+#if USE_AVRO
+            /// Backfill Iceberg identity-partition columns whose value lives only in the manifest
+            /// partition tuple and is absent from the data file (Hive-style / Fabric-virtualized
+            /// Iceberg, issue #110216). The column is part of the schema, so the reader already emits
+            /// it (NULL-filled); here we overwrite it in place with the per-file partition value.
+            if (const auto * iceberg_info = dynamic_cast<const IcebergDataObjectInfo *>(object_info.get());
+                iceberg_info && !iceberg_info->info.identity_partition_columns.empty())
+            {
+                const auto & requested_columns = read_from_format_info.requested_columns;
+                for (const auto & [column_name, value] : iceberg_info->info.identity_partition_columns)
+                {
+                    size_t pos = 0;
+                    bool found = false;
+                    for (const auto & requested_column : requested_columns)
+                    {
+                        if (requested_column.name == column_name)
+                        {
+                            found = true;
+                            break;
+                        }
+                        ++pos;
+                    }
+                    if (!found)
+                        continue;
+
+                    const auto & column_type = std::next(requested_columns.begin(), pos)->type;
+
+                    ColumnPtr full_column = backfillIdentityPartitionColumn(column_type, value, num_rows);
+                    auto columns = chunk.detachColumns();
+                    columns[pos] = std::move(full_column);
+                    chunk.setColumns(std::move(columns), num_rows);
+                }
+            }
+#endif
 
             /// The order is important, hive partition columns must be added before virtual columns
             /// because they are part of the schema

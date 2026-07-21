@@ -11,6 +11,7 @@
 #include <Poco/JSON/Array.h>
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Stringifier.h>
+#include <Poco/String.h>
 #include <Common/Exception.h>
 #include <Common/ThreadPool.h>
 
@@ -333,6 +334,31 @@ ObjectInfoPtr IcebergIterator::next(size_t)
                 manifest_file_entry,
                 persistent_components.path_resolver.resolve(manifest_file_entry->parsed_entry->file_path_key),
                 table_state_snapshot->schema_id);
+
+        /// Backfill identity-partition columns whose value lives only in the manifest partition tuple
+        /// and is absent from the data file (Hive-style / Fabric-virtualized Iceberg, issue #110216).
+        /// The partition tuple is positionally aligned with the manifest partition spec; for every
+        /// `identity` transform we map the source field id to its name in the current read schema and
+        /// carry the value so the read source can populate the otherwise NULL-filled output column.
+        const auto & partition_spec = manifest_file_entry->common_partition_specification;
+        const auto & partition_values = manifest_file_entry->parsed_entry->partition_key_value;
+        if (partition_spec && partition_spec->size() == partition_values.size())
+        {
+            for (size_t i = 0; i < partition_spec->size(); ++i)
+            {
+                const auto & spec_entry = (*partition_spec)[i];
+                if (Poco::toLower(spec_entry.transform_name) != "identity")
+                    continue;
+                if (partition_values[i].isNull())
+                    continue;
+                auto name_and_type = persistent_components.schema_processor->tryGetFieldCharacteristics(
+                    table_state_snapshot->schema_id, spec_entry.source_id);
+                if (!name_and_type.has_value())
+                    continue;
+                object_info->info.identity_partition_columns.emplace_back(name_and_type->name, partition_values[i]);
+            }
+        }
+
         for (const auto & position_delete :
              defineDeletesSpan(manifest_file_entry, position_deletes_files, /* is_equality_delete */ false, logger))
         {

@@ -32,6 +32,12 @@ struct IcebergObjectSerializableInfo
     std::optional<Int64> record_count;
     std::optional<Int64> file_size_in_bytes;
 
+    /// Identity-partition columns whose value lives only in the manifest partition tuple and is absent
+    /// from the data file (Hive-style / Fabric-virtualized Iceberg). Maps current-schema column name to
+    /// its per-file identity-partition value; the read source overwrites the otherwise NULL-filled
+    /// output column with this constant. See issue #110216.
+    std::vector<std::pair<String, Field>> identity_partition_columns;
+
     void serializeForClusterFunctionProtocol(WriteBuffer & out, size_t protocol_version) const;
     void deserializeForClusterFunctionProtocol(ReadBuffer & in, size_t protocol_version);
 

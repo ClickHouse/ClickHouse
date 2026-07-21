@@ -142,7 +142,10 @@ public:
 
     /// Returns which columns supports PREWHERE, or empty std::nullopt if all columns is supported.
     /// This is needed for engines whose aggregates data from multiple tables, like Merge.
-    virtual std::optional<NameSet> supportedPrewhereColumns() const { return std::nullopt; }
+    /// `query_snapshot` is the query's own pinned StorageSnapshot: engines deriving the answer from
+    /// query-time metadata (Iceberg identity-partition exclusion) must use it, not a fresh re-fetch,
+    /// else a concurrent commit between analysis and this call reopens the pushdown race (#110216).
+    virtual std::optional<NameSet> supportedPrewhereColumns(const StorageSnapshotPtr & /*query_snapshot*/) const { return std::nullopt; }
 
     /// Returns true if the storage supports optimization of moving conditions to PREWHERE section.
     virtual bool canMoveConditionsToPrewhere() const { return supportsPrewhere(); }

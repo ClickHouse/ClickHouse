@@ -133,7 +133,7 @@ public:
     bool supportsSubcolumns() const override { return getTargetTable()->supportsSubcolumns(); }
     bool supportsColumnsWithDynamicStructure() const override { return getTargetTable()->supportsColumnsWithDynamicStructure(); }
     bool supportsPrewhere() const override { return getTargetTable()->supportsPrewhere(); }
-    std::optional<NameSet> supportedPrewhereColumns() const override { return getTargetTable()->supportedPrewhereColumns(); }
+    std::optional<NameSet> supportedPrewhereColumns(const StorageSnapshotPtr & query_snapshot) const override { return getTargetTable()->supportedPrewhereColumns(query_snapshot); }
     bool canMoveConditionsToPrewhere() const override
     {
         auto target = tryGetTargetTable();

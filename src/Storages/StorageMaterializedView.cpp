@@ -1059,11 +1059,15 @@ void StorageMaterializedView::updateTargetTableId(std::optional<String> database
         target_table_id.table_name = *std::move(table_name);
 }
 
-std::optional<NameSet> StorageMaterializedView::supportedPrewhereColumns() const
+std::optional<NameSet> StorageMaterializedView::supportedPrewhereColumns(const StorageSnapshotPtr &) const
 {
     auto table = tryGetTargetTable();
     if (!table)
         return std::nullopt;
+
+    /// Refresh the target's data-lake metadata first (mirrors readImpl), else PREWHERE support is
+    /// decided against stale target metadata and can reopen the pushdown bug. No-op for non-data-lake.
+    table->updateExternalDynamicMetadataIfExists(getContext());
 
     auto view_metadata = getInMemoryMetadataPtr(getContext(), false);
     auto view_columns = view_metadata->getColumns().getAll();
@@ -1076,6 +1080,13 @@ std::optional<NameSet> StorageMaterializedView::supportedPrewhereColumns() const
         if (target_column && target_column->type->equals(*type))
             supported_columns.insert(name);
     }
+
+    /// Intersect with the target's own PREWHERE-safe set: same-name/same-type matching alone would
+    /// re-admit a column the target excludes (e.g. an Iceberg identity-partition column). See #110216.
+    auto target_supported = table->supportedPrewhereColumns(
+        table->getStorageSnapshot(target_table_metadata, getContext()));
+    if (target_supported)
+        std::erase_if(supported_columns, [&](const auto & name) { return !target_supported->contains(name); });
 
     return supported_columns;
 }

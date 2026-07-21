@@ -25,9 +25,13 @@ public:
     bool supportsFinal() const override { return true; }
     bool supportsPrewhere() const override { return true; }
 
-    std::optional<NameSet> supportedPrewhereColumns() const override
+    std::optional<NameSet> supportedPrewhereColumns(const StorageSnapshotPtr &) const override
     {
-        return original_storage_snapshot ? original_storage_snapshot->storage.supportedPrewhereColumns() : std::nullopt;
+        /// Forward the pinned snapshot of the underlying storage so identity-partition exclusion
+        /// (Iceberg) is derived from the query's own metadata, not a fresh re-fetch. See #110216.
+        return original_storage_snapshot
+            ? original_storage_snapshot->storage.supportedPrewhereColumns(original_storage_snapshot)
+            : std::nullopt;
     }
 
     bool supportsSubcolumns() const override { return true; }

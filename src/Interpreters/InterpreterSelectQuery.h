@@ -198,6 +198,13 @@ private:
     void executeExtremes(QueryPlan & query_plan);
     void executeSubqueriesInSetsAndJoins(QueryPlan & query_plan);
     bool autoFinalOnQuery(ASTSelectQuery & select_query);
+    /// Whether the row-level security filter may be pushed into the in-source (PREWHERE) path.
+    /// True only when the storage supports PREWHERE AND every column the policy references is
+    /// reported as PREWHERE-safe by supportedPrewhereColumns(). Iceberg identity-partition
+    /// columns absent from the data files are backfilled AFTER the in-source filter, so a policy
+    /// on such a column must stay above the source; otherwise it evaluates against synthetic NULLs
+    /// and enforces the wrong visibility. Mirrors the gate in PlannerJoinTree. See issue #110216.
+    bool canPushRowPolicyToSource() const;
     std::optional<UInt64> getTrivialCount(UInt64 allow_experimental_parallel_reading_from_replicas);
     /// Check if we can limit block size to read based on LIMIT clause
     UInt64 maxBlockSizeByLimit() const;

@@ -66,7 +66,8 @@ IcebergDataObjectInfo::IcebergDataObjectInfo(
           /* position_deletes_objects */ {},
           /* equality_deletes_objects */ {},
           data_manifest_file_entry_->parsed_entry->record_count,
-          data_manifest_file_entry_->parsed_entry->file_size_in_bytes}
+          data_manifest_file_entry_->parsed_entry->file_size_in_bytes,
+          /* identity_partition_columns */ {}}
 {
 }
 
@@ -188,6 +189,28 @@ void IcebergObjectSerializableInfo::serializeForClusterFunctionProtocol(WriteBuf
             writeVarUInt(0, out);
         }
     }
+    if (protocol_version >= DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_ICEBERG_IDENTITY_PARTITION_COLUMNS)
+    {
+        writeVarUInt(identity_partition_columns.size(), out);
+        for (const auto & [name, value] : identity_partition_columns)
+        {
+            writeStringBinary(name, out);
+            writeFieldBinary(value, out);
+        }
+    }
+    else if (!identity_partition_columns.empty())
+    {
+        /// Fail closed: these columns are absent from the data file and must be backfilled from this
+        /// payload. An older worker that cannot carry them would read the column as NULL from the file
+        /// and silently return wrong rows for SELECT, WHERE or GROUP BY instead of failing. Mirrors the
+        /// read_source_index handling in ClusterFunctionReadTaskResponse::serialize. See issue #110216.
+        throw Exception(
+            ErrorCodes::UNKNOWN_PROTOCOL,
+            "Worker protocol version {} cannot carry Iceberg `identity_partition_columns`, which are "
+            "required to backfill partition columns absent from the data file (minimum protocol version: {})",
+            protocol_version,
+            DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_ICEBERG_IDENTITY_PARTITION_COLUMNS);
+    }
 }
 
 void IcebergObjectSerializableInfo::deserializeForClusterFunctionProtocol(ReadBuffer & in, size_t protocol_version)
@@ -273,6 +296,20 @@ void IcebergObjectSerializableInfo::deserializeForClusterFunctionProtocol(ReadBu
         else
         {
             file_size_in_bytes = std::nullopt;
+        }
+    }
+    if (protocol_version >= DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_ICEBERG_IDENTITY_PARTITION_COLUMNS)
+    {
+        size_t identity_partition_columns_size = 0;
+        readVarUInt(identity_partition_columns_size, in);
+        identity_partition_columns.clear();
+        identity_partition_columns.reserve(identity_partition_columns_size);
+        for (size_t i = 0; i < identity_partition_columns_size; ++i)
+        {
+            String name;
+            readStringBinary(name, in);
+            Field value = readFieldBinary(in);
+            identity_partition_columns.emplace_back(std::move(name), std::move(value));
         }
     }
 }

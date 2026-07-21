@@ -275,6 +275,17 @@ public:
         return current_metadata.get();
     }
 
+    bool hasInitializedMetadata() const override { return current_metadata != nullptr; }
+
+    NamesAndTypesList getIdentityPartitionColumns(
+        ContextPtr context, const std::optional<DataLakeTableStateSnapshot> & pinned_state) const override
+    {
+        /// Callable during query analysis, where metadata may not be initialized yet. Do not force it.
+        if (!current_metadata)
+            return {};
+        return current_metadata->getIdentityPartitionColumns(context, pinned_state);
+    }
+
     bool supportsFileIterator() const override { return true; }
 
     bool supportsWrites() const override

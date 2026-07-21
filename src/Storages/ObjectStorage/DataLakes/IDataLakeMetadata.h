@@ -83,6 +83,12 @@ public:
     /// to keep the columns stored in the in-memory metadata in sync with the datalake.
     virtual bool shouldReloadSchemaForConsistency(ContextPtr) const { return false; }
 
+    /// Columns backfilled from the manifest partition tuple (identity partitions) that may be absent
+    /// from the data files and must be excluded from PREWHERE. Derived from `pinned_state` when set,
+    /// so a concurrent commit cannot reopen the pushdown race; null falls back to latest (#110216).
+    virtual NamesAndTypesList getIdentityPartitionColumns(
+        ContextPtr, const std::optional<DataLakeTableStateSnapshot> & /*pinned_state*/) const { return {}; }
+
     /// Read schema is the schema of actual data files,
     /// which can differ from table schema from data lake metadata.
     /// Return nothing if read schema is the same as table schema.

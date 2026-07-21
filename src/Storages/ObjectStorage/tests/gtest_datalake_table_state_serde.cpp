@@ -4,9 +4,16 @@
 #include <Storages/ObjectStorage/DataLakes/DataLakeTableStateSnapshot.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergDataObjectInfo.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergTableStateSnapshot.h>
+#include <Core/Field.h>
 #include <Core/ProtocolDefines.h>
+#include <Common/Exception.h>
 
 using namespace DB;
+
+namespace DB::ErrorCodes
+{
+extern const int UNKNOWN_PROTOCOL;
+}
 
 namespace
 {
@@ -154,5 +161,68 @@ TEST(DatalakeStateSerde, IcebergObjectSerializableInfoNulloptFileStats)
     ASSERT_TRUE(read_buffer.eof());
     ASSERT_FALSE(deserialized.record_count.has_value());
     ASSERT_FALSE(deserialized.file_size_in_bytes.has_value());
+}
+
+
+TEST(DatalakeStateSerde, IcebergObjectSerializableInfoIdentityPartitionColumnsRoundTrip)
+{
+    Iceberg::IcebergObjectSerializableInfo info;
+    info.data_object_file_path_key = DB::Iceberg::IcebergPathFromMetadata::deserialize("s3://bucket/path/to/file.parquet");
+    info.underlying_format_read_schema_id = 1;
+    info.schema_id_relevant_to_iterator = 1;
+    info.sequence_number = 0;
+    info.file_format = "PARQUET";
+    info.identity_partition_columns = {{"region", Field("East")}, {"tier", Field(Int64(1))}};
+
+    String str;
+    {
+        WriteBufferFromString write_buffer{str};
+        info.serializeForClusterFunctionProtocol(write_buffer, DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION);
+    }
+    ReadBufferFromMemory read_buffer(str.data(), str.size());
+    Iceberg::IcebergObjectSerializableInfo deserialized;
+    deserialized.deserializeForClusterFunctionProtocol(read_buffer, DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION);
+
+    ASSERT_TRUE(read_buffer.eof());
+    ASSERT_EQ(deserialized.identity_partition_columns.size(), 2);
+    ASSERT_EQ(deserialized.identity_partition_columns[0].first, "region");
+    ASSERT_EQ(deserialized.identity_partition_columns[0].second, Field("East"));
+    ASSERT_EQ(deserialized.identity_partition_columns[1].first, "tier");
+    ASSERT_EQ(deserialized.identity_partition_columns[1].second, Field(Int64(1)));
+}
+
+
+TEST(DatalakeStateSerde, IcebergObjectSerializableInfoIdentityPartitionColumnsFailClosedOnOldProtocol)
+{
+    /// Finding D: a worker that predates DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_ICEBERG_IDENTITY_PARTITION_COLUMNS
+    /// cannot carry these columns. Silently omitting them would make that worker read the partition
+    /// column as NULL from the data file and return wrong rows. Serialization must fail closed instead.
+    Iceberg::IcebergObjectSerializableInfo info;
+    info.data_object_file_path_key = DB::Iceberg::IcebergPathFromMetadata::deserialize("s3://bucket/path/to/file.parquet");
+    info.underlying_format_read_schema_id = 1;
+    info.schema_id_relevant_to_iterator = 1;
+    info.sequence_number = 0;
+    info.file_format = "PARQUET";
+    info.identity_partition_columns = {{"region", Field("East")}};
+
+    String str;
+    WriteBufferFromString write_buffer{str};
+    try
+    {
+        info.serializeForClusterFunctionProtocol(write_buffer, DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_READ_SOURCE_INDEX);
+        FAIL() << "Expected UNKNOWN_PROTOCOL exception";
+    }
+    catch (const DB::Exception & e)
+    {
+        ASSERT_EQ(e.code(), ErrorCodes::UNKNOWN_PROTOCOL);
+    }
+
+    /// With no identity-partition columns the same old protocol version serializes fine.
+    Iceberg::IcebergObjectSerializableInfo empty_info;
+    empty_info.data_object_file_path_key = DB::Iceberg::IcebergPathFromMetadata::deserialize("s3://bucket/path/to/file.parquet");
+    empty_info.file_format = "PARQUET";
+    String str2;
+    WriteBufferFromString write_buffer2{str2};
+    ASSERT_NO_THROW(empty_info.serializeForClusterFunctionProtocol(write_buffer2, DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_READ_SOURCE_INDEX));
 }
 

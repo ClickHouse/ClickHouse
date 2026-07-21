@@ -335,7 +335,7 @@ bool StorageMerge::canMoveConditionsToPrewhere() const
     return traverseTablesUntil([](const auto & table) { return !table->canMoveConditionsToPrewhere(); }) == nullptr;
 }
 
-std::optional<NameSet> StorageMerge::supportedPrewhereColumns() const
+std::optional<NameSet> StorageMerge::supportedPrewhereColumns(const StorageSnapshotPtr &) const
 {
     bool supports_prewhere = true;
 
@@ -372,6 +372,17 @@ std::optional<NameSet> StorageMerge::supportedPrewhereColumns() const
             {
                 supported_columns.erase(column.name);
             }
+        }
+
+        /// Intersect with the child's own PREWHERE-safe set: ReadFromMerge forwards prewhere_info
+        /// straight into the child read, so same-name/same-type matching alone would re-admit a column
+        /// the child excludes (e.g. an Iceberg identity-partition column). nullopt adds no exclusion.
+        /// See issue #110216.
+        const auto child_supported = table->supportedPrewhereColumns(
+            table->getStorageSnapshot(table_metadata_ptr, getContext()));
+        if (child_supported)
+        {
+            std::erase_if(supported_columns, [&](const auto & name) { return !child_supported->contains(name); });
         }
     });
 

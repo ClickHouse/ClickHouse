@@ -1239,7 +1239,7 @@ bool StorageFile::canMoveConditionsToPrewhere() const
     return supports_prewhere;
 }
 
-std::optional<NameSet> StorageFile::supportedPrewhereColumns() const
+std::optional<NameSet> StorageFile::supportedPrewhereColumns(const StorageSnapshotPtr &) const
 {
     /// Currently don't support prewhere for virtual columns, columns with default expressions,
     /// and columns taken from file path (hive partitioning).

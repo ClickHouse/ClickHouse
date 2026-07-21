@@ -56,7 +56,7 @@ public:
     bool supportsOptimizationToSubcolumns() const override;
     bool supportsColumnsWithDynamicStructure() const override { return true; }
     bool supportsPrewhere() const override;
-    std::optional<NameSet> supportedPrewhereColumns() const override;
+    std::optional<NameSet> supportedPrewhereColumns(const StorageSnapshotPtr & query_snapshot) const override;
 
     bool canMoveConditionsToPrewhere() const override;
 

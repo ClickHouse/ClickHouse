@@ -386,10 +386,33 @@ bool StorageObjectStorage::canMoveConditionsToPrewhere() const
     return supports_prewhere;
 }
 
-std::optional<NameSet> StorageObjectStorage::supportedPrewhereColumns() const
+std::optional<NameSet> StorageObjectStorage::supportedPrewhereColumns(const StorageSnapshotPtr & query_snapshot) const
 {
-    auto metadata_snapshot = getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false);
-    return metadata_snapshot->getColumnsWithoutDefaultExpressions(/*exclude=*/ hive_partition_columns_to_read_from_file_path);
+    auto query_context = CurrentThread::tryGetQueryContext();
+
+    /// Prefer the query's pinned snapshot: a fresh metadata re-fetch could observe a concurrent
+    /// commit and reopen the PREWHERE-pushdown race (#110216).
+    StorageMetadataHandle fetched_metadata;
+    if (!query_snapshot)
+        fetched_metadata = getInMemoryMetadataPtr(query_context, false);
+    StorageMetadataPtr metadata_snapshot = query_snapshot ? query_snapshot->metadata : StorageMetadataPtr(fetched_metadata);
+
+    /// Exclude Iceberg identity-partition columns: their value can be absent from the data files and is
+    /// backfilled from the manifest after the reader, so PREWHERE would read NULL and drop rows (#110216).
+    NamesAndTypesList exclude = hive_partition_columns_to_read_from_file_path;
+    if (configuration->isDataLakeConfiguration())
+    {
+        /// Fail closed when metadata is not resolved yet (cold table via an MV / Merge wrapper): an empty
+        /// set keeps nothing PREWHERE-safe, so no filter is pushed below the backfill until metadata warms.
+        if (!configuration->hasInitializedMetadata())
+            return NameSet{};
+
+        auto identity_partition_columns
+            = configuration->getIdentityPartitionColumns(query_context, metadata_snapshot->datalake_table_state);
+        exclude.splice(exclude.end(), std::move(identity_partition_columns));
+    }
+
+    return metadata_snapshot->getColumnsWithoutDefaultExpressions(/*exclude=*/ exclude);
 }
 
 IStorage::ColumnSizeByName StorageObjectStorage::getColumnSizes() const

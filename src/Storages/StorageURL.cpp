@@ -1144,7 +1144,7 @@ bool IStorageURLBase::canMoveConditionsToPrewhere() const
     return supports_prewhere;
 }
 
-std::optional<NameSet> IStorageURLBase::supportedPrewhereColumns() const
+std::optional<NameSet> IStorageURLBase::supportedPrewhereColumns(const StorageSnapshotPtr &) const
 {
     auto metadata_snapshot = getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false);
     return metadata_snapshot->getColumnsWithoutDefaultExpressions(/*exclude=*/ hive_partition_columns_to_read_from_file_path);
@@ -2275,7 +2275,7 @@ public:
     /// columns with default expressions and hive-partition columns. Otherwise `ENGINE = URL('file://...')`
     /// could accept explicit `PREWHERE` or auto-move conditions onto columns not materialized at
     /// `PREWHERE` time.
-    std::optional<NameSet> supportedPrewhereColumns() const override { return nested->supportedPrewhereColumns(); }
+    std::optional<NameSet> supportedPrewhereColumns(const StorageSnapshotPtr & query_snapshot) const override { return nested->supportedPrewhereColumns(query_snapshot); }
     bool canMoveConditionsToPrewhere() const override { return nested->canMoveConditionsToPrewhere(); }
 
     /// Forward the delegate's trivial-count contract. `StorageProxy` does not forward

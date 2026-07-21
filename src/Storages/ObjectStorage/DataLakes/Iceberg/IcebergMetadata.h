@@ -14,6 +14,8 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/SchemaProcessor.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Snapshot.h>
 
+#include <map>
+#include <mutex>
 #include <optional>
 #include <base/defines.h>
 
@@ -76,6 +78,9 @@ public:
     std::optional<DataLakeTableStateSnapshot> getTableStateSnapshot(ContextPtr local_context) const override;
     std::unique_ptr<StorageInMemoryMetadata> buildStorageMetadataFromState(const DataLakeTableStateSnapshot &, ContextPtr local_context) const override;
     bool shouldReloadSchemaForConsistency(ContextPtr local_context) const override;
+
+    NamesAndTypesList getIdentityPartitionColumns(
+        ContextPtr local_context, const std::optional<DataLakeTableStateSnapshot> & pinned_state) const override;
 
     bool operator==(const IDataLakeMetadata & /*other*/) const override { return false; }
 
@@ -212,6 +217,10 @@ private:
     getStateImpl(const ContextPtr & local_context, Poco::JSON::Object::Ptr metadata_object) const;
     std::pair<Iceberg::IcebergDataSnapshotPtr, Iceberg::TableStateSnapshot>
     getState(const ContextPtr & local_context, const String & metadata_path, Int32 metadata_version) const;
+
+    /// Identity-partition source columns per metadata version, parsed once from the metadata object
+    /// in getState and kept in the class (so getIdentityPartitionColumns is a lookup, not a re-fetch).
+    void cacheIdentityPartitionColumns(Int32 metadata_version, Int32 schema_id, const Poco::JSON::Object::Ptr & metadata_object) const;
     Iceberg::IcebergDataSnapshotPtr
     getRelevantDataSnapshotFromTableStateSnapshot(Iceberg::TableStateSnapshot table_state_snapshot, ContextPtr local_context) const;
     StorageObjectStorageConfigurationPtr getConfiguration() const;
@@ -219,6 +228,12 @@ private:
     LoggerPtr log;
     const ObjectStoragePtr object_storage;
     const DB::Iceberg::PersistentTableComponents persistent_components;
+
+    /// Identity-partition source columns keyed by metadata version. Collected across ALL partition
+    /// specs (not only the default one) when getState parses the metadata object, so the PREWHERE
+    /// exclusion is a pure in-memory lookup and never re-reads the metadata file. See issue #110216.
+    mutable std::mutex identity_partition_columns_mutex;
+    mutable std::map<Int32, NamesAndTypesList> identity_partition_columns_by_version;
     const DataLakeStorageSettings & data_lake_settings;
     const String write_format;
     BackgroundSchedulePoolTaskHolder background_metadata_prefetch_task;

@@ -876,7 +876,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
                 SelectQueryInfo current_info;
                 current_info.query = query_ptr;
                 current_info.syntax_analyzer_result = syntax_analyzer_result;
-                const auto & supported_prewhere_columns = storage->supportedPrewhereColumns();
+                const auto & supported_prewhere_columns = storage->supportedPrewhereColumns(storage_snapshot);
 
                 RangesInDataParts parts_for_estimator;
                 if (storage_snapshot->data)
@@ -1924,9 +1924,11 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
 
         if (expressions.first_stage)
         {
-            // If there is a storage that supports prewhere, this will always be nullptr
-            // Thus, we don't actually need to check if projection is active.
-            if (expressions.row_policy_info && !(!input_pipe && storage && storage->supportsPrewhere()))
+            // Emit the outer row-level-security FilterStep whenever the policy is NOT pushed into
+            // the in-source path. Must mirror canPushRowPolicyToSource() (used to populate
+            // query_info.row_level_filter) so a policy kept out of PREWHERE still runs above the
+            // source. See issue #110216.
+            if (expressions.row_policy_info && !canPushRowPolicyToSource())
             {
                 auto row_level_security_step = std::make_unique<FilterStep>(
                     query_plan.getCurrentHeader(),
@@ -2451,7 +2453,11 @@ bool InterpreterSelectQuery::shouldMoveToPrewhere() const
 
 void InterpreterSelectQuery::addPrewhereAliasActions()
 {
-    auto & row_level_filter = analysis_result.row_policy_info;
+    /// Only treat the row policy as an in-source (PREWHERE) filter when it can actually be pushed
+    /// to source. Otherwise its columns must not go through PREWHERE column validation/aliasing
+    /// below - e.g. an Iceberg identity-partition column reported as PREWHERE-unsafe would raise
+    /// ILLEGAL_PREWHERE - and the policy instead runs above the source. See issue #110216.
+    FilterDAGInfoPtr row_level_filter = canPushRowPolicyToSource() ? analysis_result.row_policy_info : nullptr;
     auto & prewhere_info = analysis_result.prewhere_info;
     auto & columns_to_remove_after_prewhere = analysis_result.columns_to_remove_after_prewhere;
 
@@ -2597,7 +2603,7 @@ void InterpreterSelectQuery::addPrewhereAliasActions()
         }
     }
 
-    const auto & supported_prewhere_columns = storage->supportedPrewhereColumns();
+    const auto & supported_prewhere_columns = storage->supportedPrewhereColumns(storage_snapshot);
     if (supported_prewhere_columns.has_value())
     {
         NameSet required_columns_from_prewhere = get_prewhere_columns();
@@ -2856,7 +2862,7 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
         if (max_streams == 0)
             max_streams = 1;
 
-        if (analysis_result.row_policy_info && (!input_pipe && storage && storage->supportsPrewhere()))
+        if (analysis_result.row_policy_info && canPushRowPolicyToSource())
             query_info.row_level_filter = analysis_result.row_policy_info;
 
         if (analysis_result.prewhere_info)
@@ -3747,6 +3753,27 @@ bool InterpreterSelectQuery::autoFinalOnQuery(ASTSelectQuery & query)
     bool is_query_already_final = query.final();
 
     return is_auto_final_setting_on && !is_query_already_final && is_final_supported;
+}
+
+bool InterpreterSelectQuery::canPushRowPolicyToSource() const
+{
+    if (input_pipe || !storage || !storage->supportsPrewhere())
+        return false;
+
+    /// Keep the row policy above the source when it references a column the storage does not
+    /// report as PREWHERE-safe (e.g. an Iceberg identity-partition column backfilled after the
+    /// in-source filter). Pass the query's own pinned snapshot so the exclusion is derived from
+    /// the metadata fixed at analysis time. See issue #110216 and the same gate in PlannerJoinTree.
+    if (analysis_result.row_policy_info)
+    {
+        if (auto supported_prewhere_columns = storage->supportedPrewhereColumns(storage_snapshot))
+        {
+            for (const auto & column : analysis_result.row_policy_info->actions.getRequiredColumnsNames())
+                if (!supported_prewhere_columns->contains(column))
+                    return false;
+        }
+    }
+    return true;
 }
 
 void InterpreterSelectQuery::initSettings()
