@@ -40,9 +40,7 @@ public:
         if (isTopNSort(*step))
             return false;
         /// Distribution-passthrough steps handled by `DistributionPassthrough`.
-        if (typeid_cast<const ExpressionStep *>(step) != nullptr
-            || typeid_cast<const FilterStep *>(step) != nullptr
-            || typeid_cast<const BuildRuntimeFilterStep *>(step) != nullptr)
+        if (isDistributionPassthroughStep(*step))
             return false;
         return true;
     }

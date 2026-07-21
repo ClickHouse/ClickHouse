@@ -1,4 +1,7 @@
 #include <Processors/QueryPlan/Optimizations/Cascades/Rule.h>
+#include <Processors/QueryPlan/BuildRuntimeFilterStep.h>
+#include <Processors/QueryPlan/FilterStep.h>
+#include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/GroupExpression.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Memo.h>
 #include <Processors/QueryPlan/SortingStep.h>
@@ -10,6 +13,13 @@ bool isTopNSort(const IQueryPlanStep & step)
 {
     const auto * sorting_step = typeid_cast<const SortingStep *>(&step);
     return sorting_step != nullptr && sorting_step->getType() == SortingStep::Type::Full && sorting_step->getLimit() > 0;
+}
+
+bool isDistributionPassthroughStep(const IQueryPlanStep & step)
+{
+    return typeid_cast<const ExpressionStep *>(&step) != nullptr
+        || typeid_cast<const FilterStep *>(&step) != nullptr
+        || typeid_cast<const BuildRuntimeFilterStep *>(&step) != nullptr;
 }
 
 void IOptimizationRule::addPhysicalToMemo(GroupExpressionPtr expression, const ExpressionProperties & required_properties,

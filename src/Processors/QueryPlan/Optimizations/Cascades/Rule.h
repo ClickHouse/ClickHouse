@@ -22,6 +22,12 @@ class Memo;
 /// input; FinishSorting/MergingSorted need ordered input, which no rule provides.
 bool isTopNSort(const IQueryPlanStep & step);
 
+/// Stateless per-row steps that can run on any data partition independently. Implemented by
+/// `DistributionPassthrough` and therefore excluded from `DefaultImplementation` - both go
+/// through this one predicate so a new passthrough step type cannot end up with two
+/// implementation rules or none.
+bool isDistributionPassthroughStep(const IQueryPlanStep & step);
+
 class IOptimizationRule
 {
 public:

@@ -102,15 +102,6 @@ static const ActionsDAG * tryGetActionsDAG(const IQueryPlanStep * step)
     return nullptr;
 }
 
-/// Stateless per-row steps that can run on any data partition independently.
-static bool isDistributionPassthrough(const IQueryPlanStep * step)
-{
-    return typeid_cast<const ExpressionStep *>(step) != nullptr
-        || typeid_cast<const FilterStep *>(step) != nullptr
-        || typeid_cast<const BuildRuntimeFilterStep *>(step) != nullptr;
-}
-
-
 /// Implementation rule for stateless per-row steps. Propagates distribution to the
 /// input and creates speculative multi-node variants at each candidate node count.
 /// Also creates sorted passthrough variants that delegate sorting to the child group,
@@ -122,7 +113,7 @@ public:
 
     bool checkPattern(GroupExpressionPtr expression, const ExpressionProperties & /*required_properties*/, const Memo & /*memo*/) const override
     {
-        return isDistributionPassthrough(expression->getQueryPlanStep());
+        return isDistributionPassthroughStep(*expression->getQueryPlanStep());
     }
 
     Promise getPromise() const override { return 1; }
