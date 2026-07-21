@@ -365,8 +365,7 @@ AlterDropPartitionExecutor::discoverTargetFilePaths(const SnapshotState & state,
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Manifest file entry is not parsed");
             if (partitionEquals(entry->parsed_entry->partition_key_value, target_partition))
                 throw Exception(
-                    ErrorCodes::NOT_IMPLEMENTED,
-                    "DROP PARTITION is not supported when the selected partition has equality deletes");
+                    ErrorCodes::NOT_IMPLEMENTED, "DROP PARTITION is not supported when the selected partition has equality deletes");
         }
     }
 
@@ -386,9 +385,8 @@ AlterDropPartitionExecutor::buildDropPlan(const SnapshotState & state, const Tar
     UInt64 removed_position_deletes = 0;
     UInt64 removed_position_delete_files = 0;
 
-    auto process_entries = [&](const std::vector<ProcessedManifestFileEntryPtr> & entries,
-                               size_t & entries_to_keep,
-                               size_t & entries_to_remove)
+    auto process_entries
+        = [&](const std::vector<ProcessedManifestFileEntryPtr> & entries, size_t & entries_to_keep, size_t & entries_to_remove)
     {
         for (const auto & entry : entries)
         {
@@ -433,10 +431,7 @@ AlterDropPartitionExecutor::buildDropPlan(const SnapshotState & state, const Tar
         size_t entries_to_remove = 0;
 
         process_entries(handle.getFilesWithoutDeleted(FileContentType::DATA), entries_to_keep, entries_to_remove);
-        process_entries(
-            handle.getFilesWithoutDeleted(FileContentType::POSITION_DELETE),
-            entries_to_keep,
-            entries_to_remove);
+        process_entries(handle.getFilesWithoutDeleted(FileContentType::POSITION_DELETE), entries_to_keep, entries_to_remove);
 
         if (entries_to_remove == 0)
             continue;
