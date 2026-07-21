@@ -349,7 +349,11 @@ def generate_invalid_property_value_types() -> None:
 
 
 def generate_invalid_integer_fields() -> None:
-    """BlobMetadata integer fields must be JSON integers, not floats or strings."""
+    """BlobMetadata integer fields must be JSON integers, not floats, strings, or booleans.
+
+    Poco reports JSON booleans as integers (`std::numeric_limits<bool>::is_integer`), so
+    boolean cases must be rejected explicitly in the reader.
+    """
     footer_json = footer_json_for_blob(BLOB_PLACEHOLDER)
     base = json.loads(footer_json.decode("utf-8"))
     cases = {
@@ -359,6 +363,9 @@ def generate_invalid_integer_fields() -> None:
         "float_sequence_number.puffin": ("sequence-number", 1.2),
         "float_fields_element.puffin": ("fields", [1.9]),
         "string_offset.puffin": ("offset", "4"),
+        "bool_offset.puffin": ("offset", True),
+        "bool_snapshot_id.puffin": ("snapshot-id", False),
+        "bool_fields_element.puffin": ("fields", [True]),
         "fields_element_out_of_int32_range.puffin": ("fields", [2**40]),
         # Poco stores integers that fail signed Int64 parse as UInt64 (2**63 wraps in tryParse64).
         "offset_out_of_int64_range.puffin": ("offset", 2**64 - 1),

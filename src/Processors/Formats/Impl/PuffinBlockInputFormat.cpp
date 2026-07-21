@@ -200,6 +200,12 @@ void requireBlobMetadataField(const Poco::JSON::Object::Ptr & blob_obj, const ch
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Puffin blob {}: missing required field '{}'", blob_index, field_name);
 }
 
+/// Poco reports JSON booleans as integers (`std::numeric_limits<bool>::is_integer`).
+bool isJSONInteger(const Poco::Dynamic::Var & value)
+{
+    return value.isInteger() && !value.isBoolean();
+}
+
 /// Poco stores JSON integers that do not fit signed Int64 as unsigned; convert<Int64>() would throw RangeException.
 std::optional<Int64> tryJSONIntegerAsInt64(const Poco::Dynamic::Var & value)
 {
@@ -218,7 +224,7 @@ Int64 requireBlobMetadataInt64(const Poco::JSON::Object::Ptr & blob_obj, const c
 {
     requireBlobMetadataField(blob_obj, field_name, blob_index);
     const Poco::Dynamic::Var & value = blob_obj->get(field_name);
-    if (!value.isInteger())
+    if (!isJSONInteger(value))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Puffin blob {}: field '{}' must be an integer", blob_index, field_name);
 
     auto as_int64 = tryJSONIntegerAsInt64(value);
@@ -229,7 +235,7 @@ Int64 requireBlobMetadataInt64(const Poco::JSON::Object::Ptr & blob_obj, const c
 
 Int32 requireBlobMetadataFieldsElementInt32(const Poco::Dynamic::Var & value, size_t blob_index, size_t field_index)
 {
-    if (!value.isInteger())
+    if (!isJSONInteger(value))
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS, "Puffin blob {}: fields[{}] must be an integer", blob_index, field_index);
 

@@ -20,6 +20,12 @@ must be an integer
 must be an integer
 --- string_offset.puffin ---
 must be an integer
+--- bool_offset.puffin ---
+must be an integer
+--- bool_snapshot_id.puffin ---
+must be an integer
+--- bool_fields_element.puffin ---
+must be an integer
 --- fields_element_out_of_int32_range.puffin ---
 out of Int32 range
 --- offset_out_of_int64_range.puffin ---

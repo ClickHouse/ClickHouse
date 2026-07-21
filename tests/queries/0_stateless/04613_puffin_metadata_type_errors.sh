@@ -66,7 +66,8 @@ do
     id=$((id + 1))
 done
 
-for f in float_offset float_length float_snapshot_id float_sequence_number float_fields_element string_offset
+for f in float_offset float_length float_snapshot_id float_sequence_number float_fields_element string_offset \
+    bool_offset bool_snapshot_id bool_fields_element
 do
     launch "$id" meta "$DATA/$f.puffin" 'must be an integer'
     id=$((id + 1))
