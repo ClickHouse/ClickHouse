@@ -90,12 +90,11 @@ bool DistributionEnforcer::checkPattern(GroupExpressionPtr expression, const Exp
 
 void DistributionEnforcer::EnforcerEnumerator::addEnforcer(QueryPlanStepPtr step, ExpressionProperties input_required, SortDescription output_sorting)
 {
-    auto enforcer_expr = std::make_shared<GroupExpression>(std::move(step));
-    enforcer_expr->group_id = expression->group_id;
-    enforcer_expr->inputs.push_back({.group_id = expression->group_id, .required_properties = std::move(input_required)});
-    enforcer_expr->properties.distribution = required_properties.distribution;
-    enforcer_expr->properties.sorting = std::move(output_sorting);
-    enforcer_expr->enforcer_axis = EnforcerAxis::Distribution;
+    ExpressionProperties output_properties;
+    output_properties.distribution = required_properties.distribution;
+    output_properties.sorting = std::move(output_sorting);
+    auto enforcer_expr = makeEnforcerExpression(
+        expression, std::move(step), std::move(input_required), std::move(output_properties), EnforcerAxis::Distribution);
 
     rule.addPhysicalToMemo(enforcer_expr, required_properties, memo, result);
 }

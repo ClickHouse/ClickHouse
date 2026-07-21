@@ -28,6 +28,18 @@ bool isTopNSort(const IQueryPlanStep & step);
 /// implementation rules or none.
 bool isDistributionPassthroughStep(const IQueryPlanStep & step);
 
+/// Builds the self-referential expression an enforcer inserts: it lives in the SOURCE
+/// expression's group and its single input points back to the same group with relaxed
+/// requirements, so the memo search recurses into the group to satisfy them. The axis marks
+/// the expression for the cycle-avoidance rules. Only constructs - the caller still calls
+/// `addPhysicalToMemo` with the original required properties.
+GroupExpressionPtr makeEnforcerExpression(
+    const GroupExpressionPtr & source,
+    QueryPlanStepPtr step,
+    ExpressionProperties input_required,
+    ExpressionProperties output_properties,
+    EnforcerAxis axis);
+
 class IOptimizationRule
 {
 public:

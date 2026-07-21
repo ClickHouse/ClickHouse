@@ -60,15 +60,14 @@ std::vector<GroupExpressionPtr> SortingEnforcer::applyImpl(GroupExpressionPtr ex
     ExpressionProperties input_required = expression->properties;
     input_required.sorting = {};
 
-    auto sort_expr = std::make_shared<GroupExpression>(
-        std::make_unique<SortingStep>(input_header, sort_desc, /*limit=*/0, sort_settings));
-    sort_expr->group_id = expression->group_id;
-    sort_expr->inputs.push_back({
-        .group_id = expression->group_id,
-        .required_properties = input_required});
-    sort_expr->properties = expression->properties;
-    sort_expr->properties.sorting = sort_desc;
-    sort_expr->enforcer_axis = EnforcerAxis::Sorting;
+    ExpressionProperties output_properties = expression->properties;
+    output_properties.sorting = sort_desc;
+    auto sort_expr = makeEnforcerExpression(
+        expression,
+        std::make_unique<SortingStep>(input_header, sort_desc, /*limit=*/0, sort_settings),
+        input_required,
+        std::move(output_properties),
+        EnforcerAxis::Sorting);
 
     /// Skip scheduling a structural duplicate so it does not consume optimizer task budget.
     std::vector<GroupExpressionPtr> result;
