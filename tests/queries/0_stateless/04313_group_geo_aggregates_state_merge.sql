@@ -1,4 +1,5 @@
--- Test State/Merge combinators for geo aggregate functions (exercises serialize/deserialize)
+-- Test State/Merge combinators for geo aggregate functions. Explicit binary round-trips are
+-- covered by the dedicated state-invariant tests.
 
 -- groupConvexHull State/Merge
 SELECT 'convex_hull_state_merge';

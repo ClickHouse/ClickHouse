@@ -67,7 +67,7 @@ SELECT round(polygonAreaCartesian(groupPolygonIntersection(g)), 2) FROM (
     ]) AS g
 );
 
--- 9. groupConvexHull with all five Geometry runtime types in one group
+-- 9. `groupConvexHull` with all six `Geometry` runtime types in one group
 SELECT 'convex_hull_mixed_geometry_runtime_types';
 SELECT
     round(polygonAreaCartesian(groupConvexHull(g)), 2) AS area,
@@ -75,6 +75,7 @@ SELECT
 FROM (
     SELECT arrayJoin([
         readWKT('POINT (0 0)'),
+        [(5., 5.), (6., 5.), (5., 6.), (5., 5.)]::Ring::Geometry,
         readWKT('LINESTRING (20 0, 15 5)'),
         readWKT('MULTILINESTRING ((10 0, 5 10), (15 15, 20 20))'),
         readWKT('POLYGON ((0 15, 0 20, 5 20, 5 15, 0 15))'),

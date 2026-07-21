@@ -12,17 +12,15 @@ SELECT groupPolygonIntersection(g) FROM (
     SELECT readWKT('POINT (1 1)') AS g
 ); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 
--- 3. LineString Geometry values are structurally identical to Ring,
---    so the Variant column conflates them. Polygon functions accept
---    the data (treated as Ring).
+-- 3. `Geometry` keeps `LineString` distinct from `Ring`, but their underlying array shapes match.
+--    Polygon functions deliberately accept the active `LineString` as a `Ring`.
 SELECT 'linestring_geometry_treated_as_ring';
 SELECT round(polygonAreaCartesian(groupPolygonUnion(g)), 2) FROM (
     SELECT readWKT('LINESTRING (0 0, 2 0, 2 2, 0 2, 0 0)') AS g
 );
 
--- 4. MultiLineString Geometry values are structurally identical to Polygon,
---    so the Variant column conflates them. Polygon functions accept
---    the data (treated as Polygon).
+-- 4. `Geometry` keeps `MultiLineString` distinct from `Polygon`, but their underlying array shapes
+--    match. Polygon functions deliberately accept the active `MultiLineString` as a `Polygon`.
 SELECT 'multilinestring_geometry_treated_as_polygon';
 SELECT round(polygonAreaCartesian(groupPolygonUnion(g)), 2) FROM (
     SELECT readWKT('MULTILINESTRING ((0 0, 2 0, 2 2, 0 2, 0 0))') AS g
