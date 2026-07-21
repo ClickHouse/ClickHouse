@@ -127,40 +127,6 @@ def parse_args() -> argparse.Namespace:
 RELEASE_INFO_FILE = "/tmp/release_info.json"
 
 
-def should_create_changelog_pr(
-    release_type: str,
-    changelog_pr_exists: bool,
-) -> bool:
-    """Whether this run should (re)create the version_date.tsv/changelog PR.
-
-    A patch release always (re)creates the PR when it is missing — on a fresh
-    release and on any recovery run (fresh, `only-repo`, or `only-docker`), so a
-    release whose PR a crashed or older run never opened is never stranded. It
-    is gated only on the `auto/<tag>` PR not already being open or merged, so a
-    rerun once the PR exists is a no-op (idempotent). The recovery mode does not
-    matter here: creating the missing registry PR is cheap and orthogonal to the
-    artifact re-publish that `only-repo`/`only-docker` perform.
-    """
-    return release_type == "patch" and not changelog_pr_exists
-
-
-def should_merge_changelog_pr(
-    create_new_release: bool,
-    changelog_pr_open: bool,
-    do_changelog: bool,
-) -> bool:
-    """Whether to run `--merge-prs`.
-
-    There is something to merge when this is a fresh/new release (which also
-    opened the master version-bump PR), when this run just created the changelog
-    PR (`do_changelog`), or when a prior run left the changelog PR open but
-    unmerged (`changelog_pr_open`) — recovery then drives it to merged instead of
-    stranding it open. An already-merged PR is not re-merged (it is neither open
-    nor freshly created), so `gh pr merge` is never called on a merged PR.
-    """
-    return create_new_release or changelog_pr_open or do_changelog
-
-
 def main():
     stopwatch = Utils.Stopwatch()
     args = parse_args()
@@ -402,9 +368,14 @@ def main():
                 branch=_pr_branch, repo="ClickHouse/ClickHouse", states=("merged",)
             )
         )
-    do_changelog = should_create_changelog_pr(
-        args.release_type, changelog_pr_open or changelog_pr_merged
-    )
+    changelog_pr_exists = changelog_pr_open or changelog_pr_merged
+    # Create the PR whenever it is missing (idempotent: skip if already open or
+    # merged). Gates the changelog-generation, PR-creation and git-restore steps
+    # below. The release_type guard matters: a "new" release has no auto/<tag>
+    # changelog PR (it uses a master version-bump PR), so the lookup above is
+    # skipped and changelog_pr_exists stays False — without the guard that would
+    # wrongly trigger changelog generation for a "new" release.
+    do_changelog = args.release_type == "patch" and not changelog_pr_exists
 
     # only-repo / only-docker only re-publish artifacts for an already-created
     # release (repo/Docker recovery). If the ref resolves to a new release, they
@@ -846,7 +817,7 @@ def main():
     # case drives a stuck-open PR to merged instead of leaving it for a human. An
     # already-merged changelog PR is neither open nor freshly created, so
     # --merge-prs is not invoked on it (gh pr merge would fail).
-    if should_merge_changelog_pr(create_new_release, changelog_pr_open, do_changelog):
+    if create_new_release or do_changelog or changelog_pr_open:
         step(
             name="Update Release Info and Merge Created PRs",
             command=[
