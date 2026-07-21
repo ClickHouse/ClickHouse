@@ -8,6 +8,10 @@
 -- build a type-checked expression DAG over unqualified names, collapsing l.c and r.c onto one node and
 -- throwing ILLEGAL_TYPE_OF_ARGUMENT. See https://github.com/ClickHouse/ClickHouse/issues/111089
 
+-- The guarded optimization lives in getOptimizedQueryProcessingStageAnalyzer, which only runs under the
+-- analyzer. Pin it so the plan-shape (MergingAggregated) assertions are deterministic in the old-analyzer job.
+SET enable_analyzer = 1;
+
 DROP DATABASE IF EXISTS shard_0;
 DROP DATABASE IF EXISTS shard_1;
 CREATE DATABASE shard_0;
