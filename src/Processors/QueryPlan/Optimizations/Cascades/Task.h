@@ -47,6 +47,10 @@ public:
     String describe() const override { return fmt::format("optimize group #{} for {}", group_id, required_properties.dump()); }
 
 private:
+    /// Stage 3: run the enforcer rules to a fixed point over the group's physical expressions
+    /// and return the expressions they inserted; satisfying expressions update the best plan.
+    std::vector<GroupExpressionPtr> runEnforcementStage(OptimizerContext & optimizer_context, const GroupPtr & group) const;
+
     GroupId group_id;
     ExpressionProperties required_properties;
 };

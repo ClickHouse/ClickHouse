@@ -67,57 +67,7 @@ void OptimizeGroupTask::execute(OptimizerContext & optimizer_context)
 
         group->setEnforcedFor(required_properties);
 
-        /// Collect enforcer expressions first, then push tasks in the right order.
-        std::vector<GroupExpressionPtr> enforcer_expressions;
-
-        /// Fixed-point loop: iterate over newly-added physical expressions until no
-        /// new enforcers are produced.  Each iteration may create expressions that
-        /// enable further enforcers (e.g. Sort enables sorted GatherExchange).
-        size_t enforced_up_to = 0;
-        bool new_enforcers_created = true;
-        while (new_enforcers_created)
-        {
-            new_enforcers_created = false;
-
-            /// Copy the list because enforcers add new physical expressions to the group.
-            auto physical_expressions = group->physical_expressions;
-            for (size_t i = enforced_up_to; i < physical_expressions.size(); ++i)
-            {
-                auto & expression = physical_expressions[i];
-
-                if (required_properties.isSatisfiedBy(expression->properties))
-                {
-                    optimizer_context.updateBestPlan(expression);
-                    continue;
-                }
-
-                for (const auto & enforcer : optimizer_context.getEnforcerRules())
-                {
-                    if (!enforcer->checkPattern(expression, required_properties, optimizer_context.getMemo()))
-                        continue;
-
-                    /// No coarse pass-local dedup here: physically identical enforcer outputs are
-                    /// dropped by Group::addPhysicalExpression (structural dedup), while sources
-                    /// that differ in sort direction or distribution keep their own enforced
-                    /// alternative (e.g. a sorted gather for each requested direction).
-                    /// Enforcers return only the expressions they actually inserted (structural
-                    /// duplicates are dropped), so duplicate enforcer outputs are neither scheduled
-                    /// nor counted as progress - they cannot exhaust the task budget.
-                    auto new_expressions = enforcer->apply(expression, required_properties, optimizer_context.getMemo());
-                    if (new_expressions.empty())
-                        continue;
-
-                    for (const auto & new_expression : new_expressions)
-                    {
-                        LOG_TEST(optimizer_context.log, "Enforcer '{}' on group #{} expression '{}' -> '{}'",
-                            enforcer->getName(), group_id, expression->getDescription(), new_expression->getDescription());
-                    }
-                    enforcer_expressions.insert(enforcer_expressions.end(), new_expressions.begin(), new_expressions.end());
-                    new_enforcers_created = true;
-                }
-            }
-            enforced_up_to = physical_expressions.size();
-        }
+        auto enforcer_expressions = runEnforcementStage(optimizer_context, group);
 
         if (!enforcer_expressions.empty())
         {
@@ -137,6 +87,62 @@ void OptimizeGroupTask::execute(OptimizerContext & optimizer_context)
         /// and a best implementation exists. Mark the group as fully done.
         group->setFullyDoneFor(required_properties);
     }
+}
+
+std::vector<GroupExpressionPtr> OptimizeGroupTask::runEnforcementStage(OptimizerContext & optimizer_context, const GroupPtr & group) const
+{
+    std::vector<GroupExpressionPtr> enforcer_expressions;
+
+    /// Fixed-point loop: iterate over newly-added physical expressions until no
+    /// new enforcers are produced.  Each iteration may create expressions that
+    /// enable further enforcers (e.g. Sort enables sorted GatherExchange).
+    size_t enforced_up_to = 0;
+    bool new_enforcers_created = true;
+    while (new_enforcers_created)
+    {
+        new_enforcers_created = false;
+
+        /// Copy the list because enforcers add new physical expressions to the group.
+        auto physical_expressions = group->physical_expressions;
+        for (size_t i = enforced_up_to; i < physical_expressions.size(); ++i)
+        {
+            auto & expression = physical_expressions[i];
+
+            if (required_properties.isSatisfiedBy(expression->properties))
+            {
+                optimizer_context.updateBestPlan(expression);
+                continue;
+            }
+
+            for (const auto & enforcer : optimizer_context.getEnforcerRules())
+            {
+                if (!enforcer->checkPattern(expression, required_properties, optimizer_context.getMemo()))
+                    continue;
+
+                /// No coarse pass-local dedup here: physically identical enforcer outputs are
+                /// dropped by Group::addPhysicalExpression (structural dedup), while sources
+                /// that differ in sort direction or distribution keep their own enforced
+                /// alternative (e.g. a sorted gather for each requested direction).
+                /// Enforcers return only the expressions they actually inserted (structural
+                /// duplicates are dropped), so duplicate enforcer outputs are neither scheduled
+                /// nor counted as progress - they cannot exhaust the task budget.
+                auto new_expressions = enforcer->apply(expression, required_properties, optimizer_context.getMemo());
+                if (new_expressions.empty())
+                    continue;
+
+                for (const auto & new_expression : new_expressions)
+                {
+                    LOG_TEST(optimizer_context.log, "Enforcer '{}' on group #{} expression '{}' -> '{}'",
+                        enforcer->getName(), group_id, expression->getDescription(), new_expression->getDescription());
+                }
+                enforcer_expressions.insert(enforcer_expressions.end(), new_expressions.begin(), new_expressions.end());
+                new_enforcers_created = true;
+            }
+        }
+        enforced_up_to = physical_expressions.size();
+    }
+
+    return enforcer_expressions;
 }
 
 
