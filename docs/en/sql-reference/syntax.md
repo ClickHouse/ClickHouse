@@ -200,8 +200,8 @@ Numeric literals are parsed as follows:
   - If the value is prefixed with `0b` or `0x`/`0X`, the number is parsed as binary or hexadecimal, respectively.
   - If the value is negative and the absolute magnitude is greater than 2<sup>63</sup>, an error is returned.
 - If the integer parsing overflows (value exceeds `UInt64` range), the behavior depends on the ClickHouse version:
-  - **Version 25.5 and later**: the literal is parsed as a wide integer (`UInt128`, `Int128`, `UInt256`, or `Int256`), whichever is the smallest type that fits. If the value exceeds all integer types, it falls back to `Float64`. Decimal-point literals (e.g. `3.14`) and exponent literals (e.g. `1e10`) are stored internally as deferred-parsed values and resolved to `Float64` by default, but when compared with a `Decimal` column they are parsed directly to the target `Decimal` type from the original text, preserving full precision.
-  - **Before version 25.5**: the literal is parsed as a `Float64` using [strtod](https://en.cppreference.com/w/cpp/string/byte/strtof), which can silently lose precision for large integers. For example, `100000000000000000000000` is parsed as `Float64(1e23)` and adjacent values become indistinguishable. To avoid this, string-based conversion was required: `toUInt128('100000000000000000000000')`.
+  - **Version 26.7 and later**: a *decimal* integer literal is parsed as a wide integer (`UInt128`, `Int128`, `UInt256`, or `Int256`), whichever is the smallest type that fits. If the value exceeds all integer types, it falls back to `Float64`. An overflowing binary (`0b`) or hexadecimal (`0x`/`0X`) integer literal is kept as `Float64` for compatibility, not widened. Decimal-point literals (e.g. `3.14`) and exponent literals (e.g. `1e10`) are stored internally as deferred-parsed values and resolved to `Float64` by default, but when compared with a `Decimal` column they are parsed directly to the target `Decimal` type from the original text, preserving full precision.
+  - **Before version 26.7**: the literal is parsed as a `Float64` using [strtod](https://en.cppreference.com/w/cpp/string/byte/strtof), which can silently lose precision for large integers. For example, `100000000000000000000000` is parsed as `Float64(1e23)` and adjacent values become indistinguishable. To avoid this, string-based conversion was required: `toUInt128('100000000000000000000000')`.
 - Otherwise, an error is returned.
 
 Literal values are cast to the smallest type that the value fits in.
@@ -209,18 +209,18 @@ For example:
 - `1` is parsed as `UInt8`
 - `256` is parsed as `UInt16`
 
-#### Changes in version 25.5 {#numeric-literal-changes-25-5}
+#### Changes in version 26.7 {#numeric-literal-changes-26-7}
 
-Starting with version 25.5, numeric literal parsing was improved in two ways:
+Starting with version 26.7, numeric literal parsing was improved in two ways:
 
 **1. Wide integer literals are parsed natively.** Integer values wider than 64-bit no longer require explicit casts:
 
 ```sql
--- These now work directly (version 25.5+):
+-- These now work directly (version 26.7+):
 SELECT -170141183460469231731687303715884105728;  -- Int128
 SELECT 340282366920938463463374607431768211455;   -- UInt128
 
--- Before version 25.5, string-based conversion was required to avoid Float64 precision loss:
+-- Before version 26.7, string-based conversion was required to avoid Float64 precision loss:
 SELECT toInt128('-170141183460469231731687303715884105728');
 SELECT toUInt128('340282366920938463463374607431768211455');
 ```
@@ -228,10 +228,10 @@ SELECT toUInt128('340282366920938463463374607431768211455');
 **2. Decimal comparison precision is preserved.** Decimal-point literals like `3.14` are parsed with deferred type resolution. When used in equality or comparison operations with `Decimal` columns, the literal is parsed directly from the original text to the target `Decimal` type. This avoids the precision loss that previously occurred when going through `Float64`:
 
 ```sql
--- Version 25.5+: literal "1.123456789012345678" is compared exactly as Decimal128(18)
+-- Version 26.7+: literal "1.123456789012345678" is compared exactly as Decimal128(18)
 SELECT count() FROM table WHERE decimal_col = 1.123456789012345678;
 
--- Before 25.5: the literal was first parsed as Float64(1.1234567890123457),
+-- Before 26.7: the literal was first parsed as Float64(1.1234567890123457),
 -- losing the last 2 digits, causing incorrect comparison results.
 ```
 
