@@ -35,7 +35,7 @@ If symbolization is disabled, or you want to resolve the raw addresses in the `t
 - `thread_id` ([UInt64](/sql-reference/data-types/int-uint)) — Thread identifier.
 - `thread_name` ([LowCardinality(String)](/sql-reference/data-types/lowcardinality)) — Thread name.
 - `query_id` ([String](/sql-reference/data-types/string)) — Query identifier that can be used to get details about a query that was running from the query_log system table.
-- `trace` ([Array(UInt64)](/sql-reference/data-types/array)) — Stack trace at the moment of sampling. Each element is a virtual memory address inside ClickHouse server process.
+- `trace` ([Array(UInt64)](/sql-reference/data-types/array)) — Stack trace at the moment of sampling. On ELF platforms except FreeBSD, addresses inside the main ClickHouse binary are stored as physical file offsets. Other addresses are virtual memory addresses inside the ClickHouse server process.
 - `size` ([Int64](/sql-reference/data-types/int-uint)) — For trace types Memory, MemorySample, MemoryAllocatedWithoutCheck or MemoryPeak is the amount of memory allocated, for other trace types is 0.
 - `ptr` ([UInt64](/sql-reference/data-types/int-uint)) — The address of the allocated chunk.
 - `memory_context` ([Enum8('Unknown' = -1, 'Global' = 0, 'User' = 1, 'Process' = 2, 'Thread' = 3, 'Max' = 4)](/sql-reference/data-types/enum)) — Memory Tracker context (only for Memory/MemoryPeak): `Unknown` context is not defined for this trace_type. `Global` represents server context. `User` represents user/merge context. `Process` represents process (i.e. query) context. `Thread` represents thread (thread of particular process) context. `Max` this is a special value means that memory tracker is not blocked (for blocked_context column).
