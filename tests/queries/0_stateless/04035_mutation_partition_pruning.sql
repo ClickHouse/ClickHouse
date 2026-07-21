@@ -1,4 +1,4 @@
--- Tags: no-replicated-database, no-parallel
+-- Tags: long, no-replicated-database, no-parallel
 -- Test automatic partition pruning for mutations.
 -- This optimization works for ReplicatedMergeTree (and SharedMergeTree)
 -- because they use partition-based block number allocation.
