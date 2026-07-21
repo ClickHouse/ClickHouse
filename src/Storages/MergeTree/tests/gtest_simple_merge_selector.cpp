@@ -99,6 +99,14 @@ static SimulationResult runSimulation(
 {
     SimulationResult result;
 
+    /// Master's `enable_heuristic_to_lower_max_parts_to_merge_at_once` (default on) is an
+    /// orthogonal optimization that requires per-partition statistics and would perturb this
+    /// controlled write-amplification measurement. Disable it so the simulation isolates the
+    /// small-parts batching behavior under test, matching the selector used when the pinned
+    /// values below were measured.
+    SimpleMergeSelector::Settings sim_settings = settings;
+    sim_settings.enable_heuristic_to_lower_max_parts_to_merge_at_once = false;
+
     PartsRange parts;
     int64_t next_block = 0;
 
@@ -125,7 +133,7 @@ static SimulationResult runSimulation(
 
     auto try_merge = [&]() -> bool
     {
-        SimpleMergeSelector selector(settings);
+        SimpleMergeSelector selector(sim_settings);
         PartsRanges selected = selector.select({parts}, constraints, nullptr);
         if (selected.empty())
             return false;
@@ -301,6 +309,8 @@ TEST(SimpleMergeSelector, SmallPartsMinCountReducesWriteAmplification)
 TEST(SimpleMergeSelector, SmallPartsMinCountSurvivesRightTailTrim)
 {
     SimpleMergeSelector::Settings settings;
+    /// Disable the orthogonal max-parts heuristic (needs partition stats) to isolate the gate under test.
+    settings.enable_heuristic_to_lower_max_parts_to_merge_at_once = false;
     /// base = 2 so that the full 8-part range passes the base-ratio check in `allow`
     /// (ratio is ~3.5 here; with base = 5 and fresh parts the range would be rejected
     /// before ever reaching the post-trim gate, making the test vacuous).
@@ -353,6 +363,8 @@ TEST(SimpleMergeSelector, SmallPartsMinCountSurvivesRightTailTrim)
 TEST(SimpleMergeSelector, SmallPartsMinCountUsesTrimmedMaxAge)
 {
     SimpleMergeSelector::Settings settings;
+    /// Disable the orthogonal max-parts heuristic (needs partition stats) to isolate the gate under test.
+    settings.enable_heuristic_to_lower_max_parts_to_merge_at_once = false;
     settings.base = 5;
     settings.small_parts_threshold = 10 * 1024 * 1024;
     settings.small_parts_min_count = 8;
@@ -404,6 +416,8 @@ TEST(SimpleMergeSelector, SmallPartsMinCountUsesTrimmedMaxAge)
 TEST(SimpleMergeSelector, MinPartsToMergeAtOnceSurvivesRightTailTrim)
 {
     SimpleMergeSelector::Settings settings;
+    /// Disable the orthogonal max-parts heuristic (needs partition stats) to isolate the gate under test.
+    settings.enable_heuristic_to_lower_max_parts_to_merge_at_once = false;
     /// base = 2 so that the full 8-part range passes the base-ratio check in `allow`
     /// (ratio is ~3.5 here; with the default base of 5 and fresh parts nothing would be
     /// selected regardless of the post-trim re-check, making the test vacuous).
@@ -447,6 +461,8 @@ TEST(SimpleMergeSelector, MinPartsToMergeAtOnceSurvivesRightTailTrim)
 TEST(SimpleMergeSelector, MinAgeToForceMergeOverridesMinPartsAfterTrim)
 {
     SimpleMergeSelector::Settings settings;
+    /// Disable the orthogonal max-parts heuristic (needs partition stats) to isolate the gate under test.
+    settings.enable_heuristic_to_lower_max_parts_to_merge_at_once = false;
     settings.base = 5;
     settings.min_parts_to_merge_at_once = 8;
     settings.min_age_to_force_merge = 3600;
@@ -495,6 +511,8 @@ TEST(SimpleMergeSelector, MinAgeToForceMergeOverridesMinPartsAfterTrim)
 TEST(SimpleMergeSelector, MinAgeToForceMergeOverridesSmallPartsMinCountAfterTrim)
 {
     SimpleMergeSelector::Settings settings;
+    /// Disable the orthogonal max-parts heuristic (needs partition stats) to isolate the gate under test.
+    settings.enable_heuristic_to_lower_max_parts_to_merge_at_once = false;
     settings.base = 5;
     settings.small_parts_threshold = 10 * 1024 * 1024;
     settings.small_parts_min_count = 8;
@@ -547,6 +565,8 @@ TEST(SimpleMergeSelector, MinAgeToForceMergeOverridesSmallPartsMinCountAfterTrim
 TEST(SimpleMergeSelector, SmallPartsMinCountUntrimmedMaxAgeLiftsGate)
 {
     SimpleMergeSelector::Settings settings;
+    /// Disable the orthogonal max-parts heuristic (needs partition stats) to isolate the gate under test.
+    settings.enable_heuristic_to_lower_max_parts_to_merge_at_once = false;
     settings.base = 5;
     settings.small_parts_threshold = 10 * 1024 * 1024;
     settings.small_parts_min_count = 8;
