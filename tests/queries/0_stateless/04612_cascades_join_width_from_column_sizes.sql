@@ -14,18 +14,22 @@ SET automatic_parallel_replicas_mode = 0;
 SET max_rows_to_group_by = 0;
 SET param__internal_cascades_cluster_node_count = 4;
 SET query_plan_join_swap_table = 'false';
-SET param__internal_join_table_stat_hints = '{"t_wd_fact": {"cardinality": 10000000, "avg_row_bytes": 24, "distinct_keys": {"k": 1000000, "g": 10}, "column_bytes": {"k": 8, "g": 8}}, "t_wd_dim": {"cardinality": 5, "distinct_keys": {"g": 5}, "column_bytes": {"g": 8, "name": 10}}}';
+SET query_plan_optimize_join_order_randomize = 0;
+SET param__internal_join_table_stat_hints = '{"t_wd_fact": {"cardinality": 10000000, "avg_row_bytes": 24, "distinct_keys": {"k": 1000000, "g": 10}, "column_bytes": {"k": 8, "g": 8}}, "t_wd_dim": {"cardinality": 5, "avg_row_bytes": 18, "distinct_keys": {"g": 5}, "column_bytes": {"g": 8, "name": 10}}}';
 
 DROP TABLE IF EXISTS t_wd_fact;
 DROP TABLE IF EXISTS t_wd_dim;
+-- The hints above pin every cost input the plan assertion depends on; the table settings and
+-- single-threaded inserts pin the physical layout (one wide part, fixed granularity) so that
+-- randomized settings and insert thread scheduling cannot move the plan either.
 -- Without `auto_statistics_types = ''` a randomized `materialize_statistics_on_insert` would
 -- activate the selectivity estimator, which sees the real tiny tables instead of the hint.
 CREATE TABLE t_wd_fact (k UInt64, g UInt64, v UInt64) ENGINE = MergeTree ORDER BY k
-  SETTINGS auto_statistics_types = '';
+  SETTINGS auto_statistics_types = '', index_granularity = 8192, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
 CREATE TABLE t_wd_dim (g UInt64, name String) ENGINE = MergeTree ORDER BY g
-  SETTINGS auto_statistics_types = '';
-INSERT INTO t_wd_fact SELECT number, number % 10, number FROM numbers(1000);
-INSERT INTO t_wd_dim SELECT number, concat('nm_', toString(number)) FROM numbers(5);
+  SETTINGS auto_statistics_types = '', index_granularity = 8192, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+INSERT INTO t_wd_fact SELECT number, number % 10, number FROM numbers(1000) SETTINGS max_insert_threads = 1;
+INSERT INTO t_wd_dim SELECT number, concat('nm_', toString(number)) FROM numbers(5) SETTINGS max_insert_threads = 1;
 
 -- The forced shuffle aggregation on `k` needs the joined rows partitioned by `k`; the shuffle
 -- above the join moves the estimated 5M narrow joined rows, the one below moves all 10M fact

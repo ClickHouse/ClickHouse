@@ -16,6 +16,7 @@ SET param__internal_cascades_cluster_node_count = 4;
 -- the dim table on the build side so the plan shape does not depend on a cost near-tie.
 SET param__internal_join_table_stat_hints = '{"t_bk_fact": {"cardinality": 10000000, "avg_row_bytes": 16, "distinct_keys": {"k": 1000000}}, "t_bk_dim": {"cardinality": 10, "avg_row_bytes": 16, "distinct_keys": {"g": 10}}}';
 SET query_plan_join_swap_table = 'false';
+SET query_plan_optimize_join_order_randomize = 0;
 
 DROP TABLE IF EXISTS t_bk_fact;
 DROP TABLE IF EXISTS t_bk_dim;
