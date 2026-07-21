@@ -40,8 +40,8 @@ std::optional<ScanDescend> findReadFromMergeTree(QueryPlan::Node * node)
         if (!expression_step || current->children.size() != 1)
             return std::nullopt;
 
-        /// Functions like `rowNumberInAllBlocks` or `blockNumber` depend on the runtime stream,
-        /// which the rewrite replaces with a replay of the build-side scan.
+        /// `rowNumberInAllBlocks` and friends depend on the runtime stream, which the rewrite
+        /// replaces with a replay of the build-side scan.
         if (dagContainsNonDeterministicFunction(expression_step->getExpression()))
             return std::nullopt;
 
@@ -52,15 +52,9 @@ std::optional<ScanDescend> findReadFromMergeTree(QueryPlan::Node * node)
 
 bool isPlainScan(const ReadFromMergeTree * rmt)
 {
-    /// A `STREAM` scan is unbounded and keeps producing newly committed rows;
-    /// buffering it or replaying a one-shot buffer instead would change semantics.
-    ///
-    /// An in-order reading contract (from `optimizeReadInOrder`, including
-    /// `read_in_order_through_join`) makes the scan emit rows in sorting-key order, which downstream
-    /// steps may rely on without an explicit sort. Replaying the probe scan from a buffer filled by
-    /// the build scan would emit the build scan's order instead, silently breaking that contract.
-    /// `optimizeReadInOrder` runs after this rewrite so `input_order_info` is normally still unset
-    /// here; this guard keeps the invariant explicit and robust to pass reordering.
+    /// `getInputOrder` matters because replaying the probe scan emits the build scan's order,
+    /// silently breaking the sorting-key order downstream steps may rely on without an explicit
+    /// sort. `optimizeReadInOrder` runs after this pass, so it is normally still unset here.
     return !rmt->isQueryWithFinal()
         && rmt->getInputOrder() == nullptr
         && !rmt->getQueryInfo().isStream()
@@ -86,9 +80,8 @@ void tryOptimizeSelfJoinSharedScan(
     if (!settings.optimize_self_join_shared_scan)
         return;
 
-    /// The rewrite introduces `CommonSubplanStep` / `CommonSubplanReferenceStep` (later lowered to
-    /// buffer steps) that carry runtime state and do not support plan serialization, so under
-    /// distributed planning the plan would fail `assertFragmentSerializable`.
+    /// The steps introduced below carry runtime state and do not support plan serialization, so
+    /// the plan would fail `assertFragmentSerializable`.
     if (settings.make_distributed_plan)
         return;
 
@@ -102,51 +95,35 @@ void tryOptimizeSelfJoinSharedScan(
     if (join_op.strictness != JoinStrictness::All)
         return;
 
-    /// The rewrite is valid only when the join is executed with a producer-first
-    /// (`FillRightFirst`) pipeline: the build side is fully consumed before the probe side is
-    /// read, so the probe scan can replay the buffer filled by the build scan.
-    ///
-    /// Note that whether the join spills is irrelevant here: `SpillingHashJoin` does not override
-    /// `pipelineType`, so it is `FillRightFirst` like the rest of the hash family and still drains
-    /// the build side completely before the probe side is read.
-    ///
-    /// `chooseJoinAlgorithm` walks `join_algorithms` in order and executes the first algorithm
-    /// that applies, so walk the same list and prove that whichever entry wins is producer-first.
-    /// Otherwise (e.g. `join_algorithm = 'full_sorting_merge,hash'`) skip the rewrite: the user's
-    /// algorithm list must keep selecting the same algorithm it would select without the rewrite.
+    /// The probe side replays a buffer the build side fills, so the join must be producer-first
+    /// (`FillRightFirst`). `chooseJoinAlgorithm` executes the first entry of `join_algorithms`
+    /// that applies, so walk the same list and prove whichever entry wins is producer-first.
+    /// Spilling is irrelevant: `SpillingHashJoin` does not override `pipelineType`.
     const auto & join_settings = join_step->getJoinSettings();
 
     bool producer_first_guaranteed = false;
     for (const auto algo : join_settings.join_algorithms)
     {
-        /// Never applies here: a direct join requires a key-value build storage, while this
-        /// rewrite requires a plain `MergeTree` scan on the build side.
+        /// Requires a key-value build storage, so it can never win against a `MergeTree` scan.
         if (algo == JoinAlgorithm::DIRECT)
             continue;
 
-        /// These always create a producer-first join, so no later entry can win: the hash family
-        /// and `default`, which means `direct,hash`.
         if (algo == JoinAlgorithm::HASH || algo == JoinAlgorithm::PARALLEL_HASH || algo == JoinAlgorithm::DEFAULT)
         {
             producer_first_guaranteed = true;
             break;
         }
 
-        /// Anything else may win. `full_sorting_merge` and `paste` are `YShaped`, which reads both
-        /// sides concurrently and so cannot replay a buffer the build side has not finished filling.
-        /// `grace_hash` and `auto` are producer-first, but re-read the build side from their own
-        /// spill files across multiple bucket passes; the rewrite has not been validated against
-        /// that replay, so exclude them until it is.
+        /// `full_sorting_merge` and `paste` are `YShaped` and read both sides concurrently.
+        /// `grace_hash` and `auto` re-read the build side across bucket passes, which the rewrite
+        /// has not been validated against.
         return;
     }
     if (!producer_first_guaranteed)
         return;
 
-    /// Under `join_overflow_mode = 'break'` the build side stops consuming its input once
-    /// `max_rows_in_join` / `max_bytes_in_join` is reached, so the shared buffer would hold only a
-    /// prefix of the scan. The probe side would then replay that truncated prefix instead of the
-    /// full stream, losing rows beyond what the join's soft limit is allowed to drop (e.g. the
-    /// preserved side of a LEFT JOIN).
+    /// `break` stops consuming the build side at the limit, so the probe side would replay a
+    /// truncated prefix rather than the full stream.
     if (join_settings.join_overflow_mode == OverflowMode::BREAK
         && (join_settings.max_rows_in_join != 0 || join_settings.max_bytes_in_join != 0))
         return;
@@ -161,17 +138,14 @@ void tryOptimizeSelfJoinSharedScan(
 
     if (rmt_l->getStorageID().uuid != rmt_r->getStorageID().uuid)
         return;
-    /// Require the exact same StorageSnapshot (pointer equality), not just matching metadata.
-    /// With `enable_shared_storage_snapshot_in_query = 0` the two scans may otherwise observe
-    /// different part sets, and forcing them through a single shared buffer would change
-    /// query semantics under concurrent part changes.
+    /// Pointer equality, not matching metadata: with `enable_shared_storage_snapshot_in_query = 0`
+    /// the two scans may observe different part sets.
     if (rmt_l->getStorageSnapshot() != rmt_r->getStorageSnapshot())
         return;
     if (!isPlainScan(rmt_l) || !isPlainScan(rmt_r))
         return;
 
-    /// The probe side replays from a buffer filled by the build side, so it can only see columns
-    /// that the build side actually scanned and saved.
+    /// The probe side can only see columns the build side saved.
     const auto & rmt_r_columns = rmt_r->getAllColumnNames();
     const auto & rmt_l_columns = rmt_l->getAllColumnNames();
     for (const auto & col : rmt_l_columns)

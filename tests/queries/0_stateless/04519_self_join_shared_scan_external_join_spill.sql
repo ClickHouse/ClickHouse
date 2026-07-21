@@ -9,10 +9,8 @@ DROP TABLE IF EXISTS t_sjss_spill;
 CREATE TABLE t_sjss_spill (x UInt64) ENGINE = MergeTree ORDER BY x;
 INSERT INTO t_sjss_spill SELECT number FROM numbers(10);
 
--- A non-zero external-join threshold makes the hash family run as `SpillingHashJoin`, which does
--- not override `pipelineType` and so is still `FillRightFirst`: the build side is drained
--- completely before the probe side is read. That is the only ordering property the rewrite needs,
--- so spilling must not block it (1 scan plus a buffer in every case below).
+-- `SpillingHashJoin` is still `FillRightFirst`, which is the only property the rewrite needs, so
+-- spilling must not block it: 1 scan plus a buffer in every case below.
 
 -- Absolute threshold set.
 SELECT
@@ -47,8 +45,7 @@ FROM (
     SETTINGS max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0
 );
 
--- A threshold low enough that the build side actually spills, so the rewrite is exercised against
--- a join that really goes to disk rather than one that merely could.
+-- A threshold low enough that the build side actually spills.
 SELECT a.x, b.x FROM t_sjss_spill AS a INNER JOIN t_sjss_spill AS b ON a.x = b.x
 ORDER BY a.x
 SETTINGS max_bytes_before_external_join = 1, max_bytes_ratio_before_external_join = 0;

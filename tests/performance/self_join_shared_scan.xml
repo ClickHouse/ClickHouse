@@ -1,0 +1,55 @@
+<test>
+    <!-- `query_plan_optimize_self_join_shared_scan` does not exist on the master server, so it is
+         written inline per query: an unknown setting in `<settings>` aborts the whole test, while
+         a query failing on one server only is reported as a partial result. -->
+
+    <settings>
+        <!-- A runtime filter makes the scan non-plain and blocks the rewrite. -->
+        <enable_join_runtime_filters>0</enable_join_runtime_filters>
+        <!-- A swap changes which side is the build side, and with it the column subset check. -->
+        <query_plan_join_swap_table>0</query_plan_join_swap_table>
+    </settings>
+
+    <create_query>
+        CREATE TABLE t_self_join_shared_scan
+        (key UInt64, s1 String, s2 String, s3 String, v1 UInt64)
+        ENGINE = MergeTree ORDER BY key
+    </create_query>
+
+    <!-- Incompressible strings so that decompression, which the avoided scan skips, is a real
+         cost rather than a rounding error. -->
+    <fill_query>
+        INSERT INTO t_self_join_shared_scan
+        SELECT number, randomPrintableASCII(60), randomPrintableASCII(60), randomPrintableASCII(60), rand64()
+        FROM numbers(10000000)
+    </fill_query>
+
+    <!-- Both sides read the same wide columns. The saving is one scan of whatever the probe side
+         reads, so a probe side reading only the join key saves next to nothing; the column subset
+         rule (probe columns must be a subset of the build side's) makes equal sets the best case. -->
+    <query tag='symmetric wide baseline'>
+        SELECT sum(length(a.s1) + length(a.s2) + length(a.s3) + length(b.s1) + length(b.s2) + length(b.s3))
+        FROM t_self_join_shared_scan AS a
+        INNER JOIN t_self_join_shared_scan AS b ON a.key = b.key
+    </query>
+    <query tag='symmetric wide shared scan'>
+        SELECT sum(length(a.s1) + length(a.s2) + length(a.s3) + length(b.s1) + length(b.s2) + length(b.s3))
+        FROM t_self_join_shared_scan AS a
+        INNER JOIN t_self_join_shared_scan AS b ON a.key = b.key
+        SETTINGS query_plan_optimize_self_join_shared_scan = 1
+    </query>
+
+    <query tag='LEFT symmetric wide baseline'>
+        SELECT sum(length(a.s1) + length(a.s2) + length(b.s1) + length(b.s2))
+        FROM t_self_join_shared_scan AS a
+        LEFT JOIN t_self_join_shared_scan AS b ON a.key = b.key
+    </query>
+    <query tag='LEFT symmetric wide shared scan'>
+        SELECT sum(length(a.s1) + length(a.s2) + length(b.s1) + length(b.s2))
+        FROM t_self_join_shared_scan AS a
+        LEFT JOIN t_self_join_shared_scan AS b ON a.key = b.key
+        SETTINGS query_plan_optimize_self_join_shared_scan = 1
+    </query>
+
+    <drop_query>DROP TABLE IF EXISTS t_self_join_shared_scan</drop_query>
+</test>
