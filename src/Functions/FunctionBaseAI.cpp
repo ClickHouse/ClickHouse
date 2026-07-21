@@ -228,7 +228,12 @@ FunctionBaseAI::AIParams FunctionBaseAI::resolveAIParams(
     {
         bool known = std::any_of(spec.begin(), spec.end(), [&](const AIParamSpec & p) { return p.name == key; });
         if (!known)
+        {
+            if (key == "model")
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "This function does not accept 'model' in the parameter map; pass 'model' to the function directly");
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown AI function parameter '{}'", key);
+        }
     }
 
     /// Resolve credentials first: they name the collection everything else is read from.
@@ -258,6 +263,14 @@ FunctionBaseAI::AIParams FunctionBaseAI::resolveAIParams(
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "AI named collection '{}' must have 'endpoint'", credentials);
 
     context->getRemoteHostFilter().checkURL(Poco::URI(params.collection.endpoint));
+
+    /// A function that does not declare `model` (i.e. `aiEmbed`, which takes it as an argument) must
+    /// not silently ignore a `model` defined in the named collection: reject it instead.
+    const bool declares_model = std::any_of(spec.begin(), spec.end(), [](const AIParamSpec & p) { return p.name == "model"; });
+    if (!declares_model && collection->has("model"))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "AI named collection '{}' defines 'model', which this function does not read from the named collection; "
+            "remove it from the collection and pass 'model' to the function directly", credentials);
 
     /// Resolve every declared parameter: map override -> named collection (if inherited) -> default.
     for (const auto & p : spec)

@@ -111,6 +111,10 @@ public:
     /// Returns true if the storage is a message queue (Kafka, RabbitMQ, NATS)
     virtual bool isMessageQueue() const { return false; }
 
+    /// Returns true if the storage continuously consumes from an external source in the background
+    /// (Kafka, RabbitMQ, NATS, S3Queue/AzureQueue).
+    virtual bool isStreamingStorage() const { return false; }
+
     /// Returns true if the storage receives data from a remote server or servers.
     virtual bool isRemote() const { return false; }
 
@@ -195,6 +199,10 @@ public:
     /// Used for query optimizations by the MergeTree family of storages and by Parquet reader.
     using ColumnSizeByName = std::unordered_map<std::string, ColumnSize>;
     virtual ColumnSizeByName getColumnSizes() const { return {}; }
+
+    /// Same as parameterless overload but also includes sizes for requested subcolumns
+    /// The default implementation falls back to the parameterless version.
+    virtual ColumnSizeByName getColumnSizes(const Names & /*columns*/) const { return getColumnSizes(); }
 
     /// Same as getColumnSizes() but may return nullopt in some specific engines like Merge/Alias
     virtual std::optional<ColumnSizeByName> tryGetColumnSizes() const { return getColumnSizes(); }
@@ -598,6 +606,14 @@ public:
 
     /// Call when lock from previous method removed
     virtual void onActionLockRemove(StorageActionBlockType /* action_type */) {}
+
+    /// Run exactly one unit of background activity now (without resuming further activity).
+    /// No-op for tables without such activity.
+    virtual void refreshBackgroundActivity() {}
+
+    /// Abort the in-flight unit of background activity without blocking future ones, discarding its
+    /// uncommitted result so it is retried later. No-op for tables without such activity.
+    virtual void cancelBackgroundActivity() {}
 
     std::atomic<bool> is_dropped{false};
     std::atomic<bool> is_detached{false};
