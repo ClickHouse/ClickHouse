@@ -70,4 +70,4 @@ for _ in {1..60}; do
     sleep 0.5
 done
 
-echo "${debug_count}"
+echo "$((debug_count > 0))"
