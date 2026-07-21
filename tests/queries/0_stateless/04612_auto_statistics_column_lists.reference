@@ -1,0 +1,25 @@
+exclude
+a	1
+b	0
+c	0
+include
+a	1
+b	0
+c	1
+include_and_exclude
+a	1
+b	1
+c	0
+explicit_keeps_despite_exclude
+a	1
+b	1
+c	0
+alter_exclude
+a	1
+b	1
+c	1
+a	1
+b	0
+c	0
+unknown_column_names
+a	1

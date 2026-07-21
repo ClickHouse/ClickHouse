@@ -128,7 +128,6 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsUInt64 merge_tree_clear_old_temporary_directories_interval_seconds;
     extern const MergeTreeSettingsUInt64 non_replicated_deduplication_window;
     extern const MergeTreeSettingsSeconds temporary_directories_lifetime;
-    extern const MergeTreeSettingsString auto_statistics_types;
     extern const MergeTreeSettingsBool table_readonly;
 }
 
@@ -481,15 +480,15 @@ void StorageMergeTree::alter(
     removeImplicitStatistics(new_metadata.columns);
     commands.apply(new_metadata, local_context);
 
-    auto [auto_statistics_types, statistics_changed] = getNewImplicitStatisticsTypes(new_metadata, *old_storage_settings);
-    addImplicitStatistics(new_metadata.columns, auto_statistics_types);
+    auto auto_statistics_config = getNewImplicitStatisticsConfig(new_metadata, *old_storage_settings);
+    addImplicitStatistics(new_metadata.columns, auto_statistics_config);
 
     /// This alter can be performed at new_metadata level only
     if (commands.isSettingsAlter())
     {
         changeSettings(new_metadata.settings_changes, table_lock_holder);
 
-        if (statistics_changed)
+        if (auto_statistics_config.changed)
             setInMemoryMetadata(new_metadata);
 
         /// It is safe to ignore exceptions here as only settings are changed, which is not validated in `alterTable`

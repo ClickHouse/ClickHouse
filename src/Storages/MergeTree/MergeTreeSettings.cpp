@@ -1952,6 +1952,19 @@ not during inserts.
 Comma-separated list of statistics types to calculate automatically on all suitable columns.
 Supported statistics types: basic, tdigest, countmin, uniq, uniq_v2.
 The `minmax` statistics type is deprecated: it is a subset of `basic`, which should be used instead.
+Column scope can be narrowed with `auto_statistics_columns` / `auto_statistics_exclude_columns`.
+)", 0) \
+    DECLARE(String, auto_statistics_columns, "", R"(
+Comma-separated allowlist of columns for which to create automatic statistics
+(`auto_statistics_types`). Empty means all suitable columns (default).
+A column receives implicit statistics only if it is in this list (or the list is empty)
+and is not listed in `auto_statistics_exclude_columns`. Explicit per-column `STATISTICS(...)`
+is unaffected. Unknown column names are ignored.
+)", 0) \
+    DECLARE(String, auto_statistics_exclude_columns, "", R"(
+Comma-separated denylist of columns to skip when creating automatic statistics
+(`auto_statistics_types`). Takes precedence over `auto_statistics_columns`.
+Explicit per-column `STATISTICS(...)` is unaffected. Unknown column names are ignored.
 )", 0) \
     DECLARE(UInt64, packed_skip_index_max_bytes, 0, R"(
 Threshold (serialized on-disk bytes, i.e. after the substream's compression and hashing

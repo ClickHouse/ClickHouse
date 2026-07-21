@@ -30,6 +30,7 @@
 #include <Storages/MergeTree/Streaming/CursorPromoter.h>
 #include <Storages/Streaming/SubscriptionManager.h>
 #include <Storages/IndicesDescription.h>
+#include <Storages/Statistics/Statistics.h>
 #include <Storages/DataDestinationType.h>
 #include <Storages/extractKeyExpressionList.h>
 #include <Storages/PartitionCommands.h>
@@ -1049,7 +1050,7 @@ public:
         AlterLockHolder & table_lock_holder,
         bool run_sanity_checks = true);
 
-    std::pair<String, bool> getNewImplicitStatisticsTypes(const StorageInMemoryMetadata & new_metadata, const MergeTreeSettings & old_settings) const;
+    ImplicitStatisticsConfig getNewImplicitStatisticsConfig(const StorageInMemoryMetadata & new_metadata, const MergeTreeSettings & old_settings) const;
     static void verifySortingKey(const KeyDescription & sorting_key);
 
     /// True iff the resolved sorting key (column list or data types) differs between two metadata snapshots.

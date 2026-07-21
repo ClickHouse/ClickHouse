@@ -71,6 +71,8 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool enable_block_number_column;
     extern const MergeTreeSettingsBool enable_block_offset_column;
     extern const MergeTreeSettingsString auto_statistics_types;
+    extern const MergeTreeSettingsString auto_statistics_columns;
+    extern const MergeTreeSettingsString auto_statistics_exclude_columns;
     extern const MergeTreeSettingsBool escape_index_filenames;
     extern const MergeTreeSettingsString disk;
     extern const MergeTreeSettingsString storage_policy;
@@ -904,16 +906,19 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         }
         metadata.addImplicitIndicesForVirtualColumns(context);
 
-        String statistics_types_str = (*storage_settings)[MergeTreeSetting::auto_statistics_types];
+        ImplicitStatisticsConfig auto_statistics_config;
+        auto_statistics_config.types = (*storage_settings)[MergeTreeSetting::auto_statistics_types];
+        auto_statistics_config.include_columns = (*storage_settings)[MergeTreeSetting::auto_statistics_columns];
+        auto_statistics_config.exclude_columns = (*storage_settings)[MergeTreeSetting::auto_statistics_exclude_columns];
 
-        if (!statistics_types_str.empty() && args.table_id.database_name != DatabaseCatalog::SYSTEM_DATABASE)
+        if (!auto_statistics_config.types.empty() && args.table_id.database_name != DatabaseCatalog::SYSTEM_DATABASE)
         {
             /// Reject deprecated statistics types (currently `minmax`) only when a table is freshly created
             /// with them in `auto_statistics_types`. Skipped for ATTACH and replicated propagation so that
             /// existing tables which still carry `minmax` in the setting keep loading.
             if (args.mode <= LoadingStrictnessLevel::CREATE)
-                validateAutoStatisticsTypes(statistics_types_str);
-            addImplicitStatistics(metadata.columns, statistics_types_str);
+                validateAutoStatisticsTypes(auto_statistics_config.types);
+            addImplicitStatistics(metadata.columns, auto_statistics_config);
         }
 
         if (args.query.columns_list && args.query.columns_list->projections)

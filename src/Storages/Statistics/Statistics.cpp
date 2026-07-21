@@ -1,5 +1,7 @@
 #include <Storages/Statistics/Statistics.h>
 
+#include <unordered_set>
+
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Common/Exception.h>
 #include <Common/FieldVisitorConvertToNumber.h>
@@ -22,8 +24,11 @@
 #include <Storages/StatisticsDescription.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ExpressionElementParsers.h>
+#include <Parsers/parseIdentifierOrStringLiteral.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Interpreters/Context.h>
+#include <Core/Settings.h>
 
 #include "config.h" /// USE_DATASKETCHES
 
@@ -861,18 +866,31 @@ void validateAutoStatisticsTypes(const String & statistics_types_str)
     }
 }
 
-void addImplicitStatistics(ColumnsDescription & columns, const String & statistics_types_str)
+void addImplicitStatistics(ColumnsDescription & columns, const ImplicitStatisticsConfig & config)
 {
-    if (statistics_types_str.empty())
+    if (config.types.empty())
         return;
 
-    auto stats_ast_map = parseColumnStatisticsFromString(statistics_types_str);
+    auto stats_ast_map = parseColumnStatisticsFromString(config.types);
     const auto & factory = MergeTreeStatisticsFactory::instance();
+
+    const auto & settings = Context::getGlobalContextInstance()->getSettingsRef();
+    std::unordered_set<String> include_columns;
+    std::unordered_set<String> exclude_columns;
+    if (!config.include_columns.empty())
+        include_columns = parseIdentifiersOrStringLiteralsToSet(config.include_columns, settings);
+    if (!config.exclude_columns.empty())
+        exclude_columns = parseIdentifiersOrStringLiteralsToSet(config.exclude_columns, settings);
 
     for (const auto & column : columns)
     {
         auto default_kind = column.default_desc.kind;
         if (default_kind == ColumnDefaultKind::Alias || default_kind == ColumnDefaultKind::Ephemeral)
+            continue;
+
+        if (!include_columns.empty() && !include_columns.contains(column.name))
+            continue;
+        if (exclude_columns.contains(column.name))
             continue;
 
         ColumnStatisticsDescription stats_desc;

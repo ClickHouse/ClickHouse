@@ -217,7 +217,19 @@ private:
 };
 
 void removeImplicitStatistics(ColumnsDescription & columns);
-void addImplicitStatistics(ColumnsDescription & columns, const String & statistics_types_str);
+
+/// Configuration for attaching implicit column statistics (`auto_statistics_types` and optional
+/// include/exclude column lists). Empty `include_columns` means all suitable columns; a column in
+/// `exclude_columns` is always skipped. Explicit per-column `STATISTICS(...)` is unaffected.
+struct ImplicitStatisticsConfig
+{
+    String types;
+    String include_columns;
+    String exclude_columns;
+    bool changed = false;
+};
+
+void addImplicitStatistics(ColumnsDescription & columns, const ImplicitStatisticsConfig & config);
 
 /// Validates a value of the `auto_statistics_types` MergeTree setting and rejects deprecated types
 /// (currently `minmax`). This must be called only on the setting-change path (CREATE / ALTER ...
