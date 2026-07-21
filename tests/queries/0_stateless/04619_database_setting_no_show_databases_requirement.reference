@@ -7,5 +7,3 @@
 -- table privileges are still enforced
 ACCESS_DENIED
 ACCESS_DENIED
--- USE still requires SHOW_DATABASES
-ACCESS_DENIED
