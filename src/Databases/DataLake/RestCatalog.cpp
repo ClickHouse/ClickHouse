@@ -1506,10 +1506,18 @@ bool RestCatalog::tryGetTableMetadata(
     {
         return getTableMetadataImpl(namespace_name, table_name, result);
     }
-    catch (const DB::Exception & ex)
+    catch (const DB::HTTPException & ex)
     {
-        LOG_DEBUG(log, "tryGetTableMetadata response: {}", ex.what());
-        return false;
+        /// Only HTTP 404 from the catalog means "table does not exist". Anything else —
+        /// 401/403 (expired or revoked credentials), 5xx, and so on — must propagate:
+        /// swallowing it would make an existing table silently disappear (`UNKNOWN_TABLE`
+        /// on SELECT, `EXISTS TABLE` returning 0) instead of surfacing the real error.
+        if (ex.getHTTPStatus() == Poco::Net::HTTPResponse::HTTPStatus::HTTP_NOT_FOUND)
+        {
+            LOG_DEBUG(log, "Table {}.{} does not exist: {}", namespace_name, table_name, ex.what());
+            return false;
+        }
+        throw;
     }
 }
 
