@@ -2327,7 +2327,7 @@ void QueryFuzzer::fuzzIndexDeclaration(ASTIndexDeclaration & index)
                 if (fuzz_rand() % 5 == 0)
                     value_ast = make_intrusive<ASTLiteral>(UInt64(fuzz_rand() % 2048 + 1));
             }
-            else if (param_id->name() == "positions")
+            else if (param_id->name() == "support_phrase_search")
             {
                 if (fuzz_rand() % 5 == 0)
                     value_ast = make_intrusive<ASTLiteral>(UInt64(fuzz_rand() % 2));
@@ -2358,7 +2358,7 @@ void QueryFuzzer::fuzzIndexDeclaration(ASTIndexDeclaration & index)
         add_missing_param("posting_list_block_size", UInt64(fuzz_rand() % 2048 + 1));
         add_missing_param("posting_list_codec", String(pickRandomly(fuzz_rand, posting_list_codecs)));
         /// `support_phrase_search = 1` requires the `allow_experimental_text_index_phrase_search` MergeTree setting.
-        add_missing_param("positions", UInt64(fuzz_rand() % 2));
+        add_missing_param("support_phrase_search", UInt64(fuzz_rand() % 2));
     }
 
     /// Fuzz vector_similarity index positional arguments independently of type swap.
@@ -4718,8 +4718,11 @@ static const std::vector<std::unordered_set<String>> & swapFuncs
         {"naiveBayesClassifier", "detectCharset", "detectLanguage", "detectLanguageUnknown", "detectLanguageMixed", "detectTonality"},
         /// Word-level NLP (language/extension + word)
         {"stem", "lemmatize", "synonyms"},
-        /// AI functions: text + optional params map
-        {"aiEmbed", "aiGenerate"},
+        /// AI text generation: text + optional params map
+        {"aiGenerate"},
+        /// aiEmbed takes (text, model[, params]); its arity matches no other AI function, so it is not
+        /// grouped for name-swapping (a swap would produce arity-mismatched calls).
+        {"aiEmbed"},
         /// AI functions: text + a per-function arg (categories / instruction / target_language) + optional params map
         {"aiClassify", "aiExtract", "aiTranslate"},
         /// Geo distance functions (lon1, lat1, lon2, lat2 → Float64)
