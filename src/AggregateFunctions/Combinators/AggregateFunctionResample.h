@@ -223,6 +223,12 @@ public:
         auto & col = assert_cast<ColumnArray &>(to);
         auto & col_offsets = assert_cast<ColumnArray::ColumnOffsets &>(col.getOffsetsColumn());
 
+        /// Reserve before the loop so that, for a nested `-State` function, the per-bucket aliasing
+        /// transfer into `col.getData()` cannot reallocate and throw mid-loop (which would double-free
+        /// the already-transferred sub-states). Reserving happens before any transfer, so it is safe.
+        col.getData().reserve(col.getData().size() + total);
+        col_offsets.getData().reserve(col_offsets.size() + 1);
+
         for (size_t i = 0; i < total; ++i)
         {
             if constexpr (merge)

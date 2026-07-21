@@ -328,6 +328,11 @@ public:
         ColumnArray::Offsets & offsets_to = arr_to.getOffsets();
         IColumn & elems_to = arr_to.getData();
 
+        /// Reserve before the loop so the per-element aliasing transfer into `elems_to` cannot
+        /// reallocate and throw mid-loop for a nested `-State` function. See AggregateFunctionResample.h.
+        elems_to.reserve(elems_to.size() + state.dynamic_array_size);
+        offsets_to.reserve(offsets_to.size() + 1);
+
         char * nested_state = state.array_of_aggregate_datas;
         for (size_t i = 0; i < state.dynamic_array_size; ++i)
         {

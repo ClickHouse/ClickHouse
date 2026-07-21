@@ -314,10 +314,15 @@ public:
         }
         ::sort(keys.begin(), keys.end());
 
-        // insert using sorted keys to result column
+        // Insert all keys first, then transfer all values, so the aliasing value transfer into
+        // val_column cannot throw once started for a nested `-State` function (which would
+        // double-free the already-aliased states). See AggregateFunctionResample.h.
+        for (auto & key : keys)
+            key_column.insert(key);
+
+        val_column.reserve(val_column.size() + keys.size());
         for (auto & key : keys)
         {
-            key_column.insert(key);
             if constexpr (merge)
                 nested_func->insertMergeResultInto(merged_maps[key], val_column, arena);
             else
@@ -325,6 +330,7 @@ public:
         }
 
         IColumn::Offsets & res_offsets = nested_column.getOffsets();
+        res_offsets.reserve(res_offsets.size() + 1);
         res_offsets.push_back(val_column.size());
     }
 
