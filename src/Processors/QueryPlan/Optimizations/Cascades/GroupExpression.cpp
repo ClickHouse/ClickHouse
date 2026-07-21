@@ -64,7 +64,7 @@ String GroupExpression::dump(const CostConfig & cost_config) const
 
 /// The one list of components that define an expression's structural identity; equality and
 /// the fingerprint hash must not diverge from it.
-struct GroupExpressionIdentityView
+struct GroupExpressionIdentity
 {
     String name;
     String description;
@@ -73,7 +73,7 @@ struct GroupExpressionIdentityView
     const std::vector<GroupExpression::Input> & inputs;
 };
 
-static GroupExpressionIdentityView identityView(const GroupExpression & expression)
+static GroupExpressionIdentity identityOf(const GroupExpression & expression)
 {
     return {
         expression.getName(),
@@ -85,8 +85,8 @@ static GroupExpressionIdentityView identityView(const GroupExpression & expressi
 
 bool GroupExpression::structurallyEqualTo(const GroupExpression & other) const
 {
-    const auto left = identityView(*this);
-    const auto right = identityView(other);
+    const auto left = identityOf(*this);
+    const auto right = identityOf(other);
 
     if (left.name != right.name || left.description != right.description || left.strategy_name != right.strategy_name)
         return false;
@@ -108,7 +108,7 @@ bool GroupExpression::structurallyEqualTo(const GroupExpression & other) const
 
 size_t GroupExpression::fingerprint() const
 {
-    const auto view = identityView(*this);
+    const auto view = identityOf(*this);
 
     size_t hash_value = std::hash<String>()(view.name);
     boost::hash_combine(hash_value, std::hash<String>()(view.description));

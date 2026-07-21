@@ -59,7 +59,7 @@ public:
     size_t fingerprint() const;
 
     /// Structural identity used to deduplicate physical expressions. Equality and the
-    /// fingerprint hash both derive from `identityView`, so a fingerprint hash collision does
+    /// fingerprint hash both derive from one `GroupExpressionIdentity`, so a fingerprint hash collision does
     /// not silently drop a distinct alternative.
     bool structurallyEqualTo(const GroupExpression & other) const;
 
