@@ -1126,7 +1126,8 @@ QueryTreeNodePtr createProjectionForUsing(const ColumnNode & using_column_node, 
 static bool qualifierBindsToJoinSubtree(
     const QueryTreeNodePtr & join_tree_node,
     const std::string & qualifier,
-    const IdentifierResolveScope & scope)
+    const IdentifierResolveScope & scope,
+    bool qualifier_can_be_database_name)
 {
     if (!join_tree_node || qualifier.empty())
         return false;
@@ -1139,21 +1140,21 @@ static bool qualifierBindsToJoinSubtree(
         case QueryTreeNodeType::JOIN:
         {
             const auto & join = join_tree_node->as<JoinNode &>();
-            return qualifierBindsToJoinSubtree(join.getLeftTableExpression(), qualifier, scope)
-                || qualifierBindsToJoinSubtree(join.getRightTableExpression(), qualifier, scope);
+            return qualifierBindsToJoinSubtree(join.getLeftTableExpression(), qualifier, scope, qualifier_can_be_database_name)
+                || qualifierBindsToJoinSubtree(join.getRightTableExpression(), qualifier, scope, qualifier_can_be_database_name);
         }
         case QueryTreeNodeType::CROSS_JOIN:
         {
             const auto & cross = join_tree_node->as<CrossJoinNode &>();
             for (const auto & expr : cross.getTableExpressions())
-                if (qualifierBindsToJoinSubtree(expr, qualifier, scope))
+                if (qualifierBindsToJoinSubtree(expr, qualifier, scope, qualifier_can_be_database_name))
                     return true;
             return false;
         }
         case QueryTreeNodeType::ARRAY_JOIN:
         {
             const auto & arr = join_tree_node->as<ArrayJoinNode &>();
-            return qualifierBindsToJoinSubtree(arr.getTableExpression(), qualifier, scope);
+            return qualifierBindsToJoinSubtree(arr.getTableExpression(), qualifier, scope, qualifier_can_be_database_name);
         }
         default:
             break;
@@ -1162,7 +1163,11 @@ static bool qualifierBindsToJoinSubtree(
     auto it = scope.table_expression_node_to_data.find(join_tree_node);
     if (it == scope.table_expression_node_to_data.end())
         return false;
-    return !it->second.table_name.empty() && it->second.table_name == qualifier;
+    if (!it->second.table_name.empty() && it->second.table_name == qualifier)
+        return true;
+    /// The identifier can also be qualified with the database name and the table name of this table
+    /// expression (`db.table.column`), so the subtree must not be pruned from resolution in that case.
+    return qualifier_can_be_database_name && !it->second.database_name.empty() && it->second.database_name == qualifier;
 }
 
 IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromJoin(const IdentifierLookup & identifier_lookup,
@@ -1224,8 +1229,11 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromJoin(const I
     if (prefer_alias && identifier_lookup.isExpressionLookup() && identifier_lookup.identifier.getPartsSize() > 1)
     {
         const auto & path_start = identifier_lookup.identifier.front();
-        binds_left = qualifierBindsToJoinSubtree(from_join_node.getLeftTableExpression(), path_start, scope);
-        binds_right = qualifierBindsToJoinSubtree(from_join_node.getRightTableExpression(), path_start, scope);
+        /// A `db.table.column` interpretation needs at least three parts, so for shorter identifiers
+        /// the first part cannot act as a database qualifier.
+        bool qualifier_can_be_database_name = identifier_lookup.identifier.getPartsSize() > 2;
+        binds_left = qualifierBindsToJoinSubtree(from_join_node.getLeftTableExpression(), path_start, scope, qualifier_can_be_database_name);
+        binds_right = qualifierBindsToJoinSubtree(from_join_node.getRightTableExpression(), path_start, scope, qualifier_can_be_database_name);
     }
 
     QueryTreeNodePtr left_resolved_identifier = nullptr;
