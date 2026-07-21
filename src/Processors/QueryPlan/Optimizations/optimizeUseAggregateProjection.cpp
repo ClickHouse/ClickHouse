@@ -989,6 +989,7 @@ std::optional<String> optimizeUseAggregateProjections(
                     reader,
                     empty_mutations_snapshot,
                     required_column_names,
+                    metadata,
                     *parent_reading_select_result,
                     projection_query_info,
                     context);
