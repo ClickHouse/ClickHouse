@@ -110,37 +110,45 @@ SELECT
     256::Int128 AS le
 FORMAT Flatbuffers" | python3 -c "$DECODER"
 
-# Numeric / string / temporal / container / nullable / low-cardinality types.
+# Value-level check for the remaining non-trivial mapping branches. A single row lets the decoded
+# values be compared directly, proving each mapping (not just that some non-empty blob is produced):
+#  * Date/Date32 map to the day number, DateTime to the Unix timestamp and DateTime64 to the raw
+#    (scaled) count, so the decoded integers pin the temporal encoding;
+#  * Decimal64 maps to its raw (unscaled) integer (1.5 with scale 3 -> 1500);
+#  * IPv4 maps to the numeric address as a UInt, IPv6 to its 16-byte network-order Blob (so ::1
+#    decodes to the trailing 0x01);
+#  * Tuple maps to a nested vector, LowCardinality to the underlying value (the dictionary value
+#    'lc', not its index), and FixedString/UUID to their String form.
 $CLICKHOUSE_LOCAL -q "
 SELECT
-    number AS u64,
-    toInt32(number) - 5 AS i32,
-    toFloat32(number) / 2 AS f32,
-    toFloat64(number) / 3 AS f64,
-    toString(number) AS s,
-    toFixedString(toString(number), 4) AS fs,
-    toDate('2020-01-01') + number AS d,
-    toDate32('2020-01-01') + number AS d32,
-    toDateTime('2020-01-01 00:00:00', 'UTC') + number AS dt,
+    42::UInt64 AS u64,
+    -5::Int32 AS i32,
+    0.5::Float32 AS f32,
+    0.25::Float64 AS f64,
+    'abcd'::FixedString(4) AS fs,
+    toDate('2020-01-01') AS d,
+    toDate32('2020-01-01') AS d32,
+    toDateTime('2020-01-01 00:00:00', 'UTC') AS dt,
     toDateTime64('2020-01-01 00:00:00.123', 3, 'UTC') AS dt64,
-    toDecimal64(number, 3) AS dec64,
+    toDecimal64('1.5', 3) AS dec64,
     toUUID('61f0c404-5cb3-11e7-907b-a6006ad3dba0') AS uuid,
     toIPv4('1.2.3.4') AS ipv4,
     toIPv6('::1') AS ipv6,
-    [number, number + 1] AS arr,
-    (number, toString(number)) AS tup,
-    if(number % 2 = 0, NULL, number)::Nullable(UInt32) AS nullable,
-    toLowCardinality(toString(number)) AS lc
-FROM numbers(3)
-FORMAT Flatbuffers" | nonempty_output
+    [10, 20]::Array(UInt32) AS arr,
+    (7, 'k')::Tuple(UInt32, String) AS tup,
+    NULL::Nullable(UInt32) AS nullable,
+    toLowCardinality('lc') AS lc
+FORMAT Flatbuffers" | python3 -c "$DECODER"
 
-# Wide integers, large decimals (serialized as Blob), enums and Float32.
+# Value-level check: wide integers and large decimals are serialized as little-endian Blobs, and
+# enums map to their underlying Int. 42 -> 0x2a as the first (lowest) byte; 42.42 with scale 2 has
+# the raw value 4242 = 0x1092, so the Blob starts with 0x92 0x10 in little-endian order.
 $CLICKHOUSE_LOCAL -q "
 SELECT
     42::Int128 AS i128, 42::UInt128 AS u128, 42::Int256 AS i256, 42::UInt256 AS u256,
-    42.42::Decimal128(2) AS dec128, 42.42::Decimal256(2) AS dec256,
-    'a'::Enum8('a' = 1) AS e8, 'b'::Enum16('b' = 1) AS e16
-FORMAT Flatbuffers" | nonempty_output
+    '42.42'::Decimal128(2) AS dec128, '42.42'::Decimal256(2) AS dec256,
+    'a'::Enum8('a' = 1) AS e8, 'b'::Enum16('b' = 2) AS e16
+FORMAT Flatbuffers" | python3 -c "$DECODER"
 
 # An empty result set still produces a valid (non-empty) FlexBuffers root that decodes to zero rows.
 $CLICKHOUSE_LOCAL -q "SELECT 1 AS x WHERE 0 FORMAT Flatbuffers" | nonempty_output
