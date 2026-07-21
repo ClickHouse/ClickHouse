@@ -240,6 +240,16 @@ struct CollectReferencedTablesMatcher
         }
         else if (const auto * function = node->as<ASTFunction>())
         {
+            /// A user-defined SQL function is expanded into its body only later (by
+            /// `UserDefinedSQLFunctionVisitor`, after `TreeRewriter`), long after this visitor runs on the
+            /// unrewritten AST. Its body can hide any of the mutable dependencies handled below - a
+            /// `dictGet`, `joinGet`, `x IN table`, `eval`, or a plain table reference - so a call spelled
+            /// `f(x)` looks like an ordinary function here and its hidden source would never be counted.
+            /// We cannot see through it without expanding it, so fail closed on any SQL UDF.
+            if (UserDefinedSQLFunctionFactory::instance().has(function->name))
+            {
+                data.cannot_verify = true;
+            }
             /// Some functions read mutable external state named by an argument rather than by a table
             /// expression, so the object they depend on never shows up as a table identifier here:
             /// `dictGet('db.dict', ...)` and friends read a dictionary (which has no modification hash at
@@ -247,7 +257,7 @@ struct CollectReferencedTablesMatcher
             /// This visitor runs on the unrewritten AST - before `MarkTableIdentifiersVisitor` could turn
             /// any identifier-spelled argument into an `ASTTableIdentifier` - and the documented quoted
             /// spellings stay literals in any case, so fail closed.
-            if (functionIsDictGet(function->name) || functionIsJoinGet(function->name) || function->name == "eval")
+            else if (functionIsDictGet(function->name) || functionIsJoinGet(function->name) || function->name == "eval")
             {
                 data.cannot_verify = true;
             }
