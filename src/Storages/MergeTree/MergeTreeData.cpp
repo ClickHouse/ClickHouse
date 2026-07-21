@@ -3115,31 +3115,47 @@ void MergeTreeData::refreshDataPartsOnce(UInt64 interval_milliseconds)
     bool have_lightweight_in_parts = false;
     bool have_parts_with_version_metadata = false;
 
-    for (const auto & my_part : parts_to_add)
+    /// Iterate by index because a rolled-back top-level part appends its committed children to
+    /// the work list below. Hold a copy of the node pointer (not a reference into the vector):
+    /// a `push_back` may reallocate `parts_to_add` while `my_part` is still in use.
+    for (size_t i = 0; i < parts_to_add.size(); ++i)
     {
+        auto my_part = parts_to_add[i];
         auto res = loadDataPartWithRetries(
             my_part->info, my_part->name, my_part->disk,
             DataPartState::PreActive, data_parts_mutex, loading_parts_initial_backoff_ms,
             loading_parts_max_backoff_ms, loading_parts_max_tries);
 
-        if (res.is_broken)
+        /// Committing a broken or rolled-back (`Outdated`) part would reset it to `PreActive` and
+        /// re-activate it. Skip it and reconsider its children instead: they are covered by it in
+        /// the loading tree, so the top-level traversal above never reaches them. Mirrors the
+        /// `!is_active_part` orphan promotion in `loadDataPartsFromDisk`.
+        if (res.is_broken || res.part->getState() == DataPartState::Outdated)
         {
-            LOG_ERROR(log, "The new data part {} appears broken - skip loading", res.part->name);
-        }
-        else
-        {
+            if (res.is_broken)
+                LOG_ERROR(log, "The new data part {} appears broken - skip loading", res.part->name);
+
+            if (!my_part->children.empty())
             {
                 auto part_lock = lockParts();
-                Transaction transaction(*this, nullptr);
-                preparePartForCommit(res.part, transaction, part_lock, false, false);
-                transaction.commit(part_lock);
+                for (const auto & [_, child] : my_part->children)
+                    if (data_parts_by_info.find(child->info) == data_parts_by_info.end())
+                        parts_to_add.push_back(child);
             }
-
-            bool is_adaptive = res.part->index_granularity_info.mark_type.adaptive;
-            have_non_adaptive_parts |= !is_adaptive;
-            have_lightweight_in_parts |= res.part->hasLightweightDelete();
-            have_parts_with_version_metadata |= res.part->wasInvolvedInTransaction();
+            continue;
         }
+
+        {
+            auto part_lock = lockParts();
+            Transaction transaction(*this, nullptr);
+            preparePartForCommit(res.part, transaction, part_lock, false, false);
+            transaction.commit(part_lock);
+        }
+
+        bool is_adaptive = res.part->index_granularity_info.mark_type.adaptive;
+        have_non_adaptive_parts |= !is_adaptive;
+        have_lightweight_in_parts |= res.part->hasLightweightDelete();
+        have_parts_with_version_metadata |= res.part->wasInvolvedInTransaction();
     }
 
     has_non_adaptive_index_granularity_parts = have_non_adaptive_parts;
