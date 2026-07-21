@@ -307,7 +307,7 @@ TEST(ClientInfoForwardedFor, LogsEachRejectedAddressOnlyOnce)
     auto log = getLogger("ClientInfo");
     LoggerStateGuard logger_state_guard(log);
     log->setChannel(stream_channel.get());
-    log->setLevel("warning");
+    log->setLevel("debug");
 
     ClientInfo info;
     info.forwarded_for = "attacker.example";

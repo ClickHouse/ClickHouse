@@ -51,23 +51,23 @@ ${CLICKHOUSE_CLIENT} --query "
     FORMAT TSV
 "
 
-# The warning is written asynchronously after the HTTP response is sent, so retry until it appears.
+# The debug message is written asynchronously after the HTTP response is sent, so retry until it appears.
 for _ in {1..60}; do
     ${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS text_log"
-    warning_count=$(${CLICKHOUSE_CLIENT} --query "
+    debug_count=$(${CLICKHOUSE_CLIENT} --query "
         SELECT count()
         FROM system.text_log
         WHERE event_time_microseconds >= toDateTime64('${log_start_time}', 6)
             AND logger_name = 'ClientInfo'
-            AND level = 'Warning'
+            AND level = 'Debug'
             AND position(message, 'Invalid address in') > 0
             AND position(message, 'X-Forwarded-For') > 0
             AND position(message, '${invalid_xff}') > 0
         SETTINGS max_rows_to_read = 0
         FORMAT TSV
     ")
-    [ "${warning_count}" -gt 0 ] && break
+    [ "${debug_count}" -gt 0 ] && break
     sleep 0.5
 done
 
-echo "${warning_count}"
+echo "${debug_count}"
