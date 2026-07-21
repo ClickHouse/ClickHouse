@@ -25,6 +25,7 @@
 #include <AggregateFunctions/AggregateFunctionCount.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Functions/FunctionFactory.h>
+#include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 
 #include <Interpreters/ApplyWithAliasVisitor.h>
 #include <Interpreters/ApplyWithSubqueryVisitor.h>
@@ -374,26 +375,43 @@ namespace
 /// trivial-LIMIT source optimization, since `arrayJoin` changes row cardinality after the
 /// source has run. Mirrors `numbersLikeUtils::astContainsArrayJoinFunction`.
 /// The function name is canonicalized so the case-insensitive alias `unnest` is also caught
-/// even when function names are not normalized (`normalize_function_names = 0`).
-bool selectListHasArrayJoinFunction(const ASTPtr & ast)
+/// even when function names are not normalized (`normalize_function_names = 0`). The call can
+/// also hide behind a SQL UDF wrapper (`CREATE FUNCTION explode AS a -> arrayJoin(a)`), so the
+/// check descends into SQL UDF bodies with cycle protection (mirrors
+/// `expressionContainsArrayJoin` in `RowPolicy.cpp`).
+bool selectListHasArrayJoinFunctionImpl(const ASTPtr & ast, std::unordered_set<String> & visited_udfs)
 {
     if (!ast)
         return false;
     if (const auto * function = ast->as<ASTFunction>())
+    {
         if (getFunctionCanonicalNameIfAny(function->name) == "arrayJoin")
             return true;
+        if (auto udf_body = UserDefinedSQLFunctionFactory::instance().tryGet(function->name);
+            udf_body && visited_udfs.insert(function->name).second
+                && selectListHasArrayJoinFunctionImpl(udf_body, visited_udfs))
+            return true;
+    }
     for (const auto & child : ast->children)
-        if (!child->as<ASTSelectQuery>() && selectListHasArrayJoinFunction(child))
+        if (!child->as<ASTSelectQuery>() && selectListHasArrayJoinFunctionImpl(child, visited_udfs))
             return true;
     return false;
+}
+
+bool selectListHasArrayJoinFunction(const ASTPtr & ast)
+{
+    std::unordered_set<String> visited_udfs;
+    return selectListHasArrayJoinFunctionImpl(ast, visited_udfs);
 }
 
 /// Whether the AST subtree contains a call to a stateful function (`IFunctionBase::isStateful`,
 /// e.g. `neighbor`, `runningAccumulate`, `logTrace`), without descending into nested subqueries.
 /// Stateful functions give block- and data-order dependent results and side effects, so they must
 /// see the same input rows they would see without limit-related optimizations.
-/// Mirrors `numbersLikeUtils::astContainsStatefulFunction`.
-bool selectListHasStatefulFunction(const ASTPtr & ast, const ContextPtr & context)
+/// Mirrors `numbersLikeUtils::astContainsStatefulFunction`. Such a call can also hide behind a
+/// SQL UDF wrapper (`CREATE FUNCTION f AS x -> neighbor(x, 1)`), so the check descends into SQL
+/// UDF bodies with cycle protection (mirrors `expressionContainsArrayJoin` in `RowPolicy.cpp`).
+bool selectListHasStatefulFunctionImpl(const ASTPtr & ast, const ContextPtr & context, std::unordered_set<String> & visited_udfs)
 {
     if (!ast)
         return false;
@@ -402,11 +420,21 @@ bool selectListHasStatefulFunction(const ASTPtr & ast, const ContextPtr & contex
         const auto function_resolver = FunctionFactory::instance().tryGet(function->name, context);
         if (function_resolver && function_resolver->isStateful())
             return true;
+        if (auto udf_body = UserDefinedSQLFunctionFactory::instance().tryGet(function->name);
+            udf_body && visited_udfs.insert(function->name).second
+                && selectListHasStatefulFunctionImpl(udf_body, context, visited_udfs))
+            return true;
     }
     for (const auto & child : ast->children)
-        if (!child->as<ASTSelectQuery>() && selectListHasStatefulFunction(child, context))
+        if (!child->as<ASTSelectQuery>() && selectListHasStatefulFunctionImpl(child, context, visited_udfs))
             return true;
     return false;
+}
+
+bool selectListHasStatefulFunction(const ASTPtr & ast, const ContextPtr & context)
+{
+    std::unordered_set<String> visited_udfs;
+    return selectListHasStatefulFunctionImpl(ast, context, visited_udfs);
 }
 
 /** There are no limits on the maximum size of the result for the subquery.

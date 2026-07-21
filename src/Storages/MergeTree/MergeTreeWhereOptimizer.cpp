@@ -3,6 +3,7 @@
 #include <DataTypes/NestedUtils.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
+#include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/IdentifierSemantic.h>
@@ -52,8 +53,10 @@ static NameToIndexMap fillNamesPositions(const Names & names)
 /// observe every input row and block. Moving any conjunct out of such a `WHERE` into reader-side
 /// `PREWHERE` lets the reader prune granules before the stateful predicate runs, changing the rows
 /// (and blocks) it sees. Mirrors `numbersLikeUtils::astContainsStatefulFunction` and the sibling
-/// guards across the limit-pushdown / read-in-order passes.
-static bool astContainsStatefulFunction(const ASTPtr & ast, const ContextPtr & context)
+/// guards across the limit-pushdown / read-in-order passes. Such a call can also hide behind a
+/// SQL UDF wrapper (`CREATE FUNCTION f AS x -> neighbor(x, 1)`), so the check descends into SQL
+/// UDF bodies with cycle protection (mirrors `expressionContainsArrayJoin` in `RowPolicy.cpp`).
+static bool astContainsStatefulFunctionImpl(const ASTPtr & ast, const ContextPtr & context, std::unordered_set<String> & visited_udfs)
 {
     if (!ast)
         return false;
@@ -62,11 +65,21 @@ static bool astContainsStatefulFunction(const ASTPtr & ast, const ContextPtr & c
         const auto function_resolver = FunctionFactory::instance().tryGet(function->name, context);
         if (function_resolver && function_resolver->isStateful())
             return true;
+        if (auto udf_body = UserDefinedSQLFunctionFactory::instance().tryGet(function->name);
+            udf_body && visited_udfs.insert(function->name).second
+                && astContainsStatefulFunctionImpl(udf_body, context, visited_udfs))
+            return true;
     }
     for (const auto & child : ast->children)
-        if (!child->as<ASTSelectQuery>() && astContainsStatefulFunction(child, context))
+        if (!child->as<ASTSelectQuery>() && astContainsStatefulFunctionImpl(child, context, visited_udfs))
             return true;
     return false;
+}
+
+static bool astContainsStatefulFunction(const ASTPtr & ast, const ContextPtr & context)
+{
+    std::unordered_set<String> visited_udfs;
+    return astContainsStatefulFunctionImpl(ast, context, visited_udfs);
 }
 
 /// Find minimal position of any of the column in primary key.
