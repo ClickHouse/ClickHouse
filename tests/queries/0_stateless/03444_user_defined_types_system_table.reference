@@ -5,5 +5,5 @@ SystemTestType1	UInt64	toUInt64(value)	toString(value)	42	1
 SystemTestType2	Array(String)	\N	\N	\N	1
 SystemTestType1
 SystemTestType2
-SystemTestType2
 SystemTestType1
+SystemTestType2
