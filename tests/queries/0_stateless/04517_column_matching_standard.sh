@@ -4,6 +4,8 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
+# Column matching is implemented only for the analyzer; force it so old-analyzer suites pass.
+CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --enable_analyzer=1"
 CLIENT_STANDARD="${CLICKHOUSE_CLIENT} --column_and_query_name_matching=standard"
 
 ${CLICKHOUSE_CLIENT} --query "CREATE TABLE t_col_match (FirstName String) ENGINE = Memory; INSERT INTO t_col_match VALUES ('a'); CREATE TABLE t_col_siblings (Val Int32, val Int32) ENGINE = Memory; INSERT INTO t_col_siblings VALUES (1, 2); CREATE TABLE t_col_tuple (Data Tuple(Name String)) ENGINE = Memory; INSERT INTO t_col_tuple VALUES (('n')); CREATE TABLE t_col_group (Category String, Amount Int32) ENGINE = Memory; INSERT INTO t_col_group VALUES ('x', 1), ('x', 2), ('y', 5)"
