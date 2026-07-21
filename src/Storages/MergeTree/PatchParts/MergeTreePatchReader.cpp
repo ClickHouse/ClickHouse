@@ -1,5 +1,6 @@
 #include <Storages/MergeTree/PatchParts/MergeTreePatchReader.h>
 #include <Storages/MergeTree/PatchParts/RangesInPatchParts.h>
+#include <Storages/MergeTree/PatchParts/PatchPartsUtils.h>
 #include <Storages/MergeTree/IMergeTreeReader.h>
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 #include <Storages/MergeTree/MergeTreeRangeReader.h>
@@ -8,6 +9,7 @@
 #include <Storages/KeyDescription.h>
 #include <Columns/ColumnSparse.h>
 #include <Columns/ColumnLowCardinality.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <Interpreters/ExpressionActions.h>
 #include <base/range.h>
 #include <Common/Stopwatch.h>
@@ -282,6 +284,14 @@ PatchReadResultPtr MergeTreePatchReaderMergeOnKey::readPatch(const MarkRange & r
     /// so downstream callers can look them up by name without re-executing the expression.
     if (patch_part.sorting_key->expression)
         patch_part.sorting_key->expression->execute(patch_read_result->block);
+
+    /// Key comparisons require the same column class on all sides.
+    for (const auto & name : patch_part.sorting_key->column_names)
+    {
+        auto & column = patch_read_result->block.getByName(name);
+        column.column = recursiveRemoveLowCardinality(removeSpecialRepresentations(column.column->convertToFullColumnIfConst()));
+        column.type = recursiveRemoveLowCardinality(column.type);
+    }
 
     return patch_read_result;
 }

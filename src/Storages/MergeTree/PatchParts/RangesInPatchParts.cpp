@@ -8,7 +8,9 @@
 #include <Storages/MergeTree/MergeTreeIndexReader.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Columns/ColumnLowCardinality.h>
+#include <Columns/ColumnSparse.h>
 #include <Columns/ColumnsNumber.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <Common/ProfileEvents.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/logger_useful.h>
@@ -198,13 +200,15 @@ MarkRanges getRangesInPatchPartMergeOnKey(
     if (common_prefix_size == 0)
         return emit_all_patch_ranges();
 
-    ColumnRawPtrs main_sorting_key_columns(common_prefix_size);
-    ColumnRawPtrs patch_sorting_key_columns(common_prefix_size);
+    Columns main_sorting_key_columns(common_prefix_size);
+    Columns patch_sorting_key_columns(common_prefix_size);
 
     for (size_t i = 0; i < common_prefix_size; ++i)
     {
-        main_sorting_key_columns[i] = (*main_index)[i].get();
-        patch_sorting_key_columns[i] = (*patch_index)[i].get();
+        /// After an ALTER like LowCardinality(T) <-> T on a key column the main index is loaded
+        /// with the current type while the patch index keeps the type the patch was written with.
+        main_sorting_key_columns[i] = recursiveRemoveLowCardinality(removeSpecialRepresentations((*main_index)[i]->convertToFullColumnIfConst()));
+        patch_sorting_key_columns[i] = recursiveRemoveLowCardinality(removeSpecialRepresentations((*patch_index)[i]->convertToFullColumnIfConst()));
     }
 
     auto compare_patch = [&](size_t patch_row, size_t main_row) -> int

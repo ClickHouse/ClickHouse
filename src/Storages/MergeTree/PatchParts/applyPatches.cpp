@@ -8,6 +8,7 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnSparse.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <Interpreters/castColumn.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Common/HashTable/Hash.h>
@@ -320,8 +321,12 @@ Block getBlockWithSortingKey(const Block & block, const KeyDescription & sorting
     result.insert(block.getByName(BlockNumberColumn::name));
     result.insert(block.getByName(BlockOffsetColumn::name));
 
+    /// Key comparisons require the same column class on all sides.
     for (auto & column : result)
-        column.column = removeSpecialRepresentations(column.column);
+    {
+        column.column = recursiveRemoveLowCardinality(removeSpecialRepresentations(column.column->convertToFullColumnIfConst()));
+        column.type = recursiveRemoveLowCardinality(column.type);
+    }
 
     return result;
 }
