@@ -494,9 +494,7 @@ void HTTPHandler::processQuery(
         {
             try
             {
-                /// The access-checked variant enforces the same `SHOW_DATABASES` privilege as `USE`,
-                /// for both the `/database/table` URL-path form and the `database` setting.
-                context->setCurrentDatabaseWithAccessCheck(resolved_database);
+                context->setCurrentDatabase(resolved_database);
             }
             catch (Exception & e)
             {

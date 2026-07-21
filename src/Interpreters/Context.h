@@ -1133,11 +1133,6 @@ public:
     String getInitialQueryId() const;
 
     void setCurrentDatabase(const String & name);
-    /// Same as `setCurrentDatabase`, but enforces the `USE` privilege contract first:
-    /// switching the database that unqualified names resolve to requires `SHOW_DATABASES`
-    /// on it. The access check runs before the existence check, so an unprivileged user
-    /// cannot use it as a database-existence oracle.
-    void setCurrentDatabaseWithAccessCheck(const String & name);
     /// Set current_database without validating that database exists.
     /// Use during bootstrap/restore scenarios where database may not be loaded yet.
     void setCurrentDatabaseUnchecked(const String & name);
