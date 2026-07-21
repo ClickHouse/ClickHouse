@@ -1,0 +1,27 @@
+<clickhouse>
+    <!-- Named collections exercising the `addresses_expr` input shape, which fills only
+         `configuration.addresses` and leaves `host` / `port` empty. The `MaterializedPostgreSQL`
+         database engine must canonicalize the single address back into `host` / `port`
+         (instead of silently building a `:0` connection string) and still run it through
+         `remote_url_allow_hosts`. -->
+    <named_collections>
+        <mpg_nc_blocked>
+            <addresses_expr>blocked-postgres-host:5432</addresses_expr>
+            <database>postgres</database>
+            <username>postgres</username>
+            <password>ClickHouse_PostgreSQL_P@ssw0rd</password>
+        </mpg_nc_blocked>
+        <mpg_nc_allowed>
+            <addresses_expr>postgres1:5432</addresses_expr>
+            <database>postgres</database>
+            <username>postgres</username>
+            <password>ClickHouse_PostgreSQL_P@ssw0rd</password>
+        </mpg_nc_allowed>
+        <mpg_nc_multiple>
+            <addresses_expr>postgres1|postgres2:5432</addresses_expr>
+            <database>postgres</database>
+            <username>postgres</username>
+            <password>ClickHouse_PostgreSQL_P@ssw0rd</password>
+        </mpg_nc_multiple>
+    </named_collections>
+</clickhouse>

@@ -633,6 +633,20 @@ void registerDatabaseMaterializedPostgreSQL(DatabaseFactory & factory)
             configuration.password = safeGetLiteralValue<String>(engine_args[3], engine_name);
         }
 
+        /// A named collection may specify the endpoint as `addresses_expr`, which fills only
+        /// `configuration.addresses` and leaves `host` / `port` empty, while the connection string
+        /// below is built from `host` / `port`. This engine keeps a single replication connection,
+        /// so exactly one address is accepted; canonicalize it back into `host` / `port`.
+        if (configuration.host.empty())
+        {
+            if (configuration.addresses.size() != 1)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                "Engine `{}` requires a single `host:port` address, but `addresses_expr` defines {} addresses",
+                                engine_name, configuration.addresses.size());
+            configuration.host = configuration.addresses.front().first;
+            configuration.port = configuration.addresses.front().second;
+        }
+
         /// Enforce the server's outbound-host policy, exactly like the table engine and the table
         /// function do in `StoragePostgreSQL::getConfiguration`: a user must not be able to open a
         /// long-lived replication connection to a host that `remote_url_allow_hosts` forbids elsewhere.
