@@ -9,6 +9,7 @@
 #include <type_traits>
 #include <utility>
 
+#include <base/sort.h>
 
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnNullable.h>
@@ -19,7 +20,7 @@
 
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <AggregateFunctions/TimeSeries/AggregateFunctionTimeseriesSamples.h>
-#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/HashTable/HashMap.h>
 #include <Common/VectorWithMemoryTracking.h>
 
 
@@ -32,6 +33,24 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int INCORRECT_DATA;
 }
+
+/// Grower for the bucket maps. The stock `HashTableGrower` quadruples the buffer below `max_size_degree`,
+/// which leaves the table at a load factor as low as ~0.125; with the whole `Bucket` stored in every cell that
+/// wastes a lot of memory across many aggregation states. Doubling keeps the same worst-case load factor (0.5)
+/// with at most half the slots of quadrupling.
+struct TimeSeriesBucketsHashTableGrower : public HashTableGrower<4>
+{
+    void increaseSize()
+    {
+        ++size_degree;
+    }
+};
+
+/// The bucket map of the `timeSeries*ToGrid` aggregation states: maps a bucket index in `[0, bucket_count)` to
+/// the bucket's aggregate data. Also used by the `timeseries_to_grid_range_scan_vs_std_sort` example, which
+/// tunes `BUCKET_DENSITY_TO_ENABLE_RANGE_SCAN` for this exact container.
+template <typename Bucket>
+using TimeSeriesBucketsMap = HashMap<UInt64, Bucket, TrivialHash, TimeSeriesBucketsHashTableGrower>;
 
 /// Base class for time series aggregate functions that map values to a grid specified by start timestamp, end timestamp, step and window.
 /// It implements the common logic for handling input data as either scalar timestamps and values or vectors of timestamps and values of
@@ -193,8 +212,8 @@ public:
         buckets.reserve(rhs_buckets.size());
         for (const auto & rhs_bucket : rhs_buckets)
         {
-            auto & bucket = buckets[rhs_bucket.first];
-            bucket.merge(rhs_bucket.second);
+            auto & bucket = buckets[rhs_bucket.getKey()];
+            bucket.merge(rhs_bucket.getMapped());
         }
     }
 
@@ -205,10 +224,10 @@ public:
 
         writeBinaryLittleEndian(data(place)->buckets.size(), buf);
 
-        for (const auto & bucket : data(place)->buckets)
+        for (const auto & entry : data(place)->buckets)
         {
-            writeBinaryLittleEndian(bucket.first, buf);
-            bucket.second.serialize(buf);
+            writeBinaryLittleEndian(entry.getKey(), buf);
+            entry.getMapped().serialize(buf);
         }
     }
 
@@ -343,9 +362,9 @@ protected:
                 const size_t window_end = bucketRangeInWindow(grid_index).second;
                 for (; next_bucket < window_end; ++next_bucket)
                 {
-                    const auto it = buckets.find(next_bucket);
-                    if (it != buckets.end())
-                        aggregator.add(it->second, bucketEndTimestamp(next_bucket));
+                    const auto * it = buckets.find(next_bucket);
+                    if (it)
+                        aggregator.add(it->getMapped(), bucketEndTimestamp(next_bucket));
                 }
                 removeOutOfWindow(aggregator, grid_index);
                 storeGridResult(grid_index, aggregator.getResult(timestampAtIndex(grid_index)), values, nulls);
@@ -355,9 +374,9 @@ protected:
         {
             VectorWithMemoryTracking<std::pair<size_t, const Bucket *>> ordered_buckets;
             ordered_buckets.reserve(buckets.size());
-            for (const auto & [bucket_index, bucket] : buckets)
-                ordered_buckets.emplace_back(bucket_index, &bucket);
-            std::sort(ordered_buckets.begin(), ordered_buckets.end(),
+            for (const auto & entry : buckets)
+                ordered_buckets.emplace_back(entry.getKey(), &entry.getMapped());
+            ::sort(ordered_buckets.begin(), ordered_buckets.end(),
                 [](const auto & lhs, const auto & rhs) { return lhs.first < rhs.first; });
 
             size_t pos = 0;
@@ -397,10 +416,16 @@ protected:
     const bool first_bucket_is_clamped{};         /// Whether bucket #0's start is below the type minimum (only it can be)
 
 private:
+    /// `HashMap` relocates cells with `memcpy`, so it requires position-independent buckets: trivially
+    /// copyable or declaring `is_position_independent`.
+    static_assert(
+        std::is_trivially_copyable_v<Bucket> || requires { requires Bucket::is_position_independent; },
+        "Bucket must be position independent (memmove-able) to be stored in a HashMap");
+
     struct State
     {
         /// Maps bucket index to the set of all timestamps and values
-        UnorderedMapWithMemoryTracking<size_t, Bucket> buckets;
+        TimeSeriesBucketsMap<Bucket> buckets;
     };
 
     static DataTypePtr createResultType()
@@ -419,11 +444,13 @@ private:
     /// `doInsertResultInto` visits the populated buckets in index order. When the fraction of populated bucket
     /// slots (`populated / bucket_count`) is at least this, scanning the whole index range and looking each up in
     /// the hash map is cheaper than collecting and sorting the populated buckets; below it (sparse data) the
-    /// collect-and-sort wins. The `timeseries_to_grid_range_scan_vs_std_sort` example measures the crossover density at
-    /// ~0.4; it depends on the bucket map's memory layout (~0.45 when buckets sit in index order, ~0.37 when
-    /// scattered as after a merge, so 0.4 is the middle). That example also shows `std::sort` beats a radix sort
-    /// here, so the sparse path uses `std::sort`.
-    static constexpr double BUCKET_DENSITY_TO_ENABLE_RANGE_SCAN = 0.4;
+    /// collect-and-sort wins. The `timeseries_to_grid_range_scan_vs_std_sort` example measures the two strategies
+    /// over the production bucket map (`HashMap` with `TrivialHash`): the range scan still wins at density 0.35
+    /// (by ~6-8%) and loses at 0.30 (~9%), so the threshold is 0.35. With `TrivialHash` open addressing a cell's
+    /// position is determined by the key, not the insertion order, so the crossover does not depend on how the map
+    /// was filled (bulk adds or a merge). That example also shows comparison sorting beats a radix sort here, so
+    /// the sparse path uses `::sort` (pdqsort).
+    static constexpr double BUCKET_DENSITY_TO_ENABLE_RANGE_SCAN = 0.35;
 
     static constexpr UInt16 FORMAT_VERSION = FunctionImpl::FORMAT_VERSION;
 
