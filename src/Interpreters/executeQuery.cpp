@@ -2588,6 +2588,13 @@ struct FramingQueues
 /// execution) - for example a reference to an unknown table - and enables `send_logs_level` only in its
 /// `SETTINGS` clause delivers just the framed `exception` packet, not the analysis-phase logs.
 ///
+/// `send_logs_source_regexp` has the same late-discovery caveat: the queue filters by source when a log
+/// entry is enqueued (`InternalTextLogsQueue::isNeeded`), so a regexp set only in the query's own
+/// `SETTINGS` clause takes effect from query execution onwards. The parse / plan / analysis phase
+/// entries are filtered by the session / URL value (unfiltered when it is not set there), so entries
+/// already buffered may not match the query-level regexp, and entries dropped by a narrower session /
+/// URL regexp cannot be recovered by a broader query-level one.
+///
 /// Does nothing unless the query runs over HTTP.
 void syncFramingQueuesWithSettings(const ContextMutablePtr & context, FramingQueues & queues)
 {
