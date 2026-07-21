@@ -39,8 +39,10 @@ trap 'rm -f "$TMP_FILE"' EXIT
     #     static constexpr auto name = cond ? "IPv4StringToNum" : "IPv4StringToNumOrNull";
     # and trait name constants referenced as name = Traits::makeDateName:
     #     static constexpr auto makeDateName = "makeDate";
+    # Both = and brace initializers are accepted:
+    #     static constexpr auto name{"JSONHas"};
     # Every string literal in the initializer is taken.
-    grep -rhozE 'constexpr [a-zA-Z_:<> *]+ [A-Za-z_]*[Nn]ame(\[\])?[[:space:]]*=[^;]*;' \
+    grep -rhozE 'constexpr [a-zA-Z_:<> *]+ [A-Za-z_]*[Nn]ame(\[\])?[[:space:]]*[={][^;]*;' \
         "$SOURCE_ROOT/src/Functions" \
         "$SOURCE_ROOT/src/AggregateFunctions" \
         "$SOURCE_ROOT/src/TableFunctions" \
