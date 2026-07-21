@@ -49,7 +49,7 @@ namespace
         String getName() const override { return toString(kind); }
 
         explicit FunctionCurrentRoles(const ContextPtr & context, Kind kind_)
-            : kind(kind_)
+            : kind(kind_), is_distributed(context->isDistributed())
         {
             switch (kind)
             {
@@ -75,6 +75,19 @@ namespace
         size_t getNumberOfArguments() const override { return 0; }
         bool isDeterministic() const override { return false; }
 
+        /// The result differs between servers: the role state is read from the shard-local user
+        /// object. On clusters without an interserver secret the shard user is not even the same
+        /// user as on the initiator, and with a secret only `current_roles` are propagated - the
+        /// enabled/default role sets still come from the shard-local user. The built function also
+        /// captures the scope-local `is_distributed` flag below, so it must be excluded from the
+        /// analyzer function cache, which is shared across scopes.
+        bool isServerConstant() const override { return true; }
+
+        /// The initiator of a distributed query must not fold the call into a literal computed
+        /// from its own access state; each shard has to report its own role configuration
+        /// (same as `getServerSetting`).
+        bool isSuitableForConstantFolding() const override { return !is_distributed; }
+
         DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override
         {
             return std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>());
@@ -94,6 +107,7 @@ namespace
     private:
         Kind kind;
         Strings role_names;
+        bool is_distributed;
     };
 }
 
