@@ -248,7 +248,7 @@ AggregateFunctionPtr createAggregateFunctionGroupPolygonUnion(
         return std::make_shared<AggregateFunctionGroupPolygonUnion>(
             arg_type, parameters, GeometryColumnType::Polygon /* unused for variant */, true);
 
-    auto geo_type = getGeometryColumnTypeFromDataType(arg_type);
+    auto geo_type = getUnambiguousGeometryColumnTypeFromDataType(arg_type, name);
     if (!geo_type)
         throw Exception(
             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
