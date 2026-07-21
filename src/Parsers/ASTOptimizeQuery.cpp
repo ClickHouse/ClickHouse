@@ -1,5 +1,8 @@
 #include <Parsers/ASTOptimizeQuery.h>
+#include <Parsers/ASTAsterisk.h>
+#include <Parsers/ASTColumnsMatcher.h>
 #include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTJSONHelpers.h>
 #include <Parsers/ASTJSONReadHelpers.h>
@@ -109,9 +112,26 @@ void ASTOptimizeQuery::readJSON(const Poco::JSON::Object & json)
     cleanup = r.getBool("cleanup");
     manifest = r.getBool("manifest");
     dry_run = r.getBool("dry_run");
-    deduplicate_by_columns = r.readChild("deduplicate_by_columns");
+    /// `deduplicate_by_columns` is produced by the parser only behind `DEDUPLICATE BY ...`
+    /// (`ParserOptimizeQuery` parses `BY` only when `deduplicate` is set) as a non-empty
+    /// `ASTExpressionList` of column specifications (identifier, asterisk, or `COLUMNS` matcher —
+    /// `ParserOptimizeQueryColumnsSpecification`). Without `deduplicate`, the list would format as
+    /// parser-impossible `OPTIMIZE TABLE t BY x` and could smuggle a hidden dedup-column list past
+    /// the interpreter's `ast.deduplicate`-based checks (e.g. the `MANIFEST` incompatibility guard).
+    deduplicate_by_columns = r.readChildOfType<ASTExpressionList>("deduplicate_by_columns");
     if (deduplicate_by_columns)
+    {
+        if (!deduplicate)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "'deduplicate_by_columns' requires 'deduplicate' (OPTIMIZE ... DEDUPLICATE BY) during AST JSON deserialization");
+        if (deduplicate_by_columns->children.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "'deduplicate_by_columns' must be a non-empty list of column specifications during AST JSON deserialization");
+        for (const auto & entry : deduplicate_by_columns->children)
+        {
+            if (!entry || !(entry->as<ASTIdentifier>() || entry->as<ASTAsterisk>() || entry->as<ASTColumnsRegexpMatcher>() || entry->as<ASTColumnsListMatcher>()))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Each entry of 'deduplicate_by_columns' must be an identifier, an asterisk, or a COLUMNS matcher during AST JSON deserialization");
+        }
         children.push_back(deduplicate_by_columns);
+    }
     /// `parts_list` is produced by the parser only for `OPTIMIZE ... DRY RUN PARTS '...'`:
     /// a non-empty `ASTExpressionList` of string literals. `formatImpl` prints it only inside
     /// the `dry_run` branch and `InterpreterOptimizeQuery` downcasts each entry to `ASTLiteral`

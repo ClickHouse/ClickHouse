@@ -179,6 +179,28 @@ void ASTDropQuery::readJSON(const Poco::JSON::Object & json)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "TRUNCATE TABLES FROM requires a single 'database' target during AST JSON deserialization");
     }
 
+    /// `TEMPORARY` is parsed only in the table-target branch (`DROP|DETACH|TRUNCATE TEMPORARY
+    /// [TABLE|VIEW|DICTIONARY] ...`), never for a `DATABASE` or `TABLES FROM` target. A database-only
+    /// AST with `is_temporary` formats as parser-impossible `DROP TEMPORARY DATABASE ...` while
+    /// `InterpreterDropQuery` still dispatches on `database` and drops the database. Reject it.
+    if (isTemporary() && !table && !database_and_tables)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "'is_temporary' requires a table target ('table' or 'database_and_tables') during AST JSON deserialization");
+
+    /// `PERMANENTLY` is parsed only for `DETACH`; on `DROP`/`TRUNCATE` it would format as
+    /// parser-impossible `... PERMANENTLY` SQL that execution ignores. Reject it.
+    if (permanently && kind != Kind::Detach)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "'permanently' is only valid for DETACH during AST JSON deserialization");
+
+    /// The LIKE filter (`like`/`not_like`/`case_insensitive_like`) is parsed only in the
+    /// `TRUNCATE [ALL] TABLES FROM <db>` branch. `formatQueryImpl` prints it unconditionally while
+    /// `InterpreterDropQuery` consults it only when `kind == Truncate && has_tables`, so on any other
+    /// shape the formatted SQL is parser-impossible and the filter is silently ignored. Reject it,
+    /// including the orphaned modifier flags without a pattern.
+    if ((!like.empty() || not_like || case_insensitive_like) && !has_tables)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "'like', 'not_like' and 'case_insensitive_like' are only valid for TRUNCATE [ALL] TABLES FROM during AST JSON deserialization");
+    if (like.empty() && (not_like || case_insensitive_like))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "'not_like'/'case_insensitive_like' require a non-empty 'like' pattern during AST JSON deserialization");
+
     /// A database-only target (no `table`, no `database_and_tables`) is formatted and executed
     /// as `DROP DATABASE`, ignoring the `is_view`/`is_dictionary` flags. Such a combination
     /// cannot be produced by the parser and, left unchecked, would let a JSON that claims to

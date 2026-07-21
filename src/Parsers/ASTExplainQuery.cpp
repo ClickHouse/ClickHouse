@@ -48,22 +48,34 @@ void ASTExplainQuery::readJSON(const Poco::JSON::Object & json)
     if (table_override_child)
         setTableOverride(std::move(table_override_child));
 
-    /// Enforce the parser-produced child set per kind: `EXPLAIN TABLE OVERRIDE` dereferences the table
-    /// function and override, `EXPLAIN CURRENT TRANSACTION` explains nothing, and every other kind
-    /// dereferences the explained query (e.g. `dumpAST(*getExplainedQuery())`).
+    /// Enforce the exact parser-produced child set per kind, rejecting forbidden extras as well:
+    /// `EXPLAIN TABLE OVERRIDE` dereferences the table function and override but never parses an
+    /// explained query, `EXPLAIN CURRENT TRANSACTION` explains nothing, and every other kind
+    /// dereferences the explained query (e.g. `dumpAST(*getExplainedQuery())`) and never parses a
+    /// table function or override. An extra child would format into parser-impossible SQL while
+    /// `InterpreterExplainQuery` silently ignores it.
     switch (kind)
     {
         case ExplainKind::TableOverride:
             if (!getTableFunction() || !getTableOverride())
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "EXPLAIN TABLE OVERRIDE requires 'table_function' and 'table_override' during AST JSON deserialization");
+            if (getExplainedQuery())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "EXPLAIN TABLE OVERRIDE cannot carry an explained 'query' during AST JSON deserialization");
             break;
         case ExplainKind::CurrentTransaction:
+            if (getExplainedQuery() || getTableFunction() || getTableOverride())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "EXPLAIN CURRENT TRANSACTION cannot carry 'query', 'table_function', or 'table_override' during AST JSON deserialization");
             break;
         default:
             if (!getExplainedQuery())
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "{} requires an explained query during AST JSON deserialization", toString(kind));
+            if (getTableFunction() || getTableOverride())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "'table_function' and 'table_override' are only valid for EXPLAIN TABLE OVERRIDE during AST JSON deserialization");
             break;
     }
 
