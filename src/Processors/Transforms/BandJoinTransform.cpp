@@ -275,6 +275,15 @@ BandJoinProbeTransform::BandJoinProbeTransform(
         residual.emplace(std::move(*residual_), input_header, interval_header);
     }
 
+    /// A padded (unmatched) output row materializes a column-type default per interval
+    /// column; estimate those bytes once so the byte cap accounts for them.
+    for (size_t i = input_header.columns(); i < output_header.columns(); ++i)
+    {
+        auto column = output_header.getByPosition(i).type->createColumn();
+        column->insertDefault();
+        padded_row_bytes += column->byteSize();
+    }
+
     lower_strict = conditions[0].op == JoinConditionOperator::Greater;
     upper_strict = conditions[1].op == JoinConditionOperator::Less;
 }
@@ -650,14 +659,20 @@ bool BandJoinProbeTransform::onMatch(size_t point_row, size_t block_index, size_
     {
         /// A candidate becomes a match only through the residual: buffer it (candidates must
         /// already satisfy both bounds, re-verify like an emitted pair) and flush per bounded
-        /// mini-batch, or earlier when the pending rows would reach the output row cap.
+        /// mini-batch, or earlier when the pending rows would reach an output cap (the byte
+        /// cap under the same semantics as outputFull), so a flush cannot overshoot the caps
+        /// by more than the last candidate.
         chassert(checkEmittedPair(point_row, index->blocks[block_index], row));
         if (pending_segments.empty() || pending_segments.back().first != block_index)
             pending_segments.emplace_back(block_index, ColumnUInt64::create());
         pending_segments.back().second->getData().push_back(row);
         ++pending_count;
-        if (pending_count >= residual_batch_size
-            || (max_joined_block_rows != 0 && out_point_rows.size() + pending_count >= max_joined_block_rows))
+        pending_bytes_estimate += point_avg_row_bytes + index->blocks[block_index].avg_row_bytes;
+        bool row_cap_reached = max_joined_block_rows != 0
+            && out_point_rows.size() + pending_count >= max_joined_block_rows;
+        bool byte_cap_reached = max_joined_block_rows != 0 && max_joined_block_bytes != 0
+            && out_bytes_estimate + pending_bytes_estimate >= max_joined_block_bytes;
+        if (pending_count >= residual_batch_size || row_cap_reached || byte_cap_reached)
             return flushPendingCandidates(point_row);
         return true;
     }
@@ -747,6 +762,7 @@ bool BandJoinProbeTransform::flushPendingCandidates(size_t point_row)
 
     pending_segments.clear();
     pending_count = 0;
+    pending_bytes_estimate = 0;
     return keep_walking;
 }
 
@@ -784,7 +800,7 @@ void BandJoinProbeTransform::emitUnmatched(size_t point_row)
     out_blocks.push_back(padded_segment);
     /// Only the padded rows' count matters; the row values are never read.
     out_rows.push_back(0);
-    out_bytes_estimate += point_avg_row_bytes;
+    out_bytes_estimate += point_avg_row_bytes + padded_row_bytes;
 }
 
 bool BandJoinProbeTransform::outputFull() const
@@ -838,8 +854,29 @@ Chunk BandJoinProbeTransform::buildOutputChunk()
     {
         /// Counting sort by block (stable, so each block's rows stay in emission order): the
         /// block count is small next to the row count, where a comparison sort would cost.
-        const size_t num_buckets = index->blocks.size() + 1;    /// + the padded sentinel, last
-        auto bucket_of = [&](UInt64 block) { return block == padded_segment ? num_buckets - 1 : block; };
+        /// An index fragmented into more blocks than there are output rows would make the
+        /// bucket arrays dominate; then the buckets densify to the touched blocks only,
+        /// keeping the scratch O(output rows). The padded sentinel sorts last either way.
+        PaddedPODArray<UInt64> touched;
+        if (index->blocks.size() + 1 > num_rows)
+        {
+            touched.assign(out_blocks.begin(), out_blocks.end());
+            std::sort(touched.begin(), touched.end());
+            touched.resize(std::unique(touched.begin(), touched.end()) - touched.begin());
+        }
+        const size_t num_buckets = touched.empty() ? index->blocks.size() + 1 : touched.size();
+        auto bucket_of = [&](UInt64 block)
+        {
+            if (touched.empty())
+                return block == padded_segment ? num_buckets - 1 : static_cast<size_t>(block);
+            return static_cast<size_t>(std::lower_bound(touched.begin(), touched.end(), block) - touched.begin());
+        };
+        auto block_of = [&](size_t bucket)
+        {
+            if (touched.empty())
+                return bucket == num_buckets - 1 ? padded_segment : bucket;
+            return static_cast<size_t>(touched[bucket]);
+        };
 
         PaddedPODArray<UInt64> bucket_begin;
         bucket_begin.resize_fill(num_buckets + 1, 0);
@@ -868,7 +905,7 @@ Chunk BandJoinProbeTransform::buildOutputChunk()
                 continue;
             auto rows = ColumnUInt64::create();
             rows->getData().insert(grouped_rows.begin() + begin, grouped_rows.begin() + end);
-            runs.push_back({bucket == num_buckets - 1 ? padded_segment : bucket, std::move(rows)});
+            runs.push_back({block_of(bucket), std::move(rows)});
         }
     }
 

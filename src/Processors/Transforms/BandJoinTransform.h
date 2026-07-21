@@ -240,6 +240,9 @@ private:
     /// row cap; it is what bounds fat rows with many matches.
     size_t max_joined_block_rows;
     size_t max_joined_block_bytes;
+    /// Estimated bytes of one padded (unmatched) output row's interval side: the column-type
+    /// defaults buildOutputChunk materializes, counted into the byte cap.
+    size_t padded_row_bytes = 0;
 
     /// State of the probe chunk being processed.
     Columns point_columns;
@@ -280,10 +283,11 @@ private:
     /// Pending residual candidates of the current point row, as per-block segments in walk
     /// order; flushed per bounded mini-batch (the first passing candidate decides SEMI/ANTI,
     /// so small batches restore the first-match short-circuit at batch granularity) and when
-    /// the pending rows would reach the output row cap, which keeps the cap exact.
+    /// the pending rows would reach the output row or byte cap, which keeps the caps exact.
     static constexpr size_t residual_batch_size = 1024;
     std::vector<std::pair<size_t, ColumnUInt64::MutablePtr>> pending_segments;
     size_t pending_count = 0;
+    size_t pending_bytes_estimate = 0;
 
     /// Bound on the work of one produceChunk call - rows scanned, directory entries visited,
     /// search steps - so that control regularly returns to the executor, which observes
