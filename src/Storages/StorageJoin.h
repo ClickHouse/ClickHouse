@@ -105,7 +105,9 @@ public:
 
     bool supportsGetRequests() const override { return true; }
 
-    Chunk getChunkByKeys(const std::vector<Field> & keys, const Names & column_names, ContextPtr context) override;
+    Block getBlockByKeys(const std::vector<Field> & keys, const Names & column_names, ContextPtr context) override;
+
+    Names getKeyColumnNamesForGetRequests() const override { return key_names; }
 
 private:
     Block sample_block;

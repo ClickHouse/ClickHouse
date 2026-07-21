@@ -1,5 +1,6 @@
 #pragma once
 
+#include <optional>
 #include <vector>
 
 #include <IO/WriteBuffer.h>
@@ -49,32 +50,31 @@ private:
     const String str;
 };
 
-/// An empty string is serialized as Nil, because `joinGet` returns
-/// a default value when the key is not found.
+/// An unset optional is serialized as Nil (the key or field was not found).
 class BulkStringResponse : public IResponse
 {
 public:
-    explicit BulkStringResponse(const String & str_) : str(str_) {}
+    explicit BulkStringResponse(std::optional<String> str_) : str(std::move(str_)) {}
 
     void serialize(WriteBuffer & out) final
     {
         Writer writer(out);
-        if (str.empty())
+        if (!str)
         {
             writer.writeNil();
             return;
         }
-        writer.writeBulkString(str);
+        writer.writeBulkString(*str);
     }
 
 private:
-    const String str;
+    const std::optional<String> str;
 };
 
 class ArrayResponse : public IResponse
 {
 public:
-    explicit ArrayResponse(const std::vector<String> & values_) : values(values_) {}
+    explicit ArrayResponse(const std::vector<std::optional<String>> & values_) : values(values_) {}
 
     void serialize(WriteBuffer & out) final
     {
@@ -82,17 +82,17 @@ public:
         writer.writeArray(values.size());
         for (const auto & value : values)
         {
-            if (value.empty())
+            if (!value)
             {
                 writer.writeNil();
                 continue;
             }
-            writer.writeBulkString(value);
+            writer.writeBulkString(*value);
         }
     }
 
 private:
-    const std::vector<String> & values;
+    const std::vector<std::optional<String>> & values;
 };
 
 }

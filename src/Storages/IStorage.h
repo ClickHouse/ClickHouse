@@ -489,11 +489,17 @@ public:
         renameInMemory(new_table_id);
     }
 
-    /** Get a single-row chunk with the values of the requested columns for the given key.
+    /** Get a single-row block with the values of the requested columns for the given key.
+      * The returned columns are Nullable, and a NULL value means the key was not found
+      * (as opposed to being present with a default value).
       * Key-value point lookup used by the Redis wire protocol.
       * Supported only if supportsGetRequests returns true.
       */
-    virtual Chunk getChunkByKeys(const std::vector<Field> & /*keys*/, const Names & /*column_names*/, ContextPtr /*context*/) { return {}; }
+    virtual Block getBlockByKeys(const std::vector<Field> & /*keys*/, const Names & /*column_names*/, ContextPtr /*context*/) { return {}; }
+
+    /// Names of the key columns for getBlockByKeys lookups.
+    /// Supported only if supportsGetRequests returns true.
+    virtual Names getKeyColumnNamesForGetRequests() const { return {}; }
 
     /**
      * Just updates names of database and table without moving any data on disk

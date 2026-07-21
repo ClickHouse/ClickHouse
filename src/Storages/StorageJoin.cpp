@@ -931,7 +931,7 @@ private:
     }
 };
 
-Chunk StorageJoin::getChunkByKeys(const std::vector<Field> & keys, const Names & column_names, ContextPtr context)
+Block StorageJoin::getBlockByKeys(const std::vector<Field> & keys, const Names & column_names, ContextPtr context)
 {
     /// For a composite key, check that all necessary data has been provided.
     if (keys.size() != key_names.size())
@@ -941,6 +941,9 @@ Chunk StorageJoin::getChunkByKeys(const std::vector<Field> & keys, const Names &
     Block key_block;
     auto metadata_snapshot = getInMemoryMetadataPtr(context, false);
     auto cur_sample_block = metadata_snapshot->getSampleBlock();
+
+    DataTypes key_types;
+    key_types.reserve(key_names.size());
 
     for (size_t i = 0; i < key_names.size(); ++i)
     {
@@ -954,25 +957,33 @@ Chunk StorageJoin::getChunkByKeys(const std::vector<Field> & keys, const Names &
         column->insert(key_value);
 
         key_block.insert({std::move(column), type, key_name});
+        key_types.push_back(type);
     }
 
     /// `joinGet` returns a single column, so request the columns one by one.
-    Columns result_columns;
-    result_columns.reserve(column_names.size());
-    UInt64 num_rows = 0;
+    Block result_block;
 
     for (const auto & name : column_names)
     {
         if (!cur_sample_block.has(name))
             throw Exception(ErrorCodes::NO_SUCH_COLUMN_IN_TABLE, "There is no column {} in table {}", name, getStorageID().getNameForLogs());
 
-        Block block_with_column_to_add({cur_sample_block.getByName(name)});
+        /// Request a Nullable result (as `joinGetOrNull` does), so that a missing key is
+        /// distinguishable from a key present with a default value.
+        auto return_type = joinGetCheckAndGetReturnType(key_types, name, /*or_null=*/ true);
+        if (!return_type->isNullable())
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "Column {} of type {} in table {} cannot be used for get requests, because a missing key "
+                "would not be distinguishable from a default value",
+                name, return_type->getName(), getStorageID().getNameForLogs());
+
+        Block block_with_column_to_add({{return_type->createColumn(), return_type, name}});
         auto result = joinGet(key_block, block_with_column_to_add, context);
-        num_rows = result.column->size();
-        result_columns.push_back(std::move(result.column));
+        result_block.insert(std::move(result));
     }
 
-    return Chunk(std::move(result_columns), num_rows);
+    return result_block;
 }
 
 // TODO: multiple stream read and index read

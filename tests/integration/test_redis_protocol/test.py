@@ -9,6 +9,7 @@ cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(
     "node",
     main_configs=["configs/redis.xml"],
+    user_configs=["configs/users.xml"],
 )
 
 server_port = 9006
@@ -41,9 +42,13 @@ def started_cluster():
             ('Bob', 'Johnson', 25, 'Los Angeles'),
             ('Charlie', 'Brown', 28, 'Chicago'),
             ('Diana', 'Williams', 32, 'Houston'),
-            ('Ethan', 'Taylor', 23, 'Phoenix')
+            ('Ethan', 'Taylor', 23, 'Phoenix'),
+            ('Frank', '', 27, '')
             """
         )
+        node.query("CREATE USER IF NOT EXISTS pass_user IDENTIFIED WITH plaintext_password BY 'secret'")
+        node.query("GRANT SELECT ON default.name_surname_map TO pass_user")
+        node.query("CREATE USER IF NOT EXISTS limited_user IDENTIFIED WITH plaintext_password BY 'secret'")
         yield cluster
     except Exception as ex:
         logging.exception(ex)
@@ -64,6 +69,9 @@ def test_basic_commands(redis_client):
 
     value = redis_client.echo("Hello world")
     assert value == b"Hello world"
+
+    # An empty string is a valid bulk string, not Nil.
+    assert redis_client.echo("") == b""
 
     assert redis_client.quit()
 
@@ -87,8 +95,16 @@ def test_hash_db(redis_client):
     assert redis_client.hget("Alice", "surname") == b"Smith"
     assert redis_client.hmget("Bob", "surname", "city") == [b"Johnson", b"Los Angeles"]
 
-    # Unknown key: `joinGet` returns a default value, which is sent as Nil.
+    # Non-string values are returned in their text representation.
+    assert redis_client.hget("Alice", "age") == b"30"
+
+    # A stored empty string is an empty bulk string, not Nil.
+    assert redis_client.hget("Frank", "city") == b""
+
+    # Unknown key: sent as Nil.
     assert redis_client.hget("Mark", "surname") is None
+    assert redis_client.hget("Mark", "age") is None
+    assert redis_client.hmget("Mark", "surname", "age") == [None, None]
 
     # A hash database does not support string commands.
     with pytest.raises(exceptions.ResponseError):
@@ -109,9 +125,39 @@ def test_string_db(redis_client):
         b"Brown",
     ]
 
-    # Unknown key: `joinGet` returns a default value, which is sent as Nil.
+    # A stored empty string is an empty bulk string, not Nil,
+    # while an unknown key is sent as Nil.
+    assert redis_client.get("Frank") == b""
+    assert redis_client.mget("Frank", "Mark", "Alice") == [b"", None, b"Smith"]
+
+    # Unknown key: sent as Nil.
     assert redis_client.get("Mark") is None
 
     # A string database does not support hash commands.
     with pytest.raises(exceptions.ResponseError):
         redis_client.hget("Alice", "city")
+
+
+def test_auth(started_cluster):
+    ip = started_cluster.get_instance_ip("node")
+
+    # Explicit authentication with a user name and a password.
+    client = Redis(host=ip, port=server_port, username="pass_user", password="secret")
+    assert client.select(1)
+    assert client.get("Alice") == b"Smith"
+    client.close()
+
+    # Wrong password: the client sends AUTH on connect and the server rejects it.
+    client = Redis(host=ip, port=server_port, username="pass_user", password="wrong")
+    with pytest.raises(Exception) as err:
+        client.ping()
+    assert "Authentication failed" in str(err.value) or "invalid username-password pair" in str(err.value)
+    client.close()
+
+    # A user without the SELECT grant on the mapped table cannot read data.
+    client = Redis(host=ip, port=server_port, username="limited_user", password="secret")
+    assert client.select(1)
+    with pytest.raises(exceptions.ResponseError) as resp_err:
+        client.get("Alice")
+    assert "Not enough privileges" in str(resp_err.value)
+    client.close()

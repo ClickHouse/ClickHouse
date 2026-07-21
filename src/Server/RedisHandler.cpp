@@ -1,10 +1,19 @@
 #include <memory>
+#include <optional>
 
 #include <Poco/Exception.h>
 
+#include <Access/Common/AccessFlags.h>
 #include <Columns/IColumn.h>
 #include <Core/Field.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/IDataType.h>
+#include <DataTypes/Serializations/ISerialization.h>
+#include <Formats/FormatSettings.h>
+#include <IO/WriteBufferFromString.h>
 #include <Interpreters/ClientInfo.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/Session.h>
 #include <Server/RedisHandler.h>
@@ -23,6 +32,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int AUTHENTICATION_FAILED;
     extern const int INVALID_STATE;
     extern const int UNSUPPORTED_METHOD;
     extern const int INVALID_CONFIG_PARAMETER;
@@ -65,6 +75,51 @@ void RedisHandler::run()
     LOG_DEBUG(log, "Redis connection closed");
 }
 
+void RedisHandler::authenticate(const String & user_name, const String & password)
+{
+    /// A session (and the table mapping resolved with its context) cannot be reused
+    /// after another authentication attempt, so start from scratch.
+    if (authenticated)
+    {
+        session = std::make_unique<Session>(server.context(), ClientInfo::Interface::REDIS);
+        query_context.reset();
+        redis_clickhouse_mapping.clear();
+        db = RedisProtocol::DB_MAX_NUM;
+        authenticated = false;
+    }
+
+    try
+    {
+        session->authenticate(user_name, password, socket().peerAddress());
+        query_context = session->makeSessionContext();
+        authenticated = true;
+    }
+    catch (...)
+    {
+        /// The session cannot be reused after a failed authentication attempt.
+        session = std::make_unique<Session>(server.context(), ClientInfo::Interface::REDIS);
+        throw;
+    }
+}
+
+void RedisHandler::ensureAuthenticated()
+{
+    if (authenticated)
+        return;
+
+    try
+    {
+        authenticate("default", "");
+    }
+    catch (...)
+    {
+        throw Exception(
+            ErrorCodes::AUTHENTICATION_FAILED,
+            "NOAUTH Authentication required (the AUTH command expects a password of a ClickHouse user, "
+            "or a user name and a password)");
+    }
+}
+
 bool RedisHandler::processRequest()
 {
     SCOPE_EXIT(out->next());
@@ -101,10 +156,10 @@ bool RedisHandler::processRequest()
         case RedisProtocol::CommandType::AUTH:
         {
             LOG_DEBUG(log, "AUTH request");
-            RedisProtocol::CommandRequest auth_request(req);
+            RedisProtocol::AuthRequest auth_request(req);
             auth_request.deserialize(*in);
 
-            /// TODO: add authentication.
+            authenticate(auth_request.getUser(), auth_request.getPassword());
 
             RedisProtocol::SimpleStringResponse resp(RedisProtocol::Message::OK);
             resp.serialize(*out);
@@ -143,6 +198,8 @@ bool RedisHandler::processRequest()
             RedisProtocol::SelectRequest select_request(req);
             select_request.deserialize(*in);
 
+            ensureAuthenticated();
+
             auto selected_db = select_request.getDB();
             if (!redis_clickhouse_mapping.contains(selected_db))
             {
@@ -166,6 +223,7 @@ bool RedisHandler::processRequest()
             RedisProtocol::GetRequest get_request(req);
             get_request.deserialize(*in);
 
+            ensureAuthenticated();
             checkDBSet();
 
             auto redis_db = redis_clickhouse_mapping[db];
@@ -174,10 +232,10 @@ bool RedisHandler::processRequest()
 
             auto table = redis_db->getTable();
             auto value_column = std::static_pointer_cast<RedisProtocol::RedisStringMapping>(redis_db)->getValueColumnName();
-            auto result_chunk = table->getChunkByKeys({get_request.getKey()}, {value_column}, server.context());
-            auto result = String(result_chunk.getColumns()[0]->getDataAt(0));
+            query_context->checkAccess(AccessType::SELECT, table->getStorageID(), Strings{redis_db->getKeyColumnName(), value_column});
+            auto result_block = table->getBlockByKeys({get_request.getKey()}, {value_column}, query_context);
 
-            RedisProtocol::BulkStringResponse resp(result);
+            RedisProtocol::BulkStringResponse resp(serializeValue(result_block.getByPosition(0)));
             resp.serialize(*out);
             return true;
         }
@@ -187,6 +245,7 @@ bool RedisHandler::processRequest()
             RedisProtocol::MGetRequest mget_request(req);
             mget_request.deserialize(*in);
 
+            ensureAuthenticated();
             checkDBSet();
 
             auto redis_db = redis_clickhouse_mapping[db];
@@ -195,13 +254,14 @@ bool RedisHandler::processRequest()
 
             auto table = redis_db->getTable();
             auto value_column = std::static_pointer_cast<RedisProtocol::RedisStringMapping>(redis_db)->getValueColumnName();
+            query_context->checkAccess(AccessType::SELECT, table->getStorageID(), Strings{redis_db->getKeyColumnName(), value_column});
 
-            std::vector<String> result;
+            std::vector<std::optional<String>> result;
             result.reserve(mget_request.getKeys().size());
             for (const auto & key : mget_request.getKeys())
             {
-                auto result_chunk = table->getChunkByKeys({key}, {value_column}, server.context());
-                result.push_back(String(result_chunk.getColumns()[0]->getDataAt(0)));
+                auto result_block = table->getBlockByKeys({key}, {value_column}, query_context);
+                result.push_back(serializeValue(result_block.getByPosition(0)));
             }
 
             RedisProtocol::ArrayResponse resp(result);
@@ -214,6 +274,7 @@ bool RedisHandler::processRequest()
             RedisProtocol::HGetRequest hget_request(req);
             hget_request.deserialize(*in);
 
+            ensureAuthenticated();
             checkDBSet();
 
             auto redis_db = redis_clickhouse_mapping[db];
@@ -221,10 +282,10 @@ bool RedisHandler::processRequest()
                 throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "HGET command can only be applied to a database of type hash");
 
             auto table = redis_db->getTable();
-            auto result_chunk = table->getChunkByKeys({hget_request.getKey()}, {hget_request.getField()}, server.context());
-            auto result = String(result_chunk.getColumns()[0]->getDataAt(0));
+            query_context->checkAccess(AccessType::SELECT, table->getStorageID(), Strings{redis_db->getKeyColumnName(), hget_request.getField()});
+            auto result_block = table->getBlockByKeys({hget_request.getKey()}, {hget_request.getField()}, query_context);
 
-            RedisProtocol::BulkStringResponse resp(result);
+            RedisProtocol::BulkStringResponse resp(serializeValue(result_block.getByPosition(0)));
             resp.serialize(*out);
             return true;
         }
@@ -234,6 +295,7 @@ bool RedisHandler::processRequest()
             RedisProtocol::HMGetRequest hmget_request(req);
             hmget_request.deserialize(*in);
 
+            ensureAuthenticated();
             checkDBSet();
 
             auto redis_db = redis_clickhouse_mapping[db];
@@ -241,12 +303,15 @@ bool RedisHandler::processRequest()
                 throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "HMGET command can only be applied to a database of type hash");
 
             auto table = redis_db->getTable();
-            auto result_chunk = table->getChunkByKeys({hmget_request.getKey()}, hmget_request.getFields(), server.context());
+            Strings columns_to_check{redis_db->getKeyColumnName()};
+            columns_to_check.insert(columns_to_check.end(), hmget_request.getFields().begin(), hmget_request.getFields().end());
+            query_context->checkAccess(AccessType::SELECT, table->getStorageID(), columns_to_check);
+            auto result_block = table->getBlockByKeys({hmget_request.getKey()}, hmget_request.getFields(), query_context);
 
-            std::vector<String> result;
-            result.reserve(result_chunk.getNumColumns());
-            for (const auto & column : result_chunk.getColumns())
-                result.push_back(String(column->getDataAt(0)));
+            std::vector<std::optional<String>> result;
+            result.reserve(result_block.columns());
+            for (size_t i = 0; i < result_block.columns(); ++i)
+                result.push_back(serializeValue(result_block.getByPosition(i)));
 
             RedisProtocol::ArrayResponse resp(result);
             resp.serialize(*out);
@@ -255,15 +320,25 @@ bool RedisHandler::processRequest()
     }
 }
 
+std::optional<String> RedisHandler::serializeValue(const ColumnWithTypeAndName & column)
+{
+    if (column.column->isNullAt(0))
+        return std::nullopt;
+
+    WriteBufferFromOwnString wb;
+    column.type->getDefaultSerialization()->serializeText(*column.column, 0, wb, FormatSettings{});
+    return wb.str();
+}
+
 void RedisHandler::initDB(UInt32 db_)
 {
     const auto & mapping = config->db_mapping[db_];
 
-    auto db_ptr = DatabaseCatalog::instance().getDatabase(mapping.clickhouse_db, server.context());
+    auto db_ptr = DatabaseCatalog::instance().getDatabase(mapping.clickhouse_db, query_context);
     if (db_ptr == nullptr)
         throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "Database {} does not exist", mapping.clickhouse_db);
 
-    auto table_ptr = db_ptr->getTable(mapping.clickhouse_table, server.context());
+    auto table_ptr = db_ptr->getTable(mapping.clickhouse_table, query_context);
     if (table_ptr == nullptr)
         throw Exception(
             ErrorCodes::INVALID_CONFIG_PARAMETER,
@@ -275,10 +350,40 @@ void RedisHandler::initDB(UInt32 db_)
             "Table {} configured for Redis database {} does not support get requests",
             mapping.clickhouse_table, db_);
 
+    auto table_key_columns = table_ptr->getKeyColumnNamesForGetRequests();
+    if (table_key_columns.size() != 1)
+        throw Exception(
+            ErrorCodes::UNSUPPORTED_METHOD,
+            "Table {} configured for Redis database {} has {} key columns, but only tables with a single key column are supported",
+            mapping.clickhouse_table, db_, table_key_columns.size());
+
+    if (table_key_columns[0] != mapping.key_column)
+        throw Exception(
+            ErrorCodes::INVALID_CONFIG_PARAMETER,
+            "key_column {} configured for Redis database {} does not match the key column {} of table {}",
+            mapping.key_column, db_, table_key_columns[0], mapping.clickhouse_table);
+
+    auto metadata_snapshot = table_ptr->getInMemoryMetadataPtr(query_context, false);
+    auto sample_block = metadata_snapshot->getSampleBlock();
+
+    /// Redis keys are strings.
+    auto key_type = removeLowCardinality(removeNullable(sample_block.getByName(mapping.key_column).type));
+    if (!isStringOrFixedString(key_type))
+        throw Exception(
+            ErrorCodes::INVALID_CONFIG_PARAMETER,
+            "Key column {} of table {} configured for Redis database {} must be of type String or FixedString, but it is {}",
+            mapping.key_column, mapping.clickhouse_table, db_, sample_block.getByName(mapping.key_column).type->getName());
+
     switch (mapping.db_type)
     {
         case RedisProtocol::DBType::STRING:
         {
+            if (!sample_block.has(mapping.value_column))
+                throw Exception(
+                    ErrorCodes::INVALID_CONFIG_PARAMETER,
+                    "There is no value_column {} configured for Redis database {} in table {}",
+                    mapping.value_column, db_, mapping.clickhouse_table);
+
             redis_clickhouse_mapping[db_]
                 = std::make_shared<RedisProtocol::RedisStringMapping>(mapping.db_type, table_ptr, mapping.key_column, mapping.value_column);
             break;

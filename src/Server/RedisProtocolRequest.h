@@ -300,6 +300,38 @@ private:
     std::vector<String> fields;
 };
 
+/// AUTH password | AUTH username password
+class AuthRequest : public IRequest
+{
+public:
+    explicit AuthRequest(RedisRequest & req) : request(req) {}
+
+    void deserialize(ReadBuffer & in) final
+    {
+        Reader reader(in);
+        if (request.getCommandLen() == 2)
+        {
+            password = reader.readBulkString();
+        }
+        else if (request.getCommandLen() == 3)
+        {
+            user = reader.readBulkString();
+            password = reader.readBulkString();
+        }
+        else
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "wrong number of arguments for 'auth' command");
+    }
+
+    const String & getUser() const { return user; }
+
+    const String & getPassword() const { return password; }
+
+private:
+    RedisRequest & request;
+    String user = "default";
+    String password;
+};
+
 /// Reads and discards all arguments of a command.
 class CommandRequest : public IRequest
 {
