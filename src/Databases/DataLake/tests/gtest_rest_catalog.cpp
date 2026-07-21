@@ -252,13 +252,6 @@ public:
         , handler_factory(new RestCatalogRequestHandlerFactory(shape, token_expires_in_seconds, token_requests))
         , server_params(new Poco::Net::HTTPServerParams())
     {
-        /// Without keep-alive a handler thread exits right after sending the response instead
-        /// of parking on the connection until the keep-alive timeout, so mock servers of later
-        /// tests are not starved of the shared default `Poco::ThreadPool` (capacity 16 for the
-        /// whole test binary). It also makes a graceful `stop` sufficient in the destructor:
-        /// `stopAll(/* abortCurrent */ true)` shuts connection sockets down from this thread
-        /// while a handler thread may be closing them concurrently in the `HTTPServerSession`
-        /// destructor, which is a data race reported by TSan.
         server_params->setKeepAlive(false);
         server = std::make_unique<Poco::Net::HTTPServer>(handler_factory, *server_socket, server_params);
         server->start();
