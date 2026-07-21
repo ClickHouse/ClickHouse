@@ -20,11 +20,6 @@ namespace DB
     return quoteStringSingleQuoteWithSingleQuote(x);
 }
 
-[[nodiscard]] inline String quoteStringSQLite(std::string_view x)
-{
-    return quoteStringSingleQuoteWithSingleQuote(x);
-}
-
 /// Double quote the string.
 String doubleQuoteString(std::string_view x);
 

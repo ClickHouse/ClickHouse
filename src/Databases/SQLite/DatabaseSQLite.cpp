@@ -16,7 +16,8 @@
 #include <Parsers/ASTFunction.h>
 #include <Storages/StorageSQLite.h>
 #include <Databases/SQLite/SQLiteUtils.h>
-#include <Common/quoteString.h>
+
+#include <string_view>
 
 
 namespace DB
@@ -132,27 +133,36 @@ bool DatabaseSQLite::checkSQLiteTable(const String & table_name) const
     if (!sqlite_db)
         sqlite_db = openSQLiteDB(database_path, getContext(), /* throw_on_error */ true, /* allow_create */ false);
 
-    const String query = "SELECT name FROM sqlite_master WHERE type = 'table' AND name = " + quoteStringSQLite(table_name) + ";";
+    /// The table name is passed as a bound parameter instead of being re-serialized into the SQL text:
+    /// SQLite string literals have no escape sequences (only an embedded quote is doubled), so any
+    /// backslash-style textual escaping would make the existence check miss a valid table whose name
+    /// contains e.g. a newline or a tab.
+    static constexpr std::string_view query = "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?";
 
-    auto callback_get_data = [](void * res, int, char **, char **) -> int
-    {
-        *(static_cast<int *>(res)) += 1;
-        return 0;
-    };
-
-    int count = 0;
-    char * err_message = nullptr;
-    int status = sqlite3_exec(sqlite_db.get(), query.c_str(), callback_get_data, &count, &err_message);
+    sqlite3_stmt * compiled_stmt = nullptr;
+    int status = sqlite3_prepare_v2(sqlite_db.get(), query.data(), static_cast<int>(query.size()), &compiled_stmt, nullptr);
     if (status != SQLITE_OK)
-    {
-        String err_msg(err_message);
-        sqlite3_free(err_message);
         throw Exception(ErrorCodes::SQLITE_ENGINE_ERROR,
                         "Cannot check sqlite table. Error status: {}. Message: {}",
-                        status, err_msg);
-    }
+                        status, sqlite3_errmsg(sqlite_db.get()));
 
-    return (count != 0);
+    std::unique_ptr<sqlite3_stmt, decltype(&sqlite3_finalize)> statement(compiled_stmt, sqlite3_finalize);
+
+    status = sqlite3_bind_text64(compiled_stmt, 1, table_name.data(), table_name.size(), SQLITE_STATIC, SQLITE_UTF8);
+    if (status != SQLITE_OK)
+        throw Exception(ErrorCodes::SQLITE_ENGINE_ERROR,
+                        "Cannot check sqlite table. Error status: {}. Message: {}",
+                        status, sqlite3_errmsg(sqlite_db.get()));
+
+    status = sqlite3_step(compiled_stmt);
+    if (status == SQLITE_ROW)
+        return true;
+    if (status == SQLITE_DONE)
+        return false;
+
+    throw Exception(ErrorCodes::SQLITE_ENGINE_ERROR,
+                    "Cannot check sqlite table. Error status: {}. Message: {}",
+                    status, sqlite3_errmsg(sqlite_db.get()));
 }
 
 
