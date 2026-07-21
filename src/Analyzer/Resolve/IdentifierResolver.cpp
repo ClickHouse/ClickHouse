@@ -890,13 +890,19 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromTableExpress
       * Example: SELECT db1.db1.id FROM db1.db1;
       * Example: SELECT db1.tbl.id FROM db1.db1 JOIN db1.tbl USING (id);
       * Example: SELECT db1.tbl.id FROM (SELECT 1 AS id) AS db1 JOIN db1.tbl USING (id);
+      * Parent scopes participate as well: resolution from a parent scope (a correlated identifier) is
+      * attempted only after the current scope returns no result, so an early exception here would make
+      * the outer interpretation unreachable.
+      * Example: SELECT (SELECT db1.tbl.id FROM db2.db1 LIMIT 1) FROM db1.tbl;
       */
     bool identifier_first_part_matches_database_name = !database_name.empty() && path_start == database_name;
 
     bool identifier_first_part_is_database_name_in_scope = identifier_first_part_matches_database_name;
-    if (!identifier_first_part_is_database_name_in_scope)
+    for (const IdentifierResolveScope * current_scope = &scope;
+         current_scope && !identifier_first_part_is_database_name_in_scope;
+         current_scope = current_scope->parent_scope)
     {
-        for (const auto & [_, other_table_expression_data] : scope.table_expression_node_to_data)
+        for (const auto & [_, other_table_expression_data] : current_scope->table_expression_node_to_data)
         {
             if (!other_table_expression_data.database_name.empty() && path_start == other_table_expression_data.database_name)
             {

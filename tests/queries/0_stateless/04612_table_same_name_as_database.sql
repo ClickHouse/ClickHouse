@@ -60,6 +60,14 @@ SELECT {CLICKHOUSE_DATABASE_1:Identifier}.id
 FROM {CLICKHOUSE_DATABASE:Identifier}.{CLICKHOUSE_DATABASE_1:Identifier}
 JOIN {CLICKHOUSE_DATABASE_1:Identifier}.tbl USING (id);
 
+-- The fall-through must also work from a correlated subquery. The first identifier part matches the
+-- inner table name, and it is a database name only in the parent scope; resolution from the parent
+-- scope is attempted only after the current scope returns no result, so the failed lookup behind the
+-- inner table name must not throw.
+SELECT (SELECT count() FROM {CLICKHOUSE_DATABASE:Identifier}.{CLICKHOUSE_DATABASE_1:Identifier} WHERE id = {CLICKHOUSE_DATABASE_1:Identifier}.tbl.value + 37)
+FROM {CLICKHOUSE_DATABASE_1:Identifier}.tbl
+SETTINGS allow_experimental_correlated_subqueries = 1;
+
 DROP DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
 
 -- A missing column must still produce an error.
