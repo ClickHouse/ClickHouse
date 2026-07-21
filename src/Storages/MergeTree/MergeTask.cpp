@@ -176,19 +176,65 @@ namespace ErrorCodes
 namespace
 {
 
+/// Resolve a source-column identifier used inside a `DEFAULT` expression to the name of the
+/// storage column it reads through. Physical columns and their subcolumns resolve directly; a
+/// subcolumn read through an `ALIAS` column (whose subcolumns are not registered) is resolved by
+/// finding the longest existing column name that is a dotted prefix of the identifier. Iterating
+/// over the actual column names (rather than peeling one dotted segment) correctly handles both
+/// nested subcolumns and legal quoted column names that themselves contain dots (e.g.
+/// `` `x.y` ALIAS m `` referenced as `` `x.y`.keys ``). Returns an empty string if nothing matches.
+String resolveDefaultDependencyToStorage(const String & required_name, const ColumnsDescription & columns_desc)
+{
+    /// `withSubcolumns` resolves subcolumns of *physical* columns (e.g. `m.keys` -> `m`).
+    if (auto resolved = columns_desc.tryGetColumn(
+            GetColumnsOptions(GetColumnsOptions::All).withSubcolumns(), required_name))
+        return resolved->getNameInStorage();
+
+    /// Subcolumns of `ALIAS` columns are not registered (`ColumnsDescription::addSubcolumns` skips
+    /// `ColumnDefaultKind::Alias`), so an identifier like `m_alias.keys` with `m_alias ALIAS m` does
+    /// not resolve above. Find the longest existing column name that is a dotted prefix of the
+    /// identifier so the alias expansion below still reaches the physical dependency, even for alias
+    /// names that contain dots themselves.
+    String storage_name;
+    for (const auto & column : columns_desc.getAll())
+    {
+        if (required_name.size() > column.name.size()
+            && required_name.starts_with(column.name)
+            && required_name[column.name.size()] == '.'
+            && column.name.size() > storage_name.size())
+            storage_name = column.name;
+    }
+    return storage_name;
+}
+
 /// Collect the physical storage columns that a column's `DEFAULT` expression semantically
 /// depends on. It uses the same scope-aware dependency analysis as default evaluation
 /// (see `addDefaultRequiredExpressionsRecursively` / `evaluateMissingDefaults`):
 /// `RequiredSourceColumnsVisitor` correctly ignores lambda formal parameters, so
-/// `arrayMap(x -> f(x), col)` depends on `col`, not on a column named `x`. `ALIAS` columns are
-/// expanded recursively into the physical columns they ultimately read, so that a default
-/// depending on an expired column through an alias is detected. Each source column is resolved to
-/// its storage column name (e.g. the subcolumn `m.keys` resolves to the `Map` column `m`), including
-/// subcolumns read through an alias (e.g. `m_alias.keys` with `m_alias ALIAS m` resolves to `m`).
-NameSet collectDefaultStorageDependencies(const ASTPtr & default_expression, const ColumnsDescription & columns_desc)
+/// `arrayMap(x -> f(x), col)` depends on `col`, not on a column named `x`. Each source column is
+/// resolved to its storage column name (e.g. the subcolumn `m.keys` resolves to the `Map` column
+/// `m`), including subcolumns read through an alias (e.g. `m_alias.keys` with `m_alias ALIAS m`
+/// resolves to `m`).
+///
+/// The dependency closure is transitive through intermediate columns that will be re-evaluated
+/// during the merge, so that a default depending on an expired column *through* another column is
+/// still detected:
+/// - `ALIAS` columns are never physically stored, so they are always expanded into the physical
+///   columns their expression reads (and are not themselves reported).
+/// - An ordinary `DEFAULT`/`MATERIALIZED` column that is absent from every source part will itself
+///   be recomputed from its expression during the merge, so its dependencies are expanded too (and
+///   the column itself is still reported). A chain such as `tmp DEFAULT m.keys`, `n.b DEFAULT tmp`
+///   with `m` expired therefore reports `m`, so `n.b` is expired as well.
+/// Columns that are present in the source parts are read as stored (not recomputed), so their own
+/// dependencies are not followed. Over-approximating is safe: an extra dependency only moves a
+/// column from being materialized at merge time to being recomputed at read time.
+NameSet collectDefaultStorageDependencies(
+    const ASTPtr & default_expression,
+    const ColumnsDescription & columns_desc,
+    const NameSet & columns_present_in_parts)
 {
     NameSet result;
-    NameSet visited_aliases;
+    NameSet visited_columns;
 
     std::vector<ASTPtr> to_visit;
     to_visit.push_back(default_expression);
@@ -205,36 +251,29 @@ NameSet collectDefaultStorageDependencies(const ASTPtr & default_expression, con
 
         for (const auto & required_name : columns_context.requiredColumns())
         {
-            String storage_name;
+            String storage_name = resolveDefaultDependencyToStorage(required_name, columns_desc);
+            if (storage_name.empty())
+                continue;
 
-            /// `withSubcolumns` resolves subcolumns of *physical* columns (e.g. `m.keys` -> `m`).
-            if (auto resolved = columns_desc.tryGetColumn(
-                    GetColumnsOptions(GetColumnsOptions::All).withSubcolumns(), required_name))
-            {
-                storage_name = resolved->getNameInStorage();
-            }
-            else
-            {
-                /// Subcolumns of `ALIAS` columns are not registered (`ColumnsDescription::addSubcolumns`
-                /// skips `ColumnDefaultKind::Alias`), so an identifier like `m_alias.keys` with
-                /// `m_alias ALIAS m` does not resolve above. Fall back to the identifier's prefix
-                /// (`m_alias`) so the alias expansion below still reaches the physical dependency.
-                auto prefix = Nested::splitName(required_name).first;
-                if (prefix.empty() || !columns_desc.has(prefix))
-                    continue;
-                storage_name = std::move(prefix);
-            }
+            auto dependency_default = columns_desc.getDefault(storage_name);
 
             /// An `ALIAS` column is not physically stored, so it never appears in `expired_columns`.
-            /// Expand it into the physical columns its expression reads instead. `visited_aliases`
-            /// guards against cycles in (mutually) recursive alias definitions.
-            auto dependency_default = columns_desc.getDefault(storage_name);
+            /// Expand it into the physical columns its expression reads instead. `visited_columns`
+            /// guards against cycles in (mutually) recursive definitions.
             if (dependency_default && dependency_default->kind == ColumnDefaultKind::Alias && dependency_default->expression)
             {
-                if (visited_aliases.emplace(storage_name).second)
+                if (visited_columns.emplace(storage_name).second)
                     to_visit.push_back(dependency_default->expression);
                 continue;
             }
+
+            /// A physical column that is missing from every source part is recomputed from its own
+            /// `DEFAULT`/`MATERIALIZED` expression during the merge, so follow its dependencies too:
+            /// the subcolumn we started from transitively reads whatever this expression reads.
+            if (dependency_default && dependency_default->expression
+                && !columns_present_in_parts.contains(storage_name)
+                && visited_columns.emplace(storage_name).second)
+                to_visit.push_back(dependency_default->expression);
 
             result.emplace(std::move(storage_name));
         }
@@ -783,7 +822,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
                     /// expands `ALIAS` columns, so both false positives (a lambda parameter that
                     /// happens to share a name with an expired column) and false negatives (a
                     /// dependency reached through an alias) are avoided.
-                    for (const auto & dependency : collectDefaultStorageDependencies(col_default->expression, columns_desc))
+                    for (const auto & dependency : collectDefaultStorageDependencies(col_default->expression, columns_desc, columns_present_in_parts))
                     {
                         if (expired_columns.contains(dependency))
                         {
