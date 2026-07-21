@@ -95,6 +95,14 @@ size_t tryOptimizeGroupByTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & 
     {
         if (next_node->children.size() != 1)
             return 0;
+
+        /// An arrayJoin between the aggregation and the limit changes row
+        /// multiplicity: it can produce zero rows for a group, so the smallest
+        /// N groups no longer guarantee N output rows and pruning loses groups
+        /// the limit still needs.
+        if (expression_step->getExpression().hasArrayJoin())
+            return 0;
+
         node_above_aggregation = next_node;
         next_node = next_node->children.front();
     }

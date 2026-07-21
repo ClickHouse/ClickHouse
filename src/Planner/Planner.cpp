@@ -745,6 +745,17 @@ void applyTopKPushdownToPartialAggregation(
     if (query_node.hasInterpolate())
         return;
 
+    /// An arrayJoin in the projection (or ORDER BY expressions) changes row
+    /// multiplicity after the aggregation: a group can expand to zero rows, so
+    /// the smallest N groups no longer guarantee N result rows and pruning
+    /// loses groups the limit still needs.  `partial_sorting_limit` only
+    /// covers the ARRAY JOIN clause in the join tree, not the function.
+    const auto & projection_actions = expression_analysis_result.getProjection().projection_actions;
+    if (projection_actions && projection_actions->dag.hasArrayJoin())
+        return;
+    if (expression_analysis_result.hasSort() && expression_analysis_result.getSort().before_order_by_actions->dag.hasArrayJoin())
+        return;
+
     const auto & params = aggregating_step.getParams();
     if (aggregating_step.isGroupingSets() || params.overflow_row || params.max_rows_to_group_by > 0 || params.keys.empty())
         return;

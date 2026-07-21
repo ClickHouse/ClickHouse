@@ -342,6 +342,29 @@ def test_distributed_remote_no_order_by(start_cluster):
     _assert_same_result(node1, outer)
 
 
+def test_distributed_remote_array_join_projection(start_cluster):
+    """`arrayJoin` in the projection changes row multiplicity after the
+    aggregation - `range(k % 2)` expands even keys to zero rows - so the
+    partial-aggregation pushdown must not fire.  If it did, shard 1's heap
+    would keep keys {0..4}, the initiator's `arrayJoin` would annihilate the
+    even ones, and the LIMIT would come up short of the true answer (the
+    five smallest odd keys).
+    """
+    _make_local_shards()
+    query = (
+        "SELECT k, arrayJoin(range(k % 2)) AS a "
+        "FROM remote('node{1,2}', currentDatabase(), t_local) "
+        "GROUP BY k "
+        "ORDER BY k ASC "
+        "LIMIT 5"
+    )
+    _assert_same_result(node1, query)
+    # Ground truth: the five smallest odd keys, each expanded to a single
+    # zero by range(1).
+    expected = "\n".join(f"{k}\t0" for k in (1, 3, 5, 7, 9)) + "\n"
+    assert _run(node1, query, 1) == expected
+
+
 # ---------------------------------------------------------------------------
 # Parallel replicas (one shard, two replicas)
 # ---------------------------------------------------------------------------
