@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <limits>
 #include <optional>
 #include <unordered_map>
@@ -125,26 +126,29 @@ String decompressPuffinFooterPayload(const char * data, size_t size)
     const char * src = data + header_size;
     size_t src_remaining = size - header_size;
 
-    size_t max_decompressed_size = 0;
-    if (common::mulOverflow(size, PUFFIN_FOOTER_LZ4_MAX_RATIO, max_decompressed_size))
+    size_t max_by_ratio = 0;
+    if (common::mulOverflow(size, PUFFIN_FOOTER_LZ4_MAX_RATIO, max_by_ratio))
         throw Exception(ErrorCodes::LZ4_DECODER_FAILED, "Puffin footer compressed payload is too large");
 
     if (frame_info.contentSize == 0)
         throw Exception(ErrorCodes::LZ4_DECODER_FAILED, "Puffin footer LZ4 frame must declare content size");
 
+    const size_t max_decompressed_size = std::min(max_by_ratio, PUFFIN_FOOTER_LZ4_MAX_DECOMPRESSED_SIZE);
     if (frame_info.contentSize > max_decompressed_size)
+    {
+        if (max_decompressed_size == PUFFIN_FOOTER_LZ4_MAX_DECOMPRESSED_SIZE)
+            throw Exception(
+                ErrorCodes::LZ4_DECODER_FAILED,
+                "Puffin footer LZ4 content size {} exceeds absolute decompression limit {}",
+                frame_info.contentSize,
+                PUFFIN_FOOTER_LZ4_MAX_DECOMPRESSED_SIZE);
+
         throw Exception(
             ErrorCodes::LZ4_DECODER_FAILED,
             "Puffin footer LZ4 content size {} exceeds decompression limit {}",
             frame_info.contentSize,
             max_decompressed_size);
-
-    if (frame_info.contentSize > PUFFIN_FOOTER_LZ4_MAX_DECOMPRESSED_SIZE)
-        throw Exception(
-            ErrorCodes::LZ4_DECODER_FAILED,
-            "Puffin footer LZ4 content size {} exceeds absolute decompression limit {}",
-            frame_info.contentSize,
-            PUFFIN_FOOTER_LZ4_MAX_DECOMPRESSED_SIZE);
+    }
 
     String result;
     result.resize(static_cast<size_t>(frame_info.contentSize));
@@ -288,7 +292,7 @@ void requireDeletionVectorV1Properties(const PuffinBlob & blob, size_t blob_inde
 
 void parseStringValuedProperties(
     const Poco::JSON::Object::Ptr & props_obj,
-    std::map<String, String> & out,
+    std::map<String, String> * out,
     bool for_blob,
     size_t blob_index)
 {
@@ -300,7 +304,8 @@ void parseStringValuedProperties(
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Puffin blob {}: property '{}' must be a string", blob_index, key);
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Puffin footer property '{}' must be a string", key);
         }
-        out.emplace(key, val.extract<String>());
+        if (out)
+            out->emplace(key, val.extract<String>());
     }
 }
 
@@ -317,7 +322,7 @@ void parseBlobProperties(const Poco::JSON::Object::Ptr & blob_obj, PuffinBlob & 
     if (!props_obj)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Puffin blob {}: field 'properties' must be an object", blob_index);
 
-    parseStringValuedProperties(props_obj, blob.properties, /*for_blob=*/true, blob_index);
+    parseStringValuedProperties(props_obj, &blob.properties, /*for_blob=*/true, blob_index);
 }
 
 /// Optional FileMetadata.properties: JSON object with string values (Iceberg Puffin spec).
@@ -330,8 +335,7 @@ void validateFileMetadataProperties(const Poco::JSON::Object::Ptr & footer_obj)
     if (!props_obj)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Puffin footer field 'properties' must be an object");
 
-    std::map<String, String> ignored;
-    parseStringValuedProperties(props_obj, ignored, /*for_blob=*/false, /*blob_index=*/0);
+    parseStringValuedProperties(props_obj, /*out=*/nullptr, /*for_blob=*/false, /*blob_index=*/0);
 }
 
 std::vector<PuffinBlob> parseFooterJSON(const String & footer_json, size_t blob_region_end)

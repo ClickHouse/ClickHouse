@@ -7,57 +7,8 @@
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
-
-DATA="$CURDIR/data_puffin"
-PUFFIN="$DATA/spark_deletion_vector.puffin"
-PARALLEL="${PUFFIN_ERRORS_PARALLEL:-4}"
-TMP=$(mktemp -d)
-trap 'rm -rf "$TMP"' EXIT
-
-run_case()
-{
-    local id="$1"
-    local kind="$2"
-    local path_or_label="$3"
-    local needle="$4"
-    local extra="${5:-}"
-    local out="$TMP/$id.out"
-    local err
-
-    {
-        case "$kind" in
-            meta)
-                echo "--- $(basename "$path_or_label") ---"
-                $CLICKHOUSE_LOCAL -q "SELECT blob_type FROM file('$path_or_label', PuffinMetadata)" 2>&1 \
-                    | grep -oF "$needle" || true
-                ;;
-            raw_meta)
-                echo "--- $path_or_label ---"
-                err=$($CLICKHOUSE_LOCAL -q "$extra" 2>&1) || true
-                echo "$err" | grep -oF "$needle" || true
-                ;;
-        esac
-    } > "$out"
-}
-
-pids=()
-wait_one()
-{
-    [[ ${#pids[@]} -eq 0 ]] && return
-    wait "${pids[0]}" || true
-    pids=("${pids[@]:1}")
-}
-
-launch()
-{
-    run_case "$@" &
-    pids+=($!)
-    while [[ ${#pids[@]} -ge $PARALLEL ]]; do
-        wait_one
-    done
-}
-
-id=0
+# shellcheck source=./data_puffin/puffin_errors_common.sh
+. "$CURDIR"/data_puffin/puffin_errors_common.sh
 
 for f in invalid_property_number invalid_property_bool invalid_property_null invalid_property_object \
     invalid_property_cardinality_number
@@ -119,10 +70,4 @@ launch "$id" raw_meta 'puffin_metadata_unknown_column' 'Unexpected column' \
     "SELECT foo FROM file('$PUFFIN', PuffinMetadata, 'foo String')"
 id=$((id + 1))
 
-while [[ ${#pids[@]} -gt 0 ]]; do
-    wait_one
-done
-
-for ((i = 0; i < id; i++)); do
-    cat "$TMP/$i.out"
-done
+finish_puffin_errors
