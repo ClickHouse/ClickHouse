@@ -1,0 +1,199 @@
+---
+sidebarTitle: 'Databrain'
+slug: /integrations/databrain
+keywords: ['ClickHouse', 'Databrain', '연결', '통합', 'UI', '애널리틱스', '임베디드', '대시보드', '시각화']
+description: 'Databrain은 ClickHouse와 원활하게 통합되어 고객 대상 대시보드, 메트릭, 데이터 시각화를 구축할 수 있는 임베디드 애널리틱스 플랫폼입니다.'
+title: 'Databrain을 ClickHouse에 연결하기'
+doc_type: 'guide'
+---
+
+import ConnectionDetails from '/snippets/ko/_gather_your_details_http.mdx';
+
+import { Image } from "/snippets/ko/components/Image.jsx";
+import CommunityMaintainedBadge from "/snippets/ko/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
+
+<CommunityMaintainedBadge />
+
+[Databrain](https://usedatabrain.com)은 고객에게 대화형 대시보드, 메트릭, 데이터 시각화를 구축하고 공유할 수 있게 해주는 임베디드 애널리틱스 플랫폼입니다. Databrain은 HTTPS 인터페이스를 사용해 ClickHouse에 연결되므로, 현대적이고 사용하기 쉬운 인터페이스에서 ClickHouse 데이터를 쉽게 시각화하고 분석할 수 있습니다.
+
+<Image size="md" img="/images/integrations/data-visualization/databrain_01.webp" alt="ClickHouse 데이터 시각화를 보여주는 Databrain 대시보드 인터페이스" border />
+
+<br />
+
+이 가이드에서는 Databrain을 ClickHouse 인스턴스에 연결하는 방법을 단계별로 안내합니다.
+
+<div id="pre-requisites">
+  ## 사전 요구 사항
+</div>
+
+* 자체 인프라 또는 [ClickHouse Cloud](https://clickhouse.com/)에서 호스팅되는 ClickHouse 데이터베이스.
+* [Databrain 계정](https://app.usedatabrain.com/users/sign-up).
+* 데이터 소스를 연결할 Databrain 워크스페이스.
+
+<div id="steps-to-connect-databrain-to-clickhouse">
+  ## Databrain을 ClickHouse에 연결하는 단계
+</div>
+
+<div id="1-gather-your-connection-details">
+  ### 1. 연결 정보 확인하기
+</div>
+
+<ConnectionDetails />
+
+<div id="2-allow-databrain-ip-addresses">
+  ### 2. Databrain IP 주소 허용(필요한 경우)
+</div>
+
+ClickHouse 인스턴스에서 IP 필터링이 활성화되어 있으면 Databrain의 IP 주소를 허용 목록에 추가해야 합니다.
+
+ClickHouse Cloud 사용자의 경우:
+
+1. ClickHouse Cloud 콘솔에서 해당 서비스로 이동합니다
+2. **설정** → **보안**으로 이동합니다
+3. Databrain의 IP 주소를 허용 목록에 추가합니다
+
+<Tip>
+  허용 목록에 추가해야 하는 최신 IP 주소 목록은 [Databrain의 IP 허용 목록 문서](https://docs.usedatabrain.com/guides/datasources/allow-access-to-our-ip)를 참조하십시오.
+</Tip>
+
+<div id="3-add-clickhouse-as-a-data-source">
+  ### 3. Databrain에서 ClickHouse를 데이터 소스로 추가하기
+</div>
+
+1. Databrain 계정에 로그인한 후 데이터 소스를 추가할 워크스페이스로 이동합니다.
+
+2. 탐색 메뉴에서 **Data Sources**를 클릭합니다.
+
+<Image size="md" img="/images/integrations/data-visualization/databrain_02.webp" alt="Databrain 데이터 소스 메뉴" border />
+
+3. **Add a Data Source** 또는 **데이터 소스 연결**을 클릭합니다.
+
+4. 사용 가능한 커넥터 목록에서 **ClickHouse**를 선택합니다.
+
+<Image size="md" img="/images/integrations/data-visualization/databrain_03.webp" alt="ClickHouse 옵션이 표시된 Databrain 커넥터 선택 화면" border />
+
+5. 연결 정보를 입력합니다:
+   * **Destination Name**: 이 연결을 식별할 수 있는 이름을 입력합니다(예: &quot;Production ClickHouse&quot; 또는 &quot;Analytics DB&quot;)
+   * **Host**: ClickHouse 호스트 URL을 입력합니다(예: `https://your-instance.region.aws.clickhouse.cloud`)
+   * **Port**: `8443`을 입력합니다(ClickHouse의 기본 HTTPS 포트)
+   * **Username**: ClickHouse 사용자 이름을 입력합니다
+   * **Password**: ClickHouse 비밀번호를 입력합니다
+
+<Image size="md" img="/images/integrations/data-visualization/databrain_04.webp" alt="구성 필드가 있는 Databrain ClickHouse 연결 양식" border />
+
+6. Databrain이 ClickHouse 인스턴스에 연결할 수 있는지 확인하려면 **Test Connection**을 클릭합니다.
+
+7. 연결이 성공하면 **Save** 또는 **Connect**를 클릭하여 데이터 소스를 추가합니다.
+
+<div id="4-configure-user-permissions">
+  ### 4. 사용자 권한 설정
+</div>
+
+연결에 사용할 ClickHouse 사용자에게 필요한 권한이 부여되어 있는지 확인하십시오:
+
+```sql
+-- 스키마 정보 읽기 권한 부여
+GRANT SELECT ON information_schema.* TO your_databrain_user;
+
+-- 데이터베이스 및 테이블 읽기 권한 부여
+GRANT SELECT ON your_database.* TO your_databrain_user;
+```
+
+`your_databrain_user` 및 `your_database`를 실제 사용자 이름과 데이터베이스 이름으로 바꾸십시오.
+
+<div id="using-databrain-with-clickhouse">
+  ## ClickHouse에서 Databrain 사용하기
+</div>
+
+<div id="explore-your-data">
+  ### 데이터 탐색하기
+</div>
+
+1. 연결한 후 Databrain의 워크스페이스로 이동하세요.
+
+2. 데이터 탐색기에 ClickHouse 테이블(table) 목록이 표시됩니다.
+
+<Image size="md" img="/images/integrations/data-visualization/databrain_05.webp" alt="ClickHouse 테이블이 표시된 Databrain 데이터 탐색기" border />
+
+3. 테이블을 클릭하여 스키마(schema)를 살펴보고 데이터를 미리 확인하세요.
+
+<div id="create-metrics-and-visualizations">
+  ### 메트릭 및 시각화 만들기
+</div>
+
+1. **Create Metric**을 클릭하여 ClickHouse 데이터로 시각화를 만들기 시작합니다.
+
+2. ClickHouse 데이터 소스를 선택한 다음, 시각화할 테이블을 선택합니다.
+
+3. Databrain의 직관적인 인터페이스를 사용해 다음 작업을 수행합니다:
+   * 차원과 측정값 선택
+   * 필터 및 집계 적용
+   * 시각화 유형 선택(막대 차트, 선 차트, 원형 차트, 테이블 등)
+   * 고급 분석을 위한 사용자 지정 SQL 쿼리 추가
+
+4. 메트릭을 저장하여 여러 대시보드에서 재사용합니다.
+
+<div id="build-dashboards">
+  ### 대시보드 만들기
+</div>
+
+1. **Create Dashboard**를 클릭하여 대시보드 만들기를 시작하세요.
+
+2. 저장된 메트릭을 끌어다 놓아 대시보드에 추가하세요.
+
+3. 대시보드의 레이아웃과 모양을 사용자 지정하세요.
+
+<Image size="md" img="/images/integrations/data-visualization/databrain_06.webp" alt="여러 ClickHouse 시각화가 있는 Databrain 대시보드" border />
+
+4. 대시보드를 팀과 공유하거나 애플리케이션에 임베드하세요.
+
+<div id="advanced-features">
+  ### 고급 기능
+</div>
+
+Databrain은 ClickHouse와 함께 사용할 때 여러 고급 기능을 제공합니다.
+
+* **사용자 지정 SQL 콘솔**: ClickHouse 데이터베이스에 직접 사용자 지정 SQL 쿼리를 작성하고 실행합니다
+* **멀티 테넌시 및 싱글 테넌시**: 싱글 테넌트와 멀티 테넌트 아키텍처 모두에서 ClickHouse 데이터베이스를 연결합니다
+* **보고서 예약**: 자동 보고서를 예약하고 이해관계자에게 이메일로 전송합니다
+* **AI 기반 인사이트**: AI를 사용해 데이터에서 요약과 인사이트를 생성합니다
+* **임베디드 애널리틱스**: 대시보드와 메트릭을 애플리케이션에 직접 삽입합니다
+* **시맨틱 레이어**: 재사용 가능한 데이터 모델과 비즈니스 로직을 생성합니다
+
+<div id="troubleshooting">
+  ## 문제 해결
+</div>
+
+<div id="connection-fails">
+  ### 연결 실패
+</div>
+
+ClickHouse에 연결되지 않는 경우:
+
+1. **자격 증명 확인**: 사용자 이름, 비밀번호, 호스트 URL이 올바른지 다시 확인하세요.
+2. **포트 확인**: HTTPS에는 포트 `8443`을 사용해야 합니다(SSL을 사용하지 않는 HTTP의 경우 `8123`).
+3. **IP 허용 목록**: Databrain의 IP 주소가 ClickHouse의 방화벽 또는 보안 설정에서 허용 목록에 추가되어 있는지 확인하세요.
+4. **SSL/TLS**: HTTPS를 사용하는 경우 SSL/TLS가 올바르게 구성되어 있는지 확인하세요.
+5. **사용자 권한**: 해당 사용자에게 `information_schema`와 대상 데이터베이스에 대한 SELECT 권한이 있는지 확인하세요.
+
+<div id="slow-query-performance">
+  ### 쿼리 성능이 느릴 때
+</div>
+
+쿼리가 느리게 실행된다면:
+
+1. **쿼리 최적화**: 필터와 집계를 효율적으로 사용하세요
+2. **materialized view 생성**: 자주 조회되는 집계라면 ClickHouse에서 materialized view 생성을 고려하세요
+3. **적절한 데이터 타입 사용**: ClickHouse 스키마에 최적의 데이터 타입을 사용하고 있는지 확인하세요
+4. **인덱스 최적화**: ClickHouse의 프라이머리 키와 스킵 인덱스를 활용하세요
+
+<div id="learn-more">
+  ## 더 알아보기
+</div>
+
+Databrain 기능과 강력한 분석을 구축하는 방법에 대한 자세한 내용은 다음 문서를 참고하십시오:
+
+* [Databrain 문서](https://docs.usedatabrain.com/)
+* [ClickHouse Integration 가이드](https://docs.usedatabrain.com/guides/datasources/connecting-data-sources-to-databrain/clickhouse)
+* [대시보드 만들기](https://docs.usedatabrain.com/guides/dashboards/create-a-dashboard)
+* [메트릭 만들기](https://docs.usedatabrain.com/guides/metrics/create-metrics)

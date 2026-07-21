@@ -8,8 +8,10 @@ import traceback
 import urllib.parse
 from datetime import datetime
 from pathlib import Path
+from threading import Thread
 
 from ci.jobs.scripts.cidb_cluster import CIDBCluster
+from ci.jobs.scripts.dataset_download import download_and_extract_datasets
 from ci.praktika.info import Info
 from ci.praktika.result import Result
 from ci.praktika.settings import Settings
@@ -24,10 +26,22 @@ perf_right_config = f"{perf_right}/config"
 perf_left_config = f"{perf_left}/config"
 raw_query_metrics_path = f"{perf_wd}/analyze/raw-query-metrics-upload.tsv"
 
-# Disable cgroup memory correction for report-building clickhouse-local so each
-# process is tracked against its own RSS, not the shared job cgroup (avoids Code 241).
-# Keep in sync with CHPC_REPORT_LOCAL_SERVER_SETTINGS in compare.sh.
-REPORT_LOCAL_SERVER_SETTINGS = ["--", "--memory_worker_use_cgroup=0"]
+# Settings for the report-building clickhouse-local (post-processing, not the
+# measured servers). Keep in sync with CHPC_REPORT_LOCAL_{QUERY,SERVER}_SETTINGS
+# in compare.sh.
+REPORT_LOCAL_QUERY_SETTINGS = [
+    # Keep report aggregations in RAM: report/tmp cannot hold a spill of the
+    # heaviest randomization queries, so spilling only fails with NOT_ENOUGH_SPACE.
+    "--max_bytes_before_external_group_by=0",
+    "--max_bytes_ratio_before_external_group_by=0",
+    "--max_bytes_before_external_sort=0",
+    "--max_bytes_ratio_before_external_sort=0",
+]
+REPORT_LOCAL_SERVER_SETTINGS = [
+    # Track each process against its own RSS, not the job cgroup (MEMORY_LIMIT_EXCEEDED).
+    "--",
+    "--memory_worker_use_cgroup=0",
+]
 
 GET_HISTORICAL_TRESHOLDS_QUERY = """\
 SELECT test, query_index,
@@ -521,7 +535,7 @@ def get_insert_metadata(info, compare_against_release):
 def build_raw_query_metrics_tsv():
     Path(raw_query_metrics_path).unlink(missing_ok=True)
     result = subprocess.run(
-        ["clickhouse-local", "--query", BUILD_RAW_QUERY_METRICS_QUERY, *REPORT_LOCAL_SERVER_SETTINGS],
+        ["clickhouse-local", "--query", BUILD_RAW_QUERY_METRICS_QUERY, *REPORT_LOCAL_QUERY_SETTINGS, *REPORT_LOCAL_SERVER_SETTINGS],
         cwd=perf_wd,
         text=True,
         capture_output=True,
@@ -561,7 +575,7 @@ def build_flamegraph_upload_tsv():
     Path(ch_uploads_dir).mkdir(parents=True, exist_ok=True)
     Path(flamegraph_upload_path).unlink(missing_ok=True)
     result = subprocess.run(
-        ["clickhouse-local", "--query", BUILD_FLAMEGRAPH_UPLOAD_QUERY, *REPORT_LOCAL_SERVER_SETTINGS],
+        ["clickhouse-local", "--query", BUILD_FLAMEGRAPH_UPLOAD_QUERY, *REPORT_LOCAL_QUERY_SETTINGS, *REPORT_LOCAL_SERVER_SETTINGS],
         cwd=perf_wd,
         text=True,
         capture_output=True,
@@ -755,7 +769,6 @@ class CHServer:
             serever_path = f"{temp_dir}/perf_wd/right"
             log_file = f"{serever_path}/server.log"
 
-        self.preconfig_start_cmd = f"{serever_path}/clickhouse-server --config-file={serever_path}/config/config.xml -- --path {db_path} --user_files_path {db_path}/user_files --top_level_domains_path {perf_wd}/top_level_domains --keeper_server.storage_path {temp_dir}/coordination0 --tcp_port {server_port}"
         self.log_fd = None
         self.log_file = log_file
         self.port = server_port
@@ -774,37 +787,6 @@ class CHServer:
             --keeper_server.storage_path {serever_path}/coordination --zookeeper.node.port {keeper_port} \
             --interserver_http_port {inter_server_port} \
             --jemalloc_profiler_sampling_rate {self.JEMALLOC_PROFILER_SAMPLING_RATE}"
-
-    def start_preconfig(self):
-        print("Starting ClickHouse server")
-        print("Command: ", self.preconfig_start_cmd)
-        self.log_fd = open(self.log_file, "w")
-        self.proc = subprocess.Popen(
-            self.preconfig_start_cmd,
-            stderr=subprocess.STDOUT,
-            stdout=self.log_fd,
-            shell=True,
-            start_new_session=True,
-        )
-        time.sleep(2)
-        retcode = self.proc.poll()
-        if retcode is not None:
-            stdout = self.proc.stdout.read().strip() if self.proc.stdout else ""
-            stderr = self.proc.stderr.read().strip() if self.proc.stderr else ""
-            Utils.print_formatted_error("Failed to start ClickHouse", stdout, stderr)
-            return False
-        print("ClickHouse server process started -> wait ready")
-        res = self.wait_ready()
-        if res:
-            print("ClickHouse server ready")
-        else:
-            print("ClickHouse server NOT ready")
-
-        Shell.check(
-            f"clickhouse-client --port {self.port} --query 'create database IF NOT EXISTS test' && clickhouse-client --port {self.port} --query 'rename table datasets.hits_v1 to test.hits'",
-            verbose=True,
-        )
-        return res
 
     def start(self):
         print(f"Starting [{self.name}] ClickHouse server")
@@ -959,6 +941,97 @@ def too_many_slow(message):
     )
 
 
+def _perf_client(port):
+    return (
+        f"clickhouse-client --port {port} "
+        "--max_memory_usage 30G --max_memory_usage_for_user 30G "
+        "--max_estimated_execution_time 0 --max_execution_time 1800 --receive_timeout 1800"
+    )
+
+
+def rebuild_table(port, source, destination):
+    # Re-insert an attached dataset through the running server so its parts are
+    # written by that server's own binary and settings (sparse columns,
+    # statistics, mark format) instead of the frozen tarball format, then
+    # OPTIMIZE FINAL back to a single part matching the original layout. INSERT
+    # is what recomputes serialization from the data; a bare OPTIMIZE would
+    # inherit the source parts' serialization, so it cannot replace the insert.
+    # For an in-place rebuild the fresh copy is built under a temporary name and
+    # swapped in with RENAME (the datasets live in Ordinary databases, so
+    # EXCHANGE TABLES is not available).
+    client = _perf_client(port)
+    if Shell.get_output(f'{client} --query "EXISTS TABLE {source}"').strip() != "1":
+        # A missing source is only expected for the cross-name rebuild
+        # (datasets.hits_v1 -> test.hits) retried after a previous run already
+        # built the destination and dropped the source. Everywhere else a
+        # missing source means the dataset failed to attach: fail closed, so the
+        # completion marker is never written for a table that was not rebuilt.
+        if source != destination and Shell.get_output(f'{client} --query "EXISTS TABLE {destination}"').strip() == "1":
+            print(f"rebuild_table: {source} already consumed into {destination}, skipping")
+            return
+        raise RuntimeError(f"rebuild_table: source {source} is not attached")
+    insert_settings = "enable_filesystem_cache_on_write_operations=0, max_insert_threads=16"
+    target = f"{destination}_rebuild" if source == destination else destination
+    # Drop any leftover target from an interrupted previous run before rebuilding.
+    Shell.check(f'{client} --query "DROP TABLE IF EXISTS {target} SYNC"', strict=True, verbose=True)
+    Shell.check(f'{client} --query "CREATE TABLE {target} AS {source}"', strict=True, verbose=True)
+    Shell.check(f'{client} --query "INSERT INTO {target} SELECT * FROM {source} SETTINGS {insert_settings}"', strict=True, verbose=True)
+    Shell.check(f'{client} --query "OPTIMIZE TABLE {target} FINAL"', strict=True, verbose=True)
+    if target != destination:
+        old = f"{destination}_old"
+        Shell.check(f'{client} --query "DROP TABLE IF EXISTS {old} SYNC"', strict=True, verbose=True)
+        Shell.check(f'{client} --query "RENAME TABLE {destination} TO {old}, {target} TO {destination}"', strict=True, verbose=True)
+        Shell.check(f'{client} --query "DROP TABLE {old} SYNC"', strict=True, verbose=True)
+    else:
+        Shell.check(f'{client} --query "DROP TABLE {source} SYNC"', strict=True, verbose=True)
+
+
+POPULATE_DONE_MARKER = "test._populate_done"
+
+
+def populate_data(port):
+    # Rebuild the hits datasets on one server, sequentially. The three inserts
+    # share the per-user memory limit (~28GiB) and hits_100m_single alone uses
+    # ~21GiB, so running them in parallel is killed by the OvercommitTracker.
+    # A dedicated marker table is created only after all three tables are
+    # rebuilt: it is the "done" signal for the re-entrant restart() skip. Table
+    # existence cannot serve as the marker, because the in-place *_single tables
+    # already exist (attached from the tarball) before they are rebuilt.
+    client = f"clickhouse-client --port {port}"
+    if Shell.get_output(f'{client} --query "EXISTS TABLE {POPULATE_DONE_MARKER}"').strip() == "1":
+        print(f"populate_data: server {port} already populated, skipping")
+        return
+    Shell.check(f'{client} --query "CREATE DATABASE IF NOT EXISTS test"', strict=True, verbose=True)
+    # Scope: only the hits datasets are rebuilt (they back the bulk of the
+    # suite, including clickbench). The other attached datasets (tpch, tpcds,
+    # values) still read their frozen tarball parts, so write-time defaults are
+    # not yet exercised on those workloads.
+    rebuild_table(port, "default.hits_10m_single", "default.hits_10m_single")
+    rebuild_table(port, "default.hits_100m_single", "default.hits_100m_single")
+    rebuild_table(port, "datasets.hits_v1", "test.hits")
+    Shell.check(f'{client} --query "CREATE TABLE {POPULATE_DONE_MARKER} (done UInt8) ENGINE = Log"', strict=True, verbose=True)
+
+
+def populate_data_both(left_port, right_port):
+    # Populate both servers in parallel. Each writes its own parts, so a PR that
+    # changes a write-time default is reflected only on the right (patched) side.
+    errors = []
+
+    def run(port):
+        try:
+            populate_data(port)
+        except Exception as e:  # noqa: BLE001
+            print(f"populate_data failed on port {port}: {e}")
+            errors.append(e)
+
+    threads = [Thread(target=run, args=(p,)) for p in (left_port, right_port)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    return not errors
+
+
 def main():
 
     args = parse_args()
@@ -981,7 +1054,7 @@ def main():
         compare_against_master or compare_against_release
     ), "test option: head_master or release_base must be selected"
 
-    # release_version = CHVersion.get_release_version_as_dict()
+    # release_version = CHVersion.get_release_version()
     info = Info()
 
     if Utils.is_arm():
@@ -1171,16 +1244,16 @@ def main():
                 "tpch10": "https://clickhouse-datasets.s3.amazonaws.com/h/10/tpch_sf10.tar",
                 "tpcds1": "https://clickhouse-datasets.s3.amazonaws.com/ds/scale_1/tpcds.tar",
             }
-            cmds = []
-            for dataset_path in dataset_paths.values():
-                cmds.append(
-                    f'wget -nv -nd -c "{dataset_path}" -O- | tar --extract --verbose -C {db_path}'
-                )
-            res = Shell.check_parallel(cmds, verbose=True)
+            stop_watch = Utils.Stopwatch()
+            errors = download_and_extract_datasets(dataset_paths.values(), db_path)
+            res = not errors
             results.append(
                 Result(
                     name="Download datasets",
                     status=Result.Status.OK if res else Result.Status.ERROR,
+                    start_time=stop_watch.start_time,
+                    duration=stop_watch.duration,
+                    info="\n".join(errors),
                 )
             )
             if res:
@@ -1188,16 +1261,6 @@ def main():
 
     if res and JobStages.CONFIGURE in stages:
         print("Configure")
-
-        leftCH = CHServer(is_left=True)
-
-        def restart_ch():
-            res_ = leftCH.start_preconfig()
-            leftCH.terminate()
-            # wait for termination
-            time.sleep(5)
-            Shell.check("ps -ef | grep clickhouse", verbose=True)
-            return res_
 
         commands = [
             f'echo "ATTACH DATABASE default ENGINE=Ordinary" > {db_path}/metadata/default.sql',
@@ -1214,17 +1277,18 @@ def main():
             # SSH config tries to bind a port not overridden per-server and may be unsupported by the reference binary
             f"rm {perf_right_config}/config.d/ssh.xml ||:",
             f"cp -rv {perf_right_config} {perf_left}/",
-            restart_ch,
             # Make copies of the original db for both servers. Use hardlinks instead
-            # of copying to save space. Before that, remove preprocessed configs and
-            # system tables, because sharing them between servers with hardlinks may
-            # lead to weird effects
+            # of copying to save space. The datasets are attached as-is; each
+            # server re-inserts them into its final tables on startup (see
+            # populate_data), so the parts are written by that server's own
+            # binary and settings instead of the frozen tarball format.
             f"rm -rf {perf_left}/db {perf_right}/db",
             f"rm -rf {db_path}/preprocessed_configs {db_path}/data/system {db_path}/metadata/system {db_path}/status",
             f"cp -al {db_path} {perf_left}/db ||:",
             f"cp -al {db_path} {perf_right}/db ||:",
-            f"cp -R {temp_dir}/coordination0 {perf_left}/coordination",
-            f"cp -R {temp_dir}/coordination0 {perf_right}/coordination",
+            # Each server bootstraps its own (embedded, non-replicated) keeper, so
+            # an empty storage dir is enough.
+            f"mkdir -p {perf_left}/coordination {perf_right}/coordination",
             # Symlink user_files from the repository into both servers' user_files directories
             f'for f in ./tests/performance/user_files/*; do [ -e "$f" ] || continue; ln -sf "$(readlink -f "$f")" {perf_left}/db/user_files/; ln -sf "$(readlink -f "$f")" {perf_right}/db/user_files/; done',
         ]
@@ -1273,6 +1337,17 @@ def main():
             if Path(leftCH.log_file).is_file():
                 logs.append(leftCH.log_file)
             results[-1].set_files(logs)
+
+    if res and JobStages.RESTART in stages:
+        print("Populate datasets")
+
+        def populate():
+            return populate_data_both(
+                CHServer.LEFT_SERVER_PORT, CHServer.RIGHT_SERVER_PORT
+            )
+
+        results.append(Result.from_commands_run(name="Populate", command=[populate]))
+        res = results[-1].is_ok()
 
     if res and JobStages.TEST in stages:
         print("Tests")

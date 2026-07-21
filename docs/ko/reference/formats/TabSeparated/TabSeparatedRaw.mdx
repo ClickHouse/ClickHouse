@@ -1,0 +1,100 @@
+---
+alias: ['TSVRaw', 'Raw']
+description: 'TabSeparatedRaw 포맷 문서'
+input_format: true
+keywords: ['TabSeparatedRaw']
+output_format: true
+slug: /interfaces/formats/TabSeparatedRaw
+title: 'TabSeparatedRaw'
+doc_type: '참고'
+---
+
+| 입력 | 출력 | 별칭              |
+| -- | -- | --------------- |
+| ✔  | ✔  | `TSVRaw`, `Raw` |
+
+<div id="description">
+  ## 설명
+</div>
+
+행을 이스케이프 처리하지 않고 기록한다는 점에서 [`TabSeparated`](/ko/reference/formats/TabSeparated/TabSeparated) 포맷과 다릅니다.
+
+<Note>
+  이 포맷으로 파싱할 때는 각 필드에 탭 또는 줄바꿈 문자를 사용할 수 없습니다.
+</Note>
+
+`TabSeparatedRaw` 포맷과 `RawBlob` 포맷의 비교는 다음을 참조하십시오: [Raw Formats Comparison](/ko/reference/formats/RawBLOB#raw-formats-comparison)
+
+<div id="example-usage">
+  ## 사용 예시
+</div>
+
+<div id="inserting-data">
+  ### 데이터 삽입
+</div>
+
+이름이 `football.tsv`인 다음 TSV 파일을 사용합니다:
+
+```tsv
+2022-04-30      2021    Sutton United   Bradford City   1       4
+2022-04-30      2021    Swindon Town    Barrow  2       1
+2022-04-30      2021    Tranmere Rovers Oldham Athletic 2       0
+2022-05-02      2021    Port Vale       Newport County  1       2
+2022-05-02      2021    Salford City    Mansfield Town  2       2
+2022-05-07      2021    Barrow  Northampton Town        1       3
+2022-05-07      2021    Bradford City   Carlisle United 2       0
+2022-05-07      2021    Bristol Rovers  Scunthorpe United       7       0
+2022-05-07      2021    Exeter City     Port Vale       0       1
+2022-05-07      2021    Harrogate Town A.F.C.   Sutton United   0       2
+2022-05-07      2021    Hartlepool United       Colchester United       0       2
+2022-05-07      2021    Leyton Orient   Tranmere Rovers 0       1
+2022-05-07      2021    Mansfield Town  Forest Green Rovers     2       2
+2022-05-07      2021    Newport County  Rochdale        0       2
+2022-05-07      2021    Oldham Athletic Crawley Town    3       3
+2022-05-07      2021    Stevenage Borough       Salford City    4       2
+2022-05-07      2021    Walsall Swindon Town    0       3
+```
+
+데이터를 삽입하세요:
+
+```sql
+INSERT INTO football FROM INFILE 'football.tsv' FORMAT TabSeparatedRaw;
+```
+
+<div id="reading-data">
+  ### 데이터 읽기
+</div>
+
+`TabSeparatedRaw` 포맷으로 데이터를 읽습니다:
+
+```sql
+SELECT *
+FROM football
+FORMAT TabSeparatedRaw
+```
+
+출력은 탭으로 구분된 포맷으로 제공됩니다:
+
+```tsv
+2022-04-30      2021    Sutton United   Bradford City   1       4
+2022-04-30      2021    Swindon Town    Barrow  2       1
+2022-04-30      2021    Tranmere Rovers Oldham Athletic 2       0
+2022-05-02      2021    Port Vale       Newport County  1       2
+2022-05-02      2021    Salford City    Mansfield Town  2       2
+2022-05-07      2021    Barrow  Northampton Town        1       3
+2022-05-07      2021    Bradford City   Carlisle United 2       0
+2022-05-07      2021    Bristol Rovers  Scunthorpe United       7       0
+2022-05-07      2021    Exeter City     Port Vale       0       1
+2022-05-07      2021    Harrogate Town A.F.C.   Sutton United   0       2
+2022-05-07      2021    Hartlepool United       Colchester United       0       2
+2022-05-07      2021    Leyton Orient   Tranmere Rovers 0       1
+2022-05-07      2021    Mansfield Town  Forest Green Rovers     2       2
+2022-05-07      2021    Newport County  Rochdale        0       2
+2022-05-07      2021    Oldham Athletic Crawley Town    3       3
+2022-05-07      2021    Stevenage Borough       Salford City    4       2
+2022-05-07      2021    Walsall Swindon Town    0       3
+```
+
+<div id="format-settings">
+  ## 포맷 설정
+</div>

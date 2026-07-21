@@ -1,10 +1,12 @@
 #include <Storages/MergeTree/MergeTreeSettings.h>
 
 #include <Columns/IColumn.h>
+#include <Compression/CompressionFactory.h>
 #include <Core/BaseSettings.h>
 #include <Core/BaseSettingsFwdMacrosImpl.h>
 #include <Core/BaseSettingsProgramOptions.h>
 #include <Core/MergeSelectorAlgorithm.h>
+#include <Core/MergeTreeSerializationEnums.h>
 #include <Core/SettingsChangesHistory.h>
 #include <Disks/DiskFromAST.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -15,6 +17,7 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/System/MutableColumnsAndConstraints.h>
 #include <Common/Exception.h>
+#include <Common/FieldVisitorToString.h>
 #include <Common/NamePrompter.h>
 #include <Common/logger_useful.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
@@ -198,6 +201,15 @@ You can see which parts of `s` were stored using the sparse serialization:
 └────────┴────────────────────┘
 ```
 )", 0) \
+    DECLARE(Bool, compute_exact_num_defaults_for_sparse_columns, false, R"(
+Compute the exact count of default values per column during inserts and
+merges, instead of the cheaper sampling estimate used to decide on sparse
+serialization. Required by `optimize_trivial_count_with_sparsity_filter`,
+which consumes the persisted `num_defaults` counter (Nullable columns
+additionally need `nullable_serialization_version = 'allow_sparse'`).
+Leaving it disabled keeps inserts/merges as fast as before; enabling it
+adds an O(rows) pass per sparse-eligible column.
+)", EXPERIMENTAL) \
     DECLARE(Bool, replace_long_file_name_to_hash, true, R"(
 If the file name for column is too long (more than 'max_file_name_length'
 bytes) replace it to SipHash128
@@ -620,9 +632,8 @@ Possible values:
 - `0` (disable deduplication).
 
 A deduplication mechanism is used, similar to replicated tables (see
-[replicated_deduplication_window](#replicated_deduplication_window) setting), including the
-`insert_deduplication_version` granularity (whole inserted block under the default
-`new_unified_hash`, per created part under the legacy versions). The hash sums are written to
+[replicated_deduplication_window](#replicated_deduplication_window) setting): the deduplication
+hash sum covers the whole inserted block. The hash sums are written to
 a local file on a disk rather than to ClickHouse Keeper.
 )", 0) \
     DECLARE(UInt64, max_parts_to_merge_at_once, 100, R"(
@@ -687,9 +698,9 @@ Can be overridden by explicit `posting_list_block_size` index argument.
 Default posting list codec for text indexes.
 Can be overridden by explicit `posting_list_codec` index argument.
 )", 0) \
-    DECLARE(Bool, allow_experimental_text_index_positions, false, R"(
-Allow creating text indexes with the experimental `positions` argument which
-stores token positions to support exact phrase matching.
+    DECLARE(Bool, allow_experimental_text_index_phrase_search, false, R"(
+Allow creating text indexes with the experimental `support_phrase_search` argument
+which stores token positions to support exact phrase matching.
 )", EXPERIMENTAL) \
     DECLARE(UInt64, merge_selecting_sleep_ms, 5000, R"(
 Minimum time to wait before trying to select parts to merge again after no
@@ -725,18 +736,12 @@ Possible values:
 Merge parts if every part in the range is older than the value of
 `min_age_to_force_merge_seconds`.
 
-By default, ignores setting `max_bytes_to_merge_at_max_space_in_pool`
-(see `enable_max_bytes_limit_for_min_age_to_force_merge`).
-
 Possible values:
 - Positive integer.
 )", 0) \
     DECLARE(Bool, min_age_to_force_merge_on_partition_only, false, R"(
 Whether `min_age_to_force_merge_seconds` should be applied only on the entire
 partition and not on subset.
-
-By default, ignores setting `max_bytes_to_merge_at_max_space_in_pool` (see
-`enable_max_bytes_limit_for_min_age_to_force_merge`).
 
 Possible values:
 - true, false
@@ -834,15 +839,15 @@ table can have a superset of the source table's indices and projections.
     DECLARE(MergeSelectorAlgorithm, merge_selector_algorithm, MergeSelectorAlgorithm::SIMPLE, R"(
 The algorithm to select parts for merges assignment
 )", EXPERIMENTAL) \
-    DECLARE(Bool, merge_selector_enable_heuristic_to_lower_max_parts_to_merge_at_once, false, R"(
-Enable heuristic for simple merge selector which will lower maximum limit for merge choice.
-By doing so number of concurrent merges will increase which can help with TOO_MANY_PARTS
-errors but at the same time this will increase the write amplification.
-)", EXPERIMENTAL) \
     DECLARE(UInt64, merge_selector_heuristic_to_lower_max_parts_to_merge_at_once_exponent, 5, R"(
 Controls the exponent value used in formulae building lowering curve. Lowering exponent will
 lower merge widths which will trigger increase in write amplification. The reverse is also true.
 )", EXPERIMENTAL) \
+    DECLARE(Bool, merge_selector_enable_heuristic_to_lower_max_parts_to_merge_at_once, true, R"(
+Enable heuristic for simple merge selector which will lower maximum limit for merge choice.
+By doing so number of concurrent merges will increase which can help with TOO_MANY_PARTS
+errors but at the same time this will increase the write amplification.
+)", 0) \
     DECLARE(Bool, merge_selector_enable_heuristic_to_remove_small_parts_at_right, true, R"(
 Enable heuristic for selecting parts for merge which removes parts from right
 side of range, if their size is less than specified ratio (0.01) of sum_size.
@@ -914,6 +919,35 @@ error, but at the same time `SELECT` performance might degrade. Also in case
 of a merge issue (for example, due to insufficient disk space) you will
 notice it later than you would with the original 300.
 
+)", 0) \
+    DECLARE(UInt64, dead_blobs_to_throw_insert, 1000000, R"(
+If the number of blobs pending removal in the dead blobs queues of the table's disks is more than the
+`dead_blobs_to_throw_insert` value, `INSERT` is interrupted with the following error:
+
+> "Too many dead blobs in queue (N) on disks of table. Blobs cleanup is processing significantly
+  slower than inserts"
+
+The dead blobs queue belongs to the disk and is shared by all tables on it (including blobs of already
+dropped tables), so size the threshold for the whole disk rather than a single table.
+
+Possible values:
+- Any positive integer.
+- 0 — disabled.
+)", 0) \
+    DECLARE(UInt64, dead_blobs_to_delay_insert, 100000, R"(
+If the number of blobs pending removal in the dead blobs queues of the table's disks exceeds the
+`dead_blobs_to_delay_insert` value, an `INSERT` is artificially slowed down (up to `max_delay_to_insert`).
+
+The dead blobs queue belongs to the disk and is shared by all tables on it (including blobs of already
+dropped tables), so size the threshold for the whole disk rather than a single table.
+
+:::tip
+It is useful when a server fails to clean up blobs quickly enough.
+:::
+
+Possible values:
+- Any positive integer.
+- 0 — disabled.
 )", 0) \
     DECLARE(UInt64, inactive_parts_to_throw_insert, 0, R"(
 If the number of inactive parts in a single partition more than the
@@ -1144,11 +1178,8 @@ ClickHouse Keeper. Hash sums are stored only for the most recent
 `replicated_deduplication_window` blocks. The oldest hash sums are removed from
 ClickHouse Keeper.
 
-Under the default `insert_deduplication_version = new_unified_hash` the hash sum covers the
-whole inserted block, so an insert is deduplicated only when its entire data matches a
-previous insert (a retry), not per individual part. Under the legacy `old_separate_hashes` /
-`compatible_double_hashes` the hash sum is instead calculated per created part, from the
-composition of the field names and types and the data of that part (stream of bytes).
+The hash sum covers the whole inserted block, so an insert is deduplicated only when its
+entire data matches a previous insert (a retry), not per individual part.
 
 A large number for `replicated_deduplication_window` slows down `Inserts` because more
 entries need to be compared.
@@ -1170,67 +1201,30 @@ The time is relative to the time of the most recent record, not to the wall
 time. If it's the only record it will be stored forever.
 )", 0) \
     DECLARE(UInt64, replicated_deduplication_window_for_async_inserts, 10000, R"(
-The number of most recently async inserted blocks for which ClickHouse Keeper
-stores hash sums to check for duplicates.
-
-Possible values:
-- Any positive integer.
-- 0 (disable deduplication for async_inserts)
-
-The [Async Insert](/operations/settings/settings#async_insert) command will
-be cached in one or more blocks (parts). For [insert deduplication](/engines/table-engines/mergetree-family/replication),
-when writing into replicated tables, ClickHouse writes the hash sums of each
-insert into ClickHouse Keeper. Hash sums are stored only for the most recent
-`replicated_deduplication_window_for_async_inserts` blocks. The oldest hash
-sums are removed from ClickHouse Keeper.
-A large number of `replicated_deduplication_window_for_async_inserts` slows
-down `Async Inserts` because it needs to compare more entries.
-The hash sum is calculated from the composition of the field names and types
-and the data of the insert (stream of bytes).
-
-This setting applies only under `insert_deduplication_version = old_separate_hashes` or
-`compatible_double_hashes`, which keep async-insert hashes in a separate `async_blocks`
-directory. Under the default `new_unified_hash`, async inserts share the unified
-`deduplication_hashes` directory with sync inserts and are governed by
-`replicated_deduplication_window` / `replicated_deduplication_window_seconds` instead.
+Legacy setting retained for mixed-version rolling upgrades. New inserts deduplicate with the
+unified hash governed by `replicated_deduplication_window`; this setting now only bounds how many
+legacy async-insert hashes are kept in the `async_blocks` directory in ClickHouse Keeper, which is
+still written by older replicas during a rolling upgrade and cleaned up by the current leader.
+A value of `0` retains none of them — the next cleanup pass removes every entry — so keep the
+default (or a larger value) to preserve the legacy async deduplication window during the upgrade.
 )", 0) \
     DECLARE(UInt64, replicated_deduplication_window_seconds_for_async_inserts, 7 * 24 * 60 * 60 /* one week */, R"(
-The number of seconds after which the hash sums of the async inserts are
-removed from ClickHouse Keeper.
-
-Possible values:
-- Any positive integer.
-
-Similar to [replicated_deduplication_window_for_async_inserts](#replicated_deduplication_window_for_async_inserts),
-`replicated_deduplication_window_seconds_for_async_inserts` specifies how
-long to store hash sums of blocks for async insert deduplication. Hash sums
-older than `replicated_deduplication_window_seconds_for_async_inserts` are
-removed from ClickHouse Keeper, even if they are less than
-`replicated_deduplication_window_for_async_inserts`.
-
-The time is relative to the time of the most recent record, not to the wall
-time. If it's the only record it will be stored forever.
-
-Like `replicated_deduplication_window_for_async_inserts`, this applies only under
-`insert_deduplication_version = old_separate_hashes` / `compatible_double_hashes`; under the
-default `new_unified_hash`, async inserts use `replicated_deduplication_window_seconds`.
+Legacy setting retained for mixed-version rolling upgrades. Together with
+`replicated_deduplication_window_for_async_inserts` it bounds how long legacy async-insert hashes
+are kept in the `async_blocks` directory in ClickHouse Keeper (written by older replicas during a
+rolling upgrade and cleaned up by the current leader). New inserts use
+`replicated_deduplication_window_seconds`.
+)", 0) \
+    DECLARE(Milliseconds, deduplication_hashes_cache_update_wait_ms, 100, R"(
+How long each insert iteration waits for the in-memory `deduplication_hashes` cache to refresh to a
+newer version before re-checking it for already-inserted blocks. The cache mirrors the
+`deduplication_hashes` directory in ClickHouse Keeper so inserts can detect duplicates without a
+Keeper round-trip.
 )", 0) \
     DECLARE(Milliseconds, async_block_ids_cache_update_wait_ms, 100, R"(
-How long each insert iteration will wait for async_block_ids_cache update
-)", 0) \
-    DECLARE(Bool, use_async_block_ids_cache, true, R"(
-If true, we cache the hash sums of the async inserts.
-
-Possible values:
-- `true`
-- `false`
-
-A block bearing multiple async inserts will generate multiple hash sums.
-When some of the inserts are duplicated, keeper will only return one
-duplicated hash sum in one RPC, which will cause unnecessary RPC retries.
-This cache will watch the hash sums path in Keeper. If updates are watched
-in the Keeper, the cache will update as soon as possible, so that we are
-able to filter the duplicated inserts in the memory.
+Deprecated alias of `deduplication_hashes_cache_update_wait_ms`, kept for one release for backward
+compatibility. It is honored only when `deduplication_hashes_cache_update_wait_ms` is left at its
+default; this setting will be removed in a future release.
 )", 0) \
     DECLARE(UInt64, max_replicated_logs_to_keep, 1000, R"(
 How many records may be in the ClickHouse Keeper log if there is inactive
@@ -1666,7 +1660,11 @@ The maximum postpone time for failed replicated task. The value is used if the t
     /** Compatibility settings */ \
     DECLARE(Bool, allow_suspicious_indices, false, R"(
 Reject primary/secondary indexes and sorting keys with identical expressions
-)", 0) \
+    )", 0) \
+    DECLARE(Bool, allow_minmax_index_for_json, false, R"(
+Allow creating minmax skip indexes on JSON (Object) columns. Disabled by default because the minmax
+index serialization path cannot handle heterogeneous Field values that JSON columns may contain.
+    )", 0) \
     DECLARE(Bool, allow_tuple_element_aggregation, false, R"(
 When enabled, individual elements within Tuple columns participate in
 aggregation during merge in SummingMergeTree, AggregatingMergeTree, and
@@ -1945,9 +1943,10 @@ When enabled, an implicit min-max (skipping) index is added for the persistent v
 Requires `enable_block_offset_column = 1` to take effect. The index is built only during merges,
 not during inserts.
 )", 0) \
-    DECLARE(String, auto_statistics_types, "minmax, uniq", R"(
+    DECLARE(String, auto_statistics_types, "basic, uniq_v2", R"(
 Comma-separated list of statistics types to calculate automatically on all suitable columns.
-Supported statistics types: basic, tdigest, countmin, minmax, uniq.
+Supported statistics types: basic, tdigest, countmin, uniq, uniq_v2.
+The `minmax` statistics type is deprecated: it is a subset of `basic`, which should be used instead.
 )", 0) \
     DECLARE(UInt64, packed_skip_index_max_bytes, 0, R"(
 Threshold (serialized on-disk bytes, i.e. after the substream's compression and hashing
@@ -1971,15 +1970,6 @@ with `add_minmax_index_for_numeric_columns`).
 The on-disk format is self-describing: readers detect `skp_idx.packed` and serve packed
 substreams from inside it transparently. Changing this setting affects newly written parts
 only; existing parts retain whatever layout they had at write time.
-
-Known limitation: `system.data_skipping_indices.data_uncompressed_bytes` and
-`system.parts.secondary_indices_uncompressed_bytes` report the compressed size for packed
-substreams (the archive index doesn't store uncompressed sizes). This is cosmetic in
-monitoring with one functional consequence:
-`distributed_index_analysis_min_indexes_bytes_to_activate` compares against
-`data_uncompressed`, so a packed index that compresses well (`set` or `bloom_filter` over
-strings) may not cross the activation threshold even if the real uncompressed size would.
-The fallback is the normal query plan, not a wrong result.
 )", EXPERIMENTAL) \
     DECLARE(Bool, allow_summing_columns_in_partition_or_order_key, false, R"(
 When enabled, allows summing columns in a SummingMergeTree table to be used in
@@ -1988,6 +1978,21 @@ the partition or sorting key.
     DECLARE(Bool, allow_coalescing_columns_in_partition_or_order_key, false, R"(
 When enabled, allows coalescing columns in a CoalescingMergeTree table to be used in
 the partition or sorting key.
+)", 0) \
+    DECLARE(Bool, allow_dimensions_outside_sorting_key, false, R"(
+In `AggregatingMergeTree`, background merges collapse rows that share the same value of the sorting
+key, combining their aggregate states. A column that is neither part of the sorting key nor an
+aggregate-state *measure* (`AggregateFunction` or `SimpleAggregateFunction`) is a *dimension*: after
+a merge it keeps an arbitrary value of one of the collapsed rows, which silently produces wrong
+results for queries that `GROUP BY` or filter on it (see
+https://github.com/ClickHouse/ClickHouse/issues/751).
+
+By default, such a schema is rejected when the table is created. Enable this setting if the column is
+functionally dependent on the sorting key (so all collapsed rows share the same value) and the
+behavior is intentional.
+
+The check applies only to tables that actually aggregate (those with at least one aggregate-state
+column) and is skipped when `allow_tuple_element_aggregation` is enabled.
 )", 0) \
     DECLARE(Bool, shared_merge_tree_enable_keeper_parts_extra_data, true, R"(
 Enables writing attributes into virtual parts and committing blocks in keeper
@@ -2105,7 +2110,10 @@ Notify newest block number to SharedJoin or SharedSet. Only in ClickHouse Cloud.
 )", EXPERIMENTAL) \
     DECLARE(UInt64, shared_merge_tree_virtual_parts_discovery_batch, 1, R"(
 How many partition discoveries should be packed into batch
-)", EXPERIMENTAL) \
+)", 0) \
+    DECLARE(Bool, shared_merge_tree_virtual_parts_partition_atomic_discovery, true, R"(
+Will SMT discover virtual parts partition atomically with extra data fetch and watches setup.
+)", 0) \
     DECLARE(Bool, shared_merge_tree_enable_automatic_empty_partitions_cleanup, true, R"(
 Enabled cleanup of Keeper entries of empty partition.
 )", 0) \
@@ -2310,6 +2318,7 @@ are also created during INSERTs with [materialize_projections_on_insert](/operat
     MAKE_OBSOLETE_MERGE_TREE_SETTING(M, UInt64, kill_threads, 128) \
     MAKE_OBSOLETE_MERGE_TREE_SETTING(M, UInt64, cleanup_threads, 128) \
     MAKE_OBSOLETE_MERGE_TREE_SETTING(M, Bool, allow_experimental_reverse_key, false) \
+    MAKE_OBSOLETE_MERGE_TREE_SETTING(M, Bool, use_async_block_ids_cache, true) \
 
     /// Settings that should not change after the creation of a table.
     /// NOLINTNEXTLINE
@@ -2330,7 +2339,7 @@ DECLARE_SETTINGS_TRAITS(MergeTreeSettingsTraits, LIST_OF_MERGE_TREE_SETTINGS, ME
 struct MergeTreeSettingsImpl : public BaseSettings<MergeTreeSettingsTraits>
 {
     /// NOTE: will rewrite the AST to add immutable settings.
-    void loadFromQuery(ASTStorage & storage_def, ContextPtr context, bool is_loading_from_existing_metadata);
+    void loadFromQuery(ASTStorage & storage_def, ContextPtr context, bool is_loading_from_existing_metadata, bool for_system_database);
 
     /// Check that the values are sane taking also query-level settings into account.
     void sanityCheck(size_t background_pool_tasks, bool allow_experimental, bool allow_beta, bool background_pool_auto_lowered) const;
@@ -2360,7 +2369,7 @@ static void validateTableDisk(const DiskPtr & disk)
 
 IMPLEMENT_SETTINGS_TRAITS_CUSTOM_IMPL(MergeTreeSettingsTraits, LIST_OF_MERGE_TREE_SETTINGS, MergeTreeSettings, MergeTreeSetting)
 
-void MergeTreeSettingsImpl::loadFromQuery(ASTStorage & storage_def, ContextPtr context, bool is_loading_from_existing_metadata)
+void MergeTreeSettingsImpl::loadFromQuery(ASTStorage & storage_def, ContextPtr context, bool is_loading_from_existing_metadata, bool for_system_database)
 {
     if (storage_def.settings)
     {
@@ -2372,25 +2381,12 @@ void MergeTreeSettingsImpl::loadFromQuery(ASTStorage & storage_def, ContextPtr c
             DiskPtr disk;
 
             auto changes = storage_def.settings->changes;
-            for (auto & [name, value] : changes)
+            MergeTreeSettings::resolveDiskSetting(changes, context, is_loading_from_existing_metadata, for_system_database);
+
+            for (const auto & [name, value] : changes)
             {
-                CustomType custom;
                 if (name == "disk")
                 {
-                    ASTPtr value_as_custom_ast = nullptr;
-                    if (value.tryGet<CustomType>(custom) && 0 == strcmp(custom.getTypeName(), "AST"))
-                        value_as_custom_ast = dynamic_cast<const FieldFromASTImpl &>(custom.getImpl()).ast;
-
-                    if (value_as_custom_ast && isDiskFunction(value_as_custom_ast))
-                    {
-                        auto disk_name = DiskFromAST::createCustomDisk(value_as_custom_ast, context, is_loading_from_existing_metadata);
-                        LOG_DEBUG(getLogger("MergeTreeSettings"), "Created custom disk {}", disk_name);
-                        value = disk_name;
-                    }
-                    else
-                    {
-                        DiskFromAST::ensureDiskIsNotCustom(value.safeGet<String>(), context);
-                    }
                     disk = context->getDisk(value.safeGet<String>());
 
                     if (has("storage_policy"))
@@ -2603,22 +2599,24 @@ void MergeTreeSettingsImpl::sanityCheck(size_t background_pool_tasks, bool allow
             (*this)[MergeTreeSetting::map_buckets_coefficient].value);
     }
 
-    if ((*this)[MergeTreeSetting::object_shared_data_buckets_for_compact_part] > max_allowed_buckets)
+    /// The reader validates the on-wire bucket count against the same bound
+    /// (`MAX_OBJECT_SHARED_DATA_BUCKETS`), so keep this cap and that guard in sync via the constant.
+    if ((*this)[MergeTreeSetting::object_shared_data_buckets_for_compact_part] > MAX_OBJECT_SHARED_DATA_BUCKETS)
     {
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "The value of object_shared_data_buckets_for_compact_part setting ({}) exceeds the maximum allowed value of {}",
             (*this)[MergeTreeSetting::object_shared_data_buckets_for_compact_part].value,
-            max_allowed_buckets);
+            MAX_OBJECT_SHARED_DATA_BUCKETS);
     }
 
-    if ((*this)[MergeTreeSetting::object_shared_data_buckets_for_wide_part] > max_allowed_buckets)
+    if ((*this)[MergeTreeSetting::object_shared_data_buckets_for_wide_part] > MAX_OBJECT_SHARED_DATA_BUCKETS)
     {
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "The value of object_shared_data_buckets_for_wide_part setting ({}) exceeds the maximum allowed value of {}",
             (*this)[MergeTreeSetting::object_shared_data_buckets_for_wide_part].value,
-            max_allowed_buckets);
+            MAX_OBJECT_SHARED_DATA_BUCKETS);
     }
 
     if ((*this)[MergeTreeSetting::zero_copy_merge_mutation_min_parts_size_sleep_before_lock] != 0
@@ -2640,6 +2638,20 @@ void MergeTreeSettingsImpl::sanityCheck(size_t background_pool_tasks, bool allow
         if (!(*this)[MergeTreeSetting::enable_block_offset_column])
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting 'part_minmax_index_columns = with_block_number_offset' requires 'enable_block_offset_column' to be enabled");
     }
+
+    /// The marks, primary key and default compression codec settings are applied without a column data type, so
+    /// each codec is built with a null type. A lossy codec (currently only `SZ3`, a floating-point codec) can not
+    /// be used in that context: there is no floating-point column to validate against, and applying it would
+    /// silently corrupt the data. `CompressionCodecFactory::get` rejects a lossy codec built with a null type, so
+    /// validating the settings here reports the misconfiguration when the table metadata is created or altered,
+    /// instead of accepting it (and even replicating it to other replicas) and then failing later on the first
+    /// part write. This mirrors how `TTL ... RECOMPRESS CODEC(...)` is already validated at metadata-creation time.
+    if (auto codec = (*this)[MergeTreeSetting::marks_compression_codec].value; !codec.empty())
+        CompressionCodecFactory::instance().get(codec);
+    if (auto codec = (*this)[MergeTreeSetting::primary_key_compression_codec].value; !codec.empty())
+        CompressionCodecFactory::instance().get(codec);
+    if (auto codec = (*this)[MergeTreeSetting::default_compression_codec].value; !codec.empty())
+        CompressionCodecFactory::instance().get(codec);
 }
 
 void MergeTreeColumnSettings::validate(const SettingsChanges & changes)
@@ -2702,14 +2714,59 @@ SettingsChanges MergeTreeSettings::changes() const
     return impl->changes();
 }
 
-void MergeTreeSettings::applyChanges(const SettingsChanges & changes)
+void MergeTreeSettings::applyChanges(const SettingsChanges & changes, ContextPtr context, bool is_loading_from_existing_metadata)
 {
-    impl->applyChanges(changes);
+    auto resolved_changes = changes;
+    resolveDiskSetting(resolved_changes, context, is_loading_from_existing_metadata);
+    impl->applyChanges(resolved_changes);
 }
 
-void MergeTreeSettings::applyChange(const SettingChange & change)
+void MergeTreeSettings::applyChange(const SettingChange & change, ContextPtr context, bool is_loading_from_existing_metadata)
 {
-    impl->applyChange(change);
+    auto resolved_change = change;
+    resolveDiskSetting(resolved_change, context, is_loading_from_existing_metadata);
+    impl->applyChange(resolved_change);
+}
+
+void MergeTreeSettings::resolveDiskSetting(SettingsChanges & changes, ContextPtr context, bool is_loading_from_existing_metadata, bool for_system_database)
+{
+    for (auto & change : changes)
+        resolveDiskSetting(change, context, is_loading_from_existing_metadata, for_system_database);
+}
+
+void MergeTreeSettings::resolveDiskSetting(SettingChange & change, ContextPtr context, bool is_loading_from_existing_metadata, bool for_system_database)
+{
+    if (change.name != "disk")
+        return;
+
+    CustomType custom;
+    ASTPtr value_as_custom_ast = nullptr;
+    if (change.value.tryGet<CustomType>(custom) && 0 == strcmp(custom.getTypeName(), "AST"))
+        value_as_custom_ast = dynamic_cast<const FieldFromASTImpl &>(custom.getImpl()).ast;
+
+    if (value_as_custom_ast && isDiskFunction(value_as_custom_ast))
+    {
+        auto disk_name = DiskFromAST::createCustomDisk(value_as_custom_ast, context, is_loading_from_existing_metadata, for_system_database);
+        LOG_DEBUG(getLogger("MergeTreeSettings"), "Created custom disk {}", disk_name);
+        change.value = disk_name;
+    }
+    else if (!is_loading_from_existing_metadata)
+    {
+        DiskFromAST::ensureDiskIsNotCustom(change.value.safeGet<String>(), context);
+    }
+}
+
+bool MergeTreeSettings::isDiskSettingChanged(const SettingsChanges & old_changes, const SettingsChanges & new_changes)
+{
+    const Field * new_value = new_changes.tryGet("disk");
+    if (!new_value)
+        return false;
+
+    const Field * old_value = old_changes.tryGet("disk");
+    if (!old_value)
+        return true;
+
+    return applyVisitor(FieldVisitorToString(), *old_value) != applyVisitor(FieldVisitorToString(), *new_value);
 }
 
 void MergeTreeSettings::applyCompatibilitySetting(const String & compatibility_value)
@@ -2782,9 +2839,9 @@ SettingsTierType MergeTreeSettings::getTier(std::string_view name) const
     return impl->getTier(name);
 }
 
-void MergeTreeSettings::loadFromQuery(ASTStorage & storage_def, ContextPtr context, bool is_loading_from_existing_metadata)
+void MergeTreeSettings::loadFromQuery(ASTStorage & storage_def, ContextPtr context, bool is_loading_from_existing_metadata, bool for_system_database)
 {
-    impl->loadFromQuery(storage_def, context, is_loading_from_existing_metadata);
+    impl->loadFromQuery(storage_def, context, is_loading_from_existing_metadata, for_system_database);
 }
 
 void MergeTreeSettings::loadFromConfig(const String & config_elem, const Poco::Util::AbstractConfiguration & config)

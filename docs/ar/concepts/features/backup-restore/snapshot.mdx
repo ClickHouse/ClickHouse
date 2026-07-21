@@ -1,0 +1,244 @@
+---
+description: 'كيفية إنشاء اللقطات الخفيفة واستعادتها للجداول السحابية الأصلية باستخدام تخزين الكائنات السحابي.'
+sidebarTitle: 'النسخ الاحتياطي باللقطات'
+slug: /operations/backup/snapshot
+title: 'النسخ الاحتياطي باللقطات واستعادتها'
+doc_type: 'guide'
+keywords: ['لقطة', 'نسخ احتياطي', 'استعادة', 'SharedMergeTree', 'SharedSet', 'SharedJoin', 'نسخ احتياطي خفيف', 'نسخ احتياطي سحابي', 'S3', 'Azure Blob Storage', 'snapshot_locks', 'snapshot_parts', 'experimental_lightweight_snapshot']
+---
+
+النسخ الاحتياطي باللقطات هو وضع نسخ احتياطي خفيف لمحركات الجداول السحابية الأصلية. فبدلًا من نسخ البيانات، يكتب عُقد قفل لكل جزء في ClickHouse Keeper. وتمنع هذه الأقفال الخادم من حذف الأجزاء المشار إليها في تخزين الكائنات طوال فترة الاحتفاظ باللقطة. ثم يسجّل النسخ الاحتياطي مراجع تخزين الكائنات بدلًا من نسخ أي بيانات فعليًا، مما يجعل إنشاء اللقطات سريعًا بغض النظر عن حجم الجدول.
+
+تنطبق الآلية الخفيفة على جداول [SharedMergeTree](/ar/products/cloud/features/infrastructure/shared-merge-tree) وSharedSet وSharedJoin. أما جميع أنواع المحركات الأخرى — مثل Log أو Memory — فيعود النسخ الاحتياطي تلقائيًا إلى نسخ احتياطي قياسي قائم على النسخ.
+
+<div id="create-a-snapshot">
+  ## إنشاء لقطة
+</div>
+
+يستخدم النسخ الاحتياطي باللقطة الأمر القياسي [`BACKUP`](/ar/concepts/features/backup-restore/overview#syntax) مع `experimental_lightweight_snapshot = true`. ويُعدّ الإعداد `id` مطلوبًا — إذ يحدد اسم اللقطة ويُستخدم للإشارة إليها في أوامر unlock والأوبزرفابيليتي:
+
+```sql
+BACKUP { TABLE [db.]table_name | DATABASE db_name | ALL [EXCEPT {TABLES | DATABASES} ...] }
+TO { S3(...) | AzureBlobStorage(...) }
+SETTINGS experimental_lightweight_snapshot = true, id = '<snapshot_id>'
+```
+
+يعرض الأمر القيمتين `id` و`status`، ويمكن استخدام `id` لتتبّع العملية في [`system.backups`](/ar/reference/system-tables/backups).
+
+أنشئ نسخة احتياطية لجدول واحد على S3:
+
+```sql
+BACKUP TABLE mydb.events
+TO S3('https://my-bucket.s3.us-east-1.amazonaws.com/snapshots/events/', 'ACCESS_KEY_ID', 'SECRET_ACCESS_KEY')
+SETTINGS experimental_lightweight_snapshot = true, id = 'events_snapshot_1'
+```
+
+خذ نسخة احتياطية لقاعدة بيانات كاملة:
+
+```sql
+BACKUP DATABASE mydb
+TO S3('https://my-bucket.s3.us-east-1.amazonaws.com/snapshots/mydb/', 'ACCESS_KEY_ID', 'SECRET_ACCESS_KEY')
+SETTINGS experimental_lightweight_snapshot = true, id = 'mydb_snapshot_1'
+```
+
+أنشئ نسخة احتياطية من جميع الجداول مع استثناء جدول واحد:
+
+```sql
+BACKUP ALL
+EXCEPT TABLES mydb.staging_table
+TO S3('https://my-bucket.s3.us-east-1.amazonaws.com/snapshots/full/', 'ACCESS_KEY_ID', 'SECRET_ACCESS_KEY')
+SETTINGS experimental_lightweight_snapshot = true, id = 'full_snapshot_1'
+```
+
+يمكن استخدام الأوامر نفسها مع Azure Blob Storage:
+
+```sql
+BACKUP TABLE mydb.events
+TO AzureBlobStorage('DefaultEndpointsProtocol=https;AccountName=myaccount;AccountKey=...', 'my-container', 'snapshots/events/')
+SETTINGS experimental_lightweight_snapshot = true, id = 'events_snapshot_1'
+```
+
+<div id="restore-to-same-service">
+  ## الاستعادة إلى الخدمة نفسها
+</div>
+
+نظرًا لأن اللقطة تحتفظ بمراجع إلى ملفات تخزين الكائنات بدلًا من نسخ البيانات نفسها، فإن الاستعادة إلى خدمة ClickHouse جديدة أو أخرى تتطلب الوصول إلى تخزين الكائنات الأصلي. لذلك، لا تتوفر الاستعادة بين الخدمات عبر SQL — فهي متاحة فقط من خلال واجهة المستخدم. وعبر SQL، يمكنك استعادة لقطة إلى الخدمة نفسها من حاوية نسخ احتياطي خارجية باستخدام `snapshot_from_current_service = 1`. يقرأ هذا الكائنات مباشرةً عبر قرص الوجهة بدلًا من المرور عبر قارئ لقطات بعيد:
+
+```sql
+RESTORE TABLE mydb.events AS mydb.events_restored
+FROM S3('https://my-bucket.s3.us-east-1.amazonaws.com/snapshots/events/', 'ACCESS_KEY_ID', 'SECRET_ACCESS_KEY')
+SETTINGS snapshot_from_current_service = 1
+```
+
+تستعيد عبارة `AS` البيانات إلى جدول باسم جديد، مع إبقاء الجدول الأصلي دون تغيير. وللاستبدال بالجدول الأصلي، احذفه أولًا:
+
+```sql
+DROP TABLE mydb.events;
+
+RESTORE TABLE mydb.events
+FROM S3('https://my-bucket.s3.us-east-1.amazonaws.com/snapshots/events/', 'ACCESS_KEY_ID', 'SECRET_ACCESS_KEY')
+SETTINGS snapshot_from_current_service = 1
+```
+
+<div id="unlock-snapshot">
+  ## فكّ قفل لقطة
+</div>
+
+تحتفظ كل لقطة بأقفال في ClickHouse Keeper تمنع حذف ملفات تخزين الكائنات المشار إليها تلقائيًا ضمن عملية تنظيف المهملات. بعد اكتمال الاستعادة — أو عندما لا تعود هناك حاجة إلى اللقطة — فكّ قفلها لتحرير تلك الأقفال.
+
+يوجد شكلان: فكّ قفل على مستوى النظام يزيل جميع أقفال اللقطة دفعةً واحدة، وفكّ قفل لكل جدول يزيل القفل عن جدول واحد مع الإبقاء على بقية اللقطة كما هي.
+
+**فكّ القفل على مستوى النظام** — يزيل جميع أقفال اللقطة:
+
+```sql
+SYSTEM UNLOCK SNAPSHOT '<snapshot_id>'
+FROM S3('https://my-bucket.s3.us-east-1.amazonaws.com/snapshots/events/', 'ACCESS_KEY_ID', 'SECRET_ACCESS_KEY')
+```
+
+**إلغاء قفل جدول محدد** — يزيل القفل لجدول واحد فقط:
+
+```sql
+ALTER TABLE mydb.events UNLOCK SNAPSHOT '<snapshot_id>'
+FROM S3('https://my-bucket.s3.us-east-1.amazonaws.com/snapshots/events/', 'ACCESS_KEY_ID', 'SECRET_ACCESS_KEY')
+```
+
+يكون بند `FROM` اختياريًا إذا كانت وجهة اللقطة محفوظة في Keeper وقت الإنشاء (كما يظهر في العمود `info` ضمن `system.snapshot_locks`):
+
+```sql
+SYSTEM UNLOCK SNAPSHOT '<snapshot_id>'
+
+-- or per-table:
+ALTER TABLE mydb.events UNLOCK SNAPSHOT '<snapshot_id>'
+```
+
+بعد إلغاء القفل، يختفي الصف المقابل من `system.snapshot_locks`، كما تُزال الأجزاء التي لم تعد لقطات أخرى تشير إليها من `system.snapshot_parts`.
+
+<div id="observability">
+  ## الأوبزرفابيليتي
+</div>
+
+<div id="system-backups">
+  ### system.backups
+</div>
+
+تظهر جميع عمليات اللقطات في [`system.backups`](/ar/reference/system-tables/backups) إلى جانب عمليات النسخ الاحتياطي والاستعادة العادية. استعلم منه باستخدام `id` الذي عيّنته (أو معرّف UUID الذي أعاده الأمر):
+
+```sql
+SELECT id, name, status, error, start_time, end_time, num_files, uncompressed_size, compressed_size
+FROM system.backups
+WHERE id = 'events_snapshot_1'
+FORMAT Vertical
+```
+
+```response
+Row 1:
+──────
+id:                events_snapshot_1
+name:              S3('https://my-bucket.s3.us-east-1.amazonaws.com/snapshots/events/', '[HIDDEN]')
+status:            BACKUP_CREATED
+error:
+start_time:        2024-06-01 10:00:00
+end_time:          2024-06-01 10:00:03
+num_files:         42
+uncompressed_size: 1073741824
+compressed_size:   0
+```
+
+<div id="system-snapshot-locks">
+  ### system.snapshot_locks
+</div>
+
+يعرض `system.snapshot_locks` اللقطات المعتمدة والمسجَّلة حاليًا في Keeper. عند اعتماد لقطة، تُنشأ عقدة في Keeper عند `/clickhouse/snapshot/committed/{snapshot_id}`. قبل حذف أي جزء بيانات، يتحقق الخادم مما إذا كانت لقطة معتمدة تحتفظ بقفل على ذلك الجزء. وإذا كان الأمر كذلك، يُتخطى الحذف. ويستمر القفل إلى أن تُلغي قفل اللقطة صراحةً.
+
+```sql
+SELECT *
+FROM system.snapshot_locks
+```
+
+| العمود      | النوع      | الوصف                         |
+| ----------- | ---------- | ----------------------------- |
+| `id`        | `String`   | معرّف اللقطة                  |
+| `info`      | `String`   | وجهة اللقطة، مثل `S3('...')`  |
+| `ctime`     | `DateTime` | وقت إنشاء هذا القفل في Keeper |
+| `lock_path` | `String`   | مسار Keeper لهذا القفل        |
+
+يمثّل كل صف لقطة مُعتمدة واحدة. إذا رأيت أقفالًا للقطات لم تعد لها وجهة نسخ احتياطي صالحة، فشغّل `SYSTEM UNLOCK SNAPSHOT` لإزالتها.
+
+للتحقق مما إذا كان قفل لقطة محددة موجودًا:
+
+```sql
+SELECT id, info, lock_path
+FROM system.snapshot_locks
+WHERE id = 'events_snapshot_1'
+```
+
+<div id="system-snapshot-parts">
+  ### system.snapshot_parts
+</div>
+
+يعرض `system.snapshot_parts` أجزاء البيانات المرتبطة حاليًا بقفل لقطة واحد على الأقل. ولكل جزء بيانات مقفَل، توجد عقدة Keeper عند `/clickhouse/snapshot/{table_uuid}/{part_name}` تتضمن حجمه المضغوط وغير المضغوط. ويقرأ هذا الجدول تلك العقد ليوضح الأجزاء المحمية حاليًا من الحذف.
+
+```sql
+SELECT *
+FROM system.snapshot_parts
+ORDER BY data_compressed_bytes DESC
+LIMIT 20
+```
+
+| العمود                    | النوع    | الوصف                                            |
+| ------------------------- | -------- | ------------------------------------------------ |
+| `name`                    | `String` | اسم جزء البيانات                                 |
+| `table_id`                | `String` | معرّف UUID للجدول الذي ينتمي إليه هذا الجزء      |
+| `data_compressed_bytes`   | `UInt64` | الحجم المضغوط لهذا الجزء                         |
+| `data_uncompressed_bytes` | `UInt64` | الحجم غير المضغوط لهذا الجزء                     |
+| `snapshots_size`          | `UInt64` | عدد اللقطات التي تفرض حاليًا قفلًا على هذا الجزء |
+
+الأجزاء التي تكون فيها `snapshots_size > 1` تكون مُشارًا إليها من عدة لقطات، ولن تُزال من تخزين الكائنات حتى يُرفع القفل عن جميع اللقطات التي تحتفظ بها.
+
+للتحقق من إجمالي التخزين المُثبّت:
+
+```sql
+SELECT
+    formatReadableSize(sum(data_compressed_bytes)) AS total_pinned_compressed,
+    formatReadableSize(sum(data_uncompressed_bytes)) AS total_pinned_uncompressed,
+    count() AS parts_count
+FROM system.snapshot_parts
+```
+
+للعثور على الأجزاء التي تقفلها لقطة، لكنها حُذفت بالفعل أو لم تعد نشطة على الخادم — أي البيانات المُحتفَظ بها في تخزين الكائنات بسبب أقفال اللقطات وحدها:
+
+```sql
+SELECT
+    count(*),
+    sum(data_uncompressed_bytes)
+FROM system.snapshot_parts
+WHERE (name, table_id) NOT IN (
+    SELECT
+        name,
+        toString(tables.uuid)
+    FROM system.parts
+    INNER JOIN system.tables ON (parts.`table` = tables.name) AND parts.active
+)
+```
+
+```response
+┌─count()─┬─sum(data_uncompressed_bytes)─┐
+│    1000 │                        96037 │
+└─────────┴──────────────────────────────┘
+```
+
+يفيد هذا في فهم العبء التخزيني الإضافي الناتج عن الاحتفاظ بالنسخ اللحظية بعد تغيّر البيانات الأصلية أو حذفها.
+
+<div id="server-settings">
+  ## إعدادات الخادم
+</div>
+
+تتحكم معلمات تهيئة الخادم التالية في سلوك اللقطات. وتُضبط في ملف تهيئة الخادم، وليس في SQL.
+
+| الإعداد                                                                                                                               | النوع  | الافتراضي | قابل للتغيير دون إعادة تشغيل | الوصف                                                                                                                                                                                                                               |
+| ------------------------------------------------------------------------------------------------------------------------------------- | ------ | --------- | ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [`max_held_snapshots`](/ar/reference/settings/server-settings/settings#max_held_snapshots)                                               | UInt64 | `0`       | لا                           | الحد الأقصى لعدد اللقطات خفيفة الوزن التي يمكن الاحتفاظ بها في الوقت نفسه. تعني القيمة `0` عدم وجود حد. وإذا تم بلوغ هذا الحد، فإن إنشاء لقطة جديدة يؤدي إلى ظهور استثناء.                                                          |
+| [`max_snapshot_commit_thread_pool_size`](/ar/reference/settings/server-settings/settings#max_snapshot_commit_thread_pool_size)           | UInt64 | `64`      | نعم                          | عدد مؤشرات الترابط المستخدمة لتنفيذ commit لعُقد قفل اللقطات في Keeper. زد هذه القيمة إذا كان إنشاء اللقطات بطيئًا في الجداول الكبيرة التي تحتوي على عدد كبير من الأجزاء.                                                           |
+| [`max_snapshot_commit_thread_pool_free_size`](/ar/reference/settings/server-settings/settings#max_snapshot_commit_thread_pool_free_size) | UInt64 | `0`       | نعم                          | إذا تجاوز عدد مؤشرات الترابط الخاملة في مجمّع commit اللقطات هذه القيمة، فإن ClickHouse يحرّر تلك المؤشرات ويقلّص حجم المجمّع. وتُنشأ المؤشرات مرة أخرى عند الحاجة. تعني القيمة `0` أنه لا يتم تحرير مؤشرات الترابط الخاملة مطلقًا. |
+| [`snapshot_cleaner_period`](/ar/reference/settings/server-settings/settings#snapshot_cleaner_period)                                     | UInt64 | `120`     | لا                           | مدى تكرار تشغيل منظّف اللقطات (بالثواني) لإزالة الأجزاء التي لم يعد أي قفل لقطة يشير إليها. في ClickHouse Cloud فقط.                                                                                                                |
+| [`snapshot_cleaner_pool_size`](/ar/reference/settings/server-settings/settings#snapshot_cleaner_pool_size)                               | UInt64 | `128`     | لا                           | عدد مؤشرات الترابط في مجمّع مؤشرات ترابط منظّف اللقطات. في ClickHouse Cloud فقط.                                                                                                                                                    |

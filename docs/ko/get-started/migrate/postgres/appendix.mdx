@@ -1,0 +1,212 @@
+---
+slug: /migrations/postgresql/appendix
+title: '부록'
+keywords: ['postgres', 'postgresql', '데이터 타입', '타입']
+description: 'PostgreSQL 마이그레이션 관련 추가 정보'
+doc_type: 'reference'
+---
+
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+<div id="postgres-vs-clickhouse-equivalent-and-different-concepts">
+  ## Postgres vs ClickHouse: 대응되는 개념과 차이점
+</div>
+
+ACID 트랜잭션에 익숙한 OLTP 시스템 사용자라면, ClickHouse가 성능을 위해 이를 완전하게 제공하는 대신 의도적으로 일부를 절충한다는 점을 알아야 합니다. ClickHouse의 동작 방식을 잘 이해하면 높은 내구성 보장과 높은 쓰기 처리량을 확보할 수 있습니다. 아래에서는 Postgres에서 ClickHouse로 작업을 시작하기 전에 숙지해야 할 몇 가지 핵심 개념을 소개합니다.
+
+<div id="shards-vs-replicas">
+  ### 세그먼트와 레플리카 비교
+</div>
+
+세그먼트 분할과 복제는 저장소 및/또는 컴퓨트가 성능 병목이 될 때 단일 Postgres 인스턴스를 넘어 스케일링하기 위해 사용하는 두 가지 전략입니다. Postgres에서 세그먼트 분할은 대규모 데이터베이스를 여러 노드에 걸쳐 더 작고 관리하기 쉬운 조각으로 나누는 것을 의미합니다. 하지만 Postgres는 세그먼트 분할을 네이티브로 지원하지 않습니다. 대신 [Citus](https://www.citusdata.com/)와 같은 확장 기능을 사용해 세그먼트 분할을 구현할 수 있으며, 이 경우 Postgres는 수평 확장이 가능한 분산 데이터베이스가 됩니다. 이러한 접근 방식은 여러 머신에 부하를 분산해 Postgres가 더 높은 트랜잭션 처리량과 더 큰 데이터셋을 처리할 수 있게 합니다. 세그먼트는 트랜잭션 처리 또는 분석과 같은 워크로드 유형에 유연하게 대응할 수 있도록 행 기반 또는 스키마 기반으로 구성할 수 있습니다. 세그먼트 분할은 여러 머신 간 조정과 일관성 보장이 필요하므로 데이터 관리와 쿼리 실행 측면에서 상당한 복잡성을 초래할 수 있습니다.
+
+세그먼트와 달리 레플리카는 프라이머리 노드의 전체 또는 일부 데이터를 포함하는 추가 Postgres 인스턴스입니다. 레플리카는 읽기 성능 향상과 HA(High Availability) 시나리오를 비롯한 다양한 이유로 사용됩니다. 물리적 복제는 Postgres의 네이티브 기능으로, 모든 데이터베이스, 테이블, 인덱스를 포함해 전체 데이터베이스 또는 그 상당 부분을 다른 서버로 복사합니다. 이 과정에는 TCP/IP를 통해 프라이머리 노드에서 레플리카로 WAL 세그먼트를 스트리밍하는 작업이 포함됩니다. 반면 논리적 복제는 `INSERT`, `UPDATE`, `DELETE` 작업을 기준으로 변경 사항을 스트리밍하는 더 높은 수준의 추상화입니다. 물리적 복제로도 동일한 결과를 얻을 수 있지만, 특정 테이블과 작업만 대상으로 지정하거나 데이터 변환을 수행하고 서로 다른 Postgres 버전을 지원하는 측면에서는 논리적 복제가 더 큰 유연성을 제공합니다.
+
+**반면 ClickHouse의 세그먼트와 레플리카는 데이터 분산과 중복성에 관한 두 가지 핵심 개념입니다**. ClickHouse 레플리카는 최종 일관성(eventual consistency)을 가지며 프라이머리라는 개념이 없다는 점을 제외하면 Postgres 레플리카와 유사하다고 볼 수 있습니다. 또한 세그먼트 분할은 Postgres와 달리 네이티브로 지원됩니다.
+
+세그먼트는 테이블 데이터의 일부입니다. 항상 최소 1개의 세그먼트가 존재합니다. 데이터를 여러 서버에 걸쳐 세그먼트 분할하면 단일 서버의 용량을 초과할 때 부하를 분산할 수 있으며, 모든 세그먼트가 병렬로 쿼리를 실행하는 데 사용됩니다. 서로 다른 서버에서 테이블용 세그먼트를 수동으로 생성하고 데이터도 직접 삽입할 수 있습니다. 또는 데이터가 어느 세그먼트로 라우팅될지 정의하는 sharding key와 함께 분산 테이블을 사용할 수도 있습니다. sharding key는 random일 수도 있고 hash function의 출력값일 수도 있습니다. 중요한 점은 하나의 세그먼트가 여러 레플리카로 구성될 수 있다는 것입니다.
+
+레플리카는 데이터의 복사본입니다. ClickHouse는 항상 최소 1개의 데이터 복사본을 가지므로 레플리카의 최소 개수는 1입니다. 데이터의 두 번째 레플리카를 추가하면 장애 허용이 향상되고, 더 많은 쿼리를 처리하기 위한 추가 컴퓨트도 확보할 수 있습니다([병렬 레플리카](https://clickhouse.com/blog/clickhouse-release-23-03#parallel-replicas-for-utilizing-the-full-power-of-your-replicas-nikita-mikhailov)를 사용하면 단일 쿼리의 컴퓨트도 분산할 수 있어 지연 시간을 낮출 수 있습니다). 레플리카는 [ReplicatedMergeTree 테이블 엔진](/ko/reference/engines/table-engines/mergetree-family/replication)을 통해 구현되며, 이를 통해 ClickHouse는 서로 다른 서버에 있는 여러 데이터 복사본을 동기화된 상태로 유지할 수 있습니다. 복제는 물리적으로 이루어집니다. 즉, 노드 간에는 쿼리가 아니라 압축된 파트만 전송됩니다.
+
+요약하면, 레플리카는 중복성과 신뢰성(그리고 경우에 따라 분산 처리)을 제공하는 데이터 복사본이며, 세그먼트는 분산 처리와 부하 분산을 가능하게 하는 데이터의 부분 집합입니다.
+
+> ClickHouse Cloud는 S3에 저장된 단일 데이터 복사본과 여러 컴퓨트 레플리카를 사용합니다. 데이터는 각 레플리카 노드에서 사용할 수 있으며, 각 노드에는 로컬 SSD 캐시가 있습니다. 이는 ClickHouse Keeper를 통한 메타데이터 복제에만 의존합니다.
+
+<div id="eventual-consistency">
+  ## 최종 일관성
+</div>
+
+ClickHouse는 내부 복제 메커니즘을 관리하기 위해 ClickHouse Keeper(C++로 구현된 ZooKeeper 구현체이며, ZooKeeper도 사용할 수 있음)를 사용하며, 주로 메타데이터 저장과 최종 일관성 보장에 중점을 둡니다. Keeper는 분산 환경에서 각 삽입에 고유한 순차 번호를 할당하는 데 사용됩니다. 이는 작업 전반에서 순서와 일관성을 유지하는 데 매우 중요합니다. 또한 이 프레임워크는 머지 및 뮤테이션과 같은 백그라운드 작업도 처리하며, 이러한 작업이 분산되어 수행되면서도 모든 레플리카에서 동일한 순서로 실행되도록 보장합니다. 메타데이터 외에도 Keeper는 저장된 데이터 파트의 체크섬 추적을 포함해 복제 전반을 제어하는 포괄적인 제어 센터 역할을 하며, 레플리카 간 분산 알림 시스템으로도 작동합니다.
+
+ClickHouse의 복제 프로세스는 (1) 데이터가 임의의 레플리카에 삽입될 때 시작됩니다. 이 데이터는 원시 삽입 형태 그대로 (2) 체크섬과 함께 디스크에 기록됩니다. 기록이 완료되면 해당 레플리카는 (3) 고유한 블록 번호를 할당하고 새 파트의 세부 정보를 기록하여 이 새로운 데이터 파트를 Keeper에 등록하려고 시도합니다. 다른 레플리카는 복제 로그의 새 항목을 (4) 감지하면, (5) 내부 HTTP 프로토콜을 통해 해당 데이터 파트를 다운로드하고 ZooKeeper에 기록된 체크섬과 대조해 검증합니다. 이 방식은 처리 속도가 다르거나 지연이 발생하더라도 모든 레플리카가 결국 일관되고 최신 상태의 데이터를 보유하도록 보장합니다. 또한 이 시스템은 여러 작업을 동시에 처리할 수 있어 데이터 관리 프로세스를 최적화하고, 시스템 확장성과 하드웨어 차이에 대한 견고성을 높입니다.
+
+<Image img="/images/integrations/data-ingestion/dbms/postgres-replicas.webp" size="md" alt="최종 일관성" />
+
+ClickHouse Cloud는 스토리지와 컴퓨트가 분리된 아키텍처에 맞게 조정된 [클라우드 최적화 복제 메커니즘](https://clickhouse.com/blog/clickhouse-cloud-boosts-performance-with-sharedmergetree-and-lightweight-updates)을 사용한다는 점에 유의하십시오. 데이터를 공유 객체 스토리지에 저장하므로 노드 간 데이터를 물리적으로 복제할 필요 없이 모든 컴퓨트 노드에서 데이터에 자동으로 접근할 수 있습니다. 대신 Keeper는 컴퓨트 노드 간에 메타데이터만(어떤 데이터가 객체 스토리지의 어디에 존재하는지) 공유하는 데 사용됩니다.
+
+PostgreSQL은 ClickHouse와 비교해 다른 복제 전략을 사용하며, 주로 스트리밍 복제를 사용합니다. 이 방식은 프라이머리-레플리카 모델을 기반으로 하며, 데이터가 프라이머리에서 하나 이상의 레플리카 노드로 지속적으로 스트리밍됩니다. 이러한 유형의 복제는 거의 실시간에 가까운 일관성을 보장하며, 동기식 또는 비동기식으로 구성할 수 있어 관리자가 가용성과 일관성 간의 균형을 제어할 수 있습니다. ClickHouse와 달리 PostgreSQL은 WAL(Write-Ahead Logging), 논리적 복제 및 디코딩을 사용해 노드 간 데이터 객체와 변경 사항을 스트리밍합니다. PostgreSQL의 이 접근 방식은 더 단순하지만, 분산 작업 조정과 최종 일관성을 위해 Keeper를 복합적으로 활용하는 ClickHouse가 고도로 분산된 환경에서 달성하는 수준의 확장성과 장애 허용은 제공하지 못할 수 있습니다.
+
+<div id="user-implications">
+  ## 사용자에게 미치는 영향
+</div>
+
+ClickHouse에서는 Keeper가 관리하는 최종 일관성 기반 복제 모델로 인해 더티 리드(dirty read)가 발생할 수 있습니다. 즉, 한 레플리카에 데이터를 기록한 뒤 다른 레플리카에서 아직 복제되지 않은 데이터를 읽게 될 가능성이 있습니다. 이 모델은 분산 시스템 전반에서 성능과 확장성을 중시하며, 각 레플리카가 독립적으로 동작하면서 비동기적으로 동기화될 수 있도록 합니다. 그 결과, 새로 삽입된 데이터는 복제 지연과 변경 사항이 시스템 전체에 전파되는 데 걸리는 시간에 따라 모든 레플리카에 즉시 반영되지 않을 수 있습니다.
+
+반면 PostgreSQL의 스트리밍 복제 모델은 일반적으로 동기 복제 옵션을 통해 더티 리드를 방지할 수 있습니다. 이 방식에서는 프라이머리가 트랜잭션을 커밋하기 전에, 적어도 하나의 레플리카가 데이터를 수신했음을 확인할 때까지 대기합니다. 이를 통해 트랜잭션이 커밋되면 해당 데이터가 다른 레플리카에도 존재한다는 보장이 제공됩니다. 프라이머리에 장애가 발생하더라도 레플리카는 쿼리 시 커밋된 데이터를 볼 수 있도록 하므로, 더 엄격한 수준의 일관성을 유지합니다.
+
+<div id="recommendations">
+  ## 권장 사항
+</div>
+
+ClickHouse를 처음 사용하는 사용자는 복제된 환경에서 이러한 차이가 나타날 수 있다는 점을 알아야 합니다. 일반적으로 수십억, 많게는 수조 개의 데이터 포인트를 분석하는 환경에서는 최종 일관성만으로도 충분합니다. 이러한 환경에서는 메트릭이 비교적 안정적이거나, 새로운 데이터가 지속적으로 높은 속도로 삽입되므로 추정값만으로도 충분한 경우가 많습니다.
+
+필요한 경우 읽기 일관성을 높일 수 있는 몇 가지 방법이 있습니다. 두 예시 모두 복잡성이나 오버헤드 증가를 수반하므로, 쿼리 성능이 저하되고 ClickHouse를 확장하기도 더 어려워집니다. **이러한 방식은 반드시 필요한 경우에만 사용할 것을 권장합니다.**
+
+<div id="consistent-routing">
+  ## 일관된 라우팅
+</div>
+
+최종 일관성의 일부 한계를 보완하려면 클라이언트가 항상 동일한 레플리카로 라우팅되도록 할 수 있습니다. 이는 여러 사용자가 ClickHouse에 쿼리를 보내고, 요청 간 결과가 결정적으로 일관되어야 하는 경우에 유용합니다. 새 데이터가 삽입되면 결과는 달라질 수 있지만, 동일한 레플리카를 쿼리하면 일관된 뷰를 유지할 수 있습니다.
+
+이는 아키텍처와 ClickHouse OSS 또는 ClickHouse Cloud 사용 여부에 따라 여러 가지 방식으로 구현할 수 있습니다.
+
+<div id="clickhouse-cloud">
+  ## ClickHouse Cloud
+</div>
+
+ClickHouse Cloud는 S3에 저장된 단일 데이터 사본과 여러 컴퓨트 레플리카를 사용합니다. 데이터는 로컬 SSD 캐시를 갖춘 각 레플리카 노드에서 사용할 수 있습니다. 따라서 일관된 결과를 보장하려면 동일한 노드로 일관되게 라우팅되도록 하면 됩니다.
+
+ClickHouse Cloud 서비스의 노드와의 통신은 프록시를 통해 이루어집니다. HTTP 및 네이티브 프로토콜 연결은 연결이 열린 상태로 유지되는 동안 동일한 노드로 라우팅됩니다. 대부분의 클라이언트에서 HTTP 1.1 연결의 경우 이는 Keep-Alive 윈도우에 따라 달라집니다. 이는 대부분의 클라이언트(예: Node.js)에서 구성할 수 있습니다. 또한 서버 측 구성도 필요하며, 이 값은 클라이언트보다 크게 설정되어야 하고 ClickHouse Cloud에서는 10초로 설정됩니다.
+
+예를 들어 연결 풀을 사용하거나 연결이 만료되는 경우처럼 연결 간에도 일관된 라우팅을 보장하려면, 동일한 연결을 계속 사용하거나(네이티브 프로토콜에서 더 쉽습니다) 스티키 엔드포인트(sticky endpoints) 노출을 요청할 수 있습니다. 그러면 cluster의 각 노드에 대한 엔드포인트 집합이 제공되므로, 클라이언트가 쿼리를 결정적으로 라우팅할 수 있습니다.
+
+> 스티키 엔드포인트에 대한 액세스는 지원팀에 문의하십시오.
+
+<div id="clickhouse-oss">
+  ## ClickHouse OSS
+</div>
+
+OSS에서 이러한 동작을 구현하는 방법은 세그먼트와 레플리카의 토폴로지, 그리고 쿼리에 [분산 테이블](/ko/reference/engines/table-engines/special/distributed)을 사용하는지에 따라 달라집니다.
+
+세그먼트가 하나이고 레플리카만 있는 경우(ClickHouse는 수직 확장이 일반적이므로 흔한 구성입니다), 사용자는 클라이언트 계층에서 노드를 선택하고 레플리카에 직접 쿼리하므로, 이 선택이 항상 같은 방식으로 이루어지도록 해야 합니다.
+
+여러 세그먼트와 레플리카로 이루어진 토폴로지는 분산 테이블 없이도 가능하지만, 이러한 고급 배포는 일반적으로 자체 라우팅 인프라를 갖추고 있습니다. 따라서 세그먼트가 2개 이상인 배포는 분산 테이블을 사용한다고 가정합니다(분산 테이블은 단일 세그먼트 배포에도 사용할 수 있지만, 보통은 필요하지 않습니다).
+
+이 경우 `session_id` 또는 `user_id` 같은 값을 기준으로 일관된 노드 라우팅이 수행되도록 해야 합니다. 설정 [`prefer_localhost_replica=0`](/ko/reference/settings/session-settings#prefer_localhost_replica), [`load_balancing=in_order`](/ko/reference/settings/session-settings#load_balancing)는 [쿼리에서 설정](/ko/concepts/features/configuration/settings/settings-query-level)해야 합니다. 이렇게 하면 각 세그먼트의 로컬 레플리카가 우선 선택되고, 로컬 레플리카가 없으면 구성에 나열된 순서대로 레플리카가 우선 선택됩니다. 단, 오류 수가 같아야 하며, 오류 수가 더 많으면 failover가 발생하고 무작위로 선택됩니다. 이러한 결정적 세그먼트 선택의 대안으로 [`load_balancing=nearest_hostname`](/ko/reference/settings/session-settings#load_balancing)도 사용할 수 있습니다.
+
+> 분산 테이블을 만들 때는 cluster를 지정해야 합니다. `config.xml`에 지정하는 이 cluster 정의에는 세그먼트(및 해당 레플리카)가 나열되므로, 사용자는 각 노드에서 사용 순서를 제어할 수 있습니다. 이를 통해 선택이 항상 같은 방식으로 이루어지도록 할 수 있습니다.
+
+<div id="sequential-consistency">
+  ## 순차 일관성
+</div>
+
+예외적인 상황에서는 순차 일관성이 필요할 수 있습니다.
+
+데이터베이스의 순차 일관성이란 데이터베이스에 대한 연산이 어떤 순차적인 순서로 실행된 것처럼 보이며, 이 순서가 데이터베이스와 상호작용하는 모든 프로세스에서 동일하게 유지되는 것을 의미합니다. 즉, 모든 연산은 호출 시점과 완료 시점 사이의 어느 한 순간에 즉시 반영된 것처럼 보이고, 모든 프로세스가 관찰하는 연산 순서에는 단 하나의 합의된 순서가 존재합니다.
+
+사용자 관점에서 이는 보통 ClickHouse에 데이터를 기록한 뒤 데이터를 읽을 때, 가장 최근에 삽입된 행이 반환되도록 보장해야 하는 요구로 나타납니다.
+이는 다음과 같은 여러 방법으로 달성할 수 있습니다(권장 순서순).
+
+1. **동일한 노드에서 읽기/쓰기** - 네이티브 프로토콜을 사용하거나 [HTTP를 통해 쓰기/읽기를 수행하는 세션](/ko/concepts/features/interfaces/http#default-database)을 사용하는 경우, 동일한 레플리카에 연결되어 있어야 합니다. 이 경우 쓰기를 수행한 노드에서 직접 읽으므로 읽기 결과는 항상 일관됩니다.
+2. **레플리카를 수동으로 동기화** - 한 레플리카에 쓰고 다른 레플리카에서 읽는 경우, 읽기 전에 `SYSTEM SYNC REPLICA LIGHTWEIGHT`를 실행할 수 있습니다.
+3. **순차 일관성 활성화** - 쿼리 설정 [`select_sequential_consistency = 1`](/ko/reference/settings/session-settings#select_sequential_consistency)로 활성화할 수 있습니다. OSS에서는 `insert_quorum = 'auto'` 설정도 함께 지정해야 합니다.
+
+<br />
+
+이 설정을 활성화하는 방법에 대한 자세한 내용은 [여기](/ko/products/cloud/features/infrastructure/shared-merge-tree#consistency)를 참조하십시오.
+
+> 순차 일관성을 사용하면 ClickHouse Keeper에 더 큰 부하가 발생합니다. 그 결과
+> 삽입과 읽기가 더 느려질 수 있습니다. ClickHouse Cloud에서 기본 테이블 엔진으로 사용되는 SharedMergeTree는 순차 일관성 사용 시 [오버헤드가 더 적고 확장성이 더 뛰어납니다](/ko/products/cloud/features/infrastructure/shared-merge-tree#consistency). OSS에서는 이 방식을 신중하게 사용하고 Keeper 부하를 측정해야 합니다.
+
+<div id="transactional-acid-support">
+  ## 트랜잭션(ACID) 지원
+</div>
+
+PostgreSQL에서 마이그레이션하는 사용자는 ACID(Atomicity, Consistency, Isolation, Durability) 속성에 대한 PostgreSQL의 강력한 지원에 익숙할 수 있습니다. 이러한 특성 덕분에 PostgreSQL은 트랜잭션 데이터베이스에 적합한 신뢰할 수 있는 선택지로 여겨집니다. PostgreSQL의 atomicity는 각 transaction을 하나의 단위로 처리하여, 완전히 성공하거나 전체가 롤백되도록 함으로써 부분 업데이트를 방지합니다. consistency는 모든 데이터베이스 transaction이 유효한 상태에 도달하도록 constraints, triggers, 규칙을 적용해 유지됩니다. PostgreSQL은 Read Committed부터 Serializable까지의 isolation level을 지원하므로 concurrent transaction이 수행한 변경 사항의 가시성을 세밀하게 제어할 수 있습니다. 마지막으로 durability는 write-ahead logging(WAL)을 통해 보장되며, transaction이 한 번 커밋되면 시스템 장애가 발생하더라도 그 상태가 유지됩니다.
+
+이러한 속성은 단일 진실 공급원(source of truth) 역할을 하는 OLTP 데이터베이스에서 일반적으로 기대되는 특성입니다.
+
+이러한 기능은 강력하지만, 그에 따른 본질적인 제약도 있으며 PB 규모로 확장하기는 어렵습니다. ClickHouse는 높은 쓰기 처리량을 유지하면서 대규모에서 빠른 분석 쿼리를 제공하기 위해 이러한 속성 일부를 절충합니다.
+
+ClickHouse는 [제한된 구성](/ko/concepts/features/operations/insert/transactions)에서 ACID 속성을 제공합니다. 가장 단순한 예는 하나의 파티션을 사용하는 비복제 MergeTree 테이블 엔진 인스턴스입니다. 이러한 경우를 벗어나면 이런 속성을 기대해서는 안 되며, 이것이 필수 요구 사항이 아닌지 확인해야 합니다.
+
+<div id="compression">
+  ## 압축
+</div>
+
+ClickHouse&#39;s 컬럼 지향 스토리지는 Postgres와 비교할 때 압축 효율이 훨씬 더 뛰어난 경우가 많습니다. 다음은 두 데이터베이스에서 모든 Stack Overflow 테이블의 스토리지 요구 사항을 비교한 예시입니다:
+
+```sql title="Query (Postgres)"
+SELECT
+    schemaname,
+    tablename,
+    pg_total_relation_size(schemaname || '.' || tablename) AS total_size_bytes,
+    pg_total_relation_size(schemaname || '.' || tablename) / (1024 * 1024 * 1024) AS total_size_gb
+FROM
+    pg_tables s
+WHERE
+    schemaname = 'public';
+```
+
+```sql title="Query (ClickHouse)"
+SELECT
+        `table`,
+        formatReadableSize(sum(data_compressed_bytes)) AS compressed_size
+FROM system.parts
+WHERE (database = 'stackoverflow') AND active
+GROUP BY `table`
+```
+
+```response title="Response"
+┌─table───────┬─compressed_size─┐
+│ posts       │ 25.17 GiB       │
+│ users       │ 846.57 MiB      │
+│ badges      │ 513.13 MiB      │
+│ comments    │ 7.11 GiB        │
+│ votes       │ 1.28 GiB        │
+│ posthistory │ 40.44 GiB       │
+│ postlinks   │ 79.22 MiB       │
+└─────────────┴─────────────────┘
+```
+
+압축 최적화 및 측정에 관한 자세한 내용은 [여기](/ko/guides/clickhouse/data-modelling/compression/compression-in-clickhouse)에서 확인할 수 있습니다.
+
+<div id="data-type-mappings">
+  ## 데이터 타입 매핑
+</div>
+
+다음 표는 Postgres와 대응되는 ClickHouse 데이터 타입을 보여줍니다.
+
+| Postgres 데이터 타입      | ClickHouse 유형                                                                                                                                                                          |
+| -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `DATE`               | [Date](/ko/reference/data-types/date)                                                                                                                                                     |
+| `TIMESTAMP`          | [DateTime](/ko/reference/data-types/datetime)                                                                                                                                             |
+| `REAL`               | [Float32](/ko/reference/data-types/float)                                                                                                                                                 |
+| `DOUBLE`             | [Float64](/ko/reference/data-types/float)                                                                                                                                                 |
+| `DECIMAL, NUMERIC`   | [Decimal](/ko/reference/data-types/decimal)                                                                                                                                               |
+| `SMALLINT`           | [Int16](/ko/reference/data-types/int-uint)                                                                                                                                                |
+| `INTEGER`            | [Int32](/ko/reference/data-types/int-uint)                                                                                                                                                |
+| `BIGINT`             | [Int64](/ko/reference/data-types/int-uint)                                                                                                                                                |
+| `SERIAL`             | [UInt32](/ko/reference/data-types/int-uint)                                                                                                                                               |
+| `BIGSERIAL`          | [UInt64](/ko/reference/data-types/int-uint)                                                                                                                                               |
+| `TEXT, CHAR, BPCHAR` | [String](/ko/reference/data-types/string)                                                                                                                                                 |
+| `INTEGER`            | Nullable([Int32](/ko/reference/data-types/int-uint))                                                                                                                                      |
+| `ARRAY`              | [Array](/ko/reference/data-types/array)                                                                                                                                                   |
+| `FLOAT4`             | [Float32](/ko/reference/data-types/float)                                                                                                                                                 |
+| `BOOLEAN`            | [Bool](/ko/reference/data-types/boolean)                                                                                                                                                  |
+| `VARCHAR`            | [String](/ko/reference/data-types/string)                                                                                                                                                 |
+| `BIT`                | [String](/ko/reference/data-types/string)                                                                                                                                                 |
+| `BIT VARYING`        | [String](/ko/reference/data-types/string)                                                                                                                                                 |
+| `BYTEA`              | [String](/ko/reference/data-types/string)                                                                                                                                                 |
+| `NUMERIC`            | [Decimal](/ko/reference/data-types/decimal)                                                                                                                                               |
+| `GEOGRAPHY`          | [Point](/ko/reference/data-types/geo#point), [Ring](/ko/reference/data-types/geo#ring), [Polygon](/ko/reference/data-types/geo#polygon), [MultiPolygon](/ko/reference/data-types/geo#multipolygon) |
+| `GEOMETRY`           | [Point](/ko/reference/data-types/geo#point), [Ring](/ko/reference/data-types/geo#ring), [Polygon](/ko/reference/data-types/geo#polygon), [MultiPolygon](/ko/reference/data-types/geo#multipolygon) |
+| `INET`               | [IPv4](/ko/reference/data-types/ipv4), [IPv6](/ko/reference/data-types/ipv6)                                                                                                                 |
+| `MACADDR`            | [String](/ko/reference/data-types/string)                                                                                                                                                 |
+| `CIDR`               | [String](/ko/reference/data-types/string)                                                                                                                                                 |
+| `HSTORE`             | [Map(K, V)](/ko/reference/data-types/map), [Map](/ko/reference/data-types/map)(K,[Variant](/ko/reference/data-types/variant))                                                                   |
+| `UUID`               | [UUID](/ko/reference/data-types/uuid)                                                                                                                                                     |
+| `ARRAY<T>`           | [ARRAY(T)](/ko/reference/data-types/array)                                                                                                                                                |
+| `JSON`               | [String](/ko/reference/data-types/string), [Variant](/ko/reference/data-types/variant), [Nested](/ko/reference/data-types/nested-data-structures/index), [Tuple](/ko/reference/data-types/tuple)   |
+| `JSON`               | [String](/ko/reference/data-types/string), [Variant](/ko/reference/data-types/variant), [Nested](/ko/reference/data-types/nested-data-structures), [Tuple](/ko/reference/data-types/tuple)         |
+| `JSONB`              | [String](/ko/reference/data-types/string)                                                                                                                                                 |
