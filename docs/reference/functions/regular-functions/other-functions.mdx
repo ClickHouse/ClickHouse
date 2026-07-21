@@ -57,9 +57,9 @@ SELECT fqdn()
 ```
 
 ```response title=Response
-┌─FQDN()──────────────────────────┐
+┌─FQDN()────────────────────────┐
 │ clickhouse.us-east-2.internal │
-└─────────────────────────────────┘
+└───────────────────────────────┘
 ```
 
 ## MACNumToString {#MACNumToString}
@@ -548,6 +548,8 @@ communicate using a HTTP interface. By default, port `9012` is used. A different
 
 See [Training and applying models](https://catboost.ai/docs/features/training.html#training) for how to train catboost models from a training data set.
 
+The model file must be located inside the [`user_files`](/reference/settings/server-settings/settings#user_files_path) directory, like for the [`file`](/reference/functions/regular-functions/files#file) function.
+
 <Note>
 This function is non-deterministic: it can return different results for the same arguments.
 </Note>
@@ -560,7 +562,7 @@ catboostEvaluate(path_to_model, feature_1[, feature_2, ..., feature_n])
 
 **Arguments**
 
-- `path_to_model` — Path to catboost model. [`const String`](/reference/data-types/string)
+- `path_to_model` — Path to the catboost model, located inside the `user_files` directory. [`const String`](/reference/data-types/string)
 - `feature` — One or more model features/arguments. [`Float*`](/reference/data-types/float)
 
 **Returned value**
@@ -572,7 +574,7 @@ Returns the model evaluation result. [`Float64`](/reference/data-types/float)
 **catboostEvaluate**
 
 ```sql title=Query
-SELECT catboostEvaluate('/root/occupy.bin', Temperature, Humidity, Light, CO2, HumidityRatio) AS prediction FROM occupancy LIMIT 1
+SELECT catboostEvaluate('/var/lib/clickhouse/user_files/occupy.bin', Temperature, Humidity, Light, CO2, HumidityRatio) AS prediction FROM occupancy LIMIT 1
 ```
 
 ```response title=Response
@@ -929,7 +931,7 @@ This function is non-deterministic: it can return different results for the same
 currentDatabase()
 ```
 
-**Aliases**: `current_database`, `SCHEMA`, `DATABASE`
+**Aliases**: `current_database`, `DATABASE`, `SCHEMA`
 
 **Arguments**
 
@@ -1146,7 +1148,7 @@ This function is non-deterministic: it can return different results for the same
 currentUser()
 ```
 
-**Aliases**: `session_user`, `user`, `current_user`
+**Aliases**: `session_user`, `current_user`, `user`
 
 **Arguments**
 
@@ -1351,6 +1353,89 @@ SELECT defaultValueOfTypeName('Nullable(Int8)');
 ┌─defaultValueOfTypeName('Nullable(Int8)')─┐
 │                                     ᴺᵁᴸᴸ │
 └──────────────────────────────────────────┘
+```
+
+## digits {#digits}
+
+Introduced in: v26.7.0
+
+Returns the digits of a number `n` which starts at the specified index `offset`.
+Counting starts from 1 with the following logic:
+- If `offset` is `0`, an exception is thrown, as `offset` is 1-based.
+- If `offset` is negative, counting starts `offset` digits from the end of the number, rather than from the beginning.
+- If `offset` is greater than the number of digits in `n`, `0` is returned.
+
+An optional argument `length` uses the following logic:
+- If `length` is positive, it means number of digits to take from offset
+- If `length` is negative, it means number of digits from the right of the number to exclude
+    
+
+**Syntax**
+
+```sql
+digits(n, offset[, length])
+```
+
+**Arguments**
+
+- `n` — The number to calculate digits from. [`(U)Int8`](/reference/data-types/int-uint) or [`(U)Int16`](/reference/data-types/int-uint) or [`(U)Int32`](/reference/data-types/int-uint) or [`(U)Int64`](/reference/data-types/int-uint)
+- `offset` — The starting position of the digit in `n`. [`(U)Int8`](/reference/data-types/int-uint) or [`(U)Int16`](/reference/data-types/int-uint) or [`(U)Int32`](/reference/data-types/int-uint) or [`(U)Int64`](/reference/data-types/int-uint)
+- `length` — Optional. The maximum length of the digits. [`(U)Int8`](/reference/data-types/int-uint) or [`(U)Int16`](/reference/data-types/int-uint) or [`(U)Int32`](/reference/data-types/int-uint) or [`(U)Int64`](/reference/data-types/int-uint)
+
+**Returned value**
+
+The selected digits of `n`, interpreted as a `UInt64`. Returns `0` if the selected range is empty. Leading zeros are not preserved. [`UInt64`](/reference/data-types/int-uint)
+
+**Examples**
+
+**Positive offset**
+
+```sql title=Query
+SELECT digits(1234567890, 7)
+```
+
+```response title=Response
+7890
+```
+
+**Positive offset and length**
+
+```sql title=Query
+SELECT digits(1234567890, 7, 2)
+```
+
+```response title=Response
+78
+```
+
+**Negative offset counts from the right**
+
+```sql title=Query
+SELECT digits(1234567890, -3)
+```
+
+```response title=Response
+890
+```
+
+**Negative length excludes digits from the right**
+
+```sql title=Query
+SELECT digits(1234567890, 3, -2)
+```
+
+```response title=Response
+345678
+```
+
+**Offset past the end returns 0**
+
+```sql title=Query
+SELECT digits(1234567890, 11)
+```
+
+```response title=Response
+0
 ```
 
 ## displayName {#displayName}
@@ -2197,11 +2282,11 @@ SELECT
 ```
 
 ```response title=Response
-┌────elapsed─┬─time_delta─────────────────────────────────────────────────────┐
-│        100 │ 1 minute and 40 seconds                                         │
-│      12345 │ 205 minutes and 45 seconds                                      │
-│  432546534 │ 7209108 minutes and 54 seconds                                  │
-└────────────┴─────────────────────────────────────────────────────────────────┘
+┌───elapsed─┬─time_delta─────────────────────┐
+│       100 │ 1 minute and 40 seconds        │
+│     12345 │ 205 minutes and 45 seconds     │
+│ 432546534 │ 7209108 minutes and 54 seconds │
+└───────────┴────────────────────────────────┘
 ```
 
 **With an INTERVAL expression**
@@ -2402,16 +2487,16 @@ Introduced in: v24.5.0
 
 Gets the value of an HTTP header.
 If there is no such header or the current request is not performed via the HTTP interface, the function returns an empty string.
-Certain HTTP headers (e.g., `Authentication` and `X-ClickHouse-*`) are restricted.
+Certain HTTP headers (e.g., `Authorization`, `Authentication` and `X-ClickHouse-*`) are restricted.
 
-<Note>
+<Info>
 **Setting `allow_get_client_http_header` is required**
 
 The function requires the setting `allow_get_client_http_header` to be enabled.
 The setting is not enabled by default for security reasons, because some headers, such as `Cookie`, could contain sensitive info.
-</Note>
+</Info>
 
-HTTP headers are case sensitive for this function.
+HTTP headers are case-insensitive per RFC 9110.
 If the function is used in the context of a distributed query, it returns non-empty result only on the initiator node.
 
 `getClientHTTPHeader` reads the headers of the current request, so it returns a non-empty value only when the query is sent over the HTTP interface.
@@ -2907,6 +2992,13 @@ Introduced in: v1.1.0
 Checks if a specific column exists in a database table.
 For elements in a nested data structure, the function checks for the existence of a column.
 For the nested data structure itself, the function returns `0`.
+
+<Info>
+**Privilege `SHOW COLUMNS` is required**
+
+The function requires the `SHOW COLUMNS` privilege on the target table (the same grant needed by `DESCRIBE` and `SHOW CREATE TABLE`).
+Without it the call fails with `ACCESS_DENIED` instead of returning `1` or `0`, so column names cannot be probed without access.
+</Info>
     
 
 <Note>
@@ -2916,7 +3008,7 @@ This function is non-deterministic: it can return different results for the same
 **Syntax**
 
 ```sql
-hasColumnInTable([hostname[, username[, password]],]database, table, column)
+hasColumnInTable(database, table, column)
 ```
 
 **Arguments**
@@ -2924,9 +3016,6 @@ hasColumnInTable([hostname[, username[, password]],]database, table, column)
 - `database` — Name of the database. [`const String`](/reference/data-types/string)
 - `table` — Name of the table. [`const String`](/reference/data-types/string)
 - `column` — Name of the column. [`const String`](/reference/data-types/string)
-- `hostname` — Optional. Remote server name to perform the check on. [`const String`](/reference/data-types/string)
-- `username` — Optional. Username for remote server. [`const String`](/reference/data-types/string)
-- `password` — Optional. Password for remote server. [`const String`](/reference/data-types/string)
 
 **Returned value**
 
@@ -3214,9 +3303,7 @@ During index analysis, the argument of this function is assumed to not be wrappe
 This allows you to select data in index ranges by the corresponding condition but without further filtering by this condition.
 The index in ClickHouse is sparse and using `indexHint` will yield more data than specifying the same condition directly.
 
-<details>
-<summary>Explanation</summary>
-
+<Accordion title="Explanation">
 When you run:
 
 ```sql
@@ -3245,7 +3332,7 @@ It returns all 8,192 rows, including rows where `key = 456`, `key = 789`, etc. (
 - Which granules does my condition select?
 - How many rows are in those granules?
 - Is my index being used effectively?
-</details>
+</Accordion>
 
 Note: It is not possible to optimize a query with the `indexHint` function. The `indexHint` function does not optimize the query, as it does not provide any additional information for the query analysis. Having an expression inside the `indexHint` function is not anyhow better than without the `indexHint` function. The `indexHint` function can be used only for introspection and debugging purposes and it does not improve performance. If you see the usage of `indexHint` by anyone other than ClickHouse contributors, it is likely a mistake and you should remove it.
     

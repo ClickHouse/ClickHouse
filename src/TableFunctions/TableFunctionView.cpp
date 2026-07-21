@@ -75,7 +75,63 @@ StoragePtr TableFunctionView::executeImpl(
 
 void registerTableFunctionView(TableFunctionFactory & factory)
 {
-    factory.registerFunction<TableFunctionView>({}, {.allow_readonly = true});
+    factory.registerFunction<TableFunctionView>({.description = R"DOCS_MD(
+Turns a subquery into a table. The function implements views (see [CREATE VIEW](/reference/statements/create/view)). The resulting table does not store data, but only stores the specified `SELECT` query. When reading from the table, ClickHouse executes the query and deletes all unnecessary columns from the result.
+
+## Syntax {#syntax}
+
+```sql
+view(subquery)
+```
+
+## Arguments {#arguments}
+
+- `subquery` — `SELECT` query.
+
+## Returned value {#returned_value}
+
+- A table.
+
+## Examples {#examples}
+
+Input table:
+
+```text
+┌─id─┬─name─────┬─days─┐
+│  1 │ January  │   31 │
+│  2 │ February │   29 │
+│  3 │ March    │   31 │
+│  4 │ April    │   30 │
+└────┴──────────┴──────┘
+```
+
+```sql title="Query"
+SELECT * FROM view(SELECT name FROM months);
+```
+
+```text title="Response"
+┌─name─────┐
+│ January  │
+│ February │
+│ March    │
+│ April    │
+└──────────┘
+```
+
+You can use the `view` function as a parameter of the [remote](/reference/functions/table-functions/remote) and [cluster](/reference/functions/table-functions/cluster) table functions:
+
+```sql title="Query"
+SELECT * FROM remote(`127.0.0.1`, view(SELECT a, b, c FROM table_name));
+```
+
+```sql title="Query"
+SELECT * FROM cluster(`cluster_name`, view(SELECT a, b, c FROM table_name));
+```
+
+## Related {#related}
+
+- [View Table Engine](/reference/engines/table-engines/special/view)
+)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction}, {.allow_readonly = true});
 }
 
 }
