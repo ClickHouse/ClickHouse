@@ -78,6 +78,22 @@ $CLICKHOUSE_CLIENT --dynamic_disk_allow_from_env=1 --dynamic_disk_allow_from_zk=
         service_account_key = 'from_env ${DB}_SA_KEY2'); -- { serverError ACCESS_DENIED }
 "
 
+# `include` resolves named nodes from the server-side include file only after these checks run, so an
+# `include`d disk that is not provably non-GCS is treated as potentially GCS: the included configuration
+# could supply `type = gcs`, making the server open the `service_account_key_file` from the AST, or resolve
+# indirect credential placeholders. These are rejected on the AST (before the include is even resolved), so
+# they are safe in every build type. The complementary case -- the key file or credential fields coming from
+# the included configuration itself -- is guarded post-resolution by `validateResolvedGCSDiskCredentials`,
+# which needs a real include target and is exercised by the code path shared with the S3 re-check.
+$CLICKHOUSE_CLIENT --dynamic_disk_allow_include=1 --dynamic_disk_allow_from_env=1 -m -q "
+    CREATE TABLE ${TABLE} (x UInt8) ENGINE = MergeTree ORDER BY tuple()
+    SETTINGS disk = disk(name = '${DISK}_incl', include = '${DB}_gcs_disk',
+        service_account_key_file = '/etc/passwd'); -- { serverError ACCESS_DENIED }
+    CREATE TABLE ${TABLE} (x UInt8) ENGINE = MergeTree ORDER BY tuple()
+    SETTINGS disk = disk(name = '${DISK}_incl_key', include = '${DB}_gcs_disk2',
+        service_account_key = 'from_env ${DB}_SA_KEY3'); -- { serverError ACCESS_DENIED }
+"
+
 # Positive control: an inline `service_account_key` (not a path) must not be rejected by this check. Unlike
 # the two negative cases above (which are rejected on the AST, before any object storage is created), this
 # config passes the check and proceeds to construct the native GCS backend. Table creation then still fails

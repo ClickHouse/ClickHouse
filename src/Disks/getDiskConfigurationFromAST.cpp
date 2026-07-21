@@ -96,6 +96,15 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & 
     bool is_gcs_disk_via_object_storage_type = false;
     bool has_service_account_key_file = false;
     bool has_indirect_gcs_credential_field = false;
+    /// A literal, concrete non-GCS backend (any concrete `type` other than `gcs` and the `object_storage`
+    /// wrapper, or `object_storage` with a literal non-GCS `object_storage_type`) -- used to decide whether an
+    /// `include` could still resolve to a GCS backend.
+    bool has_concrete_non_gcs_type = false;
+    bool has_explicit_non_gcs_object_storage_type = false;
+    /// Native GCS credential fields the AST supplied as literal values (vouched for by the SQL definition
+    /// itself); reported through `info` for the post-`include` re-check.
+    bool has_gcs_service_account_key = false;
+    bool has_gcs_access_token = false;
 
     /// `from_env`/`from_zk` substitute the value from a server-side source (an environment variable or a
     /// ZooKeeper node), so for credential/auth/type fields the literal placeholder must not be treated as a
@@ -168,6 +177,8 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & 
                     has_concrete_non_s3_type = true;
                 if (!indirect && value_str == "gcs")
                     is_gcs_disk_via_type = true;
+                if (!indirect && value_str != "gcs" && value_str != "object_storage")
+                    has_concrete_non_gcs_type = true;
             }
             else /// object_storage_type
             {
@@ -175,6 +186,8 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & 
                     has_explicit_non_s3_object_storage_type = true;
                 if (!indirect && value_str == "gcs")
                     is_gcs_disk_via_object_storage_type = true;
+                if (!indirect && value_str != "gcs")
+                    has_explicit_non_gcs_object_storage_type = true;
             }
         }
         else if (key == "access_key_id")
@@ -200,6 +213,10 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & 
             /// server-side file path that the native GCS backend opens, so it must be rejected below exactly like
             /// a literal path (the placeholder string is itself non-empty).
             has_service_account_key_file = !value_str.empty();
+        else if (key == "service_account_key")
+            has_gcs_service_account_key = !value_str.empty() && !indirect;
+        else if (key == "access_token")
+            has_gcs_access_token = !value_str.empty() && !indirect;
         else if (key == "_server_credentials_allowed")
             has_server_credentials_marker = !indirect && value_str != "0" && !boost::iequals(value_str, "false");
 
@@ -243,12 +260,15 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & 
     /// functions such as `file` are confined to `user_files_path` rather than an opt-in. A `system`-database
     /// disk is server-internal (admin-configured, not user SQL), so it is exempt like the S3 restriction above.
     /// A backend that cannot be proven non-GCS at parse time -- the `type`, or for the `object_storage` wrapper
-    /// its `object_storage_type`, is supplied indirectly (`from_env`/`from_zk`) and could resolve to `gcs` -- is
-    /// treated conservatively as potentially GCS, the same way `maybe_s3_disk` below treats indirect types. The
-    /// `service_account_key_file` value is likewise rejected whether it is a literal path or an indirect one,
-    /// since an indirect value still resolves to a server-side path the backend opens.
+    /// its `object_storage_type`, is supplied indirectly (`from_env`/`from_zk`) and could resolve to `gcs`, or
+    /// an `include` is present without a literal non-GCS type (the include could supply `type = gcs`) -- is
+    /// treated conservatively as potentially GCS, the same way `maybe_s3_disk` below treats indirect types and
+    /// `include`. The `service_account_key_file` value is likewise rejected whether it is a literal path or an
+    /// indirect one, since an indirect value still resolves to a server-side path the backend opens.
     const bool is_gcs_disk = is_gcs_disk_via_type || (type_is_object_storage && is_gcs_disk_via_object_storage_type);
-    const bool maybe_gcs_disk = is_gcs_disk || type_is_indirect;
+    const bool type_explicitly_non_gcs
+        = has_concrete_non_gcs_type || (type_is_object_storage && has_explicit_non_gcs_object_storage_type);
+    const bool maybe_gcs_disk = is_gcs_disk || type_is_indirect || (has_include && !type_explicitly_non_gcs);
     if (maybe_gcs_disk && has_service_account_key_file && !for_system_database)
         throw Exception(
             ErrorCodes::ACCESS_DENIED,
@@ -315,6 +335,12 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & 
         info->ast_has_use_environment_credentials_off = allowed_anonymous;
         info->ast_has_explicit_gcp_adc = has_explicit_gcp_adc;
         info->restriction_exempt = restriction_exempt;
+        info->for_system_database = for_system_database;
+        info->ast_has_gcs_service_account_key = has_gcs_service_account_key;
+        info->ast_has_gcs_access_token = has_gcs_access_token;
+        info->ast_has_google_adc_client_id = has_google_adc_client_id;
+        info->ast_has_google_adc_client_secret = has_google_adc_client_secret;
+        info->ast_has_google_adc_refresh_token = has_google_adc_refresh_token;
         /// Persist the opt-in for a fresh create that resolves server credentials and is currently allowed
         /// (the session opted in), so the disk is not re-restricted on reload.
         info->persist_server_credentials_allowance = !is_loading_from_existing_metadata && relies_on_server_credentials
@@ -512,6 +538,64 @@ void validateResolvedS3DiskCredentials(
             "`use_environment_credentials = 0`; or, for `http_client = gcp_oauth`, a complete explicit Google ADC "
             "triple). It may not take the S3 type or credentials from the included configuration, which could "
             "resolve the server's own credentials. Enable `s3_allow_server_credentials_in_user_queries` to allow it.");
+}
+
+void validateResolvedGCSDiskCredentials(const Poco::Util::AbstractConfiguration & config, const DynamicS3DiskCredentialInfo & info)
+{
+    /// Re-check after `include` is resolved, mirroring `validateResolvedS3DiskCredentials`: an `include` can
+    /// inject a `gcs` backend with `service_account_key_file` or credential fields past the pre-resolution AST
+    /// checks (which only see the keys present in the AST itself). A `system`-database disk is server-internal,
+    /// exempt like the pre-resolution GCS checks. There is no anonymous downgrade for GCS: the pre-resolution
+    /// checks are unconditional (not opt-in-gated), so this check fails closed in every mode too.
+    if (!info.has_include || info.for_system_database)
+        return;
+
+    /// Check the disk root and every `locations.<name>` child: a multi-location `DiskObjectStorage` builds one
+    /// object storage per child, so an `include` can hide a GCS child behind a non-GCS root.
+    std::vector<String> prefixes{""};
+    if (config.has("locations"))
+    {
+        Poco::Util::AbstractConfiguration::Keys locations;
+        config.keys("locations", locations);
+        for (const auto & location : locations)
+            prefixes.push_back("locations." + location + ".");
+    }
+
+    for (const auto & prefix : prefixes)
+    {
+        auto key = [&](const String & k) { return prefix + k; };
+        const bool resolved_backend_is_gcs
+            = config.getString(key("type"), "") == "gcs" || config.getString(key("object_storage_type"), "") == "gcs";
+        if (!resolved_backend_is_gcs)
+            continue;
+
+        /// `service_account_key_file` makes the server open a local file path; the pre-resolution check rejects
+        /// it even as a literal, so a resolved value is rejected regardless of its provenance.
+        if (!config.getString(key("service_account_key_file"), "").empty())
+            throw Exception(
+                ErrorCodes::ACCESS_DENIED,
+                "A dynamic GCS disk created from user SQL may not use `service_account_key_file` (here resolved "
+                "via `include`), which would make the server read an arbitrary local file path. Configure "
+                "`service_account_key_file` on a server-managed disk in the server configuration instead.");
+
+        /// The other credential fields are allowed only when the SQL definition itself supplied them as literal
+        /// values on the disk root; a value resolved from the `include` -- including any credential field on an
+        /// `include`-created `locations` child, which the AST cannot vouch for -- is server-managed auth material.
+        const bool is_root = prefix.empty();
+        const bool has_foreign_credential_field
+            = (!config.getString(key("service_account_key"), "").empty() && !(is_root && info.ast_has_gcs_service_account_key))
+            || (!config.getString(key("access_token"), "").empty() && !(is_root && info.ast_has_gcs_access_token))
+            || (!config.getString(key("google_adc_client_id"), "").empty() && !(is_root && info.ast_has_google_adc_client_id))
+            || (!config.getString(key("google_adc_client_secret"), "").empty() && !(is_root && info.ast_has_google_adc_client_secret))
+            || (!config.getString(key("google_adc_refresh_token"), "").empty() && !(is_root && info.ast_has_google_adc_refresh_token));
+        if (has_foreign_credential_field)
+            throw Exception(
+                ErrorCodes::ACCESS_DENIED,
+                "A dynamic GCS disk created from user SQL may not take credential fields (`service_account_key`, "
+                "`access_token`, or `google_adc_*`) from an included configuration, which could resolve "
+                "server-managed auth material. Provide the credentials as literal values in the SQL definition, "
+                "or configure the disk in the server configuration instead.");
+    }
 }
 
 DiskConfigurationPtr getDiskConfigurationFromAST(const ASTs & disk_args, ContextPtr context)

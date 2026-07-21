@@ -46,6 +46,16 @@ struct DynamicS3DiskCredentialInfo
     bool ast_has_no_sign_request = false;                   /// literal `no_sign_request`
     bool ast_has_use_environment_credentials_off = false;   /// literal `use_environment_credentials = 0`, no `role_arn`
     bool ast_has_explicit_gcp_adc = false;                  /// complete literal Google ADC triple
+
+    /// For the post-`include` GCS re-check (`validateResolvedGCSDiskCredentials`): whether the AST itself
+    /// supplied each native GCS credential field as a literal value. A resolved field the AST did not vouch
+    /// for came from the included (server-side) configuration, i.e. server-managed auth material.
+    bool for_system_database = false;                       /// server-internal disk, exempt like the AST-level GCS checks
+    bool ast_has_gcs_service_account_key = false;
+    bool ast_has_gcs_access_token = false;
+    bool ast_has_google_adc_client_id = false;
+    bool ast_has_google_adc_client_secret = false;
+    bool ast_has_google_adc_refresh_token = false;
 };
 
 /// The same as above function, but return XML::Document for easier modification of result configuration.
@@ -70,6 +80,13 @@ void forceAnonymousS3DiskConfigAtPrefix(Poco::Util::AbstractConfiguration & conf
 /// backend with server-managed auth past the pre-resolution check. Throws `ACCESS_DENIED`, or forces the disk
 /// anonymous when loading from existing metadata (see `s3_load_table_anonymously_if_credentials_restricted`).
 void validateResolvedS3DiskCredentials(Poco::Util::AbstractConfiguration & config, ContextPtr context, bool is_loading_from_existing_metadata, const DynamicS3DiskCredentialInfo & info);
+
+/// The native GCS analogue of `validateResolvedS3DiskCredentials`: re-apply the GCS credential restrictions
+/// after `include` is resolved, so an `include` cannot inject a `gcs` backend with `service_account_key_file`
+/// (a server-side file read) or server-managed credential fields past the pre-resolution AST checks. Unlike
+/// the S3 path there is no anonymous downgrade: the AST-level GCS checks are unconditional (not opt-in-gated),
+/// so this check throws `ACCESS_DENIED` (fail-closed) in every mode.
+void validateResolvedGCSDiskCredentials(const Poco::Util::AbstractConfiguration & config, const DynamicS3DiskCredentialInfo & info);
 
 /*
  * A reverse function.
