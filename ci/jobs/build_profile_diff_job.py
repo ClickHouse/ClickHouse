@@ -137,57 +137,81 @@ def in_list(values) -> str:
     return ", ".join(quote(v) for v in values)
 
 
-def side_conditions(days: int, pr_number: int, sha: str, extra_where: str = "") -> str:
-    """The WHERE conditions selecting one side's rows (before run scoping)."""
-    where = f"\n            AND {extra_where}" if extra_where else ""
-    return f"""date >= today() - {days}
-            AND pull_request_number = {pr_number}
-            AND commit_sha = {quote(sha)}
-            AND check_name = {quote(CHECK_NAME)}{where}"""
-
-
-def latest_run(table: str, conditions: str) -> str:
-    """A predicate restricting matching rows to the newest uploaded build run.
+@dataclasses.dataclass
+class Side:
+    """One comparison side, pinned to a single concrete build run.
 
     A rerun of the build re-inserts the whole dataset under the same
-    pull_request_number/commit_sha/check_name with a new check_start_time and
-    instance_id. Mixing runs corrupts every aggregation (sums double, max picks
-    the slowest run), so each side must be scoped to one concrete run.
+    pull_request_number/commit_sha/check_name with a fresh check_start_time and
+    instance_id, and the three tables of one build are uploaded under the same
+    pair (see build_profile_hook.py). The pair is chosen once per side (see
+    resolve_run) and reused across every table, so the whole comparison stays
+    scoped to one concrete build instead of picking a different run per table -
+    which would let a size section read the newest run while the symbol section
+    silently falls back to an older one.
     """
-    return f"""(check_start_time, instance_id) IN (
-                SELECT check_start_time, instance_id
-                FROM {table}
-                WHERE {conditions}
-                ORDER BY check_start_time DESC
-                LIMIT 1
-            )"""
+
+    days: int
+    pr_number: int
+    sha: str
+    check_start_time: str
+    instance_id: str
+
+
+def resolve_run(db: "Db", days: int, pr_number: int, sha: str, table: str = "binary_sizes") -> Optional[Side]:
+    """The newest uploaded build run for one side, or None if there is no data.
+
+    Resolved from `binary_sizes` by default (the canonical, always-complete
+    table); the resulting (check_start_time, instance_id) is reused for every
+    other table of the same build.
+    """
+    rows = db.query(
+        f"""SELECT check_start_time, instance_id
+        FROM {table}
+        WHERE date >= today() - {days}
+            AND pull_request_number = {pr_number}
+            AND commit_sha = {quote(sha)}
+            AND check_name = {quote(CHECK_NAME)}
+        ORDER BY check_start_time DESC
+        LIMIT 1"""
+    )
+    if not rows:
+        return None
+    return Side(days, pr_number, sha, rows[0]["check_start_time"], rows[0]["instance_id"])
+
+
+def side_conditions(side: Side, extra_where: str = "") -> str:
+    """The WHERE conditions selecting one side's rows, pinned to its build run."""
+    where = f"\n            AND {extra_where}" if extra_where else ""
+    return f"""date >= today() - {side.days}
+            AND pull_request_number = {side.pr_number}
+            AND commit_sha = {quote(side.sha)}
+            AND check_name = {quote(CHECK_NAME)}
+            AND check_start_time = {quote(side.check_start_time)}
+            AND instance_id = {quote(side.instance_id)}{where}"""
 
 
 def both_sides(
     table: str,
     columns: str,
-    pr_number: int,
-    pr_sha: str,
-    base_sha: str,
+    pr_side: Side,
+    base_side: Side,
     extra_where: str = "",
-    base_days: int = BASE_DAYS,
 ) -> str:
     """A UNION ALL subquery with PR rows marked side='pr' and master rows side='base'.
 
-    Each side is restricted to its newest uploaded build run (see latest_run).
+    Each side is pinned to the single build run chosen for it (see Side).
     """
-    pr_cond = side_conditions(PR_DAYS, pr_number, pr_sha, extra_where)
-    base_cond = side_conditions(base_days, 0, base_sha, extra_where)
+    pr_cond = side_conditions(pr_side, extra_where)
+    base_cond = side_conditions(base_side, extra_where)
     return f"""(
         SELECT 'pr' AS side, {columns}
         FROM {table}
         WHERE {pr_cond}
-            AND {latest_run(table, pr_cond)}
         UNION ALL
         SELECT 'base' AS side, {columns}
         FROM {table}
         WHERE {base_cond}
-            AND {latest_run(table, base_cond)}
     )"""
 
 
@@ -342,13 +366,13 @@ def has_pr_data(db: Db, pr_number: int, pr_sha: str) -> bool:
     return rows and int(rows[0]["c"]) > 0
 
 
-def compare_binaries(db: Db, pr_number, pr_sha, base_sha) -> Section:
+def compare_binaries(db: Db, pr_side, base_side) -> Section:
     section = Section(title="Binary sizes")
     rows = db.query(
         f"""SELECT file,
             maxIf(size, side = 'pr') AS pr_size,
             maxIf(size, side = 'base') AS base_size
-        FROM {both_sides("binary_sizes", "file, size", pr_number, pr_sha, base_sha, f"file IN ({in_list(HEADLINE_BINARIES)})")}
+        FROM {both_sides("binary_sizes", "file, size", pr_side, base_side, f"file IN ({in_list(HEADLINE_BINARIES)})")}
         GROUP BY file
         ORDER BY file"""
     )
@@ -380,14 +404,14 @@ def compare_binaries(db: Db, pr_number, pr_sha, base_sha) -> Section:
 OBJECT_FILTER = "file LIKE '%.o' AND file NOT LIKE '%CMakeScratch%' AND file NOT LIKE '%/incremental/%'"
 
 
-def compare_objects(db: Db, pr_number, pr_sha, base_sha) -> Section:
+def compare_objects(db: Db, pr_side, base_side) -> Section:
     section = Section(title="Object file sizes")
     rows = db.query(
         f"""SELECT file,
             maxIf(size, side = 'pr') AS pr_size,
             maxIf(size, side = 'base') AS base_size,
             toInt64(pr_size) - toInt64(base_size) AS delta
-        FROM {both_sides("binary_sizes", "file, size", pr_number, pr_sha, base_sha, OBJECT_FILTER)}
+        FROM {both_sides("binary_sizes", "file, size", pr_side, base_side, OBJECT_FILTER)}
         GROUP BY file
         HAVING abs(delta) >= {OBJECT_REPORT_BYTES}
         ORDER BY abs(delta) DESC
@@ -403,7 +427,7 @@ def compare_objects(db: Db, pr_number, pr_sha, base_sha) -> Section:
             SELECT file,
                 maxIf(size, side = 'pr') AS pr_size,
                 maxIf(size, side = 'base') AS base_size
-            FROM {both_sides("binary_sizes", "file, size", pr_number, pr_sha, base_sha, OBJECT_FILTER)}
+            FROM {both_sides("binary_sizes", "file, size", pr_side, base_side, OBJECT_FILTER)}
             GROUP BY file
         )"""
     )[0]
@@ -434,13 +458,13 @@ def compare_objects(db: Db, pr_number, pr_sha, base_sha) -> Section:
     return section
 
 
-def compare_link_time(db: Db, pr_number, pr_sha, base_sha) -> Section:
+def compare_link_time(db: Db, pr_side, base_side) -> Section:
     section = Section(title="Link time")
     rows = db.query(
         f"""SELECT file,
             maxIf(dur, side = 'pr') AS pr_dur,
             maxIf(dur, side = 'base') AS base_dur
-        FROM {both_sides("build_time_trace", "file, dur", pr_number, pr_sha, base_sha, f"file IN ({in_list(LINK_BINARIES)}) AND name = 'ExecuteLinker'")}
+        FROM {both_sides("build_time_trace", "file, dur", pr_side, base_side, f"file IN ({in_list(LINK_BINARIES)}) AND name = 'ExecuteLinker'")}
         GROUP BY file
         ORDER BY file"""
     )
@@ -465,7 +489,7 @@ def compare_link_time(db: Db, pr_number, pr_sha, base_sha) -> Section:
     return section
 
 
-def compare_opt_functions(db: Db, pr_number, pr_sha, base_sha) -> Section:
+def compare_opt_functions(db: Db, pr_side, base_side) -> Section:
     """Per-function ThinLTO optimization time of the main binary.
 
     This is the per-function 'how long does the backend chew on it' signal; it
@@ -482,7 +506,7 @@ def compare_opt_functions(db: Db, pr_number, pr_sha, base_sha) -> Section:
             sumIf(dur, side = 'pr') AS pr_dur,
             sumIf(dur, side = 'base') AS base_dur,
             toInt64(pr_dur) - toInt64(base_dur) AS delta
-        FROM {both_sides("build_time_trace", "detail, dur", pr_number, pr_sha, base_sha, f"file = {quote(MAIN_BINARY)} AND name = 'OptFunction' AND dur >= 50000")}
+        FROM {both_sides("build_time_trace", "detail, dur", pr_side, base_side, f"file = {quote(MAIN_BINARY)} AND name = 'OptFunction' AND dur >= 50000")}
         GROUP BY detail
         HAVING abs(delta) >= {report_us}
             AND (pr_dur = 0 OR base_dur = 0
@@ -508,19 +532,18 @@ def compare_opt_functions(db: Db, pr_number, pr_sha, base_sha) -> Section:
     return section
 
 
-def compare_compile_times(db: Db, pr_number, pr_sha, base_sha, master_shas) -> Section:
+def compare_compile_times(db: Db, pr_side, base_side, master_shas) -> Section:
     """Per-TU compile time of TUs this PR recompiled.
 
     sccache makes the recompiled set exactly the TUs affected by the PR. Each
     is compared against the most recent master build that also recompiled it.
     """
     section = Section(title="Compile time of recompiled translation units")
-    pr_cond = side_conditions(PR_DAYS, pr_number, pr_sha, "name = 'ExecuteCompiler'")
+    pr_cond = side_conditions(pr_side, "name = 'ExecuteCompiler'")
     pr_rows = db.query(
         f"""SELECT file, max(dur) AS dur
         FROM build_time_trace
         WHERE {pr_cond}
-            AND {latest_run("build_time_trace", pr_cond)}
         GROUP BY file"""
     )
     if not pr_rows:
@@ -541,7 +564,6 @@ def compare_compile_times(db: Db, pr_number, pr_sha, base_sha, master_shas) -> S
                 SELECT DISTINCT file
                 FROM build_time_trace
                 WHERE {pr_cond}
-                    AND {latest_run("build_time_trace", pr_cond)}
             )
             AND commit_sha IN ({in_list(master_shas)})
         GROUP BY file"""
@@ -594,7 +616,7 @@ def compare_compile_times(db: Db, pr_number, pr_sha, base_sha, master_shas) -> S
         for file, pr_dur, base_dur, base_tu_sha, delta_s, ratio in findings[:3]:
             if delta_s <= 0:
                 continue
-            drill = drill_down_tu(db, pr_number, pr_sha, base_tu_sha, file, skew)
+            drill = drill_down_tu(db, pr_side, base_tu_sha, file, skew)
             if drill:
                 lines += ["", f"Slowest changed entities of {md_code(strip_build_dir(file))}:", ""]
                 lines += drill
@@ -613,13 +635,21 @@ def compare_compile_times(db: Db, pr_number, pr_sha, base_sha, master_shas) -> S
     return section
 
 
-def drill_down_tu(db: Db, pr_number, pr_sha, base_tu_sha, file, skew=1.0) -> List[str]:
+def drill_down_tu(db: Db, pr_side, base_tu_sha, file, skew=1.0) -> List[str]:
     """Top per-entity compile time changes inside one translation unit.
 
     Entity deltas are filtered against the same median machine-speed ratio as
     the per-TU comparison, so a uniformly slower run does not list every
     entity of the TU.
+
+    The per-TU baseline commit differs from the overall baseline (it is the most
+    recent master build that recompiled this TU), so its build run is resolved
+    separately; if it has no run, the drill-down is skipped rather than mixing
+    runs.
     """
+    base_side = resolve_run(db, TU_BASE_DAYS, 0, base_tu_sha, table="build_time_trace")
+    if base_side is None:
+        return []
     rows = db.query(
         f"""SELECT name, detail,
             sumIf(dur, side = 'pr') AS pr_dur,
@@ -629,11 +659,9 @@ def drill_down_tu(db: Db, pr_number, pr_sha, base_tu_sha, file, skew=1.0) -> Lis
             both_sides(
                 "build_time_trace",
                 "name, detail, dur",
-                pr_number,
-                pr_sha,
-                base_tu_sha,
+                pr_side,
+                base_side,
                 f"file = {quote(file)} AND detail != '' AND name IN ('InstantiateFunction', 'InstantiateClass', 'ParseClass', 'Source', 'OptFunction', 'CodeGen Function')",
-                TU_BASE_DAYS,
             )
         }
         GROUP BY name, detail
@@ -655,7 +683,7 @@ def drill_down_tu(db: Db, pr_number, pr_sha, base_tu_sha, file, skew=1.0) -> Lis
     return lines
 
 
-def compare_symbols(db: Db, pr_number, pr_sha, base_sha) -> Section:
+def compare_symbols(db: Db, pr_side, base_side) -> Section:
     """Per-symbol size diff of the final linked binaries.
 
     Covers both `clickhouse` and `clickhouse-keeper` (the producer uploads the
@@ -668,7 +696,7 @@ def compare_symbols(db: Db, pr_number, pr_sha, base_sha) -> Section:
         f"""SELECT file,
             countIf(side = 'pr') AS pr_count,
             countIf(side = 'base') AS base_count
-        FROM {both_sides("binary_symbols", "file", pr_number, pr_sha, base_sha, f"file IN ({in_list(LINK_BINARIES)})")}
+        FROM {both_sides("binary_symbols", "file", pr_side, base_side, f"file IN ({in_list(LINK_BINARIES)})")}
         GROUP BY file"""
     )
     comparable = [row["file"] for row in sides if int(row["pr_count"]) and int(row["base_count"])]
@@ -686,7 +714,7 @@ def compare_symbols(db: Db, pr_number, pr_sha, base_sha) -> Section:
             sumIf(size, side = 'pr') AS pr_size,
             sumIf(size, side = 'base') AS base_size,
             toInt64(pr_size) - toInt64(base_size) AS delta
-        FROM {both_sides("binary_symbols", "file, symbol, size", pr_number, pr_sha, base_sha, f"file IN ({in_list(comparable)}) AND size >= 1024")}
+        FROM {both_sides("binary_symbols", "file, symbol, size", pr_side, base_side, f"file IN ({in_list(comparable)}) AND size >= 1024")}
         GROUP BY file, symbol
         HAVING abs(delta) >= {SYMBOL_REPORT_BYTES}
         ORDER BY abs(delta) DESC
@@ -788,13 +816,21 @@ def main():
         raise RuntimeError("No master baseline with build profile data found - cannot compare")
     print(f"Comparing PR {pr_number} sha {pr_sha} against master {base_sha}")
 
+    # Pin each side to one concrete build run once, and reuse it for every
+    # table (see Side / resolve_run): the whole comparison then reflects a
+    # single build instead of a per-table mix of reruns.
+    pr_side = resolve_run(db, PR_DAYS, pr_number, pr_sha)
+    base_side = resolve_run(db, BASE_DAYS, 0, base_sha)
+    if pr_side is None or base_side is None:
+        raise RuntimeError("Could not resolve a concrete build run for one of the sides")
+
     sections = [
-        compare_binaries(db, pr_number, pr_sha, base_sha),
-        compare_objects(db, pr_number, pr_sha, base_sha),
-        compare_link_time(db, pr_number, pr_sha, base_sha),
-        compare_opt_functions(db, pr_number, pr_sha, base_sha),
-        compare_compile_times(db, pr_number, pr_sha, base_sha, master_shas),
-        compare_symbols(db, pr_number, pr_sha, base_sha),
+        compare_binaries(db, pr_side, base_side),
+        compare_objects(db, pr_side, base_side),
+        compare_link_time(db, pr_side, base_side),
+        compare_opt_functions(db, pr_side, base_side),
+        compare_compile_times(db, pr_side, base_side, master_shas),
+        compare_symbols(db, pr_side, base_side),
     ]
 
     body = build_comment(info, pr_sha, base_sha, sections)
