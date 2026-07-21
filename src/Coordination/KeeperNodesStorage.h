@@ -111,6 +111,7 @@ struct KeeperNodesStorage
     virtual std::unique_ptr<KeeperNodesReadView> issueReadView() = 0;
 
     /// Does only createStreams-finishStreams on `reader`, the caller does everything before and after that.
+    /// Caller must *not* hold storage_mutex.
     virtual void loadNodesFromSnapshot(KeeperSnapshotReader & reader, KeeperStorage * storage, uint64_t * out_digest) = 0;
 
     virtual void commitDelta(Delta & delta, uint64_t * digest) = 0;

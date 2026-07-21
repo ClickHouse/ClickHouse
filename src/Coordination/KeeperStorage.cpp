@@ -323,12 +323,7 @@ void KeeperStorage::loadFromSnapshot(KeeperSnapshotReader & reader)
 
     bool recalculate_digest = reader.nodes_digest == 0 && keeper_context->digestEnabled();
     nodes_digest = reader.nodes_digest;
-
-    {
-        std::lock_guard lock(storage_mutex);
-        nodes_storage->loadNodesFromSnapshot(reader, this, recalculate_digest ? &nodes_digest : nullptr);
-    }
-
+    nodes_storage->loadNodesFromSnapshot(reader, this, recalculate_digest ? &nodes_digest : nullptr);
     acl_map = std::move(reader.acl_map);
     zxid = reader.commit_zxid;
     old_snapshot_zxid = reader.old_snapshot_zxid;

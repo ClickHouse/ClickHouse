@@ -172,15 +172,26 @@ void KeeperLSMTNodesStorage::removeCommittedNode(std::string_view path)
 
 void KeeperLSMTNodesStorage::loadNodesFromSnapshot(KeeperSnapshotReader & reader, KeeperStorage * storage, uint64_t * out_digest)
 {
+    std::unique_lock lock(*storage_mutex);
+
     /// TODO: Autodetect long sorted runs, turn them directly into SortedRun-s.
     auto streams = reader.createStreams(1);
     chassert(streams.size() == 1);
     size_t path_size = 0;
     std::string path_buf;
     std::string data_buf;
-    while (streams[0]->readNodePathSize(path_size))
+    for (size_t iteration = 0;; ++iteration)
     {
-        state.throttleWrite();
+        if (!streams[0]->readNodePathSize(path_size))
+            break;
+
+        if (iteration % 100 == 0)
+        {
+            /// Give background threads a chance to look at the state and plan flushes/merges.
+            lock.unlock();
+            state.throttleWrite();
+            lock.lock();
+        }
 
         path_buf.resize(path_size);
         size_t data_size = 0;
