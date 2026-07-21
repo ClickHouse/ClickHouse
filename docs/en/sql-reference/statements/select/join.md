@@ -49,7 +49,7 @@ Additional join types available in ClickHouse are:
 | `PASTE JOIN`                                | Performs a horizontal concatenation of two tables.                                                                                          |
 
 :::note
-When [join_algorithm](../../../operations/settings/settings.md#join_algorithm) is set to `partial_merge`, `RIGHT JOIN` and `FULL JOIN` are supported only with `ALL` strictness (`SEMI`, `ANTI`, `ANY`, and `ASOF` are not supported).
+When [join_algorithm](../../../operations/settings/settings.md#join_algorithm) is set to `partial_merge`, `RIGHT JOIN` and `FULL JOIN` are supported only with `ALL` strictness (`SEMI`, `ANTI`, `ANY`, and `ASOF` are not supported). `INNER ANY JOIN` is also not supported when `any_join_distinct_right_table_keys = 0` (the default); use `prefer_partial_merge` to fall back to a capable algorithm for it.
 :::
 
 ## Settings {#settings}
