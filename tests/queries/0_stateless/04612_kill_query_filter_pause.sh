@@ -10,6 +10,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CURDIR"/../shell_config.sh
 
 query_id="kill_query_filter_pause_${CLICKHOUSE_DATABASE}_$RANDOM"
+output_file="${CLICKHOUSE_TMP}/kill_query_filter_pause_${CLICKHOUSE_DATABASE}.out"
 
 trap '${CLICKHOUSE_CLIENT} -q "SYSTEM DISABLE FAILPOINT filter_transform_pause" 2>/dev/null' EXIT
 
@@ -23,7 +24,7 @@ ${CLICKHOUSE_CLIENT} --query_id="$query_id" --query "
     WHERE sipHash64(number) % 2 = 1
     FORMAT Null
     SETTINGS max_block_size=10000000, max_threads=1, max_rows_to_read=0
-" >/dev/null 2>&1 &
+" >"$output_file" 2>&1 &
 
 # Wait for the failpoint to be hit (query is now blocked in doTransform after expression execution)
 ${CLICKHOUSE_CLIENT} -q "SYSTEM WAIT FAILPOINT filter_transform_pause PAUSE"
@@ -35,5 +36,8 @@ ${CLICKHOUSE_CURL} -sS "$CLICKHOUSE_URL" -d "KILL QUERY WHERE query_id = '$query
 ${CLICKHOUSE_CLIENT} -q "SYSTEM DISABLE FAILPOINT filter_transform_pause"
 
 wait
+
+# Assert cancellation was detected, not normal completion
+grep -oF "QUERY_WAS_CANCELLED" "$output_file" || { echo "FAIL: query was not cancelled"; exit 1; }
 
 echo "OK"
