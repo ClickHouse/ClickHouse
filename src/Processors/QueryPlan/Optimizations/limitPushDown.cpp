@@ -1,5 +1,6 @@
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
+#include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/ITransformingStep.h>
 #include <Processors/QueryPlan/LimitByStep.h>
 #include <Processors/QueryPlan/LimitStep.h>
@@ -37,6 +38,30 @@ static bool tryUpdateLimitForSortingSteps(QueryPlan::Node * node, size_t limit)
         tryUpdateLimitForSortingSteps(child, limit);
 
     return updated;
+}
+
+/// Whether any step in the plan subtree evaluates a stateful expression (e.g. `neighbor`,
+/// `runningAccumulate`, `logTrace`). Used to fence the `DistinctStep` limit hint: the distinct
+/// transforms stop reading input as soon as the hint is reached, which truncates the rows (and
+/// blocks) every stateful expression BELOW the distinct observes.
+static bool subtreeHasStatefulFunctions(const QueryPlan::Node * node)
+{
+    if (const auto * expression_step = typeid_cast<const ExpressionStep *>(node->step.get()))
+    {
+        if (expression_step->getExpression().hasStatefulFunctions())
+            return true;
+    }
+    else if (const auto * filter_step = typeid_cast<const FilterStep *>(node->step.get()))
+    {
+        if (filter_step->getExpression().hasStatefulFunctions())
+            return true;
+    }
+
+    for (const auto * child : node->children)
+        if (subtreeHasStatefulFunctions(child))
+            return true;
+
+    return false;
 }
 
 size_t tryPushDownLimit(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & /*settings*/)
@@ -111,6 +136,13 @@ size_t tryPushDownLimit(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes,
 
     if (auto * distinct = typeid_cast<DistinctStep *>(child.get()))
     {
+        /// The limit hint makes the distinct transforms stop reading input once the hint is
+        /// reached (`DistinctTransform`, `DistinctSorted*Transform`), so a stateful expression
+        /// anywhere below the distinct would see truncated input. See the sibling guard on the
+        /// generic transforming-step path below.
+        if (subtreeHasStatefulFunctions(child_node))
+            return 0;
+
         distinct->updateLimitHint(limit->getLimitForSorting());
         return 0;
     }
