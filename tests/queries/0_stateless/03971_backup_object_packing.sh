@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest
-# ^ backups need a running server with a configured 'backups' disk.
+# Tags: no-fasttest, no-asan, no-msan, no-tsan
+# ^ backups need a running server with a configured 'backups' disk; too slow under sanitizer overhead +
+#   the flaky check's 8x concurrency (trips the 180s per-test cap). Non-sanitizer builds run it in seconds.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
