@@ -340,6 +340,19 @@ public:
                 size_after_compression,
                 size);
 
+        /// `addMany` and `merge` compress immediately when growth since the previous compression
+        /// exceeds this threshold. Therefore the writer can never emit a state whose watermark
+        /// lags farther behind. Enforce the same invariant on untrusted serialized states so a
+        /// crafted watermark cannot defer compression for a point set the writer would already
+        /// have reduced.
+        if (size - size_after_compression > CONVEX_HULL_COMPRESSION_THRESHOLD)
+            throw Exception(
+                ErrorCodes::INCORRECT_DATA,
+                "Corrupted state of aggregate function {}: {} points since compression exceed the threshold {}",
+                getName(),
+                size - size_after_compression,
+                CONVEX_HULL_COMPRESSION_THRESHOLD);
+
         /// Do not pre-size the accumulator to the declared count. A corrupted state can advertise
         /// an in-range count (up to `MAX_POINTS_IN_CONVEX_HULL_STATE`) yet carry a truncated
         /// coordinate payload, so `points.resize(size)` would force an allocation for up to
