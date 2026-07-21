@@ -83,6 +83,11 @@ SELECT ([tuple('a', 1::UInt64)]::Array(Tuple(String, UInt64)) IS NOT DISTINCT FR
 -- A crossed String-vs-number subfield is still rejected null-safely
 SELECT [tuple('a', 1::UInt64)]::Array(Tuple(String, UInt64)) IS DISTINCT FROM [tuple(1::Int64, 'a')]::Array(Tuple(Int64, String)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 
+-- Array of Tuple with a nested Nullable field: regular = / != now agree with the null-safe operators
+-- (both use null-as-value element semantics).
+SELECT ([tuple(CAST(1,'Nullable(UInt64)'))]::Array(Tuple(Nullable(UInt64))) IS NOT DISTINCT FROM [tuple(CAST(1,'Nullable(Int64)'))]::Array(Tuple(Nullable(Int64)))) = ([tuple(CAST(1,'Nullable(UInt64)'))]::Array(Tuple(Nullable(UInt64))) = [tuple(CAST(1,'Nullable(Int64)'))]::Array(Tuple(Nullable(Int64))));
+SELECT ([tuple(CAST(1,'Nullable(UInt64)'))]::Array(Tuple(Nullable(UInt64))) IS DISTINCT FROM     [tuple(CAST(2,'Nullable(Int64)'))]::Array(Tuple(Nullable(Int64)))) = ([tuple(CAST(1,'Nullable(UInt64)'))]::Array(Tuple(Nullable(UInt64))) != [tuple(CAST(2,'Nullable(Int64)'))]::Array(Tuple(Nullable(Int64))));
+
 -- Top-level Nullable(Tuple(...)) with an aligned String subfield exercises the no-supertype
 -- Nullable path (executeNullableWithoutSupertype) and matches the non-Nullable value comparison.
 SET enable_nullable_tuple_type = 1;

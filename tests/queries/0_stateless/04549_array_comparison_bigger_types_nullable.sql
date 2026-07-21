@@ -71,13 +71,24 @@ SELECT ([1]::Array(Nullable(Int64))    <  [NULL]::Array(Nullable(Int64))) =  ([1
 -- incomparable element types still throw
 SELECT ['a']::Array(Nullable(String)) < [1]::Array(Nullable(Int64)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 
--- Array with nullable Tuple element still throw
-SELECT [tuple(CAST(1, 'Nullable(UInt64)'))]::Array(Tuple(Nullable(UInt64))) = [tuple(CAST(1, 'Nullable(Int64)'))]::Array(Tuple(Nullable(Int64))); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+-- Array of Tuple with a nested Nullable field: EQUALITY is comparable (array null-as-value
+-- semantics let the executor use the null-safe equals element comparator), and matches the
+-- equivalent bare-tuple / null-safe result. ORDERING has no null-safe primitive for nested NULLs,
+-- so it still throws.
+SELECT [tuple(CAST(1, 'Nullable(UInt64)'))]::Array(Tuple(Nullable(UInt64))) =  [tuple(CAST(1, 'Nullable(Int64)'))]::Array(Tuple(Nullable(Int64)));
+SELECT [tuple(CAST(1, 'Nullable(UInt64)'))]::Array(Tuple(Nullable(UInt64))) != [tuple(CAST(2, 'Nullable(Int64)'))]::Array(Tuple(Nullable(Int64)));
+SELECT [tuple(CAST(NULL, 'Nullable(UInt64)'))]::Array(Tuple(Nullable(UInt64))) = [tuple(CAST(NULL, 'Nullable(Int64)'))]::Array(Tuple(Nullable(Int64)));
+SELECT [tuple(CAST(NULL, 'Nullable(UInt64)'))]::Array(Tuple(Nullable(UInt64))) = [tuple(CAST(1, 'Nullable(Int64)'))]::Array(Tuple(Nullable(Int64)));
+-- matches the null-safe (IS NOT DISTINCT FROM) element semantics on the same values
+SELECT ([tuple(CAST(1,'Nullable(UInt64)'))]::Array(Tuple(Nullable(UInt64))) = [tuple(CAST(1,'Nullable(Int64)'))]::Array(Tuple(Nullable(Int64)))) = ((CAST(1,'Nullable(UInt64)'),) IS NOT DISTINCT FROM (CAST(1,'Nullable(Int64)'),));
+SELECT [tuple(CAST(1, 'Nullable(UInt64)'))]::Array(Tuple(Nullable(UInt64))) < [tuple(CAST(1, 'Nullable(Int64)'))]::Array(Tuple(Nullable(Int64))); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 
 -- a string vs non-string mismatch nested inside a composite element type is rejected during analysis, not at execution
 SELECT [tuple('1')]::Array(Tuple(String)) = [tuple(1)]::Array(Tuple(Int64)); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT [tuple(tuple('1'))]::Array(Tuple(Tuple(String))) = [tuple(tuple(1))]::Array(Tuple(Tuple(Int64))); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 
--- an aligned String-vs-String subfield is not itself a reason to reject, but a Nullable element in
--- another subfield makes the element comparison Nullable, which is still rejected (as before).
-SELECT [tuple('a', CAST(1, 'Nullable(UInt64)'))]::Array(Tuple(String, Nullable(UInt64))) = [tuple('a', CAST(1, 'Nullable(Int64)'))]::Array(Tuple(String, Nullable(Int64))); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+-- an aligned String-vs-String subfield with a nested Nullable field in another subfield: EQUALITY is
+-- now comparable (aligned strings are fine, and equality tolerates the Nullable element result);
+-- ORDERING still throws.
+SELECT [tuple('a', CAST(1, 'Nullable(UInt64)'))]::Array(Tuple(String, Nullable(UInt64))) = [tuple('a', CAST(1, 'Nullable(Int64)'))]::Array(Tuple(String, Nullable(Int64)));
+SELECT [tuple('a', CAST(1, 'Nullable(UInt64)'))]::Array(Tuple(String, Nullable(UInt64))) < [tuple('a', CAST(1, 'Nullable(Int64)'))]::Array(Tuple(String, Nullable(Int64))); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }

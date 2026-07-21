@@ -1,6 +1,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsComparison.h>
 #include <Functions/FunctionsLogical.h>
+#include <Functions/isNotDistinctFrom.h>
 
 namespace DB
 {
@@ -59,8 +60,11 @@ ColumnPtr FunctionComparison<NotEqualsOp, NameNotEquals>::executeArray(
     const ColumnWithTypeAndName & column_type_name1,
     size_t input_rows_count) const
 {
+    /// Array element equality is null-as-value at every nesting level, so use the null-safe equals
+    /// comparator: it returns a definite UInt8 even when a nested field is Nullable (e.g.
+    /// Tuple(Nullable(T))), and coincides with the regular comparator for non-Nullable elements.
     FunctionOverloadResolverPtr equals_resolver
-        = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionEquals>(params));
+        = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionIsNotDistinctFrom>(params));
 
     return executeArrayLexicographicImpl(
         column_type_name0,

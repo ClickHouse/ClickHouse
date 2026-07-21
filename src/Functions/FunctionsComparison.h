@@ -1571,13 +1571,22 @@ public:
                     ColumnsWithTypeAndName element_args{{nullptr, left_nested_type, ""}, {nullptr, right_nested_type, ""}};
                     DataTypePtr element_result_type = element_comparison->build(element_args)->getResultType();
 
-                    /// Supported only when the element comparison produces a non-Nullable result
-                    /// (covers the mixed signed/unsigned integer case). Reject only aligned
-                    /// string-vs-non-string positions (the legacy String<->value coercion we do not
-                    /// support element-wise); aligned String-vs-String positions are fine.
+                    /// Reject only aligned string-vs-non-string positions (the legacy String<->value
+                    /// coercion we do not support element-wise); aligned String-vs-String positions are fine.
                     bool has_string_vs_non_string = hasAlignedStringVsNonStringElement(left_nested_type, right_nested_type);
-                    if (!element_result_type->isNullable() && !element_result_type->onlyNull() && !isNothing(element_result_type)
-                        && !has_string_vs_non_string)
+
+                    /// The element comparator yields `UInt8` for the mixed signed/unsigned case. For a
+                    /// nested-`Nullable` composite element (e.g. `Tuple(Nullable(T))`) it yields
+                    /// `Nullable(UInt8)`; that is still comparable for EQUALITY, where array null-as-value
+                    /// semantics let the executor use the null-safe equals element comparator (which returns
+                    /// a definite `UInt8`). Ordering has no null-safe primitive, so it stays restricted to a
+                    /// non-`Nullable` element result.
+                    const bool is_equality = (name == NameEquals::name || name == NameNotEquals::name);
+                    const bool element_result_ok
+                        = WhichDataType(element_result_type.get()).isUInt8()
+                        || (is_equality && element_result_type->isNullable()
+                            && WhichDataType(removeNullable(element_result_type).get()).isUInt8());
+                    if (element_result_ok && !has_string_vs_non_string)
                         return std::make_shared<DataTypeUInt8>();
                 }
 
