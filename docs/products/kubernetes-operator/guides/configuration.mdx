@@ -90,8 +90,8 @@ The operator can modify an existing PVC only if the underlying StorageClass supp
 </Note>
 
 Attaching extra disks in a multi-disk (JBOD) layout, running without a persistent
-volume, expanding capacity, custom storage policies, and the rules for what cannot
-change after creation are covered in the dedicated
+volume, expanding capacity, custom storage policies, at-rest encryption, and the
+rules for what cannot change after creation are covered in the dedicated
 [Storage and volumes guide](/products/kubernetes-operator/guides/storage).
 
 ## Cluster domain {#cluster-domain}
@@ -465,6 +465,7 @@ The Secret must contain the following keys:
 | `keeper-identity`       | `clickhouse:<password>`                    | Always                     |
 | `cluster-secret`        | plaintext password                         | Always                     |
 | `named-collections-key` | hex-encoded 16-byte AES key (32 hex chars) | ClickHouse `>= 25.12` only |
+| `disk-encryption-key`   | hex-encoded 16-byte AES key (32 hex chars) | Only when `settings.encryption` is set |
 
 A complete Secret looks like this:
 
@@ -481,6 +482,7 @@ stringData:
   keeper-identity: "clickhouse:keeper-auth-password"
   cluster-secret: "cluster-internal-secret"
   named-collections-key: "0123456789abcdef0123456789abcdef"   # 32 hex chars = 16 bytes
+  disk-encryption-key: "00112233445566778899aabbccddeeff"     # only when settings.encryption is set
 ```
 
 ### Policy: Observe vs Manage {#external-secret-policy}
@@ -524,7 +526,7 @@ Possible reasons:
 The operator requeues reconciliation while the Secret is invalid, so once you add the missing keys the next reconcile picks them up automatically — no need to bounce pods.
 
 <Note>
-The set of required keys depends on the running ClickHouse version. `named-collections-key` is only validated once the operator's version probe has detected ClickHouse `25.12` or newer. On older versions the key may be absent from the Secret.
+The set of required keys depends on the running ClickHouse version. `named-collections-key` is only validated once the operator's version probe has detected ClickHouse `25.12` or newer. On older versions the key may be absent from the Secret. `disk-encryption-key` is required only when `spec.settings.encryption` is set.
 </Note>
 
 ## Additional ports {#additional-ports}
