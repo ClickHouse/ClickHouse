@@ -19,7 +19,7 @@ class Memo;
 
 /// A Full sort with a limit is a top-N: it reduces rows, so it stays in the memo as an operator
 /// (a limit-less Full sort is stripped into a sorting property). Only a Full sort takes unsorted
-/// input; FinishSorting/MergingSorted need ordered input, which no rule provides.
+/// input; `FinishSorting`/`MergingSorted` need ordered input, which no rule provides.
 bool isTopNSort(const IQueryPlanStep & step);
 
 /// Node counts the rules create speculative multi-node variants at. Returns {max_node_count} -
@@ -38,7 +38,7 @@ inline std::vector<size_t> getCandidateNodeCounts(size_t max_node_count)
 /// implementation rules or none.
 bool isDistributionPassthroughStep(const IQueryPlanStep & step);
 
-/// Builds the self-referential expression an enforcer inserts: it lives in the SOURCE
+/// Builds the self-referential expression an enforcer inserts: it lives in the source
 /// expression's group and its single input points back to the same group with relaxed
 /// requirements, so the memo search recurses into the group to satisfy them. The axis marks
 /// the expression for the cycle-avoidance rules. Only constructs - the caller still calls

@@ -211,7 +211,8 @@ void remapColumnStats(std::unordered_map<String, ColumnStats> & mapped, const Ac
             /// Add the offset, guarding against overflow when the source NDV is near the maximum.
             if (stats.num_distinct_values <= std::numeric_limits<UInt64>::max() - back_tracked.ndv_offset)
                 stats.num_distinct_values += back_tracked.ndv_offset;
-            /// A hop that changes the type (e.g. `toString(k)`) changes the value bytes with it.
+            /// A hop that changes the type (e.g. `toString(k)`) changes the value bytes, so drop the
+            /// width to unknown.
             if (!back_tracked.preserves_width)
                 stats.avg_bytes = 0;
             mapped[remapped] = stats;

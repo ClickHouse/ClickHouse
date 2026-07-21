@@ -54,7 +54,7 @@ static OptimizationEnvironment buildEnvironment(const ContextPtr & query_context
 {
     OptimizationEnvironment environment;
 
-    /// Seed the sort settings from the query so any sort added by SortingEnforcer keeps the query's
+    /// Seed the sort settings from the query so any sort added by `SortingEnforcer` keeps the query's
     /// size limits and spill thresholds instead of arbitrary defaults.
     environment.sort_settings = SortingStep::Settings(query_context->getSettingsRef());
 
@@ -109,11 +109,10 @@ void CascadesOptimizer::optimize()
 
     LOG_TEST(optimizer_context.log, "Initial memo:\n{}", optimizer_context.memo.dump());
 
-    /// Add task to optimize root group
     optimizer_context.pushTask(std::make_shared<OptimizeGroupTask>(root_group_id, root_required_properties));
 
     /// Limit the time in terms of optimization tasks instead of wall clock time. This is done for stability of generated plans regardless of system load.
-    /// Guys from MS SQL Server describe this in Andy Pavlo's seminar: https://www.youtube.com/watch?v=pQe1LQJiXN0
+    /// Microsoft SQL Server's optimizer team describes this in Andy Pavlo's seminar: https://www.youtube.com/watch?v=pQe1LQJiXN0
     const size_t executed_tasks_limit = getCascadesTaskLimitParam(query_context, DEFAULT_TASK_LIMIT);
     size_t executed_tasks_count = 0;
     for (; !optimizer_context.tasks.empty() && executed_tasks_count < executed_tasks_limit; ++executed_tasks_count)
@@ -138,7 +137,6 @@ void CascadesOptimizer::optimize()
             optimizer_context.memo.getGroupCount(), optimizer_context.tasks.size(),
             optimizer_context.tasks.top()->describe());
 
-    /// Get the best plan for the root group
     auto best_plan = buildBestPlan(root_group_id, root_required_properties, optimizer_context.memo);
 
     LOG_TEST(optimizer_context.log, "Optimized plan:\n{}", dumpQueryPlanShort(*best_plan));

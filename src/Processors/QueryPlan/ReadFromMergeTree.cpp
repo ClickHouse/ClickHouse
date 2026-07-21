@@ -5308,8 +5308,8 @@ size_t ReadFromMergeTree::setupDistributedReadBuckets(size_t target_buckets, siz
     for (const auto & span : spans)
         total_marks += span.getMarksCountAllParts();
 
-    /// Merge layers to aim for per task, fixed so the split does not depend on the machine
-    /// that builds the plan.
+    /// Target number of merge layers per task, fixed so the split does not depend on the
+    /// machine that builds the plan.
     constexpr size_t target_lanes_per_task = 16;
     const size_t layer_budget = target_buckets * target_lanes_per_task;
 

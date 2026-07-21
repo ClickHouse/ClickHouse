@@ -26,7 +26,8 @@ namespace ErrorCodes
 /// is_replicated, and sorting where needed) as the requirement - this lets the optimizer
 /// pick the cheapest source with that distribution shape.  The optimizer recursively
 /// satisfies this self-referential input through the normal task mechanism, enabling
-/// natural enforcer composition (e.g. Sort + Gather compose into Strategy A without
+/// natural enforcer composition (e.g. a sort and a gather compose into gather-then-sort,
+/// see `SortingEnforcer`, without
 /// bundling steps).
 class DistributionEnforcer : public IOptimizationRule
 {
@@ -43,7 +44,7 @@ protected:
 };
 
 /// Emits the exchange enforcers that can bridge one distribution gap, one method per
-/// exchange kind. addEnforcer centralizes the construction of the self-referential
+/// exchange kind. `addEnforcer` centralizes the construction of the self-referential
 /// enforcer expression: it lives in the source group, its single input points back to
 /// the same group with a relaxed requirement, the output distribution is the required
 /// one, and the expression carries the Distribution enforcer axis that the
@@ -132,15 +133,14 @@ void DistributionEnforcer::EnforcerEnumerator::addGather()
     input_required.distribution.node_count = expression->properties.distribution.node_count;
     input_required.distribution.is_replicated = expression->properties.distribution.is_replicated;
 
-    /// Sorting is destroyed by a regular gather.
-    addEnforcer(
+        addEnforcer(
         std::make_unique<GatherExchangeStep>(input_header, expression->properties.distribution.node_count),
         std::move(input_required));
 }
 
 /// Sorted-merge gather: N nodes -> 1 node, sorting PRESERVED.
 /// Only produced when the source expression already has sorting, so that
-/// the composition SortOnEachNode -> SortedGather yields Strategy B.
+/// sort-per-node followed by this sorted gather keeps the result sorted.
 void DistributionEnforcer::EnforcerEnumerator::addSortedGather()
 {
     ExpressionProperties input_required;

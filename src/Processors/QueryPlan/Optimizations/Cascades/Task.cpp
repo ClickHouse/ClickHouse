@@ -19,7 +19,7 @@ void OptimizeGroupTask::execute(OptimizerContext & optimizer_context)
 
     /// Skip this group only if it is already fully processed (explored + implemented +
     /// enforced) for these properties and has a satisfying plan - re-running would be a no-op.
-    /// We deliberately do NOT prune just because a current best is within a finite cost budget:
+    /// We deliberately do not prune just because a current best is within a finite cost budget:
     /// the budget is an upper bound, not a lower bound, so such pruning is unsound for
     /// optimality, and it can return before stage-3 enforcers add the distributed alternatives.
     {
@@ -37,7 +37,7 @@ void OptimizeGroupTask::execute(OptimizerContext & optimizer_context)
 
     if (!group->isExplored())
     {
-        /// Explore the group and then re-run OptimizeGroup again
+        /// Explore the group, then re-run `OptimizeGroupTask`
         optimizer_context.pushTask(std::make_shared<OptimizeGroupTask>(group_id, required_properties));
         optimizer_context.pushTask(std::make_shared<ExploreGroupTask>(group_id));
     }
@@ -58,12 +58,12 @@ void OptimizeGroupTask::execute(OptimizerContext & optimizer_context)
         ///
         /// The gate uses `isEnforcedFor` instead of `!getBestImplementation` so that
         /// enforcers always run exactly once per (group, properties) pair.  This lets
-        /// enforcer-created plans (e.g. GatherExchange on a distributed subtree) compete
+        /// enforcer-created plans (e.g. a `GatherExchange` on a distributed subtree) compete
         /// on cost with passthrough implementations that already satisfy the properties.
         ///
         /// A fixed-point loop handles enforcer composition within a single invocation:
-        /// e.g. SortingEnforcer creates Sort({N nodes, sorted}), then DistributionEnforcer
-        /// creates GatherExchange(sorted) from it - all in the same Stage 3 pass.
+        /// e.g. `SortingEnforcer` creates a sort at `{N nodes, sorted}`, then `DistributionEnforcer`
+        /// creates a sorted `GatherExchange` from it - all in the same Stage 3 pass.
 
         group->setEnforcedFor(required_properties);
 
@@ -71,8 +71,8 @@ void OptimizeGroupTask::execute(OptimizerContext & optimizer_context)
 
         if (!enforcer_expressions.empty())
         {
-            /// Push self-task FIRST so it sits at the bottom of the stack (LIFO) and
-            /// executes AFTER all OptimizeInputsTask complete.  This re-run checks
+            /// Push the self-task first so it sits at the bottom of the stack (LIFO) and
+            /// executes after all `OptimizeInputsTask` complete.  This re-run checks
             /// whether the newly created enforcer expressions need further composition.
             optimizer_context.pushTask(
                 std::make_shared<OptimizeGroupTask>(group_id, required_properties));
@@ -95,7 +95,7 @@ std::vector<GroupExpressionPtr> OptimizeGroupTask::runEnforcementStage(Optimizer
 
     /// Fixed-point loop: iterate over newly-added physical expressions until no
     /// new enforcers are produced.  Each iteration may create expressions that
-    /// enable further enforcers (e.g. Sort enables sorted GatherExchange).
+    /// enable further enforcers (e.g. a sort enables a sorted `GatherExchange`).
     size_t enforced_up_to = 0;
     bool new_enforcers_created = true;
     while (new_enforcers_created)
@@ -120,7 +120,7 @@ std::vector<GroupExpressionPtr> OptimizeGroupTask::runEnforcementStage(Optimizer
                     continue;
 
                 /// No coarse pass-local dedup here: physically identical enforcer outputs are
-                /// dropped by Group::addPhysicalExpression (structural dedup), while sources
+                /// dropped by `Group::addPhysicalExpression` (structural dedup), while sources
                 /// that differ in sort direction or distribution keep their own enforced
                 /// alternative (e.g. a sorted gather for each requested direction).
                 /// Enforcers return only the expressions they actually inserted (structural
@@ -235,7 +235,7 @@ void OptimizeInputsTask::execute(OptimizerContext & optimizer_context)
     LOG_TEST(optimizer_context.log, "OptimizeInputsTask group #{} expression {}",
         expression->group_id, expression->dump(optimizer_context.getMemo().getEnvironment().cost_config));
 
-    /// All inputs were processed?
+    /// All inputs optimized: cost the expression.
     if (input_index_to_optimize == expression->inputs.size())
     {
         const auto & cost_config = optimizer_context.getMemo().getEnvironment().cost_config;

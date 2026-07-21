@@ -175,7 +175,7 @@ bool OptimizerContext::tryUpdateBestPlanDirectly(GroupExpressionPtr expression)
 
     /// Check if all inputs are fully optimized (all stages complete) and have
     /// a satisfying implementation.  A group can be fully done with no best if
-    /// no rule could produce the required distribution (e.g. ReadFromSystemOne
+    /// no rule could produce the required distribution (e.g. `ReadFromSystemOne`
     /// at {N nodes}) - treat as pruned.
     for (const auto & input : expression->inputs)
     {
@@ -192,7 +192,7 @@ bool OptimizerContext::tryUpdateBestPlanDirectly(GroupExpressionPtr expression)
         }
     }
 
-    /// All inputs ready - compute cost directly, bypassing the OptimizeInputsTask chain.
+    /// All inputs ready - compute cost directly, bypassing the `OptimizeInputsTask` chain.
     deriveStatistics(expression->group_id);
     costAndUpdateBest(expression, /*prune_against_best=*/true);
     return true;

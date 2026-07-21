@@ -9,12 +9,12 @@
 namespace DB
 {
 
-/// Clamp an inner-join-style row-count ESTIMATE to the semantics of the join kind and strictness.
+/// Clamp an inner-join-style row-count estimate to the semantics of the join kind and strictness.
 /// `base` is the multiplicative inner estimate; `left`/`right` are the input row estimates. A
 /// directional cost heuristic, not exact cardinality. Exposed for testing.
 Float64 clampJoinRowCount(JoinKind kind, JoinStrictness strictness, Float64 base, Float64 left, Float64 right);
 
-/// A valid UPPER bound on the join output row count, given the input max counts. Unlike the estimate
+/// A valid upper bound on the join output row count, given the input max counts. Unlike the estimate
 /// clamp, this must never fall below a possible output: a FULL join over disjoint sides can emit
 /// `left + right` rows, and an ANTI join can emit the whole preserved side. `product` is
 /// `left * right`. Exposed for testing.

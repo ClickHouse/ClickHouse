@@ -1038,7 +1038,7 @@ DistributedQueryPlan makeDistributedPlan(QueryPlan::Nodes /*nodes*/, QueryPlan::
                 {
                     /// Reconcile shard counts: when one child has 1 shard and the
                     /// other has N, replicate the single-shard task to all N shards.
-                    /// This handles ReplicatedRead (data available on every node) and
+                    /// This handles `ReplicatedRead` (data available on every node) and
                     /// single-node subplans feeding into multi-node broadcast joins.
                     /// A single-shard leaf task (it carries `bucket_description`) reads the same data
                     /// on every node, so drop its routing parameters: the read ignores them, and they

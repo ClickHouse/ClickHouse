@@ -23,9 +23,9 @@ namespace ErrorCodes
 /// this operator, not by the sorting property.
 
 /// Implements a top-N sort either on a single node (gather the input, then bounded sort) or
-/// per shard (bounded sort on each node, output stays distributed and sorted).  The per-shard
-/// variant lets `DistributionEnforcer` add a sorted-merge gather, so only each shard's top-N
-/// rows cross the network.  Per-shard sorting is only valid for the partial of a two-stage
+/// per node (bounded sort on each node, output stays distributed and sorted).  The per-node
+/// variant lets `DistributionEnforcer` add a sorted-merge gather, so only each node's top-N
+/// rows cross the network.  Per-node sorting is only valid for the partial of a two-stage
 /// top-N (`TwoStageTopN`), where a coordinator limit re-applies the global bound afterwards;
 /// the original operator must keep the whole result, so it is implemented single-node only.
 class TopNImplementation : public IOptimizationRule
@@ -68,7 +68,7 @@ std::vector<GroupExpressionPtr> TopNImplementation::applyImpl(GroupExpressionPtr
     const bool is_partial = dynamic_cast<const PartialTopNStrategy *>(expression->strategy.get()) != nullptr;
     if (is_partial)
     {
-        /// Bounded sort on each shard; a sorted gather merges and a coordinator limit re-bounds.
+        /// Bounded sort on each node; a sorted gather merges and a coordinator limit re-bounds.
         for (size_t candidate : getCandidateNodeCounts(memo.getEnvironment().cluster_node_count))
             make_variant(candidate);
     }
@@ -81,7 +81,7 @@ std::vector<GroupExpressionPtr> TopNImplementation::applyImpl(GroupExpressionPtr
     return result;
 }
 
-/// Splits a top-N `SortingStep(limit=L)` into a per-shard bounded sort plus a coordinator
+/// Splits a top-N `SortingStep(limit=L)` into a per-node bounded sort plus a coordinator
 /// `Limit(L)` over the sorted-merged result, mirroring `TwoStageAggregationTransformation`:
 ///   SortingStep(limit=L) @ N nodes -> sorted GatherExchange -> Limit(L) @ 1 node
 /// The coordinator `Limit` makes this group honor its "top-L" contract independently of any
@@ -92,7 +92,7 @@ public:
     String getName() const override { return "TwoStageTopN"; }
     bool checkPattern(GroupExpressionPtr expression, const ExpressionProperties & /*required_properties*/, const Memo & memo) const override
     {
-        /// With `exact_rows_before_limit` the per-shard sorts must feed the full row count
+        /// With `exact_rows_before_limit` the per-node sorts must feed the full row count
         /// into `rows_before_limit_at_least`, but the internal cap below cuts the pipeline
         /// walk that collects those counters, so the query would report fewer rows.
         if (memo.getEnvironment().exact_rows_before_limit)
@@ -121,7 +121,7 @@ std::vector<GroupExpressionPtr> TwoStageTopN::applyImpl(GroupExpressionPtr expre
     const UInt64 limit = sorting_step->getLimit();
     const SortDescription sort_desc = sorting_step->getSortDescription();
 
-    /// Phase 1: per-shard bounded sort. Same step, marked so it is implemented per shard
+    /// Phase 1: per-node bounded sort. Same step, marked so it is implemented per node
     /// (TopNImplementation) and not split again.
     GroupExpressionPtr partial_expr = std::make_shared<GroupExpression>(sorting_step->clone());
     partial_expr->strategy = std::make_shared<PartialTopNStrategy>();

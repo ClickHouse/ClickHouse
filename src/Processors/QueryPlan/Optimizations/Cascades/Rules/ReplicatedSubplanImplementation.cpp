@@ -13,7 +13,7 @@ namespace DB
 {
 
 /// Whether this step gives the same result on every node when run over identical inputs.
-/// Steps without a proven argument refuse.  Not listed on purpose: reads have their own
+/// Steps not proven safe return false.  Not listed on purpose: reads have their own
 /// rule (`ReplicatedRead`), per-row steps are covered by `DistributionPassthrough`, top-N
 /// and LIMIT pick different rows on different nodes, and aggregations can diverge
 /// (order-dependent functions, floating-point accumulation) until a per-function gate

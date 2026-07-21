@@ -236,7 +236,7 @@ ExpressionStatistics StatisticsDerivation::deriveJoinStatistics(
             min_number_of_distinct_values = std::min(min_number_of_distinct_values, right_number_of_distinct_values);
         }
 
-        /// Estimate JOIN equality predicate selectivity as 1 / max(NDV(A), NDV(B)) based on assumption that distinct values have equal probabilities.
+        /// Estimate `JOIN` equality predicate selectivity as 1 / max(NDV(A), NDV(B)) based on assumption that distinct values have equal probabilities.
         /// An empty relation or a supplied hint can carry NDV = 0; clamp to 1, otherwise the division
         /// would produce an infinite selectivity that poisons every cost downstream.
         UInt64 max_number_of_distinct_values = std::max<UInt64>({left_number_of_distinct_values, right_number_of_distinct_values, 1});
@@ -470,7 +470,7 @@ ExpressionStatistics StatisticsDerivation::deriveSortingStatistics(const Sorting
 ExpressionStatistics StatisticsDerivation::deriveLimitStatistics(const LimitStep & limit_step, const ExpressionStatistics & input_statistics)
 {
     ExpressionStatistics result_statistics = input_statistics;
-    /// If there is no LIMIT, then limit does not change statistics
+    /// Without a `LIMIT` value the step does not change statistics
     if (limit_step.getLimit())
     {
         trimStatisticsByLimit(result_statistics, limit_step.getLimit());

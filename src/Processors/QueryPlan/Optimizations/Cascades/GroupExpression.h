@@ -64,7 +64,7 @@ public:
     bool structurallyEqualTo(const GroupExpression & other) const;
 
     GroupId group_id = INVALID_GROUP_ID;
-    std::shared_ptr<const IQueryPlanStep> plan_step;  /// Shared immutable plan step
+    std::shared_ptr<const IQueryPlanStep> plan_step;
     ImplementationStrategyPtr strategy;     /// Implementation strategy (nullptr = logical / default)
     String description_suffix;             /// Extra description set by rules (e.g., "(by col)" for single-key shuffle)
 

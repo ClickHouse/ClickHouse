@@ -180,7 +180,7 @@ std::unordered_map<String, Float64> estimateReadColumnWidths(const ReadFromMerge
 {
     const auto & storage = read_step.getStorageSnapshot()->storage;
     const auto total_rows_opt = storage.totalRows(nullptr);
-    /// The named overload adds sizes of the requested subcolumns (`Map`/`JSON` reads).
+    /// `getColumnSizes(names)` also includes the requested subcolumns' sizes (`Map`/`JSON` reads).
     const auto column_sizes = storage.getColumnSizes(read_step.getAllColumnNames());
     const Float64 total_rows = (total_rows_opt && *total_rows_opt > 0) ? Float64(*total_rows_opt) : 0;
 
@@ -266,7 +266,7 @@ std::optional<ExpressionStatistics> estimateStatistics(QueryPlan::Node & node)
         if (!read_step)
             read_step = typeid_cast<ReadFromMergeTree *>(node.children[0]->step.get());
 
-        /// estimateReadRowsCount handles FilterStep and PREWHERE sampling internally.
+        /// `estimateReadRowsCount` handles `FilterStep` and `PREWHERE` sampling internally.
         auto relation_stats = QueryPlanOptimizations::estimateReadRowsCount(node);
         if (relation_stats.estimated_rows)
         {

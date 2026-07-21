@@ -52,6 +52,7 @@ CostConfig parseCostConfig(const String & json_str)
                 value = object->getValue<Float64>(name);
         };
         read("work_weight", config.work_weight);
+        /// `cpu_weight` is accepted as a legacy alias for `work_weight`.
         if (!object->has("work_weight"))
             read("cpu_weight", config.work_weight);
         read("network_weight", config.network_weight);

@@ -1063,7 +1063,7 @@ void TaskToHostMap::fillWorkerAddresses(ContextPtr context)
 
 #if CLICKHOUSE_CLOUD
     /// When the discovery service is configured it is the only source of
-    /// workers — the statically configured cluster/host is never used as a
+    /// workers - the statically configured cluster/host is never used as a
     /// fallback, so the two can never be mixed. Discovery takes precedence when
     /// both are present.
     if (context->getConfigRef().has("stateless_worker_client.discovery_service"))
@@ -1614,7 +1614,7 @@ protected:
                 String input_stream_name = input_stream.toString();
                 task_description.exchange_stream_sources.stream_hosts[input_stream_name] = task_to_host_map->getExchangeStreamSourceHosts().at(input_stream_name);
             }
-            /// A version-1 consumer dials producers on its OWN exchange port, so the decision must
+            /// A version-1 consumer dials producers on its own exchange port, so the decision must
             /// compare against the destination worker's port, not the initiator's.
             const auto & destination_worker = task_to_host_map->getTaskHosts().at(task.task_id);
             task_description.serialization_version = chooseTaskSerializationVersion(

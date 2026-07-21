@@ -379,7 +379,7 @@ void HashJoinImplementation::StrategyEnumerator::addShuffleJoin(size_t node_coun
 }
 
 /// Single-key shuffle alternatives.
-/// For joins with 2+ equi-join keys, generate a shuffle alternative for EACH individual
+/// For joins with 2+ equi-join keys, generate a shuffle alternative for each individual
 /// key pair. This lets the cost model pick a single-key shuffle when the input is already
 /// distributed by that key, avoiding unnecessary re-shuffles.
 /// Correctness: hash join on (A=A', B=B') shuffled by only A/A' is correct because
@@ -442,9 +442,9 @@ std::vector<GroupExpressionPtr> HashJoinImplementation::applyImpl(GroupExpressio
     for (size_t candidate_node_count : candidate_node_counts)
     {
         /// Broadcast replicates the right side, so it is only safe when every output row is
-        /// driven by the partitioned left side: RIGHT and FULL emit unmatched right-side rows
-        /// on every node, and PASTE pairs rows by position. JoinCommutativity can turn RIGHT
-        /// Semi/Anti/Any into LEFT, but not RIGHT ALL or FULL.
+        /// driven by the partitioned left side: `RIGHT` and `FULL` emit unmatched right-side rows
+        /// on every node, and `PASTE` pairs rows by position. `JoinCommutativity` can turn `RIGHT`
+        /// Semi/Anti/Any into `LEFT`, but not `RIGHT ALL` or `FULL`.
         if (strategies.isBroadcastSafe())
             strategies.addBroadcastJoins(candidate_node_count);
 

@@ -17,11 +17,11 @@ class IDataType;
 
 struct ExpressionStatistics
 {
-    /// Number of row that we estimated using probabilities, histograms, heuristics, etc.
+    /// Number of rows estimated using probabilities, histograms, heuristics, etc.
     Float64 estimated_row_count = 0;
     /// Proven minimum number of rows
     Float64 min_row_count = 0;
-    /// Proven maximum number of rows. E.g. after LIMIT step
+    /// Proven maximum number of rows. E.g. after a `LIMIT` step
     Float64 max_row_count = Float64(std::numeric_limits<UInt64>::max());
 
     /// Estimated average number of bytes per row in the output of this expression.

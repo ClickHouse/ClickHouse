@@ -347,7 +347,7 @@ void optimizeTreeSecondPass(
         validateDistributedPlanBucketCounts(optimization_settings);
     const bool make_distributed_plan = optimization_settings.make_distributed_plan;
     /// Cascades runs only when both settings are on (see below); `enable_cascades_optimizer`
-    /// alone (with make_distributed_plan = 0) keeps the normal single-node optimizer.
+    /// alone (with `make_distributed_plan = 0`) keeps the normal single-node optimizer.
     const bool cascades_active = make_distributed_plan && optimization_settings.enable_cascades_optimizer;
 
     traverseQueryPlan(stack, root,
@@ -444,8 +444,8 @@ void optimizeTreeSecondPass(
                 optimizeLimitByPerPartition(frame_node, nodes, optimization_settings);
 
             /// Skip when Cascades is enabled: it treats sorting as a physical property and
-            /// strips SortingStep::Full, which this heuristic would otherwise rewrite to
-            /// FinishSorting first.
+            /// strips `SortingStep::Full`, which this heuristic would otherwise rewrite to
+            /// `FinishSorting` first.
             if (optimization_settings.read_in_order && !cascades_active)
                 optimizeReadInOrder(frame_node, nodes, optimization_settings);
 

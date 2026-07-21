@@ -48,7 +48,6 @@ bool JoinCommutativity::checkPattern(GroupExpressionPtr expression, const Expres
         join.strictness == JoinStrictness::Anti;
 }
 
-/// Make the same JOIN but with left and right inputs swapped
 static std::unique_ptr<JoinStepLogical> cloneSwapped(const JoinStepLogical & join_step)
 {
     auto swapped_join_step = cloneStepAs(join_step);
@@ -67,7 +66,7 @@ std::vector<GroupExpressionPtr> JoinCommutativity::applyImpl(GroupExpressionPtr 
 
     GroupExpressionPtr expression_with_swapped_inputs = std::make_shared<GroupExpression>(std::move(swapped_join_step));
     expression_with_swapped_inputs->inputs = {expression->inputs[1], expression->inputs[0]};
-    expression_with_swapped_inputs->setApplied(*this, {});  /// Don't apply commutativity rule to the new expression
+    expression_with_swapped_inputs->setApplied(*this, {});  /// Mark the swapped join; otherwise the rule would keep swapping it back.
     memo.getGroup(expression->group_id)->addLogicalExpression(expression_with_swapped_inputs);
 
     return {expression_with_swapped_inputs};

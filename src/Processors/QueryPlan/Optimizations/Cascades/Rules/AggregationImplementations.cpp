@@ -25,9 +25,9 @@ namespace ErrorCodes
 ///     (only applicable when node_count > 1 and there are `GROUP BY` keys)
 ///   - Partial: a non-final aggregation stays where its input is (any node count)
 ///
-/// Two-phase (partial + shuffle + merge) aggregation is handled separately by
-/// TwoStageAggregationTransformation, which splits a logical Agg into
-/// FinalAgg(PartialAgg(input)) before implementations are assigned.
+/// The two-stage split (partial + merge) is handled separately by
+/// `TwoStageAggregationTransformation`, which splits a logical aggregation into a
+/// final-merge over a partial before implementations are assigned.
 class AggregationImplementation : public IOptimizationRule
 {
 public:
@@ -59,7 +59,7 @@ public:
     void addShuffleAggregation(size_t node_count);
     void addSingleKeyShuffleAggregations(const std::vector<size_t> & candidate_node_counts);
 
-    /// See addShuffleAggregation for why each condition disables the shuffle strategy.
+    /// See `addShuffleAggregation` for why each condition disables the shuffle strategy.
     bool isShuffleApplicable() const
     {
         return !agg_step.getParams().keys.empty()
@@ -92,10 +92,10 @@ private:
 ///
 /// PartialAgg computes partial aggregate states locally on each node without finalization.
 /// FinalMergeAgg receives pre-aggregated states and merges them into final results.
-/// The exchange between the two is inserted by the DistributionEnforcer based on the
+/// The exchange between the two is inserted by the `DistributionEnforcer` based on the
 /// distribution requirements set by the implementation rules on FinalMergeAgg.
 ///
-/// This split is only attempted for aggregations that support it (canUseProjection).
+/// This split is only attempted for aggregations that support it (`canUseProjection`).
 class TwoStageAggregationTransformation : public IOptimizationRule
 {
 public:
@@ -172,8 +172,8 @@ void AggregationImplementation::StrategyEnumerator::addLocalAggregation()
 
 /// Shuffle - input pre-distributed by group keys, each node aggregates its
 /// own partition of keys and produces a final result independently.
-/// Not applicable for global aggregations (e.g. COUNT(*)) that have no group keys.
-/// Not applicable for GROUPING SETS: `params.keys` is the union of all sets' keys,
+/// Not applicable for global aggregations (e.g. `COUNT(*)`) that have no group keys.
+/// Not applicable for `GROUPING SETS`: `params.keys` is the union of all sets' keys,
 /// so shuffling by the union splits the rows of one grouping-set group across nodes.
 /// Not applicable with an overflow row: each node would emit its own overflow row.
 /// Not applicable with `max_rows_to_group_by`: the limit is a global contract, but each
@@ -191,7 +191,7 @@ void AggregationImplementation::StrategyEnumerator::addShuffleAggregation(size_t
 }
 
 /// Single-key shuffle alternatives.
-/// For aggregations with 2+ group-by keys, generate a shuffle alternative for EACH
+/// For aggregations with 2+ group-by keys, generate a shuffle alternative for each
 /// individual key. Correctness: `GROUP BY (A, B)` with data shuffled by `A` is correct
 /// because all rows with the same `(A, B)` have the same `A`, hence the same node.
 void AggregationImplementation::StrategyEnumerator::addSingleKeyShuffleAggregations(const std::vector<size_t> & candidate_node_counts)
@@ -230,7 +230,7 @@ std::vector<GroupExpressionPtr> AggregationImplementation::applyImpl(GroupExpres
 
     /// Partial (non-final) aggregation: create distributed implementations at each candidate
     /// node count. When the parent (MergingAggregated) requires `{1 node}`, the
-    /// DistributionEnforcer bridges the gap via GatherExchange - crucially on the PARTIAL
+    /// `DistributionEnforcer` bridges the gap via `GatherExchange` - on the partial
     /// output (~25 rows) rather than the raw input (~1M rows). This produces:
     ///   ParallelRead -> Expression -> PartialAgg({N nodes}) -> GatherExchange -> MergeAgg
     /// We intentionally do NOT create a `{1 node}` variant for multi-node clusters: if one
@@ -339,7 +339,7 @@ std::vector<GroupExpressionPtr> TwoStageAggregationTransformation::applyImpl(Gro
 
     /// The partial aggregation becomes its own group over the original inputs; the merge becomes
     /// a logical alternative in the original group. The merge's implementation rules will set the
-    /// distribution requirements (Local or Shuffle), causing the DistributionEnforcer to insert
+    /// distribution requirements (Local or Shuffle), causing the `DistributionEnforcer` to insert
     /// the appropriate exchange before the partial step.
     GroupExpressionPtr partial_expr = std::make_shared<GroupExpression>(std::move(partial_step_ptr));
     auto merge_expr = addTwoStageSplit(memo, expression, std::move(partial_expr), std::move(merge_step_ptr), {});

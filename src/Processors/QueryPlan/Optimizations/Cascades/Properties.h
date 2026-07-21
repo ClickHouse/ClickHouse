@@ -21,7 +21,7 @@ struct DistributionDescription
     /// types agree). Aligns buckets across both sides of a shuffle join.
     Names hash_type_names;
     bool is_replicated = false;     /// All data is replicated to all nodes, so any distribution is satisfied. E.g. for small tables that are broadcasted to all nodes.
-    size_t node_count = 1;          /// Number of nodes among which data is distributed. E.g. for shuffle exchange of partitioned read.
+    size_t node_count = 1;          /// Number of nodes among which data is distributed. E.g. for a shuffle exchange or a partitioned read.
 
     bool operator==(const DistributionDescription & other) const = default;
 
@@ -62,7 +62,7 @@ struct ExpressionPropertiesHash
         for (const auto & type_name : props.distribution.hash_type_names)
             boost::hash_combine(h, type_name);
         /// Hash exactly the fields SortColumnDescription::operator== compares, so the hash is
-        /// consistent with equality (ORDER BY k ASC and k DESC must hash differently).
+        /// consistent with equality (`ORDER BY k ASC` and k DESC must hash differently).
         for (const auto & col : props.sorting)
         {
             boost::hash_combine(h, col.column_name);
