@@ -18,10 +18,12 @@ struct ComparisonOrderDomain
         String,
         Date,
         TimePoint,
+        Decimal,
     };
 
     Kind kind = Kind::None;
-    /// Tick scale for TimePoint (DateTime -> 0, DateTime64(s) -> s)
+    /// Tick scale for TimePoint (DateTime -> 0, DateTime64(s) -> s) and fraction scale for Decimal.
+    /// Equal-scale values compare their underlying integers directly, without a throwing rescale.
     UInt32 scale = 0;
 
     bool isValid() const

@@ -52,6 +52,14 @@ FROM values(
     ('2299-12-31 23:59:59', '2000-01-02 00:00:00'))
 WHERE a > b AND b > toDateTime64('2000-01-01 00:00:00.000000001', 9, 'UTC');
 
+-- Comparing `Decimal` of different scales rescales the values and can throw `DECIMAL_OVERFLOW`,
+-- so an inferred mixed-scale comparison may fail on valid data.
+SELECT 'decimal mixed scales', count()
+FROM values(
+    'a Decimal64(0), b Decimal64(0)',
+    ('999999999999999999', '1'))
+WHERE a > b AND b > toDecimal64('0.5', 1);
+
 -- Keep deriving conditions inside explicitly supported domains.
 SELECT
     'safe domains remain optimized',
@@ -141,5 +149,36 @@ SELECT
      FROM (EXPLAIN QUERY TREE
            SELECT * FROM values('a DateTime64(3, \'UTC\'), b DateTime64(3, \'UTC\')', ('2020-01-01 00:00:00.1', '2020-01-01 00:00:00.2'))
            WHERE a < b AND b < toDateTime64('2020-01-01 00:00:00.3', 3, 'UTC')
+           SETTINGS optimize_and_compare_chain = 0)
+     WHERE explain LIKE '%function_name: less,%');
+
+-- Equal-scale decimals compare their underlying integers directly, regardless of width.
+-- Keep deriving conditions inside the per-scale `Decimal` domain.
+SELECT
+    'decimal same scale remains optimized',
+    (SELECT count()
+     FROM (EXPLAIN QUERY TREE
+           SELECT * FROM values('a Decimal64(2), b Decimal64(2)', ('1.00', '2.00'))
+           WHERE a < b AND b < toDecimal64('3.00', 2)
+           SETTINGS optimize_and_compare_chain = 1)
+     WHERE explain LIKE '%function_name: less,%')
+        >
+    (SELECT count()
+     FROM (EXPLAIN QUERY TREE
+           SELECT * FROM values('a Decimal64(2), b Decimal64(2)', ('1.00', '2.00'))
+           WHERE a < b AND b < toDecimal64('3.00', 2)
+           SETTINGS optimize_and_compare_chain = 0)
+     WHERE explain LIKE '%function_name: less,%'),
+    (SELECT count()
+     FROM (EXPLAIN QUERY TREE
+           SELECT * FROM values('a Decimal64(2), b Decimal128(2)', ('1.00', '2.00'))
+           WHERE a < b AND b < toDecimal64('3.00', 2)
+           SETTINGS optimize_and_compare_chain = 1)
+     WHERE explain LIKE '%function_name: less,%')
+        >
+    (SELECT count()
+     FROM (EXPLAIN QUERY TREE
+           SELECT * FROM values('a Decimal64(2), b Decimal128(2)', ('1.00', '2.00'))
+           WHERE a < b AND b < toDecimal64('3.00', 2)
            SETTINGS optimize_and_compare_chain = 0)
      WHERE explain LIKE '%function_name: less,%');

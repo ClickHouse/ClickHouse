@@ -21,6 +21,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeUUID.h>
+#include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/NumberTraits.h>
 #include <DataTypes/getLeastSupertype.h>
@@ -770,6 +771,10 @@ private:
             return {.kind = Kind::TimePoint, .scale = 0};
         if (const auto * datetime64_type = typeid_cast<const DataTypeDateTime64 *>(nested_type.get()))
             return {.kind = Kind::TimePoint, .scale = datetime64_type->getScale()};
+        /// Equal-scale decimals compare their underlying integers directly (regardless of width);
+        /// mixed scales rescale and can throw `DECIMAL_OVERFLOW`, so the scale keys the domain.
+        if (isDecimal(nested_type))
+            return {.kind = Kind::Decimal, .scale = getDecimalScale(*nested_type)};
         return {};
     }
 
