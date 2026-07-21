@@ -46,21 +46,42 @@ INNER JOIN (
 WHERE event_name LIKE 'af_%' AND toFloat64OrZero(event_revenue_usd) > 0
 SETTINGS enable_parallel_replicas = 2, max_parallel_replicas = 3, cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost', automatic_parallel_replicas_mode = 0; -- { serverError SUPPORT_IS_DISABLED }
 
--- R1: nested alias over `remote` stays a loud error (documented limitation).
+-- R1: the nested-alias `USING` key is rejected on the initiator before shipping (guard fires first), not a shard-side re-analysis failure.
 SELECT uniqExact(lower(if(platform = 'android', advertising_id, idfv)) AS id) AS users_pay
 FROM remote('127.0.0.{1,2}', currentDatabase(), events) AS iap
 INNER JOIN (
     SELECT lower(if(platform = 'ios', idfv, advertising_id)) AS id, min(event_date) AS InstallDate
     FROM events WHERE event_name = 'install' GROUP BY id
 ) AS sub USING (id)
-WHERE event_name LIKE 'af_%' AND toFloat64OrZero(event_revenue_usd) > 0; -- { serverError UNKNOWN_IDENTIFIER }
+WHERE event_name LIKE 'af_%' AND toFloat64OrZero(event_revenue_usd) > 0; -- { serverError UNSUPPORTED_METHOD }
 
--- R2: the `join_use_nulls` LEFT variant over `remote`, same expectation.
+-- R2: the `join_use_nulls` LEFT variant is rejected the same way, on the initiator.
 SELECT uniqExact(lower(if(platform = 'android', advertising_id, idfv)) AS id) AS users_pay
 FROM remote('127.0.0.{1,2}', currentDatabase(), events) AS iap
 LEFT JOIN (SELECT lower(if(platform = 'ios', idfv, advertising_id)) AS id FROM events WHERE event_name = 'install' GROUP BY id) AS sub USING (id)
 WHERE event_name LIKE 'af_%'
-SETTINGS join_use_nulls = 1; -- { serverError UNKNOWN_IDENTIFIER }
+SETTINGS join_use_nulls = 1; -- { serverError UNSUPPORTED_METHOD }
+
+-- R3: the owner's minimal repro; the nested-alias `id` in `USING` over `remote` is rejected on the initiator.
+CREATE TABLE t_shadow (x UInt64) ENGINE = MergeTree ORDER BY x;
+INSERT INTO t_shadow VALUES (1);
+
+SELECT sum(x + 10 AS id)
+FROM remote('127.0.0.{1,2}', currentDatabase(), t_shadow) AS tsh
+JOIN (SELECT 11 AS id) t2 USING (id); -- { serverError UNSUPPORTED_METHOD }
+
+-- R4: shadowing variant (previously silent wrong data); the alias `id` shadows a real column, still rejected.
+CREATE TABLE t_shadow2 (x UInt64, id UInt64) ENGINE = MergeTree ORDER BY x;
+INSERT INTO t_shadow2 VALUES (1, 5);
+
+SELECT sum(x + 10 AS id)
+FROM remote('127.0.0.{1,2}', currentDatabase(), t_shadow2) AS tsh
+JOIN (SELECT 11 AS id) t2 USING (id); -- { serverError UNSUPPORTED_METHOD }
+
+-- R5: `ALIAS`-column positive control; a table `ALIAS` column is excluded from the guard, so this ships and returns.
+CREATE TABLE t_aliascol (x UInt64, id UInt64 ALIAS x + 100) ENGINE = MergeTree ORDER BY x;
+INSERT INTO t_aliascol VALUES (1);
+SELECT count() FROM remote('127.0.0.{1,2}', currentDatabase(), t_aliascol) AS ta JOIN (SELECT 101 AS id) t2 USING (id);
 
 -- T1: top-level aliases keep working over `remote` (control; no downgrade, no error).
 -- Each left row is read once per shard, so the single-shard result is duplicated; ORDER BY makes it deterministic.
@@ -82,3 +103,6 @@ DROP TABLE events;
 DROP TABLE t1;
 DROP TABLE t2;
 DROP TABLE t3;
+DROP TABLE t_shadow;
+DROP TABLE t_shadow2;
+DROP TABLE t_aliascol;
