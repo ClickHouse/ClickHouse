@@ -27,3 +27,13 @@ RIGHT ANTI JOIN GROUP BY l.k (bug_dl padded), optimize=1 equals optimize=0 (anal
 1
 RIGHT ANTI JOIN GROUP BY l.k (bug_dl padded), optimize=1 equals optimize=0 (old analyzer)
 1
+DISTINCT l.k over RIGHT JOIN (bug_dl padded), optimize=1 equals optimize=0 (analyzer)
+1
+DISTINCT l.k over RIGHT JOIN (bug_dl padded), optimize=1 equals optimize=0 (old analyzer)
+1
+LIMIT 1 BY l.k over RIGHT JOIN (bug_dl padded), optimize=1 equals optimize=0 (analyzer)
+1
+LIMIT 1 BY l.k over RIGHT JOIN (bug_dl padded), optimize=1 equals optimize=0 (old analyzer)
+1
+DISTINCT r.k over LEFT JOIN (foreign column name), optimize=1 equals optimize=0 (analyzer)
+1
