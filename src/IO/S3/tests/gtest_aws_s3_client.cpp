@@ -860,6 +860,8 @@ public:
     {
         server->start();
     }
+    /// See `~TestPocoHTTPServer`.
+    ~FixedETagServer() { server->stopAll(/* abortCurrent */ true); }
     std::string getUrl() const { return "http://" + server_socket->address().toString(); }
 private:
     std::unique_ptr<Poco::Net::ServerSocket> server_socket;
@@ -929,6 +931,8 @@ public:
     {
         server->start();
     }
+    /// See `~TestPocoHTTPServer`.
+    ~IfMatchAwareServer() { server->stopAll(/* abortCurrent */ true); }
     std::string getUrl() const { return "http://" + server_socket->address().toString(); }
 private:
     std::unique_ptr<Poco::Net::ServerSocket> server_socket;

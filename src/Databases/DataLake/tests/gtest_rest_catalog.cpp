@@ -229,7 +229,12 @@ public:
 
     ~RestCatalogTestServer()
     {
-        server->stop();
+        /// Abort keep-alive connections instead of waiting out their timeout: the client side
+        /// stays parked in the global connection pool, and a gracefully stopped server would
+        /// leave each handler thread occupying the shared default `Poco::ThreadPool` (capacity
+        /// 16 for the whole test binary) until the keep-alive expires, starving the mock
+        /// servers of later tests.
+        server->stopAll(/* abortCurrent */ true);
     }
 
     std::string getUrl() const

@@ -74,6 +74,16 @@ public:
         server->start();
     }
 
+    ~TestPocoHTTPServer()
+    {
+        /// Abort keep-alive connections instead of waiting out their timeout: the client side
+        /// stays parked in the global connection pool, and a gracefully stopped server would
+        /// leave each handler thread occupying the shared default `Poco::ThreadPool` (capacity
+        /// 16 for the whole test binary) until the keep-alive expires, starving the mock
+        /// servers of later tests.
+        server->stopAll(/* abortCurrent */ true);
+    }
+
     std::string getUrl()
     {
         return "http://" + server_socket->address().toString();
@@ -170,6 +180,12 @@ public:
         server(std::make_unique<Poco::Net::HTTPServer>(handler_factory, *server_socket, server_params))
     {
         server->start();
+    }
+
+    /// See `~TestPocoHTTPServer`.
+    ~TestPocoHTTPStsServer()
+    {
+        server->stopAll(/* abortCurrent */ true);
     }
 
     std::string getUrl()
