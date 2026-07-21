@@ -195,7 +195,7 @@ public:
         size_t num_rows,
         VectorWithMemoryTracking<String> & out,
         const IColumn::Permutation * permutation,
-        const UInt8 * null_map = nullptr) const override
+        const UInt8 * null_map) const override
     {
         /// Match the base class no-op for empty batches: avoid touching the payload
         /// (and a possible NOT_IMPLEMENTED from an unsupported nested type).

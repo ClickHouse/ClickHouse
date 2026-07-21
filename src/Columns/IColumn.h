@@ -379,12 +379,17 @@ public:
     /// wrapper's null flag is the whole encoding of a NULL row. This keeps NULL
     /// rows from materializing hidden nested payload and avoids a second copy.
     /// Default implementation calls serializeAsComparable in a loop.
+    ///
+    /// Precondition: when `permutation` is non-null it must contain exactly
+    /// `num_rows` entries and every entry must be < `size()`. The caller is
+    /// responsible for validating this; the implementation indexes
+    /// `(*permutation)[r]` directly without bounds checking.
     using Permutation = IColumnPermutation;
     virtual void batchSerializeAsComparable(
         size_t num_rows,
         VectorWithMemoryTracking<String> & out,
         const Permutation * permutation,
-        const UInt8 * null_map = nullptr) const;
+        const UInt8 * null_map) const;
 
     /// Deserializes a value that was serialized using IColumn::serializeValueIntoArena method.
     /// Note that it needs to deal with user input

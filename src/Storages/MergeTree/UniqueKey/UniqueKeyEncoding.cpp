@@ -51,7 +51,7 @@ void encodeBlock(
 
     for (const auto & col_ptr : columns)
     {
-        col_ptr->batchSerializeAsComparable(num_rows, out, permutation);
+        col_ptr->batchSerializeAsComparable(num_rows, out, permutation, nullptr);
 
         for (size_t r = 0; r < num_rows; ++r)
         {
