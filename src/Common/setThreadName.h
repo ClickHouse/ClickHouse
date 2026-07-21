@@ -1,5 +1,6 @@
 #pragma once
 
+#include <string>
 #include <string_view>
 
 namespace DB
@@ -197,6 +198,16 @@ enum class ThreadName : uint8_t
   */
 void setThreadName(ThreadName name);
 ThreadName getThreadName();
+
+/// Raw OS-level thread name (comm). Unlike getThreadName, does not collapse names that are
+/// absent from the ThreadName enum to UNKNOWN: e.g. for a thread that was never renamed the
+/// OS reports the binary name ("clickhouse" for the server's main thread), and tools such as
+/// `pkill clickhouse` or `ps -C clickhouse` match against exactly that comm value.
+std::string getThreadNameRaw();
+
+/// Restore a name previously obtained from getThreadNameRaw. An empty name (the raw read can
+/// return one in restricted environments where prctl is unavailable) is a no-op.
+void setThreadNameRaw(const std::string & name);
 
 std::string_view toString(ThreadName name);
 

@@ -35,8 +35,11 @@ ThreadGroupPtr getCurrentThreadGroup();
 class ScopedThreadAttributes : private boost::noncopyable
 {
 public:
-    /// Name: if thread_name is not UNKNOWN, calls setThreadName and restores the previous name
-    /// in the destructor, regardless of the group logic below.
+    /// Name: if thread_name is not UNKNOWN, calls setThreadName regardless of the group logic
+    /// below. The previous name is restored in the destructor, except after a successful attach
+    /// from a detached thread: there the new name is intentionally left in place, because
+    /// ThreadPoolImpl::worker reads it after the job returns to name the tracing span
+    /// (and resets it on the next iteration).
     /// Group: if thread_group_ is nullptr or equal to the current thread group, does nothing.
     /// allow_existing_group:
     ///  * If false, asserts that the thread is not already attached to a different group.
@@ -49,9 +52,10 @@ private:
     ThreadStatus * prev_thread = nullptr;
     ThreadGroupPtr prev_thread_group;
     ThreadGroupPtr thread_group;
-    /// Name before the rename, restored in the destructor. A separate bool gates the restore
-    /// because UNKNOWN is a valid saved name, not a sentinel.
-    ThreadName prev_thread_name = ThreadName::UNKNOWN;
+    /// Raw OS name before the rename, restored in the destructor. Raw, not a ThreadName:
+    /// a thread that was never renamed carries the binary name (e.g. "clickhouse" for the
+    /// server's main thread), which has no enum value and must be restored verbatim.
+    std::string prev_thread_name;
     bool should_restore_prev_thread_name = false;
 };
 

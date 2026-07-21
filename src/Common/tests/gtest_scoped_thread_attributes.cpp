@@ -163,4 +163,59 @@ TEST(ScopedThreadAttributes, SwitchesNameIndependentlyOfGroup)
     t.join();
 }
 
+/// A thread that was never renamed carries the binary name as its OS comm (e.g. "clickhouse"
+/// for the server's main thread), which has no ThreadName enum value. The destructor must
+/// restore that name verbatim: collapsing it through the enum would write "Unknown" as the
+/// comm, permanently breaking tools that match the process by its original comm, such as
+/// `pkill clickhouse` and `ps -C clickhouse` (integration tests restart the server that way).
+TEST(ScopedThreadAttributes, RestoresNameAbsentFromEnum)
+{
+    std::thread t([&]
+    {
+        ThreadStatus ts;
+        setThreadNameRaw("clickhouse");
+        ASSERT_EQ(getThreadNameRaw(), "clickhouse");
+        ASSERT_EQ(getThreadName(), ThreadName::UNKNOWN);
+
+        {
+            ScopedThreadAttributes scoped_attributes(nullptr, ThreadName::S3_COPY_POOL);
+            EXPECT_EQ(getThreadName(), ThreadName::S3_COPY_POOL);
+        }
+
+        EXPECT_EQ(getThreadNameRaw(), "clickhouse")
+            << "a comm absent from the ThreadName enum must be restored verbatim, not as 'Unknown'";
+    });
+    t.join();
+}
+
+/// After a successful attach from a detached thread the destructor must leave the new NAME in
+/// place (while still detaching the group): ThreadPoolImpl::worker reads the name after the job
+/// returns to give the tracing span a readable operation name, and resets it on the next
+/// iteration. Restoring the name here would make tracing fall back to demangled lambda names.
+TEST(ScopedThreadAttributes, KeepsNameAfterAttachFromDetachedThread)
+{
+    std::thread t([&]
+    {
+        ThreadStatus ts;
+        auto context = getContext().context;
+        auto G1 = std::make_shared<ThreadGroup>(context, 0);
+
+        setThreadName(ThreadName::DEFAULT_THREAD_POOL);
+        ASSERT_EQ(getCurrentThreadGroup(), nullptr);
+
+        {
+            ScopedThreadAttributes scoped_attributes(G1, ThreadName::MERGE_MUTATE);
+            EXPECT_EQ(getThreadName(), ThreadName::MERGE_MUTATE);
+            EXPECT_EQ(getCurrentThreadGroup(), G1);
+        }
+
+        EXPECT_EQ(getCurrentThreadGroup(), nullptr)
+            << "the destructor must detach the group attached from a detached thread";
+        EXPECT_EQ(getThreadName(), ThreadName::MERGE_MUTATE)
+            << "the name must be left in place after a successful attach from a detached thread, "
+               "so the thread pool worker can use it as the tracing span operation name";
+    });
+    t.join();
+}
+
 } // namespace DB

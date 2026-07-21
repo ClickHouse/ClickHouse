@@ -181,6 +181,57 @@ void setThreadName(ThreadName name)
 #endif
 }
 
+std::string getThreadNameRaw()
+{
+#if defined(OS_DARWIN)
+    char tmp_thread_name[THREAD_NAME_SIZE] = {};
+    if (pthread_getname_np(pthread_self(), tmp_thread_name, THREAD_NAME_SIZE))
+        throw DB::Exception(DB::ErrorCodes::PTHREAD_ERROR, "Cannot get thread name with pthread_getname_np()");
+    return std::string(tmp_thread_name);
+#elif defined(OS_SUNOS) || defined(OS_FREEBSD)
+    /// The OS-level name is not read on these systems (see getThreadName); fall back to the cache.
+    return std::string(toString(thread_name));
+#else
+    char tmp_thread_name[THREAD_NAME_SIZE] = {};
+    if (0 != prctl(PR_GET_NAME, tmp_thread_name, 0, 0, 0))
+        if (errno != ENOSYS && errno != EPERM)    /// It's ok if the syscall is unsupported or not allowed in some environments.
+            throw DB::ErrnoException(DB::ErrorCodes::PTHREAD_ERROR, "Cannot get thread name with prctl(PR_GET_NAME)");
+    return std::string(tmp_thread_name);
+#endif
+}
+
+void setThreadNameRaw(const std::string & name)
+{
+    /// The raw read can return an empty name in restricted environments where prctl is
+    /// unavailable; there is nothing meaningful to restore then.
+    if (name.empty())
+        return;
+
+    if (name.size() >= THREAD_NAME_SIZE)
+        throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Thread name cannot be longer than 15 bytes");
+
+#if defined(OS_FREEBSD)
+    pthread_set_name_np(pthread_self(), name.c_str());
+    if ((false))
+#elif defined(OS_DARWIN)
+    if (0 != pthread_setname_np(name.c_str()))
+#elif defined(OS_SUNOS)
+    if ((false))
+#else
+    if (0 != prctl(PR_SET_NAME, name.c_str(), 0, 0, 0))
+#endif
+        if (errno != ENOSYS && errno != EPERM)    /// It's ok if the syscall is unsupported or not allowed in some environments.
+            throw DB::ErrnoException(DB::ErrorCodes::PTHREAD_ERROR, "Cannot set thread name with prctl(PR_SET_NAME, ...)");
+
+    /// Keep the enum cache consistent: a name absent from the enum parses to UNKNOWN, which
+    /// makes the next getThreadName re-read the OS name instead of trusting a stale cache.
+    thread_name = parseThreadName(name);
+
+#if USE_JEMALLOC
+    DB::Jemalloc::setValue("thread.prof.name", name.c_str());
+#endif
+}
+
 ThreadName getThreadName()
 {
     if (thread_name != ThreadName::UNKNOWN)

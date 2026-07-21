@@ -35,7 +35,12 @@ ScopedThreadAttributes::ScopedThreadAttributes(ThreadGroupPtr thread_group_, Thr
     {
         try
         {
-            prev_thread_name = getThreadName();
+            /// Save the raw OS name, not the ThreadName enum: for a thread that was never
+            /// renamed the OS reports the binary name (e.g. "clickhouse" for the server's
+            /// main thread), which has no enum value. Restoring through the enum would write
+            /// "Unknown" as the comm, permanently breaking tools that match the process by
+            /// its original comm, such as `pkill clickhouse` and `ps -C clickhouse`.
+            prev_thread_name = getThreadNameRaw();
             should_restore_prev_thread_name = true;
             setThreadName(thread_name);
         }
@@ -80,6 +85,15 @@ ScopedThreadAttributes::ScopedThreadAttributes(ThreadGroupPtr thread_group_, Thr
         {
             throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure after attachToGroup");
         });
+
+        /// A successful attach from a detached thread intentionally leaves the new name in place
+        /// after the scope ends: ThreadPoolImpl::worker reads the name after the job returns to
+        /// give the tracing span a readable operation name (the worker resets it on the next
+        /// iteration). The name is restored only for the pure-rename cases (no group, already
+        /// attached to the target group) and for the borrowed-thread case, which restores the
+        /// previous group together with its name.
+        if (!prev_thread_group)
+            should_restore_prev_thread_name = false;
     }
     catch (...)
     {
@@ -140,7 +154,7 @@ ScopedThreadAttributes::~ScopedThreadAttributes()
         try
         {
             LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
-            setThreadName(prev_thread_name);
+            setThreadNameRaw(prev_thread_name);
         }
         catch (...)
         {
