@@ -3,7 +3,7 @@
         <url_routing_validation>
             <url>/write</url>
             <handler>
-                <type>write</type>
+                <type>prometheus_write</type>
                 <table>default.prometheus</table>
                 <enable_table_name_url_routing>false</enable_table_name_url_routing>
             </handler>

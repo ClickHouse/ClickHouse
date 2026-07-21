@@ -674,13 +674,13 @@ def test_prometheus_url_routing_config_validation():
 
     try:
         cluster.start()
-        for handler_type in ("remote_read", "query_api"):
+        for handler_type in ("prometheus_remote_read", "prometheus_query_api"):
             expected_message = (
                 "`enable_table_name_url_routing` is not supported for Prometheus "
                 f"handler type `{handler_type}`"
             )
             assert_config_is_rejected(
-                [("<type>write</type>", f"<type>{handler_type}</type>")],
+                [("<type>prometheus_write</type>", f"<type>{handler_type}</type>")],
                 expected_message,
             )
 
@@ -699,7 +699,7 @@ def test_prometheus_url_routing_config_validation():
         )
         assert_config_is_rejected(
             [
-                ("<type>write</type>", "<type>prometheus_api_v1</type>"),
+                ("<type>prometheus_write</type>", "<type>prometheus_api_v1</type>"),
                 ("<table>default.prometheus</table>", "<database>default</database>"),
                 (
                     "<enable_table_name_url_routing>false</enable_table_name_url_routing>",
