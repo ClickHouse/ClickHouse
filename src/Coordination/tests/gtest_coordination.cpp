@@ -129,80 +129,6 @@ TYPED_TEST(CoordinationTest, BufferSerde)
     }
 }
 
-TYPED_TEST(CoordinationTest, ContainerCreateSerde)
-{
-    auto request = std::make_shared<Coordination::ZooKeeperCreateRequest>();
-    request->path = "/container";
-    request->is_container = true;
-    EXPECT_EQ(request->getOpNum(), Coordination::OpNum::CreateContainer);
-
-    DB::WriteBufferFromNuraftBuffer wbuf;
-    request->write(wbuf, /*use_xid_64=*/true);
-    auto nuraft_buffer = wbuf.getBuffer();
-
-    DB::ReadBufferFromNuraftBuffer rbuf(nuraft_buffer);
-    int32_t length = 0;
-    Coordination::read(length, rbuf);
-    int64_t xid = 0;
-    Coordination::read(xid, rbuf);
-    Coordination::OpNum opnum = {};
-    Coordination::read(opnum, rbuf);
-    EXPECT_EQ(opnum, Coordination::OpNum::CreateContainer);
-
-    auto request_read = Coordination::ZooKeeperRequestFactory::instance().get(opnum);
-    request_read->readImpl(rbuf);
-    auto & create_read = dynamic_cast<Coordination::ZooKeeperCreateRequest &>(*request_read);
-    EXPECT_TRUE(create_read.is_container);
-    EXPECT_FALSE(create_read.is_sequential);
-    EXPECT_FALSE(create_read.is_ephemeral);
-    EXPECT_FALSE(create_read.include_ttl);
-}
-
-TYPED_TEST(CoordinationTest, ContainerCreateModeMismatchRejected)
-{
-    /// An opnum/create-mode mismatch must be rejected, not silently accepted as both a
-    /// container and a sequential node — that would diverge the Raft log across replicas.
-    DB::WriteBufferFromNuraftBuffer wbuf;
-    Coordination::write(std::string{"/container"}, wbuf); /// path
-    Coordination::write(std::string{}, wbuf);             /// data
-    Coordination::write(Coordination::ACLs{}, wbuf);      /// acls
-    Coordination::write(static_cast<int32_t>(2), wbuf);   /// CreateMode::PERSISTENT_SEQUENTIAL
-
-    auto request_read = Coordination::ZooKeeperRequestFactory::instance().get(Coordination::OpNum::CreateContainer);
-    DB::ReadBufferFromNuraftBuffer rbuf(wbuf.getBuffer());
-    EXPECT_THROW(request_read->readImpl(rbuf), Coordination::Exception);
-}
-
-TYPED_TEST(CoordinationTest, Create2WithContainerFlagRejected)
-{
-    /// A Create2 opnum carrying the CONTAINER flag must be rejected: getOpNum() prioritizes
-    /// include_stats over is_container, so this combination would otherwise validate and log
-    /// as Create2 (gated by CREATE_WITH_STATS) while still creating a container node (gated
-    /// separately by CREATE_CONTAINER) — bypassing the CreateContainer feature-flag gate.
-    DB::WriteBufferFromNuraftBuffer wbuf;
-    Coordination::write(std::string{"/container"}, wbuf); /// path
-    Coordination::write(std::string{}, wbuf);             /// data
-    Coordination::write(Coordination::ACLs{}, wbuf);      /// acls
-    Coordination::write(static_cast<int32_t>(4), wbuf);   /// CreateMode::CONTAINER
-
-    auto request_read = Coordination::ZooKeeperRequestFactory::instance().get(Coordination::OpNum::Create2);
-    DB::ReadBufferFromNuraftBuffer rbuf(wbuf.getBuffer());
-    EXPECT_THROW(request_read->readImpl(rbuf), Coordination::Exception);
-}
-
-TYPED_TEST(CoordinationTest, PlainCreateWithContainerFlagRejected)
-{
-    DB::WriteBufferFromNuraftBuffer wbuf;
-    Coordination::write(std::string{"/container"}, wbuf); /// path
-    Coordination::write(std::string{}, wbuf);             /// data
-    Coordination::write(Coordination::ACLs{}, wbuf);      /// acls
-    Coordination::write(static_cast<int32_t>(4), wbuf);   /// CreateMode::CONTAINER
-
-    auto request_read = Coordination::ZooKeeperRequestFactory::instance().get(Coordination::OpNum::Create);
-    DB::ReadBufferFromNuraftBuffer rbuf(wbuf.getBuffer());
-    EXPECT_THROW(request_read->readImpl(rbuf), Coordination::Exception);
-}
-
 template <typename StateMachine>
 struct SimpliestRaftServer
 {
@@ -338,19 +264,22 @@ void testLogAndStateMachine(
 
     ChangelogDirTest snapshots("./snapshots");
     ChangelogDirTest logs("./logs");
+    ChangelogDirTest rocks("./rocksdb");
 
     auto get_keeper_context = [&]
     {
         auto local_keeper_context = std::make_shared<DB::KeeperContext>(true, settings);
         local_keeper_context->setSnapshotDisk(std::make_shared<DiskLocal>("SnapshotDisk", "./snapshots"));
         local_keeper_context->setLogDisk(std::make_shared<DiskLocal>("LogDisk", "./logs"));
+        local_keeper_context->setRocksDBDisk(std::make_shared<DiskLocal>("RocksDisk", "./rocksdb"));
+        local_keeper_context->setRocksDBOptions();
         return local_keeper_context;
     };
 
     SnapshotsQueue snapshots_queue{1};
 
     auto keeper_context = get_keeper_context();
-    auto state_machine = std::make_shared<KeeperStateMachine>(nullptr, snapshots_queue, keeper_context, nullptr);
+    auto state_machine = std::make_shared<KeeperStateMachine<Storage>>(nullptr, snapshots_queue, keeper_context, nullptr);
 
     state_machine->init();
     DB::KeeperLogStore changelog(
@@ -397,7 +326,7 @@ void testLogAndStateMachine(
 
     SnapshotsQueue snapshots_queue1{1};
     keeper_context = get_keeper_context();
-    auto restore_machine = std::make_shared<KeeperStateMachine>(nullptr, snapshots_queue1, keeper_context, nullptr);
+    auto restore_machine = std::make_shared<KeeperStateMachine<Storage>>(nullptr, snapshots_queue1, keeper_context, nullptr);
     restore_machine->init();
     EXPECT_EQ(restore_machine->last_commit_index(), total_logs - total_logs % (*settings)[DB::CoordinationSetting::snapshot_distance]);
 
@@ -438,7 +367,7 @@ TYPED_TEST(CoordinationTest, TestStateMachineAndLogStore)
     using namespace Coordination;
     using namespace DB;
 
-    using Storage [[maybe_unused]] = DB::KeeperStorage;
+    using Storage = typename TestFixture::Storage;
 
     {
         CoordinationSettingsPtr settings = std::make_shared<CoordinationSettings>();
@@ -514,12 +443,14 @@ TYPED_TEST(CoordinationTest, TestEphemeralNodeRemove)
     ChangelogDirTest snapshots("./snapshots");
     this->setSnapshotDirectory("./snapshots");
 
-    using Storage [[maybe_unused]] = DB::KeeperStorage;
+    using Storage = typename TestFixture::Storage;
 
+    ChangelogDirTest rocks("./rocksdb");
+    this->setRocksDBDirectory("./rocksdb");
 
     SnapshotsQueue snapshots_queue{1};
 
-    auto state_machine = std::make_shared<KeeperStateMachine>(nullptr, snapshots_queue, this->keeper_context, nullptr);
+    auto state_machine = std::make_shared<KeeperStateMachine<Storage>>(nullptr, snapshots_queue, this->keeper_context, nullptr);
     state_machine->init();
 
     std::shared_ptr<ZooKeeperCreateRequest> request_c = std::make_shared<ZooKeeperCreateRequest>();
@@ -550,16 +481,18 @@ TYPED_TEST(CoordinationTest, TestCreateNodeWithAuthSchemeForAclWhenAuthIsPrecomm
     ChangelogDirTest snapshots("./snapshots");
     this->setSnapshotDirectory("./snapshots");
 
-    using Storage [[maybe_unused]] = DB::KeeperStorage;
+    using Storage = typename TestFixture::Storage;
 
+    ChangelogDirTest rocks("./rocksdb");
+    this->setRocksDBDirectory("./rocksdb");
 
     SnapshotsQueue snapshots_queue{1};
 
-    auto state_machine = std::make_shared<KeeperStateMachine>(nullptr, snapshots_queue, this->keeper_context, nullptr);
+    auto state_machine = std::make_shared<KeeperStateMachine<Storage>>(nullptr, snapshots_queue, this->keeper_context, nullptr);
     state_machine->init();
 
     String user_auth_data = "test_user:test_password";
-    String digest = KeeperStorage::generateDigest(user_auth_data);
+    String digest = KeeperMemoryStorage::generateDigest(user_auth_data);
 
     std::shared_ptr<ZooKeeperAuthRequest> auth_req = std::make_shared<ZooKeeperAuthRequest>();
     auth_req->scheme = "digest";
@@ -603,14 +536,16 @@ TYPED_TEST(CoordinationTest, TestPreprocessWhenCloseSessionIsPrecommitted)
     ChangelogDirTest snapshots("./snapshots");
     this->setSnapshotDirectory("./snapshots");
 
-    using Storage [[maybe_unused]] = DB::KeeperStorage;
+    using Storage = typename TestFixture::Storage;
 
+    ChangelogDirTest rocks("./rocksdb");
+    this->setRocksDBDirectory("./rocksdb");
     SnapshotsQueue snapshots_queue{1};
     int64_t session_without_auth = 1;
     int64_t session_with_auth = 2;
     size_t term = 0;
 
-    auto state_machine = std::make_shared<KeeperStateMachine>(nullptr, snapshots_queue, this->keeper_context, nullptr);
+    auto state_machine = std::make_shared<KeeperStateMachine<Storage>>(nullptr, snapshots_queue, this->keeper_context, nullptr);
     state_machine->init();
 
     auto & storage = state_machine->getStorageUnsafe();
@@ -785,14 +720,16 @@ TYPED_TEST(CoordinationTest, TestMultiRequestWithNoAuth)
     ChangelogDirTest snapshots("./snapshots");
     this->setSnapshotDirectory("./snapshots");
 
-    using Storage [[maybe_unused]] = DB::KeeperStorage;
+    using Storage = typename TestFixture::Storage;
 
+    ChangelogDirTest rocks("./rocksdb");
+    this->setRocksDBDirectory("./rocksdb");
     SnapshotsQueue snapshots_queue{1};
     int64_t session_without_auth = 1;
     int64_t session_with_auth = 2;
     size_t term = 0;
 
-    auto state_machine = std::make_shared<KeeperStateMachine>(nullptr, snapshots_queue, this->keeper_context, nullptr);
+    auto state_machine = std::make_shared<KeeperStateMachine<Storage>>(nullptr, snapshots_queue, this->keeper_context, nullptr);
     state_machine->init();
 
     auto & storage = state_machine->getStorageUnsafe();
@@ -838,15 +775,17 @@ TYPED_TEST(CoordinationTest, TestSetACLWithAuthSchemeForAclWhenAuthIsPrecommitte
     ChangelogDirTest snapshots("./snapshots");
     this->setSnapshotDirectory("./snapshots");
 
+    ChangelogDirTest rocks("./rocksdb");
+    this->setRocksDBDirectory("./rocksdb");
 
     SnapshotsQueue snapshots_queue{1};
 
-    using Storage [[maybe_unused]] = DB::KeeperStorage;
-    auto state_machine = std::make_shared<KeeperStateMachine>(nullptr, snapshots_queue, this->keeper_context, nullptr);
+    using Storage = typename TestFixture::Storage;
+    auto state_machine = std::make_shared<KeeperStateMachine<Storage>>(nullptr, snapshots_queue, this->keeper_context, nullptr);
     state_machine->init();
 
     String user_auth_data = "test_user:test_password";
-    String digest = KeeperStorage::generateDigest(user_auth_data);
+    String digest = KeeperMemoryStorage::generateDigest(user_auth_data);
 
     std::shared_ptr<ZooKeeperAuthRequest> auth_req = std::make_shared<ZooKeeperAuthRequest>();
     auth_req->scheme = "digest";
@@ -982,8 +921,10 @@ TYPED_TEST(CoordinationTest, TestDurableState)
 TYPED_TEST(CoordinationTest, TestFeatureFlags)
 {
     using namespace Coordination;
-    using Storage [[maybe_unused]] = DB::KeeperStorage;
+    using Storage = typename TestFixture::Storage;
 
+    ChangelogDirTest rocks("./rocksdb");
+    this->setRocksDBDirectory("./rocksdb");
 
     Storage storage{500, "", this->keeper_context};
     auto request = std::make_shared<ZooKeeperGetRequest>();

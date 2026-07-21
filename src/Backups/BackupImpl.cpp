@@ -174,7 +174,6 @@ BackupImpl::BackupImpl(
     , data_file_name_prefix_length(params.data_file_name_prefix_length)
     , coordination(params.backup_coordination)
     , uuid(params.backup_uuid)
-    , backup_id(params.backup_id)
     , version(CURRENT_BACKUP_VERSION)
     , base_backup_info(params.base_backup_info)
     , log(getLogger("BackupImpl"))
@@ -346,27 +345,6 @@ std::shared_ptr<const IBackup> BackupImpl::getBaseBackupUnlocked() const
     return base_backup;
 }
 
-std::map<String, String> BackupImpl::getEngineSettings() const
-{
-    std::lock_guard lock{mutex};
-
-    /// Both a BACKUP and a RESTORE can involve more than one engine with different endpoint settings, which
-    /// a flat map cannot represent: an incremental BACKUP writes through `writer` but also reads from the
-    /// base backup, and a RESTORE reads from the base backup (incremental restores) and/or the lightweight
-    /// snapshot reader in addition to the top-level backup. Report the engine settings only when a single
-    /// engine is involved; otherwise omit them.
-    if (base_backup_info || lightweight_snapshot_reader)
-        return {};
-
-    if (writer)
-        return writer->getSerializedSettings();
-
-    if (reader)
-        return reader->getSerializedSettings();
-
-    return {};
-}
-
 size_t BackupImpl::getNumFiles() const
 {
     std::lock_guard lock{mutex};
@@ -434,27 +412,24 @@ void BackupImpl::writeBackupMetadata()
     *out << "<deduplicate_files>" << params.deduplicate_files << "</deduplicate_files>";
     *out << "<timestamp>" << toString(LocalDateTime{timestamp}) << "</timestamp>";
     *out << "<uuid>" << toString(*uuid) << "</uuid>";
-    if (!backup_id.empty())
-        *out << "<backup_id>" << xml << backup_id << "</backup_id>";
     if (data_file_name_generator != BackupDataFileNameGeneratorType::FirstFileName)
         *out << "<data_file_name_generator>" << SettingFieldBackupDataFileNameGeneratorTypeTraits::toString(data_file_name_generator)
              << "</data_file_name_generator>";
 
-    /// Iterate in place instead of copying all file infos (a backup can contain millions).
-    size_t num_all_file_infos = 0;
-    bool base_backup_in_use = false;
-    coordination->forEachFileInfoForAllHosts([&](const BackupFileInfo & info)
-    {
-        ++num_all_file_infos;
-        if (info.base_size)
-            base_backup_in_use = true;
-    });
+    auto all_file_infos = coordination->getFileInfosForAllHosts();
 
-    if (num_all_file_infos == 0)
+    if (all_file_infos.empty())
         throw Exception(ErrorCodes::BACKUP_IS_EMPTY, "Backup must not be empty");
 
     if (base_backup_info)
     {
+        bool base_backup_in_use = false;
+        for (const auto & info : all_file_infos)
+        {
+            if (info.base_size)
+                base_backup_in_use = true;
+        }
+
         if (base_backup_in_use)
         {
             /// Persist base backup locators without inline `S3` credentials.
@@ -487,13 +462,13 @@ void BackupImpl::writeBackupMetadata()
         *out << "<original_namespace>" << original_namespace << "</original_namespace>";
     }
 
-    num_files = num_all_file_infos;
+    num_files = all_file_infos.size();
     total_size = 0;
     num_entries = 0;
     size_of_entries = 0;
 
     *out << "<contents>";
-    coordination->forEachFileInfoForAllHosts([&](const BackupFileInfo & info)
+    for (const auto & info : all_file_infos)
     {
         *out << "<file>";
 
@@ -537,7 +512,7 @@ void BackupImpl::writeBackupMetadata()
         }
 
         *out << "</file>";
-    });
+    }
     *out << "</contents>";
 
     *out << "</config>";
@@ -584,8 +559,6 @@ void BackupImpl::readBackupMetadata()
 
     timestamp = parse<::LocalDateTime>(getString(config_root, "timestamp")).to_time_t();
     uuid = parse<UUID>(getString(config_root, "uuid"));
-    if (config_root->getNodeByPath("backup_id"))
-        backup_id = getString(config_root, "backup_id");
 
     if (config_root->getNodeByPath("base_backup") && !base_backup_info)
     {
@@ -1280,10 +1253,8 @@ bool BackupImpl::tryRemoveAllFiles() noexcept
         else
         {
             files_to_remove.push_back(".backup");
-            coordination->forEachFileInfoForAllHosts([&](const BackupFileInfo & file_info)
-            {
+            for (const auto & file_info : coordination->getFileInfosForAllHosts())
                 files_to_remove.push_back(file_info.data_file_name);
-            });
         }
 
         if (!checkLockFile(false))

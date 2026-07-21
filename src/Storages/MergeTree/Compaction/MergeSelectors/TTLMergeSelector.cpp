@@ -230,10 +230,7 @@ time_t TTLPartDropMergeSelector::getTTLForPart(const PartProperties & part) cons
 
 bool TTLPartDropMergeSelector::canConsiderPart(const PartProperties & part) const
 {
-    if (!part.general_ttl_info.has_value())
-        return false;
-
-    return part.general_ttl_info->has_any_non_finished_ttls;
+    return part.general_ttl_info.has_value();
 }
 
 TTLRowDeleteMergeSelector::TTLRowDeleteMergeSelector(const PartitionIdToTTLs & merge_due_times_, time_t current_time_)

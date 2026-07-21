@@ -83,7 +83,7 @@ void FrequencyHolder::loadEncodingsFrequency()
         {
             readIntText(bigram, buf_line);
             buf_line.ignore();
-            readFloatTextPrecise(frequency, buf_line);
+            readFloatText(frequency, buf_line);
 
             encodings_freq.back().map[bigram] = frequency;
         }
@@ -120,7 +120,7 @@ void FrequencyHolder::loadEmotionalDict()
 
         readStringUntilWhitespace(word, buf_line);
         buf_line.ignore();
-        readFloatTextPrecise(tonality, buf_line);
+        readFloatText(tonality, buf_line);
 
         std::string_view ref{string_pool.insert(word.data(), word.size()), word.size()};
         emotional_dict[ref] = tonality;

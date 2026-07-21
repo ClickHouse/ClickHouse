@@ -8,8 +8,6 @@
 #include <base/DayNum.h>
 #include <base/IPv4andIPv6.h>
 #include <Common/AllocatorWithMemoryTracking.h>
-#include <Common/MapWithMemoryTracking.h>
-#include <Common/VectorWithMemoryTracking.h>
 
 #include <fmt/format.h>
 
@@ -20,7 +18,7 @@ constexpr Null NEGATIVE_INFINITY{Null::Value::NegativeInfinity};
 constexpr Null POSITIVE_INFINITY{Null::Value::PositiveInfinity};
 
 class Field;
-using FieldVector = VectorWithMemoryTracking<Field>;
+using FieldVector = std::vector<Field, AllocatorWithMemoryTracking<Field>>;
 
 /// Array and Tuple use the same storage type -- FieldVector, but we declare
 /// distinct types for them, so that the caller can choose whether it wants to
@@ -43,7 +41,7 @@ DEFINE_FIELD_VECTOR(Map); /// TODO: use map instead of vector.
 
 #undef DEFINE_FIELD_VECTOR
 
-using FieldMap = MapWithMemoryTracking<String, Field, std::less<>>;
+using FieldMap = std::map<String, Field, std::less<>, AllocatorWithMemoryTracking<std::pair<const String, Field>>>;
 
 #define DEFINE_FIELD_MAP(X) \
 struct X : public FieldMap \
