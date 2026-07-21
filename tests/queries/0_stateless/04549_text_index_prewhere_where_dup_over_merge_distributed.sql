@@ -14,6 +14,14 @@ SET allow_experimental_full_text_index = 1;
 -- would be rewritten to the subcolumn, which Merge rejects with ILLEGAL_PREWHERE. Pin it to 0 to keep
 -- the predicate in the function form that matches the text-index expression, as in the original repro.
 SET optimize_functions_to_subcolumns = 0;
+-- On 26.3 (unlike master and 26.4+) the direct-read-from-text-index optimization is additionally
+-- gated on use_skip_indexes_on_data_read (see QueryPlanOptimizationSettings). The test runner
+-- randomizes that setting, and with 0 the optimization is disabled: the crash path of the original
+-- bug would be silently skipped and the EXPLAIN visibility check below would spuriously report the
+-- optimization as gone. Pin it to 1. The session-level SET alone is not enough on 26.3: it does not
+-- reach the plan optimization of a query explained via SELECT ... FROM (EXPLAIN ...), so the setting
+-- is additionally pinned in the SETTINGS clause of every query that needs direct read engaged.
+SET use_skip_indexes_on_data_read = 1;
 -- The double-registration is reached only when the whole Merge -> Distributed -> MergeTree plan is
 -- built and optimized on the initiator (local replica).
 SET prefer_localhost_replica = 1;
@@ -48,7 +56,7 @@ CREATE TABLE logs_merge AS logs ENGINE = Merge(currentDatabase(), '^logs_dist$')
 SELECT count() FROM logs_merge
 PREWHERE has(mapValues(attributes), toNullable('192.168.1.1'))
 WHERE has(mapValues(attributes), toNullable('192.168.1.1'))
-SETTINGS force_data_skipping_indices = 'attributes_vals_idx', query_plan_direct_read_from_text_index = 1;
+SETTINGS force_data_skipping_indices = 'attributes_vals_idx', query_plan_direct_read_from_text_index = 1, use_skip_indexes_on_data_read = 1;
 
 -- Direct read from the text index must remain engaged (optimization preserved, not disabled).
 -- query_plan_direct_read_from_text_index is pinned to 1 here: it is randomized by the test runner and
@@ -60,7 +68,7 @@ SELECT count() > 0 FROM
     SELECT count() FROM logs_merge
     PREWHERE has(mapValues(attributes), toNullable('192.168.1.1'))
     WHERE has(mapValues(attributes), toNullable('192.168.1.1'))
-    SETTINGS query_plan_direct_read_from_text_index = 1
+    SETTINGS query_plan_direct_read_from_text_index = 1, use_skip_indexes_on_data_read = 1
 )
 WHERE explain ILIKE '%__text_index_attributes_vals_idx_has%';
 
@@ -84,7 +92,7 @@ SETTINGS query_plan_direct_read_from_text_index = 0;
 SELECT count() FROM logs_merge
 PREWHERE has(mapValues(attributes), toNullable('192.168.1.1'))
 WHERE hasAnyTokens(msg, ['delta'])
-SETTINGS query_plan_direct_read_from_text_index = 1;
+SETTINGS query_plan_direct_read_from_text_index = 1, use_skip_indexes_on_data_read = 1;
 
 -- The WHERE tokenizing predicate keeps its tokenizer rewrite (the 3-argument form with the index
 -- tokenizer 'splitByNonAlpha' appended) even though the step is re-visited after the PREWHERE already
@@ -95,7 +103,7 @@ SELECT count() > 0 FROM
     SELECT count() FROM logs_merge
     PREWHERE has(mapValues(attributes), toNullable('192.168.1.1'))
     WHERE hasAnyTokens(msg, ['delta'])
-    SETTINGS query_plan_direct_read_from_text_index = 1
+    SETTINGS query_plan_direct_read_from_text_index = 1, use_skip_indexes_on_data_read = 1
 )
 WHERE explain ILIKE '%hasAnyTokens(%splitByNonAlpha%';
 
