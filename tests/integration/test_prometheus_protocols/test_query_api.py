@@ -177,15 +177,15 @@ def test_query_after_response_sent():
 # endpoints must keep those exclusions when they reserve their own parameters. Otherwise a request
 # like `/api/v1/query?...&query_id=x` fails with an "unknown setting" error.
 def test_generic_http_params_are_not_settings():
-    node.query("CREATE ROLE IF NOT EXISTS prometheus_api_role")
-    node.query("GRANT prometheus_api_role TO default")
+    # `query_id`, `quota_key` and `stacktrace` are generic HTTP parameters handled by the base
+    # HTTP handler, not ClickHouse settings. If any of them were misinterpreted as a setting, the
+    # request would fail with an "Unknown setting ..." error instead of succeeding.
     url = (
         f"http://{node.ip_address}:9093/api/v1/query"
         f"?query=post_body_metric&time=1000"
         f"&query_id=prometheus_api_query_id"
         f"&quota_key=prometheus_api_quota"
         f"&stacktrace=1"
-        f"&role=prometheus_api_role"
     )
     response = requests.get(url)
     assert response.status_code == 200, f"got {response.status_code}: {response.text}"
@@ -199,6 +199,21 @@ def test_generic_http_params_are_not_settings():
         )
         == "1\n"
     )
+
+    # `role` is likewise a generic session parameter, not a setting. Passing a role that exists but
+    # is not granted to the handler's user must fail inside the session role machinery (a role/access
+    # error naming the role) rather than with "Unknown setting role", which proves the parameter was
+    # routed to `SET ROLE` instead of the settings parser.  Granting the role to the `default` user
+    # is not possible here because it lives in the read-only XML access storage, so an ungranted role
+    # is the reliable positive signal that the parameter is not treated as a setting.
+    node.query("CREATE ROLE IF NOT EXISTS prometheus_api_role")
+    response = requests.get(
+        f"http://{node.ip_address}:9093/api/v1/query"
+        f"?query=post_body_metric&time=1000&role=prometheus_api_role"
+    )
+    assert response.status_code != 200, f"expected a failure, got {response.text}"
+    assert "Unknown setting" not in response.text, response.text
+    assert "prometheus_api_role" in response.text, response.text
 
 
 def test_table_query_param():
