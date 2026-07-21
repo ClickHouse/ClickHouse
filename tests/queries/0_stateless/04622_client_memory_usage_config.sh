@@ -32,3 +32,14 @@ $CLICKHOUSE_CLIENT --config "$config" --memory-usage none -q "SELECT sum(number)
 
 echo "-- print-memory-to-stderr=readable from config, CLI --memory-usage default wins (plain byte count)"
 $CLICKHOUSE_CLIENT --config "$config" --memory-usage default -q "SELECT sum(number) FROM numbers(10_000) FORMAT Null" 2>&1 >/dev/null | grep -c -E '^[0-9]+$'
+
+# A typo in the config value must be rejected the same way --memory-usage=unknown is,
+# instead of silently disabling memory reporting.
+cat > "$config" <<'EOF'
+<config>
+    <print-memory-to-stderr>defualt</print-memory-to-stderr>
+</config>
+EOF
+
+echo "-- invalid print-memory-to-stderr in config is rejected (BAD_ARGUMENTS)"
+$CLICKHOUSE_CLIENT --config "$config" -q "SELECT sum(number) FROM numbers(10_000) FORMAT Null" 2>&1 >/dev/null | grep -c -E 'Unknown memory-usage mode: defualt'

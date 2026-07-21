@@ -4,3 +4,5 @@
 0
 -- print-memory-to-stderr=readable from config, CLI --memory-usage default wins (plain byte count)
 1
+-- invalid print-memory-to-stderr in config is rejected (BAD_ARGUMENTS)
+1

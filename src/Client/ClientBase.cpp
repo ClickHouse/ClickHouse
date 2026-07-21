@@ -278,6 +278,16 @@ std::istream& operator>> (std::istream & in, ProgressOption & progress)
     return in;
 }
 
+/// Validate the `print-memory-to-stderr` mode. The same values are accepted for the `--memory-usage`
+/// CLI option and for the `<print-memory-to-stderr>` client config key, so both paths validate here
+/// (an empty value means the feature is off). Without this a typo in the config file would silently
+/// disable memory reporting instead of throwing, unlike `--memory-usage=unknown`.
+static void assertMemoryUsageMode(const std::string & mode)
+{
+    if (!mode.empty() && mode != "none" && mode != "default" && mode != "readable")
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown memory-usage mode: {}", mode);
+}
+
 static void incrementProfileEventsBlock(Block & dst, const Block & src)
 {
     if (dst.empty())
@@ -2682,6 +2692,9 @@ void ClientBase::processParsedSingleQuery(
             error_stream << progress_indication.elapsedSeconds() << "\n";
 
         const auto & print_memory_mode = config.getString("print-memory-to-stderr", "");
+        /// The value may come from the client config file (e.g. `<print-memory-to-stderr>`), which is
+        /// not routed through the `--memory-usage` option parser, so validate it here as well.
+        assertMemoryUsageMode(print_memory_mode);
         auto peak_memory_usage = std::max<Int64>(progress_indication.getMemoryUsage().peak, 0);
         if (print_memory_mode == "default")
             error_stream << peak_memory_usage << "\n";
@@ -3942,8 +3955,7 @@ void ClientBase::addOptionsToTheClientConfiguration(const CommandLineOptions & o
     if (options.contains("memory-usage") && !options["memory-usage"].defaulted())
     {
         const auto & memory_usage_mode = options["memory-usage"].as<std::string>();
-        if (memory_usage_mode != "none" && memory_usage_mode != "default" && memory_usage_mode != "readable")
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown memory-usage mode: {}", memory_usage_mode);
+        assertMemoryUsageMode(memory_usage_mode);
         getClientConfiguration().setString("print-memory-to-stderr", memory_usage_mode);
     }
 
