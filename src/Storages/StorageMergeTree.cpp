@@ -95,6 +95,8 @@ namespace FailPoints
     extern const char mt_alter_throw_after_mutation_registered[];
     extern const char mt_throw_after_mutation_commit[];
     extern const char mt_alter_throw_in_durable_rollback[];
+    extern const char merge_tree_leader_election_stale_epoch_before_commit[];
+    extern const char merge_tree_leader_election_stale_lease_cleanup[];
 }
 
 namespace Setting
@@ -3063,7 +3065,7 @@ static std::pair<StorageMergeTree::MutableDataPartsVector, std::vector<scope_gua
 }
 
 
-void StorageMergeTree::renameAndCommitEmptyParts(MutableDataPartsVector & new_parts, Transaction & transaction)
+void StorageMergeTree::renameAndCommitEmptyParts(MutableDataPartsVector & new_parts, Transaction & transaction, UInt64 admission_epoch)
 {
     DataPartsVector covered_parts;
     size_t next_part_index = 0;
@@ -3110,6 +3112,11 @@ void StorageMergeTree::renameAndCommitEmptyParts(MutableDataPartsVector & new_pa
     LOG_INFO(log, "Remove {} parts by covering them with empty {} parts. With txn {}.",
              covered_parts.size(), new_parts.size(), transaction.getTID());
 
+    /// The rename below is the first write that publishes the covering empty parts into the
+    /// (possibly shared) storage prefix. A lease lost during `stopMergesAndWait` or the empty-part
+    /// preparation above must fail closed here, before anything becomes visible to the new leader.
+    assertWritableLeaderAtEpoch(admission_epoch);
+
     transaction.renameParts();
     transaction.commit();
 
@@ -3124,6 +3131,9 @@ void StorageMergeTree::renameAndCommitEmptyParts(MutableDataPartsVector & new_pa
 
 void StorageMergeTree::truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr query_context, TableExclusiveLockHolder &)
 {
+    /// Capture the leadership epoch before the admission gate (same ordering as `write`); it is
+    /// re-checked immediately before the covering empty parts are published.
+    const UInt64 admission_epoch = currentLeadershipEpoch();
     assertNotReadonly();
 
     {
@@ -3165,7 +3175,7 @@ void StorageMergeTree::truncate(const ASTPtr &, const StorageMetadataPtr &, Cont
                      transaction.getTID());
 
             auto [new_data_parts, tmp_dir_holders] = createEmptyDataParts(*this, future_parts, txn);
-            renameAndCommitEmptyParts(new_data_parts, transaction);
+            renameAndCommitEmptyParts(new_data_parts, transaction, admission_epoch);
 
             PartLog::addNewParts(query_context, PartLog::createPartLogEntries(new_data_parts, watch.elapsed(), profile_events_scope.getSnapshot()));
 
@@ -3173,6 +3183,17 @@ void StorageMergeTree::truncate(const ASTPtr &, const StorageMetadataPtr &, Cont
                      parts.size(), future_parts.size(),
                      transaction.getTID());
         }
+    }
+
+    /// If the lease went stale after the empty parts were committed, the destructive cleanup
+    /// below must not run: `clearOldPartsFromFilesystem` fails closed by itself, but
+    /// `clearEmptyParts` would still drop the just-created covering empty parts while the covered
+    /// parts remain on disk, letting the old data reappear on a later refresh. The committed empty
+    /// parts already make the `TRUNCATE` effective; cleanup is left to the current leader.
+    if (!canRunDestructiveCleanup())
+    {
+        LOG_INFO(log, "Skipping synchronous cleanup after TRUNCATE: the leadership lease is stale (leader_election)");
+        return;
     }
 
     /// Old parts are needed to be destroyed before clearing them from filesystem.
@@ -3183,6 +3204,8 @@ void StorageMergeTree::truncate(const ASTPtr &, const StorageMetadataPtr &, Cont
 
 void StorageMergeTree::dropPart(const String & part_name, bool detach, ContextPtr query_context)
 {
+    /// See the comment in `truncate` — same admission-epoch fence for the empty-part publish.
+    const UInt64 admission_epoch = currentLeadershipEpoch();
     assertNotReadonly();
     {
         /// Asks to complete merges and does not allow them to start.
@@ -3238,7 +3261,7 @@ void StorageMergeTree::dropPart(const String & part_name, bool detach, ContextPt
                          transaction.getTID());
 
                 auto [new_data_parts, tmp_dir_holders] = createEmptyDataParts(*this, future_parts, txn);
-                renameAndCommitEmptyParts(new_data_parts, transaction);
+                renameAndCommitEmptyParts(new_data_parts, transaction, admission_epoch);
 
                 PartLog::addNewParts(query_context, PartLog::createPartLogEntries(new_data_parts, watch.elapsed(), profile_events_scope.getSnapshot()));
 
@@ -3250,12 +3273,21 @@ void StorageMergeTree::dropPart(const String & part_name, bool detach, ContextPt
         }
     }
 
+    /// See the comment in `truncate` — a stale lease must skip the destructive cleanup.
+    if (!canRunDestructiveCleanup())
+    {
+        LOG_INFO(log, "Skipping synchronous cleanup after DROP/DETACH PART: the leadership lease is stale (leader_election)");
+        return;
+    }
+
     clearOldPartsFromFilesystem();
     clearEmptyParts();
 }
 
 void StorageMergeTree::dropPartition(const ASTPtr & partition, bool detach, ContextPtr query_context)
 {
+    /// See the comment in `truncate` — same admission-epoch fence for the empty-part publish.
+    const UInt64 admission_epoch = currentLeadershipEpoch();
     assertNotReadonly();
     {
         const auto * partition_ast = partition->as<ASTPartition>();
@@ -3359,7 +3391,7 @@ void StorageMergeTree::dropPartition(const ASTPtr & partition, bool detach, Cont
 
 
             auto [new_data_parts, tmp_dir_holders] = createEmptyDataParts(*this, future_parts, txn);
-            renameAndCommitEmptyParts(new_data_parts, transaction);
+            renameAndCommitEmptyParts(new_data_parts, transaction, admission_epoch);
 
             PartLog::addNewParts(query_context, PartLog::createPartLogEntries(new_data_parts, watch.elapsed(), profile_events_scope.getSnapshot()));
 
@@ -3368,6 +3400,13 @@ void StorageMergeTree::dropPartition(const ASTPtr & partition, bool detach, Cont
                      op, parts.size(), future_parts.size(),
                      transaction.getTID());
         }
+    }
+
+    /// See the comment in `truncate` — a stale lease must skip the destructive cleanup.
+    if (!canRunDestructiveCleanup())
+    {
+        LOG_INFO(log, "Skipping synchronous cleanup after DROP/DETACH PARTITION: the leadership lease is stale (leader_election)");
+        return;
     }
 
     clearOldPartsFromFilesystem();
@@ -3406,6 +3445,10 @@ void StorageMergeTree::dropPartsImpl(DataPartsVector && parts_to_remove, bool de
 PartitionCommandsResultInfo StorageMergeTree::attachPartition(
     const PartitionCommand & command, const StorageMetadataPtr &, ContextPtr local_context)
 {
+    /// Capture the leadership epoch before the admission gate (same ordering as `write`);
+    /// `tryLoadPartsToAttach` can take arbitrary time, so the epoch is re-checked immediately
+    /// before each rename that publishes an attached part.
+    const UInt64 admission_epoch = currentLeadershipEpoch();
     assertNotReadonly();
     PartitionCommandsResultInfo results;
     PartsTemporaryRename renamed_parts(*this, DETACHED_DIR_NAME);
@@ -3424,6 +3467,10 @@ PartitionCommandsResultInfo StorageMergeTree::attachPartition(
         MergeTreeData::Transaction transaction(*this, local_context->getCurrentTransaction().get());
         {
             auto lock = lockParts();
+            /// The rename below publishes the attached part into the (possibly shared) storage
+            /// prefix; a lease lost — or lost and reacquired — during `tryLoadPartsToAttach`
+            /// must fail closed here, before the part becomes visible to the new leader.
+            assertWritableLeaderAtEpoch(admission_epoch);
             auto block_holder = fillNewPartNameAndResetLevel(loaded_parts[i], lock);
             renameTempPartAndAdd(loaded_parts[i], transaction, lock, /*rename_in_transaction=*/ false);
             transaction.commit(lock);
@@ -4048,6 +4095,10 @@ BackupEntries StorageMergeTree::backupMutations(UInt64 version, const String & d
 
 void StorageMergeTree::attachRestoredParts(MutableDataPartsVector && parts, const std::optional<ZooKeeperRetriesInfo> &)
 {
+    /// Same admission-epoch fence as `attachPartition`: restoring parts publishes them into the
+    /// (possibly shared) storage prefix, so a lease lost during the restore must fail closed
+    /// before each rename.
+    const UInt64 admission_epoch = currentLeadershipEpoch();
     for (auto part : parts)
     {
         /// It's important to create it outside of lock scope because
@@ -4055,6 +4106,7 @@ void StorageMergeTree::attachRestoredParts(MutableDataPartsVector && parts, cons
         MergeTreeData::Transaction transaction(*this, NO_TRANSACTION_RAW);
         {
             auto lock = lockParts();
+            assertWritableLeaderAtEpoch(admission_epoch);
             auto block_holder = fillNewPartName(part, lock);
             renameTempPartAndAdd(part, transaction, lock, /*rename_in_transaction=*/ false);
             transaction.commit(lock);
@@ -4198,13 +4250,20 @@ void StorageMergeTree::assertNotReadonly() const
 
 bool StorageMergeTree::canRunDestructiveCleanup() const
 {
+    if (!leader_election_ptr)
+        return true;
+
+    /// Test hook: deterministically simulate a lease that went stale before a destructive
+    /// cleanup (e.g. between a partition DDL's commit and its synchronous cleanup).
+    fiu_do_on(FailPoints::merge_tree_leader_election_stale_lease_cleanup, { return false; });
+
     /// `isLeader()` returns false once the last successful lease renewal is older than the
     /// freshness threshold, so a stale leader (whose heartbeat — and therefore its
     /// leadership-loss callback — stalled) fails closed here even before `cleanup_thread.stop()`
     /// runs. Note we deliberately use `isLeader()` (lease freshness), not
     /// `isLeaderAndWritable()`: cleanup must keep running during the short post-failover
     /// takeover-sync window when `writes_enabled` is still false but the lease is held.
-    return !leader_election_ptr || leader_election_ptr->isLeader();
+    return leader_election_ptr->isLeader();
 }
 
 UInt64 StorageMergeTree::currentLeadershipEpoch() const
@@ -4216,6 +4275,15 @@ void StorageMergeTree::assertWritableLeaderAtEpoch(UInt64 admission_epoch) const
 {
     if (!leader_election_ptr)
         return;
+
+    /// Test hook: deterministically simulate a leadership loss+reacquire between a write's
+    /// admission and its commit by presenting an older admission epoch than the current one, so
+    /// the epoch comparison below rejects the write before any shared write. Placed here so every
+    /// fenced publish path (insert, merge, mutation, partition DDL, attach) is covered.
+    fiu_do_on(FailPoints::merge_tree_leader_election_stale_epoch_before_commit,
+    {
+        admission_epoch = admission_epoch >= 1 ? admission_epoch - 1 : admission_epoch + 1;
+    });
 
     /// Must still be the writable leader (not merely hold the lease): user/background writes are
     /// only valid once the post-failover takeover sync has completed (`writes_enabled`).

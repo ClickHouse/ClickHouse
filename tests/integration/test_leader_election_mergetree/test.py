@@ -935,3 +935,143 @@ def test_commit_rejected_on_stale_leadership_epoch(started_cluster):
             node1.query(f"DROP TABLE IF EXISTS {table} SYNC")
         except Exception:
             pass
+
+
+SHARED_UUID_DDL_EPOCH = "12345678-abcd-abcd-abcd-12345678ab07"
+SHARED_UUID_DDL_CLEANUP = "12345678-abcd-abcd-abcd-12345678ab08"
+
+
+def test_partition_ddl_rejected_on_stale_leadership_epoch(started_cluster):
+    """
+    Regression for the admission-epoch fence on the partition-DDL publish paths: `TRUNCATE`,
+    `DROP PARTITION` (via `renameAndCommitEmptyParts`) and `ATTACH PARTITION` (via
+    `renameTempPartAndAdd`) must not publish parts into the shared prefix if leadership was lost
+    (and possibly reacquired) between the DDL's admission and the first non-temporary rename.
+
+    The `merge_tree_leader_election_stale_epoch_before_commit` failpoint (which now fires inside
+    `assertWritableLeaderAtEpoch`, covering every fenced path) deterministically presents a stale
+    admission epoch, so each DDL must be rejected BEFORE anything becomes visible.
+    """
+    ensure_node_up(node1)
+    failpoint = "merge_tree_leader_election_stale_epoch_before_commit"
+    table = "test_ddl_epoch_fence"
+    try:
+        node1.query(
+            f"""
+            CREATE TABLE {table} UUID '{SHARED_UUID_DDL_EPOCH}' (x UInt64)
+            ENGINE = MergeTree PARTITION BY x % 2 ORDER BY x
+            SETTINGS {TABLE_SETTINGS}
+            """
+        )
+        wait_for_leader([node1], table_name=table)
+
+        node1.query(f"INSERT INTO {table} VALUES (1), (2), (3), (4)")
+        assert int(node1.query(f"SELECT count() FROM {table}").strip()) == 4
+
+        node1.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
+        try:
+            # TRUNCATE: the covering empty parts must not be published under a stale epoch.
+            with pytest.raises(Exception, match="Leadership epoch"):
+                node1.query(f"TRUNCATE TABLE {table}")
+            assert int(node1.query(f"SELECT count() FROM {table}").strip()) == 4, (
+                "TRUNCATE was rejected but the covering empty parts were still published"
+            )
+
+            # DROP PARTITION: same fence, same invariant.
+            with pytest.raises(Exception, match="Leadership epoch"):
+                node1.query(f"ALTER TABLE {table} DROP PARTITION 1")
+            assert int(node1.query(f"SELECT count() FROM {table}").strip()) == 4, (
+                "DROP PARTITION was rejected but the covering empty parts were still published"
+            )
+        finally:
+            node1.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+
+        # ATTACH PARTITION: detach with the failpoint cleared, then attach under a stale epoch.
+        node1.query(f"ALTER TABLE {table} DETACH PARTITION 1")
+        assert int(node1.query(f"SELECT count() FROM {table}").strip()) == 2
+
+        node1.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
+        try:
+            with pytest.raises(Exception, match="Leadership epoch"):
+                node1.query(f"ALTER TABLE {table} ATTACH PARTITION 1")
+            assert int(node1.query(f"SELECT count() FROM {table}").strip()) == 2, (
+                "ATTACH PARTITION was rejected but the part was still published"
+            )
+        finally:
+            node1.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+
+        # With the failpoint cleared the same DDLs succeed.
+        node1.query(f"ALTER TABLE {table} ATTACH PARTITION 1")
+        assert int(node1.query(f"SELECT count() FROM {table}").strip()) == 4
+        node1.query(f"TRUNCATE TABLE {table}")
+        assert int(node1.query(f"SELECT count() FROM {table}").strip()) == 0
+    finally:
+        try:
+            node1.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+        except Exception:
+            pass
+        try:
+            node1.query(f"DROP TABLE IF EXISTS {table} SYNC")
+        except Exception:
+            pass
+
+
+def test_cleanup_skipped_on_stale_lease_after_partition_ddl(started_cluster):
+    """
+    Regression for the post-DDL cleanup gate: if the lease goes stale between a non-transactional
+    `TRUNCATE` / `DROP PARTITION` committing its covering empty parts and the synchronous cleanup,
+    the stale node must skip `clearEmptyParts` (and the rest of the destructive cleanup) — else it
+    would drop the covering empty parts while the covered old parts remain on disk, letting the old
+    data reappear later.
+
+    The `merge_tree_leader_election_stale_lease_cleanup` failpoint makes `canRunDestructiveCleanup`
+    report a stale lease, so the DDL itself succeeds but the cleanup is skipped: the covered parts
+    must remain on disk (as `Outdated`) together with their covering empty parts.
+    """
+    ensure_node_up(node1)
+    failpoint = "merge_tree_leader_election_stale_lease_cleanup"
+    table = "test_ddl_cleanup_gate"
+    try:
+        node1.query(
+            f"""
+            CREATE TABLE {table} UUID '{SHARED_UUID_DDL_CLEANUP}' (x UInt64)
+            ENGINE = MergeTree ORDER BY x
+            SETTINGS {TABLE_SETTINGS}, old_parts_lifetime = 1
+            """
+        )
+        wait_for_leader([node1], table_name=table)
+
+        node1.query(f"INSERT INTO {table} VALUES (1), (2), (3)")
+        assert int(node1.query(f"SELECT count() FROM {table}").strip()) == 3
+
+        node1.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
+        try:
+            # The DDL itself succeeds (the empty parts commit before the lease goes stale) ...
+            node1.query(f"TRUNCATE TABLE {table}")
+            assert int(node1.query(f"SELECT count() FROM {table}").strip()) == 0
+
+            # ... but the destructive cleanup is skipped: the covered old parts must still be on
+            # disk (Outdated), not removed by a node whose lease is stale.
+            outdated = int(
+                node1.query(
+                    f"SELECT count() FROM system.parts WHERE database = currentDatabase()"
+                    f" AND table = '{table}' AND NOT active"
+                ).strip()
+            )
+            assert outdated > 0, (
+                "The stale node removed the covered parts despite the stale lease"
+            )
+        finally:
+            node1.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+
+        # The table stays truncated after the lease is fresh again.
+        assert int(node1.query(f"SELECT count() FROM {table}").strip()) == 0
+    finally:
+        try:
+            node1.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+        except Exception:
+            pass
+        try:
+            node1.query(f"DROP TABLE IF EXISTS {table} SYNC")
+        except Exception:
+            pass

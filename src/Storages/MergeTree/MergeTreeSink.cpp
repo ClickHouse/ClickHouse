@@ -8,7 +8,6 @@
 #include <Interpreters/ProcessList.h>
 #include <Processors/Transforms/DeduplicationTokenTransforms.h>
 #include <Common/logger_useful.h>
-#include <Common/FailPoint.h>
 #include <Common/ProfileEventsScope.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Core/Settings.h>
@@ -31,11 +30,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int INSERT_WAS_DEDUPLICATED;
-}
-
-namespace FailPoints
-{
-    extern const char merge_tree_leader_election_stale_epoch_before_commit[];
 }
 
 namespace Setting
@@ -375,15 +369,7 @@ std::vector<std::string> MergeTreeSink::commitPart(MergeTreeMutableDataPartPtr &
         /// re-checks leadership, but by then both writes have already happened, so the fence must be
         /// here. Checking here also rejects an `INSERT` admitted under a previous lease epoch (stale
         /// block numbers).
-        UInt64 admission_epoch = commit_epoch;
-        /// Test hook: deterministically simulate a leadership loss+reacquire between this INSERT's
-        /// admission and its commit by presenting an older admission epoch than the current one, so
-        /// the real `assertWritableLeaderAtEpoch` comparison rejects the write before any shared write.
-        fiu_do_on(FailPoints::merge_tree_leader_election_stale_epoch_before_commit,
-        {
-            admission_epoch = commit_epoch >= 1 ? commit_epoch - 1 : commit_epoch + 1;
-        });
-        storage.assertWritableLeaderAtEpoch(admission_epoch);
+        storage.assertWritableLeaderAtEpoch(commit_epoch);
 
         auto block_holder = storage.fillNewPartName(part, lock);
 
