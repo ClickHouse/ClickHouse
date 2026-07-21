@@ -31,11 +31,16 @@ exp_internal -f $CLICKHOUSE_TMP/$basename.debuglog 0
 set history_file $CLICKHOUSE_TMP/$basename.history
 
 # The progress table is only rendered when the terminal is wide enough for the
-# event name, value and progress columns; make it comfortably wide.
-set stty_init "rows 40 cols 300"
+# event name, value and progress columns (the longest event name plus two
+# 20-character columns, about 106 characters); 120 is wide enough for that but
+# too narrow for the documentation column, which keeps the volume of the
+# continuously redrawn live table small — a flaky-check run once stalled on a
+# loaded machine while streaming the much larger 300-column rendering through
+# the pty.
+set stty_init "rows 40 cols 120"
 
 log_user 0
-set timeout 60
+set timeout 120
 match_max 100000
 expect_after {
     # Do not ignore eof from expect
@@ -64,7 +69,7 @@ close $fd
 spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_CLIENT_BINARY \${CLICKHOUSE_CLIENT_EXPECT_OPT/--enable-progress-table-toggle 0/} --config $dashed_cfg --history_file=$history_file"
 expect ":) "
 
-send -- "SELECT sum(number) FROM numbers(1000000)\r"
+send -- "SELECT sum(number) FROM numbers(100000)\r"
 expect "Event name"
 expect ":) "
 send -- "\4"
@@ -74,7 +79,7 @@ expect eof
 spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_CLIENT_BINARY \${CLICKHOUSE_CLIENT_EXPECT_OPT/--enable-progress-table-toggle 0/} --config $underscore_cfg --history_file=$history_file"
 expect ":) "
 
-send -- "SELECT sum(number) FROM numbers(1000000)\r"
+send -- "SELECT sum(number) FROM numbers(100000)\r"
 expect "Event name"
 expect ":) "
 send -- "\4"
@@ -86,10 +91,10 @@ expect eof
 spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_CLIENT_BINARY \${CLICKHOUSE_CLIENT_EXPECT_OPT/--enable-progress-table-toggle 0/} --config $dashed_cfg --enable-progress-table-toggle=1 --history_file=$history_file"
 expect ":) "
 
-send -- "SELECT sum(number) FROM numbers(1000000)\r"
+send -- "SELECT sum(number) FROM numbers(100000)\r"
 expect {
     "Event name" { exit 1 }
-    -re {499999500000.*:\) } {}
+    -re {4999950000.*:\) } {}
 }
 send -- "\4"
 expect eof
