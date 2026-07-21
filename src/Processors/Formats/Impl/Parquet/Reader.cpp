@@ -646,8 +646,16 @@ void Reader::initializePrefetches()
             /// little benefit, so we keep it disabled on row groups (like this one) that fall back to
             /// it. If some smaller atom did register hashes, we still enable it for those - the
             /// unregistered over-cap hashes are handled conservatively in `BloomFilterLookup::findAnyHash`.
-            if (!column.use_dictionary_filter &&
-                options.format.parquet.bloom_filter_push_down &&
+            /// We prepare the bloom filter even for a dictionary-filter-eligible column that also carries
+            /// one, as a fallback: the exact dictionary path can still decline at runtime when its decoded
+            /// page or value set does not fit the pruning memory budget (see `decodeDictionaryPage` and
+            /// `hashDictionaryValues`), and without this the row group would then be read in full even
+            /// though its bloom filter could have ruled it out - a regression from the pre-existing
+            /// bloom-only behavior. `applyBloomAndDictionaryFilters` still prefers the exact dictionary
+            /// filter and only falls back to the bloom filter for that case; the only extra cost here is
+            /// the small bloom-filter header read, since the filter blocks are prefetched lazily
+            /// (`likely_to_be_used=false`) and read only if the fallback is actually taken.
+            if (options.format.parquet.bloom_filter_push_down &&
                 primitive_columns[column_idx].use_bloom_filter &&
                 !primitive_columns[column_idx].bloom_filter_hashes.empty() &&
                 column.meta->meta_data.__isset.bloom_filter_offset)
@@ -1336,6 +1344,12 @@ struct Reader::DictionaryLookup : public KeyCondition::BloomFilter
     bool computed = false;
     std::optional<HashSet<UInt64>> value_hashes;
 
+    /// Bloom filter of the same column chunk, kept as a fallback for when the exact dictionary value set
+    /// can't be built within the pruning memory budget (see `hashDictionaryValues`). Without it such a
+    /// chunk would be read in full even though its bloom filter could rule it out. Null when the chunk
+    /// has no bloom filter (see `initializePrefetches`).
+    std::unique_ptr<BloomFilterLookup> bloom_fallback;
+
     DictionaryLookup(Reader & reader_, ColumnChunk & column_, const PrimitiveColumnInfo & column_info_, PruningMemoryReservation reservation_)
         : reader(reader_), column(column_), column_info(column_info_), reservation(reservation_) {}
 
@@ -1351,9 +1365,10 @@ bool Reader::DictionaryLookup::findAnyHash(const std::vector<uint64_t> & hashes)
         value_hashes = hashDictionaryValues(reader.file_metadata, reader.options, column, column_info, reservation, reserved_bytes);
         computed = true;
     }
-    /// If the dictionary values couldn't be hashed, we can't rule out a match.
+    /// If the dictionary values couldn't be hashed (e.g. the value set didn't fit the pruning budget),
+    /// fall back to the column chunk's bloom filter if it has one; otherwise we can't rule out a match.
     if (!value_hashes.has_value())
-        return true;
+        return bloom_fallback ? bloom_fallback->findAnyHash(hashes) : true;
     for (UInt64 h : hashes)
         if (value_hashes->contains(h))
             return true;
@@ -1374,12 +1389,18 @@ bool Reader::applyBloomAndDictionaryFilters(RowGroup & row_group, PruningMemoryR
     for (size_t i = 0; i < row_group.columns.size(); ++i)
     {
         ColumnChunk & column = row_group.columns[i];
-        /// use_dictionary_filter takes precedence over use_bloom_filter, and the two are never set
-        /// together for the same column chunk (see initializePrefetches).
+        /// The exact dictionary filter takes precedence over the bloom filter. Both can be set for the
+        /// same column chunk (see initializePrefetches): the bloom filter is then kept only as a runtime
+        /// fallback for when the dictionary path declines because its value set does not fit the pruning
+        /// memory budget. `decodeDictionaryPage` failing earlier (in `ReadManager::runTask`) clears
+        /// `use_dictionary_filter`, so that case is handled by the `else if` bloom branch below.
         if (column.use_dictionary_filter)
-            filter_map.emplace(
-                primitive_columns[i].idx_in_output_block,
-                std::make_unique<DictionaryLookup>(*this, column, primitive_columns[i], reservation));
+        {
+            auto lookup = std::make_unique<DictionaryLookup>(*this, column, primitive_columns[i], reservation);
+            if (column.use_bloom_filter && !column.bloom_filter_blocks.empty())
+                lookup->bloom_fallback = std::make_unique<BloomFilterLookup>(prefetcher, column);
+            filter_map.emplace(primitive_columns[i].idx_in_output_block, std::move(lookup));
+        }
         else if (column.use_bloom_filter)
             filter_map.emplace(
                 primitive_columns[i].idx_in_output_block,
