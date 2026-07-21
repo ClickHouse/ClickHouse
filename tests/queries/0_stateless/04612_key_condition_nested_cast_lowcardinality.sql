@@ -80,3 +80,30 @@ FROM (
 );
 
 DROP TABLE t_04612_alias;
+
+-- Same nested-cast chain over a LowCardinality PARTITION key. Unlike the WHERE cases above (which
+-- run through applyFunction's cached-column branch), partition/minmax pruning feeds explicit Field
+-- bounds through applyFunctionForField, so this covers the second half of the fix.
+DROP TABLE IF EXISTS t_04612_part;
+CREATE TABLE t_04612_part (s LowCardinality(Nullable(Int32)), v UInt32)
+    ENGINE = MergeTree PARTITION BY s ORDER BY v
+    SETTINGS allow_nullable_key = 1;
+INSERT INTO t_04612_part SELECT number, number FROM numbers(20);
+INSERT INTO t_04612_part SELECT number + 1000, number FROM numbers(20);
+
+SELECT count() = (SELECT countIf(CAST(CAST(s, 'LowCardinality(String)'), 'String') < '5') FROM t_04612_part)
+    FROM t_04612_part WHERE CAST(CAST(s, 'LowCardinality(String)'), 'String') < '5';
+
+-- At least one index (partition/minmax) must prune parts (a "Parts: X/Y" line with X < Y).
+SELECT max(toUInt32(extract(g, '^(\d+)')) < toUInt32(extract(g, '/(\d+)$'))) AS pruning_fired
+FROM (
+    SELECT extract(trimLeft(explain), 'Parts: (\d+/\d+)') AS g
+    FROM (
+        EXPLAIN indexes = 1
+        SELECT count() FROM t_04612_part WHERE CAST(CAST(s, 'LowCardinality(String)'), 'String') < '5'
+        SETTINGS optimize_use_implicit_projections = 0, optimize_trivial_count_query = 0
+    )
+    WHERE explain ILIKE '%Parts: %/%'
+);
+
+DROP TABLE t_04612_part;
