@@ -2465,7 +2465,7 @@ SELECT L2DistanceTransposed(vec, array(1, 2), 16) FROM qbit;
 )",
             R"(
 ┌─L2DistanceTransposed([0, 1], [1, 2], 16)─┐
-│                       1.4142135623730951 │
+│                       1.3922918381215914 │
 └──────────────────────────────────────────┘
             )"}};
     FunctionDocumentation::IntroducedIn introduced_in_l2_distance_transposed = {25, 10};
@@ -2511,7 +2511,7 @@ SELECT cosineDistanceTransposed(vec, array(1, 2), 16) FROM qbit;
 )",
             R"(
 ┌─cosineDistanceTransposed([0, 1], [1, 2], 16)─┐
-│                          0.10557281085638826 │
+│                          0.10557280905788935 │
 └──────────────────────────────────────────────┘
             )"}};
     FunctionDocumentation::IntroducedIn introduced_in_cosine_distance_transposed = {26, 1};
@@ -2557,7 +2557,7 @@ SELECT dotProductTransposed(vec, array(1, 2), 16) FROM qbit;
 )",
             R"(
 ┌─dotProductTransposed([0, 1], [1, 2], 16)─┐
-│                                        2 │
+│                                   2.0625 │
 └──────────────────────────────────────────┘
             )"}};
     FunctionDocumentation::IntroducedIn introduced_in_dot_product_transposed = {26, 7};

@@ -231,6 +231,7 @@
             "concepts/features/interfaces/documentation-search",
             "concepts/features/interfaces/web-sql",
             "concepts/features/interfaces/web-ui-color-coding",
+            "concepts/features/interfaces/web-ui-pinned-columns",
             "concepts/features/interfaces/web-terminal",
             {
               "group": "Third-party clients",
