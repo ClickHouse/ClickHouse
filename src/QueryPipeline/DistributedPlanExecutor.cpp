@@ -14,6 +14,7 @@
 #include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <QueryPipeline/DistributedPlanExecutor.h>
+#include <Processors/QueryPlan/Optimizations/Cascades/CascadesParams.h>
 #if CLICKHOUSE_CLOUD
 #include <Server/StatelessWorker/StatelessWorkersProvider.h>
 #include <Server/StatelessWorker/StatelessWorkerAllocation.h>
@@ -1033,34 +1034,6 @@ static Strings getDistributedWorkerHostnames(ContextPtr context)
     for (const auto & replica : shard_addresses[0])
         result.push_back(replica.host_name);
     return result;
-}
-
-size_t getCascadesClusterNodeCountParam(ContextPtr context)
-{
-    constexpr auto param_name = "_internal_cascades_cluster_node_count";
-    if (context->getQueryParameters().contains(param_name))
-    {
-        size_t value = parse<size_t>(context->getQueryParameters().at(param_name));
-        if (value > 0)
-            return value;
-    }
-    return 0;
-}
-
-size_t getCascadesTaskLimitParam(ContextPtr context, size_t default_limit)
-{
-    /// The override can only LOWER the budget (it exists so tests can force the fail-closed path).
-    /// It must never raise the limit above the built-in cap: the task budget is the optimizer's
-    /// work guard, so an unbounded override would let a single query spin the optimizer without
-    /// bound. Values above the cap are clamped to it.
-    constexpr auto param_name = "_internal_cascades_task_limit";
-    if (context->getQueryParameters().contains(param_name))
-    {
-        size_t value = parse<size_t>(context->getQueryParameters().at(param_name));
-        if (value > 0)
-            return value < default_limit ? value : default_limit;
-    }
-    return default_limit;
 }
 
 size_t getCascadesPlanningNodeCount(ContextPtr context)

@@ -2,7 +2,7 @@
 
 #include <Common/tests/gtest_global_context.h>
 #include <Interpreters/Context.h>
-#include <QueryPipeline/DistributedPlanExecutor.h>
+#include <Processors/QueryPlan/Optimizations/Cascades/CascadesParams.h>
 
 using namespace DB;
 

@@ -1,4 +1,5 @@
 #include <Planner/PlannerJoinsLogical.h>
+#include <Processors/QueryPlan/Optimizations/Cascades/CascadesParams.h>
 #include <Planner/PlannerJoins.h>
 
 #include <IO/WriteBuffer.h>
@@ -577,7 +578,7 @@ std::unique_ptr<JoinStepLogical> buildJoinStepLogical(
 
     {
         const auto & query_params = query_context->getQueryParameters();
-        if (auto it = query_params.find("_internal_join_table_stat_hints"); it != query_params.end())
+        if (auto it = query_params.find(CascadesParams::STAT_HINTS); it != query_params.end())
             join_step->setTableStatsHint(it->second);
     }
 

@@ -12,6 +12,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/Context_fwd.h>
 #include <QueryPipeline/DistributedPlanExecutor.h>
+#include <Processors/QueryPlan/Optimizations/Cascades/CascadesParams.h>
 #include <Common/CurrentThread.h>
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
@@ -53,9 +54,8 @@ void CascadesOptimizer::optimize()
     auto query_context = CurrentThread::get().tryGetQueryContext();
     if (!query_context)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "No query context available");
-    constexpr auto stats_hint_param_name = "_internal_join_table_stat_hints";
-    if (query_context->getQueryParameters().contains(stats_hint_param_name))
-        statistics = createStatisticsFromHint(query_context->getQueryParameters().at(stats_hint_param_name));
+    if (query_context->getQueryParameters().contains(CascadesParams::STAT_HINTS))
+        statistics = createStatisticsFromHint(query_context->getQueryParameters().at(CascadesParams::STAT_HINTS));
     else
         statistics = createEmptyStatistics();
 
@@ -79,9 +79,8 @@ void CascadesOptimizer::optimize()
 
     /// If the cost-config override is set but invalid, let the error propagate instead of silently
     /// using the defaults, so a query that set it does not get a different cost model than it asked for.
-    constexpr auto cost_config_param_name = "_internal_cascades_cost_config";
-    if (query_context->getQueryParameters().contains(cost_config_param_name))
-        environment.cost_config = parseCostConfig(query_context->getQueryParameters().at(cost_config_param_name));
+    if (query_context->getQueryParameters().contains(CascadesParams::COST_CONFIG))
+        environment.cost_config = parseCostConfig(query_context->getQueryParameters().at(CascadesParams::COST_CONFIG));
 
     environment.distributed_plan_execute_locally = optimization_settings.distributed_plan_execute_locally;
     environment.distributed_aggregation_memory_efficient = optimization_settings.distributed_aggregation_memory_efficient;

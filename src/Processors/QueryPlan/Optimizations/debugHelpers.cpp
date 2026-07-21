@@ -12,6 +12,7 @@
 #include <Core/Block.h>
 
 #include <pcg_random.hpp>
+#include <Processors/QueryPlan/Optimizations/Cascades/CascadesParams.h>
 
 /*
  * This file contains helper functions for debugging and testing join optimization.
@@ -26,7 +27,7 @@
 namespace DB
 {
 
-constexpr auto DUMMY_JOIN_STATS_PARAM_NAME = "_internal_join_table_stat_hints";
+constexpr auto DUMMY_JOIN_STATS_PARAM_NAME = CascadesParams::STAT_HINTS;
 
 /* Read dummy stats from query parameter
  * The parameter should be a JSON object with the following structure:
