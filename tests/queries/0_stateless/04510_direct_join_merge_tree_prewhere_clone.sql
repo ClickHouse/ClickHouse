@@ -4,6 +4,8 @@
 -- DirectJoinMergeTreeEntity::getByKeys clones and re-optimizes on every lookup (across
 -- max_threads threads). Column pruning (query_plan_remove_unused_columns) mutated the shared
 -- PrewhereInfo/row_level_filter DAGs in place, corrupting them across clones. See PR #109932.
+-- This is a heap-use-after-free, so it aborts deterministically only under a sanitizer (ASan);
+-- on a plain build the corrupted read usually returns silently. CI runs it under asan/ubsan.
 
 DROP TABLE IF EXISTS events;
 DROP TABLE IF EXISTS attributes;
