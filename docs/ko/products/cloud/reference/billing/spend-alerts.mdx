@@ -51,7 +51,7 @@ import { Image } from "/snippets/ko/components/Image.jsx";
     2. 알림 채널(**Email**, **UI**, **Slack**) 중 하나 이상을 선택합니다.
     3. **Save**를 클릭합니다.
 
-    <Image img="/images/cloud/reference/billing/spend-alerts-config.webp" alt="지출 한도, 자동 임계값 알림, 알림 채널이 표시된 조직 지출 알림 대화 상자" size="md" />
+    <Image img="/images/cloud/reference/billing/spend-alerts-config.png" alt="지출 한도, 자동 임계값 알림, 알림 채널이 표시된 조직 지출 알림 대화 상자" size="md" />
   </Step>
 </Steps>
 
@@ -59,12 +59,13 @@ import { Image } from "/snippets/ko/components/Image.jsx";
   ## 자동 임계값 알림
 </div>
 
-설정된 지출 알림 금액에 따라 3개의 알림이 자동으로 생성되고 실행됩니다.
+설정된 지출 알림 금액에 따라 4개의 알림이 자동으로 생성되고 실행됩니다.
 
 | 임계값      | 실행 조건          | 예시 ($10 알림) |
 | -------- | -------------- | ----------- |
 | **50%**  | 지출 금액의 절반에 도달  | $5          |
-| **75%**  | 지출 금액의 75%에 도달 | $7.50       |
+| **75%**  | 지출 금액의 75%에 도달 | $8          |
+| **90%**  | 지출 금액의 90%에 도달 | $9          |
 | **100%** | 전체 지출 금액에 도달   | $10         |
 
 <div id="notification-channels">
