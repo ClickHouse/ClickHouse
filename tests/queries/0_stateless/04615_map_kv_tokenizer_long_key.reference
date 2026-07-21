@@ -1,0 +1,21 @@
+-- exact m[key] = value --
+1
+1
+2
+2
+3
+3
+-- mapContainsKey (long key) --
+2
+4
+2
+4
+-- mapContainsValue (long value, and value shared by long+short key) --
+3
+3
+4
+5
+4
+5
+-- no false match on a long absent key/value --
+0

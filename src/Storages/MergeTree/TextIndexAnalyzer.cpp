@@ -295,13 +295,13 @@ bool TextIndexAnalyzer::addTokenToPatterns(std::string_view token)
 
     if (!queries_with_value_matchers.empty())
     {
-        auto [token_key, token_value] = decodeMapKeyValueToken(token);
+        auto decoded = decodeMapKeyValueToken(token);
         for (const auto & query_hash : queries_with_value_matchers)
         {
             const auto & query = *query_builders[query_hash].query;
             const bool matched = std::ranges::any_of(query.getValueMatchers(), [&](const auto & matcher)
             {
-                return matcher.match(token_key, token_value);
+                return matcher.match(decoded.key, decoded.value, decoded.is_rest);
             });
 
             if (matched)

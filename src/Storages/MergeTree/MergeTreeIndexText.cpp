@@ -1690,13 +1690,34 @@ void MergeTreeIndexAggregatorText::update(const Block & block, size_t * pos, siz
         /// the right, so a bare Arena/String buffer is not enough; ColumnString's PaddedPODArray
         /// pads both sides, exactly like the plain-String and Array index paths.
         auto tokens_column = ColumnString::create();
+        /// Reused across the whole block so encoding a pair does not allocate a String per token; the
+        /// encoded bytes are then copied into the padded ColumnString (see above), which the wide
+        /// StringHashTable::dispatch reads require.
+        String token_buf;
+        /// Keys already emitted for the current row, to flag the first occurrence of a key with
+        /// is_rest = 0 and later duplicates with is_rest = 1 (see MapKeyValueToken.h). A linear
+        /// back-scan over this small per-row vector beats a hash set here: maps have few entries, and
+        /// the scan is allocation-free and short-circuits, whereas a node-based set allocates per key.
+        std::vector<std::string_view> row_keys;
         for (size_t i = offset; i < offset + rows_read; ++i)
         {
             tokens_column->popBack(tokens_column->size());
+            row_keys.clear();
             for (size_t j = offsets[i - 1]; j < offsets[i]; ++j)
             {
-                String token = encodeMapKeyValueToken(keys.getDataAt(j), values.getDataAt(j));
-                tokens_column->insertData(token.data(), token.size());
+                const std::string_view key_view = keys.getDataAt(j);
+                bool is_rest = false;
+                for (const auto & prev_key : row_keys)
+                {
+                    if (prev_key == key_view)
+                    {
+                        is_rest = true;
+                        break;
+                    }
+                }
+                row_keys.push_back(key_view);
+                encodeMapKeyValueToken(key_view, values.getDataAt(j), is_rest, token_buf);
+                tokens_column->insertData(token_buf.data(), token_buf.size());
             }
 
             /// One position per map entry, in the map's stored order (mirrors the Array path).

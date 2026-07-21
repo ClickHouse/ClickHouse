@@ -13,11 +13,13 @@ SETTINGS index_granularity = 2, min_bytes_for_wide_part = 0;
 
 INSERT INTO t_map_kv VALUES (1, {'foo':'bar'}), (2, {'foo':'baz','k2':'v2'});
 
--- Each distinct pair becomes one token: key || value || chr(length(key)).
+-- Each distinct pair becomes one token: key || value || chr((length(key) << 1) | is_rest). The trailer
+-- packs the per-key occurrence flag in the low bit; a first (here only) occurrence has is_rest = 0, so
+-- the trailer byte is length(key) * 2.
 SELECT hex(token), cardinality FROM mergeTreeTextIndex(currentDatabase(), t_map_kv, idx) ORDER BY token;
 
--- The exact 'foo' -> 'bar' token is present (length of key 'foo' is 3).
-SELECT count() FROM mergeTreeTextIndex(currentDatabase(), t_map_kv, idx) WHERE token = concat('foo', 'bar', char(3));
+-- The exact 'foo' -> 'bar' token is present (key 'foo' has length 3, first occurrence -> trailer 3*2 = 6).
+SELECT count() FROM mergeTreeTextIndex(currentDatabase(), t_map_kv, idx) WHERE token = concat('foo', 'bar', char(6));
 
 -- Exact key-value lookups answered by the index.
 SELECT id FROM t_map_kv WHERE m['foo'] = 'bar' ORDER BY id;

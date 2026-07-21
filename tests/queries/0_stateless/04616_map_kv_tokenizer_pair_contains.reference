@@ -1,0 +1,17 @@
+-- mapContainsKeyValue: indexed == Memory --
+1
+1
+2
+2
+3
+3
+-- mapContainsKeyValueLike: indexed == Memory --
+1
+1
+2
+2
+-- direct read engages for the pair functions (settings pinned) --
+kv exact	1
+kvLike on	1
+kvLike off	0
+kvLike short	0

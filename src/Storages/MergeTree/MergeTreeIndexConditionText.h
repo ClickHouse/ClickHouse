@@ -57,8 +57,11 @@ struct TokenValueMatcher
     std::optional<String> value_suffix = std::nullopt;
     /// If set, the decoded value must match this pattern (for LIKE-style search).
     std::shared_ptr<OptimizedRegularExpression> value_pattern = nullptr;
+    /// If true, only the first occurrence of the key in a row matches (the `m['key']` positional
+    /// forms); existence forms leave it false and match any occurrence. See MapKeyValueToken.h.
+    bool require_first = false;
 
-    bool match(std::string_view token_key, std::string_view token_value) const;
+    bool match(std::string_view token_key, std::string_view token_value, bool token_is_rest) const;
 };
 
 /// Represents a single text-search function
@@ -196,6 +199,9 @@ private:
     TextIndexDirectReadMode getHintOrNoneMode() const;
 
     bool traverseMapElementKeyNode(const RPNBuilderFunctionTreeNode & function_node, RPNElement & out) const;
+    /// Handles the 3-argument pair-existence functions `mapContainsKeyValue(map, key, value)` and
+    /// `mapContainsKeyValueLike(map, key_pattern, value_pattern)` for the keyValuePairs index.
+    bool traverseMapContainsKeyValue(const RPNBuilderFunctionTreeNode & function_node, RPNElement & out) const;
     bool traverseMapElementValueNode(const RPNBuilderTreeNode & index_column_node, const Field & const_value) const;
     bool traverseJSONSubcolumnKeyNode(const RPNBuilderFunctionTreeNode & function_node, RPNElement & out) const;
 
