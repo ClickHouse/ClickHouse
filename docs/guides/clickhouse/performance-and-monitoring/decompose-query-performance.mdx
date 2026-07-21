@@ -1,0 +1,34 @@
+---
+slug: /optimize/decompose-query-performance
+sidebarTitle: 'Decompose query performance'
+title: 'Decompose query performance'
+description: 'Learn a repeatable methodology for isolating bottlenecks in slow ClickHouse queries'
+doc_type: 'guide'
+keywords: ['query optimization', 'query decomposition', 'performance', 'benchmarking']
+---
+
+import { Image } from "/snippets/components/Image.jsx";
+
+Query optimization is easier when you change one part of a query at a time and compare each result with a stable baseline. Use the following measurement practices before isolating individual execution stages.
+
+## Methodology {#methodology}
+
+### Establish a repeatable baseline {#establish-a-repeatable-baseline}
+
+It can be difficult to identify problematic queries on a production deployment, as there are probably a large number of queries being executed at any given time on your ClickHouse deployment. 
+
+If you know which user, database, or tables are having issues, you can use the fields `user`, `tables`, or `databases` from `system.query_log` to narrow down the search. 
+
+Once you identify the queries you want to optimize, you can start working on them to optimize. One common mistake developers make at this stage is changing multiple things simultaneously, running ad-hoc experiments, and usually ending up with mixed results, but, more importantly, missing a good understanding of what made the query faster. 
+
+Query optimization requires structure. I'm not talking about advanced benchmarking, but having a simple process in place to understand how your changes affect query performance can go a long way. 
+
+Start by identifying your slow queries from query logs, then investigate potential improvements in isolation. When testing the query, make sure you disable the filesystem cache. 
+
+> ClickHouse leverages [caching](/concepts/features/performance/caches/caches) to speed up query performance at different stages. This is good for query performance, but during troubleshooting, it could hide potential I/O bottlenecks or poor table schema. For this reason, I suggest turning off the filesystem cache during testing. Make sure to have it enabled in production setup.
+
+Once you have identified potential optimizations, it is recommended that you implement them one by one to better track how they affect performance. Below is a diagram describing the general approach.
+
+<Image img="/images/guides/best-practices/query_optimization_diagram_1.webp" size="lg" alt="Optimization workflow"/>
+
+_Finally, be cautious of outliers; it's pretty common that a query might run slowly, either because a user tried an ad-hoc expensive query or the system was under stress for another reason. You can group by the field normalized_query_hash to identify expensive queries that are being executed regularly. Those are probably the ones you want to investigate._

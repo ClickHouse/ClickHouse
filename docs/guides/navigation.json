@@ -53,7 +53,15 @@
         {
           "group": "Performance & monitoring",
           "pages": [
-            "guides/clickhouse/performance-and-monitoring/query-optimization",
+            {
+              "group": "Query optimization",
+              "pages": [
+                "guides/clickhouse/performance-and-monitoring/diagnose-slow-queries",
+                "guides/clickhouse/performance-and-monitoring/decompose-query-performance",
+                "guides/clickhouse/performance-and-monitoring/query-optimization-example"
+              ],
+              "root": "guides/clickhouse/performance-and-monitoring/query-optimization"
+            },
             "guides/clickhouse/performance-and-monitoring/analyzer",
             "guides/clickhouse/performance-and-monitoring/understanding-query-execution-with-the-analyzer",
             "guides/clickhouse/performance-and-monitoring/dynamic-column-selection"
