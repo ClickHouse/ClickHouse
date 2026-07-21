@@ -157,6 +157,20 @@ def test_upgrade_and_attach_partition_from(start_cluster):
     )
     node_old.query("INSERT INTO t_parens_src VALUES (1, 1), (1, 2), (2, 1)")
 
+    # A table with a secondary index and a projection created by the OLD version: it stores the
+    # canonical form without the redundant parentheses (`INDEX ix b * c`, `PROJECTION p (SELECT b ...)`).
+    node_old.query(
+        """
+        CREATE TABLE t_parens_defs_src (a UInt32, b UInt32, c UInt32,
+            INDEX ix (b * c) TYPE minmax GRANULARITY 1,
+            PROJECTION p (SELECT (b), sum(c) GROUP BY (b)))
+        ENGINE = MergeTree
+        PARTITION BY (a)
+        ORDER BY (a)
+        """
+    )
+    node_old.query("INSERT INTO t_parens_defs_src VALUES (1, 1, 1), (1, 2, 2), (2, 3, 3)")
+
     node_old.restart_with_latest_version()
 
     create = node_old.query("SHOW CREATE TABLE t_parens_src")
@@ -173,6 +187,26 @@ def test_upgrade_and_attach_partition_from(start_cluster):
     )
     node_old.query("ALTER TABLE t_parens_dst ATTACH PARTITION 1 FROM t_parens_src")
     assert node_old.query("SELECT a, b FROM t_parens_dst ORDER BY a, b") == "1\t1\n1\t2\n"
+
+    # The index/projection stored by the old version (canonical, no redundant parentheses) must be
+    # interchangeable in `ATTACH PARTITION FROM` with a table freshly created by the current version,
+    # whose `INDEX ix (b * c)` / `PROJECTION p (SELECT (b) ...)` keeps the parentheses #92340 preserves.
+    # The structure gate must compare them by their backward-compatible canonical form.
+    node_old.query(
+        """
+        CREATE TABLE t_parens_defs_dst (a UInt32, b UInt32, c UInt32,
+            INDEX ix (b * c) TYPE minmax GRANULARITY 1,
+            PROJECTION p (SELECT (b), sum(c) GROUP BY (b)))
+        ENGINE = MergeTree
+        PARTITION BY (a)
+        ORDER BY (a)
+        """
+    )
+    node_old.query("ALTER TABLE t_parens_defs_dst ATTACH PARTITION 1 FROM t_parens_defs_src")
+    assert (
+        node_old.query("SELECT a, b, c FROM t_parens_defs_dst ORDER BY a, b, c")
+        == "1\t1\t1\n1\t2\t2\n"
+    )
 
     # The replicated table created by the old version must still work after the upgrade.
     node_old.query("SYSTEM SYNC REPLICA t_parens_old_first", timeout=30)

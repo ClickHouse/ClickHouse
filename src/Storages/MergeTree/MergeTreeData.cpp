@@ -10218,12 +10218,16 @@ MergeTreeData & MergeTreeData::checkStructureAndGetMergeTreeData(IStorage & sour
             (strict_match && my_descriptions.size() != src_descriptions.size()))
             return false;
 
+        /// Compare by the backward-compatible canonical form, not the raw definition AST: `(a)`,
+        /// `INDEX ix (b * c)` and `PROJECTION p (SELECT (b) ...)` are the same as their unparenthesized
+        /// form but format to different strings, so a syntactic compare rejects a semantically-equal
+        /// index/projection stored by a version that serializes the parentheses differently (#92340).
         std::unordered_set<std::string> my_query_strings;
         for (const auto & description : my_descriptions)
-            my_query_strings.insert(description.definition_ast->formatWithSecretsOneLine());
+            my_query_strings.insert(description.formatBackwardCompatibleOneLine());
 
         for (const auto & src_description : src_descriptions)
-            if (!my_query_strings.contains(src_description.definition_ast->formatWithSecretsOneLine()))
+            if (!my_query_strings.contains(src_description.formatBackwardCompatibleOneLine()))
                 return false;
 
         return true;

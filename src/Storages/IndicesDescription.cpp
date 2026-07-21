@@ -244,6 +244,22 @@ String IndicesDescription::allToString() const
     return list.formatWithSecretsOneLine();
 }
 
+/// Strip the redundant parentheses around a single index expression (`INDEX ix (b * c)`) on a
+/// clone, so the same index stored by a version that preserved them (#92340) compares equal to
+/// the canonical form. Shared by the per-item and whole-collection canonical formatters.
+static ASTPtr strippedIndexDefinitionAST(const IndexDescription & index)
+{
+    auto cloned = index.definition_ast->clone();
+    if (auto * index_decl = cloned->as<ASTIndexDeclaration>())
+        stripParenthesesUnlessAliased(index_decl->getExpression());
+    return cloned;
+}
+
+String IndexDescription::formatBackwardCompatibleOneLine() const
+{
+    return strippedIndexDefinitionAST(*this)->formatWithSecretsOneLine();
+}
+
 String IndicesDescription::formatBackwardCompatibleOneLine(bool only_explicit) const
 {
     if (empty())
@@ -255,13 +271,7 @@ String IndicesDescription::formatBackwardCompatibleOneLine(bool only_explicit) c
         if (only_explicit && index.isImplicitlyCreated())
             continue;
 
-        /// Parentheses around the whole index expression (`INDEX ix (b * c)`) are redundant; strip
-        /// them on a clone so the same index stored by a version that preserved them (#92340)
-        /// compares equal to the canonical form.
-        auto cloned = index.definition_ast->clone();
-        if (auto * index_decl = cloned->as<ASTIndexDeclaration>())
-            stripParenthesesUnlessAliased(index_decl->getExpression());
-        list.children.push_back(std::move(cloned));
+        list.children.push_back(strippedIndexDefinitionAST(index));
     }
 
     return list.formatWithSecretsOneLine();

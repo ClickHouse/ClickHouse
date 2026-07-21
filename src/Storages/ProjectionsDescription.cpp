@@ -811,8 +811,21 @@ String ProjectionsDescription::toString() const
 
 namespace
 {
+    /// Drop the redundant top-level parentheses of a projection SELECT / WITH element even when it
+    /// carries an alias. `stripParenthesesUnlessAliased` leaves aliased nodes untouched to keep the
+    /// `(expr) AS alias` round-trip stable, but older versions (pre-#92340) stored the alias without
+    /// the redundant parens (`b + 1 AS y`, not `(b + 1) AS y`), so for the backward-compatible
+    /// comparison form we clear the flag on the element's own node. This is safe: `decideParensEmission`
+    /// gates the redundant parens on `isParenthesized()`, while a subquery emits its own `(SELECT ...)`
+    /// and an operator chain keeps its inner precedence parens regardless of this flag.
+    void stripElementParensKeepingAlias(const ASTPtr & element)
+    {
+        if (element)
+            element->setParenthesized(false);
+    }
+
     /// Strip the redundant top-level parentheses from every whole expression of a projection
-    /// definition (its SELECT/WHERE/GROUP BY/ORDER BY elements and, for a minmax projection, its
+    /// definition (its WITH/SELECT/WHERE/GROUP BY/ORDER BY elements and, for a minmax projection, its
     /// INDEX key list). Mirrors the parse-time canonicalization done for ordinary key clauses so
     /// projections written by a version that preserved the parentheses (#92340) compare equal.
     void stripProjectionParens(const ASTPtr & definition_ast)
@@ -823,9 +836,16 @@ namespace
 
         if (auto * select = projection->query ? projection->query->as<ASTProjectionSelectQuery>() : nullptr)
         {
+            /// WITH and SELECT elements are always aliased (`(expr) AS name`), so
+            /// `stripParenthesesUnlessAliased` would be a no-op on them; clear the redundant parens
+            /// on the element itself while keeping the alias.
+            if (auto with_list = select->with())
+                for (const auto & element : with_list->children)
+                    stripElementParensKeepingAlias(element);
+
             if (auto select_list = select->select())
                 for (const auto & element : select_list->children)
-                    stripParenthesesUnlessAliased(element);
+                    stripElementParensKeepingAlias(element);
 
             stripParenthesesUnlessAliased(select->where());
 
@@ -843,6 +863,13 @@ namespace
             for (const auto & element : projection->index->children)
                 stripParenthesesUnlessAliased(element);
     }
+}
+
+String ProjectionDescription::formatBackwardCompatibleOneLine() const
+{
+    auto cloned = definition_ast->clone();
+    stripProjectionParens(cloned);
+    return cloned->formatWithSecretsOneLine();
 }
 
 String ProjectionsDescription::formatBackwardCompatibleOneLine() const

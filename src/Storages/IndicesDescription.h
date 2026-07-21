@@ -84,6 +84,11 @@ struct IndexDescription
     void initExpressionInfo(ASTPtr index_expression, const ColumnsDescription & columns, ContextPtr context);
 
     bool isSimpleSingleColumnIndex() const;
+
+    /// One-line canonical form of this single index used for backward-compatible equality checks.
+    /// Strips the redundant parentheses #92340 preserves (`INDEX ix (b * c)`) so it compares equal
+    /// to `INDEX ix b * c` stored by other versions. See IndicesDescription::formatBackwardCompatibleOneLine.
+    String formatBackwardCompatibleOneLine() const;
 };
 
 /// All secondary indices in storage
