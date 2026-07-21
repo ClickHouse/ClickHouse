@@ -1149,11 +1149,15 @@ UInt64 estimateNeededMemoryForMerge(
                 /// wide-part settings. An expression that expands bytes per row can push a small input over the
                 /// wide threshold; underestimating the projected size here can only misclassify a Wide temp part
                 /// as Compact, which merely weakens throttling of concurrent merges (a single merge is always
-                /// admitted), the safe direction.
+                /// admitted), the safe direction. writeTempProjectionPart formats the temporary part after
+                /// patches are applied to the merged rows, so include the patch parts (the same patched input
+                /// set the stream count above uses): a patch that inflates a projected column can push the real
+                /// temp part over min_bytes_for_wide_part, and counting the patch bytes here lets them
+                /// participate in the Wide-vs-Compact decision.
                 const auto projection_required_columns = projection.getRequiredColumns();
                 UInt64 projection_uncompressed_bytes = 0;
                 UInt64 projection_rows = 0;
-                for (const auto & part : future_part.parts)
+                for (const auto & part : source_and_patch_parts)
                 {
                     projection_rows += part->rows_count;
                     UInt64 part_projection_bytes = 0;
