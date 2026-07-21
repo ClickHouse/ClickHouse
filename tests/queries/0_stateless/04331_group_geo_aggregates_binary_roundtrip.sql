@@ -29,7 +29,7 @@ FROM
 
 -- The first merge into a fresh accumulator must preserve the restored watermark as well.
 SELECT 'convex_hull_watermark_merge_state';
-SELECT serialized = hex(groupConvexHullMergeState(
+SELECT any(serialized) = hex(groupConvexHullMergeState(
     CAST(unhex(serialized) AS AggregateFunction(groupConvexHull, Point))))
 FROM
 (
