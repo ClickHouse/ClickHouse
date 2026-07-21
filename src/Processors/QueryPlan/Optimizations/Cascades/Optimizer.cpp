@@ -45,20 +45,13 @@ CascadesOptimizer::CascadesOptimizer(QueryPlan & query_plan_, const QueryPlanOpt
     , optimization_settings(optimization_settings_)
 {}
 
-void CascadesOptimizer::optimize()
-{
-    Stopwatch optimizer_timer;
-    OptimizerStatisticsPtr statistics;
-    /// Statistics come from a query-parameter hint when present, otherwise they are empty.
-    /// Deriving them from real table statistics is not wired up yet.
-    auto query_context = CurrentThread::get().tryGetQueryContext();
-    if (!query_context)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "No query context available");
-    if (query_context->getQueryParameters().contains(CascadesParams::STAT_HINTS))
-        statistics = createStatisticsFromHint(query_context->getQueryParameters().at(CascadesParams::STAT_HINTS));
-    else
-        statistics = createEmptyStatistics();
+/// Default task budget for one optimization; see the comment at the search loop.
+static constexpr size_t DEFAULT_TASK_LIMIT = 100000;
 
+/// Collects everything the search runs under: the cluster size (fail-closed when unknown), the
+/// cost model, and the query settings the rules honor.
+static OptimizationEnvironment buildEnvironment(const ContextPtr & query_context, const QueryPlanOptimizationSettings & optimization_settings)
+{
     OptimizationEnvironment environment;
 
     /// Seed the sort settings from the query so any sort added by SortingEnforcer keeps the query's
@@ -87,6 +80,25 @@ void CascadesOptimizer::optimize()
     environment.distributed_plan_force_shuffle_aggregation = optimization_settings.distributed_plan_force_shuffle_aggregation;
     environment.exact_rows_before_limit = optimization_settings.exact_rows_before_limit;
 
+    return environment;
+}
+
+void CascadesOptimizer::optimize()
+{
+    Stopwatch optimizer_timer;
+    auto query_context = CurrentThread::get().tryGetQueryContext();
+    if (!query_context)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "No query context available");
+
+    /// Statistics come from a query-parameter hint when present, otherwise they are empty.
+    /// Deriving them from real table statistics is not wired up yet.
+    OptimizerStatisticsPtr statistics;
+    if (query_context->getQueryParameters().contains(CascadesParams::STAT_HINTS))
+        statistics = createStatisticsFromHint(query_context->getQueryParameters().at(CascadesParams::STAT_HINTS));
+    else
+        statistics = createEmptyStatistics();
+
+    OptimizationEnvironment environment = buildEnvironment(query_context, optimization_settings);
     LOG_TRACE(getLogger("CascadesOptimizer"), "Cost config: {}, cluster node count: {}",
         environment.cost_config.dump(), environment.cluster_node_count);
 
@@ -102,7 +114,7 @@ void CascadesOptimizer::optimize()
 
     /// Limit the time in terms of optimization tasks instead of wall clock time. This is done for stability of generated plans regardless of system load.
     /// Guys from MS SQL Server describe this in Andy Pavlo's seminar: https://www.youtube.com/watch?v=pQe1LQJiXN0
-    const size_t executed_tasks_limit = getCascadesTaskLimitParam(query_context, 100000);
+    const size_t executed_tasks_limit = getCascadesTaskLimitParam(query_context, DEFAULT_TASK_LIMIT);
     size_t executed_tasks_count = 0;
     for (; !optimizer_context.tasks.empty() && executed_tasks_count < executed_tasks_limit; ++executed_tasks_count)
     {
