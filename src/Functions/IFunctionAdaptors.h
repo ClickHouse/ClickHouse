@@ -21,6 +21,7 @@ protected:
     ColumnPtr executeDryRunImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const final;
 
     bool useDefaultImplementationForNulls() const final { return function->useDefaultImplementationForNulls(); }
+    bool preserveNullableArrayResultForDefaultNulls() const final { return function->preserveNullableArrayResultForDefaultNulls(); }
     bool useDefaultImplementationForNothing() const final { return function->useDefaultImplementationForNothing(); }
     bool useDefaultImplementationForConstants() const final { return function->useDefaultImplementationForConstants(); }
     bool useDefaultImplementationForLowCardinalityColumns() const final { return function->useDefaultImplementationForLowCardinalityColumns(); }

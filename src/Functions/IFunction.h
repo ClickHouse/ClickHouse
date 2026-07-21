@@ -80,6 +80,8 @@ protected:
       */
     virtual bool useDefaultImplementationForNulls() const { return true; }
 
+    virtual bool preserveNullableArrayResultForDefaultNulls() const { return false; }
+
     /** Default implementation in presence of arguments with type Nothing is the following:
       *  If some of arguments have type Nothing then default implementation is to return constant column with type Nothing
       */
@@ -460,6 +462,8 @@ protected:
       */
     virtual bool useDefaultImplementationForNulls() const { return true; }
 
+    virtual bool preserveNullableArrayResultForDefaultNulls() const { return false; }
+
     /** If useDefaultImplementationForNothing() is true, then change arguments for getReturnType() and build():
       *  if some of arguments are Nothing then don't call getReturnType(), call build() with return_type = Nothing,
       * Otherwise build returns build(arguments, getReturnType(arguments));
@@ -543,11 +547,12 @@ public:
       */
     virtual bool useDefaultImplementationForNulls() const { return true; }
 
+    virtual bool preserveNullableArrayResultForDefaultNulls() const { return false; }
+
     /** Default implementation in presence of arguments with type Nothing is the following:
       *  If some of arguments have type Nothing then default implementation is to return constant column with type Nothing
       */
     virtual bool useDefaultImplementationForNothing() const { return true; }
-
     /** If the function have non-zero number of arguments,
       *  and if all arguments are constant, that we could automatically provide default implementation:
       *  arguments are converted to ordinary columns with single value, then function is executed as usual,

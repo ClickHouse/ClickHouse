@@ -79,6 +79,7 @@ public:
     String getName() const override;
 
     bool useDefaultImplementationForConstants() const override { return true; }
+    bool preserveNullableArrayResultForDefaultNulls() const override { return is_null_mode; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
     size_t getNumberOfArguments() const override { return 2; }
 
