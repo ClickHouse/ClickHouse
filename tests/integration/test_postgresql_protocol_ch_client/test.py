@@ -711,3 +711,85 @@ def test_current_setting_missing_ok_returns_null(started_cluster):
     assert "UNKNOWN_SETTING" in node.query_and_get_error(
         "SELECT current_setting('no_such_parameter')"
     )
+
+
+def test_datetime_with_timezone_stays_text(started_cluster):
+    # PostgreSQL `timestamp without time zone` cannot carry a ClickHouse column's explicit time zone.
+    # Advertising e.g. `DateTime('UTC')` as `timestamp` would make the reading side reconstruct a plain
+    # `DateTime` and parse the text in the server default time zone, silently shifting the stored epochs
+    # whenever the zones differ. Such columns must stay on the text fallback: they are inferred as
+    # `String` and the value is the exact text rendering in the column's own time zone (no epoch shift).
+    node.query("DROP TABLE IF EXISTS test_dt_tz SYNC")
+    node.query(
+        "CREATE TABLE test_dt_tz "
+        "(id UInt32, dt_utc DateTime('UTC'), dt64_tz DateTime64(3, 'Asia/Istanbul'), dt DateTime) "
+        "ENGINE = MergeTree ORDER BY id"
+    )
+    node.query(
+        "INSERT INTO test_dt_tz VALUES "
+        "(1, '2024-01-02 03:04:05', '2024-01-02 03:04:05.123', '2024-01-02 03:04:05')"
+    )
+
+    # Timezone-bearing columns fall back to text (String); a plain DateTime still round-trips natively.
+    assert node.query(
+        "SELECT toTypeName(dt_utc), toTypeName(dt64_tz), toTypeName(dt) "
+        f"FROM {pg_source('default', 'test_dt_tz')} LIMIT 1"
+    ) == "String\tString\tDateTime\n"
+
+    # The values are the exact rendering in each column's own time zone - nothing is reinterpreted.
+    assert node.query(
+        f"SELECT dt_utc, dt64_tz, dt FROM {pg_source('default', 'test_dt_tz')} ORDER BY id"
+    ) == "2024-01-02 03:04:05\t2024-01-02 03:04:05.123\t2024-01-02 03:04:05\n"
+
+    # The direct wire path agrees: timezone-bearing columns are varchar (1043), a plain one stays
+    # timestamp (1114).
+    conn = py_psql.connect(
+        host=node.ip_address, port=PG_PORT, user="pguser", password="pgpass", database="default"
+    )
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT dt_utc, dt64_tz, dt FROM test_dt_tz")
+        assert [c.type_code for c in cur.description] == [1043, 1043, 1114]
+        row = cur.fetchone()
+        assert row[0] == "2024-01-02 03:04:05"
+        assert row[1] == "2024-01-02 03:04:05.123"
+    finally:
+        conn.close()
+
+
+def test_copy_from_stdin_row_split_across_frames(started_cluster):
+    # PostgreSQL `CopyData` frame boundaries are transport-only: a client may split one logical row
+    # (or even one field) across several frames, and may pack many rows into one frame. The server must
+    # parse the concatenation of all frames as a single stream; a parser restarted per frame would drop
+    # the partial trailing row of every frame. psycopg2's `copy_expert` sends one `CopyData` message per
+    # `read(size)` call, so a tiny `size` forces splits in the middle of rows and fields.
+    node.query("DROP TABLE IF EXISTS test_copy_split SYNC")
+    node.query(
+        "CREATE TABLE test_copy_split (id UInt32, s String) ENGINE = MergeTree ORDER BY id"
+    )
+
+    payload = "".join(f"{i},value-{i}\n" for i in range(1, 101))
+    conn = py_psql.connect(
+        host=node.ip_address, port=PG_PORT, user="pguser", password="pgpass", database="default"
+    )
+    try:
+        cur = conn.cursor()
+        # Each row is about 12 bytes, so size=3 splits every row across several CopyData frames.
+        cur.copy_expert(
+            "COPY test_copy_split FROM STDIN WITH (FORMAT csv)", io.StringIO(payload), size=3
+        )
+
+        # One frame holding many rows (the whole payload in a single CopyData) must work as well.
+        cur.copy_expert(
+            "COPY test_copy_split FROM STDIN WITH (FORMAT csv)",
+            io.StringIO("".join(f"{i},value-{i}\n" for i in range(101, 201))),
+            size=1024 * 1024,
+        )
+    finally:
+        conn.close()
+
+    assert node.query("SELECT count(), sum(id) FROM test_copy_split") == "200\t20100\n"
+    assert (
+        node.query("SELECT s FROM test_copy_split WHERE id IN (42, 142) ORDER BY id")
+        == "value-42\nvalue-142\n"
+    )
