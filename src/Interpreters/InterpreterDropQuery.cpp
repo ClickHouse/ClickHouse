@@ -15,6 +15,7 @@
 #include <Storages/IStorage.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/StorageMaterializedView.h>
+#include <Common/Exception.h>
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
 #include <Common/escapeForFileName.h>
 #include <Common/quoteString.h>
@@ -416,6 +417,21 @@ BlockIO InterpreterDropQuery::executeToDatabase(const ASTDropQuery & query)
     }
     catch (...)
     {
+        /// The drop failed. If it is a real DROP DATABASE, the engine may have committed teardown work in
+        /// `beforeDropDatabase` (before any table was removed) and then thrown while dropping the nested tables;
+        /// give it a chance to recover so a refused drop does not leave the database mounted but dead. Idempotent.
+        if (database && query.kind == ASTDropQuery::Kind::Drop)
+        {
+            try
+            {
+                database->onDropDatabaseFailed(getContext());
+            }
+            catch (...) // NOLINT(bugprone-empty-catch)
+            {
+                tryLogCurrentException(__PRETTY_FUNCTION__, "Failed to recover the database after a refused DROP");
+            }
+        }
+
         if (query.sync)
         {
             for (const auto & table_uuid : tables_to_wait)

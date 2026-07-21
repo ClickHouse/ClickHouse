@@ -1726,6 +1726,12 @@ void PostgreSQLReplicationHandler::restartCoordinatedReplicationAfterFailedTeard
     /// all of which the retrying startup path rebuilds. Re-registration and nested-table creation are
     /// idempotent, and the shared snapshot_completed marker decides (as always) whether the elected worker
     /// resumes from confirmed_flush_lsn or redoes the initial snapshot.
+    ///
+    /// The failed teardown had already made its last-replica decision and re-registered this replica (or, for the
+    /// last replica, removed the shared coordination nodes, which the rebuilt startup then recreates). Clear that
+    /// stale decision so a later drop re-runs the race-free last-replica check from scratch instead of reusing
+    /// `coordinated_teardown_was_last` (which a retried drop that skips the teardown would otherwise trust).
+    coordinated_teardown_was_last = false;
     stop_synchronization.store(false);
     retry_startup_on_error.store(true);
     startup_task->activateAndSchedule();

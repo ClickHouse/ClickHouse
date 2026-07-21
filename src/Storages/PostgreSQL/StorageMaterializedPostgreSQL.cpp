@@ -4,6 +4,7 @@
 
 #if USE_LIBPQXX
 #include <Common/logger_useful.h>
+#include <Common/FailPoint.h>
 
 #include <Common/Macros.h>
 #include <Common/parseAddress.h>
@@ -61,6 +62,12 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int NOT_IMPLEMENTED;
     extern const int CANNOT_BACKUP_TABLE;
+    extern const int FAULT_INJECTED;
+}
+
+namespace FailPoints
+{
+    extern const char materialized_postgresql_fail_nested_table_drop[];
 }
 
 
@@ -357,16 +364,46 @@ void StorageMaterializedPostgreSQL::dropInnerTableIfAny(bool sync, ContextPtr lo
             }
         }
 
-        /// Drop the nested replicated table synchronously (ignoring the delayed-drop window): the shared
-        /// teardown above already runs now, so leaving the nested table's Keeper tree behind for
-        /// `database_atomic_delay_before_drop_table_sec` would let a prompt CREATE on the same keeper path
-        /// adopt a half-dead shared tree (a ghost replica and stale block deduplication hashes).
-        if (tryGetNested())
-            InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind::Drop, getContext(), local_context, getNestedStorageID(), /* sync */ true, /* ignore_sync_setting */ true);
+        /// The teardown above has already stopped the handler. Dropping the local nested table (and the
+        /// authoritative `shutdownFinal` that follows) can still throw - for example if Keeper disappears while
+        /// the nested ReplicatedReplacingMergeTree is deleting its own Keeper metadata. In that case the DROP is
+        /// refused, so recover the stopped handler exactly as for a post-shutdown teardown failure above, instead
+        /// of leaving the table mounted but permanently not consuming until a server restart.
+        try
+        {
+            /// Simulates the local nested-table drop below failing (e.g. Keeper disappearing while the nested
+            /// ReplicatedReplacingMergeTree deletes its own Keeper metadata), to test recovery of the handler
+            /// that the teardown has already stopped.
+            fiu_do_on(FailPoints::materialized_postgresql_fail_nested_table_drop,
+            {
+                throw Exception(ErrorCodes::FAULT_INJECTED,
+                    "Injected failure while dropping the local nested table of a coordinated MaterializedPostgreSQL table");
+            });
 
-        /// The local copy is gone: finalize the teardown authoritatively (drops this replica's registration
-        /// for the non-last case; a no-op for the last case, whose registration was already removed above).
-        replication_handler->shutdownFinal();
+            /// Drop the nested replicated table synchronously (ignoring the delayed-drop window): the shared
+            /// teardown above already runs now, so leaving the nested table's Keeper tree behind for
+            /// `database_atomic_delay_before_drop_table_sec` would let a prompt CREATE on the same keeper path
+            /// adopt a half-dead shared tree (a ghost replica and stale block deduplication hashes).
+            if (tryGetNested())
+                InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind::Drop, getContext(), local_context, getNestedStorageID(), /* sync */ true, /* ignore_sync_setting */ true);
+
+            /// The local copy is gone: finalize the teardown authoritatively (drops this replica's registration
+            /// for the non-last case; a no-op for the last case, whose registration was already removed above).
+            replication_handler->shutdownFinal();
+        }
+        catch (...)
+        {
+            if (replication_handler->isStopped())
+            {
+                /// The teardown already committed its last-replica decision, but the local nested table was not
+                /// dropped. Re-arm the retrying startup path (it rebuilds and re-registers this replica) and
+                /// clear `coordinated_teardown_done` so a retried drop re-runs the teardown - and its race-free
+                /// last-replica check - from scratch rather than reusing the now-stale earlier decision.
+                coordinated_teardown_done = false;
+                replication_handler->restartCoordinatedReplicationAfterFailedTeardown();
+            }
+            throw;
+        }
         replication_handler.reset();
         return;
     }

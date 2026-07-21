@@ -82,6 +82,11 @@ public:
     /// shared replicated data while the shared slot/publication/marker (and the live consumer) stay in place.
     void beforeTruncateDatabase(ContextPtr local_context) override;
 
+    /// Recover a coordinated database when a DROP is refused after `beforeDropDatabase` had already stopped the
+    /// replication handler: if the subsequent nested-table drop throws, re-arm the retrying startup path so the
+    /// database resumes replicating instead of staying mounted but silently dead. Idempotent.
+    void onDropDatabaseFailed(ContextPtr local_context) override;
+
     void drop(ContextPtr local_context) override;
 
     bool hasReplicationThread() const override { return true; }
@@ -109,6 +114,11 @@ private:
     /// replication. Constructing it only resolves the coordination path / replica-name macros, which is enough to
     /// run the coordinated teardown even before the background startup task has built the live handler.
     std::shared_ptr<PostgreSQLReplicationHandler> makeReplicationHandler();
+
+    /// Recovery shared by `beforeDropDatabase`'s catch and `onDropDatabaseFailed`: if the coordinated teardown
+    /// had already stopped the handler, discard it and clear `synchronization_started`; then re-arm the startup
+    /// task so replication is rebuilt once Keeper is reachable again. Must be called under `handler_mutex`.
+    void recoverAfterRefusedCoordinatedDrop();
 
     ASTPtr createAlterSettingsQuery(const SettingChange & new_setting);
 
