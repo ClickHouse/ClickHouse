@@ -91,6 +91,16 @@ function firePhaseListeners(node, ev, phase) {
     }
 }
 
+/// Fire a custom-element lifecycle callback (`connectedCallback` / `disconnectedCallback`) on `node`
+/// and its light-DOM descendants. Only real custom elements (a constructed `QueryResultElement`)
+/// define these; plain stubs do not, so this is a no-op for them. Used so removing a tab panel from
+/// the DOM runs the genuine `QueryResultElement.disconnectedCallback` (the tab-removal teardown).
+function fireLifecycle(node, name) {
+    if (!node || node.nodeType !== 1) return;
+    for (const c of (node.children || []).slice()) fireLifecycle(c, name);
+    if (typeof node[name] === 'function') node[name]();
+}
+
 /// Install element behavior onto `el`. Used both for plain stub elements (`makeElement`) and as the
 /// body of the `HTMLElement` base class, so a real `QueryResultElement` can be constructed and its
 /// production methods (`_renderCell`, the constructor's shadow-root listeners) actually run.
@@ -172,6 +182,7 @@ function installElementBehavior(el, tag) {
         c.parentElement = el;
         el.firstChild = el.children[0];
         el.lastChild = c;
+        fireLifecycle(c, 'connectedCallback');
         return c;
     };
     el.removeChild = function (c) {
@@ -179,6 +190,9 @@ function installElementBehavior(el, tag) {
         el.childNodes = el.childNodes.filter(x => x !== c);
         el.firstChild = el.children[0] || null;
         el.lastChild = el.children[el.children.length - 1] || null;
+        c.parentNode = null;
+        c.parentElement = null;
+        fireLifecycle(c, 'disconnectedCallback');
         return c;
     };
     el.insertBefore = function (c, ref) {
@@ -189,14 +203,18 @@ function installElementBehavior(el, tag) {
         c.parentNode = el;
         c.parentElement = el;
         el.firstChild = el.children[0];
+        fireLifecycle(c, 'connectedCallback');
         return c;
     };
     el.replaceChildren = function (...cs) {
+        const old = el.children.slice();
         el.children = [...cs];
         el.childNodes = [...cs];
         for (const c of cs) { c.parentNode = el; c.parentElement = el; }
         el.firstChild = el.children[0] || null;
         el.lastChild = el.children[el.children.length - 1] || null;
+        for (const c of old) { if (!cs.includes(c)) { c.parentNode = null; c.parentElement = null; fireLifecycle(c, 'disconnectedCallback'); } }
+        for (const c of cs) fireLifecycle(c, 'connectedCallback');
     };
     el.remove = function () { if (el.parentNode) el.parentNode.removeChild(el); };
     el.setAttribute = function (k, v) {
@@ -223,7 +241,14 @@ function installElementBehavior(el, tag) {
     el.querySelectorAll = function () { return []; };
     el.closest = function () { return null; };
     el.matches = function () { return false; };
-    el.contains = function () { return false; };
+    /// A real `contains`: true for the element itself or any light-DOM descendant. `setActivePanel`
+    /// uses `panel.contains(image_preview_owner)` to keep a preview owned by the newly active panel
+    /// and dismiss one owned by a panel switched away from, so this must walk the subtree.
+    el.contains = function (target) {
+        if (target === el) return true;
+        for (const c of el.children) { if (c === target || (c.contains && c.contains(target))) return true; }
+        return false;
+    };
     el.scrollIntoView = function () {};
     el.scrollTo = function () {};
     el.scroll = function () {};
@@ -585,6 +610,67 @@ async function boot(js, url) {
     };
 }
 
+/// Boot a page and build a real ACTIVE tab through the production tab machinery, whose result holds a
+/// hovered, revealed image preview OWNED by that tab's result. Uses a genuine `QueryResultElement`
+/// (so its real `clear`/`disconnectedCallback` run), `_renderCell` for the URL, the panel appended to
+/// `resultPanelsEl`, and the tab pushed into `tabs` as active. A following production teardown
+/// (`clearPanel`, `setActivePanel`, `panel.remove()`) can then be asserted to dismiss (or, for a
+/// different tab, NOT dismiss) the preview. Returns `{ run }`; `installBackgroundTab` adds a second,
+/// non-hovered real tab and returns its id via `globalThis.__bgId`.
+async function bootRealTab(js, url) {
+    const page = await bootPage(js);
+    const { run } = page;
+    run(`(function () {
+        globalThis.__find = function find(n, pred) {
+            if (!n) return null;
+            if (pred(n)) return n;
+            for (const ch of (n.children || [])) { const r = find(ch, pred); if (r) return r; }
+            return null;
+        };
+        globalThis.__makeResultTab = function (title) {
+            const qr = new QueryResultElement();
+            const panel = document.createElement('div');
+            panel.className = 'tab-panel';
+            panel.appendChild(qr);                 // panel.contains(qr) is true; fires connectedCallback
+            resultPanelsEl.appendChild(panel);
+            const tab = makeTab(title, '');
+            tab.panel = panel; tab.resultEl = qr;
+            tabs.push(tab);
+            return tab;
+        };
+        const tab = __makeResultTab('Active');
+        activeTabId = tab.id;
+        for (const t of tabs) if (t.panel) t.panel.hidden = (t !== tab);
+        /// Render the image cell through the production renderer and hover it with the modifier held,
+        /// so the preview is created, revealed, and anchored to this tab's result (image_preview_owner).
+        const td = tab.resultEl._renderCell('c', ${JSON.stringify(url)});
+        tab.resultEl.shadowRoot.appendChild(td);
+        const link = __find(td, n => n.tagName === 'A');
+        setImagePreviewModifierHeld(true);
+        link.dispatchEvent({ type: 'mouseenter', clientX: 5, clientY: 5 });
+        if (image_preview && typeof image_preview.onload === 'function') image_preview.onload();
+    })()`);
+    return { page, run };
+}
+
+/// Add a second, non-hovered real result tab (hidden background panel). Its id is in `globalThis.__bgId`.
+function installBackgroundTab(run) {
+    run(`(function () {
+        const bg = __makeResultTab('Background');
+        bg.panel.hidden = true;
+        globalThis.__bgId = bg.id;
+    })()`);
+}
+
+/// Snapshot the shared preview element plus whether it is still anchored to an owner.
+function ownedState(run) {
+    return JSON.parse(run(`JSON.stringify(image_preview === null ? null : {
+        src: image_preview.src,
+        display: image_preview.style.display,
+        owner: image_preview_owner === null ? null : 'set',
+    })`));
+}
+
 /// ----- Assertions ----------------------------------------------------------------------------
 
 let failures = 0;
@@ -820,6 +906,78 @@ async function main() {
         const s = h.state();
         check('keydown-not-a-fetch', 'the following pointer move fetches once',
             s && s.src === url && s.assignments === 1, s);
+    }
+
+    /// Contract 5: teardown is anchored to the ACTIVE result lifecycle, not the auxiliary global
+    /// `clear` wrapper. With the tabs rework, a rerun tears the result down through `clearPanel`
+    /// (called from `postSingle`/`postMulti`/`materializeResult`/`beginFlight`), a tab switch hides
+    /// the panel through `setActivePanel`, and closing a tab removes the panel from the DOM. Each of
+    /// these production paths must dismiss a preview owned by the affected result, WITHOUT a
+    /// background/unrelated teardown dismissing a preview owned by another result. These scenarios run
+    /// the real `clearPanel`/`setActivePanel`/`panel.remove()` against genuine `QueryResultElement`s.
+
+    /// 5a: a rerun through the production `clearPanel` dismisses the owning tab's preview.
+    {
+        const { run } = await bootRealTab(js, url);
+        let s = ownedState(run);
+        check('clearPanel-rerun', 'preview is shown and owned before the rerun',
+            s && s.display === 'block' && s.src === url && s.owner === 'set', s);
+        run(`clearPanel(getActiveTab());`);
+        s = ownedState(run);
+        check('clearPanel-rerun', 'rerun through clearPanel dismisses the preview',
+            s && s.display === 'none' && s.src === '' && s.owner === null, s);
+    }
+
+    /// 5b: clearing a BACKGROUND tab must not dismiss a preview owned by the active tab; clearing the
+    /// owning (active) tab then does dismiss it.
+    {
+        const { run } = await bootRealTab(js, url);
+        installBackgroundTab(run);
+        let s = ownedState(run);
+        check('background-clear', 'preview is shown before the background clear', s && s.display === 'block', s);
+        run(`clearPanel(tabs.find(t => t.id === __bgId));`);
+        s = ownedState(run);
+        check('background-clear', 'clearing a background tab does not dismiss the active preview',
+            s && s.display === 'block' && s.src === url && s.owner === 'set', s);
+        run(`clearPanel(getActiveTab());`);
+        s = ownedState(run);
+        check('background-clear', 'clearing the owning (active) tab dismisses it',
+            s && s.display === 'none' && s.owner === null, s);
+    }
+
+    /// 5c: switching tabs (production `setActivePanel`) dismisses a preview owned by the tab left
+    /// behind (its link is hidden with the panel, no `mouseleave`), but re-activating the owning tab
+    /// keeps it.
+    {
+        const { run } = await bootRealTab(js, url);
+        installBackgroundTab(run);
+        run(`setActivePanel(getActiveTab());`);   // re-activate the owner: preview must stay
+        let s = ownedState(run);
+        check('panel-switch', 're-activating the owning tab keeps the preview', s && s.display === 'block', s);
+        run(`setActivePanel(tabs.find(t => t.id === __bgId));`);
+        s = ownedState(run);
+        check('panel-switch', 'switching to another tab dismisses a preview owned by the tab left behind',
+            s && s.display === 'none' && s.src === '' && s.owner === null, s);
+    }
+
+    /// 5d: closing a tab removes its panel from the DOM (production does `closing.panel.remove()`),
+    /// whose `disconnectedCallback` dismisses the preview it owned; removing a background tab does not.
+    {
+        const { run } = await bootRealTab(js, url);
+        let s = ownedState(run);
+        check('tab-removal', 'preview is shown before removing the owning tab', s && s.display === 'block', s);
+        run(`getActiveTab().panel.remove();`);
+        s = ownedState(run);
+        check('tab-removal', 'removing the owning tab (panel.remove -> disconnectedCallback) dismisses the preview',
+            s && s.display === 'none' && s.src === '' && s.owner === null, s);
+    }
+    {
+        const { run } = await bootRealTab(js, url);
+        installBackgroundTab(run);
+        run(`tabs.find(t => t.id === __bgId).panel.remove();`);
+        const s = ownedState(run);
+        check('tab-removal', 'removing a background tab does not dismiss the active preview',
+            s && s.display === 'block' && s.owner === 'set', s);
     }
 
     if (failures === 0) {

@@ -2611,6 +2611,9 @@ class QueryResultElement extends HTMLElement
         /// (e.g. via `multiQueryContainer.innerHTML = ''`) without going through `clear`,
         /// so revoke the image object URL here to avoid leaking the response blob.
         this._clearImage();
+        /// Removing this result from the DOM (tab close, multi-query re-render) also removes
+        /// the hovered link that owns the preview, without any `mouseleave`; dismiss it here.
+        hideImagePreviewOwnedBy(this);
     }
 
     get rowCount() { return this._row_idx; }
@@ -2633,6 +2636,13 @@ class QueryResultElement extends HTMLElement
 
     clear()
     {
+        /// This result's rows (and any hovered image link in them) are about to go away. This
+        /// is the production teardown path for a rerun: `clearPanel` -> `resultEl.clear()` from
+        /// `postSingle`/`postMulti`/`materializeResult`/`beginFlight`. Dismiss the floating
+        /// preview iff it is anchored to THIS result, so a background tab's clear cannot dismiss
+        /// a preview owned by the active, still-hovered result (see `hideImagePreviewOwnedBy`).
+        hideImagePreviewOwnedBy(this);
+
         this._clearElement(this._dataTable);
         this._clearElement(this._graph);
         this._clearElement(this._chart);
@@ -2750,7 +2760,7 @@ class QueryResultElement extends HTMLElement
             try { image_url_path = new URL(text).pathname; } catch (e) { /* unparsable URL */ }
             if (image_url_path !== null && image_url_path.match(/\.(jpe?g|png|gif|webp)$/i))
             {
-                attachImagePreview(link, text);
+                attachImagePreview(link, text, this);
             }
             node = link;
         }
@@ -5577,6 +5587,13 @@ let image_preview_y = 0;
 /// finishes after the cursor has left, or after a different image link was entered,
 /// must not reveal the preview - the `load` handler checks this before showing.
 let image_preview_hovered_url = null;
+/// The result element (`query-result`) whose cell owns the current preview. The floating
+/// preview is a single global element, but its anchor lives inside one specific result: when
+/// that result is torn down (rerun via `clearPanel`, tab removal, multi-query re-render) or
+/// its panel is switched away from, the preview must be dismissed - but tearing down a
+/// *different* (e.g. background) result must not dismiss a preview owned by another. See
+/// `hideImagePreviewOwnedBy`, `QueryResultElement.clear`/`disconnectedCallback`, `setActivePanel`.
+let image_preview_owner = null;
 /// The preview only loads and displays while Ctrl (Cmd on Mac) is held: merely
 /// moving the cursor over a table cell must not make the browser fetch a URL taken
 /// from untrusted query results, so an explicit modifier key is required.
@@ -5626,8 +5643,11 @@ function positionImagePreview() {
 
 /// Load and show the image preview for `url`, i.e. actually assign `src` and fetch it.
 /// Only called once the opt-in modifier is held (see `setImagePreviewModifierHeld`).
-function showImagePreview(url) {
+/// `owner` is the result element (`query-result`) the hovered cell belongs to, so its
+/// teardown can dismiss the preview it owns (see `hideImagePreviewOwnedBy`).
+function showImagePreview(url, owner) {
     image_preview_hovered_url = url;
+    image_preview_owner = owner;
     if (!image_preview) {
         image_preview = document.createElement('img');
         image_preview.id = 'image-preview';
@@ -5658,13 +5678,14 @@ function showImagePreview(url) {
 }
 
 /// Show the image preview for `url` on hovering `link` while the modifier is held,
-/// following the cursor while it moves, and hide it when the cursor leaves.
-function attachImagePreview(link, url) {
+/// following the cursor while it moves, and hide it when the cursor leaves. `owner` is the
+/// result element the link belongs to, so the preview can be torn down with that result.
+function attachImagePreview(link, url, owner) {
     link.title = 'Ctrl+hover (Cmd+hover on Mac) to preview this image';
     link.addEventListener('mouseenter', (event) => {
         image_preview_x = event.clientX;
         image_preview_y = event.clientY;
-        if (image_preview_modifier_held) { showImagePreview(url); }
+        if (image_preview_modifier_held) { showImagePreview(url, owner); }
     });
     link.addEventListener('mousemove', (event) => {
         image_preview_x = event.clientX;
@@ -5673,7 +5694,7 @@ function attachImagePreview(link, url) {
         /// next cursor movement: the bare `keydown` must not fetch (see
         /// `setImagePreviewModifierHeld`), and once the preview is active for this URL
         /// (`image_preview_hovered_url`), further movement only repositions it.
-        if (image_preview_modifier_held && image_preview_hovered_url !== url) { showImagePreview(url); }
+        if (image_preview_modifier_held && image_preview_hovered_url !== url) { showImagePreview(url, owner); }
         positionImagePreview();
     });
     link.addEventListener('mouseleave', () => {
@@ -5688,6 +5709,7 @@ function attachImagePreview(link, url) {
 /// (re-showing the link refetches, normally from the browser cache).
 function hideImagePreview() {
     image_preview_hovered_url = null;
+    image_preview_owner = null;
     if (image_preview)
     {
         image_preview.style.display = 'none';
@@ -5696,6 +5718,14 @@ function hideImagePreview() {
         image_preview.removeAttribute('src');
         delete image_preview.dataset.url;
     }
+}
+
+/// Dismiss the preview only if it is currently anchored to `owner`. A result being torn
+/// down (rerun via `clearPanel`, tab removal, multi-query re-render) must dismiss the
+/// preview whose hovered link it owns, but tearing down a *different* result (e.g. a
+/// background tab) must not dismiss a preview owned by another, still-hovered result.
+function hideImagePreviewOwnedBy(owner) {
+    if (image_preview_owner === owner) { hideImagePreview(); }
 }
 
 /// Hide the currently visible table-info balloon on any scroll: it uses
@@ -7406,6 +7436,10 @@ function getOrCreatePanel(tab) {
 function setActivePanel(tab) {
     getOrCreatePanel(tab);
     for (const t of tabs) if (t.panel) t.panel.hidden = (t !== tab);
+    /// Switching tabs hides the previous panel programmatically (no `mouseleave` fires for a
+    /// link hidden this way), so a preview owned by a result now in a hidden panel would stay
+    /// pinned. Dismiss it unless its owner lives in the panel that just became active.
+    if (image_preview_owner && !tab.panel.contains(image_preview_owner)) { hideImagePreview(); }
     resultEl = tab.resultEl;
     multiQueryContainer = tab.multiContainer;
 }
