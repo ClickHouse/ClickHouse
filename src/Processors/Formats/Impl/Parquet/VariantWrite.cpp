@@ -1529,7 +1529,7 @@ bool tryEncodeVariantScalarFromColumnUsingTypeHint(
         {
             /// Both `Float32` and `Float64` columns are accepted here because both widen to a `Float64`
             /// value (`NearestFieldType<Float32> == Float64`).
-            Float64 value;
+            Float64 value = 0;
             if (value_type.getTypeId() == TypeIndex::Float32)
                 value = static_cast<Float64>(assert_cast<const ColumnVector<Float32> &>(column).getData()[row]);
             else if (value_type.getTypeId() == TypeIndex::Float64)
@@ -2506,7 +2506,8 @@ bool measureVariantColumnarValue(
         collectVariantColumnarObjectLeaves(*object_column, *object_data_type, resolved_row, context, leaves);
         sortVariantColumnarObjectLeaves(leaves);
         std::vector<VariantColumnarObjectColumnChild> children;
-        UInt8 fid = 0, fos = 0;
+        UInt8 fid = 0;
+        UInt8 fos = 0;
         bool large = false;
         out_size = measureVariantColumnarObjectColumnLevel(leaves, 0, leaves.size(), 0, depth, context, children, fid, fos, large);
         return true;
@@ -2628,7 +2629,8 @@ void writeVariantColumnarValue(
         collectVariantColumnarObjectLeaves(*object_column, *object_data_type, resolved_row, context, leaves);
         sortVariantColumnarObjectLeaves(leaves);
         std::vector<VariantColumnarObjectColumnChild> children;
-        UInt8 fid = 0, fos = 0;
+        UInt8 fid = 0;
+        UInt8 fos = 0;
         bool large = false;
         measureVariantColumnarObjectColumnLevel(leaves, 0, leaves.size(), 0, depth, context, children, fid, fos, large);
         writeVariantColumnarObjectColumnLevel(children, fid, fos, large, context, depth, out);
@@ -2860,7 +2862,8 @@ std::optional<String> encodeVariantShreddedResidualObjectFromLeaves(
     size_t depth)
 {
     std::vector<VariantColumnarObjectColumnChild> children;
-    UInt8 fid = 0, fos = 0;
+    UInt8 fid = 0;
+    UInt8 fos = 0;
     bool large = false;
     size_t total = measureVariantColumnarObjectColumnLevel(
         sorted_leaves, 0, sorted_leaves.size(), 0, depth, context, children, fid, fos, large, &shredded_field_names);

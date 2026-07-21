@@ -1713,9 +1713,11 @@ DecodedVariantValue decodeValue(const VariantMetadata & metadata, std::string_vi
 /// the parsed key strings (`remaining_path` for the exact match, `key` for the nested descent).
 struct ParsedVariantPathMatcher
 {
+    /// The result is always consumed immediately by the caller (never stored), and `path` is a live
+    /// reference into the walker's argument, so returning a const reference to it cannot dangle.
     static const ParsedVariantPath & parsedPathOf(const ParsedVariantPath & path)
     {
-        return path;
+        return path; /// NOLINT(bugprone-return-const-ref-from-parameter)
     }
 
     static bool canMatchExact(const ParsedVariantPath &, size_t)
