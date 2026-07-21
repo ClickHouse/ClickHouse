@@ -493,6 +493,8 @@ function makeContext() {
         Event, CustomEvent,
         AbortController,
         structuredClone,
+        /// The tabs code derives a per-page-load id from `crypto.getRandomValues` at top level.
+        crypto: globalThis.crypto,
         /// A functional element base so `new QueryResultElement()` runs the real constructor
         /// (`attachShadow`, the shadow-root scroll/click listeners) and its `_renderCell`.
         HTMLElement: class HTMLElement { constructor() { installElementBehavior(this, 'html-element'); } },
