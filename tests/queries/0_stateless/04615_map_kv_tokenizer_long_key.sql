@@ -19,7 +19,13 @@ INSERT INTO t_mem VALUES
     (2, map(repeat('K', 128), 'v2')),
     (3, map(repeat('x', 200), repeat('y', 300))),
     (4, map(repeat('K', 128), 'shared')),
-    (5, map('short', 'shared'));
+    (5, map('short', 'shared')),
+    -- Short total token with a multi-byte trailer: a 64-byte key (packed length 128 -> 2 trailer bytes)
+    -- with an empty/short value keeps the whole token under 128 bytes. Decoding must bound the trailer
+    -- scan by the packed length, not by the token size, or it stops before the terminator and mis-reads.
+    -- 63-byte key (packed 126) is the last single-trailer-byte case.
+    (6, map(repeat('a', 64), '')),
+    (7, map(repeat('b', 63), 'c'));
 INSERT INTO t_idx SELECT * FROM t_mem;
 
 SELECT '-- exact m[key] = value --';
@@ -39,6 +45,16 @@ SELECT id FROM t_mem WHERE mapContainsValue(m, repeat('y', 300)) ORDER BY id;
 SELECT id FROM t_idx WHERE mapContainsValue(m, repeat('y', 300)) ORDER BY id;
 SELECT id FROM t_mem WHERE mapContainsValue(m, 'shared') ORDER BY id;
 SELECT id FROM t_idx WHERE mapContainsValue(m, 'shared') ORDER BY id;
+
+SELECT '-- multi-byte trailer in a short token (key >= 64 bytes, total token < 128): decode-scan must not mis-read --';
+SELECT id FROM t_mem WHERE mapContainsKey(m, repeat('a', 64)) ORDER BY id;
+SELECT id FROM t_idx WHERE mapContainsKey(m, repeat('a', 64)) ORDER BY id;
+SELECT id FROM t_mem WHERE mapContainsKey(m, repeat('b', 63)) ORDER BY id;
+SELECT id FROM t_idx WHERE mapContainsKey(m, repeat('b', 63)) ORDER BY id;
+SELECT id FROM t_mem WHERE mapContainsValue(m, 'c') ORDER BY id;
+SELECT id FROM t_idx WHERE mapContainsValue(m, 'c') ORDER BY id;
+SELECT id FROM t_mem WHERE mapContainsKeyValue(m, repeat('a', 64), '') ORDER BY id;
+SELECT id FROM t_idx WHERE mapContainsKeyValue(m, repeat('a', 64), '') ORDER BY id;
 
 SELECT '-- no false match on a long absent key/value --';
 SELECT id FROM t_mem WHERE m[repeat('K', 128)] = 'nope' ORDER BY id;

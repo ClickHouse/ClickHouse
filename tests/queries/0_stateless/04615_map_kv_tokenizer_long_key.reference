@@ -17,5 +17,14 @@
 5
 4
 5
+-- multi-byte trailer in a short token (key >= 64 bytes, total token < 128): decode-scan must not mis-read --
+6
+6
+7
+7
+7
+7
+6
+6
 -- no false match on a long absent key/value --
 0

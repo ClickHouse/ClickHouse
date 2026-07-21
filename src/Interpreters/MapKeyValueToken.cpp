@@ -74,13 +74,17 @@ DecodedMapKeyValueToken decodeMapKeyValueToken(std::string_view token)
     {
         /// Rare: multi-byte length. Scan backward collecting the reversed varint bytes; they come
         /// out in normal varint order, so readVarUInt decodes them directly. The scan is bounded by
-        /// getLengthOfVarUInt(token.size()) — the widest a valid trailer can be, since
-        /// key_len <= token.size() — which also rejects a corrupt token claiming a longer trailer
-        /// and never exceeds 10 (the max for a UInt64), so buf is always large enough.
+        /// the widest a valid trailer can be: the trailer encodes `packed = (key.size() << 1) | is_rest`
+        /// and `key.size() <= token.size()`, so `packed <= (token.size() << 1) | 1` — bound by the varint
+        /// length of that. (Bounding by `token.size()` alone would be too small: e.g. a 64-byte key with
+        /// an empty value gives `packed = 128`, a 2-byte trailer, yet `token.size() = 66` whose varint is
+        /// 1 byte, so the scan would stop before the terminator and mis-decode to `packed = 0`.) This also
+        /// rejects a corrupt token claiming a longer trailer and never exceeds 10 (the max for a UInt64),
+        /// so buf is always large enough.
         char buf[10];
         size_t num_bytes = 0;
         bool terminated = false;
-        const size_t max_trailer_bytes = getLengthOfVarUInt(token.size());
+        const size_t max_trailer_bytes = getLengthOfVarUInt((static_cast<UInt64>(token.size()) << 1) | 1);
         size_t pos = token.size();
         while (pos > 0 && num_bytes < max_trailer_bytes)
         {
