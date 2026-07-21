@@ -118,7 +118,9 @@ Note, that user `my_user` refers to `my_ldap_server`. This LDAP server must be c
 
 When SQL-driven [Access Control and Account Management](/operations/access-rights#access-control-usage) is enabled, users that are authenticated by LDAP servers can also be created using the [CREATE USER](/sql-reference/statements/create/user) statement.
 
-```sql title="Query"
+Query:
+
+```sql
 CREATE USER my_user IDENTIFIED WITH ldap SERVER 'my_ldap_server';
 ```
 

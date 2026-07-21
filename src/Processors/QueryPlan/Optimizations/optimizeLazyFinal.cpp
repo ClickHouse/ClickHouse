@@ -24,14 +24,7 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeIOSettings.h>
 
-namespace DB
-{
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
-
-namespace QueryPlanOptimizations
+namespace DB::QueryPlanOptimizations
 {
 
 /// Clone only the filter computation sub-DAG from a larger DAG.
@@ -48,25 +41,6 @@ static ActionsDAG cloneFilterSubDAG(const ActionsDAG & dag, const String & filte
             sub_dag.getOutputs().push_back(input);
 
     return sub_dag;
-}
-
-/// Expose the given intermediate nodes (by result name) as outputs of `dag`, if present and not
-/// already exposed. Used so that the set-building read's prewhere keeps the computed columns that
-/// a WHERE `FilterStep` above the reading step consumes as inputs.
-static void exposeNodesAsDAGOutputs(ActionsDAG & dag, const NameSet & names)
-{
-    if (names.empty())
-        return;
-
-    std::unordered_set<const ActionsDAG::Node *> outputs(dag.getOutputs().begin(), dag.getOutputs().end());
-    for (const auto & node : dag.getNodes())
-    {
-        if (names.contains(node.result_name) && !outputs.contains(&node))
-        {
-            dag.getOutputs().push_back(&node);
-            outputs.insert(&node);
-        }
-    }
 }
 
 /// Add a FilterStep that keeps only rows where is_deleted == 0.
@@ -99,19 +73,8 @@ static void addIsDeletedFilter(QueryPlan & plan, const String & is_deleted_colum
         }
     }
 
-    /// `createNonIntersectingPlan` must guarantee that `is_deleted_column` is in the
-    /// upstream header. Throw rather than passing a null pointer to `addFunction` —
-    /// any future regression in the upstream invariant should surface, not turn into UB.
-    if (!col_node)
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "Lazy FINAL optimization: column `{}` is missing from the non-intersecting reading step header. "
-            "This is a bug in `createNonIntersectingPlan`.",
-            is_deleted_column);
-
-    auto zero_type = std::make_shared<DataTypeUInt8>();
-    auto zero_column = zero_type->createColumnConst(0, Field(UInt8(0)));
-    const auto * zero_node = &dag.addColumn(std::move(zero_column), std::move(zero_type), "__is_deleted_zero");
+    const auto * zero_node = &dag.addColumn(
+        ColumnWithTypeAndName(DataTypeUInt8().createColumnConst(1, Field(UInt8(0))), std::make_shared<DataTypeUInt8>(), "__is_deleted_zero"));
 
     auto equals_func = FunctionFactory::instance().get("equals", context);
     const auto * filter_node = &dag.addFunction(equals_func, {col_node, zero_node}, "__is_deleted_filter");
@@ -120,27 +83,6 @@ static void addIsDeletedFilter(QueryPlan & plan, const String & is_deleted_colum
 
     plan.addStep(std::make_unique<FilterStep>(
         plan.getCurrentHeader(), std::move(dag), "__is_deleted_filter", /*remove_filter_column=*/ true));
-}
-
-/// Ensure `column_name` (if present as a DAG input) is also exposed as a DAG output,
-/// so that `ActionsDAG::updateHeader` does not erase it from the block.
-/// Used by the lazy-FINAL non-intersecting plan to keep the `is_deleted` column
-/// available for the downstream `is_deleted = 0` filter, even when prewhere/row-level
-/// filter has consumed it.
-static bool exposeInputAsDAGOutput(ActionsDAG & dag, const String & column_name)
-{
-    std::unordered_set<const ActionsDAG::Node *> outputs(dag.getOutputs().begin(), dag.getOutputs().end());
-    bool added = false;
-    for (const auto * input : dag.getInputs())
-    {
-        if (input->result_name == column_name && !outputs.contains(input))
-        {
-            dag.getOutputs().push_back(input);
-            added = true;
-            break;
-        }
-    }
-    return added;
 }
 
 /// Create a non-FINAL ReadFromMergeTree plan for non-intersecting parts,
@@ -167,50 +109,6 @@ static std::optional<QueryPlan> createNonIntersectingPlan(
         {
             columns.push_back(merging_params.is_deleted_column);
             is_deleted_added = true;
-        }
-
-        /// If the prewhere or row-level filter on the ORIGINAL (FINAL) reading step
-        /// consumed `is_deleted` as an input but did not expose it as an output,
-        /// the column is missing from the read step's output header. Two consequences
-        /// for the non-intersecting plan we are about to build:
-        ///   1. `addIsDeletedFilter` reads `is_deleted` from the read step's output,
-        ///      so we must keep the column in the output of `non_final_reading`.
-        ///   2. The non-intersecting plan is later unioned with the FINAL plan
-        ///      (whose output also lacks `is_deleted` for the same prewhere reason).
-        ///      To keep the two union branches header-compatible, `addIsDeletedFilter`
-        ///      must then drop `is_deleted` from its output.
-        ///
-        /// Clone the filter info(s) before mutating to avoid affecting the original
-        /// reading step's prewhere/row-level filter (shared via `getQueryInfo()`).
-        const auto & original_output_header = reading_step->getOutputHeader();
-        const bool is_deleted_in_original_output
-            = original_output_header && original_output_header->has(merging_params.is_deleted_column);
-        if (!is_deleted_in_original_output)
-        {
-            bool exposed = false;
-            if (non_final_query_info.prewhere_info)
-            {
-                auto cloned_prewhere = std::make_shared<PrewhereInfo>(non_final_query_info.prewhere_info->clone());
-                exposed |= exposeInputAsDAGOutput(cloned_prewhere->prewhere_actions, merging_params.is_deleted_column);
-                non_final_query_info.prewhere_info = std::move(cloned_prewhere);
-            }
-            if (non_final_query_info.row_level_filter)
-            {
-                const auto & original = *non_final_query_info.row_level_filter;
-                auto cloned_row_level = std::make_shared<FilterDAGInfo>();
-                cloned_row_level->actions = original.actions.clone();
-                cloned_row_level->column_name = original.column_name;
-                cloned_row_level->do_remove_column = original.do_remove_column;
-                exposed |= exposeInputAsDAGOutput(cloned_row_level->actions, merging_params.is_deleted_column);
-                non_final_query_info.row_level_filter = std::move(cloned_row_level);
-            }
-
-            /// If we successfully re-exposed `is_deleted` in the prewhere/row-level
-            /// filter outputs, the column will be present in `non_final_reading`'s
-            /// output header. We must drop it again after `addIsDeletedFilter` has
-            /// done its work, to keep header parity with the FINAL branch.
-            if (exposed)
-                is_deleted_added = true;
         }
     }
 
@@ -459,78 +357,24 @@ void optimizeLazyFinal(const Stack & stack, QueryPlan & query_plan, QueryPlan::N
     /// Start with the original column set (covers prewhere, row policy, etc.),
     /// then append primary key source columns, filter input columns,
     /// and prewhere/row_policy input columns that might be missing.
-    ///
-    /// `set_columns` is the list of columns to read FROM STORAGE for the set-building
-    /// `ReadFromMergeTree` (it is passed as `all_column_names`). It must contain only
-    /// real storage columns/subcolumns: the `ReadFromMergeTree` constructor calls
-    /// `StorageSnapshot::getSampleBlockForColumns` on it, which throws
-    /// NOT_FOUND_COLUMN_IN_BLOCK for any name that is not a storage or virtual column.
-    ///
-    /// The `filter_step` above the reading step takes its inputs from the reading
-    /// step's OUTPUT columns, which include columns PRODUCED by the reading step's
-    /// prewhere (e.g. the computed `greaterOrEquals(42, id)` predicate, kept when the
-    /// remaining WHERE conjunct references it) rather than read from storage. Such
-    /// derived columns are regenerated by the cloned prewhere/row-level-filter on the
-    /// set-building read, so they must not be requested from storage here. We only add
-    /// a name to `set_columns` if the storage snapshot actually has it as a column or
-    /// subcolumn, which is exactly the precondition `getSampleBlockForColumns` checks.
-    const auto & set_columns_desc = storage_snapshot->metadata->getColumns();
-    auto is_storage_column = [&](const String & name)
-    {
-        return set_columns_desc.hasColumnOrSubcolumn(GetColumnsOptions::All, name)
-            || storage_snapshot->metadata->virtuals.has(name);
-    };
-
     Names set_columns = reading_step->getAllColumnNames();
     {
         NameSet existing(set_columns.begin(), set_columns.end());
 
-        auto add_columns = [&](const ActionsDAG & dag, bool storage_columns_only)
+        auto add_columns = [&](const ActionsDAG & dag)
         {
             for (const auto * input : dag.getInputs())
-            {
-                /// Filter inputs may be derived columns produced by the reading step's
-                /// prewhere/row-level-filter, not storage columns. Requesting those from
-                /// storage would throw NOT_FOUND_COLUMN_IN_BLOCK, so skip non-storage names.
-                if (storage_columns_only && !is_storage_column(input->result_name))
-                    continue;
                 if (existing.insert(input->result_name).second)
                     set_columns.push_back(input->result_name);
-            }
         };
 
-        add_columns(primary_key_dag, /*storage_columns_only=*/ false);
+        add_columns(primary_key_dag);
         if (filter_step)
-            add_columns(filter_step->getExpression(), /*storage_columns_only=*/ true);
+            add_columns(filter_step->getExpression());
         if (const auto & prewhere = reading_step->getQueryInfo().prewhere_info)
-            add_columns(prewhere->prewhere_actions, /*storage_columns_only=*/ false);
+            add_columns(prewhere->prewhere_actions);
         if (const auto & row_filter = reading_step->getQueryInfo().row_level_filter)
-            add_columns(row_filter->actions, /*storage_columns_only=*/ false);
-    }
-
-    /// Inspect the inputs of the WHERE `filter_step` we copy above the set-building read below.
-    ///
-    /// `filter_derived_inputs`: inputs PRODUCED by the reading step's prewhere/row-level-filter
-    /// rather than read from storage (e.g. the computed `greaterOrEquals(42, id)` predicate). They
-    /// were excluded from `set_columns` above (not storage columns), so the set-building read must
-    /// expose them from its cloned prewhere/row-level-filter, else the copied WHERE cannot find them.
-    ///
-    /// `filter_all_inputs`: EVERY input the copied WHERE consumes (storage and derived). Used to
-    /// decide whether the prewhere/row-level-filter column must be kept in the output: if the WHERE
-    /// still consumes it we must not remove it. This is exactly the case `splitAndFillPrewhereInfo`
-    /// handles by flipping `remove_prewhere_column` to false, and it includes the case where the
-    /// pushed predicate is a plain storage column (e.g. `WHERE flag AND value != 7`), which is NOT
-    /// in `filter_derived_inputs`.
-    NameSet filter_derived_inputs;
-    NameSet filter_all_inputs;
-    if (filter_step)
-    {
-        for (const auto * input : filter_step->getExpression().getInputs())
-        {
-            filter_all_inputs.insert(input->result_name);
-            if (!is_storage_column(input->result_name))
-                filter_derived_inputs.insert(input->result_name);
-        }
+            add_columns(row_filter->actions);
     }
 
     QueryPlan set_plan;
@@ -543,32 +387,19 @@ void optimizeLazyFinal(const Stack & stack, QueryPlan & query_plan, QueryPlan::N
         set_query_info.table_expression_modifiers->setHasFinal(false);
 
         /// Fix prewhere/row_policy DAGs so they don't remove columns from output.
-        /// Also expose the derived columns the WHERE filter consumes (see `filter_derived_inputs`),
-        /// so the copied WHERE filter below finds its inputs in the reading step's output.
         if (set_query_info.prewhere_info)
         {
             set_query_info.prewhere_info = std::make_shared<PrewhereInfo>(set_query_info.prewhere_info->clone());
             set_query_info.prewhere_info->prewhere_actions = cloneFilterSubDAG(
                 set_query_info.prewhere_info->prewhere_actions, set_query_info.prewhere_info->prewhere_column_name);
-            exposeNodesAsDAGOutputs(set_query_info.prewhere_info->prewhere_actions, filter_derived_inputs);
-            /// Keep the prewhere predicate column in the output when the copied WHERE filter still
-            /// consumes it. `splitAndFillPrewhereInfo` flips `remove_prewhere_column` to false in the
-            /// single-conjunct case where the residual WHERE references the pushed predicate; forcing
-            /// removal here would erase that column and the WHERE could not resolve its input. Check
-            /// ALL of the WHERE's inputs, not only derived ones: the pushed predicate can be a plain
-            /// storage column (e.g. `WHERE flag AND value != 7`), which is not in `filter_derived_inputs`.
-            set_query_info.prewhere_info->remove_prewhere_column
-                = !filter_all_inputs.contains(set_query_info.prewhere_info->prewhere_column_name);
+            set_query_info.prewhere_info->remove_prewhere_column = true;
         }
         if (set_query_info.row_level_filter)
         {
             auto fixed = std::make_shared<FilterDAGInfo>();
             fixed->actions = cloneFilterSubDAG(set_query_info.row_level_filter->actions, set_query_info.row_level_filter->column_name);
-            exposeNodesAsDAGOutputs(fixed->actions, filter_derived_inputs);
             fixed->column_name = set_query_info.row_level_filter->column_name;
-            /// Same reasoning as `remove_prewhere_column` above: keep the row-level-filter column
-            /// when the copied WHERE still consumes it, checking all of the WHERE's inputs.
-            fixed->do_remove_column = !filter_all_inputs.contains(fixed->column_name);
+            fixed->do_remove_column = true;
             set_query_info.row_level_filter = std::move(fixed);
         }
 
@@ -789,5 +620,4 @@ void optimizeLazyFinal(const Stack & stack, QueryPlan & query_plan, QueryPlan::N
     query_plan.replaceNodeWithPlan(read_node, std::move(result_plan), expected_header);
 }
 
-}
 }

@@ -5,14 +5,11 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/FilterDescription.h>
-#include <DataTypes/DataTypeNullable.h>
 #include <Common/FieldAccurateComparison.h>
 #include <Common/checkStackSize.h>
-#include <Common/ProfileEvents.h>
 #include <Formats/FormatFilterInfo.h>
 #include <Interpreters/castColumn.h>
 #include <IO/CompressionMethod.h>
-#include <IO/Libdeflate.h>
 #include <Processors/Formats/Impl/Parquet/Decoding.h>
 #include <Processors/Formats/Impl/Parquet/parquetBloomFilterHash.h>
 #include <Processors/Formats/Impl/Parquet/Reader.h>
@@ -37,6 +34,7 @@ namespace DB::ErrorCodes
     extern const int INCORRECT_DATA;
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
+    extern const int CHECKSUM_DOESNT_MATCH;
 }
 
 namespace ProfileEvents
@@ -126,7 +124,7 @@ static void decompress(const char * data, size_t compressed_size, size_t uncompr
         {
             /// Can't use CompressionMethod::Snappy because it dispatches to HadoopSnappyReadBuffer,
             /// which expects some additional header before the compressed block.
-            size_t actual_uncompressed_size = 0;
+            size_t actual_uncompressed_size;
             if (!snappy::GetUncompressedLength(data, compressed_size, &actual_uncompressed_size))
                 throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Malformed snappy compressed page (couldn't get uncompressed length)");
             if (actual_uncompressed_size != uncompressed_size)
@@ -139,15 +137,8 @@ static void decompress(const char * data, size_t compressed_size, size_t uncompr
             throw Exception(ErrorCodes::FEATURE_IS_NOT_ENABLED_AT_BUILD_TIME, "Cannot decompress Snappy: ClickHouse was compiled without Snappy support");
 #endif
         case parq::CompressionCodec::GZIP:
-#if USE_LIBDEFLATE
-            /// One-shot libdeflate: the whole page is in memory and the uncompressed size is known,
-            /// which is faster than the streaming zlib path.
-            Libdeflate::decompress(CompressionMethod::Gzip, data, compressed_size, out, uncompressed_size);
-            return;
-#else
             method = CompressionMethod::Gzip;
             break;
-#endif
         case parq::CompressionCodec::LZO:
             /// Arrow also doesn't support it.
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "LZO decompression is not supported");
@@ -178,9 +169,6 @@ static void decompress(const char * data, size_t compressed_size, size_t uncompr
         std::move(mem_buf),
         method,
         /*zstd_window_log_max*/ 0,
-        /// Parquet's `SNAPPY` codec is raw block compression and is special-cased above —
-        /// this dispatch never sees it, so the snappy mode here is irrelevant.
-        SnappyMode::Basic,
         uncompressed_size,
         out);
     size_t pos = 0;
@@ -222,7 +210,7 @@ parq::FileMetaData Reader::readFileMetaData(Prefetcher & prefetcher)
     if (memcmp(buf.data() + initial_read_size - 4, "PAR1", 4) != 0)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Not a Parquet file (wrong magic bytes at the end of file)");
 
-    int32_t metadata_size_i32 = 0;
+    int32_t metadata_size_i32;
     memcpy(&metadata_size_i32, buf.data() + initial_read_size - 8, 4);
     if (metadata_size_i32 <= 0 || size_t(metadata_size_i32) + 8 > file_size)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Bad metadata size in parquet file: {} bytes", metadata_size_i32);
@@ -1279,7 +1267,7 @@ void Reader::determinePagesToPrefetch(ColumnChunk & column, const RowSubgroup & 
 
 double Reader::estimateAverageStringLengthPerRow(const ColumnChunk & column, const RowGroup & row_group) const
 {
-    double column_chunk_bytes = 0;
+    double column_chunk_bytes;
     if (column.meta->meta_data.__isset.size_statistics &&
         column.meta->meta_data.size_statistics.__isset.unencoded_byte_array_data_bytes)
     {
@@ -1290,7 +1278,7 @@ double Reader::estimateAverageStringLengthPerRow(const ColumnChunk & column, con
     else if (column.meta->meta_data.__isset.dictionary_page_offset)
     {
         /// Dictionary-encoded strings. No way to know the decoded length in advance.
-        double avg_string_length = 0;
+        double avg_string_length;
         if (column.dictionary.isInitialized())
         {
             /// We've read the dictionary. Use the average string length in the dictionary as a guess
@@ -1302,12 +1290,7 @@ double Reader::estimateAverageStringLengthPerRow(const ColumnChunk & column, con
             /// We have no idea how long the strings are. Use some made up number (not chosen carefully).
             avg_string_length = 20;
         }
-        /// Null values don't contribute to string data. Subtract null_count when available
-        /// to avoid massive overestimation for columns with high null rates and large dictionary entries.
-        double non_null_values = static_cast<double>(column.meta->meta_data.num_values);
-        if (column.meta->meta_data.statistics.__isset.null_count)
-            non_null_values = std::max(0., non_null_values - static_cast<double>(column.meta->meta_data.statistics.null_count));
-        column_chunk_bytes = avg_string_length * non_null_values;
+        column_chunk_bytes = avg_string_length * static_cast<double>(column.meta->meta_data.num_values);
     }
     else
     {
@@ -1320,7 +1303,7 @@ double Reader::estimateAverageStringLengthPerRow(const ColumnChunk & column, con
 
 double Reader::estimateColumnMemoryBytesPerRow(const ColumnChunk & column, const RowGroup & row_group, const PrimitiveColumnInfo & column_info) const
 {
-    double res = 0;
+    double res;
     if (column_info.output_type->haveMaximumSizeOfValue())
         /// Fixed-size values, e.g. numbers or FixedString.
         res = 1. * static_cast<double>(column_info.output_type->getMaximumSizeOfValueInMemory())
@@ -1344,7 +1327,7 @@ void Reader::decodePrimitiveColumn(ColumnChunk & column, const PrimitiveColumnIn
 {
     /// Allocate columns for values, null map, and array offsets.
 
-    size_t output_num_values_estimate = 0;
+    size_t output_num_values_estimate;
     if (column_info.levels.back().rep == 0)
         output_num_values_estimate = row_subgroup.filter.rows_pass; // no arrays, rows == values
     else if (row_subgroup.filter.rows_pass == size_t(row_group.meta->num_rows))
@@ -1472,7 +1455,7 @@ void Reader::decodePrimitiveColumn(ColumnChunk & column, const PrimitiveColumnIn
             throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid repetition/definition levels for arrays in column {}", column_info.name);
     }
 
-    if (subchunk.null_map && !column_info.output_nullable && !column_info.group_nullable && !options.format.null_as_default)
+    if (subchunk.null_map && !column_info.output_nullable && !options.format.null_as_default)
     {
         const auto & null_map = assert_cast<const ColumnUInt8 &>(*subchunk.null_map).getData();
         /// null_map uses standard ClickHouse convention: 1 = NULL, 0 = NOT NULL.
@@ -1485,21 +1468,7 @@ void Reader::decodePrimitiveColumn(ColumnChunk & column, const PrimitiveColumnIn
     if (subchunk.null_map)
     {
         const auto & null_map = assert_cast<const ColumnUInt8 &>(*subchunk.null_map).getData();
-        /// Fill defaults at null rows so the column reaches full size. For a group_nullable leaf,
-        /// the null map is the group null map: defaults fill the struct-null rows.
         subchunk.column->expand(null_map, /*inverted*/ true);
-    }
-
-    if (column_info.group_nullable && subchunk.null_map)
-    {
-        /// Leaf of a physically-nullable struct read as Nullable(Tuple(...)): its def-level null map
-        /// is the group null map. Move it aside now, before the output_nullable block below can
-        /// consume `null_map` into a leaf-level ColumnNullable. formOutputColumn reads it from the
-        /// group's first leaf to wrap the assembled ColumnTuple in ColumnNullable. If the leaf is
-        /// itself Nullable, it gets a fresh all-non-null map below (the file leaf is REQUIRED, so it
-        /// has no element-level nulls; the struct nulls are represented by the outer ColumnNullable).
-        subchunk.group_null_map = std::move(subchunk.null_map);
-        subchunk.null_map.reset();
     }
 
     if (subchunk.arrays_offsets.empty() && subchunk.column->size() != row_subgroup.filter.rows_pass)
@@ -1622,7 +1591,7 @@ std::tuple<parq::PageHeader, std::span<const char>> Reader::decodeAndCheckPageHe
     {
         uint32_t crc = arrow::internal::crc32(0, page_data.data(), page_data.size());
         if (crc != uint32_t(header.crc))
-            throw Exception(ErrorCodes::INCORRECT_DATA, "Page CRC checksum verification failed");
+            throw Exception(ErrorCodes::CHECKSUM_DOESNT_MATCH, "Page CRC checksum verification failed");
     }
 
     return {header, page_data};
@@ -1722,7 +1691,7 @@ bool Reader::initializeDataPage(const char * & data_ptr, const char * data_end, 
             /// <def length> <def> [<rep length> <rep>] <values>
             decompressPageIfCompressed(page);
 
-            UInt32 n = 0;
+            UInt32 n;
             if (column_info.levels.back().rep > 0)
             {
                 if (page.data.size() < 4)
@@ -2173,26 +2142,7 @@ MutableColumnPtr Reader::formOutputColumn(RowSubgroup & row_subgroup, size_t out
         return res;
     }
 
-    /// Physically-nullable struct read as Nullable(Tuple(...)). input_type is Nullable(Tuple), but
-    /// we assemble the inner ColumnTuple from the leaves and then wrap it in ColumnNullable using
-    /// the group null map. Every leaf shares the same def-level null map (the subtree is
-    /// all-REQUIRED), which decodePrimitiveColumn moved into `group_null_map` on each leaf before
-    /// any leaf-level Nullable wrapping could consume it. Take it from the first leaf. Dispatch on
-    /// the unwrapped type.
-    MutableColumnPtr nullable_group_null_map;
-    if (output_info.nullable_group)
-    {
-        ColumnSubchunk & first_leaf = row_subgroup.columns.at(output_info.primitive_start);
-        if (first_leaf.group_null_map)
-            nullable_group_null_map = IColumn::mutate(std::move(first_leaf.group_null_map));
-        else
-            /// No struct-level nulls (all rows defined): all-non-null map.
-            nullable_group_null_map = ColumnUInt8::create(num_rows, UInt8(0));
-    }
-
-    TypeIndex kind = output_info.nullable_group
-        ? removeNullable(output_info.input_type)->getColumnType()
-        : output_info.input_type->getColumnType();
+    TypeIndex kind = output_info.input_type->getColumnType();
 
     if (output_info.is_primitive)
     {
@@ -2250,13 +2200,6 @@ MutableColumnPtr Reader::formOutputColumn(RowSubgroup & row_subgroup, size_t out
         chassert(output_info.nested_columns.size() == 1);
         MutableColumnPtr nested = formOutputColumn(row_subgroup, output_info.nested_columns.at(0), num_rows);
         res = ColumnMap::create(std::move(nested));
-    }
-
-    if (output_info.nullable_group)
-    {
-        /// Wrap the assembled ColumnTuple in ColumnNullable using the reconstructed group null map.
-        chassert(nullable_group_null_map->size() == res->size());
-        res = ColumnNullable::create(std::move(res), std::move(nullable_group_null_map));
     }
 
     chassert(res->getDataType() == output_info.input_type->getColumnType());

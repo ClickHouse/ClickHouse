@@ -53,9 +53,7 @@ public:
         SharedHeader right_sample_block_,
         TemporaryDataOnDiskScopePtr tmp_data_,
         size_t initial_num_buckets_,
-        size_t max_num_buckets_,
-        const StatsCollectingParams & stats_collecting_params_ = {},
-        bool any_take_last_row_ = false);
+        size_t max_num_buckets_);
 
     /// Concurrent mode: wraps a ConcurrentHashJoin.
     SpillingHashJoin(
@@ -66,8 +64,7 @@ public:
         size_t initial_num_buckets_,
         size_t max_num_buckets_,
         size_t concurrent_slots_,
-        const StatsCollectingParams & stats_collecting_params_ = {},
-        bool any_take_last_row_ = false);
+        const StatsCollectingParams & stats_collecting_params_);
 
     ~SpillingHashJoin() override;
 
@@ -105,8 +102,6 @@ public:
 
     void onBuildPhaseFinish() override;
 
-    void setEnableLazyColumnsIndexing(bool value) override;
-
 private:
     enum class State
     {
@@ -125,7 +120,6 @@ private:
     TemporaryDataOnDiskScopePtr tmp_data;
     size_t initial_num_buckets;
     size_t max_num_buckets;
-    bool any_take_last_row;
     size_t max_bytes_before_external_join;
 
     SharedMutex switch_mutex;

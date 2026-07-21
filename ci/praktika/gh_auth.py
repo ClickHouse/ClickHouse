@@ -1,4 +1,3 @@
-import json
 import time
 
 import requests
@@ -17,54 +16,8 @@ except (ImportError, AssertionError):
 
 from praktika.utils import Shell
 
-# `gh auth login --with-token` validates the token against api.github.com. A single
-# transient GitHub API 5xx/timeout there would otherwise hard-fail the whole job.
-# Retry only on transport-class errors; auth errors (e.g. HTTP 401 bad token) stay fatal.
-_GH_AUTH_RETRY_ERRORS = [
-    "HTTP 500",
-    "HTTP 502",
-    "HTTP 503",
-    "HTTP 504",
-    "HTTP 429",
-    "Service Unavailable",
-    "Bad Gateway",
-    "Gateway Timeout",
-    "Too Many Requests",
-    "Internal Server Error",
-    "i/o timeout",
-    "TLS handshake timeout",
-    "connection reset by peer",
-    "connection refused",
-    "EOF",
-]
-
 
 class GHAuth:
-
-    @classmethod
-    def _get_access_token_from_lambda(cls, lambda_name: str, region: str) -> str:
-        import boto3  # type: ignore
-
-        client = boto3.session.Session().client(
-            service_name="lambda", region_name=region or None
-        )
-        response = client.invoke(
-            FunctionName=lambda_name,
-            InvocationType="RequestResponse",
-            Payload=b"{}",
-        )
-        if response.get("FunctionError"):
-            raise RuntimeError(
-                f"Lambda {lambda_name} returned FunctionError (payload redacted)"
-            )
-        result = json.loads(response["Payload"].read())
-        status_code = result.get("statusCode")
-        if status_code != 200:
-            raise RuntimeError(
-                f"Lambda {lambda_name} returned statusCode={status_code} (body redacted)"
-            )
-        body = json.loads(result["body"])
-        return body["token"]
 
     @classmethod
     def _get_access_token_by_jwt(cls, jwt_token: str, installation_id: int) -> str:
@@ -117,31 +70,12 @@ class GHAuth:
             access_token = cls._get_access_token(app_key, app_id, installation_id)
         else:
             access_token = cls._get_access_token_deprecated(app_key, app_id, installation_id)
-        Shell.check(
-            "gh auth login --with-token",
-            stdin_str=f"{access_token}\n",
-            strict=True,
-            retries=4,
-            retry_errors=_GH_AUTH_RETRY_ERRORS,
-        )
+        Shell.check(f"echo {access_token} | gh auth login --with-token", strict=True)
 
     @classmethod
     def auth_from_settings(cls) -> None:
         from praktika.secret import Secret
         from praktika.settings import Settings
-
-        if Settings.GH_AUTH_LAMBDA_NAME:
-            access_token = cls._get_access_token_from_lambda(
-                Settings.GH_AUTH_LAMBDA_NAME, Settings.GH_AUTH_LAMBDA_REGION
-            )
-            Shell.check(
-                "gh auth login --with-token",
-                stdin_str=f"{access_token}\n",
-                strict=True,
-                retries=4,
-                retry_errors=_GH_AUTH_RETRY_ERRORS,
-            )
-            return
 
         app_id, pem, installation_id = (
             Secret.Config(
@@ -172,11 +106,11 @@ class GHAuth:
 #     from ci.praktika.secret import Secret
 #
 #     pem = Secret.Config(
-#         name="/github-app/clickhouse-gh.clickhouse-app-key",
+#         name="woolenwolf_gh_app.clickhouse-app-key",
 #         type=Secret.Type.AWS_SSM_SECRET,
 #     ).get_value()
 #     app_id = Secret.Config(
-#         name="/github-app/clickhouse-gh.clickhouse-app-id",
+#         name="woolenwolf_gh_app.clickhouse-app-id",
 #         type=Secret.Type.AWS_SSM_SECRET,
 #     ).get_value()
 #     print(app_id, pem)

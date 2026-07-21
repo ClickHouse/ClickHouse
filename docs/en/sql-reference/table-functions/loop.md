@@ -6,6 +6,8 @@ title: 'loop'
 doc_type: 'reference'
 ---
 
+# loop Table Function
+
 ## Syntax {#syntax}
 
 ```sql

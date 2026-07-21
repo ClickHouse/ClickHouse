@@ -1,11 +1,9 @@
 #include <Columns/ColumnConst.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <Core/Field.h>
 #include <Core/SortDescription.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/IFunction.h>
-#include <Functions/FunctionFactory.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
@@ -45,7 +43,7 @@ namespace DB::QueryPlanOptimizations
 /// (*) Vector search only makes sense if a vector similarity index exists on vec. In the scope of this
 ///     function, we check that the table has a vector similarity index built on vec or an expression based
 ///     on vec. Other checks are left to query runtime, ReadFromMergeTree specifically.
-size_t tryUseVectorSearchWithVectorIndexFirstPass(QueryPlan::Node * parent_node, QueryPlan::Nodes & /*nodes*/, const Optimization::ExtraSettings & settings)
+size_t tryUseVectorSearch(QueryPlan::Node * parent_node, QueryPlan::Nodes & /*nodes*/, const Optimization::ExtraSettings & settings)
 {
     QueryPlan::Node * node = parent_node;
 
@@ -116,12 +114,6 @@ size_t tryUseVectorSearchWithVectorIndexFirstPass(QueryPlan::Node * parent_node,
     /// Extract N
     size_t n = limit_step->getLimitForSorting();
 
-    /// LIMIT ... WITH TIES can return more rows than n. The vector search optimization
-    /// bounds the ANN search to exactly n candidates, so rows tied with the n-th row
-    /// are never retrieved. Skip the optimization and fall back to brute force.
-    if (limit_step->withTies())
-        return no_layers_updated;
-
     /// Check that the LIMIT specified by the user isn't too big - otherwise the cost of vector search outweighs the benefit.
     if (n > settings.max_limit_for_vector_search_queries)
         return no_layers_updated;
@@ -165,7 +157,7 @@ size_t tryUseVectorSearchWithVectorIndexFirstPass(QueryPlan::Node * parent_node,
     /// - The search column is 'vec1'.
     /// - The reference vector is [1.0, 2.0, ...].
     const ActionsDAG::NodeRawConstPtrs & sort_column_node_children = sort_column_node->children;
-    VectorWithMemoryTracking<Float64> reference_vector;
+    std::vector<Float64> reference_vector;
     String search_column;
 
     for (const auto * child : sort_column_node_children)
@@ -197,7 +189,12 @@ size_t tryUseVectorSearchWithVectorIndexFirstPass(QueryPlan::Node * parent_node,
                 continue;
 
             /// Read value from column
-            Field field = child->column->getField();
+            const ColumnPtr & column = child->column;
+            const auto * literal_column = typeid_cast<const ColumnConst *>(column.get());
+            if (!literal_column || literal_column->size() != 1)
+                continue;
+            Field field;
+            literal_column->get(0, field);
             Field::Types::Which field_type = field.getType();
             if (field_type != Field::Types::Array)
                 continue;
@@ -251,7 +248,7 @@ size_t tryUseVectorSearchWithVectorIndexFirstPass(QueryPlan::Node * parent_node,
     return no_layers_updated;
 }
 
-bool optimizeVectorSearchWithVectorIndexSecondPass(QueryPlan::Node & /*root*/, Stack & stack, QueryPlan::Nodes & /*nodes*/, const Optimization::ExtraSettings & settings)
+bool optimizeVectorSearchSecondPass(QueryPlan::Node & /*root*/, Stack & stack, QueryPlan::Nodes & /*nodes*/, const Optimization::ExtraSettings & settings)
 {
     /// QueryPlan::Node * node = parent_node;
 
@@ -346,13 +343,12 @@ bool optimizeVectorSearchWithVectorIndexSecondPass(QueryPlan::Node & /*root*/, S
     /// is slightly at odds with vector search optimizations. There are two optimizations in vector
     /// search -
     /// 1. Lookup the vector index and shortlist a handful of granules containing neighbours.
-    /// 2. Apply the candidate-row filter from the vector index before distance
-    ///    computation for rescoring queries, or use `_distance` from the index
-    ///    for non-rescoring queries.
+    /// 2. The rescoring optimization goes even further and does not read the 'heavy' vector column at all and
+    ///    only sends the exact neighbour rows to the Sorting + Output step.
     /// Thus, explicit or implicit PREWHERE after above two optimizations does not bring additional benefit. Also,
-    /// the PREWHERE filter implementation conflicts with the vector-search candidate-row filter. If explicit PREWHERE
-    /// is requested, we turn the vector-search optimization off. If there is a WHERE clause and even with
-    /// optimize_move_to_prewhere = 1, we retain vector-search optimization and disable the implicit PREWHERE
+    /// the PREWHERE filter implementation conflicts with rescoring optimization filter. If explicit PREWHERE is
+    /// requested, we turn the rescoring optimization off. If there is a WHERE clause and even with
+    /// optimize_move_to_prewhere = 1, we retain the rescoring optimization and disable the implicit PREWHERE
     /// optimization. (check optimizePrewhere.cpp)
     if (const auto & prewhere_info = read_from_mergetree_step->getPrewhereInfo())
         return false;
@@ -388,10 +384,6 @@ bool optimizeVectorSearchWithVectorIndexSecondPass(QueryPlan::Node & /*root*/, S
     ActionsDAG & expression = expression_step->getExpression();
 
     bool optimize_plan = !settings.vector_search_with_rescoring;
-    /// FINAL may add PK-overlapping ranges after vector index analysis. In that case,
-    /// vector row hints only describe the original candidates and must not filter
-    /// rows added for the final merge.
-    bool apply_row_filter_for_rescoring = settings.vector_search_with_rescoring && !read_from_mergetree_step->isQueryWithFinal();
     if (optimize_plan)
     {
         auto search_column = vector_search_parameters.value().column;
@@ -437,8 +429,9 @@ bool optimizeVectorSearchWithVectorIndexSecondPass(QueryPlan::Node & /*root*/, S
             /// Bug #85514: cosineDistance/L2Distance can have return types Float64 or Float32, depending on the
             /// input types but the "_distance" column is always of type Float32. Add a CAST if needed.
             ///
-            /// The sort column node will be removed first from the DAG, hence remember the datatype of final result
+            /// The sort column node will be removed first from the DAG, hence remember if a CAST is needed.
             const ActionsDAG::Node * sort_column_node = expression.tryFindInOutputs(sort_column); /// "cosine/L2Distance(..., ...)"
+            const bool need_cast = !WhichDataType(sort_column_node->result_type).isFloat32();
             const auto result_type = sort_column_node->result_type;
 
             /// Now replace the "cosineDistance(vec, [1.0, 2.0...])" node in the DAG by the "_distance" node
@@ -446,14 +439,7 @@ bool optimizeVectorSearchWithVectorIndexSecondPass(QueryPlan::Node & /*root*/, S
             expression.removeUnusedActions(); /// Removes the vector column INPUT node (it is no longer needed)
             const auto * distance_node = &expression.addInput("_distance",std::make_shared<DataTypeFloat32>());
 
-            const bool need_sqrt = vector_search_parameters->distance_function == "L2Distance";
-            if (need_sqrt) /// usearch returns L2 squared distance to save repeated sqrt computations.
-            {
-                auto sqrt_function = FunctionFactory::instance().get("sqrt", read_from_mergetree_step->getContext());
-                distance_node = &expression.addFunction(sqrt_function, {distance_node}, {});
-            }
-
-            if (!distance_node->result_type->equals(*result_type))
+            if (need_cast)
                 distance_node = &expression.addCast(*distance_node, result_type, "_CAST_distance", nullptr);
 
             const auto * new_output = &expression.addAlias(*distance_node, sort_column);
@@ -499,43 +485,7 @@ bool optimizeVectorSearchWithVectorIndexSecondPass(QueryPlan::Node & /*root*/, S
         sorting_step->updateInputHeader(expression_node->step->getOutputHeader());
     }
 
-    if (apply_row_filter_for_rescoring)
-    {
-        auto analyzed_result = read_from_mergetree_step->getAnalyzedResult();
-        analyzed_result = analyzed_result ? analyzed_result : read_from_mergetree_step->selectRangesToRead();
-
-        bool can_apply_row_filter = analyzed_result != nullptr;
-        if (can_apply_row_filter)
-        {
-            for (const auto & part_with_ranges : analyzed_result->parts_with_ranges)
-            {
-                if (!part_with_ranges.ranges.empty() && !part_with_ranges.read_hints.vector_search_results.has_value())
-                {
-                    can_apply_row_filter = false;
-                    break;
-                }
-            }
-        }
-
-        if (can_apply_row_filter)
-        {
-            for (auto & part_with_ranges : analyzed_result->parts_with_ranges)
-            {
-                if (!part_with_ranges.ranges.empty())
-                    part_with_ranges.read_hints.use_vector_search_result_filter = true;
-            }
-        }
-        else
-        {
-            apply_row_filter_for_rescoring = false;
-        }
-    }
-
-    const bool vector_optimization_applied = optimize_plan || apply_row_filter_for_rescoring;
-    if (!vector_optimization_applied && settings.optimize_prewhere && filter_step)
-        optimizePrewhere(*filter_or_prewhere_node, settings.remove_unused_columns, false);
-
-    return vector_optimization_applied;
+    return true;
 }
 
 }
