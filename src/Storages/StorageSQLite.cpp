@@ -370,47 +370,83 @@ public:
 
         const auto query = sqlbuf.str();
 
-        sqlite3_stmt * compiled_stmt = nullptr;
-        int status = sqlite3_prepare_v2(
-            sqlite_db.get(), query.c_str(), static_cast<int>(query.size() + 1), &compiled_stmt, nullptr);
-        if (status != SQLITE_OK)
-            throw Exception(ErrorCodes::SQLITE_ENGINE_ERROR,
-                            "Cannot prepare sqlite INSERT statement. Status: {}. Message: {}",
-                            status, sqlite3_errmsg(sqlite_db.get()));
-
-        std::unique_ptr<sqlite3_stmt, StatementDeleter> statement(compiled_stmt, StatementDeleter());
-
         std::vector<SerializationPtr> serializations;
         serializations.reserve(num_columns);
         for (size_t i = 0; i < num_columns; ++i)
             serializations.emplace_back(insertable_block.getByPosition(i).type->getDefaultSerialization());
 
-        const size_t num_rows = insertable_block.rows();
-        for (size_t row = 0; row < num_rows; ++row)
+        /// Reusing a single-row prepared statement executes one SQLite statement per row. Without an explicit
+        /// transaction, SQLite autocommits every successful row and a later constraint violation leaves a partial
+        /// chunk behind. Keep the previous multi-row INSERT semantics by committing the whole chunk atomically.
+        SQLiteFormatImpl::executeSQLite(sqlite_db.get(), "BEGIN");
+        try
         {
-            for (size_t i = 0; i < num_columns; ++i)
+            sqlite3_stmt * compiled_stmt = nullptr;
+            int status = sqlite3_prepare_v2(sqlite_db.get(), query.c_str(), static_cast<int>(query.size() + 1), &compiled_stmt, nullptr);
+            if (status != SQLITE_OK)
+                throw Exception(
+                    ErrorCodes::SQLITE_ENGINE_ERROR,
+                    "Cannot prepare sqlite INSERT statement. Status: {}. Message: {}",
+                    status,
+                    sqlite3_errmsg(sqlite_db.get()));
+
+            std::unique_ptr<sqlite3_stmt, StatementDeleter> statement(compiled_stmt, StatementDeleter());
+
+            const size_t num_rows = insertable_block.rows();
+            for (size_t row = 0; row < num_rows; ++row)
             {
-                const auto & elem = insertable_block.getByPosition(i);
-                const int sqlite_index = static_cast<int>(i + 1);
-                if (elem.column->isNullAt(row))
-                    SQLiteFormatImpl::checkSQLiteStatus(
-                        sqlite_db.get(), sqlite3_bind_null(statement.get(), sqlite_index), "Cannot bind NULL value");
-                else
-                    /// The shared binder keeps the dispatch identical to the `SQLite` output format: `Bool` is
-                    /// bound as 0/1, `UInt64` (which can exceed the SQLite INTEGER range) and NaN (which
-                    /// `sqlite3_bind_double` would turn into SQLite NULL) go through the text path.
-                    SQLiteFormatImpl::bindSQLiteValue(
-                        sqlite_db.get(), statement.get(), sqlite_index, *elem.column, row, elem.type, *serializations[i], format_settings);
+                for (size_t i = 0; i < num_columns; ++i)
+                {
+                    const auto & elem = insertable_block.getByPosition(i);
+                    const int sqlite_index = static_cast<int>(i + 1);
+                    if (elem.column->isNullAt(row))
+                        SQLiteFormatImpl::checkSQLiteStatus(
+                            sqlite_db.get(), sqlite3_bind_null(statement.get(), sqlite_index), "Cannot bind NULL value");
+                    else
+                        /// The shared binder keeps the dispatch identical to the `SQLite` output format: `Bool` is
+                        /// bound as 0/1, `UInt64` (which can exceed the SQLite INTEGER range) and NaN (which
+                        /// `sqlite3_bind_double` would turn into SQLite NULL) go through the text path.
+                        SQLiteFormatImpl::bindSQLiteValue(
+                            sqlite_db.get(),
+                            statement.get(),
+                            sqlite_index,
+                            *elem.column,
+                            row,
+                            elem.type,
+                            *serializations[i],
+                            format_settings);
+                }
+
+                status = sqlite3_step(statement.get());
+                if (status != SQLITE_DONE)
+                    throw Exception(
+                        ErrorCodes::SQLITE_ENGINE_ERROR,
+                        "Failed to execute sqlite INSERT query. Status: {}. Message: {}",
+                        status,
+                        sqlite3_errmsg(sqlite_db.get()));
+
+                sqlite3_reset(statement.get());
+                sqlite3_clear_bindings(statement.get());
             }
 
-            status = sqlite3_step(statement.get());
-            if (status != SQLITE_DONE)
-                throw Exception(ErrorCodes::SQLITE_ENGINE_ERROR,
-                                "Failed to execute sqlite INSERT query. Status: {}. Message: {}",
-                                status, sqlite3_errmsg(sqlite_db.get()));
-
-            sqlite3_reset(statement.get());
-            sqlite3_clear_bindings(statement.get());
+            statement.reset();
+            SQLiteFormatImpl::executeSQLite(sqlite_db.get(), "COMMIT");
+        }
+        catch (...)
+        {
+            /// A conflict handler may have rolled the transaction back already.
+            if (!sqlite3_get_autocommit(sqlite_db.get()))
+            {
+                try
+                {
+                    SQLiteFormatImpl::executeSQLite(sqlite_db.get(), "ROLLBACK");
+                }
+                catch (...)
+                {
+                    tryLogCurrentException(getLogger("SQLiteSink"), "Failed to roll back SQLite chunk transaction");
+                }
+            }
+            throw;
         }
     }
 
@@ -434,8 +470,9 @@ SinkToStoragePtr StorageSQLite::write(const ASTPtr & query, const StorageMetadat
     if (remote_table_or_query.isQuery())
         throw Exception(ErrorCodes::INCORRECT_QUERY, "Cannot write into a SQLite table representing the result of a query");
 
-    auto sqlite_db_local = openConnectionIfNeeded(/* throw_on_error */ true,
-                             /* allow_create */ !generated_columns_reclassification_pending.load(std::memory_order_acquire));
+    openConnectionIfNeeded(
+        /* throw_on_error */ true,
+        /* allow_create */ !generated_columns_reclassification_pending.load(std::memory_order_acquire));
 
     /// Fallback: `updateExternalDynamicMetadataIfExists` normally repairs the pending classification before the
     /// insert's metadata snapshot is taken; this covers any path that reaches `write` without that hook.
@@ -462,8 +499,13 @@ SinkToStoragePtr StorageSQLite::write(const ASTPtr & query, const StorageMetadat
             explicitly_inserted_columns = *insertion_column_names;
     }
 
+    /// A transaction is connection-wide in SQLite. Give every sink its own connection so chunk transactions from
+    /// concurrent inserts cannot overlap on the shared metadata connection (which can also be shared by all tables
+    /// of a `DatabaseSQLite`). The database was opened above, so this connection must not create a missing file.
+    auto write_connection = openSQLiteDB(database_path, getContext(), /* throw_on_error */ true, /* allow_create */ false);
+
     return std::make_shared<SQLiteSink>(
-        *this, metadata_snapshot, sqlite_db_local, remote_table_or_query.getTableName(), explicitly_inserted_columns);
+        *this, metadata_snapshot, write_connection, remote_table_or_query.getTableName(), explicitly_inserted_columns);
 }
 
 
