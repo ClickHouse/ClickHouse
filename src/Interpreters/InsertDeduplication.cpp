@@ -456,6 +456,33 @@ void DeduplicationInfo::cacheDataHashes() const
 }
 
 
+void DeduplicationInfo::cacheDataHashes(DataHashCache & cache) const
+{
+    if (disabled)
+        return;
+
+    /// A cache hit: this info is a sibling clone of the one that filled the cache (same source
+    /// block, same token boundaries). Copy the already-computed hashes instead of re-hashing.
+    if (cache.block && cache.block.get() == original_block.get() && cache.offsets == offsets)
+    {
+        chassert(cache.hashes.size() == tokens.size());
+        for (size_t offset = 0; offset < tokens.size(); ++offset)
+            if (!tokens[offset].data_hash_batch.has_value())
+                tokens[offset].data_hash_batch = cache.hashes[offset];
+        return;
+    }
+
+    cacheDataHashes();
+
+    /// Remember the computed hashes so the sibling clones of this source block reuse them.
+    cache.block = original_block;
+    cache.offsets = offsets;
+    cache.hashes.resize(tokens.size());
+    for (size_t offset = 0; offset < tokens.size(); ++offset)
+        cache.hashes[offset] = tokens[offset].data_hash_batch;
+}
+
+
 size_t DeduplicationInfo::getCount() const
 {
     return offsets.size();

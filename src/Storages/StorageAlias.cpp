@@ -155,7 +155,7 @@ public:
         /// that re-anchoring would read out of the block's bounds. Cache the hashes now, while the
         /// info is still consistent.
         if (auto deduplication_info = non_materialized_chunk.getChunkInfos().get<DeduplicationInfo>())
-            deduplication_info->cacheDataHashes();
+            deduplication_info->cacheDataHashes(data_hash_cache);
 
         executor->push(std::move(non_materialized_chunk));
     }
@@ -184,6 +184,9 @@ private:
     bool async_insert;
     BlockIO block_io;
     std::unique_ptr<PushingPipelineExecutor> executor;
+    /// Memoizes the deduplication data hashes across the sibling chunks of one source block, so a
+    /// row-count-changing view fanned out into many chunks does not re-hash the source per chunk.
+    DeduplicationInfo::DataHashCache data_hash_cache;
 };
 
 void StorageAlias::read(

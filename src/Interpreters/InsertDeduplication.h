@@ -118,6 +118,21 @@ public:
     /// re-anchoring would read out of the block's bounds.
     void cacheDataHashes() const;
 
+    /// Memoizing overload for the `Alias` hop. `RestoreChunkInfosTransform` clones the same
+    /// source-level info onto every output chunk of a row-count-changing view, and the clones do
+    /// not share `data_hash_batch` (tokens are copied by value). Caching per chunk would re-hash
+    /// the whole source block once per emitted chunk - O(source_rows * output_chunks). All those
+    /// clones carry the same `original_block` and `offsets` and differ only in view-block numbers,
+    /// which do not affect the hashed range, so the per-token hashes are computed once for a given
+    /// block and reused across its clones.
+    struct DataHashCache
+    {
+        std::shared_ptr<Block> block;
+        std::vector<size_t> offsets;
+        std::vector<std::optional<UInt128>> hashes;
+    };
+    void cacheDataHashes(DataHashCache & cache) const;
+
     const std::vector<StorageIDMaybeEmpty> & getVisitedViews() const;
 
 private:
