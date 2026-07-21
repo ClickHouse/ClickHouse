@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['query optimization', 'performance', 'best practices', 'query tuning', 'efficiency', 'query log', 'EXPLAIN']
 ---
 
-import { LegacyDeepLinkSection } from "/snippets/components/LegacyDeepLinkSection/LegacyDeepLinkSection.jsx";
-
 This section aims to illustrate through common scenarios how to use different performance and optimization techniques, such as [analyzer](/guides/clickhouse/performance-and-monitoring/analyzer), [query profiling](/concepts/features/performance/troubleshoot/sampling-query-profiler) or [avoid nullable Columns](/concepts/best-practices/avoidnullablecolumns), in order to improve your ClickHouse query performances.
 
 ## Understand query performance {#understand-query-performance}
@@ -80,49 +78,6 @@ Query optimization starts with understanding where a query spends its time. Inst
     Learn how the analyzer builds and optimizes a query execution plan.
   </Card>
 </CardGroup>
-
-<LegacyDeepLinkSection
-  accordionId="find-a-section-from-the-previous-guide"
-  anchorIds={[
-    "spot-the-slow-queries",
-    "query-logs",
-    "explain-statement",
-    "methodology",
-    "dataset",
-    "basic-optimization",
-    "nullable",
-    "low-cardinality",
-    "optimize-data-type",
-    "apply-the-optimizations",
-    "the-importance-of-primary-keys",
-    "choose-primary-keys",
-    "next-steps",
-  ]}
->
-
-## Previous guide sections {#previous-guide-sections}
-
-<Accordion title="Find a section from the previous guide">
-
-If you followed a link to a section in the previous version of this guide, use the links below to find its new location:
-
-- <span id="spot-the-slow-queries"></span>[Spot the slow queries](/guides/clickhouse/performance-and-monitoring/diagnose-slow-queries#spot-the-slow-queries)
-- <span id="query-logs"></span>[Query logs](/guides/clickhouse/performance-and-monitoring/diagnose-slow-queries#query-logs)
-- <span id="explain-statement"></span>[Explain statement](/guides/clickhouse/performance-and-monitoring/diagnose-slow-queries#explain-statement)
-- <span id="methodology"></span>[Methodology](/guides/clickhouse/performance-and-monitoring/decompose-query-performance#methodology)
-- <span id="dataset"></span>[Dataset](/guides/clickhouse/performance-and-monitoring/query-optimization-example#dataset)
-- <span id="basic-optimization"></span>[Basic optimization](/guides/clickhouse/performance-and-monitoring/query-optimization-example#basic-optimization)
-- <span id="nullable"></span>[Nullable](/guides/clickhouse/performance-and-monitoring/query-optimization-example#nullable)
-- <span id="low-cardinality"></span>[Low cardinality](/guides/clickhouse/performance-and-monitoring/query-optimization-example#low-cardinality)
-- <span id="optimize-data-type"></span>[Optimize data type](/guides/clickhouse/performance-and-monitoring/query-optimization-example#optimize-data-type)
-- <span id="apply-the-optimizations"></span>[Apply the optimizations](/guides/clickhouse/performance-and-monitoring/query-optimization-example#apply-the-optimizations)
-- <span id="the-importance-of-primary-keys"></span>[The importance of primary keys](/guides/clickhouse/performance-and-monitoring/query-optimization-example#the-importance-of-primary-keys)
-- <span id="choose-primary-keys"></span>[Choose primary keys](/guides/clickhouse/performance-and-monitoring/query-optimization-example#choose-primary-keys)
-- <span id="next-steps"></span>[Next steps](/guides/clickhouse/performance-and-monitoring/query-optimization-example#next-steps)
-
-</Accordion>
-
-</LegacyDeepLinkSection>
 
 ## Related optimization guidance {#related-optimization-guidance}
 
