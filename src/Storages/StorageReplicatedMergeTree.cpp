@@ -6721,7 +6721,12 @@ bool StorageReplicatedMergeTree::executeMetadataAlter(const StorageReplicatedMer
         LOG_INFO(log, "Metadata changed in ZooKeeper. Applying changes locally.");
 
         const auto table_metadata = ReplicatedMergeTreeTableMetadata(*this, current_metadata);
-        auto metadata_diff = table_metadata.checkAndFindDiff(metadata_from_entry, current_metadata->columns, current_metadata->virtuals, getStorageID().getNameForLogs(), getContext());
+        /// `checkAndFindDiff` parses the metadata coming from the log entry, so it must resolve
+        /// expressions against the entry's columns (`columns_from_entry`), not the local ones. On a
+        /// combined `ALTER ADD COLUMN c ..., MODIFY ORDER BY (..., c)` the new key references a column
+        /// that is only present in the entry's columns; parsing it against the stale local columns
+        /// would throw `UNKNOWN_IDENTIFIER` and the metadata alter would retry forever.
+        auto metadata_diff = table_metadata.checkAndFindDiff(metadata_from_entry, columns_from_entry, current_metadata->virtuals, getStorageID().getNameForLogs(), getContext());
         setTableStructure(table_id, alter_context, std::move(columns_from_entry), metadata_diff, entry.alter_version);
 
         auto applied_metadata_snapshot = getInMemoryMetadataPtr(getContext(), true);
@@ -11701,7 +11706,10 @@ void StorageReplicatedMergeTree::applyMetadataChangesToCreateQueryForBackup(cons
             current_metadata->add_minmax_index_for_string_columns,
             getContext());
         const auto table_metadata = ReplicatedMergeTreeTableMetadata(*this, current_metadata);
-        auto metadata_diff = table_metadata.checkAndFindDiff(metadata_from_entry, current_metadata->columns, current_metadata->virtuals, getStorageID().getNameForLogs(), getContext());
+        /// Parse the ZooKeeper metadata against the columns that were stored together with it (see the
+        /// note at the other `checkAndFindDiff` call site), so a key/TTL/index/projection expression
+        /// that references a column only present in the ZooKeeper columns does not throw.
+        auto metadata_diff = table_metadata.checkAndFindDiff(metadata_from_entry, columns_from_entry, current_metadata->virtuals, getStorageID().getNameForLogs(), getContext());
         auto adjusted_metadata = metadata_diff.getNewMetadata(columns_from_entry, current_metadata->virtuals, getContext(), *current_metadata);
         applyMetadataChangesToCreateQuery(create_query, adjusted_metadata, getContext(), false);
     }
