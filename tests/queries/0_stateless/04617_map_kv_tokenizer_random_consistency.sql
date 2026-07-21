@@ -16,22 +16,29 @@ CREATE TABLE t_lc (id UInt64, m Map(LowCardinality(String), LowCardinality(Strin
     INDEX idx m TYPE text(tokenizer = 'keyValuePairs') GRANULARITY 1)
     ENGINE = MergeTree ORDER BY id SETTINGS min_bytes_for_wide_part = 0, index_granularity = 8;
 
+-- Keys and values are arbitrary byte strings (any of 0..255, including NUL, 0x80+, and bytes that
+-- look like trailer values) to stress the length-delimited encode/decode. Keys are drawn from a small
+-- pool (so they repeat within a row -> duplicates) with lengths spanning the 63/64-byte trailer
+-- boundary; values are per-entry. ~1/6 of keys and values are the empty string.
 INSERT INTO t_s
 SELECT number,
-  arrayMap(j -> ( -- ~1/6 of keys and values are the empty string (and repeat within a row -> duplicate '' keys)
-                  if(cityHash64(number, j, 13) % 6 = 0, '',
-                     repeat(substring('abc', 1 + (cityHash64(number, j) % 3), 1),
-                            [1, 50, 63, 64, 65, 127, 200][1 + (cityHash64(number, j, 7) % 7)])),
-                  if(cityHash64(number, j, 17) % 6 = 0, '',
-                     substring(hex(cityHash64(number, j, 9)), 1, 1 + (cityHash64(number, j, 11) % 16))) ),
+  arrayMap(j -> (
+    if(cityHash64(number, j, 13) % 6 = 0, '',
+       arrayStringConcat(arrayMap(i -> char(cityHash64(cityHash64(number, j) % 8, i) % 256),
+                                  range([1, 50, 63, 64, 65, 127, 200][1 + (cityHash64(number, j, 7) % 7)])))),
+    if(cityHash64(number, j, 17) % 6 = 0, '',
+       arrayStringConcat(arrayMap(i -> char(cityHash64(number, j, i, 3) % 256),
+                                  range(1 + (cityHash64(number, j, 11) % 20))))) ),
     range(1 + (cityHash64(number) % 5)))::Map(String, String)
 FROM numbers(200);
--- Crafted edge rows: guarantee empty-key/empty-value coverage, including duplicates of both.
+-- Crafted edge rows: guarantee empty-key/empty-value coverage and explicit weird bytes, with dups.
 INSERT INTO t_s VALUES
-    (100000, map('', 'a', '', 'b')),   -- duplicate empty key, distinct values
-    (100001, map('k', '', 'k', 'v')),  -- duplicate key, first value empty
-    (100002, map('', '', '', '')),     -- all empty, duplicated
-    (100003, map('x', '', '', 'y'));   -- empty value and empty key mixed
+    (100000, map('', 'a', '', 'b')),                                              -- duplicate empty key
+    (100001, map('k', '', 'k', 'v')),                                             -- duplicate key, first value empty
+    (100002, map('', '', '', '')),                                                -- all empty, duplicated
+    (100003, map('x', '', '', 'y')),                                              -- empty value and empty key mixed
+    (100004, map(char(0, 128, 255), char(255, 0, 1), char(0, 128, 255), char(2))),-- duplicate NUL/high-byte key
+    (100005, map(char(1), char(0), char(200, 0, 50), char(0, 0)));                -- values with leading/embedded NUL
 INSERT INTO t_lc SELECT id, CAST(m, 'Map(LowCardinality(String), LowCardinality(String))') FROM t_s;
 
 CREATE TABLE r (q String, use_index UInt8, h UInt64) ENGINE = Memory;
