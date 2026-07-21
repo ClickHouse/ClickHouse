@@ -296,8 +296,10 @@ public:
                 first_array_col_concrete = array_argument.column_array;
             }
 
+            /// Unwrap LowCardinality from the column in lockstep with the type; a
+            /// LowCardinality column carrying a non-LowCardinality type mismatches in the lambda.
             ColumnWithTypeAndName data_type_name(
-                array_argument.column_array->getDataPtr(),
+                recursiveRemoveLowCardinality(array_argument.column_array->getDataPtr()),
                 recursiveRemoveLowCardinality(array_argument.array_type->getNestedType()),
                 array_argument.name);
             arrays_data_with_type_and_name.push_back(data_type_name);

@@ -145,7 +145,8 @@ public:
         bool null_as_default_,
         bool case_insensitive_matching_ = false,
         bool dictionary_as_low_cardinality_ = false,
-        bool allow_nullable_array_type_ = false);
+        bool allow_nullable_array_type_ = false,
+        FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior_ = FormatSettings::DateTimeOverflowBehavior::Ignore);
 
     void orcTableToCHChunk(
         Chunk & res,
@@ -172,6 +173,7 @@ private:
     bool case_insensitive_matching;
     bool dictionary_as_low_cardinality;
     bool allow_nullable_array_type;
+    FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior;
 };
 }
 #endif
