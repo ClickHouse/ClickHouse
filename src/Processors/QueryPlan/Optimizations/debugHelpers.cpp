@@ -27,25 +27,23 @@
 namespace DB
 {
 
-constexpr auto DUMMY_JOIN_STATS_PARAM_NAME = CascadesParams::STAT_HINTS;
-
-/* Read dummy stats from query parameter
+/* Read a table statistics hint from the query parameter.
  * The parameter should be a JSON object with the following structure:
  * SET param__internal_join_table_stat_hints = '{
  *   "table_name": { "cardinality": 1000, "distinct_keys": { "column_name": 100, ... } },
  *   ...
  * }';
  */
-RelationStats parseTableStatsHint(const String & dummy_stats_str, const String & table_name);
+RelationStats parseTableStatsHint(const String & stats_hint_json, const String & table_name);
 RelationStats parseTableStatsHint(ContextPtr context, const String & table_name);
 RelationStats getRandomizedStats(UInt64 seed, size_t relation_index, const String & table_name, const Block & header);
 
-RelationStats parseTableStatsHint(const String & dummy_stats_str, const String & table_name)
+RelationStats parseTableStatsHint(const String & stats_hint_json, const String & table_name)
 {
     try
     {
         Poco::JSON::Parser parser;
-        Poco::Dynamic::Var result = parser.parse(dummy_stats_str);
+        Poco::Dynamic::Var result = parser.parse(stats_hint_json);
         const auto & object = result.extract<Poco::JSON::Object::Ptr>();
         if (!object)
             return {};
@@ -80,13 +78,13 @@ RelationStats parseTableStatsHint(const String & dummy_stats_str, const String &
                 stats.column_stats[key].avg_bytes = value.convert<Float64>();
         }
         LOG_DEBUG(getLogger("optimizeJoin"),
-            "Got dummy join stats for table '{}' from '{}' query parameter, it's supposed to be used only for testing, do not use it in production",
-            table_name, DUMMY_JOIN_STATS_PARAM_NAME);
+            "Got a table statistics hint for table '{}' from '{}' query parameter, it is meant for testing only, do not use it in production",
+            table_name, CascadesParams::STAT_HINTS);
         return stats;
     }
     catch (const Poco::Exception & e)
     {
-        LOG_WARNING(getLogger("optimizeJoin"), "Failed to parse '{}': {}", DUMMY_JOIN_STATS_PARAM_NAME, e.displayText());
+        LOG_WARNING(getLogger("optimizeJoin"), "Failed to parse '{}': {}", CascadesParams::STAT_HINTS, e.displayText());
         return {};
     }
 }
@@ -94,7 +92,7 @@ RelationStats parseTableStatsHint(const String & dummy_stats_str, const String &
 RelationStats parseTableStatsHint(ContextPtr context, const String & table_name)
 {
     const auto & query_params = context->getQueryParameters();
-    if (auto it = query_params.find(DUMMY_JOIN_STATS_PARAM_NAME); it != query_params.end())
+    if (auto it = query_params.find(CascadesParams::STAT_HINTS); it != query_params.end())
         return parseTableStatsHint(it->second, table_name);
     return {};
 }

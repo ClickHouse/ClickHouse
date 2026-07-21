@@ -49,7 +49,7 @@ SortDescription sortBy(const String & column)
 
 }
 
-TEST(CascadesDagNameTranslation, ClassifyOutputName)
+TEST(CascadesDagNameTranslation, ClassifyOutputNameTracesAliasesAndDetectsComputed)
 {
     auto dag = makeDag();
     String input_name;
@@ -66,7 +66,7 @@ TEST(CascadesDagNameTranslation, ClassifyOutputName)
     EXPECT_EQ(classifyOutputName(dag, "not_in_dag", input_name), TranslatedName::Passthrough);
 }
 
-TEST(CascadesDagNameTranslation, DistributionColumns)
+TEST(CascadesDagNameTranslation, ComputedOnlyDistributionColumnsAreUnderivable)
 {
     auto dag = makeDag();
 
@@ -86,7 +86,7 @@ TEST(CascadesDagNameTranslation, DistributionColumns)
     EXPECT_FALSE(translateDistributionColumns(dag, computed_only));
 }
 
-TEST(CascadesDagNameTranslation, SortDescription)
+TEST(CascadesDagNameTranslation, ComputedSortKeyOrderIsUnderivable)
 {
     auto dag = makeDag();
 

@@ -78,7 +78,7 @@ Float64 estimateRowWidth(const Block & header, const std::unordered_map<String, 
     return std::max(total, MIN_ROW_WIDTH);
 }
 
-RelationStats parseTableStatsHint(const String & dummy_stats_str, const String & table_name);
+RelationStats parseTableStatsHint(const String & stats_hint_json, const String & table_name);
 
 /// Statistics hint can be passed in JSON as query parameter. `avg_row_bytes` and `column_bytes`
 /// (average bytes of one value per column) are optional:
@@ -131,7 +131,7 @@ public:
         return parsed_table_statistics[table_name].avg_row_bytes;
     }
 
-    std::optional<Float64> getColumnAvgBytes(const String & table_name, const String & column_name) const override
+    std::optional<Float64> getAvgColumnBytes(const String & table_name, const String & column_name) const override
     {
         std::lock_guard g(table_statistics_lock);
         fillParsedStatisticsIfNeeded(table_name);
@@ -245,18 +245,6 @@ std::unordered_map<String, Float64> estimateReadColumnWidthsScaledToRow(const Re
     return widths;
 }
 
-/// Estimate bytes per row of a read: the sum of the per-column widths, the output header as fallback.
-Float64 estimateReadBytesPerRowFromStep(const ReadFromMergeTree & read_step)
-{
-    auto widths = estimateReadColumnWidths(read_step);
-    if (widths.empty())
-        return estimateRowWidthFromHeader(*read_step.getOutputHeader());
-
-    Float64 total = 0;
-    for (const auto & [_, width] : widths)
-        total += width;
-    return std::max(total, MIN_ROW_WIDTH);
-}
 
 namespace QueryPlanOptimizations
 {

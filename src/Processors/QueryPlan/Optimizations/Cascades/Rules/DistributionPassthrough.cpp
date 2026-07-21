@@ -57,13 +57,13 @@ protected:
             step_dag && QueryPlanOptimizations::dagContainsNonDeterministicFunction(*step_dag))
         {
             DistributionDescription single_node;    /// node_count=1, not replicated (default)
-            if (auto implementation_expression = createAtDistribution(expression, single_node))
+            if (auto implementation_expression = tryCreateAtDistribution(expression, single_node))
                 addPhysicalToMemo(implementation_expression, required_properties, memo, result);
             return result;
         }
 
         /// Implementation at the parent's required distribution.
-        if (auto implementation_expression = createAtDistribution(expression, required_properties.distribution))
+        if (auto implementation_expression = tryCreateAtDistribution(expression, required_properties.distribution))
             addPhysicalToMemo(implementation_expression, required_properties, memo, result);
 
         /// Speculative implementations at each candidate node count.
@@ -76,7 +76,7 @@ protected:
             DistributionDescription dist;
             dist.node_count = candidate;
 
-            if (auto implementation_expression = createAtDistribution(expression, dist))
+            if (auto implementation_expression = tryCreateAtDistribution(expression, dist))
                 addPhysicalToMemo(implementation_expression, required_properties, memo, result);
         }
 
@@ -121,7 +121,7 @@ protected:
     }
 
 private:
-    GroupExpressionPtr createAtDistribution(
+    GroupExpressionPtr tryCreateAtDistribution(
         const GroupExpressionPtr & expression,
         const DistributionDescription & distribution) const
     {

@@ -26,7 +26,7 @@ namespace ErrorCodes
 ///   - Partial: a non-final aggregation stays where its input is (any node count)
 ///
 /// Two-phase (partial + shuffle + merge) aggregation is handled separately by
-/// TwoPhaseAggregationTransformation, which splits a logical Agg into
+/// TwoStageAggregationTransformation, which splits a logical Agg into
 /// FinalAgg(PartialAgg(input)) before implementations are assigned.
 class AggregationImplementation : public IOptimizationRule
 {
@@ -60,7 +60,7 @@ public:
     void addSingleKeyShuffleAggregations(const std::vector<size_t> & candidate_node_counts);
 
     /// See addShuffleAggregation for why each condition disables the shuffle strategy.
-    bool shuffleApplicable() const
+    bool isShuffleApplicable() const
     {
         return !agg_step.getParams().keys.empty()
             && !agg_step.isGroupingSets()
@@ -96,10 +96,10 @@ private:
 /// distribution requirements set by the implementation rules on FinalMergeAgg.
 ///
 /// This split is only attempted for aggregations that support it (canUseProjection).
-class TwoPhaseAggregationTransformation : public IOptimizationRule
+class TwoStageAggregationTransformation : public IOptimizationRule
 {
 public:
-    String getName() const override { return "TwoPhaseAggregation"; }
+    String getName() const override { return "TwoStageAggregation"; }
     bool checkPattern(GroupExpressionPtr expression, const ExpressionProperties & required_properties, const Memo & memo) const override;
     Promise getPromise() const override { return 2000; }
     bool isTransformation() const override { return true; }
@@ -252,7 +252,7 @@ std::vector<GroupExpressionPtr> AggregationImplementation::applyImpl(GroupExpres
     /// `distributed_plan_force_shuffle_aggregation` leaves shuffle as the only strategy
     /// on a multi-node cluster whenever it is applicable.
     const bool only_shuffle = memo.getEnvironment().distributed_plan_force_shuffle_aggregation
-        && strategies.shuffleApplicable() && !candidate_node_counts.empty();
+        && strategies.isShuffleApplicable() && !candidate_node_counts.empty();
 
     if (!only_shuffle)
         strategies.addLocalAggregation();
@@ -261,7 +261,7 @@ std::vector<GroupExpressionPtr> AggregationImplementation::applyImpl(GroupExpres
     if (candidate_node_counts.empty())
         return result;
 
-    if (strategies.shuffleApplicable())
+    if (strategies.isShuffleApplicable())
     {
         for (size_t candidate_node_count : candidate_node_counts)
             strategies.addShuffleAggregation(candidate_node_count);
@@ -277,7 +277,7 @@ OptimizationRulePtr createAggregationImplementation();
 OptimizationRulePtr createAggregationImplementation() { return std::make_shared<AggregationImplementation>(); }
 
 
-bool TwoPhaseAggregationTransformation::checkPattern(GroupExpressionPtr expression, const ExpressionProperties & /*required_properties*/, const Memo & memo) const
+bool TwoStageAggregationTransformation::checkPattern(GroupExpressionPtr expression, const ExpressionProperties & /*required_properties*/, const Memo & memo) const
 {
     const auto * agg_step = typeid_cast<const AggregatingStep *>(expression->getQueryPlanStep());
     return agg_step != nullptr &&
@@ -292,16 +292,16 @@ bool TwoPhaseAggregationTransformation::checkPattern(GroupExpressionPtr expressi
         !(memo.getEnvironment().distributed_plan_force_shuffle_aggregation && !agg_step->getParams().keys.empty());
 }
 
-std::vector<GroupExpressionPtr> TwoPhaseAggregationTransformation::applyImpl(GroupExpressionPtr expression, const ExpressionProperties & /*required_properties*/, Memo & memo) const
+std::vector<GroupExpressionPtr> TwoStageAggregationTransformation::applyImpl(GroupExpressionPtr expression, const ExpressionProperties & /*required_properties*/, Memo & memo) const
 {
     const auto * agg_step = typeid_cast<const AggregatingStep *>(expression->getQueryPlanStep());
     if (!agg_step)
         throw Exception(ErrorCodes::LOGICAL_ERROR,
-            "TwoPhaseAggregationTransformation::applyImpl called for non-AggregatingStep expression '{}'",
+            "TwoStageAggregationTransformation::applyImpl called for non-AggregatingStep expression '{}'",
             expression->getDescription());
     if (expression->inputs.size() != 1)
         throw Exception(ErrorCodes::LOGICAL_ERROR,
-            "TwoPhaseAggregationTransformation::applyImpl: expected 1 input, got {} for expression '{}'",
+            "TwoStageAggregationTransformation::applyImpl: expected 1 input, got {} for expression '{}'",
             expression->inputs.size(), expression->getDescription());
 
     /// Phase 1: partial aggregation - takes raw rows, outputs intermediate aggregate states.
@@ -347,7 +347,7 @@ std::vector<GroupExpressionPtr> TwoPhaseAggregationTransformation::applyImpl(Gro
     return {merge_expr};
 }
 
-OptimizationRulePtr createTwoPhaseAggregationTransformation();
-OptimizationRulePtr createTwoPhaseAggregationTransformation() { return std::make_shared<TwoPhaseAggregationTransformation>(); }
+OptimizationRulePtr createTwoStageAggregationTransformation();
+OptimizationRulePtr createTwoStageAggregationTransformation() { return std::make_shared<TwoStageAggregationTransformation>(); }
 
 }

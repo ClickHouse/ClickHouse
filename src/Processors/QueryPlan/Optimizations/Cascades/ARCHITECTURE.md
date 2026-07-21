@@ -201,7 +201,7 @@ The optimizer uses a LIFO task stack. For each group, optimization proceeds thro
 four stages:
 
 - **Stage 1 — Explore**: Fire transformation rules (`JoinCommutativity`,
-  `TwoPhaseAggregation`, `TwoStageTopN`) to generate logically equivalent expressions.
+  `TwoStageAggregation`, `TwoStageTopN`) to generate logically equivalent expressions.
 - **Stage 2 — Implement**: Fire implementation rules (`HashJoinImplementation`,
   `AggregationImplementation`, `LocalReadImplementation`, `ParallelReadImplementation`,
   `ReplicatedReadImplementation`, `SortImplementation`, `DefaultImplementation`,
@@ -379,7 +379,7 @@ The lists below use class names; `getName` log names may omit the `Implementatio
 - `JoinCommutativity` — swaps join sides (left ↔ right) for joins where the swap is
   semantics-preserving: `INNER ALL`, `CROSS`, and `SEMI`/`ANY`/`ANTI` strictness;
   never `ASOF` or `INNER ANY`
-- `TwoPhaseAggregation` — splits aggregation into partial + merge
+- `TwoStageAggregation` — splits aggregation into partial + merge
 - `TwoStageTopN` — splits a top-N sort into a per-node bounded sort, a sorted-merge
   gather, and a coordinator limit
 
@@ -580,7 +580,7 @@ step — Cascades will strip it into a property.
 
 Each operator becomes a group. `SortingStep` is stripped — the sort description
 `[total_revenue DESC]` becomes a required property on Group #1's input link.
-`TwoPhaseAggregation` transformation creates an additional Group #12.
+`TwoStageAggregation` transformation creates an additional Group #12.
 
 ```
 Group #0:  Expression (Project names)         -- root, required: {1 node}
@@ -595,7 +595,7 @@ Group #8:  Expression -> orders
 Group #9:  ReadFromMergeTree (orders)          -- 5.6M rows
 Group #10: Expression -> nation
 Group #11: ReadFromMergeTree (nation)          -- 25 rows
-Group #12: Aggregating (Partial)              -- from TwoPhaseAggregation rule
+Group #12: Aggregating (Partial)              -- from TwoStageAggregation rule
 ```
 
 ### Implementation rules: read strategies
@@ -653,7 +653,7 @@ storage, avoiding network overhead entirely.
 
 ### Implementation rules: aggregation
 
-`TwoPhaseAggregation` transformation created Group #12 (`Aggregating Partial`).
+`TwoStageAggregation` transformation created Group #12 (`Aggregating Partial`).
 
 | Strategy | Distribution | Subtree Cost | Best? |
 |---|---|---|---|

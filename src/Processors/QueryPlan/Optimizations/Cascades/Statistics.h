@@ -42,7 +42,7 @@ public:
     virtual std::optional<UInt64> getCardinality(const String & table_name) const = 0;
     virtual std::optional<UInt64> getNumberOfDistinctValues(const String & table_name, const String & column_name) const = 0;
     virtual std::optional<Float64> getAvgRowBytes(const String & table_name) const = 0;
-    virtual std::optional<Float64> getColumnAvgBytes(const String & /*table_name*/, const String & /*column_name*/) const { return std::nullopt; }
+    virtual std::optional<Float64> getAvgColumnBytes(const String & /*table_name*/, const String & /*column_name*/) const { return std::nullopt; }
 };
 
 using OptimizerStatisticsPtr = std::unique_ptr<IOptimizerStatistics>;
@@ -50,9 +50,6 @@ using OptimizerStatisticsPtr = std::unique_ptr<IOptimizerStatistics>;
 OptimizerStatisticsPtr createEmptyStatistics();
 
 class ReadFromMergeTree;
-
-/// Bytes per row of a read: storage column sizes when available, the output header otherwise.
-Float64 estimateReadBytesPerRowFromStep(const ReadFromMergeTree & read_step);
 
 /// Average bytes per value of each column a read produces: real per-column storage sizes when the
 /// parts carry them (scaled up to the table-level uncompressed total when compact parts hide part

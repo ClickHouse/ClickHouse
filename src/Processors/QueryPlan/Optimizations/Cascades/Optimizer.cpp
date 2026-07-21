@@ -196,7 +196,7 @@ QueryPlanPtr CascadesOptimizer::buildBestPlan(GroupId subtree_root_group_id, Exp
 
     /// Select the cheapest eligible (acyclic) implementation for a group. `input_is_self_referential`
     /// is true when this selection is for the self-referential input of a same-group enforcer.
-    auto selectBest = [&](GroupId group_id, const ExpressionProperties & props, bool input_is_self_referential) -> GroupExpressionPtr
+    auto select_best = [&](GroupId group_id, const ExpressionProperties & props, bool input_is_self_referential) -> GroupExpressionPtr
     {
         auto group = memo.getGroup(group_id);
         auto best = group->selectInputImplementation(props, cost_config, active_path, input_is_self_referential).expression;
@@ -222,7 +222,7 @@ QueryPlanPtr CascadesOptimizer::buildBestPlan(GroupId subtree_root_group_id, Exp
     QueryPlanPtr result;
 
     /// Push a frame for `expression`, recording it on the active path if it is single-input.
-    auto pushFrame = [&](GroupId group_id, GroupExpressionPtr expression)
+    auto push_frame = [&](GroupId group_id, GroupExpressionPtr expression)
     {
         const bool on_active_path = expression->inputs.size() == 1;
         if (on_active_path)
@@ -244,7 +244,7 @@ QueryPlanPtr CascadesOptimizer::buildBestPlan(GroupId subtree_root_group_id, Exp
                 "The distributed Cascades optimizer is experimental; disable enable_cascades_optimizer "
                 "or simplify the query.",
                 required_properties.dump());
-        pushFrame(subtree_root_group_id, std::move(root_best));
+        push_frame(subtree_root_group_id, std::move(root_best));
     }
 
     while (!stack.empty())
@@ -257,8 +257,8 @@ QueryPlanPtr CascadesOptimizer::buildBestPlan(GroupId subtree_root_group_id, Exp
             const auto & input = frame.expression->inputs[frame.next_child];
             ++frame.next_child;
             const bool input_is_self_referential = input.group_id == frame.group_id;
-            auto child = selectBest(input.group_id, input.required_properties, input_is_self_referential);
-            pushFrame(input.group_id, std::move(child));
+            auto child = select_best(input.group_id, input.required_properties, input_is_self_referential);
+            push_frame(input.group_id, std::move(child));
             continue;
         }
 

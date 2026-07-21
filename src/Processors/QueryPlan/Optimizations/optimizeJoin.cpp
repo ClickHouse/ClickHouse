@@ -71,7 +71,7 @@ namespace Setting
 }
 
 RelationStats parseTableStatsHint(ContextPtr context, const String & table_name);
-RelationStats parseTableStatsHint(const String & dummy_stats_str, const String & table_name);
+RelationStats parseTableStatsHint(const String & stats_hint_json, const String & table_name);
 RelationStats getRandomizedStats(UInt64 seed, size_t relation_index, const String & table_name, const Block & header);
 
 namespace QueryPlanOptimizations
@@ -129,7 +129,7 @@ static ValueHop describeValueHop(const ActionsDAG::Node & node)
 struct BackTrackedColumn
 {
     UInt64 ndv_offset = 0;   /// add to the source NDV to bound the output NDV
-    bool keeps_width = true; /// value bytes unchanged along the whole path
+    bool preserves_width = true; /// value bytes unchanged along the whole path
 };
 
 /// For each output column that traces back to `input_name`, describe the path to it.
@@ -182,7 +182,7 @@ static std::unordered_map<String, BackTrackedColumn> backTrackColumnsInDag(const
                 if (auto source_path = path_to_input[node->children[0]])
                     result = BackTrackedColumn{
                         .ndv_offset = source_path->ndv_offset + hop.ndv_delta,
-                        .keeps_width = source_path->keeps_width && hop.preserves_width};
+                        .preserves_width = source_path->preserves_width && hop.preserves_width};
             }
             path_to_input[node] = result;
             nodes_to_process.pop();
@@ -212,7 +212,7 @@ void remapColumnStats(std::unordered_map<String, ColumnStats> & mapped, const Ac
             if (stats.num_distinct_values <= std::numeric_limits<UInt64>::max() - back_tracked.ndv_offset)
                 stats.num_distinct_values += back_tracked.ndv_offset;
             /// A hop that changes the type (e.g. `toString(k)`) changes the value bytes with it.
-            if (!back_tracked.keeps_width)
+            if (!back_tracked.preserves_width)
                 stats.avg_bytes = 0;
             mapped[remapped] = stats;
         }
@@ -379,8 +379,8 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
                 return stats;
             }
         }
-        if (auto dummy_stats = parseTableStatsHint(reading->getContext(), table_display_name); !dummy_stats.table_name.empty())
-            return dummy_stats;
+        if (auto stats_hint = parseTableStatsHint(reading->getContext(), table_display_name); !stats_hint.table_name.empty())
+            return stats_hint;
 
         ReadFromMergeTree::AnalysisResultPtr analyzed_result = nullptr;
         analyzed_result = analyzed_result ? analyzed_result : reading->getAnalyzedResult();
@@ -617,7 +617,7 @@ struct QueryGraphBuilder
         RuntimeHashStatisticsContext statistics_context;
         JoinSettings join_settings;
         SortingStep::Settings sorting_settings;
-        String dummy_stats;
+        String stats_hint;
         UInt64 effective_randomize_seed = 0;
 
         BuilderContext(
@@ -1551,7 +1551,7 @@ void optimizeJoinLogicalImpl(JoinStepLogical * join_step, QueryPlan::Node & node
     }
 
     QueryGraphBuilder query_graph_builder(optimization_settings, node, join_step->getJoinSettings(), join_step->getSortingSettings());
-    query_graph_builder.context->dummy_stats = join_step->getTableStatsHint();
+    query_graph_builder.context->stats_hint = join_step->getTableStatsHint();
 
     buildQueryGraph(query_graph_builder, node, nodes, query_graph_size_limit);
     node = chooseJoinOrder(std::move(query_graph_builder), nodes, strictness);

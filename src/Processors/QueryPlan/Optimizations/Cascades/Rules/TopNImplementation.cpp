@@ -28,10 +28,10 @@ namespace ErrorCodes
 /// rows cross the network.  Per-shard sorting is only valid for the partial of a two-stage
 /// top-N (`TwoStageTopN`), where a coordinator limit re-applies the global bound afterwards;
 /// the original operator must keep the whole result, so it is implemented single-node only.
-class SortImplementation : public IOptimizationRule
+class TopNImplementation : public IOptimizationRule
 {
 public:
-    String getName() const override { return "SortImplementation"; }
+    String getName() const override { return "TopN"; }
     bool checkPattern(GroupExpressionPtr expression, const ExpressionProperties & /*required_properties*/, const Memo & /*memo*/) const override
     {
         return isTopNSort(*expression->getQueryPlanStep());
@@ -43,7 +43,7 @@ protected:
     std::vector<GroupExpressionPtr> applyImpl(GroupExpressionPtr expression, const ExpressionProperties & required_properties, Memo & memo) const override;
 };
 
-std::vector<GroupExpressionPtr> SortImplementation::applyImpl(GroupExpressionPtr expression, const ExpressionProperties & required_properties, Memo & memo) const
+std::vector<GroupExpressionPtr> TopNImplementation::applyImpl(GroupExpressionPtr expression, const ExpressionProperties & required_properties, Memo & memo) const
 {
     const auto * sorting_step = typeid_cast<const SortingStep *>(expression->getQueryPlanStep());
     const SortDescription sort_desc = sorting_step->getSortDescription();
@@ -82,7 +82,7 @@ std::vector<GroupExpressionPtr> SortImplementation::applyImpl(GroupExpressionPtr
 }
 
 /// Splits a top-N `SortingStep(limit=L)` into a per-shard bounded sort plus a coordinator
-/// `Limit(L)` over the sorted-merged result, mirroring `TwoPhaseAggregationTransformation`:
+/// `Limit(L)` over the sorted-merged result, mirroring `TwoStageAggregationTransformation`:
 ///   SortingStep(limit=L) @ N nodes -> sorted GatherExchange -> Limit(L) @ 1 node
 /// The coordinator `Limit` makes this group honor its "top-L" contract independently of any
 /// outer Limit; the outer Limit still applies the exact n / offset / WITH TIES.
@@ -122,7 +122,7 @@ std::vector<GroupExpressionPtr> TwoStageTopN::applyImpl(GroupExpressionPtr expre
     const SortDescription sort_desc = sorting_step->getSortDescription();
 
     /// Phase 1: per-shard bounded sort. Same step, marked so it is implemented per shard
-    /// (SortImplementation) and not split again.
+    /// (TopNImplementation) and not split again.
     GroupExpressionPtr partial_expr = std::make_shared<GroupExpression>(sorting_step->clone());
     partial_expr->strategy = std::make_shared<PartialTopNStrategy>();
 
@@ -139,8 +139,8 @@ std::vector<GroupExpressionPtr> TwoStageTopN::applyImpl(GroupExpressionPtr expre
     return {final_expr};
 }
 
-OptimizationRulePtr createSortImplementation();
-OptimizationRulePtr createSortImplementation() { return std::make_shared<SortImplementation>(); }
+OptimizationRulePtr createTopNImplementation();
+OptimizationRulePtr createTopNImplementation() { return std::make_shared<TopNImplementation>(); }
 OptimizationRulePtr createTwoStageTopN();
 OptimizationRulePtr createTwoStageTopN() { return std::make_shared<TwoStageTopN>(); }
 

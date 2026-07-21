@@ -54,7 +54,7 @@ public:
 
     bool hasEquiKeys() const { return !equi_keys.empty(); }
     bool hasMultipleEquiKeys() const { return equi_keys.size() >= 2; }
-    bool broadcastUnsafe() const { return !left_preserved; }
+    bool isBroadcastSafe() const { return left_preserved; }
 
 private:
     /// `hash_type_name` is the least supertype both sides are cast to before hashing when
@@ -445,7 +445,7 @@ std::vector<GroupExpressionPtr> HashJoinImplementation::applyImpl(GroupExpressio
         /// driven by the partitioned left side: RIGHT and FULL emit unmatched right-side rows
         /// on every node, and PASTE pairs rows by position. JoinCommutativity can turn RIGHT
         /// Semi/Anti/Any into LEFT, but not RIGHT ALL or FULL.
-        if (!strategies.broadcastUnsafe())
+        if (strategies.isBroadcastSafe())
             strategies.addBroadcastJoins(candidate_node_count);
 
         if (strategies.hasEquiKeys())

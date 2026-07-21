@@ -51,7 +51,7 @@ bool ParallelReadImplementation::checkPattern(GroupExpressionPtr expression, con
 /// nullptr when the read does not split into exactly the requested count (an unsupported
 /// feature, nothing to read, an unsplittable FINAL); `actual_buckets` reports the count for the
 /// caller's log line.
-static GroupExpressionPtr makeBucketedReadVariant(
+static GroupExpressionPtr tryMakeBucketedReadVariant(
     const GroupExpressionPtr & expression,
     size_t node_count,
     size_t target_buckets,
@@ -90,7 +90,7 @@ std::vector<GroupExpressionPtr> ParallelReadImplementation::applyImpl(GroupExpre
     /// computes each bucket's authoritative marks and the fan-out ships them to the workers in
     /// the per-read bucket task parameters. `LocalReadImplementation` handles the single-node read.
     size_t actual_buckets = 0;
-    auto parallel_read_expression = makeBucketedReadVariant(
+    auto parallel_read_expression = tryMakeBucketedReadVariant(
         expression, node_count, /*target_buckets=*/node_count,
         std::make_shared<ParallelReadStrategy>(), "ParallelRead", /*is_replicated=*/false, actual_buckets);
     if (!parallel_read_expression)
@@ -145,7 +145,7 @@ std::vector<GroupExpressionPtr> ReplicatedReadImplementation::applyImpl(GroupExp
     /// A read that cannot be pinned (an unsupported feature, or `FINAL`, which the single-bucket path
     /// refuses) gets no replicated implementation and the requirement falls back to a BroadcastExchange.
     size_t actual_buckets = 0;
-    auto replicated_read_expression = makeBucketedReadVariant(
+    auto replicated_read_expression = tryMakeBucketedReadVariant(
         expression, node_count, /*target_buckets=*/1,
         std::make_shared<ReplicatedReadStrategy>(), "ReplicatedRead", /*is_replicated=*/true, actual_buckets);
     if (!replicated_read_expression)

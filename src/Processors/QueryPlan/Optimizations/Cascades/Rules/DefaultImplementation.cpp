@@ -35,7 +35,7 @@ public:
             || typeid_cast<const JoinStepLogical *>(step) != nullptr
             || typeid_cast<const ReadFromMergeTree *>(step) != nullptr)
             return false;
-        /// A top-N sort is handled by `SortImplementation`; any other sort left in the memo
+        /// A top-N sort is handled by `TopNImplementation`; any other sort left in the memo
         /// gets the single-node default.
         if (isTopNSort(*step))
             return false;

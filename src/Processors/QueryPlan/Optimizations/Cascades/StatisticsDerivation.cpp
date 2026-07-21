@@ -376,7 +376,7 @@ void StatisticsDerivation::fillReadColumnWidths(ExpressionStatistics & statistic
     /// A per-column hint overrides the derived width.
     for (const auto & column_name : read_step.getAllColumnNames())
     {
-        auto hint = statistics_lookup.getColumnAvgBytes(table_name, column_name);
+        auto hint = statistics_lookup.getAvgColumnBytes(table_name, column_name);
         if (hint)
             statistics.column_statistics[column_name].avg_bytes = *hint;
     }

@@ -136,15 +136,15 @@ static Cost hashJoinCost(const CostInputs & inputs, bool is_broadcast)
                  + inputs.output_stats.estimated_row_count) / inputs.parallelism;
 
     /// Hash table materialization: memory allocation + cache pressure.
-    const Float64 ht_bytes = right_stats.estimated_row_count * right_stats.estimated_bytes_per_row;
+    const Float64 hash_table_bytes = right_stats.estimated_row_count * right_stats.estimated_bytes_per_row;
     if (is_broadcast)
     {
-        cost.work += ht_bytes;
+        cost.work += hash_table_bytes;
         cost.sequential += inputs.config.hash_table_build_factor * right_stats.estimated_row_count;
     }
     else
     {
-        cost.work += ht_bytes / inputs.parallelism;
+        cost.work += hash_table_bytes / inputs.parallelism;
         cost.sequential += inputs.config.hash_table_build_factor * right_stats.estimated_row_count / inputs.parallelism;
     }
     return cost;

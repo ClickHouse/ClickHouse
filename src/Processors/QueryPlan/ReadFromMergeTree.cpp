@@ -5310,8 +5310,8 @@ size_t ReadFromMergeTree::setupDistributedReadBuckets(size_t target_buckets, siz
 
     /// Merge layers to aim for per task, fixed so the split does not depend on the machine
     /// that builds the plan.
-    constexpr size_t slicing_lanes = 16;
-    const size_t layer_budget = target_buckets * slicing_lanes;
+    constexpr size_t target_lanes_per_task = 16;
+    const size_t layer_budget = target_buckets * target_lanes_per_task;
 
     /// Split each span by primary key into non-intersecting ranges (owned by a single level>0 part,
     /// already deduplicated, read without a merge) and intersecting ranges (merged in PK-range layers),
@@ -5363,18 +5363,18 @@ size_t ReadFromMergeTree::setupDistributedReadBuckets(size_t target_buckets, siz
     /// Group the layers into `target_buckets` tasks. More layers than the target (a per-partition
     /// split makes at least one per partition) just mean more lanes per task, and each task ships
     /// only its own lanes. A single task or a task count above the ceiling reads serially.
-    const size_t grouping_lanes = std::max<size_t>(1, (buckets.size() + target_buckets - 1) / target_buckets);
-    const size_t tasks = (buckets.size() + grouping_lanes - 1) / grouping_lanes;
+    const size_t lanes_per_task = std::max<size_t>(1, (buckets.size() + target_buckets - 1) / target_buckets);
+    const size_t tasks = (buckets.size() + lanes_per_task - 1) / lanes_per_task;
     if (tasks <= 1 || tasks > max_total_buckets)
     {
         LOG_TRACE(log, "Distributed FINAL read not bucketed: {} layers in {} lanes per task make {} tasks (target {}, limit {})",
-            buckets.size(), grouping_lanes, tasks, target_buckets, max_total_buckets);
+            buckets.size(), lanes_per_task, tasks, target_buckets, max_total_buckets);
         return 0;
     }
 
     LOG_TRACE(log, "Distributed FINAL read bucketed: {} layers in {} lanes per task make {} tasks (target {})",
-        buckets.size(), grouping_lanes, tasks, target_buckets);
-    distributed_read_lanes_per_task = grouping_lanes;
+        buckets.size(), lanes_per_task, tasks, target_buckets);
+    distributed_read_lanes_per_task = lanes_per_task;
     distributed_read_buckets = std::move(buckets);
     setDistributedRead(tasks);
     distributed_read_param_name = nextDistributedReadParamName();
