@@ -1650,16 +1650,28 @@ void IMergeTreeDataPart::loadDefaultCompressionCodec()
     /// with the same predicate (see `unsafeUntypedCompressionCodecReason` in `MergeTreeSettings.cpp`);
     /// enforce the same invariant on the metadata-load path too, where an attached or pre-fix part may
     /// still carry an unsuitable codec in `default_compression_codec.txt` (or have one detected from a
-    /// column file). Fall back to the server default codec, which is always usable for untyped streams,
-    /// so the bad metadata cannot reach a mutation writer.
+    /// column file). Fall back to the table's normal default codec selection (the
+    /// `default_compression_codec` setting, then the server `<compression>` selector — both validated
+    /// or sanitized with the same predicate, so the result is always usable for untyped streams), so
+    /// the bad metadata cannot reach a mutation writer. Following the normal selection matters beyond
+    /// the untyped streams: a mutation reuses the part default as the codec for every rewritten column
+    /// without an explicit `CODEC(...)`, and a hardcoded fallback (`LZ4`) would silently move such
+    /// columns off a table default like `ZSTD(3)`. The part's TTL infos are deliberately not passed:
+    /// resolving a matching `RECOMPRESS` codec into the part default would make the part look already
+    /// recompressed (see `PartProperties::buildRecompressTTLInfo`) and suppress the recompression merge.
     if (default_codec->requiresColumnTypeToCompress() || default_codec->isExperimental())
     {
         LOG_WARNING(
             storage.log,
             "Part {} has a default compression codec that cannot be used for untyped streams (it requires a column "
-            "type or is experimental); falling back to the server default codec.",
+            "type or is experimental); falling back to the table's default codec.",
             name);
-        default_codec = CompressionCodecFactory::instance().getDefaultCodec();
+        default_codec = storage.getCompressionCodecForPart(0, {}, time(nullptr));
+
+        /// The selection above never returns a codec unsafe for untyped data; this is a fail-safe for
+        /// a future drift of that invariant, because such a codec would corrupt data at the next write.
+        if (default_codec->requiresColumnTypeToCompress() || default_codec->isExperimental())
+            default_codec = CompressionCodecFactory::instance().getDefaultCodec();
     }
 }
 
