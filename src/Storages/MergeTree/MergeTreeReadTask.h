@@ -1,6 +1,5 @@
 #pragma once
 
-#include <map>
 #include <vector>
 #include <Core/NamesAndTypes.h>
 #include <Storages/MergeTree/AlterConversions.h>
@@ -72,13 +71,8 @@ struct IndexReadTask
     bool is_final = false;
 };
 
-/// Ordered map to ensure deterministic iteration order.
-/// `IndexReadTasks` may be copied (e.g. into `MergeTreeReadPoolBase`) and then
-/// iterated independently in `getPrewhereActions` / `getReadTaskColumns`.
-/// `std::unordered_map` does not guarantee the same iteration order after copy,
-/// which leads to mismatched prewhere readers and actions.
-using IndexReadTasks = std::map<String, IndexReadTask>;
-using IndexReadColumns = std::map<String, VirtualColumnsDescription>;
+using IndexReadTasks = std::unordered_map<String, IndexReadTask>;
+using IndexReadColumns = std::unordered_map<String, VirtualColumnsDescription>;
 
 struct MergeTreeReadTaskColumns
 {

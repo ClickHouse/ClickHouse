@@ -34,8 +34,11 @@ namespace ErrorCodes
 
 
 /// Various illegal actions to test diagnostic features of ClickHouse itself. Should not be enabled in production builds.
-class FunctionTrap : public IFunction, private WithContext
+class FunctionTrap : public IFunction
 {
+private:
+    ContextPtr context;
+
 public:
     static constexpr auto name = "trap";
     static FunctionPtr create(ContextPtr context)
@@ -43,7 +46,7 @@ public:
         return std::make_shared<FunctionTrap>(context);
     }
 
-    explicit FunctionTrap(ContextPtr context_) : WithContext(context_) {}
+    FunctionTrap(ContextPtr context_) : context(context_) {}
 
     String getName() const override
     {
@@ -138,7 +141,7 @@ public:
             }
             else if (mode == "access context")
             {
-                (void)getContext()->getCurrentQueryId();
+                (void)context->getCurrentQueryId();
             }
             else if (mode == "stack overflow")
             {

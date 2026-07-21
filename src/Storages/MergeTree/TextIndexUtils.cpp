@@ -1,5 +1,4 @@
 #include <Processors/Port.h>
-#include <DataTypes/DataTypeString.h>
 #include <Storages/MergeTree/TextIndexUtils.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Compression/CompressionFactory.h>

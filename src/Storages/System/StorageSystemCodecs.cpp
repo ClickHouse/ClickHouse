@@ -1,9 +1,5 @@
 
 #include <Storages/System/StorageSystemCodecs.h>
-#include <Core/ColumnsWithTypeAndName.h>
-#include <DataTypes/DataTypeString.h>
-#include <Core/NamesAndTypes.h>
-#include <DataTypes/DataTypesNumber.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnString.h>

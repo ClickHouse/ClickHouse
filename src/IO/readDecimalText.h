@@ -2,6 +2,7 @@
 
 #include <Common/FieldVisitorToString.h>
 #include <Common/intExp.h>
+#include <IO/ReadHelpers.h>
 
 #include <limits>
 

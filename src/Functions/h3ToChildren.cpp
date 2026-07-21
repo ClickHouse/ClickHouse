@@ -115,9 +115,7 @@ public:
                 continue;
             }
 
-            int64_t children_size = 0;
-            cellToChildrenSize(parent_hindex, child_resolution, &children_size);
-            const size_t vec_size = static_cast<size_t>(children_size);
+            const size_t vec_size = cellToChildrenSize(parent_hindex, child_resolution);
             if (vec_size > MAX_ARRAY_SIZE)
                 throw Exception(
                     ErrorCodes::TOO_LARGE_ARRAY_SIZE,

@@ -188,7 +188,7 @@ SerializationPtr DataTypeVariant::doGetSerialization(const SerializationInfoSett
         variant_names.push_back(variant->getName());
     }
 
-    return SerializationVariant::create(variants, serializations, variant_names, getName());
+    return std::make_shared<SerializationVariant>(variants, serializations, variant_names, getName());
 }
 
 void DataTypeVariant::forEachChild(const DB::IDataType::ChildCallback & callback) const

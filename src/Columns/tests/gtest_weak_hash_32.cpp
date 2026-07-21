@@ -11,7 +11,6 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypesNumber.h>
 
-#include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/WeakHash.h>
 
 #include <unordered_map>
@@ -31,7 +30,7 @@ void checkColumnImpl(
 
     /// Check equal rows has equal hash.
     {
-        UnorderedMapWithMemoryTracking<T, UInt32> map;
+        std::unordered_map<T, UInt32> map;
 
         for (size_t i = 0; i < eq_class.size(); ++i)
         {

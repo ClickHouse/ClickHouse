@@ -3,7 +3,6 @@
 
 SET mutations_sync = 2;
 SET allow_statistics = 1;
-SET materialize_statistics_on_insert = 1;
 DROP TABLE IF EXISTS t_alter_auto_statistics;
 
 CREATE TABLE t_alter_auto_statistics

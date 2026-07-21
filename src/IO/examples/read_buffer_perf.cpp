@@ -7,7 +7,7 @@
 #include <IO/ReadBufferFromFile.h>
 
 
-int mainEntryExampleReadBufferPerf(int, char **)
+int main(int, char **)
 {
     try
     {

@@ -43,17 +43,12 @@
   */
 
 
-namespace
-{
-
 /// Instance of EncryptDecryptApplication is needed in order to initialize Poco::Net::SSLManager for certificates loading
 class EncryptDecryptApplication : public Poco::Util::Application
 {
 };
 
-}
-
-int mainEntryExampleEncryptDecrypt(int argc, char ** argv)
+int main(int argc, char ** argv)
 {
     try
     {

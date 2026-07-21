@@ -1,5 +1,7 @@
 #pragma once
 
+#if defined(OS_LINUX)
+
 #include <Server/ClientEmbedded/IClientDescriptorSet.h>
 #include <boost/iostreams/device/file_descriptor.hpp>
 #include <boost/iostreams/stream.hpp>
@@ -61,3 +63,5 @@ private:
 };
 
 }
+
+#endif

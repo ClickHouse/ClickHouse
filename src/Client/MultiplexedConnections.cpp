@@ -1,6 +1,6 @@
 #include <Client/MultiplexedConnections.h>
 
-#include <Client/scaleInteractiveDelayByFanout.h>
+#include <Common/thread_local_rng.h>
 #include <Core/Protocol.h>
 #include <Core/ProtocolDefines.h>
 #include <Core/Settings.h>
@@ -19,7 +19,6 @@ namespace Setting
     extern const SettingsDialect dialect;
     extern const SettingsUInt64 group_by_two_level_threshold;
     extern const SettingsUInt64 group_by_two_level_threshold_bytes;
-    extern const SettingsUInt64 interactive_delay;
     extern const SettingsUInt64 parallel_replicas_count;
     extern const SettingsUInt64 parallel_replica_offset;
     extern const SettingsSeconds receive_timeout;
@@ -158,10 +157,6 @@ void MultiplexedConnections::sendQuery(
     /// Queries in foreign languages are transformed to ClickHouse-SQL. Ensure the setting before sending.
     modified_settings[Setting::dialect] = Dialect::clickhouse;
     modified_settings[Setting::dialect].changed = false;
-
-    modified_settings[Setting::interactive_delay] = scaleInteractiveDelayByFanout(
-        modified_settings[Setting::interactive_delay],
-        distributed_fanout * replica_states.size());
 
     for (auto & replica : replica_states)
     {

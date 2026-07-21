@@ -17,7 +17,7 @@
   * Using the SO_LINGER option, we ensure that the connection is terminated by sending a RST packet (not FIN).
   * Long time ago this behavior caused a bug in the TCPServer implementation in the Poco library.
   */
-int mainEntryExampleTestConnect(int argc, char ** argv)
+int main(int argc, char ** argv)
 try
 {
     using namespace DB;
@@ -84,10 +84,8 @@ try
         thread.join();
 
     std::cerr << "\n";
-    return 0;
 }
 catch (const Poco::Exception & e)
 {
     std::cerr << e.displayText() << "\n";
-    return 1;
 }

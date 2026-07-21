@@ -1,4 +1,3 @@
-#include <Common/SipHash.h>
 #include <DataTypes/Serializations/SerializationDateTime64.h>
 
 #include <Columns/ColumnVector.h>
@@ -23,18 +22,6 @@ SerializationDateTime64::SerializationDateTime64(
     : SerializationDecimalBase<DateTime64>(DecimalUtils::max_precision<DateTime64>, scale_)
     , TimezoneMixin(time_zone_)
 {
-}
-
-UInt128 SerializationDateTime64::getHash(UInt32 scale_, const TimezoneMixin & time_zone_)
-{
-    SipHash hash;
-    hash.update("DateTime64");
-    hash.update(scale_);
-    auto tz = time_zone_.getTimeZone().getTimeZone();
-    hash.update(tz.size());
-    hash.update(tz);
-    hash.update(time_zone_.hasExplicitTimeZone());
-    return hash.get128();
 }
 
 void SerializationDateTime64::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
@@ -116,11 +103,6 @@ static inline bool tryReadText(DateTime64 & x, UInt32 scale, ReadBuffer & istr, 
         case FormatSettings::DateTimeInputFormat::BestEffortUS:
             return tryParseDateTime64BestEffortUS(x, scale, istr, time_zone, utc_time_zone);
     }
-}
-
-SerializationPtr SerializationDateTime64::create(UInt32 scale_, const TimezoneMixin & time_zone_)
-{
-    return ISerialization::pooled(getHash(scale_, time_zone_), [&] { return new SerializationDateTime64(scale_, time_zone_); });
 }
 
 

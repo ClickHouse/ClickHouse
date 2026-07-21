@@ -245,7 +245,7 @@ llvm::Value * ColumnVector<T>::compileComparator(llvm::IRBuilderBase & builder, 
 
 #endif
 
-MULTITARGET_FUNCTION_X86_V4(
+MULTITARGET_FUNCTION_X86_V4_V3(
 MULTITARGET_FUNCTION_HEADER(
 template <typename T>
 void), compareColumnImpl, MULTITARGET_FUNCTION_BODY((
@@ -334,6 +334,11 @@ void ColumnVector<T>::compareColumn(
         compareColumnImpl_x86_64_v4<T>(data, value, compare_results, direction, nan_direction_hint);
         return;
     }
+    if (isArchSupported(TargetArch::x86_64_v3))
+    {
+        compareColumnImpl_x86_64_v3<T>(data, value, compare_results, direction, nan_direction_hint);
+        return;
+    }
 #endif
     compareColumnImpl<T>(data, value, compare_results, direction, nan_direction_hint);
 }
@@ -353,15 +358,12 @@ void ColumnVector<T>::getPermutation(IColumn::PermutationSortDirection direction
 
     iota(res.data(), data_size, IColumn::Permutation::value_type(0));
 
-    if constexpr (has_find_extreme_implementation<T>)
+    if constexpr (has_find_extreme_implementation<T> && !is_floating_point<T>)
     {
-        /// For floating point, findExtremeMinIndex/MaxIndex skip NaN (NaN is always last).
-        /// This matches the standard nan_direction_hint convention: ASC with hint >= 0, DESC with hint <= 0.
-        /// stability::Stable: We might return any value, not the first.
-        const bool nan_direction_ok = !is_floating_point<T>
-            || (direction == IColumn::PermutationSortDirection::Ascending && nan_direction_hint >= 0)
-            || (direction == IColumn::PermutationSortDirection::Descending && nan_direction_hint <= 0);
-        if ((limit == 1) && (stability == IColumn::PermutationSortStability::Unstable) && nan_direction_ok)
+        /// Disabled for floating point:
+        /// * floating point: We don't deal with nan_direction_hint
+        /// * stability::Stable: We might return any value, not the first
+        if ((limit == 1) && (stability == IColumn::PermutationSortStability::Unstable))
         {
             std::optional<size_t> index;
             if (direction == IColumn::PermutationSortDirection::Ascending)
@@ -956,7 +958,7 @@ ColumnPtr ColumnVector<T>::index(const IColumn & indexes, size_t limit) const
 namespace
 {
 
-MULTITARGET_FUNCTION_X86_V4(
+MULTITARGET_FUNCTION_X86_V4_V3(
 MULTITARGET_FUNCTION_HEADER(template <typename ValueType, bool use_window, int padding_elements = std::min(size_t(4), ColumnVector<ValueType>::Container::pad_right / sizeof(ValueType))> void),
 replicateImpl,
 MULTITARGET_FUNCTION_BODY((const ValueType * __restrict data, size_t size, [[maybe_unused]] size_t window_size, const IColumn::Offsets & offsets, ValueType * __restrict result) /// NOLINT
@@ -1025,6 +1027,11 @@ ColumnPtr ColumnVector<T>::replicate(const IColumn::Offsets & offsets) const
             replicateImpl_x86_64_v4<T, true>(data.data(), size, window_size, offsets, res->getData().data());
         else
             replicateImpl_x86_64_v4<T, false>(data.data(), size, window_size, offsets, res->getData().data());
+    else if (isArchSupported(TargetArch::x86_64_v3))
+        if (use_window)
+            replicateImpl_x86_64_v3<T, true>(data.data(), size, window_size, offsets, res->getData().data());
+        else
+            replicateImpl_x86_64_v3<T, false>(data.data(), size, window_size, offsets, res->getData().data());
     else
 #endif
     {

@@ -54,17 +54,7 @@ bool ArrayIndexOf::convertImpl(String & out, IParser::Pos & pos)
 
 bool ArrayLength::convertImpl(String & out, IParser::Pos & pos)
 {
-    const auto fn_name = getKQLFunctionName(pos);
-    if (fn_name.empty())
-        return false;
-    const auto arg = getArgument(fn_name, pos);
-    /// For string inputs that look like JSON arrays, parse and count elements
-    /// For actual arrays, use length() directly
-    out = "if(toTypeName(" + arg + ") LIKE '%Array%', length(" + arg + "), "
-        "if(toTypeName(" + arg + ") LIKE '%String%' AND startsWith(trimBoth(ifNull(toString(" + arg + "), '')), '['), "
-        "JSONArrayLength(ifNull(toString(" + arg + "), '[]')), "
-        "NULL))";
-    return true;
+    return directMapping(out, pos, "length");
 }
 
 bool ArrayReverse::convertImpl(String & out, IParser::Pos & pos)

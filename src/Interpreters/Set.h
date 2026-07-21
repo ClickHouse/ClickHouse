@@ -21,7 +21,7 @@ using FunctionBasePtr = std::shared_ptr<const IFunctionBase>;
 using Sizes = std::vector<size_t>;
 
 struct ColumnWithTypeAndName;
-using ColumnsWithTypeAndName = VectorWithMemoryTracking<ColumnWithTypeAndName>;
+using ColumnsWithTypeAndName = std::vector<ColumnWithTypeAndName>;
 
 class Chunk;
 
@@ -57,9 +57,6 @@ public:
 
     /// finishInsert and isCreated are thread-safe
     bool isCreated() const { return is_created.load(); }
-
-    /// Whether the set building was stopped early because of size limits with OverflowMode::BREAK.
-    bool isTruncated() const { return is_truncated.load(); }
 
     void checkIsCreated() const;
 
@@ -134,9 +131,6 @@ private:
     /// Check if set contains all the data.
     std::atomic<bool> is_created = false;
 
-    /// Whether the set was truncated due to overflow with OverflowMode::BREAK.
-    std::atomic<bool> is_truncated = false;
-
     /// If in the left part columns contains the same types as the elements of the set.
     void executeOrdinary(
         const ColumnRawPtrs & key_columns,
@@ -197,6 +191,10 @@ private:
 using SetPtr = std::shared_ptr<Set>;
 using ConstSetPtr = std::shared_ptr<const Set>;
 using Sets = std::vector<SetPtr>;
+
+
+class IFunction;
+using FunctionPtr = std::shared_ptr<IFunction>;
 
 
 /// Class for checkInRange function.

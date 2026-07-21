@@ -83,6 +83,8 @@ ASTPtr ASTColumnDeclaration::clone() const
 
 void ASTColumnDeclaration::formatImpl(WriteBuffer & ostr, const FormatSettings & format_settings, FormatState & state, FormatStateStacked frame) const
 {
+    frame.need_parens = false;
+
     format_settings.writeIdentifier(ostr, name, /*ambiguous=*/true);
 
     if (auto type = getType())

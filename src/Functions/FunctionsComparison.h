@@ -4,18 +4,24 @@
 #include <Common/TargetSpecific.h>
 #include <Common/assert_cast.h>
 #include <Common/checkStackSize.h>
+#include <Columns/ColumnArray.h>
 #include <Common/quoteString.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
 #include <Core/AccurateComparison.h>
 #include <Core/DecimalComparison.h>
+#include <Core/Settings.h>
 #include <Core/callOnTypeIndex.h>
+#include <DataTypes/DataTypeDate.h>
+#include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeFixedString.h>
+#include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -26,10 +32,11 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunctionAdaptors.h>
 #include <Functions/IsOperation.h>
-#include <Interpreters/Context_fwd.h>
+#include <IO/ReadBufferFromMemory.h>
+#include <IO/ReadHelpers.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/castColumn.h>
 #include <Interpreters/convertFieldToType.h>
-#include <Functions/ComparisonNames.h>
 #include <type_traits>
 
 #if USE_EMBEDDED_COMPILER
@@ -41,6 +48,13 @@
 
 namespace DB
 {
+
+namespace Setting
+{
+    extern const SettingsBool validate_enum_literals_in_operators;
+    extern const SettingsBool use_variant_default_implementation_for_comparisons;
+    extern const SettingsDateTimeInputFormat cast_string_to_date_time_mode;
+}
 
 FormatSettings getFormatSettings(const ContextPtr & context);
 
@@ -141,7 +155,7 @@ struct NumComparisonImpl
     using ContainerA = PaddedPODArray<A>;
     using ContainerB = PaddedPODArray<B>;
 
-    MULTITARGET_FUNCTION_X86_V4(
+    MULTITARGET_FUNCTION_X86_V4_V3(
     MULTITARGET_FUNCTION_HEADER(static void), vectorVectorImpl, MULTITARGET_FUNCTION_BODY(( /// NOLINT
         const ContainerA & a, const ContainerB & b, PaddedPODArray<UInt8> & c)
     {
@@ -173,13 +187,19 @@ struct NumComparisonImpl
             vectorVectorImpl_x86_64_v4(a, b, c);
             return;
         }
+
+        if (isArchSupported(TargetArch::x86_64_v3))
+        {
+            vectorVectorImpl_x86_64_v3(a, b, c);
+            return;
+        }
 #endif
 
         vectorVectorImpl(a, b, c);
     }
 
 
-    MULTITARGET_FUNCTION_X86_V4(
+    MULTITARGET_FUNCTION_X86_V4_V3(
     MULTITARGET_FUNCTION_HEADER(static void), vectorConstantImpl, MULTITARGET_FUNCTION_BODY(( /// NOLINT
         const ContainerA & a, B b, PaddedPODArray<UInt8> & c)
     {
@@ -202,6 +222,12 @@ struct NumComparisonImpl
         if (isArchSupported(TargetArch::x86_64_v4))
         {
             vectorConstantImpl_x86_64_v4(a, b, c);
+            return;
+        }
+
+        if (isArchSupported(TargetArch::x86_64_v3))
+        {
+            vectorConstantImpl_x86_64_v3(a, b, c);
             return;
         }
 #endif
@@ -661,6 +687,13 @@ template <> struct CompileOp<GreaterOrEqualsOp>
 
 #endif
 
+struct NameEquals          { static constexpr auto name = "equals"; };
+struct NameNotEquals       { static constexpr auto name = "notEquals"; };
+struct NameLess            { static constexpr auto name = "less"; };
+struct NameGreater         { static constexpr auto name = "greater"; };
+struct NameLessOrEquals    { static constexpr auto name = "lessOrEquals"; };
+struct NameGreaterOrEquals { static constexpr auto name = "greaterOrEquals"; };
+
 struct ComparisonParams
 {
     bool check_decimal_overflow = false;
@@ -668,7 +701,14 @@ struct ComparisonParams
     bool use_variant_default_implementation = true;
     FormatSettings format_settings;
 
-    explicit ComparisonParams(const ContextPtr & context);
+    explicit ComparisonParams(const ContextPtr & context)
+        : check_decimal_overflow(decimalCheckComparisonOverflow(context))
+        , validate_enum_literals_in_operators(context->getSettingsRef()[Setting::validate_enum_literals_in_operators])
+        , use_variant_default_implementation(context->getSettingsRef()[Setting::use_variant_default_implementation_for_comparisons])
+        , format_settings(getFormatSettings(context))
+    {
+        format_settings.date_time_input_format = context->getSettingsRef()[Setting::cast_string_to_date_time_mode];
+    }
 
     ComparisonParams() = default;
 };
@@ -1267,22 +1307,6 @@ public:
                                                    {nullptr, right_tuple->getElements()[i], ""}};
                     element_type = func->build(args)->getResultType();
                 }
-                else
-                {
-                    /// One side is `String`/`FixedString`. At runtime the string is parsed as a tuple
-                    /// value matching the structure of the tuple side and compared element-wise.
-                    /// Recursively compute the element-vs-string comparison type so that nested
-                    /// `Nullable` (or `Nothing`/`Dynamic`/`Variant`) elements transitively propagate
-                    /// `Nullable` to the outer return type. Without this, e.g.
-                    /// `Tuple(Tuple(Nullable(String))) <= String` would be inferred as `UInt8`
-                    /// while the runtime produces `Nullable(UInt8)`, tripping the type-mismatch
-                    /// assertion in the analyzer's constant-folding path (STID 3344-4a3c).
-                    const DataTypePtr & string_side_type = left_tuple ? arguments[1] : arguments[0];
-                    ColumnsWithTypeAndName args = left_tuple
-                        ? ColumnsWithTypeAndName{{nullptr, element_type, ""}, {nullptr, string_side_type, ""}}
-                        : ColumnsWithTypeAndName{{nullptr, string_side_type, ""}, {nullptr, element_type, ""}};
-                    element_type = func->build(args)->getResultType();
-                }
                 has_nullable = has_nullable || element_type->isNullable() || isDynamic(element_type);
 
                 /// Nullable(Nothing)
@@ -1500,14 +1524,7 @@ public:
                 continue;
 
             if (column->isNullAt(0))
-            {
-                /// If the result type cannot hold NULL values (e.g. LowCardinality(UInt8) when
-                /// comparing with a Variant column that contains NULL but is not Nullable itself),
-                /// don't constant-fold — let the runtime execution path handle NULL correctly.
-                if (!canContainNull(*result_type))
-                    return nullptr;
                 return result_type->createColumnConst(1, Null());
-            }
         }
 
         return nullptr;

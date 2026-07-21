@@ -11,7 +11,7 @@
 #include <IO/WriteBufferFromString.h>
 
 
-int mainEntryExampleSnappyReadBuffer(int, char **)
+int main()
 {
     using namespace DB;
     String str = "this is a snappy example.\n";

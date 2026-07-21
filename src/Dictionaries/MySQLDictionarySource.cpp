@@ -301,7 +301,11 @@ bool MySQLDictionarySource::isModified() const
     {
         LOG_TRACE(log, "Executing invalidate query: {}", configuration.invalidate_query);
         auto response = doInvalidateQuery(configuration.invalidate_query);
-        return invalidate_query_response.updateAndCheckModified(response);
+        if (response == invalidate_query_response)
+            return false;
+
+        invalidate_query_response = response;
+        return true;
     }
 
     return true;

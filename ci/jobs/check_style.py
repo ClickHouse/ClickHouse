@@ -43,7 +43,7 @@ def run_check_concurrent(check_name, check_function, files, nproc=NPROC):
 
     result = Result(
         name=check_name,
-        status=Result.Status.OK if not results else Result.Status.FAIL,
+        status=Result.Status.SUCCESS if not results else Result.Status.FAILED,
         start_time=stop_watch.start_time,
         duration=stop_watch.duration,
         info="\n".join(results) if results else "",

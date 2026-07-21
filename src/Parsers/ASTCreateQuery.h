@@ -28,7 +28,6 @@ public:
     IAST * order_by = nullptr;
     IAST * sample_by = nullptr;
     IAST * ttl_table = nullptr;
-    IAST * unique_key = nullptr;
     ASTSetQuery * settings = nullptr;
 
     String getID(char) const override { return "Storage definition"; }
@@ -49,7 +48,6 @@ public:
         f(&order_by, nullptr);
         f(&sample_by, nullptr);
         f(&ttl_table, nullptr);
-        f(&unique_key, nullptr);
         f(reinterpret_cast<IAST **>(&settings), nullptr);
     }
 

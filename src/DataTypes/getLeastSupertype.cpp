@@ -281,7 +281,6 @@ DataTypePtr getLeastSuperTypeForTuple(const DataTypes & types)
     Strings element_names;
     size_t element_size = 0;
     std::vector<DataTypes> element_types;
-    bool initialized = false;
 
     bool have_nullable = false;
 
@@ -299,7 +298,7 @@ DataTypePtr getLeastSuperTypeForTuple(const DataTypes & types)
         if (const auto * type_tuple = typeid_cast<const DataTypeTuple *>(unwrapped_type))
         {
             const auto & current_elements = type_tuple->getElements();
-            if (!initialized)
+            if (element_types.empty())
             {
                 element_size = current_elements.size();
                 element_types.resize(element_size);
@@ -307,7 +306,6 @@ DataTypePtr getLeastSuperTypeForTuple(const DataTypes & types)
                     element_types[i].reserve(types.size());
                 if (type_tuple->hasExplicitNames())
                     element_names = type_tuple->getElementNames();
-                initialized = true;
             }
 
             if (element_size != type_tuple->getElements().size())
@@ -767,7 +765,7 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
             /// Time/Time64 mixed with only Date/Date32 (no DateTime): also promote to DateTime/DateTime64.
             /// From here on, the result is always DateTime or DateTime64.
 
-            if (!have_datetime64 && !have_date32 && !have_time64 && !have_time)
+            if (!have_datetime64 && !have_date32 && !have_time64)
             {
                 for (const auto & type : types)
                 {

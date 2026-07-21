@@ -40,7 +40,7 @@ public:
 
     SerializationPtr doGetSerialization(const SerializationInfoSettings &) const override
     {
-        return SerializationNumber<T>::create();
+        return std::make_shared<SerializationNumber<T>>();
     }
 
     /// Special constructor for unsigned integers that can also fit into signed integer.

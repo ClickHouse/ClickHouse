@@ -370,7 +370,7 @@ std::optional<Poco::Timestamp> MetadataStorageFromPlainRewritableObjectStorage::
     }
 
     if (auto remote_info = fs_tree->getFileRemoteInfo(path))
-        return Poco::Timestamp::fromEpochTime(remote_info->last_modified);
+        return remote_info->last_modified;
 
     return std::nullopt;
 }

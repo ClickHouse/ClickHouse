@@ -1,7 +1,6 @@
 #include <Formats/FormatFilterInfo.h>
 #include <Core/Settings.h>
 #include <Storages/MergeTree/KeyCondition.h>
-#include <Storages/VirtualColumnUtils.h>
 #include <Interpreters/ExpressionActions.h>
 
 #include <DataTypes/DataTypeTuple.h>
@@ -10,8 +9,6 @@
 #include <Columns/IColumn.h>
 #include <Core/TypeId.h>
 
-#include <Interpreters/Context.h>
-
 namespace DB
 {
 
@@ -19,11 +16,6 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int ICEBERG_SPECIFICATION_VIOLATION;
-}
-
-namespace Setting
-{
-    extern const SettingsBool use_query_condition_cache;
 }
 
 void ColumnMapper::setStorageColumnEncoding(std::unordered_map<String, Int64> && storage_encoding_)
@@ -68,13 +60,6 @@ FormatFilterInfo::FormatFilterInfo(
     , prewhere_info(std::move(prewhere_info_))
     , column_mapper(column_mapper_)
 {
-    bool use_query_condition_cache = context_->getSettingsRef()[Setting::use_query_condition_cache];
-    if (use_query_condition_cache && filter_actions_dag)
-    {
-        const auto & outputs = filter_actions_dag->getOutputs();
-        if (outputs.size() == 1 && VirtualColumnUtils::isDeterministic(outputs[0]))
-            condition_hash = filter_actions_dag->getHash();
-    }
 }
 
 FormatFilterInfo::FormatFilterInfo() = default;

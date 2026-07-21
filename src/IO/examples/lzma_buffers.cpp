@@ -9,7 +9,7 @@
 #include <IO/WriteHelpers.h>
 #include <Common/Stopwatch.h>
 
-int mainEntryExampleLzmaBuffers(int, char **)
+int main(int, char **)
 try
 {
     std::cout << std::fixed << std::setprecision(2);
