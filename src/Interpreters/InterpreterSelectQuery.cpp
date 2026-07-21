@@ -865,7 +865,8 @@ InterpreterSelectQuery::InterpreterSelectQuery(
             && !query.hasJoin()) /// Join may produce rows with nulls or default values, it's difficult to analyze if they affected or not.
         {
             /// PREWHERE optimization: transfer some condition from WHERE to PREWHERE if enabled and viable
-            if (const auto & column_sizes = storage->getColumnSizes(); !column_sizes.empty())
+            Names queried_columns = syntax_analyzer_result->requiredSourceColumns();
+            if (const auto & column_sizes = storage->getColumnSizes(queried_columns); !column_sizes.empty())
             {
                 /// Extract column compressed sizes.
                 std::unordered_map<std::string, UInt64> column_compressed_sizes;
@@ -875,8 +876,6 @@ InterpreterSelectQuery::InterpreterSelectQuery(
                 SelectQueryInfo current_info;
                 current_info.query = query_ptr;
                 current_info.syntax_analyzer_result = syntax_analyzer_result;
-
-                Names queried_columns = syntax_analyzer_result->requiredSourceColumns();
                 const auto & supported_prewhere_columns = storage->supportedPrewhereColumns();
 
                 RangesInDataParts parts_for_estimator;
@@ -1205,12 +1204,34 @@ void InterpreterSelectQuery::buildQueryPlan(QueryPlan & query_plan)
 {
     executeImpl(query_plan, std::move(input_pipe));
 
+    /// The old analyzer computes result_header from the ExpressionAnalyzer sample block,
+    /// independently of the actual query plan. A plan step may legitimately materialize a
+    /// column the sample considered constant (e.g. a remote(...) UnionStep whose shards fold
+    /// randConstant() to different values). Forcing such a full column back to a Const in the
+    /// convert target would fail in makeConvertingActions. Reconcile a local convert target:
+    /// where a column is full in the plan but Const of the same type in the result header,
+    /// take the plan's full column so the conversion keeps it full. result_header itself is
+    /// left untouched so getSampleBlock() (seen by an enclosing subquery) is unchanged.
+    ColumnsWithTypeAndName convert_target = result_header->getColumnsWithTypeAndName();
+    {
+        const auto & plan_header = *query_plan.getCurrentHeader();
+        for (auto & res_col : convert_target)
+        {
+            if (!res_col.column || !isColumnConst(*res_col.column))
+                continue;
+            const auto * plan_col = plan_header.findByName(res_col.name);
+            if (plan_col && plan_col->column && !isColumnConst(*plan_col->column)
+                && res_col.type->equals(*plan_col->type))
+                res_col.column = plan_col->column;
+        }
+    }
+
     /// We must guarantee that result structure is the same as in getSampleBlock()
-    if (!blocksHaveEqualStructure(*query_plan.getCurrentHeader(), *result_header))
+    if (!blocksHaveEqualStructure(*query_plan.getCurrentHeader(), Block(convert_target)))
     {
         auto convert_actions_dag = ActionsDAG::makeConvertingActions(
             query_plan.getCurrentHeader()->getColumnsWithTypeAndName(),
-            result_header->getColumnsWithTypeAndName(),
+            convert_target,
             ActionsDAG::MatchColumnsMode::Name,
             context,
             true);
@@ -3404,6 +3425,8 @@ void InterpreterSelectQuery::executePreLimit(QueryPlan & query_plan, bool do_not
         {
             auto limit = std::make_unique<LimitStep>(
                 query_plan.getCurrentHeader(), lim_info.limit_length, lim_info.limit_offset, settings[Setting::exact_rows_before_limit]);
+            if (options.is_local_shard_plan)
+                limit->markAsShardLimit();
             if (do_not_skip_offset)
                 limit->setStepDescription("preliminary LIMIT (with OFFSET)");
             else
@@ -3413,7 +3436,10 @@ void InterpreterSelectQuery::executePreLimit(QueryPlan & query_plan, bool do_not
         }
         else if (lim_info.is_limit_length_negative && lim_info.is_limit_offset_negative)
         {
-            auto limit = std::make_unique<NegativeLimitStep>(query_plan.getCurrentHeader(), lim_info.limit_length, lim_info.limit_offset);
+            auto limit = std::make_unique<NegativeLimitStep>(
+                query_plan.getCurrentHeader(), lim_info.limit_length, lim_info.limit_offset);
+            if (options.is_local_shard_plan)
+                limit->markAsShardLimit();
 
             query_plan.addStep(std::move(limit));
         }
@@ -3423,6 +3449,8 @@ void InterpreterSelectQuery::executePreLimit(QueryPlan & query_plan, bool do_not
             query_plan.addStep(std::move(offsets_step));
 
             auto limit = std::make_unique<NegativeLimitStep>(query_plan.getCurrentHeader(), lim_info.limit_length, 0);
+            if (options.is_local_shard_plan)
+                limit->markAsShardLimit();
             query_plan.addStep(std::move(limit));
         }
         else // if (!lim_info.is_limit_length_negative && lim_info.is_limit_offset_negative)
@@ -3432,6 +3460,8 @@ void InterpreterSelectQuery::executePreLimit(QueryPlan & query_plan, bool do_not
 
             auto limit = std::make_unique<LimitStep>(
                 query_plan.getCurrentHeader(), lim_info.limit_length, 0, settings[Setting::exact_rows_before_limit]);
+            if (options.is_local_shard_plan)
+                limit->markAsShardLimit();
 
             query_plan.addStep(std::move(limit));
         }
