@@ -170,9 +170,9 @@ void MergingSortedAlgorithm::initialize(Inputs inputs)
     /// front of the merge are not read. The flip side is that the merge would otherwise
     /// request the deferred sources strictly one by one, serializing reads that used to
     /// happen in parallel, so a window of them reads ahead (see `topUpPrefetch`). The
-    /// read-ahead is not started here: it begins only once the merge has consumed real data
-    /// and still needs to advance (see `merge`), so that a limit satisfied from the front
-    /// source alone does not pull in the sources deferred behind it.
+    /// read-ahead is not started here: it begins only once the merge has actually advanced
+    /// past a source (see `merge`), so that a limit satisfied from the front source alone —
+    /// even over several blocks — does not pull in the sources deferred behind it.
     if (virtual_row_prefetch_window && !has_collation)
     {
         source_deferral_state.assign(current_inputs.size(), SourceDeferralState::NotDeferred);
@@ -180,6 +180,7 @@ void MergingSortedAlgorithm::initialize(Inputs inputs)
         next_deferred_source_pos = 0;
         prefetches_in_flight = 0;
         merge_advanced_past_source = false;
+        last_source_with_real_data = -1;
 
         for (size_t i = 0; i < current_inputs.size(); ++i)
         {
@@ -228,12 +229,6 @@ void MergingSortedAlgorithm::releaseDeferredSource(size_t source_num)
     if (source_deferral_state.empty())
         return;
 
-    /// The merge has finished with this source (its real data arrived, or it was exhausted
-    /// without any), so it is past resolving the very first front source from its virtual
-    /// row. From now on a request for another source is a genuine advance that justifies
-    /// reading ahead (see `merge`).
-    merge_advanced_past_source = true;
-
     auto prev_state = source_deferral_state[source_num];
     source_deferral_state[source_num] = SourceDeferralState::NotDeferred;
 
@@ -250,6 +245,10 @@ void MergingSortedAlgorithm::onSourceExhausted(size_t source_num)
     /// the read-ahead start when the leading sources are entirely filtered out (they are
     /// exhausted without data, never consumed).
     releaseDeferredSource(source_num);
+
+    /// A source exhausted without data forces the merge to move to another source: that is
+    /// a genuine advance that justifies reading ahead (see `merge`).
+    merge_advanced_past_source = true;
 }
 
 void MergingSortedAlgorithm::consume(Input & input, size_t source_num)
@@ -267,7 +266,11 @@ void MergingSortedAlgorithm::consume(Input & input, size_t source_num)
     cursors[source_num].reset(current_inputs[source_num].chunk.getColumns(), *header, current_inputs[source_num].chunk.getNumRows());
 
     if (!is_virtual_row)
+    {
         releaseDeferredSource(source_num);
+        if (!source_deferral_state.empty())
+            last_source_with_real_data = static_cast<ssize_t>(source_num);
+    }
 
 #ifndef NDEBUG
     /// See `initialize` for why we gate on `apply_virtual_row_conversions`.
@@ -316,15 +319,24 @@ IMergingAlgorithm::Status MergingSortedAlgorithm::merge()
     }
     else
     {
-        /// Start (or top up) the read-ahead only when the merge has already finished with a
-        /// source and still needs another one. The first source the merge asks for is the
-        /// front source being resolved from its virtual row; prefetching the sources deferred
-        /// behind it then would read parts that a limit satisfied from the front source alone
-        /// never reaches (e.g. `ORDER BY pk LIMIT n` answered by the first part). Once a
-        /// source has been read or exhausted and the merge still asks for another, reading
-        /// ahead is worthwhile and keeps the deferred sources from being read one by one.
-        if (result.required_source >= 0 && merge_advanced_past_source)
-            topUpPrefetch();
+        /// Start (or top up) the read-ahead only once the merge has actually advanced past a
+        /// source: it asks for a source other than the one whose real data it has been
+        /// consuming, or a source was exhausted without data (see `onSourceExhausted`). As
+        /// long as the merge keeps asking the same source for more blocks — the front source
+        /// being resolved from its virtual row, possibly over several blocks — prefetching
+        /// the sources deferred behind it would read parts that a limit satisfied from the
+        /// front source alone never reaches (e.g. a multi-block `ORDER BY pk LIMIT n`
+        /// answered entirely by the first part). Once the merge does move to another source,
+        /// reading ahead is worthwhile and keeps the deferred sources from being read one by
+        /// one.
+        if (result.required_source >= 0)
+        {
+            if (last_source_with_real_data >= 0 && result.required_source != last_source_with_real_data)
+                merge_advanced_past_source = true;
+
+            if (merge_advanced_past_source)
+                topUpPrefetch();
+        }
 
         if (!sources_to_prefetch.empty())
         {

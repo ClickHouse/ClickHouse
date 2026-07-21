@@ -83,12 +83,15 @@ private:
     std::vector<SourceDeferralState> source_deferral_state;
     /// Sources to report for read-ahead with the next `merge` status.
     std::vector<size_t> sources_to_prefetch;
-    /// Whether the merge has already finished with at least one source (read its real data
-    /// or exhausted it without any). Read-ahead is only started after this: the first source
-    /// the merge asks for is the front source being resolved from its virtual row, and the
-    /// sources deferred behind it may never be reached under a limit (e.g. the front part
-    /// alone satisfies it).
+    /// Whether the merge has actually advanced past a source: it asked for a source other
+    /// than the one that last delivered real data, or a source was exhausted without any.
+    /// Read-ahead is only started after this: as long as the merge keeps asking the same
+    /// source for more data (the front source being resolved from its virtual row, possibly
+    /// over several blocks), the sources deferred behind it may never be reached under a
+    /// limit (e.g. the front part alone satisfies it).
     bool merge_advanced_past_source = false;
+    /// The last source whose real (non-virtual-row) data arrived, -1 before any did.
+    ssize_t last_source_with_real_data = -1;
 
     /// Chunks currently being merged.
     Inputs current_inputs;
