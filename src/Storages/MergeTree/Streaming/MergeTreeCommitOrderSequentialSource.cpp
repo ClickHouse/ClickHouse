@@ -431,6 +431,12 @@ void MergeTreeCommitOrderSequentialSource::work()
     if (subscription->isDisabled())
         return;
 
+    /// A stale wakeup from a resolved round can reach work() after a newer round made the safe
+    /// segment pending again; mirror the prepare() gate so a bounded stream never builds a partial
+    /// snapshot. prepare() then re-parks it on Async until the segment is determined again.
+    if (subscription->isBounded() && !subscription->safeSegmentDetermined())
+        return;
+
     if (!canConstructReadingPipeline(safe_block_numbers, last_emitted_positions))
         return;
 
