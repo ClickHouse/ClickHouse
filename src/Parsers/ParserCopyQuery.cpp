@@ -25,6 +25,8 @@
 #include <Parsers/ParserTablesInSelectQuery.h>
 #include <Parsers/ParserWithElement.h>
 
+#include <Common/quoteString.h>
+
 #include <algorithm>
 #include <memory>
 #include <optional>
@@ -55,7 +57,7 @@ bool ParserCopyQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     if (!open_bracket.ignore(pos, expected))
     {
-        ParserIdentifier s_table_identifier;
+        ParserCompoundIdentifier s_table_identifier;
         ASTPtr table_name;
         if (!s_table_identifier.parse(pos, table_name, expected))
             return false;
@@ -73,7 +75,20 @@ bool ParserCopyQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                 copy_element->column_names.push_back(column_ast->as<ASTIdentifier>()->full_name);
         }
         saved_pos = pos;
-        copy_element->table_name = table_name->as<ASTIdentifier>()->full_name;
+        /// Store the table name already rendered as valid SQL: a compound `database.table` must keep its
+        /// parts separately quoted (`` `database`.`table` ``) rather than becoming one quoted identifier
+        /// (`` `database.table` ``), which would resolve to a single table whose name contains a dot.
+        {
+            const auto & id = table_name->as<ASTIdentifier &>();
+            String rendered;
+            for (const auto & part : id.name_parts)
+            {
+                if (!rendered.empty())
+                    rendered += '.';
+                rendered += backQuoteIfNeed(part);
+            }
+            copy_element->table_name = rendered;
+        }
 
         if (s_to.ignore(pos, expected))
         {

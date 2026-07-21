@@ -793,3 +793,74 @@ def test_copy_from_stdin_row_split_across_frames(started_cluster):
         node.query("SELECT s FROM test_copy_split WHERE id IN (42, 142) ORDER BY id")
         == "value-42\nvalue-142\n"
     )
+
+
+def test_copy_from_stdin_compound_table_name(started_cluster):
+    # A schema/database-qualified target such as `COPY db.table FROM STDIN` must resolve to
+    # `db`.`table`, not to a single table whose name literally contains a dot. The `COPY ... TO STDOUT`
+    # direction already handled compound names, so both directions must agree.
+    node.query("DROP DATABASE IF EXISTS copy_ns SYNC")
+    node.query("CREATE DATABASE copy_ns")
+    node.query(
+        "CREATE TABLE copy_ns.dest (id UInt32, s String) ENGINE = MergeTree ORDER BY id"
+    )
+
+    conn = py_psql.connect(
+        host=node.ip_address, port=PG_PORT, user="pguser", password="pgpass", database="default"
+    )
+    try:
+        cur = conn.cursor()
+        cur.copy_expert(
+            "COPY copy_ns.dest FROM STDIN WITH (FORMAT csv)",
+            io.StringIO("1,one\n2,two\n"),
+        )
+        # The same compound name must round-trip back out via COPY TO STDOUT.
+        out = io.StringIO()
+        cur.copy_expert("COPY copy_ns.dest TO STDOUT WITH (FORMAT csv)", out)
+    finally:
+        conn.close()
+
+    assert node.query("SELECT id, s FROM copy_ns.dest ORDER BY id") == "1\tone\n2\ttwo\n"
+    assert sorted(out.getvalue().splitlines()) == ["1,one", "2,two"]
+    node.query("DROP DATABASE copy_ns SYNC")
+
+
+class _FailingSource:
+    # A file-like object whose read fails partway through, so psycopg2 aborts the COPY FROM by sending
+    # a `CopyFail` frontend message instead of `CopyDone`.
+    def __init__(self):
+        self._sent = False
+
+    def read(self, size=-1):
+        if not self._sent:
+            self._sent = True
+            return "1,one\n"
+        raise IOError("simulated local source failure")
+
+
+def test_copy_from_stdin_client_abort_sends_copy_fail(started_cluster):
+    # When a client aborts a `COPY FROM STDIN` (e.g. its local data source errors), libpq sends a
+    # `CopyFail` message. The server must treat this as a regular query error - reply with an error and
+    # `ReadyForQuery` - so the connection stays usable, rather than as a protocol violation that tears
+    # the connection down.
+    node.query("DROP TABLE IF EXISTS test_copy_abort SYNC")
+    node.query(
+        "CREATE TABLE test_copy_abort (id UInt32, s String) ENGINE = MergeTree ORDER BY id"
+    )
+
+    conn = py_psql.connect(
+        host=node.ip_address, port=PG_PORT, user="pguser", password="pgpass", database="default"
+    )
+    try:
+        cur = conn.cursor()
+        with pytest.raises(Exception):
+            cur.copy_expert(
+                "COPY test_copy_abort FROM STDIN WITH (FORMAT csv)", _FailingSource()
+            )
+        conn.rollback()
+
+        # The connection survives the aborted copy and can run another statement.
+        cur.execute("SELECT 42")
+        assert cur.fetchone()[0] == 42
+    finally:
+        conn.close()

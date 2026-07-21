@@ -123,6 +123,17 @@ private:
                 received_copy_done = true;
                 return false;
             }
+            /// A `CopyFail` is a normal client-side abort of the copy (libpq sends it when its local data
+            /// source errors or the copy is cancelled), not a protocol violation. Surface the client's
+            /// reason as a regular query error: the handler's outer catch turns it into an `ErrorResponse`
+            /// followed by `ReadyForQuery`, keeping the connection alive.
+            if (message_type == PostgreSQLProtocol::Messaging::FrontMessageType::COPY_FAILURE)
+            {
+                auto copy_fail = transport.receive<PostgreSQLProtocol::Messaging::CopyFail>();
+                received_copy_done = true;
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS, "COPY FROM STDIN aborted by the client: {}", copy_fail->message);
+            }
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
                 "Received incorrect message type - expected {} or {}, got {}",
@@ -733,7 +744,9 @@ bool PostgreSQLHandler::processCopyQuery(const String & query)
             columns_to_insert = "(" + columns_to_insert + ")";
         }
 
-        auto [ast, io] = executeQuery(fmt::format("INSERT INTO `{}` {} FROM INFILE 'psql_copy'", copy_query->table_name, columns_to_insert), query_context, {}, QueryProcessingStage::Enum::Complete);
+        /// `table_name` is already rendered as valid SQL by the parser (each part of a compound
+        /// `database.table` name separately backquoted), so it must not be wrapped in backquotes again.
+        auto [ast, io] = executeQuery(fmt::format("INSERT INTO {} {} FROM INFILE 'psql_copy'", copy_query->table_name, columns_to_insert), query_context, {}, QueryProcessingStage::Enum::Complete);
         chassert(io.pipeline.pushing());
         auto executor = std::make_unique<PushingPipelineExecutor>(io.pipeline);
 

@@ -66,6 +66,7 @@ enum class FrontMessageType : Int32
     EXECUTE = 'E',
     COPY_DATA = 'd',
     COPY_COMPLETION = 'c',
+    COPY_FAILURE = 'f',
 };
 
 enum class MessageType : Int32
@@ -1210,6 +1211,38 @@ public:
     MessageType getMessageType() const override
     {
         return MessageType::COPY_DONE;
+    }
+};
+
+/// Sent by the client to abort an in-progress `COPY FROM STDIN` (libpq emits it when the local data
+/// source errors out or the copy is cancelled). The body is a human-readable failure reason.
+class CopyFail : FrontMessage
+{
+public:
+    String message;
+
+    void deserialize(ReadBuffer & in) override
+    {
+        Int32 sz = 0;
+        readBinaryBigEndian(sz, in);
+        if (sz < static_cast<Int32>(sizeof(Int32)))
+            throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT,
+                            "Wrong message length {} in CopyFail, it must be at least 4", sz);
+        message.reserve(sz - sizeof(Int32));
+        for (size_t i = 0; i < sz - sizeof(Int32); ++i)
+        {
+            char byte = 0;
+            readBinary(byte, in);
+            message.push_back(byte);
+        }
+        /// The reason is a null-terminated string; drop the trailing NUL if present.
+        if (!message.empty() && message.back() == '\0')
+            message.pop_back();
+    }
+
+    MessageType getMessageType() const override
+    {
+        return MessageType::COPY_FAIL;
     }
 };
 
