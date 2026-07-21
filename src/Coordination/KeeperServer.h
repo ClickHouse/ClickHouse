@@ -218,6 +218,7 @@ public:
     std::optional<AuthenticationData> getAuthenticationData() const { return state_manager->getAuthenticationData(); }
 
     std::vector<std::pair<std::string, Int32>> getExpiredTTLPathsForGarbageCollector(size_t batch_size) const;
+    std::vector<std::pair<std::string, Int32>> getContainerCandidatesForGarbageCollector(size_t batch_size, UInt64 max_never_used_interval_ms) const;
 
     const KeeperContextPtr & getKeeperContext() const { return keeper_context; }
 };

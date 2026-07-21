@@ -1019,17 +1019,10 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
 
 bool MergeTask::enabledBlockNumberColumn(GlobalRuntimeContextPtr global_ctx)
 {
-    /// `_block_number`/`_block_offset` are per-row columns of the top-level part.
-    /// A projection is a separate sub-part with its own schema; it stores these columns
-    /// only when its own definition references them (then they are already in the
-    /// projection's storage columns). Do not auto-inject them into a projection sub-part,
-    /// otherwise the merged projection part would carry a column the projection metadata
-    /// and insert-produced projection parts do not have.
     if (global_ctx->parent_part)
         return false;
 
-    return (*global_ctx->data_settings)[MergeTreeSetting::enable_block_number_column]
-        && global_ctx->metadata_snapshot->getGroupByTTLs().empty();
+    return (*global_ctx->data_settings)[MergeTreeSetting::enable_block_number_column];
 }
 
 bool MergeTask::enabledBlockOffsetColumn(GlobalRuntimeContextPtr global_ctx)
@@ -1037,8 +1030,7 @@ bool MergeTask::enabledBlockOffsetColumn(GlobalRuntimeContextPtr global_ctx)
     if (global_ctx->parent_part)
         return false;
 
-    return (*global_ctx->data_settings)[MergeTreeSetting::enable_block_offset_column]
-        && global_ctx->metadata_snapshot->getGroupByTTLs().empty();
+    return (*global_ctx->data_settings)[MergeTreeSetting::enable_block_offset_column];
 }
 
 void MergeTask::addGatheringColumn(GlobalRuntimeContextPtr global_ctx, const String & name, const DataTypePtr & type)
@@ -1218,15 +1210,45 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::prepareProjectionsToMergeAndRe
             continue;
         }
 
+        /// An existing projection part may lack a column the current metadata expects (e.g. an ALIAS
+        /// selected by the projection was re-pointed by ALTER; see projectionPartHasRequiredColumns).
+        /// Merging it directly would bake default values into the merged part, so rebuild from the parent
+        /// instead. A parent TABLE column the parent part also lacks is a legitimate late-add and does
+        /// not count.
+        const auto projection_columns = projection.metadata->getColumns().getAllPhysical();
+        const auto & parent_table_columns = global_ctx->metadata_snapshot->getColumns();
+        bool projection_part_misses_column = false;
+
         MergeTreeData::DataPartsVector projection_parts;
         for (const auto & part : global_ctx->future_part->parts)
         {
             auto it = part->getProjectionParts().find(projection.name);
             if (it != part->getProjectionParts().end() && !it->second->is_broken)
+            {
+                for (const auto & column : projection_columns)
+                {
+                    if (!it->second->tryGetColumn(column.name)
+                        && (part->tryGetColumn(column.name)
+                            || !parent_table_columns.hasColumnOrSubcolumn(GetColumnsOptions::AllPhysical, column.name)))
+                    {
+                        projection_part_misses_column = true;
+                        break;
+                    }
+                }
+
                 projection_parts.push_back(it->second);
+            }
         }
 
-        if (projection_parts.size() == global_ctx->future_part->parts.size())
+        if (projection_part_misses_column && mode != DeduplicateMergeProjectionMode::IGNORE)
+        {
+            LOG_DEBUG(
+                ctx->log,
+                "Projection {} will be rebuilt because some projection parts miss columns the projection now expects",
+                projection.name);
+            global_ctx->projections_to_rebuild.push_back(&projection);
+        }
+        else if (projection_parts.size() == global_ctx->future_part->parts.size())
         {
             global_ctx->projections_to_merge.push_back(&projection);
             global_ctx->projections_to_merge_parts[projection.name].assign(projection_parts.begin(), projection_parts.end());
@@ -1998,7 +2020,7 @@ bool MergeTask::MergeProjectionsStage::prepareProjections() const
 
         double elapsed_seconds = global_ctx->merge_list_element_ptr->watch.elapsedSeconds();
         LOG_DEBUG(ctx->log,
-            "Merge sorted {} rows, containing {} columns ({} merged, {} gathered) in {} sec., {} rows/sec., {}/sec.",
+            "Merge sorted {} rows, containing {} columns ({} merged, {} gathered) in {:.3f} sec., {:.3f} rows/sec., {}/sec.",
             global_ctx->merge_list_element_ptr->rows_read.load(),
             global_ctx->storage_columns.size(),
             global_ctx->merging_columns.size(),

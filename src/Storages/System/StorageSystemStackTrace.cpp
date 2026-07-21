@@ -162,14 +162,30 @@ void signalHandler(int, siginfo_t * info, void * context)
 
     /// All these methods are signal-safe.
     const ucontext_t signal_context = *reinterpret_cast<ucontext_t *>(context);
+#if defined(OS_DARWIN)
+    /// On macOS the async unwind (frame-pointer backtrace) can fault (SIGBUS/SIGSEGV) when the target
+    /// thread is parked in frame-pointer-less libsystem code; recover by dropping this trace instead of
+    /// crashing the server, mirroring the query profiler. SignalHandlers.cpp performs the siglongjmp.
+    /// The ctor blocks the profiler signals (SIGUSR1/SIGUSR2) here so they cannot nest and clobber the
+    /// shared recovery buffer. This applies under TSan too: macOS always captures via backtrace() (there
+    /// is no abseil path), so the fault is possible regardless of TSan. (On Linux libunwind + the PHDR
+    /// cache is async-safe, so no recovery here.)
+    asynchronous_stack_unwinding = true;
+    if (0 == sigsetjmp(asynchronous_stack_unwinding_signal_jump_buffer, 1))
+        stack_trace = StackTrace(signal_context);
+    else
+        stack_trace = StackTrace(NoCapture{});
+    asynchronous_stack_unwinding = false;
+#else
     stack_trace = StackTrace(signal_context);
+#endif
 
     auto query_id = CurrentThread::getQueryId();
     query_id_size = std::min(query_id.size(), max_query_id_size);
     if (!query_id.empty())
         memcpy(query_id_data, query_id.data(), query_id_size);
 
-    untracked_memory_data = current_thread ? current_thread->untracked_memory : 0;
+    untracked_memory_data = current_thread ? current_thread->untracked_memory.load() : 0;
 
     /// This is unneeded (because we synchronize through pipe) but makes TSan happy.
     data_ready_num.store(notification_num, std::memory_order_release);
@@ -733,7 +749,7 @@ StorageSystemStackTrace::StorageSystemStackTrace(const StorageID & table_id_)
         {"thread_id", std::make_shared<DataTypeUInt64>(), "The thread identifier"},
         {"query_id", std::make_shared<DataTypeString>(), "The ID of the query this thread belongs to."},
         {"trace", std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>()), "The stacktrace of this thread. Basically just an array of addresses."},
-        {"untracked_memory", std::make_shared<DataTypeInt64>(), "Per-thread atomic-less counter of memory allocations not yet propagated to the parent MemoryTracker. May be negative if more was freed than allocated since the last flush."},
+        {"untracked_memory", std::make_shared<DataTypeInt64>(), "Per-thread counter of memory allocations not yet propagated to the parent MemoryTracker. May be negative if more was freed than allocated since the last flush."},
     }));
     storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
@@ -754,6 +770,15 @@ StorageSystemStackTrace::StorageSystemStackTrace(const StorageID & table_id_)
 
     if (sigaddset(&sa.sa_mask, STACK_TRACE_SERVICE_SIGNAL))
         throw ErrnoException(ErrorCodes::CANNOT_MANIPULATE_SIGSET, "Cannot set signal handler");
+
+#if defined(OS_DARWIN)
+    /// This handler shares the thread-local async-unwind recovery buffer with the query profiler on
+    /// macOS (see signalHandler above). Block the profiler pause signals (SIGUSR1/SIGUSR2) while it runs
+    /// so a profiler signal cannot nest and clobber that buffer, which would make the next fault's
+    /// siglongjmp jump to the wrong frame. Kept under TSan too, matching the recovery in signalHandler.
+    if (sigaddset(&sa.sa_mask, SIGUSR1) || sigaddset(&sa.sa_mask, SIGUSR2))
+        throw ErrnoException(ErrorCodes::CANNOT_MANIPULATE_SIGSET, "Cannot set signal handler");
+#endif
 #pragma clang diagnostic pop
 
     if (sigaction(STACK_TRACE_SERVICE_SIGNAL, &sa, nullptr))

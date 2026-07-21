@@ -254,8 +254,8 @@ SELECT UUIDv7ToDateTime(toUUID('018f05c9-4ab8-7b86-b64e-c9f03fbd45d1'), 'America
 
 ```response title=Response
 ┌─UUIDv7ToDateTime(toUUID('018f05c9-4ab8-7b86-b64e-c9f03fbd45d1'), 'America/New_York')─┐
-│                                                             2024-04-22 11:30:29.048 │
-└─────────────────────────────────────────────────────────────────────────────────────┘
+│                                                              2024-04-22 08:30:29.048 │
+└──────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ## dateTime64ToSnowflakeID {#dateTime64ToSnowflakeID}
@@ -332,14 +332,14 @@ Converts a [DateTime](/reference/data-types/datetime) value to a [UUIDv7](https:
 
 See section ["UUIDv7 generation"](#uuidv7-generation) for details on UUID structure, counter management, and concurrency guarantees.
 
-:::note
+<Note>
 As of September 2025, version 7 UUIDs are in draft status and their layout may change in future.
-:::
+</Note>
     
 
-:::note
+<Note>
 This function is non-deterministic: it can return different results for the same arguments.
-:::
+</Note>
 
 **Syntax**
 
@@ -365,8 +365,8 @@ SELECT dateTimeToUUIDv7(toDateTime('2021-08-15 18:57:56', 'Asia/Shanghai'));
 
 ```response title=Response
 ┌─dateTimeToUUIDv7(toDateTime('2021-08-15 18:57:56', 'Asia/Shanghai'))─┐
-│ 018f05af-f4a8-778f-beee-1bedbc95c93b                                   │
-└─────────────────────────────────────────────────────────────────────────┘
+│ 018f05af-f4a8-778f-beee-1bedbc95c93b                                 │
+└──────────────────────────────────────────────────────────────────────┘
 ```
 
 **multiple UUIDs for the same timestamp**
@@ -396,9 +396,9 @@ Function `generateSnowflakeID` guarantees that the counter field within a timest
 See section ["Snowflake ID generation"](#snowflake-id-generation) for implementation details.
     
 
-:::note
+<Note>
 This function is non-deterministic: it can return different results for the same arguments.
-:::
+</Note>
 
 **Syntax**
 
@@ -464,9 +464,9 @@ Introduced in: v1.1.0
 
 Generates a [version 4](https://tools.ietf.org/html/rfc4122#section-4.4) [UUID](/reference/data-types/uuid).
 
-:::note
+<Note>
 This function is non-deterministic: it can return different results for the same arguments.
-:::
+</Note>
 
 **Syntax**
 
@@ -518,14 +518,14 @@ Generates a [version 7](https://datatracker.ietf.org/doc/html/draft-peabody-disp
 
 See section ["UUIDv7 generation"](#uuidv7-generation) for details on UUID structure, counter management, and concurrency guarantees.
 
-:::note
+<Note>
 As of September 2025, version 7 UUIDs are in draft status and their layout may change in future.
-:::
+</Note>
     
 
-:::note
+<Note>
 This function is non-deterministic: it can return different results for the same arguments.
-:::
+</Note>
 
 **Syntax**
 
@@ -677,8 +677,8 @@ SELECT toUUIDOrDefault('61f0c404-5cb3-11e7-907b-a6006ad3dba0', toUUID('59f0c404-
 
 ```response title=Response
 ┌─toUUIDOrDefault('61f0c404-5cb3-11e7-907b-a6006ad3dba0', toUUID('59f0c404-5cb3-11e7-907b-a6006ad3dba0'))─┐
-│ 61f0c404-5cb3-11e7-907b-a6006ad3dba0                                                                     │
-└──────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+│ 61f0c404-5cb3-11e7-907b-a6006ad3dba0                                                                    │
+└─────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 **Failed conversion returns the default UUID**
@@ -689,8 +689,8 @@ SELECT toUUIDOrDefault('-----61f0c404-5cb3-11e7-907b-a6006ad3dba0', toUUID('59f0
 
 ```response title=Response
 ┌─toUUIDOrDefault('-----61f0c404-5cb3-11e7-907b-a6006ad3dba0', toUUID('59f0c404-5cb3-11e7-907b-a6006ad3dba0'))─┐
-│ 59f0c404-5cb3-11e7-907b-a6006ad3dba0                                                                          │
-└───────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+│ 59f0c404-5cb3-11e7-907b-a6006ad3dba0                                                                         │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ## toUUIDOrNull {#toUUIDOrNull}
