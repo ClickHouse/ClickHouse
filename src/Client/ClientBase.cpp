@@ -1565,11 +1565,12 @@ void ClientBase::processOrdinaryQuery(String query, ASTPtr parsed_query)
             receiveResult(parsed_query, signals_before_stop, settings[Setting::partial_result_on_first_cancel]);
 
             /// The teardown flushes in resetOutput() honor a late Ctrl+C (discarding the rest of
-            /// the pending output) and promote it into `cancelled`; the interrupt handler is
-            /// still armed at this point, so re-check for a signal racing in after that promotion.
-            if (!cancelled && query_interrupt_handler.isRunning() && query_interrupt_handler.cancelled())
-                cancelled = true;
-
+            /// the pending output) and latch it into `cancelled` there, while the output can still
+            /// be affected. Do not sample the interrupt handler again here: the teardown has
+            /// already finished, so a signal arriving at this point cannot touch any output, and
+            /// treating it as a cancellation would only send the fully written temporary file of
+            /// `INTO OUTFILE ... TRUNCATE` below into cleanupTempFile, silently discarding a
+            /// successful result without even printing "Query was cancelled.".
             if (!out_file_if_truncated.empty())
             {
                 /// Replace the target file only on success. On an error the result is incomplete,
