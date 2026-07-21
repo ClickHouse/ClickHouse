@@ -262,11 +262,14 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
     auto component_guard = Coordination::setCurrentComponent("InterpreterCreateQuery::createDatabase");
     String database_name = create.getDatabase();
 
+    auto guard = DatabaseCatalog::instance().getDDLGuard(database_name, "", nullptr);
+
     /// Serialize concurrent creates of case siblings on the folded spelling, then re-check.
+    /// Acquired after the exact-name guard: the exact spelling always sorts before its folded
+    /// (lowercased) form, and multi-guard holders like RENAME acquire in sorted order.
     std::unique_ptr<DDLGuard> folded_guard;
     if (String folded_name = foldIdentifierCaseASCII(database_name); folded_name != database_name)
         folded_guard = DatabaseCatalog::instance().getDDLGuard(folded_name, "", nullptr);
-    auto guard = DatabaseCatalog::instance().getDDLGuard(database_name, "", nullptr);
 
     throwIfCaseSiblingDatabase(create, getContext());
 
@@ -2202,12 +2205,14 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
         return true;
     }
 
+    if (!ddl_guard && likely(need_ddl_guard))
+        ddl_guard = DatabaseCatalog::instance().getDDLGuard(create.getDatabase(), create.getTable(), nullptr);
     /// Guard on the folded spelling too, so concurrent sibling creates re-check serially.
+    /// Acquired after the exact-name guard: the exact spelling always sorts before its folded
+    /// (lowercased) form, and multi-guard holders like RENAME acquire in sorted order.
     std::unique_ptr<DDLGuard> folded_table_guard;
     if (String folded_table = foldIdentifierCaseASCII(create.getTable()); folded_table != create.getTable())
         folded_table_guard = DatabaseCatalog::instance().getDDLGuard(create.getDatabase(), folded_table, nullptr);
-    if (!ddl_guard && likely(need_ddl_guard))
-        ddl_guard = DatabaseCatalog::instance().getDDLGuard(create.getDatabase(), create.getTable(), nullptr);
 
     String data_path;
     DatabasePtr database;
