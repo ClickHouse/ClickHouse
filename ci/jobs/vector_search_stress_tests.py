@@ -258,9 +258,10 @@ test_params_cohere_wiki_20m = {
 }
 
 # Quantized codec ('rabitq') variants: no HNSW index is built. The vector column
-# carries a CODEC(Quantized('rabitq', <dimension>)) companion stream and searches
-# run with vector_search_use_quantized_codes = 1. The rescoring (fetch) multiplier
-# is 1, i.e. the shortlist size equals the query LIMIT with no oversampling.
+# is stored as Array(BFloat16) with a CODEC(Quantized('rabitq', <dimension>))
+# companion stream, and searches run with vector_search_use_quantized_codes = 1.
+# The rescoring (fetch) multiplier is 1, i.e. the shortlist size equals the query
+# LIMIT with no oversampling.
 test_params_hackernews_10m_rabitq = {
     LIMIT_N: None,
     TRUTH_SET_FILES: [
@@ -349,16 +350,18 @@ class RunTest:
     # Attach a CODEC(Quantized('<method>', <dimension>)) clause to the vector column.
     # The codec is experimental and, unlike an HNSW index, must be declared at table
     # creation time - it cannot be added or changed with ALTER TABLE.
+    #
+    # The full-precision values (used for rescoring the shortlist) are stored as
+    # BFloat16 rather than the dataset's Float32, halving the full-precision stream.
     def _schema_with_quantized_codec(self):
         schema = self._dataset[SCHEMA]
         if self._quantized_codec is None:
             return schema
 
         codec_clause = f" CODEC(Quantized('{self._quantized_codec}', {self._dimension}))"
+        column_def = f"{self._vector_column} Array(BFloat16){codec_clause}"
         pattern = rf"\b{re.escape(self._vector_column)}\s+Array\(Float32\)"
-        schema, count = re.subn(
-            pattern, lambda m: m.group(0) + codec_clause, schema
-        )
+        schema, count = re.subn(pattern, lambda m: column_def, schema)
         if count != 1:
             raise ValueError(
                 f"Expected exactly one '{self._vector_column} Array(Float32)' column "
