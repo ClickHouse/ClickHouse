@@ -669,17 +669,14 @@ class ReleaseInfo:
         return f"auto/{self.release_tag}"
 
     def update_release_info(self, dry_run: bool) -> "ReleaseInfo":
-        # The version_date.tsv/changelog PR (auto/<tag>) is created for both
-        # patch and new releases, so look it up for both.
-        if not self.changelog_pr:
-            branch = self.get_change_log_branch()
-            url = "dry-run" if dry_run else GH.get_pr_url_by_branch(branch=branch, repo=GITHUB_REPOSITORY)
-            print(f"ChangeLog PR url [{url}]")
-            self.changelog_pr = url
         if self.release_type == "patch":
+            if not self.changelog_pr:
+                branch = self.get_change_log_branch()
+                url = "dry-run" if dry_run else GH.get_pr_url_by_branch(branch=branch, repo=GITHUB_REPOSITORY)
+                print(f"ChangeLog PR url [{url}]")
+                self.changelog_pr = url
             self.docker = f"docker run --rm clickhouse/clickhouse:{self.version} clickhouse --version"
         else:
-            # A new release additionally opens the master version-bump PR.
             branch = self.get_version_bump_branch()
             url = "dry-run" if dry_run else GH.get_pr_url_by_branch(branch=branch, repo=GITHUB_REPOSITORY)
             print(f"Version bump PR url [{url}]")
@@ -738,18 +735,17 @@ class ReleaseInfo:
 
     def merge_prs(self, dry_run: bool) -> None:
         res = True
-        # The changelog PR is created for both patch and new releases now.
-        assert self.changelog_pr
-        print("Merging ChangeLog PR")
-        changelog_pr_num = 23456 if dry_run else int(self.changelog_pr.rsplit("/", 1)[-1])
-        res = Shell.check(
-            f"gh pr merge {changelog_pr_num} --repo {GITHUB_REPOSITORY} --merge --auto",
-            verbose=True,
-            dry_run=dry_run,
-            strict=True,
-        )
+        if self.release_type == "patch":
+            assert self.changelog_pr
+            print("Merging ChangeLog PR")
+            changelog_pr_num = 23456 if dry_run else int(self.changelog_pr.rsplit("/", 1)[-1])
+            res = Shell.check(
+                f"gh pr merge {changelog_pr_num} --repo {GITHUB_REPOSITORY} --merge --auto",
+                verbose=True,
+                dry_run=dry_run,
+                strict=True,
+            )
         if self.release_type == "new":
-            # A new release additionally opens the master version-bump PR.
             assert self.version_bump_pr
             print("Merging Version Bump PR")
             version_bump_pr_num = 23456 if dry_run else int(self.version_bump_pr.rsplit("/", 1)[-1])
