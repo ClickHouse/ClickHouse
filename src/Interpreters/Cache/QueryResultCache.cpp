@@ -1580,7 +1580,20 @@ std::optional<QueryResultCache::Cache::KeyMapped> QueryResultCache::readFromDisk
             }
             else
             {
-                memory_cache.set(disk_entry_key, entry_);
+                /// Promote a *clone* into `memory_cache`, not `entry_` itself. `entry_` is handed back to the
+                /// reader below, which immediately moves its `chunks`/`totals`/`extremes` out via
+                /// `buildSourceFromChunks`. Caching the same shared pointer would leave the promoted memory
+                /// entry empty, so the next (memory) hit for this key would return an empty result. Mirror the
+                /// compressed branch, which already caches a separate copy.
+                auto memory_entry = std::make_shared<Entry>();
+                for (const auto & chunk : entry_->chunks)
+                    memory_entry->chunks.push_back(chunk.clone());
+                if (entry_->totals.has_value())
+                    memory_entry->totals.emplace(entry_->totals->clone());
+                if (entry_->extremes.has_value())
+                    memory_entry->extremes.emplace(entry_->extremes->clone());
+
+                memory_cache.set(disk_entry_key, memory_entry);
             }
         }
 

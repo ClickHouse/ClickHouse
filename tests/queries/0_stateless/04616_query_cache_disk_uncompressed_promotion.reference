@@ -1,0 +1,11 @@
+-- populate memory and disk with uncompressed entries
+10
+-- drop memory cache, only the disk entry remains
+0
+1
+-- disk hit promotes into the memory cache and serves the correct result
+10
+-- memory cache is populated again
+1
+-- memory hit must return the same, non-empty result (10), not an empty promoted entry
+10
