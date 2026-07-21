@@ -302,6 +302,17 @@ constexpr size_t OBJECT_SHARED_DATA_GLOBAL_COPY_STREAMS = 3;
 /// direction for an upper bound.
 constexpr size_t DYNAMIC_BASE_STREAMS = 3;
 
+/// The streams a Dynamic node's default serialization already enumerates without a column present: exactly the
+/// DynamicStructure stream (SerializationDynamic::enumerateStreams emits it unconditionally, then stops - it
+/// has no column and so no variants to walk). countColumnStreams therefore already charges this one stream for
+/// every Dynamic node reachable through the static type skeleton - a top-level Dynamic column, or one nested in
+/// a Tuple / Array / Map / a JSON typed path - and every caller of countDynamicCapacityStreams adds
+/// countColumnStreams({column}) on top of it. Subtracting it from a real Dynamic node's capacity keeps the
+/// DynamicStructure stream from being reserved twice (on object storage a doubly counted stream is another full
+/// multipart ceiling per column). This is not subtracted from a JSON node's hypothetical dynamic paths below:
+/// the default serialization cannot enumerate those without a real column, so it never counts them.
+constexpr size_t DYNAMIC_STREAMS_VISIBLE_TO_DEFAULT_SERIALIZATION = 1;
+
 /// Worst-case number of on-disk streams a single materialized variant of a Dynamic value writes. A variant's
 /// concrete type is runtime data, invisible in the declared Dynamic / JSON type, so it cannot be enumerated
 /// statically: a scalar variant is one data stream, and the nested wrappers a value commonly carries -
@@ -335,7 +346,10 @@ constexpr size_t STREAMS_PER_DYNAMIC_VARIANT = 4;
 /// compact-part one), each up to MAX_OBJECT_SHARED_DATA_STREAMS_PER_BUCKET streams, plus the
 /// OBJECT_SHARED_DATA_GLOBAL_COPY_STREAMS the ADVANCED serialization writes once per column. Composite types
 /// are walked recursively (forEachChild is a full descent), so Tuple(UInt64, JSON) or Array(Dynamic) are
-/// priced by their nested semi-structured components. Zero for types without dynamic structure.
+/// priced by their nested semi-structured components. Zero for types without dynamic structure. Every caller
+/// adds countColumnStreams({column}) on top of this, so a real Dynamic node's capacity here excludes the
+/// DynamicStructure stream that the default serialization already enumerates (see
+/// DYNAMIC_STREAMS_VISIBLE_TO_DEFAULT_SERIALIZATION), to avoid reserving that stream twice.
 size_t countDynamicCapacityStreams(const IDataType & type, const MergeTreeSettings & settings)
 {
     const UInt64 shared_data_buckets = settings[MergeTreeSetting::object_shared_data_buckets_for_wide_part];
@@ -350,7 +364,9 @@ size_t countDynamicCapacityStreams(const IDataType & type, const MergeTreeSettin
     const auto node_capacity = [&](const IDataType & node) -> size_t
     {
         if (const auto * dynamic = typeid_cast<const DataTypeDynamic *>(&node))
-            return dynamic_capacity(dynamic->getMaxDynamicTypes());
+            /// A real Dynamic node's DynamicStructure stream is already counted by the countColumnStreams the
+            /// callers add on top, so exclude it here to avoid reserving it twice.
+            return dynamic_capacity(dynamic->getMaxDynamicTypes()) - DYNAMIC_STREAMS_VISIBLE_TO_DEFAULT_SERIALIZATION;
         if (const auto * object = typeid_cast<const DataTypeObject *>(&node))
         {
             const size_t shared_data_streams
