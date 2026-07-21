@@ -10,14 +10,12 @@
 #include <Processors/Chunk.h>
 #include <Processors/Merges/Algorithms/IMergingAlgorithm.h>
 #include <Processors/Merges/IMergingTransform.h>
+#include <Processors/Transforms/JoinResidualCondition.h>
 #include <QueryPipeline/SizeLimits.h>
 #include <Common/PODArray.h>
 
 namespace DB
 {
-
-class ExpressionActions;
-using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 
 /// One inequality join condition `left.x op right.x`: the comparison operator and the
 /// positions of the key columns in the input headers (not bound to column names).
@@ -49,24 +47,6 @@ const char * toString(IEJoinKind kind);
 /// algorithm: the first condition defines the L1 order, the second the L2 order.
 using IEJoinConditions = std::array<IEJoinCondition, 2>;
 
-/// A residual JOIN ON condition beyond the two inequalities, evaluated per candidate pair:
-/// a single-output boolean expression over columns of both inputs. A pair matches only when
-/// both inequalities hold AND the residual passes (a NULL result counts as failed).
-struct IEJoinResidualCondition
-{
-    /// Where a required column of `actions` comes from: the input (0 = left, 1 = right)
-    /// and the column's position in that input's header.
-    struct Source
-    {
-        size_t side = 0;
-        size_t position = 0;
-    };
-
-    ExpressionActionsPtr actions;
-    /// One entry per required column of `actions`, in `getRequiredColumnsWithTypes` order.
-    std::vector<Source> inputs;
-};
-
 /*
  * Joins two fully materialized streams by two inequality conditions
  * `left.x op1 right.x AND left.y op2 right.y` with the IEJoin algorithm
@@ -85,7 +65,7 @@ public:
     IEJoinAlgorithm(
         IEJoinKind kind_,
         const IEJoinConditions & conditions_,
-        std::optional<IEJoinResidualCondition> residual_,
+        std::optional<JoinResidualCondition> residual_,
         bool inputs_sorted_by_first_key_,
         const SharedHeaders & input_headers_,
         const SizeLimits & size_limits_,
@@ -245,11 +225,7 @@ private:
     };
     std::array<KeyOrder, 2> key_order;
     /// The residual ON condition gating candidate pairs, if any.
-    std::optional<IEJoinResidualCondition> residual;
-    /// Header of the residual's input columns (in its required-columns order) and the
-    /// precomputed input positions for `ExpressionActions::executeOnColumns`.
-    Block residual_input_header;
-    std::vector<ssize_t> residual_input_positions;
+    std::optional<JoinResidualConditionEvaluator> residual;
     /// The inputs are each sorted by the first condition's key (ascending, NULLS LAST):
     /// selects the merge-based L1 build; with the flag off the operator orders the union
     /// itself with an index sort.
@@ -366,7 +342,7 @@ public:
     IEJoinTransform(
         IEJoinKind kind,
         const IEJoinConditions & conditions,
-        std::optional<IEJoinResidualCondition> residual,
+        std::optional<JoinResidualCondition> residual,
         bool inputs_sorted_by_first_key,
         SharedHeaders & input_headers,
         SharedHeader output_header,

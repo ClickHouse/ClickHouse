@@ -9,10 +9,6 @@
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/IColumn.h>
-#include <DataTypes/DataTypeLowCardinality.h>
-#include <DataTypes/DataTypeNullable.h>
-#include <Interpreters/ExpressionActions.h>
-#include <Common/assert_cast.h>
 #include <Processors/Transforms/IEJoinTransform.h>
 #include <Processors/Transforms/JoinKeyEncoding.h>
 #include <Common/NaNUtils.h>
@@ -50,7 +46,7 @@ const char * toString(IEJoinKind kind)
 IEJoinAlgorithm::IEJoinAlgorithm(
     IEJoinKind kind_,
     const IEJoinConditions & conditions_,
-    std::optional<IEJoinResidualCondition> residual_,
+    std::optional<JoinResidualCondition> residual_,
     bool inputs_sorted_by_first_key_,
     const SharedHeaders & input_headers_,
     const SizeLimits & size_limits_,
@@ -59,7 +55,6 @@ IEJoinAlgorithm::IEJoinAlgorithm(
     , max_block_size(std::max<size_t>(1, max_block_size_))
     , kind(kind_)
     , conditions(conditions_)
-    , residual(std::move(residual_))
     , inputs_sorted_by_first_key(inputs_sorted_by_first_key_)
     , size_limits(size_limits_)
 {
@@ -91,36 +86,8 @@ IEJoinAlgorithm::IEJoinAlgorithm(
         key_order[key_index].strict
             = conditions[key_index].op == JoinConditionOperator::Less || conditions[key_index].op == JoinConditionOperator::Greater;
 
-    if (residual)
-    {
-        const auto & sample = residual->actions->getSampleBlock();
-        if (sample.columns() != 1
-            || !WhichDataType(removeNullable(removeLowCardinality(sample.getByPosition(0).type))).isUInt8())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "IEJoin residual condition must have a single boolean output, got {}",
-                sample.dumpStructure());
-
-        const auto & required_columns = residual->actions->getRequiredColumnsWithTypes();
-        if (residual->inputs.size() != required_columns.size())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "IEJoin residual condition requires {} columns, {} sources given",
-                required_columns.size(), residual->inputs.size());
-
-        size_t i = 0;
-        for (const auto & required_column : required_columns)
-        {
-            const auto & source = residual->inputs[i++];
-            if (source.side >= 2 || source.position >= input_headers[source.side]->columns())
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "IEJoin residual condition source ({}, {}) is out of range",
-                    source.side, source.position);
-
-            const auto & input_column = input_headers[source.side]->getByPosition(source.position);
-            if (!input_column.type->equals(*required_column.type))
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "IEJoin residual condition input {} has type {}, expected {}",
-                    required_column.name, input_column.type->getName(), required_column.type->getName());
-
-            residual_input_header.insert(ColumnWithTypeAndName(nullptr, required_column.type, required_column.name));
-        }
-        residual_input_positions = residual->actions->getInputPositions(residual_input_header);
-    }
+    if (residual_)
+        residual.emplace(std::move(*residual_), *input_headers[0], *input_headers[1]);
 }
 
 void IEJoinAlgorithm::initialize(Inputs inputs)
@@ -1002,29 +969,11 @@ IColumn::Filter IEJoinAlgorithm::evaluateResidualMask(const ColumnUInt64 & left_
     produce_work += num_rows;
 
     Columns expression_columns;
-    expression_columns.reserve(residual->inputs.size());
-    for (const auto & source : residual->inputs)
+    expression_columns.reserve(residual->sources().size());
+    for (const auto & source : residual->sources())
         expression_columns.push_back(side_columns[source.side][source.position]->index(source.side == 0 ? left_rows : right_rows, 0));
 
-    Columns results = residual->actions->executeOnColumns(
-        std::move(expression_columns), residual_input_header, residual_input_positions, num_rows);
-    ColumnPtr result = results.at(0)->convertToFullColumnIfConst()->convertToFullColumnIfLowCardinality();
-
-    IColumn::Filter mask(num_rows);
-    if (const auto * nullable = checkAndGetColumn<ColumnNullable>(result.get()))
-    {
-        const auto & null_map = nullable->getNullMapData();
-        const auto & values = assert_cast<const ColumnUInt8 &>(nullable->getNestedColumn()).getData();
-        for (size_t row = 0; row < num_rows; ++row)
-            mask[row] = !null_map[row] && values[row];
-    }
-    else
-    {
-        const auto & values = assert_cast<const ColumnUInt8 &>(*result).getData();
-        for (size_t row = 0; row < num_rows; ++row)
-            mask[row] = values[row] ? 1 : 0;
-    }
-    return mask;
+    return residual->evaluateMask(std::move(expression_columns), num_rows);
 }
 
 void IEJoinAlgorithm::appendPadded(Chunk & chunk, size_t side, size_t num_rows) const
@@ -1109,7 +1058,7 @@ IMergingAlgorithm::MergedStats IEJoinAlgorithm::getMergedStats() const
 IEJoinTransform::IEJoinTransform(
     IEJoinKind kind,
     const IEJoinConditions & conditions,
-    std::optional<IEJoinResidualCondition> residual,
+    std::optional<JoinResidualCondition> residual,
     bool inputs_sorted_by_first_key,
     SharedHeaders & input_headers,
     SharedHeader output_header,

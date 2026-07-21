@@ -963,8 +963,8 @@ static bool isLowerBoundOperator(JoinConditionOperator op)
 /// point-side keys are the same expression, bracketing it in opposite directions
 /// (`t {>,>=} lo AND t {<,<=} hi`). The shared expression may come from either table.
 /// Consumption of the conditions and the handling of the extra conjuncts follow
-/// tryExtractIEJoinDescription; extra conjuncts become a filter over the join result, which
-/// is equivalent only for ALL INNER — the other in-scope kinds decline when any remain.
+/// tryExtractIEJoinDescription: extra conjuncts become a filter over the join result
+/// (ALL INNER) or a residual condition inside the operator (the other in-scope kinds).
 static std::optional<BandJoinPlanDescription> tryExtractBandJoinDescription(
     std::vector<JoinActionRef> & join_expression,
     const JoinOperator & join_operator,
@@ -978,13 +978,6 @@ static std::optional<BandJoinPlanDescription> tryExtractBandJoinDescription(
         return {};
 
     if (planning_context.is_storage_join)
-        return {};
-
-    /// Extra ON conjuncts are equivalent to a post-join filter only for ALL INNER; for the
-    /// other kinds they affect matching (unmatched rows are emitted padded, not dropped) and
-    /// residual evaluation inside the operator is not implemented, so decline.
-    if (join_expression.size() > 2
-        && !(join_operator.kind == JoinKind::Inner && join_operator.strictness == JoinStrictness::All))
         return {};
 
     std::vector<size_t> candidate_positions;
@@ -1473,6 +1466,7 @@ static void constructBandJoinStep(
     ActionsDAG post_join_actions,
     std::pair<String, bool> residual_filter_condition,
     BandJoinPlanDescription description,
+    ExpressionActionsPtr residual_condition,
     JoinKind kind,
     JoinStrictness strictness,
     const JoinSettings & join_settings,
@@ -1522,7 +1516,8 @@ static void constructBandJoinStep(
 
     SizeLimits size_limits(join_settings.max_rows_in_join, join_settings.max_bytes_in_join, join_settings.join_overflow_mode);
     node.step = std::make_unique<BandJoinStep>(
-        left_header, right_header, conditions, kind, strictness, description.point_side_is_right, size_limits,
+        left_header, right_header, conditions, std::move(residual_condition), kind, strictness,
+        description.point_side_is_right, size_limits,
         join_settings.max_joined_block_size_rows, join_settings.max_joined_block_size_bytes);
 
     node.children = {join_left_node, join_right_node};
@@ -1794,18 +1789,15 @@ static QueryPlanNode buildPhysicalJoinImpl(
     collect_required_input_nodes(on_clause_condition);
     collect_required_input_nodes(residual_filter_condition);
 
-    ExpressionActionsPtr ie_join_residual_condition;
+    ExpressionActionsPtr specialized_join_residual_condition;
     if (on_clause_condition && (is_disjunctive_condition || !canPushDownFromOn(join_operator)))
     {
-        /// Band join can leave extra ON conjuncts only for ALL INNER, whose ON conditions
-        /// always push down; the non-pushdown kinds decline in detection when any remain.
-        chassert(!band_join_description);
         auto on_clause_dag = JoinExpressionActions::getSubDAG(std::views::single(on_clause_condition));
         auto on_clause_expression = std::make_shared<ExpressionActions>(std::move(on_clause_dag), optimization_settings.actions_settings);
-        /// For IEJoin the condition gates candidate pairs inside the operator; TableJoin's
-        /// mixed join expression is consumed only by the hash-family algorithms.
-        if (ie_join_description)
-            ie_join_residual_condition = std::move(on_clause_expression);
+        /// For the specialized joins the condition gates candidates inside the operator;
+        /// TableJoin's mixed join expression is consumed only by the hash-family algorithms.
+        if (ie_join_description || band_join_description)
+            specialized_join_residual_condition = std::move(on_clause_expression);
         else
             table_join->getMixedJoinExpression() = std::move(on_clause_expression);
         on_clause_condition = JoinActionRef(nullptr);
@@ -1914,7 +1906,7 @@ static QueryPlanNode buildPhysicalJoinImpl(
         constructBandJoinStep(
             node, std::move(left_dag), std::move(right_dag), std::move(residual_dag),
             std::make_pair(band_residual_filter_condition_name, can_remove_residual_filter),
-            std::move(*band_join_description),
+            std::move(*band_join_description), std::move(specialized_join_residual_condition),
             join_operator.kind, join_operator.strictness,
             join_settings, sorting_settings,
             optimization_settings.max_step_description_length, nodes);
@@ -1929,7 +1921,7 @@ static QueryPlanNode buildPhysicalJoinImpl(
         constructIEJoinStep(
             node, std::move(left_dag), std::move(right_dag), std::move(residual_dag),
             std::make_pair(ie_residual_filter_condition_name, can_remove_residual_filter),
-            std::move(*ie_join_description), std::move(ie_join_residual_condition),
+            std::move(*ie_join_description), std::move(specialized_join_residual_condition),
             join_operator.kind, join_operator.strictness,
             join_settings, sorting_settings,
             optimization_settings.max_step_description_length, nodes);

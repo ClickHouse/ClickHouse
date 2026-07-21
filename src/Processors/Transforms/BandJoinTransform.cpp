@@ -243,6 +243,7 @@ BandJoinProbeTransform::BandJoinProbeTransform(
     SharedHeader output_header_,
     const BandJoinConditions & conditions_,
     BandJoinKind kind_,
+    std::optional<JoinResidualCondition> residual_,
     BandJoinSharedStatePtr state_,
     size_t max_joined_block_rows_,
     size_t max_joined_block_bytes_)
@@ -263,6 +264,16 @@ BandJoinProbeTransform::BandJoinProbeTransform(
     if (output_header.columns() <= input_header.columns())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Band join output header must be the concatenation of the input headers, got {} and {}",
             input_header.dumpStructure(), output_header.dumpStructure());
+
+    if (residual_)
+    {
+        /// The interval-side header is the output's tail (the output is the concatenation,
+        /// checked above); the residual's side 1 positions refer to it.
+        Block interval_header;
+        for (size_t i = input_header.columns(); i < output_header.columns(); ++i)
+            interval_header.insert(output_header.getByPosition(i));
+        residual.emplace(std::move(*residual_), input_header, interval_header);
+    }
 
     lower_strict = conditions[0].op == JoinConditionOperator::Greater;
     upper_strict = conditions[1].op == JoinConditionOperator::Less;
@@ -322,6 +333,8 @@ void BandJoinProbeTransform::consumeProbeChunk(Chunk chunk)
 
 void BandJoinProbeTransform::resetChunkState()
 {
+    /// Every completed row flushes its pending residual candidates in finishRow.
+    chassert(pending_count == 0);
     point_columns.clear();
     num_point_rows = 0;
     point_keys = {};
@@ -508,6 +521,22 @@ bool BandJoinProbeTransform::continueWalk(size_t point_row)
 
 bool BandJoinProbeTransform::onMatch(size_t point_row, size_t block_index, size_t row)
 {
+    if (residual)
+    {
+        /// A candidate becomes a match only through the residual: buffer it (candidates must
+        /// already satisfy both bounds, re-verify like an emitted pair) and flush per bounded
+        /// mini-batch, or earlier when the pending rows would reach the output row cap.
+        chassert(checkEmittedPair(point_row, index->blocks[block_index], row));
+        if (pending_segments.empty() || pending_segments.back().first != block_index)
+            pending_segments.emplace_back(block_index, ColumnUInt64::create());
+        pending_segments.back().second->getData().push_back(row);
+        ++pending_count;
+        if (pending_count >= residual_batch_size
+            || (max_joined_block_rows != 0 && out_point_rows.size() + pending_count >= max_joined_block_rows))
+            return flushPendingCandidates(point_row);
+        return true;
+    }
+
     current_row_matched = true;
     switch (kind)
     {
@@ -525,8 +554,81 @@ bool BandJoinProbeTransform::onMatch(size_t point_row, size_t block_index, size_
     }
 }
 
+bool BandJoinProbeTransform::flushPendingCandidates(size_t point_row)
+{
+    if (pending_count == 0)
+        return true;
+    produce_work += pending_count;
+
+    /// Gather the residual's input columns for the candidates: the point side is the single
+    /// point row replicated, the interval side is gathered per pending segment.
+    auto point_indexes = ColumnUInt64::create(pending_count, point_row);
+    const auto & output_header = getOutputs().front().getHeader();
+    const size_t num_point_columns = point_columns.size();
+
+    Columns expression_columns;
+    expression_columns.reserve(residual->sources().size());
+    for (const auto & source : residual->sources())
+    {
+        if (source.side == 0)
+        {
+            expression_columns.push_back(point_columns[source.position]->index(*point_indexes, 0));
+            continue;
+        }
+        auto gather_segment = [&](size_t block_index, const ColumnUInt64 & rows)
+        {
+            return index->blocks[block_index].columns[source.position]->index(rows, 0);
+        };
+        if (pending_segments.size() == 1)
+        {
+            expression_columns.push_back(gather_segment(pending_segments.front().first, *pending_segments.front().second));
+        }
+        else
+        {
+            auto result = output_header.getByPosition(num_point_columns + source.position).type->createColumn();
+            result->reserve(pending_count);
+            for (const auto & [block_index, rows] : pending_segments)
+            {
+                auto gathered = gather_segment(block_index, *rows);
+                result->insertRangeFrom(*gathered, 0, gathered->size());
+            }
+            expression_columns.push_back(std::move(result));
+        }
+    }
+
+    IColumn::Filter mask = residual->evaluateMask(std::move(expression_columns), pending_count);
+
+    bool keep_walking = true;
+    size_t candidate = 0;
+    for (const auto & [block_index, rows] : pending_segments)
+    {
+        for (UInt64 row : rows->getData())
+        {
+            if (!mask[candidate++])
+                continue;
+            current_row_matched = true;
+            if (kind != BandJoinKind::LeftAnti)
+                emitMatch(point_row, block_index, row);
+            if (kind == BandJoinKind::LeftSemi || kind == BandJoinKind::LeftAnti)
+            {
+                /// The first passing candidate decides the row; the rest are discarded.
+                keep_walking = false;
+                break;
+            }
+        }
+        if (!keep_walking)
+            break;
+    }
+
+    pending_segments.clear();
+    pending_count = 0;
+    return keep_walking;
+}
+
 void BandJoinProbeTransform::finishRow(size_t point_row)
 {
+    if (residual)
+        flushPendingCandidates(point_row);
     if (!current_row_matched && emitsUnmatchedRows())
         emitUnmatched(point_row);
 }

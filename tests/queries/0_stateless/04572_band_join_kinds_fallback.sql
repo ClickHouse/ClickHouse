@@ -2,9 +2,9 @@
 
 -- Kind-scope boundaries of the band join and `join_use_nulls` behavior of the in-scope kinds.
 -- Kinds that keep unmatched interval-side rows (RIGHT/FULL relative to the point side, and
--- SEMI/ANTI keeping the interval side) fall through to IEJoin listed next; so do the in-scope
--- non-INNER kinds when extra ON conjuncts remain (they affect matching, and residual
--- evaluation inside the band operator is not implemented).
+-- SEMI/ANTI keeping the interval side) fall through to IEJoin listed next; the in-scope kinds
+-- with extra ON conjuncts stay with the band join, which evaluates them as a residual
+-- condition inside the operator.
 
 -- Keep the written join order so the pins below see the orientation and kind as written.
 SET query_plan_optimize_join_order_limit = 0;
@@ -35,8 +35,8 @@ FROM (EXPLAIN SELECT count() FROM kf_p p RIGHT SEMI JOIN kf_i i ON p.t >= i.lo A
 SELECT 'anti of interval side', countIf(explain LIKE '%IEJoin%') > 0, countIf(explain LIKE '%BandJoin%')
 FROM (EXPLAIN SELECT count() FROM kf_i i LEFT ANTI JOIN kf_p p ON p.t >= i.lo AND p.t <= i.hi);
 
--- Extra ON conjuncts push down as a post-join filter only for ALL INNER: the non-INNER kinds
--- decline and fall through to IEJoin, which evaluates them as a residual condition inside
+-- Extra ON conjuncts push down as a post-join filter for ALL INNER; the non-INNER kinds keep
+-- them as a residual condition inside the band join operator (no IEJoin fall-through)
 SELECT 'inner extra conjunct', count() > 0
 FROM (EXPLAIN SELECT count() FROM kf_p p JOIN kf_i i ON p.t >= i.lo AND p.t <= i.hi AND p.id != i.id) WHERE explain LIKE '%BandJoin%';
 SELECT 'left extra conjunct', countIf(explain LIKE '%IEJoin%') > 0, countIf(explain LIKE '%BandJoin%')

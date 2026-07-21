@@ -1,0 +1,22 @@
+routed	1	1
+semi	1
+semi	2
+anti	3
+anti	4
+anti	5
+anti	6
+semi vs oracle	1
+anti vs oracle	1
+semi pair valid	1	1
+semi pair valid	2	1
+semi parity	1
+anti parity	1
+left counts	1	1
+left counts	2	225
+left counts	3	0
+left counts	4	0
+left counts	5	0
+left counts	6	0
+left vs oracle	1
+left parity	1
+left caps	1

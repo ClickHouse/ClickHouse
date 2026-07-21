@@ -11,6 +11,7 @@
 #include <Interpreters/JoinExpressionActions.h>
 #include <Processors/Chunk.h>
 #include <Processors/Transforms/BuildProbeJoinTransforms.h>
+#include <Processors/Transforms/JoinResidualCondition.h>
 #include <QueryPipeline/SizeLimits.h>
 #include <Common/PODArray.h>
 
@@ -160,6 +161,8 @@ private:
 /// `join_use_nulls` the planner made those columns Nullable in the pre-join actions); SEMI
 /// emits the first match and skips the rest of the walk; ANTI emits padded on no-match only.
 /// NULL/NaN point keys match nothing, so LEFT/ANTI emit them padded.
+/// With a residual ON condition the walk's candidates are buffered and gated through it in
+/// bounded mini-batches; only the passing ones count as matches of the point row.
 class BandJoinProbeTransform final : public JoinProbeSideTransform
 {
 public:
@@ -168,6 +171,7 @@ public:
         SharedHeader output_header_,
         const BandJoinConditions & conditions_,
         BandJoinKind kind_,
+        std::optional<JoinResidualCondition> residual_,
         BandJoinSharedStatePtr state_,
         size_t max_joined_block_rows_,
         size_t max_joined_block_bytes_);
@@ -199,8 +203,13 @@ private:
     bool descendDirectory(size_t point_row, bool & out_of_budget);
 
     /// Register a match of the walk; returns whether the walk keeps looking for more
-    /// (SEMI/ANTI are decided by their first match and skip the rest).
+    /// (SEMI/ANTI are decided by their first match and skip the rest). With a residual the
+    /// match only becomes a buffered candidate, decided by a later flush.
     bool onMatch(size_t point_row, size_t block_index, size_t row);
+    /// Evaluate the residual over the pending candidates and consume them; the passing ones
+    /// are the row's matches (LEFT emits each, SEMI emits the first and stops, ANTI only
+    /// decides). Returns whether the walk keeps looking for more candidates.
+    bool flushPendingCandidates(size_t point_row);
     /// The point row's walk is complete: LEFT/ANTI emit the row padded when nothing matched.
     void finishRow(size_t point_row);
     bool emitsUnmatchedRows() const { return kind == BandJoinKind::Left || kind == BandJoinKind::LeftAnti; }
@@ -219,6 +228,8 @@ private:
     /// Strictness of each bound, derived from its operator in the constructor.
     bool lower_strict = false;
     bool upper_strict = false;
+    /// The residual ON condition gating the candidates, bound to the (point, interval) sides.
+    std::optional<JoinResidualConditionEvaluator> residual;
     BandJoinSharedStatePtr state;
     std::shared_ptr<const BandJoinIndex> index;
     /// Output caps with hash-join semantics: the byte cap takes effect only with a non-zero
@@ -253,6 +264,14 @@ private:
     PaddedPODArray<UInt64> out_point_rows;
     std::vector<std::pair<size_t, ColumnUInt64::MutablePtr>> out_segments;
     size_t out_bytes_estimate = 0;
+
+    /// Pending residual candidates of the current point row, as per-block segments in walk
+    /// order; flushed per bounded mini-batch (the first passing candidate decides SEMI/ANTI,
+    /// so small batches restore the first-match short-circuit at batch granularity) and when
+    /// the pending rows would reach the output row cap, which keeps the cap exact.
+    static constexpr size_t residual_batch_size = 1024;
+    std::vector<std::pair<size_t, ColumnUInt64::MutablePtr>> pending_segments;
+    size_t pending_count = 0;
 
     /// Bound on the work of one produceChunk call - rows scanned, directory entries visited,
     /// search steps - so that control regularly returns to the executor, which observes

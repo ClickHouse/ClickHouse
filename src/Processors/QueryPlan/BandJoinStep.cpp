@@ -2,6 +2,7 @@
 
 #include <Core/Block.h>
 #include <IO/Operators.h>
+#include <Interpreters/ExpressionActions.h>
 #include <Processors/QueryPlan/BandJoinStep.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/Transforms/BandJoinTransform.h>
@@ -57,6 +58,7 @@ BandJoinStep::BandJoinStep(
     const SharedHeader & left_header_,
     const SharedHeader & right_header_,
     BandJoinConditions conditions_,
+    ExpressionActionsPtr residual_condition_,
     JoinKind kind_,
     JoinStrictness strictness_,
     bool point_side_is_right_,
@@ -73,6 +75,9 @@ BandJoinStep::BandJoinStep(
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Band join does not support {} {} JOIN", toString(strictness_), toString(kind_));
     kind = band_kind->first;
     swap_inputs = band_kind->second;
+
+    if (residual_condition_)
+        residual = resolveJoinResidualCondition(std::move(residual_condition_), *left_header_, *right_header_);
 
     const auto & point_header = point_side_is_right_ ? right_header_ : left_header_;
     const auto & interval_header = point_side_is_right_ ? left_header_ : right_header_;
@@ -118,13 +123,21 @@ QueryPipelineBuilderPtr BandJoinStep::updatePipeline(QueryPipelineBuilders pipel
     auto build_transform = std::make_shared<BandJoinBuildTransform>(
         build_pipeline->getSharedHeader(), conditions, size_limits, state);
 
+    auto executed_residual = residual;
+    if (swap_inputs && executed_residual)
+    {
+        /// The expression and positions are orientation-independent, only the source sides flip.
+        for (auto & source : executed_residual->inputs)
+            source.side = 1 - source.side;
+    }
+
     SharedHeader probe_header = probe_pipeline->getSharedHeader();
     /// The probe transform emits the point-side columns before the interval-side ones.
     SharedHeader joined_header = concatHeaders({probe_header, build_pipeline->getSharedHeader()});
-    auto probe_transform_factory = [this, probe_header, joined_header, state]()
+    auto probe_transform_factory = [this, probe_header, joined_header, state, executed_residual]()
     {
         return std::make_shared<BandJoinProbeTransform>(
-            probe_header, joined_header, conditions, kind, state, max_joined_block_rows, max_joined_block_bytes);
+            probe_header, joined_header, conditions, kind, executed_residual, state, max_joined_block_rows, max_joined_block_bytes);
     };
 
     auto pipeline = QueryPipelineBuilder::joinPipelinesBuildProbe(
@@ -172,6 +185,8 @@ void BandJoinStep::describeActions(FormatSettings & settings) const
 {
     settings.out << settings.detail_prefix << "Type: " << toString(kind) << '\n';
     settings.out << settings.detail_prefix << "Conditions: " << formatConditions() << '\n';
+    if (residual)
+        settings.out << settings.detail_prefix << "Residual filter: " << residual->actions->getSampleBlock().getByPosition(0).name << '\n';
     settings.out << settings.detail_prefix << "PointSide: " << (swap_inputs ? "Right" : "Left") << '\n';
     if (swap_inputs)
         settings.out << settings.detail_prefix << "Swapped: true\n";
@@ -181,6 +196,8 @@ void BandJoinStep::describeActions(JSONBuilder::JSONMap & map) const
 {
     map.add("Type", toString(kind));
     map.add("Conditions", formatConditions());
+    if (residual)
+        map.add("Residual filter", residual->actions->getSampleBlock().getByPosition(0).name);
     map.add("PointSide", swap_inputs ? "Right" : "Left");
     if (swap_inputs)
         map.add("Swapped", true);

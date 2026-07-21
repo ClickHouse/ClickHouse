@@ -13,6 +13,8 @@ namespace DB
 /// a shared read-only index in parallel. The point side may be either query input: when it is
 /// the right one, the step swaps the input pipelines so the point side probes and restores the
 /// query column order on top of the join (`Swapped: true` in EXPLAIN).
+/// An optional residual condition (the ON conjuncts beyond the two bounds, a single boolean
+/// expression over columns of both inputs) gates the candidates inside the probe.
 class BandJoinStep : public IQueryPlanStep
 {
 public:
@@ -20,6 +22,7 @@ public:
         const SharedHeader & left_header_,
         const SharedHeader & right_header_,
         BandJoinConditions conditions_,
+        ExpressionActionsPtr residual_condition_,
         JoinKind kind_,
         JoinStrictness strictness_,
         bool point_side_is_right_,
@@ -47,6 +50,9 @@ private:
     /// The two bounds with the positions resolved against the point-side and interval-side
     /// headers; [0] is the lower bound, [1] the upper.
     BandJoinConditions conditions;
+    /// The residual ON condition with its inputs resolved against the query-orientation
+    /// headers, if any.
+    std::optional<JoinResidualCondition> residual;
 
     BandJoinKind kind = BandJoinKind::Inner;
     /// Whether to swap the input pipelines so the point side probes; set when the point
