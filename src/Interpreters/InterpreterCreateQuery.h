@@ -116,7 +116,7 @@ private:
     void convertTableEngineForCloud(ASTStorage & table_engine, TableProperties & properties) const;
 #endif
     /// Inserts data in created table if it's CREATE ... SELECT
-    BlockIO fillTableIfNeeded(const ASTCreateQuery & create);
+    BlockIO fillTableIfNeeded(const ASTCreateQuery & create, bool skip_target_insert_access_check = false);
 
     void assertOrSetUUID(ASTCreateQuery & create, const DatabasePtr & database) const;
 
