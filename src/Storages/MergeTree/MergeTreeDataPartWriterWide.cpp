@@ -3,6 +3,8 @@
 #include <Compression/CompressedReadBufferFromFile.h>
 #include <Compression/CompressionFactory.h>
 #include <DataTypes/Serializations/ISerialization.h>
+#include <DataTypes/DataTypeArray.h>
+#include <Compression/CompressionCodecQuantized.h>
 #include <Interpreters/Context.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/MarkCache.h>
@@ -194,11 +196,47 @@ void MergeTreeDataPartWriterWide::addStreams(
         const auto column_desc = metadata_snapshot->columns.tryGetColumnDescription(GetColumnsOptions(GetColumnsOptions::AllPhysical), name_and_type.getNameInStorage());
 
         UInt64 max_compress_block_size = 0;
+        bool user_set_block_size = false;
         if (column_desc)
+        {
             if (const auto * value = column_desc->settings.tryGet("max_compress_block_size"))
+            {
                 max_compress_block_size = value->safeGet<UInt64>();
+                user_set_block_size = true;
+            }
+            if (column_desc->settings.tryGet("min_compress_block_size"))
+                user_set_block_size = true;
+        }
         if (!max_compress_block_size)
             max_compress_block_size = settings.max_compress_block_size;
+
+        /// Align ONLY the full-precision vector data (the `Array` elements) of a `Quantized(...)` column to one vector
+        /// per compressed block, so the two-phase quantized-codes vector search can rescore a single vector with a
+        /// single-block point read (see MergeTreePointReadSource) instead of decompressing a whole granule. Other
+        /// substreams (array offsets, the `.quantized` codes, the per-part PQ codebook) keep the default block size:
+        /// re-blocking the single-value codebook into tiny blocks would break its read. Skipped when the user has
+        /// configured the column's block size explicitly (either min or max).
+        if (!user_set_block_size)
+        {
+            bool is_array_elements = false;
+            for (const auto & elem : substream_path)
+                if (elem.type == ISerialization::Substream::ArrayElements)
+                    is_array_elements = true;
+
+            if (is_array_elements)
+            {
+                if (auto params = tryExtractQuantizedCodecParams(effective_codec_desc))
+                {
+                    if (const auto * array_type = typeid_cast<const DataTypeArray *>(name_and_type.type.get()))
+                    {
+                        const UInt64 row_size = params->dimensions * array_type->getNestedType()->getSizeOfValueInMemory();
+                        if (row_size != 0)
+                            max_compress_block_size = row_size;
+                    }
+                }
+            }
+        }
+
         /// Clamp to prevent absurd memory allocations from fuzzed or misconfigured column settings.
         max_compress_block_size = std::min<UInt64>(max_compress_block_size, MergeTreeWriterSettings::MAX_COMPRESS_BLOCK_SIZE);
 

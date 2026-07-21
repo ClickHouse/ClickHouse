@@ -31,9 +31,6 @@
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 
-#include <Compression/CompressionCodecQuantized.h>
-#include <DataTypes/DataTypeArray.h>
-
 #include <Disks/DiskType.h>
 #include <Disks/IDisk.h>
 #include <Disks/StoragePolicy.h>
@@ -665,30 +662,6 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         columns = getColumnsDescriptionFromZookeeper(zookeeper_info, context);
     else
         columns = args.columns;
-
-    /// For a dense-vector column carrying a `Quantized(...)` codec (a fixed-size Array stored uncompressed), set a
-    /// per-column `max_compress_block_size` equal to one vector's byte size (`dimensions * sizeof(element)`), i.e. one
-    /// vector per compressed block. This lets the two-phase quantized-codes vector search rescore a single vector with a
-    /// single-block point read instead of decompressing a whole granule (see MergeTreePointReadSource), without shrinking
-    /// the blocks of any other column. Only applied when the user has not already set a per-column block size on it.
-    {
-        std::vector<std::pair<String, UInt64>> columns_to_align;
-        for (const auto & column : columns)
-        {
-            auto params = tryExtractQuantizedCodecParams(column.codec);
-            if (!params)
-                continue;
-            const auto * array_type = typeid_cast<const DataTypeArray *>(column.type.get());
-            if (!array_type)
-                continue;
-            const UInt64 row_size = params->dimensions * array_type->getNestedType()->getSizeOfValueInMemory();
-            if (row_size == 0 || column.settings.tryGet("max_compress_block_size"))
-                continue;
-            columns_to_align.emplace_back(column.name, row_size);
-        }
-        for (const auto & [name, row_size] : columns_to_align)
-            columns.modify(name, [row_size](ColumnDescription & c) { c.settings.push_back(SettingChange{"max_compress_block_size", row_size}); });
-    }
 
     metadata.setColumns(columns);
     metadata.setComment(args.comment);

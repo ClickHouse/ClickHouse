@@ -11,6 +11,8 @@
 #include <Storages/MergeTree/MergeTreeReadTask.h>
 #include <Processors/Sources/MergeTreePointReadSource.h>
 #include <Compression/CompressionCodecQuantized.h>
+#include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/AlterConversions.h>
 
 #include <algorithm>
 
@@ -253,6 +255,19 @@ Processors LazyReadFromMergeTreeSource::buildReaders()
             for (const auto & part_with_ranges : lazy_materializing_rows->ranges_in_data_parts)
             {
                 if (!MergeTreePointReadSource::isEligible(part_with_ranges, *vector_column, point_read_dims))
+                {
+                    all_eligible = false;
+                    break;
+                }
+                /// The point read fetches the base `.bin` directly and bypasses the on-the-fly mutations, patch parts,
+                /// lightweight deletes and column renames that `MergeTreeReadTask` would otherwise apply. Fall back to
+                /// the granule read for any part that needs such conversions, so we never return stale/unconverted rows.
+                auto alter_conversions = MergeTreeData::getAlterConversionsForPart(part_with_ranges.data_part, mutations_snapshot, context);
+                if (part_with_ranges.data_part->hasLightweightDelete()
+                    || alter_conversions->hasMutations()
+                    || alter_conversions->hasPatches()
+                    || alter_conversions->hasLightweightDelete()
+                    || !alter_conversions->getRenameMap().empty())
                 {
                     all_eligible = false;
                     break;

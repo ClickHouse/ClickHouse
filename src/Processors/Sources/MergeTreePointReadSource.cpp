@@ -4,6 +4,7 @@
 #include <Columns/ColumnVector.h>
 #include <Compression/CompressedReadBufferFromFile.h>
 #include <Compression/CompressionInfo.h>
+#include <Core/Block.h>
 #include <Core/TypeId.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/Serializations/ISerialization.h>
@@ -199,6 +200,15 @@ void MergeTreePointReadSource::readOtherColumns(size_t base, size_t batch, Colum
             from_mark, /*current_task_last_mark=*/ from_mark + 1, /*continue_reading=*/ false,
             /*max_rows_to_read=*/ 1, /*rows_offset=*/ row - granule_start, dst_columns);
     }
+
+    /// Normalize exactly like the standard read path: synthesize columns and defaults that are absent from older parts
+    /// and fix partially read Array/Nested offsets, then apply any required type conversions. Without this a lazy column
+    /// added by a later ALTER (or a shared-offset array payload) could be returned invalid/null.
+    bool should_evaluate_missing_defaults = false;
+    other_reader->fillMissingColumns(dst_columns, should_evaluate_missing_defaults, batch);
+    if (should_evaluate_missing_defaults)
+        other_reader->evaluateMissingDefaults(Block{}, dst_columns);
+    other_reader->performRequiredConversions(dst_columns);
 }
 
 Chunk MergeTreePointReadSource::generate()
