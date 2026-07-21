@@ -210,6 +210,68 @@ Cost ReplicatedReadStrategy::estimateOperatorCost(const CostInputs & inputs) con
     return fullReadCost(inputs);
 }
 
+static Cost mergingAggregatedCost(const CostInputs & inputs)
+{
+    Cost cost;
+    cost.work = (inputs.output_stats.estimated_row_count
+        + inputs.output_stats.estimated_row_count * inputs.output_stats.estimated_bytes_per_row
+        + inputStats(inputs, 0).estimated_row_count) / inputs.parallelism;
+    /// Sequential ~ output groups (hash table size). Penalizes gather-to-one-node
+    /// merge for large outputs; bucket-level merge within a node is parallel.
+    cost.sequential = inputs.output_stats.estimated_row_count / inputs.parallelism;
+    return cost;
+}
+
+static Cost broadcastExchangeCost(const CostInputs & inputs)
+{
+    Cost cost;
+    /// Each of the N receiving nodes gets a full copy, so N times the data crosses the network;
+    /// without the factor a 100-node broadcast would look as cheap as a 2-node one.
+    cost.network += inputs.output_stats.estimated_row_count * inputs.output_stats.estimated_bytes_per_row
+        * std::max(1.0, inputs.node_count);
+    cost.sequential += inputs.config.exchange_fixed_overhead;
+    return cost;
+}
+
+static Cost exchangeCost(const CostInputs & inputs, const IQueryPlanStep & step)
+{
+    /// A sorted gather over a partial top-N transfers min(input_rows, L * node_count) rows,
+    /// not the group's trimmed L; the caller resolves that override from the memo.
+    const Float64 rows = inputs.exchange_rows_override.value_or(inputs.output_stats.estimated_row_count);
+    Cost cost;
+    /// Each row crosses the network once.
+    cost.network += rows * inputs.output_stats.estimated_bytes_per_row;
+    cost.sequential += inputs.config.exchange_fixed_overhead;
+    /// Gather (N->1) and Scatter (1->N) funnel every row through a single node that
+    /// sends or receives them sequentially; Shuffle (N->N) spreads this across nodes.
+    /// Without the funnel cost a gather/scatter of a large input looks as cheap as a
+    /// shuffle, so the optimizer distributes work (e.g. a sort) that should stay local.
+    if (dynamic_cast<const GatherExchangeStep *>(&step) || dynamic_cast<const ScatterExchangeStep *>(&step))
+        cost.sequential += inputs.config.funnel_sequential_cost_per_row * rows;
+    return cost;
+}
+
+static Cost sortCost(const CostInputs & inputs, const SortingStep & sorting_step)
+{
+    Float64 rows = inputs.output_stats.estimated_row_count;
+    /// A bounded (top-N) sort scans all of its input rows, keeping only the best L; the group
+    /// stats are already trimmed to L, so read the input cardinality from the input.
+    if (sorting_step.getLimit() > 0)
+        rows = inputStats(inputs, 0).estimated_row_count;
+    /// A top-N keeps a heap of at most L rows (n * log L); a full sort is n * log n.
+    const Float64 sorted_rows = sorting_step.getLimit() > 0
+        ? std::min(rows, Float64(sorting_step.getLimit()))
+        : rows;
+    Cost cost;
+    cost.work += rows * std::max(1.0, std::log2(sorted_rows)) / inputs.parallelism;
+    /// N-way merge is single-threaded and sees only the rows the sort emits.
+    cost.sequential += inputs.config.merge_sequential_cost_per_row * inputs.output_stats.estimated_row_count / inputs.parallelism;
+    return cost;
+}
+
+/// Steps with a physical strategy price themselves; the rest are matched here - exchanges by
+/// `dynamic_cast` (they form a hierarchy under `LogicalExchangeStep`), other steps by
+/// `typeid_cast` (exact types).
 Cost estimateOperatorCost(const CostInputs & inputs, const IImplementationStrategy * strategy)
 {
     const IQueryPlanStep * step = inputs.step;
@@ -242,63 +304,16 @@ Cost estimateOperatorCost(const CostInputs & inputs, const IImplementationStrate
     }
 
     if (typeid_cast<const MergingAggregatedStep *>(step))
-    {
-        Cost cost;
-        cost.work = (inputs.output_stats.estimated_row_count
-            + inputs.output_stats.estimated_row_count * inputs.output_stats.estimated_bytes_per_row
-            + inputStats(inputs, 0).estimated_row_count) / inputs.parallelism;
-        /// Sequential ~ output groups (hash table size). Penalizes gather-to-one-node
-        /// merge for large outputs; bucket-level merge within a node is parallel.
-        cost.sequential = inputs.output_stats.estimated_row_count / inputs.parallelism;
-        return cost;
-    }
+        return mergingAggregatedCost(inputs);
 
     if (dynamic_cast<const BroadcastExchangeStep *>(step))
-    {
-        Cost cost;
-        /// Each of the N receiving nodes gets a full copy, so N times the data crosses the network;
-        /// without the factor a 100-node broadcast would look as cheap as a 2-node one.
-        cost.network += inputs.output_stats.estimated_row_count * inputs.output_stats.estimated_bytes_per_row
-            * std::max(1.0, inputs.node_count);
-        cost.sequential += inputs.config.exchange_fixed_overhead;
-        return cost;
-    }
+        return broadcastExchangeCost(inputs);
 
     if (dynamic_cast<const LogicalExchangeStep *>(step))
-    {
-        /// A sorted gather over a partial top-N transfers min(input_rows, L * node_count) rows,
-        /// not the group's trimmed L; the caller resolves that override from the memo.
-        const Float64 rows = inputs.exchange_rows_override.value_or(inputs.output_stats.estimated_row_count);
-        Cost cost;
-        /// Each row crosses the network once.
-        cost.network += rows * inputs.output_stats.estimated_bytes_per_row;
-        cost.sequential += inputs.config.exchange_fixed_overhead;
-        /// Gather (N->1) and Scatter (1->N) funnel every row through a single node that
-        /// sends or receives them sequentially; Shuffle (N->N) spreads this across nodes.
-        /// Without the funnel cost a gather/scatter of a large input looks as cheap as a
-        /// shuffle, so the optimizer distributes work (e.g. a sort) that should stay local.
-        if (dynamic_cast<const GatherExchangeStep *>(step) || dynamic_cast<const ScatterExchangeStep *>(step))
-            cost.sequential += inputs.config.funnel_sequential_cost_per_row * rows;
-        return cost;
-    }
+        return exchangeCost(inputs, *step);
 
     if (const auto * sorting_step = typeid_cast<const SortingStep *>(step))
-    {
-        Float64 rows = inputs.output_stats.estimated_row_count;
-        /// A bounded (top-N) sort scans all of its input rows, keeping only the best L; the group
-        /// stats are already trimmed to L, so read the input cardinality from the input.
-        if (sorting_step->getLimit() > 0)
-            rows = inputStats(inputs, 0).estimated_row_count;
-        /// A top-N keeps a heap of at most L rows (n * log L); a full sort is n * log n.
-        const Float64 sorted_rows = sorting_step->getLimit() > 0
-            ? std::min(rows, Float64(sorting_step->getLimit()))
-            : rows;
-        Cost cost;
-        cost.work += rows * std::max(1.0, std::log2(sorted_rows)) / inputs.parallelism;
-        /// N-way merge is single-threaded and sees only the rows the sort emits.
-        cost.sequential += inputs.config.merge_sequential_cost_per_row * inputs.output_stats.estimated_row_count / inputs.parallelism;
-        return cost;
-    }
+        return sortCost(inputs, *sorting_step);
 
     if (inputs.input_stats.empty())
         return Cost{.work = inputs.config.unknown_leaf_cost};
