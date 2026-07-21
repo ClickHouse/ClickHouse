@@ -640,6 +640,7 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             ReadBufferFromString buf(time_str);
             time_t time = 0;
             readDateTimeText(time, buf);
+            assertEOF(buf); // reject trailing characters, e.g. '2024 April 4'
             res->fake_time_for_view = Int64(time);
 
             break;
