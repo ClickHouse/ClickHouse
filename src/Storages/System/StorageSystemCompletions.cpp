@@ -105,11 +105,15 @@ static void fillDataWithTableColumns(
     const auto & columns = snapshot->getColumns();
     for (const auto & column : columns)
     {
-        if (check_access_for_columns
-            && !(access->isGranted(AccessType::SHOW_COLUMNS, database_name, table_name, column.name)
-                 && (!overlay_source_id
-                     || access->isGranted(
-                         AccessType::SHOW_COLUMNS, overlay_source_id->database_name, overlay_source_id->table_name, column.name))))
+        /// The source-side check runs regardless of the facade-side per-database grant
+        /// shortcut (`check_access_for_columns`), since such a shortcut does not cover
+        /// the source database.
+        if (overlay_source_id
+            && !access->isGranted(
+                AccessType::SHOW_COLUMNS, overlay_source_id->database_name, overlay_source_id->table_name, column.name))
+            continue;
+
+        if (check_access_for_columns && !access->isGranted(AccessType::SHOW_COLUMNS, database_name, table_name, column.name))
             continue;
 
         res_columns[0]->insert(column.name);

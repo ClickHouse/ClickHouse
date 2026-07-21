@@ -4,7 +4,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-# system.graphite must not walk a read-only Overlay facade: the facade owns no tables, and its
+# system.graphite_retentions must not walk a read-only Overlay facade: the facade owns no tables, and its
 # iterator returns the underlying source tables, which the scan already visits through their own
 # databases. Walking the facade too would list every overlay-backed GraphiteMergeTree table twice
 # in the Tables.database / Tables.table arrays (both times under the source table's own id).
@@ -27,14 +27,14 @@ ${CLICKHOUSE_CLIENT} -nm --query "
 echo 'The source table is listed exactly once (no duplicate entry through the facade)'
 ${CLICKHOUSE_CLIENT} --query "
     SELECT DISTINCT arrayCount(x -> x = '${DB_SRC}', \`Tables.database\`)
-    FROM system.graphite
+    FROM system.graphite_retentions
     WHERE has(\`Tables.database\`, '${DB_SRC}')
 "
 
 echo 'No entries are listed under the facade database name'
 ${CLICKHOUSE_CLIENT} --query "
     SELECT count()
-    FROM system.graphite
+    FROM system.graphite_retentions
     WHERE has(\`Tables.database\`, '${DB_OVL}')
 "
 
