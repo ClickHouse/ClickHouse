@@ -785,7 +785,12 @@ create view query_display_names as select * from
 create table flagged_queries engine File(TSV, 'analyze-confirm/flagged-queries.tsv')
     as select
         query_metric_stats.test test, query_metric_stats.query_index query_index,
-        diff, stat_threshold
+        diff, stat_threshold,
+        -- Carried along so the confirmation rerun is held to the same
+        -- per-query bar as the flagging rule (not just the 0.15 floor):
+        -- historically noisy queries have learned thresholds above the floor.
+        ceil(greatest(0.15, historical_thresholds.max_diff,
+            test_thresholds.report_threshold), 2) changed_threshold
     from query_metric_stats
     left join query_display_names
         on query_metric_stats.test = query_display_names.test
@@ -832,6 +837,20 @@ fi
 if ! restart
 then
     echo "confirm_changes: server restart failed, skipping confirmation"
+    while pkill -f clickhouse-serv ; do echo . ; sleep 1 ; done
+    echo all killed
+    return 0
+fi
+
+# The caller runs us with errexit disabled (fail-open), which also masks
+# failures inside restart: its return value only reflects the last check.
+# Verify both servers explicitly before spending the rerun budget.
+if ! clickhouse-client --port "$LEFT_SERVER_PORT" --receive_timeout=5 \
+        --query "select 1 format Null" \
+    || ! clickhouse-client --port "$RIGHT_SERVER_PORT" --receive_timeout=5 \
+        --query "select 1 format Null"
+then
+    echo "confirm_changes: servers not healthy after restart, skipping confirmation"
     while pkill -f clickhouse-serv ; do echo . ; sleep 1 ; done
     echo all killed
     return 0
@@ -974,13 +993,15 @@ parallel -v -j "$(nproc --all)" --joblog analyze-confirm/parallel-log.txt --null
     || echo "confirm_changes: some rerun stats failed to compute, those queries keep their original verdict"
 
 # 5. Demote the flagged queries whose rerun does not reproduce the change.
-# Confirmed = same-direction diff clearing the rerun noise threshold, in the
-# same shape as the production rule (0.15 floor, non-strict >=). The inner
-# join means only queries with rerun stats can be demoted: if the rerun failed
-# or produced no stats, the original verdict stands (fail-open).
+# Confirmed = same-direction diff clearing the exact production rule again:
+# the per-query changed threshold carried from the flagging step (strict >)
+# and the rerun's own noise threshold (non-strict >=). The inner join means
+# only queries with rerun stats can be demoted: if the rerun failed or
+# produced no stats, the original verdict stands (fail-open).
 if ! clickhouse-local --query "
 create view flagged_queries as select * from file('analyze-confirm/flagged-queries.tsv',
-    TSV, 'test text, query_index int, diff float, stat_threshold float');
+    TSV, 'test text, query_index int, diff float, stat_threshold float,
+        changed_threshold float');
 
 create view rerun_stats as
     select test, query_index,
@@ -998,7 +1019,8 @@ create table unconfirmed_queries engine File(TSV, 'analyze-confirm/unconfirmed-q
         on flagged_queries.test = rerun_stats.test
             and flagged_queries.query_index = rerun_stats.query_index
     where not (sign(diff_rerun) = sign(diff)
-        and abs(diff_rerun) >= greatest(0.15, stat_threshold_rerun))
+        and abs(diff_rerun) > changed_threshold
+        and abs(diff_rerun) >= stat_threshold_rerun)
     order by test, query_index
     ;
 " $CHPC_REPORT_LOCAL_QUERY_SETTINGS -- $CHPC_REPORT_LOCAL_SERVER_SETTINGS 2>> analyze-confirm/errors.log
@@ -1116,7 +1138,11 @@ create table queries engine File(TSVWithNamesAndTypes, 'report/queries.tsv')
                 (select test, query_index from unconfirmed_queries)) as changed_fail,
         abs(diff) > changed_threshold - 0.05 and abs(diff) >= stat_threshold as changed_show,
 
-        not changed_fail and stat_threshold > unstable_threshold as unstable_fail,
+        -- Demoted queries are excluded here too: a demotion must not resurface
+        -- as an 'unstable' failure through the flipped changed_fail.
+        not changed_fail and stat_threshold > unstable_threshold
+            and ((query_metric_stats.test, query_metric_stats.query_index) not in
+                (select test, query_index from unconfirmed_queries)) as unstable_fail,
         not changed_show and stat_threshold > unstable_threshold - 0.05 as unstable_show,
 
         left, right, diff, stat_threshold,

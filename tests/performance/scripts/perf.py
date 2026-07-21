@@ -970,19 +970,20 @@ for query_index in queries_to_run:
 
         avg_time_per_server = server_seconds / len(this_query_connections)
 
-        # Precision-targeted adaptive run policy: always do at least --min-runs
-        # runs per server (each individual run is still bounded by
+        # Precision-targeted adaptive run policy: do at least --min-runs runs
+        # per server (each individual run is still bounded by
         # --max-query-seconds), then stop as soon as the noise threshold of this
         # query drops to --tau, or a cap on the number of runs is reached:
         # --cap runs normally, --cap-fast runs for fast queries (they are cheap
-        # to rerun and, in relative terms, the noisiest). As an escape from
-        # pathologically slow queries, also stop once the cumulative time per
-        # server reaches 30 seconds, regardless of the precision reached.
-        if run < args.min_runs:
-            continue
-
+        # to rerun and, in relative terms, the noisiest). The escape from
+        # pathologically slow queries — stop once the cumulative time per server
+        # reaches 30 seconds — takes precedence over the --min-runs floor, so a
+        # e.g. 12 s query stops after 3 runs instead of burning 5 x 12 s x 2.
         if avg_time_per_server >= 30:
             break
+
+        if run < args.min_runs:
+            continue
 
         # The precision stop needs exactly two servers to compare; partial
         # queries just run to the caps.
