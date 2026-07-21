@@ -14,6 +14,7 @@
 #include <Core/DecimalComparison.h>
 #include <Core/callOnTypeIndex.h>
 #include <DataTypes/DataTypeDateTime64.h>
+#include <DataTypes/DataTypeTime64.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -771,6 +772,12 @@ private:
             return {.kind = Kind::TimePoint, .scale = 0};
         if (const auto * datetime64_type = typeid_cast<const DataTypeDateTime64 *>(nested_type.get()))
             return {.kind = Kind::TimePoint, .scale = datetime64_type->getScale()};
+        /// Mixed `Time64` scales rescale and can throw `DECIMAL_OVERFLOW` (interval arithmetic can
+        /// leave values beyond the clamped range), so the scale keys the domain, like `TimePoint`.
+        if (WhichDataType(nested_type).isTime())
+            return {.kind = Kind::TimeOfDay, .scale = 0};
+        if (const auto * time64_type = typeid_cast<const DataTypeTime64 *>(nested_type.get()))
+            return {.kind = Kind::TimeOfDay, .scale = time64_type->getScale()};
         /// Equal-scale decimals compare their underlying integers directly (regardless of width);
         /// mixed scales rescale and can throw `DECIMAL_OVERFLOW`, so the scale keys the domain.
         if (isDecimal(nested_type))

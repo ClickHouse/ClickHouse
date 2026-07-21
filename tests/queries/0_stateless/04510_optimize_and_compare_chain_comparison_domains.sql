@@ -52,6 +52,12 @@ FROM values(
     ('2299-12-31 23:59:59', '2000-01-02 00:00:00'))
 WHERE a > b AND b > toDateTime64('2000-01-01 00:00:00.000000001', 9, 'UTC');
 
+-- Mixed-scale `Time64` comparisons also rescale: interval arithmetic can leave values beyond
+-- the clamped range, so an inferred mixed-scale comparison may throw `DECIMAL_OVERFLOW`.
+SELECT 'time64 mixed scales', count()
+FROM (SELECT (CAST('999:59:59', 'Time64(0)') + INTERVAL 300 YEAR)::Time64(0) AS a, CAST('00:00:01', 'Time64(0)') AS b)
+WHERE a > b AND b > toTime64('00:00:00.5', 9);
+
 -- Comparing `Decimal` of different scales rescales the values and can throw `DECIMAL_OVERFLOW`,
 -- so an inferred mixed-scale comparison may fail on valid data.
 SELECT 'decimal mixed scales', count()
@@ -149,6 +155,37 @@ SELECT
      FROM (EXPLAIN QUERY TREE
            SELECT * FROM values('a DateTime64(3, \'UTC\'), b DateTime64(3, \'UTC\')', ('2020-01-01 00:00:00.1', '2020-01-01 00:00:00.2'))
            WHERE a < b AND b < toDateTime64('2020-01-01 00:00:00.3', 3, 'UTC')
+           SETTINGS optimize_and_compare_chain = 0)
+     WHERE explain LIKE '%function_name: less,%');
+
+-- `Time` and equal-scale `Time64` compare their ticks directly.
+-- Keep deriving conditions inside the per-scale time-of-day domain.
+SELECT
+    'time same scale remains optimized',
+    (SELECT count()
+     FROM (EXPLAIN QUERY TREE
+           SELECT * FROM values('a Time, b Time64(0)', ('01:00:00', '02:00:00'))
+           WHERE a < b AND b < CAST('03:00:00', 'Time64(0)')
+           SETTINGS optimize_and_compare_chain = 1)
+     WHERE explain LIKE '%function_name: less,%')
+        >
+    (SELECT count()
+     FROM (EXPLAIN QUERY TREE
+           SELECT * FROM values('a Time, b Time64(0)', ('01:00:00', '02:00:00'))
+           WHERE a < b AND b < CAST('03:00:00', 'Time64(0)')
+           SETTINGS optimize_and_compare_chain = 0)
+     WHERE explain LIKE '%function_name: less,%'),
+    (SELECT count()
+     FROM (EXPLAIN QUERY TREE
+           SELECT * FROM values('a Time64(3), b Time64(3)', ('01:00:00.1', '01:00:00.2'))
+           WHERE a < b AND b < CAST('01:00:00.3', 'Time64(3)')
+           SETTINGS optimize_and_compare_chain = 1)
+     WHERE explain LIKE '%function_name: less,%')
+        >
+    (SELECT count()
+     FROM (EXPLAIN QUERY TREE
+           SELECT * FROM values('a Time64(3), b Time64(3)', ('01:00:00.1', '01:00:00.2'))
+           WHERE a < b AND b < CAST('01:00:00.3', 'Time64(3)')
            SETTINGS optimize_and_compare_chain = 0)
      WHERE explain LIKE '%function_name: less,%');
 
