@@ -14,10 +14,12 @@ run_happy_path() {
     $CLICKHOUSE_LOCAL -q "
     SELECT blob_type, snapshot_id, sequence_number, offset, length, compression_codec, mapKeys(properties), mapValues(properties)
     FROM file('$puffin', PuffinMetadata)
+    ORDER BY all
     "
     $CLICKHOUSE_LOCAL -q "
     SELECT referenced_data_file, deleted_rows
     FROM file('$puffin', Puffin)
+    ORDER BY all
     "
     $CLICKHOUSE_LOCAL -q "
     SELECT referenced_data_file, row_number
