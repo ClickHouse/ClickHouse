@@ -4,12 +4,17 @@ import shlex
 import time
 from typing import Dict, List, Optional, Tuple
 
-from ci.defs.defs import BASE_BRANCH
 from ci.praktika.gh import GH
 from ci.praktika.info import Info
 from ci.praktika.result import Result
 from ci.praktika.secret import Secret
 from ci.praktika.utils import Shell, Utils
+
+# Default branch releases are cut from, and the ref the dispatched CreateRelease
+# runs use. Defined locally (not imported from ci.defs) so the job keeps its
+# runtime PYTHONPATH minimal — importing ci.defs pulls in `from praktika import`,
+# which the job's `PYTHONPATH=.` command does not resolve (mirrors release_job.py).
+MAIN_BRANCH = "master"
 
 # Only inspect the last few commits on each release branch for a green release
 # candidate. A branch that has fallen further behind than this is surfaced as
@@ -219,7 +224,7 @@ def _dispatch_and_wait(branch: str, sha: str, dry_run: bool) -> bool:
     before = _latest_create_release_run_id()
     print(f"Dispatch CreateRelease for [{branch}] at commit [{sha}] (dry-run={dry})")
     Shell.check(
-        f"gh workflow run {CREATE_RELEASE_WORKFLOW} --ref {BASE_BRANCH}"
+        f"gh workflow run {CREATE_RELEASE_WORKFLOW} --ref {MAIN_BRANCH}"
         f" -f ref={shlex.quote(sha)} -f type=patch -f dry-run={dry}",
         strict=True,
         verbose=True,

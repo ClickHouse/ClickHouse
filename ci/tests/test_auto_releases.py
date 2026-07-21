@@ -104,6 +104,19 @@ def test_workflow_points_at_the_job():
     assert "./ci/jobs/auto_release_job.py" in _read(WORKFLOW_DEF)
 
 
+def test_job_does_not_import_ci_defs():
+    """The job runs with ``PYTHONPATH=.`` (see its workflow command), so it must
+    not import ``ci.defs`` — that pulls in ``from praktika import ...`` which only
+    resolves with ``./ci`` on the path, and would fail at runtime with
+    ``ModuleNotFoundError: No module named 'praktika'``. Mirrors release_job.py,
+    which keeps its runtime imports to ``ci.praktika.*`` for the same reason.
+    """
+    text = _read(JOB)
+    assert (
+        "ci.defs" not in text
+    ), "job must not import ci.defs (breaks PYTHONPATH=. run)"
+
+
 def test_legacy_sources_are_gone():
     assert not os.path.exists(LEGACY_JOB), (
         "tests/ci/auto_release.py should be removed; its logic moved to "
