@@ -1220,6 +1220,9 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::prepareProjectionsToMergeAndRe
         const auto projection_columns = projection.metadata->getColumns().getAllPhysical();
         const auto & parent_table_columns = global_ctx->metadata_snapshot->getColumns();
         bool projection_part_misses_column = false;
+        /// A missed column whose late-add default cannot be filled from the projection part: merging it
+        /// throws instead of yielding a stale-but-valid part, so it must rebuild in every mode.
+        bool projection_part_default_unfillable = false;
 
         /// A late-added column is only mergeable from the projection part if its DEFAULT/MATERIALIZED
         /// expression can be evaluated there, i.e. every column it references is a current projection
@@ -1267,6 +1270,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::prepareProjectionsToMergeAndRe
                     if (!projection_part_can_fill_default(*it->second, column.name))
                     {
                         projection_part_misses_column = true;
+                        projection_part_default_unfillable = true;
                         break;
                     }
                 }
@@ -1275,7 +1279,9 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::prepareProjectionsToMergeAndRe
             }
         }
 
-        if (projection_part_misses_column && mode != DeduplicateMergeProjectionMode::IGNORE)
+        /// An unfillable default rebuilds in every mode; other misses stay IGNORE-tolerant (stale merge).
+        if (projection_part_misses_column
+            && (projection_part_default_unfillable || mode != DeduplicateMergeProjectionMode::IGNORE))
         {
             LOG_DEBUG(
                 ctx->log,

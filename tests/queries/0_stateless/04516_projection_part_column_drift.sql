@@ -192,6 +192,44 @@ SETTINGS optimize_use_projections = 1, force_optimize_projection = 1;
 
 DROP TABLE t_proj_orphaned_stored_dep;
 
+-- unfillable-default drift under deduplicate_merge_projection_mode='ignore': IGNORE tolerates stale
+-- projection answers but must not wedge merges. A late-add whose default references a column the
+-- projection part cannot resolve (never-stored `f` here) still throws UNKNOWN_IDENTIFIER if its stale
+-- part is merged, so this sub-case must rebuild even under IGNORE (other misses stay merge-tolerant).
+DROP TABLE IF EXISTS t_proj_ignore_default_drift;
+
+CREATE TABLE t_proj_ignore_default_drift
+(
+    a UInt64,
+    b UInt64,
+    f UInt64,
+    c UInt64 ALIAS b + 1,
+    PROJECTION p (SELECT a, c ORDER BY a)
+)
+ENGINE = MergeTree ORDER BY a SETTINGS deduplicate_merge_projection_mode = 'ignore';
+
+-- Two parts must reach the tested OPTIMIZE as separate drifted parts, so hold background merges off
+-- until the drift is in place; otherwise a background merge could consume them before the OPTIMIZE and
+-- the fixed multi-part merge branch would not be exercised.
+SYSTEM STOP MERGES t_proj_ignore_default_drift;
+
+INSERT INTO t_proj_ignore_default_drift (a, b, f) VALUES (1, 100, 5);
+INSERT INTO t_proj_ignore_default_drift (a, b, f) VALUES (2, 200, 6);
+
+ALTER TABLE t_proj_ignore_default_drift ADD COLUMN d UInt64 DEFAULT f * 10;
+ALTER TABLE t_proj_ignore_default_drift MODIFY COLUMN c UInt64 ALIAS d + 1;
+
+-- read falls back to the parent (c = d + 1 = f * 10 + 1)
+SELECT 'ignore-drift read after drift', a, c FROM t_proj_ignore_default_drift ORDER BY a;
+
+-- the merge must rebuild instead of throwing UNKNOWN_IDENTIFIER on the missing `f` even under IGNORE
+SYSTEM START MERGES t_proj_ignore_default_drift;
+OPTIMIZE TABLE t_proj_ignore_default_drift FINAL;
+
+SELECT 'ignore-drift read after merge', a, c FROM t_proj_ignore_default_drift ORDER BY a;
+
+DROP TABLE t_proj_ignore_default_drift;
+
 -- aggregate projection drift: the state column name embeds the expanded alias
 -- (`sum(plus(b, 1))`), so re-pointing the alias leaves the part without the state column the
 -- metadata now expects (`sum(plus(d, 1))`); the parent never stores aggregate states, so the
