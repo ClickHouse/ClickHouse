@@ -249,11 +249,19 @@ FillingTransform::FillingTransform(
     {
         interpolate_actions = std::make_shared<ExpressionActions>(interpolate_description->actions.clone());
 
-        for (const auto & description: sort_description_)
-            if (interpolate_description->result_columns_set.contains(description.alias))
-                throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
-                    "Column '{}' is participating in ORDER BY expression and can't be INTERPOLATE output",
-                    description.alias);
+        for (const auto & description : sort_description_)
+        {
+            /// A column participating in ORDER BY ... WITH FILL must not also be an INTERPOLATE output.
+            /// For a constant ORDER BY expression the sort description carries no alias, so the column name
+            /// (which holds the resolved name of the constant) has to be checked as well. Otherwise the
+            /// conflict slips through here and later trips the chunk row-count check in `transform` once
+            /// WITH FILL generates extra rows for the fill column while the interpolated column does not.
+            for (const auto & name : {description.alias, description.column_name})
+                if (!name.empty() && interpolate_description->result_columns_set.contains(name))
+                    throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
+                        "Column '{}' is participating in ORDER BY expression and can't be INTERPOLATE output",
+                        name);
+        }
     }
 
     std::vector<bool> is_fill_column(header_->columns());

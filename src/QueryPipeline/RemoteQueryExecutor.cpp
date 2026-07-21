@@ -156,12 +156,12 @@ RemoteQueryExecutor::RemoteQueryExecutor(
             auto table_name = main_table.getQualifiedName();
 
             ConnectionEstablisher connection_establisher(pool, &timeouts, settings, log, &table_name);
-            connection_establisher.run(result, fail_message, /*force_connected=*/true);
+            connection_establisher.run(result, fail_message);
         }
         else
         {
             ConnectionEstablisher connection_establisher(pool, &timeouts, settings, log, nullptr);
-            connection_establisher.run(result, fail_message, /*force_connected=*/true);
+            connection_establisher.run(result, fail_message);
         }
 
         ConnectionPoolEntries connection_entries;
@@ -495,6 +495,23 @@ void RemoteQueryExecutor::sendQueryUnlocked(ClientInfo::QueryKind query_kind, As
     auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(settings);
     ClientInfo modified_client_info = context->getClientInfo();
     modified_client_info.query_kind = query_kind;
+
+    /// Forward this node's current roles so the remote scopes row policies the same way (gated by the setting).
+    /// Reset first against stale/injected values, and skip when initial_user was rewritten (remote(user=>...)).
+    modified_client_info.current_roles.reset();
+    if (context->getSettingsRef()[Setting::push_external_roles_in_interserver_queries]
+        && modified_client_info.initial_user == modified_client_info.current_user)
+    {
+        const auto & access_control = context->getAccessControl();
+        Strings current_role_names;
+        for (const auto & role_id : context->getCurrentRoles())
+        {
+            /// tryReadName: skip a concurrently-dropped role (its policies already target nobody).
+            if (auto name = access_control.tryReadName(role_id))
+                current_role_names.push_back(*name);
+        }
+        modified_client_info.current_roles = std::move(current_role_names);
+    }
 
     if (extension)
         modified_client_info.collaborate_with_initiator = true;
