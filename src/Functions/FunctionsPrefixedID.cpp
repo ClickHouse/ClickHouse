@@ -8,11 +8,12 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
+#include <Common/ErrnoException.h>
 #include <Common/StringUtils.h>
 
 #include <pcg_random.hpp>
 
-#include <random>
+#include <sys/random.h>
 
 /// Functions for prefixed identifiers in the style popularized by Stripe: `<prefix>_<body>`,
 /// e.g. `user_NffrFeUfNV2Hib` or `ch_test_51TpZvW`. The prefix may contain underscores
@@ -26,6 +27,7 @@ namespace ErrorCodes
 {
 extern const int BAD_ARGUMENTS;
 extern const int ILLEGAL_COLUMN;
+extern const int SYSTEM_ERROR;
 }
 
 namespace
@@ -186,10 +188,11 @@ public:
         /// Seed from the OS entropy source rather than randomSeed(): the latter is derived
         /// from the time and the thread id, which is too predictable for identifiers whose
         /// point is to be unique and opaque.
-        std::random_device entropy;
-        auto entropy64 = [&entropy] { return (static_cast<UInt64>(entropy()) << 32) | entropy(); };
+        UInt64 entropy[2];
+        if (getentropy(entropy, sizeof(entropy)) != 0)
+            throw ErrnoException(ErrorCodes::SYSTEM_ERROR, "Cannot get entropy from the operating system in function {}", name);
         using UInt128Raw = unsigned __int128;
-        pcg64_fast rng((static_cast<UInt128Raw>(entropy64()) << 64) | entropy64());
+        pcg64_fast rng((static_cast<UInt128Raw>(entropy[0]) << 64) | entropy[1]);
 
         IColumn::Offset offset = 0;
         for (size_t row = 0; row < input_rows_count; ++row)
