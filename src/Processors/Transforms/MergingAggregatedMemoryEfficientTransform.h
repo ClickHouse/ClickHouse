@@ -66,7 +66,11 @@ namespace DB
 class GroupingAggregatedTransform final : public IProcessor
 {
 public:
-    GroupingAggregatedTransform(const Block & header_, size_t num_inputs_, AggregatingTransformParamsPtr params_);
+    /// With `produce_buckets_in_order` the output buckets are strictly ascending: a bucket some
+    /// input announced as delayed is waited for instead of being emitted late. The output
+    /// carries no delay announcements, so the order is required when the output feeds another
+    /// `GroupingAggregatedTransform` over an exchange.
+    GroupingAggregatedTransform(const Block & header_, size_t num_inputs_, AggregatingTransformParamsPtr params_, bool produce_buckets_in_order_);
     String getName() const override { return "GroupingAggregatedTransform"; }
 
 protected:
@@ -76,6 +80,7 @@ protected:
 private:
     size_t num_inputs;
     AggregatingTransformParamsPtr params;
+    bool produce_buckets_in_order;
 
     std::vector<Int32> last_bucket_number; /// Last bucket read from each input.
     std::vector<Int32> max_seen_bucket; /// Highest bucket read from each input, to validate the delivery order.
@@ -99,6 +104,8 @@ private:
 
     /// Add chunk read from input to chunks_map, overflow_chunks or single_level_chunks according to it's chunk info.
     void addChunk(Chunk chunk, size_t input);
+    /// Drop a finished input's delayed-bucket announcements and treat it as past every bucket.
+    void releaseFinishedInput(size_t input_num);
     /// Push chunks if all inputs has single level.
     bool tryPushSingleLevelData();
     /// Push chunks from ready bucket if has one.
