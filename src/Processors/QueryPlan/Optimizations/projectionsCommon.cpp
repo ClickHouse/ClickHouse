@@ -315,15 +315,11 @@ size_t filterPartsByProjection(
     return filtered_parts;
 }
 
-/// A case-(4) late-added column is only usable from the projection part if its DEFAULT/MATERIALIZED
-/// expression can be evaluated there, i.e. every column the expression references is a current
-/// projection column the part stores. A dependency must be both physically present in the part and
-/// still a current projection column: a projection read resolves identifiers against the current
-/// projection columns, so a dependency that the part physically stores but that the metadata no
-/// longer lists (e.g. its alias source after the alias was re-pointed off it) is unresolvable on the
-/// read path and must route to the parent, exactly like a dependency the part never stored. Checks
-/// the default's immediate dependencies only (not transitively, unlike MergeTreeBlockReadUtils): a
-/// chained default over another non-stored column conservatively routes to the parent.
+/// A late-added column's DEFAULT/MATERIALIZED default is fillable from the projection part only if
+/// every column its expression references is both physically stored in the part and still a current
+/// projection column; a read resolves identifiers against the current projection columns, so an
+/// orphaned-but-stored dependency (e.g. an alias source after the alias was re-pointed off it) is
+/// unresolvable and must route to the parent. Immediate dependencies only, not transitively.
 static bool projectionPartCanFillDefault(
     const IMergeTreeDataPart & projection_part,
     const ProjectionDescription & projection,
@@ -363,9 +359,9 @@ static bool projectionPartCanFillDefault(
 ///       parent TABLE column at all (a drifted alias-derived or aggregate-state column):
 ///       drift, read from the parent instead.
 ///   (4) the projection part lacks it, the parent part lacks it too, and it is a parent TABLE column:
-///       a late-added column. Usable only if its default fill is identical on either read path (see
-///       04412); if the default expression references a column the projection part does not store,
-///       it cannot be evaluated there, so route to the parent instead.
+///       a late-added column. Usable only if its default fill is identical on either read path; if the
+///       default expression references a column the projection part does not store, it cannot be
+///       evaluated there, so route to the parent instead.
 static bool projectionPartHasRequiredColumns(
     const IMergeTreeDataPart & projection_part,
     const IMergeTreeDataPart & parent_part,

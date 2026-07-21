@@ -228,6 +228,10 @@ OPTIMIZE TABLE t_proj_ignore_default_drift FINAL;
 
 SELECT 'ignore-drift read after merge', a, c FROM t_proj_ignore_default_drift ORDER BY a;
 
+-- the rebuilt projection part materializes the current projection columns {a, d}, not the stale set
+SELECT 'ignore-drift part columns after merge', name, column FROM system.projection_parts_columns
+WHERE database = currentDatabase() AND table = 't_proj_ignore_default_drift' AND active ORDER BY name, column;
+
 DROP TABLE t_proj_ignore_default_drift;
 
 -- aggregate projection drift: the state column name embeds the expanded alias

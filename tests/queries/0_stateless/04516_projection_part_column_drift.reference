@@ -24,6 +24,8 @@ ignore-drift read after drift	1	51
 ignore-drift read after drift	2	61
 ignore-drift read after merge	1	51
 ignore-drift read after merge	2	61
+ignore-drift part columns after merge	p	a
+ignore-drift part columns after merge	p	d
 agg read after drift	1	501
 agg read after merge	1	501
 agg read after merge	2	601
