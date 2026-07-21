@@ -708,7 +708,7 @@ void applyTopKPushdownToPartialAggregation(
         return;
 
     /// The distributed planner splits aggregation itself; see the matching gate
-    /// in `tryOptimizeGroupByLimitPushdown`.
+    /// in `tryOptimizeGroupByTopK`.
     if (settings[Setting::make_distributed_plan])
         return;
 

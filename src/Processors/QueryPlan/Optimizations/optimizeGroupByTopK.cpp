@@ -49,7 +49,7 @@ static AggregatingStep * validateAggregatingStep(QueryPlan::Node * node)
     return aggregating_step;
 }
 
-size_t tryOptimizeGroupByLimitPushdown(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & settings)
+size_t tryOptimizeGroupByTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & settings)
 {
     if (!settings.enable_group_by_top_k_optimization)
         return 0;
