@@ -1,4 +1,3 @@
-import glob
 import json
 import logging
 import os
@@ -23,10 +22,8 @@ from helpers.s3_tools import (
     LocalUploader,
     S3Uploader,
     LocalDownloader,
-    list_s3_objects,
     prepare_s3_bucket,
 )
-from helpers.test_tools import TSV
 
 from helpers.iceberg_utils import (
     default_upload_directory,
@@ -90,6 +87,7 @@ def generate_cluster_def(common_path, port, azure_container):
                 <access_key_id>minio</access_key_id>
                 <secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key>
                 <no_sign_request>0</no_sign_request>
+                <skip_access_check>true</skip_access_check>
             </disk_s3_0_common>
             <disk_s3_1_common>
                 <type>s3</type>
@@ -97,6 +95,7 @@ def generate_cluster_def(common_path, port, azure_container):
                 <access_key_id>minio</access_key_id>
                 <secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key>
                 <no_sign_request>0</no_sign_request>
+                <skip_access_check>true</skip_access_check>
             </disk_s3_1_common>
             <disk_azure_common>
                 <type>object_storage</type>
@@ -112,12 +111,14 @@ def generate_cluster_def(common_path, port, azure_container):
                 <disk>disk_s3_0_common</disk>
                 <path>/tmp/s3_0_cache/</path>
                 <max_size>1000000000</max_size>
+                <skip_access_check>true</skip_access_check>
             </disk_s3_0_with_cache>
             <disk_s3_1_with_cache>
                 <type>cache</type>
                 <disk>disk_s3_1_common</disk>
                 <path>/tmp/s3_1_cache/</path>
                 <max_size>1000000000</max_size>
+                <skip_access_check>true</skip_access_check>
             </disk_s3_1_with_cache>
             <disk_azure_with_cache>
                 <type>cache</type>

@@ -47,7 +47,7 @@ class CoverageExporter:
         #
         #   [2]: https://github.com/ClickHouse/ClickHouse/issues/77320
         #
-        command_args_post = f"-- --zookeeper.implementation=testkeeper"
+        command_args_post = "-- --zookeeper.implementation=testkeeper"
 
         Shell.check(
             f"rm -rf {temp_dir}/system_tables && mkdir -p {temp_dir}/system_tables"

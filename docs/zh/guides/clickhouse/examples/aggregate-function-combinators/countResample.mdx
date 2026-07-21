@@ -1,0 +1,67 @@
+---
+slug: '/examples/aggregate-function-combinators/countResample'
+title: 'countResample'
+description: 'count 与 Resample 组合器搭配使用示例'
+keywords: ['count', 'Resample', '组合器', '示例', 'countResample']
+sidebarTitle: 'countResample'
+doc_type: 'reference'
+---
+
+<div id="description">
+  ## 说明
+</div>
+
+[`Resample`](/zh/reference/functions/aggregate-functions/combinators#-resample)
+组合器可应用于 [`count`](/zh/reference/functions/aggregate-functions/count)
+聚合函数，在固定数量的区间 (`N`) 内对指定键列的值进行计数。
+
+<div id="example-usage">
+  ## 示例用法
+</div>
+
+<div id="basic-example">
+  ### 基本示例
+</div>
+
+下面来看一个示例。我们将创建一个表，用于存储员工的 `name`、`age` 和
+`wage`，并向其中插入一些数据：
+
+```sql
+CREATE TABLE employee_data 
+(
+    name String,
+    age UInt8,
+    wage Float32
+) 
+ENGINE = MergeTree()
+ORDER BY tuple()
+
+INSERT INTO employee_data (name, age, wage) VALUES
+    ('John', 16, 10.0),
+    ('Alice', 30, 15.0),
+    ('Mary', 35, 8.0),
+    ('Evelyn', 48, 11.5),
+    ('David', 62, 9.9),
+    ('Brian', 60, 16.0);
+```
+
+让我们统计所有年龄处于 `[30,60)`
+和 `[60,75)` 区间内的人。由于年龄使用整数表示，因此对应的年龄区间为
+`[30, 59]` 和 `[60,74]`。为此，我们对 `count` 应用 `Resample` 组合器
+
+```sql
+SELECT countResample(30, 75, 30)(name, age) AS amount FROM employee_data
+```
+
+```response
+┌─amount─┐
+│ [3,2]  │
+└────────┘
+```
+
+<div id="see-also">
+  ## 另请参阅
+</div>
+
+* [`count`](/zh/reference/functions/aggregate-functions/count)
+* [`Resample 组合器`](/zh/reference/functions/aggregate-functions/combinators#-resample)

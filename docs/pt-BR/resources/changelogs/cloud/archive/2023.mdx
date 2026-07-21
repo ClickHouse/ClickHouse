@@ -1,0 +1,765 @@
+---
+slug: /whats-new/cloud/2023
+sidebarTitle: '2023'
+title: 'Changelog do Cloud - 2023'
+description: 'Changelog do ClickHouse Cloud de 2023'
+doc_type: 'changelog'
+keywords: ['changelog', 'notas de lançamento', 'atualizações', 'novos recursos', 'mudanças no Cloud', '2023']
+---
+
+<div id="december-18-2023">
+  ## 18 de dezembro de 2023
+</div>
+
+Este lançamento traz uma nova região no GCP (us-east1), a capacidade de configurar, em autoatendimento, conexões seguras com endpoints, suporte a integrações adicionais, incluindo o DBT 1.7, além de inúmeras correções de bugs e melhorias de segurança.
+
+<div id="general-changes-1">
+  ### Alterações gerais
+</div>
+
+* O ClickHouse Cloud agora está disponível na região us-east1 (South Carolina) do GCP
+* Habilitada a configuração do AWS Private Link e do GCP Private Service Connect via OpenAPI
+
+<div id="console-changes-7">
+  ### alteração no Console
+</div>
+
+* Login sem interrupções no SQL Console habilitado para quem tem a função Developer
+* Fluxo de trabalho simplificado para configurar controles de idling durante o onboarding
+
+<div id="integrations-changes-7">
+  ### alteração na integração
+</div>
+
+* Conector DBT: adicionado suporte ao DBT até a v1.7
+* Metabase: adicionado suporte ao Metabase v0.48
+* Conector PowerBI: adicionado suporte para execução no PowerBI Cloud
+* Permitir configurar as permissões do usuário interno do ClickPipes
+* Kafka Connect
+  * Lógica de desduplicação e ingestão de tipos Nullable aprimorada.
+  * Adicionado suporte a formatos baseados em texto (CSV, TSV)
+* Apache Beam: adicionado suporte aos tipos Boolean e LowCardinality
+* cliente Nodejs: adicionado suporte ao formato Parquet
+
+<div id="security-announcements">
+  ### Comunicados de segurança
+</div>
+
+* Corrigidas 3 vulnerabilidades de segurança - veja o [changelog de segurança](/pt-BR/resources/changelogs/security-changelog) para mais detalhes:
+  * CVE 2023-47118 (CVSS 7.0) - uma vulnerabilidade de heap buffer overflow que afeta a interface nativa executada por padrão na porta 9000/tcp
+  * CVE-2023-48704 (CVSS 7.0) - uma vulnerabilidade de heap buffer overflow que afeta a interface nativa executada por padrão na porta 9000/tcp
+  * CVE 2023-48298 (CVSS 5.9) - uma vulnerabilidade de underflow de inteiro no codec de compressão FPC
+
+<div id="november-22-2023">
+  ## 22 de novembro de 2023
+</div>
+
+Este lançamento atualiza a versão principal do banco de dados, melhora o fluxo de login e autenticação e adiciona suporte a proxy no Kafka Connect Sink.
+
+<div id="clickhouse-version-upgrade-2">
+  ### Atualização da versão do ClickHouse
+</div>
+
+* O desempenho na leitura de arquivos Parquet foi drasticamente melhorado. Veja o [blog de lançamento 23.8](https://clickhouse.com/blog/clickhouse-release-23-08) para mais detalhes.
+* Foi adicionado suporte à inferência de tipos para JSON. Veja o [blog de lançamento 23.9](https://clickhouse.com/blog/clickhouse-release-23-09) para mais detalhes.
+* Foram introduzidas funções poderosas voltadas para analistas, como `ArrayFold`. Veja o [blog de lançamento 23.10](https://clickhouse.com/blog/clickhouse-release-23-10) para mais detalhes.
+* **Mudança incompatível com versões anteriores visível ao usuário**: a configuração `input_format_json_try_infer_numbers_from_strings` foi desabilitada por padrão para evitar a inferência de números a partir de strings no formato JSON. Isso pode causar possíveis erros de parsing quando os dados de amostra contêm strings semelhantes a números.
+* Dezenas de novos recursos, melhorias de desempenho e correções de bugs. Veja os [changelogs do banco de dados principal](/pt-BR/resources/changelogs/oss/2026) para mais detalhes.
+
+<div id="console-changes-8">
+  ### Mudanças no Console
+</div>
+
+* Fluxo de login e autenticação aprimorado.
+* Sugestões de consulta baseadas em IA aprimoradas para oferecer melhor suporte a esquemas extensos.
+
+<div id="integrations-changes-8">
+  ### Alterações nas integrações
+</div>
+
+* Kafka Connect Sink: Adicionado suporte a proxy, ao mapeamento `topic-tablename` e à configuração das propriedades de entrega *exactly-once* do Keeper.
+* Cliente Node.js: Adicionado suporte ao formato Parquet.
+* Metabase: Adicionado suporte à função `datetimeDiff`.
+* Cliente Python: Adicionado suporte a caracteres especiais em nomes de colunas. Corrigida a associação do parâmetro de fuso horário.
+
+<div id="november-2-2023">
+  ## 2 de novembro de 2023
+</div>
+
+Este lançamento amplia o suporte regional para serviços Development na Ásia, introduz a funcionalidade de rotação de chaves para chaves de criptografia gerenciadas pelo cliente, melhora a granularidade das configurações fiscais no console de faturamento e inclui várias correções de bugs nos clientes compatíveis em diferentes linguagens.
+
+<div id="general-updates-1">
+  ### Atualizações gerais
+</div>
+
+* Os serviços Development agora estão disponíveis na AWS nas regiões `ap-south-1` (Mumbai) e `ap-southeast-1` (Singapura)
+* Adicionado suporte à rotação de chaves para chaves de criptografia gerenciadas pelo cliente (CMEK)
+
+<div id="console-changes-9">
+  ### Alterações no Console
+</div>
+
+* Adicionada a possibilidade de configurar opções fiscais detalhadas ao adicionar um cartão de crédito
+
+<div id="integrations-changes-9">
+  ### Mudanças nas integrações
+</div>
+
+* MySQL
+  * Aprimorado o suporte ao Tableau Online e ao QuickSight via MySQL
+* Kafka Connector
+  * Introduzido um novo StringConverter para oferecer suporte a formatos baseados em texto (CSV, TSV)
+  * Adicionado suporte aos tipos de dados Bytes e Decimal
+  * Ajustadas as Retryable Exceptions para que agora sejam sempre tentadas novamente (mesmo quando errors.tolerance=all)
+* Node.js client
+  * Corrigido um problema em que grandes datasets em streaming produziam resultados corrompidos
+* Python client
+  * Corrigidos timeouts em inserts grandes
+  * Corrigido um problema de Date32 no NumPy/Pandas
+    ​​- Golang client
+  * Corrigida a inserção de um map vazio em coluna JSON, limpeza do buffer de compressão, escape de consulta e panic em zero/nil para IPv4 e IPv6
+  * Adicionado watchdog para inserts cancelados
+* DBT
+  * Aprimorado o suporte a tabela distribuída com testes
+
+<div id="october-19-2023">
+  ## 19 de outubro de 2023
+</div>
+
+Este lançamento traz melhorias de usabilidade e desempenho no SQL Console, melhor suporte ao tipo de dado IP no conector do Metabase e novas funcionalidades nos clientes Java e Node.js.
+
+<div id="console-changes-9">
+  ### Alterações no Console
+</div>
+
+* Usabilidade do SQL Console aprimorada (por exemplo, preservação da largura da coluna entre execuções de consultas)
+* Desempenho do SQL Console aprimorado
+
+<div id="integrations-changes-8">
+  ### Alterações nas integrações
+</div>
+
+* Java client:
+  * A biblioteca de rede padrão foi alterada para melhorar o desempenho e reutilizar conexões abertas
+  * Adicionado suporte a proxy
+  * Adicionado suporte a conexões seguras usando Trust Store
+* Node.js client: Corrigido o comportamento de keep-alive para consultas insert
+* Metabase: Corrigida a serialização de colunas IPv4/IPv6
+
+<div id="september-28-2023">
+  ## 28 de setembro de 2023
+</div>
+
+Este lançamento traz a disponibilidade geral do ClickPipes for Kafka, do Confluent Cloud e do Amazon MSK, além do Kafka Connect ClickHouse Sink, um fluxo de trabalho self-service para proteger o acesso ao Amazon S3 por meio de IAM roles e sugestões de consultas com auxílio de IA (versão prévia privada).
+
+<div id="console-changes-9">
+  ### Alterações no Console
+</div>
+
+* Adicionado um fluxo de autoatendimento para proteger o [acesso ao Amazon S3 via IAM roles](/pt-BR/products/cloud/guides/data-sources/accessing-s3-data-securely)
+* Introduzidas sugestões de consulta com assistência de IA em prévia privada (entre em contato com o [suporte do ClickHouse Cloud](https://console.clickhouse.cloud/support) para testar o recurso.)
+
+<div id="integrations-changes-8">
+  ### Alterações nas integrações
+</div>
+
+* Foi anunciada a disponibilidade geral do ClickPipes — um serviço de ingestão de dados pronto para uso — para Kafka, Confluent Cloud e Amazon MSK (veja o [post de lançamento](https://clickhouse.com/blog/clickpipes-is-generally-available))
+* O Kafka Connect ClickHouse Sink alcançou disponibilidade geral
+  * Suporte estendido para configurações personalizadas do ClickHouse usando a propriedade `clickhouse.settings`
+  * Comportamento de desduplicação aprimorado para considerar campos dinâmicos
+  * Adicionado suporte a `tableRefreshInterval` para buscar novamente alterações da tabela no ClickHouse
+* Foram corrigidos um problema de conexão SSL e os mapeamentos de tipos entre o [PowerBI](/pt-BR/integrations/connectors/data-visualization/powerbi-and-clickhouse) e os tipos de dados do ClickHouse
+
+<div id="september-7-2023">
+  ## 7 de setembro de 2023
+</div>
+
+Este lançamento traz a versão beta do conector oficial do Power BI Desktop, melhorias no processamento de pagamentos com cartão de crédito na Índia e várias melhorias nos clientes compatíveis em diferentes linguagens.
+
+<div id="console-changes-9">
+  ### Alterações no Console
+</div>
+
+* Adicionados créditos remanescentes e novas tentativas de pagamento para dar suporte a cobranças na Índia
+
+<div id="integrations-changes-7">
+  ### alteração na integração
+</div>
+
+* Kafka Connector: adicionado suporte à configuração das configurações do ClickHouse, adicionada a opção de configuração error.tolerance
+* PowerBI Desktop: lançada a versão beta do conector oficial
+* Grafana: adicionado suporte ao tipo geo Point, corrigidos os painéis do dashboard Data Analyst, corrigida a macro timeInterval
+* Python client: compatível com Pandas 2.1.0, removido o suporte ao Python 3.7, adicionado suporte ao tipo JSON Nullable
+* Node.js client: adicionado suporte à configuração default&#95;format
+* Golang client: corrigido o tratamento do tipo bool, removidos os limites de string
+
+<div id="aug-24-2023">
+  ## 24 de ago. de 2023
+</div>
+
+Este lançamento adiciona suporte à interface MySQL no banco de dados ClickHouse, introduz um novo connector oficial do Power BI, adiciona uma nova visualização &quot;Running Queries&quot; no Cloud Console e atualiza a versão do ClickHouse para 23.7.
+
+<div id="general-updates-1">
+  ### Atualizações gerais
+</div>
+
+* Adicionado suporte ao [protocolo wire do MySQL](/pt-BR/concepts/features/interfaces/mysql), o que (entre outros casos de uso) permite a compatibilidade com muitas ferramentas de BI existentes. Entre em contato com o suporte para habilitar esse recurso para sua organização.
+* Introduzido um novo conector oficial para o PowerBI
+
+<div id="console-changes-9">
+  ### Alterações no Console
+</div>
+
+* Adicionado suporte à exibição &quot;Consultas em execução&quot; no SQL Console
+
+<div id="clickhouse-237-version-upgrade">
+  ### Atualização para a versão 23.7 do ClickHouse
+</div>
+
+* Adicionado suporte à função de tabela do Azure, os tipos de dados Geo passaram a ser considerados prontos para produção, e o desempenho de JOIN foi melhorado — veja o [blog](https://clickhouse.com/blog/clickhouse-release-23-05) do lançamento 23.5 para mais detalhes
+* O suporte à integração com MongoDB foi estendido para a versão 6.0 — veja o [blog](https://clickhouse.com/blog/clickhouse-release-23-06) do lançamento 23.6 para mais detalhes
+* O desempenho da gravação no formato Parquet foi melhorado em 6x, foi adicionado suporte à linguagem de consulta PRQL, e a compatibilidade com SQL foi aprimorada — veja a [apresentação](https://presentations.clickhouse.com/release_23.7/) do lançamento 23.7 para mais detalhes
+* Dezenas de novos recursos, melhorias de desempenho e correções de bugs — veja os [changelogs](/pt-BR/resources/changelogs/oss/2026) detalhados das versões 23.5, 23.6 e 23.7
+
+<div id="integrations-changes-7">
+  ### alteração na integração
+</div>
+
+* Kafka Connector: Adicionado suporte aos tipos Avro Date e Time
+* Cliente JavaScript: Lançada uma versão estável para ambientes web
+* Grafana: Aprimoradas a lógica de filtro e o tratamento do nome do banco de dados, além de adicionado suporte a TimeInteval com precisão de subsegundos
+* Cliente Golang: Corrigidos vários problemas com batch e carregamento assíncrono de dados
+* Metabase: Suporte à v0.47, adicionada impersonação na conexão, corrigidos mapeamentos de tipos de dados
+
+<div id="july-27-2023">
+  ## 27 de julho de 2023
+</div>
+
+Este lançamento traz a prévia privada do ClickPipes for Kafka, uma nova experiência para carregamento de dados e a possibilidade de carregar um arquivo a partir de uma URL pelo Cloud Console.
+
+<div id="integrations-changes-7">
+  ### alteração na integração
+</div>
+
+* Foi introduzida a prévia privada do [ClickPipes](https://clickhouse.com/cloud/clickpipes) para Kafka, um engine de integração cloud-native que torna a ingestão de grandes volumes de dados do Kafka e do Confluent Cloud tão simples quanto clicar em alguns botões. Inscreva-se na lista de espera [aqui](https://clickhouse.com/cloud/clickpipes#joinwaitlist).
+* cliente JavaScript: lançado suporte para ambientes baseados na web (navegador, workers do Cloudflare). O código foi refatorado para permitir que a comunidade crie conectores para ambientes personalizados.
+* Kafka Connector: adicionado suporte a schema inline com os tipos Kafka Timestamp e Time
+* cliente Python: corrigidos problemas na compressão de insert e na leitura de LowCardinality
+
+<div id="console-changes-8">
+  ### Mudanças no Console
+</div>
+
+* Adicionada uma nova experiência de carregamento de dados, com mais opções de configuração para criação de tabelas
+* Introduzida a possibilidade de carregar um arquivo a partir de uma URL usando o Cloud Console
+* Melhorado o fluxo de convites, com opções adicionais para entrar em outra organização e ver todos os seus convites pendentes
+
+<div id="july-14-2023">
+  ## 14 de julho de 2023
+</div>
+
+Este lançamento traz a capacidade de provisionar Dedicated Services, uma nova região da AWS na Austrália e a possibilidade de usar sua própria chave para criptografar dados armazenados em disco.
+
+<div id="general-updates-1">
+  ### Atualizações gerais
+</div>
+
+* Nova região da AWS na Austrália: Sydney (ap-southeast-2)
+* Serviços em tier dedicado para workloads exigentes e sensíveis à latência (entre em contato com o [suporte](https://console.clickhouse.cloud/support) para habilitá-los)
+* Use sua própria chave (BYOK) para criptografar dados em disco (entre em contato com o [suporte](https://console.clickhouse.cloud/support) para habilitá-lo)
+
+<div id="console-changes-9">
+  ### Alterações no Console
+</div>
+
+* Melhorias no dashboard de métricas de observabilidade para inserções assíncronas
+* Comportamento aprimorado do chatbot para integração com a equipe de suporte
+
+<div id="integrations-changes-8">
+  ### Alterações nas integrações
+</div>
+
+* Cliente NodeJS: corrigido um bug que causava falha de conexão por timeout de socket
+* Cliente Python: adicionado QuerySummary às consultas de insert e suporte a caracteres especiais no nome do banco de dados
+* Metabase: atualizada a versão do JDBC driver, adicionado suporte a DateTime64, melhorias de desempenho.
+
+<div id="core-database-changes">
+  ### Principais alterações no banco de dados
+</div>
+
+* O [cache de consultas](/pt-BR/concepts/features/performance/caches/query-cache) pode ser habilitado no ClickHouse Cloud. Quando habilitado, as consultas bem-sucedidas ficam em cache por padrão por um minuto, e as consultas subsequentes usam o resultado em cache.
+
+<div id="june-20-2023">
+  ## 20 de junho de 2023
+</div>
+
+Este lançamento disponibiliza o ClickHouse Cloud on GCP para uso geral, traz um Terraform provider para a API do Cloud e atualiza a versão do ClickHouse para 23.4.
+
+<div id="general-updates-1">
+  ### Atualizações gerais
+</div>
+
+* O ClickHouse Cloud on GCP agora está em GA, trazendo integração com o GCP Marketplace, suporte ao Private Service Connect e backups automáticos (veja o [blog](https://clickhouse.com/blog/clickhouse-cloud-on-google-cloud-platform-gcp-is-generally-available) e o [comunicado à imprensa](https://clickhouse.com/blog/clickhouse-cloud-expands-choice-with-launch-on-google-cloud-platform) para mais detalhes)
+* O [provider do Terraform](https://registry.terraform.io/providers/ClickHouse/clickhouse/latest/docs) para a API do Cloud já está disponível
+
+<div id="console-changes-8">
+  ### Mudanças no Console
+</div>
+
+* Adicionada uma nova página consolidada de configurações para os serviços
+* Ajustada a precisão da medição de armazenamento e recursos computacionais
+
+<div id="integrations-changes-8">
+  ### Alterações nas integrações
+</div>
+
+* Python client: melhorou o desempenho de `insert`, refatorou as dependências internas para oferecer suporte a multiprocessamento
+* Kafka Connector: pode ser carregado e instalado no Confluent Cloud, adiciona retry para problemas temporários de conexão, redefine automaticamente o estado incorreto do connector
+
+<div id="clickhouse-234-version-upgrade">
+  ### Atualização da versão 23.4 do ClickHouse
+</div>
+
+* Adicionado suporte a JOIN com réplicas paralelas (entre em contato com o [suporte](https://console.clickhouse.cloud/support) para fazer a configuração)
+* Melhorado o desempenho das exclusões leves
+* Melhorado o uso de cache durante o processamento de inserts de grande volume
+
+<div id="administration-changes-1">
+  ### Alterações na administração
+</div>
+
+* Criação de Dicionários locais ampliada para usuários que não sejam &quot;default&quot;
+
+<div id="may-30-2023">
+  ## 30 de maio de 2023
+</div>
+
+Este lançamento marca a disponibilização pública da API programática do ClickHouse Cloud para operações do plano de controle (consulte o [blog](https://clickhouse.com/blog/using-the-new-clickhouse-cloud-api-to-automate-deployments) para mais detalhes), acesso ao S3 usando IAM roles e opções adicionais de escalonamento.
+
+<div id="general-changes-1">
+  ### Alterações gerais
+</div>
+
+* Suporte à API do ClickHouse Cloud. Com a nova API do Cloud, você pode integrar facilmente o gerenciamento de serviços ao seu pipeline de CI/CD existente e gerenciar seus serviços programaticamente
+* Acesso ao S3 usando IAM roles. Agora você pode usar IAM roles para acessar com segurança seus buckets privados do Amazon Simple Storage Service (S3) (entre em contato com o suporte para configurar isso)
+
+<div id="scaling-changes">
+  ### Mudanças de escalonamento
+</div>
+
+* [Escalonamento horizontal](/pt-BR/products/cloud/features/autoscaling/horizontal#manual-horizontal-scaling). As cargas de trabalho que exigem mais paralelismo agora podem ser configuradas com até 10 réplicas (entre em contato com o suporte para configurá-las)
+* [Autoescalonamento com base em CPU](/pt-BR/products/cloud/features/autoscaling/overview). Cargas de trabalho limitadas por CPU agora podem se beneficiar de gatilhos adicionais para políticas de autoescalonamento
+
+<div id="console-changes-9">
+  ### Alterações no Console
+</div>
+
+* Migrar o serviço Dev para o serviço de Produção (entre em contato com o suporte para habilitar)
+* Adicionados controles de configuração de escalonamento durante os fluxos de criação de instâncias
+* Corrigida a string de conexão quando não há senha padrão na Memory
+
+<div id="integrations-changes-8">
+  ### Alterações nas integrações
+</div>
+
+* cliente Golang: corrigido um problema que causava conexões desequilibradas no protocolo nativo, adicionado suporte a configurações personalizadas no protocolo nativo
+* cliente Nodejs: removido o suporte ao nodejs v14, adicionado suporte ao v20
+* Kafka Connector: adicionado suporte ao tipo LowCardinality
+* Metabase: corrigido o agrupamento por intervalo de tempo, corrigido o suporte a inteiros nas perguntas integradas do Metabase
+
+<div id="performance-and-reliability">
+  ### Desempenho e confiabilidade
+</div>
+
+* Maior eficiência e melhor desempenho em cargas de trabalho com uso intensivo de gravação
+* Implementada a estratégia de backup incremental para aumentar a velocidade e a eficiência dos backups
+
+<div id="may-11-2023">
+  ## 11 de maio de 2023
+</div>
+
+Este lançamento traz o Public Beta do ClickHouse Cloud on GCP
+(consulte o [blog](https://clickhouse.com/blog/clickhouse-cloud-on-gcp-available-in-public-beta)
+para mais detalhes), amplia as permissões dos administradores para conceder permissões de encerramento de consultas
+e dá mais visibilidade ao status dos usuários com MFA no Console do Cloud.
+
+<Info>
+  **Atualização**
+
+  O ClickHouse Cloud on GCP agora está em GA; veja o item de 20 de junho acima.
+</Info>
+
+<div id="clickhouse-cloud-on-gcp-is-now-available-in-public-beta-now-ga-see-june-20th-entry-above">
+  ### ClickHouse Cloud on GCP agora está disponível em beta público
+</div>
+
+<Note>
+  ClickHouse Cloud on GCP agora está em GA; veja o item de [20 de junho](#june-20-2023) acima.
+</Note>
+
+* Lança uma oferta ClickHouse totalmente gerenciada com armazenamento e computação separados, executada sobre o Google Compute e o Google Cloud Storage
+* Disponível nas regiões de Iowa (us-central1), Holanda (europe-west4) e Singapura (asia-southeast1)
+* Oferece suporte a serviços Development e Production em todas as três regiões iniciais
+* Fornece segurança robusta por padrão: criptografia de ponta a ponta em trânsito, criptografia de dados em repouso e listas de permissões de IP
+
+<div id="integrations-changes-7">
+  ### alteração na integração
+</div>
+
+* cliente Golang: adicionado suporte a variáveis de ambiente de proxy
+* Grafana: adicionada a possibilidade de especificar configurações personalizadas do ClickHouse e variáveis de ambiente de proxy na configuração da fonte de dados do Grafana
+* Kafka Connector: aprimorado o tratamento de registros vazios
+
+<div id="console-changes-9">
+  ### Alterações no Console
+</div>
+
+* Adicionado um indicador de uso de autenticação multifator (MFA) na lista de usuários
+
+<div id="performance-and-reliability">
+  ### Desempenho e confiabilidade
+</div>
+
+* Adicionado um controle mais granular sobre a permissão de encerrar consultas para administradores
+
+<div id="may-4-2023">
+  ## 4 de maio de 2023
+</div>
+
+Este lançamento traz um novo tipo de gráfico heatmap, aprimora a página de consumo e cobrança e reduz o tempo de inicialização do serviço.
+
+<div id="console-changes-9">
+  ### Alterações no Console
+</div>
+
+* Adicionado o tipo de gráfico heatmap no SQL Console
+* Página de uso de faturamento aprimorada para exibir os créditos consumidos em cada dimensão de faturamento
+
+<div id="integrations-changes-7">
+  ### alteração na integração
+</div>
+
+* Conector Kafka: adicionado mecanismo de retentativa para erros transitórios de conexão
+* Cliente Python: adicionada a configuração max&#95;connection&#95;age para garantir que conexões HTTP não sejam reutilizadas indefinidamente. Isso pode ajudar com determinados problemas de balanceamento de carga
+* Cliente Node.js: adicionado suporte ao Node.js v20
+* Cliente Java: aprimorado o suporte à autenticação por certificado de cliente e adicionado suporte a tipos Tuple/Map/Nested aninhados
+
+<div id="performance-and-reliability">
+  ### Desempenho e confiabilidade
+</div>
+
+* Melhorado o tempo de inicialização do serviço na presença de um grande número de partes
+* Otimizada a lógica de cancelamento de consultas de longa duração no SQL Console
+
+<div id="bug-fixes">
+  ### Correção de bugs
+</div>
+
+* Corrigido um bug que fazia falhar a importação do conjunto de dados de exemplo &#39;Cell Towers&#39;
+
+<div id="april-20-2023">
+  ## 20 de abril de 2023
+</div>
+
+Este lançamento atualiza a versão do ClickHouse para 23.3, melhora significativamente a velocidade das leituras frias e traz chat em tempo real com o suporte.
+
+<div id="console-changes-9">
+  ### Alterações no Console
+</div>
+
+* Adicionada a opção de chat em tempo real com o suporte
+
+<div id="integrations-changes-8">
+  ### Alterações nas integrações
+</div>
+
+* Kafka Connector: adicionado suporte a tipos Nullable
+* Cliente Golang: adicionado suporte a tabelas externas e a bindings de parâmetros dos tipos booleano e ponteiro
+
+<div id="configuration-changes">
+  ### Mudanças de configuração
+</div>
+
+* Permite remover tabelas grandes substituindo as configurações `max_table_size_to_drop` e `max_partition_size_to_drop`
+
+<div id="performance-and-reliability">
+  ### Desempenho e confiabilidade
+</div>
+
+* Melhora a velocidade das leituras a frio por meio de prefetch no S3 com a configuração `allow_prefetched_read_pool_for_remote_filesystem`
+
+<div id="clickhouse-233-version-upgrade">
+  ### Atualização para a versão 23.3 do ClickHouse
+</div>
+
+* As exclusões leves já estão prontas para produção–consulte o [blog](https://clickhouse.com/blog/clickhouse-release-23-03) de lançamento da versão 23.3 para mais detalhes
+* Foi adicionado suporte a PREWHERE em múltiplos estágios–consulte o [blog](https://clickhouse.com/blog/clickhouse-release-23-03) de lançamento da versão 23.2 para mais detalhes
+* Dezenas de novos recursos, melhorias de desempenho e correções de bugs–consulte os [changelogs](/pt-BR/resources/changelogs/oss/2026) detalhados das versões 23.3 e 23.2
+
+<div id="april-6-2023">
+  ## 6 de abril de 2023
+</div>
+
+Este lançamento traz uma API para obter endpoints do Cloud, um controle avançado de escalonamento para o tempo mínimo de inatividade e suporte a dados externos nos métodos de consulta do Python client.
+
+<div id="api-changes">
+  ### Alterações na API
+</div>
+
+* Foi adicionada a capacidade de consultar programaticamente os endpoints do ClickHouse Cloud por meio da [API Cloud Endpoints](/pt-BR/products/cloud/guides/sql-console/query-endpoints)
+
+<div id="console-changes-9">
+  ### Alterações no Console
+</div>
+
+* Adicionada a configuração &#39;tempo mínimo de inatividade&#39; às configurações avançadas de escalonamento
+* Adicionada detecção de datetime em modo best effort à inferência de esquema no modal de carregamento de dados
+
+<div id="integrations-changes-8">
+  ### Alterações nas integrações
+</div>
+
+* [Metabase](/pt-BR/integrations/connectors/data-visualization/metabase-and-clickhouse): Adicionado suporte a vários schemas
+* [cliente Go](/pt-BR/integrations/language-clients/go/index): Corrigida a verificação de atividade de conexões ociosas em conexões TLS
+* [cliente Python](/pt-BR/integrations/language-clients/python/index)
+  * Adicionado suporte a dados externos em métodos de consulta
+  * Adicionado suporte a fuso horário nos resultados de consulta
+  * Adicionado suporte à variável de ambiente `no_proxy`/`NO_PROXY`
+  * Corrigida a vinculação, no servidor, de parâmetros com valor NULL para tipos Nullable
+
+<div id="bug-fixes">
+  ### Correção de bugs
+</div>
+
+* Corrigido o comportamento em que a execução de `INSERT INTO ... SELECT ...` no SQL Console aplicava incorretamente o mesmo limite de linhas das consultas `SELECT`
+
+<div id="march-23-2023">
+  ## 23 de março de 2023
+</div>
+
+Este lançamento traz regras de complexidade para senhas de banco de dados, um ganho significativo de velocidade na restauração de backups grandes e suporte à exibição de traces no Grafana Trace View.
+
+<div id="security-and-reliability">
+  ### Segurança e confiabilidade
+</div>
+
+* Os endpoints principais do banco de dados agora exigem senhas mais complexas
+* Tempo de restauração de backups grandes reduzido
+
+<div id="console-changes-9">
+  ### Alterações no Console
+</div>
+
+* Fluxo de onboarding simplificado, com novos padrões e visualizações mais compactas
+* Redução da latência no cadastro e no login
+
+<div id="integrations-changes-8">
+  ### Alterações nas integrações
+</div>
+
+* Grafana:
+  * Adicionado suporte para exibir dados de trace armazenados no ClickHouse no Trace View
+  * Melhorados os filtros de intervalo de tempo e adicionado suporte a caracteres especiais em nomes de tabelas
+* Superset: Adicionado suporte nativo ao ClickHouse
+* Kafka Connect Sink: Adicionadas a conversão automática de datas e a manipulação de colunas Null
+* Metabase: Implementada compatibilidade com a v0.46
+* Python client: Corrigidas inserções em tabelas temporárias e adicionado suporte a Pandas Null
+* Golang client: Normalizados os tipos Date com timezone
+* Java client
+  * Adicionado suporte, no parser SQL, para as palavras-chave compression, infile e outfile
+  * Adicionada sobrecarga para credentials
+  * Corrigido o suporte a batch com `ON CLUSTER`
+* Node.js client
+  * Adicionado suporte aos formatos JSONStrings, JSONCompact, JSONCompactStrings e JSONColumnsWithMetadata
+  * Agora, `query_id` pode ser fornecido para todos os principais métodos do cliente
+
+<div id="bug-fixes">
+  ### Correção de bugs
+</div>
+
+* Correção de um bug que causava provisionamento inicial e tempos de inicialização lentos para novos serviços
+* Correção de um bug que causava desempenho mais lento das consultas devido à configuração incorreta do cache
+
+<div id="march-9-2023">
+  ## 9 de março de 2023
+</div>
+
+Este lançamento aprimora os dashboards de observabilidade, otimiza o tempo necessário para criar backups grandes e adiciona a configuração necessária para remover tabelas e partições grandes.
+
+<div id="console-changes-9">
+  ### Alterações no Console
+</div>
+
+* Adicionados dashboards avançados de observabilidade (prévia)
+* Adicionado um gráfico de alocação de memória aos dashboards de observabilidade
+* Melhorado o espaçamento e o tratamento de quebras de linha na visualização em planilha do SQL Console
+
+<div id="reliability-and-performance">
+  ### Confiabilidade e desempenho
+</div>
+
+* Cronograma de backup otimizado para executar backups apenas se os dados tiverem sido modificados
+* Redução do tempo necessário para concluir backups grandes
+
+<div id="configuration-changes-1">
+  ### Alterações de configuração
+</div>
+
+* Adicionada a capacidade de aumentar o limite para remover tabelas e partições, sobrescrevendo as configurações `max_table_size_to_drop` e `max_partition_size_to_drop` no nível da consulta ou da conexão
+* Adicionado o IP de origem ao log de consultas, para permitir a aplicação de cotas e do controle de acesso com base no IP de origem
+
+<div id="integrations">
+  ### Integrações
+</div>
+
+* [Cliente Python](/pt-BR/integrations/language-clients/python/index): Suporte aprimorado ao Pandas e correção de problemas relacionados a fusos horários
+* [Metabase](/pt-BR/integrations/connectors/data-visualization/metabase-and-clickhouse): Compatibilidade com o Metabase 0.46.x e suporte a SimpleAggregateFunction
+* [Kafka-Connect](/pt-BR/integrations/connectors/data-ingestion/kafka/index): Conversão implícita de datas e melhor tratamento de colunas com valor nulo
+* [Cliente Java](https://github.com/ClickHouse/clickhouse-java): Conversão de estruturas aninhadas em maps do Java
+
+<div id="february-23-2023">
+  ## 23 de fevereiro de 2023
+</div>
+
+Este lançamento disponibiliza um subconjunto dos recursos do lançamento principal ClickHouse 23.1, traz interoperabilidade com o Amazon Managed Streaming for Apache Kafka (MSK) e exibe ajustes avançados de escalonamento e inatividade no log de atividade.
+
+<div id="clickhouse-231-version-upgrade">
+  ### Atualização para a versão 23.1 do ClickHouse
+</div>
+
+Adiciona suporte a um subconjunto de recursos do ClickHouse 23.1, por exemplo:
+
+* ARRAY JOIN com o tipo map
+* Literais hexadecimais e binários no padrão SQL
+* Novas funções, incluindo `age()`, `quantileInterpolatedWeighted()`, `quantilesInterpolatedWeighted()`
+* Capacidade de usar a estrutura da tabela de inserção em `generateRandom` sem argumentos
+* Lógica aprimorada de criação e renomeação de banco de dados, permitindo reutilizar nomes anteriores
+* Veja os [slides do webinar](https://presentations.clickhouse.com/release_23.1/#cover) do lançamento 23.1 e o [changelog do lançamento 23.1](#clickhouse-231-version-upgrade) para mais detalhes
+
+<div id="integrations-changes-8">
+  ### Alterações nas integrações
+</div>
+
+* [Kafka-Connect](/pt-BR/integrations/connectors/data-ingestion/kafka/index): Adicionado suporte ao Amazon MSK
+* [Metabase](/pt-BR/integrations/connectors/data-visualization/metabase-and-clickhouse): Primeiro lançamento estável 1.0.0
+  * O conector passou a estar disponível no [Metabase Cloud](https://www.metabase.com/start/)
+  * Adicionado um recurso para explorar todos os bancos de dados disponíveis
+  * Corrigida a sincronização de banco de dados com o tipo AggregationFunction
+* [DBT-clickhouse](/pt-BR/integrations/connectors/data-ingestion/etl-tools/dbt/index): Adicionado suporte à versão mais recente do DBT, v1.4.1
+* [Cliente Python](/pt-BR/integrations/language-clients/python/index): Melhorado o suporte a proxy e túnel SSH; adicionadas várias correções e otimizações de desempenho para DataFrames do Pandas
+* [Cliente Nodejs](/pt-BR/integrations/language-clients/js): Lançada a capacidade de associar `query_id` ao resultado da consulta, que pode ser usado para recuperar métricas da consulta em `system.query_log`
+* [Cliente Golang](/pt-BR/integrations/language-clients/go/index): Otimizada a conexão de rede com o ClickHouse Cloud
+
+<div id="console-changes-8">
+  ### Mudanças no Console
+</div>
+
+* Adicionados ajustes avançados das configurações de escalonamento e ociosidade ao log de atividades
+* Adicionadas informações de user agent e IP aos e-mails de redefinição de senha
+* Melhorado o fluxo de cadastro com Google OAuth
+
+<div id="reliability-and-performance">
+  ### Confiabilidade e desempenho
+</div>
+
+* Redução do tempo para retomar a partir do estado ocioso em serviços grandes
+* Melhoria na latência de leitura para serviços com um grande número de tabelas e partições
+
+<div id="bug-fixes">
+  ### Correção de bugs
+</div>
+
+* Corrigido o comportamento em que a redefinição da senha do service não seguia a política de senha
+* A validação do e-mail de convite da organização passou a não diferenciar maiúsculas de minúsculas
+
+<div id="february-2-2023">
+  ## 2 de fevereiro de 2023
+</div>
+
+Este lançamento traz uma integração oficialmente compatível com o Metabase, um grande lançamento do cliente Java / driver JDBC e suporte a views e visões materializadas no SQL Console.
+
+<div id="integrations-changes-8">
+  ### Alterações nas integrações
+</div>
+
+* plugin [Metabase](/pt-BR/integrations/connectors/data-visualization/metabase-and-clickhouse): tornou-se uma solução oficial mantida pela ClickHouse
+* plugin [dbt](/pt-BR/integrations/connectors/data-ingestion/etl-tools/dbt/index): adicionado suporte a [múltiplas threads](https://github.com/ClickHouse/dbt-clickhouse/blob/main/CHANGELOG.md)
+* plugin [Grafana](/pt-BR/integrations/connectors/data-visualization/grafana/index): melhor tratamento de erros de conexão
+* cliente [Python](/pt-BR/integrations/language-clients/python/index): [suporte a streaming](/pt-BR/integrations/language-clients/python/advanced-querying#streaming-queries) para operação de insert
+* cliente [Go](/pt-BR/integrations/language-clients/go/index): [correção de bugs](https://github.com/ClickHouse/clickhouse-go/blob/main/CHANGELOG.md): fechamento de conexões canceladas, melhor tratamento de erros de conexão
+* cliente [JS](/pt-BR/integrations/language-clients/js): [mudanças incompatíveis em exec/insert](https://github.com/ClickHouse/clickhouse-js/releases/tag/0.0.12); `query_id` exposto nos tipos de retorno
+* lançamento principal do cliente [Java](https://github.com/ClickHouse/clickhouse-java#readme) / driver JDBC
+  * [Mudanças incompatíveis](https://github.com/ClickHouse/clickhouse-java/releases): métodos, classes e pacotes descontinuados foram removidos
+  * Adicionado suporte ao driver R2DBC e à inserção de arquivos
+
+<div id="console-changes-9">
+  ### Alterações no Console
+</div>
+
+* Adicionado suporte a views e visões materializadas no SQL Console
+
+<div id="performance-and-reliability">
+  ### Desempenho e confiabilidade
+</div>
+
+* Redefinição de senha mais rápida para instâncias paradas/ociosas
+* Comportamento de scale-down aprimorado por meio de um rastreamento de atividade mais preciso
+* Corrigido um bug em que a exportação de CSV no SQL Console era truncada
+* Corrigido um bug que causava falhas intermitentes no upload de dados de exemplo
+
+<div id="january-12-2023">
+  ## 12 de janeiro de 2023
+</div>
+
+Este lançamento atualiza a versão do ClickHouse para 22.12, habilita dicionários para várias novas fontes e melhora o desempenho das consultas.
+
+<div id="general-changes-1">
+  ### Alterações gerais
+</div>
+
+* Foi habilitado o uso de dicionários com fontes adicionais, incluindo ClickHouse externo, Cassandra, MongoDB, MySQL, PostgreSQL e Redis
+
+<div id="clickhouse-2212-version-upgrade">
+  ### Atualização para a versão 22.12 do ClickHouse
+</div>
+
+* Suporte a JOIN ampliado para incluir Grace Hash Join
+* Adicionado suporte a JSON binário (BSON) para leitura de arquivos
+* Adicionado suporte à sintaxe SQL padrão GROUP BY ALL
+* Novas funções matemáticas para operações decimais com precisão fixa
+* Consulte o [blog de lançamento da 22.12](https://clickhouse.com/blog/clickhouse-release-22-12) e o [changelog detalhado da 22.12](#clickhouse-2212-version-upgrade) para a lista completa de alterações
+
+<div id="console-changes-9">
+  ### Alterações no Console
+</div>
+
+* Melhorias no preenchimento automático no SQL Console
+* A região padrão agora leva em consideração a localização continental
+* A página Uso de faturamento foi aprimorada para exibir tanto as unidades de faturamento quanto as do site
+
+<div id="integrations-changes-25">
+  ### Alterações na integração
+</div>
+
+* Lançamento do DBT [v1.3.2](https://github.com/ClickHouse/dbt-clickhouse/blob/main/CHANGELOG.md#release-132-2022-12-23)
+  * Adicionado suporte experimental à estratégia incremental delete+insert
+  * Nova macro s3source
+* Cliente Python [v0.4.8](https://github.com/ClickHouse/clickhouse-connect/blob/main/CHANGELOG.md#048-2023-01-02)
+  * Suporte a insert com File
+  * Consulta com [vinculação de parâmetros](/pt-BR/concepts/features/interfaces/client#cli-queries-with-parameters) no servidor
+* Cliente Go [v2.5.0](https://github.com/ClickHouse/clickhouse-go/releases/tag/v2.5.0)
+  * Redução do uso de memória para compressão
+  * Consulta com [vinculação de parâmetros](/pt-BR/concepts/features/interfaces/client#cli-queries-with-parameters) no servidor
+
+<div id="reliability-and-performance">
+  ### Confiabilidade e desempenho
+</div>
+
+* Melhor desempenho de leitura para consultas que buscam um grande número de arquivos pequenos no armazenamento de objetos
+* Defina a configuração [compatibility](/pt-BR/reference/settings/session-settings#compatibility) como a versão com a qual o serviço é iniciado inicialmente, para serviços recém-lançados
+
+<div id="bug-fixes">
+  ### Correção de bugs
+</div>
+
+Agora, ao usar o controle deslizante Advanced Scaling para reservar recursos, a alteração entra em vigor imediatamente.

@@ -1,0 +1,103 @@
+---
+description: 'Документация по созданию и настройке словарей'
+sidebarTitle: 'Обзор'
+slug: /sql-reference/statements/create/dictionary
+title: 'CREATE DICTIONARY'
+doc_type: 'reference'
+---
+
+import CloudNotSupportedBadge from "/snippets/ru/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+import CloudSupportedBadge from "/snippets/ru/components/CloudSupportedBadge/CloudSupportedBadge.jsx";
+
+Словарь — это соответствие (`key -> attributes`), удобное для различных типов справочных списков.
+ClickHouse поддерживает специальные функции для работы со словарями, которые можно использовать в запросах. Использовать словари через функции проще и эффективнее, чем `JOIN` со справочными таблицами.
+
+Словари можно создавать двумя способами:
+
+* [С помощью DDL-запроса](#creating-a-dictionary-with-a-ddl-query) (рекомендуется)
+* [С помощью файла конфигурации](#creating-a-dictionary-with-a-configuration-file)
+
+<div id="creating-a-dictionary-with-a-ddl-query">
+  ## Создание словаря с помощью DDL-запроса
+</div>
+
+<CloudSupportedBadge />
+
+Словари можно создавать с помощью DDL-запросов.
+Это рекомендуемый способ, поскольку для словарей, созданных с помощью DDL:
+
+* В файлы конфигурации сервера не добавляются дополнительные записи.
+* Словари можно использовать как полноценные сущности, такие как таблицы или представления.
+* Данные можно читать напрямую, используя знакомый синтаксис `SELECT`, а не табличные функции словарей. Обратите внимание: при прямом обращении к словарю через оператор `SELECT` кэшируемый словарь вернет только кэшированные данные, тогда как некэшируемый словарь вернет все хранимые в нем данные.
+* Словари можно легко переименовывать.
+
+<div id="syntax">
+  ### Синтаксис
+</div>
+
+```sql
+CREATE [OR REPLACE] DICTIONARY [IF NOT EXISTS] [db.]dictionary_name [ON CLUSTER cluster]
+(
+    key1  type1  [DEFAULT | EXPRESSION expr1] [IS_OBJECT_ID],
+    key2  type2  [DEFAULT | EXPRESSION expr2],
+    attr1 type2  [DEFAULT | EXPRESSION expr3] [HIERARCHICAL|INJECTIVE],
+    attr2 type2  [DEFAULT | EXPRESSION expr4] [HIERARCHICAL|INJECTIVE]
+)
+PRIMARY KEY key1, key2
+SOURCE(SOURCE_NAME([param1 value1 ... paramN valueN]))
+LAYOUT(LAYOUT_NAME([param_name param_value]))
+LIFETIME({MIN min_val MAX max_val | max_val})
+SETTINGS(setting_name = setting_value, setting_name = setting_value, ...)
+COMMENT 'Comment'
+```
+
+| Предложение                                                          | Описание                                                                                                                                            |
+| -------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [Атрибуты](/ru/reference/statements/create/dictionary/attributes)       | Атрибуты словаря задаются аналогично столбцам таблицы. Единственное обязательное свойство — тип; все остальные могут иметь значения по умолчанию.   |
+| PRIMARY KEY                                                          | Определяет ключевой столбец или столбцы для поиска в словаре. В зависимости от структуры один или несколько атрибутов могут быть указаны как ключи. |
+| [`SOURCE`](/ru/reference/statements/create/dictionary/sources/overview) | Определяет источник данных для словаря (например, таблицу ClickHouse, HTTP, PostgreSQL).                                                            |
+| [`LAYOUT`](/ru/reference/statements/create/dictionary/layouts/overview) | Определяет способ хранения словаря в памяти (например, `FLAT`, `HASHED`, `CACHE`).                                                                  |
+| [`LIFETIME`](/ru/reference/statements/create/dictionary/lifetime)       | Задает интервал обновления словаря.                                                                                                                 |
+| [`ON CLUSTER`](/ru/reference/statements/distributed-ddl)                | Создает словарь на кластере. Необязательно.                                                                                                         |
+| `SETTINGS`                                                           | Дополнительные настройки словаря. Необязательно.                                                                                                    |
+| `COMMENT`                                                            | Добавляет текстовый комментарий к словарю. Необязательно.                                                                                           |
+
+<div id="creating-a-dictionary-with-a-configuration-file">
+  ## Создание словаря с помощью файла конфигурации
+</div>
+
+<CloudNotSupportedBadge />
+
+<Note>
+  Создание словаря с помощью файла конфигурации не поддерживается в ClickHouse Cloud. Используйте DDL (см. выше) и создайте словарь от имени пользователя `default`.
+</Note>
+
+Файл конфигурации словаря имеет следующий формат:
+
+```xml
+<clickhouse>
+    <comment>Необязательный элемент с произвольным содержимым. Игнорируется сервером ClickHouse.</comment>
+
+    <!--Необязательный элемент. Имя файла с подстановками-->
+    <include_from>/etc/metrika.xml</include_from>
+
+    <dictionary>
+        <!-- Конфигурация словаря. -->
+        <!-- В файле конфигурации может быть любое количество секций dictionary. -->
+    </dictionary>
+
+</clickhouse>
+```
+
+Вы можете настроить любое количество словарей в одном файле.
+
+<div id="related-content">
+  ## Связанные материалы
+</div>
+
+* [Структуры](/ru/reference/statements/create/dictionary/layouts/overview) — Как словари хранятся в памяти
+* [Источники](/ru/reference/statements/create/dictionary/sources/overview) — Подключение к источникам данных
+* [Время жизни](/ru/reference/statements/create/dictionary/lifetime) — Настройка автоматического обновления
+* [Атрибуты](/ru/reference/statements/create/dictionary/attributes) — Настройка ключей и атрибутов
+* [Встроенные словари](/ru/reference/statements/create/dictionary/embedded) — Встроенные словари геобазы
+* [system.dictionaries](/ru/reference/system-tables/dictionaries) — Системная таблица с информацией о словарях

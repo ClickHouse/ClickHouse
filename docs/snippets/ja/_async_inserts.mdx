@@ -1,0 +1,122 @@
+---
+title: 非同期 INSERT
+---
+
+ClickHouse の非同期挿入は、クライアント側でのバッチ処理が現実的でない場合に有効な代替手段です。これは特にオブザーバビリティのワークロードで有用です。このようなワークロードでは、何百、何千ものエージェントが、ログ、メトリクス、トレースといったデータを、多くの場合小さなリアルタイムのペイロードで継続的に送信します。こうした環境でクライアント側にデータをバッファリングすると複雑さが増し、十分な大きさのバッチを送信できるようにするための集中管理キューが必要になります。
+
+<Note>
+  同期モードで多数の小さなバッチを送信することは推奨されません。多くのパーツが作成される原因になるためです。これにより、クエリ性能の低下や [&quot;too many part&quot;](/ja/resources/support-center/knowledge-base/troubleshooting/exception-too-many-parts) エラーにつながります。
+</Note>
+
+非同期挿入では、受信したデータをメモリ内バッファに書き込み、その後、設定可能なしきい値に基づいてストレージへフラッシュすることで、バッチ処理の責務をクライアントからサーバーへ移します。このアプローチにより、パーツ作成のオーバーヘッドが大幅に減り、CPU 使用率が下がり、高い同時実行性の下でもインジェストを効率的に維持できます。
+
+中核となる動作は [`async_insert`](/ja/reference/settings/session-settings#async_insert) 設定によって制御されます。
+
+<Image img="/images/bestpractices/async_inserts.webp" size="lg" alt="非同期 INSERT" />
+
+非同期挿入は HTTP と native TCP の両方のインターフェイスでサポートされています。
+
+有効化されている場合 (`async_insert = 1`) 、INSERT はバッファリングされ、次のフラッシュ条件のいずれかが満たされた時点でのみ disk に書き込まれます。
+
+* バッファが指定されたデータサイズに達する ([`async_insert_max_data_size`](/ja/reference/settings/session-settings#async_insert_max_data_size)、デフォルトは 100 MiB) 。
+* 時間しきい値が経過する ([`async_insert_busy_timeout_ms`](/ja/reference/settings/session-settings#async_insert_busy_timeout_max_ms)、デフォルトは 200 ms、Cloud では 1000 ms) 。
+* INSERT クエリの最大数が蓄積される ([`async_insert_max_query_number`](/ja/reference/settings/session-settings#async_insert_max_query_number)、デフォルトは 450) 。
+
+最初に到達したしきい値でフラッシュがトリガーされます。
+
+このバッチ処理はクライアントからは見えず、ClickHouse が複数のソースからの INSERT トラフィックを効率的にマージするのに役立ちます。ただし、フラッシュが発生するまでは、そのデータをクエリすることはできません。重要なのは、INSERT の shape と settings の組み合わせごとに複数のバッファが存在し、クラスターではノードごとにバッファが維持されることです。これにより、マルチテナント環境全体で細かな制御が可能になります。それ以外の INSERT の仕組みは、[synchronous inserts](/ja/concepts/best-practices/selecting-an-insert-strategy#synchronous-inserts-by-default) で説明されているものと同一です。
+
+<div id="choosing-a-return-mode">
+  ### 戻りモードの選択
+</div>
+
+非同期挿入の動作は、[`wait_for_async_insert`](/ja/reference/settings/session-settings#wait_for_async_insert) 設定によってさらに細かく制御できます。
+
+1 (デフォルト) に設定すると、ClickHouse はデータが正常にディスクにフラッシュされたあとでのみ insert の受け付けを通知します。これにより高い永続性が確保され、error 処理もシンプルになります。フラッシュ中に問題が発生した場合は、その error がクライアントに返されます。このモードは、ほとんどの本番環境、とくに insert の失敗を確実に追跡する必要がある場合に推奨されます。
+
+[ベンチマーク](https://clickhouse.com/blog/asynchronous-data-inserts-in-clickhouse) では、適応的な insert と安定した part 作成動作により、200 クライアントでも 500 クライアントでも、高い並行度でも良好にスケールすることが示されています。
+
+`wait_for_async_insert = 0` を設定すると、「fire-and-forget」モードが有効になります。この場合、server はデータが storage に書き込まれるのを待たず、バッファ に格納された時点で insert の受け付けを通知します。
+
+これにより、超低 latency の insert と最大限の throughput が得られるため、高速に流入し、重要度の低いデータに適しています。ただし、これにはトレードオフがあります。データが永続化される保証はなく、error が表面化するのはフラッシュ時だけで、失敗した insert のための dead-letter queue もありません。障害を追跡するには、事後的に サーバーログ とシステムテーブルを調査する必要があります。このモードは、workload がデータ損失を許容できる場合にのみ使用してください。
+
+[ベンチマークではさらに](https://clickhouse.com/blog/asynchronous-data-inserts-in-clickhouse)、バッファ のフラッシュ頻度が低い場合 (たとえば 30 Seconds ごと) には、part の大幅な削減と CPU 使用率の低下も示されていますが、気づかれないまま失敗するリスクは残ります。
+
+非同期挿入を使用する場合は、`async_insert=1,wait_for_async_insert=1` を使うことを強く推奨します。`wait_for_async_insert=0` の使用は非常に危険です。error が発生しても INSERT クライアントがそれを認識できない可能性があるうえ、service の信頼性を確保するために ClickHouse server 側で書き込みを抑制し、backpressure をかける必要がある状況でも、クライアントが高速な書き込みを続けることで過負荷を引き起こすおそれがあるためです。
+
+<div id="adaptive-async-inserts">
+  ### 適応型非同期 INSERT
+</div>
+
+バージョン 24.2 以降、ClickHouse ではデフォルトで適応型のフラッシュタイムアウト ([`async_insert_use_adaptive_busy_timeout`](/ja/reference/settings/session-settings#async_insert_use_adaptive_busy_timeout)) が使用されます。固定のフラッシュ間隔ではなく、受信データのレートに応じて、タイムアウトが最小値 ([`async_insert_busy_timeout_min_ms`](/ja/reference/settings/session-settings#async_insert_busy_timeout_min_ms)、デフォルトは 50 ms) から最大値 ([`async_insert_busy_timeout_max_ms`](/ja/reference/settings/session-settings#async_insert_busy_timeout_max_ms)、デフォルトは 200 ms、Cloud では 1000 ms) までの範囲で動的に調整されます。
+
+データが高頻度で到着する場合、より早くフラッシュしてエンドツーエンドのレイテンシを抑えるため、タイムアウトは最小値寄りに保たれます。データがスパースな場合は、より大きなバッチを蓄積できるよう、最大値に向かって長くなります。これは、固定の長いタイムアウトを設定すると、フラッシュ可能なデータがすでに揃っていてもクライアントがその間ずっと待たされてしまうデフォルトモード (`wait_for_async_insert=1`) で特に有効です。
+
+<div id="error-handling">
+  ### エラー処理
+</div>
+
+スキーマの検証とデータのパースは、insert の受信時ではなく、バッファのフラッシュ時に行われます。INSERT クエリ内のいずれかの行にパースまたは型のエラーがある場合、**そのクエリのデータは一切フラッシュされません** — クエリ全体のペイロードが拒否されます。デフォルトモード (`wait_for_async_insert=1`) では、エラーはクライアントに返されます。fire-and-forget モードでは、エラーはサーバーログと [`system.asynchronous_inserts`](/ja/reference/system-tables/asynchronous_inserts) テーブルに書き込まれます。
+
+フラッシュが実行されるたびに、バッファ内の異なる各パーティションキーの値ごとに少なくとも 1 つのパーツが作成されます。パーティションキーのないテーブルであっても、バッファされたデータが [`max_insert_block_size`](/ja/reference/settings/session-settings#max_insert_block_size) (デフォルトは約 100 万行) を超える場合、1 回のフラッシュで複数のパーツが生成されることがあります。
+
+<Note>
+  非同期 INSERT を使用していても、パーティション化キーのカーディナリティが高い場合は、[&quot;パーツが多すぎる&quot;](/ja/resources/support-center/knowledge-base/troubleshooting/exception-too-many-parts) エラーが発生することがあります。
+</Note>
+
+<div id="deduplication-and-reliability">
+  ### 重複排除と信頼性
+</div>
+
+デフォルトでは、ClickHouse は同期挿入に対して自動的に重複排除を行うため、障害発生時でも安全に再試行できます。ただし、非同期挿入では明示的に有効化しない限り、この機能は無効です (依存する materialized view がある場合は有効にしないでください — [issue を参照](https://github.com/ClickHouse/ClickHouse/issues/66003)) 。
+
+実際には、重複排除が有効になっていれば、たとえばタイムアウトやネットワーク切断によって同じ挿入が再試行された場合でも、ClickHouse は重複分を安全に無視できます。これにより、冪等性を維持し、データの二重書き込みを防げます。
+
+<div id="enabling-asynchronous-inserts">
+  ### 非同期挿入の有効化
+</div>
+
+非同期挿入は、特定のユーザーまたは特定のクエリに対して有効にできます。
+
+* ユーザーレベルで非同期挿入を有効にします。この例ではユーザー `default` を使用しています。別のユーザーを作成した場合は、そのユーザー名に置き換えてください。
+  ```sql
+  ALTER USER default SETTINGS async_insert = 1
+  ```
+* INSERT クエリの SETTINGS 句を使用して、非同期挿入の設定を指定することもできます。
+  ```sql
+  INSERT INTO YourTable SETTINGS async_insert=1, wait_for_async_insert=1 VALUES (...)
+  ```
+* ClickHouse のプログラミング言語クライアントを使用する場合は、接続パラメーターとして非同期挿入の設定を指定することもできます。
+
+  たとえば、ClickHouse Cloud への接続に ClickHouse Java JDBCドライバーを使用する場合、JDBC 接続文字列では次のように指定できます。
+
+  ```bash
+  "jdbc:ch://HOST.clickhouse.cloud:8443/?user=default&password=PASSWORD&ssl=true&custom_http_params=async_insert=1,wait_for_async_insert=1"
+  ```
+
+<Note>
+  非同期挿入は `INSERT INTO ... SELECT` クエリには適用されません。挿入に `SELECT` 句が含まれている場合、`async_insert` 設定に関係なく、クエリは常に同期的に実行されます。
+</Note>
+
+<div id="flushing-buffers-on-shutdown">
+  ### シャットダウン時にバッファをフラッシュする
+</div>
+
+保留中のすべての非同期 INSERT バッファをフラッシュするには (たとえば、正常終了時やメンテナンス前) 、次を実行します。
+
+```sql
+SYSTEM FLUSH ASYNC INSERT QUEUE
+```
+
+これにより、サーバーが停止する前に、バッファリングされたデータがすべてストレージに書き込まれます。
+
+<div id="comparison-with-buffer-tables">
+  ### Bufferテーブルとの比較
+</div>
+
+非同期挿入は、[Buffer tables](/ja/reference/engines/table-engines/special/buffer) に代わる現代的な方式です。主な違いは次のとおりです。
+
+* **DDL の変更は不要です。** 非同期挿入は透過的に動作するため、追加のテーブルを作成するのではなく、設定を有効にするだけで利用できます。
+* **クエリ形状ごとのバッファリング。** 非同期挿入では、一意のクエリ形状と設定の組み合わせごとに個別のバッファが維持されるため、きめ細かな フラッシュ ポリシーを適用できます。Buffer tables では、ターゲットテーブルごとに 1 つのバッファを使用します。
+* **耐久性。** デフォルトモード (`wait_for_async_insert=1`) では、クライアントに確認応答が返される前に、データがディスクに書き込まれたことが確認されます。Buffer tables は fire-and-forget 型で動作するため、クラッシュ時にはバッファ内のデータが失われます。
+* **クラスターでの動作。** クラスターでは、非同期挿入のバッファはノードごとに維持されます。Buffer tables では、各ノードで明示的に作成する必要があります。

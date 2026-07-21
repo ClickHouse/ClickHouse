@@ -1,0 +1,67 @@
+---
+description: 'Отображает данные словаря как таблицу ClickHouse. Работает так же,
+  как движок Dictionary.'
+sidebarTitle: 'dictionary'
+slug: /sql-reference/table-functions/dictionary
+title: 'dictionary'
+doc_type: 'reference'
+---
+
+Отображает данные [словаря](/ru/reference/statements/create/dictionary) в виде таблицы ClickHouse. Работает так же, как движок [Dictionary](/ru/reference/engines/table-engines/special/dictionary).
+
+<div id="syntax">
+  ## Синтаксис
+</div>
+
+```sql
+dictionary('dict')
+```
+
+<div id="arguments">
+  ## Аргументы
+</div>
+
+* `dict` — Название словаря. [String](/ru/reference/data-types/string).
+
+<div id="returned_value">
+  ## Возвращаемое значение
+</div>
+
+Таблица ClickHouse.
+
+<div id="examples">
+  ## Примеры
+</div>
+
+Исходная таблица `dictionary_source_table`:
+
+```text
+┌─id─┬─value─┐
+│  0 │     0 │
+│  1 │     1 │
+└────┴───────┘
+```
+
+Создайте словарь:
+
+```sql title="Query"
+CREATE DICTIONARY new_dictionary(id UInt64, value UInt64 DEFAULT 0) PRIMARY KEY id
+SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() USER 'default' TABLE 'dictionary_source_table')) LAYOUT(DIRECT());
+```
+
+```sql title="Query"
+SELECT * FROM dictionary('new_dictionary');
+```
+
+```text title="Response"
+┌─id─┬─value─┐
+│  0 │     0 │
+│  1 │     1 │
+└────┴───────┘
+```
+
+<div id="related">
+  ## См. также
+</div>
+
+* [Движок Dictionary](/ru/reference/engines/table-engines/special/dictionary)

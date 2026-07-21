@@ -1,0 +1,34 @@
+---
+title: 'Поддерживаемые типы данных'
+slug: /integrations/clickpipes/mongodb/datatypes
+description: 'Страница с описанием сопоставления типов данных MongoDB ClickPipe при переносе из MongoDB в ClickHouse'
+doc_type: 'reference'
+keywords: ['clickpipes', 'mongodb', 'cdc', 'ингестия данных', 'синхронизация в реальном времени']
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+MongoDB хранит записи в виде BSON-документов. В ClickPipes можно настроить ингестию BSON-документов в ClickHouse как JSON или JSON String. В следующей таблице показано поддерживаемое сопоставление типов полей BSON и JSON:
+
+| Тип BSON в MongoDB    | Тип JSON в ClickHouse                        | Примечания                                                                                                                                                                                                    |
+| --------------------- | -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| ObjectId              | String                                       |                                                                                                                                                                                                               |
+| String                | String                                       |                                                                                                                                                                                                               |
+| 32-битное целое число | Int64                                        |                                                                                                                                                                                                               |
+| 64-битное целое число | Int64                                        |                                                                                                                                                                                                               |
+| Double                | Float64                                      |                                                                                                                                                                                                               |
+| Boolean               | Bool                                         |                                                                                                                                                                                                               |
+| Date                  | String                                       | формат ISO 8601                                                                                                                                                                                               |
+| Regular Expression    | &#123;Options: String, Pattern: String&#125; | Регулярное выражение MongoDB с фиксированными полями: Options (флаги регулярного выражения) и Pattern (шаблон регулярного выражения)                                                                          |
+| Timestamp             | &#123;T: Int64, I: Int64&#125;               | Внутренний формат временной метки MongoDB с фиксированными полями: T (временная метка) и I (инкремент)                                                                                                        |
+| Decimal128            | String                                       |                                                                                                                                                                                                               |
+| Binary data           | &#123;Data: String, Subtype: Int64&#125;     | Бинарные данные MongoDB с фиксированными полями: Data (в кодировке base64) и Subtype ([тип бинарных данных](https://www.mongodb.com/docs/manual/reference/bson-types/#binary-data))                           |
+| JavaScript            | String                                       |                                                                                                                                                                                                               |
+| Null                  | Null                                         |                                                                                                                                                                                                               |
+| Array                 | Dynamic                                      | Массивы с однородными типами преобразуются в Array(Nullable(T)); массивы со смешанными примитивными типами приводятся к наиболее общему типу; массивы со сложными несовместимыми типами преобразуются в Tuple |
+| Object                | Dynamic                                      | Каждое вложенное поле сопоставляется рекурсивно                                                                                                                                                               |
+
+<Info>
+  Подробнее о типах данных JSON в ClickHouse см. в [документации](/ru/reference/data-types/newjson).
+</Info>

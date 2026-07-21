@@ -1,0 +1,366 @@
+---
+description: '包含 130 万条历史记录的数据集，内容涵盖酒店、餐馆和咖啡馆的菜单，
+  以及其中菜品及其价格。'
+sidebarTitle: '纽约公共图书馆“菜单上有什么？”数据集'
+slug: /getting-started/example-datasets/menus
+title: '纽约公共图书馆“What''s on the Menu?”数据集'
+doc_type: 'guide'
+keywords: ['example dataset', 'menus', 'historical data', 'sample data', 'nypl']
+---
+
+该数据集由纽约公共图书馆创建，包含酒店、餐馆和咖啡馆菜单的历史数据，以及其中菜品及其价格。
+
+来源：http://menus.nypl.org/data
+这些数据属于公有领域。
+
+这些数据来自图书馆档案，因此可能并不完整，也不太适合用于统计分析。尽管如此，它也“很美味”。
+数据规模仅为 130 万条菜单菜品记录——对于 ClickHouse 来说，这只是非常小的数据量，但仍然是一个很好的示例。
+
+<div id="download-dataset">
+  ## 下载数据集
+</div>
+
+运行以下命令：
+
+```bash
+wget https://s3.amazonaws.com/menusdata.nypl.org/gzips/2021_08_01_07_01_17_data.tgz
+# 可选：验证校验和
+md5sum 2021_08_01_07_01_17_data.tgz
+# 校验和应为：db6126724de939a5481e3160a2d67d15
+```
+
+如有需要，请将该链接替换为 http://menus.nypl.org/data 中的最新链接。
+下载大小约为 35 MB。
+
+<div id="unpack-dataset">
+  ## 解压数据集
+</div>
+
+```bash
+tar xvf 2021_08_01_07_01_17_data.tgz
+```
+
+未压缩大小约为 150 MB。
+
+这些数据经过归一化后，由四个表组成：
+
+* `Menu` — 菜单相关信息：餐厅名称、菜单被记录到的日期等。
+* `Dish` — 菜品相关信息：菜名以及一些特征。
+* `MenuPage` — 菜单页面相关信息，因为每个页面都属于某个菜单。
+* `MenuItem` — 菜单中的一个条目，即某个菜单页面上的一道菜及其价格：关联到菜品和菜单页面。
+
+<div id="create-tables">
+  ## 创建表
+</div>
+
+我们使用 [Decimal](/zh/reference/data-types/decimal) 数据类型来存储价格。
+
+```sql
+CREATE TABLE dish
+(
+    id UInt32,
+    name String,
+    description String,
+    menus_appeared UInt32,
+    times_appeared Int32,
+    first_appeared UInt16,
+    last_appeared UInt16,
+    lowest_price Decimal64(3),
+    highest_price Decimal64(3)
+) ENGINE = MergeTree ORDER BY id;
+
+CREATE TABLE menu
+(
+    id UInt32,
+    name String,
+    sponsor String,
+    event String,
+    venue String,
+    place String,
+    physical_description String,
+    occasion String,
+    notes String,
+    call_number String,
+    keywords String,
+    language String,
+    date String,
+    location String,
+    location_type String,
+    currency String,
+    currency_symbol String,
+    status String,
+    page_count UInt16,
+    dish_count UInt16
+) ENGINE = MergeTree ORDER BY id;
+
+CREATE TABLE menu_page
+(
+    id UInt32,
+    menu_id UInt32,
+    page_number UInt16,
+    image_id String,
+    full_height UInt16,
+    full_width UInt16,
+    uuid UUID
+) ENGINE = MergeTree ORDER BY id;
+
+CREATE TABLE menu_item
+(
+    id UInt32,
+    menu_page_id UInt32,
+    price Decimal64(3),
+    high_price Decimal64(3),
+    dish_id UInt32,
+    created_at DateTime,
+    updated_at DateTime,
+    xpos Float64,
+    ypos Float64
+) ENGINE = MergeTree ORDER BY id;
+```
+
+<div id="import-data">
+  ## 导入数据
+</div>
+
+将数据导入 ClickHouse，运行：
+
+```bash
+clickhouse-client --format_csv_allow_single_quotes 0 --input_format_null_as_default 0 --query "INSERT INTO dish FORMAT CSVWithNames" < Dish.csv
+clickhouse-client --format_csv_allow_single_quotes 0 --input_format_null_as_default 0 --query "INSERT INTO menu FORMAT CSVWithNames" < Menu.csv
+clickhouse-client --format_csv_allow_single_quotes 0 --input_format_null_as_default 0 --query "INSERT INTO menu_page FORMAT CSVWithNames" < MenuPage.csv
+clickhouse-client --format_csv_allow_single_quotes 0 --input_format_null_as_default 0 --date_time_input_format best_effort --query "INSERT INTO menu_item FORMAT CSVWithNames" < MenuItem.csv
+```
+
+我们使用 [CSVWithNames](/zh/reference/formats/CSV/CSVWithNames) 格式，因为数据是以带请求头的 CSV 形式表示的。
+
+我们禁用 `format_csv_allow_single_quotes`，因为数据字段只使用双引号，而单引号可以出现在值中，不应让 CSV parser 产生误判。
+
+我们禁用 [input&#95;format&#95;null&#95;as&#95;default](/zh/reference/settings/formats#input_format_null_as_default)，因为我们的数据中没有 [NULL](/zh/reference/settings/formats#input_format_null_as_default)。否则 ClickHouse 会尝试解析 `\N` 序列，从而可能与数据中的 `\` 混淆。
+
+设置 [date&#95;time&#95;input&#95;format best&#95;effort](/zh/reference/settings/formats#date_time_input_format) 允许以多种格式解析 [DateTime](/zh/reference/data-types/datetime) 字段。例如，不带秒的 ISO-8601 格式 (如 &#39;2000-01-01 01:02&#39;) 也能被识别。如果不启用此设置，则只允许固定的 DateTime 格式。
+
+<div id="denormalize-data">
+  ## 对数据进行反规范化
+</div>
+
+数据以多个表的[规范化结果](https://en.wikipedia.org/wiki/Database_normalization#Normal_forms)形式呈现。这意味着，如果你想查询例如菜单项对应的菜名，就必须执行 [JOIN](/zh/reference/statements/select/join)。
+对于典型的分析任务，直接处理预先 JOIN 好的数据效率要高得多，可以避免每次都执行 `JOIN`。这类数据称为“反规范化的”数据。
+
+我们将创建一个表 `menu_item_denorm`，其中包含通过 JOIN 合并在一起的所有数据：
+
+```sql
+CREATE TABLE menu_item_denorm
+ENGINE = MergeTree ORDER BY (dish_name, created_at)
+AS SELECT
+    price,
+    high_price,
+    created_at,
+    updated_at,
+    xpos,
+    ypos,
+    dish.id AS dish_id,
+    dish.name AS dish_name,
+    dish.description AS dish_description,
+    dish.menus_appeared AS dish_menus_appeared,
+    dish.times_appeared AS dish_times_appeared,
+    dish.first_appeared AS dish_first_appeared,
+    dish.last_appeared AS dish_last_appeared,
+    dish.lowest_price AS dish_lowest_price,
+    dish.highest_price AS dish_highest_price,
+    menu.id AS menu_id,
+    menu.name AS menu_name,
+    menu.sponsor AS menu_sponsor,
+    menu.event AS menu_event,
+    menu.venue AS menu_venue,
+    menu.place AS menu_place,
+    menu.physical_description AS menu_physical_description,
+    menu.occasion AS menu_occasion,
+    menu.notes AS menu_notes,
+    menu.call_number AS menu_call_number,
+    menu.keywords AS menu_keywords,
+    menu.language AS menu_language,
+    menu.date AS menu_date,
+    menu.location AS menu_location,
+    menu.location_type AS menu_location_type,
+    menu.currency AS menu_currency,
+    menu.currency_symbol AS menu_currency_symbol,
+    menu.status AS menu_status,
+    menu.page_count AS menu_page_count,
+    menu.dish_count AS menu_dish_count
+FROM menu_item
+    JOIN dish ON menu_item.dish_id = dish.id
+    JOIN menu_page ON menu_item.menu_page_id = menu_page.id
+    JOIN menu ON menu_page.menu_id = menu.id;
+```
+
+<div id="validate-data">
+  ## 验证数据
+</div>
+
+```sql title="Query"
+SELECT count() FROM menu_item_denorm;
+```
+
+```text title="Response"
+┌─count()─┐
+│ 1329175 │
+└─────────┘
+```
+
+<div id="run-queries">
+  ## 执行一些查询
+</div>
+
+<div id="query-averaged-historical-prices">
+  ### 菜品历史价格的平均值
+</div>
+
+```sql title="Query"
+SELECT
+    round(toUInt32OrZero(extract(menu_date, '^\\d{4}')), -1) AS d,
+    count(),
+    round(avg(price), 2),
+    bar(avg(price), 0, 100, 100)
+FROM menu_item_denorm
+WHERE (menu_currency = 'Dollars') AND (d > 0) AND (d < 2022)
+GROUP BY d
+ORDER BY d ASC;
+```
+
+```text title="Response"
+┌────d─┬─count()─┬─round(avg(price), 2)─┬─bar(avg(price), 0, 100, 100)─┐
+│ 1850 │     618 │                  1.5 │ █▍                           │
+│ 1860 │    1634 │                 1.29 │ █▎                           │
+│ 1870 │    2215 │                 1.36 │ █▎                           │
+│ 1880 │    3909 │                 1.01 │ █                            │
+│ 1890 │    8837 │                  1.4 │ █▍                           │
+│ 1900 │  176292 │                 0.68 │ ▋                            │
+│ 1910 │  212196 │                 0.88 │ ▊                            │
+│ 1920 │  179590 │                 0.74 │ ▋                            │
+│ 1930 │   73707 │                  0.6 │ ▌                            │
+│ 1940 │   58795 │                 0.57 │ ▌                            │
+│ 1950 │   41407 │                 0.95 │ ▊                            │
+│ 1960 │   51179 │                 1.32 │ █▎                           │
+│ 1970 │   12914 │                 1.86 │ █▋                           │
+│ 1980 │    7268 │                 4.35 │ ████▎                        │
+│ 1990 │   11055 │                 6.03 │ ██████                       │
+│ 2000 │    2467 │                11.85 │ ███████████▋                 │
+│ 2010 │     597 │                25.66 │ █████████████████████████▋   │
+└──────┴─────────┴──────────────────────┴──────────────────────────────┘
+```
+
+仅供参考。
+
+<div id="query-burger-prices">
+  ### 汉堡价格
+</div>
+
+```sql title="Query"
+SELECT
+    round(toUInt32OrZero(extract(menu_date, '^\\d{4}')), -1) AS d,
+    count(),
+    round(avg(price), 2),
+    bar(avg(price), 0, 50, 100)
+FROM menu_item_denorm
+WHERE (menu_currency = 'Dollars') AND (d > 0) AND (d < 2022) AND (dish_name ILIKE '%burger%')
+GROUP BY d
+ORDER BY d ASC;
+```
+
+```text title="Response"
+┌────d─┬─count()─┬─round(avg(price), 2)─┬─bar(avg(price), 0, 50, 100)───────────┐
+│ 1880 │       2 │                 0.42 │ ▋                                     │
+│ 1890 │       7 │                 0.85 │ █▋                                    │
+│ 1900 │     399 │                 0.49 │ ▊                                     │
+│ 1910 │     589 │                 0.68 │ █▎                                    │
+│ 1920 │     280 │                 0.56 │ █                                     │
+│ 1930 │      74 │                 0.42 │ ▋                                     │
+│ 1940 │     119 │                 0.59 │ █▏                                    │
+│ 1950 │     134 │                 1.09 │ ██▏                                   │
+│ 1960 │     272 │                 0.92 │ █▋                                    │
+│ 1970 │     108 │                 1.18 │ ██▎                                   │
+│ 1980 │      88 │                 2.82 │ █████▋                                │
+│ 1990 │     184 │                 3.68 │ ███████▎                              │
+│ 2000 │      21 │                 7.14 │ ██████████████▎                       │
+│ 2010 │       6 │                18.42 │ ████████████████████████████████████▋ │
+└──────┴─────────┴──────────────────────┴───────────────────────────────────────┘
+```
+
+<div id="query-vodka">
+  ### 伏特加
+</div>
+
+```sql title="Query"
+SELECT
+    round(toUInt32OrZero(extract(menu_date, '^\\d{4}')), -1) AS d,
+    count(),
+    round(avg(price), 2),
+    bar(avg(price), 0, 50, 100)
+FROM menu_item_denorm
+WHERE (menu_currency IN ('Dollars', '')) AND (d > 0) AND (d < 2022) AND (dish_name ILIKE '%vodka%')
+GROUP BY d
+ORDER BY d ASC;
+```
+
+```text title="Response"
+┌────d─┬─count()─┬─round(avg(price), 2)─┬─bar(avg(price), 0, 50, 100)─┐
+│ 1910 │       2 │                    0 │                             │
+│ 1920 │       1 │                  0.3 │ ▌                           │
+│ 1940 │      21 │                 0.42 │ ▋                           │
+│ 1950 │      14 │                 0.59 │ █▏                          │
+│ 1960 │     113 │                 2.17 │ ████▎                       │
+│ 1970 │      37 │                 0.68 │ █▎                          │
+│ 1980 │      19 │                 2.55 │ █████                       │
+│ 1990 │      86 │                  3.6 │ ███████▏                    │
+│ 2000 │       2 │                 3.98 │ ███████▊                    │
+└──────┴─────────┴──────────────────────┴─────────────────────────────┘
+```
+
+要查 vodka，我们得写 `ILIKE '%vodka%'`，这写法绝对很有态度。
+
+<div id="query-caviar">
+  ### 鱼子酱
+</div>
+
+让我们输出鱼子酱的价格，再输出一道含有鱼子酱的菜名。
+
+```sql title="Query"
+SELECT
+    round(toUInt32OrZero(extract(menu_date, '^\\d{4}')), -1) AS d,
+    count(),
+    round(avg(price), 2),
+    bar(avg(price), 0, 50, 100),
+    any(dish_name)
+FROM menu_item_denorm
+WHERE (menu_currency IN ('Dollars', '')) AND (d > 0) AND (d < 2022) AND (dish_name ILIKE '%caviar%')
+GROUP BY d
+ORDER BY d ASC;
+```
+
+```text title="Response"
+┌────d─┬─count()─┬─round(avg(price), 2)─┬─bar(avg(price), 0, 50, 100)──────┬─any(dish_name)──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ 1090 │       1 │                    0 │                                  │ Caviar                                                                                                                              │
+│ 1880 │       3 │                    0 │                                  │ Caviar                                                                                                                              │
+│ 1890 │      39 │                 0.59 │ █▏                               │ Butter and caviar                                                                                                                   │
+│ 1900 │    1014 │                 0.34 │ ▋                                │ Anchovy Caviar on Toast                                                                                                             │
+│ 1910 │    1588 │                 1.35 │ ██▋                              │ 1/1 Brötchen Caviar                                                                                                                 │
+│ 1920 │     927 │                 1.37 │ ██▋                              │ ASTRAKAN CAVIAR                                                                                                                     │
+│ 1930 │     289 │                 1.91 │ ███▋                             │ Astrachan caviar                                                                                                                    │
+│ 1940 │     201 │                 0.83 │ █▋                               │ (SPECIAL) Domestic Caviar Sandwich                                                                                                  │
+│ 1950 │      81 │                 2.27 │ ████▌                            │ Beluga Caviar                                                                                                                       │
+│ 1960 │     126 │                 2.21 │ ████▍                            │ Beluga Caviar                                                                                                                       │
+│ 1970 │     105 │                 0.95 │ █▊                               │ BELUGA MALOSSOL CAVIAR AMERICAN DRESSING                                                                                            │
+│ 1980 │      12 │                 7.22 │ ██████████████▍                  │ Authentic Iranian Beluga Caviar the world's finest black caviar presented in ice garni and a sampling of chilled 100° Russian vodka │
+│ 1990 │      74 │                14.42 │ ████████████████████████████▋    │ Avocado Salad, Fresh cut avocado with caviare                                                                                       │
+│ 2000 │       3 │                 7.82 │ ███████████████▋                 │ Aufgeschlagenes Kartoffelsueppchen mit Forellencaviar                                                                               │
+│ 2010 │       6 │                15.58 │ ███████████████████████████████▏ │ "OYSTERS AND PEARLS" "Sabayon" of Pearl Tapioca with Island Creek Oysters and Russian Sevruga Caviar                                │
+└──────┴─────────┴──────────────────────┴──────────────────────────────────┴─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+至少他们还有鱼子酱配伏特加。真不错。
+
+<div id="playground">
+  ## 在线体验环境
+</div>
+
+数据已上传至 ClickHouse Playground，[示例](https://sql.clickhouse.com?query_id=KB5KQJJFNBKHE5GBUJCP1B)。

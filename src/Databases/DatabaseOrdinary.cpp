@@ -699,7 +699,7 @@ DatabaseDetachedTablesSnapshotIteratorPtr DatabaseOrdinary::getDetachedTablesIte
     return DatabaseWithOwnTablesBase::getDetachedTablesIterator(local_context, filter_by_table_name, skip_not_loaded);
 }
 
-Strings DatabaseOrdinary::getAllTableNames(ContextPtr) const
+VectorWithMemoryTracking<String> DatabaseOrdinary::getAllTableNames(ContextPtr) const
 {
     std::set<String> unique_names;
     {
@@ -711,6 +711,23 @@ Strings DatabaseOrdinary::getAllTableNames(ContextPtr) const
             unique_names.emplace(table_name);
     }
     return {unique_names.begin(), unique_names.end()};
+}
+
+void DatabaseOrdinary::eraseAsyncLoadState(const String & table_name)
+{
+    /// Drop pending async load/startup task references so that `getAllTableNames`
+    /// (and the hints derived from it) do not still suggest a no-longer-present name.
+    startup_table.erase(table_name);
+    load_table.erase(table_name);
+}
+
+StoragePtr DatabaseOrdinary::detachTableUnlocked(const String & table_name)
+{
+    /// Detach first: if the base throws (e.g. UNKNOWN_TABLE) the table is not
+    /// detached, so its async-load state must stay intact. Erase only on success.
+    auto table = DatabaseWithOwnTablesBase::detachTableUnlocked(table_name);
+    eraseAsyncLoadState(table_name);
+    return table;
 }
 
 void DatabaseOrdinary::alterTable(ContextPtr local_context, const StorageID & table_id, const StorageInMemoryMetadata & metadata, const bool validate_new_create_query)

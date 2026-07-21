@@ -130,12 +130,12 @@ def test_sequential_nodes(started_cluster, request):
         fake_throw = False
         try:
             genuine_zk.create(f"/test_sequential_nodes_{retry}_1/a", sequence=True)
-        except Exception as ex:
+        except Exception:
             genuine_throw = True
 
         try:
             fake_zk.create(f"/test_sequential_nodes_{retry}_1/a", sequence=True)
-        except Exception as ex:
+        except Exception:
             fake_throw = True
 
         assert genuine_throw == True

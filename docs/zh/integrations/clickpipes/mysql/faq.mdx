@@ -1,0 +1,96 @@
+---
+sidebarTitle: '常见问题'
+description: '有关 ClickPipes for MySQL 的常见问题。'
+slug: /integrations/clickpipes/mysql/faq
+title: 'ClickPipes for MySQL 常见问题'
+doc_type: '参考'
+keywords: ['MySQL ClickPipes 常见问题', 'ClickPipes MySQL 故障排查', 'MySQL 到 ClickHouse 复制', 'ClickPipes MySQL 支持', 'MySQL CDC（变更数据捕获） ClickHouse']
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+<div id="does-the-clickpipe-support-mariadb">
+  ### MySQL ClickPipe 支持 MariaDB 吗？
+</div>
+
+是的，MySQL ClickPipe 支持 MariaDB 10.0 及更高版本。其配置与 MySQL 非常相似，默认使用 GTID 复制。
+
+<div id="does-the-clickpipe-support-planetscale-vitess">
+  ### MySQL ClickPipe 是否支持 PlanetScale、Vitess 或 TiDB？
+</div>
+
+不支持，因为它们不支持 MySQL 的 binlog API。
+
+<div id="how-is-replication-managed">
+  ### 复制是如何管理的？
+</div>
+
+我们同时支持 `GTID` 和 `FilePos` 复制。与 Postgres 不同，这里没有用于管理偏移量的 slot。相反，你必须为 MySQL 服务器配置足够长的 binlog 保留期。如果我们在 binlog 中的偏移量失效 *(例如，mirror 暂停时间过长，或使用 `FilePos` 复制时发生数据库故障转移)*，则需要重新同步该管道。请务必根据目标表优化 materialized view，因为低效查询可能会拖慢摄取速度，导致其落后于保留期。
+
+对于不活跃的数据库，也可能出现日志文件轮转，导致 ClickPipes 无法推进到更新的偏移量。你可能需要设置一个心跳表，并定期更新。
+
+在初始加载开始时，我们会记录起始 binlog 偏移量。要让 CDC (变更数据捕获) 继续推进，该偏移量在初始加载完成时必须仍然有效。如果你正在摄取大量数据，请务必配置合适的 binlog 保留期。设置表时，你可以在高级设置中为大表配置 *对初始加载使用自定义分区键*，这样我们就能并行加载单个表，从而加快初始加载速度。
+
+<div id="binlog-event-exceeded-max-allowed-packet">
+  ### 为什么我的管道会因 max_allowed_packet binlog 错误而失败？
+</div>
+
+如果你的管道报出了类似以下的错误：
+
+```text
+MySQL execute error: ERROR 1236 (HY000): log event entry exceeded max_allowed_packet;
+Increase max_allowed_packet on source
+```
+
+这意味着单个 binlog 事件 (对应一次行变更) 大于你的 MySQL 服务器 [`max_allowed_packet`](https://dev.mysql.com/doc/refman/8.0/en/server-system-variables.html#sysvar_max_allowed_packet) 的设置值。由于服务器无法发送超出此限制的事件，binlog 流读取会中止，CDC (变更数据捕获) 也无法继续。
+
+这通常是因为某些行包含较大的 `BLOB`、`TEXT` 或 `JSON` 值。要解决这个问题：
+
+* **增大源端的 `max_allowed_packet`。** 将其调高到超过最大单次行变更的大小——通常直接设为最大值 `1G` 是安全的：
+  ```sql
+  SET GLOBAL max_allowed_packet = 1073741824; -- 1 GiB
+  ```
+  还要在服务器配置 (例如 `my.cnf` 或 DB 参数组) 中一并设置，这样重启后也能保持生效。
+* **如果单行大小超过 1G：** 重新同步该管道。
+
+<div id="tls-certificate-validation-error">
+  ### 连接到 MySQL 时，为什么会出现 TLS 证书验证错误？
+</div>
+
+连接到 MySQL 时，你可能会遇到 `x509: certificate is not valid for any names` 或 `x509: certificate signed by unknown authority` 等证书错误。这是因为 ClickPipes 默认启用了 TLS 加密。
+
+你可以通过以下几种方式解决这些问题：
+
+1. **设置 TLS Host 字段** - 当连接中使用的 hostname 与证书中的名称不一致时 (这在通过 Endpoint Service 使用 AWS PrivateLink 时很常见) ，就可能出现此问题。请将 “TLS Host (optional)” 设置为与证书的 Common Name (CN) 或 Subject Alternative Name (SAN) 相匹配。
+
+2. **上传 Root CA** - 适用于使用内部 CA 的 MySQL 服务器，或采用默认按实例划分 CA 配置的 Google Cloud SQL。有关如何获取 Google Cloud SQL 证书的更多信息，请参见[本节](/zh/integrations/clickpipes/mysql/source/gcp#download-root-ca-certificate-gcp-mysql)。
+
+3. **配置服务器证书** - 更新服务器的 SSL 证书，使其包含所有连接时使用的 hostname，并由受信任的 CA 签发。
+
+4. **跳过证书验证** - 适用于 self-hosted MySQL 或 MariaDB，它们的默认配置会预配我们无法验证的自签名证书 ([MySQL](https://dev.mysql.com/doc/refman/8.4/en/creating-ssl-rsa-files-using-mysql.html#creating-ssl-rsa-files-using-mysql-automatic)、[MariaDB](https://mariadb.com/kb/en/securing-connections-for-client-and-server/#enabling-tls-for-mariadb-server)) 。依赖此类证书可以加密传输中的数据，但也会带来服务器冒充的风险。我们建议在生产环境中使用正确签发的证书，不过对于一次性实例测试或连接到旧有基础设施，此选项仍然很有用。
+
+<div id="do-you-support-schema-changes">
+  ### 是否支持 schema 变更？
+</div>
+
+更多信息，请参阅 [ClickPipes for MySQL：schema 变更传播支持](/zh/integrations/clickpipes/mysql/schema-changes) 页面。
+
+<div id="support-on-delete-cascade">
+  ### 是否支持复制 MySQL 外键级联删除 `ON DELETE CASCADE`？
+</div>
+
+由于 MySQL [处理级联删除](https://dev.mysql.com/doc/refman/8.0/en/innodb-and-mysql-replication.html) 的方式，这类操作不会写入 binlog。因此，ClickPipes (或任何 CDC (变更数据捕获)  工具) 都无法对其进行复制。这可能会导致数据不一致。建议改用触发器来支持级联删除。
+
+<div id="replicate-table-dot">
+  ### 为什么表名里带点号时无法复制该表？
+</div>
+
+PeerDB 目前有一个限制：如果源表标识符中包含点号——也就是 schema 名称或表名中带有点号——则不支持复制。因为在这种情况下，PeerDB 会按点号拆分，无法分辨哪一部分是 schema，哪一部分是表名。
+目前正在支持将 schema 和表分别输入，以规避这一限制。
+
+<div id="include-excluded-columns">
+  ### 我可以把最初未纳入复制的列包含进来吗？
+</div>
+
+目前还不支持。替代方法是对你想要包含这些列的[表进行重新同步](/zh/integrations/clickpipes/mysql/table-resync)。

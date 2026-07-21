@@ -1,0 +1,141 @@
+---
+sidebarTitle: 'إدخال البيانات من MongoDB إلى ClickHouse'
+description: 'يوضح كيفية ربط MongoDB لديك بـ ClickHouse Cloud بسلاسة.'
+slug: /integrations/clickpipes/mongodb
+title: 'إدخال البيانات من MongoDB إلى ClickHouse (باستخدام CDC)'
+doc_type: 'guide'
+keywords: ['clickpipes', 'mongodb', 'cdc', 'إدخال البيانات', 'مزامنة لحظية']
+integration:
+   - support_level: 'core'
+   - category: 'clickpipes'
+---
+
+import BetaBadge from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
+
+import { Image } from "/snippets/ar/components/Image.jsx";
+
+<BetaBadge />
+
+<Info>
+  إدخال البيانات من MongoDB إلى ClickHouse Cloud عبر ClickPipes متاح حاليًا في النسخة التجريبية العامة.
+</Info>
+
+<Note>
+  في وحدة تحكم ClickHouse Cloud والوثائق، يُستخدم المصطلحان &quot;table&quot; و&quot;collection&quot; بالتبادل عند الإشارة إلى MongoDB.
+</Note>
+
+يمكنك استخدام ClickPipes لإدخال البيانات من قاعدة بيانات MongoDB الخاصة بك إلى ClickHouse Cloud. ويمكن استضافة قاعدة بيانات MongoDB المصدر داخل بنيتك التحتية المحلية أو في السحابة باستخدام خدمات مثل MongoDB Atlas.
+
+يمكن نشر MongoDB ClickPipes وإدارته يدويًا باستخدام ClickPipes UI، وكذلك برمجيًا باستخدام [OpenAPI](/ar/integrations/clickpipes/programmatic-access/openapi) و[Terraform](/ar/integrations/clickpipes/programmatic-access/terraform).
+
+<div id="prerequisites">
+  ## المتطلبات الأساسية
+</div>
+
+للبدء، عليك أولًا التأكد من أن قاعدة بيانات MongoDB المصدر مُعَدّة بشكل صحيح للنسخ المتماثل. وتعتمد خطوات الإعداد على طريقة نشر MongoDB، لذا يُرجى اتباع الدليل المناسب أدناه:
+
+1. [MongoDB Atlas](/ar/integrations/clickpipes/mongodb/source/atlas)
+
+2. [Generic MongoDB](/ar/integrations/clickpipes/mongodb/source/generic)
+
+3. [Amazon DocumentDB](/ar/integrations/clickpipes/mongodb/source/documentdb)
+
+بعد إعداد قاعدة بيانات MongoDB المصدر، يمكنك متابعة إنشاء ClickPipe.
+
+<div id="create-your-clickpipe">
+  ## أنشئ ClickPipe الخاص بك
+</div>
+
+تأكد من أنك مسجّل الدخول إلى حساب ClickHouse Cloud الخاص بك. إذا لم يكن لديك حساب بعد، يمكنك التسجيل [هنا](https://cloud.clickhouse.com/).
+
+1. في وحدة تحكم ClickHouse Cloud، انتقل إلى خدمة ClickHouse Cloud الخاصة بك.
+
+<Image img="/images/integrations/data-ingestion/clickpipes/cp_service.webp" alt="خدمة ClickPipes" size="lg" border />
+
+2. من القائمة الجانبية اليسرى، حدّد الزر `Data Sources` ثم انقر على &quot;Set up a ClickPipe&quot;.
+
+<Image img="/images/integrations/data-ingestion/clickpipes/cp_step0.webp" alt="اختيار الواردات" size="lg" border />
+
+3. حدّد بطاقة `MongoDB CDC`.
+
+<Image img="/images/integrations/data-ingestion/clickpipes/mongodb/mongodb-tile.webp" alt="اختيار MongoDB" size="lg" border />
+
+<div id="add-your-source-mongodb-database-connection">
+  ### أضِف اتصال قاعدة بيانات MongoDB المصدر
+</div>
+
+4. املأ تفاصيل الاتصال لقاعدة بيانات MongoDB المصدر التي أعددتها في خطوة المتطلبات الأساسية.
+
+<Info>
+  قبل البدء بإضافة تفاصيل الاتصال، تأكد من إدراج عناوين IP الخاصة بـ ClickPipes في قائمة السماح ضمن قواعد جدار الحماية لديك. في الصفحة التالية، يمكنك العثور على [قائمة بعناوين IP الخاصة بـ ClickPipes](/ar/integrations/clickpipes/home#list-of-static-ips).
+  لمزيد من المعلومات، راجع أدلة إعداد MongoDB المصدر المشار إليها في [أعلى هذه الصفحة](#prerequisites).
+</Info>
+
+<Image img="/images/integrations/data-ingestion/clickpipes/mongodb/mongodb-connection-details.webp" alt="املأ تفاصيل الاتصال" size="lg" border />
+
+<div id="optional-set-up-ssh-tunneling">
+  #### (اختياري) إعداد نفق SSH
+</div>
+
+يمكنك تحديد تفاصيل نفق SSH إذا كانت قاعدة بيانات MongoDB المصدر لديك غير متاحة عبر الإنترنت العام.
+
+1. فعِّل زر التبديل &quot;Use SSH Tunnelling&quot;.
+
+2. املأ تفاصيل اتصال SSH.
+
+   <Image img="/images/integrations/data-ingestion/clickpipes/postgres/ssh-tunnel.jpg" alt="نفق SSH" size="lg" border />
+
+3. لاستخدام المصادقة المستندة إلى المفتاح، انقر على &quot;Revoke and generate key pair&quot; لإنشاء زوج مفاتيح جديد، ثم انسخ المفتاح العام الذي تم إنشاؤه إلى خادم SSH لديك ضمن `~/.ssh/authorized_keys`.
+
+4. انقر على &quot;Verify Connection&quot; للتحقق من الاتصال.
+
+<Note>
+  تأكد من السماح لعناوين IP الخاصة بـ [عناوين IP الخاصة بـ ClickPipes](/ar/integrations/clickpipes/home#list-of-static-ips) في قواعد جدار الحماية الخاصة بمضيف SSH bastion حتى يتمكن ClickPipes من إنشاء نفق SSH.
+</Note>
+
+بعد إدخال تفاصيل الاتصال، انقر على `Next`.
+
+<div id="advanced-settings">
+  #### تكوين الإعدادات المتقدمة
+</div>
+
+يمكنك تكوين الإعدادات المتقدمة عند الحاجة. يرد أدناه وصف موجز لكل إعداد:
+
+* **فاصل المزامنة**: هذا هو الفاصل الزمني الذي ستتحقق عنده ClickPipes من وجود تغييرات في قاعدة البيانات المصدر. ولهذا تأثير على خدمة ClickHouse الوجهة، لذا نوصي المستخدمين الحريصين على التكلفة بالإبقاء عليه عند قيمة أعلى (أكبر من `3600`).
+* **حجم دفعة السحب**: عدد الصفوف التي سيتم جلبها في دفعة واحدة. هذا إعداد يُطبَّق على أساس أفضل جهد، وقد لا يُلتزم به في جميع الحالات.
+* **عدد الجداول في اللقطة الأولية بالتوازي**: هذا هو عدد الجداول التي سيتم جلبها بالتوازي أثناء اللقطة الأولية. ويكون ذلك مفيدًا عندما يكون لديك عدد كبير من الجداول وتريد التحكم في عدد الجداول التي يتم جلبها بالتوازي.
+
+<div id="configure-the-tables">
+  ### إعداد الجداول
+</div>
+
+5. هنا يمكنك تحديد قاعدة البيانات الوجهة لـ ClickPipe. يمكنك إما تحديد قاعدة بيانات موجودة أو إنشاء قاعدة بيانات جديدة.
+
+   <Image img="/images/integrations/data-ingestion/clickpipes/mongodb/select-destination-db.webp" alt="تحديد قاعدة البيانات الوجهة" size="lg" border />
+
+6. يمكنك تحديد الجداول التي تريد نسخها من قاعدة بيانات MongoDB المصدر. وأثناء تحديد الجداول، يمكنك أيضًا اختيار إعادة تسمية الجداول في قاعدة بيانات ClickHouse الوجهة.
+
+<div id="review-permissions-and-start-the-clickpipe">
+  ### راجع الأذونات وابدأ ClickPipe
+</div>
+
+7. اختر دور «الوصول الكامل» من القائمة المنسدلة للأذونات، ثم انقر على «إكمال الإعداد».
+
+   <Image img="/images/integrations/data-ingestion/clickpipes/postgres/ch-permissions.jpg" alt="مراجعة الأذونات" size="lg" border />
+
+<div id="whats-next">
+  ## ما التالي؟
+</div>
+
+بعد إعداد ClickPipe لنسخ البيانات من MongoDB إلى ClickHouse Cloud، يمكنك التركيز على كيفية الاستعلام عن بياناتك ونمذجتها لتحقيق أفضل أداء.
+
+<div id="caveats">
+  ## ملاحظات مهمة
+</div>
+
+فيما يلي بعض الملاحظات المهمة التي ينبغي الانتباه إليها عند استخدام هذا الموصل:
+
+* نشترط استخدام MongoDB بالإصدار 5.1.0 أو أحدث.
+* نستخدم واجهة برمجة تطبيقات change stream الأصلية في MongoDB من أجل CDC، والتي تعتمد على oplog في MongoDB لالتقاط التغييرات في الوقت الفعلي.
+* تُنسخ المستندات من MongoDB إلى ClickHouse باستخدام JSON type افتراضيًا. يوفّر ذلك مرونة في إدارة الـ schema، ويتيح استخدام المجموعة الغنية من operators الخاصة بـ JSON في ClickHouse لأغراض الاستعلام والتحليلات. يمكنك معرفة المزيد عن الاستعلام عن بيانات JSON [هنا](/ar/reference/data-types/newjson).
+* لا يتوفر حاليًا إعداد PrivateLink بنمط self-serve. إذا كنت تستخدم AWS وتحتاج إلى PrivateLink، يُرجى التواصل عبر db-integrations-support@clickhouse.com أو إنشاء تذكرة دعم — وسنعمل معك على تفعيله.

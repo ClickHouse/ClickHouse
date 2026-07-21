@@ -1,0 +1,93 @@
+---
+sidebarTitle: 'Onboarding PCI'
+slug: /cloud/security/compliance/pci-onboarding
+title: 'Onboarding PCI'
+description: 'En savoir plus sur l’onboarding vers des services conformes PCI'
+doc_type: 'guide'
+keywords: ['pci', 'conformité', 'sécurité des paiements', 'protection des données', 'sécurité']
+---
+
+import BetaBadge from "/snippets/fr/components/BetaBadge/BetaBadge.jsx";
+import EnterprisePlanFeatureBadge from "/snippets/fr/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
+
+import { Image } from "/snippets/fr/components/Image.jsx";
+
+<EnterprisePlanFeatureBadge feature="conformité PCI" />
+
+ClickHouse propose des services conformes à la norme Payment Card Industry Data Security Standard (PCI-DSS) et est audité selon les exigences de niveau 1 applicables aux prestataires de services. Les clients peuvent traiter des numéros de compte principal (PAN) dans ces services en activant cette fonctionnalité et en déployant des services dans une région conforme.
+
+Pour en savoir plus sur le programme de conformité de ClickHouse et la disponibilité des rapports d’audit tiers, consultez notre [aperçu de la conformité](/fr/products/cloud/reference/security/compliance-overview). Pour obtenir une copie de notre document PCI sur le partage des responsabilités, consultez notre [Trust Center](https://trust.clickhouse.com). En outre, les clients doivent consulter notre page [fonctionnalités de sécurité](/fr/products/cloud/features/security) afin de sélectionner et de mettre en œuvre les contrôles de sécurité adaptés à leurs workloads.
+
+Cette page décrit la procédure à suivre pour activer le déploiement de services conformes PCI dans ClickHouse Cloud.
+
+<Steps>
+  <Step>
+    ### Souscrire à des services Enterprise
+
+    1. Sélectionnez le nom de votre organisation dans l’angle inférieur gauche de la console.
+    2. Cliquez sur **Facturation**.
+    3. Vérifiez votre **Forfait** dans l’angle supérieur gauche.
+    4. Si votre **Forfait** est **Enterprise**, passez à la section suivante. Sinon, cliquez sur **Changer de forfait**.
+    5. Sélectionnez **Passer à Enterprise**.
+  </Step>
+
+  <Step>
+    ### Activer PCI pour votre organisation
+
+    1. Sélectionnez le nom de votre organisation dans l’angle inférieur gauche de la console.
+    2. Cliquez sur **Détails de l’organisation**.
+    3. Activez l’option **Enable PCI**.
+
+    <br />
+
+    <Image img="/images/cloud/security/compliance/pci_1.webp" size="md" alt="Activer PCI" background="black" />
+
+    <br />
+
+    4. Une fois activée, l’organisation peut déployer des services PCI.
+
+    <br />
+
+    <Image img="/images/cloud/security/compliance/pci_2.webp" size="md" alt="PCI activé" background="black" />
+
+    <br />
+  </Step>
+
+  <Step>
+    ### Déployer des services dans des régions conformes PCI
+
+    1. Sélectionnez **Nouveau service** dans l’angle supérieur gauche de l’écran d’accueil de la console
+    2. Remplacez le **Type de région** par **Conforme HIPAA**
+
+    <br />
+
+    <Image img="/images/cloud/security/compliance/pci_3.webp" size="md" alt="Déployer dans une région PCI" background="black" />
+
+    <br />
+
+    3. Saisissez un nom pour le service et renseignez les autres informations
+
+    Pour obtenir la liste complète des fournisseurs cloud et des services conformes PCI, consultez notre page [Régions cloud prises en charge](/fr/products/cloud/reference/supported-regions).
+  </Step>
+</Steps>
+
+<div id="migrate-to-hipaa">
+  ## Migrer des services existants
+</div>
+
+Il est vivement recommandé aux clients de déployer leurs services dans des environnements conformes lorsque cela est nécessaire. Le processus de migration de services d&#39;une région standard vers une région conforme PCI implique une restauration à partir d&#39;une sauvegarde et peut entraîner une certaine indisisponibilité.
+
+Si une migration d&#39;une région standard vers une région conforme PCI est nécessaire, suivez ces étapes pour effectuer une migration en libre-service :
+
+1. Sélectionnez le service à migrer.
+2. Cliquez sur **Backups** dans le menu de gauche.
+3. Sélectionnez les trois points à gauche de la sauvegarde à restaurer.
+4. Sélectionnez le **Type de région** afin de restaurer la sauvegarde dans une région conforme PCI.
+5. Une fois la restauration terminée, exécutez quelques requêtes pour vérifier que les schémas et le nombre d&#39;enregistrements sont conformes à vos attentes.
+6. Supprimez l&#39;ancien service.
+
+<Info>
+  **Restrictions**
+
+  Les services doivent rester chez le même fournisseur de cloud et dans la même région géographique. Ce processus migre le service vers un environnement conforme chez le même fournisseur de cloud et dans la même région.
+</Info>

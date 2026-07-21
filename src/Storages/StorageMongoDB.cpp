@@ -656,7 +656,7 @@ void registerStorageMongoDB(StorageFactory & factory)
         .description = R"DOCS_MD(
 MongoDB engine is read-only table engine which allows to read data from a remote [MongoDB](https://www.mongodb.com/) collection.
 
-Only MongoDB v3.6+ servers are supported.
+Only MongoDB >=7 is supported.
 [Seed list(`mongodb+srv`)](https://www.mongodb.com/docs/manual/reference/glossary/#std-term-seed-list) is not yet supported.
 
 ## Creating a table {#creating-a-table}

@@ -1,0 +1,193 @@
+---
+slug: /use-cases/data-lake/onelake-catalog
+sidebarTitle: 'Fabric OneLake'
+title: 'Fabric OneLake'
+description: 'Neste guia, mostraremos as etapas para consultar seus dados no Microsoft OneLake.'
+keywords: ['OneLake', 'lago de dados', 'Fabric']
+show_related_blogs: true
+doc_type: 'guide'
+---
+
+import BetaBadge from "/snippets/pt-BR/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge />
+
+O ClickHouse oferece suporte à integração com vários catálogos (OneLake, Unity, Glue, Polaris etc.). Este guia orienta você pelas etapas para consultar seus dados armazenados no Microsoft OneLake usando o ClickHouse e o [OneLake](https://learn.microsoft.com/en-us/fabric/onelake/onelake-overview).
+
+O Microsoft OneLake oferece suporte a vários formatos de tabela para seu lakehouse. Com o ClickHouse, você pode consultar tabelas Iceberg.
+
+<Note>
+  Como esse recurso está em beta, você precisará habilitá-lo usando:
+  `SET allow_database_iceberg = 1;`
+</Note>
+
+<div id="gathering-requirements">
+  ## Reunindo os pré-requisitos do OneLake
+</div>
+
+Antes de consultar sua tabela no Microsoft Fabric, você precisará coletar as seguintes informações:
+
+* Um ID do tenant do OneLake (seu Entra ID)
+* Um ID do aplicativo (cliente)
+* Um segredo do cliente
+* Um ID de warehouse e um ID de item de dados
+
+O ID do seu warehouse é o ID do seu Workspace.
+
+Para o ID do item de dados, recomendamos usar o ID do seu Lakehouse. Em nossos testes, isso não funciona com um ID de Warehouse.
+
+Consulte a [documentação do Microsoft OneLake](http://learn.microsoft.com/en-us/fabric/onelake/table-apis/table-apis-overview#prerequisites) para obter ajuda para encontrar esses valores.
+
+<div id="creating-a-connection-between-unity-catalog-and-clickhouse">
+  ## Criando uma conexão entre o OneLake e o ClickHouse
+</div>
+
+Com as informações acima, agora você já pode criar uma conexão entre o Microsoft OneLake e o ClickHouse, mas, antes disso, é preciso habilitar os catálogos:
+
+```sql
+SET allow_database_iceberg=1
+```
+
+<div id="connect-onelake">
+  ### Conecte-se ao OneLake
+</div>
+
+```sql
+CREATE DATABASE onelake_catalog
+ENGINE = DataLakeCatalog('https://onelake.table.fabric.microsoft.com/iceberg')
+SETTINGS
+catalog_type = 'onelake',
+warehouse = 'warehouse_id/data_item_id',
+onelake_tenant_id = '<tenant_id>',
+oauth_server_uri = 'https://login.microsoftonline.com/<tenant_id>/oauth2/v2.0/token',
+auth_scope = 'https://storage.azure.com/.default',
+onelake_client_id = '<client_id>',
+onelake_client_secret = '<client_secret>'
+```
+
+<div id="querying-onelake-using-clickhouse">
+  ## Consultando o OneLake com o ClickHouse
+</div>
+
+Agora que a conexão está estabelecida, você pode começar a consultar o OneLake:
+
+```sql
+SHOW TABLES FROM onelake_catalog
+```
+
+```response
+Query id: 8f6124c4-45c2-4351-b49a-89dc13e548a7
+
+   ┌─name──────────────────────────┐
+1. │ year_2017.green_tripdata_2017 │
+2. │ year_2018.green_tripdata_2018 │
+3. │ year_2019.green_tripdata_2019 │
+4. │ year_2020.green_tripdata_2020 │
+5. │ year_2022.green_tripdata_2022 │
+   └───────────────────────────────┘
+```
+
+Se você estiver usando o cliente Iceberg, somente as tabelas Delta com o Uniform habilitado serão mostradas:
+
+Para consultar uma tabela:
+
+```sql
+SELECT *
+FROM onelake_catalog.`year_2017.green_tripdata_2017`
+LIMIT 1
+```
+
+```response
+Query id: db6b4bda-cc58-4ca1-8891-e0d14f02c890
+
+Linha 1:
+──────
+VendorID:              2
+lpep_pickup_datetime:  2017-05-18 16:55:43.000000
+lpep_dropoff_datetime: 2017-05-18 18:04:11.000000
+store_and_fwd_flag:    N
+RatecodeID:            2
+PULocationID:          130
+DOLocationID:          48
+passenger_count:       2
+trip_distance:         12.43
+fare_amount:           52
+extra:                 4.5
+mta_tax:               0.5
+tip_amount:            0
+tolls_amount:          33
+ehail_fee:             ᴺᵁᴸᴸ
+improvement_surcharge: 0.3
+total_amount:          90.3
+payment_type:          2
+trip_type:             1
+congestion_surcharge:  ᴺᵁᴸᴸ
+source_file:           green_tripdata_2017-05.parquet
+```
+
+<Info>
+  **Backticks obrigatórios**
+
+  Os backticks são obrigatórios porque o ClickHouse não oferece suporte a mais de um espaço de nomes.
+</Info>
+
+Para inspecionar a DDL da tabela:
+
+```sql
+SHOW CREATE TABLE onelake_catalog.`year_2017.green_tripdata_2017`
+```
+
+```response
+Query id: 8bd5bd8e-83be-453e-9a88-32de12ba7f24
+
+   ┌─statement───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+1. │ CREATE TABLE onelake_catalog.`year_2017.green_tripdata_2017`                                                                                                               ↴│
+   │↳(                                                                                                                                                                          ↴│
+   │↳    `VendorID` Nullable(Int64),                                                                                                                                            ↴│
+   │↳    `lpep_pickup_datetime` Nullable(DateTime64(6, 'UTC')),                                                                                                                 ↴│
+   │↳    `lpep_dropoff_datetime` Nullable(DateTime64(6, 'UTC')),                                                                                                                ↴│
+   │↳    `store_and_fwd_flag` Nullable(String),                                                                                                                                 ↴│
+   │↳    `RatecodeID` Nullable(Int64),                                                                                                                                          ↴│
+   │↳    `PULocationID` Nullable(Int64),                                                                                                                                        ↴│
+   │↳    `DOLocationID` Nullable(Int64),                                                                                                                                        ↴│
+   │↳    `passenger_count` Nullable(Int64),                                                                                                                                     ↴│
+   │↳    `trip_distance` Nullable(Float64),                                                                                                                                     ↴│
+   │↳    `fare_amount` Nullable(Float64),                                                                                                                                       ↴│
+   │↳    `extra` Nullable(Float64),                                                                                                                                             ↴│
+   │↳    `mta_tax` Nullable(Float64),                                                                                                                                           ↴│
+   │↳    `tip_amount` Nullable(Float64),                                                                                                                                        ↴│
+   │↳    `tolls_amount` Nullable(Float64),                                                                                                                                      ↴│
+   │↳    `ehail_fee` Nullable(Float64),                                                                                                                                         ↴│
+   │↳    `improvement_surcharge` Nullable(Float64),                                                                                                                             ↴│
+   │↳    `total_amount` Nullable(Float64),                                                                                                                                      ↴│
+   │↳    `payment_type` Nullable(Int64),                                                                                                                                        ↴│
+   │↳    `trip_type` Nullable(Int64),                                                                                                                                           ↴│
+   │↳    `congestion_surcharge` Nullable(Float64),                                                                                                                              ↴│
+   │↳    `source_file` Nullable(String)                                                                                                                                         ↴│
+   │↳)                                                                                                                                                                          ↴│
+   │↳ENGINE = Iceberg('abfss://<warehouse_id>@onelake.dfs.fabric.microsoft.com/<data_item_id>/Tables/year_2017/green_tripdata_2017') │
+   └─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+<div id="loading-data-from-onelake-into-clickhouse">
+  ## Carregando dados do seu lago de dados para o ClickHouse
+</div>
+
+Se você precisar carregar dados do OneLake para o ClickHouse:
+
+```sql
+CREATE TABLE trips
+ENGINE = MergeTree
+ORDER BY coalesce(VendorID, 0)
+AS SELECT *
+FROM onelake_catalog.`year_2017.green_tripdata_2017`
+```
+
+```response
+Query id: d15983a6-ef6a-40fe-80d5-19274b9fe328
+
+Ok.
+
+0 rows in set. Elapsed: 32.570 sec. Processed 11.74 million rows, 275.37 MB (360.36 thousand rows/s., 8.45 MB/s.)
+Peak memory usage: 1.31 GiB.
+```
