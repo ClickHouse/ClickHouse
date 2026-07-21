@@ -171,9 +171,12 @@ static constexpr auto DBMS_MIN_PROTOCOL_VERSION_WITH_INTERNAL_QUERY_FLAG = 54486
 /// (sent right after the request, validated before the response).
 static constexpr auto DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET_TABLES_STATUS = 54487;
 
+/// Push the initiator's current roles to other nodes for consistent role-scoped access.
+static constexpr auto DBMS_MIN_PROTOCOL_VERSION_WITH_INTERSERVER_CURRENT_ROLES = 54488;
+
 /// Native push `INSERT ... RETURNING` sends a post-terminator result stream (`Data`/`Totals`/`Extremes`),
 /// so old clients that do not switch from insert-drain to query-result mode must be rejected.
-static constexpr auto DBMS_MIN_PROTOCOL_VERSION_WITH_INSERT_RETURNING_RESULTS = 54488;
+static constexpr auto DBMS_MIN_PROTOCOL_VERSION_WITH_INSERT_RETURNING_RESULTS = 54489;
 
 
 /// Version of ClickHouse TCP protocol.
@@ -183,5 +186,5 @@ static constexpr auto DBMS_MIN_PROTOCOL_VERSION_WITH_INSERT_RETURNING_RESULTS = 
 /// NOTE: DBMS_TCP_PROTOCOL_VERSION has nothing common with VERSION_REVISION,
 /// later is just a number for server version (one number instead of commit SHA)
 /// for simplicity (sometimes it may be more convenient in some use cases).
-static constexpr auto DBMS_TCP_PROTOCOL_VERSION = 54488;
+static constexpr auto DBMS_TCP_PROTOCOL_VERSION = 54489;
 }

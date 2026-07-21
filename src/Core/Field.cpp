@@ -12,6 +12,9 @@
 #include <IO/WriteHelpers.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/readDecimalText.h>
+#include <Common/LockMemoryExceptionInThread.h>
+
+#include <absl/container/inlined_vector.h>
 
 
 using namespace std::literals;
@@ -29,6 +32,166 @@ extern const int INCORRECT_DATA;
 extern const int NOT_IMPLEMENTED;
 extern const int LOGICAL_ERROR;
 extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+}
+
+void Field::initEmptyContainer(Types::Which w)
+{
+    switch (w)
+    {
+        case Types::Array:  new (&storage) Array();  break;
+        case Types::Tuple:  new (&storage) Tuple();  break;
+        case Types::Map:    new (&storage) Map();    break;
+        case Types::Object: new (&storage) Object(); break;
+        default: break;
+    }
+    which = w;
+}
+
+void Field::createContainerIteratively(const Field & src)
+{
+    /// Build *this as a deep copy of `src`. Each pending entry is a (source, destination)
+    /// pair of same-typed container Fields whose destination is empty and still needs its
+    /// elements copied in. Container children are created empty and enqueued instead of
+    /// being copied recursively, so the copy runs with a bounded native stack.
+    initEmptyContainer(src.which);
+
+    absl::InlinedVector<std::pair<const Field *, Field *>, 16> pending;
+
+    /// On a mid-copy allocation failure, tear down what was built so we neither leak the
+    /// partial container nor leave the storage in a half-constructed state (matches the
+    /// strong guarantee the recursive std::vector copy used to provide).
+    auto copy_level = [&pending](const Field & s, Field & d)
+    {
+        auto copy_vector = [&pending](const auto & sv, auto & dv)
+        {
+            dv.reserve(sv.size());  /// keep &dv.back() stable while we hand out pointers below
+            for (const Field & se : sv)
+            {
+                if (isContainer(se.which))
+                {
+                    dv.emplace_back();
+                    Field & de = dv.back();
+                    de.initEmptyContainer(se.which);
+                    pending.emplace_back(&se, &de);
+                }
+                else
+                    dv.push_back(se);  /// leaf: a shallow copy, no recursion
+            }
+        };
+
+        switch (d.which)
+        {
+            case Types::Array: copy_vector(s.get<Array>(), d.get<Array>()); break;
+            case Types::Tuple: copy_vector(s.get<Tuple>(), d.get<Tuple>()); break;
+            case Types::Map:   copy_vector(s.get<Map>(),   d.get<Map>());   break;
+            case Types::Object:
+            {
+                /// std::map insertion never invalidates references to existing elements,
+                /// so the &de pointers we enqueue stay valid.
+                for (const auto & [key, se] : s.get<Object>())
+                {
+                    if (isContainer(se.which))
+                    {
+                        Field & de = d.get<Object>().emplace(key, Field()).first->second;
+                        de.initEmptyContainer(se.which);
+                        pending.emplace_back(&se, &de);
+                    }
+                    else
+                        d.get<Object>().emplace(key, se);
+                }
+                break;
+            }
+            default: break;
+        }
+    };
+
+    try
+    {
+        copy_level(src, *this);
+        while (!pending.empty())
+        {
+            auto [s, d] = pending.back();
+            pending.pop_back();
+            copy_level(*s, *d);
+        }
+    }
+    catch (...)
+    {
+        destroy();
+        throw;
+    }
+}
+
+static bool containerIsEmpty(const Field & f)
+{
+    switch (f.getType())
+    {
+        case Field::Types::Array:  return f.safeGet<Array>().empty();
+        case Field::Types::Tuple:  return f.safeGet<Tuple>().empty();
+        case Field::Types::Map:    return f.safeGet<Map>().empty();
+        case Field::Types::Object: return f.safeGet<Object>().empty();
+        default: return true;
+    }
+}
+
+void Field::destroyContainerIteratively(Types::Which old_which) noexcept
+{
+    /// Tear down a (possibly deeply nested) container without native recursion: move every
+    /// non-empty nested-container child into an explicit worklist so each vector/map
+    /// destructor only ever destroys leaf elements (and already-emptied containers, which are
+    /// trivial), keeping the native stack depth bounded regardless of the nesting depth.
+    ///
+    /// This runs from ~Field, so it must not throw. The worklist can allocate, and allocation
+    /// goes through the throwing operator new, so suppress the memory-limit exception for its
+    /// lifetime (memory is still tracked, so freeing the value being destroyed is still credited).
+    /// The worklist only holds the current frontier of nested containers, which for a deeply
+    /// nested value is narrow (a deep literal is query-size bounded, so it cannot also be wide);
+    /// the inline buffer keeps that common case allocation-free.
+    LockMemoryExceptionInThread block_memory_limit_exception;
+    absl::InlinedVector<Field, 16> to_destroy;
+
+    auto steal_children = [&to_destroy](Field & container, Types::Which w)
+    {
+        auto steal_from_vector = [&to_destroy](auto & vec)
+        {
+            for (Field & elem : vec)
+                if (isContainer(elem.which) && !containerIsEmpty(elem))
+                    to_destroy.push_back(std::move(elem));
+        };
+
+        switch (w)
+        {
+            case Types::Array: steal_from_vector(container.get<Array>()); break;
+            case Types::Tuple: steal_from_vector(container.get<Tuple>()); break;
+            case Types::Map:   steal_from_vector(container.get<Map>());   break;
+            case Types::Object:
+                for (auto & [key, elem] : container.get<Object>())
+                    if (isContainer(elem.which) && !containerIsEmpty(elem))
+                        to_destroy.push_back(std::move(elem));
+                break;
+            default: break;
+        }
+    };
+
+    /// `which` is already Null here (set by destroy()), so drive off the saved `old_which`.
+    steal_children(*this, old_which);
+    switch (old_which)
+    {
+        case Types::Array:  destroy<Array>();  break;
+        case Types::Tuple:  destroy<Tuple>();  break;
+        case Types::Map:    destroy<Map>();    break;
+        case Types::Object: destroy<Object>(); break;
+        default: break;
+    }
+
+    while (!to_destroy.empty())
+    {
+        Field cur = std::move(to_destroy.back());
+        to_destroy.pop_back();
+        /// Empty `cur`'s nested containers into the worklist first, so destroying `cur` at the
+        /// end of this scope stays shallow (its remaining children are leaves or emptied).
+        steal_children(cur, cur.which);
+    }
 }
 
 bool AggregateFunctionStateData::operator < (const AggregateFunctionStateData &) const
