@@ -46,6 +46,8 @@ void GroupExpression::dump(WriteBuffer & out, const CostConfig & cost_config) co
     out << " '" << getDescription() << "'";
     if (strategy)
         out << " [" << strategy->getName() << "]";
+    if (enforcer_axis != EnforcerAxis::None)
+        out << " [enforcer:" << (enforcer_axis == EnforcerAxis::Sorting ? "Sorting" : "Distribution") << "]";
     out << " inputs:";
     for (const auto & input : inputs)
         out << " #" << input.group_id;

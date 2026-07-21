@@ -223,12 +223,14 @@ void Group::dump(WriteBuffer & out, const CostConfig & cost_config, String inden
         {
             out << indent << "Best for " << best->properties.dump() << ":\n"
                 << indent << indent
-                << "Cost: " << best->cost->cost.total(cost_config) << " (subtree: " << best->cost->subtree_cost.total(cost_config);
-            if (best->cost->cost.sequential > 0)
-                out << ", seq: " << best->cost->cost.sequential
-                    << ", work: " << best->cost->cost.work
-                    << ", net: " << best->cost->cost.network;
-            out << ") : " << best->getDescription() << "\n";
+                << "Cost: local(" << best->cost->cost.dump(cost_config) << ")"
+                << " subtree(" << best->cost->subtree_cost.dump(cost_config) << ")"
+                << " : " << best->getDescription();
+            /// The inputs with their required properties let the reader follow the winning
+            /// chain down the memo (which bucket of each child group this plan was built from).
+            for (const auto & input : best->inputs)
+                out << " <- #" << input.group_id << " " << input.required_properties.dump();
+            out << "\n";
         }
     }
 }
