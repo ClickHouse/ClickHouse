@@ -37,6 +37,7 @@ def clone_submodules():
         "contrib/llvm-project",
         "contrib/lz4",
         "contrib/zstd",
+        "contrib/zxc",
         "contrib/re2",
         "contrib/sparsehash-c11",
         "contrib/croaring",
@@ -168,6 +169,8 @@ def main():
         stages.insert(0, stage)
 
     clickhouse_bin_path = Path(f"{build_dir}/programs/clickhouse")
+    clickhouse_se_path = Path(f"{build_dir}/programs/self-extracting/clickhouse")
+    clickhouse_se_stripped_path = Path(f"{build_dir}/programs/self-extracting/clickhouse-stripped")
 
     for path in [
         Path(temp_dir) / "clickhouse",
@@ -268,6 +271,7 @@ def main():
                 -DENABLE_TESTS=0 -DENABLE_UTILS=0 -DENABLE_THINLTO=0 -DENABLE_NURAFT=1 -DENABLE_SIMDJSON=1 \
                 -DENABLE_LEXER_TEST=1 \
                 -DBUILD_STRIPPED_BINARY=1 \
+                -DENABLE_CLICKHOUSE_SELF_EXTRACTING=1 \
                 -DENABLE_JEMALLOC=1 -DENABLE_LIBURING=1 -DENABLE_YAML_CPP=1 -DENABLE_RUST=1 \
                 -B {build_dir_normalized}",
                 workdir=repo_path_normalized,
@@ -289,13 +293,24 @@ def main():
         res = results[-1].is_ok()
 
     if res and JobStages.BUILD in stages:
+        se_check_path = Path(build_dir) / "clickhouse_se_check"
+        se_stripped_check_path = Path(build_dir) / "clickhouse_se_stripped_check"
         commands = [
             "sccache --show-stats",
             "clickhouse-client --version",
+            # Verify both self-extracting bundles: copy each so the first-run
+            # in-place decompression does not corrupt the artifacts we will upload,
+            # then run --version to trigger extraction and confirm output.
+            f"cp {clickhouse_se_path} {se_check_path}",
+            f"chmod +x {se_check_path}",
+            f"{se_check_path} --version",
+            f"cp {clickhouse_se_stripped_path} {se_stripped_check_path}",
+            f"chmod +x {se_stripped_check_path}",
+            f"{se_stripped_check_path} --version",
         ]
         results.append(
             Result.from_commands_run(
-                name="Check and Compress binary",
+                name="Check binary",
                 command=commands,
                 workdir=build_dir_normalized,
             )
@@ -369,11 +384,14 @@ def main():
             attach_debug = True
         job_info = results[-1].info
 
+    clickhouse_upload_path = (
+        clickhouse_se_path if (attach_debug or not res) else clickhouse_se_stripped_path
+    )
+    if clickhouse_upload_path.is_file():
+        # do not reupload clickhouse binary for non-building jobs (e.g. darwin tests)
+        attach_files.append(clickhouse_upload_path)
     if attach_debug:
-        attach_files += [
-            clickhouse_bin_path,
-            *CH.prepare_logs(info=info, all=True),
-        ]
+        attach_files.extend(CH.prepare_logs(info=info, all=True))
 
     CH.terminate(force=True)
 
