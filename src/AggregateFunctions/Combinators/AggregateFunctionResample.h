@@ -226,8 +226,7 @@ public:
         /// Reserve before the loop so that, for a nested `-State` function, the per-bucket aliasing
         /// transfer into `col.getData()` cannot reallocate and throw mid-loop (which would double-free
         /// the already-transferred sub-states). Reserving happens before any transfer, so it is safe.
-        col.getData().reserve(col.getData().size() + total);
-        col_offsets.getData().reserve(col_offsets.size() + 1);
+        reserveForInsertResult(place, to);
 
         for (size_t i = 0; i < total; ++i)
         {
@@ -248,6 +247,19 @@ public:
     void insertMergeResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena * arena) const override
     {
         insertResultIntoImpl<true>(place, to, arena);
+    }
+
+    void reserveForInsertResult(ConstAggregateDataPtr __restrict, IColumn & to) const override
+    {
+        auto & col = assert_cast<ColumnArray &>(to);
+        auto & col_offsets = assert_cast<ColumnArray::ColumnOffsets &>(col.getOffsetsColumn());
+
+        /// Reserve the offsets and the flat data column for all buckets before the transfer, so the
+        /// per-bucket aliasing of a nested `-State` result cannot reallocate and throw once it starts.
+        /// Needed both standalone and when this function is a `-Tuple` element (so a later tuple element
+        /// cannot throw here after an earlier element already aliased its states).
+        col.getData().reserve(col.getData().size() + total);
+        col_offsets.getData().reserve(col_offsets.size() + 1);
     }
 
     AggregateFunctionPtr getNestedFunction() const override { return nested_function; }

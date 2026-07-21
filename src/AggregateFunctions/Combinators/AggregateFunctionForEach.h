@@ -330,8 +330,7 @@ public:
 
         /// Reserve before the loop so the per-element aliasing transfer into `elems_to` cannot
         /// reallocate and throw mid-loop for a nested `-State` function. See AggregateFunctionResample.h.
-        elems_to.reserve(elems_to.size() + state.dynamic_array_size);
-        offsets_to.reserve(offsets_to.size() + 1);
+        reserveForInsertResult(place, to);
 
         char * nested_state = state.array_of_aggregate_datas;
         for (size_t i = 0; i < state.dynamic_array_size; ++i)
@@ -354,6 +353,22 @@ public:
     void insertMergeResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena * arena) const override
     {
         insertResultIntoImpl<true>(place, to, arena);
+    }
+
+    void reserveForInsertResult(ConstAggregateDataPtr __restrict place, IColumn & to) const override
+    {
+        const AggregateFunctionForEachData & state = data(place);
+
+        ColumnArray & arr_to = assert_cast<ColumnArray &>(to);
+        ColumnArray::Offsets & offsets_to = arr_to.getOffsets();
+        IColumn & elems_to = arr_to.getData();
+
+        /// Reserve the offsets and the flat data column for all elements before the transfer, so the
+        /// per-element aliasing of a nested `-State` result cannot reallocate and throw once it starts.
+        /// Needed both standalone and when this function is a `-Tuple` element (so a later tuple element
+        /// cannot throw here after an earlier element already aliased its states).
+        elems_to.reserve(elems_to.size() + state.dynamic_array_size);
+        offsets_to.reserve(offsets_to.size() + 1);
     }
 
     bool allocatesMemoryInArena() const override

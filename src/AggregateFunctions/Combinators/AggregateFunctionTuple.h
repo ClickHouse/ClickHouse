@@ -130,6 +130,7 @@ public:
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena * arena) const override;
     void insertMergeResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena * arena) const override;
+    void reserveForInsertResult(ConstAggregateDataPtr __restrict place, IColumn & to) const override;
 
     bool allocatesMemoryInArena() const override;
     bool isState() const override;
@@ -147,6 +148,16 @@ private:
     void insertResultIntoImpl(AggregateDataPtr __restrict place, IColumn & to, Arena * arena) const
     {
         auto & tuple_to = assert_cast<ColumnTuple &>(to);
+
+        /// Reserve every element subcolumn before transferring any of them. For a `-State` element
+        /// (directly, or under a looping combinator) the transfer aliases the state into a
+        /// ColumnAggregateFunction; once the first element has transferred, a reallocation thrown while
+        /// transferring a later element would make Aggregator::insertAggregatesIntoColumns
+        /// double-destroy the already-aliased state. Reserving every element up front removes the
+        /// allocation that would otherwise throw between element transfers.
+        for (size_t i = 0; i < nested_functions.size(); ++i)
+            nested_functions[i]->reserveForInsertResult(place + state_offsets[i], tuple_to.getColumn(i));
+
         for (size_t i = 0; i < nested_functions.size(); ++i)
         {
             if constexpr (for_merge)

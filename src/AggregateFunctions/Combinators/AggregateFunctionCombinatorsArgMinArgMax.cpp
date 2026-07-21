@@ -220,6 +220,14 @@ public:
         nested_function->insertMergeResultInto(place, to, arena);
     }
 
+    void reserveForInsertResult(ConstAggregateDataPtr __restrict place, IColumn & to) const override
+    {
+        /// insertResultInto delegates to the nested function on the same place and column, so forward
+        /// the reservation too (a `-State` result reachable through `-ArgMin`/`-ArgMax` otherwise keeps
+        /// the throwing transfer window when this is a `-Tuple` element).
+        nested_function->reserveForInsertResult(place, to);
+    }
+
     AggregateFunctionPtr getNestedFunction() const override { return nested_function; }
 };
 

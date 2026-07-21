@@ -383,6 +383,16 @@ public:
         insertResultIntoImpl<true>(place, to, arena);
     }
 
+    void reserveForInsertResult(ConstAggregateDataPtr __restrict place, IColumn & to) const override
+    {
+        /// insertResultInto forwards the transfer to the nested function, into `to` itself unless the
+        /// result is Nullable. A `-State` nested function cannot be inside Nullable
+        /// (canBeInsideNullable() == false), so whenever there is a state to alias, `to` is exactly the
+        /// nested function's column; forward the reservation there so `-Tuple` closes the window.
+        if (!result_is_nullable || inner_nullable)
+            nested_function->reserveForInsertResult(place, to);
+    }
+
     AggregateFunctionPtr getNestedFunction() const override { return nested_function; }
 
     /// After `Nullable(Tuple)` was introduced, Tuple's `canBeInsideNullable` now returns true,

@@ -317,6 +317,7 @@ public:
         // Insert all keys first, then transfer all values, so the aliasing value transfer into
         // val_column cannot throw once started for a nested `-State` function (which would
         // double-free the already-aliased states). See AggregateFunctionResample.h.
+        key_column.reserve(key_column.size() + keys.size());
         for (auto & key : keys)
             key_column.insert(key);
 
@@ -342,6 +343,23 @@ public:
     void insertMergeResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena * arena) const override
     {
         insertResultIntoImpl<true>(place, to, arena);
+    }
+
+    void reserveForInsertResult(ConstAggregateDataPtr __restrict place, IColumn & to) const override
+    {
+        auto & map_column = assert_cast<ColumnMap &>(to);
+        auto & nested_data_column = map_column.getNestedData();
+        auto & key_column = nested_data_column.getColumn(0);
+        auto & val_column = nested_data_column.getColumn(1);
+
+        const auto & merged_maps = this->data(place).merged_maps;
+
+        /// Reserve the value column (which the `-State` value transfer aliases into) and the key column
+        /// row counts before the transfer, so the value aliasing cannot reallocate and throw once it
+        /// starts. Needed when this function is a `-Tuple` element (so a later tuple element cannot
+        /// throw here after an earlier element already aliased its states).
+        key_column.reserve(key_column.size() + merged_maps.size());
+        val_column.reserve(val_column.size() + merged_maps.size());
     }
 
     bool allocatesMemoryInArena() const override { return true; }

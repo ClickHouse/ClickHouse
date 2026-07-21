@@ -277,6 +277,16 @@ public:
         insertResultIntoImpl<true>(place, to, arena);
     }
 
+    void reserveForInsertResult(ConstAggregateDataPtr __restrict place, IColumn & to) const override
+    {
+        /// A `-State` result cannot be inside Nullable (canBeInsideNullable() == false), so a
+        /// state-producing nested function only reaches the non-nullable variant, whose insertResultInto
+        /// forwards the transfer straight into `to`. Forward the reservation the same way so `-Tuple`
+        /// closes the window; the nullable variant appends a plain value and has nothing to reserve.
+        if constexpr (!result_is_nullable)
+            nested_function->reserveForInsertResult(nestedPlace(place), to);
+    }
+
     bool allocatesMemoryInArena() const override
     {
         return nested_function->allocatesMemoryInArena();
