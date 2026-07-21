@@ -22,15 +22,13 @@ Build a custom agent in the Cloud console and run a natural-language query again
 ## Build the agent {#build-the-agent}
 
 <Steps>
-<Step>
-### Launch ClickHouse Agents {#launch-agents}
+<Step title="Launch ClickHouse Agents" id="launch-agents">
 
 From your Cloud service, click **ClickHouse agents** in the left sidebar to open the agents launchpad. Click **Launch ClickHouse agents** to open the Agent Builder.
 
 <Image img="/images/cloud/agent-builder/launch-ch-agents.webp" alt="Cloud service navigation with ClickHouse agents (Beta) selected, showing the launchpad with the Launch ClickHouse agents button" size="lg" />
 </Step>
-<Step>
-### Create the agent {#create-the-agent}
+<Step title="Create the agent" id="create-the-agent">
 
 In the Agent Builder, click **Create New Agent** at the top of the left panel. Fill in the core fields:
 
@@ -42,8 +40,7 @@ In the Agent Builder, click **Create New Agent** at the top of the left panel. F
 
 <Image img="/images/cloud/agent-builder/agent-builder.webp" alt="Agent Builder panel showing the Create New Agent dropdown, the form fields (Name, Description, Category, Instructions, Model), and the Capabilities section" size="lg" />
 </Step>
-<Step>
-### Attach capabilities and tools {#attach-tools}
+<Step title="Attach capabilities and tools" id="attach-tools">
 
 The agent's capabilities and tools live in two places.
 
@@ -63,8 +60,7 @@ Click **Add Tools** to browse the catalog:
 
 You can change attached capabilities and tools any time.
 </Step>
-<Step>
-### Run a query {#run-a-query}
+<Step title="Run a query" id="run-a-query">
 
 Save the agent, open a new conversation, and select your agent from the agent picker. Type a question — for example, *"What are my top 10 tables by row count this week?"* — and the agent plans, calls tools as needed, and returns an answer.
 

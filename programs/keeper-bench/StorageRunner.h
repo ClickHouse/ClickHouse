@@ -143,7 +143,7 @@ private:
     DB::KeeperContextPtr keeper_context;
 
     DB::SharedMutex state_machine_storage_mutex;
-    std::shared_ptr<Storage> storage;
+    std::unique_ptr<Storage> storage;
 
     BenchmarkContext benchmark_context;
     std::vector<std::shared_ptr<Generator>> generators;
@@ -164,6 +164,8 @@ private:
     PeriodStats period_stats;
     /// Accumulates stats across all periods for the final report. Only touched by the main thread.
     StatsSnapshot total_stats;
+
+    std::atomic<bool> snapshot_enabled{false};
 
     DB::SharedContextHolder shared_context;
     DB::ContextMutablePtr global_context;

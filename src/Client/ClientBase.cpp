@@ -152,6 +152,7 @@ namespace Setting
     extern const SettingsFloatAuto promql_evaluation_time;
     extern const SettingsBool into_outfile_create_parent_directories;
     extern const SettingsBool ignore_format_null_for_explain;
+    extern const SettingsSnappyMode snappy_mode;
     extern const SettingsBool use_client_time_zone;
     extern const SettingsTimezone session_timezone;
 }
@@ -563,17 +564,23 @@ void ClientBase::adjustQueryEnd(
 void ClientBase::sendExternalTables(ASTPtr parsed_query)
 {
     const auto * select = parsed_query->as<ASTSelectWithUnionQuery>();
-    if (!select && !external_tables.empty())
+    bool has_external_data = !external_tables.empty() || !external_scalars.empty();
+    if (!select && has_external_data)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "External tables could be sent only with select query");
 
-    if (isEmbeeddedClient() && !external_tables.empty())
+    if (isEmbeeddedClient() && has_external_data)
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "External tables are not allowed in embedded more");
 
-    std::vector<ExternalTableDataPtr> data;
+    Scalars scalars;
+    std::vector<ExternalTableDataPtr> tables;
     for (auto & table : external_tables)
-        data.emplace_back(table.getData(client_context));
+        tables.emplace_back(table.getData(client_context));
+    for (auto & table : external_scalars)
+        scalars[table.name] = table.getScalar(client_context);
 
-    connection->sendExternalTablesData(data);
+    if (!scalars.empty())
+        connection->sendScalarsData(scalars);
+    connection->sendExternalTablesData(tables);
 }
 
 
@@ -793,7 +800,9 @@ try
                 out_file_buf = wrapWriteBufferWithCompressionMethod(
                     std::make_unique<WriteBufferFromFile>(out_file, DBMS_DEFAULT_BUFFER_SIZE, flags),
                     compression_method,
-                    static_cast<int>(compression_level)
+                    static_cast<int>(compression_level),
+                    /*zstd_window_log=*/ 0,
+                    client_context->getSettingsRef()[Setting::snappy_mode]
                 );
 
                 if (query_with_output->isIntoOutfileWithStdout())
@@ -834,7 +843,8 @@ try
         bool select_only_into_file = select_into_file && !select_into_file_and_stdout;
 
         if (!out_file_buf && default_output_compression_method != CompressionMethod::None)
-            out_file_buf = wrapWriteBufferWithCompressionMethod(out_buf, default_output_compression_method, 3, 0);
+            out_file_buf = wrapWriteBufferWithCompressionMethod(
+                out_buf, default_output_compression_method, 3, 0, client_context->getSettingsRef()[Setting::snappy_mode]);
 
         auto format_settings = getFormatSettings(client_context);
         format_settings.is_writing_to_terminal = stdout_is_a_tty;
@@ -1278,6 +1288,16 @@ bool ClientBase::processTextAsSingleQuery(const String & full_query)
     return !have_error;
 }
 
+std::optional<Settings> ClientBase::settingsWithoutCompatibilityDerived() const
+{
+    const Settings & settings = client_context->getSettingsRef();
+    if (!settings.hasSettingsChangedByCompatibility())
+        return {};
+    Settings result = settings;
+    result.resetSettingsChangedByCompatibility();
+    return result;
+}
+
 void ClientBase::processOrdinaryQuery(String query, ASTPtr parsed_query)
 {
     /// Rewrite query only when we have query parameters.
@@ -1416,6 +1436,9 @@ void ClientBase::processOrdinaryQuery(String query, ASTPtr parsed_query)
     const auto & settings = client_context->getSettingsRef();
     const Int32 signals_before_stop = settings[Setting::partial_result_on_first_cancel] ? 2 : 1;
 
+    const auto settings_without_compat = settingsWithoutCompatibilityDerived();
+    const Settings * settings_to_send = settings_without_compat ? &*settings_without_compat : &settings;
+
     int retries_left = 10;
     while (retries_left)
     {
@@ -1437,7 +1460,7 @@ void ClientBase::processOrdinaryQuery(String query, ASTPtr parsed_query)
                     query_parameters,
                     client_context->getCurrentQueryId(),
                     query_processing_stage,
-                    &client_context->getSettingsRef(),
+                    settings_to_send,
                     &client_context->getClientInfo(),
                     true,
                     {},
@@ -2001,13 +2024,17 @@ void ClientBase::processInsertQuery(String query, ASTPtr parsed_query)
     query_interrupt_handler.start();
     SCOPE_EXIT({ query_interrupt_handler.stop(); });
 
+    const auto settings_without_compat = settingsWithoutCompatibilityDerived();
+    const Settings * settings_to_send
+        = settings_without_compat ? &*settings_without_compat : &client_context->getSettingsRef();
+
     connection->sendQuery(
         connection_parameters.timeouts,
         query,
         query_parameters,
         client_context->getCurrentQueryId(),
         query_processing_stage,
-        &client_context->getSettingsRef(),
+        settings_to_send,
         &client_context->getClientInfo(),
         true,
         {},
@@ -2321,7 +2348,9 @@ void ClientBase::sendDataFromStdin(Block & sample, const ColumnsDescription & co
     try
     {
         if (default_input_compression_method != CompressionMethod::None)
-            std_in = wrapReadBufferWithCompressionMethod(std::move(std_in), default_input_compression_method);
+            std_in = wrapReadBufferWithCompressionMethod(
+                std::move(std_in), default_input_compression_method,
+                /*zstd_window_log_max=*/ 0, client_context->getSettingsRef()[Setting::snappy_mode]);
         sendDataFrom(*std_in, sample, columns_description, parsed_query);
     }
     catch (Exception & e)
@@ -2590,8 +2619,12 @@ void ClientBase::processParsedSingleQuery(
     {
         if (const auto * set_query = parsed_query->as<ASTSetQuery>())
         {
+            /// Resolve query parameters used as setting values, e.g. `SET max_threads = {threads:UInt64}`.
+            SettingsChanges changes = set_query->changes;
+            replaceQueryParametersInSettingsChanges(changes, client_context->getQueryParameters());
+
             /// Save all changes in settings to avoid losing them if the connection is lost.
-            for (const auto & change : set_query->changes)
+            for (const auto & change : changes)
             {
                 if (change.name != "profile")
                     client_context->applySettingChange(change);
@@ -2791,12 +2824,15 @@ MultiQueryProcessingStage ClientBase::analyzeMultiQueryText(
     {
         if (insert_ast->format == "Values")
         {
-            // Invoke the VALUES format parser to skip the inserted data
+            // Invoke the VALUES format parser to skip the inserted data.
+            // Skip SQL comments too (as ValuesBlockInputFormat::read does), not just
+            // whitespace: a trailing comment after the last row would otherwise be scanned
+            // as row data past the terminating ';', swallowing the following queries.
             ReadBufferFromMemory data_in(insert_ast->data, all_queries_end - insert_ast->data);
             skipBOMIfExists(data_in);
             do
             {
-                skipWhitespaceIfAny(data_in);
+                skipWhitespaceAndSQLComments(data_in);
                 if (data_in.eof() || *data_in.position() == ';')
                     break;
             }

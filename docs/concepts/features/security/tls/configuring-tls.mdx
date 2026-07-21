@@ -22,8 +22,7 @@ Review this [basic tutorial on certificate usage](https://ubuntu.com/server/docs
 </Note>
 
 <Steps>
-<Step>
-## Create a ClickHouse Deployment {#1-create-a-clickhouse-deployment}
+<Step title="Create a ClickHouse Deployment" id="1-create-a-clickhouse-deployment">
 
 This guide was written using Ubuntu 20.04 and ClickHouse installed on the following hosts using the DEB package (using apt). The domain is `marsnet.local`:
 
@@ -37,8 +36,7 @@ This guide was written using Ubuntu 20.04 and ClickHouse installed on the follow
 View the [Quick Start](/get-started/setup/install) for more details on how to install ClickHouse.
 </Note>
 </Step>
-<Step>
-## Create TLS certificates {#2-create-tls-certificates}
+<Step title="Create TLS certificates" id="2-create-tls-certificates">
 <Note>
 Using self-signed certificates are for demonstration purposes only and shouldn't used in production. Certificate requests should be created to be signed by the organization and validated using the CA chain that will be configured in the settings. However, these steps can be used to configure and test settings, then can be replaced by the actual certificates that will be used.
 </Note>
@@ -87,8 +85,7 @@ Using self-signed certificates are for demonstration purposes only and shouldn't
     chnode1.crt: OK
     ```
 </Step>
-<Step>
-## Create and Configure a directory to store certificates and keys. {#3-create-and-configure-a-directory-to-store-certificates-and-keys}
+<Step title="Create and Configure a directory to store certificates and keys." id="3-create-and-configure-a-directory-to-store-certificates-and-keys">
 
 <Note>
 This must be done on each node. Use appropriate certificates and keys on each host.
@@ -118,8 +115,7 @@ This must be done on each node. Use appropriate certificates and keys on each ho
     -rw------- 1 clickhouse clickhouse 1131 Apr 12 20:23 marsnet_ca.crt
     ```
 </Step>
-<Step>
-## Configure the environment with basic clusters using ClickHouse Keeper {#4-configure-the-environment-with-basic-clusters-using-clickhouse-keeper}
+<Step title="Configure the environment with basic clusters using ClickHouse Keeper" id="4-configure-the-environment-with-basic-clusters-using-clickhouse-keeper">
 
 For this deployment environment, the following ClickHouse Keeper settings are used in each node. Each server will have its own `<server_id>`. (For example, `<server_id>1</server_id>` for node `chnode1`, and so on.)
 
@@ -241,8 +237,7 @@ For a full explanation of all options, visit https://clickhouse.com/docs/operati
     </macros>
     ```
 </Step>
-<Step>
-## Configure TLS interfaces on ClickHouse nodes {#5-configure-tls-interfaces-on-clickhouse-nodes}
+<Step title="Configure TLS interfaces on ClickHouse nodes" id="5-configure-tls-interfaces-on-clickhouse-nodes">
 The settings below are configured in the ClickHouse server `config.xml`
 
 1.  Set the display name for the deployment (optional):
@@ -347,8 +342,7 @@ The settings below are configured in the ClickHouse server `config.xml`
     {/*postgresql_port>9005</postgresql_port*/}
     ```
 </Step>
-<Step>
-## Testing {#6-testing}
+<Step title="Testing" id="6-testing">
 1. Start all nodes, one at a time:
     ```bash
     service clickhouse-server start

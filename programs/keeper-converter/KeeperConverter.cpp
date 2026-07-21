@@ -4,6 +4,9 @@
 #include <Coordination/CoordinationSettings.h>
 #include <Coordination/KeeperSnapshotManager.h>
 #include <Coordination/KeeperStorage.h>
+#include <Coordination/KeeperStorageImpl.h>
+#include <Coordination/KeeperMemNodesStorage.h>
+#include <Coordination/KeeperStorage_fwd.h>
 #include <Coordination/ZooKeeperDataReader.h>
 #include <Coordination/KeeperContext.h>
 #include <Common/TerminalSize.h>
@@ -47,18 +50,18 @@ int mainEntryClickHouseKeeperConverter(int argc, char ** argv)
         keeper_context->setDigestEnabled(true);
         keeper_context->setSnapshotDisk(std::make_shared<DiskLocal>("Keeper-snapshots", options["output-dir"].as<std::string>()));
 
-        auto storage = std::make_shared<DB::KeeperStorage>(/* tick_time_ms */ 500, /* superdigest */ "", keeper_context, /* initialize_system_nodes */ false);
+        DB::KeeperMemoryStorage storage(/* tick_time_ms */ 500, /* superdigest */ "", keeper_context);
 
-        DB::deserializeKeeperStorageFromSnapshotsDir(*storage, options["zookeeper-snapshots-dir"].as<std::string>(), logger);
-        storage->initializeSystemNodes();
+        DB::deserializeKeeperStorageFromSnapshotsDir(storage, options["zookeeper-snapshots-dir"].as<std::string>(), logger);
+        storage.initializeSystemNodes();
 
-        DB::deserializeLogsAndApplyToStorage(*storage, options["zookeeper-logs-dir"].as<std::string>(), logger);
-        DB::SnapshotMetadataPtr snapshot_meta = std::make_shared<DB::SnapshotMetadata>(storage->getZXID(), 1, std::make_shared<nuraft::cluster_config>());
-        DB::KeeperStorageSnapshot snapshot(storage.get(), snapshot_meta, nullptr, keeper_context->getWriteSnapshotVersion());
+        DB::deserializeLogsAndApplyToStorage(storage, options["zookeeper-logs-dir"].as<std::string>(), logger);
+        DB::SnapshotMetadataPtr snapshot_meta = std::make_shared<DB::SnapshotMetadata>(storage.getZXID(), 1, std::make_shared<nuraft::cluster_config>());
+        DB::KeeperStorageSnapshot snapshot(&storage, snapshot_meta, nullptr, keeper_context->getWriteSnapshotVersion());
 
         DB::KeeperSnapshotManager manager(1, keeper_context);
         auto snp = manager.serializeSnapshotToBuffer(snapshot);
-        auto file_info = manager.serializeSnapshotBufferToDisk(*snp, storage->getZXID());
+        auto file_info = manager.serializeSnapshotBufferToDisk(*snp, storage.getZXID());
         std::cout << "Snapshot serialized to path:" << fs::path(file_info->disk->getPath()) / file_info->path << std::endl;
     }
     catch (...)

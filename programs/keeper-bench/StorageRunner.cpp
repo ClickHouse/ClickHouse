@@ -183,7 +183,7 @@ void StorageRunner::setupStorage()
     keeper_context->setLocalLogsPreprocessed();
     keeper_context->setServerState(DB::KeeperContext::Phase::RUNNING);
 
-    storage = std::make_shared<Storage>(tick_time_ms, /*superdigest=*/"", keeper_context);
+    storage = Storage::create(tick_time_ms, /*superdigest=*/"", keeper_context);
 
     /// Allocate one session for setup and one per generator thread.
     /// All subsequent requests from a generator use its dedicated session.
@@ -211,7 +211,7 @@ void StorageRunner::setupStorage()
         int64_t zxid = next_zxid.fetch_add(1);
         try
         {
-            storage->preprocessRequest(request, setup_session_id, 0, zxid);
+            storage->preprocessRequest(request, setup_session_id, 0, zxid, /*check_acl=*/true, /*digest=*/std::nullopt, /*log_idx=*/0);
             auto responses = storage->processRequest(request, setup_session_id, zxid);
             for (const auto & response : responses)
             {
@@ -243,7 +243,7 @@ void StorageRunner::setupStorage()
         for (const auto & [tag_name, paths] : benchmark_context.getTaggedPaths())
             std::cerr << "  \"" << tag_name << "\": " << paths.size() << " paths" << std::endl;
     }
-    std::cerr << "Populated " << storage->getNodesCount() << " znodes.\n" << std::endl;
+    std::cerr << "Populated " << storage->getStorageStats().nodes_count << " znodes.\n" << std::endl;
 }
 
 void StorageRunner::startGenerators()
@@ -359,7 +359,7 @@ void StorageRunner::preprocessThread()
         try
         {
             std::shared_lock lock(state_machine_storage_mutex);
-            storage->preprocessRequest(item.request, item.session_id, /*time=*/0, item.zxid);
+            storage->preprocessRequest(item.request, item.session_id, /*time=*/0, item.zxid, /*check_acl=*/true, /*digest=*/std::nullopt, /*log_idx=*/0);
         }
         catch (...)
         {
@@ -557,7 +557,7 @@ void StorageRunner::printStats(const std::string & header, double seconds, const
     uint64_t znode_count = 0;
     {
         std::lock_guard lock(state_machine_storage_mutex);
-        znode_count = storage ? storage->getNodesCount() : 0;
+        znode_count = storage ? storage->getStorageStats().nodes_count : 0;
     }
 
     std::stringstream out; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
@@ -633,7 +633,7 @@ void StorageRunner::runBenchmark()
     Stopwatch period_watch;
     size_t period_idx = 0;
     bool period_had_snapshot = false;
-    std::optional<DB::KeeperStorage::ReadViewHolder> read_view;
+    std::unique_ptr<DB::KeeperNodeStreamForSnapshot> stream_for_snapshot;
     while (!shutdown.load(std::memory_order_relaxed))
     {
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
@@ -647,19 +647,25 @@ void StorageRunner::runBenchmark()
             period_idx++;
 
             /// Toggle snapshot mode at period boundaries.
-            bool want_snapshot_now = read_view.has_value();
+            bool want_snapshot_now = snapshot_enabled.load(std::memory_order_relaxed);
             if (snapshot_toggle_periods > 0 && (period_idx % snapshot_toggle_periods == 0))
             {
                 std::lock_guard lock(state_machine_storage_mutex);
-                if (read_view)
-                    read_view.reset();
+                if (snapshot_enabled.load())
+                {
+                    storage->nodes_storage->finishWritingSnapshot(std::move(stream_for_snapshot));
+                    snapshot_enabled.store(false);
+                }
                 else
-                    read_view.emplace(storage->issueReadView());
+                {
+                    stream_for_snapshot = storage->nodes_storage->beginWritingSnapshot();
+                    snapshot_enabled.store(true);
+                }
             }
 
             report(elapsed_period, period_had_snapshot || want_snapshot_now);
             period_watch.restart();
-            period_had_snapshot = read_view.has_value();
+            period_had_snapshot = snapshot_enabled.load();
         }
     }
 
@@ -674,7 +680,13 @@ void StorageRunner::runBenchmark()
     if (commit_thread_handle->joinable())
         commit_thread_handle->join();
 
-    read_view.reset();
+    /// Retire the read view before the storage is destroyed: SnapshotableHashTable's
+    /// destructor asserts that no read views are outstanding.
+    if (snapshot_enabled.load())
+    {
+        storage->nodes_storage->finishWritingSnapshot(std::move(stream_for_snapshot));
+        snapshot_enabled.store(false);
+    }
 
     /// Account for the work done while draining the queues after the last period report.
     total_stats.add(takePeriodStats());

@@ -4,6 +4,7 @@
 #if USE_NURAFT
 
 #include <Coordination/KeeperDispatcher.h>
+#include <Coordination/KeeperMemNodesStorage.h>
 #include <Coordination/KeeperStateMachine.h>
 #include <Coordination/KeeperStorage.h>
 #include <Core/Field.h>
@@ -49,7 +50,7 @@ namespace
 class SystemKeeperStorageSource final : public ISource
 {
 public:
-    SystemKeeperStorageSource(KeeperStorage::ReadViewHolder view_, Block header, std::vector<UInt8> columns_mask_, UInt64 max_block_size_)
+    SystemKeeperStorageSource(KeeperMemNodesStorage::ReadViewHolder view_, Block header, std::vector<UInt8> columns_mask_, UInt64 max_block_size_)
         : ISource(std::make_shared<const Block>(std::move(header)))
         , view(std::move(view_))
         , it(view->begin())
@@ -86,7 +87,7 @@ protected:
             if (columns_mask[src_index++])
                 res_columns[res_index++]->insert(node.stats.mzxid);
             if (columns_mask[src_index++])
-                res_columns[res_index++]->insert(DecimalField<DateTime64>(node.stats.ctime(), 3));
+                res_columns[res_index++]->insert(DecimalField<DateTime64>(node.stats.getCTime(), 3));
             if (columns_mask[src_index++])
                 res_columns[res_index++]->insert(DecimalField<DateTime64>(node.stats.mtime, 3));
             if (columns_mask[src_index++])
@@ -96,19 +97,19 @@ protected:
             if (columns_mask[src_index++])
                 res_columns[res_index++]->insert(node.stats.aversion);
             if (columns_mask[src_index++])
-                res_columns[res_index++]->insert(node.stats.ephemeralOwner());
+                res_columns[res_index++]->insert(node.stats.getEphemeralOwner());
             if (columns_mask[src_index++])
                 res_columns[res_index++]->insert(node.stats.data_size);
             if (columns_mask[src_index++])
-                res_columns[res_index++]->insert(node.numChildren());
+                res_columns[res_index++]->insert(node.stats.getNumChildren());
             if (columns_mask[src_index++])
                 res_columns[res_index++]->insert(node.stats.pzxid);
             if (columns_mask[src_index++])
-                res_columns[res_index++]->insert(node.stats.seqNum());
+                res_columns[res_index++]->insert(node.stats.getSeqNum());
             if (columns_mask[src_index++])
-                res_columns[res_index++]->insert(node.stats.isTTL() ? node.stats.ttl() : 0);
+                res_columns[res_index++]->insert(node.stats.getTTL());
             if (columns_mask[src_index++])
-                res_columns[res_index++]->insert(node.acl_id);
+                res_columns[res_index++]->insert(node.stats.acl_id);
 
             ++rows_count;
             ++it;
@@ -121,8 +122,8 @@ protected:
     }
 
 private:
-    KeeperStorage::ReadViewHolder view;
-    KeeperStorage::Container::ReadView::Iterator it;
+    KeeperMemNodesStorage::ReadViewHolder view;
+    KeeperMemNodesStorage::Container::ReadView::Iterator it;
     const std::vector<UInt8> columns_mask;
     const UInt64 max_block_size;
 };

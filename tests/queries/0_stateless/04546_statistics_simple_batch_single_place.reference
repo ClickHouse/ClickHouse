@@ -1,0 +1,30 @@
+varPop int exact	1	1	1	1
+varPop f64 approx	1	1	1
+varSamp int exact	1	1	1	1
+varSamp f64 approx	1	1	1
+stddevPop int exact	1	1	1	1
+stddevPop f64 approx	1	1	1
+stddevSamp int exact	1	1	1	1
+stddevSamp f64 approx	1	1	1
+skewPop int exact	1	1	1	1
+skewPop f64 approx	1	1	1
+skewSamp int exact	1	1	1	1
+skewSamp f64 approx	1	1	1
+kurtPop int exact	1	1	1	1
+kurtPop f64 approx	1	1	1
+kurtSamp int exact	1	1	1	1
+kurtSamp f64 approx	1	1	1
+covarPop int exact	1	1	1	1
+covarPop f64 approx	1	1	1
+covarSamp int exact	1	1	1	1
+covarSamp f64 approx	1	1	1
+corr int exact	1	1	1	1
+corr f64 approx	1	1	1
+f32 approx	1	1
+nan-safety If	1	1	1
+inf-safety If	1
+nan-safety Null	1
+empty	1	1	1
+all-false	1	1	1
+bf16 exact	1
+decimal	1
