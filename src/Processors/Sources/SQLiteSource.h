@@ -18,6 +18,9 @@ class SQLiteSource final : public ISource
 using SQLitePtr = std::shared_ptr<sqlite3>;
 
 public:
+    /// The connection must be dedicated to this source: cancellation aborts the running statement with
+    /// `sqlite3_interrupt`, which is connection-wide in SQLite, so a handle shared with other queries
+    /// would let cancelling this source interrupt an unrelated sibling statement.
     SQLiteSource(SQLitePtr sqlite_db_, const String & query_str_, const Block & sample_block, UInt64 max_block_size_);
 
     String getName() const override { return "SQLite"; }

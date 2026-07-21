@@ -256,7 +256,7 @@ Pipe StorageSQLite::read(
     /// A read must never materialize a missing SQLite database. In particular, query-backed storages are
     /// read-only and do not have pending generated-column reclassification, so deriving `allow_create` from
     /// that flag would create an empty file on the first read after an `ATTACH` while the file is unavailable.
-    auto sqlite_db_local = openConnectionIfNeeded(/* throw_on_error */ true, /* allow_create */ false);
+    openConnectionIfNeeded(/* throw_on_error */ true, /* allow_create */ false);
 
     /// Fallback: `updateExternalDynamicMetadataIfExists` normally repairs the pending classification before the
     /// snapshot is taken; this covers any path that reaches `read` without going through that hook. Idempotent.
@@ -299,7 +299,13 @@ Pipe StorageSQLite::read(
         sample_block.insert({column_data.type, column_data.name});
     }
 
-    return Pipe(std::make_shared<SQLiteSource>(sqlite_db_local, query, sample_block, max_block_size));
+    /// Each read runs on its own dedicated connection: `SQLiteSource::onCancel` aborts a running statement
+    /// with `sqlite3_interrupt`, which is connection-wide in SQLite. On the shared `sqlite_db` handle - also
+    /// used by every concurrent query on this table, and by all tables of a `DatabaseSQLite` - cancelling one
+    /// query could interrupt an unrelated sibling statement mid-scan. `allow_create` stays false: a read must
+    /// never materialize a missing database file.
+    auto read_connection = openSQLiteDB(database_path, getContext(), /* throw_on_error */ true, /* allow_create */ false);
+    return Pipe(std::make_shared<SQLiteSource>(read_connection, query, sample_block, max_block_size));
 }
 
 

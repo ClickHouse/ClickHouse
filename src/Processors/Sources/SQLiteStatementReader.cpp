@@ -152,10 +152,26 @@ Chunk SQLiteStatementReader::readChunk(sqlite3 * db, sqlite3_stmt * statement, U
     {
         int status = sqlite3_step(statement);
 
-        if (status == SQLITE_INTERRUPT || status == SQLITE_DONE)
+        if (status == SQLITE_DONE)
         {
             finished = true;
             break;
+        }
+
+        if (status == SQLITE_INTERRUPT)
+        {
+            /// `sqlite3_interrupt` is issued by our own cancellation path on a connection dedicated to this
+            /// reader. If the read was not cancelled, the interrupt came from elsewhere; finishing silently
+            /// would then return a truncated result set as if it were complete, so fail instead.
+            if (is_cancelled())
+            {
+                finished = true;
+                break;
+            }
+            throw Exception(
+                ErrorCodes::SQLITE_ENGINE_ERROR,
+                "SQLite statement was interrupted, but the query was not cancelled. Message: {}",
+                sqlite3_errmsg(db));
         }
 
         if (status == SQLITE_BUSY)

@@ -35,6 +35,9 @@ public:
 
     /// Reads up to max_block_size rows. `is_cancelled` bounds how long the read waits for a locked
     /// database (SQLITE_BUSY): the wait is aborted and the read reports `finished` when it returns true.
+    /// It also legitimizes an interrupted step: SQLITE_INTERRUPT reports `finished` only when `is_cancelled`
+    /// returns true (our own cancellation issued the interrupt on a dedicated connection); otherwise the
+    /// interrupt would silently truncate the result set, so the read fails instead.
     Chunk readChunk(sqlite3 * db, sqlite3_stmt * statement, UInt64 max_block_size, bool & finished, const std::function<bool()> & is_cancelled);
 
 private:
