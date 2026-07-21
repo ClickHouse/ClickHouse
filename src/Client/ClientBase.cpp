@@ -1806,10 +1806,13 @@ void ClientBase::onProfileEvents(Block & block)
             progress_table.writeTable(*tty_buf, lock, progress_table_toggle_on.load(), toggle_enabled, false);
         }
 
-        if (profile_events.print)
+        /// Read at the use site: the client config file is loaded after the command line
+        /// options are processed, so an early read would miss the value from the file.
+        /// `print-profile-events` is an enable-only flag (no CLI form to disable it), so the
+        /// CLI-derived `profile_events.print` and the config value combine with OR; the config
+        /// layer already carries the CLI flag (see `addOptionsToTheClientConfiguration`).
+        if (profile_events.print || getClientConfiguration().getBool("print-profile-events", false))
         {
-            /// Read at the use site: the client config file is loaded after the command line
-            /// options are processed, so an early read would miss the value from the file.
             profile_events.delay_ms = getClientConfiguration().getUInt64("profile-events-delay-ms", 0);
             if (profile_events.watch.elapsedMilliseconds() >= profile_events.delay_ms)
             {

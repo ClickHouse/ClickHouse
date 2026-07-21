@@ -19,10 +19,11 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 config_totals=$CLICKHOUSE_TMP/client_profile_events_delay_totals_${CLICKHOUSE_DATABASE}.xml
 config_zero=$CLICKHOUSE_TMP/client_profile_events_delay_zero_${CLICKHOUSE_DATABASE}.xml
+config_enable=$CLICKHOUSE_TMP/client_profile_events_delay_enable_${CLICKHOUSE_DATABASE}.xml
 
 function cleanup()
 {
-    rm -f "${config_totals}" "${config_zero}"
+    rm -f "${config_totals}" "${config_zero}" "${config_enable}"
 }
 trap cleanup EXIT
 
@@ -38,6 +39,13 @@ cat > "$config_zero" <<'EOF'
 </config>
 EOF
 
+cat > "$config_enable" <<'EOF'
+<config>
+    <print-profile-events>true</print-profile-events>
+    <profile-events-delay-ms>18446744073709551615</profile-events-delay-ms>
+</config>
+EOF
+
 echo "-- delay -1 from config, CLI omitted: totals only (one SleepFunctionCalls line)"
 count=$($CLICKHOUSE_CLIENT --config "$config_totals" --max_block_size 1 --print-profile-events -q 'SELECT sleep(0.2) FROM numbers(10) FORMAT Null' |& grep -c 'SleepFunctionCalls')
 test "$count" -eq 1 && echo OK || echo "FAIL ($count)"
@@ -48,3 +56,11 @@ $CLICKHOUSE_CLIENT --config "$config_totals" --max_block_size=65505 --print-prof
 echo "-- delay 0 from config, explicit CLI --profile-events-delay-ms=-1 wins: totals only"
 count=$($CLICKHOUSE_CLIENT --config "$config_zero" --profile-events-delay-ms=-1 --max_block_size 1 --print-profile-events -q 'SELECT sleep(0.2) FROM numbers(10) FORMAT Null' |& grep -c 'SleepFunctionCalls')
 test "$count" -eq 1 && echo OK || echo "FAIL ($count)"
+
+echo "-- <print-profile-events>true</> from config, CLI omitted: printing is enabled (totals only)"
+count=$($CLICKHOUSE_CLIENT --config "$config_enable" --max_block_size 1 -q 'SELECT sleep(0.2) FROM numbers(10) FORMAT Null' |& grep -c 'SleepFunctionCalls')
+test "$count" -eq 1 && echo OK || echo "FAIL ($count)"
+
+echo "-- no enable flag anywhere: nothing is printed"
+count=$($CLICKHOUSE_CLIENT --config "$config_totals" --max_block_size 1 -q 'SELECT sleep(0.2) FROM numbers(10) FORMAT Null' |& grep -c 'SleepFunctionCalls')
+test "$count" -eq 0 && echo OK || echo "FAIL ($count)"
