@@ -210,6 +210,7 @@ public:
     const size_t fail_from_sync;
 };
 
+#ifdef MERGE_TREE_DEDUPLICATION_LOG_FIX_IS_PRESENT
 /// Wraps an already open file writer and fails once on a chosen sync() and once on a
 /// chosen flush (next()). Reproduces a rotation failure (the sync of the previous file)
 /// followed by a failure partway through writing the compensating rollback records (the
@@ -276,6 +277,7 @@ public:
     size_t flush_count = 0;
     const size_t fail_on_flush;
 };
+#endif
 
 /// A DiskLocal that reproduces a compaction whose snapshot is written and made durable
 /// but whose completion then fails: reopening the just-written snapshot for appending
