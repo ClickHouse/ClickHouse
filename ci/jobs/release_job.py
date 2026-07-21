@@ -343,18 +343,20 @@ def main():
         with open(RELEASE_INFO_FILE) as f:
             create_new_release = json.load(f)["create_new_release"]
 
-    # (Re)create the changelog PR whenever it is missing, on a fresh release and
-    # on any recovery run (including only-repo/only-docker) — this replaces the
-    # previous blanket create_new_release gate, which treated an existing tag as
-    # "finished" and stranded a release whose changelog tail never ran (root
-    # cause of #111175/#111176). Look up the auto/<tag> PR by state so an open
-    # (not-yet-merged) PR can be told from a merged one: a missing PR is created,
-    # an open one is merged, a merged one is left alone. The artifact re-publish
+    # (Re)create the version_date.tsv/changelog PR whenever it is missing — for
+    # both patch and new releases, on a fresh release and on any recovery run
+    # (including only-repo/only-docker). This replaces the previous blanket
+    # create_new_release gate, which treated an existing tag as "finished" and
+    # stranded a release whose changelog tail never ran (root cause of
+    # #111175/#111176). A new release additionally opens a separate master
+    # version-bump PR. Look up the auto/<tag> PR by state so an open
+    # (not-yet-merged) PR is told from a merged one: a missing PR is created, an
+    # open one is merged, a merged one is left alone. The artifact re-publish
     # steps stay gated as before, so a rerun after a crash still finishes any
     # unpublished artifacts.
     changelog_pr_open = False
     changelog_pr_merged = False
-    if ok and args.release_type == "patch":
+    if ok:
         with open(RELEASE_INFO_FILE) as f:
             _release_tag = json.load(f)["release_tag"]
         _pr_branch = f"auto/{_release_tag}"
@@ -370,12 +372,8 @@ def main():
         )
     changelog_pr_exists = changelog_pr_open or changelog_pr_merged
     # Create the PR whenever it is missing (idempotent: skip if already open or
-    # merged). Gates the changelog-generation, PR-creation and git-restore steps
-    # below. The release_type guard matters: a "new" release has no auto/<tag>
-    # changelog PR (it uses a master version-bump PR), so the lookup above is
-    # skipped and changelog_pr_exists stays False — without the guard that would
-    # wrongly trigger changelog generation for a "new" release.
-    do_changelog = args.release_type == "patch" and not changelog_pr_exists
+    # merged). Gates the changelog-generation, PR-creation and git-restore steps.
+    do_changelog = ok and not changelog_pr_exists
 
     # only-repo / only-docker only re-publish artifacts for an already-created
     # release (repo/Docker recovery). If the ref resolves to a new release, they
@@ -573,13 +571,13 @@ def main():
 
     # Restore the working tree after the changelog steps, which dirty it and
     # leave HEAD on the auto/<tag> branch. This must run whenever the changelog
-    # steps ran (do_changelog) — including an only-repo/only-docker recovery that
-    # created the PR — so the artifact/Docker steps below run on the original
-    # branch, not on auto/<tag>. Also runs on the plain neither-flag path as a
-    # no-op safety when the changelog steps were skipped. The always-run
-    # "Checkout Back" below is the final safety net.
-    if args.release_type == "patch" and (
-        do_changelog or (not args.only_repo and not args.only_docker)
+    # steps ran (do_changelog) — for a patch or new release, including an
+    # only-repo/only-docker recovery that created the PR — so the artifact/Docker
+    # steps below run on the original branch, not on auto/<tag>. Also runs on the
+    # plain patch neither-flag path as a no-op safety when the changelog steps
+    # were skipped. The always-run "Checkout Back" below is the final safety net.
+    if do_changelog or (
+        args.release_type == "patch" and not args.only_repo and not args.only_docker
     ):
         step(
             name="Restore Git State",
