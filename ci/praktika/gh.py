@@ -1081,7 +1081,7 @@ class GH:
         return None
 
     @classmethod
-    def get_pr_url_by_branch(cls, branch, repo=None):
+    def get_pr_url_by_branch(cls, branch, repo=None, states=("open", "merged")):
         """URL of the PR whose head is `branch`, or '' if there genuinely is none.
 
         On the rerun-safety path (changelog / version-bump PR reuse), a transient
@@ -1091,12 +1091,15 @@ class GH:
         persistent failure. A successful `gh pr list --json` always prints at
         least `[]`, so an empty result from the retried read means the command
         itself failed; genuinely no PR is an empty JSON array.
+
+        `states` restricts which PR states count as "exists" (checked in order);
+        pass e.g. `("open",)` to detect only an open, not-yet-merged PR.
         """
         if not repo:
             repo = _Environment.get().REPOSITORY
         safe_repo = shlex.quote(repo)
         safe_branch = shlex.quote(branch)
-        for state in ("open", "merged"):
+        for state in states:
             cmd = (
                 f"gh pr list --repo {safe_repo} --head {safe_branch}"
                 f" --state {state} --json url"

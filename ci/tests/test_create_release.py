@@ -598,33 +598,47 @@ def test_should_create_changelog_pr_continues_recovery():
     """release_job continues a stranded release by (re)creating the changelog PR.
 
     The gate is the PR's own absence, not the blanket ``create_new_release``
-    flag: a recovery run (existing tag, so ``create_new_release`` is False)
-    dispatched with neither only-repo nor only-docker still creates the
-    changelog PR when it is missing, which is what prevents the future
-    stranding that produced the manual #111175/#111176 remediation. It is a
-    no-op once the PR is open or merged (idempotent), and only-repo/only-docker
-    — which re-publish artifacts — never touch it.
+    flag: any patch run (fresh, or a recovery in any mode) creates the changelog
+    PR when it is missing, which is what prevents the future stranding that
+    produced the manual #111175/#111176 remediation. It is a no-op once the PR
+    is open or merged (idempotent). The recovery mode (only-repo/only-docker) is
+    irrelevant to whether the missing PR is created.
     """
     import importlib
 
     release_job = importlib.import_module("ci.jobs.release_job")
     gate = release_job.should_create_changelog_pr
 
-    # Fresh release or plain recovery with no PR yet -> create it.
-    assert gate("patch", only_repo=False, only_docker=False, changelog_pr_exists=False)
+    # Any patch run with no PR yet -> create it (fresh or recovery, any mode).
+    assert gate("patch", changelog_pr_exists=False)
     # PR already open or merged -> idempotent no-op.
-    assert not gate(
-        "patch", only_repo=False, only_docker=False, changelog_pr_exists=True
-    )
-    # Artifact-only recovery modes never create the changelog PR.
-    assert not gate(
-        "patch", only_repo=True, only_docker=False, changelog_pr_exists=False
-    )
-    assert not gate(
-        "patch", only_repo=False, only_docker=True, changelog_pr_exists=False
-    )
+    assert not gate("patch", changelog_pr_exists=True)
     # A new release branch handles its version bump PR elsewhere.
-    assert not gate("new", only_repo=False, only_docker=False, changelog_pr_exists=False)
+    assert not gate("new", changelog_pr_exists=False)
+
+
+def test_should_merge_changelog_pr_drives_open_pr_to_merged():
+    """--merge-prs runs whenever there is a PR to merge, never on a merged one.
+
+    A fresh/new release, a run that just created the PR, or a recovery that
+    finds it open-but-unmerged all merge it; an already-merged PR (neither open
+    nor freshly created) is left alone so ``gh pr merge`` is never called on it.
+    """
+    import importlib
+
+    release_job = importlib.import_module("ci.jobs.release_job")
+    merge = release_job.should_merge_changelog_pr
+
+    # Fresh/new release opened PRs to merge.
+    assert merge(create_new_release=True, changelog_pr_open=False, do_changelog=False)
+    # This run just created the changelog PR.
+    assert merge(create_new_release=False, changelog_pr_open=False, do_changelog=True)
+    # A prior run left the changelog PR open but unmerged -> drive it to merged.
+    assert merge(create_new_release=False, changelog_pr_open=True, do_changelog=False)
+    # Already merged (not open, not freshly created) -> nothing to merge.
+    assert not merge(
+        create_new_release=False, changelog_pr_open=False, do_changelog=False
+    )
 
 
 def test_prepare_refuses_out_of_order_commit(tmp_path):
