@@ -5321,18 +5321,13 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
         auto & join_using_list = join_node_typed.getJoinExpression()->as<ListNode &>();
         std::unordered_set<std::string> join_using_identifiers;
 
-        /// SELECT-list alias map, computed lazily once per resolveJoin and reused for all USING identifiers.
-        /// The projection list is not mutated during resolveJoin, so the cache stays valid across identifiers.
+        /// SELECT-list alias map, computed lazily once per resolveJoin and reused (projection is not mutated here).
         std::optional<ScopeAliases> select_list_aliases;
 
-        /// Set by the helper below when the identifier matched an alias nested in a SELECT-list
-        /// subexpression (not a top-level projection alias). Reset per USING identifier.
+        /// Set below when the identifier matched a nested SELECT-list alias (not a top-level projection alias); reset per identifier.
         bool nested_alias_matched = false;
 
-        /** Find a SELECT-list node whose alias matches the USING identifier.
-          * Top-level projection aliases are checked first (existing pick-first behavior, kept for compatibility);
-          * if none match, search aliases defined on subexpressions of the SELECT list.
-          */
+        /// Find a SELECT-list node aliased as the USING identifier: top-level projection aliases first (pick-first, kept for compatibility), then nested-subexpression aliases.
         auto find_aliased_node_in_projection = [&select_list_aliases, &nested_alias_matched](const QueryNode * query_node_,
                                                    const String & identifier_full_name_) -> QueryTreeNodePtr
         {
@@ -5342,8 +5337,7 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
                     return projection_node;
             }
 
-            /// QueryExpressionsAliasVisitor applies the SELECT-list scoping rules (skips lambdas and nested
-            /// non-CTE queries) and stores clones of the aliased nodes. It needs a mutable node, so clone first.
+            /// QueryExpressionsAliasVisitor applies SELECT-list scoping and stores clones of aliased nodes; it needs a mutable node, so clone first.
             if (!select_list_aliases)
             {
                 auto projection_list_clone = query_node_->getProjectionNode()->clone();
@@ -5466,19 +5460,11 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
             if (settings[Setting::analyzer_compatibility_join_using_top_level_identifier])
                 result_left_table_expression = try_resolve_identifier_from_query_projection(identifier_full_name, join_node_typed.getLeftTableExpression(), scope);
 
-            /** A USING key resolved from an alias nested in the SELECT list cannot be shipped to a remote
-              * server: the rendered SQL keeps only top-level projection aliases, so a replica's re-analysis
-              * of the USING clause would fail. Disable parallel replicas for such a query. Top-level aliases
-              * become projection names in the rendered SQL and are unaffected.
-              */
+            /// A nested-alias USING key cannot ship to a remote server (rendered SQL keeps only top-level projection aliases), so disable parallel replicas for such a query.
             if (result_left_table_expression && nested_alias_matched)
             {
-                /// Every query node that CONTAINS this JOIN lies on the scope chain from the current scope
-                /// up to the root. Independently-planned subqueries (an `IN`, `FROM`, or `JOIN`-right-side
-                /// subquery) are planned from their own pre-analysis context copies, so mutating only the
-                /// root leaves those copies free to ship the unshippable JOIN to replicas. Walk the whole
-                /// chain and disable parallel replicas on each `QueryNode`/`UnionNode` on it. Sibling
-                /// subqueries not on the chain do not hold this JOIN and keep parallel replicas.
+                /// Independently-planned subqueries (`IN`/`FROM`/`JOIN`-right-side) are planned from their own context copies,
+                /// so disable on every `QueryNode`/`UnionNode` on the scope chain that contains this JOIN, not just the root.
                 bool disabled_any = false;
                 for (const IdentifierResolveScope * chain_scope = &scope; chain_scope; chain_scope = chain_scope->parent_scope)
                 {
@@ -5492,14 +5478,9 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
                     else
                         continue; /// expression/lambda scope - skip, keep walking
 
-                    /// Never touch a secondary (replica-side) query: disabling the setting there could corrupt
-                    /// task-based reading. Unreachable by construction (the shipped SQL never contains a nested
-                    /// alias), but guard by intent; NO_QUERY contexts are fine to handle.
-                    /// The `canUseTaskBasedParallelReplicas` gate mirrors the FINAL precedent in the planner: only
-                    /// act when parallel replicas would actually run (read-tasks mode, `max_parallel_replicas > 1`,
-                    /// etc.). This also leaves custom-key parallel-replicas modes untouched - they ship full SQL
-                    /// and fail loudly on the nested alias, consistent with the accepted `Distributed` limitation.
-                    /// It is checked per node because subquery-level `SETTINGS` clauses produce distinct contexts.
+                    /// Skip secondary (replica-side) queries to not corrupt task-based reading. The `canUseTaskBasedParallelReplicas`
+                    /// gate (mirroring the planner's FINAL precedent) acts only when parallel replicas would actually run, leaving
+                    /// custom-key modes to ship full SQL and fail loudly. Checked per node: subquery `SETTINGS` produce distinct contexts.
                     if (chain_context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY
                         || !chain_context->canUseTaskBasedParallelReplicas())
                         continue;

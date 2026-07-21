@@ -1,5 +1,6 @@
 #include <Storages/buildQueryTreeForShard.h>
 
+#include <Analyzer/ArrayJoinNode.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/createUniqueAliasesIfNecessary.h>
@@ -7,6 +8,7 @@
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/JoinNode.h>
+#include <Analyzer/ListNode.h>
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/SortNode.h>
 #include <Core/Block.h>
@@ -38,6 +40,7 @@
 #include <QueryPipeline/SizeLimits.h>
 #include <Storages/StorageDistributed.h>
 #include <Storages/StorageDummy.h>
+#include <Storages/StorageSnapshot.h>
 #include <Analyzer/UnionNode.h>
 
 #include <stack>
@@ -66,6 +69,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int INCOMPATIBLE_TYPE_OF_JOIN;
     extern const int DISTRIBUTED_IN_JOIN_SUBQUERY_DENIED;
+    extern const int UNSUPPORTED_METHOD;
 }
 
 namespace
@@ -614,6 +618,139 @@ QueryTreeNodePtr getSubqueryFromTableExpression(
     return subquery_node;
 }
 
+/// Reject `JOIN USING` keys resolved from an alias nested in the SELECT list: the shipped SQL keeps only
+/// top-level projection aliases, so a shard cannot re-resolve such a key (silently wrong or UNKNOWN_IDENTIFIER).
+class RejectNestedAliasJoinUsingKeyVisitor : public InDepthQueryTreeVisitor<RejectNestedAliasJoinUsingKeyVisitor>
+{
+public:
+    void visitImpl(QueryTreeNodePtr & node)
+    {
+        auto * query_node = node->as<QueryNode>();
+        if (!query_node)
+            return;
+
+        /// Own join tree only; nested subquery/union table expressions are visited as their own `QueryNode`s.
+        walkJoinTree(query_node->getJoinTree(), *query_node);
+    }
+
+private:
+    static void walkJoinTree(const QueryTreeNodePtr & node, const QueryNode & query_node)
+    {
+        if (!node)
+            return;
+
+        if (const auto * join_node = node->as<JoinNode>())
+        {
+            if (join_node->isUsingJoinExpression())
+                checkJoin(*join_node, query_node);
+
+            walkJoinTree(join_node->getLeftTableExpression(), query_node);
+            walkJoinTree(join_node->getRightTableExpression(), query_node);
+        }
+        else if (const auto * cross_join_node = node->as<CrossJoinNode>())
+        {
+            for (const auto & table_expression : cross_join_node->getTableExpressions())
+                walkJoinTree(table_expression, query_node);
+        }
+        else if (const auto * array_join_node = node->as<ArrayJoinNode>())
+        {
+            walkJoinTree(array_join_node->getTableExpression(), query_node);
+        }
+        /// TABLE/TABLE_FUNCTION/QUERY/UNION expressions terminate the walk: they are their own scopes.
+    }
+
+    static void checkJoin(const JoinNode & join_node, const QueryNode & query_node)
+    {
+        const auto & using_list = join_node.getJoinExpression()->as<ListNode &>();
+        for (const auto & using_node : using_list.getNodes())
+        {
+            /// USING key `N`: a `ColumnNode` whose expression is a `ListNode{left, right}` (see `QueryAnalyzer::resolveJoin`).
+            const auto * using_column = using_node->as<ColumnNode>();
+            if (!using_column || !using_column->hasExpression())
+                continue;
+
+            const auto & using_elements = using_column->getExpression()->as<ListNode &>().getNodes();
+            if (using_elements.empty())
+                continue;
+
+            const auto & name = using_column->getColumnName();
+            const auto & left_element = using_elements.front();
+
+            /// Marker: the left element carries a resolved alias body, as a `ColumnNode` with an expression (a)
+            /// or as a non-`ColumnNode` node carrying an alias (b, alias-column inlining on the `Distributed` path).
+            const auto * left_column = left_element->as<ColumnNode>();
+            String wrapper_name;
+            if (left_column)
+            {
+                if (!left_column->hasExpression())
+                    continue; /// plain-column USING key
+                wrapper_name = left_column->getColumnName();
+            }
+            else if (left_element->hasAlias())
+            {
+                wrapper_name = left_element->getAlias();
+            }
+            else
+            {
+                continue;
+            }
+
+            /// Top-level alias: re-emitted as a projection name in the shipped SQL, re-resolves on the shard.
+            if (hasProjectionColumn(query_node, name))
+                continue;
+
+            /// Genuine table `ALIAS` column used in USING: its name is a real left-table column, so spare it.
+            if (wrapper_name == name && leftTableHasColumn(join_node.getLeftTableExpression(), name))
+                continue;
+
+            throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
+                "JOIN {} using identifier '{}' is resolved from an alias nested in the SELECT list, which is not "
+                "supported for queries sent to remote servers. Move the alias to the top level of the SELECT list",
+                join_node.formatASTForErrorMessage(), name);
+        }
+    }
+
+    static bool hasProjectionColumn(const QueryNode & query_node, const String & name)
+    {
+        for (const auto & projection_column : query_node.getProjectionColumns())
+            if (projection_column.name == name)
+                return true;
+        return false;
+    }
+
+    /// Does the JOIN's left table expression expose a real column `N` (schema column, not an alias)?
+    static bool leftTableHasColumn(const QueryTreeNodePtr & node, const String & name)
+    {
+        if (!node)
+            return false;
+
+        if (const auto * table_node = node->as<TableNode>())
+            return table_node->getStorageSnapshot()->tryGetColumn(GetColumnsOptions::All, name).has_value();
+        if (const auto * query_node = node->as<QueryNode>())
+            return hasProjectionColumn(*query_node, name);
+        if (const auto * union_node = node->as<UnionNode>())
+        {
+            for (const auto & projection_column : union_node->computeProjectionColumns())
+                if (projection_column.name == name)
+                    return true;
+            return false;
+        }
+        if (const auto * join_node = node->as<JoinNode>())
+            return leftTableHasColumn(join_node->getLeftTableExpression(), name)
+                || leftTableHasColumn(join_node->getRightTableExpression(), name);
+        if (const auto * cross_join_node = node->as<CrossJoinNode>())
+        {
+            for (const auto & table_expression : cross_join_node->getTableExpressions())
+                if (leftTableHasColumn(table_expression, name))
+                    return true;
+            return false;
+        }
+        if (const auto * array_join_node = node->as<ArrayJoinNode>())
+            return leftTableHasColumn(array_join_node->getTableExpression(), name);
+        return false;
+    }
+};
+
 }
 
 QueryTreeNodePtr buildQueryTreeForShard(const PlannerContextPtr & planner_context, QueryTreeNodePtr query_tree_to_modify, bool allow_global_join_for_right_table)
@@ -733,6 +870,10 @@ QueryTreeNodePtr buildQueryTreeForShard(const PlannerContextPtr & planner_contex
         query_tree_to_modify = query_tree_to_modify->cloneAndReplace(replacement_map);
 
     createUniqueAliasesIfNecessary(query_tree_to_modify, planner_context->getQueryContext());
+
+    /// A nested-alias `JOIN USING` key cannot be re-resolved on a shard; reject it here on the initiator.
+    RejectNestedAliasJoinUsingKeyVisitor reject_nested_alias_join_using_key_visitor;
+    reject_nested_alias_join_using_key_visitor.visit(query_tree_to_modify);
 
     // Get rid of the settings clause so we don't send them to remote. Thus newly non-important
     // settings won't break any remote parser. It's also more reasonable since the query settings
