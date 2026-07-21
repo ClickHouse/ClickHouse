@@ -299,10 +299,10 @@ void SSTIndexWriter::finish()
 SSTIndexWriter::~SSTIndexWriter()
 {
 #if USE_ROCKSDB
-    /// If the writer was opened but never finalized (abandoned without
-    /// `finalizeToStorage`), cancel the `WriteBuffer` so its destructor
-    /// doesn't trip the "neither finalized nor canceled" assertion.
-    if (impl && impl->opened && !finalized)
+    /// Not finalized → abandoned on some error path; cancel the live
+    /// `WriteBuffer` so an object-storage writer aborts its multipart
+    /// upload instead of leaking it.
+    if (impl && impl->out_file && !finalized)
         impl->out_file->cancel();
 #endif
 }
