@@ -56,6 +56,7 @@ namespace Setting
     extern const SettingsUInt64 min_insert_block_size_bytes_for_materialized_views;
     extern const SettingsUInt64 min_external_table_block_size_rows;
     extern const SettingsUInt64 max_joined_block_size_rows;
+    extern const SettingsUInt64 max_streams_for_merge_tree_reading;
     extern const SettingsMaxThreads max_threads;
     extern const SettingsBool use_hedged_requests;
 }
@@ -95,6 +96,21 @@ void doSettingsSanityCheckClamp(Settings & current_settings, LoggerPtr log)
         if (log)
             LOG_WARNING(log, "Sanity check: Too many threads requested ({}). Reduced to {}", max_threads, max_threads_max_value);
         current_settings[Setting::max_threads] = max_threads_max_value;
+    }
+
+    /// Same ceiling as max_threads: an unbounded value drives pipes.reserve()/resize() in
+    /// ReadFromMergeTree, where reserve() throws std::length_error when the requested size exceeds
+    /// the vector max_size.
+    if (UInt64 max_streams_for_merge_tree_reading = current_settings[Setting::max_streams_for_merge_tree_reading];
+        max_streams_for_merge_tree_reading > max_threads_max_value)
+    {
+        if (log)
+            LOG_WARNING(
+                log,
+                "Sanity check: 'max_streams_for_merge_tree_reading' value is too high ({}). Reduced to {}",
+                max_streams_for_merge_tree_reading,
+                max_threads_max_value);
+        current_settings[Setting::max_streams_for_merge_tree_reading] = max_threads_max_value;
     }
 
     static constexpr UInt64 max_sane_block_rows_size = 4294967296; // 2^32

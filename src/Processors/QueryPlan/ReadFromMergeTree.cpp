@@ -482,12 +482,8 @@ ReadFromMergeTree::ReadFromMergeTree(
     }
 
     const auto & settings = context->getSettingsRef();
-    /// `requested_num_streams` and the setting below drive pipes.reserve()/resize() in
-    /// groupPartitionsByStreams and spreadMarkRanges. Unbounded, reserve() throws std::length_error
-    /// (requested size exceeds vector max_size). Bound both to the ceiling max_threads gets.
-    const UInt64 max_num_streams = 256 * getNumberOfCPUCoresToUse();
-    if (const UInt64 max_streams_for_merge_tree_reading
-            = std::min<UInt64>(settings[Setting::max_streams_for_merge_tree_reading], max_num_streams))
+    /// The `max_streams_for_merge_tree_reading` setting is bounded by `doSettingsSanityCheckClamp`.
+    if (const UInt64 max_streams_for_merge_tree_reading = settings[Setting::max_streams_for_merge_tree_reading])
     {
         if (settings[Setting::allow_asynchronous_read_from_io_pool_for_merge_tree])
         {
@@ -503,9 +499,11 @@ ReadFromMergeTree::ReadFromMergeTree(
             /// Just limit requested_num_streams otherwise.
             requested_num_streams = std::min<size_t>(requested_num_streams, max_streams_for_merge_tree_reading);
     }
-    /// requested_num_streams may also be amplified upstream (max_streams * max_streams_to_max_threads_ratio
-    /// in the planner) regardless of the setting above; bound the effective value too.
-    requested_num_streams = std::min<size_t>(requested_num_streams, max_num_streams);
+    /// `requested_num_streams` drives pipes.reserve()/resize() in groupPartitionsByStreams and
+    /// spreadMarkRanges; unbounded, reserve() throws std::length_error (size exceeds vector max_size).
+    /// It can be amplified upstream (max_streams * max_streams_to_max_threads_ratio in the planner)
+    /// beyond any setting clamp, so bound the effective value here to the ceiling max_threads gets.
+    requested_num_streams = std::min<size_t>(requested_num_streams, 256 * getNumberOfCPUCoresToUse());
 
     /// Add explicit description.
     std::string description = data.getStorageID().getFullNameNotQuoted();

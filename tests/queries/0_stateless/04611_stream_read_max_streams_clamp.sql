@@ -7,6 +7,10 @@
 -- pipes.reserve in groupPartitionsByStreams (which aborts the server in debug/sanitizer builds).
 -- EXPLAIN PIPELINE exercises the streaming read path without running the streaming query forever.
 
+-- doSettingsSanityCheckClamp logs a warning when it clamps the pathological setting below; drop
+-- log messages from the client so they do not end up on stderr (see 02994_sanity_check_settings).
+SET send_logs_level = 'error';
+
 SET enable_streaming_queries = 1;
 
 -- Keep effective `max_threads` as set below. Under memory pressure (e.g. per_test_coverage)
