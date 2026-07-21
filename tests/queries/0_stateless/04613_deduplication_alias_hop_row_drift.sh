@@ -1,4 +1,9 @@
 #!/usr/bin/env bash
+# Tags: no-random-settings, no-random-merge-tree-settings
+# These scenarios pin the deduplication path exactly: the async batch busy timeout, the view-level
+# squash thresholds and the insert/thread counts decide how the deduplication tokens merge behind
+# the alias hop and whether two inserts join one async flush. Settings randomization perturbs that
+# (e.g. an early async flush breaks the batched self-deduplication), so it is disabled here.
 # Regression test: a dependent materialized view with a row-count-changing inner query (GROUP BY)
 # targeting an Alias, with a deduplicating table behind the alias hop. The AliasSink runs a nested
 # INSERT whose squashing and AddDeduplicationInfoTransform re-anchor the DeduplicationInfo's
