@@ -3,6 +3,7 @@
 -- finishes, instead of subscribing for updates like a plain STREAM query. Because it
 -- terminates, it can be exercised with a plain synchronous query.
 
+SET enable_analyzer = 1; -- streaming queries require the analyzer (CI randomizes this setting)
 SET enable_streaming_queries = 1;
 SET use_skip_indexes_on_data_read = 0;
 
