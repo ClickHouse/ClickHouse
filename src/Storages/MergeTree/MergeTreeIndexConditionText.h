@@ -224,6 +224,9 @@ private:
 
     bool tryPrepareSetForTextSearch(const RPNBuilderTreeNode & lhs, const RPNBuilderTreeNode & rhs, const String & function_name, RPNElement & out) const;
 
+    /// `m['key'] IN (v1, ..., vn)` over a keyValuePairs index: an OR of exact `m['key'] = vi` pair lookups.
+    bool tryPrepareMapElementKeyValueSet(const RPNBuilderTreeNode & lhs, const RPNBuilderTreeNode & rhs, RPNElement & out) const;
+
     /// Returns true if all tokens must be read for text index analysis
     /// and we cannot exit analysis earlier if some of the tokens are missing in granule.
     /// E.g. "hasAnyTokens(s, 'tokens')" or "hasAllTokens(s, 'tokens1') OR hasAllTokens(s, 'tokens2')""

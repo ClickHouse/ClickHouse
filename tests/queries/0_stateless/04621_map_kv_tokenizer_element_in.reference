@@ -1,0 +1,26 @@
+-- m[key] IN engages direct read (sub0) --
+direct read	1
+-- index == plain scan (direct read, then granule pruning) --
+1
+3
+6
+1
+3
+6
+1
+3
+6
+-- absent values match nothing --
+0
+-- empty string in the set: falls back, still correct (rows without the key match) --
+1
+4
+6
+7
+1
+4
+6
+7
+-- duplicate key: first-value (arrayElement) semantics, k=(a,b) matches on a, not b --
+7
+7

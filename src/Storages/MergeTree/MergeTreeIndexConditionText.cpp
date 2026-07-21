@@ -719,6 +719,12 @@ bool MergeTreeIndexConditionText::traverseAtomNode(const RPNBuilderTreeNode & no
         auto rhs_argument = function.getArgumentAt(1);
 
         if ((function_name == "in" || function_name == "globalIn")
+            && tryPrepareMapElementKeyValueSet(lhs_argument, rhs_argument, out))
+        {
+            return true;
+        }
+
+        if ((function_name == "in" || function_name == "globalIn")
             && tryPrepareSetForTextSearch(lhs_argument, rhs_argument, function_name, out))
         {
             out.function = RPNElement::FUNCTION_HAS_ANY_ELEMENTS;
@@ -2113,6 +2119,69 @@ bool MergeTreeIndexConditionText::tryPrepareSetForTextSearch(
         out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, TextIndexDirectReadMode::None, std::move(tokens)));
     }
 
+    return true;
+}
+
+bool MergeTreeIndexConditionText::tryPrepareMapElementKeyValueSet(
+    const RPNBuilderTreeNode & lhs, const RPNBuilderTreeNode & rhs, RPNElement & out) const
+{
+    /// `m['key'] IN (v1, ..., vn)` is the union of the exact first-value lookups `m['key'] = vi`.
+    /// The generic tryPrepareSetForTextSearch path cannot answer it: it resolves the map element against
+    /// a `mapValues(m)` index and tokenizes each set element on its own, whereas the keyValuePairs index
+    /// stores whole `(key, value)` pairs as single tokens. Handle it here, mirroring the `m['key'] = v`
+    /// rewrite: encode one exact pair token per set element and OR them.
+    if (!typeid_cast<const KeyValuePairsTokenizer *>(tokenizer))
+        return false;
+
+    /// The left side must be `m['key']` (arrayElement or the map subcolumn) resolving to a constant key.
+    auto key = tryGetMapElementKeyForKeyValueIndex(lhs);
+    if (!key)
+        return false;
+
+    auto future_set = rhs.tryGetPreparedSet();
+    if (!future_set)
+        return false;
+
+    auto prepared_set = future_set->buildOrderedSetInplace(rhs.getTreeContext().getQueryContext());
+    if (!prepared_set || !prepared_set->hasExplicitSetElements())
+        return false;
+
+    Columns columns = prepared_set->getSetElements();
+    /// A single-column set may arrive wrapped in a tuple; unwrap it.
+    if (columns.size() == 1 && isTuple(columns.front()->getDataType()))
+        columns = typeid_cast<const ColumnTuple &>(*columns.front()).getColumnsCopy();
+    if (columns.size() != 1)
+        return false;
+
+    const auto & set_column = *columns.front();
+    if (!WhichDataType(set_column.getDataType()).isStringOrFixedString())
+        return false;
+
+    /// Each `m['key'] = vi` matches the key's first occurrence (is_rest = 0), so build one exact pair
+    /// token per set element and OR them with FUNCTION_HAS_ANY_TOKENS. Kept as a single multi-token query
+    /// (like the mapContainsKeyValue rewrite) so the exact single-query direct read still applies and all
+    /// postings are read before answering.
+    VectorWithMemoryTracking<String> tokens;
+    size_t total_row_count = prepared_set->getTotalRowCount();
+    for (size_t row = 0; row < total_row_count; ++row)
+    {
+        auto ref = set_column.getDataAt(row);
+
+        /// `m['key'] = ''` is true for rows lacking the key (the map's default value), which have no
+        /// token, so a set containing the empty string cannot be answered by the index — keep the
+        /// original predicate and fall back to a scan.
+        if (ref.empty())
+            return false;
+
+        tokens.push_back(encodeMapKeyValueToken(*key, std::string_view(ref.data(), ref.size()), /*is_rest=*/ false));
+    }
+
+    if (tokens.empty())
+        return false;
+
+    out.function = RPNElement::FUNCTION_HAS_ANY_TOKENS;
+    out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(
+        "in", TextSearchMode::Any, TextIndexDirectReadMode::Exact, std::move(tokens)));
     return true;
 }
 
