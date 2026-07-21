@@ -82,8 +82,9 @@ SELECT groupPolygonIntersectionMerge(state) FROM (
 SELECT 'convexhull_truncated_payload';
 SELECT groupConvexHullMerge(state) FROM (
     SELECT CAST(unhex(concat(
-        '01',          -- version
-        '80C2D72F'     -- 100,000,000 declared points (== limit); no coordinate payload follows
+        '02',          -- version
+        '80C2D72F',    -- 100,000,000 declared points (== limit)
+        '00'           -- compression watermark; no coordinate payload follows
     )) AS AggregateFunction(groupConvexHull, Point)) AS state
 ); -- { serverError CANNOT_READ_ALL_DATA }
 

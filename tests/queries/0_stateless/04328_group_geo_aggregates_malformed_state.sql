@@ -1,10 +1,10 @@
 -- Malformed binary state rejection for geo aggregate functions.
 
--- 1. groupConvexHull: reject unknown version (2 instead of 1)
+-- 1. groupConvexHull: reject unknown version (3 instead of 2)
 SELECT 'convex_hull_bad_version';
 SELECT groupConvexHullMerge(state) FROM (
     SELECT CAST(unhex(concat(
-        '02',
+        '03',
         substring(hex(groupConvexHullState(pt)), 3)
     )) AS AggregateFunction(groupConvexHull, Point)) AS state
     FROM (SELECT readWKTPoint('POINT (1 2)') AS pt)
@@ -86,7 +86,7 @@ SELECT groupPolygonUnionMerge(state) FROM (
 SELECT 'convex_hull_oversized_points';
 SELECT groupConvexHullMerge(state) FROM (
     SELECT CAST(unhex(concat(
-        '01',          -- version
+        '02',          -- version
         '81C2D72F',    -- 100000001 points (limit 100000000)
         '00'
     )) AS AggregateFunction(groupConvexHull, Point)) AS state
@@ -110,9 +110,20 @@ SELECT groupPolygonUnionMerge(state) FROM (
 SELECT 'convex_hull_inf_coordinate';
 SELECT groupConvexHullMerge(state) FROM (
     SELECT CAST(unhex(concat(
-        '01',                  -- version
+        '02',                  -- version
         '01',                  -- 1 point
+        '00',                  -- compression watermark
         '000000000000F07F',    -- x = +Inf (little-endian IEEE 754)
         '0000000000000000'     -- y = 0.0
+    )) AS AggregateFunction(groupConvexHull, Point)) AS state
+); -- { serverError INCORRECT_DATA }
+
+-- 11. groupConvexHull: reject a compression watermark larger than the point count
+SELECT 'convex_hull_invalid_watermark';
+SELECT groupConvexHullMerge(state) FROM (
+    SELECT CAST(unhex(concat(
+        '02',  -- version
+        '01',  -- 1 point
+        '02'   -- compression watermark = 2
     )) AS AggregateFunction(groupConvexHull, Point)) AS state
 ); -- { serverError INCORRECT_DATA }

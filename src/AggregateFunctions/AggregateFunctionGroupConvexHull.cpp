@@ -26,6 +26,7 @@ namespace
 {
 
 constexpr size_t CONVEX_HULL_COMPRESSION_THRESHOLD = 10000;
+constexpr UInt8 GROUP_CONVEX_HULL_SERDE_VERSION = 2;
 
 struct GroupConvexHullData
 {
@@ -63,6 +64,16 @@ struct GroupConvexHullData
 
     void merge(const GroupConvexHullData & other, const char * function_name)
     {
+        /// Preserve the compression watermark when a serialized partial state is the first state
+        /// merged into a fresh accumulator. Treating its already-compressed hull points as newly
+        /// appended growth would discard the amortization restored by `deserialize`.
+        if (points.empty())
+        {
+            points = other.points;
+            size_after_compression = other.size_after_compression;
+            return;
+        }
+
         points.insert(points.end(), other.points.begin(), other.points.end());
 
         /// Compress (recompute the hull) before enforcing the budget. Two partial states can
@@ -285,11 +296,12 @@ public:
 
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
     {
-        writeBinaryLittleEndian(GEO_SERDE_VERSION, buf);
+        writeBinaryLittleEndian(GROUP_CONVEX_HULL_SERDE_VERSION, buf);
 
-        const auto & points = AggregateFunctionGroupConvexHull::data(place).points;
-        writeVarUInt(points.size(), buf);
-        for (const auto & pt : points)
+        const auto & data = AggregateFunctionGroupConvexHull::data(place);
+        writeVarUInt(data.points.size(), buf);
+        writeVarUInt(data.size_after_compression, buf);
+        for (const auto & pt : data.points)
         {
             writeBinaryLittleEndian(pt.get<0>(), buf);
             writeBinaryLittleEndian(pt.get<1>(), buf);
@@ -300,13 +312,13 @@ public:
     {
         UInt8 version = 0;
         readBinaryLittleEndian(version, buf);
-        if (version != GEO_SERDE_VERSION)
+        if (version != GROUP_CONVEX_HULL_SERDE_VERSION)
             throw Exception(
                 ErrorCodes::INCORRECT_DATA,
                 "Unsupported serialization version {} for aggregate function {} (expected {})",
                 static_cast<int>(version),
                 getName(),
-                static_cast<int>(GEO_SERDE_VERSION));
+                static_cast<int>(GROUP_CONVEX_HULL_SERDE_VERSION));
 
         UInt64 size = 0;
         readVarUInt(size, buf);
@@ -318,18 +330,26 @@ public:
                 size,
                 MAX_POINTS_IN_CONVEX_HULL_STATE);
 
+        UInt64 size_after_compression = 0;
+        readVarUInt(size_after_compression, buf);
+        if (size_after_compression > size)
+            throw Exception(
+                ErrorCodes::INCORRECT_DATA,
+                "Corrupted state of aggregate function {}: compression watermark {} exceeds point count {}",
+                getName(),
+                size_after_compression,
+                size);
+
         /// Do not pre-size the accumulator to the declared count. A corrupted state can advertise
         /// an in-range count (up to `MAX_POINTS_IN_CONVEX_HULL_STATE`) yet carry a truncated
         /// coordinate payload, so `points.resize(size)` would force an allocation for up to
         /// `MAX_POINTS_IN_CONVEX_HULL_STATE` `CartesianPoint` values before `readBinaryLittleEndian`
-        /// hits EOF. Read the payload in bounded batches and feed them through `addMany`, which
-        /// compresses the accumulator once it grows past `CONVEX_HULL_COMPRESSION_THRESHOLD`:
-        /// memory then grows only with the bytes actually present, not with the declared count.
-        constexpr UInt64 deserialize_batch_size = 4096;
+        /// hits EOF. Append points incrementally with a bounded initial reservation so memory grows
+        /// only with the bytes actually present. Do not call `addMany`: it can compress the partial
+        /// payload and make the restored state depend on the deserialization batch size.
+        constexpr UInt64 deserialize_initial_capacity = 4096;
         auto & data = AggregateFunctionGroupConvexHull::data(place);
-
-        std::vector<CartesianPoint> batch; // STYLE_CHECK_ALLOW_STD_CONTAINERS
-        batch.reserve(size < deserialize_batch_size ? static_cast<size_t>(size) : deserialize_batch_size);
+        data.points.reserve(size < deserialize_initial_capacity ? static_cast<size_t>(size) : deserialize_initial_capacity);
 
         for (UInt64 i = 0; i < size; ++i)
         {
@@ -344,17 +364,10 @@ public:
                     getName(),
                     x,
                     y);
-            batch.push_back(CartesianPoint(x, y));
-
-            if (batch.size() >= deserialize_batch_size)
-            {
-                data.addMany(batch, getName().c_str());
-                batch.clear();
-            }
+            data.points.push_back(CartesianPoint(x, y));
         }
 
-        if (!batch.empty())
-            data.addMany(batch, getName().c_str());
+        data.size_after_compression = static_cast<size_t>(size_after_compression);
     }
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override

@@ -16,6 +16,28 @@ SELECT round(polygonAreaCartesian(groupConvexHullMerge(state)), 2) FROM
     )
 );
 
+-- Preserve the compression watermark as part of the serialized state. The first 10,001 points
+-- trigger compression; the remaining 500 points must stay counted as growth after it.
+SELECT 'convex_hull_watermark_roundtrip';
+SELECT serialized = hex(CAST(unhex(serialized) AS AggregateFunction(groupConvexHull, Point)))
+FROM
+(
+    SELECT hex(groupConvexHullState(
+        (toFloat64(number % 2), toFloat64(intDiv(number, 2) % 2))::Point)) AS serialized
+    FROM numbers(10501)
+);
+
+-- The first merge into a fresh accumulator must preserve the restored watermark as well.
+SELECT 'convex_hull_watermark_merge_state';
+SELECT serialized = hex(groupConvexHullMergeState(
+    CAST(unhex(serialized) AS AggregateFunction(groupConvexHull, Point))))
+FROM
+(
+    SELECT hex(groupConvexHullState(
+        (toFloat64(number % 2), toFloat64(intDiv(number, 2) % 2))::Point)) AS serialized
+    FROM numbers(10501)
+);
+
 -- 2. `groupPolygonUnion`: polygon with an inner ring exercises ring/polygon state serialization helpers.
 SELECT 'union_binary_roundtrip_hole';
 SELECT round(polygonAreaCartesian(groupPolygonUnionMerge(state)), 2) FROM
