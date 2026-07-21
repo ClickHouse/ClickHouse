@@ -1,6 +1,4 @@
--- m[key] IN engages direct read (sub0) --
-direct read	1
--- index == plain scan (direct read, then granule pruning) --
+-- index (granule pruning) == plain scan --
 1
 3
 6
@@ -10,9 +8,11 @@ direct read	1
 1
 3
 6
+-- direct read is intentionally NOT used for the IN set form (0) --
+direct read	0
 -- absent values match nothing --
 0
--- empty string in the set: falls back, still correct (rows without the key match) --
+-- empty string in the set: rows without the key match --
 1
 4
 6
@@ -23,4 +23,9 @@ direct read	1
 7
 -- duplicate key: first-value (arrayElement) semantics, k=(a,b) matches on a, not b --
 7
-7
+0
+-- regression: a part where the index is not materialized must not drop rows --
+1
+2
+10
+11

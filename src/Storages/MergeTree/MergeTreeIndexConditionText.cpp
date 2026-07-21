@@ -2158,9 +2158,16 @@ bool MergeTreeIndexConditionText::tryPrepareMapElementKeyValueSet(
         return false;
 
     /// Each `m['key'] = vi` matches the key's first occurrence (is_rest = 0), so build one exact pair
-    /// token per set element and OR them with FUNCTION_HAS_ANY_TOKENS. Kept as a single multi-token query
-    /// (like the mapContainsKeyValue rewrite) so the exact single-query direct read still applies and all
-    /// postings are read before answering.
+    /// token per set element and OR them with FUNCTION_HAS_ANY_TOKENS (a single multi-token query, like
+    /// the mapContainsKeyValue rewrite, so requiresReadingAllTokens forces reading every posting).
+    ///
+    /// The direct read mode is `None`, NOT `Exact` — matching the generic set path
+    /// (`tryPrepareSetForTextSearch`). An exact direct read would replace the predicate with a virtual
+    /// column and, for parts where the index is not materialized, recompute it from
+    /// `convertNodeToAST(in(...))`; but the `IN` right-hand side is a `ColumnSet`, which does not survive
+    /// that round-trip (it degrades to a NULL literal), so the recomputed predicate would drop the
+    /// non-materialized part's matching rows. With `None` the original `IN` predicate is kept and the
+    /// index is used only to prune granules (which the FUNCTION_HAS_ANY_TOKENS RPN still drives).
     VectorWithMemoryTracking<String> tokens;
     size_t total_row_count = prepared_set->getTotalRowCount();
     for (size_t row = 0; row < total_row_count; ++row)
@@ -2181,7 +2188,7 @@ bool MergeTreeIndexConditionText::tryPrepareMapElementKeyValueSet(
 
     out.function = RPNElement::FUNCTION_HAS_ANY_TOKENS;
     out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(
-        "in", TextSearchMode::Any, TextIndexDirectReadMode::Exact, std::move(tokens)));
+        "in", TextSearchMode::Any, TextIndexDirectReadMode::None, std::move(tokens)));
     return true;
 }
 
