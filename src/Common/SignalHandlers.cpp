@@ -52,6 +52,9 @@ static std::atomic_bool is_crashed = false;
 static_assert(std::atomic_bool::is_always_lock_free, "is_crashed must be lock-free for use in signal handlers");
 bool isCrashed() { return is_crashed.load(std::memory_order_relaxed); }
 
+/// Set once the deadly signal handlers are reset to SIG_DFL; makes resetHandledSignals() a no-op afterwards.
+static std::atomic_flag handled_signals_were_reset;
+
 /// After re-raising the signal, the siginfo recorded in the core dump shows SI_TKILL with no si_addr,
 /// so we need to preserve the address for core dump analysis.
 static std::atomic<uintptr_t> saved_fault_address{0};
@@ -279,7 +282,9 @@ static DISABLE_SANITIZER_INSTRUMENTATION void sanitizerDeathCallback()
     /// Sanitizer errors cannot be handled properly with our signal handlers, because it leads to deadlock.
     /// So we need to reset the signal handlers (this does not lead to deadlock),
     /// but closing the pipe leads to deadlock from death callback, so we will not close it.
-    HandledSignals::instance().reset(/* close_pipe= */ false);
+    /// Use resetHandledSignals() (idempotent, does not construct the singleton) instead of
+    /// HandledSignals::instance().reset() to stay safe when called at process exit.
+    resetHandledSignals();
 }
 #endif
 
@@ -723,6 +728,8 @@ HandledSignals::HandledSignals()
 
 void HandledSignals::reset(bool close_pipe)
 {
+    handled_signals_were_reset.test_and_set();
+
     /// Reset signals to SIG_DFL to avoid trying to write to the signal_pipe that will be closed after.
     for (int sig : handled_signals)
     {
@@ -741,6 +748,15 @@ void HandledSignals::reset(bool close_pipe)
 
     if (close_pipe)
         signal_pipe.close();
+}
+
+void resetHandledSignals()
+{
+    /// Already reset: do nothing, and in particular do not touch (or construct) HandledSignals.
+    if (handled_signals_were_reset.test())
+        return;
+
+    HandledSignals::instance().reset(/* close_pipe= */ false);
 }
 
 HandledSignals::~HandledSignals()
