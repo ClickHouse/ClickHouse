@@ -1,10 +1,10 @@
 #pragma once
 
-#include <ranges>
 #include <Interpreters/HashJoin/HashJoin.h>
 #include <Interpreters/HashJoin/JoinUsedFlags.h>
 #include <Interpreters/RowRefs.h>
 #include <Common/HashTable/HashMap.h>
+#include <Common/HashTable/HashSet.h>
 
 namespace DB
 {
@@ -26,7 +26,7 @@ public:
 private:
     static const size_t MAX_LINEAR = 16; // threshold to switch from Array to Set
     using ArrayHolder = std::array<Type, MAX_LINEAR>;
-    using SetHolder = std::set<Type>;
+    using SetHolder = HashSet<Type, DefaultHash<Type>, HashTableGrower<5>>;
     using SetHolderPtr = std::unique_ptr<SetHolder>;
 
     ArrayHolder array_holder;
@@ -55,10 +55,12 @@ public:
         {
             if (items <= MAX_LINEAR)
             {
-                set_holder_ptr = std::make_unique<SetHolder>();
-                set_holder_ptr->insert(std::cbegin(array_holder), std::cbegin(array_holder) + items);
+                set_holder_ptr = std::make_unique<SetHolder>(items + new_items);
+                for (size_t i = 0; i < items; ++i)
+                    set_holder_ptr->insert(array_holder[i]);
             }
-            set_holder_ptr->insert(from, to);
+            for (auto it = from; it != to; ++it)
+                set_holder_ptr->insert(*it);
         }
         items += new_items;
     }
@@ -68,7 +70,7 @@ public:
     {
         return items <= MAX_LINEAR
             ? std::find(std::cbegin(array_holder), std::cbegin(array_holder) + items, needle) != std::cbegin(array_holder) + items
-            : set_holder_ptr->find(needle) != set_holder_ptr->end();
+            : set_holder_ptr->has(needle);
     }
 };
 
