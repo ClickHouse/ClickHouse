@@ -37,6 +37,7 @@
 #include <Analyzer/Resolve/TypoCorrection.h>
 
 #include <Common/FieldVisitorToString.h>
+#include <Common/logger_useful.h>
 #include <Common/quoteString.h>
 #include <Core/Settings.h>
 
@@ -104,6 +105,7 @@ namespace Setting
     extern const SettingsString implicit_table_at_top_level;
     extern const SettingsBool parallel_replicas_for_cluster_engines;
     extern const SettingsBool enable_identifier_resolve_cache;
+    extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
 }
 
 
@@ -5323,11 +5325,15 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
         /// The projection list is not mutated during resolveJoin, so the cache stays valid across identifiers.
         std::optional<ScopeAliases> select_list_aliases;
 
+        /// Set by the helper below when the identifier matched an alias nested in a SELECT-list
+        /// subexpression (not a top-level projection alias). Reset per USING identifier.
+        bool nested_alias_matched = false;
+
         /** Find a SELECT-list node whose alias matches the USING identifier.
           * Top-level projection aliases are checked first (existing pick-first behavior, kept for compatibility);
           * if none match, search aliases defined on subexpressions of the SELECT list.
           */
-        auto find_aliased_node_in_projection = [&select_list_aliases](const QueryNode * query_node_,
+        auto find_aliased_node_in_projection = [&select_list_aliases, &nested_alias_matched](const QueryNode * query_node_,
                                                    const String & identifier_full_name_) -> QueryTreeNodePtr
         {
             for (const auto & projection_node : query_node_->getProjection().getNodes())
@@ -5358,6 +5364,7 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
                     return nullptr;
             }
 
+            nested_alias_matched = true;
             return it->second;
         };
 
@@ -5427,6 +5434,8 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
 
         for (auto & join_using_node : join_using_list.getNodes())
         {
+            nested_alias_matched = false;
+
             auto * identifier_node = join_using_node->as<IdentifierNode>();
             if (!identifier_node)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
@@ -5456,6 +5465,47 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
               */
             if (settings[Setting::analyzer_compatibility_join_using_top_level_identifier])
                 result_left_table_expression = try_resolve_identifier_from_query_projection(identifier_full_name, join_node_typed.getLeftTableExpression(), scope);
+
+            /** A USING key resolved from an alias nested in the SELECT list cannot be shipped to a remote
+              * server: the rendered SQL keeps only top-level projection aliases, so a replica's re-analysis
+              * of the USING clause would fail. Disable parallel replicas for such a query. Top-level aliases
+              * become projection names in the rendered SQL and are unaffected.
+              */
+            if (result_left_table_expression && nested_alias_matched)
+            {
+                const IdentifierResolveScope * root_scope = &scope;
+                while (root_scope->parent_scope)
+                    root_scope = root_scope->parent_scope;
+
+                ContextMutablePtr root_mutable_context;
+                if (auto * root_query_node = root_scope->scope_node->as<QueryNode>())
+                    root_mutable_context = root_query_node->getMutableContext();
+                else if (auto * root_union_node = root_scope->scope_node->as<UnionNode>())
+                    root_mutable_context = root_union_node->getMutableContext();
+
+                /// The guard on INITIAL_QUERY makes it structurally impossible to disable the setting on a
+                /// secondary (replica-side) query, which could corrupt task-based reading. Unreachable by
+                /// construction: the shipped SQL never contains a nested alias.
+                if (root_mutable_context
+                    && root_mutable_context->getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
+                {
+                    const auto & root_settings = root_mutable_context->getSettingsRef();
+                    if (root_settings[Setting::allow_experimental_parallel_reading_from_replicas] >= 2)
+                        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                            "JOIN USING identifier '{}' is resolved from an alias nested in the SELECT list, "
+                            "which is not supported with parallel replicas",
+                            identifier_full_name);
+
+                    if (root_settings[Setting::allow_experimental_parallel_reading_from_replicas] == 1)
+                    {
+                        root_mutable_context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));
+                        LOG_DEBUG(getLogger("QueryAnalyzer"),
+                            "JOIN USING identifier '{}' is resolved from an alias nested in the SELECT list; "
+                            "parallel replicas are disabled because the query sent to a remote server would not contain the alias",
+                            identifier_full_name);
+                    }
+                }
+            }
 
             if (!result_left_table_expression)
             {
