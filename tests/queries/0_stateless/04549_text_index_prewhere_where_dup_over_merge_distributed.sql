@@ -8,6 +8,12 @@
 
 SET enable_analyzer = 1;
 SET allow_experimental_full_text_index = 1;
+-- 26.3 does not have the fix from https://github.com/ClickHouse/ClickHouse/pull/109188 (StorageMerge
+-- and StorageDistributed opting out of the rewrite of mapValues(attributes) to the subcolumn
+-- attributes.values), so with optimize_functions_to_subcolumns randomized to 1 the PREWHERE predicate
+-- would be rewritten to the subcolumn, which Merge rejects with ILLEGAL_PREWHERE. Pin it to 0 to keep
+-- the predicate in the function form that matches the text-index expression, as in the original repro.
+SET optimize_functions_to_subcolumns = 0;
 -- The double-registration is reached only when the whole Merge -> Distributed -> MergeTree plan is
 -- built and optimized on the initiator (local replica).
 SET prefer_localhost_replica = 1;
