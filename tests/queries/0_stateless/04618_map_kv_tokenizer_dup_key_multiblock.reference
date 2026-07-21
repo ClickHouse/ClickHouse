@@ -1,0 +1,6 @@
+-- mapContainsKeyValue: index must equal brute-force (19) on the pruning and direct-read paths --
+19
+19
+19
+-- the absent pair must still match nothing --
+0

@@ -1012,15 +1012,28 @@ bool MergeTreeIndexConditionText::traverseMapContainsKeyValue(const RPNBuilderFu
     if (function.getFunctionName() == "mapContainsKeyValue")
     {
         /// Existence of a (key, value) pair at any position. A pair is stored as either the
-        /// first-occurrence (is_rest = 0) or a later-occurrence (is_rest = 1) token, so existence
-        /// unions both variants — a union of two exact tokens is still an exact existence answer.
-        /// (`m['key'] = v` instead pins only the is_rest = 0 token — first value.)
+        /// first-occurrence (is_rest = 0) or a later-occurrence (is_rest = 1) token, so existence is
+        /// the union (OR) of the two variants. Tag the query FUNCTION_HAS_ANY_TOKENS (Any mode),
+        /// NOT FUNCTION_EQUALS.
+        ///
+        /// The distinction matters for granule pruning. FUNCTION_EQUALS forces the All-mode check
+        /// (hasAllTokensOrEmptyInRange), which treats the query's folded posting list as complete and
+        /// intersects it with the mark range. But a two-token Any query folds its postings by union,
+        /// and that union is complete only once every token's postings have been read; if one variant's
+        /// postings are still unread (e.g. the is_rest = 1 token's posting list spans several posting
+        /// blocks while is_rest = 0 is embedded), the partial union would be taken as exact and a mark
+        /// holding only the unread variant would be wrongly pruned — a false negative for exactly the
+        /// later-duplicate rows this function exists to find. FUNCTION_HAS_ANY_TOKENS instead routes to
+        /// the Any-mode check (which stays conservative until all postings are read) and makes
+        /// requiresReadingAllTokens true, so the reader folds both postings before answering; direct
+        /// read likewise unions the two exact postings. Kept as one query (not two) so the single-query
+        /// direct-read replacement still applies. (`m['key'] = v` instead pins only the is_rest = 0 token.)
         const String key_str = key_field.safeGet<String>();
         const String value_str = value_field.safeGet<String>();
         VectorWithMemoryTracking<String> tokens;
         tokens.push_back(encodeMapKeyValueToken(key_str, value_str, /*is_rest=*/ false));
         tokens.push_back(encodeMapKeyValueToken(key_str, value_str, /*is_rest=*/ true));
-        out.function = RPNElement::FUNCTION_EQUALS;
+        out.function = RPNElement::FUNCTION_HAS_ANY_TOKENS;
         out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(
             function.getFunctionName(), TextSearchMode::Any, TextIndexDirectReadMode::Exact, std::move(tokens)));
         return true;
