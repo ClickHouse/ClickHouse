@@ -80,10 +80,10 @@ REGISTER_FUNCTION(Bitmap)
         {"cardinality_limit", "Maximum cardinality of the subset. [`UInt*`](/sql-reference/data-types/int-uint)"}
     };
     FunctionDocumentation::ReturnedValue returned_value_bitmapSubsetLimit = {"Returns a bitmap containing at most `cardinality_limit` set bits, starting from `range_start`", {"AggregateFunction(groupBitmap, T)"}};
-    FunctionDocumentation::Examples examples_bitmapSubsetLimit = {{"Usage example", "SELECT bitmapToArray(bitmapSubsetLimit(bitmapBuild([1, 5, 3, 2, 8]), 3, 2)) AS res;",
+    FunctionDocumentation::Examples examples_bitmapSubsetLimit = {{"Usage example", "SELECT arraySort(bitmapToArray(bitmapSubsetLimit(bitmapBuild([1, 5, 3, 2, 8]), 3, 2))) AS res;",
         R"(
 ┌─res────┐
-│ [5, 3] │
+│ [3, 5] │
 └────────┘
     )"}
     };
