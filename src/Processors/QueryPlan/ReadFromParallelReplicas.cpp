@@ -194,7 +194,17 @@ Pipe ReadFromParallelReplicasStep::createPipeForSingeReplica(
     const SharedHeader & out_header,
     size_t parallel_marshalling_threads)
 {
-    const bool add_agg_info = false;
+    /// The shipped fragment produces intermediate aggregation state when it ends in a partial
+    /// AggregatingStep (e.g. from the parallel-replicas aggregation split). A MergingAggregated above the
+    /// ReadFromParallelReplicas then requires every received chunk to carry AggregatedChunkInfo.
+    /// RemoteSource auto-detects this only when the header has an AggregateFunction column, which misses a
+    /// keys-only aggregation (GROUP BY / DISTINCT with no aggregate functions), so set it explicitly here.
+    bool add_agg_info = false;
+    if (query_plan)
+        if (const auto * root = query_plan->getRootNode())
+            if (const auto * agg = typeid_cast<const AggregatingStep *>(root->step.get()))
+                add_agg_info = !agg->getFinal();
+
     bool add_totals = false;
     bool add_extremes = false;
     bool async_read = context->getSettingsRef()[Setting::async_socket_for_remote];
