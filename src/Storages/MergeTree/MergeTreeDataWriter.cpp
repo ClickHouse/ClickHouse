@@ -483,8 +483,13 @@ void MergeTreeTemporaryPart::prewarmCaches()
 }
 
 BlocksWithPartition MergeTreeDataWriter::splitBlockIntoParts(
-    Block && block, size_t max_parts, const StorageMetadataPtr & metadata_snapshot, ContextPtr context)
+    Block && block, size_t max_parts, const StorageMetadataPtr & metadata_snapshot, ContextPtr context, IColumn::Selector * out_selector)
 {
+    /// out_selector is left empty when the block is not split (a single resulting partition);
+    /// the caller then knows every row belongs to the only partition.
+    if (out_selector)
+        out_selector->clear();
+
     BlocksWithPartition result;
     if (block.empty() || !block.rows())
     {
@@ -553,6 +558,10 @@ BlocksWithPartition MergeTreeDataWriter::splitBlockIntoParts(
 
     for (auto & item : result)
         item.partition_id = item.partition.getID(metadata_snapshot->getPartitionKey().sample_block);
+
+    /// Hand the row -> partition-index mapping to the caller (deduplication uses it).
+    if (out_selector)
+        *out_selector = std::move(selector);
 
     return result;
 }
