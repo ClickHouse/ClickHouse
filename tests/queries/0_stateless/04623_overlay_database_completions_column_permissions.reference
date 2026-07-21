@@ -1,0 +1,8 @@
+Sanity: default user sees the table and the column tokens
+1
+1
+Facade SHOW + source SHOW TABLES only: the table token is visible, the column token is not
+1
+0
+Facade SHOW + source SHOW COLUMNS: the column token is visible
+1
