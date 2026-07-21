@@ -254,6 +254,13 @@ SELECT 'a'   SIMILAR TO '[#a]' ESCAPE '#';         -- Returns: 1
 SELECT 'b'   SIMILAR TO '[#a]' ESCAPE '#';         -- Returns: 0
 SELECT 'a#b' SIMILAR TO 'a[#]b' ESCAPE '#';        -- Returns: 1 (bracket with literal #, no invalid regexp)
 
+SELECT '-- A bare backslash is a literal member inside a bracket expression under a custom escape';
+SELECT '\\'  SIMILAR TO '[\\d]' ESCAPE '#';        -- Returns: 1 (the backslash is a literal member)
+SELECT 'd'   SIMILAR TO '[\\d]' ESCAPE '#';        -- Returns: 1
+SELECT '5'   SIMILAR TO '[\\d]' ESCAPE '#';        -- Returns: 0 (\d is not the digit class)
+SELECT 'a\\c' SIMILAR TO 'a[b\\]c' ESCAPE '#';     -- Returns: 1 (a lone backslash member does not consume the closing bracket)
+SELECT 'abc' SIMILAR TO 'a[b\\]c' ESCAPE '#';      -- Returns: 1
+
 SELECT '-- A trailing escape character is an error';
 SELECT 'a'   SIMILAR TO 'a#' ESCAPE '#';           -- { serverError CANNOT_PARSE_ESCAPE_SEQUENCE }
 

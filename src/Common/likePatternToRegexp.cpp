@@ -472,8 +472,11 @@ String similarToPatternWithCustomEscapeToSimilarToPattern(std::string_view patte
 
     /// Bracket state, tracked exactly as in `similarToPatternToRegexp`. The escape character is only
     /// special *outside* a bracket expression (POSIX / PostgreSQL do not recognize escapes inside
-    /// `[...]`), so within a bracket every character — including the escape character and a bare
-    /// backslash — is passed through verbatim and `similarToPatternToRegexp` applies the bracket rules.
+    /// `[...]`), so within a bracket it is passed through verbatim and `similarToPatternToRegexp`
+    /// applies the bracket rules. A bare backslash, however, is a literal everywhere under a custom
+    /// escape (backslash is no longer the escape) and is rewritten to `\\` inside brackets too —
+    /// otherwise the standard translator would consume it as a bracket escape, turning the member
+    /// `\` of `[a\]` into an unterminated class and collapsing `[\d]` to `[d]`.
     bool in_bracket = false;
     bool maybe_in_class = false;
 
@@ -494,10 +497,11 @@ String similarToPatternWithCustomEscapeToSimilarToPattern(std::string_view patte
             ++pos;
             continue;
         }
-        if (!in_bracket && !maybe_in_class && *pos == '\\')
+        if (*pos == '\\')
         {
             /// When a custom escape character is used, a bare backslash is a literal (backslash is no
-            /// longer the escape). Emit `\\` so `similarToPatternToRegexp` keeps it as a literal backslash.
+            /// longer the escape). Emit `\\` so `similarToPatternToRegexp` keeps it as a literal
+            /// backslash — `\\` denotes a literal backslash member inside bracket expressions as well.
             res += "\\\\";
             ++pos;
             continue;

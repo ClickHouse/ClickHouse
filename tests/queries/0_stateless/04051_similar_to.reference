@@ -206,6 +206,12 @@
 1
 0
 1
+-- A bare backslash is a literal member inside a bracket expression under a custom escape
+1
+1
+0
+1
+1
 -- A trailing escape character is an error
 -- NOT SIMILAR TO with ESCAPE
 0
